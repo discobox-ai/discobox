@@ -2,63 +2,66 @@ package model
 
 import "time"
 
+// Desired state answers existence and nothing else (ADR 0017 §9). Power state —
+// whether a sandbox is running right now — is not orchestrated: it is observed
+// and reported by the runtime, never requested by the control plane.
+//
+// These two values are shared verbatim by every orchestrated resource, which is
+// why the enum tag on DesiredState below is accurate rather than the union the
+// State tag still is.
 const (
-	OperationStatusPending = "pending"
-	OperationStatusRunning = "running"
-	OperationStatusSuccess = "success"
-	OperationStatusFailed  = "failed"
+	DesiredStatePresent = "present"
+	DesiredStateDeleted = "deleted"
 )
 
-// OperationSpec describes the resource state update made when an operation is
-// accepted and its durable job is queued.
-type OperationSpec struct {
-	Operation    string
-	DesiredState string
-	Phase        string
+// DesiredStates is the canonical desired-state vocabulary, identical for all
+// orchestrated resources.
+var DesiredStates = []string{
+	DesiredStatePresent,
+	DesiredStateDeleted,
 }
 
-// ResourceLifecycle is embedded into resources that are reconciled by queued
-// operations. Embedding keeps DB/API fields flat while sharing transition code.
+// ResourceLifecycle is embedded into orchestrated resources. Two of its fields
+// are the orchestration contract — Generation and ObservedGeneration, read by
+// the reconcile engine and identical for every resource. The rest belong to the
+// resource and are read only by its own reconciler and by the API (ADR 0017 §2).
+//
+// Embedding keeps DB/API fields flat while sharing the transition helpers. It
+// is a convenience, not a contract: a resource owes the orchestrator only the
+// two counters.
 type ResourceLifecycle struct {
-	DesiredState        string    `gorm:"column:desired_state;not null;type:text;index" json:"desiredState" doc:"Requested steady state for reconciliation" enum:"running,stopped,deleted"`
-	Phase               string    `gorm:"not null;type:text;index" json:"phase" doc:"Observed lifecycle phase" enum:"pending,provisioning,starting,running,stopping,stopped,deleting,deleted,failed"`
-	ActiveOperation     *string   `gorm:"column:active_operation;type:text;index" json:"activeOperation,omitempty" doc:"Current queued or running operation" enum:"create,start,stop,restart,delete"`
-	LastOperationStatus string    `gorm:"column:last_operation_status;not null;type:text;index" json:"lastOperationStatus" doc:"Status of the most recent operation" enum:"pending,running,success,failed"`
-	Generation          int64     `gorm:"not null;default:0" json:"generation" doc:"Latest desired-state generation"`
-	ObservedGeneration  int64     `gorm:"column:observed_generation;not null;default:0" json:"observedGeneration" doc:"Latest generation fully observed by reconciliation"`
-	StatusMessage       *string   `gorm:"column:status_message;type:text" json:"statusMessage,omitempty" doc:"Human-readable status detail"`
-	PhaseChangedAt      time.Time `gorm:"column:phase_changed_at" json:"phaseChangedAt,omitempty" doc:"When Phase last changed to its current value. Anchors how long a resource has been in a phase, for timeouts that must not be reset by unrelated reconciles." format:"date-time"`
-	ErrorMessage        *string   `gorm:"column:error_message;type:text" json:"errorMessage,omitempty" doc:"Latest error message"`
+	DesiredState       string    `gorm:"column:desired_state;not null;type:text;index;default:''" json:"desiredState" doc:"Requested existence. Power state is not orchestrated (ADR 0017 §9)." enum:"present,deleted"`
+	State              string    `gorm:"column:state;not null;type:text;index;default:''" json:"state" doc:"Observed state, reported by whichever component can see it" enum:"pending,awaiting_source,registering,starting,running,stopping,stopped,active,offline,deleted,failed"`
+	Generation         int64     `gorm:"not null;default:0" json:"generation" doc:"Latest spec generation"`
+	ObservedGeneration int64     `gorm:"column:observed_generation;not null;default:0" json:"observedGeneration" doc:"Latest generation the reconciler has finished acting on"`
+	StateChangedAt     time.Time `gorm:"column:state_changed_at" json:"stateChangedAt,omitempty" doc:"When State last changed to its current value. Anchors how long a resource has been in a state, for timeouts that must not be reset by unrelated reconciles." format:"date-time"`
+	ErrorMessage       *string   `gorm:"column:error_message;type:text" json:"errorMessage,omitempty" doc:"Error from the generation currently recorded in ObservedGeneration. Cleared by every accepted intent."`
 }
 
-func NewResourceLifecycle(spec OperationSpec) ResourceLifecycle {
-	var lifecycle ResourceLifecycle
-	lifecycle.BeginOperation(spec)
-	return lifecycle
-}
-
-// SetPhase moves the resource to phase, stamping PhaseChangedAt only on an
+// SetState moves the resource to state, stamping StateChangedAt only on an
 // actual change.
 //
-// The guard is the point: a caller that re-asserts the phase it is already in —
-// a reconcile that re-parks, re-drives, or simply converges again — must not
-// move the anchor. Timeouts derive their deadline from it, so restamping on
-// every write would push the deadline out each time anything looked at the
-// resource, and it could never expire.
-func (l *ResourceLifecycle) SetPhase(phase string) {
-	if l.Phase == phase {
+// The guard is the point: a caller that re-asserts the state it is already in —
+// a reconcile that re-parks, re-drives, or simply converges again, or a runtime
+// report that repeats what we already knew — must not move the anchor. Timeouts
+// derive their deadline from it, so restamping on every write would push the
+// deadline out each time anything looked at the resource, and it could never
+// expire.
+func (l *ResourceLifecycle) SetState(state string) {
+	if l.State == state {
 		return
 	}
-	l.Phase = phase
-	l.PhaseChangedAt = time.Now().UTC()
+	l.State = state
+	l.StateChangedAt = time.Now().UTC()
 }
 
-func (l *ResourceLifecycle) BeginOperation(spec OperationSpec) {
-	l.DesiredState = spec.DesiredState
-	l.SetPhase(spec.Phase)
-	l.ActiveOperation = &spec.Operation
-	l.LastOperationStatus = OperationStatusPending
-	l.StatusMessage = nil
+// RecordIntent accepts new intent: it sets the desired state and clears the
+// error, leaving the generation bump to the caller's transaction.
+//
+// It deliberately does not touch State. Intent says what should be; State says
+// what is, and nothing about accepting intent makes an observation stale.
+func (l *ResourceLifecycle) RecordIntent(desiredState string) {
+	l.DesiredState = desiredState
 	l.ErrorMessage = nil
 }
 
@@ -66,49 +69,30 @@ func (l *ResourceLifecycle) IncrementGeneration() {
 	l.Generation++
 }
 
-func (l *ResourceLifecycle) MarkOperationRunning(message *string) {
-	l.LastOperationStatus = OperationStatusRunning
-	l.StatusMessage = message
-	l.ErrorMessage = nil
+// Converged reports whether the reconciler has finished acting on the current
+// generation. It is the whole of what the orchestrator knows (ADR 0017 §1).
+func (l *ResourceLifecycle) Converged() bool {
+	return l.Generation == l.ObservedGeneration
 }
 
-func (l *ResourceLifecycle) CompleteOperation(phase string, message *string) {
-	l.SetPhase(phase)
-	l.ActiveOperation = nil
-	l.LastOperationStatus = OperationStatusSuccess
-	l.StatusMessage = message
-	l.ErrorMessage = nil
-}
-
-func (l *ResourceLifecycle) FailOperation(message string) {
-	l.SetPhase("failed")
-	l.ActiveOperation = nil
-	l.LastOperationStatus = OperationStatusFailed
-	l.StatusMessage = nil
+// RecordFailure settles one intent as failed: the reconciler has done all it
+// can, so it records the resulting state and the reason, and its caller
+// advances ObservedGeneration (ADR 0017 §§3–4).
+//
+// The state is the caller's to choose, because failure is not one thing. A
+// sandbox that could not be built is `failed`; a pool whose host stopped
+// answering is `offline` and expected back. The single terminal phase this
+// replaces is what made those two indistinguishable.
+func (l *ResourceLifecycle) RecordFailure(state, message string) {
+	l.SetState(state)
 	l.ErrorMessage = &message
 }
 
-// FailOperationRetryable records an operation failure without moving the
-// resource to the terminal "failed" phase. It is used for stateful resources
-// that must keep being reconciled toward health after a non-create operation
-// fails: the caller supplies a non-terminal phase (e.g. offline) so downstream
-// reconcilers continue to re-drive the resource rather than abandon it.
-func (l *ResourceLifecycle) FailOperationRetryable(phase string, message string) {
-	l.SetPhase(phase)
-	l.ActiveOperation = nil
-	l.LastOperationStatus = OperationStatusFailed
-	l.StatusMessage = nil
-	l.ErrorMessage = &message
-}
-
-func (l *ResourceLifecycle) SetDefaults(desiredState, phase string) {
+func (l *ResourceLifecycle) SetDefaults(desiredState, state string) {
 	if l.DesiredState == "" {
 		l.DesiredState = desiredState
 	}
-	if l.Phase == "" {
-		l.SetPhase(phase)
-	}
-	if l.LastOperationStatus == "" {
-		l.LastOperationStatus = OperationStatusPending
+	if l.State == "" {
+		l.SetState(state)
 	}
 }

@@ -1063,8 +1063,8 @@ func (s *Server) decodeRegisterPoolRequest(r *http.Request) (
 	}
 }
 
-func (s *Server) decodeReportPoolSandboxRemovedRequest(r *http.Request) (
-	req *ReportPoolSandboxRemovedBody,
+func (s *Server) decodeReportPoolSandboxStatesRequest(r *http.Request) (
+	req *ReportPoolSandboxStatesBody,
 	rawBody []byte,
 	close func() error,
 	rerr error,
@@ -1111,7 +1111,7 @@ func (s *Server) decodeReportPoolSandboxRemovedRequest(r *http.Request) (
 		rawBody = append(rawBody, buf...)
 		d := jx.DecodeBytes(buf)
 
-		var request ReportPoolSandboxRemovedBody
+		var request ReportPoolSandboxStatesBody
 		if err := func() error {
 			if err := request.Decode(d); err != nil {
 				return err
@@ -1127,6 +1127,14 @@ func (s *Server) decodeReportPoolSandboxRemovedRequest(r *http.Request) (
 				Err:         err,
 			}
 			return req, rawBody, close, err
+		}
+		if err := func() error {
+			if err := request.Validate(); err != nil {
+				return err
+			}
+			return nil
+		}(); err != nil {
+			return req, rawBody, close, errors.Wrap(err, "validate")
 		}
 		return &request, rawBody, close, nil
 	default:

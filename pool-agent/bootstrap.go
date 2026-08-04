@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"os"
 	"strings"
+	"time"
 
 	"github.com/obot-platform/discobox/controlplane"
 	"github.com/obot-platform/discobox/pool-agent/endpoint"
@@ -105,8 +106,12 @@ type StatusClient interface {
 	UpdatePoolStatus(ctx context.Context, req StatusRequest) error
 }
 
-type SandboxRemovalClient interface {
-	ReportSandboxRemoved(ctx context.Context, req SandboxRemovalRequest) error
+// SandboxStateClient publishes observed sandbox states to the control plane.
+// It is the channel that makes power state knowable at all: operations answer
+// with acceptance only, and the transitions that matter most — a container
+// dying, a host rebooting — have no request to answer (ADR 0017 §10).
+type SandboxStateClient interface {
+	ReportSandboxStates(ctx context.Context, req SandboxStateRequest) error
 }
 
 // RegisterRequest is sent by the pool after generating its keypair.
@@ -134,20 +139,32 @@ type StatusRequest struct {
 	Conditions            any                `json:"conditions,omitempty"`
 }
 
-// SandboxRemovalRequest reports a pool-local runtime removed outside the
-// control plane's delete reconciliation.
-type SandboxRemovalRequest struct {
+// SandboxState is one observation about one sandbox.
+type SandboxState struct {
+	SandboxID string `json:"sandboxId"`
+	State     string `json:"state"`
+	Error     string `json:"error,omitempty"`
+}
+
+// SandboxStateRequest is one delivery on the state channel.
+type SandboxStateRequest struct {
 	ControlPlaneURL string             `json:"-"`
 	ProjectID       string             `json:"-"`
 	PoolID          string             `json:"-"`
 	PrivateKey      ed25519.PrivateKey `json:"-"`
-	SandboxID       string             `json:"sandboxId"`
-	// ContainerID is the runtime that was removed. The control plane ignores a
-	// report naming a container it no longer believes is serving the sandbox, so
-	// a report about an already-replaced container cannot countermand the
-	// operation that replaced it (ADR 0016 §8). Empty when the report comes from
-	// the level-triggered orphan sweep rather than a removal event.
-	ContainerID string `json:"containerId,omitempty"`
+
+	// BootID identifies this run of the agent and Sequence counts batches
+	// within it. Together they let the control plane drop a delayed delta that
+	// would otherwise overwrite a newer full sync; across boots the sequence
+	// restarts and means nothing, so ReportedAt decides.
+	BootID     string    `json:"bootId"`
+	Sequence   int64     `json:"sequence"`
+	ReportedAt time.Time `json:"reportedAt"`
+	// Complete marks the periodic full sync: States is every sandbox this agent
+	// hosts, so a sandbox the control plane thinks is here and that States omits
+	// no longer has a container.
+	Complete bool           `json:"complete"`
+	States   []SandboxState `json:"states"`
 }
 
 // RegisterResponse is returned by the control plane after pool registration.

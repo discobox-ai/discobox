@@ -45,7 +45,7 @@ func sandboxAgentTerminalProxyHandler(service services.SandboxService) http.Hand
 			return
 		}
 
-		lease, sandboxModel, err := service.AcquireSandboxHTTPClient(r.Context(), projectID, sandboxID, scopes, services.SandboxPhasesRunning)
+		lease, sandboxModel, err := service.AcquireSandboxHTTPClient(r.Context(), projectID, sandboxID, scopes)
 		if err != nil {
 			writeSandboxAgentProxyError(w, statusCodeForProxyError(err), err.Error())
 			return

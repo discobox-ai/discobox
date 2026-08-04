@@ -125,9 +125,9 @@ func (h *Handler) UpdatePoolStatus(ctx context.Context, req *apimodel.UpdatePool
 	return &body, nil
 }
 
-func (h *Handler) ReportPoolSandboxRemoved(ctx context.Context, req *apimodel.ReportPoolSandboxRemovedBody, params serverapi.ReportPoolSandboxRemovedParams) (serverapi.ReportPoolSandboxRemovedRes, error) {
-	if err := h.services.Pools.ReportPoolSandboxRemoved(ctx, params.PoolId, *req); err != nil {
+func (h *Handler) ReportPoolSandboxStates(ctx context.Context, req *apimodel.ReportPoolSandboxStatesBody, params serverapi.ReportPoolSandboxStatesParams) (serverapi.ReportPoolSandboxStatesRes, error) {
+	if err := h.services.Pools.ReportPoolSandboxStates(ctx, params.PoolId, *req); err != nil {
 		return apiError(err), nil
 	}
-	return &serverapi.ReportPoolSandboxRemovedNoContent{}, nil
+	return &serverapi.ReportPoolSandboxStatesNoContent{}, nil
 }

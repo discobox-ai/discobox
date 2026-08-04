@@ -32,18 +32,24 @@ type Handler interface {
 	//
 	// GET /api/project/{projectId}/pool/{poolId}/sandboxes
 	PoolListSandboxes(ctx context.Context, params PoolListSandboxesParams) (*PoolSandboxListResponse, error)
+	// PoolRestartSandbox implements pool-restart-sandbox operation.
+	//
+	// Restart pool sandbox.
+	//
+	// POST /api/project/{projectId}/pool/{poolId}/sandboxes/{sandboxId}/restart
+	PoolRestartSandbox(ctx context.Context, req *PoolSandboxOperationRequest, params PoolRestartSandboxParams) (*PoolSandboxOperationAccepted, error)
 	// PoolStartSandbox implements pool-start-sandbox operation.
 	//
 	// Start pool sandbox.
 	//
 	// POST /api/project/{projectId}/pool/{poolId}/sandboxes/{sandboxId}/start
-	PoolStartSandbox(ctx context.Context, req *PoolSandboxOperationRequest, params PoolStartSandboxParams) (*PoolSandboxInstance, error)
+	PoolStartSandbox(ctx context.Context, req *PoolSandboxOperationRequest, params PoolStartSandboxParams) (*PoolSandboxOperationAccepted, error)
 	// PoolStopSandbox implements pool-stop-sandbox operation.
 	//
 	// Stop pool sandbox.
 	//
 	// POST /api/project/{projectId}/pool/{poolId}/sandboxes/{sandboxId}/stop
-	PoolStopSandbox(ctx context.Context, req *PoolSandboxOperationRequest, params PoolStopSandboxParams) (*PoolSandboxInstance, error)
+	PoolStopSandbox(ctx context.Context, req *PoolSandboxOperationRequest, params PoolStopSandboxParams) (*PoolSandboxOperationAccepted, error)
 	// PoolSync implements pool-sync operation.
 	//
 	// Reconcile the set of pools this host should have, reaping any others.

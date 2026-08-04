@@ -192,11 +192,14 @@ func (p *fakeProvider) Create(context.Context, sandbox.SandboxRef, []byte, sandb
 func (p *fakeProvider) Update(context.Context, sandbox.SandboxRef, []byte, sandbox.UpdateOptions) (*sandbox.Sandbox, []byte, error) {
 	return nil, nil, nil
 }
-func (p *fakeProvider) Start(context.Context, sandbox.SandboxRef, []byte) (*sandbox.Sandbox, []byte, error) {
-	return nil, nil, nil
+func (p *fakeProvider) Start(context.Context, sandbox.SandboxRef, []byte) ([]byte, error) {
+	return nil, nil
 }
-func (p *fakeProvider) Stop(context.Context, sandbox.SandboxRef, []byte, time.Duration) (*sandbox.Sandbox, []byte, error) {
-	return nil, nil, nil
+func (p *fakeProvider) Stop(context.Context, sandbox.SandboxRef, []byte, time.Duration) ([]byte, error) {
+	return nil, nil
+}
+func (p *fakeProvider) Restart(context.Context, sandbox.SandboxRef, []byte, time.Duration) ([]byte, error) {
+	return nil, nil
 }
 func (p *fakeProvider) Remove(context.Context, sandbox.SandboxRef, []byte, ...sandbox.RemoveOption) ([]byte, error) {
 	return nil, nil

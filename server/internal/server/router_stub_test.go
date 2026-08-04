@@ -151,27 +151,29 @@ func (s *routerTestServices) CreateSandbox(_ context.Context, projectID string, 
 	}
 	userName, userUID, userGID, homeDirectory := services.SandboxUserToModel(config.User)
 	sandbox := model.Sandbox{
-		ID:                   id.NewString(id.PrefixProject),
-		ProjectID:            s.project.ID,
-		CreatedByUserID:      s.user.ID,
-		PoolID:               input.PoolId.Or(""),
-		HarnessConfigID:      harnessConfigID,
-		Name:                 config.Name,
-		Description:          services.OptStringPtr(config.Description),
-		ResourceLifecycle:    model.NewResourceLifecycle(model.SandboxCreateOperation),
-		Model:                services.OptStringPtr(config.Model),
-		ModelServiceTier:     services.OptStringPtr(config.ModelServiceTier),
-		ModelReasoningLevel:  services.OptStringPtr(config.ModelReasoningLevel),
-		Prompt:               config.Prompt,
-		Source:               source,
-		SourceCodeReferences: stubSourceCodeReferences(config.SourceCodeReferences),
-		UserName:             userName,
-		UserUID:              userUID,
-		UserGID:              userGID,
-		HomeDirectory:        homeDirectory,
-		CreatedAt:            now,
-		UpdatedAt:            now,
-		CreatedBy:            &s.user,
+		ID:                id.NewString(id.PrefixProject),
+		ProjectID:         s.project.ID,
+		CreatedByUserID:   s.user.ID,
+		PoolID:            input.PoolId.Or(""),
+		Name:              config.Name,
+		Description:       services.OptStringPtr(config.Description),
+		ResourceLifecycle: model.ResourceLifecycle{DesiredState: model.DesiredStatePresent, State: model.SandboxStatePending, Generation: 1},
+		CreatedAt:         now,
+		UpdatedAt:         now,
+		CreatedBy:         &s.user,
+		SandboxManifest: model.SandboxManifest{
+			HarnessConfigID:      harnessConfigID,
+			Model:                services.OptStringPtr(config.Model),
+			ModelServiceTier:     services.OptStringPtr(config.ModelServiceTier),
+			ModelReasoningLevel:  services.OptStringPtr(config.ModelReasoningLevel),
+			Prompt:               config.Prompt,
+			Source:               source,
+			SourceCodeReferences: stubSourceCodeReferences(config.SourceCodeReferences),
+			UserName:             userName,
+			UserUID:              userUID,
+			UserGID:              userGID,
+			HomeDirectory:        homeDirectory,
+		},
 	}
 	s.sandboxes[sandbox.ID] = sandbox
 	return &sandbox, nil
@@ -188,7 +190,7 @@ func (s *routerTestServices) GetSandbox(_ context.Context, projectID, sandboxID 
 	return &sandbox, nil
 }
 
-func (s *routerTestServices) AcquireSandboxHTTPClient(_ context.Context, projectID, sandboxID string, scopes, _ []string) (*services.HTTPClientLease, *model.Sandbox, error) {
+func (s *routerTestServices) AcquireSandboxHTTPClient(_ context.Context, projectID, sandboxID string, scopes []string) (*services.HTTPClientLease, *model.Sandbox, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
@@ -231,23 +233,23 @@ func (s *routerTestServices) DeleteSandbox(_ context.Context, projectID, sandbox
 }
 
 func (s *routerTestServices) StartSandbox(_ context.Context, projectID, sandboxID string, _ services.StartSandboxBody) (*model.Sandbox, error) {
-	return s.beginSandboxOperation(projectID, sandboxID, model.SandboxStartOperation)
+	return s.instructSandbox(projectID, sandboxID)
 }
 
 func (s *routerTestServices) StopSandbox(_ context.Context, projectID, sandboxID string, _ services.StopSandboxBody) (*model.Sandbox, error) {
-	return s.beginSandboxOperation(projectID, sandboxID, model.SandboxStopOperation)
+	return s.instructSandbox(projectID, sandboxID)
 }
 
 func (s *routerTestServices) RestartSandbox(_ context.Context, projectID, sandboxID string, _ services.RestartSandboxBody) (*model.Sandbox, error) {
-	return s.beginSandboxOperation(projectID, sandboxID, model.SandboxRestartOperation)
+	return s.instructSandbox(projectID, sandboxID)
 }
 
 func (s *routerTestServices) UpgradeSandbox(_ context.Context, projectID, sandboxID string, _ services.UpgradeSandboxBody) (*model.Sandbox, error) {
-	return s.beginSandboxOperation(projectID, sandboxID, model.SandboxRestartOperation)
+	return s.instructSandbox(projectID, sandboxID)
 }
 
 func (s *routerTestServices) CompleteSandboxSourcePush(_ context.Context, projectID, sandboxID string, _ services.CompleteSandboxSourcePushBody) (*model.Sandbox, error) {
-	return s.beginSandboxOperation(projectID, sandboxID, model.SandboxStartOperation)
+	return s.instructSandbox(projectID, sandboxID)
 }
 
 func (s *routerTestServices) CompleteSandboxApply(_ context.Context, projectID, sandboxID string, _ services.CompleteSandboxApplyBody) (*model.Sandbox, error) {
@@ -341,7 +343,7 @@ func (s *routerTestServices) ConfigureHarnessConfig(_ context.Context, projectID
 	now := time.Now().UTC()
 	return &model.Sandbox{
 		ID: id.NewString(id.PrefixSandbox), ProjectID: projectID, Name: "configure-test",
-		ResourceLifecycle: model.NewResourceLifecycle(model.SandboxCreateOperation),
+		ResourceLifecycle: model.ResourceLifecycle{DesiredState: model.DesiredStatePresent, State: model.SandboxStatePending, Generation: 1},
 		CreatedAt:         now, UpdatedAt: now,
 	}, nil
 }
@@ -599,7 +601,7 @@ func (s *routerTestServices) CreatePool(_ context.Context, projectID string, inp
 		return nil, apperrors.NewStatusError(http.StatusNotFound, "project not found")
 	}
 	now := time.Now().UTC()
-	pool := model.Pool{ID: id.NewString(id.PrefixPool), ProjectID: projectID, Name: input.Name, ProviderInstanceID: input.ProviderInstanceId, CreatedAt: now, UpdatedAt: now}
+	pool := model.Pool{ID: id.NewString(id.PrefixPool), ProjectID: projectID, CreatedAt: now, UpdatedAt: now, PoolManifest: model.PoolManifest{Name: input.Name, ProviderInstanceID: input.ProviderInstanceId}}
 	if s.pools == nil {
 		s.pools = map[string]model.Pool{}
 	}
@@ -736,11 +738,14 @@ func (s *routerTestServices) UpdatePoolStatus(context.Context, string, services.
 	return &model.Pool{}, nil
 }
 
-func (s *routerTestServices) ReportPoolSandboxRemoved(context.Context, string, services.ReportPoolSandboxRemovedBody) error {
+func (s *routerTestServices) ReportPoolSandboxStates(context.Context, string, services.ReportPoolSandboxStatesBody) error {
 	return nil
 }
 
-func (s *routerTestServices) beginSandboxOperation(projectID, sandboxID string, spec model.OperationSpec) (*model.Sandbox, error) {
+// instructSandbox stands in for forwarding a power instruction to the pool
+// agent. It writes no state, because the real one does not: what became of the
+// instruction arrives later on the agent's reporting channel (ADR 0017 §9).
+func (s *routerTestServices) instructSandbox(projectID, sandboxID string) (*model.Sandbox, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
@@ -748,9 +753,6 @@ func (s *routerTestServices) beginSandboxOperation(projectID, sandboxID string, 
 	if err != nil {
 		return nil, err
 	}
-	sandbox.BeginOperation(spec)
-	sandbox.UpdatedAt = time.Now().UTC()
-	s.sandboxes[sandbox.ID] = sandbox
 	return &sandbox, nil
 }
 

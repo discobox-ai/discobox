@@ -87,7 +87,7 @@ func New(store *store.Store, engine *reconcile.Engine, options Options, broker .
 	sandboxService := sandboxes.NewService(store, manager, DefaultUserID, engine, poolControlPlane)
 	providerService := providers.NewService(store, sandboxService, poolControlPlane)
 	poolService := pools.NewService(store, poolControlPlane)
-	poolService.SetSandboxRemovalReporter(sandboxService)
+	poolService.SetSandboxStateReporter(sandboxService)
 	jobsService := resourcejobs.NewService(store, engine)
 	harnessConfigService := harnessconfigs.NewService(store)
 	harnessConfigService.SetDevelopmentImages(options.DevelopmentImages)

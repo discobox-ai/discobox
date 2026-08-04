@@ -31,6 +31,9 @@ const (
 	PrefixRun                        = "run"
 	PrefixSnapshot                   = "snap"
 	PrefixHost                       = "host"
+	// PrefixPoolAgentBoot identifies one run of a pool agent process, so state
+	// reports carry a boot identity their sequence numbers are scoped to.
+	PrefixPoolAgentBoot = "boot"
 )
 
 // RandomLength is the length of the random portion of a generated ID.

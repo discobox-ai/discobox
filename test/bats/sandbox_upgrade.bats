@@ -173,7 +173,7 @@ while time.time() < deadline:
     con.row_factory = sqlite3.Row
     rows = con.execute(
         """
-        SELECT id, ready, schedulable, phase, last_operation_status
+        SELECT id, ready, schedulable, state, generation, observed_generation
         FROM pools
         WHERE id = ?
         """,

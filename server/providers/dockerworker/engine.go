@@ -310,7 +310,7 @@ func (e *Engine) recordPoolRuntime(pool *model.Pool, vmInfo *VMInfo, inst *conta
 		pool.Ready = false
 		pool.Schedulable = false
 		pool.Degraded = false
-		pool.Phase = model.PoolPhaseRegistering
+		pool.SetState(model.PoolStateRegistering)
 	}
 	return nil
 }

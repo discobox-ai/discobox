@@ -34,12 +34,10 @@ func TestModelEnumsMatchAPISchema(t *testing.T) {
 		model []string
 		api   []string
 	}{
-		{"pool phase", model.PoolPhases, values(apigen.PoolPhase("").AllValues())},
-		{"pool desired state", model.PoolDesiredStates, values(apigen.PoolDesiredState("").AllValues())},
-		{"pool operation status", model.OperationStatuses, values(apigen.PoolLastOperationStatus("").AllValues())},
-		{"sandbox phase", model.SandboxPhases, values(apigen.SandboxRuntimePhase("").AllValues())},
-		{"sandbox desired state", model.SandboxDesiredStates, values(apigen.SandboxRuntimeDesiredState("").AllValues())},
-		{"sandbox operation status", model.OperationStatuses, values(apigen.SandboxRuntimeLastOperationStatus("").AllValues())},
+		{"pool state", model.PoolStates, values(apigen.PoolState("").AllValues())},
+		{"pool desired state", model.DesiredStates, values(apigen.PoolDesiredState("").AllValues())},
+		{"sandbox state", model.SandboxStates, values(apigen.SandboxRuntimeState("").AllValues())},
+		{"sandbox desired state", model.DesiredStates, values(apigen.SandboxRuntimeDesiredState("").AllValues())},
 	}
 
 	for _, tc := range cases {
@@ -72,11 +70,9 @@ func TestModelEnumConstsAreRegistered(t *testing.T) {
 	// Prefix → registry slice. No prefix here is a prefix of another, so each
 	// const matches at most one.
 	registries := map[string][]string{
-		"PoolPhase":           model.PoolPhases,
-		"PoolDesiredState":    model.PoolDesiredStates,
-		"SandboxPhase":        model.SandboxPhases,
-		"SandboxDesiredState": model.SandboxDesiredStates,
-		"OperationStatus":     model.OperationStatuses,
+		"PoolState":    model.PoolStates,
+		"SandboxState": model.SandboxStates,
+		"DesiredState": model.DesiredStates,
 	}
 
 	for name, value := range stringConstsInPackage(t) {

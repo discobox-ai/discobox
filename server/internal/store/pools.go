@@ -164,10 +164,11 @@ func (s *Store) UpdatePoolWithGeneration(ctx context.Context, pool *model.Pool, 
 	return err
 }
 
-// ListPoolIDsWithStaleOperations returns ids of pools whose recorded operation
-// has been in flight (pending/running) since before cutoff. It is the
-// reconcile engine's lost-mark backstop.
-func (s *Store) ListPoolIDsWithStaleOperations(ctx context.Context, cutoff time.Time) ([]model.Pool, error) {
+// ListPoolsNeedingReconcile returns ids of pools whose generations disagree. It
+// is the reconcile engine's lost-mark backstop, and it is deliberately the same
+// query as ListSandboxRefsNeedingReconcile: under ADR 0017 §1 both scanners are
+// one generation comparison, with no per-resource knowledge.
+func (s *Store) ListPoolsNeedingReconcile(ctx context.Context) ([]model.Pool, error) {
 	read, err := s.getRead(ctx)
 	if err != nil {
 		return nil, err
@@ -175,8 +176,7 @@ func (s *Store) ListPoolIDsWithStaleOperations(ctx context.Context, cutoff time.
 	var pools []model.Pool
 	err = read.Model(&model.Pool{}).
 		Select("id", "project_id").
-		Where("last_operation_status IN ?", []string{model.OperationStatusPending, model.OperationStatusRunning}).
-		Where("updated_at < ?", cutoff).
+		Where("generation > observed_generation").
 		Find(&pools).Error
 	return pools, err
 }
@@ -220,8 +220,7 @@ func (s *Store) RegisterPool(ctx context.Context, poolID string, tokenHash []byt
 		pool.Degraded = false
 		pool.RegisteredAt = &now
 		pool.LastSeenAt = &now
-		pool.SetPhase(model.PoolPhaseActive)
-		pool.LastOperationStatus = model.OperationStatusSuccess
+		pool.SetState(model.PoolStateActive)
 		pool.ObservedGeneration = pool.Generation
 		return tx.Save(&pool).Error
 	})
@@ -262,7 +261,7 @@ func (s *Store) UpdatePoolStatus(ctx context.Context, poolID string, ready, sche
 		pool.Conditions = conditions
 		pool.LastSeenAt = &now
 		if ready {
-			pool.SetPhase(model.PoolPhaseActive)
+			pool.SetState(model.PoolStateActive)
 		}
 		return tx.Save(&pool).Error
 	})
@@ -296,7 +295,7 @@ func (s *Store) SchedulablePoolForSandbox(ctx context.Context, sandbox *model.Sa
 		storageBytes = 0
 	}
 	if pool.RevokedAt != nil ||
-		pool.DesiredState != model.PoolDesiredStateActive ||
+		pool.DesiredState != model.DesiredStatePresent ||
 		!pool.Ready || !pool.Schedulable ||
 		pool.AvailableCPUVCPUs < cpuVCPUs ||
 		pool.AvailableMemoryBytes < memoryBytes ||

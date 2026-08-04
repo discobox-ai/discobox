@@ -109,7 +109,12 @@ func (s *sandboxService) PoolSync(ctx context.Context, req *workerapimodel.PoolS
 	return nil
 }
 
-func (s *sandboxService) PoolStartSandbox(ctx context.Context, req *workerapimodel.PoolSandboxOperationRequest, params workerapi.PoolStartSandboxParams) (*workerapimodel.PoolSandboxInstance, error) {
+// PoolStartSandbox, PoolStopSandbox, and PoolRestartSandbox accept an
+// instruction and answer with acceptance alone. The resulting state — starting,
+// then running or stopped — is published on the agent's own state-reporting
+// channel, because a response cannot express a transition that has not finished
+// (ADR 0017 §§9-10).
+func (s *sandboxService) PoolStartSandbox(ctx context.Context, req *workerapimodel.PoolSandboxOperationRequest, params workerapi.PoolStartSandboxParams) (*workerapimodel.PoolSandboxOperationAccepted, error) {
 	if err := s.authorize(params.ProjectId, params.PoolId); err != nil {
 		return nil, err
 	}
@@ -117,11 +122,13 @@ func (s *sandboxService) PoolStartSandbox(ctx context.Context, req *workerapimod
 	if err != nil {
 		return nil, err
 	}
-	sb, err := s.runtime.StartSandbox(ctx, params.SandboxId, &converted)
-	return sandboxOutput(sb, err, nil)
+	if err := s.runtime.StartSandbox(ctx, params.SandboxId, &converted); err != nil {
+		return nil, err
+	}
+	return &workerapimodel.PoolSandboxOperationAccepted{SandboxId: params.SandboxId}, nil
 }
 
-func (s *sandboxService) PoolStopSandbox(ctx context.Context, req *workerapimodel.PoolSandboxOperationRequest, params workerapi.PoolStopSandboxParams) (*workerapimodel.PoolSandboxInstance, error) {
+func (s *sandboxService) PoolStopSandbox(ctx context.Context, req *workerapimodel.PoolSandboxOperationRequest, params workerapi.PoolStopSandboxParams) (*workerapimodel.PoolSandboxOperationAccepted, error) {
 	if err := s.authorize(params.ProjectId, params.PoolId); err != nil {
 		return nil, err
 	}
@@ -129,8 +136,24 @@ func (s *sandboxService) PoolStopSandbox(ctx context.Context, req *workerapimode
 	if err != nil {
 		return nil, err
 	}
-	sb, err := s.runtime.StopSandbox(ctx, params.SandboxId, &converted)
-	return sandboxOutput(sb, err, nil)
+	if err := s.runtime.StopSandbox(ctx, params.SandboxId, &converted); err != nil {
+		return nil, err
+	}
+	return &workerapimodel.PoolSandboxOperationAccepted{SandboxId: params.SandboxId}, nil
+}
+
+func (s *sandboxService) PoolRestartSandbox(ctx context.Context, req *workerapimodel.PoolSandboxOperationRequest, params workerapi.PoolRestartSandboxParams) (*workerapimodel.PoolSandboxOperationAccepted, error) {
+	if err := s.authorize(params.ProjectId, params.PoolId); err != nil {
+		return nil, err
+	}
+	converted, err := convert[workerapimodel.PoolSandboxOperationRequest](req)
+	if err != nil {
+		return nil, err
+	}
+	if err := s.runtime.RestartSandbox(ctx, params.SandboxId, &converted); err != nil {
+		return nil, err
+	}
+	return &workerapimodel.PoolSandboxOperationAccepted{SandboxId: params.SandboxId}, nil
 }
 
 func (s *sandboxService) NewError(_ context.Context, err error) *workerapi.ErrorModelStatusCode {

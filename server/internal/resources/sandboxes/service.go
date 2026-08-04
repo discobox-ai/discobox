@@ -5,7 +5,6 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
-	"slices"
 	"sort"
 	"strings"
 	"time"
@@ -194,34 +193,35 @@ func (s *Service) CreateSandbox(ctx context.Context, projectID string, input ser
 		image = s.defaultImage
 	}
 	sandbox := &model.Sandbox{
-		ID:                   sandboxID,
-		ProjectID:            projectID,
-		CreatedByUserID:      userID,
-		PoolID:               pool.ID,
-		HarnessConfigID:      harnessConfigID,
-		HarnessMode:          harnessMode,
-		Name:                 config.Name,
-		Description:          services.OptStringPtr(config.Description),
-		ResourceLifecycle:    model.NewResourceLifecycle(model.SandboxCreateOperation),
-		Model:                services.OptStringPtr(config.Model),
-		ModelServiceTier:     services.OptStringPtr(config.ModelServiceTier),
-		ModelReasoningLevel:  services.OptStringPtr(config.ModelReasoningLevel),
-		Prompt:               config.Prompt,
-		Image:                image,
-		ImageDigest:          imageDigest,
-		Env:                  map[string]string(config.Env.Or(nil)),
-		Source:               source,
-		SourceRoot:           sourceRoot,
-		SourceCodeReferences: sourceCodeReferences,
-		Origin:               origin,
-		OriginKey:            originKey,
-		UserName:             userName,
-		UserUID:              userUID,
-		UserGID:              userGID,
-		HomeDirectory:        homeDirectory,
-		CPUVCPUs:             config.CpuVcpus.Or(0),
-		MemoryBytes:          config.MemoryBytes.Or(0),
-		StorageBytes:         config.StorageBytes.Or(0),
+		ID:              sandboxID,
+		ProjectID:       projectID,
+		CreatedByUserID: userID,
+		PoolID:          pool.ID,
+		Name:            config.Name,
+		Description:     services.OptStringPtr(config.Description),
+		SandboxManifest: model.SandboxManifest{
+			HarnessConfigID:      harnessConfigID,
+			HarnessMode:          harnessMode,
+			Model:                services.OptStringPtr(config.Model),
+			ModelServiceTier:     services.OptStringPtr(config.ModelServiceTier),
+			ModelReasoningLevel:  services.OptStringPtr(config.ModelReasoningLevel),
+			Prompt:               config.Prompt,
+			Image:                image,
+			ImageDigest:          imageDigest,
+			Env:                  map[string]string(config.Env.Or(nil)),
+			Source:               source,
+			SourceCodeReferences: sourceCodeReferences,
+			UserName:             userName,
+			UserUID:              userUID,
+			UserGID:              userGID,
+			HomeDirectory:        homeDirectory,
+			CPUVCPUs:             config.CpuVcpus.Or(0),
+			MemoryBytes:          config.MemoryBytes.Or(0),
+			StorageBytes:         config.StorageBytes.Or(0),
+		},
+		SourceRoot: sourceRoot,
+		Origin:     origin,
+		OriginKey:  originKey,
 	}
 	assignments, err := s.prepareSandboxSecrets(ctx, projectID, sandbox, config.Secrets)
 	if err != nil {
@@ -317,7 +317,16 @@ func (s *Service) GetSandbox(ctx context.Context, projectID, sandboxID string) (
 	return sandbox, nil
 }
 
-func (s *Service) AcquireSandboxHTTPClient(ctx context.Context, projectID, sandboxID string, scopes, allowedPhases []string) (*services.HTTPClientLease, *model.Sandbox, error) {
+// AcquireSandboxHTTPClient leases an HTTP client onto the sandbox for the
+// caller's scopes.
+//
+// It checks that the sandbox still exists and that its pool is up, and nothing
+// about whether the sandbox is running: a stopped sandbox is started on demand
+// by the pool agent when the request arrives (ADR 0017 §12). Refusing here
+// would reject traffic the agent would have served, and would only cover the
+// routes that consult the server at all — the git and HTTP proxies are served
+// by the agent directly.
+func (s *Service) AcquireSandboxHTTPClient(ctx context.Context, projectID, sandboxID string, scopes []string) (*services.HTTPClientLease, *model.Sandbox, error) {
 	if err := authorizeRequestedScopes(ctx, scopes); err != nil {
 		return nil, nil, err
 	}
@@ -325,18 +334,15 @@ func (s *Service) AcquireSandboxHTTPClient(ctx context.Context, projectID, sandb
 	if err != nil {
 		return nil, nil, mapAPIError(err, "sandbox not found")
 	}
-	if len(allowedPhases) == 0 {
-		allowedPhases = services.SandboxPhasesRunning
-	}
-	if !slices.Contains(allowedPhases, sandboxModel.Phase) {
-		return nil, sandboxModel, apperrors.NewStatusError(http.StatusConflict, fmt.Sprintf("sandbox is not ready: phase=%s, want one of %v", sandboxModel.Phase, allowedPhases))
+	if sandboxModel.DesiredState == model.DesiredStateDeleted {
+		return nil, sandboxModel, apperrors.NewStatusError(http.StatusConflict, "sandbox is being deleted")
 	}
 	pool, err := s.store.GetPool(ctx, projectID, sandboxModel.PoolID)
 	if err != nil {
 		return nil, sandboxModel, mapAPIError(err, "sandbox pool not found")
 	}
-	if pool.Phase != model.PoolPhaseActive || !pool.Ready {
-		return nil, sandboxModel, apperrors.NewStatusError(http.StatusConflict, fmt.Sprintf("sandbox pool is not active: pool=%s phase=%s ready=%t", pool.ID, pool.Phase, pool.Ready))
+	if pool.State != model.PoolStateActive || !pool.Ready {
+		return nil, sandboxModel, apperrors.NewStatusError(http.StatusConflict, fmt.Sprintf("sandbox pool is not active: pool=%s state=%s ready=%t", pool.ID, pool.State, pool.Ready))
 	}
 	if s.sandboxProviders == nil {
 		return nil, nil, fmt.Errorf("sandbox provider manager is required")
@@ -387,37 +393,56 @@ func (s *Service) UpdateSandbox(ctx context.Context, projectID, sandboxID string
 }
 
 func (s *Service) DeleteSandbox(ctx context.Context, projectID, sandboxID string) error {
-	_, err := s.submitSandboxOperation(ctx, projectID, sandboxID, model.SandboxDeleteOperation)
+	_, err := s.recordSandboxIntent(ctx, projectID, sandboxID, model.DesiredStateDeleted)
 	if err != nil {
 		return mapAPIError(err, "sandbox not found")
 	}
 	return nil
 }
 
+// StartSandbox, StopSandbox, and RestartSandbox forward an instruction to the
+// pool agent hosting the sandbox and return the sandbox as it currently reads.
+//
+// They write no state. The returned sandbox is therefore a snapshot from
+// *before* the instruction takes effect, and deliberately so: the state that
+// results arrives on the pool agent's reporting channel, which will publish it
+// as a project event a moment later. A caller that needs to know the outcome
+// watches for that rather than believing this response (ADR 0017 §§9–10).
 func (s *Service) StartSandbox(ctx context.Context, projectID, sandboxID string, _ services.StartSandboxBody) (*model.Sandbox, error) {
-	sandbox, err := s.submitSandboxOperation(ctx, projectID, sandboxID, model.SandboxStartOperation)
-	if err != nil {
-		return nil, mapAPIError(err, "sandbox not found")
-	}
-	return sandbox, nil
+	return s.instructSandbox(ctx, projectID, sandboxID, sandboxStart)
 }
 
 func (s *Service) StopSandbox(ctx context.Context, projectID, sandboxID string, _ services.StopSandboxBody) (*model.Sandbox, error) {
-	sandbox, err := s.submitSandboxOperation(ctx, projectID, sandboxID, model.SandboxStopOperation)
+	return s.instructSandbox(ctx, projectID, sandboxID, sandboxStop)
+}
+
+func (s *Service) RestartSandbox(ctx context.Context, projectID, sandboxID string, _ services.RestartSandboxBody) (*model.Sandbox, error) {
+	return s.instructSandbox(ctx, projectID, sandboxID, sandboxRestart)
+}
+
+func (s *Service) instructSandbox(ctx context.Context, projectID, sandboxID string, instruction sandboxInstruction) (*model.Sandbox, error) {
+	sandbox, err := s.store.GetSandbox(ctx, projectID, sandboxID)
 	if err != nil {
 		return nil, mapAPIError(err, "sandbox not found")
+	}
+	if sandbox.DesiredState == model.DesiredStateDeleted {
+		return nil, apperrors.NewStatusError(http.StatusConflict, "sandbox is being deleted")
+	}
+	provider, err := s.resolveProvider(ctx, sandbox)
+	if err != nil {
+		return nil, err
+	}
+	if err := instructSandbox(ctx, s.store, provider, sandbox, instruction); err != nil {
+		return nil, err
 	}
 	return sandbox, nil
 }
 
-func (s *Service) RestartSandbox(ctx context.Context, projectID, sandboxID string, _ services.RestartSandboxBody) (*model.Sandbox, error) {
-	sandbox, err := s.submitSandboxOperation(ctx, projectID, sandboxID, model.SandboxRestartOperation, func(sandbox *model.Sandbox) {
-		sandbox.RestartGeneration++
-	})
-	if err != nil {
-		return nil, mapAPIError(err, "sandbox not found")
+func (s *Service) resolveProvider(ctx context.Context, sb *model.Sandbox) (Provider, error) {
+	if s.sandboxProviders == nil {
+		return nil, nil
 	}
-	return sandbox, nil
+	return s.sandboxProviders.ResolveForSandbox(ctx, sb)
 }
 
 // UpgradeSandbox re-pins the sandbox to its harness config's current image and
@@ -460,10 +485,12 @@ func (s *Service) UpgradeSandbox(ctx context.Context, projectID, sandboxID strin
 		return nil, apperrors.NewStatusError(http.StatusConflict,
 			"sandbox is already running its harness config's current image")
 	}
-	sandbox, err := s.submitSandboxOperation(ctx, projectID, sandboxID, model.SandboxRestartOperation, func(sb *model.Sandbox) {
+	// The re-pin is the whole instruction: a changed image digest changes the
+	// spec fingerprint, and the pool host rebuilds any container that does not
+	// match it (ADR 0017 §5). There is no restart counter to bump.
+	sandbox, err := s.recordSandboxIntent(ctx, projectID, sandboxID, model.DesiredStatePresent, func(sb *model.Sandbox) {
 		sb.Image = target.Image
 		sb.ImageDigest = target.Digest
-		sb.RestartGeneration++
 	})
 	if err != nil {
 		return nil, mapAPIError(err, "sandbox not found")
@@ -539,9 +566,9 @@ func (s *Service) CompleteSandboxSourcePush(ctx context.Context, projectID, sand
 	// Reject anything but a sandbox that is actually waiting. A completion for
 	// an already-started sandbox would otherwise restart it out from under
 	// whatever is running in it.
-	if existing.Phase != model.SandboxPhaseAwaitingSource {
+	if existing.State != model.SandboxStateAwaitingSource {
 		return nil, apperrors.NewStatusError(http.StatusConflict,
-			fmt.Sprintf("sandbox is not awaiting its source (phase %q)", existing.Phase))
+			fmt.Sprintf("sandbox is not awaiting its source (state %q)", existing.State))
 	}
 	expected := ""
 	if existing.Source.Checkout != nil && existing.Source.Checkout.Commit != nil {
@@ -556,9 +583,8 @@ func (s *Service) CompleteSandboxSourcePush(ctx context.Context, projectID, sand
 			fmt.Sprintf("pushed commit %q does not match the source's commit %q", reported, expected))
 	}
 	now := time.Now().UTC()
-	sandbox, err := s.submitSandboxOperation(ctx, projectID, sandboxID, model.SandboxStartOperation, func(sb *model.Sandbox) {
+	sandbox, err := s.recordSandboxIntent(ctx, projectID, sandboxID, model.DesiredStatePresent, func(sb *model.Sandbox) {
 		sb.SourceDeliveredAt = &now
-		sb.StatusMessage = nil
 	})
 	if err != nil {
 		return nil, mapAPIError(err, "sandbox not found")
@@ -578,7 +604,7 @@ func (s *Service) CompleteSandboxSourcePush(ctx context.Context, projectID, sand
 // the pool agent for a bookkeeping call whose real work already succeeded on
 // the client's side. It also carries no lifecycle intent — the sandbox's
 // desired or observed runtime state does not change — so it persists via
-// updateSandboxMetadata rather than submitSandboxOperation.
+// updateSandboxMetadata rather than recordSandboxIntent.
 func (s *Service) CompleteSandboxApply(ctx context.Context, projectID, sandboxID string, input services.CompleteSandboxApplyBody) (*model.Sandbox, error) {
 	existing, err := s.store.GetSandbox(ctx, projectID, sandboxID)
 	if err != nil {

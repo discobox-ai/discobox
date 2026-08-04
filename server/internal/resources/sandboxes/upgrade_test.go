@@ -15,8 +15,11 @@ func pinnedSandbox(t *testing.T, st *store.Store, configID, image, digest string
 	t.Helper()
 	ensurePool(t, st)
 	sb := &model.Sandbox{
-		ProjectID: "project-1", CreatedByUserID: "user-1", PoolID: "pool-1",
-		Name: "sandbox", HarnessMode: "run", Image: image, ImageDigest: digest,
+		ProjectID:       "project-1",
+		CreatedByUserID: "user-1",
+		PoolID:          "pool-1",
+		Name:            "sandbox",
+		SandboxManifest: model.SandboxManifest{HarnessMode: "run", Image: image, ImageDigest: digest},
 	}
 	if configID != "" {
 		sb.HarnessConfigID = &configID
@@ -38,7 +41,7 @@ func ensurePool(t *testing.T, st *store.Store) {
 	if err := st.CreateSandboxProviderInstance(ctx, provider); err != nil {
 		t.Fatalf("create provider: %v", err)
 	}
-	if err := st.CreatePool(ctx, &model.Pool{ID: "pool-1", ProjectID: "project-1", Name: "pool-1", ProviderInstanceID: provider.ID}); err != nil {
+	if err := st.CreatePool(ctx, &model.Pool{ID: "pool-1", ProjectID: "project-1", PoolManifest: model.PoolManifest{Name: "pool-1", ProviderInstanceID: provider.ID}}); err != nil {
 		t.Fatalf("create pool: %v", err)
 	}
 }
@@ -135,10 +138,10 @@ func TestRepinOnStartFollowsLiveness(t *testing.T) {
 	config := imagedConfig(t, st, "discobox-harness-codex:local", "sha256:new")
 	reconciler := NewSandboxReconciler(st)
 
-	for _, phase := range []string{model.SandboxPhaseFailed, model.SandboxPhaseStopped, model.SandboxPhasePending} {
+	for _, phase := range []string{model.SandboxStateFailed, model.SandboxStateStopped, model.SandboxStatePending} {
 		sb := pinnedSandbox(t, st, config.ID, "discobox-harness-codex:gone", "sha256:old")
-		sb.Phase = phase
-		if sandboxIsLive(sb.Phase) {
+		sb.State = phase
+		if model.SandboxIsLive(sb.State) {
 			t.Fatalf("phase %q reported live; want re-pin eligible", phase)
 		}
 		reconciler.repinToCurrentImage(ctx, sb)
@@ -147,8 +150,8 @@ func TestRepinOnStartFollowsLiveness(t *testing.T) {
 		}
 	}
 
-	for _, phase := range []string{model.SandboxPhaseRunning, model.SandboxPhaseAwaitingSource} {
-		if !sandboxIsLive(phase) {
+	for _, phase := range []string{model.SandboxStateRunning, model.SandboxStateAwaitingSource} {
+		if !model.SandboxIsLive(phase) {
 			t.Fatalf("phase %q reported not live; a live sandbox must not re-pin without an upgrade", phase)
 		}
 	}

@@ -69,7 +69,7 @@ func TestRunCommandCreatesSandbox(t *testing.T) {
 		}
 		w.Header().Set("Content-Type", "application/json; charset=utf-8")
 		w.WriteHeader(http.StatusAccepted)
-		_, _ = w.Write([]byte(`{"id":"` + sandboxID + `","projectId":"project-1","createdByUserId":"user-1","config":{"name":"run-test","image":"","cpuVcpus":0,"memoryBytes":0,"storageBytes":0},"runtime":{"phase":"pending","desiredState":"stopped","lastOperationStatus":"pending","generation":1,"observedGeneration":0,"restartGeneration":0,"restartedGeneration":0},"createdAt":"2026-06-17T00:00:00Z","updatedAt":"2026-06-17T00:00:01Z"}`))
+		_, _ = w.Write([]byte(`{"id":"` + sandboxID + `","projectId":"project-1","createdByUserId":"user-1","config":{"name":"run-test","image":"","cpuVcpus":0,"memoryBytes":0,"storageBytes":0},"runtime":{"state":"pending","desiredState":"present","generation":1,"observedGeneration":0},"createdAt":"2026-06-17T00:00:00Z","updatedAt":"2026-06-17T00:00:01Z"}`))
 	}))
 	t.Cleanup(server.Close)
 
@@ -135,7 +135,7 @@ func TestRunCommandDefaultsSourceToCurrentDirectory(t *testing.T) {
 		}
 		w.Header().Set("Content-Type", "application/json; charset=utf-8")
 		w.WriteHeader(http.StatusAccepted)
-		_, _ = w.Write([]byte(`{"id":"sbx_9qk5n25t2hh2rv00","projectId":"project-1","createdByUserId":"user-1","config":{"name":"run-test","image":"","cpuVcpus":0,"memoryBytes":0,"storageBytes":0},"runtime":{"phase":"pending","desiredState":"stopped","lastOperationStatus":"pending","generation":1,"observedGeneration":0,"restartGeneration":0,"restartedGeneration":0},"createdAt":"2026-06-17T00:00:00Z","updatedAt":"2026-06-17T00:00:01Z"}`))
+		_, _ = w.Write([]byte(`{"id":"sbx_9qk5n25t2hh2rv00","projectId":"project-1","createdByUserId":"user-1","config":{"name":"run-test","image":"","cpuVcpus":0,"memoryBytes":0,"storageBytes":0},"runtime":{"state":"pending","desiredState":"present","generation":1,"observedGeneration":0},"createdAt":"2026-06-17T00:00:00Z","updatedAt":"2026-06-17T00:00:01Z"}`))
 	}))
 	t.Cleanup(server.Close)
 
@@ -173,7 +173,7 @@ func TestRunCommandStillAcceptsDashDashSeparator(t *testing.T) {
 		sawCreate = true
 		w.Header().Set("Content-Type", "application/json; charset=utf-8")
 		w.WriteHeader(http.StatusAccepted)
-		_, _ = w.Write([]byte(`{"id":"sbx_9qk5n25t2hh2rv00","projectId":"project-1","createdByUserId":"user-1","config":{"name":"run-test","image":"","cpuVcpus":0,"memoryBytes":0,"storageBytes":0},"runtime":{"phase":"pending","desiredState":"stopped","lastOperationStatus":"pending","generation":1,"observedGeneration":0,"restartGeneration":0,"restartedGeneration":0},"createdAt":"2026-06-17T00:00:00Z","updatedAt":"2026-06-17T00:00:01Z"}`))
+		_, _ = w.Write([]byte(`{"id":"sbx_9qk5n25t2hh2rv00","projectId":"project-1","createdByUserId":"user-1","config":{"name":"run-test","image":"","cpuVcpus":0,"memoryBytes":0,"storageBytes":0},"runtime":{"state":"pending","desiredState":"present","generation":1,"observedGeneration":0},"createdAt":"2026-06-17T00:00:00Z","updatedAt":"2026-06-17T00:00:01Z"}`))
 	}))
 	t.Cleanup(server.Close)
 
@@ -294,6 +294,15 @@ func TestRunCommandAttachesVirtualPrimaryTerminal(t *testing.T) {
 	}
 }
 
-func runTestSandboxJSON(sandboxID, phase string) string {
-	return `{"id":"` + sandboxID + `","projectId":"project-1","createdByUserId":"user-1","config":{"name":"run-test","image":"","cpuVcpus":0,"memoryBytes":0,"storageBytes":0},"runtime":{"phase":"` + phase + `","desiredState":"running","lastOperationStatus":"success","generation":1,"observedGeneration":1,"restartGeneration":0,"restartedGeneration":0},"createdAt":"2026-06-17T00:00:00Z","updatedAt":"2026-06-17T00:00:01Z"}`
+// displayState is what the CLI waits on, so a fixture that omits it would leave
+// the wait loop spinning forever (ADR 0017 §7). It mirrors the server's
+// derivation: close to the identity on state, with the not-yet-up states shown
+// as starting.
+func runTestSandboxJSON(sandboxID, state string) string {
+	displayState := state
+	switch state {
+	case "pending", "awaiting_source":
+		displayState = "starting"
+	}
+	return `{"id":"` + sandboxID + `","projectId":"project-1","createdByUserId":"user-1","config":{"name":"run-test","image":"","cpuVcpus":0,"memoryBytes":0,"storageBytes":0},"runtime":{"state":"` + state + `","displayState":"` + displayState + `","desiredState":"present","generation":1,"observedGeneration":1},"createdAt":"2026-06-17T00:00:00Z","updatedAt":"2026-06-17T00:00:01Z"}`
 }

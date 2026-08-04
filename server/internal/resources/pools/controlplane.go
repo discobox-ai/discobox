@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"log"
+	"log/slog"
 	"time"
 
 	poolagentauth "github.com/obot-platform/discobox/server/internal/auth/poolagent"
@@ -137,10 +138,14 @@ func (s *ControlPlane) SchedulePoolRepair(ctx context.Context, poolID, reason st
 		if err != nil {
 			return err
 		}
-		if pool.LastOperationStatus == model.OperationStatusFailed && pool.ObservedGeneration == pool.Generation {
+		// A settled failure needs new intent to get another attempt: the
+		// reconciler already gave up on the recorded generation, so a bare
+		// dirty mark would be re-converged as "still failed" (ADR 0017 §4).
+		if pool.ErrorMessage != nil && pool.Converged() {
 			previousGeneration := pool.Generation
 			pool.IncrementGeneration()
-			pool.StatusMessage = &reason
+			pool.RecordIntent(pool.DesiredState)
+			slog.InfoContext(ctx, "re-driving a settled pool failure", "poolId", pool.ID, "reason", reason)
 			if err := txStore.UpdatePoolWithGeneration(ctx, pool, previousGeneration); err != nil {
 				if errors.Is(err, store.ErrGenerationConflict) {
 					return nil // concurrent intent already re-drove the pool
@@ -164,12 +169,12 @@ func (s *ControlPlane) SubmitPoolDelete(ctx context.Context, projectID, poolID s
 		if err != nil {
 			return err
 		}
-		if pool.DesiredState == model.PoolDesiredStateDeleted {
+		if pool.DesiredState == model.DesiredStateDeleted {
 			return s.engine.MarkDirtyTx(ctx, txDB, PoolResourceType, PoolDirtyID(pool.ProjectID, pool.ID))
 		}
 		previousGeneration := pool.Generation
 		pool.IncrementGeneration()
-		pool.BeginOperation(model.PoolDeleteOperation)
+		pool.RecordIntent(model.DesiredStateDeleted)
 		if err := txStore.UpdatePoolWithGeneration(ctx, pool, previousGeneration); err != nil {
 			return err
 		}

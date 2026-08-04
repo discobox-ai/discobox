@@ -42,7 +42,7 @@ func createProviderWithPool(ctx context.Context, t *testing.T, appStore *store.S
 			t.Fatalf("create provider %s: %v", providerID, err)
 		}
 	}
-	if err := appStore.CreatePool(ctx, &model.Pool{ID: poolID, ProjectID: "project-1", Name: poolID, ProviderInstanceID: providerID}); err != nil {
+	if err := appStore.CreatePool(ctx, &model.Pool{ID: poolID, ProjectID: "project-1", PoolManifest: model.PoolManifest{Name: poolID, ProviderInstanceID: providerID}}); err != nil {
 		t.Fatalf("create pool %s: %v", poolID, err)
 	}
 }

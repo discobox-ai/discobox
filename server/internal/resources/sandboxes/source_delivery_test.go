@@ -109,25 +109,25 @@ func TestAwaitingSourcePush(t *testing.T) {
 	}{
 		{
 			name:    "push source with no delivered commit waits",
-			sandbox: &model.Sandbox{Source: pushSource()},
+			sandbox: &model.Sandbox{SandboxManifest: model.SandboxManifest{Source: pushSource()}},
 			want:    true,
 			why:     "the workspace is empty until the client pushes",
 		},
 		{
 			name:    "push source reported delivered proceeds",
-			sandbox: &model.Sandbox{Source: pushSource(), SourceDeliveredAt: &delivered},
+			sandbox: &model.Sandbox{SourceDeliveredAt: &delivered, SandboxManifest: model.SandboxManifest{Source: pushSource()}},
 			want:    false,
 			why:     "the client reported the push complete",
 		},
 		{
 			name:    "clone source never waits",
-			sandbox: &model.Sandbox{Source: &model.GitSource{Kind: "git", Delivery: model.GitSourceDeliveryClone}},
+			sandbox: &model.Sandbox{SandboxManifest: model.SandboxManifest{Source: &model.GitSource{Kind: "git", Delivery: model.GitSourceDeliveryClone}}},
 			want:    false,
 			why:     "the sandbox fetches a clone-delivered source itself",
 		},
 		{
 			name:    "source without delivery never waits",
-			sandbox: &model.Sandbox{Source: &model.GitSource{Kind: "git"}},
+			sandbox: &model.Sandbox{SandboxManifest: model.SandboxManifest{Source: &model.GitSource{Kind: "git"}}},
 			want:    false,
 			why:     "delivery defaults to clone; absence must not imply a push",
 		},
@@ -147,7 +147,7 @@ func TestAwaitingSourcePush(t *testing.T) {
 	}
 }
 
-// The deadline is derived from PhaseChangedAt, so the anchor must be stamped
+// The deadline is derived from StateChangedAt, so the anchor must be stamped
 // once and left alone. Restamping it on each reconcile would push the deadline
 // out every time the sandbox was looked at, and it could never expire.
 func TestParkForSourcePushAnchorsAndExpires(t *testing.T) {
@@ -156,17 +156,17 @@ func TestParkForSourcePushAnchorsAndExpires(t *testing.T) {
 	}
 
 	t.Run("first park stamps the anchor and sets a future deadline", func(t *testing.T) {
-		sb := &model.Sandbox{Source: source()}
-		sb.SetPhase(model.SandboxPhaseStarting)
+		sb := &model.Sandbox{SandboxManifest: model.SandboxManifest{Source: source()}}
+		sb.SetState(model.SandboxStateStarting)
 		before := time.Now().UTC()
 		if err := parkForSourcePush(sb); err != nil {
 			t.Fatalf("park: %v", err)
 		}
-		if sb.Phase != model.SandboxPhaseAwaitingSource {
-			t.Fatalf("phase = %q, want awaiting_source", sb.Phase)
+		if sb.State != model.SandboxStateAwaitingSource {
+			t.Fatalf("phase = %q, want awaiting_source", sb.State)
 		}
-		if sb.PhaseChangedAt.Before(before) {
-			t.Fatalf("anchor %v predates the park", sb.PhaseChangedAt)
+		if sb.StateChangedAt.Before(before) {
+			t.Fatalf("anchor %v predates the park", sb.StateChangedAt)
 		}
 		if !sourceAwaitDeadline(sb).After(before) {
 			t.Fatalf("deadline %v is not in the future", sourceAwaitDeadline(sb))
@@ -174,9 +174,9 @@ func TestParkForSourcePushAnchorsAndExpires(t *testing.T) {
 	})
 
 	t.Run("re-parking keeps the original anchor", func(t *testing.T) {
-		sb := &model.Sandbox{Source: source()}
-		sb.SetPhase(model.SandboxPhaseAwaitingSource)
-		anchor := sb.PhaseChangedAt
+		sb := &model.Sandbox{SandboxManifest: model.SandboxManifest{Source: source()}}
+		sb.SetState(model.SandboxStateAwaitingSource)
+		anchor := sb.StateChangedAt
 		deadline := sourceAwaitDeadline(sb)
 
 		// Whatever else reconciles this sandbox, the clock must not restart.
@@ -185,8 +185,8 @@ func TestParkForSourcePushAnchorsAndExpires(t *testing.T) {
 				t.Fatalf("re-park: %v", err)
 			}
 		}
-		if !sb.PhaseChangedAt.Equal(anchor) {
-			t.Fatalf("anchor moved to %v, want it pinned at %v", sb.PhaseChangedAt, anchor)
+		if !sb.StateChangedAt.Equal(anchor) {
+			t.Fatalf("anchor moved to %v, want it pinned at %v", sb.StateChangedAt, anchor)
 		}
 		if !sourceAwaitDeadline(sb).Equal(deadline) {
 			t.Fatalf("deadline moved to %v, want %v", sourceAwaitDeadline(sb), deadline)
@@ -194,10 +194,10 @@ func TestParkForSourcePushAnchorsAndExpires(t *testing.T) {
 	})
 
 	t.Run("a passed deadline fails instead of parking again", func(t *testing.T) {
-		sb := &model.Sandbox{Source: source()}
-		sb.SetPhase(model.SandboxPhaseAwaitingSource)
+		sb := &model.Sandbox{SandboxManifest: model.SandboxManifest{Source: source()}}
+		sb.SetState(model.SandboxStateAwaitingSource)
 		// Parked longer ago than the timeout allows.
-		sb.PhaseChangedAt = time.Now().UTC().Add(-sourcePushTimeout - time.Second)
+		sb.StateChangedAt = time.Now().UTC().Add(-sourcePushTimeout - time.Second)
 
 		err := parkForSourcePush(sb)
 		if err == nil {
@@ -209,15 +209,15 @@ func TestParkForSourcePushAnchorsAndExpires(t *testing.T) {
 	})
 
 	t.Run("a sandbox still inside its deadline keeps waiting", func(t *testing.T) {
-		sb := &model.Sandbox{Source: source()}
-		sb.SetPhase(model.SandboxPhaseAwaitingSource)
-		sb.PhaseChangedAt = time.Now().UTC().Add(-sourcePushTimeout / 2)
+		sb := &model.Sandbox{SandboxManifest: model.SandboxManifest{Source: source()}}
+		sb.SetState(model.SandboxStateAwaitingSource)
+		sb.StateChangedAt = time.Now().UTC().Add(-sourcePushTimeout / 2)
 
 		if err := parkForSourcePush(sb); err != nil {
 			t.Fatalf("park within the deadline: %v", err)
 		}
-		if sb.Phase != model.SandboxPhaseAwaitingSource {
-			t.Fatalf("phase = %q, want it still awaiting_source", sb.Phase)
+		if sb.State != model.SandboxStateAwaitingSource {
+			t.Fatalf("phase = %q, want it still awaiting_source", sb.State)
 		}
 	})
 }

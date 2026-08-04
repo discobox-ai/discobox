@@ -9,7 +9,10 @@ import (
 	"runtime"
 	"strconv"
 	"strings"
+	"sync/atomic"
 	"time"
+
+	"github.com/obot-platform/discobox/id"
 
 	"github.com/obot-platform/discobox/layout"
 	"github.com/obot-platform/discobox/pool-agent/endpoint"
@@ -201,7 +204,7 @@ func ExecSystemdChildIfRequested() error {
 }
 
 // Serve starts the pool-agent HTTP server.
-func Serve(ctx context.Context, logger *slog.Logger, bootstrap Bootstrap, registration *Registration, reporters ...SandboxRemovalClient) error {
+func Serve(ctx context.Context, logger *slog.Logger, bootstrap Bootstrap, registration *Registration, reporters ...SandboxStateClient) error {
 	runtime, err := sandboxruntime.NewDockerSandboxRuntime(sandboxruntime.DockerSandboxRuntimeConfig{
 		ProjectID:             bootstrap.ProjectID,
 		PoolID:                bootstrap.PoolID,
@@ -212,26 +215,42 @@ func Serve(ctx context.Context, logger *slog.Logger, bootstrap Bootstrap, regist
 	if err != nil {
 		return err
 	}
-	var reporter SandboxRemovalClient
+	var reporter SandboxStateClient
 	if len(reporters) > 0 {
 		reporter = reporters[0]
 	}
-	if reporter != nil && registration == nil {
-		return errors.New("pool registration is required for sandbox removal reporting")
-	}
-	go runtime.WatchSandboxRemovals(ctx, logger, func(reportCtx context.Context, sandboxID, containerID string) error {
-		if reporter == nil {
-			return nil
+	if reporter != nil {
+		if registration == nil {
+			return errors.New("pool registration is required for sandbox state reporting")
 		}
-		return reporter.ReportSandboxRemoved(reportCtx, SandboxRemovalRequest{
-			ControlPlaneURL: bootstrap.ControlPlaneURL,
-			ProjectID:       bootstrap.ProjectID,
-			PoolID:          bootstrap.PoolID,
-			PrivateKey:      registration.PrivateKey,
-			SandboxID:       sandboxID,
-			ContainerID:     containerID,
+		// One boot ID per agent process, and a sequence within it. The control
+		// plane uses the pair to drop a delayed delta that would otherwise
+		// overwrite a newer complete sync (ADR 0017 §10).
+		bootID := id.NewString(id.PrefixPoolAgentBoot)
+		var sequence atomic.Int64
+		go runtime.WatchSandboxStates(ctx, logger, func(reportCtx context.Context, batch sandboxruntime.SandboxStateBatch) error {
+			states := make([]SandboxState, 0, len(batch.States))
+			for _, observed := range batch.States {
+				states = append(states, SandboxState{
+					SandboxID: observed.SandboxID,
+					State:     observed.State,
+					Error:     observed.Error,
+				})
+			}
+			return reporter.ReportSandboxStates(reportCtx, SandboxStateRequest{
+				ControlPlaneURL: bootstrap.ControlPlaneURL,
+				ProjectID:       bootstrap.ProjectID,
+				PoolID:          bootstrap.PoolID,
+				PrivateKey:      registration.PrivateKey,
+				BootID:          bootID,
+				Sequence:        sequence.Add(1),
+				ReportedAt:      batch.ReportedAt,
+				Complete:        batch.Complete,
+				States:          states,
+			})
 		})
-	})
+	}
+	go runtime.WatchProxyMaterial(ctx, logger)
 	return ServeWithRuntime(ctx, logger, bootstrap, registration, runtime)
 }
 

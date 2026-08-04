@@ -559,12 +559,12 @@ func (UnimplementedHandler) RegisterPool(ctx context.Context, req *RegisterPoolB
 	return r, ht.ErrNotImplemented
 }
 
-// ReportPoolSandboxRemoved implements report-pool-sandbox-removed operation.
+// ReportPoolSandboxStates implements report-pool-sandbox-states operation.
 //
-// Report a pool-local sandbox runtime removed outside reconciliation.
+// Report observed sandbox states from the pool agent.
 //
-// POST /api/pools/{poolId}/sandbox-removed
-func (UnimplementedHandler) ReportPoolSandboxRemoved(ctx context.Context, req *ReportPoolSandboxRemovedBody, params ReportPoolSandboxRemovedParams) (r ReportPoolSandboxRemovedRes, _ error) {
+// POST /api/pools/{poolId}/sandbox-states
+func (UnimplementedHandler) ReportPoolSandboxStates(ctx context.Context, req *ReportPoolSandboxStatesBody, params ReportPoolSandboxStatesParams) (r ReportPoolSandboxStatesRes, _ error) {
 	return r, ht.ErrNotImplemented
 }
 

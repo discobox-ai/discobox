@@ -16,6 +16,7 @@ type HarnessVolume = poolagentapi.HarnessVolume
 type PoolSandboxCreateRequest = poolagentapi.PoolSandboxCreateRequest
 type PoolSandboxInstance = poolagentapi.PoolSandboxInstance
 type PoolSandboxListResponse = poolagentapi.PoolSandboxListResponse
+type PoolSandboxOperationAccepted = poolagentapi.PoolSandboxOperationAccepted
 type PoolSandboxOperationRequest = poolagentapi.PoolSandboxOperationRequest
 type PoolSandboxPort = poolagentapi.PoolSandboxPort
 type PoolSandboxResources = poolagentapi.PoolSandboxResources

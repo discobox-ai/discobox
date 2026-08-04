@@ -68,10 +68,10 @@ func TestWritePoolTableIncludesRuntimeState(t *testing.T) {
 
 	err := app.writePool(cmd, &apimodel.Pool{
 		ID:                 "pool-1",
-		Name:               "Default",
 		ProviderInstanceId: "provider-1",
-		Phase:              "failed",
+		State:              "failed",
 		ErrorMessage:       apiclientgen.NewOptString("docker create failed"),
+		Name:               "Default",
 	})
 	if err != nil {
 		t.Fatalf("writePool: %v", err)
@@ -79,7 +79,7 @@ func TestWritePoolTableIncludesRuntimeState(t *testing.T) {
 
 	output := out.String()
 	for _, want := range []string{
-		"PHASE",
+		"STATE",
 		"failed",
 		"MESSAGE",
 		"docker create failed",
@@ -90,7 +90,7 @@ func TestWritePoolTableIncludesRuntimeState(t *testing.T) {
 	}
 }
 
-func TestWritePoolsTableIncludesPhaseAndMessage(t *testing.T) {
+func TestWritePoolsTableIncludesStateAndMessage(t *testing.T) {
 	app := &App{output: "table"}
 	cmd := &cobra.Command{}
 	var out bytes.Buffer
@@ -100,15 +100,15 @@ func TestWritePoolsTableIncludesPhaseAndMessage(t *testing.T) {
 		ID:                 "pool-1",
 		Name:               "Default",
 		ProviderInstanceId: "provider-1",
-		Phase:              "registering",
-		StatusMessage:      apiclientgen.NewOptString("pool agent did not register before timeout"),
+		State:              "registering",
+		ErrorMessage:       apiclientgen.NewOptString("pool agent did not register before timeout"),
 	}})
 	if err != nil {
 		t.Fatalf("writePools: %v", err)
 	}
 
 	output := out.String()
-	for _, want := range []string{"PHASE", "registering", "pool agent did not register before timeout"} {
+	for _, want := range []string{"STATE", "registering", "pool agent did not register before timeout"} {
 		if !strings.Contains(output, want) {
 			t.Fatalf("pools output = %q, want %q", output, want)
 		}
@@ -928,12 +928,11 @@ func TestWriteSandboxesTableIncludesErrorMessage(t *testing.T) {
 		CreatedAt: time.Date(2026, 6, 17, 0, 0, 0, 0, time.UTC),
 		UpdatedAt: time.Date(2026, 6, 17, 0, 0, 1, 0, time.UTC),
 		Runtime: apimodel.SandboxRuntime{
-			Phase:               "failed",
-			DesiredState:        "running",
-			DisplayState:        apiclientgen.NewOptSandboxRuntimeDisplayState("error"),
-			LastOperationStatus: "failed",
-			ErrorMessage:        apiclientgen.NewOptString("worker-agent request failed: git clone failed"),
-			Generation:          1,
+			State:        "failed",
+			DesiredState: "running",
+			DisplayState: apiclientgen.NewOptSandboxRuntimeDisplayState("error"),
+			ErrorMessage: apiclientgen.NewOptString("worker-agent request failed: git clone failed"),
+			Generation:   1,
 		},
 	}}, false)
 	if err != nil {
@@ -946,7 +945,7 @@ func TestWriteSandboxesTableIncludesErrorMessage(t *testing.T) {
 			t.Fatalf("sandboxes output = %q, want %q", output, want)
 		}
 	}
-	for _, unwanted := range []string{"PHASE", "DESIRED", "GENERATION"} {
+	for _, unwanted := range []string{"DESIRED", "GENERATION", "OBSERVED"} {
 		if strings.Contains(output, unwanted) {
 			t.Fatalf("sandboxes output = %q, did not want column %q", output, unwanted)
 		}
@@ -1651,5 +1650,5 @@ func (f roundTripFunc) RoundTrip(req *http.Request) (*http.Response, error) {
 }
 
 func testSandboxJSON(id, name, createdAt, updatedAt string) string {
-	return `{"id":"` + id + `","projectId":"project-1","createdByUserId":"user-1","config":{"name":"` + name + `","image":"","cpuVcpus":0,"memoryBytes":0,"storageBytes":0},"runtime":{"phase":"running","desiredState":"running","displayState":"running","lastOperationStatus":"success","generation":1,"observedGeneration":1,"restartGeneration":0,"restartedGeneration":0},"createdAt":"` + createdAt + `","updatedAt":"` + updatedAt + `"}`
+	return `{"id":"` + id + `","projectId":"project-1","createdByUserId":"user-1","config":{"name":"` + name + `","image":"","cpuVcpus":0,"memoryBytes":0,"storageBytes":0},"runtime":{"state":"running","desiredState":"present","displayState":"running","generation":1,"observedGeneration":1},"createdAt":"` + createdAt + `","updatedAt":"` + updatedAt + `"}`
 }

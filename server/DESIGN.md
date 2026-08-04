@@ -104,9 +104,9 @@ service may use those body fields only to redeem the short-lived, one-time
 bootstrap token against the bootstrapped worker and issue the first runtime
 worker token. Subsequent worker authorization must use request metadata and the
 authenticated worker principal, such as `/api/workers/{workerId}/status`.
-Worker-observed sandbox container loss is reported at
-`/api/workers/{workerId}/sandbox-removed` under the same worker-principal rule;
-the sandbox ID is runtime evidence, not user authorization input.
+Agent-observed sandbox state is reported at
+`/api/pools/{poolId}/sandbox-states` under the same pool-principal rule; the
+sandbox IDs are runtime evidence, not user authorization input.
 
 ## Applying Sandbox Commits to a Host (`disco apply`)
 
@@ -114,8 +114,7 @@ the sandbox ID is runtime evidence, not user authorization input.
 host working tree they started from. It fetches over the same
 git-repositories proxy documented above, now used for read as well as write:
 `ScopeSandboxRead` already permitted fetch, so no new proxy surface was
-needed, only allowing the phase the fetch (and the original create-time push)
-actually happen in — see below.
+needed.
 
 - **`CompleteSandboxApply`** is a plain generated OpenAPI operation, not a
   hand-wired proxy: the client reports a completed apply after it has already
@@ -130,14 +129,12 @@ actually happen in — see below.
   `sandboxes.updateSandboxMetadata` rather than `submitSandboxOperation`:
   nothing about desired or observed runtime state changes, so there is
   nothing for the reconcile engine to act on.
-- `AcquireSandboxHTTPClient` takes an explicit `allowedPhases` per caller
-  instead of hardcoding `phase == running`. The sandbox git-repositories
-  proxy is the only caller that passes `SandboxPhasesRunningOrAwaitingSource`:
-  a push-delivered source is received precisely while the sandbox is
-  `awaiting_source` (ADR 0001), so requiring `running` there made that push —
-  and therefore the whole local-source create path — impossible to complete.
-  Every other proxy (terminals, sandbox HTTP, harness configure) keeps
-  `SandboxPhasesRunning`.
+- `AcquireSandboxHTTPClient` checks that the sandbox exists and that its pool
+  is up, and nothing about whether it is running. A stopped sandbox is started
+  on demand by the pool agent when the request reaches it (ADR 0017 §12), so
+  gating here would refuse traffic the agent would have served — and would
+  only cover the routes that consult the server at all, which the git and HTTP
+  proxies do not.
 
 ## Listen Endpoints
 
@@ -253,20 +250,21 @@ tag never moves a running sandbox.
 
 ## Observation vs Intent
 
-An observation may set desired state, but only when it is provably about the
-runtime the control plane currently believes in, and only when nothing else is
-operating on that resource.
+An observation never becomes intent. The pool agent reports what its containers
+are doing on its own channel (`/api/pools/{poolId}/sandbox-states`), and the
+control plane records it as observed state: no desired state, no generation, no
+operation. A generation versions the spec, and nothing the runtime saw changes
+what was asked for.
 
-`ReportSandboxRemoved` is the worked example. A container that dies unexpectedly
-becomes stop intent — a sandbox whose runtime is gone should stop trying rather
-than be silently rebuilt. But the report is ignored when an operation is in
-flight (the control plane is the one removing the container, e.g. an image
-upgrade) and when it names a container that is no longer the recorded runtime
-(a late report about an already-replaced container). Each guard covers the
-other's gap; together they are what keep a deliberate replacement from
-countermanding the operation that performed it.
+The one case that looks like an exception is a container that is gone. It is
+still an observation — the reconciler learns about it through a dirty mark, and
+its idempotent ensure rebuilds the container from the spec already recorded.
+What it does not do is invent intent to justify acting.
 
-See ADR 0016.
+This is why the ordering guard matters: reports carry the agent's boot ID and a
+per-boot sequence, so a delayed delta cannot overwrite a newer complete sync.
+
+See ADR 0017 §§9–10.
 
 ## Package Map
 

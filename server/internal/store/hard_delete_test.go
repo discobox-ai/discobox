@@ -64,7 +64,7 @@ func TestDeletedPoolFreesItsName(t *testing.T) {
 		t.Fatalf("pool bootstrap token count = %d after pool delete, want 0", tokenCount)
 	}
 	// Same project, same name: unique on (project_id, name).
-	if err := s.CreatePool(ctx, &model.Pool{ID: "pool-2", ProjectID: "project-1", Name: "pool-1", ProviderInstanceID: "prov-pool-1"}); err != nil {
+	if err := s.CreatePool(ctx, &model.Pool{ID: "pool-2", ProjectID: "project-1", PoolManifest: model.PoolManifest{Name: "pool-1", ProviderInstanceID: "prov-pool-1"}}); err != nil {
 		t.Fatalf("recreate pool with the deleted pool's name: %v", err)
 	}
 }

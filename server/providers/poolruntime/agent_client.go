@@ -101,40 +101,41 @@ func (p *poolAgentClient) Update(ctx context.Context, ref sandbox.SandboxRef, st
 	return runtimeSandbox, state, nil
 }
 
-func (p *poolAgentClient) Start(ctx context.Context, ref sandbox.SandboxRef, state []byte) (*sandbox.Sandbox, []byte, error) {
-	client, release, err := p.poolClient(ref, poolagentauth.ScopeSandboxWrite)
-	if err != nil {
-		return nil, state, err
-	}
-	defer release()
-	poolSandbox, err := client.PoolStartSandbox(ctx, &poolapimodel.PoolSandboxOperationRequest{}, poolclient.PoolStartSandboxParams{ProjectId: ref.ProjectID, PoolId: p.poolID, SandboxId: ref.SandboxID})
-	if err != nil {
-		return nil, state, mapPoolClientError(err)
-	}
-	runtimeSandbox := sandboxFromPool(poolSandbox, p.poolID)
-	state, err = json.Marshal(runtimeSandbox)
-	if err != nil {
-		return nil, state, err
-	}
-	return runtimeSandbox, state, nil
+// Start, Stop, and Restart deliver an instruction and return only the sealed
+// state, because the pool agent answers them with acceptance rather than a
+// sandbox: what became of the instruction arrives on its state-reporting
+// channel (ADR 0017 §§9–10).
+func (p *poolAgentClient) Start(ctx context.Context, ref sandbox.SandboxRef, state []byte) ([]byte, error) {
+	return p.instruct(ctx, ref, state, func(ctx context.Context, client *poolclient.Client) error {
+		_, err := client.PoolStartSandbox(ctx, &poolapimodel.PoolSandboxOperationRequest{}, poolclient.PoolStartSandboxParams{ProjectId: ref.ProjectID, PoolId: p.poolID, SandboxId: ref.SandboxID})
+		return err
+	})
 }
 
-func (p *poolAgentClient) Stop(ctx context.Context, ref sandbox.SandboxRef, state []byte, _ time.Duration) (*sandbox.Sandbox, []byte, error) {
+func (p *poolAgentClient) Stop(ctx context.Context, ref sandbox.SandboxRef, state []byte, _ time.Duration) ([]byte, error) {
+	return p.instruct(ctx, ref, state, func(ctx context.Context, client *poolclient.Client) error {
+		_, err := client.PoolStopSandbox(ctx, &poolapimodel.PoolSandboxOperationRequest{}, poolclient.PoolStopSandboxParams{ProjectId: ref.ProjectID, PoolId: p.poolID, SandboxId: ref.SandboxID})
+		return err
+	})
+}
+
+func (p *poolAgentClient) Restart(ctx context.Context, ref sandbox.SandboxRef, state []byte, _ time.Duration) ([]byte, error) {
+	return p.instruct(ctx, ref, state, func(ctx context.Context, client *poolclient.Client) error {
+		_, err := client.PoolRestartSandbox(ctx, &poolapimodel.PoolSandboxOperationRequest{}, poolclient.PoolRestartSandboxParams{ProjectId: ref.ProjectID, PoolId: p.poolID, SandboxId: ref.SandboxID})
+		return err
+	})
+}
+
+func (p *poolAgentClient) instruct(ctx context.Context, ref sandbox.SandboxRef, state []byte, call func(context.Context, *poolclient.Client) error) ([]byte, error) {
 	client, release, err := p.poolClient(ref, poolagentauth.ScopeSandboxWrite)
 	if err != nil {
-		return nil, state, err
+		return state, err
 	}
 	defer release()
-	poolSandbox, err := client.PoolStopSandbox(ctx, &poolapimodel.PoolSandboxOperationRequest{}, poolclient.PoolStopSandboxParams{ProjectId: ref.ProjectID, PoolId: p.poolID, SandboxId: ref.SandboxID})
-	if err != nil {
-		return nil, state, mapPoolClientError(err)
+	if err := call(ctx, client); err != nil {
+		return state, mapPoolClientError(err)
 	}
-	runtimeSandbox := sandboxFromPool(poolSandbox, p.poolID)
-	state, err = json.Marshal(runtimeSandbox)
-	if err != nil {
-		return nil, state, err
-	}
-	return runtimeSandbox, state, nil
+	return state, nil
 }
 
 func (p *poolAgentClient) Remove(ctx context.Context, ref sandbox.SandboxRef, state []byte, _ ...sandbox.RemoveOption) ([]byte, error) {
@@ -299,6 +300,10 @@ func poolCreateRequestFromOptions(sandboxID string, opts sandbox.CreateOptions) 
 	if opts.Image.Digest != "" {
 		config.ImageDigest = poolclient.NewOptString(opts.Image.Digest)
 	}
+	if opts.SpecFingerprint != "" {
+		config.SpecFingerprint = poolclient.NewOptString(opts.SpecFingerprint)
+	}
+	config.Start = poolclient.NewOptBool(opts.Start)
 	if opts.Env != nil {
 		config.Env = poolclient.NewOptSandboxConfigEnv(poolclient.SandboxConfigEnv(opts.Env))
 	}

@@ -156,6 +156,5 @@ PY
   [ -n "$sandbox_id" ]
   record sandbox "$sandbox_id"
   [ "$(printf '%s' "$sandbox_json" | json_get poolId)" = "$pool_id" ]
-  [ "$(printf '%s' "$sandbox_json" | json_get phase)" = "running" ]
-  [ "$(printf '%s' "$sandbox_json" | json_get lastOperationStatus)" = "success" ]
+  [ "$(printf '%s' "$sandbox_json" | json_get displayState)" = "running" ]
 }

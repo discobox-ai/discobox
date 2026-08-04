@@ -13,17 +13,18 @@ import (
 	"github.com/obot-platform/discobox/server/internal/auth"
 	"github.com/obot-platform/discobox/server/internal/model"
 	services "github.com/obot-platform/discobox/server/internal/services"
+	"github.com/obot-platform/discobox/server/internal/store"
 )
 
-// SandboxRemovalReporter records agent-observed sandbox runtime loss as
-// lifecycle intent owned by the sandbox control plane.
-type SandboxRemovalReporter interface {
-	ReportSandboxRemoved(ctx context.Context, poolID, sandboxID, containerID string) error
+// SandboxStateReporter records agent-observed sandbox states through the
+// sandbox control plane, which owns the sandbox rows.
+type SandboxStateReporter interface {
+	ReportSandboxStates(ctx context.Context, batch store.SandboxStateReportBatch) error
 }
 
-// SetSandboxRemovalReporter wires the sandbox service dependency for
-// agent-reported sandbox removals.
-func (s *Service) SetSandboxRemovalReporter(reporter SandboxRemovalReporter) {
+// SetSandboxStateReporter wires the sandbox service dependency for
+// agent-reported sandbox states.
+func (s *Service) SetSandboxStateReporter(reporter SandboxStateReporter) {
 	s.sandboxReporter = reporter
 }
 
@@ -64,22 +65,46 @@ func (s *Service) UpdatePoolStatus(ctx context.Context, poolID string, input ser
 	return pool, nil
 }
 
-// ReportPoolSandboxRemoved records an agent-observed sandbox runtime loss.
-func (s *Service) ReportPoolSandboxRemoved(ctx context.Context, poolID string, input services.ReportPoolSandboxRemovedBody) error {
+// ReportPoolSandboxStates records a batch of sandbox state observations from
+// the agent hosting them (ADR 0017 §10).
+//
+// It writes observations only. Nothing here bumps a generation or touches
+// desired state: what the agent saw is not a request for anything, and the
+// control plane holds no opinion about whether a sandbox should be running.
+func (s *Service) ReportPoolSandboxStates(ctx context.Context, poolID string, input services.ReportPoolSandboxStatesBody) error {
 	poolID = strings.TrimSpace(poolID)
-	sandboxID := strings.TrimSpace(input.SandboxId)
-	if poolID == "" || sandboxID == "" {
-		return apperrors.NewStatusError(http.StatusBadRequest, "poolId and sandboxId are required")
+	if poolID == "" {
+		return apperrors.NewStatusError(http.StatusBadRequest, "poolId is required")
 	}
 	principal, ok := auth.PrincipalFromContext(ctx)
 	if !ok || principal.Type != auth.PrincipalTypePool || principal.PoolID != poolID {
-		return apperrors.NewStatusError(http.StatusForbidden, "pool agent is not authorized to report sandbox removal")
+		return apperrors.NewStatusError(http.StatusForbidden, "pool agent is not authorized to report sandbox states")
 	}
 	if s.sandboxReporter == nil {
-		return errors.New("sandbox removal reporter is required")
+		return errors.New("sandbox state reporter is required")
 	}
-	if err := s.sandboxReporter.ReportSandboxRemoved(ctx, poolID, sandboxID, strings.TrimSpace(input.ContainerId.Or(""))); err != nil {
-		return mapAPIError(err, "sandbox not found")
+	reports := make([]store.SandboxStateReport, 0, len(input.States))
+	for _, state := range input.States {
+		sandboxID := strings.TrimSpace(state.SandboxId)
+		if sandboxID == "" {
+			continue
+		}
+		reports = append(reports, store.SandboxStateReport{
+			SandboxID: sandboxID,
+			State:     string(state.State),
+			Error:     strings.TrimSpace(state.Error.Or("")),
+		})
+	}
+	batch := store.SandboxStateReportBatch{
+		PoolID:     poolID,
+		BootID:     strings.TrimSpace(input.BootId),
+		Sequence:   input.Sequence,
+		ReportedAt: input.ReportedAt,
+		Complete:   input.Complete,
+		Reports:    reports,
+	}
+	if err := s.sandboxReporter.ReportSandboxStates(ctx, batch); err != nil {
+		return mapAPIError(err, "pool not found")
 	}
 	return nil
 }

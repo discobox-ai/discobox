@@ -2220,6 +2220,37 @@ func (s *PoolSandboxListResponse) SetSandboxes(val []PoolSandboxInstance) {
 	s.Sandboxes = val
 }
 
+// Acknowledges that a power instruction was accepted. It carries no
+// state: what became of the instruction arrives on the agent's
+// sandbox state-reporting channel (ADR 0017 §§9-10).
+// Ref: #/components/schemas/PoolSandboxOperationAccepted
+type PoolSandboxOperationAccepted struct {
+	// A URL to the JSON Schema for this object.
+	Schema OptURI `json:"$schema"`
+	// Sandbox the instruction was accepted for.
+	SandboxId string `json:"sandboxId"`
+}
+
+// GetSchema returns the value of Schema.
+func (s *PoolSandboxOperationAccepted) GetSchema() OptURI {
+	return s.Schema
+}
+
+// GetSandboxId returns the value of SandboxId.
+func (s *PoolSandboxOperationAccepted) GetSandboxId() string {
+	return s.SandboxId
+}
+
+// SetSchema sets the value of Schema.
+func (s *PoolSandboxOperationAccepted) SetSchema(val OptURI) {
+	s.Schema = val
+}
+
+// SetSandboxId sets the value of SandboxId.
+func (s *PoolSandboxOperationAccepted) SetSandboxId(val string) {
+	s.SandboxId = val
+}
+
 // Ref: #/components/schemas/PoolSandboxOperationRequest
 type PoolSandboxOperationRequest struct {
 	// A URL to the JSON Schema for this object.
@@ -2727,7 +2758,17 @@ type SandboxConfig struct {
 	Image               OptString                   `json:"image"`
 	// Config digest the image must resolve to. The runtime runs this image and replaces a container
 	// built from any other, so a moved tag never silently changes a running sandbox (ADR 0016).
-	ImageDigest          OptString                            `json:"imageDigest"`
+	ImageDigest OptString `json:"imageDigest"`
+	// Whether creating the container should also bring it up. True for a sandbox being
+	// created for the first time, because asking for a sandbox means asking for one that
+	// runs. False for a rebuild after the container was lost: recovery restores what
+	// exists, and starting is left to whoever actually wants it (ADR 0017 §13).
+	Start OptBool `json:"start"`
+	// Digest of the whole sandbox spec this container must be built from (ADR 0017 §5).
+	// The runtime records it as a container label and rebuilds any container whose label
+	// no longer matches, so image upgrades and every other spec change are one mechanism
+	// rather than a growing list of per-field comparisons.
+	SpecFingerprint      OptString                            `json:"specFingerprint"`
 	MemoryBytes          OptInt64                             `json:"memoryBytes"`
 	Name                 OptString                            `json:"name"`
 	Prompt               []string                             `json:"prompt"`
@@ -2785,6 +2826,16 @@ func (s *SandboxConfig) GetImage() OptString {
 // GetImageDigest returns the value of ImageDigest.
 func (s *SandboxConfig) GetImageDigest() OptString {
 	return s.ImageDigest
+}
+
+// GetStart returns the value of Start.
+func (s *SandboxConfig) GetStart() OptBool {
+	return s.Start
+}
+
+// GetSpecFingerprint returns the value of SpecFingerprint.
+func (s *SandboxConfig) GetSpecFingerprint() OptString {
+	return s.SpecFingerprint
 }
 
 // GetMemoryBytes returns the value of MemoryBytes.
@@ -2870,6 +2921,16 @@ func (s *SandboxConfig) SetImage(val OptString) {
 // SetImageDigest sets the value of ImageDigest.
 func (s *SandboxConfig) SetImageDigest(val OptString) {
 	s.ImageDigest = val
+}
+
+// SetStart sets the value of Start.
+func (s *SandboxConfig) SetStart(val OptBool) {
+	s.Start = val
+}
+
+// SetSpecFingerprint sets the value of SpecFingerprint.
+func (s *SandboxConfig) SetSpecFingerprint(val OptString) {
+	s.SpecFingerprint = val
 }
 
 // SetMemoryBytes sets the value of MemoryBytes.

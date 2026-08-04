@@ -6,12 +6,13 @@ package poolagentapi
 type OperationName = string
 
 const (
-	PoolCreateSandboxOperation OperationName = "PoolCreateSandbox"
-	PoolDeleteSandboxOperation OperationName = "PoolDeleteSandbox"
-	PoolGetSandboxOperation    OperationName = "PoolGetSandbox"
-	PoolListSandboxesOperation OperationName = "PoolListSandboxes"
-	PoolStartSandboxOperation  OperationName = "PoolStartSandbox"
-	PoolStopSandboxOperation   OperationName = "PoolStopSandbox"
-	PoolSyncOperation          OperationName = "PoolSync"
-	PoolUpdateSandboxOperation OperationName = "PoolUpdateSandbox"
+	PoolCreateSandboxOperation  OperationName = "PoolCreateSandbox"
+	PoolDeleteSandboxOperation  OperationName = "PoolDeleteSandbox"
+	PoolGetSandboxOperation     OperationName = "PoolGetSandbox"
+	PoolListSandboxesOperation  OperationName = "PoolListSandboxes"
+	PoolRestartSandboxOperation OperationName = "PoolRestartSandbox"
+	PoolStartSandboxOperation   OperationName = "PoolStartSandbox"
+	PoolStopSandboxOperation    OperationName = "PoolStopSandbox"
+	PoolSyncOperation           OperationName = "PoolSync"
+	PoolUpdateSandboxOperation  OperationName = "PoolUpdateSandbox"
 )

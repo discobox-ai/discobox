@@ -536,10 +536,13 @@ func (a *App) waitForSandboxCtx(ctx context.Context, client *apiclientgen.Client
 		if err != nil {
 			return nil, err
 		}
-		if sandbox.Runtime.Phase == "running" && sandbox.Runtime.LastOperationStatus == "success" {
+		// displayState is the single vocabulary the server exposes for this
+		// (ADR 0017 §7); reading raw state plus generations here would be
+		// re-deriving what it already computed.
+		switch sandbox.Runtime.DisplayState.Or("") {
+		case "running":
 			return sandbox, nil
-		}
-		if sandbox.Runtime.Phase == "failed" || sandbox.Runtime.LastOperationStatus == "failed" {
+		case "error":
 			return sandbox, fmt.Errorf("sandbox failed: %s", sandboxFailureReason(sandbox))
 		}
 		select {
@@ -551,13 +554,13 @@ func (a *App) waitForSandboxCtx(ctx context.Context, client *apiclientgen.Client
 }
 
 // sandboxFailureReason reports why a sandbox failed, preferring the message the
-// server recorded on it. Phase and status alone are tautological ("it failed
-// because it failed"), so they are only the fallback when no message is set.
+// server recorded on it. The state alone is tautological ("it failed because it
+// failed"), so it is only the fallback when no message is set.
 func sandboxFailureReason(sandbox *apimodel.Sandbox) string {
 	if message, ok := sandbox.Runtime.ErrorMessage.Get(); ok && strings.TrimSpace(message) != "" {
 		return strings.TrimSpace(message)
 	}
-	return fmt.Sprintf("phase=%s lastOperationStatus=%s", sandbox.Runtime.Phase, sandbox.Runtime.LastOperationStatus)
+	return fmt.Sprintf("state=%s", sandbox.Runtime.State)
 }
 
 func sourceCodeReferences(value string) (apiclientgen.SandboxCreateConfigSourceCodeReferences, error) {

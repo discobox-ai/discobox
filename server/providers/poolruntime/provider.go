@@ -194,12 +194,14 @@ func (p *Provider) Create(ctx context.Context, ref sandbox.SandboxRef, state []b
 		return nil, state, err
 	}
 	sb := &model.Sandbox{
-		ID:           ref.SandboxID,
-		ProjectID:    ref.ProjectID,
-		PoolID:       opts.PoolID,
-		CPUVCPUs:     opts.CPUVCPUs,
-		MemoryBytes:  opts.MemoryBytes,
-		StorageBytes: opts.StorageBytes,
+		ID:        ref.SandboxID,
+		ProjectID: ref.ProjectID,
+		PoolID:    opts.PoolID,
+		SandboxManifest: model.SandboxManifest{
+			CPUVCPUs:     opts.CPUVCPUs,
+			MemoryBytes:  opts.MemoryBytes,
+			StorageBytes: opts.StorageBytes,
+		},
 	}
 	pool, err := p.schedulablePool(ctx, sb)
 	if err != nil {
@@ -275,12 +277,12 @@ func (p *Provider) settledFailure(ctx context.Context, sb *model.Sandbox) error 
 	if err != nil {
 		return err
 	}
-	if pool.RevokedAt != nil || pool.DesiredState != model.PoolDesiredStateActive {
+	if pool.RevokedAt != nil || pool.DesiredState != model.DesiredStatePresent {
 		return &sandbox.PoolFailure{PoolID: pool.ID, Message: "pool is not active"}
 	}
 	// A failure is settled only when the latest intent was attempted and lost;
 	// a bumped generation means a retry is pending.
-	if pool.LastOperationStatus != model.OperationStatusFailed || pool.ObservedGeneration != pool.Generation {
+	if pool.ErrorMessage == nil || !pool.Converged() {
 		return nil
 	}
 	message := ""
@@ -298,20 +300,28 @@ func (p *Provider) Update(ctx context.Context, ref sandbox.SandboxRef, state []b
 	return client.Update(ctx, ref, state, opts)
 }
 
-func (p *Provider) Start(ctx context.Context, ref sandbox.SandboxRef, state []byte) (*sandbox.Sandbox, []byte, error) {
+func (p *Provider) Start(ctx context.Context, ref sandbox.SandboxRef, state []byte) ([]byte, error) {
 	client, err := p.agentClientFromState(ctx, ref, state)
 	if err != nil {
-		return nil, state, err
+		return state, err
 	}
 	return client.Start(ctx, ref, state)
 }
 
-func (p *Provider) Stop(ctx context.Context, ref sandbox.SandboxRef, state []byte, timeout time.Duration) (*sandbox.Sandbox, []byte, error) {
+func (p *Provider) Stop(ctx context.Context, ref sandbox.SandboxRef, state []byte, timeout time.Duration) ([]byte, error) {
 	client, err := p.agentClientFromState(ctx, ref, state)
 	if err != nil {
-		return nil, state, err
+		return state, err
 	}
 	return client.Stop(ctx, ref, state, timeout)
+}
+
+func (p *Provider) Restart(ctx context.Context, ref sandbox.SandboxRef, state []byte, timeout time.Duration) ([]byte, error) {
+	client, err := p.agentClientFromState(ctx, ref, state)
+	if err != nil {
+		return state, err
+	}
+	return client.Restart(ctx, ref, state, timeout)
 }
 
 func (p *Provider) Get(ctx context.Context, ref sandbox.SandboxRef, state []byte) (*sandbox.Sandbox, error) {
@@ -390,7 +400,7 @@ func (p *Provider) waitForPoolReconcile(ctx context.Context, projectID, poolID s
 		if err != nil {
 			return nil, err
 		}
-		if pool != nil && poolOperationTerminal(pool) {
+		if pool != nil && poolReconcileSettled(pool) {
 			return pool, nil
 		}
 		if poolCapacityWaitTimeout <= 0 || !time.Now().Before(deadline) {
@@ -408,15 +418,11 @@ func (p *Provider) waitForPoolReconcile(ctx context.Context, projectID, poolID s
 	}
 }
 
-// poolOperationTerminal reports whether the pool's last recorded operation
-// settled (success or failure) rather than being queued or in flight.
-func poolOperationTerminal(pool *model.Pool) bool {
-	switch pool.LastOperationStatus {
-	case model.OperationStatusSuccess, model.OperationStatusFailed:
-		return true
-	default:
-		return false
-	}
+// poolReconcileSettled reports whether the pool's reconciler has finished
+// acting on its latest intent, however that turned out. Under ADR 0017 §3 that
+// is exactly what matching generations mean.
+func poolReconcileSettled(pool *model.Pool) bool {
+	return pool.Converged()
 }
 
 func poolIDFromRuntimeState(state []byte) (string, error) {

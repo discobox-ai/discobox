@@ -20,7 +20,7 @@ import (
 type Service struct {
 	store           *store.Store
 	pools           *ControlPlane
-	sandboxReporter SandboxRemovalReporter
+	sandboxReporter SandboxStateReporter
 }
 
 func NewService(appStore *store.Store, controlPlane *ControlPlane) *Service {
@@ -58,12 +58,14 @@ func (s *Service) CreatePool(ctx context.Context, projectID string, input servic
 		return nil, mapAPIError(err, "provider instance not found")
 	}
 	pool := &model.Pool{
-		ProjectID:          projectID,
-		Name:               name,
-		ProviderInstanceID: provider.ID,
-		CPUVCPUs:           input.CpuVcpus.Or(0),
-		MemoryBytes:        input.MemoryBytes.Or(0),
-		StorageBytes:       input.StorageBytes.Or(0),
+		ProjectID: projectID,
+		PoolManifest: model.PoolManifest{
+			Name:               name,
+			ProviderInstanceID: provider.ID,
+			CPUVCPUs:           input.CpuVcpus.Or(0),
+			MemoryBytes:        input.MemoryBytes.Or(0),
+			StorageBytes:       input.StorageBytes.Or(0),
+		},
 	}
 	if err := s.store.CreatePool(ctx, pool); err != nil {
 		return nil, err

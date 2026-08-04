@@ -104,9 +104,8 @@ func TestDockerWorkerWatcherSchedulesFailedPoolWhenCurrentContainerRuns(t *testi
 		ID:        "pool-1",
 		ProjectID: "project-1",
 		ResourceLifecycle: model.ResourceLifecycle{
-			DesiredState:        model.PoolDesiredStateActive,
-			Phase:               model.PoolPhaseFailed,
-			LastOperationStatus: model.OperationStatusFailed,
+			DesiredState: model.DesiredStatePresent,
+			State:        model.PoolStateFailed,
 		},
 	}
 	current := &container.InspectResponse{
@@ -136,9 +135,8 @@ func TestDockerWorkerWatcherSchedulesCreatedFailedPoolWithoutContainer(t *testin
 		ProjectID:    "project-1",
 		RegisteredAt: &registeredAt,
 		ResourceLifecycle: model.ResourceLifecycle{
-			DesiredState:        model.PoolDesiredStateActive,
-			Phase:               model.PoolPhaseOffline,
-			LastOperationStatus: model.OperationStatusFailed,
+			DesiredState: model.DesiredStatePresent,
+			State:        model.PoolStateOffline,
 		},
 	}
 
@@ -163,9 +161,8 @@ func TestDockerWorkerWatcherLeavesNeverCreatedFailedPoolWithoutContainer(t *test
 		ID:        "pool-1",
 		ProjectID: "project-1",
 		ResourceLifecycle: model.ResourceLifecycle{
-			DesiredState:        model.PoolDesiredStateActive,
-			Phase:               model.PoolPhaseFailed,
-			LastOperationStatus: model.OperationStatusFailed,
+			DesiredState: model.DesiredStatePresent,
+			State:        model.PoolStateFailed,
 		},
 	}
 
@@ -190,9 +187,8 @@ func TestDockerWorkerWatcherSchedulesDeletedPoolWhenContainerRemains(t *testing.
 		ID:        "pool-1",
 		ProjectID: "project-1",
 		ResourceLifecycle: model.ResourceLifecycle{
-			DesiredState:        model.PoolDesiredStateDeleted,
-			Phase:               model.PoolPhaseDeleted,
-			LastOperationStatus: model.OperationStatusSuccess,
+			DesiredState: model.DesiredStateDeleted,
+			State:        model.PoolStateDeleted,
 		},
 	}
 	current := &container.InspectResponse{
@@ -229,15 +225,15 @@ type recordingPoolManager struct {
 }
 
 func (m *recordingPoolManager) GetPool(context.Context, string, string) (*model.Pool, error) {
-	return &model.Pool{ID: "pool-1", ProjectID: "project-1", ProviderInstanceID: "provider-1"}, nil
+	return &model.Pool{ID: "pool-1", ProjectID: "project-1", PoolManifest: model.PoolManifest{ProviderInstanceID: "provider-1"}}, nil
 }
 
 func (m *recordingPoolManager) ListPoolsForProviderInstance(context.Context, string, string) ([]model.Pool, error) {
-	return []model.Pool{{ID: "pool-1", ProjectID: "project-1", ProviderInstanceID: "provider-1"}}, nil
+	return []model.Pool{{ID: "pool-1", ProjectID: "project-1", PoolManifest: model.PoolManifest{ProviderInstanceID: "provider-1"}}}, nil
 }
 
 func (m *recordingPoolManager) ListPools(context.Context, string) ([]model.Pool, error) {
-	return []model.Pool{{ID: "pool-1", ProjectID: "project-1", ProviderInstanceID: "provider-1"}}, nil
+	return []model.Pool{{ID: "pool-1", ProjectID: "project-1", PoolManifest: model.PoolManifest{ProviderInstanceID: "provider-1"}}}, nil
 }
 
 func (m *recordingPoolManager) SchedulablePoolForSandbox(context.Context, *model.Sandbox) (*model.Pool, error) {

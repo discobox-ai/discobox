@@ -202,8 +202,8 @@ func encodeRegisterPoolRequest(
 	return nil
 }
 
-func encodeReportPoolSandboxRemovedRequest(
-	req *ReportPoolSandboxRemovedBody,
+func encodeReportPoolSandboxStatesRequest(
+	req *ReportPoolSandboxStatesBody,
 	r *http.Request,
 ) error {
 	const contentType = "application/json"

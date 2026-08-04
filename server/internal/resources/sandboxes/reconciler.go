@@ -63,22 +63,19 @@ func (r *SandboxReconciler) Reconcile(ctx context.Context, id string) error {
 		return nil
 	}
 	if current, gerr := r.store.GetSandbox(ctx, projectID, sandboxID); gerr == nil &&
-		current.LastOperationStatus == model.SandboxOperationStatusFailed {
+		current.ErrorMessage != nil && current.Converged() {
 		return nil // failure recorded on the resource: converged until new intent
 	}
 	return err
 }
 
-// stuckSandboxCutoff mirrors the worker backstop: an operation recorded as in
-// flight for this long means the dirty mark was lost.
-const stuckSandboxCutoff = 10 * time.Minute
-
-// ScanDirty is the level-triggered backstop: sandboxes whose recorded
-// operation has been in flight implausibly long are re-marked. Terminal
-// operations are excluded — a recorded failure is converged by design until
-// new intent arrives.
+// ScanDirty is the level-triggered backstop: every sandbox whose generations
+// disagree is re-marked, whatever it is doing and however long ago the mark was
+// lost (ADR 0017 §1). A settled failure has already advanced
+// ObservedGeneration, so it is converged by design and this does not re-drive
+// it until new intent arrives.
 func (r *SandboxReconciler) ScanDirty(ctx context.Context) ([]string, error) {
-	pairs, err := r.store.ListSandboxIDsWithStaleOperations(ctx, time.Now().Add(-stuckSandboxCutoff))
+	pairs, err := r.store.ListSandboxRefsNeedingReconcile(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -152,96 +149,79 @@ func WithSandboxAuthenticator(auth SandboxAuthenticator) SandboxReconcilerOption
 // desired state. The sandbox's current generation guards every write, so newer
 // intent arriving mid-run surfaces as a Superseded error, which the reconciler
 // maps to a clean settle (the newer intent's own mark re-runs the reconcile).
+//
+// Desired state answers existence only (ADR 0017 §9). Whether the sandbox is
+// running right now is not converged here and is not stored as intent: start,
+// stop, and restart are operations the service forwards to the pool agent, and
+// the resulting state comes back on the agent's reporting channel.
 func (r *SandboxReconciler) ReconcileSandbox(ctx context.Context, sandbox *model.Sandbox) error {
 	generation := sandbox.Generation
 	switch sandbox.DesiredState {
-	case model.SandboxDesiredStateRunning:
-		if sandbox.RestartGeneration > sandbox.RestartedGeneration {
-			return r.restart(ctx, sandbox, generation)
-		}
-		return r.start(ctx, sandbox, generation)
-	case model.SandboxDesiredStateStopped:
-		return r.stop(ctx, sandbox, generation)
-	case model.SandboxDesiredStateDeleted:
+	case model.DesiredStatePresent:
+		return r.ensure(ctx, sandbox, generation)
+	case model.DesiredStateDeleted:
 		return r.delete(ctx, sandbox, generation)
 	default:
 		return fmt.Errorf("unsupported sandbox desired state %q", sandbox.DesiredState)
 	}
 }
 
-func (r *SandboxReconciler) start(ctx context.Context, sandbox *model.Sandbox, generation int64) error {
-	if sandbox.Phase == model.SandboxPhaseRunning && sandbox.ObservedGeneration == generation && sandbox.LastOperationStatus == model.SandboxOperationStatusSuccess {
+// ensure brings the sandbox's container into existence, built from the current
+// spec. It does not start it.
+//
+// The one exception is a sandbox that has never run: creating a sandbox means
+// asking for one, so the first create issues a start. A later ensure — a
+// re-pin, a spec change, or a rebuild after the container was lost — creates
+// the container and leaves its power state alone, which is what makes a
+// recovered sandbox stay stopped until something uses it (ADR 0017 §13).
+func (r *SandboxReconciler) ensure(ctx context.Context, sandbox *model.Sandbox, generation int64) error {
+	// A settled failure is converged by design and needs new intent, not another
+	// attempt (ADR 0017 §4). Anything else gets the idempotent ensure below,
+	// because a dirty mark can come from an observation as well as from intent —
+	// "your container is gone" is the case that matters, and it arrives with the
+	// generations already in agreement.
+	if sandbox.Converged() && sandbox.ErrorMessage != nil {
 		return nil
 	}
 
-	if !sandboxIsLive(sandbox.Phase) {
+	firstCreate := sandboxHasNeverRun(sandbox.State)
+	if !model.SandboxIsLive(sandbox.State) {
 		r.repinToCurrentImage(ctx, sandbox)
 	}
 
-	status := "starting sandbox"
-	sandbox.MarkOperationRunning(&status)
-	if err := r.update(ctx, sandbox, generation); err != nil {
-		return err
-	}
-	if err := r.startSandbox(ctx, sandbox); err != nil {
-		sandbox.FailOperation(err.Error())
+	if err := r.createSandbox(ctx, sandbox, firstCreate); err != nil {
+		sandbox.ObservedGeneration = generation
+		sandbox.RecordFailure(model.SandboxStateFailed, err.Error())
 		if updateErr := r.update(ctx, sandbox, generation); updateErr != nil {
 			return updateErr
 		}
 		return err
 	}
-	if sandbox.Phase == model.SandboxPhaseAwaitingSource {
+
+	if sandbox.State == model.SandboxStateAwaitingSource {
 		// Parked waiting for the client's push. The generation is fully handled
 		// — there is nothing further to do until the client acts — so record it
-		// as observed and leave the create operation running rather than
-		// completing it as running.
+		// as observed and arm the give-up timer off StateChangedAt.
 		sandbox.ObservedGeneration = generation
 		if err := r.update(ctx, sandbox, generation); err != nil {
 			return err
 		}
 		return r.scheduleSourceAwaitTimeout(ctx, sandbox)
 	}
-	sandbox.ObservedGeneration = generation
-	sandbox.CompleteOperation(model.SandboxPhaseRunning, nil)
-	return r.update(ctx, sandbox, generation)
-}
 
-func (r *SandboxReconciler) restart(ctx context.Context, sandbox *model.Sandbox, generation int64) error {
-	status := "restarting sandbox"
-	sandbox.MarkOperationRunning(&status)
+	if sandbox.State == model.SandboxStateAwaitingSource {
+		// The push landed and the workspace is materialized, so the sandbox is
+		// no longer waiting for anything. Its container exists and is not
+		// running, which is what `stopped` says; the start below and the pool
+		// agent's report take it the rest of the way.
+		sandbox.SetState(model.SandboxStateStopped)
+	}
+	sandbox.ObservedGeneration = generation
+	sandbox.ErrorMessage = nil
 	if err := r.update(ctx, sandbox, generation); err != nil {
 		return err
 	}
-	if err := r.stopSandbox(ctx, sandbox); err != nil {
-		sandbox.FailOperation(err.Error())
-		if updateErr := r.update(ctx, sandbox, generation); updateErr != nil {
-			return updateErr
-		}
-		return err
-	}
-	if err := r.startSandbox(ctx, sandbox); err != nil {
-		sandbox.FailOperation(err.Error())
-		if updateErr := r.update(ctx, sandbox, generation); updateErr != nil {
-			return updateErr
-		}
-		return err
-	}
-	sandbox.RestartedGeneration = sandbox.RestartGeneration
-	sandbox.ObservedGeneration = generation
-	sandbox.CompleteOperation(model.SandboxPhaseRunning, nil)
-	return r.update(ctx, sandbox, generation)
-}
-
-// sandboxIsLive reports whether a sandbox has a container a user is currently
-// relying on, and so must not be re-pinned underneath them.
-//
-// Running is the obvious case. Awaiting-source is the subtle one: it is parked
-// mid-create waiting for the client's push, and replacing its container in the
-// middle of that hands the push a different sandbox than the one it started
-// against. Every other phase reaching a start — stopped, failed, or a create
-// that never got there — is about to have its container built.
-func sandboxIsLive(phase string) bool {
-	return phase == model.SandboxPhaseRunning || phase == model.SandboxPhaseAwaitingSource
+	return nil
 }
 
 // repinToCurrentImage moves a sandbox onto its harness config's current image as
@@ -280,47 +260,22 @@ func (r *SandboxReconciler) repinToCurrentImage(ctx context.Context, sb *model.S
 	sb.Image, sb.ImageDigest = image, digest
 }
 
-func (r *SandboxReconciler) stop(ctx context.Context, sandbox *model.Sandbox, generation int64) error {
-	if sandbox.Phase == model.SandboxPhaseStopped && sandbox.ObservedGeneration == generation && sandbox.LastOperationStatus == model.SandboxOperationStatusSuccess {
-		return nil
-	}
-
-	status := "stopping sandbox"
-	sandbox.MarkOperationRunning(&status)
-	if err := r.update(ctx, sandbox, generation); err != nil {
-		return err
-	}
-	if err := r.stopSandbox(ctx, sandbox); err != nil {
-		sandbox.FailOperation(err.Error())
-		if updateErr := r.update(ctx, sandbox, generation); updateErr != nil {
-			return updateErr
-		}
-		return err
-	}
-	sandbox.ObservedGeneration = generation
-	sandbox.CompleteOperation(model.SandboxPhaseStopped, nil)
-	return r.update(ctx, sandbox, generation)
-}
-
 func (r *SandboxReconciler) delete(ctx context.Context, sandbox *model.Sandbox, generation int64) error {
-	if sandbox.Phase == model.SandboxPhaseDeleted && sandbox.ObservedGeneration == generation && sandbox.LastOperationStatus == model.SandboxOperationStatusSuccess {
+	if sandbox.State == model.SandboxStateDeleted && sandbox.Converged() {
 		return r.softDelete(ctx, sandbox, generation)
 	}
 
-	status := "deleting sandbox"
-	sandbox.MarkOperationRunning(&status)
-	if err := r.update(ctx, sandbox, generation); err != nil {
-		return err
-	}
 	if err := r.deleteSandbox(ctx, sandbox); err != nil {
-		sandbox.FailOperation(err.Error())
+		sandbox.ObservedGeneration = generation
+		sandbox.RecordFailure(model.SandboxStateFailed, err.Error())
 		if updateErr := r.update(ctx, sandbox, generation); updateErr != nil {
 			return updateErr
 		}
 		return err
 	}
 	sandbox.ObservedGeneration = generation
-	sandbox.CompleteOperation(model.SandboxPhaseDeleted, nil)
+	sandbox.SetState(model.SandboxStateDeleted)
+	sandbox.ErrorMessage = nil
 	if err := r.update(ctx, sandbox, generation); err != nil {
 		return err
 	}
@@ -359,7 +314,10 @@ type SandboxAuthenticator interface {
 	CreateToken(ctx context.Context, claims sandboxauth.TokenClaims) (string, error)
 }
 
-func (r *SandboxReconciler) startSandbox(ctx context.Context, sb *model.Sandbox) error {
+// createSandbox brings the sandbox's container into existence and parks it if
+// its source has not arrived yet. It never starts anything: power is not this
+// reconciler's business (ADR 0017 §9).
+func (r *SandboxReconciler) createSandbox(ctx context.Context, sb *model.Sandbox, start bool) error {
 	provider, err := r.resolveProvider(ctx, sb)
 	if err != nil {
 		return err
@@ -373,7 +331,7 @@ func (r *SandboxReconciler) startSandbox(ctx context.Context, sb *model.Sandbox)
 	if err != nil {
 		return err
 	}
-	secretState, err = r.ensureSandboxCreated(ctx, sb, provider, secretState)
+	secretState, err = r.ensureSandboxCreated(ctx, sb, provider, secretState, start)
 	if err != nil {
 		return err
 	}
@@ -383,24 +341,15 @@ func (r *SandboxReconciler) startSandbox(ctx context.Context, sb *model.Sandbox)
 		}
 		return parkForSourcePush(sb)
 	}
-	runtimeSandbox, state, err := provider.Start(ctx, sandboxRefFromSandbox(sb), secretState)
-	if err != nil && !errors.Is(err, ErrAlreadyRunning) {
-		return err
-	}
-	if len(state) > 0 || secretState != nil {
-		sb.SecretState = state
-	}
-	if runtimeSandbox != nil {
-		setRuntimeState(sb, runtimeSandbox)
-	}
 	now := time.Now().UTC()
 	sb.LastActiveAt = &now
 	return nil
 }
 
-func (r *SandboxReconciler) ensureSandboxCreated(ctx context.Context, sb *model.Sandbox, provider Provider, secretState []byte) ([]byte, error) {
+func (r *SandboxReconciler) ensureSandboxCreated(ctx context.Context, sb *model.Sandbox, provider Provider, secretState []byte, start bool) ([]byte, error) {
 	ref := sandboxRefFromSandbox(sb)
 	createOpts := r.createOptionsFromSandbox(ctx, sb)
+	createOpts.Start = start
 	if err := r.applyTrustKey(ctx, sb, &createOpts); err != nil {
 		return secretState, err
 	}
@@ -416,38 +365,6 @@ func (r *SandboxReconciler) ensureSandboxCreated(ctx context.Context, sb *model.
 		setRuntimeState(sb, runtimeSandbox)
 	}
 	return secretState, nil
-}
-
-func (r *SandboxReconciler) stopSandbox(ctx context.Context, sb *model.Sandbox) error {
-	provider, err := r.resolveProvider(ctx, sb)
-	if err != nil {
-		return err
-	}
-	if provider == nil {
-		return nil
-	}
-	secretState, err := r.store.OpenSandboxSecretState(ctx, sb)
-	if err != nil {
-		return err
-	}
-	runtimeSandbox, state, err := provider.Stop(ctx, sandboxRefFromSandbox(sb), secretState, defaultSandboxStopTimeout)
-	if errors.Is(err, ErrNotFound) {
-		secretState, err = r.ensureSandboxCreated(ctx, sb, provider, secretState)
-		if err != nil {
-			return err
-		}
-		runtimeSandbox, state, err = provider.Stop(ctx, sandboxRefFromSandbox(sb), secretState, defaultSandboxStopTimeout)
-	}
-	if err != nil && !errors.Is(err, ErrNotRunning) {
-		return err
-	}
-	if len(state) > 0 || secretState != nil {
-		sb.SecretState = state
-	}
-	if runtimeSandbox != nil {
-		setRuntimeState(sb, runtimeSandbox)
-	}
-	return nil
 }
 
 func (r *SandboxReconciler) deleteSandbox(ctx context.Context, sb *model.Sandbox) error {
@@ -516,6 +433,7 @@ func (r *SandboxReconciler) createOptionsFromSandbox(ctx context.Context, sb *mo
 		},
 	}
 	opts.Image = ImageRef{Name: sb.Image, Digest: sb.ImageDigest}
+	opts.SpecFingerprint = sb.Fingerprint()
 	opts.PoolID = sb.PoolID
 	opts.Name = sb.Name
 	opts.Description = sb.Description
@@ -575,4 +493,14 @@ func setRuntimeState(sb *model.Sandbox, runtimeSandbox *Sandbox) {
 		return
 	}
 	sb.RuntimeState = data
+}
+
+// sandboxHasNeverRun reports whether a sandbox has yet to run for the first
+// time, which is the one case where creating it also starts it (see ensure).
+//
+// Pending is the obvious case. Awaiting-source is the same thing interrupted:
+// the sandbox was created, parked for its client's push, and has been waiting
+// ever since. Resuming it is still its first start.
+func sandboxHasNeverRun(state string) bool {
+	return state == model.SandboxStatePending || state == model.SandboxStateAwaitingSource
 }

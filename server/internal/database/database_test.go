@@ -94,7 +94,7 @@ func TestMigrateRenamesLocalVMProvidersToLibkrun(t *testing.T) {
 	if err := db.Write.Create(provider).Error; err != nil {
 		t.Fatalf("create legacy provider: %v", err)
 	}
-	pool := &model.Pool{ID: "pool-1", ProjectID: project.ID, Name: "pool", ProviderInstanceID: provider.ID}
+	pool := &model.Pool{ID: "pool-1", ProjectID: project.ID, PoolManifest: model.PoolManifest{Name: "pool", ProviderInstanceID: provider.ID}}
 	if err := db.Write.Create(pool).Error; err != nil {
 		t.Fatalf("create pool: %v", err)
 	}
@@ -162,7 +162,7 @@ func TestMigrateDropsJobQueueArtifactsWithForeignKeys(t *testing.T) {
 	if err := db.Write.Create(provider).Error; err != nil {
 		t.Fatalf("create provider: %v", err)
 	}
-	pool := &model.Pool{ID: "pool-1", ProjectID: project.ID, Name: "pool", ProviderInstanceID: provider.ID}
+	pool := &model.Pool{ID: "pool-1", ProjectID: project.ID, PoolManifest: model.PoolManifest{Name: "pool", ProviderInstanceID: provider.ID}}
 	if err := db.Write.Create(pool).Error; err != nil {
 		t.Fatalf("create pool: %v", err)
 	}
@@ -244,7 +244,7 @@ func TestMigrateReplacesLegacyPoolBootstrapTokenConstraint(t *testing.T) {
 	if err := db.Write.Create(provider).Error; err != nil {
 		t.Fatalf("create provider: %v", err)
 	}
-	pool := &model.Pool{ID: "pool-1", ProjectID: project.ID, Name: "pool", ProviderInstanceID: provider.ID}
+	pool := &model.Pool{ID: "pool-1", ProjectID: project.ID, PoolManifest: model.PoolManifest{Name: "pool", ProviderInstanceID: provider.ID}}
 	if err := db.Write.Create(pool).Error; err != nil {
 		t.Fatalf("create pool: %v", err)
 	}

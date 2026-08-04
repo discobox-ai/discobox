@@ -44,13 +44,47 @@ pressure details. It sets `ready`, `schedulable`, and `degraded` booleans for
 control-plane scheduling. Richer pressure/condition details can be sent as an
 opaque JSON blob for display.
 
-The Docker sandbox runtime also watches managed-container destroy events. When
-a sandbox container is removed outside the pool host API, the pool host reports the
-sandbox ID through the authenticated control-plane pool route
-`/api/pools/{pool_id}/sandbox-removed` and retries until accepted. Persisted
-per-sandbox proxy material supplies the periodic level-triggered backstop for
-removals that happened while the pool host was down; the material is reclaimed
-only after the report succeeds.
+## Sandbox State Channel
+
+The agent is the only component that can see whether a sandbox is running, so it
+says so on its own schedule rather than in reply to anything (ADR 0017 §10). The
+control plane holds no opinion about power state and never asks for one.
+
+Two deliveries, both load-bearing:
+
+- **Deltas**, from the Docker event stream — `start`, `die`, `stop`, `destroy`.
+  Watching only `destroy` is what once let a whole pool of dead containers go on
+  being reported as running: a container that stops and stays put emits nothing
+  else.
+- **A complete sync**, on agent start and on an interval, listing every sandbox
+  this agent hosts. A dropped delta heals at the next sync, where a delta-only
+  channel drifts permanently the first time a post fails. A sandbox the control
+  plane believes is here and that the sync omits has no container.
+
+Batches carry the agent's boot ID and a per-boot sequence, so a delayed delta
+cannot overwrite a newer sync. The interval's arrival doubles as pool liveness.
+
+`starting` and `stopping` are published by the power operations themselves
+(`sandboxruntime/power.go`): by the time a Docker event arrives the transition
+is over, and a state nobody can report is a state that does not exist. The
+channel deliberately has no `failed` — an exited container looks the same
+whether it was stopped on purpose or died, so failure is a judgement about an
+operation rather than something the runtime can observe.
+
+Power operations (`start`, `stop`, `restart`) answer with acceptance only, and
+serialise per sandbox on one mutex. That is also what makes on-demand start safe:
+sandbox-directed routes — the HTTP proxy, the sandbox-agent proxy, and the Git
+proxy — start a stopped sandbox before proxying (`server/autostart.go`), and ten
+concurrent requests produce one start. Control operations never auto-start.
+
+The runtime rebuilds any container whose recorded spec fingerprint no longer
+matches the one the control plane sent, which covers image upgrades and every
+other spec change through one comparison (ADR 0017 §5).
+
+Separately, persisted per-sandbox proxy material supplies a periodic
+level-triggered sweep that reclaims the material of sandboxes that no longer
+have a container here. That is only about reclaiming disk; sandbox loss travels
+on the state channel.
 
 The runtime reaps its own dead sandboxes' persistent volume trees
 (`pools/{pool_id}/sandboxes/{sandbox_id}`) on the same backstop, keeping each for

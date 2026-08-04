@@ -14,8 +14,11 @@ canceled when superseded by newer intent.
 
 At the system boundary, Discobot is three cooperating concepts:
 
-- **Server**: the control plane and API surface. It stores desired state and
-  coordinates reconciliation.
+- **Server**: the control plane and API surface. It stores which sandboxes
+  should exist and with what spec, and coordinates reconciliation toward that.
+  It holds no opinion about whether a sandbox is running: power state is
+  observed and reported by the pool agent, and start/stop/restart are
+  instructions forwarded to it (ADR 0017 §9).
 - **Pool**: the user-visible sharing boundary sandboxes are scheduled into,
   and its own runtime host (ADR-0003, ADR-0006). Sandboxes in one pool share a
   cache volume, a resource envelope, and a kernel/host; a pool binds immutably

@@ -33,7 +33,7 @@ func sandboxHTTPProxyHandler(service services.SandboxService) http.Handler {
 
 		projectID := chi.URLParam(r, "projectId")
 		sandboxID := chi.URLParam(r, "sandboxId")
-		lease, sandboxModel, err := service.AcquireSandboxHTTPClient(r.Context(), projectID, sandboxID, sandboxHTTPProxyScopes, services.SandboxPhasesRunning)
+		lease, sandboxModel, err := service.AcquireSandboxHTTPClient(r.Context(), projectID, sandboxID, sandboxHTTPProxyScopes)
 		if err != nil {
 			http.Error(w, err.Error(), statusCodeForProxyError(err))
 			return

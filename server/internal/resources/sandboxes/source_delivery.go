@@ -59,29 +59,27 @@ const sourcePushTimeout = 30 * time.Minute
 // harness now would run it against an empty workspace.
 //
 // Parking is a normal state rather than a failure, so it reports success and
-// the caller reads the phase. An expired wait is the exception: it returns an
-// error, which the caller records as a failed operation.
+// the caller reads the state. An expired wait is the exception: it returns an
+// error, which the caller records as a failure.
 func parkForSourcePush(sb *model.Sandbox) error {
-	// Check before parking: once SetPhase is a no-op for an already-parked
+	// Check before parking: once SetState is a no-op for an already-parked
 	// sandbox, the deadline below is the one set when it first parked.
-	if sb.Phase == model.SandboxPhaseAwaitingSource && !time.Now().Before(sourceAwaitDeadline(sb)) {
+	if sb.State == model.SandboxStateAwaitingSource && !time.Now().Before(sourceAwaitDeadline(sb)) {
 		return fmt.Errorf("timed out after %s waiting for the client to push the source", sourcePushTimeout)
 	}
-	sb.SetPhase(model.SandboxPhaseAwaitingSource)
-	status := "waiting for the client to push the source"
-	sb.StatusMessage = &status
+	sb.SetState(model.SandboxStateAwaitingSource)
 	return nil
 }
 
 // sourceAwaitDeadline is when waiting for a client's push stops and the sandbox
 // fails.
 //
-// It is derived, not stored: PhaseChangedAt is stamped once, when the sandbox
+// It is derived, not stored: StateChangedAt is stamped once, when the sandbox
 // parks, so every reconcile computes the same deadline and can re-arm the wake
 // for it. A stored deadline would instead be lost if the process died between
 // persisting it and scheduling the wake, and the sandbox would park forever.
 func sourceAwaitDeadline(sb *model.Sandbox) time.Time {
-	return sb.PhaseChangedAt.Add(sourcePushTimeout)
+	return sb.StateChangedAt.Add(sourcePushTimeout)
 }
 
 // scheduleSourceAwaitTimeout arranges the reconcile that enforces the deadline.
@@ -90,7 +88,7 @@ func sourceAwaitDeadline(sb *model.Sandbox) time.Time {
 // exactly at the deadline is why the engine's future-dated mark is used instead
 // of a periodic sweep over every sandbox.
 func (r *SandboxReconciler) scheduleSourceAwaitTimeout(ctx context.Context, sb *model.Sandbox) error {
-	if r.engine == nil || sb.PhaseChangedAt.IsZero() {
+	if r.engine == nil || sb.StateChangedAt.IsZero() {
 		return nil
 	}
 	return r.engine.MarkDirtyAt(ctx, SandboxResourceType, SandboxDirtyID(sb.ProjectID, sb.ID), sourceAwaitDeadline(sb))

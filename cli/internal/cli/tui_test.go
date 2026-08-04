@@ -20,7 +20,7 @@ import (
 func TestToTUISandboxUsesServerDisplayState(t *testing.T) {
 	sandbox := toTUISandbox(apimodel.Sandbox{
 		Runtime: apimodel.SandboxRuntime{
-			Phase:        "running",
+			State:        "running",
 			DesiredState: "stopped",
 			DisplayState: apiclientgen.NewOptSandboxRuntimeDisplayState("stopping"),
 		},
@@ -45,7 +45,7 @@ func TestAPIDataSourceCreateSessionUsesSharedRunCreation(t *testing.T) {
 		}
 		w.Header().Set("Content-Type", "application/json; charset=utf-8")
 		w.WriteHeader(http.StatusAccepted)
-		_, _ = w.Write([]byte(`{"id":"sbx_9qk5n25t2hh2rv00","projectId":"project-1","createdByUserId":"user-1","config":{"name":"tui-test","image":"","cpuVcpus":0,"memoryBytes":0,"storageBytes":0},"runtime":{"phase":"pending","desiredState":"stopped","lastOperationStatus":"pending","generation":1,"observedGeneration":0,"restartGeneration":0,"restartedGeneration":0},"createdAt":"2026-06-17T00:00:00Z","updatedAt":"2026-06-17T00:00:01Z"}`))
+		_, _ = w.Write([]byte(`{"id":"sbx_9qk5n25t2hh2rv00","projectId":"project-1","createdByUserId":"user-1","config":{"name":"tui-test","image":"","cpuVcpus":0,"memoryBytes":0,"storageBytes":0},"runtime":{"state":"pending","desiredState":"present","generation":1,"observedGeneration":0},"createdAt":"2026-06-17T00:00:00Z","updatedAt":"2026-06-17T00:00:01Z"}`))
 	}))
 	t.Cleanup(server.Close)
 

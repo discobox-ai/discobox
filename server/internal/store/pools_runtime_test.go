@@ -96,11 +96,13 @@ func TestPoolGenerationOptions(t *testing.T) {
 
 func sandboxForClaim(projectID, poolID string, cpuVCPUs float64, memoryBytes, storageBytes int64) *model.Sandbox {
 	return &model.Sandbox{
-		ProjectID:    projectID,
-		PoolID:       poolID,
-		CPUVCPUs:     cpuVCPUs,
-		MemoryBytes:  memoryBytes,
-		StorageBytes: storageBytes,
+		ProjectID: projectID,
+		PoolID:    poolID,
+		SandboxManifest: model.SandboxManifest{
+			CPUVCPUs:     cpuVCPUs,
+			MemoryBytes:  memoryBytes,
+			StorageBytes: storageBytes,
+		},
 	}
 }
 

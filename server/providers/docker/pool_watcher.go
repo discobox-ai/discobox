@@ -140,13 +140,15 @@ func (w dockerPoolWatcher) checkPool(ctx context.Context, pool *model.Pool, curr
 	if pool == nil || pool.ProjectID != w.projectID {
 		return false, nil
 	}
-	if current != nil && pool.DesiredState == model.PoolDesiredStateDeleted {
+	if current != nil && pool.DesiredState == model.DesiredStateDeleted {
 		return w.schedulePoolReconciliation(ctx, pool)
 	}
-	if pool.DesiredState != model.PoolDesiredStateActive || pool.RevokedAt != nil {
+	if pool.DesiredState != model.DesiredStatePresent || pool.RevokedAt != nil {
 		return false, nil
 	}
-	if pool.LastOperationStatus == model.OperationStatusFailed || pool.Phase == model.PoolPhaseFailed {
+	// Offline counts: it is a pool whose host stopped answering and is expected
+	// back, which is exactly what this watcher exists to recover (ADR 0017 §4).
+	if pool.ErrorMessage != nil || pool.State == model.PoolStateFailed || pool.State == model.PoolStateOffline {
 		// A created pool is stateful, so recover it whether or not a container
 		// is still present: its runtime may need to be recreated. A pool that
 		// never registered only reconciles while a container lingers to clean up.

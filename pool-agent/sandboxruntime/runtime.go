@@ -18,6 +18,7 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	cerrdefs "github.com/containerd/errdefs"
@@ -62,11 +63,16 @@ const (
 	// independently of sandbox.json — a resolved sentinel can change
 	// (rotation, grant approval, OAuth refresh) without touching the
 	// sandbox's static config (ADR 0012 §3).
-	sandboxSecretsMount      = "/.discobox/secrets" //nolint:gosec // Filesystem path, not a credential.
-	sandboxLabelManaged      = "discobox.sandbox.managed"
-	sandboxLabelProject      = "discobox.project_id"
-	sandboxLabelPool         = "discobox.pool_id"
-	sandboxLabelSandbox      = "discobox.sandbox_id"
+	sandboxSecretsMount = "/.discobox/secrets" //nolint:gosec // Filesystem path, not a credential.
+	sandboxLabelManaged = "discobox.sandbox.managed"
+	sandboxLabelProject = "discobox.project_id"
+	sandboxLabelPool    = "discobox.pool_id"
+	sandboxLabelSandbox = "discobox.sandbox_id"
+	// sandboxLabelSpec records the spec fingerprint the container was built
+	// from (ADR 0017 §5). Comparing it is how the runtime decides drift: one
+	// check covers the image pin, resources, sources, and anything added to the
+	// spec later, because the control plane hashes the whole manifest.
+	sandboxLabelSpec         = "discobox.spec_fingerprint"
 	sandboxManifestPublicKey = "controlPlane"
 )
 
@@ -136,8 +142,14 @@ type Runtime interface {
 	// reclaims whole orphaned pools; the caller is the control plane, which owns
 	// the authoritative pool set.
 	SyncKnownPools(ctx context.Context, knownPoolIDs []string) error
-	StartSandbox(ctx context.Context, sandboxID string, req *workerapimodel.PoolSandboxOperationRequest) (*Sandbox, error)
-	StopSandbox(ctx context.Context, sandboxID string, req *workerapimodel.PoolSandboxOperationRequest) (*Sandbox, error)
+	// Power operations instruct and report acceptance only; the resulting state
+	// is published by the state reporter (ADR 0017 §§9-10, see power.go).
+	StartSandbox(ctx context.Context, sandboxID string, req *workerapimodel.PoolSandboxOperationRequest) error
+	StopSandbox(ctx context.Context, sandboxID string, req *workerapimodel.PoolSandboxOperationRequest) error
+	RestartSandbox(ctx context.Context, sandboxID string, req *workerapimodel.PoolSandboxOperationRequest) error
+	// EnsureSandboxRunning starts a stopped sandbox on demand, for the
+	// sandbox-directed routes (ADR 0017 §12).
+	EnsureSandboxRunning(ctx context.Context, sandboxID string) error
 	GitRepositoryPath(ctx context.Context, sandboxID, repositoryID string) (GitRepositoryLocation, error)
 	HTTPBaseURL(ctx context.Context, sandboxID string, port int) (*url.URL, error)
 }
@@ -152,6 +164,12 @@ type DockerSandboxRuntime struct {
 	// hostState translates a container path into the daemon's view of it. It is
 	// applied only where a path is handed to the daemon.
 	hostState layout.HostMapping
+	// powerLocks serializes power operations per sandbox (see power.go).
+	powerLocks sync.Map
+	// statePublisher is the state channel's sink while a watcher is running
+	// (see statereport.go). Power operations use it to announce a transition
+	// they are about to make.
+	statePublisher atomic.Value
 }
 
 type DockerSandboxRuntimeConfig struct {
@@ -204,7 +222,7 @@ func (r *DockerSandboxRuntime) CreateSandbox(ctx context.Context, req *workerapi
 		return nil, fmt.Errorf("sandbox ID is required")
 	}
 	if existing, err := r.GetSandbox(ctx, sandboxID); err == nil {
-		drifted, err := r.containerImageDrifted(ctx, existing, req)
+		drifted, err := r.containerSpecDrifted(ctx, existing, req)
 		if err != nil {
 			return nil, err
 		}
@@ -219,14 +237,16 @@ func (r *DockerSandboxRuntime) CreateSandbox(ctx context.Context, req *workerapi
 			}
 			return existing, nil
 		}
-		// The control plane re-pinned this sandbox, which it only does for an
-		// upgrade (ADR 0016 §4, §5). Remove the container and fall through to
-		// build a new one; the sandbox's state lives in the pool-host binds
-		// prepared below, not in the container, so it survives.
-		slog.InfoContext(ctx, "replacing sandbox container for image upgrade",
-			"sandboxId", sandboxID, "imageDigest", strings.TrimSpace(optString(req.Config.ImageDigest)))
+		// The control plane changed this sandbox's spec — an image upgrade
+		// (ADR 0016 §4, §5) or any other manifest edit. Remove the container and
+		// fall through to build a new one; the sandbox's state lives in the
+		// pool-host binds prepared below, not in the container, so it survives.
+		slog.InfoContext(ctx, "replacing sandbox container for a spec change",
+			"sandboxId", sandboxID,
+			"imageDigest", strings.TrimSpace(optString(req.Config.ImageDigest)),
+			"specFingerprint", strings.TrimSpace(optString(req.Config.SpecFingerprint)))
 		if _, err := r.client.ContainerRemove(ctx, existing.ID, client.ContainerRemoveOptions{Force: true}); err != nil && !cerrdefs.IsNotFound(err) {
-			return nil, fmt.Errorf("remove sandbox container for upgrade: %w", err)
+			return nil, fmt.Errorf("remove sandbox container for a spec change: %w", err)
 		}
 	} else if !errors.Is(err, ErrNotFound) {
 		return nil, err
@@ -275,7 +295,7 @@ func (r *DockerSandboxRuntime) CreateSandbox(ctx context.Context, req *workerapi
 	name := sandboxContainerName(r.poolID, sandboxID)
 	cfg := &container.Config{
 		Image:        imageName,
-		Labels:       r.labels(sandboxID),
+		Labels:       r.labels(sandboxID, strings.TrimSpace(optString(config.SpecFingerprint))),
 		Env:          envList(envWithSandboxUser(baseEnv, user)),
 		WorkingDir:   sourceWorkingDirectory(req),
 		AttachStdout: true,
@@ -308,6 +328,14 @@ func (r *DockerSandboxRuntime) CreateSandbox(ctx context.Context, req *workerapi
 	if err != nil {
 		return nil, err
 	}
+	// A create that is not asked to start leaves the container built and down.
+	// That is what makes rebuilding a sandbox whose container was lost a
+	// restoration rather than a resurrection: the sandbox exists again, and
+	// whoever wants it running starts it (ADR 0017 §13).
+	if !config.Start.Or(true) {
+		return r.GetSandbox(ctx, sandboxID)
+	}
+	r.PublishSandboxState(ctx, sandboxID, StateStarting)
 	if _, err := r.client.ContainerStart(ctx, created.ID, client.ContainerStartOptions{}); err != nil {
 		return nil, err
 	}
@@ -370,12 +398,27 @@ func imageMatchesPin(imageID, pinnedDigest string) bool {
 // sandboxes run whatever their reference names, and treating a moved tag as
 // drift here would replace containers the control plane never decided to
 // upgrade.
-func (r *DockerSandboxRuntime) containerImageDrifted(ctx context.Context, existing *Sandbox, req *workerapimodel.PoolSandboxCreateRequest) (bool, error) {
+// containerSpecDrifted reports whether the existing container was built from a
+// different spec than the one this request describes (ADR 0017 §5).
+//
+// The comparison is against the fingerprint label, not against any individual
+// field. That is the point of hashing the whole manifest in the control plane:
+// a spec field added later is covered here for free, where a per-field check
+// would silently keep serving a stale container until somebody remembered to
+// extend it.
+//
+// An empty fingerprint in the request means the caller does not pin a spec, so
+// nothing has drifted — the same "unpinned means run what you have" rule the
+// image digest already follows. A container with no label predates fingerprinting
+// and is left alone for the same reason: rebuilding every existing sandbox the
+// first time an upgraded control plane talks to it would be an upgrade nobody
+// asked for.
+func (r *DockerSandboxRuntime) containerSpecDrifted(ctx context.Context, existing *Sandbox, req *workerapimodel.PoolSandboxCreateRequest) (bool, error) {
 	if req == nil {
 		return false, nil
 	}
-	pinned := strings.TrimSpace(optString(req.Config.ImageDigest))
-	if pinned == "" {
+	fingerprint := strings.TrimSpace(optString(req.Config.SpecFingerprint))
+	if fingerprint == "" {
 		return false, nil
 	}
 	inspect, err := r.client.ContainerInspect(ctx, existing.ID, client.ContainerInspectOptions{})
@@ -385,7 +428,11 @@ func (r *DockerSandboxRuntime) containerImageDrifted(ctx context.Context, existi
 		}
 		return false, err
 	}
-	return !imageMatchesPin(inspect.Container.Image, pinned), nil
+	recorded := strings.TrimSpace(inspect.Container.Config.Labels[sandboxLabelSpec])
+	if recorded == "" {
+		return false, nil
+	}
+	return recorded != fingerprint, nil
 }
 
 func (r *DockerSandboxRuntime) ensureImageAvailable(ctx context.Context, imageName string) error {
@@ -409,14 +456,14 @@ func (r *DockerSandboxRuntime) ensureImageAvailable(ctx context.Context, imageNa
 // that already exists, checking out the commit the client pushed and restoring
 // its workspace.
 //
-// Only push-delivered sources are touched. A clone-delivered source was fully
-// materialized when the sandbox was created, and re-running it would reset and
-// clean a workspace the sandbox may have been using since.
+// Only push-delivered sources are touched: a clone-delivered source was fully
+// materialized when the sandbox was created, so there is nothing here to
+// finish.
 //
 // Materialization is idempotent, so a repeat create that has nothing new to
-// deliver is a no-op; once it has actually finished a source, a marker (see
-// gitSourceMaterialized) makes every later repeat a true no-op too, so a stray
-// duplicate resume call can't reset/clean a workspace the sandbox has been
+// deliver is a no-op; once a source has actually been finished, a marker (see
+// gitMaterializedMarkerName) makes every later create a true no-op too, so a
+// stray duplicate call can't reset/clean a workspace the sandbox has been
 // using since.
 func (r *DockerSandboxRuntime) materializePushedSources(ctx context.Context, sandboxID string, req *workerapimodel.PoolSandboxCreateRequest) error {
 	if req == nil {
@@ -858,21 +905,19 @@ func (r *DockerSandboxRuntime) liveSandboxIDs(ctx context.Context) ([]string, er
 	return live, nil
 }
 
-// WatchProxyMaterial reconciles orphaned proxy material after establishing a
-// Docker event subscription, on managed sandbox destroy events, and on a slow
-// level-triggered backstop.
+// WatchProxyMaterial reclaims orphaned pool-local proxy material after
+// establishing a Docker event subscription, on managed sandbox destroy events,
+// and on a slow level-triggered backstop.
+//
+// It no longer reports anything to the control plane: a sandbox whose container
+// is gone is an observation, and observations travel on the state channel
+// (statereport.go). This is now only about reclaiming disk.
 func (r *DockerSandboxRuntime) WatchProxyMaterial(ctx context.Context, logger *slog.Logger) {
-	r.WatchSandboxRemovals(ctx, logger, nil)
-}
-
-// WatchSandboxRemovals watches Docker destroy events, reports the removed
-// sandbox to the control plane, and reclaims its pool-local proxy material.
-func (r *DockerSandboxRuntime) WatchSandboxRemovals(ctx context.Context, logger *slog.Logger, report func(context.Context, string, string) error) {
 	if logger == nil {
 		logger = slog.Default()
 	}
 	for ctx.Err() == nil {
-		if err := r.watchProxyMaterialEvents(ctx, logger, report); err != nil && ctx.Err() == nil {
+		if err := r.watchProxyMaterialEvents(ctx, logger); err != nil && ctx.Err() == nil {
 			logger.Warn("watch sandbox container events", "error", err)
 		}
 		if ctx.Err() != nil {
@@ -892,7 +937,10 @@ func (r *DockerSandboxRuntime) reconcileProxyMaterial(ctx context.Context, logge
 	}
 }
 
-func (r *DockerSandboxRuntime) reconcileSandboxRemovals(ctx context.Context, logger *slog.Logger, report func(context.Context, string, string) error, minAge time.Duration) {
+// reconcileSandboxMaterial reclaims the proxy material of sandboxes that no
+// longer have a container here. It is the level-triggered backstop for material
+// whose destroy event was missed while the agent was down.
+func (r *DockerSandboxRuntime) reconcileSandboxMaterial(ctx context.Context, logger *slog.Logger, minAge time.Duration) {
 	live, err := r.liveSandboxIDs(ctx)
 	if err != nil {
 		logger.Warn("list sandbox containers", "error", err)
@@ -903,11 +951,6 @@ func (r *DockerSandboxRuntime) reconcileSandboxRemovals(ctx context.Context, log
 		logger.Warn("scan orphaned sandbox material", "error", err)
 	}
 	for _, sandboxID := range orphans {
-		if report != nil {
-			if err := r.reportSandboxRemoved(ctx, logger, report, sandboxID, ""); err != nil {
-				return
-			}
-		}
 		if err := proxyagent.RemoveSandboxSentinels(r.projectID, r.poolID, sandboxID); err != nil {
 			logger.Warn("remove sandbox proxy sentinels", "sandboxID", sandboxID, "error", err)
 		}
@@ -1100,22 +1143,6 @@ func writeSandboxTombstone(path string, at time.Time, logger *slog.Logger) {
 	}
 }
 
-func (r *DockerSandboxRuntime) reportSandboxRemoved(ctx context.Context, logger *slog.Logger, report func(context.Context, string, string) error, sandboxID, containerID string) error {
-	for sandboxID != "" && ctx.Err() == nil {
-		err := report(ctx, sandboxID, containerID)
-		if err == nil {
-			return nil
-		}
-		logger.Warn("report removed sandbox", "sandboxID", sandboxID, "error", err)
-		select {
-		case <-ctx.Done():
-			return ctx.Err()
-		case <-time.After(proxyMaterialWatchBackoff):
-		}
-	}
-	return ctx.Err()
-}
-
 // watchProxyMaterialEvents subscribes to the Docker event stream for managed
 // sandbox container destroy events, then reconciles, then blocks kicking a
 // debounced reconcile for each burst. It returns when the stream ends or errors
@@ -1126,7 +1153,7 @@ func (r *DockerSandboxRuntime) reportSandboxRemoved(ctx context.Context, logger 
 // destroy that occurs in the window between opening the stream and the reconcile
 // completing. This closes the race where a container deleted just after a
 // startup reconcile would otherwise be missed until the next reconnect.
-func (r *DockerSandboxRuntime) watchProxyMaterialEvents(ctx context.Context, logger *slog.Logger, report func(context.Context, string, string) error) error {
+func (r *DockerSandboxRuntime) watchProxyMaterialEvents(ctx context.Context, logger *slog.Logger) error {
 	since := time.Now()
 	filters := client.Filters{}
 	filters = filters.Add("type", string(events.ContainerEventType))
@@ -1142,7 +1169,7 @@ func (r *DockerSandboxRuntime) watchProxyMaterialEvents(ctx context.Context, log
 	// Reconcile once the subscription is established. Destroys from `since`
 	// onward are buffered by the daemon and delivered on the stream below, so the
 	// reconcile and the replayed events together cover every deletion.
-	r.reconcileSandboxRemovals(ctx, logger, report, proxyMaterialGracePeriod)
+	r.reconcileSandboxMaterial(ctx, logger, proxyMaterialGracePeriod)
 	r.reconcileSandboxVolumes(ctx, logger, sandboxVolumeRetention)
 
 	debounce := time.NewTimer(0)
@@ -1159,13 +1186,7 @@ func (r *DockerSandboxRuntime) watchProxyMaterialEvents(ctx context.Context, log
 			return nil
 		case err := <-result.Err:
 			return err
-		case message := <-result.Messages:
-			if report != nil {
-				sandboxID := strings.TrimSpace(message.Actor.Attributes[sandboxLabelSandbox])
-				if err := r.reportSandboxRemoved(ctx, logger, report, sandboxID, strings.TrimSpace(message.Actor.ID)); err != nil {
-					return nil
-				}
-			}
+		case <-result.Messages:
 			if !pending {
 				pending = true
 				debounce.Reset(proxyMaterialEventDebounce)
@@ -1174,39 +1195,10 @@ func (r *DockerSandboxRuntime) watchProxyMaterialEvents(ctx context.Context, log
 			pending = false
 			r.reconcileProxyMaterial(ctx, logger)
 		case <-backstop.C:
-			r.reconcileSandboxRemovals(ctx, logger, report, proxyMaterialGracePeriod)
+			r.reconcileSandboxMaterial(ctx, logger, proxyMaterialGracePeriod)
 			r.reconcileSandboxVolumes(ctx, logger, sandboxVolumeRetention)
 		}
 	}
-}
-
-func (r *DockerSandboxRuntime) StartSandbox(ctx context.Context, sandboxID string, _ *workerapimodel.PoolSandboxOperationRequest) (*Sandbox, error) {
-	sb, err := r.GetSandbox(ctx, sandboxID)
-	if err != nil {
-		return nil, err
-	}
-	if sb.Status == StatusRunning {
-		return sb, nil
-	}
-	if _, err := r.client.ContainerStart(ctx, sb.ID, client.ContainerStartOptions{}); err != nil {
-		return nil, err
-	}
-	if err := r.waitForSandboxAgent(ctx, sandboxID); err != nil {
-		return nil, err
-	}
-	return r.GetSandbox(ctx, sandboxID)
-}
-
-func (r *DockerSandboxRuntime) StopSandbox(ctx context.Context, sandboxID string, _ *workerapimodel.PoolSandboxOperationRequest) (*Sandbox, error) {
-	sb, err := r.GetSandbox(ctx, sandboxID)
-	if err != nil {
-		return nil, err
-	}
-	timeout := 10
-	if _, err := r.client.ContainerStop(ctx, sb.ID, client.ContainerStopOptions{Timeout: &timeout}); err != nil {
-		return nil, err
-	}
-	return r.GetSandbox(ctx, sandboxID)
 }
 
 func (r *DockerSandboxRuntime) GitRepositoryPath(ctx context.Context, sandboxID, repositoryID string) (GitRepositoryLocation, error) {
@@ -1330,13 +1322,17 @@ func (r *DockerSandboxRuntime) filters(sandboxID string) client.Filters {
 	return args
 }
 
-func (r *DockerSandboxRuntime) labels(sandboxID string) map[string]string {
-	return map[string]string{
+func (r *DockerSandboxRuntime) labels(sandboxID, specFingerprint string) map[string]string {
+	labels := map[string]string{
 		sandboxLabelManaged: "true",
 		sandboxLabelProject: r.projectID,
 		sandboxLabelPool:    r.poolID,
 		sandboxLabelSandbox: sandboxID,
 	}
+	if specFingerprint != "" {
+		labels[sandboxLabelSpec] = specFingerprint
+	}
+	return labels
 }
 
 func (r *DockerSandboxRuntime) sandboxFromInspect(ctx context.Context, inspect container.InspectResponse) *Sandbox {
@@ -1509,33 +1505,44 @@ func (r *MemorySandboxRuntime) SyncKnownPools(context.Context, []string) error {
 	return nil
 }
 
-func (r *MemorySandboxRuntime) StartSandbox(_ context.Context, sandboxID string, _ *workerapimodel.PoolSandboxOperationRequest) (*Sandbox, error) {
+func (r *MemorySandboxRuntime) StartSandbox(_ context.Context, sandboxID string, _ *workerapimodel.PoolSandboxOperationRequest) error {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	sb := r.sandboxes[sandboxID]
 	if sb == nil {
-		return nil, ErrNotFound
+		return ErrNotFound
 	}
 	if sb.Status == StatusRunning {
-		return cloneSandbox(sb), nil
+		return nil
 	}
 	now := time.Now().UTC()
 	sb.Status = StatusRunning
 	sb.StartedAt = &now
-	return cloneSandbox(sb), nil
+	return nil
 }
 
-func (r *MemorySandboxRuntime) StopSandbox(_ context.Context, sandboxID string, _ *workerapimodel.PoolSandboxOperationRequest) (*Sandbox, error) {
+func (r *MemorySandboxRuntime) StopSandbox(_ context.Context, sandboxID string, _ *workerapimodel.PoolSandboxOperationRequest) error {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	sb := r.sandboxes[sandboxID]
 	if sb == nil {
-		return nil, ErrNotFound
+		return ErrNotFound
 	}
 	now := time.Now().UTC()
 	sb.Status = StatusStopped
 	sb.StoppedAt = &now
-	return cloneSandbox(sb), nil
+	return nil
+}
+
+func (r *MemorySandboxRuntime) RestartSandbox(ctx context.Context, sandboxID string, req *workerapimodel.PoolSandboxOperationRequest) error {
+	if err := r.StopSandbox(ctx, sandboxID, req); err != nil {
+		return err
+	}
+	return r.StartSandbox(ctx, sandboxID, req)
+}
+
+func (r *MemorySandboxRuntime) EnsureSandboxRunning(ctx context.Context, sandboxID string) error {
+	return r.StartSandbox(ctx, sandboxID, nil)
 }
 
 func (r *MemorySandboxRuntime) GitRepositoryPath(_ context.Context, sandboxID, repositoryID string) (GitRepositoryLocation, error) {
@@ -1876,6 +1883,12 @@ func (r *DockerSandboxRuntime) daemonPath(containerPath string) string {
 // materializeGitSource brings target to the state source describes, running
 // git as whichever identity actually owns target at each step.
 //
+// It does that exactly once per source. The first call clones (or, for a push
+// delivery, parks an empty repository the client pushes into and finalizes on
+// the resume) and then records a marker; every later call returns immediately.
+// Re-materializing a workspace the sandbox has been using is destructive, not
+// merely redundant — see gitMaterializedMarkerName.
+//
 // A push-delivered source's target is chowned to the sandbox user immediately
 // after initGitSource creates it (prepareSandboxVolumes / materializePushedSources),
 // so every operation below that point — reset, clean, checkout, workspace
@@ -1891,13 +1904,16 @@ func (r *DockerSandboxRuntime) materializeGitSource(ctx context.Context, source 
 		identity = user
 	}
 	if _, err := os.Stat(filepath.Join(target, ".git")); err == nil {
+		// A source is materialized exactly once, whatever its delivery mode.
+		// Every later create for the same sandbox — a resume, a re-pin, a
+		// reconcile that re-drives create after a failure — must leave the
+		// workspace alone: the sandbox has been using it since, so the
+		// reset/clean/checkout below would discard uncommitted work and move
+		// the branch off commits made inside the sandbox.
+		if gitSourceMaterialized(target) {
+			return nil
+		}
 		if gitSourceAwaitsPush(source) {
-			// Once the resumed create has finished a push-delivered source, a
-			// stray repeat must not touch it again: the sandbox may have been
-			// using the workspace since, and reset/clean would destroy that.
-			if gitSourceMaterialized(target) {
-				return nil
-			}
 			// A push-delivered repository with no commits is still waiting for
 			// the client. There is nothing to reset, clean, or check out yet,
 			// and every one of those fails against an unborn branch.
@@ -1920,10 +1936,7 @@ func (r *DockerSandboxRuntime) materializeGitSource(ctx context.Context, source 
 		if err := r.restoreGitWorkspace(ctx, target, source, identity.uid, identity.gid); err != nil {
 			return err
 		}
-		if gitSourceAwaitsPush(source) {
-			return markGitSourceMaterialized(target, user.uid, user.gid)
-		}
-		return nil
+		return markGitSourceMaterialized(target, user.uid, user.gid)
 	} else if !os.IsNotExist(err) {
 		return err
 	}
@@ -1952,7 +1965,10 @@ func (r *DockerSandboxRuntime) materializeGitSource(ctx context.Context, source 
 	if err := checkoutGitSource(ctx, target, source, identity.uid, identity.gid); err != nil {
 		return err
 	}
-	return r.restoreGitWorkspace(ctx, target, source, identity.uid, identity.gid)
+	if err := r.restoreGitWorkspace(ctx, target, source, identity.uid, identity.gid); err != nil {
+		return err
+	}
+	return markGitSourceMaterialized(target, user.uid, user.gid)
 }
 
 func (r *DockerSandboxRuntime) restoreGitWorkspace(ctx context.Context, repo string, source workerapimodel.GitSource, uid, gid int) error {
@@ -2044,25 +2060,26 @@ func gitSourceAwaitsPush(source workerapimodel.GitSource) bool {
 	return ok && string(delivery) == string(workerclient.GitSourceDeliveryPush)
 }
 
-// gitMaterializedMarkerName records, inside a push-delivered source's .git
-// directory, that materializeGitSource has already finished checking it out
-// and restoring its workspace once. It lives under .git rather than the
-// worktree so it never appears as an untracked file the sandbox user sees.
+// gitMaterializedMarkerName records, inside a source's .git directory, that
+// materializeGitSource has already finished checking it out and restoring its
+// workspace once, so no later create touches the workspace again. It lives
+// under .git rather than the worktree so it never appears as an untracked file
+// the sandbox user sees.
 const gitMaterializedMarkerName = "discobox-materialized"
 
 func gitMaterializedMarkerPath(target string) string {
 	return filepath.Join(target, ".git", gitMaterializedMarkerName)
 }
 
-// gitSourceMaterialized reports whether a push-delivered source has already
-// been finalized once, so a stray repeat create knows to leave it alone.
+// gitSourceMaterialized reports whether a source has already been finalized
+// once, so a repeat create knows to leave its workspace alone.
 func gitSourceMaterialized(target string) bool {
 	_, err := os.Stat(gitMaterializedMarkerPath(target))
 	return err == nil
 }
 
-// markGitSourceMaterialized records that a push-delivered source has been
-// finalized, owned by the same sandbox user as the rest of the repository.
+// markGitSourceMaterialized records that a source has been finalized, owned by
+// the same sandbox user as the rest of the repository.
 func markGitSourceMaterialized(target string, uid, gid int) error {
 	path := gitMaterializedMarkerPath(target)
 	if err := os.WriteFile(path, nil, 0o600); err != nil {

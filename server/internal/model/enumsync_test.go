@@ -42,28 +42,32 @@ var yamlEnumAliases = map[string]string{
 	"ResolveSandboxSecretResponse.status": "SecretRequest.status",
 	"ResourceChangedEvent.action":         "ProjectEvent.action",
 	"ResourceListedEvent.action":          "ProjectEvent.action",
+	// Desired state is genuinely shared now that it answers existence only, so
+	// the tag on the embedded ResourceLifecycle is authoritative for both
+	// resources rather than a union matching neither (ADR 0017 §2).
+	"Pool.desiredState":           "ResourceLifecycle.desiredState",
+	"SandboxRuntime.desiredState": "ResourceLifecycle.desiredState",
 }
 
 // yamlOwnedEnums lists contract enums with no authoritative Go model tag, with
 // the reason. The contract in server.yaml is the single source of truth for
 // these; server code must follow it.
 var yamlOwnedEnums = map[string]string{
-	"Job.status":                         "job status values are owned by the orchestration module; model.Job.Status is untagged text",
-	"Pool.desiredState":                  "per-resource narrowing of the embedded ResourceLifecycle, whose shared tag cannot match both Pool and SandboxRuntime",
-	"Pool.phase":                         "per-resource narrowing of the embedded ResourceLifecycle",
-	"Pool.activeOperation":               "per-resource narrowing of the embedded ResourceLifecycle",
-	"Pool.lastOperationStatus":           "per-resource narrowing of the embedded ResourceLifecycle",
-	"SandboxRuntime.desiredState":        "per-resource narrowing of the embedded ResourceLifecycle",
-	"SandboxRuntime.phase":               "per-resource narrowing of the embedded ResourceLifecycle",
-	"SandboxRuntime.activeOperation":     "per-resource narrowing of the embedded ResourceLifecycle",
-	"SandboxRuntime.lastOperationStatus": "per-resource narrowing of the embedded ResourceLifecycle",
-	"SandboxRuntime.displayState":        "derived presentation state computed by the API layer, not stored on the model",
-	"SandboxConfig.harnessMode":          "model.Sandbox.HarnessMode is untagged text; run/config is a contract-level restriction",
-	"SandboxCreateConfig.harnessMode":    "model.Sandbox.HarnessMode is untagged text; run/config is a contract-level restriction",
-	"SandboxExec.status":                 "exec lifecycle is owned by the sandbox-agent",
-	"SandboxExecLogEntry.stream":         "exec log streams are owned by the sandbox-agent",
-	"HarnessVolume.volume":               "value set is owned by harness.VolumeKind in the root module, not a server/internal/model enum tag",
-	"SandboxUpgrade.reason":              "derived at read time by services.SandboxUpgrade from the pin and the harness config; nothing on the model stores it",
+	"Job.status": "job status values are owned by the orchestration module; model.Job.Status is untagged text",
+	// Desired state is now identical on both resources, so the shared tag on
+	// ResourceLifecycle is authoritative and these need no exemption. Observed
+	// state still diverges per resource, which is what the shared tag cannot
+	// express (ADR 0017 §2).
+	"Pool.state":                      "per-resource narrowing of the embedded ResourceLifecycle, whose shared tag is the union of both vocabularies",
+	"SandboxRuntime.state":            "per-resource narrowing of the embedded ResourceLifecycle",
+	"SandboxRuntime.displayState":     "derived presentation state computed by the API layer, not stored on the model",
+	"PoolSandboxState.state":          "the pool agent's reporting vocabulary: the states a runtime can actually observe, a subset of the model's",
+	"SandboxConfig.harnessMode":       "model.Sandbox.HarnessMode is untagged text; run/config is a contract-level restriction",
+	"SandboxCreateConfig.harnessMode": "model.Sandbox.HarnessMode is untagged text; run/config is a contract-level restriction",
+	"SandboxExec.status":              "exec lifecycle is owned by the sandbox-agent",
+	"SandboxExecLogEntry.stream":      "exec log streams are owned by the sandbox-agent",
+	"HarnessVolume.volume":            "value set is owned by harness.VolumeKind in the root module, not a server/internal/model enum tag",
+	"SandboxUpgrade.reason":           "derived at read time by services.SandboxUpgrade from the pin and the harness config; nothing on the model stores it",
 }
 
 func TestModelEnumTagsMatchOpenAPI(t *testing.T) {

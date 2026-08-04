@@ -26,7 +26,7 @@ func TestProjectFlagCompletionListsDefaultAndProjects(t *testing.T) {
 
 func TestSandboxPositionalCompletionListsSandboxes(t *testing.T) {
 	server := completionServer(t, map[string]string{
-		"/projects/project-1/sandboxes": `{"sandboxes":[{"id":"sandbox-1","projectId":"project-1","createdByUserId":"user-1","config":{"name":"Alpha","image":"","cpuVcpus":0,"memoryBytes":0,"storageBytes":0},"runtime":{"phase":"running","desiredState":"running","lastOperationStatus":"success","generation":1,"observedGeneration":1,"restartGeneration":0,"restartedGeneration":0},"createdAt":"2026-01-01T00:00:00Z","updatedAt":"2026-01-01T00:00:00Z"}]}`,
+		"/projects/project-1/sandboxes": `{"sandboxes":[{"id":"sandbox-1","projectId":"project-1","createdByUserId":"user-1","config":{"name":"Alpha","image":"","cpuVcpus":0,"memoryBytes":0,"storageBytes":0},"runtime":{"state":"running","desiredState":"present","generation":1,"observedGeneration":1},"createdAt":"2026-01-01T00:00:00Z","updatedAt":"2026-01-01T00:00:00Z"}]}`,
 	})
 	root := NewRootCommand()
 	setFlag(t, root, "server", server.URL)
@@ -43,7 +43,7 @@ func TestSandboxPositionalCompletionListsSandboxes(t *testing.T) {
 
 func TestPoolFlagCompletionListsPools(t *testing.T) {
 	server := completionServer(t, map[string]string{
-		"/projects/project-1/pools": `{"pools":[{"id":"pool-1","projectId":"project-1","name":"Default","providerInstanceId":"provider-1","cpuVcpus":0,"memoryBytes":0,"storageBytes":0,"ready":true,"schedulable":true,"degraded":false,"availableCpuVcpus":0,"availableMemoryBytes":0,"availableStorageBytes":0,"desiredState":"active","phase":"active","lastOperationStatus":"success","generation":1,"observedGeneration":1,"createdAt":"2026-01-01T00:00:00Z","updatedAt":"2026-01-01T00:00:00Z"}]}`,
+		"/projects/project-1/pools": `{"pools":[{"id":"pool-1","projectId":"project-1","name":"Default","providerInstanceId":"provider-1","cpuVcpus":0,"memoryBytes":0,"storageBytes":0,"ready":true,"schedulable":true,"degraded":false,"availableCpuVcpus":0,"availableMemoryBytes":0,"availableStorageBytes":0,"desiredState":"present","state":"active","generation":1,"observedGeneration":1,"createdAt":"2026-01-01T00:00:00Z","updatedAt":"2026-01-01T00:00:00Z"}]}`,
 	})
 	root := NewRootCommand()
 	setFlag(t, root, "server", server.URL)

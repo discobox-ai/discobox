@@ -5288,14 +5288,14 @@ func decodeRegisterPoolResponse(resp *http.Response) (res RegisterPoolRes, _ err
 	return res, nil
 }
 
-func decodeReportPoolSandboxRemovedResponse(resp *http.Response) (res ReportPoolSandboxRemovedRes, _ error) {
+func decodeReportPoolSandboxStatesResponse(resp *http.Response) (res ReportPoolSandboxStatesRes, _ error) {
 	switch resp.StatusCode {
 	case 204:
 		// Code 204.
-		return &ReportPoolSandboxRemovedNoContent{}, nil
+		return &ReportPoolSandboxStatesNoContent{}, nil
 	}
 	// Default response.
-	res, err := func() (res ReportPoolSandboxRemovedRes, err error) {
+	res, err := func() (res ReportPoolSandboxStatesRes, err error) {
 		ct, _, err := mime.ParseMediaType(resp.Header.Get("Content-Type"))
 		if err != nil {
 			return res, errors.Wrap(err, "parse media type")

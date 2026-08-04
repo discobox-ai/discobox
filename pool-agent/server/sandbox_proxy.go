@@ -14,22 +14,22 @@ import (
 const sandboxAgentAuthorizationHeader = "X-Discobox-Sandbox-Agent-Authorization"
 
 func registerSandboxProxyRoutes(router chi.Router, service *sandboxService) {
-	router.Handle("/api/project/{projectId}/pool/{poolId}/sandboxes/{sandboxId}/http/{port}", service.sandboxHTTPProxyHandler())
-	router.Handle("/api/project/{projectId}/pool/{poolId}/sandboxes/{sandboxId}/http/{port}/*", service.sandboxHTTPProxyHandler())
+	router.Handle("/api/project/{projectId}/pool/{poolId}/sandboxes/{sandboxId}/http/{port}", service.autoStart(service.sandboxHTTPProxyHandler()))
+	router.Handle("/api/project/{projectId}/pool/{poolId}/sandboxes/{sandboxId}/http/{port}/*", service.autoStart(service.sandboxHTTPProxyHandler()))
 
-	router.Method(http.MethodGet, "/api/project/{projectId}/pool/{poolId}/sandboxes/{sandboxId}/harness-hooks", service.sandboxAgentProxyHandler())
-	router.Method(http.MethodGet, "/api/project/{projectId}/pool/{poolId}/sandboxes/{sandboxId}/execs", service.sandboxAgentProxyHandler())
-	router.Method(http.MethodPost, "/api/project/{projectId}/pool/{poolId}/sandboxes/{sandboxId}/execs", service.sandboxAgentProxyHandler())
-	router.Method(http.MethodGet, "/api/project/{projectId}/pool/{poolId}/sandboxes/{sandboxId}/execs/{execId}", service.sandboxAgentProxyHandler())
-	router.Method(http.MethodDelete, "/api/project/{projectId}/pool/{poolId}/sandboxes/{sandboxId}/execs/{execId}", service.sandboxAgentProxyHandler())
-	router.Method(http.MethodGet, "/api/project/{projectId}/pool/{poolId}/sandboxes/{sandboxId}/execs/{execId}/logs", service.sandboxAgentProxyHandler())
-	router.Method(http.MethodPost, "/api/project/{projectId}/pool/{poolId}/sandboxes/{sandboxId}/execs/{execId}/attach", service.sandboxAgentProxyHandler())
-	router.Method(http.MethodGet, "/api/project/{projectId}/pool/{poolId}/sandboxes/{sandboxId}/execs/{execId}/attach", service.sandboxAgentProxyHandler())
-	router.Method(http.MethodPost, "/api/project/{projectId}/pool/{poolId}/sandboxes/{sandboxId}/execs/{execId}/start", service.sandboxAgentProxyHandler())
-	router.Method(http.MethodGet, "/api/project/{projectId}/pool/{poolId}/sandboxes/{sandboxId}/execs/{execId}/events", service.sandboxAgentProxyHandler())
-	router.Method(http.MethodGet, "/api/project/{projectId}/pool/{poolId}/sandboxes/{sandboxId}/execs/{execId}/resources", service.sandboxAgentProxyHandler())
-	router.Method(http.MethodGet, "/api/project/{projectId}/pool/{poolId}/sandboxes/{sandboxId}/execs/{execId}/resources/history", service.sandboxAgentProxyHandler())
-	router.Method(http.MethodGet, "/api/project/{projectId}/pool/{poolId}/sandboxes/{sandboxId}/execs/{execId}/resources/stream", service.sandboxAgentProxyHandler())
+	router.Method(http.MethodGet, "/api/project/{projectId}/pool/{poolId}/sandboxes/{sandboxId}/harness-hooks", service.autoStart(service.sandboxAgentProxyHandler()))
+	router.Method(http.MethodGet, "/api/project/{projectId}/pool/{poolId}/sandboxes/{sandboxId}/execs", service.autoStart(service.sandboxAgentProxyHandler()))
+	router.Method(http.MethodPost, "/api/project/{projectId}/pool/{poolId}/sandboxes/{sandboxId}/execs", service.autoStart(service.sandboxAgentProxyHandler()))
+	router.Method(http.MethodGet, "/api/project/{projectId}/pool/{poolId}/sandboxes/{sandboxId}/execs/{execId}", service.autoStart(service.sandboxAgentProxyHandler()))
+	router.Method(http.MethodDelete, "/api/project/{projectId}/pool/{poolId}/sandboxes/{sandboxId}/execs/{execId}", service.autoStart(service.sandboxAgentProxyHandler()))
+	router.Method(http.MethodGet, "/api/project/{projectId}/pool/{poolId}/sandboxes/{sandboxId}/execs/{execId}/logs", service.autoStart(service.sandboxAgentProxyHandler()))
+	router.Method(http.MethodPost, "/api/project/{projectId}/pool/{poolId}/sandboxes/{sandboxId}/execs/{execId}/attach", service.autoStart(service.sandboxAgentProxyHandler()))
+	router.Method(http.MethodGet, "/api/project/{projectId}/pool/{poolId}/sandboxes/{sandboxId}/execs/{execId}/attach", service.autoStart(service.sandboxAgentProxyHandler()))
+	router.Method(http.MethodPost, "/api/project/{projectId}/pool/{poolId}/sandboxes/{sandboxId}/execs/{execId}/start", service.autoStart(service.sandboxAgentProxyHandler()))
+	router.Method(http.MethodGet, "/api/project/{projectId}/pool/{poolId}/sandboxes/{sandboxId}/execs/{execId}/events", service.autoStart(service.sandboxAgentProxyHandler()))
+	router.Method(http.MethodGet, "/api/project/{projectId}/pool/{poolId}/sandboxes/{sandboxId}/execs/{execId}/resources", service.autoStart(service.sandboxAgentProxyHandler()))
+	router.Method(http.MethodGet, "/api/project/{projectId}/pool/{poolId}/sandboxes/{sandboxId}/execs/{execId}/resources/history", service.autoStart(service.sandboxAgentProxyHandler()))
+	router.Method(http.MethodGet, "/api/project/{projectId}/pool/{poolId}/sandboxes/{sandboxId}/execs/{execId}/resources/stream", service.autoStart(service.sandboxAgentProxyHandler()))
 }
 
 func (s *sandboxService) sandboxHTTPProxyHandler() http.Handler {

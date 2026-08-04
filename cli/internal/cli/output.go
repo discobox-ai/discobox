@@ -199,7 +199,7 @@ func (a *App) writePool(cmd *cobra.Command, pool *apimodel.Pool) error {
 	fmt.Fprintf(tw, "ENVELOPE CPU\t%s\n", formatPoolCPU(pool.CpuVcpus))
 	fmt.Fprintf(tw, "ENVELOPE MEMORY\t%s\n", formatPoolBytes(pool.MemoryBytes))
 	fmt.Fprintf(tw, "ENVELOPE STORAGE\t%s\n", formatPoolBytes(pool.StorageBytes))
-	fmt.Fprintf(tw, "PHASE\t%s\n", pool.Phase)
+	fmt.Fprintf(tw, "STATE\t%s\n", pool.State)
 	fmt.Fprintf(tw, "READY\t%t\n", pool.Ready)
 	fmt.Fprintf(tw, "SCHEDULABLE\t%t\n", pool.Schedulable)
 	fmt.Fprintf(tw, "CAPACITY\t%s\n", formatPoolCapacity(*pool))
@@ -223,14 +223,14 @@ func (a *App) writePools(cmd *cobra.Command, pools []apimodel.Pool, defaultPoolI
 		defaultID = defaultPoolID[0]
 	}
 	tw := tabwriter.NewWriter(cmd.OutOrStdout(), 0, 0, 2, ' ', 0)
-	fmt.Fprintln(tw, "ID\tNAME\tPROVIDER\tDEFAULT\tPHASE\tREADY\tCPU\tMEMORY\tSTORAGE\tUPDATED\tMESSAGE")
+	fmt.Fprintln(tw, "ID\tNAME\tPROVIDER\tDEFAULT\tSTATE\tREADY\tCPU\tMEMORY\tSTORAGE\tUPDATED\tMESSAGE")
 	for _, pool := range pools {
 		fmt.Fprintf(tw, "%s\t%s\t%s\t%s\t%s\t%t\t%s\t%s\t%s\t%s\t%s\n",
 			pool.ID,
 			pool.Name,
 			pool.ProviderInstanceId,
 			formatDefaultMarker(pool.ID == defaultID),
-			pool.Phase,
+			pool.State,
 			pool.Ready,
 			formatPoolCPU(pool.CpuVcpus),
 			formatPoolBytes(pool.MemoryBytes),
@@ -266,11 +266,12 @@ func formatPoolCapacity(pool apimodel.Pool) string {
 }
 
 // poolMessage surfaces the most relevant human-readable detail on the pool.
+//
+// Only the error remains: the status message it used to fall back to was
+// narration of an operation in flight, and operations are no longer a thing the
+// control plane records (ADR 0017 §2).
 func poolMessage(pool apimodel.Pool) string {
 	if message, ok := pool.ErrorMessage.Get(); ok && strings.TrimSpace(message) != "" {
-		return message
-	}
-	if message, ok := pool.StatusMessage.Get(); ok && strings.TrimSpace(message) != "" {
 		return message
 	}
 	return ""

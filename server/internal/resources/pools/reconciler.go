@@ -68,9 +68,9 @@ func (r *PoolReconciler) Reconcile(ctx context.Context, id string) error {
 	}
 	generation := pool.Generation
 	switch pool.DesiredState {
-	case model.PoolDesiredStateActive:
+	case model.DesiredStatePresent:
 		return r.reconcileActive(ctx, pool, generation)
-	case model.PoolDesiredStateDeleted:
+	case model.DesiredStateDeleted:
 		return r.reconcileDeleted(ctx, pool, generation)
 	default:
 		return fmt.Errorf("unsupported pool desired state %q", pool.DesiredState)
@@ -110,16 +110,14 @@ func (r *PoolReconciler) reconcileActive(ctx context.Context, pool *model.Pool, 
 		return nil // provider type does not own pool runtimes
 	}
 
-	alreadySuccessful := pool.ObservedGeneration == generation && pool.LastOperationStatus == model.OperationStatusSuccess
-	status := "launching pool host"
-	if alreadySuccessful {
-		status = "checking pool host"
-	} else {
-		pool.SetPhase(model.PoolPhaseLaunching)
-	}
-	pool.MarkOperationRunning(&status)
-	if err := r.update(ctx, pool, generation); err != nil {
-		return err
+	// Converged with no recorded error means this generation has already been
+	// brought up once and we are re-checking it, not launching it.
+	alreadySuccessful := pool.Converged() && pool.ErrorMessage == nil
+	if !alreadySuccessful {
+		pool.SetState(model.PoolStatePending)
+		if err := r.update(ctx, pool, generation); err != nil {
+			return err
+		}
 	}
 
 	// A runtime that came up but whose agent never registered is repaired in
@@ -150,7 +148,7 @@ func (r *PoolReconciler) reconcileActive(ctx context.Context, pool *model.Pool, 
 	if err != nil {
 		return err
 	}
-	if current.LastOperationStatus == model.OperationStatusFailed {
+	if current.ErrorMessage != nil {
 		return nil
 	}
 	// Ready/Schedulable/Degraded are agent-reported fields, written by
@@ -161,13 +159,14 @@ func (r *PoolReconciler) reconcileActive(ctx context.Context, pool *model.Pool, 
 	// the stale pre-call value.
 	current.RuntimeState = pool.RuntimeState
 	current.ObservedGeneration = generation
-	phase := model.PoolPhaseRegistering
+	state := model.PoolStateRegistering
 	if alreadySuccessful {
-		phase = current.Phase
+		state = current.State
 	} else if current.RegisteredAt != nil || current.Ready {
-		phase = model.PoolPhaseActive
+		state = model.PoolStateActive
 	}
-	current.CompleteOperation(phase, nil)
+	current.SetState(state)
+	current.ErrorMessage = nil
 	return r.update(ctx, current, generation)
 }
 
@@ -177,11 +176,10 @@ func (r *PoolReconciler) registrationExpired(pool *model.Pool) bool {
 	if poolRegistrationTimeout <= 0 {
 		return false
 	}
-	return pool.Phase == model.PoolPhaseRegistering &&
-		pool.LastOperationStatus == model.OperationStatusRunning &&
+	return pool.State == model.PoolStateRegistering &&
 		pool.RegisteredAt == nil &&
 		pool.LastSeenAt == nil &&
-		time.Since(pool.PhaseChangedAt) > poolRegistrationTimeout
+		time.Since(pool.StateChangedAt) > poolRegistrationTimeout
 }
 
 func (r *PoolReconciler) reconcileDeleted(ctx context.Context, pool *model.Pool, generation int64) error {
@@ -192,18 +190,12 @@ func (r *PoolReconciler) reconcileDeleted(ctx context.Context, pool *model.Pool,
 	if assigned > 0 {
 		message := fmt.Sprintf("pool has %d assigned sandbox(es)", assigned)
 		pool.ObservedGeneration = generation
-		pool.FailOperation(message)
+		pool.RecordFailure(model.PoolStateFailed, message)
 		if updateErr := r.update(ctx, pool, generation); updateErr != nil {
 			return updateErr
 		}
 		return fmt.Errorf("%s", message)
 	}
-	status := "deleting pool host"
-	pool.MarkOperationRunning(&status)
-	if err := r.update(ctx, pool, generation); err != nil {
-		return err
-	}
-
 	project, provider, runtimeProvider, err := r.resolve(ctx, pool)
 	if err != nil {
 		return err
@@ -211,7 +203,7 @@ func (r *PoolReconciler) reconcileDeleted(ctx context.Context, pool *model.Pool,
 	if runtimeProvider != nil && provider != nil {
 		if err := runtimeProvider.RemovePool(ctx, r.pools, project, provider, pool); err != nil {
 			pool.ObservedGeneration = generation
-			pool.FailOperation(err.Error())
+			pool.RecordFailure(model.PoolStateFailed, err.Error())
 			if updateErr := r.update(ctx, pool, generation); updateErr != nil {
 				return updateErr
 			}
@@ -226,7 +218,8 @@ func (r *PoolReconciler) reconcileDeleted(ctx context.Context, pool *model.Pool,
 	pool.RevokedAt = &now
 	pool.RuntimeState = nil
 	pool.ObservedGeneration = generation
-	pool.CompleteOperation(model.PoolPhaseDeleted, nil)
+	pool.SetState(model.PoolStateDeleted)
+	pool.ErrorMessage = nil
 	if err := r.update(ctx, pool, generation); err != nil {
 		return err
 	}
@@ -252,10 +245,10 @@ func (r *PoolReconciler) failReconcile(pool *model.Pool, generation int64, messa
 	pool.Ready = false
 	pool.Schedulable = false
 	if !pool.EverCreated() {
-		pool.FailOperation(message)
+		pool.RecordFailure(model.PoolStateFailed, message)
 		return
 	}
-	pool.FailOperationRetryable(model.PoolPhaseOffline, message)
+	pool.RecordFailure(model.PoolStateOffline, message)
 }
 
 // repairAssignedPool repairs a pool whose reconcile failed while sandboxes

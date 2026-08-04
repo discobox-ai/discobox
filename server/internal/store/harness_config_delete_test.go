@@ -23,7 +23,12 @@ func TestDeleteHarnessConfigSandboxReferences(t *testing.T) {
 	}
 	newSandbox := func(id, harnessConfigID string) {
 		if err := s.CreateSandbox(ctx, &model.Sandbox{
-			ID: id, ProjectID: "project-1", PoolID: "pool-1", CreatedByUserID: "user-1", Name: id, HarnessConfigID: &harnessConfigID,
+			ID:              id,
+			ProjectID:       "project-1",
+			PoolID:          "pool-1",
+			CreatedByUserID: "user-1",
+			Name:            id,
+			SandboxManifest: model.SandboxManifest{HarnessConfigID: &harnessConfigID},
 		}); err != nil {
 			t.Fatalf("create sandbox: %v", err)
 		}

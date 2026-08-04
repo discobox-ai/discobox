@@ -24,7 +24,7 @@ func createTestPool(t *testing.T, s *store.Store, projectID, poolID string) {
 		}
 	}
 	if _, err := s.GetPool(ctx, projectID, poolID); err != nil {
-		if err := s.CreatePool(ctx, &model.Pool{ID: poolID, ProjectID: projectID, Name: poolID, ProviderInstanceID: providerID}); err != nil {
+		if err := s.CreatePool(ctx, &model.Pool{ID: poolID, ProjectID: projectID, PoolManifest: model.PoolManifest{Name: poolID, ProviderInstanceID: providerID}}); err != nil {
 			t.Fatalf("create pool %s: %v", poolID, err)
 		}
 	}

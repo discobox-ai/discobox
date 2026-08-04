@@ -189,7 +189,7 @@ func TestLibkrunEndToEnd(t *testing.T) {
 		t.Fatal(err)
 	}
 	provider := &model.SandboxProviderInstance{ID: "provider-e2e", ProjectID: "project-e2e", Type: ProviderType}
-	pool := &model.Pool{ID: poolID, ProjectID: "project-e2e", ProviderInstanceID: provider.ID}
+	pool := &model.Pool{ID: poolID, ProjectID: "project-e2e", PoolManifest: model.PoolManifest{ProviderInstanceID: provider.ID}}
 	mint := func(context.Context) (poolagent.Bootstrap, error) {
 		return poolagent.Bootstrap{
 			Token:           bootstrapToken,

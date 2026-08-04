@@ -11,7 +11,7 @@ import (
 )
 
 var (
-	rn12AllowedHeaders = map[string]string{
+	rn14AllowedHeaders = map[string]string{
 		"POST": "Authorization,Content-Type",
 	}
 	rn5AllowedHeaders = map[string]string{
@@ -27,6 +27,9 @@ var (
 		"POST": "Authorization,Content-Type",
 	}
 	rn10AllowedHeaders = map[string]string{
+		"POST": "Authorization,Content-Type",
+	}
+	rn12AllowedHeaders = map[string]string{
 		"POST": "Authorization,Content-Type",
 	}
 )
@@ -143,7 +146,7 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 							default:
 								s.notAllowed(w, r, notAllowedParams{
 									allowedMethods: "POST",
-									allowedHeaders: rn12AllowedHeaders,
+									allowedHeaders: rn14AllowedHeaders,
 									acceptPost:     "application/json",
 									acceptPatch:    "",
 								})
@@ -233,9 +236,9 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 								return
 							}
 							switch elem[0] {
-							case '/': // Prefix: "/st"
+							case '/': // Prefix: "/"
 
-								if l := len("/st"); len(elem) >= l && elem[0:l] == "/st" {
+								if l := len("/"); len(elem) >= l && elem[0:l] == "/" {
 									elem = elem[l:]
 								} else {
 									break
@@ -245,9 +248,9 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 									break
 								}
 								switch elem[0] {
-								case 'a': // Prefix: "art"
+								case 'r': // Prefix: "restart"
 
-									if l := len("art"); len(elem) >= l && elem[0:l] == "art" {
+									if l := len("restart"); len(elem) >= l && elem[0:l] == "restart" {
 										elem = elem[l:]
 									} else {
 										break
@@ -257,7 +260,7 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 										// Leaf node.
 										switch r.Method {
 										case "POST":
-											s.handlePoolStartSandboxRequest([3]string{
+											s.handlePoolRestartSandboxRequest([3]string{
 												args[0],
 												args[1],
 												args[2],
@@ -274,33 +277,76 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 										return
 									}
 
-								case 'o': // Prefix: "op"
+								case 's': // Prefix: "st"
 
-									if l := len("op"); len(elem) >= l && elem[0:l] == "op" {
+									if l := len("st"); len(elem) >= l && elem[0:l] == "st" {
 										elem = elem[l:]
 									} else {
 										break
 									}
 
 									if len(elem) == 0 {
-										// Leaf node.
-										switch r.Method {
-										case "POST":
-											s.handlePoolStopSandboxRequest([3]string{
-												args[0],
-												args[1],
-												args[2],
-											}, elemIsEscaped, w, r)
-										default:
-											s.notAllowed(w, r, notAllowedParams{
-												allowedMethods: "POST",
-												allowedHeaders: rn10AllowedHeaders,
-												acceptPost:     "application/json",
-												acceptPatch:    "",
-											})
+										break
+									}
+									switch elem[0] {
+									case 'a': // Prefix: "art"
+
+										if l := len("art"); len(elem) >= l && elem[0:l] == "art" {
+											elem = elem[l:]
+										} else {
+											break
 										}
 
-										return
+										if len(elem) == 0 {
+											// Leaf node.
+											switch r.Method {
+											case "POST":
+												s.handlePoolStartSandboxRequest([3]string{
+													args[0],
+													args[1],
+													args[2],
+												}, elemIsEscaped, w, r)
+											default:
+												s.notAllowed(w, r, notAllowedParams{
+													allowedMethods: "POST",
+													allowedHeaders: rn10AllowedHeaders,
+													acceptPost:     "application/json",
+													acceptPatch:    "",
+												})
+											}
+
+											return
+										}
+
+									case 'o': // Prefix: "op"
+
+										if l := len("op"); len(elem) >= l && elem[0:l] == "op" {
+											elem = elem[l:]
+										} else {
+											break
+										}
+
+										if len(elem) == 0 {
+											// Leaf node.
+											switch r.Method {
+											case "POST":
+												s.handlePoolStopSandboxRequest([3]string{
+													args[0],
+													args[1],
+													args[2],
+												}, elemIsEscaped, w, r)
+											default:
+												s.notAllowed(w, r, notAllowedParams{
+													allowedMethods: "POST",
+													allowedHeaders: rn12AllowedHeaders,
+													acceptPost:     "application/json",
+													acceptPatch:    "",
+												})
+											}
+
+											return
+										}
+
 									}
 
 								}
@@ -564,9 +610,9 @@ func (s *Server) FindPath(method string, u *url.URL) (r Route, _ bool) {
 								}
 							}
 							switch elem[0] {
-							case '/': // Prefix: "/st"
+							case '/': // Prefix: "/"
 
-								if l := len("/st"); len(elem) >= l && elem[0:l] == "/st" {
+								if l := len("/"); len(elem) >= l && elem[0:l] == "/" {
 									elem = elem[l:]
 								} else {
 									break
@@ -576,9 +622,9 @@ func (s *Server) FindPath(method string, u *url.URL) (r Route, _ bool) {
 									break
 								}
 								switch elem[0] {
-								case 'a': // Prefix: "art"
+								case 'r': // Prefix: "restart"
 
-									if l := len("art"); len(elem) >= l && elem[0:l] == "art" {
+									if l := len("restart"); len(elem) >= l && elem[0:l] == "restart" {
 										elem = elem[l:]
 									} else {
 										break
@@ -588,11 +634,11 @@ func (s *Server) FindPath(method string, u *url.URL) (r Route, _ bool) {
 										// Leaf node.
 										switch method {
 										case "POST":
-											r.name = PoolStartSandboxOperation
-											r.summary = "Start pool sandbox"
-											r.operationID = "pool-start-sandbox"
+											r.name = PoolRestartSandboxOperation
+											r.summary = "Restart pool sandbox"
+											r.operationID = "pool-restart-sandbox"
 											r.operationGroup = ""
-											r.pathPattern = "/api/project/{projectId}/pool/{poolId}/sandboxes/{sandboxId}/start"
+											r.pathPattern = "/api/project/{projectId}/pool/{poolId}/sandboxes/{sandboxId}/restart"
 											r.args = args
 											r.count = 3
 											return r, true
@@ -601,29 +647,68 @@ func (s *Server) FindPath(method string, u *url.URL) (r Route, _ bool) {
 										}
 									}
 
-								case 'o': // Prefix: "op"
+								case 's': // Prefix: "st"
 
-									if l := len("op"); len(elem) >= l && elem[0:l] == "op" {
+									if l := len("st"); len(elem) >= l && elem[0:l] == "st" {
 										elem = elem[l:]
 									} else {
 										break
 									}
 
 									if len(elem) == 0 {
-										// Leaf node.
-										switch method {
-										case "POST":
-											r.name = PoolStopSandboxOperation
-											r.summary = "Stop pool sandbox"
-											r.operationID = "pool-stop-sandbox"
-											r.operationGroup = ""
-											r.pathPattern = "/api/project/{projectId}/pool/{poolId}/sandboxes/{sandboxId}/stop"
-											r.args = args
-											r.count = 3
-											return r, true
-										default:
-											return
+										break
+									}
+									switch elem[0] {
+									case 'a': // Prefix: "art"
+
+										if l := len("art"); len(elem) >= l && elem[0:l] == "art" {
+											elem = elem[l:]
+										} else {
+											break
 										}
+
+										if len(elem) == 0 {
+											// Leaf node.
+											switch method {
+											case "POST":
+												r.name = PoolStartSandboxOperation
+												r.summary = "Start pool sandbox"
+												r.operationID = "pool-start-sandbox"
+												r.operationGroup = ""
+												r.pathPattern = "/api/project/{projectId}/pool/{poolId}/sandboxes/{sandboxId}/start"
+												r.args = args
+												r.count = 3
+												return r, true
+											default:
+												return
+											}
+										}
+
+									case 'o': // Prefix: "op"
+
+										if l := len("op"); len(elem) >= l && elem[0:l] == "op" {
+											elem = elem[l:]
+										} else {
+											break
+										}
+
+										if len(elem) == 0 {
+											// Leaf node.
+											switch method {
+											case "POST":
+												r.name = PoolStopSandboxOperation
+												r.summary = "Stop pool sandbox"
+												r.operationID = "pool-stop-sandbox"
+												r.operationGroup = ""
+												r.pathPattern = "/api/project/{projectId}/pool/{poolId}/sandboxes/{sandboxId}/stop"
+												r.args = args
+												r.count = 3
+												return r, true
+											default:
+												return
+											}
+										}
+
 									}
 
 								}

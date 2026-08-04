@@ -383,12 +383,12 @@ type Handler interface {
 	//
 	// POST /api/pools/register
 	RegisterPool(ctx context.Context, req *RegisterPoolBody) (RegisterPoolRes, error)
-	// ReportPoolSandboxRemoved implements report-pool-sandbox-removed operation.
+	// ReportPoolSandboxStates implements report-pool-sandbox-states operation.
 	//
-	// Report a pool-local sandbox runtime removed outside reconciliation.
+	// Report observed sandbox states from the pool agent.
 	//
-	// POST /api/pools/{poolId}/sandbox-removed
-	ReportPoolSandboxRemoved(ctx context.Context, req *ReportPoolSandboxRemovedBody, params ReportPoolSandboxRemovedParams) (ReportPoolSandboxRemovedRes, error)
+	// POST /api/pools/{poolId}/sandbox-states
+	ReportPoolSandboxStates(ctx context.Context, req *ReportPoolSandboxStatesBody, params ReportPoolSandboxStatesParams) (ReportPoolSandboxStatesRes, error)
 	// ResolveSandboxSecret implements resolve-sandbox-secret operation.
 	//
 	// Resolve a sandbox sentinel secret.

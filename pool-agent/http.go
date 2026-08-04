@@ -16,7 +16,7 @@ import (
 const (
 	defaultRegisterPath = "/api/pools/register"
 	defaultStatusPath   = "/api/pools/{poolId}/status"
-	defaultRemovedPath  = "/api/pools/{poolId}/sandbox-removed"
+	defaultStatesPath   = "/api/pools/{poolId}/sandbox-states"
 )
 
 // HTTPClient registers pools through the control plane HTTP API.
@@ -25,7 +25,7 @@ type HTTPClient struct {
 	client       *http.Client
 	registerPath string
 	statusPath   string
-	removedPath  string
+	statesPath   string
 }
 
 type HTTPClientOption func(*HTTPClient)
@@ -37,7 +37,7 @@ func NewHTTPClient(baseURL string, opts ...HTTPClientOption) *HTTPClient {
 		client:       http.DefaultClient,
 		registerPath: defaultRegisterPath,
 		statusPath:   defaultStatusPath,
-		removedPath:  defaultRemovedPath,
+		statesPath:   defaultStatesPath,
 	}
 	for _, opt := range opts {
 		if opt != nil {
@@ -47,16 +47,16 @@ func NewHTTPClient(baseURL string, opts ...HTTPClientOption) *HTTPClient {
 	return c
 }
 
-// ReportSandboxRemoved reports a pool-local sandbox container deletion to
-// the control plane using the pool's signed runtime identity.
-func (c *HTTPClient) ReportSandboxRemoved(ctx context.Context, req SandboxRemovalRequest) error {
+// ReportSandboxStates publishes observed sandbox states to the control plane
+// using the pool's signed runtime identity.
+func (c *HTTPClient) ReportSandboxStates(ctx context.Context, req SandboxStateRequest) error {
 	baseURL := firstNonEmpty(strings.TrimRight(req.ControlPlaneURL, "/"), c.baseURL)
 	if baseURL == "" {
 		return fmt.Errorf("control plane URL is required")
 	}
 	poolID := strings.TrimSpace(req.PoolID)
-	if poolID == "" || strings.TrimSpace(req.SandboxID) == "" {
-		return fmt.Errorf("pool ID and sandbox ID are required")
+	if poolID == "" {
+		return fmt.Errorf("pool ID is required")
 	}
 	projectID := strings.TrimSpace(req.ProjectID)
 	if projectID == "" {
@@ -70,8 +70,8 @@ func (c *HTTPClient) ReportSandboxRemoved(ctx context.Context, req SandboxRemova
 	if err != nil {
 		return err
 	}
-	removedPath := strings.ReplaceAll(c.removedPath, "{poolId}", url.PathEscape(poolID))
-	httpReq, err := http.NewRequestWithContext(ctx, http.MethodPost, baseURL+removedPath, bytes.NewReader(body))
+	statesPath := strings.ReplaceAll(c.statesPath, "{poolId}", url.PathEscape(poolID))
+	httpReq, err := http.NewRequestWithContext(ctx, http.MethodPost, baseURL+statesPath, bytes.NewReader(body))
 	if err != nil {
 		return err
 	}
@@ -84,7 +84,7 @@ func (c *HTTPClient) ReportSandboxRemoved(ctx context.Context, req SandboxRemova
 	defer resp.Body.Close()
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
 		data, _ := io.ReadAll(io.LimitReader(resp.Body, 4096))
-		return fmt.Errorf("sandbox removal report failed: status %d: %s", resp.StatusCode, strings.TrimSpace(string(data)))
+		return fmt.Errorf("sandbox state report failed: status %d: %s", resp.StatusCode, strings.TrimSpace(string(data)))
 	}
 	return nil
 }

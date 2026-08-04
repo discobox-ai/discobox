@@ -231,6 +231,20 @@ components:
                 imageDigest:
                     description: Config digest the image must resolve to. The runtime runs this image and replaces a container built from any other, so a moved tag never silently changes a running sandbox (ADR 0016).
                     type: string
+                start:
+                    description: |-
+                        Whether creating the container should also bring it up. True for a sandbox being
+                        created for the first time, because asking for a sandbox means asking for one that
+                        runs. False for a rebuild after the container was lost: recovery restores what
+                        exists, and starting is left to whoever actually wants it (ADR 0017 §13).
+                    type: boolean
+                specFingerprint:
+                    description: |-
+                        Digest of the whole sandbox spec this container must be built from (ADR 0017 §5).
+                        The runtime records it as a container label and rebuilds any container whose label
+                        no longer matches, so image upgrades and every other spec change are one mechanism
+                        rather than a growing list of per-field comparisons.
+                    type: string
                 memoryBytes:
                     format: int64
                     type: integer
@@ -360,6 +374,25 @@ components:
                     type: array
             required:
             - sandboxes
+            type: object
+        PoolSandboxOperationAccepted:
+            additionalProperties: false
+            description: |-
+                Acknowledges that a power instruction was accepted. It carries no
+                state: what became of the instruction arrives on the agent's
+                sandbox state-reporting channel (ADR 0017 §§9-10).
+            properties:
+                "$schema":
+                    description: A URL to the JSON Schema for this object.
+                    example: https://example.com/schemas/PoolSandboxOperationAccepted.json
+                    format: uri
+                    readOnly: true
+                    type: string
+                sandboxId:
+                    description: Sandbox the instruction was accepted for
+                    type: string
+            required:
+            - sandboxId
             type: object
         PoolSandboxOperationRequest:
             additionalProperties: false
@@ -752,12 +785,12 @@ paths:
                             "$ref": "#/components/schemas/PoolSandboxOperationRequest"
                 required: true
             responses:
-                '200':
+                '202':
                     content:
                         application/json:
                             schema:
-                                "$ref": "#/components/schemas/PoolSandboxInstance"
-                    description: OK
+                                "$ref": "#/components/schemas/PoolSandboxOperationAccepted"
+                    description: Instruction accepted
                 default:
                     content:
                         application/problem+json:
@@ -801,12 +834,12 @@ paths:
                             "$ref": "#/components/schemas/PoolSandboxOperationRequest"
                 required: true
             responses:
-                '200':
+                '202':
                     content:
                         application/json:
                             schema:
-                                "$ref": "#/components/schemas/PoolSandboxInstance"
-                    description: OK
+                                "$ref": "#/components/schemas/PoolSandboxOperationAccepted"
+                    description: Instruction accepted
                 default:
                     content:
                         application/problem+json:
@@ -816,6 +849,55 @@ paths:
             security:
             -   poolBearerAuth: []
             summary: Stop pool sandbox
+            tags:
+            - Pool Sandboxes
+    "/api/project/{projectId}/pool/{poolId}/sandboxes/{sandboxId}/restart":
+        post:
+            operationId: pool-restart-sandbox
+            parameters:
+            -   description: Project ID
+                in: path
+                name: projectId
+                required: true
+                schema:
+                    description: Project ID
+                    type: string
+            -   description: Pool ID
+                in: path
+                name: poolId
+                required: true
+                schema:
+                    description: Pool ID
+                    type: string
+            -   description: Sandbox ID
+                in: path
+                name: sandboxId
+                required: true
+                schema:
+                    description: Sandbox ID
+                    type: string
+            requestBody:
+                content:
+                    application/json:
+                        schema:
+                            "$ref": "#/components/schemas/PoolSandboxOperationRequest"
+                required: true
+            responses:
+                '202':
+                    content:
+                        application/json:
+                            schema:
+                                "$ref": "#/components/schemas/PoolSandboxOperationAccepted"
+                    description: Instruction accepted
+                default:
+                    content:
+                        application/problem+json:
+                            schema:
+                                "$ref": "#/components/schemas/ErrorModel"
+                    description: Error
+            security:
+            -   poolBearerAuth: []
+            summary: Restart pool sandbox
             tags:
             - Pool Sandboxes
     "/api/project/{projectId}/pool/{poolId}/pool-sync":

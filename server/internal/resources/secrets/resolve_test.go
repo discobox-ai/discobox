@@ -36,7 +36,9 @@ func newResolveFixture(t *testing.T) (*resourcesecrets.Service, *store.Store) {
 		t.Fatalf("create provider instance: %v", err)
 	}
 	if err := st.CreatePool(ctx, &model.Pool{
-		ID: "pool-1", ProjectID: "project-1", Name: "pool-1", ProviderInstanceID: "prov-1",
+		ID:           "pool-1",
+		ProjectID:    "project-1",
+		PoolManifest: model.PoolManifest{Name: "pool-1", ProviderInstanceID: "prov-1"},
 	}); err != nil {
 		t.Fatalf("create pool: %v", err)
 	}

@@ -1423,7 +1423,7 @@ func (*ErrorModelStatusCode) reconcilePoolRes()                    {}
 func (*ErrorModelStatusCode) reconcileSandboxRes()                 {}
 func (*ErrorModelStatusCode) refreshHarnessConfigImageRes()        {}
 func (*ErrorModelStatusCode) registerPoolRes()                     {}
-func (*ErrorModelStatusCode) reportPoolSandboxRemovedRes()         {}
+func (*ErrorModelStatusCode) reportPoolSandboxStatesRes()          {}
 func (*ErrorModelStatusCode) resolveSandboxSecretRes()             {}
 func (*ErrorModelStatusCode) restartSandboxRes()                   {}
 func (*ErrorModelStatusCode) revokeSecretGrantRes()                {}
@@ -4799,52 +4799,6 @@ func (o OptPool) Or(d Pool) Pool {
 	return d
 }
 
-// NewOptPoolActiveOperation returns new OptPoolActiveOperation with value set to v.
-func NewOptPoolActiveOperation(v PoolActiveOperation) OptPoolActiveOperation {
-	return OptPoolActiveOperation{
-		Value: v,
-		Set:   true,
-	}
-}
-
-// OptPoolActiveOperation is optional PoolActiveOperation.
-type OptPoolActiveOperation struct {
-	Value PoolActiveOperation
-	Set   bool
-}
-
-// IsSet returns true if OptPoolActiveOperation was set.
-func (o OptPoolActiveOperation) IsSet() bool { return o.Set }
-
-// Reset unsets value.
-func (o *OptPoolActiveOperation) Reset() {
-	var v PoolActiveOperation
-	o.Value = v
-	o.Set = false
-}
-
-// SetTo sets value to v.
-func (o *OptPoolActiveOperation) SetTo(v PoolActiveOperation) {
-	o.Set = true
-	o.Value = v
-}
-
-// Get returns value and boolean that denotes whether value was set.
-func (o OptPoolActiveOperation) Get() (v PoolActiveOperation, ok bool) {
-	if !o.Set {
-		return v, false
-	}
-	return o.Value, true
-}
-
-// Or returns value if set, or given parameter if does not.
-func (o OptPoolActiveOperation) Or(d PoolActiveOperation) PoolActiveOperation {
-	if v, ok := o.Get(); ok {
-		return v
-	}
-	return d
-}
-
 // NewOptSandboxConfigEnv returns new OptSandboxConfigEnv with value set to v.
 func NewOptSandboxConfigEnv(v SandboxConfigEnv) OptSandboxConfigEnv {
 	return OptSandboxConfigEnv{
@@ -5253,52 +5207,6 @@ func (o OptSandboxProviderInstance) Get() (v SandboxProviderInstance, ok bool) {
 
 // Or returns value if set, or given parameter if does not.
 func (o OptSandboxProviderInstance) Or(d SandboxProviderInstance) SandboxProviderInstance {
-	if v, ok := o.Get(); ok {
-		return v
-	}
-	return d
-}
-
-// NewOptSandboxRuntimeActiveOperation returns new OptSandboxRuntimeActiveOperation with value set to v.
-func NewOptSandboxRuntimeActiveOperation(v SandboxRuntimeActiveOperation) OptSandboxRuntimeActiveOperation {
-	return OptSandboxRuntimeActiveOperation{
-		Value: v,
-		Set:   true,
-	}
-}
-
-// OptSandboxRuntimeActiveOperation is optional SandboxRuntimeActiveOperation.
-type OptSandboxRuntimeActiveOperation struct {
-	Value SandboxRuntimeActiveOperation
-	Set   bool
-}
-
-// IsSet returns true if OptSandboxRuntimeActiveOperation was set.
-func (o OptSandboxRuntimeActiveOperation) IsSet() bool { return o.Set }
-
-// Reset unsets value.
-func (o *OptSandboxRuntimeActiveOperation) Reset() {
-	var v SandboxRuntimeActiveOperation
-	o.Value = v
-	o.Set = false
-}
-
-// SetTo sets value to v.
-func (o *OptSandboxRuntimeActiveOperation) SetTo(v SandboxRuntimeActiveOperation) {
-	o.Set = true
-	o.Value = v
-}
-
-// Get returns value and boolean that denotes whether value was set.
-func (o OptSandboxRuntimeActiveOperation) Get() (v SandboxRuntimeActiveOperation, ok bool) {
-	if !o.Set {
-		return v, false
-	}
-	return o.Value, true
-}
-
-// Or returns value if set, or given parameter if does not.
-func (o OptSandboxRuntimeActiveOperation) Or(d SandboxRuntimeActiveOperation) SandboxRuntimeActiveOperation {
 	if v, ok := o.Get(); ok {
 		return v
 	}
@@ -5810,25 +5718,18 @@ type Pool struct {
 	AvailableStorageBytes int64 `json:"availableStorageBytes"`
 	// Opaque agent-reported condition details for display.
 	Conditions jx.Raw `json:"conditions"`
-	// Requested pool state.
+	// Requested existence, the same vocabulary every orchestrated resource uses (ADR 0017 §2).
 	DesiredState PoolDesiredState `json:"desiredState"`
-	// Observed pool lifecycle phase.
-	Phase PoolPhase `json:"phase"`
-	// Current queued or running operation.
-	ActiveOperation OptPoolActiveOperation `json:"activeOperation"`
-	// Status of the most recent operation.
-	LastOperationStatus PoolLastOperationStatus `json:"lastOperationStatus"`
-	// Latest desired-state generation.
+	// Observed pool state.
+	State PoolState `json:"state"`
+	// When state last changed to its current value.
+	StateChangedAt OptDateTime `json:"stateChangedAt"`
+	// Latest spec generation.
 	Generation int64 `json:"generation"`
-	// Latest generation fully observed by reconciliation.
+	// Latest generation the reconciler has finished acting on.
 	ObservedGeneration int64 `json:"observedGeneration"`
-	// Human-readable status detail.
-	StatusMessage OptString `json:"statusMessage"`
 	// Latest error message.
 	ErrorMessage OptString `json:"errorMessage"`
-	// When phase last changed to its current value. Anchors how long the resource has been in a phase,
-	// for timeouts that must not be reset by unrelated reconciles.
-	PhaseChangedAt OptDateTime `json:"phaseChangedAt"`
 	// Pool agent key type.
 	KeyType OptString `json:"keyType"`
 	// Pool agent public key.
@@ -5933,19 +5834,14 @@ func (s *Pool) GetDesiredState() PoolDesiredState {
 	return s.DesiredState
 }
 
-// GetPhase returns the value of Phase.
-func (s *Pool) GetPhase() PoolPhase {
-	return s.Phase
+// GetState returns the value of State.
+func (s *Pool) GetState() PoolState {
+	return s.State
 }
 
-// GetActiveOperation returns the value of ActiveOperation.
-func (s *Pool) GetActiveOperation() OptPoolActiveOperation {
-	return s.ActiveOperation
-}
-
-// GetLastOperationStatus returns the value of LastOperationStatus.
-func (s *Pool) GetLastOperationStatus() PoolLastOperationStatus {
-	return s.LastOperationStatus
+// GetStateChangedAt returns the value of StateChangedAt.
+func (s *Pool) GetStateChangedAt() OptDateTime {
+	return s.StateChangedAt
 }
 
 // GetGeneration returns the value of Generation.
@@ -5958,19 +5854,9 @@ func (s *Pool) GetObservedGeneration() int64 {
 	return s.ObservedGeneration
 }
 
-// GetStatusMessage returns the value of StatusMessage.
-func (s *Pool) GetStatusMessage() OptString {
-	return s.StatusMessage
-}
-
 // GetErrorMessage returns the value of ErrorMessage.
 func (s *Pool) GetErrorMessage() OptString {
 	return s.ErrorMessage
-}
-
-// GetPhaseChangedAt returns the value of PhaseChangedAt.
-func (s *Pool) GetPhaseChangedAt() OptDateTime {
-	return s.PhaseChangedAt
 }
 
 // GetKeyType returns the value of KeyType.
@@ -6093,19 +5979,14 @@ func (s *Pool) SetDesiredState(val PoolDesiredState) {
 	s.DesiredState = val
 }
 
-// SetPhase sets the value of Phase.
-func (s *Pool) SetPhase(val PoolPhase) {
-	s.Phase = val
+// SetState sets the value of State.
+func (s *Pool) SetState(val PoolState) {
+	s.State = val
 }
 
-// SetActiveOperation sets the value of ActiveOperation.
-func (s *Pool) SetActiveOperation(val OptPoolActiveOperation) {
-	s.ActiveOperation = val
-}
-
-// SetLastOperationStatus sets the value of LastOperationStatus.
-func (s *Pool) SetLastOperationStatus(val PoolLastOperationStatus) {
-	s.LastOperationStatus = val
+// SetStateChangedAt sets the value of StateChangedAt.
+func (s *Pool) SetStateChangedAt(val OptDateTime) {
+	s.StateChangedAt = val
 }
 
 // SetGeneration sets the value of Generation.
@@ -6118,19 +5999,9 @@ func (s *Pool) SetObservedGeneration(val int64) {
 	s.ObservedGeneration = val
 }
 
-// SetStatusMessage sets the value of StatusMessage.
-func (s *Pool) SetStatusMessage(val OptString) {
-	s.StatusMessage = val
-}
-
 // SetErrorMessage sets the value of ErrorMessage.
 func (s *Pool) SetErrorMessage(val OptString) {
 	s.ErrorMessage = val
-}
-
-// SetPhaseChangedAt sets the value of PhaseChangedAt.
-func (s *Pool) SetPhaseChangedAt(val OptDateTime) {
-	s.PhaseChangedAt = val
 }
 
 // SetKeyType sets the value of KeyType.
@@ -6169,60 +6040,18 @@ func (*Pool) reconcilePoolRes()    {}
 func (*Pool) updatePoolRes()       {}
 func (*Pool) updatePoolStatusRes() {}
 
-// Current queued or running operation.
-type PoolActiveOperation string
-
-const (
-	PoolActiveOperationCreate PoolActiveOperation = "create"
-	PoolActiveOperationDelete PoolActiveOperation = "delete"
-)
-
-// AllValues returns all PoolActiveOperation values.
-func (PoolActiveOperation) AllValues() []PoolActiveOperation {
-	return []PoolActiveOperation{
-		PoolActiveOperationCreate,
-		PoolActiveOperationDelete,
-	}
-}
-
-// MarshalText implements encoding.TextMarshaler.
-func (s PoolActiveOperation) MarshalText() ([]byte, error) {
-	switch s {
-	case PoolActiveOperationCreate:
-		return []byte(s), nil
-	case PoolActiveOperationDelete:
-		return []byte(s), nil
-	default:
-		return nil, errors.Errorf("invalid value: %q", s)
-	}
-}
-
-// UnmarshalText implements encoding.TextUnmarshaler.
-func (s *PoolActiveOperation) UnmarshalText(data []byte) error {
-	switch PoolActiveOperation(data) {
-	case PoolActiveOperationCreate:
-		*s = PoolActiveOperationCreate
-		return nil
-	case PoolActiveOperationDelete:
-		*s = PoolActiveOperationDelete
-		return nil
-	default:
-		return errors.Errorf("invalid value: %q", data)
-	}
-}
-
-// Requested pool state.
+// Requested existence, the same vocabulary every orchestrated resource uses (ADR 0017 §2).
 type PoolDesiredState string
 
 const (
-	PoolDesiredStateActive  PoolDesiredState = "active"
+	PoolDesiredStatePresent PoolDesiredState = "present"
 	PoolDesiredStateDeleted PoolDesiredState = "deleted"
 )
 
 // AllValues returns all PoolDesiredState values.
 func (PoolDesiredState) AllValues() []PoolDesiredState {
 	return []PoolDesiredState{
-		PoolDesiredStateActive,
+		PoolDesiredStatePresent,
 		PoolDesiredStateDeleted,
 	}
 }
@@ -6230,7 +6059,7 @@ func (PoolDesiredState) AllValues() []PoolDesiredState {
 // MarshalText implements encoding.TextMarshaler.
 func (s PoolDesiredState) MarshalText() ([]byte, error) {
 	switch s {
-	case PoolDesiredStateActive:
+	case PoolDesiredStatePresent:
 		return []byte(s), nil
 	case PoolDesiredStateDeleted:
 		return []byte(s), nil
@@ -6242,8 +6071,8 @@ func (s PoolDesiredState) MarshalText() ([]byte, error) {
 // UnmarshalText implements encoding.TextUnmarshaler.
 func (s *PoolDesiredState) UnmarshalText(data []byte) error {
 	switch PoolDesiredState(data) {
-	case PoolDesiredStateActive:
-		*s = PoolDesiredStateActive
+	case PoolDesiredStatePresent:
+		*s = PoolDesiredStatePresent
 		return nil
 	case PoolDesiredStateDeleted:
 		*s = PoolDesiredStateDeleted
@@ -6253,36 +6082,80 @@ func (s *PoolDesiredState) UnmarshalText(data []byte) error {
 	}
 }
 
-// Status of the most recent operation.
-type PoolLastOperationStatus string
+// Ref: #/components/schemas/PoolSandboxState
+type PoolSandboxState struct {
+	// Why the sandbox reached a failed state, empty otherwise.
+	Error OptString `json:"error"`
+	// Sandbox the observation is about.
+	SandboxId string `json:"sandboxId"`
+	// Observed state. There is no `failed` here: a container that has exited looks the
+	// same whether it was stopped deliberately or died, so failure is a judgement about
+	// an operation rather than something the runtime can observe (ADR 0017 §10).
+	State PoolSandboxStateState `json:"state"`
+}
+
+// GetError returns the value of Error.
+func (s *PoolSandboxState) GetError() OptString {
+	return s.Error
+}
+
+// GetSandboxId returns the value of SandboxId.
+func (s *PoolSandboxState) GetSandboxId() string {
+	return s.SandboxId
+}
+
+// GetState returns the value of State.
+func (s *PoolSandboxState) GetState() PoolSandboxStateState {
+	return s.State
+}
+
+// SetError sets the value of Error.
+func (s *PoolSandboxState) SetError(val OptString) {
+	s.Error = val
+}
+
+// SetSandboxId sets the value of SandboxId.
+func (s *PoolSandboxState) SetSandboxId(val string) {
+	s.SandboxId = val
+}
+
+// SetState sets the value of State.
+func (s *PoolSandboxState) SetState(val PoolSandboxStateState) {
+	s.State = val
+}
+
+// Observed state. There is no `failed` here: a container that has exited looks the
+// same whether it was stopped deliberately or died, so failure is a judgement about
+// an operation rather than something the runtime can observe (ADR 0017 §10).
+type PoolSandboxStateState string
 
 const (
-	PoolLastOperationStatusPending PoolLastOperationStatus = "pending"
-	PoolLastOperationStatusRunning PoolLastOperationStatus = "running"
-	PoolLastOperationStatusSuccess PoolLastOperationStatus = "success"
-	PoolLastOperationStatusFailed  PoolLastOperationStatus = "failed"
+	PoolSandboxStateStateStarting PoolSandboxStateState = "starting"
+	PoolSandboxStateStateRunning  PoolSandboxStateState = "running"
+	PoolSandboxStateStateStopping PoolSandboxStateState = "stopping"
+	PoolSandboxStateStateStopped  PoolSandboxStateState = "stopped"
 )
 
-// AllValues returns all PoolLastOperationStatus values.
-func (PoolLastOperationStatus) AllValues() []PoolLastOperationStatus {
-	return []PoolLastOperationStatus{
-		PoolLastOperationStatusPending,
-		PoolLastOperationStatusRunning,
-		PoolLastOperationStatusSuccess,
-		PoolLastOperationStatusFailed,
+// AllValues returns all PoolSandboxStateState values.
+func (PoolSandboxStateState) AllValues() []PoolSandboxStateState {
+	return []PoolSandboxStateState{
+		PoolSandboxStateStateStarting,
+		PoolSandboxStateStateRunning,
+		PoolSandboxStateStateStopping,
+		PoolSandboxStateStateStopped,
 	}
 }
 
 // MarshalText implements encoding.TextMarshaler.
-func (s PoolLastOperationStatus) MarshalText() ([]byte, error) {
+func (s PoolSandboxStateState) MarshalText() ([]byte, error) {
 	switch s {
-	case PoolLastOperationStatusPending:
+	case PoolSandboxStateStateStarting:
 		return []byte(s), nil
-	case PoolLastOperationStatusRunning:
+	case PoolSandboxStateStateRunning:
 		return []byte(s), nil
-	case PoolLastOperationStatusSuccess:
+	case PoolSandboxStateStateStopping:
 		return []byte(s), nil
-	case PoolLastOperationStatusFailed:
+	case PoolSandboxStateStateStopped:
 		return []byte(s), nil
 	default:
 		return nil, errors.Errorf("invalid value: %q", s)
@@ -6290,71 +6163,63 @@ func (s PoolLastOperationStatus) MarshalText() ([]byte, error) {
 }
 
 // UnmarshalText implements encoding.TextUnmarshaler.
-func (s *PoolLastOperationStatus) UnmarshalText(data []byte) error {
-	switch PoolLastOperationStatus(data) {
-	case PoolLastOperationStatusPending:
-		*s = PoolLastOperationStatusPending
+func (s *PoolSandboxStateState) UnmarshalText(data []byte) error {
+	switch PoolSandboxStateState(data) {
+	case PoolSandboxStateStateStarting:
+		*s = PoolSandboxStateStateStarting
 		return nil
-	case PoolLastOperationStatusRunning:
-		*s = PoolLastOperationStatusRunning
+	case PoolSandboxStateStateRunning:
+		*s = PoolSandboxStateStateRunning
 		return nil
-	case PoolLastOperationStatusSuccess:
-		*s = PoolLastOperationStatusSuccess
+	case PoolSandboxStateStateStopping:
+		*s = PoolSandboxStateStateStopping
 		return nil
-	case PoolLastOperationStatusFailed:
-		*s = PoolLastOperationStatusFailed
+	case PoolSandboxStateStateStopped:
+		*s = PoolSandboxStateStateStopped
 		return nil
 	default:
 		return errors.Errorf("invalid value: %q", data)
 	}
 }
 
-// Observed pool lifecycle phase.
-type PoolPhase string
+// Observed pool state.
+type PoolState string
 
 const (
-	PoolPhasePending     PoolPhase = "pending"
-	PoolPhaseLaunching   PoolPhase = "launching"
-	PoolPhaseRegistering PoolPhase = "registering"
-	PoolPhaseActive      PoolPhase = "active"
-	PoolPhaseDeleting    PoolPhase = "deleting"
-	PoolPhaseOffline     PoolPhase = "offline"
-	PoolPhaseFailed      PoolPhase = "failed"
-	PoolPhaseDeleted     PoolPhase = "deleted"
+	PoolStatePending     PoolState = "pending"
+	PoolStateRegistering PoolState = "registering"
+	PoolStateActive      PoolState = "active"
+	PoolStateOffline     PoolState = "offline"
+	PoolStateFailed      PoolState = "failed"
+	PoolStateDeleted     PoolState = "deleted"
 )
 
-// AllValues returns all PoolPhase values.
-func (PoolPhase) AllValues() []PoolPhase {
-	return []PoolPhase{
-		PoolPhasePending,
-		PoolPhaseLaunching,
-		PoolPhaseRegistering,
-		PoolPhaseActive,
-		PoolPhaseDeleting,
-		PoolPhaseOffline,
-		PoolPhaseFailed,
-		PoolPhaseDeleted,
+// AllValues returns all PoolState values.
+func (PoolState) AllValues() []PoolState {
+	return []PoolState{
+		PoolStatePending,
+		PoolStateRegistering,
+		PoolStateActive,
+		PoolStateOffline,
+		PoolStateFailed,
+		PoolStateDeleted,
 	}
 }
 
 // MarshalText implements encoding.TextMarshaler.
-func (s PoolPhase) MarshalText() ([]byte, error) {
+func (s PoolState) MarshalText() ([]byte, error) {
 	switch s {
-	case PoolPhasePending:
+	case PoolStatePending:
 		return []byte(s), nil
-	case PoolPhaseLaunching:
+	case PoolStateRegistering:
 		return []byte(s), nil
-	case PoolPhaseRegistering:
+	case PoolStateActive:
 		return []byte(s), nil
-	case PoolPhaseActive:
+	case PoolStateOffline:
 		return []byte(s), nil
-	case PoolPhaseDeleting:
+	case PoolStateFailed:
 		return []byte(s), nil
-	case PoolPhaseOffline:
-		return []byte(s), nil
-	case PoolPhaseFailed:
-		return []byte(s), nil
-	case PoolPhaseDeleted:
+	case PoolStateDeleted:
 		return []byte(s), nil
 	default:
 		return nil, errors.Errorf("invalid value: %q", s)
@@ -6362,31 +6227,25 @@ func (s PoolPhase) MarshalText() ([]byte, error) {
 }
 
 // UnmarshalText implements encoding.TextUnmarshaler.
-func (s *PoolPhase) UnmarshalText(data []byte) error {
-	switch PoolPhase(data) {
-	case PoolPhasePending:
-		*s = PoolPhasePending
+func (s *PoolState) UnmarshalText(data []byte) error {
+	switch PoolState(data) {
+	case PoolStatePending:
+		*s = PoolStatePending
 		return nil
-	case PoolPhaseLaunching:
-		*s = PoolPhaseLaunching
+	case PoolStateRegistering:
+		*s = PoolStateRegistering
 		return nil
-	case PoolPhaseRegistering:
-		*s = PoolPhaseRegistering
+	case PoolStateActive:
+		*s = PoolStateActive
 		return nil
-	case PoolPhaseActive:
-		*s = PoolPhaseActive
+	case PoolStateOffline:
+		*s = PoolStateOffline
 		return nil
-	case PoolPhaseDeleting:
-		*s = PoolPhaseDeleting
+	case PoolStateFailed:
+		*s = PoolStateFailed
 		return nil
-	case PoolPhaseOffline:
-		*s = PoolPhaseOffline
-		return nil
-	case PoolPhaseFailed:
-		*s = PoolPhaseFailed
-		return nil
-	case PoolPhaseDeleted:
-		*s = PoolPhaseDeleted
+	case PoolStateDeleted:
+		*s = PoolStateDeleted
 		return nil
 	default:
 		return errors.Errorf("invalid value: %q", data)
@@ -6899,53 +6758,93 @@ func (s *RegisterPoolResponseBody) SetSchema(val OptURI) {
 
 func (*RegisterPoolResponseBody) registerPoolRes() {}
 
-// Ref: #/components/schemas/ReportPoolSandboxRemovedBody
-type ReportPoolSandboxRemovedBody struct {
+// A batch of sandbox state observations from the pool agent hosting them (ADR 0017 §10).
+// State is reported, never requested: the control plane records what the agent saw and
+// never asks it to make a sandbox running.
+// Ref: #/components/schemas/ReportPoolSandboxStatesBody
+type ReportPoolSandboxStatesBody struct {
 	// A URL to the JSON Schema for this object.
 	Schema OptURI `json:"$schema"`
-	// Runtime identity that was removed. The control plane ignores the report when this is
-	// not the runtime it currently believes is serving the sandbox, which is what makes a
-	// report about an already-replaced container harmless. Empty means the report came from
-	// the level-triggered orphan sweep rather than a specific removal event.
-	ContainerId OptString `json:"containerId"`
-	// Sandbox whose pool-local runtime was removed outside control-plane reconciliation.
-	SandboxId string `json:"sandboxId"`
+	// Identifies this run of the pool agent. Sequence numbers are only comparable within
+	// one boot, because a restarted agent counts from zero again.
+	BootId string `json:"bootId"`
+	// True when the batch is the periodic full sync: the reports are every sandbox the
+	// agent hosts, so a sandbox the control plane believes is on this pool and that the
+	// batch omits no longer has a container. A batch that is not complete is a transition
+	// delta and says nothing about sandboxes it does not mention.
+	Complete bool `json:"complete"`
+	// When the agent observed these states.
+	ReportedAt time.Time `json:"reportedAt"`
+	// Monotonic counter within bootId, so a delayed delta cannot overwrite a newer sync.
+	Sequence int64 `json:"sequence"`
+	// The observed sandbox states.
+	States []PoolSandboxState `json:"states"`
 }
 
 // GetSchema returns the value of Schema.
-func (s *ReportPoolSandboxRemovedBody) GetSchema() OptURI {
+func (s *ReportPoolSandboxStatesBody) GetSchema() OptURI {
 	return s.Schema
 }
 
-// GetContainerId returns the value of ContainerId.
-func (s *ReportPoolSandboxRemovedBody) GetContainerId() OptString {
-	return s.ContainerId
+// GetBootId returns the value of BootId.
+func (s *ReportPoolSandboxStatesBody) GetBootId() string {
+	return s.BootId
 }
 
-// GetSandboxId returns the value of SandboxId.
-func (s *ReportPoolSandboxRemovedBody) GetSandboxId() string {
-	return s.SandboxId
+// GetComplete returns the value of Complete.
+func (s *ReportPoolSandboxStatesBody) GetComplete() bool {
+	return s.Complete
+}
+
+// GetReportedAt returns the value of ReportedAt.
+func (s *ReportPoolSandboxStatesBody) GetReportedAt() time.Time {
+	return s.ReportedAt
+}
+
+// GetSequence returns the value of Sequence.
+func (s *ReportPoolSandboxStatesBody) GetSequence() int64 {
+	return s.Sequence
+}
+
+// GetStates returns the value of States.
+func (s *ReportPoolSandboxStatesBody) GetStates() []PoolSandboxState {
+	return s.States
 }
 
 // SetSchema sets the value of Schema.
-func (s *ReportPoolSandboxRemovedBody) SetSchema(val OptURI) {
+func (s *ReportPoolSandboxStatesBody) SetSchema(val OptURI) {
 	s.Schema = val
 }
 
-// SetContainerId sets the value of ContainerId.
-func (s *ReportPoolSandboxRemovedBody) SetContainerId(val OptString) {
-	s.ContainerId = val
+// SetBootId sets the value of BootId.
+func (s *ReportPoolSandboxStatesBody) SetBootId(val string) {
+	s.BootId = val
 }
 
-// SetSandboxId sets the value of SandboxId.
-func (s *ReportPoolSandboxRemovedBody) SetSandboxId(val string) {
-	s.SandboxId = val
+// SetComplete sets the value of Complete.
+func (s *ReportPoolSandboxStatesBody) SetComplete(val bool) {
+	s.Complete = val
 }
 
-// ReportPoolSandboxRemovedNoContent is response for ReportPoolSandboxRemoved operation.
-type ReportPoolSandboxRemovedNoContent struct{}
+// SetReportedAt sets the value of ReportedAt.
+func (s *ReportPoolSandboxStatesBody) SetReportedAt(val time.Time) {
+	s.ReportedAt = val
+}
 
-func (*ReportPoolSandboxRemovedNoContent) reportPoolSandboxRemovedRes() {}
+// SetSequence sets the value of Sequence.
+func (s *ReportPoolSandboxStatesBody) SetSequence(val int64) {
+	s.Sequence = val
+}
+
+// SetStates sets the value of States.
+func (s *ReportPoolSandboxStatesBody) SetStates(val []PoolSandboxState) {
+	s.States = val
+}
+
+// ReportPoolSandboxStatesNoContent is response for ReportPoolSandboxStates operation.
+type ReportPoolSandboxStatesNoContent struct{}
+
+func (*ReportPoolSandboxStatesNoContent) reportPoolSandboxStatesRes() {}
 
 // Worker request to resolve a sentinel placeholder observed by the proxy to its real secret value
 // for a destination host.
@@ -8705,40 +8604,34 @@ func (*SandboxProviderInstance) updateSandboxProviderInstanceRes() {}
 
 // Ref: #/components/schemas/SandboxRuntime
 type SandboxRuntime struct {
-	// Current queued or running operation.
-	ActiveOperation OptSandboxRuntimeActiveOperation `json:"activeOperation"`
 	// History of successful disco apply runs that landed this sandbox's commits on a host, most recent
 	// last. Client-reported; append-only.
 	AppliedCommits OptNilAppliedSourceCommitArray `json:"appliedCommits"`
-	// Requested steady state for reconciliation.
+	// Requested existence. Power state is not requested: whether a sandbox is running is
+	// observed and reported by its runtime, never asked for by the control plane
+	// (ADR 0017 §9).
 	DesiredState SandboxRuntimeDesiredState `json:"desiredState"`
-	// User-facing lifecycle state calculated from desired state, observed phase, and reconciliation
-	// generations.
+	// User-facing lifecycle state, derived from the observed state plus whether the existence
+	// generations agree.
 	DisplayState OptSandboxRuntimeDisplayState `json:"displayState"`
-	// Latest error message.
+	// Error from the generation currently recorded in observedGeneration. Cleared by every accepted
+	// intent.
 	ErrorMessage OptString `json:"errorMessage"`
-	// Latest desired-state generation.
+	// Latest spec generation.
 	Generation int64 `json:"generation"`
 	// Last observed activity timestamp.
 	LastActiveAt OptDateTime `json:"lastActiveAt"`
-	// Status of the most recent operation.
-	LastOperationStatus SandboxRuntimeLastOperationStatus `json:"lastOperationStatus"`
-	// Latest generation fully observed by reconciliation.
+	// Latest generation the reconciler has finished acting on.
 	ObservedGeneration int64 `json:"observedGeneration"`
-	// Observed lifecycle phase.
-	Phase SandboxRuntimePhase `json:"phase"`
-	// Requested restart generation.
-	RestartGeneration int64 `json:"restartGeneration"`
-	// Last restart generation completed by reconciliation.
-	RestartedGeneration int64 `json:"restartedGeneration"`
-	// Human-readable status detail.
-	StatusMessage OptString         `json:"statusMessage"`
-	Upgrade       OptSandboxUpgrade `json:"upgrade"`
-}
-
-// GetActiveOperation returns the value of ActiveOperation.
-func (s *SandboxRuntime) GetActiveOperation() OptSandboxRuntimeActiveOperation {
-	return s.ActiveOperation
+	// Observed state. The transitional values are reported by the pool agent, which is the only
+	// component that can see them.
+	State SandboxRuntimeState `json:"state"`
+	// When state last changed to its current value.
+	StateChangedAt OptDateTime `json:"stateChangedAt"`
+	// When the hosting pool agent last reported this sandbox's state. A state whose report
+	// is old is a state nobody has confirmed recently.
+	StateReportedAt OptDateTime       `json:"stateReportedAt"`
+	Upgrade         OptSandboxUpgrade `json:"upgrade"`
 }
 
 // GetAppliedCommits returns the value of AppliedCommits.
@@ -8771,44 +8664,29 @@ func (s *SandboxRuntime) GetLastActiveAt() OptDateTime {
 	return s.LastActiveAt
 }
 
-// GetLastOperationStatus returns the value of LastOperationStatus.
-func (s *SandboxRuntime) GetLastOperationStatus() SandboxRuntimeLastOperationStatus {
-	return s.LastOperationStatus
-}
-
 // GetObservedGeneration returns the value of ObservedGeneration.
 func (s *SandboxRuntime) GetObservedGeneration() int64 {
 	return s.ObservedGeneration
 }
 
-// GetPhase returns the value of Phase.
-func (s *SandboxRuntime) GetPhase() SandboxRuntimePhase {
-	return s.Phase
+// GetState returns the value of State.
+func (s *SandboxRuntime) GetState() SandboxRuntimeState {
+	return s.State
 }
 
-// GetRestartGeneration returns the value of RestartGeneration.
-func (s *SandboxRuntime) GetRestartGeneration() int64 {
-	return s.RestartGeneration
+// GetStateChangedAt returns the value of StateChangedAt.
+func (s *SandboxRuntime) GetStateChangedAt() OptDateTime {
+	return s.StateChangedAt
 }
 
-// GetRestartedGeneration returns the value of RestartedGeneration.
-func (s *SandboxRuntime) GetRestartedGeneration() int64 {
-	return s.RestartedGeneration
-}
-
-// GetStatusMessage returns the value of StatusMessage.
-func (s *SandboxRuntime) GetStatusMessage() OptString {
-	return s.StatusMessage
+// GetStateReportedAt returns the value of StateReportedAt.
+func (s *SandboxRuntime) GetStateReportedAt() OptDateTime {
+	return s.StateReportedAt
 }
 
 // GetUpgrade returns the value of Upgrade.
 func (s *SandboxRuntime) GetUpgrade() OptSandboxUpgrade {
 	return s.Upgrade
-}
-
-// SetActiveOperation sets the value of ActiveOperation.
-func (s *SandboxRuntime) SetActiveOperation(val OptSandboxRuntimeActiveOperation) {
-	s.ActiveOperation = val
 }
 
 // SetAppliedCommits sets the value of AppliedCommits.
@@ -8841,34 +8719,24 @@ func (s *SandboxRuntime) SetLastActiveAt(val OptDateTime) {
 	s.LastActiveAt = val
 }
 
-// SetLastOperationStatus sets the value of LastOperationStatus.
-func (s *SandboxRuntime) SetLastOperationStatus(val SandboxRuntimeLastOperationStatus) {
-	s.LastOperationStatus = val
-}
-
 // SetObservedGeneration sets the value of ObservedGeneration.
 func (s *SandboxRuntime) SetObservedGeneration(val int64) {
 	s.ObservedGeneration = val
 }
 
-// SetPhase sets the value of Phase.
-func (s *SandboxRuntime) SetPhase(val SandboxRuntimePhase) {
-	s.Phase = val
+// SetState sets the value of State.
+func (s *SandboxRuntime) SetState(val SandboxRuntimeState) {
+	s.State = val
 }
 
-// SetRestartGeneration sets the value of RestartGeneration.
-func (s *SandboxRuntime) SetRestartGeneration(val int64) {
-	s.RestartGeneration = val
+// SetStateChangedAt sets the value of StateChangedAt.
+func (s *SandboxRuntime) SetStateChangedAt(val OptDateTime) {
+	s.StateChangedAt = val
 }
 
-// SetRestartedGeneration sets the value of RestartedGeneration.
-func (s *SandboxRuntime) SetRestartedGeneration(val int64) {
-	s.RestartedGeneration = val
-}
-
-// SetStatusMessage sets the value of StatusMessage.
-func (s *SandboxRuntime) SetStatusMessage(val OptString) {
-	s.StatusMessage = val
+// SetStateReportedAt sets the value of StateReportedAt.
+func (s *SandboxRuntime) SetStateReportedAt(val OptDateTime) {
+	s.StateReportedAt = val
 }
 
 // SetUpgrade sets the value of Upgrade.
@@ -8876,83 +8744,20 @@ func (s *SandboxRuntime) SetUpgrade(val OptSandboxUpgrade) {
 	s.Upgrade = val
 }
 
-// Current queued or running operation.
-type SandboxRuntimeActiveOperation string
-
-const (
-	SandboxRuntimeActiveOperationCreate  SandboxRuntimeActiveOperation = "create"
-	SandboxRuntimeActiveOperationStart   SandboxRuntimeActiveOperation = "start"
-	SandboxRuntimeActiveOperationStop    SandboxRuntimeActiveOperation = "stop"
-	SandboxRuntimeActiveOperationRestart SandboxRuntimeActiveOperation = "restart"
-	SandboxRuntimeActiveOperationDelete  SandboxRuntimeActiveOperation = "delete"
-)
-
-// AllValues returns all SandboxRuntimeActiveOperation values.
-func (SandboxRuntimeActiveOperation) AllValues() []SandboxRuntimeActiveOperation {
-	return []SandboxRuntimeActiveOperation{
-		SandboxRuntimeActiveOperationCreate,
-		SandboxRuntimeActiveOperationStart,
-		SandboxRuntimeActiveOperationStop,
-		SandboxRuntimeActiveOperationRestart,
-		SandboxRuntimeActiveOperationDelete,
-	}
-}
-
-// MarshalText implements encoding.TextMarshaler.
-func (s SandboxRuntimeActiveOperation) MarshalText() ([]byte, error) {
-	switch s {
-	case SandboxRuntimeActiveOperationCreate:
-		return []byte(s), nil
-	case SandboxRuntimeActiveOperationStart:
-		return []byte(s), nil
-	case SandboxRuntimeActiveOperationStop:
-		return []byte(s), nil
-	case SandboxRuntimeActiveOperationRestart:
-		return []byte(s), nil
-	case SandboxRuntimeActiveOperationDelete:
-		return []byte(s), nil
-	default:
-		return nil, errors.Errorf("invalid value: %q", s)
-	}
-}
-
-// UnmarshalText implements encoding.TextUnmarshaler.
-func (s *SandboxRuntimeActiveOperation) UnmarshalText(data []byte) error {
-	switch SandboxRuntimeActiveOperation(data) {
-	case SandboxRuntimeActiveOperationCreate:
-		*s = SandboxRuntimeActiveOperationCreate
-		return nil
-	case SandboxRuntimeActiveOperationStart:
-		*s = SandboxRuntimeActiveOperationStart
-		return nil
-	case SandboxRuntimeActiveOperationStop:
-		*s = SandboxRuntimeActiveOperationStop
-		return nil
-	case SandboxRuntimeActiveOperationRestart:
-		*s = SandboxRuntimeActiveOperationRestart
-		return nil
-	case SandboxRuntimeActiveOperationDelete:
-		*s = SandboxRuntimeActiveOperationDelete
-		return nil
-	default:
-		return errors.Errorf("invalid value: %q", data)
-	}
-}
-
-// Requested steady state for reconciliation.
+// Requested existence. Power state is not requested: whether a sandbox is running is
+// observed and reported by its runtime, never asked for by the control plane
+// (ADR 0017 §9).
 type SandboxRuntimeDesiredState string
 
 const (
-	SandboxRuntimeDesiredStateRunning SandboxRuntimeDesiredState = "running"
-	SandboxRuntimeDesiredStateStopped SandboxRuntimeDesiredState = "stopped"
+	SandboxRuntimeDesiredStatePresent SandboxRuntimeDesiredState = "present"
 	SandboxRuntimeDesiredStateDeleted SandboxRuntimeDesiredState = "deleted"
 )
 
 // AllValues returns all SandboxRuntimeDesiredState values.
 func (SandboxRuntimeDesiredState) AllValues() []SandboxRuntimeDesiredState {
 	return []SandboxRuntimeDesiredState{
-		SandboxRuntimeDesiredStateRunning,
-		SandboxRuntimeDesiredStateStopped,
+		SandboxRuntimeDesiredStatePresent,
 		SandboxRuntimeDesiredStateDeleted,
 	}
 }
@@ -8960,9 +8765,7 @@ func (SandboxRuntimeDesiredState) AllValues() []SandboxRuntimeDesiredState {
 // MarshalText implements encoding.TextMarshaler.
 func (s SandboxRuntimeDesiredState) MarshalText() ([]byte, error) {
 	switch s {
-	case SandboxRuntimeDesiredStateRunning:
-		return []byte(s), nil
-	case SandboxRuntimeDesiredStateStopped:
+	case SandboxRuntimeDesiredStatePresent:
 		return []byte(s), nil
 	case SandboxRuntimeDesiredStateDeleted:
 		return []byte(s), nil
@@ -8974,11 +8777,8 @@ func (s SandboxRuntimeDesiredState) MarshalText() ([]byte, error) {
 // UnmarshalText implements encoding.TextUnmarshaler.
 func (s *SandboxRuntimeDesiredState) UnmarshalText(data []byte) error {
 	switch SandboxRuntimeDesiredState(data) {
-	case SandboxRuntimeDesiredStateRunning:
-		*s = SandboxRuntimeDesiredStateRunning
-		return nil
-	case SandboxRuntimeDesiredStateStopped:
-		*s = SandboxRuntimeDesiredStateStopped
+	case SandboxRuntimeDesiredStatePresent:
+		*s = SandboxRuntimeDesiredStatePresent
 		return nil
 	case SandboxRuntimeDesiredStateDeleted:
 		*s = SandboxRuntimeDesiredStateDeleted
@@ -8988,8 +8788,8 @@ func (s *SandboxRuntimeDesiredState) UnmarshalText(data []byte) error {
 	}
 }
 
-// User-facing lifecycle state calculated from desired state, observed phase, and reconciliation
-// generations.
+// User-facing lifecycle state, derived from the observed state plus whether the existence
+// generations agree.
 type SandboxRuntimeDisplayState string
 
 const (
@@ -9066,36 +8866,53 @@ func (s *SandboxRuntimeDisplayState) UnmarshalText(data []byte) error {
 	}
 }
 
-// Status of the most recent operation.
-type SandboxRuntimeLastOperationStatus string
+// Observed state. The transitional values are reported by the pool agent, which is the only
+// component that can see them.
+type SandboxRuntimeState string
 
 const (
-	SandboxRuntimeLastOperationStatusPending SandboxRuntimeLastOperationStatus = "pending"
-	SandboxRuntimeLastOperationStatusRunning SandboxRuntimeLastOperationStatus = "running"
-	SandboxRuntimeLastOperationStatusSuccess SandboxRuntimeLastOperationStatus = "success"
-	SandboxRuntimeLastOperationStatusFailed  SandboxRuntimeLastOperationStatus = "failed"
+	SandboxRuntimeStatePending        SandboxRuntimeState = "pending"
+	SandboxRuntimeStateAwaitingSource SandboxRuntimeState = "awaiting_source"
+	SandboxRuntimeStateStarting       SandboxRuntimeState = "starting"
+	SandboxRuntimeStateRunning        SandboxRuntimeState = "running"
+	SandboxRuntimeStateStopping       SandboxRuntimeState = "stopping"
+	SandboxRuntimeStateStopped        SandboxRuntimeState = "stopped"
+	SandboxRuntimeStateDeleted        SandboxRuntimeState = "deleted"
+	SandboxRuntimeStateFailed         SandboxRuntimeState = "failed"
 )
 
-// AllValues returns all SandboxRuntimeLastOperationStatus values.
-func (SandboxRuntimeLastOperationStatus) AllValues() []SandboxRuntimeLastOperationStatus {
-	return []SandboxRuntimeLastOperationStatus{
-		SandboxRuntimeLastOperationStatusPending,
-		SandboxRuntimeLastOperationStatusRunning,
-		SandboxRuntimeLastOperationStatusSuccess,
-		SandboxRuntimeLastOperationStatusFailed,
+// AllValues returns all SandboxRuntimeState values.
+func (SandboxRuntimeState) AllValues() []SandboxRuntimeState {
+	return []SandboxRuntimeState{
+		SandboxRuntimeStatePending,
+		SandboxRuntimeStateAwaitingSource,
+		SandboxRuntimeStateStarting,
+		SandboxRuntimeStateRunning,
+		SandboxRuntimeStateStopping,
+		SandboxRuntimeStateStopped,
+		SandboxRuntimeStateDeleted,
+		SandboxRuntimeStateFailed,
 	}
 }
 
 // MarshalText implements encoding.TextMarshaler.
-func (s SandboxRuntimeLastOperationStatus) MarshalText() ([]byte, error) {
+func (s SandboxRuntimeState) MarshalText() ([]byte, error) {
 	switch s {
-	case SandboxRuntimeLastOperationStatusPending:
+	case SandboxRuntimeStatePending:
 		return []byte(s), nil
-	case SandboxRuntimeLastOperationStatusRunning:
+	case SandboxRuntimeStateAwaitingSource:
 		return []byte(s), nil
-	case SandboxRuntimeLastOperationStatusSuccess:
+	case SandboxRuntimeStateStarting:
 		return []byte(s), nil
-	case SandboxRuntimeLastOperationStatusFailed:
+	case SandboxRuntimeStateRunning:
+		return []byte(s), nil
+	case SandboxRuntimeStateStopping:
+		return []byte(s), nil
+	case SandboxRuntimeStateStopped:
+		return []byte(s), nil
+	case SandboxRuntimeStateDeleted:
+		return []byte(s), nil
+	case SandboxRuntimeStateFailed:
 		return []byte(s), nil
 	default:
 		return nil, errors.Errorf("invalid value: %q", s)
@@ -9103,117 +8920,31 @@ func (s SandboxRuntimeLastOperationStatus) MarshalText() ([]byte, error) {
 }
 
 // UnmarshalText implements encoding.TextUnmarshaler.
-func (s *SandboxRuntimeLastOperationStatus) UnmarshalText(data []byte) error {
-	switch SandboxRuntimeLastOperationStatus(data) {
-	case SandboxRuntimeLastOperationStatusPending:
-		*s = SandboxRuntimeLastOperationStatusPending
+func (s *SandboxRuntimeState) UnmarshalText(data []byte) error {
+	switch SandboxRuntimeState(data) {
+	case SandboxRuntimeStatePending:
+		*s = SandboxRuntimeStatePending
 		return nil
-	case SandboxRuntimeLastOperationStatusRunning:
-		*s = SandboxRuntimeLastOperationStatusRunning
+	case SandboxRuntimeStateAwaitingSource:
+		*s = SandboxRuntimeStateAwaitingSource
 		return nil
-	case SandboxRuntimeLastOperationStatusSuccess:
-		*s = SandboxRuntimeLastOperationStatusSuccess
+	case SandboxRuntimeStateStarting:
+		*s = SandboxRuntimeStateStarting
 		return nil
-	case SandboxRuntimeLastOperationStatusFailed:
-		*s = SandboxRuntimeLastOperationStatusFailed
+	case SandboxRuntimeStateRunning:
+		*s = SandboxRuntimeStateRunning
 		return nil
-	default:
-		return errors.Errorf("invalid value: %q", data)
-	}
-}
-
-// Observed lifecycle phase.
-type SandboxRuntimePhase string
-
-const (
-	SandboxRuntimePhasePending        SandboxRuntimePhase = "pending"
-	SandboxRuntimePhaseProvisioning   SandboxRuntimePhase = "provisioning"
-	SandboxRuntimePhaseAwaitingSource SandboxRuntimePhase = "awaiting_source"
-	SandboxRuntimePhaseStarting       SandboxRuntimePhase = "starting"
-	SandboxRuntimePhaseRunning        SandboxRuntimePhase = "running"
-	SandboxRuntimePhaseStopping       SandboxRuntimePhase = "stopping"
-	SandboxRuntimePhaseStopped        SandboxRuntimePhase = "stopped"
-	SandboxRuntimePhaseDeleting       SandboxRuntimePhase = "deleting"
-	SandboxRuntimePhaseDeleted        SandboxRuntimePhase = "deleted"
-	SandboxRuntimePhaseFailed         SandboxRuntimePhase = "failed"
-)
-
-// AllValues returns all SandboxRuntimePhase values.
-func (SandboxRuntimePhase) AllValues() []SandboxRuntimePhase {
-	return []SandboxRuntimePhase{
-		SandboxRuntimePhasePending,
-		SandboxRuntimePhaseProvisioning,
-		SandboxRuntimePhaseAwaitingSource,
-		SandboxRuntimePhaseStarting,
-		SandboxRuntimePhaseRunning,
-		SandboxRuntimePhaseStopping,
-		SandboxRuntimePhaseStopped,
-		SandboxRuntimePhaseDeleting,
-		SandboxRuntimePhaseDeleted,
-		SandboxRuntimePhaseFailed,
-	}
-}
-
-// MarshalText implements encoding.TextMarshaler.
-func (s SandboxRuntimePhase) MarshalText() ([]byte, error) {
-	switch s {
-	case SandboxRuntimePhasePending:
-		return []byte(s), nil
-	case SandboxRuntimePhaseProvisioning:
-		return []byte(s), nil
-	case SandboxRuntimePhaseAwaitingSource:
-		return []byte(s), nil
-	case SandboxRuntimePhaseStarting:
-		return []byte(s), nil
-	case SandboxRuntimePhaseRunning:
-		return []byte(s), nil
-	case SandboxRuntimePhaseStopping:
-		return []byte(s), nil
-	case SandboxRuntimePhaseStopped:
-		return []byte(s), nil
-	case SandboxRuntimePhaseDeleting:
-		return []byte(s), nil
-	case SandboxRuntimePhaseDeleted:
-		return []byte(s), nil
-	case SandboxRuntimePhaseFailed:
-		return []byte(s), nil
-	default:
-		return nil, errors.Errorf("invalid value: %q", s)
-	}
-}
-
-// UnmarshalText implements encoding.TextUnmarshaler.
-func (s *SandboxRuntimePhase) UnmarshalText(data []byte) error {
-	switch SandboxRuntimePhase(data) {
-	case SandboxRuntimePhasePending:
-		*s = SandboxRuntimePhasePending
+	case SandboxRuntimeStateStopping:
+		*s = SandboxRuntimeStateStopping
 		return nil
-	case SandboxRuntimePhaseProvisioning:
-		*s = SandboxRuntimePhaseProvisioning
+	case SandboxRuntimeStateStopped:
+		*s = SandboxRuntimeStateStopped
 		return nil
-	case SandboxRuntimePhaseAwaitingSource:
-		*s = SandboxRuntimePhaseAwaitingSource
+	case SandboxRuntimeStateDeleted:
+		*s = SandboxRuntimeStateDeleted
 		return nil
-	case SandboxRuntimePhaseStarting:
-		*s = SandboxRuntimePhaseStarting
-		return nil
-	case SandboxRuntimePhaseRunning:
-		*s = SandboxRuntimePhaseRunning
-		return nil
-	case SandboxRuntimePhaseStopping:
-		*s = SandboxRuntimePhaseStopping
-		return nil
-	case SandboxRuntimePhaseStopped:
-		*s = SandboxRuntimePhaseStopped
-		return nil
-	case SandboxRuntimePhaseDeleting:
-		*s = SandboxRuntimePhaseDeleting
-		return nil
-	case SandboxRuntimePhaseDeleted:
-		*s = SandboxRuntimePhaseDeleted
-		return nil
-	case SandboxRuntimePhaseFailed:
-		*s = SandboxRuntimePhaseFailed
+	case SandboxRuntimeStateFailed:
+		*s = SandboxRuntimeStateFailed
 		return nil
 	default:
 		return errors.Errorf("invalid value: %q", data)

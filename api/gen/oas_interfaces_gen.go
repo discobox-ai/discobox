@@ -229,8 +229,8 @@ type RegisterPoolRes interface {
 	registerPoolRes()
 }
 
-type ReportPoolSandboxRemovedRes interface {
-	reportPoolSandboxRemovedRes()
+type ReportPoolSandboxStatesRes interface {
+	reportPoolSandboxStatesRes()
 }
 
 type ResolveSandboxSecretRes interface {

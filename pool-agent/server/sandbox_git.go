@@ -13,7 +13,7 @@ import (
 )
 
 func registerSandboxGitRoutes(router chi.Router, service *sandboxService) {
-	router.Handle("/api/project/{projectId}/pool/{poolId}/sandboxes/{sandboxId}/git-repositories/*", service.sandboxGitHTTPHandler())
+	router.Handle("/api/project/{projectId}/pool/{poolId}/sandboxes/{sandboxId}/git-repositories/*", service.autoStart(service.sandboxGitHTTPHandler()))
 }
 
 func (s *sandboxService) sandboxGitHTTPHandler() http.Handler {

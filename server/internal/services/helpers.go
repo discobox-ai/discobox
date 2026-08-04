@@ -159,17 +159,12 @@ func SandboxToAPI(sandbox *model.Sandbox) (serverapi.Sandbox, error) {
 		config["user"] = user
 	}
 	runtime := map[string]any{
-		"desiredState":        sandbox.DesiredState,
-		"displayState":        SandboxDisplayState(sandbox),
-		"generation":          sandbox.Generation,
-		"lastOperationStatus": sandbox.LastOperationStatus,
-		"observedGeneration":  sandbox.ObservedGeneration,
-		"phase":               sandbox.Phase,
-		"restartGeneration":   sandbox.RestartGeneration,
-		"restartedGeneration": sandbox.RestartedGeneration,
-	}
-	if sandbox.ActiveOperation != nil {
-		runtime["activeOperation"] = *sandbox.ActiveOperation
+		"desiredState":       sandbox.DesiredState,
+		"displayState":       SandboxDisplayState(sandbox),
+		"generation":         sandbox.Generation,
+		"observedGeneration": sandbox.ObservedGeneration,
+		"state":              sandbox.State,
+		"stateChangedAt":     sandbox.StateChangedAt,
 	}
 	if sandbox.ErrorMessage != nil {
 		runtime["errorMessage"] = *sandbox.ErrorMessage
@@ -177,8 +172,8 @@ func SandboxToAPI(sandbox *model.Sandbox) (serverapi.Sandbox, error) {
 	if sandbox.LastActiveAt != nil {
 		runtime["lastActiveAt"] = *sandbox.LastActiveAt
 	}
-	if sandbox.StatusMessage != nil {
-		runtime["statusMessage"] = *sandbox.StatusMessage
+	if sandbox.StateReportedAt != nil {
+		runtime["stateReportedAt"] = *sandbox.StateReportedAt
 	}
 	if len(sandbox.AppliedCommits) > 0 {
 		runtime["appliedCommits"] = sandbox.AppliedCommits
@@ -249,33 +244,34 @@ func SandboxUpgrade(sandbox *model.Sandbox) map[string]any {
 	return upgrade
 }
 
-// SandboxDisplayState consolidates reconciliation intent and observation into
-// the small lifecycle vocabulary presented to API users. A steady state is
-// displayed only after the current generation has been fully observed.
+// SandboxDisplayState renders the small lifecycle vocabulary presented to API
+// users: starting, running, stopping, stopped, deleting, deleted, error.
+//
+// It is close to the identity function on State, because State is now reported
+// by whichever component can observe it rather than inferred from orchestration
+// bookkeeping (ADR 0017 §7). Only the existence axis still consults the
+// generations, because existence is the only thing the server converges.
 func SandboxDisplayState(sandbox *model.Sandbox) string {
-	if sandbox == nil || sandbox.Phase == model.SandboxPhaseFailed {
+	if sandbox == nil {
 		return "error"
 	}
-
-	observed := sandbox.Generation == sandbox.ObservedGeneration
-	switch sandbox.DesiredState {
-	case model.SandboxDesiredStateRunning:
-		if observed && sandbox.Phase == model.SandboxPhaseRunning {
-			return "running"
-		}
-		return "starting"
-	case model.SandboxDesiredStateStopped:
-		if observed && sandbox.Phase == model.SandboxPhaseStopped {
-			return "stopped"
-		}
-		return "stopping"
-	case model.SandboxDesiredStateDeleted:
-		if observed && sandbox.Phase == model.SandboxPhaseDeleted {
-			return "deleted"
-		}
-		return "deleting"
-	default:
+	if sandbox.ErrorMessage != nil || sandbox.State == model.SandboxStateFailed {
 		return "error"
+	}
+	if sandbox.DesiredState == model.DesiredStateDeleted && sandbox.State != model.SandboxStateDeleted {
+		return "deleting"
+	}
+	switch sandbox.State {
+	case model.SandboxStatePending, model.SandboxStateAwaitingSource:
+		// Both are a sandbox on its way up for the first time. Awaiting-source
+		// is parked rather than working, but from the caller's side the sandbox
+		// it asked for is not ready yet and the client that owes it a push is
+		// the one that already knows.
+		return "starting"
+	case "":
+		return "error"
+	default:
+		return sandbox.State
 	}
 }
 

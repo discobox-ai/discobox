@@ -260,9 +260,9 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 								break
 							}
 							switch elem[0] {
-							case 'a': // Prefix: "andbox-removed"
+							case 'a': // Prefix: "andbox-states"
 
-								if l := len("andbox-removed"); len(elem) >= l && elem[0:l] == "andbox-removed" {
+								if l := len("andbox-states"); len(elem) >= l && elem[0:l] == "andbox-states" {
 									elem = elem[l:]
 								} else {
 									break
@@ -272,7 +272,7 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 									// Leaf node.
 									switch r.Method {
 									case "POST":
-										s.handleReportPoolSandboxRemovedRequest([1]string{
+										s.handleReportPoolSandboxStatesRequest([1]string{
 											args[0],
 										}, elemIsEscaped, w, r)
 									default:
@@ -2457,9 +2457,9 @@ func (s *Server) FindPath(method string, u *url.URL) (r Route, _ bool) {
 								break
 							}
 							switch elem[0] {
-							case 'a': // Prefix: "andbox-removed"
+							case 'a': // Prefix: "andbox-states"
 
-								if l := len("andbox-removed"); len(elem) >= l && elem[0:l] == "andbox-removed" {
+								if l := len("andbox-states"); len(elem) >= l && elem[0:l] == "andbox-states" {
 									elem = elem[l:]
 								} else {
 									break
@@ -2469,11 +2469,11 @@ func (s *Server) FindPath(method string, u *url.URL) (r Route, _ bool) {
 									// Leaf node.
 									switch method {
 									case "POST":
-										r.name = ReportPoolSandboxRemovedOperation
-										r.summary = "Report a pool-local sandbox runtime removed outside reconciliation"
-										r.operationID = "report-pool-sandbox-removed"
+										r.name = ReportPoolSandboxStatesOperation
+										r.summary = "Report observed sandbox states from the pool agent"
+										r.operationID = "report-pool-sandbox-states"
 										r.operationGroup = ""
-										r.pathPattern = "/api/pools/{poolId}/sandbox-removed"
+										r.pathPattern = "/api/pools/{poolId}/sandbox-states"
 										r.args = args
 										r.count = 1
 										return r, true

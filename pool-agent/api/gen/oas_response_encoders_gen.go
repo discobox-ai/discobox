@@ -61,10 +61,10 @@ func encodePoolListSandboxesResponse(response *PoolSandboxListResponse, w http.R
 	return nil
 }
 
-func encodePoolStartSandboxResponse(response *PoolSandboxInstance, w http.ResponseWriter, span trace.Span) error {
+func encodePoolRestartSandboxResponse(response *PoolSandboxOperationAccepted, w http.ResponseWriter, span trace.Span) error {
 	w.Header().Set("Content-Type", "application/json; charset=utf-8")
-	w.WriteHeader(200)
-	span.SetStatus(codes.Ok, http.StatusText(200))
+	w.WriteHeader(202)
+	span.SetStatus(codes.Ok, http.StatusText(202))
 
 	e := new(jx.Encoder)
 	response.Encode(e)
@@ -75,10 +75,24 @@ func encodePoolStartSandboxResponse(response *PoolSandboxInstance, w http.Respon
 	return nil
 }
 
-func encodePoolStopSandboxResponse(response *PoolSandboxInstance, w http.ResponseWriter, span trace.Span) error {
+func encodePoolStartSandboxResponse(response *PoolSandboxOperationAccepted, w http.ResponseWriter, span trace.Span) error {
 	w.Header().Set("Content-Type", "application/json; charset=utf-8")
-	w.WriteHeader(200)
-	span.SetStatus(codes.Ok, http.StatusText(200))
+	w.WriteHeader(202)
+	span.SetStatus(codes.Ok, http.StatusText(202))
+
+	e := new(jx.Encoder)
+	response.Encode(e)
+	if _, err := e.WriteTo(w); err != nil {
+		return errors.Wrap(err, "write")
+	}
+
+	return nil
+}
+
+func encodePoolStopSandboxResponse(response *PoolSandboxOperationAccepted, w http.ResponseWriter, span trace.Span) error {
+	w.Header().Set("Content-Type", "application/json; charset=utf-8")
+	w.WriteHeader(202)
+	span.SetStatus(codes.Ok, http.StatusText(202))
 
 	e := new(jx.Encoder)
 	response.Encode(e)

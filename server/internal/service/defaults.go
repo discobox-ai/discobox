@@ -146,10 +146,12 @@ func (s *Service) ensureDefaultSandboxProviderInstalled(ctx context.Context, pro
 // the pool (or the provider), it is not recreated.
 func ensureDefaultPool(ctx context.Context, appStore *store.Store, defaultProvider *model.SandboxProviderInstance) error {
 	pool := &model.Pool{
-		ID:                 id.NewString(id.PrefixPool),
-		ProjectID:          defaultProvider.ProjectID,
-		Name:               "Default",
-		ProviderInstanceID: defaultProvider.ID,
+		ID:        id.NewString(id.PrefixPool),
+		ProjectID: defaultProvider.ProjectID,
+		PoolManifest: model.PoolManifest{
+			Name:               "Default",
+			ProviderInstanceID: defaultProvider.ID,
+		},
 	}
 	if err := appStore.CreatePool(ctx, pool); err != nil {
 		return err

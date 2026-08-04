@@ -9,21 +9,49 @@ integration.
 ```mermaid
 flowchart LR
     api[internal/handlers] --> service[Service]
-    service --> store[internal/store]
-    service --> jobs[internal/resources/jobs.Manager]
-    dispatcher[orchestration.Dispatcher] --> executor[SandboxReconcileExecutor]
-    executor --> store
-    executor --> providers[sandbox.ProviderManager]
-    executor --> auth[internal/auth/sandbox]
+    service -->|"existence & spec intent"| store[internal/store]
+    service -->|"start/stop/restart"| providers[sandbox.ProviderManager]
+    engine[internal/reconcile] --> reconciler[SandboxReconciler]
+    reconciler --> store
+    reconciler --> providers
+    reconciler --> auth[internal/auth/sandbox]
+    agent[pool agent] -->|"observed state"| service
 ```
 
 - `Service` exposes sandbox API use cases and may call store directly for simple
   reads or non-orchestrated updates.
-- Lifecycle intent must go through durable job submission and generation guards.
-- `SandboxReconcileExecutor` owns payload decode, generation assertions, and
-  sandbox lifecycle reconciliation.
-- Provider runtime operations belong in reconciliation, not in handlers or raw
-  stores.
+- Existence and spec intent goes through `recordSandboxIntent`: generation bump,
+  desired state, and dirty mark in one transaction.
+- `SandboxReconciler` converges existence and spec, and nothing else.
+- Provider runtime operations belong in reconciliation or in an explicit
+  instruction, never in handlers or raw stores.
+
+## Power is not orchestrated
+
+`start`, `stop`, and `restart` are instructions forwarded to the pool agent
+(`power.go`). They write no lifecycle state and bump no generation, and their
+responses carry no state — a caller learns the outcome from the project event
+the agent's report produces. `DesiredState` answers existence only: `present`
+or `deleted`.
+
+Observed state arrives on the agent's reporting channel and lands in
+`observations.go`. Two rules there are load-bearing:
+
+- A report never writes intent. Not desired state, not a generation — including
+  the report that a sandbox's container is gone, which is news about the world
+  rather than a change to what was asked for.
+- A complete sync distinguishes "stopped" from "no container", which record the
+  same state. Only the second needs a rebuild, and it gets one through a dirty
+  mark plus the reconciler's idempotent ensure.
+
+`ensure` creates the container and does not start it. The exception is a
+sandbox that has never run — `pending`, or `awaiting_source` resuming after its
+push — because asking for a sandbox means asking for one that runs. A rebuild
+after the container was lost stays stopped until something uses it, and the
+pool agent starts it on demand when that happens.
+
+See [ADR 0017](../../../../docs/adr/0017-resource-state-is-desired-and-observed-with-no-operations.md)
+§§9–13.
 
 ## Source delivery
 
@@ -51,7 +79,7 @@ sequenceDiagram
     S->>S: delivery = push
     S->>W: create (no url/localDirectory)
     W->>W: git init -b <branch>
-    S->>S: phase = awaiting_source
+    S->>S: state = awaiting_source
     C->>S: git push <commit>:refs/heads/<branch> (+ snapshot ref)
     S->>W: proxied git-receive-pack
     C->>S: complete-source-push (confirms commit)
@@ -64,21 +92,22 @@ The push transport is the pre-existing sandbox Git proxy
 no transport. The commit is fixed at create in `Checkout.Commit`;
 `complete-source-push` only confirms it, and a mismatch is refused.
 
-Waiting is bounded: `PhaseChangedAt` anchors the deadline and the engine's
+Waiting is bounded: `StateChangedAt` anchors the deadline and the engine's
 future-dated mark wakes the sandbox to fail it. The anchor is stamped only on a
-real phase change, so a reconcile that re-parks cannot push the deadline out.
+real state change, so neither a reconcile that re-parks nor a repeated runtime
+report can push the deadline out.
 
 See [ADR 0001](../../../../docs/adr/0001-sandbox-origin-and-remote-source-push.md).
 
-## Worker-observed runtime loss
+## Runtime loss
 
-Worker-backed providers report an out-of-band container removal through the
-authenticated pool control-plane route. The sandbox service verifies the
-pool assignment, atomically records stopped intent (generation bump plus stop
-operation), and marks the sandbox dirty. Stop reconciliation treats a missing
-runtime as drift: it recreates the sandbox from persisted intent and state, then
-stops the retained runtime so observed and desired state converge on `stopped`.
-Duplicate, stale-pool, and already-deleting reports are no-ops.
+A sandbox whose container disappears is reported by omission from the pool
+agent's next complete sync. The service records the observed state, marks the
+sandbox dirty, and the reconciler rebuilds the container from the persisted
+spec — leaving it stopped, because nothing has asked for it to run.
+
+Duplicate reports, reports from a pool the sandbox has left, and reports older
+than the recorded watermark are no-ops.
 
 ## Image-backed harnesses
 

@@ -101,7 +101,7 @@ func TestSandboxExecAttachDoneEndsWhenSandboxStops(t *testing.T) {
 				case strings.HasSuffix(r.URL.Path, "/execs/primary"):
 					// The proxy refuses exec reads unless the sandbox is running.
 					w.WriteHeader(http.StatusConflict)
-					_, _ = w.Write([]byte(`{"error":"sandbox is not running"}`))
+					_, _ = w.Write([]byte(`{"error":"sandbox not found"}`))
 				case r.Method == http.MethodPost && strings.HasSuffix(r.URL.Path, "/start"):
 					started = true
 					w.WriteHeader(http.StatusAccepted)

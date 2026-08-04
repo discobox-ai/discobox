@@ -402,12 +402,12 @@ type Invoker interface {
 	//
 	// POST /api/pools/register
 	RegisterPool(ctx context.Context, request *RegisterPoolBody) (RegisterPoolRes, error)
-	// ReportPoolSandboxRemoved invokes report-pool-sandbox-removed operation.
+	// ReportPoolSandboxStates invokes report-pool-sandbox-states operation.
 	//
-	// Report a pool-local sandbox runtime removed outside reconciliation.
+	// Report observed sandbox states from the pool agent.
 	//
-	// POST /api/pools/{poolId}/sandbox-removed
-	ReportPoolSandboxRemoved(ctx context.Context, request *ReportPoolSandboxRemovedBody, params ReportPoolSandboxRemovedParams) (ReportPoolSandboxRemovedRes, error)
+	// POST /api/pools/{poolId}/sandbox-states
+	ReportPoolSandboxStates(ctx context.Context, request *ReportPoolSandboxStatesBody, params ReportPoolSandboxStatesParams) (ReportPoolSandboxStatesRes, error)
 	// ResolveSandboxSecret invokes resolve-sandbox-secret operation.
 	//
 	// Resolve a sandbox sentinel secret.
@@ -6919,21 +6919,21 @@ func (c *Client) sendRegisterPool(ctx context.Context, request *RegisterPoolBody
 	return result, nil
 }
 
-// ReportPoolSandboxRemoved invokes report-pool-sandbox-removed operation.
+// ReportPoolSandboxStates invokes report-pool-sandbox-states operation.
 //
-// Report a pool-local sandbox runtime removed outside reconciliation.
+// Report observed sandbox states from the pool agent.
 //
-// POST /api/pools/{poolId}/sandbox-removed
-func (c *Client) ReportPoolSandboxRemoved(ctx context.Context, request *ReportPoolSandboxRemovedBody, params ReportPoolSandboxRemovedParams) (ReportPoolSandboxRemovedRes, error) {
-	res, err := c.sendReportPoolSandboxRemoved(ctx, request, params)
+// POST /api/pools/{poolId}/sandbox-states
+func (c *Client) ReportPoolSandboxStates(ctx context.Context, request *ReportPoolSandboxStatesBody, params ReportPoolSandboxStatesParams) (ReportPoolSandboxStatesRes, error) {
+	res, err := c.sendReportPoolSandboxStates(ctx, request, params)
 	return res, err
 }
 
-func (c *Client) sendReportPoolSandboxRemoved(ctx context.Context, request *ReportPoolSandboxRemovedBody, params ReportPoolSandboxRemovedParams) (res ReportPoolSandboxRemovedRes, err error) {
+func (c *Client) sendReportPoolSandboxStates(ctx context.Context, request *ReportPoolSandboxStatesBody, params ReportPoolSandboxStatesParams) (res ReportPoolSandboxStatesRes, err error) {
 	otelAttrs := []attribute.KeyValue{
-		otelogen.OperationID("report-pool-sandbox-removed"),
+		otelogen.OperationID("report-pool-sandbox-states"),
 		semconv.HTTPRequestMethodKey.String("POST"),
-		semconv.URLTemplateKey.String("/api/pools/{poolId}/sandbox-removed"),
+		semconv.URLTemplateKey.String("/api/pools/{poolId}/sandbox-states"),
 	}
 	otelAttrs = append(otelAttrs, c.cfg.Attributes...)
 
@@ -6949,7 +6949,7 @@ func (c *Client) sendReportPoolSandboxRemoved(ctx context.Context, request *Repo
 	c.requests.Add(ctx, 1, metric.WithAttributes(otelAttrs...))
 
 	// Start a span for this request.
-	ctx, span := c.cfg.Tracer.Start(ctx, ReportPoolSandboxRemovedOperation,
+	ctx, span := c.cfg.Tracer.Start(ctx, ReportPoolSandboxStatesOperation,
 		trace.WithAttributes(otelAttrs...),
 		clientSpanKind,
 	)
@@ -6986,7 +6986,7 @@ func (c *Client) sendReportPoolSandboxRemoved(ctx context.Context, request *Repo
 		}
 		pathParts[1] = encoded
 	}
-	pathParts[2] = "/sandbox-removed"
+	pathParts[2] = "/sandbox-states"
 	uri.AddPathParts(u, pathParts[:]...)
 
 	stage = "EncodeRequest"
@@ -6994,7 +6994,7 @@ func (c *Client) sendReportPoolSandboxRemoved(ctx context.Context, request *Repo
 	if err != nil {
 		return res, errors.Wrap(err, "create request")
 	}
-	if err := encodeReportPoolSandboxRemovedRequest(request, r); err != nil {
+	if err := encodeReportPoolSandboxStatesRequest(request, r); err != nil {
 		return res, errors.Wrap(err, "encode request")
 	}
 
@@ -7007,7 +7007,7 @@ func (c *Client) sendReportPoolSandboxRemoved(ctx context.Context, request *Repo
 	defer body.Close()
 
 	stage = "DecodeResponse"
-	result, err := decodeReportPoolSandboxRemovedResponse(resp)
+	result, err := decodeReportPoolSandboxStatesResponse(resp)
 	if err != nil {
 		return res, errors.Wrap(err, "decode response")
 	}

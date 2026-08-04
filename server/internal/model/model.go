@@ -6,6 +6,8 @@
 package model
 
 import (
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"strings"
 	"time"
@@ -18,39 +20,32 @@ import (
 )
 
 const (
-	PoolDesiredStateActive  = "active"
-	PoolDesiredStateDeleted = "deleted"
+	// Pool desired state is DesiredStatePresent / DesiredStateDeleted, shared
+	// with every other orchestrated resource (see lifecycle.go).
 
-	PoolPhasePending     = "pending"
-	PoolPhaseLaunching   = "launching"
-	PoolPhaseRegistering = "registering"
-	PoolPhaseActive      = "active"
-	PoolPhaseDeleting    = "deleting"
-	PoolPhaseOffline     = "offline"
-	PoolPhaseFailed      = "failed"
-	PoolPhaseDeleted     = "deleted"
+	PoolStatePending     = "pending"
+	PoolStateRegistering = "registering"
+	PoolStateActive      = "active"
+	PoolStateOffline     = "offline"
+	PoolStateFailed      = "failed"
+	PoolStateDeleted     = "deleted"
 
-	PoolOperationCreate = "create"
-	PoolOperationDelete = "delete"
-
-	SandboxDesiredStateRunning = "running"
-	SandboxDesiredStateStopped = "stopped"
-	SandboxDesiredStateDeleted = "deleted"
-
-	SandboxPhasePending      = "pending"
-	SandboxPhaseProvisioning = "provisioning"
-	// SandboxPhaseAwaitingSource means the sandbox is provisioned and waiting
+	SandboxStatePending = "pending"
+	// SandboxStateAwaitingSource means the sandbox is provisioned and waiting
 	// for the client to push its source, because the source is a local
 	// directory this server's provider cannot reach. The client pushes into the
 	// sandbox's repository, then calls continue to name the commit to check out.
-	SandboxPhaseAwaitingSource = "awaiting_source"
-	SandboxPhaseStarting       = "starting"
-	SandboxPhaseRunning        = "running"
-	SandboxPhaseStopping       = "stopping"
-	SandboxPhaseStopped        = "stopped"
-	SandboxPhaseDeleting       = "deleting"
-	SandboxPhaseDeleted        = "deleted"
-	SandboxPhaseFailed         = "failed"
+	SandboxStateAwaitingSource = "awaiting_source"
+	// SandboxStateStarting and the other transitional states are observations,
+	// not dispatch bookkeeping: only the pool agent writes them, and only
+	// because a runtime that has begun a start and not finished it genuinely is
+	// in `starting` (ADR 0017 §2).
+	SandboxStateStarting = "starting"
+	SandboxStateRunning  = "running"
+	SandboxStateStopping = "stopping"
+	SandboxStateStopped  = "stopped"
+	SandboxStateDeleted  = "deleted"
+	SandboxStateFailed   = "failed"
 
 	// GitSourceDeliveryClone has the sandbox fetch the source itself.
 	// GitSourceDeliveryPush has the client push it in, for a local directory the
@@ -58,17 +53,6 @@ const (
 	// source fields happen to be set.
 	GitSourceDeliveryClone = "clone"
 	GitSourceDeliveryPush  = "push"
-
-	SandboxOperationCreate  = "create"
-	SandboxOperationStart   = "start"
-	SandboxOperationStop    = "stop"
-	SandboxOperationRestart = "restart"
-	SandboxOperationDelete  = "delete"
-
-	SandboxOperationStatusPending = OperationStatusPending
-	SandboxOperationStatusRunning = OperationStatusRunning
-	SandboxOperationStatusSuccess = OperationStatusSuccess
-	SandboxOperationStatusFailed  = OperationStatusFailed
 )
 
 // Enum registries. Each slice is the canonical set of values a string-typed
@@ -79,87 +63,51 @@ const (
 // it — a value present in one list but not the other is exactly the bug the test
 // catches.
 var (
-	PoolDesiredStates = []string{
-		PoolDesiredStateActive,
-		PoolDesiredStateDeleted,
+	PoolStates = []string{
+		PoolStatePending,
+		PoolStateRegistering,
+		PoolStateActive,
+		PoolStateOffline,
+		PoolStateFailed,
+		PoolStateDeleted,
 	}
-	PoolPhases = []string{
-		PoolPhasePending,
-		PoolPhaseLaunching,
-		PoolPhaseRegistering,
-		PoolPhaseActive,
-		PoolPhaseDeleting,
-		PoolPhaseOffline,
-		PoolPhaseFailed,
-		PoolPhaseDeleted,
-	}
-	SandboxDesiredStates = []string{
-		SandboxDesiredStateRunning,
-		SandboxDesiredStateStopped,
-		SandboxDesiredStateDeleted,
-	}
-	SandboxPhases = []string{
-		SandboxPhasePending,
-		SandboxPhaseProvisioning,
-		SandboxPhaseAwaitingSource,
-		SandboxPhaseStarting,
-		SandboxPhaseRunning,
-		SandboxPhaseStopping,
-		SandboxPhaseStopped,
-		SandboxPhaseDeleting,
-		SandboxPhaseDeleted,
-		SandboxPhaseFailed,
+	SandboxStates = []string{
+		SandboxStatePending,
+		SandboxStateAwaitingSource,
+		SandboxStateStarting,
+		SandboxStateRunning,
+		SandboxStateStopping,
+		SandboxStateStopped,
+		SandboxStateDeleted,
+		SandboxStateFailed,
 	}
 	GitSourceDeliveries = []string{
 		GitSourceDeliveryClone,
 		GitSourceDeliveryPush,
 	}
-	OperationStatuses = []string{
-		OperationStatusPending,
-		OperationStatusRunning,
-		OperationStatusSuccess,
-		OperationStatusFailed,
-	}
 )
 
-var (
-	PoolCreateOperation = OperationSpec{
-		Operation:    PoolOperationCreate,
-		DesiredState: PoolDesiredStateActive,
-		Phase:        PoolPhasePending,
+// SandboxIsLive reports whether a sandbox has a container something is
+// currently relying on, and so must not be rebuilt underneath it.
+//
+// Running is the obvious case. Awaiting-source is the subtle one: it is parked
+// mid-create waiting for the client's push, and replacing its container in the
+// middle of that hands the push a different sandbox than the one it started
+// against. The transitional states count as live because the runtime is acting
+// on the container right now.
+//
+// Guards are written against this predicate rather than against a single state
+// value, which is the lesson of the wedge described in ADR 0017 §4: a check
+// spelled State == "stopped" is asking "is anything relying on this", and
+// `failed` and `stopped` answer that question the same way.
+func SandboxIsLive(state string) bool {
+	switch state {
+	case SandboxStateAwaitingSource, SandboxStateStarting, SandboxStateRunning, SandboxStateStopping:
+		return true
+	default:
+		return false
 	}
-	PoolDeleteOperation = OperationSpec{
-		Operation:    PoolOperationDelete,
-		DesiredState: PoolDesiredStateDeleted,
-		Phase:        PoolPhaseDeleting,
-	}
-
-	SandboxCreateOperation = OperationSpec{
-		Operation:    SandboxOperationCreate,
-		DesiredState: SandboxDesiredStateRunning,
-		Phase:        SandboxPhasePending,
-	}
-	SandboxStartOperation = OperationSpec{
-		Operation:    SandboxOperationStart,
-		DesiredState: SandboxDesiredStateRunning,
-		Phase:        SandboxPhaseStarting,
-	}
-	SandboxStopOperation = OperationSpec{
-		Operation:    SandboxOperationStop,
-		DesiredState: SandboxDesiredStateStopped,
-		Phase:        SandboxPhaseStopping,
-	}
-	SandboxRestartOperation = OperationSpec{
-		Operation:    SandboxOperationRestart,
-		DesiredState: SandboxDesiredStateRunning,
-		Phase:        SandboxPhaseStarting,
-	}
-	SandboxDeleteOperation = OperationSpec{
-		Operation:    SandboxOperationDelete,
-		DesiredState: SandboxDesiredStateDeleted,
-		Phase:        SandboxPhaseDeleting,
-	}
-)
+}
 
 // User represents an authenticated user.
 type User struct {
@@ -469,6 +417,20 @@ func (o *Origin) Key() string {
 	return originkey.Of(o.HostID, o.ProjectPath)
 }
 
+// PoolManifest is the pool spec, embedded anonymously in Pool on the same terms
+// as SandboxManifest (ADR 0017 §11): the fields the pool's host is built from,
+// separated from everything the host reports back.
+type PoolManifest struct {
+	Name               string `gorm:"column:name;not null;type:text;uniqueIndex:idx_pool_project_name,priority:2" json:"name" doc:"Pool display name" maxLength:"200"`
+	ProviderInstanceID string `gorm:"column:provider_instance_id;not null;type:text;index" json:"providerInstanceId" doc:"Backing sandbox provider instance ID. Immutable after create."`
+	// Envelope: total capacity available to the pool. Sandbox resource requests
+	// are scheduled against the envelope and may overcommit it. Zero means the
+	// envelope is sized by the pool's host.
+	CPUVCPUs     float64 `gorm:"column:cpu_vcpus;not null;default:0" json:"cpuVcpus" doc:"Total CPU capacity of the pool envelope in vCPUs. Zero sizes the envelope by the host."`
+	MemoryBytes  int64   `gorm:"column:memory_bytes;not null;default:0" json:"memoryBytes" doc:"Total memory capacity of the pool envelope in bytes. Zero sizes the envelope by the host."`
+	StorageBytes int64   `gorm:"column:storage_bytes;not null;default:0" json:"storageBytes" doc:"Total storage capacity of the pool envelope in bytes. Zero sizes the envelope by the host."`
+}
+
 // Pool is the user-visible sharing boundary sandboxes are scheduled into,
 // and its own runtime host (ADR-0006).
 //
@@ -485,16 +447,9 @@ func (o *Origin) Key() string {
 // runtime in place under the same pool identity; pool-local state survives in
 // named volumes.
 type Pool struct {
-	ID                 string `gorm:"primaryKey;type:text" json:"id" doc:"Stable pool ID"`
-	ProjectID          string `gorm:"column:project_id;not null;type:text;index;uniqueIndex:idx_pool_project_name,priority:1" json:"projectId" doc:"Project ID"`
-	Name               string `gorm:"column:name;not null;type:text;uniqueIndex:idx_pool_project_name,priority:2" json:"name" doc:"Pool display name" maxLength:"200"`
-	ProviderInstanceID string `gorm:"column:provider_instance_id;not null;type:text;index" json:"providerInstanceId" doc:"Backing sandbox provider instance ID. Immutable after create."`
-	// Envelope: total capacity available to the pool. Sandbox resource requests
-	// are scheduled against the envelope and may overcommit it. Zero means the
-	// envelope is sized by the pool's host.
-	CPUVCPUs     float64 `gorm:"column:cpu_vcpus;not null;default:0" json:"cpuVcpus" doc:"Total CPU capacity of the pool envelope in vCPUs. Zero sizes the envelope by the host."`
-	MemoryBytes  int64   `gorm:"column:memory_bytes;not null;default:0" json:"memoryBytes" doc:"Total memory capacity of the pool envelope in bytes. Zero sizes the envelope by the host."`
-	StorageBytes int64   `gorm:"column:storage_bytes;not null;default:0" json:"storageBytes" doc:"Total storage capacity of the pool envelope in bytes. Zero sizes the envelope by the host."`
+	ID           string `gorm:"primaryKey;type:text" json:"id" doc:"Stable pool ID"`
+	ProjectID    string `gorm:"column:project_id;not null;type:text;index;uniqueIndex:idx_pool_project_name,priority:1" json:"projectId" doc:"Project ID"`
+	PoolManifest `gorm:"embedded"`
 
 	// Runtime host state, reported by the pool agent and the provider.
 	PublicKey             string          `gorm:"column:public_key;type:text" json:"publicKey,omitempty" doc:"Pool agent public key"`
@@ -534,7 +489,7 @@ func (p *Pool) BeforeCreate(_ *gorm.DB) error {
 			return err
 		}
 	}
-	p.SetDefaults(PoolDesiredStateActive, PoolPhasePending)
+	p.SetDefaults(DesiredStatePresent, PoolStatePending)
 	if p.KeyType == "" {
 		p.KeyType = "ed25519"
 	}
@@ -550,45 +505,92 @@ func (p *Pool) EverCreated() bool {
 	return p != nil && p.RegisteredAt != nil
 }
 
+// SandboxManifest is the sandbox spec: everything the container is built from.
+// It is embedded anonymously in Sandbox, so it is flat in the database and flat
+// on the wire — the split is a statement about ownership, not a nesting change
+// (ADR 0017 §11).
+//
+// Membership has one test: **does changing this field require rebuilding the
+// container?** Everything here answers yes, which is what makes the fingerprint
+// over this struct a sound drift check. Fields that answer no — Name,
+// Description, Origin, AppliedCommits, the derived index columns, and every
+// observed or runtime field — belong on Sandbox instead.
+//
+// Model, ModelServiceTier, ModelReasoningLevel, and Prompt are here because
+// they are handed to the runtime at create and baked into the container the
+// harness launches from, so a change to any of them only takes effect on a
+// rebuild. That they read as session parameters rather than infrastructure does
+// not change where they are consumed.
+//
+// Adding a field here puts it in the fingerprint automatically. That is the
+// entire reason the struct exists: a hand-maintained list of spec fields rots
+// silently, and the symptom is a container that stops being rebuilt for a
+// change that should rebuild it.
+type SandboxManifest struct {
+	HarnessConfigID      *string              `gorm:"column:harness_config_id;type:text;index" json:"harnessConfigId,omitempty" doc:"Harness config ID"`
+	HarnessMode          string               `gorm:"column:harness_mode;not null;type:text;default:'run'" json:"harnessMode,omitempty" doc:"Harness startup mode: run or config"`
+	Model                *string              `gorm:"column:model;type:text" json:"model,omitempty" doc:"Model the harness should use"`
+	ModelServiceTier     *string              `gorm:"column:model_service_tier;type:text" json:"modelServiceTier,omitempty" doc:"Model service tier the harness should use"`
+	ModelReasoningLevel  *string              `gorm:"column:model_reasoning_level;type:text" json:"modelReasoningLevel,omitempty" doc:"Model reasoning level the harness should use"`
+	Prompt               []string             `gorm:"column:prompt;type:text;serializer:json" json:"prompt,omitempty" doc:"Prompt the harness should run, passed as argv to preserve the caller's exact tokens"`
+	Image                string               `gorm:"column:image;type:text" json:"image,omitempty" doc:"Sandbox base image"`
+	ImageDigest          string               `gorm:"column:image_digest;not null;type:text;default:''" json:"imageDigest,omitempty" doc:"Config digest of the image this sandbox is pinned to. Written at create and by an upgrade; the pool host rebuilds any container whose spec fingerprint does not match (ADR 0016, ADR 0017 §5)."`
+	Env                  map[string]string    `gorm:"column:env;type:text;serializer:json" json:"env,omitempty" doc:"Environment variables available to sandbox-agent terminals and execs by default"`
+	Source               *GitSource           `gorm:"column:source;type:text;serializer:json" json:"source,omitempty" doc:"Primary Git source to materialize in the sandbox"`
+	SourceCodeReferences SourceCodeReferences `gorm:"column:source_code_references;type:text;serializer:json" json:"sourceCodeReferences,omitempty" doc:"Additional Git sources to materialize in the sandbox"`
+	UserName             *string              `gorm:"column:user_name;type:text" json:"userName,omitempty" doc:"Username to use inside the sandbox"`
+	UserUID              *int                 `gorm:"column:user_uid" json:"userUid,omitempty" doc:"UID to use inside the sandbox"`
+	UserGID              *int                 `gorm:"column:user_gid" json:"userGid,omitempty" doc:"GID to use inside the sandbox"`
+	HomeDirectory        *string              `gorm:"column:home_directory;type:text" json:"homeDirectory,omitempty" doc:"User home directory to use inside the sandbox"`
+	CPUVCPUs             float64              `gorm:"column:cpu_vcpus;not null;default:1" json:"cpuVcpus" doc:"Requested CPU capacity in vCPUs"`
+	MemoryBytes          int64                `gorm:"column:memory_bytes;not null;default:0" json:"memoryBytes" doc:"Requested memory capacity in bytes"`
+	StorageBytes         int64                `gorm:"column:storage_bytes;not null;default:0" json:"storageBytes" doc:"Requested storage capacity in bytes"`
+}
+
+// Fingerprint is the spec digest the runtime compares a container against
+// (ADR 0017 §5). It is recorded as a container label at build time; a container
+// whose label no longer matches was built from a different spec and is rebuilt.
+//
+// Canonical JSON of the manifest is the input, so the digest is stable across
+// processes and changes exactly when a spec field changes.
+func (m SandboxManifest) Fingerprint() string {
+	encoded, err := json.Marshal(m)
+	if err != nil {
+		// Marshaling a manifest cannot fail for the types it holds. If it ever
+		// does, a fingerprint that matches nothing is the safe answer: it forces
+		// a rebuild rather than silently accepting a stale container.
+		return "unfingerprintable"
+	}
+	sum := sha256.Sum256(encoded)
+	return hex.EncodeToString(sum[:])
+}
+
 // Sandbox is the managed runtime/session unit.
 type Sandbox struct {
-	ID                   string  `gorm:"primaryKey;type:text" json:"id" doc:"Stable sandbox ID"`
-	ProjectID            string  `gorm:"column:project_id;not null;type:text;index" json:"projectId" doc:"Project ID"`
-	CreatedByUserID      string  `gorm:"column:created_by_user_id;not null;type:text;index" json:"createdByUserId" doc:"Creating user ID"`
-	PoolID               string  `gorm:"column:pool_id;not null;type:text;index" json:"poolId" doc:"Pool the sandbox is scheduled into. Resolved at create, immutable after."`
-	HarnessConfigID      *string `gorm:"column:harness_config_id;type:text;index" json:"harnessConfigId,omitempty" doc:"Harness config ID"`
-	HarnessMode          string  `gorm:"column:harness_mode;not null;type:text;default:'run'" json:"harnessMode,omitempty" doc:"Harness startup mode: run or config"`
-	Name                 string  `gorm:"not null;type:text" json:"name" doc:"Sandbox name" maxLength:"200"`
-	Description          *string `gorm:"type:text" json:"description,omitempty" doc:"Sandbox description"`
-	ResourceLifecycle    `gorm:"embedded"`
-	RestartGeneration    int64                 `gorm:"column:restart_generation;not null;default:0" json:"restartGeneration" doc:"Requested restart generation"`
-	RestartedGeneration  int64                 `gorm:"column:restarted_generation;not null;default:0" json:"restartedGeneration" doc:"Last restart generation completed by reconciliation"`
-	Model                *string               `gorm:"column:model;type:text" json:"model,omitempty" doc:"Model the harness should use"`
-	ModelServiceTier     *string               `gorm:"column:model_service_tier;type:text" json:"modelServiceTier,omitempty" doc:"Model service tier the harness should use"`
-	ModelReasoningLevel  *string               `gorm:"column:model_reasoning_level;type:text" json:"modelReasoningLevel,omitempty" doc:"Model reasoning level the harness should use"`
-	Prompt               []string              `gorm:"column:prompt;type:text;serializer:json" json:"prompt,omitempty" doc:"Prompt the harness should run, passed as argv to preserve the caller's exact tokens"`
-	Image                string                `gorm:"column:image;type:text" json:"image,omitempty" doc:"Sandbox base image"`
-	ImageDigest          string                `gorm:"column:image_digest;not null;type:text;default:''" json:"imageDigest,omitempty" doc:"Config digest of the image this sandbox is pinned to. Written at create and by an upgrade, never by a restart; the pool host rebuilds any container that does not match it (ADR 0016)."`
-	Env                  map[string]string     `gorm:"column:env;type:text;serializer:json" json:"env,omitempty" doc:"Environment variables available to sandbox-agent terminals and execs by default"`
-	Source               *GitSource            `gorm:"column:source;type:text;serializer:json" json:"source,omitempty" doc:"Primary Git source to materialize in the sandbox"`
-	SourceRoot           *string               `gorm:"column:source_root;type:text;index" json:"sourceRoot,omitempty" doc:"Normalized repository identity of the primary source: local repository root path, or remote URL. Derived from Source; used to list the sandboxes belonging to a repository."`
-	SourceCodeReferences SourceCodeReferences  `gorm:"column:source_code_references;type:text;serializer:json" json:"sourceCodeReferences,omitempty" doc:"Additional Git sources to materialize in the sandbox"`
-	Origin               *Origin               `gorm:"column:origin;type:text;serializer:json" json:"origin,omitempty" doc:"Client host and project directory the sandbox was created from. Immutable after create."`
-	SourceDeliveredAt    *time.Time            `gorm:"column:source_delivered_at" json:"sourceDeliveredAt,omitempty" doc:"When the client reported its push complete for a push-delivered source. Empty while the sandbox is still awaiting it. The commit to check out is the source's Checkout.Commit, fixed at create." format:"date-time"`
-	AppliedCommits       []AppliedSourceCommit `gorm:"column:applied_commits;type:text;serializer:json" json:"appliedCommits,omitempty" doc:"History of successful disco apply runs that landed this sandbox's commits on a host (ADR 0014). Client-reported; append-only."`
-	OriginKey            *string               `gorm:"column:origin_key;type:text;index" json:"-" doc:"Indexed identity of Origin. Derived from Origin; used to list the sandboxes created from one client project directory."`
-	UserName             *string               `gorm:"column:user_name;type:text" json:"userName,omitempty" doc:"Username to use inside the sandbox"`
-	UserUID              *int                  `gorm:"column:user_uid" json:"userUid,omitempty" doc:"UID to use inside the sandbox"`
-	UserGID              *int                  `gorm:"column:user_gid" json:"userGid,omitempty" doc:"GID to use inside the sandbox"`
-	HomeDirectory        *string               `gorm:"column:home_directory;type:text" json:"homeDirectory,omitempty" doc:"User home directory to use inside the sandbox"`
-	CPUVCPUs             float64               `gorm:"column:cpu_vcpus;not null;default:1" json:"cpuVcpus" doc:"Requested CPU capacity in vCPUs"`
-	MemoryBytes          int64                 `gorm:"column:memory_bytes;not null;default:0" json:"memoryBytes" doc:"Requested memory capacity in bytes"`
-	StorageBytes         int64                 `gorm:"column:storage_bytes;not null;default:0" json:"storageBytes" doc:"Requested storage capacity in bytes"`
-	RuntimeState         json.RawMessage       `gorm:"column:runtime_state;type:text" json:"runtimeState,omitempty" doc:"Non-secret provider runtime state"`
-	SecretState          []byte                `gorm:"column:secret_state" json:"-"`
-	LastActiveAt         *time.Time            `gorm:"column:last_active_at;index" json:"lastActiveAt,omitempty" doc:"Last observed activity timestamp" format:"date-time"`
-	CreatedAt            time.Time             `gorm:"autoCreateTime" json:"createdAt" doc:"Creation timestamp" format:"date-time"`
-	UpdatedAt            time.Time             `gorm:"autoUpdateTime" json:"updatedAt" doc:"Last update timestamp" format:"date-time"`
+	ID                string  `gorm:"primaryKey;type:text" json:"id" doc:"Stable sandbox ID"`
+	ProjectID         string  `gorm:"column:project_id;not null;type:text;index" json:"projectId" doc:"Project ID"`
+	CreatedByUserID   string  `gorm:"column:created_by_user_id;not null;type:text;index" json:"createdByUserId" doc:"Creating user ID"`
+	PoolID            string  `gorm:"column:pool_id;not null;type:text;index" json:"poolId" doc:"Pool the sandbox is scheduled into. Resolved at create, immutable after."`
+	Name              string  `gorm:"not null;type:text" json:"name" doc:"Sandbox name" maxLength:"200"`
+	Description       *string `gorm:"type:text" json:"description,omitempty" doc:"Sandbox description"`
+	SandboxManifest   `gorm:"embedded"`
+	ResourceLifecycle `gorm:"embedded"`
+	SourceRoot        *string               `gorm:"column:source_root;type:text;index" json:"sourceRoot,omitempty" doc:"Normalized repository identity of the primary source: local repository root path, or remote URL. Derived from Source; used to list the sandboxes belonging to a repository."`
+	Origin            *Origin               `gorm:"column:origin;type:text;serializer:json" json:"origin,omitempty" doc:"Client host and project directory the sandbox was created from. Immutable after create."`
+	SourceDeliveredAt *time.Time            `gorm:"column:source_delivered_at" json:"sourceDeliveredAt,omitempty" doc:"When the client reported its push complete for a push-delivered source. Empty while the sandbox is still awaiting it. The commit to check out is the source's Checkout.Commit, fixed at create." format:"date-time"`
+	AppliedCommits    []AppliedSourceCommit `gorm:"column:applied_commits;type:text;serializer:json" json:"appliedCommits,omitempty" doc:"History of successful disco apply runs that landed this sandbox's commits on a host (ADR 0014). Client-reported; append-only."`
+	OriginKey         *string               `gorm:"column:origin_key;type:text;index" json:"-" doc:"Indexed identity of Origin. Derived from Origin; used to list the sandboxes created from one client project directory."`
+	RuntimeState      json.RawMessage       `gorm:"column:runtime_state;type:text" json:"runtimeState,omitempty" doc:"Non-secret provider runtime state"`
+	SecretState       []byte                `gorm:"column:secret_state" json:"-"`
+	LastActiveAt      *time.Time            `gorm:"column:last_active_at;index" json:"lastActiveAt,omitempty" doc:"Last observed activity timestamp" format:"date-time"`
+	// StateReportedAt and StateReportSeq order the runtime's state reports
+	// (ADR 0017 §10). A report older than what is already recorded is ignored,
+	// so a delayed transition cannot overwrite a newer complete sync.
+	StateReportedAt *time.Time `gorm:"column:state_reported_at" json:"stateReportedAt,omitempty" doc:"When the hosting pool agent last reported this sandbox's state" format:"date-time"`
+	StateReportBoot string     `gorm:"column:state_report_boot;not null;type:text;default:''" json:"-" doc:"Boot ID of the pool agent that produced the recorded state report"`
+	StateReportSeq  int64      `gorm:"column:state_report_seq;not null;default:0" json:"-" doc:"Sequence number of the recorded state report within its reporting agent's boot"`
+	CreatedAt       time.Time  `gorm:"autoCreateTime" json:"createdAt" doc:"Creation timestamp" format:"date-time"`
+	UpdatedAt       time.Time  `gorm:"autoUpdateTime" json:"updatedAt" doc:"Last update timestamp" format:"date-time"`
 
 	Project       *Project       `gorm:"foreignKey:ProjectID" json:"-"`
 	CreatedBy     *User          `gorm:"-" json:"createdBy,omitempty" doc:"Creating user"`
@@ -612,7 +614,7 @@ func (s *Sandbox) BeforeCreate(_ *gorm.DB) error {
 			return err
 		}
 	}
-	s.SetDefaults(SandboxDesiredStateRunning, SandboxPhasePending)
+	s.SetDefaults(DesiredStatePresent, SandboxStatePending)
 	if s.CPUVCPUs <= 0 {
 		s.CPUVCPUs = 1
 	}

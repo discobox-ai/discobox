@@ -6830,13 +6830,13 @@ func decodeRefreshHarnessConfigImageParams(args [2]string, argsEscaped bool, r *
 	return params, nil
 }
 
-// ReportPoolSandboxRemovedParams is parameters of report-pool-sandbox-removed operation.
-type ReportPoolSandboxRemovedParams struct {
+// ReportPoolSandboxStatesParams is parameters of report-pool-sandbox-states operation.
+type ReportPoolSandboxStatesParams struct {
 	// Pool ID.
 	PoolId string
 }
 
-func unpackReportPoolSandboxRemovedParams(packed middleware.Parameters) (params ReportPoolSandboxRemovedParams) {
+func unpackReportPoolSandboxStatesParams(packed middleware.Parameters) (params ReportPoolSandboxStatesParams) {
 	{
 		key := middleware.ParameterKey{
 			Name: "poolId",
@@ -6847,7 +6847,7 @@ func unpackReportPoolSandboxRemovedParams(packed middleware.Parameters) (params 
 	return params
 }
 
-func decodeReportPoolSandboxRemovedParams(args [1]string, argsEscaped bool, r *http.Request) (params ReportPoolSandboxRemovedParams, _ error) {
+func decodeReportPoolSandboxStatesParams(args [1]string, argsEscaped bool, r *http.Request) (params ReportPoolSandboxStatesParams, _ error) {
 	// Decode path: poolId.
 	if err := func() error {
 		param := args[0]

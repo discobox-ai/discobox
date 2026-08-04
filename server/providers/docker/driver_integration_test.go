@@ -50,7 +50,7 @@ func TestDockerIntegrationWorkerLifecycle(t *testing.T) {
 
 	project := &model.Project{ID: "project-" + uuid.NewString()}
 	provider := &model.SandboxProviderInstance{ID: "provider-" + uuid.NewString(), ProjectID: project.ID}
-	pool := &model.Pool{ID: "pool-" + uuid.NewString(), ProjectID: project.ID, Name: "pool", ProviderInstanceID: provider.ID}
+	pool := &model.Pool{ID: "pool-" + uuid.NewString(), ProjectID: project.ID, PoolManifest: model.PoolManifest{Name: "pool", ProviderInstanceID: provider.ID}}
 	mint := staticMint(poolagent.Bootstrap{ProjectID: project.ID, PoolID: pool.ID, Token: "token-1", ControlPlaneKey: "key-1"})
 
 	if err := engine.EnsurePool(ctx, project, provider, pool, mint); err != nil {
@@ -68,8 +68,8 @@ func TestDockerIntegrationWorkerLifecycle(t *testing.T) {
 	if state.ContainerID == "" {
 		t.Fatalf("runtime state = %#v, want container ID", state)
 	}
-	if pool.Phase != model.PoolPhaseRegistering {
-		t.Fatalf("pool phase = %q, want registering", pool.Phase)
+	if pool.State != model.PoolStateRegistering {
+		t.Fatalf("pool phase = %q, want registering", pool.State)
 	}
 	assertContainerRunning(ctx, t, state.ContainerID, true)
 
@@ -146,7 +146,7 @@ func TestDockerIntegrationWorker(t *testing.T) {
 
 	project := &model.Project{ID: "project-" + uuid.NewString()}
 	provider := &model.SandboxProviderInstance{ID: "provider-" + uuid.NewString(), ProjectID: project.ID}
-	pool := &model.Pool{ID: "pool-" + uuid.NewString(), ProjectID: project.ID, Name: "pool", ProviderInstanceID: provider.ID}
+	pool := &model.Pool{ID: "pool-" + uuid.NewString(), ProjectID: project.ID, PoolManifest: model.PoolManifest{Name: "pool", ProviderInstanceID: provider.ID}}
 	if err := engine.EnsurePool(ctx, project, provider, pool, staticMint(poolagent.Bootstrap{ProjectID: project.ID, PoolID: pool.ID, Token: "token-1"})); err != nil {
 		t.Fatalf("ensure systemd pool: %v", err)
 	}

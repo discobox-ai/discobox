@@ -4,7 +4,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"time"
 
 	"gorm.io/gorm"
 
@@ -78,10 +77,15 @@ type SandboxOperationRef struct {
 	SandboxID string
 }
 
-// ListSandboxIDsWithStaleOperations returns refs of sandboxes whose recorded
-// operation has been in flight (pending/running) since before cutoff. It is
-// the reconcile engine's lost-mark backstop.
-func (s *Store) ListSandboxIDsWithStaleOperations(ctx context.Context, cutoff time.Time) ([]SandboxOperationRef, error) {
+// ListSandboxRefsNeedingReconcile returns refs of sandboxes whose generations
+// disagree. It is the reconcile engine's lost-mark backstop (ADR 0017 §1).
+//
+// The generation comparison is the source of truth, so this needs no cutoff and
+// no notion of an operation being in flight. The query it replaces asked which
+// sandboxes had an operation recorded as pending or running, which is why it
+// never re-drove a sandbox that had drifted but read `success` — the gap that
+// let a whole pool's worth of dead containers report themselves as running.
+func (s *Store) ListSandboxRefsNeedingReconcile(ctx context.Context) ([]SandboxOperationRef, error) {
 	read, err := s.getRead(ctx)
 	if err != nil {
 		return nil, err
@@ -89,8 +93,7 @@ func (s *Store) ListSandboxIDsWithStaleOperations(ctx context.Context, cutoff ti
 	var rows []model.Sandbox
 	if err := read.Model(&model.Sandbox{}).
 		Select("project_id", "id").
-		Where("last_operation_status IN ?", []string{model.SandboxOperationStatusPending, model.SandboxOperationStatusRunning}).
-		Where("updated_at < ?", cutoff).
+		Where("generation > observed_generation").
 		Find(&rows).Error; err != nil {
 		return nil, err
 	}

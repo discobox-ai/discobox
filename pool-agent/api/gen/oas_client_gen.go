@@ -52,18 +52,24 @@ type Invoker interface {
 	//
 	// GET /api/project/{projectId}/pool/{poolId}/sandboxes
 	PoolListSandboxes(ctx context.Context, params PoolListSandboxesParams) (*PoolSandboxListResponse, error)
+	// PoolRestartSandbox invokes pool-restart-sandbox operation.
+	//
+	// Restart pool sandbox.
+	//
+	// POST /api/project/{projectId}/pool/{poolId}/sandboxes/{sandboxId}/restart
+	PoolRestartSandbox(ctx context.Context, request *PoolSandboxOperationRequest, params PoolRestartSandboxParams) (*PoolSandboxOperationAccepted, error)
 	// PoolStartSandbox invokes pool-start-sandbox operation.
 	//
 	// Start pool sandbox.
 	//
 	// POST /api/project/{projectId}/pool/{poolId}/sandboxes/{sandboxId}/start
-	PoolStartSandbox(ctx context.Context, request *PoolSandboxOperationRequest, params PoolStartSandboxParams) (*PoolSandboxInstance, error)
+	PoolStartSandbox(ctx context.Context, request *PoolSandboxOperationRequest, params PoolStartSandboxParams) (*PoolSandboxOperationAccepted, error)
 	// PoolStopSandbox invokes pool-stop-sandbox operation.
 	//
 	// Stop pool sandbox.
 	//
 	// POST /api/project/{projectId}/pool/{poolId}/sandboxes/{sandboxId}/stop
-	PoolStopSandbox(ctx context.Context, request *PoolSandboxOperationRequest, params PoolStopSandboxParams) (*PoolSandboxInstance, error)
+	PoolStopSandbox(ctx context.Context, request *PoolSandboxOperationRequest, params PoolStopSandboxParams) (*PoolSandboxOperationAccepted, error)
 	// PoolSync invokes pool-sync operation.
 	//
 	// Reconcile the set of pools this host should have, reaping any others.
@@ -738,17 +744,184 @@ func (c *Client) sendPoolListSandboxes(ctx context.Context, params PoolListSandb
 	return result, nil
 }
 
+// PoolRestartSandbox invokes pool-restart-sandbox operation.
+//
+// Restart pool sandbox.
+//
+// POST /api/project/{projectId}/pool/{poolId}/sandboxes/{sandboxId}/restart
+func (c *Client) PoolRestartSandbox(ctx context.Context, request *PoolSandboxOperationRequest, params PoolRestartSandboxParams) (*PoolSandboxOperationAccepted, error) {
+	res, err := c.sendPoolRestartSandbox(ctx, request, params)
+	return res, err
+}
+
+func (c *Client) sendPoolRestartSandbox(ctx context.Context, request *PoolSandboxOperationRequest, params PoolRestartSandboxParams) (res *PoolSandboxOperationAccepted, err error) {
+	otelAttrs := []attribute.KeyValue{
+		otelogen.OperationID("pool-restart-sandbox"),
+		semconv.HTTPRequestMethodKey.String("POST"),
+		semconv.URLTemplateKey.String("/api/project/{projectId}/pool/{poolId}/sandboxes/{sandboxId}/restart"),
+	}
+	otelAttrs = append(otelAttrs, c.cfg.Attributes...)
+
+	// Run stopwatch.
+	startTime := time.Now()
+	defer func() {
+		// Use floating point division here for higher precision (instead of Millisecond method).
+		elapsedDuration := time.Since(startTime)
+		c.duration.Record(ctx, float64(elapsedDuration)/float64(time.Millisecond), metric.WithAttributes(otelAttrs...))
+	}()
+
+	// Increment request counter.
+	c.requests.Add(ctx, 1, metric.WithAttributes(otelAttrs...))
+
+	// Start a span for this request.
+	ctx, span := c.cfg.Tracer.Start(ctx, PoolRestartSandboxOperation,
+		trace.WithAttributes(otelAttrs...),
+		clientSpanKind,
+	)
+	// Track stage for error reporting.
+	var stage string
+	defer func() {
+		if err != nil {
+			span.RecordError(err)
+			span.SetStatus(codes.Error, stage)
+			c.errors.Add(ctx, 1, metric.WithAttributes(otelAttrs...))
+		}
+		span.End()
+	}()
+
+	stage = "BuildURL"
+	u := uri.Clone(c.requestURL(ctx))
+	var pathParts [7]string
+	pathParts[0] = "/api/project/"
+	{
+		// Encode "projectId" parameter.
+		e := uri.NewPathEncoder(uri.PathEncoderConfig{
+			Param:   "projectId",
+			Style:   uri.PathStyleSimple,
+			Explode: false,
+		})
+		if err := func() error {
+			return e.EncodeValue(conv.StringToString(params.ProjectId))
+		}(); err != nil {
+			return res, errors.Wrap(err, "encode path")
+		}
+		encoded, err := e.Result()
+		if err != nil {
+			return res, errors.Wrap(err, "encode path")
+		}
+		pathParts[1] = encoded
+	}
+	pathParts[2] = "/pool/"
+	{
+		// Encode "poolId" parameter.
+		e := uri.NewPathEncoder(uri.PathEncoderConfig{
+			Param:   "poolId",
+			Style:   uri.PathStyleSimple,
+			Explode: false,
+		})
+		if err := func() error {
+			return e.EncodeValue(conv.StringToString(params.PoolId))
+		}(); err != nil {
+			return res, errors.Wrap(err, "encode path")
+		}
+		encoded, err := e.Result()
+		if err != nil {
+			return res, errors.Wrap(err, "encode path")
+		}
+		pathParts[3] = encoded
+	}
+	pathParts[4] = "/sandboxes/"
+	{
+		// Encode "sandboxId" parameter.
+		e := uri.NewPathEncoder(uri.PathEncoderConfig{
+			Param:   "sandboxId",
+			Style:   uri.PathStyleSimple,
+			Explode: false,
+		})
+		if err := func() error {
+			return e.EncodeValue(conv.StringToString(params.SandboxId))
+		}(); err != nil {
+			return res, errors.Wrap(err, "encode path")
+		}
+		encoded, err := e.Result()
+		if err != nil {
+			return res, errors.Wrap(err, "encode path")
+		}
+		pathParts[5] = encoded
+	}
+	pathParts[6] = "/restart"
+	uri.AddPathParts(u, pathParts[:]...)
+
+	stage = "EncodeRequest"
+	r, err := ht.NewRequest(ctx, "POST", u)
+	if err != nil {
+		return res, errors.Wrap(err, "create request")
+	}
+	if err := encodePoolRestartSandboxRequest(request, r); err != nil {
+		return res, errors.Wrap(err, "encode request")
+	}
+
+	{
+		type bitset = [1]uint8
+		var satisfied bitset
+		{
+			stage = "Security:PoolBearerAuth"
+			switch err := c.securityPoolBearerAuth(ctx, PoolRestartSandboxOperation, r); {
+			case err == nil: // if NO error
+				satisfied[0] |= 1 << 0
+			case errors.Is(err, ogenerrors.ErrSkipClientSecurity):
+				// Skip this security.
+			default:
+				return res, errors.Wrap(err, "security \"PoolBearerAuth\"")
+			}
+		}
+
+		if ok := func() bool {
+		nextRequirement:
+			for _, requirement := range []bitset{
+				{0b00000001},
+			} {
+				for i, mask := range requirement {
+					if satisfied[i]&mask != mask {
+						continue nextRequirement
+					}
+				}
+				return true
+			}
+			return false
+		}(); !ok {
+			return res, ogenerrors.ErrSecurityRequirementIsNotSatisfied
+		}
+	}
+
+	stage = "SendRequest"
+	resp, err := c.cfg.Client.Do(r)
+	if err != nil {
+		return res, errors.Wrap(err, "do request")
+	}
+	body := resp.Body
+	defer body.Close()
+
+	stage = "DecodeResponse"
+	result, err := decodePoolRestartSandboxResponse(resp)
+	if err != nil {
+		return res, errors.Wrap(err, "decode response")
+	}
+
+	return result, nil
+}
+
 // PoolStartSandbox invokes pool-start-sandbox operation.
 //
 // Start pool sandbox.
 //
 // POST /api/project/{projectId}/pool/{poolId}/sandboxes/{sandboxId}/start
-func (c *Client) PoolStartSandbox(ctx context.Context, request *PoolSandboxOperationRequest, params PoolStartSandboxParams) (*PoolSandboxInstance, error) {
+func (c *Client) PoolStartSandbox(ctx context.Context, request *PoolSandboxOperationRequest, params PoolStartSandboxParams) (*PoolSandboxOperationAccepted, error) {
 	res, err := c.sendPoolStartSandbox(ctx, request, params)
 	return res, err
 }
 
-func (c *Client) sendPoolStartSandbox(ctx context.Context, request *PoolSandboxOperationRequest, params PoolStartSandboxParams) (res *PoolSandboxInstance, err error) {
+func (c *Client) sendPoolStartSandbox(ctx context.Context, request *PoolSandboxOperationRequest, params PoolStartSandboxParams) (res *PoolSandboxOperationAccepted, err error) {
 	otelAttrs := []attribute.KeyValue{
 		otelogen.OperationID("pool-start-sandbox"),
 		semconv.HTTPRequestMethodKey.String("POST"),
@@ -910,12 +1083,12 @@ func (c *Client) sendPoolStartSandbox(ctx context.Context, request *PoolSandboxO
 // Stop pool sandbox.
 //
 // POST /api/project/{projectId}/pool/{poolId}/sandboxes/{sandboxId}/stop
-func (c *Client) PoolStopSandbox(ctx context.Context, request *PoolSandboxOperationRequest, params PoolStopSandboxParams) (*PoolSandboxInstance, error) {
+func (c *Client) PoolStopSandbox(ctx context.Context, request *PoolSandboxOperationRequest, params PoolStopSandboxParams) (*PoolSandboxOperationAccepted, error) {
 	res, err := c.sendPoolStopSandbox(ctx, request, params)
 	return res, err
 }
 
-func (c *Client) sendPoolStopSandbox(ctx context.Context, request *PoolSandboxOperationRequest, params PoolStopSandboxParams) (res *PoolSandboxInstance, err error) {
+func (c *Client) sendPoolStopSandbox(ctx context.Context, request *PoolSandboxOperationRequest, params PoolStopSandboxParams) (res *PoolSandboxOperationAccepted, err error) {
 	otelAttrs := []attribute.KeyValue{
 		otelogen.OperationID("pool-stop-sandbox"),
 		semconv.HTTPRequestMethodKey.String("POST"),

@@ -212,7 +212,7 @@ func TestHTTPClientUpdatesPoolStatusByPath(t *testing.T) {
 	}
 }
 
-func TestHTTPClientReportsSandboxRemoved(t *testing.T) {
+func TestHTTPClientReportsSandboxStates(t *testing.T) {
 	publicKey, privateKey, err := ed25519.GenerateKey(rand.Reader)
 	if err != nil {
 		t.Fatalf("generate key: %v", err)
@@ -222,7 +222,7 @@ func TestHTTPClientReportsSandboxRemoved(t *testing.T) {
 		t.Fatalf("encode public key: %v", err)
 	}
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.URL.Path != "/api/pools/pool-1/sandbox-removed" {
+		if r.URL.Path != "/api/pools/pool-1/sandbox-states" {
 			t.Fatalf("path = %q", r.URL.Path)
 		}
 		_, token, ok := strings.Cut(r.Header.Get("Authorization"), " ")
@@ -236,22 +236,35 @@ func TestHTTPClientReportsSandboxRemoved(t *testing.T) {
 		if claims.ProjectID != "project-1" || claims.PoolID != "pool-1" {
 			t.Fatalf("claims = %#v", claims)
 		}
-		var body map[string]any
+		var body struct {
+			BootID   string `json:"bootId"`
+			Sequence int64  `json:"sequence"`
+			Complete bool   `json:"complete"`
+			States   []struct {
+				SandboxID string `json:"sandboxId"`
+				State     string `json:"state"`
+			} `json:"states"`
+		}
 		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
 			t.Fatalf("decode body: %v", err)
 		}
-		if body["sandboxId"] != "sandbox-1" {
-			t.Fatalf("body = %#v", body)
+		if body.BootID != "boot-1" || body.Sequence != 7 || !body.Complete {
+			t.Fatalf("batch identity = %#v, want boot-1/7/complete", body)
+		}
+		if len(body.States) != 1 || body.States[0].SandboxID != "sandbox-1" || body.States[0].State != "running" {
+			t.Fatalf("states = %#v", body.States)
 		}
 		w.WriteHeader(http.StatusNoContent)
 	}))
 	defer server.Close()
 
-	err = poolagent.NewHTTPClient(server.URL, poolagent.WithHTTPClient(server.Client())).ReportSandboxRemoved(context.Background(), poolagent.SandboxRemovalRequest{
-		ProjectID: "project-1", PoolID: "pool-1", PrivateKey: privateKey, SandboxID: "sandbox-1",
+	err = poolagent.NewHTTPClient(server.URL, poolagent.WithHTTPClient(server.Client())).ReportSandboxStates(context.Background(), poolagent.SandboxStateRequest{
+		ProjectID: "project-1", PoolID: "pool-1", PrivateKey: privateKey,
+		BootID: "boot-1", Sequence: 7, ReportedAt: time.Now().UTC(), Complete: true,
+		States: []poolagent.SandboxState{{SandboxID: "sandbox-1", State: "running"}},
 	})
 	if err != nil {
-		t.Fatalf("report sandbox removed: %v", err)
+		t.Fatalf("report sandbox states: %v", err)
 	}
 }
 
@@ -307,20 +320,30 @@ func TestPoolSandboxHandlersValidateIdentityAndOperateOnRuntime(t *testing.T) {
 		t.Fatalf("created sandbox = %#v", created)
 	}
 
+	// Power operations answer with acceptance, not a sandbox: the resulting
+	// state travels on the agent's reporting channel (ADR 0017 §§9-10). What
+	// they changed is verified by asking the runtime, not by reading the reply.
 	started, err := client.PoolStartSandbox(context.Background(), &workerapimodel.PoolSandboxOperationRequest{}, workerclient.PoolStartSandboxParams{ProjectId: "project-1", PoolId: "pool-1", SandboxId: "sandbox-1"})
 	if err != nil {
 		t.Fatalf("start already-running sandbox: %v", err)
 	}
-	if sandboxruntime.Status(started.Runtime.Status) != sandboxruntime.StatusRunning {
-		t.Fatalf("started status = %q", started.Runtime.Status)
+	if started.SandboxId != "sandbox-1" {
+		t.Fatalf("accepted start = %#v, want sandbox-1", started)
 	}
 
 	stopped, err := client.PoolStopSandbox(context.Background(), &workerapimodel.PoolSandboxOperationRequest{}, workerclient.PoolStopSandboxParams{ProjectId: "project-1", PoolId: "pool-1", SandboxId: "sandbox-1"})
 	if err != nil {
 		t.Fatalf("stop sandbox: %v", err)
 	}
-	if sandboxruntime.Status(stopped.Runtime.Status) != sandboxruntime.StatusStopped {
-		t.Fatalf("stopped status = %q", stopped.Runtime.Status)
+	if stopped.SandboxId != "sandbox-1" {
+		t.Fatalf("accepted stop = %#v, want sandbox-1", stopped)
+	}
+	current, err := runtime.GetSandbox(context.Background(), "sandbox-1")
+	if err != nil {
+		t.Fatalf("get sandbox after stop: %v", err)
+	}
+	if current.Status != sandboxruntime.StatusStopped {
+		t.Fatalf("status after stop = %q, want stopped", current.Status)
 	}
 
 	_, err = client.PoolGetSandbox(context.Background(), workerclient.PoolGetSandboxParams{ProjectId: "project-other", PoolId: "pool-1", SandboxId: "sandbox-1"})

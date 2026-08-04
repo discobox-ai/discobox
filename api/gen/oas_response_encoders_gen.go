@@ -2547,9 +2547,9 @@ func encodeRegisterPoolResponse(response RegisterPoolRes, w http.ResponseWriter,
 	}
 }
 
-func encodeReportPoolSandboxRemovedResponse(response ReportPoolSandboxRemovedRes, w http.ResponseWriter, span trace.Span) error {
+func encodeReportPoolSandboxStatesResponse(response ReportPoolSandboxStatesRes, w http.ResponseWriter, span trace.Span) error {
 	switch response := response.(type) {
-	case *ReportPoolSandboxRemovedNoContent:
+	case *ReportPoolSandboxStatesNoContent:
 		w.WriteHeader(204)
 		span.SetStatus(codes.Ok, http.StatusText(204))
 

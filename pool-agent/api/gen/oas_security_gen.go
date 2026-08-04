@@ -34,14 +34,15 @@ func findAuthorization(h http.Header, prefix string) (string, bool) {
 
 // operationRolesPoolBearerAuth is a private map storing roles per operation.
 var operationRolesPoolBearerAuth = map[string][]string{
-	PoolCreateSandboxOperation: []string{},
-	PoolDeleteSandboxOperation: []string{},
-	PoolGetSandboxOperation:    []string{},
-	PoolListSandboxesOperation: []string{},
-	PoolStartSandboxOperation:  []string{},
-	PoolStopSandboxOperation:   []string{},
-	PoolSyncOperation:          []string{},
-	PoolUpdateSandboxOperation: []string{},
+	PoolCreateSandboxOperation:  []string{},
+	PoolDeleteSandboxOperation:  []string{},
+	PoolGetSandboxOperation:     []string{},
+	PoolListSandboxesOperation:  []string{},
+	PoolRestartSandboxOperation: []string{},
+	PoolStartSandboxOperation:   []string{},
+	PoolStopSandboxOperation:    []string{},
+	PoolSyncOperation:           []string{},
+	PoolUpdateSandboxOperation:  []string{},
 }
 
 // GetRolesForPoolBearerAuth returns the required roles for the given operation.

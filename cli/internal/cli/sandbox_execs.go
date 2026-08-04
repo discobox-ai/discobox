@@ -626,10 +626,10 @@ func (a *App) sandboxStoppedAttachDone(ctx context.Context, projectID, sandboxID
 	if !ok {
 		return false, nil
 	}
-	switch sandbox.Runtime.Phase {
-	case sandboxPhaseStopped, sandboxPhaseStopping:
-		return true, fmt.Errorf("sandbox %s is %s; detaching terminal", sandboxID, sandbox.Runtime.Phase)
-	case sandboxPhaseFailed:
+	switch sandbox.Runtime.State {
+	case sandboxStateStopped, sandboxStateStopping:
+		return true, fmt.Errorf("sandbox %s is %s; detaching terminal", sandboxID, sandbox.Runtime.State)
+	case sandboxStateFailed:
 		return true, fmt.Errorf("sandbox failed: %s", sandboxFailureReason(sandbox))
 	default:
 		return false, nil
@@ -663,9 +663,9 @@ func execAttachStatusError(exec *apimodel.SandboxExec) error {
 }
 
 const (
-	sandboxPhaseStopped  = "stopped"
-	sandboxPhaseStopping = "stopping"
-	sandboxPhaseFailed   = "failed"
+	sandboxStateStopped  = "stopped"
+	sandboxStateStopping = "stopping"
+	sandboxStateFailed   = "failed"
 )
 
 // attachPingInterval paces websocket keepalive pings on an exec attach. The

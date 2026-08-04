@@ -8594,24 +8594,24 @@ func (s *Server) handleRegisterPoolRequest(args [0]string, argsEscaped bool, w h
 	}
 }
 
-// handleReportPoolSandboxRemovedRequest handles report-pool-sandbox-removed operation.
+// handleReportPoolSandboxStatesRequest handles report-pool-sandbox-states operation.
 //
-// Report a pool-local sandbox runtime removed outside reconciliation.
+// Report observed sandbox states from the pool agent.
 //
-// POST /api/pools/{poolId}/sandbox-removed
-func (s *Server) handleReportPoolSandboxRemovedRequest(args [1]string, argsEscaped bool, w http.ResponseWriter, r *http.Request) {
+// POST /api/pools/{poolId}/sandbox-states
+func (s *Server) handleReportPoolSandboxStatesRequest(args [1]string, argsEscaped bool, w http.ResponseWriter, r *http.Request) {
 	statusWriter := &codeRecorder{ResponseWriter: w}
 	w = statusWriter
 	otelAttrs := []attribute.KeyValue{
-		otelogen.OperationID("report-pool-sandbox-removed"),
+		otelogen.OperationID("report-pool-sandbox-states"),
 		semconv.HTTPRequestMethodKey.String("POST"),
-		semconv.HTTPRouteKey.String("/api/pools/{poolId}/sandbox-removed"),
+		semconv.HTTPRouteKey.String("/api/pools/{poolId}/sandbox-states"),
 	}
 	// Add attributes from config.
 	otelAttrs = append(otelAttrs, s.cfg.Attributes...)
 
 	// Start a span for this request.
-	ctx, span := s.cfg.Tracer.Start(r.Context(), ReportPoolSandboxRemovedOperation,
+	ctx, span := s.cfg.Tracer.Start(r.Context(), ReportPoolSandboxStatesOperation,
 		trace.WithAttributes(otelAttrs...),
 		serverSpanKind,
 	)
@@ -8666,11 +8666,11 @@ func (s *Server) handleReportPoolSandboxRemovedRequest(args [1]string, argsEscap
 		}
 		err          error
 		opErrContext = ogenerrors.OperationContext{
-			Name: ReportPoolSandboxRemovedOperation,
-			ID:   "report-pool-sandbox-removed",
+			Name: ReportPoolSandboxStatesOperation,
+			ID:   "report-pool-sandbox-states",
 		}
 	)
-	params, err := decodeReportPoolSandboxRemovedParams(args, argsEscaped, r)
+	params, err := decodeReportPoolSandboxStatesParams(args, argsEscaped, r)
 	if err != nil {
 		err = &ogenerrors.DecodeParamsError{
 			OperationContext: opErrContext,
@@ -8682,7 +8682,7 @@ func (s *Server) handleReportPoolSandboxRemovedRequest(args [1]string, argsEscap
 	}
 
 	var rawBody []byte
-	request, rawBody, close, err := s.decodeReportPoolSandboxRemovedRequest(r)
+	request, rawBody, close, err := s.decodeReportPoolSandboxStatesRequest(r)
 	if err != nil {
 		err = &ogenerrors.DecodeRequestError{
 			OperationContext: opErrContext,
@@ -8698,13 +8698,13 @@ func (s *Server) handleReportPoolSandboxRemovedRequest(args [1]string, argsEscap
 		}
 	}()
 
-	var response ReportPoolSandboxRemovedRes
+	var response ReportPoolSandboxStatesRes
 	if m := s.cfg.Middleware; m != nil {
 		mreq := middleware.Request{
 			Context:          ctx,
-			OperationName:    ReportPoolSandboxRemovedOperation,
-			OperationSummary: "Report a pool-local sandbox runtime removed outside reconciliation",
-			OperationID:      "report-pool-sandbox-removed",
+			OperationName:    ReportPoolSandboxStatesOperation,
+			OperationSummary: "Report observed sandbox states from the pool agent",
+			OperationID:      "report-pool-sandbox-states",
 			Body:             request,
 			RawBody:          rawBody,
 			Params: middleware.Parameters{
@@ -8717,9 +8717,9 @@ func (s *Server) handleReportPoolSandboxRemovedRequest(args [1]string, argsEscap
 		}
 
 		type (
-			Request  = *ReportPoolSandboxRemovedBody
-			Params   = ReportPoolSandboxRemovedParams
-			Response = ReportPoolSandboxRemovedRes
+			Request  = *ReportPoolSandboxStatesBody
+			Params   = ReportPoolSandboxStatesParams
+			Response = ReportPoolSandboxStatesRes
 		)
 		response, err = middleware.HookMiddleware[
 			Request,
@@ -8728,14 +8728,14 @@ func (s *Server) handleReportPoolSandboxRemovedRequest(args [1]string, argsEscap
 		](
 			m,
 			mreq,
-			unpackReportPoolSandboxRemovedParams,
+			unpackReportPoolSandboxStatesParams,
 			func(ctx context.Context, request Request, params Params) (response Response, err error) {
-				response, err = s.h.ReportPoolSandboxRemoved(ctx, request, params)
+				response, err = s.h.ReportPoolSandboxStates(ctx, request, params)
 				return response, err
 			},
 		)
 	} else {
-		response, err = s.h.ReportPoolSandboxRemoved(ctx, request, params)
+		response, err = s.h.ReportPoolSandboxStates(ctx, request, params)
 	}
 	if err != nil {
 		defer recordError("Internal", err)
@@ -8743,7 +8743,7 @@ func (s *Server) handleReportPoolSandboxRemovedRequest(args [1]string, argsEscap
 		return
 	}
 
-	if err := encodeReportPoolSandboxRemovedResponse(response, w, span); err != nil {
+	if err := encodeReportPoolSandboxStatesResponse(response, w, span); err != nil {
 		defer recordError("EncodeResponse", err)
 		if !errors.Is(err, ht.ErrInternalServerErrorResponse) {
 			s.cfg.ErrorHandler(ctx, w, r, err)

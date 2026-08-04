@@ -1116,54 +1116,35 @@ components:
                 conditions:
                     description: Opaque agent-reported condition details for display
                 desiredState:
-                    description: Requested pool state
+                    description: Requested existence, the same vocabulary every orchestrated resource uses (ADR 0017 §2)
                     enum:
-                        - active
+                        - present
                         - deleted
                     type: string
-                phase:
-                    description: Observed pool lifecycle phase
+                state:
+                    description: Observed pool state
                     enum:
                         - pending
-                        - launching
                         - registering
                         - active
-                        - deleting
                         - offline
                         - failed
                         - deleted
                     type: string
-                activeOperation:
-                    description: Current queued or running operation
-                    enum:
-                        - create
-                        - delete
-                    type: string
-                lastOperationStatus:
-                    description: Status of the most recent operation
-                    enum:
-                        - pending
-                        - running
-                        - success
-                        - failed
+                stateChangedAt:
+                    description: When state last changed to its current value
+                    format: date-time
                     type: string
                 generation:
-                    description: Latest desired-state generation
+                    description: Latest spec generation
                     format: int64
                     type: integer
                 observedGeneration:
-                    description: Latest generation fully observed by reconciliation
+                    description: Latest generation the reconciler has finished acting on
                     format: int64
                     type: integer
-                statusMessage:
-                    description: Human-readable status detail
-                    type: string
                 errorMessage:
                     description: Latest error message
-                    type: string
-                phaseChangedAt:
-                    description: When phase last changed to its current value. Anchors how long the resource has been in a phase, for timeouts that must not be reset by unrelated reconciles.
-                    format: date-time
                     type: string
                 keyType:
                     description: Pool agent key type
@@ -1202,8 +1183,7 @@ components:
                 - availableMemoryBytes
                 - availableStorageBytes
                 - desiredState
-                - phase
-                - lastOperationStatus
+                - state
                 - generation
                 - observedGeneration
                 - createdAt
@@ -1887,15 +1867,6 @@ components:
         SandboxRuntime:
             additionalProperties: false
             properties:
-                activeOperation:
-                    description: Current queued or running operation
-                    enum:
-                        - create
-                        - start
-                        - stop
-                        - restart
-                        - delete
-                    type: string
                 appliedCommits:
                     description: History of successful disco apply runs that landed this sandbox's commits on a host, most recent last. Client-reported; append-only.
                     items:
@@ -1903,14 +1874,16 @@ components:
                     nullable: true
                     type: array
                 desiredState:
-                    description: Requested steady state for reconciliation
+                    description: |-
+                        Requested existence. Power state is not requested: whether a sandbox is running is
+                        observed and reported by its runtime, never asked for by the control plane
+                        (ADR 0017 §9).
                     enum:
-                        - running
-                        - stopped
+                        - present
                         - deleted
                     type: string
                 displayState:
-                    description: User-facing lifecycle state calculated from desired state, observed phase, and reconciliation generations
+                    description: User-facing lifecycle state, derived from the observed state plus whether the existence generations agree
                     enum:
                         - starting
                         - running
@@ -1922,63 +1895,49 @@ components:
                     readOnly: true
                     type: string
                 errorMessage:
-                    description: Latest error message
+                    description: Error from the generation currently recorded in observedGeneration. Cleared by every accepted intent.
                     type: string
                 generation:
-                    description: Latest desired-state generation
+                    description: Latest spec generation
                     format: int64
                     type: integer
                 lastActiveAt:
                     description: Last observed activity timestamp
                     format: date-time
                     type: string
-                lastOperationStatus:
-                    description: Status of the most recent operation
-                    enum:
-                        - pending
-                        - running
-                        - success
-                        - failed
-                    type: string
                 observedGeneration:
-                    description: Latest generation fully observed by reconciliation
+                    description: Latest generation the reconciler has finished acting on
                     format: int64
                     type: integer
-                phase:
-                    description: Observed lifecycle phase
+                state:
+                    description: Observed state. The transitional values are reported by the pool agent, which is the only component that can see them.
                     enum:
                         - pending
-                        - provisioning
                         - awaiting_source
                         - starting
                         - running
                         - stopping
                         - stopped
-                        - deleting
                         - deleted
                         - failed
                     type: string
-                restartGeneration:
-                    description: Requested restart generation
-                    format: int64
-                    type: integer
-                restartedGeneration:
-                    description: Last restart generation completed by reconciliation
-                    format: int64
-                    type: integer
-                statusMessage:
-                    description: Human-readable status detail
+                stateChangedAt:
+                    description: When state last changed to its current value
+                    format: date-time
+                    type: string
+                stateReportedAt:
+                    description: |-
+                        When the hosting pool agent last reported this sandbox's state. A state whose report
+                        is old is a state nobody has confirmed recently.
+                    format: date-time
                     type: string
                 upgrade:
                     "$ref": "#/components/schemas/SandboxUpgrade"
             required:
                 - desiredState
-                - phase
-                - lastOperationStatus
+                - state
                 - generation
                 - observedGeneration
-                - restartGeneration
-                - restartedGeneration
             type: object
         Sandbox:
             additionalProperties: false
@@ -2689,27 +2648,74 @@ components:
                 - availableMemoryBytes
                 - availableStorageBytes
             type: object
-        ReportPoolSandboxRemovedBody:
+        ReportPoolSandboxStatesBody:
             additionalProperties: false
+            description: |-
+                A batch of sandbox state observations from the pool agent hosting them (ADR 0017 §10).
+                State is reported, never requested: the control plane records what the agent saw and
+                never asks it to make a sandbox running.
             properties:
                 $schema:
                     description: A URL to the JSON Schema for this object.
-                    example: https://example.com/schemas/ReportPoolSandboxRemovedBody.json
+                    example: https://example.com/schemas/ReportPoolSandboxStatesBody.json
                     format: uri
                     readOnly: true
                     type: string
-                containerId:
+                bootId:
                     description: |-
-                        Runtime identity that was removed. The control plane ignores the report when this is
-                        not the runtime it currently believes is serving the sandbox, which is what makes a
-                        report about an already-replaced container harmless. Empty means the report came from
-                        the level-triggered orphan sweep rather than a specific removal event.
+                        Identifies this run of the pool agent. Sequence numbers are only comparable within
+                        one boot, because a restarted agent counts from zero again.
+                    type: string
+                complete:
+                    description: |-
+                        True when the batch is the periodic full sync: the reports are every sandbox the
+                        agent hosts, so a sandbox the control plane believes is on this pool and that the
+                        batch omits no longer has a container. A batch that is not complete is a transition
+                        delta and says nothing about sandboxes it does not mention.
+                    type: boolean
+                reportedAt:
+                    description: When the agent observed these states
+                    format: date-time
+                    type: string
+                sequence:
+                    description: Monotonic counter within bootId, so a delayed delta cannot overwrite a newer sync
+                    format: int64
+                    type: integer
+                states:
+                    description: The observed sandbox states
+                    items:
+                        $ref: '#/components/schemas/PoolSandboxState'
+                    type: array
+            required:
+                - bootId
+                - sequence
+                - reportedAt
+                - complete
+                - states
+            type: object
+        PoolSandboxState:
+            additionalProperties: false
+            properties:
+                error:
+                    description: Why the sandbox reached a failed state, empty otherwise
                     type: string
                 sandboxId:
-                    description: Sandbox whose pool-local runtime was removed outside control-plane reconciliation
+                    description: Sandbox the observation is about
+                    type: string
+                state:
+                    description: |-
+                        Observed state. There is no `failed` here: a container that has exited looks the
+                        same whether it was stopped deliberately or died, so failure is a judgement about
+                        an operation rather than something the runtime can observe (ADR 0017 §10).
+                    enum:
+                        - starting
+                        - running
+                        - stopping
+                        - stopped
                     type: string
             required:
                 - sandboxId
+                - state
             type: object
         User:
             additionalProperties: false
@@ -2909,9 +2915,9 @@ paths:
             summary: Update pool status
             tags:
                 - Pools
-    /api/pools/{poolId}/sandbox-removed:
+    /api/pools/{poolId}/sandbox-states:
         post:
-            operationId: report-pool-sandbox-removed
+            operationId: report-pool-sandbox-states
             parameters:
                 - description: Pool ID
                   in: path
@@ -2930,18 +2936,18 @@ paths:
                 content:
                     application/json:
                         schema:
-                            $ref: '#/components/schemas/ReportPoolSandboxRemovedBody'
+                            $ref: '#/components/schemas/ReportPoolSandboxStatesBody'
                 required: true
             responses:
                 204:
-                    description: Sandbox removal accepted or already superseded
+                    description: State report accepted or superseded by a newer one
                 default:
                     content:
                         application/problem+json:
                             schema:
                                 $ref: '#/components/schemas/ErrorModel'
                     description: Error
-            summary: Report a pool-local sandbox runtime removed outside reconciliation
+            summary: Report observed sandbox states from the pool agent
             tags:
                 - Pools
     /api/pools/{poolId}/resolve-sandbox-secret:

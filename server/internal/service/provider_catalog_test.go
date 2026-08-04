@@ -74,8 +74,11 @@ func TestSandboxReconcileExecutorDelegatesToProvider(t *testing.T) {
 	if err := reconcileSandbox(ctx, t, svc, executor, sb.ProjectID, sb.ID); err != nil {
 		t.Fatalf("reconcile start: %v", err)
 	}
-	if provider.createCalls != 1 || provider.startCalls != 1 {
-		t.Fatalf("create/start calls = %d/%d, want 1/1", provider.createCalls, provider.startCalls)
+	// Bringing a brand-new sandbox up is part of creating it, not a separate
+	// start: the runtime is told to start what it builds (ADR 0017 §13).
+	if provider.createCalls != 1 || !provider.createOptions.Start {
+		t.Fatalf("create calls = %d, asked to start = %v, want 1 and true",
+			provider.createCalls, provider.createOptions.Start)
 	}
 	if provider.createRef.ProjectID != projectID || provider.createOptions.Source == nil || provider.createOptions.Source.URL == nil || *provider.createOptions.Source.URL != "https://example.com/repo.git" || provider.createOptions.Source.Checkout == nil || provider.createOptions.Source.Checkout.RefName == nil || *provider.createOptions.Source.Checkout.RefName != "main" {
 		t.Fatalf("create ref/options = %#v %#v", provider.createRef, provider.createOptions)
@@ -84,8 +87,10 @@ func TestSandboxReconcileExecutorDelegatesToProvider(t *testing.T) {
 	if err != nil {
 		t.Fatalf("get sandbox after start: %v", err)
 	}
-	if string(sb.SecretState) != "started" {
-		t.Fatalf("secret state after start = %q, want started", string(sb.SecretState))
+	// Create is the only runtime call in this flow now, so it is create's
+	// rotated secret state that persists.
+	if string(sb.SecretState) != "created" {
+		t.Fatalf("secret state after create = %q, want created", string(sb.SecretState))
 	}
 	if len(sb.RuntimeState) == 0 {
 		t.Fatal("expected runtime state to be set from provider sandbox")
@@ -97,9 +102,8 @@ func TestSandboxReconcileExecutorDelegatesToProvider(t *testing.T) {
 	if err != nil {
 		t.Fatalf("stop sandbox: %v", err)
 	}
-	if err := reconcileSandbox(ctx, t, svc, executor, sb.ProjectID, sb.ID); err != nil {
-		t.Fatalf("reconcile stop: %v", err)
-	}
+	// The stop reaches the provider directly; there is no reconcile behind it,
+	// because power is not orchestrated (ADR 0017 §9).
 	if provider.stopCalls != 1 {
 		t.Fatalf("stop calls = %d, want 1", provider.stopCalls)
 	}
@@ -210,7 +214,7 @@ func TestSandboxReconcileExecutorInjectsTrustKey(t *testing.T) {
 	if err := appStore.CreateSandboxProviderInstance(ctx, &model.SandboxProviderInstance{ID: "prov-trust", ProjectID: projectID, Type: "recording", Name: "recording"}); err != nil {
 		t.Fatalf("create provider instance: %v", err)
 	}
-	if err := appStore.CreatePool(ctx, &model.Pool{ID: "pool-trust", ProjectID: projectID, Name: "pool-trust", ProviderInstanceID: "prov-trust"}); err != nil {
+	if err := appStore.CreatePool(ctx, &model.Pool{ID: "pool-trust", ProjectID: projectID, PoolManifest: model.PoolManifest{Name: "pool-trust", ProviderInstanceID: "prov-trust"}}); err != nil {
 		t.Fatalf("create pool: %v", err)
 	}
 	sb := &model.Sandbox{
@@ -219,7 +223,7 @@ func TestSandboxReconcileExecutorInjectsTrustKey(t *testing.T) {
 		PoolID:            "pool-trust",
 		CreatedByUserID:   service.DefaultUserID,
 		Name:              "sandbox-1",
-		ResourceLifecycle: model.NewResourceLifecycle(model.SandboxCreateOperation),
+		ResourceLifecycle: model.ResourceLifecycle{DesiredState: model.DesiredStatePresent, State: model.SandboxStatePending},
 	}
 	sb.IncrementGeneration()
 	if err := appStore.CreateSandbox(ctx, sb); err != nil {
@@ -625,13 +629,16 @@ func (p *recordingSandboxProvider) Create(_ context.Context, ref sandboxes.Sandb
 func (p *recordingSandboxProvider) Update(context.Context, sandboxes.SandboxRef, []byte, sandboxes.UpdateOptions) (*sandboxes.Sandbox, []byte, error) {
 	return nil, []byte("updated"), nil
 }
-func (p *recordingSandboxProvider) Start(context.Context, sandboxes.SandboxRef, []byte) (*sandboxes.Sandbox, []byte, error) {
+func (p *recordingSandboxProvider) Start(context.Context, sandboxes.SandboxRef, []byte) ([]byte, error) {
 	p.startCalls++
-	return nil, []byte("started"), nil
+	return []byte("started"), nil
 }
-func (p *recordingSandboxProvider) Stop(context.Context, sandboxes.SandboxRef, []byte, time.Duration) (*sandboxes.Sandbox, []byte, error) {
+func (p *recordingSandboxProvider) Stop(context.Context, sandboxes.SandboxRef, []byte, time.Duration) ([]byte, error) {
 	p.stopCalls++
-	return nil, []byte("stopped"), nil
+	return []byte("stopped"), nil
+}
+func (p *recordingSandboxProvider) Restart(context.Context, sandboxes.SandboxRef, []byte, time.Duration) ([]byte, error) {
+	return nil, nil
 }
 func (p *recordingSandboxProvider) Remove(context.Context, sandboxes.SandboxRef, []byte, ...sandboxes.RemoveOption) ([]byte, error) {
 	p.removeCalls++

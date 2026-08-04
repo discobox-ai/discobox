@@ -105,11 +105,11 @@ func TestDockerProviderPoolCreateFlowE2E(t *testing.T) {
 		t.Fatalf("create pool: %v", err)
 	}
 	pool = waitForRegisteringPool(ctx, t, appStore, project.ID, pool.ID)
-	if pool.Phase != model.PoolPhaseRegistering {
-		t.Fatalf("pool phase = %q, want %q", pool.Phase, model.PoolPhaseRegistering)
+	if pool.State != model.PoolStateRegistering {
+		t.Fatalf("pool phase = %q, want %q", pool.State, model.PoolStateRegistering)
 	}
-	if pool.LastOperationStatus != model.OperationStatusSuccess || pool.ObservedGeneration != pool.Generation {
-		t.Fatalf("pool status/generation = %q %d/%d, want success observed", pool.LastOperationStatus, pool.ObservedGeneration, pool.Generation)
+	if pool.ErrorMessage != nil || pool.ObservedGeneration != pool.Generation {
+		t.Fatalf("pool state/generation = %q %d/%d, want converged with no error", pool.State, pool.ObservedGeneration, pool.Generation)
 	}
 
 	containers := listDockerProviderContainers(t, dockerClient, provider.ID)
@@ -144,7 +144,7 @@ func waitForRegisteringPool(ctx context.Context, t *testing.T, appStore *store.S
 			t.Fatalf("get pool: %v", err)
 		}
 		last = pool
-		if pool.Phase == model.PoolPhaseRegistering && pool.LastOperationStatus == model.OperationStatusSuccess {
+		if pool.State == model.PoolStateRegistering && pool.ErrorMessage == nil {
 			return pool
 		}
 		time.Sleep(100 * time.Millisecond)

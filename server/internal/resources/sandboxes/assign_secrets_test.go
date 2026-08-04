@@ -38,11 +38,15 @@ func (p *recordingProvider) Update(_ context.Context, _ sandbox.SandboxRef, stat
 	p.updated = append(p.updated, append([]string{}, opts.Sentinels...))
 	return nil, state, nil
 }
-func (p *recordingProvider) Start(context.Context, sandbox.SandboxRef, []byte) (*sandbox.Sandbox, []byte, error) {
-	return nil, nil, nil
+func (p *recordingProvider) Start(context.Context, sandbox.SandboxRef, []byte) ([]byte, error) {
+	return nil, nil
 }
-func (p *recordingProvider) Stop(context.Context, sandbox.SandboxRef, []byte, time.Duration) (*sandbox.Sandbox, []byte, error) {
-	return nil, nil, nil
+func (p *recordingProvider) Stop(context.Context, sandbox.SandboxRef, []byte, time.Duration) ([]byte, error) {
+	return nil, nil
+}
+
+func (p *recordingProvider) Restart(context.Context, sandbox.SandboxRef, []byte, time.Duration) ([]byte, error) {
+	return nil, nil
 }
 func (p *recordingProvider) Remove(context.Context, sandbox.SandboxRef, []byte, ...sandbox.RemoveOption) ([]byte, error) {
 	return nil, nil
@@ -70,7 +74,12 @@ func newAssignFixture(t *testing.T) (*Service, *recordingProvider) {
 		t.Fatalf("create provider instance: %v", err)
 	}
 	if err := svc.store.CreatePool(context.Background(), &model.Pool{
-		ID: "pool-1", ProjectID: "project-1", Name: "pool-1", ProviderInstanceID: "prov-1",
+		ID:        "pool-1",
+		ProjectID: "project-1",
+		PoolManifest: model.PoolManifest{
+			Name:               "pool-1",
+			ProviderInstanceID: "prov-1",
+		},
 	}); err != nil {
 		t.Fatalf("create pool: %v", err)
 	}

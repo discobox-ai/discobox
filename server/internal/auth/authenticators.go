@@ -79,7 +79,7 @@ func bearerToken(authorization string) string {
 }
 
 var poolRuntimeActions = map[string]struct{}{
-	"sandbox-removed":        {},
+	"sandbox-states":         {},
 	"status":                 {},
 	"resolve-sandbox-secret": {},
 }

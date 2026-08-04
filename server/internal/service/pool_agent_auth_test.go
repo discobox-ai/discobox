@@ -42,7 +42,7 @@ func TestUpdatePoolStatusRejectsCrossPoolAssertion(t *testing.T) {
 	svc, appStore, _, projectID := newPoolAgentTestService(t)
 	registerTestPool(ctx, t, svc, appStore, projectID, "pool-auth")
 
-	otherPool := &model.Pool{ID: "pool-other", ProjectID: projectID, Name: "other", ProviderInstanceID: "provider-auth"}
+	otherPool := &model.Pool{ID: "pool-other", ProjectID: projectID, PoolManifest: model.PoolManifest{Name: "other", ProviderInstanceID: "provider-auth"}}
 	if err := appStore.CreatePool(ctx, otherPool); err != nil {
 		t.Fatalf("create other pool: %v", err)
 	}
@@ -81,8 +81,8 @@ func TestGetPoolIncludesAgentReportedStatus(t *testing.T) {
 	if !pool.Ready || !pool.Schedulable || pool.AvailableCPUVCPUs != 2 {
 		t.Fatalf("pool status = ready %t schedulable %t cpu %v, want reported values", pool.Ready, pool.Schedulable, pool.AvailableCPUVCPUs)
 	}
-	if pool.Phase != model.PoolPhaseActive {
-		t.Fatalf("pool phase = %q, want active", pool.Phase)
+	if pool.State != model.PoolStateActive {
+		t.Fatalf("pool phase = %q, want active", pool.State)
 	}
 	response, err := json.Marshal(pool)
 	if err != nil {
@@ -115,7 +115,7 @@ func newPoolAgentTestService(t *testing.T) (*service.Service, *store.Store, *dat
 	if err := appStore.CreateSandboxProviderInstance(ctx, provider); err != nil {
 		t.Fatalf("create provider: %v", err)
 	}
-	if err := appStore.CreatePool(ctx, &model.Pool{ID: "pool-auth", ProjectID: project.ID, Name: "pool-auth", ProviderInstanceID: provider.ID}); err != nil {
+	if err := appStore.CreatePool(ctx, &model.Pool{ID: "pool-auth", ProjectID: project.ID, PoolManifest: model.PoolManifest{Name: "pool-auth", ProviderInstanceID: provider.ID}}); err != nil {
 		t.Fatalf("create pool: %v", err)
 	}
 	return svc, appStore, db, project.ID

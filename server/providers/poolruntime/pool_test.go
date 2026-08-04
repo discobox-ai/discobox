@@ -100,7 +100,7 @@ func (m *fakePoolManager) SchedulePoolReconciliation(_ context.Context, _, poolI
 	if m.scheduleUnblocks {
 		m.schedulable = true
 		if m.pool != nil {
-			m.pool.LastOperationStatus = model.OperationStatusSuccess
+			m.pool.ErrorMessage = nil
 		}
 	}
 	return nil
@@ -121,14 +121,13 @@ func activePool(id string) *model.Pool {
 	return &model.Pool{
 		ID:        id,
 		ProjectID: "project-1",
-		Name:      id,
 		ResourceLifecycle: model.ResourceLifecycle{
-			DesiredState:        model.PoolDesiredStateActive,
-			Phase:               model.PoolPhaseActive,
-			LastOperationStatus: model.OperationStatusSuccess,
+			DesiredState: model.DesiredStatePresent,
+			State:        model.PoolStateActive,
 		},
-		Ready:       true,
-		Schedulable: true,
+		Ready:        true,
+		Schedulable:  true,
+		PoolManifest: model.PoolManifest{Name: id},
 	}
 }
 
@@ -239,7 +238,7 @@ func TestPoolProviderCreateWaitsForSchedulablePool(t *testing.T) {
 	pool := activePool("pool-1")
 	pool.Ready = false
 	pool.Schedulable = false
-	pool.LastOperationStatus = model.OperationStatusRunning
+	pool.ObservedGeneration = pool.Generation - 1 // a retry is pending
 	manager := &fakePoolManager{pool: pool, schedulable: false, scheduleUnblocks: true}
 	provider := New(runtimeProvider, sandbox.ProviderDefinition{Name: "test"}, manager)
 
@@ -269,7 +268,6 @@ func TestPoolProviderCreateSurfacesSettledPoolFailure(t *testing.T) {
 	pool := activePool("pool-1")
 	pool.Ready = false
 	pool.Schedulable = false
-	pool.LastOperationStatus = model.OperationStatusFailed
 	pool.ErrorMessage = &message
 	manager := &fakePoolManager{pool: pool, schedulable: false}
 	provider := New(newTestRuntimeProvider(t, "project-1", "pool-1"), sandbox.ProviderDefinition{Name: "test"}, manager)

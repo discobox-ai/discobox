@@ -28,8 +28,17 @@ type Provider interface {
 	// Update applies the mutable subset of a sandbox's configuration to a running
 	// instance in place. Only the fields present in UpdateOptions can change.
 	Update(ctx context.Context, ref SandboxRef, state []byte, opts UpdateOptions) (*Sandbox, []byte, error)
-	Start(ctx context.Context, ref SandboxRef, state []byte) (*Sandbox, []byte, error)
-	Stop(ctx context.Context, ref SandboxRef, state []byte, timeout time.Duration) (*Sandbox, []byte, error)
+
+	// Start, Stop, and Restart instruct the runtime and return only whether the
+	// instruction was accepted. They deliberately do not return a Sandbox: the
+	// resulting state arrives on the runtime's own reporting channel, because a
+	// response cannot express "starting" and because the transitions that matter
+	// most — a container dying, a host rebooting — have no request to answer
+	// (ADR 0017 §§9–10).
+	Start(ctx context.Context, ref SandboxRef, state []byte) ([]byte, error)
+	Stop(ctx context.Context, ref SandboxRef, state []byte, timeout time.Duration) ([]byte, error)
+	Restart(ctx context.Context, ref SandboxRef, state []byte, timeout time.Duration) ([]byte, error)
+
 	Remove(ctx context.Context, ref SandboxRef, state []byte, opts ...RemoveOption) ([]byte, error)
 	Get(ctx context.Context, ref SandboxRef, state []byte) (*Sandbox, error)
 	AcquireHTTPClient(ctx context.Context, ref SandboxRef, state []byte, scopes []string) (*transport.HTTPClientLease, error)
@@ -90,6 +99,16 @@ type StateEvent struct {
 // CreateOptions configures sandbox creation.
 type CreateOptions struct {
 	Image ImageRef
+	// SpecFingerprint is the digest of the sandbox's whole manifest. The
+	// runtime records it on the container it builds and rebuilds any container
+	// whose recorded fingerprint no longer matches, which is how every spec
+	// change — image, resources, sources, whatever is added later — converges
+	// through one mechanism (ADR 0017 §5).
+	SpecFingerprint string
+	// Start asks the runtime to bring the container up as part of creating it.
+	// True only for a sandbox that has never run; a rebuild after the container
+	// was lost restores it stopped (ADR 0017 §13).
+	Start bool
 
 	Labels map[string]string
 	Env    map[string]string

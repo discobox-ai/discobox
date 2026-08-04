@@ -36,12 +36,17 @@ func TestSandboxReconcileCancelsWhenGenerationChanges(t *testing.T) {
 		t.Fatalf("create generation = %d, want 1", sandbox.Generation)
 	}
 
-	stopped, err := svc.StopSandbox(ctx, projectID, sandbox.ID, services.StopSandboxBody{})
-	if err != nil {
-		t.Fatalf("stop sandbox: %v", err)
+	// Existence and spec intent is what bumps the generation now; power
+	// operations do not (ADR 0017 §9).
+	if err := svc.DeleteSandbox(ctx, projectID, sandbox.ID); err != nil {
+		t.Fatalf("delete sandbox: %v", err)
 	}
-	if stopped.Generation != 2 {
-		t.Fatalf("stop generation = %d, want 2", stopped.Generation)
+	deleted, err := svc.GetSandbox(ctx, projectID, sandbox.ID)
+	if err != nil {
+		t.Fatalf("get sandbox: %v", err)
+	}
+	if deleted.Generation != 2 {
+		t.Fatalf("delete generation = %d, want 2", deleted.Generation)
 	}
 
 	// The in-memory sandbox still carries generation 1; the store moved on to 2.
@@ -55,17 +60,20 @@ func TestSandboxReconcileCancelsWhenGenerationChanges(t *testing.T) {
 func TestSandboxIntentCreatesGenerationScopedJobs(t *testing.T) {
 	ctx := context.Background()
 	svc, _, _, projectID := newSandboxTestService(t, nil)
+	svc.RegisterSandboxProvider("test", noopSandboxProvider{})
 
 	created, err := svc.CreateSandbox(ctx, projectID, services.CreateSandboxBody{Config: serverapi.SandboxCreateConfig{Name: "alpha"}})
 	if err != nil {
 		t.Fatalf("create sandbox: %v", err)
 	}
+	// Power operations write nothing, so the generation must not move: they are
+	// instructions, not intent (ADR 0017 §9).
 	started, err := svc.StartSandbox(ctx, projectID, created.ID, services.StartSandboxBody{})
 	if err != nil {
 		t.Fatalf("start sandbox: %v", err)
 	}
-	if started.Generation != created.Generation+1 {
-		t.Fatalf("start generation = %d, want %d", started.Generation, created.Generation+1)
+	if started.Generation != created.Generation {
+		t.Fatalf("start generation = %d, want %d unchanged", started.Generation, created.Generation)
 	}
 }
 
@@ -84,8 +92,8 @@ func TestReconcileSandboxDoesNotChangeIntent(t *testing.T) {
 	if reconciled.Generation != created.Generation {
 		t.Fatalf("reconcile generation = %d, want %d", reconciled.Generation, created.Generation)
 	}
-	if reconciled.DesiredState != created.DesiredState || derefString(reconciled.ActiveOperation) != derefString(created.ActiveOperation) {
-		t.Fatalf("reconcile intent = %q/%q, want %q/%q", reconciled.DesiredState, derefString(reconciled.ActiveOperation), created.DesiredState, derefString(created.ActiveOperation))
+	if reconciled.DesiredState != created.DesiredState {
+		t.Fatalf("reconcile intent = %q, want %q", reconciled.DesiredState, created.DesiredState)
 	}
 }
 
@@ -381,39 +389,63 @@ func TestSandboxIntentIsReconciledByJobQueue(t *testing.T) {
 	if err != nil {
 		t.Fatalf("create sandbox: %v", err)
 	}
-	sandbox = waitForSandboxPhase(ctx, t, svc, projectID, sandbox.ID, model.SandboxPhaseRunning)
-	if sandbox.DesiredState != model.SandboxDesiredStateRunning {
-		t.Fatalf("created desired state = %q, want %q", sandbox.DesiredState, model.SandboxDesiredStateRunning)
+	// The reconciler brings the sandbox into existence and issues one start; it
+	// does not record that the sandbox is running, because it cannot see that.
+	// Converged is the whole of what the control plane knows here (ADR 0017 §9).
+	sandbox = waitForSandboxConverged(ctx, t, svc, projectID, sandbox.ID)
+	if sandbox.DesiredState != model.DesiredStatePresent {
+		t.Fatalf("created desired state = %q, want %q", sandbox.DesiredState, model.DesiredStatePresent)
 	}
-	if sandbox.ActiveOperation != nil {
-		t.Fatalf("created active operation = %v, want nil", *sandbox.ActiveOperation)
-	}
-
-	if _, err := svc.StopSandbox(ctx, projectID, sandbox.ID, services.StopSandboxBody{}); err != nil {
-		t.Fatalf("stop sandbox: %v", err)
-	}
-	sandbox = waitForSandboxPhase(ctx, t, svc, projectID, sandbox.ID, model.SandboxPhaseStopped)
-	if sandbox.DesiredState != model.SandboxDesiredStateStopped {
-		t.Fatalf("stopped desired state = %q, want %q", sandbox.DesiredState, model.SandboxDesiredStateStopped)
+	if sandbox.DesiredState != model.DesiredStatePresent {
+		t.Fatalf("created desired state = %q, want present", sandbox.DesiredState)
 	}
 
-	if _, err := svc.StartSandbox(ctx, projectID, sandbox.ID, services.StartSandboxBody{}); err != nil {
-		t.Fatalf("start sandbox: %v", err)
+	// Power operations are delivered to the runtime and change nothing here:
+	// no state, no desired state, no generation. The runtime reports what
+	// became of them on its own channel, and there is no runtime in this test
+	// (ADR 0017 §§9-10).
+	for _, instruct := range []func() error{
+		func() error {
+			_, err := svc.StopSandbox(ctx, projectID, sandbox.ID, services.StopSandboxBody{})
+			return err
+		},
+		func() error {
+			_, err := svc.StartSandbox(ctx, projectID, sandbox.ID, services.StartSandboxBody{})
+			return err
+		},
+	} {
+		before, err := svc.GetSandbox(ctx, projectID, sandbox.ID)
+		if err != nil {
+			t.Fatalf("get sandbox: %v", err)
+		}
+		if err := instruct(); err != nil {
+			t.Fatalf("instruct sandbox: %v", err)
+		}
+		after, err := svc.GetSandbox(ctx, projectID, sandbox.ID)
+		if err != nil {
+			t.Fatalf("get sandbox: %v", err)
+		}
+		if after.Generation != before.Generation || after.DesiredState != before.DesiredState || after.State != before.State {
+			t.Fatalf("an instruction wrote state: generation %d->%d, desired %q->%q, state %q->%q",
+				before.Generation, after.Generation, before.DesiredState, after.DesiredState, before.State, after.State)
+		}
 	}
-	sandbox = waitForSandboxPhase(ctx, t, svc, projectID, sandbox.ID, model.SandboxPhaseRunning)
-	if sandbox.DesiredState != model.SandboxDesiredStateRunning {
-		t.Fatalf("started desired state = %q, want %q", sandbox.DesiredState, model.SandboxDesiredStateRunning)
+	sandbox, err = svc.GetSandbox(ctx, projectID, sandbox.ID)
+	if err != nil {
+		t.Fatalf("get sandbox: %v", err)
 	}
 
 	if _, err := svc.RestartSandbox(ctx, projectID, sandbox.ID, services.RestartSandboxBody{}); err != nil {
 		t.Fatalf("restart sandbox: %v", err)
 	}
-	sandbox = waitForSandboxPhase(ctx, t, svc, projectID, sandbox.ID, model.SandboxPhaseRunning)
-	if sandbox.RestartGeneration != 1 {
-		t.Fatalf("restart generation = %d, want 1", sandbox.RestartGeneration)
+	// Restart is an instruction, not intent: it bumps no counter and leaves the
+	// recorded state to the runtime's own report (ADR 0017 §§5, 9).
+	restarted, err := svc.GetSandbox(ctx, projectID, sandbox.ID)
+	if err != nil {
+		t.Fatalf("get sandbox: %v", err)
 	}
-	if sandbox.RestartedGeneration != sandbox.RestartGeneration {
-		t.Fatalf("restarted generation = %d, want %d", sandbox.RestartedGeneration, sandbox.RestartGeneration)
+	if restarted.Generation != sandbox.Generation {
+		t.Fatalf("restart moved the generation %d -> %d", sandbox.Generation, restarted.Generation)
 	}
 
 	if err := svc.DeleteSandbox(ctx, projectID, sandbox.ID); err != nil {
@@ -478,10 +510,12 @@ func installDefaultSandboxProviderInstance(ctx context.Context, t *testing.T, ap
 		t.Fatalf("create test provider: %v", err)
 	}
 	pool := &model.Pool{
-		ID:                 id.NewString(id.PrefixPool),
-		ProjectID:          projectID,
-		Name:               "Default",
-		ProviderInstanceID: provider.ID,
+		ID:        id.NewString(id.PrefixPool),
+		ProjectID: projectID,
+		PoolManifest: model.PoolManifest{
+			Name:               "Default",
+			ProviderInstanceID: provider.ID,
+		},
 	}
 	if err := appStore.CreatePool(ctx, pool); err != nil {
 		t.Fatalf("create test pool: %v", err)
@@ -541,12 +575,16 @@ func (noopSandboxProvider) Update(_ context.Context, ref sandboxes.SandboxRef, _
 	return runtimeSandbox(ref, sandboxes.Status("running")), nil, nil
 }
 
-func (noopSandboxProvider) Start(_ context.Context, ref sandboxes.SandboxRef, _ []byte) (*sandboxes.Sandbox, []byte, error) {
-	return runtimeSandbox(ref, sandboxes.Status("running")), nil, nil
+func (noopSandboxProvider) Start(context.Context, sandboxes.SandboxRef, []byte) ([]byte, error) {
+	return nil, nil
 }
 
-func (noopSandboxProvider) Stop(_ context.Context, ref sandboxes.SandboxRef, _ []byte, _ time.Duration) (*sandboxes.Sandbox, []byte, error) {
-	return runtimeSandbox(ref, sandboxes.Status("stopped")), nil, nil
+func (noopSandboxProvider) Stop(context.Context, sandboxes.SandboxRef, []byte, time.Duration) ([]byte, error) {
+	return nil, nil
+}
+
+func (noopSandboxProvider) Restart(context.Context, sandboxes.SandboxRef, []byte, time.Duration) ([]byte, error) {
+	return nil, nil
 }
 
 func (noopSandboxProvider) Remove(context.Context, sandboxes.SandboxRef, []byte, ...sandboxes.RemoveOption) ([]byte, error) {
@@ -567,29 +605,6 @@ func runtimeSandbox(ref sandboxes.SandboxRef, status sandboxes.Status) *sandboxe
 		SandboxID: ref.SandboxID,
 		Status:    status,
 	}
-}
-
-func waitForSandboxPhase(ctx context.Context, t *testing.T, svc *service.Service, projectID, sandboxID, phase string) *model.Sandbox {
-	t.Helper()
-
-	deadline := time.Now().Add(time.Second)
-	for time.Now().Before(deadline) {
-		sandbox, err := svc.GetSandbox(ctx, projectID, sandboxID)
-		if err != nil {
-			t.Fatalf("get sandbox: %v", err)
-		}
-		if sandbox.Phase == phase {
-			return sandbox
-		}
-		time.Sleep(10 * time.Millisecond)
-	}
-
-	sandbox, err := svc.GetSandbox(ctx, projectID, sandboxID)
-	if err != nil {
-		t.Fatalf("get sandbox after timeout: %v", err)
-	}
-	t.Fatalf("sandbox phase = %q, want %q", sandbox.Phase, phase)
-	return nil
 }
 
 func waitForSandboxDeleted(ctx context.Context, t *testing.T, svc *service.Service, projectID, sandboxID string) {
@@ -635,7 +650,7 @@ func park(t *testing.T, st *store.Store, projectID, sandboxID string) {
 		// The commit is resolved by the client at create, before any push.
 		Checkout: &model.GitSourceCheckout{Commit: &parkedCommit},
 	}
-	sb.Phase = model.SandboxPhaseAwaitingSource
+	sb.State = model.SandboxStateAwaitingSource
 	if err := st.UpdateSandbox(ctx, sb); err != nil {
 		t.Fatalf("park sandbox: %v", err)
 	}
@@ -666,11 +681,15 @@ func TestCompleteSandboxSourcePushRecordsCommitAndResumes(t *testing.T) {
 	if resumed.Source == nil || resumed.Source.Checkout == nil || derefString(resumed.Source.Checkout.Commit) != parkedCommit {
 		t.Fatalf("source commit = %v, want it unchanged at %q", resumed.Source, parkedCommit)
 	}
-	// The sandbox must leave awaiting_source, or it would park forever.
-	if resumed.Phase == model.SandboxPhaseAwaitingSource {
-		t.Fatal("sandbox is still awaiting its source after the push completed")
+	// Completing the push records new intent; the state still reads
+	// awaiting_source because nothing has reconciled yet, and reporting a state
+	// the sandbox has not reached would be exactly the lie this model removes.
+	// What must be true here is that the sandbox is no longer converged, so the
+	// reconciler will resume it.
+	if resumed.Converged() {
+		t.Fatal("completing the push recorded no new intent; the sandbox would park forever")
 	}
-	if resumed.DesiredState != model.SandboxDesiredStateRunning {
+	if resumed.DesiredState != model.DesiredStatePresent {
 		t.Fatalf("desired state = %q, want running", resumed.DesiredState)
 	}
 }
@@ -704,7 +723,7 @@ func TestCompleteSandboxSourcePushRejectsSandboxNotAwaitingSource(t *testing.T) 
 	if err != nil {
 		t.Fatal(err)
 	}
-	sb.Phase = model.SandboxPhaseRunning
+	sb.State = model.SandboxStateRunning
 	if err := st.UpdateSandbox(ctx, sb); err != nil {
 		t.Fatal(err)
 	}
@@ -754,7 +773,27 @@ func TestCompleteSandboxSourcePushRejectsMismatchedCommit(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if sb.SourceDeliveredAt != nil || sb.Phase != model.SandboxPhaseAwaitingSource {
-		t.Fatalf("sandbox resumed on a mismatched commit: delivered=%v phase=%q", sb.SourceDeliveredAt, sb.Phase)
+	if sb.SourceDeliveredAt != nil || sb.State != model.SandboxStateAwaitingSource {
+		t.Fatalf("sandbox resumed on a mismatched commit: delivered=%v phase=%q", sb.SourceDeliveredAt, sb.State)
+	}
+}
+
+// waitForSandboxConverged waits until the reconciler has finished acting on the
+// sandbox's current generation.
+func waitForSandboxConverged(ctx context.Context, t *testing.T, svc *service.Service, projectID, sandboxID string) *model.Sandbox {
+	t.Helper()
+	deadline := time.Now().Add(5 * time.Second)
+	for {
+		sandbox, err := svc.GetSandbox(ctx, projectID, sandboxID)
+		if err != nil {
+			t.Fatalf("get sandbox: %v", err)
+		}
+		if sandbox.Converged() {
+			return sandbox
+		}
+		if time.Now().After(deadline) {
+			t.Fatalf("sandbox generations = %d/%d, want converged", sandbox.ObservedGeneration, sandbox.Generation)
+		}
+		time.Sleep(10 * time.Millisecond)
 	}
 }

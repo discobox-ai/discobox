@@ -1741,42 +1741,13 @@ func (s *Pool) Validate() error {
 		})
 	}
 	if err := func() error {
-		if err := s.Phase.Validate(); err != nil {
+		if err := s.State.Validate(); err != nil {
 			return err
 		}
 		return nil
 	}(); err != nil {
 		failures = append(failures, validate.FieldError{
-			Name:  "phase",
-			Error: err,
-		})
-	}
-	if err := func() error {
-		if value, ok := s.ActiveOperation.Get(); ok {
-			if err := func() error {
-				if err := value.Validate(); err != nil {
-					return err
-				}
-				return nil
-			}(); err != nil {
-				return err
-			}
-		}
-		return nil
-	}(); err != nil {
-		failures = append(failures, validate.FieldError{
-			Name:  "activeOperation",
-			Error: err,
-		})
-	}
-	if err := func() error {
-		if err := s.LastOperationStatus.Validate(); err != nil {
-			return err
-		}
-		return nil
-	}(); err != nil {
-		failures = append(failures, validate.FieldError{
-			Name:  "lastOperationStatus",
+			Name:  "state",
 			Error: err,
 		})
 	}
@@ -1786,20 +1757,9 @@ func (s *Pool) Validate() error {
 	return nil
 }
 
-func (s PoolActiveOperation) Validate() error {
-	switch s {
-	case "create":
-		return nil
-	case "delete":
-		return nil
-	default:
-		return errors.Errorf("invalid value: %v", s)
-	}
-}
-
 func (s PoolDesiredState) Validate() error {
 	switch s {
-	case "active":
+	case "present":
 		return nil
 	case "deleted":
 		return nil
@@ -1808,32 +1768,51 @@ func (s PoolDesiredState) Validate() error {
 	}
 }
 
-func (s PoolLastOperationStatus) Validate() error {
+func (s *PoolSandboxState) Validate() error {
+	if s == nil {
+		return validate.ErrNilPointer
+	}
+
+	var failures []validate.FieldError
+	if err := func() error {
+		if err := s.State.Validate(); err != nil {
+			return err
+		}
+		return nil
+	}(); err != nil {
+		failures = append(failures, validate.FieldError{
+			Name:  "state",
+			Error: err,
+		})
+	}
+	if len(failures) > 0 {
+		return &validate.Error{Fields: failures}
+	}
+	return nil
+}
+
+func (s PoolSandboxStateState) Validate() error {
 	switch s {
-	case "pending":
+	case "starting":
 		return nil
 	case "running":
 		return nil
-	case "success":
+	case "stopping":
 		return nil
-	case "failed":
+	case "stopped":
 		return nil
 	default:
 		return errors.Errorf("invalid value: %v", s)
 	}
 }
 
-func (s PoolPhase) Validate() error {
+func (s PoolState) Validate() error {
 	switch s {
 	case "pending":
-		return nil
-	case "launching":
 		return nil
 	case "registering":
 		return nil
 	case "active":
-		return nil
-	case "deleting":
 		return nil
 	case "offline":
 		return nil
@@ -2071,6 +2050,46 @@ func (s *Project) Validate() error {
 	}(); err != nil {
 		failures = append(failures, validate.FieldError{
 			Name:  "slug",
+			Error: err,
+		})
+	}
+	if len(failures) > 0 {
+		return &validate.Error{Fields: failures}
+	}
+	return nil
+}
+
+func (s *ReportPoolSandboxStatesBody) Validate() error {
+	if s == nil {
+		return validate.ErrNilPointer
+	}
+
+	var failures []validate.FieldError
+	if err := func() error {
+		if s.States == nil {
+			return errors.New("nil is invalid value")
+		}
+		var failures []validate.FieldError
+		for i, elem := range s.States {
+			if err := func() error {
+				if err := elem.Validate(); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				failures = append(failures, validate.FieldError{
+					Name:  fmt.Sprintf("[%d]", i),
+					Error: err,
+				})
+			}
+		}
+		if len(failures) > 0 {
+			return &validate.Error{Fields: failures}
+		}
+		return nil
+	}(); err != nil {
+		failures = append(failures, validate.FieldError{
+			Name:  "states",
 			Error: err,
 		})
 	}
@@ -2799,24 +2818,6 @@ func (s *SandboxRuntime) Validate() error {
 
 	var failures []validate.FieldError
 	if err := func() error {
-		if value, ok := s.ActiveOperation.Get(); ok {
-			if err := func() error {
-				if err := value.Validate(); err != nil {
-					return err
-				}
-				return nil
-			}(); err != nil {
-				return err
-			}
-		}
-		return nil
-	}(); err != nil {
-		failures = append(failures, validate.FieldError{
-			Name:  "activeOperation",
-			Error: err,
-		})
-	}
-	if err := func() error {
 		if value, ok := s.AppliedCommits.Get(); ok {
 			if err := func() error {
 				if value == nil {
@@ -2881,24 +2882,13 @@ func (s *SandboxRuntime) Validate() error {
 		})
 	}
 	if err := func() error {
-		if err := s.LastOperationStatus.Validate(); err != nil {
+		if err := s.State.Validate(); err != nil {
 			return err
 		}
 		return nil
 	}(); err != nil {
 		failures = append(failures, validate.FieldError{
-			Name:  "lastOperationStatus",
-			Error: err,
-		})
-	}
-	if err := func() error {
-		if err := s.Phase.Validate(); err != nil {
-			return err
-		}
-		return nil
-	}(); err != nil {
-		failures = append(failures, validate.FieldError{
-			Name:  "phase",
+			Name:  "state",
 			Error: err,
 		})
 	}
@@ -2926,28 +2916,9 @@ func (s *SandboxRuntime) Validate() error {
 	return nil
 }
 
-func (s SandboxRuntimeActiveOperation) Validate() error {
-	switch s {
-	case "create":
-		return nil
-	case "start":
-		return nil
-	case "stop":
-		return nil
-	case "restart":
-		return nil
-	case "delete":
-		return nil
-	default:
-		return errors.Errorf("invalid value: %v", s)
-	}
-}
-
 func (s SandboxRuntimeDesiredState) Validate() error {
 	switch s {
-	case "running":
-		return nil
-	case "stopped":
+	case "present":
 		return nil
 	case "deleted":
 		return nil
@@ -2977,26 +2948,9 @@ func (s SandboxRuntimeDisplayState) Validate() error {
 	}
 }
 
-func (s SandboxRuntimeLastOperationStatus) Validate() error {
+func (s SandboxRuntimeState) Validate() error {
 	switch s {
 	case "pending":
-		return nil
-	case "running":
-		return nil
-	case "success":
-		return nil
-	case "failed":
-		return nil
-	default:
-		return errors.Errorf("invalid value: %v", s)
-	}
-}
-
-func (s SandboxRuntimePhase) Validate() error {
-	switch s {
-	case "pending":
-		return nil
-	case "provisioning":
 		return nil
 	case "awaiting_source":
 		return nil
@@ -3007,8 +2961,6 @@ func (s SandboxRuntimePhase) Validate() error {
 	case "stopping":
 		return nil
 	case "stopped":
-		return nil
-	case "deleting":
 		return nil
 	case "deleted":
 		return nil

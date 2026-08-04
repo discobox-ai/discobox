@@ -156,10 +156,10 @@ func awaitSourceRequested(ctx context.Context, client sourceDeliveryClient, proj
 		if err != nil {
 			return err
 		}
-		switch sandbox.Runtime.Phase {
-		case apiclientgen.SandboxRuntimePhaseAwaitingSource:
+		switch sandbox.Runtime.State {
+		case apiclientgen.SandboxRuntimeStateAwaitingSource:
 			return nil
-		case apiclientgen.SandboxRuntimePhaseFailed:
+		case apiclientgen.SandboxRuntimeStateFailed:
 			return fmt.Errorf("sandbox failed before it could receive its source: %s", sandbox.Runtime.ErrorMessage.Or("unknown error"))
 		}
 		if time.Now().After(deadline) {

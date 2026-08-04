@@ -37,7 +37,7 @@ type UpdatePoolBody = apimodel.UpdatePoolBody
 type RegisterPoolBody = apimodel.RegisterPoolBody
 type RegisterPoolResponseBody = apimodel.RegisterPoolResponseBody
 type UpdatePoolStatusBody = apimodel.UpdatePoolStatusBody
-type ReportPoolSandboxRemovedBody = apimodel.ReportPoolSandboxRemovedBody
+type ReportPoolSandboxStatesBody = apimodel.ReportPoolSandboxStatesBody
 type OptBool = serverapi.OptBool
 type OptString = serverapi.OptString
 type OptURI = serverapi.OptURI
@@ -86,16 +86,15 @@ type HarnessConfigService interface {
 	DeleteHarnessConfigSecretBinding(ctx context.Context, projectID, configID, envName string) error
 }
 
-// Phase sets accepted by AcquireSandboxHTTPClient. Most sandbox-agent proxies
-// (terminals, http, execs) only make sense once the sandbox is fully running.
-// The sandbox git-repositories proxy is the exception: a push-delivered
-// source is received precisely while the sandbox is awaiting_source (ADR
-// 0001), so it must accept that phase too, or the delivery it exists for can
-// never happen.
-var (
-	SandboxPhasesRunning                 = []string{model.SandboxPhaseRunning}
-	SandboxPhasesRunningOrAwaitingSource = []string{model.SandboxPhaseRunning, model.SandboxPhaseAwaitingSource}
-)
+// AcquireSandboxHTTPClient no longer takes a set of acceptable states. It used
+// to refuse anything but a running sandbox (and, for the git-repositories
+// proxy, one awaiting its source), which made every caller responsible for
+// knowing the sandbox was up before it could talk to it.
+//
+// Under ADR 0017 §12 the pool agent starts a stopped sandbox on demand, so the
+// only thing the server checks is that the sandbox still exists. Gating here
+// would refuse traffic that the pool agent would happily have served, and it
+// would only cover the routes that consult the server in the first place.
 
 // SandboxService manages sandboxes within a project.
 type SandboxService interface {
@@ -113,7 +112,7 @@ type SandboxService interface {
 	CompleteSandboxSourcePush(ctx context.Context, projectID, sandboxID string, input CompleteSandboxSourcePushBody) (*model.Sandbox, error)
 	CompleteSandboxApply(ctx context.Context, projectID, sandboxID string, input CompleteSandboxApplyBody) (*model.Sandbox, error)
 	ReconcileSandbox(ctx context.Context, projectID, sandboxID string) (*model.Sandbox, error)
-	AcquireSandboxHTTPClient(ctx context.Context, projectID, sandboxID string, scopes, allowedPhases []string) (*HTTPClientLease, *model.Sandbox, error)
+	AcquireSandboxHTTPClient(ctx context.Context, projectID, sandboxID string, scopes []string) (*HTTPClientLease, *model.Sandbox, error)
 	AssignSandboxHarnessSecrets(ctx context.Context, projectID, sandboxID, harnessConfigID string) (map[string]string, error)
 }
 
@@ -141,7 +140,7 @@ type PoolService interface {
 
 	RegisterPool(ctx context.Context, input RegisterPoolBody) (*RegisterPoolResponseBody, error)
 	UpdatePoolStatus(ctx context.Context, poolID string, input UpdatePoolStatusBody) (*model.Pool, error)
-	ReportPoolSandboxRemoved(ctx context.Context, poolID string, input ReportPoolSandboxRemovedBody) error
+	ReportPoolSandboxStates(ctx context.Context, poolID string, input ReportPoolSandboxStatesBody) error
 }
 
 // JobService provides project-scoped durable job visibility.

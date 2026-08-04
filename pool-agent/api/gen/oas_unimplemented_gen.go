@@ -49,12 +49,21 @@ func (UnimplementedHandler) PoolListSandboxes(ctx context.Context, params PoolLi
 	return r, ht.ErrNotImplemented
 }
 
+// PoolRestartSandbox implements pool-restart-sandbox operation.
+//
+// Restart pool sandbox.
+//
+// POST /api/project/{projectId}/pool/{poolId}/sandboxes/{sandboxId}/restart
+func (UnimplementedHandler) PoolRestartSandbox(ctx context.Context, req *PoolSandboxOperationRequest, params PoolRestartSandboxParams) (r *PoolSandboxOperationAccepted, _ error) {
+	return r, ht.ErrNotImplemented
+}
+
 // PoolStartSandbox implements pool-start-sandbox operation.
 //
 // Start pool sandbox.
 //
 // POST /api/project/{projectId}/pool/{poolId}/sandboxes/{sandboxId}/start
-func (UnimplementedHandler) PoolStartSandbox(ctx context.Context, req *PoolSandboxOperationRequest, params PoolStartSandboxParams) (r *PoolSandboxInstance, _ error) {
+func (UnimplementedHandler) PoolStartSandbox(ctx context.Context, req *PoolSandboxOperationRequest, params PoolStartSandboxParams) (r *PoolSandboxOperationAccepted, _ error) {
 	return r, ht.ErrNotImplemented
 }
 
@@ -63,7 +72,7 @@ func (UnimplementedHandler) PoolStartSandbox(ctx context.Context, req *PoolSandb
 // Stop pool sandbox.
 //
 // POST /api/project/{projectId}/pool/{poolId}/sandboxes/{sandboxId}/stop
-func (UnimplementedHandler) PoolStopSandbox(ctx context.Context, req *PoolSandboxOperationRequest, params PoolStopSandboxParams) (r *PoolSandboxInstance, _ error) {
+func (UnimplementedHandler) PoolStopSandbox(ctx context.Context, req *PoolSandboxOperationRequest, params PoolStopSandboxParams) (r *PoolSandboxOperationAccepted, _ error) {
 	return r, ht.ErrNotImplemented
 }
 
