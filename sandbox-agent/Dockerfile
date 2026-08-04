@@ -130,13 +130,80 @@ RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
     && curl -fsSL https://bun.sh/install | BUN_INSTALL=/usr/local bash \
     && rm -rf /var/lib/apt/lists/* /root/.npm \
     && rm -f /etc/apt/apt.conf.d/docker-clean \
+    # Trim systemd down to what a container actually needs. The host owns the
+    # kernel, hardware, partitions, and network namespace, so anything that
+    # manages those is dead weight or an outright failure at boot. udev is
+    # deliberately NOT masked: nested Docker in the sandbox depends on it.
+    # Periodic maintenance (apt, dpkg, fstrim, e2scrub) is masked so sandboxes
+    # never wake up and mutate packages or filesystems behind the user.
     && systemctl mask \
-        dev-hugepages.mount \
-        sys-fs-fuse-connections.mount \
-        systemd-remount-fs.service \
-        getty.target \
+        apt-daily-upgrade.timer \
+        apt-daily.timer \
         console-getty.service \
+        dev-hugepages.mount \
+        dpkg-db-backup.timer \
+        e2scrub_all.timer \
+        e2scrub_reap.service \
+        fstrim.timer \
+        getty.target \
+        getty@.service \
+        kmod-static-nodes.service \
+        ldconfig.service \
+        proc-sys-fs-binfmt_misc.mount \
+        serial-getty@.service \
+        sys-fs-fuse-connections.mount \
+        systemd-ask-password-console.path \
+        systemd-ask-password-console.service \
+        systemd-ask-password-wall.path \
+        systemd-ask-password-wall.service \
+        systemd-battery-check.service \
+        systemd-binfmt.service \
+        systemd-boot-check-no-failures.service \
+        systemd-bsod.service \
+        systemd-confext.service \
+        systemd-firstboot.service \
+        systemd-growfs-root.service \
+        systemd-hibernate-clear.service \
+        systemd-hibernate-resume.service \
+        systemd-hibernate.service \
+        systemd-hostnamed.service \
+        systemd-hostnamed.socket \
+        systemd-hybrid-sleep.service \
+        systemd-initctl.service \
+        systemd-initctl.socket \
+        systemd-journald-audit.socket \
+        systemd-localed.service \
         systemd-logind.service \
+        systemd-machine-id-commit.service \
+        systemd-modules-load.service \
+        systemd-networkd-wait-online.service \
+        systemd-networkd.service \
+        systemd-networkd.socket \
+        systemd-pcrextend.socket \
+        systemd-pcrlock.socket \
+        systemd-pcrmachine.service \
+        systemd-pcrphase-initrd.service \
+        systemd-pcrphase-sysinit.service \
+        systemd-pcrphase.service \
+        systemd-pstore.service \
+        systemd-quotacheck-root.service \
+        systemd-random-seed.service \
+        systemd-remount-fs.service \
+        systemd-repart.service \
+        systemd-rfkill.service \
+        systemd-rfkill.socket \
+        systemd-soft-reboot.service \
+        systemd-suspend-then-hibernate.service \
+        systemd-suspend.service \
+        systemd-sysext.service \
+        systemd-sysext.socket \
+        systemd-timedated.service \
+        systemd-tmpfiles-clean.timer \
+        systemd-tpm2-setup-early.service \
+        systemd-tpm2-setup.service \
+        systemd-update-utmp-runlevel.service \
+        systemd-update-utmp.service \
+        systemd-volatile-root.service \
     && systemctl disable docker.service containerd.service \
     && systemctl enable docker.socket
 
