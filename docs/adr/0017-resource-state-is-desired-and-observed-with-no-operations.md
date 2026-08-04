@@ -1,10 +1,41 @@
 # 0017 — Orchestration is generation convergence; a resource has state and desired state
 
-- **Status**: Accepted
+- **Status**: Accepted 2026-07-30. **Amendment Accepted 2026-08-04** — §§2, 5, 7
+  revised; §§9–13 added.
 - **Date**: 2026-07-30
 - **Relates to**: [ADR 0016](0016-sandbox-image-upgrades-are-explicit-and-in-place.md),
   whose re-pin rule this model would have made correct by construction, and
   whose image-drift check generalizes into §5
+
+## Amendment (2026-08-04)
+
+Nothing has shipped against this ADR — `ActiveOperation`,
+`LastOperationStatus`, `PhaseChangedAt`, `RestartGeneration`, and
+`RestartedGeneration` are all still on the models — so this is an amendment
+rather than a superseding ADR.
+
+The original decision treated power state as desired state: a sandbox's
+`DesiredState` could be `running` or `stopped`, and the reconciler converged
+toward it. That is wrong, for a reason the original context nearly reached but
+did not name. It is being corrected before implementation.
+
+The incident that prompted it: a host restart stopped every sandbox container
+on a pool. Nothing observed it, because the reconciler short-circuits on
+`Phase == running && ObservedGeneration == Generation && LastOperationStatus ==
+success` and never asks the runtime anything, and because the only liveness
+signal the pool agent emits is keyed on container *destroy* rather than *death*.
+`disco ls` reported nineteen sandboxes as `running` for 41 hours. The provider
+interface has a `Get` that would have answered correctly; it has no callers.
+
+The original model would not have fixed this. It removes the operation
+vocabulary and adds a lost-mark backstop, but a sandbox whose generations agree
+and whose stored state reads `running` is converged under §1 no matter what the
+container is doing. The defect is not the operation fields. It is that the
+server holds an opinion about power that it has no means to verify.
+
+§§9–13 move power state out of the orchestration model entirely; §§2, 5, and 7
+are revised where they assumed it. §§1, 3, 4, 6, and 8 are unchanged and
+continue to govern existence and spec convergence.
 
 ## Context
 
@@ -85,7 +116,7 @@ The consequence worth stating plainly: once the numbers match, nothing re-drives
 the resource on its own. Further work needs new intent, or an observation that
 marks it dirty. That is the property §4 depends on.
 
-### 2. Two fields are the orchestration contract; the rest belong to the resource
+### 2. Two fields are the orchestration contract; the rest belong to the resource *(amended 2026-08-04)*
 
 The split matters more than the field list:
 
@@ -115,12 +146,29 @@ deleted. `BeginOperation` becomes an intent write: set `DesiredState`, bump
 `Generation`, clear `ErrorMessage`.
 
 Observed state may hold values desired state cannot — you can observe `pending`
-but not request it. Sandbox: `pending`, `awaiting_source`, `running`, `stopped`,
-`deleted`, `failed`, against a desired set of `running`, `stopped`, `deleted`.
-Pool: `pending`, `registering`, `active`, `offline`, `deleted`, `failed`,
-against `active`, `deleted`. Dropped: `provisioning` (never assigned),
-`starting`, `stopping`, `deleting`, and `launching` — written, never read, and
-already synthesized for display.
+but not request it. Under §9, desired state answers existence and nothing else.
+
+- **Sandbox.** Observed: `pending`, `awaiting_source`, `starting`, `running`,
+  `stopping`, `stopped`, `deleted`, `failed`. Desired: `present`, `deleted`.
+- **Pool.** Observed: `pending`, `registering`, `active`, `offline`, `deleted`,
+  `failed`. Desired: `present`, `deleted`.
+
+Dropped: `provisioning` (never assigned), `deleting`, and `launching` — written,
+never read, and already synthesized for display.
+
+`starting` and `stopping` were dropped in the original decision for that same
+reason, and they return here on a different justification. They were fake when
+the server wrote them from its own dispatch: nothing had been observed, so the
+value described the server's place in a code path. They are real when the pool
+agent posts them (§10), because a runtime that has begun a start and not
+finished it genuinely is in `starting`, and that is a fact only the runtime
+holds. A state value is legitimate when someone can observe it, not when
+someone finds it convenient to display.
+
+Pool's desired `active` is renamed `present` so both resources say existence the
+same way. It is the same concept under two words, which is the confusion this
+section exists to remove; observed `active` is untouched, since it is a distinct
+and real observation about a registered host.
 
 `StateChangedAt` survives as the timeout anchor `PhaseChangedAt` is today,
 renamed with its field. It is an observed fact — how long this has been true —
@@ -182,29 +230,32 @@ pools and sandboxes need the same single path. `offline` survives as a pool
 state — a genuine observation about a host that is expected back, distinct from
 a reconciler giving up.
 
-### 5. Convergence is whole-spec, and the runtime compares a spec fingerprint
+### 5. Convergence is whole-spec, and the runtime compares a spec fingerprint *(amended 2026-08-04)*
 
-`State`/`DesiredState` is one dimension of convergence. Image and restart are
-others, and under §1 they cannot have their own counters without reintroducing
-per-operation bookkeeping through the back door.
+Existence is one dimension of convergence. The image pin is another, and under
+§1 it cannot have its own counter without reintroducing per-operation
+bookkeeping through the back door.
 
-So `Generation` versions the **whole** spec — lifecycle intent, image pin,
-restart nonce, and anything added later — and the runtime decides drift by
-comparing the container against the spec it was built from, not against a coarse
-enum. The pool-agent already does this for one field: `containerImageDrifted`
-inspects the running container and recreates it when its image no longer matches
-the pinned digest. Generalizing that comparison to a fingerprint of the whole
-sandbox spec, recorded as a container label alongside the existing
-managed/project/pool/sandbox labels, makes image upgrade, restart, and every
-future spec change one mechanism instead of three.
+So `Generation` versions the **whole** spec — existence intent, image pin,
+resources, sources, and anything added later (§11) — and the runtime decides
+drift by comparing the container against the spec it was built from, not against
+a coarse enum. The pool-agent already does this for one field:
+`containerImageDrifted` inspects the running container and recreates it when its
+image no longer matches the pinned digest. Generalizing that comparison to a
+fingerprint of the whole sandbox spec, recorded as a container label alongside
+the existing managed/project/pool/sandbox labels, makes image upgrade and every
+future spec change one mechanism instead of many.
 
-**`RestartGeneration` and `RestartedGeneration` are therefore deleted.** Restart
-becomes a nonce in the spec: bumping it changes the fingerprint, the fingerprint
-no longer matches the container, the container is recreated. This is precisely
-what `kubectl rollout restart` does — it writes an annotation whose only job is
-to change the pod template hash — with the indirection removed. The imperative
-verb that had no declarative expression turns out to have one after all, and it
-is the same one that already handles image upgrades.
+**`RestartGeneration` and `RestartedGeneration` are deleted**, as the original
+decision had them, but not for the reason it gave. That draft made restart a
+spec nonce — the `kubectl rollout restart` trick, where an annotation exists only
+to change a template hash — because the model had no imperative channel to put
+restart on and a declarative one had to be invented for it.
+
+§9 supplies that channel, so the trick is unnecessary and, once available, wrong:
+a restart changes nothing about what the sandbox *is*, and encoding it as a spec
+edit means the spec carries a field whose only content is "somebody pressed a
+button." Restart is an operation. The fingerprint covers spec drift only.
 
 This keeps the division ADR 0016 established: the server owns policy and states
 the desired spec, the runtime owns identity and enforces it.
@@ -224,22 +275,37 @@ marks the sandbox dirty and the give-up deadline is a timer armed off
 `StateChangedAt`, exactly as it is armed off `PhaseChangedAt` today. Neither
 needs the resource to pretend it is mid-operation.
 
-### 7. `displayState` is the only user-facing vocabulary
+### 7. `displayState` is the only user-facing vocabulary *(amended 2026-08-04)*
 
-`displayState` stays derived and becomes the single vocabulary the CLI and UI
+`displayState` stays derived and stays the single vocabulary the CLI and UI
 consume: `starting`, `running`, `stopping`, `stopped`, `deleting`, `deleted`,
-`error`. It is computed from `DesiredState`, `State`, whether the generations
-agree, and whether an error is set. It already synthesizes the transient values
-§2 removes, so its output does not change when the internal fields do.
+`error`. Its output is unchanged. What changes is where it gets its answer.
 
-This is where operation-shaped language legitimately survives — as the
-UX-generated value it always effectively was. "Starting" is a fact about the
-user's screen, not about the resource. The internal fields stop trying to be
-user-facing, and the user-facing field stops being reverse-engineered from five
-internal ones.
+The original derivation synthesized `starting` and `stopping` out of
+`DesiredState` plus `Generation != ObservedGeneration` — reverse-engineering a
+runtime fact from orchestration bookkeeping, because the runtime fact was not
+recorded anywhere. Under §10 it is recorded, by the component that observes it.
+So the derivation collapses to close to the identity function on `State`:
+
+- `ErrorMessage` set → `error`
+- desired `deleted` and not yet observed → `deleting`
+- otherwise → `State`, with `pending` and `awaiting_source` displayed as
+  `starting`
+
+Only the existence axis still consults the generations, because existence is
+the only thing left that the server converges.
+
+This is where operation-shaped language legitimately survives — but less of it
+is synthesized than before. "Starting" turns out to be a fact about the sandbox
+after all, once something is willing to observe it; what was never a fact was
+the server's inference that a sandbox must be starting because it had recently
+been told to start.
 
 The CLI wait loop, which reads raw `phase` plus `lastOperationStatus`, moves to
-`displayState` plus `errorMessage` — what it was approximating.
+`displayState` plus `errorMessage` — what it was approximating. Since start,
+stop, and restart no longer return state (§9), that loop is now the only way a
+client learns an operation's outcome, and it watches project events rather than
+polling.
 
 ### 8. Only Sandbox and Pool are orchestrated
 
@@ -258,6 +324,158 @@ registration list is not misread as evidence that harness configs are
 orchestrated — a reconciler that is really a cron job makes the state model look
 more general than it needs to be, and under §1 it is now visibly outside the
 model rather than awkwardly inside it.
+
+### 9. Power state is not orchestrated *(added 2026-08-04)*
+
+**No component holds an opinion that a sandbox should be running.** Not the
+server, not the pool agent, not the container runtime's restart policy.
+
+`start`, `stop`, and `restart` are operations. They instruct, they are attempted
+once, and whatever the world looks like afterwards is the state. A start that
+fails leaves a stopped sandbox and an error, and nothing retries it. There is no
+"this sandbox should be running" to converge toward, so there is nothing to
+converge. We reconcile later, when something asks us to.
+
+`DesiredState` therefore answers existence only: `present` or `deleted`.
+Everything §§1–8 say about generation convergence continues to govern existence
+and the spec (§11); none of it applies to power.
+
+Two reasons, and the second is the load-bearing one.
+
+**An opinion the server cannot verify is a lie in waiting.** That is the
+incident above, and any design where the server stores a power state and hopes
+it stays true will reproduce it in some form.
+
+**Power state is about to become dynamic.** Sandboxes will start and stop on
+criteria — idleness, demand, capacity, cost — that no stored intent can
+anticipate. A field that says "should be running" is wrong the instant a policy
+decides otherwise, and a reconciler reading it would spend its time fighting the
+policy that just acted. The two mechanisms would each be certain, and they would
+disagree. Deleting the field is what makes those policies expressible at all:
+they become callers of `start` and `stop` like any other caller, with no
+privileged channel and nothing to overrule them.
+
+This is deliberately *not* the Kubernetes node model, and the difference is
+worth being precise about, since §10 borrows the kubelet's reporting shape. A
+kubelet is fire-and-forget about instructions because it re-reads a durable pod
+spec that says the pod should be running; the desired state is real, it just
+lives in one place. Here there is no equivalent. The closer analogy is a
+socket-activated service: it runs because something wants it right now, and the
+absence of demand is a sufficient reason for it not to be running.
+
+The consequence to state plainly: **a host restart leaves every sandbox
+stopped, and nothing brings them back.** They report `stopped`, which is true,
+and §12 starts the ones somebody actually uses. That is the intended behavior,
+not a gap — see the rejected alternative on durable power intent.
+
+### 10. The pool agent reports state on its own channel *(added 2026-08-04)*
+
+Operations never return state. The response to `start` says the instruction was
+accepted and nothing more. State arrives separately, from the pool agent, which
+is the only component that can observe it.
+
+- **On transition.** Driven by the Docker event stream, which must cover
+  `start`, `die`, `stop`, and `destroy` — not `destroy` alone, as today. A
+  start posts `starting` and then `running`; a stop posts `stopping` and then
+  `stopped`.
+- **On start and on an interval, a complete report.** The full set of
+  `{sandbox → state}` the agent hosts, flagged `complete`. A sandbox the server
+  believes is on this pool and that a complete report omits is gone. This is the
+  level-triggered half and it is what makes the channel correct: a dropped delta
+  self-heals at the next sync, where a delta-only channel drifts permanently the
+  first time a post fails.
+- **Ordering.** Reports carry the agent's boot ID and a per-agent monotonic
+  sequence. The server ignores a report older than what it has already recorded,
+  so a delayed delta cannot overwrite a newer complete sync.
+- **Liveness.** The interval's arrival time is enough to serve as the pool
+  heartbeat if we want one; no separate mechanism is being added now.
+
+The existing `/api/pools/{pool_id}/sandbox-removed` route is subsumed — removal
+is one observation among several rather than its own endpoint and its own
+server-side dance (§13).
+
+Reports are observations, so under §1 they may mark the sandbox dirty. That is
+the hook §13 uses to re-drive existence and re-pin, and it is the general answer
+to "what wakes a resource up now that power no longer does."
+
+### 11. The spec is an embedded `Manifest` *(added 2026-08-04)*
+
+§5's fingerprint needs a precise answer to "what is the spec." Hand-maintaining
+that list is a mechanism that rots silently: someone adds a field, forgets the
+list, and containers stop being rebuilt for a change that should rebuild them —
+invisible until a sandbox is quietly several images behind.
+
+So each orchestrated resource gets a `Manifest`: an anonymously embedded struct
+holding the spec, with observed state, generations, timestamps, and runtime
+bookkeeping outside it. The fingerprint is the hash of its canonical JSON, so a
+field added to the `Manifest` is in the fingerprint by construction.
+
+The cost is smaller than the "every orchestrated resource" framing suggests.
+There are two of them (§8). Anonymous embedding promotes fields in
+`encoding/json`, so project events — which marshal the raw model and are a
+second, undeclared wire format — stay flat. And the REST shape is a separate
+generated type reached through a conversion, so clients see nothing. This is the
+same arrangement used in `obot`, where the flat external shape is the point:
+the split is a Go-side statement about ownership, not an API redesign.
+
+Membership has one test: **does changing this field require rebuilding the
+container?** Yes, it is spec. No, it is status, provenance, or annotation.
+`Prompt`, `Model`, `ModelServiceTier`, and `ModelReasoningLevel` are the fields
+to examine against that test during implementation — they are user intent, which
+makes them feel like spec, but a prompt edit rebuilding a running container is
+probably not what anyone wants.
+
+### 12. Auto-start latches in the pool agent *(added 2026-08-04)*
+
+Sandbox-directed traffic starts a stopped sandbox on demand. The latch is in the
+pool agent, not the server.
+
+The pool agent is the right place for three reasons: it is the only component
+that knows the true container state, so it needs no round trip and cannot race a
+cache; it is a single process per pool, so the latch is a mutex rather than a
+distributed lock, and an explicit `stop` serializes against a concurrent
+auto-start on that same mutex; and it already serves sandbox-directed routes
+directly — `git-repositories/*` and `http/{port}/*` — which a server-side gate
+would never see.
+
+Which routes latch is a property of the route table: sandbox-directed proxy
+routes auto-start, control operations (`pool-get-sandbox`,
+`pool-list-sandboxes`, `pool-stop-sandbox`, `pool-delete-sandbox`) never do. A
+started sandbox posts `starting` then `running` on the §10 channel like any
+other start; there is no separate path for implicit ones.
+
+The pool agent cannot distinguish a user's `disco exec` from a background
+poller, and it should not have to. Nothing server-side may poll a sandbox
+through the proxy routes; if something ever must, the server marks the request
+rather than the agent guessing.
+
+This is the recovery path §9 leaves open. It brings back exactly the sandboxes
+someone actually wants, at the moment they want them, with no stored intent
+anywhere.
+
+### 13. What moves *(added 2026-08-04)*
+
+Three existing mechanisms are attached to the start reconciler and need new
+homes.
+
+**ADR 0016 §5 re-pin.** A non-live sandbox re-pins to its harness config's
+current image on its next start, guarded by `sandboxIsLive`. Start is leaving
+the reconciler, so the trigger becomes the §10 report that observes a sandbox
+leaving a live state: the report marks it dirty, and the reconciler re-pins.
+The guard is unchanged and is finally reading an observation instead of a
+recollection.
+
+**Worker-observed runtime loss.** The current removal report atomically records
+stopped intent, then stop-reconciles by recreating the sandbox from persisted
+intent and stopping the recreated runtime — a contortion that exists only to
+make a lost container converge against a desired power state. With no desired
+power state, a removed container is an observation. If the sandbox is still
+`present`, existence reconciliation recreates it; it stays stopped until
+something uses it.
+
+**The pool-local API.** `pool-start-sandbox` and `pool-stop-sandbox` return
+acceptance rather than a sandbox; `pool-restart-sandbox` is added. The server's
+own `POST /sandboxes/{id}/start|stop|restart` do the same, and write no state.
 
 ## API shape
 
@@ -279,6 +497,15 @@ so the lifecycle JSON tags are a second, undeclared wire format
 `ResourceLifecycle` is a union matching neither resource, which is why
 `enumsync_test.go` exempts all four lifecycle fields on both models; with
 per-resource vocabularies still divergent, those exemptions stay.
+
+*Amended 2026-08-04.* `desiredState` narrows to `present`/`deleted` on both
+resources, and `state` gains `starting`/`stopping` on Sandbox (§2). Start, stop,
+and restart return acceptance rather than a sandbox, on both the server API and
+the pool-local API, and `pool-restart-sandbox` is added (§13); clients learn
+outcomes from project events. The pool agent gains an authenticated
+control-plane route for sandbox state reports carrying transitions and complete
+syncs, and `/api/pools/{pool_id}/sandbox-removed` is removed (§10). The
+`Manifest` embedding changes no wire format (§11).
 
 ## Alternatives rejected
 
@@ -329,6 +556,41 @@ Rejected because the model has already produced one production wedge, and
 documentation does not stop `State == "stopped"` from being the natural and
 wrong thing to write.
 
+### Rejected in the 2026-08-04 amendment
+
+**Durable power intent in the pool agent, via a container restart policy.**
+Docker's `unless-stopped` is exactly "this should be running," it survives a
+daemon or host restart for free, and setting it would have made the incident
+above self-healing rather than merely visible — the containers would have come
+back on their own. Today's policy is `no`, which is why they did not. Rejected
+because it is the same unverifiable opinion relocated to a cheaper store: the
+moment a policy stops a sandbox for idleness, the restart policy is a stale
+instruction sitting in the runtime waiting for a reboot to act on. §12 recovers
+the same sandboxes on demand, and recovers only the ones somebody wants, which
+after a two-day outage is a small fraction of them.
+
+**Keep desired power state, and add observation alongside it.** The smallest
+change that fixes the reported bug: leave `DesiredState` as it is, have the pool
+agent report reality into a separate observed field, and show the truth. Rejected
+because two writers with overlapping authority need a conflict rule, and every
+such rule is wrong in one direction — either the reconciler restarts what a
+policy just stopped, or the observation is decorative and the server keeps
+acting on an opinion nobody honors. Deleting one of the two writers is what
+makes the question disappear.
+
+**Let the operation's response carry the new state.** Rejected on the user's
+point, and it is the sharper argument: a response cannot express `starting`, so
+it either lies about a completed start or blocks until one finishes. And the
+transitions that caused the incident — a container dying, a host rebooting, an
+OOM kill — have no request to respond to, so the separate channel is required
+regardless. Having both means two paths that can disagree, and the redundant one
+is the one that only works when someone happens to be asking.
+
+**Delta-only reporting, without periodic complete syncs.** Cheaper, and correct
+whenever every post is delivered. Rejected because the failure mode is silent
+permanent drift, which is precisely the bug being fixed here, arrived at by a
+narrower road.
+
 ## Consequences
 
 - Ten lifecycle-ish fields become six, and only two of them are the orchestration
@@ -358,6 +620,31 @@ wrong thing to write.
   has, and stored `phase` values including `failed`. The read-time
   interpretation or migration is part of the implementation, not deferred.
 
+### From the 2026-08-04 amendment
+
+- A sandbox's recorded state is only ever as good as the last report from its
+  pool. The staleness that produced the incident is not eliminated, it is
+  bounded by the sync interval and made attributable — a pool that stops
+  reporting is a visible fact about the pool, not a silent fact about nineteen
+  sandboxes. Rendering that staleness to users is left to the pool liveness work
+  §10 defers.
+- A host restart leaves every sandbox stopped until used (§9). For a pool that
+  was hosting long-running agent sessions, that is a real loss of running work
+  that a restart policy would have prevented. Accepted deliberately: the
+  alternative is a stored intent that the coming start/stop policies would
+  immediately contradict.
+- The server can no longer answer "did my start succeed" synchronously. Every
+  client learns outcomes from project events, which the CLI wait loop already
+  does and other consumers may not.
+- Auto-start makes any sandbox-directed request potentially expensive — a
+  request that used to fail fast against a stopped sandbox now blocks on a
+  container start. Callers that cannot tolerate that need a timeout, and the
+  latch must not serialize unrelated sandboxes.
+- Existence reconciliation and power operations can interleave: a create that
+  is still converging can receive a `start`. The pool agent's per-sandbox mutex
+  is the serialization point for that, which means the pool agent — not the
+  server — owns the ordering guarantee.
+
 ## Deferred
 
 - **Conditions.** Kubernetes carries `[]Condition` rather than one
@@ -379,3 +666,20 @@ wrong thing to write.
   observations should un-stick which failures" is exactly the domain judgment
   §3 keeps out of the engine, and it should be designed per resource once there
   is a second example.
+
+### Deferred by the 2026-08-04 amendment
+
+- **The criteria that start and stop sandboxes.** §9 exists to make idle-stop,
+  demand-start, and capacity policies possible; none of them are decided here.
+  They will be callers of the operations, and the test of this ADR is that they
+  need no new state to be written.
+- **Pool liveness and stale-state rendering.** §10's interval is sufficient to
+  detect a silent pool, but what a user sees when a pool has stopped reporting —
+  `unknown`, a staleness marker, the last known state with an age — is left
+  open. Until it is decided, a silent pool's sandboxes show their last reported
+  state, which is a smaller version of the incident and should not stay open
+  long.
+- **Whether boot ID plus sequence is enough ordering.** §10 assumes a single
+  reporting agent per pool. If reports ever originate from more than one place,
+  or a sandbox migrates between pools, per-sandbox versioning will need
+  revisiting.
