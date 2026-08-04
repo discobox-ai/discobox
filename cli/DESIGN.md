@@ -197,9 +197,16 @@ session, `execstream/client`.
   the shim deduplicates it by logical-session token. A full window backpressures
   stdin instead of silently dropping accepted input. Resize is idempotent state,
   so only its latest value is retained and restored.
-- Plain exec attaches remain direct and fail on disconnect. Resuming a pipe exec
-  requires byte-exact output positions as well as input resumption; a terminal
-  screen repaint is not an acceptable substitute for a piped stdout stream.
+- A plain exec attach (`attachSandboxExec`, `internal/cli/sandbox_execs.go`) —
+  `disco shell`, `box exec create`, `disco tools git`, everything that is not a
+  harness terminal — follows the same PTY/no-PTY split as replay itself:
+  `openExecAttachConn` picks the reconnecting transport, replay included, when
+  `tty` is true, and the direct one otherwise. A TTY exec's screen can be
+  repainted on reconnect exactly like a terminal's; a piped exec's output has
+  no such buffer — resuming it would need byte-exact output positions, which
+  the shim does not provide — so it stays direct and fails on disconnect.
+  `SignalReady` and `OtherErr` are set to match: they only make sense once
+  replay is in play, and only exist on the TTY branch.
 - Connection lifecycle notifications are transport events, not terminal output.
   CLI attach ignores them; the TUI adapter maps them into its `TerminalEvent`
   stream.

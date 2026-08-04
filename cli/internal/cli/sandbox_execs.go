@@ -366,14 +366,20 @@ func (a *App) writeSandboxExecs(cmd *cobra.Command, execs []apimodel.SandboxExec
 	return tw.Flush()
 }
 
+// attachSandboxExec attaches to a plain (non-terminal) exec. A TTY exec
+// reconnects on a dropped websocket exactly like a terminal attach does — the
+// sandbox-agent's replay repaints the current screen, which is well-defined
+// for a PTY. A non-TTY exec has no such buffer to replay (no byte-exact
+// resumption of piped stdout), so it stays on the direct, fail-on-disconnect
+// transport.
 func (a *App) attachSandboxExec(ctx context.Context, projectID, sandboxID, execID string, interactive, tty bool, stdin io.Reader, stdout, stderr io.Writer) error {
-	conn, err := a.openSandboxExecAttach(ctx, projectID, sandboxID, execID, false)
+	conn, err := a.openExecAttachConn(ctx, projectID, sandboxID, execID, tty)
 	if err != nil {
 		return a.execAttachError(ctx, projectID, sandboxID, execID, err)
 	}
 	defer conn.Close()
 
-	session := client.New(client.Options{
+	opts := client.Options{
 		Conn:    conn,
 		Stdin:   stdin,
 		Stdout:  stdout,
@@ -386,7 +392,23 @@ func (a *App) attachSandboxExec(ctx context.Context, projectID, sandboxID, execI
 		CopyInput: func(ctx context.Context, s *client.Session) error {
 			return copySandboxExecInput(ctx, s, interactive)
 		},
-	})
+	}
+	if tty {
+		// SignalReady pairs with the replay this dial asked for: the remote must
+		// not stream replay history before the output reader is running. OtherErr
+		// keeps a transient close in the auxiliary goroutines (resize, signals,
+		// input) from ending the session while the resumable Conn is still
+		// reconnecting underneath them — only copyOutput's own read failure, via
+		// the Done callback, gets to decide the attach is really over.
+		opts.SignalReady = true
+		opts.OtherErr = func(err error) (bool, error) {
+			if client.IsDone(err) {
+				return true, nil
+			}
+			return false, err
+		}
+	}
+	session := client.New(opts)
 	if tty {
 		if err := session.WriteInitialResize(); err != nil {
 			return err
@@ -396,6 +418,15 @@ func (a *App) attachSandboxExec(ctx context.Context, projectID, sandboxID, execI
 		return err
 	}
 	return session.Run(ctx)
+}
+
+// openExecAttachConn opens the attach connection for a plain exec: the
+// reconnecting, replay transport for a TTY, the direct one otherwise.
+func (a *App) openExecAttachConn(ctx context.Context, projectID, sandboxID, execID string, tty bool) (execstream.Conn, error) {
+	if !tty {
+		return a.openSandboxExecAttach(ctx, projectID, sandboxID, execID, false)
+	}
+	return a.openReconnectingSandboxExecAttach(ctx, projectID, sandboxID, execID, execAttachOptions{replay: true})
 }
 
 // attachRejectedError is an attach the sandbox-agent refused with an HTTP
