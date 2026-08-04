@@ -81,8 +81,8 @@ as the table: the order is the CLI's answer, not a table-rendering detail.
 ## Choosing a Sandbox Interactively
 
 Commands that act on "the sandbox I am working in" take a sandbox identifier —
-as `--sandbox-id` (`exec`) or an optional positional `SANDBOX_ID` (`apply`,
-`box get`) — and fall back to `selectSandbox` (`internal/cli/picker.go`) when
+as `--sandbox-id` (`exec`) or an optional positional `SANDBOX_ID` (`status`,
+`diff`, `apply`, `box get`) — and fall back to `selectSandbox` (`internal/cli/picker.go`) when
 it's omitted, never to a guess:
 
 - Candidates are exactly what `disco ls` shows — `listProjectSandboxes` filtered
@@ -281,6 +281,41 @@ Everything that shells out to git shares it — `sandboxcreate.DeliverSource`
 (push at create) and `sandboxapply.FetchSource` (fetch at apply) — so the local
 socket, which is the default endpoint, is not a server only half the CLI can
 reach.
+
+## Status
+
+`disco status` (`internal/cli/status.go`) is `git status` for a sandbox's source
+working trees. It is deliberately thin: it selects a sandbox the way `apply` and
+`diff` do — optional positional `SANDBOX_ID`, otherwise `selectSandbox` — shares
+`selectSources` so `--source` means the same thing in all three, and runs one
+`git status` per source in that source's working directory.
+
+- No scratch index, unlike `diff`: `git status` already reports files git has
+  never been told about, so the working tree as it stands is exactly the
+  subject and nothing has to be constructed to see it.
+- No `sh -c` either. The command is argv, so a user-supplied pathspec is an
+  argument and never shell syntax; pathspecs come after `--`, which is also what
+  keeps the optional `SANDBOX_ID` positional unambiguous (`cmd.ArgsLenAtDash`).
+- The output streams through the normal exec attach, unparsed and unrendered.
+  Nothing here has to understand git's output, and a PTY — asked for only when
+  stdin, stdout, and stderr are all terminals — gets git's own color and
+  columns for free.
+- The flags are `git status`'s own, in git's spelling, for the subset that still
+  means something against a working tree that is not on this machine. `-s` is
+  therefore git's `--short`, and `--source` has no shorthand in this command.
+  A mode-taking flag needs its value attached with `=` (`-u=no`), because pflag
+  reads git's compact `-uno` as further shorthands.
+- `--color` is `-c color.status=<when>`, not a flag: `git status` has none of
+  its own. `auto` is git's default and is passed nothing, so a PTY colors and a
+  pipe does not, with no special case.
+- Per-source headings are printed only when there is more than one source, and
+  only to stdout when stdout is a terminal and no machine-readable format
+  (`--porcelain`, `-z`) was asked for; otherwise they go to stderr, so
+  `disco status --porcelain` is git's bytes and nothing else.
+- A source that cannot be reported is reported and the rest still run; the
+  command's error is the closing verdict, as in `apply` and `diff`.
+
+There is no pager, following `git status` itself.
 
 ## Diff
 
