@@ -14,11 +14,13 @@ import (
 	"os"
 	"path/filepath"
 	"sort"
+	"strconv"
 	"strings"
 	"time"
 
 	"github.com/obot-platform/discobox/layout"
 	"github.com/obot-platform/discobox/proxy"
+	"github.com/obot-platform/discobox/sandboxconfig"
 )
 
 const (
@@ -66,28 +68,17 @@ const (
 	// processes use as their HTTP/HTTPS/ALL proxy.
 	SandboxForwarderListen = "127.0.0.1:17008"
 
-	// NestedDockerBridgeGateway is the fixed gateway address of the sandbox's
-	// nested Docker default bridge network (its daemon.json pins "bip" to
-	// this /16). A container on that bridge cannot reach
-	// SandboxForwarderListen, which is loopback-only from the sandbox's own
-	// point of view, so it gets a second forwarder instance bound here
-	// instead. See ADR 0015.
-	NestedDockerBridgeGateway = "172.30.0.1"
-
-	// NestedForwarderListen is the second sandbox-local forwarder address,
-	// reachable only from containers on the sandbox's nested Docker default
-	// bridge network. sandbox-agent's NRI plugin substitutes this for the
-	// URL-valued proxy env vars (HTTP_PROXY, HTTPS_PROXY, ALL_PROXY) when
-	// injecting trust into a nested container; file-path-valued vars pass
-	// through unchanged. See ADR 0015.
-	NestedForwarderListen = NestedDockerBridgeGateway + ":17008"
-
 	// UnitEnvironmentFile is read by the proxy systemd unit. The pool agent
 	// process writes it so the unit, which runs with a clean systemd
 	// environment, learns which pool it serves and how to reach the control
 	// plane.
 	UnitEnvironmentFile = "/etc/discobox/proxy.env"
 )
+
+// UpstreamProxyEnvVarNames are the proxy-address variables forwarded to the
+// proxy unit. They mirror proxy.UpstreamProxyEnvVars, which is what the proxy
+// reads when deciding whether it must chain through another proxy.
+var UpstreamProxyEnvVarNames = proxy.UpstreamProxyEnvVars
 
 // PoolsRoot is the parent of every one of a project's pools' proxy subtrees on
 // the host. It is enumerated by the pool-sync reaper to find pools whose
@@ -151,7 +142,42 @@ func unitEnvironment(prefix, controlPlaneURL, projectID, poolID string) string {
 	// is scoped to this pool, so without these it cannot address its own state.
 	content += envProjectID + "=" + strings.TrimSpace(projectID) + "\n"
 	content += envPoolID + "=" + strings.TrimSpace(poolID) + "\n"
+	// Propagate this process's own proxy-trust environment. It matters when the
+	// pool itself runs inside a Discobox sandbox: the sandbox injects these
+	// into the pool container, but systemd resets the environment for units, so
+	// the proxy unit would otherwise start with none of them and try to reach
+	// origins directly — which a sandbox has no route for. Forwarding them here
+	// is what lets the inner proxy chain through the outer one.
+	content += proxyEnvironment(os.Environ())
 	return content
+}
+
+// proxyEnvironment renders the proxy-trust subset of an environment as
+// systemd EnvironmentFile lines. Names are matched rather than listed
+// separately so this stays in step with what a sandbox actually injects.
+func proxyEnvironment(environ []string) string {
+	wanted := map[string]bool{}
+	for _, name := range append(append([]string{}, UpstreamProxyEnvVarNames...), "NO_PROXY", "no_proxy", "SSL_CERT_FILE", "SSL_CERT_DIR") {
+		wanted[name] = true
+	}
+	var names []string
+	values := map[string]string{}
+	for _, entry := range environ {
+		name, value, ok := strings.Cut(entry, "=")
+		if !ok || !wanted[name] || strings.TrimSpace(value) == "" {
+			continue
+		}
+		if _, seen := values[name]; !seen {
+			names = append(names, name)
+		}
+		values[name] = value
+	}
+	sort.Strings(names)
+	var b strings.Builder
+	for _, name := range names {
+		fmt.Fprintf(&b, "%s=%s\n", name, strconv.Quote(values[name]))
+	}
+	return b.String()
 }
 
 // PrepareBundle creates or reuses the proxy CA bundle and pool server
@@ -439,15 +465,17 @@ func EnsureSandboxMaterial(projectID, poolID, sandboxID string) (*SandboxMateria
 		return nil, fmt.Errorf("write bridge config: %w", err)
 	}
 
-	// A second forwarder instance, socket-activated on the sandbox's fixed
-	// nested-Docker bridge gateway (discobox-proxy-bridge-docker.socket),
-	// reachable from containers a nested dockerd creates — SandboxForwarderListen
-	// is loopback-only from the sandbox's own point of view, so a nested
-	// container can't reach it. ListenAddress is set for clarity/fallback
-	// only; the unit's socket activation supplies the actual bound listener.
-	// See docs/adr/0015 decision 7.
+	// Material for the sandbox's second forwarder instance, which serves
+	// containers a nested dockerd creates: SandboxForwarderListen is
+	// loopback-only from the sandbox's own point of view, so a nested
+	// container cannot reach it. Only the upstream and credentials are set
+	// here — the listen address belongs to the sandbox.
+	// No ListenAddress: the sandbox's nested Docker bridge subnet is chosen by
+	// its own dockerd (its daemon.json pins no "bip"), so the address is not
+	// knowable out here and is not pool-agent's to decide. sandbox-agent
+	// discovers docker0's address at runtime and publishes it; see the
+	// sandbox-agent/nestedbridge package.
 	dockerBridge := bridgeConfig{
-		ListenAddress:  NestedForwarderListen,
 		PoolProxyURL:   PoolProxyURL,
 		MTLSCAPath:     filepath.Join(SandboxProxyMount, "mtls-ca.crt"),
 		ClientCertPath: filepath.Join(SandboxProxyMount, "client.crt"),
@@ -469,15 +497,22 @@ func EnsureSandboxMaterial(projectID, poolID, sandboxID string) (*SandboxMateria
 		"https_proxy": proxyURL,
 		"ALL_PROXY":   proxyURL,
 		"all_proxy":   proxyURL,
-		"NO_PROXY":    "127.0.0.1,localhost,::1",
-		"no_proxy":    "127.0.0.1,localhost,::1",
+		// The token stands in for the sandbox's own directly-connected
+		// networks, which pool-agent cannot know: Docker allocates them, and
+		// the nested-Docker bridge does not exist until dockerd first starts.
+		// sandbox-agent substitutes the real list when it materializes this
+		// env. Without it, traffic to a sandbox's own networks (a pool agent
+		// reaching its sandboxes, for one) is sent out through the egress
+		// proxy instead of straight there.
+		"NO_PROXY": "127.0.0.1,localhost,::1," + sandboxconfig.LocalSubnetsToken,
+		"no_proxy": "127.0.0.1,localhost,::1," + sandboxconfig.LocalSubnetsToken,
 		// Node.js (and Claude Code, which runs on Node), Python's ssl module
 		// and requests/certifi, and pip all bundle their own root store and
 		// ignore the system bundle, so each needs pointing at it explicitly.
 		// It is the system bundle (not just the raw MITM CA) in every case, so
 		// the same value also validates directly-reached (NO_PROXY) TLS, not
-		// just MITM-intercepted TLS. See docs/adr/0015: sandbox-agent's NRI
-		// plugin mounts the identical bundle at SystemCABundle inside a
+		// just MITM-intercepted TLS. See docs/adr/0020: sandbox-agent's runc
+		// wrapper mounts the identical bundle at SystemCABundle inside a
 		// nested Docker container too, so this value is reusable there
 		// unchanged once named in ProxyEnvs.
 		"NODE_EXTRA_CA_CERTS": SystemCABundle,
@@ -487,9 +522,39 @@ func EnsureSandboxMaterial(projectID, poolID, sandboxID string) (*SandboxMateria
 	}
 	// curl, git, wget, and the OpenSSL CLI read the system bundle directly, so
 	// the boot-time update-ca-certificates step covers them without env vars
-	// — and so does sandbox-agent's NRI plugin mounting the same bundle path
-	// into a nested container.
+	// — and so does sandbox-agent's runc wrapper mounting the same bundle
+	// path into a nested container.
+
+	// A systemd EnvironmentFile rendering of the same map, for sandbox daemons
+	// systemd starts directly rather than sandbox-agent spawning them: those
+	// never inherit Env above. dockerd is the one that matters — it resolves
+	// and pulls images itself, before any container exists, so no
+	// container-level injection can reach it, and the sandbox has no route
+	// off-box, so without this every image pull fails DNS resolution.
+	// docker.service.d/proxy.conf reads it with a leading `-`, so a sandbox
+	// with no proxy configured (no material written here at all) is unaffected.
+	if err := os.WriteFile(resolve(filepath.Join(writeDir, "proxy.env")), renderEnvFile(env), 0o644); err != nil { //nolint:gosec // proxy URL and bundle path are not secret; matches the 0644 public CAs beside it.
+		return nil, fmt.Errorf("write proxy env file: %w", err)
+	}
 	return &SandboxMaterial{MountSource: mountSource, Env: env}, nil
+}
+
+// renderEnvFile renders env as a systemd EnvironmentFile: one KEY="value" per
+// line, sorted so the file is byte-stable across rewrites. Values are quoted
+// rather than emitted bare because systemd applies shell-like unquoting to
+// this format, so an unquoted value would be at the mercy of whatever
+// characters a future entry in the map happens to carry.
+func renderEnvFile(env map[string]string) []byte {
+	names := make([]string, 0, len(env))
+	for name := range env {
+		names = append(names, name)
+	}
+	sort.Strings(names)
+	var b strings.Builder
+	for _, name := range names {
+		fmt.Fprintf(&b, "%s=%s\n", name, strconv.Quote(env[name]))
+	}
+	return []byte(b.String())
 }
 
 // copyFile copies proxy material into a per-sandbox directory. dst is always

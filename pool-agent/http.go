@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"github.com/obot-platform/discobox/pool-agent/internalhttp"
 	"io"
 	"net/http"
 	"net/url"
@@ -33,8 +34,10 @@ type HTTPClientOption func(*HTTPClient)
 // NewHTTPClient creates a pool registration HTTP client.
 func NewHTTPClient(baseURL string, opts ...HTTPClientOption) *HTTPClient {
 	c := &HTTPClient{
-		baseURL:      strings.TrimRight(baseURL, "/"),
-		client:       http.DefaultClient,
+		baseURL: strings.TrimRight(baseURL, "/"),
+		// Never http.DefaultClient: it proxies when the pool runs inside a
+		// sandbox, and this client speaks to the pool's own sandboxes.
+		client:       internalhttp.Client,
 		registerPath: defaultRegisterPath,
 		statusPath:   defaultStatusPath,
 		statesPath:   defaultStatesPath,

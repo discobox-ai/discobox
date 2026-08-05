@@ -33,6 +33,7 @@ import (
 	"github.com/obot-platform/discobox/sandboxconfig"
 
 	"github.com/obot-platform/discobox/pool-agent/execidentity"
+	"github.com/obot-platform/discobox/pool-agent/internalhttp"
 	"github.com/obot-platform/discobox/pool-agent/proxyagent"
 
 	workerclient "github.com/obot-platform/discobox/pool-agent/api/gen"
@@ -781,7 +782,7 @@ func buildSandboxDocument(projectID, sandboxID, poolID, controlPlanePublicKey, r
 		}
 		doc.Runtime.Env = env
 		// ProxyEnvs names which of the keys just merged into Env are
-		// proxy-trust vars, so sandbox-agent's NRI plugin knows which names
+		// proxy-trust vars, so sandbox-agent's runc wrapper knows which names
 		// to republish into a nested Docker container without hardcoding
 		// them itself. See docs/adr/0015.
 		proxyEnvNames := make([]string, 0, len(proxyEnv))
@@ -1269,7 +1270,10 @@ func (r *DockerSandboxRuntime) waitForSandboxAgent(ctx context.Context, sandboxI
 				if reqErr != nil {
 					return reqErr
 				}
-				resp, reqErr := http.DefaultClient.Do(req)
+				// Not http.DefaultClient: it honours HTTP_PROXY, and a pool
+				// running inside a sandbox has proxy env injected for its
+				// egress. This request stays on the pool's own network.
+				resp, reqErr := internalhttp.Client.Do(req)
 				if reqErr == nil {
 					_, _ = io.Copy(io.Discard, resp.Body)
 					_ = resp.Body.Close()
@@ -1695,6 +1699,8 @@ func resolveSandboxUser(req *workerapimodel.PoolSandboxCreateRequest) sandboxUse
 	if gid, ok := user.Gid.Get(); ok {
 		out.gid = int(gid)
 	} else if user.UID.Set {
+		// A new account gets a user-private group, the useradd convention that
+		// sandbox boot follows when it creates the account.
 		out.gid = out.uid
 	}
 	if name := strings.TrimSpace(optString(user.Name)); name != "" {

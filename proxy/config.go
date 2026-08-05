@@ -23,6 +23,20 @@ type Config struct {
 	Allowlist     AllowlistConfig
 	Headers       []HeaderRule
 	Secrets       SecretsConfig
+
+	// UpstreamProxy forwards this proxy's own egress through another proxy.
+	// Empty means direct, and falls back to the standard proxy environment
+	// variables (see UpstreamProxyEnvVars). It exists for the nested case: a
+	// pool proxy running inside a Discobox sandbox has no route off-box, so it
+	// must hand traffic to the sandbox's own forwarder instead of dialing
+	// origins itself.
+	UpstreamProxy string
+
+	// UpstreamNoProxy exempts destinations from UpstreamProxy, using the same
+	// syntax as NO_PROXY. Empty falls back to the NO_PROXY environment
+	// variable. Exemptions matter even when an upstream exists: the proxy
+	// reaches its own control plane and loopback services directly.
+	UpstreamNoProxy string
 }
 
 // SecretsConfig controls runtime sentinel secret swapping. The real values are

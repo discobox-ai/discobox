@@ -1,14 +1,23 @@
 [Unit]
 Description=Discobox Sandbox Proxy Bridge (nested Docker bridge-facing)
 Documentation=https://github.com/obot-platform/discobox
-Requires=discobox-proxy-bridge-docker.socket
 ConditionPathExists=/etc/discobox/proxy/bridge-docker.json
 
 [Service]
 Type=simple
-ExecStart=/usr/local/bin/discobox-sandbox-agent proxy-bridge --config /etc/discobox/proxy/bridge-docker.json
+# daemon.json pins no "bip", so dockerd picks a non-overlapping subnet for its
+# default bridge and the address is not knowable until docker0 exists. This
+# discovers it instead of assuming one, and publishes it for the runc wrapper.
+# docker.service.d/proxy-bridge.conf Upholds= this unit, so it runs only while
+# dockerd runs and may start moments before the bridge appears -- hence the
+# wait built into --bridge-interface.
+ExecStart=/usr/local/bin/discobox-sandbox-agent proxy-bridge \
+    --config /etc/discobox/proxy/bridge-docker.json \
+    --bridge-interface docker0
 StandardOutput=journal+console
 StandardError=journal+console
 Restart=on-failure
 RestartSec=2s
 KillMode=mixed
+
+# Not enabled at boot: it is pulled up by dockerd, which is itself on-demand.

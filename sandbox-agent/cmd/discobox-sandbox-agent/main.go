@@ -20,6 +20,7 @@ import (
 	"github.com/obot-platform/discobox/sandbox-agent/config"
 	"github.com/obot-platform/discobox/sandbox-agent/execs"
 	harnesshooks "github.com/obot-platform/discobox/sandbox-agent/hooks"
+	"github.com/obot-platform/discobox/sandbox-agent/nestedbridge"
 	"github.com/obot-platform/discobox/sandbox-agent/server"
 )
 
@@ -123,9 +124,13 @@ type bridgeConfig struct {
 // runProxyBridge runs the sandbox-local forwarder that routes sandbox proxy
 // traffic to the worker proxy over mTLS.
 func runProxyBridge(args []string) int {
-	var configPath string
+	var configPath, bridgeInterface, publishPath string
+	var bridgeTimeout time.Duration
 	flags := flag.NewFlagSet("discobox-sandbox-agent proxy-bridge", flag.ContinueOnError)
 	flags.StringVar(&configPath, "config", "/etc/discobox/proxy/bridge.json", "path to proxy bridge config")
+	flags.StringVar(&bridgeInterface, "bridge-interface", "", "discover the listen address from this interface instead of the config (e.g. docker0)")
+	flags.StringVar(&publishPath, "publish", nestedbridge.DefaultPublishPath, "where to publish the discovered listen address")
+	flags.DurationVar(&bridgeTimeout, "bridge-timeout", 2*time.Minute, "how long to wait for the bridge interface to get an address")
 	if err := flags.Parse(args); err != nil {
 		return 2
 	}
@@ -141,6 +146,29 @@ func runProxyBridge(args []string) int {
 	}
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
+
+	// The bridge-facing instance binds whatever subnet dockerd chose for its
+	// default bridge, rather than a pinned address: daemon.json sets no "bip",
+	// so the address is not knowable until docker0 exists. This unit is pulled
+	// up alongside dockerd (docker.service.d/proxy-bridge.conf), so the bridge
+	// may still be moments away when we start. See the nestedbridge package.
+	if bridgeInterface != "" {
+		discovered, err := nestedbridge.WaitForAddress(ctx, bridgeInterface, bridgeTimeout)
+		if err != nil {
+			slog.Error("wait for nested docker bridge", "interface", bridgeInterface, "error", err)
+			return 1
+		}
+		cfg.ListenAddress = discovered
+		// Publish before serving: the runc wrapper reads this to tell nested
+		// containers which address to use, and an unpublished address is
+		// better than a stale one.
+		if err := nestedbridge.Publish(publishPath, discovered); err != nil {
+			slog.Error("publish nested bridge address", "error", err)
+			return 1
+		}
+		slog.Info("discovered nested docker bridge", "interface", bridgeInterface, "addr", discovered)
+	}
+
 	forwarder, err := bridge.New(ctx, bridge.Config{
 		ListenAddress:  cfg.ListenAddress,
 		WorkerProxyURL: cfg.WorkerProxyURL,
@@ -152,10 +180,8 @@ func runProxyBridge(args []string) int {
 		slog.Error("create proxy bridge", "error", err)
 		return 1
 	}
-	// A systemd .socket unit pre-binds the nested-Docker-bridge-facing
-	// instance (see discobox-proxy-bridge-docker.socket, ADR 0015) so it can
-	// FreeBind an address before docker0 exists; when systemd passed a
-	// listener this way, serve on it instead of dialing our own.
+	// The loopback instance may still arrive as a systemd-passed listener; the
+	// bridge-facing one binds the address it just discovered.
 	activationListeners, err := activation.Listeners()
 	if err != nil {
 		slog.Error("read systemd activation listeners", "error", err)

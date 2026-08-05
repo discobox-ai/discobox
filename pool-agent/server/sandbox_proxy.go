@@ -2,6 +2,7 @@ package server
 
 import (
 	"fmt"
+	"github.com/obot-platform/discobox/pool-agent/internalhttp"
 	"net/http"
 	"net/http/httputil"
 	"net/url"
@@ -152,6 +153,12 @@ func sandboxAgentPath(projectID, sandboxID, suffix string) string {
 
 func sandboxProxy(target *url.URL, downstreamAuth string) *httputil.ReverseProxy {
 	return &httputil.ReverseProxy{
+		// Not the default transport: it honours HTTP_PROXY, and a pool running
+		// inside a Discobox sandbox has proxy env injected for its egress.
+		// This request goes to a sandbox on the pool's own network, so it must
+		// never leave through the egress proxy -- and must not depend on
+		// NO_PROXY being right for that.
+		Transport: internalhttp.Transport(),
 		Rewrite: func(req *httputil.ProxyRequest) {
 			rawQuery := req.In.URL.RawQuery
 			req.SetURL(target)

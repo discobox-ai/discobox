@@ -3,6 +3,9 @@ package proxyagent
 import (
 	"os"
 	"path/filepath"
+	"sort"
+	"strconv"
+	"strings"
 	"testing"
 	"time"
 
@@ -22,7 +25,7 @@ func TestEnsureSandboxMaterialStagesClientOnly(t *testing.T) {
 	}
 
 	dir := material.MountSource
-	for _, name := range []string{"mtls-ca.crt", "mitm-ca.crt", "client.crt", "client.key", "bridge.json", "bridge-docker.json"} {
+	for _, name := range []string{"mtls-ca.crt", "mitm-ca.crt", "client.crt", "client.key", "bridge.json", "bridge-docker.json", "proxy.env"} {
 		if _, err := os.Stat(resolve(filepath.Join(dir, name))); err != nil {
 			t.Fatalf("expected staged file %q: %v", name, err)
 		}
@@ -41,8 +44,8 @@ func TestEnsureSandboxMaterialStagesClientOnly(t *testing.T) {
 	// Node.js/Claude Code, Python/requests, and pip all bundle their own root
 	// store, so each points at the system bundle the boot-time trust step
 	// augments — not the raw MITM CA file, so a nested Docker container gets
-	// the identical value working once its NRI plugin mounts the same bundle
-	// at the same path (docs/adr/0015).
+	// the identical value working once its runc wrapper mounts the same
+	// bundle at the same path (docs/adr/0020).
 	if got := material.Env["NODE_EXTRA_CA_CERTS"]; got != SystemCABundle {
 		t.Fatalf("NODE_EXTRA_CA_CERTS = %q, want system CA bundle", got)
 	}
@@ -220,5 +223,87 @@ func TestEnsureSandboxMaterialReusesClientCertificate(t *testing.T) {
 
 	if string(firstCert) != string(secondCert) {
 		t.Fatal("client certificate was not reused across calls")
+	}
+}
+
+// dockerd is started by socket activation, not spawned by sandbox-agent, so it
+// inherits none of SandboxMaterial.Env. docker.service.d/proxy.conf reads this
+// rendering instead; without it every image pull in a sandbox fails to resolve
+// its registry, since the sandbox has no route off-box.
+func TestEnsureSandboxMaterialRendersProxyEnvFile(t *testing.T) {
+	withTestRoot(t)
+
+	material, err := EnsureSandboxMaterial("project-1", "pool-1", "sandbox-1")
+	if err != nil {
+		t.Fatalf("EnsureSandboxMaterial() error = %v", err)
+	}
+
+	data, err := os.ReadFile(resolve(filepath.Join(material.MountSource, "proxy.env")))
+	if err != nil {
+		t.Fatalf("read proxy.env: %v", err)
+	}
+	got := string(data)
+
+	// Every name in Env must round-trip, quoted, so systemd's shell-like
+	// unquoting of this format cannot reinterpret a value.
+	for name, value := range material.Env {
+		if want := name + "=" + strconv.Quote(value) + "\n"; !strings.Contains(got, want) {
+			t.Fatalf("proxy.env missing %q\ngot:\n%s", want, got)
+		}
+	}
+
+	// dockerd runs in the sandbox's own netns, so it reaches the loopback
+	// forwarder directly — not the nested-container bridge address.
+	if want := `HTTP_PROXY="http://` + SandboxForwarderListen + `"`; !strings.Contains(got, want) {
+		t.Fatalf("proxy.env missing %q\ngot:\n%s", want, got)
+	}
+
+	// Sorted, so a rewrite with unchanged material is byte-identical.
+	lines := strings.Split(strings.TrimSpace(got), "\n")
+	if !sort.StringsAreSorted(lines) {
+		t.Fatalf("proxy.env lines not sorted: %v", lines)
+	}
+}
+
+// systemd resets the environment for units, so a proxy unit starts with none of
+// the proxy-trust variables the surrounding sandbox injected into the pool
+// container. Without forwarding them the inner proxy dials origins directly,
+// which a sandbox has no route for. Only the proxy-trust subset is forwarded --
+// the pool agent's wider environment is not the unit's business.
+func TestUnitEnvironmentForwardsProxyTrustVars(t *testing.T) {
+	got := proxyEnvironment([]string{
+		"HTTPS_PROXY=http://172.30.0.1:17008",
+		"NO_PROXY=127.0.0.1,localhost",
+		"SSL_CERT_FILE=/etc/ssl/certs/ca-certificates.crt",
+		"PATH=/usr/bin",
+		"AWS_SECRET_ACCESS_KEY=nope",
+		"EMPTY_PROXY=",
+	})
+
+	for _, want := range []string{
+		`HTTPS_PROXY="http://172.30.0.1:17008"`,
+		`NO_PROXY="127.0.0.1,localhost"`,
+		`SSL_CERT_FILE="/etc/ssl/certs/ca-certificates.crt"`,
+	} {
+		if !strings.Contains(got, want) {
+			t.Fatalf("missing %s in:\n%s", want, got)
+		}
+	}
+	for _, unwanted := range []string{"PATH=", "AWS_SECRET_ACCESS_KEY", "EMPTY_PROXY"} {
+		if strings.Contains(got, unwanted) {
+			t.Fatalf("forwarded %s, which is not proxy-trust material:\n%s", unwanted, got)
+		}
+	}
+	// Sorted, so the unit file is byte-stable across restarts.
+	lines := strings.Split(strings.TrimSpace(got), "\n")
+	if !sort.StringsAreSorted(lines) {
+		t.Fatalf("lines not sorted: %v", lines)
+	}
+}
+
+// A pool with direct egress has no proxy vars, and must not gain empty ones.
+func TestUnitEnvironmentOmitsAbsentProxyVars(t *testing.T) {
+	if got := proxyEnvironment([]string{"PATH=/usr/bin"}); got != "" {
+		t.Fatalf("expected nothing forwarded, got %q", got)
 	}
 }
