@@ -14,10 +14,17 @@ RemainAfterExit=yes
 # can vanish mid-run (it exits 2). A private, ephemeral /tmp is isolated from that
 # cleanup.
 PrivateTmp=yes
-ExecStart=/usr/bin/install -D -m 0644 /etc/discobox/proxy/mitm-ca.crt /usr/local/share/ca-certificates/discobox-mitm-ca.crt
+# The anchor filename is derived from the CA's own fingerprint, not fixed:
+# a filesystem can hold more than one Discobox MITM CA (there is one per pool,
+# and a sandbox nested inside another sees both its own and its host's). A
+# fixed name makes those collide, and because the file may be a bind mount
+# from the outer sandbox, unlink-and-replace fails EBUSY and leaves this
+# sandbox trusting the wrong CA. discobox-ca-anchor shares the naming rule
+# with the runc wrapper so neither side can drift.
+ExecStart=/usr/local/bin/discobox-ca-anchor /etc/discobox/proxy/mitm-ca.crt /usr/local/share/ca-certificates
 ExecStart=/usr/sbin/update-ca-certificates
 # Stage the same augmented bundle under the trust-store path convention of
-# other distro families, for sandbox-agent's NRI plugin (docs/adr/0015) to
+# other distro families, for sandbox-agent's runc wrapper (docs/adr/0020) to
 # bind-mount into nested Docker containers built from a non-Debian base. This
 # process never runs update-ca-certificates inside a container itself — that
 # would land in the container's committed layer — it only mounts these

@@ -1,9 +1,0 @@
-# Minimal override merged onto containerd's defaults. Enabling NRI here lets
-# discobox-nri-ca (docs/adr/0015) inject MITM trust into every container a
-# nested Docker daemon creates, once containerd-snapshotter (see daemon.json)
-# routes both `docker build` and `docker run` through this containerd
-# instance instead of dockerd's separate embedded OCI worker.
-version = 2
-
-[plugins."io.containerd.nri.v1.nri"]
-  disable = false

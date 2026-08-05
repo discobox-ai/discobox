@@ -44,10 +44,10 @@ type RuntimeLayer struct {
 
 	// ProxyEnvs names the subset of Env's keys that carry proxy-trust
 	// material (proxy.ClientMaterial.EnvironmentVars) rather than ordinary
-	// environment. It is the one list sandbox-agent's NRI plugin reads to
+	// environment. It is the one list sandbox-agent's runc wrapper reads to
 	// know which env vars to republish into a nested Docker container's spec
-	// (see docs/adr/0015-nested-docker-builds-trust-the-mitm-proxy-via-nri.md);
-	// the plugin never hardcodes env var names itself.
+	// (see docs/adr/0020-nested-docker-trust-is-injected-by-a-runc-wrapper.md);
+	// the wrapper never hardcodes env var names itself.
 	ProxyEnvs []string `json:"proxyEnvs,omitempty"`
 
 	// HarnessMode selects run vs config mode; it is a selection, not a
@@ -153,3 +153,17 @@ type ProjectLayer struct {
 	// image- or runtime-declared path.
 	FilesAdd []File `json:"filesAdd,omitempty"`
 }
+
+// LocalSubnetsToken is a placeholder pool-agent writes into env values that
+// must name the sandbox's own directly-connected networks — in practice the
+// NO_PROXY list, so a sandbox never sends traffic destined for its own
+// networks out through the egress proxy.
+//
+// It exists so neither side has to know the other's business. pool-agent does
+// not know which subnets a sandbox ends up on: Docker allocates them, and the
+// nested-Docker bridge does not exist until dockerd first starts. sandbox-agent
+// does know, but has no business parsing proxy-variable syntax to work out
+// where a subnet list belongs. A token both sides treat as opaque keeps that
+// split: pool-agent decides *where* local subnets are needed, sandbox-agent
+// decides *what* they are.
+const LocalSubnetsToken = "%LOCAL_SUBNETS%"
