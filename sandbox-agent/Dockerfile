@@ -24,7 +24,8 @@ RUN --mount=type=cache,target=/go/pkg/mod,sharing=locked \
     --mount=type=cache,target=/root/.cache/go-build,sharing=locked \
     CGO_ENABLED=0 GOOS=$TARGETOS GOARCH=$TARGETARCH go -C sandbox-agent build -trimpath -ldflags="-s -w" -o /out/discobox-sandbox-agent ./cmd/discobox-sandbox-agent \
     && CGO_ENABLED=0 GOOS=$TARGETOS GOARCH=$TARGETARCH go -C sandbox-agent build -trimpath -ldflags="-s -w" -o /out/discobox-runc ./cmd/discobox-runc \
-    && CGO_ENABLED=0 GOOS=$TARGETOS GOARCH=$TARGETARCH go -C sandbox-agent build -trimpath -ldflags="-s -w" -o /out/discobox-ca-anchor ./cmd/discobox-ca-anchor
+    && CGO_ENABLED=0 GOOS=$TARGETOS GOARCH=$TARGETARCH go -C sandbox-agent build -trimpath -ldflags="-s -w" -o /out/discobox-ca-anchor ./cmd/discobox-ca-anchor \
+    && CGO_ENABLED=0 GOOS=$TARGETOS GOARCH=$TARGETARCH go -C sandbox-agent build -trimpath -ldflags="-s -w" -o /out/discobox-docker ./cmd/discobox-docker
 
 FROM debian:bookworm AS sandbox-base
 
@@ -232,9 +233,9 @@ COPY sandbox-agent/image/systemd/discobox-sandbox-agent.service /etc/systemd/sys
 COPY sandbox-agent/image/systemd/discobox-proxy-bridge.service /etc/systemd/system/discobox-proxy-bridge.service
 COPY sandbox-agent/image/systemd/discobox-trust-ca.service /etc/systemd/system/discobox-trust-ca.service
 COPY sandbox-agent/image/systemd/containerd.service.d/runc-ca.conf /etc/systemd/system/containerd.service.d/runc-ca.conf
+COPY sandbox-agent/image/systemd/docker.service.d/runc-ca.conf /etc/systemd/system/docker.service.d/runc-ca.conf
 COPY sandbox-agent/image/systemd/docker.service.d/proxy.conf /etc/systemd/system/docker.service.d/proxy.conf
 COPY sandbox-agent/image/systemd/docker.service.d/proxy-bridge.conf /etc/systemd/system/docker.service.d/proxy-bridge.conf
-COPY sandbox-agent/image/systemd/docker.service.d/runc-ca.conf /etc/systemd/system/docker.service.d/runc-ca.conf
 COPY sandbox-agent/image/systemd/discobox-proxy-bridge-docker.service /etc/systemd/system/discobox-proxy-bridge-docker.service
 COPY sandbox-agent/image/daemon.json /etc/docker/daemon.json
 COPY sandbox-agent/image/systemd/journald-console.conf /etc/systemd/journald.conf.d/discobox-console.conf
@@ -255,10 +256,15 @@ COPY --from=sandbox-agent-builder /out/discobox-sandbox-agent /usr/local/bin/dis
 # env injected into its OCI spec. See the sandbox-agent/runcca package.
 COPY --from=sandbox-agent-builder /out/discobox-runc /opt/discobox/bin/runc
 COPY --from=sandbox-agent-builder /out/discobox-ca-anchor /usr/local/bin/discobox-ca-anchor
+# Installs as `docker`, ahead of the real CLI at /usr/bin/docker on PATH, to
+# give `docker build` the pool-shared BuildKit cache. Non-build commands are
+# exec'd straight through. See the sandbox-agent/dockercache package.
+COPY --from=sandbox-agent-builder /out/discobox-docker /usr/local/bin/docker
 
 RUN chmod 0755 /usr/local/bin/discobox-sandbox-agent \
     && chmod 0755 /opt/discobox/bin/runc \
     && chmod 0755 /usr/local/bin/discobox-ca-anchor \
+    && chmod 0755 /usr/local/bin/docker \
     && chmod 0755 /usr/local/bin/discobox-vnc-websockify \
     && ln -sf /usr/local/bin/discobox-sandbox-agent /usr/local/bin/discobox-hook-publish \
     && mkdir -p /etc/discobox /run/discobox/agent-terminals /var/lib/docker /var/lib/discobox /workspace \
