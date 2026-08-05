@@ -196,10 +196,11 @@ func execDefaultUser(defaults config.ExecDefaults) *execs.User {
 		return nil
 	}
 	return &execs.User{
-		Name:          defaults.Username,
-		UID:           cloneInt64(defaults.UID),
-		GID:           cloneInt64(defaults.GID),
-		HomeDirectory: defaults.HomeDirectory,
+		Name:             defaults.Username,
+		UID:              cloneInt64(defaults.UID),
+		GID:              cloneInt64(defaults.GID),
+		HomeDirectory:    defaults.HomeDirectory,
+		AdditionalGroups: append([]string(nil), defaults.AdditionalGroups...),
 	}
 }
 

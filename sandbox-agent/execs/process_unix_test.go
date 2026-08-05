@@ -3,25 +3,32 @@
 package execs
 
 import (
+	"os"
 	osuser "os/user"
 	"strconv"
 	"testing"
 )
 
-func TestUserCredentialDefaultsGIDFromUID(t *testing.T) {
+// A uid with no account cannot have its primary group resolved, and the old
+// behaviour -- defaulting the gid to the uid -- silently ran the process under
+// whatever group happened to hold that number. UIDs and GIDs are separate
+// namespaces, so that is a guess, and an unresolvable uid is now an error.
+func TestUserCredentialRefusesToInventAGID(t *testing.T) {
 	uid := int64(1234)
-	credential, ok, err := userCredential(&User{UID: &uid})
-	if err != nil {
-		t.Fatalf("user credential: %v", err)
+	if _, _, err := userCredential(&User{UID: &uid}); err == nil {
+		t.Fatal("expected an error rather than an invented gid for a uid with no account")
 	}
-	if !ok {
-		t.Fatal("credential was not set")
+}
+
+// An explicit gid is taken as given: the manifest is the source of truth.
+func TestUserCredentialUsesExplicitGID(t *testing.T) {
+	uid, gid := int64(1234), int64(5678)
+	credential, ok, err := userCredential(&User{UID: &uid, GID: &gid})
+	if err != nil || !ok {
+		t.Fatalf("user credential: ok=%v err=%v", ok, err)
 	}
-	if credential.Uid != 1234 || credential.Gid != 1234 {
-		t.Fatalf("credential = %d:%d, want 1234:1234", credential.Uid, credential.Gid)
-	}
-	if !credential.NoSetGroups {
-		t.Fatal("credential should not grant supplementary groups")
+	if credential.Uid != 1234 || credential.Gid != 5678 {
+		t.Fatalf("credential = %d:%d, want 1234:5678", credential.Uid, credential.Gid)
 	}
 }
 
@@ -59,5 +66,61 @@ func TestUserEnvDefaultsResolveHomeForNumericUser(t *testing.T) {
 	}
 	if env["HOME"] != current.HomeDir {
 		t.Fatalf("env = %#v, want current user home", env)
+	}
+}
+
+// The agent runs as root. With NoSetGroups the child kept root's supplementary
+// groups and none of the sandbox user's, silently discarding every group the
+// image declared -- which is why docker-in-sandbox needed an `sg docker`
+// wrapper. Groups must be set explicitly from the manifest.
+func TestCredentialSetsManifestGroups(t *testing.T) {
+	uid := int64(os.Getuid())
+	cred, ok, err := userCredential(&User{UID: &uid, GID: &uid, AdditionalGroups: []string{"root"}})
+	if err != nil || !ok {
+		t.Fatalf("userCredential: ok=%v err=%v", ok, err)
+	}
+	if cred.NoSetGroups {
+		t.Fatal("NoSetGroups must not be set: the child would inherit the agent's groups")
+	}
+	if len(cred.Groups) != 1 || cred.Groups[0] != 0 {
+		t.Fatalf("Groups = %v, want the resolved gid for \"root\"", cred.Groups)
+	}
+}
+
+// A group the manifest names but the image never created is skipped, matching
+// boot's ensureAdditionalGroups; the two must not disagree about one image.
+func TestCredentialSkipsUnknownGroups(t *testing.T) {
+	uid := int64(os.Getuid())
+	cred, ok, err := userCredential(&User{UID: &uid, GID: &uid,
+		AdditionalGroups: []string{"root", "discobox-no-such-group"}})
+	if err != nil || !ok {
+		t.Fatalf("userCredential: ok=%v err=%v", ok, err)
+	}
+	if len(cred.Groups) != 1 {
+		t.Fatalf("unknown group should be skipped, got %v", cred.Groups)
+	}
+}
+
+// UIDs and GIDs are separate namespaces, so a missing gid must be looked up,
+// never assumed equal to the uid.
+func TestCredentialResolvesPrimaryGroupRatherThanGuessing(t *testing.T) {
+	uid := int64(os.Getuid())
+	cred, ok, err := userCredential(&User{UID: &uid})
+	if err != nil {
+		t.Skipf("uid %d has no account entry here: %v", uid, err)
+	}
+	if !ok {
+		t.Fatal("expected a credential")
+	}
+	self, err := osuser.LookupId(strconv.FormatInt(uid, 10))
+	if err != nil {
+		t.Skipf("cannot resolve uid %d: %v", uid, err)
+	}
+	want, err := strconv.ParseInt(self.Gid, 10, 64)
+	if err != nil {
+		t.Fatalf("parse gid: %v", err)
+	}
+	if cred.Gid != uint32(want) {
+		t.Fatalf("Gid = %d, want the account's real gid %d", cred.Gid, want)
 	}
 }

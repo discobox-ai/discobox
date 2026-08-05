@@ -25,7 +25,11 @@ func TestCreateSandboxBodyIncludesHarnessLaunchFields(t *testing.T) {
 		userName:             "darren",
 		userUID:              1000,
 		userGID:              1000,
-		homeDirectory:        "/home/darren",
+		// 0 is a meaningful uid, so the body only carries these when the flag
+		// was actually given; the command sets these from Flags().Changed.
+		userUIDSet:    true,
+		userGIDSet:    true,
+		homeDirectory: "/home/darren",
 	})
 	if err != nil {
 		t.Fatalf("createSandboxBody: %v", err)
@@ -116,5 +120,22 @@ func TestTerminalDetachSequenceFilter(t *testing.T) {
 	out, detach = filterDetachSequence([]byte{0x10, 0x11}, &pending)
 	if !detach || len(out) != 0 || pending {
 		t.Fatalf("detach sequence = %v detach=%t pending=%t", out, detach, pending)
+	}
+}
+
+// 0 is a real uid (root), so an omitted flag and an explicit --user-uid 0 must
+// reach the server differently. Gating on `> 0` collapsed them and made
+// explicit root impossible to request.
+func TestSandboxUserDistinguishesUnsetFromExplicitZero(t *testing.T) {
+	unset, _ := sandboxUserFromCreateOptions(sandboxCreateOptions{userName: "dev"})
+	if unset.UID.Set {
+		t.Fatal("an unset --user-uid must not be sent as 0")
+	}
+
+	explicit, ok := sandboxUserFromCreateOptions(sandboxCreateOptions{
+		userName: "root", userUID: 0, userUIDSet: true,
+	})
+	if !ok || !explicit.UID.Set || explicit.UID.Value != 0 {
+		t.Fatalf("explicit --user-uid 0 must be sent: set=%v value=%d", explicit.UID.Set, explicit.UID.Value)
 	}
 }

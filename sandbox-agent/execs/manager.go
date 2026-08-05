@@ -814,6 +814,12 @@ type User struct {
 	UID           *int64 `json:"uid,omitempty"`
 	GID           *int64 `json:"gid,omitempty"`
 	HomeDirectory string `json:"homeDirectory,omitempty"`
+	// AdditionalGroups are the supplementary groups this user runs with. The
+	// sandbox manifest is the source of truth: boot materializes these into the
+	// OS group file, and exec sets them on the process. Without them an exec
+	// silently loses every group the image declared (e.g. "docker"), which is
+	// what made nested Docker need an `sg docker` wrapper.
+	AdditionalGroups []string `json:"additionalGroups,omitempty"`
 }
 
 func emptyUser(user *User) bool {

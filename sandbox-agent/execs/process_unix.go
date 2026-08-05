@@ -81,7 +81,19 @@ func userCredential(user *User) (*syscall.Credential, bool, error) {
 		return nil, false, fmt.Errorf("exec user uid is required")
 	}
 	if !gidOK {
-		gid = uid
+		// Look the primary group up; never assume it equals the uid. UIDs and
+		// GIDs are separate namespaces, so uid==gid is a coincidence of common
+		// useradd defaults rather than a rule, and guessing it silently runs
+		// the process under whatever group happens to hold that number.
+		found, err := osuser.LookupId(strconv.FormatInt(uid, 10))
+		if err != nil {
+			return nil, false, fmt.Errorf("resolve exec user uid %d primary group: %w", uid, err)
+		}
+		parsed, err := strconv.ParseInt(found.Gid, 10, 64)
+		if err != nil {
+			return nil, false, fmt.Errorf("resolve exec user uid %d gid %q: %w", uid, found.Gid, err)
+		}
+		gid = parsed
 	}
 	if uid < 0 || uid > int64(^uint32(0)) {
 		return nil, false, fmt.Errorf("exec user uid %d is out of range", uid)
@@ -89,11 +101,57 @@ func userCredential(user *User) (*syscall.Credential, bool, error) {
 	if gid < 0 || gid > int64(^uint32(0)) {
 		return nil, false, fmt.Errorf("exec user gid %d is out of range", gid)
 	}
+	groups, err := resolveGroups(user.AdditionalGroups)
+	if err != nil {
+		return nil, false, err
+	}
+	// NoSetGroups is deliberately NOT set. With it, the child keeps whatever
+	// supplementary groups the agent has -- the agent runs as root, so an exec
+	// dropped to the sandbox user inherited root's groups and none of its own.
+	// That silently discarded the image's declared additionalGroups (e.g.
+	// "docker"), so docker-in-sandbox only worked under an `sg docker` wrapper.
 	return &syscall.Credential{
-		Uid:         uint32(uid),
-		Gid:         uint32(gid),
-		NoSetGroups: true,
+		Uid:    uint32(uid),
+		Gid:    uint32(gid),
+		Groups: groups,
 	}, true, nil
+}
+
+// resolveGroups maps the manifest's group names to GIDs.
+//
+// The manifest is the source of truth for *membership*; the OS group file is
+// consulted only to resolve a name. A group the manifest names but the image
+// never created is skipped rather than fatal, mirroring boot's
+// ensureAdditionalGroups -- the two must not disagree about the same image, and
+// a harness Dockerfile that forgot to install a package should not make every
+// exec in the sandbox fail.
+func resolveGroups(names []string) ([]uint32, error) {
+	if len(names) == 0 {
+		return nil, nil
+	}
+	seen := make(map[uint32]struct{}, len(names))
+	out := make([]uint32, 0, len(names))
+	for _, name := range names {
+		name = strings.TrimSpace(name)
+		if name == "" {
+			continue
+		}
+		group, err := osuser.LookupGroup(name)
+		if err != nil {
+			continue // not present in this image; skip, as boot does
+		}
+		parsed, err := strconv.ParseInt(group.Gid, 10, 64)
+		if err != nil || parsed < 0 || parsed > int64(^uint32(0)) {
+			continue
+		}
+		gid := uint32(parsed)
+		if _, dup := seen[gid]; dup {
+			continue
+		}
+		seen[gid] = struct{}{}
+		out = append(out, gid)
+	}
+	return out, nil
 }
 
 func int64Value(value *int64) (int64, bool) {

@@ -50,6 +50,10 @@ type ExecDefaults struct {
 	UID           *int64 `json:"uid,omitempty"`
 	GID           *int64 `json:"gid,omitempty"`
 	HomeDirectory string `json:"homeDirectory,omitempty"`
+	// AdditionalGroups are the manifest's supplementary groups for this user.
+	// The manifest is the source of truth for membership; the OS group file is
+	// consulted only to resolve a name to a GID.
+	AdditionalGroups []string `json:"additionalGroups,omitempty"`
 }
 
 // Harness is the sandbox's one effective, fully-resolved harness.
@@ -175,6 +179,7 @@ func execDefaultsFromEffective(effective sandboxconfig.Config) ExecDefaults {
 	out.HomeDirectory = strings.TrimSpace(effective.User.HomeDirectory)
 	out.UID = effective.User.UID
 	out.GID = effective.User.GID
+	out.AdditionalGroups = append([]string(nil), effective.AdditionalGroups...)
 	return out
 }
 

@@ -1679,6 +1679,10 @@ type sandboxUserIdentity struct {
 	homeDirectory string
 }
 
+// defaultNonRootUID is the conventional first non-system uid, used when a
+// caller names a non-root sandbox user without giving an id.
+const defaultNonRootUID = 1000
+
 func resolveSandboxUser(req *workerapimodel.PoolSandboxCreateRequest) sandboxUserIdentity {
 	out := sandboxUserIdentity{
 		uid:           0,
@@ -1705,6 +1709,19 @@ func resolveSandboxUser(req *workerapimodel.PoolSandboxCreateRequest) sandboxUse
 	}
 	if name := strings.TrimSpace(optString(user.Name)); name != "" {
 		out.name = name
+		// A caller who named a non-root user meant a non-root user. Leaving the
+		// default uid 0 would hand them root under someone else's name, and uid
+		// 0 is load-bearing elsewhere -- boot skips additionalGroups for it, so
+		// the sandbox would also silently lose the groups its image declared.
+		// The name cannot be resolved out here (the account lives in the image,
+		// and boot may still have to create it), so fall back to the
+		// conventional first non-system id rather than to root.
+		if out.name != "root" && !user.UID.Set {
+			out.uid = defaultNonRootUID
+			if !user.Gid.Set {
+				out.gid = defaultNonRootUID
+			}
+		}
 	}
 	if home := cleanContainerPath(optString(user.HomeDirectory)); home != "" {
 		out.homeDirectory = home

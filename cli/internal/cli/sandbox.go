@@ -37,12 +37,18 @@ type sandboxCreateOptions struct {
 	userName             string
 	userUID              int64
 	userGID              int64
-	homeDirectory        string
-	cpuVCPUs             float64
-	memoryBytes          int64
-	storageBytes         int64
-	wait                 bool
-	waitTimeout          time.Duration
+	// userUIDSet/userGIDSet record whether the flag was given at all. 0 is a
+	// meaningful uid/gid (root), so "was it set" cannot be inferred from the
+	// value: gating on `> 0` silently drops an explicit `--user-uid 0` and
+	// makes it indistinguishable from omitting the flag.
+	userUIDSet    bool
+	userGIDSet    bool
+	homeDirectory string
+	cpuVCPUs      float64
+	memoryBytes   int64
+	storageBytes  int64
+	wait          bool
+	waitTimeout   time.Duration
 }
 
 type sandboxUpdateOptions struct {
@@ -146,6 +152,8 @@ func (a *App) newSandboxCreateCommand() *cobra.Command {
 					return err
 				}
 			}
+			opts.userUIDSet = cmd.Flags().Changed("user-uid")
+			opts.userGIDSet = cmd.Flags().Changed("user-gid")
 			body, err := createSandboxBody(opts)
 			if err != nil {
 				return err
@@ -465,10 +473,10 @@ func sandboxUserFromCreateOptions(opts sandboxCreateOptions) (apimodel.SandboxUs
 	user := apimodel.SandboxUser{}
 	user.SetName(optString(opts.userName))
 	user.SetHomeDirectory(optString(opts.homeDirectory))
-	if opts.userUID > 0 {
+	if opts.userUIDSet {
 		user.SetUID(apiclientgen.NewOptInt64(opts.userUID))
 	}
-	if opts.userGID > 0 {
+	if opts.userGIDSet {
 		user.SetGid(apiclientgen.NewOptInt64(opts.userGID))
 	}
 	return user, user.Name.Set || user.HomeDirectory.Set || user.UID.Set || user.Gid.Set

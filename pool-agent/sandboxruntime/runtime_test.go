@@ -1010,3 +1010,47 @@ func TestSandboxDocumentRecordsResolvedImageIdentity(t *testing.T) {
 		t.Fatalf("provenance image = %q, want the resolved image identity", provenance.Runtime.Image)
 	}
 }
+
+// A caller who names a non-root user must not silently get root. uid 0 is
+// load-bearing: boot skips additionalGroups for it, so this also cost the
+// sandbox every group its image declared (e.g. "docker").
+func TestResolveSandboxUserNamedUserIsNotRoot(t *testing.T) {
+	req := &workerapimodel.PoolSandboxCreateRequest{
+		Config: workerapimodel.SandboxConfig{
+			User: workerclient.NewOptSandboxUser(workerapimodel.SandboxUser{
+				Name: workerclient.NewOptString("dev"),
+			}),
+		},
+	}
+	got := resolveSandboxUser(req)
+	if got.uid == 0 || got.gid == 0 {
+		t.Fatalf("named user resolved to root: uid=%d gid=%d", got.uid, got.gid)
+	}
+	if got.name != "dev" || got.homeDirectory != "/home/dev" {
+		t.Fatalf("got %q home %q", got.name, got.homeDirectory)
+	}
+}
+
+// Nothing specified still means root, unchanged.
+func TestResolveSandboxUserDefaultsToRoot(t *testing.T) {
+	got := resolveSandboxUser(&workerapimodel.PoolSandboxCreateRequest{})
+	if got.uid != 0 || got.name != "root" {
+		t.Fatalf("default = %d/%q, want 0/root", got.uid, got.name)
+	}
+}
+
+// An explicit uid 0 is honoured: root is a legitimate choice, and distinct
+// from omitting the field.
+func TestResolveSandboxUserExplicitRootIsHonoured(t *testing.T) {
+	req := &workerapimodel.PoolSandboxCreateRequest{
+		Config: workerapimodel.SandboxConfig{
+			User: workerclient.NewOptSandboxUser(workerapimodel.SandboxUser{
+				Name: workerclient.NewOptString("root"),
+				UID:  workerclient.NewOptInt64(0),
+			}),
+		},
+	}
+	if got := resolveSandboxUser(req); got.uid != 0 {
+		t.Fatalf("explicit root uid = %d, want 0", got.uid)
+	}
+}

@@ -125,12 +125,37 @@ func (b *booter) ensureAdditionalGroups(id identity, groups []string) error {
 	return b.run("usermod", "--append", "--groups", strings.Join(present, ","), id.name)
 }
 
+// proxyEnvKeep are the variables sudo must carry from the sandbox user to
+// root. They mirror what pool-agent's EnsureSandboxMaterial injects; a name
+// listed here that is unset is simply not passed on.
+var proxyEnvKeep = []string{
+	"HTTP_PROXY", "HTTPS_PROXY", "ALL_PROXY", "NO_PROXY",
+	"http_proxy", "https_proxy", "all_proxy", "no_proxy",
+	"SSL_CERT_FILE", "REQUESTS_CA_BUNDLE", "NODE_EXTRA_CA_CERTS", "PIP_CERT",
+}
+
+// sudoersContent renders the drop-in, separate from writing it so its shape can
+// be asserted without touching /etc.
+func sudoersContent(name string) string {
+	return fmt.Sprintf("Defaults env_keep += \"%s\"\n%s ALL=(ALL) NOPASSWD:ALL\n",
+		strings.Join(proxyEnvKeep, " "), name)
+}
+
 func (b *booter) writeSudoers(name string) error {
 	if err := os.MkdirAll("/etc/sudoers.d", 0o750); err != nil {
 		return err
 	}
 	path := "/etc/sudoers.d/discobox-user"
-	content := fmt.Sprintf("%s ALL=(ALL) NOPASSWD:ALL\n", name)
+	// sudo runs with env_reset, so the sandbox's proxy-trust variables are
+	// stripped on the way to root and anything run under sudo tries to reach
+	// the network directly -- which a sandbox has no route for. env_keep is the
+	// targeted lever: it applies only to sudo and preserves the caller's own
+	// values, which boot and the runc wrapper already set correctly.
+	//
+	// Deliberately not /etc/environment: that is read by PAM for every login
+	// session regardless of context, cannot be scoped, and would put proxy
+	// settings in front of processes that must not inherit them.
+	content := sudoersContent(name)
 	//nolint:gosec // sudoers drop-ins must be mode 0440; sudo refuses more permissive files.
 	if err := os.WriteFile(path, []byte(content), 0o440); err != nil {
 		return err

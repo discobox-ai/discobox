@@ -2,6 +2,7 @@ package boot
 
 import (
 	"slices"
+	"strings"
 	"testing"
 )
 
@@ -69,5 +70,24 @@ func TestEnsureAdditionalGroupsNoGroups(t *testing.T) {
 	}
 	if len(f.runs) != 0 {
 		t.Fatalf("runs = %v, want none", f.runs)
+	}
+}
+
+// sudo runs with env_reset, so without env_keep the sandbox's proxy variables
+// are stripped on the way to root and anything under sudo tries to reach the
+// network directly -- which a sandbox has no route for.
+func TestSudoersKeepsProxyEnvironment(t *testing.T) {
+	content := sudoersContent("dev")
+	for _, name := range []string{"HTTPS_PROXY", "NO_PROXY", "SSL_CERT_FILE", "no_proxy"} {
+		if !strings.Contains(content, name) {
+			t.Fatalf("env_keep is missing %s:\n%s", name, content)
+		}
+	}
+	if !strings.Contains(content, "Defaults env_keep +=") {
+		t.Fatalf("expected an env_keep default:\n%s", content)
+	}
+	// The grant itself must survive alongside it.
+	if !strings.Contains(content, "dev ALL=(ALL) NOPASSWD:ALL") {
+		t.Fatalf("sudo grant lost:\n%s", content)
 	}
 }
