@@ -18,6 +18,17 @@ build-errors.log
 /node_modules/
 /.pnpm-store/
 **/target/
+.pnpm-store/
+
+# Core dumps. A test that signals a child with SIGQUIT (or any other
+# core-dumping default action) leaves one in that child's working directory;
+# the kernel's core_pattern is a bare "core" on the machines this runs on.
+# Tests should not rely on this: sandbox-agent/procio runs its children in
+# t.TempDir() so the dump is cleaned up rather than merely ignored.
+# The negation keeps a legitimate package directory named "core" committable.
+core
+core.[0-9]*
+!core/
 
 # Devenv
 .devenv*

@@ -79,28 +79,29 @@ docker save alpine:latest | docker exec -i <container-id> docker load
 docker exec <container-id> docker run --rm alpine ...
 ```
 
-## Known environment limitation: nested overlayfs
+## Nested Docker needs its data root on a real filesystem
 
-`docker run`/`docker build` **inside a sandbox** (i.e., a third level of
-Docker-in-Docker: host dockerd -> pool's nested dockerd -> sandbox's nested
-dockerd -> a container the sandbox creates) reliably fails at container
-creation with:
+`docker run`/`docker build` **inside a sandbox** fails at container creation with:
 
 ```
 failed to mount /tmp/containerd-mountNNNN: mount source: "overlay", ...
 err: invalid argument
 ```
 
-This reproduces identically regardless of `daemon.json`'s
-`containerd-snapshotter` feature flag (tried both `true` and unset/default —
-this docker-ce version already defaults to the containerd snapshotter
-regardless) and regardless of containerd's configured snapshotter plugin.
-It is a kernel/storage limitation of this dev host at this nesting depth, not
-specific to any one change. It blocks observing the *result* of anything that
-mounts/adjusts a nested container's spec (e.g. an NRI plugin) via an actual
-running container — you can still fully verify activation, service state, and
-registration (e.g. via `journalctl` showing an NRI plugin's "Started plugin"
-line), just not the live container's own filesystem/env.
+*only* when that dockerd's data root sits on the container's own overlay
+rootfs. overlayfs cannot use another overlayfs as its `upperdir`, so
+overlay-on-overlay is rejected by the kernel.
+
+This is **not** a limitation of the host or of nesting depth. A real sandbox
+already avoids it: `sandbox.json` declares `/var/lib/docker` and
+`/var/lib/containerd` on the `data` volume, so they are ext4 rather than
+overlay, and nested `docker run`/`docker build` work normally (verified: a
+container from the sandbox image with `-v <ext4 dir>:/var/lib/docker` pulls and
+runs images fine, while the same image with `--data-root` on its overlay rootfs
+fails as above).
+
+If you hit this error in an ad-hoc probe container, mount a real filesystem at
+the data root rather than concluding the environment cannot nest.
 
 ## Cleanup
 

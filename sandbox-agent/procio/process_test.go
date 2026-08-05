@@ -18,6 +18,15 @@ func start(t *testing.T, opts Options) *Process {
 	if opts.SysProcAttr == nil {
 		opts.SysProcAttr = newSessionAttr()
 	}
+	if opts.Dir == "" {
+		// Run every test child in its own scratch directory. A signal whose
+		// default action dumps core (TestExitCodeUsesShellConventionForSignals
+		// sends SIGQUIT) writes that dump to the *child's* working directory,
+		// which would otherwise be this package's source directory: the kernel
+		// core_pattern is a bare "core" on the machines this runs on. Landing
+		// it under t.TempDir() means the test framework removes it.
+		opts.Dir = t.TempDir()
+	}
 	p, err := Start(opts)
 	if err != nil {
 		t.Fatalf("start: %v", err)
