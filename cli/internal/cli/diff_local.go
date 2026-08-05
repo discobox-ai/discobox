@@ -41,7 +41,7 @@ type localDiff struct {
 	commit string
 }
 
-func (a *App) fetchSandboxWorkingState(ctx context.Context, projectID, sandboxID string, sandbox *apimodel.Sandbox, entry applySourceEntry, dirOverrides map[string]string, flagName string) (localDiff, error) {
+func (a *App) fetchSandboxWorkingState(ctx context.Context, projectID, sandboxID string, sandbox *apimodel.Sandbox, entry applySourceEntry, dirOverrides map[string]string, pathspecs []string, flagName string) (localDiff, error) {
 	host, err := hostid.Get()
 	if err != nil {
 		return localDiff{}, err
@@ -63,7 +63,7 @@ func (a *App) fetchSandboxWorkingState(ctx context.Context, projectID, sandboxID
 
 	ref := sandboxDiffRef(sandboxID, entry.slug)
 	stdout, stderr, code, err := a.sandboxCommandOutput(ctx, projectID, sandboxID, sourceWorkdir(entry.source),
-		sandboxWorkingCommitCommand(ref))
+		sandboxWorkingCommitCommand(ref, pathspecs))
 	if err != nil {
 		return localDiff{}, err
 	}
@@ -130,8 +130,12 @@ func diffTrees(ctx context.Context, repoRoot, left, right string, gitArgs, paths
 // so the two sides share history and the fetch stays incremental. The identity
 // is set inline: a sandbox need not have user.email configured, and
 // commit-tree refuses without one.
-func sandboxWorkingCommitCommand(ref string) []string {
-	script := sandboxWorkingTreeScript + `
+//
+// The pathspecs narrow the tree exactly as they do for the sandbox-side diff,
+// and for the same reason: the comparison that follows reads nothing outside
+// them, so nothing outside them is worth hashing or sending.
+func sandboxWorkingCommitCommand(ref string, pathspecs []string) []string {
+	script := sandboxWorkingTreeScript(pathspecs) + `
 parent=$(git rev-parse --verify --quiet HEAD 2>/dev/null)
 if [ -n "$parent" ]; then
   set -- -p "$parent"
@@ -159,7 +163,7 @@ func (a *App) localSideDiff(ctx context.Context, projectID, sandboxID string, sa
 	if opts.applyPreview {
 		flagName = "--apply-preview"
 	}
-	local, err := a.fetchSandboxWorkingState(ctx, projectID, sandboxID, sandbox, entry, dirOverrides, flagName)
+	local, err := a.fetchSandboxWorkingState(ctx, projectID, sandboxID, sandbox, entry, dirOverrides, pathspecs, flagName)
 	if err != nil {
 		return "", diffBase{}, err
 	}

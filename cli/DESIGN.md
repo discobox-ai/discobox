@@ -378,6 +378,20 @@ names the same thing in both.
   against a base that *does* contain them reports them as deletions. The
   repository's own index is never touched — no `git add` into it, not even an
   intent-to-add — so diffing cannot disturb the work going on in the sandbox.
+- Pathspecs narrow the `git add` as well as the diff. Only what they cover is
+  ever read, so entries outside them keep whatever the seeded index held and
+  untracked files outside them are never hashed — without this, a diff of one
+  directory still pays to hash the whole tree and then discards it.
+- Building that tree is the expensive part: `git add` hashes and compresses
+  every untracked file into the sandbox's object database, on every run,
+  leaving unreachable objects behind. `checkUntrackedPayload`
+  (`internal/cli/diff_untracked.go`) measures the payload first with
+  `git ls-files -o` — the same walk, honoring the same ignore rules, without
+  the hashing — and past `--max-untracked` refuses, naming the largest
+  directories. It runs once per source before the mode branch, so one
+  measurement covers the streamed diff, the rendered one, and the commit
+  `--base local` fetches. It never silently excludes: a diff that omits an
+  agent's work is worse than one that says why it stopped.
 - The diff runs *inside* the sandbox, not by fetching to this machine. That is
   what lets it show uncommitted work, which `apply`'s fetch cannot see, and it
   needs no local repository at all.

@@ -39,6 +39,15 @@ func (r *gitRepo) git(args ...string) string {
 	return strings.TrimSpace(string(out))
 }
 
+// gitErr runs git for its exit status, for the checks whose whole point is that
+// the command is expected to fail.
+func (r *gitRepo) gitErr(args ...string) error {
+	r.t.Helper()
+	cmd := exec.CommandContext(r.t.Context(), "git", args...)
+	cmd.Dir = r.dir
+	return cmd.Run()
+}
+
 func (r *gitRepo) write(name, content string) {
 	r.t.Helper()
 	path := filepath.Join(r.dir, name)

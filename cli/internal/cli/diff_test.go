@@ -109,6 +109,25 @@ func TestSandboxDiffCommandOutput(t *testing.T) {
 		}
 	}
 
+	// The pathspec has to narrow the "git add" as well as the diff, or a diff of
+	// one directory still pays to hash every untracked file in the tree. What
+	// the pathspec excludes must never reach the object database at all.
+	excluded := repo.git("hash-object", "untracked.txt")
+	if err := repo.gitErr("cat-file", "-e", excluded); err != nil {
+		t.Fatalf("an unnarrowed diff should have hashed untracked.txt: %v", err)
+	}
+	fresh := newGitRepo(t)
+	fresh.commit("tracked.txt", "one\n", "init")
+	fresh.write("wanted/new.txt", "wanted\n")
+	fresh.write("store/huge.txt", "not wanted\n")
+	unwanted := fresh.git("hash-object", "store/huge.txt")
+	if _, err := fresh.run(sandboxDiffCommand(fresh.git("rev-parse", "HEAD"), nil, []string{"wanted"})); err != nil {
+		t.Fatalf("diff script: %v", err)
+	}
+	if err := fresh.gitErr("cat-file", "-e", unwanted); err == nil {
+		t.Fatal("a pathspec-narrowed diff hashed a file outside the pathspec")
+	}
+
 	// Comparing trees rather than a tree against the working copy is what makes
 	// this one diff, so git's own formats summarize it once.
 	stat, err := repo.run(sandboxDiffCommand(base, diffOptions{stat: true}.gitArgs(false), nil))

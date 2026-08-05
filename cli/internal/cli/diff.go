@@ -53,6 +53,10 @@ type diffOptions struct {
 	// --base local; the same slug=path form apply uses.
 	dirOverrides []string
 	color        string
+	// maxUntracked is the flag's text; maxUntrackedBytes is it resolved, which
+	// runDiff does once before any source is diffed.
+	maxUntracked      string
+	maxUntrackedBytes int64
 }
 
 // rawGitOutput reports whether the user asked for one of git's own output
@@ -150,6 +154,12 @@ straight to stdout. Redirected, it is a plain unified patch that "git apply"
 accepts, never paged. --patch is that patch at a terminal too, and --stat and
 the other git output formats are git's own output, unrendered.
 
+Building the diff hashes the sandbox's untracked files into its repository, so
+a package store or a build directory that nothing ignores costs far more than
+the diff is worth. Past --max-untracked the diff stops and names what is in the
+way, rather than quietly leaving it out; ignore it in the sandbox, narrow the
+diff with a pathspec, or pass --max-untracked 0 to diff it anyway.
+
 Most of "git diff"'s flags mean the same thing here and are passed through.
 The ones that choose what to compare are not: the right-hand side is always
 the sandbox's working tree, and the left is the base described above.`,
@@ -206,6 +216,7 @@ the sandbox's working tree, and the left is the base described above.`,
 	flags.BoolVar(&opts.applyPreview, "apply-preview", false, "Show what applying this sandbox would land on the local branch: measured from where apply would start, with the sandbox's uncommitted work included")
 	flags.StringArrayVar(&opts.dirOverrides, "dir", nil, "Local directory a source compares against for --apply-preview and --base local, as slug=path; required for a source with no known local directory on this machine")
 	flags.StringVar(&opts.color, "color", "auto", "When to colorize: auto, always, or never")
+	flags.StringVar(&opts.maxUntracked, "max-untracked", defaultMaxUntracked, "Refuse the diff when the sandbox's untracked files exceed this size, since building the diff hashes every one of them; 0 removes the limit")
 	return cmd
 }
 
@@ -242,6 +253,9 @@ func (a *App) runDiff(cmd *cobra.Command, sandboxArg, onlySlug string, opts diff
 	}
 	dirOverrides, err := parseDirOverrides(opts.dirOverrides)
 	if err != nil {
+		return err
+	}
+	if opts.maxUntrackedBytes, err = parseMaxUntracked(opts.maxUntracked); err != nil {
 		return err
 	}
 
@@ -289,6 +303,15 @@ func (a *App) runDiff(cmd *cobra.Command, sandboxArg, onlySlug string, opts diff
 			fmt.Fprintln(headings)
 		}
 		workdir := sourceWorkdir(entry.source)
+
+		// Every mode below builds the sandbox's working tree, so the cost of
+		// doing so is checked once here rather than in each of them.
+		if err := a.checkUntrackedPayload(ctx, projectID, sandboxID, workdir, pathspecs, opts.maxUntrackedBytes); err != nil {
+			if fail(entry.slug, err) {
+				break
+			}
+			continue
+		}
 
 		// These are the modes whose two sides start out on different machines,
 		// so they produce the patch here rather than in the sandbox.
@@ -543,17 +566,22 @@ func sandboxDiffCommand(base string, gitArgs, pathspecs []string) []string {
 	// "$tree" is the shell's own variable and so is the one word here that must
 	// not be quoted as a literal; everything else is.
 	diff := shellCommand(append(append([]string{"git", "--no-pager", "diff"}, gitArgs...), base)) +
-		` "$tree" --`
-	for _, pathspec := range pathspecs {
-		diff += " " + shellQuote(pathspec)
-	}
-	return []string{"sh", "-c", sandboxWorkingTreeScript + diff + "\n"}
+		` "$tree" --` + pathspecArgs(pathspecs)
+	return []string{"sh", "-c", sandboxWorkingTreeScript(pathspecs) + diff + "\n"}
 }
 
-// sandboxWorkingTreeScript leaves the sandbox's entire working state in $tree
-// as a tree object. Shared by the commands that need it — the diff itself, and
-// the commit `--base local` fetches — so the two cannot drift.
-const sandboxWorkingTreeScript = `
+// sandboxWorkingTreeScript leaves the sandbox's working state in $tree as a
+// tree object. Shared by the commands that need it — the diff itself, and the
+// commit `--base local` fetches — so the two cannot drift.
+//
+// The pathspecs are the diff's own, and narrow the `git add` as well as the
+// diff. Only what the pathspecs cover has to be accurate, since nothing else is
+// ever read: entries outside them keep whatever state the seeded index held,
+// and untracked files outside them are never hashed at all. Without this a
+// diff of one directory still pays to hash every build output and package
+// store in the tree, only to throw the result away.
+func sandboxWorkingTreeScript(pathspecs []string) string {
+	return `
 index=$(mktemp) || exit 1
 trap 'rm -f "$index"' EXIT
 # mktemp leaves an empty file, and git rejects an empty index outright rather
@@ -563,9 +591,21 @@ rm -f "$index"
 # "git add" rehashes every file in the tree instead of consulting git's stat
 # cache. A repository that has no index yet simply starts from none.
 cp "$(git rev-parse --git-dir)/index" "$index" 2>/dev/null || :
-GIT_INDEX_FILE="$index" git add -A || exit $?
+GIT_INDEX_FILE="$index" git add -A --` + pathspecArgs(pathspecs) + ` || exit $?
 tree=$(GIT_INDEX_FILE="$index" git write-tree) || exit $?
 `
+}
+
+// pathspecArgs renders pathspecs as trailing shell arguments, each quoted so
+// nothing in it can be read as syntax. Empty when there are none, which leaves
+// the bare `--` that every command here already ends with.
+func pathspecArgs(pathspecs []string) string {
+	var args string
+	for _, pathspec := range pathspecs {
+		args += " " + shellQuote(pathspec)
+	}
+	return args
+}
 
 // shellCommand renders argv as a shell command line, quoting every word so
 // nothing in it can be read as syntax.
