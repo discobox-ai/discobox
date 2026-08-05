@@ -11,6 +11,10 @@ build-errors.log
 .discobot/state/
 .claude/worktrees/
 
+# IntelliJ project settings. Local to each developer's checkout: the module
+# file is rewritten on its own whenever the IDE re-resolves the workspace.
+.idea/
+
 /node_modules/
 /.pnpm-store/
 **/target/
