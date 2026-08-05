@@ -192,6 +192,13 @@ flowchart LR
 - Normalize provider-owned source destination defaults before both mounting
   sources and writing the public sandbox manifest so manifest consumers observe
   the paths actually used by the runtime.
+- A source is materialized exactly once, whatever its delivery mode. The first
+  create clones (or parks an empty repository for a push delivery and finalizes
+  it on the resume) and records a marker in the repository's `.git`; every later
+  create returns without touching the workspace. Create is re-driven for reasons
+  unrelated to sources — resume, re-pin, reconcile after a failure — and by then
+  the sandbox owns the workspace, so re-materializing would discard uncommitted
+  work and move the branch off commits made inside the sandbox.
 - Publish the pool host-resolved sandbox user (name, UID, GID, and home) in the
   manifest even when the request omitted or partially specified `config.user`.
   The home mount, container environment, sandbox-agent exec defaults, and

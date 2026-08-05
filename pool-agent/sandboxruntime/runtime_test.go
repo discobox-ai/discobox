@@ -501,6 +501,77 @@ func TestMaterializeGitSourceRestoresDirtySnapshotAsUnstagedChanges(t *testing.T
 	}
 }
 
+// A clone-delivered source is materialized once, like a push-delivered one. Any
+// later create for the same sandbox — a re-pin, or a reconcile that re-drives
+// create after a failure — reaches the same code with the workspace already
+// live, and reset/clean/checkout there discards whatever the sandbox has done
+// since: uncommitted edits, untracked files, and commits the branch points at.
+func TestMaterializeGitSourceLeavesLiveCloneDeliveredWorkspaceAlone(t *testing.T) {
+	requirePOSIXHost(t)
+	ctx := context.Background()
+
+	sourceRepo := t.TempDir()
+	git(t, sourceRepo, "init", "-b", "main")
+	if err := os.WriteFile(filepath.Join(sourceRepo, "README.md"), []byte("base\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	git(t, sourceRepo, "add", "-A")
+	git(t, sourceRepo, "-c", "user.name=Test", "-c", "user.email=test@example.com", "commit", "-m", "base")
+	baseCommit := gitOutput(t, sourceRepo, "rev-parse", "HEAD")
+
+	source := workerapimodel.GitSource{
+		Kind:           workerclient.GitSourceKindGit,
+		LocalDirectory: workerclient.NewOptString(sourceRepo),
+		Checkout: workerclient.NewOptGitSourceCheckout(workerapimodel.GitSourceCheckout{
+			Commit:  workerclient.NewOptString(baseCommit),
+			RefName: workerclient.NewOptString("main"),
+			RefType: workerclient.NewOptString("branch"),
+		}),
+	}
+	target := filepath.Join(t.TempDir(), "target")
+	runtime := &DockerSandboxRuntime{}
+	if err := runtime.materializeGitSource(ctx, source, target, currentUser()); err != nil {
+		t.Fatalf("materialize clone source: %v", err)
+	}
+	if !gitSourceMaterialized(target) {
+		t.Fatal("clone-delivered source was not marked materialized")
+	}
+
+	// Work the sandbox has done since the harness started: a commit of its own,
+	// an uncommitted edit on top of it, and an untracked file.
+	if err := os.WriteFile(filepath.Join(target, "feature.go"), []byte("package main\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	git(t, target, "add", "-A")
+	git(t, target, "-c", "user.name=Sandbox", "-c", "user.email=sandbox@example.com", "commit", "-m", "sandbox work")
+	sandboxCommit := gitOutput(t, target, "rev-parse", "HEAD")
+	if err := os.WriteFile(filepath.Join(target, "README.md"), []byte("edited in the sandbox\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(target, "scratch.txt"), []byte("in progress\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	// The repeat create must be a no-op.
+	if err := runtime.materializeGitSource(ctx, source, target, currentUser()); err != nil {
+		t.Fatalf("materialize clone source again: %v", err)
+	}
+
+	if head := gitOutput(t, target, "rev-parse", "HEAD"); head != sandboxCommit {
+		t.Fatalf("HEAD = %q, want the sandbox's own commit %q", head, sandboxCommit)
+	}
+	data, err := os.ReadFile(filepath.Join(target, "README.md"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(data) != "edited in the sandbox\n" {
+		t.Fatalf("README = %q, want the sandbox's uncommitted edit", data)
+	}
+	if _, err := os.Stat(filepath.Join(target, "scratch.txt")); err != nil {
+		t.Fatalf("untracked file the sandbox created was cleaned away: %v", err)
+	}
+}
+
 func mustURL(t *testing.T, raw string) url.URL {
 	t.Helper()
 	parsed, err := url.Parse(raw)
