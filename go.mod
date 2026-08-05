@@ -184,6 +184,7 @@ require (
 	github.com/hashicorp/golang-lru/v2 v2.0.7 // indirect
 	github.com/hashicorp/hcl v1.0.0 // indirect
 	github.com/hexops/gotextdiff v1.0.3 // indirect
+	github.com/ibuildthecloud/watchnbuild v0.1.0 // indirect
 	github.com/inconshreveable/mousetrap v1.1.0 // indirect
 	github.com/jgautheron/goconst v1.10.0 // indirect
 	github.com/jjti/go-spancheck v0.6.5 // indirect
@@ -312,7 +313,7 @@ require (
 	golang.org/x/net v0.56.0 // indirect
 	golang.org/x/oauth2 v0.36.0 // indirect
 	golang.org/x/sync v0.21.0 // indirect
-	golang.org/x/sys v0.46.0 // indirect
+	golang.org/x/sys v0.47.0 // indirect
 	golang.org/x/term v0.44.0
 	golang.org/x/time v0.15.0 // indirect
 	golang.org/x/tools v0.47.1-0.20260707181000-a299dadba899 // indirect
@@ -372,6 +373,7 @@ tool (
 	github.com/air-verse/air
 	github.com/go-task/task/v3/cmd/task
 	github.com/golangci/golangci-lint/v2/cmd/golangci-lint
+	github.com/ibuildthecloud/watchnbuild
 	github.com/ogen-go/ogen/cmd/ogen
 	golang.org/x/tools/gopls
 )

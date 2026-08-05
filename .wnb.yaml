@@ -1,0 +1,48 @@
+# watchnbuild config for `task dev-wnb` — the parallel of .air.toml.
+#
+# Differences from the air setup, on purpose:
+#
+#   - air used an `include_dir` allowlist that had gone stale: it named seven
+#     directories that no longer exist at the repo root, and omitted the root
+#     packages server/ and cli/ actually import (internal, execstream,
+#     devimage, harness, localipc, layout, controlplane, randomname). Editing
+#     any of those did not trigger a rebuild. wnb watches the whole tree and
+#     excludes what a build writes, so a new root package is covered the day
+#     it is added.
+#   - no stop_signal: discobox-server's signal.NotifyContext takes SIGINT and
+#     SIGTERM through the same shutdown path, so air's send_interrupt bought
+#     nothing. TERM is wnb's default and the right signal for a supervisor.
+
+watch:
+  # extensions is deliberately unset: wnb's built-in source list already
+  # covers go/tpl/tmpl/html/sql plus go.mod, go.sum and go.work.
+  include: [.env]
+  exclude: ["*_test.go"]
+  exclude_dirs: [build, node_modules, vendor, testdata]
+
+debounce: 1s
+
+build:
+  # No `rm -f build/disco` (air had one): go build already replaces the
+  # output atomically, so it works over a running binary, and it leaves the
+  # previous binary in place when compilation fails. The rm only guaranteed
+  # that a failed build left you with no CLI at all.
+  command: >-
+    cd cli && go build -o ../build/disco ./cmd/disco &&
+    cd ../server && go build -gcflags="all=-N -l" -o ../build/discobox-server ./cmd/discobox-server &&
+    cd .. && go tool task build:hooks
+  grace: 2s
+
+run:
+  command: ./build/discobox-server
+  # Matches air's kill_delay. A grace this long is only safe because wnb
+  # stays responsive while stopping: Ctrl-C a second time and the process
+  # group is killed immediately rather than waiting out the ten minutes.
+  grace: 10m
+
+retry:
+  # ADR-0019 has a starting server wait on <data dir>/server.lock rather than
+  # displacing the incumbent, and a start can also lose a race for the listen
+  # socket. Both are transient, and neither is fixed by touching a file.
+  initial: 15s
+  max: 10m

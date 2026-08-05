@@ -163,6 +163,23 @@ tasks:
     cmds:
       - go tool air -c .air.cli.toml
 
+  dev-wnb:
+    desc: "Like dev, but hot-reloads with watchnbuild instead of Air (see .wnb.yaml)"
+    deps:
+      - dev-wnb:server
+      - dev:docker-image-watch
+
+  dev-wnb:server:
+    desc: Run discobox-server with watchnbuild hot reload
+    cmds:
+      - touch .env
+      - go tool watchnbuild
+
+  dev-wnb:cli:
+    desc: Recompile the disco CLI with watchnbuild hot reload
+    cmds:
+      - go tool watchnbuild -config .wnb.cli.yaml
+
   dev:docker-image-watch:
     desc: Build and continuously rebuild pool, sandbox, and harness development images
     cmds:
