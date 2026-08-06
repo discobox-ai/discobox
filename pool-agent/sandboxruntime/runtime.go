@@ -222,6 +222,18 @@ func (r *DockerSandboxRuntime) CreateSandbox(ctx context.Context, req *workerapi
 	if sandboxID == "" {
 		return nil, fmt.Errorf("sandbox ID is required")
 	}
+	// Replacing a container is a power operation on this sandbox as much as a
+	// start or a stop is, and it reads the power state it is preserving
+	// (ADR 0021 §3). Taking the same per-sandbox lock is what stops an auto-start
+	// (ADR 0017 §12) from racing the replacement — starting the container being
+	// removed, or finding none at all.
+	lock := r.sandboxLock(sandboxID)
+	lock.Lock()
+	defer lock.Unlock()
+	// A container this create replaces takes its power state with it: an upgrade
+	// restarts a running sandbox into the new image and leaves a stopped one
+	// stopped (ADR 0021 §3).
+	replacedRunning := false
 	if existing, err := r.GetSandbox(ctx, sandboxID); err == nil {
 		drifted, err := r.containerSpecDrifted(ctx, existing, req)
 		if err != nil {
@@ -239,13 +251,24 @@ func (r *DockerSandboxRuntime) CreateSandbox(ctx context.Context, req *workerapi
 			return existing, nil
 		}
 		// The control plane changed this sandbox's spec — an image upgrade
-		// (ADR 0016 §4, §5) or any other manifest edit. Remove the container and
+		// (ADR 0021 §1) or any other manifest edit. Remove the container and
 		// fall through to build a new one; the sandbox's state lives in the
 		// pool-host binds prepared below, not in the container, so it survives.
+		replacedRunning = existing.Status == StatusRunning
 		slog.InfoContext(ctx, "replacing sandbox container for a spec change",
 			"sandboxId", sandboxID,
 			"imageDigest", strings.TrimSpace(optString(req.Config.ImageDigest)),
-			"specFingerprint", strings.TrimSpace(optString(req.Config.SpecFingerprint)))
+			"specFingerprint", strings.TrimSpace(optString(req.Config.SpecFingerprint)),
+			"running", replacedRunning)
+		if replacedRunning {
+			// Stop it the way a stop would, so the sandbox-agent tears its execs
+			// down and flushes their logs instead of being killed outright.
+			r.PublishSandboxState(ctx, sandboxID, StateStopping)
+			timeout := sandboxStopTimeoutSeconds
+			if _, err := r.client.ContainerStop(ctx, existing.ID, client.ContainerStopOptions{Timeout: &timeout}); err != nil && !cerrdefs.IsNotFound(err) {
+				return nil, fmt.Errorf("stop sandbox container for a spec change: %w", err)
+			}
+		}
 		if _, err := r.client.ContainerRemove(ctx, existing.ID, client.ContainerRemoveOptions{Force: true}); err != nil && !cerrdefs.IsNotFound(err) {
 			return nil, fmt.Errorf("remove sandbox container for a spec change: %w", err)
 		}
@@ -333,7 +356,11 @@ func (r *DockerSandboxRuntime) CreateSandbox(ctx context.Context, req *workerapi
 	// That is what makes rebuilding a sandbox whose container was lost a
 	// restoration rather than a resurrection: the sandbox exists again, and
 	// whoever wants it running starts it (ADR 0017 §13).
-	if !config.Start.Or(true) {
+	//
+	// Replacing a running container is the exception, and the flag cannot veto
+	// it: Start is first-create intent, not a desired power state for a sandbox
+	// that already exists, so the two inputs only ever add a start (ADR 0021 §4).
+	if !config.Start.Or(true) && !replacedRunning {
 		return r.GetSandbox(ctx, sandboxID)
 	}
 	r.PublishSandboxState(ctx, sandboxID, StateStarting)

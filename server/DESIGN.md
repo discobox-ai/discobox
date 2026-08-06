@@ -231,22 +231,26 @@ tag never moves a running sandbox.
   the sandbox's pin to its preloaded harness config on every read and projects
   `runtime.upgrade`. Nothing caches it, so no write path can forget to
   invalidate it.
-- **Upgrading is explicit, and is a re-pin plus a restart.** `UpgradeSandbox`
-  re-pins and bumps `RestartGeneration`; the pool host rebuilds the container
-  because its image no longer matches the pin. There is no upgrade operation and
-  no upgrade counter. A sandbox that is not live re-pins itself on its way up
-  (`repinToCurrentImage`, guarded by `sandboxIsLive`) — running and
-  awaiting-source sandboxes never move without the action. Failed is included on
-  purpose: an unpullable image is the likeliest reason a start failed, so
-  excluding it would wedge the sandbox on a dead reference.
-- **An unpinned sandbox is re-pin eligible, not excluded.** Sandboxes created
+- **Upgrading is a re-pin and nothing else.** `UpgradeSandbox` writes the
+  harness config's current `Image`/`ImageDigest` as intent. That changes the
+  spec fingerprint, so the ordinary reconcile carries it to the pool agent,
+  which replaces the container that no longer matches — restarting it into the
+  new image if it was running and leaving it stopped if it was not (ADR 0021).
+  There is no upgrade operation and no upgrade counter.
+- **No reconcile ever moves the pin.** A sandbox runs the image it is pinned to
+  until somebody upgrades it, in every state. The upgrade is reported through
+  `runtime.upgrade` and applied only by the action.
+- **An unpinned sandbox is upgrade eligible, not excluded.** Sandboxes created
   before pinning, or while the harness config's digest was unknown, carry an
-  empty `ImageDigest`. They re-pin on start and report an upgrade; only a
-  missing harness config, a config declaring no image, or harness mode `config`
-  opts a sandbox out.
+  empty `ImageDigest`. They report an upgrade like any other; only a missing
+  harness config, a config declaring no image, or harness mode `config` opts a
+  sandbox out.
 - **Enforcement is on the pool host, not here.** The control plane sends the
   pin; `pool-agent/sandboxruntime` resolves images and refuses to launch one
-  that does not match it. The server owns policy, the runtime owns identity.
+  that does not match it. The server owns policy, the runtime owns identity —
+  and whether an image can be obtained at all is knowable only there, so the
+  server never gates on it and surfaces the agent's failure instead
+  (ADR 0021 §5).
 
 ## Observation vs Intent
 

@@ -237,6 +237,15 @@ pull) and `imageDigest` (the config digest it must resolve to).
 - `imageMatchesPin` is the single comparison behind both, so they cannot
   disagree about what the pinned image is. An empty pin matches anything.
 
+A replacement preserves the power state it found (ADR 0021 §3). `CreateSandbox`
+takes the sandbox's power lock, records whether the container it is about to
+replace was running, stops it the way a stop would, and starts the replacement
+only if that container was running or the request asked for a first-create
+start. `Start` in a create request is first-create intent, never a desired power
+state for a sandbox that already exists, so the two inputs can only add a start.
+An upgrade therefore restarts a running sandbox into its new image and never
+powers a stopped one on.
+
 Replacing a container makes it vanish, which `WatchSandboxRemovals` reports to
 the control plane. The report names the container that was removed
 (`Actor.ID`), which is what lets the control plane recognise a report about an

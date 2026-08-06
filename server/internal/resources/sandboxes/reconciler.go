@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"log/slog"
 	"strings"
 	"time"
 
@@ -173,7 +172,13 @@ func (r *SandboxReconciler) ReconcileSandbox(ctx context.Context, sandbox *model
 // asking for one, so the first create issues a start. A later ensure — a
 // re-pin, a spec change, or a rebuild after the container was lost — creates
 // the container and leaves its power state alone, which is what makes a
-// recovered sandbox stay stopped until something uses it (ADR 0017 §13).
+// recovered sandbox stay stopped until something uses it (ADR 0017 §13). Where
+// that ensure replaces a *running* container, the pool agent restarts it into
+// the new spec from its own observation; the start does not come from here
+// (ADR 0021 §§3–4).
+//
+// The spec is taken as it stands. Nothing here advances the image pin: a
+// sandbox runs what it is pinned to until an upgrade re-pins it (ADR 0021 §2).
 func (r *SandboxReconciler) ensure(ctx context.Context, sandbox *model.Sandbox, generation int64) error {
 	// A settled failure is converged by design and needs new intent, not another
 	// attempt (ADR 0017 §4). Anything else gets the idempotent ensure below,
@@ -185,10 +190,6 @@ func (r *SandboxReconciler) ensure(ctx context.Context, sandbox *model.Sandbox, 
 	}
 
 	firstCreate := sandboxHasNeverRun(sandbox.State)
-	if !model.SandboxIsLive(sandbox.State) {
-		r.repinToCurrentImage(ctx, sandbox)
-	}
-
 	if err := r.createSandbox(ctx, sandbox, firstCreate); err != nil {
 		sandbox.ObservedGeneration = generation
 		sandbox.RecordFailure(model.SandboxStateFailed, err.Error())
@@ -224,41 +225,11 @@ func (r *SandboxReconciler) ensure(ctx context.Context, sandbox *model.Sandbox, 
 	return nil
 }
 
-// repinToCurrentImage moves a sandbox onto its harness config's current image as
-// it comes up (ADR 0016 §5).
-//
-// A sandbox that is not live has no session to interrupt and nothing running
-// that a user is relying on, and starting it is the moment its container is
-// built. Building it deliberately obsolete serves nobody, so the pin advances
-// here — and only here. A live sandbox never moves without the explicit upgrade
-// action, which is why this is guarded by sandboxIsLive rather than reached from
-// startSandbox, where every reconcile of a running sandbox would pass through it.
-//
-// Failed is deliberately included: the single most likely reason a start failed
-// is an image that can no longer be pulled, and excluding it would wedge exactly
-// the sandboxes that re-pinning exists to rescue into retrying a dead reference
-// forever.
-//
-// Best-effort by design: a harness config that cannot be read is not a reason to
-// refuse to start a sandbox that was going to start anyway on the image it
-// already has.
-func (r *SandboxReconciler) repinToCurrentImage(ctx context.Context, sb *model.Sandbox) {
-	if r.store == nil || sb.HarnessConfigID == nil || sb.HarnessMode == "config" {
-		return
-	}
-	config, err := r.store.GetHarnessConfig(ctx, sb.ProjectID, strings.TrimSpace(*sb.HarnessConfigID))
-	if err != nil {
-		return
-	}
-	image, digest := strings.TrimSpace(config.Image), strings.TrimSpace(config.ImageDigest)
-	if image == "" || digest == "" || digest == strings.TrimSpace(sb.ImageDigest) {
-		return
-	}
-	slog.InfoContext(ctx, "re-pinning stopped sandbox to its harness config's current image",
-		"sandboxId", sb.ID, "image", image,
-		"previousImageDigest", sb.ImageDigest, "imageDigest", digest)
-	sb.Image, sb.ImageDigest = image, digest
-}
+// The image pin moves in exactly one place: UpgradeSandbox. There is
+// deliberately no reconciler-side re-pin. An implicit one would be a control
+// plane rescue for a condition only the pool agent can detect — whether the
+// pinned image can actually be run there — and it would fire on reconciles a
+// user never asked for (ADR 0021 §§2, 5).
 
 func (r *SandboxReconciler) delete(ctx context.Context, sandbox *model.Sandbox, generation int64) error {
 	if sandbox.State == model.SandboxStateDeleted && sandbox.Converged() {

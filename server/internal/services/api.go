@@ -106,8 +106,9 @@ type SandboxService interface {
 	StartSandbox(ctx context.Context, projectID, sandboxID string, input StartSandboxBody) (*model.Sandbox, error)
 	StopSandbox(ctx context.Context, projectID, sandboxID string, input StopSandboxBody) (*model.Sandbox, error)
 	RestartSandbox(ctx context.Context, projectID, sandboxID string, input RestartSandboxBody) (*model.Sandbox, error)
-	// UpgradeSandbox re-pins the sandbox to its harness config's current image
-	// and recreates its container from it.
+	// UpgradeSandbox re-pins the sandbox to its harness config's current image.
+	// The pool agent recreates the container from it and keeps the power state
+	// it had (ADR 0021).
 	UpgradeSandbox(ctx context.Context, projectID, sandboxID string, input UpgradeSandboxBody) (*model.Sandbox, error)
 	CompleteSandboxSourcePush(ctx context.Context, projectID, sandboxID string, input CompleteSandboxSourcePushBody) (*model.Sandbox, error)
 	CompleteSandboxApply(ctx context.Context, projectID, sandboxID string, input CompleteSandboxApplyBody) (*model.Sandbox, error)

@@ -17,10 +17,9 @@ import (
 // operation. What the agent saw is not a request.
 //
 // A state change is also an observation the reconciler may care about, so the
-// sandboxes whose state actually moved are marked dirty. That is what re-arms
-// the ADR 0016 §5 re-pin: a sandbox that has just left a live state is one whose
-// container can be rebuilt on a newer image without disturbing anybody, and the
-// reconciler is the thing that decides so.
+// sandboxes whose state actually moved are marked dirty. The case that matters
+// is a container that is gone: the reconciler is what rebuilds it, and nothing
+// else would tell it to.
 func (s *Service) ReportSandboxStates(ctx context.Context, batch store.SandboxStateReportBatch) error {
 	changed, err := s.store.ApplySandboxStateReports(ctx, batch)
 	if err != nil {
@@ -49,11 +48,11 @@ func (s *Service) ReportSandboxStates(ctx context.Context, batch store.SandboxSt
 // observationNeedsReconcile reports whether an observation is one the
 // reconciler should look at.
 //
-// A sandbox that just went quiet is worth a look: it may be re-pinnable, and if
-// its container is gone entirely the reconciler is what rebuilds it. A sandbox
-// that came up is not — nothing about the control plane's view of it changed by
-// its starting, and marking every start dirty would re-drive the whole pool
-// every time somebody used a sandbox.
+// A sandbox that just went quiet is worth a look: if its container is gone
+// entirely the reconciler is what rebuilds it. A sandbox that came up is not —
+// nothing about the control plane's view of it changed by its starting, and
+// marking every start dirty would re-drive the whole pool every time somebody
+// used a sandbox.
 func (s *Service) observationNeedsReconcile(sandbox *model.Sandbox) bool {
 	if sandbox.DesiredState == model.DesiredStateDeleted {
 		return true

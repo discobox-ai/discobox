@@ -445,14 +445,20 @@ func (s *Service) resolveProvider(ctx context.Context, sb *model.Sandbox) (Provi
 	return s.sandboxProviders.ResolveForSandbox(ctx, sb)
 }
 
-// UpgradeSandbox re-pins the sandbox to its harness config's current image and
-// restarts it (ADR 0016 §4).
+// UpgradeSandbox re-pins the sandbox to its harness config's current image
+// (ADR 0021 §1).
 //
-// Upgrading is a re-pin plus a restart, not an operation of its own. The pool
-// host already rebuilds any sandbox container whose image does not match the
-// pin, so changing the pin is the entire instruction — the restart is just what
-// makes the runtime notice. A separate upgrade operation, with its own
-// generation counters, would be a second way to say "converge this sandbox".
+// The re-pin is the whole operation. It changes the spec, so the ordinary
+// reconcile delivers it, and the pool agent replaces any container that no
+// longer matches — restarting it into the new image if it was running, leaving
+// it stopped if it was not (ADR 0021 §3). Upgrading never powers a sandbox on.
+// A separate upgrade operation, with its own generation counters, would be a
+// second way to say "converge this sandbox".
+//
+// Availability is the only thing checked here. Whether the target image can be
+// obtained on the sandbox's pool is not knowable from the control plane, and is
+// deliberately left to fail where it is observable — the pool agent's create
+// (ADR 0021 §5).
 //
 // The sandbox ID, its history, and its pool-host volumes survive; anything
 // written to the container's own filesystem outside those volumes does not.

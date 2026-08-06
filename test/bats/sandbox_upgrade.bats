@@ -45,6 +45,12 @@ s.close()
 PY
 )"
   export DISCOBOX_BATS_SERVER="http://127.0.0.1:$DISCOBOX_BATS_PORT"
+  # Name both listen endpoints explicitly. The server opens no TCP listener
+  # unless DISCOBOX_SERVER_LISTEN asks for one, and without a unix endpoint of
+  # its own it falls back to the machine's default IPC socket — which it then
+  # RECLAIMS, shutting down the developer's running server. A private socket in
+  # this suite's temp dir keeps the run isolated.
+  export DISCOBOX_BATS_SOCKET="$DISCOBOX_BATS_TMP/server.sock"
 
   (cd server && go build -o ../build/discobox-server ./cmd/discobox-server)
   rm -f build/disco
@@ -53,6 +59,7 @@ PY
   go tool task build:harness-stub-image
 
   PORT="$DISCOBOX_BATS_PORT" \
+  DISCOBOX_SERVER_LISTEN="unix://$DISCOBOX_BATS_SOCKET,http://127.0.0.1:$DISCOBOX_BATS_PORT" \
   DATABASE_DSN="$DISCOBOX_BATS_DB" \
   DISCOBOX_DATA_DIR="$DISCOBOX_BATS_DATA_DIR" \
   DISCOBOX_CONFIG_DIR="$DISCOBOX_BATS_CONFIG_DIR" \
@@ -277,6 +284,22 @@ sandbox_field() {
     box sandbox get "$1" | json_get "$2"
 }
 
+wait_for_sandbox_state() {
+  local sandbox_id="$1" want="$2"
+  for _ in {1..90}; do
+    case "$(sandbox_field "$sandbox_id" runtime.displayState)" in
+      "$want") return 0 ;;
+      error) break ;;
+    esac
+    sleep 1
+  done
+  echo "sandbox did not reach $want: $sandbox_id" >&2
+  "$REPO_ROOT/build/disco" --server "$DISCOBOX_BATS_SERVER" --project default --output json \
+    box sandbox get "$sandbox_id" >&2 || true
+  tail -100 "$DISCOBOX_BATS_SERVER_LOG" >&2 || true
+  return 1
+}
+
 wait_for_sandbox_running() {
   local sandbox_id="$1"
   for _ in {1..90}; do
@@ -362,4 +385,62 @@ wait_for_sandbox_running() {
   # recreating a container costs container-local state for no gain.
   run cli box sandbox upgrade "$sandbox_id"
   [ "$status" -ne 0 ]
+}
+
+# Upgrading is not a way to start a sandbox (ADR 0021 §3). A stopped sandbox gets
+# the new image and stays stopped; a running one comes back up on it. Only the
+# pool agent can know which case it is in, so this is the assertion that the
+# control plane never decides power state.
+@test "an upgrade preserves the power state of the sandbox it replaces" {
+  local pool_id harness_id sandbox_id before_image after_image after_digest
+  pool_id="$(ensure_pool)"
+  [ -n "$pool_id" ]
+
+  build_upgrade_stub power-v1
+
+  run cli box harness create --image "$UPGRADE_STUB_IMAGE" --slug power-stub --name "Power Stub"
+  [ "$status" -eq 0 ]
+  harness_id="$(printf '%s' "$output" | json_get id)"
+  [ -n "$harness_id" ]
+
+  run configure_stub power-stub
+  [ "$status" -eq 0 ]
+
+  run cli box sandbox create --name "upgrade-power-e2e" --harness power-stub --wait --wait-timeout 120s
+  [ "$status" -eq 0 ]
+  sandbox_id="$(printf '%s' "$output" | json_get id)"
+  [ -n "$sandbox_id" ]
+  before_image="$(sandbox_container_image "$sandbox_id")"
+  [ -n "$before_image" ]
+
+  run cli box sandbox stop "$sandbox_id"
+  [ "$status" -eq 0 ]
+  wait_for_sandbox_state "$sandbox_id" stopped
+
+  build_upgrade_stub power-v2
+  run cli box harness refresh-image power-stub
+  [ "$status" -eq 0 ]
+  after_digest="$(printf '%s' "$output" | json_get imageDigest)"
+  [ -n "$after_digest" ]
+
+  run cli box sandbox upgrade "$sandbox_id"
+  [ "$status" -eq 0 ]
+
+  # The container is rebuilt on the new image without being started: an upgrade
+  # delivers an image, never a power-on.
+  for _ in {1..90}; do
+    after_image="$(sandbox_container_image "$sandbox_id" || true)"
+    [ -n "$after_image" ] && [ "$after_image" != "$before_image" ] && break
+    sleep 1
+  done
+  [ -n "$after_image" ]
+  [ "$after_image" != "$before_image" ]
+  [ "$(sandbox_field "$sandbox_id" config.imageDigest)" = "$after_digest" ]
+  wait_for_sandbox_state "$sandbox_id" stopped
+
+  # And a start after the upgrade is an ordinary start of the rebuilt container.
+  run cli box sandbox start "$sandbox_id"
+  [ "$status" -eq 0 ]
+  wait_for_sandbox_running "$sandbox_id"
+  [ "$(sandbox_container_image "$sandbox_id")" = "$after_image" ]
 }

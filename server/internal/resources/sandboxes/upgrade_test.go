@@ -5,6 +5,7 @@ import (
 	"testing"
 
 	"github.com/obot-platform/discobox/server/internal/model"
+	"github.com/obot-platform/discobox/server/internal/sandbox"
 	"github.com/obot-platform/discobox/server/internal/services"
 	"github.com/obot-platform/discobox/server/internal/store"
 )
@@ -128,31 +129,60 @@ func TestUpgradeTargetIgnoresConfigModeAndHarnesslessSandboxes(t *testing.T) {
 	}
 }
 
-// A start re-pins from every phase that is about to build a container, and from
-// no phase that already has one a user is using. Failed is the case that
-// matters: a start that failed on an unpullable image must not retry that same
-// reference forever.
-func TestRepinOnStartFollowsLiveness(t *testing.T) {
+// pinCapturingProvider records the image a create was actually asked to build
+// from, which is the only place the effective pin is observable.
+type pinCapturingProvider struct {
+	recordingProvider
+	created []ImageRef
+}
+
+func (p *pinCapturingProvider) Create(_ context.Context, _ sandbox.SandboxRef, state []byte, opts sandbox.CreateOptions) (*sandbox.Sandbox, []byte, error) {
+	p.created = append(p.created, opts.Image)
+	return &sandbox.Sandbox{ID: "runtime-1"}, state, nil
+}
+
+// A sandbox runs the image it is pinned to until somebody upgrades it. No
+// reconcile advances the pin, whatever state the sandbox is in — including the
+// non-live states that used to re-pin themselves on the way up (ADR 0021 §2).
+func TestReconcileNeverRepinsToTheConfigImage(t *testing.T) {
 	ctx := context.Background()
-	_, st := newBindingFixture(t)
+	svc, st := newBindingFixture(t)
 	config := imagedConfig(t, st, "discobox-harness-codex:local", "sha256:new")
-	reconciler := NewSandboxReconciler(st)
 
-	for _, phase := range []string{model.SandboxStateFailed, model.SandboxStateStopped, model.SandboxStatePending} {
+	for _, state := range []string{model.SandboxStateStopped, model.SandboxStateFailed, model.SandboxStatePending} {
 		sb := pinnedSandbox(t, st, config.ID, "discobox-harness-codex:gone", "sha256:old")
-		sb.State = phase
-		if model.SandboxIsLive(sb.State) {
-			t.Fatalf("phase %q reported live; want re-pin eligible", phase)
+		sb.State = state
+		sb.DesiredState = model.DesiredStatePresent
+		sb.IncrementGeneration()
+		if err := st.UpdateSandbox(ctx, sb); err != nil {
+			t.Fatalf("state %q: update sandbox: %v", state, err)
 		}
-		reconciler.repinToCurrentImage(ctx, sb)
-		if sb.Image != "discobox-harness-codex:local" || sb.ImageDigest != "sha256:new" {
-			t.Fatalf("phase %q: image = %q/%q, want the config's current image", phase, sb.Image, sb.ImageDigest)
-		}
-	}
+		provider := &pinCapturingProvider{}
+		reconciler := NewSandboxReconciler(st, WithSandboxProvider(provider))
 
-	for _, phase := range []string{model.SandboxStateRunning, model.SandboxStateAwaitingSource} {
-		if !model.SandboxIsLive(phase) {
-			t.Fatalf("phase %q reported not live; a live sandbox must not re-pin without an upgrade", phase)
+		if err := reconciler.ReconcileSandbox(ctx, sb); err != nil {
+			t.Fatalf("state %q: reconcile: %v", state, err)
+		}
+		if len(provider.created) != 1 {
+			t.Fatalf("state %q: creates = %d, want 1", state, len(provider.created))
+		}
+		if got := provider.created[0]; got.Digest != "sha256:old" || got.Name != "discobox-harness-codex:gone" {
+			t.Fatalf("state %q: created from %+v, want the sandbox's own pin", state, got)
+		}
+		stored, err := st.GetSandbox(ctx, sb.ProjectID, sb.ID)
+		if err != nil {
+			t.Fatalf("state %q: get sandbox: %v", state, err)
+		}
+		if stored.ImageDigest != "sha256:old" || stored.Image != "discobox-harness-codex:gone" {
+			t.Fatalf("state %q: pin moved to %q/%q without an upgrade", state, stored.Image, stored.ImageDigest)
+		}
+		// The upgrade is still offered — it is reported, not applied.
+		target, err := svc.upgradeTarget(ctx, stored)
+		if err != nil {
+			t.Fatalf("state %q: upgradeTarget: %v", state, err)
+		}
+		if !target.Available || target.Digest != "sha256:new" {
+			t.Fatalf("state %q: target = %+v, want the config's image still on offer", state, target)
 		}
 	}
 }
