@@ -1,6 +1,6 @@
 # 0020 — Nested Docker trust is injected by a runc wrapper, not an NRI plugin
 
-- **Status**: Proposed
+- **Status**: Accepted
 - **Date**: 2026-08-01
 - **Supersedes**: [0015](0015-nested-docker-builds-trust-the-mitm-proxy-via-nri.md)
 

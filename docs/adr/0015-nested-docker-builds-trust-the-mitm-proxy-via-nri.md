@@ -1,6 +1,6 @@
 # 0015 — Nested Docker builds and containers trust the MITM proxy via an NRI plugin
 
-- **Status**: Accepted
+- **Status**: Superseded by [0020](0020-nested-docker-trust-is-injected-by-a-runc-wrapper.md)
 - **Date**: 2026-07-23
 
 ## Context
