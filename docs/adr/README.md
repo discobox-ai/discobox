@@ -73,3 +73,4 @@ Nygard-style ADRs (see adr.github.io) combined with current-state design docs:
 | [0018](0018-disco-diff-resolves-its-base-inside-the-sandbox.md) | `disco diff` resolves its base inside the sandbox | Accepted |
 | [0019](0019-one-server-per-data-directory-enforced-by-a-file-lock.md) | One server per data directory, enforced by an advisory file lock | Proposed |
 | [0020](0020-nested-docker-trust-is-injected-by-a-runc-wrapper.md) | Nested Docker trust is injected by a runc wrapper, not an NRI plugin | Accepted |
+| [0021](0021-upgrade-is-a-re-pin-and-preserves-power-state.md) | Upgrade is a desired-state re-pin, and replacing a container preserves its power state | Accepted |
