@@ -37,6 +37,12 @@ s.close()
 PY
 )"
   export DISCOBOX_BATS_SERVER="http://127.0.0.1:$DISCOBOX_BATS_PORT"
+  # Name both listen endpoints explicitly. The server opens no TCP listener
+  # unless DISCOBOX_SERVER_LISTEN asks for one, and without a unix endpoint of
+  # its own it falls back to the machine's default IPC socket — which it then
+  # RECLAIMS, shutting down the developer's running server. A private socket in
+  # this suite's temp dir keeps the run isolated.
+  export DISCOBOX_BATS_SOCKET="$DISCOBOX_BATS_TMP/server.sock"
 
   (cd server && go build -o ../build/discobox-server ./cmd/discobox-server)
   rm -f build/disco
@@ -46,6 +52,7 @@ PY
   build_keep_stub_image
 
   PORT="$DISCOBOX_BATS_PORT" \
+  DISCOBOX_SERVER_LISTEN="unix://$DISCOBOX_BATS_SOCKET,http://127.0.0.1:$DISCOBOX_BATS_PORT" \
   DATABASE_DSN="$DISCOBOX_BATS_DB" \
   DISCOBOX_DATA_DIR="$DISCOBOX_BATS_DATA_DIR" \
   DISCOBOX_CONFIG_DIR="$DISCOBOX_BATS_CONFIG_DIR" \
