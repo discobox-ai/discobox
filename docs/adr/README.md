@@ -74,3 +74,6 @@ Nygard-style ADRs (see adr.github.io) combined with current-state design docs:
 | [0019](0019-one-server-per-data-directory-enforced-by-a-file-lock.md) | One server per data directory, enforced by an advisory file lock | Proposed |
 | [0020](0020-nested-docker-trust-is-injected-by-a-runc-wrapper.md) | Nested Docker trust is injected by a runc wrapper, not an NRI plugin | Accepted |
 | [0021](0021-upgrade-is-a-re-pin-and-preserves-power-state.md) | Upgrade is a desired-state re-pin, and replacing a container preserves its power state | Accepted |
+| [0022](0022-sandbox-deletion-is-archive-then-confirmed-purge.md) | Sandbox deletion is archive, then confirmed purge | Accepted |
+| [0023](0023-projects-are-created-by-copy-and-deleted-only-when-empty.md) | A project is created by copying an existing one, and deleted only when empty | Proposed |
+| [0024](0024-ssh-is-a-control-plane-ingress-onto-execs.md) | SSH is a control-plane ingress onto execs, and forwarded TCP terminates inside the sandbox | Accepted |
