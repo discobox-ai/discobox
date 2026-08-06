@@ -38,6 +38,20 @@ func TestSelectLivePrimary(t *testing.T) {
 		}
 	})
 
+	// A primary whose unit vanished with a reboot is not a terminal anyone can
+	// attach to, so it must not shadow a live one — and EnsurePrimary, which
+	// skips the relaunch only for a starting/running primary, must relaunch.
+	t.Run("lost primary does not count as live", func(t *testing.T) {
+		list := []execs.Exec{
+			primaryExec("lost", execs.StatusLost, base.Add(time.Hour)),
+			primaryExec("live", execs.StatusRunning, base),
+		}
+		got, ok := selectLivePrimary(list)
+		if !ok || got.ID != "live" {
+			t.Fatalf("selectLivePrimary = %q,%v, want live,true", got.ID, ok)
+		}
+	})
+
 	t.Run("none when no primary", func(t *testing.T) {
 		if _, ok := selectLivePrimary([]execs.Exec{nonPrimary}); ok {
 			t.Fatal("expected no primary")

@@ -104,6 +104,7 @@ func (SystemdRunner) Status(ctx context.Context, unit string) (UnitStatus, error
 	}
 	props := []string{
 		"Id",
+		"LoadState",
 		"ActiveState",
 		"SubState",
 		"MainPID",
@@ -160,7 +161,11 @@ func parseProperties(output string) map[string]string {
 }
 
 func unitStatusFromProperties(props map[string]string) UnitStatus {
-	status := UnitStatus{Unit: props["Id"]}
+	// systemctl show exits 0 for a unit systemd has never heard of and reports it
+	// as inactive, so LoadState is the only signal that separates "this unit ran
+	// and is gone" from "this unit does not exist"; a transient unit lost to a
+	// reboot reads not-found here.
+	status := UnitStatus{Unit: props["Id"], Loaded: loadedState(props["LoadState"])}
 	active := props["ActiveState"]
 	sub := props["SubState"]
 	switch active {
@@ -195,6 +200,19 @@ func unitStatusFromProperties(props map[string]string) UnitStatus {
 		status.ExitedAt = exited
 	}
 	return status
+}
+
+// loadedState reports whether systemd still has a unit definition for the unit.
+// An unreported LoadState counts as loaded: the property is missing only if the
+// show output is unexpected, and treating that as a vanished unit would declare
+// live execs lost.
+func loadedState(value string) bool {
+	switch strings.TrimSpace(value) {
+	case "not-found", "error", "bad-setting":
+		return false
+	default:
+		return true
+	}
 }
 
 func parseInt64(value string) int64 {

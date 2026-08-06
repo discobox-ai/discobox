@@ -59,7 +59,10 @@ runtime operations.
   files identify known terminals; reconciliation joins those files with systemd
   status and shim status. Durable database-only exec records must be reconciled
   before they are returned: restore manager-owned runtime/socket paths, and do
-  not preserve stale `starting` or `running` state when the unit is gone.
+  not preserve stale `starting` or `running` state when the unit is gone. "Gone"
+  means unloaded, not inactive: `systemctl show` succeeds for a unit systemd
+  never heard of and calls it inactive, so `UnitStatus.Loaded` — not a status
+  error — is what demotes a vanished exec to `lost`.
 - Keep terminal and exec history local. The SQLite store records append-only
   lifecycle events, latest observed runtime state, and retained opaque resource
   samples, but REST runtime state should be derived from runtime/systemd/shim

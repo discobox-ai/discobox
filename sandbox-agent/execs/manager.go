@@ -96,7 +96,12 @@ type StartResult struct {
 }
 
 type UnitStatus struct {
-	Unit      string
+	Unit string
+	// Loaded reports whether the unit manager still has a definition for the
+	// unit. A unit that never existed, or a transient one lost to a reboot, is
+	// reported unloaded rather than as an error, so callers must consult this to
+	// tell a vanished exec from an inactive one.
+	Loaded    bool
 	Active    bool
 	Status    Status
 	PID       int64
@@ -619,7 +624,23 @@ func (m *Manager) refreshExec(ctx context.Context, exec Exec, runtimePresent boo
 	// keep it starting rather than declaring it lost while it waits to launch.
 	notYetLaunched := runtimePresent && exec.Status == StatusStarting && exec.StartedAt == nil
 	if unit, err := m.units.Status(ctx, exec.Unit); err == nil {
-		exec = applyUnitStatus(exec, unit)
+		// The unit is gone, so the shim that owned this exec cannot come back and
+		// neither can the exec — an exec whose transient unit did not survive a
+		// reboot lands here. Say so rather than letting applyUnitStatus report the
+		// unknown unit's "inactive" as an ordinary exit, or pin a never-started
+		// exec at starting forever: a phantom starting primary terminal makes
+		// EnsurePrimary skip the relaunch and every attach dial a socket that will
+		// never exist.
+		if !unit.Loaded && !notYetLaunched {
+			exec.Status = StatusLost
+			exec.Error = "exec unit is no longer loaded"
+			if exec.ExitedAt == nil {
+				exitedAt := time.Now().UTC()
+				exec.ExitedAt = &exitedAt
+			}
+		} else {
+			exec = applyUnitStatus(exec, unit)
+		}
 	} else if exec.ExitedAt == nil && !notYetLaunched {
 		exec.Status = StatusLost
 		exec.Error = "exec unit status is unavailable"

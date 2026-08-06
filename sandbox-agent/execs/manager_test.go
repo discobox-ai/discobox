@@ -464,6 +464,91 @@ func (m *fakeUnitManager) Status(context.Context, string) (UnitStatus, error) {
 	return UnitStatus{}, errors.New("not found")
 }
 
+// unloadedUnitManager reports what systemd actually reports for a unit it has
+// never heard of: no error, an unloaded and inactive unit. A transient exec unit
+// lost to a sandbox reboot reads exactly like this.
+type unloadedUnitManager struct {
+	fakeUnitManager
+}
+
+func (m *unloadedUnitManager) Status(_ context.Context, unit string) (UnitStatus, error) {
+	return UnitStatus{Unit: unit, Loaded: false, Status: StatusExited}, nil
+}
+
+// A never-started exec whose unit vanished (the sandbox rebooted before its
+// command launched) must reconcile to lost. systemd reports the missing unit
+// without error, so nothing else demotes it, and a primary terminal left at
+// starting forever makes EnsurePrimary skip the relaunch while every attach
+// dials a socket that will never exist.
+func TestManagerReconcilesNeverStartedExecWithVanishedUnit(t *testing.T) {
+	audit := newRecordingAudit()
+	manager, err := NewManagerWithConfig(ManagerConfig{
+		WorkingRoot: "/workspace",
+		RuntimeDir:  t.TempDir(),
+		Units:       &unloadedUnitManager{},
+		Audit:       audit,
+	})
+	if err != nil {
+		t.Fatalf("new manager: %v", err)
+	}
+	created, err := manager.Create(context.Background(), CreateRequest{
+		Command:  []string{"claude", "--continue"},
+		TTY:      true,
+		Metadata: map[string]string{"primary": "true"},
+	})
+	if err != nil {
+		t.Fatalf("create: %v", err)
+	}
+	if created.Status != StatusStarting || created.StartedAt != nil {
+		t.Fatalf("created exec = %#v, want starting and unstarted", created)
+	}
+	// The reboot: the tmpfs runtime file is gone, only the durable record is left.
+	if err := os.Remove(created.RuntimePath); err != nil {
+		t.Fatalf("remove runtime: %v", err)
+	}
+
+	got, ok := manager.Get(created.ID)
+	if !ok {
+		t.Fatal("durable exec not found")
+	}
+	if got.Status != StatusLost {
+		t.Fatalf("status = %q, want lost", got.Status)
+	}
+	// The status must stay put once the runtime file has been rewritten, so a
+	// later read cannot report the unknown unit's "inactive" as a clean exit.
+	again, ok := manager.Get(created.ID)
+	if !ok || again.Status != StatusLost {
+		t.Fatalf("second read status = %q (found %v), want lost", again.Status, ok)
+	}
+	// Lost is terminal, so an attach says the session is gone instead of dialing
+	// a socket that will never appear.
+	if err := manager.Attach(context.Background(), nil, nil, created.ID, true); !errors.Is(err, ErrSessionGone) {
+		t.Fatalf("attach err = %v, want ErrSessionGone", err)
+	}
+}
+
+// A created-but-not-yet-launched exec has no unit for a moment, and must not be
+// declared lost while its runtime file says it is still on its way up.
+func TestManagerKeepsUnlaunchedExecStartingWhileRuntimePresent(t *testing.T) {
+	manager, err := NewManagerWithConfig(ManagerConfig{
+		WorkingRoot: "/workspace",
+		RuntimeDir:  t.TempDir(),
+		Units:       &unloadedUnitManager{},
+		Audit:       newRecordingAudit(),
+	})
+	if err != nil {
+		t.Fatalf("new manager: %v", err)
+	}
+	created, err := manager.Create(context.Background(), CreateRequest{Command: []string{"codex"}})
+	if err != nil {
+		t.Fatalf("create: %v", err)
+	}
+	got, ok := manager.Get(created.ID)
+	if !ok || got.Status != StatusStarting {
+		t.Fatalf("status = %q (found %v), want starting", got.Status, ok)
+	}
+}
+
 func (m *fakeUnitManager) List(context.Context) ([]UnitStatus, error) {
 	return nil, nil
 }

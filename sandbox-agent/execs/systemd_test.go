@@ -44,3 +44,29 @@ func TestSystemdRunnerKeepsShimRootAndPassesUserToShim(t *testing.T) {
 		t.Fatalf("systemd-run args did not pass user to exec shim:\n%s", args)
 	}
 }
+
+// systemctl show exits 0 for a unit systemd has never heard of, reporting it as
+// inactive. Only LoadState separates that from a unit that ran and stopped, so
+// the parser must carry it through.
+func TestUnitStatusFromPropertiesReportsNotFoundUnitUnloaded(t *testing.T) {
+	missing := unitStatusFromProperties(map[string]string{
+		"Id":          "discobox-exec-ex_gone.service",
+		"LoadState":   "not-found",
+		"ActiveState": "inactive",
+	})
+	if missing.Loaded {
+		t.Fatalf("not-found unit reported loaded: %#v", missing)
+	}
+	stopped := unitStatusFromProperties(map[string]string{
+		"Id":          "discobox-exec-ex_ran.service",
+		"LoadState":   "loaded",
+		"ActiveState": "inactive",
+	})
+	if !stopped.Loaded {
+		t.Fatalf("loaded unit reported unloaded: %#v", stopped)
+	}
+	// An unexpected show output must not read as a vanished unit.
+	if !unitStatusFromProperties(map[string]string{"Id": "x", "ActiveState": "active"}).Loaded {
+		t.Fatal("unit without LoadState reported unloaded")
+	}
+}
