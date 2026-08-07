@@ -151,6 +151,14 @@ git subprocesses that cannot speak anything else (see [cli](../cli/DESIGN.md)).
 `cfg.Listen` is threaded to the provider factories so a backend picks a
 transport this server actually answers on rather than assuming one exists.
 
+The SSH control-plane ingress (ADR 0024) follows the same opt-in rule on its
+own listener: `DISCOBOX_SSH_LISTEN` binds a second, independent TCP listener
+when set, and binds nothing when unset. It is started in `Run` alongside
+`listenAll`'s HTTP listeners, not folded into `serveAll`: an SSH connection
+has no request/response cycle for `http.Server.Shutdown` to drain, so
+`internal/sshd.Server.Serve` has its own `ctx`-driven listener lifecycle
+instead. See [`internal/sshd/DESIGN.md`](internal/sshd/DESIGN.md).
+
 ## Single Server Per Data Directory
 
 One server runs against a data directory at a time, enforced by an exclusive
@@ -299,6 +307,8 @@ See ADR 0017 §§9–10.
 | `internal/apperrors` | Server-owned sentinel and HTTP status errors used by handlers, services, store, and provider adapters. |
 | `internal/model` | Server-owned persistence models and migration model list. |
 | `internal/sandbox` | Go-level sandbox provider interfaces, provider manager, and shared provider contract types. |
+| `internal/sshd` | SSH control-plane ingress (ADR 0024): listener, session-channel↔exec mapping, direct-tcpip tunnel, host key and authorized-keys handling. |
+| `internal/sandboxagentclient` | Pool-agent target-URL builder and lease auth transport shared by the hand-wired HTTP proxies and `internal/sshd`. |
 | `providers` | Docker, VM, cloud, and worker-backed sandbox provider implementations. |
 
 ## Dependency Rules
@@ -336,6 +346,7 @@ See ADR 0017 §§9–10.
 | `internal/auth/sandbox` | [`internal/auth/sandbox/DESIGN.md`](internal/auth/sandbox/DESIGN.md) |
 | `internal/service` | [`internal/service/DESIGN.md`](internal/service/DESIGN.md) |
 | `internal/store` | [`internal/store/DESIGN.md`](internal/store/DESIGN.md) |
+| `internal/sshd` | [`internal/sshd/DESIGN.md`](internal/sshd/DESIGN.md) |
 | `providers` | [`providers/DESIGN.md`](providers/DESIGN.md) |
 
 Add lower-level `DESIGN.md` files next to packages when a package gains its own

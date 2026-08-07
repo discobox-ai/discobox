@@ -293,6 +293,30 @@ session, `execstream/client`.
   policy in [`execstream/resume/DESIGN.md`](../execstream/resume/DESIGN.md)
   when exposing these events in a CLI or TUI.
 
+## SSH Keys and Config (ADR 0024)
+
+`disco ssh-key` and `disco ssh-config` are the CLI-side counterpart to the
+SSH control-plane ingress (`server/internal/sshd/DESIGN.md`); they do not
+attach to anything themselves, so they sit beside `disco secret` at the root
+command level rather than layering on the attach transports above.
+
+- `disco ssh-key add` with an explicit file (or `-` for stdin) argument
+  enrolls that key directly. With no argument it lists public keys from a
+  running `SSH_AUTH_SOCK` agent (falling back to `~/.ssh/*.pub`) and reuses
+  the shared picker (`internal/cli/picker.go`) for the "which key" choice
+  when there is more than one candidate — the same picker `disco shell`'s
+  sandbox selection and `run --include-dirty`'s prompt use. This step is
+  enrollment convenience only: listing an agent's public keys proves nothing
+  about possession of the private half, and the actual authorization is the
+  authenticated `CreateSSHKey` API call that follows, never agent presence
+  itself (ADR 0024 §6).
+- `disco ssh-config` emits one `ssh_config(5)` `Host` stanza per sandbox in
+  the current project plus a `known_hosts` line, read from a small
+  unauthenticated `GET /ssh/host-key` route
+  (`server/internal/auth/DESIGN.md`) rather than any generated API client,
+  since the SSH host key is not part of the OpenAPI-modeled control-plane
+  resource surface.
+
 ## Signals and Job Control
 
 Keystrokes reach the remote job, never this process. Two mechanisms, chosen by

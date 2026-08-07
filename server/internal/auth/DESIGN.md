@@ -18,6 +18,15 @@ flowchart LR
 
 Public documentation paths bypass both phases via `IsPublicPath`.
 
+`internal/sshd`'s SSH control-plane ingress (ADR 0024) does not participate
+in this pipeline at all: it has no `*http.Request` to authenticate against,
+since identity is decided during the SSH key exchange, before any
+HTTP-shaped request exists. It builds an `auth.Principal` directly in its own
+`PublicKeyCallback` and carries it via `WithPrincipal` on the connection's
+context — a third, transport-specific authenticator that never touches
+`Authentication`/`Authorization`. See
+[`internal/sshd/DESIGN.md`](../sshd/DESIGN.md).
+
 ## Authentication
 
 `Authentication` runs authenticators in order. The first authenticator that

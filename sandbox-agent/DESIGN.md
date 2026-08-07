@@ -16,7 +16,7 @@ runtime operations.
 | `cmd/discobox-sandbox-agent` | Binary entrypoint, config loading, signal handling, and server startup. Also dispatches the `init` PID-1 subcommand. |
 | `boot` | The PID-1 `init` flow: resolves the sandbox user (replacing the retired `entrypoint.sh`), wires image-declared data/cache volumes and manifest sources from the primary volumes, binds the config volume onto `/etc/discobox`, writes desktop drop-ins, then execs the container's real init (systemd). See ADR 0007. |
 | `config` | Local boot/config file parsing, environment overrides, defaults, and validation. Owns `image.json` parsing, including the `volumes` declaration and `%HOME%`/`%UID%`/`%GID%` token resolution. |
-| `server` | HTTP router, generated OpenAPI handler adapter, PASETO auth middleware, and identity/scope validation. |
+| `server` | HTTP router, generated OpenAPI handler adapter, PASETO auth middleware, and identity/scope validation. Also hand-registers the exec attach/start routes and, for ADR 0024's SSH ingress, `GET .../tcp/attach` (`tcp_attach.go`): dials `host:port` from inside this process — sharing the sandbox's network namespace, unlike the pool-agent's container-IP-only `/http/{port}` — and bridges the raw TCP bytes to `execstream/frame` `Input`/`Stdout`/`CloseInput` frames over a websocket, gated by the `tcp:connect` scope. |
 | `runuser` | The sandbox's run identity: resolves who a process launches as, from the image's own passwd/group database. Used by `boot`, `execs`, and `terminal` so none of them derives it separately. See [runuser/DESIGN.md](runuser/DESIGN.md). |
 | `execs` | The sandbox runtime primitive: exec lifecycle, runtime metadata, systemd unit abstraction, stdout/stderr or PTY logging, shim launch, status socket, and attach. Harness terminals are execs. |
 | `execs` (`shim.go`) | Per-exec child process: the local Unix socket attach/status/start API, the audit log, and the runtime status file. It no longer owns the process itself — see `procio`. |
@@ -174,6 +174,13 @@ development images without a registry.
   exec record reports, so a shell exec is self-describing after the fact.
   `shell` is mutually exclusive with `command` and `harnessId`: an empty command
   still means "run the harness" for every caller that did not ask for a shell.
+  `CreateRequest.ShellCommandLine` (API field `shellCommandLine`) is the one
+  exception to "shell means an interactive login shell": set alongside
+  `shell`, it runs the resolved shell with `-lc <ShellCommandLine>` instead.
+  It exists for ADR 0024's SSH ingress — SSH's `exec "cmd"` channel type
+  carries one opaque command-line string, and sshd, running outside the
+  sandbox, cannot resolve a login shell path itself the way a `shell: true`
+  request already lets a caller avoid naming one.
 - There is one shim (`execs/shim.go`) and one framed attach mechanism. Attacher
   tracking, frame writes, output broadcast, exit frame emission, and pending
   resize state belong to `execstream/host` in the root module; keep Unix socket

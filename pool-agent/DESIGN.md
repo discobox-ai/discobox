@@ -73,9 +73,10 @@ operation rather than something the runtime can observe.
 
 Power operations (`start`, `stop`, `restart`) answer with acceptance only, and
 serialise per sandbox on one mutex. That is also what makes on-demand start safe:
-sandbox-directed routes — the HTTP proxy, the sandbox-agent proxy, and the Git
-proxy — start a stopped sandbox before proxying (`server/autostart.go`), and ten
-concurrent requests produce one start. Control operations never auto-start.
+sandbox-directed routes — the HTTP proxy, the sandbox-agent proxy, the Git
+proxy, and the SSH ingress's TCP tunnel route (ADR 0024 §7) — start a stopped
+sandbox before proxying (`server/autostart.go`), and ten concurrent requests
+produce one start. Control operations never auto-start.
 
 Archived sandboxes are exempt from that latch and fail those routes with 409.
 `archive` and `delete` take the same per-sandbox mutex, and both answer only once
@@ -181,6 +182,14 @@ API operations must authorize against those scopes. Sandbox operation handlers
 under this route own only local runtime work; control-plane persistence, user
 authorization, project events, and desired-state orchestration remain outside
 this module.
+
+`.../sandboxes/{sandbox_id}/tcp/attach` (scope `tcp:connect`) is the pool-agent
+side of ADR 0024's SSH `direct-tcpip` tunnel: it reuses the generic
+sandbox-agent proxy handler and `autoStart` wrapper unchanged, forwarding to
+the sandbox-agent's own `/tcp/attach` (`sandbox-agent/DESIGN.md`), which is
+where the actual `host:port` dial happens — inside the sandbox's own network
+namespace, not this one, so `localhost` in a forwarded connection means what
+the user meant.
 
 ## Worker Proxy Integration
 
