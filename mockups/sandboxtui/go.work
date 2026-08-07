@@ -1,0 +1,5 @@
+// The mockup is deliberately outside the repository workspace: it depends on
+// nothing in the tree and must not perturb the real modules' dependency graph.
+go 1.26.0
+
+use .
