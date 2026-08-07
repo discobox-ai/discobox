@@ -1,6 +1,7 @@
 package proxy
 
 import (
+	"context"
 	"fmt"
 	"net"
 	"net/http"
@@ -80,7 +81,7 @@ func upstreamNoProxy(cfg Config) string {
 // Setting only the first leaves passthrough CONNECT broken; setting only the
 // second leaves everything inspected broken.
 //
-// Exemptions are honoured on both. Routing unconditionally (http.ProxyURL) is
+// Exemptions are honored on both. Routing unconditionally (http.ProxyURL) is
 // wrong even when an upstream exists: a pool proxy reaches its own control
 // plane and loopback services directly, and forcing those through an upstream
 // breaks them.
@@ -111,7 +112,10 @@ func applyUpstreamProxy(h *httpProxy, upstream *url.URL, noProxy string) {
 			if direct != nil {
 				return direct(network, addr)
 			}
-			return net.Dial(network, addr)
+			// goproxy's ConnectDial carries no context, and the tunnel it
+			// dials lives as long as the CONNECT itself, so there is nothing
+			// narrower than Background to hand the dialer.
+			return (&net.Dialer{}).DialContext(context.Background(), network, addr)
 		}
 		return viaProxy(network, addr)
 	}

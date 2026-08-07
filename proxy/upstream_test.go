@@ -121,7 +121,7 @@ func mustURL(t *testing.T, raw string) *url.URL {
 	return u
 }
 
-// Exemptions must be honoured on BOTH paths. Routing unconditionally breaks a
+// Exemptions must be honored on BOTH paths. Routing unconditionally breaks a
 // proxy that reaches its own control plane or loopback services directly -- and
 // it is what made the existing proxy tests fail, since they talk to 127.0.0.1
 // while the surrounding sandbox sets NO_PROXY=127.0.0.1,localhost.

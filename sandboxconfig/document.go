@@ -166,4 +166,4 @@ type ProjectLayer struct {
 // where a subnet list belongs. A token both sides treat as opaque keeps that
 // split: pool-agent decides *where* local subnets are needed, sandbox-agent
 // decides *what* they are.
-const LocalSubnetsToken = "%LOCAL_SUBNETS%"
+const LocalSubnetsToken = "%LOCAL_SUBNETS%" //nolint:gosec // G101: a placeholder token, not a credential.
