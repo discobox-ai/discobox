@@ -51,8 +51,12 @@ func (a *App) writeSandbox(cmd *cobra.Command, sandbox *apimodel.Sandbox) error 
 	return tw.Flush()
 }
 
+// writeSandboxes lists sandboxes newest-created first. It reports creation
+// rather than update time, unlike the other listings here: a sandbox's
+// UpdatedAt moves for reconciler-driven reasons a user did not ask for, so it
+// reorders the list they are trying to read.
 func (a *App) writeSandboxes(cmd *cobra.Command, sandboxes []apimodel.Sandbox, showFolder bool) error {
-	sandboxes = sortedByRecency(sandboxes, func(sandbox apimodel.Sandbox) time.Time { return recencyTime(sandbox.UpdatedAt, sandbox.CreatedAt) })
+	sandboxes = sortedByRecency(sandboxes, func(sandbox apimodel.Sandbox) time.Time { return sandbox.CreatedAt })
 	if a.quiet {
 		return writeResourceIDs(cmd.OutOrStdout(), sandboxes, func(sandbox apimodel.Sandbox) string { return sandbox.ID })
 	}
@@ -61,9 +65,9 @@ func (a *App) writeSandboxes(cmd *cobra.Command, sandboxes []apimodel.Sandbox, s
 	}
 	tw := tabwriter.NewWriter(cmd.OutOrStdout(), 0, 0, 2, ' ', 0)
 	if showFolder {
-		fmt.Fprintln(tw, "ID\tNAME\tSTATE\tUPGRADE\tERROR\tUPDATED\tFOLDER")
+		fmt.Fprintln(tw, "ID\tNAME\tSTATE\tUPGRADE\tERROR\tCREATED\tFOLDER")
 	} else {
-		fmt.Fprintln(tw, "ID\tNAME\tSTATE\tUPGRADE\tERROR\tUPDATED")
+		fmt.Fprintln(tw, "ID\tNAME\tSTATE\tUPGRADE\tERROR\tCREATED")
 	}
 	for _, sandbox := range sandboxes {
 		if showFolder {
@@ -73,7 +77,7 @@ func (a *App) writeSandboxes(cmd *cobra.Command, sandboxes []apimodel.Sandbox, s
 				sandboxDisplayState(sandbox),
 				sandboxUpgradeState(sandbox),
 				truncateTableValue(sandboxMessage(sandbox), 80),
-				formatTime(sandbox.UpdatedAt),
+				formatTime(sandbox.CreatedAt),
 				sandboxFolder(sandbox),
 			)
 			continue
@@ -84,7 +88,7 @@ func (a *App) writeSandboxes(cmd *cobra.Command, sandboxes []apimodel.Sandbox, s
 			sandboxDisplayState(sandbox),
 			sandboxUpgradeState(sandbox),
 			truncateTableValue(sandboxMessage(sandbox), 80),
-			formatTime(sandbox.UpdatedAt),
+			formatTime(sandbox.CreatedAt),
 		)
 	}
 	return tw.Flush()
