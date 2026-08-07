@@ -31,6 +31,15 @@ func registerSandboxProxyRoutes(router chi.Router, service *sandboxService) {
 	router.Method(http.MethodGet, "/api/project/{projectId}/pool/{poolId}/sandboxes/{sandboxId}/execs/{execId}/resources", service.autoStart(service.sandboxAgentProxyHandler()))
 	router.Method(http.MethodGet, "/api/project/{projectId}/pool/{poolId}/sandboxes/{sandboxId}/execs/{execId}/resources/history", service.autoStart(service.sandboxAgentProxyHandler()))
 	router.Method(http.MethodGet, "/api/project/{projectId}/pool/{poolId}/sandboxes/{sandboxId}/execs/{execId}/resources/stream", service.autoStart(service.sandboxAgentProxyHandler()))
+
+	// direct-tcpip tunnel (ADR 0024 §3). Reuses sandboxAgentProxyHandler and
+	// autoStart unchanged: the handler already generically forwards any
+	// /api/project/.../sandboxes/{sandboxId}/* suffix to the sandbox-agent,
+	// and sandboxAgentRequiredScope below already knows this path needs
+	// tcp:connect — this registration is the entire auto-start inheritance
+	// the ADR asks for, achieved by literally reusing autoStart rather than
+	// reimplementing it.
+	router.Method(http.MethodGet, "/api/project/{projectId}/pool/{poolId}/sandboxes/{sandboxId}/tcp/attach", service.autoStart(service.sandboxAgentProxyHandler()))
 }
 
 func (s *sandboxService) sandboxHTTPProxyHandler() http.Handler {
@@ -112,6 +121,12 @@ func sandboxAgentRequiredScope(r *http.Request) string {
 	if strings.Contains(r.URL.Path, "/harness-hooks") {
 		if r.Method == http.MethodGet {
 			return ScopeExecRead
+		}
+		return ""
+	}
+	if strings.Contains(r.URL.Path, "/tcp/attach") {
+		if r.Method == http.MethodGet {
+			return ScopeTCPConnect
 		}
 		return ""
 	}

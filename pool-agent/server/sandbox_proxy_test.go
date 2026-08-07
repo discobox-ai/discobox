@@ -245,3 +245,83 @@ func testPoolTokenSigner(t *testing.T) (string, func(projectID, poolID, sandboxI
 		return token.V4Sign(secretKey, nil)
 	}
 }
+
+func TestSandboxTCPTunnelProxyRequiresTCPConnectScope(t *testing.T) {
+	projectID := "project-1"
+	poolID := "pool-1"
+	sandboxID := "sandbox-1"
+	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/api/projects/project-1/sandboxes/sandbox-1/tcp/attach" {
+			t.Fatalf("upstream path = %q", r.URL.Path)
+		}
+		w.WriteHeader(http.StatusSwitchingProtocols)
+	}))
+	t.Cleanup(upstream.Close)
+	baseURL, err := url.Parse(upstream.URL)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	publicKey, sign := testPoolTokenSigner(t)
+	router, err := NewRouter(Config{
+		Identity:              Identity{ProjectID: projectID, PoolID: poolID},
+		Runtime:               proxyTestRuntime{MemorySandboxRuntime: sandboxruntime.NewMemorySandboxRuntime(), baseURL: baseURL},
+		ControlPlanePublicKey: publicKey,
+	})
+	if err != nil {
+		t.Fatalf("new router: %v", err)
+	}
+
+	// exec:read/exec:write are not tcp:connect: the tunnel route must reject them.
+	req := httptest.NewRequestWithContext(context.Background(), http.MethodGet, "/api/project/project-1/pool/pool-1/sandboxes/sandbox-1/tcp/attach?host=127.0.0.1&port=80", nil)
+	req.Header.Set("Authorization", "Bearer "+sign(projectID, poolID, sandboxID, ScopeExecRead, ScopeExecWrite))
+	req.Header.Set(sandboxAgentAuthorizationHeader, "Bearer sandbox-token")
+	resp := httptest.NewRecorder()
+	router.ServeHTTP(resp, req)
+
+	if resp.Code != http.StatusForbidden {
+		t.Fatalf("proxy status = %d, body = %s", resp.Code, resp.Body.String())
+	}
+}
+
+func TestSandboxTCPTunnelProxyForwardsWithTCPConnectScope(t *testing.T) {
+	projectID := "project-1"
+	poolID := "pool-1"
+	sandboxID := "sandbox-1"
+	var gotQuery string
+	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/api/projects/project-1/sandboxes/sandbox-1/tcp/attach" {
+			t.Fatalf("upstream path = %q", r.URL.Path)
+		}
+		gotQuery = r.URL.RawQuery
+		w.WriteHeader(http.StatusBadGateway) // stand-in: no real listener behind this test's dial target
+	}))
+	t.Cleanup(upstream.Close)
+	baseURL, err := url.Parse(upstream.URL)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	publicKey, sign := testPoolTokenSigner(t)
+	router, err := NewRouter(Config{
+		Identity:              Identity{ProjectID: projectID, PoolID: poolID},
+		Runtime:               proxyTestRuntime{MemorySandboxRuntime: sandboxruntime.NewMemorySandboxRuntime(), baseURL: baseURL},
+		ControlPlanePublicKey: publicKey,
+	})
+	if err != nil {
+		t.Fatalf("new router: %v", err)
+	}
+
+	req := httptest.NewRequestWithContext(context.Background(), http.MethodGet, "/api/project/project-1/pool/pool-1/sandboxes/sandbox-1/tcp/attach?host=127.0.0.1&port=80", nil)
+	req.Header.Set("Authorization", "Bearer "+sign(projectID, poolID, sandboxID, ScopeTCPConnect))
+	req.Header.Set(sandboxAgentAuthorizationHeader, "Bearer sandbox-token")
+	resp := httptest.NewRecorder()
+	router.ServeHTTP(resp, req)
+
+	if resp.Code != http.StatusBadGateway {
+		t.Fatalf("proxy status = %d, body = %s", resp.Code, resp.Body.String())
+	}
+	if gotQuery != "host=127.0.0.1&port=80" {
+		t.Fatalf("upstream query = %q, want host/port forwarded", gotQuery)
+	}
+}

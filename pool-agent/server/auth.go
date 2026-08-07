@@ -24,6 +24,10 @@ const (
 	ScopeTerminalWrite = "terminal:write"
 	ScopeExecRead      = "exec:read"
 	ScopeExecWrite     = "exec:write"
+	// ScopeTCPConnect gates the direct-tcpip tunnel endpoint (ADR 0024 §3):
+	// dialing an arbitrary host:port from inside the sandbox's own network
+	// namespace, distinct from ScopeSandboxHTTP's container-IP-only reach.
+	ScopeTCPConnect = "tcp:connect"
 	// ScopePoolSync authorizes host-wide pool reconciliation (reaping pools not
 	// in the known set). Only the control-plane provider driver carries it.
 	ScopePoolSync = "pool:sync"
@@ -53,6 +57,10 @@ func (c SignedTokenClaims) HasScope(scope string) bool {
 			}
 		case "exec:*":
 			if strings.HasPrefix(scope, "exec:") {
+				return true
+			}
+		case "tcp:*":
+			if strings.HasPrefix(scope, "tcp:") {
 				return true
 			}
 		}

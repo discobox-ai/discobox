@@ -12,7 +12,6 @@ import (
 	"strings"
 	"sync"
 
-	"github.com/coder/websocket"
 	"golang.org/x/crypto/ssh"
 
 	sandboxgen "github.com/obot-platform/discobox/api/sandboxgen"
@@ -331,24 +330,7 @@ func createAndDialExec(ctx context.Context, lease *transport.HTTPClientLease, sa
 	if err != nil {
 		return nil, err
 	}
-	switch attachURL.Scheme {
-	case "https":
-		attachURL.Scheme = "wss"
-	default:
-		attachURL.Scheme = "ws"
-	}
-
-	wsConn, wsResp, err := websocket.Dial(ctx, attachURL.String(), &websocket.DialOptions{HTTPClient: client})
-	if err != nil {
-		if wsResp != nil && wsResp.Body != nil {
-			defer wsResp.Body.Close()
-			data, _ := io.ReadAll(io.LimitReader(wsResp.Body, 64*1024))
-			return nil, fmt.Errorf("attach exec: %s: %s", wsResp.Status, strings.TrimSpace(string(data)))
-		}
-		return nil, fmt.Errorf("attach exec: %w", err)
-	}
-	netConn := websocket.NetConn(ctx, wsConn, websocket.MessageBinary)
-	return &frameConn{conn: netConn}, nil
+	return dialFrameWebSocket(ctx, client, attachURL, "attach exec")
 }
 
 // pump bridges the SSH channel and the exec attach connection until the exec

@@ -23,6 +23,10 @@ import (
 type fakeSandboxService struct {
 	acquireCalls []acquireCall
 	acquireErr   error
+	// acquireResult, when set, is returned instead of acquireErr — for tests
+	// that need a real lease pointed at a fake sandbox-agent/pool-agent HTTP
+	// server.
+	acquireResult func() (*services.HTTPClientLease, *model.Sandbox, error)
 }
 
 type acquireCall struct {
@@ -36,6 +40,9 @@ type acquireCall struct {
 func (f *fakeSandboxService) AcquireSandboxHTTPClient(ctx context.Context, projectID, sandboxID string, scopes []string) (*services.HTTPClientLease, *model.Sandbox, error) {
 	principal, ok := auth.PrincipalFromContext(ctx)
 	f.acquireCalls = append(f.acquireCalls, acquireCall{principal: principal, ok: ok, projectID: projectID, sandboxID: sandboxID, scopes: scopes})
+	if f.acquireResult != nil {
+		return f.acquireResult()
+	}
 	if f.acquireErr != nil {
 		return nil, nil, f.acquireErr
 	}

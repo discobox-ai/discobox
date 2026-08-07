@@ -195,6 +195,7 @@ func newRouterAndManager(cfg Config) (*chi.Mux, *terminal.Service, *execs.Manage
 		protected.Post("/api/projects/{projectId}/sandboxes/{sandboxId}/execs/{execId}/start", func(w http.ResponseWriter, r *http.Request) {
 			handler.startExecHTTP(w, r, chi.URLParam(r, "execId"))
 		})
+		protected.Get("/api/projects/{projectId}/sandboxes/{sandboxId}/tcp/attach", handler.attachTCPTunnelHTTP)
 		protected.Mount("/", generated)
 	})
 	return router, manager, execManager, localStore, nil

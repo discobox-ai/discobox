@@ -41,33 +41,48 @@ func LoadOrCreateHostKey(dataDir string) (ssh.Signer, error) {
 		return nil, err
 	}
 
-	// O_EXCL makes the create atomic: if another process (or another goroutine
-	// racing the same startup) wins, this open fails and the loser must load
-	// the winner's bytes rather than overwrite them — the host key must never
-	// be regenerated once set. Mirrors the "reload the winner" idiom
-	// poolagent/auth.go's EnsureTrustKey uses for a DB unique-constraint race,
-	// adapted here to a filesystem race.
-	file, err := os.OpenFile(path, os.O_CREATE|os.O_EXCL|os.O_WRONLY, 0o600)
-	if err == nil {
-		_, writeErr := file.Write(pemBytes)
-		closeErr := file.Close()
-		if writeErr != nil {
-			return nil, fmt.Errorf("write SSH host key: %w", writeErr)
-		}
-		if closeErr != nil {
-			return nil, fmt.Errorf("write SSH host key: %w", closeErr)
-		}
-		return ssh.ParsePrivateKey(pemBytes)
+	// Write-then-link, not a direct O_EXCL create: O_CREATE|O_EXCL makes the
+	// *creation* atomic, but the content write that follows it is not, so a
+	// concurrent reader (another goroutine or process racing the same
+	// startup) can open the file the instant it is created and read it
+	// before the winner finishes writing, seeing a truncated key. Writing
+	// the complete PEM to a temp file first and only then linking it into
+	// place means the target's content is always complete by the time any
+	// reader — including the loser of the race, immediately below — can see
+	// it at all: Link either produces a fully-written file or fails with
+	// ErrExist and touches nothing.
+	tmpFile, err := os.CreateTemp(dataDir, hostKeyFileName+".tmp-*")
+	if err != nil {
+		return nil, fmt.Errorf("create SSH host key temp file: %w", err)
 	}
-	if !errors.Is(err, os.ErrExist) {
+	tmpPath := tmpFile.Name()
+	defer os.Remove(tmpPath) // best-effort: harmless if Link already moved it out of the way conceptually (a hard link leaves the temp name too, so this always has something to remove).
+	if err := tmpFile.Chmod(0o600); err != nil {
+		_ = tmpFile.Close()
+		return nil, fmt.Errorf("chmod SSH host key temp file: %w", err)
+	}
+	if _, err := tmpFile.Write(pemBytes); err != nil {
+		_ = tmpFile.Close()
+		return nil, fmt.Errorf("write SSH host key: %w", err)
+	}
+	if err := tmpFile.Close(); err != nil {
 		return nil, fmt.Errorf("write SSH host key: %w", err)
 	}
 
-	existing, err := os.ReadFile(path)
-	if err != nil {
-		return nil, fmt.Errorf("read SSH host key after generation race: %w", err)
+	if err := os.Link(tmpPath, path); err != nil {
+		if !errors.Is(err, os.ErrExist) {
+			return nil, fmt.Errorf("write SSH host key: %w", err)
+		}
+		// Reload the winner's bytes rather than trust our own, mirroring the
+		// "reload the winner" idiom poolagent/auth.go's EnsureTrustKey uses
+		// for a DB unique-constraint race, adapted here to a filesystem one.
+		existing, err := os.ReadFile(path)
+		if err != nil {
+			return nil, fmt.Errorf("read SSH host key after generation race: %w", err)
+		}
+		return ssh.ParsePrivateKey(existing)
 	}
-	return ssh.ParsePrivateKey(existing)
+	return ssh.ParsePrivateKey(pemBytes)
 }
 
 func generateHostKeyPEM() ([]byte, error) {

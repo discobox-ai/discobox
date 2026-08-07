@@ -23,6 +23,8 @@ const (
 	// carrying it are minted server-side with this scope hardcoded, never
 	// derived from a caller's request (see server's MintSandboxAgentStatusTokens).
 	ScopeStatusRead = "status:read"
+	// ScopeTCPConnect gates the direct-tcpip tunnel endpoint (ADR 0024 §3).
+	ScopeTCPConnect = "tcp:connect"
 )
 
 type signedTokenClaimsContextKey struct{}
@@ -45,6 +47,10 @@ func (c SignedTokenClaims) HasScope(scope string) bool {
 			}
 		case "exec:*":
 			if strings.HasPrefix(scope, "exec:") {
+				return true
+			}
+		case "tcp:*":
+			if strings.HasPrefix(scope, "tcp:") {
 				return true
 			}
 		}
@@ -192,6 +198,12 @@ func requiredRequestScope(r *http.Request) string {
 		default:
 			return ""
 		}
+	}
+	if strings.Contains(r.URL.Path, "/tcp/attach") {
+		if r.Method == http.MethodGet {
+			return ScopeTCPConnect
+		}
+		return ""
 	}
 	return ""
 }

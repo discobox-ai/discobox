@@ -65,19 +65,18 @@ func cutLast(s, sep string) (before, after string, ok bool) {
 	return s[:i], s[i+len(sep):], true
 }
 
-// resolveProject matches a project by exact slug, then exact name, then
-// id.ResolveShort against project IDs — mirroring the CLI's
-// resolvePoolID/resolveHarnessConfigID name-or-slug-then-ID-prefix
-// convention, since there is no GetProjectByName store method.
+// resolveProject matches a project by exact name, then id.ResolveShort against
+// project IDs — mirroring the CLI's resolvePoolID/resolveHarnessConfigID
+// name-then-ID-prefix convention, since there is no GetProjectByName store
+// method.
+//
+// A name is a key here rather than a label: it is unique per owner
+// (idx_project_owner_name). This used to try a slug first, which no longer
+// exists — a project is addressed by ID, and by name as a convenience.
 func resolveProject(ctx context.Context, db *store.Store, value string) (*model.Project, error) {
 	projects, err := db.ListProjects(ctx)
 	if err != nil {
 		return nil, err
-	}
-	for _, p := range projects {
-		if p.Slug == value {
-			return &p, nil
-		}
 	}
 	for _, p := range projects {
 		if p.Name == value {
