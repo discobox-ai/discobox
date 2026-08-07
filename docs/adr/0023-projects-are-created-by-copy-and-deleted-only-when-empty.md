@@ -1,6 +1,6 @@
 # 0023 — A project is created by copying an existing one, and deleted only when empty
 
-- **Status**: Proposed
+- **Status**: Accepted
 - **Date**: 2026-08-06
 
 ## Context
