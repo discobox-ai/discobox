@@ -1,0 +1,21 @@
+[Unit]
+Description=Discobox Render Docker's Proxy-Trust Environment
+Documentation=https://github.com/obot-platform/discobox
+DefaultDependencies=no
+After=local-fs.target
+Before=docker.service sysinit.target
+ConditionPathExists=/etc/discobox/sandbox.json
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+# Derives /run/discobox/proxy/proxy.env from sandbox.json's proxy-trust env
+# (proxyenv package): docker.service.d/proxy.conf reads that file as its
+# EnvironmentFile, since dockerd is started by docker.socket activation and
+# inherits none of the sandbox's proxy env any other way. Run as a unit of its
+# own, rather than folded into the PID-1 boot flow, so it can be re-run
+# (`systemctl restart`) without restarting the sandbox.
+ExecStart=/usr/local/bin/discobox-sandbox-agent render-proxy-env
+
+[Install]
+WantedBy=sysinit.target

@@ -8,7 +8,9 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/obot-platform/discobox/sandbox-agent/nestedbridge"
 	"github.com/obot-platform/discobox/sandbox-agent/runuser"
+	"github.com/obot-platform/discobox/sandboxconfig"
 )
 
 func TestManagerMergesConfigEnvWithRequestOverrides(t *testing.T) {
@@ -36,6 +38,42 @@ func TestManagerMergesConfigEnvWithRequestOverrides(t *testing.T) {
 	}
 	if env["TERM"] != defaultTerm {
 		t.Fatalf("TERM = %q, want %q", env["TERM"], defaultTerm)
+	}
+}
+
+// pool-agent cannot know a sandbox's own directly-connected networks (Docker
+// allocates them), so it leaves sandboxconfig.LocalSubnetsToken in NO_PROXY
+// for sandbox-agent to resolve. Every exec must see the real list, not the
+// literal placeholder, and resolved fresh -- not once at manager construction
+// -- since the nested-Docker bridge and any user-created networks only appear
+// after the sandbox has booted.
+func TestManagerResolvesLocalSubnetsTokenPerExec(t *testing.T) {
+	runner := &fakeUnitManager{}
+	manager, err := NewManagerWithConfig(ManagerConfig{
+		WorkingRoot: "/workspace",
+		RuntimeDir:  t.TempDir(),
+		Env:         map[string]string{"NO_PROXY": "127.0.0.1,localhost,::1," + sandboxconfig.LocalSubnetsToken},
+		Units:       runner,
+	})
+	if err != nil {
+		t.Fatalf("new manager: %v", err)
+	}
+
+	if _, err := manager.Create(context.Background(), CreateRequest{Command: []string{"echo", "ok"}}); err != nil {
+		t.Fatalf("create exec: %v", err)
+	}
+
+	noProxy := runner.starts[0].Env["NO_PROXY"]
+	if strings.Contains(noProxy, sandboxconfig.LocalSubnetsToken) {
+		t.Fatalf("token left unresolved: %q", noProxy)
+	}
+	if !strings.Contains(noProxy, "127.0.0.1") {
+		t.Fatalf("literal exemptions were lost: %q", noProxy)
+	}
+	for _, cidr := range nestedbridge.LocalSubnets() {
+		if !strings.Contains(noProxy, cidr) {
+			t.Fatalf("local subnet %s missing from %q", cidr, noProxy)
+		}
 	}
 }
 

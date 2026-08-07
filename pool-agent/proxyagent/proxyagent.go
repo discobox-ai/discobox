@@ -524,37 +524,15 @@ func EnsureSandboxMaterial(projectID, poolID, sandboxID string) (*SandboxMateria
 	// the boot-time update-ca-certificates step covers them without env vars
 	// — and so does sandbox-agent's runc wrapper mounting the same bundle
 	// path into a nested container.
-
-	// A systemd EnvironmentFile rendering of the same map, for sandbox daemons
-	// systemd starts directly rather than sandbox-agent spawning them: those
-	// never inherit Env above. dockerd is the one that matters — it resolves
-	// and pulls images itself, before any container exists, so no
-	// container-level injection can reach it, and the sandbox has no route
-	// off-box, so without this every image pull fails DNS resolution.
-	// docker.service.d/proxy.conf reads it with a leading `-`, so a sandbox
-	// with no proxy configured (no material written here at all) is unaffected.
-	if err := os.WriteFile(resolve(filepath.Join(writeDir, "proxy.env")), renderEnvFile(env), 0o644); err != nil { //nolint:gosec // proxy URL and bundle path are not secret; matches the 0644 public CAs beside it.
-		return nil, fmt.Errorf("write proxy env file: %w", err)
-	}
+	//
+	// Sandbox daemons systemd starts directly (dockerd, notably) never inherit
+	// this map: they are units, and units never inherit the container's own
+	// env. That is not solved here — pool-agent cannot resolve
+	// sandboxconfig.LocalSubnetsToken, only sandbox-agent can, so sandbox-agent
+	// derives its own systemd EnvironmentFile from sandbox.json's Env/ProxyEnvs
+	// at boot. See sandbox-agent's proxyenv package and
+	// discobox-render-proxy-env.service.
 	return &SandboxMaterial{MountSource: mountSource, Env: env}, nil
-}
-
-// renderEnvFile renders env as a systemd EnvironmentFile: one KEY="value" per
-// line, sorted so the file is byte-stable across rewrites. Values are quoted
-// rather than emitted bare because systemd applies shell-like unquoting to
-// this format, so an unquoted value would be at the mercy of whatever
-// characters a future entry in the map happens to carry.
-func renderEnvFile(env map[string]string) []byte {
-	names := make([]string, 0, len(env))
-	for name := range env {
-		names = append(names, name)
-	}
-	sort.Strings(names)
-	var b strings.Builder
-	for _, name := range names {
-		fmt.Fprintf(&b, "%s=%s\n", name, strconv.Quote(env[name]))
-	}
-	return []byte(b.String())
 }
 
 // copyFile copies proxy material into a per-sandbox directory. dst is always

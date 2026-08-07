@@ -499,11 +499,7 @@ func proxyEnv(cfg Config) (map[string]string, error) {
 		// which wrote it, and this is the point where the real networks are
 		// known. Enumerating here rather than at boot matters because the
 		// nested-Docker bridge and any user-created networks appear later.
-		if strings.Contains(value, sandboxconfig.LocalSubnetsToken) {
-			value = strings.ReplaceAll(value, sandboxconfig.LocalSubnetsToken,
-				strings.Join(nestedbridge.LocalSubnets(), ","))
-			value = strings.Trim(strings.ReplaceAll(value, ",,", ","), ",")
-		}
+		value = sandboxconfig.ResolveLocalSubnetsToken(value, nestedbridge.LocalSubnets())
 		if loopback != "" && strings.Contains(value, loopback) {
 			// This value names the sandbox-local forwarder, which is the
 			// container's *own* loopback once inside — unreachable. Rewrite it

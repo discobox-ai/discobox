@@ -250,6 +250,16 @@ flowchart LR
 - Keep harness behavior opaque. The pool host transports only selected harness
   identity, `harnessMode`, and the non-secret project file overlay. Commands and
   the project harness catalog are image-owned and never interpreted here.
+- The injected `NO_PROXY` carries `sandboxconfig.LocalSubnetsToken` in place of
+  the sandbox's own directly-connected networks: pool-agent cannot know them
+  (Docker allocates them, and the nested-Docker bridge does not exist until the
+  sandbox's own dockerd first starts). sandbox-agent resolves it — `execs` and
+  `terminal` per exec, `runcca` per nested container OCI spec. `docker.service`
+  is a separate case: it is started by socket activation rather than spawned by
+  sandbox-agent, so it inherits none of the above and can't be reached by any
+  per-container injection. It gets its env from a file sandbox-agent renders at
+  boot from `sandbox.json` itself (`proxyenv` package,
+  `discobox-render-proxy-env.service`) — pool-agent does not write it.
 - MITM CA trust is split by how tools find roots: the sandbox
   `discobox-trust-ca.service` runs `update-ca-certificates` early in boot so the
   system bundle (curl, git, wget, OpenSSL, and the `SSL_CERT_FILE` /

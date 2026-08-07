@@ -12,8 +12,10 @@ import (
 	"time"
 
 	"github.com/obot-platform/discobox/id"
+	"github.com/obot-platform/discobox/sandbox-agent/nestedbridge"
 	"github.com/obot-platform/discobox/sandbox-agent/runuser"
 	"github.com/obot-platform/discobox/sandbox-agent/shimproxy"
+	"github.com/obot-platform/discobox/sandboxconfig"
 )
 
 type Status string
@@ -245,13 +247,24 @@ func MergeEnv(base, override map[string]string) map[string]string {
 }
 
 // EnvWithRuntimeDefaults fills TERM and USER/LOGNAME/HOME into env without
-// overriding existing entries. Image env defaults are no longer applied here:
-// pool-agent's Effective() call already merges them into the sandbox's
-// effective Env (ADR 0012 §2), so env already carries them. Exported for the
-// terminal layer.
+// overriding existing entries, and resolves sandboxconfig.LocalSubnetsToken
+// (pool-agent cannot know the sandbox's own directly-connected networks, so it
+// leaves this placeholder in NO_PROXY for the sandbox side to fill in). Image
+// env defaults are no longer applied here: pool-agent's Effective() call
+// already merges them into the sandbox's effective Env (ADR 0012 §2), so env
+// already carries them. Exported for the terminal layer.
+//
+// The token is resolved here, at exec time, rather than once when sandbox.json
+// is loaded: this is the same reasoning runcca.proxyEnv uses for a nested
+// container's env, and it holds just as well for an exec's — the nested-Docker
+// bridge and any user-created networks appear only after boot, so an exec
+// started later must see them too.
 func EnvWithRuntimeDefaults(env map[string]string, user *User) map[string]string {
 	if env == nil {
 		env = map[string]string{}
+	}
+	for key, value := range env {
+		env[key] = sandboxconfig.ResolveLocalSubnetsToken(value, nestedbridge.LocalSubnets())
 	}
 	if _, ok := env["TERM"]; !ok {
 		env["TERM"] = defaultTerm

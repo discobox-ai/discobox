@@ -21,6 +21,7 @@ import (
 	"github.com/obot-platform/discobox/sandbox-agent/execs"
 	harnesshooks "github.com/obot-platform/discobox/sandbox-agent/hooks"
 	"github.com/obot-platform/discobox/sandbox-agent/nestedbridge"
+	"github.com/obot-platform/discobox/sandbox-agent/proxyenv"
 	"github.com/obot-platform/discobox/sandbox-agent/server"
 	agentstore "github.com/obot-platform/discobox/sandbox-agent/store"
 )
@@ -41,6 +42,9 @@ func run(args []string) int {
 	}
 	if len(args) > 0 && args[0] == "proxy-bridge" {
 		return runProxyBridge(args[1:])
+	}
+	if len(args) > 0 && args[0] == "render-proxy-env" {
+		return runRenderProxyEnv(args[1:])
 	}
 	if len(args) > 0 && args[0] == "init" {
 		return boot.Init(slog.Default(), args[1:])
@@ -210,6 +214,26 @@ func runProxyBridge(args []string) int {
 		}
 		return 0
 	}
+}
+
+// runRenderProxyEnv regenerates the systemd EnvironmentFile docker.service
+// reads its proxy-trust env from. It runs as discobox-render-proxy-env.service,
+// ordered before docker.service, since dockerd is started by docker.socket
+// activation rather than spawned by sandbox-agent and so inherits none of the
+// sandbox's proxy env any other way. See the proxyenv package.
+func runRenderProxyEnv(args []string) int {
+	var sandboxJSON, out string
+	flags := flag.NewFlagSet("discobox-sandbox-agent render-proxy-env", flag.ContinueOnError)
+	flags.StringVar(&sandboxJSON, "sandbox-json", proxyenv.DefaultSandboxJSON, "path to sandbox manifest")
+	flags.StringVar(&out, "out", proxyenv.DefaultOutputPath, "path to write the rendered EnvironmentFile")
+	if err := flags.Parse(args); err != nil {
+		return 2
+	}
+	if err := proxyenv.WriteFile(sandboxJSON, out); err != nil {
+		slog.Error("render proxy env", "error", err)
+		return 1
+	}
+	return 0
 }
 
 func runExecShim(args []string) int {

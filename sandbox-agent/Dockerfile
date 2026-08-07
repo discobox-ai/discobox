@@ -249,6 +249,7 @@ COPY sandbox-agent/image/profile.d/sandbox-dev-tools.sh /etc/profile.d/sandbox-d
 COPY sandbox-agent/image/systemd/discobox-sandbox-agent.service /etc/systemd/system/discobox-sandbox-agent.service
 COPY sandbox-agent/image/systemd/discobox-proxy-bridge.service /etc/systemd/system/discobox-proxy-bridge.service
 COPY sandbox-agent/image/systemd/discobox-trust-ca.service /etc/systemd/system/discobox-trust-ca.service
+COPY sandbox-agent/image/systemd/discobox-render-proxy-env.service /etc/systemd/system/discobox-render-proxy-env.service
 COPY sandbox-agent/image/systemd/containerd.service.d/runc-ca.conf /etc/systemd/system/containerd.service.d/runc-ca.conf
 COPY sandbox-agent/image/systemd/docker.service.d/runc-ca.conf /etc/systemd/system/docker.service.d/runc-ca.conf
 COPY sandbox-agent/image/systemd/docker.service.d/proxy.conf /etc/systemd/system/docker.service.d/proxy.conf
@@ -291,6 +292,7 @@ RUN chmod 0755 /usr/local/bin/discobox-sandbox-agent \
         discobox-sandbox-agent.service \
         discobox-proxy-bridge.service \
         discobox-trust-ca.service \
+        discobox-render-proxy-env.service \
         x11-display.socket \
         x11vnc.socket \
         websockify-proxy.socket

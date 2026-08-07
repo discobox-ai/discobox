@@ -4,7 +4,11 @@
 // more than one layer.
 package sandboxconfig
 
-import "github.com/obot-platform/discobox/harness"
+import (
+	"strings"
+
+	"github.com/obot-platform/discobox/harness"
+)
 
 // Document is the full, unmerged input to Effective. Runtime is assembled by
 // the control plane/pool-agent from the create request, Image is snapshotted
@@ -176,3 +180,21 @@ type ProjectLayer struct {
 // split: pool-agent decides *where* local subnets are needed, sandbox-agent
 // decides *what* they are.
 const LocalSubnetsToken = "%LOCAL_SUBNETS%" //nolint:gosec // G101: a placeholder token, not a credential.
+
+// ResolveLocalSubnetsToken substitutes LocalSubnetsToken in value with subnets
+// (each sandbox-agent's own enumeration of its directly-connected networks),
+// joined the same way the rest of an env-list value is: comma-separated. value
+// is returned unchanged when it carries no token, so calling this
+// unconditionally on every env value is safe.
+//
+// The substitution collapses any resulting empty entries (a leading, trailing,
+// or doubled comma) rather than leaving them for the NO_PROXY parser to trip
+// over — that happens whenever subnets is empty, or the token sits at either
+// end of value.
+func ResolveLocalSubnetsToken(value string, subnets []string) string {
+	if !strings.Contains(value, LocalSubnetsToken) {
+		return value
+	}
+	value = strings.ReplaceAll(value, LocalSubnetsToken, strings.Join(subnets, ","))
+	return strings.Trim(strings.ReplaceAll(value, ",,", ","), ",")
+}

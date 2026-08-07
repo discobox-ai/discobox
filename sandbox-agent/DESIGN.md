@@ -25,6 +25,8 @@ runtime operations.
 | `shimruntime` | The platform half of an exec attach: Unix socket setup, the HTTP upgrade, the PTY, and the screen emulator behind repaint-on-attach. The stream itself — attachers, ordering, buffering, exit retention — is the root module's `execstream/host`, which this drives and implements `host.Replayer` for. |
 | `hooks` | Local Unix-socket collector and publisher protocol for coding-harness lifecycle hook payloads. |
 | `runcca` | The sandbox's runc wrapper (`cmd/discobox-runc`): installed as `runc` ahead of the real one on containerd's and dockerd's PATH, it mounts the sandbox's CA trust bundles and injects proxy-trust env into every container's OCI spec, so a user's Dockerfile or `docker run` never needs MITM awareness. See ADR 0020, which supersedes 0015's NRI plugin — containerd invokes NRI only from its CRI path, which dockerd does not use. Handles both `runc create` (the `docker run` path, via the containerd shim) and `runc run` (the `docker build` path, via BuildKit's executor). Bundles are staged per boot by `discobox-trust-ca.service` under `/run/discobox/proxy/ca-bundles`; they cannot live beside the CA in `/etc/discobox/proxy`, which is pool-agent's read-only mount. |
+| `nestedbridge` | Discovers the nested Docker daemon's bridge address and publishes it under `/run` for the bridge-facing proxy forwarder and the runc wrapper. Also enumerates this sandbox's own directly-connected IPv4 networks (`LocalSubnets`), the resolution target for `sandboxconfig.LocalSubnetsToken`. |
+| `proxyenv` | Renders `sandbox.json`'s proxy-trust env (`Env`/`ProxyEnvs`) as a systemd `EnvironmentFile`, for `docker.service` — started by socket activation, not spawned by sandbox-agent, so it inherits no container env and cannot be reached by any per-container injection. Resolves `sandboxconfig.LocalSubnetsToken` against `nestedbridge.LocalSubnets()`, the same substitution `runcca.proxyEnv` applies for nested containers. Run at boot by `discobox-render-proxy-env.service`, ordered before `docker.service`, writing to `/run/discobox/proxy/proxy.env` (not `/etc/discobox`, which is pool-agent's read-only mount). |
 | `dockercache` | The sandbox's `docker` CLI wrapper (`cmd/discobox-docker`): installed as `docker` ahead of the real CLI on PATH, it gives `docker build` a BuildKit local cache on the pool-shared cache volume so a build in one sandbox is reused by the others. Only build commands are rewritten; everything else is exec'd straight through. |
 | `resources` | Opaque cgroup/procfs/systemd-style resource snapshot collection for exec runtimes. |
 | `store` | Sandbox-local SQLite/GORM audit log, observed terminal state snapshots, retained resource blobs, and compressed exec/terminal transcript chunks (see ADR 0028). |
@@ -40,6 +42,15 @@ runtime operations.
   module unless a shared contract belongs in the root module.
 - Do not call back to the pool host-harness or server; resolved config is injected
   into the sandbox and read locally.
+- Any code that reads `sandbox.json`'s `Env` to actually launch or configure
+  something (an exec, a nested container's OCI spec, a systemd
+  `EnvironmentFile`) must resolve `sandboxconfig.LocalSubnetsToken` via
+  `nestedbridge.LocalSubnets()` first — pool-agent cannot know a sandbox's own
+  directly-connected networks and leaves the token as a placeholder. Resolve it
+  at the point of use, not once and cached: the nested Docker bridge and any
+  user-created networks only exist after the sandbox has booted, so a value
+  resolved earlier goes stale. `execs.EnvWithRuntimeDefaults`, `runcca.proxyEnv`,
+  and `proxyenv.Render` are the three current call sites.
 - Load the single immutable harness contract from
   `/usr/share/discobox/image.json`. Commands, static files, and config-mode
   behavior are image-owned; the sandbox manifest contributes selection, mode,

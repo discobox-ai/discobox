@@ -4,7 +4,6 @@ import (
 	"os"
 	"path/filepath"
 	"sort"
-	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -25,7 +24,7 @@ func TestEnsureSandboxMaterialStagesClientOnly(t *testing.T) {
 	}
 
 	dir := material.MountSource
-	for _, name := range []string{"mtls-ca.crt", "mitm-ca.crt", "client.crt", "client.key", "bridge.json", "bridge-docker.json", "proxy.env"} {
+	for _, name := range []string{"mtls-ca.crt", "mitm-ca.crt", "client.crt", "client.key", "bridge.json", "bridge-docker.json"} {
 		if _, err := os.Stat(resolve(filepath.Join(dir, name))); err != nil {
 			t.Fatalf("expected staged file %q: %v", name, err)
 		}
@@ -223,45 +222,6 @@ func TestEnsureSandboxMaterialReusesClientCertificate(t *testing.T) {
 
 	if string(firstCert) != string(secondCert) {
 		t.Fatal("client certificate was not reused across calls")
-	}
-}
-
-// dockerd is started by socket activation, not spawned by sandbox-agent, so it
-// inherits none of SandboxMaterial.Env. docker.service.d/proxy.conf reads this
-// rendering instead; without it every image pull in a sandbox fails to resolve
-// its registry, since the sandbox has no route off-box.
-func TestEnsureSandboxMaterialRendersProxyEnvFile(t *testing.T) {
-	withTestRoot(t)
-
-	material, err := EnsureSandboxMaterial("project-1", "pool-1", "sandbox-1")
-	if err != nil {
-		t.Fatalf("EnsureSandboxMaterial() error = %v", err)
-	}
-
-	data, err := os.ReadFile(resolve(filepath.Join(material.MountSource, "proxy.env")))
-	if err != nil {
-		t.Fatalf("read proxy.env: %v", err)
-	}
-	got := string(data)
-
-	// Every name in Env must round-trip, quoted, so systemd's shell-like
-	// unquoting of this format cannot reinterpret a value.
-	for name, value := range material.Env {
-		if want := name + "=" + strconv.Quote(value) + "\n"; !strings.Contains(got, want) {
-			t.Fatalf("proxy.env missing %q\ngot:\n%s", want, got)
-		}
-	}
-
-	// dockerd runs in the sandbox's own netns, so it reaches the loopback
-	// forwarder directly — not the nested-container bridge address.
-	if want := `HTTP_PROXY="http://` + SandboxForwarderListen + `"`; !strings.Contains(got, want) {
-		t.Fatalf("proxy.env missing %q\ngot:\n%s", want, got)
-	}
-
-	// Sorted, so a rewrite with unchanged material is byte-identical.
-	lines := strings.Split(strings.TrimSpace(got), "\n")
-	if !sort.StringsAreSorted(lines) {
-		t.Fatalf("proxy.env lines not sorted: %v", lines)
 	}
 }
 
