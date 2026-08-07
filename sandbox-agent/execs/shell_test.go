@@ -195,3 +195,25 @@ func TestQuoteShellCommand(t *testing.T) {
 		t.Fatal("empty argv must produce no bytes to inject")
 	}
 }
+
+func TestResolveCommandShellCommandLine(t *testing.T) {
+	writePasswd(t, "")
+
+	if _, err := resolveCommand(CreateRequest{Shell: true, Command: []string{"ls"}, ShellCommandLine: "ls -la"}, nil, nil); err == nil {
+		t.Fatal("shell with a command was accepted")
+	}
+
+	command, err := resolveCommand(CreateRequest{Shell: true, ShellCommandLine: "ls -la"}, nil, map[string]string{"SHELL": "/bin/bash"})
+	if err != nil {
+		t.Fatalf("resolve shell command line: %v", err)
+	}
+	want := []string{"/bin/bash", "-lc", "ls -la"}
+	if len(command) != len(want) {
+		t.Fatalf("command = %v, want %v", command, want)
+	}
+	for i := range want {
+		if command[i] != want[i] {
+			t.Fatalf("command = %v, want %v", command, want)
+		}
+	}
+}

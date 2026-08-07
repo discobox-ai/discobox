@@ -675,7 +675,7 @@ func TestNewAppStartsWithDefaults(t *testing.T) {
 	ctx := context.Background()
 	db := newAppTestDB(ctx, t)
 
-	router, err := NewApp(ctx, db.Write, db.Read)
+	router, _, _, err := NewApp(ctx, db.Write, db.Read)
 	if err != nil {
 		t.Fatalf("new database router: %v", err)
 	}
@@ -705,7 +705,7 @@ func TestNewAppResolvesDefaultProjectAlias(t *testing.T) {
 	ctx := context.Background()
 	db := newAppTestDB(ctx, t)
 
-	router, err := NewApp(ctx, db.Write, db.Read)
+	router, _, _, err := NewApp(ctx, db.Write, db.Read)
 	if err != nil {
 		t.Fatalf("new database router: %v", err)
 	}
@@ -733,7 +733,7 @@ func TestProjectStreamReceivesSandboxMutation(t *testing.T) {
 	ctx := context.Background()
 	db := newAppTestDB(ctx, t)
 
-	router, err := NewApp(ctx, db.Write, db.Read)
+	router, _, _, err := NewApp(ctx, db.Write, db.Read)
 	if err != nil {
 		t.Fatalf("new database router: %v", err)
 	}

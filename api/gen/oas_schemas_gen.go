@@ -748,6 +748,9 @@ type CreateSandboxExecRequest struct {
 	// Run the run user's login shell instead of a command. The sandbox resolves which shell that is from
 	// the user's passwd entry. Mutually exclusive with command and harnessId.
 	Shell OptBool `json:"shell"`
+	// When shell is set, run the resolved login shell with `-lc <shellCommandLine>` instead of an
+	// interactive login shell. Ignored unless shell is set.
+	ShellCommandLine OptString `json:"shellCommandLine"`
 	// Harness CLI to start in terminal mode. Defaults to the sandbox configured harness when omitted.
 	// Mutually exclusive with command and shell.
 	HarnessId OptString `json:"harnessId"`
@@ -777,6 +780,11 @@ func (s *CreateSandboxExecRequest) GetCommand() []string {
 // GetShell returns the value of Shell.
 func (s *CreateSandboxExecRequest) GetShell() OptBool {
 	return s.Shell
+}
+
+// GetShellCommandLine returns the value of ShellCommandLine.
+func (s *CreateSandboxExecRequest) GetShellCommandLine() OptString {
+	return s.ShellCommandLine
 }
 
 // GetHarnessId returns the value of HarnessId.
@@ -832,6 +840,11 @@ func (s *CreateSandboxExecRequest) SetCommand(val []string) {
 // SetShell sets the value of Shell.
 func (s *CreateSandboxExecRequest) SetShell(val OptBool) {
 	s.Shell = val
+}
+
+// SetShellCommandLine sets the value of ShellCommandLine.
+func (s *CreateSandboxExecRequest) SetShellCommandLine(val OptString) {
+	s.ShellCommandLine = val
 }
 
 // SetHarnessId sets the value of HarnessId.

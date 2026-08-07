@@ -79,13 +79,19 @@ type CreateRequest struct {
 	// as if the caller had typed it themselves. It requires Shell and is
 	// mutually exclusive with Command. See Exec.StartupCommand for why.
 	StartupCommand []string
-	Workdir        string
-	Env            map[string]string
-	User           *User
-	TTY            bool
-	Rows           uint16
-	Cols           uint16
-	Metadata       map[string]string
+	// ShellCommandLine, when set alongside Shell, runs the resolved login
+	// shell with `-lc <ShellCommandLine>` instead of an interactive login
+	// shell. It exists for callers outside the sandbox — the SSH ingress's
+	// `exec "cmd"` channel type carries one opaque command-line string — that
+	// cannot resolve the login shell path themselves (ADR 0024 §2).
+	ShellCommandLine string
+	Workdir          string
+	Env              map[string]string
+	User             *User
+	TTY              bool
+	Rows             uint16
+	Cols             uint16
+	Metadata         map[string]string
 }
 
 type UnitManager interface {
@@ -629,6 +635,13 @@ func resolveCommand(req CreateRequest, user *User, env map[string]string) ([]str
 	if req.Shell {
 		if len(req.Command) > 0 {
 			return nil, errors.New("exec shell and command are mutually exclusive")
+		}
+		if req.ShellCommandLine != "" {
+			shell, err := ResolveShell(user, env)
+			if err != nil {
+				return nil, err
+			}
+			return []string{shell, "-lc", req.ShellCommandLine}, nil
 		}
 		return ShellCommand(user, env)
 	}

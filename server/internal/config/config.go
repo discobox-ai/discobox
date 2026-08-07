@@ -4,6 +4,7 @@ package config
 
 import (
 	"fmt"
+	"net"
 	"os"
 	"path/filepath"
 	"strconv"
@@ -29,6 +30,12 @@ type Config struct {
 	Port                int
 	Listen              []string
 	AutoShutdownTimeout time.Duration
+
+	// SSHListen is the address the SSH control-plane ingress (ADR 0024) binds,
+	// e.g. ":3222". Empty disables it: unlike the local-IPC HTTP endpoint, an
+	// SSH listener is a machine-wide TCP surface that is opted into, never
+	// implied (server/DESIGN.md "Listen Endpoints").
+	SSHListen string
 
 	// XDG-backed application directories.
 	DataDir   string
@@ -77,6 +84,7 @@ func Load() (*Config, error) {
 	cfg.Port = getEnvInt("PORT", controlplane.DefaultPort)
 	cfg.Listen = listenEndpoints()
 	cfg.AutoShutdownTimeout = getEnvDuration("DISCOBOX_SERVER_IDLE_TIMEOUT", 0)
+	cfg.SSHListen = getEnv("DISCOBOX_SSH_LISTEN", "")
 
 	cfg.DataDir = getEnv("DISCOBOX_DATA_DIR", filepath.Join(xdg.DataHome, appName))
 	cfg.ConfigDir = getEnv("DISCOBOX_CONFIG_DIR", filepath.Join(xdg.ConfigHome, appName))
@@ -128,6 +136,11 @@ func Load() (*Config, error) {
 	}
 	if cfg.AutoShutdownTimeout < 0 {
 		return nil, fmt.Errorf("DISCOBOX_SERVER_IDLE_TIMEOUT must be greater than or equal to 0")
+	}
+	if cfg.SSHListen != "" {
+		if _, _, err := net.SplitHostPort(cfg.SSHListen); err != nil {
+			return nil, fmt.Errorf("DISCOBOX_SSH_LISTEN must be a host:port address: %w", err)
+		}
 	}
 	if cfg.DataDir == "" {
 		return nil, fmt.Errorf("DISCOBOX_DATA_DIR is required")

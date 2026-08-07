@@ -765,6 +765,9 @@ components:
                 shell:
                     description: Run the run user's login shell instead of a command. The sandbox resolves which shell that is from the user's passwd entry. Mutually exclusive with command and harnessId.
                     type: boolean
+                shellCommandLine:
+                    description: When shell is set, run the resolved login shell with `-lc <shellCommandLine>` instead of an interactive login shell. Ignored unless shell is set.
+                    type: string
                 harnessId:
                     description: Harness CLI to start in terminal mode. Defaults to the sandbox configured harness when omitted. Mutually exclusive with command and shell.
                     type: string

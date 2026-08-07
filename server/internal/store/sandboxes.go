@@ -229,6 +229,24 @@ func (s *Store) GetSandbox(ctx context.Context, projectID, sandboxID string, opt
 	return firstByID[model.Sandbox](query, "id", sandboxID)
 }
 
+// FindSandboxByIDPrefix resolves a sandbox ID or ID-prefix across all
+// projects, unscoped by project ID. It exists for the SSH ingress's bare
+// `sbx_...` username form (ADR 0024 §1), which names a sandbox before the
+// connecting principal's project membership is known; every other caller
+// should use the project-scoped GetSandbox.
+func (s *Store) FindSandboxByIDPrefix(ctx context.Context, idOrPrefix string) (*model.Sandbox, error) {
+	read, err := s.getRead(ctx)
+	if err != nil {
+		return nil, err
+	}
+	query := read.
+		Preload("Project").
+		Preload("Pool").
+		Preload("Pool.ProviderInstance").
+		Preload("HarnessConfig")
+	return firstByID[model.Sandbox](query, "id", idOrPrefix)
+}
+
 func (s *Store) UpdateSandbox(ctx context.Context, sandbox *model.Sandbox, options ...SandboxGetOption) error {
 	var opts sandboxGetOptions
 	for _, option := range options {

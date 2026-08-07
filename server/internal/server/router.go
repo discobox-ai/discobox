@@ -97,8 +97,12 @@ func registerProjectStreamTransports(router chi.Router, service services.Project
 	projectstream.RegisterProjectStreamSSERoutes(router, service)
 }
 
-// NewApp creates the app backed by persistent services.
-func NewApp(ctx context.Context, writeDB, readDB *gorm.DB, options ...AppOptions) (*chi.Mux, error) {
+// NewApp creates the app backed by persistent services. Alongside the router
+// it returns the assembled services and store so an in-process, non-HTTP
+// caller — the SSH ingress (ADR 0024) — can drive the same
+// AcquireSandboxHTTPClient choke point and username resolution an HTTP
+// caller would, without a wrapper or a second service assembly.
+func NewApp(ctx context.Context, writeDB, readDB *gorm.DB, options ...AppOptions) (*chi.Mux, services.Services, *store.Store, error) {
 	opts := DefaultAppOptions()
 	if len(options) > 0 {
 		opts = options[0]
@@ -116,11 +120,11 @@ func NewApp(ctx context.Context, writeDB, readDB *gorm.DB, options ...AppOptions
 		PollInterval: opts.DispatcherPollInterval,
 	})
 	if err != nil {
-		return nil, err
+		return nil, services.Services{}, nil, err
 	}
 	developmentImageSync, err := dockerworker.NewDevelopmentImageSynchronizer(opts.DevelopmentImages)
 	if err != nil {
-		return nil, fmt.Errorf("configure development image synchronization: %w", err)
+		return nil, services.Services{}, nil, fmt.Errorf("configure development image synchronization: %w", err)
 	}
 	// Pool backends that cannot be dialed inward hand their guest-initiated
 	// control-plane connections to this hub; Serve treats it as one more
@@ -142,10 +146,21 @@ func NewApp(ctx context.Context, writeDB, readDB *gorm.DB, options ...AppOptions
 	}
 	appServices.SetWorkerAgentAuthManager(poolagentauth.NewManager(appStore, opts.SecretSealer))
 	if _, err := appServices.InitializeDefaults(ctx, opts.UserID); err != nil {
-		return nil, err
+		return nil, services.Services{}, nil, err
 	}
 	if err := appServices.Start(ctx); err != nil {
-		return nil, err
+		return nil, services.Services{}, nil, err
+	}
+	svc := services.Services{
+		Projects:       appServices,
+		HarnessConfigs: appServices,
+		Sandboxes:      appServices,
+		Providers:      appServices,
+		Pools:          appServices,
+		Jobs:           appServices,
+		Events:         appServices,
+		Secrets:        appServices,
+		SSHKeys:        appServices,
 	}
 	router := chi.NewRouter()
 	router.Use(auth.Authentication(
@@ -163,20 +178,10 @@ func NewApp(ctx context.Context, writeDB, readDB *gorm.DB, options ...AppOptions
 	registerSandboxGitRoutes(router, appServices)
 	registerSandboxHTTPRoutes(router, appServices)
 	registerSandboxAgentTerminalRoutes(router, appServices)
-	generated, err := handlers.NewServer(services.Services{
-		Projects:       appServices,
-		HarnessConfigs: appServices,
-		Sandboxes:      appServices,
-		Providers:      appServices,
-		Pools:          appServices,
-		Jobs:           appServices,
-		Events:         appServices,
-		Secrets:        appServices,
-		SSHKeys:        appServices,
-	})
+	generated, err := handlers.NewServer(svc)
 	if err != nil {
-		return nil, err
+		return nil, services.Services{}, nil, err
 	}
 	router.Mount("/", generated)
-	return router, nil
+	return router, svc, appStore, nil
 }

@@ -257,15 +257,16 @@ func (h *handler) CreateSandboxExec(ctx context.Context, req *sandboxapi.CreateS
 		return &sandboxapi.CreateSandboxExecResponse{Exec: h.sandboxExec(created)}, nil
 	}
 	created, err := h.execs.Create(ctx, execs.CreateRequest{
-		Command:  append([]string{}, req.Command...),
-		Shell:    shell,
-		Workdir:  req.Workdir.Or(""),
-		Env:      stringMap(req.Env.Or(nil)),
-		User:     execUserFromAPI(req.User),
-		TTY:      req.Tty.Or(false),
-		Rows:     uint16(req.Rows.Or(0)),
-		Cols:     uint16(req.Cols.Or(0)),
-		Metadata: stringMap(req.Metadata.Or(nil)),
+		Command:          append([]string{}, req.Command...),
+		Shell:            shell,
+		ShellCommandLine: req.ShellCommandLine.Or(""),
+		Workdir:          req.Workdir.Or(""),
+		Env:              stringMap(req.Env.Or(nil)),
+		User:             execUserFromAPI(req.User),
+		TTY:              req.Tty.Or(false),
+		Rows:             uint16(req.Rows.Or(0)),
+		Cols:             uint16(req.Cols.Or(0)),
+		Metadata:         stringMap(req.Metadata.Or(nil)),
 	})
 	if err != nil {
 		if created.ID != "" && created.Status == execs.StatusFailed {

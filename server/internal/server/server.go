@@ -80,7 +80,7 @@ func Run(ctx context.Context) error {
 	controlPlaneStreams := carrierhub.New()
 	defer func() { _ = controlPlaneStreams.Close() }()
 
-	router, err := NewApp(ctx, db.Write, db.Read, AppOptions{
+	router, appServices, appStore, err := NewApp(ctx, db.Write, db.Read, AppOptions{
 		ControlPlaneStreams:            controlPlaneStreams,
 		UserID:                         service.DefaultUserID,
 		SecretSealer:                   sealer,
@@ -108,6 +108,9 @@ func Run(ctx context.Context) error {
 		log.Printf("listening on %s", listener.display)
 		log.Printf("openapi spec available at %s/openapi.yaml", listener.display)
 		log.Printf("api docs available at %s/docs", listener.display)
+	}
+	if err := startSSHListener(ctx, cfg, appServices, appStore); err != nil {
+		return fmt.Errorf("start SSH listener: %w", err)
 	}
 	handler := otelhttp.NewHandler(router, "discobox-server")
 	activity := newActivityTracker()

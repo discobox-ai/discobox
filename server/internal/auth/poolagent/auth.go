@@ -31,7 +31,11 @@ const (
 	ScopeTerminalWrite   = "terminal:write"
 	ScopeExecRead        = "exec:read"
 	ScopeExecWrite       = "exec:write"
-	ScopePoolSync        = "pool:sync"
+	// ScopeTCPConnect gates the direct-tcpip tunnel endpoint (ADR 0024 §3):
+	// dialing an arbitrary host:port from inside the sandbox's own network
+	// namespace, distinct from ScopeSandboxHTTP's container-IP-only reach.
+	ScopeTCPConnect = "tcp:connect"
+	ScopePoolSync   = "pool:sync"
 	// ScopeStatusRead authorizes only the sandbox-agent status endpoint. It is
 	// the sole scope MintSandboxAgentStatusTokens ever mints, hardcoded there
 	// rather than accepted from the caller, so a pool agent can never obtain a

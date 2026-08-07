@@ -69,6 +69,9 @@ func TestLoadDefaults(t *testing.T) {
 	if cfg.OTelMetricExportInterval != time.Second {
 		t.Fatalf("OTelMetricExportInterval = %s, want 1s", cfg.OTelMetricExportInterval)
 	}
+	if cfg.SSHListen != "" {
+		t.Fatalf("SSHListen = %q, want empty (disabled by default)", cfg.SSHListen)
+	}
 }
 
 func TestLoadEnvironmentOverrides(t *testing.T) {
@@ -88,6 +91,7 @@ func TestLoadEnvironmentOverrides(t *testing.T) {
 	t.Setenv("DISCOBOX_ENCRYPTION_KEY", "key")
 	t.Setenv("OTEL_METRICS_EXPORTER", "otlp")
 	t.Setenv("OTEL_METRIC_EXPORT_INTERVAL", "5000")
+	t.Setenv("DISCOBOX_SSH_LISTEN", ":3222")
 
 	cfg, err := Load()
 	if err != nil {
@@ -143,6 +147,9 @@ func TestLoadEnvironmentOverrides(t *testing.T) {
 	}
 	if cfg.OTelMetricExportInterval != 5*time.Second {
 		t.Fatalf("OTelMetricExportInterval = %s, want 5s", cfg.OTelMetricExportInterval)
+	}
+	if cfg.SSHListen != ":3222" {
+		t.Fatalf("SSHListen = %q, want :3222", cfg.SSHListen)
 	}
 }
 
@@ -277,6 +284,7 @@ func TestLoadRejectsInvalidValues(t *testing.T) {
 		{name: "poll interval", key: "DISPATCHER_POLL_INTERVAL", val: "-1s"},
 		{name: "sandbox concurrency", key: "SANDBOX_RECONCILE_JOB_CONCURRENCY", val: "0"},
 		{name: "otel metric export interval", key: "OTEL_METRIC_EXPORT_INTERVAL", val: "0s"},
+		{name: "ssh listen missing port", key: "DISCOBOX_SSH_LISTEN", val: "localhost"},
 	}
 
 	for _, tt := range tests {
@@ -299,6 +307,7 @@ func clearConfigEnv(t *testing.T) {
 		"DISCOBOX_SERVER",
 		"DISCOBOX_SERVER_LISTEN",
 		"DISCOBOX_SERVER_IDLE_TIMEOUT",
+		"DISCOBOX_SSH_LISTEN",
 		"DISCOBOX_DATA_DIR",
 		"DISCOBOX_CONFIG_DIR",
 		"DISCOBOX_CACHE_DIR",

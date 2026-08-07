@@ -1642,6 +1642,12 @@ func (s *CreateSandboxExecRequest) encodeFields(e *jx.Encoder) {
 		}
 	}
 	{
+		if s.ShellCommandLine.Set {
+			e.FieldStart("shellCommandLine")
+			s.ShellCommandLine.Encode(e)
+		}
+	}
+	{
 		if s.HarnessId.Set {
 			e.FieldStart("harnessId")
 			s.HarnessId.Encode(e)
@@ -1701,18 +1707,19 @@ func (s *CreateSandboxExecRequest) encodeFields(e *jx.Encoder) {
 	}
 }
 
-var jsonFieldsNameOfCreateSandboxExecRequest = [11]string{
+var jsonFieldsNameOfCreateSandboxExecRequest = [12]string{
 	0:  "command",
 	1:  "shell",
-	2:  "harnessId",
-	3:  "args",
-	4:  "workdir",
-	5:  "env",
-	6:  "user",
-	7:  "tty",
-	8:  "cols",
-	9:  "rows",
-	10: "metadata",
+	2:  "shellCommandLine",
+	3:  "harnessId",
+	4:  "args",
+	5:  "workdir",
+	6:  "env",
+	7:  "user",
+	8:  "tty",
+	9:  "cols",
+	10: "rows",
+	11: "metadata",
 }
 
 // Decode decodes CreateSandboxExecRequest from json.
@@ -1751,6 +1758,16 @@ func (s *CreateSandboxExecRequest) Decode(d *jx.Decoder) error {
 				return nil
 			}(); err != nil {
 				return errors.Wrap(err, "decode field \"shell\"")
+			}
+		case "shellCommandLine":
+			if err := func() error {
+				s.ShellCommandLine.Reset()
+				if err := s.ShellCommandLine.Decode(d); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"shellCommandLine\"")
 			}
 		case "harnessId":
 			if err := func() error {
