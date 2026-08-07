@@ -119,6 +119,12 @@ type Invoker interface {
 	//
 	// POST /projects/{projectId}/pools
 	CreatePool(ctx context.Context, request *CreatePoolBody, params CreatePoolParams) (CreatePoolRes, error)
+	// CreateProject invokes create-project operation.
+	//
+	// Create a project.
+	//
+	// POST /projects
+	CreateProject(ctx context.Context, request *CreateProjectBody) (CreateProjectRes, error)
 	// CreateSandbox invokes create-sandbox operation.
 	//
 	// Create a sandbox.
@@ -182,9 +188,17 @@ type Invoker interface {
 	//
 	// DELETE /projects/{projectId}/pools/{poolId}
 	DeletePool(ctx context.Context, params DeletePoolParams) (DeletePoolRes, error)
+	// DeleteProject invokes delete-project operation.
+	//
+	// Delete a project.
+	//
+	// DELETE /projects/{projectId}
+	DeleteProject(ctx context.Context, params DeleteProjectParams) (DeleteProjectRes, error)
 	// DeleteSandbox invokes delete-sandbox operation.
 	//
-	// Delete a sandbox.
+	// Archive the sandbox. Its container and runtime resources are removed and its data is kept, so it
+	// can be restored with unarchive until its project's archive retention runs out, after which it is
+	// purged automatically. To destroy a sandbox and its data now, use purge (ADR 0022 §2).
 	//
 	// DELETE /projects/{projectId}/sandboxes/{sandboxId}
 	DeleteSandbox(ctx context.Context, params DeleteSandboxParams) (DeleteSandboxRes, error)
@@ -374,6 +388,16 @@ type Invoker interface {
 	//
 	// GET /projects/{projectId}/secrets
 	ListSecrets(ctx context.Context, params ListSecretsParams) (ListSecretsRes, error)
+	// PurgeSandbox invokes purge-sandbox operation.
+	//
+	// Destroy the sandbox and its data. Unlike every other existence change this is synchronous - the
+	// request does not return success until the pool agent has confirmed the container and the sandbox's
+	// data are both gone, because a 202 would be a promise the server could not later verify against a
+	// row it had just deleted (ADR 0022 §3). A failure leaves the delete intent recorded, so it
+	// converges in the background regardless.
+	//
+	// POST /projects/{projectId}/sandboxes/{sandboxId}/purge
+	PurgeSandbox(ctx context.Context, params PurgeSandboxParams) (PurgeSandboxRes, error)
 	// ReconcilePool invokes reconcile-pool operation.
 	//
 	// Reconcile a pool.
@@ -438,6 +462,12 @@ type Invoker interface {
 	//
 	// PUT /projects/{projectId}/pools/{poolId}/default
 	SetDefaultPool(ctx context.Context, params SetDefaultPoolParams) (SetDefaultPoolRes, error)
+	// SetDefaultProject invokes set-default-project operation.
+	//
+	// Set the user's default project.
+	//
+	// PUT /projects/{projectId}/default
+	SetDefaultProject(ctx context.Context, params SetDefaultProjectParams) (SetDefaultProjectRes, error)
 	// SetHarnessConfigSecretBinding invokes set-harness-config-secret-binding operation.
 	//
 	// Bind a harness config environment variable to a secret.
@@ -468,6 +498,13 @@ type Invoker interface {
 	//
 	// GET /api/projects/{projectId}/sandboxes/{sandboxId}/execs/{execId}/resources/stream
 	StreamSandboxExecResources(ctx context.Context, params StreamSandboxExecResourcesParams) (StreamSandboxExecResourcesRes, error)
+	// UnarchiveSandbox invokes unarchive-sandbox operation.
+	//
+	// Restore an archived sandbox. Its container is recreated against the data that was retained and
+	// left stopped; the pool agent starts it on first use. Conflicts if the sandbox is not archived.
+	//
+	// POST /projects/{projectId}/sandboxes/{sandboxId}/unarchive
+	UnarchiveSandbox(ctx context.Context, params UnarchiveSandboxParams) (UnarchiveSandboxRes, error)
 	// UnsetDefaultHarnessConfig invokes unset-default-harness-config operation.
 	//
 	// Clear the project default harness config.
@@ -498,6 +535,12 @@ type Invoker interface {
 	//
 	// POST /api/pools/{poolId}/status
 	UpdatePoolStatus(ctx context.Context, request *UpdatePoolStatusBody, params UpdatePoolStatusParams) (UpdatePoolStatusRes, error)
+	// UpdateProject invokes update-project operation.
+	//
+	// Update a project.
+	//
+	// PATCH /projects/{projectId}
+	UpdateProject(ctx context.Context, request *UpdateProjectBody, params UpdateProjectParams) (UpdateProjectRes, error)
 	// UpdateSandbox invokes update-sandbox operation.
 	//
 	// Update a sandbox.
@@ -1842,6 +1885,83 @@ func (c *Client) sendCreatePool(ctx context.Context, request *CreatePoolBody, pa
 	return result, nil
 }
 
+// CreateProject invokes create-project operation.
+//
+// Create a project.
+//
+// POST /projects
+func (c *Client) CreateProject(ctx context.Context, request *CreateProjectBody) (CreateProjectRes, error) {
+	res, err := c.sendCreateProject(ctx, request)
+	return res, err
+}
+
+func (c *Client) sendCreateProject(ctx context.Context, request *CreateProjectBody) (res CreateProjectRes, err error) {
+	otelAttrs := []attribute.KeyValue{
+		otelogen.OperationID("create-project"),
+		semconv.HTTPRequestMethodKey.String("POST"),
+		semconv.URLTemplateKey.String("/projects"),
+	}
+	otelAttrs = append(otelAttrs, c.cfg.Attributes...)
+
+	// Run stopwatch.
+	startTime := time.Now()
+	defer func() {
+		// Use floating point division here for higher precision (instead of Millisecond method).
+		elapsedDuration := time.Since(startTime)
+		c.duration.Record(ctx, float64(elapsedDuration)/float64(time.Millisecond), metric.WithAttributes(otelAttrs...))
+	}()
+
+	// Increment request counter.
+	c.requests.Add(ctx, 1, metric.WithAttributes(otelAttrs...))
+
+	// Start a span for this request.
+	ctx, span := c.cfg.Tracer.Start(ctx, CreateProjectOperation,
+		trace.WithAttributes(otelAttrs...),
+		clientSpanKind,
+	)
+	// Track stage for error reporting.
+	var stage string
+	defer func() {
+		if err != nil {
+			span.RecordError(err)
+			span.SetStatus(codes.Error, stage)
+			c.errors.Add(ctx, 1, metric.WithAttributes(otelAttrs...))
+		}
+		span.End()
+	}()
+
+	stage = "BuildURL"
+	u := uri.Clone(c.requestURL(ctx))
+	var pathParts [1]string
+	pathParts[0] = "/projects"
+	uri.AddPathParts(u, pathParts[:]...)
+
+	stage = "EncodeRequest"
+	r, err := ht.NewRequest(ctx, "POST", u)
+	if err != nil {
+		return res, errors.Wrap(err, "create request")
+	}
+	if err := encodeCreateProjectRequest(request, r); err != nil {
+		return res, errors.Wrap(err, "encode request")
+	}
+
+	stage = "SendRequest"
+	resp, err := c.cfg.Client.Do(r)
+	if err != nil {
+		return res, errors.Wrap(err, "do request")
+	}
+	body := resp.Body
+	defer body.Close()
+
+	stage = "DecodeResponse"
+	result, err := decodeCreateProjectResponse(resp)
+	if err != nil {
+		return res, errors.Wrap(err, "decode response")
+	}
+
+	return result, nil
+}
+
 // CreateSandbox invokes create-sandbox operation.
 //
 // Create a sandbox.
@@ -2904,9 +3024,103 @@ func (c *Client) sendDeletePool(ctx context.Context, params DeletePoolParams) (r
 	return result, nil
 }
 
+// DeleteProject invokes delete-project operation.
+//
+// Delete a project.
+//
+// DELETE /projects/{projectId}
+func (c *Client) DeleteProject(ctx context.Context, params DeleteProjectParams) (DeleteProjectRes, error) {
+	res, err := c.sendDeleteProject(ctx, params)
+	return res, err
+}
+
+func (c *Client) sendDeleteProject(ctx context.Context, params DeleteProjectParams) (res DeleteProjectRes, err error) {
+	otelAttrs := []attribute.KeyValue{
+		otelogen.OperationID("delete-project"),
+		semconv.HTTPRequestMethodKey.String("DELETE"),
+		semconv.URLTemplateKey.String("/projects/{projectId}"),
+	}
+	otelAttrs = append(otelAttrs, c.cfg.Attributes...)
+
+	// Run stopwatch.
+	startTime := time.Now()
+	defer func() {
+		// Use floating point division here for higher precision (instead of Millisecond method).
+		elapsedDuration := time.Since(startTime)
+		c.duration.Record(ctx, float64(elapsedDuration)/float64(time.Millisecond), metric.WithAttributes(otelAttrs...))
+	}()
+
+	// Increment request counter.
+	c.requests.Add(ctx, 1, metric.WithAttributes(otelAttrs...))
+
+	// Start a span for this request.
+	ctx, span := c.cfg.Tracer.Start(ctx, DeleteProjectOperation,
+		trace.WithAttributes(otelAttrs...),
+		clientSpanKind,
+	)
+	// Track stage for error reporting.
+	var stage string
+	defer func() {
+		if err != nil {
+			span.RecordError(err)
+			span.SetStatus(codes.Error, stage)
+			c.errors.Add(ctx, 1, metric.WithAttributes(otelAttrs...))
+		}
+		span.End()
+	}()
+
+	stage = "BuildURL"
+	u := uri.Clone(c.requestURL(ctx))
+	var pathParts [2]string
+	pathParts[0] = "/projects/"
+	{
+		// Encode "projectId" parameter.
+		e := uri.NewPathEncoder(uri.PathEncoderConfig{
+			Param:   "projectId",
+			Style:   uri.PathStyleSimple,
+			Explode: false,
+		})
+		if err := func() error {
+			return e.EncodeValue(conv.StringToString(params.ProjectId))
+		}(); err != nil {
+			return res, errors.Wrap(err, "encode path")
+		}
+		encoded, err := e.Result()
+		if err != nil {
+			return res, errors.Wrap(err, "encode path")
+		}
+		pathParts[1] = encoded
+	}
+	uri.AddPathParts(u, pathParts[:]...)
+
+	stage = "EncodeRequest"
+	r, err := ht.NewRequest(ctx, "DELETE", u)
+	if err != nil {
+		return res, errors.Wrap(err, "create request")
+	}
+
+	stage = "SendRequest"
+	resp, err := c.cfg.Client.Do(r)
+	if err != nil {
+		return res, errors.Wrap(err, "do request")
+	}
+	body := resp.Body
+	defer body.Close()
+
+	stage = "DecodeResponse"
+	result, err := decodeDeleteProjectResponse(resp)
+	if err != nil {
+		return res, errors.Wrap(err, "decode response")
+	}
+
+	return result, nil
+}
+
 // DeleteSandbox invokes delete-sandbox operation.
 //
-// Delete a sandbox.
+// Archive the sandbox. Its container and runtime resources are removed and its data is kept, so it
+// can be restored with unarchive until its project's archive retention runs out, after which it is
+// purged automatically. To destroy a sandbox and its data now, use purge (ADR 0022 §2).
 //
 // DELETE /projects/{projectId}/sandboxes/{sandboxId}
 func (c *Client) DeleteSandbox(ctx context.Context, params DeleteSandboxParams) (DeleteSandboxRes, error) {
@@ -6502,6 +6716,122 @@ func (c *Client) sendListSecrets(ctx context.Context, params ListSecretsParams) 
 	return result, nil
 }
 
+// PurgeSandbox invokes purge-sandbox operation.
+//
+// Destroy the sandbox and its data. Unlike every other existence change this is synchronous - the
+// request does not return success until the pool agent has confirmed the container and the sandbox's
+// data are both gone, because a 202 would be a promise the server could not later verify against a
+// row it had just deleted (ADR 0022 §3). A failure leaves the delete intent recorded, so it
+// converges in the background regardless.
+//
+// POST /projects/{projectId}/sandboxes/{sandboxId}/purge
+func (c *Client) PurgeSandbox(ctx context.Context, params PurgeSandboxParams) (PurgeSandboxRes, error) {
+	res, err := c.sendPurgeSandbox(ctx, params)
+	return res, err
+}
+
+func (c *Client) sendPurgeSandbox(ctx context.Context, params PurgeSandboxParams) (res PurgeSandboxRes, err error) {
+	otelAttrs := []attribute.KeyValue{
+		otelogen.OperationID("purge-sandbox"),
+		semconv.HTTPRequestMethodKey.String("POST"),
+		semconv.URLTemplateKey.String("/projects/{projectId}/sandboxes/{sandboxId}/purge"),
+	}
+	otelAttrs = append(otelAttrs, c.cfg.Attributes...)
+
+	// Run stopwatch.
+	startTime := time.Now()
+	defer func() {
+		// Use floating point division here for higher precision (instead of Millisecond method).
+		elapsedDuration := time.Since(startTime)
+		c.duration.Record(ctx, float64(elapsedDuration)/float64(time.Millisecond), metric.WithAttributes(otelAttrs...))
+	}()
+
+	// Increment request counter.
+	c.requests.Add(ctx, 1, metric.WithAttributes(otelAttrs...))
+
+	// Start a span for this request.
+	ctx, span := c.cfg.Tracer.Start(ctx, PurgeSandboxOperation,
+		trace.WithAttributes(otelAttrs...),
+		clientSpanKind,
+	)
+	// Track stage for error reporting.
+	var stage string
+	defer func() {
+		if err != nil {
+			span.RecordError(err)
+			span.SetStatus(codes.Error, stage)
+			c.errors.Add(ctx, 1, metric.WithAttributes(otelAttrs...))
+		}
+		span.End()
+	}()
+
+	stage = "BuildURL"
+	u := uri.Clone(c.requestURL(ctx))
+	var pathParts [5]string
+	pathParts[0] = "/projects/"
+	{
+		// Encode "projectId" parameter.
+		e := uri.NewPathEncoder(uri.PathEncoderConfig{
+			Param:   "projectId",
+			Style:   uri.PathStyleSimple,
+			Explode: false,
+		})
+		if err := func() error {
+			return e.EncodeValue(conv.StringToString(params.ProjectId))
+		}(); err != nil {
+			return res, errors.Wrap(err, "encode path")
+		}
+		encoded, err := e.Result()
+		if err != nil {
+			return res, errors.Wrap(err, "encode path")
+		}
+		pathParts[1] = encoded
+	}
+	pathParts[2] = "/sandboxes/"
+	{
+		// Encode "sandboxId" parameter.
+		e := uri.NewPathEncoder(uri.PathEncoderConfig{
+			Param:   "sandboxId",
+			Style:   uri.PathStyleSimple,
+			Explode: false,
+		})
+		if err := func() error {
+			return e.EncodeValue(conv.StringToString(params.SandboxId))
+		}(); err != nil {
+			return res, errors.Wrap(err, "encode path")
+		}
+		encoded, err := e.Result()
+		if err != nil {
+			return res, errors.Wrap(err, "encode path")
+		}
+		pathParts[3] = encoded
+	}
+	pathParts[4] = "/purge"
+	uri.AddPathParts(u, pathParts[:]...)
+
+	stage = "EncodeRequest"
+	r, err := ht.NewRequest(ctx, "POST", u)
+	if err != nil {
+		return res, errors.Wrap(err, "create request")
+	}
+
+	stage = "SendRequest"
+	resp, err := c.cfg.Client.Do(r)
+	if err != nil {
+		return res, errors.Wrap(err, "do request")
+	}
+	body := resp.Body
+	defer body.Close()
+
+	stage = "DecodeResponse"
+	result, err := decodePurgeSandboxResponse(resp)
+	if err != nil {
+		return res, errors.Wrap(err, "decode response")
+	}
+
+	return result, nil
+}
+
 // ReconcilePool invokes reconcile-pool operation.
 //
 // Reconcile a pool.
@@ -7561,6 +7891,99 @@ func (c *Client) sendSetDefaultPool(ctx context.Context, params SetDefaultPoolPa
 	return result, nil
 }
 
+// SetDefaultProject invokes set-default-project operation.
+//
+// Set the user's default project.
+//
+// PUT /projects/{projectId}/default
+func (c *Client) SetDefaultProject(ctx context.Context, params SetDefaultProjectParams) (SetDefaultProjectRes, error) {
+	res, err := c.sendSetDefaultProject(ctx, params)
+	return res, err
+}
+
+func (c *Client) sendSetDefaultProject(ctx context.Context, params SetDefaultProjectParams) (res SetDefaultProjectRes, err error) {
+	otelAttrs := []attribute.KeyValue{
+		otelogen.OperationID("set-default-project"),
+		semconv.HTTPRequestMethodKey.String("PUT"),
+		semconv.URLTemplateKey.String("/projects/{projectId}/default"),
+	}
+	otelAttrs = append(otelAttrs, c.cfg.Attributes...)
+
+	// Run stopwatch.
+	startTime := time.Now()
+	defer func() {
+		// Use floating point division here for higher precision (instead of Millisecond method).
+		elapsedDuration := time.Since(startTime)
+		c.duration.Record(ctx, float64(elapsedDuration)/float64(time.Millisecond), metric.WithAttributes(otelAttrs...))
+	}()
+
+	// Increment request counter.
+	c.requests.Add(ctx, 1, metric.WithAttributes(otelAttrs...))
+
+	// Start a span for this request.
+	ctx, span := c.cfg.Tracer.Start(ctx, SetDefaultProjectOperation,
+		trace.WithAttributes(otelAttrs...),
+		clientSpanKind,
+	)
+	// Track stage for error reporting.
+	var stage string
+	defer func() {
+		if err != nil {
+			span.RecordError(err)
+			span.SetStatus(codes.Error, stage)
+			c.errors.Add(ctx, 1, metric.WithAttributes(otelAttrs...))
+		}
+		span.End()
+	}()
+
+	stage = "BuildURL"
+	u := uri.Clone(c.requestURL(ctx))
+	var pathParts [3]string
+	pathParts[0] = "/projects/"
+	{
+		// Encode "projectId" parameter.
+		e := uri.NewPathEncoder(uri.PathEncoderConfig{
+			Param:   "projectId",
+			Style:   uri.PathStyleSimple,
+			Explode: false,
+		})
+		if err := func() error {
+			return e.EncodeValue(conv.StringToString(params.ProjectId))
+		}(); err != nil {
+			return res, errors.Wrap(err, "encode path")
+		}
+		encoded, err := e.Result()
+		if err != nil {
+			return res, errors.Wrap(err, "encode path")
+		}
+		pathParts[1] = encoded
+	}
+	pathParts[2] = "/default"
+	uri.AddPathParts(u, pathParts[:]...)
+
+	stage = "EncodeRequest"
+	r, err := ht.NewRequest(ctx, "PUT", u)
+	if err != nil {
+		return res, errors.Wrap(err, "create request")
+	}
+
+	stage = "SendRequest"
+	resp, err := c.cfg.Client.Do(r)
+	if err != nil {
+		return res, errors.Wrap(err, "do request")
+	}
+	body := resp.Body
+	defer body.Close()
+
+	stage = "DecodeResponse"
+	result, err := decodeSetDefaultProjectResponse(resp)
+	if err != nil {
+		return res, errors.Wrap(err, "decode response")
+	}
+
+	return result, nil
+}
+
 // SetHarnessConfigSecretBinding invokes set-harness-config-secret-binding operation.
 //
 // Bind a harness config environment variable to a secret.
@@ -8186,6 +8609,119 @@ func (c *Client) sendStreamSandboxExecResources(ctx context.Context, params Stre
 	return result, nil
 }
 
+// UnarchiveSandbox invokes unarchive-sandbox operation.
+//
+// Restore an archived sandbox. Its container is recreated against the data that was retained and
+// left stopped; the pool agent starts it on first use. Conflicts if the sandbox is not archived.
+//
+// POST /projects/{projectId}/sandboxes/{sandboxId}/unarchive
+func (c *Client) UnarchiveSandbox(ctx context.Context, params UnarchiveSandboxParams) (UnarchiveSandboxRes, error) {
+	res, err := c.sendUnarchiveSandbox(ctx, params)
+	return res, err
+}
+
+func (c *Client) sendUnarchiveSandbox(ctx context.Context, params UnarchiveSandboxParams) (res UnarchiveSandboxRes, err error) {
+	otelAttrs := []attribute.KeyValue{
+		otelogen.OperationID("unarchive-sandbox"),
+		semconv.HTTPRequestMethodKey.String("POST"),
+		semconv.URLTemplateKey.String("/projects/{projectId}/sandboxes/{sandboxId}/unarchive"),
+	}
+	otelAttrs = append(otelAttrs, c.cfg.Attributes...)
+
+	// Run stopwatch.
+	startTime := time.Now()
+	defer func() {
+		// Use floating point division here for higher precision (instead of Millisecond method).
+		elapsedDuration := time.Since(startTime)
+		c.duration.Record(ctx, float64(elapsedDuration)/float64(time.Millisecond), metric.WithAttributes(otelAttrs...))
+	}()
+
+	// Increment request counter.
+	c.requests.Add(ctx, 1, metric.WithAttributes(otelAttrs...))
+
+	// Start a span for this request.
+	ctx, span := c.cfg.Tracer.Start(ctx, UnarchiveSandboxOperation,
+		trace.WithAttributes(otelAttrs...),
+		clientSpanKind,
+	)
+	// Track stage for error reporting.
+	var stage string
+	defer func() {
+		if err != nil {
+			span.RecordError(err)
+			span.SetStatus(codes.Error, stage)
+			c.errors.Add(ctx, 1, metric.WithAttributes(otelAttrs...))
+		}
+		span.End()
+	}()
+
+	stage = "BuildURL"
+	u := uri.Clone(c.requestURL(ctx))
+	var pathParts [5]string
+	pathParts[0] = "/projects/"
+	{
+		// Encode "projectId" parameter.
+		e := uri.NewPathEncoder(uri.PathEncoderConfig{
+			Param:   "projectId",
+			Style:   uri.PathStyleSimple,
+			Explode: false,
+		})
+		if err := func() error {
+			return e.EncodeValue(conv.StringToString(params.ProjectId))
+		}(); err != nil {
+			return res, errors.Wrap(err, "encode path")
+		}
+		encoded, err := e.Result()
+		if err != nil {
+			return res, errors.Wrap(err, "encode path")
+		}
+		pathParts[1] = encoded
+	}
+	pathParts[2] = "/sandboxes/"
+	{
+		// Encode "sandboxId" parameter.
+		e := uri.NewPathEncoder(uri.PathEncoderConfig{
+			Param:   "sandboxId",
+			Style:   uri.PathStyleSimple,
+			Explode: false,
+		})
+		if err := func() error {
+			return e.EncodeValue(conv.StringToString(params.SandboxId))
+		}(); err != nil {
+			return res, errors.Wrap(err, "encode path")
+		}
+		encoded, err := e.Result()
+		if err != nil {
+			return res, errors.Wrap(err, "encode path")
+		}
+		pathParts[3] = encoded
+	}
+	pathParts[4] = "/unarchive"
+	uri.AddPathParts(u, pathParts[:]...)
+
+	stage = "EncodeRequest"
+	r, err := ht.NewRequest(ctx, "POST", u)
+	if err != nil {
+		return res, errors.Wrap(err, "create request")
+	}
+
+	stage = "SendRequest"
+	resp, err := c.cfg.Client.Do(r)
+	if err != nil {
+		return res, errors.Wrap(err, "do request")
+	}
+	body := resp.Body
+	defer body.Close()
+
+	stage = "DecodeResponse"
+	result, err := decodeUnarchiveSandboxResponse(resp)
+	if err != nil {
+		return res, errors.Wrap(err, "decode response")
+	}
+
+	return result, nil
+}
+
 // UnsetDefaultHarnessConfig invokes unset-default-harness-config operation.
 //
 // Clear the project default harness config.
@@ -8727,6 +9263,101 @@ func (c *Client) sendUpdatePoolStatus(ctx context.Context, request *UpdatePoolSt
 
 	stage = "DecodeResponse"
 	result, err := decodeUpdatePoolStatusResponse(resp)
+	if err != nil {
+		return res, errors.Wrap(err, "decode response")
+	}
+
+	return result, nil
+}
+
+// UpdateProject invokes update-project operation.
+//
+// Update a project.
+//
+// PATCH /projects/{projectId}
+func (c *Client) UpdateProject(ctx context.Context, request *UpdateProjectBody, params UpdateProjectParams) (UpdateProjectRes, error) {
+	res, err := c.sendUpdateProject(ctx, request, params)
+	return res, err
+}
+
+func (c *Client) sendUpdateProject(ctx context.Context, request *UpdateProjectBody, params UpdateProjectParams) (res UpdateProjectRes, err error) {
+	otelAttrs := []attribute.KeyValue{
+		otelogen.OperationID("update-project"),
+		semconv.HTTPRequestMethodKey.String("PATCH"),
+		semconv.URLTemplateKey.String("/projects/{projectId}"),
+	}
+	otelAttrs = append(otelAttrs, c.cfg.Attributes...)
+
+	// Run stopwatch.
+	startTime := time.Now()
+	defer func() {
+		// Use floating point division here for higher precision (instead of Millisecond method).
+		elapsedDuration := time.Since(startTime)
+		c.duration.Record(ctx, float64(elapsedDuration)/float64(time.Millisecond), metric.WithAttributes(otelAttrs...))
+	}()
+
+	// Increment request counter.
+	c.requests.Add(ctx, 1, metric.WithAttributes(otelAttrs...))
+
+	// Start a span for this request.
+	ctx, span := c.cfg.Tracer.Start(ctx, UpdateProjectOperation,
+		trace.WithAttributes(otelAttrs...),
+		clientSpanKind,
+	)
+	// Track stage for error reporting.
+	var stage string
+	defer func() {
+		if err != nil {
+			span.RecordError(err)
+			span.SetStatus(codes.Error, stage)
+			c.errors.Add(ctx, 1, metric.WithAttributes(otelAttrs...))
+		}
+		span.End()
+	}()
+
+	stage = "BuildURL"
+	u := uri.Clone(c.requestURL(ctx))
+	var pathParts [2]string
+	pathParts[0] = "/projects/"
+	{
+		// Encode "projectId" parameter.
+		e := uri.NewPathEncoder(uri.PathEncoderConfig{
+			Param:   "projectId",
+			Style:   uri.PathStyleSimple,
+			Explode: false,
+		})
+		if err := func() error {
+			return e.EncodeValue(conv.StringToString(params.ProjectId))
+		}(); err != nil {
+			return res, errors.Wrap(err, "encode path")
+		}
+		encoded, err := e.Result()
+		if err != nil {
+			return res, errors.Wrap(err, "encode path")
+		}
+		pathParts[1] = encoded
+	}
+	uri.AddPathParts(u, pathParts[:]...)
+
+	stage = "EncodeRequest"
+	r, err := ht.NewRequest(ctx, "PATCH", u)
+	if err != nil {
+		return res, errors.Wrap(err, "create request")
+	}
+	if err := encodeUpdateProjectRequest(request, r); err != nil {
+		return res, errors.Wrap(err, "encode request")
+	}
+
+	stage = "SendRequest"
+	resp, err := c.cfg.Client.Do(r)
+	if err != nil {
+		return res, errors.Wrap(err, "do request")
+	}
+	body := resp.Body
+	defer body.Close()
+
+	stage = "DecodeResponse"
+	result, err := decodeUpdateProjectResponse(resp)
 	if err != nil {
 		return res, errors.Wrap(err, "decode response")
 	}

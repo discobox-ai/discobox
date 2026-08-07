@@ -100,6 +100,12 @@ type Handler interface {
 	//
 	// POST /projects/{projectId}/pools
 	CreatePool(ctx context.Context, req *CreatePoolBody, params CreatePoolParams) (CreatePoolRes, error)
+	// CreateProject implements create-project operation.
+	//
+	// Create a project.
+	//
+	// POST /projects
+	CreateProject(ctx context.Context, req *CreateProjectBody) (CreateProjectRes, error)
 	// CreateSandbox implements create-sandbox operation.
 	//
 	// Create a sandbox.
@@ -163,9 +169,17 @@ type Handler interface {
 	//
 	// DELETE /projects/{projectId}/pools/{poolId}
 	DeletePool(ctx context.Context, params DeletePoolParams) (DeletePoolRes, error)
+	// DeleteProject implements delete-project operation.
+	//
+	// Delete a project.
+	//
+	// DELETE /projects/{projectId}
+	DeleteProject(ctx context.Context, params DeleteProjectParams) (DeleteProjectRes, error)
 	// DeleteSandbox implements delete-sandbox operation.
 	//
-	// Delete a sandbox.
+	// Archive the sandbox. Its container and runtime resources are removed and its data is kept, so it
+	// can be restored with unarchive until its project's archive retention runs out, after which it is
+	// purged automatically. To destroy a sandbox and its data now, use purge (ADR 0022 §2).
 	//
 	// DELETE /projects/{projectId}/sandboxes/{sandboxId}
 	DeleteSandbox(ctx context.Context, params DeleteSandboxParams) (DeleteSandboxRes, error)
@@ -355,6 +369,16 @@ type Handler interface {
 	//
 	// GET /projects/{projectId}/secrets
 	ListSecrets(ctx context.Context, params ListSecretsParams) (ListSecretsRes, error)
+	// PurgeSandbox implements purge-sandbox operation.
+	//
+	// Destroy the sandbox and its data. Unlike every other existence change this is synchronous - the
+	// request does not return success until the pool agent has confirmed the container and the sandbox's
+	// data are both gone, because a 202 would be a promise the server could not later verify against a
+	// row it had just deleted (ADR 0022 §3). A failure leaves the delete intent recorded, so it
+	// converges in the background regardless.
+	//
+	// POST /projects/{projectId}/sandboxes/{sandboxId}/purge
+	PurgeSandbox(ctx context.Context, params PurgeSandboxParams) (PurgeSandboxRes, error)
 	// ReconcilePool implements reconcile-pool operation.
 	//
 	// Reconcile a pool.
@@ -419,6 +443,12 @@ type Handler interface {
 	//
 	// PUT /projects/{projectId}/pools/{poolId}/default
 	SetDefaultPool(ctx context.Context, params SetDefaultPoolParams) (SetDefaultPoolRes, error)
+	// SetDefaultProject implements set-default-project operation.
+	//
+	// Set the user's default project.
+	//
+	// PUT /projects/{projectId}/default
+	SetDefaultProject(ctx context.Context, params SetDefaultProjectParams) (SetDefaultProjectRes, error)
 	// SetHarnessConfigSecretBinding implements set-harness-config-secret-binding operation.
 	//
 	// Bind a harness config environment variable to a secret.
@@ -449,6 +479,13 @@ type Handler interface {
 	//
 	// GET /api/projects/{projectId}/sandboxes/{sandboxId}/execs/{execId}/resources/stream
 	StreamSandboxExecResources(ctx context.Context, params StreamSandboxExecResourcesParams) (StreamSandboxExecResourcesRes, error)
+	// UnarchiveSandbox implements unarchive-sandbox operation.
+	//
+	// Restore an archived sandbox. Its container is recreated against the data that was retained and
+	// left stopped; the pool agent starts it on first use. Conflicts if the sandbox is not archived.
+	//
+	// POST /projects/{projectId}/sandboxes/{sandboxId}/unarchive
+	UnarchiveSandbox(ctx context.Context, params UnarchiveSandboxParams) (UnarchiveSandboxRes, error)
 	// UnsetDefaultHarnessConfig implements unset-default-harness-config operation.
 	//
 	// Clear the project default harness config.
@@ -479,6 +516,12 @@ type Handler interface {
 	//
 	// POST /api/pools/{poolId}/status
 	UpdatePoolStatus(ctx context.Context, req *UpdatePoolStatusBody, params UpdatePoolStatusParams) (UpdatePoolStatusRes, error)
+	// UpdateProject implements update-project operation.
+	//
+	// Update a project.
+	//
+	// PATCH /projects/{projectId}
+	UpdateProject(ctx context.Context, req *UpdateProjectBody, params UpdateProjectParams) (UpdateProjectRes, error)
 	// UpdateSandbox implements update-sandbox operation.
 	//
 	// Update a sandbox.

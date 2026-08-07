@@ -96,7 +96,7 @@ func New(store *store.Store, engine *reconcile.Engine, options Options, broker .
 	harnessConfigService.SetSandboxRuntime(sandboxService)
 	harnessConfigService.SetDirtier(engine)
 	return &Service{
-		ProjectService:                 projects.NewService(store),
+		ProjectService:                 projects.NewService(store, providerService, poolService, harnessConfigService),
 		HarnessConfigService:           harnessConfigService,
 		Service:                        sandboxService,
 		SandboxProviderInstanceService: providerService,

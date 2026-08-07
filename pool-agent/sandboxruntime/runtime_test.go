@@ -1054,3 +1054,33 @@ func TestResolveSandboxUserExplicitRootIsHonoured(t *testing.T) {
 		t.Fatalf("explicit root uid = %d, want 0", got.uid)
 	}
 }
+
+// A recorded fingerprint is the whole answer when it is present.
+func TestSpecDriftedComparesTheRecordedFingerprint(t *testing.T) {
+	if specDrifted("fp-1", "sha256:old", "fp-1", "sha256:new") {
+		t.Fatal("matching fingerprints reported as drift")
+	}
+	if !specDrifted("fp-1", "sha256:same", "fp-2", "sha256:same") {
+		t.Fatal("changed fingerprint not reported as drift")
+	}
+}
+
+// A container with no fingerprint label predates fingerprinting. It falls back
+// to the image comparison rather than being declared clean, which is what left
+// such sandboxes stranded on an old image with no way to upgrade off it.
+func TestSpecDriftedFallsBackToTheImagePinWithoutALabel(t *testing.T) {
+	if !specDrifted("", "sha256:old", "fp-1", "sha256:new") {
+		t.Fatal("unlabeled container running an unpinned image not reported as drift")
+	}
+	if specDrifted("", "sha256:pinned", "fp-1", "sha256:pinned") {
+		t.Fatal("unlabeled container already on the pinned image reported as drift")
+	}
+}
+
+// An unpinned sandbox runs whatever its reference names, so an unlabeled
+// container cannot drift: there is nothing to compare it against.
+func TestSpecDriftedUnlabeledAndUnpinnedIsNotDrift(t *testing.T) {
+	if specDrifted("", "sha256:whatever", "fp-1", "") {
+		t.Fatal("unpinned sandbox reported as drift")
+	}
+}

@@ -49,6 +49,42 @@ func isResolvableShortID(id string) bool {
 	return true
 }
 
+// resolveProjectID accepts the same selectors the -p flag does — the "default"
+// alias, a full or short ID, or the display name — and resolves them to a
+// project ID. The alias is left for the server, which is the only side that
+// knows which project carries the user's default flag.
+func (a *App) resolveProjectID(ctx context.Context, client *apiclientgen.Client, value string) (string, error) {
+	id, err := parseIDArg(value, "project ID")
+	if err != nil {
+		return "", err
+	}
+	if id == defaultProjectAlias || idpkg.IsGenerated(id) {
+		return id, nil
+	}
+	res, err := client.ListProjects(ctx)
+	if err != nil {
+		return "", err
+	}
+	body, err := expectResponse[apimodel.ListProjectsBody](res)
+	if err != nil {
+		return "", err
+	}
+	projects := body.GetProjects()
+	for _, project := range projects {
+		if project.Name == value {
+			return project.ID, nil
+		}
+	}
+	if !isResolvableShortID(id) {
+		return id, nil
+	}
+	ids := make([]string, 0, len(projects))
+	for _, project := range projects {
+		ids = append(ids, project.ID)
+	}
+	return resolveShortID(id, "project ID", ids)
+}
+
 func (a *App) resolveSandboxID(ctx context.Context, client *apiclientgen.Client, projectID, value string) (string, error) {
 	id, err := parseIDArg(value, "sandbox ID")
 	if err != nil || !isResolvableShortID(id) {

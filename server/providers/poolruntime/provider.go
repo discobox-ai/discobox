@@ -340,12 +340,20 @@ func (p *Provider) AcquireHTTPClient(ctx context.Context, ref sandbox.SandboxRef
 	return client.AcquireHTTPClient(ctx, ref, state, scopes)
 }
 
-func (p *Provider) Remove(ctx context.Context, ref sandbox.SandboxRef, state []byte, opts ...sandbox.RemoveOption) ([]byte, error) {
+func (p *Provider) Archive(ctx context.Context, ref sandbox.SandboxRef, state []byte) ([]byte, error) {
 	client, err := p.agentClientFromState(ctx, ref, state)
 	if err != nil {
 		return state, err
 	}
-	return client.Remove(ctx, ref, state, opts...)
+	return client.Archive(ctx, ref, state)
+}
+
+func (p *Provider) Remove(ctx context.Context, ref sandbox.SandboxRef, state []byte) ([]byte, error) {
+	client, err := p.agentClientFromState(ctx, ref, state)
+	if err != nil {
+		return state, err
+	}
+	return client.Remove(ctx, ref, state)
 }
 
 func (p *Provider) agentClientFromState(ctx context.Context, ref sandbox.SandboxRef, state []byte) (*poolAgentClient, error) {

@@ -2,6 +2,7 @@ package sandboxruntime
 
 import (
 	"context"
+	"errors"
 	"sync"
 
 	"github.com/moby/moby/client"
@@ -63,6 +64,12 @@ func (r *DockerSandboxRuntime) EnsureSandboxRunning(ctx context.Context, sandbox
 	defer lock.Unlock()
 	sb, err := r.GetSandbox(ctx, sandboxID)
 	if err != nil {
+		// An archived sandbox has no container, so the lookup fails first. The
+		// archive check answers the more useful question, and only for a
+		// sandbox this pool actually holds.
+		if errors.Is(err, ErrNotFound) && r.SandboxIsArchived(sandboxID) {
+			return ErrArchived
+		}
 		return err
 	}
 	if sb.Status == StatusRunning {
@@ -72,6 +79,12 @@ func (r *DockerSandboxRuntime) EnsureSandboxRunning(ctx context.Context, sandbox
 }
 
 func (r *DockerSandboxRuntime) startLocked(ctx context.Context, sandboxID string) error {
+	// Archiving removes the container, so reaching here with a marked tree means
+	// a container survived a partial archive. Starting it would silently undo the
+	// archive and put the sandbox back beyond the reach of its retention policy.
+	if r.SandboxIsArchived(sandboxID) {
+		return ErrArchived
+	}
 	sb, err := r.GetSandbox(ctx, sandboxID)
 	if err != nil {
 		return err

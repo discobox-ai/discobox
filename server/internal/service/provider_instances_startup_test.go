@@ -27,7 +27,7 @@ func newProviderInstanceTestStore(ctx context.Context, t *testing.T) (*store.Sto
 		t.Fatalf("migrate db: %v", err)
 	}
 	appStore := store.New(db.Write, db.Read)
-	project := &model.Project{ID: "project-1", OwnerUserID: "user-1", Name: "Project", Slug: "project"}
+	project := &model.Project{ID: "project-1", OwnerUserID: "user-1", Name: "Project"}
 	if err := appStore.UpsertProject(ctx, project); err != nil {
 		t.Fatalf("create project: %v", err)
 	}

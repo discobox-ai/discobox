@@ -593,7 +593,7 @@ func TestHarnessSetDefaultCommand(t *testing.T) {
 			// unrecognized value like a full ID falls through unchanged.
 			_, _ = w.Write([]byte(`{"harnessConfigs":[]}`))
 		case r.Method == http.MethodPut && r.URL.Path == "/projects/project-1/harness-configs/"+harnessID+"/default":
-			_, _ = w.Write([]byte(`{"id":"project-1","ownerUserId":"user-1","name":"Project","slug":"project-1","default":true,"defaultHarnessConfigId":"` + harnessID + `","createdAt":"2026-01-01T00:00:00Z","updatedAt":"2026-01-01T00:00:00Z"}`))
+			_, _ = w.Write([]byte(`{"id":"project-1","ownerUserId":"user-1","name":"Project","default":true,"defaultHarnessConfigId":"` + harnessID + `","createdAt":"2026-01-01T00:00:00Z","updatedAt":"2026-01-01T00:00:00Z"}`))
 		default:
 			t.Fatalf("request = %s %s, want list then PUT set-default path", r.Method, r.URL.Path)
 		}
@@ -699,7 +699,7 @@ func TestHarnessListShowsProjectDefault(t *testing.T) {
 				`{"id":"` + defaultHarnessID + `","projectId":"project-1","slug":"codex","name":"Codex","builtIn":true,"configured":true,"runCommand":["codex"],"createdAt":"2026-01-01T00:01:00Z","updatedAt":"2026-01-01T00:01:00Z"}` +
 				`]}`))
 		case r.Method == http.MethodGet && r.URL.Path == "/projects/project-1":
-			_, _ = w.Write([]byte(`{"id":"project-1","ownerUserId":"user-1","name":"Project","slug":"project-1","default":true,"defaultHarnessConfigId":"` + defaultHarnessID + `","createdAt":"2026-01-01T00:00:00Z","updatedAt":"2026-01-01T00:00:00Z"}`))
+			_, _ = w.Write([]byte(`{"id":"project-1","ownerUserId":"user-1","name":"Project","default":true,"defaultHarnessConfigId":"` + defaultHarnessID + `","createdAt":"2026-01-01T00:00:00Z","updatedAt":"2026-01-01T00:00:00Z"}`))
 		default:
 			t.Fatalf("unexpected request: %s %s", r.Method, r.URL.Path)
 		}
@@ -1255,16 +1255,16 @@ func TestSandboxDeleteContinuesAfterFailure(t *testing.T) {
 	if err == nil {
 		t.Fatal("execute sandbox delete error = nil, want aggregate delete failure")
 	}
-	if got, want := err.Error(), "failed to delete 1 sandbox"; got != want {
+	if got, want := err.Error(), "failed to archive 1 sandbox"; got != want {
 		t.Fatalf("execute sandbox delete error = %q, want %q", got, want)
 	}
 	if got, want := strings.Join(deleted, ","), "sandbox-ok-1,sandbox-fail,sandbox-ok-2"; got != want {
 		t.Fatalf("deleted order = %q, want %q", got, want)
 	}
-	if got, want := out.String(), "sandbox-ok-1 deleted\nsandbox-ok-2 deleted\n"; got != want {
+	if got, want := out.String(), "sandbox-ok-1 archived\nsandbox-ok-2 archived\n"; got != want {
 		t.Fatalf("stdout = %q, want %q", got, want)
 	}
-	for _, want := range []string{`failed to delete sandbox "sandbox-fail"`, "sandbox is busy"} {
+	for _, want := range []string{`failed to archive sandbox "sandbox-fail"`, "sandbox is busy"} {
 		if !strings.Contains(errOut.String(), want) {
 			t.Fatalf("stderr = %q, want %q", errOut.String(), want)
 		}

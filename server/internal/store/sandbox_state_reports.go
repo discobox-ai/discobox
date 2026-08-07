@@ -76,6 +76,16 @@ func (s *Store) ApplySandboxStateReports(ctx context.Context, batch SandboxState
 		}
 		for i := range hosted {
 			sandbox := &hosted[i]
+			// An archived sandbox has no container by intent, so every complete
+			// sync omits it — the same signal a lost container sends. Left to the
+			// logic below it would be recorded as `stopped` and handed to the
+			// reconciler as drift to repair, which would rebuild the container the
+			// archive just removed and put the sandbox beyond its retention
+			// policy. Archived sandboxes are simply not the runtime's to report
+			// on (ADR 0022 §5).
+			if sandbox.DesiredState == model.DesiredStateArchived {
+				continue
+			}
 			report, ok := reported[sandbox.ID]
 			missing := false
 			if !ok {

@@ -392,10 +392,68 @@ func (s *Service) UpdateSandbox(ctx context.Context, projectID, sandboxID string
 	return s.store.GetSandbox(ctx, projectID, sandboxID)
 }
 
+// DeleteSandbox archives the sandbox: its runtime goes, its data is kept, and
+// it can be brought back with UnarchiveSandbox until its project's retention
+// runs out (ADR 0022 §2). Getting a sandbox out of the way is the common
+// request and the recoverable one, so it is what the unqualified verb does.
+//
+// Destroying the data is PurgeSandbox, which has to be asked for.
 func (s *Service) DeleteSandbox(ctx context.Context, projectID, sandboxID string) error {
-	_, err := s.recordSandboxIntent(ctx, projectID, sandboxID, model.DesiredStateDeleted)
+	_, err := s.recordSandboxIntent(ctx, projectID, sandboxID, model.DesiredStateArchived)
 	if err != nil {
 		return mapAPIError(err, "sandbox not found")
+	}
+	return nil
+}
+
+// UnarchiveSandbox asks for the sandbox to exist as a runtime again. The
+// reconciler recreates its container against the data that was retained, and
+// leaves it stopped: a container that has run before stays stopped until
+// something uses it (ADR 0017 §13), and the pool agent starts it on demand at
+// first real use. Unarchiving is not itself use.
+func (s *Service) UnarchiveSandbox(ctx context.Context, projectID, sandboxID string) error {
+	sandbox, err := s.store.GetSandbox(ctx, projectID, sandboxID)
+	if err != nil {
+		return mapAPIError(err, "sandbox not found")
+	}
+	if sandbox.DesiredState != model.DesiredStateArchived {
+		return apperrors.NewStatusError(http.StatusConflict, "sandbox is not archived")
+	}
+	if _, err := s.recordSandboxIntent(ctx, projectID, sandboxID, model.DesiredStatePresent); err != nil {
+		return mapAPIError(err, "sandbox not found")
+	}
+	return nil
+}
+
+// PurgeSandbox destroys the sandbox and its data, and does not return success
+// until the pool agent confirms both are gone (ADR 0022 §3).
+//
+// It records delete intent transactionally and then drives that sandbox's
+// reconcile inline, in this request. Doing the work here is not a second
+// deletion path: it is the same reconcile the engine would run, called early so
+// the caller learns the outcome. Whatever happens to this request, the intent
+// and its dirty mark are already durable — so a purge that fails, times out, or
+// loses its client still converges in the background, and the only thing lost
+// is the synchronous answer.
+//
+// A 202 would have been a promise the server could not keep and could not later
+// verify: the row it would check against is the thing being deleted.
+func (s *Service) PurgeSandbox(ctx context.Context, projectID, sandboxID string) error {
+	if _, err := s.recordSandboxIntent(ctx, projectID, sandboxID, model.DesiredStateDeleted); err != nil {
+		return mapAPIError(err, "sandbox not found")
+	}
+	if err := s.NewSandboxReconciler().Reconcile(ctx, SandboxDirtyID(projectID, sandboxID)); err != nil {
+		return fmt.Errorf("purge sandbox: %w", err)
+	}
+	// Reconcile settles rather than returning an error when it records a failure
+	// on the resource (ADR 0017 §4), so a clean return is not by itself proof the
+	// data is gone. The row is: the purge deletes it, so a sandbox still present
+	// here is one whose removal did not complete.
+	if _, err := s.store.GetSandbox(ctx, projectID, sandboxID); err == nil {
+		return apperrors.NewStatusError(http.StatusConflict,
+			"sandbox purge did not complete; it will be retried in the background")
+	} else if !errors.Is(err, store.ErrNotFound) {
+		return err
 	}
 	return nil
 }
@@ -427,6 +485,9 @@ func (s *Service) instructSandbox(ctx context.Context, projectID, sandboxID stri
 	}
 	if sandbox.DesiredState == model.DesiredStateDeleted {
 		return nil, apperrors.NewStatusError(http.StatusConflict, "sandbox is being deleted")
+	}
+	if sandbox.DesiredState == model.DesiredStateArchived {
+		return nil, apperrors.NewStatusError(http.StatusConflict, "sandbox is archived; unarchive it first")
 	}
 	provider, err := s.resolveProvider(ctx, sandbox)
 	if err != nil {

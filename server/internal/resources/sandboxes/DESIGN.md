@@ -31,8 +31,51 @@ flowchart LR
 `start`, `stop`, and `restart` are instructions forwarded to the pool agent
 (`power.go`). They write no lifecycle state and bump no generation, and their
 responses carry no state — a caller learns the outcome from the project event
-the agent's report produces. `DesiredState` answers existence only: `present`
-or `deleted`.
+the agent's report produces. `DesiredState` answers existence only: `present`,
+`archived`, or `deleted`. Start, stop, and restart are refused with 409 on an
+archived sandbox — it has no container to power.
+
+## Existence is three-valued
+
+`archived` is not a power state but a third form of existence: as data, with no
+container (ADR 0022 §1). See [ADR 0022](../../../../docs/adr/0022-sandbox-deletion-is-archive-then-confirmed-purge.md).
+
+| API call | Desired state | Shape |
+| --- | --- | --- |
+| `DELETE /sandboxes/{id}` | `archived` | orchestrated, 202 |
+| `POST .../unarchive` | `present` | orchestrated, 202 |
+| `POST .../purge` | `deleted` | **converges in the request**, 204 |
+
+Delete archives, because getting a sandbox out of the way is the common request
+and the recoverable one. `archive.go` holds the archive branch and retention;
+`reconciler.go` holds the rest.
+
+Purge is the one existence change that is not fire-and-forget. Its whole content
+is a destructive side effect on a machine the control plane does not own, and a
+202 would be a promise the server could not later verify — the row it would check
+against is the thing being deleted. So `PurgeSandbox` records intent through the
+ordinary `recordSandboxIntent` and then drives that sandbox's reconcile inline,
+returning the provider's answer. It is not a second deletion path: the intent and
+its dirty mark are durable before the inline attempt starts, so a purge that
+fails or loses its client still converges in the background. The row is deleted
+only after the provider confirms the data is gone.
+
+Retention: an archived sandbox is purged once it has been archived longer than
+`Project.ArchiveRetentionSeconds` (default `DefaultArchiveRetention`, 24h). The
+deadline derives from `StateChangedAt` and is never stored — the same reason the
+source-push timeout derives its own — and is armed with the engine's
+future-dated mark. `ScanDirty` also returns expired archives, because an archived
+sandbox has converged and the generation comparison is blind to it by design, so
+a lost mark would otherwise mean data kept forever.
+
+Two rules keep archived sandboxes inert:
+
+- The pool agent's complete sync omits them, exactly as it omits a sandbox whose
+  container was lost. `ApplySandboxStateReports` skips them outright — recording
+  `stopped` would hand the reconciler drift to repair, and `ensure` would rebuild
+  the container the archive just removed.
+- The pool agent refuses to start them on demand, so an exec cannot quietly
+  undo an archive.
 
 Observed state arrives on the agent's reporting channel and lands in
 `observations.go`. Two rules there are load-bearing:

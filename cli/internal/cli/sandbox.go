@@ -66,6 +66,8 @@ func (a *App) newSandboxCommand() *cobra.Command {
 	cmd.AddCommand(a.newSandboxCreateCommand())
 	cmd.AddCommand(a.newSandboxUpdateCommand())
 	cmd.AddCommand(a.newSandboxDeleteCommand())
+	cmd.AddCommand(a.newSandboxUnarchiveCommand())
+	cmd.AddCommand(a.newSandboxPurgeCommand())
 	cmd.AddCommand(a.newSandboxStartCommand())
 	cmd.AddCommand(a.newSandboxStopCommand())
 	cmd.AddCommand(a.newSandboxRestartCommand())
@@ -216,8 +218,17 @@ func (a *App) newSandboxUpdateCommand() *cobra.Command {
 
 func (a *App) newSandboxDeleteCommand() *cobra.Command {
 	return &cobra.Command{
-		Use:               "delete SANDBOX_ID...",
-		Short:             "Delete a sandbox",
+		Use:   "delete SANDBOX_ID...",
+		Short: "Archive a sandbox",
+		Long: `Archive sandboxes.
+
+The container and its runtime resources are removed; the sandbox's workspace,
+config, and secrets are kept, so "sandbox unarchive" brings it back with its
+work intact. Archived sandboxes are purged automatically once the project's
+archive retention runs out (24h by default; see "project update
+--archive-retention").
+
+To destroy a sandbox and its data now, use "sandbox purge".`,
 		Args:              cobra.MinimumNArgs(1),
 		ValidArgsFunction: a.completeSandboxes,
 		RunE: func(cmd *cobra.Command, args []string) error {
@@ -229,7 +240,7 @@ func (a *App) newSandboxDeleteCommand() *cobra.Command {
 			if err != nil {
 				return err
 			}
-			return runDeleteMany(cmd, args, "sandbox", func(arg string) (string, error) {
+			return runActionMany(cmd, args, "sandbox", "archived", func(arg string) (string, error) {
 				sandboxID, err := a.resolveSandboxID(cmd.Context(), client, projectID, arg)
 				if err != nil {
 					return "", err
@@ -239,6 +250,84 @@ func (a *App) newSandboxDeleteCommand() *cobra.Command {
 					return "", err
 				}
 				if err := expectNoContent[apiclientgen.DeleteSandboxAccepted](res); err != nil {
+					return "", err
+				}
+				return sandboxID, nil
+			})
+		},
+	}
+}
+
+func (a *App) newSandboxUnarchiveCommand() *cobra.Command {
+	return &cobra.Command{
+		Use:   "unarchive SANDBOX_ID...",
+		Short: "Restore an archived sandbox",
+		Long: `Restore archived sandboxes.
+
+The container is recreated against the data that was kept and left stopped; it
+starts on first use, the same as any other stopped sandbox.`,
+		Args:              cobra.MinimumNArgs(1),
+		ValidArgsFunction: a.completeSandboxes,
+		RunE: func(cmd *cobra.Command, args []string) error {
+			projectID, err := a.projectIDValue()
+			if err != nil {
+				return err
+			}
+			client, err := a.apiClient()
+			if err != nil {
+				return err
+			}
+			return runActionMany(cmd, args, "sandbox", "unarchived", func(arg string) (string, error) {
+				sandboxID, err := a.resolveSandboxID(cmd.Context(), client, projectID, arg)
+				if err != nil {
+					return "", err
+				}
+				res, err := client.UnarchiveSandbox(cmd.Context(), apiclientgen.UnarchiveSandboxParams{ProjectId: projectID, SandboxId: sandboxID})
+				if err != nil {
+					return "", err
+				}
+				if err := expectNoContent[apiclientgen.UnarchiveSandboxAccepted](res); err != nil {
+					return "", err
+				}
+				return sandboxID, nil
+			})
+		},
+	}
+}
+
+func (a *App) newSandboxPurgeCommand() *cobra.Command {
+	return &cobra.Command{
+		Use:   "purge SANDBOX_ID...",
+		Short: "Destroy a sandbox and its data",
+		Long: `Destroy sandboxes and their data.
+
+This is not recoverable: the workspace, config, and secrets are removed from
+the pool host along with the container. Unlike the other lifecycle commands it
+waits for the pool agent to confirm the removal, so when it returns the data is
+actually gone.
+
+To keep the data, use "sandbox delete", which archives instead.`,
+		Args:              cobra.MinimumNArgs(1),
+		ValidArgsFunction: a.completeSandboxes,
+		RunE: func(cmd *cobra.Command, args []string) error {
+			projectID, err := a.projectIDValue()
+			if err != nil {
+				return err
+			}
+			client, err := a.apiClient()
+			if err != nil {
+				return err
+			}
+			return runActionMany(cmd, args, "sandbox", "purged", func(arg string) (string, error) {
+				sandboxID, err := a.resolveSandboxID(cmd.Context(), client, projectID, arg)
+				if err != nil {
+					return "", err
+				}
+				res, err := client.PurgeSandbox(cmd.Context(), apiclientgen.PurgeSandboxParams{ProjectId: projectID, SandboxId: sandboxID})
+				if err != nil {
+					return "", err
+				}
+				if err := expectNoContent[apiclientgen.PurgeSandboxNoContent](res); err != nil {
 					return "", err
 				}
 				return sandboxID, nil

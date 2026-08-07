@@ -192,6 +192,7 @@ func requiredPoolOperationScope(operation workerapi.OperationName) string {
 		return ScopeSandboxRead
 	case workerapi.PoolCreateSandboxOperation,
 		workerapi.PoolUpdateSandboxOperation,
+		workerapi.PoolArchiveSandboxOperation,
 		workerapi.PoolDeleteSandboxOperation,
 		workerapi.PoolStartSandboxOperation,
 		workerapi.PoolStopSandboxOperation:

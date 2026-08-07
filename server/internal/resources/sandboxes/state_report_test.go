@@ -28,7 +28,7 @@ func stateReportFixture(t *testing.T) (context.Context, *Service, *store.Store) 
 	if err != nil {
 		t.Fatalf("create reconcile engine: %v", err)
 	}
-	project := &model.Project{ID: "project-1", OwnerUserID: "user-1", Name: "Project", Slug: "project"}
+	project := &model.Project{ID: "project-1", OwnerUserID: "user-1", Name: "Project"}
 	if err := db.Write.WithContext(ctx).Create(project).Error; err != nil {
 		t.Fatalf("create project: %v", err)
 	}
@@ -101,6 +101,45 @@ func TestStateReportCompleteSyncStopsOmittedSandboxes(t *testing.T) {
 	}
 	if got := stateOf(ctx, t, st, "sandbox-2"); got != model.SandboxStateStopped {
 		t.Fatalf("sandbox-2 state = %q, want stopped: a complete sync reports absence by omission", got)
+	}
+}
+
+// An archived sandbox has no container by intent, so every complete sync omits
+// it — the same signal a lost container sends. Recording that as `stopped` would
+// hand the reconciler drift to repair, and it would rebuild the container the
+// archive just removed, putting the sandbox back beyond its retention policy
+// (ADR 0022 §5). This is the sharpest edge in the archive change.
+func TestStateReportCompleteSyncDoesNotResurrectArchivedSandboxes(t *testing.T) {
+	ctx, service, st := stateReportFixture(t)
+
+	archived, err := st.GetSandbox(ctx, "project-1", "sandbox-2")
+	if err != nil {
+		t.Fatalf("get sandbox-2: %v", err)
+	}
+	archived.DesiredState = model.DesiredStateArchived
+	archived.SetState(model.SandboxStateArchived)
+	if err := st.UpdateSandbox(ctx, archived); err != nil {
+		t.Fatalf("archive sandbox-2: %v", err)
+	}
+
+	// A complete sync listing only the live sandbox: sandbox-2 is absent, which
+	// for any other sandbox would mean "your container is gone".
+	if err := service.ReportSandboxStates(ctx, store.SandboxStateReportBatch{
+		PoolID: "pool-1", BootID: "boot-1", Sequence: 1, ReportedAt: time.Now().UTC(), Complete: true,
+		Reports: []store.SandboxStateReport{{SandboxID: "sandbox-1", State: model.SandboxStateRunning}},
+	}); err != nil {
+		t.Fatalf("report states: %v", err)
+	}
+
+	if got := stateOf(ctx, t, st, "sandbox-2"); got != model.SandboxStateArchived {
+		t.Fatalf("sandbox-2 state = %q, want archived: a runtime report must not un-archive a sandbox", got)
+	}
+	current, err := st.GetSandbox(ctx, "project-1", "sandbox-2")
+	if err != nil {
+		t.Fatalf("get sandbox-2: %v", err)
+	}
+	if current.DesiredState != model.DesiredStateArchived {
+		t.Fatalf("sandbox-2 desired state = %q, want archived", current.DesiredState)
 	}
 }
 

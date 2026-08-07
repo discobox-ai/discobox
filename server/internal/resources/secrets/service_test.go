@@ -107,7 +107,6 @@ func newTestService(t *testing.T) *resourcesecrets.Service {
 		ID:          "project-1",
 		OwnerUserID: "user-1",
 		Name:        "Project",
-		Slug:        "project",
 	}).Error; err != nil {
 		t.Fatalf("create project: %v", err)
 	}

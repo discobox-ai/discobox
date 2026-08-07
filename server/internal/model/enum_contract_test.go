@@ -35,9 +35,9 @@ func TestModelEnumsMatchAPISchema(t *testing.T) {
 		api   []string
 	}{
 		{"pool state", model.PoolStates, values(apigen.PoolState("").AllValues())},
-		{"pool desired state", model.DesiredStates, values(apigen.PoolDesiredState("").AllValues())},
+		{"pool desired state", model.PoolDesiredStates, values(apigen.PoolDesiredState("").AllValues())},
 		{"sandbox state", model.SandboxStates, values(apigen.SandboxRuntimeState("").AllValues())},
-		{"sandbox desired state", model.DesiredStates, values(apigen.SandboxRuntimeDesiredState("").AllValues())},
+		{"sandbox desired state", model.SandboxDesiredStates, values(apigen.SandboxRuntimeDesiredState("").AllValues())},
 	}
 
 	for _, tc := range cases {
@@ -67,12 +67,14 @@ func TestModelEnumsMatchAPISchema(t *testing.T) {
 // whole enum family already follows; a const named off-pattern would not be
 // caught, but that is a far more visible mistake than a missing slice entry.
 func TestModelEnumConstsAreRegistered(t *testing.T) {
-	// Prefix → registry slice. No prefix here is a prefix of another, so each
-	// const matches at most one.
-	registries := map[string][]string{
-		"PoolState":    model.PoolStates,
-		"SandboxState": model.SandboxStates,
-		"DesiredState": model.DesiredStates,
+	// Prefix → the registry slices a const with that prefix may live in. No
+	// prefix here is a prefix of another, so each const matches at most one
+	// entry. DesiredState maps to two because the vocabulary is per-resource
+	// since ADR 0022 §1: a value belonging to either resource is registered.
+	registries := map[string][][]string{
+		"PoolState":    {model.PoolStates},
+		"SandboxState": {model.SandboxStates},
+		"DesiredState": {model.SandboxDesiredStates, model.PoolDesiredStates},
 	}
 
 	for name, value := range stringConstsInPackage(t) {
@@ -80,8 +82,8 @@ func TestModelEnumConstsAreRegistered(t *testing.T) {
 		if prefix == "" {
 			continue
 		}
-		if !sliceContains(registries[prefix], value) {
-			t.Errorf("const %s = %q is not in the %s registry slice; add it there (a value the "+
+		if !anySliceContains(registries[prefix], value) {
+			t.Errorf("const %s = %q is not in any %s registry slice; add it there (a value the "+
 				"registry omits is served but never validated)", name, value, prefix)
 		}
 	}
@@ -139,7 +141,7 @@ func stringConstsInPackage(t *testing.T) map[string]string {
 }
 
 // matchingPrefix returns the registry prefix that name starts with, or "".
-func matchingPrefix(name string, registries map[string][]string) string {
+func matchingPrefix(name string, registries map[string][][]string) string {
 	for prefix := range registries {
 		if strings.HasPrefix(name, prefix) {
 			return prefix
@@ -148,10 +150,12 @@ func matchingPrefix(name string, registries map[string][]string) string {
 	return ""
 }
 
-func sliceContains(values []string, target string) bool {
-	for _, v := range values {
-		if v == target {
-			return true
+func anySliceContains(slices [][]string, target string) bool {
+	for _, values := range slices {
+		for _, v := range values {
+			if v == target {
+				return true
+			}
 		}
 	}
 	return false

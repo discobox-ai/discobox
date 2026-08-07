@@ -115,22 +115,42 @@ func TestSandboxReconcileExecutorDelegatesToProvider(t *testing.T) {
 		t.Fatalf("secret state after stop = %q, want stopped", string(sb.SecretState))
 	}
 
+	// Delete archives: the provider is asked to drop the runtime and keep the
+	// data, and the row survives so the sandbox can be restored (ADR 0022 §2).
 	if err := svc.DeleteSandbox(ctx, projectID, sb.ID); err != nil {
 		t.Fatalf("delete sandbox: %v", err)
 	}
 	sb, err = svc.GetSandbox(ctx, projectID, sb.ID)
 	if err != nil {
-		t.Fatalf("get sandbox after delete intent: %v", err)
+		t.Fatalf("get sandbox after archive intent: %v", err)
 	}
 	if err := reconcileSandbox(ctx, t, svc, executor, sb.ProjectID, sb.ID); err != nil {
-		t.Fatalf("reconcile delete: %v", err)
+		t.Fatalf("reconcile archive: %v", err)
+	}
+	if provider.archiveCalls != 1 {
+		t.Fatalf("archive calls = %d, want 1", provider.archiveCalls)
+	}
+	if provider.removeCalls != 0 {
+		t.Fatalf("archive removed the data: remove calls = %d, want 0", provider.removeCalls)
+	}
+	sb, err = svc.GetSandbox(ctx, projectID, sb.ID)
+	if err != nil {
+		t.Fatalf("get sandbox after archive = %v, want it retained", err)
+	}
+	if sb.State != model.SandboxStateArchived {
+		t.Fatalf("state after archive = %q, want archived", sb.State)
+	}
+
+	// Purge is what destroys it, and only returns once the provider confirms.
+	if err := svc.PurgeSandbox(ctx, projectID, sb.ID); err != nil {
+		t.Fatalf("purge sandbox: %v", err)
 	}
 	if provider.removeCalls != 1 {
 		t.Fatalf("remove calls = %d, want 1", provider.removeCalls)
 	}
 	_, err = svc.GetSandbox(ctx, projectID, sb.ID)
 	if !isNotFoundStatus(err) {
-		t.Fatalf("get sandbox after delete = %v, want not found", err)
+		t.Fatalf("get sandbox after purge = %v, want not found", err)
 	}
 }
 
@@ -587,6 +607,7 @@ type recordingSandboxProvider struct {
 	createCalls   int
 	startCalls    int
 	stopCalls     int
+	archiveCalls  int
 	removeCalls   int
 	createRef     sandboxes.SandboxRef
 	createOptions sandboxes.CreateOptions
@@ -640,7 +661,12 @@ func (p *recordingSandboxProvider) Stop(context.Context, sandboxes.SandboxRef, [
 func (p *recordingSandboxProvider) Restart(context.Context, sandboxes.SandboxRef, []byte, time.Duration) ([]byte, error) {
 	return nil, nil
 }
-func (p *recordingSandboxProvider) Remove(context.Context, sandboxes.SandboxRef, []byte, ...sandboxes.RemoveOption) ([]byte, error) {
+func (p *recordingSandboxProvider) Archive(context.Context, sandboxes.SandboxRef, []byte) ([]byte, error) {
+	p.archiveCalls++
+	return nil, nil
+}
+
+func (p *recordingSandboxProvider) Remove(context.Context, sandboxes.SandboxRef, []byte) ([]byte, error) {
 	p.removeCalls++
 	return nil, nil
 }

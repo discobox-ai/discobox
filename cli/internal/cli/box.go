@@ -7,6 +7,7 @@ func (a *App) newBoxCommand() *cobra.Command {
 		Use:   "box",
 		Short: "Manage advanced Discobox configuration",
 	}
+	cmd.AddCommand(a.newProjectCommand())
 	cmd.AddCommand(a.newSandboxCommand())
 	cmd.AddCommand(a.newSandboxTerminalsCommand())
 	cmd.AddCommand(a.newSandboxExecCommand())

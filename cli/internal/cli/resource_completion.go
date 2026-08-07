@@ -28,10 +28,7 @@ func (a *App) completeProjects(cmd *cobra.Command, _ []string, toComplete string
 	completions := []string{completionItem(defaultProjectAlias, "default project")}
 	for _, project := range body.GetProjects() {
 		if project.ID != "" {
-			completions = append(completions, completionItem(project.ID, completionDescription(project.Name, project.Slug)))
-		}
-		if project.Slug != "" && project.Slug != project.ID {
-			completions = append(completions, completionItem(project.Slug, completionDescription(project.Name, project.ID)))
+			completions = append(completions, completionItem(project.ID, project.Name))
 		}
 	}
 	return filterCompletions(completions, toComplete), cobra.ShellCompDirectiveNoFileComp

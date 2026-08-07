@@ -81,7 +81,7 @@ func TestMigrateRenamesLocalVMProvidersToLibkrun(t *testing.T) {
 		t.Fatalf("initial migrate: %v", err)
 	}
 
-	project := &model.Project{ID: "project-1", OwnerUserID: "user-1", Name: "Project", Slug: "project"}
+	project := &model.Project{ID: "project-1", OwnerUserID: "user-1", Name: "Project"}
 	if err := db.Write.Create(project).Error; err != nil {
 		t.Fatalf("create project: %v", err)
 	}
@@ -154,7 +154,7 @@ func TestMigrateDropsJobQueueArtifactsWithForeignKeys(t *testing.T) {
 	}
 
 	// FK-linked rows spanning the tables that get rebuilt.
-	project := &model.Project{ID: "project-1", OwnerUserID: "user-1", Name: "Project", Slug: "project"}
+	project := &model.Project{ID: "project-1", OwnerUserID: "user-1", Name: "Project"}
 	if err := db.Write.Create(project).Error; err != nil {
 		t.Fatalf("create project: %v", err)
 	}
@@ -236,7 +236,7 @@ func TestMigrateReplacesLegacyPoolBootstrapTokenConstraint(t *testing.T) {
 		t.Fatal("legacy restrictive constraint was not installed")
 	}
 
-	project := &model.Project{ID: "project-1", OwnerUserID: "user-1", Name: "Project", Slug: "project"}
+	project := &model.Project{ID: "project-1", OwnerUserID: "user-1", Name: "Project"}
 	if err := db.Write.Create(project).Error; err != nil {
 		t.Fatalf("create project: %v", err)
 	}
@@ -283,6 +283,54 @@ func TestMigrateReplacesLegacyPoolBootstrapTokenConstraint(t *testing.T) {
 	}
 	if tokenCount != 0 {
 		t.Fatalf("bootstrap token count after pool delete = %d, want 0", tokenCount)
+	}
+}
+
+// A database created before the slug column was retired still has it, declared
+// NOT NULL with no default. AutoMigrate adds columns but never drops them, so
+// without the migration every project write fails with a constraint violation —
+// which is what a plain `sandbox restart` hit.
+func TestMigrateDropsLegacyProjectSlugColumn(t *testing.T) {
+	ctx := context.Background()
+	db, err := database.New(database.Config{
+		Driver: gormdb.DriverSQLite,
+		DSN:    "sqlite3://" + filepath.Join(t.TempDir(), "discobox.db"),
+	})
+	if err != nil {
+		t.Fatalf("open database: %v", err)
+	}
+	t.Cleanup(func() {
+		if err := db.Close(); err != nil {
+			t.Fatalf("close database: %v", err)
+		}
+	})
+	if err := db.Migrate(ctx); err != nil {
+		t.Fatalf("initial migrate: %v", err)
+	}
+	// Re-add the column the way AutoMigrate wrote it: NOT NULL, and quoted as
+	// GORM quotes identifiers, so this is the schema a real upgrade meets.
+	if err := db.Write.Exec("ALTER TABLE projects ADD COLUMN `slug` text NOT NULL DEFAULT ''").Error; err != nil {
+		t.Fatalf("re-add legacy slug column: %v", err)
+	}
+	if !db.Write.Migrator().HasColumn(&model.Project{}, "slug") {
+		t.Fatal("legacy slug column was not re-added")
+	}
+
+	if err := db.Migrate(ctx); err != nil {
+		t.Fatalf("upgrade migrate: %v", err)
+	}
+
+	if db.Write.Migrator().HasColumn(&model.Project{}, "slug") {
+		t.Fatal("projects.slug survived the migration")
+	}
+	project := &model.Project{ID: "project-1", OwnerUserID: "user-1", Name: "Project"}
+	if err := db.Write.Create(project).Error; err != nil {
+		t.Fatalf("create project after migration: %v", err)
+	}
+	// The write path that failed in the field is an update, not just an insert.
+	project.Name = "Renamed"
+	if err := db.Write.Save(project).Error; err != nil {
+		t.Fatalf("update project after migration: %v", err)
 	}
 }
 

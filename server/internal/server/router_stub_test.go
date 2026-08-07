@@ -47,7 +47,6 @@ func newRouterTestServices() *routerTestServices {
 		ID:          testDefaultProjectID,
 		OwnerUserID: user.ID,
 		Name:        "Default Project",
-		Slug:        "default",
 		Owner:       &user,
 		CreatedAt:   now,
 		UpdatedAt:   now,
@@ -78,6 +77,25 @@ func (s *routerTestServices) GetProject(_ context.Context, projectID string) (*m
 	}
 	project := s.projectWithSandboxes()
 	return &project, nil
+}
+
+func (s *routerTestServices) CreateProject(context.Context, services.CreateProjectBody) (*model.Project, error) {
+	return nil, apperrors.NewStatusError(http.StatusNotImplemented, "not implemented")
+}
+
+func (s *routerTestServices) UpdateProject(_ context.Context, projectID string, _ services.UpdateProjectBody) (*model.Project, error) {
+	return s.GetProject(context.Background(), projectID)
+}
+
+func (s *routerTestServices) DeleteProject(_ context.Context, projectID string) error {
+	if projectID != s.project.ID {
+		return apperrors.NewStatusError(http.StatusNotFound, "project not found")
+	}
+	return apperrors.NewStatusError(http.StatusConflict, "project is the default project")
+}
+
+func (s *routerTestServices) SetDefaultProject(_ context.Context, projectID string) (*model.Project, error) {
+	return s.GetProject(context.Background(), projectID)
 }
 
 func (s *routerTestServices) ListJobs(_ context.Context, projectID string) ([]model.Job, error) {
@@ -221,7 +239,38 @@ func (s *routerTestServices) UpdateSandbox(_ context.Context, projectID, sandbox
 	return &sandbox, nil
 }
 
+// DeleteSandbox archives: the row survives with desired state archived, which
+// is what lets unarchive and the retention purge find it again (ADR 0022 §2).
 func (s *routerTestServices) DeleteSandbox(_ context.Context, projectID, sandboxID string) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	sandbox, err := s.getSandbox(projectID, sandboxID)
+	if err != nil {
+		return err
+	}
+	sandbox.DesiredState = model.DesiredStateArchived
+	sandbox.SetState(model.SandboxStateArchived)
+	return nil
+}
+
+func (s *routerTestServices) UnarchiveSandbox(_ context.Context, projectID, sandboxID string) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	sandbox, err := s.getSandbox(projectID, sandboxID)
+	if err != nil {
+		return err
+	}
+	if sandbox.DesiredState != model.DesiredStateArchived {
+		return apperrors.NewStatusError(http.StatusConflict, "sandbox is not archived")
+	}
+	sandbox.DesiredState = model.DesiredStatePresent
+	sandbox.SetState(model.SandboxStateStopped)
+	return nil
+}
+
+func (s *routerTestServices) PurgeSandbox(_ context.Context, projectID, sandboxID string) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 

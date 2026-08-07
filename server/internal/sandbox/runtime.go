@@ -39,7 +39,17 @@ type Provider interface {
 	Stop(ctx context.Context, ref SandboxRef, state []byte, timeout time.Duration) ([]byte, error)
 	Restart(ctx context.Context, ref SandboxRef, state []byte, timeout time.Duration) ([]byte, error)
 
-	Remove(ctx context.Context, ref SandboxRef, state []byte, opts ...RemoveOption) ([]byte, error)
+	// Archive tears the sandbox's runtime down and keeps its data: no container
+	// and no runtime resources, but whatever durable state the provider holds
+	// for it survives, so a later Create reinstantiates the same sandbox rather
+	// than a fresh one (ADR 0022 §6).
+	Archive(ctx context.Context, ref SandboxRef, state []byte) ([]byte, error)
+	// Remove destroys the sandbox and its data, and returns only once the
+	// provider has confirmed both are gone. The control plane deletes its row on
+	// the strength of that return, so a provider that cannot confirm must error
+	// rather than report success (ADR 0022 §3). Keeping the data is Archive's
+	// job; there is no option here for it.
+	Remove(ctx context.Context, ref SandboxRef, state []byte) ([]byte, error)
 	Get(ctx context.Context, ref SandboxRef, state []byte) (*Sandbox, error)
 	AcquireHTTPClient(ctx context.Context, ref SandboxRef, state []byte, scopes []string) (*transport.HTTPClientLease, error)
 }
@@ -192,32 +202,6 @@ type ResourceConfig struct {
 	CPUCores float64
 	DiskMB   int
 	Timeout  time.Duration
-}
-
-// RemoveOption configures sandbox removal behavior.
-type RemoveOption func(*RemoveConfig)
-
-// RemoveConfig holds parsed remove options.
-type RemoveConfig struct {
-	RemoveVolumes bool
-}
-
-// RemoveVolumes enables provider-managed volume/data deletion.
-func RemoveVolumes() RemoveOption {
-	return func(cfg *RemoveConfig) {
-		cfg.RemoveVolumes = true
-	}
-}
-
-// ParseRemoveOptions applies remove options to defaults.
-func ParseRemoveOptions(opts []RemoveOption) RemoveConfig {
-	cfg := RemoveConfig{}
-	for _, opt := range opts {
-		if opt != nil {
-			opt(&cfg)
-		}
-	}
-	return cfg
 }
 
 // AttachOptions configures an interactive PTY.

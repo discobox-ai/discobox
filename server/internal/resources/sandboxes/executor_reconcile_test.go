@@ -255,10 +255,11 @@ func (noCapacityProvider) Create(context.Context, sandboxes.SandboxRef, []byte, 
 
 type failingSandboxProvider struct {
 	sandboxes.Provider
-	createErr error
-	startErr  error
-	stopErr   error
-	removeErr error
+	createErr  error
+	startErr   error
+	stopErr    error
+	archiveErr error
+	removeErr  error
 }
 
 func (p failingSandboxProvider) Create(context.Context, sandboxes.SandboxRef, []byte, sandboxes.CreateOptions) (*sandboxes.Sandbox, []byte, error) {
@@ -286,7 +287,11 @@ func (p failingSandboxProvider) Restart(context.Context, sandboxes.SandboxRef, [
 	return nil, nil
 }
 
-func (p failingSandboxProvider) Remove(context.Context, sandboxes.SandboxRef, []byte, ...sandboxes.RemoveOption) ([]byte, error) {
+func (p failingSandboxProvider) Archive(context.Context, sandboxes.SandboxRef, []byte) ([]byte, error) {
+	return nil, p.archiveErr
+}
+
+func (p failingSandboxProvider) Remove(context.Context, sandboxes.SandboxRef, []byte) ([]byte, error) {
 	if p.removeErr != nil {
 		return nil, p.removeErr
 	}
@@ -347,7 +352,7 @@ func newExecutorTestStore(t *testing.T) *store.Store {
 	if err := db.Migrate(ctx); err != nil {
 		t.Fatalf("migrate db: %v", err)
 	}
-	project := &model.Project{ID: "project-1", OwnerUserID: "user-1", Name: "Project", Slug: "project"}
+	project := &model.Project{ID: "project-1", OwnerUserID: "user-1", Name: "Project"}
 	if err := db.Write.WithContext(ctx).Create(project).Error; err != nil {
 		t.Fatalf("create project: %v", err)
 	}

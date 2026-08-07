@@ -243,11 +243,7 @@ you release the default before deleting that pool.`, Args: cobra.ExactArgs(1), V
 // defaultPoolID returns the project's configured default pool ID, or "" when
 // none is set.
 func (a *App) defaultPoolID(ctx context.Context, client *apiclientgen.Client, projectID string) (string, error) {
-	res, err := client.GetProject(ctx, apiclientgen.GetProjectParams{ProjectId: projectID})
-	if err != nil {
-		return "", err
-	}
-	project, err := expectResponse[apimodel.Project](res)
+	project, err := a.getProject(ctx, client, projectID)
 	if err != nil {
 		return "", err
 	}
@@ -270,7 +266,7 @@ func (a *App) newPoolDeleteCommand() *cobra.Command {
 		if err != nil {
 			return err
 		}
-		return runDeleteMany(cmd, args, "pool", func(arg string) (string, error) {
+		return runActionMany(cmd, args, "pool", "deleted", func(arg string) (string, error) {
 			poolID, err := a.resolvePoolID(cmd.Context(), client, projectID, arg)
 			if err != nil {
 				return "", err

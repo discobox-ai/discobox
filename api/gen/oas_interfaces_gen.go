@@ -45,6 +45,10 @@ type CreatePoolRes interface {
 	createPoolRes()
 }
 
+type CreateProjectRes interface {
+	createProjectRes()
+}
+
 type CreateSandboxExecRes interface {
 	createSandboxExecRes()
 }
@@ -83,6 +87,10 @@ type DeleteHarnessConfigSecretBindingRes interface {
 
 type DeletePoolRes interface {
 	deletePoolRes()
+}
+
+type DeleteProjectRes interface {
+	deleteProjectRes()
 }
 
 type DeleteSandboxExecRes interface {
@@ -213,6 +221,10 @@ type ListSecretsRes interface {
 	listSecretsRes()
 }
 
+type PurgeSandboxRes interface {
+	purgeSandboxRes()
+}
+
 type ReconcilePoolRes interface {
 	reconcilePoolRes()
 }
@@ -253,6 +265,10 @@ type SetDefaultPoolRes interface {
 	setDefaultPoolRes()
 }
 
+type SetDefaultProjectRes interface {
+	setDefaultProjectRes()
+}
+
 type SetHarnessConfigSecretBindingRes interface {
 	setHarnessConfigSecretBindingRes()
 }
@@ -273,6 +289,10 @@ type StreamSandboxExecResourcesRes interface {
 	streamSandboxExecResourcesRes()
 }
 
+type UnarchiveSandboxRes interface {
+	unarchiveSandboxRes()
+}
+
 type UnsetDefaultHarnessConfigRes interface {
 	unsetDefaultHarnessConfigRes()
 }
@@ -291,6 +311,10 @@ type UpdatePoolRes interface {
 
 type UpdatePoolStatusRes interface {
 	updatePoolStatusRes()
+}
+
+type UpdateProjectRes interface {
+	updateProjectRes()
 }
 
 type UpdateSandboxProviderInstanceRes interface {

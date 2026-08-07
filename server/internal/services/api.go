@@ -32,6 +32,8 @@ type ProviderConfigField = apimodel.ProviderConfigField
 type ProviderStatus = apimodel.ProviderStatus
 type CreateSandboxProviderInstanceBody = apimodel.CreateSandboxProviderInstanceBody
 type UpdateSandboxProviderInstanceBody = apimodel.UpdateSandboxProviderInstanceBody
+type CreateProjectBody = apimodel.CreateProjectBody
+type UpdateProjectBody = apimodel.UpdateProjectBody
 type CreatePoolBody = apimodel.CreatePoolBody
 type UpdatePoolBody = apimodel.UpdatePoolBody
 type RegisterPoolBody = apimodel.RegisterPoolBody
@@ -47,10 +49,17 @@ type OptNilProviderConfigFieldArray = serverapi.OptNilProviderConfigFieldArray
 type OptSandboxCreateConfigSourceCodeReferences = serverapi.OptSandboxCreateConfigSourceCodeReferences
 type HTTPClientLease = transport.HTTPClientLease
 
-// ProjectService provides read-only access to projects.
+// ProjectService manages projects and the user's default project.
 type ProjectService interface {
 	ListProjects(ctx context.Context) ([]model.Project, error)
+	CreateProject(ctx context.Context, input CreateProjectBody) (*model.Project, error)
 	GetProject(ctx context.Context, projectID string) (*model.Project, error)
+	UpdateProject(ctx context.Context, projectID string, input UpdateProjectBody) (*model.Project, error)
+	DeleteProject(ctx context.Context, projectID string) error
+	// SetDefaultProject moves the calling user's default-project flag, which is
+	// what the "default" project alias resolves. It has no unset: a user always
+	// has exactly one default project.
+	SetDefaultProject(ctx context.Context, projectID string) (*model.Project, error)
 }
 
 // HarnessConfigService manages project-scoped harness configurations.
@@ -102,7 +111,11 @@ type SandboxService interface {
 	CreateSandbox(ctx context.Context, projectID string, input CreateSandboxBody) (*model.Sandbox, error)
 	GetSandbox(ctx context.Context, projectID, sandboxID string) (*model.Sandbox, error)
 	UpdateSandbox(ctx context.Context, projectID, sandboxID string, input UpdateSandboxBody) (*model.Sandbox, error)
+	// DeleteSandbox archives; UnarchiveSandbox restores; PurgeSandbox destroys
+	// the data and confirms it before returning (ADR 0022 §§2-3).
 	DeleteSandbox(ctx context.Context, projectID, sandboxID string) error
+	UnarchiveSandbox(ctx context.Context, projectID, sandboxID string) error
+	PurgeSandbox(ctx context.Context, projectID, sandboxID string) error
 	StartSandbox(ctx context.Context, projectID, sandboxID string, input StartSandboxBody) (*model.Sandbox, error)
 	StopSandbox(ctx context.Context, projectID, sandboxID string, input StopSandboxBody) (*model.Sandbox, error)
 	RestartSandbox(ctx context.Context, projectID, sandboxID string, input RestartSandboxBody) (*model.Sandbox, error)

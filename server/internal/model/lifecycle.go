@@ -6,20 +6,38 @@ import "time"
 // whether a sandbox is running right now — is not orchestrated: it is observed
 // and reported by the runtime, never requested by the control plane.
 //
-// These two values are shared verbatim by every orchestrated resource, which is
-// why the enum tag on DesiredState below is accurate rather than the union the
-// State tag still is.
+// Existence is three-valued for a sandbox (ADR 0022 §1): `archived` is not a
+// power state but a third answer to what form the resource should exist in —
+// as data rather than as a runtime.
 const (
 	DesiredStatePresent = "present"
-	DesiredStateDeleted = "deleted"
+	// DesiredStateArchived means: exist as data. No container and no runtime
+	// resources, but the durable tree is retained so the sandbox can be
+	// reinstantiated by asking for `present` again.
+	DesiredStateArchived = "archived"
+	DesiredStateDeleted  = "deleted"
 )
 
-// DesiredStates is the canonical desired-state vocabulary, identical for all
-// orchestrated resources.
-var DesiredStates = []string{
-	DesiredStatePresent,
-	DesiredStateDeleted,
-}
+// SandboxDesiredStates and PoolDesiredStates are the desired-state vocabularies
+// of the two orchestrated resources. They were one shared slice until ADR 0022
+// §1: only a sandbox can be archived. A pool's data is many sandboxes' data, so
+// archiving one is a different decision that nothing converges — putting the
+// value in the pool's enum just to keep a single slice would advertise a state
+// the pool reconciler cannot reach.
+//
+// The enum tag on ResourceLifecycle.DesiredState is therefore the union, like
+// the State tag, rather than the exact vocabulary of any one resource.
+var (
+	SandboxDesiredStates = []string{
+		DesiredStatePresent,
+		DesiredStateArchived,
+		DesiredStateDeleted,
+	}
+	PoolDesiredStates = []string{
+		DesiredStatePresent,
+		DesiredStateDeleted,
+	}
+)
 
 // ResourceLifecycle is embedded into orchestrated resources. Two of its fields
 // are the orchestration contract — Generation and ObservedGeneration, read by
@@ -30,8 +48,8 @@ var DesiredStates = []string{
 // is a convenience, not a contract: a resource owes the orchestrator only the
 // two counters.
 type ResourceLifecycle struct {
-	DesiredState       string    `gorm:"column:desired_state;not null;type:text;index;default:''" json:"desiredState" doc:"Requested existence. Power state is not orchestrated (ADR 0017 §9)." enum:"present,deleted"`
-	State              string    `gorm:"column:state;not null;type:text;index;default:''" json:"state" doc:"Observed state, reported by whichever component can see it" enum:"pending,awaiting_source,registering,starting,running,stopping,stopped,active,offline,deleted,failed"`
+	DesiredState       string    `gorm:"column:desired_state;not null;type:text;index;default:''" json:"desiredState" doc:"Requested existence. Power state is not orchestrated (ADR 0017 §9)." enum:"present,archived,deleted"`
+	State              string    `gorm:"column:state;not null;type:text;index;default:''" json:"state" doc:"Observed state, reported by whichever component can see it" enum:"pending,awaiting_source,registering,starting,running,stopping,stopped,active,offline,archived,deleted,failed"`
 	Generation         int64     `gorm:"not null;default:0" json:"generation" doc:"Latest spec generation"`
 	ObservedGeneration int64     `gorm:"column:observed_generation;not null;default:0" json:"observedGeneration" doc:"Latest generation the reconciler has finished acting on"`
 	StateChangedAt     time.Time `gorm:"column:state_changed_at" json:"stateChangedAt,omitempty" doc:"When State last changed to its current value. Anchors how long a resource has been in a state, for timeouts that must not be reset by unrelated reconciles." format:"date-time"`

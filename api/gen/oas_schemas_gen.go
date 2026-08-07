@@ -532,6 +532,109 @@ func (s *CreatePoolBody) SetStorageBytes(val OptInt64) {
 	s.StorageBytes = val
 }
 
+// Ref: #/components/schemas/CreateProjectBody
+type CreateProjectBody struct {
+	// A URL to the JSON Schema for this object.
+	Schema OptURI `json:"$schema"`
+	// What to copy from copyFromProjectId. Omitted means copy everything copyable; an empty array copies
+	// nothing. Copying pools implies copying providers, since a pool binds to a provider instance in its
+	// own project.
+	Copy OptNilCreateProjectBodyCopyItemArray `json:"copy"`
+	// Project whose configuration seeds the new project. Omitted leaves the project bare apart from the
+	// built-in harnesses every project is seeded with.
+	CopyFromProjectId OptString `json:"copyFromProjectId"`
+	// Project display name.
+	Name string `json:"name"`
+}
+
+// GetSchema returns the value of Schema.
+func (s *CreateProjectBody) GetSchema() OptURI {
+	return s.Schema
+}
+
+// GetCopy returns the value of Copy.
+func (s *CreateProjectBody) GetCopy() OptNilCreateProjectBodyCopyItemArray {
+	return s.Copy
+}
+
+// GetCopyFromProjectId returns the value of CopyFromProjectId.
+func (s *CreateProjectBody) GetCopyFromProjectId() OptString {
+	return s.CopyFromProjectId
+}
+
+// GetName returns the value of Name.
+func (s *CreateProjectBody) GetName() string {
+	return s.Name
+}
+
+// SetSchema sets the value of Schema.
+func (s *CreateProjectBody) SetSchema(val OptURI) {
+	s.Schema = val
+}
+
+// SetCopy sets the value of Copy.
+func (s *CreateProjectBody) SetCopy(val OptNilCreateProjectBodyCopyItemArray) {
+	s.Copy = val
+}
+
+// SetCopyFromProjectId sets the value of CopyFromProjectId.
+func (s *CreateProjectBody) SetCopyFromProjectId(val OptString) {
+	s.CopyFromProjectId = val
+}
+
+// SetName sets the value of Name.
+func (s *CreateProjectBody) SetName(val string) {
+	s.Name = val
+}
+
+type CreateProjectBodyCopyItem string
+
+const (
+	CreateProjectBodyCopyItemProviders CreateProjectBodyCopyItem = "providers"
+	CreateProjectBodyCopyItemPools     CreateProjectBodyCopyItem = "pools"
+	CreateProjectBodyCopyItemHarnesses CreateProjectBodyCopyItem = "harnesses"
+)
+
+// AllValues returns all CreateProjectBodyCopyItem values.
+func (CreateProjectBodyCopyItem) AllValues() []CreateProjectBodyCopyItem {
+	return []CreateProjectBodyCopyItem{
+		CreateProjectBodyCopyItemProviders,
+		CreateProjectBodyCopyItemPools,
+		CreateProjectBodyCopyItemHarnesses,
+	}
+}
+
+// MarshalText implements encoding.TextMarshaler.
+func (s CreateProjectBodyCopyItem) MarshalText() ([]byte, error) {
+	switch s {
+	case CreateProjectBodyCopyItemProviders:
+		return []byte(s), nil
+	case CreateProjectBodyCopyItemPools:
+		return []byte(s), nil
+	case CreateProjectBodyCopyItemHarnesses:
+		return []byte(s), nil
+	default:
+		return nil, errors.Errorf("invalid value: %q", s)
+	}
+}
+
+// UnmarshalText implements encoding.TextUnmarshaler.
+func (s *CreateProjectBodyCopyItem) UnmarshalText(data []byte) error {
+	switch CreateProjectBodyCopyItem(data) {
+	case CreateProjectBodyCopyItemProviders:
+		*s = CreateProjectBodyCopyItemProviders
+		return nil
+	case CreateProjectBodyCopyItemPools:
+		*s = CreateProjectBodyCopyItemPools
+		return nil
+	case CreateProjectBodyCopyItemHarnesses:
+		*s = CreateProjectBodyCopyItemHarnesses
+		return nil
+	default:
+		return errors.Errorf("invalid value: %q", data)
+	}
+}
+
 // Ref: #/components/schemas/CreateSandboxBody
 type CreateSandboxBody struct {
 	// A URL to the JSON Schema for this object.
@@ -1197,6 +1300,11 @@ type DeletePoolNoContent struct{}
 
 func (*DeletePoolNoContent) deletePoolRes() {}
 
+// DeleteProjectNoContent is response for DeleteProject operation.
+type DeleteProjectNoContent struct{}
+
+func (*DeleteProjectNoContent) deleteProjectRes() {}
+
 // DeleteSandboxAccepted is response for DeleteSandbox operation.
 type DeleteSandboxAccepted struct{}
 
@@ -1386,6 +1494,7 @@ func (*ErrorModelStatusCode) completeSandboxSourcePushRes()        {}
 func (*ErrorModelStatusCode) configureHarnessConfigRes()           {}
 func (*ErrorModelStatusCode) createHarnessConfigRes()              {}
 func (*ErrorModelStatusCode) createPoolRes()                       {}
+func (*ErrorModelStatusCode) createProjectRes()                    {}
 func (*ErrorModelStatusCode) createSandboxProviderInstanceRes()    {}
 func (*ErrorModelStatusCode) createSandboxRes()                    {}
 func (*ErrorModelStatusCode) createSecretGrantRes()                {}
@@ -1395,6 +1504,7 @@ func (*ErrorModelStatusCode) deconfigureHarnessConfigRes()         {}
 func (*ErrorModelStatusCode) deleteHarnessConfigRes()              {}
 func (*ErrorModelStatusCode) deleteHarnessConfigSecretBindingRes() {}
 func (*ErrorModelStatusCode) deletePoolRes()                       {}
+func (*ErrorModelStatusCode) deleteProjectRes()                    {}
 func (*ErrorModelStatusCode) deleteSandboxProviderInstanceRes()    {}
 func (*ErrorModelStatusCode) deleteSandboxRes()                    {}
 func (*ErrorModelStatusCode) deleteSecretRes()                     {}
@@ -1419,6 +1529,7 @@ func (*ErrorModelStatusCode) listSandboxesRes()                    {}
 func (*ErrorModelStatusCode) listSecretGrantsRes()                 {}
 func (*ErrorModelStatusCode) listSecretRequestsRes()               {}
 func (*ErrorModelStatusCode) listSecretsRes()                      {}
+func (*ErrorModelStatusCode) purgeSandboxRes()                     {}
 func (*ErrorModelStatusCode) reconcilePoolRes()                    {}
 func (*ErrorModelStatusCode) reconcileSandboxRes()                 {}
 func (*ErrorModelStatusCode) refreshHarnessConfigImageRes()        {}
@@ -1429,14 +1540,17 @@ func (*ErrorModelStatusCode) restartSandboxRes()                   {}
 func (*ErrorModelStatusCode) revokeSecretGrantRes()                {}
 func (*ErrorModelStatusCode) setDefaultHarnessConfigRes()          {}
 func (*ErrorModelStatusCode) setDefaultPoolRes()                   {}
+func (*ErrorModelStatusCode) setDefaultProjectRes()                {}
 func (*ErrorModelStatusCode) setHarnessConfigSecretBindingRes()    {}
 func (*ErrorModelStatusCode) startSandboxRes()                     {}
 func (*ErrorModelStatusCode) stopSandboxRes()                      {}
+func (*ErrorModelStatusCode) unarchiveSandboxRes()                 {}
 func (*ErrorModelStatusCode) unsetDefaultHarnessConfigRes()        {}
 func (*ErrorModelStatusCode) unsetDefaultPoolRes()                 {}
 func (*ErrorModelStatusCode) updateHarnessConfigRes()              {}
 func (*ErrorModelStatusCode) updatePoolRes()                       {}
 func (*ErrorModelStatusCode) updatePoolStatusRes()                 {}
+func (*ErrorModelStatusCode) updateProjectRes()                    {}
 func (*ErrorModelStatusCode) updateSandboxProviderInstanceRes()    {}
 func (*ErrorModelStatusCode) updateSandboxRes()                    {}
 func (*ErrorModelStatusCode) updateSecretRes()                     {}
@@ -3951,6 +4065,69 @@ func (o OptNilAppliedSourceCommitArray) Or(d []AppliedSourceCommit) []AppliedSou
 	return d
 }
 
+// NewOptNilCreateProjectBodyCopyItemArray returns new OptNilCreateProjectBodyCopyItemArray with value set to v.
+func NewOptNilCreateProjectBodyCopyItemArray(v []CreateProjectBodyCopyItem) OptNilCreateProjectBodyCopyItemArray {
+	return OptNilCreateProjectBodyCopyItemArray{
+		Value: v,
+		Set:   true,
+	}
+}
+
+// OptNilCreateProjectBodyCopyItemArray is optional nullable []CreateProjectBodyCopyItem.
+type OptNilCreateProjectBodyCopyItemArray struct {
+	Value []CreateProjectBodyCopyItem
+	Set   bool
+	Null  bool
+}
+
+// IsSet returns true if OptNilCreateProjectBodyCopyItemArray was set.
+func (o OptNilCreateProjectBodyCopyItemArray) IsSet() bool { return o.Set }
+
+// Reset unsets value.
+func (o *OptNilCreateProjectBodyCopyItemArray) Reset() {
+	var v []CreateProjectBodyCopyItem
+	o.Value = v
+	o.Set = false
+	o.Null = false
+}
+
+// SetTo sets value to v.
+func (o *OptNilCreateProjectBodyCopyItemArray) SetTo(v []CreateProjectBodyCopyItem) {
+	o.Set = true
+	o.Null = false
+	o.Value = v
+}
+
+// IsNull returns true if value is Null.
+func (o OptNilCreateProjectBodyCopyItemArray) IsNull() bool { return o.Null }
+
+// SetToNull sets value to null.
+func (o *OptNilCreateProjectBodyCopyItemArray) SetToNull() {
+	o.Set = true
+	o.Null = true
+	var v []CreateProjectBodyCopyItem
+	o.Value = v
+}
+
+// Get returns value and boolean that denotes whether value was set.
+func (o OptNilCreateProjectBodyCopyItemArray) Get() (v []CreateProjectBodyCopyItem, ok bool) {
+	if o.Null {
+		return v, false
+	}
+	if !o.Set {
+		return v, false
+	}
+	return o.Value, true
+}
+
+// Or returns value if set, or given parameter if does not.
+func (o OptNilCreateProjectBodyCopyItemArray) Or(d []CreateProjectBodyCopyItem) []CreateProjectBodyCopyItem {
+	if v, ok := o.Get(); ok {
+		return v
+	}
+	return d
+}
+
 // NewOptNilErrorDetailArray returns new OptNilErrorDetailArray with value set to v.
 func NewOptNilErrorDetailArray(v []ErrorDetail) OptNilErrorDetailArray {
 	return OptNilErrorDetailArray{
@@ -6266,6 +6443,9 @@ type Project struct {
 	DefaultPoolId OptString `json:"defaultPoolId"`
 	// Default harness config ID.
 	DefaultHarnessConfigId OptString `json:"defaultHarnessConfigId"`
+	// How long archived sandboxes are kept before being purged, in seconds. Zero means the server
+	// default.
+	ArchiveRetentionSeconds OptInt64 `json:"archiveRetentionSeconds"`
 	// Stable project ID.
 	ID string `json:"id"`
 	// Project members.
@@ -6282,8 +6462,6 @@ type Project struct {
 	SandboxProviderInstances OptNilSandboxProviderInstanceArray `json:"sandboxProviderInstances"`
 	// Project sandboxes.
 	Sandboxes OptNilSandboxArray `json:"sandboxes"`
-	// URL-safe project slug.
-	Slug string `json:"slug"`
 	// Last update timestamp.
 	UpdatedAt time.Time `json:"updatedAt"`
 }
@@ -6316,6 +6494,11 @@ func (s *Project) GetDefaultPoolId() OptString {
 // GetDefaultHarnessConfigId returns the value of DefaultHarnessConfigId.
 func (s *Project) GetDefaultHarnessConfigId() OptString {
 	return s.DefaultHarnessConfigId
+}
+
+// GetArchiveRetentionSeconds returns the value of ArchiveRetentionSeconds.
+func (s *Project) GetArchiveRetentionSeconds() OptInt64 {
+	return s.ArchiveRetentionSeconds
 }
 
 // GetID returns the value of ID.
@@ -6358,11 +6541,6 @@ func (s *Project) GetSandboxes() OptNilSandboxArray {
 	return s.Sandboxes
 }
 
-// GetSlug returns the value of Slug.
-func (s *Project) GetSlug() string {
-	return s.Slug
-}
-
 // GetUpdatedAt returns the value of UpdatedAt.
 func (s *Project) GetUpdatedAt() time.Time {
 	return s.UpdatedAt
@@ -6396,6 +6574,11 @@ func (s *Project) SetDefaultPoolId(val OptString) {
 // SetDefaultHarnessConfigId sets the value of DefaultHarnessConfigId.
 func (s *Project) SetDefaultHarnessConfigId(val OptString) {
 	s.DefaultHarnessConfigId = val
+}
+
+// SetArchiveRetentionSeconds sets the value of ArchiveRetentionSeconds.
+func (s *Project) SetArchiveRetentionSeconds(val OptInt64) {
+	s.ArchiveRetentionSeconds = val
 }
 
 // SetID sets the value of ID.
@@ -6438,21 +6621,19 @@ func (s *Project) SetSandboxes(val OptNilSandboxArray) {
 	s.Sandboxes = val
 }
 
-// SetSlug sets the value of Slug.
-func (s *Project) SetSlug(val string) {
-	s.Slug = val
-}
-
 // SetUpdatedAt sets the value of UpdatedAt.
 func (s *Project) SetUpdatedAt(val time.Time) {
 	s.UpdatedAt = val
 }
 
+func (*Project) createProjectRes()             {}
 func (*Project) getProjectRes()                {}
 func (*Project) setDefaultHarnessConfigRes()   {}
 func (*Project) setDefaultPoolRes()            {}
+func (*Project) setDefaultProjectRes()         {}
 func (*Project) unsetDefaultHarnessConfigRes() {}
 func (*Project) unsetDefaultPoolRes()          {}
+func (*Project) updateProjectRes()             {}
 
 // Ref: #/components/schemas/ProjectMember
 type ProjectMember struct {
@@ -6668,6 +6849,11 @@ func (s *ProviderStatus) SetMessage(val OptString) {
 func (s *ProviderStatus) SetState(val string) {
 	s.State = val
 }
+
+// PurgeSandboxNoContent is response for PurgeSandbox operation.
+type PurgeSandboxNoContent struct{}
+
+func (*PurgeSandboxNoContent) purgeSandboxRes() {}
 
 // Ref: #/components/schemas/RegisterPoolBody
 type RegisterPoolBody struct {
@@ -8609,7 +8795,8 @@ type SandboxRuntime struct {
 	AppliedCommits OptNilAppliedSourceCommitArray `json:"appliedCommits"`
 	// Requested existence. Power state is not requested: whether a sandbox is running is
 	// observed and reported by its runtime, never asked for by the control plane
-	// (ADR 0017 §9).
+	// (ADR 0017 §9). Archived is a third form of existence — as data, with no
+	// container — not a power state (ADR 0022 §1).
 	DesiredState SandboxRuntimeDesiredState `json:"desiredState"`
 	// User-facing lifecycle state, derived from the observed state plus whether the existence
 	// generations agree.
@@ -8746,18 +8933,21 @@ func (s *SandboxRuntime) SetUpgrade(val OptSandboxUpgrade) {
 
 // Requested existence. Power state is not requested: whether a sandbox is running is
 // observed and reported by its runtime, never asked for by the control plane
-// (ADR 0017 §9).
+// (ADR 0017 §9). Archived is a third form of existence — as data, with no
+// container — not a power state (ADR 0022 §1).
 type SandboxRuntimeDesiredState string
 
 const (
-	SandboxRuntimeDesiredStatePresent SandboxRuntimeDesiredState = "present"
-	SandboxRuntimeDesiredStateDeleted SandboxRuntimeDesiredState = "deleted"
+	SandboxRuntimeDesiredStatePresent  SandboxRuntimeDesiredState = "present"
+	SandboxRuntimeDesiredStateArchived SandboxRuntimeDesiredState = "archived"
+	SandboxRuntimeDesiredStateDeleted  SandboxRuntimeDesiredState = "deleted"
 )
 
 // AllValues returns all SandboxRuntimeDesiredState values.
 func (SandboxRuntimeDesiredState) AllValues() []SandboxRuntimeDesiredState {
 	return []SandboxRuntimeDesiredState{
 		SandboxRuntimeDesiredStatePresent,
+		SandboxRuntimeDesiredStateArchived,
 		SandboxRuntimeDesiredStateDeleted,
 	}
 }
@@ -8766,6 +8956,8 @@ func (SandboxRuntimeDesiredState) AllValues() []SandboxRuntimeDesiredState {
 func (s SandboxRuntimeDesiredState) MarshalText() ([]byte, error) {
 	switch s {
 	case SandboxRuntimeDesiredStatePresent:
+		return []byte(s), nil
+	case SandboxRuntimeDesiredStateArchived:
 		return []byte(s), nil
 	case SandboxRuntimeDesiredStateDeleted:
 		return []byte(s), nil
@@ -8780,6 +8972,9 @@ func (s *SandboxRuntimeDesiredState) UnmarshalText(data []byte) error {
 	case SandboxRuntimeDesiredStatePresent:
 		*s = SandboxRuntimeDesiredStatePresent
 		return nil
+	case SandboxRuntimeDesiredStateArchived:
+		*s = SandboxRuntimeDesiredStateArchived
+		return nil
 	case SandboxRuntimeDesiredStateDeleted:
 		*s = SandboxRuntimeDesiredStateDeleted
 		return nil
@@ -8793,13 +8988,15 @@ func (s *SandboxRuntimeDesiredState) UnmarshalText(data []byte) error {
 type SandboxRuntimeDisplayState string
 
 const (
-	SandboxRuntimeDisplayStateStarting SandboxRuntimeDisplayState = "starting"
-	SandboxRuntimeDisplayStateRunning  SandboxRuntimeDisplayState = "running"
-	SandboxRuntimeDisplayStateStopping SandboxRuntimeDisplayState = "stopping"
-	SandboxRuntimeDisplayStateStopped  SandboxRuntimeDisplayState = "stopped"
-	SandboxRuntimeDisplayStateDeleting SandboxRuntimeDisplayState = "deleting"
-	SandboxRuntimeDisplayStateDeleted  SandboxRuntimeDisplayState = "deleted"
-	SandboxRuntimeDisplayStateError    SandboxRuntimeDisplayState = "error"
+	SandboxRuntimeDisplayStateStarting  SandboxRuntimeDisplayState = "starting"
+	SandboxRuntimeDisplayStateRunning   SandboxRuntimeDisplayState = "running"
+	SandboxRuntimeDisplayStateStopping  SandboxRuntimeDisplayState = "stopping"
+	SandboxRuntimeDisplayStateStopped   SandboxRuntimeDisplayState = "stopped"
+	SandboxRuntimeDisplayStateArchiving SandboxRuntimeDisplayState = "archiving"
+	SandboxRuntimeDisplayStateArchived  SandboxRuntimeDisplayState = "archived"
+	SandboxRuntimeDisplayStateDeleting  SandboxRuntimeDisplayState = "deleting"
+	SandboxRuntimeDisplayStateDeleted   SandboxRuntimeDisplayState = "deleted"
+	SandboxRuntimeDisplayStateError     SandboxRuntimeDisplayState = "error"
 )
 
 // AllValues returns all SandboxRuntimeDisplayState values.
@@ -8809,6 +9006,8 @@ func (SandboxRuntimeDisplayState) AllValues() []SandboxRuntimeDisplayState {
 		SandboxRuntimeDisplayStateRunning,
 		SandboxRuntimeDisplayStateStopping,
 		SandboxRuntimeDisplayStateStopped,
+		SandboxRuntimeDisplayStateArchiving,
+		SandboxRuntimeDisplayStateArchived,
 		SandboxRuntimeDisplayStateDeleting,
 		SandboxRuntimeDisplayStateDeleted,
 		SandboxRuntimeDisplayStateError,
@@ -8825,6 +9024,10 @@ func (s SandboxRuntimeDisplayState) MarshalText() ([]byte, error) {
 	case SandboxRuntimeDisplayStateStopping:
 		return []byte(s), nil
 	case SandboxRuntimeDisplayStateStopped:
+		return []byte(s), nil
+	case SandboxRuntimeDisplayStateArchiving:
+		return []byte(s), nil
+	case SandboxRuntimeDisplayStateArchived:
 		return []byte(s), nil
 	case SandboxRuntimeDisplayStateDeleting:
 		return []byte(s), nil
@@ -8852,6 +9055,12 @@ func (s *SandboxRuntimeDisplayState) UnmarshalText(data []byte) error {
 	case SandboxRuntimeDisplayStateStopped:
 		*s = SandboxRuntimeDisplayStateStopped
 		return nil
+	case SandboxRuntimeDisplayStateArchiving:
+		*s = SandboxRuntimeDisplayStateArchiving
+		return nil
+	case SandboxRuntimeDisplayStateArchived:
+		*s = SandboxRuntimeDisplayStateArchived
+		return nil
 	case SandboxRuntimeDisplayStateDeleting:
 		*s = SandboxRuntimeDisplayStateDeleting
 		return nil
@@ -8877,6 +9086,7 @@ const (
 	SandboxRuntimeStateRunning        SandboxRuntimeState = "running"
 	SandboxRuntimeStateStopping       SandboxRuntimeState = "stopping"
 	SandboxRuntimeStateStopped        SandboxRuntimeState = "stopped"
+	SandboxRuntimeStateArchived       SandboxRuntimeState = "archived"
 	SandboxRuntimeStateDeleted        SandboxRuntimeState = "deleted"
 	SandboxRuntimeStateFailed         SandboxRuntimeState = "failed"
 )
@@ -8890,6 +9100,7 @@ func (SandboxRuntimeState) AllValues() []SandboxRuntimeState {
 		SandboxRuntimeStateRunning,
 		SandboxRuntimeStateStopping,
 		SandboxRuntimeStateStopped,
+		SandboxRuntimeStateArchived,
 		SandboxRuntimeStateDeleted,
 		SandboxRuntimeStateFailed,
 	}
@@ -8909,6 +9120,8 @@ func (s SandboxRuntimeState) MarshalText() ([]byte, error) {
 	case SandboxRuntimeStateStopping:
 		return []byte(s), nil
 	case SandboxRuntimeStateStopped:
+		return []byte(s), nil
+	case SandboxRuntimeStateArchived:
 		return []byte(s), nil
 	case SandboxRuntimeStateDeleted:
 		return []byte(s), nil
@@ -8939,6 +9152,9 @@ func (s *SandboxRuntimeState) UnmarshalText(data []byte) error {
 		return nil
 	case SandboxRuntimeStateStopped:
 		*s = SandboxRuntimeStateStopped
+		return nil
+	case SandboxRuntimeStateArchived:
+		*s = SandboxRuntimeStateArchived
 		return nil
 	case SandboxRuntimeStateDeleted:
 		*s = SandboxRuntimeStateDeleted
@@ -10006,6 +10222,11 @@ func (s StreamSandboxExecResourcesOK) Read(p []byte) (n int, err error) {
 
 func (*StreamSandboxExecResourcesOK) streamSandboxExecResourcesRes() {}
 
+// UnarchiveSandboxAccepted is response for UnarchiveSandbox operation.
+type UnarchiveSandboxAccepted struct{}
+
+func (*UnarchiveSandboxAccepted) unarchiveSandboxRes() {}
+
 // Ref: #/components/schemas/UpdateHarnessConfigBody
 type UpdateHarnessConfigBody struct {
 	// A URL to the JSON Schema for this object.
@@ -10213,6 +10434,47 @@ func (s *UpdatePoolStatusBody) SetReady(val bool) {
 // SetSchedulable sets the value of Schedulable.
 func (s *UpdatePoolStatusBody) SetSchedulable(val bool) {
 	s.Schedulable = val
+}
+
+// Ref: #/components/schemas/UpdateProjectBody
+type UpdateProjectBody struct {
+	// A URL to the JSON Schema for this object.
+	Schema OptURI `json:"$schema"`
+	// Project display name.
+	Name OptString `json:"name"`
+	// How long this project's archived sandboxes are kept before they are purged, in seconds. Zero
+	// restores the server default, which the project then follows as it changes.
+	ArchiveRetentionSeconds OptInt64 `json:"archiveRetentionSeconds"`
+}
+
+// GetSchema returns the value of Schema.
+func (s *UpdateProjectBody) GetSchema() OptURI {
+	return s.Schema
+}
+
+// GetName returns the value of Name.
+func (s *UpdateProjectBody) GetName() OptString {
+	return s.Name
+}
+
+// GetArchiveRetentionSeconds returns the value of ArchiveRetentionSeconds.
+func (s *UpdateProjectBody) GetArchiveRetentionSeconds() OptInt64 {
+	return s.ArchiveRetentionSeconds
+}
+
+// SetSchema sets the value of Schema.
+func (s *UpdateProjectBody) SetSchema(val OptURI) {
+	s.Schema = val
+}
+
+// SetName sets the value of Name.
+func (s *UpdateProjectBody) SetName(val OptString) {
+	s.Name = val
+}
+
+// SetArchiveRetentionSeconds sets the value of ArchiveRetentionSeconds.
+func (s *UpdateProjectBody) SetArchiveRetentionSeconds(val OptInt64) {
+	s.ArchiveRetentionSeconds = val
 }
 
 // Ref: #/components/schemas/UpdateSandboxBody

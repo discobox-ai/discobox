@@ -201,7 +201,11 @@ func (p *fakeProvider) Stop(context.Context, sandbox.SandboxRef, []byte, time.Du
 func (p *fakeProvider) Restart(context.Context, sandbox.SandboxRef, []byte, time.Duration) ([]byte, error) {
 	return nil, nil
 }
-func (p *fakeProvider) Remove(context.Context, sandbox.SandboxRef, []byte, ...sandbox.RemoveOption) ([]byte, error) {
+func (p *fakeProvider) Archive(context.Context, sandbox.SandboxRef, []byte) ([]byte, error) {
+	return nil, nil
+}
+
+func (p *fakeProvider) Remove(context.Context, sandbox.SandboxRef, []byte) ([]byte, error) {
 	return nil, nil
 }
 func (p *fakeProvider) Get(context.Context, sandbox.SandboxRef, []byte) (*sandbox.Sandbox, error) {

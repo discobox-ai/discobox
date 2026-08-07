@@ -138,7 +138,25 @@ func (p *poolAgentClient) instruct(ctx context.Context, ref sandbox.SandboxRef, 
 	return state, nil
 }
 
-func (p *poolAgentClient) Remove(ctx context.Context, ref sandbox.SandboxRef, state []byte, _ ...sandbox.RemoveOption) ([]byte, error) {
+// Archive keeps the runtime state: the sandbox still belongs to this pool, and
+// unarchiving must reach the same agent to find its data.
+func (p *poolAgentClient) Archive(ctx context.Context, ref sandbox.SandboxRef, state []byte) ([]byte, error) {
+	client, release, err := p.poolClient(ref, poolagentauth.ScopeSandboxWrite)
+	if err != nil {
+		return state, err
+	}
+	defer release()
+	if err := client.PoolArchiveSandbox(ctx, poolclient.PoolArchiveSandboxParams{ProjectId: ref.ProjectID, PoolId: p.poolID, SandboxId: ref.SandboxID}); err != nil {
+		return state, mapPoolClientError(err)
+	}
+	return state, nil
+}
+
+// Remove returns nil state: the sandbox no longer exists anywhere, so there is
+// no pool binding left to remember. The agent answers only once the container
+// and the durable tree are both gone (ADR 0022 §3), so a nil error here is the
+// confirmation the reconciler deletes the row on.
+func (p *poolAgentClient) Remove(ctx context.Context, ref sandbox.SandboxRef, state []byte) ([]byte, error) {
 	client, release, err := p.poolClient(ref, poolagentauth.ScopeSandboxWrite)
 	if err != nil {
 		return state, err

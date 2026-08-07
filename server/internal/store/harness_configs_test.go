@@ -121,7 +121,6 @@ func TestDeleteHarnessConfigClearsProjectDefault(t *testing.T) {
 		ID:          "project-1",
 		OwnerUserID: "user-1",
 		Name:        "Project",
-		Slug:        "project",
 	}
 	if err := s.UpsertProject(ctx, project); err != nil {
 		t.Fatalf("create project: %v", err)

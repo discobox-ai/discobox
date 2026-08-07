@@ -1993,6 +1993,9 @@ func (o OptURI) Or(d url.URL) url.URL {
 	return d
 }
 
+// PoolArchiveSandboxNoContent is response for PoolArchiveSandbox operation.
+type PoolArchiveSandboxNoContent struct{}
+
 type PoolBearerAuth struct {
 	Token string
 	Roles []string

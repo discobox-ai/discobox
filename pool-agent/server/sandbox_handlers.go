@@ -89,6 +89,21 @@ func (s *sandboxService) PoolUpdateSandbox(ctx context.Context, req *workerapimo
 	return sandboxOutput(sb, err, nil)
 }
 
+// PoolArchiveSandbox and PoolDeleteSandbox both answer only when the work is
+// done, unlike the power instructions below. Each is a destructive act on state
+// only this agent can see, so acceptance would be a promise the control plane
+// could not verify — and in the delete case the row it would verify against is
+// the thing being removed (ADR 0022 §3).
+func (s *sandboxService) PoolArchiveSandbox(ctx context.Context, params workerapi.PoolArchiveSandboxParams) error {
+	if err := s.authorize(params.ProjectId, params.PoolId); err != nil {
+		return err
+	}
+	if err := s.runtime.ArchiveSandbox(ctx, params.SandboxId); err != nil {
+		return mapRuntimeError(err)
+	}
+	return nil
+}
+
 func (s *sandboxService) PoolDeleteSandbox(ctx context.Context, params workerapi.PoolDeleteSandboxParams) error {
 	if err := s.authorize(params.ProjectId, params.PoolId); err != nil {
 		return err
@@ -267,6 +282,11 @@ func mapRuntimeError(err error) error {
 	}
 	if errors.Is(err, sandboxruntime.ErrAlreadyExists) {
 		return newStatusError(http.StatusConflict, http.StatusText(http.StatusConflict))
+	}
+	// Archived carries its own message: unlike the two above, the caller's next
+	// move (unarchive) is not obvious from the status alone.
+	if errors.Is(err, sandboxruntime.ErrArchived) {
+		return newStatusError(http.StatusConflict, err.Error())
 	}
 	return newStatusError(http.StatusInternalServerError, err.Error())
 }

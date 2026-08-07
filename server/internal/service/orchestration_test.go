@@ -448,10 +448,21 @@ func TestSandboxIntentIsReconciledByJobQueue(t *testing.T) {
 		t.Fatalf("restart moved the generation %d -> %d", sandbox.Generation, restarted.Generation)
 	}
 
+	// Delete is intent like any other: it archives, and the engine converges it.
+	// The row survives, which is what makes the sandbox restorable (ADR 0022 §2).
 	if err := svc.DeleteSandbox(ctx, projectID, sandbox.ID); err != nil {
 		t.Fatalf("delete sandbox: %v", err)
 	}
-	waitForSandboxDeleted(ctx, t, svc, projectID, sandbox.ID)
+	waitForSandboxState(ctx, t, svc, projectID, sandbox.ID, model.SandboxStateArchived)
+
+	// Purge does not go through the queue: it converges in the request and does
+	// not return until the removal is confirmed (ADR 0022 §3).
+	if err := svc.PurgeSandbox(ctx, projectID, sandbox.ID); err != nil {
+		t.Fatalf("purge sandbox: %v", err)
+	}
+	if _, err := svc.GetSandbox(ctx, projectID, sandbox.ID); !isNotFoundStatus(err) {
+		t.Fatalf("get purged sandbox = %v, want not found", err)
+	}
 }
 
 func newSandboxTestService(t *testing.T, notify func()) (*service.Service, *sandboxes.SandboxReconciler, *store.Store, string) {
@@ -587,7 +598,11 @@ func (noopSandboxProvider) Restart(context.Context, sandboxes.SandboxRef, []byte
 	return nil, nil
 }
 
-func (noopSandboxProvider) Remove(context.Context, sandboxes.SandboxRef, []byte, ...sandboxes.RemoveOption) ([]byte, error) {
+func (noopSandboxProvider) Archive(context.Context, sandboxes.SandboxRef, []byte) ([]byte, error) {
+	return nil, nil
+}
+
+func (noopSandboxProvider) Remove(context.Context, sandboxes.SandboxRef, []byte) ([]byte, error) {
 	return nil, nil
 }
 
@@ -607,24 +622,23 @@ func runtimeSandbox(ref sandboxes.SandboxRef, status sandboxes.Status) *sandboxe
 	}
 }
 
-func waitForSandboxDeleted(ctx context.Context, t *testing.T, svc *service.Service, projectID, sandboxID string) {
+func waitForSandboxState(ctx context.Context, t *testing.T, svc *service.Service, projectID, sandboxID, want string) {
 	t.Helper()
 
 	deadline := time.Now().Add(time.Second)
+	last := ""
 	for time.Now().Before(deadline) {
-		_, err := svc.GetSandbox(ctx, projectID, sandboxID)
-		if isNotFoundStatus(err) {
-			return
-		}
+		sandbox, err := svc.GetSandbox(ctx, projectID, sandboxID)
 		if err != nil {
 			t.Fatalf("get sandbox: %v", err)
 		}
+		if sandbox.State == want {
+			return
+		}
+		last = sandbox.State
 		time.Sleep(10 * time.Millisecond)
 	}
-
-	if _, err := svc.GetSandbox(ctx, projectID, sandboxID); !isNotFoundStatus(err) {
-		t.Fatalf("get deleted sandbox = %v, want not found", err)
-	}
+	t.Fatalf("sandbox state = %q, want %q", last, want)
 }
 
 func isNotFoundStatus(err error) bool {

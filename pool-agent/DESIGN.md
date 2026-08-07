@@ -77,9 +77,27 @@ sandbox-directed routes — the HTTP proxy, the sandbox-agent proxy, and the Git
 proxy — start a stopped sandbox before proxying (`server/autostart.go`), and ten
 concurrent requests produce one start. Control operations never auto-start.
 
+Archived sandboxes are exempt from that latch and fail those routes with 409.
+`archive` and `delete` take the same per-sandbox mutex, and both answer only once
+the work is done rather than accepting it: each is a destructive act on state
+only this agent can see, and for `delete` the control plane removes its row on
+the strength of the response (ADR 0022 §§3, 5-6).
+
+- `archive` removes the container and the sandbox's proxy material, keeps
+  `data/config/secrets/sources`, and writes a `.discobox-archived` marker.
+- `delete` removes all of it, including the durable tree, and confirms.
+- `create` clears the marker, which is the whole of what unarchiving needs here:
+  the reuse-the-existing-tree path already restores the sandbox.
+
+The marker is what makes retained data legible as retained. On disk an archived
+sandbox and one whose container was lost out of band are the same shape, and
+only the marker separates "held by intent" from "garbage awaiting the reaper".
+
 The runtime rebuilds any container whose recorded spec fingerprint no longer
 matches the one the control plane sent, which covers image upgrades and every
-other spec change through one comparison (ADR 0017 §5).
+other spec change through one comparison (ADR 0017 §5). A container carrying no
+fingerprint label predates that label; it is compared against the pinned image
+digest instead, so a missing label never reads as "converged".
 
 Separately, persisted per-sandbox proxy material supplies a periodic
 level-triggered sweep that reclaims the material of sandboxes that no longer
@@ -89,7 +107,13 @@ on the state channel.
 The runtime reaps its own dead sandboxes' persistent volume trees
 (`pools/{pool_id}/sandboxes/{sandbox_id}`) on the same backstop, keeping each for
 a 24h retention window after it is first seen dead (a tombstone starts the
-clock). All per-sandbox state is project- and pool-scoped by path — sandbox
+clock). That window is accident recovery — a container removed out of band or
+lost while the pool was down — and covers only what never runs through
+`delete`. Archived trees are skipped entirely: deliberate retention is a
+control-plane policy with a per-project length the agent does not know, enforced
+by an explicit `delete` when it expires (ADR 0022 §4).
+
+All per-sandbox state is project- and pool-scoped by path — sandbox
 volume trees live under `projects/{project_id}/pools/{pool_id}/` and proxy
 material under `proxy/projects/{project_id}/pools/{pool_id}/` — so agents
 sharing a host daemon never reap each other's data. Both trees carry the same

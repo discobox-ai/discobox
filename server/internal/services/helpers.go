@@ -245,7 +245,8 @@ func SandboxUpgrade(sandbox *model.Sandbox) map[string]any {
 }
 
 // SandboxDisplayState renders the small lifecycle vocabulary presented to API
-// users: starting, running, stopping, stopped, deleting, deleted, error.
+// users: starting, running, stopping, stopped, archiving, archived, deleting,
+// deleted, error.
 //
 // It is close to the identity function on State, because State is now reported
 // by whichever component can observe it rather than inferred from orchestration
@@ -260,6 +261,9 @@ func SandboxDisplayState(sandbox *model.Sandbox) string {
 	}
 	if sandbox.DesiredState == model.DesiredStateDeleted && sandbox.State != model.SandboxStateDeleted {
 		return "deleting"
+	}
+	if sandbox.DesiredState == model.DesiredStateArchived && sandbox.State != model.SandboxStateArchived {
+		return "archiving"
 	}
 	switch sandbox.State {
 	case model.SandboxStatePending, model.SandboxStateAwaitingSource:

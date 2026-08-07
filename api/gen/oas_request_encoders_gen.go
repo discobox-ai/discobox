@@ -104,6 +104,20 @@ func encodeCreatePoolRequest(
 	return nil
 }
 
+func encodeCreateProjectRequest(
+	req *CreateProjectBody,
+	r *http.Request,
+) error {
+	const contentType = "application/json"
+	e := new(jx.Encoder)
+	{
+		req.Encode(e)
+	}
+	encoded := e.Bytes()
+	ht.SetBody(r, bytes.NewReader(encoded), contentType)
+	return nil
+}
+
 func encodeCreateSandboxRequest(
 	req *CreateSandboxBody,
 	r *http.Request,
@@ -316,6 +330,20 @@ func encodeUpdatePoolRequest(
 
 func encodeUpdatePoolStatusRequest(
 	req *UpdatePoolStatusBody,
+	r *http.Request,
+) error {
+	const contentType = "application/json"
+	e := new(jx.Encoder)
+	{
+		req.Encode(e)
+	}
+	encoded := e.Bytes()
+	ht.SetBody(r, bytes.NewReader(encoded), contentType)
+	return nil
+}
+
+func encodeUpdateProjectRequest(
+	req *UpdateProjectBody,
 	r *http.Request,
 ) error {
 	const contentType = "application/json"

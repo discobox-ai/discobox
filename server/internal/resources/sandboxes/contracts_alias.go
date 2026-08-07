@@ -22,14 +22,11 @@ type StateEvent = contract.StateEvent
 type HTTPClientLease = transport.HTTPClientLease
 type PoolRuntimeReconciler = contract.PoolRuntimeReconciler
 type PoolManager = contract.PoolManager
-type RemoveConfig = contract.RemoveConfig
-type RemoveOption = contract.RemoveOption
 
 var ErrNotFound = contract.ErrNotFound
 var ErrAlreadyExists = contract.ErrAlreadyExists
 var ErrNotRunning = contract.ErrNotRunning
 var ErrAlreadyRunning = contract.ErrAlreadyRunning
-var RemoveVolumes = contract.RemoveVolumes
 var StatusCreated = contract.StatusCreated
 var NewHTTPClientLease = transport.NewHTTPClientLease
 var NewProviderManager = contract.NewProviderManager

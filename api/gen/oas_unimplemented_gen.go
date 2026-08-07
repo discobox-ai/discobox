@@ -138,6 +138,15 @@ func (UnimplementedHandler) CreatePool(ctx context.Context, req *CreatePoolBody,
 	return r, ht.ErrNotImplemented
 }
 
+// CreateProject implements create-project operation.
+//
+// Create a project.
+//
+// POST /projects
+func (UnimplementedHandler) CreateProject(ctx context.Context, req *CreateProjectBody) (r CreateProjectRes, _ error) {
+	return r, ht.ErrNotImplemented
+}
+
 // CreateSandbox implements create-sandbox operation.
 //
 // Create a sandbox.
@@ -231,9 +240,20 @@ func (UnimplementedHandler) DeletePool(ctx context.Context, params DeletePoolPar
 	return r, ht.ErrNotImplemented
 }
 
+// DeleteProject implements delete-project operation.
+//
+// Delete a project.
+//
+// DELETE /projects/{projectId}
+func (UnimplementedHandler) DeleteProject(ctx context.Context, params DeleteProjectParams) (r DeleteProjectRes, _ error) {
+	return r, ht.ErrNotImplemented
+}
+
 // DeleteSandbox implements delete-sandbox operation.
 //
-// Delete a sandbox.
+// Archive the sandbox. Its container and runtime resources are removed and its data is kept, so it
+// can be restored with unarchive until its project's archive retention runs out, after which it is
+// purged automatically. To destroy a sandbox and its data now, use purge (ADR 0022 §2).
 //
 // DELETE /projects/{projectId}/sandboxes/{sandboxId}
 func (UnimplementedHandler) DeleteSandbox(ctx context.Context, params DeleteSandboxParams) (r DeleteSandboxRes, _ error) {
@@ -519,6 +539,19 @@ func (UnimplementedHandler) ListSecrets(ctx context.Context, params ListSecretsP
 	return r, ht.ErrNotImplemented
 }
 
+// PurgeSandbox implements purge-sandbox operation.
+//
+// Destroy the sandbox and its data. Unlike every other existence change this is synchronous - the
+// request does not return success until the pool agent has confirmed the container and the sandbox's
+// data are both gone, because a 202 would be a promise the server could not later verify against a
+// row it had just deleted (ADR 0022 §3). A failure leaves the delete intent recorded, so it
+// converges in the background regardless.
+//
+// POST /projects/{projectId}/sandboxes/{sandboxId}/purge
+func (UnimplementedHandler) PurgeSandbox(ctx context.Context, params PurgeSandboxParams) (r PurgeSandboxRes, _ error) {
+	return r, ht.ErrNotImplemented
+}
+
 // ReconcilePool implements reconcile-pool operation.
 //
 // Reconcile a pool.
@@ -613,6 +646,15 @@ func (UnimplementedHandler) SetDefaultPool(ctx context.Context, params SetDefaul
 	return r, ht.ErrNotImplemented
 }
 
+// SetDefaultProject implements set-default-project operation.
+//
+// Set the user's default project.
+//
+// PUT /projects/{projectId}/default
+func (UnimplementedHandler) SetDefaultProject(ctx context.Context, params SetDefaultProjectParams) (r SetDefaultProjectRes, _ error) {
+	return r, ht.ErrNotImplemented
+}
+
 // SetHarnessConfigSecretBinding implements set-harness-config-secret-binding operation.
 //
 // Bind a harness config environment variable to a secret.
@@ -658,6 +700,16 @@ func (UnimplementedHandler) StreamSandboxExecResources(ctx context.Context, para
 	return r, ht.ErrNotImplemented
 }
 
+// UnarchiveSandbox implements unarchive-sandbox operation.
+//
+// Restore an archived sandbox. Its container is recreated against the data that was retained and
+// left stopped; the pool agent starts it on first use. Conflicts if the sandbox is not archived.
+//
+// POST /projects/{projectId}/sandboxes/{sandboxId}/unarchive
+func (UnimplementedHandler) UnarchiveSandbox(ctx context.Context, params UnarchiveSandboxParams) (r UnarchiveSandboxRes, _ error) {
+	return r, ht.ErrNotImplemented
+}
+
 // UnsetDefaultHarnessConfig implements unset-default-harness-config operation.
 //
 // Clear the project default harness config.
@@ -700,6 +752,15 @@ func (UnimplementedHandler) UpdatePool(ctx context.Context, req *UpdatePoolBody,
 //
 // POST /api/pools/{poolId}/status
 func (UnimplementedHandler) UpdatePoolStatus(ctx context.Context, req *UpdatePoolStatusBody, params UpdatePoolStatusParams) (r UpdatePoolStatusRes, _ error) {
+	return r, ht.ErrNotImplemented
+}
+
+// UpdateProject implements update-project operation.
+//
+// Update a project.
+//
+// PATCH /projects/{projectId}
+func (UnimplementedHandler) UpdateProject(ctx context.Context, req *UpdateProjectBody, params UpdateProjectParams) (r UpdateProjectRes, _ error) {
 	return r, ht.ErrNotImplemented
 }
 

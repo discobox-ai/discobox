@@ -1265,6 +1265,54 @@ components:
             required:
                 - pools
             type: object
+        CreateProjectBody:
+            additionalProperties: false
+            properties:
+                $schema:
+                    description: A URL to the JSON Schema for this object.
+                    example: https://example.com/schemas/CreateProjectBody.json
+                    format: uri
+                    readOnly: true
+                    type: string
+                copy:
+                    description: What to copy from copyFromProjectId. Omitted means copy everything copyable; an empty array copies nothing. Copying pools implies copying providers, since a pool binds to a provider instance in its own project.
+                    items:
+                        enum:
+                            - providers
+                            - pools
+                            - harnesses
+                        type: string
+                    nullable: true
+                    type: array
+                copyFromProjectId:
+                    description: Project whose configuration seeds the new project. Omitted leaves the project bare apart from the built-in harnesses every project is seeded with.
+                    type: string
+                name:
+                    description: Project display name
+                    maxLength: 200
+                    type: string
+            required:
+                - name
+            type: object
+        UpdateProjectBody:
+            additionalProperties: false
+            properties:
+                $schema:
+                    description: A URL to the JSON Schema for this object.
+                    example: https://example.com/schemas/UpdateProjectBody.json
+                    format: uri
+                    readOnly: true
+                    type: string
+                name:
+                    description: Project display name
+                    maxLength: 200
+                    type: string
+                archiveRetentionSeconds:
+                    description: How long this project's archived sandboxes are kept before they are purged, in seconds. Zero restores the server default, which the project then follows as it changes.
+                    format: int64
+                    minimum: 0
+                    type: integer
+            type: object
         Project:
             additionalProperties: false
             properties:
@@ -1293,6 +1341,10 @@ components:
                 defaultHarnessConfigId:
                     description: Default harness config ID
                     type: string
+                archiveRetentionSeconds:
+                    description: How long archived sandboxes are kept before being purged, in seconds. Zero means the server default.
+                    format: int64
+                    type: integer
                 id:
                     description: Stable project ID
                     type: string
@@ -1330,10 +1382,6 @@ components:
                         $ref: '#/components/schemas/Sandbox'
                     nullable: true
                     type: array
-                slug:
-                    description: URL-safe project slug
-                    pattern: ^[a-z0-9][a-z0-9-]*$
-                    type: string
                 updatedAt:
                     description: Last update timestamp
                     format: date-time
@@ -1342,7 +1390,6 @@ components:
                 - id
                 - ownerUserId
                 - name
-                - slug
                 - default
                 - createdAt
                 - updatedAt
@@ -1877,9 +1924,11 @@ components:
                     description: |-
                         Requested existence. Power state is not requested: whether a sandbox is running is
                         observed and reported by its runtime, never asked for by the control plane
-                        (ADR 0017 §9).
+                        (ADR 0017 §9). Archived is a third form of existence — as data, with no
+                        container — not a power state (ADR 0022 §1).
                     enum:
                         - present
+                        - archived
                         - deleted
                     type: string
                 displayState:
@@ -1889,6 +1938,8 @@ components:
                         - running
                         - stopping
                         - stopped
+                        - archiving
+                        - archived
                         - deleting
                         - deleted
                         - error
@@ -1918,6 +1969,7 @@ components:
                         - running
                         - stopping
                         - stopped
+                        - archived
                         - deleted
                         - failed
                     type: string
@@ -3008,7 +3060,54 @@ paths:
             summary: List projects
             tags:
                 - Projects
+        post:
+            operationId: create-project
+            requestBody:
+                content:
+                    application/json:
+                        schema:
+                            $ref: '#/components/schemas/CreateProjectBody'
+                required: true
+            responses:
+                200:
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/Project'
+                    description: OK
+                default:
+                    content:
+                        application/problem+json:
+                            schema:
+                                $ref: '#/components/schemas/ErrorModel'
+                    description: Error
+            summary: Create a project
+            tags:
+                - Projects
     /projects/{projectId}:
+        delete:
+            operationId: delete-project
+            parameters:
+                - description: Project ID
+                  in: path
+                  name: projectId
+                  required: true
+                  schema:
+                    default: default
+                    description: Project ID
+                    type: string
+            responses:
+                204:
+                    description: No Content
+                default:
+                    content:
+                        application/problem+json:
+                            schema:
+                                $ref: '#/components/schemas/ErrorModel'
+                    description: Error
+            summary: Delete a project
+            tags:
+                - Projects
         get:
             operationId: get-project
             parameters:
@@ -3034,6 +3133,67 @@ paths:
                                 $ref: '#/components/schemas/ErrorModel'
                     description: Error
             summary: Get a project
+            tags:
+                - Projects
+        patch:
+            operationId: update-project
+            parameters:
+                - description: Project ID
+                  in: path
+                  name: projectId
+                  required: true
+                  schema:
+                    default: default
+                    description: Project ID
+                    type: string
+            requestBody:
+                content:
+                    application/json:
+                        schema:
+                            $ref: '#/components/schemas/UpdateProjectBody'
+                required: true
+            responses:
+                200:
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/Project'
+                    description: OK
+                default:
+                    content:
+                        application/problem+json:
+                            schema:
+                                $ref: '#/components/schemas/ErrorModel'
+                    description: Error
+            summary: Update a project
+            tags:
+                - Projects
+    /projects/{projectId}/default:
+        put:
+            operationId: set-default-project
+            parameters:
+                - description: Project ID
+                  in: path
+                  name: projectId
+                  required: true
+                  schema:
+                    default: default
+                    description: Project ID
+                    type: string
+            responses:
+                200:
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/Project'
+                    description: OK
+                default:
+                    content:
+                        application/problem+json:
+                            schema:
+                                $ref: '#/components/schemas/ErrorModel'
+                    description: Error
+            summary: Set the user's default project
             tags:
                 - Projects
     /projects/{projectId}/harness-configs:
@@ -4104,6 +4264,7 @@ paths:
     /projects/{projectId}/sandboxes/{sandboxId}:
         delete:
             operationId: delete-sandbox
+            description: Archive the sandbox. Its container and runtime resources are removed and its data is kept, so it can be restored with unarchive until its project's archive retention runs out, after which it is purged automatically. To destroy a sandbox and its data now, use purge (ADR 0022 §2).
             parameters:
                 - description: Project ID
                   in: path
@@ -4129,7 +4290,7 @@ paths:
                             schema:
                                 $ref: '#/components/schemas/ErrorModel'
                     description: Error
-            summary: Delete a sandbox
+            summary: Archive a sandbox
             tags:
                 - Sandboxes
         get:
@@ -4245,6 +4406,70 @@ paths:
                                 $ref: '#/components/schemas/ErrorModel'
                     description: Error
             summary: Assign a harness config's bound secrets to a running sandbox and return their sentinel env
+            tags:
+                - Sandboxes
+    /projects/{projectId}/sandboxes/{sandboxId}/unarchive:
+        post:
+            operationId: unarchive-sandbox
+            description: Restore an archived sandbox. Its container is recreated against the data that was retained and left stopped; the pool agent starts it on first use. Conflicts if the sandbox is not archived.
+            parameters:
+                - description: Project ID
+                  in: path
+                  name: projectId
+                  required: true
+                  schema:
+                    default: default
+                    description: Project ID
+                    type: string
+                - description: Sandbox ID
+                  in: path
+                  name: sandboxId
+                  required: true
+                  schema:
+                    description: Sandbox ID
+                    type: string
+            responses:
+                202:
+                    description: Accepted
+                default:
+                    content:
+                        application/problem+json:
+                            schema:
+                                $ref: '#/components/schemas/ErrorModel'
+                    description: Error
+            summary: Unarchive a sandbox
+            tags:
+                - Sandboxes
+    /projects/{projectId}/sandboxes/{sandboxId}/purge:
+        post:
+            operationId: purge-sandbox
+            description: Destroy the sandbox and its data. Unlike every other existence change this is synchronous - the request does not return success until the pool agent has confirmed the container and the sandbox's data are both gone, because a 202 would be a promise the server could not later verify against a row it had just deleted (ADR 0022 §3). A failure leaves the delete intent recorded, so it converges in the background regardless.
+            parameters:
+                - description: Project ID
+                  in: path
+                  name: projectId
+                  required: true
+                  schema:
+                    default: default
+                    description: Project ID
+                    type: string
+                - description: Sandbox ID
+                  in: path
+                  name: sandboxId
+                  required: true
+                  schema:
+                    description: Sandbox ID
+                    type: string
+            responses:
+                204:
+                    description: Confirmed - the sandbox and its data are gone
+                default:
+                    content:
+                        application/problem+json:
+                            schema:
+                                $ref: '#/components/schemas/ErrorModel'
+                    description: Error
+            summary: Purge a sandbox and its data
             tags:
                 - Sandboxes
     /projects/{projectId}/sandboxes/{sandboxId}/complete-apply:

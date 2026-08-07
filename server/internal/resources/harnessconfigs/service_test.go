@@ -27,7 +27,7 @@ func newBindingService(t *testing.T) (*harnessconfigs.Service, *store.Store, str
 		t.Fatalf("migrate db: %v", err)
 	}
 	if err := db.Write.WithContext(ctx).Create(&model.Project{
-		ID: "project-1", OwnerUserID: "user-1", Name: "Project", Slug: "project",
+		ID: "project-1", OwnerUserID: "user-1", Name: "Project",
 	}).Error; err != nil {
 		t.Fatalf("create project: %v", err)
 	}

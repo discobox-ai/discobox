@@ -184,6 +184,49 @@ func (a *App) writeProviders(cmd *cobra.Command, providers []apimodel.SandboxPro
 	return tw.Flush()
 }
 
+func (a *App) writeProjects(cmd *cobra.Command, projects []apimodel.Project) error {
+	if a.quiet {
+		return writeResourceIDs(cmd.OutOrStdout(), projects, func(project apimodel.Project) string { return project.ID })
+	}
+	if a.output == "json" {
+		return writeJSON(cmd.OutOrStdout(), map[string]any{"projects": projects})
+	}
+	tw := tabwriter.NewWriter(cmd.OutOrStdout(), 0, 0, 2, ' ', 0)
+	fmt.Fprintln(tw, "ID\tNAME\tDEFAULT\tCREATED")
+	for _, project := range projects {
+		fmt.Fprintf(tw, "%s\t%s\t%s\t%s\n",
+			project.ID,
+			project.Name,
+			formatDefaultMarker(project.Default),
+			formatTime(project.CreatedAt),
+		)
+	}
+	return tw.Flush()
+}
+
+func (a *App) writeProject(cmd *cobra.Command, project *apimodel.Project) error {
+	if project == nil {
+		return nil
+	}
+	if a.output == "json" {
+		return writeJSON(cmd.OutOrStdout(), project)
+	}
+	tw := tabwriter.NewWriter(cmd.OutOrStdout(), 0, 0, 2, ' ', 0)
+	fmt.Fprintln(tw, "FIELD\tVALUE")
+	fmt.Fprintf(tw, "ID\t%s\n", project.ID)
+	fmt.Fprintf(tw, "NAME\t%s\n", project.Name)
+	fmt.Fprintf(tw, "DEFAULT\t%t\n", project.Default)
+	if poolID := project.DefaultPoolId.Or(""); poolID != "" {
+		fmt.Fprintf(tw, "DEFAULT POOL\t%s\n", poolID)
+	}
+	if harnessID := project.DefaultHarnessConfigId.Or(""); harnessID != "" {
+		fmt.Fprintf(tw, "DEFAULT HARNESS\t%s\n", harnessID)
+	}
+	fmt.Fprintf(tw, "CREATED\t%s\n", formatTime(project.CreatedAt))
+	fmt.Fprintf(tw, "UPDATED\t%s\n", formatTime(project.UpdatedAt))
+	return tw.Flush()
+}
+
 func (a *App) writePool(cmd *cobra.Command, pool *apimodel.Pool) error {
 	if pool == nil {
 		return nil

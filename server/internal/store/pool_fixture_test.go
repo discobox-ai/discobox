@@ -14,7 +14,7 @@ import (
 func createTestPool(t *testing.T, s *store.Store, projectID, poolID string) {
 	t.Helper()
 	ctx := context.Background()
-	if err := s.UpsertProject(ctx, &model.Project{ID: projectID, OwnerUserID: "user-1", Name: projectID, Slug: projectID}); err != nil {
+	if err := s.UpsertProject(ctx, &model.Project{ID: projectID, OwnerUserID: "user-1", Name: projectID}); err != nil {
 		t.Fatalf("create project %s: %v", projectID, err)
 	}
 	providerID := "prov-" + poolID

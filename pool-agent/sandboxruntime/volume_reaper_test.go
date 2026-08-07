@@ -69,6 +69,54 @@ func TestReapDeadSandboxVolumesKeepsLiveAndClearsTombstone(t *testing.T) {
 	}
 }
 
+// An archived sandbox looks exactly like a dead one to the reaper — a directory
+// with no container — and must survive anyway, indefinitely. Its retention is a
+// control-plane policy the agent does not know, enforced by an explicit purge
+// (ADR 0022 §4). Reaping it here would delete data the user asked to keep, on a
+// schedule nobody chose.
+func TestReapDeadSandboxVolumesSkipsArchived(t *testing.T) {
+	root := t.TempDir()
+	archived := mkSandboxDir(t, root, "sbx_archived")
+	if err := writeSandboxArchiveMarker(archived, time.Now().Add(-90*24*time.Hour)); err != nil {
+		t.Fatal(err)
+	}
+
+	// Far past any retention, and with no live container.
+	reapDeadSandboxVolumes(root, map[string]struct{}{}, 24*time.Hour, time.Now(), quietLogger())
+
+	if _, err := os.Stat(archived); err != nil {
+		t.Fatalf("archived sandbox dir was reaped: %v", err)
+	}
+	// It must not even be tombstoned: a tombstone would start the reaper's clock
+	// and delete the tree 24h after the sandbox is unarchived and next stopped.
+	if _, err := os.Stat(filepath.Join(archived, sandboxVolumeTombstone)); !os.IsNotExist(err) {
+		t.Fatalf("archived sandbox was tombstoned")
+	}
+}
+
+// Clearing the marker is the whole of what unarchive does on disk, so once it
+// is gone the tree must be ordinary again — including being reapable if its
+// container never comes back.
+func TestReapDeadSandboxVolumesReapsAfterUnarchive(t *testing.T) {
+	root := t.TempDir()
+	dir := mkSandboxDir(t, root, "sbx_unarchived")
+	if err := writeSandboxArchiveMarker(dir, time.Now()); err != nil {
+		t.Fatal(err)
+	}
+	if err := clearSandboxArchiveMarker(dir); err != nil {
+		t.Fatal(err)
+	}
+
+	retention := 24 * time.Hour
+	now := time.Now()
+	reapDeadSandboxVolumes(root, map[string]struct{}{}, retention, now, quietLogger())
+	reapDeadSandboxVolumes(root, map[string]struct{}{}, retention, now.Add(retention+time.Minute), quietLogger())
+
+	if _, err := os.Stat(dir); !os.IsNotExist(err) {
+		t.Fatalf("unarchived dead dir not reaped: err=%v", err)
+	}
+}
+
 func TestReapUnknownPoolsRetainsThenReapsData(t *testing.T) {
 	dataRoot := t.TempDir()
 	cacheRoot := t.TempDir()

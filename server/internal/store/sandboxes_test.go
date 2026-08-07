@@ -198,7 +198,7 @@ func TestGetResourcesByShortIDPrefix(t *testing.T) {
 	ctx := context.Background()
 	s := newTestStore(t)
 	createTestPool(t, s, "project-1", "pool-1")
-	project := &model.Project{ID: "proj_abc12345000000p1", OwnerUserID: "user-1", Name: "Project", Slug: "project-short-id"}
+	project := &model.Project{ID: "proj_abc12345000000p1", OwnerUserID: "user-1", Name: "Project"}
 	if err := s.UpsertProject(ctx, project); err != nil {
 		t.Fatalf("create project: %v", err)
 	}
@@ -341,7 +341,6 @@ func newTestStoreWithDB(t *testing.T, sealer secrets.Sealer) (*store.Store, *dat
 		ID:          "project-1",
 		OwnerUserID: "user-1",
 		Name:        "Project",
-		Slug:        "project",
 	}
 	if err := db.Write.WithContext(ctx).Create(project).Error; err != nil {
 		t.Fatalf("create project: %v", err)

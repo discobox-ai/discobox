@@ -70,6 +70,22 @@ func (h *Handler) DeleteSandbox(ctx context.Context, params serverapi.DeleteSand
 	return &serverapi.DeleteSandboxAccepted{}, nil
 }
 
+func (h *Handler) UnarchiveSandbox(ctx context.Context, params serverapi.UnarchiveSandboxParams) (serverapi.UnarchiveSandboxRes, error) {
+	if err := h.services.Sandboxes.UnarchiveSandbox(ctx, params.ProjectId, params.SandboxId); err != nil {
+		return apiError(err), nil
+	}
+	return &serverapi.UnarchiveSandboxAccepted{}, nil
+}
+
+// PurgeSandbox holds the request open until the removal is confirmed, unlike
+// every other existence change here (ADR 0022 §3).
+func (h *Handler) PurgeSandbox(ctx context.Context, params serverapi.PurgeSandboxParams) (serverapi.PurgeSandboxRes, error) {
+	if err := h.services.Sandboxes.PurgeSandbox(ctx, params.ProjectId, params.SandboxId); err != nil {
+		return apiError(err), nil
+	}
+	return &serverapi.PurgeSandboxNoContent{}, nil
+}
+
 func (h *Handler) StartSandbox(ctx context.Context, req *apimodel.StartSandboxBody, params serverapi.StartSandboxParams) (serverapi.StartSandboxRes, error) {
 	sandbox, err := h.services.Sandboxes.StartSandbox(ctx, params.ProjectId, params.SandboxId, *req)
 	if err != nil {

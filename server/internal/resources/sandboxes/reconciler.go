@@ -73,14 +73,31 @@ func (r *SandboxReconciler) Reconcile(ctx context.Context, id string) error {
 // lost (ADR 0017 §1). A settled failure has already advanced
 // ObservedGeneration, so it is converged by design and this does not re-drive
 // it until new intent arrives.
+// It has one addition the generation comparison cannot express: archived
+// sandboxes past their retention. Those have converged — their generations
+// agree, and by design nothing re-drives them — so the deadline is the only
+// thing that makes them work again, and the future-dated mark carrying it is a
+// mark like any other and can be lost. A lost mark here means data kept
+// forever, so retention gets the same backstop everything else has
+// (ADR 0022 §4).
 func (r *SandboxReconciler) ScanDirty(ctx context.Context) ([]string, error) {
 	pairs, err := r.store.ListSandboxRefsNeedingReconcile(ctx)
 	if err != nil {
 		return nil, err
 	}
-	ids := make([]string, 0, len(pairs))
-	for _, p := range pairs {
-		ids = append(ids, SandboxDirtyID(p.ProjectID, p.SandboxID))
+	expired, err := r.store.ListArchivedSandboxRefsExpiredBefore(ctx, DefaultArchiveRetention, time.Now().UTC())
+	if err != nil {
+		return nil, err
+	}
+	ids := make([]string, 0, len(pairs)+len(expired))
+	seen := make(map[string]struct{}, len(pairs)+len(expired))
+	for _, p := range append(pairs, expired...) {
+		id := SandboxDirtyID(p.ProjectID, p.SandboxID)
+		if _, ok := seen[id]; ok {
+			continue
+		}
+		seen[id] = struct{}{}
+		ids = append(ids, id)
 	}
 	return ids, nil
 }
@@ -158,6 +175,8 @@ func (r *SandboxReconciler) ReconcileSandbox(ctx context.Context, sandbox *model
 	switch sandbox.DesiredState {
 	case model.DesiredStatePresent:
 		return r.ensure(ctx, sandbox, generation)
+	case model.DesiredStateArchived:
+		return r.archive(ctx, sandbox, generation)
 	case model.DesiredStateDeleted:
 		return r.delete(ctx, sandbox, generation)
 	default:
@@ -210,11 +229,17 @@ func (r *SandboxReconciler) ensure(ctx context.Context, sandbox *model.Sandbox, 
 		return r.scheduleSourceAwaitTimeout(ctx, sandbox)
 	}
 
-	if sandbox.State == model.SandboxStateAwaitingSource {
-		// The push landed and the workspace is materialized, so the sandbox is
-		// no longer waiting for anything. Its container exists and is not
-		// running, which is what `stopped` says; the start below and the pool
-		// agent's report take it the rest of the way.
+	if sandbox.State == model.SandboxStateArchived {
+		// Unarchiving: the container has just been rebuilt against the retained
+		// tree, so the sandbox exists as a runtime again and `archived` is no
+		// longer true of it. Recording that here rather than waiting for the
+		// agent's next complete sync is not the reconciler holding an opinion
+		// about power — it owns existence, and this is the existence change it
+		// just made. Leaving it stale would report an archived sandbox that has
+		// a container for up to a full sync interval.
+		//
+		// `stopped` is the honest value: the container exists and is not
+		// running, and nothing started it (ADR 0022 §2).
 		sandbox.SetState(model.SandboxStateStopped)
 	}
 	sandbox.ObservedGeneration = generation
@@ -350,7 +375,13 @@ func (r *SandboxReconciler) deleteSandbox(ctx context.Context, sb *model.Sandbox
 	if err != nil {
 		return err
 	}
-	state, err := provider.Remove(ctx, sandboxRefFromSandbox(sb), secretState, RemoveVolumes())
+	// Remove returns only once the provider has confirmed the container and the
+	// sandbox's data are both gone (ADR 0022 §3). Everything after this point —
+	// the deleted state, and then the row itself — is written on the strength of
+	// that confirmation, so an error here must not be swallowed. ErrNotFound is
+	// the one exception: a provider that never heard of the sandbox is not
+	// holding data for it.
+	state, err := provider.Remove(ctx, sandboxRefFromSandbox(sb), secretState)
 	if err != nil && !errors.Is(err, ErrNotFound) {
 		return err
 	}

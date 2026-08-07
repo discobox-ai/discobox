@@ -48,7 +48,11 @@ func (p *recordingProvider) Stop(context.Context, sandbox.SandboxRef, []byte, ti
 func (p *recordingProvider) Restart(context.Context, sandbox.SandboxRef, []byte, time.Duration) ([]byte, error) {
 	return nil, nil
 }
-func (p *recordingProvider) Remove(context.Context, sandbox.SandboxRef, []byte, ...sandbox.RemoveOption) ([]byte, error) {
+func (p *recordingProvider) Archive(context.Context, sandbox.SandboxRef, []byte) ([]byte, error) {
+	return nil, nil
+}
+
+func (p *recordingProvider) Remove(context.Context, sandbox.SandboxRef, []byte) ([]byte, error) {
 	return nil, nil
 }
 func (p *recordingProvider) Get(context.Context, sandbox.SandboxRef, []byte) (*sandbox.Sandbox, error) {

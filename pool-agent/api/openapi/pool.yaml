@@ -651,7 +651,11 @@ paths:
                     type: string
             responses:
                 '204':
-                    description: No Content
+                    description: |-
+                        Confirmed: the container, its proxy material, and the sandbox's durable
+                        data tree are all gone. The control plane deletes its row on the strength
+                        of this response, so it is returned only once the removal has happened
+                        (ADR 0022 §3). Keeping a sandbox's data is what archive is for.
                 default:
                     content:
                         application/problem+json:
@@ -751,6 +755,50 @@ paths:
             security:
             -   poolBearerAuth: []
             summary: Update pool sandbox
+            tags:
+            - Pool Sandboxes
+    "/api/project/{projectId}/pool/{poolId}/sandboxes/{sandboxId}/archive":
+        post:
+            description: |-
+                Tear the sandbox's runtime down and keep its data: remove the container and its
+                proxy material, retain the durable data/config/secrets/sources tree, and mark it
+                archived so the volume reaper leaves it alone and nothing starts it on demand
+                (ADR 0022 §6). A later create against the retained tree unarchives it.
+            operationId: pool-archive-sandbox
+            parameters:
+            -   description: Project ID
+                in: path
+                name: projectId
+                required: true
+                schema:
+                    description: Project ID
+                    type: string
+            -   description: Pool ID
+                in: path
+                name: poolId
+                required: true
+                schema:
+                    description: Pool ID
+                    type: string
+            -   description: Sandbox ID
+                in: path
+                name: sandboxId
+                required: true
+                schema:
+                    description: Sandbox ID
+                    type: string
+            responses:
+                '204':
+                    description: Confirmed - the runtime is gone and the data is retained
+                default:
+                    content:
+                        application/problem+json:
+                            schema:
+                                "$ref": "#/components/schemas/ErrorModel"
+                    description: Error
+            security:
+            -   poolBearerAuth: []
+            summary: Archive pool sandbox
             tags:
             - Pool Sandboxes
     "/api/project/{projectId}/pool/{poolId}/sandboxes/{sandboxId}/start":

@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"time"
 
 	"gorm.io/gorm"
 
@@ -100,6 +101,55 @@ func (s *Store) ListSandboxRefsNeedingReconcile(ctx context.Context) ([]SandboxO
 	refs := make([]SandboxOperationRef, 0, len(rows))
 	for _, row := range rows {
 		refs = append(refs, SandboxOperationRef{ProjectID: row.ProjectID, SandboxID: row.ID})
+	}
+	return refs, nil
+}
+
+// ListArchivedSandboxRefsExpiredBefore returns refs of archived sandboxes whose
+// retention has run out, judged against their own project's setting and falling
+// back to defaultRetention where the project has not chosen one.
+//
+// It is the level-triggered backstop for retention (ADR 0022 §4). An archived
+// sandbox's generations agree, so ListSandboxRefsNeedingReconcile is blind to it
+// by design; the future-dated mark that normally wakes it is a mark like any
+// other and can be lost. Without this, a lost mark means data kept forever.
+//
+// The deadline is derived rather than stored, for the same reason the Go-side
+// helper derives it: nothing can drift out of agreement with a value that is
+// never written down. It is computed here rather than in SQL because date
+// arithmetic is not portable between SQLite and Postgres, and the archived set
+// is small — a sandbox is only in it between an archive and its purge.
+func (s *Store) ListArchivedSandboxRefsExpiredBefore(ctx context.Context, defaultRetention time.Duration, now time.Time) ([]SandboxOperationRef, error) {
+	read, err := s.getRead(ctx)
+	if err != nil {
+		return nil, err
+	}
+	var rows []struct {
+		ProjectID               string
+		ID                      string
+		StateChangedAt          time.Time
+		ArchiveRetentionSeconds int64
+	}
+	if err := read.Model(&model.Sandbox{}).
+		Select("sandboxes.project_id, sandboxes.id, sandboxes.state_changed_at, projects.archive_retention_seconds").
+		Joins("JOIN projects ON projects.id = sandboxes.project_id").
+		Where("sandboxes.state = ?", model.SandboxStateArchived).
+		Where("sandboxes.desired_state = ?", model.DesiredStateArchived).
+		Scan(&rows).Error; err != nil {
+		return nil, err
+	}
+	refs := make([]SandboxOperationRef, 0, len(rows))
+	for _, row := range rows {
+		if row.StateChangedAt.IsZero() {
+			continue
+		}
+		retention := defaultRetention
+		if row.ArchiveRetentionSeconds > 0 {
+			retention = time.Duration(row.ArchiveRetentionSeconds) * time.Second
+		}
+		if !now.Before(row.StateChangedAt.Add(retention)) {
+			refs = append(refs, SandboxOperationRef{ProjectID: row.ProjectID, SandboxID: row.ID})
+		}
 	}
 	return refs, nil
 }

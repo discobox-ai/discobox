@@ -42,10 +42,10 @@ var yamlEnumAliases = map[string]string{
 	"ResolveSandboxSecretResponse.status": "SecretRequest.status",
 	"ResourceChangedEvent.action":         "ProjectEvent.action",
 	"ResourceListedEvent.action":          "ProjectEvent.action",
-	// Desired state is genuinely shared now that it answers existence only, so
-	// the tag on the embedded ResourceLifecycle is authoritative for both
-	// resources rather than a union matching neither (ADR 0017 §2).
-	"Pool.desiredState":           "ResourceLifecycle.desiredState",
+	// The sandbox owns the full existence vocabulary, so the tag on the embedded
+	// ResourceLifecycle is authoritative for it. The pool no longer matches:
+	// only a sandbox can be archived (ADR 0022 §1), so Pool.desiredState is a
+	// narrowing and moved to yamlOwnedEnums below.
 	"SandboxRuntime.desiredState": "ResourceLifecycle.desiredState",
 }
 
@@ -54,10 +54,10 @@ var yamlEnumAliases = map[string]string{
 // these; server code must follow it.
 var yamlOwnedEnums = map[string]string{
 	"Job.status": "job status values are owned by the orchestration module; model.Job.Status is untagged text",
-	// Desired state is now identical on both resources, so the shared tag on
-	// ResourceLifecycle is authoritative and these need no exemption. Observed
-	// state still diverges per resource, which is what the shared tag cannot
-	// express (ADR 0017 §2).
+	// Both axes now diverge per resource, which is what a single embedded tag
+	// cannot express: the shared tag is the union, and each resource's schema
+	// narrows it (ADR 0017 §2, ADR 0022 §1).
+	"Pool.desiredState":               "per-resource narrowing: a pool cannot be archived, so it omits the sandbox-only value in the shared tag",
 	"Pool.state":                      "per-resource narrowing of the embedded ResourceLifecycle, whose shared tag is the union of both vocabularies",
 	"SandboxRuntime.state":            "per-resource narrowing of the embedded ResourceLifecycle",
 	"SandboxRuntime.displayState":     "derived presentation state computed by the API layer, not stored on the model",
@@ -68,6 +68,7 @@ var yamlOwnedEnums = map[string]string{
 	"SandboxExecLogEntry.stream":      "exec log streams are owned by the sandbox-agent",
 	"HarnessVolume.volume":            "value set is owned by harness.VolumeKind in the root module, not a server/internal/model enum tag",
 	"SandboxUpgrade.reason":           "derived at read time by services.SandboxUpgrade from the pin and the harness config; nothing on the model stores it",
+	"CreateProjectBody.copy[]":        "names the resource kinds a project copy takes; a request-shaping vocabulary with no persisted field behind it",
 }
 
 func TestModelEnumTagsMatchOpenAPI(t *testing.T) {

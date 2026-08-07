@@ -62,7 +62,6 @@ func (s *Service) InitializeDefaults(ctx context.Context, userID string, options
 			ID:          id.NewString(id.PrefixProject),
 			OwnerUserID: userID,
 			Name:        "Default Project",
-			Slug:        "default",
 			Default:     true,
 			CreatedAt:   now,
 			UpdatedAt:   now,

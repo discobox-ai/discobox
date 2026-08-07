@@ -30,8 +30,17 @@ builds leave it disabled; release CLI binaries opt in at build time by setting
 remains the runtime override for release binaries.
 
 Advanced configuration and low-level resource commands are grouped beneath the
-visible `disco box` command: `sandbox`, `terminal`, `exec`, `provider`, `pool`,
-`job`, `harnesses`, and `hooks` are not root commands.
+visible `disco box` command: `project`, `sandbox`, `terminal`, `exec`,
+`provider`, `pool`, `job`, `harnesses`, and `hooks` are not root commands.
+
+`disco box project` is the only command group not scoped by the global
+`--project` flag: its arguments name the project being acted on, resolved by
+`resolveProjectID` from the same selectors `-p` accepts (the `default` alias, a
+full or short ID, or the display name). `set-default` moves the flag
+`default` resolves to, so it is how `-p`'s own default is chosen; there is no
+unset. `create --from` copies an existing project's configuration
+([ADR 0023](../docs/adr/0023-projects-are-created-by-copy-and-deleted-only-when-empty.md)),
+with `--copy` selecting what comes across and `--copy none` taking nothing.
 
 `disco shell` is the exception: the root command is the everyday one-shot "run
 this in my sandbox" verb, while `box exec create` stays the raw, fully

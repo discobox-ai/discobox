@@ -6,6 +6,7 @@ package poolagentapi
 type OperationName = string
 
 const (
+	PoolArchiveSandboxOperation OperationName = "PoolArchiveSandbox"
 	PoolCreateSandboxOperation  OperationName = "PoolCreateSandbox"
 	PoolDeleteSandboxOperation  OperationName = "PoolDeleteSandbox"
 	PoolGetSandboxOperation     OperationName = "PoolGetSandbox"

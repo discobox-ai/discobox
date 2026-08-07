@@ -136,6 +136,13 @@ type Runtime interface {
 	GetSandbox(ctx context.Context, sandboxID string) (*Sandbox, error)
 	CreateSandbox(ctx context.Context, req *workerapimodel.PoolSandboxCreateRequest) (*Sandbox, error)
 	UpdateSandbox(ctx context.Context, sandboxID string, req *workerapimodel.PoolSandboxUpdateRequest) (*Sandbox, error)
+	// ArchiveSandbox drops the sandbox's container and disposable state and
+	// keeps its durable tree, so it can be reinstantiated by a later create
+	// (ADR 0022 §6).
+	ArchiveSandbox(ctx context.Context, sandboxID string) error
+	// DeleteSandbox removes the container AND the durable tree, and returns
+	// only once the data is gone: the control plane's delete is confirmed
+	// rather than accepted (ADR 0022 §3).
 	DeleteSandbox(ctx context.Context, sandboxID string) error
 	// SyncKnownPools reaps the agent-created footprint (sandbox containers and
 	// host data/proxy subtrees) of any pool on this shared host daemon whose ID
@@ -419,13 +426,6 @@ func imageMatchesPin(imageID, pinnedDigest string) bool {
 	return pinned == "" || strings.TrimSpace(imageID) == pinned
 }
 
-// containerImageDrifted reports whether an existing sandbox container was built
-// from an image other than the one the request pins.
-//
-// Only the pin is compared. A request with no pin cannot drift: unpinned
-// sandboxes run whatever their reference names, and treating a moved tag as
-// drift here would replace containers the control plane never decided to
-// upgrade.
 // containerSpecDrifted reports whether the existing container was built from a
 // different spec than the one this request describes (ADR 0017 §5).
 //
@@ -437,10 +437,7 @@ func imageMatchesPin(imageID, pinnedDigest string) bool {
 //
 // An empty fingerprint in the request means the caller does not pin a spec, so
 // nothing has drifted — the same "unpinned means run what you have" rule the
-// image digest already follows. A container with no label predates fingerprinting
-// and is left alone for the same reason: rebuilding every existing sandbox the
-// first time an upgraded control plane talks to it would be an upgrade nobody
-// asked for.
+// image digest already follows.
 func (r *DockerSandboxRuntime) containerSpecDrifted(ctx context.Context, existing *Sandbox, req *workerapimodel.PoolSandboxCreateRequest) (bool, error) {
 	if req == nil {
 		return false, nil
@@ -456,11 +453,36 @@ func (r *DockerSandboxRuntime) containerSpecDrifted(ctx context.Context, existin
 		}
 		return false, err
 	}
-	recorded := strings.TrimSpace(inspect.Container.Config.Labels[sandboxLabelSpec])
-	if recorded == "" {
-		return false, nil
+	return specDrifted(
+		inspect.Container.Config.Labels[sandboxLabelSpec],
+		inspect.Container.Image,
+		fingerprint,
+		strings.TrimSpace(optString(req.Config.ImageDigest)),
+	), nil
+}
+
+// specDrifted decides drift from what the container can say about itself.
+//
+// A recorded fingerprint answers the question outright. Without one the
+// container predates fingerprinting, and the answer is not "nothing drifted" —
+// it is that the label cannot tell us, so we fall back to the comparison that
+// needs no label: the image the container was built from against the digest the
+// request pins. That is the check this one generalized (ADR 0016), and dropping
+// it for unlabeled containers left them permanently stranded — the control plane
+// records a re-pin, the runtime declines to act on it, `ObservedGeneration`
+// catches up, and upgrade then reports the sandbox as already current forever
+// because it compares the record against the harness config, never against the
+// container.
+//
+// Falling back narrows the rebuild to containers actually running the wrong
+// image rather than every container an upgraded control plane first talks to,
+// and a replacement keeps the pool-host volumes and the power state either way
+// (ADR 0021 §3).
+func specDrifted(recordedFingerprint, containerImageID, fingerprint, pinnedDigest string) bool {
+	if recorded := strings.TrimSpace(recordedFingerprint); recorded != "" {
+		return recorded != fingerprint
 	}
-	return recorded != fingerprint, nil
+	return !imageMatchesPin(containerImageID, pinnedDigest)
 }
 
 func (r *DockerSandboxRuntime) ensureImageAvailable(ctx context.Context, imageName string) error {
@@ -520,6 +542,14 @@ func (r *DockerSandboxRuntime) materializePushedSources(ctx context.Context, san
 // contribution (nil if the source has no .discobox/project.json), read once
 // here at clone time — never inside the running sandbox (ADR 0012 §7).
 func (r *DockerSandboxRuntime) prepareSandboxVolumes(ctx context.Context, sandboxID string, req *workerapimodel.PoolSandboxCreateRequest, user sandboxUserIdentity) ([]mount.Mount, *sandboxconfig.ProjectLayer, error) {
+	// Creating a container against this tree is what unarchiving is: the tree is
+	// reused as it stands, and clearing the marker is the whole of what makes it
+	// a live sandbox again (ADR 0022 §6). Clearing it first means a create that
+	// fails part way leaves the tree unmarked and container-less, which the
+	// reaper handles as the ordinary failed-create case.
+	if err := clearSandboxArchiveMarker(r.sandboxRoot(sandboxID)); err != nil {
+		return nil, nil, fmt.Errorf("clear sandbox archive marker: %w", err)
+	}
 	dataHostPath := r.sandboxDataRootPath(sandboxID)
 	if err := prepareOwnedDirectory(ctx, dataHostPath, 0, 0); err != nil {
 		return nil, nil, fmt.Errorf("prepare sandbox data volume: %w", err)
@@ -867,7 +897,19 @@ func (r *DockerSandboxRuntime) UpdateSandbox(ctx context.Context, sandboxID stri
 	return r.GetSandbox(ctx, sandboxID)
 }
 
+// DeleteSandbox removes the sandbox's container, its proxy material, and its
+// durable tree, and returns only once all three are gone.
+//
+// The durable removal is the point: the control plane's delete is synchronous
+// and reports success to the user on the strength of this call returning
+// (ADR 0022 §3). Until it did, the tree was left to the volume reaper's
+// 24-hour retention, so a sandbox could be absent from the API and present on
+// disk — including its resolved secrets — for a day.
 func (r *DockerSandboxRuntime) DeleteSandbox(ctx context.Context, sandboxID string) error {
+	lock := r.sandboxLock(sandboxID)
+	lock.Lock()
+	defer lock.Unlock()
+
 	sb, err := r.GetSandbox(ctx, sandboxID)
 	if err != nil && !errors.Is(err, ErrNotFound) {
 		return err
@@ -882,7 +924,13 @@ func (r *DockerSandboxRuntime) DeleteSandbox(ctx context.Context, sandboxID stri
 	if err := proxyagent.RemoveSandboxSentinels(r.projectID, r.poolID, sandboxID); err != nil {
 		return err
 	}
-	return proxyagent.RemoveSandboxMaterial(r.projectID, r.poolID, sandboxID)
+	if err := proxyagent.RemoveSandboxMaterial(r.projectID, r.poolID, sandboxID); err != nil {
+		return err
+	}
+	if err := os.RemoveAll(r.sandboxRoot(sandboxID)); err != nil {
+		return fmt.Errorf("remove sandbox data for %s: %w", sandboxID, err)
+	}
+	return nil
 }
 
 const (
@@ -901,6 +949,12 @@ const (
 	// sandboxVolumeRetention is how long a dead sandbox's persistent volume tree
 	// (data/config/sources/secrets) is kept before reclamation, so its data survives an
 	// accidental or transient removal and a same-day recreate.
+	//
+	// This is accident recovery only, and covers exactly the cases that never
+	// run through DeleteSandbox: a container removed out of band, or lost while
+	// the agent was down. Deliberate retention is archiving, whose window is a
+	// control-plane policy the agent does not know (ADR 0022 §4) — archived
+	// trees are skipped here, not timed out here.
 	sandboxVolumeRetention = 24 * time.Hour
 	// sandboxVolumeTombstone records, inside a sandbox's volume tree, when the
 	// sandbox was first observed dead. The tree is reaped once the tombstone
@@ -1130,6 +1184,11 @@ func reapDeadSandboxVolumes(root string, liveSet map[string]struct{}, retention 
 		}
 		sandboxID := entry.Name()
 		dir := filepath.Join(root, sandboxID)
+		if sandboxIsArchived(dir) {
+			// Held by intent, not orphaned. The control plane decides when an
+			// archived tree expires, and purges it through DeleteSandbox.
+			continue
+		}
 		tombstone := filepath.Join(dir, sandboxVolumeTombstone)
 		if _, ok := liveSet[sandboxID]; ok {
 			// The sandbox is alive (or came back): clear any stale tombstone.
@@ -1464,14 +1523,18 @@ func compactLogTail(logs string) string {
 
 // MemorySandboxRuntime is a lightweight runtime for tests and non-Docker embeds.
 type MemorySandboxRuntime struct {
-	mu              sync.Mutex
-	sandboxes       map[string]*Sandbox
+	mu        sync.Mutex
+	sandboxes map[string]*Sandbox
+	// archived stands in for the on-disk marker: an entry here has no sandbox
+	// in the map (archiving drops the container) but is still held as data.
+	archived        map[string]struct{}
 	gitRepositories map[string]map[string]string
 }
 
 func NewMemorySandboxRuntime() *MemorySandboxRuntime {
 	return &MemorySandboxRuntime{
 		sandboxes:       map[string]*Sandbox{},
+		archived:        map[string]struct{}{},
 		gitRepositories: map[string]map[string]string{},
 	}
 }
@@ -1495,6 +1558,8 @@ func (r *MemorySandboxRuntime) CreateSandbox(_ context.Context, req *workerapimo
 	now := time.Now().UTC()
 	sb := &Sandbox{ID: req.SandboxId, SandboxID: req.SandboxId, Status: StatusRunning, Image: optString(req.Config.Image), CreatedAt: now, StartedAt: &now, Env: copyMap(map[string]string(optSandboxConfigEnv(req.Config.Env)))}
 	r.sandboxes[req.SandboxId] = sb
+	// Creating against a retained tree is what unarchive is (ADR 0022 §6).
+	delete(r.archived, req.SandboxId)
 	return cloneSandbox(sb), nil
 }
 
@@ -1525,10 +1590,19 @@ func (r *MemorySandboxRuntime) UpdateSandbox(_ context.Context, sandboxID string
 	return cloneSandbox(sb), nil
 }
 
+func (r *MemorySandboxRuntime) ArchiveSandbox(_ context.Context, sandboxID string) error {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	delete(r.sandboxes, sandboxID)
+	r.archived[sandboxID] = struct{}{}
+	return nil
+}
+
 func (r *MemorySandboxRuntime) DeleteSandbox(_ context.Context, sandboxID string) error {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	delete(r.sandboxes, sandboxID)
+	delete(r.archived, sandboxID)
 	return nil
 }
 
@@ -1541,6 +1615,9 @@ func (r *MemorySandboxRuntime) StartSandbox(_ context.Context, sandboxID string,
 	defer r.mu.Unlock()
 	sb := r.sandboxes[sandboxID]
 	if sb == nil {
+		if _, archived := r.archived[sandboxID]; archived {
+			return ErrArchived
+		}
 		return ErrNotFound
 	}
 	if sb.Status == StatusRunning {

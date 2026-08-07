@@ -8,6 +8,15 @@ import (
 
 // Handler handles operations described by OpenAPI v3 specification.
 type Handler interface {
+	// PoolArchiveSandbox implements pool-archive-sandbox operation.
+	//
+	// Tear the sandbox's runtime down and keep its data: remove the container and its
+	// proxy material, retain the durable data/config/secrets/sources tree, and mark it
+	// archived so the volume reaper leaves it alone and nothing starts it on demand
+	// (ADR 0022 §6). A later create against the retained tree unarchives it.
+	//
+	// POST /api/project/{projectId}/pool/{poolId}/sandboxes/{sandboxId}/archive
+	PoolArchiveSandbox(ctx context.Context, params PoolArchiveSandboxParams) error
 	// PoolCreateSandbox implements pool-create-sandbox operation.
 	//
 	// Create pool sandbox.

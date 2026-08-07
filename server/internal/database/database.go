@@ -62,7 +62,10 @@ func (db *DB) Migrate(ctx context.Context) error {
 	if err := dropLegacyPoolBootstrapTokenConstraint(write); err != nil {
 		return err
 	}
-	return dropJobQueueArtifacts(write)
+	if err := dropJobQueueArtifacts(write); err != nil {
+		return err
+	}
+	return dropLegacyProjectSlug(write)
 }
 
 const (
@@ -126,6 +129,50 @@ func dropJobQueueArtifacts(db *gorm.DB) error {
 	// and bootstrap tokens reference it. Follow SQLite's documented ALTER TABLE
 	// procedure: disable the pragma around the rebuild. Pragmas are
 	// per-connection, so pin one connection for the whole operation.
+	return db.Connection(func(tx *gorm.DB) error {
+		if err := tx.Exec("PRAGMA foreign_keys = OFF").Error; err != nil {
+			return err
+		}
+		defer tx.Exec("PRAGMA foreign_keys = ON")
+		return drop(tx)
+	})
+}
+
+// dropLegacyProjectSlug removes the retired projects.slug column (ADR 0023 §5).
+// AutoMigrate adds columns but never drops them, so a database created before
+// the column was retired keeps it — declared NOT NULL with no default, which
+// fails every project write the moment the model stops populating it.
+//
+// The rebuild is the same SQLite dance dropJobQueueArtifacts documents: the
+// projects table is referenced by most of the schema, so the foreign-key pragma
+// comes off around it.
+func dropLegacyProjectSlug(db *gorm.DB) error {
+	return dropRetiredColumn(db, &model.Project{}, "projects", "slug")
+}
+
+// dropRetiredColumn removes a column that is no longer part of a model.
+//
+// It issues the DDL directly rather than through Migrator().DropColumn. On
+// SQLite that helper rebuilds the table by rewriting its stored CREATE TABLE
+// text, and it only matches the column when the DDL quotes the identifier the
+// way GORM writes it. A column added by anything else is left in place and the
+// call still reports success. `ALTER TABLE ... DROP COLUMN` has no such
+// dependency and is supported by both SQLite (3.35+) and PostgreSQL.
+//
+// The foreign-key pragma comes off around the statement for the same reason
+// dropJobQueueArtifacts documents: SQLite implements the drop by rebuilding the
+// table, which trips references from other tables. Pragmas are per-connection,
+// so the rebuild is pinned to one connection.
+func dropRetiredColumn(db *gorm.DB, model any, table, column string) error {
+	drop := func(tx *gorm.DB) error {
+		if !tx.Migrator().HasColumn(model, column) {
+			return nil
+		}
+		return tx.Exec(fmt.Sprintf("ALTER TABLE %q DROP COLUMN %q", table, column)).Error
+	}
+	if db.Name() != "sqlite" {
+		return drop(db)
+	}
 	return db.Connection(func(tx *gorm.DB) error {
 		if err := tx.Exec("PRAGMA foreign_keys = OFF").Error; err != nil {
 			return err

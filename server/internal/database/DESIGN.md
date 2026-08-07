@@ -32,6 +32,14 @@ GORM handles to `internal/store`.
 in one schema. Do not reintroduce split global/resource migrations or
 database-routing migration entry points.
 
+`AutoMigrate` adds and widens columns but never drops them, so retiring a
+column from a model needs an explicit migration or existing databases keep it —
+and a retired `NOT NULL` column fails every write to its table from the moment
+the model stops populating it. Drop retired columns with `dropRetiredColumn`,
+which issues `ALTER TABLE ... DROP COLUMN` rather than `Migrator().DropColumn`:
+on SQLite the latter rebuilds the table from its stored DDL text and quietly
+drops nothing unless the identifier is quoted the way GORM writes it.
+
 Tenant-era databases are not migrated in place. The supported replacement path
 for an installation that still has `tenant_id` columns, tenant-scoped primary
 keys, or tenant indexes is:

@@ -44,6 +44,12 @@ const (
 	SandboxStateRunning  = "running"
 	SandboxStateStopping = "stopping"
 	SandboxStateStopped  = "stopped"
+	// SandboxStateArchived means the container and every disposable resource are
+	// gone, and the sandbox's durable tree is retained on its pool host so it can
+	// be reinstantiated (ADR 0022 §1). It is the settled observation of desired
+	// state `archived`, not a power state: an archived sandbox has nothing to
+	// start.
+	SandboxStateArchived = "archived"
 	SandboxStateDeleted  = "deleted"
 	SandboxStateFailed   = "failed"
 
@@ -78,6 +84,7 @@ var (
 		SandboxStateRunning,
 		SandboxStateStopping,
 		SandboxStateStopped,
+		SandboxStateArchived,
 		SandboxStateDeleted,
 		SandboxStateFailed,
 	}
@@ -100,6 +107,10 @@ var (
 // value, which is the lesson of the wedge described in ADR 0017 §4: a check
 // spelled State == "stopped" is asking "is anything relying on this", and
 // `failed` and `stopped` answer that question the same way.
+//
+// Archived is not live, and the answer is not the interesting part: an archived
+// sandbox has no container by intent, so callers that treat "not live" as
+// "needs a container built" must check desired state first (ADR 0022 §5).
 func SandboxIsLive(state string) bool {
 	switch state {
 	case SandboxStateAwaitingSource, SandboxStateStarting, SandboxStateRunning, SandboxStateStopping:
@@ -136,15 +147,23 @@ func (u *User) BeforeCreate(_ *gorm.DB) error {
 
 // Project groups sandboxes and provider configuration.
 type Project struct {
-	ID                     string    `gorm:"primaryKey;type:text" json:"id" doc:"Stable project ID"`
-	OwnerUserID            string    `gorm:"column:owner_user_id;not null;type:text;index" json:"ownerUserId" doc:"Owning user ID"`
-	Name                   string    `gorm:"not null;type:text" json:"name" doc:"Project display name" maxLength:"200"`
-	Slug                   string    `gorm:"uniqueIndex;not null;type:text" json:"slug" doc:"URL-safe project slug" pattern:"^[a-z0-9][a-z0-9-]*$"`
-	Default                bool      `gorm:"column:default_project;not null;default:false;index" json:"default" doc:"Whether this is the user's default project"`
-	DefaultPoolID          string    `gorm:"column:default_pool_id;type:text;default:''" json:"defaultPoolId,omitempty" doc:"Default pool ID for new sandboxes"`
-	DefaultHarnessConfigID string    `gorm:"column:default_harness_config_id;type:text;default:''" json:"defaultHarnessConfigId,omitempty" doc:"Default harness config ID"`
-	CreatedAt              time.Time `gorm:"autoCreateTime" json:"createdAt" doc:"Creation timestamp" format:"date-time"`
-	UpdatedAt              time.Time `gorm:"autoUpdateTime" json:"updatedAt" doc:"Last update timestamp" format:"date-time"`
+	ID          string `gorm:"primaryKey;type:text" json:"id" doc:"Stable project ID"`
+	OwnerUserID string `gorm:"column:owner_user_id;not null;type:text;index;uniqueIndex:idx_project_owner_name,priority:1" json:"ownerUserId" doc:"Owning user ID"`
+	Name        string `gorm:"not null;type:text;uniqueIndex:idx_project_owner_name,priority:2" json:"name" doc:"Project display name" maxLength:"200"`
+	// Default is the flag that resolves the "default" project alias. It is the
+	// only thing that does: a project is addressed by ID, and by name only as a
+	// client-side convenience, so nothing about the default project's name or
+	// identity is special.
+	Default                bool   `gorm:"column:default_project;not null;default:false;index" json:"default" doc:"Whether this is the user's default project"`
+	DefaultPoolID          string `gorm:"column:default_pool_id;type:text;default:''" json:"defaultPoolId,omitempty" doc:"Default pool ID for new sandboxes"`
+	DefaultHarnessConfigID string `gorm:"column:default_harness_config_id;type:text;default:''" json:"defaultHarnessConfigId,omitempty" doc:"Default harness config ID"`
+	// ArchiveRetentionSeconds is how long this project's archived sandboxes are
+	// kept before they are purged (ADR 0022 §4). Zero means the server default:
+	// a project that has never chosen gets the default as it changes, rather
+	// than being frozen to whatever it was at create time.
+	ArchiveRetentionSeconds int64     `gorm:"column:archive_retention_seconds;not null;default:0" json:"archiveRetentionSeconds,omitempty" doc:"How long archived sandboxes are kept before being purged, in seconds. Zero means the server default."`
+	CreatedAt               time.Time `gorm:"autoCreateTime" json:"createdAt" doc:"Creation timestamp" format:"date-time"`
+	UpdatedAt               time.Time `gorm:"autoUpdateTime" json:"updatedAt" doc:"Last update timestamp" format:"date-time"`
 
 	Owner                    *User                     `gorm:"-" json:"owner,omitempty" doc:"Project owner"`
 	Pools                    []Pool                    `gorm:"foreignKey:ProjectID" json:"pools,omitempty" doc:"Project pools"`
