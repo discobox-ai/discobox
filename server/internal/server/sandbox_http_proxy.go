@@ -1,7 +1,6 @@
 package server
 
 import (
-	"fmt"
 	"net/http"
 	"net/url"
 	"strconv"
@@ -9,6 +8,7 @@ import (
 
 	"github.com/go-chi/chi/v5"
 	poolagentauth "github.com/obot-platform/discobox/server/internal/auth/poolagent"
+	"github.com/obot-platform/discobox/server/internal/sandboxagentclient"
 	services "github.com/obot-platform/discobox/server/internal/services"
 )
 
@@ -67,28 +67,8 @@ func parseSandboxHTTPPort(value string) (int, bool) {
 }
 
 func sandboxHTTPProxyTargetURL(baseURL, projectID, poolID, sandboxID string, port int, suffix string) (*url.URL, error) {
-	if strings.TrimSpace(baseURL) == "" {
-		baseURL = defaultSandboxPoolBaseURL
-	}
-	target, err := url.Parse(strings.TrimRight(baseURL, "/"))
-	if err != nil {
-		return nil, fmt.Errorf("parse sandbox HTTP proxy target: %w", err)
-	}
-	if target.Scheme == "" || target.Host == "" {
-		return nil, fmt.Errorf("sandbox HTTP proxy target %q must include scheme and host", baseURL)
-	}
 	if suffix != "" {
 		suffix = "/" + suffix
 	}
-	target.Path = fmt.Sprintf(
-		"/api/project/%s/pool/%s/sandboxes/%s/http/%d%s",
-		url.PathEscape(projectID),
-		url.PathEscape(poolID),
-		url.PathEscape(sandboxID),
-		port,
-		suffix,
-	)
-	target.RawPath = ""
-	target.RawQuery = ""
-	return target, nil
+	return sandboxagentclient.TargetURL(baseURL, projectID, poolID, sandboxID, "/http/"+strconv.Itoa(port)+suffix)
 }

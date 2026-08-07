@@ -10,10 +10,9 @@ import (
 	"github.com/go-chi/chi/v5"
 
 	poolagentauth "github.com/obot-platform/discobox/server/internal/auth/poolagent"
+	"github.com/obot-platform/discobox/server/internal/sandboxagentclient"
 	services "github.com/obot-platform/discobox/server/internal/services"
 )
-
-const defaultSandboxAgentBaseURL = "http://sandbox.local"
 
 func registerSandboxAgentTerminalRoutes(router chi.Router, service services.SandboxService) {
 	router.Method(http.MethodGet, "/api/projects/{projectId}/sandboxes/{sandboxId}/harness-hooks", sandboxAgentTerminalProxyHandler(service))
@@ -107,16 +106,6 @@ func sandboxAgentTerminalProxyScopes(r *http.Request) []string {
 }
 
 func sandboxAgentTerminalProxyTargetURL(baseURL, routeProjectID, projectID, poolID, routeSandboxID, sandboxID, path string) (*url.URL, error) {
-	if strings.TrimSpace(baseURL) == "" {
-		baseURL = defaultSandboxAgentBaseURL
-	}
-	target, err := url.Parse(strings.TrimRight(baseURL, "/"))
-	if err != nil {
-		return nil, fmt.Errorf("parse sandbox agent-terminal proxy target: %w", err)
-	}
-	if target.Scheme == "" || target.Host == "" {
-		return nil, fmt.Errorf("sandbox agent-terminal proxy target %q must include scheme and host", baseURL)
-	}
 	if !strings.HasPrefix(path, "/api/projects/") {
 		return nil, fmt.Errorf("sandbox agent-terminal proxy path %q must start with /api/projects/", path)
 	}
@@ -124,14 +113,5 @@ func sandboxAgentTerminalProxyTargetURL(baseURL, routeProjectID, projectID, pool
 	if suffix == path {
 		return nil, fmt.Errorf("sandbox agent-terminal proxy path identity does not match route")
 	}
-	target.Path = fmt.Sprintf(
-		"/api/project/%s/pool/%s/sandboxes/%s%s",
-		url.PathEscape(projectID),
-		url.PathEscape(poolID),
-		url.PathEscape(sandboxID),
-		suffix,
-	)
-	target.RawPath = ""
-	target.RawQuery = ""
-	return target, nil
+	return sandboxagentclient.TargetURL(baseURL, projectID, poolID, sandboxID, suffix)
 }

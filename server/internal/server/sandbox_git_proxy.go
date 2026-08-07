@@ -11,11 +11,10 @@ import (
 
 	"github.com/go-chi/chi/v5"
 	poolagentauth "github.com/obot-platform/discobox/server/internal/auth/poolagent"
+	"github.com/obot-platform/discobox/server/internal/sandboxagentclient"
 	services "github.com/obot-platform/discobox/server/internal/services"
 	"github.com/obot-platform/discobox/server/internal/store"
 )
-
-const defaultSandboxPoolBaseURL = "https://pool"
 
 func registerSandboxGitRoutes(router chi.Router, service services.SandboxService) {
 	router.Handle("/projects/{projectId}/sandboxes/{sandboxId}/git-repositories/*", sandboxGitProxyHandler(service))
@@ -100,27 +99,7 @@ func validSandboxGitRepositoryID(value string) bool {
 }
 
 func sandboxGitProxyTargetURL(baseURL, projectID, poolID, sandboxID, repositoryID, suffix string) (*url.URL, error) {
-	if strings.TrimSpace(baseURL) == "" {
-		baseURL = defaultSandboxPoolBaseURL
-	}
-	target, err := url.Parse(strings.TrimRight(baseURL, "/"))
-	if err != nil {
-		return nil, fmt.Errorf("parse sandbox git proxy target: %w", err)
-	}
-	if target.Scheme == "" || target.Host == "" {
-		return nil, fmt.Errorf("sandbox git proxy target %q must include scheme and host", baseURL)
-	}
-	target.Path = fmt.Sprintf(
-		"/api/project/%s/pool/%s/sandboxes/%s/git-repositories/%s.git%s",
-		url.PathEscape(projectID),
-		url.PathEscape(poolID),
-		url.PathEscape(sandboxID),
-		url.PathEscape(repositoryID),
-		suffix,
-	)
-	target.RawPath = ""
-	target.RawQuery = ""
-	return target, nil
+	return sandboxagentclient.TargetURL(baseURL, projectID, poolID, sandboxID, fmt.Sprintf("/git-repositories/%s.git%s", url.PathEscape(repositoryID), suffix))
 }
 
 func sandboxPoolReverseProxy(target *url.URL, lease *services.HTTPClientLease) *httputil.ReverseProxy {
@@ -135,38 +114,15 @@ func sandboxPoolReverseProxy(target *url.URL, lease *services.HTTPClientLease) *
 			req.SetXForwarded()
 		},
 	}
-	baseTransport := http.DefaultTransport
-	if lease.Client != nil && lease.Client.Transport != nil {
-		baseTransport = lease.Client.Transport
-	}
-	proxy.Transport = poolAgentAuthTransport{base: baseTransport, lease: lease}
+	proxy.Transport = sandboxagentclient.AuthTransport{Base: baseTransportFor(lease), Lease: lease}
 	return proxy
 }
 
-type poolAgentAuthTransport struct {
-	base  http.RoundTripper
-	lease *services.HTTPClientLease
-}
-
-func (t poolAgentAuthTransport) RoundTrip(req *http.Request) (*http.Response, error) {
-	authToken, err := t.lease.AuthorizationToken(req.Context())
-	if err != nil {
-		return nil, err
+func baseTransportFor(lease *services.HTTPClientLease) http.RoundTripper {
+	if lease.Client != nil && lease.Client.Transport != nil {
+		return lease.Client.Transport
 	}
-	if strings.TrimSpace(authToken) != "" {
-		req.Header.Set("Authorization", "Bearer "+strings.TrimSpace(authToken))
-	} else {
-		req.Header.Del("Authorization")
-	}
-	req.Header.Del("X-Discobox-Sandbox-Agent-Authorization")
-	forwardAuthToken, err := t.lease.ForwardAuthorizationToken(req.Context())
-	if err != nil {
-		return nil, err
-	}
-	if strings.TrimSpace(forwardAuthToken) != "" {
-		req.Header.Set("X-Discobox-Sandbox-Agent-Authorization", "Bearer "+strings.TrimSpace(forwardAuthToken))
-	}
-	return t.base.RoundTrip(req)
+	return http.DefaultTransport
 }
 
 func statusCodeForProxyError(err error) int {
