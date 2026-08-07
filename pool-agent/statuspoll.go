@@ -29,7 +29,7 @@ const (
 
 // startSandboxAgentStatusPoller runs the standing loop that polls every
 // hosted sandbox's sandbox-agent status endpoint and pushes a batch of
-// results to the control plane (ADR 0017). It never affects sandbox
+// results to the control plane (ADR 0030). It never affects sandbox
 // lifecycle: a poll or push failure is logged and skipped for this tick,
 // never treated as a signal to stop or recreate a sandbox.
 func startSandboxAgentStatusPoller(ctx context.Context, logger *slog.Logger, bootstrap Bootstrap, registration *Registration, runtime sandboxruntime.Runtime, client SandboxAgentStatusClient) {

@@ -116,7 +116,7 @@ type SandboxStateClient interface {
 }
 
 // SandboxAgentStatusClient mints scoped sandbox-agent tokens and pushes
-// polled sandbox-agent status batches to the control plane (ADR 0017).
+// polled sandbox-agent status batches to the control plane (ADR 0030).
 type SandboxAgentStatusClient interface {
 	MintSandboxAgentStatusTokens(ctx context.Context, req MintSandboxAgentStatusTokensRequest) (*MintSandboxAgentStatusTokensResponse, error)
 	ReportSandboxAgentStatus(ctx context.Context, req SandboxAgentStatusReportRequest) error

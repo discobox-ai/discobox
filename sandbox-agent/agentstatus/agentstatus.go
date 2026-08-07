@@ -1,6 +1,6 @@
 // Package agentstatus computes the sandbox-agent-reported status a pool
 // agent polls periodically: per-source git status, per-terminal harness
-// session state, and active attach connection counts (see ADR 0017). It is
+// session state, and active attach connection counts (see ADR 0030). It is
 // computed fresh on every call, never cached or pushed on its own initiative
 // — sandbox-agent only ever answers inbound authenticated requests.
 package agentstatus

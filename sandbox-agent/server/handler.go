@@ -32,6 +32,7 @@ type handler struct {
 	sources           []sandboxconfig.Source
 	harnessTypeID     string
 	prompt            []string
+	execUser          *execs.User
 }
 
 type terminalStore interface {
@@ -419,10 +420,10 @@ func (h *handler) ListHarnessHooks(ctx context.Context, params sandboxapi.ListHa
 
 // GetSandboxAgentStatus computes git/session/connection status fresh on every
 // call: sandbox-agent never caches or pushes this on its own initiative, it
-// only ever answers inbound authenticated requests (see ADR 0017).
+// only ever answers inbound authenticated requests (see ADR 0030).
 func (h *handler) GetSandboxAgentStatus(ctx context.Context, _ sandboxapi.GetSandboxAgentStatusParams) (*sandboxapi.SandboxAgentStatusResponse, error) {
 	observedAt := time.Now().UTC()
-	sources := agentstatus.ComputeGitStatus(ctx, h.sources)
+	sources := agentstatus.ComputeGitStatus(ctx, h.sources, h.execUser)
 	var terminals []execs.Exec
 	if h.terminals != nil {
 		terminals = h.terminals.List()

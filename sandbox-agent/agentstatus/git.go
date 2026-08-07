@@ -10,6 +10,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/obot-platform/discobox/sandbox-agent/execs"
 	"github.com/obot-platform/discobox/sandboxconfig"
 )
 
@@ -22,8 +23,12 @@ const (
 // ComputeGitStatus reports git status for every source, bounded so one huge
 // or unreachable source cannot stall or balloon the whole response: each
 // source gets its own timeout and output cap, and a failure on one source is
-// recorded on that source alone.
-func ComputeGitStatus(ctx context.Context, sources []sandboxconfig.Source) []GitSourceStatus {
+// recorded on that source alone. user, when set, is the sandbox's resolved
+// user (the same identity exec'd terminals and execs already run as; see
+// execs.AgentSysProcAttr) — git runs as that user rather than as
+// sandbox-agent's own root process, since sources are owned by it and git
+// itself refuses to operate as a different, mismatched owner.
+func ComputeGitStatus(ctx context.Context, sources []sandboxconfig.Source, user *execs.User) []GitSourceStatus {
 	if len(sources) == 0 {
 		return nil
 	}
@@ -31,16 +36,16 @@ func ComputeGitStatus(ctx context.Context, sources []sandboxconfig.Source) []Git
 	defer cancel()
 	out := make([]GitSourceStatus, 0, len(sources))
 	for _, source := range sources {
-		out = append(out, gitStatusForSource(ctx, source))
+		out = append(out, gitStatusForSource(ctx, source, user))
 	}
 	return out
 }
 
-func gitStatusForSource(ctx context.Context, source sandboxconfig.Source) GitSourceStatus {
+func gitStatusForSource(ctx context.Context, source sandboxconfig.Source, user *execs.User) GitSourceStatus {
 	status := GitSourceStatus{Slug: source.Slug, Target: source.Target, ObservedAt: time.Now().UTC()}
 	sourceCtx, cancel := context.WithTimeout(ctx, perSourceTimeout)
 	defer cancel()
-	output, truncated, err := runGitStatus(sourceCtx, source.Target)
+	output, truncated, err := runGitStatus(sourceCtx, source.Target, user)
 	if err != nil {
 		status.Error = err.Error()
 		return status
@@ -52,7 +57,7 @@ func gitStatusForSource(ctx context.Context, source sandboxconfig.Source) GitSou
 	return status
 }
 
-func runGitStatus(ctx context.Context, dir string) (output string, truncated bool, err error) {
+func runGitStatus(ctx context.Context, dir string, user *execs.User) (output string, truncated bool, err error) {
 	if strings.TrimSpace(dir) == "" {
 		return "", false, errors.New("source target is empty")
 	}
@@ -64,6 +69,11 @@ func runGitStatus(ctx context.Context, dir string) (output string, truncated boo
 		return "", false, errors.New("source target is not a directory")
 	}
 	cmd := exec.CommandContext(ctx, "git", "-C", dir, "status", "--porcelain=v2", "--branch")
+	attr, err := execs.AgentSysProcAttr(user)
+	if err != nil {
+		return "", false, err
+	}
+	cmd.SysProcAttr = attr
 	stdout := &limitedBuffer{max: maxPorcelainCapture}
 	var stderr bytes.Buffer
 	cmd.Stdout = stdout
