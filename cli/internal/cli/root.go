@@ -102,6 +102,7 @@ func NewRootCommand() *cobra.Command {
 	cmd.AddCommand(app.newToolsCommand())
 	cmd.AddCommand(app.newConfigureCommand())
 	cmd.AddCommand(app.newSecretCommand())
+	cmd.AddCommand(app.newSSHKeyCommand())
 	cmd.AddCommand(app.newEventsCommand())
 	cmd.AddCommand(app.newTUICommand())
 	cmd.AddCommand(app.newCompletionCommand())

@@ -3004,6 +3004,86 @@ components:
                 - createdAt
                 - updatedAt
             type: object
+        CreateSSHKeyBody:
+            additionalProperties: false
+            properties:
+                $schema:
+                    description: A URL to the JSON Schema for this object.
+                    example: https://example.com/schemas/CreateSSHKeyBody.json
+                    format: uri
+                    readOnly: true
+                    type: string
+                name:
+                    description: Optional label for the key
+                    type: string
+                publicKey:
+                    description: An authorized_keys(5) public key line
+                    type: string
+            required:
+                - publicKey
+            type: object
+        ListSSHKeysBody:
+            additionalProperties: false
+            properties:
+                $schema:
+                    description: A URL to the JSON Schema for this object.
+                    example: https://example.com/schemas/ListSSHKeysBody.json
+                    format: uri
+                    readOnly: true
+                    type: string
+                sshKeys:
+                    items:
+                        $ref: '#/components/schemas/SSHKey'
+                    type: array
+            required:
+                - sshKeys
+            type: object
+        SSHKey:
+            additionalProperties: false
+            properties:
+                $schema:
+                    description: A URL to the JSON Schema for this object.
+                    example: https://example.com/schemas/SSHKey.json
+                    format: uri
+                    readOnly: true
+                    type: string
+                comment:
+                    description: Trailing comment from the public key line
+                    type: string
+                createdAt:
+                    description: Creation timestamp
+                    format: date-time
+                    type: string
+                createdBy:
+                    description: Principal ID that enrolled this key
+                    type: string
+                fingerprint:
+                    description: SHA256 fingerprint of the public key
+                    type: string
+                id:
+                    description: Stable SSH key ID
+                    type: string
+                name:
+                    description: Optional label for the key
+                    type: string
+                projectId:
+                    description: Project ID
+                    type: string
+                publicKey:
+                    description: Normalized authorized_keys(5) public key line (type and base64 blob only)
+                    type: string
+                updatedAt:
+                    description: Last update timestamp
+                    format: date-time
+                    type: string
+            required:
+                - id
+                - projectId
+                - publicKey
+                - fingerprint
+                - createdAt
+                - updatedAt
+            type: object
 info:
     title: Discobox Sandbox Manager
     version: 0.1.0
@@ -6224,3 +6304,95 @@ paths:
             summary: List sandbox provider catalog
             tags:
                 - Providers
+    /projects/{projectId}/ssh-keys:
+        get:
+            operationId: list-ssh-keys
+            parameters:
+                - description: Project ID
+                  in: path
+                  name: projectId
+                  required: true
+                  schema:
+                    default: default
+                    description: Project ID
+                    type: string
+            responses:
+                200:
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/ListSSHKeysBody'
+                    description: OK
+                default:
+                    content:
+                        application/problem+json:
+                            schema:
+                                $ref: '#/components/schemas/ErrorModel'
+                    description: Error
+            summary: List SSH keys
+            tags:
+                - SSHKeys
+        post:
+            operationId: create-ssh-key
+            parameters:
+                - description: Project ID
+                  in: path
+                  name: projectId
+                  required: true
+                  schema:
+                    default: default
+                    description: Project ID
+                    type: string
+            requestBody:
+                content:
+                    application/json:
+                        schema:
+                            $ref: '#/components/schemas/CreateSSHKeyBody'
+                required: true
+            responses:
+                200:
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/SSHKey'
+                    description: OK
+                default:
+                    content:
+                        application/problem+json:
+                            schema:
+                                $ref: '#/components/schemas/ErrorModel'
+                    description: Error
+            summary: Enroll a project-scoped SSH key
+            tags:
+                - SSHKeys
+    /projects/{projectId}/ssh-keys/{sshKeyId}:
+        delete:
+            operationId: delete-ssh-key
+            parameters:
+                - description: Project ID
+                  in: path
+                  name: projectId
+                  required: true
+                  schema:
+                    default: default
+                    description: Project ID
+                    type: string
+                - description: SSH key ID
+                  in: path
+                  name: sshKeyId
+                  required: true
+                  schema:
+                    description: SSH key ID
+                    type: string
+            responses:
+                204:
+                    description: No Content
+                default:
+                    content:
+                        application/problem+json:
+                            schema:
+                                $ref: '#/components/schemas/ErrorModel'
+                    description: Error
+            summary: Revoke an SSH key
+            tags:
+                - SSHKeys

@@ -106,6 +106,12 @@ type Handler interface {
 	//
 	// POST /projects
 	CreateProject(ctx context.Context, req *CreateProjectBody) (CreateProjectRes, error)
+	// CreateSSHKey implements create-ssh-key operation.
+	//
+	// Enroll a project-scoped SSH key.
+	//
+	// POST /projects/{projectId}/ssh-keys
+	CreateSSHKey(ctx context.Context, req *CreateSSHKeyBody, params CreateSSHKeyParams) (CreateSSHKeyRes, error)
 	// CreateSandbox implements create-sandbox operation.
 	//
 	// Create a sandbox.
@@ -175,6 +181,12 @@ type Handler interface {
 	//
 	// DELETE /projects/{projectId}
 	DeleteProject(ctx context.Context, params DeleteProjectParams) (DeleteProjectRes, error)
+	// DeleteSSHKey implements delete-ssh-key operation.
+	//
+	// Revoke an SSH key.
+	//
+	// DELETE /projects/{projectId}/ssh-keys/{sshKeyId}
+	DeleteSSHKey(ctx context.Context, params DeleteSSHKeyParams) (DeleteSSHKeyRes, error)
 	// DeleteSandbox implements delete-sandbox operation.
 	//
 	// Archive the sandbox. Its container and runtime resources are removed and its data is kept, so it
@@ -315,6 +327,12 @@ type Handler interface {
 	//
 	// GET /projects
 	ListProjects(ctx context.Context) (ListProjectsRes, error)
+	// ListSSHKeys implements list-ssh-keys operation.
+	//
+	// List SSH keys.
+	//
+	// GET /projects/{projectId}/ssh-keys
+	ListSSHKeys(ctx context.Context, params ListSSHKeysParams) (ListSSHKeysRes, error)
 	// ListSandboxExecEvents implements list-sandbox-exec-events operation.
 	//
 	// List recent audit events for a sandbox exec.

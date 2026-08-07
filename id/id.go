@@ -31,6 +31,7 @@ const (
 	PrefixRun                        = "run"
 	PrefixSnapshot                   = "snap"
 	PrefixHost                       = "host"
+	PrefixSSHKey                     = "sshkey"
 	// PrefixPoolAgentBoot identifies one run of a pool agent process, so state
 	// reports carry a boot identity their sequence numbers are scoped to.
 	PrefixPoolAgentBoot = "boot"

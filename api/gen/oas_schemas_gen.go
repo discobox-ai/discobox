@@ -635,6 +635,46 @@ func (s *CreateProjectBodyCopyItem) UnmarshalText(data []byte) error {
 	}
 }
 
+// Ref: #/components/schemas/CreateSSHKeyBody
+type CreateSSHKeyBody struct {
+	// A URL to the JSON Schema for this object.
+	Schema OptURI `json:"$schema"`
+	// Optional label for the key.
+	Name OptString `json:"name"`
+	// An authorized_keys(5) public key line.
+	PublicKey string `json:"publicKey"`
+}
+
+// GetSchema returns the value of Schema.
+func (s *CreateSSHKeyBody) GetSchema() OptURI {
+	return s.Schema
+}
+
+// GetName returns the value of Name.
+func (s *CreateSSHKeyBody) GetName() OptString {
+	return s.Name
+}
+
+// GetPublicKey returns the value of PublicKey.
+func (s *CreateSSHKeyBody) GetPublicKey() string {
+	return s.PublicKey
+}
+
+// SetSchema sets the value of Schema.
+func (s *CreateSSHKeyBody) SetSchema(val OptURI) {
+	s.Schema = val
+}
+
+// SetName sets the value of Name.
+func (s *CreateSSHKeyBody) SetName(val OptString) {
+	s.Name = val
+}
+
+// SetPublicKey sets the value of PublicKey.
+func (s *CreateSSHKeyBody) SetPublicKey(val string) {
+	s.PublicKey = val
+}
+
 // Ref: #/components/schemas/CreateSandboxBody
 type CreateSandboxBody struct {
 	// A URL to the JSON Schema for this object.
@@ -1305,6 +1345,11 @@ type DeleteProjectNoContent struct{}
 
 func (*DeleteProjectNoContent) deleteProjectRes() {}
 
+// DeleteSSHKeyNoContent is response for DeleteSSHKey operation.
+type DeleteSSHKeyNoContent struct{}
+
+func (*DeleteSSHKeyNoContent) deleteSSHKeyRes() {}
+
 // DeleteSandboxAccepted is response for DeleteSandbox operation.
 type DeleteSandboxAccepted struct{}
 
@@ -1495,6 +1540,7 @@ func (*ErrorModelStatusCode) configureHarnessConfigRes()           {}
 func (*ErrorModelStatusCode) createHarnessConfigRes()              {}
 func (*ErrorModelStatusCode) createPoolRes()                       {}
 func (*ErrorModelStatusCode) createProjectRes()                    {}
+func (*ErrorModelStatusCode) createSSHKeyRes()                     {}
 func (*ErrorModelStatusCode) createSandboxProviderInstanceRes()    {}
 func (*ErrorModelStatusCode) createSandboxRes()                    {}
 func (*ErrorModelStatusCode) createSecretGrantRes()                {}
@@ -1505,6 +1551,7 @@ func (*ErrorModelStatusCode) deleteHarnessConfigRes()              {}
 func (*ErrorModelStatusCode) deleteHarnessConfigSecretBindingRes() {}
 func (*ErrorModelStatusCode) deletePoolRes()                       {}
 func (*ErrorModelStatusCode) deleteProjectRes()                    {}
+func (*ErrorModelStatusCode) deleteSSHKeyRes()                     {}
 func (*ErrorModelStatusCode) deleteSandboxProviderInstanceRes()    {}
 func (*ErrorModelStatusCode) deleteSandboxRes()                    {}
 func (*ErrorModelStatusCode) deleteSecretRes()                     {}
@@ -1523,6 +1570,7 @@ func (*ErrorModelStatusCode) listHarnessConfigsRes()               {}
 func (*ErrorModelStatusCode) listJobsRes()                         {}
 func (*ErrorModelStatusCode) listPoolsRes()                        {}
 func (*ErrorModelStatusCode) listProjectsRes()                     {}
+func (*ErrorModelStatusCode) listSSHKeysRes()                      {}
 func (*ErrorModelStatusCode) listSandboxProviderCatalogRes()       {}
 func (*ErrorModelStatusCode) listSandboxProviderInstancesRes()     {}
 func (*ErrorModelStatusCode) listSandboxesRes()                    {}
@@ -3042,6 +3090,35 @@ func (s *ListProjectsBody) SetProjects(val []Project) {
 }
 
 func (*ListProjectsBody) listProjectsRes() {}
+
+// Ref: #/components/schemas/ListSSHKeysBody
+type ListSSHKeysBody struct {
+	// A URL to the JSON Schema for this object.
+	Schema  OptURI   `json:"$schema"`
+	SshKeys []SSHKey `json:"sshKeys"`
+}
+
+// GetSchema returns the value of Schema.
+func (s *ListSSHKeysBody) GetSchema() OptURI {
+	return s.Schema
+}
+
+// GetSshKeys returns the value of SshKeys.
+func (s *ListSSHKeysBody) GetSshKeys() []SSHKey {
+	return s.SshKeys
+}
+
+// SetSchema sets the value of Schema.
+func (s *ListSSHKeysBody) SetSchema(val OptURI) {
+	s.Schema = val
+}
+
+// SetSshKeys sets the value of SshKeys.
+func (s *ListSSHKeysBody) SetSshKeys(val []SSHKey) {
+	s.SshKeys = val
+}
+
+func (*ListSSHKeysBody) listSSHKeysRes() {}
 
 // Ref: #/components/schemas/ListSandboxProviderCatalogBody
 type ListSandboxProviderCatalogBody struct {
@@ -7450,6 +7527,132 @@ func (s *RestartSandboxBody) SetForce(val OptBool) {
 type RevokeSecretGrantNoContent struct{}
 
 func (*RevokeSecretGrantNoContent) revokeSecretGrantRes() {}
+
+// Ref: #/components/schemas/SSHKey
+type SSHKey struct {
+	// A URL to the JSON Schema for this object.
+	Schema OptURI `json:"$schema"`
+	// Trailing comment from the public key line.
+	Comment OptString `json:"comment"`
+	// Creation timestamp.
+	CreatedAt time.Time `json:"createdAt"`
+	// Principal ID that enrolled this key.
+	CreatedBy OptString `json:"createdBy"`
+	// SHA256 fingerprint of the public key.
+	Fingerprint string `json:"fingerprint"`
+	// Stable SSH key ID.
+	ID string `json:"id"`
+	// Optional label for the key.
+	Name OptString `json:"name"`
+	// Project ID.
+	ProjectId string `json:"projectId"`
+	// Normalized authorized_keys(5) public key line (type and base64 blob only).
+	PublicKey string `json:"publicKey"`
+	// Last update timestamp.
+	UpdatedAt time.Time `json:"updatedAt"`
+}
+
+// GetSchema returns the value of Schema.
+func (s *SSHKey) GetSchema() OptURI {
+	return s.Schema
+}
+
+// GetComment returns the value of Comment.
+func (s *SSHKey) GetComment() OptString {
+	return s.Comment
+}
+
+// GetCreatedAt returns the value of CreatedAt.
+func (s *SSHKey) GetCreatedAt() time.Time {
+	return s.CreatedAt
+}
+
+// GetCreatedBy returns the value of CreatedBy.
+func (s *SSHKey) GetCreatedBy() OptString {
+	return s.CreatedBy
+}
+
+// GetFingerprint returns the value of Fingerprint.
+func (s *SSHKey) GetFingerprint() string {
+	return s.Fingerprint
+}
+
+// GetID returns the value of ID.
+func (s *SSHKey) GetID() string {
+	return s.ID
+}
+
+// GetName returns the value of Name.
+func (s *SSHKey) GetName() OptString {
+	return s.Name
+}
+
+// GetProjectId returns the value of ProjectId.
+func (s *SSHKey) GetProjectId() string {
+	return s.ProjectId
+}
+
+// GetPublicKey returns the value of PublicKey.
+func (s *SSHKey) GetPublicKey() string {
+	return s.PublicKey
+}
+
+// GetUpdatedAt returns the value of UpdatedAt.
+func (s *SSHKey) GetUpdatedAt() time.Time {
+	return s.UpdatedAt
+}
+
+// SetSchema sets the value of Schema.
+func (s *SSHKey) SetSchema(val OptURI) {
+	s.Schema = val
+}
+
+// SetComment sets the value of Comment.
+func (s *SSHKey) SetComment(val OptString) {
+	s.Comment = val
+}
+
+// SetCreatedAt sets the value of CreatedAt.
+func (s *SSHKey) SetCreatedAt(val time.Time) {
+	s.CreatedAt = val
+}
+
+// SetCreatedBy sets the value of CreatedBy.
+func (s *SSHKey) SetCreatedBy(val OptString) {
+	s.CreatedBy = val
+}
+
+// SetFingerprint sets the value of Fingerprint.
+func (s *SSHKey) SetFingerprint(val string) {
+	s.Fingerprint = val
+}
+
+// SetID sets the value of ID.
+func (s *SSHKey) SetID(val string) {
+	s.ID = val
+}
+
+// SetName sets the value of Name.
+func (s *SSHKey) SetName(val OptString) {
+	s.Name = val
+}
+
+// SetProjectId sets the value of ProjectId.
+func (s *SSHKey) SetProjectId(val string) {
+	s.ProjectId = val
+}
+
+// SetPublicKey sets the value of PublicKey.
+func (s *SSHKey) SetPublicKey(val string) {
+	s.PublicKey = val
+}
+
+// SetUpdatedAt sets the value of UpdatedAt.
+func (s *SSHKey) SetUpdatedAt(val time.Time) {
+	s.UpdatedAt = val
+}
+
+func (*SSHKey) createSSHKeyRes() {}
 
 // Ref: #/components/schemas/Sandbox
 type Sandbox struct {

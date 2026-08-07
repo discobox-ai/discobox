@@ -16,6 +16,7 @@ type SetHarnessConfigSecretBindingBody = apimodel.SetHarnessConfigSecretBindingB
 type CreateSecretBody = apimodel.CreateSecretBody
 type CreateSecretRequestBody = apimodel.CreateSecretRequestBody
 type CreateSecretGrantBody = apimodel.CreateSecretGrantBody
+type CreateSSHKeyBody = apimodel.CreateSSHKeyBody
 type UpdateHarnessConfigBody = apimodel.UpdateHarnessConfigBody
 type UpdateSecretBody = apimodel.UpdateSecretBody
 type CreateSandboxBody = apimodel.CreateSandboxBody
@@ -191,6 +192,14 @@ type SecretService interface {
 	ResolveSandboxSecret(ctx context.Context, poolID, sandboxID, sentinel, host string) (*model.SandboxSecretResolution, error)
 }
 
+// SSHKeyService manages project-scoped SSH keys that authorize SSH access to
+// that project's sandboxes (ADR 0024 §5).
+type SSHKeyService interface {
+	ListSSHKeys(ctx context.Context, projectID string) ([]model.SSHKey, error)
+	CreateSSHKey(ctx context.Context, projectID string, input CreateSSHKeyBody) (*model.SSHKey, error)
+	DeleteSSHKey(ctx context.Context, projectID, keyID string) error
+}
+
 // ProjectEventService provides project-scoped resource snapshots and live subscription.
 type ProjectEventService interface {
 	MaxProjectEventSeq(ctx context.Context, projectID string) (int64, error)
@@ -209,4 +218,5 @@ type Services struct {
 	Jobs           JobService
 	Events         ProjectEventService
 	Secrets        SecretService
+	SSHKeys        SSHKeyService
 }

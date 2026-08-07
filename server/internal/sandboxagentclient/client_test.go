@@ -106,7 +106,7 @@ func TestAuthTransportRoundTrip(t *testing.T) {
 		base := roundTripFunc(func(req *http.Request) (*http.Response, error) {
 			gotAuth = req.Header.Get("Authorization")
 			gotForward = req.Header.Get("X-Discobox-Sandbox-Agent-Authorization")
-			return &http.Response{StatusCode: http.StatusOK}, nil
+			return &http.Response{StatusCode: http.StatusOK, Body: http.NoBody}, nil
 		})
 		lease := &transport.HTTPClientLease{
 			AuthToken: "server-token",
@@ -114,12 +114,14 @@ func TestAuthTransportRoundTrip(t *testing.T) {
 				return "sandbox-token", nil
 			},
 		}
-		req := httptest.NewRequest(http.MethodGet, "https://pool/x", nil)
+		req := httptest.NewRequestWithContext(context.Background(), http.MethodGet, "https://pool/x", nil)
 		req.Header.Set("X-Discobox-Sandbox-Agent-Authorization", "Bearer stale")
 		tr := AuthTransport{Base: base, Lease: lease}
-		if _, err := tr.RoundTrip(req); err != nil {
+		resp, err := tr.RoundTrip(req)
+		if err != nil {
 			t.Fatalf("unexpected error: %v", err)
 		}
+		resp.Body.Close()
 		if gotAuth != "Bearer server-token" {
 			t.Fatalf("Authorization = %q", gotAuth)
 		}
@@ -132,15 +134,17 @@ func TestAuthTransportRoundTrip(t *testing.T) {
 		var sawForward bool
 		base := roundTripFunc(func(req *http.Request) (*http.Response, error) {
 			_, sawForward = req.Header["X-Discobox-Sandbox-Agent-Authorization"]
-			return &http.Response{StatusCode: http.StatusOK}, nil
+			return &http.Response{StatusCode: http.StatusOK, Body: http.NoBody}, nil
 		})
 		lease := &transport.HTTPClientLease{}
-		req := httptest.NewRequest(http.MethodGet, "https://pool/x", nil)
+		req := httptest.NewRequestWithContext(context.Background(), http.MethodGet, "https://pool/x", nil)
 		req.Header.Set("X-Discobox-Sandbox-Agent-Authorization", "Bearer stale")
 		tr := AuthTransport{Base: base, Lease: lease}
-		if _, err := tr.RoundTrip(req); err != nil {
+		resp, err := tr.RoundTrip(req)
+		if err != nil {
 			t.Fatalf("unexpected error: %v", err)
 		}
+		resp.Body.Close()
 		if sawForward {
 			t.Fatalf("expected forwarded header to be cleared")
 		}
@@ -150,15 +154,17 @@ func TestAuthTransportRoundTrip(t *testing.T) {
 		var sawAuth bool
 		base := roundTripFunc(func(req *http.Request) (*http.Response, error) {
 			_, sawAuth = req.Header["Authorization"]
-			return &http.Response{StatusCode: http.StatusOK}, nil
+			return &http.Response{StatusCode: http.StatusOK, Body: http.NoBody}, nil
 		})
 		lease := &transport.HTTPClientLease{}
-		req := httptest.NewRequest(http.MethodGet, "https://pool/x", nil)
+		req := httptest.NewRequestWithContext(context.Background(), http.MethodGet, "https://pool/x", nil)
 		req.Header.Set("Authorization", "Bearer stale")
 		tr := AuthTransport{Base: base, Lease: lease}
-		if _, err := tr.RoundTrip(req); err != nil {
+		resp, err := tr.RoundTrip(req)
+		if err != nil {
 			t.Fatalf("unexpected error: %v", err)
 		}
+		resp.Body.Close()
 		if sawAuth {
 			t.Fatalf("expected Authorization header to be cleared")
 		}
@@ -166,16 +172,20 @@ func TestAuthTransportRoundTrip(t *testing.T) {
 
 	t.Run("propagates auth token provider error", func(t *testing.T) {
 		wantErr := errors.New("boom")
-		base := roundTripFunc(func(req *http.Request) (*http.Response, error) {
+		base := roundTripFunc(func(_ *http.Request) (*http.Response, error) {
 			t.Fatal("base transport should not be called on provider error")
 			return nil, nil
 		})
 		lease := &transport.HTTPClientLease{
 			AuthTokenProvider: func(context.Context) (string, error) { return "", wantErr },
 		}
-		req := httptest.NewRequest(http.MethodGet, "https://pool/x", nil)
+		req := httptest.NewRequestWithContext(context.Background(), http.MethodGet, "https://pool/x", nil)
 		tr := AuthTransport{Base: base, Lease: lease}
-		if _, err := tr.RoundTrip(req); !errors.Is(err, wantErr) {
+		resp, err := tr.RoundTrip(req)
+		if resp != nil {
+			resp.Body.Close()
+		}
+		if !errors.Is(err, wantErr) {
 			t.Fatalf("got err %v, want %v", err, wantErr)
 		}
 	})
@@ -188,16 +198,17 @@ func TestAuthTransportRoundTrip(t *testing.T) {
 		}
 		// RoundTrip must not panic dereferencing a nil Base; use an httptest server
 		// so the default transport has somewhere real to dial.
-		srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 			w.WriteHeader(http.StatusNoContent)
 		}))
 		defer srv.Close()
-		req := httptest.NewRequest(http.MethodGet, srv.URL, nil)
+		req := httptest.NewRequestWithContext(context.Background(), http.MethodGet, srv.URL, nil)
 		req.RequestURI = ""
 		resp, err := tr.RoundTrip(req)
 		if err != nil {
 			t.Fatalf("unexpected error: %v", err)
 		}
+		resp.Body.Close()
 		if resp.StatusCode != http.StatusNoContent {
 			t.Fatalf("status = %d", resp.StatusCode)
 		}

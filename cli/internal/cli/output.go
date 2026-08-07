@@ -366,6 +366,45 @@ func (a *App) writeSecrets(cmd *cobra.Command, secrets []apimodel.Secret) error 
 	return tw.Flush()
 }
 
+func (a *App) writeSSHKey(cmd *cobra.Command, key *apimodel.SSHKey) error {
+	if key == nil {
+		return nil
+	}
+	if a.output == "json" {
+		return writeJSON(cmd.OutOrStdout(), key)
+	}
+	tw := tabwriter.NewWriter(cmd.OutOrStdout(), 0, 0, 2, ' ', 0)
+	fmt.Fprintln(tw, "FIELD\tVALUE")
+	fmt.Fprintf(tw, "ID\t%s\n", key.ID)
+	fmt.Fprintf(tw, "NAME\t%s\n", key.Name.Or(""))
+	fmt.Fprintf(tw, "FINGERPRINT\t%s\n", key.Fingerprint)
+	fmt.Fprintf(tw, "COMMENT\t%s\n", key.Comment.Or(""))
+	fmt.Fprintf(tw, "CREATED\t%s\n", formatTime(key.CreatedAt))
+	return tw.Flush()
+}
+
+func (a *App) writeSSHKeys(cmd *cobra.Command, keys []apimodel.SSHKey) error {
+	keys = sortedByRecency(keys, func(key apimodel.SSHKey) time.Time { return recencyTime(key.UpdatedAt, key.CreatedAt) })
+	if a.quiet {
+		return writeResourceIDs(cmd.OutOrStdout(), keys, func(key apimodel.SSHKey) string { return key.ID })
+	}
+	if a.output == "json" {
+		return writeJSON(cmd.OutOrStdout(), map[string]any{"sshKeys": keys})
+	}
+	tw := tabwriter.NewWriter(cmd.OutOrStdout(), 0, 0, 2, ' ', 0)
+	fmt.Fprintln(tw, "ID\tNAME\tFINGERPRINT\tCOMMENT\tCREATED")
+	for _, key := range keys {
+		fmt.Fprintf(tw, "%s\t%s\t%s\t%s\t%s\n",
+			key.ID,
+			key.Name.Or(""),
+			key.Fingerprint,
+			key.Comment.Or(""),
+			formatTime(key.CreatedAt),
+		)
+	}
+	return tw.Flush()
+}
+
 func (a *App) writeSecretGrant(cmd *cobra.Command, grant *apimodel.SecretGrant) error {
 	if grant == nil {
 		return nil

@@ -956,5 +956,6 @@ func AllModels() []any {
 		&SecretRequest{},
 		&SecretGrant{},
 		&SandboxSecret{},
+		&SSHKey{},
 	}
 }

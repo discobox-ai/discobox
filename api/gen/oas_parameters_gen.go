@@ -1379,6 +1379,77 @@ func decodeCreatePoolParams(args [1]string, argsEscaped bool, r *http.Request) (
 	return params, nil
 }
 
+// CreateSSHKeyParams is parameters of create-ssh-key operation.
+type CreateSSHKeyParams struct {
+	// Project ID.
+	ProjectId string
+}
+
+func unpackCreateSSHKeyParams(packed middleware.Parameters) (params CreateSSHKeyParams) {
+	{
+		key := middleware.ParameterKey{
+			Name: "projectId",
+			In:   "path",
+		}
+		params.ProjectId = packed[key].(string)
+	}
+	return params
+}
+
+func decodeCreateSSHKeyParams(args [1]string, argsEscaped bool, r *http.Request) (params CreateSSHKeyParams, _ error) {
+	// Set default value for path: projectId.
+	{
+		val := string("default")
+		params.ProjectId = val
+	}
+	// Decode path: projectId.
+	if err := func() error {
+		param := args[0]
+		if argsEscaped {
+			unescaped, err := url.PathUnescape(args[0])
+			if err != nil {
+				return errors.Wrap(err, "unescape path")
+			}
+			param = unescaped
+		}
+		if len(param) > 0 {
+			d := uri.NewPathDecoder(uri.PathDecoderConfig{
+				Param:   "projectId",
+				Value:   param,
+				Style:   uri.PathStyleSimple,
+				Explode: false,
+			})
+
+			if err := func() error {
+				val, err := d.DecodeValue()
+				if err != nil {
+					return err
+				}
+
+				c, err := conv.ToString(val)
+				if err != nil {
+					return err
+				}
+
+				params.ProjectId = c
+				return nil
+			}(); err != nil {
+				return err
+			}
+		} else {
+			return validate.ErrFieldRequired
+		}
+		return nil
+	}(); err != nil {
+		return params, &ogenerrors.DecodeParamError{
+			Name: "projectId",
+			In:   "path",
+			Err:  err,
+		}
+	}
+	return params, nil
+}
+
 // CreateSandboxParams is parameters of create-sandbox operation.
 type CreateSandboxParams struct {
 	// Project ID.
@@ -2472,6 +2543,131 @@ func decodeDeleteProjectParams(args [1]string, argsEscaped bool, r *http.Request
 	}(); err != nil {
 		return params, &ogenerrors.DecodeParamError{
 			Name: "projectId",
+			In:   "path",
+			Err:  err,
+		}
+	}
+	return params, nil
+}
+
+// DeleteSSHKeyParams is parameters of delete-ssh-key operation.
+type DeleteSSHKeyParams struct {
+	// Project ID.
+	ProjectId string
+	// SSH key ID.
+	SshKeyId string
+}
+
+func unpackDeleteSSHKeyParams(packed middleware.Parameters) (params DeleteSSHKeyParams) {
+	{
+		key := middleware.ParameterKey{
+			Name: "projectId",
+			In:   "path",
+		}
+		params.ProjectId = packed[key].(string)
+	}
+	{
+		key := middleware.ParameterKey{
+			Name: "sshKeyId",
+			In:   "path",
+		}
+		params.SshKeyId = packed[key].(string)
+	}
+	return params
+}
+
+func decodeDeleteSSHKeyParams(args [2]string, argsEscaped bool, r *http.Request) (params DeleteSSHKeyParams, _ error) {
+	// Set default value for path: projectId.
+	{
+		val := string("default")
+		params.ProjectId = val
+	}
+	// Decode path: projectId.
+	if err := func() error {
+		param := args[0]
+		if argsEscaped {
+			unescaped, err := url.PathUnescape(args[0])
+			if err != nil {
+				return errors.Wrap(err, "unescape path")
+			}
+			param = unescaped
+		}
+		if len(param) > 0 {
+			d := uri.NewPathDecoder(uri.PathDecoderConfig{
+				Param:   "projectId",
+				Value:   param,
+				Style:   uri.PathStyleSimple,
+				Explode: false,
+			})
+
+			if err := func() error {
+				val, err := d.DecodeValue()
+				if err != nil {
+					return err
+				}
+
+				c, err := conv.ToString(val)
+				if err != nil {
+					return err
+				}
+
+				params.ProjectId = c
+				return nil
+			}(); err != nil {
+				return err
+			}
+		} else {
+			return validate.ErrFieldRequired
+		}
+		return nil
+	}(); err != nil {
+		return params, &ogenerrors.DecodeParamError{
+			Name: "projectId",
+			In:   "path",
+			Err:  err,
+		}
+	}
+	// Decode path: sshKeyId.
+	if err := func() error {
+		param := args[1]
+		if argsEscaped {
+			unescaped, err := url.PathUnescape(args[1])
+			if err != nil {
+				return errors.Wrap(err, "unescape path")
+			}
+			param = unescaped
+		}
+		if len(param) > 0 {
+			d := uri.NewPathDecoder(uri.PathDecoderConfig{
+				Param:   "sshKeyId",
+				Value:   param,
+				Style:   uri.PathStyleSimple,
+				Explode: false,
+			})
+
+			if err := func() error {
+				val, err := d.DecodeValue()
+				if err != nil {
+					return err
+				}
+
+				c, err := conv.ToString(val)
+				if err != nil {
+					return err
+				}
+
+				params.SshKeyId = c
+				return nil
+			}(); err != nil {
+				return err
+			}
+		} else {
+			return validate.ErrFieldRequired
+		}
+		return nil
+	}(); err != nil {
+		return params, &ogenerrors.DecodeParamError{
+			Name: "sshKeyId",
 			In:   "path",
 			Err:  err,
 		}
@@ -5212,6 +5408,77 @@ func unpackListPoolsParams(packed middleware.Parameters) (params ListPoolsParams
 }
 
 func decodeListPoolsParams(args [1]string, argsEscaped bool, r *http.Request) (params ListPoolsParams, _ error) {
+	// Set default value for path: projectId.
+	{
+		val := string("default")
+		params.ProjectId = val
+	}
+	// Decode path: projectId.
+	if err := func() error {
+		param := args[0]
+		if argsEscaped {
+			unescaped, err := url.PathUnescape(args[0])
+			if err != nil {
+				return errors.Wrap(err, "unescape path")
+			}
+			param = unescaped
+		}
+		if len(param) > 0 {
+			d := uri.NewPathDecoder(uri.PathDecoderConfig{
+				Param:   "projectId",
+				Value:   param,
+				Style:   uri.PathStyleSimple,
+				Explode: false,
+			})
+
+			if err := func() error {
+				val, err := d.DecodeValue()
+				if err != nil {
+					return err
+				}
+
+				c, err := conv.ToString(val)
+				if err != nil {
+					return err
+				}
+
+				params.ProjectId = c
+				return nil
+			}(); err != nil {
+				return err
+			}
+		} else {
+			return validate.ErrFieldRequired
+		}
+		return nil
+	}(); err != nil {
+		return params, &ogenerrors.DecodeParamError{
+			Name: "projectId",
+			In:   "path",
+			Err:  err,
+		}
+	}
+	return params, nil
+}
+
+// ListSSHKeysParams is parameters of list-ssh-keys operation.
+type ListSSHKeysParams struct {
+	// Project ID.
+	ProjectId string
+}
+
+func unpackListSSHKeysParams(packed middleware.Parameters) (params ListSSHKeysParams) {
+	{
+		key := middleware.ParameterKey{
+			Name: "projectId",
+			In:   "path",
+		}
+		params.ProjectId = packed[key].(string)
+	}
+	return params
+}
+
+func decodeListSSHKeysParams(args [1]string, argsEscaped bool, r *http.Request) (params ListSSHKeysParams, _ error) {
 	// Set default value for path: projectId.
 	{
 		val := string("default")

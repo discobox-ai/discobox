@@ -49,6 +49,10 @@ type CreateProjectRes interface {
 	createProjectRes()
 }
 
+type CreateSSHKeyRes interface {
+	createSSHKeyRes()
+}
+
 type CreateSandboxExecRes interface {
 	createSandboxExecRes()
 }
@@ -91,6 +95,10 @@ type DeletePoolRes interface {
 
 type DeleteProjectRes interface {
 	deleteProjectRes()
+}
+
+type DeleteSSHKeyRes interface {
+	deleteSSHKeyRes()
 }
 
 type DeleteSandboxExecRes interface {
@@ -183,6 +191,10 @@ type ListPoolsRes interface {
 
 type ListProjectsRes interface {
 	listProjectsRes()
+}
+
+type ListSSHKeysRes interface {
+	listSSHKeysRes()
 }
 
 type ListSandboxExecEventsRes interface {

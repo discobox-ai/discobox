@@ -172,6 +172,7 @@ func NewApp(ctx context.Context, writeDB, readDB *gorm.DB, options ...AppOptions
 		Jobs:           appServices,
 		Events:         appServices,
 		Secrets:        appServices,
+		SSHKeys:        appServices,
 	})
 	if err != nil {
 		return nil, err

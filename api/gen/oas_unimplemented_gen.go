@@ -147,6 +147,15 @@ func (UnimplementedHandler) CreateProject(ctx context.Context, req *CreateProjec
 	return r, ht.ErrNotImplemented
 }
 
+// CreateSSHKey implements create-ssh-key operation.
+//
+// Enroll a project-scoped SSH key.
+//
+// POST /projects/{projectId}/ssh-keys
+func (UnimplementedHandler) CreateSSHKey(ctx context.Context, req *CreateSSHKeyBody, params CreateSSHKeyParams) (r CreateSSHKeyRes, _ error) {
+	return r, ht.ErrNotImplemented
+}
+
 // CreateSandbox implements create-sandbox operation.
 //
 // Create a sandbox.
@@ -246,6 +255,15 @@ func (UnimplementedHandler) DeletePool(ctx context.Context, params DeletePoolPar
 //
 // DELETE /projects/{projectId}
 func (UnimplementedHandler) DeleteProject(ctx context.Context, params DeleteProjectParams) (r DeleteProjectRes, _ error) {
+	return r, ht.ErrNotImplemented
+}
+
+// DeleteSSHKey implements delete-ssh-key operation.
+//
+// Revoke an SSH key.
+//
+// DELETE /projects/{projectId}/ssh-keys/{sshKeyId}
+func (UnimplementedHandler) DeleteSSHKey(ctx context.Context, params DeleteSSHKeyParams) (r DeleteSSHKeyRes, _ error) {
 	return r, ht.ErrNotImplemented
 }
 
@@ -455,6 +473,15 @@ func (UnimplementedHandler) ListPools(ctx context.Context, params ListPoolsParam
 //
 // GET /projects
 func (UnimplementedHandler) ListProjects(ctx context.Context) (r ListProjectsRes, _ error) {
+	return r, ht.ErrNotImplemented
+}
+
+// ListSSHKeys implements list-ssh-keys operation.
+//
+// List SSH keys.
+//
+// GET /projects/{projectId}/ssh-keys
+func (UnimplementedHandler) ListSSHKeys(ctx context.Context, params ListSSHKeysParams) (r ListSSHKeysRes, _ error) {
 	return r, ht.ErrNotImplemented
 }
 

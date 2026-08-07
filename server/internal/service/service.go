@@ -20,6 +20,7 @@ import (
 	"github.com/obot-platform/discobox/server/internal/resources/providers"
 	sandboxes "github.com/obot-platform/discobox/server/internal/resources/sandboxes"
 	"github.com/obot-platform/discobox/server/internal/resources/secrets"
+	"github.com/obot-platform/discobox/server/internal/resources/sshkeys"
 	sandbox "github.com/obot-platform/discobox/server/internal/sandbox"
 	services "github.com/obot-platform/discobox/server/internal/services"
 	"github.com/obot-platform/discobox/server/internal/store"
@@ -42,6 +43,7 @@ type Service struct {
 	services.JobService
 	services.ProjectEventService
 	services.SecretService
+	services.SSHKeyService
 
 	store            *store.Store
 	engine           *reconcile.Engine
@@ -104,6 +106,7 @@ func New(store *store.Store, engine *reconcile.Engine, options Options, broker .
 		JobService:                     jobsService,
 		ProjectEventService:            resourceevents.NewService(store, b),
 		SecretService:                  secrets.NewService(store),
+		SSHKeyService:                  sshkeys.NewService(store),
 
 		jobs:            jobsService,
 		providerService: providerService,
