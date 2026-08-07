@@ -109,9 +109,11 @@ func Run(ctx context.Context) error {
 		log.Printf("openapi spec available at %s/openapi.yaml", listener.display)
 		log.Printf("api docs available at %s/docs", listener.display)
 	}
-	if err := startSSHListener(ctx, cfg, appServices, appStore); err != nil {
+	sshHostKey, err := startSSHListener(ctx, cfg, appServices, appStore)
+	if err != nil {
 		return fmt.Errorf("start SSH listener: %w", err)
 	}
+	registerSSHHostKeyRoute(router, sshHostKey)
 	handler := otelhttp.NewHandler(router, "discobox-server")
 	activity := newActivityTracker()
 	if cfg.AutoShutdownTimeout > 0 {
