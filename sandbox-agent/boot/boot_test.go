@@ -1,9 +1,10 @@
 package boot
 
 import (
-	"github.com/obot-platform/discobox/sandbox-agent/runuser"
 	"slices"
 	"testing"
+
+	"github.com/obot-platform/discobox/sandbox-agent/runuser"
 )
 
 // An empty environment means the manifest named nobody, so boot provisions no

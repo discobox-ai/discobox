@@ -884,14 +884,6 @@ func cloneMap(in map[string]string) map[string]string {
 	return out
 }
 
-func cloneInt64(in *int64) *int64 {
-	if in == nil {
-		return nil
-	}
-	out := *in
-	return &out
-}
-
 func cloneExec(in Exec) Exec {
 	out := in
 	out.Command = append([]string{}, in.Command...)

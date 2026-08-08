@@ -5,12 +5,12 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"github.com/obot-platform/discobox/pool-agent/internalhttp"
 	"io"
 	"net/http"
 	"net/url"
 	"strings"
 
+	"github.com/obot-platform/discobox/pool-agent/internalhttp"
 	"github.com/obot-platform/discobox/pool-agent/poolauth"
 )
 

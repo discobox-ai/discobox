@@ -299,13 +299,6 @@ func dirNonEmpty(path string) (bool, error) {
 	return !empty, nil
 }
 
-func envOr(key, fallback string) string {
-	if v := strings.TrimSpace(os.Getenv(key)); v != "" {
-		return v
-	}
-	return fallback
-}
-
 func firstField(s string) string {
 	s = strings.TrimSpace(s)
 	if idx := strings.IndexByte(s, ':'); idx >= 0 {

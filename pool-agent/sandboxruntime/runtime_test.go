@@ -1098,7 +1098,7 @@ func TestResolveSandboxUserNamedUserIsNotRoot(t *testing.T) {
 }
 
 // Nothing specified still means root, unchanged.
-// An explicit uid 0 is honoured: root is a legitimate choice, and distinct
+// An explicit uid 0 is honored: root is a legitimate choice, and distinct
 // from omitting the field.
 func TestResolveSandboxUserExplicitRootIsHonoured(t *testing.T) {
 	req := &workerapimodel.PoolSandboxCreateRequest{

@@ -1358,7 +1358,7 @@ func (r *DockerSandboxRuntime) waitForSandboxAgent(ctx context.Context, sandboxI
 				if reqErr != nil {
 					return reqErr
 				}
-				// Not http.DefaultClient: it honours HTTP_PROXY, and a pool
+				// Not http.DefaultClient: it honors HTTP_PROXY, and a pool
 				// running inside a sandbox has proxy env injected for its
 				// egress. This request stays on the pool's own network.
 				resp, reqErr := internalhttp.Client.Do(req)

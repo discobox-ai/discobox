@@ -1,7 +1,7 @@
 // Package internalhttp provides the HTTP client the pool agent uses to reach
 // its own sandboxes.
 //
-// It deliberately does NOT honour HTTP_PROXY. When a pool runs inside a
+// It deliberately does NOT honor HTTP_PROXY. When a pool runs inside a
 // Discobox sandbox, that sandbox injects proxy environment variables into the
 // pool container so the pool's *egress* can cross the surrounding MITM proxy.
 // http.DefaultClient picks those up for every request, including the pool

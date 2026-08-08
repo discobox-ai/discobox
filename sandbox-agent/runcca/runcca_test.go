@@ -491,7 +491,9 @@ func TestAnchorNameIsDerivedFromTheCertificate(t *testing.T) {
 // always map to the same one so re-running is idempotent.
 func TestAnchorNameIsStableAndUnique(t *testing.T) {
 	a := []byte(mitmPEM)
-	if AnchorFileNameFor(a) != AnchorFileNameFor(a) {
+	// Distinct slices with identical bytes: the name must derive from content
+	// alone, so a re-run that re-reads the same CA lands on the same file.
+	if AnchorFileNameFor(a) != AnchorFileNameFor([]byte(mitmPEM)) {
 		t.Fatal("same CA produced different names")
 	}
 	other := "-----BEGIN CERTIFICATE-----\nT1RIRVI=\n-----END CERTIFICATE-----\n"

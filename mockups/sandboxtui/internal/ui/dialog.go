@@ -187,7 +187,8 @@ func (d *dialog) view(st *styles, width int) string {
 			end := min(d.offset+maxBody, len(lines))
 			b.WriteString(strings.Join(lines[d.offset:end], "\n"))
 			if len(lines) > maxBody {
-				b.WriteString("\n" + st.dimText.Render("  … ↑/↓ to scroll"))
+				b.WriteString("\n")
+				b.WriteString(st.dimText.Render("  … ↑/↓ to scroll"))
 			}
 		} else {
 			b.WriteString(strings.Join(lines, "\n"))
@@ -197,15 +198,23 @@ func (d *dialog) view(st *styles, width int) string {
 
 	switch d.kind {
 	case dlgConfirm:
-		b.WriteString("\n" + st.key.Render("y") + " yes   " + st.key.Render("n") + " no")
+		b.WriteString("\n")
+		b.WriteString(st.key.Render("y"))
+		b.WriteString(" yes   ")
+		b.WriteString(st.key.Render("n"))
+		b.WriteString(" no")
 	case dlgMessage, dlgText:
 		if d.command != "" {
-			b.WriteString("\n" + st.dimText.Render("would run") + "\n")
+			b.WriteString("\n")
+			b.WriteString(st.dimText.Render("would run"))
+			b.WriteString("\n")
 			for _, l := range wrap(d.command, inner) {
-				b.WriteString(st.command.Render(l) + "\n")
+				b.WriteString(st.command.Render(l))
+				b.WriteString("\n")
 			}
 		}
-		b.WriteString("\n" + st.dimText.Render("Esc closes"))
+		b.WriteString("\n")
+		b.WriteString(st.dimText.Render("Esc closes"))
 	case dlgActions:
 		b.WriteString("\n")
 		for i, it := range d.items {
@@ -222,11 +231,14 @@ func (d *dialog) view(st *styles, width int) string {
 			}
 			row := bar + " " + key + "  " + label.Render(pad(it.label, 14)) + " " +
 				st.dimText.Render(truncate(detail, max(inner-20, 8)))
-			b.WriteString(padANSI(row, inner) + "\n")
+			b.WriteString(padANSI(row, inner))
+			b.WriteString("\n")
 		}
 		b.WriteString(st.dimText.Render("Enter runs the highlighted action · Esc cancels"))
 	case dlgInput:
-		b.WriteString("\n" + d.input.View() + "\n\n")
+		b.WriteString("\n")
+		b.WriteString(d.input.View())
+		b.WriteString("\n\n")
 		b.WriteString(st.dimText.Render("Enter accepts · Esc cancels"))
 	}
 

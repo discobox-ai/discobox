@@ -60,17 +60,18 @@ func IsDelete(args []string) bool {
 // `delete --force <id>`), so the trailing operand is the ID. A trailing flag
 // means this is not one of those forms.
 func ContainerID(args []string) string {
-	for i := len(args) - 1; i >= 0; i-- {
-		if strings.HasPrefix(args[i], "-") {
-			return ""
-		}
-		// Guard against consuming a preceding flag's value as the ID.
-		if i > 0 && isFlagExpectingValue(args[i-1]) {
-			return ""
-		}
-		return args[i]
+	if len(args) == 0 {
+		return ""
 	}
-	return ""
+	last := len(args) - 1
+	if strings.HasPrefix(args[last], "-") {
+		return ""
+	}
+	// Guard against consuming a preceding flag's value as the ID.
+	if last > 0 && isFlagExpectingValue(args[last-1]) {
+		return ""
+	}
+	return args[last]
 }
 
 // isFlagExpectingValue reports whether a bare flag takes a separate value, so

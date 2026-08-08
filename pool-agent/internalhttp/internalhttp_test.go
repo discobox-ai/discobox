@@ -21,7 +21,7 @@ func TestClientIgnoresProxyEnvironment(t *testing.T) {
 	defer srv.Close()
 
 	// The transport must resolve no proxy even for a non-exempt destination.
-	req, err := http.NewRequest(http.MethodGet, "http://172.17.0.4:3003/healthz", nil)
+	req, err := http.NewRequestWithContext(t.Context(), http.MethodGet, "http://172.17.0.4:3003/healthz", nil)
 	if err != nil {
 		t.Fatalf("new request: %v", err)
 	}
@@ -32,7 +32,11 @@ func TestClientIgnoresProxyEnvironment(t *testing.T) {
 		}
 	}
 
-	resp, err := Client.Get(srv.URL)
+	liveReq, err := http.NewRequestWithContext(t.Context(), http.MethodGet, srv.URL, nil)
+	if err != nil {
+		t.Fatalf("new request: %v", err)
+	}
+	resp, err := Client.Do(liveReq)
 	if err != nil {
 		t.Fatalf("internal request failed: %v", err)
 	}

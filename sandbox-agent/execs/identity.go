@@ -7,6 +7,5 @@ import "github.com/obot-platform/discobox/sandbox-agent/runuser"
 // call runuser directly.
 var (
 	ResolveNameAndHome = runuser.NameAndHome
-	lookupGroupID      = runuser.LookupGroupID
 	resolveGroups      = runuser.Groups
 )

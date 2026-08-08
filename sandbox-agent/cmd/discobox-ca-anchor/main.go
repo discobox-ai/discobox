@@ -35,6 +35,7 @@ func main() {
 		// bind mount from an outer sandbox, and replacing a mount point fails
 		// EBUSY. Writing the identical bytes to our own content-derived name
 		// is idempotent, so a re-run is harmless either way.
+		//nolint:gosec // A trust anchor is public and must be readable by every user in the container.
 		if err := os.WriteFile(dst, ca, 0o644); err != nil {
 			fmt.Fprintf(os.Stderr, "discobox-ca-anchor: write %s: %v\n", dst, err)
 			os.Exit(1)

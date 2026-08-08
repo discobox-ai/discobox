@@ -12,7 +12,7 @@ import (
 )
 
 // A uid with no account cannot have its primary group resolved, and the old
-// behaviour -- defaulting the gid to the uid -- silently ran the process under
+// behavior -- defaulting the gid to the uid -- silently ran the process under
 // whatever group happened to hold that number. UIDs and GIDs are separate
 // namespaces, so that is a guess, and an unresolvable uid is now an error.
 func TestUserCredentialRefusesToInventAGID(t *testing.T) {

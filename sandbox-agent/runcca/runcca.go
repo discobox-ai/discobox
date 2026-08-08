@@ -190,7 +190,7 @@ func Adjust(bundleDir, containerID string, cfg Config) (bool, error) {
 		return false, fmt.Errorf("encode oci spec: %w", err)
 	}
 	// Write via a sibling temp file and rename: runc may be starting other
-	// containers from neighbouring bundles concurrently, and a partially
+	// containers from neighboring bundles concurrently, and a partially
 	// written spec would be unparseable rather than merely un-injected.
 	tmp := path + ".discobox.tmp"
 	if err := os.WriteFile(tmp, out, 0o600); err != nil {
@@ -267,6 +267,7 @@ func addTrustMounts(spec map[string]any, bundleDir, containerID string, cfg Conf
 		if err := os.MkdirAll(filepath.Dir(src), 0o755); err != nil {
 			return changed, fmt.Errorf("stage anchor dir: %w", err)
 		}
+		//nolint:gosec // A trust anchor is public and must be readable by every user in the container.
 		if err := os.WriteFile(src, ca, 0o644); err != nil {
 			return changed, fmt.Errorf("stage anchor %s: %w", src, err)
 		}
@@ -342,6 +343,7 @@ func seedTrustStore(src, dst string, store trustStore, ca []byte, cfg Config) er
 	default:
 		return fmt.Errorf("read image bundle %s: %w", bundle, err)
 	}
+	//nolint:gosec // A CA bundle is public and must be readable by every user in the container.
 	if err := os.WriteFile(bundle, body, 0o644); err != nil {
 		return fmt.Errorf("write staged bundle %s: %w", bundle, err)
 	}

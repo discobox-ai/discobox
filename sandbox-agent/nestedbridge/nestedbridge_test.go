@@ -66,7 +66,7 @@ func TestWaitForAddressTimesOut(t *testing.T) {
 	}
 }
 
-// A cancelled context (unit stopping) must unblock the wait promptly.
+// A canceled context (unit stopping) must unblock the wait promptly.
 func TestWaitForAddressHonoursContext(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	go func() {

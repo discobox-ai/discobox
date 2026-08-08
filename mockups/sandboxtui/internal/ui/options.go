@@ -272,7 +272,8 @@ func (o *optionSet) view(st *styles, width int, prompt string) string {
 			value = "‹ " + value + " ›"
 		}
 		row := bar + " " + label + " " + valueStyle.Render(truncate(value, max(inner-labelW-3, 6)))
-		b.WriteString(padANSI(row, inner) + "\n")
+		b.WriteString(padANSI(row, inner))
+		b.WriteString("\n")
 	}
 
 	b.WriteString("\n")
@@ -281,7 +282,8 @@ func (o *optionSet) view(st *styles, width int, prompt string) string {
 	b.WriteString(st.dimText.Render("would run"))
 	b.WriteString("\n")
 	for _, l := range wrap(o.command(prompt), inner) {
-		b.WriteString(st.command.Render(l) + "\n")
+		b.WriteString(st.command.Render(l))
+		b.WriteString("\n")
 	}
 
 	return st.dialog.Width(boxWidth).Render(b.String())
