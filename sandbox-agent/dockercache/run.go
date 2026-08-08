@@ -1,12 +1,12 @@
 package dockercache
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"io"
 	"os"
 	"os/exec"
-	"os/signal"
 	"strings"
 	"syscall"
 	"time"
@@ -66,6 +66,7 @@ func Run(args []string, home string) int {
 
 // execDirect replaces this process with the real docker CLI.
 func execDirect(argv []string) int {
+	//nolint:gosec // Handing this process's own argv to the real docker CLI is the entire point of the shim.
 	if err := syscall.Exec(argv[0], argv, os.Environ()); err != nil {
 		fmt.Fprintf(os.Stderr, "discobox-docker: exec %s: %v\n", argv[0], err)
 		return 127
@@ -80,7 +81,10 @@ func execDirect(argv []string) int {
 // docker wrote, on their own stream. Only stderr is intercepted, which is
 // where BuildKit writes progress and errors.
 func runRelayed(argv []string) (int, string) {
-	cmd := exec.Command(argv[0], argv[1:]...)
+	// context.Background(): the shim is a one-shot CLI process with nothing to
+	// cancel it, and the child owns the terminal until the user's build ends.
+	//nolint:gosec // Running this process's own argv as the real docker CLI is the entire point of the shim.
+	cmd := exec.CommandContext(context.Background(), argv[0], argv[1:]...)
 	cmd.Stdin = os.Stdin
 	cmd.Stdout = os.Stdout
 
@@ -113,15 +117,7 @@ func runRelayed(argv []string) (int, string) {
 		// master never end when the child exits.
 		_ = slave.Close()
 
-		winch := make(chan os.Signal, 1)
-		signal.Notify(winch, syscall.SIGWINCH)
-		go func() {
-			for range winch {
-				if s, err := pty.GetsizeFull(os.Stderr); err == nil {
-					_ = pty.Setsize(master, s)
-				}
-			}
-		}()
+		stopResize := watchResize(master)
 
 		relayDone = make(chan struct{})
 		go func() {
@@ -134,8 +130,7 @@ func runRelayed(argv []string) (int, string) {
 		code := wait(cmd)
 		_ = master.Close()
 		<-relayDone
-		signal.Stop(winch)
-		close(winch)
+		stopResize()
 		return code, tail.String()
 	}
 
@@ -196,7 +191,10 @@ func wait(cmd *exec.Cmd) int {
 }
 
 func execQuiet(name string, args ...string) error {
-	cmd := exec.Command(name, args...)
+	// context.Background(): the shim is a one-shot CLI process with nothing to
+	// cancel it, and a prune that is interrupted halfway leaves the builder
+	// state this is trying to repair in a worse shape than before.
+	cmd := exec.CommandContext(context.Background(), name, args...)
 	cmd.Stdout, cmd.Stderr = io.Discard, io.Discard
 	return cmd.Run()
 }
