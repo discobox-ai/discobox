@@ -29,7 +29,11 @@ RUN --mount=type=cache,target=/go/pkg/mod,sharing=locked \
 
 # Built in its own layer so bumping the difftui version does not invalidate the
 # sandbox-agent binaries above.
-ARG DIFFTUI_VERSION=latest
+# Pinned to a main pseudo-version rather than `latest`: difftui carries no
+# tags, so `latest` is main's tip anyway, but an unpinned version makes the
+# build unreproducible and leaves this layer cached on a stale commit. Bump it
+# to pull a newer main.
+ARG DIFFTUI_VERSION=v0.0.0-20260807003816-80e97d762e58
 RUN --mount=type=cache,target=/go/pkg/mod,sharing=locked \
     --mount=type=cache,target=/root/.cache/go-build,sharing=locked \
     set -eux \
