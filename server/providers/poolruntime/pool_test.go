@@ -30,7 +30,6 @@ type fakePoolManager struct {
 	sandboxAgentTokenClaims []poolagentauth.TokenClaims
 	scheduledReconciles     int
 	scheduledPoolID         string
-	scheduledAt             time.Time
 	scheduledRepairs        []string
 	scheduleUnblocks        bool
 }
@@ -103,12 +102,6 @@ func (m *fakePoolManager) SchedulePoolReconciliation(_ context.Context, _, poolI
 			m.pool.ErrorMessage = nil
 		}
 	}
-	return nil
-}
-
-func (m *fakePoolManager) SchedulePoolReconciliationAt(_ context.Context, _, poolID string, at time.Time) error {
-	m.scheduledPoolID = poolID
-	m.scheduledAt = at
 	return nil
 }
 
@@ -342,42 +335,6 @@ func TestPoolProviderMintsBootstrapOnlyWhenRuntimeIsCreated(t *testing.T) {
 			t.Fatalf("minted %d bootstrap tokens, want exactly 1 for a created runtime", manager.mintedBootstrapTokens)
 		}
 	})
-}
-
-// TestPoolProviderReconcileSkipsRegistrationTimerForRegisteredPool pins the
-// bound on a busy loop: arming the registration re-check for an
-// already-registered pool re-marks the very row being reconciled.
-func TestPoolProviderReconcileSkipsRegistrationTimerForRegisteredPool(t *testing.T) {
-	oldTimeout := poolRegistrationTimeout
-	poolRegistrationTimeout = time.Minute
-	t.Cleanup(func() { poolRegistrationTimeout = oldTimeout })
-
-	project := &model.Project{ID: "project-1"}
-	providerInstance := &model.SandboxProviderInstance{ID: "provider-1", ProjectID: "project-1"}
-
-	registered := activePool("pool-1")
-	registeredAt := time.Now().UTC()
-	registered.RegisteredAt = &registeredAt
-	manager := &fakePoolManager{pool: registered}
-	provider := New(&testRuntimeProvider{}, sandbox.ProviderDefinition{Name: "test"}, manager)
-	if err := provider.ReconcilePool(context.Background(), manager, project, providerInstance, registered); err != nil {
-		t.Fatalf("reconcile registered pool: %v", err)
-	}
-	if !manager.scheduledAt.IsZero() {
-		t.Fatalf("scheduled registration re-check at %s, want none for a registered pool", manager.scheduledAt)
-	}
-
-	fresh := activePool("pool-2")
-	manager = &fakePoolManager{pool: fresh}
-	provider = New(&testRuntimeProvider{}, sandbox.ProviderDefinition{Name: "test"}, manager)
-	before := time.Now().UTC().Add(poolRegistrationTimeout)
-	if err := provider.ReconcilePool(context.Background(), manager, project, providerInstance, fresh); err != nil {
-		t.Fatalf("reconcile fresh pool: %v", err)
-	}
-	after := time.Now().UTC().Add(poolRegistrationTimeout)
-	if manager.scheduledAt.Before(before) || manager.scheduledAt.After(after) {
-		t.Fatalf("scheduled registration re-check at = %s, want between %s and %s", manager.scheduledAt, before, after)
-	}
 }
 
 func TestPoolProviderAcquireHTTPClientReconcilesPoolAndRetries(t *testing.T) {

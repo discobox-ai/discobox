@@ -63,8 +63,8 @@ only after the provider confirms the data is gone.
 Retention: an archived sandbox is purged once it has been archived longer than
 `Project.ArchiveRetentionSeconds` (default `DefaultArchiveRetention`, 24h). The
 deadline derives from `StateChangedAt` and is never stored — the same reason the
-source-push timeout derives its own — and is armed with the engine's
-future-dated mark. `ScanDirty` also returns expired archives, because an archived
+source-push timeout derives its own — and is armed by returning it as
+`reconcile.Result.RequeueAt`. `ScanDirty` also returns expired archives, because an archived
 sandbox has converged and the generation comparison is blind to it by design, so
 a lost mark would otherwise mean data kept forever.
 
@@ -135,10 +135,14 @@ The push transport is the pre-existing sandbox Git proxy
 no transport. The commit is fixed at create in `Checkout.Commit`;
 `complete-source-push` only confirms it, and a mismatch is refused.
 
-Waiting is bounded: `StateChangedAt` anchors the deadline and the engine's
-future-dated mark wakes the sandbox to fail it. The anchor is stamped only on a
-real state change, so neither a reconcile that re-parks nor a repeated runtime
-report can push the deadline out.
+Waiting is bounded: `StateChangedAt` anchors the deadline and the reconcile
+returns it as `reconcile.Result.RequeueAt`, which wakes the sandbox to fail it.
+The anchor is stamped only on a real state change, so neither a reconcile that
+re-parks nor a repeated runtime report can push the deadline out.
+
+Both deadlines are returned rather than marked. A reconciler that marks its own
+resource can never settle — see the engine's
+[self-marking rule](../../reconcile/DESIGN.md#self-marking).
 
 See [ADR 0001](../../../../docs/adr/0001-sandbox-origin-and-remote-source-push.md).
 

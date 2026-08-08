@@ -9,6 +9,7 @@ import (
 
 	"github.com/obot-platform/discobox/server/internal/apperrors"
 	"github.com/obot-platform/discobox/server/internal/model"
+	"github.com/obot-platform/discobox/server/internal/reconcile"
 	"github.com/obot-platform/discobox/server/internal/sandbox"
 )
 
@@ -82,16 +83,16 @@ func sourceAwaitDeadline(sb *model.Sandbox) time.Time {
 	return sb.StateChangedAt.Add(sourcePushTimeout)
 }
 
-// scheduleSourceAwaitTimeout arranges the reconcile that enforces the deadline.
-// A parked sandbox has no other trigger: no server-side state changes while a
-// client is pushing, so without this the sandbox would wait forever. Waking
-// exactly at the deadline is why the engine's future-dated mark is used instead
+// armSourceAwaitTimeout is the reconcile that enforces the deadline, expressed
+// as the engine's timer. A parked sandbox has no other trigger: no server-side
+// state changes while a client is pushing, so without this the sandbox would
+// wait forever. Waking exactly at the deadline is why the timer is used instead
 // of a periodic sweep over every sandbox.
-func (r *SandboxReconciler) scheduleSourceAwaitTimeout(ctx context.Context, sb *model.Sandbox) error {
-	if r.engine == nil || sb.StateChangedAt.IsZero() {
-		return nil
+func armSourceAwaitTimeout(sb *model.Sandbox) reconcile.Result {
+	if sb.StateChangedAt.IsZero() {
+		return reconcile.Result{}
 	}
-	return r.engine.MarkDirtyAt(ctx, SandboxResourceType, SandboxDirtyID(sb.ProjectID, sb.ID), sourceAwaitDeadline(sb))
+	return reconcile.RequeueAt(sourceAwaitDeadline(sb))
 }
 
 // awaitingSourcePush reports whether a sandbox is provisioned but cannot start

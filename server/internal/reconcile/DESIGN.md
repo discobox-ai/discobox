@@ -16,13 +16,18 @@ flowchart LR
     runner --> reconciler["Reconciler.Reconcile(id)"]
     reconciler -- "failure: re-mark with backoff" --> dirty
     reconciler -- "success: delete row (unless re-marked)" --> dirty
+    reconciler -- "success + Result.RequeueAt: keep row, arm it" --> dirty
 ```
 
 ## Concepts (all of them)
 
-- **Reconciler** — one per resource type. `Reconcile(ctx, id)` reads current
-  desired + observed state from the store and converges. It must be idempotent;
-  it may block for the duration of the work.
+- **Reconciler** — one per resource type. `Reconcile(ctx, id) (Result, error)`
+  reads current desired + observed state from the store and converges. It must
+  be idempotent; it may block for the duration of the work.
+- **Result** — what a successful reconcile reports beyond "no error". The zero
+  value settles. `Result.RequeueAt` asks to run again at an instant only the
+  reconciler can know, and is the **only** way for it to schedule its own
+  re-run (see Self-marking).
 - **Dirty set** — one row per `(resource_type, resource_id)` that may need
   attention. Marking is coalescing by construction (primary-key upsert): a
   thousand marks while a reconcile is queued collapse into one row.
@@ -47,10 +52,27 @@ MarkDirtyAt(ctx, tx, "sandbox", id, at)    // reconcile no earlier than `at`
   `submitExistingLifecycle` provided).
 - Every mark bumps the row's `seq`. `seq` is how the engine detects "marked
   again while a reconcile was already running" (see Completion).
-- `MarkDirtyAt` is the timer primitive. It replaces scheduled jobs
-  ("re-check this provider at now+registrationTimeout") and is also how failure
-  backoff is expressed internally. Marking earlier than an existing
-  `not_before` pulls the row forward; marking later never pushes it back.
+- `MarkDirtyAt` is the timer primitive **for other resources**. Marking earlier
+  than an existing `not_before` pulls the row forward; marking later never
+  pushes it back. A reconciler's own timer is `Result.RequeueAt`, which assigns
+  `not_before` outright — pull-forward would let one stale past value pin the
+  row as permanently claimable.
+
+### Self-marking
+
+A reconciler must never mark the resource it is currently reconciling.
+`MarkDirtyAtTx` rejects it with `ErrSelfMark`, detected from the in-flight
+resource the engine puts on the reconcile context — so it is caught however
+deep in the call stack the mark is made.
+
+This is a correctness rule, not style. Completion deletes the row under a `seq`
+guard, and a self-mark bumps `seq`, so the delete misses **every time**: the row
+survives, `attempts` resets to 0, and it is re-claimed with no delay and no
+backoff. It is an unbounded hot loop, not a slow retry. Marking a *different*
+resource stays ordinary — that is how work propagates.
+
+Return `Result.RequeueAt` instead. The engine arms the row it already holds,
+under the same `seq` guard, so newer intent still wins.
 
 ## Claiming and leases (multi-node)
 
@@ -78,7 +100,9 @@ old fast-recovery behavior without a distinct code path anywhere else.
 stateDiagram-v2
     [*] --> Dirty: MarkDirty / MarkDirtyAt (upsert, seq++)
     Dirty --> Claimed: claim (not_before ≤ now, lease set)
-    Claimed --> [*]: success ∧ seq unchanged (row deleted)
+    Claimed --> [*]: success ∧ zero Result ∧ seq unchanged (row deleted)
+    Claimed --> Armed: success ∧ Result.RequeueAt ∧ seq unchanged
+    Armed --> Claimed: not_before reached
     Claimed --> Dirty: success ∧ seq bumped mid-run (re-run)
     Claimed --> Dirty: failure (attempts++, not_before += backoff)
     Claimed --> Dirty: lease expired (node died, any node may claim)
@@ -90,6 +114,11 @@ stateDiagram-v2
   row stays dirty, so the reconciler runs again and observes the newer state.
   This is the entire supersede story — no generation-assert pre-checks, no
   successor-cancellation rules.
+- **Success + `RequeueAt`** → the row is kept and `not_before` is **assigned**
+  (not pulled forward): the reconciler just read the resource, so it is the
+  authority on when it next needs attention. Same `seq` guard, so a mid-run mark
+  makes the update miss and its own earlier `not_before` stands — intent beats
+  the timer.
 - **Failure** → release the claim, `attempts++`,
   `not_before = now + backoff(attempts)` (exponential, capped). The row stays
   dirty until a reconcile finally succeeds. This also serves as flap damping
@@ -135,8 +164,12 @@ store.Transaction(ctx, func(tx *gorm.DB) error {
 // Watcher (drift): one line.
 engine.MarkDirty(ctx, "sandbox", sandboxID)
 
-// Cross-resource chaining and timers: the pool registration timeout.
-engine.MarkDirtyAt(ctx, "pool", poolID, time.Now().Add(timeout))
+// Cross-resource chaining: a pool reconcile marking one of its sandboxes.
+engine.MarkDirty(ctx, "sandbox", sandboxID)
+
+// A reconciler's own deadline — retention, a park timeout, a registration
+// timeout. Returned, never marked: see Self-marking.
+return reconcile.RequeueAt(sb.StateChangedAt.Add(retention)), nil
 ```
 
 ## Migration order

@@ -444,7 +444,10 @@ func (s *Service) PurgeSandbox(ctx context.Context, projectID, sandboxID string)
 	if _, err := s.recordSandboxIntent(ctx, projectID, sandboxID, model.DesiredStateDeleted); err != nil {
 		return mapAPIError(err, "sandbox not found")
 	}
-	if err := s.NewSandboxReconciler().Reconcile(ctx, SandboxDirtyID(projectID, sandboxID)); err != nil {
+	// The Result is discarded rather than honored: a delete converges to the row
+	// being gone and never arms a timer, and this call is outside the engine, so
+	// there is no claimed row to arm one on.
+	if _, err := s.NewSandboxReconciler().Reconcile(ctx, SandboxDirtyID(projectID, sandboxID)); err != nil {
 		return fmt.Errorf("purge sandbox: %w", err)
 	}
 	// Reconcile settles rather than returning an error when it records a failure

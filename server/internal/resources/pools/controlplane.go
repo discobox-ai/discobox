@@ -106,17 +106,10 @@ func (s *ControlPlane) SchedulePoolReconciliation(ctx context.Context, projectID
 	return s.engine.MarkDirty(ctx, PoolResourceType, PoolDirtyID(projectID, poolID))
 }
 
-// SchedulePoolReconciliationAt marks the pool dirty no earlier than
-// scheduledAt (the timer form: "re-check the pool at T").
-func (s *ControlPlane) SchedulePoolReconciliationAt(ctx context.Context, projectID, poolID string, scheduledAt time.Time) error {
-	if s.engine == nil {
-		return errors.New("reconcile engine is required")
-	}
-	if scheduledAt.IsZero() {
-		scheduledAt = time.Now()
-	}
-	return s.engine.MarkDirtyAt(ctx, PoolResourceType, PoolDirtyID(projectID, poolID), scheduledAt)
-}
+// A pool's timer form is deliberately absent. "Re-check this pool at T" is the
+// reconciler's own business and belongs in the Result it returns, where the
+// engine can arm it on the row it already holds; routing it back through a mark
+// is how a reconcile ends up marking itself (reconcile.ErrSelfMark).
 
 // SchedulePoolRepair re-drives a failed pool as NEW INTENT: it bumps the
 // generation and marks the pool dirty in one transaction.

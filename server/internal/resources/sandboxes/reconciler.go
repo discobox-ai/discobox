@@ -41,31 +41,33 @@ func splitSandboxDirtyID(id string) (projectID, sandboxID string, err error) {
 //   - failure NOT recorded (crash/timeout before the status write): return the
 //     error so the row stays dirty and retries with backoff. This replaces the
 //     old MarkSandboxJobFailed terminal latch with self-healing.
-func (r *SandboxReconciler) Reconcile(ctx context.Context, id string) error {
+func (r *SandboxReconciler) Reconcile(ctx context.Context, id string) (reconcile.Result, error) {
 	projectID, sandboxID, err := splitSandboxDirtyID(id)
 	if err != nil {
-		return err
+		return reconcile.Result{}, err
 	}
 	sandbox, err := r.store.GetSandbox(ctx, projectID, sandboxID)
 	if errors.Is(err, store.ErrNotFound) {
-		return nil
+		return reconcile.Result{}, nil
 	}
 	if err != nil {
-		return err
+		return reconcile.Result{}, err
 	}
 
-	err = r.ReconcileSandbox(ctx, sandbox)
+	result, err := r.ReconcileSandbox(ctx, sandbox)
 	if errors.Is(err, reconcile.ErrSuperseded) {
-		return nil // superseded: newer intent's mark re-runs us
+		// Superseded: the newer intent's mark re-runs us, and it is the run that
+		// gets to arm a timer against the state it actually read.
+		return reconcile.Result{}, nil
 	}
 	if err == nil {
-		return nil
+		return result, nil
 	}
 	if current, gerr := r.store.GetSandbox(ctx, projectID, sandboxID); gerr == nil &&
 		current.ErrorMessage != nil && current.Converged() {
-		return nil // failure recorded on the resource: converged until new intent
+		return reconcile.Result{}, nil // failure recorded on the resource: converged until new intent
 	}
-	return err
+	return reconcile.Result{}, err
 }
 
 // ScanDirty is the level-triggered backstop: every sandbox whose generations
@@ -170,7 +172,7 @@ func WithSandboxAuthenticator(auth SandboxAuthenticator) SandboxReconcilerOption
 // running right now is not converged here and is not stored as intent: start,
 // stop, and restart are operations the service forwards to the pool agent, and
 // the resulting state comes back on the agent's reporting channel.
-func (r *SandboxReconciler) ReconcileSandbox(ctx context.Context, sandbox *model.Sandbox) error {
+func (r *SandboxReconciler) ReconcileSandbox(ctx context.Context, sandbox *model.Sandbox) (reconcile.Result, error) {
 	generation := sandbox.Generation
 	switch sandbox.DesiredState {
 	case model.DesiredStatePresent:
@@ -178,9 +180,9 @@ func (r *SandboxReconciler) ReconcileSandbox(ctx context.Context, sandbox *model
 	case model.DesiredStateArchived:
 		return r.archive(ctx, sandbox, generation)
 	case model.DesiredStateDeleted:
-		return r.delete(ctx, sandbox, generation)
+		return reconcile.Result{}, r.delete(ctx, sandbox, generation)
 	default:
-		return fmt.Errorf("unsupported sandbox desired state %q", sandbox.DesiredState)
+		return reconcile.Result{}, fmt.Errorf("unsupported sandbox desired state %q", sandbox.DesiredState)
 	}
 }
 
@@ -198,14 +200,14 @@ func (r *SandboxReconciler) ReconcileSandbox(ctx context.Context, sandbox *model
 //
 // The spec is taken as it stands. Nothing here advances the image pin: a
 // sandbox runs what it is pinned to until an upgrade re-pins it (ADR 0021 §2).
-func (r *SandboxReconciler) ensure(ctx context.Context, sandbox *model.Sandbox, generation int64) error {
+func (r *SandboxReconciler) ensure(ctx context.Context, sandbox *model.Sandbox, generation int64) (reconcile.Result, error) {
 	// A settled failure is converged by design and needs new intent, not another
 	// attempt (ADR 0017 §4). Anything else gets the idempotent ensure below,
 	// because a dirty mark can come from an observation as well as from intent —
 	// "your container is gone" is the case that matters, and it arrives with the
 	// generations already in agreement.
 	if sandbox.Converged() && sandbox.ErrorMessage != nil {
-		return nil
+		return reconcile.Result{}, nil
 	}
 
 	firstCreate := sandboxHasNeverRun(sandbox.State)
@@ -213,9 +215,9 @@ func (r *SandboxReconciler) ensure(ctx context.Context, sandbox *model.Sandbox, 
 		sandbox.ObservedGeneration = generation
 		sandbox.RecordFailure(model.SandboxStateFailed, err.Error())
 		if updateErr := r.update(ctx, sandbox, generation); updateErr != nil {
-			return updateErr
+			return reconcile.Result{}, updateErr
 		}
-		return err
+		return reconcile.Result{}, err
 	}
 
 	if sandbox.State == model.SandboxStateAwaitingSource {
@@ -224,9 +226,9 @@ func (r *SandboxReconciler) ensure(ctx context.Context, sandbox *model.Sandbox, 
 		// as observed and arm the give-up timer off StateChangedAt.
 		sandbox.ObservedGeneration = generation
 		if err := r.update(ctx, sandbox, generation); err != nil {
-			return err
+			return reconcile.Result{}, err
 		}
-		return r.scheduleSourceAwaitTimeout(ctx, sandbox)
+		return armSourceAwaitTimeout(sandbox), nil
 	}
 
 	if sandbox.State == model.SandboxStateArchived {
@@ -245,9 +247,9 @@ func (r *SandboxReconciler) ensure(ctx context.Context, sandbox *model.Sandbox, 
 	sandbox.ObservedGeneration = generation
 	sandbox.ErrorMessage = nil
 	if err := r.update(ctx, sandbox, generation); err != nil {
-		return err
+		return reconcile.Result{}, err
 	}
-	return nil
+	return reconcile.Result{}, nil
 }
 
 // The image pin moves in exactly one place: UpgradeSandbox. There is

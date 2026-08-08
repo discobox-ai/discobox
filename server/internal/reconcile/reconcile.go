@@ -23,7 +23,54 @@ import (
 // state from the store themselves and must be idempotent: a reconcile may be
 // re-run at any time, including concurrently with newer intent being written.
 type Reconciler interface {
-	Reconcile(ctx context.Context, id string) error
+	Reconcile(ctx context.Context, id string) (Result, error)
+}
+
+// Result is what a successful reconcile reports beyond "no error". The zero
+// Result settles the resource: the dirty row is removed and nothing runs again
+// until new intent arrives or a scan finds work.
+type Result struct {
+	// RequeueAt asks the engine to run this resource again no earlier than this
+	// instant. It is the timer primitive for deadlines only the reconciler can
+	// know — "this sandbox parked at T and gives up at T+timeout" — where the
+	// resource is otherwise converged and nothing else would ever wake it.
+	//
+	// It is the ONLY way for a reconciler to schedule its own re-run. Marking
+	// your own resource dirty mid-run cannot work: the engine settles a row by
+	// deleting it under a seq guard, so a self-mark's seq bump makes that delete
+	// miss every time and the row runs again immediately, forever. MarkDirtyAtTx
+	// rejects it with ErrSelfMark.
+	RequeueAt time.Time
+}
+
+// RequeueAt returns a Result that re-runs this resource at `at`.
+func RequeueAt(at time.Time) Result { return Result{RequeueAt: at} }
+
+// RequeueAfter returns a Result that re-runs this resource after `d`.
+func RequeueAfter(d time.Duration) Result { return Result{RequeueAt: time.Now().Add(d)} }
+
+// ErrSelfMark is returned when a reconciler marks the resource it is currently
+// reconciling. See Result.RequeueAt for why this can never work and what to do
+// instead.
+var ErrSelfMark = errors.New("reconcile: a reconciler cannot mark its own resource dirty; return Result.RequeueAt instead")
+
+// inFlightKey carries the resource a goroutine is currently reconciling, so a
+// mark can be recognized as a self-mark however deep in the call stack it is
+// made. The engine sets it on the context it hands to Reconcile.
+type inFlightKey struct{}
+
+type inFlight struct{ resourceType, resourceID string }
+
+func withInFlight(ctx context.Context, resourceType, resourceID string) context.Context {
+	return context.WithValue(ctx, inFlightKey{}, inFlight{resourceType: resourceType, resourceID: resourceID})
+}
+
+// isSelfMark reports whether marking (resourceType, id) would be the in-flight
+// reconcile marking itself. Marking a DIFFERENT resource is ordinary and stays
+// allowed: a pool reconcile marking its sandboxes is how work propagates.
+func isSelfMark(ctx context.Context, resourceType, id string) bool {
+	current, ok := ctx.Value(inFlightKey{}).(inFlight)
+	return ok && current.resourceType == resourceType && current.resourceID == id
 }
 
 // ErrSuperseded marks a reconcile that lost a generation-guarded write because
@@ -202,6 +249,9 @@ func (e *Engine) MarkDirtyTx(ctx context.Context, tx *gorm.DB, resourceType, id 
 func (e *Engine) MarkDirtyAtTx(ctx context.Context, tx *gorm.DB, resourceType, id string, at time.Time) error {
 	if resourceType == "" || id == "" {
 		return fmt.Errorf("reconcile: resource type and id are required")
+	}
+	if isSelfMark(ctx, resourceType, id) {
+		return fmt.Errorf("%w (%s %s)", ErrSelfMark, resourceType, id)
 	}
 	now := time.Now()
 	row := dirtyRow{

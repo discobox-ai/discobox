@@ -54,26 +54,26 @@ func NewPoolReconciler(appStore *store.Store, manager *sandbox.ProviderManager, 
 // Reconcile loads the latest project + pool + provider state and converges
 // the pool's runtime. Missing pools and missing or disabled providers are
 // converged trivially (nothing to do), settling the dirty row.
-func (r *PoolReconciler) Reconcile(ctx context.Context, id string) error {
+func (r *PoolReconciler) Reconcile(ctx context.Context, id string) (reconcile.Result, error) {
 	projectID, poolID, err := splitPoolDirtyID(id)
 	if err != nil {
-		return err
+		return reconcile.Result{}, err
 	}
 	pool, err := r.store.GetPool(ctx, projectID, poolID)
 	if errors.Is(err, store.ErrNotFound) {
-		return nil
+		return reconcile.Result{}, nil
 	}
 	if err != nil {
-		return err
+		return reconcile.Result{}, err
 	}
 	generation := pool.Generation
 	switch pool.DesiredState {
 	case model.DesiredStatePresent:
 		return r.reconcileActive(ctx, pool, generation)
 	case model.DesiredStateDeleted:
-		return r.reconcileDeleted(ctx, pool, generation)
+		return reconcile.Result{}, r.reconcileDeleted(ctx, pool, generation)
 	default:
-		return fmt.Errorf("unsupported pool desired state %q", pool.DesiredState)
+		return reconcile.Result{}, fmt.Errorf("unsupported pool desired state %q", pool.DesiredState)
 	}
 }
 
@@ -98,16 +98,16 @@ func (r *PoolReconciler) ScanDirty(ctx context.Context) ([]string, error) {
 	return ids, nil
 }
 
-func (r *PoolReconciler) reconcileActive(ctx context.Context, pool *model.Pool, generation int64) error {
+func (r *PoolReconciler) reconcileActive(ctx context.Context, pool *model.Pool, generation int64) (reconcile.Result, error) {
 	project, provider, runtimeProvider, err := r.resolve(ctx, pool)
 	if err != nil {
-		return err
+		return reconcile.Result{}, err
 	}
 	if provider == nil || provider.Disabled {
-		return nil
+		return reconcile.Result{}, nil
 	}
 	if runtimeProvider == nil {
-		return nil // provider type does not own pool runtimes
+		return reconcile.Result{}, nil // provider type does not own pool runtimes
 	}
 
 	// Converged with no recorded error means this generation has already been
@@ -116,7 +116,7 @@ func (r *PoolReconciler) reconcileActive(ctx context.Context, pool *model.Pool, 
 	if !alreadySuccessful {
 		pool.SetState(model.PoolStatePending)
 		if err := r.update(ctx, pool, generation); err != nil {
-			return err
+			return reconcile.Result{}, err
 		}
 	}
 
@@ -136,20 +136,20 @@ func (r *PoolReconciler) reconcileActive(ctx context.Context, pool *model.Pool, 
 	if err != nil {
 		r.failReconcile(pool, generation, err.Error())
 		if updateErr := r.update(ctx, pool, generation); updateErr != nil {
-			return updateErr
+			return reconcile.Result{}, updateErr
 		}
-		return err
+		return reconcile.Result{}, err
 	}
 
 	current, err := r.store.GetPoolByID(ctx, pool.ID, store.WithPoolGeneration(generation))
 	if errors.Is(err, store.ErrGenerationConflict) {
-		return reconcile.Superseded("pool generation changed")
+		return reconcile.Result{}, reconcile.Superseded("pool generation changed")
 	}
 	if err != nil {
-		return err
+		return reconcile.Result{}, err
 	}
 	if current.ErrorMessage != nil {
-		return nil
+		return reconcile.Result{}, nil
 	}
 	// Ready/Schedulable/Degraded are agent-reported fields, written by
 	// RegisterPool/UpdatePoolStatus over their own HTTP calls, which can land
@@ -167,7 +167,29 @@ func (r *PoolReconciler) reconcileActive(ctx context.Context, pool *model.Pool, 
 	}
 	current.SetState(state)
 	current.ErrorMessage = nil
-	return r.update(ctx, current, generation)
+	if err := r.update(ctx, current, generation); err != nil {
+		return reconcile.Result{}, err
+	}
+	return armRegistrationTimeout(current), nil
+}
+
+// armRegistrationTimeout is the deadline half of registrationExpired: a pool
+// whose runtime came up but whose agent has not registered yet needs one wake
+// at the moment that stops being worth waiting for, and nothing else would
+// deliver it — registration lands over the agent's own HTTP call, and a pool
+// that never registers produces no event at all.
+//
+// It arms ONLY for a pool that is still waiting. Arming it unconditionally
+// would put a timer on every healthy pool in the fleet, which is the drift
+// re-check the 60s scan already does.
+func armRegistrationTimeout(pool *model.Pool) reconcile.Result {
+	if poolRegistrationTimeout <= 0 || pool.StateChangedAt.IsZero() {
+		return reconcile.Result{}
+	}
+	if pool.State != model.PoolStateRegistering || pool.RegisteredAt != nil || pool.LastSeenAt != nil {
+		return reconcile.Result{}
+	}
+	return reconcile.RequeueAt(pool.StateChangedAt.Add(poolRegistrationTimeout))
 }
 
 // registrationExpired reports a pool whose runtime creation succeeded but

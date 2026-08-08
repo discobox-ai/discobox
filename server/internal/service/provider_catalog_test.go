@@ -31,7 +31,8 @@ func reconcileSandbox(ctx context.Context, t *testing.T, svc *service.Service, e
 	if err != nil {
 		t.Fatalf("get sandbox for reconcile: %v", err)
 	}
-	return executor.ReconcileSandbox(ctx, current)
+	_, err = executor.ReconcileSandbox(ctx, current)
+	return err
 }
 
 func TestSandboxReconcileExecutorDelegatesToProvider(t *testing.T) {
@@ -249,7 +250,7 @@ func TestSandboxReconcileExecutorInjectsTrustKey(t *testing.T) {
 	if err := appStore.CreateSandbox(ctx, sb); err != nil {
 		t.Fatalf("create sandbox: %v", err)
 	}
-	if err := executor.ReconcileSandbox(ctx, sb); err != nil {
+	if _, err := executor.ReconcileSandbox(ctx, sb); err != nil {
 		t.Fatalf("reconcile start: %v", err)
 	}
 	if auth.userID != service.DefaultUserID {

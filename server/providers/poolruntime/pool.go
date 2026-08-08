@@ -13,9 +13,6 @@ import (
 )
 
 const defaultPoolBootstrapTTL = 30 * time.Minute
-const defaultPoolRegistrationTimeout = 2 * time.Minute
-
-var poolRegistrationTimeout = defaultPoolRegistrationTimeout
 
 // mintPoolBootstrap returns the deferred minter handed to a runtime provider.
 // The provider calls it only when it actually creates a runtime, so a drift

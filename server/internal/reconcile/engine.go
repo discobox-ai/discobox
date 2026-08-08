@@ -229,13 +229,15 @@ func (e *Engine) execute(row dirtyRow) {
 	reg := e.regs[row.ResourceType]
 	e.mu.Unlock()
 
-	err := func() (err error) {
+	result, err := func() (result Result, err error) {
 		defer func() {
 			if r := recover(); r != nil {
 				err = fmt.Errorf("reconcile panic: %v", r)
 			}
 		}()
-		return reg.reconciler.Reconcile(e.ctx, row.ResourceID)
+		// withInFlight is what makes a self-mark detectable anywhere under this
+		// call, however deep: MarkDirtyAtTx reads it off the context.
+		return reg.reconciler.Reconcile(withInFlight(e.ctx, row.ResourceType, row.ResourceID), row.ResourceID)
 	}()
 
 	if err != nil {
@@ -247,25 +249,52 @@ func (e *Engine) execute(row dirtyRow) {
 		e.release(row)
 		return
 	}
-	e.complete(row)
+	e.complete(row, result)
 }
 
-// complete deletes the row if it was not re-marked while running. A bumped seq
-// means newer intent arrived mid-run: release the claim and leave the row
-// dirty so the reconciler runs again against the newer state. That is the
-// entire supersede story.
-func (e *Engine) complete(row dirtyRow) {
-	res := e.db.Model(&dirtyRow{}).
-		Where("resource_type = ? AND resource_id = ? AND seq = ?", row.ResourceType, row.ResourceID, row.Seq).
-		Delete(&dirtyRow{})
+// complete settles a row after a successful reconcile.
+//
+// Without a requeue the row is deleted. If it was re-marked while running the
+// seq guard makes that delete miss, which means newer intent arrived mid-run:
+// release the claim and leave the row dirty so the reconciler runs again
+// against the newer state. That is the entire supersede story.
+//
+// With a requeue the row SURVIVES as the reconciler's timer, and not_before is
+// assigned outright rather than pulled forward the way MarkDirtyAt does it.
+// That is the point: the reconciler just read the resource, so it — not the
+// stale value already on the row — is the authority on when it next needs
+// attention. Doing this here, under the same seq guard, is also what keeps the
+// timer honest about newer intent: a mid-run mark makes the guarded update miss
+// and its own earlier not_before stands, so intent still beats the timer.
+func (e *Engine) complete(row dirtyRow, result Result) {
+	settled := map[string]any{"claimed_by": nil, "lease_expires": nil, "attempts": 0}
+
+	var res *gorm.DB
+	if result.RequeueAt.IsZero() {
+		res = e.db.Model(&dirtyRow{}).
+			Where("resource_type = ? AND resource_id = ? AND seq = ?", row.ResourceType, row.ResourceID, row.Seq).
+			Delete(&dirtyRow{})
+	} else {
+		armed := map[string]any{"not_before": result.RequeueAt}
+		for k, v := range settled {
+			armed[k] = v
+		}
+		res = e.db.Model(&dirtyRow{}).
+			Where("resource_type = ? AND resource_id = ? AND seq = ? AND claimed_by = ?",
+				row.ResourceType, row.ResourceID, row.Seq, e.opt.WorkerID).
+			Updates(armed)
+	}
 	if res.Error == nil && res.RowsAffected == 1 {
+		// Settled, or armed for the future. Either way there is nothing to run
+		// now, so deliberately no wake.
 		return
 	}
-	// Re-marked during the run (or transient delete error): clear our claim and
-	// reset attempts — this run succeeded.
+
+	// Re-marked during the run (or a transient error): clear our claim and reset
+	// attempts — this run succeeded — and let the newer mark drive the re-run.
 	e.db.Model(&dirtyRow{}).
 		Where("resource_type = ? AND resource_id = ? AND claimed_by = ?", row.ResourceType, row.ResourceID, e.opt.WorkerID).
-		Updates(map[string]any{"claimed_by": nil, "lease_expires": nil, "attempts": 0})
+		Updates(settled)
 	e.wake()
 }
 

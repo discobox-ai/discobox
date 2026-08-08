@@ -19,6 +19,7 @@ import (
 	"github.com/obot-platform/discobox/server/internal/apperrors"
 	poolagentauth "github.com/obot-platform/discobox/server/internal/auth/poolagent"
 	"github.com/obot-platform/discobox/server/internal/model"
+	"github.com/obot-platform/discobox/server/internal/reconcile"
 	services "github.com/obot-platform/discobox/server/internal/services"
 	"github.com/obot-platform/discobox/server/internal/store"
 )
@@ -616,34 +617,36 @@ func (s *Service) DeconfigureHarnessConfig(ctx context.Context, projectID, confi
 // Reconcile reaps a configure sandbox whose flow was started but never committed
 // (the client crashed, detached, or walked away). It never touches the sandbox
 // agent, so it needs no credentials of its own.
-func (s *Service) Reconcile(ctx context.Context, configID string) error {
+func (s *Service) Reconcile(ctx context.Context, configID string) (reconcile.Result, error) {
 	config, err := s.store.GetHarnessConfigByID(ctx, configID)
 	if err != nil {
 		if errors.Is(err, store.ErrNotFound) {
-			return nil
+			return reconcile.Result{}, nil
 		}
-		return err
+		return reconcile.Result{}, err
 	}
 	sandboxID := strings.TrimSpace(config.ConfigureSandboxID)
 	if sandboxID == "" {
-		return nil
+		return reconcile.Result{}, nil
 	}
 	if s.sandboxes == nil || s.dirtier == nil {
-		return errors.New("harness configure requires the sandbox runtime and reconcile engine")
+		return reconcile.Result{}, errors.New("harness configure requires the sandbox runtime and reconcile engine")
 	}
 	if deadline := config.UpdatedAt.Add(configureTTL); time.Now().Before(deadline) {
 		// Committed configures clear ConfigureSandboxID, so anything still set
 		// here is either in progress or abandoned; look again after the TTL.
-		return s.dirtier.MarkDirtyAt(ctx, HarnessConfigResourceType, config.ID, deadline)
+		// Each in-progress write pushes UpdatedAt out, so the reap only lands
+		// once the flow has actually gone quiet for a full TTL.
+		return reconcile.RequeueAt(deadline), nil
 	}
 	slog.InfoContext(ctx, "reaping abandoned configure sandbox",
 		"harnessConfigId", config.ID, "sandboxId", sandboxID)
 	if err := s.sandboxes.DeleteSandbox(ctx, config.ProjectID, sandboxID); err != nil && !errors.Is(err, store.ErrNotFound) {
-		return err
+		return reconcile.Result{}, err
 	}
 	config.ConfigureSandboxID = ""
 	config.ConfigureError = "configure was never completed and timed out"
-	return s.store.UpdateHarnessConfig(ctx, config)
+	return reconcile.Result{}, s.store.UpdateHarnessConfig(ctx, config)
 }
 
 // sandboxAgentClient builds a runner for the sandbox's agent API using the

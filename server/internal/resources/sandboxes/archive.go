@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"github.com/obot-platform/discobox/server/internal/model"
+	"github.com/obot-platform/discobox/server/internal/reconcile"
 )
 
 // DefaultArchiveRetention is how long an archived sandbox is kept when its
@@ -44,25 +45,20 @@ func archiveDeadline(sb *model.Sandbox, retention time.Duration) time.Time {
 // expiry backstop in ScanDirty — and the only question left is whether the
 // sandbox has been archived long enough to purge. If it has, this records
 // delete intent and lets the ordinary delete path do the work.
-func (r *SandboxReconciler) archive(ctx context.Context, sandbox *model.Sandbox, generation int64) error {
+func (r *SandboxReconciler) archive(ctx context.Context, sandbox *model.Sandbox, generation int64) (reconcile.Result, error) {
 	// A settled failure needs new intent, not another attempt (ADR 0017 §4).
 	if sandbox.Converged() && sandbox.ErrorMessage != nil {
-		return nil
+		return reconcile.Result{}, nil
 	}
 
 	retention := r.archiveRetention(ctx, sandbox.ProjectID)
 
 	if sandbox.State == model.SandboxStateArchived {
 		if !time.Now().Before(archiveDeadline(sandbox, retention)) {
-			return r.expireArchive(ctx, sandbox, generation)
-		}
-		// Still within retention. Re-arm the wake in case the mark that brought
-		// us here was the last one, then settle.
-		if err := r.scheduleArchiveExpiry(ctx, sandbox, retention); err != nil {
-			return err
+			return reconcile.Result{}, r.expireArchive(ctx, sandbox, generation)
 		}
 		if sandbox.Converged() {
-			return nil
+			return r.armArchiveExpiry(sandbox, retention), nil
 		}
 	}
 
@@ -70,18 +66,18 @@ func (r *SandboxReconciler) archive(ctx context.Context, sandbox *model.Sandbox,
 		sandbox.ObservedGeneration = generation
 		sandbox.RecordFailure(model.SandboxStateFailed, err.Error())
 		if updateErr := r.update(ctx, sandbox, generation); updateErr != nil {
-			return updateErr
+			return reconcile.Result{}, updateErr
 		}
-		return err
+		return reconcile.Result{}, err
 	}
 
 	sandbox.ObservedGeneration = generation
 	sandbox.SetState(model.SandboxStateArchived)
 	sandbox.ErrorMessage = nil
 	if err := r.update(ctx, sandbox, generation); err != nil {
-		return err
+		return reconcile.Result{}, err
 	}
-	return r.scheduleArchiveExpiry(ctx, sandbox, retention)
+	return r.armArchiveExpiry(sandbox, retention), nil
 }
 
 // expireArchive turns an expired archive into a delete. It writes the intent
@@ -96,14 +92,18 @@ func (r *SandboxReconciler) expireArchive(ctx context.Context, sandbox *model.Sa
 	return r.delete(ctx, updated, updated.Generation)
 }
 
-// scheduleArchiveExpiry arranges the reconcile that enforces retention. An
-// archived sandbox has no other trigger: its generations agree and nothing
-// observes it, so without a future-dated mark it would sit archived forever.
-func (r *SandboxReconciler) scheduleArchiveExpiry(ctx context.Context, sb *model.Sandbox, retention time.Duration) error {
-	if r.engine == nil || sb.StateChangedAt.IsZero() {
-		return nil
+// armArchiveExpiry is the reconcile that enforces retention, expressed as the
+// engine's timer. An archived sandbox has no other edge — its generations agree
+// and nothing observes it — so without this it would wait on the 60s scan
+// backstop rather than waking at the deadline itself.
+//
+// A zero StateChangedAt has no deadline to arm, and settles: the scan's
+// ListArchivedSandboxRefsExpiredBefore skips those rows for the same reason.
+func (r *SandboxReconciler) armArchiveExpiry(sb *model.Sandbox, retention time.Duration) reconcile.Result {
+	if sb.StateChangedAt.IsZero() {
+		return reconcile.Result{}
 	}
-	return r.engine.MarkDirtyAt(ctx, SandboxResourceType, SandboxDirtyID(sb.ProjectID, sb.ID), archiveDeadline(sb, retention))
+	return reconcile.RequeueAt(archiveDeadline(sb, retention))
 }
 
 // archiveSandbox is the provider call. A sandbox with no provider — one that

@@ -274,10 +274,6 @@ func (m *recordingPoolManager) SchedulePoolReconciliation(_ context.Context, pro
 	return nil
 }
 
-func (m *recordingPoolManager) SchedulePoolReconciliationAt(context.Context, string, string, time.Time) error {
-	return nil
-}
-
 func (m *recordingPoolManager) SchedulePoolRepair(context.Context, string, string) error {
 	return nil
 }

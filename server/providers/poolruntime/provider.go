@@ -121,7 +121,7 @@ func (p *Provider) ReconcilePool(ctx context.Context, manager sandbox.PoolManage
 	if err := p.syncKnownPools(ctx, manager, provider, pool); err != nil {
 		slog.Warn("pool-sync failed", "pool", pool.ID, "error", err)
 	}
-	return armRegistrationTimeout(ctx, manager, pool)
+	return nil
 }
 
 // syncKnownPools sends the pool-agent the full set of pools in this project, so
@@ -151,29 +151,17 @@ func (p *Provider) RepairPool(ctx context.Context, manager sandbox.PoolManager, 
 	if manager == nil {
 		return fmt.Errorf("pool manager is required")
 	}
-	if err := p.runtimeProvider.RepairPool(ctx, project, provider, pool, mintPoolBootstrap(manager, project, pool), reason); err != nil {
-		return err
-	}
-	return armRegistrationTimeout(ctx, manager, pool)
+	return p.runtimeProvider.RepairPool(ctx, project, provider, pool, mintPoolBootstrap(manager, project, pool), reason)
 }
 
 func (p *Provider) RemovePool(ctx context.Context, _ sandbox.PoolManager, project *model.Project, provider *model.SandboxProviderInstance, pool *model.Pool) error {
 	return p.runtimeProvider.RemovePool(ctx, project, provider, pool)
 }
 
-// armRegistrationTimeout schedules the pool re-check that catches a runtime
-// that came up but whose agent never registered.
-//
-// It arms ONLY for a pool that has never registered, because only such a pool
-// can time out. Arming it for an already-registered pool is a busy loop: the
-// reconcile drift-checks every healthy pool through here, so the timer would
-// re-mark the very pool row being reconciled.
-func armRegistrationTimeout(ctx context.Context, manager sandbox.PoolManager, pool *model.Pool) error {
-	if poolRegistrationTimeout <= 0 || pool.EverCreated() {
-		return nil
-	}
-	return manager.SchedulePoolReconciliationAt(ctx, pool.ProjectID, pool.ID, time.Now().UTC().Add(poolRegistrationTimeout))
-}
+// The registration timeout is armed by the pool reconciler, which owns the
+// deadline (pools.armRegistrationTimeout). Arming it from here meant a provider
+// call made on the pool's own reconcile path marking that same pool dirty,
+// which the engine now rejects outright: see reconcile.ErrSelfMark.
 
 func (p *Provider) Create(ctx context.Context, ref sandbox.SandboxRef, state []byte, opts sandbox.CreateOptions) (*sandbox.Sandbox, []byte, error) {
 	if p.manager == nil {

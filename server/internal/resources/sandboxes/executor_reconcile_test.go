@@ -38,7 +38,7 @@ func TestReconcileSandboxNoCapacityFailsFast(t *testing.T) {
 	}
 
 	executor := sandboxes.NewSandboxReconciler(appStore, sandboxes.WithSandboxProvider(noCapacityProvider{}))
-	err := executor.ReconcileSandbox(ctx, sb)
+	_, err := executor.ReconcileSandbox(ctx, sb)
 	if !errors.Is(err, sandboxes.ErrNoSandboxCapacity) {
 		t.Fatalf("reconcile error = %v, want ErrNoSandboxCapacity", err)
 	}
@@ -71,7 +71,7 @@ func TestReconcileToleratesAnUndeliverableStart(t *testing.T) {
 	})
 
 	executor := sandboxes.NewSandboxReconciler(appStore, sandboxes.WithSandboxProvider(failingSandboxProvider{startErr: startErr}))
-	if err := executor.ReconcileSandbox(ctx, sb); err != nil {
+	if _, err := executor.ReconcileSandbox(ctx, sb); err != nil {
 		t.Fatalf("reconcile = %v, want nil: the sandbox exists, which is what this generation was for", err)
 	}
 
@@ -102,7 +102,7 @@ func TestReconcileRebuildsAMissingRuntimeWithoutStartingIt(t *testing.T) {
 	provider := &missingRuntimeProvider{}
 	reconciler := sandboxes.NewSandboxReconciler(appStore, sandboxes.WithSandboxProvider(provider))
 
-	if err := reconciler.ReconcileSandbox(ctx, sb); err != nil {
+	if _, err := reconciler.ReconcileSandbox(ctx, sb); err != nil {
 		t.Fatalf("reconcile: %v", err)
 	}
 	if provider.createCalls != 1 {
@@ -148,7 +148,7 @@ func TestReconcileOnlyStartsASandboxThatHasNeverRun(t *testing.T) {
 			provider := &recordingCreateProvider{}
 			reconciler := sandboxes.NewSandboxReconciler(appStore, sandboxes.WithSandboxProvider(provider))
 
-			if err := reconciler.ReconcileSandbox(ctx, sb); err != nil {
+			if _, err := reconciler.ReconcileSandbox(ctx, sb); err != nil {
 				t.Fatalf("reconcile: %v", err)
 			}
 			if provider.lastStart != tc.wantStart {
@@ -210,7 +210,7 @@ func TestReconcileSandboxMarksDeleteFailure(t *testing.T) {
 	})
 
 	executor := sandboxes.NewSandboxReconciler(appStore, sandboxes.WithSandboxProvider(failingSandboxProvider{removeErr: removeErr}))
-	err := executor.ReconcileSandbox(ctx, sb)
+	_, err := executor.ReconcileSandbox(ctx, sb)
 	if !errors.Is(err, removeErr) {
 		t.Fatalf("reconcile error = %v, want %v", err, removeErr)
 	}
@@ -229,7 +229,7 @@ func TestReconcileSandboxSoftDeletesAfterRuntimeRemoval(t *testing.T) {
 	})
 
 	reconciler := sandboxes.NewSandboxReconciler(appStore, sandboxes.WithSandboxProvider(failingSandboxProvider{}))
-	if err := reconciler.ReconcileSandbox(ctx, sb); err != nil {
+	if _, err := reconciler.ReconcileSandbox(ctx, sb); err != nil {
 		t.Fatalf("reconcile delete: %v", err)
 	}
 

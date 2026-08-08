@@ -77,23 +77,32 @@ func rowCount(t *testing.T, db *gorm.DB) int64 {
 	return n
 }
 
+// errBox lets a possibly-nil error go through atomic.Value, which panics on a
+// nil interface.
+type errBox struct{ err error }
+
 type fakeReconciler struct {
 	runs    atomic.Int32
 	fail    atomic.Int32  // fail this many runs before succeeding
 	block   chan struct{} // if non-nil, each run waits until it can receive
 	lastIDs sync.Map
+	// onRun, when set, supplies the Result (and any extra behavior) for a run.
+	onRun func(ctx context.Context, id string) Result
 }
 
-func (f *fakeReconciler) Reconcile(_ context.Context, id string) error {
+func (f *fakeReconciler) Reconcile(ctx context.Context, id string) (Result, error) {
 	f.lastIDs.Store(id, true)
 	if f.block != nil {
 		<-f.block
 	}
 	n := f.runs.Add(1)
 	if n <= f.fail.Load() {
-		return errors.New("boom")
+		return Result{}, errors.New("boom")
 	}
-	return nil
+	if f.onRun != nil {
+		return f.onRun(ctx, id), nil
+	}
+	return Result{}, nil
 }
 
 func TestMarkReconcileAndSettle(t *testing.T) {
@@ -273,4 +282,171 @@ func TestScannerBackstop(t *testing.T) {
 		_, ok := r.lastIDs.Load("drifted-1")
 		return ok
 	})
+}
+
+// TestSelfMarkIsRejected pins the invariant the Result contract exists to
+// enforce: a reconciler cannot mark the resource it is reconciling. Allowing it
+// is unbounded CPU, not a slow retry — the seq bump makes complete's guarded
+// delete miss forever, so the row is re-run with no delay and no backoff.
+func TestSelfMarkIsRejected(t *testing.T) {
+	e, db := testEngine(t)
+	var markErr atomic.Value
+	r := &fakeReconciler{onRun: func(ctx context.Context, id string) Result {
+		markErr.Store(errBox{e.MarkDirty(ctx, "sandbox", id)})
+		return Result{}
+	}}
+	if err := e.Register("sandbox", r); err != nil {
+		t.Fatal(err)
+	}
+	start(t, e)
+
+	if err := e.MarkDirty(context.Background(), "sandbox", "sb-1"); err != nil {
+		t.Fatal(err)
+	}
+	waitFor(t, "reconcile to run", func() bool { return r.runs.Load() == 1 })
+	waitFor(t, "row to settle", func() bool { return rowCount(t, db) == 0 })
+
+	got, _ := markErr.Load().(errBox)
+	if !errors.Is(got.err, ErrSelfMark) {
+		t.Fatalf("self-mark error = %v, want ErrSelfMark", got.err)
+	}
+	// The rejection is what lets the row settle at all: one run, then done.
+	if runs := r.runs.Load(); runs != 1 {
+		t.Fatalf("runs = %d, want 1 (a tolerated self-mark loops)", runs)
+	}
+}
+
+// TestMarkingAnotherResourceIsAllowed guards the other half: only marking
+// YOURSELF is the error. Cross-resource marks are how work propagates.
+func TestMarkingAnotherResourceIsAllowed(t *testing.T) {
+	e, db := testEngine(t)
+	var markErr atomic.Value
+	r := &fakeReconciler{onRun: func(ctx context.Context, id string) Result {
+		if id == "sb-1" {
+			markErr.Store(errBox{e.MarkDirty(ctx, "sandbox", "sb-2")})
+		}
+		return Result{}
+	}}
+	if err := e.Register("sandbox", r); err != nil {
+		t.Fatal(err)
+	}
+	start(t, e)
+
+	if err := e.MarkDirty(context.Background(), "sandbox", "sb-1"); err != nil {
+		t.Fatal(err)
+	}
+	waitFor(t, "both resources to run", func() bool { return r.runs.Load() == 2 })
+	waitFor(t, "rows to settle", func() bool { return rowCount(t, db) == 0 })
+	if got, _ := markErr.Load().(errBox); got.err != nil {
+		t.Fatalf("cross-resource mark failed: %v", got.err)
+	}
+	if _, ok := r.lastIDs.Load("sb-2"); !ok {
+		t.Fatal("sb-2 was never reconciled")
+	}
+}
+
+// TestRequeueAtKeepsRowAndArmsIt is the replacement for self-marking: the row
+// survives as the reconciler's timer, future-dated, claimable again at the
+// deadline rather than immediately.
+func TestRequeueAtKeepsRowAndArmsIt(t *testing.T) {
+	e, db := testEngine(t)
+	requeueAt := time.Now().Add(time.Hour)
+	r := &fakeReconciler{onRun: func(context.Context, string) Result {
+		return RequeueAt(requeueAt)
+	}}
+	if err := e.Register("sandbox", r); err != nil {
+		t.Fatal(err)
+	}
+	start(t, e)
+
+	if err := e.MarkDirty(context.Background(), "sandbox", "sb-1"); err != nil {
+		t.Fatal(err)
+	}
+	waitFor(t, "reconcile to run", func() bool { return r.runs.Load() == 1 })
+
+	// Long enough for several poll ticks: a row armed for an hour must not be
+	// re-run, which is exactly what the old self-mark got wrong.
+	time.Sleep(200 * time.Millisecond)
+	if runs := r.runs.Load(); runs != 1 {
+		t.Fatalf("runs = %d, want 1 (armed row must not re-run)", runs)
+	}
+	if n := rowCount(t, db); n != 1 {
+		t.Fatalf("row count = %d, want 1 (the row IS the timer)", n)
+	}
+	var row dirtyRow
+	if err := db.First(&row).Error; err != nil {
+		t.Fatal(err)
+	}
+	if row.ClaimedBy != nil {
+		t.Fatalf("claimed_by = %v, want released", *row.ClaimedBy)
+	}
+	if !row.NotBefore.Truncate(time.Second).Equal(requeueAt.Truncate(time.Second)) {
+		t.Fatalf("not_before = %v, want %v", row.NotBefore, requeueAt)
+	}
+}
+
+// TestRequeueAtAssignsNotBeforeBackwards is the property MarkDirtyAt could not
+// provide, and the direct cause of the runaway loop: pull-forward-only marking
+// leaves a stale past not_before pinned forever, so the row is permanently
+// claimable. A reconciler that just read the resource may move the deadline in
+// either direction.
+func TestRequeueAtAssignsNotBeforeBackwards(t *testing.T) {
+	e, db := testEngine(t)
+	past := time.Now().Add(-time.Hour)
+	future := time.Now().Add(time.Hour)
+	r := &fakeReconciler{onRun: func(context.Context, string) Result {
+		return RequeueAt(future)
+	}}
+	if err := e.Register("sandbox", r); err != nil {
+		t.Fatal(err)
+	}
+	start(t, e)
+
+	// Arm the row in the past first — the exact state the looping sandboxes were in.
+	if err := e.MarkDirtyAt(context.Background(), "sandbox", "sb-1", past); err != nil {
+		t.Fatal(err)
+	}
+	waitFor(t, "reconcile to run", func() bool { return r.runs.Load() == 1 })
+	time.Sleep(200 * time.Millisecond)
+
+	if runs := r.runs.Load(); runs != 1 {
+		t.Fatalf("runs = %d, want 1 (a past not_before must not survive the requeue)", runs)
+	}
+	var row dirtyRow
+	if err := db.First(&row).Error; err != nil {
+		t.Fatal(err)
+	}
+	if row.NotBefore.Before(time.Now()) {
+		t.Fatalf("not_before = %v, still in the past", row.NotBefore)
+	}
+}
+
+// TestNewIntentBeatsRequeue: a mark that lands mid-run is newer intent and must
+// win over the timer the reconciler was about to arm, or an armed deadline
+// could swallow a user's request for up to its whole duration.
+func TestNewIntentBeatsRequeue(t *testing.T) {
+	e, db := testEngine(t)
+	release := make(chan struct{})
+	var once sync.Once
+	r := &fakeReconciler{onRun: func(context.Context, string) Result {
+		once.Do(func() {
+			if err := e.MarkDirty(context.Background(), "sandbox", "sb-1"); err != nil {
+				t.Error(err)
+			}
+			close(release)
+		})
+		return RequeueAt(time.Now().Add(time.Hour))
+	}}
+	if err := e.Register("sandbox", r); err != nil {
+		t.Fatal(err)
+	}
+	start(t, e)
+
+	if err := e.MarkDirty(context.Background(), "sandbox", "sb-1"); err != nil {
+		t.Fatal(err)
+	}
+	<-release
+	// The mid-run mark must re-run the reconcile now, not an hour from now.
+	waitFor(t, "re-run against newer intent", func() bool { return r.runs.Load() >= 2 })
+	waitFor(t, "row to arm after the re-run", func() bool { return rowCount(t, db) == 1 })
 }

@@ -84,7 +84,7 @@ func TestReconcileArchiveKeepsTheSandboxAndItsData(t *testing.T) {
 
 	provider := &archiveTestProvider{}
 	reconciler := sandboxes.NewSandboxReconciler(appStore, sandboxes.WithSandboxProvider(provider))
-	if err := reconciler.ReconcileSandbox(ctx, sb); err != nil {
+	if _, err := reconciler.ReconcileSandbox(ctx, sb); err != nil {
 		t.Fatalf("reconcile archive: %v", err)
 	}
 
@@ -118,7 +118,7 @@ func TestReconcileArchivedWithinRetentionIsInert(t *testing.T) {
 
 	provider := &archiveTestProvider{}
 	reconciler := sandboxes.NewSandboxReconciler(appStore, sandboxes.WithSandboxProvider(provider))
-	if err := reconciler.ReconcileSandbox(ctx, sb); err != nil {
+	if _, err := reconciler.ReconcileSandbox(ctx, sb); err != nil {
 		t.Fatalf("reconcile archived: %v", err)
 	}
 
@@ -147,7 +147,7 @@ func TestReconcileArchivedPastRetentionPurges(t *testing.T) {
 
 	provider := &archiveTestProvider{}
 	reconciler := sandboxes.NewSandboxReconciler(appStore, sandboxes.WithSandboxProvider(provider))
-	if err := reconciler.ReconcileSandbox(ctx, sb); err != nil {
+	if _, err := reconciler.ReconcileSandbox(ctx, sb); err != nil {
 		t.Fatalf("reconcile expired archive: %v", err)
 	}
 
@@ -178,7 +178,7 @@ func TestReconcileUnarchiveLeavesTheSandboxStopped(t *testing.T) {
 
 	provider := &archiveTestProvider{}
 	reconciler := sandboxes.NewSandboxReconciler(appStore, sandboxes.WithSandboxProvider(provider))
-	if err := reconciler.ReconcileSandbox(ctx, sb); err != nil {
+	if _, err := reconciler.ReconcileSandbox(ctx, sb); err != nil {
 		t.Fatalf("reconcile unarchive: %v", err)
 	}
 
@@ -219,7 +219,7 @@ func TestArchiveRetentionFollowsTheProjectSetting(t *testing.T) {
 
 	provider := &archiveTestProvider{}
 	reconciler := sandboxes.NewSandboxReconciler(appStore, sandboxes.WithSandboxProvider(provider))
-	if err := reconciler.ReconcileSandbox(ctx, sb); err != nil {
+	if _, err := reconciler.ReconcileSandbox(ctx, sb); err != nil {
 		t.Fatalf("reconcile expired archive: %v", err)
 	}
 
@@ -251,5 +251,73 @@ func TestExpiredArchiveScanFindsOnlyExpiredSandboxes(t *testing.T) {
 	}
 	if len(refs) != 1 || refs[0].SandboxID != sb.ID {
 		t.Fatalf("scan = %#v, want just %s", refs, sb.ID)
+	}
+}
+
+// TestReconcileArchivedArmsTheDeadlineInsteadOfSpinning is the regression test
+// for a reconcile loop that burned two CPUs for seventeen hours.
+//
+// An archived sandbox within retention is converged, so it reports the deadline
+// as a Result and the engine parks the row until then. The bug it replaces did
+// the same job by marking the sandbox dirty from inside its own reconcile,
+// which the engine cannot tell apart from newer intent: the row could never be
+// deleted, was never delayed, and re-ran at ~146/sec, forever.
+func TestReconcileArchivedArmsTheDeadlineInsteadOfSpinning(t *testing.T) {
+	ctx := context.Background()
+	appStore := newExecutorTestStore(t)
+	archivedFor := time.Hour
+	sb := archivableSandbox(ctx, t, appStore, model.SandboxStateArchived, archivedFor)
+
+	provider := &archiveTestProvider{}
+	reconciler := sandboxes.NewSandboxReconciler(appStore, sandboxes.WithSandboxProvider(provider))
+	result, err := reconciler.ReconcileSandbox(ctx, sb)
+	if err != nil {
+		t.Fatalf("reconcile archived: %v", err)
+	}
+
+	if result.RequeueAt.IsZero() {
+		t.Fatal("no deadline armed: the sandbox would wait on the scan backstop, not its own retention")
+	}
+	want := sb.StateChangedAt.Add(sandboxes.DefaultArchiveRetention)
+	if !result.RequeueAt.Equal(want) {
+		t.Fatalf("RequeueAt = %s, want %s (the derived retention deadline)", result.RequeueAt, want)
+	}
+	// The whole point: the next run is a long way off, not immediately.
+	if !result.RequeueAt.After(time.Now().Add(time.Hour)) {
+		t.Fatalf("RequeueAt = %s, want well into the future", result.RequeueAt)
+	}
+}
+
+// TestReconcileArchivedIsStableAcrossRepeatedRuns pins the property the loop
+// violated: the armed deadline is derived from an anchor no reconcile moves, so
+// running again yields the same instant rather than pushing it out.
+func TestReconcileArchivedIsStableAcrossRepeatedRuns(t *testing.T) {
+	ctx := context.Background()
+	appStore := newExecutorTestStore(t)
+	sb := archivableSandbox(ctx, t, appStore, model.SandboxStateArchived, time.Hour)
+
+	provider := &archiveTestProvider{}
+	reconciler := sandboxes.NewSandboxReconciler(appStore, sandboxes.WithSandboxProvider(provider))
+
+	var first time.Time
+	for i := range 3 {
+		current, err := appStore.GetSandbox(ctx, sb.ProjectID, sb.ID)
+		if err != nil {
+			t.Fatalf("get sandbox: %v", err)
+		}
+		result, err := reconciler.ReconcileSandbox(ctx, current)
+		if err != nil {
+			t.Fatalf("reconcile %d: %v", i, err)
+		}
+		if i == 0 {
+			first = result.RequeueAt
+			continue
+		}
+		if !result.RequeueAt.Equal(first) {
+			t.Fatalf("run %d armed %s, want the stable deadline %s", i, result.RequeueAt, first)
+		}
+	}
+	if provider.removeCalls != 0 {
+		t.Fatalf("repeated reconciles purged the data: remove calls = %d", provider.removeCalls)
 	}
 }

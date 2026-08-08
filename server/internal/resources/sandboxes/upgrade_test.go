@@ -160,7 +160,7 @@ func TestReconcileNeverRepinsToTheConfigImage(t *testing.T) {
 		provider := &pinCapturingProvider{}
 		reconciler := NewSandboxReconciler(st, WithSandboxProvider(provider))
 
-		if err := reconciler.ReconcileSandbox(ctx, sb); err != nil {
+		if _, err := reconciler.ReconcileSandbox(ctx, sb); err != nil {
 			t.Fatalf("state %q: reconcile: %v", state, err)
 		}
 		if len(provider.created) != 1 {

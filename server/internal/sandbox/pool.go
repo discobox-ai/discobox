@@ -2,7 +2,6 @@ package sandbox
 
 import (
 	"context"
-	"time"
 
 	poolagentauth "github.com/obot-platform/discobox/server/internal/auth/poolagent"
 	"github.com/obot-platform/discobox/server/internal/model"
@@ -30,7 +29,6 @@ type PoolManager interface {
 	CreateAgentToken(ctx context.Context, claims poolagentauth.TokenClaims) (string, error)
 	CreateSandboxAgentToken(ctx context.Context, claims poolagentauth.TokenClaims) (string, error)
 	SchedulePoolReconciliation(ctx context.Context, projectID, poolID string) error
-	SchedulePoolReconciliationAt(ctx context.Context, projectID, poolID string, scheduledAt time.Time) error
 	// SchedulePoolRepair re-drives a failed pool as new intent (generation bump
 	// plus dirty mark), so schedulers can tell a pending retry from a settled
 	// failure.

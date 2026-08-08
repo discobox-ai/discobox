@@ -51,7 +51,7 @@ func TestSandboxReconcileCancelsWhenGenerationChanges(t *testing.T) {
 
 	// The in-memory sandbox still carries generation 1; the store moved on to 2.
 	// The reconcile's generation-guarded writes must supersede, not clobber.
-	err = executor.ReconcileSandbox(ctx, sandbox)
+	_, err = executor.ReconcileSandbox(ctx, sandbox)
 	if !errors.Is(err, reconcile.ErrSuperseded) {
 		t.Fatalf("stale reconcile error = %v, want ErrJobCanceled", err)
 	}
