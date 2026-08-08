@@ -37,6 +37,16 @@ transport helpers where OpenAPI does not model the stream.
 - Either way what runs is `disco diff` with its own rendering, flag defaults,
   pager and terminal detection, not a second implementation that drifts from it.
   A launcher that cannot be reproduced from a shell is the thing to avoid.
+- Bare `disco` runs the launcher when stdin and stdout are both terminals, and
+  prints its help otherwise (`App.runTUI`, reached from the root command's
+  `RunE` and from `disco tui`). Typing a program's name is how you ask for it,
+  and the launcher is the one thing you can ask for without knowing a
+  subcommand; a pipe, a script or CI expected output, and a full-screen window
+  is not an answer to that. The root's `Args` is left at cobra's default, which
+  turns an unrecognized first argument into "unknown command" rather than
+  handing it to the launcher. The leader there comes from the environment only:
+  a flag would have to be persistent to be reachable, and every subcommand would
+  carry one that means nothing to it.
 - `disco tui --leader`/`DISCOBOX_LEADER` sets the terminal pane's prefix key,
   normalized by `tui.NormalizeLeader`: a bare character is taken as Ctrl-that,
   since a leader that is not a chord would be a character you could never type.

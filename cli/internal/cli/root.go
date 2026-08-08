@@ -52,6 +52,25 @@ func NewRootCommand() *cobra.Command {
 			app.errOut = cmd.ErrOrStderr()
 			return app.validate()
 		},
+		// Bare `disco` at a terminal opens the launcher: it is the one thing
+		// you can ask for without knowing a subcommand, and typing the name of
+		// a program is how you ask for it. Anywhere else — a pipe, a script,
+		// CI — it prints its help, because a full-screen window is not an
+		// answer to a program that expected output.
+		//
+		// Args is deliberately left alone: cobra's default already turns an
+		// unrecognized first argument into "unknown command" rather than
+		// handing it here, and that error is worth more than a launcher that
+		// opens when you misspell one.
+		RunE: func(cmd *cobra.Command, _ []string) error {
+			if !isTerminalStream(cmd.OutOrStdout()) || !isTerminalStream(cmd.InOrStdin()) {
+				return cmd.Help()
+			}
+			// The leader comes from the environment only. A flag would have to
+			// be a persistent one to be reachable here, and every subcommand
+			// would carry a flag that means nothing to it.
+			return app.runTUI(cmd, os.Getenv("DISCOBOX_LEADER"))
+		},
 	}
 	cmd.PersistentFlags().StringVar(&app.serverURL, "server", envOrDefault("DISCOBOX_SERVER", localipc.DefaultEndpoint()), "Discobox API server endpoint")
 	cmd.PersistentFlags().StringVarP(&app.projectID, "project", "p", envOrDefault("DISCOBOX_PROJECT", defaultProjectAlias), "Project ID for this invocation; use default for the user's default project")

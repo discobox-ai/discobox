@@ -36,42 +36,49 @@ attaches, s opens a shell, d diffs, y applies, x archives — and Shift-Tab open
 "disco run"'s options.
 
 Attaching or opening a shell draws the sandbox's terminal in the window itself.
-Every key then goes to the sandbox except Ctrl-C, which detaches, and the ones
-behind the leader: leader Ctrl-C sends a real interrupt through, and leader m
-hands the mouse over or takes it back. The leader is Ctrl-A unless --leader or
-DISCOBOX_LEADER says otherwise — worth changing when it collides with something
+Every key then goes to the sandbox, Ctrl-C included: it is the program's, so
+what you interrupt is what is running rather than the window around it. The
+window's own keys are behind the leader — leader q detaches, leader m hands the
+mouse over or takes it back — and the leader is Ctrl-A unless --leader or
+DISCOBOX_LEADER says otherwise, worth changing when it collides with something
 you run in your sandboxes.
 
 The window takes the whole terminal while it is up, and puts back what was on
-screen when it exits. Press F1 for the keys and Ctrl-C to quit.`,
+screen when it exits. Press F1 for the keys, and Ctrl-C to quit once no
+sandbox terminal is up.`,
 		Example: `  disco tui
   disco tui --leader b
   DISCOBOX_LEADER=b disco tui`,
 		Args: cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
-			leaderKey, err := tui.NormalizeLeader(leader)
-			if err != nil {
-				return err
-			}
-			projectID, err := a.projectIDValue()
-			if err != nil {
-				return err
-			}
-			client, err := a.apiClient()
-			if err != nil {
-				return err
-			}
-			// The launcher owns the screen, so a pager it starts has to give it
-			// back rather than leaving its last page on it for the window to
-			// redraw over.
-			a.pagerRestoresScreen = true
-			ds := &apiDataSource{app: a, client: client, projectID: projectID}
-			return tui.Run(cmd.Context(), ds, tui.WithLeader(leaderKey))
+			return a.runTUI(cmd, leader)
 		},
 	}
 	cmd.Flags().StringVarP(&leader, "leader", "l", envOrDefault("DISCOBOX_LEADER", ""),
 		"Prefix key for the terminal pane's own commands, as a single character taken as Ctrl-that (e.g. -l b for Ctrl-B); defaults to a")
 	return cmd
+}
+
+// runTUI starts the launcher. It is reached two ways — `disco tui`, and `disco`
+// with nothing to do — so it lives here rather than inside either one's RunE.
+func (a *App) runTUI(cmd *cobra.Command, leader string) error {
+	leaderKey, err := tui.NormalizeLeader(leader)
+	if err != nil {
+		return err
+	}
+	projectID, err := a.projectIDValue()
+	if err != nil {
+		return err
+	}
+	client, err := a.apiClient()
+	if err != nil {
+		return err
+	}
+	// The launcher owns the screen, so a pager it starts has to give it back
+	// rather than leaving its last page on it for the window to redraw over.
+	a.pagerRestoresScreen = true
+	ds := &apiDataSource{app: a, client: client, projectID: projectID}
+	return tui.Run(cmd.Context(), ds, tui.WithLeader(leaderKey))
 }
 
 // apiDataSource is the launcher's one seam onto the rest of the CLI. Everything

@@ -1652,3 +1652,46 @@ func (f roundTripFunc) RoundTrip(req *http.Request) (*http.Response, error) {
 func testSandboxJSON(id, name, createdAt, updatedAt string) string {
 	return `{"id":"` + id + `","projectId":"project-1","createdByUserId":"user-1","config":{"name":"` + name + `","image":"","cpuVcpus":0,"memoryBytes":0,"storageBytes":0},"runtime":{"state":"running","desiredState":"present","displayState":"running","generation":1,"observedGeneration":1},"createdAt":"` + createdAt + `","updatedAt":"` + updatedAt + `"}`
 }
+
+// Bare `disco` opens the launcher at a terminal and prints its help anywhere
+// else: a full-screen window is not an answer to a program that expected
+// output. Here the streams are buffers, which is the "anywhere else" case.
+func TestBareCommandPrintsHelpWithoutATerminal(t *testing.T) {
+	cmd := NewRootCommand()
+	var out bytes.Buffer
+	cmd.SetOut(&out)
+	cmd.SetErr(&out)
+	cmd.SetIn(&bytes.Buffer{})
+	cmd.SetArgs(nil)
+
+	if err := cmd.Execute(); err != nil {
+		t.Fatalf("execute: %v", err)
+	}
+	if !strings.Contains(out.String(), "Available Commands:") {
+		t.Fatalf("want the help, got:\n%s", out.String())
+	}
+	// And nothing tried to reach a server on the way there.
+	if strings.Contains(out.String(), "connect") {
+		t.Fatalf("the help path should not have talked to anything:\n%s", out.String())
+	}
+}
+
+// A misspelled subcommand is still a misspelled subcommand. Cobra's default
+// argument handling reports it rather than handing the word to the launcher,
+// and that error is worth more than a window that opens on a typo.
+func TestUnknownCommandIsNotTheLauncher(t *testing.T) {
+	cmd := NewRootCommand()
+	var out bytes.Buffer
+	cmd.SetOut(&out)
+	cmd.SetErr(&out)
+	cmd.SetIn(&bytes.Buffer{})
+	cmd.SetArgs([]string{"bogus"})
+
+	err := cmd.Execute()
+	if err == nil {
+		t.Fatalf("want an error, got help:\n%s", out.String())
+	}
+	if !strings.Contains(err.Error(), `unknown command "bogus"`) {
+		t.Fatalf("error = %v, want it to name the command", err)
+	}
+}
