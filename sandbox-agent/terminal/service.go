@@ -76,7 +76,6 @@ type ServiceConfig struct {
 	// rather than baked into Env. Called fresh at every exec. May be nil.
 	SecretEnv    func() map[string]string
 	ExecDefaults config.ExecDefaults
-	DefaultUser  *execs.User
 	Units        execs.UnitManager
 	Installer    Installer
 	PrimaryState PrimaryStateStore
@@ -115,7 +114,16 @@ func NewService(cfg ServiceConfig) (*Service, error) {
 	if cfg.Execs == nil {
 		return nil, errors.New("shared exec manager is required")
 	}
-	defaultUser := terminalDefaultUser(cfg)
+	// A terminal is an exec, so it runs as the exec primitive's default user,
+	// fully resolved -- manifest groups included, ids filled in from passwd.
+	// Deriving it here instead would be a second, silently divergent
+	// construction of the same identity; that divergence is what dropped every
+	// terminal's supplementary groups (e.g. "docker") while plain execs kept
+	// them, and what left the shell and HOME resolved against a half-known user.
+	defaultUser, err := cfg.Execs.ResolveUser(execs.CreateRequest{})
+	if err != nil {
+		return nil, fmt.Errorf("resolve sandbox user: %w", err)
+	}
 
 	s := &Service{
 		execs:        cfg.Execs,
@@ -530,7 +538,7 @@ func (i FileInstaller) resolveHome() (string, error) {
 	if home := strings.TrimSpace(i.HomeDirectory); home != "" {
 		return home, nil
 	}
-	_, home, err := execs.ResolveUser(&execs.User{Name: i.Name, UID: i.UID, GID: i.GID})
+	_, home, err := execs.ResolveNameAndHome(&execs.User{Name: i.Name, UID: i.UID, GID: i.GID})
 	if err != nil {
 		return "", fmt.Errorf("resolve home directory: %w", err)
 	}
@@ -623,22 +631,6 @@ func mkdirAllTracked(path string, perm os.FileMode) ([]string, error) {
 
 // --- shared helpers ---
 
-func terminalDefaultUser(cfg ServiceConfig) *execs.User {
-	if cfg.DefaultUser != nil {
-		return cloneUser(cfg.DefaultUser)
-	}
-	defaults := cfg.ExecDefaults
-	if strings.TrimSpace(defaults.Username) == "" && defaults.UID == nil && defaults.GID == nil && strings.TrimSpace(defaults.HomeDirectory) == "" {
-		return nil
-	}
-	return cloneUser(&execs.User{
-		Name:          defaults.Username,
-		UID:           cloneInt64(defaults.UID),
-		GID:           cloneInt64(defaults.GID),
-		HomeDirectory: defaults.HomeDirectory,
-	})
-}
-
 func cloneHarness(in config.Harness) config.Harness {
 	out := in
 	out.Command = append([]string{}, in.Command...)
@@ -667,6 +659,7 @@ func cloneUser(in *execs.User) *execs.User {
 	out.HomeDirectory = strings.TrimSpace(out.HomeDirectory)
 	out.UID = cloneInt64(in.UID)
 	out.GID = cloneInt64(in.GID)
+	out.AdditionalGroups = append([]string(nil), in.AdditionalGroups...)
 	return &out
 }
 

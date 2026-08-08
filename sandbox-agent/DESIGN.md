@@ -17,6 +17,7 @@ runtime operations.
 | `boot` | The PID-1 `init` flow: resolves the sandbox user (replacing the retired `entrypoint.sh`), wires image-declared data/cache volumes and manifest sources from the primary volumes, binds the config volume onto `/etc/discobox`, writes desktop drop-ins, then execs the container's real init (systemd). See ADR 0007. |
 | `config` | Local boot/config file parsing, environment overrides, defaults, and validation. Owns `image.json` parsing, including the `volumes` declaration and `%HOME%`/`%UID%`/`%GID%` token resolution. |
 | `server` | HTTP router, generated OpenAPI handler adapter, PASETO auth middleware, and identity/scope validation. |
+| `runuser` | The sandbox's run identity: resolves who a process launches as, from the image's own passwd/group database. Used by `execs` and `terminal` so neither derives it separately. See [runuser/DESIGN.md](runuser/DESIGN.md). |
 | `execs` | The sandbox runtime primitive: exec lifecycle, runtime metadata, systemd unit abstraction, stdout/stderr or PTY logging, shim launch, status socket, and attach. Harness terminals are execs. |
 | `execs` (`shim.go`) | Per-exec child process: the local Unix socket attach/status/start API, the audit log, and the runtime status file. It no longer owns the process itself — see `procio`. |
 | `procio` | Running a process and owning its descriptors: PTY versus pipes, stdin close, signal mapping, and exit status. No sockets, no frames, no attach — which is what makes its traps testable with a real process and nothing else. |
@@ -118,6 +119,14 @@ development images without a registry.
   → `409`, whose message reports the exit status and points at `"primary"` when
   the dead exec was the primary terminal. The control plane proxies exec ids
   opaquely, so clients just send this value.
+- Run identity is owned by [`runuser`](runuser/DESIGN.md): one call resolves who
+  a process runs as, so nothing re-derives it. `execs.User` is that package's
+  type. `execs.Manager.ResolveUser` is the entry point for execs and terminals —
+  it applies the request-vs-manifest and group rules, then resolves — and
+  `terminal` asks it rather than rebuilding the user from `ExecDefaults`. See
+  [REVIEW.md](REVIEW.md) for the mistakes this prevents and
+  [ADR 0025](../docs/adr/0025-the-sandbox-user-is-one-contract-resolved-inside-the-sandbox.md)
+  for why.
 - Which shell a user has is sandbox knowledge, so an exec request asks for one
   (`shell: true`) instead of naming it. `execs.ResolveShell` answers from the run
   user's passwd entry — the current process user when the exec inherits the

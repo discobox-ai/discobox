@@ -1,9 +1,12 @@
 package terminal
 
 import (
+	"context"
+	"path/filepath"
 	"testing"
 	"time"
 
+	"github.com/obot-platform/discobox/sandbox-agent/config"
 	"github.com/obot-platform/discobox/sandbox-agent/execs"
 )
 
@@ -62,5 +65,62 @@ func TestSelectLivePrimary(t *testing.T) {
 func TestPrimaryExecIDConst(t *testing.T) {
 	if PrimaryExecID != "primary" {
 		t.Fatalf("PrimaryExecID = %q, want primary", PrimaryExecID)
+	}
+}
+
+// A terminal is an exec, so it must run as the exec primitive's default user --
+// groups included. The terminal layer used to rebuild that identity from
+// ExecDefaults and drop AdditionalGroups, so the primary terminal launched at
+// sandbox start/resume lost every group the image declared (e.g. "docker")
+// while plain execs kept them.
+func TestPrimaryTerminalRunsWithTheExecDefaultUsersGroups(t *testing.T) {
+	dir := t.TempDir()
+	uid := int64(1000)
+	gid := int64(1000)
+	units := &fakeUnits{}
+	execManager, err := execs.NewManagerWithConfig(execs.ManagerConfig{
+		WorkingRoot: dir,
+		RuntimeDir:  filepath.Join(dir, "rt"),
+		Env:         map[string]string{"PATH": "/usr/bin"},
+		Units:       units,
+		DefaultUser: &execs.User{
+			Name:             "dev",
+			UID:              &uid,
+			GID:              &gid,
+			HomeDirectory:    "/home/dev",
+			AdditionalGroups: []string{"docker"},
+		},
+	})
+	if err != nil {
+		t.Fatalf("new exec manager: %v", err)
+	}
+	svc, err := NewService(ServiceConfig{
+		Execs:       execManager,
+		WorkingRoot: dir,
+		RuntimeDir:  filepath.Join(dir, "rt"),
+		Env:         map[string]string{"PATH": "/usr/bin"},
+		Harness:     config.Harness{ID: "codex", Command: []string{"codex"}},
+		Units:       units,
+		Installer:   &noopInstaller{},
+		// Wiring passes ExecDefaults for the file installer; the run identity
+		// must not be re-derived from it.
+		ExecDefaults: config.ExecDefaults{Username: "dev", UID: &uid, GID: &gid, HomeDirectory: "/home/dev"},
+	})
+	if err != nil {
+		t.Fatalf("new service: %v", err)
+	}
+
+	ex, err := svc.Create(context.Background(), CreateRequest{primary: true})
+	if err != nil {
+		t.Fatalf("create: %v", err)
+	}
+	if !IsPrimary(ex) {
+		t.Fatalf("expected a primary terminal, metadata=%v", ex.Metadata)
+	}
+	if ex.User == nil {
+		t.Fatal("primary terminal ran with no user")
+	}
+	if got := ex.User.AdditionalGroups; len(got) != 1 || got[0] != "docker" {
+		t.Fatalf("additionalGroups = %v, want [docker]", got)
 	}
 }

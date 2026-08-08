@@ -31,14 +31,14 @@ func ResolveShell(user *User, env map[string]string) (string, error) {
 		name = strings.TrimSpace(user.Name)
 	}
 	if name == "" {
-		if emptyUser(user) {
+		if user.Empty() {
 			if current, err := osuser.Current(); err == nil {
 				name = strings.TrimSpace(current.Username)
 			}
 		} else {
 			// A run user given only as a UID still has a login shell whenever the
 			// OS database knows the UID.
-			resolved, _, err := ResolveUser(user)
+			resolved, _, err := ResolveNameAndHome(user)
 			if err != nil {
 				return "", err
 			}

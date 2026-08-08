@@ -7,6 +7,8 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/obot-platform/discobox/sandbox-agent/runuser"
 )
 
 func TestManagerMergesConfigEnvWithRequestOverrides(t *testing.T) {
@@ -162,6 +164,7 @@ func testEffectiveEnv() map[string]string {
 }
 
 func TestManagerExecRequestOverridesDefaultUserAndWorkdir(t *testing.T) {
+	t.Cleanup(runuser.FixedDatabase())
 	runner := &fakeUnitManager{}
 	defaultUID := int64(1000)
 	requestUID := int64(2000)
@@ -183,8 +186,10 @@ func TestManagerExecRequestOverridesDefaultUserAndWorkdir(t *testing.T) {
 		Command: []string{"pwd"},
 		Workdir: "/tmp",
 		User: &User{
-			Name: "override",
-			UID:  &requestUID,
+			Name:          "override",
+			UID:           &requestUID,
+			GID:           &requestUID,
+			HomeDirectory: "/home/override",
 		},
 	})
 	if err != nil {
@@ -551,4 +556,98 @@ func TestManagerKeepsUnlaunchedExecStartingWhileRuntimePresent(t *testing.T) {
 
 func (m *fakeUnitManager) List(context.Context) ([]UnitStatus, error) {
 	return nil, nil
+}
+
+// The sandbox manifest is the sole authority for group membership; a request
+// chooses only identity. Naming a user therefore must not strip the sandbox's
+// declared groups -- `exec --user dev` used to run with an empty supplementary
+// set while the identical default-user exec kept "docker".
+func TestManagerKeepsManifestGroupsForAnExplicitlyNamedUser(t *testing.T) {
+	t.Cleanup(runuser.FixedDatabase())
+	uid := int64(1000)
+	gid := int64(1000)
+	manager, err := NewManagerWithConfig(ManagerConfig{
+		WorkingRoot: "/workspace",
+		RuntimeDir:  t.TempDir(),
+		Env:         testEffectiveEnv(),
+		Units:       &fakeUnitManager{},
+		DefaultUser: &User{
+			Name:             "dev",
+			UID:              &uid,
+			GID:              &gid,
+			AdditionalGroups: []string{"docker"},
+		},
+	})
+	if err != nil {
+		t.Fatalf("new manager: %v", err)
+	}
+
+	root := int64(0)
+	for name, req := range map[string]CreateRequest{
+		"same user by name": {Command: []string{"pwd"}, User: &User{Name: "dev"}},
+		"another user":      {Command: []string{"pwd"}, User: &User{UID: &root, GID: &root}},
+		"no user":           {Command: []string{"pwd"}},
+		// A request carrying only groups names no one to run as, so it still
+		// falls back to the manifest's identity -- and to its groups, since it
+		// asked for none of its own.
+		"no groups, no identity": {Command: []string{"pwd"}, User: &User{}},
+	} {
+		t.Run(name, func(t *testing.T) {
+			created, err := manager.Create(context.Background(), req)
+			if err != nil {
+				t.Fatalf("create exec: %v", err)
+			}
+			if created.User == nil {
+				t.Fatal("exec ran with no user")
+			}
+			if got := created.User.AdditionalGroups; len(got) != 1 || got[0] != "docker" {
+				t.Fatalf("additionalGroups = %v, want [docker] from the manifest", got)
+			}
+		})
+	}
+}
+
+// Groups are all-or-nothing, never merged: a request naming any uses exactly
+// those, so an exec can run with fewer groups than the sandbox declares. Merging
+// would make the manifest a floor no caller could get under.
+func TestManagerRequestGroupsReplaceTheManifests(t *testing.T) {
+	t.Cleanup(runuser.FixedDatabase())
+	uid := int64(1000)
+	gid := int64(1000)
+	manager, err := NewManagerWithConfig(ManagerConfig{
+		WorkingRoot: "/workspace",
+		RuntimeDir:  t.TempDir(),
+		Env:         testEffectiveEnv(),
+		Units:       &fakeUnitManager{},
+		DefaultUser: &User{
+			Name:             "dev",
+			UID:              &uid,
+			GID:              &gid,
+			AdditionalGroups: []string{"docker", "video"},
+		},
+	})
+	if err != nil {
+		t.Fatalf("new manager: %v", err)
+	}
+
+	for name, req := range map[string]CreateRequest{
+		"with an identity": {Command: []string{"pwd"}, User: &User{Name: "dev", AdditionalGroups: []string{"audio", "997"}}},
+		// "the usual user, plus these groups": emptyUser ignores groups, so the
+		// identity falls back to the manifest's while the groups do not.
+		"groups only": {Command: []string{"pwd"}, User: &User{AdditionalGroups: []string{"audio", "997"}}},
+	} {
+		t.Run(name, func(t *testing.T) {
+			created, err := manager.Create(context.Background(), req)
+			if err != nil {
+				t.Fatalf("create exec: %v", err)
+			}
+			if created.User == nil {
+				t.Fatal("exec ran with no user")
+			}
+			got := created.User.AdditionalGroups
+			if len(got) != 2 || got[0] != "audio" || got[1] != "997" {
+				t.Fatalf("additionalGroups = %v, want [audio 997] from the request", got)
+			}
+		})
+	}
 }

@@ -16021,9 +16021,25 @@ func (s *SandboxUser) Encode(e *jx.Encoder) {
 // encodeFields encodes fields.
 func (s *SandboxUser) encodeFields(e *jx.Encoder) {
 	{
+		if s.AdditionalGroups != nil {
+			e.FieldStart("additionalGroups")
+			e.ArrStart()
+			for _, elem := range s.AdditionalGroups {
+				e.Str(elem)
+			}
+			e.ArrEnd()
+		}
+	}
+	{
 		if s.Gid.Set {
 			e.FieldStart("gid")
 			s.Gid.Encode(e)
+		}
+	}
+	{
+		if s.GroupName.Set {
+			e.FieldStart("groupName")
+			s.GroupName.Encode(e)
 		}
 	}
 	{
@@ -16046,11 +16062,13 @@ func (s *SandboxUser) encodeFields(e *jx.Encoder) {
 	}
 }
 
-var jsonFieldsNameOfSandboxUser = [4]string{
-	0: "gid",
-	1: "homeDirectory",
-	2: "name",
-	3: "uid",
+var jsonFieldsNameOfSandboxUser = [6]string{
+	0: "additionalGroups",
+	1: "gid",
+	2: "groupName",
+	3: "homeDirectory",
+	4: "name",
+	5: "uid",
 }
 
 // Decode decodes SandboxUser from json.
@@ -16061,6 +16079,25 @@ func (s *SandboxUser) Decode(d *jx.Decoder) error {
 
 	if err := d.ObjBytes(func(d *jx.Decoder, k []byte) error {
 		switch string(k) {
+		case "additionalGroups":
+			if err := func() error {
+				s.AdditionalGroups = make([]string, 0)
+				if err := d.Arr(func(d *jx.Decoder) error {
+					var elem string
+					v, err := d.Str()
+					elem = string(v)
+					if err != nil {
+						return err
+					}
+					s.AdditionalGroups = append(s.AdditionalGroups, elem)
+					return nil
+				}); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"additionalGroups\"")
+			}
 		case "gid":
 			if err := func() error {
 				s.Gid.Reset()
@@ -16070,6 +16107,16 @@ func (s *SandboxUser) Decode(d *jx.Decoder) error {
 				return nil
 			}(); err != nil {
 				return errors.Wrap(err, "decode field \"gid\"")
+			}
+		case "groupName":
+			if err := func() error {
+				s.GroupName.Reset()
+				if err := s.GroupName.Decode(d); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"groupName\"")
 			}
 		case "homeDirectory":
 			if err := func() error {

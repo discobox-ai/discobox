@@ -292,11 +292,30 @@ components:
             type: object
         SandboxUser:
             additionalProperties: false
+            description: |-
+                Run identity and group membership. Every field is optional; omitting the
+                whole object means the image's own user (ADR 0025 §5). On sandbox create
+                this defines the sandbox.json default user, and on exec create it
+                overrides that user for one exec — the same fields mean the same thing at
+                both layers.
             properties:
+                additionalGroups:
+                    description: |-
+                        Supplementary groups, each a group name or a numeric GID, resolved inside
+                        the sandbox. All-or-nothing, never merged: omit to inherit the sandbox's
+                        groups, or name any to run with exactly those (ADR 0025 §2).
+                    items:
+                        type: string
+                    type: array
                 gid:
-                    description: GID to use inside the sandbox
+                    description: Primary group ID to use inside the sandbox. Mutually exclusive with groupName.
                     format: int64
                     type: integer
+                groupName:
+                    description: |-
+                        Primary group name to use inside the sandbox, resolved against the image's
+                        /etc/group. Mutually exclusive with gid.
+                    type: string
                 homeDirectory:
                     description: User home directory to use inside the sandbox
                     type: string

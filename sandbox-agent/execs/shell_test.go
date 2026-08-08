@@ -122,3 +122,5 @@ func TestResolveCommandShellExclusivity(t *testing.T) {
 		t.Fatal("shell request resolved to no command")
 	}
 }
+
+func int64ptr(v int64) *int64 { return &v }

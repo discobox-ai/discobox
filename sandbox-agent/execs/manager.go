@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/obot-platform/discobox/id"
+	"github.com/obot-platform/discobox/sandbox-agent/runuser"
 	"github.com/obot-platform/discobox/sandbox-agent/shimproxy"
 )
 
@@ -170,7 +171,7 @@ func NewManagerWithConfig(cfg ManagerConfig) (*Manager, error) {
 	return &Manager{
 		workingRoot:    filepath.Clean(workingRoot),
 		defaultWorkdir: strings.TrimSpace(cfg.DefaultWorkdir),
-		defaultUser:    cloneUser(cfg.DefaultUser),
+		defaultUser:    cfg.DefaultUser.Clone(),
 		runtimeDir:     runtimeDir,
 		logDir:         filepath.Join(runtimeDir, "logs"),
 		env:            cloneMap(cfg.Env),
@@ -231,7 +232,12 @@ func (m *Manager) Create(ctx context.Context, req CreateRequest) (Exec, error) {
 	if err != nil {
 		return Exec{}, err
 	}
-	user := m.resolveUser(req)
+	// Resolve before anything reads the identity, so the shell, the env
+	// defaults, and the persisted record all describe one fully-known user.
+	user, err := m.ResolveUser(req)
+	if err != nil {
+		return Exec{}, err
+	}
 	env := EnvWithRuntimeDefaults(MergeEnv(m.env, req.Env), user)
 	// The shell is resolved against the run user and env the exec will actually
 	// have, so it is the shell of the identity the process runs as.
@@ -256,7 +262,7 @@ func (m *Manager) Create(ctx context.Context, req CreateRequest) (Exec, error) {
 		Command:     command,
 		Workdir:     workdir,
 		Env:         cloneMap(env),
-		User:        cloneUser(user),
+		User:        user.Clone(),
 		TTY:         req.TTY,
 		Unit:        unit,
 		CreatedAt:   now,
@@ -283,7 +289,7 @@ func (m *Manager) Create(ctx context.Context, req CreateRequest) (Exec, error) {
 		Command:     exec.Command,
 		Workdir:     workdir,
 		Env:         cloneMap(env),
-		User:        cloneUser(user),
+		User:        user.Clone(),
 		TTY:         req.TTY,
 		Metadata:    cloneMap(req.Metadata),
 		SocketPath:  socketPath,
@@ -558,11 +564,77 @@ func resolveCommand(req CreateRequest, user *User, env map[string]string) ([]str
 	return append([]string{}, req.Command...), nil
 }
 
-func (m *Manager) resolveUser(req CreateRequest) *User {
-	if !emptyUser(req.User) {
-		return normalizeUser(cloneUser(req.User))
+// ResolveUser answers "who would an exec created from this request run as," and
+// is the only way to ask. It returns the identity fully resolved: the request's
+// where it gave one and the manifest's where it did not, groups per ADR 0025 §2,
+// and every id filled in from passwd per §6 -- so the result never carries a
+// name to look up, a nil gid, or an unresolved group.
+//
+// The manager owns this because it owns the exec primitive. Layers built on top
+// (terminal) ask rather than reconstruct: a second construction of the same
+// identity drifts, which is how terminals came to run without the manifest's
+// supplementary groups while plain execs kept them. Pass the zero CreateRequest
+// for the sandbox's default identity.
+func (m *Manager) ResolveUser(req CreateRequest) (*User, error) {
+	user := m.resolveUser(req)
+	if user == nil {
+		return nil, nil
 	}
-	return normalizeUser(cloneUser(m.defaultUser))
+	resolved, err := runuser.Resolve(*user)
+	if err != nil {
+		return nil, err
+	}
+	return &resolved, nil
+}
+
+// resolveUser picks the identity an exec runs as, without inventing any part of
+// it. In particular a nil GID stays nil rather than being back-filled from the
+// UID: UIDs and GIDs are separate namespaces, so uid==gid is a coincidence of
+// common useradd defaults, and the primary group is looked up from the uid at
+// launch (userCredential). Back-filling here silently ran the process under
+// whatever group happened to hold that number and made that lookup unreachable.
+//
+// Supplementary groups are all-or-nothing, never merged: a request that names
+// none inherits the sandbox manifest's, and a request that names any uses
+// exactly those. Merging would make the manifest a floor the caller could not
+// get under, so an exec could never run with fewer groups than the sandbox.
+// Either way /etc/passwd and /etc/group are consulted only at launch, to resolve
+// those names to ids and drop any the image never created (resolveGroups).
+//
+// Identity and membership are separate choices: naming a user does not by itself
+// touch groups. Without this, `exec --user dev` ran with an empty supplementary
+// set while the identical default-user exec kept "docker".
+func (m *Manager) resolveUser(req CreateRequest) *User {
+	// Groups are read off the request before the identity fallback, so asking
+	// for groups alone ("the usual user, plus these") keeps them: emptyUser
+	// deliberately ignores AdditionalGroups, since a request carrying only
+	// groups still names no one to run as.
+	var groups []string
+	if req.User != nil {
+		groups = append([]string(nil), req.User.AdditionalGroups...)
+	}
+	user := req.User
+	if user.Empty() {
+		user = m.defaultUser
+	}
+	resolved := user.Clone()
+	if resolved == nil {
+		return nil
+	}
+	if len(groups) == 0 {
+		groups = m.manifestGroups()
+	}
+	resolved.AdditionalGroups = groups
+	return resolved
+}
+
+// manifestGroups returns the supplementary groups the sandbox manifest declared,
+// which an exec runs with unless its request named groups of its own.
+func (m *Manager) manifestGroups() []string {
+	if m.defaultUser == nil {
+		return nil
+	}
+	return append([]string(nil), m.defaultUser.AdditionalGroups...)
 }
 
 func (m *Manager) runtimePath(id string) string {
@@ -826,48 +898,14 @@ func cloneExec(in Exec) Exec {
 	out.Env = cloneMap(in.Env)
 	out.Metadata = cloneMap(in.Metadata)
 	out.SocketPath = in.SocketPath
-	out.User = cloneUser(in.User)
+	out.User = in.User.Clone()
 	return out
 }
 
-type User struct {
-	Name          string `json:"name,omitempty"`
-	UID           *int64 `json:"uid,omitempty"`
-	GID           *int64 `json:"gid,omitempty"`
-	HomeDirectory string `json:"homeDirectory,omitempty"`
-	// AdditionalGroups are the supplementary groups this user runs with. The
-	// sandbox manifest is the source of truth: boot materializes these into the
-	// OS group file, and exec sets them on the process. Without them an exec
-	// silently loses every group the image declared (e.g. "docker"), which is
-	// what made nested Docker need an `sg docker` wrapper.
-	AdditionalGroups []string `json:"additionalGroups,omitempty"`
-}
-
-func emptyUser(user *User) bool {
-	return user == nil || strings.TrimSpace(user.Name) == "" && user.UID == nil && user.GID == nil && strings.TrimSpace(user.HomeDirectory) == ""
-}
-
-func cloneUser(in *User) *User {
-	if emptyUser(in) {
-		return nil
-	}
-	out := *in
-	out.Name = strings.TrimSpace(out.Name)
-	out.HomeDirectory = strings.TrimSpace(out.HomeDirectory)
-	out.UID = cloneInt64(in.UID)
-	out.GID = cloneInt64(in.GID)
-	return &out
-}
-
-func normalizeUser(user *User) *User {
-	if user == nil {
-		return nil
-	}
-	if user.UID != nil && user.GID == nil {
-		user.GID = cloneInt64(user.UID)
-	}
-	return user
-}
+// User is the run identity an exec launches under. It is runuser.User: one
+// type, so the exec record, the boot flow, and anything new resolve identity
+// through the same rules rather than each keeping their own.
+type User = runuser.User
 
 func safeName(value string) string {
 	var b strings.Builder

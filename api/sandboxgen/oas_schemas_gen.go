@@ -1420,10 +1420,22 @@ func (s *SandboxExecsResponse) SetExecs(val []SandboxExec) {
 	s.Execs = val
 }
 
+// Run identity and group membership. Every field is optional; omitting the
+// whole object means the image's own user (ADR 0025 §5). On sandbox create
+// this defines the sandbox.json default user, and on exec create it
+// overrides that user for one exec — the same fields mean the same thing at
+// both layers.
 // Ref: #/components/schemas/SandboxUser
 type SandboxUser struct {
-	// GID to use inside the sandbox.
+	// Supplementary groups, each a group name or a numeric GID, resolved inside
+	// the sandbox. All-or-nothing, never merged: omit to inherit the sandbox's
+	// groups, or name any to run with exactly those (ADR 0025 §2).
+	AdditionalGroups []string `json:"additionalGroups"`
+	// Primary group ID to use inside the sandbox. Mutually exclusive with groupName.
 	Gid OptInt64 `json:"gid"`
+	// Primary group name to use inside the sandbox, resolved against the image's
+	// /etc/group. Mutually exclusive with gid.
+	GroupName OptString `json:"groupName"`
 	// User home directory to use inside the sandbox.
 	HomeDirectory OptString `json:"homeDirectory"`
 	// Username to use inside the sandbox.
@@ -1432,9 +1444,19 @@ type SandboxUser struct {
 	UID OptInt64 `json:"uid"`
 }
 
+// GetAdditionalGroups returns the value of AdditionalGroups.
+func (s *SandboxUser) GetAdditionalGroups() []string {
+	return s.AdditionalGroups
+}
+
 // GetGid returns the value of Gid.
 func (s *SandboxUser) GetGid() OptInt64 {
 	return s.Gid
+}
+
+// GetGroupName returns the value of GroupName.
+func (s *SandboxUser) GetGroupName() OptString {
+	return s.GroupName
 }
 
 // GetHomeDirectory returns the value of HomeDirectory.
@@ -1452,9 +1474,19 @@ func (s *SandboxUser) GetUID() OptInt64 {
 	return s.UID
 }
 
+// SetAdditionalGroups sets the value of AdditionalGroups.
+func (s *SandboxUser) SetAdditionalGroups(val []string) {
+	s.AdditionalGroups = val
+}
+
 // SetGid sets the value of Gid.
 func (s *SandboxUser) SetGid(val OptInt64) {
 	s.Gid = val
+}
+
+// SetGroupName sets the value of GroupName.
+func (s *SandboxUser) SetGroupName(val OptString) {
+	s.GroupName = val
 }
 
 // SetHomeDirectory sets the value of HomeDirectory.

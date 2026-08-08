@@ -7,6 +7,8 @@ import (
 	osuser "os/user"
 	"strconv"
 	"testing"
+
+	"github.com/obot-platform/discobox/sandbox-agent/runuser"
 )
 
 // A uid with no account cannot have its primary group resolved, and the old
@@ -122,5 +124,15 @@ func TestCredentialResolvesPrimaryGroupRatherThanGuessing(t *testing.T) {
 	}
 	if cred.Gid != uint32(want) {
 		t.Fatalf("Gid = %d, want the account's real gid %d", cred.Gid, want)
+	}
+}
+
+// resolveGroups drops what it cannot resolve and collapses duplicates. Entry
+// forms themselves are covered by TestLookupGroupIDAcceptsNamesAndNumbers.
+func TestResolveGroupsSkipsUnknownAndDeduplicates(t *testing.T) {
+	t.Cleanup(runuser.FixedDatabase())
+	got := resolveGroups([]string{"docker", "997", "no-such-group", " ", "video"})
+	if len(got) != 2 || got[0] != 997 || got[1] != 44 {
+		t.Fatalf("groups = %v, want [997 44]: docker by name, 997 the same gid again, unknown and blank dropped", got)
 	}
 }

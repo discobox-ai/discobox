@@ -94,7 +94,7 @@ func (r *shimRuntime) start(ctx context.Context) error {
 		Command:     append([]string{}, r.cfg.Command...),
 		Workdir:     r.cfg.Workdir,
 		Env:         cloneMap(r.cfg.Env),
-		User:        cloneUser(r.cfg.User),
+		User:        r.cfg.User.Clone(),
 		TTY:         r.cfg.TTY,
 		Unit:        r.cfg.Unit,
 		CreatedAt:   now,

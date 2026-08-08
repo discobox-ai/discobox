@@ -8,7 +8,7 @@ import (
 )
 
 func agentSysProcAttr(user *User) (*syscall.SysProcAttr, error) {
-	if !emptyUser(user) {
+	if !user.Empty() {
 		return nil, fmt.Errorf("exec user is not supported on windows")
 	}
 	return nil, nil
@@ -19,7 +19,7 @@ func AgentSysProcAttr(user *User) (*syscall.SysProcAttr, error) {
 }
 
 func userEnvDefaults(user *User) (map[string]string, error) {
-	if !emptyUser(user) {
+	if !user.Empty() {
 		return nil, fmt.Errorf("exec user is not supported on windows")
 	}
 	return nil, nil
