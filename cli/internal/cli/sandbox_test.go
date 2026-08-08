@@ -24,11 +24,10 @@ func TestCreateSandboxBodyIncludesHarnessLaunchFields(t *testing.T) {
 		sourceCodeReferences: `{"lib":{"kind":"git","url":"https://example.com/lib.git","checkout":{"commit":"abc123","refType":"commit"},"destination":{"directory":"/workspace/lib"}}}`,
 		userName:             "darren",
 		userUID:              1000,
-		userGID:              1000,
+		userGroups:           []string{"1000", "docker"},
 		// 0 is a meaningful uid, so the body only carries these when the flag
 		// was actually given; the command sets these from Flags().Changed.
 		userUIDSet:    true,
-		userGIDSet:    true,
 		homeDirectory: "/home/darren",
 	})
 	if err != nil {

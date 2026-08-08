@@ -162,7 +162,7 @@ func (s *Service) CreateSandbox(ctx context.Context, projectID string, input ser
 	if err := s.resolveSourceDelivery(ctx, source, origin, provider); err != nil {
 		return nil, err
 	}
-	userName, userUID, userGID, homeDirectory := services.SandboxUserToModel(config.User)
+	user := services.SandboxUserToModel(config.User)
 	harnessMode := "run"
 	if mode, ok := config.HarnessMode.Get(); ok {
 		harnessMode = string(mode)
@@ -211,10 +211,12 @@ func (s *Service) CreateSandbox(ctx context.Context, projectID string, input ser
 			Env:                  map[string]string(config.Env.Or(nil)),
 			Source:               source,
 			SourceCodeReferences: sourceCodeReferences,
-			UserName:             userName,
-			UserUID:              userUID,
-			UserGID:              userGID,
-			HomeDirectory:        homeDirectory,
+			UserName:             user.Name,
+			UserUID:              user.UID,
+			UserGID:              user.GID,
+			UserGroupName:        user.GroupName,
+			UserAdditionalGroups: user.AdditionalGroups,
+			HomeDirectory:        user.HomeDirectory,
 			CPUVCPUs:             config.CpuVcpus.Or(0),
 			MemoryBytes:          config.MemoryBytes.Or(0),
 			StorageBytes:         config.StorageBytes.Or(0),

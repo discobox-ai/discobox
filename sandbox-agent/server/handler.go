@@ -480,7 +480,11 @@ func execUserFromAPI(opt sandboxapi.OptSandboxUser) *execs.User {
 	}
 	user := &execs.User{
 		Name:          strings.TrimSpace(in.Name.Or("")),
+		Group:         strings.TrimSpace(in.GroupName.Or("")),
 		HomeDirectory: strings.TrimSpace(in.HomeDirectory.Or("")),
+		// Groups are all-or-nothing (ADR 0025 §2): an empty list here means the
+		// sandbox's own, which Manager.resolveUser fills in.
+		AdditionalGroups: append([]string(nil), in.AdditionalGroups...),
 	}
 	if uid, ok := in.UID.Get(); ok {
 		user.UID = int64ValuePtr(uid)
@@ -512,7 +516,10 @@ func execUserToAPI(in *execs.User) *sandboxapi.SandboxUser {
 	if in.GID != nil {
 		out.Gid = sandboxapi.NewOptInt64(*in.GID)
 	}
-	if !out.Name.Set && !out.HomeDirectory.Set && !out.UID.Set && !out.Gid.Set {
+	// Group is always empty on a resolved user -- it has become Gid -- so the
+	// response reports the id, never a name the caller would have to resolve.
+	out.AdditionalGroups = append([]string(nil), in.AdditionalGroups...)
+	if !out.Name.Set && !out.HomeDirectory.Set && !out.UID.Set && !out.Gid.Set && len(out.AdditionalGroups) == 0 {
 		return nil
 	}
 	return &out

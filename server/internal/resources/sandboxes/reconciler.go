@@ -470,6 +470,8 @@ func (r *SandboxReconciler) createOptionsFromSandbox(ctx context.Context, sb *mo
 	opts.UserName = sb.UserName
 	opts.UserUID = sb.UserUID
 	opts.UserGID = sb.UserGID
+	opts.UserGroupName = sb.UserGroupName
+	opts.UserAdditionalGroups = append([]string(nil), sb.UserAdditionalGroups...)
 	opts.HomeDirectory = sb.HomeDirectory
 	if sb.HarnessConfigID != nil && r.store != nil {
 		if cfg, err := r.store.GetHarnessConfig(ctx, sb.ProjectID, *sb.HarnessConfigID); err == nil {

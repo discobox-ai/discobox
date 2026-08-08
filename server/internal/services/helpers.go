@@ -83,16 +83,37 @@ func HarnessConfigSecretsToModel(secrets []apimodel.HarnessConfigSecret) ([]mode
 	return out, nil
 }
 
-func SandboxUserToModel(value OptSandboxUser) (name *string, uid *int, gid *int, homeDirectory *string) {
+// SandboxUserFields is the sandbox user as the model stores it. Every field is
+// optional and stays nil when the request omitted it: the control plane cannot
+// resolve a sandbox's names or ids, so it records intent verbatim and the
+// sandbox resolves it (ADR 0025 §4).
+type SandboxUserFields struct {
+	Name             *string
+	UID              *int
+	GID              *int
+	GroupName        *string
+	HomeDirectory    *string
+	AdditionalGroups []string
+}
+
+func SandboxUserToModel(value OptSandboxUser) SandboxUserFields {
 	user, ok := value.Get()
 	if !ok {
-		return nil, nil, nil, nil
+		return SandboxUserFields{}
 	}
-	return OptStringPtr(user.Name), OptIntPtr(user.UID), OptIntPtr(user.Gid), OptStringPtr(user.HomeDirectory)
+	return SandboxUserFields{
+		Name:             OptStringPtr(user.Name),
+		UID:              OptIntPtr(user.UID),
+		GID:              OptIntPtr(user.Gid),
+		GroupName:        OptStringPtr(user.GroupName),
+		HomeDirectory:    OptStringPtr(user.HomeDirectory),
+		AdditionalGroups: append([]string(nil), user.AdditionalGroups...),
+	}
 }
 
 func SandboxUserFromModel(sandbox *model.Sandbox) *serverapi.SandboxUser {
-	if sandbox == nil || sandbox.UserName == nil && sandbox.UserUID == nil && sandbox.UserGID == nil && sandbox.HomeDirectory == nil {
+	if sandbox == nil || sandbox.UserName == nil && sandbox.UserUID == nil && sandbox.UserGID == nil &&
+		sandbox.UserGroupName == nil && sandbox.HomeDirectory == nil && len(sandbox.UserAdditionalGroups) == 0 {
 		return nil
 	}
 	user := &serverapi.SandboxUser{}
@@ -104,6 +125,12 @@ func SandboxUserFromModel(sandbox *model.Sandbox) *serverapi.SandboxUser {
 	}
 	if sandbox.UserGID != nil {
 		user.SetGid(serverapi.NewOptInt64(int64(*sandbox.UserGID)))
+	}
+	if sandbox.UserGroupName != nil {
+		user.SetGroupName(serverapi.NewOptString(*sandbox.UserGroupName))
+	}
+	if len(sandbox.UserAdditionalGroups) > 0 {
+		user.SetAdditionalGroups(append([]string(nil), sandbox.UserAdditionalGroups...))
 	}
 	if sandbox.HomeDirectory != nil {
 		user.SetHomeDirectory(serverapi.NewOptString(*sandbox.HomeDirectory))

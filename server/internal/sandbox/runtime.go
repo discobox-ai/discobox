@@ -147,6 +147,8 @@ type CreateOptions struct {
 	UserName              *string
 	UserUID               *int
 	UserGID               *int
+	UserGroupName         *string
+	UserAdditionalGroups  []string
 	HomeDirectory         *string
 	ResolvedHarnessConfig *ResolvedHarnessConfig
 	AgentServerURL        string

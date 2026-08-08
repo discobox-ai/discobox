@@ -33,7 +33,7 @@ type sandboxExecCreateOptions struct {
 	env         []string
 	user        string
 	uid         string
-	gid         string
+	gid         []string
 	tty         bool
 	interactive bool
 	detach      bool
@@ -94,7 +94,7 @@ func (a *App) newSandboxExecCreateCommand(sandboxID *string) *cobra.Command {
 	cmd.Flags().StringArrayVarP(&opts.env, "env", "e", nil, "Environment variable as KEY=VALUE or KEY from the local environment; repeat for multiple variables")
 	cmd.Flags().StringVar(&opts.user, "user", "", "User name or UID[:GID] to run as inside the sandbox")
 	cmd.Flags().StringVar(&opts.uid, "uid", "", "User ID to run as inside the sandbox")
-	cmd.Flags().StringVar(&opts.gid, "gid", "", "Group ID to run as inside the sandbox")
+	cmd.Flags().StringSliceVar(&opts.gid, "gid", nil, "Groups to run as inside the sandbox, each a name or a numeric GID. The first is the primary group and the rest are supplementary; omit to inherit the sandbox's own groups")
 	cmd.Flags().BoolVar(&opts.shell, "shell", false, "Run the sandbox user's login shell instead of a command; the sandbox resolves which shell that is")
 	cmd.Flags().BoolVarP(&opts.tty, "tty", "t", false, "Allocate a PTY")
 	cmd.Flags().BoolVarP(&opts.interactive, "interactive", "i", false, "Accepted for docker exec -it compatibility")
@@ -220,17 +220,45 @@ func sandboxExecUserFromOptions(opts sandboxExecCreateOptions) (*apimodel.Sandbo
 	if uid != nil {
 		user.SetUID(apiclientgen.NewOptInt64(*uid))
 	}
-	gid, err := parseOptionalInt64(opts.gid, "gid")
-	if err != nil {
+	if err := applySandboxExecGroups(user, opts.gid); err != nil {
 		return nil, err
 	}
-	if gid != nil {
-		user.SetGid(apiclientgen.NewOptInt64(*gid))
-	}
-	if !user.Name.Set && !user.UID.Set && !user.Gid.Set && !user.HomeDirectory.Set {
+	if !user.Name.Set && !user.UID.Set && !user.Gid.Set && !user.GroupName.Set &&
+		!user.HomeDirectory.Set && len(user.AdditionalGroups) == 0 {
 		return nil, nil
 	}
 	return user, nil
+}
+
+// applySandboxExecGroups splits --gid into the primary group and the
+// supplementary ones. Each entry is a group name or a numeric GID; the sandbox
+// resolves both the same way, since only it has the group file (ADR 0025 §3).
+//
+// An empty list means "inherit the sandbox's groups" -- groups are
+// all-or-nothing, so naming any replaces them all (ADR 0025 §2).
+func applySandboxExecGroups(user *apimodel.SandboxUser, values []string) error {
+	groups := make([]string, 0, len(values))
+	for _, value := range values {
+		if value = strings.TrimSpace(value); value != "" {
+			groups = append(groups, value)
+		}
+	}
+	if len(groups) == 0 {
+		return nil
+	}
+	primary := groups[0]
+	if user.Gid.Set {
+		return fmt.Errorf("group %q conflicts with the group already given by --user", primary)
+	}
+	if parsed, ok := parseOptionalUserID(primary); ok {
+		user.SetGid(apiclientgen.NewOptInt64(parsed))
+	} else {
+		user.SetGroupName(apiclientgen.NewOptString(primary))
+	}
+	if len(groups) > 1 {
+		user.SetAdditionalGroups(append([]string(nil), groups[1:]...))
+	}
+	return nil
 }
 
 func applySandboxExecUserFlag(user *apimodel.SandboxUser, value string) error {

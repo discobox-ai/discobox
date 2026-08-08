@@ -401,8 +401,12 @@ func poolCreateRequestFromOptions(sandboxID string, opts sandbox.CreateOptions) 
 	if opts.UserGID != nil {
 		user.SetGid(poolclient.NewOptInt64(int64(*opts.UserGID)))
 	}
+	user.SetGroupName(poolOptStringPtr(opts.UserGroupName))
+	if len(opts.UserAdditionalGroups) > 0 {
+		user.SetAdditionalGroups(append([]string(nil), opts.UserAdditionalGroups...))
+	}
 	user.SetHomeDirectory(poolOptStringPtr(opts.HomeDirectory))
-	if user.Name.Set || user.UID.Set || user.Gid.Set || user.HomeDirectory.Set {
+	if user.Name.Set || user.UID.Set || user.Gid.Set || user.GroupName.Set || user.HomeDirectory.Set || len(user.AdditionalGroups) > 0 {
 		config.User = poolclient.NewOptSandboxUser(user)
 	}
 	if opts.Resources != (sandbox.ResourceConfig{}) {

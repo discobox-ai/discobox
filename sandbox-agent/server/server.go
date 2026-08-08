@@ -192,13 +192,14 @@ func newRouterAndManager(cfg Config) (*chi.Mux, *terminal.Service, *execs.Manage
 }
 
 func execDefaultUser(defaults config.ExecDefaults) *execs.User {
-	if strings.TrimSpace(defaults.Username) == "" && defaults.UID == nil && defaults.GID == nil {
+	if strings.TrimSpace(defaults.Username) == "" && defaults.UID == nil && defaults.GID == nil && strings.TrimSpace(defaults.GroupName) == "" {
 		return nil
 	}
 	return &execs.User{
 		Name:             defaults.Username,
 		UID:              cloneInt64(defaults.UID),
 		GID:              cloneInt64(defaults.GID),
+		Group:            defaults.GroupName,
 		HomeDirectory:    defaults.HomeDirectory,
 		AdditionalGroups: append([]string(nil), defaults.AdditionalGroups...),
 	}

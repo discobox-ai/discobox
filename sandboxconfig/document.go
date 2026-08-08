@@ -97,12 +97,21 @@ type Source struct {
 	GID    int64  `json:"gid,omitempty"`
 }
 
-// User is the resolved sandbox user identity.
+// User is the sandbox user identity as the manifest publishes it. Fields the
+// request did not give stay unset: the pool agent cannot resolve a sandbox's
+// names or invent its ids, so it forwards what it was told and the sandbox
+// resolves the rest (ADR 0025 §4). A wholly empty User means the manifest named
+// nobody and the image's own account stands (§5).
 type User struct {
-	Name          string `json:"name,omitempty"`
-	UID           *int64 `json:"uid,omitempty"`
-	GID           *int64 `json:"gid,omitempty"`
+	Name string `json:"name,omitempty"`
+	UID  *int64 `json:"uid,omitempty"`
+	GID  *int64 `json:"gid,omitempty"`
+	// GroupName is the primary group by name, mutually exclusive with GID and
+	// resolvable only inside the sandbox.
+	GroupName     string `json:"groupName,omitempty"`
 	HomeDirectory string `json:"homeDirectory,omitempty"`
+	// AdditionalGroups are supplementary groups, each a name or a numeric GID.
+	AdditionalGroups []string `json:"additionalGroups,omitempty"`
 }
 
 // File is a file to write into the harness's home directory when the harness

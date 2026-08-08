@@ -3115,17 +3115,34 @@ func (s *SandboxUpdateConfigEnv) init() SandboxUpdateConfigEnv {
 	return m
 }
 
+// Run identity and group membership, forwarded to the sandbox unresolved.
+// Names and any field the request omitted are resolved inside the sandbox,
+// which is the only place its passwd and group files exist (ADR 0025 §4).
 // Ref: #/components/schemas/SandboxUser
 type SandboxUser struct {
-	Gid           OptInt64  `json:"gid"`
+	// Supplementary groups, each a group name or a numeric GID.
+	AdditionalGroups []string `json:"additionalGroups"`
+	Gid              OptInt64 `json:"gid"`
+	// Primary group by name. Mutually exclusive with gid.
+	GroupName     OptString `json:"groupName"`
 	HomeDirectory OptString `json:"homeDirectory"`
 	Name          OptString `json:"name"`
 	UID           OptInt64  `json:"uid"`
 }
 
+// GetAdditionalGroups returns the value of AdditionalGroups.
+func (s *SandboxUser) GetAdditionalGroups() []string {
+	return s.AdditionalGroups
+}
+
 // GetGid returns the value of Gid.
 func (s *SandboxUser) GetGid() OptInt64 {
 	return s.Gid
+}
+
+// GetGroupName returns the value of GroupName.
+func (s *SandboxUser) GetGroupName() OptString {
+	return s.GroupName
 }
 
 // GetHomeDirectory returns the value of HomeDirectory.
@@ -3143,9 +3160,19 @@ func (s *SandboxUser) GetUID() OptInt64 {
 	return s.UID
 }
 
+// SetAdditionalGroups sets the value of AdditionalGroups.
+func (s *SandboxUser) SetAdditionalGroups(val []string) {
+	s.AdditionalGroups = val
+}
+
 // SetGid sets the value of Gid.
 func (s *SandboxUser) SetGid(val OptInt64) {
 	s.Gid = val
+}
+
+// SetGroupName sets the value of GroupName.
+func (s *SandboxUser) SetGroupName(val OptString) {
+	s.GroupName = val
 }
 
 // SetHomeDirectory sets the value of HomeDirectory.

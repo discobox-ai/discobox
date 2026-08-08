@@ -772,12 +772,14 @@ func buildSandboxDocument(projectID, sandboxID, poolID, controlPlanePublicKey, r
 		// sandbox-agent installs harness files and launches commands against the
 		// same home directory.
 		user := resolveSandboxUser(req)
-		uid, gid := int64(user.uid), int64(user.gid)
+		uid, gid := user.optionalUID(), user.optionalGID()
 		doc.Runtime.User = sandboxconfig.User{
-			Name:          user.name,
-			UID:           &uid,
-			GID:           &gid,
-			HomeDirectory: user.homeDirectory,
+			Name:             user.name,
+			UID:              uid,
+			GID:              gid,
+			GroupName:        user.groupName,
+			HomeDirectory:    user.homeDirectory,
+			AdditionalGroups: append([]string(nil), user.additionalGroups...),
 		}
 		// The sandbox-agent bind-mounts each worker-materialized source from
 		// /.discobox/sources/<slug> onto its target as this same user (ADR 0007).
@@ -785,8 +787,8 @@ func buildSandboxDocument(projectID, sandboxID, poolID, controlPlanePublicKey, r
 			doc.Runtime.Sources = append(doc.Runtime.Sources, sandboxconfig.Source{
 				Slug:   source.slug,
 				Target: source.target,
-				UID:    uid,
-				GID:    gid,
+				UID:    derefID(uid),
+				GID:    derefID(gid),
 			})
 		}
 		if resources, ok := req.Resources.Get(); ok {
@@ -1776,24 +1778,50 @@ func optFloat64(opt workerclient.OptFloat64) float64 {
 	return v
 }
 
-type sandboxUserIdentity struct {
-	uid           int
-	gid           int
-	name          string
-	homeDirectory string
+// unsetID marks an id the request did not give. It is the POSIX chown sentinel
+// for "leave this field unchanged", so an unknown id is passed through rather
+// than guessed at.
+const unsetID = -1
+
+// optionalUID and optionalGID render an unset id as nil, so the manifest
+// distinguishes "the request did not say" from a real 0.
+func (s sandboxUserIdentity) optionalUID() *int64 { return optionalID(s.uid) }
+func (s sandboxUserIdentity) optionalGID() *int64 { return optionalID(s.gid) }
+
+func optionalID(v int) *int64 {
+	if v == unsetID {
+		return nil
+	}
+	out := int64(v)
+	return &out
 }
 
-// defaultNonRootUID is the conventional first non-system uid, used when a
-// caller names a non-root sandbox user without giving an id.
-const defaultNonRootUID = 1000
-
-func resolveSandboxUser(req *workerapimodel.PoolSandboxCreateRequest) sandboxUserIdentity {
-	out := sandboxUserIdentity{
-		uid:           0,
-		gid:           0,
-		name:          "root",
-		homeDirectory: "/home/root",
+func derefID(v *int64) int64 {
+	if v == nil {
+		return 0
 	}
+	return *v
+}
+
+type sandboxUserIdentity struct {
+	uid              int
+	gid              int
+	name             string
+	groupName        string
+	homeDirectory    string
+	additionalGroups []string
+}
+
+// resolveSandboxUser reads the request's user without completing it. The pool
+// agent cannot resolve a sandbox's names -- the account and the group live in
+// the image, and boot may still have to create them -- so it forwards what it
+// was given and leaves the rest unset (ADR 0025 §4).
+//
+// Nothing is invented. A missing gid does not become the uid, a bare name does
+// not become uid 1000, and an absent user does not become root: the sandbox then
+// runs as whatever the image already is (§5).
+func resolveSandboxUser(req *workerapimodel.PoolSandboxCreateRequest) sandboxUserIdentity {
+	out := sandboxUserIdentity{uid: unsetID, gid: unsetID}
 	if req == nil {
 		return out
 	}
@@ -1806,26 +1834,11 @@ func resolveSandboxUser(req *workerapimodel.PoolSandboxCreateRequest) sandboxUse
 	}
 	if gid, ok := user.Gid.Get(); ok {
 		out.gid = int(gid)
-	} else if user.UID.Set {
-		// A new account gets a user-private group, the useradd convention that
-		// sandbox boot follows when it creates the account.
-		out.gid = out.uid
 	}
+	out.groupName = strings.TrimSpace(optString(user.GroupName))
+	out.additionalGroups = append([]string(nil), user.AdditionalGroups...)
 	if name := strings.TrimSpace(optString(user.Name)); name != "" {
 		out.name = name
-		// A caller who named a non-root user meant a non-root user. Leaving the
-		// default uid 0 would hand them root under someone else's name, and uid
-		// 0 is load-bearing elsewhere -- boot skips additionalGroups for it, so
-		// the sandbox would also silently lose the groups its image declared.
-		// The name cannot be resolved out here (the account lives in the image,
-		// and boot may still have to create it), so fall back to the
-		// conventional first non-system id rather than to root.
-		if out.name != "root" && !user.UID.Set {
-			out.uid = defaultNonRootUID
-			if !user.Gid.Set {
-				out.gid = defaultNonRootUID
-			}
-		}
 	}
 	if home := cleanContainerPath(optString(user.HomeDirectory)); home != "" {
 		out.homeDirectory = home
@@ -2387,7 +2400,27 @@ func runGitOutputWithEnv(ctx context.Context, dir string, uid, gid int, stdin []
 	return out, nil
 }
 
+// chownSpec renders the owner argument. An unset id is omitted rather than
+// guessed at: "1000" leaves the group alone, and there is no owner to change at
+// all when the uid is unset (ADR 0025 §4). The shell form cannot express -1,
+// which the Lchown fallback takes directly.
+func chownSpec(uid, gid int) string {
+	switch {
+	case uid == unsetID:
+		return fmt.Sprintf(":%d", gid)
+	case gid == unsetID:
+		return fmt.Sprintf("%d", uid)
+	default:
+		return fmt.Sprintf("%d:%d", uid, gid)
+	}
+}
+
 func chownRecursive(ctx context.Context, root string, uid, gid int) error {
+	if uid == unsetID && gid == unsetID {
+		// Nothing was given, so there is nothing to assert. Leaving ownership
+		// alone is the honest answer; the sandbox sets it once it can resolve.
+		return nil
+	}
 	if err := runChown(ctx, root, uid, gid); err == nil {
 		return nil
 	}
@@ -2402,7 +2435,7 @@ func chownRecursive(ctx context.Context, root string, uid, gid int) error {
 
 func runChown(ctx context.Context, root string, uid, gid int) error {
 	//nolint:gosec // root is a pool-owned source volume path and args are passed without a shell.
-	cmd := exec.CommandContext(ctx, "chown", "-R", "--no-dereference", fmt.Sprintf("%d:%d", uid, gid), root)
+	cmd := exec.CommandContext(ctx, "chown", "-R", "--no-dereference", chownSpec(uid, gid), root)
 	out, err := cmd.CombinedOutput()
 	if err != nil {
 		return fmt.Errorf("chown %s: %w: %s", root, err, strings.TrimSpace(string(out)))
@@ -2425,10 +2458,23 @@ func envList(values map[string]string) []string {
 
 func envWithSandboxUser(values map[string]string, user sandboxUserIdentity) map[string]string {
 	out := copyMap(values)
-	out["DISCOBOX_USER_UID"] = fmt.Sprintf("%d", user.uid)
-	out["DISCOBOX_USER_GID"] = fmt.Sprintf("%d", user.gid)
-	out["DISCOBOX_USER_NAME"] = user.name
-	out["DISCOBOX_USER_HOME"] = user.homeDirectory
+	// Only what the request gave is stamped. An absent variable means absent,
+	// which is how boot tells "no user configured" from "uid 0" (ADR 0025 §5).
+	if user.uid != unsetID {
+		out["DISCOBOX_USER_UID"] = fmt.Sprintf("%d", user.uid)
+	}
+	if user.gid != unsetID {
+		out["DISCOBOX_USER_GID"] = fmt.Sprintf("%d", user.gid)
+	}
+	if user.groupName != "" {
+		out["DISCOBOX_USER_GROUP"] = user.groupName
+	}
+	if user.name != "" {
+		out["DISCOBOX_USER_NAME"] = user.name
+	}
+	if user.homeDirectory != "" {
+		out["DISCOBOX_USER_HOME"] = user.homeDirectory
+	}
 	if _, ok := out["HOME"]; !ok && user.homeDirectory != "" {
 		out["HOME"] = user.homeDirectory
 	}

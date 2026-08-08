@@ -289,10 +289,22 @@ components:
             type: object
         SandboxUser:
             additionalProperties: false
+            description: |-
+                Run identity and group membership, forwarded to the sandbox unresolved.
+                Names and any field the request omitted are resolved inside the sandbox,
+                which is the only place its passwd and group files exist (ADR 0025 §4).
             properties:
+                additionalGroups:
+                    description: Supplementary groups, each a group name or a numeric GID.
+                    items:
+                        type: string
+                    type: array
                 gid:
                     format: int64
                     type: integer
+                groupName:
+                    description: Primary group by name. Mutually exclusive with gid.
+                    type: string
                 homeDirectory:
                     type: string
                 name:

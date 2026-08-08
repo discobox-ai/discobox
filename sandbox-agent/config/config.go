@@ -50,9 +50,12 @@ type ExecDefaults struct {
 	UID           *int64 `json:"uid,omitempty"`
 	GID           *int64 `json:"gid,omitempty"`
 	HomeDirectory string `json:"homeDirectory,omitempty"`
+	// GroupName is the primary group by name, mutually exclusive with GID and
+	// resolved inside the sandbox.
+	GroupName string `json:"groupName,omitempty"`
 	// AdditionalGroups are the manifest's supplementary groups for this user.
 	// The manifest is the source of truth for membership; the OS group file is
-	// consulted only to resolve a name to a GID.
+	// consulted only to resolve an entry to a GID.
 	AdditionalGroups []string `json:"additionalGroups,omitempty"`
 }
 
@@ -176,10 +179,17 @@ func execDefaultsFromEffective(effective sandboxconfig.Config) ExecDefaults {
 		}
 	}
 	out.Username = strings.TrimSpace(effective.User.Name)
+	out.GroupName = strings.TrimSpace(effective.User.GroupName)
 	out.HomeDirectory = strings.TrimSpace(effective.User.HomeDirectory)
 	out.UID = effective.User.UID
 	out.GID = effective.User.GID
-	out.AdditionalGroups = append([]string(nil), effective.AdditionalGroups...)
+	// Groups are all-or-nothing (ADR 0025 §2). The create request's replace the
+	// image label's rather than adding to them, so a caller can run with fewer
+	// groups than the image declares.
+	out.AdditionalGroups = append([]string(nil), effective.User.AdditionalGroups...)
+	if len(out.AdditionalGroups) == 0 {
+		out.AdditionalGroups = append([]string(nil), effective.AdditionalGroups...)
+	}
 	return out
 }
 

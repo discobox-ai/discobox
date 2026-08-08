@@ -36,13 +36,12 @@ type sandboxCreateOptions struct {
 	sourceCodeReferences string
 	userName             string
 	userUID              int64
-	userGID              int64
-	// userUIDSet/userGIDSet record whether the flag was given at all. 0 is a
+	userGroups           []string
+	// userUIDSet records whether the flag was given at all. 0 is a
 	// meaningful uid/gid (root), so "was it set" cannot be inferred from the
 	// value: gating on `> 0` silently drops an explicit `--user-uid 0` and
 	// makes it indistinguishable from omitting the flag.
 	userUIDSet    bool
-	userGIDSet    bool
 	homeDirectory string
 	cpuVCPUs      float64
 	memoryBytes   int64
@@ -155,7 +154,6 @@ func (a *App) newSandboxCreateCommand() *cobra.Command {
 				}
 			}
 			opts.userUIDSet = cmd.Flags().Changed("user-uid")
-			opts.userGIDSet = cmd.Flags().Changed("user-gid")
 			body, err := createSandboxBody(opts)
 			if err != nil {
 				return err
@@ -492,7 +490,7 @@ func addCreateFlags(cmd *cobra.Command, opts *sandboxCreateOptions) {
 	cmd.Flags().StringVar(&opts.sourceCodeReferences, "source-code-references", "", "Additional source code references JSON or @path")
 	cmd.Flags().StringVar(&opts.userName, "user-name", "", "Username to use inside the sandbox")
 	cmd.Flags().Int64Var(&opts.userUID, "user-uid", 0, "UID to use inside the sandbox")
-	cmd.Flags().Int64Var(&opts.userGID, "user-gid", 0, "GID to use inside the sandbox")
+	cmd.Flags().StringSliceVar(&opts.userGroups, "user-group", nil, "Groups for the sandbox user, each a name or a numeric GID. The first is the primary group and the rest are supplementary; omit to use the image's own groups")
 	cmd.Flags().StringVar(&opts.homeDirectory, "home-directory", "", "User home directory to use inside the sandbox")
 	cmd.Flags().Float64Var(&opts.cpuVCPUs, "cpu-vcpus", 0, "Requested CPU capacity in vCPUs")
 	cmd.Flags().Int64Var(&opts.memoryBytes, "memory-bytes", 0, "Requested memory capacity in bytes")
@@ -565,10 +563,32 @@ func sandboxUserFromCreateOptions(opts sandboxCreateOptions) (apimodel.SandboxUs
 	if opts.userUIDSet {
 		user.SetUID(apiclientgen.NewOptInt64(opts.userUID))
 	}
-	if opts.userGIDSet {
-		user.SetGid(apiclientgen.NewOptInt64(opts.userGID))
+	applySandboxUserGroups(&user, opts.userGroups)
+	return user, user.Name.Set || user.HomeDirectory.Set || user.UID.Set || user.Gid.Set ||
+		user.GroupName.Set || len(user.AdditionalGroups) > 0
+}
+
+// applySandboxUserGroups splits --user-group into the primary group and the
+// supplementary ones, the same shape `exec create --gid` takes. Entries may be
+// names or numeric GIDs; both resolve inside the sandbox (ADR 0025 §3).
+func applySandboxUserGroups(user *apimodel.SandboxUser, values []string) {
+	groups := make([]string, 0, len(values))
+	for _, value := range values {
+		if value = strings.TrimSpace(value); value != "" {
+			groups = append(groups, value)
+		}
 	}
-	return user, user.Name.Set || user.HomeDirectory.Set || user.UID.Set || user.Gid.Set
+	if len(groups) == 0 {
+		return
+	}
+	if parsed, ok := parseOptionalUserID(groups[0]); ok {
+		user.SetGid(apiclientgen.NewOptInt64(parsed))
+	} else {
+		user.SetGroupName(apiclientgen.NewOptString(groups[0]))
+	}
+	if len(groups) > 1 {
+		user.SetAdditionalGroups(append([]string(nil), groups[1:]...))
+	}
 }
 
 func gitSourceFromCreateOptions(opts sandboxCreateOptions) (*apimodel.GitSource, error) {

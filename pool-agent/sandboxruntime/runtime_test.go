@@ -38,7 +38,11 @@ func TestSandboxUserResolvesUIDGIDAndDefaults(t *testing.T) {
 	}
 }
 
-func TestSandboxUserUsesReasonableDefaults(t *testing.T) {
+// A request that names no user leaves everything unset. The pool agent cannot
+// resolve a sandbox's account, so it forwards nothing rather than inventing
+// root -- absent must not become the most privileged identity available, and
+// the image's own user stands instead (ADR 0025 §4, §5).
+func TestSandboxUserWithNoUserRequestedIsLeftUnset(t *testing.T) {
 	for name, req := range map[string]*workerapimodel.PoolSandboxCreateRequest{
 		"nil": nil,
 		"empty user": {
@@ -49,14 +53,74 @@ func TestSandboxUserUsesReasonableDefaults(t *testing.T) {
 	} {
 		t.Run(name, func(t *testing.T) {
 			user := resolveSandboxUser(req)
-			if user.uid != 0 || user.gid != 0 || user.name != "root" || user.homeDirectory != "/home/root" {
-				t.Fatalf("resolveSandboxUser = %#v", user)
+			if user.uid != unsetID || user.gid != unsetID || user.name != "" || user.homeDirectory != "" {
+				t.Fatalf("resolveSandboxUser = %#v, want everything unset", user)
 			}
+			// An absent variable is how boot tells "no user configured" from
+			// "uid 0"; stamping 0 here is what made every such sandbox root.
 			env := envWithSandboxUser(map[string]string{}, user)
-			if env["DISCOBOX_USER_UID"] != "0" || env["DISCOBOX_USER_GID"] != "0" || env["DISCOBOX_USER_NAME"] != "root" || env["DISCOBOX_USER_HOME"] != "/home/root" {
-				t.Fatalf("envWithSandboxUser = %#v", env)
+			for _, key := range []string{"DISCOBOX_USER_UID", "DISCOBOX_USER_GID", "DISCOBOX_USER_NAME", "DISCOBOX_USER_HOME", "DISCOBOX_USER_GROUP"} {
+				if _, ok := env[key]; ok {
+					t.Fatalf("%s = %q, want unset", key, env[key])
+				}
 			}
 		})
+	}
+}
+
+// A bare name no longer becomes uid 1000: 1000 is one distro family's
+// convention, and the account may have any id (ADR 0025 §4).
+func TestSandboxUserNameAloneInventsNoIDs(t *testing.T) {
+	user := resolveSandboxUser(&workerapimodel.PoolSandboxCreateRequest{
+		Config: workerapimodel.SandboxConfig{
+			User: workerclient.NewOptSandboxUser(workerapimodel.SandboxUser{
+				Name: workerclient.NewOptString("dev"),
+			}),
+		},
+	})
+	if user.name != "dev" {
+		t.Fatalf("name = %q, want dev", user.name)
+	}
+	if user.uid != unsetID || user.gid != unsetID {
+		t.Fatalf("ids = %d/%d, want both unset", user.uid, user.gid)
+	}
+}
+
+// A uid with no gid keeps the gid unset rather than copying the uid; the
+// sandbox reads the account's real default group (ADR 0025 §6).
+func TestSandboxUserUIDAloneLeavesTheGIDUnset(t *testing.T) {
+	user := resolveSandboxUser(&workerapimodel.PoolSandboxCreateRequest{
+		Config: workerapimodel.SandboxConfig{
+			User: workerclient.NewOptSandboxUser(workerapimodel.SandboxUser{
+				UID: workerclient.NewOptInt64(1000),
+			}),
+		},
+	})
+	if user.uid != 1000 || user.gid != unsetID {
+		t.Fatalf("resolveSandboxUser = %#v, want uid 1000 with an unset gid", user)
+	}
+	env := envWithSandboxUser(map[string]string{}, user)
+	if env["DISCOBOX_USER_UID"] != "1000" {
+		t.Fatalf("DISCOBOX_USER_UID = %q", env["DISCOBOX_USER_UID"])
+	}
+	if _, ok := env["DISCOBOX_USER_GID"]; ok {
+		t.Fatalf("DISCOBOX_USER_GID = %q, want unset", env["DISCOBOX_USER_GID"])
+	}
+}
+
+// An unknown id is omitted from the chown argument rather than guessed at.
+func TestChownSpecOmitsUnsetIDs(t *testing.T) {
+	for _, tc := range []struct {
+		uid, gid int
+		want     string
+	}{
+		{1000, 2000, "1000:2000"},
+		{1000, unsetID, "1000"},
+		{unsetID, 2000, ":2000"},
+	} {
+		if got := chownSpec(tc.uid, tc.gid); got != tc.want {
+			t.Fatalf("chownSpec(%d,%d) = %q, want %q", tc.uid, tc.gid, got, tc.want)
+		}
 	}
 }
 
@@ -325,8 +389,10 @@ func TestBuildSandboxDocumentIncludesSelectedHarnessIdentityAndFiles(t *testing.
 	if cfg.Provider.PublicKeys["controlPlane"] != "public-key" {
 		t.Fatalf("public keys = %#v, want control plane key", cfg.Provider.PublicKeys)
 	}
-	if cfg.User.Name != "root" || cfg.User.UID == nil || *cfg.User.UID != 0 || cfg.User.GID == nil || *cfg.User.GID != 0 || cfg.User.HomeDirectory != "/home/root" {
-		t.Fatalf("effective user = %#v, want resolved root identity at /home/root", cfg.User)
+	// The request named no user, so the manifest publishes none and the image's
+	// own account stands (ADR 0025 §5). It used to publish root.
+	if cfg.User.Name != "" || cfg.User.UID != nil || cfg.User.GID != nil || cfg.User.HomeDirectory != "" {
+		t.Fatalf("effective user = %#v, want nothing published for an unrequested user", cfg.User)
 	}
 	if cfg.Env["BASE"] != "sandbox" || cfg.Env["OVERRIDE"] != "sandbox" {
 		t.Fatalf("env = %#v, want sandbox env in effective config", cfg.Env)
@@ -1032,13 +1098,6 @@ func TestResolveSandboxUserNamedUserIsNotRoot(t *testing.T) {
 }
 
 // Nothing specified still means root, unchanged.
-func TestResolveSandboxUserDefaultsToRoot(t *testing.T) {
-	got := resolveSandboxUser(&workerapimodel.PoolSandboxCreateRequest{})
-	if got.uid != 0 || got.name != "root" {
-		t.Fatalf("default = %d/%q, want 0/root", got.uid, got.name)
-	}
-}
-
 // An explicit uid 0 is honoured: root is a legitimate choice, and distinct
 // from omitting the field.
 func TestResolveSandboxUserExplicitRootIsHonoured(t *testing.T) {

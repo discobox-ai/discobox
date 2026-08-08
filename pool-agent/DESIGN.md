@@ -223,12 +223,17 @@ flowchart LR
   unrelated to sources — resume, re-pin, reconcile after a failure — and by then
   the sandbox owns the workspace, so re-materializing would discard uncommitted
   work and move the branch off commits made inside the sandbox.
-- Publish the pool host-resolved sandbox user (name, UID, GID, and home) in the
-  manifest even when the request omitted or partially specified `config.user`.
-  The home mount, container environment, sandbox-agent exec defaults, and
-  home-relative harness files must all use that same identity. The home
-  directory is now wired by the sandbox-agent from the `data` volume against the
-  `%HOME%`/`%UID%`/`%GID%` tokens the manifest identity resolves.
+- Forward the sandbox user; never complete it. The pool host cannot resolve a
+  sandbox's account or group — both live in the image, and `boot` may still have
+  to create them — so it publishes exactly what `config.user` gave and leaves the
+  rest unset. No `gid = uid`, no `uid = 1000` for a bare name, and no root when
+  the request named nobody: an omitted user means the image's own account
+  ([ADR 0025](../docs/adr/0025-the-sandbox-user-is-one-contract-resolved-inside-the-sandbox.md)
+  §§4–5). `DISCOBOX_USER_*` is stamped only for what is known, so `boot` can tell
+  "unset" from "uid 0", and an unknown id is passed to `chown` as `-1` (omitted
+  from the spec) rather than guessed at. The home directory is wired by the
+  sandbox-agent from the `data` volume against the `%HOME%`/`%UID%`/`%GID%`
+  tokens, which resolve inside the sandbox.
 - Keep harness behavior opaque. The pool host transports only selected harness
   identity, `harnessMode`, and the non-secret project file overlay. Commands and
   the project harness catalog are image-owned and never interpreted here.

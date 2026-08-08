@@ -100,7 +100,9 @@ func execPlan(id identity, args []string) (argv, env []string) {
 		return args, os.Environ()
 	}
 	userEnv := userEnviron(id)
-	if id.uid == 0 {
+	// An unconfigured identity means the image's own user already applies
+	// (ADR 0025 §5); there is nobody to drop to.
+	if !id.configured || id.uid == 0 {
 		return args, userEnv
 	}
 	runuser := append([]string{"runuser", "-u", id.name, "--", "env",

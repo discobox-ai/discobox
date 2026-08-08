@@ -2,6 +2,7 @@ package boot
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"os"
 	"os/exec"
@@ -9,45 +10,122 @@ import (
 	"regexp"
 	"strconv"
 	"strings"
+
+	"github.com/obot-platform/discobox/sandbox-agent/runuser"
 )
 
 // identity is the resolved sandbox user, sourced from the DISCOBOX_USER_* env
-// the worker injects. It mirrors the values the manifest publishes so the init
-// flow, the harness, and exec defaults all use one user.
+// the pool agent injects. It mirrors the values the manifest publishes so the
+// init flow, the harness, and exec defaults all use one user.
+//
+// configured reports whether the manifest asked for a specific user at all.
+// When it did not, boot provisions no account and the sandbox runs as whatever
+// the image already is (ADR 0025 §5) -- absent must not silently become root.
 type identity struct {
-	uid  int
-	gid  int
-	name string
-	home string
+	uid        int
+	gid        int
+	name       string
+	home       string
+	configured bool
 }
 
 var sudoersNameRE = regexp.MustCompile(`^[A-Za-z_][A-Za-z0-9_.-]*\$?$`)
 
+// resolveIdentity reads the manifest's user out of the environment and fills in
+// whatever it left out by asking the OS, never by defaulting it (ADR 0025 §6).
+//
+// Nothing is invented. A missing uid does not become 0, a missing gid does not
+// become the uid, and a primary group given by name is resolved against the
+// image's own /etc/group. An account the manifest names but the image lacks is
+// created by ensureUser afterwards, which is why resolution tolerates a uid that
+// does not resolve yet.
 func resolveIdentity() (identity, error) {
-	id := identity{name: envOr("DISCOBOX_USER_NAME", "root"), home: envOr("DISCOBOX_USER_HOME", "/root")}
-	uidStr := envOr("DISCOBOX_USER_UID", "0")
-	uid, err := strconv.Atoi(uidStr)
-	if err != nil {
-		return identity{}, fmt.Errorf("DISCOBOX_USER_UID %q must be numeric", uidStr)
+	spec := runuser.User{
+		Name:          strings.TrimSpace(os.Getenv("DISCOBOX_USER_NAME")),
+		Group:         strings.TrimSpace(os.Getenv("DISCOBOX_USER_GROUP")),
+		HomeDirectory: strings.TrimSpace(os.Getenv("DISCOBOX_USER_HOME")),
 	}
-	id.uid = uid
-	gidStr := envOr("DISCOBOX_USER_GID", uidStr)
-	gid, err := strconv.Atoi(gidStr)
+	uid, err := envID("DISCOBOX_USER_UID")
 	if err != nil {
-		return identity{}, fmt.Errorf("DISCOBOX_USER_GID %q must be numeric", gidStr)
+		return identity{}, err
 	}
-	id.gid = gid
-	if id.uid == 0 {
-		id.name = "root"
-		id.home = envOr("DISCOBOX_USER_HOME", "/root")
+	gid, err := envID("DISCOBOX_USER_GID")
+	if err != nil {
+		return identity{}, err
+	}
+	spec.UID, spec.GID = uid, gid
+	if spec.Empty() && spec.Group == "" {
+		// The manifest named nobody. Provision nothing and leave the image's own
+		// account in place.
+		return identity{}, nil
+	}
+	if spec.UID == nil {
+		return identity{}, errors.New("DISCOBOX_USER_UID is required when a sandbox user is configured")
+	}
+	// A group given by name resolves here; a missing gid is left to ensureGroup,
+	// which creates the group when the image has none. Resolve cannot answer for
+	// an account that does not exist yet, so only the group is resolved now.
+	if spec.Group != "" {
+		if spec.GID != nil {
+			return identity{}, errors.New("DISCOBOX_USER_GID and DISCOBOX_USER_GROUP are mutually exclusive")
+		}
+		resolved, ok := runuser.LookupGroupID(spec.Group)
+		if !ok {
+			return identity{}, fmt.Errorf("DISCOBOX_USER_GROUP %q is not a group in this image", spec.Group)
+		}
+		gid := int64(resolved)
+		spec.GID = &gid
+	}
+	if spec.GID == nil {
+		// No group was named. The account's own entry knows its default group;
+		// if there is no account yet there is nothing to go on, and guessing the
+		// uid is exactly the coincidence ADR 0025 §6 forbids.
+		found, err := runuser.Resolve(runuser.User{UID: spec.UID})
+		if err != nil {
+			return identity{}, fmt.Errorf("resolve sandbox user gid: %w", err)
+		}
+		spec.GID = found.GID
+	}
+	id := identity{uid: int(*spec.UID), gid: int(*spec.GID), name: spec.Name, home: spec.HomeDirectory, configured: true}
+	if id.name == "" || id.home == "" {
+		// Fill name and home from the account when it already exists; a fresh
+		// account has neither, and ensureUser creates it from what we do have.
+		if name, home, err := runuser.NameAndHome(&spec); err == nil {
+			if id.name == "" {
+				id.name = name
+			}
+			if id.home == "" {
+				id.home = home
+			}
+		}
+	}
+	if id.name == "" {
+		return identity{}, errors.New("DISCOBOX_USER_NAME is required for a user the image does not already have")
+	}
+	if id.home == "" {
+		id.home = filepath.Join("/home", id.name)
 	}
 	return id, nil
+}
+
+// envID reads an optional numeric id. Absent means absent -- it never falls back
+// to another field's value.
+func envID(key string) (*int64, error) {
+	raw := strings.TrimSpace(os.Getenv(key))
+	if raw == "" {
+		return nil, nil
+	}
+	parsed, err := strconv.ParseInt(raw, 10, 64)
+	if err != nil {
+		return nil, fmt.Errorf("%s %q must be numeric", key, raw)
+	}
+	return &parsed, nil
 }
 
 // ensureUser creates or aligns the sandbox user/group and grants passwordless
 // sudo, mirroring the retired entrypoint.sh. Root needs none of this.
 func (b *booter) ensureUser(id identity) error {
-	if id.uid == 0 {
+	if !id.configured || id.uid == 0 {
 		return nil
 	}
 	groupName, err := b.ensureGroup(id)
