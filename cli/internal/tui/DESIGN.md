@@ -150,33 +150,33 @@ with parts, and a pane is a terminal with captions. Focus becomes `focusPane` an
 except the reserved ones — and which those are depends on what is in the pane
 (`paneKeys`).
 
-Attaching joins a harness running a task, where Ctrl-C is worth more as "back
-out of this" than as an interrupt: `ctrl+c` detaches, and the leader plus
-`ctrl+c` sends a real interrupt. A **shell** needs Ctrl-C for itself — a shell
-you cannot interrupt is not a shell — so nothing stands between it and the
-application, and detach moves behind the leader as `leader q` — `d` is diff,
-because the leader carries the list's keys. Either way the leader plus `m` hands
+**Ctrl-C is the application's, in every pane.** Nothing the window reserves
+stands between a program and its own interrupt, so `paneOptions` passes an empty
+detach key to `termpane.WithPrefix` and the only way out is `leader q` (`d` is
+diff, because the leader carries the list's keys). An attach used to take
+Ctrl-C as "back out of this", which reads well right up until it is wrong:
+someone who types it to stop an agent and gets a detached session instead has
+not stopped anything, and nothing on the screen says so. One key with two
+meanings depending on what is in the pane is worse than the keystroke it saved.
+The window's own Ctrl-C-quits is therefore suppressed for the whole pane screen
+rather than for the panes that took the key. Either way the leader plus `m` hands
 the mouse back and forth, and the second key of a leader pair matches with or
 without Ctrl held. Typing the leader itself takes it twice in full: its bare
 letter is `a` under the default Ctrl-A, and that is attach.
 
-**The leader is configurable, the detach key is not.** `--leader`/
-`DISCOBOX_LEADER` (`NormalizeLeader`, `WithLeader`) because the leader is the
-key that *collides* — it has to be a chord nothing you run in a sandbox wants,
-and which that is depends on what you run. Ctrl-C stays fixed because it means
-the same thing everywhere in the window: back out of where you are. The leader
-cannot be Ctrl-C, since both are matched against the same keystroke and one
-would be unreachable.
+**The leader is configurable.** `--leader`/`DISCOBOX_LEADER`
+(`NormalizeLeader`, `WithLeader`) because the leader is the key that *collides*
+— it has to be a chord nothing you run in a sandbox wants, and which that is
+depends on what you run. It cannot be Ctrl-C: that one is never the window's to
+take, and a leader that took it would take it from every program the window
+ever draws.
 
 The mouse reaches the sandbox only while something in it has asked for one
 (`paneMouseMode` mirrors `termpane.MouseMode` into `View.MouseMode`), so native
 selection is only lost while it is being used — and `ctrl+a m` takes it back for
 when you would rather copy a stack trace than click on it. Events are translated
 out of screen space by `paneOriginX`/`paneOriginY`, the same origin the cursor
-is placed at. Ctrl-C therefore backs out of wherever you are —
-out of a pane to the sandboxes, out of the window from there — which is why the
-window's own Ctrl-C-quits is suppressed while a pane has focus. Detaching
-returns to the list with the cursor still on the sandbox it was opened on.
+is placed at. Detaching returns to the list with the cursor still on the sandbox it was opened on.
 
 The title an application sets goes two places: the middle of the window's header
 (`spreadCenter`), which says what is in the window, and the real terminal's own

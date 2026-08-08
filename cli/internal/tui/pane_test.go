@@ -49,7 +49,7 @@ func TestAttachDrawsInTheWindow(t *testing.T) {
 	if !strings.Contains(frame, "sbx_one") {
 		t.Errorf("the pane should identify its discobox:\n%s", frame)
 	}
-	if !strings.Contains(frame, "ctrl+c detach") {
+	if !strings.Contains(frame, "ctrl+a q detach") {
 		t.Errorf("the pane should say how to get out:\n%s", frame)
 	}
 	for _, line := range strings.Split(rawFrame(m), "\n") {
@@ -126,7 +126,8 @@ func TestDetachReturnsToTheList(t *testing.T) {
 	ds := newFakeSource(testSandboxes()...)
 	d, m, _ := openPane(t, ds, "enter")
 
-	d.key("ctrl+c")
+	d.key("ctrl+a")
+	d.key("q")
 	d.wait("the pane to close", func() bool { return len(m.panes) == 0 })
 	if m.focus != focusList {
 		t.Fatalf("focus = %v, want the list", m.focus)
@@ -300,43 +301,32 @@ func TestALongTitleLeavesTheBorderAlone(t *testing.T) {
 	}
 }
 
-// Ctrl-C backs out of wherever you are: out of a pane to the sandboxes, and out
-// of the window altogether from there.
-func TestCtrlCDetachesThenQuits(t *testing.T) {
+// Ctrl-C never quits the window from inside a pane: there it belongs to the
+// program. It quits from everywhere else, which is where nothing is running to
+// take it.
+func TestCtrlCNeverQuitsFromAPane(t *testing.T) {
 	ds := newFakeSource(testSandboxes()...)
 	d, m, term := openPane(t, ds, "enter")
 
 	d.key("ctrl+c")
-	d.wait("the pane to close", func() bool { return len(m.panes) == 0 })
+	d.settle()
 	if m.quit {
-		t.Fatal("ctrl+c in a pane should detach, not quit")
+		t.Fatal("ctrl+c in a pane should reach the program, not quit")
 	}
-	if m.focus != focusList {
-		t.Fatalf("focus = %v, want the list", m.focus)
+	if len(m.panes) != 1 {
+		t.Fatal("ctrl+c in a pane should not detach either")
 	}
-	if got := term.typed(""); strings.Contains(got, "\x03") {
-		t.Fatalf("the detach key should not also reach the sandbox: %q", got)
+	if got := term.typed("\x03"); !strings.Contains(got, "\x03") {
+		t.Fatalf("typed %q, want the interrupt to reach the sandbox", got)
 	}
 
+	// Out of the pane, and it is the window's again.
+	d.key("ctrl+a")
+	d.key("q")
+	d.wait("the pane to close", func() bool { return len(m.panes) == 0 })
 	d.key("ctrl+c")
 	if !m.quit {
 		t.Fatal("ctrl+c outside a pane should quit")
-	}
-}
-
-// The sandbox still needs a real interrupt, and the prefix is how it gets the
-// one key the pane has taken.
-func TestPrefixSendsARealInterrupt(t *testing.T) {
-	ds := newFakeSource(testSandboxes()...)
-	d, m, term := openPane(t, ds, "enter")
-
-	d.key("ctrl+a")
-	d.key("ctrl+c")
-	if got := term.typed("\x03"); !strings.Contains(got, "\x03") {
-		t.Fatalf("typed %q, want ETX to reach the sandbox", got)
-	}
-	if len(m.panes) == 0 {
-		t.Fatal("a prefixed interrupt should not detach")
 	}
 }
 
@@ -413,7 +403,8 @@ func TestTheTerminalTitleFollowsThePane(t *testing.T) {
 
 	// And with no pane the title is left exactly as the shell that started this
 	// window left it: it is a guest in someone else's terminal.
-	d.key("ctrl+c")
+	d.key("ctrl+a")
+	d.key("q")
 	d.wait("the pane to close", func() bool { return len(m.panes) == 0 })
 	if got := m.View().WindowTitle; got != "" {
 		t.Fatalf("title = %q, want the terminal's own left alone", got)
@@ -521,9 +512,9 @@ func TestSwapExchangesThePanes(t *testing.T) {
 	}
 }
 
-// Keys reach whichever pane has focus, and the way out is that pane's own: the
-// shell keeps ctrl+c for itself and detaches on the leader, the harness detaches
-// on ctrl+c.
+// Keys reach whichever pane has focus, and ctrl+c is not one the window takes:
+// it reaches the program in a harness exactly as it does in a shell, and the way
+// out is the leader's in both.
 func TestEachPaneKeepsItsOwnKeys(t *testing.T) {
 	ds := newFakeSource(testSandboxes()...)
 	d, m, harness := openPane(t, ds, "enter")
@@ -541,7 +532,7 @@ func TestEachPaneKeepsItsOwnKeys(t *testing.T) {
 		t.Fatal("ctrl+c in a shell should not detach it")
 	}
 	if !strings.Contains(m.hints(), m.leader()+" q detach") {
-		t.Fatalf("the keys should say the shell's way out: %q", m.hints())
+		t.Fatalf("the keys should say the way out: %q", m.hints())
 	}
 
 	// The leader plus q closes the shell, leaving the harness.
@@ -555,11 +546,20 @@ func TestEachPaneKeepsItsOwnKeys(t *testing.T) {
 		t.Fatal("closing one pane should leave the other focused")
 	}
 
-	// And on the harness ctrl+c detaches, which is where the window ends up.
-	if got := harness.typed(""); strings.Contains(got, "\x03") {
-		t.Fatalf("the harness should not have seen an interrupt: %q", got)
-	}
+	// And ctrl+c reaches the harness too. Someone who types it to stop an agent
+	// has to have stopped the agent: a detached session instead is a stop that
+	// silently did not happen.
 	d.key("ctrl+c")
+	if got := harness.typed("\x03"); !strings.Contains(got, "\x03") {
+		t.Fatalf("the harness typed %q, want the interrupt", got)
+	}
+	if len(m.panes) != 1 || m.focus != focusPane {
+		t.Fatal("ctrl+c in a harness should not detach it")
+	}
+
+	// The leader is how you leave it, the same as the shell.
+	d.key("ctrl+a")
+	d.key("q")
 	d.wait("the pane to close", func() bool { return len(m.panes) == 0 })
 	if m.focus != focusList {
 		t.Fatalf("focus = %v, want the list", m.focus)
@@ -642,8 +642,8 @@ func TestDiffAndStatusOpenInPanes(t *testing.T) {
 				t.Fatalf("overlay = %v, want the command to have the screen", m.overlay)
 			}
 			// A pager wants ctrl+c, so the way out is behind the leader.
-			if got := m.overlay.hint; got != m.leader()+" "+paneDetachAlt {
-				t.Fatalf("detach hint = %q, want the leader's", got)
+			if !strings.Contains(m.hints(), m.leader()+" "+paneDetachAlt+" close") {
+				t.Fatalf("keys = %q, want the leader's way out", m.hints())
 			}
 		})
 	}

@@ -455,10 +455,10 @@ func (m *Model) updateKey(msg tea.KeyPressMsg) tea.Cmd {
 	m.status, m.statusE = "", false
 	m.statusGen++
 
-	// Ctrl-C backs out of wherever you are: the pane handles it as its detach
-	// key, and everywhere else it quits the window. So it never quits from
-	// inside a pane — one press gets you out of the terminal, the next out of
-	// the window.
+	// Ctrl-C quits the window, but never from inside a pane: there it belongs
+	// to whatever is running, and a key that sometimes interrupts an agent and
+	// sometimes closes the window it is running in is a key nobody can press
+	// with any confidence. See detachHint.
 	if keyName(msg) == "ctrl+c" && (m.focus != focusPane || m.dialog != nil) {
 		m.quit = true
 		return tea.Quit
@@ -1330,7 +1330,7 @@ func (m *Model) viewHeaderLeft() string {
 // the one that is, is the way out.
 func (m *Model) viewHeaderRight() string {
 	if p := m.focusedPane(); p != nil {
-		return m.st.dimText.Render(p.hint + " detach")
+		return m.st.dimText.Render(m.detachHint() + " detach")
 	}
 	return m.st.dimText.Render("F1 help  ·  Ctrl-C quit")
 }
@@ -1448,10 +1448,7 @@ func (m *Model) hints() string {
 		if !p.action.slotted() {
 			what, out = string(p.action), "close"
 		}
-		hints := "every key goes to " + what + " · " + p.hint + " " + out
-		if interrupt := m.paneInterrupt(); interrupt != "" {
-			hints += " · " + interrupt + " interrupt"
-		}
+		hints := "every key goes to " + what + " · " + m.detachHint() + " " + out
 		if m.overlay == nil {
 			// The empty spot is worth a key; two full ones are worth the keys
 			// that get between them.
@@ -1608,13 +1605,14 @@ func (m *Model) helpText() string {
 		"  Every other key goes to the pane. Which ones do not depends on",
 		"  what is in it:",
 		"",
-		"    " + paneAttachDetach + "         detach from an attached harness, leaving it",
-		"                   running",
-		"    " + m.leader() + " " + paneAttachDetach + "  send a real interrupt to an attached harness",
-		"    " + m.leader() + " " + paneDetachAlt + "       detach from a shell, which keeps Ctrl-C for",
-		"                   itself — a shell you cannot interrupt is not one.",
-		"                   It also closes a finished command, as does q on",
-		"                   its own once there is nothing left to type at",
+		"    " + m.leader() + " " + paneDetachAlt + "       detach, leaving whatever is in the pane",
+		"                   running. The same key in every pane: Ctrl-C is the",
+		"                   application's, in a harness as much as in a shell,",
+		"                   because someone who types it to stop an agent and",
+		"                   gets a detached session instead has not stopped",
+		"                   anything and cannot tell from the screen. It also",
+		"                   closes a finished command, as does q on its own",
+		"                   once there is nothing left to type at",
 		"    " + m.leader() + " ← / " + m.leader() + " →  move between the two, or h and l. Hold",
 		"                   Ctrl and they keep going: " + m.leader() + " ^← ^← walks",
 		"                   across without pressing the leader again",
@@ -1638,8 +1636,8 @@ func (m *Model) helpText() string {
 		"  round it: most terminals let Shift through to their own",
 		"  selection.",
 		"",
-		"  Ctrl-C backs out of wherever you are: out of a pane to the",
-		"  discoboxes, and out of the window altogether from there.",
+		"  Ctrl-C reaches the program in every pane, and quits the window",
+		"  only when no pane is up.",
 		"",
 		"───────────────────────────────────────────────────────────────",
 		"Back in the discobox list",

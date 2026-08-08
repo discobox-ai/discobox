@@ -634,23 +634,22 @@ func TestLeaderReachesThePaneAndTheKeyLists(t *testing.T) {
 	d.key("enter")
 	d.wait("the pane", func() bool { return m.focus == focusPane })
 
-	if !strings.Contains(m.hints(), "ctrl+b ctrl+c interrupt") {
+	if !strings.Contains(m.hints(), "ctrl+b q detach") {
 		t.Errorf("the key list should name the leader: %q", m.hints())
 	}
-	if !strings.Contains(m.helpText(), "ctrl+b ctrl+c") {
+	if !strings.Contains(m.helpText(), "ctrl+b q") {
 		t.Error("the help should name the leader")
 	}
 
 	// The configured leader arms the pane; the default one no longer does.
 	term := ds.terminals[0]
+	d.key("ctrl+a")
+	if got := term.typed("\x01"); !strings.Contains(got, "\x01") {
+		t.Fatalf("typed %q, want the default leader to reach the sandbox", got)
+	}
 	d.key("ctrl+b")
-	d.key("ctrl+c")
-	if got := term.typed("\x03"); !strings.Contains(got, "\x03") {
-		t.Fatalf("typed %q, want the configured leader to send an interrupt", got)
-	}
-	if len(m.panes) == 0 {
-		t.Fatal("a prefixed interrupt should not detach")
-	}
+	d.key("q")
+	d.wait("the pane to close", func() bool { return len(m.panes) == 0 })
 }
 
 // Tab goes round the window in the order it is drawn, bottom to top: the

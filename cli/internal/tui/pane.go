@@ -37,9 +37,10 @@ const (
 	// the d screen and tmux use, because the leader now carries the list's own
 	// keys and d among them is diff.
 	paneDetachAlt = "q"
-	// paneAttachDetach is the bare detach key, for a pane where Ctrl-C is
-	// better spent backing out.
-	paneAttachDetach = "ctrl+c"
+	// paneInterruptKey is the application's everywhere, and never the window's.
+	// The one exception is a pane whose command has finished, where there is
+	// nothing left to interrupt and it means done like the rest of them.
+	paneInterruptKey = "ctrl+c"
 )
 
 // pane is one terminal in the window.
@@ -56,31 +57,20 @@ type pane struct {
 	sandbox Sandbox
 	status  string
 
-	// hint is how to get out of this one, as its key list spells it.
-	hint string
-
 	// exited is set when what was running in the pane finished and the pane was
 	// kept anyway, so its last screen can be read. See Interaction.holdsOnExit.
 	exited bool
 }
 
-// paneKeys is how you get out of a pane, and it depends on what is in it.
+// detachHint is how to get out of a pane, as the key lists spell it.
 //
-// Attaching joins a harness that is running a task: Ctrl-C there is worth more
-// as "back out of this" than as an interrupt, and it makes one key back out of
-// everywhere — the pane, then the window.
-//
-// A shell needs Ctrl-C for itself. It is how you stop a command, and a shell you
-// cannot interrupt is not a shell, so nothing may stand between it and the
-// application. Detaching moves behind the leader instead.
-func (m *Model) paneKeys(act Interaction) (detach, hint string) {
-	if act == InteractAttach {
-		return paneAttachDetach, paneAttachDetach
-	}
-	// Everything else — a shell, and the commands that page — keeps Ctrl-C for
-	// itself.
-	return "", m.leader() + " " + paneDetachAlt
-}
+// It is the same in every pane, and Ctrl-C is not it. A harness attach used to
+// take Ctrl-C as "back out of this", which is a fine reading of the key right
+// up until it is wrong: someone who types it to stop an agent and gets a
+// detached session instead has not stopped anything, and has no way to tell
+// from the screen they are looking at. The key belongs to whatever is running,
+// in a shell and in a harness alike, and the window asks for the leader.
+func (m *Model) detachHint() string { return m.leader() + " " + paneDetachAlt }
 
 // leader is the pane's prefix key, as a Bubble Tea key name.
 func (m *Model) leader() string {
@@ -92,15 +82,6 @@ func (m *Model) leader() string {
 
 // paneMouseHint is the mouse toggle, as the key lists spell it.
 func (m *Model) paneMouseHint() string { return m.leader() + " " + paneMouseKey }
-
-// paneInterrupt is how to send a real interrupt, which is only worth saying
-// where the window has taken Ctrl-C for itself.
-func (m *Model) paneInterrupt() string {
-	if p := m.focusedPane(); p == nil || p.hint != paneAttachDetach {
-		return ""
-	}
-	return m.leader() + " " + paneAttachDetach
-}
 
 // NormalizeLeader turns what a user typed into the key name the pane reserves.
 //
@@ -117,10 +98,10 @@ func NormalizeLeader(leader string) (string, error) {
 		return "", fmt.Errorf("leader must be a single character, or ctrl+ one: got %q", leader)
 	}
 	key = "ctrl+" + key
-	if key == paneAttachDetach {
-		// They are matched against the same keystroke, so one of them would
-		// never be reachable.
-		return "", fmt.Errorf("leader cannot be %s: that is the detach key", paneAttachDetach)
+	if key == paneInterruptKey {
+		// It is the application's, in every pane. A leader that took it would
+		// take it from every program the window ever draws.
+		return "", fmt.Errorf("leader cannot be %s: that is the application's interrupt", paneInterruptKey)
 	}
 	return key, nil
 }
@@ -338,15 +319,13 @@ func (m *Model) connectPane(act Interaction, sandbox Sandbox, at int, overlay bo
 // paneOpened starts drawing a connected terminal.
 func (m *Model) paneOpened(msg paneOpenedMsg) tea.Cmd {
 	m.busy = ""
-	detach, hint := m.paneKeys(msg.action)
 	m.nextPaneID++
 	p := &pane{
 		id:      m.nextPaneID,
-		term:    termpane.New(m.paneOptions(detach, msg.overlay)...),
+		term:    termpane.New(m.paneOptions(msg.overlay)...),
 		stream:  msg.term,
 		action:  msg.action,
 		sandbox: msg.sandbox,
-		hint:    hint,
 	}
 
 	if msg.overlay {
@@ -374,13 +353,13 @@ func (m *Model) paneOpened(msg paneOpenedMsg) tea.Cmd {
 // discobox on screen and the screen is where you are. The overlay carries only
 // its way out and the mouse: it is one command running to completion, and a key
 // that opened something else over it would be a key that lost it.
-func (m *Model) paneOptions(detach string, overlay bool) []termpane.Option {
+func (m *Model) paneOptions(overlay bool) []termpane.Option {
 	opts := []termpane.Option{
-		termpane.WithPrefix(m.leader(), detach),
+		// No bare detach key: nothing the window reserves stands between a
+		// program and its own interrupt. The way out is behind the leader, and
+		// it is the same one in every pane. See detachHint.
+		termpane.WithPrefix(m.leader(), ""),
 		termpane.WithPrefixBinding(paneMouseKey, toggleMouseMsg{}),
-		// The way out of any pane, whether or not it has one of its own. It
-		// costs the application nothing, being behind the leader, and one key
-		// that always works beats remembering which pane took Ctrl-C.
 		termpane.WithPrefixBinding(paneDetachAlt, termpane.DetachMsg{}),
 	}
 	if overlay {
@@ -645,7 +624,7 @@ func (m *Model) readFinished(p *pane, key tea.KeyPressMsg) tea.Cmd {
 		p.term.Scroll(p.term.ScrollbackLen())
 	case "end", "G":
 		p.term.Scroll(-p.term.ScrollbackLen())
-	case "q", "esc", "enter", paneAttachDetach:
+	case "q", "esc", "enter", paneInterruptKey:
 		_, at := m.paneByID(p.id)
 		m.closePane(at)
 		m.layout()
