@@ -31,6 +31,12 @@ type App struct {
 	debug     bool
 	noStart   bool
 	errOut    io.Writer
+
+	// pagerRestoresScreen asks any pager this invocation starts to put the
+	// screen back on the way out, instead of leaving its last page on it the
+	// way git does. Only the launcher wants that: it owns the screen and is
+	// about to redraw over whatever the pager left. See pagerEnvDefaults.
+	pagerRestoresScreen bool
 }
 
 func NewRootCommand() *cobra.Command {

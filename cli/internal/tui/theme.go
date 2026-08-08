@@ -1,0 +1,156 @@
+package tui
+
+import (
+	"os"
+
+	"charm.land/lipgloss/v2"
+	"github.com/charmbracelet/colorprofile"
+)
+
+// The palette is difftui's, which is git-gui's: lightsalmon, lightgreen and
+// gold over a terminal's own background. Nothing here paints a full screen
+// background — the panes are told apart by their title bars alone.
+//
+// They are held as 256-color indices rather than as lipgloss colors because
+// highlight() has to write the background escape itself; see the comment there.
+const (
+	colSalmon = "216" // the diffstat's minus side
+	colGreen  = "120"
+	colGold   = "220"
+	colBlack  = "232"
+	colGrey   = "245"
+	colDim    = "240"
+	// Three bands, because a row can be under the cursor, selected, or both,
+	// and "both" has to be its own color or the cursor would hide what a
+	// command is about to act on.
+	colHighlightBG = "237" // under the cursor
+	colSelectedBG  = "24"  // a command will act on it
+	colBothBG      = "31"  // under the cursor and selected
+	colInactive    = "236"
+	// The mark's own purple, which is what the box round the window is drawn
+	// in: the window is framed in the color it is branded in rather than in a
+	// third accent.
+	colMark = "13"
+	colWarn = "214"
+	colErr  = "196"
+	colOK   = "83"
+	colInfo = "111"
+)
+
+// detectColor reports whether the terminal will show color at all. NO_COLOR is
+// honored here rather than checked for directly: colorprofile reads it, per
+// no-color.org, along with everything else that decides a profile.
+//
+// The profile is a value on the styles rather than a process-wide setting, so a
+// test can render both the colored and the plain frame in one run.
+//
+// The profiles are ordered by how much they can show, and the three at the
+// bottom — unknown, not a terminal, and a terminal without color — all mean the
+// same thing here, so the test is against the last of them rather than for
+// equality with any one.
+func detectColor() bool {
+	return colorprofile.Detect(os.Stdout, os.Environ()) > colorprofile.ASCII
+}
+
+type styles struct {
+	// color is the one thing every other decision in the package reads: which
+	// glyphs are drawn, whether the mark is drawn at all, and whether a row can
+	// carry a background.
+	color bool
+
+	headerBar   lipgloss.Style
+	headerLabel lipgloss.Style
+
+	titleList lipgloss.Style
+	titleDim  lipgloss.Style
+
+	// The cursor is a chevron in the left column and the row it is on takes a
+	// background, as difftui's file lists do. Painting a background across a
+	// row that carries its own colors needs highlight(), not a style.
+	cursorName lipgloss.Style
+
+	dimText lipgloss.Style
+	rule    lipgloss.Style
+	ruleOn  lipgloss.Style
+
+	// frame is the border round the whole window, in the mark's own purple. It
+	// is a foreground color rather than a bordered style because the box is
+	// drawn by hand; see Model.box.
+	frame    lipgloss.Style
+	statusOK lipgloss.Style
+	statusWA lipgloss.Style
+	statusER lipgloss.Style
+	info     lipgloss.Style
+
+	stateRun  lipgloss.Style
+	stateBusy lipgloss.Style
+	stateOff  lipgloss.Style
+	stateErr  lipgloss.Style
+
+	name    lipgloss.Style
+	add     lipgloss.Style
+	del     lipgloss.Style
+	chip    lipgloss.Style
+	chipOn  lipgloss.Style
+	command lipgloss.Style
+
+	dialog      lipgloss.Style
+	dialogTitle lipgloss.Style
+	key         lipgloss.Style
+}
+
+func newStyles(color bool) *styles {
+	// Without color every style is the identity, so nothing has to check the
+	// profile before rendering: what a plain terminal gets is the text.
+	paint := func(index string) lipgloss.Style {
+		if !color {
+			return lipgloss.NewStyle()
+		}
+		return lipgloss.NewStyle().Foreground(lipgloss.Color(index))
+	}
+
+	s := &styles{color: color}
+	s.headerBar = lipgloss.NewStyle().Bold(true)
+	s.headerLabel = paint(colGrey)
+
+	// The list's title bar is the same gold as the cursor and every key hint,
+	// so the window has one accent color rather than two competing ones.
+	s.titleList = lipgloss.NewStyle().Bold(true).Padding(0, 1)
+	s.titleDim = lipgloss.NewStyle().Padding(0, 1)
+	if color {
+		s.titleList = s.titleList.Foreground(lipgloss.Color(colBlack)).Background(lipgloss.Color(colGold))
+		s.titleDim = s.titleDim.Foreground(lipgloss.Color(colGrey)).Background(lipgloss.Color(colInactive))
+	}
+
+	s.cursorName = lipgloss.NewStyle().Bold(true)
+
+	s.dimText = paint(colDim)
+	s.rule = paint(colInactive)
+	s.ruleOn = paint(colDim)
+
+	s.frame = paint(colMark)
+	s.statusOK = paint(colOK)
+	s.statusWA = paint(colWarn)
+	s.statusER = paint(colErr)
+	s.info = paint(colInfo)
+
+	s.stateRun = paint(colOK)
+	s.stateBusy = paint(colGold)
+	s.stateOff = paint(colDim)
+	s.stateErr = paint(colErr)
+
+	s.name = lipgloss.NewStyle()
+	s.add = paint(colGreen)
+	s.del = paint(colSalmon)
+	s.chip = paint(colDim)
+	s.chipOn = paint(colGold)
+	s.command = paint(colGreen)
+
+	s.dialog = lipgloss.NewStyle().Border(lipgloss.RoundedBorder()).Padding(1, 2)
+	if color {
+		s.dialog = s.dialog.BorderForeground(lipgloss.Color(colGold))
+	}
+	s.dialogTitle = paint(colGold).Bold(true)
+	s.key = paint(colGold)
+	return s
+}

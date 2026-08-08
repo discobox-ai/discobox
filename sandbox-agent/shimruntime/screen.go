@@ -18,11 +18,12 @@ const DefaultScrollbackLines = 1000
 // repainted with the current screen, recent scrollback, and the terminal modes
 // the program set before the client connected.
 //
-// A running TUI emits its screen and its mode-setting (mouse, bracketed paste,
-// cursor keys, cursor visibility) once at startup. A client attaching later
-// never saw any of it, so the emulator reconstructs the visible state and a
-// small mode tracker records the input/rendering modes the emulator does not
-// expose, so both can be replayed on attach.
+// A running TUI emits its screen, its mode-setting (mouse, bracketed paste,
+// cursor keys, cursor visibility) and its window title once at startup. A
+// client attaching later never saw any of it, so the emulator reconstructs the
+// visible state, a small mode tracker records the input/rendering modes the
+// emulator does not expose, and the title is held from the emulator's callback,
+// so all three can be replayed on attach.
 //
 // screenBuffer is not safe for concurrent use. The Runtime serializes all
 // access (write, resize, snapshot) under its mutex, keeping the emulator's view
@@ -31,6 +32,15 @@ const DefaultScrollbackLines = 1000
 type screenBuffer struct {
 	emu   *vt.Emulator
 	modes modeTracker
+
+	// title and iconName are the last the program set, or empty for never. The
+	// emulator parses the OSC that carries them but does not keep them, and
+	// there is no accessor to read them back, so they are held here as they go
+	// past. Doing it from the callback rather than by scanning the stream the
+	// way modeTracker does is what gets OSC 0/1/2, both terminators, and
+	// sequences split across writes for free.
+	title    string
+	iconName string
 }
 
 func newScreenBuffer(rows, cols uint16, scrollbackLines int) *screenBuffer {
@@ -43,7 +53,15 @@ func newScreenBuffer(rows, cols uint16, scrollbackLines int) *screenBuffer {
 	}
 	emu := vt.NewEmulator(w, h)
 	emu.SetScrollbackSize(scrollbackLines)
-	return &screenBuffer{emu: emu}
+	s := &screenBuffer{emu: emu}
+	// The callbacks fire from inside emu.Write, which is only ever reached
+	// through screenBuffer.write under the Runtime's lock, so they touch these
+	// fields on the same goroutine that reads them in snapshot.
+	emu.SetCallbacks(vt.Callbacks{
+		Title:    func(title string) { s.title = title },
+		IconName: func(name string) { s.iconName = name },
+	})
+	return s
 }
 
 func (s *screenBuffer) write(p []byte) {
@@ -59,12 +77,19 @@ func (s *screenBuffer) resize(rows, cols uint16) {
 }
 
 // snapshot renders a self-contained escape sequence that repaints the current
-// terminal state: restored input/rendering modes, then the screen (with recent
-// scrollback when on the primary screen), then the cursor placed where the
-// program left it. The returned bytes are streamed to a fresh attacher before
-// its buffered live output is flushed.
+// terminal state: the window title, restored input/rendering modes, then the
+// screen (with recent scrollback when on the primary screen), then the cursor
+// placed where the program left it. The returned bytes are streamed to a fresh
+// attacher before its buffered live output is flushed.
 func (s *screenBuffer) snapshot() []byte {
 	var b strings.Builder
+
+	// The title the program set, for the same reason as the modes below: it was
+	// announced once, at startup, and a client that arrived after that never
+	// saw it. A title that was never set writes nothing rather than an empty
+	// one, which would clear whatever the client's own terminal had.
+	writeOSC(&b, 1, s.iconName)
+	writeOSC(&b, 2, s.title)
 
 	// Restore the modes the running program set before this client attached so
 	// mouse, paste, and cursor-key input work immediately rather than after the
@@ -100,6 +125,34 @@ func (s *screenBuffer) snapshot() []byte {
 	fmt.Fprintf(&b, "\x1b[%d;%dH", pos.Y+1, pos.X+1)
 
 	return []byte(b.String())
+}
+
+// maxOSCString bounds a replayed title. It is state carried on every attach,
+// and a program is free to set a title as long as it likes; xterm truncates for
+// the same reason.
+const maxOSCString = 512
+
+// writeOSC writes one OSC string command, terminated with BEL: it is what
+// almost everything that sets a title emits, and every terminal that
+// understands the sequence at all understands that form of it.
+//
+// The payload is written only if there is one, and only up to the first control
+// character — a title carrying an ESC or a BEL would end the sequence early and
+// leave the rest of it printing on the client's screen as text.
+func writeOSC(b *strings.Builder, cmd int, s string) {
+	if s == "" {
+		return
+	}
+	if len(s) > maxOSCString {
+		s = s[:maxOSCString]
+	}
+	if i := strings.IndexFunc(s, func(r rune) bool { return r < 0x20 || r == 0x7f }); i >= 0 {
+		s = s[:i]
+		if s == "" {
+			return
+		}
+	}
+	fmt.Fprintf(b, "\x1b]%d;%s\a", cmd, s)
 }
 
 // writeScreen writes the emulator's rendered screen, translating the bare line

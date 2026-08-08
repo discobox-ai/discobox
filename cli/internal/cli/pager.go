@@ -24,7 +24,19 @@ const defaultPager = "less"
 //	   screen after the pager exits
 //
 // Without R in particular, a rendered diff arrives as unreadable escape noise.
-var pagerEnvDefaults = map[string]string{"LESS": "FRX", "LV": "-c"}
+//
+// X is the one that depends on who is asking. At a shell it is what you want:
+// you page a diff, quit, and the diff is still above your prompt. Under a
+// caller that owns the screen it is the opposite — the pager leaves a screenful
+// of diff behind for that caller to redraw over — so restoreScreen drops it and
+// less uses the alternate screen it would have used anyway.
+func pagerEnvDefaults(restoreScreen bool) map[string]string {
+	less := "FRX"
+	if restoreScreen {
+		less = "FR"
+	}
+	return map[string]string{"LESS": less, "LV": "-c"}
+}
 
 // startPager routes out through the user's pager, returning the writer to use
 // and a function that closes it and waits for the pager to exit.
@@ -33,7 +45,7 @@ var pagerEnvDefaults = map[string]string{"LESS": "FRX", "LV": "-c"}
 // piped, or captured in a test is left exactly as it was. A pager of "cat" —
 // the conventional way to say "do not page" through the environment — is
 // honored by not starting one at all.
-func startPager(ctx context.Context, out io.Writer, enabled bool) (io.Writer, func() error) {
+func startPager(ctx context.Context, out io.Writer, enabled, restoreScreen bool) (io.Writer, func() error) {
 	noop := func() error { return nil }
 	if !enabled || !isTerminalStream(out) {
 		return out, noop
@@ -47,7 +59,7 @@ func startPager(ctx context.Context, out io.Writer, enabled bool) (io.Writer, fu
 	//nolint:gosec // the command is the user's own PAGER, run the way git runs it
 	pager := exec.CommandContext(ctx, "sh", "-c", command)
 	pager.Stdout, pager.Stderr = out, os.Stderr
-	pager.Env = pagerEnv(os.Environ())
+	pager.Env = pagerEnv(os.Environ(), restoreScreen)
 	input, err := pager.StdinPipe()
 	if err != nil {
 		return out, noop
@@ -93,8 +105,8 @@ func pagerCommand(discoboxPager, gitPager, pager string) string {
 
 // pagerEnv adds the pager settings git supplies, without overriding a choice
 // the user has already made.
-func pagerEnv(environ []string) []string {
-	for name, value := range pagerEnvDefaults {
+func pagerEnv(environ []string, restoreScreen bool) []string {
+	for name, value := range pagerEnvDefaults(restoreScreen) {
 		if _, ok := os.LookupEnv(name); ok {
 			continue
 		}

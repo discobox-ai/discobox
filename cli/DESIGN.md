@@ -12,7 +12,7 @@ transport helpers where OpenAPI does not model the stream.
 | `internal/cli` | Cobra command tree, output formatting, local server auto-start, TUI API adapter, and the attach transports and policy layered on `execstream/client`. |
 | `internal/sandboxcreate` | UI-independent client-side sandbox request preparation and creation, including prompt options, source resolution, workspace snapshots, environment/secrets, local user identity, and source push delivery. |
 | `internal/origin` | Resolves the client host and project directory a sandbox is created from. Host identity itself is shared, in the root module's `internal/hostid`. |
-| `internal/tui` | Bubble Tea presentation and interaction state, expressed against its own `DataSource` interface. |
+| `internal/tui` | The `disco tui` launcher: Bubble Tea presentation and interaction state, expressed against its own `DataSource` interface. See [`internal/tui/DESIGN.md`](internal/tui/DESIGN.md). |
 | `internal/diffrender` | Unified-diff parsing and terminal layout, with no knowledge of sandboxes or the API. |
 
 ## UI Dependency Direction
@@ -23,6 +23,40 @@ transport helpers where OpenAPI does not model the stream.
   frontend contracts only; API and terminal adapters belong outside it.
 - `internal/cli` may adapt generated API clients and terminal transports to the
   TUI's interfaces, but must not become the owner of logic shared by frontends.
+- The launcher never reimplements a command. `apply` is the Cobra command
+  itself: `apiDataSource.Interact` builds it, binds it to the streams `tea.Exec`
+  hands over while the window is suspended, and executes it.
+- `diff` and `status` are drawn in a pane instead, and are the same commands —
+  spawned as a child `disco diff <id>` on a local pty sized to the pane
+  (`tui_local.go`). The pty is the child's *controlling* terminal, which is the
+  point: a pager reads its keys from `/dev/tty`, so without one `less` would
+  take them from the real terminal, out from under the window drawing it. The
+  child inherits this invocation's `--server`, `--project` and `--chdir`; the
+  token goes through the environment rather than the argument list, which every
+  process on the machine can read.
+- Either way what runs is `disco diff` with its own rendering, flag defaults,
+  pager and terminal detection, not a second implementation that drifts from it.
+  A launcher that cannot be reproduced from a shell is the thing to avoid.
+- `disco tui --leader`/`DISCOBOX_LEADER` sets the terminal pane's prefix key,
+  normalized by `tui.NormalizeLeader`: a bare character is taken as Ctrl-that,
+  since a leader that is not a chord would be a character you could never type.
+- Attach and shell are terminals rather than commands, and are drawn inside the
+  window by the `termpane` module. `apiDataSource.Open` connects one:
+  `framedTerminal` (`internal/cli/tui_terminal.go`) presents the framed exec
+  attach as the byte stream a pane draws. Attach targets the virtual primary
+  exec id and needs no start — the agent resolves the sandbox's current primary
+  terminal and relaunches it if it has stopped. A shell creates a new
+  interactive TTY exec, the same one `disco shell` with no command runs, carrying
+  `COLORTERM` and `NO_COLOR` from this terminal (`paneTerminalEnv`) so the
+  sandbox knows how much color to use. `TERM` is deliberately not forwarded: the
+  terminal on the client side of a pane is an emulator, not the user's, and the
+  sandbox's own `xterm-256color` default describes it — a forwarded
+  `xterm-kitty` names a terminal the sandbox has no terminfo for. A created exec
+  is not a running one: it is started only after the attach is up
+  and sized, the order `attachSandboxExec` uses. Started first, its opening
+  output would go out before anything was listening. `TestPaneTerminalsE2E`
+  (opt-in, `DISCOBOX_PANE_E2E=1`) is what catches the omission, since a pane
+  attached to an unstarted exec draws an empty screen forever with no error.
 
 Local server auto-launch is a release-only capability. Normal and development
 builds leave it disabled; release CLI binaries opt in at build time by setting
@@ -217,8 +251,9 @@ session, `execstream/client`.
   `SignalReady` and `OtherErr` are set to match: they only make sense once
   replay is in play, and only exist on the TTY branch.
 - Connection lifecycle notifications are transport events, not terminal output.
-  CLI attach ignores them; the TUI adapter maps them into its `TerminalEvent`
-  stream.
+  CLI attach ignores them. Nothing renders them today: the launcher suspends
+  itself and hands the real terminal to `disco attach` rather than embedding a
+  pane, so there is no second consumer to notify.
 - Resumable attaches can subscribe to timing events without parsing terminal
   output. A websocket heartbeat measures the physical proxy path to the
   sandbox-agent; an action-acknowledgement sample measures from client
@@ -303,9 +338,11 @@ happens:
   the default answer is the one that carries nothing extra into the sandbox.
 - `true` / `false` answer ahead of time; bare `--include-dirty` means `true`.
 - Frontends express the question through `sandboxcreate.ConfirmIncludeDirtyFunc`
-  rather than prompting themselves. A nil func means there is nobody to ask —
-  no terminal, or the TUI, which owns the screen — and the work is included:
-  dropping a user's edits silently is worse than carrying them.
+  rather than prompting themselves. A nil func means there is nobody to ask — no
+  terminal — and the work is included: dropping a user's edits silently is worse
+  than carrying them. The launcher does not use it: it owns the screen, so it
+  asks in its own confirmation dialog and settles `IncludeDirty` to `true` or
+  `false` before it calls the shared create at all.
 - `true` is rejected for a remote URL or an explicit `@REF`, because a snapshot
   only ever sits on top of HEAD of a local working tree.
 
@@ -576,9 +613,9 @@ sequences the calls and hands the user the terminal in between:
 4. `POST .../configure/commit` — the server reads the command's real exit status,
    applies the secrets and files it wrote, and deletes the sandbox.
 
-`runHarnessConfigure` takes streams rather than a `*cobra.Command` so its callers
-can share it: the full `tui` dashboard and the inline `disco configure` menu
-(`internal/cli/configure.go`) both hand it the real terminal via `tea.Exec`.
+`runHarnessConfigure` takes streams rather than a `*cobra.Command` so its caller
+can hand it the real terminal via `tea.Exec`: the inline `disco configure` menu
+(`internal/cli/configure.go`) does exactly that.
 
 `disco configure` (aliases `config`, `conf`, `c`, `init`) is a small inline (no
 alternate screen) Bubble Tea menu over the project's harnesses for the common

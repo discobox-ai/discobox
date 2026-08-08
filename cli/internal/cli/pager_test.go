@@ -39,7 +39,7 @@ func TestPagerEnvDefaults(t *testing.T) {
 	os.Unsetenv("LESS")
 	os.Unsetenv("LV")
 
-	env := pagerEnv(nil)
+	env := pagerEnv(nil, false)
 	if !slices.Contains(env, "LESS=FRX") {
 		t.Fatalf("LESS default missing: %v", env)
 	}
@@ -48,9 +48,23 @@ func TestPagerEnvDefaults(t *testing.T) {
 	}
 }
 
+// A caller that owns the screen gets the same settings without X, so less puts
+// the screen back on the way out instead of leaving its last page on it. The
+// launcher is the one caller that needs that; a shell wants the diff left where
+// it can still be read.
+func TestPagerEnvRestoresTheScreenForTheLauncher(t *testing.T) {
+	t.Setenv("LESS", "")
+	os.Unsetenv("LESS")
+
+	env := pagerEnv(nil, true)
+	if !slices.Contains(env, "LESS=FR") {
+		t.Fatalf("LESS should drop X when the screen has to be restored: %v", env)
+	}
+}
+
 func TestPagerEnvKeepsTheUsersChoice(t *testing.T) {
 	t.Setenv("LESS", "-S")
-	for _, entry := range pagerEnv(nil) {
+	for _, entry := range pagerEnv(nil, false) {
 		if strings.HasPrefix(entry, "LESS=") {
 			t.Fatalf("overrode the user's LESS: %q", entry)
 		}
@@ -61,7 +75,7 @@ func TestPagerEnvKeepsTheUsersChoice(t *testing.T) {
 // every test in this package writing straight to their own writer.
 func TestStartPagerLeavesNonTerminalsAlone(t *testing.T) {
 	var buf strings.Builder
-	out, done := startPager(t.Context(), &buf, true)
+	out, done := startPager(t.Context(), &buf, true, false)
 	if out != any(&buf) {
 		t.Fatal("a non-terminal must not be paged")
 	}

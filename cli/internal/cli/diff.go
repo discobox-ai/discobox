@@ -263,7 +263,7 @@ func (a *App) runDiff(cmd *cobra.Command, sandboxArg, onlySlug string, opts diff
 	// Everything that depends on the terminal is decided against the real
 	// stdout, before the pager replaces it: once output goes down a pipe there
 	// is no width to measure and no terminal to ask about its background.
-	view := newDiffView(cmd, opts)
+	view := a.newDiffView(cmd, opts)
 	gitArgs := opts.gitArgs(cmd.Flags().Changed("unified"))
 	// git colors its own output only when writing to a terminal, and under a
 	// pager it is writing to a pipe. Ask for color explicitly, exactly as git
@@ -376,14 +376,18 @@ type diffView struct {
 	color    bool
 	dark     bool
 	width    int
+	// restoreScreen asks the pager to put the screen back the way it found it,
+	// for a caller that is going to redraw over it. See pagerEnvDefaults.
+	restoreScreen bool
 }
 
-func newDiffView(cmd *cobra.Command, opts diffOptions) *diffView {
+func (a *App) newDiffView(cmd *cobra.Command, opts diffOptions) *diffView {
 	out := cmd.OutOrStdout()
 	view := &diffView{
-		out:      out,
-		terminal: out,
-		opts:     opts,
+		out:           out,
+		terminal:      out,
+		opts:          opts,
+		restoreScreen: a.pagerRestoresScreen,
 		// The rendered view needs the whole diff before it can lay any of it
 		// out, so it is the one that buys the text instead of streaming it.
 		// Git's own formats stream, which is what a piped patch or a very large
@@ -402,7 +406,7 @@ func newDiffView(cmd *cobra.Command, opts diffOptions) *diffView {
 }
 
 func (v *diffView) startPager(ctx context.Context) (func() error, error) {
-	out, done := startPager(ctx, v.terminal, v.paging)
+	out, done := startPager(ctx, v.terminal, v.paging, v.restoreScreen)
 	v.out = out
 	return done, nil
 }

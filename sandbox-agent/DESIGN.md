@@ -194,10 +194,13 @@ development images without a registry.
   is a snapshot of an in-memory terminal emulator (`shimruntime.screenBuffer`, reached through `host.Replayer`,
   backed by `charmbracelet/x/vt`), not the raw transcript: the emulator is fed
   every output chunk in `Broadcast`, and a snapshot serializes the current
-  screen, capped scrollback (`DefaultScrollbackLines`), the cursor position, and
-  the input/rendering modes a TUI set before the client connected (mouse,
-  bracketed paste, cursor keys, cursor visibility — tracked by scanning the
-  output stream, since the emulator does not expose them). Only TTY execs have a
+  screen, capped scrollback (`DefaultScrollbackLines`), the cursor position, the
+  input/rendering modes a TUI set before the client connected (mouse, bracketed
+  paste, cursor keys, cursor visibility — tracked by scanning the output stream,
+  since the emulator does not expose them), and the window title (held from the
+  emulator's OSC callback, since it has no accessor either, and replayed as
+  `OSC 1`/`OSC 2` — a title that was never set writes nothing rather than an
+  empty one, which would clear whatever the client's own terminal had). Only TTY execs have a
   screen: `Runtime.EnableScreen` installs the `Replayer` once the PTY exists, so a
   pipe exec never waits on a repaint handshake it cannot satisfy. The
   disk log (`AsyncLogger`) is no longer used for attach — it backs only the

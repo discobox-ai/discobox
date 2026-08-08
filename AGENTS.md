@@ -20,6 +20,7 @@
 - `server/providers`: Docker, VM, cloud, and pool-backed provider implementations.
 - `pool-agent`: nested Go module for the pool agent implementation.
 - `sandbox-agent`: nested Go module and image context for the sandbox agent runtime environment.
+- `termpane`: nested Go module; a reusable Bubble Tea component that draws a live terminal from any stream. No dependency on the rest of the repository.
 - `pool-agent/cmd/discobox-pool-agent`: pool agent entrypoint.
 - `cmd/discobox-docker-image-watch`: local Docker image rebuild watcher for pool-agent and sandbox-agent images.
 - `docs`: user/developer documentation.

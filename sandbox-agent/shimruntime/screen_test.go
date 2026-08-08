@@ -111,3 +111,57 @@ func TestModeTrackerIgnoresRegularCSIAndUntracked(t *testing.T) {
 		t.Fatalf("sequences = %q, want empty (no tracked modes toggled)", got)
 	}
 }
+
+// A program announces its title once, at startup, the same as its modes. A
+// client that attached afterwards never saw it, so the snapshot carries it.
+func TestScreenSnapshotRestoresTheTitle(t *testing.T) {
+	s := newScreenBuffer(24, 80, DefaultScrollbackLines)
+	s.write([]byte("\x1b]2;claude — src/disco2\a"))
+	s.write([]byte("working"))
+
+	snap := string(s.snapshot())
+	if !strings.Contains(snap, "\x1b]2;claude — src/disco2\a") {
+		t.Fatalf("snapshot missing the title:\n%q", snap)
+	}
+
+	// The last one set wins, and OSC 0 sets both the title and the icon name.
+	s.write([]byte("\x1b]0;done\x1b\\"))
+	snap = string(s.snapshot())
+	if strings.Contains(snap, "claude") {
+		t.Fatalf("snapshot carried a title that was replaced:\n%q", snap)
+	}
+	if !strings.Contains(snap, "\x1b]2;done\a") || !strings.Contains(snap, "\x1b]1;done\a") {
+		t.Fatalf("snapshot missing the title and icon name:\n%q", snap)
+	}
+}
+
+// A title that was never set writes nothing: an empty one would clear whatever
+// the client's own terminal had, which is worse than leaving it alone.
+func TestScreenSnapshotOmitsATitleNeverSet(t *testing.T) {
+	s := newScreenBuffer(24, 80, DefaultScrollbackLines)
+	s.write([]byte("hello"))
+
+	if snap := string(s.snapshot()); strings.Contains(snap, "\x1b]") {
+		t.Fatalf("snapshot should carry no OSC at all:\n%q", snap)
+	}
+}
+
+// A title carrying a control character would end the sequence early and leave
+// the rest of it printing on the client's screen as text, and one carrying a
+// novel would be paid for on every attach.
+func TestScreenSnapshotSanitizesTheTitle(t *testing.T) {
+	s := newScreenBuffer(24, 80, DefaultScrollbackLines)
+	// The emulator ends the OSC at the BEL, so the control character has to be
+	// planted in what it hands back rather than in the sequence.
+	s.title = "safe\x1b]2;evil\aalso"
+	if got := string(s.snapshot()); !strings.Contains(got, "\x1b]2;safe\a") || strings.Contains(got, "evil") {
+		t.Fatalf("snapshot should stop at the control character:\n%q", got)
+	}
+
+	s.title = strings.Repeat("x", maxOSCString+50)
+	snap := string(s.snapshot())
+	title := snap[strings.Index(snap, "\x1b]2;")+4:]
+	if got := len(title[:strings.IndexByte(title, '\a')]); got != maxOSCString {
+		t.Fatalf("title is %d bytes, want it capped at %d", got, maxOSCString)
+	}
+}

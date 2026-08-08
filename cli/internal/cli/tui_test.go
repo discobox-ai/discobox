@@ -2,35 +2,127 @@ package cli
 
 import (
 	"encoding/json"
-	"errors"
-	"io"
-	"net"
 	"net/http"
 	"net/http/httptest"
+	"os"
 	"strings"
 	"testing"
-
-	"github.com/obot-platform/discobox/execstream/frame"
+	"time"
 
 	apiclientgen "github.com/obot-platform/discobox/api/gen"
 	apimodel "github.com/obot-platform/discobox/api/model"
 	"github.com/obot-platform/discobox/cli/internal/tui"
 )
 
-func TestToTUISandboxUsesServerDisplayState(t *testing.T) {
-	sandbox := toTUISandbox(apimodel.Sandbox{
-		Runtime: apimodel.SandboxRuntime{
-			State:        "running",
-			DesiredState: "stopped",
-			DisplayState: apiclientgen.NewOptSandboxRuntimeDisplayState("stopping"),
-		},
-	})
-	if sandbox.State != "stopping" {
-		t.Fatalf("state = %q, want stopping", sandbox.State)
+// The launcher draws five states, so the server's fuller set has to land on one
+// of them — and a transitional state has to land on the one that answers "can I
+// act on this", which is where it is heading, not where it came from.
+func TestToTUISandboxNarrowsDisplayState(t *testing.T) {
+	for _, tc := range []struct {
+		display string
+		want    tui.State
+	}{
+		{"running", tui.StateRunning},
+		{"starting", tui.StateStarting},
+		{"stopping", tui.StateRunning},
+		{"stopped", tui.StateStopped},
+		{"archiving", tui.StateArchived},
+		{"archived", tui.StateArchived},
+		{"error", tui.StateError},
+	} {
+		sandbox := toTUISandbox(apimodel.Sandbox{
+			Runtime: apimodel.SandboxRuntime{
+				State:        "running",
+				DesiredState: "present",
+				DisplayState: apiclientgen.NewOptSandboxRuntimeDisplayState(apiclientgen.SandboxRuntimeDisplayState(tc.display)),
+			},
+		})
+		if sandbox.State != tc.want {
+			t.Errorf("display %q -> %q, want %q", tc.display, sandbox.State, tc.want)
+		}
 	}
 }
 
-func TestAPIDataSourceCreateSessionUsesSharedRunCreation(t *testing.T) {
+// The starred commit on a row means the sandbox was cut from a snapshot of
+// uncommitted work, which is recorded as the source's snapshot ref.
+func TestToTUISandboxMarksSnapshotSources(t *testing.T) {
+	source := apimodel.GitSource{Kind: "git"}
+	source.SetCheckout(apiclientgen.NewOptGitSourceCheckout(apiclientgen.GitSourceCheckout{
+		Commit:  apiclientgen.NewOptString("a3f9c2179bbf0f4e2e9d1a7c5b6d8e0f11223344"),
+		RefName: apiclientgen.NewOptString("main"),
+		RefType: apiclientgen.NewOptString("branch"),
+	}))
+	source.SetWorkspace(apiclientgen.NewOptGitSourceWorkspace(apiclientgen.GitSourceWorkspace{
+		Mode:        apiclientgen.NewOptGitSourceWorkspaceMode("dirty"),
+		SnapshotRef: apiclientgen.NewOptString("refs/disco/snapshot"),
+	}))
+	sandbox := apimodel.Sandbox{Runtime: apimodel.SandboxRuntime{State: "running", DesiredState: "present"}}
+	sandbox.Config.SetSource(apiclientgen.NewOptGitSource(source))
+
+	row := toTUISandbox(sandbox)
+	if row.Branch != "main" || row.Commit != "a3f9c21" {
+		t.Fatalf("base = %q@%q, want main@a3f9c21", row.Branch, row.Commit)
+	}
+	if !row.Dirty {
+		t.Fatal("a snapshot source should mark the row dirty")
+	}
+}
+
+// The runtime's own activity timestamp is what the row is ranked and dated by;
+// the record's update time is only the fallback for a sandbox nothing has
+// reported activity for.
+func TestSandboxLastUsedPrefersRuntimeActivity(t *testing.T) {
+	active := time.Date(2026, 8, 7, 12, 0, 0, 0, time.UTC)
+	updated := time.Date(2026, 8, 6, 12, 0, 0, 0, time.UTC)
+
+	sandbox := apimodel.Sandbox{UpdatedAt: updated, CreatedAt: updated}
+	if got := sandboxLastUsed(sandbox); !got.Equal(updated) {
+		t.Fatalf("without activity: %v, want %v", got, updated)
+	}
+	sandbox.Runtime.LastActiveAt = apiclientgen.NewOptDateTime(active)
+	if got := sandboxLastUsed(sandbox); !got.Equal(active) {
+		t.Fatalf("with activity: %v, want %v", got, active)
+	}
+}
+
+// git omits whichever of the three clauses is zero, so the parse cannot assume
+// all of them are there.
+func TestParseShortstat(t *testing.T) {
+	for _, tc := range []struct {
+		out  string
+		want tui.DiffStat
+	}{
+		{" 3 files changed, 61 insertions(+), 12 deletions(-)\n", tui.DiffStat{Known: true, Files: 3, Added: 61, Deleted: 12}},
+		{" 1 file changed, 1 insertion(+)\n", tui.DiffStat{Known: true, Files: 1, Added: 1}},
+		{" 2 files changed, 8 deletions(-)\n", tui.DiffStat{Known: true, Files: 2, Deleted: 8}},
+		{"", tui.DiffStat{Known: true}},
+	} {
+		if got := parseShortstat(tc.out); got != tc.want {
+			t.Errorf("parseShortstat(%q) = %+v, want %+v", tc.out, got, tc.want)
+		}
+	}
+}
+
+// The ref half of -C DIR@REF says which commit to cut from; the working tree
+// being asked about is the directory's either way.
+func TestSourceDirectoryDropsTheRef(t *testing.T) {
+	for source, want := range map[string]string{
+		"":                     ".",
+		"/src/disco2":          "/src/disco2",
+		"/src/disco2@main":     "/src/disco2",
+		"/src/disco2@HEAD~1":   "/src/disco2",
+		"@main":                "@main",
+		"https://x/y.git@main": "https://x/y.git",
+	} {
+		if got := sourceDirectory(source); got != want {
+			t.Errorf("sourceDirectory(%q) = %q, want %q", source, got, want)
+		}
+	}
+}
+
+// Run is the launcher's Enter, and it has to go through the same creation path
+// `disco run` does rather than posting a body of its own.
+func TestAPIDataSourceRunUsesSharedRunCreation(t *testing.T) {
 	repo := newRunSourceTestRepo(t)
 	git := runSourceTestGit(t, repo)
 	commit := strings.TrimSpace(git("rev-parse", "HEAD"))
@@ -58,13 +150,13 @@ func TestAPIDataSourceCreateSessionUsesSharedRunCreation(t *testing.T) {
 		client:    client,
 		projectID: "project-1",
 	}
-	sandbox, err := ds.CreateSession(t.Context(), tui.NewSessionRequest{
+	sandbox, err := ds.Run(t.Context(), tui.RunRequest{
 		Harness: "codex",
-		Path:    repo + "@HEAD",
+		Source:  repo + "@HEAD",
 		Prompt:  "fix the failing tests",
 	})
 	if err != nil {
-		t.Fatalf("create session: %v", err)
+		t.Fatalf("run: %v", err)
 	}
 	if sandbox.ID != "sbx_9qk5n25t2hh2rv00" {
 		t.Fatalf("sandbox ID = %q", sandbox.ID)
@@ -84,80 +176,37 @@ func TestAPIDataSourceCreateSessionUsesSharedRunCreation(t *testing.T) {
 	}
 }
 
-// TestFramedTerminalRead verifies output frames are surfaced as a plain byte
-// stream, including a payload split across two Reads.
-func TestFramedTerminalRead(t *testing.T) {
-	client, server := net.Pipe()
-	term := &framedTerminal{frames: &directAttachFrames{conn: client}, events: make(chan tui.TerminalEvent)}
-	defer term.Close()
+// A pane's shell is told how much color to use, from the terminal this window
+// is running in. Unset names are dropped, so a sandbox only ever hears about a
+// setting somebody made.
+func TestPaneTerminalEnvCarriesTheColorSettings(t *testing.T) {
+	t.Setenv("COLORTERM", "truecolor")
+	os.Unsetenv("NO_COLOR")
 
-	go func() {
-		_, _ = frame.Read(server)
-		_ = frame.Write(server, frame.Stdout, []byte("abc"))
-	}()
-
-	buf := make([]byte, 2)
-	n, err := term.Read(buf)
-	if err != nil || string(buf[:n]) != "ab" {
-		t.Fatalf("first read = %q, %v; want \"ab\", nil", buf[:n], err)
-	}
-	n, err = term.Read(buf)
-	if err != nil || string(buf[:n]) != "c" {
-		t.Fatalf("second read = %q, %v; want \"c\", nil", buf[:n], err)
-	}
-}
-
-// TestFramedTerminalWriteAndResize verifies input and resize both round-trip as
-// the expected frame types.
-func TestFramedTerminalWriteAndResize(t *testing.T) {
-	client, server := net.Pipe()
-	term := &framedTerminal{frames: &directAttachFrames{conn: client}, events: make(chan tui.TerminalEvent)}
-	defer term.Close()
-
-	go func() {
-		_, _ = term.Write([]byte("xy"))
-		_ = term.Resize(80, 24)
-	}()
-
-	f, err := frame.Read(server)
-	if err != nil || f.Type != frame.Input || string(f.Payload) != "xy" {
-		t.Fatalf("input frame = %+v, %v", f, err)
-	}
-
-	f, err = frame.Read(server)
-	if err != nil || f.Type != frame.Resize {
-		t.Fatalf("resize frame type = %d, %v", f.Type, err)
-	}
-	var size struct {
-		Cols int `json:"cols"`
-		Rows int `json:"rows"`
-	}
-	if err := json.Unmarshal(f.Payload, &size); err != nil {
-		t.Fatalf("resize payload: %v", err)
-	}
-	if size.Cols != 80 || size.Rows != 24 {
-		t.Fatalf("resize = %dx%d, want 80x24", size.Cols, size.Rows)
-	}
-}
-
-// TestFramedTerminalExit maps a clean exit frame onto io.EOF.
-func TestFramedTerminalExit(t *testing.T) {
-	client, server := net.Pipe()
-	term := &framedTerminal{frames: &directAttachFrames{conn: client}, events: make(chan tui.TerminalEvent)}
-	defer term.Close()
-
-	payload, err := json.Marshal(struct {
-		Status string `json:"status"`
-	}{Status: "success"})
+	env, err := keyValueMapFromShell(paneTerminalEnv())
 	if err != nil {
-		t.Fatalf("marshal exit payload: %v", err)
+		t.Fatalf("env: %v", err)
 	}
-	go func() {
-		_, _ = frame.Read(server)
-		_ = frame.Write(server, frame.Exit, payload)
-	}()
+	if env["COLORTERM"] != "truecolor" {
+		t.Fatalf("COLORTERM = %q, want the one this shell has", env["COLORTERM"])
+	}
+	if _, ok := env["NO_COLOR"]; ok {
+		t.Fatal("an unset name should not be sent at all")
+	}
 
-	if _, err := term.Read(make([]byte, 8)); !errors.Is(err, io.EOF) {
-		t.Fatalf("exit read err = %v, want io.EOF", err)
+	// And TERM is not among them: the terminal on this side of a pane is an
+	// emulator, not yours, and the sandbox's own default describes it. A TERM
+	// the sandbox has no terminfo for is how "unknown terminal type" happens.
+	if _, ok := env["TERM"]; ok {
+		t.Fatal("TERM should not be forwarded into a pane")
+	}
+
+	t.Setenv("NO_COLOR", "1")
+	env, err = keyValueMapFromShell(paneTerminalEnv())
+	if err != nil {
+		t.Fatalf("env: %v", err)
+	}
+	if env["NO_COLOR"] != "1" {
+		t.Fatalf("NO_COLOR = %q, want it carried across", env["NO_COLOR"])
 	}
 }

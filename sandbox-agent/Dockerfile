@@ -27,6 +27,20 @@ RUN --mount=type=cache,target=/go/pkg/mod,sharing=locked \
     && CGO_ENABLED=0 GOOS=$TARGETOS GOARCH=$TARGETARCH go -C sandbox-agent build -trimpath -ldflags="-s -w" -o /out/discobox-ca-anchor ./cmd/discobox-ca-anchor \
     && CGO_ENABLED=0 GOOS=$TARGETOS GOARCH=$TARGETARCH go -C sandbox-agent build -trimpath -ldflags="-s -w" -o /out/discobox-docker ./cmd/discobox-docker
 
+# Built in its own layer so bumping the difftui version does not invalidate the
+# sandbox-agent binaries above.
+ARG DIFFTUI_VERSION=latest
+RUN --mount=type=cache,target=/go/pkg/mod,sharing=locked \
+    --mount=type=cache,target=/root/.cache/go-build,sharing=locked \
+    set -eux \
+    && CGO_ENABLED=0 GOOS=$TARGETOS GOARCH=$TARGETARCH \
+        go install -trimpath -ldflags="-s -w" github.com/discobox-ai/difftui@${DIFFTUI_VERSION} \
+    # `go install` refuses a GOBIN with cross-compilation and drops
+    # cross-built binaries under GOPATH/bin/<goos>_<goarch> instead, so pick
+    # the binary up from whichever of the two layouts was used.
+    && mv "$(go env GOPATH)/bin/${TARGETOS}_${TARGETARCH}/difftui" /out/difftui \
+        || mv "$(go env GOPATH)/bin/difftui" /out/difftui
+
 FROM debian:bookworm AS sandbox-base
 
 ARG DEBIAN_MIRROR
@@ -260,11 +274,13 @@ COPY --from=sandbox-agent-builder /out/discobox-ca-anchor /usr/local/bin/discobo
 # give `docker build` the pool-shared BuildKit cache. Non-build commands are
 # exec'd straight through. See the sandbox-agent/dockercache package.
 COPY --from=sandbox-agent-builder /out/discobox-docker /usr/local/bin/docker
+COPY --from=sandbox-agent-builder /out/difftui /usr/local/bin/difftui
 
 RUN chmod 0755 /usr/local/bin/discobox-sandbox-agent \
     && chmod 0755 /opt/discobox/bin/runc \
     && chmod 0755 /usr/local/bin/discobox-ca-anchor \
     && chmod 0755 /usr/local/bin/docker \
+    && chmod 0755 /usr/local/bin/difftui \
     && chmod 0755 /usr/local/bin/discobox-vnc-websockify \
     && ln -sf /usr/local/bin/discobox-sandbox-agent /usr/local/bin/discobox-hook-publish \
     && mkdir -p /etc/discobox /run/discobox/agent-terminals /var/lib/docker /var/lib/discobox /workspace \

@@ -268,6 +268,7 @@ tasks:
     cmds:
       - go test {{.PACKAGES}}
       - cd cli && go test ./...
+      - cd termpane && go test ./...
       - cd server && go test ./...
       - cd pool-agent && go test ./...
       - cd gormdb && go test ./...
@@ -279,6 +280,7 @@ tasks:
     cmds:
       - go tool golangci-lint run
       - cd cli && "$(go -C .. tool -n golangci-lint)" run
+      - cd termpane && "$(go -C .. tool -n golangci-lint)" run
       - cd server && "$(go -C .. tool -n golangci-lint)" run
       - cd pool-agent && "$(go -C .. tool -n golangci-lint)" run
       - cd gormdb && "$(go -C .. tool -n golangci-lint)" run
@@ -339,6 +341,7 @@ tasks:
     cmds:
       - go tool golangci-lint run --fix
       - cd cli && "$(go -C .. tool -n golangci-lint)" run --fix
+      - cd termpane && "$(go -C .. tool -n golangci-lint)" run --fix
       - cd server && "$(go -C .. tool -n golangci-lint)" run --fix
       - cd pool-agent && "$(go -C .. tool -n golangci-lint)" run --fix
       - cd gormdb && "$(go -C .. tool -n golangci-lint)" run --fix

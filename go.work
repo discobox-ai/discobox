@@ -8,4 +8,5 @@ use (
 	./pool-agent
 	./sandbox-agent
 	./server
+	./termpane
 )
