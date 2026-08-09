@@ -76,7 +76,20 @@ func Attempt(ctx context.Context, repoRoot, base, tipRef string) (Result, error)
 	}
 
 	rangeSpec := base + ".." + tipRef
-	if _, err := gitutil.Output(ctx, scratch, nil, nil, "cherry-pick", rangeSpec); err != nil {
+	if _, cherryErr := gitutil.Output(ctx, scratch, nil, nil, "cherry-pick", rangeSpec); cherryErr != nil {
+		conflicted, err := hasUnmergedPaths(ctx, scratch)
+		if err != nil {
+			_, _ = gitutil.Output(ctx, scratch, nil, nil, "cherry-pick", "--abort")
+			return Result{}, fmt.Errorf("check cherry-pick conflict state: %w", err)
+		}
+		if !conflicted {
+			// Cherry-pick failed for a reason other than conflicting content
+			// (e.g. no git identity configured to create the commit) — that
+			// is not something a caller should report as "commit X did not
+			// apply cleanly", so surface it as a real error instead.
+			_, _ = gitutil.Output(ctx, scratch, nil, nil, "cherry-pick", "--abort")
+			return Result{}, fmt.Errorf("cherry-pick %s: %w", rangeSpec, cherryErr)
+		}
 		conflict, _ := gitutil.Output(ctx, scratch, nil, nil, "rev-parse", "CHERRY_PICK_HEAD")
 		_, _ = gitutil.Output(ctx, scratch, nil, nil, "cherry-pick", "--abort")
 		return Result{HostBase: head, ConflictCommit: strings.TrimSpace(conflict)}, nil
@@ -94,4 +107,17 @@ func Attempt(ctx context.Context, repoRoot, base, tipRef string) (Result, error)
 	}
 
 	return Result{HostBase: head, Landed: true, HostTip: scratchTip}, nil
+}
+
+// hasUnmergedPaths reports whether dir's index currently has unresolved
+// conflict entries. A real cherry-pick conflict always leaves some; other
+// cherry-pick failures (e.g. no git identity configured to create the
+// resulting commit) leave CHERRY_PICK_HEAD set too but stage cleanly, so this
+// is what actually distinguishes the two.
+func hasUnmergedPaths(ctx context.Context, dir string) (bool, error) {
+	out, err := gitutil.Output(ctx, dir, nil, nil, "diff", "--name-only", "--diff-filter=U")
+	if err != nil {
+		return false, fmt.Errorf("list unmerged paths: %w", err)
+	}
+	return strings.TrimSpace(out) != "", nil
 }

@@ -37,6 +37,18 @@ func newRepo(t *testing.T) (string, string) {
 	return dir, commit
 }
 
+// setGitIdentity gives the test process itself a git identity, so the git
+// commands Attempt runs internally (which, unlike run(), do not carry their
+// own explicit identity env) do not depend on the host running the test
+// already having ~/.gitconfig or /etc/gitconfig configured.
+func setGitIdentity(t *testing.T) {
+	t.Helper()
+	t.Setenv("GIT_AUTHOR_NAME", "test")
+	t.Setenv("GIT_AUTHOR_EMAIL", "test@example.com")
+	t.Setenv("GIT_COMMITTER_NAME", "test")
+	t.Setenv("GIT_COMMITTER_EMAIL", "test@example.com")
+}
+
 func writeFile(t *testing.T, dir, name, content string) {
 	t.Helper()
 	if err := os.WriteFile(filepath.Join(dir, name), []byte(content), 0o644); err != nil {
@@ -59,6 +71,7 @@ func addCommits(t *testing.T, repoRoot string, files ...string) string {
 
 func TestAttemptLandsCleanRangeAndFastForwards(t *testing.T) {
 	ctx := context.Background()
+	setGitIdentity(t)
 	host, base := newRepo(t)
 
 	// Simulate a fetched sandbox tip by branching off base in the same repo
@@ -101,6 +114,7 @@ func TestAttemptLandsCleanRangeAndFastForwards(t *testing.T) {
 
 func TestAttemptConflictLeavesHostUntouched(t *testing.T) {
 	ctx := context.Background()
+	setGitIdentity(t)
 	host, base := newRepo(t)
 
 	// A host-side change and a conflicting sandbox-side change to the same
@@ -137,6 +151,46 @@ func TestAttemptConflictLeavesHostUntouched(t *testing.T) {
 	status := run(t, host, "status", "--porcelain")
 	if status != "" {
 		t.Fatalf("host working tree is dirty after a conflicting attempt: %q", status)
+	}
+	worktrees := run(t, host, "worktree", "list", "--porcelain")
+	if strings.Count(worktrees, "worktree ") != 1 {
+		t.Fatalf("expected only the main worktree to remain, got:\n%s", worktrees)
+	}
+}
+
+// TestAttemptNonConflictFailureReturnsError covers a cherry-pick that fails
+// for a reason other than conflicting content — no identity to attribute the
+// resulting commit to, in this case. That must surface as an error, not be
+// misreported as a conflict on some commit: nothing about it is a content
+// conflict a caller could ask the user to resolve.
+func TestAttemptNonConflictFailureReturnsError(t *testing.T) {
+	ctx := context.Background()
+	setGitIdentity(t)
+	host, base := newRepo(t)
+
+	run(t, host, "checkout", "-q", "-b", "sandbox-tip", base)
+	tip := addCommits(t, host, "a.txt")
+	run(t, host, "checkout", "-q", "main")
+	hostHead := run(t, host, "rev-parse", "HEAD")
+
+	// Explicit (even empty) identity env vars override any discovered
+	// ~/.gitconfig, so this deterministically fails the same way regardless
+	// of what git identity the host running the test happens to have.
+	t.Setenv("GIT_AUTHOR_NAME", "")
+	t.Setenv("GIT_AUTHOR_EMAIL", "")
+	t.Setenv("GIT_COMMITTER_NAME", "")
+	t.Setenv("GIT_COMMITTER_EMAIL", "")
+
+	result, err := Attempt(ctx, host, base, tip)
+	if err == nil {
+		t.Fatalf("expected a non-conflict cherry-pick failure to return an error, got result %+v", result)
+	}
+	if result != (Result{}) {
+		t.Fatalf("expected a zero Result alongside the error, got %+v", result)
+	}
+	headNow := run(t, host, "rev-parse", "HEAD")
+	if headNow != hostHead {
+		t.Fatalf("host HEAD moved from %s to %s after a failed attempt", hostHead, headNow)
 	}
 	worktrees := run(t, host, "worktree", "list", "--porcelain")
 	if strings.Count(worktrees, "worktree ") != 1 {
