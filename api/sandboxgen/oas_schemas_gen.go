@@ -933,6 +933,12 @@ type SandboxExec struct {
 	// Whether this is the sandbox's primary harness terminal.
 	Primary   OptBool     `json:"primary"`
 	StartedAt OptDateTime `json:"startedAt"`
+	// Harness terminal mode only: the command typed into the shell (command
+	// above) once it starts, as if the caller had typed it themselves. This is
+	// what is actually running in the foreground, and what gives it real job
+	// control (Ctrl-Z, fg, bg) — see command for what process is literally
+	// executed.
+	StartupCommand []string `json:"startupCommand"`
 	// Current observed exec runtime status. installing is a terminal-layer
 	// phase: the exec record exists and its hooks/files are still being
 	// prepared, before the harness process is launched (starting -> running).
@@ -1005,6 +1011,11 @@ func (s *SandboxExec) GetPrimary() OptBool {
 // GetStartedAt returns the value of StartedAt.
 func (s *SandboxExec) GetStartedAt() OptDateTime {
 	return s.StartedAt
+}
+
+// GetStartupCommand returns the value of StartupCommand.
+func (s *SandboxExec) GetStartupCommand() []string {
+	return s.StartupCommand
 }
 
 // GetStatus returns the value of Status.
@@ -1090,6 +1101,11 @@ func (s *SandboxExec) SetPrimary(val OptBool) {
 // SetStartedAt sets the value of StartedAt.
 func (s *SandboxExec) SetStartedAt(val OptDateTime) {
 	s.StartedAt = val
+}
+
+// SetStartupCommand sets the value of StartupCommand.
+func (s *SandboxExec) SetStartupCommand(val []string) {
+	s.StartupCommand = val
 }
 
 // SetStatus sets the value of Status.

@@ -1542,6 +1542,16 @@ func (s *SandboxExec) encodeFields(e *jx.Encoder) {
 		}
 	}
 	{
+		if s.StartupCommand != nil {
+			e.FieldStart("startupCommand")
+			e.ArrStart()
+			for _, elem := range s.StartupCommand {
+				e.Str(elem)
+			}
+			e.ArrEnd()
+		}
+	}
+	{
 		e.FieldStart("status")
 		s.Status.Encode(e)
 	}
@@ -1567,7 +1577,7 @@ func (s *SandboxExec) encodeFields(e *jx.Encoder) {
 	}
 }
 
-var jsonFieldsNameOfSandboxExec = [17]string{
+var jsonFieldsNameOfSandboxExec = [18]string{
 	0:  "command",
 	1:  "createdAt",
 	2:  "env",
@@ -1580,11 +1590,12 @@ var jsonFieldsNameOfSandboxExec = [17]string{
 	9:  "pid",
 	10: "primary",
 	11: "startedAt",
-	12: "status",
-	13: "tty",
-	14: "unit",
-	15: "user",
-	16: "workdir",
+	12: "startupCommand",
+	13: "status",
+	14: "tty",
+	15: "unit",
+	16: "user",
+	17: "workdir",
 }
 
 // Decode decodes SandboxExec from json.
@@ -1730,8 +1741,27 @@ func (s *SandboxExec) Decode(d *jx.Decoder) error {
 			}(); err != nil {
 				return errors.Wrap(err, "decode field \"startedAt\"")
 			}
+		case "startupCommand":
+			if err := func() error {
+				s.StartupCommand = make([]string, 0)
+				if err := d.Arr(func(d *jx.Decoder) error {
+					var elem string
+					v, err := d.Str()
+					elem = string(v)
+					if err != nil {
+						return err
+					}
+					s.StartupCommand = append(s.StartupCommand, elem)
+					return nil
+				}); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"startupCommand\"")
+			}
 		case "status":
-			requiredBitSet[1] |= 1 << 4
+			requiredBitSet[1] |= 1 << 5
 			if err := func() error {
 				if err := s.Status.Decode(d); err != nil {
 					return err
@@ -1741,7 +1771,7 @@ func (s *SandboxExec) Decode(d *jx.Decoder) error {
 				return errors.Wrap(err, "decode field \"status\"")
 			}
 		case "tty":
-			requiredBitSet[1] |= 1 << 5
+			requiredBitSet[1] |= 1 << 6
 			if err := func() error {
 				v, err := d.Bool()
 				s.Tty = bool(v)
@@ -1773,7 +1803,7 @@ func (s *SandboxExec) Decode(d *jx.Decoder) error {
 				return errors.Wrap(err, "decode field \"user\"")
 			}
 		case "workdir":
-			requiredBitSet[2] |= 1 << 0
+			requiredBitSet[2] |= 1 << 1
 			if err := func() error {
 				v, err := d.Str()
 				s.Workdir = string(v)
@@ -1795,8 +1825,8 @@ func (s *SandboxExec) Decode(d *jx.Decoder) error {
 	var failures []validate.FieldError
 	for i, mask := range [3]uint8{
 		0b10000011,
-		0b00110000,
-		0b00000001,
+		0b01100000,
+		0b00000010,
 	} {
 		if result := (requiredBitSet[i] & mask) ^ mask; result != 0 {
 			// Mask only required fields and check equality to mask using XOR.

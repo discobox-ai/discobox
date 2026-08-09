@@ -57,6 +57,9 @@ func TestTerminalFallsBackToShellWhenNoHarnessConfigured(t *testing.T) {
 	if !terminal.TTY {
 		t.Fatal("shell terminal must allocate a TTY")
 	}
+	if len(terminal.StartupCommand) != 0 {
+		t.Fatalf("shell fallback terminal must not type in a startup command, got %v", terminal.StartupCommand)
+	}
 }
 
 type fakeUnits struct {
@@ -111,8 +114,10 @@ func newTestService(t *testing.T, installer Installer) (*Service, *fakeUnits) {
 	return svc, units
 }
 
-// A terminal is an exec created in harness mode: the resolved harness command runs
-// with TTY, tagged harnessId in metadata, after the installer runs for that harness.
+// A terminal is an exec created in harness mode: it runs as the resolved login
+// shell (TTY, real job control) with the harness command typed in as
+// StartupCommand, tagged harnessId in metadata, after the installer runs for
+// that harness.
 func TestServiceCreateResolvesAgentAndTagsMetadata(t *testing.T) {
 	installer := &noopInstaller{}
 	svc, units := newTestService(t, installer)
@@ -127,8 +132,11 @@ func TestServiceCreateResolvesAgentAndTagsMetadata(t *testing.T) {
 	if !ex.TTY {
 		t.Fatalf("terminal exec must allocate a TTY")
 	}
-	if want := []string{"codex", "hello"}; len(ex.Command) != 2 || ex.Command[0] != want[0] || ex.Command[1] != want[1] {
-		t.Fatalf("command = %v, want %v", ex.Command, want)
+	if len(ex.Command) != 2 || !strings.HasSuffix(ex.Command[0], "sh") || ex.Command[1] != "-l" {
+		t.Fatalf("command = %v, want a login shell (the harness runs as its typed-in startup command)", ex.Command)
+	}
+	if want := []string{"codex", "hello"}; len(ex.StartupCommand) != 2 || ex.StartupCommand[0] != want[0] || ex.StartupCommand[1] != want[1] {
+		t.Fatalf("startupCommand = %v, want %v", ex.StartupCommand, want)
 	}
 	if len(units.starts) != 1 {
 		t.Fatalf("expected one unit start, got %d", len(units.starts))

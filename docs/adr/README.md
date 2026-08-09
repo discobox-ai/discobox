@@ -79,3 +79,4 @@ Nygard-style ADRs (see adr.github.io) combined with current-state design docs:
 | [0024](0024-ssh-is-a-control-plane-ingress-onto-execs.md) | SSH is a control-plane ingress onto execs, and forwarded TCP terminates inside the sandbox | Accepted |
 | [0025](0025-the-sandbox-user-is-one-contract-resolved-inside-the-sandbox.md) | The sandbox user is one contract, resolved inside the sandbox | Accepted |
 | [0026](0026-local-source-origin-is-bind-mounted-live-into-the-sandbox.md) | A local source's origin is bind-mounted live into the sandbox | Proposed |
+| [0027](0027-harness-terminals-run-as-a-shells-typed-in-job.md) | Harness terminals run as a shell's typed-in job, not as the exec's own process | Accepted |

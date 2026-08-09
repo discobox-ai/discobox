@@ -10,8 +10,10 @@ import (
 	"net"
 	"net/http"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"runtime"
+	"strconv"
 	"testing"
 	"time"
 
@@ -531,6 +533,110 @@ func TestRunShimSuspendAndResume(t *testing.T) {
 	if err := <-errCh; err != nil && !errors.Is(err, context.Canceled) {
 		t.Fatalf("run shim: %v", err)
 	}
+}
+
+// A harness terminal never execs its command directly — it execs a shell and
+// types the command in, so the command runs as the shell's foreground job
+// rather than as the exec's own (orphaned) session leader. This is what makes
+// Ctrl-Z work at all: TestRunShimSuspendAndResume above pins that an orphaned
+// session leader's process group discards SIGTSTP outright (a Signal frame
+// has to map it to SIGSTOP to get anywhere). Here the same raw Ctrl-Z byte a
+// real terminal sends — a frame.Input, not a frame.Signal — must stop the
+// child while leaving the shell itself alive to hand back a prompt.
+func TestRunShimStartupCommandGetsRealJobControl(t *testing.T) {
+	if runtime.GOOS != "linux" {
+		t.Skip("process state is read from /proc")
+	}
+	if _, err := exec.LookPath("bash"); err != nil {
+		t.Skip("bash not available")
+	}
+	dir := t.TempDir()
+	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
+	defer cancel()
+	socketPath := filepath.Join(dir, "shim.sock")
+	errCh := make(chan error, 1)
+	go func() {
+		errCh <- RunShim(ctx, ShimConfig{
+			ExecID:         "exec_startup",
+			Command:        []string{"bash", "--norc", "--noprofile", "-i"},
+			StartupCommand: []string{"sleep", "30"},
+			Workdir:        dir,
+			SocketPath:     socketPath,
+			RuntimePath:    filepath.Join(dir, "runtime.json"),
+			LogDir:         filepath.Join(dir, "logs"),
+			Rows:           24,
+			Cols:           80,
+			TTY:            true,
+		})
+	}()
+
+	conn, _ := attachShimConnForTest(ctx, t, socketPath)
+	started, err := shimproxy.StartJSON[Exec](ctx, socketPath)
+	if err != nil {
+		t.Fatalf("start shim: %v", err)
+	}
+	shellPID := int(started.PID)
+
+	var childPID int
+	deadline := time.Now().Add(5 * time.Second)
+	for time.Now().Before(deadline) {
+		if pid, ok := findChildPID(shellPID, "sleep"); ok {
+			childPID = pid
+			break
+		}
+		time.Sleep(25 * time.Millisecond)
+	}
+	if childPID == 0 {
+		t.Fatalf("typed-in startup command never appeared as a child of the shell (pid %d)", shellPID)
+	}
+	waitForProcessState(t, childPID, "S", "startup command never started running")
+
+	if err := frame.Write(conn, frame.Input, []byte{0x1a}); err != nil {
+		t.Fatalf("write ctrl-z byte: %v", err)
+	}
+	waitForProcessState(t, childPID, "T", "ctrl-z did not stop the shell's child job")
+	waitForProcessState(t, shellPID, "S", "the shell must still be running after its child stopped, ready to hand back a prompt")
+
+	cancel()
+	if err := <-errCh; err != nil && !errors.Is(err, context.Canceled) {
+		t.Fatalf("run shim: %v", err)
+	}
+}
+
+// findChildPID scans /proc for a running process whose parent pid is parent
+// and whose comm matches name.
+func findChildPID(parent int, name string) (int, bool) {
+	entries, err := os.ReadDir("/proc")
+	if err != nil {
+		return 0, false
+	}
+	for _, entry := range entries {
+		pid, err := strconv.Atoi(entry.Name())
+		if err != nil {
+			continue
+		}
+		data, err := os.ReadFile(fmt.Sprintf("/proc/%d/stat", pid))
+		if err != nil {
+			continue
+		}
+		open := bytes.IndexByte(data, '(')
+		closeParen := bytes.LastIndexByte(data, ')')
+		if open < 0 || closeParen < 0 || closeParen <= open || closeParen+2 >= len(data) {
+			continue
+		}
+		if string(data[open+1:closeParen]) != name {
+			continue
+		}
+		fields := bytes.Fields(data[closeParen+2:])
+		if len(fields) < 2 {
+			continue
+		}
+		ppid, err := strconv.Atoi(string(fields[1]))
+		if err == nil && ppid == parent {
+			return pid, true
+		}
+	}
+	return 0, false
 }
 
 // waitForProcessState polls /proc until the process reaches want ("S" running

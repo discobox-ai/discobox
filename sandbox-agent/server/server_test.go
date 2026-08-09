@@ -153,7 +153,10 @@ func TestCreateAgentTerminalRequiresWriteScope(t *testing.T) {
 	if len(runner.starts) != 1 {
 		t.Fatalf("starts = %#v", runner.starts)
 	}
-	if body := resp.Body.String(); !strings.Contains(body, `"status":"starting"`) || !strings.Contains(body, `"command":["codex"]`) {
+	// The exec's command is the login shell it actually runs as (real job
+	// control); the harness command is what got typed into it, reported
+	// separately as startupCommand.
+	if body := resp.Body.String(); !strings.Contains(body, `"status":"starting"`) || !strings.Contains(body, `"startupCommand":["codex"]`) {
 		t.Fatalf("body = %q", body)
 	}
 }

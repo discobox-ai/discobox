@@ -215,9 +215,9 @@ func (s *Service) Create(ctx context.Context, req CreateRequest) (execs.Exec, er
 	if req.primary {
 		metadata[metadataPrimary] = "true"
 	}
-	created, err := s.execs.Create(ctx, execs.CreateRequest{
+	execReq := execs.CreateRequest{
 		ID:       id,
-		Command:  command,
+		Shell:    true,
 		Workdir:  workdir,
 		Env:      env,
 		User:     cloneUser(s.defaultUser),
@@ -225,7 +225,18 @@ func (s *Service) Create(ctx context.Context, req CreateRequest) (execs.Exec, er
 		Rows:     req.Rows,
 		Cols:     req.Cols,
 		Metadata: metadata,
-	})
+	}
+	// Every terminal runs as the resolved login shell so its command is the
+	// shell's own foreground job rather than the exec's session leader: a
+	// session leader's process group is orphaned (Setsid) and the kernel
+	// discards SIGTSTP sent to it, so Ctrl-Z typed at a harness would do
+	// nothing. A child of the shell is not orphaned, so Ctrl-Z stops it and
+	// the shell is left to hand back a prompt, same as any local terminal. The
+	// shell fallback harness IS that shell, so it needs no command typed in.
+	if harnessID != ShellHarnessID {
+		execReq.StartupCommand = command
+	}
+	created, err := s.execs.Create(ctx, execReq)
 	if err != nil {
 		return execs.Exec{}, err
 	}

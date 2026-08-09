@@ -27,6 +27,10 @@ func (SystemdRunner) Start(ctx context.Context, req StartRequest) (StartResult, 
 	if err != nil {
 		return StartResult{}, err
 	}
+	startupCommandJSON, err := json.Marshal(req.StartupCommand)
+	if err != nil {
+		return StartResult{}, err
+	}
 	envJSON, err := json.Marshal(req.Env)
 	if err != nil {
 		return StartResult{}, err
@@ -63,6 +67,7 @@ func (SystemdRunner) Start(ctx context.Context, req StartRequest) (StartResult, 
 		"--rows", strconv.Itoa(int(req.Rows)),
 		"--cols", strconv.Itoa(int(req.Cols)),
 		"--command", base64.StdEncoding.EncodeToString(commandJSON),
+		"--startup-command", base64.StdEncoding.EncodeToString(startupCommandJSON),
 		"--env", base64.StdEncoding.EncodeToString(envJSON),
 		"--user", base64.StdEncoding.EncodeToString(userJSON),
 		"--metadata", base64.StdEncoding.EncodeToString(metadataJSON),

@@ -437,6 +437,9 @@ func (h *handler) sandboxExec(in execs.Exec) sandboxapi.SandboxExec {
 		Tty:       in.TTY,
 		CreatedAt: in.CreatedAt,
 	}
+	if len(in.StartupCommand) > 0 {
+		out.StartupCommand = append([]string{}, in.StartupCommand...)
+	}
 	if len(in.Env) > 0 {
 		out.Env = sandboxapi.NewOptSandboxExecEnv(sandboxapi.SandboxExecEnv(stringMap(in.Env)))
 	}

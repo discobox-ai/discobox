@@ -20,19 +20,20 @@ import (
 )
 
 type ShimConfig struct {
-	ExecID      string
-	Unit        string
-	Command     []string
-	Workdir     string
-	SocketPath  string
-	RuntimePath string
-	LogDir      string
-	Rows        uint16
-	Cols        uint16
-	TTY         bool
-	Env         map[string]string
-	User        *User
-	Metadata    map[string]string
+	ExecID         string
+	Unit           string
+	Command        []string
+	StartupCommand []string
+	Workdir        string
+	SocketPath     string
+	RuntimePath    string
+	LogDir         string
+	Rows           uint16
+	Cols           uint16
+	TTY            bool
+	Env            map[string]string
+	User           *User
+	Metadata       map[string]string
 }
 
 type shimRuntime struct {
@@ -89,18 +90,19 @@ func (r *shimRuntime) start(ctx context.Context) error {
 
 	now := time.Now().UTC()
 	r.status = Exec{
-		ID:          r.cfg.ExecID,
-		Status:      StatusStarting,
-		Command:     append([]string{}, r.cfg.Command...),
-		Workdir:     r.cfg.Workdir,
-		Env:         cloneMap(r.cfg.Env),
-		User:        r.cfg.User.Clone(),
-		TTY:         r.cfg.TTY,
-		Unit:        r.cfg.Unit,
-		CreatedAt:   now,
-		Metadata:    cloneMap(r.cfg.Metadata),
-		SocketPath:  r.cfg.SocketPath,
-		RuntimePath: r.cfg.RuntimePath,
+		ID:             r.cfg.ExecID,
+		Status:         StatusStarting,
+		Command:        append([]string{}, r.cfg.Command...),
+		StartupCommand: append([]string{}, r.cfg.StartupCommand...),
+		Workdir:        r.cfg.Workdir,
+		Env:            cloneMap(r.cfg.Env),
+		User:           r.cfg.User.Clone(),
+		TTY:            r.cfg.TTY,
+		Unit:           r.cfg.Unit,
+		CreatedAt:      now,
+		Metadata:       cloneMap(r.cfg.Metadata),
+		SocketPath:     r.cfg.SocketPath,
+		RuntimePath:    r.cfg.RuntimePath,
 	}
 	if err := r.writeStatus(); err != nil {
 		logger.Close()
@@ -250,6 +252,11 @@ func (r *shimRuntime) startCommand() error {
 		r.markStartFailed(err)
 		return err
 	}
+	if err := r.writeStartupCommand(); err != nil {
+		r.terminate()
+		r.markStartFailed(err)
+		return err
+	}
 	now := time.Now().UTC()
 	r.mu.Lock()
 	r.status.Status = StatusRunning
@@ -260,6 +267,22 @@ func (r *shimRuntime) startCommand() error {
 		return err
 	}
 	go r.wait()
+	return nil
+}
+
+// writeStartupCommand types the resolved startup command into the process's
+// input once, immediately after it starts, exactly as attach input arrives —
+// see Exec.StartupCommand for why this is how a harness terminal gets real job
+// control.
+func (r *shimRuntime) writeStartupCommand() error {
+	payload := QuoteShellCommand(r.cfg.StartupCommand)
+	if len(payload) == 0 {
+		return nil
+	}
+	if _, err := r.proc.WriteInput(payload); err != nil {
+		return err
+	}
+	r.logger.Record(LogStreamInput, payload)
 	return nil
 }
 

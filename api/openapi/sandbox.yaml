@@ -183,6 +183,16 @@ components:
                 startedAt:
                     format: date-time
                     type: string
+                startupCommand:
+                    description: |
+                        Harness terminal mode only: the command typed into the shell (command
+                        above) once it starts, as if the caller had typed it themselves. This is
+                        what is actually running in the foreground, and what gives it real job
+                        control (Ctrl-Z, fg, bg) — see command for what process is literally
+                        executed.
+                    items:
+                        type: string
+                    type: array
                 status:
                     description: |
                         Current observed exec runtime status. installing is a terminal-layer

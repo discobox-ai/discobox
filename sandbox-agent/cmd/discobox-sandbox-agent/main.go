@@ -213,7 +213,7 @@ func runProxyBridge(args []string) int {
 
 func runExecShim(args []string) int {
 	var cfg execs.ShimConfig
-	var commandBase64, envBase64, userBase64, metadataBase64 string
+	var commandBase64, startupCommandBase64, envBase64, userBase64, metadataBase64 string
 	var rows, cols int
 	flags := flag.NewFlagSet("discobox-sandbox-agent exec-shim", flag.ContinueOnError)
 	flags.StringVar(&cfg.ExecID, "exec-id", "", "sandbox exec id")
@@ -226,6 +226,7 @@ func runExecShim(args []string) int {
 	flags.IntVar(&cols, "cols", 0, "initial PTY cols")
 	flags.BoolVar(&cfg.TTY, "tty", false, "allocate a PTY")
 	flags.StringVar(&commandBase64, "command", "", "base64 encoded JSON command argv")
+	flags.StringVar(&startupCommandBase64, "startup-command", "", "base64 encoded JSON startup command argv, typed into the shell after it starts")
 	flags.StringVar(&envBase64, "env", "", "base64 encoded JSON environment")
 	flags.StringVar(&userBase64, "user", "", "base64 encoded JSON exec user")
 	flags.StringVar(&metadataBase64, "metadata", "", "base64 encoded JSON exec metadata")
@@ -244,6 +245,17 @@ func runExecShim(args []string) int {
 	if err := json.Unmarshal(commandJSON, &cfg.Command); err != nil {
 		slog.Error("parse exec shim command", "error", err)
 		return 2
+	}
+	if startupCommandBase64 != "" {
+		startupCommandJSON, err := base64.StdEncoding.DecodeString(startupCommandBase64)
+		if err != nil {
+			slog.Error("decode exec shim startup command", "error", err)
+			return 2
+		}
+		if err := json.Unmarshal(startupCommandJSON, &cfg.StartupCommand); err != nil {
+			slog.Error("parse exec shim startup command", "error", err)
+			return 2
+		}
 	}
 	if envBase64 != "" {
 		envJSON, err := base64.StdEncoding.DecodeString(envBase64)

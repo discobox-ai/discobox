@@ -13388,6 +13388,16 @@ func (s *SandboxExec) encodeFields(e *jx.Encoder) {
 		e.ArrEnd()
 	}
 	{
+		if s.StartupCommand != nil {
+			e.FieldStart("startupCommand")
+			e.ArrStart()
+			for _, elem := range s.StartupCommand {
+				e.Str(elem)
+			}
+			e.ArrEnd()
+		}
+	}
+	{
 		e.FieldStart("workdir")
 		e.Str(s.Workdir)
 	}
@@ -13467,24 +13477,25 @@ func (s *SandboxExec) encodeFields(e *jx.Encoder) {
 	}
 }
 
-var jsonFieldsNameOfSandboxExec = [17]string{
+var jsonFieldsNameOfSandboxExec = [18]string{
 	0:  "id",
 	1:  "status",
 	2:  "command",
-	3:  "workdir",
-	4:  "env",
-	5:  "user",
-	6:  "tty",
-	7:  "unit",
-	8:  "pid",
-	9:  "exitCode",
-	10: "error",
-	11: "createdAt",
-	12: "startedAt",
-	13: "exitedAt",
-	14: "metadata",
-	15: "harnessId",
-	16: "primary",
+	3:  "startupCommand",
+	4:  "workdir",
+	5:  "env",
+	6:  "user",
+	7:  "tty",
+	8:  "unit",
+	9:  "pid",
+	10: "exitCode",
+	11: "error",
+	12: "createdAt",
+	13: "startedAt",
+	14: "exitedAt",
+	15: "metadata",
+	16: "harnessId",
+	17: "primary",
 }
 
 // Decode decodes SandboxExec from json.
@@ -13538,8 +13549,27 @@ func (s *SandboxExec) Decode(d *jx.Decoder) error {
 			}(); err != nil {
 				return errors.Wrap(err, "decode field \"command\"")
 			}
+		case "startupCommand":
+			if err := func() error {
+				s.StartupCommand = make([]string, 0)
+				if err := d.Arr(func(d *jx.Decoder) error {
+					var elem string
+					v, err := d.Str()
+					elem = string(v)
+					if err != nil {
+						return err
+					}
+					s.StartupCommand = append(s.StartupCommand, elem)
+					return nil
+				}); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"startupCommand\"")
+			}
 		case "workdir":
-			requiredBitSet[0] |= 1 << 3
+			requiredBitSet[0] |= 1 << 4
 			if err := func() error {
 				v, err := d.Str()
 				s.Workdir = string(v)
@@ -13571,7 +13601,7 @@ func (s *SandboxExec) Decode(d *jx.Decoder) error {
 				return errors.Wrap(err, "decode field \"user\"")
 			}
 		case "tty":
-			requiredBitSet[0] |= 1 << 6
+			requiredBitSet[0] |= 1 << 7
 			if err := func() error {
 				v, err := d.Bool()
 				s.Tty = bool(v)
@@ -13623,7 +13653,7 @@ func (s *SandboxExec) Decode(d *jx.Decoder) error {
 				return errors.Wrap(err, "decode field \"error\"")
 			}
 		case "createdAt":
-			requiredBitSet[1] |= 1 << 3
+			requiredBitSet[1] |= 1 << 4
 			if err := func() error {
 				v, err := json.DecodeDateTime(d)
 				s.CreatedAt = v
@@ -13694,8 +13724,8 @@ func (s *SandboxExec) Decode(d *jx.Decoder) error {
 	// Validate required fields.
 	var failures []validate.FieldError
 	for i, mask := range [3]uint8{
-		0b01001111,
-		0b00001000,
+		0b10010111,
+		0b00010000,
 		0b00000000,
 	} {
 		if result := (requiredBitSet[i] & mask) ^ mask; result != 0 {

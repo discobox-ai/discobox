@@ -76,6 +76,31 @@ func ShellCommand(user *User, env map[string]string) ([]string, error) {
 	return []string{shell, "-l"}, nil
 }
 
+// QuoteShellCommand renders argv as a single command line safe to type into an
+// interactive shell, as if a user had typed it themselves rather than passed
+// it as argv: every argument is single-quoted, the one quoting form bash, zsh,
+// dash, ksh, and fish all agree on (only a literal single quote needs
+// escaping — close the quote, emit an escaped quote, reopen it). It ends in a
+// newline so the shell executes it as soon as it is read. Feeding a command
+// through the shell's normal input, rather than launching it directly, is what
+// gives it real job control: see Exec.StartupCommand.
+func QuoteShellCommand(argv []string) []byte {
+	if len(argv) == 0 {
+		return nil
+	}
+	var b strings.Builder
+	for i, arg := range argv {
+		if i > 0 {
+			b.WriteByte(' ')
+		}
+		b.WriteByte('\'')
+		b.WriteString(strings.ReplaceAll(arg, "'", `'\''`))
+		b.WriteByte('\'')
+	}
+	b.WriteByte('\n')
+	return []byte(b.String())
+}
+
 // passwdShell reads the shell field of name's passwd entry. os/user does not
 // expose it, so the database is parsed directly. A missing entry is not an
 // error: the caller falls back, since a user can run a process without one.

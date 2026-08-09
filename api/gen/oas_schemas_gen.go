@@ -8030,6 +8030,12 @@ type SandboxExec struct {
 	Status SandboxExecStatus `json:"status"`
 	// Command argv executed in the sandbox.
 	Command []string `json:"command"`
+	// Harness terminal mode only: the command typed into the shell (command
+	// above) once it starts, as if the caller had typed it themselves. This is
+	// what is actually running in the foreground, and what gives it real job
+	// control (Ctrl-Z, fg, bg) — see command for what process is literally
+	// executed.
+	StartupCommand []string `json:"startupCommand"`
 	// Working directory for the exec process.
 	Workdir string `json:"workdir"`
 	// Additional environment variables for the exec process.
@@ -8070,6 +8076,11 @@ func (s *SandboxExec) GetStatus() SandboxExecStatus {
 // GetCommand returns the value of Command.
 func (s *SandboxExec) GetCommand() []string {
 	return s.Command
+}
+
+// GetStartupCommand returns the value of StartupCommand.
+func (s *SandboxExec) GetStartupCommand() []string {
+	return s.StartupCommand
 }
 
 // GetWorkdir returns the value of Workdir.
@@ -8155,6 +8166,11 @@ func (s *SandboxExec) SetStatus(val SandboxExecStatus) {
 // SetCommand sets the value of Command.
 func (s *SandboxExec) SetCommand(val []string) {
 	s.Command = val
+}
+
+// SetStartupCommand sets the value of StartupCommand.
+func (s *SandboxExec) SetStartupCommand(val []string) {
+	s.StartupCommand = val
 }
 
 // SetWorkdir sets the value of Workdir.

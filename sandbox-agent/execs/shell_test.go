@@ -124,3 +124,74 @@ func TestResolveCommandShellExclusivity(t *testing.T) {
 }
 
 func int64ptr(v int64) *int64 { return &v }
+
+// A startup command only makes sense typed into a shell, so it requires Shell
+// and never changes the resolved argv: the shell is still what actually runs.
+func TestResolveCommandStartupCommandRequiresShell(t *testing.T) {
+	writePasswd(t, "")
+
+	if _, err := resolveCommand(CreateRequest{StartupCommand: []string{"claude"}}, nil, nil); err == nil {
+		t.Fatal("startup command without shell was accepted")
+	}
+	command, err := resolveCommand(CreateRequest{Shell: true, StartupCommand: []string{"claude"}}, nil, map[string]string{"SHELL": "/bin/bash"})
+	if err != nil {
+		t.Fatalf("resolve shell+startup command: %v", err)
+	}
+	if len(command) != 2 || command[0] != "/bin/bash" || command[1] != "-l" {
+		t.Fatalf("command = %v, want the login shell (startup command is typed in, not exec'd)", command)
+	}
+}
+
+// The exec record reports both: Command is the literal argv actually executed
+// (the shell), StartupCommand is what was typed into it and what the launched
+// unit is told to type in turn.
+func TestManagerReportsStartupCommandSeparatelyFromCommand(t *testing.T) {
+	writePasswd(t, "")
+	runner := &fakeUnitManager{}
+	manager, err := NewManagerWithConfig(ManagerConfig{
+		WorkingRoot: "/workspace",
+		RuntimeDir:  t.TempDir(),
+		Env:         map[string]string{"SHELL": "/bin/bash"},
+		Units:       runner,
+	})
+	if err != nil {
+		t.Fatalf("new manager: %v", err)
+	}
+
+	exec, err := manager.Create(context.Background(), CreateRequest{
+		Shell:          true,
+		StartupCommand: []string{"claude", "do a thing"},
+		TTY:            true,
+	})
+	if err != nil {
+		t.Fatalf("create: %v", err)
+	}
+	if len(exec.Command) != 2 || exec.Command[0] != "/bin/bash" || exec.Command[1] != "-l" {
+		t.Fatalf("exec.Command = %v, want the login shell", exec.Command)
+	}
+	want := []string{"claude", "do a thing"}
+	if len(exec.StartupCommand) != 2 || exec.StartupCommand[0] != want[0] || exec.StartupCommand[1] != want[1] {
+		t.Fatalf("exec.StartupCommand = %v, want %v", exec.StartupCommand, want)
+	}
+	if len(runner.starts) != 1 {
+		t.Fatalf("expected one unit start, got %d", len(runner.starts))
+	}
+	started := runner.starts[0].StartupCommand
+	if len(started) != 2 || started[0] != want[0] || started[1] != want[1] {
+		t.Fatalf("started unit startupCommand = %v, want %v", started, want)
+	}
+}
+
+// The bytes typed into the shell are quoted so the command runs exactly as
+// given, argument boundaries included, even when an argument itself contains
+// shell metacharacters.
+func TestQuoteShellCommand(t *testing.T) {
+	got := string(QuoteShellCommand([]string{"claude", "do a thing", "it's fine"}))
+	want := `'claude' 'do a thing' 'it'\''s fine'` + "\n"
+	if got != want {
+		t.Fatalf("quoted = %q, want %q", got, want)
+	}
+	if QuoteShellCommand(nil) != nil {
+		t.Fatal("empty argv must produce no bytes to inject")
+	}
+}

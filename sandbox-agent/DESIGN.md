@@ -76,11 +76,26 @@ runtime operations.
 - A terminal is one primitive: an exec created in harness mode. The `terminal`
   layer resolves the image harness (or the `shell` fallback harness — a login
   shell — when the image has no harness), applies image/project files and hooks,
-  injects the hook/terminal env, then calls `execs.Manager` with
-  the resolved command, `TTY`, and `harnessId`/`primary` metadata. `execs.Manager`
-  never learns what a harness is. Plain execs and terminals currently use
-  separate `execs.Manager` instances (distinct runtime dirs); the API-level merge
-  to a single `/execs` surface is pending.
+  injects the hook/terminal env, then calls `execs.Manager` with `TTY`,
+  `harnessId`/`primary` metadata, `Shell: true`, and — for every harness except
+  the `shell` fallback (which already is the shell) — `StartupCommand` set to the
+  resolved harness command. `execs.Manager` never learns what a harness is;
+  `StartupCommand` is a generic exec-primitive capability, not a harness concept.
+  Plain execs and terminals currently use separate `execs.Manager` instances
+  (distinct runtime dirs); the API-level merge to a single `/execs` surface is
+  pending.
+- A harness terminal never execs the harness binary directly. `execs.Manager`
+  resolves `Shell: true` to the run user's login shell (as for a plain `shell:
+  true` exec) and reports that shell as the exec's `Command` — what is literally
+  executed. `StartupCommand`, when set, is a second argv the shim types into that
+  shell's PTY once it starts, quoted with `execs.QuoteShellCommand` and followed
+  by a newline, exactly as if the user had typed it at the prompt: the harness
+  therefore runs as the shell's foreground job, not as the exec's own process.
+  Injection needs no readiness handshake — the PTY's cooked-mode input queue
+  holds the bytes until the shell's own first read, regardless of profile/rc
+  timing. This is why Ctrl-Z can suspend a harness at all: see the orphaned
+  process group rule below. `SandboxExec.command` and `.startupCommand` report
+  the two argvs separately; CLI/API display prefers `startupCommand` when set.
 
 ## Development Images
 
@@ -179,10 +194,15 @@ development images without a registry.
   kernel discards SIGTSTP, SIGTTIN, and SIGTTOU sent to an orphaned group. A
   `TSTP` frame therefore maps to **SIGSTOP**, which is never discarded; mapping
   it to SIGTSTP silently does nothing. Ctrl-Z typed into a TTY exec is unaffected
-  because it is a byte, not a frame: the remote line discipline signals the
-  foreground job, which is a child group of the shell and not orphaned. A command
-  that *is* the session leader (`disco shell -t sleep 30`) cannot be stopped by
-  Ctrl-Z for the same orphan rule — `ssh host sleep 30` behaves identically.
+  by this rule when it is a byte, not a frame, and there is a shell in front of
+  the command: the remote line discipline signals the foreground job, whose
+  group has a parent (the shell) in the same session and so is not orphaned.
+  This is exactly what a harness terminal's `Shell: true` + `StartupCommand` buys
+  it (see above) — the harness is never the exec's session leader, so its
+  process group is never orphaned in the first place. A command that *is* the
+  session leader (a plain exec, `disco shell -t sleep 30`) cannot be stopped by
+  Ctrl-Z for the same orphan rule — `ssh host sleep 30` behaves identically —
+  which is exactly why terminals stopped taking that path.
 - Exit status uses the shell convention for signal deaths: `128+signum`, so an
   interrupted command reports 130 rather than Go's `ExitCode() == -1`, which
   loses the signal and reads as a generic failure. `procio.Status` carries it.

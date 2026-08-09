@@ -308,6 +308,14 @@ func (a *App) writeSandboxTerminals(cmd *cobra.Command, terminals []apimodel.San
 		if value, ok := terminal.ExitCode.Get(); ok {
 			exitCode = fmt.Sprint(value)
 		}
+		// A terminal runs as a shell so its command has real job control; the
+		// harness command typed into that shell (what the user thinks of as
+		// "the command") is StartupCommand when set, and Command otherwise
+		// (a plain shell terminal, which has no separate startup command).
+		command := terminal.Command
+		if len(terminal.StartupCommand) > 0 {
+			command = terminal.StartupCommand
+		}
 		fmt.Fprintf(tw, "%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\n",
 			terminal.ID,
 			terminal.HarnessId.Or(""),
@@ -315,7 +323,7 @@ func (a *App) writeSandboxTerminals(cmd *cobra.Command, terminals []apimodel.San
 			pid,
 			exitCode,
 			truncateTableValue(terminal.Workdir, 36),
-			truncateTableValue(strings.Join(terminal.Command, " "), 48),
+			truncateTableValue(strings.Join(command, " "), 48),
 			formatTime(terminal.CreatedAt),
 		)
 	}

@@ -29,23 +29,33 @@ const (
 const defaultTerm = "xterm-256color"
 
 type Exec struct {
-	ID          string            `json:"id"`
-	Status      Status            `json:"status"`
-	Command     []string          `json:"command"`
-	Workdir     string            `json:"workdir"`
-	Env         map[string]string `json:"env,omitempty"`
-	User        *User             `json:"user,omitempty"`
-	TTY         bool              `json:"tty"`
-	Unit        string            `json:"unit,omitempty"`
-	PID         int64             `json:"pid,omitempty"`
-	ExitCode    *int64            `json:"exitCode,omitempty"`
-	Error       string            `json:"error,omitempty"`
-	CreatedAt   time.Time         `json:"createdAt"`
-	StartedAt   *time.Time        `json:"startedAt,omitempty"`
-	ExitedAt    *time.Time        `json:"exitedAt,omitempty"`
-	Metadata    map[string]string `json:"metadata,omitempty"`
-	SocketPath  string            `json:"socketPath,omitempty"`
-	RuntimePath string            `json:"runtimePath,omitempty"`
+	ID      string   `json:"id"`
+	Status  Status   `json:"status"`
+	Command []string `json:"command"`
+	// StartupCommand, when set, is the command line typed into the shell's PTY
+	// immediately after it starts, as if a user had typed it: the actual argv
+	// (Command) is the resolved login shell, so the process the caller asked for
+	// runs as the shell's foreground job rather than as the exec's own session
+	// leader. That is what gives it real job control — Ctrl-Z reaches a child
+	// process group with a parent in the same session instead of an orphaned one,
+	// so the kernel actually stops it and the shell is left to hand back a
+	// prompt. It is reported separately from Command because Command must stay
+	// the literal argv actually executed.
+	StartupCommand []string          `json:"startupCommand,omitempty"`
+	Workdir        string            `json:"workdir"`
+	Env            map[string]string `json:"env,omitempty"`
+	User           *User             `json:"user,omitempty"`
+	TTY            bool              `json:"tty"`
+	Unit           string            `json:"unit,omitempty"`
+	PID            int64             `json:"pid,omitempty"`
+	ExitCode       *int64            `json:"exitCode,omitempty"`
+	Error          string            `json:"error,omitempty"`
+	CreatedAt      time.Time         `json:"createdAt"`
+	StartedAt      *time.Time        `json:"startedAt,omitempty"`
+	ExitedAt       *time.Time        `json:"exitedAt,omitempty"`
+	Metadata       map[string]string `json:"metadata,omitempty"`
+	SocketPath     string            `json:"socketPath,omitempty"`
+	RuntimePath    string            `json:"runtimePath,omitempty"`
 }
 
 type CreateRequest struct {
@@ -58,14 +68,18 @@ type CreateRequest struct {
 	// Shell runs the run user's login shell instead of Command, resolved in the
 	// sandbox because only the sandbox knows what that user's shell is. It is
 	// mutually exclusive with Command.
-	Shell    bool
-	Workdir  string
-	Env      map[string]string
-	User     *User
-	TTY      bool
-	Rows     uint16
-	Cols     uint16
-	Metadata map[string]string
+	Shell bool
+	// StartupCommand types this command line into the shell once it starts,
+	// as if the caller had typed it themselves. It requires Shell and is
+	// mutually exclusive with Command. See Exec.StartupCommand for why.
+	StartupCommand []string
+	Workdir        string
+	Env            map[string]string
+	User           *User
+	TTY            bool
+	Rows           uint16
+	Cols           uint16
+	Metadata       map[string]string
 }
 
 type UnitManager interface {
@@ -76,19 +90,20 @@ type UnitManager interface {
 }
 
 type StartRequest struct {
-	ID          string
-	Unit        string
-	Command     []string
-	Workdir     string
-	Env         map[string]string
-	User        *User
-	TTY         bool
-	Metadata    map[string]string
-	SocketPath  string
-	RuntimePath string
-	LogDir      string
-	Rows        uint16
-	Cols        uint16
+	ID             string
+	Unit           string
+	Command        []string
+	StartupCommand []string
+	Workdir        string
+	Env            map[string]string
+	User           *User
+	TTY            bool
+	Metadata       map[string]string
+	SocketPath     string
+	RuntimePath    string
+	LogDir         string
+	Rows           uint16
+	Cols           uint16
 }
 
 type StartResult struct {
@@ -257,18 +272,19 @@ func (m *Manager) Create(ctx context.Context, req CreateRequest) (Exec, error) {
 	runtimePath := m.runtimePath(id)
 	now := time.Now().UTC()
 	exec := Exec{
-		ID:          id,
-		Status:      StatusStarting,
-		Command:     command,
-		Workdir:     workdir,
-		Env:         cloneMap(env),
-		User:        user.Clone(),
-		TTY:         req.TTY,
-		Unit:        unit,
-		CreatedAt:   now,
-		Metadata:    cloneMap(req.Metadata),
-		SocketPath:  socketPath,
-		RuntimePath: runtimePath,
+		ID:             id,
+		Status:         StatusStarting,
+		Command:        command,
+		StartupCommand: append([]string{}, req.StartupCommand...),
+		Workdir:        workdir,
+		Env:            cloneMap(env),
+		User:           user.Clone(),
+		TTY:            req.TTY,
+		Unit:           unit,
+		CreatedAt:      now,
+		Metadata:       cloneMap(req.Metadata),
+		SocketPath:     socketPath,
+		RuntimePath:    runtimePath,
 	}
 	if err := writeRuntime(runtimePath, exec); err != nil {
 		return Exec{}, err
@@ -284,19 +300,20 @@ func (m *Manager) Create(ctx context.Context, req CreateRequest) (Exec, error) {
 		"user":    user,
 	})
 	result, err := m.units.Start(ctx, StartRequest{
-		ID:          id,
-		Unit:        unit,
-		Command:     exec.Command,
-		Workdir:     workdir,
-		Env:         cloneMap(env),
-		User:        user.Clone(),
-		TTY:         req.TTY,
-		Metadata:    cloneMap(req.Metadata),
-		SocketPath:  socketPath,
-		RuntimePath: runtimePath,
-		LogDir:      m.logDir,
-		Rows:        req.Rows,
-		Cols:        req.Cols,
+		ID:             id,
+		Unit:           unit,
+		Command:        exec.Command,
+		StartupCommand: exec.StartupCommand,
+		Workdir:        workdir,
+		Env:            cloneMap(env),
+		User:           user.Clone(),
+		TTY:            req.TTY,
+		Metadata:       cloneMap(req.Metadata),
+		SocketPath:     socketPath,
+		RuntimePath:    runtimePath,
+		LogDir:         m.logDir,
+		Rows:           req.Rows,
+		Cols:           req.Cols,
 	})
 	current := exec
 	if err != nil {
@@ -550,8 +567,12 @@ func (m *Manager) resolveWorkdir(requested string) (string, error) {
 // resolveCommand yields the argv the exec runs: the requested command, or the
 // run user's login shell when the request asks for a shell rather than naming
 // one. The resolved argv is what the exec record reports, so a shell exec is
-// self-describing after the fact.
+// self-describing after the fact. StartupCommand never changes this: it rides
+// along with the shell and is typed into it after start, not exec'd itself.
 func resolveCommand(req CreateRequest, user *User, env map[string]string) ([]string, error) {
+	if len(req.StartupCommand) > 0 && !req.Shell {
+		return nil, errors.New("exec startup command requires shell")
+	}
 	if req.Shell {
 		if len(req.Command) > 0 {
 			return nil, errors.New("exec shell and command are mutually exclusive")
@@ -887,6 +908,7 @@ func cloneMap(in map[string]string) map[string]string {
 func cloneExec(in Exec) Exec {
 	out := in
 	out.Command = append([]string{}, in.Command...)
+	out.StartupCommand = append([]string{}, in.StartupCommand...)
 	out.Env = cloneMap(in.Env)
 	out.Metadata = cloneMap(in.Metadata)
 	out.SocketPath = in.SocketPath
