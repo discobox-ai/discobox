@@ -23,6 +23,7 @@ import (
 
 func TestRunShimSendsOutputBeforeExitFrame(t *testing.T) {
 	dir := t.TempDir()
+	logs := newFakeLogSink()
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 
@@ -35,7 +36,7 @@ func TestRunShimSendsOutputBeforeExitFrame(t *testing.T) {
 			Workdir:     dir,
 			SocketPath:  socketPath,
 			RuntimePath: filepath.Join(dir, "runtime.json"),
-			LogDir:      filepath.Join(dir, "logs"),
+			Logs:        logs,
 		})
 	}()
 
@@ -104,12 +105,12 @@ done:
 	}
 	// Logs are flushed by the time the exit frame arrives, so read them before
 	// tearing down.
-	logs, err := ReadLogs(ctx, filepath.Join(dir, "logs"), "exec_test")
+	entries, err := ReadExecLog(ctx, logs, "exec_test")
 	if err != nil {
 		t.Fatalf("read logs: %v", err)
 	}
 	var logged []byte
-	for _, entry := range logs {
+	for _, entry := range entries {
 		if entry.Stream == LogStreamStdout {
 			logged = append(logged, entry.Data...)
 		}
@@ -127,6 +128,7 @@ done:
 
 func TestRunShimUsesResizeFrameBeforeStart(t *testing.T) {
 	dir := t.TempDir()
+	logs := newFakeLogSink()
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 
@@ -140,7 +142,7 @@ func TestRunShimUsesResizeFrameBeforeStart(t *testing.T) {
 			Workdir:     dir,
 			SocketPath:  socketPath,
 			RuntimePath: filepath.Join(dir, "runtime.json"),
-			LogDir:      filepath.Join(dir, "logs"),
+			Logs:        logs,
 			Rows:        24,
 			Cols:        80,
 			TTY:         true,
@@ -254,6 +256,7 @@ func attachReadExit(ctx context.Context, t *testing.T, socketPath string, start 
 // exit frame (and code) rather than a bare disconnect, because the shim lingers.
 func TestRunShimLingersForLateAttach(t *testing.T) {
 	dir := t.TempDir()
+	logs := newFakeLogSink()
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 	socketPath := filepath.Join(dir, "shim.sock")
@@ -265,7 +268,7 @@ func TestRunShimLingersForLateAttach(t *testing.T) {
 			Workdir:     dir,
 			SocketPath:  socketPath,
 			RuntimePath: filepath.Join(dir, "runtime.json"),
-			LogDir:      filepath.Join(dir, "logs"),
+			Logs:        logs,
 		})
 	}()
 
@@ -290,6 +293,7 @@ func TestRunShimLingersForLateAttach(t *testing.T) {
 // does. A TTY exec has no such split — the PTY merges them before the shim.
 func TestRunShimSeparatesStderrFrames(t *testing.T) {
 	dir := t.TempDir()
+	logs := newFakeLogSink()
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 	socketPath := filepath.Join(dir, "shim.sock")
@@ -301,7 +305,7 @@ func TestRunShimSeparatesStderrFrames(t *testing.T) {
 			Workdir:     dir,
 			SocketPath:  socketPath,
 			RuntimePath: filepath.Join(dir, "runtime.json"),
-			LogDir:      filepath.Join(dir, "logs"),
+			Logs:        logs,
 		})
 	}()
 
@@ -376,6 +380,7 @@ func attachShimForTest(ctx context.Context, t *testing.T, socketPath string) *bu
 // nothing to stderr, which is the point: clients do not special-case TTYs.
 func TestRunShimTTYReportsEverythingAsStdout(t *testing.T) {
 	dir := t.TempDir()
+	logs := newFakeLogSink()
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 	socketPath := filepath.Join(dir, "shim.sock")
@@ -387,7 +392,7 @@ func TestRunShimTTYReportsEverythingAsStdout(t *testing.T) {
 			Workdir:     dir,
 			SocketPath:  socketPath,
 			RuntimePath: filepath.Join(dir, "runtime.json"),
-			LogDir:      filepath.Join(dir, "logs"),
+			Logs:        logs,
 			Rows:        24,
 			Cols:        80,
 			TTY:         true,
@@ -422,11 +427,11 @@ func TestRunShimTTYReportsEverythingAsStdout(t *testing.T) {
 		t.Fatalf("stdout frames = %q, want both writes merged onto stdout", string(stdout))
 	}
 
-	logs, err := ReadLogs(ctx, filepath.Join(dir, "logs"), "exec_tty_streams")
+	entries, err := ReadExecLog(ctx, logs, "exec_tty_streams")
 	if err != nil {
 		t.Fatalf("read logs: %v", err)
 	}
-	for _, entry := range logs {
+	for _, entry := range entries {
 		if entry.Stream == LogStreamStderr {
 			t.Fatalf("a TTY exec must not log a stderr stream, got %q", entry.Data)
 		}
@@ -445,6 +450,7 @@ func TestRunShimTTYReportsEverythingAsStdout(t *testing.T) {
 func TestRunShimDoesNotLoseOutputRacingAttach(t *testing.T) {
 	for i := range 25 {
 		dir := t.TempDir()
+		logs := newFakeLogSink()
 		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 		socketPath := filepath.Join(dir, "shim.sock")
 		errCh := make(chan error, 1)
@@ -455,7 +461,7 @@ func TestRunShimDoesNotLoseOutputRacingAttach(t *testing.T) {
 				Workdir:     dir,
 				SocketPath:  socketPath,
 				RuntimePath: filepath.Join(dir, "runtime.json"),
-				LogDir:      filepath.Join(dir, "logs"),
+				Logs:        logs,
 			})
 		}()
 
@@ -495,6 +501,7 @@ func TestRunShimSuspendAndResume(t *testing.T) {
 		t.Skip("process state is read from /proc")
 	}
 	dir := t.TempDir()
+	logs := newFakeLogSink()
 	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
 	defer cancel()
 	socketPath := filepath.Join(dir, "shim.sock")
@@ -506,7 +513,7 @@ func TestRunShimSuspendAndResume(t *testing.T) {
 			Workdir:     dir,
 			SocketPath:  socketPath,
 			RuntimePath: filepath.Join(dir, "runtime.json"),
-			LogDir:      filepath.Join(dir, "logs"),
+			Logs:        logs,
 		})
 	}()
 
@@ -563,7 +570,7 @@ func TestRunShimStartupCommandGetsRealJobControl(t *testing.T) {
 			Workdir:        dir,
 			SocketPath:     socketPath,
 			RuntimePath:    filepath.Join(dir, "runtime.json"),
-			LogDir:         filepath.Join(dir, "logs"),
+			Logs:           newFakeLogSink(),
 			Rows:           24,
 			Cols:           80,
 			TTY:            true,

@@ -79,3 +79,19 @@ type ExecEvent struct {
 }
 
 func (ExecEvent) TableName() string { return "exec_events" }
+
+// ExecLogChunk is one compressed batch of an exec's stdin/stdout/stderr
+// transcript, covering roughly one AsyncLogger flush window (see
+// execs.LogSink). Data holds the compressed bytes; RawSize is the
+// uncompressed size, kept for observability/debugging only.
+type ExecLogChunk struct {
+	ID          string    `gorm:"primaryKey" json:"id"`
+	ExecID      string    `gorm:"index:idx_exec_log_chunks_exec_bucket,priority:1" json:"execId"`
+	BucketStart time.Time `gorm:"index:idx_exec_log_chunks_exec_bucket,priority:2" json:"bucketStart"`
+	Codec       string    `json:"codec"`
+	Data        []byte    `json:"-"`
+	RawSize     int       `json:"rawSize"`
+	CreatedAt   time.Time `json:"createdAt"`
+}
+
+func (ExecLogChunk) TableName() string { return "exec_log_chunks" }

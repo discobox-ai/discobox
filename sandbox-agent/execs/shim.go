@@ -27,13 +27,22 @@ type ShimConfig struct {
 	Workdir        string
 	SocketPath     string
 	RuntimePath    string
-	LogDir         string
-	Rows           uint16
-	Cols           uint16
-	TTY            bool
-	Env            map[string]string
-	User           *User
-	Metadata       map[string]string
+	// Logs is an already-open sink, not a path: the exec-shim process opens
+	// its own connection to the sandbox's sqlite database (a separate OS
+	// process from the main sandbox-agent server, see docs/adr/0028) before
+	// constructing this config, the same way the main process opens its
+	// store before constructing execs.ManagerConfig.
+	Logs LogSink
+	// OnLogFlushError, if set, is called when a background transcript flush to
+	// Logs fails (see AsyncLogger) — otherwise that bucket's data is dropped
+	// with no signal at all.
+	OnLogFlushError func(error)
+	Rows            uint16
+	Cols            uint16
+	TTY             bool
+	Env             map[string]string
+	User            *User
+	Metadata        map[string]string
 }
 
 type shimRuntime struct {
@@ -82,7 +91,7 @@ func (r *shimRuntime) start(ctx context.Context) error {
 	if strings.TrimSpace(r.cfg.Workdir) == "" {
 		return fmt.Errorf("workdir is required")
 	}
-	logger, err := NewAsyncLogger(r.cfg.LogDir, r.cfg.ExecID)
+	logger, err := NewAsyncLogger(r.cfg.Logs, r.cfg.ExecID, r.cfg.OnLogFlushError)
 	if err != nil {
 		return err
 	}

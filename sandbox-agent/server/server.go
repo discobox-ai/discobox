@@ -117,9 +117,11 @@ func newRouterAndManager(cfg Config) (*chi.Mux, *terminal.Service, *execs.Manage
 		DefaultWorkdir: cfg.ExecDefaults.Workdir,
 		DefaultUser:    execDefaultUser(cfg.ExecDefaults),
 		RuntimeDir:     cfg.RuntimeDir,
+		DatabasePath:   cfg.DatabasePath,
 		Env:            cfg.Env,
 		Units:          cfg.ExecUnitManager,
 		Audit:          execAudit,
+		Logs:           localStore,
 	})
 	if err != nil {
 		return nil, nil, nil, nil, err

@@ -22,6 +22,7 @@ import (
 	harnesshooks "github.com/obot-platform/discobox/sandbox-agent/hooks"
 	"github.com/obot-platform/discobox/sandbox-agent/nestedbridge"
 	"github.com/obot-platform/discobox/sandbox-agent/server"
+	agentstore "github.com/obot-platform/discobox/sandbox-agent/store"
 )
 
 func main() {
@@ -213,7 +214,7 @@ func runProxyBridge(args []string) int {
 
 func runExecShim(args []string) int {
 	var cfg execs.ShimConfig
-	var commandBase64, startupCommandBase64, envBase64, userBase64, metadataBase64 string
+	var databasePath, commandBase64, startupCommandBase64, envBase64, userBase64, metadataBase64 string
 	var rows, cols int
 	flags := flag.NewFlagSet("discobox-sandbox-agent exec-shim", flag.ContinueOnError)
 	flags.StringVar(&cfg.ExecID, "exec-id", "", "sandbox exec id")
@@ -221,7 +222,7 @@ func runExecShim(args []string) int {
 	flags.StringVar(&cfg.Workdir, "workdir", "", "exec working directory")
 	flags.StringVar(&cfg.SocketPath, "socket", "", "exec shim unix socket path")
 	flags.StringVar(&cfg.RuntimePath, "runtime", "", "exec runtime status path")
-	flags.StringVar(&cfg.LogDir, "logs", "", "exec log directory")
+	flags.StringVar(&databasePath, "database", "", "sandbox-agent sqlite database path")
 	flags.IntVar(&rows, "rows", 0, "initial PTY rows")
 	flags.IntVar(&cols, "cols", 0, "initial PTY cols")
 	flags.BoolVar(&cfg.TTY, "tty", false, "allocate a PTY")
@@ -294,6 +295,25 @@ func runExecShim(args []string) int {
 	cfg.Cols = uint16Dimension(cols)
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
+	// The exec-shim is its own OS process (systemd-run, see execs/systemd.go),
+	// separate from the main sandbox-agent server that owns the long-lived
+	// store — it opens its own connection to the same sqlite file to write
+	// this exec's transcript (execs.LogSink, see docs/adr/0028). Fail hard on
+	// error rather than falling back to an unlogged exec: silently degrading
+	// here would defeat the durability this exists for.
+	logStore, err := agentstore.Open(ctx, databasePath)
+	if err != nil {
+		slog.Error("open exec shim log store", "execID", cfg.ExecID, "error", err)
+		return 1
+	}
+	defer logStore.Close()
+	cfg.Logs = logStore
+	// A flush failure (e.g. sqlite's busy_timeout exceeded under multi-process
+	// write contention) otherwise drops a bucket's transcript data with no
+	// signal at all; log it so it's at least observable.
+	cfg.OnLogFlushError = func(err error) {
+		slog.Error("flush exec log chunk", "execID", cfg.ExecID, "error", err)
+	}
 	if err := execs.RunShim(ctx, cfg); err != nil && !errors.Is(err, context.Canceled) {
 		slog.Error("run exec shim", "execID", cfg.ExecID, "error", err)
 		return 1

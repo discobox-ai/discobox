@@ -16,7 +16,15 @@ import (
 
 const DefaultDBPath = "/var/lib/discobox/sandbox-agent.db"
 
+// defaultLogRetention bounds how long exec transcript chunks are kept. It is
+// a fixed constant rather than sandbox-configurable: nothing today needs a
+// per-sandbox retention policy, and a long-lived terminal (the primary one
+// lives for the sandbox's whole lifetime) would otherwise grow its transcript
+// without bound even though individual chunks are compressed.
+const defaultLogRetention = 14 * 24 * time.Hour
+
 type Store struct {
+	pools *gormdb.Pools
 	write *gorm.DB
 	read  *gorm.DB
 }
@@ -55,11 +63,22 @@ func Open(ctx context.Context, dsn string) (*Store, error) {
 	if err != nil {
 		return nil, err
 	}
-	s := &Store{write: pools.Write, read: pools.Read}
-	if err := s.write.WithContext(ctx).AutoMigrate(&AgentState{}, &ResourceSnapshot{}, &HarnessHookLog{}, &ExecState{}, &ExecEvent{}, &ExecRecord{}); err != nil {
+	s := &Store{pools: pools, write: pools.Write, read: pools.Read}
+	if err := s.write.WithContext(ctx).AutoMigrate(&AgentState{}, &ResourceSnapshot{}, &HarnessHookLog{}, &ExecState{}, &ExecEvent{}, &ExecRecord{}, &ExecLogChunk{}); err != nil {
 		return nil, fmt.Errorf("migrate sandbox-agent store: %w", err)
 	}
 	return s, nil
+}
+
+// Close releases the underlying database connections. The long-lived main
+// sandbox-agent server process does not need to call this, but the
+// short-lived exec-shim process (one per exec, see execs.LogSink) does, to
+// release its handle on the shared sqlite file promptly on exit.
+func (s *Store) Close() error {
+	if s == nil {
+		return nil
+	}
+	return s.pools.Close()
 }
 
 const primaryTerminalLaunchedKey = "primary_terminal_launched"
@@ -421,6 +440,85 @@ func (s *Store) ListHarnessHooks(ctx context.Context, terminalID string, limit i
 		})
 	}
 	return out, nil
+}
+
+// AppendExecLogChunk durably persists one compressed transcript batch for an
+// exec, then prunes chunks for that exec older than defaultLogRetention in
+// the same transaction (mirrors RecordResourceSample's insert+prune
+// pattern, but time-bounded rather than count-bounded since compressed
+// chunk sizes vary with terminal output).
+func (s *Store) AppendExecLogChunk(ctx context.Context, execID string, bucketStart time.Time, codec string, data []byte, rawSize int) error {
+	if s == nil {
+		return nil
+	}
+	execID = strings.TrimSpace(execID)
+	if execID == "" {
+		return fmt.Errorf("exec id is required")
+	}
+	codec = strings.TrimSpace(codec)
+	if codec == "" {
+		return fmt.Errorf("log chunk codec is required")
+	}
+	id, err := newID()
+	if err != nil {
+		return err
+	}
+	row := ExecLogChunk{
+		ID:          id,
+		ExecID:      execID,
+		BucketStart: bucketStart.UTC(),
+		Codec:       codec,
+		Data:        append([]byte{}, data...),
+		RawSize:     rawSize,
+		CreatedAt:   time.Now().UTC(),
+	}
+	cutoff := time.Now().UTC().Add(-defaultLogRetention)
+	return s.write.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		if err := tx.Create(&row).Error; err != nil {
+			return err
+		}
+		return tx.Where("exec_id = ? AND bucket_start < ?", execID, cutoff).Delete(&ExecLogChunk{}).Error
+	})
+}
+
+// ListExecLogChunks returns an exec's transcript chunks ordered oldest first,
+// as execs.LogChunk so the execs package (which cannot import store, since
+// store already imports execs) can decompress and parse them without knowing
+// about the sqlite row shape.
+func (s *Store) ListExecLogChunks(ctx context.Context, execID string) ([]execs.LogChunk, error) {
+	if s == nil {
+		return nil, nil
+	}
+	var rows []ExecLogChunk
+	if err := s.read.WithContext(ctx).
+		Where("exec_id = ?", strings.TrimSpace(execID)).
+		Order("bucket_start ASC, created_at ASC").
+		Find(&rows).Error; err != nil {
+		return nil, err
+	}
+	out := make([]execs.LogChunk, 0, len(rows))
+	for _, row := range rows {
+		out = append(out, execs.LogChunk{
+			BucketStart: row.BucketStart,
+			Codec:       row.Codec,
+			Data:        append([]byte{}, row.Data...),
+			RawSize:     row.RawSize,
+		})
+	}
+	return out, nil
+}
+
+// DeleteExecLog hard-deletes every transcript chunk for an exec. Called from
+// Manager.Delete so a deleted exec's transcript does not outlive it.
+func (s *Store) DeleteExecLog(ctx context.Context, execID string) error {
+	if s == nil {
+		return nil
+	}
+	execID = strings.TrimSpace(execID)
+	if execID == "" {
+		return nil
+	}
+	return s.write.WithContext(ctx).Where("exec_id = ?", execID).Delete(&ExecLogChunk{}).Error
 }
 
 func createExecEventTx(tx *gorm.DB, execID, typ, message string, details map[string]any) error {

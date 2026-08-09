@@ -13,6 +13,7 @@ require (
 	github.com/fsnotify/fsnotify v1.10.1
 	github.com/go-chi/chi/v5 v5.3.0
 	github.com/go-faster/jx v1.2.0
+	github.com/klauspost/compress v1.18.5
 	github.com/obot-platform/discobox v0.0.0
 	github.com/obot-platform/discobox/gormdb v0.0.0
 	gorm.io/gorm v1.31.1

@@ -201,3 +201,72 @@ func TestResourceSamplesRespectRetention(t *testing.T) {
 		t.Fatalf("samples not oldest-to-newest retained tail: %#v", samples)
 	}
 }
+
+func TestExecLogChunksAreOrderedAndDeletable(t *testing.T) {
+	ctx := context.Background()
+	st, err := Open(ctx, filepath.Join(t.TempDir(), "harness.db"))
+	if err != nil {
+		t.Fatalf("open store: %v", err)
+	}
+	base := time.Now().UTC()
+	for i := range 3 {
+		if err := st.AppendExecLogChunk(ctx, "exec_1", base.Add(time.Duration(i)*time.Minute), "zstd", []byte{byte(i)}, 10); err != nil {
+			t.Fatalf("append chunk %d: %v", i, err)
+		}
+	}
+	// A second exec's chunks must not leak into the first exec's read.
+	if err := st.AppendExecLogChunk(ctx, "exec_2", base, "zstd", []byte{9}, 1); err != nil {
+		t.Fatalf("append other exec chunk: %v", err)
+	}
+	chunks, err := st.ListExecLogChunks(ctx, "exec_1")
+	if err != nil {
+		t.Fatalf("list chunks: %v", err)
+	}
+	if len(chunks) != 3 {
+		t.Fatalf("len(chunks) = %d, want 3: %#v", len(chunks), chunks)
+	}
+	for i, chunk := range chunks {
+		if chunk.Data[0] != byte(i) {
+			t.Fatalf("chunks[%d] = %#v, want oldest-first order", i, chunk)
+		}
+	}
+	if err := st.DeleteExecLog(ctx, "exec_1"); err != nil {
+		t.Fatalf("delete log: %v", err)
+	}
+	chunks, err = st.ListExecLogChunks(ctx, "exec_1")
+	if err != nil {
+		t.Fatalf("list chunks after delete: %v", err)
+	}
+	if len(chunks) != 0 {
+		t.Fatalf("len(chunks) after delete = %d, want 0", len(chunks))
+	}
+	remaining, err := st.ListExecLogChunks(ctx, "exec_2")
+	if err != nil {
+		t.Fatalf("list other exec chunks: %v", err)
+	}
+	if len(remaining) != 1 {
+		t.Fatalf("deleting exec_1 must not remove exec_2's chunks: %#v", remaining)
+	}
+}
+
+func TestExecLogChunksPruneBeyondRetention(t *testing.T) {
+	ctx := context.Background()
+	st, err := Open(ctx, filepath.Join(t.TempDir(), "harness.db"))
+	if err != nil {
+		t.Fatalf("open store: %v", err)
+	}
+	now := time.Now().UTC()
+	if err := st.AppendExecLogChunk(ctx, "exec_1", now.Add(-defaultLogRetention-time.Hour), "zstd", []byte{1}, 1); err != nil {
+		t.Fatalf("append stale chunk: %v", err)
+	}
+	if err := st.AppendExecLogChunk(ctx, "exec_1", now, "zstd", []byte{2}, 1); err != nil {
+		t.Fatalf("append fresh chunk: %v", err)
+	}
+	chunks, err := st.ListExecLogChunks(ctx, "exec_1")
+	if err != nil {
+		t.Fatalf("list chunks: %v", err)
+	}
+	if len(chunks) != 1 || chunks[0].Data[0] != 2 {
+		t.Fatalf("chunks = %#v, want only the fresh chunk retained", chunks)
+	}
+}

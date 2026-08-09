@@ -89,7 +89,7 @@ func TestRunShimResumesTerminalInputAcrossPhysicalReconnect(t *testing.T) {
 			Workdir:     dir,
 			SocketPath:  socketPath,
 			RuntimePath: filepath.Join(dir, "runtime.json"),
-			LogDir:      filepath.Join(dir, "logs"),
+			Logs:        newFakeLogSink(),
 			Rows:        24,
 			Cols:        80,
 			TTY:         true,

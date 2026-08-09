@@ -20,14 +20,14 @@ func TestSystemdRunnerKeepsShimRootAndPassesUserToShim(t *testing.T) {
 	uid := int64(1000)
 	gid := int64(1001)
 	if _, err := (SystemdRunner{}).Start(context.Background(), StartRequest{
-		ID:          "exec-test",
-		Unit:        "discobox-exec-test",
-		Command:     []string{"true"},
-		Workdir:     "/workspace",
-		User:        &User{Name: "darren", UID: &uid, GID: &gid},
-		SocketPath:  "/run/discobox/harness-terminals/execs/exec-test.sock",
-		RuntimePath: "/run/discobox/harness-terminals/execs/exec-test.json",
-		LogDir:      "/run/discobox/harness-terminals/execs/logs",
+		ID:           "exec-test",
+		Unit:         "discobox-exec-test",
+		Command:      []string{"true"},
+		Workdir:      "/workspace",
+		User:         &User{Name: "darren", UID: &uid, GID: &gid},
+		SocketPath:   "/run/discobox/harness-terminals/execs/exec-test.sock",
+		RuntimePath:  "/run/discobox/harness-terminals/execs/exec-test.json",
+		DatabasePath: "/var/lib/discobox/sandbox-agent.db",
 	}); err != nil {
 		t.Fatalf("start: %v", err)
 	}
@@ -42,6 +42,9 @@ func TestSystemdRunnerKeepsShimRootAndPassesUserToShim(t *testing.T) {
 	}
 	if !strings.Contains(args, "exec-shim\n") || !strings.Contains(args, "--user\n") {
 		t.Fatalf("systemd-run args did not pass user to exec shim:\n%s", args)
+	}
+	if !strings.Contains(args, "--database\n/var/lib/discobox/sandbox-agent.db\n") {
+		t.Fatalf("systemd-run args did not pass the database path to exec shim:\n%s", args)
 	}
 }
 

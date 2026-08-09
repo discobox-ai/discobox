@@ -101,9 +101,11 @@ type StartRequest struct {
 	Metadata       map[string]string
 	SocketPath     string
 	RuntimePath    string
-	LogDir         string
-	Rows           uint16
-	Cols           uint16
+	// DatabasePath is the sqlite file the exec-shim process opens its own
+	// connection to, to write transcript chunks (see LogSink).
+	DatabasePath string
+	Rows         uint16
+	Cols         uint16
 }
 
 type StartResult struct {
@@ -139,15 +141,39 @@ type AuditRecorder interface {
 	LoadExecRecords(context.Context) ([]Exec, error)
 }
 
+// LogChunk is one compressed batch of an exec's stdin/stdout/stderr
+// transcript, as persisted by a LogSink. Data is compressed with Codec; the
+// caller is what knows how to marshal/unmarshal the entries inside it (see
+// AsyncLogger and ReadExecLog) — the sink itself treats it as opaque bytes.
+type LogChunk struct {
+	BucketStart time.Time
+	Codec       string
+	Data        []byte
+	RawSize     int
+}
+
+// LogSink durably persists exec transcript chunks. It is implemented by
+// *store.Store; the interface lives here (not in store) so both the main
+// sandbox-agent server process and the exec-shim process — which runs as its
+// own OS process and cannot share the server's in-memory *store.Store, see
+// ShimConfig.Logs — depend on the same narrow contract without execs
+// importing store (store already imports execs, so the reverse would cycle).
+type LogSink interface {
+	AppendExecLogChunk(ctx context.Context, execID string, bucketStart time.Time, codec string, data []byte, rawSize int) error
+	ListExecLogChunks(ctx context.Context, execID string) ([]LogChunk, error)
+	DeleteExecLog(ctx context.Context, execID string) error
+}
+
 type Manager struct {
 	workingRoot    string
 	defaultWorkdir string
 	defaultUser    *User
 	runtimeDir     string
-	logDir         string
+	databasePath   string
 	env            map[string]string
 	units          UnitManager
 	audit          AuditRecorder
+	logs           LogSink
 }
 
 type ManagerConfig struct {
@@ -155,9 +181,14 @@ type ManagerConfig struct {
 	DefaultWorkdir string
 	DefaultUser    *User
 	RuntimeDir     string
-	Env            map[string]string
-	Units          UnitManager
-	Audit          AuditRecorder
+	// DatabasePath is threaded onto each StartRequest so the systemd runner
+	// can pass it to the exec-shim process, which opens its own connection
+	// to the same sqlite file to write log chunks (see LogSink).
+	DatabasePath string
+	Env          map[string]string
+	Units        UnitManager
+	Audit        AuditRecorder
+	Logs         LogSink
 }
 
 func NewManager(workingRoot, runtimeDir string, units UnitManager, audit AuditRecorder) (*Manager, error) {
@@ -188,10 +219,11 @@ func NewManagerWithConfig(cfg ManagerConfig) (*Manager, error) {
 		defaultWorkdir: strings.TrimSpace(cfg.DefaultWorkdir),
 		defaultUser:    cfg.DefaultUser.Clone(),
 		runtimeDir:     runtimeDir,
-		logDir:         filepath.Join(runtimeDir, "logs"),
+		databasePath:   strings.TrimSpace(cfg.DatabasePath),
 		env:            cloneMap(cfg.Env),
 		units:          units,
 		audit:          cfg.Audit,
+		logs:           cfg.Logs,
 	}, nil
 }
 
@@ -311,7 +343,7 @@ func (m *Manager) Create(ctx context.Context, req CreateRequest) (Exec, error) {
 		Metadata:       cloneMap(req.Metadata),
 		SocketPath:     socketPath,
 		RuntimePath:    runtimePath,
-		LogDir:         m.logDir,
+		DatabasePath:   m.databasePath,
 		Rows:           req.Rows,
 		Cols:           req.Cols,
 	})
@@ -407,12 +439,13 @@ func (m *Manager) Logs(ctx context.Context, id string) ([]LogEntry, error) {
 	if _, ok := m.Get(id); !ok {
 		return nil, ErrNotFound
 	}
-	return ReadLogs(ctx, m.logDir, id)
+	return ReadExecLog(ctx, m.logs, id)
 }
 
-// Delete stops the exec's unit and removes its runtime and socket files. It is
-// used for long-lived execs (such as harness terminals) that outlive a single
-// command and must be explicitly torn down.
+// Delete stops the exec's unit, removes its runtime and socket files, and
+// deletes its durable transcript. It is used for long-lived execs (such as
+// harness terminals) that outlive a single command and must be explicitly
+// torn down.
 func (m *Manager) Delete(ctx context.Context, id string) error {
 	exec, ok := m.Get(id)
 	if !ok {
@@ -424,6 +457,9 @@ func (m *Manager) Delete(ctx context.Context, id string) error {
 	_ = m.recordEvent(ctx, id, "exec.stop.requested", "exec stop requested", map[string]any{"unit": exec.Unit})
 	_ = os.Remove(exec.RuntimePath)
 	_ = os.Remove(exec.SocketPath)
+	if m.logs != nil {
+		_ = m.logs.DeleteExecLog(ctx, id)
+	}
 	_ = m.recordEvent(ctx, id, "exec.deleted", "exec deleted", map[string]any{"unit": exec.Unit})
 	return nil
 }

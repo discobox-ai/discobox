@@ -27,7 +27,7 @@ runtime operations.
 | `runcca` | The sandbox's runc wrapper (`cmd/discobox-runc`): installed as `runc` ahead of the real one on containerd's and dockerd's PATH, it mounts the sandbox's CA trust bundles and injects proxy-trust env into every container's OCI spec, so a user's Dockerfile or `docker run` never needs MITM awareness. See ADR 0020, which supersedes 0015's NRI plugin — containerd invokes NRI only from its CRI path, which dockerd does not use. Handles both `runc create` (the `docker run` path, via the containerd shim) and `runc run` (the `docker build` path, via BuildKit's executor). Bundles are staged per boot by `discobox-trust-ca.service` under `/run/discobox/proxy/ca-bundles`; they cannot live beside the CA in `/etc/discobox/proxy`, which is pool-agent's read-only mount. |
 | `dockercache` | The sandbox's `docker` CLI wrapper (`cmd/discobox-docker`): installed as `docker` ahead of the real CLI on PATH, it gives `docker build` a BuildKit local cache on the pool-shared cache volume so a build in one sandbox is reused by the others. Only build commands are rewritten; everything else is exec'd straight through. |
 | `resources` | Opaque cgroup/procfs/systemd-style resource snapshot collection for exec runtimes. |
-| `store` | Sandbox-local SQLite/GORM audit log, observed terminal state snapshots, and retained resource blobs. |
+| `store` | Sandbox-local SQLite/GORM audit log, observed terminal state snapshots, retained resource blobs, and compressed exec/terminal transcript chunks (see ADR 0028). |
 | `Dockerfile` | Debian-based base sandbox runtime image with Docker, development tools, Chromium, socket-activated desktop access, code-server, and Nix tooling. Harness image builds live in their owning `harness/<type>` folders. |
 
 ## Boundary Rules
@@ -228,8 +228,12 @@ development images without a registry.
   empty one, which would clear whatever the client's own terminal had). Only TTY execs have a
   screen: `Runtime.EnableScreen` installs the `Replayer` once the PTY exists, so a
   pipe exec never waits on a repaint handshake it cannot satisfy. The
-  disk log (`AsyncLogger`) is no longer used for attach — it backs only the
-  `terminal logs` command (full forensic transcript).
+  durable transcript (`AsyncLogger`) is not used for attach — it backs only
+  the `terminal logs` command (full forensic transcript). It batches an
+  exec's output into compressed rows in the sandbox-local sqlite store
+  (`store.ExecLogChunk`) rather than tmpfs files, so transcripts survive a
+  pool container restart; see ADR 0028 for why and the read-staleness
+  tradeoff that follows from batching.
 - Race-free snapshot: `host.Stream.Broadcast` feeds the `Replayer` and snapshots
   the attacher set under one lock, and registration captures the `Replayer`
   snapshot under that same lock. Every output chunk
