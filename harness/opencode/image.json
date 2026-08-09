@@ -4,15 +4,19 @@
     "NIX_CONFIG": "experimental-features = nix-command flakes",
     "NIX_REMOTE": "daemon",
     "NPM_CONFIG_PREFIX": "%HOME%/.npm-global",
-    "PATH": "%HOME%/.npm-global/bin:%HOME%/.cargo/bin:%HOME%/.nix-profile/bin:%HOME%/.local/bin:/nix/var/nix/profiles/default/bin:/usr/local/go/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin",
-    "PNPM_HOME": "/var/lib/discobox/pnpm"
+    "PATH": "%HOME%/.npm-global/bin:%HOME%/.cargo/bin:%HOME%/.nix-profile/bin:%HOME%/.local/bin:/nix/var/nix/profiles/default/bin:/usr/local/go/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
   },
   "volumes": [
     { "path": "%HOME%", "volume": "data", "uid": "%UID%", "gid": "%GID%", "mode": "0755" },
     { "path": "/var/lib/docker", "volume": "data", "uid": 0, "gid": 0, "mode": "0711" },
     { "path": "/var/lib/containerd", "volume": "data", "uid": 0, "gid": 0, "mode": "0711" },
     { "path": "/var/lib/discobox", "volume": "data", "uid": 0, "gid": 0, "mode": "0755" },
-    { "path": "/var/lib/discobox/pnpm", "volume": "cache", "uid": "%UID%", "gid": "%GID%", "mode": "0755" }
+    { "path": "%HOME%/.cache", "volume": "cache", "uid": "%UID%", "gid": "%GID%", "mode": "0755" },
+    { "path": "%HOME%/.local/share/pnpm", "volume": "cache", "uid": "%UID%", "gid": "%GID%", "mode": "0755" },
+    { "path": "%HOME%/go/pkg/mod", "volume": "cache", "uid": "%UID%", "gid": "%GID%", "mode": "0755" },
+    { "path": "%HOME%/.cargo/registry", "volume": "cache", "uid": "%UID%", "gid": "%GID%", "mode": "0755" },
+    { "path": "%HOME%/.cargo/git", "volume": "cache", "uid": "%UID%", "gid": "%GID%", "mode": "0755" },
+    { "path": "%HOME%/.rustup", "volume": "cache", "uid": "%UID%", "gid": "%GID%", "mode": "0755" }
   ],
   "additionalGroups": ["docker"],
   "harness": {
@@ -25,6 +29,13 @@
     "relaunchCommand": [
       "opencode",
       "--continue"
+    ],
+    "files": [
+      {
+        "path": ".config/pnpm/config.yaml",
+        "createOnly": true,
+        "content": "storeDir: ~/.local/share/pnpm\n"
+      }
     ],
     "secrets": [
       {

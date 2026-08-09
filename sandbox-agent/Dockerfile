@@ -54,7 +54,6 @@ ENV container=docker
 ENV DEBIAN_FRONTEND=noninteractive
 ENV NIX_CONFIG="experimental-features = nix-command flakes"
 ENV NIX_REMOTE=daemon
-ENV PNPM_HOME=/var/lib/discobox/pnpm
 ENV PATH=/nix/var/nix/profiles/default/bin:/usr/local/go/bin:/usr/local/bin:${PATH}
 
 SHELL ["/bin/bash", "-o", "pipefail", "-c"]
