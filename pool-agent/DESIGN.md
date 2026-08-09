@@ -20,7 +20,7 @@ from the future in-sandbox `sandbox-agent` API.
 | `.` | Root `poolagent` Go package: boot contract, registration flow, status reporting, and high-level command orchestration. |
 | `server` | Pool-local HTTP server, health/metadata endpoints, and generated sandbox API route/auth adapter. |
 | `vsock` | Guest AF_VSOCK listener and host-CID HTTP transport primitives. |
-| `sandboxruntime` | Local sandbox runtime implementations used by the pool host server. Provisions the four primary volumes (`/.discobox/{data,cache,config,sources}`) and mounts them into every sandbox; `cache` is the pool-local directory shared across the pool's sandboxes. In-sandbox path wiring is delegated to the sandbox-agent init flow (ADR 0007). |
+| `sandboxruntime` | Local sandbox runtime implementations used by the pool host server. Provisions the five primary volumes (`/.discobox/{data,cache,config,sources,secrets}`) and mounts them into every sandbox; `cache` is the pool-local directory shared across the pool's sandboxes. Also binds each clone-delivered local source's real origin directory, read-only, onto `/.discobox/origins/<slug>` (ADR 0026). In-sandbox path wiring for the primary volumes is delegated to the sandbox-agent init flow (ADR 0007). |
 | `proxyagent` | Worker-scoped proxy wiring: certificate bundle preparation, the `proxy` subcommand entrypoint, and per-sandbox client material staging. |
 | `systemd` | Linux/systemd namespace startup and child reaping helpers, with non-Linux stubs. |
 
@@ -203,16 +203,29 @@ flowchart LR
   terminals and execs are proxied. The sandbox-agent's PID-1 init recursively
   rebinds the config volume onto `/etc/discobox`, so the proxy material lands at
   its documented `/etc/discobox/proxy` path.
-- The pool host provisions four host-backed primary volumes and mounts them at
-  `/.discobox/{data,cache,config,sources}`; it no longer decides in-sandbox paths
-  (home, `/var/lib/docker`, source targets). `data`, `config`, and `sources` are
-  per-sandbox; `cache` is shared across the pool's sandboxes in this project. The
-  durable host layout is
-  `/var/lib/discobox/projects/{project}/pools/{pool}/sandboxes/{sandbox}/{data,config,sources}`;
+- The pool host provisions five host-backed primary volumes and mounts them at
+  `/.discobox/{data,cache,config,sources,secrets}`; it no longer decides
+  in-sandbox paths (home, `/var/lib/docker`, source targets). `data`, `config`,
+  `sources`, and `secrets` are per-sandbox; `cache` is shared across the pool's
+  sandboxes in this project. The durable host layout is
+  `/var/lib/discobox/projects/{project}/pools/{pool}/sandboxes/{sandbox}/{data,config,sources,secrets}`;
   disposable shared cache lives independently at
   `/var/lib/discobox/cache/projects/{project}/pools/{pool}/cache`.
   The sandbox-agent wires everything else from the image's declarative volume
   list and the manifest source list. See ADR 0007.
+- For every source (primary or `SourceCodeReferences`) that is clone-delivered
+  from a `LocalDirectory`, the pool host also binds that real host directory,
+  read-only, directly onto `/.discobox/origins/<slug>` — the same `<slug>` as
+  the corresponding `/.discobox/sources/<slug>`. Unlike the five primary roots,
+  this is not one pool-owned volume: each origin is an independent bind of an
+  arbitrary external directory the pool host does not own or provision, so
+  there is nothing here for the sandbox-agent to rebind or for the pool host to
+  reap. `materializeGitSource` rewrites the cloned repository's `origin` remote
+  to that in-sandbox path once materialized, so a sandbox can `git fetch`/`git
+  rebase` against the developer's real, live working directory whenever it
+  shares a host with the pool. Push-delivered sources are unaffected: they are
+  push-delivered precisely because no on-disk origin is reachable from this
+  host. See ADR 0026.
 - Normalize provider-owned source destination defaults before both mounting
   sources and writing the public sandbox manifest so manifest consumers observe
   the paths actually used by the runtime.

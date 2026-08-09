@@ -46,13 +46,18 @@ runtime operations.
   and a non-secret project file overlay.
 - Volume wiring is declarative and image-owned. `image.json` lists the paths the
   image needs persisted (`data`) or shared across the pool's sandboxes
-  (`cache`); the pool host mounts four primary volumes (`/.discobox/{data,cache,config,sources}`)
+  (`cache`); the pool host mounts the primary volumes (`/.discobox/{data,cache,config,sources,secrets}`)
   and the `boot` init flow wires each declared path onto its backing volume —
   bind when the target is empty, overlay (lower = image content) when it ships
   content. Cache paths are always a direct shared bind, never an overlay, because
   the cache volume is shared across concurrently running sandboxes. Sources are
   bind-mounted from `/.discobox/sources/<slug>` onto the targets named in the
   manifest. See ADR 0007.
+- A clone-delivered local source's live origin, when present, arrives at
+  `/.discobox/origins/<slug>` as a plain read-only bind the pool host already
+  made directly onto that final path before the container started — unlike
+  `sources`, `boot` does not rebind it from anywhere; it is simply present by
+  the time `boot` runs. See ADR 0026.
 - Render templated harness files locally at installation time against the public
   `SandboxConfig` object from the manifest. Keep API field names as the template
   surface and expose only deterministic, non-secret formatting helpers.

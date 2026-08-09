@@ -65,6 +65,14 @@ const (
 	// (rotation, grant approval, OAuth refresh) without touching the
 	// sandbox's static config (ADR 0012 §3).
 	sandboxSecretsMount = "/.discobox/secrets" //nolint:gosec // Filesystem path, not a credential.
+
+	// sandboxOriginsMount is where a clone-delivered local source's real host
+	// origin directory is bound, read-only, at /.discobox/origins/<slug> (ADR
+	// 0026). Unlike the primary roots above, this is not one pool-provisioned
+	// volume: each eligible source gets its own independent bind straight from
+	// an arbitrary external host directory, built in prepareSandboxVolumes.
+	sandboxOriginsMount = "/.discobox/origins"
+
 	sandboxLabelManaged = "discobox.sandbox.managed"
 	sandboxLabelProject = "discobox.project_id"
 	sandboxLabelPool    = "discobox.pool_id"
@@ -526,7 +534,7 @@ func (r *DockerSandboxRuntime) materializePushedSources(ctx context.Context, san
 			continue
 		}
 		sourcePoolPath := r.sandboxSourcePath(sandboxID, source.slug)
-		if err := r.materializeGitSource(ctx, source.git, sourcePoolPath, user); err != nil {
+		if err := r.materializeGitSource(ctx, source.git, sourcePoolPath, source.slug, user); err != nil {
 			return fmt.Errorf("materialize pushed source %q: %w", source.slug, err)
 		}
 	}
@@ -571,10 +579,11 @@ func (r *DockerSandboxRuntime) prepareSandboxVolumes(ctx context.Context, sandbo
 		return nil, nil, fmt.Errorf("prepare sandbox secrets volume: %w", err)
 	}
 	var project *sandboxconfig.ProjectLayer
+	sources := sandboxSources(req)
 	_, hasPrimary := req.Config.Source.Get()
-	for i, source := range sandboxSources(req) {
+	for i, source := range sources {
 		sourcePoolPath := r.sandboxSourcePath(sandboxID, source.slug)
-		if err := r.materializeGitSource(ctx, source.git, sourcePoolPath, user); err != nil {
+		if err := r.materializeGitSource(ctx, source.git, sourcePoolPath, source.slug, user); err != nil {
 			return nil, nil, fmt.Errorf("materialize source %q: %w", source.slug, err)
 		}
 		if err := prepareOwnedDirectory(ctx, sourcePoolPath, user.uid, user.gid); err != nil {
@@ -591,14 +600,42 @@ func (r *DockerSandboxRuntime) prepareSandboxVolumes(ctx context.Context, sandbo
 	}
 	// These sources are resolved by the Docker daemon, so they are the only
 	// place a container path has to become a daemon path. A local source bind
-	// is already a daemon path and passes through untouched.
-	return []mount.Mount{
+	// is already a daemon path and passes through untouched — including each
+	// origin mount's raw host directory below.
+	mounts := []mount.Mount{
 		{Type: mount.TypeBind, Source: r.daemonPath(dataHostPath), Target: sandboxDataMount},
 		{Type: mount.TypeBind, Source: r.daemonPath(cacheHostPath), Target: sandboxCacheMount},
 		{Type: mount.TypeBind, Source: r.daemonPath(configHostPath), Target: sandboxConfigMount, ReadOnly: true},
 		{Type: mount.TypeBind, Source: r.daemonPath(sourcesHostPath), Target: sandboxSourcesMount},
 		{Type: mount.TypeBind, Source: r.daemonPath(secretsHostPath), Target: sandboxSecretsMount},
-	}, project, nil
+	}
+	mounts = append(mounts, originMounts(sources, r.daemonPath)...)
+	return mounts, project, nil
+}
+
+// originMounts builds one read-only bind per clone-delivered local source,
+// each pointing straight at its real host directory rather than any
+// pool-owned volume tree — not a copy, and not a sub-path of any pool-owned
+// volume, unlike /.discobox/sources (ADR 0026). Push-delivered sources have no
+// on-disk origin reachable from this host, which is precisely why push was
+// chosen for them, so they are skipped. Pure and side-effect free, unlike the
+// rest of prepareSandboxVolumes, so it is testable without the root privilege
+// the primary volumes' ownership chowns require.
+func originMounts(sources []sandboxSource, daemonPath func(string) string) []mount.Mount {
+	var mounts []mount.Mount
+	for _, source := range sources {
+		local := strings.TrimSpace(optString(source.git.LocalDirectory))
+		if gitSourceAwaitsPush(source.git) || local == "" {
+			continue
+		}
+		mounts = append(mounts, mount.Mount{
+			Type:     mount.TypeBind,
+			Source:   daemonPath(local),
+			Target:   path.Join(sandboxOriginsMount, source.slug),
+			ReadOnly: true,
+		})
+	}
+	return mounts
 }
 
 // writeSandboxSecrets atomically writes the sandbox's secret-bound
@@ -2038,10 +2075,24 @@ func (r *DockerSandboxRuntime) daemonPath(containerPath string) string {
 // process at materialize time (prepareSandboxVolumes only chowns it after this
 // function returns), so those same operations run under the calling process's
 // own identity there, matching who actually created the clone.
-func (r *DockerSandboxRuntime) materializeGitSource(ctx context.Context, source workerapimodel.GitSource, target string, user sandboxUserIdentity) error {
+func (r *DockerSandboxRuntime) materializeGitSource(ctx context.Context, source workerapimodel.GitSource, target, slug string, user sandboxUserIdentity) error {
 	identity := sandboxUserIdentity{uid: -1, gid: -1}
 	if gitSourceAwaitsPush(source) {
 		identity = user
+	}
+	// fetchURL is the real, pool-agent-resolvable location to clone/fetch from.
+	// It is computed once here and reused for both the initial clone and every
+	// restoreGitWorkspace fetch, rather than read back from the repository's
+	// "origin" remote — rewriteOriginRemote repoints that remote at the
+	// in-sandbox path /.discobox/origins/<slug>, which only the sandbox, not
+	// this process, can resolve.
+	var fetchURL string
+	if !gitSourceAwaitsPush(source) {
+		url, err := gitSourceCloneURL(source, r.hostMountPrefix)
+		if err != nil {
+			return err
+		}
+		fetchURL = url
 	}
 	if _, err := os.Stat(filepath.Join(target, ".git")); err == nil {
 		// A source is materialized exactly once, whatever its delivery mode.
@@ -2073,7 +2124,10 @@ func (r *DockerSandboxRuntime) materializeGitSource(ctx context.Context, source 
 		if err := checkoutGitSource(ctx, target, source, identity.uid, identity.gid); err != nil {
 			return err
 		}
-		if err := r.restoreGitWorkspace(ctx, target, source, identity.uid, identity.gid); err != nil {
+		if err := r.restoreGitWorkspace(ctx, target, source, fetchURL, identity.uid, identity.gid); err != nil {
+			return err
+		}
+		if err := r.rewriteOriginRemote(ctx, target, source, slug, identity); err != nil {
 			return err
 		}
 		return markGitSourceMaterialized(target, user.uid, user.gid)
@@ -2088,30 +2142,48 @@ func (r *DockerSandboxRuntime) materializeGitSource(ctx context.Context, source 
 		// tree. Nothing to clone or check out here.
 		return r.initGitSource(ctx, source, target)
 	}
-	cloneURL, err := gitSourceCloneURL(source, r.hostMountPrefix)
-	if err != nil {
-		return err
-	}
 	args := []string{"clone"}
 	if checkout, ok := source.Checkout.Get(); ok {
 		if refName := strings.TrimSpace(optString(checkout.RefName)); refName != "" {
 			args = append(args, "--branch", refName)
 		}
 	}
-	args = append(args, cloneURL, target)
-	if err := runGitWithSafeDirectories(ctx, "", identity.uid, identity.gid, gitSafeDirectories(cloneURL, r.hostMountPrefix), args...); err != nil {
+	args = append(args, fetchURL, target)
+	if err := runGitWithSafeDirectories(ctx, "", identity.uid, identity.gid, gitSafeDirectories(fetchURL, r.hostMountPrefix), args...); err != nil {
 		return err
 	}
 	if err := checkoutGitSource(ctx, target, source, identity.uid, identity.gid); err != nil {
 		return err
 	}
-	if err := r.restoreGitWorkspace(ctx, target, source, identity.uid, identity.gid); err != nil {
+	if err := r.restoreGitWorkspace(ctx, target, source, fetchURL, identity.uid, identity.gid); err != nil {
+		return err
+	}
+	if err := r.rewriteOriginRemote(ctx, target, source, slug, identity); err != nil {
 		return err
 	}
 	return markGitSourceMaterialized(target, user.uid, user.gid)
 }
 
-func (r *DockerSandboxRuntime) restoreGitWorkspace(ctx context.Context, repo string, source workerapimodel.GitSource, uid, gid int) error {
+// rewriteOriginRemote points a clone-delivered local source's "origin" remote
+// at the path the sandbox container will see, /.discobox/origins/<slug>,
+// instead of the pool-agent-process-local path materializeGitSource actually
+// cloned from — which is meaningless once the sandbox container exists.
+// restoreGitWorkspace never depends on "origin"'s configured URL (it fetches
+// by an explicitly resolved URL instead), so this stays correct even though a
+// source is only ever materialized once (ADR 0026): it runs once, at the end
+// of the same materialize call that clones and restores the workspace, before
+// that source is marked materialized.
+func (r *DockerSandboxRuntime) rewriteOriginRemote(ctx context.Context, target string, source workerapimodel.GitSource, slug string, identity sandboxUserIdentity) error {
+	if gitSourceAwaitsPush(source) || slug == "" {
+		return nil
+	}
+	if strings.TrimSpace(optString(source.LocalDirectory)) == "" {
+		return nil
+	}
+	return runGit(ctx, target, identity.uid, identity.gid, "remote", "set-url", "origin", path.Join(sandboxOriginsMount, slug))
+}
+
+func (r *DockerSandboxRuntime) restoreGitWorkspace(ctx context.Context, repo string, source workerapimodel.GitSource, fetchURL string, uid, gid int) error {
 	workspace, ok := source.Workspace.Get()
 	if !ok || workspace.Mode.Or(workerclient.GitSourceWorkspaceModeClean) != workerclient.GitSourceWorkspaceModeDirty {
 		return nil
@@ -2129,17 +2201,17 @@ func (r *DockerSandboxRuntime) restoreGitWorkspace(ctx context.Context, repo str
 	// snapshot ref in alongside the branch, so the objects are already here.
 	// Everything below is local and applies to both delivery modes.
 	if !gitSourceAwaitsPush(source) {
-		remoteURL, err := runGitOutput(ctx, repo, uid, gid, nil, "remote", "get-url", "origin")
-		if err != nil {
-			return err
-		}
-		remoteURL = bytes.TrimSpace(remoteURL)
 		refspec := "+" + snapshotRef + ":" + snapshotRef
-		// The fetch reads from origin, a possibly arbitrary and differently
-		// owned local path (materializeGitSource's clone case), so it always
-		// runs under the caller's own identity rather than uid/gid — the same
-		// identity that owns repo at this point in the clone-delivered path.
-		if err := runGitWithSafeDirectories(ctx, repo, -1, -1, gitSafeDirectories(string(remoteURL), r.hostMountPrefix), "fetch", "origin", refspec); err != nil {
+		// The fetch reads from fetchURL by explicit URL rather than the
+		// "origin" remote name, so it stays correct even after
+		// rewriteOriginRemote later repoints "origin" to the in-sandbox path
+		// (ADR 0026) — that path is only resolvable from inside the sandbox,
+		// not from this process. fetchURL is a possibly arbitrary and
+		// differently owned local path (materializeGitSource's clone case), so
+		// the fetch always runs under the caller's own identity rather than
+		// uid/gid — the same identity that owns repo at this point in the
+		// clone-delivered path.
+		if err := runGitWithSafeDirectories(ctx, repo, -1, -1, gitSafeDirectories(fetchURL, r.hostMountPrefix), "fetch", fetchURL, refspec); err != nil {
 			return fmt.Errorf("fetch workspace snapshot %q: %w", snapshotRef, err)
 		}
 	} else if err := runGit(ctx, repo, uid, gid, "rev-parse", "--verify", "--quiet", snapshotRef+"^{commit}"); err != nil {
