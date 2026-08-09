@@ -254,6 +254,57 @@ func TestPurgeConfirmsAndArchiveDoesNot(t *testing.T) {
 	}
 }
 
+// e opens the name for editing, and Enter sends the edited one.
+func TestRenameEditsTheNameInPlace(t *testing.T) {
+	ds := newFakeSource(testSandboxes()...)
+	m := newTestModel(t, ds)
+	send(t, m, key("tab"), key("e"))
+
+	if m.dialog == nil || m.dialog.kind != dlgInput {
+		t.Fatal("e should open an input dialog")
+	}
+	// The name it already has is what is being edited, not a blank line.
+	if got := m.dialog.input.Value(); got != "fix flaky pool reaper tests" {
+		t.Fatalf("input = %q, want the current name", got)
+	}
+	send(t, m, typeString(" again")...)
+	send(t, m, key("enter"))
+	if len(ds.renames) != 1 || ds.renames[0] != "sbx_one fix flaky pool reaper tests again" {
+		t.Fatalf("renames = %v", ds.renames)
+	}
+	if m.dialog != nil {
+		t.Fatal("accepting the name should close the dialog")
+	}
+}
+
+// Esc leaves the name alone, and so does Enter on the name it already had.
+func TestRenameCancelsWithoutCalling(t *testing.T) {
+	ds := newFakeSource(testSandboxes()...)
+	m := newTestModel(t, ds)
+	send(t, m, key("tab"), key("e"), key("esc"))
+	if len(ds.renames) != 0 {
+		t.Fatalf("esc should rename nothing, got %v", ds.renames)
+	}
+	send(t, m, key("e"), key("enter"))
+	if len(ds.renames) != 0 {
+		t.Fatalf("an unchanged name should rename nothing, got %v", ds.renames)
+	}
+}
+
+// Rename takes one box: a name is a name, and several rows cannot share one.
+func TestRenameTakesExactlyOneBox(t *testing.T) {
+	ds := newFakeSource(testSandboxes()...)
+	m := newTestModel(t, ds)
+	send(t, m, key("tab"), key(" "), key(" "), key("e"))
+
+	if m.dialog == nil || m.dialog.kind != dlgMessage {
+		t.Fatalf("rename on a selection should say why, got %+v", m.dialog)
+	}
+	if len(ds.renames) != 0 {
+		t.Fatalf("renames = %v", ds.renames)
+	}
+}
+
 // An action that does not apply says why rather than doing nothing.
 func TestUnavailableActionExplainsItself(t *testing.T) {
 	ds := newFakeSource(testSandboxes()...)

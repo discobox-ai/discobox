@@ -19,6 +19,7 @@ flowchart LR
     M --> D["dialog (menu, confirm, input, help)"]
     P -->|Enter| Run["DataSource.Run → attach"]
     L -->|u t T x U P| Verb["DataSource.Do"]
+    L -->|e| Rename["dialog → DataSource.Rename"]
     L -->|Enter s d y i| Exec["tea.Exec → DataSource.Interact"]
 ```
 
@@ -74,6 +75,17 @@ list, apply suspends the window through `tea.Exec` — the list can act on sever
 discoboxes at once and a pane shows one. The `exec` field on the model is that
 handoff, and exists as a field only so a test can run an action without a
 terminal to release.
+
+**Rename is a third kind, and only in the list** (`renameKey`, `askRename`). It
+is not a `Verb` — a verb is a word the window already has, and this one needs a
+name typed first — so `e` opens the input dialog on the name the discobox
+*already has*: the usual edit is a word added to a name that is nearly right,
+and a blank line would make that a retype. Enter on the unchanged name is the
+same as Esc, since neither asked for anything. It takes exactly one discobox,
+because a name is a name and a selection cannot share one. It is deliberately
+absent from `verbs`/`interactions`, which is what keeps it off the pane screen:
+there the leader plus `e` exchanges the two spots, and a discobox you are
+already looking at is one you know the name of.
 
 **The pane screen is one discobox in two spots, and everything you can do to
 it.** `Model.panes` holds at most one pane per `Interaction.slotted` action —

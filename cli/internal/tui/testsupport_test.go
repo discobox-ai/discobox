@@ -28,11 +28,13 @@ type fakeSource struct {
 	runErr    error
 	createdID string
 
-	openErr error
+	openErr   error
+	renameErr error
 
 	// Calls, in order.
 	runs      []RunRequest
 	did       []string // "verb id"
+	renames   []string // "id name"
 	interacts []string // "action id,id"
 	opens     []string // "action id colsxrows"
 	terminals []*fakeTerminal
@@ -91,6 +93,21 @@ func (f *fakeSource) Do(_ context.Context, verb Verb, id string) error {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	f.did = append(f.did, string(verb)+" "+id)
+	return nil
+}
+
+func (f *fakeSource) Rename(_ context.Context, id, name string) error {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.renames = append(f.renames, id+" "+name)
+	if f.renameErr != nil {
+		return f.renameErr
+	}
+	for i, sb := range f.sandboxes {
+		if sb.ID == id {
+			f.sandboxes[i].Name = name
+		}
+	}
 	return nil
 }
 

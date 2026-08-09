@@ -378,6 +378,12 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case verbDoneMsg:
 		return m, m.verbDone(msg)
 
+	case renameMsg:
+		return m, m.rename(msg.id, msg.name)
+
+	case renameDoneMsg:
+		return m, m.renameDone(msg)
+
 	case interactDoneMsg:
 		m.busy = ""
 		cmds := []tea.Cmd{m.refresh()}
@@ -851,6 +857,8 @@ func (m *Model) actions(targets []Sandbox) []action {
 			why: diffWhy},
 		{key: "i", label: "status", detail: "changed files, one per line", enabled: diffable,
 			why: diffWhy},
+		{key: renameKey, label: "rename", detail: "type a new name for the box", enabled: one,
+			why: "takes exactly one box"},
 		{key: "u", label: "upgrade", detail: "re-pin to the current harness image", enabled: anyUpgrade,
 			why: "already on the current image"},
 		{key: "t", label: "stop", detail: "power the box off, keeping its disk", enabled: anyRunning,
@@ -926,6 +934,10 @@ func (m *Model) actOn(key string, targets []Sandbox) tea.Cmd {
 	ids := make([]string, 0, len(targets))
 	for _, s := range targets {
 		ids = append(ids, s.ID)
+	}
+
+	if key == renameKey {
+		return m.askRename(targets[0])
 	}
 
 	if action, ok := interactions[key]; ok {
@@ -1029,6 +1041,52 @@ func (m *Model) verbDone(msg verbDoneMsg) tea.Cmd {
 	default:
 		return tea.Batch(m.refresh(), m.report(true, "%s: %d of %d failed: %v", msg.verb, failed, len(msg.ids), firstErr))
 	}
+}
+
+// ---------------------------------------------------------------------------
+// rename
+
+// renameKey is the letter rename answers to in the list. It is deliberately not
+// bound on the pane screen: there the leader plus `e` exchanges the two spots,
+// and the discobox on screen is one you are already looking at by name.
+const renameKey = "e"
+
+// renameMsg is an accepted name on its way back to the live model, the same way
+// the action menu and a confirmation hand their answers back.
+type renameMsg struct{ id, name string }
+
+type renameDoneMsg struct {
+	name string
+	err  error
+}
+
+// askRename opens the input dialog on the name the discobox already has, so the
+// common edit — a word added to a name that is nearly right — is a word typed
+// rather than a name retyped.
+func (m *Model) askRename(box Sandbox) tea.Cmd {
+	m.dialog = inputDialog("Rename", "What should this discobox be called?", "name", box.Name,
+		func(name string) tea.Cmd {
+			if name == "" || name == box.Name {
+				return status("name unchanged")
+			}
+			return func() tea.Msg { return renameMsg{id: box.ID, name: name} }
+		})
+	return nil
+}
+
+func (m *Model) rename(id, name string) tea.Cmd {
+	m.busy = "rename…"
+	return func() tea.Msg {
+		return renameDoneMsg{name: name, err: m.ds.Rename(m.ctx, id, name)}
+	}
+}
+
+func (m *Model) renameDone(msg renameDoneMsg) tea.Cmd {
+	m.busy = ""
+	if msg.err != nil {
+		return m.report(true, "rename: %v", msg.err)
+	}
+	return tea.Batch(m.refresh(), m.report(false, "renamed to %s", msg.name))
 }
 
 // interact suspends the window and hands the terminal to the action for as long
@@ -1565,9 +1623,13 @@ func (m *Model) helpText() string {
 		"    Enter  attach          s  shell",
 		"    d      diff            y  apply back to this directory",
 		"    i      status          u  upgrade to the current image",
-		"    t      stop            T  start",
-		"    x      archive         U  unarchive",
-		"    P      purge           .  every action, as a menu",
+		"    e      rename          t  stop",
+		"    T      start           x  archive",
+		"    U      unarchive       P  purge",
+		"    .      every action, as a menu",
+		"",
+		"  rename opens the name it already has, to be edited rather than",
+		"  retyped: Enter accepts it, Esc leaves it alone.",
 		"",
 		"  attach, shell, diff and status are drawn in the window itself,",
 		"  in a pane with the border round it: the first two are the",

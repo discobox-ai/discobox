@@ -426,6 +426,21 @@ func (d *apiDataSource) Do(ctx context.Context, verb tui.Verb, sandboxID string)
 	}
 }
 
+// Rename gives a sandbox a new name — the one piece of its config the window
+// edits, through the same PATCH `disco sandbox update --name` uses.
+func (d *apiDataSource) Rename(ctx context.Context, sandboxID, name string) error {
+	body := &apimodel.UpdateSandboxBody{}
+	body.SetConfig(apiclientgen.NewOptSandboxUpdateConfig(apimodel.SandboxUpdateConfig{
+		Name: apiclientgen.NewOptString(name),
+	}))
+	res, err := d.client.UpdateSandbox(ctx, body, apiclientgen.UpdateSandboxParams{ProjectId: d.projectID, SandboxId: sandboxID})
+	if err != nil {
+		return err
+	}
+	_, err = expectResponse[apimodel.Sandbox](res)
+	return err
+}
+
 // Interact runs one of the command-shaped actions with the real terminal's
 // streams, while the window is suspended.
 //

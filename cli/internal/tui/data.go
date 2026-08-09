@@ -271,6 +271,10 @@ type DataSource interface {
 	// Do runs a lifecycle verb against one sandbox.
 	Do(ctx context.Context, verb Verb, sandboxID string) error
 
+	// Rename gives one sandbox a new name. It is not a Verb: a verb is a word
+	// the window already has, and this one needs the name typed first.
+	Rename(ctx context.Context, sandboxID, name string) error
+
 	// Interact runs a terminal-owning action against the given sandboxes, with
 	// the real terminal's streams. The window is suspended for the duration.
 	Interact(ctx context.Context, action Interaction, sandboxIDs []string, stdin io.Reader, stdout, stderr io.Writer) error
