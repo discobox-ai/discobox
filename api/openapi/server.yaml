@@ -1695,10 +1695,6 @@ components:
                 modelServiceTier:
                     description: Model service tier the harness should use
                     type: string
-                cpuVcpus:
-                    description: Requested CPU capacity in vCPUs
-                    format: double
-                    type: number
                 description:
                     description: Sandbox description
                     type: string
@@ -1713,10 +1709,6 @@ components:
                 imageDigest:
                     description: Config digest of the image this sandbox is pinned to. Written at create and by an upgrade, never by a restart; the pool host refuses an image that does not match it (ADR 0016).
                     type: string
-                memoryBytes:
-                    description: Requested memory capacity in bytes
-                    format: int64
-                    type: integer
                 name:
                     description: Sandbox name
                     maxLength: 200
@@ -1734,19 +1726,12 @@ components:
                         $ref: '#/components/schemas/GitSource'
                     description: Additional Git sources to materialize in the sandbox
                     type: object
-                storageBytes:
-                    description: Requested storage capacity in bytes
-                    format: int64
-                    type: integer
                 user:
                     $ref: '#/components/schemas/SandboxUser'
                     description: User identity and home directory to use inside the sandbox
             required:
                 - name
                 - image
-                - cpuVcpus
-                - memoryBytes
-                - storageBytes
             type: object
         SandboxCreateConfig:
             additionalProperties: false
@@ -1769,10 +1754,6 @@ components:
                 modelServiceTier:
                     description: Model service tier the harness should use
                     type: string
-                cpuVcpus:
-                    description: Requested CPU capacity in vCPUs
-                    format: double
-                    type: number
                 description:
                     description: Sandbox description
                     type: string
@@ -1784,10 +1765,6 @@ components:
                 image:
                     description: Sandbox base image. Defaults to the server configured sandbox image when omitted.
                     type: string
-                memoryBytes:
-                    description: Requested memory capacity in bytes
-                    format: int64
-                    type: integer
                 name:
                     description: Sandbox name
                     maxLength: 200
@@ -1810,10 +1787,6 @@ components:
                         $ref: '#/components/schemas/GitSource'
                     description: Additional Git sources to materialize in the sandbox
                     type: object
-                storageBytes:
-                    description: Requested storage capacity in bytes
-                    format: int64
-                    type: integer
                 user:
                     $ref: '#/components/schemas/SandboxUser'
                     description: User identity and home directory to use inside the sandbox

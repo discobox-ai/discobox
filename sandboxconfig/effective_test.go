@@ -12,7 +12,6 @@ func TestEffective_SingleWriterFields(t *testing.T) {
 		Runtime: RuntimeLayer{
 			SandboxID: "sbx_1",
 			Provider:  Provider{Kind: "discobox-pool", ProjectID: "proj_1"},
-			Resources: Resources{CPUCores: 2, MemoryMB: 512},
 			Sources:   []Source{{Slug: "main", Target: "/workspace"}},
 			Model:     "claude",
 			User:      User{Name: "sandbox"},
@@ -26,9 +25,6 @@ func TestEffective_SingleWriterFields(t *testing.T) {
 	}
 	if cfg.Provider.ProjectID != "proj_1" {
 		t.Errorf("Provider.ProjectID = %q", cfg.Provider.ProjectID)
-	}
-	if cfg.Resources.CPUCores != 2 {
-		t.Errorf("Resources.CPUCores = %v", cfg.Resources.CPUCores)
 	}
 	if len(cfg.Sources) != 1 || cfg.Sources[0].Slug != "main" {
 		t.Errorf("Sources = %+v", cfg.Sources)

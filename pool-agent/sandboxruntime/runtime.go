@@ -345,16 +345,9 @@ func (r *DockerSandboxRuntime) CreateSandbox(ctx context.Context, req *workerapi
 		Mounts:     mounts,
 		Privileged: true,
 	}
-	if memoryBytes := optInt64(config.MemoryBytes); memoryBytes > 0 {
-		hostCfg.Memory = memoryBytes
-	} else if resources, ok := req.Resources.Get(); ok && resources.MemoryMb > 0 {
-		hostCfg.Memory = resources.MemoryMb * 1024 * 1024
-	}
-	if cpuVCPUs := optFloat64(config.CpuVcpus); cpuVCPUs > 0 {
-		hostCfg.NanoCPUs = int64(cpuVCPUs * 1_000_000_000)
-	} else if resources, ok := req.Resources.Get(); ok && resources.CpuCores > 0 {
-		hostCfg.NanoCPUs = int64(resources.CpuCores * 1_000_000_000)
-	}
+	// No CPU/memory limit is set here: a sandbox container shares its worker
+	// container's cgroup rather than reserving a nested slice of it
+	// (docs/adr/0025).
 	// Attach the sandbox to the per-pool internal network only: it reaches the
 	// pool proxy (resolved as discobox-pool-proxy via Docker embedded DNS)
 	// and DNS, but has no route off-box, so all egress is forced through the proxy.
@@ -827,14 +820,6 @@ func buildSandboxDocument(projectID, sandboxID, poolID, controlPlanePublicKey, r
 				UID:    derefID(uid),
 				GID:    derefID(gid),
 			})
-		}
-		if resources, ok := req.Resources.Get(); ok {
-			doc.Runtime.Resources = sandboxconfig.Resources{
-				CPUCores:       resources.CpuCores,
-				DiskMB:         resources.DiskMb,
-				MemoryMB:       resources.MemoryMb,
-				TimeoutSeconds: resources.TimeoutSeconds,
-			}
 		}
 		if resolved, ok := req.ResolvedHarnessConfig.Get(); ok {
 			doc.Image = sandboxconfig.ImageLayer{
@@ -1801,16 +1786,6 @@ func containerIPAddress(inspect container.InspectResponse) string {
 }
 
 func optString(opt workerclient.OptString) string {
-	v, _ := opt.Get()
-	return v
-}
-
-func optInt64(opt workerclient.OptInt64) int64 {
-	v, _ := opt.Get()
-	return v
-}
-
-func optFloat64(opt workerclient.OptFloat64) float64 {
 	v, _ := opt.Get()
 	return v
 }

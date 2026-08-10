@@ -1650,7 +1650,7 @@ func (f roundTripFunc) RoundTrip(req *http.Request) (*http.Response, error) {
 }
 
 func testSandboxJSON(id, name, createdAt, updatedAt string) string {
-	return `{"id":"` + id + `","projectId":"project-1","createdByUserId":"user-1","config":{"name":"` + name + `","image":"","cpuVcpus":0,"memoryBytes":0,"storageBytes":0},"runtime":{"state":"running","desiredState":"present","displayState":"running","generation":1,"observedGeneration":1},"createdAt":"` + createdAt + `","updatedAt":"` + updatedAt + `"}`
+	return `{"id":"` + id + `","projectId":"project-1","createdByUserId":"user-1","config":{"name":"` + name + `","image":""},"runtime":{"state":"running","desiredState":"present","displayState":"running","generation":1,"observedGeneration":1},"createdAt":"` + createdAt + `","updatedAt":"` + updatedAt + `"}`
 }
 
 // Bare `disco` opens the launcher at a terminal and prints its help anywhere

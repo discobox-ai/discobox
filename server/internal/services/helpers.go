@@ -143,11 +143,8 @@ func SandboxToAPI(sandbox *model.Sandbox) (serverapi.Sandbox, error) {
 		return serverapi.Sandbox{}, nil
 	}
 	config := map[string]any{
-		"cpuVcpus":     sandbox.CPUVCPUs,
-		"image":        sandbox.Image,
-		"memoryBytes":  sandbox.MemoryBytes,
-		"name":         sandbox.Name,
-		"storageBytes": sandbox.StorageBytes,
+		"image": sandbox.Image,
+		"name":  sandbox.Name,
 	}
 	if sandbox.ImageDigest != "" {
 		config["imageDigest"] = sandbox.ImageDigest

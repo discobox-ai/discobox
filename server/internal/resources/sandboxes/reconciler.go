@@ -464,9 +464,6 @@ func (r *SandboxReconciler) createOptionsFromSandbox(ctx context.Context, sb *mo
 			}
 		}
 	}
-	opts.CPUVCPUs = sb.CPUVCPUs
-	opts.MemoryBytes = sb.MemoryBytes
-	opts.StorageBytes = sb.StorageBytes
 	opts.Source = sb.Source
 	opts.SourceCodeReferences = sb.SourceCodeReferences
 	opts.UserName = sb.UserName

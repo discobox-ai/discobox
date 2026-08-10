@@ -281,8 +281,10 @@ func (s *Store) UpdatePoolStatus(ctx context.Context, poolID string, ready, sche
 }
 
 // SchedulablePoolForSandbox gates placement: the sandbox's pool must be
-// active, ready, schedulable, unrevoked, and fit the request within its
-// reported capacity. There is no candidate search — the pool is the host.
+// active, ready, schedulable, and unrevoked. No capacity is gated — sandboxes
+// share their pool's overcommitted CPU/memory/storage envelope with no
+// per-sandbox reservation (docs/adr/0029). There is no candidate search — the
+// pool is the host.
 func (s *Store) SchedulablePoolForSandbox(ctx context.Context, sandbox *model.Sandbox) (*model.Pool, error) {
 	if sandbox == nil || sandbox.PoolID == "" {
 		return nil, ErrNotFound
@@ -291,24 +293,9 @@ func (s *Store) SchedulablePoolForSandbox(ctx context.Context, sandbox *model.Sa
 	if err != nil {
 		return nil, err
 	}
-	cpuVCPUs := sandbox.CPUVCPUs
-	if cpuVCPUs <= 0 {
-		cpuVCPUs = 1
-	}
-	memoryBytes := sandbox.MemoryBytes
-	if memoryBytes < 0 {
-		memoryBytes = 0
-	}
-	storageBytes := sandbox.StorageBytes
-	if storageBytes < 0 {
-		storageBytes = 0
-	}
 	if pool.RevokedAt != nil ||
 		pool.DesiredState != model.DesiredStatePresent ||
-		!pool.Ready || !pool.Schedulable ||
-		pool.AvailableCPUVCPUs < cpuVCPUs ||
-		pool.AvailableMemoryBytes < memoryBytes ||
-		pool.AvailableStorageBytes < storageBytes {
+		!pool.Ready || !pool.Schedulable {
 		return nil, ErrNotFound
 	}
 	return pool, nil

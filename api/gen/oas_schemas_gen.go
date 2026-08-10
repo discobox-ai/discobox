@@ -7479,8 +7479,6 @@ type SandboxConfig struct {
 	ModelReasoningLevel OptString `json:"modelReasoningLevel"`
 	// Model service tier the harness should use.
 	ModelServiceTier OptString `json:"modelServiceTier"`
-	// Requested CPU capacity in vCPUs.
-	CpuVcpus float64 `json:"cpuVcpus"`
 	// Sandbox description.
 	Description OptString `json:"description"`
 	// Environment variables available to sandbox-harness terminals and execs by default.
@@ -7490,8 +7488,6 @@ type SandboxConfig struct {
 	// Config digest of the image this sandbox is pinned to. Written at create and by an upgrade, never
 	// by a restart; the pool host refuses an image that does not match it (ADR 0016).
 	ImageDigest OptString `json:"imageDigest"`
-	// Requested memory capacity in bytes.
-	MemoryBytes int64 `json:"memoryBytes"`
 	// Sandbox name.
 	Name string `json:"name"`
 	// Prompt the harness should run, passed as argv to preserve the caller's exact tokens.
@@ -7500,8 +7496,6 @@ type SandboxConfig struct {
 	Source OptGitSource `json:"source"`
 	// Additional Git sources to materialize in the sandbox.
 	SourceCodeReferences OptSandboxConfigSourceCodeReferences `json:"sourceCodeReferences"`
-	// Requested storage capacity in bytes.
-	StorageBytes int64 `json:"storageBytes"`
 	// User identity and home directory to use inside the sandbox.
 	User OptSandboxUser `json:"user"`
 }
@@ -7531,11 +7525,6 @@ func (s *SandboxConfig) GetModelServiceTier() OptString {
 	return s.ModelServiceTier
 }
 
-// GetCpuVcpus returns the value of CpuVcpus.
-func (s *SandboxConfig) GetCpuVcpus() float64 {
-	return s.CpuVcpus
-}
-
 // GetDescription returns the value of Description.
 func (s *SandboxConfig) GetDescription() OptString {
 	return s.Description
@@ -7556,11 +7545,6 @@ func (s *SandboxConfig) GetImageDigest() OptString {
 	return s.ImageDigest
 }
 
-// GetMemoryBytes returns the value of MemoryBytes.
-func (s *SandboxConfig) GetMemoryBytes() int64 {
-	return s.MemoryBytes
-}
-
 // GetName returns the value of Name.
 func (s *SandboxConfig) GetName() string {
 	return s.Name
@@ -7579,11 +7563,6 @@ func (s *SandboxConfig) GetSource() OptGitSource {
 // GetSourceCodeReferences returns the value of SourceCodeReferences.
 func (s *SandboxConfig) GetSourceCodeReferences() OptSandboxConfigSourceCodeReferences {
 	return s.SourceCodeReferences
-}
-
-// GetStorageBytes returns the value of StorageBytes.
-func (s *SandboxConfig) GetStorageBytes() int64 {
-	return s.StorageBytes
 }
 
 // GetUser returns the value of User.
@@ -7616,11 +7595,6 @@ func (s *SandboxConfig) SetModelServiceTier(val OptString) {
 	s.ModelServiceTier = val
 }
 
-// SetCpuVcpus sets the value of CpuVcpus.
-func (s *SandboxConfig) SetCpuVcpus(val float64) {
-	s.CpuVcpus = val
-}
-
 // SetDescription sets the value of Description.
 func (s *SandboxConfig) SetDescription(val OptString) {
 	s.Description = val
@@ -7641,11 +7615,6 @@ func (s *SandboxConfig) SetImageDigest(val OptString) {
 	s.ImageDigest = val
 }
 
-// SetMemoryBytes sets the value of MemoryBytes.
-func (s *SandboxConfig) SetMemoryBytes(val int64) {
-	s.MemoryBytes = val
-}
-
 // SetName sets the value of Name.
 func (s *SandboxConfig) SetName(val string) {
 	s.Name = val
@@ -7664,11 +7633,6 @@ func (s *SandboxConfig) SetSource(val OptGitSource) {
 // SetSourceCodeReferences sets the value of SourceCodeReferences.
 func (s *SandboxConfig) SetSourceCodeReferences(val OptSandboxConfigSourceCodeReferences) {
 	s.SourceCodeReferences = val
-}
-
-// SetStorageBytes sets the value of StorageBytes.
-func (s *SandboxConfig) SetStorageBytes(val int64) {
-	s.StorageBytes = val
 }
 
 // SetUser sets the value of User.
@@ -7756,16 +7720,12 @@ type SandboxCreateConfig struct {
 	ModelReasoningLevel OptString `json:"modelReasoningLevel"`
 	// Model service tier the harness should use.
 	ModelServiceTier OptString `json:"modelServiceTier"`
-	// Requested CPU capacity in vCPUs.
-	CpuVcpus OptFloat64 `json:"cpuVcpus"`
 	// Sandbox description.
 	Description OptString `json:"description"`
 	// Environment variables available to sandbox-harness terminals and execs by default.
 	Env OptSandboxCreateConfigEnv `json:"env"`
 	// Sandbox base image. Defaults to the server configured sandbox image when omitted.
 	Image OptString `json:"image"`
-	// Requested memory capacity in bytes.
-	MemoryBytes OptInt64 `json:"memoryBytes"`
 	// Sandbox name.
 	Name string `json:"name"`
 	// Prompt the harness should run, passed as argv to preserve the caller's exact tokens.
@@ -7777,8 +7737,6 @@ type SandboxCreateConfig struct {
 	Source OptGitSource `json:"source"`
 	// Additional Git sources to materialize in the sandbox.
 	SourceCodeReferences OptSandboxCreateConfigSourceCodeReferences `json:"sourceCodeReferences"`
-	// Requested storage capacity in bytes.
-	StorageBytes OptInt64 `json:"storageBytes"`
 	// User identity and home directory to use inside the sandbox.
 	User OptSandboxUser `json:"user"`
 }
@@ -7808,11 +7766,6 @@ func (s *SandboxCreateConfig) GetModelServiceTier() OptString {
 	return s.ModelServiceTier
 }
 
-// GetCpuVcpus returns the value of CpuVcpus.
-func (s *SandboxCreateConfig) GetCpuVcpus() OptFloat64 {
-	return s.CpuVcpus
-}
-
 // GetDescription returns the value of Description.
 func (s *SandboxCreateConfig) GetDescription() OptString {
 	return s.Description
@@ -7826,11 +7779,6 @@ func (s *SandboxCreateConfig) GetEnv() OptSandboxCreateConfigEnv {
 // GetImage returns the value of Image.
 func (s *SandboxCreateConfig) GetImage() OptString {
 	return s.Image
-}
-
-// GetMemoryBytes returns the value of MemoryBytes.
-func (s *SandboxCreateConfig) GetMemoryBytes() OptInt64 {
-	return s.MemoryBytes
 }
 
 // GetName returns the value of Name.
@@ -7856,11 +7804,6 @@ func (s *SandboxCreateConfig) GetSource() OptGitSource {
 // GetSourceCodeReferences returns the value of SourceCodeReferences.
 func (s *SandboxCreateConfig) GetSourceCodeReferences() OptSandboxCreateConfigSourceCodeReferences {
 	return s.SourceCodeReferences
-}
-
-// GetStorageBytes returns the value of StorageBytes.
-func (s *SandboxCreateConfig) GetStorageBytes() OptInt64 {
-	return s.StorageBytes
 }
 
 // GetUser returns the value of User.
@@ -7893,11 +7836,6 @@ func (s *SandboxCreateConfig) SetModelServiceTier(val OptString) {
 	s.ModelServiceTier = val
 }
 
-// SetCpuVcpus sets the value of CpuVcpus.
-func (s *SandboxCreateConfig) SetCpuVcpus(val OptFloat64) {
-	s.CpuVcpus = val
-}
-
 // SetDescription sets the value of Description.
 func (s *SandboxCreateConfig) SetDescription(val OptString) {
 	s.Description = val
@@ -7911,11 +7849,6 @@ func (s *SandboxCreateConfig) SetEnv(val OptSandboxCreateConfigEnv) {
 // SetImage sets the value of Image.
 func (s *SandboxCreateConfig) SetImage(val OptString) {
 	s.Image = val
-}
-
-// SetMemoryBytes sets the value of MemoryBytes.
-func (s *SandboxCreateConfig) SetMemoryBytes(val OptInt64) {
-	s.MemoryBytes = val
 }
 
 // SetName sets the value of Name.
@@ -7941,11 +7874,6 @@ func (s *SandboxCreateConfig) SetSource(val OptGitSource) {
 // SetSourceCodeReferences sets the value of SourceCodeReferences.
 func (s *SandboxCreateConfig) SetSourceCodeReferences(val OptSandboxCreateConfigSourceCodeReferences) {
 	s.SourceCodeReferences = val
-}
-
-// SetStorageBytes sets the value of StorageBytes.
-func (s *SandboxCreateConfig) SetStorageBytes(val OptInt64) {
-	s.StorageBytes = val
 }
 
 // SetUser sets the value of User.

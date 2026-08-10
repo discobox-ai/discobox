@@ -724,52 +724,6 @@ func (o OptBool) Or(d bool) bool {
 	return d
 }
 
-// NewOptFloat64 returns new OptFloat64 with value set to v.
-func NewOptFloat64(v float64) OptFloat64 {
-	return OptFloat64{
-		Value: v,
-		Set:   true,
-	}
-}
-
-// OptFloat64 is optional float64.
-type OptFloat64 struct {
-	Value float64
-	Set   bool
-}
-
-// IsSet returns true if OptFloat64 was set.
-func (o OptFloat64) IsSet() bool { return o.Set }
-
-// Reset unsets value.
-func (o *OptFloat64) Reset() {
-	var v float64
-	o.Value = v
-	o.Set = false
-}
-
-// SetTo sets value to v.
-func (o *OptFloat64) SetTo(v float64) {
-	o.Set = true
-	o.Value = v
-}
-
-// Get returns value and boolean that denotes whether value was set.
-func (o OptFloat64) Get() (v float64, ok bool) {
-	if !o.Set {
-		return v, false
-	}
-	return o.Value, true
-}
-
-// Or returns value if set, or given parameter if does not.
-func (o OptFloat64) Or(d float64) float64 {
-	if v, ok := o.Get(); ok {
-		return v
-	}
-	return d
-}
-
 // NewOptGitSource returns new OptGitSource with value set to v.
 func NewOptGitSource(v GitSource) OptGitSource {
 	return OptGitSource{
@@ -1533,52 +1487,6 @@ func (o OptNilStringArray) Or(d []string) []string {
 	return d
 }
 
-// NewOptPoolSandboxResources returns new OptPoolSandboxResources with value set to v.
-func NewOptPoolSandboxResources(v PoolSandboxResources) OptPoolSandboxResources {
-	return OptPoolSandboxResources{
-		Value: v,
-		Set:   true,
-	}
-}
-
-// OptPoolSandboxResources is optional PoolSandboxResources.
-type OptPoolSandboxResources struct {
-	Value PoolSandboxResources
-	Set   bool
-}
-
-// IsSet returns true if OptPoolSandboxResources was set.
-func (o OptPoolSandboxResources) IsSet() bool { return o.Set }
-
-// Reset unsets value.
-func (o *OptPoolSandboxResources) Reset() {
-	var v PoolSandboxResources
-	o.Value = v
-	o.Set = false
-}
-
-// SetTo sets value to v.
-func (o *OptPoolSandboxResources) SetTo(v PoolSandboxResources) {
-	o.Set = true
-	o.Value = v
-}
-
-// Get returns value and boolean that denotes whether value was set.
-func (o OptPoolSandboxResources) Get() (v PoolSandboxResources, ok bool) {
-	if !o.Set {
-		return v, false
-	}
-	return o.Value, true
-}
-
-// Or returns value if set, or given parameter if does not.
-func (o OptPoolSandboxResources) Or(d PoolSandboxResources) PoolSandboxResources {
-	if v, ok := o.Get(); ok {
-		return v
-	}
-	return d
-}
-
 // NewOptResolvedHarnessConfig returns new OptResolvedHarnessConfig with value set to v.
 func NewOptResolvedHarnessConfig(v ResolvedHarnessConfig) OptResolvedHarnessConfig {
 	return OptResolvedHarnessConfig{
@@ -2030,7 +1938,6 @@ type PoolSandboxCreateRequest struct {
 	Schema                OptURI                   `json:"$schema"`
 	Config                SandboxConfig            `json:"config"`
 	ResolvedHarnessConfig OptResolvedHarnessConfig `json:"resolvedHarnessConfig"`
-	Resources             OptPoolSandboxResources  `json:"resources"`
 	SandboxId             string                   `json:"sandboxId"`
 	// Sentinel placeholder values injected into this sandbox. The pool registers them with the proxy so
 	// their real secret values are swapped at runtime.
@@ -2054,11 +1961,6 @@ func (s *PoolSandboxCreateRequest) GetConfig() SandboxConfig {
 // GetResolvedHarnessConfig returns the value of ResolvedHarnessConfig.
 func (s *PoolSandboxCreateRequest) GetResolvedHarnessConfig() OptResolvedHarnessConfig {
 	return s.ResolvedHarnessConfig
-}
-
-// GetResources returns the value of Resources.
-func (s *PoolSandboxCreateRequest) GetResources() OptPoolSandboxResources {
-	return s.Resources
 }
 
 // GetSandboxId returns the value of SandboxId.
@@ -2089,11 +1991,6 @@ func (s *PoolSandboxCreateRequest) SetConfig(val SandboxConfig) {
 // SetResolvedHarnessConfig sets the value of ResolvedHarnessConfig.
 func (s *PoolSandboxCreateRequest) SetResolvedHarnessConfig(val OptResolvedHarnessConfig) {
 	s.ResolvedHarnessConfig = val
-}
-
-// SetResources sets the value of Resources.
-func (s *PoolSandboxCreateRequest) SetResources(val OptPoolSandboxResources) {
-	s.Resources = val
 }
 
 // SetSandboxId sets the value of SandboxId.
@@ -2131,7 +2028,6 @@ type PoolSandboxInstance struct {
 	Schema                OptURI                   `json:"$schema"`
 	Config                SandboxConfig            `json:"config"`
 	ResolvedHarnessConfig OptResolvedHarnessConfig `json:"resolvedHarnessConfig"`
-	Resources             OptPoolSandboxResources  `json:"resources"`
 	Runtime               PoolSandboxRuntime       `json:"runtime"`
 	SandboxId             string                   `json:"sandboxId"`
 }
@@ -2149,11 +2045,6 @@ func (s *PoolSandboxInstance) GetConfig() SandboxConfig {
 // GetResolvedHarnessConfig returns the value of ResolvedHarnessConfig.
 func (s *PoolSandboxInstance) GetResolvedHarnessConfig() OptResolvedHarnessConfig {
 	return s.ResolvedHarnessConfig
-}
-
-// GetResources returns the value of Resources.
-func (s *PoolSandboxInstance) GetResources() OptPoolSandboxResources {
-	return s.Resources
 }
 
 // GetRuntime returns the value of Runtime.
@@ -2179,11 +2070,6 @@ func (s *PoolSandboxInstance) SetConfig(val SandboxConfig) {
 // SetResolvedHarnessConfig sets the value of ResolvedHarnessConfig.
 func (s *PoolSandboxInstance) SetResolvedHarnessConfig(val OptResolvedHarnessConfig) {
 	s.ResolvedHarnessConfig = val
-}
-
-// SetResources sets the value of Resources.
-func (s *PoolSandboxInstance) SetResources(val OptPoolSandboxResources) {
-	s.Resources = val
 }
 
 // SetRuntime sets the value of Runtime.
@@ -2329,54 +2215,6 @@ func (s *PoolSandboxPort) SetProtocol(val string) {
 	s.Protocol = val
 }
 
-// Ref: #/components/schemas/PoolSandboxResources
-type PoolSandboxResources struct {
-	CpuCores       float64 `json:"cpuCores"`
-	DiskMb         int64   `json:"diskMb"`
-	MemoryMb       int64   `json:"memoryMb"`
-	TimeoutSeconds int64   `json:"timeoutSeconds"`
-}
-
-// GetCpuCores returns the value of CpuCores.
-func (s *PoolSandboxResources) GetCpuCores() float64 {
-	return s.CpuCores
-}
-
-// GetDiskMb returns the value of DiskMb.
-func (s *PoolSandboxResources) GetDiskMb() int64 {
-	return s.DiskMb
-}
-
-// GetMemoryMb returns the value of MemoryMb.
-func (s *PoolSandboxResources) GetMemoryMb() int64 {
-	return s.MemoryMb
-}
-
-// GetTimeoutSeconds returns the value of TimeoutSeconds.
-func (s *PoolSandboxResources) GetTimeoutSeconds() int64 {
-	return s.TimeoutSeconds
-}
-
-// SetCpuCores sets the value of CpuCores.
-func (s *PoolSandboxResources) SetCpuCores(val float64) {
-	s.CpuCores = val
-}
-
-// SetDiskMb sets the value of DiskMb.
-func (s *PoolSandboxResources) SetDiskMb(val int64) {
-	s.DiskMb = val
-}
-
-// SetMemoryMb sets the value of MemoryMb.
-func (s *PoolSandboxResources) SetMemoryMb(val int64) {
-	s.MemoryMb = val
-}
-
-// SetTimeoutSeconds sets the value of TimeoutSeconds.
-func (s *PoolSandboxResources) SetTimeoutSeconds(val int64) {
-	s.TimeoutSeconds = val
-}
-
 // Ref: #/components/schemas/PoolSandboxRuntime
 type PoolSandboxRuntime struct {
 	CreatedAt  time.Time                  `json:"createdAt"`
@@ -2516,9 +2354,8 @@ func (s *PoolSandboxRuntimeMetadata) init() PoolSandboxRuntimeMetadata {
 // Ref: #/components/schemas/PoolSandboxUpdateRequest
 type PoolSandboxUpdateRequest struct {
 	// A URL to the JSON Schema for this object.
-	Schema    OptURI                  `json:"$schema"`
-	Config    OptSandboxUpdateConfig  `json:"config"`
-	Resources OptPoolSandboxResources `json:"resources"`
+	Schema OptURI                 `json:"$schema"`
+	Config OptSandboxUpdateConfig `json:"config"`
 	// Replacement sentinel placeholder set for a running sandbox. The pool re-registers them with the
 	// proxy so newly bound secrets resolve without a restart.
 	Sentinels OptNilStringArray `json:"sentinels"`
@@ -2535,11 +2372,6 @@ func (s *PoolSandboxUpdateRequest) GetSchema() OptURI {
 // GetConfig returns the value of Config.
 func (s *PoolSandboxUpdateRequest) GetConfig() OptSandboxUpdateConfig {
 	return s.Config
-}
-
-// GetResources returns the value of Resources.
-func (s *PoolSandboxUpdateRequest) GetResources() OptPoolSandboxResources {
-	return s.Resources
 }
 
 // GetSentinels returns the value of Sentinels.
@@ -2560,11 +2392,6 @@ func (s *PoolSandboxUpdateRequest) SetSchema(val OptURI) {
 // SetConfig sets the value of Config.
 func (s *PoolSandboxUpdateRequest) SetConfig(val OptSandboxUpdateConfig) {
 	s.Config = val
-}
-
-// SetResources sets the value of Resources.
-func (s *PoolSandboxUpdateRequest) SetResources(val OptPoolSandboxResources) {
-	s.Resources = val
 }
 
 // SetSentinels sets the value of Sentinels.
@@ -2755,7 +2582,6 @@ type SandboxConfig struct {
 	Model               OptString                   `json:"model"`
 	ModelReasoningLevel OptString                   `json:"modelReasoningLevel"`
 	ModelServiceTier    OptString                   `json:"modelServiceTier"`
-	CpuVcpus            OptFloat64                  `json:"cpuVcpus"`
 	Description         OptString                   `json:"description"`
 	Env                 OptSandboxConfigEnv         `json:"env"`
 	Image               OptString                   `json:"image"`
@@ -2772,12 +2598,10 @@ type SandboxConfig struct {
 	// no longer matches, so image upgrades and every other spec change are one mechanism
 	// rather than a growing list of per-field comparisons.
 	SpecFingerprint      OptString                            `json:"specFingerprint"`
-	MemoryBytes          OptInt64                             `json:"memoryBytes"`
 	Name                 OptString                            `json:"name"`
 	Prompt               []string                             `json:"prompt"`
 	Source               OptGitSource                         `json:"source"`
 	SourceCodeReferences OptSandboxConfigSourceCodeReferences `json:"sourceCodeReferences"`
-	StorageBytes         OptInt64                             `json:"storageBytes"`
 	User                 OptSandboxUser                       `json:"user"`
 }
 
@@ -2804,11 +2628,6 @@ func (s *SandboxConfig) GetModelReasoningLevel() OptString {
 // GetModelServiceTier returns the value of ModelServiceTier.
 func (s *SandboxConfig) GetModelServiceTier() OptString {
 	return s.ModelServiceTier
-}
-
-// GetCpuVcpus returns the value of CpuVcpus.
-func (s *SandboxConfig) GetCpuVcpus() OptFloat64 {
-	return s.CpuVcpus
 }
 
 // GetDescription returns the value of Description.
@@ -2841,11 +2660,6 @@ func (s *SandboxConfig) GetSpecFingerprint() OptString {
 	return s.SpecFingerprint
 }
 
-// GetMemoryBytes returns the value of MemoryBytes.
-func (s *SandboxConfig) GetMemoryBytes() OptInt64 {
-	return s.MemoryBytes
-}
-
 // GetName returns the value of Name.
 func (s *SandboxConfig) GetName() OptString {
 	return s.Name
@@ -2864,11 +2678,6 @@ func (s *SandboxConfig) GetSource() OptGitSource {
 // GetSourceCodeReferences returns the value of SourceCodeReferences.
 func (s *SandboxConfig) GetSourceCodeReferences() OptSandboxConfigSourceCodeReferences {
 	return s.SourceCodeReferences
-}
-
-// GetStorageBytes returns the value of StorageBytes.
-func (s *SandboxConfig) GetStorageBytes() OptInt64 {
-	return s.StorageBytes
 }
 
 // GetUser returns the value of User.
@@ -2901,11 +2710,6 @@ func (s *SandboxConfig) SetModelServiceTier(val OptString) {
 	s.ModelServiceTier = val
 }
 
-// SetCpuVcpus sets the value of CpuVcpus.
-func (s *SandboxConfig) SetCpuVcpus(val OptFloat64) {
-	s.CpuVcpus = val
-}
-
 // SetDescription sets the value of Description.
 func (s *SandboxConfig) SetDescription(val OptString) {
 	s.Description = val
@@ -2936,11 +2740,6 @@ func (s *SandboxConfig) SetSpecFingerprint(val OptString) {
 	s.SpecFingerprint = val
 }
 
-// SetMemoryBytes sets the value of MemoryBytes.
-func (s *SandboxConfig) SetMemoryBytes(val OptInt64) {
-	s.MemoryBytes = val
-}
-
 // SetName sets the value of Name.
 func (s *SandboxConfig) SetName(val OptString) {
 	s.Name = val
@@ -2959,11 +2758,6 @@ func (s *SandboxConfig) SetSource(val OptGitSource) {
 // SetSourceCodeReferences sets the value of SourceCodeReferences.
 func (s *SandboxConfig) SetSourceCodeReferences(val OptSandboxConfigSourceCodeReferences) {
 	s.SourceCodeReferences = val
-}
-
-// SetStorageBytes sets the value of StorageBytes.
-func (s *SandboxConfig) SetStorageBytes(val OptInt64) {
-	s.StorageBytes = val
 }
 
 // SetUser sets the value of User.
@@ -3036,17 +2830,9 @@ func (s *SandboxConfigSourceCodeReferences) init() SandboxConfigSourceCodeRefere
 
 // Ref: #/components/schemas/SandboxUpdateConfig
 type SandboxUpdateConfig struct {
-	CpuVcpus         OptFloat64                `json:"cpuVcpus"`
 	Env              OptSandboxUpdateConfigEnv `json:"env"`
 	Image            OptString                 `json:"image"`
-	MemoryBytes      OptInt64                  `json:"memoryBytes"`
-	StorageBytes     OptInt64                  `json:"storageBytes"`
 	WorkingDirectory OptString                 `json:"workingDirectory"`
-}
-
-// GetCpuVcpus returns the value of CpuVcpus.
-func (s *SandboxUpdateConfig) GetCpuVcpus() OptFloat64 {
-	return s.CpuVcpus
 }
 
 // GetEnv returns the value of Env.
@@ -3059,24 +2845,9 @@ func (s *SandboxUpdateConfig) GetImage() OptString {
 	return s.Image
 }
 
-// GetMemoryBytes returns the value of MemoryBytes.
-func (s *SandboxUpdateConfig) GetMemoryBytes() OptInt64 {
-	return s.MemoryBytes
-}
-
-// GetStorageBytes returns the value of StorageBytes.
-func (s *SandboxUpdateConfig) GetStorageBytes() OptInt64 {
-	return s.StorageBytes
-}
-
 // GetWorkingDirectory returns the value of WorkingDirectory.
 func (s *SandboxUpdateConfig) GetWorkingDirectory() OptString {
 	return s.WorkingDirectory
-}
-
-// SetCpuVcpus sets the value of CpuVcpus.
-func (s *SandboxUpdateConfig) SetCpuVcpus(val OptFloat64) {
-	s.CpuVcpus = val
 }
 
 // SetEnv sets the value of Env.
@@ -3087,16 +2858,6 @@ func (s *SandboxUpdateConfig) SetEnv(val OptSandboxUpdateConfigEnv) {
 // SetImage sets the value of Image.
 func (s *SandboxUpdateConfig) SetImage(val OptString) {
 	s.Image = val
-}
-
-// SetMemoryBytes sets the value of MemoryBytes.
-func (s *SandboxUpdateConfig) SetMemoryBytes(val OptInt64) {
-	s.MemoryBytes = val
-}
-
-// SetStorageBytes sets the value of StorageBytes.
-func (s *SandboxUpdateConfig) SetStorageBytes(val OptInt64) {
-	s.StorageBytes = val
 }
 
 // SetWorkingDirectory sets the value of WorkingDirectory.

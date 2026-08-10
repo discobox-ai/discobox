@@ -44,7 +44,7 @@ func TestPoolRegisterStatusAndSchedulableGate(t *testing.T) {
 	if !updated.Degraded || updated.AvailableCPUVCPUs != 2 || updated.AvailableMemoryBytes != 4<<30 || updated.AvailableStorageBytes != 10<<30 || string(updated.Conditions) == "" {
 		t.Fatalf("updated pool = %#v", updated)
 	}
-	pool, err := s.SchedulablePoolForSandbox(ctx, sandboxForClaim("project-1", "pool-1", 1, 1<<30, 1<<30))
+	pool, err := s.SchedulablePoolForSandbox(ctx, sandboxForClaim("project-1", "pool-1"))
 	if err != nil {
 		t.Fatalf("schedulable pool: %v", err)
 	}
@@ -87,18 +87,20 @@ func TestUpdatePoolStatusLeavesReconcilerVerdictAlone(t *testing.T) {
 	}
 }
 
-func TestSchedulablePoolForSandboxRequiresResourceFit(t *testing.T) {
+// TestSchedulablePoolForSandboxIgnoresCapacity pins that placement is never
+// refused for low reported CPU/memory/storage (docs/adr/0029): sandboxes
+// share their pool's envelope with no per-sandbox reservation, so a pool
+// reporting almost no available capacity is still schedulable as long as it
+// is ready and schedulable.
+func TestSchedulablePoolForSandboxIgnoresCapacity(t *testing.T) {
 	ctx := context.Background()
 	s := newTestStore(t)
 	createTestPool(t, s, "project-1", "pool-1")
-	if _, err := s.UpdatePoolStatus(ctx, "pool-1", true, true, false, 1, 1<<30, 1<<30, nil); err != nil {
+	if _, err := s.UpdatePoolStatus(ctx, "pool-1", true, true, false, 0, 0, 0, nil); err != nil {
 		t.Fatalf("update status: %v", err)
 	}
 
-	if _, err := s.SchedulablePoolForSandbox(ctx, sandboxForClaim("project-1", "pool-1", 2, 1<<30, 1<<30)); !errors.Is(err, store.ErrNotFound) {
-		t.Fatalf("schedulable pool error = %v, want ErrNotFound", err)
-	}
-	if pool, err := s.SchedulablePoolForSandbox(ctx, sandboxForClaim("project-1", "pool-1", 1, 1<<30, 1<<30)); err != nil || pool.ID != "pool-1" {
+	if pool, err := s.SchedulablePoolForSandbox(ctx, sandboxForClaim("project-1", "pool-1")); err != nil || pool.ID != "pool-1" {
 		t.Fatalf("schedulable pool = %v err=%v, want pool-1", pool, err)
 	}
 }
@@ -109,7 +111,7 @@ func TestSchedulablePoolForSandboxRequiresReadiness(t *testing.T) {
 	createTestPool(t, s, "project-1", "pool-1")
 
 	// A pool that never reported ready cannot accept placement.
-	if _, err := s.SchedulablePoolForSandbox(ctx, sandboxForClaim("project-1", "pool-1", 1, 0, 0)); !errors.Is(err, store.ErrNotFound) {
+	if _, err := s.SchedulablePoolForSandbox(ctx, sandboxForClaim("project-1", "pool-1")); !errors.Is(err, store.ErrNotFound) {
 		t.Fatalf("schedulable pool error = %v, want ErrNotFound", err)
 	}
 }
@@ -137,15 +139,10 @@ func TestPoolGenerationOptions(t *testing.T) {
 	}
 }
 
-func sandboxForClaim(projectID, poolID string, cpuVCPUs float64, memoryBytes, storageBytes int64) *model.Sandbox {
+func sandboxForClaim(projectID, poolID string) *model.Sandbox {
 	return &model.Sandbox{
 		ProjectID: projectID,
 		PoolID:    poolID,
-		SandboxManifest: model.SandboxManifest{
-			CPUVCPUs:     cpuVCPUs,
-			MemoryBytes:  memoryBytes,
-			StorageBytes: storageBytes,
-		},
 	}
 }
 

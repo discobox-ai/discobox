@@ -409,18 +409,6 @@ func poolCreateRequestFromOptions(sandboxID string, opts sandbox.CreateOptions) 
 	if user.Name.Set || user.UID.Set || user.Gid.Set || user.GroupName.Set || user.HomeDirectory.Set || len(user.AdditionalGroups) > 0 {
 		config.User = poolclient.NewOptSandboxUser(user)
 	}
-	if opts.Resources != (sandbox.ResourceConfig{}) {
-		out.Resources = poolclient.NewOptPoolSandboxResources(poolResourceConfig(opts.Resources))
-	}
-	if opts.CPUVCPUs != 0 {
-		config.CpuVcpus = poolclient.NewOptFloat64(opts.CPUVCPUs)
-	}
-	if opts.MemoryBytes != 0 {
-		config.MemoryBytes = poolclient.NewOptInt64(opts.MemoryBytes)
-	}
-	if opts.StorageBytes != 0 {
-		config.StorageBytes = poolclient.NewOptInt64(opts.StorageBytes)
-	}
 	return out
 }
 
@@ -429,15 +417,6 @@ func poolOptStringPtr(value *string) poolclient.OptString {
 		return poolclient.OptString{}
 	}
 	return poolclient.NewOptString(*value)
-}
-
-func poolResourceConfig(cfg sandbox.ResourceConfig) poolapimodel.PoolSandboxResources {
-	return poolapimodel.PoolSandboxResources{
-		MemoryMb:       int64(cfg.MemoryMB),
-		CpuCores:       cfg.CPUCores,
-		DiskMb:         int64(cfg.DiskMB),
-		TimeoutSeconds: int64(cfg.Timeout),
-	}
 }
 
 func poolSourceCodeReferences(in model.SourceCodeReferences) poolclient.SandboxConfigSourceCodeReferences {

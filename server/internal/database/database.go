@@ -65,7 +65,10 @@ func (db *DB) Migrate(ctx context.Context) error {
 	if err := dropJobQueueArtifacts(write); err != nil {
 		return err
 	}
-	return dropLegacyProjectSlug(write)
+	if err := dropLegacyProjectSlug(write); err != nil {
+		return err
+	}
+	return dropSandboxResourceRequestColumns(write)
 }
 
 const (
@@ -148,6 +151,20 @@ func dropJobQueueArtifacts(db *gorm.DB) error {
 // comes off around it.
 func dropLegacyProjectSlug(db *gorm.DB) error {
 	return dropRetiredColumn(db, &model.Project{}, "projects", "slug")
+}
+
+// dropSandboxResourceRequestColumns removes the retired per-sandbox
+// cpu_vcpus/memory_bytes/storage_bytes request columns (docs/adr/0029):
+// sandboxes no longer reserve a slice of their pool's envelope, so nothing
+// writes these columns anymore. The same-named columns on pools are the
+// envelope itself and are untouched.
+func dropSandboxResourceRequestColumns(db *gorm.DB) error {
+	for _, column := range []string{"cpu_vcpus", "memory_bytes", "storage_bytes"} {
+		if err := dropRetiredColumn(db, &model.Sandbox{}, "sandboxes", column); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 // dropRetiredColumn removes a column that is no longer part of a model.

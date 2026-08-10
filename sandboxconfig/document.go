@@ -36,7 +36,6 @@ type RuntimeLayer struct {
 	Image        string       `json:"image,omitempty"`
 	Provider     Provider     `json:"provider"`
 	AgentRuntime AgentRuntime `json:"agentRuntime"`
-	Resources    Resources    `json:"resources"`
 	Sources      []Source     `json:"sources,omitempty"`
 
 	Model               string            `json:"model,omitempty"`
@@ -80,16 +79,6 @@ type AgentRuntime struct {
 	DatabasePath           string `json:"databasePath"`
 	ResourceSampleInterval string `json:"resourceSampleInterval,omitempty"`
 	ResourceRetentionCount int    `json:"resourceRetentionCount,omitempty"`
-}
-
-// Resources is the sandbox's provider-normalized resource allocation — the
-// single representation superseding the SandboxResources/SandboxConfig
-// duplication in the pre-ADR manifest (docs/adr/0012 §5).
-type Resources struct {
-	CPUCores       float64 `json:"cpuCores"`
-	MemoryMB       int64   `json:"memoryMb"`
-	DiskMB         int64   `json:"diskMb"`
-	TimeoutSeconds int64   `json:"timeoutSeconds"`
 }
 
 // Source is a worker-materialized source the sandbox-agent bind-mounts from

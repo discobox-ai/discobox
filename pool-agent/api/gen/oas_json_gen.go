@@ -1313,41 +1313,6 @@ func (s *OptBool) UnmarshalJSON(data []byte) error {
 	return s.Decode(d)
 }
 
-// Encode encodes float64 as json.
-func (o OptFloat64) Encode(e *jx.Encoder) {
-	if !o.Set {
-		return
-	}
-	e.Float64(float64(o.Value))
-}
-
-// Decode decodes float64 from json.
-func (o *OptFloat64) Decode(d *jx.Decoder) error {
-	if o == nil {
-		return errors.New("invalid: unable to decode OptFloat64 to nil")
-	}
-	o.Set = true
-	v, err := d.Float64()
-	if err != nil {
-		return err
-	}
-	o.Value = float64(v)
-	return nil
-}
-
-// MarshalJSON implements stdjson.Marshaler.
-func (s OptFloat64) MarshalJSON() ([]byte, error) {
-	e := jx.Encoder{}
-	s.Encode(&e)
-	return e.Bytes(), nil
-}
-
-// UnmarshalJSON implements stdjson.Unmarshaler.
-func (s *OptFloat64) UnmarshalJSON(data []byte) error {
-	d := jx.DecodeBytes(data)
-	return s.Decode(d)
-}
-
 // Encode encodes GitSource as json.
 func (o OptGitSource) Encode(e *jx.Encoder) {
 	if !o.Set {
@@ -1977,39 +1942,6 @@ func (s *OptNilStringArray) UnmarshalJSON(data []byte) error {
 	return s.Decode(d)
 }
 
-// Encode encodes PoolSandboxResources as json.
-func (o OptPoolSandboxResources) Encode(e *jx.Encoder) {
-	if !o.Set {
-		return
-	}
-	o.Value.Encode(e)
-}
-
-// Decode decodes PoolSandboxResources from json.
-func (o *OptPoolSandboxResources) Decode(d *jx.Decoder) error {
-	if o == nil {
-		return errors.New("invalid: unable to decode OptPoolSandboxResources to nil")
-	}
-	o.Set = true
-	if err := o.Value.Decode(d); err != nil {
-		return err
-	}
-	return nil
-}
-
-// MarshalJSON implements stdjson.Marshaler.
-func (s OptPoolSandboxResources) MarshalJSON() ([]byte, error) {
-	e := jx.Encoder{}
-	s.Encode(&e)
-	return e.Bytes(), nil
-}
-
-// UnmarshalJSON implements stdjson.Unmarshaler.
-func (s *OptPoolSandboxResources) UnmarshalJSON(data []byte) error {
-	d := jx.DecodeBytes(data)
-	return s.Decode(d)
-}
-
 // Encode encodes ResolvedHarnessConfig as json.
 func (o OptResolvedHarnessConfig) Encode(e *jx.Encoder) {
 	if !o.Set {
@@ -2340,12 +2272,6 @@ func (s *PoolSandboxCreateRequest) encodeFields(e *jx.Encoder) {
 		}
 	}
 	{
-		if s.Resources.Set {
-			e.FieldStart("resources")
-			s.Resources.Encode(e)
-		}
-	}
-	{
 		e.FieldStart("sandboxId")
 		e.Str(s.SandboxId)
 	}
@@ -2363,14 +2289,13 @@ func (s *PoolSandboxCreateRequest) encodeFields(e *jx.Encoder) {
 	}
 }
 
-var jsonFieldsNameOfPoolSandboxCreateRequest = [7]string{
+var jsonFieldsNameOfPoolSandboxCreateRequest = [6]string{
 	0: "$schema",
 	1: "config",
 	2: "resolvedHarnessConfig",
-	3: "resources",
-	4: "sandboxId",
-	5: "sentinels",
-	6: "secretEnv",
+	3: "sandboxId",
+	4: "sentinels",
+	5: "secretEnv",
 }
 
 // Decode decodes PoolSandboxCreateRequest from json.
@@ -2412,18 +2337,8 @@ func (s *PoolSandboxCreateRequest) Decode(d *jx.Decoder) error {
 			}(); err != nil {
 				return errors.Wrap(err, "decode field \"resolvedHarnessConfig\"")
 			}
-		case "resources":
-			if err := func() error {
-				s.Resources.Reset()
-				if err := s.Resources.Decode(d); err != nil {
-					return err
-				}
-				return nil
-			}(); err != nil {
-				return errors.Wrap(err, "decode field \"resources\"")
-			}
 		case "sandboxId":
-			requiredBitSet[0] |= 1 << 4
+			requiredBitSet[0] |= 1 << 3
 			if err := func() error {
 				v, err := d.Str()
 				s.SandboxId = string(v)
@@ -2464,7 +2379,7 @@ func (s *PoolSandboxCreateRequest) Decode(d *jx.Decoder) error {
 	// Validate required fields.
 	var failures []validate.FieldError
 	for i, mask := range [1]uint8{
-		0b00010010,
+		0b00001010,
 	} {
 		if result := (requiredBitSet[i] & mask) ^ mask; result != 0 {
 			// Mask only required fields and check equality to mask using XOR.
@@ -2592,12 +2507,6 @@ func (s *PoolSandboxInstance) encodeFields(e *jx.Encoder) {
 		}
 	}
 	{
-		if s.Resources.Set {
-			e.FieldStart("resources")
-			s.Resources.Encode(e)
-		}
-	}
-	{
 		e.FieldStart("runtime")
 		s.Runtime.Encode(e)
 	}
@@ -2607,13 +2516,12 @@ func (s *PoolSandboxInstance) encodeFields(e *jx.Encoder) {
 	}
 }
 
-var jsonFieldsNameOfPoolSandboxInstance = [6]string{
+var jsonFieldsNameOfPoolSandboxInstance = [5]string{
 	0: "$schema",
 	1: "config",
 	2: "resolvedHarnessConfig",
-	3: "resources",
-	4: "runtime",
-	5: "sandboxId",
+	3: "runtime",
+	4: "sandboxId",
 }
 
 // Decode decodes PoolSandboxInstance from json.
@@ -2655,18 +2563,8 @@ func (s *PoolSandboxInstance) Decode(d *jx.Decoder) error {
 			}(); err != nil {
 				return errors.Wrap(err, "decode field \"resolvedHarnessConfig\"")
 			}
-		case "resources":
-			if err := func() error {
-				s.Resources.Reset()
-				if err := s.Resources.Decode(d); err != nil {
-					return err
-				}
-				return nil
-			}(); err != nil {
-				return errors.Wrap(err, "decode field \"resources\"")
-			}
 		case "runtime":
-			requiredBitSet[0] |= 1 << 4
+			requiredBitSet[0] |= 1 << 3
 			if err := func() error {
 				if err := s.Runtime.Decode(d); err != nil {
 					return err
@@ -2676,7 +2574,7 @@ func (s *PoolSandboxInstance) Decode(d *jx.Decoder) error {
 				return errors.Wrap(err, "decode field \"runtime\"")
 			}
 		case "sandboxId":
-			requiredBitSet[0] |= 1 << 5
+			requiredBitSet[0] |= 1 << 4
 			if err := func() error {
 				v, err := d.Str()
 				s.SandboxId = string(v)
@@ -2697,7 +2595,7 @@ func (s *PoolSandboxInstance) Decode(d *jx.Decoder) error {
 	// Validate required fields.
 	var failures []validate.FieldError
 	for i, mask := range [1]uint8{
-		0b00110010,
+		0b00011010,
 	} {
 		if result := (requiredBitSet[i] & mask) ^ mask; result != 0 {
 			// Mask only required fields and check equality to mask using XOR.
@@ -3218,153 +3116,6 @@ func (s *PoolSandboxPort) UnmarshalJSON(data []byte) error {
 }
 
 // Encode implements json.Marshaler.
-func (s *PoolSandboxResources) Encode(e *jx.Encoder) {
-	e.ObjStart()
-	s.encodeFields(e)
-	e.ObjEnd()
-}
-
-// encodeFields encodes fields.
-func (s *PoolSandboxResources) encodeFields(e *jx.Encoder) {
-	{
-		e.FieldStart("cpuCores")
-		e.Float64(s.CpuCores)
-	}
-	{
-		e.FieldStart("diskMb")
-		e.Int64(s.DiskMb)
-	}
-	{
-		e.FieldStart("memoryMb")
-		e.Int64(s.MemoryMb)
-	}
-	{
-		e.FieldStart("timeoutSeconds")
-		e.Int64(s.TimeoutSeconds)
-	}
-}
-
-var jsonFieldsNameOfPoolSandboxResources = [4]string{
-	0: "cpuCores",
-	1: "diskMb",
-	2: "memoryMb",
-	3: "timeoutSeconds",
-}
-
-// Decode decodes PoolSandboxResources from json.
-func (s *PoolSandboxResources) Decode(d *jx.Decoder) error {
-	if s == nil {
-		return errors.New("invalid: unable to decode PoolSandboxResources to nil")
-	}
-	var requiredBitSet [1]uint8
-
-	if err := d.ObjBytes(func(d *jx.Decoder, k []byte) error {
-		switch string(k) {
-		case "cpuCores":
-			requiredBitSet[0] |= 1 << 0
-			if err := func() error {
-				v, err := d.Float64()
-				s.CpuCores = float64(v)
-				if err != nil {
-					return err
-				}
-				return nil
-			}(); err != nil {
-				return errors.Wrap(err, "decode field \"cpuCores\"")
-			}
-		case "diskMb":
-			requiredBitSet[0] |= 1 << 1
-			if err := func() error {
-				v, err := d.Int64()
-				s.DiskMb = int64(v)
-				if err != nil {
-					return err
-				}
-				return nil
-			}(); err != nil {
-				return errors.Wrap(err, "decode field \"diskMb\"")
-			}
-		case "memoryMb":
-			requiredBitSet[0] |= 1 << 2
-			if err := func() error {
-				v, err := d.Int64()
-				s.MemoryMb = int64(v)
-				if err != nil {
-					return err
-				}
-				return nil
-			}(); err != nil {
-				return errors.Wrap(err, "decode field \"memoryMb\"")
-			}
-		case "timeoutSeconds":
-			requiredBitSet[0] |= 1 << 3
-			if err := func() error {
-				v, err := d.Int64()
-				s.TimeoutSeconds = int64(v)
-				if err != nil {
-					return err
-				}
-				return nil
-			}(); err != nil {
-				return errors.Wrap(err, "decode field \"timeoutSeconds\"")
-			}
-		default:
-			return errors.Errorf("unexpected field %q", k)
-		}
-		return nil
-	}); err != nil {
-		return errors.Wrap(err, "decode PoolSandboxResources")
-	}
-	// Validate required fields.
-	var failures []validate.FieldError
-	for i, mask := range [1]uint8{
-		0b00001111,
-	} {
-		if result := (requiredBitSet[i] & mask) ^ mask; result != 0 {
-			// Mask only required fields and check equality to mask using XOR.
-			//
-			// If XOR result is not zero, result is not equal to expected, so some fields are missed.
-			// Bits of fields which would be set are actually bits of missed fields.
-			missed := bits.OnesCount8(result)
-			for bitN := 0; bitN < missed; bitN++ {
-				bitIdx := bits.TrailingZeros8(result)
-				fieldIdx := i*8 + bitIdx
-				var name string
-				if fieldIdx < len(jsonFieldsNameOfPoolSandboxResources) {
-					name = jsonFieldsNameOfPoolSandboxResources[fieldIdx]
-				} else {
-					name = strconv.Itoa(fieldIdx)
-				}
-				failures = append(failures, validate.FieldError{
-					Name:  name,
-					Error: validate.ErrFieldRequired,
-				})
-				// Reset bit.
-				result &^= 1 << bitIdx
-			}
-		}
-	}
-	if len(failures) > 0 {
-		return &validate.Error{Fields: failures}
-	}
-
-	return nil
-}
-
-// MarshalJSON implements stdjson.Marshaler.
-func (s *PoolSandboxResources) MarshalJSON() ([]byte, error) {
-	e := jx.Encoder{}
-	s.Encode(&e)
-	return e.Bytes(), nil
-}
-
-// UnmarshalJSON implements stdjson.Unmarshaler.
-func (s *PoolSandboxResources) UnmarshalJSON(data []byte) error {
-	d := jx.DecodeBytes(data)
-	return s.Decode(d)
-}
-
-// Encode implements json.Marshaler.
 func (s *PoolSandboxRuntime) Encode(e *jx.Encoder) {
 	e.ObjStart()
 	s.encodeFields(e)
@@ -3761,12 +3512,6 @@ func (s *PoolSandboxUpdateRequest) encodeFields(e *jx.Encoder) {
 		}
 	}
 	{
-		if s.Resources.Set {
-			e.FieldStart("resources")
-			s.Resources.Encode(e)
-		}
-	}
-	{
 		if s.Sentinels.Set {
 			e.FieldStart("sentinels")
 			s.Sentinels.Encode(e)
@@ -3780,12 +3525,11 @@ func (s *PoolSandboxUpdateRequest) encodeFields(e *jx.Encoder) {
 	}
 }
 
-var jsonFieldsNameOfPoolSandboxUpdateRequest = [5]string{
+var jsonFieldsNameOfPoolSandboxUpdateRequest = [4]string{
 	0: "$schema",
 	1: "config",
-	2: "resources",
-	3: "sentinels",
-	4: "secretEnv",
+	2: "sentinels",
+	3: "secretEnv",
 }
 
 // Decode decodes PoolSandboxUpdateRequest from json.
@@ -3815,16 +3559,6 @@ func (s *PoolSandboxUpdateRequest) Decode(d *jx.Decoder) error {
 				return nil
 			}(); err != nil {
 				return errors.Wrap(err, "decode field \"config\"")
-			}
-		case "resources":
-			if err := func() error {
-				s.Resources.Reset()
-				if err := s.Resources.Decode(d); err != nil {
-					return err
-				}
-				return nil
-			}(); err != nil {
-				return errors.Wrap(err, "decode field \"resources\"")
 			}
 		case "sentinels":
 			if err := func() error {
@@ -4397,12 +4131,6 @@ func (s *SandboxConfig) encodeFields(e *jx.Encoder) {
 		}
 	}
 	{
-		if s.CpuVcpus.Set {
-			e.FieldStart("cpuVcpus")
-			s.CpuVcpus.Encode(e)
-		}
-	}
-	{
 		if s.Description.Set {
 			e.FieldStart("description")
 			s.Description.Encode(e)
@@ -4439,12 +4167,6 @@ func (s *SandboxConfig) encodeFields(e *jx.Encoder) {
 		}
 	}
 	{
-		if s.MemoryBytes.Set {
-			e.FieldStart("memoryBytes")
-			s.MemoryBytes.Encode(e)
-		}
-	}
-	{
 		if s.Name.Set {
 			e.FieldStart("name")
 			s.Name.Encode(e)
@@ -4473,12 +4195,6 @@ func (s *SandboxConfig) encodeFields(e *jx.Encoder) {
 		}
 	}
 	{
-		if s.StorageBytes.Set {
-			e.FieldStart("storageBytes")
-			s.StorageBytes.Encode(e)
-		}
-	}
-	{
 		if s.User.Set {
 			e.FieldStart("user")
 			s.User.Encode(e)
@@ -4486,26 +4202,23 @@ func (s *SandboxConfig) encodeFields(e *jx.Encoder) {
 	}
 }
 
-var jsonFieldsNameOfSandboxConfig = [19]string{
+var jsonFieldsNameOfSandboxConfig = [16]string{
 	0:  "harnessConfigId",
 	1:  "harnessMode",
 	2:  "model",
 	3:  "modelReasoningLevel",
 	4:  "modelServiceTier",
-	5:  "cpuVcpus",
-	6:  "description",
-	7:  "env",
-	8:  "image",
-	9:  "imageDigest",
-	10: "start",
-	11: "specFingerprint",
-	12: "memoryBytes",
-	13: "name",
-	14: "prompt",
-	15: "source",
-	16: "sourceCodeReferences",
-	17: "storageBytes",
-	18: "user",
+	5:  "description",
+	6:  "env",
+	7:  "image",
+	8:  "imageDigest",
+	9:  "start",
+	10: "specFingerprint",
+	11: "name",
+	12: "prompt",
+	13: "source",
+	14: "sourceCodeReferences",
+	15: "user",
 }
 
 // Decode decodes SandboxConfig from json.
@@ -4565,16 +4278,6 @@ func (s *SandboxConfig) Decode(d *jx.Decoder) error {
 				return nil
 			}(); err != nil {
 				return errors.Wrap(err, "decode field \"modelServiceTier\"")
-			}
-		case "cpuVcpus":
-			if err := func() error {
-				s.CpuVcpus.Reset()
-				if err := s.CpuVcpus.Decode(d); err != nil {
-					return err
-				}
-				return nil
-			}(); err != nil {
-				return errors.Wrap(err, "decode field \"cpuVcpus\"")
 			}
 		case "description":
 			if err := func() error {
@@ -4636,16 +4339,6 @@ func (s *SandboxConfig) Decode(d *jx.Decoder) error {
 			}(); err != nil {
 				return errors.Wrap(err, "decode field \"specFingerprint\"")
 			}
-		case "memoryBytes":
-			if err := func() error {
-				s.MemoryBytes.Reset()
-				if err := s.MemoryBytes.Decode(d); err != nil {
-					return err
-				}
-				return nil
-			}(); err != nil {
-				return errors.Wrap(err, "decode field \"memoryBytes\"")
-			}
 		case "name":
 			if err := func() error {
 				s.Name.Reset()
@@ -4694,16 +4387,6 @@ func (s *SandboxConfig) Decode(d *jx.Decoder) error {
 				return nil
 			}(); err != nil {
 				return errors.Wrap(err, "decode field \"sourceCodeReferences\"")
-			}
-		case "storageBytes":
-			if err := func() error {
-				s.StorageBytes.Reset()
-				if err := s.StorageBytes.Decode(d); err != nil {
-					return err
-				}
-				return nil
-			}(); err != nil {
-				return errors.Wrap(err, "decode field \"storageBytes\"")
 			}
 		case "user":
 			if err := func() error {
@@ -4899,12 +4582,6 @@ func (s *SandboxUpdateConfig) Encode(e *jx.Encoder) {
 // encodeFields encodes fields.
 func (s *SandboxUpdateConfig) encodeFields(e *jx.Encoder) {
 	{
-		if s.CpuVcpus.Set {
-			e.FieldStart("cpuVcpus")
-			s.CpuVcpus.Encode(e)
-		}
-	}
-	{
 		if s.Env.Set {
 			e.FieldStart("env")
 			s.Env.Encode(e)
@@ -4917,18 +4594,6 @@ func (s *SandboxUpdateConfig) encodeFields(e *jx.Encoder) {
 		}
 	}
 	{
-		if s.MemoryBytes.Set {
-			e.FieldStart("memoryBytes")
-			s.MemoryBytes.Encode(e)
-		}
-	}
-	{
-		if s.StorageBytes.Set {
-			e.FieldStart("storageBytes")
-			s.StorageBytes.Encode(e)
-		}
-	}
-	{
 		if s.WorkingDirectory.Set {
 			e.FieldStart("workingDirectory")
 			s.WorkingDirectory.Encode(e)
@@ -4936,13 +4601,10 @@ func (s *SandboxUpdateConfig) encodeFields(e *jx.Encoder) {
 	}
 }
 
-var jsonFieldsNameOfSandboxUpdateConfig = [6]string{
-	0: "cpuVcpus",
-	1: "env",
-	2: "image",
-	3: "memoryBytes",
-	4: "storageBytes",
-	5: "workingDirectory",
+var jsonFieldsNameOfSandboxUpdateConfig = [3]string{
+	0: "env",
+	1: "image",
+	2: "workingDirectory",
 }
 
 // Decode decodes SandboxUpdateConfig from json.
@@ -4953,16 +4615,6 @@ func (s *SandboxUpdateConfig) Decode(d *jx.Decoder) error {
 
 	if err := d.ObjBytes(func(d *jx.Decoder, k []byte) error {
 		switch string(k) {
-		case "cpuVcpus":
-			if err := func() error {
-				s.CpuVcpus.Reset()
-				if err := s.CpuVcpus.Decode(d); err != nil {
-					return err
-				}
-				return nil
-			}(); err != nil {
-				return errors.Wrap(err, "decode field \"cpuVcpus\"")
-			}
 		case "env":
 			if err := func() error {
 				s.Env.Reset()
@@ -4982,26 +4634,6 @@ func (s *SandboxUpdateConfig) Decode(d *jx.Decoder) error {
 				return nil
 			}(); err != nil {
 				return errors.Wrap(err, "decode field \"image\"")
-			}
-		case "memoryBytes":
-			if err := func() error {
-				s.MemoryBytes.Reset()
-				if err := s.MemoryBytes.Decode(d); err != nil {
-					return err
-				}
-				return nil
-			}(); err != nil {
-				return errors.Wrap(err, "decode field \"memoryBytes\"")
-			}
-		case "storageBytes":
-			if err := func() error {
-				s.StorageBytes.Reset()
-				if err := s.StorageBytes.Decode(d); err != nil {
-					return err
-				}
-				return nil
-			}(); err != nil {
-				return errors.Wrap(err, "decode field \"storageBytes\"")
 			}
 		case "workingDirectory":
 			if err := func() error {

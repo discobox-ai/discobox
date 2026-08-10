@@ -13,7 +13,6 @@ type Config struct {
 	SandboxID    string       `json:"sandboxId"`
 	Provider     Provider     `json:"provider"`
 	AgentRuntime AgentRuntime `json:"agentRuntime"`
-	Resources    Resources    `json:"resources"`
 	Sources      []Source     `json:"sources,omitempty"`
 
 	Harness Harness `json:"harness"`
@@ -68,7 +67,6 @@ func Effective(doc Document) (Config, Provenance) {
 		SandboxID:    doc.Runtime.SandboxID,
 		Provider:     doc.Runtime.Provider,
 		AgentRuntime: doc.Runtime.AgentRuntime,
-		Resources:    doc.Runtime.Resources,
 		Sources:      cloneSources(doc.Runtime.Sources),
 
 		Model:               doc.Runtime.Model,

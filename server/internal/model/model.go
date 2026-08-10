@@ -563,9 +563,6 @@ type SandboxManifest struct {
 	UserGroupName        *string              `gorm:"column:user_group_name;type:text" json:"userGroupName,omitempty" doc:"Primary group name to use inside the sandbox, resolved inside it"`
 	UserAdditionalGroups []string             `gorm:"column:user_additional_groups;type:text;serializer:json" json:"userAdditionalGroups,omitempty" doc:"Supplementary groups, each a group name or a numeric GID"`
 	HomeDirectory        *string              `gorm:"column:home_directory;type:text" json:"homeDirectory,omitempty" doc:"User home directory to use inside the sandbox"`
-	CPUVCPUs             float64              `gorm:"column:cpu_vcpus;not null;default:1" json:"cpuVcpus" doc:"Requested CPU capacity in vCPUs"`
-	MemoryBytes          int64                `gorm:"column:memory_bytes;not null;default:0" json:"memoryBytes" doc:"Requested memory capacity in bytes"`
-	StorageBytes         int64                `gorm:"column:storage_bytes;not null;default:0" json:"storageBytes" doc:"Requested storage capacity in bytes"`
 }
 
 // Fingerprint is the spec digest the runtime compares a container against
@@ -636,15 +633,6 @@ func (s *Sandbox) BeforeCreate(_ *gorm.DB) error {
 		}
 	}
 	s.SetDefaults(DesiredStatePresent, SandboxStatePending)
-	if s.CPUVCPUs <= 0 {
-		s.CPUVCPUs = 1
-	}
-	if s.MemoryBytes < 0 {
-		s.MemoryBytes = 0
-	}
-	if s.StorageBytes < 0 {
-		s.StorageBytes = 0
-	}
 	return nil
 }
 

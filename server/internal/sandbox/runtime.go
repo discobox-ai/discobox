@@ -153,11 +153,7 @@ type CreateOptions struct {
 	ResolvedHarnessConfig *ResolvedHarnessConfig
 	AgentServerURL        string
 	OAuthRedirectBase     string
-	Resources             ResourceConfig
 	PoolID                string
-	CPUVCPUs              float64
-	MemoryBytes           int64
-	StorageBytes          int64
 }
 
 // UpdateOptions carries the mutable subset of CreateOptions that can be applied
@@ -196,14 +192,6 @@ type PoolRuntimeReconciler interface {
 	ReconcilePool(ctx context.Context, manager PoolManager, project *model.Project, provider *model.SandboxProviderInstance, pool *model.Pool) error
 	RepairPool(ctx context.Context, manager PoolManager, project *model.Project, provider *model.SandboxProviderInstance, pool *model.Pool, reason string) error
 	RemovePool(ctx context.Context, manager PoolManager, project *model.Project, provider *model.SandboxProviderInstance, pool *model.Pool) error
-}
-
-// ResourceConfig defines runtime resource limits.
-type ResourceConfig struct {
-	MemoryMB int
-	CPUCores float64
-	DiskMB   int
-	Timeout  time.Duration
 }
 
 // AttachOptions configures an interactive PTY.

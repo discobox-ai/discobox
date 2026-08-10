@@ -43,9 +43,6 @@ type sandboxCreateOptions struct {
 	// makes it indistinguishable from omitting the flag.
 	userUIDSet    bool
 	homeDirectory string
-	cpuVCPUs      float64
-	memoryBytes   int64
-	storageBytes  int64
 	wait          bool
 	waitTimeout   time.Duration
 }
@@ -492,9 +489,6 @@ func addCreateFlags(cmd *cobra.Command, opts *sandboxCreateOptions) {
 	cmd.Flags().Int64Var(&opts.userUID, "user-uid", 0, "UID to use inside the sandbox")
 	cmd.Flags().StringSliceVar(&opts.userGroups, "user-group", nil, "Groups for the sandbox user, each a name or a numeric GID. The first is the primary group and the rest are supplementary; omit to use the image's own groups")
 	cmd.Flags().StringVar(&opts.homeDirectory, "home-directory", "", "User home directory to use inside the sandbox")
-	cmd.Flags().Float64Var(&opts.cpuVCPUs, "cpu-vcpus", 0, "Requested CPU capacity in vCPUs")
-	cmd.Flags().Int64Var(&opts.memoryBytes, "memory-bytes", 0, "Requested memory capacity in bytes")
-	cmd.Flags().Int64Var(&opts.storageBytes, "storage-bytes", 0, "Requested storage capacity in bytes")
 	cmd.Flags().BoolVar(&opts.wait, "wait", false, "Wait for sandbox to reach running or fail")
 	cmd.Flags().DurationVar(&opts.waitTimeout, "wait-timeout", 2*time.Minute, "Maximum time to wait")
 }
@@ -533,15 +527,6 @@ func createSandboxBody(opts sandboxCreateOptions) (*apimodel.CreateSandboxBody, 
 	}
 	if source != nil {
 		config.SetSource(apiclientgen.NewOptGitSource(*source))
-	}
-	if opts.cpuVCPUs > 0 {
-		config.SetCpuVcpus(apiclientgen.NewOptFloat64(opts.cpuVCPUs))
-	}
-	if opts.memoryBytes > 0 {
-		config.SetMemoryBytes(apiclientgen.NewOptInt64(opts.memoryBytes))
-	}
-	if opts.storageBytes > 0 {
-		config.SetStorageBytes(apiclientgen.NewOptInt64(opts.storageBytes))
 	}
 	sourceCodeReferences, err := sourceCodeReferences(opts.sourceCodeReferences)
 	if err != nil {

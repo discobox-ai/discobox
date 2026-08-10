@@ -217,9 +217,6 @@ components:
                     type: string
                 modelServiceTier:
                     type: string
-                cpuVcpus:
-                    format: double
-                    type: number
                 description:
                     type: string
                 env:
@@ -245,9 +242,6 @@ components:
                         no longer matches, so image upgrades and every other spec change are one mechanism
                         rather than a growing list of per-field comparisons.
                     type: string
-                memoryBytes:
-                    format: int64
-                    type: integer
                 name:
                     type: string
                 prompt:
@@ -260,30 +254,18 @@ components:
                     additionalProperties:
                         "$ref": "#/components/schemas/GitSource"
                     type: object
-                storageBytes:
-                    format: int64
-                    type: integer
                 user:
                     "$ref": "#/components/schemas/SandboxUser"
             type: object
         SandboxUpdateConfig:
             additionalProperties: false
             properties:
-                cpuVcpus:
-                    format: double
-                    type: number
                 env:
                     additionalProperties:
                         type: string
                     type: object
                 image:
                     type: string
-                memoryBytes:
-                    format: int64
-                    type: integer
-                storageBytes:
-                    format: int64
-                    type: integer
                 workingDirectory:
                     type: string
             type: object
@@ -326,8 +308,6 @@ components:
                     "$ref": "#/components/schemas/SandboxConfig"
                 resolvedHarnessConfig:
                     "$ref": "#/components/schemas/ResolvedHarnessConfig"
-                resources:
-                    "$ref": "#/components/schemas/PoolSandboxResources"
                 sandboxId:
                     type: string
                 sentinels:
@@ -359,8 +339,6 @@ components:
                     "$ref": "#/components/schemas/SandboxConfig"
                 resolvedHarnessConfig:
                     "$ref": "#/components/schemas/ResolvedHarnessConfig"
-                resources:
-                    "$ref": "#/components/schemas/PoolSandboxResources"
                 runtime:
                     "$ref": "#/components/schemas/PoolSandboxRuntime"
                 sandboxId:
@@ -447,8 +425,6 @@ components:
                     type: string
                 config:
                     "$ref": "#/components/schemas/SandboxUpdateConfig"
-                resources:
-                    "$ref": "#/components/schemas/PoolSandboxResources"
                 sentinels:
                     description: Replacement sentinel placeholder set for a running sandbox. The pool re-registers them with the proxy so newly bound secrets resolve without a restart.
                     items:
@@ -480,27 +456,6 @@ components:
             - hostPort
             - hostIp
             - protocol
-            type: object
-        PoolSandboxResources:
-            additionalProperties: false
-            properties:
-                cpuCores:
-                    format: double
-                    type: number
-                diskMb:
-                    format: int64
-                    type: integer
-                memoryMb:
-                    format: int64
-                    type: integer
-                timeoutSeconds:
-                    format: int64
-                    type: integer
-            required:
-            - memoryMb
-            - cpuCores
-            - diskMb
-            - timeoutSeconds
             type: object
         PoolSandboxRuntime:
             additionalProperties: false

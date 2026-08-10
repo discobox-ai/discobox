@@ -185,11 +185,6 @@ func (p *Provider) Create(ctx context.Context, ref sandbox.SandboxRef, state []b
 		ID:        ref.SandboxID,
 		ProjectID: ref.ProjectID,
 		PoolID:    opts.PoolID,
-		SandboxManifest: model.SandboxManifest{
-			CPUVCPUs:     opts.CPUVCPUs,
-			MemoryBytes:  opts.MemoryBytes,
-			StorageBytes: opts.StorageBytes,
-		},
 	}
 	pool, err := p.schedulablePool(ctx, sb)
 	if err != nil {

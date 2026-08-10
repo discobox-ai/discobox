@@ -43,12 +43,14 @@ flowchart TD
 
 `server/providers/poolruntime.Provider` is the registered `sandbox.Provider`
 for pool-backed provider instances. It owns sandbox placement gating (the
-sandbox's pool must be ready, schedulable, and fit the request — there is no
-candidate search), capacity waits, bootstrap credential minting, pool runtime
-convergence (`sandbox.PoolRuntimeReconciler`), and user-sandbox operations
-through the pool-agent API. Docker never appears at this layer or above: the
-boundary contract downward is the `poolruntime.RuntimeProvider` interface, and
-the runtime contract for sandboxes is the pool-agent HTTP API reached through
+sandbox's pool must be ready and schedulable — there is no candidate search
+and no capacity check; sandboxes share their pool's CPU/memory/storage
+envelope with no per-sandbox reservation, docs/adr/0029), capacity waits,
+bootstrap credential minting, pool runtime convergence
+(`sandbox.PoolRuntimeReconciler`), and user-sandbox operations through the
+pool-agent API. Docker never appears at this layer or above: the boundary
+contract downward is the `poolruntime.RuntimeProvider` interface, and the
+runtime contract for sandboxes is the pool-agent HTTP API reached through
 `transport.HTTPClientLease`.
 
 `poolruntime.RuntimeProvider` is a five-method interface: `Close`,
@@ -57,8 +59,10 @@ the runtime contract for sandboxes is the pool-agent HTTP API reached through
 Docker: launching the pool-agent container with boot env, socket bind and host
 mounts, scoped volumes, the per-pool sandbox proxy network, health waits,
 config-revision drift detection, container replacement during repair, and
-applying the pool envelope (CPU/memory) as the container limit so per-sandbox
-limits nest inside it. It obtains Docker access exclusively through the driver.
+applying the pool envelope (CPU/memory) as the container limit. A sandbox
+container created inside it gets no nested CPU/memory limit of its own — it
+shares the worker container's cgroup with its siblings (docs/adr/0025). It
+obtains Docker access exclusively through the driver.
 
 `dockerworker.Driver` is the backend seam sized for "add EC2 without reading
 the engine":
