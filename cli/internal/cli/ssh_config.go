@@ -31,14 +31,6 @@ func (a *App) newSSHConfigCommand() *cobra.Command {
 			if err != nil {
 				return err
 			}
-			res, err := client.GetProject(cmd.Context(), apiclientgen.GetProjectParams{ProjectId: projectID})
-			if err != nil {
-				return err
-			}
-			project, err := expectResponse[apimodel.Project](res)
-			if err != nil {
-				return err
-			}
 			sandboxesRes, err := client.ListSandboxes(cmd.Context(), apiclientgen.ListSandboxesParams{ProjectId: projectID})
 			if err != nil {
 				return err
@@ -50,7 +42,7 @@ func (a *App) newSSHConfigCommand() *cobra.Command {
 
 			out := cmd.OutOrStdout()
 			for _, sandbox := range sandboxesBody.GetSandboxes() {
-				fmt.Fprintf(out, "Host %s.%s\n", sandbox.ID, project.Slug)
+				fmt.Fprintf(out, "Host %s.discobox.internal\n", sandbox.ID)
 				fmt.Fprintf(out, "    HostName %s\n", host)
 				fmt.Fprintf(out, "    Port %d\n", port)
 				fmt.Fprintf(out, "    User %s\n\n", sandbox.ID)

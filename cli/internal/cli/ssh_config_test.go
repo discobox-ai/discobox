@@ -11,12 +11,6 @@ func TestSSHConfigEmitsHostStanzasAndKnownHostsLine(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		switch r.URL.Path {
-		case "/projects/project-1":
-			_, _ = w.Write([]byte(`{
-				"id": "project-1", "ownerUserId": "user-1", "name": "Acme",
-				"slug": "acme", "default": true,
-				"createdAt": "2026-01-01T00:00:00Z", "updatedAt": "2026-01-01T00:00:00Z"
-			}`))
 		case "/projects/project-1/sandboxes":
 			_, _ = w.Write([]byte(`{"sandboxes":[
 				{"id":"sbx_devbox00000001","projectId":"project-1","createdByUserId":"user-1",
@@ -45,7 +39,7 @@ func TestSSHConfigEmitsHostStanzasAndKnownHostsLine(t *testing.T) {
 
 	got := out.String()
 	for _, want := range []string{
-		"Host sbx_devbox00000001.acme\n",
+		"Host sbx_devbox00000001.discobox.internal\n",
 		"    HostName ssh.example.com\n",
 		"    Port 3222\n",
 		"    User sbx_devbox00000001\n",
@@ -61,12 +55,6 @@ func TestSSHConfigMissingHostKeyRouteWarnsButStillEmitsStanzas(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		switch r.URL.Path {
-		case "/projects/project-1":
-			_, _ = w.Write([]byte(`{
-				"id": "project-1", "ownerUserId": "user-1", "name": "Acme",
-				"slug": "acme", "default": true,
-				"createdAt": "2026-01-01T00:00:00Z", "updatedAt": "2026-01-01T00:00:00Z"
-			}`))
 		case "/projects/project-1/sandboxes":
 			_, _ = w.Write([]byte(`{"sandboxes":[]}`))
 		case "/ssh/host-key":
