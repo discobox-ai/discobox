@@ -115,8 +115,8 @@ type Model struct {
 // Option configures the window at construction.
 type Option func(*Model)
 
-// WithLeader sets the pane's prefix key, as [NormalizeLeader] spells it. Empty
-// takes the default.
+// WithLeader sets the pane's prefix key, as the keys package normalizes it.
+// Empty takes the default.
 func WithLeader(key string) Option {
 	return func(m *Model) { m.leaderKey = key }
 }

@@ -13,6 +13,7 @@ import (
 
 	apiclientgen "github.com/obot-platform/discobox/api/gen"
 	apimodel "github.com/obot-platform/discobox/api/model"
+	"github.com/obot-platform/discobox/cli/internal/keys"
 	"github.com/obot-platform/discobox/cli/internal/sandboxcreate"
 	"github.com/obot-platform/discobox/cli/internal/tui"
 	"github.com/obot-platform/discobox/internal/gitutil"
@@ -22,7 +23,7 @@ import (
 // opens with the cursor in a prompt for a new sandbox, with the project's
 // sandboxes a press of Tab away.
 func (a *App) newTUICommand() *cobra.Command {
-	var leader string
+	var leaderFlag string
 	cmd := &cobra.Command{
 		Use:   "tui",
 		Short: "Launch the interactive sandbox launcher",
@@ -41,7 +42,7 @@ what you interrupt is what is running rather than the window around it. The
 window's own keys are behind the leader — leader q detaches, leader m hands the
 mouse over or takes it back — and the leader is Ctrl-A unless --leader or
 DISCOBOX_LEADER says otherwise, worth changing when it collides with something
-you run in your sandboxes.
+you run in your sandboxes. It is the same leader "disco attach" detaches behind.
 
 The window takes the whole terminal while it is up, and puts back what was on
 screen when it exits. Press F1 for the keys, and Ctrl-C to quit once no
@@ -51,20 +52,26 @@ sandbox terminal is up.`,
   DISCOBOX_LEADER=b disco tui`,
 		Args: cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
-			return a.runTUI(cmd, leader)
+			return a.runTUI(cmd, leaderFlag)
 		},
 	}
-	cmd.Flags().StringVarP(&leader, "leader", "l", envOrDefault("DISCOBOX_LEADER", ""),
-		"Prefix key for the terminal pane's own commands, as a single character taken as Ctrl-that (e.g. -l b for Ctrl-B); defaults to a")
+	cmd.Flags().StringVarP(&leaderFlag, "leader", "l", "",
+		"Prefix key for the terminal pane's own commands, as a single letter taken as Ctrl-that (e.g. -l b for Ctrl-B); defaults to "+keys.LeaderEnv+", then a")
 	return cmd
 }
 
 // runTUI starts the launcher. It is reached two ways — `disco tui`, and `disco`
 // with nothing to do — so it lives here rather than inside either one's RunE.
-func (a *App) runTUI(cmd *cobra.Command, leader string) error {
-	leaderKey, err := tui.NormalizeLeader(leader)
-	if err != nil {
-		return err
+//
+// leaderFlag is --leader, empty when it was not given: the environment's leader
+// is already resolved on the App, and only an explicit flag displaces it.
+func (a *App) runTUI(cmd *cobra.Command, leaderFlag string) error {
+	leaderKey := a.leader()
+	if leaderFlag != "" {
+		var err error
+		if leaderKey, err = keys.NormalizeLeader(leaderFlag); err != nil {
+			return err
+		}
 	}
 	projectID, err := a.projectIDValue()
 	if err != nil {

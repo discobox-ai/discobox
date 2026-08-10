@@ -21,6 +21,7 @@ import (
 
 	apiclientgen "github.com/obot-platform/discobox/api/gen"
 	apimodel "github.com/obot-platform/discobox/api/model"
+	"github.com/obot-platform/discobox/cli/internal/keys"
 )
 
 var errTerminalDetached = errors.New("detached")
@@ -136,7 +137,10 @@ func (a *App) newSandboxTerminalAttachCommand(sandboxID *string) *cobra.Command 
 Pass "primary" instead of a terminal ID to attach the sandbox's primary
 terminal, relaunching it with the harness's relaunch command when it has
 stopped. Attaching a terminal by ID never relaunches it: an ID names one
-session, and once that session has ended there is nothing to attach to.`,
+session, and once that session has ended there is nothing to attach to.
+
+The leader key then d — Ctrl-A d by default, and Ctrl-A Ctrl-D works too —
+detaches without ending the session. Set DISCOBOX_LEADER to change the Ctrl-A.`,
 		Args:              cobra.ExactArgs(1),
 		ValidArgsFunction: a.completeTerminals(sandboxID),
 		RunE: func(cmd *cobra.Command, args []string) error {
@@ -331,7 +335,7 @@ func (a *App) writeSandboxTerminals(cmd *cobra.Command, terminals []apimodel.San
 }
 
 // attachSandboxTerminal attaches to a terminal exec over the exec websocket with
-// scrollback replay and Ctrl-P Ctrl-Q detach handling.
+// scrollback replay and detach-chord handling. See detachFilter.
 func (a *App) attachSandboxTerminal(ctx context.Context, projectID, sandboxID, terminalID string, opts execAttachOptions, stdin io.Reader, stdout, stderr io.Writer) error {
 	opts.replay = true
 	frames, err := a.openReconnectingSandboxExecAttach(ctx, projectID, sandboxID, terminalID, opts)
@@ -340,6 +344,10 @@ func (a *App) attachSandboxTerminal(ctx context.Context, projectID, sandboxID, t
 	}
 	defer frames.Close()
 
+	// One filter for the whole attach: the chord is a pair of keystrokes and
+	// they can land in separate reads, so what the leader armed has to outlive
+	// the read that carried it.
+	chord := newDetachFilter(a.leader())
 	session := client.New(client.Options{
 		Conn:        frames,
 		Stdin:       stdin,
@@ -351,8 +359,10 @@ func (a *App) attachSandboxTerminal(ctx context.Context, projectID, sandboxID, t
 		RawMode:     true,
 		Resize:      true,
 		SignalReady: true,
-		CopyInput:   copyTerminalInput,
-		ErrorFrame:  printAttachErrorFrame(stderr),
+		CopyInput: func(ctx context.Context, s *client.Session) error {
+			return copyTerminalInput(ctx, s, chord)
+		},
+		ErrorFrame: printAttachErrorFrame(stderr),
 		OtherErr: func(err error) (bool, error) {
 			if client.IsDone(err) {
 				return true, nil
@@ -373,14 +383,13 @@ func (a *App) attachSandboxTerminal(ctx context.Context, projectID, sandboxID, t
 	return err
 }
 
-func copyTerminalInput(ctx context.Context, s *client.Session) error {
+func copyTerminalInput(ctx context.Context, s *client.Session, chord *detachFilter) error {
 	buf := make([]byte, 32*1024)
-	pendingCtrlP := false
 	stdin := s.Stdin()
 	for {
 		n, err := stdin.Read(buf)
 		if n > 0 {
-			payload, detach := filterDetachSequence(buf[:n], &pendingCtrlP)
+			payload, detach := chord.filter(buf[:n])
 			if len(payload) > 0 {
 				if writeErr := s.WriteFrame(frame.Input, payload); writeErr != nil {
 					return writeErr
@@ -404,22 +413,73 @@ func copyTerminalInput(ctx context.Context, s *client.Session) error {
 	}
 }
 
-func filterDetachSequence(in []byte, pendingCtrlP *bool) ([]byte, bool) {
+const (
+	// detachKey is the second key of the detach chord: the leader, then d, the
+	// key screen and tmux both detach on. The launcher's pane uses q instead
+	// only because its leader also carries the list's own keys, and d among
+	// them is diff.
+	detachKey = 'd'
+	// detachCtrlKey is the same key with Ctrl still held. Letting go precisely
+	// between the two keystrokes of a chord is a skill nobody should have to
+	// acquire, so both forms detach — screen has bound its commands both ways
+	// for decades, and the launcher's panes match the same way.
+	detachCtrlKey = detachKey - 'a' + 1
+)
+
+// detachFilter watches the bytes on their way to a terminal for the detach
+// chord, and passes everything else through untouched.
+//
+// Nothing is taken from the program outright. The leader is held back only
+// until the next keystroke says what it meant: a leader that qualified nothing
+// is delivered along with the key that followed it, and the leader typed twice
+// sends one literal leader, which is how you type the key the chord took. This
+// is what screen and tmux do, and what the launcher's panes do, so the same
+// keystrokes mean the same thing in a pane and in a plain attach.
+type detachFilter struct {
+	// leader is the prefix key as the terminal sends it: Ctrl-A is 0x01.
+	leader byte
+	// armed is set between the leader and the key it qualifies.
+	armed bool
+}
+
+// newDetachFilter builds the filter for a leader key name, as the keys package
+// normalizes it.
+func newDetachFilter(leaderKey string) *detachFilter {
+	leader := keys.ControlByte(leaderKey)
+	if leader == 0 {
+		leader = keys.ControlByte(keys.DefaultLeader)
+	}
+	return &detachFilter{leader: leader}
+}
+
+// filter returns the bytes to forward, and whether the chord completed. The
+// rest of a read that completed it is dropped: the attach is over, and those
+// keystrokes belong to whatever the caller returns to.
+func (f *detachFilter) filter(in []byte) ([]byte, bool) {
 	out := bytes.NewBuffer(make([]byte, 0, len(in)))
 	for _, b := range in {
-		if *pendingCtrlP {
-			*pendingCtrlP = false
-			if b == 0x11 {
-				// Ctrl-P Ctrl-Q: the docker-style detach sequence.
+		if f.armed {
+			f.armed = false
+			switch b {
+			case detachKey, detachCtrlKey:
 				return out.Bytes(), true
+			case f.leader:
+				out.WriteByte(f.leader)
+				continue
 			}
-			out.WriteByte(0x10)
+			out.WriteByte(f.leader)
 		}
-		if b == 0x10 {
-			*pendingCtrlP = true
+		if b == f.leader {
+			f.armed = true
 			continue
 		}
 		out.WriteByte(b)
 	}
 	return out.Bytes(), false
+}
+
+// detachHint is how to get out of an attach, as the messages that mention it
+// spell the keys.
+func (a *App) detachHint() string {
+	return keys.Describe(a.leader()) + " " + string(rune(detachKey))
 }

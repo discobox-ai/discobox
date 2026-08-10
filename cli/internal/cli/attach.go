@@ -25,8 +25,9 @@ or a plain shell when it has none. Attaching relaunches it with the harness's
 relaunch command when it has stopped.
 
 Stdin is always attached, and a PTY is allocated the same way the sandbox's
-default terminal already runs one. Ctrl-P Ctrl-Q detaches without ending the
-session.`,
+default terminal already runs one. The leader key then d — Ctrl-A d by default,
+and Ctrl-A Ctrl-D works too — detaches without ending the session. Set
+DISCOBOX_LEADER to change the Ctrl-A when it collides with what you run.`,
 		Example: `  disco attach
   disco attach sbx_01hq`,
 		Args:              cobra.MaximumNArgs(1),
@@ -40,7 +41,7 @@ session.`,
 			if err != nil {
 				return err
 			}
-			fmt.Fprintln(cmd.ErrOrStderr(), "Attaching to the sandbox's primary terminal (Ctrl-P Ctrl-Q to detach)")
+			fmt.Fprintf(cmd.ErrOrStderr(), "Attaching to the sandbox's primary terminal (%s to detach)\n", a.detachHint())
 			return a.attachSandboxTerminal(cmd.Context(), projectID, sandboxID, primaryExecID, execAttachOptions{}, cmd.InOrStdin(), cmd.OutOrStdout(), cmd.ErrOrStderr())
 		},
 	}

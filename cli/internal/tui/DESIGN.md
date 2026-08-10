@@ -164,8 +164,9 @@ except the reserved ones — and which those are depends on what is in the pane
 
 **Ctrl-C is the application's, in every pane.** Nothing the window reserves
 stands between a program and its own interrupt, so `paneOptions` passes an empty
-detach key to `termpane.WithPrefix` and the only way out is `leader q` (`d` is
-diff, because the leader carries the list's keys). An attach used to take
+detach key to `termpane.WithPrefix` and the only way out is `leader q` — `d`,
+which is what screen, tmux and a plain `disco attach` detach on, is diff here,
+because this leader also carries the list's keys. An attach used to take
 Ctrl-C as "back out of this", which reads well right up until it is wrong:
 someone who types it to stop an agent and gets a detached session instead has
 not stopped anything, and nothing on the screen says so. One key with two
@@ -176,12 +177,15 @@ the mouse back and forth, and the second key of a leader pair matches with or
 without Ctrl held. Typing the leader itself takes it twice in full: its bare
 letter is `a` under the default Ctrl-A, and that is attach.
 
-**The leader is configurable.** `--leader`/`DISCOBOX_LEADER`
-(`NormalizeLeader`, `WithLeader`) because the leader is the key that *collides*
-— it has to be a chord nothing you run in a sandbox wants, and which that is
-depends on what you run. It cannot be Ctrl-C: that one is never the window's to
-take, and a leader that took it would take it from every program the window
-ever draws.
+**The leader is configurable, and it is not this package's.** `--leader`/
+`DISCOBOX_LEADER` (`internal/keys.NormalizeLeader`, `WithLeader`) because the
+leader is the key that *collides* — it has to be a chord nothing you run in a
+sandbox wants, and which that is depends on what you run. It cannot be Ctrl-C:
+that one is never the window's to take, and a leader that took it would take it
+from every program the window ever draws. Its default and its spelling live in
+`internal/keys` rather than here, because a plain `disco attach` detaches behind
+the same key: one leader for both terminals discobox shows you is one thing to
+learn and one thing to change.
 
 The mouse reaches the sandbox only while something in it has asked for one
 (`paneMouseMode` mirrors `termpane.MouseMode` into `View.MouseMode`), so native

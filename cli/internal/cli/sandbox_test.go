@@ -93,32 +93,64 @@ func TestUpdateSandboxBodyIsNameOnly(t *testing.T) {
 }
 
 func TestTerminalDetachSequenceFilter(t *testing.T) {
-	pending := false
-	out, detach := filterDetachSequence([]byte("abc"), &pending)
-	if detach || string(out) != "abc" || pending {
-		t.Fatalf("plain input = %q detach=%t pending=%t", out, detach, pending)
+	const ctrlA = 0x01
+	f := newDetachFilter("ctrl+a")
+
+	out, detach := f.filter([]byte("abc"))
+	if detach || string(out) != "abc" || f.armed {
+		t.Fatalf("plain input = %q detach=%t armed=%t", out, detach, f.armed)
 	}
 
-	out, detach = filterDetachSequence([]byte{0x10}, &pending)
-	if detach || string(out) != "" || !pending {
-		t.Fatalf("ctrl-p input = %q detach=%t pending=%t", out, detach, pending)
+	// The leader is held back across reads: the chord is two keystrokes and
+	// nothing says they arrive together.
+	out, detach = f.filter([]byte{ctrlA})
+	if detach || string(out) != "" || !f.armed {
+		t.Fatalf("leader alone = %q detach=%t armed=%t", out, detach, f.armed)
 	}
 
-	out, detach = filterDetachSequence([]byte("x"), &pending)
-	if detach || string(out) != string([]byte{0x10, 'x'}) || pending {
-		t.Fatalf("non-detach followup = %v detach=%t pending=%t", out, detach, pending)
+	// A leader that qualified nothing costs nothing: it is delivered along with
+	// the key that followed it.
+	out, detach = f.filter([]byte("x"))
+	if detach || string(out) != string([]byte{ctrlA, 'x'}) || f.armed {
+		t.Fatalf("non-detach followup = %v detach=%t armed=%t", out, detach, f.armed)
 	}
 
-	// A plain q after Ctrl-P is passed through, not a detach: the docker-style
-	// sequence requires Ctrl-Q (0x11), and Ctrl-P is a common editing key.
-	out, detach = filterDetachSequence([]byte{0x10, 'q'}, &pending)
-	if detach || string(out) != string([]byte{0x10, 'q'}) || pending {
-		t.Fatalf("ctrl-p then plain q = %v detach=%t pending=%t", out, detach, pending)
+	// Both forms of the second key detach, because Ctrl is usually still down.
+	for _, second := range []byte{'d', 0x04} {
+		f = newDetachFilter("ctrl+a")
+		out, detach = f.filter([]byte{'h', 'i', ctrlA, second, 'j'})
+		if !detach || string(out) != "hi" || f.armed {
+			t.Fatalf("detach chord with %#x = %q detach=%t armed=%t", second, out, detach, f.armed)
+		}
 	}
 
-	out, detach = filterDetachSequence([]byte{0x10, 0x11}, &pending)
-	if !detach || len(out) != 0 || pending {
-		t.Fatalf("detach sequence = %v detach=%t pending=%t", out, detach, pending)
+	// The leader twice is how you type one.
+	f = newDetachFilter("ctrl+a")
+	out, detach = f.filter([]byte{ctrlA, ctrlA, 'z'})
+	if detach || string(out) != string([]byte{ctrlA, 'z'}) || f.armed {
+		t.Fatalf("leader twice = %v detach=%t armed=%t", out, detach, f.armed)
+	}
+
+	// The leader is the configured one, so under another leader Ctrl-A is just
+	// a keystroke and d after it is just a d.
+	f = newDetachFilter("ctrl+b")
+	out, detach = f.filter([]byte{ctrlA, 'd'})
+	if detach || string(out) != string([]byte{ctrlA, 'd'}) || f.armed {
+		t.Fatalf("old chord under ctrl+b = %v detach=%t armed=%t", out, detach, f.armed)
+	}
+	out, detach = f.filter([]byte{0x02, 'd'})
+	if !detach || len(out) != 0 || f.armed {
+		t.Fatalf("ctrl+b chord = %v detach=%t armed=%t", out, detach, f.armed)
+	}
+}
+
+// The hint the attach prints names the chord it actually installed.
+func TestTerminalDetachHintFollowsTheLeader(t *testing.T) {
+	if got := (&App{}).detachHint(); got != "Ctrl-A d" {
+		t.Errorf("default detach hint = %q, want %q", got, "Ctrl-A d")
+	}
+	if got := (&App{leaderKey: "ctrl+b"}).detachHint(); got != "Ctrl-B d" {
+		t.Errorf("ctrl+b detach hint = %q, want %q", got, "Ctrl-B d")
 	}
 }
 

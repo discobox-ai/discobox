@@ -7,6 +7,7 @@ import (
 	tea "charm.land/bubbletea/v2"
 	"charm.land/lipgloss/v2"
 
+	"github.com/obot-platform/discobox/cli/internal/keys"
 	"github.com/obot-platform/discobox/termpane"
 )
 
@@ -27,20 +28,19 @@ import (
 // the key it has there, and acts on the one discobox the screen is showing.
 
 const (
-	defaultLeader = "ctrl+a"
-	paneMouseKey  = "m"
-	paneSwapKey   = "e"
-	paneLeftKey   = "h"
-	paneRightKey  = "l"
+	paneMouseKey = "m"
+	paneSwapKey  = "e"
+	paneLeftKey  = "h"
+	paneRightKey = "l"
 	// paneDetachAlt is the detach key behind the leader, for a pane whose
 	// application needs Ctrl-C more than the window does. It is q rather than
-	// the d screen and tmux use, because the leader now carries the list's own
-	// keys and d among them is diff.
+	// the d screen, tmux, and a plain `disco attach` all use, because the leader
+	// here also carries the list's own keys and d among them is diff.
 	paneDetachAlt = "q"
 	// paneInterruptKey is the application's everywhere, and never the window's.
 	// The one exception is a pane whose command has finished, where there is
 	// nothing left to interrupt and it means done like the rest of them.
-	paneInterruptKey = "ctrl+c"
+	paneInterruptKey = keys.Interrupt
 )
 
 // pane is one terminal in the window.
@@ -72,39 +72,17 @@ type pane struct {
 // in a shell and in a harness alike, and the window asks for the leader.
 func (m *Model) detachHint() string { return m.leader() + " " + paneDetachAlt }
 
-// leader is the pane's prefix key, as a Bubble Tea key name.
+// leader is the pane's prefix key, as a Bubble Tea key name. It is the same key
+// a plain `disco attach` detaches behind; see [keys].
 func (m *Model) leader() string {
 	if m.leaderKey == "" {
-		return defaultLeader
+		return keys.DefaultLeader
 	}
 	return m.leaderKey
 }
 
 // paneMouseHint is the mouse toggle, as the key lists spell it.
 func (m *Model) paneMouseHint() string { return m.leader() + " " + paneMouseKey }
-
-// NormalizeLeader turns what a user typed into the key name the pane reserves.
-//
-// A bare character is the usual spelling — "x" means Ctrl-X, because a leader
-// that is not a chord would be a character you could never type — and the full
-// "ctrl+x" is accepted for anyone who writes it out.
-func NormalizeLeader(leader string) (string, error) {
-	leader = strings.TrimSpace(strings.ToLower(leader))
-	if leader == "" {
-		return defaultLeader, nil
-	}
-	key := strings.TrimPrefix(leader, "ctrl+")
-	if len([]rune(key)) != 1 {
-		return "", fmt.Errorf("leader must be a single character, or ctrl+ one: got %q", leader)
-	}
-	key = "ctrl+" + key
-	if key == paneInterruptKey {
-		// It is the application's, in every pane. A leader that took it would
-		// take it from every program the window ever draws.
-		return "", fmt.Errorf("leader cannot be %s: that is the application's interrupt", paneInterruptKey)
-	}
-	return key, nil
-}
 
 // toggleMouseMsg is the leader plus m: hand the mouse to the box, or keep it.
 //

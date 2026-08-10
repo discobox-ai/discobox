@@ -32,8 +32,9 @@ command flags explicitly.
 
 Every sandbox has one default terminal: the configured harness, or a shell when
 no harness is configured. By default run waits for the sandbox to start and
-attaches to that terminal, streaming it to your terminal (press Ctrl-P Ctrl-Q to
-detach). Pass -d to create the sandbox and print it without attaching.
+attaches to that terminal, streaming it to your terminal (press Ctrl-A d to
+detach; DISCOBOX_LEADER changes the Ctrl-A). Pass -d to create the sandbox and
+print it without attaching.
 
 Uncommitted changes in the source directory are carried into the sandbox as a
 snapshot on top of the checked-out commit. By default run asks before doing that
@@ -156,7 +157,7 @@ func (a *App) attachRunSandbox(cmd *cobra.Command, client *apiclientgen.Client, 
 	if err != nil {
 		return err
 	}
-	fmt.Fprintf(stderr, "Attaching to terminal %s (Ctrl-P Ctrl-Q to detach)\n", terminal.ID)
+	fmt.Fprintf(stderr, "Attaching to terminal %s (%s to detach)\n", terminal.ID, a.detachHint())
 	// Attach the virtual primary id rather than the id just polled for: the
 	// sandbox-agent resolves it to whichever exec is currently primary and
 	// relaunches a stopped one, so a primary that ended between the wait and the

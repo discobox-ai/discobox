@@ -14,6 +14,7 @@ import (
 	"github.com/spf13/cobra"
 
 	apiclientgen "github.com/obot-platform/discobox/api/gen"
+	"github.com/obot-platform/discobox/cli/internal/keys"
 	"github.com/obot-platform/discobox/controlplane"
 	"github.com/obot-platform/discobox/localipc"
 	discoboxserver "github.com/obot-platform/discobox/server"
@@ -31,6 +32,12 @@ type App struct {
 	debug     bool
 	noStart   bool
 	errOut    io.Writer
+
+	// leaderKey is the prefix key this invocation reserves in a terminal it
+	// shows: the launcher's window commands, and the detach chord of an attach.
+	// validate resolves it from the environment, so it is empty until then —
+	// read it through leader() rather than directly.
+	leaderKey string
 
 	// pagerRestoresScreen asks any pager this invocation starts to put the
 	// screen back on the way out, instead of leaving its last page on it the
@@ -66,10 +73,11 @@ func NewRootCommand() *cobra.Command {
 			if !isTerminalStream(cmd.OutOrStdout()) || !isTerminalStream(cmd.InOrStdin()) {
 				return cmd.Help()
 			}
-			// The leader comes from the environment only. A flag would have to
-			// be a persistent one to be reachable here, and every subcommand
-			// would carry a flag that means nothing to it.
-			return app.runTUI(cmd, os.Getenv("DISCOBOX_LEADER"))
+			// No leader override here: validate already took the environment's,
+			// and --leader is the tui command's own. A flag would have to be a
+			// persistent one to be reachable from a bare `disco`, and every
+			// subcommand would then carry a flag that means nothing to it.
+			return app.runTUI(cmd, "")
 		},
 	}
 	cmd.PersistentFlags().StringVar(&app.serverURL, "server", envOrDefault("DISCOBOX_SERVER", localipc.DefaultEndpoint()), "Discobox API server endpoint")
@@ -112,10 +120,30 @@ func (a *App) addQuietFlag(cmd *cobra.Command) {
 func (a *App) validate() error {
 	switch a.output {
 	case "table", "json":
-		return nil
 	default:
 		return fmt.Errorf("unsupported output format %q; expected table or json", a.output)
 	}
+	leaderKey, err := keys.NormalizeLeader(os.Getenv(keys.LeaderEnv))
+	if err != nil {
+		// Resolved once, for every command, rather than at the attach that
+		// happens to need it: a leader the environment spells wrong is worth
+		// hearing about before a terminal has been handed over.
+		return fmt.Errorf("%s: %w", keys.LeaderEnv, err)
+	}
+	a.leaderKey = leaderKey
+	return nil
+}
+
+// leader is the prefix key this invocation reserves, as a Bubble Tea key name.
+//
+// One key covers both terminals discobox shows you — the launcher's panes and a
+// plain attach — so there is one thing to learn and one thing to change when it
+// collides with what you run inside a sandbox.
+func (a *App) leader() string {
+	if a.leaderKey == "" {
+		return keys.DefaultLeader
+	}
+	return a.leaderKey
 }
 
 func (a *App) projectIDValue() (string, error) {

@@ -645,34 +645,8 @@ func TestSwitchingFolderForgetsTheCursor(t *testing.T) {
 	}
 }
 
-// The leader is configurable because it is the key that collides: it has to be
-// a chord nothing you run in a sandbox wants, and which that is depends on what
-// you run.
-func TestLeaderIsConfigurable(t *testing.T) {
-	for _, given := range []string{"b", "B", "ctrl+b", " ctrl+b "} {
-		got, err := NormalizeLeader(given)
-		if err != nil {
-			t.Fatalf("NormalizeLeader(%q): %v", given, err)
-		}
-		if got != "ctrl+b" {
-			t.Errorf("NormalizeLeader(%q) = %q, want ctrl+b", given, got)
-		}
-	}
-	if got, _ := NormalizeLeader(""); got != defaultLeader {
-		t.Errorf("an unset leader = %q, want %q", got, defaultLeader)
-	}
-
-	// The detach key cannot also be the leader: both are matched against the
-	// same keystroke, so one of them would never be reachable.
-	if _, err := NormalizeLeader("c"); err == nil {
-		t.Error("ctrl+c is the detach key and cannot be the leader")
-	}
-	if _, err := NormalizeLeader("shift"); err == nil {
-		t.Error("a leader must be a single character")
-	}
-}
-
-// And it is the key the pane actually reserves, and the one the key lists name.
+// The leader is configurable — see the keys package for what a leader may be —
+// and it is the key the pane actually reserves, and the one the key lists name.
 func TestLeaderReachesThePaneAndTheKeyLists(t *testing.T) {
 	ds := newFakeSource(testSandboxes()...)
 	t.Setenv("NO_COLOR", "1")

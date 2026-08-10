@@ -13,6 +13,7 @@ transport helpers where OpenAPI does not model the stream.
 | `internal/sandboxcreate` | UI-independent client-side sandbox request preparation and creation, including prompt options, source resolution, workspace snapshots, environment/secrets, local user identity, and source push delivery. |
 | `internal/origin` | Resolves the client host and project directory a sandbox is created from. Host identity itself is shared, in the root module's `internal/hostid`. |
 | `internal/tui` | The `disco tui` launcher: Bubble Tea presentation and interaction state, expressed against its own `DataSource` interface. See [`internal/tui/DESIGN.md`](internal/tui/DESIGN.md). |
+| `internal/keys` | The leader: its default, its `DISCOBOX_LEADER` override, normalization, and the byte a raw stream matches it as. Owned here because the launcher's panes and a plain attach must reserve the same key. |
 | `internal/diffrender` | Unified-diff parsing and terminal layout, with no knowledge of sandboxes or the API. |
 
 ## UI Dependency Direction
@@ -47,9 +48,12 @@ transport helpers where OpenAPI does not model the stream.
   handing it to the launcher. The leader there comes from the environment only:
   a flag would have to be persistent to be reachable, and every subcommand would
   carry one that means nothing to it.
-- `disco tui --leader`/`DISCOBOX_LEADER` sets the terminal pane's prefix key,
-  normalized by `tui.NormalizeLeader`: a bare character is taken as Ctrl-that,
-  since a leader that is not a chord would be a character you could never type.
+- `DISCOBOX_LEADER` sets the prefix key, normalized by `keys.NormalizeLeader`:
+  a bare letter is taken as Ctrl-that, since a leader that is not a chord would
+  be a character you could never type, and only a letter is accepted because the
+  leader has to survive being turned back into the byte a terminal sends.
+  `disco tui --leader` overrides it for the launcher; nothing else takes a flag.
+  It is one key for both the launcher's panes and a plain attach's detach chord.
 - Attach and shell are terminals rather than commands, and are drawn inside the
   window by the `termpane` module. `apiDataSource.Open` connects one:
   `framedTerminal` (`internal/cli/tui_terminal.go`) presents the framed exec
@@ -244,6 +248,19 @@ session, `execstream/client`.
   `attachSandboxTerminal` with the virtual primary id and nothing else — sandbox
   autostart is a possible future addition to it, and until then the client never
   starts a sandbox to keep an attach alive.
+- The way out of a terminal attach is the leader then `d` (`detachFilter`,
+  `internal/cli/sandbox_terminals.go`), matched over the raw input bytes and
+  nothing else: `execstream/client` never learns the chord, and never learns
+  where the leader came from. The leader is the launcher's
+  (`internal/keys`, `App.leader`), resolved once from `DISCOBOX_LEADER` in
+  `App.validate` so a misspelling is reported before a terminal is handed over,
+  and `App.detachHint` is the one spelling the messages print. Ctrl-D counts as
+  the second key alongside a bare `d`, the leader typed twice sends one literal
+  leader, and a leader that qualified nothing is delivered with the key that
+  followed it — the same bargain `termpane` makes in a pane, so the keystrokes
+  mean the same thing either way. It replaced Docker's Ctrl-P Ctrl-Q, which took
+  a key programs want (Ctrl-P is history-back everywhere) and matched nothing
+  the launcher did.
 - Resumable actions (input, signals, and close-input) carry monotonically
   increasing positions. The client retains a bounded window until the shim
   acknowledges applying them; reconnect resends the unacknowledged suffix and
