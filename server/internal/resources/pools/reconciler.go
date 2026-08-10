@@ -148,24 +148,33 @@ func (r *PoolReconciler) reconcileActive(ctx context.Context, pool *model.Pool, 
 	if err != nil {
 		return reconcile.Result{}, err
 	}
-	if current.ErrorMessage != nil {
-		return reconcile.Result{}, nil
-	}
-	// Ready/Schedulable/Degraded are agent-reported fields, written by
-	// RegisterPool/UpdatePoolStatus over their own HTTP calls, which can land
-	// concurrently with EnsurePool/RepairPool waiting on container health.
-	// Only RuntimeState is safe to copy from the pre-call local object; copying
-	// the others would stomp a registration that already landed in the DB with
-	// the stale pre-call value.
+	// Ready/Schedulable/Degraded and RegisteredAt are agent-reported fields,
+	// written by RegisterPool/UpdatePoolStatus over their own HTTP calls, which
+	// can land concurrently with EnsurePool/RepairPool waiting on container
+	// health. Only RuntimeState is safe to copy from the pre-call local object;
+	// copying the others would stomp a registration that already landed in the
+	// DB with the stale pre-call value.
 	current.RuntimeState = pool.RuntimeState
 	current.ObservedGeneration = generation
+	// The state is derived on every success, never carried over. A pool whose
+	// agent has called home is active; one whose runtime exists but has not
+	// been heard from is still registering. Preserving current.State on a
+	// drift re-check instead only worked while registration wrote `active`
+	// itself: the create reconcile converges the generation before the agent
+	// registers, so every later pass took the preserve branch and a pool that
+	// registered afterwards would stay `registering` forever.
 	state := model.PoolStateRegistering
-	if alreadySuccessful {
-		state = current.State
-	} else if current.RegisteredAt != nil || current.Ready {
+	if current.RegisteredAt != nil || current.Ready {
 		state = model.PoolStateActive
 	}
 	current.SetState(state)
+	// A recorded error is this reconciler's own verdict on an earlier attempt,
+	// and the attempt that just succeeded disproves it, so success always
+	// clears it. Skipping the clear because the row still carries an error is
+	// what made ErrorMessage a one-way latch: it was unreachable for exactly
+	// the pool that needed it, and a recovered pool reported its old failure
+	// forever. Nothing else writes a pool's ErrorMessage, and a competing
+	// intent is already caught by the generation guard above.
 	current.ErrorMessage = nil
 	if err := r.update(ctx, current, generation); err != nil {
 		return reconcile.Result{}, err

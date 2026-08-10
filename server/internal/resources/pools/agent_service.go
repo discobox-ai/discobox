@@ -30,6 +30,11 @@ func (s *Service) SetSandboxStateReporter(reporter SandboxStateReporter) {
 
 // RegisterPool redeems a bootstrap token from a starting pool agent and
 // records its public key.
+//
+// Registration is an observation, so it reaches the reconciler as a dirty mark
+// rather than by writing the reconciler's fields itself (ADR 0017 §10). The
+// mark is what promotes the pool out of `registering` promptly; without it the
+// row would carry a stale state until the 60s drift scan.
 func (s *Service) RegisterPool(ctx context.Context, input services.RegisterPoolBody) (*services.RegisterPoolResponseBody, error) {
 	projectID := strings.TrimSpace(input.ProjectId)
 	poolID := strings.TrimSpace(input.PoolId)
@@ -43,6 +48,11 @@ func (s *Service) RegisterPool(ctx context.Context, input services.RegisterPoolB
 	h := sha256.Sum256([]byte(input.BootstrapToken))
 	if _, err := s.store.RegisterPool(ctx, pool.ID, h[:], input.PublicKey, defaultString(input.KeyType.Or(""), poolauth.KeyType)); err != nil {
 		return nil, mapAPIError(err, "pool bootstrap token not found")
+	}
+	if s.pools != nil {
+		if err := s.pools.SchedulePoolReconciliation(ctx, pool.ProjectID, pool.ID); err != nil {
+			return nil, err
+		}
 	}
 	return &services.RegisterPoolResponseBody{}, nil
 }

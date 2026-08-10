@@ -189,8 +189,16 @@ func (s *Store) CreatePoolBootstrapToken(ctx context.Context, token *model.PoolB
 	return write.Create(token).Error
 }
 
-// RegisterPool redeems a bootstrap token: it records the agent's public key,
-// marks the pool registered, and brings it into service.
+// RegisterPool redeems a bootstrap token: it records the agent's public key
+// and stamps the pool registered.
+//
+// Registration establishes identity and liveness, and nothing else. It does
+// not write State, ErrorMessage, or ObservedGeneration — redeeming a token is
+// not evidence that the reconciler finished converging the runtime, which is
+// the only thing ObservedGeneration means; the reconciler derives `active`
+// from RegisteredAt on the reconcile the registration marks dirty. It does not
+// write the health flags either: the agent reports those over its own
+// heartbeat, synchronously, immediately after this call returns.
 func (s *Store) RegisterPool(ctx context.Context, poolID string, tokenHash []byte, publicKey, keyType string) (*model.Pool, error) {
 	write, err := s.getWrite(ctx)
 	if err != nil {
@@ -215,13 +223,8 @@ func (s *Store) RegisterPool(ctx context.Context, poolID string, tokenHash []byt
 		}
 		pool.PublicKey = publicKey
 		pool.KeyType = keyType
-		pool.Ready = true
-		pool.Schedulable = true
-		pool.Degraded = false
 		pool.RegisteredAt = &now
 		pool.LastSeenAt = &now
-		pool.SetState(model.PoolStateActive)
-		pool.ObservedGeneration = pool.Generation
 		return tx.Save(&pool).Error
 	})
 	if err != nil {
@@ -232,6 +235,15 @@ func (s *Store) RegisterPool(ctx context.Context, poolID string, tokenHash []byt
 
 // UpdatePoolStatus records an agent heartbeat: scheduling flags, reported
 // capacity, and conditions.
+//
+// It deliberately does not touch State or ErrorMessage. Health and State have
+// different owners: the agent knows whether it can take work right now, while
+// State and ErrorMessage are the reconciler's verdict on whether the pool's
+// runtime converged. A heartbeat that also wrote State let a healthy agent
+// repaint `active` over a recorded `offline` every few seconds, so a pool whose
+// reconcile was failing read as active with an error message attached. A pool
+// that recovers is returned to `active` by the reconcile that proves it, not by
+// the heartbeat.
 func (s *Store) UpdatePoolStatus(ctx context.Context, poolID string, ready, schedulable, degraded bool, availableCPUVCPUs float64, availableMemoryBytes, availableStorageBytes int64, conditions []byte) (*model.Pool, error) {
 	write, err := s.getWrite(ctx)
 	if err != nil {
@@ -260,9 +272,6 @@ func (s *Store) UpdatePoolStatus(ctx context.Context, poolID string, ready, sche
 		pool.AvailableStorageBytes = availableStorageBytes
 		pool.Conditions = conditions
 		pool.LastSeenAt = &now
-		if ready {
-			pool.SetState(model.PoolStateActive)
-		}
 		return tx.Save(&pool).Error
 	})
 	if err != nil {

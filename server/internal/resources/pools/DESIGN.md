@@ -52,3 +52,35 @@ flowchart LR
 Reconciliation is level-triggered: intent writers mark `(pool, id)` dirty and
 the engine (`internal/reconcile`) drives convergence; `ScanDirty` re-checks
 every pool as the drift and lost-mark backstop.
+
+## Who owns which status field
+
+A pool's status has two writers, and they must not overlap:
+
+| Fields | Owner | Written by |
+| --- | --- | --- |
+| `PublicKey`, `KeyType`, `RegisteredAt` | pool agent | `RegisterPool` (bootstrap-token redemption) |
+| `Ready`, `Schedulable`, `Degraded`, capacity, `Conditions`, `LastSeenAt` | pool agent | `UpdatePoolStatus` heartbeats |
+| `State`, `ErrorMessage`, `ObservedGeneration` | reconciler | `PoolReconciler`, and nothing else |
+
+Health answers "can this host take work right now"; `State`/`ErrorMessage` are
+the reconciler's verdict on whether the runtime converged, and
+`ObservedGeneration` says the reconciler finished acting on a generation.
+Scheduling gates on the health flags (`SchedulablePoolForSandbox`), so no agent
+call has any reason to write the reconciler's fields.
+
+The rule that keeps the split honest: **agent calls write facts and mark the
+pool dirty; the reconciler alone writes `State`, `ErrorMessage`, and
+`ObservedGeneration`** (ADR 0017 §10 — a report is an observation, never
+intent). Registration marks the pool dirty for exactly this reason.
+
+Two consequences worth stating, because both were bugs:
+
+- Every successful reconcile clears `ErrorMessage`. Nothing else clears it, and
+  no path may skip the clear — skipping it because an error is already recorded
+  makes the field a one-way latch.
+- The reconciler *derives* `State` on success (`registering` until
+  `RegisteredAt`/`Ready`, then `active`) rather than carrying the recorded
+  state forward. The create reconcile converges the generation before the agent
+  registers, so a drift re-check that preserved `State` would strand a
+  registered pool in `registering`.

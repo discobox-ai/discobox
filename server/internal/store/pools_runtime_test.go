@@ -25,8 +25,17 @@ func TestPoolRegisterStatusAndSchedulableGate(t *testing.T) {
 	if err != nil {
 		t.Fatalf("register pool: %v", err)
 	}
-	if !registered.Ready || !registered.Schedulable || registered.PublicKey != "public" {
+	// Registration establishes identity and liveness only: health arrives on
+	// the agent's own heartbeat, and State/ObservedGeneration are the
+	// reconciler's to write.
+	if registered.PublicKey != "public" || registered.RegisteredAt == nil || registered.LastSeenAt == nil {
 		t.Fatalf("registered pool = %#v", registered)
+	}
+	if registered.Ready || registered.Schedulable {
+		t.Fatalf("registration reported health: %#v", registered)
+	}
+	if registered.State == model.PoolStateActive {
+		t.Fatal("registration wrote the reconciler's state")
 	}
 	updated, err := s.UpdatePoolStatus(ctx, "pool-1", true, true, true, 2, 4<<30, 10<<30, []byte(`{"pressure":"high"}`))
 	if err != nil {
@@ -41,6 +50,40 @@ func TestPoolRegisterStatusAndSchedulableGate(t *testing.T) {
 	}
 	if pool.ID != "pool-1" {
 		t.Fatalf("schedulable pool = %q, want pool-1", pool.ID)
+	}
+}
+
+// TestUpdatePoolStatusLeavesReconcilerVerdictAlone pins the ownership split: a
+// heartbeat reports health, and health alone. It used to also write
+// State=active whenever the agent reported ready, which repainted a recorded
+// `offline` every few seconds — so a pool whose reconcile kept failing read as
+// active with a stale error hanging off it.
+func TestUpdatePoolStatusLeavesReconcilerVerdictAlone(t *testing.T) {
+	ctx := context.Background()
+	s := newTestStore(t)
+	createTestPool(t, s, "project-1", "pool-1")
+
+	pool, err := s.GetPool(ctx, "project-1", "pool-1")
+	if err != nil {
+		t.Fatalf("get pool: %v", err)
+	}
+	pool.RecordFailure(model.PoolStateOffline, "runtime did not converge")
+	if err := s.UpdatePoolWithGeneration(ctx, pool, pool.Generation); err != nil {
+		t.Fatalf("record failure: %v", err)
+	}
+
+	updated, err := s.UpdatePoolStatus(ctx, "pool-1", true, true, false, 1, 1<<30, 1<<30, nil)
+	if err != nil {
+		t.Fatalf("update status: %v", err)
+	}
+	if !updated.Ready || !updated.Schedulable || updated.LastSeenAt == nil {
+		t.Fatalf("heartbeat did not record health: %#v", updated)
+	}
+	if updated.State != model.PoolStateOffline {
+		t.Fatalf("state = %q, want the reconciler's %q to survive the heartbeat", updated.State, model.PoolStateOffline)
+	}
+	if updated.ErrorMessage == nil {
+		t.Fatal("heartbeat dropped the recorded error; only a successful reconcile clears it")
 	}
 }
 

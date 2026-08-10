@@ -81,8 +81,12 @@ func TestGetPoolIncludesAgentReportedStatus(t *testing.T) {
 	if !pool.Ready || !pool.Schedulable || pool.AvailableCPUVCPUs != 2 {
 		t.Fatalf("pool status = ready %t schedulable %t cpu %v, want reported values", pool.Ready, pool.Schedulable, pool.AvailableCPUVCPUs)
 	}
-	if pool.State != model.PoolStateActive {
-		t.Fatalf("pool phase = %q, want active", pool.State)
+	// Neither registration nor a heartbeat writes State: it is the reconciler's
+	// verdict on the runtime, and no reconcile has run here. The pool reads
+	// ready and schedulable — which is what placement gates on — while its
+	// state still says what the control plane last converged.
+	if pool.State == model.PoolStateActive {
+		t.Fatalf("pool state = %q, want the agent path to leave the reconciler's state alone", pool.State)
 	}
 	response, err := json.Marshal(pool)
 	if err != nil {
@@ -106,7 +110,8 @@ func newPoolAgentTestService(t *testing.T) (*service.Service, *store.Store, *dat
 	}
 	broker := events.NewBroker()
 	appStore := store.New(db.Write, db.Read, store.WithPublisher(broker))
-	svc := service.New(appStore, nil, service.Options{}, broker)
+	// Registration marks the pool dirty, so these tests need a real engine.
+	svc := service.New(appStore, newTestReconcileEngine(t, db.Write), service.Options{}, broker)
 	project, err := svc.InitializeDefaults(ctx, service.DefaultUserID)
 	if err != nil {
 		t.Fatalf("init defaults: %v", err)
