@@ -55,7 +55,7 @@ Nygard-style ADRs (see adr.github.io) combined with current-state design docs:
 | --- | --- | --- |
 | [0001](0001-sandbox-origin-and-remote-source-push.md) | Sandbox origin and remote source push | Accepted |
 | [0002](0002-harness-config-is-the-only-harness-concept.md) | Harness config is the only harness concept | Accepted |
-| [0003](0003-promote-pool-to-a-first-class-primitive.md) | Promote pool to a first-class primitive | Accepted |
+| [0003](0003-promote-pool-to-a-first-class-primitive.md) | Promote pool to a first-class primitive | Accepted (§4 superseded by [0029](0029-sandboxes-have-no-per-sandbox-resource-requests.md)) |
 | [0004](0004-user-namespaces-are-the-default-isolation.md) | User namespaces are the default isolation | Proposed |
 | [0005](0005-kubernetes-backend-is-a-worker-driver.md) | Kubernetes backend is a worker driver | Proposed |
 | [0006](0006-pool-is-the-runtime-host.md) | Pool is the runtime host; the worker resource is removed | Accepted |
@@ -81,3 +81,4 @@ Nygard-style ADRs (see adr.github.io) combined with current-state design docs:
 | [0026](0026-local-source-origin-is-bind-mounted-live-into-the-sandbox.md) | A local source's origin is bind-mounted live into the sandbox | Proposed |
 | [0027](0027-harness-terminals-run-as-a-shells-typed-in-job.md) | Harness terminals run as a shell's typed-in job, not as the exec's own process | Accepted |
 | [0028](0028-exec-log-transcripts-persist-as-compressed-sqlite-rows.md) | Exec/terminal transcripts persist as compressed sqlite rows, not tmpfs jsonl files | Accepted |
+| [0029](0029-sandboxes-have-no-per-sandbox-resource-requests.md) | Sandboxes have no per-sandbox resource requests | Accepted |

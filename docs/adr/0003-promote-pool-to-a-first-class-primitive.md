@@ -1,6 +1,8 @@
 # 0003 — Promote pool to a first-class primitive
 
-- **Status**: Accepted
+- **Status**: Accepted (§4's per-sandbox nesting superseded by
+  [ADR 0029](0029-sandboxes-have-no-per-sandbox-resource-requests.md);
+  everything else stands)
 - **Date**: 2026-07-17
 
 ## Context
