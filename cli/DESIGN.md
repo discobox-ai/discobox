@@ -295,12 +295,13 @@ session, `execstream/client`.
 
 ## SSH Keys and Config (ADR 0024)
 
-`disco ssh-key` and `disco ssh-config` are the CLI-side counterpart to the
-SSH control-plane ingress (`server/internal/sshd/DESIGN.md`); they do not
-attach to anything themselves, so they sit beside `disco secret` at the root
-command level rather than layering on the attach transports above.
+`disco box ssh-key` and `disco box ssh-config` are the CLI-side counterpart
+to the SSH control-plane ingress (`server/internal/sshd/DESIGN.md`); they
+are advanced/low-level configuration in the same sense as `box provider` or
+`box pool`, so they live under `disco box` rather than at the root command
+level or layering on the attach transports above.
 
-- `disco ssh-key add` with an explicit file (or `-` for stdin) argument
+- `disco box ssh-key add` with an explicit file (or `-` for stdin) argument
   enrolls that key directly. With no argument it lists public keys from a
   running `SSH_AUTH_SOCK` agent (falling back to `~/.ssh/*.pub`) and reuses
   the shared picker (`internal/cli/picker.go`) for the "which key" choice
@@ -310,7 +311,7 @@ command level rather than layering on the attach transports above.
   about possession of the private half, and the actual authorization is the
   authenticated `CreateSSHKey` API call that follows, never agent presence
   itself (ADR 0024 §6).
-- `disco ssh-config` emits one `ssh_config(5)` `Host` stanza per sandbox in
+- `disco box ssh-config` emits one `ssh_config(5)` `Host` stanza per sandbox in
   the current project plus a `known_hosts` line, read from a small
   unauthenticated `GET /ssh/host-key` route
   (`server/internal/auth/DESIGN.md`) rather than any generated API client,

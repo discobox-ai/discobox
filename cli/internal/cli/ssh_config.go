@@ -20,7 +20,7 @@ func (a *App) newSSHConfigCommand() *cobra.Command {
 		Use:   "ssh-config",
 		Short: "Emit an SSH client config for this project's sandboxes",
 		Long: "Emit ssh_config(5) Host stanzas — one per sandbox in the current project — plus\n" +
-			"the server's known_hosts line, suitable for `disco ssh-config >> ~/.ssh/config`\n" +
+			"the server's known_hosts line, suitable for `disco box ssh-config >> ~/.ssh/config`\n" +
 			"or an ssh_config Include directive.",
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			client, err := a.apiClient()

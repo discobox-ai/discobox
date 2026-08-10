@@ -17,5 +17,7 @@ func (a *App) newBoxCommand() *cobra.Command {
 	cmd.AddCommand(a.newHarnessCommand())
 	cmd.AddCommand(a.newHooksCommand())
 	cmd.AddCommand(a.newServerCommand())
+	cmd.AddCommand(a.newSSHKeyCommand())
+	cmd.AddCommand(a.newSSHConfigCommand())
 	return cmd
 }

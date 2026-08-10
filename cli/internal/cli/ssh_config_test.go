@@ -38,7 +38,7 @@ func TestSSHConfigEmitsHostStanzasAndKnownHostsLine(t *testing.T) {
 	var out strings.Builder
 	cmd.SetOut(&out)
 	cmd.SetErr(new(strings.Builder))
-	cmd.SetArgs([]string{"--server", server.URL, "--project", "project-1", "ssh-config", "--host", "ssh.example.com", "--port", "3222"})
+	cmd.SetArgs([]string{"--server", server.URL, "--project", "project-1", "box", "ssh-config", "--host", "ssh.example.com", "--port", "3222"})
 	if err := cmd.Execute(); err != nil {
 		t.Fatalf("execute ssh-config: %v", err)
 	}
@@ -82,7 +82,7 @@ func TestSSHConfigMissingHostKeyRouteWarnsButStillEmitsStanzas(t *testing.T) {
 	var out, errOut strings.Builder
 	cmd.SetOut(&out)
 	cmd.SetErr(&errOut)
-	cmd.SetArgs([]string{"--server", server.URL, "--project", "project-1", "ssh-config"})
+	cmd.SetArgs([]string{"--server", server.URL, "--project", "project-1", "box", "ssh-config"})
 	if err := cmd.Execute(); err != nil {
 		t.Fatalf("execute ssh-config: %v", err)
 	}
