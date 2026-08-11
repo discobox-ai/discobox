@@ -482,15 +482,15 @@ func (r *SandboxReconciler) createOptionsFromSandbox(ctx context.Context, sb *mo
 	opts.UserAdditionalGroups = append([]string(nil), sb.UserAdditionalGroups...)
 	opts.HomeDirectory = sb.HomeDirectory
 	if sb.HarnessConfigID != nil && r.store != nil {
+		// A load failure is not swallowed: the pool agent refuses a create with
+		// no resolved harness config, so quietly omitting one would turn a
+		// missing config row into an agent-side error about a request this side
+		// built wrong.
 		cfg, err := r.store.GetHarnessConfig(ctx, sb.ProjectID, *sb.HarnessConfigID)
-		switch {
-		case errors.Is(err, store.ErrNotFound):
-			// A deleted harness config is a legitimate state: the sandbox's
-			// image and digest are pinned at create, so it still launches —
-			// just without the config's run command, files, and env.
-		case err != nil:
-			return CreateOptions{}, fmt.Errorf("resolve harness config: %w", err)
-		default:
+		if err != nil {
+			return CreateOptions{}, fmt.Errorf("resolve harness config %s for sandbox %s: %w", *sb.HarnessConfigID, sb.ID, err)
+		}
+		{
 			opts.ResolvedHarnessConfig = &ResolvedHarnessConfig{
 				ID:               cfg.ID,
 				Name:             cfg.Name,

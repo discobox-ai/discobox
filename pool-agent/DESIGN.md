@@ -302,6 +302,16 @@ flowchart LR
 image pin is enforced (ADR 0016). The create request carries `image` (what to
 pull) and `imageDigest` (the config digest it must resolve to).
 
+The pool agent runs what the control plane tells it and invents nothing.
+`validateCreateRequest` refuses a create that names no image, and one that
+carries no resolved harness config — every sandbox has one (ADR 0025), so its
+absence is a control plane that failed to resolve it, not a sandbox asking for
+a bare shell. There used to be a `defaultSandboxImage = "alpine:3.20"` fallback
+here, which is the worst possible answer to a missing image: alpine cannot host
+a sandbox agent, so the request succeeded and produced a container that could
+never answer, instead of failing and naming what was wrong. Validation runs
+before any container work, so a malformed request costs nothing.
+
 - `resolveSandboxImage` returns the **image ID to launch**, preferring a pinned
   image already on the host over whatever the tag names now. Launching the
   reference instead would let a rebuilt tag change a sandbox underneath its

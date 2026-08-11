@@ -41,7 +41,6 @@ import (
 )
 
 const (
-	defaultSandboxImage = "alpine:3.20"
 	// SandboxAgentPort is exported so pool-agent's standing status-poll loop
 	// (a package-external caller) can reach a sandbox-agent's HTTP API via
 	// HTTPBaseURL without duplicating this value.
@@ -240,6 +239,11 @@ func (r *DockerSandboxRuntime) CreateSandbox(ctx context.Context, req *workerapi
 	if sandboxID == "" {
 		return nil, fmt.Errorf("sandbox ID is required")
 	}
+	// Validated before any container work, so a malformed request costs nothing
+	// and fails saying what was wrong with it.
+	if err := validateCreateRequest(sandboxID, req); err != nil {
+		return nil, err
+	}
 	// Replacing a container is a power operation on this sandbox as much as a
 	// start or a stop is, and it reads the power state it is preserving
 	// (ADR 0021 §3). Taking the same per-sandbox lock is what stops an auto-start
@@ -296,9 +300,6 @@ func (r *DockerSandboxRuntime) CreateSandbox(ctx context.Context, req *workerapi
 	normalizeSandboxConfig(&req.Config)
 	config := req.Config
 	imageName := strings.TrimSpace(optString(config.Image))
-	if imageName == "" {
-		imageName = defaultSandboxImage
-	}
 	imageName, err := r.resolveSandboxImage(ctx, imageName, strings.TrimSpace(optString(config.ImageDigest)))
 	if err != nil {
 		return nil, err
@@ -2571,4 +2572,21 @@ func cloneSandbox(sb *Sandbox) *Sandbox {
 	clone.Env = copyMap(sb.Env)
 	clone.Ports = append([]AssignedPort(nil), sb.Ports...)
 	return &clone
+}
+
+// validateCreateRequest refuses a create the control plane did not fully
+// resolve. The pool agent runs what it is told and invents nothing: it used to
+// substitute a plain alpine image for a missing one, which cannot host a
+// sandbox agent at all, so the result was a container that could never answer
+// instead of a failure naming the request that was wrong. Every sandbox carries
+// a harness config (ADR 0025), so a request without one is a control plane that
+// failed to resolve it, not a sandbox asking for a bare shell.
+func validateCreateRequest(sandboxID string, req *workerapimodel.PoolSandboxCreateRequest) error {
+	if strings.TrimSpace(optString(req.Config.Image)) == "" {
+		return fmt.Errorf("sandbox %s: create request has no image", sandboxID)
+	}
+	if _, ok := req.ResolvedHarnessConfig.Get(); !ok {
+		return fmt.Errorf("sandbox %s: create request has no resolved harness config", sandboxID)
+	}
+	return nil
 }

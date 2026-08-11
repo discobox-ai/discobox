@@ -1251,3 +1251,53 @@ func TestSpecDriftedUnlabeledAndUnpinnedIsNotDrift(t *testing.T) {
 		t.Fatal("unpinned sandbox reported as drift")
 	}
 }
+
+// TestValidateCreateRequestRefusesAnUnresolvedRequest: the pool agent runs what
+// the control plane tells it and invents nothing. It used to substitute a plain
+// alpine image for a missing one — a container that can never host a sandbox
+// agent, so the sandbox simply never answered instead of the request being
+// reported as wrong (ADR 0025).
+func TestValidateCreateRequestRefusesAnUnresolvedRequest(t *testing.T) {
+	resolved := workerclient.NewOptResolvedHarnessConfig(workerapimodel.ResolvedHarnessConfig{ID: "harness-1", Name: "Shell"})
+
+	for name, tc := range map[string]struct {
+		req     *workerapimodel.PoolSandboxCreateRequest
+		wantErr string
+	}{
+		"no image": {
+			req: &workerapimodel.PoolSandboxCreateRequest{
+				Config:                workerapimodel.SandboxConfig{},
+				ResolvedHarnessConfig: resolved,
+			},
+			wantErr: "no image",
+		},
+		"no harness config": {
+			req: &workerapimodel.PoolSandboxCreateRequest{
+				Config: workerapimodel.SandboxConfig{Image: workerclient.NewOptString("discobox-sandbox-agent:local")},
+			},
+			wantErr: "no resolved harness config",
+		},
+		"fully resolved": {
+			req: &workerapimodel.PoolSandboxCreateRequest{
+				Config:                workerapimodel.SandboxConfig{Image: workerclient.NewOptString("discobox-sandbox-agent:local")},
+				ResolvedHarnessConfig: resolved,
+			},
+		},
+	} {
+		t.Run(name, func(t *testing.T) {
+			err := validateCreateRequest("sbx_test0000000001", tc.req)
+			if tc.wantErr == "" {
+				if err != nil {
+					t.Fatalf("validate: %v", err)
+				}
+				return
+			}
+			if err == nil {
+				t.Fatalf("expected an error mentioning %q", tc.wantErr)
+			}
+			if !strings.Contains(err.Error(), tc.wantErr) {
+				t.Fatalf("error = %v, want it to mention %q", err, tc.wantErr)
+			}
+		})
+	}
+}
