@@ -166,6 +166,11 @@ type discoveredPublicKey struct {
 	line        string
 	fingerprint string
 	comment     string
+	// privateKeyPath is the private half beside a discovered ~/.ssh/*.pub
+	// file, empty when it is missing or when the key came from the agent. Only
+	// a key with one can be named as an ssh_config IdentityFile, which is what
+	// ssh-config needs to reuse an already-enrolled key instead of making one.
+	privateKeyPath string
 }
 
 func fingerprintList(keys []discoveredPublicKey) []string {
@@ -238,13 +243,22 @@ func discoverSSHDirPublicKeys() ([]discoveredPublicKey, error) {
 		if err != nil {
 			continue
 		}
-		out = append(out, discoveredPublicKey{
+		discovered := discoveredPublicKey{
 			line:        strings.TrimSpace(string(ssh.MarshalAuthorizedKey(pub))) + " " + comment,
 			fingerprint: ssh.FingerprintSHA256(pub),
 			comment:     comment,
-		})
+		}
+		if privateKeyPath := strings.TrimSuffix(path, ".pub"); fileExists(privateKeyPath) {
+			discovered.privateKeyPath = privateKeyPath
+		}
+		out = append(out, discovered)
 	}
 	return out, nil
+}
+
+func fileExists(path string) bool {
+	info, err := os.Stat(path)
+	return err == nil && !info.IsDir()
 }
 
 func (a *App) resolveSSHKeyID(ctx context.Context, client *apiclientgen.Client, projectID, value string) (string, error) {

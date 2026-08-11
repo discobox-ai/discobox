@@ -39,6 +39,16 @@ func (a *App) newSSHConfigCommand() *cobra.Command {
 			if err != nil {
 				return err
 			}
+			// The written files are named after the project, so resolve what
+			// the flag means: "default" is a server-side alias, and the same
+			// project reached as "default" and by ID must not end up owning two
+			// files and two Include lines.
+			resolvedProjectID := projectID
+			if write {
+				if resolvedProjectID, err = a.resolveProjectID(cmd, client, projectID); err != nil {
+					return err
+				}
+			}
 
 			ingressRes, err := client.GetSSHIngress(cmd.Context())
 			if err != nil {
@@ -49,6 +59,15 @@ func (a *App) newSSHConfigCommand() *cobra.Command {
 				return err
 			}
 			if !ingress.Enabled {
+				// --write mirrors the server into local files, and "no SSH
+				// here" is a state to mirror: an empty config replaces stanzas
+				// that would otherwise keep pointing at a port nothing answers
+				// on. Printing has nothing to mirror and nothing to emit, so it
+				// still says why rather than producing empty output to paste.
+				if write {
+					fmt.Fprintf(cmd.ErrOrStderr(), "this server has no SSH ingress; wrote an empty config\n")
+					return writeManagedSSHConfig(cmd, resolvedProjectID, "", "", "")
+				}
 				return fmt.Errorf("this server has no SSH ingress: set DISCOBOX_SSH_LISTEN to enable it")
 			}
 			ingressHost, ingressPort, err := net.SplitHostPort(ingress.Address.Or(""))
@@ -66,10 +85,8 @@ func (a *App) newSSHConfigCommand() *cobra.Command {
 				}
 			}
 
-			if strings.TrimSpace(identityFile) == "" {
-				identityFile = defaultSSHIdentityPath()
-			}
-			if err := a.ensureSSHIdentityEnrolled(cmd, client, projectID, identityFile); err != nil {
+			identityFile, err = a.resolveSSHIdentity(cmd, client, projectID, identityFile)
+			if err != nil {
 				return err
 			}
 
@@ -89,10 +106,10 @@ func (a *App) newSSHConfigCommand() *cobra.Command {
 				identityFile: identityFile,
 				// Only the written config can point at a known_hosts file,
 				// because only it owns one.
-				knownHostsFile: knownHostsFileFor(write),
+				knownHostsFile: knownHostsFileFor(write, resolvedProjectID),
 			})
 			if write {
-				return writeManagedSSHConfig(cmd, stanzas, knownHostsHost(host, port), ingress.HostKey.Or(""))
+				return writeManagedSSHConfig(cmd, resolvedProjectID, stanzas, knownHostsHost(host, port), ingress.HostKey.Or(""))
 			}
 			out := cmd.OutOrStdout()
 			fmt.Fprint(out, stanzas)
@@ -189,17 +206,85 @@ func knownHostsHost(host string, port int) string {
 	return fmt.Sprintf("[%s]:%d", host, port)
 }
 
-// ensureSSHIdentityEnrolled makes the emitted config usable on its own: it
-// generates the key when absent and enrolls it in the project when the project
-// does not already have it, so `disco box ssh-config >> ~/.ssh/config` is the
-// only step between a fresh checkout and `ssh <sandbox>`.
+// resolveSSHIdentity returns the private key path the emitted config should
+// name, enrolling it if the project does not already have it.
 //
-// Enrollment is keyed on the fingerprint, not on having just generated the
-// key, so running this against a second project — or after someone revoked the
-// key — enrolls the existing key rather than creating a duplicate or leaving a
-// config that cannot authenticate.
-func (a *App) ensureSSHIdentityEnrolled(cmd *cobra.Command, client *apiclientgen.Client, projectID, identityFile string) error {
-	publicKeyLine, created, err := loadOrCreateSSHIdentity(identityFile)
+// A new key is generated only as a last resort. An enrolled key the caller can
+// actually use is preferred in every case, because generating one would leave
+// the project accumulating keys that all authenticate the same person from the
+// same machine, and would revoke nothing when the old one is removed. In order:
+//
+//  1. --identity-file, which is an explicit instruction, not a preference.
+//  2. The key this command manages, if it exists.
+//  3. Any ~/.ssh key already enrolled in this project whose private half is
+//     present — the case where the user enrolled their own key by hand.
+//  4. Only then, a freshly generated managed key.
+//
+// Agent-only keys cannot win step 3: `IdentityFile` names a file, and an agent
+// identity has no path to name.
+func (a *App) resolveSSHIdentity(cmd *cobra.Command, client *apiclientgen.Client, projectID, explicitPath string) (string, error) {
+	enrolled, err := a.listEnrolledFingerprints(cmd, client, projectID)
+	if err != nil {
+		return "", err
+	}
+
+	if strings.TrimSpace(explicitPath) != "" {
+		return explicitPath, a.enrollSSHIdentity(cmd, client, projectID, explicitPath, enrolled)
+	}
+	managed := defaultSSHIdentityPath()
+	if fileExists(managed) {
+		return managed, a.enrollSSHIdentity(cmd, client, projectID, managed, enrolled)
+	}
+	if reusable := enrolledLocalKey(enrolled); reusable != "" {
+		fmt.Fprintf(cmd.ErrOrStderr(), "using %s, already enrolled in this project\n", reusable)
+		return reusable, nil
+	}
+	return managed, a.enrollSSHIdentity(cmd, client, projectID, managed, enrolled)
+}
+
+func (a *App) listEnrolledFingerprints(cmd *cobra.Command, client *apiclientgen.Client, projectID string) (map[string]bool, error) {
+	res, err := client.ListSSHKeys(cmd.Context(), apiclientgen.ListSSHKeysParams{ProjectId: projectID})
+	if err != nil {
+		return nil, err
+	}
+	body, err := expectResponse[apimodel.ListSSHKeysBody](res)
+	if err != nil {
+		return nil, err
+	}
+	fingerprints := map[string]bool{}
+	for _, key := range body.GetSshKeys() {
+		fingerprints[key.Fingerprint] = true
+	}
+	return fingerprints, nil
+}
+
+// enrolledLocalKey returns the path of a ~/.ssh private key whose public half
+// is already enrolled, or "" when there is none. Discovery failures are not
+// errors: this is an optimization over generating a key, so a missing or
+// unreadable ~/.ssh simply means there is nothing to reuse.
+func enrolledLocalKey(enrolled map[string]bool) string {
+	candidates, err := discoverSSHDirPublicKeys()
+	if err != nil {
+		return ""
+	}
+	for _, candidate := range candidates {
+		if candidate.privateKeyPath != "" && enrolled[candidate.fingerprint] {
+			return candidate.privateKeyPath
+		}
+	}
+	return ""
+}
+
+// enrollSSHIdentity generates the key at path if absent and enrolls it when the
+// project does not already list its fingerprint, so the emitted config can
+// authenticate on its own.
+//
+// Enrollment is keyed on the fingerprint rather than on having just generated
+// the key, so running this against a second project — or after someone revoked
+// the key — enrolls the existing key instead of creating a duplicate or leaving
+// a config that cannot authenticate.
+func (a *App) enrollSSHIdentity(cmd *cobra.Command, client *apiclientgen.Client, projectID, path string, enrolled map[string]bool) error {
+	publicKeyLine, created, err := loadOrCreateSSHIdentity(path)
 	if err != nil {
 		return err
 	}
@@ -209,21 +294,10 @@ func (a *App) ensureSSHIdentityEnrolled(cmd *cobra.Command, client *apiclientgen
 	}
 	fingerprint := ssh.FingerprintSHA256(parsed)
 	if created {
-		fmt.Fprintf(cmd.ErrOrStderr(), "generated a new SSH key at %s (%s)\n", identityFile, fingerprint)
+		fmt.Fprintf(cmd.ErrOrStderr(), "generated a new SSH key at %s (%s)\n", path, fingerprint)
 	}
-
-	res, err := client.ListSSHKeys(cmd.Context(), apiclientgen.ListSSHKeysParams{ProjectId: projectID})
-	if err != nil {
-		return err
-	}
-	body, err := expectResponse[apimodel.ListSSHKeysBody](res)
-	if err != nil {
-		return err
-	}
-	for _, key := range body.GetSshKeys() {
-		if key.Fingerprint == fingerprint {
-			return nil
-		}
+	if enrolled[fingerprint] {
+		return nil
 	}
 
 	createBody := &apimodel.CreateSSHKeyBody{PublicKey: publicKeyLine}

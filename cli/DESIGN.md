@@ -348,13 +348,25 @@ level or layering on the attach transports above.
   whole file.
 - `--write` writes the stanzas and the server's host key to two files under the
   CLI state directory, beside the generated key, and adds one `Include` line to
-  `~/.ssh/config`. Nothing else in `~/.ssh` is edited: this command owns those
+  `~/.ssh/config`. Both files are scoped to the project — `<state>/ssh/<project
+  id>/{config,known_hosts}`, one `Include` each — because a run only knows
+  about the project it was given: a shared file would drop every other
+  project's stanzas on each write, and two projects can live on different
+  servers with different addresses and host keys. The ID is resolved first, so
+  the same project reached as `default` and by ID does not end up owning two
+  files. Nothing else in `~/.ssh` is edited: this command owns those
   two files and rewrites them wholesale, so it never has to parse or merge into
   a config the user maintains by hand. The `Include` goes at the *top*, because
   ssh takes the first value obtained for each keyword and an `Include` placed
   after an existing `Host *` block would lose every setting that block sets. It
   is idempotent — re-running after creating a sandbox refreshes the stanzas and
   leaves one `Include`.
+- A server with no SSH ingress writes an *empty* config rather than failing:
+  these files mirror the server, so a project that stopped offering SSH must
+  stop offering stanzas pointing at a port nothing answers on. The `Include`
+  stays, so re-enabling needs no further edit to `~/.ssh/config`. Printing has
+  nothing to mirror, so it still reports the error instead of emitting empty
+  output to paste.
 - Only the written form carries `UserKnownHostsFile`, pointing at the
   known_hosts it just wrote. Pinning the host key there keeps
   `StrictHostKeyChecking` meaningful without editing the file that records the

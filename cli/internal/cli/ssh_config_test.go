@@ -34,6 +34,12 @@ func (f *sshConfigFakeServer) start(t *testing.T) *httptest.Server {
 		defer f.mu.Unlock()
 		w.Header().Set("Content-Type", "application/json")
 		switch {
+		case r.URL.Path == "/projects/project-1" && r.Method == http.MethodGet:
+			// Deliberately not the flag value: --write names its files after
+			// the resolved ID, and this proves it resolves rather than reusing
+			// whatever -p happened to say.
+			_, _ = w.Write([]byte(`{"id":"` + resolvedTestProjectID + `","name":"P","slug":"p","ownerUserId":"user-1",
+				"default":true,"createdAt":"2026-01-01T00:00:00Z","updatedAt":"2026-01-01T00:00:00Z"}`))
 		case r.URL.Path == "/ssh":
 			_, _ = w.Write([]byte(f.ingress))
 		case r.URL.Path == "/projects/project-1/ssh-keys" && r.Method == http.MethodGet:
@@ -73,6 +79,9 @@ func (f *sshConfigFakeServer) sandboxesJSON() string {
 	}
 	return `{"sandboxes":[` + strings.Join(entries, ",") + `]}`
 }
+
+// resolvedTestProjectID is what GET /projects/project-1 resolves to.
+const resolvedTestProjectID = "proj_resolved00001"
 
 const sshConfigEnabledIngress = `{"enabled":true,"address":"ssh.example.com:3222","hostKey":"ssh-ed25519 AAAAfakehostkey=="}`
 
