@@ -79,9 +79,18 @@ func (a *App) newSSHConfigCommand() *cobra.Command {
 			}
 
 			sandboxes := sandboxesBody.GetSandboxes()
+			patterns := sshConfigHostPatterns(sandboxes)
 			out := cmd.OutOrStdout()
 			for i, sandbox := range sandboxes {
-				fmt.Fprintf(out, "Host %s\n", strings.Join(sshConfigHostPatterns(sandbox, sandboxes), " "))
+				if len(patterns[i]) == 0 {
+					// Every candidate was claimed by another sandbox. Emitting
+					// `Host` with no patterns is an ssh_config syntax error that
+					// would break the whole file, so say what happened instead.
+					fmt.Fprintf(out, "# %s (%s) has no unambiguous host alias and was skipped\n\n",
+						sandbox.Config.Name, sandbox.ID)
+					continue
+				}
+				fmt.Fprintf(out, "Host %s\n", strings.Join(patterns[i], " "))
 				fmt.Fprintf(out, "    HostName %s\n", host)
 				fmt.Fprintf(out, "    Port %d\n", port)
 				fmt.Fprintf(out, "    User %s\n", sandbox.ID)
@@ -104,36 +113,53 @@ func (a *App) newSSHConfigCommand() *cobra.Command {
 	return cmd
 }
 
-// hostAliasSuffix keeps every generated Host pattern inside one obviously
-// discobox-owned namespace, so a pattern can never collide with a real host in
-// the user's ssh_config.
+// hostAliasSuffix qualifies each pattern into an obviously discobox-owned
+// namespace. Every sandbox gets both the bare form and the qualified one: the
+// bare name is what anyone actually types, and the qualified alias is the
+// unambiguous spelling to fall back on when a bare name collides with a real
+// host elsewhere in the user's ssh_config — which is the cost of the bare form
+// and the reason the qualified one is still emitted.
 const hostAliasSuffix = ".discobox.internal"
 
-// sshConfigHostPatterns returns the Host patterns for one sandbox: its name
-// first, when that name can safely and unambiguously stand for it, then always
-// its ID.
+// sshConfigHostPatterns returns each sandbox's Host patterns, aligned with
+// sandboxes: its name and ID, each bare and suffixed.
 //
 // The name is only an alias — `User` carries the sandbox ID, which is what
 // actually routes (server/internal/sshd's ResolveUsername), and `HostName` is
 // what ssh resolves — so the pattern is free to be friendly. It is not free to
-// be ambiguous: ssh silently applies the *first* matching Host block, so two
-// sandboxes answering to one pattern would quietly send you to the wrong one.
-// The server enforces that names are unique within a project
-// (idx_sandbox_project_name), and the duplicate check here is the client-side
-// backstop for that invariant, not a substitute for it. The ID pattern is
-// always present, so every sandbox stays addressable however its name behaves.
-func sshConfigHostPatterns(sandbox apimodel.Sandbox, all []apimodel.Sandbox) []string {
-	idPattern := sandbox.ID + hostAliasSuffix
-	name := sandbox.Config.Name
-	if !safeHostAlias(name) {
-		return []string{idPattern}
-	}
-	for _, other := range all {
-		if other.ID != sandbox.ID && other.Config.Name == name {
-			return []string{idPattern}
+// be ambiguous: ssh silently applies the *first* matching Host block, so a
+// pattern claimed by two sandboxes would quietly send you to the wrong one.
+// Patterns are therefore counted across the whole emitted config and any that
+// is not unique is dropped from every stanza that wanted it.
+//
+// The server enforces unique names within a project
+// (idx_sandbox_project_name), so name-versus-name collisions no longer happen;
+// what this still catches is a name that spells another sandbox's pattern, such
+// as one named exactly "<other id>.discobox.internal".
+func sshConfigHostPatterns(sandboxes []apimodel.Sandbox) [][]string {
+	candidates := make([][]string, len(sandboxes))
+	claims := map[string]int{}
+	for i, sandbox := range sandboxes {
+		var patterns []string
+		if name := sandbox.Config.Name; safeHostAlias(name) {
+			patterns = append(patterns, name, name+hostAliasSuffix)
+		}
+		patterns = append(patterns, sandbox.ID, sandbox.ID+hostAliasSuffix)
+		candidates[i] = patterns
+		for _, pattern := range patterns {
+			claims[pattern]++
 		}
 	}
-	return []string{name + hostAliasSuffix, idPattern}
+
+	unique := make([][]string, len(sandboxes))
+	for i, patterns := range candidates {
+		for _, pattern := range patterns {
+			if claims[pattern] == 1 {
+				unique[i] = append(unique[i], pattern)
+			}
+		}
+	}
+	return unique
 }
 
 // safeHostAlias reports whether a sandbox name can be used as an ssh_config

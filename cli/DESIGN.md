@@ -327,14 +327,25 @@ level or layering on the attach transports above.
   not pile up duplicates. The private key is written in OpenSSH's own format,
   not the PKCS#8 PEM the server uses for its host key, because this file is
   read by the `ssh` binary rather than by `x/crypto/ssh`.
-- Each stanza carries two `Host` patterns: the sandbox name and the sandbox ID,
-  both under `.discobox.internal`. The name is cosmetic — `User` carries the
-  ID, which is what `ResolveUsername` routes on — so it is dropped whenever it
-  cannot stand for exactly one sandbox: names have no unique index, and `ssh`
-  applies the *first* matching block, so a duplicated name would silently reach
-  the wrong sandbox. Names with whitespace or glob metacharacters are dropped
-  for the same reason (`Host *.discobox.internal` would capture every sandbox).
-  The ID pattern is always emitted, so a sandbox is addressable regardless.
+- Each stanza carries four `Host` patterns: the sandbox name and the sandbox
+  ID, each bare and suffixed with `.discobox.internal`. The bare name is what
+  anyone actually types; the suffixed form is the unambiguous spelling to fall
+  back on, and is the reason dropping the suffix from the primary alias is
+  affordable — a bare pattern lives in the same namespace as the user's real
+  hosts, and the qualified one does not.
+- The name is cosmetic — `User` carries the ID, which is what `ResolveUsername`
+  routes on — but an alias must still mean exactly one sandbox, because `ssh`
+  applies the *first* matching block and would otherwise silently reach the
+  wrong one. Patterns are counted across the whole emitted config and any
+  claimed twice is dropped from every stanza that wanted it. Server-side name
+  uniqueness (`idx_sandbox_project_name`) means this no longer fires for
+  name-versus-name; what it still catches is a name that spells another
+  sandbox's ID, which claims both that sandbox's ID patterns at once. Names
+  with whitespace or glob metacharacters never become patterns at all
+  (`Host *` would capture every host).
+- A sandbox whose every pattern is contested is emitted as a comment rather
+  than a stanza: `Host` with no patterns is a syntax error that would break the
+  whole file.
 
 ## Signals and Job Control
 
