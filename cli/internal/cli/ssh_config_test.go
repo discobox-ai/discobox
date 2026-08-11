@@ -1,25 +1,61 @@
 package cli
 
 import (
+	"encoding/json"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"path/filepath"
 	"strings"
+	"sync"
 	"testing"
 )
 
-// sshConfigTestServer serves the two routes ssh-config reads: the project's
-// sandboxes and the SSH ingress discovery document.
-func sshConfigTestServer(t *testing.T, sandboxes, ingress string) *httptest.Server {
+// sshConfigFakeServer serves the routes ssh-config drives: the SSH ingress
+// discovery document, the project's enrolled keys, and its sandboxes.
+type sshConfigFakeServer struct {
+	ingress   string
+	sandboxes []sshConfigFakeSandbox
+
+	mu       sync.Mutex
+	keys     []map[string]any
+	enrolled []string // public key lines POSTed during the test
+}
+
+type sshConfigFakeSandbox struct {
+	id   string
+	name string
+}
+
+func (f *sshConfigFakeServer) start(t *testing.T) *httptest.Server {
 	t.Helper()
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		f.mu.Lock()
+		defer f.mu.Unlock()
 		w.Header().Set("Content-Type", "application/json")
-		switch r.URL.Path {
-		case "/projects/project-1/sandboxes":
-			_, _ = w.Write([]byte(sandboxes))
-		case "/ssh":
-			_, _ = w.Write([]byte(ingress))
+		switch {
+		case r.URL.Path == "/ssh":
+			_, _ = w.Write([]byte(f.ingress))
+		case r.URL.Path == "/projects/project-1/ssh-keys" && r.Method == http.MethodGet:
+			keys := f.keys
+			if keys == nil {
+				keys = []map[string]any{} // a nil slice marshals to null, which the schema rejects
+			}
+			body, _ := json.Marshal(map[string]any{"sshKeys": keys})
+			_, _ = w.Write(body)
+		case r.URL.Path == "/projects/project-1/ssh-keys" && r.Method == http.MethodPost:
+			var payload struct {
+				PublicKey string `json:"publicKey"`
+			}
+			_ = json.NewDecoder(r.Body).Decode(&payload)
+			f.enrolled = append(f.enrolled, payload.PublicKey)
+			_, _ = w.Write([]byte(`{"id":"sshkey_1","projectId":"project-1",
+				"publicKey":"` + payload.PublicKey + `","fingerprint":"SHA256:whatever",
+				"createdAt":"2026-01-01T00:00:00Z","updatedAt":"2026-01-01T00:00:00Z"}`))
+		case r.URL.Path == "/projects/project-1/sandboxes":
+			_, _ = w.Write([]byte(f.sandboxesJSON()))
 		default:
-			t.Errorf("unexpected path %s", r.URL.Path)
+			t.Errorf("unexpected path %s %s", r.Method, r.URL.Path)
 			w.WriteHeader(http.StatusNotFound)
 		}
 	}))
@@ -27,71 +63,198 @@ func sshConfigTestServer(t *testing.T, sandboxes, ingress string) *httptest.Serv
 	return server
 }
 
-const sshConfigTestSandboxes = `{"sandboxes":[
-	{"id":"sbx_devbox00000001","projectId":"project-1","createdByUserId":"user-1",
-	 "config":{"name":"devbox","image":"discobox-sandbox-agent:local","cpuVcpus":1,"memoryBytes":1,"storageBytes":1},
-	 "runtime":{"desiredState":"present","state":"running","generation":1,"observedGeneration":1},
-	 "createdAt":"2026-01-01T00:00:00Z","updatedAt":"2026-01-01T00:00:00Z"}
-]}`
+func (f *sshConfigFakeServer) sandboxesJSON() string {
+	entries := make([]string, 0, len(f.sandboxes))
+	for _, sandbox := range f.sandboxes {
+		entries = append(entries, fmt.Sprintf(`{"id":%q,"projectId":"project-1","createdByUserId":"user-1",
+			"config":{"name":%q,"image":"discobox-sandbox-agent:local","cpuVcpus":1,"memoryBytes":1,"storageBytes":1},
+			"runtime":{"desiredState":"present","state":"running","generation":1,"observedGeneration":1},
+			"createdAt":"2026-01-01T00:00:00Z","updatedAt":"2026-01-01T00:00:00Z"}`, sandbox.id, sandbox.name))
+	}
+	return `{"sandboxes":[` + strings.Join(entries, ",") + `]}`
+}
 
-// TestSSHConfigUsesTheAdvertisedAddress is the point of the discovery
-// document: the client emits the endpoint the server named, having hard-coded
-// neither host nor port.
-func TestSSHConfigUsesTheAdvertisedAddress(t *testing.T) {
-	server := sshConfigTestServer(t, sshConfigTestSandboxes,
-		`{"enabled":true,"address":"ssh.example.com:3222","hostKey":"ssh-ed25519 AAAAfakehostkey=="}`)
+const sshConfigEnabledIngress = `{"enabled":true,"address":"ssh.example.com:3222","hostKey":"ssh-ed25519 AAAAfakehostkey=="}`
+
+// runSSHConfig executes ssh-config against fake, always with an identity file
+// inside the test's temp dir so no test can read or write the real one.
+func runSSHConfig(t *testing.T, fake *sshConfigFakeServer, extraArgs ...string) (stdout, stderr string, err error) {
+	t.Helper()
+	server := fake.start(t)
+	identity := filepath.Join(t.TempDir(), "id_ed25519")
+	// Belt and braces alongside --identity-file: cliStateDir honours
+	// XDG_STATE_HOME, so even a future test that forgets the flag cannot
+	// generate or enrol a key in the developer's real state directory.
+	t.Setenv("XDG_STATE_HOME", t.TempDir())
 
 	cmd := NewRootCommand()
-	var out strings.Builder
+	var out, errOut strings.Builder
 	cmd.SetOut(&out)
-	cmd.SetErr(new(strings.Builder))
-	cmd.SetArgs([]string{"--server", server.URL, "--project", "project-1", "box", "ssh-config"})
-	if err := cmd.Execute(); err != nil {
+	cmd.SetErr(&errOut)
+	cmd.SetArgs(append([]string{
+		"--server", server.URL, "--project", "project-1", "box", "ssh-config",
+		"--identity-file", identity,
+	}, extraArgs...))
+	err = cmd.Execute()
+	return out.String(), errOut.String(), err
+}
+
+// TestSSHConfigEmitsAFriendlyNameAndTheID covers the two things a Host pattern
+// has to be: friendly to type, and unambiguous. The ID stays as a second
+// pattern so a renamed or duplicated sandbox is still reachable.
+func TestSSHConfigEmitsAFriendlyNameAndTheID(t *testing.T) {
+	fake := &sshConfigFakeServer{
+		ingress:   sshConfigEnabledIngress,
+		sandboxes: []sshConfigFakeSandbox{{id: "sbx_devbox00000001", name: "cheerful_poincare"}},
+	}
+	out, _, err := runSSHConfig(t, fake)
+	if err != nil {
 		t.Fatalf("execute ssh-config: %v", err)
 	}
 
-	got := out.String()
 	for _, want := range []string{
-		"Host sbx_devbox00000001.discobox.internal\n",
+		"Host cheerful_poincare.discobox.internal sbx_devbox00000001.discobox.internal\n",
 		"    HostName ssh.example.com\n",
 		"    Port 3222\n",
+		// The name is cosmetic; the ID is what routes.
 		"    User sbx_devbox00000001\n",
-		"[ssh.example.com]:3222 ssh-ed25519 AAAAfakehostkey==",
+		"    IdentitiesOnly yes\n",
 	} {
-		if !strings.Contains(got, want) {
-			t.Fatalf("output missing %q; got:\n%s", want, got)
+		if !strings.Contains(out, want) {
+			t.Fatalf("output missing %q; got:\n%s", want, out)
+		}
+	}
+	if !strings.Contains(out, "    IdentityFile ") {
+		t.Fatalf("output has no IdentityFile:\n%s", out)
+	}
+}
+
+// TestSSHConfigDropsAmbiguousAndUnsafeNames: ssh applies the first matching
+// Host block, so a duplicated name would silently route to one sandbox for
+// both, and a name with a glob or a space would match hosts it should not.
+func TestSSHConfigDropsAmbiguousAndUnsafeNames(t *testing.T) {
+	fake := &sshConfigFakeServer{
+		ingress: sshConfigEnabledIngress,
+		sandboxes: []sshConfigFakeSandbox{
+			{id: "sbx_dup0000000001", name: "twin"},
+			{id: "sbx_dup0000000002", name: "twin"},
+			{id: "sbx_glob000000001", name: "*"},
+			{id: "sbx_space00000001", name: "two words"},
+			{id: "sbx_fine000000001", name: "unique_name"},
+		},
+	}
+	out, _, err := runSSHConfig(t, fake)
+	if err != nil {
+		t.Fatalf("execute ssh-config: %v", err)
+	}
+
+	if strings.Contains(out, "twin.discobox.internal") {
+		t.Fatalf("a duplicated name must not become a Host pattern:\n%s", out)
+	}
+	if strings.Contains(out, "*.discobox.internal") {
+		t.Fatalf("a glob name must never become a Host pattern:\n%s", out)
+	}
+	if strings.Contains(out, "two words.discobox.internal") || strings.Contains(out, "words.discobox.internal") {
+		t.Fatalf("a name with whitespace must not become a Host pattern:\n%s", out)
+	}
+	if !strings.Contains(out, "Host unique_name.discobox.internal sbx_fine000000001.discobox.internal\n") {
+		t.Fatalf("the unique, safe name should still be an alias:\n%s", out)
+	}
+	for _, id := range []string{"sbx_dup0000000001", "sbx_dup0000000002", "sbx_glob000000001", "sbx_space00000001"} {
+		if !strings.Contains(out, "Host "+id+".discobox.internal\n") {
+			t.Fatalf("%s lost its ID pattern and is now unreachable:\n%s", id, out)
 		}
 	}
 }
 
-// TestSSHConfigFlagsOverrideTheAdvertisedAddress covers the case the server
-// cannot know about, such as reaching it through a local port forward.
-func TestSSHConfigFlagsOverrideTheAdvertisedAddress(t *testing.T) {
-	server := sshConfigTestServer(t, sshConfigTestSandboxes,
-		`{"enabled":true,"address":"ssh.example.com:3222","hostKey":"ssh-ed25519 AAAAfakehostkey=="}`)
-
-	cmd := NewRootCommand()
-	var out strings.Builder
-	cmd.SetOut(&out)
-	cmd.SetErr(new(strings.Builder))
-	cmd.SetArgs([]string{"--server", server.URL, "--project", "project-1", "box", "ssh-config",
-		"--host", "127.0.0.1", "--port", "22022"})
-	if err := cmd.Execute(); err != nil {
+// TestSSHConfigGeneratesAndEnrollsAKey is the point of the automation: one
+// command turns a fresh machine into one that can ssh.
+func TestSSHConfigGeneratesAndEnrollsAKey(t *testing.T) {
+	fake := &sshConfigFakeServer{
+		ingress:   sshConfigEnabledIngress,
+		sandboxes: []sshConfigFakeSandbox{{id: "sbx_devbox00000001", name: "devbox"}},
+	}
+	_, stderr, err := runSSHConfig(t, fake)
+	if err != nil {
 		t.Fatalf("execute ssh-config: %v", err)
 	}
+	if len(fake.enrolled) != 1 {
+		t.Fatalf("enrolled %d keys, want 1", len(fake.enrolled))
+	}
+	if !strings.HasPrefix(fake.enrolled[0], "ssh-ed25519 ") {
+		t.Fatalf("enrolled key is not an ed25519 public key line: %q", fake.enrolled[0])
+	}
+	// Creating a credential is not something to do silently.
+	if !strings.Contains(stderr, "generated a new SSH key") {
+		t.Fatalf("key generation was not reported, stderr: %q", stderr)
+	}
+}
 
-	got := out.String()
+// TestSSHConfigDoesNotReEnrollAKnownKey keys enrollment on the fingerprint, so
+// repeated runs do not pile up duplicate keys on the project.
+func TestSSHConfigDoesNotReEnrollAKnownKey(t *testing.T) {
+	fake := &sshConfigFakeServer{
+		ingress:   sshConfigEnabledIngress,
+		sandboxes: []sshConfigFakeSandbox{{id: "sbx_devbox00000001", name: "devbox"}},
+	}
+	server := fake.start(t)
+	identity := filepath.Join(t.TempDir(), "id_ed25519")
+	t.Setenv("XDG_STATE_HOME", t.TempDir())
+
+	run := func() {
+		cmd := NewRootCommand()
+		cmd.SetOut(new(strings.Builder))
+		cmd.SetErr(new(strings.Builder))
+		cmd.SetArgs([]string{"--server", server.URL, "--project", "project-1", "box", "ssh-config",
+			"--identity-file", identity})
+		if err := cmd.Execute(); err != nil {
+			t.Fatalf("execute ssh-config: %v", err)
+		}
+	}
+
+	run()
+	if len(fake.enrolled) != 1 {
+		t.Fatalf("first run enrolled %d keys, want 1", len(fake.enrolled))
+	}
+	// Reflect the enrollment back the way the server would on the next call.
+	line, _, err := loadOrCreateSSHIdentity(identity)
+	if err != nil {
+		t.Fatalf("read identity: %v", err)
+	}
+	parsed := mustFingerprint(t, line)
+	fake.mu.Lock()
+	fake.keys = []map[string]any{{
+		"id": "sshkey_1", "projectId": "project-1", "publicKey": line, "fingerprint": parsed,
+		"createdAt": "2026-01-01T00:00:00Z", "updatedAt": "2026-01-01T00:00:00Z",
+	}}
+	fake.mu.Unlock()
+
+	run()
+	if len(fake.enrolled) != 1 {
+		t.Fatalf("second run enrolled the key again: %d enrollments", len(fake.enrolled))
+	}
+}
+
+func TestSSHConfigFlagsOverrideTheAdvertisedAddress(t *testing.T) {
+	fake := &sshConfigFakeServer{
+		ingress:   sshConfigEnabledIngress,
+		sandboxes: []sshConfigFakeSandbox{{id: "sbx_devbox00000001", name: "devbox"}},
+	}
+	out, _, err := runSSHConfig(t, fake, "--host", "127.0.0.1", "--port", "22022")
+	if err != nil {
+		t.Fatalf("execute ssh-config: %v", err)
+	}
 	for _, want := range []string{
 		"    HostName 127.0.0.1\n",
 		"    Port 22022\n",
 		"[127.0.0.1]:22022 ssh-ed25519 AAAAfakehostkey==",
 	} {
-		if !strings.Contains(got, want) {
-			t.Fatalf("output missing %q; got:\n%s", want, got)
+		if !strings.Contains(out, want) {
+			t.Fatalf("output missing %q; got:\n%s", want, out)
 		}
 	}
-	if strings.Contains(got, "ssh.example.com") {
-		t.Fatalf("advertised address leaked past the overrides:\n%s", got)
+	if strings.Contains(out, "ssh.example.com") {
+		t.Fatalf("advertised address leaked past the overrides:\n%s", out)
 	}
 }
 
@@ -99,13 +262,8 @@ func TestSSHConfigFlagsOverrideTheAdvertisedAddress(t *testing.T) {
 // ordinary answer the document carries, and the client should say so rather
 // than emit a config pointing nowhere.
 func TestSSHConfigReportsDisabledIngress(t *testing.T) {
-	server := sshConfigTestServer(t, sshConfigTestSandboxes, `{"enabled":false}`)
-
-	cmd := NewRootCommand()
-	cmd.SetOut(new(strings.Builder))
-	cmd.SetErr(new(strings.Builder))
-	cmd.SetArgs([]string{"--server", server.URL, "--project", "project-1", "box", "ssh-config"})
-	err := cmd.Execute()
+	fake := &sshConfigFakeServer{ingress: `{"enabled":false}`}
+	_, _, err := runSSHConfig(t, fake)
 	if err == nil {
 		t.Fatal("expected ssh-config to fail when the server has no SSH ingress")
 	}

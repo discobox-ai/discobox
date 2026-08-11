@@ -319,6 +319,22 @@ level or layering on the attach transports above.
   are unset by default. The `known_hosts` host field is bracketed
   (`[host]:port`) for every port but 22, which `ssh` looks up under the bare
   hostname instead.
+- It also generates and enrolls the key it points at, so the emitted config
+  works on its own: an ed25519 key under the CLI state directory
+  (`<state>/ssh/id_ed25519`, `0600`), enrolled in the project when the project
+  does not already list its fingerprint. Enrollment keys on the fingerprint,
+  not on having just generated the key, so repeat runs and second projects do
+  not pile up duplicates. The private key is written in OpenSSH's own format,
+  not the PKCS#8 PEM the server uses for its host key, because this file is
+  read by the `ssh` binary rather than by `x/crypto/ssh`.
+- Each stanza carries two `Host` patterns: the sandbox name and the sandbox ID,
+  both under `.discobox.internal`. The name is cosmetic — `User` carries the
+  ID, which is what `ResolveUsername` routes on — so it is dropped whenever it
+  cannot stand for exactly one sandbox: names have no unique index, and `ssh`
+  applies the *first* matching block, so a duplicated name would silently reach
+  the wrong sandbox. Names with whitespace or glob metacharacters are dropped
+  for the same reason (`Host *.discobox.internal` would capture every sandbox).
+  The ID pattern is always emitted, so a sandbox is addressable regardless.
 
 ## Signals and Job Control
 
