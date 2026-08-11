@@ -116,11 +116,12 @@ const hostAliasSuffix = ".discobox.internal"
 // The name is only an alias — `User` carries the sandbox ID, which is what
 // actually routes (server/internal/sshd's ResolveUsername), and `HostName` is
 // what ssh resolves — so the pattern is free to be friendly. It is not free to
-// be ambiguous: sandbox names have no unique index and are settable at create,
-// so two can share one, and ssh silently applies the *first* matching block,
-// which would quietly send you to the wrong sandbox. A duplicated name is
-// therefore dropped rather than emitted for both. The ID pattern is always
-// present, so every sandbox stays addressable however its name behaves.
+// be ambiguous: ssh silently applies the *first* matching Host block, so two
+// sandboxes answering to one pattern would quietly send you to the wrong one.
+// The server enforces that names are unique within a project
+// (idx_sandbox_project_name), and the duplicate check here is the client-side
+// backstop for that invariant, not a substitute for it. The ID pattern is
+// always present, so every sandbox stays addressable however its name behaves.
 func sshConfigHostPatterns(sandbox apimodel.Sandbox, all []apimodel.Sandbox) []string {
 	idPattern := sandbox.ID + hostAliasSuffix
 	name := sandbox.Config.Name

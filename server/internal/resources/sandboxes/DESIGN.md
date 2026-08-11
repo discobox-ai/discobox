@@ -20,6 +20,14 @@ flowchart LR
 
 - `Service` exposes sandbox API use cases and may call store directly for simple
   reads or non-orchestrated updates.
+- A sandbox name is unique within its project (`idx_sandbox_project_name`),
+  like a pool's or a harness config's. It is an addressable handle, not a
+  label: `disco box ssh-config` emits it as an `ssh_config` `Host` alias, and
+  ssh applies the first matching block, so a second sandbox answering to the
+  same name would silently take the first one's connections. `CreateSandbox`
+  checks the name and returns 409 so the common case is a readable error; the
+  index is the authority that closes the race between two concurrent creates.
+  Names free up on delete, since deletes are hard deletes (ADR 0010).
 - Existence and spec intent goes through `recordSandboxIntent`: generation bump,
   desired state, and dirty mark in one transaction.
 - `SandboxReconciler` converges existence and spec, and nothing else.

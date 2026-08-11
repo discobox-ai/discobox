@@ -3,6 +3,7 @@ package database_test
 import (
 	"context"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
@@ -349,4 +350,100 @@ func (legacyPoolConstraint) TableName() string { return "pools" }
 func fileExists(path string) bool {
 	matches, err := filepath.Glob(path)
 	return err == nil && len(matches) == 1
+}
+
+// TestMigrateDeduplicatesSandboxNames reproduces upgrading a database written
+// before sandbox names were unique. The unique index cannot be created over
+// duplicates, and a duplicate must not be able to strand a server on startup,
+// so the migration renames the later holders instead of failing.
+func TestMigrateDeduplicatesSandboxNames(t *testing.T) {
+	ctx := context.Background()
+	db, err := database.New(database.Config{
+		Driver: gormdb.DriverSQLite,
+		DSN:    "sqlite3://" + filepath.Join(t.TempDir(), "discobox.db"),
+	})
+	if err != nil {
+		t.Fatalf("open database: %v", err)
+	}
+	t.Cleanup(func() {
+		if err := db.Close(); err != nil {
+			t.Fatalf("close database: %v", err)
+		}
+	})
+	if err := db.Migrate(ctx); err != nil {
+		t.Fatalf("initial migrate: %v", err)
+	}
+
+	project := &model.Project{ID: "project-1", OwnerUserID: "user-1", Name: "Project", Slug: "project"}
+	other := &model.Project{ID: "project-2", OwnerUserID: "user-1", Name: "Other", Slug: "other"}
+	for _, p := range []*model.Project{project, other} {
+		if err := db.Write.Create(p).Error; err != nil {
+			t.Fatalf("create project: %v", err)
+		}
+	}
+	provider := &model.SandboxProviderInstance{ID: "provider-1", ProjectID: project.ID, Type: "docker", Name: "Docker"}
+	if err := db.Write.Create(provider).Error; err != nil {
+		t.Fatalf("create provider: %v", err)
+	}
+	pool := &model.Pool{ID: "pool-1", ProjectID: project.ID, PoolManifest: model.PoolManifest{Name: "pool", ProviderInstanceID: provider.ID}}
+	if err := db.Write.Create(pool).Error; err != nil {
+		t.Fatalf("create pool: %v", err)
+	}
+
+	// Drop the index to get the pre-uniqueness schema back, which is the only
+	// way duplicates can be written at all.
+	if err := db.Write.Migrator().DropIndex(&model.Sandbox{}, "idx_sandbox_project_name"); err != nil {
+		t.Fatalf("drop unique index: %v", err)
+	}
+	created := time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)
+	for i, sandbox := range []*model.Sandbox{
+		{ID: "sbx_oldest", ProjectID: project.ID, PoolID: pool.ID, CreatedByUserID: "user-1", Name: "twin"},
+		{ID: "sbx_middle", ProjectID: project.ID, PoolID: pool.ID, CreatedByUserID: "user-1", Name: "twin"},
+		{ID: "sbx_newest", ProjectID: project.ID, PoolID: pool.ID, CreatedByUserID: "user-1", Name: "twin"},
+		{ID: "sbx_unique", ProjectID: project.ID, PoolID: pool.ID, CreatedByUserID: "user-1", Name: "solo"},
+		// Same name, different project: uniqueness is project-scoped.
+		{ID: "sbx_other0", ProjectID: other.ID, PoolID: pool.ID, CreatedByUserID: "user-1", Name: "twin"},
+	} {
+		sandbox.CreatedAt = created.Add(time.Duration(i) * time.Minute)
+		if err := db.Write.Create(sandbox).Error; err != nil {
+			t.Fatalf("create sandbox %s: %v", sandbox.ID, err)
+		}
+	}
+
+	if err := db.Migrate(ctx); err != nil {
+		t.Fatalf("upgrade migrate: %v", err)
+	}
+
+	names := map[string]string{}
+	var sandboxes []model.Sandbox
+	if err := db.Write.Find(&sandboxes).Error; err != nil {
+		t.Fatalf("read sandboxes: %v", err)
+	}
+	for _, sandbox := range sandboxes {
+		names[sandbox.ID] = sandbox.Name
+	}
+	// The oldest holder keeps the name the user has been using.
+	if names["sbx_oldest"] != "twin" {
+		t.Fatalf("oldest sandbox name = %q, want twin", names["sbx_oldest"])
+	}
+	if names["sbx_unique"] != "solo" {
+		t.Fatalf("an unaffected sandbox was renamed to %q", names["sbx_unique"])
+	}
+	if names["sbx_other0"] != "twin" {
+		t.Fatalf("a same-name sandbox in another project was renamed to %q", names["sbx_other0"])
+	}
+	for _, id := range []string{"sbx_middle", "sbx_newest"} {
+		if names[id] == "twin" {
+			t.Fatalf("%s kept the duplicate name", id)
+		}
+		if !strings.Contains(names[id], id) {
+			t.Fatalf("%s renamed to %q, which does not identify the sandbox", id, names[id])
+		}
+	}
+
+	// The whole point: the index exists now, and rejects a new duplicate.
+	dup := &model.Sandbox{ID: "sbx_late00", ProjectID: project.ID, PoolID: pool.ID, CreatedByUserID: "user-1", Name: "twin"}
+	if err := db.Write.Create(dup).Error; err == nil {
+		t.Fatal("expected the unique index to reject a duplicate sandbox name")
+	}
 }

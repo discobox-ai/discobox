@@ -2,6 +2,8 @@ package sandboxes
 
 import (
 	"context"
+	"fmt"
+	"sync/atomic"
 	"testing"
 
 	"github.com/obot-platform/discobox/server/internal/model"
@@ -9,6 +11,10 @@ import (
 	"github.com/obot-platform/discobox/server/internal/services"
 	"github.com/obot-platform/discobox/server/internal/store"
 )
+
+// pinnedSandboxSeq names each fixture uniquely: sandbox names are unique within
+// a project, and these tests store several sandboxes in one.
+var pinnedSandboxSeq atomic.Int64
 
 // pinnedSandbox stores a sandbox pinned to an image digest, with a harness
 // config to compare against.
@@ -19,7 +25,7 @@ func pinnedSandbox(t *testing.T, st *store.Store, configID, image, digest string
 		ProjectID:       "project-1",
 		CreatedByUserID: "user-1",
 		PoolID:          "pool-1",
-		Name:            "sandbox",
+		Name:            fmt.Sprintf("sandbox-%d", pinnedSandboxSeq.Add(1)),
 		SandboxManifest: model.SandboxManifest{HarnessMode: "run", Image: image, ImageDigest: digest},
 	}
 	if configID != "" {

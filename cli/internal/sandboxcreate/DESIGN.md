@@ -14,3 +14,8 @@ sandbox create requests.
   package through their adapters.
 - Keep terminal waiting, attach, progress output, and rendering in the frontend
   packages; those behaviors begin after sandbox creation.
+- The sandbox name is generated here (`randomname`), and sandbox names are
+  unique within a project, so `CreatePromptSandbox` retries a 409 with a fresh
+  name a bounded number of times. Only a generated name is replaced this way: a
+  name the user typed is theirs, so `disco box sandbox create --name` reports
+  the conflict instead of quietly creating something else.

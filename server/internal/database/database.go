@@ -4,6 +4,7 @@ package database
 import (
 	"context"
 	"fmt"
+	"log"
 	"strings"
 
 	"gorm.io/gorm"
@@ -54,6 +55,12 @@ func New(cfg Config) (*DB, error) {
 // recreated into the current single-database schema before running this server.
 func (db *DB) Migrate(ctx context.Context) error {
 	write := db.Write.WithContext(ctx)
+	// Runs before AutoMigrate, unlike every other step here: it clears the way
+	// for a unique index AutoMigrate is about to create, and creating that
+	// index is what fails on duplicate data.
+	if err := deduplicateSandboxNames(write); err != nil {
+		return err
+	}
 	if err := write.AutoMigrate(model.AllModels()...); err != nil {
 		return err
 	}
@@ -252,4 +259,60 @@ func (db *DB) Close() error {
 		return nil
 	}
 	return db.pools.Close()
+}
+
+// deduplicateSandboxNames renames sandboxes that share a name within a project
+// so the idx_sandbox_project_name unique index can be created. Names became
+// unique only once they were promoted to an addressable handle (an ssh_config
+// Host alias, per cli/DESIGN.md), and nothing stopped duplicates before that.
+//
+// Renaming rather than refusing to start is the deliberate choice: a sandbox is
+// live state a user may have work inside, so a duplicate name must not be able
+// to strand a server on startup. The oldest holder keeps the name — it is the
+// one whose name the user has been using — and every later one is suffixed with
+// its own sandbox ID, which is unique by construction. In the vanishingly
+// unlikely case that suffixed name is itself taken, a counter is appended, so
+// this always terminates with a set of unique names.
+func deduplicateSandboxNames(db *gorm.DB) error {
+	if !db.Migrator().HasTable(&model.Sandbox{}) {
+		return nil
+	}
+	type sandboxName struct {
+		ID        string
+		ProjectID string
+		Name      string
+	}
+	var sandboxes []sandboxName
+	if err := db.Model(&model.Sandbox{}).
+		Select("id", "project_id", "name").
+		Order("project_id, created_at, id").
+		Find(&sandboxes).Error; err != nil {
+		return fmt.Errorf("read sandbox names: %w", err)
+	}
+
+	taken := map[string]bool{}
+	for _, sandbox := range sandboxes {
+		taken[sandbox.ProjectID+"\x00"+sandbox.Name] = true
+	}
+	seen := map[string]bool{}
+	for _, sandbox := range sandboxes {
+		key := sandbox.ProjectID + "\x00" + sandbox.Name
+		if !seen[key] {
+			seen[key] = true
+			continue
+		}
+		renamed := sandbox.Name + "-" + sandbox.ID
+		for counter := 2; taken[sandbox.ProjectID+"\x00"+renamed]; counter++ {
+			renamed = fmt.Sprintf("%s-%s-%d", sandbox.Name, sandbox.ID, counter)
+		}
+		taken[sandbox.ProjectID+"\x00"+renamed] = true
+		seen[sandbox.ProjectID+"\x00"+renamed] = true
+		if err := db.Model(&model.Sandbox{}).
+			Where("id = ?", sandbox.ID).
+			Update("name", renamed).Error; err != nil {
+			return fmt.Errorf("rename duplicate sandbox %s: %w", sandbox.ID, err)
+		}
+		log.Printf("renamed sandbox %s from %q to %q: sandbox names are now unique within a project", sandbox.ID, sandbox.Name, renamed)
+	}
+	return nil
 }

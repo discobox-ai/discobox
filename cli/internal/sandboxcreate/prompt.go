@@ -118,20 +118,47 @@ type promptSandboxCreator interface {
 	CreateSandbox(context.Context, *apimodel.CreateSandboxBody, apiclientgen.CreateSandboxParams) (apiclientgen.CreateSandboxRes, error)
 }
 
-// CreatePromptSandbox builds, submits, and decodes a prompt sandbox request.
+// nameConflictAttempts bounds the retries below. Sandbox names are unique
+// within a project and this one was generated rather than chosen, so a
+// collision is ours to resolve silently — but only a handful of times, since a
+// persistent 409 means something other than bad luck.
+const nameConflictAttempts = 5
+
+// CreatePromptSandbox builds, submits, and decodes a prompt sandbox request,
+// picking another name if the generated one is already taken.
+//
+// Only this path retries: the name here is generated (BuildPromptSandboxBody),
+// so replacing it costs the caller nothing. A name the user typed is theirs,
+// and `box sandbox create --name` reports the conflict instead.
 func CreatePromptSandbox(ctx context.Context, client promptSandboxCreator, projectID string, opts PromptOptions) (*apimodel.Sandbox, error) {
 	body, err := BuildPromptSandboxBody(ctx, opts)
 	if err != nil {
 		return nil, err
 	}
-	res, err := client.CreateSandbox(ctx, body, apiclientgen.CreateSandboxParams{ProjectId: projectID})
-	if err != nil {
-		return nil, err
+	for attempt := 1; ; attempt++ {
+		res, err := client.CreateSandbox(ctx, body, apiclientgen.CreateSandboxParams{ProjectId: projectID})
+		if err != nil {
+			return nil, err
+		}
+		if sandbox, ok := res.(*apimodel.Sandbox); ok {
+			return sandbox, nil
+		}
+		if attempt >= nameConflictAttempts || !isNameConflict(res) {
+			return nil, createResponseError(res)
+		}
+		name, err := randomname.Generate()
+		if err != nil {
+			return nil, fmt.Errorf("generate sandbox name: %w", err)
+		}
+		body.Config.Name = name
 	}
-	if sandbox, ok := res.(*apimodel.Sandbox); ok {
-		return sandbox, nil
-	}
-	return nil, createResponseError(res)
+}
+
+// isNameConflict reports whether res is the conflict a duplicate sandbox name
+// produces. Create has no other 409, so the status alone identifies it.
+func isNameConflict(res any) bool {
+	problem, ok := res.(*apiclientgen.ErrorModelStatusCode)
+	return ok && problem.StatusCode == http.StatusConflict
 }
 
 func createResponseError(res any) error {

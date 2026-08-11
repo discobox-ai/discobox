@@ -423,3 +423,22 @@ func (s *Store) OpenSandboxSecretState(ctx context.Context, sandbox *model.Sandb
 func sandboxSecretResourceID(sandbox *model.Sandbox) string {
 	return sandbox.ProjectID + "/" + sandbox.ID
 }
+
+// SandboxNameTaken reports whether a sandbox already holds name in the project.
+// It backs the friendly conflict the API returns before the
+// idx_sandbox_project_name unique index would reject the insert with a driver
+// error. The index remains the authority — two concurrent creates can both pass
+// this check — but the race is narrow and the loser still fails safely.
+func (s *Store) SandboxNameTaken(ctx context.Context, projectID, name string) (bool, error) {
+	read, err := s.getRead(ctx)
+	if err != nil {
+		return false, err
+	}
+	var count int64
+	if err := read.Model(&model.Sandbox{}).
+		Where("project_id = ? AND name = ?", projectID, name).
+		Count(&count).Error; err != nil {
+		return false, err
+	}
+	return count > 0, nil
+}

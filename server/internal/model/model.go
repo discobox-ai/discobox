@@ -594,10 +594,10 @@ func (m SandboxManifest) Fingerprint() string {
 // Sandbox is the managed runtime/session unit.
 type Sandbox struct {
 	ID                string  `gorm:"primaryKey;type:text" json:"id" doc:"Stable sandbox ID"`
-	ProjectID         string  `gorm:"column:project_id;not null;type:text;index" json:"projectId" doc:"Project ID"`
+	ProjectID         string  `gorm:"column:project_id;not null;type:text;index;uniqueIndex:idx_sandbox_project_name,priority:1" json:"projectId" doc:"Project ID"`
 	CreatedByUserID   string  `gorm:"column:created_by_user_id;not null;type:text;index" json:"createdByUserId" doc:"Creating user ID"`
 	PoolID            string  `gorm:"column:pool_id;not null;type:text;index" json:"poolId" doc:"Pool the sandbox is scheduled into. Resolved at create, immutable after."`
-	Name              string  `gorm:"not null;type:text" json:"name" doc:"Sandbox name" maxLength:"200"`
+	Name              string  `gorm:"column:name;not null;type:text;uniqueIndex:idx_sandbox_project_name,priority:2" json:"name" doc:"Sandbox name, unique within its project" maxLength:"200"`
 	Description       *string `gorm:"type:text" json:"description,omitempty" doc:"Sandbox description"`
 	SandboxManifest   `gorm:"embedded"`
 	ResourceLifecycle `gorm:"embedded"`

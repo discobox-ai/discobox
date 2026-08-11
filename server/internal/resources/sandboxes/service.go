@@ -132,6 +132,19 @@ func (s *Service) CreateSandbox(ctx context.Context, projectID string, input ser
 	if strings.TrimSpace(config.Name) == "" {
 		return nil, fmt.Errorf("sandbox name is required")
 	}
+	// Names are unique within a project (idx_sandbox_project_name) because they
+	// are an addressable handle, not just a label: `disco box ssh-config` emits
+	// one as an ssh_config Host alias, and ssh applies the first matching block,
+	// so a second sandbox answering to the same name would silently take the
+	// first one's connections.
+	taken, err := s.store.SandboxNameTaken(ctx, projectID, config.Name)
+	if err != nil {
+		return nil, err
+	}
+	if taken {
+		return nil, apperrors.NewStatusError(http.StatusConflict,
+			fmt.Sprintf("a sandbox named %q already exists in this project", config.Name))
+	}
 	userID := s.defaultUserID
 	if authenticatedUserID, err := auth.UserID(ctx); err == nil {
 		userID = authenticatedUserID
