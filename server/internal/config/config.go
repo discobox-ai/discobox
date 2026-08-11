@@ -74,6 +74,13 @@ type Config struct {
 
 	// Sandbox settings.
 	DefaultSandboxImage string
+	// DefaultSandboxImageDigest is the identity behind DefaultSandboxImage.
+	// Sandboxes with no harness config run the default image, and the tag alone
+	// cannot say which build that is — dev workflows rebuild tags in place — so
+	// the digest is what lets such a sandbox report and take an upgrade
+	// (ADR 0016 §1's "a digest and not just a tag"). Empty when unknown, which
+	// simply means those sandboxes report no upgrade.
+	DefaultSandboxImageDigest string
 
 	// HarnessImages overrides built-in harness definition images, keyed by
 	// definition ID. Dev builds populate this from DISCOBOX_HARNESS_<ID>_IMAGE
@@ -116,6 +123,7 @@ func Load() (*Config, error) {
 	cfg.DispatcherPollInterval = getEnvDuration("DISPATCHER_POLL_INTERVAL", time.Second)
 	cfg.SandboxReconcileJobConcurrency = getEnvInt("SANDBOX_RECONCILE_JOB_CONCURRENCY", 4)
 	cfg.DefaultSandboxImage = getEnv("DISCOBOX_DEFAULT_SANDBOX_IMAGE", sandbox.DefaultSandboxImageName)
+	cfg.DefaultSandboxImageDigest = getEnv("DISCOBOX_DEFAULT_SANDBOX_IMAGE_DIGEST", "")
 	cfg.HarnessImages = harnessdefs.ImageOverridesFromEnv(os.Getenv)
 	developmentImageSync, err := getEnvBool(devimage.SyncEnv, false)
 	if err != nil {

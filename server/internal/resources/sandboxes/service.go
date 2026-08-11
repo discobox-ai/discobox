@@ -25,14 +25,15 @@ import (
 // Service owns sandbox API behavior, orchestration, provider catalog state, and
 // sandbox auth dependencies.
 type Service struct {
-	store            *store.Store
-	engine           *reconcile.Engine
-	sandboxProviders *sandbox.ProviderManager
-	providerStore    any
-	sandboxAuth      *sandboxauth.Manager
-	defaultUserID    string
-	defaultImage     string
-	hostID           string
+	store              *store.Store
+	engine             *reconcile.Engine
+	sandboxProviders   *sandbox.ProviderManager
+	providerStore      any
+	sandboxAuth        *sandboxauth.Manager
+	defaultUserID      string
+	defaultImage       string
+	defaultImageDigest string
+	hostID             string
 }
 
 func NewService(store *store.Store, manager *sandbox.ProviderManager, defaultUserID string, engine *reconcile.Engine, providerStore ...any) *Service {
@@ -62,10 +63,15 @@ func (s *Service) SetSandboxAuthManager(manager *sandboxauth.Manager) {
 	s.sandboxAuth = manager
 }
 
-func (s *Service) SetDefaultSandboxImage(image string) {
+// SetDefaultSandboxImage records the image a sandbox with no harness config
+// runs, and the digest identifying which build that tag currently is. They are
+// set together because they are one identity: the tag says what to run, and
+// only the digest says whether a sandbox already runs it.
+func (s *Service) SetDefaultSandboxImage(image, digest string) {
 	if image = strings.TrimSpace(image); image != "" {
 		s.defaultImage = image
 	}
+	s.defaultImageDigest = strings.TrimSpace(digest)
 }
 
 // SetHostID records the machine this server runs on, so a create request whose
@@ -203,7 +209,10 @@ func (s *Service) CreateSandbox(ctx context.Context, projectID string, input ser
 		}
 	}
 	if image == "" {
-		image = s.defaultImage
+		// No harness config: the sandbox runs the server's default image, which
+		// is a choice of image rather than the absence of one, so pin its
+		// identity the same way a harness image is pinned.
+		image, imageDigest = s.defaultImage, s.defaultImageDigest
 	}
 	sandbox := &model.Sandbox{
 		ID:              sandboxID,
@@ -546,17 +555,17 @@ func (s *Service) UpgradeSandbox(ctx context.Context, projectID, sandboxID strin
 		return nil, err
 	}
 	if !target.Available {
-		// Distinguish "nothing newer" from "nothing to move to". A sandbox on the
-		// default image, or one whose harness config was deleted or declares no
-		// image, has no harness image to upgrade to, and telling its owner it is
-		// running "its harness config's current image" asserts something that is
-		// not true of it.
+		// Distinguish "nothing newer" from "nothing to move to". A config-mode
+		// sandbox, one whose harness config was deleted or declares no image,
+		// and one whose target image has no known digest all have nothing to
+		// move to, and telling their owner they are running "the current image"
+		// asserts something that is not true of them.
 		if strings.TrimSpace(target.Digest) == "" {
 			return nil, apperrors.NewStatusError(http.StatusConflict,
-				"sandbox has no harness image to upgrade to")
+				"sandbox has no image to upgrade to")
 		}
 		return nil, apperrors.NewStatusError(http.StatusConflict,
-			"sandbox is already running its harness config's current image")
+			"sandbox is already running its current image")
 	}
 	// The re-pin is the whole instruction: a changed image digest changes the
 	// spec fingerprint, and the pool host rebuilds any container that does not
@@ -571,37 +580,38 @@ func (s *Service) UpgradeSandbox(ctx context.Context, projectID, sandboxID strin
 	return sandbox, nil
 }
 
-// upgradeTarget reports what an upgrade would move the sandbox to.
-//
-// It is derived on every read rather than stored: a cached flag would have to
-// be invalidated by every path that writes a harness config — seeding,
-// registration, refresh, configure, deconfigure — and the first one that forgot
-// would leave a sandbox lying about its own state.
+// upgradeTarget reports what an upgrade would move the sandbox to, loading the
+// harness config the shared rule needs. The rule itself lives in
+// services.SandboxUpgradeTarget so this and the read path that reports an
+// available upgrade cannot answer differently.
 func (s *Service) upgradeTarget(ctx context.Context, sb *model.Sandbox) (UpgradeTarget, error) {
-	target := UpgradeTarget{Image: sb.Image, Digest: sb.ImageDigest}
-	// A sandbox with no harness config has no image to move to, and a
-	// config-mode sandbox is running the configure command against a
-	// deliberately fixed image. An unpinned sandbox under an image-bearing
-	// harness config is still eligible: created before pinning existed, or
-	// while the config's digest was unknown, it is the strongest candidate for
-	// adopting the config's current image, not an exclusion case.
-	if sb.HarnessConfigID == nil || sb.HarnessMode == "config" {
-		return target, nil
-	}
-	config, err := s.store.GetHarnessConfig(ctx, sb.ProjectID, strings.TrimSpace(*sb.HarnessConfigID))
-	if err != nil {
-		if errors.Is(err, store.ErrNotFound) {
-			return target, nil
+	var config *model.HarnessConfig
+	if sb.HarnessConfigID != nil {
+		loaded, err := s.store.GetHarnessConfig(ctx, sb.ProjectID, strings.TrimSpace(*sb.HarnessConfigID))
+		if err != nil && !errors.Is(err, store.ErrNotFound) {
+			return UpgradeTarget{}, err
 		}
-		return UpgradeTarget{}, err
+		config = loaded
 	}
-	image, digest := strings.TrimSpace(config.Image), strings.TrimSpace(config.ImageDigest)
-	if image == "" || digest == "" {
-		return target, nil
+	target, available := services.SandboxUpgradeTarget(sb, config, s.defaultImageIdentity())
+	if target.Digest == "" {
+		// Nothing to move to: report what it runs now, so callers can tell that
+		// apart from an upgrade that is merely already applied.
+		return UpgradeTarget{Image: sb.Image, Digest: sb.ImageDigest}, nil
 	}
-	target.Image, target.Digest = image, digest
-	target.Available = digest != strings.TrimSpace(sb.ImageDigest)
-	return target, nil
+	return UpgradeTarget{Image: target.Image, Digest: target.Digest, Available: available}, nil
+}
+
+// defaultImageIdentity is what a sandbox with no harness config runs, and
+// therefore what it upgrades to.
+func (s *Service) defaultImageIdentity() services.SandboxImageTarget {
+	return services.SandboxImageTarget{Image: s.defaultImage, Digest: s.defaultImageDigest}
+}
+
+// DefaultSandboxImage exposes that identity to the API mappers, which report a
+// sandbox's available upgrade and need the same answer this service applies.
+func (s *Service) DefaultSandboxImage() services.SandboxImageTarget {
+	return s.defaultImageIdentity()
 }
 
 // UpgradeTarget is what an upgrade would pin the sandbox to, and whether that

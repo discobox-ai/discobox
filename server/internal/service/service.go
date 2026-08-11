@@ -129,8 +129,8 @@ func (s *Service) SetSandboxAuthManager(manager *sandboxauth.Manager) {
 	s.Service.SetSandboxAuthManager(manager)
 }
 
-func (s *Service) SetDefaultSandboxImage(image string) {
-	s.Service.SetDefaultSandboxImage(image)
+func (s *Service) SetDefaultSandboxImage(image, digest string) {
+	s.Service.SetDefaultSandboxImage(image, digest)
 }
 
 func (s *Service) SetHostID(hostID string) {

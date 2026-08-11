@@ -158,7 +158,7 @@ func TestSandboxReconcileExecutorDelegatesToProvider(t *testing.T) {
 func TestCreateSandboxUsesDefaultSandboxImage(t *testing.T) {
 	ctx := context.Background()
 	svc, _, _, projectID := newSandboxTestService(t, nil)
-	svc.SetDefaultSandboxImage("discobox-sandbox-agent:default")
+	svc.SetDefaultSandboxImage("discobox-sandbox-agent:default", "sha256:default")
 	provider := &recordingSandboxProvider{}
 	svc.RegisterSandboxProvider("recording", provider)
 	providerInstance, err := svc.CreateSandboxProviderInstance(ctx, projectID, services.CreateSandboxProviderInstanceBody{
@@ -192,7 +192,7 @@ func TestCreateSandboxUsesDefaultSandboxImage(t *testing.T) {
 func TestCreateSandboxExplicitImageOverridesDefault(t *testing.T) {
 	ctx := context.Background()
 	svc, _, _, projectID := newSandboxTestService(t, nil)
-	svc.SetDefaultSandboxImage("discobox-sandbox-agent:default")
+	svc.SetDefaultSandboxImage("discobox-sandbox-agent:default", "sha256:default")
 	provider := &recordingSandboxProvider{}
 	svc.RegisterSandboxProvider("recording", provider)
 	providerInstance, err := svc.CreateSandboxProviderInstance(ctx, projectID, services.CreateSandboxProviderInstanceBody{

@@ -118,7 +118,7 @@ func TestUpgradeTargetOffersConfigImageToUnpinnedSandboxes(t *testing.T) {
 
 // A config-mode sandbox runs the configure command against a deliberately fixed
 // image, and a sandbox with no harness config has no image to move to.
-func TestUpgradeTargetIgnoresConfigModeAndHarnesslessSandboxes(t *testing.T) {
+func TestUpgradeTargetIgnoresConfigModeSandboxes(t *testing.T) {
 	ctx := context.Background()
 	svc, st := newBindingFixture(t)
 	config := imagedConfig(t, st, "discobox-harness-codex:local", "sha256:new")
@@ -128,10 +128,66 @@ func TestUpgradeTargetIgnoresConfigModeAndHarnesslessSandboxes(t *testing.T) {
 	if target, err := svc.upgradeTarget(ctx, configMode); err != nil || target.Available {
 		t.Fatalf("config-mode target = %+v, %v; want unavailable", target, err)
 	}
+}
 
-	harnessless := pinnedSandbox(t, st, "", "discobox-harness-codex:local", "sha256:old")
+// TestUpgradeTargetForHarnesslessSandboxIsTheDefaultImage: having no harness
+// config is a choice of image, not the absence of one, and the image it chose
+// is the thing carrying the sandbox agent. Leaving these pinned forever
+// stranded them on whatever agent shipped the day they were created.
+func TestUpgradeTargetForHarnesslessSandboxIsTheDefaultImage(t *testing.T) {
+	ctx := context.Background()
+	svc, st := newBindingFixture(t)
+	svc.SetDefaultSandboxImage("discobox-sandbox-agent:dev-new", "sha256:default-new")
+
+	harnessless := pinnedSandbox(t, st, "", "discobox-sandbox-agent:dev-old", "sha256:default-old")
+	target, err := svc.upgradeTarget(ctx, harnessless)
+	if err != nil {
+		t.Fatalf("upgrade target: %v", err)
+	}
+	if !target.Available {
+		t.Fatalf("target = %+v, want an available upgrade to the default image", target)
+	}
+	if target.Image != "discobox-sandbox-agent:dev-new" || target.Digest != "sha256:default-new" {
+		t.Fatalf("target = %+v, want the server's current default image", target)
+	}
+
+	// Already on it: same digest, nothing to do — the tag alone must not decide,
+	// since dev workflows rebuild tags in place.
+	current := pinnedSandbox(t, st, "", "discobox-sandbox-agent:dev-new", "sha256:default-new")
+	if target, err := svc.upgradeTarget(ctx, current); err != nil || target.Available {
+		t.Fatalf("target = %+v, %v; want unavailable when already on the default digest", target, err)
+	}
+}
+
+// TestUpgradeTargetForHarnesslessSandboxNeedsAKnownDigest: with no digest for
+// the default image there is nothing to compare, and comparing tags would
+// report "up to date" for every sandbox on a rebuilt tag (ADR 0016 §1).
+func TestUpgradeTargetForHarnesslessSandboxNeedsAKnownDigest(t *testing.T) {
+	ctx := context.Background()
+	svc, st := newBindingFixture(t)
+	svc.SetDefaultSandboxImage("discobox-sandbox-agent:local", "")
+
+	harnessless := pinnedSandbox(t, st, "", "discobox-sandbox-agent:local", "sha256:old")
 	if target, err := svc.upgradeTarget(ctx, harnessless); err != nil || target.Available {
-		t.Fatalf("harnessless target = %+v, %v; want unavailable", target, err)
+		t.Fatalf("target = %+v, %v; want unavailable with no known default digest", target, err)
+	}
+}
+
+// TestUpgradeTargetForUnpinnedHarnesslessSandbox covers every sandbox created
+// before the default image's digest was pinned, which is the population that
+// needs this most.
+func TestUpgradeTargetForUnpinnedHarnesslessSandbox(t *testing.T) {
+	ctx := context.Background()
+	svc, st := newBindingFixture(t)
+	svc.SetDefaultSandboxImage("discobox-sandbox-agent:dev-new", "sha256:default-new")
+
+	unpinned := pinnedSandbox(t, st, "", "discobox-sandbox-agent:dev-old", "")
+	target, err := svc.upgradeTarget(ctx, unpinned)
+	if err != nil {
+		t.Fatalf("upgrade target: %v", err)
+	}
+	if !target.Available || target.Digest != "sha256:default-new" {
+		t.Fatalf("target = %+v, want an available upgrade for an unpinned sandbox", target)
 	}
 }
 

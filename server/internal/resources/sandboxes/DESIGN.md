@@ -20,6 +20,20 @@ flowchart LR
 
 - `Service` exposes sandbox API use cases and may call store directly for simple
   reads or non-orchestrated updates.
+- A sandbox with no harness config runs the server's default sandbox image, and
+  that is a choice of image rather than the absence of one: the default image is
+  what carries the sandbox agent, and a harness image is built on top of the same
+  agent. So it is also what such a sandbox *upgrades* to — leaving these pinned
+  forever stranded them on whatever agent shipped the day they were created,
+  with no way forward but recreation. The comparison needs the default image's
+  digest (`DISCOBOX_DEFAULT_SANDBOX_IMAGE_DIGEST`); with only a
+  tag there is nothing to compare, and tag equality would report "up to date"
+  for every sandbox on a rebuilt tag (ADR 0016 §1).
+- The upgrade rule has exactly one implementation,
+  `services.SandboxUpgradeTarget`, called both by the read path that reports an
+  available upgrade and by `UpgradeSandbox` which applies one. They were
+  separate implementations and drifted: a sandbox could accept an upgrade the
+  listing said it did not have.
 - A sandbox name is unique within its project (`idx_sandbox_project_name`),
   like a pool's or a harness config's. It is an addressable handle, not a
   label: `disco box ssh-config` emits it as an `ssh_config` `Host` alias, and

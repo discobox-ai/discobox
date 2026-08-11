@@ -138,7 +138,7 @@ func SandboxUserFromModel(sandbox *model.Sandbox) *serverapi.SandboxUser {
 	return user
 }
 
-func SandboxToAPI(sandbox *model.Sandbox) (serverapi.Sandbox, error) {
+func SandboxToAPI(sandbox *model.Sandbox, defaultImage SandboxImageTarget) (serverapi.Sandbox, error) {
 	if sandbox == nil {
 		return serverapi.Sandbox{}, nil
 	}
@@ -202,7 +202,7 @@ func SandboxToAPI(sandbox *model.Sandbox) (serverapi.Sandbox, error) {
 	if len(sandbox.AppliedCommits) > 0 {
 		runtime["appliedCommits"] = sandbox.AppliedCommits
 	}
-	if upgrade := SandboxUpgrade(sandbox); upgrade != nil {
+	if upgrade := SandboxUpgrade(sandbox, defaultImage); upgrade != nil {
 		runtime["upgrade"] = upgrade
 	}
 	if len(sandbox.AgentStatus) > 0 {
@@ -238,37 +238,74 @@ func SandboxToAPI(sandbox *model.Sandbox) (serverapi.Sandbox, error) {
 	return Convert[serverapi.Sandbox](fields)
 }
 
-// SandboxUpgrade reports whether the sandbox's harness config now resolves to a
-// different image than the sandbox is pinned to (ADR 0016 §2).
+// SandboxImageTarget is an image identity: the reference to run and the digest
+// saying which build that reference currently is.
+type SandboxImageTarget struct {
+	Image  string
+	Digest string
+}
+
+// SandboxUpgradeTarget reports what an upgrade would move sandbox to, and
+// whether that differs from what it runs now. It is the single implementation
+// of the rule (ADR 0016 §2), shared by the read path that reports an available
+// upgrade and the mutation that applies one — those two answering differently
+// is a sandbox lying about itself.
+//
+// config is the sandbox's harness config, or nil when it has none; defaultImage
+// is the server's default sandbox image. A sandbox with no harness config is
+// not a sandbox with no image: it runs the default, which carries the sandbox
+// agent, and that is what it upgrades to. A config-mode sandbox is running the
+// configure command against a deliberately fixed image and upgrades to nothing.
+//
+// A candidate needs both halves: the reference says what to run, and only the
+// digest says whether the sandbox already runs it. Comparing tags would report
+// "up to date" for every sandbox on a tag its workflow rebuilds in place, which
+// is the failure ADR 0016 §1 exists to prevent. An unpinned sandbox is eligible
+// rather than excluded — its tag may no longer resolve anywhere, so adopting
+// the current image is its only way forward.
+// A zero SandboxImageTarget means there is nothing to move to, which is a
+// different answer from "already up to date" and is reported differently.
+func SandboxUpgradeTarget(sandbox *model.Sandbox, config *model.HarnessConfig, defaultImage SandboxImageTarget) (SandboxImageTarget, bool) {
+	if sandbox.HarnessMode == "config" {
+		return SandboxImageTarget{}, false
+	}
+	candidate := defaultImage
+	if sandbox.HarnessConfigID != nil {
+		if config == nil {
+			return SandboxImageTarget{}, false
+		}
+		candidate = SandboxImageTarget{Image: config.Image, Digest: config.ImageDigest}
+	}
+	image, digest := strings.TrimSpace(candidate.Image), strings.TrimSpace(candidate.Digest)
+	if image == "" || digest == "" {
+		return SandboxImageTarget{}, false
+	}
+	return SandboxImageTarget{Image: image, Digest: digest}, digest != strings.TrimSpace(sandbox.ImageDigest)
+}
+
+// SandboxUpgrade renders the upgrade field of a sandbox API response, or nil
+// when the sandbox has nothing to move to.
 //
 // Derived on every read from the preloaded harness config, never stored: a
 // cached flag would have to be invalidated by every path that writes a harness
 // config, and the first one that forgot would leave a sandbox misreporting its
-// own state. Returns nil when there is no image to move to — a sandbox with no
-// harness config (or one whose config declares no image), or a config-mode
-// sandbox, which runs a deliberately fixed image. An unpinned sandbox under an
-// image-bearing config does report an upgrade: its tag may no longer resolve
-// anywhere, and adopting the config's current image is its only way forward.
-func SandboxUpgrade(sandbox *model.Sandbox) map[string]any {
-	if sandbox == nil || sandbox.HarnessMode == "config" {
+// own state.
+func SandboxUpgrade(sandbox *model.Sandbox, defaultImage SandboxImageTarget) map[string]any {
+	if sandbox == nil {
 		return nil
 	}
-	config := sandbox.HarnessConfig
-	if config == nil {
-		return nil
-	}
-	target, targetDigest := strings.TrimSpace(config.Image), strings.TrimSpace(config.ImageDigest)
-	if target == "" || targetDigest == "" {
+	target, available := SandboxUpgradeTarget(sandbox, sandbox.HarnessConfig, defaultImage)
+	if target.Digest == "" {
 		return nil
 	}
 	upgrade := map[string]any{
-		"available":          targetDigest != strings.TrimSpace(sandbox.ImageDigest),
+		"available":          available,
 		"currentImage":       sandbox.Image,
 		"currentImageDigest": sandbox.ImageDigest,
-		"targetImage":        target,
-		"targetImageDigest":  targetDigest,
+		"targetImage":        target.Image,
+		"targetImageDigest":  target.Digest,
 	}
-	if upgrade["available"] == true {
+	if available {
 		upgrade["reason"] = "imageDigestChanged"
 	}
 	return upgrade
@@ -309,10 +346,10 @@ func SandboxDisplayState(sandbox *model.Sandbox) string {
 	}
 }
 
-func SandboxesToAPI(sandboxes []model.Sandbox) ([]serverapi.Sandbox, error) {
+func SandboxesToAPI(sandboxes []model.Sandbox, defaultImage SandboxImageTarget) ([]serverapi.Sandbox, error) {
 	out := make([]serverapi.Sandbox, 0, len(sandboxes))
 	for i := range sandboxes {
-		converted, err := SandboxToAPI(&sandboxes[i])
+		converted, err := SandboxToAPI(&sandboxes[i], defaultImage)
 		if err != nil {
 			return nil, err
 		}

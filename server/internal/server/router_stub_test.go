@@ -128,6 +128,10 @@ func (s *routerTestServices) ForceJob(_ context.Context, projectID, _ string) (*
 	return nil, apperrors.NewStatusError(http.StatusNotFound, "job not found")
 }
 
+func (s *routerTestServices) DefaultSandboxImage() services.SandboxImageTarget {
+	return services.SandboxImageTarget{Image: "discobox-sandbox-agent:stub", Digest: "sha256:stub"}
+}
+
 func (s *routerTestServices) ListSandboxes(_ context.Context, projectID, sourceRoot, _ string) ([]model.Sandbox, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()

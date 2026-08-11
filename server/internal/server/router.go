@@ -49,6 +49,10 @@ type AppOptions struct {
 
 	SandboxReconcileJobConcurrency int
 	DefaultSandboxImage            string
+	// DefaultSandboxImageDigest identifies which build DefaultSandboxImage's
+	// tag currently is, so a sandbox running the default image can tell whether
+	// it is already on it. See config.Config.
+	DefaultSandboxImageDigest string
 	// HostID identifies the machine this server runs on; see config.Config.
 	HostID string
 
@@ -144,7 +148,7 @@ func NewApp(ctx context.Context, writeDB, readDB *gorm.DB, options ...AppOptions
 		ControlPlaneStreams:            controlPlaneStreams,
 		ListenEndpoints:                opts.ListenEndpoints,
 	}, broker)
-	appServices.SetDefaultSandboxImage(opts.DefaultSandboxImage)
+	appServices.SetDefaultSandboxImage(opts.DefaultSandboxImage, opts.DefaultSandboxImageDigest)
 	appServices.SetHostID(opts.HostID)
 	appServices.SetHarnessImages(opts.HarnessImages)
 	if opts.SecretSealer != nil {

@@ -226,7 +226,9 @@ func TestCreateSandboxDerivesSourceRootFromPrimarySource(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			created, err := svc.CreateSandbox(ctx, projectID, services.CreateSandboxBody{
 				Config: serverapi.SandboxCreateConfig{
-					Name:   "alpha",
+					// Distinct per case: sandbox names are unique within a
+					// project, and both cases create one in the same project.
+					Name:   "alpha-" + strings.ReplaceAll(tc.name, " ", "-"),
 					Source: serverapi.NewOptGitSource(tc.source),
 				},
 			})
