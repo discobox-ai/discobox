@@ -291,10 +291,15 @@ func buildCreateExecRequest(target execTarget, ptyRequested bool, cols, rows uin
 	return req
 }
 
-// createAndDialExec POSTs the exec create request and dials its attach
-// websocket, both against the pool-agent target the lease resolves to — the
-// same chain sandboxAgentTerminalProxyHandler uses, minus the server's own
-// outer HTTP hop (ADR 0024 §1).
+// createAndDialExec POSTs the exec create request, dials its attach websocket,
+// and starts the exec, all against the pool-agent target the lease resolves to
+// — the same chain sandboxAgentTerminalProxyHandler uses, minus the server's
+// own outer HTTP hop (ADR 0024 §1).
+//
+// An exec is created suspended and runs only once started, so the order here
+// is load-bearing and matches the CLI's: attach first, then start. A fast
+// command's output is broadcast as it exits, so starting before the attach
+// websocket is open races the exec to its own output.
 func createAndDialExec(ctx context.Context, lease *transport.HTTPClientLease, sandboxModel *model.Sandbox, execReq sandboxgen.CreateSandboxExecRequest) (*frameConn, error) {
 	client := sandboxagentclient.HTTPClient(lease)
 
@@ -330,7 +335,41 @@ func createAndDialExec(ctx context.Context, lease *transport.HTTPClientLease, sa
 	if err != nil {
 		return nil, err
 	}
-	return dialFrameWebSocket(ctx, client, attachURL, "attach exec")
+	conn, err := dialFrameWebSocket(ctx, client, attachURL, "attach exec")
+	if err != nil {
+		return nil, err
+	}
+	if err := startExec(ctx, client, lease, sandboxModel, created.Exec.ID); err != nil {
+		conn.Close()
+		return nil, err
+	}
+	return conn, nil
+}
+
+// startExec runs the created exec. It is a separate call from create because
+// the sandbox agent creates an exec suspended so a client can attach without
+// racing its output; see createAndDialExec for the ordering that depends on it.
+func startExec(ctx context.Context, client *http.Client, lease *transport.HTTPClientLease, sandboxModel *model.Sandbox, execID string) error {
+	startURL, err := sandboxagentclient.TargetURL(lease.BaseURL, sandboxModel.ProjectID, sandboxModel.PoolID, sandboxModel.ID,
+		"/execs/"+url.PathEscape(execID)+"/start")
+	if err != nil {
+		return err
+	}
+	httpReq, err := http.NewRequestWithContext(ctx, http.MethodPost, startURL.String(), nil)
+	if err != nil {
+		return err
+	}
+	resp, err := client.Do(httpReq)
+	if err != nil {
+		return fmt.Errorf("start exec: %w", err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode/100 != 2 {
+		data, _ := io.ReadAll(io.LimitReader(resp.Body, 64*1024))
+		return fmt.Errorf("start exec: %s: %s", resp.Status, strings.TrimSpace(string(data)))
+	}
+	_, _ = io.Copy(io.Discard, io.LimitReader(resp.Body, 64*1024))
+	return nil
 }
 
 // pump bridges the SSH channel and the exec attach connection until the exec

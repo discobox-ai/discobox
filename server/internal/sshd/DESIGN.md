@@ -67,9 +67,13 @@ an unauthenticated connection attempt must not learn what exists.
 dispatches `shell`/`exec`/`subsystem` (only one legal per channel) to
 `attach`, which calls `AcquireSandboxHTTPClient`, POSTs a
 `CreateSandboxExecRequest` to the pool-agent target
-(`sandboxagentclient.TargetURL`), and dials the exec's attach websocket
-(`dial.go`'s `dialFrameWebSocket`, shared with the TCP tunnel below). Two
-pump goroutines then bridge the SSH channel and the exec's frame stream:
+(`sandboxagentclient.TargetURL`), dials the exec's attach websocket
+(`dial.go`'s `dialFrameWebSocket`, shared with the TCP tunnel below), and
+only then POSTs `/start`. That order is load-bearing and matches the CLI's:
+an exec is created suspended, and a fast command broadcasts its output as it
+exits, so starting before the attach is open races the exec to its own
+output — while never starting leaves the session hanging on a suspended exec.
+Two pump goroutines then bridge the SSH channel and the exec's frame stream:
 `Input`/`CloseInput` one way, `Stdout`/`Stderr`/`Exit` the other.
 `exec "cmd"` needed a primitive extension — `CreateRequest.ShellCommandLine`
 in `sandbox-agent/execs` — because SSH's `exec` carries one opaque
