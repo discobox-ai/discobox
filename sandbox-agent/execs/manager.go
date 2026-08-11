@@ -85,8 +85,13 @@ type CreateRequest struct {
 	// `exec "cmd"` channel type carries one opaque command-line string — that
 	// cannot resolve the login shell path themselves (ADR 0024 §2).
 	ShellCommandLine string
-	Workdir          string
-	Env              map[string]string
+	// Workdir is the working directory for the exec process. An empty value
+	// takes the sandbox's configured default (the primary source directory).
+	// A leading `~` or `~/` is expanded against the run user's home directory,
+	// which is how a caller outside the sandbox asks for "start where a login
+	// shell would" without knowing what that path is.
+	Workdir string
+	Env     map[string]string
 	User             *User
 	TTY              bool
 	Rows             uint16
@@ -298,10 +303,6 @@ func EnvWithRuntimeDefaults(env map[string]string, user *User) map[string]string
 }
 
 func (m *Manager) Create(ctx context.Context, req CreateRequest) (Exec, error) {
-	workdir, err := m.resolveWorkdir(req.Workdir)
-	if err != nil {
-		return Exec{}, err
-	}
 	// Resolve before anything reads the identity, so the shell, the env
 	// defaults, and the persisted record all describe one fully-known user.
 	user, err := m.ResolveUser(req)
@@ -309,6 +310,12 @@ func (m *Manager) Create(ctx context.Context, req CreateRequest) (Exec, error) {
 		return Exec{}, err
 	}
 	env := EnvWithRuntimeDefaults(MergeEnv(m.env, req.Env), user)
+	// The workdir is resolved after the run user and env, because `~` expands
+	// against the home directory of the identity the exec actually runs as.
+	workdir, err := m.resolveWorkdir(req.Workdir, HomeDir(user, env))
+	if err != nil {
+		return Exec{}, err
+	}
 	// The shell is resolved against the run user and env the exec will actually
 	// have, so it is the shell of the identity the process runs as.
 	command, err := resolveCommand(req, user, env)
@@ -604,23 +611,58 @@ func (m *Manager) WaitForExit(ctx context.Context, id string, timeout, poll time
 }
 
 // ResolveWorkdir resolves a requested workdir against the manager's working
-// root and default, exported so the terminal layer resolves workdirs
-// identically before harness resolution and install.
-func (m *Manager) ResolveWorkdir(requested string) (string, error) {
-	return m.resolveWorkdir(requested)
+// root and default, expanding a leading `~` against home. It is exported so
+// the terminal layer resolves workdirs identically before harness resolution
+// and install; home comes from HomeDir.
+func (m *Manager) ResolveWorkdir(requested, home string) (string, error) {
+	return m.resolveWorkdir(requested, home)
 }
 
-func (m *Manager) resolveWorkdir(requested string) (string, error) {
+func (m *Manager) resolveWorkdir(requested, home string) (string, error) {
 	if strings.TrimSpace(requested) == "" {
 		requested = m.defaultWorkdir
 	}
 	if strings.TrimSpace(requested) == "" {
 		return m.workingRoot, nil
 	}
+	requested, err := expandHome(requested, home)
+	if err != nil {
+		return "", err
+	}
 	if !filepath.IsAbs(requested) {
 		requested = filepath.Join(m.workingRoot, requested)
 	}
 	return filepath.Clean(requested), nil
+}
+
+// expandHome expands a leading `~` or `~/` against home, leaving every other
+// path untouched. A `~` that cannot be expanded is an error rather than a
+// silent fallback: the caller asked for the home directory specifically, and
+// quietly running somewhere else instead is the kind of difference that only
+// shows up later as files written to the wrong place.
+func expandHome(path, home string) (string, error) {
+	if path != "~" && !strings.HasPrefix(path, "~/") {
+		return path, nil
+	}
+	if strings.TrimSpace(home) == "" {
+		return "", errors.New("cannot expand ~ in workdir: the exec user has no home directory")
+	}
+	if path == "~" {
+		return home, nil
+	}
+	return filepath.Join(home, strings.TrimPrefix(path, "~/")), nil
+}
+
+// HomeDir resolves the run user's home directory: the explicit or passwd value
+// runuser.NameAndHome yields, falling back to env HOME for a user that has no passwd
+// entry (a bare UID) but whose environment still names a home. It is the input
+// to ResolveWorkdir's `~` expansion, shared so the exec and terminal layers
+// cannot disagree about where home is.
+func HomeDir(user *User, env map[string]string) string {
+	if _, home, err := ResolveNameAndHome(user); err == nil && strings.TrimSpace(home) != "" {
+		return home
+	}
+	return strings.TrimSpace(env["HOME"])
 }
 
 // resolveCommand yields the argv the exec runs: the requested command, or the

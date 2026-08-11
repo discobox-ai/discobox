@@ -98,7 +98,8 @@ type CreateSandboxExecRequest struct {
 	Tty OptBool `json:"tty"`
 	// User identity used to run the exec process.
 	User OptSandboxUser `json:"user"`
-	// Working directory for the exec process.
+	// Working directory for the exec process. Defaults to the sandbox's primary source directory. A
+	// leading `~` or `~/` is expanded against the run user's home directory inside the sandbox.
 	Workdir OptString `json:"workdir"`
 }
 
@@ -1316,7 +1317,8 @@ type SandboxExec struct {
 	Unit OptString `json:"unit"`
 	// User identity used to run the exec process.
 	User OptSandboxUser `json:"user"`
-	// Working directory for the exec process.
+	// Working directory for the exec process. Defaults to the sandbox's primary source directory. A
+	// leading `~` or `~/` is expanded against the run user's home directory inside the sandbox.
 	Workdir string `json:"workdir"`
 }
 

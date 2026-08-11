@@ -28,6 +28,12 @@ import (
 // in ADR 0024 needs.
 const sftpServerPath = "/usr/lib/openssh/sftp-server"
 
+// sessionHomeWorkdir is the workdir every session channel requests. The
+// sandbox expands `~` against the run user's home directory
+// (sandbox-agent/execs), since sshd runs outside the sandbox and cannot know
+// that path.
+const sessionHomeWorkdir = "~"
+
 // allowedSessionEnvName restricts SSH "env" requests to the row ADR 0024 §2
 // specifies. Anything else is silently dropped rather than erroring, since
 // clients routinely offer more than a server accepts.
@@ -263,6 +269,13 @@ func (sess *sshSession) attach(ctx context.Context, req *ssh.Request, target exe
 
 func buildCreateExecRequest(target execTarget, ptyRequested bool, cols, rows uint16, term string, env map[string]string) sandboxgen.CreateSandboxExecRequest {
 	req := sandboxgen.CreateSandboxExecRequest{}
+	// SSH starts a session in the user's home directory, and every tool built
+	// on it assumes that: `scp file host:` and sftp resolve relative paths
+	// there. The sandbox's own exec default is the primary source directory,
+	// which is right for `disco shell` but would silently write uploads into
+	// the sandbox's git working tree. `~` is resolved inside the sandbox,
+	// which is the only place that knows the run user's home.
+	req.Workdir = sandboxgen.NewOptString(sessionHomeWorkdir)
 	if len(target.command) > 0 {
 		req.Command = target.command
 	} else {

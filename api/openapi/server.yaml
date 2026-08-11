@@ -624,7 +624,7 @@ components:
                         type: string
                     type: array
                 workdir:
-                    description: Working directory for the exec process.
+                    description: Working directory for the exec process. Defaults to the sandbox's primary source directory. A leading `~` or `~/` is expanded against the run user's home directory inside the sandbox.
                     type: string
                 env:
                     additionalProperties:
@@ -777,7 +777,7 @@ components:
                         type: string
                     type: array
                 workdir:
-                    description: Working directory for the exec process.
+                    description: Working directory for the exec process. Defaults to the sandbox's primary source directory. A leading `~` or `~/` is expanded against the run user's home directory inside the sandbox.
                     type: string
                 env:
                     additionalProperties:

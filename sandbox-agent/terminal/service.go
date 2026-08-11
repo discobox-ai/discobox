@@ -176,10 +176,6 @@ func (s *Service) Logs(ctx context.Context, id string) ([]execs.LogEntry, error)
 // record exists and the mapper projects it as the "installing" phase. The unit
 // is only launched later by Start, so the record sits idle during install.
 func (s *Service) Create(ctx context.Context, req CreateRequest) (execs.Exec, error) {
-	workdir, err := s.execs.ResolveWorkdir(req.Workdir)
-	if err != nil {
-		return execs.Exec{}, err
-	}
 	harness, harnessID, err := s.resolveHarness(req.HarnessID)
 	if err != nil {
 		return execs.Exec{}, err
@@ -196,6 +192,12 @@ func (s *Service) Create(ctx context.Context, req CreateRequest) (execs.Exec, er
 		base = execs.MergeEnv(base, s.secretEnv())
 	}
 	env := execs.EnvWithRuntimeDefaults(execs.MergeEnv(base, req.Env), s.defaultUser)
+	// Resolved after env for the same reason the exec layer does it: `~`
+	// expands against the run user's home directory.
+	workdir, err := s.execs.ResolveWorkdir(req.Workdir, execs.HomeDir(s.defaultUser, env))
+	if err != nil {
+		return execs.Exec{}, err
+	}
 	env["DISCOBOX_TERMINAL_ID"] = id
 	if s.hookSocketPath != "" {
 		env["DISCOBOX_HOOK_SOCKET"] = s.hookSocketPath

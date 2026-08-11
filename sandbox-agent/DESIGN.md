@@ -81,6 +81,15 @@ runtime operations.
   means unloaded, not inactive: `systemctl show` succeeds for a unit systemd
   never heard of and calls it inactive, so `UnitStatus.Loaded` — not a status
   error — is what demotes a vanished exec to `lost`.
+- Resolve an exec's workdir after its run user and env, never before: an empty
+  request takes the sandbox's configured default (the primary source
+  directory), a relative path joins the working root, and a leading `~`/`~/`
+  expands against the run user's home directory (`execs.HomeDir`, shared with
+  the terminal layer so the two cannot disagree). `~` is how a caller outside
+  the sandbox — the SSH ingress, whose sessions must start where a login shell
+  would — names a path only the sandbox can resolve. An unresolvable `~` is an
+  error, not a fallback to the default: silently starting somewhere else is
+  what puts `scp` uploads in the source tree.
 - Keep terminal and exec history local. The SQLite store records append-only
   lifecycle events, latest observed runtime state, and retained opaque resource
   samples, but REST runtime state should be derived from runtime/systemd/shim

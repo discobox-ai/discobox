@@ -69,7 +69,13 @@ dispatches `shell`/`exec`/`subsystem` (only one legal per channel) to
 `CreateSandboxExecRequest` to the pool-agent target
 (`sandboxagentclient.TargetURL`), dials the exec's attach websocket
 (`dial.go`'s `dialFrameWebSocket`, shared with the TCP tunnel below), and
-only then POSTs `/start`. That order is load-bearing and matches the CLI's:
+only then POSTs `/start`. Every session channel requests `workdir: "~"`: SSH
+starts a session in the user's home directory and `scp`/`sftp` resolve
+relative paths against it, while the sandbox's own exec default is the primary
+source directory — right for `disco shell`, but it would land uploads inside
+the sandbox's git working tree. The tilde is expanded in the sandbox
+(`sandbox-agent/execs`), the only place that knows the run user's home.
+That order is load-bearing and matches the CLI's:
 an exec is created suspended, and a fast command broadcasts its output as it
 exits, so starting before the attach is open races the exec to its own
 output — while never starting leaves the session hanging on a suspended exec.

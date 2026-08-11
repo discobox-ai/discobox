@@ -745,3 +745,116 @@ func TestManagerRequestGroupsSurviveAManifestWithNoUser(t *testing.T) {
 		}
 	})
 }
+
+// TestManagerExpandsTildeWorkdirAgainstUserHome covers the workdir the SSH
+// ingress asks for. SSH starts a session in the user's home directory and
+// scp/sftp resolve relative paths there, so `~` must land on home rather than
+// on the sandbox's default (the primary source directory) — writing uploads
+// into the source tree is the bug this expansion exists to prevent.
+func TestManagerExpandsTildeWorkdirAgainstUserHome(t *testing.T) {
+	for _, tc := range []struct {
+		name    string
+		workdir string
+		want    string
+	}{
+		{name: "bare tilde", workdir: "~", want: "/home/darren"},
+		{name: "tilde subdirectory", workdir: "~/uploads", want: "/home/darren/uploads"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			runner := &fakeUnitManager{}
+			manager, err := NewManagerWithConfig(ManagerConfig{
+				WorkingRoot:    "/workspace",
+				DefaultWorkdir: "project",
+				DefaultUser:    &User{Name: "darren", HomeDirectory: "/home/darren"},
+				RuntimeDir:     t.TempDir(),
+				Units:          runner,
+			})
+			if err != nil {
+				t.Fatalf("new manager: %v", err)
+			}
+
+			created, err := manager.Create(context.Background(), CreateRequest{
+				Command: []string{"pwd"},
+				Workdir: tc.workdir,
+			})
+			if err != nil {
+				t.Fatalf("create exec: %v", err)
+			}
+			if created.Workdir != tc.want {
+				t.Fatalf("workdir = %q, want %q", created.Workdir, tc.want)
+			}
+			if runner.starts[0].Workdir != tc.want {
+				t.Fatalf("start workdir = %q, want %q", runner.starts[0].Workdir, tc.want)
+			}
+		})
+	}
+}
+
+// TestManagerTildeWorkdirWithoutHomeFails documents the deliberate choice not
+// to silently fall back: a caller that asked for home and got the source
+// directory instead would only find out when files landed in the wrong place.
+func TestManagerTildeWorkdirWithoutHomeFails(t *testing.T) {
+	runner := &fakeUnitManager{}
+	manager, err := NewManagerWithConfig(ManagerConfig{
+		WorkingRoot:    "/workspace",
+		DefaultWorkdir: "project",
+		RuntimeDir:     t.TempDir(),
+		Units:          runner,
+	})
+	if err != nil {
+		t.Fatalf("new manager: %v", err)
+	}
+
+	if _, err := manager.Create(context.Background(), CreateRequest{
+		Command: []string{"pwd"},
+		Workdir: "~",
+	}); err == nil {
+		t.Fatal("expected ~ with no resolvable home directory to fail")
+	}
+}
+
+// TestManagerLeavesNonTildeWorkdirsAlone keeps the expansion narrow: only a
+// leading `~`/`~/` is special, and a relative path still joins the working
+// root as before.
+func TestManagerLeavesNonTildeWorkdirsAlone(t *testing.T) {
+	runner := &fakeUnitManager{}
+	manager, err := NewManagerWithConfig(ManagerConfig{
+		WorkingRoot: "/workspace",
+		DefaultUser: &User{Name: "darren", HomeDirectory: "/home/darren"},
+		RuntimeDir:  t.TempDir(),
+		Units:       runner,
+	})
+	if err != nil {
+		t.Fatalf("new manager: %v", err)
+	}
+
+	for _, tc := range []struct{ workdir, want string }{
+		{workdir: "sub", want: "/workspace/sub"},
+		{workdir: "/etc", want: "/etc"},
+		{workdir: "already~tilde", want: "/workspace/already~tilde"},
+	} {
+		created, err := manager.Create(context.Background(), CreateRequest{
+			Command: []string{"pwd"},
+			Workdir: tc.workdir,
+		})
+		if err != nil {
+			t.Fatalf("create exec %q: %v", tc.workdir, err)
+		}
+		if created.Workdir != tc.want {
+			t.Fatalf("workdir for %q = %q, want %q", tc.workdir, created.Workdir, tc.want)
+		}
+	}
+}
+
+// TestHomeDirFallsBackToEnvHome covers a run user with no passwd entry (a bare
+// UID) whose environment still names a home.
+func TestHomeDirFallsBackToEnvHome(t *testing.T) {
+	uid := int64(4242)
+	got := HomeDir(&User{UID: &uid}, map[string]string{"HOME": "/home/from-env"})
+	if got != "/home/from-env" {
+		t.Fatalf("HomeDir = %q, want /home/from-env", got)
+	}
+	if got := HomeDir(nil, nil); got != "" {
+		t.Fatalf("HomeDir with nothing to resolve = %q, want empty", got)
+	}
+}

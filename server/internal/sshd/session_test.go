@@ -191,6 +191,19 @@ func TestSessionExecStartsTheExecAndStreamsOutput(t *testing.T) {
 	if cmdLine, _ := agent.createBody["shellCommandLine"].(string); cmdLine != "echo hello" {
 		t.Fatalf("shellCommandLine = %q, want %q", cmdLine, "echo hello")
 	}
+	assertHomeWorkdir(t, agent.createBody)
+}
+
+// assertHomeWorkdir pins the workdir every session channel must request. SSH
+// starts a session in the user's home directory; the sandbox's own exec
+// default is the primary source directory, so inheriting it would put `scp
+// file host:` uploads inside the sandbox's git working tree.
+func assertHomeWorkdir(t *testing.T, createBody map[string]any) {
+	t.Helper()
+	workdir, _ := createBody["workdir"].(string)
+	if workdir != sessionHomeWorkdir {
+		t.Fatalf("workdir = %q, want %q (the run user's home directory)", workdir, sessionHomeWorkdir)
+	}
 }
 
 // TestSessionSubsystemSFTPStartsTheExec covers the other dispatch that reaches
@@ -234,4 +247,7 @@ func TestSessionSubsystemSFTPStartsTheExec(t *testing.T) {
 	if tty, _ := agent.createBody["tty"].(bool); tty {
 		t.Fatal("the sftp subsystem must never allocate a pty")
 	}
+	// sftp is where the wrong default bites hardest: a client that uploads to
+	// a bare relative path lands wherever the exec started.
+	assertHomeWorkdir(t, agent.createBody)
 }

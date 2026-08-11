@@ -51,7 +51,7 @@ components:
                     $ref: '#/components/schemas/SandboxUser'
                     description: User identity used to run the exec process.
                 workdir:
-                    description: Working directory for the exec process.
+                    description: Working directory for the exec process. Defaults to the sandbox's primary source directory. A leading `~` or `~/` is expanded against the run user's home directory inside the sandbox.
                     type: string
             type: object
         CreateSandboxExecResponse:
@@ -320,7 +320,7 @@ components:
                     $ref: '#/components/schemas/SandboxUser'
                     description: User identity used to run the exec process.
                 workdir:
-                    description: Working directory for the exec process.
+                    description: Working directory for the exec process. Defaults to the sandbox's primary source directory. A leading `~` or `~/` is expanded against the run user's home directory inside the sandbox.
                     type: string
             required:
                 - id

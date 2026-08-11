@@ -756,7 +756,8 @@ type CreateSandboxExecRequest struct {
 	HarnessId OptString `json:"harnessId"`
 	// Additional command arguments appended to the resolved harness command in terminal mode.
 	Args []string `json:"args"`
-	// Working directory for the exec process.
+	// Working directory for the exec process. Defaults to the sandbox's primary source directory. A
+	// leading `~` or `~/` is expanded against the run user's home directory inside the sandbox.
 	Workdir OptString `json:"workdir"`
 	// Additional environment variables for the exec process.
 	Env OptCreateSandboxExecRequestEnv `json:"env"`
@@ -8784,7 +8785,8 @@ type SandboxExec struct {
 	// control (Ctrl-Z, fg, bg) — see command for what process is literally
 	// executed.
 	StartupCommand []string `json:"startupCommand"`
-	// Working directory for the exec process.
+	// Working directory for the exec process. Defaults to the sandbox's primary source directory. A
+	// leading `~` or `~/` is expanded against the run user's home directory inside the sandbox.
 	Workdir string `json:"workdir"`
 	// Additional environment variables for the exec process.
 	Env OptSandboxExecEnv `json:"env"`
