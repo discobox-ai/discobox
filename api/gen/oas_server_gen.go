@@ -249,6 +249,12 @@ type Handler interface {
 	//
 	// GET /projects/{projectId}
 	GetProject(ctx context.Context, params GetProjectParams) (GetProjectRes, error)
+	// GetSSHIngress implements get-ssh-ingress operation.
+	//
+	// Discover this server's SSH ingress endpoint and host key.
+	//
+	// GET /ssh
+	GetSSHIngress(ctx context.Context) (GetSSHIngressRes, error)
 	// GetSandbox implements get-sandbox operation.
 	//
 	// Get a sandbox.

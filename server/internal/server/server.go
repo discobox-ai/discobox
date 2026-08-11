@@ -80,7 +80,16 @@ func Run(ctx context.Context) error {
 	controlPlaneStreams := carrierhub.New()
 	defer func() { _ = controlPlaneStreams.Close() }()
 
+	// Resolved before the app is built: GET /ssh is an ordinary generated
+	// handler reading services.Services, so the discovery document has to
+	// exist by the time the router does.
+	sshIngress, sshHostKey, err := resolveSSHIngress(cfg)
+	if err != nil {
+		return err
+	}
+
 	router, appServices, appStore, err := NewApp(ctx, db.Write, db.Read, AppOptions{
+		SSHIngress:                     sshIngress,
 		ControlPlaneStreams:            controlPlaneStreams,
 		UserID:                         service.DefaultUserID,
 		SecretSealer:                   sealer,
@@ -109,11 +118,9 @@ func Run(ctx context.Context) error {
 		log.Printf("openapi spec available at %s/openapi.yaml", listener.display)
 		log.Printf("api docs available at %s/docs", listener.display)
 	}
-	sshHostKey, err := startSSHListener(ctx, cfg, appServices, appStore)
-	if err != nil {
+	if err := startSSHListener(ctx, cfg, sshHostKey, appServices, appStore); err != nil {
 		return fmt.Errorf("start SSH listener: %w", err)
 	}
-	registerSSHHostKeyRoute(router, sshHostKey)
 	handler := otelhttp.NewHandler(router, "discobox-server")
 	activity := newActivityTracker()
 	if cfg.AutoShutdownTimeout > 0 {

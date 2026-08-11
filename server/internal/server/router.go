@@ -35,6 +35,12 @@ const (
 type AppOptions struct {
 	UserID string
 
+	// SSHIngress is what GET /ssh serves: the endpoint SSH clients should dial
+	// and the host key to pin. It is resolved by the caller because the
+	// advertised address is configuration and the host key is loaded from the
+	// data directory, neither of which this constructor owns.
+	SSHIngress services.SSHIngress
+
 	SecretSealer secrets.Sealer
 
 	// DispatcherPollInterval is how often the reconcile engine looks for
@@ -152,6 +158,7 @@ func NewApp(ctx context.Context, writeDB, readDB *gorm.DB, options ...AppOptions
 		return nil, services.Services{}, nil, err
 	}
 	svc := services.Services{
+		SSH:            opts.SSHIngress,
 		Projects:       appServices,
 		HarnessConfigs: appServices,
 		Sandboxes:      appServices,

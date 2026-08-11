@@ -141,6 +141,10 @@ type GetProjectRes interface {
 	getProjectRes()
 }
 
+type GetSSHIngressRes interface {
+	getSSHIngressRes()
+}
+
 type GetSandboxAgentStatusRes interface {
 	getSandboxAgentStatusRes()
 }

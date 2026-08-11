@@ -104,6 +104,14 @@ the channel before accepting, matching what a real `sshd` does for a
 refused `-L` target. See `sandbox-agent/DESIGN.md` for the sandbox-side
 dial and pump, and `pool-agent/DESIGN.md` for the proxy route.
 
+## Endpoint discovery
+
+The endpoint and host key are served together by `GET /ssh` (an ordinary
+generated handler over `services.SSHIngress`, resolved in `internal/server`
+before the router is built), so `disco box ssh-config` hard-codes neither. The
+address it reports is the *advertised* one, never the bind address — see
+[`server/DESIGN.md`](../../DESIGN.md#listen-endpoints).
+
 ## Persistent host key
 
 `hostkey.go`'s `LoadOrCreateHostKey` writes an ed25519 key once to

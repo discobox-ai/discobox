@@ -5,9 +5,8 @@ import (
 	"fmt"
 	"log"
 	"net"
-	"net/http"
+	"strings"
 
-	"github.com/go-chi/chi/v5"
 	"golang.org/x/crypto/ssh"
 
 	"github.com/obot-platform/discobox/server/internal/config"
@@ -16,6 +15,30 @@ import (
 	"github.com/obot-platform/discobox/server/internal/sshd"
 	"github.com/obot-platform/discobox/server/internal/store"
 )
+
+// resolveSSHIngress loads the host key and resolves the endpoint clients
+// should dial, producing what GET /ssh serves. It runs before the router is
+// built, because the discovery document is answered by an ordinary generated
+// handler reading services.Services rather than by a hand-wired route bolted
+// on after startup — and the host key is a file in the data directory, so
+// reading it does not depend on the listener being up.
+//
+// A disabled ingress is a resolved value too, not an absent one: clients get
+// {"enabled": false} rather than a 404 they cannot tell from an unknown route.
+func resolveSSHIngress(cfg *config.Config) (services.SSHIngress, ssh.Signer, error) {
+	if cfg.SSHListen == "" {
+		return services.SSHIngress{}, nil, nil
+	}
+	hostKey, err := sshd.LoadOrCreateHostKey(cfg.DataDir)
+	if err != nil {
+		return services.SSHIngress{}, nil, fmt.Errorf("load SSH host key: %w", err)
+	}
+	return services.SSHIngress{
+		Enabled: true,
+		Address: cfg.SSHAdvertiseAddress,
+		HostKey: strings.TrimSpace(string(ssh.MarshalAuthorizedKey(hostKey.PublicKey()))),
+	}, hostKey, nil
+}
 
 // startSSHListener starts the SSH control-plane ingress (ADR 0024) as an
 // additional listener alongside the HTTP one when DISCOBOX_SSH_LISTEN is
@@ -28,16 +51,12 @@ import (
 // to drain the same way — sshd.Server.Serve simply stops accepting and lets
 // ctx cancellation close the listener, matching sshd's own connection
 // lifecycle rather than http.Server's.
-// startSSHListener returns the host key it loaded/generated so the caller can
-// wire GET /ssh/host-key onto the HTTP router; it returns a nil signer,
-// without error, when SSH is disabled.
-func startSSHListener(ctx context.Context, cfg *config.Config, appServices services.Services, appStore *store.Store) (ssh.Signer, error) {
-	if cfg.SSHListen == "" {
-		return nil, nil
-	}
-	hostKey, err := sshd.LoadOrCreateHostKey(cfg.DataDir)
-	if err != nil {
-		return nil, fmt.Errorf("load SSH host key: %w", err)
+//
+// hostKey is the signer resolveSSHIngress already loaded; a nil signer means
+// SSH is disabled and this is a no-op.
+func startSSHListener(ctx context.Context, cfg *config.Config, hostKey ssh.Signer, appServices services.Services, appStore *store.Store) error {
+	if hostKey == nil {
+		return nil
 	}
 	sshServer, err := sshd.NewServer(sshd.Options{
 		HostKey:       hostKey,
@@ -47,32 +66,17 @@ func startSSHListener(ctx context.Context, cfg *config.Config, appServices servi
 		DefaultUserID: service.DefaultUserID,
 	})
 	if err != nil {
-		return nil, fmt.Errorf("initialize SSH server: %w", err)
+		return fmt.Errorf("initialize SSH server: %w", err)
 	}
 	ln, err := new(net.ListenConfig).Listen(ctx, "tcp", cfg.SSHListen)
 	if err != nil {
-		return nil, fmt.Errorf("listen on %s: %w", cfg.SSHListen, err)
+		return fmt.Errorf("listen on %s: %w", cfg.SSHListen, err)
 	}
-	log.Printf("listening on ssh://%s", cfg.SSHListen)
+	log.Printf("listening on ssh://%s (advertised as %s)", cfg.SSHListen, cfg.SSHAdvertiseAddress)
 	go func() {
 		if err := sshServer.Serve(ctx, ln); err != nil && ctx.Err() == nil {
 			log.Printf("ssh server: %v", err)
 		}
 	}()
-	return hostKey, nil
-}
-
-// registerSSHHostKeyRoute serves the server's SSH host public key as a plain
-// authorized_keys(5)-shaped line ("type base64"), the two fields
-// `disco ssh-config` needs to build a known_hosts entry. It is a no-op when
-// SSH is disabled (hostKey is nil).
-func registerSSHHostKeyRoute(router chi.Router, hostKey ssh.Signer) {
-	if hostKey == nil {
-		return
-	}
-	line := ssh.MarshalAuthorizedKey(hostKey.PublicKey())
-	router.Get("/ssh/host-key", func(w http.ResponseWriter, _ *http.Request) {
-		w.Header().Set("Content-Type", "text/plain; charset=utf-8")
-		_, _ = w.Write(line)
-	})
+	return nil
 }

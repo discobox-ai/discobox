@@ -153,7 +153,15 @@ transport this server actually answers on rather than assuming one exists.
 
 The SSH control-plane ingress (ADR 0024) follows the same opt-in rule on its
 own listener: `DISCOBOX_SSH_LISTEN` binds a second, independent TCP listener
-when set, and binds nothing when unset. It is started in `Run` alongside
+when set, and binds nothing when unset. What clients dial is a separate
+setting, `DISCOBOX_SSH_ADVERTISE_ADDRESS`, because a bind address is routinely
+not dialable — `:3222` names no host, `0.0.0.0:3222` is not an address — and
+the reachable endpoint may be a load balancer, port mapping, or tunnel in
+front of this process. Unset, it derives from the bind address with a wildcard
+host replaced by loopback. `GET /ssh` serves it alongside the host key so
+clients discover the endpoint instead of hard-coding a port; it answers
+`{"enabled": false}` rather than 404 when SSH is off, which a client cannot
+otherwise tell from an unknown route. It is started in `Run` alongside
 `listenAll`'s HTTP listeners, not folded into `serveAll`: an SSH connection
 has no request/response cycle for `http.Server.Shutdown` to drain, so
 `internal/sshd.Server.Serve` has its own `ctx`-driven listener lifecycle

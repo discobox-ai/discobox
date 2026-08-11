@@ -37,6 +37,17 @@ type Config struct {
 	// implied (server/DESIGN.md "Listen Endpoints").
 	SSHListen string
 
+	// SSHAdvertiseAddress is the host:port SSH clients should dial, which is
+	// not the same thing as SSHListen: a bind address is frequently not
+	// dialable at all (":3222" names no host, "0.0.0.0:3222" is not an
+	// address a client can use), and the reachable endpoint may be a load
+	// balancer, a NAT, or a tunnel in front of this process. It is served by
+	// GET /ssh so clients discover it instead of hard-coding a port. Empty
+	// when SSH is disabled; otherwise resolved from
+	// DISCOBOX_SSH_ADVERTISE_ADDRESS, falling back to SSHListen's own host and
+	// port with a wildcard host replaced by loopback.
+	SSHAdvertiseAddress string
+
 	// XDG-backed application directories.
 	DataDir   string
 	ConfigDir string
@@ -85,6 +96,7 @@ func Load() (*Config, error) {
 	cfg.Listen = listenEndpoints()
 	cfg.AutoShutdownTimeout = getEnvDuration("DISCOBOX_SERVER_IDLE_TIMEOUT", 0)
 	cfg.SSHListen = getEnv("DISCOBOX_SSH_LISTEN", "")
+	cfg.SSHAdvertiseAddress = getEnv("DISCOBOX_SSH_ADVERTISE_ADDRESS", "")
 
 	cfg.DataDir = getEnv("DISCOBOX_DATA_DIR", filepath.Join(xdg.DataHome, appName))
 	cfg.ConfigDir = getEnv("DISCOBOX_CONFIG_DIR", filepath.Join(xdg.ConfigHome, appName))
@@ -142,6 +154,15 @@ func Load() (*Config, error) {
 			return nil, fmt.Errorf("DISCOBOX_SSH_LISTEN must be a host:port address: %w", err)
 		}
 	}
+	if cfg.SSHAdvertiseAddress != "" {
+		if _, _, err := net.SplitHostPort(cfg.SSHAdvertiseAddress); err != nil {
+			return nil, fmt.Errorf("DISCOBOX_SSH_ADVERTISE_ADDRESS must be a host:port address: %w", err)
+		}
+		if cfg.SSHListen == "" {
+			return nil, fmt.Errorf("DISCOBOX_SSH_ADVERTISE_ADDRESS is set but DISCOBOX_SSH_LISTEN is not: there is no SSH ingress to advertise")
+		}
+	}
+	cfg.SSHAdvertiseAddress = resolveSSHAdvertiseAddress(cfg.SSHListen, cfg.SSHAdvertiseAddress)
 	if cfg.DataDir == "" {
 		return nil, fmt.Errorf("DISCOBOX_DATA_DIR is required")
 	}
@@ -292,4 +313,30 @@ func getEnvDriver(key string, defaultValue gormdb.Driver) gormdb.Driver {
 	default:
 		return gormdb.Driver(value)
 	}
+}
+
+// resolveSSHAdvertiseAddress returns the host:port SSH clients should dial.
+//
+// An explicit advertised address always wins: it is the only way to express an
+// endpoint that differs from what this process bound, which is the normal case
+// behind a load balancer, a port mapping, or a tunnel. Otherwise the address is
+// derived from the bind address, whose host is replaced by loopback when it
+// names no host or a wildcard — ":3222", "0.0.0.0:3222", and "[::]:3222" are
+// bind-side spellings of "every interface", not addresses a client can dial.
+func resolveSSHAdvertiseAddress(listen, advertised string) string {
+	if listen == "" {
+		return ""
+	}
+	if advertised != "" {
+		return advertised
+	}
+	host, port, err := net.SplitHostPort(listen)
+	if err != nil {
+		return ""
+	}
+	switch strings.TrimSpace(host) {
+	case "", "0.0.0.0", "::", "[::]":
+		host = "127.0.0.1"
+	}
+	return net.JoinHostPort(host, port)
 }

@@ -359,6 +359,15 @@ func (UnimplementedHandler) GetProject(ctx context.Context, params GetProjectPar
 	return r, ht.ErrNotImplemented
 }
 
+// GetSSHIngress implements get-ssh-ingress operation.
+//
+// Discover this server's SSH ingress endpoint and host key.
+//
+// GET /ssh
+func (UnimplementedHandler) GetSSHIngress(ctx context.Context) (r GetSSHIngressRes, _ error) {
+	return r, ht.ErrNotImplemented
+}
+
 // GetSandbox implements get-sandbox operation.
 //
 // Get a sandbox.

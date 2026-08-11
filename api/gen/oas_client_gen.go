@@ -268,6 +268,12 @@ type Invoker interface {
 	//
 	// GET /projects/{projectId}
 	GetProject(ctx context.Context, params GetProjectParams) (GetProjectRes, error)
+	// GetSSHIngress invokes get-ssh-ingress operation.
+	//
+	// Discover this server's SSH ingress endpoint and host key.
+	//
+	// GET /ssh
+	GetSSHIngress(ctx context.Context) (GetSSHIngressRes, error)
 	// GetSandbox invokes get-sandbox operation.
 	//
 	// Get a sandbox.
@@ -4466,6 +4472,80 @@ func (c *Client) sendGetProject(ctx context.Context, params GetProjectParams) (r
 
 	stage = "DecodeResponse"
 	result, err := decodeGetProjectResponse(resp)
+	if err != nil {
+		return res, errors.Wrap(err, "decode response")
+	}
+
+	return result, nil
+}
+
+// GetSSHIngress invokes get-ssh-ingress operation.
+//
+// Discover this server's SSH ingress endpoint and host key.
+//
+// GET /ssh
+func (c *Client) GetSSHIngress(ctx context.Context) (GetSSHIngressRes, error) {
+	res, err := c.sendGetSSHIngress(ctx)
+	return res, err
+}
+
+func (c *Client) sendGetSSHIngress(ctx context.Context) (res GetSSHIngressRes, err error) {
+	otelAttrs := []attribute.KeyValue{
+		otelogen.OperationID("get-ssh-ingress"),
+		semconv.HTTPRequestMethodKey.String("GET"),
+		semconv.URLTemplateKey.String("/ssh"),
+	}
+	otelAttrs = append(otelAttrs, c.cfg.Attributes...)
+
+	// Run stopwatch.
+	startTime := time.Now()
+	defer func() {
+		// Use floating point division here for higher precision (instead of Millisecond method).
+		elapsedDuration := time.Since(startTime)
+		c.duration.Record(ctx, float64(elapsedDuration)/float64(time.Millisecond), metric.WithAttributes(otelAttrs...))
+	}()
+
+	// Increment request counter.
+	c.requests.Add(ctx, 1, metric.WithAttributes(otelAttrs...))
+
+	// Start a span for this request.
+	ctx, span := c.cfg.Tracer.Start(ctx, GetSSHIngressOperation,
+		trace.WithAttributes(otelAttrs...),
+		clientSpanKind,
+	)
+	// Track stage for error reporting.
+	var stage string
+	defer func() {
+		if err != nil {
+			span.RecordError(err)
+			span.SetStatus(codes.Error, stage)
+			c.errors.Add(ctx, 1, metric.WithAttributes(otelAttrs...))
+		}
+		span.End()
+	}()
+
+	stage = "BuildURL"
+	u := uri.Clone(c.requestURL(ctx))
+	var pathParts [1]string
+	pathParts[0] = "/ssh"
+	uri.AddPathParts(u, pathParts[:]...)
+
+	stage = "EncodeRequest"
+	r, err := ht.NewRequest(ctx, "GET", u)
+	if err != nil {
+		return res, errors.Wrap(err, "create request")
+	}
+
+	stage = "SendRequest"
+	resp, err := c.cfg.Client.Do(r)
+	if err != nil {
+		return res, errors.Wrap(err, "do request")
+	}
+	body := resp.Body
+	defer body.Close()
+
+	stage = "DecodeResponse"
+	result, err := decodeGetSSHIngressResponse(resp)
 	if err != nil {
 		return res, errors.Wrap(err, "decode response")
 	}

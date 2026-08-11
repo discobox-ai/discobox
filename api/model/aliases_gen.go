@@ -66,6 +66,7 @@ type ResolveSandboxSecretResponse = apigen.ResolveSandboxSecretResponse
 type ResourceHistoryResponse = apigen.ResourceHistoryResponse
 type ResourceSnapshot = apigen.ResourceSnapshot
 type RestartSandboxBody = apigen.RestartSandboxBody
+type SSHIngress = apigen.SSHIngress
 type SSHKey = apigen.SSHKey
 type Sandbox = apigen.Sandbox
 type SandboxAgentGitSourceStatus = apigen.SandboxAgentGitSourceStatus

@@ -11,9 +11,10 @@
 - Pool status authorization must compare the authenticated pool principal to the path `poolId` before updating state.
 - Keep the request context limited to identity/authorization metadata; do not store mutable resource payloads or credentials in context.
 - Preserve public-path bypass behavior only for docs/openapi/health routes,
-  plus `GET /ssh/host-key` (ADR 0024): it serves the server's SSH host
-  *public* key, which is not a credential — publishing it is the point, the
-  same as a `known_hosts` line — and, like docs/openapi, it must be
-  fetchable (`disco ssh-config`) before any other credential exists. Do not
-  widen this list further without the same "must work pre-auth and reveals
-  nothing sensitive" justification.
+  plus `GET /ssh` (ADR 0024): it serves the SSH endpoint discovery document —
+  the advertised address and the server's SSH host *public* key, neither of
+  which is a credential; publishing the key is the point, the same as a
+  `known_hosts` line — and, like docs/openapi, it must be fetchable
+  (`disco box ssh-config`) before any other credential exists. Do not widen
+  this list further without the same "must work pre-auth and reveals nothing
+  sensitive" justification.

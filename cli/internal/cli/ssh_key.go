@@ -102,7 +102,7 @@ func (a *App) newSSHKeyDeleteCommand() *cobra.Command {
 		if err != nil {
 			return err
 		}
-		return runDeleteMany(cmd, args, "SSH key", func(arg string) (string, error) {
+		return runActionMany(cmd, args, "SSH key", "deleted", func(arg string) (string, error) {
 			keyID, err := a.resolveSSHKeyID(cmd.Context(), client, projectID, arg)
 			if err != nil {
 				return "", err

@@ -70,11 +70,11 @@ func Authorization(authorizers ...Authorizer) func(http.Handler) http.Handler {
 
 // IsPublicPath reports whether a path can be served without authentication.
 func IsPublicPath(path string) bool {
-	// /ssh/host-key (ADR 0024) serves the server's SSH host *public* key —
-	// not a credential, and it must be fetchable (disco ssh-config) before
-	// any other credential exists, the same rule that puts docs/openapi/health
-	// here.
-	return path == "/healthz" || path == "/openapi.yaml" || path == "/docs" || strings.HasPrefix(path, "/docs/") || path == "/ssh/host-key"
+	// /ssh (ADR 0024) serves the SSH endpoint discovery document — an address
+	// and the server's host *public* key, neither a credential — and it must
+	// be fetchable (disco box ssh-config) before any other credential exists,
+	// the same rule that puts docs/openapi/health here.
+	return path == "/healthz" || path == "/openapi.yaml" || path == "/docs" || strings.HasPrefix(path, "/docs/") || path == "/ssh"
 }
 
 type defaultProjectIDContextKey struct{}

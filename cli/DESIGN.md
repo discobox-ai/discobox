@@ -312,11 +312,13 @@ level or layering on the attach transports above.
   authenticated `CreateSSHKey` API call that follows, never agent presence
   itself (ADR 0024 §6).
 - `disco box ssh-config` emits one `ssh_config(5)` `Host` stanza per sandbox in
-  the current project plus a `known_hosts` line, read from a small
-  unauthenticated `GET /ssh/host-key` route
-  (`server/internal/auth/DESIGN.md`) rather than any generated API client,
-  since the SSH host key is not part of the OpenAPI-modeled control-plane
-  resource surface.
+  the current project plus a `known_hosts` line. Both the address and the host
+  key come from `GET /ssh` (public, `server/internal/auth/DESIGN.md`), so
+  nothing here hard-codes a port: `--host`/`--port` are overrides for what the
+  server cannot know about, such as reaching it through a local forward, and
+  are unset by default. The `known_hosts` host field is bracketed
+  (`[host]:port`) for every port but 22, which `ssh` looks up under the bare
+  hostname instead.
 
 ## Signals and Job Control
 

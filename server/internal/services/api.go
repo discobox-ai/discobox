@@ -208,8 +208,26 @@ type ProjectEventService interface {
 	SubscribeProjectEvents(ctx context.Context, projectID string) (<-chan model.ProjectEvent, func(), error)
 }
 
+// SSHIngress is how a client reaches this server's SSH ingress (ADR 0024). It
+// is a resolved value rather than a service: the address is configuration and
+// the host key is loaded once at startup, so there is nothing to call.
+//
+// Address is the advertised endpoint, never the bind address — ":3222" names
+// no host and "0.0.0.0:3222" is not dialable, and the reachable endpoint may
+// be a load balancer or tunnel in front of this process. Address and HostKey
+// are empty when Enabled is false.
+type SSHIngress struct {
+	Enabled bool
+	Address string
+	HostKey string
+}
+
 // Services groups the dependencies needed by the API operations.
 type Services struct {
+	// SSH is served by GET /ssh so clients discover the SSH endpoint instead
+	// of hard-coding a port.
+	SSH SSHIngress
+
 	Projects       ProjectService
 	HarnessConfigs HarnessConfigService
 	Sandboxes      SandboxService

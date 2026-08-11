@@ -41,6 +41,7 @@ const (
 	GetJobOperation                           OperationName = "GetJob"
 	GetPoolOperation                          OperationName = "GetPool"
 	GetProjectOperation                       OperationName = "GetProject"
+	GetSSHIngressOperation                    OperationName = "GetSSHIngress"
 	GetSandboxOperation                       OperationName = "GetSandbox"
 	GetSandboxAgentStatusOperation            OperationName = "GetSandboxAgentStatus"
 	GetSandboxExecOperation                   OperationName = "GetSandboxExec"
