@@ -157,3 +157,32 @@ func TestLoadDerivesExecDefaultsFromEffectiveConfig(t *testing.T) {
 		t.Fatalf("sandbox config sources = %#v, want the raw sources array as template data", cfg.SandboxConfig["sources"])
 	}
 }
+
+// validTestConfig is the minimum a sandbox manifest must carry to validate.
+func validTestConfig() Config {
+	return Config{
+		Identity:              Identity{ProjectID: "proj_test000000001", SandboxID: "sbx_test0000000001"},
+		ControlPlanePublicKey: "ssh-ed25519 AAAAtest",
+	}
+}
+
+// TestValidateAcceptsACommandlessHarness: the control plane can name a harness
+// without naming a command, which means the run user's login shell — the only
+// thing the sandbox itself can resolve (ADR 0025 §2).
+func TestValidateAcceptsACommandlessHarness(t *testing.T) {
+	cfg := validTestConfig()
+	cfg.Harness = Harness{ID: "harness_shell0000001", Name: "Shell"}
+	if err := cfg.Validate(); err != nil {
+		t.Fatalf("validate commandless harness: %v", err)
+	}
+}
+
+// TestValidateRejectsABlankHarnessCommand keeps the malformed case rejected: a
+// declared command that says nothing is not the same as declaring none.
+func TestValidateRejectsABlankHarnessCommand(t *testing.T) {
+	cfg := validTestConfig()
+	cfg.Harness = Harness{ID: "harness_shell0000001", Name: "Shell", Command: []string{"  "}}
+	if err := cfg.Validate(); err == nil {
+		t.Fatal("expected a blank harness command to be rejected")
+	}
+}

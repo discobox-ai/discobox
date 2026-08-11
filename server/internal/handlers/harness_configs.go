@@ -18,7 +18,7 @@ func (h *Handler) ConfigureHarnessConfig(ctx context.Context, params serverapi.C
 	}
 	// Sandbox needs its dedicated mapper, not a raw Convert: the API shape embeds
 	// the harness config rather than carrying the model's harnessConfigId.
-	body, err := services.SandboxToAPI(sandbox, h.services.Sandboxes.DefaultSandboxImage())
+	body, err := services.SandboxToAPI(sandbox, h.fallbackHarnessConfig(ctx, params.ProjectId))
 	if err != nil {
 		return nil, err
 	}

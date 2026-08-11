@@ -3926,12 +3926,14 @@ func (s *HarnessConfig) encodeFields(e *jx.Encoder) {
 		}
 	}
 	{
-		e.FieldStart("runCommand")
-		e.ArrStart()
-		for _, elem := range s.RunCommand {
-			e.Str(elem)
+		if s.RunCommand != nil {
+			e.FieldStart("runCommand")
+			e.ArrStart()
+			for _, elem := range s.RunCommand {
+				e.Str(elem)
+			}
+			e.ArrEnd()
 		}
-		e.ArrEnd()
 	}
 	{
 		if s.Secrets.Set {
@@ -4172,7 +4174,6 @@ func (s *HarnessConfig) Decode(d *jx.Decoder) error {
 				return errors.Wrap(err, "decode field \"relaunchCommand\"")
 			}
 		case "runCommand":
-			requiredBitSet[2] |= 1 << 1
 			if err := func() error {
 				s.RunCommand = make([]string, 0)
 				if err := d.Arr(func(d *jx.Decoder) error {
@@ -4247,7 +4248,7 @@ func (s *HarnessConfig) Decode(d *jx.Decoder) error {
 	for i, mask := range [3]uint8{
 		0b01000100,
 		0b11001001,
-		0b00011010,
+		0b00011000,
 	} {
 		if result := (requiredBitSet[i] & mask) ^ mask; result != 0 {
 			// Mask only required fields and check equality to mask using XOR.

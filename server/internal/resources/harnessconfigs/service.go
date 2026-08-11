@@ -24,6 +24,25 @@ type Service struct {
 	harnessImages map[string]string
 	sandboxes     SandboxRuntime
 	dirtier       Dirtier
+	// defaultSandboxImage/Digest is the image the reserved `shell` built-in
+	// runs: the sandbox agent itself, with no harness product on top
+	// (ADR 0025 §2).
+	defaultSandboxImage       string
+	defaultSandboxImageDigest string
+}
+
+// SetDefaultSandboxImage records the image the `shell` built-in is seeded
+// against. Seeding keeps that config on the current image the same way it keeps
+// the other built-ins current, which is what lets an agent upgrade reach a
+// sandbox running no harness product.
+//
+// The digest is taken rather than inspected because this image is the one that
+// deliberately has no harness label to read: it is the agent, not a harness
+// product built on it. Without a digest there is no identity to pin, and the
+// built-in is not seeded at all.
+func (s *Service) SetDefaultSandboxImage(image, digest string) {
+	s.defaultSandboxImage = strings.TrimSpace(image)
+	s.defaultSandboxImageDigest = strings.TrimSpace(digest)
 }
 
 func NewService(store *store.Store) *Service {
@@ -375,7 +394,7 @@ func (s *Service) SeedBuiltIns(ctx context.Context, projectID string) error {
 	if s.inspector == nil {
 		return nil
 	}
-	for _, seed := range harnessdefs.Seeds(s.harnessImages) {
+	for _, seed := range s.seeds() {
 		image := strings.TrimSpace(seed.Image)
 		if image == "" {
 			continue
@@ -384,11 +403,18 @@ func (s *Service) SeedBuiltIns(ctx context.Context, projectID string) error {
 		if err != nil && !errors.Is(err, store.ErrNotFound) {
 			return err
 		}
-		metadata, inspectErr := s.inspector.Inspect(ctx, image)
-		if inspectErr != nil {
-			slog.WarnContext(ctx, "skip built-in harness seed; image unavailable",
-				"slug", seed.Slug, "image", image, "error", inspectErr)
-			continue
+		// A seed carrying its own digest is not inspected: the `shell` built-in
+		// runs the sandbox agent image, which has no harness label, and reading
+		// one is exactly what would fail.
+		metadata := imageMetadata{Digest: strings.TrimSpace(seed.Digest)}
+		if metadata.Digest == "" {
+			inspected, inspectErr := s.inspector.Inspect(ctx, image)
+			if inspectErr != nil {
+				slog.WarnContext(ctx, "skip built-in harness seed; image unavailable",
+					"slug", seed.Slug, "image", image, "error", inspectErr)
+				continue
+			}
+			metadata = inspected
 		}
 		if existing != nil && existing.Image == image && existing.ImageDigest == metadata.Digest {
 			continue
@@ -396,7 +422,7 @@ func (s *Service) SeedBuiltIns(ctx context.Context, projectID string) error {
 		if existing == nil {
 			config := &model.HarnessConfig{
 				ProjectID: projectID, Slug: seed.Slug, Name: seed.Name,
-				BuiltIn: true, Configured: false, Image: image, ImageDigest: metadata.Digest,
+				BuiltIn: true, Configured: seed.Slug == harnessdefs.ShellSlug, Image: image, ImageDigest: metadata.Digest,
 			}
 			config.RunCommand, config.RelaunchCommand, config.ConfigCommand, config.Files, config.Secrets, config.Env, config.Volumes, config.AdditionalGroups = harnessMetadataFields(metadata.ImageMetadata)
 			if err := s.store.CreateHarnessConfig(ctx, config); err != nil {
@@ -418,6 +444,25 @@ func (s *Service) SeedBuiltIns(ctx context.Context, projectID string) error {
 			"previousImageDigest", previousDigest, "imageDigest", metadata.Digest)
 	}
 	return nil
+}
+
+// seeds are the built-in harness configs: the registry's harness products,
+// plus the reserved `shell` config whose image is the sandbox agent itself
+// (ADR 0025 §2). `shell` is appended rather than registered because the
+// registry describes images built on top of the agent, and this one is the
+// agent. It is skipped when no default sandbox image is configured, the same
+// way a product seed is skipped when its image is unavailable.
+func (s *Service) seeds() []harnessdefs.Seed {
+	seeds := harnessdefs.Seeds(s.harnessImages)
+	if image, digest := strings.TrimSpace(s.defaultSandboxImage), strings.TrimSpace(s.defaultSandboxImageDigest); image != "" && digest != "" {
+		seeds = append(seeds, harnessdefs.Seed{
+			Slug:   harnessdefs.ShellSlug,
+			Name:   harnessdefs.ShellName,
+			Image:  image,
+			Digest: digest,
+		})
+	}
+	return seeds
 }
 
 // harnessMetadataFields snapshots the mutable config fields declared by a

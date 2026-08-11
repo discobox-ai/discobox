@@ -78,7 +78,7 @@ components:
                     nullable: true
                     type: array
                 runCommand:
-                    description: Argv declared by the registered image to run the harness.
+                    description: Argv declared by the registered image to run the harness. Absent for a harness whose image declares none, such as the built-in `shell`, where the sandbox resolves the run user's login shell instead.
                     items:
                         type: string
                     type: array
@@ -109,7 +109,6 @@ components:
                 - name
                 - builtIn
                 - configured
-                - runCommand
                 - createdAt
                 - updatedAt
             type: object

@@ -242,8 +242,13 @@ func (c Config) Validate() error {
 	default:
 		return fmt.Errorf("unsupported harnessMode %q", c.HarnessMode)
 	}
-	if strings.TrimSpace(c.Harness.ID) != "" && (len(c.Harness.Command) == 0 || strings.TrimSpace(c.Harness.Command[0]) == "") {
-		return fmt.Errorf("harness %q command is required", c.Harness.ID)
+	// A harness with no command is legal and means the run user's login shell,
+	// resolved here rather than named by the control plane, which cannot know
+	// what that user's shell is. That is what the reserved `shell` harness
+	// config is (ADR 0025 §2). A command whose first element is blank is still
+	// malformed: that is a declared command that says nothing.
+	if len(c.Harness.Command) > 0 && strings.TrimSpace(c.Harness.Command[0]) == "" {
+		return fmt.Errorf("harness %q command is empty", c.Harness.ID)
 	}
 	return nil
 }

@@ -6,7 +6,10 @@ import (
 	"sync/atomic"
 	"testing"
 
+	"github.com/obot-platform/discobox/server/internal/database"
+	"github.com/obot-platform/discobox/server/internal/harnessdefs"
 	"github.com/obot-platform/discobox/server/internal/model"
+	"github.com/obot-platform/discobox/server/internal/reconcile"
 	"github.com/obot-platform/discobox/server/internal/sandbox"
 	"github.com/obot-platform/discobox/server/internal/services"
 	"github.com/obot-platform/discobox/server/internal/store"
@@ -130,14 +133,26 @@ func TestUpgradeTargetIgnoresConfigModeSandboxes(t *testing.T) {
 	}
 }
 
-// TestUpgradeTargetForHarnesslessSandboxIsTheDefaultImage: having no harness
-// config is a choice of image, not the absence of one, and the image it chose
-// is the thing carrying the sandbox agent. Leaving these pinned forever
-// stranded them on whatever agent shipped the day they were created.
-func TestUpgradeTargetForHarnesslessSandboxIsTheDefaultImage(t *testing.T) {
+// shellConfig seeds the reserved built-in an unconverged sandbox upgrades to.
+func shellConfig(t *testing.T, st *store.Store, image, digest string) *model.HarnessConfig {
+	t.Helper()
+	config := &model.HarnessConfig{
+		ProjectID: "project-1", Slug: harnessdefs.ShellSlug, Name: harnessdefs.ShellName,
+		BuiltIn: true, Configured: true, Image: image, ImageDigest: digest,
+	}
+	if err := st.CreateHarnessConfig(context.Background(), config); err != nil {
+		t.Fatalf("create shell config: %v", err)
+	}
+	return config
+}
+
+// TestUpgradeTargetForHarnesslessSandboxIsTheFallback: a sandbox created before
+// every sandbox carried a harness config converges by upgrade, and what it
+// upgrades to is the reserved `shell` built-in (ADR 0025 §4).
+func TestUpgradeTargetForHarnesslessSandboxIsTheFallback(t *testing.T) {
 	ctx := context.Background()
 	svc, st := newBindingFixture(t)
-	svc.SetDefaultSandboxImage("discobox-sandbox-agent:dev-new", "sha256:default-new")
+	shell := shellConfig(t, st, "discobox-sandbox-agent:dev-new", "sha256:default-new")
 
 	harnessless := pinnedSandbox(t, st, "", "discobox-sandbox-agent:dev-old", "sha256:default-old")
 	target, err := svc.upgradeTarget(ctx, harnessless)
@@ -145,49 +160,55 @@ func TestUpgradeTargetForHarnesslessSandboxIsTheDefaultImage(t *testing.T) {
 		t.Fatalf("upgrade target: %v", err)
 	}
 	if !target.Available {
-		t.Fatalf("target = %+v, want an available upgrade to the default image", target)
+		t.Fatalf("target = %+v, want an available upgrade to the fallback", target)
 	}
-	if target.Image != "discobox-sandbox-agent:dev-new" || target.Digest != "sha256:default-new" {
-		t.Fatalf("target = %+v, want the server's current default image", target)
+	if target.Image != shell.Image || target.Digest != shell.ImageDigest {
+		t.Fatalf("target = %+v, want the shell config's image", target)
 	}
 
-	// Already on it: same digest, nothing to do — the tag alone must not decide,
-	// since dev workflows rebuild tags in place.
-	current := pinnedSandbox(t, st, "", "discobox-sandbox-agent:dev-new", "sha256:default-new")
-	if target, err := svc.upgradeTarget(ctx, current); err != nil || target.Available {
-		t.Fatalf("target = %+v, %v; want unavailable when already on the default digest", target, err)
+	// Even on the fallback's own digest: what the upgrade changes is adopting
+	// the config, not the image.
+	current := pinnedSandbox(t, st, "", shell.Image, shell.ImageDigest)
+	if target, err := svc.upgradeTarget(ctx, current); err != nil || !target.Available {
+		t.Fatalf("target = %+v, %v; want available while still unconverged", target, err)
 	}
 }
 
-// TestUpgradeTargetForHarnesslessSandboxNeedsAKnownDigest: with no digest for
-// the default image there is nothing to compare, and comparing tags would
-// report "up to date" for every sandbox on a rebuilt tag (ADR 0016 §1).
-func TestUpgradeTargetForHarnesslessSandboxNeedsAKnownDigest(t *testing.T) {
+// TestUpgradeSandboxAdoptsTheFallbackConfig is the convergence itself: the
+// upgrade writes the harness config the sandbox never had. It needs the
+// reconcile engine, since the adoption rides recordSandboxIntent like any other
+// spec change.
+func TestUpgradeSandboxAdoptsTheFallbackConfig(t *testing.T) {
+	ctx := context.Background()
+	svc, st := newUpgradeEngineFixture(t)
+	shell := shellConfig(t, st, "discobox-sandbox-agent:dev-new", "sha256:default-new")
+	harnessless := pinnedSandbox(t, st, "", "discobox-sandbox-agent:dev-old", "sha256:default-old")
+
+	upgraded, err := svc.UpgradeSandbox(ctx, "project-1", harnessless.ID, services.UpgradeSandboxBody{})
+	if err != nil {
+		t.Fatalf("upgrade sandbox: %v", err)
+	}
+	if upgraded.HarnessConfigID == nil || *upgraded.HarnessConfigID != shell.ID {
+		t.Fatalf("harness config = %v, want the adopted shell config %s", upgraded.HarnessConfigID, shell.ID)
+	}
+	if upgraded.Image != shell.Image || upgraded.ImageDigest != shell.ImageDigest {
+		t.Fatalf("image = %s@%s, want the shell config's", upgraded.Image, upgraded.ImageDigest)
+	}
+	// Converged: nothing further to do.
+	if target, err := svc.upgradeTarget(ctx, upgraded); err != nil || target.Available {
+		t.Fatalf("target = %+v, %v; want unavailable once converged", target, err)
+	}
+}
+
+// TestUpgradeTargetWithoutASeededFallback: seeding may not have created the
+// `shell` config, and then an unconverged sandbox has nowhere to go yet.
+func TestUpgradeTargetWithoutASeededFallback(t *testing.T) {
 	ctx := context.Background()
 	svc, st := newBindingFixture(t)
-	svc.SetDefaultSandboxImage("discobox-sandbox-agent:local", "")
 
 	harnessless := pinnedSandbox(t, st, "", "discobox-sandbox-agent:local", "sha256:old")
 	if target, err := svc.upgradeTarget(ctx, harnessless); err != nil || target.Available {
-		t.Fatalf("target = %+v, %v; want unavailable with no known default digest", target, err)
-	}
-}
-
-// TestUpgradeTargetForUnpinnedHarnesslessSandbox covers every sandbox created
-// before the default image's digest was pinned, which is the population that
-// needs this most.
-func TestUpgradeTargetForUnpinnedHarnesslessSandbox(t *testing.T) {
-	ctx := context.Background()
-	svc, st := newBindingFixture(t)
-	svc.SetDefaultSandboxImage("discobox-sandbox-agent:dev-new", "sha256:default-new")
-
-	unpinned := pinnedSandbox(t, st, "", "discobox-sandbox-agent:dev-old", "")
-	target, err := svc.upgradeTarget(ctx, unpinned)
-	if err != nil {
-		t.Fatalf("upgrade target: %v", err)
-	}
-	if !target.Available || target.Digest != "sha256:default-new" {
-		t.Fatalf("target = %+v, want an available upgrade for an unpinned sandbox", target)
+		t.Fatalf("target = %+v, %v; want unavailable with no fallback seeded", target, err)
 	}
 }
 
@@ -261,4 +282,30 @@ func TestUpgradeSandboxRefusedWhenAlreadyCurrent(t *testing.T) {
 	if _, err := svc.UpgradeSandbox(ctx, "project-1", sb.ID, services.UpgradeSandboxBody{}); err == nil {
 		t.Fatal("upgrade succeeded; want refusal when the sandbox is already current")
 	}
+}
+
+// newUpgradeEngineFixture is newBindingFixture plus the reconcile engine an
+// intent-recording path needs.
+func newUpgradeEngineFixture(t *testing.T) (*Service, *store.Store) {
+	t.Helper()
+	ctx := context.Background()
+	db, err := database.New(database.Config{DSN: ":memory:"})
+	if err != nil {
+		t.Fatalf("open db: %v", err)
+	}
+	t.Cleanup(func() { _ = db.Close() })
+	if err := db.Migrate(ctx); err != nil {
+		t.Fatalf("migrate db: %v", err)
+	}
+	if err := db.Write.WithContext(ctx).Create(&model.Project{
+		ID: "project-1", OwnerUserID: "user-1", Name: "Project", Slug: "project",
+	}).Error; err != nil {
+		t.Fatalf("create project: %v", err)
+	}
+	engine, err := reconcile.New(db.Write, reconcile.Options{SingleNode: true})
+	if err != nil {
+		t.Fatalf("create reconcile engine: %v", err)
+	}
+	st := store.New(db.Write, db.Read)
+	return NewService(st, nil, "user-1", engine), st
 }

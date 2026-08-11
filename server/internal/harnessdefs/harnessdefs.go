@@ -24,11 +24,26 @@ type Seed struct {
 	Name string
 	// Image is the harness image, already resolved against any env override.
 	Image string
+	// Digest, when set, is the image's already-known identity and is used in
+	// place of inspecting the image. The reserved `shell` built-in sets it:
+	// its image is the sandbox agent, which deliberately declares no harness
+	// label to read, and whose identity the server is configured with anyway.
+	Digest string
 }
 
 // Seeds returns the built-in harness configs to seed, with each image replaced
 // by imageOverrides[slug] when present. Dev builds inject freshly tagged images
 // this way (see ImageEnvVar); an empty map yields the baked-in images.
+// ShellSlug is the reserved slug of the built-in that ends the harness
+// resolution chain (ADR 0025). It is not in the registry: the registry holds
+// harness products, each built on top of the sandbox agent image, while this
+// one *is* the sandbox agent image with no product on it. Its name is reserved
+// so nothing else can claim the end of the chain.
+const ShellSlug = "shell"
+
+// ShellName is the display name of the ShellSlug built-in.
+const ShellName = "Shell"
+
 func Seeds(imageOverrides map[string]string) []Seed {
 	definitions := registry.Definitions()
 	out := make([]Seed, 0, len(definitions))

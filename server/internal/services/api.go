@@ -112,10 +112,11 @@ type HarnessConfigService interface {
 
 // SandboxService manages sandboxes within a project.
 type SandboxService interface {
-	// DefaultSandboxImage is the image identity a sandbox with no harness
-	// config runs, which is also what such a sandbox upgrades to. The API
-	// mappers need it to report an available upgrade.
-	DefaultSandboxImage() SandboxImageTarget
+	// FallbackHarnessConfig is the project's reserved `shell` config, which a
+	// sandbox with no harness config of its own upgrades to (ADR 0025 §4). The
+	// API mappers need it to report that upgrade. Nil when seeding has not
+	// created it.
+	FallbackHarnessConfig(ctx context.Context, projectID string) (*model.HarnessConfig, error)
 	ListSandboxes(ctx context.Context, projectID, sourceRoot, originKey string) ([]model.Sandbox, error)
 	CreateSandbox(ctx context.Context, projectID string, input CreateSandboxBody) (*model.Sandbox, error)
 	GetSandbox(ctx context.Context, projectID, sandboxID string) (*model.Sandbox, error)

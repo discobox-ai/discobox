@@ -1,6 +1,7 @@
 # 0016 — Sandbox image upgrades are explicit, in-place, and digest-driven
 
 - **Status**: Accepted
+- **Partially superseded by**: [0025](0025-every-sandbox-has-a-harness-config-and-shell-is-the-built-in.md) — its treatment of sandboxes with no harness config only; the rest stands.
 - **Date**: 2026-07-23
 - **Closes**: the digest-pinning follow-on left open by
   [ADR 0012](0012-sandbox-config-is-three-attribute-owned-layers.md)

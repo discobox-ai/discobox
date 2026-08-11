@@ -14,11 +14,19 @@ func sandboxWithHarness(configID string, image, digest string) *model.Sandbox {
 	return sb
 }
 
+// shellConfig stands in for the reserved built-in a project seeds.
+func shellConfig() *model.HarnessConfig {
+	return &model.HarnessConfig{
+		ID: "harness-shell", Slug: "shell", BuiltIn: true, Configured: true,
+		Image: "discobox-sandbox-agent:new", ImageDigest: "sha256:new",
+	}
+}
+
 // TestSandboxUpgradeTargetIsSharedByBothPaths pins the rule that the read path
 // and the upgrade mutation must agree on: a sandbox that reports an available
 // upgrade must be one the upgrade call will actually move, and vice versa.
 func TestSandboxUpgradeTargetIsSharedByBothPaths(t *testing.T) {
-	def := SandboxImageTarget{Image: "discobox-sandbox-agent:new", Digest: "sha256:new"}
+	shell := shellConfig()
 
 	for _, tc := range []struct {
 		name          string
@@ -28,16 +36,26 @@ func TestSandboxUpgradeTargetIsSharedByBothPaths(t *testing.T) {
 		wantAvailable bool
 	}{
 		{
-			// No harness config is a choice of image, not the absence of one.
-			name:          "harnessless upgrades to the default image",
+			// Not converged: the upgrade adopts the config, so it is available
+			// regardless of digest (ADR 0025 §4).
+			name:          "harnessless upgrades to the fallback",
 			sandbox:       sandboxWithHarness("", "discobox-sandbox-agent:old", "sha256:old"),
-			wantTarget:    def,
+			config:        shell,
+			wantTarget:    SandboxImageTarget{Image: "discobox-sandbox-agent:new", Digest: "sha256:new"},
 			wantAvailable: true,
 		},
 		{
-			name:          "harnessless already on the default image",
+			name:          "harnessless on the fallback's own digest is still unconverged",
 			sandbox:       sandboxWithHarness("", "discobox-sandbox-agent:new", "sha256:new"),
-			wantTarget:    def,
+			config:        shell,
+			wantTarget:    SandboxImageTarget{Image: "discobox-sandbox-agent:new", Digest: "sha256:new"},
+			wantAvailable: true,
+		},
+		{
+			name:          "converged sandbox on the shell config is up to date",
+			sandbox:       sandboxWithHarness("harness-shell", "discobox-sandbox-agent:new", "sha256:new"),
+			config:        shell,
+			wantTarget:    SandboxImageTarget{Image: "discobox-sandbox-agent:new", Digest: "sha256:new"},
 			wantAvailable: false,
 		},
 		{
@@ -48,9 +66,7 @@ func TestSandboxUpgradeTargetIsSharedByBothPaths(t *testing.T) {
 			wantAvailable: true,
 		},
 		{
-			// Its harness config is gone, so the default is not its answer: it
-			// was never running the default image.
-			name:       "harnessed with a missing config has nothing to move to",
+			name:       "no config at all has nothing to move to",
 			sandbox:    sandboxWithHarness("harness-1", "discobox-harness-codex:old", "sha256:codex-old"),
 			wantTarget: SandboxImageTarget{},
 		},
@@ -60,24 +76,20 @@ func TestSandboxUpgradeTargetIsSharedByBothPaths(t *testing.T) {
 			config:     &model.HarnessConfig{Image: "discobox-harness-codex:new"},
 			wantTarget: SandboxImageTarget{},
 		},
-		{
-			name:          "an unpinned sandbox is eligible, not excluded",
-			sandbox:       sandboxWithHarness("", "discobox-sandbox-agent:old", ""),
-			wantTarget:    def,
-			wantAvailable: true,
-		},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			target, available := SandboxUpgradeTarget(tc.sandbox, tc.config, def)
+			target, available := SandboxUpgradeTarget(tc.sandbox, tc.config)
 			if target != tc.wantTarget || available != tc.wantAvailable {
 				t.Fatalf("target = %+v available = %v, want %+v / %v", target, available, tc.wantTarget, tc.wantAvailable)
 			}
 			// The rendered field must agree with the rule it is rendered from.
-			// The read path reads the preloaded association rather than
-			// loading the config itself, which is the seam these two paths
-			// drifted across before they shared a rule.
-			tc.sandbox.HarnessConfig = tc.config
-			rendered := SandboxUpgrade(tc.sandbox, def)
+			// The read path reads the preloaded association for a converged
+			// sandbox and the passed fallback for one that is not, which is the
+			// seam these two paths drifted across before they shared a rule.
+			if tc.sandbox.HarnessConfigID != nil {
+				tc.sandbox.HarnessConfig = tc.config
+			}
+			rendered := SandboxUpgrade(tc.sandbox, tc.config)
 			if tc.wantTarget == (SandboxImageTarget{}) {
 				if rendered != nil {
 					t.Fatalf("rendered %v for a sandbox with nothing to move to", rendered)
@@ -102,19 +114,20 @@ func TestSandboxUpgradeTargetIsSharedByBothPaths(t *testing.T) {
 func TestSandboxUpgradeTargetIgnoresConfigMode(t *testing.T) {
 	sb := sandboxWithHarness("", "discobox-sandbox-agent:old", "sha256:old")
 	sb.HarnessMode = "config"
-	def := SandboxImageTarget{Image: "discobox-sandbox-agent:new", Digest: "sha256:new"}
-	if target, available := SandboxUpgradeTarget(sb, nil, def); target != (SandboxImageTarget{}) || available {
+	if target, available := SandboxUpgradeTarget(sb, shellConfig()); target != (SandboxImageTarget{}) || available {
 		t.Fatalf("target = %+v available = %v, want nothing to move to", target, available)
 	}
 }
 
-// TestSandboxUpgradeNeedsAKnownDefaultDigest: with no digest for the default
-// image there is nothing to compare, and comparing tags would report "up to
-// date" for every sandbox on a tag its workflow rebuilds in place.
-func TestSandboxUpgradeNeedsAKnownDefaultDigest(t *testing.T) {
-	sb := sandboxWithHarness("", "discobox-sandbox-agent:local", "sha256:old")
-	def := SandboxImageTarget{Image: "discobox-sandbox-agent:local"}
-	if target, available := SandboxUpgradeTarget(sb, nil, def); target != (SandboxImageTarget{}) || available {
+// TestSandboxUpgradeWithoutAFallbackConfig: seeding may not have created the
+// `shell` config — no default sandbox image, or an image that could not be
+// inspected — and then an unconverged sandbox has nowhere to go yet.
+func TestSandboxUpgradeWithoutAFallbackConfig(t *testing.T) {
+	sb := sandboxWithHarness("", "discobox-sandbox-agent:old", "sha256:old")
+	if target, available := SandboxUpgradeTarget(sb, nil); target != (SandboxImageTarget{}) || available {
 		t.Fatalf("target = %+v available = %v, want nothing to move to", target, available)
+	}
+	if rendered := SandboxUpgrade(sb, nil); rendered != nil {
+		t.Fatalf("rendered %v with no fallback config", rendered)
 	}
 }

@@ -1,6 +1,6 @@
 # 0031 — Every sandbox has a harness config, and `shell` is the built-in one
 
-- **Status**: Proposed
+- **Status**: Accepted
 - **Date**: 2026-08-11
 - **Supersedes**: parts of
   [0016](0016-sandbox-image-upgrades-are-explicit-and-in-place.md) — see

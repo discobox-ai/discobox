@@ -14,6 +14,7 @@ import (
 
 	"github.com/obot-platform/discobox/id"
 	"github.com/obot-platform/discobox/server/internal/auth"
+	"github.com/obot-platform/discobox/server/internal/harnessdefs"
 	"github.com/obot-platform/discobox/server/internal/model"
 	services "github.com/obot-platform/discobox/server/internal/services"
 
@@ -209,9 +210,9 @@ func (s *Service) CreateSandbox(ctx context.Context, projectID string, input ser
 		}
 	}
 	if image == "" {
-		// No harness config: the sandbox runs the server's default image, which
-		// is a choice of image rather than the absence of one, so pin its
-		// identity the same way a harness image is pinned.
+		// Only reachable when seeding could not create the `shell` config, or
+		// in config mode, where the image is the harness config's own and is
+		// resolved above. Everything else took its image from a harness config.
 		image, imageDigest = s.defaultImage, s.defaultImageDigest
 	}
 	sandbox := &model.Sandbox{
@@ -310,15 +311,41 @@ func (s *Service) resolveHarnessConfigID(ctx context.Context, project *model.Pro
 	// required-secret gate and binding materialization apply to `run .`.
 	if strings.TrimSpace(project.DefaultHarnessConfigID) != "" {
 		config, err := s.store.GetHarnessConfig(ctx, project.ID, project.DefaultHarnessConfigID)
-		if err != nil {
-			if errors.Is(err, store.ErrNotFound) {
-				return nil, nil // default was deleted; leave the sandbox agent-less
-			}
+		if err == nil {
+			return &config.ID, nil
+		}
+		if !errors.Is(err, store.ErrNotFound) {
 			return nil, mapAPIError(err, "harness config not found")
 		}
-		return &config.ID, nil
+		// The default was deleted. That is an absent default like any other,
+		// not a reason to create a structurally different sandbox (ADR 0025 §5).
 	}
-	return nil, nil
+	// The end of the chain: every sandbox carries a harness config, and the one
+	// that runs no harness product runs `shell` (ADR 0025 §1).
+	fallback, err := s.fallbackHarnessConfig(ctx, project.ID)
+	if err != nil {
+		return nil, err
+	}
+	if fallback == nil {
+		return nil, nil
+	}
+	return &fallback.ID, nil
+}
+
+// fallbackHarnessConfig is the reserved `shell` built-in, or nil when seeding
+// has not created it — which happens only when no default sandbox image is
+// configured, or its image could not be inspected. A nil fallback leaves the
+// sandbox without a harness config rather than failing the create: refusing to
+// make a sandbox at all would be a worse answer than the one this ADR removes.
+func (s *Service) fallbackHarnessConfig(ctx context.Context, projectID string) (*model.HarnessConfig, error) {
+	config, err := s.store.GetHarnessConfigBySlug(ctx, projectID, harnessdefs.ShellSlug)
+	if err != nil {
+		if errors.Is(err, store.ErrNotFound) {
+			return nil, nil
+		}
+		return nil, err
+	}
+	return config, nil
 }
 
 func (s *Service) GetSandbox(ctx context.Context, projectID, sandboxID string) (*model.Sandbox, error) {
@@ -570,9 +597,26 @@ func (s *Service) UpgradeSandbox(ctx context.Context, projectID, sandboxID strin
 	// The re-pin is the whole instruction: a changed image digest changes the
 	// spec fingerprint, and the pool host rebuilds any container that does not
 	// match it (ADR 0017 §5). There is no restart counter to bump.
+	adopt := ""
+	if existing.HarnessConfigID == nil {
+		// Converging a sandbox created before every sandbox carried a harness
+		// config: the upgrade adopts one as well as re-pinning the image
+		// (ADR 0025 §4). This is the whole migration — explicit, in place, and
+		// visible in the listing first.
+		fallback, err := s.fallbackHarnessConfig(ctx, projectID)
+		if err != nil {
+			return nil, err
+		}
+		if fallback != nil {
+			adopt = fallback.ID
+		}
+	}
 	sandbox, err := s.recordSandboxIntent(ctx, projectID, sandboxID, model.DesiredStatePresent, func(sb *model.Sandbox) {
 		sb.Image = target.Image
 		sb.ImageDigest = target.Digest
+		if adopt != "" {
+			sb.HarnessConfigID = &adopt
+		}
 	})
 	if err != nil {
 		return nil, mapAPIError(err, "sandbox not found")
@@ -586,14 +630,19 @@ func (s *Service) UpgradeSandbox(ctx context.Context, projectID, sandboxID strin
 // available upgrade cannot answer differently.
 func (s *Service) upgradeTarget(ctx context.Context, sb *model.Sandbox) (UpgradeTarget, error) {
 	var config *model.HarnessConfig
-	if sb.HarnessConfigID != nil {
-		loaded, err := s.store.GetHarnessConfig(ctx, sb.ProjectID, strings.TrimSpace(*sb.HarnessConfigID))
-		if err != nil && !errors.Is(err, store.ErrNotFound) {
+	var err error
+	if sb.HarnessConfigID == nil {
+		// Not converged yet: it upgrades to the fallback, adopting it.
+		if config, err = s.fallbackHarnessConfig(ctx, sb.ProjectID); err != nil {
 			return UpgradeTarget{}, err
 		}
-		config = loaded
+	} else if config, err = s.store.GetHarnessConfig(ctx, sb.ProjectID, strings.TrimSpace(*sb.HarnessConfigID)); err != nil {
+		if !errors.Is(err, store.ErrNotFound) {
+			return UpgradeTarget{}, err
+		}
+		config = nil
 	}
-	target, available := services.SandboxUpgradeTarget(sb, config, s.defaultImageIdentity())
+	target, available := services.SandboxUpgradeTarget(sb, config)
 	if target.Digest == "" {
 		// Nothing to move to: report what it runs now, so callers can tell that
 		// apart from an upgrade that is merely already applied.
@@ -602,16 +651,11 @@ func (s *Service) upgradeTarget(ctx context.Context, sb *model.Sandbox) (Upgrade
 	return UpgradeTarget{Image: target.Image, Digest: target.Digest, Available: available}, nil
 }
 
-// defaultImageIdentity is what a sandbox with no harness config runs, and
-// therefore what it upgrades to.
-func (s *Service) defaultImageIdentity() services.SandboxImageTarget {
-	return services.SandboxImageTarget{Image: s.defaultImage, Digest: s.defaultImageDigest}
-}
-
-// DefaultSandboxImage exposes that identity to the API mappers, which report a
-// sandbox's available upgrade and need the same answer this service applies.
-func (s *Service) DefaultSandboxImage() services.SandboxImageTarget {
-	return s.defaultImageIdentity()
+// FallbackHarnessConfig exposes the reserved `shell` config to the API mappers,
+// which report a sandbox's available upgrade and must give the same answer this
+// service applies.
+func (s *Service) FallbackHarnessConfig(ctx context.Context, projectID string) (*model.HarnessConfig, error) {
+	return s.fallbackHarnessConfig(ctx, projectID)
 }
 
 // UpgradeTarget is what an upgrade would pin the sandbox to, and whether that

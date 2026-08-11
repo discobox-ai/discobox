@@ -426,6 +426,19 @@ func (s *Service) resolveHarness(requested string) (config.Harness, string, erro
 	if requested != "" && requested != s.harness.ID {
 		return config.Harness{}, "", fmt.Errorf("harness %q is not configured", requested)
 	}
+	if len(s.harness.Command) == 0 {
+		// A declared harness with no command is the login shell: the control
+		// plane names the harness, and only the sandbox knows which shell the
+		// run user has. Its identity stays the declared one, so the terminal
+		// still reports the harness the sandbox was created with.
+		shell, err := s.shellAgent()
+		if err != nil {
+			return config.Harness{}, "", err
+		}
+		harness := s.harness
+		harness.Command = shell.Command
+		return harness, harness.ID, nil
+	}
 	return s.harness, s.harness.ID, nil
 }
 

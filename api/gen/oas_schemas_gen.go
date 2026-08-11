@@ -2051,7 +2051,9 @@ type HarnessConfig struct {
 	ProjectId string `json:"projectId"`
 	// Argv declared by the registered image to resume a previous harness session.
 	RelaunchCommand OptNilStringArray `json:"relaunchCommand"`
-	// Argv declared by the registered image to run the harness.
+	// Argv declared by the registered image to run the harness. Absent for a harness whose image
+	// declares none, such as the built-in `shell`, where the sandbox resolves the run user's login shell
+	// instead.
 	RunCommand []string `json:"runCommand"`
 	// Environment-variable secrets declared by the registered image.
 	Secrets OptNilHarnessConfigSecretArray `json:"secrets"`

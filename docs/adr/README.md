@@ -68,7 +68,7 @@ Nygard-style ADRs (see adr.github.io) combined with current-state design docs:
 | [0013](0013-local-linux-pools-use-libkrun-microvms.md) | Local Linux pools use libkrun microVMs with VSOCK and passt | Accepted |
 | [0014](0014-disco-apply-pulls-sandbox-commits-via-cherry-pick.md) | `disco apply` pulls sandbox commits to the host via cherry-pick | Accepted |
 | [0015](0015-nested-docker-builds-trust-the-mitm-proxy-via-nri.md) | Nested Docker builds and containers trust the MITM proxy via an NRI plugin | Superseded by [0020](0020-nested-docker-trust-is-injected-by-a-runc-wrapper.md) |
-| [0016](0016-sandbox-image-upgrades-are-explicit-and-in-place.md) | Sandbox image upgrades are explicit, in-place, and digest-driven | Accepted |
+| [0016](0016-sandbox-image-upgrades-are-explicit-and-in-place.md) | Sandbox image upgrades are explicit, in-place, and digest-driven | Accepted (harnessless part superseded by 0025) |
 | [0017](0017-resource-state-is-desired-and-observed-with-no-operations.md) | Orchestration is generation convergence; a resource has state and desired state | Accepted |
 | [0018](0018-disco-diff-resolves-its-base-inside-the-sandbox.md) | `disco diff` resolves its base inside the sandbox | Accepted |
 | [0019](0019-one-server-per-data-directory-enforced-by-a-file-lock.md) | One server per data directory, enforced by an advisory file lock | Proposed |
@@ -84,4 +84,4 @@ Nygard-style ADRs (see adr.github.io) combined with current-state design docs:
 | [0029](0029-sandboxes-have-no-per-sandbox-resource-requests.md) | Sandboxes have no per-sandbox resource requests | Accepted |
 | [0030](0030-pool-agent-polls-and-pushes-sandbox-agent-status.md) | Pool-agent polls sandbox-agent status and pushes it to the control plane | Accepted |
 | [0031](0031-agent-credentials-are-a-portable-protocol-with-ephemeral-sentinels.md) | Agent credentials are a portable list/request/get protocol with pool-agent-minted ephemeral sentinels | Proposed |
-| [0031](0031-every-sandbox-has-a-harness-config-and-shell-is-the-built-in.md) | Every sandbox has a harness config, and `shell` is the built-in one | Proposed |
+| [0031](0031-every-sandbox-has-a-harness-config-and-shell-is-the-built-in.md) | Every sandbox has a harness config, and `shell` is the built-in one | Accepted |

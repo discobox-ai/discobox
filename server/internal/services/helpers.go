@@ -138,7 +138,7 @@ func SandboxUserFromModel(sandbox *model.Sandbox) *serverapi.SandboxUser {
 	return user
 }
 
-func SandboxToAPI(sandbox *model.Sandbox, defaultImage SandboxImageTarget) (serverapi.Sandbox, error) {
+func SandboxToAPI(sandbox *model.Sandbox, fallback *model.HarnessConfig) (serverapi.Sandbox, error) {
 	if sandbox == nil {
 		return serverapi.Sandbox{}, nil
 	}
@@ -202,7 +202,7 @@ func SandboxToAPI(sandbox *model.Sandbox, defaultImage SandboxImageTarget) (serv
 	if len(sandbox.AppliedCommits) > 0 {
 		runtime["appliedCommits"] = sandbox.AppliedCommits
 	}
-	if upgrade := SandboxUpgrade(sandbox, defaultImage); upgrade != nil {
+	if upgrade := SandboxUpgrade(sandbox, fallback); upgrade != nil {
 		runtime["upgrade"] = upgrade
 	}
 	if len(sandbox.AgentStatus) > 0 {
@@ -265,22 +265,25 @@ type SandboxImageTarget struct {
 // the current image is its only way forward.
 // A zero SandboxImageTarget means there is nothing to move to, which is a
 // different answer from "already up to date" and is reported differently.
-func SandboxUpgradeTarget(sandbox *model.Sandbox, config *model.HarnessConfig, defaultImage SandboxImageTarget) (SandboxImageTarget, bool) {
-	if sandbox.HarnessMode == "config" {
+//
+// config is the sandbox's harness config, or the project's fallback `shell`
+// config when the sandbox has none yet. A sandbox with no harness config is
+// always reported as upgradable, whatever its digest: what the upgrade changes
+// for it is adopting the config, and its digest matching already is not the
+// same as it being converged (ADR 0025 §4).
+func SandboxUpgradeTarget(sandbox *model.Sandbox, config *model.HarnessConfig) (SandboxImageTarget, bool) {
+	if sandbox.HarnessMode == "config" || config == nil {
 		return SandboxImageTarget{}, false
 	}
-	candidate := defaultImage
-	if sandbox.HarnessConfigID != nil {
-		if config == nil {
-			return SandboxImageTarget{}, false
-		}
-		candidate = SandboxImageTarget{Image: config.Image, Digest: config.ImageDigest}
-	}
-	image, digest := strings.TrimSpace(candidate.Image), strings.TrimSpace(candidate.Digest)
+	image, digest := strings.TrimSpace(config.Image), strings.TrimSpace(config.ImageDigest)
 	if image == "" || digest == "" {
 		return SandboxImageTarget{}, false
 	}
-	return SandboxImageTarget{Image: image, Digest: digest}, digest != strings.TrimSpace(sandbox.ImageDigest)
+	target := SandboxImageTarget{Image: image, Digest: digest}
+	if sandbox.HarnessConfigID == nil {
+		return target, true
+	}
+	return target, digest != strings.TrimSpace(sandbox.ImageDigest)
 }
 
 // SandboxUpgrade renders the upgrade field of a sandbox API response, or nil
@@ -290,11 +293,15 @@ func SandboxUpgradeTarget(sandbox *model.Sandbox, config *model.HarnessConfig, d
 // cached flag would have to be invalidated by every path that writes a harness
 // config, and the first one that forgot would leave a sandbox misreporting its
 // own state.
-func SandboxUpgrade(sandbox *model.Sandbox, defaultImage SandboxImageTarget) map[string]any {
+func SandboxUpgrade(sandbox *model.Sandbox, fallback *model.HarnessConfig) map[string]any {
 	if sandbox == nil {
 		return nil
 	}
-	target, available := SandboxUpgradeTarget(sandbox, sandbox.HarnessConfig, defaultImage)
+	config := sandbox.HarnessConfig
+	if sandbox.HarnessConfigID == nil {
+		config = fallback
+	}
+	target, available := SandboxUpgradeTarget(sandbox, config)
 	if target.Digest == "" {
 		return nil
 	}
@@ -346,10 +353,10 @@ func SandboxDisplayState(sandbox *model.Sandbox) string {
 	}
 }
 
-func SandboxesToAPI(sandboxes []model.Sandbox, defaultImage SandboxImageTarget) ([]serverapi.Sandbox, error) {
+func SandboxesToAPI(sandboxes []model.Sandbox, fallback *model.HarnessConfig) ([]serverapi.Sandbox, error) {
 	out := make([]serverapi.Sandbox, 0, len(sandboxes))
 	for i := range sandboxes {
-		converted, err := SandboxToAPI(&sandboxes[i], defaultImage)
+		converted, err := SandboxToAPI(&sandboxes[i], fallback)
 		if err != nil {
 			return nil, err
 		}

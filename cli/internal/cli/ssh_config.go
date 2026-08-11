@@ -45,7 +45,7 @@ func (a *App) newSSHConfigCommand() *cobra.Command {
 			// files and two Include lines.
 			resolvedProjectID := projectID
 			if write {
-				if resolvedProjectID, err = a.resolveProjectID(cmd, client, projectID); err != nil {
+				if resolvedProjectID, err = a.concreteProjectID(cmd, client, projectID); err != nil {
 					return err
 				}
 			}

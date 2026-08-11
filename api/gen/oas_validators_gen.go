@@ -1082,17 +1082,6 @@ func (s *HarnessConfig) Validate() error {
 		})
 	}
 	if err := func() error {
-		if s.RunCommand == nil {
-			return errors.New("nil is invalid value")
-		}
-		return nil
-	}(); err != nil {
-		failures = append(failures, validate.FieldError{
-			Name:  "runCommand",
-			Error: err,
-		})
-	}
-	if err := func() error {
 		if value, ok := s.Secrets.Get(); ok {
 			if err := func() error {
 				if value == nil {

@@ -109,6 +109,13 @@ func (s *Service) ConfigureHarnessConfig(ctx context.Context, projectID, configI
 	if strings.TrimSpace(config.Image) == "" {
 		return nil, apperrors.NewStatusError(http.StatusBadRequest, "harness config has no image to configure")
 	}
+	// Stated in terms of the missing command rather than the slug: the reserved
+	// `shell` built-in is a login shell with no credentials to collect (ADR
+	// 0025 §2), and so is any other image that declares no configure command.
+	if len(config.ConfigCommand) == 0 {
+		return nil, apperrors.NewStatusError(http.StatusConflict,
+			fmt.Sprintf("harness %q has nothing to configure: its image declares no configure command", config.Slug))
+	}
 	if previous := strings.TrimSpace(config.ConfigureSandboxID); previous != "" {
 		if err := s.sandboxes.DeleteSandbox(ctx, projectID, previous); err != nil && !errors.Is(err, store.ErrNotFound) {
 			slog.WarnContext(ctx, "failed to delete superseded configure sandbox",

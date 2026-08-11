@@ -49,8 +49,8 @@ func (f *fakeSandboxService) AcquireSandboxHTTPClient(ctx context.Context, proje
 	return nil, nil, errors.New("fakeSandboxService: no lease configured")
 }
 
-func (f *fakeSandboxService) DefaultSandboxImage() services.SandboxImageTarget {
-	return services.SandboxImageTarget{}
+func (f *fakeSandboxService) FallbackHarnessConfig(context.Context, string) (*model.HarnessConfig, error) {
+	return nil, nil
 }
 func (f *fakeSandboxService) ListSandboxes(context.Context, string, string, string) ([]model.Sandbox, error) {
 	panic("not implemented")

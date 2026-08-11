@@ -208,11 +208,15 @@ func hasSSHConfigInclude(config, managed string) bool {
 	return false
 }
 
-// resolveProjectID turns whatever -p was given into the project's real ID.
-// "default" is a server-side alias rather than an identifier, and the written
-// files are named after the project, so without this the same project reached
-// two ways would own two files and two Include lines.
-func (a *App) resolveProjectID(cmd *cobra.Command, client *apiclientgen.Client, projectID string) (string, error) {
+// concreteProjectID turns whatever -p was given into the project's real ID.
+//
+// It is deliberately not id.go's resolveProjectID, which passes the "default"
+// alias through untouched for the server to resolve. That is right for a
+// request — the server is the only side that knows which project carries the
+// default flag — and wrong here: these files are *named* after the project, so
+// leaving the alias unresolved is exactly how one project ends up owning two
+// files and two Include lines.
+func (a *App) concreteProjectID(cmd *cobra.Command, client *apiclientgen.Client, projectID string) (string, error) {
 	res, err := client.GetProject(cmd.Context(), apiclientgen.GetProjectParams{ProjectId: projectID})
 	if err != nil {
 		return "", err

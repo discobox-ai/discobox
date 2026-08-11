@@ -24,7 +24,7 @@ func TestSandboxToAPIIncludesRegisteredHarnessConfig(t *testing.T) {
 			RunCommand: []string{"codex"},
 		},
 	}
-	out, err := SandboxToAPI(sandbox, SandboxImageTarget{})
+	out, err := SandboxToAPI(sandbox, nil)
 	if err != nil {
 		t.Fatalf("SandboxToAPI: %v", err)
 	}
@@ -100,7 +100,7 @@ func TestSandboxToAPIIncludesCalculatedDisplayState(t *testing.T) {
 			ObservedGeneration: 1,
 		},
 	}
-	out, err := SandboxToAPI(sandbox, SandboxImageTarget{})
+	out, err := SandboxToAPI(sandbox, nil)
 	if err != nil {
 		t.Fatalf("SandboxToAPI: %v", err)
 	}

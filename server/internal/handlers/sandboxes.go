@@ -14,7 +14,7 @@ func (h *Handler) ListSandboxes(ctx context.Context, params serverapi.ListSandbo
 	if err != nil {
 		return apiError(err), nil
 	}
-	converted, err := services.SandboxesToAPI(sandboxes, h.services.Sandboxes.DefaultSandboxImage())
+	converted, err := services.SandboxesToAPI(sandboxes, h.fallbackHarnessConfig(ctx, params.ProjectId))
 	if err != nil {
 		return nil, err
 	}
@@ -32,7 +32,7 @@ func (h *Handler) CreateSandbox(ctx context.Context, req *apimodel.CreateSandbox
 	if err != nil {
 		return apiError(err), nil
 	}
-	body, err := services.SandboxToAPI(sandbox, h.services.Sandboxes.DefaultSandboxImage())
+	body, err := services.SandboxToAPI(sandbox, h.fallbackHarnessConfig(ctx, params.ProjectId))
 	if err != nil {
 		return nil, err
 	}
@@ -44,7 +44,7 @@ func (h *Handler) GetSandbox(ctx context.Context, params serverapi.GetSandboxPar
 	if err != nil {
 		return apiError(err), nil
 	}
-	body, err := services.SandboxToAPI(sandbox, h.services.Sandboxes.DefaultSandboxImage())
+	body, err := services.SandboxToAPI(sandbox, h.fallbackHarnessConfig(ctx, params.ProjectId))
 	if err != nil {
 		return nil, err
 	}
@@ -56,7 +56,7 @@ func (h *Handler) UpdateSandbox(ctx context.Context, req *apimodel.UpdateSandbox
 	if err != nil {
 		return apiError(err), nil
 	}
-	body, err := services.SandboxToAPI(sandbox, h.services.Sandboxes.DefaultSandboxImage())
+	body, err := services.SandboxToAPI(sandbox, h.fallbackHarnessConfig(ctx, params.ProjectId))
 	if err != nil {
 		return nil, err
 	}
@@ -91,7 +91,7 @@ func (h *Handler) StartSandbox(ctx context.Context, req *apimodel.StartSandboxBo
 	if err != nil {
 		return apiError(err), nil
 	}
-	body, err := services.SandboxToAPI(sandbox, h.services.Sandboxes.DefaultSandboxImage())
+	body, err := services.SandboxToAPI(sandbox, h.fallbackHarnessConfig(ctx, params.ProjectId))
 	if err != nil {
 		return nil, err
 	}
@@ -103,7 +103,7 @@ func (h *Handler) StopSandbox(ctx context.Context, req *apimodel.StopSandboxBody
 	if err != nil {
 		return apiError(err), nil
 	}
-	body, err := services.SandboxToAPI(sandbox, h.services.Sandboxes.DefaultSandboxImage())
+	body, err := services.SandboxToAPI(sandbox, h.fallbackHarnessConfig(ctx, params.ProjectId))
 	if err != nil {
 		return nil, err
 	}
@@ -115,7 +115,7 @@ func (h *Handler) RestartSandbox(ctx context.Context, req *apimodel.RestartSandb
 	if err != nil {
 		return apiError(err), nil
 	}
-	body, err := services.SandboxToAPI(sandbox, h.services.Sandboxes.DefaultSandboxImage())
+	body, err := services.SandboxToAPI(sandbox, h.fallbackHarnessConfig(ctx, params.ProjectId))
 	if err != nil {
 		return nil, err
 	}
@@ -127,7 +127,7 @@ func (h *Handler) UpgradeSandbox(ctx context.Context, req *apimodel.UpgradeSandb
 	if err != nil {
 		return apiError(err), nil
 	}
-	body, err := services.SandboxToAPI(sandbox, h.services.Sandboxes.DefaultSandboxImage())
+	body, err := services.SandboxToAPI(sandbox, h.fallbackHarnessConfig(ctx, params.ProjectId))
 	if err != nil {
 		return nil, err
 	}
@@ -139,7 +139,7 @@ func (h *Handler) CompleteSandboxSourcePush(ctx context.Context, req *apimodel.C
 	if err != nil {
 		return apiError(err), nil
 	}
-	body, err := services.SandboxToAPI(sandbox, h.services.Sandboxes.DefaultSandboxImage())
+	body, err := services.SandboxToAPI(sandbox, h.fallbackHarnessConfig(ctx, params.ProjectId))
 	if err != nil {
 		return nil, err
 	}
@@ -151,7 +151,7 @@ func (h *Handler) CompleteSandboxApply(ctx context.Context, req *apimodel.Comple
 	if err != nil {
 		return apiError(err), nil
 	}
-	body, err := services.SandboxToAPI(sandbox, h.services.Sandboxes.DefaultSandboxImage())
+	body, err := services.SandboxToAPI(sandbox, h.fallbackHarnessConfig(ctx, params.ProjectId))
 	if err != nil {
 		return nil, err
 	}
@@ -172,7 +172,7 @@ func (h *Handler) ReconcileSandbox(ctx context.Context, params serverapi.Reconci
 	if err != nil {
 		return apiError(err), nil
 	}
-	body, err := services.SandboxToAPI(sandbox, h.services.Sandboxes.DefaultSandboxImage())
+	body, err := services.SandboxToAPI(sandbox, h.fallbackHarnessConfig(ctx, params.ProjectId))
 	if err != nil {
 		return nil, err
 	}

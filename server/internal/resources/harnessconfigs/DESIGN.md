@@ -6,6 +6,26 @@ A harness config is the **only** harness concept — there is no separate
 definition. The three included harnesses are seeded as built-in configs
 (`SeedBuiltIns`); everything else is a user-registered image.
 
+`shell` is a fourth built-in, and the one every other rule bends around
+(ADR 0025). It is the end of the harness resolution chain, so a sandbox always
+has a harness config:
+
+- Its image is the server's default sandbox image — the agent itself, not a
+  harness product built on top of one. It therefore has no
+  `io.discobox.harness.v1` label to inspect, and is seeded from the configured
+  image *and digest* rather than by inspection. No digest means no seed: an
+  identity that cannot be pinned is not one an upgrade could ever compare.
+- It is born `Configured`. Every other built-in starts unconfigured, visible
+  but unselectable; this one has no credentials to collect, and a fresh project
+  has to be usable before anyone configures anything.
+- It carries **no run command**. The control plane cannot know the run user's
+  login shell, so the sandbox resolves it: `sandbox-agent`'s terminal layer
+  treats a declared harness with no command as that shell, keeping the declared
+  harness identity. `runCommand` is optional in the API schema for this reason.
+- `configure` refuses it — stated as "its image declares no configure command"
+  rather than by slug, since that is true of any such image. Deleting it is
+  already refused by the built-in rule.
+
 ## Registration and image metadata
 
 - The image's `io.discobox.harness.v1` label is authoritative. `image.go` inspects

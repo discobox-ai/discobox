@@ -20,15 +20,15 @@ flowchart LR
 
 - `Service` exposes sandbox API use cases and may call store directly for simple
   reads or non-orchestrated updates.
-- A sandbox with no harness config runs the server's default sandbox image, and
-  that is a choice of image rather than the absence of one: the default image is
-  what carries the sandbox agent, and a harness image is built on top of the same
-  agent. So it is also what such a sandbox *upgrades* to — leaving these pinned
-  forever stranded them on whatever agent shipped the day they were created,
-  with no way forward but recreation. The comparison needs the default image's
-  digest (`DISCOBOX_DEFAULT_SANDBOX_IMAGE_DIGEST`); with only a
-  tag there is nothing to compare, and tag equality would report "up to date"
-  for every sandbox on a rebuilt tag (ADR 0016 §1).
+- Every sandbox carries a harness config (ADR 0025). Resolution at create is
+  one chain that always terminates: explicit `--harness` → the project default
+  → the reserved `shell` built-in, which is also where a deleted default lands.
+  There is no second image path: a sandbox's image is its harness config's.
+- Sandboxes created before that rule converge by *upgrade*, not by migration.
+  One with no harness config reports `available` regardless of its digest —
+  what the upgrade changes for it is adopting the config — and taking the
+  upgrade writes the config as well as re-pinning the image. Until it does, it
+  says so in its own listing.
 - The upgrade rule has exactly one implementation,
   `services.SandboxUpgradeTarget`, called both by the read path that reports an
   available upgrade and by `UpgradeSandbox` which applies one. They were

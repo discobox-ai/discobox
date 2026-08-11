@@ -100,7 +100,10 @@ runtime operations.
   it anywhere on its own initiative, consistent with the boundary rule above.
 - A terminal is one primitive: an exec created in harness mode. The `terminal`
   layer resolves the image harness (or the `shell` fallback harness — a login
-  shell — when the image has no harness), applies image/project files and hooks,
+  shell — when the image has no harness, or when the manifest declares a
+  harness with no command, which is the control plane's way of naming that
+  same shell without knowing which shell the run user has: ADR 0031), applies
+  image/project files and hooks,
   injects the hook/terminal env, then calls `execs.Manager` with `TTY`,
   `harnessId`/`primary` metadata, `Shell: true`, and — for every harness except
   the `shell` fallback (which already is the shell) — `StartupCommand` set to the
@@ -121,7 +124,6 @@ runtime operations.
   timing. This is why Ctrl-Z can suspend a harness at all: see the orphaned
   process group rule below. `SandboxExec.command` and `.startupCommand` report
   the two argvs separately; CLI/API display prefers `startupCommand` when set.
-
 ## Development Images
 
 `task build` is the no-argument build entry point for binaries and all local
