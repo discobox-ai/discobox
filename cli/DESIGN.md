@@ -346,6 +346,20 @@ level or layering on the attach transports above.
 - A sandbox whose every pattern is contested is emitted as a comment rather
   than a stanza: `Host` with no patterns is a syntax error that would break the
   whole file.
+- `--write` writes the stanzas and the server's host key to two files under the
+  CLI state directory, beside the generated key, and adds one `Include` line to
+  `~/.ssh/config`. Nothing else in `~/.ssh` is edited: this command owns those
+  two files and rewrites them wholesale, so it never has to parse or merge into
+  a config the user maintains by hand. The `Include` goes at the *top*, because
+  ssh takes the first value obtained for each keyword and an `Include` placed
+  after an existing `Host *` block would lose every setting that block sets. It
+  is idempotent — re-running after creating a sandbox refreshes the stanzas and
+  leaves one `Include`.
+- Only the written form carries `UserKnownHostsFile`, pointing at the
+  known_hosts it just wrote. Pinning the host key there keeps
+  `StrictHostKeyChecking` meaningful without editing the file that records the
+  user's trust in every other host they use; printed output cannot name a file
+  the run never wrote, so it keeps emitting the line as a comment instead.
 
 ## Signals and Job Control
 

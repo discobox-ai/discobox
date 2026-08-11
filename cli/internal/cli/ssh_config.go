@@ -17,12 +17,16 @@ func (a *App) newSSHConfigCommand() *cobra.Command {
 	var host string
 	var port int
 	var identityFile string
+	var write bool
 	cmd := &cobra.Command{
 		Use:   "ssh-config",
 		Short: "Emit an SSH client config for this project's sandboxes",
 		Long: "Emit ssh_config(5) Host stanzas — one per sandbox in the current project — plus\n" +
 			"the server's known_hosts line, suitable for `disco box ssh-config >> ~/.ssh/config`\n" +
 			"or an ssh_config Include directive.\n\n" +
+			"With --write, the stanzas and the server's host key are written to files this\n" +
+			"command owns and rewrites, and ~/.ssh/config gains a single Include line pointing\n" +
+			"at them. Nothing else in ~/.ssh is edited.\n\n" +
 			"The address comes from the server, which knows where its SSH ingress is reachable;\n" +
 			"--host and --port override it for cases the server cannot know about, such as a\n" +
 			"local port forward.",
@@ -78,30 +82,20 @@ func (a *App) newSSHConfigCommand() *cobra.Command {
 				return err
 			}
 
-			sandboxes := sandboxesBody.GetSandboxes()
-			patterns := sshConfigHostPatterns(sandboxes)
-			out := cmd.OutOrStdout()
-			for i, sandbox := range sandboxes {
-				if len(patterns[i]) == 0 {
-					// Every candidate was claimed by another sandbox. Emitting
-					// `Host` with no patterns is an ssh_config syntax error that
-					// would break the whole file, so say what happened instead.
-					fmt.Fprintf(out, "# %s (%s) has no unambiguous host alias and was skipped\n\n",
-						sandbox.Config.Name, sandbox.ID)
-					continue
-				}
-				fmt.Fprintf(out, "Host %s\n", strings.Join(patterns[i], " "))
-				fmt.Fprintf(out, "    HostName %s\n", host)
-				fmt.Fprintf(out, "    Port %d\n", port)
-				fmt.Fprintf(out, "    User %s\n", sandbox.ID)
-				fmt.Fprintf(out, "    IdentityFile %s\n", identityFile)
-				// Without IdentitiesOnly, ssh offers every agent key before
-				// this one and can exhaust MaxAuthTries before reaching it.
-				fmt.Fprintf(out, "    IdentitiesOnly yes\n")
-				if i < len(sandboxes)-1 {
-					fmt.Fprintln(out)
-				}
+			stanzas := renderSSHConfig(sshConfigRender{
+				sandboxes:    sandboxesBody.GetSandboxes(),
+				host:         host,
+				port:         port,
+				identityFile: identityFile,
+				// Only the written config can point at a known_hosts file,
+				// because only it owns one.
+				knownHostsFile: knownHostsFileFor(write),
+			})
+			if write {
+				return writeManagedSSHConfig(cmd, stanzas, knownHostsHost(host, port), ingress.HostKey.Or(""))
 			}
+			out := cmd.OutOrStdout()
+			fmt.Fprint(out, stanzas)
 			fmt.Fprintf(out, "\n# add to your known_hosts:\n# %s %s\n",
 				knownHostsHost(host, port), ingress.HostKey.Or(""))
 			return nil
@@ -110,6 +104,7 @@ func (a *App) newSSHConfigCommand() *cobra.Command {
 	cmd.Flags().StringVar(&host, "host", "", "Override the address ssh clients should dial (default: whatever the server advertises)")
 	cmd.Flags().IntVar(&port, "port", 0, "Override the SSH port (default: whatever the server advertises)")
 	cmd.Flags().StringVar(&identityFile, "identity-file", "", "Private key to use, generated and enrolled if absent (default: the CLI's own managed key)")
+	cmd.Flags().BoolVarP(&write, "write", "w", false, "Write the config where ssh will find it, instead of printing it")
 	return cmd
 }
 
