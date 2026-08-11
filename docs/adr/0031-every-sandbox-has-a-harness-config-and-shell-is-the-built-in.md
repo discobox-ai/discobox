@@ -43,9 +43,7 @@ that chain always terminates:
     explicit --harness / harnessConfigId  →  project default  →  the built-in `shell` config
 
 The inline `s.defaultImage` fallback in `CreateSandbox` is removed: a sandbox's
-image comes from its harness config, with no second path. Existing sandboxes
-with no harness config are backfilled to their project's `shell` config by
-migration, and the column becomes required afterwards.
+image comes from its harness config, with no second path.
 
 ### 2. `shell` is a seeded built-in whose image is the default sandbox image
 
@@ -87,7 +85,25 @@ without it: a project with no default is still visibly a project where nobody
 has chosen an agent, because `DefaultHarnessConfigID` stays empty rather than
 being quietly pointed at `shell`. Resolution falls back; state does not.
 
-### 4. A deleted default resolves to `shell`, not to nothing
+### 4. Existing sandboxes converge by upgrade, not by migration
+
+A sandbox that already has no harness config is not rewritten in place. It
+reports an upgrade whose target is the fallback, and taking that upgrade adopts
+the `shell` config as well as re-pinning the image.
+
+This is the mechanism 0016 already built, used for what it is for: an upgrade
+is the explicit, in-place, power-state-preserving way a sandbox's spec changes
+(0021), and it is already visible in `disco box sandbox ls`. A migration that
+silently repointed live sandboxes at a harness config would be the one thing
+0016 exists to prevent — a sandbox's identity changing without anyone asking —
+and it would do so to sandboxes whose owners are mid-task inside them.
+
+Such a sandbox reports `available` even when its pinned digest already matches
+the fallback's image. The digest is not what changes: adopting the harness
+config is, and a sandbox that cannot say which harness it runs is exactly the
+state this ADR removes.
+
+### 5. A deleted default resolves to `shell`, not to nothing
 
 `resolveHarnessConfigID` currently returns nil when the project's default was
 deleted, with the comment "leave the sandbox agent-less". Under this ADR that
@@ -121,9 +137,13 @@ config there is nothing for an upgrade to move to, which is the bug.
 - A sandbox's image is answerable from its harness config alone, so the pool
   agent's contract can require one rather than tolerating its absence.
 - `disco box harness configure shell` has nothing to do and should say so.
-- Migration must backfill every existing sandbox, including archived ones,
-  before the column can be required. A project whose sandboxes predate seeding
-  gets its `shell` config created by the same migration.
+- `Sandbox.HarnessConfigID` stays nullable, and the read path keeps a
+  nil-means-fallback rule until the fleet has converged. That is the price of
+  converging by upgrade instead of by backfill, and it is bounded: the fleet is
+  short-lived, and every sandbox that has not converged says so in its own
+  listing.
+- Seeding creates the `shell` config for every existing project, not only new
+  ones, since an un-converged sandbox needs a target to upgrade to.
 - Deleting the `shell` config has to be refused, the way deleting the last
   route out of a system is refused. It is the end of the resolution chain, and
   a project without it can create no sandboxes.
