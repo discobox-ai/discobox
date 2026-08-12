@@ -56,7 +56,7 @@ func TestDirectTCPIPTunnelRoundTrip(t *testing.T) {
 	defer agentServer.Close()
 
 	h := newTestHarness(t)
-	acme := createRouteFixtureProject(t, h.server.store, "proj_acme00000000", "Acme", "acme")
+	acme := createRouteFixtureProject(t, h.server.store, "proj_acme00000000", "Acme")
 	sandbox := createRouteFixtureSandbox(t, h.server.store, acme, "devbox")
 	h.sandboxes.acquireResult = func() (*services.HTTPClientLease, *model.Sandbox, error) {
 		lease := &transport.HTTPClientLease{Client: agentServer.Client(), BaseURL: agentServer.URL}
@@ -101,7 +101,7 @@ func TestDirectTCPIPRejectedBeforeAcceptOnDialFailure(t *testing.T) {
 	defer agentServer.Close()
 
 	h := newTestHarness(t)
-	acme := createRouteFixtureProject(t, h.server.store, "proj_acme00000000", "Acme", "acme")
+	acme := createRouteFixtureProject(t, h.server.store, "proj_acme00000000", "Acme")
 	sandbox := createRouteFixtureSandbox(t, h.server.store, acme, "devbox")
 	h.sandboxes.acquireResult = func() (*services.HTTPClientLease, *model.Sandbox, error) {
 		lease := &transport.HTTPClientLease{Client: agentServer.Client(), BaseURL: agentServer.URL}
@@ -124,7 +124,7 @@ func TestDirectTCPIPRejectedBeforeAcceptOnDialFailure(t *testing.T) {
 
 func TestDirectTCPIPMalformedPayloadRejected(t *testing.T) {
 	h := newTestHarness(t)
-	acme := createRouteFixtureProject(t, h.server.store, "proj_acme00000000", "Acme", "acme")
+	acme := createRouteFixtureProject(t, h.server.store, "proj_acme00000000", "Acme")
 	sandbox := createRouteFixtureSandbox(t, h.server.store, acme, "devbox")
 	signer := newTestSigner(t)
 	writeAuthorizedKeys(t, h.server.dataDir, signer)

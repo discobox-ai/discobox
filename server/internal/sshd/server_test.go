@@ -175,7 +175,7 @@ func TestHandshakeFileKeyAuthenticatesAsDefaultUserWithFullScope(t *testing.T) {
 	signer := newTestSigner(t)
 	writeAuthorizedKeys(t, h.server.dataDir, signer)
 
-	acme := createRouteFixtureProject(t, h.server.store, "proj_acme00000000", "Acme", "acme")
+	acme := createRouteFixtureProject(t, h.server.store, "proj_acme00000000", "Acme")
 	sandbox := createRouteFixtureSandbox(t, h.server.store, acme, "devbox")
 
 	client, err := h.dial(sandbox.ID, signer)
@@ -213,7 +213,7 @@ func TestHandshakeProjectKeyGetsScopedBundle(t *testing.T) {
 	h := newTestHarness(t)
 	signer := newTestSigner(t)
 
-	acme := createRouteFixtureProject(t, h.server.store, "proj_acme00000000", "Acme", "acme")
+	acme := createRouteFixtureProject(t, h.server.store, "proj_acme00000000", "Acme")
 	sandbox := createRouteFixtureSandbox(t, h.server.store, acme, "devbox")
 
 	pub := signer.PublicKey()
@@ -258,7 +258,7 @@ func TestHandshakeProjectKeyGetsScopedBundle(t *testing.T) {
 
 func TestHandshakeUnknownKeyRejected(t *testing.T) {
 	h := newTestHarness(t)
-	acme := createRouteFixtureProject(t, h.server.store, "proj_acme00000000", "Acme", "acme")
+	acme := createRouteFixtureProject(t, h.server.store, "proj_acme00000000", "Acme")
 	sandbox := createRouteFixtureSandbox(t, h.server.store, acme, "devbox")
 
 	stranger := newTestSigner(t)
@@ -271,7 +271,7 @@ func TestGlobalRequestsAreRejected(t *testing.T) {
 	h := newTestHarness(t)
 	signer := newTestSigner(t)
 	writeAuthorizedKeys(t, h.server.dataDir, signer)
-	acme := createRouteFixtureProject(t, h.server.store, "proj_acme00000000", "Acme", "acme")
+	acme := createRouteFixtureProject(t, h.server.store, "proj_acme00000000", "Acme")
 	sandbox := createRouteFixtureSandbox(t, h.server.store, acme, "devbox")
 
 	client, err := h.dial(sandbox.ID, signer)
@@ -295,7 +295,7 @@ func TestUnknownChannelTypeRejected(t *testing.T) {
 	h := newTestHarness(t)
 	signer := newTestSigner(t)
 	writeAuthorizedKeys(t, h.server.dataDir, signer)
-	acme := createRouteFixtureProject(t, h.server.store, "proj_acme00000000", "Acme", "acme")
+	acme := createRouteFixtureProject(t, h.server.store, "proj_acme00000000", "Acme")
 	sandbox := createRouteFixtureSandbox(t, h.server.store, acme, "devbox")
 
 	client, err := h.dial(sandbox.ID, signer)

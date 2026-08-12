@@ -14,8 +14,8 @@ func TestResolveUsername(t *testing.T) {
 	ctx := context.Background()
 	db := newRouteTestStore(t)
 
-	acme := createRouteFixtureProject(t, db, "proj_acme00000000", "Acme", "acme")
-	other := createRouteFixtureProject(t, db, "proj_other0000000", "Other Co", "other-co")
+	acme := createRouteFixtureProject(t, db, "proj_acme00000000", "Acme")
+	other := createRouteFixtureProject(t, db, "proj_other0000000", "Other Co")
 	sandbox := createRouteFixtureSandbox(t, db, acme, "devbox")
 	otherSandbox := createRouteFixtureSandbox(t, db, other, "devbox")
 
@@ -65,7 +65,7 @@ func TestResolveUsername(t *testing.T) {
 func TestResolveUsernameSbxPrefixWinsEvenWithDot(t *testing.T) {
 	ctx := context.Background()
 	db := newRouteTestStore(t)
-	acme := createRouteFixtureProject(t, db, "proj_acme00000000", "Acme", "acme")
+	acme := createRouteFixtureProject(t, db, "proj_acme00000000", "Acme")
 	sandbox := createRouteFixtureSandbox(t, db, acme, "devbox")
 
 	// A username that starts with the sandbox ID prefix is always parsed as a
@@ -93,7 +93,7 @@ func newRouteTestStore(t *testing.T) *store.Store {
 	return store.New(db.Write, db.Read)
 }
 
-func createRouteFixtureProject(t *testing.T, s *store.Store, id, name, slug string) string {
+func createRouteFixtureProject(t *testing.T, s *store.Store, id, name string) string {
 	t.Helper()
 	ctx := context.Background()
 	if err := s.UpsertProject(ctx, &model.Project{ID: id, OwnerUserID: "user-1", Name: name}); err != nil {

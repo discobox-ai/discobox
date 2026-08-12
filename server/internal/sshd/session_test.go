@@ -2,6 +2,7 @@ package sshd
 
 import (
 	"encoding/json"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -25,7 +26,7 @@ const fakeExecRecordJSON = `{"id":"ex_test0000000000","command":["/bin/bash"],"c
 	`"status":"starting","tty":false,"workdir":"/home/user"}`
 
 // fakeExecAgent stands in for the sandbox-agent's exec endpoints, reproducing
-// the one behaviour the SSH session path depends on: an exec is created
+// the one behavior the SSH session path depends on: an exec is created
 // suspended and produces nothing until it is started. Output is written by the
 // start handler, so a session that never starts its exec hangs here exactly as
 // it does against a real sandbox.
@@ -126,7 +127,7 @@ func newExecSessionHarness(t *testing.T, agent *fakeExecAgent) (*testHarness, st
 	t.Cleanup(agentServer.Close)
 
 	h := newTestHarness(t)
-	acme := createRouteFixtureProject(t, h.server.store, "proj_acme00000000", "Acme", "acme")
+	acme := createRouteFixtureProject(t, h.server.store, "proj_acme00000000", "Acme")
 	sandbox := createRouteFixtureSandbox(t, h.server.store, acme, "devbox")
 	h.sandboxes.acquireResult = func() (*services.HTTPClientLease, *model.Sandbox, error) {
 		lease := &transport.HTTPClientLease{Client: agentServer.Client(), BaseURL: agentServer.URL}
@@ -178,8 +179,8 @@ func TestSessionExecStartsTheExecAndStreamsOutput(t *testing.T) {
 	if string(got.out) != "hello from the sandbox\n" {
 		t.Fatalf("stdout = %q, want %q", got.out, "hello from the sandbox\n")
 	}
-	exitErr, ok := got.err.(*ssh.ExitError)
-	if !ok {
+	var exitErr *ssh.ExitError
+	if !errors.As(got.err, &exitErr) {
 		t.Fatalf("err = %v (%T), want *ssh.ExitError carrying the exit status", got.err, got.err)
 	}
 	if exitErr.ExitStatus() != 7 {
@@ -290,8 +291,8 @@ func TestSessionFailureReachesTheClient(t *testing.T) {
 		t.Fatalf("the request is accepted so the reason can be delivered: %v", err)
 	}
 	err = session.Wait()
-	exitErr, ok := err.(*ssh.ExitError)
-	if !ok {
+	var exitErr *ssh.ExitError
+	if !errors.As(err, &exitErr) {
 		t.Fatalf("wait = %v (%T), want a non-zero exit carrying the failure", err, err)
 	}
 	if exitErr.ExitStatus() != sessionSetupExitStatus {
@@ -313,7 +314,7 @@ func TestSessionFailureReachesTheClient(t *testing.T) {
 func TestSessionAuthorizationFailureSaysNothingSpecific(t *testing.T) {
 	for _, status := range []int{http.StatusForbidden, http.StatusNotFound} {
 		h := newTestHarness(t)
-		acme := createRouteFixtureProject(t, h.server.store, "proj_acme00000000", "Acme", "acme")
+		acme := createRouteFixtureProject(t, h.server.store, "proj_acme00000000", "Acme")
 		sandbox := createRouteFixtureSandbox(t, h.server.store, acme, "devbox")
 		h.sandboxes.acquireErr = apperrors.NewStatusError(status,
 			"sandbox sbx_secret000000001 not found in project proj_secret00000001")
@@ -353,7 +354,7 @@ func TestSessionAuthorizationFailureSaysNothingSpecific(t *testing.T) {
 // sends the reader to look at keys and grants for something that is neither.
 func TestSessionOperationalFailureSaysWhat(t *testing.T) {
 	h := newTestHarness(t)
-	acme := createRouteFixtureProject(t, h.server.store, "proj_acme00000000", "Acme", "acme")
+	acme := createRouteFixtureProject(t, h.server.store, "proj_acme00000000", "Acme")
 	sandbox := createRouteFixtureSandbox(t, h.server.store, acme, "devbox")
 	h.sandboxes.acquireErr = apperrors.NewStatusError(http.StatusConflict, "sandbox pool is not active")
 
