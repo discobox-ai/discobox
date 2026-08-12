@@ -120,7 +120,8 @@ func (a *App) resolveShellTarget(cmd *cobra.Command, args []string) (projectID, 
 }
 
 // matchSandboxArg reports whether arg names one of sandboxes, the same
-// candidates "disco ls" shows for the current project directory. A full
+// candidates "disco ls" shows for the current project directory: a full
+// generated ID, an exact sandbox name, or a short ID. A full
 // generated ID (id.IsGenerated) is trusted outright: its shape — a resource
 // prefix plus 16 random characters — is unique enough that no shell command
 // word could collide with it by accident. A short ID is matched against these
@@ -132,6 +133,18 @@ func (a *App) resolveShellTarget(cmd *cobra.Command, args []string) (projectID, 
 func matchSandboxArg(arg string, sandboxes []apimodel.Sandbox) (id string, ok bool, err error) {
 	if idpkg.IsGenerated(arg) {
 		return arg, true, nil
+	}
+	// An exact name, before any ID matching: a name is what the listing shows
+	// and what people type, and matching it in full leaves no room for the
+	// guessing a prefix invites. Names are unique within a project
+	// (idx_sandbox_project_name), so a duplicate here would mean the candidate
+	// list spans projects; it is reported rather than picked between.
+	switch named := sandboxesNamed(arg, sandboxes); len(named) {
+	case 0:
+	case 1:
+		return named[0], true, nil
+	default:
+		return "", false, fmt.Errorf("%q names more than one sandbox from this directory (%s); use the sandbox ID", arg, strings.Join(named, ", "))
 	}
 	if !isResolvableShortID(arg) {
 		return "", false, nil
@@ -148,4 +161,18 @@ func matchSandboxArg(arg string, sandboxes []apimodel.Sandbox) (id string, ok bo
 	default:
 		return "", false, fmt.Errorf("%q matches more than one sandbox from this directory (%s); use a longer prefix", arg, strings.Join(matches, ", "))
 	}
+}
+
+// sandboxesNamed returns the IDs of the sandboxes whose name is exactly arg.
+// The match is the whole name and nothing less: a partial name would compete
+// with short-ID matching for the same argument, and "did you mean a name or an
+// ID" is not a question a command word should have to answer.
+func sandboxesNamed(arg string, sandboxes []apimodel.Sandbox) []string {
+	var ids []string
+	for _, sandbox := range sandboxes {
+		if sandbox.Config.Name == arg {
+			ids = append(ids, sandbox.ID)
+		}
+	}
+	return ids
 }

@@ -127,6 +127,9 @@ func sshBridgeArgs(port int, sandboxID, identityFile, knownHostsFile string) []s
 		// about it, and a stray `Host *` block there could otherwise override
 		// the identity or user this command just resolved.
 		"-F", "none",
-		"127.0.0.1",
 	}
 }
+
+// sshBridgeHost is the host argument, which must follow every option and
+// precede any remote command (`ssh [options] host [command]`).
+const sshBridgeHost = "127.0.0.1"

@@ -27,8 +27,12 @@ func TestSSHBridgeArgsCarryEverythingTheSessionNeeds(t *testing.T) {
 			t.Fatalf("args %v missing %q", args, want)
 		}
 	}
-	if args[len(args)-1] != "127.0.0.1" {
-		t.Fatalf("args must end at the host so the user's arguments follow it, got %v", args)
+	// The host is deliberately not here: it has to sit after the user's own
+	// options and before their remote command, so the caller places it.
+	for _, arg := range args {
+		if arg == sshBridgeHost {
+			t.Fatalf("the host must not be part of the option list, got %v", args)
+		}
 	}
 }
 

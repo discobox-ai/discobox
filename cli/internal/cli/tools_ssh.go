@@ -55,6 +55,16 @@ func (a *App) runToolsSSH(cmd *cobra.Command, sandboxArg string, args []string) 
 	if err != nil {
 		return err
 	}
+	userOptions, remoteCommand, background := splitSSHArgs(sshArgs)
+	if background {
+		// ssh -f forks and returns, and this process owns the bridge its
+		// session runs over: returning here tears the bridge down under the
+		// backgrounded ssh, which is why it currently "succeeds" and leaves
+		// nothing behind. Backgrounding the whole command keeps the two
+		// lifetimes together and leaves one process to kill.
+		return fmt.Errorf("ssh -f cannot be used here: the connection is carried by this command, " +
+			"so ssh must not outlive it. Background the command instead: disco tools ssh -N ... &")
+	}
 
 	identityFile, err := a.resolveSSHIdentity(cmd, client, projectID, "")
 	if err != nil {
@@ -88,7 +98,9 @@ func (a *App) runToolsSSH(cmd *cobra.Command, sandboxArg string, args []string) 
 	if err != nil {
 		return fmt.Errorf("ssh is not installed: %w", err)
 	}
-	full := append(sshBridgeArgs(bridge.port(), sandboxID, identityFile, knownHosts), sshArgs...)
+	full := append(sshBridgeArgs(bridge.port(), sandboxID, identityFile, knownHosts), userOptions...)
+	full = append(full, sshBridgeHost)
+	full = append(full, remoteCommand...)
 	session := exec.CommandContext(cmd.Context(), sshPath, full...) //nolint:gosec // G204: this command's own arguments, plus the user's own ssh arguments.
 	session.Stdin, session.Stdout, session.Stderr = cmd.InOrStdin(), cmd.OutOrStdout(), cmd.ErrOrStderr()
 	if err := session.Run(); err != nil {

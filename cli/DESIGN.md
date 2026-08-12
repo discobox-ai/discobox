@@ -110,6 +110,9 @@ sees one flat `[]string` and cannot tell SANDBOX_ID from CMD apart, so
 - A full generated ID (`id.IsGenerated`) is trusted outright: a resource prefix
   plus 16 random characters cannot collide with a real command word by
   accident.
+- An exact sandbox name matches next, in full and never partially: a name is
+  what the listing shows and what people type, and a partial one would compete
+  with short-ID matching for the same argument.
 - A short ID is matched against that candidate list exactly like an explicit
   SANDBOX_ID argument elsewhere. Zero matches is not an error — it just means
   `args[0]` was never a sandbox reference — but more than one is reported as
@@ -162,8 +165,19 @@ Flag parsing is **off** for `tools ssh` (`DisableFlagParsing`), not merely
 non-interspersed: `disco tools ssh -L 8080:localhost:3000` puts ssh's own flags
 first, and cobra would reject them as unknown before the command ever ran. The
 leading argument is taken as a sandbox only when it does not start with `-` and
-`matchSandboxArg` recognizes it; everything else, and everything after it,
-reaches ssh untouched.
+`matchSandboxArg` recognizes it; everything else reaches ssh.
+
+Reaching ssh is not the same as being appended. `ssh [options] host [command]`
+is positional and this command supplies the host, so `splitSSHArgs` separates
+the user's options from their remote command and places them either side of it.
+Appending everything after the host only works on glibc, whose getopt permutes
+argv; anywhere else every option would be sent to the remote as a command.
+
+`ssh -f` is refused rather than passed through. It forks and returns, and the
+bridge lives in this process, so honouring it would tear the connection down
+under the backgrounded ssh — which is exactly what it did before the check
+existed, silently. Backgrounding the whole command keeps both lifetimes
+together and leaves one process to kill.
 
 ## Listing Order
 
