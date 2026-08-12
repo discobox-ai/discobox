@@ -74,7 +74,11 @@ func IsPublicPath(path string) bool {
 	// and the server's host *public* key, neither a credential — and it must
 	// be fetchable (disco box ssh-config) before any other credential exists,
 	// the same rule that puts docs/openapi/health here.
-	return path == "/healthz" || path == "/openapi.yaml" || path == "/docs" || strings.HasPrefix(path, "/docs/") || path == "/ssh"
+	// /ssh/connect carries an SSH connection over this transport (ADR 0024).
+	// It is exempt for the same reason the TCP listener needs no HTTP auth:
+	// SSH authenticates inside its own protocol, by public key, before any
+	// channel exists.
+	return path == "/healthz" || path == "/openapi.yaml" || path == "/docs" || strings.HasPrefix(path, "/docs/") || path == "/ssh" || path == "/ssh/connect"
 }
 
 type defaultProjectIDContextKey struct{}

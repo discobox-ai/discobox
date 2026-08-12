@@ -20,6 +20,7 @@ import (
 	"github.com/obot-platform/discobox/server/internal/database"
 	"github.com/obot-platform/discobox/server/internal/secrets"
 	"github.com/obot-platform/discobox/server/internal/service"
+	"github.com/obot-platform/discobox/server/internal/sshd"
 	"github.com/obot-platform/discobox/server/internal/transport/carrierhub"
 )
 
@@ -106,6 +107,16 @@ func Run(ctx context.Context) error {
 		return fmt.Errorf("initialize app: %w", err)
 	}
 
+	// One sshd behind both front doors. The route is registered here rather
+	// than inside NewApp because sshd needs the services NewApp returns, and
+	// registering it on the same router keeps SSH reachable wherever the API
+	// is — which is what `disco tools ssh` relies on.
+	sshServer, err := newSSHServer(cfg, sshHostKey, appServices, appStore)
+	if err != nil {
+		return err
+	}
+	sshd.RegisterConnectRoute(router, sshServer)
+
 	listeners, err := listenAll(ctx, cfg.Listen)
 	if err != nil {
 		return fmt.Errorf("listen: %w", err)
@@ -119,7 +130,7 @@ func Run(ctx context.Context) error {
 		log.Printf("openapi spec available at %s/openapi.yaml", listener.display)
 		log.Printf("api docs available at %s/docs", listener.display)
 	}
-	if err := startSSHListener(ctx, cfg, sshHostKey, appServices, appStore); err != nil {
+	if err := startSSHListener(ctx, cfg, sshServer); err != nil {
 		return fmt.Errorf("start SSH listener: %w", err)
 	}
 	handler := otelhttp.NewHandler(router, "discobox-server")

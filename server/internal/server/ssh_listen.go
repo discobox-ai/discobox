@@ -23,12 +23,14 @@ import (
 // on after startup — and the host key is a file in the data directory, so
 // reading it does not depend on the listener being up.
 //
-// A disabled ingress is a resolved value too, not an absent one: clients get
-// {"enabled": false} rather than a 404 they cannot tell from an unknown route.
+// SSH is always available: every server can serve it over the transport the API
+// already answers on (`GET /ssh/connect`), so the host key is loaded
+// unconditionally. DISCOBOX_SSH_LISTEN decides only whether there is *also* a
+// TCP front door, which is the part that has to be opted into because it is a
+// machine-wide surface. Those are two different questions, and Address answers
+// the second: empty means "reachable, but not at an address you can put in a
+// config file".
 func resolveSSHIngress(cfg *config.Config) (services.SSHIngress, ssh.Signer, error) {
-	if cfg.SSHListen == "" {
-		return services.SSHIngress{}, nil, nil
-	}
 	hostKey, err := sshd.LoadOrCreateHostKey(cfg.DataDir)
 	if err != nil {
 		return services.SSHIngress{}, nil, fmt.Errorf("load SSH host key: %w", err)
@@ -51,14 +53,10 @@ func resolveSSHIngress(cfg *config.Config) (services.SSHIngress, ssh.Signer, err
 // to drain the same way — sshd.Server.Serve simply stops accepting and lets
 // ctx cancellation close the listener, matching sshd's own connection
 // lifecycle rather than http.Server's.
-//
-// hostKey is the signer resolveSSHIngress already loaded; a nil signer means
-// SSH is disabled and this is a no-op.
-func startSSHListener(ctx context.Context, cfg *config.Config, hostKey ssh.Signer, appServices services.Services, appStore *store.Store) error {
-	if hostKey == nil {
-		return nil
-	}
-	sshServer, err := sshd.NewServer(sshd.Options{
+// newSSHServer builds the one sshd both front doors share: the optional TCP
+// listener and the `GET /ssh/connect` route.
+func newSSHServer(cfg *config.Config, hostKey ssh.Signer, appServices services.Services, appStore *store.Store) (*sshd.Server, error) {
+	server, err := sshd.NewServer(sshd.Options{
 		HostKey:       hostKey,
 		DataDir:       cfg.DataDir,
 		Store:         appStore,
@@ -66,7 +64,14 @@ func startSSHListener(ctx context.Context, cfg *config.Config, hostKey ssh.Signe
 		DefaultUserID: service.DefaultUserID,
 	})
 	if err != nil {
-		return fmt.Errorf("initialize SSH server: %w", err)
+		return nil, fmt.Errorf("initialize SSH server: %w", err)
+	}
+	return server, nil
+}
+
+func startSSHListener(ctx context.Context, cfg *config.Config, sshServer *sshd.Server) error {
+	if cfg.SSHListen == "" {
+		return nil
 	}
 	ln, err := new(net.ListenConfig).Listen(ctx, "tcp", cfg.SSHListen)
 	if err != nil {

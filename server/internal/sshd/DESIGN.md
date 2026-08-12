@@ -104,6 +104,26 @@ the channel before accepting, matching what a real `sshd` does for a
 refused `-L` target. See `sandbox-agent/DESIGN.md` for the sandbox-side
 dial and pump, and `pool-agent/DESIGN.md` for the proxy route.
 
+## Two front doors, one server
+
+`sshd.Server` is fed by two things: the optional TCP listener
+(`DISCOBOX_SSH_LISTEN`), and `GET /ssh/connect`, which accepts a websocket and
+hands `websocket.NetConn`'s byte stream to the same `handleConn`. Both
+authenticate identically, because authentication is inside the SSH protocol.
+
+That is what lets `disco tools ssh` work against a server that binds no SSH
+port: reaching the server the way the CLI already reaches it needs no new
+machine-wide surface. The route is exempt from HTTP auth for the same reason
+the TCP listener needs none — SSH authenticates by public key before any
+channel exists, and an HTTP credential in front of it would only be a second
+lock on the same door.
+
+So `GET /ssh` answers two different questions. `enabled` is whether this server
+can serve SSH at all, which is always true; `address` is the advertised TCP
+endpoint, which is absent when none is configured. A client that needs a
+persistent `ssh_config` needs the address; `disco tools ssh` needs only
+`enabled` and the host key.
+
 ## Endpoint discovery
 
 The endpoint and host key are served together by `GET /ssh` (an ordinary

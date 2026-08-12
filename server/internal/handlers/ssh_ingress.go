@@ -20,8 +20,12 @@ func (h *Handler) GetSSHIngress(context.Context) (serverapi.GetSSHIngressRes, er
 	ingress := h.services.SSH
 	body := &apimodel.SSHIngress{Enabled: ingress.Enabled}
 	if ingress.Enabled {
-		body.SetAddress(serverapi.NewOptString(ingress.Address))
 		body.SetHostKey(serverapi.NewOptString(ingress.HostKey))
+		// Absent when no TCP listener is configured: SSH is reachable through
+		// `GET /ssh/connect`, but there is no address to write into a config.
+		if ingress.Address != "" {
+			body.SetAddress(serverapi.NewOptString(ingress.Address))
+		}
 	}
 	return body, nil
 }

@@ -127,12 +127,12 @@ because the local `$SHELL` describes this machine and says nothing about the
 identity the exec runs as. `box exec create --shell` is the same request in
 raw form.
 
-`disco tools` groups the everyday development tools run inside a sandbox against
-one of its sources — `tools git` today. Which sandbox to run in is the one thing
-every tool has in common, so `--sandbox-id` is a persistent flag on `tools`
-itself and every subcommand inherits it. Everything else, including where in the
-sandbox the tool runs (`git`'s `--source`/`-s`), belongs to the subcommand that
-means it. Each then drives the same exec create/attach/status sequence as
+`disco tools` groups the everyday development tools run *against* a sandbox —
+`git` and `ssh` today. Which sandbox is the one thing every tool has in common,
+so `--sandbox-id` is a persistent flag on `tools` itself and every subcommand
+inherits it. Everything else belongs to the subcommand that means it, including
+where the tool runs: `git` runs inside the sandbox and takes `--source`/`-s`,
+while `ssh` runs on this machine and connects to the sandbox. Each then drives the same exec create/attach/status sequence as
 `disco shell`. Flag parsing stops at the first positional argument
 (`SetInterspersed(false)`), so everything from there on reaches the tool verbatim.
 
@@ -142,6 +142,28 @@ primary source's. Only `git --source` has to `GetSandbox` to turn a slug into a
 directory. With a full `--sandbox-id` the whole command is create + attach +
 start + status, so a one-shot `disco t git status` costs no round trip it does
 not need.
+
+`disco tools ssh` needs no SSH port on the server. The session is carried over
+the endpoint the CLI already uses: a loopback TCP port opened for the life of
+the command splices each connection to a `GET /ssh/connect` websocket, whose
+byte stream the server hands to the same sshd its TCP listener feeds.
+`localipc.StartLoopbackProxy` cannot serve this — it is an HTTP reverse proxy,
+and these are not HTTP bytes.
+
+Everything the session needs is passed on the command line, so nothing is
+written down: address and port from the bridge, `-l` from the sandbox ID, `-i`
+from the managed key, and `UserKnownHostsFile` from a temp file holding the
+host key this run fetched. `-F none` keeps the user's own `ssh_config` out of
+it, since a `Host *` block there could otherwise override the identity or user
+just resolved. The enrolled key is the single persisted thing, and
+`resolveSSHIdentity` reuses an already-enrolled one rather than adding another.
+
+Flag parsing is **off** for `tools ssh` (`DisableFlagParsing`), not merely
+non-interspersed: `disco tools ssh -L 8080:localhost:3000` puts ssh's own flags
+first, and cobra would reject them as unknown before the command ever ran. The
+leading argument is taken as a sandbox only when it does not start with `-` and
+`matchSandboxArg` recognizes it; everything else, and everything after it,
+reaches ssh untouched.
 
 ## Listing Order
 

@@ -217,10 +217,16 @@ type ProjectEventService interface {
 // is a resolved value rather than a service: the address is configuration and
 // the host key is loaded once at startup, so there is nothing to call.
 //
+// Enabled and Address answer different questions. Every server can serve SSH
+// over the transport its API already answers on, so Enabled is about the
+// server being able to at all. Address is the advertised TCP endpoint, which is
+// opted into separately because a machine-wide port is: empty means SSH is
+// reachable but has no address to write into an ssh_config, which is exactly
+// the case `disco tools ssh` exists for.
+//
 // Address is the advertised endpoint, never the bind address — ":3222" names
 // no host and "0.0.0.0:3222" is not dialable, and the reachable endpoint may
-// be a load balancer or tunnel in front of this process. Address and HostKey
-// are empty when Enabled is false.
+// be a load balancer or tunnel in front of this process.
 type SSHIngress struct {
 	Enabled bool
 	Address string

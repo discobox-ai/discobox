@@ -11,28 +11,32 @@ import (
 )
 
 // newToolsCommand groups the commands that run a familiar development tool
-// inside a sandbox against one of its sources, with the tool's own arguments
-// passed through untouched.
+// against a sandbox, with the tool's own arguments passed through untouched.
+// Where the tool itself runs is the tool's business: `git` runs inside the
+// sandbox, `ssh` runs here and connects to it.
 func (a *App) newToolsCommand() *cobra.Command {
 	var sandboxID string
 	cmd := &cobra.Command{
 		Use:     "tools",
 		Aliases: []string{"tool", "t"},
-		Short:   "Run a development tool inside a sandbox",
-		Long: `Run a development tool inside a sandbox.
+		Short:   "Run a development tool against a sandbox",
+		Long: `Run a development tool against a sandbox.
 
 Without --sandbox-id the sandbox is taken from the ones "disco ls" shows for the
 current project directory: the only one when there is one, otherwise you are
-asked to pick. Where in the sandbox a tool runs is the tool's own business; git
-takes --source.`,
+asked to pick.
+
+Each tool decides where it runs and what else it needs: git runs inside the
+sandbox and takes --source, ssh runs here and connects to the sandbox.`,
 	}
-	// Which sandbox to run in is the one thing every tool has in common, so it
-	// is asked once here and inherited. Everything else, including where in the
-	// sandbox the tool runs, belongs to the subcommand that means it.
-	cmd.PersistentFlags().StringVar(&sandboxID, "sandbox-id", "", "Sandbox to run in; when omitted, the sandbox started from this directory, or a prompt to pick one")
+	// Which sandbox a tool acts on is the one thing every tool has in common,
+	// so it is asked once here and inherited. Everything else, including where
+	// the tool runs, belongs to the subcommand that means it.
+	cmd.PersistentFlags().StringVar(&sandboxID, "sandbox-id", "", "Sandbox to act on; when omitted, the sandbox started from this directory, or a prompt to pick one")
 	_ = cmd.RegisterFlagCompletionFunc("sandbox-id", a.completeSandboxes)
 
 	cmd.AddCommand(a.newToolsGitCommand(&sandboxID))
+	cmd.AddCommand(a.newToolsSSHCommand(&sandboxID))
 	return cmd
 }
 
