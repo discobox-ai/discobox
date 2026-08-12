@@ -171,8 +171,26 @@ RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
     && test -s /opt/discobox/ca-certificates/ca-certificates.crt \
     # Trim systemd down to what a container actually needs. The host owns the
     # kernel, hardware, partitions, and network namespace, so anything that
-    # manages those is dead weight or an outright failure at boot. udev is
-    # deliberately NOT masked: nested Docker in the sandbox depends on it.
+    # manages those is dead weight or an outright failure at boot.
+    #
+    # udev is masked here too, which earlier revisions of this file said it
+    # could not be: "nested Docker in the sandbox depends on it". Nothing does.
+    # A sandbox with the data volumes wired (the harness image.json declares
+    # /var/lib/docker and /var/lib/containerd on `data`, without which nested
+    # Docker fails on overlay-on-overlay for reasons unrelated to udev) runs
+    # `docker run`, `docker build`, and HTTPS from inside a nested container
+    # with udev fully masked, reaching is-system-running=running with zero
+    # failed units.
+    #
+    # The cost it was imposing: systemd-udev-trigger replays a uevent for every
+    # device already in /sys, which in a container is the host's hardware — 786
+    # of them here — and it is ordered Before=sysinit.target, so the sandbox
+    # agent and its primary terminal wait behind the whole enumeration. What it
+    # bought, measured by diffing /dev across a boot with and without it, was
+    # six symlink trees for host devices: block, char, disk, ptp_hyperv, rtc,
+    # virtio-ports. The container's /dev is a Docker-provided tmpfs rather than
+    # devtmpfs, and nested Docker runs on overlayfs, so none of them had a
+    # consumer. Userspace boot went 2.08s -> 237ms.
     # Periodic maintenance (apt, dpkg, fstrim, e2scrub) is masked so sandboxes
     # never wake up and mutate packages or filesystems behind the user.
     && systemctl mask \
@@ -240,6 +258,11 @@ RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
         systemd-tmpfiles-clean.timer \
         systemd-tpm2-setup-early.service \
         systemd-tpm2-setup.service \
+        systemd-udev-settle.service \
+        systemd-udev-trigger.service \
+        systemd-udevd-control.socket \
+        systemd-udevd-kernel.socket \
+        systemd-udevd.service \
         systemd-update-utmp-runlevel.service \
         systemd-update-utmp.service \
         systemd-volatile-root.service \
