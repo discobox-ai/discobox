@@ -391,3 +391,26 @@ func TestSSHConfigSkipsASandboxWithNoUnambiguousPattern(t *testing.T) {
 		}
 	}
 }
+
+// TestSSHConfigReportsNoAddressToWrite covers a server that can serve SSH but
+// binds no TCP port: there is nothing for a persisted config to point at, and
+// the error should say which setting gives it one and which command needs none
+// — rather than failing on the empty address it was handed.
+func TestSSHConfigReportsNoAddressToWrite(t *testing.T) {
+	fake := &sshConfigFakeServer{
+		ingress:   `{"enabled":true,"hostKey":"ssh-ed25519 AAAAfakehostkey=="}`,
+		sandboxes: []sshConfigFakeSandbox{{id: "sbx_devbox00000001", name: "devbox"}},
+	}
+	_, _, err := runSSHConfig(t, fake)
+	if err == nil {
+		t.Fatal("expected ssh-config to fail with no advertised address")
+	}
+	for _, want := range []string{"DISCOBOX_SSH_LISTEN", "disco tools ssh"} {
+		if !strings.Contains(err.Error(), want) {
+			t.Fatalf("error should mention %q, got: %v", want, err)
+		}
+	}
+	if strings.Contains(err.Error(), "missing port") {
+		t.Fatalf("the empty address should be reported as its own case, got: %v", err)
+	}
+}

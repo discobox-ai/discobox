@@ -70,9 +70,18 @@ func (a *App) newSSHConfigCommand() *cobra.Command {
 				}
 				return fmt.Errorf("this server has no SSH ingress: set DISCOBOX_SSH_LISTEN to enable it")
 			}
-			ingressHost, ingressPort, err := net.SplitHostPort(ingress.Address.Or(""))
+			address := strings.TrimSpace(ingress.Address.Or(""))
+			if address == "" {
+				// The server can serve SSH but binds no TCP port, so there is
+				// no address a persisted config could point at. `disco tools
+				// ssh` needs none: it carries the session over this same
+				// endpoint for the life of the command.
+				return fmt.Errorf("this server has no SSH address to write a config for: " +
+					"set DISCOBOX_SSH_LISTEN to give it one, or connect with `disco tools ssh`")
+			}
+			ingressHost, ingressPort, err := net.SplitHostPort(address)
 			if err != nil {
-				return fmt.Errorf("server advertised an unusable SSH address %q: %w", ingress.Address.Or(""), err)
+				return fmt.Errorf("server advertised an unusable SSH address %q: %w", address, err)
 			}
 			// Flags are overrides, never defaults: an unset flag means "use
 			// what the server advertises", which is the whole point of asking.
