@@ -17,9 +17,13 @@ import (
 // intent and do not pass through this file: they are instructions forwarded to
 // the runtime, which reports what became of them (ADR 0017 §9).
 
-// createSandboxIntent persists a new sandbox with create intent and marks it
-// dirty, atomically.
-func (s *Service) createSandboxIntent(ctx context.Context, sandbox *model.Sandbox) (*model.Sandbox, error) {
+// createSandboxIntent persists a new sandbox with create intent, its secret
+// assignments, and the dirty mark, atomically. The assignments must commit
+// with the sandbox row: the dirty mark wakes the reconciler on commit, and a
+// reconciler that can observe the sandbox without its assignments launches it
+// with no secrets — the miss is permanent, because assignments are not part of
+// the spec fingerprint and nothing re-pushes them to a running sandbox.
+func (s *Service) createSandboxIntent(ctx context.Context, sandbox *model.Sandbox, secrets []*model.SandboxSecret) (*model.Sandbox, error) {
 	if s.engine == nil {
 		return nil, errors.New("reconcile engine is required")
 	}
@@ -28,6 +32,11 @@ func (s *Service) createSandboxIntent(ctx context.Context, sandbox *model.Sandbo
 		sandbox.RecordIntent(model.DesiredStatePresent)
 		if err := txStore.CreateSandbox(ctx, sandbox); err != nil {
 			return err
+		}
+		for _, secret := range secrets {
+			if err := txStore.CreateSandboxSecret(ctx, secret); err != nil {
+				return err
+			}
 		}
 		return s.engine.MarkDirtyTx(ctx, txDB, SandboxResourceType, SandboxDirtyID(sandbox.ProjectID, sandbox.ID))
 	}); err != nil {

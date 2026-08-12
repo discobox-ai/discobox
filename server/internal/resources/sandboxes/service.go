@@ -254,16 +254,7 @@ func (s *Service) CreateSandbox(ctx context.Context, projectID string, input ser
 			assignments = append(assignments, harnessAssignments...)
 		}
 	}
-	created, err := s.createSandboxIntent(ctx, sandbox)
-	if err != nil {
-		return nil, err
-	}
-	for _, assignment := range assignments {
-		if err := s.store.CreateSandboxSecret(ctx, assignment); err != nil {
-			return nil, fmt.Errorf("persist sandbox secret assignment: %w", err)
-		}
-	}
-	return created, nil
+	return s.createSandboxIntent(ctx, sandbox, assignments)
 }
 
 func (s *Service) resolveHarnessConfigID(ctx context.Context, project *model.Project, harnessConfigID, harnessName services.OptString) (*string, error) {

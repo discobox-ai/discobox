@@ -172,3 +172,14 @@ binds the secrets a previous configure run created under
 same sentinels, under `PREV_`-prefixed names so the harness CLI cannot quietly
 authenticate with the old credential. See
 `resources/harnessconfigs/DESIGN.md`.
+
+Secret assignments commit in the same transaction as the sandbox row and its
+dirty mark (`createSandboxIntent`): the mark wakes the reconciler on commit, so
+a reconciler that could observe the sandbox without its assignments would
+launch it with no secrets. The miss would be permanent — assignments are
+deliberately excluded from the spec fingerprint (see
+`SandboxManifest.Fingerprint`), so late-arriving rows never read as drift, and
+nothing re-pushes the primary harness's sentinels to a running sandbox. For the
+same reason the reconciler fails the reconcile when it cannot read the
+assignments or the harness config, rather than degrading to a secretless
+launch.

@@ -346,7 +346,10 @@ func (r *SandboxReconciler) createSandbox(ctx context.Context, sb *model.Sandbox
 
 func (r *SandboxReconciler) ensureSandboxCreated(ctx context.Context, sb *model.Sandbox, provider Provider, secretState []byte, start bool) ([]byte, error) {
 	ref := sandboxRefFromSandbox(sb)
-	createOpts := r.createOptionsFromSandbox(ctx, sb)
+	createOpts, err := r.createOptionsFromSandbox(ctx, sb)
+	if err != nil {
+		return secretState, err
+	}
 	createOpts.Start = start
 	if err := r.applyTrustKey(ctx, sb, &createOpts); err != nil {
 		return secretState, err
@@ -429,7 +432,7 @@ func sandboxRefFromSandbox(sb *model.Sandbox) SandboxRef {
 	}
 }
 
-func (r *SandboxReconciler) createOptionsFromSandbox(ctx context.Context, sb *model.Sandbox) CreateOptions {
+func (r *SandboxReconciler) createOptionsFromSandbox(ctx context.Context, sb *model.Sandbox) (CreateOptions, error) {
 	opts := CreateOptions{
 		Labels: map[string]string{
 			"discobox.project_id": sb.ProjectID,
@@ -454,14 +457,20 @@ func (r *SandboxReconciler) createOptionsFromSandbox(ctx context.Context, sb *mo
 		}
 	}
 	if r.store != nil {
-		if assignments, err := r.store.ListSandboxSecrets(ctx, sb.ProjectID, sb.ID); err == nil {
-			for _, assignment := range assignments {
-				opts.Sentinels = append(opts.Sentinels, assignment.Sentinel)
-				if opts.SecretEnv == nil {
-					opts.SecretEnv = map[string]string{}
-				}
-				opts.SecretEnv[assignment.EnvName] = assignment.Sentinel
+		// A failed read must fail the reconcile, not degrade to "no secrets":
+		// a sandbox launched without its assignments never gets them (the
+		// fingerprint excludes assignments, so a later reconcile sees no
+		// drift), while a returned error just retries the reconcile.
+		assignments, err := r.store.ListSandboxSecrets(ctx, sb.ProjectID, sb.ID)
+		if err != nil {
+			return CreateOptions{}, fmt.Errorf("list sandbox secret assignments: %w", err)
+		}
+		for _, assignment := range assignments {
+			opts.Sentinels = append(opts.Sentinels, assignment.Sentinel)
+			if opts.SecretEnv == nil {
+				opts.SecretEnv = map[string]string{}
 			}
+			opts.SecretEnv[assignment.EnvName] = assignment.Sentinel
 		}
 	}
 	opts.Source = sb.Source
@@ -473,7 +482,15 @@ func (r *SandboxReconciler) createOptionsFromSandbox(ctx context.Context, sb *mo
 	opts.UserAdditionalGroups = append([]string(nil), sb.UserAdditionalGroups...)
 	opts.HomeDirectory = sb.HomeDirectory
 	if sb.HarnessConfigID != nil && r.store != nil {
-		if cfg, err := r.store.GetHarnessConfig(ctx, sb.ProjectID, *sb.HarnessConfigID); err == nil {
+		cfg, err := r.store.GetHarnessConfig(ctx, sb.ProjectID, *sb.HarnessConfigID)
+		switch {
+		case errors.Is(err, store.ErrNotFound):
+			// A deleted harness config is a legitimate state: the sandbox's
+			// image and digest are pinned at create, so it still launches —
+			// just without the config's run command, files, and env.
+		case err != nil:
+			return CreateOptions{}, fmt.Errorf("resolve harness config: %w", err)
+		default:
 			opts.ResolvedHarnessConfig = &ResolvedHarnessConfig{
 				ID:               cfg.ID,
 				Name:             cfg.Name,
@@ -487,7 +504,7 @@ func (r *SandboxReconciler) createOptionsFromSandbox(ctx context.Context, sb *mo
 			}
 		}
 	}
-	return opts
+	return opts, nil
 }
 
 func setRuntimeState(sb *model.Sandbox, runtimeSandbox *Sandbox) {

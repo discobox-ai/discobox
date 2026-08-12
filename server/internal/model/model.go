@@ -571,6 +571,14 @@ type SandboxManifest struct {
 //
 // Canonical JSON of the manifest is the input, so the digest is stable across
 // processes and changes exactly when a spec field changes.
+//
+// Sandbox secret assignments are intentionally not part of the fingerprint:
+// they are sentinels injected at launch, not spec, and folding them in would
+// rebuild the container whenever an assignment changes. The corollary is that
+// a sandbox must never be launched before its assignments are readable —
+// create commits them atomically with the sandbox row and the dirty mark
+// (createSandboxIntent), and the reconciler fails rather than launching when
+// it cannot read them.
 func (m SandboxManifest) Fingerprint() string {
 	encoded, err := json.Marshal(m)
 	if err != nil {
