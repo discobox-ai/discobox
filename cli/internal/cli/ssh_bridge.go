@@ -30,7 +30,16 @@ type sshBridge struct {
 	cancel   context.CancelFunc
 }
 
-func (b *sshBridge) port() int { return b.listener.Addr().(*net.TCPAddr).Port }
+// port is the loopback port ssh is pointed at. The listener is always TCP —
+// startSSHBridge asks for "tcp" — but the assertion is checked rather than
+// assumed, so a future change to that call fails here instead of panicking
+// inside a running session.
+func (b *sshBridge) port() int {
+	if addr, ok := b.listener.Addr().(*net.TCPAddr); ok {
+		return addr.Port
+	}
+	return 0
+}
 
 func (b *sshBridge) Close() error {
 	b.cancel()
@@ -72,7 +81,13 @@ func (a *App) startSSHBridge(ctx context.Context) (*sshBridge, error) {
 
 func (b *sshBridge) serve(ctx context.Context, conn net.Conn, socketURL string, httpClient *http.Client) {
 	defer conn.Close()
-	wsConn, _, err := websocket.Dial(ctx, socketURL, &websocket.DialOptions{HTTPClient: httpClient})
+	wsConn, resp, err := websocket.Dial(ctx, socketURL, &websocket.DialOptions{HTTPClient: httpClient})
+	if resp != nil && resp.Body != nil {
+		// The handshake response body carries nothing once the connection is
+		// upgraded, but it is still a body: leaving it open leaks the
+		// underlying connection on every bridged session.
+		_ = resp.Body.Close()
+	}
 	if err != nil {
 		return
 	}

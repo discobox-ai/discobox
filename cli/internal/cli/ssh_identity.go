@@ -77,7 +77,9 @@ func loadOrCreateSSHIdentity(path string) (publicKeyLine string, created bool, e
 		return "", false, fmt.Errorf("derive SSH identity public key: %w", err)
 	}
 	line := publicKeyLineWithComment(sshPub, sshIdentityComment())
-	if err := os.WriteFile(path+".pub", []byte(line+"\n"), 0o644); err != nil {
+	// 0600, though a public key is public: it sits beside the private key in a
+	// directory only this user reads, and a looser mode here would buy nothing.
+	if err := os.WriteFile(path+".pub", []byte(line+"\n"), 0o600); err != nil {
 		return "", false, fmt.Errorf("write SSH identity public key: %w", err)
 	}
 	return line, true, nil

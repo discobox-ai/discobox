@@ -115,7 +115,9 @@ func writeManagedSSHConfig(cmd *cobra.Command, projectID, stanzas, knownHostsHos
 	if hostKey != "" {
 		knownHosts = knownHostsHost + " " + hostKey + "\n"
 	}
-	if err := os.WriteFile(knownHostsPath, []byte(knownHosts), 0o644); err != nil {
+	// 0600 like the config beside it: a known_hosts file is public
+	// information, but nothing other than this user needs to read it.
+	if err := os.WriteFile(knownHostsPath, []byte(knownHosts), 0o600); err != nil {
 		return fmt.Errorf("write known_hosts: %w", err)
 	}
 	if err := os.WriteFile(configPath, []byte(managedConfigHeader(projectID)+stanzas), 0o600); err != nil {
