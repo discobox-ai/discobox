@@ -6,13 +6,13 @@
 // nothing left to work out for those fields -- no name to look up, no nil gid,
 // no unresolved group -- so callers use the fields directly instead of each
 // re-deriving them and drifting apart. That drift is what ADR 0025 was written
-// about and what ADR 0032 removed the room for: terminals lost the sandbox's
+// about and what ADR 0033 removed the room for: terminals lost the sandbox's
 // supplementary groups, the boot flow defaulted a missing uid to root and a
 // missing gid to the uid, and an exec naming only a group either lost it or
 // failed outright depending on how it was spelled.
 //
 // This package is the only one that resolves against the image's own
-// /etc/passwd and /etc/group (ADR 0032 §6), which is the only place a sandbox's
+// /etc/passwd and /etc/group (ADR 0033 §6), which is the only place a sandbox's
 // users and groups exist -- so it is usable only from inside the sandbox. The
 // control plane and the pool agent cannot resolve these names and must not try
 // (ADR 0025 §4); they use sandboxuser.Merge, which has no way to.
@@ -79,7 +79,7 @@ func Current() *User {
 // A field in need that cannot be determined is an *UnresolvedError naming it.
 // There is no third outcome and in particular no zero standing in for an answer:
 // 0 is root, "" is no home, and both read as answers at every call site
-// downstream (ADR 0032 §2). A caller that knows a field is undeterminable in its
+// downstream (ADR 0033 §2). A caller that knows a field is undeterminable in its
 // context leaves it out of need, which is an explicit claim rather than a
 // silent gap.
 //
@@ -298,7 +298,7 @@ func LookupGroupID(entry string) (uint32, bool) {
 // entry existed. os/user does not expose that field, so the database is parsed
 // directly -- which is why this lives here rather than in execs: the format of
 // /etc/passwd is knowledge this package already carries, and two packages
-// should not each hold a copy of it (ADR 0032 §6).
+// should not each hold a copy of it (ADR 0033 §6).
 //
 // A missing entry is not an error. A user can run a process without one; the
 // caller falls back to $SHELL and then to a probe of the usual paths.

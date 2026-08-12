@@ -8,7 +8,7 @@ import (
 )
 
 // writePasswd is now runuser's business: the passwd format is parsed in one
-// place (ADR 0032 §6), so these tests use its fixture rather than a second
+// place (ADR 0033 §6), so these tests use its fixture rather than a second
 // pointer at a second file.
 func writePasswd(t *testing.T, _ string) {
 	t.Helper()

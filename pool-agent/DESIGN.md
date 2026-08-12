@@ -270,7 +270,7 @@ flowchart LR
   §§4–5). This is now structural rather than a rule to remember: `resolveSandboxUser`
   calls [`sandboxuser.Merge`](../sandboxuser/DESIGN.md), which performs no
   lookups, and this module cannot import the resolver at all
-  ([ADR 0032](../docs/adr/0032-user-resolution-is-one-layered-resolver-with-declared-gaps.md) §4).
+  ([ADR 0033](../docs/adr/0033-user-resolution-is-one-layered-resolver-with-declared-gaps.md) §4).
 - Absent is absent, all the way onto the wire. `DISCOBOX_USER_*` is stamped only
   for what is known, so `boot` can tell "unset" from "uid 0", and
   `sandbox.json`'s source ownership is optional for the same reason — when the
@@ -278,7 +278,7 @@ flowchart LR
   identity it resolved instead. As plain ints those fields could not say so:
   absent arrived as `0` and the primary source tree was chowned to root, in the
   case where the sandbox is least likely to be running as root. `-1` survives
-  only as an argument to `chown(2)`, whose own vocabulary it is (ADR 0032 §3).
+  only as an argument to `chown(2)`, whose own vocabulary it is (ADR 0033 §3).
 - Defer what cannot be resolved rather than approximating it. `%HOME%` in
   image-declared env is expanded here only when the request stated a home
   outright; otherwise the token travels into `sandbox.json` and the sandbox

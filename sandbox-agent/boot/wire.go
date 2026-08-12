@@ -120,7 +120,7 @@ func applyOwnership(target string, v harness.ResolvedVolume) error {
 // named no user there is nothing for it to publish -- and the previous shape,
 // where those fields were plain ints, could not say so. Absent arrived as 0 and
 // this chown handed the primary source tree to root, in precisely the case
-// where the sandbox is least likely to be running as root (ADR 0032 §5).
+// where the sandbox is least likely to be running as root (ADR 0033 §5).
 func (b *booter) wireSources(sources []sandboxconfig.Source, id identity) error {
 	for _, s := range sources {
 		src := filepath.Join(sourcesMountPath, s.Slug)

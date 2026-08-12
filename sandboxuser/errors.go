@@ -13,7 +13,7 @@ var errBothGIDAndGroupName = errors.New("gid and groupName are mutually exclusiv
 // determined from the layers it supplied plus the account database available to
 // it. It is deliberately not a fallback: the caller either has standing to ask
 // for the field or it does not, and a default here would be the guess this
-// whole design exists to remove (ADR 0032 §2).
+// whole design exists to remove (ADR 0033 §2).
 type UnresolvedError struct {
 	// Field is the single field that could not be resolved.
 	Field Fields

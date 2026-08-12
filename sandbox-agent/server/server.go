@@ -205,7 +205,7 @@ func newRouterAndManager(cfg Config) (*chi.Mux, *terminal.Service, *execs.Manage
 // exec defaults carry it. Whether it names anybody is asked of sandboxuser.Named
 // rather than re-tested here -- that predicate having been written per-site is
 // what let an exec naming only a group fall through the gap between two copies
-// of it (ADR 0032 §1).
+// of it (ADR 0033 §1).
 func execDefaultUser(defaults config.ExecDefaults) *execs.User {
 	user := &execs.User{
 		Name:             defaults.Username,

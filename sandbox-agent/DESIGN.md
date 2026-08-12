@@ -102,7 +102,7 @@ runtime operations.
   layer resolves the image harness (or the `shell` fallback harness — a login
   shell — when the image has no harness, or when the manifest declares a
   harness with no command, which is the control plane's way of naming that
-  same shell without knowing which shell the run user has: ADR 0031), applies
+  same shell without knowing which shell the run user has: ADR 0032), applies
   image/project files and hooks,
   injects the hook/terminal env, then calls `execs.Manager` with `TTY`,
   `harnessId`/`primary` metadata, `Shell: true`, and — for every harness except

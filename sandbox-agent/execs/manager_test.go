@@ -1000,7 +1000,7 @@ func uidOf(user *User) int64 {
 // not state one -- the account lives in the image -- so it forwards %HOME%
 // unexpanded and the sandbox substitutes it, exactly as it does for
 // %LOCAL_SUBNETS%. Expanding it outside against a blank would have produced
-// real paths pointing at the wrong place (ADR 0032 §5).
+// real paths pointing at the wrong place (ADR 0033 §5).
 func TestManagerExpandsDeferredHomeTokenInEnv(t *testing.T) {
 	t.Cleanup(runuser.FixedDatabase())
 	runner := &fakeUnitManager{}

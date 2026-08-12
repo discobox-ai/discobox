@@ -29,7 +29,7 @@ func ResolveShell(user *User, env map[string]string) (string, error) {
 	if name == "" && !sandboxuser.Named(user) {
 		// The exec inherits the agent's own identity, so the shell to resolve is
 		// that account's. Who this process is belongs to runuser, which owns the
-		// image layer for everyone (ADR 0032 §6).
+		// image layer for everyone (ADR 0033 §6).
 		resolved, err := runuser.Resolve(runuser.Layers{Image: runuser.Current()}, sandboxuser.FieldName)
 		if err == nil {
 			name = strings.TrimSpace(resolved.Name)

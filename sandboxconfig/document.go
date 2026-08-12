@@ -93,7 +93,7 @@ type Source struct {
 	// and absent has to be expressible. As plain ints, "not given" arrived as 0
 	// and boot chowned the primary source tree to root, in exactly the case
 	// (no manifest user) where the sandbox is least likely to be running as
-	// root (ADR 0032 §3).
+	// root (ADR 0033 §3).
 	//
 	// Absent means boot supplies the identity it resolved, which it has in hand
 	// at that point and which is the better answer anyway.

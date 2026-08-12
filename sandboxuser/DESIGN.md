@@ -5,7 +5,7 @@ layers that describe it, and the vocabulary for saying which parts of it a
 caller needs.
 
 Decision records: [ADR 0025](../docs/adr/0025-the-sandbox-user-is-one-contract-resolved-inside-the-sandbox.md)
-(the rules), [ADR 0032](../docs/adr/0032-user-resolution-is-one-layered-resolver-with-declared-gaps.md)
+(the rules), [ADR 0033](../docs/adr/0033-user-resolution-is-one-layered-resolver-with-declared-gaps.md)
 (where they live).
 
 ## Why it is in the root module

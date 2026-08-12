@@ -1,4 +1,4 @@
-# 0032 — User resolution is one layered resolver, and every gap is declared
+# 0033 — User resolution is one layered resolver, and every gap is declared
 
 - **Status**: Accepted
 - **Date**: 2026-08-12

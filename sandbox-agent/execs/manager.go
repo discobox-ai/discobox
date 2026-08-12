@@ -285,7 +285,7 @@ func EnvWithRuntimeDefaults(env map[string]string, user *User) map[string]string
 	// lives in the image and only the sandbox can look it up. Expanding it there
 	// against a blank would turn "$HOME/.config" into "/.config" -- a real path
 	// pointing at the wrong place. It is deferred here for the same reason
-	// %LOCAL_SUBNETS% is (ADR 0032 §5).
+	// %LOCAL_SUBNETS% is (ADR 0033 §5).
 	home := ""
 	if user != nil {
 		home = strings.TrimSpace(user.HomeDirectory)
@@ -716,7 +716,7 @@ func resolveCommand(req CreateRequest, user *User, env map[string]string) ([]str
 // is the only way to ask. The layers are the sandbox's own image identity, the
 // manifest's declared user, and this request's override; precedence and
 // completion both belong to runuser, so this method supplies inputs and does no
-// merging of its own (ADR 0032 §1).
+// merging of its own (ADR 0033 §1).
 //
 // The manager owns this because it owns the exec primitive. Layers built on top
 // (terminal) ask rather than reconstruct: a second construction of the same

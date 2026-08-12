@@ -8,7 +8,7 @@
 // is safe everywhere else. The split is load-bearing rather than tidy: the pool
 // agent imports this module and cannot import sandbox-agent, so "the host must
 // not resolve" (ADR 0025 §4) is enforced by the build graph instead of by a
-// rule someone has to remember (ADR 0032 §4).
+// rule someone has to remember (ADR 0033 §4).
 package sandboxuser
 
 import "strings"
@@ -19,7 +19,7 @@ import "strings"
 //
 // A nil *User named nobody. Within a User, every field is independently
 // optional and nil means absent -- never zero, which for a uid is root and for
-// a gid is the root group (ADR 0032 §3).
+// a gid is the root group (ADR 0033 §3).
 type User struct {
 	Name string `json:"name,omitempty"`
 	UID  *int64 `json:"uid,omitempty"`
@@ -38,7 +38,7 @@ type User struct {
 // Fields names the parts of an identity a caller requires. A caller passes the
 // set it genuinely needs; anything required but undeterminable is an error
 // naming the field, and anything not required comes back absent rather than
-// defaulted (ADR 0032 §2).
+// defaulted (ADR 0033 §2).
 //
 // Leaving a field out is how a caller says "I know I cannot have this here" --
 // an explicit, greppable claim, rather than a zero value that reads like an
@@ -173,7 +173,7 @@ func Merge(l Layers) User {
 // per-site: boot asked one question, execs asked a subtly different one, and
 // the difference was invisible until an exec naming only a group ran as the
 // wrong one. A field added to User is taught to this function, not to five
-// call sites that each have to remember (ADR 0032 §1).
+// call sites that each have to remember (ADR 0033 §1).
 func NamesIdentity(u *User) bool {
 	return u != nil && (strings.TrimSpace(u.Name) != "" ||
 		u.UID != nil ||

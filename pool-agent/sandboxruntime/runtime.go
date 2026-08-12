@@ -816,7 +816,7 @@ func buildSandboxDocument(projectID, sandboxID, poolID, controlPlanePublicKey, r
 				Target: source.target,
 				// Absent when the request gave no ids: boot then chowns with
 				// the identity it resolved, which it has in hand and which is
-				// the better answer anyway (ADR 0032 §5).
+				// the better answer anyway (ADR 0033 §5).
 				UID: user.UID,
 				GID: user.GID,
 			})
@@ -1798,7 +1798,7 @@ const unsetID = -1
 // chownID renders an id for chown(2), whose own vocabulary for "leave this
 // field unchanged" is -1. That is the only place -1 survives: as a value the
 // syscall defines, at the moment of the call. Everywhere else absent is nil
-// (ADR 0032 §3), because a sentinel is only ever as good as every conversion
+// (ADR 0033 §3), because a sentinel is only ever as good as every conversion
 // between it and the real thing -- and the conversion that turned unset into 0
 // is what chowned sandbox source trees to root.
 func chownID(v *int64) int {

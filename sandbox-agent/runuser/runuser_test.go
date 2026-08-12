@@ -74,7 +74,7 @@ func TestResolveCompletesAgainstTheAccountDatabase(t *testing.T) {
 // A field left out of `need` is neither looked up nor returned. This is the
 // property the whole design rests on: a caller that cannot determine something
 // says so, and gets absence rather than a zero that reads like an answer at
-// every site downstream (ADR 0032 §2).
+// every site downstream (ADR 0033 §2).
 func TestResolveOnlyAnswersWhatWasAsked(t *testing.T) {
 	t.Cleanup(FixedDatabase())
 

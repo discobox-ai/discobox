@@ -35,7 +35,7 @@ var sudoersNameRE = regexp.MustCompile(`^[A-Za-z_][A-Za-z0-9_.-]*\$?$`)
 // resolveIdentity works out who this sandbox runs as, from the manifest's user
 // (which the pool agent forwards as DISCOBOX_USER_*) layered over the image's
 // own identity. Precedence and completion belong to runuser; this function
-// supplies the layers and declares what it needs (ADR 0032 §1).
+// supplies the layers and declares what it needs (ADR 0033 §1).
 //
 // What it needs differs between the two cases, and that difference is the whole
 // reason boot cannot simply ask for everything. When the manifest names nobody,
@@ -97,7 +97,7 @@ func resolveIdentity() (identity, error) {
 	if id.home == "" {
 		// The account is being created here, so this is a decision about where
 		// its home goes rather than a guess about where it already is. Nothing
-		// outside the sandbox may make this choice (ADR 0032 §5); boot may,
+		// outside the sandbox may make this choice (ADR 0033 §5); boot may,
 		// because it is the thing that creates the directory.
 		id.home = filepath.Join("/home", id.name)
 	}

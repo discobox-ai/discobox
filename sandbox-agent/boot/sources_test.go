@@ -11,11 +11,11 @@ import (
 // ownership to publish, that absence arrived as the zero value of a plain
 // int64, and the wired source tree was chowned to root:root. An image running
 // as a non-root USER then could not write its own checkout -- and this is the
-// case ADR 0031 made ordinary rather than exotic.
+// case ADR 0032 made ordinary rather than exotic.
 //
 // Absent is now absent, and boot answers with the identity it resolved, which
 // it has in hand at that moment and which is the better answer regardless
-// (ADR 0032 §5).
+// (ADR 0033 §5).
 func TestSourceOwnerFallsBackToTheResolvedIdentity(t *testing.T) {
 	id := identity{uid: 1500, gid: 1600, name: "image", home: "/home/image"}
 

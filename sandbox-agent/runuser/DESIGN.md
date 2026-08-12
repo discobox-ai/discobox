@@ -5,7 +5,7 @@ somebody: **given what each layer asked for, who does the process actually run
 as?**
 
 Decision records: [ADR 0025](../../docs/adr/0025-the-sandbox-user-is-one-contract-resolved-inside-the-sandbox.md),
-[ADR 0032](../../docs/adr/0032-user-resolution-is-one-layered-resolver-with-declared-gaps.md).
+[ADR 0033](../../docs/adr/0033-user-resolution-is-one-layered-resolver-with-declared-gaps.md).
 
 The type, the layer precedence, and the `Fields` vocabulary belong to
 [`sandboxuser`](../../sandboxuser/DESIGN.md) in the root module. This package
@@ -62,7 +62,7 @@ it, and asks for name and home separately where absence is an acceptable answer.
 ## Boundary
 
 This is the **only** package that resolves against the image's account database
-(ADR 0032 §6). `execs.userCredential` requires the ids rather than re-deriving
+(ADR 0033 §6). `execs.userCredential` requires the ids rather than re-deriving
 them, and the login-shell parse lives here rather than in `execs`, so faking the
 database fakes it for every consumer — including the path that calls `setuid`.
 

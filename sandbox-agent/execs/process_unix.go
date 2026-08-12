@@ -62,7 +62,7 @@ func UserEnvDefaults(user *User) (map[string]string, error) {
 // populated and passes straight through. Requiring the ids instead makes the
 // stronger claim: Resolve was asked for a credential, so both are filled or the
 // call failed, and anything else here is a broken invariant rather than
-// something to go and complete (ADR 0032 §6). It also puts this path behind the
+// something to go and complete (ADR 0033 §6). It also puts this path behind the
 // test fixture, which a direct os/user call could never be.
 func userCredential(user *User) (*syscall.Credential, bool, error) {
 	if !sandboxuser.Named(user) {

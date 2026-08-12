@@ -1,4 +1,4 @@
-# 0031 — Every sandbox has a harness config, and `shell` is the built-in one
+# 0032 — Every sandbox has a harness config, and `shell` is the built-in one
 
 - **Status**: Accepted
 - **Date**: 2026-08-11

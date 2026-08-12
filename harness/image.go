@@ -168,7 +168,7 @@ func expandVolumeToken(value string, rt VolumeRuntime) string {
 // sandbox user's home directory. It survives into sandbox.json whenever the
 // pool agent cannot resolve that home, and the sandbox expands it on the way
 // into a process environment -- the same treatment sandboxconfig.LocalSubnetsToken
-// gets for the same reason (ADR 0032 §5).
+// gets for the same reason (ADR 0033 §5).
 const HomeToken = "%HOME%"
 
 // ExpandEnvHomeTokens replaces HomeToken in every value of an image-declared

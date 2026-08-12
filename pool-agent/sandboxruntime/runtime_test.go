@@ -1236,7 +1236,7 @@ func TestResolveSandboxUserNamedUserIsNotRoot(t *testing.T) {
 	}
 	// The home directory is no longer guessed from the name. /home/<name> is a
 	// convention, and which one this account actually has is a fact that lives
-	// in the image's own passwd file (ADR 0032 §5).
+	// in the image's own passwd file (ADR 0033 §5).
 	if got.HomeDirectory != "" {
 		t.Fatalf("home = %q, want unset: only the sandbox can answer that", got.HomeDirectory)
 	}
