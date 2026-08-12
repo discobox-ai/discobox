@@ -12,8 +12,8 @@ import (
 // ReportSandboxStates records what a pool agent observed about the sandboxes it
 // hosts (ADR 0017 §10).
 //
-// This is the only path by which a sandbox's State changes to a runtime fact,
-// and it writes nothing else: no generation bump, no desired state, no
+// This is the only path that writes a sandbox's RuntimeState, and it writes
+// nothing else: no generation bump, no desired state, no existence state, no
 // operation. What the agent saw is not a request.
 //
 // A state change is also an observation the reconciler may care about, so the
@@ -39,7 +39,7 @@ func (s *Service) ReportSandboxStates(ctx context.Context, batch store.SandboxSt
 		}
 		if err := s.engine.MarkDirty(ctx, SandboxResourceType, SandboxDirtyID(sandbox.ProjectID, sandbox.ID)); err != nil {
 			slog.WarnContext(ctx, "could not mark sandbox dirty after a state report",
-				"sandboxId", sandbox.ID, "state", sandbox.State, "runtimeMissing", observation.RuntimeMissing, "error", err)
+				"sandboxId", sandbox.ID, "runtimeState", sandbox.RuntimeState, "runtimeMissing", observation.RuntimeMissing, "error", err)
 		}
 	}
 	return nil
@@ -57,7 +57,7 @@ func (s *Service) observationNeedsReconcile(sandbox *model.Sandbox) bool {
 	if sandbox.DesiredState == model.DesiredStateDeleted {
 		return true
 	}
-	return !model.SandboxIsLive(sandbox.State)
+	return !model.SandboxIsLive(sandbox)
 }
 
 // Nothing here bumps a generation. A generation versions the spec, and an

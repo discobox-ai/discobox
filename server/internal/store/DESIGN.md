@@ -45,6 +45,18 @@ sequenceDiagram
 Publish live events only after the database commit succeeds. During a transaction,
 queue after-commit events instead of publishing immediately.
 
+## Field Ownership on Whole-Row Writes
+
+A resource whose status has more than one writer must not be saved by writing
+every column from an in-memory copy. The copy was read before whatever the
+caller just did, and a concurrent writer's update lands in that window — so the
+save silently replays a stale value. `Store.UpdateSandbox` omits
+`observedSandboxColumns` for exactly this reason; see
+`resources/sandboxes/DESIGN.md` for who owns what and ADR 0034 for the incident.
+
+When a new field gains a second writer, narrow the write rather than relying on
+callers to be careful.
+
 ## Resource Scope
 
 Every resource query must use the store-owned GORM handles rather than opening or

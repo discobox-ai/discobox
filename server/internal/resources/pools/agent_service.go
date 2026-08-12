@@ -196,7 +196,6 @@ func (s *Service) ReportPoolSandboxStates(ctx context.Context, poolID string, in
 		reports = append(reports, store.SandboxStateReport{
 			SandboxID: sandboxID,
 			State:     string(state.State),
-			Error:     strings.TrimSpace(state.Error.Or("")),
 		})
 	}
 	batch := store.SandboxStateReportBatch{

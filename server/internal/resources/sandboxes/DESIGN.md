@@ -106,8 +106,40 @@ Observed state arrives on the agent's reporting channel and lands in
   the report that a sandbox's container is gone, which is news about the world
   rather than a change to what was asked for.
 - A complete sync distinguishes "stopped" from "no container", which record the
-  same state. Only the second needs a rebuild, and it gets one through a dirty
-  mark plus the reconciler's idempotent ensure.
+  same runtime state. Only the second needs a rebuild, and it gets one through a
+  dirty mark plus the reconciler's idempotent ensure.
+
+## Two state fields, one writer each
+
+A sandbox's existence and its power are decided by different components, so
+they are stored in different columns (ADR 0034). Neither writer touches the
+other's field:
+
+| Field | Values | Owner |
+| --- | --- | --- |
+| `State` | `pending`, `awaiting_source`, `ready`, `failed`, `archived`, `deleted` | `SandboxReconciler`, and nothing else |
+| `RuntimeState` | `starting`, `running`, `stopping`, `stopped`, empty | `Store.ApplySandboxStateReports`, and nothing else |
+| `ErrorMessage`, `ObservedGeneration` | — | `SandboxReconciler` |
+
+`ready` means the container has been converged against the spec. It says
+nothing about power; empty `RuntimeState` means no agent has reported yet,
+which is not `stopped`.
+
+The rule is enforced in the store, not by convention: `Store.UpdateSandbox`
+omits `observedSandboxColumns` (the runtime state, its anchor, and the report
+watermark) from every write. Without that, any caller that loads a sandbox,
+performs a slow operation, and saves it back replays a stale observation — the
+reconciler did exactly that across a ~5s `provider.Create`, pushing a sandbox
+observed `running` back to `pending` until the next 60s complete sync.
+
+Two consequences worth stating:
+
+- **`SandboxIsLive` takes the sandbox**, not a state string: the question spans
+  both fields, and an archived sandbox is never live however it was last
+  observed.
+- **`displayState` is the composition** and the only thing clients should read
+  (`services.SandboxDisplayState`). Existence answers first; the runtime axis
+  fills in what the container is doing once existence is settled at `ready`.
 
 `ensure` creates the container and does not start it. The exception is a
 sandbox that has never run — `pending`, or `awaiting_source` resuming after its

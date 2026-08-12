@@ -80,7 +80,7 @@ func archivableSandbox(ctx context.Context, t *testing.T, appStore *store.Store,
 func TestReconcileArchiveKeepsTheSandboxAndItsData(t *testing.T) {
 	ctx := context.Background()
 	appStore := newExecutorTestStore(t)
-	sb := archivableSandbox(ctx, t, appStore, model.SandboxStateStopped, 0)
+	sb := archivableSandbox(ctx, t, appStore, model.SandboxStateReady, 0)
 
 	provider := &archiveTestProvider{}
 	reconciler := sandboxes.NewSandboxReconciler(appStore, sandboxes.WithSandboxProvider(provider))
@@ -193,8 +193,8 @@ func TestReconcileUnarchiveLeavesTheSandboxStopped(t *testing.T) {
 	if err != nil {
 		t.Fatalf("get sandbox: %v", err)
 	}
-	if updated.State != model.SandboxStateStopped {
-		t.Fatalf("state after unarchive = %q, want stopped", updated.State)
+	if updated.State != model.SandboxStateReady {
+		t.Fatalf("state after unarchive = %q, want ready: the container exists again", updated.State)
 	}
 	if updated.DesiredState != model.DesiredStatePresent {
 		t.Fatalf("desired state = %q, want present", updated.DesiredState)

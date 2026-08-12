@@ -49,7 +49,7 @@ var (
 // two counters.
 type ResourceLifecycle struct {
 	DesiredState       string    `gorm:"column:desired_state;not null;type:text;index;default:''" json:"desiredState" doc:"Requested existence. Power state is not orchestrated (ADR 0017 §9)." enum:"present,archived,deleted"`
-	State              string    `gorm:"column:state;not null;type:text;index;default:''" json:"state" doc:"Observed state, reported by whichever component can see it" enum:"pending,awaiting_source,registering,starting,running,stopping,stopped,active,offline,archived,deleted,failed"`
+	State              string    `gorm:"column:state;not null;type:text;index;default:''" json:"state" doc:"Existence state, written by the resource's reconciler. A sandbox's power state is a separate field (ADR 0034)." enum:"pending,awaiting_source,registering,ready,active,offline,archived,deleted,failed"`
 	Generation         int64     `gorm:"not null;default:0" json:"generation" doc:"Latest spec generation"`
 	ObservedGeneration int64     `gorm:"column:observed_generation;not null;default:0" json:"observedGeneration" doc:"Latest generation the reconciler has finished acting on"`
 	StateChangedAt     time.Time `gorm:"column:state_changed_at" json:"stateChangedAt,omitempty" doc:"When State last changed to its current value. Anchors how long a resource has been in a state, for timeouts that must not be reset by unrelated reconciles." format:"date-time"`

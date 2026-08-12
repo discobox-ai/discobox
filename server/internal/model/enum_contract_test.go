@@ -37,6 +37,7 @@ func TestModelEnumsMatchAPISchema(t *testing.T) {
 		{"pool state", model.PoolStates, values(apigen.PoolState("").AllValues())},
 		{"pool desired state", model.PoolDesiredStates, values(apigen.PoolDesiredState("").AllValues())},
 		{"sandbox state", model.SandboxStates, values(apigen.SandboxRuntimeState("").AllValues())},
+		{"sandbox runtime state", model.SandboxRuntimeStates, values(apigen.SandboxRuntimeRuntimeState("").AllValues())},
 		{"sandbox desired state", model.SandboxDesiredStates, values(apigen.SandboxRuntimeDesiredState("").AllValues())},
 	}
 
@@ -69,12 +70,14 @@ func TestModelEnumsMatchAPISchema(t *testing.T) {
 func TestModelEnumConstsAreRegistered(t *testing.T) {
 	// Prefix → the registry slices a const with that prefix may live in. No
 	// prefix here is a prefix of another, so each const matches at most one
-	// entry. DesiredState maps to two because the vocabulary is per-resource
+	// entry — SandboxRuntimeState and SandboxState diverge at their eighth
+	// character. DesiredState maps to two because the vocabulary is per-resource
 	// since ADR 0022 §1: a value belonging to either resource is registered.
 	registries := map[string][][]string{
-		"PoolState":    {model.PoolStates},
-		"SandboxState": {model.SandboxStates},
-		"DesiredState": {model.SandboxDesiredStates, model.PoolDesiredStates},
+		"PoolState":           {model.PoolStates},
+		"SandboxState":        {model.SandboxStates},
+		"SandboxRuntimeState": {model.SandboxRuntimeStates},
+		"DesiredState":        {model.SandboxDesiredStates, model.PoolDesiredStates},
 	}
 
 	for name, value := range stringConstsInPackage(t) {

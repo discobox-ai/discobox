@@ -374,7 +374,7 @@ func (r *DockerSandboxRuntime) CreateSandbox(ctx context.Context, req *workerapi
 	// it: Start is first-create intent, not a desired power state for a sandbox
 	// that already exists, so the two inputs only ever add a start (ADR 0021 §4).
 	if !config.Start.Or(true) && !replacedRunning {
-		return r.GetSandbox(ctx, sandboxID)
+		return r.observedSandbox(ctx, sandboxID)
 	}
 	r.PublishSandboxState(ctx, sandboxID, StateStarting)
 	if _, err := r.client.ContainerStart(ctx, created.ID, client.ContainerStartOptions{}); err != nil {
@@ -383,7 +383,31 @@ func (r *DockerSandboxRuntime) CreateSandbox(ctx context.Context, req *workerapi
 	if err := r.waitForSandboxAgent(ctx, sandboxID); err != nil {
 		return nil, err
 	}
-	return r.GetSandbox(ctx, sandboxID)
+	return r.observedSandbox(ctx, sandboxID)
+}
+
+// observedSandbox reads the sandbox back and reports what it sees before
+// returning it.
+//
+// Every create ends here, including the one that was not asked to start
+// anything. That create is the case the Docker event stream cannot cover: no
+// container transition happens, so an unarchive or a rebuild after the
+// container was lost would produce no observation at all and the control plane
+// would carry its previous belief until the next complete sync, up to a full
+// interval later (ADR 0034 §4).
+//
+// A create that did start the container publishes a state the `start` event
+// already reported. That duplicate is harmless — the report is idempotent and
+// carries a newer sequence — and it is worth more than the alternative, which
+// is a create path where whether an observation gets published depends on which
+// branch it took.
+func (r *DockerSandboxRuntime) observedSandbox(ctx context.Context, sandboxID string) (*Sandbox, error) {
+	sb, err := r.GetSandbox(ctx, sandboxID)
+	if err != nil {
+		return nil, err
+	}
+	r.PublishSandboxState(ctx, sandboxID, stateFromStatus(sb.Status))
+	return sb, nil
 }
 
 // resolveSandboxImage resolves what a sandbox must actually run and returns the

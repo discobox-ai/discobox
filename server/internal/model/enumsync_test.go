@@ -47,6 +47,10 @@ var yamlEnumAliases = map[string]string{
 	// only a sandbox can be archived (ADR 0022 §1), so Pool.desiredState is a
 	// narrowing and moved to yamlOwnedEnums below.
 	"SandboxRuntime.desiredState": "ResourceLifecycle.desiredState",
+	// The runtime axis is declared on Sandbox rather than on the embedded
+	// ResourceLifecycle, because only a sandbox has one (ADR 0034). The API
+	// carries it inside the runtime object, so the two names differ.
+	"SandboxRuntime.runtimeState": "Sandbox.runtimeState",
 }
 
 // yamlOwnedEnums lists contract enums with no authoritative Go model tag, with

@@ -61,6 +61,12 @@ func (db *DB) Migrate(ctx context.Context) error {
 	if err := deduplicateSandboxNames(write); err != nil {
 		return err
 	}
+	// Also pre-AutoMigrate, for the same shape of reason: AutoMigrate applies
+	// runtime_state's NOT NULL by rebuilding the table, and the rebuild fails
+	// on the rows it would have to repair.
+	if err := prepareSandboxStateSplit(write); err != nil {
+		return err
+	}
 	if err := write.AutoMigrate(model.AllModels()...); err != nil {
 		return err
 	}
@@ -76,7 +82,80 @@ func (db *DB) Migrate(ctx context.Context) error {
 	if err := dropLegacyProjectSlug(write); err != nil {
 		return err
 	}
-	return dropSandboxResourceRequestColumns(write)
+	if err := dropSandboxResourceRequestColumns(write); err != nil {
+		return err
+	}
+	return migrateSandboxStateSplit(write)
+}
+
+// prepareSandboxStateSplit makes the sandboxes table safe for AutoMigrate to
+// apply the ADR 0034 schema to, and must run before it.
+//
+// `runtime_state` predates the split as a nullable provider blob and is now a
+// NOT NULL string. Applying that constraint is a table rebuild on SQLite, and
+// the rebuild fails outright on any row holding NULL — which is every sandbox
+// whose provider never recorded state. AutoMigrate cannot fix that itself,
+// because the rows it would have to repair are the ones stopping it, so the
+// NULLs have to be gone before it runs.
+//
+// Everything else about the split waits until after AutoMigrate, in
+// migrateSandboxStateSplit, where the columns it needs exist.
+func prepareSandboxStateSplit(db *gorm.DB) error {
+	migrator := db.Migrator()
+	if !migrator.HasTable("sandboxes") || !migrator.HasColumn(&model.Sandbox{}, "runtime_state") {
+		return nil // fresh database: AutoMigrate creates the column correctly
+	}
+	return db.Exec(`UPDATE sandboxes SET runtime_state = '' WHERE runtime_state IS NULL`).Error
+}
+
+// migrateSandboxStateSplit moves a pre-ADR-0034 sandbox row onto the two state
+// fields, and moves the provider blob out of the column the runtime axis now
+// owns.
+//
+// Each statement is guarded by exactly what it is looking for, so the sequence
+// is idempotent and safe to resume after an interrupted run. Order is
+// load-bearing: the blob has to leave `runtime_state` before a power value is
+// written into it, or a rerun would find a state string where it expected JSON.
+func migrateSandboxStateSplit(db *gorm.DB) error {
+	// A legacy provider blob is anything the runtime vocabulary does not
+	// contain, empty included. Matching the closed set is what makes the pass
+	// idempotent — after it runs, every value in the column is a member — and
+	// it is the only test that works on the value as stored: GORM wrote the
+	// blob as a []byte, so SQLite holds it with BLOB storage class, and a
+	// `LIKE '{%'` sniff silently matches none of them.
+	runtimeValues := append([]string{""}, model.SandboxRuntimeStates...)
+	statements := []struct {
+		sql  string
+		args []any
+	}{
+		{
+			sql: `UPDATE sandboxes SET provider_state = runtime_state
+			      WHERE (provider_state IS NULL OR provider_state = '') AND runtime_state NOT IN (?)`,
+			args: []any{runtimeValues},
+		},
+		{
+			sql:  `UPDATE sandboxes SET runtime_state = '' WHERE runtime_state NOT IN (?)`,
+			args: []any{runtimeValues},
+		},
+		// A power value in `state` predates the split. It moves to the runtime
+		// axis and leaves `ready` behind: such a row described a sandbox whose
+		// container existed and had been converged, which is what `ready` now
+		// says. The old anchor described that power transition, so it moves
+		// with it; `state_changed_at` stays put, and nothing derives a deadline
+		// from `ready`.
+		{
+			sql: `UPDATE sandboxes
+			      SET runtime_state = state, runtime_state_changed_at = state_changed_at, state = ?
+			      WHERE state IN (?)`,
+			args: []any{model.SandboxStateReady, model.SandboxRuntimeStates},
+		},
+	}
+	for _, statement := range statements {
+		if err := db.Exec(statement.sql, statement.args...).Error; err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 const (

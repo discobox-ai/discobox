@@ -397,7 +397,7 @@ func (s *Service) pushSandboxSentinels(ctx context.Context, sandboxModel *model.
 	if err != nil {
 		return err
 	}
-	if _, _, err := provider.Update(ctx, SandboxRef{ProjectID: sandboxModel.ProjectID, SandboxID: sandboxModel.ID}, sandboxModel.RuntimeState, UpdateOptions{Sentinels: sentinels, SecretEnv: secretEnv}); err != nil {
+	if _, _, err := provider.Update(ctx, SandboxRef{ProjectID: sandboxModel.ProjectID, SandboxID: sandboxModel.ID}, sandboxModel.ProviderState, UpdateOptions{Sentinels: sentinels, SecretEnv: secretEnv}); err != nil {
 		return err
 	}
 	return nil

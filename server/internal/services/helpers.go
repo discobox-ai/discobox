@@ -190,6 +190,15 @@ func SandboxToAPI(sandbox *model.Sandbox, fallback *model.HarnessConfig) (server
 		"state":              sandbox.State,
 		"stateChangedAt":     sandbox.StateChangedAt,
 	}
+	// Omitted rather than sent empty: empty means no agent has reported on this
+	// sandbox yet, and an empty string is not a member of the runtimeState enum
+	// (ADR 0034 §2).
+	if sandbox.RuntimeState != "" {
+		runtime["runtimeState"] = sandbox.RuntimeState
+	}
+	if sandbox.RuntimeStateChangedAt != nil {
+		runtime["runtimeStateChangedAt"] = *sandbox.RuntimeStateChangedAt
+	}
 	if sandbox.ErrorMessage != nil {
 		runtime["errorMessage"] = *sandbox.ErrorMessage
 	}
@@ -322,10 +331,15 @@ func SandboxUpgrade(sandbox *model.Sandbox, fallback *model.HarnessConfig) map[s
 // users: starting, running, stopping, stopped, archiving, archived, deleting,
 // deleted, error.
 //
-// It is close to the identity function on State, because State is now reported
-// by whichever component can observe it rather than inferred from orchestration
-// bookkeeping (ADR 0017 §7). Only the existence axis still consults the
-// generations, because existence is the only thing the server converges.
+// It is the one place the two state axes are combined, and it is what clients
+// should read: existence is the reconciler's `State`, power is the pool agent's
+// `RuntimeState`, and a caller asking "what is this sandbox doing" wants one
+// answer composed from both (ADR 0034 §5).
+//
+// Existence is consulted first and wins, because a sandbox that is being
+// archived or deleted is not described by whatever its container was last seen
+// doing. Only once existence is settled at `ready` does the runtime axis
+// answer.
 func SandboxDisplayState(sandbox *model.Sandbox) string {
 	if sandbox == nil {
 		return "error"
@@ -341,15 +355,29 @@ func SandboxDisplayState(sandbox *model.Sandbox) string {
 	}
 	switch sandbox.State {
 	case model.SandboxStatePending, model.SandboxStateAwaitingSource:
-		// Both are a sandbox on its way up for the first time. Awaiting-source
-		// is parked rather than working, but from the caller's side the sandbox
-		// it asked for is not ready yet and the client that owes it a push is
-		// the one that already knows.
+		// Both are a sandbox on its way up for the first time, whatever its
+		// container is doing: the agent may already have reported `running`
+		// while the reconciler is still finishing the create, and the sandbox
+		// the caller asked for is not ready until both are true.
+		//
+		// Awaiting-source is parked rather than working, but from the caller's
+		// side it is the same "not ready yet", and the client that owes it a
+		// push is the one that already knows.
 		return "starting"
-	case "":
-		return "error"
-	default:
+	case model.SandboxStateReady:
+		if sandbox.RuntimeState == "" {
+			// Converged, and no agent has reported on it yet. That window is
+			// brief — the create publishes what it observed before returning —
+			// and "starting" is the honest reading of it: the container exists
+			// and nobody has seen it settle.
+			return "starting"
+		}
+		return sandbox.RuntimeState
+	case model.SandboxStateArchived, model.SandboxStateDeleted:
 		return sandbox.State
+	default:
+		// Includes the empty state, which is a row that was never given one.
+		return "error"
 	}
 }
 

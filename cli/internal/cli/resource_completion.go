@@ -122,7 +122,7 @@ func (a *App) listSandboxCompletions(ctx context.Context, client *apiclientgen.C
 	sandboxes := sortedByRecency(body.GetSandboxes(), func(sandbox apimodel.Sandbox) time.Time { return recencyTime(sandbox.UpdatedAt, sandbox.CreatedAt) })
 	completions := make([]string, 0, len(sandboxes))
 	for _, sandbox := range sandboxes {
-		completions = append(completions, completionItem(sandbox.ID, completionDescription(sandbox.Config.Name, string(sandbox.Runtime.State))))
+		completions = append(completions, completionItem(sandbox.ID, completionDescription(sandbox.Config.Name, sandboxDisplayState(sandbox))))
 	}
 	return completions, nil
 }

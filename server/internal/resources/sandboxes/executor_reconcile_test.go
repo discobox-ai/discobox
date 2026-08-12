@@ -95,10 +95,10 @@ func TestReconcileRebuildsAMissingRuntimeWithoutStartingIt(t *testing.T) {
 	appStore := newExecutorTestStore(t)
 	sb := createSandboxForReconcile(t, appStore, model.ResourceLifecycle{
 		DesiredState:       model.DesiredStatePresent,
-		State:              model.SandboxStateStopped,
+		State:              model.SandboxStateReady,
 		Generation:         2,
 		ObservedGeneration: 1,
-	})
+	}, model.SandboxRuntimeStateStopped)
 	provider := &missingRuntimeProvider{}
 	reconciler := sandboxes.NewSandboxReconciler(appStore, sandboxes.WithSandboxProvider(provider))
 
@@ -118,8 +118,14 @@ func TestReconcileRebuildsAMissingRuntimeWithoutStartingIt(t *testing.T) {
 	if !updated.Converged() {
 		t.Fatalf("generations = %d/%d, want converged", updated.ObservedGeneration, updated.Generation)
 	}
-	if updated.State != model.SandboxStateStopped {
-		t.Fatalf("state = %q, want stopped: the runtime reports what it is, and nothing started it", updated.State)
+	if updated.State != model.SandboxStateReady {
+		t.Fatalf("state = %q, want ready: the container exists again", updated.State)
+	}
+	// The rebuild is an existence change, so it leaves the runtime axis alone.
+	// Nothing started the container, and the agent's next report is what says
+	// so — the reconciler has no observation of its own to record (ADR 0034 §2).
+	if updated.RuntimeState != model.SandboxRuntimeStateStopped {
+		t.Fatalf("runtime state = %q, want stopped: a rebuild must not claim to have observed anything", updated.RuntimeState)
 	}
 }
 
@@ -135,7 +141,7 @@ func TestReconcileOnlyStartsASandboxThatHasNeverRun(t *testing.T) {
 	}{
 		{name: "first create", state: model.SandboxStatePending, wantStart: true},
 		{name: "resumed after its push", state: model.SandboxStateAwaitingSource, wantStart: true},
-		{name: "rebuild after the container was lost", state: model.SandboxStateStopped, wantStart: false},
+		{name: "rebuild after the container was lost", state: model.SandboxStateReady, wantStart: false},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			appStore := newExecutorTestStore(t)
@@ -204,7 +210,7 @@ func TestReconcileSandboxMarksDeleteFailure(t *testing.T) {
 	removeErr := errors.New("remove failed")
 	sb := createSandboxForReconcile(t, appStore, model.ResourceLifecycle{
 		DesiredState:       model.DesiredStateDeleted,
-		State:              model.SandboxStateRunning,
+		State:              model.SandboxStateReady,
 		Generation:         2,
 		ObservedGeneration: 1,
 	})
@@ -223,7 +229,7 @@ func TestReconcileSandboxSoftDeletesAfterRuntimeRemoval(t *testing.T) {
 	appStore := newExecutorTestStore(t)
 	sb := createSandboxForReconcile(t, appStore, model.ResourceLifecycle{
 		DesiredState:       model.DesiredStateDeleted,
-		State:              model.SandboxStateRunning,
+		State:              model.SandboxStateReady,
 		Generation:         2,
 		ObservedGeneration: 1,
 	})
@@ -298,7 +304,10 @@ func (p failingSandboxProvider) Remove(context.Context, sandboxes.SandboxRef, []
 	return nil, nil
 }
 
-func createSandboxForReconcile(t *testing.T, appStore *store.Store, lifecycle model.ResourceLifecycle) *model.Sandbox {
+// createSandboxForReconcile builds a sandbox on a fresh pool. runtimeState is
+// optional and names what the pool agent last observed, which since ADR 0034 is
+// a different field from the lifecycle's existence state.
+func createSandboxForReconcile(t *testing.T, appStore *store.Store, lifecycle model.ResourceLifecycle, runtimeState ...string) *model.Sandbox {
 	t.Helper()
 	ctx := context.Background()
 	provider := &model.SandboxProviderInstance{ID: "provider-1", ProjectID: "project-1", Type: "test", Name: "test"}
@@ -316,6 +325,9 @@ func createSandboxForReconcile(t *testing.T, appStore *store.Store, lifecycle mo
 		CreatedByUserID:   "user-1",
 		Name:              "alpha",
 		ResourceLifecycle: lifecycle,
+	}
+	if len(runtimeState) > 0 {
+		sb.RuntimeState = runtimeState[0]
 	}
 	if err := appStore.CreateSandbox(ctx, sb); err != nil {
 		t.Fatalf("create sandbox: %v", err)

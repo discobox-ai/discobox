@@ -232,7 +232,7 @@ func TestReconcileNeverRepinsToTheConfigImage(t *testing.T) {
 	svc, st := newBindingFixture(t)
 	config := imagedConfig(t, st, "discobox-harness-codex:local", "sha256:new")
 
-	for _, state := range []string{model.SandboxStateStopped, model.SandboxStateFailed, model.SandboxStatePending} {
+	for _, state := range []string{model.SandboxStateReady, model.SandboxStateFailed, model.SandboxStatePending} {
 		sb := pinnedSandbox(t, st, config.ID, "discobox-harness-codex:gone", "sha256:old")
 		sb.State = state
 		sb.DesiredState = model.DesiredStatePresent

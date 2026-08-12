@@ -294,15 +294,27 @@ func TestRunCommandAttachesVirtualPrimaryTerminal(t *testing.T) {
 	}
 }
 
-// displayState is what the CLI waits on, so a fixture that omits it would leave
-// the wait loop spinning forever (ADR 0017 §7). It mirrors the server's
-// derivation: close to the identity on state, with the not-yet-up states shown
-// as starting.
-func runTestSandboxJSON(sandboxID, state string) string {
-	displayState := state
-	switch state {
+// runTestSandboxJSON builds a sandbox response in the phase the caller names,
+// filling in both state axes the way the server would (ADR 0034) plus the
+// derived displayState the CLI actually waits on — a fixture that omitted it
+// would leave the wait loop spinning forever.
+//
+// The phases that are not existence states are runtime ones, and a sandbox with
+// a runtime state has necessarily converged, so they come back as `ready` plus
+// the observation.
+func runTestSandboxJSON(sandboxID, phase string) string {
+	state, runtimeState, displayState := phase, "", phase
+	switch phase {
 	case "pending", "awaiting_source":
 		displayState = "starting"
+	case "failed":
+		displayState = "error"
+	default:
+		state, runtimeState = "ready", phase
 	}
-	return `{"id":"` + sandboxID + `","projectId":"project-1","createdByUserId":"user-1","config":{"name":"run-test","image":""},"runtime":{"state":"` + state + `","displayState":"` + displayState + `","desiredState":"present","generation":1,"observedGeneration":1},"createdAt":"2026-06-17T00:00:00Z","updatedAt":"2026-06-17T00:00:01Z"}`
+	runtime := `"state":"` + state + `","displayState":"` + displayState + `","desiredState":"present","generation":1,"observedGeneration":1`
+	if runtimeState != "" {
+		runtime += `,"runtimeState":"` + runtimeState + `"`
+	}
+	return `{"id":"` + sandboxID + `","projectId":"project-1","createdByUserId":"user-1","config":{"name":"run-test","image":""},"runtime":{` + runtime + `},"createdAt":"2026-06-17T00:00:00Z","updatedAt":"2026-06-17T00:00:01Z"}`
 }

@@ -71,7 +71,7 @@ func TestSandboxReconcileExecutorDelegatesToProvider(t *testing.T) {
 		t.Fatalf("create sandbox: %v", err)
 	}
 	sb.SecretState = []byte("initial")
-	sb.RuntimeState = []byte(`{"existing":true}`)
+	sb.ProviderState = []byte(`{"existing":true}`)
 	if err := reconcileSandbox(ctx, t, svc, executor, sb.ProjectID, sb.ID); err != nil {
 		t.Fatalf("reconcile start: %v", err)
 	}
@@ -93,8 +93,8 @@ func TestSandboxReconcileExecutorDelegatesToProvider(t *testing.T) {
 	if string(sb.SecretState) != "created" {
 		t.Fatalf("secret state after create = %q, want created", string(sb.SecretState))
 	}
-	if len(sb.RuntimeState) == 0 {
-		t.Fatal("expected runtime state to be set from provider sandbox")
+	if len(sb.ProviderState) == 0 {
+		t.Fatal("expected provider state to be set from provider sandbox")
 	}
 	if sb.LastActiveAt == nil {
 		t.Fatal("expected last active time")

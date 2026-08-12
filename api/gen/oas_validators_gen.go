@@ -3087,6 +3087,24 @@ func (s *SandboxRuntime) Validate() error {
 		})
 	}
 	if err := func() error {
+		if value, ok := s.RuntimeState.Get(); ok {
+			if err := func() error {
+				if err := value.Validate(); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return err
+			}
+		}
+		return nil
+	}(); err != nil {
+		failures = append(failures, validate.FieldError{
+			Name:  "runtimeState",
+			Error: err,
+		})
+	}
+	if err := func() error {
 		if err := s.State.Validate(); err != nil {
 			return err
 		}
@@ -3159,12 +3177,8 @@ func (s SandboxRuntimeDisplayState) Validate() error {
 	}
 }
 
-func (s SandboxRuntimeState) Validate() error {
+func (s SandboxRuntimeRuntimeState) Validate() error {
 	switch s {
-	case "pending":
-		return nil
-	case "awaiting_source":
-		return nil
 	case "starting":
 		return nil
 	case "running":
@@ -3172,6 +3186,19 @@ func (s SandboxRuntimeState) Validate() error {
 	case "stopping":
 		return nil
 	case "stopped":
+		return nil
+	default:
+		return errors.Errorf("invalid value: %v", s)
+	}
+}
+
+func (s SandboxRuntimeState) Validate() error {
+	switch s {
+	case "pending":
+		return nil
+	case "awaiting_source":
+		return nil
+	case "ready":
 		return nil
 	case "archived":
 		return nil

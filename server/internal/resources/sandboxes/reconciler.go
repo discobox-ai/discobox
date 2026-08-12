@@ -231,19 +231,14 @@ func (r *SandboxReconciler) ensure(ctx context.Context, sandbox *model.Sandbox, 
 		return armSourceAwaitTimeout(sandbox), nil
 	}
 
-	if sandbox.State == model.SandboxStateArchived {
-		// Unarchiving: the container has just been rebuilt against the retained
-		// tree, so the sandbox exists as a runtime again and `archived` is no
-		// longer true of it. Recording that here rather than waiting for the
-		// agent's next complete sync is not the reconciler holding an opinion
-		// about power — it owns existence, and this is the existence change it
-		// just made. Leaving it stale would report an archived sandbox that has
-		// a container for up to a full sync interval.
-		//
-		// `stopped` is the honest value: the container exists and is not
-		// running, and nothing started it (ADR 0022 §2).
-		sandbox.SetState(model.SandboxStateStopped)
-	}
+	// The container exists and matches the spec, which is the whole of what this
+	// reconciler converges. `ready` says exactly that and nothing about power —
+	// whether the container is running is the pool agent's to report, and it
+	// already has: the create it just performed publishes what it observed
+	// before returning (ADR 0034 §4), so an unarchive that rebuilt a stopped
+	// container reads `stopped` by the time this lands, without waiting for a
+	// complete sync.
+	sandbox.SetState(model.SandboxStateReady)
 	sandbox.ObservedGeneration = generation
 	sandbox.ErrorMessage = nil
 	if err := r.update(ctx, sandbox, generation); err != nil {
@@ -363,7 +358,7 @@ func (r *SandboxReconciler) ensureSandboxCreated(ctx context.Context, sb *model.
 		secretState = state
 	}
 	if runtimeSandbox != nil {
-		setRuntimeState(sb, runtimeSandbox)
+		setProviderState(sb, runtimeSandbox)
 	}
 	return secretState, nil
 }
@@ -392,7 +387,7 @@ func (r *SandboxReconciler) deleteSandbox(ctx context.Context, sb *model.Sandbox
 	}
 	sb.SecretState = state
 	if len(state) == 0 {
-		sb.RuntimeState = nil
+		sb.ProviderState = nil
 	}
 	return nil
 }
@@ -507,12 +502,12 @@ func (r *SandboxReconciler) createOptionsFromSandbox(ctx context.Context, sb *mo
 	return opts, nil
 }
 
-func setRuntimeState(sb *model.Sandbox, runtimeSandbox *Sandbox) {
+func setProviderState(sb *model.Sandbox, runtimeSandbox *Sandbox) {
 	data, err := json.Marshal(runtimeSandbox)
 	if err != nil {
 		return
 	}
-	sb.RuntimeState = data
+	sb.ProviderState = data
 }
 
 // sandboxHasNeverRun reports whether a sandbox has yet to run for the first
@@ -521,6 +516,11 @@ func setRuntimeState(sb *model.Sandbox, runtimeSandbox *Sandbox) {
 // Pending is the obvious case. Awaiting-source is the same thing interrupted:
 // the sandbox was created, parked for its client's push, and has been waiting
 // ever since. Resuming it is still its first start.
+//
+// It reads the existence axis, not the runtime one, and that is the point: a
+// sandbox that has reached `ready` has been created once already, so a later
+// ensure — a re-pin, a spec change, a rebuild after the container was lost —
+// rebuilds without starting, whatever the runtime last reported.
 func sandboxHasNeverRun(state string) bool {
 	return state == model.SandboxStatePending || state == model.SandboxStateAwaitingSource
 }

@@ -390,7 +390,7 @@ func (s *Service) AcquireSandboxHTTPClient(ctx context.Context, projectID, sandb
 	if err != nil {
 		return nil, nil, err
 	}
-	lease, err := provider.AcquireHTTPClient(ctx, sandbox.SandboxRef{ProjectID: sandboxModel.ProjectID, SandboxID: sandboxModel.ID}, sandboxModel.RuntimeState, scopes)
+	lease, err := provider.AcquireHTTPClient(ctx, sandbox.SandboxRef{ProjectID: sandboxModel.ProjectID, SandboxID: sandboxModel.ID}, sandboxModel.ProviderState, scopes)
 	if err != nil {
 		return nil, nil, err
 	}

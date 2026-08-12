@@ -5653,6 +5653,52 @@ func (o OptSandboxRuntimeDisplayState) Or(d SandboxRuntimeDisplayState) SandboxR
 	return d
 }
 
+// NewOptSandboxRuntimeRuntimeState returns new OptSandboxRuntimeRuntimeState with value set to v.
+func NewOptSandboxRuntimeRuntimeState(v SandboxRuntimeRuntimeState) OptSandboxRuntimeRuntimeState {
+	return OptSandboxRuntimeRuntimeState{
+		Value: v,
+		Set:   true,
+	}
+}
+
+// OptSandboxRuntimeRuntimeState is optional SandboxRuntimeRuntimeState.
+type OptSandboxRuntimeRuntimeState struct {
+	Value SandboxRuntimeRuntimeState
+	Set   bool
+}
+
+// IsSet returns true if OptSandboxRuntimeRuntimeState was set.
+func (o OptSandboxRuntimeRuntimeState) IsSet() bool { return o.Set }
+
+// Reset unsets value.
+func (o *OptSandboxRuntimeRuntimeState) Reset() {
+	var v SandboxRuntimeRuntimeState
+	o.Value = v
+	o.Set = false
+}
+
+// SetTo sets value to v.
+func (o *OptSandboxRuntimeRuntimeState) SetTo(v SandboxRuntimeRuntimeState) {
+	o.Set = true
+	o.Value = v
+}
+
+// Get returns value and boolean that denotes whether value was set.
+func (o OptSandboxRuntimeRuntimeState) Get() (v SandboxRuntimeRuntimeState, ok bool) {
+	if !o.Set {
+		return v, false
+	}
+	return o.Value, true
+}
+
+// Or returns value if set, or given parameter if does not.
+func (o OptSandboxRuntimeRuntimeState) Or(d SandboxRuntimeRuntimeState) SandboxRuntimeRuntimeState {
+	if v, ok := o.Get(); ok {
+		return v
+	}
+	return d
+}
+
 // NewOptSandboxUpdateConfig returns new OptSandboxUpdateConfig with value set to v.
 func NewOptSandboxUpdateConfig(v SandboxUpdateConfig) OptSandboxUpdateConfig {
 	return OptSandboxUpdateConfig{
@@ -6478,19 +6524,14 @@ func (s *PoolDesiredState) UnmarshalText(data []byte) error {
 
 // Ref: #/components/schemas/PoolSandboxState
 type PoolSandboxState struct {
-	// Why the sandbox reached a failed state, empty otherwise.
-	Error OptString `json:"error"`
 	// Sandbox the observation is about.
 	SandboxId string `json:"sandboxId"`
-	// Observed state. There is no `failed` here: a container that has exited looks the
-	// same whether it was stopped deliberately or died, so failure is a judgement about
-	// an operation rather than something the runtime can observe (ADR 0017 §10).
+	// Observed runtime state. There is no `failed` here: a container that has exited looks
+	// the same whether it was stopped deliberately or died, so failure is a judgement about
+	// an operation rather than something the runtime can observe (ADR 0017 §10). For the
+	// same reason a report carries no error message — why an operation failed is the
+	// reconciler's verdict, and it owns the field that records one (ADR 0034 §7).
 	State PoolSandboxStateState `json:"state"`
-}
-
-// GetError returns the value of Error.
-func (s *PoolSandboxState) GetError() OptString {
-	return s.Error
 }
 
 // GetSandboxId returns the value of SandboxId.
@@ -6503,11 +6544,6 @@ func (s *PoolSandboxState) GetState() PoolSandboxStateState {
 	return s.State
 }
 
-// SetError sets the value of Error.
-func (s *PoolSandboxState) SetError(val OptString) {
-	s.Error = val
-}
-
 // SetSandboxId sets the value of SandboxId.
 func (s *PoolSandboxState) SetSandboxId(val string) {
 	s.SandboxId = val
@@ -6518,9 +6554,11 @@ func (s *PoolSandboxState) SetState(val PoolSandboxStateState) {
 	s.State = val
 }
 
-// Observed state. There is no `failed` here: a container that has exited looks the
-// same whether it was stopped deliberately or died, so failure is a judgement about
-// an operation rather than something the runtime can observe (ADR 0017 §10).
+// Observed runtime state. There is no `failed` here: a container that has exited looks
+// the same whether it was stopped deliberately or died, so failure is a judgement about
+// an operation rather than something the runtime can observe (ADR 0017 §10). For the
+// same reason a report carries no error message — why an operation failed is the
+// reconciler's verdict, and it owns the field that records one (ADR 0034 §7).
 type PoolSandboxStateState string
 
 const (
@@ -9632,8 +9670,9 @@ type SandboxRuntime struct {
 	// (ADR 0017 §9). Archived is a third form of existence — as data, with no
 	// container — not a power state (ADR 0022 §1).
 	DesiredState SandboxRuntimeDesiredState `json:"desiredState"`
-	// User-facing lifecycle state, derived from the observed state plus whether the existence
-	// generations agree.
+	// User-facing lifecycle state, composed from the existence state, the runtime state,
+	// and whether the existence generations agree (ADR 0034 §5). This is the field
+	// clients should read: it is the one answer to "what is this sandbox doing".
 	DisplayState OptSandboxRuntimeDisplayState `json:"displayState"`
 	// Error from the generation currently recorded in observedGeneration. Cleared by every accepted
 	// intent.
@@ -9644,13 +9683,20 @@ type SandboxRuntime struct {
 	LastActiveAt OptDateTime `json:"lastActiveAt"`
 	// Latest generation the reconciler has finished acting on.
 	ObservedGeneration int64 `json:"observedGeneration"`
-	// Observed state. The transitional values are reported by the pool agent, which is the only
-	// component that can see them.
+	// Observed power state: what the container is doing, as reported by the pool agent
+	// hosting it, which is the only component that can see it. Absent until an agent has
+	// reported on this sandbox, which is not the same as `stopped` (ADR 0034 §2).
+	RuntimeState OptSandboxRuntimeRuntimeState `json:"runtimeState"`
+	// When runtimeState last changed to its current value.
+	RuntimeStateChangedAt OptDateTime `json:"runtimeStateChangedAt"`
+	// Existence state, written only by the reconciler: whether the sandbox's container has
+	// been converged against its spec. `ready` means it has. What that container is doing
+	// is a separate field, runtimeState (ADR 0034 §1).
 	State SandboxRuntimeState `json:"state"`
 	// When state last changed to its current value.
 	StateChangedAt OptDateTime `json:"stateChangedAt"`
-	// When the hosting pool agent last reported this sandbox's state. A state whose report
-	// is old is a state nobody has confirmed recently.
+	// When the hosting pool agent last reported this sandbox's runtime state. A runtime
+	// state whose report is old is one nobody has confirmed recently.
 	StateReportedAt OptDateTime       `json:"stateReportedAt"`
 	Upgrade         OptSandboxUpgrade `json:"upgrade"`
 }
@@ -9698,6 +9744,16 @@ func (s *SandboxRuntime) GetLastActiveAt() OptDateTime {
 // GetObservedGeneration returns the value of ObservedGeneration.
 func (s *SandboxRuntime) GetObservedGeneration() int64 {
 	return s.ObservedGeneration
+}
+
+// GetRuntimeState returns the value of RuntimeState.
+func (s *SandboxRuntime) GetRuntimeState() OptSandboxRuntimeRuntimeState {
+	return s.RuntimeState
+}
+
+// GetRuntimeStateChangedAt returns the value of RuntimeStateChangedAt.
+func (s *SandboxRuntime) GetRuntimeStateChangedAt() OptDateTime {
+	return s.RuntimeStateChangedAt
 }
 
 // GetState returns the value of State.
@@ -9763,6 +9819,16 @@ func (s *SandboxRuntime) SetLastActiveAt(val OptDateTime) {
 // SetObservedGeneration sets the value of ObservedGeneration.
 func (s *SandboxRuntime) SetObservedGeneration(val int64) {
 	s.ObservedGeneration = val
+}
+
+// SetRuntimeState sets the value of RuntimeState.
+func (s *SandboxRuntime) SetRuntimeState(val OptSandboxRuntimeRuntimeState) {
+	s.RuntimeState = val
+}
+
+// SetRuntimeStateChangedAt sets the value of RuntimeStateChangedAt.
+func (s *SandboxRuntime) SetRuntimeStateChangedAt(val OptDateTime) {
+	s.RuntimeStateChangedAt = val
 }
 
 // SetState sets the value of State.
@@ -9850,8 +9916,9 @@ func (s *SandboxRuntimeDesiredState) UnmarshalText(data []byte) error {
 	}
 }
 
-// User-facing lifecycle state, derived from the observed state plus whether the existence
-// generations agree.
+// User-facing lifecycle state, composed from the existence state, the runtime state,
+// and whether the existence generations agree (ADR 0034 §5). This is the field
+// clients should read: it is the one answer to "what is this sandbox doing".
 type SandboxRuntimeDisplayState string
 
 const (
@@ -9942,17 +10009,73 @@ func (s *SandboxRuntimeDisplayState) UnmarshalText(data []byte) error {
 	}
 }
 
-// Observed state. The transitional values are reported by the pool agent, which is the only
-// component that can see them.
+// Observed power state: what the container is doing, as reported by the pool agent
+// hosting it, which is the only component that can see it. Absent until an agent has
+// reported on this sandbox, which is not the same as `stopped` (ADR 0034 §2).
+type SandboxRuntimeRuntimeState string
+
+const (
+	SandboxRuntimeRuntimeStateStarting SandboxRuntimeRuntimeState = "starting"
+	SandboxRuntimeRuntimeStateRunning  SandboxRuntimeRuntimeState = "running"
+	SandboxRuntimeRuntimeStateStopping SandboxRuntimeRuntimeState = "stopping"
+	SandboxRuntimeRuntimeStateStopped  SandboxRuntimeRuntimeState = "stopped"
+)
+
+// AllValues returns all SandboxRuntimeRuntimeState values.
+func (SandboxRuntimeRuntimeState) AllValues() []SandboxRuntimeRuntimeState {
+	return []SandboxRuntimeRuntimeState{
+		SandboxRuntimeRuntimeStateStarting,
+		SandboxRuntimeRuntimeStateRunning,
+		SandboxRuntimeRuntimeStateStopping,
+		SandboxRuntimeRuntimeStateStopped,
+	}
+}
+
+// MarshalText implements encoding.TextMarshaler.
+func (s SandboxRuntimeRuntimeState) MarshalText() ([]byte, error) {
+	switch s {
+	case SandboxRuntimeRuntimeStateStarting:
+		return []byte(s), nil
+	case SandboxRuntimeRuntimeStateRunning:
+		return []byte(s), nil
+	case SandboxRuntimeRuntimeStateStopping:
+		return []byte(s), nil
+	case SandboxRuntimeRuntimeStateStopped:
+		return []byte(s), nil
+	default:
+		return nil, errors.Errorf("invalid value: %q", s)
+	}
+}
+
+// UnmarshalText implements encoding.TextUnmarshaler.
+func (s *SandboxRuntimeRuntimeState) UnmarshalText(data []byte) error {
+	switch SandboxRuntimeRuntimeState(data) {
+	case SandboxRuntimeRuntimeStateStarting:
+		*s = SandboxRuntimeRuntimeStateStarting
+		return nil
+	case SandboxRuntimeRuntimeStateRunning:
+		*s = SandboxRuntimeRuntimeStateRunning
+		return nil
+	case SandboxRuntimeRuntimeStateStopping:
+		*s = SandboxRuntimeRuntimeStateStopping
+		return nil
+	case SandboxRuntimeRuntimeStateStopped:
+		*s = SandboxRuntimeRuntimeStateStopped
+		return nil
+	default:
+		return errors.Errorf("invalid value: %q", data)
+	}
+}
+
+// Existence state, written only by the reconciler: whether the sandbox's container has
+// been converged against its spec. `ready` means it has. What that container is doing
+// is a separate field, runtimeState (ADR 0034 §1).
 type SandboxRuntimeState string
 
 const (
 	SandboxRuntimeStatePending        SandboxRuntimeState = "pending"
 	SandboxRuntimeStateAwaitingSource SandboxRuntimeState = "awaiting_source"
-	SandboxRuntimeStateStarting       SandboxRuntimeState = "starting"
-	SandboxRuntimeStateRunning        SandboxRuntimeState = "running"
-	SandboxRuntimeStateStopping       SandboxRuntimeState = "stopping"
-	SandboxRuntimeStateStopped        SandboxRuntimeState = "stopped"
+	SandboxRuntimeStateReady          SandboxRuntimeState = "ready"
 	SandboxRuntimeStateArchived       SandboxRuntimeState = "archived"
 	SandboxRuntimeStateDeleted        SandboxRuntimeState = "deleted"
 	SandboxRuntimeStateFailed         SandboxRuntimeState = "failed"
@@ -9963,10 +10086,7 @@ func (SandboxRuntimeState) AllValues() []SandboxRuntimeState {
 	return []SandboxRuntimeState{
 		SandboxRuntimeStatePending,
 		SandboxRuntimeStateAwaitingSource,
-		SandboxRuntimeStateStarting,
-		SandboxRuntimeStateRunning,
-		SandboxRuntimeStateStopping,
-		SandboxRuntimeStateStopped,
+		SandboxRuntimeStateReady,
 		SandboxRuntimeStateArchived,
 		SandboxRuntimeStateDeleted,
 		SandboxRuntimeStateFailed,
@@ -9980,13 +10100,7 @@ func (s SandboxRuntimeState) MarshalText() ([]byte, error) {
 		return []byte(s), nil
 	case SandboxRuntimeStateAwaitingSource:
 		return []byte(s), nil
-	case SandboxRuntimeStateStarting:
-		return []byte(s), nil
-	case SandboxRuntimeStateRunning:
-		return []byte(s), nil
-	case SandboxRuntimeStateStopping:
-		return []byte(s), nil
-	case SandboxRuntimeStateStopped:
+	case SandboxRuntimeStateReady:
 		return []byte(s), nil
 	case SandboxRuntimeStateArchived:
 		return []byte(s), nil
@@ -10008,17 +10122,8 @@ func (s *SandboxRuntimeState) UnmarshalText(data []byte) error {
 	case SandboxRuntimeStateAwaitingSource:
 		*s = SandboxRuntimeStateAwaitingSource
 		return nil
-	case SandboxRuntimeStateStarting:
-		*s = SandboxRuntimeStateStarting
-		return nil
-	case SandboxRuntimeStateRunning:
-		*s = SandboxRuntimeStateRunning
-		return nil
-	case SandboxRuntimeStateStopping:
-		*s = SandboxRuntimeStateStopping
-		return nil
-	case SandboxRuntimeStateStopped:
-		*s = SandboxRuntimeStateStopped
+	case SandboxRuntimeStateReady:
+		*s = SandboxRuntimeStateReady
 		return nil
 	case SandboxRuntimeStateArchived:
 		*s = SandboxRuntimeStateArchived

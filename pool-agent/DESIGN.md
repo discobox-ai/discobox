@@ -61,6 +61,12 @@ Two deliveries, both load-bearing:
   channel drifts permanently the first time a post fails. A sandbox the control
   plane believes is here and that the sync omits has no container.
 
+- **The end of every create**, which is the case the event stream cannot cover:
+  a create that was not asked to start anything produces no container
+  transition, so an unarchive or a rebuild after the container was lost would
+  otherwise go unreported until the next sync (ADR 0034 §4). `CreateSandbox`
+  reads the container back and publishes what it sees before returning.
+
 Batches carry the agent's boot ID and a per-boot sequence, so a delayed delta
 cannot overwrite a newer sync. The interval's arrival doubles as pool liveness.
 
@@ -69,7 +75,10 @@ cannot overwrite a newer sync. The interval's arrival doubles as pool liveness.
 is over, and a state nobody can report is a state that does not exist. The
 channel deliberately has no `failed` — an exited container looks the same
 whether it was stopped on purpose or died, so failure is a judgement about an
-operation rather than something the runtime can observe.
+operation rather than something the runtime can observe. For the same reason a
+report carries no error message: what this channel feeds is the control plane's
+runtime state field, and the field that records why something failed belongs to
+the reconciler (ADR 0034 §7).
 
 Power operations (`start`, `stop`, `restart`) answer with acceptance only, and
 serialise per sandbox on one mutex. That is also what makes on-demand start safe:

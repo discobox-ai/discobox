@@ -11,11 +11,14 @@ import (
 
 // SandboxStateReport is one runtime observation of one sandbox, as reported by
 // the pool agent that hosts it (ADR 0017 §10).
+//
+// State is a runtime state — one of model.SandboxRuntimeStates. A report says
+// nothing about whether the sandbox should exist, and carries no error: why an
+// operation failed is the reconciler's verdict, recorded on ErrorMessage, and a
+// second writer of that field is what ADR 0034 exists to remove.
 type SandboxStateReport struct {
 	SandboxID string
 	State     string
-	// Error is the reason a sandbox reached a failed state, empty otherwise.
-	Error string
 }
 
 // SandboxObservation is one sandbox the caller should look at after a batch.
@@ -47,8 +50,10 @@ type SandboxStateReportBatch struct {
 // ApplySandboxStateReports records a batch of runtime observations and returns
 // the sandboxes the reconciler should take a look at.
 //
-// Reports are observations, never intent: this writes State, ErrorMessage, and
-// the report watermark, and touches neither DesiredState nor Generation.
+// Reports are observations, never intent: this writes RuntimeState and the
+// report watermark, and touches neither DesiredState, Generation, State, nor
+// ErrorMessage. It is the only writer of the runtime axis, and the only place
+// that writes those columns at all (ADR 0034 §2).
 //
 // Two things earn a look. A state that actually changed is the obvious one. The
 // other is a sandbox a complete sync omitted: its container is gone, which is a
@@ -98,35 +103,28 @@ func (s *Store) ApplySandboxStateReports(ctx context.Context, batch SandboxState
 				// about whether the sandbox should exist: existence
 				// reconciliation rebuilds it if it is still wanted, and it
 				// stays stopped until something uses it (ADR 0017 §13).
-				report = SandboxStateReport{SandboxID: sandbox.ID, State: model.SandboxStateStopped}
+				//
+				// `stopped` rather than unobserved is deliberate: a container
+				// that is gone is certainly not running, and reverting to
+				// unobserved would report the sandbox as starting.
+				report = SandboxStateReport{SandboxID: sandbox.ID, State: model.SandboxRuntimeStateStopped}
 			}
 			if !acceptSandboxStateReport(sandbox, batch) {
 				continue
 			}
-			previous := sandbox.State
-			sandbox.SetState(report.State)
-			switch {
-			case report.Error != "":
-				message := report.Error
-				sandbox.ErrorMessage = &message
-			case report.State == model.SandboxStateRunning:
-				// The sandbox is up, so whatever went wrong last time is no
-				// longer what is true of it. Only a live state clears the
-				// error: a stopped sandbox that failed to build still owes its
-				// owner the reason.
-				sandbox.ErrorMessage = nil
-			}
+			previous := sandbox.RuntimeState
+			sandbox.SetRuntimeState(report.State)
 			reportedAt := batch.ReportedAt
 			sandbox.StateReportedAt = &reportedAt
 			sandbox.StateReportBoot = batch.BootID
 			sandbox.StateReportSeq = batch.Sequence
 			if err := tx.Model(&model.Sandbox{}).
 				Where("id = ?", sandbox.ID).
-				Select("state", "state_changed_at", "error_message", "state_reported_at", "state_report_boot", "state_report_seq").
+				Select(observedSandboxColumns).
 				Updates(sandbox).Error; err != nil {
 				return err
 			}
-			if missing || previous != sandbox.State {
+			if missing || previous != sandbox.RuntimeState {
 				changed = append(changed, SandboxObservation{Sandbox: *sandbox, RuntimeMissing: missing})
 			}
 		}

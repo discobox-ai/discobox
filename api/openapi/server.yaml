@@ -2027,7 +2027,10 @@ components:
                         - deleted
                     type: string
                 displayState:
-                    description: User-facing lifecycle state, derived from the observed state plus whether the existence generations agree
+                    description: |-
+                        User-facing lifecycle state, composed from the existence state, the runtime state,
+                        and whether the existence generations agree (ADR 0034 §5). This is the field
+                        clients should read: it is the one answer to "what is this sandbox doing".
                     enum:
                         - starting
                         - running
@@ -2055,15 +2058,30 @@ components:
                     description: Latest generation the reconciler has finished acting on
                     format: int64
                     type: integer
-                state:
-                    description: Observed state. The transitional values are reported by the pool agent, which is the only component that can see them.
+                runtimeState:
+                    description: |-
+                        Observed power state: what the container is doing, as reported by the pool agent
+                        hosting it, which is the only component that can see it. Absent until an agent has
+                        reported on this sandbox, which is not the same as `stopped` (ADR 0034 §2).
                     enum:
-                        - pending
-                        - awaiting_source
                         - starting
                         - running
                         - stopping
                         - stopped
+                    type: string
+                runtimeStateChangedAt:
+                    description: When runtimeState last changed to its current value
+                    format: date-time
+                    type: string
+                state:
+                    description: |-
+                        Existence state, written only by the reconciler: whether the sandbox's container has
+                        been converged against its spec. `ready` means it has. What that container is doing
+                        is a separate field, runtimeState (ADR 0034 §1).
+                    enum:
+                        - pending
+                        - awaiting_source
+                        - ready
                         - archived
                         - deleted
                         - failed
@@ -2074,8 +2092,8 @@ components:
                     type: string
                 stateReportedAt:
                     description: |-
-                        When the hosting pool agent last reported this sandbox's state. A state whose report
-                        is old is a state nobody has confirmed recently.
+                        When the hosting pool agent last reported this sandbox's runtime state. A runtime
+                        state whose report is old is one nobody has confirmed recently.
                     format: date-time
                     type: string
                 upgrade:
@@ -2862,17 +2880,16 @@ components:
         PoolSandboxState:
             additionalProperties: false
             properties:
-                error:
-                    description: Why the sandbox reached a failed state, empty otherwise
-                    type: string
                 sandboxId:
                     description: Sandbox the observation is about
                     type: string
                 state:
                     description: |-
-                        Observed state. There is no `failed` here: a container that has exited looks the
-                        same whether it was stopped deliberately or died, so failure is a judgement about
-                        an operation rather than something the runtime can observe (ADR 0017 §10).
+                        Observed runtime state. There is no `failed` here: a container that has exited looks
+                        the same whether it was stopped deliberately or died, so failure is a judgement about
+                        an operation rather than something the runtime can observe (ADR 0017 §10). For the
+                        same reason a report carries no error message — why an operation failed is the
+                        reconciler's verdict, and it owns the field that records one (ADR 0034 §7).
                     enum:
                         - starting
                         - running

@@ -157,7 +157,7 @@ func TestParkForSourcePushAnchorsAndExpires(t *testing.T) {
 
 	t.Run("first park stamps the anchor and sets a future deadline", func(t *testing.T) {
 		sb := &model.Sandbox{SandboxManifest: model.SandboxManifest{Source: source()}}
-		sb.SetState(model.SandboxStateStarting)
+		sb.SetState(model.SandboxStatePending)
 		before := time.Now().UTC()
 		if err := parkForSourcePush(sb); err != nil {
 			t.Fatalf("park: %v", err)

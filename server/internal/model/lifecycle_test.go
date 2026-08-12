@@ -29,7 +29,7 @@ func TestSetStateStampsOnlyOnChange(t *testing.T) {
 	}
 
 	time.Sleep(time.Millisecond)
-	lifecycle.SetState(model.SandboxStateRunning)
+	lifecycle.SetState(model.SandboxStateReady)
 	if !lifecycle.StateChangedAt.After(first) {
 		t.Fatalf("a real state change did not restamp the anchor: %v then %v", first, lifecycle.StateChangedAt)
 	}
@@ -40,7 +40,7 @@ func TestSetStateStampsOnlyOnChange(t *testing.T) {
 // land in `offline` and a sandbox in `failed` through the same call.
 func TestRecordFailureKeepsTheCallersState(t *testing.T) {
 	var sandbox model.ResourceLifecycle
-	sandbox.SetState(model.SandboxStateRunning)
+	sandbox.SetState(model.SandboxStateReady)
 	before := sandbox.StateChangedAt
 	time.Sleep(time.Millisecond)
 
@@ -66,16 +66,16 @@ func TestRecordFailureKeepsTheCallersState(t *testing.T) {
 // observation is still the most recent one until something observes otherwise.
 func TestRecordIntentLeavesStateAlone(t *testing.T) {
 	var lifecycle model.ResourceLifecycle
-	lifecycle.SetState(model.SandboxStateRunning)
-	lifecycle.RecordFailure(model.SandboxStateRunning, "transient")
+	lifecycle.SetState(model.SandboxStateReady)
+	lifecycle.RecordFailure(model.SandboxStateFailed, "transient")
 
 	lifecycle.RecordIntent(model.DesiredStateDeleted)
 
 	if lifecycle.DesiredState != model.DesiredStateDeleted {
 		t.Fatalf("desired state = %q, want deleted", lifecycle.DesiredState)
 	}
-	if lifecycle.State != model.SandboxStateRunning {
-		t.Fatalf("state = %q, want running: accepting intent is not an observation", lifecycle.State)
+	if lifecycle.State != model.SandboxStateFailed {
+		t.Fatalf("state = %q, want failed: accepting intent is not an observation", lifecycle.State)
 	}
 	if lifecycle.ErrorMessage != nil {
 		t.Fatal("accepted intent did not clear the error from the previous generation")

@@ -739,7 +739,7 @@ func TestCompleteSandboxSourcePushRejectsSandboxNotAwaitingSource(t *testing.T) 
 	if err != nil {
 		t.Fatal(err)
 	}
-	sb.State = model.SandboxStateRunning
+	sb.State = model.SandboxStateReady
 	if err := st.UpdateSandbox(ctx, sb); err != nil {
 		t.Fatal(err)
 	}

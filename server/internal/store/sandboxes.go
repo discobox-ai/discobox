@@ -247,6 +247,27 @@ func (s *Store) FindSandboxByIDPrefix(ctx context.Context, idOrPrefix string) (*
 	return firstByID[model.Sandbox](query, "id", idOrPrefix)
 }
 
+// observedSandboxColumns are written by ApplySandboxStateReports and by nothing
+// else (ADR 0034 §2).
+//
+// Every other sandbox write omits them. The reason is not tidiness: a caller
+// that loads a sandbox, performs a slow operation, and saves it back would
+// otherwise replay whatever these columns held before that operation, and the
+// pool agent's observations land in exactly that window. That is how a sandbox
+// observed `running` 1.5s into its create was pushed back to its pre-create
+// value at +5s and left there until the next complete sync 60s later.
+//
+// Nothing is lost by omitting them. The reconciler has no observation to record
+// — it never looked at the container — and the report path writes them from
+// what the agent saw, in a transaction of its own.
+var observedSandboxColumns = []string{
+	"runtime_state",
+	"runtime_state_changed_at",
+	"state_reported_at",
+	"state_report_boot",
+	"state_report_seq",
+}
+
 func (s *Store) UpdateSandbox(ctx context.Context, sandbox *model.Sandbox, options ...SandboxGetOption) error {
 	var opts sandboxGetOptions
 	for _, option := range options {
@@ -261,7 +282,7 @@ func (s *Store) UpdateSandbox(ctx context.Context, sandbox *model.Sandbox, optio
 			return nil, err
 		}
 		if opts.generation == nil {
-			if err := tx.Save(persisted).Error; err != nil {
+			if err := tx.Omit(observedSandboxColumns...).Save(persisted).Error; err != nil {
 				return nil, err
 			}
 			return sandbox, nil
@@ -270,6 +291,7 @@ func (s *Store) UpdateSandbox(ctx context.Context, sandbox *model.Sandbox, optio
 		result := tx.Model(&model.Sandbox{}).
 			Where("project_id = ? AND id = ? AND generation = ?", sandbox.ProjectID, sandbox.ID, *opts.generation).
 			Select("*").
+			Omit(observedSandboxColumns...).
 			Updates(persisted)
 		if result.Error != nil {
 			return nil, result.Error

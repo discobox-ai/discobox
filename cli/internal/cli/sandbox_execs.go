@@ -654,14 +654,14 @@ func (a *App) sandboxStoppedAttachDone(ctx context.Context, projectID, sandboxID
 	if !ok {
 		return false, nil
 	}
-	switch sandbox.Runtime.State {
-	case sandboxStateStopped, sandboxStateStopping:
-		return true, fmt.Errorf("sandbox %s is %s; detaching terminal", sandboxID, sandbox.Runtime.State)
-	case sandboxStateFailed:
-		return true, fmt.Errorf("sandbox failed: %s", sandboxFailureReason(sandbox))
-	default:
-		return false, nil
+	switch sandbox.Runtime.RuntimeState.Or("") {
+	case sandboxRuntimeStateStopped, sandboxRuntimeStateStopping:
+		return true, fmt.Errorf("sandbox %s is %s; detaching terminal", sandboxID, sandbox.Runtime.RuntimeState.Or(""))
 	}
+	if sandbox.Runtime.State == sandboxStateFailed {
+		return true, fmt.Errorf("sandbox failed: %s", sandboxFailureReason(sandbox))
+	}
+	return false, nil
 }
 
 // sandboxSnapshot fetches the sandbox once, returning ok=false when its state
@@ -691,9 +691,12 @@ func execAttachStatusError(exec *apimodel.SandboxExec) error {
 }
 
 const (
-	sandboxStateStopped  = "stopped"
-	sandboxStateStopping = "stopping"
-	sandboxStateFailed   = "failed"
+	// The container being down is a runtime fact and a sandbox that could not
+	// be built is an existence one, so the two live on different fields
+	// (ADR 0034).
+	sandboxRuntimeStateStopped  = "stopped"
+	sandboxRuntimeStateStopping = "stopping"
+	sandboxStateFailed          = "failed"
 )
 
 // attachPingInterval paces websocket keepalive pings on an exec attach. The

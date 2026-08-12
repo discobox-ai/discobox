@@ -30,20 +30,23 @@ const (
 	PoolStateFailed      = "failed"
 	PoolStateDeleted     = "deleted"
 
+	// SandboxStatePending opens the sandbox existence vocabulary. Only
+	// SandboxReconciler writes State; what the container is doing lives on
+	// RuntimeState, written only by the pool agent's reports (ADR 0034 §§1–2).
 	SandboxStatePending = "pending"
 	// SandboxStateAwaitingSource means the sandbox is provisioned and waiting
 	// for the client to push its source, because the source is a local
 	// directory this server's provider cannot reach. The client pushes into the
 	// sandbox's repository, then calls continue to name the commit to check out.
+	//
+	// It reads like a runtime condition and is not one: the reconciler sets it,
+	// parks on it, resumes from it, and derives its give-up deadline from the
+	// StateChangedAt it stamps. It is a phase of creation (ADR 0034 §3).
 	SandboxStateAwaitingSource = "awaiting_source"
-	// SandboxStateStarting and the other transitional states are observations,
-	// not dispatch bookkeeping: only the pool agent writes them, and only
-	// because a runtime that has begun a start and not finished it genuinely is
-	// in `starting` (ADR 0017 §2).
-	SandboxStateStarting = "starting"
-	SandboxStateRunning  = "running"
-	SandboxStateStopping = "stopping"
-	SandboxStateStopped  = "stopped"
+	// SandboxStateReady means the reconciler has converged the sandbox's
+	// container against its spec. Whether that container is running is a
+	// separate question, answered by RuntimeState.
+	SandboxStateReady = "ready"
 	// SandboxStateArchived means the container and every disposable resource are
 	// gone, and the sandbox's durable tree is retained on its pool host so it can
 	// be reinstantiated (ADR 0022 §1). It is the settled observation of desired
@@ -52,6 +55,21 @@ const (
 	SandboxStateArchived = "archived"
 	SandboxStateDeleted  = "deleted"
 	SandboxStateFailed   = "failed"
+
+	// SandboxRuntimeStateStarting opens the sandbox runtime vocabulary: what
+	// the container is doing, as observed and reported by the pool agent
+	// hosting it (ADR 0017 §10, ADR 0034 §2).
+	// Store.ApplySandboxStateReports is the only writer.
+	//
+	// The empty value is the fifth member of this vocabulary and means *not
+	// observed*, which is not the same as SandboxRuntimeStateStopped: it is what
+	// a sandbox reads between being recorded and its agent first reporting on
+	// it. It is deliberately absent from SandboxRuntimeStates, because the API
+	// omits the field entirely rather than serving an empty enum value.
+	SandboxRuntimeStateStarting = "starting"
+	SandboxRuntimeStateRunning  = "running"
+	SandboxRuntimeStateStopping = "stopping"
+	SandboxRuntimeStateStopped  = "stopped"
 
 	// GitSourceDeliveryClone has the sandbox fetch the source itself.
 	// GitSourceDeliveryPush has the client push it in, for a local directory the
@@ -80,13 +98,16 @@ var (
 	SandboxStates = []string{
 		SandboxStatePending,
 		SandboxStateAwaitingSource,
-		SandboxStateStarting,
-		SandboxStateRunning,
-		SandboxStateStopping,
-		SandboxStateStopped,
+		SandboxStateReady,
 		SandboxStateArchived,
 		SandboxStateDeleted,
 		SandboxStateFailed,
+	}
+	SandboxRuntimeStates = []string{
+		SandboxRuntimeStateStarting,
+		SandboxRuntimeStateRunning,
+		SandboxRuntimeStateStopping,
+		SandboxRuntimeStateStopped,
 	}
 	GitSourceDeliveries = []string{
 		GitSourceDeliveryClone,
@@ -100,21 +121,32 @@ var (
 // Running is the obvious case. Awaiting-source is the subtle one: it is parked
 // mid-create waiting for the client's push, and replacing its container in the
 // middle of that hands the push a different sandbox than the one it started
-// against. The transitional states count as live because the runtime is acting
-// on the container right now.
+// against. The transitional runtime states count as live because the runtime is
+// acting on the container right now.
 //
-// Guards are written against this predicate rather than against a single state
-// value, which is the lesson of the wedge described in ADR 0017 §4: a check
-// spelled State == "stopped" is asking "is anything relying on this", and
-// `failed` and `stopped` answer that question the same way.
+// It takes the sandbox rather than a state string because the question spans
+// both state axes: `awaiting_source` is a phase of creation and the rest are
+// power (ADR 0034 §§1–2). That is also why it is a function rather than a
+// comparison at each call site — the wedge described in ADR 0017 §4 came from
+// checks spelled State == "stopped", which is really asking "is anything
+// relying on this", a question several values answer the same way.
 //
 // Archived is not live, and the answer is not the interesting part: an archived
 // sandbox has no container by intent, so callers that treat "not live" as
 // "needs a container built" must check desired state first (ADR 0022 §5).
-func SandboxIsLive(state string) bool {
-	switch state {
-	case SandboxStateAwaitingSource, SandboxStateStarting, SandboxStateRunning, SandboxStateStopping:
+func SandboxIsLive(sandbox *Sandbox) bool {
+	if sandbox == nil {
+		return false
+	}
+	if sandbox.State == SandboxStateAwaitingSource {
 		return true
+	}
+	switch sandbox.RuntimeState {
+	case SandboxRuntimeStateStarting, SandboxRuntimeStateRunning, SandboxRuntimeStateStopping:
+		// An archived sandbox is not live whatever its last observation said:
+		// the archive removed the container, and reports stop covering it
+		// (ADR 0022 §5), so a stale `running` must not read as live.
+		return sandbox.State != SandboxStateArchived && sandbox.State != SandboxStateDeleted
 	default:
 		return false
 	}
@@ -606,9 +638,16 @@ type Sandbox struct {
 	SourceDeliveredAt *time.Time            `gorm:"column:source_delivered_at" json:"sourceDeliveredAt,omitempty" doc:"When the client reported its push complete for a push-delivered source. Empty while the sandbox is still awaiting it. The commit to check out is the source's Checkout.Commit, fixed at create." format:"date-time"`
 	AppliedCommits    []AppliedSourceCommit `gorm:"column:applied_commits;type:text;serializer:json" json:"appliedCommits,omitempty" doc:"History of successful disco apply runs that landed this sandbox's commits on a host (ADR 0014). Client-reported; append-only."`
 	OriginKey         *string               `gorm:"column:origin_key;type:text;index" json:"-" doc:"Indexed identity of Origin. Derived from Origin; used to list the sandboxes created from one client project directory."`
-	RuntimeState      json.RawMessage       `gorm:"column:runtime_state;type:text" json:"runtimeState,omitempty" doc:"Non-secret provider runtime state"`
+	ProviderState     json.RawMessage       `gorm:"column:provider_state;type:text" json:"providerState,omitempty" doc:"Non-secret provider state"`
 	SecretState       []byte                `gorm:"column:secret_state" json:"-"`
 	LastActiveAt      *time.Time            `gorm:"column:last_active_at;index" json:"lastActiveAt,omitempty" doc:"Last observed activity timestamp" format:"date-time"`
+	// RuntimeState is the power axis: what the container is doing, as observed
+	// by the pool agent hosting it. Store.ApplySandboxStateReports is its only
+	// writer, and Store.UpdateSandbox omits it so no other path can carry a
+	// stale value back over an observation (ADR 0034 §2). Empty means no agent
+	// has reported on this sandbox yet, which is not the same as `stopped`.
+	RuntimeState          string     `gorm:"column:runtime_state;not null;type:text;default:''" json:"runtimeState,omitempty" doc:"Observed power state, reported by the pool agent hosting the sandbox. Empty until one has reported." enum:"starting,running,stopping,stopped"`
+	RuntimeStateChangedAt *time.Time `gorm:"column:runtime_state_changed_at" json:"runtimeStateChangedAt,omitempty" doc:"When RuntimeState last changed to its current value" format:"date-time"`
 	// StateReportedAt and StateReportSeq order the runtime's state reports
 	// (ADR 0017 §10). A report older than what is already recorded is ignored,
 	// so a delayed transition cannot overwrite a newer complete sync.
@@ -638,6 +677,21 @@ func (s *Sandbox) EventProjectID() string { return s.ProjectID }
 func (s *Sandbox) EventResourceType() string { return "sandbox" }
 
 func (s *Sandbox) EventResourceID() string { return s.ID }
+
+// SetRuntimeState records an observation of what the container is doing,
+// stamping RuntimeStateChangedAt only on an actual change.
+//
+// It mirrors SetState on the other axis, and for the same reason: a complete
+// sync repeats what we already knew every 60 seconds, and restamping the anchor
+// each time would make it useless for "how long has this been running".
+func (s *Sandbox) SetRuntimeState(state string) {
+	if s.RuntimeState == state {
+		return
+	}
+	s.RuntimeState = state
+	now := time.Now().UTC()
+	s.RuntimeStateChangedAt = &now
+}
 
 func (s *Sandbox) BeforeCreate(_ *gorm.DB) error {
 	if s.ID == "" {

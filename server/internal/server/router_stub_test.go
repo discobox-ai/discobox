@@ -272,7 +272,7 @@ func (s *routerTestServices) UnarchiveSandbox(_ context.Context, projectID, sand
 		return apperrors.NewStatusError(http.StatusConflict, "sandbox is not archived")
 	}
 	sandbox.DesiredState = model.DesiredStatePresent
-	sandbox.SetState(model.SandboxStateStopped)
+	sandbox.SetState(model.SandboxStateReady)
 	return nil
 }
 
