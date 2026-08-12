@@ -9,11 +9,6 @@ ConditionPathExists=/etc/discobox/proxy/mitm-ca.crt
 [Service]
 Type=oneshot
 RemainAfterExit=yes
-# This unit runs before sysinit.target, concurrently with systemd-tmpfiles-setup
-# cleaning the shared /tmp, so scratch files update-ca-certificates creates there
-# can vanish mid-run (it exits 2). A private, ephemeral /tmp is isolated from that
-# cleanup.
-PrivateTmp=yes
 # The anchor filename is derived from the CA's own fingerprint, not fixed:
 # a filesystem can hold more than one Discobox MITM CA (there is one per pool,
 # and a sandbox nested inside another sees both its own and its host's). A
@@ -21,8 +16,14 @@ PrivateTmp=yes
 # from the outer sandbox, unlink-and-replace fails EBUSY and leaves this
 # sandbox trusting the wrong CA. discobox-ca-anchor shares the naming rule
 # with the runc wrapper so neither side can drift.
-ExecStart=/usr/local/bin/discobox-ca-anchor /etc/discobox/proxy/mitm-ca.crt /usr/local/share/ca-certificates
-ExecStart=/usr/sbin/update-ca-certificates
+#
+# -store makes the same command materialize the trust store the anchors belong
+# in, which is what this unit used to call update-ca-certificates for. That
+# tool rebuilds everything at a fixed ~0.8s whether it adds one CA or 152, and
+# this unit is ordered ahead of the sandbox agent, so every sandbox paid it
+# before its terminal could exist. The image ships the finished system store at
+# -prebuilt; only the anchors are added here.
+ExecStart=/usr/local/bin/discobox-ca-anchor -store /etc/ssl/certs /etc/discobox/proxy/mitm-ca.crt /usr/local/share/ca-certificates
 # Stage the same augmented bundle under the trust-store path convention of
 # other distro families, for sandbox-agent's runc wrapper (docs/adr/0020) to
 # bind-mount into nested Docker containers built from a non-Debian base. This

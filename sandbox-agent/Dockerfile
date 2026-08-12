@@ -150,6 +150,25 @@ RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
     && curl -fsSL https://bun.sh/install | BUN_INSTALL=/usr/local bash \
     && rm -rf /var/lib/apt/lists/* /root/.npm \
     && rm -f /etc/apt/apt.conf.d/docker-clean \
+    # Build the complete system trust store into the image, so the boot path
+    # only has to add this sandbox's MITM CA to it rather than rebuilding all
+    # 152 certificates to add one (see runcca.MaterializeTrustStore).
+    #
+    # It is built at /opt rather than /etc/ssl/certs, and by a redirected copy
+    # of update-ca-certificates rather than the tool itself, because a build
+    # running inside a Discobox sandbox has /etc/ssl/certs bind-mounted over by
+    # the runc wrapper: writes there go to the mount and vanish when the layer
+    # commits, which is why the image used to ship an empty store. LOCALCERTSDIR
+    # is pointed away so no build-time anchor is baked in; anchors belong to the
+    # sandbox that boots, and it adds its own.
+    && mkdir -p /opt/discobox/ca-certificates \
+    && sed -e 's|^ETCCERTSDIR=.*|ETCCERTSDIR=/opt/discobox/ca-certificates|' \
+           -e 's|^LOCALCERTSDIR=.*|LOCALCERTSDIR=/nonexistent|' \
+           /usr/sbin/update-ca-certificates > /tmp/discobox-prebuild-ca-store \
+    && chmod +x /tmp/discobox-prebuild-ca-store \
+    && /tmp/discobox-prebuild-ca-store --fresh \
+    && rm -f /tmp/discobox-prebuild-ca-store \
+    && test -s /opt/discobox/ca-certificates/ca-certificates.crt \
     # Trim systemd down to what a container actually needs. The host owns the
     # kernel, hardware, partitions, and network namespace, so anything that
     # manages those is dead weight or an outright failure at boot. udev is

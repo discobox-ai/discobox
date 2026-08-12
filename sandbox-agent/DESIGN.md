@@ -124,6 +124,43 @@ runtime operations.
   timing. This is why Ctrl-Z can suspend a harness at all: see the orphaned
   process group rule below. `SandboxExec.command` and `.startupCommand` report
   the two argvs separately; CLI/API display prefers `startupCommand` when set.
+
+## Trust Store on the Boot Path
+
+`discobox-trust-ca.service` is ordered `Before=discobox-sandbox-agent.service`,
+so nothing about a sandbox exists — no agent, no primary terminal, nothing to
+attach to — until it finishes. It is therefore held to a different standard than
+the rest of the boot: it must be proportional to the CAs it is actually adding.
+
+It does not run `update-ca-certificates`. That tool rebuilds the whole store at
+a flat ~0.8s whether it is adding one certificate or 150, which was 1.7s of a
+~4.2s wait for an attachable terminal. Instead:
+
+- The image ships the finished system store at **`/opt/discobox/ca-certificates`**,
+  built in the Dockerfile by a copy of `update-ca-certificates` with
+  `ETCCERTSDIR` redirected there.
+- At boot `discobox-ca-anchor -store /etc/ssl/certs` seeds what is missing from
+  it, appends every anchor to the bundle, and hashes only the anchors
+  (`runcca.MaterializeTrustStore`). ~85ms.
+
+Two constraints on any change here:
+
+- **The prebuilt store cannot live at `/etc/ssl/certs`.** `runcca` bind-mounts a
+  staging directory over that path in every container this sandbox's dockerd
+  starts, *including BuildKit's*, so a build running inside a sandbox writes
+  there into the mount and loses it at layer commit. That is why the image used
+  to ship an empty trust store, and why anything built for the store goes under
+  `/opt`.
+- **An existing bundle is never replaced.** A nested sandbox boots with one its
+  host's wrapper already placed, carrying the host's CA; overwriting it with the
+  image's cuts off the egress path the outer proxy owns. Anchors are appended to
+  whatever is there.
+
+Subject hashes come from `openssl x509 -hash`, not from Go. The value is a
+digest over a canonicalized subject encoding, and getting it subtly wrong would
+misplace a link on the path that decides what the sandbox trusts, to save one
+10ms exec.
+
 ## Development Images
 
 `task build` is the no-argument build entry point for binaries and all local
