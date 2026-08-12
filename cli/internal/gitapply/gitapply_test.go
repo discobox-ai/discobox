@@ -30,6 +30,13 @@ func newRepo(t *testing.T) (string, string) {
 	t.Helper()
 	dir := t.TempDir()
 	run(t, dir, "init", "--initial-branch=main")
+	// Configure the identity in the repo itself, not just in the environment
+	// this helper passes to its own git calls. Attempt shells out to git on its
+	// own, and cherry-pick needs a committer: without this the test passes only
+	// on machines that happen to have a global user.name/user.email, and fails
+	// with "Committer identity unknown" everywhere else.
+	run(t, dir, "config", "user.email", "test@example.com")
+	run(t, dir, "config", "user.name", "test")
 	writeFile(t, dir, "README.md", "base\n")
 	run(t, dir, "add", "README.md")
 	run(t, dir, "commit", "-m", "base")

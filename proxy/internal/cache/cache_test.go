@@ -56,8 +56,16 @@ func TestCacheEvictsLeastRecentlyUsed(t *testing.T) {
 	req2 := newCacheTestRequest(t, "https://example.com/two")
 	storeCacheEntry(t, c, req1, "first")
 
+	// Room for one entry and not two. The margin is deliberately loose: each
+	// entry's header embeds CachedAt, and encoding/json trims trailing zeros
+	// from a timestamp's fractional seconds, so an entry is a byte or two
+	// shorter whenever the clock lands on one. A margin of +1 made this test
+	// depend on which nanosecond it ran — it failed roughly one run in seven —
+	// while still being far smaller than the ~110 bytes a whole entry costs,
+	// so storing the second one has to evict the first either way.
+	const roomToSpare = 20
 	c.mu.Lock()
-	c.maxSize = c.stats.CurrentSize + 1
+	c.maxSize = c.stats.CurrentSize + roomToSpare
 	c.mu.Unlock()
 
 	storeCacheEntry(t, c, req2, "second")
