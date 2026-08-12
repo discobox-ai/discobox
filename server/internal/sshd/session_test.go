@@ -13,6 +13,7 @@ import (
 	"golang.org/x/crypto/ssh"
 
 	"github.com/obot-platform/discobox/execstream/frame"
+	"github.com/obot-platform/discobox/server/internal/apperrors"
 	"github.com/obot-platform/discobox/server/internal/model"
 	"github.com/obot-platform/discobox/server/internal/services"
 	"github.com/obot-platform/discobox/server/internal/transport"
@@ -31,6 +32,9 @@ const fakeExecRecordJSON = `{"id":"ex_test0000000000","command":["/bin/bash"],"c
 type fakeExecAgent struct {
 	stdout   string
 	exitCode int64
+	// failCreate makes POST /execs fail, standing in for every reason a
+	// sandbox cannot start a session.
+	failCreate bool
 
 	mu             sync.Mutex
 	createBody     map[string]any
@@ -54,6 +58,10 @@ func newFakeExecAgent(stdout string, exitCode int64) *fakeExecAgent {
 func (f *fakeExecAgent) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	switch {
 	case r.Method == http.MethodPost && strings.HasSuffix(r.URL.Path, "/execs"):
+		if f.failCreate {
+			http.Error(w, "sandbox is not accepting execs", http.StatusServiceUnavailable)
+			return
+		}
 		var body map[string]any
 		_ = json.NewDecoder(r.Body).Decode(&body)
 		f.mu.Lock()
@@ -250,4 +258,128 @@ func TestSessionSubsystemSFTPStartsTheExec(t *testing.T) {
 	// sftp is where the wrong default bites hardest: a client that uploads to
 	// a bare relative path lands wherever the exec started.
 	assertHomeWorkdir(t, agent.createBody)
+}
+
+// TestSessionFailureReachesTheClient is the difference between "shell request
+// failed on channel 0" and knowing why. SSH_MSG_CHANNEL_FAILURE carries no
+// message and OpenSSH discards extended data on a refused request, so the
+// reason arrives as an ordinary session: stderr, plus a non-zero exit.
+func TestSessionFailureReachesTheClient(t *testing.T) {
+	agent := newFakeExecAgent("", 0)
+	agent.failCreate = true
+	h, sandboxID := newExecSessionHarness(t, agent)
+
+	signer := newTestSigner(t)
+	writeAuthorizedKeys(t, h.server.dataDir, signer)
+
+	client, err := h.dial(sandboxID, signer)
+	if err != nil {
+		t.Fatalf("dial: %v", err)
+	}
+	defer client.Close()
+
+	session, err := client.NewSession()
+	if err != nil {
+		t.Fatalf("new session: %v", err)
+	}
+	defer session.Close()
+
+	var stderr strings.Builder
+	session.Stderr = &stderr
+	if err := session.Shell(); err != nil {
+		t.Fatalf("the request is accepted so the reason can be delivered: %v", err)
+	}
+	err = session.Wait()
+	exitErr, ok := err.(*ssh.ExitError)
+	if !ok {
+		t.Fatalf("wait = %v (%T), want a non-zero exit carrying the failure", err, err)
+	}
+	if exitErr.ExitStatus() != sessionSetupExitStatus {
+		t.Fatalf("exit status = %d, want %d for a session that never ran", exitErr.ExitStatus(), sessionSetupExitStatus)
+	}
+	if !strings.Contains(stderr.String(), "could not start a session") {
+		t.Fatalf("stderr should carry the reason, got %q", stderr.String())
+	}
+	// The underlying cause, not just that there was one.
+	if !strings.Contains(stderr.String(), "sandbox is not accepting execs") {
+		t.Fatalf("stderr should carry the sandbox's own error, got %q", stderr.String())
+	}
+}
+
+// TestSessionAuthorizationFailureSaysNothingSpecific: whether this connection
+// may reach this sandbox is the one answer that must not distinguish "no such
+// sandbox" from "not yours" (ADR 0024 §1), so both statuses collapse into one
+// message with nothing of the original in it.
+func TestSessionAuthorizationFailureSaysNothingSpecific(t *testing.T) {
+	for _, status := range []int{http.StatusForbidden, http.StatusNotFound} {
+		h := newTestHarness(t)
+		acme := createRouteFixtureProject(t, h.server.store, "proj_acme00000000", "Acme", "acme")
+		sandbox := createRouteFixtureSandbox(t, h.server.store, acme, "devbox")
+		h.sandboxes.acquireErr = apperrors.NewStatusError(status,
+			"sandbox sbx_secret000000001 not found in project proj_secret00000001")
+
+		signer := newTestSigner(t)
+		writeAuthorizedKeys(t, h.server.dataDir, signer)
+		client, err := h.dial(sandbox.ID, signer)
+		if err != nil {
+			t.Fatalf("dial: %v", err)
+		}
+		session, err := client.NewSession()
+		if err != nil {
+			t.Fatalf("new session: %v", err)
+		}
+		var stderr strings.Builder
+		session.Stderr = &stderr
+		if err := session.Shell(); err != nil {
+			t.Fatalf("shell: %v", err)
+		}
+		_ = session.Wait()
+		_ = session.Close()
+		_ = client.Close()
+
+		if !strings.Contains(stderr.String(), "not authorized") {
+			t.Fatalf("status %d: stderr = %q, want the generic message", status, stderr.String())
+		}
+		for _, leaked := range []string{"sbx_secret", "proj_secret", "not found"} {
+			if strings.Contains(stderr.String(), leaked) {
+				t.Fatalf("status %d: stderr leaked %q: %s", status, leaked, stderr.String())
+			}
+		}
+	}
+}
+
+// TestSessionOperationalFailureSaysWhat: a pool that is not active or a sandbox
+// that cannot start is not an authorization problem, and reporting it as one
+// sends the reader to look at keys and grants for something that is neither.
+func TestSessionOperationalFailureSaysWhat(t *testing.T) {
+	h := newTestHarness(t)
+	acme := createRouteFixtureProject(t, h.server.store, "proj_acme00000000", "Acme", "acme")
+	sandbox := createRouteFixtureSandbox(t, h.server.store, acme, "devbox")
+	h.sandboxes.acquireErr = apperrors.NewStatusError(http.StatusConflict, "sandbox pool is not active")
+
+	signer := newTestSigner(t)
+	writeAuthorizedKeys(t, h.server.dataDir, signer)
+	client, err := h.dial(sandbox.ID, signer)
+	if err != nil {
+		t.Fatalf("dial: %v", err)
+	}
+	defer client.Close()
+	session, err := client.NewSession()
+	if err != nil {
+		t.Fatalf("new session: %v", err)
+	}
+	defer session.Close()
+
+	var stderr strings.Builder
+	session.Stderr = &stderr
+	if err := session.Shell(); err != nil {
+		t.Fatalf("shell: %v", err)
+	}
+	_ = session.Wait()
+	if !strings.Contains(stderr.String(), "sandbox pool is not active") {
+		t.Fatalf("stderr = %q, want the operational cause", stderr.String())
+	}
+	if strings.Contains(stderr.String(), "not authorized") {
+		t.Fatalf("an operational failure must not be reported as an authorization one: %s", stderr.String())
+	}
 }

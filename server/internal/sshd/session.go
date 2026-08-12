@@ -168,7 +168,7 @@ func (sess *sshSession) run(ctx context.Context, requests <-chan *ssh.Request) {
 			}
 			// sftp is a binary protocol over stdio: never a pty, matching
 			// the ADR's mapping table exactly.
-			sess.attach(ctx, req, execTarget{command: []string{sftpServerPath}, noPTY: true})
+			sess.attach(ctx, req, execTarget{command: []string{sftpServerPath}, noPTY: true, subsystem: true})
 
 		case "window-change":
 			var m windowChangeMsg
@@ -198,6 +198,63 @@ func (sess *sshSession) run(ctx context.Context, requests <-chan *ssh.Request) {
 	}
 }
 
+// acquireFailureReason describes why acquiring the sandbox failed, without
+// turning the answer into an oracle.
+//
+// AcquireSandboxHTTPClient covers two different kinds of failure. One is
+// whether this connection may reach this sandbox at all, and its answer must
+// not distinguish "no such sandbox" from "not yours" (ADR 0024 §1) — so those
+// statuses collapse into one message. The rest are operational: a pool that is
+// not active, a sandbox that cannot start. Those say what happened, because
+// reporting them as an authorization problem sends the reader to look at keys
+// and grants for something that is neither.
+func acquireFailureReason(err error) string {
+	var status interface{ StatusCode() int }
+	if errors.As(err, &status) {
+		switch status.StatusCode() {
+		case http.StatusUnauthorized, http.StatusForbidden, http.StatusNotFound:
+			return "not authorized for this sandbox"
+		}
+	}
+	return "could not reach this sandbox: " + err.Error()
+}
+
+// sessionSetupExitStatus is what a session that could not be started reports.
+// 255 is ssh's own convention for "the session never ran", as opposed to a
+// status the remote command chose, and keeps that distinction visible to a
+// caller scripting this.
+const sessionSetupExitStatus = 255
+
+// failRequest reports why a channel request cannot be served, in the only way a
+// client actually shows.
+//
+// SSH_MSG_CHANNEL_FAILURE carries no message field, which is why a refused
+// request becomes "shell request failed on channel 0" with the cause reaching
+// only the server log. Writing the reason to the channel's stderr first does
+// not help either: OpenSSH discards extended data on a channel whose request
+// failed — verified against the real client, which printed nothing.
+//
+// So a session that cannot start is reported the way sshd itself reports a
+// shell it cannot exec: accept the request, write the reason to stderr, and
+// exit non-zero. The session did not run, and now the user is told why instead
+// of being handed a generic failure to go and grep the server log for.
+//
+// A subsystem is refused instead. Its client is waiting to speak a protocol,
+// not to read prose, and `sftp` reports the refusal legibly on its own.
+func (sess *sshSession) failRequest(req *ssh.Request, subsystem bool, reason string) {
+	if subsystem {
+		sess.reply(req, false)
+		return
+	}
+	sess.reply(req, true)
+	if _, err := fmt.Fprintln(sess.channel.Stderr(), "discobox: "+reason); err != nil {
+		sess.server.logger.Debug("write ssh failure reason", "error", err)
+	}
+	code := int64(sessionSetupExitStatus)
+	sess.sendExitStatus(frame.ExitPayload{Status: "exited", ExitCode: &code})
+	_ = sess.channel.Close()
+}
+
 func (sess *sshSession) reply(req *ssh.Request, ok bool) {
 	if req.WantReply {
 		_ = req.Reply(ok, nil)
@@ -217,6 +274,9 @@ type execTarget struct {
 	shellCommandLine string
 	command          []string
 	noPTY            bool
+	// subsystem marks a request whose client is waiting to speak a protocol
+	// rather than to read output, which changes how a failure is reported.
+	subsystem bool
 }
 
 // attach is the shell/exec/subsystem dispatch (ADR 0024 §2). Only one is
@@ -245,8 +305,8 @@ func (sess *sshSession) attach(ctx context.Context, req *ssh.Request, target exe
 	lease, sandboxModel, err := sess.server.sandboxes.AcquireSandboxHTTPClient(ctx, sess.projectID, sess.sandboxID,
 		[]string{poolagentauth.ScopeExecRead, poolagentauth.ScopeExecWrite})
 	if err != nil {
-		sess.server.logger.Warn("ssh exec authorize failed", "project", sess.projectID, "sandbox", sess.sandboxID, "error", err)
-		sess.reply(req, false)
+		sess.server.logger.Warn("ssh acquire sandbox failed", "project", sess.projectID, "sandbox", sess.sandboxID, "error", err)
+		sess.failRequest(req, target.subsystem, acquireFailureReason(err))
 		return
 	}
 
@@ -255,7 +315,7 @@ func (sess *sshSession) attach(ctx context.Context, req *ssh.Request, target exe
 	if err != nil {
 		lease.Release()
 		sess.server.logger.Warn("ssh exec attach failed", "project", sess.projectID, "sandbox", sess.sandboxID, "error", err)
-		sess.reply(req, false)
+		sess.failRequest(req, target.subsystem, "could not start a session in this sandbox: "+err.Error())
 		return
 	}
 

@@ -86,6 +86,30 @@ in `sandbox-agent/execs` — because SSH's `exec` carries one opaque
 command-line string and sshd, running outside the sandbox, cannot resolve a
 login shell path itself; see `sandbox-agent/DESIGN.md`.
 
+A session that cannot be started is reported as one that ran and failed:
+accept the request, write the reason to the channel's stderr, and exit
+`sessionSetupExitStatus` (255, ssh's own convention for "the session never
+ran"). Refusing the request instead is what produces `shell request failed on
+channel 0` with the cause reaching only the server log —
+`SSH_MSG_CHANNEL_FAILURE` has no message field, and writing stderr *before*
+refusing does not help either, because OpenSSH discards extended data on a
+refused request. That was verified against the real client, which printed
+nothing; the Go client happened to show it, which is exactly the kind of
+difference a unit test alone would have blessed.
+
+A **subsystem** is still refused outright. Its client is waiting to speak a
+protocol rather than to read prose, and `sftp` reports the refusal legibly by
+itself.
+
+What the reason may say depends on which failure it is.
+`AcquireSandboxHTTPClient` answers both "may this connection reach this
+sandbox" and "is the sandbox reachable at all". The first must not distinguish
+"no such sandbox" from "not yours" (ADR 0024 §1), so 401/403/404 collapse into
+one generic message; everything else — a pool that is not active, a sandbox
+that cannot start — says what happened, because reporting it as an
+authorization problem sends the reader to look at keys and grants for something
+that is neither.
+
 Exit always sends SSH's `exit-status`, never `exit-signal`: the shim already
 converts a signal death to the shell convention (128+signum), so
 `frame.ExitPayload` never carries a bare signal name to build an
