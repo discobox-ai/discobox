@@ -77,7 +77,7 @@ Nygard-style ADRs (see adr.github.io) combined with current-state design docs:
 | [0022](0022-sandbox-deletion-is-archive-then-confirmed-purge.md) | Sandbox deletion is archive, then confirmed purge | Accepted |
 | [0023](0023-projects-are-created-by-copy-and-deleted-only-when-empty.md) | A project is created by copying an existing one, and deleted only when empty | Accepted |
 | [0024](0024-ssh-is-a-control-plane-ingress-onto-execs.md) | SSH is a control-plane ingress onto execs, and forwarded TCP terminates inside the sandbox | Accepted |
-| [0025](0025-the-sandbox-user-is-one-contract-resolved-inside-the-sandbox.md) | The sandbox user is one contract, resolved inside the sandbox | Accepted |
+| [0025](0025-the-sandbox-user-is-one-contract-resolved-inside-the-sandbox.md) | The sandbox user is one contract, resolved inside the sandbox | Accepted (§6 launch-time re-lookup superseded by [0032](0032-user-resolution-is-one-layered-resolver-with-declared-gaps.md)) |
 | [0026](0026-local-source-origin-is-bind-mounted-live-into-the-sandbox.md) | A local source's origin is bind-mounted live into the sandbox | Proposed |
 | [0027](0027-harness-terminals-run-as-a-shells-typed-in-job.md) | Harness terminals run as a shell's typed-in job, not as the exec's own process | Accepted |
 | [0028](0028-exec-log-transcripts-persist-as-compressed-sqlite-rows.md) | Exec/terminal transcripts persist as compressed sqlite rows, not tmpfs jsonl files | Accepted |
@@ -85,3 +85,4 @@ Nygard-style ADRs (see adr.github.io) combined with current-state design docs:
 | [0030](0030-pool-agent-polls-and-pushes-sandbox-agent-status.md) | Pool-agent polls sandbox-agent status and pushes it to the control plane | Accepted |
 | [0031](0031-agent-credentials-are-a-portable-protocol-with-ephemeral-sentinels.md) | Agent credentials are a portable list/request/get protocol with pool-agent-minted ephemeral sentinels | Proposed |
 | [0031](0031-every-sandbox-has-a-harness-config-and-shell-is-the-built-in.md) | Every sandbox has a harness config, and `shell` is the built-in one | Accepted |
+| [0032](0032-user-resolution-is-one-layered-resolver-with-declared-gaps.md) | User resolution is one layered resolver, and every gap is declared | Accepted |
