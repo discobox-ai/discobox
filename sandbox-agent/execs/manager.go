@@ -90,13 +90,13 @@ type CreateRequest struct {
 	// A leading `~` or `~/` is expanded against the run user's home directory,
 	// which is how a caller outside the sandbox asks for "start where a login
 	// shell would" without knowing what that path is.
-	Workdir string
-	Env     map[string]string
-	User             *User
-	TTY              bool
-	Rows             uint16
-	Cols             uint16
-	Metadata         map[string]string
+	Workdir  string
+	Env      map[string]string
+	User     *User
+	TTY      bool
+	Rows     uint16
+	Cols     uint16
+	Metadata map[string]string
 }
 
 type UnitManager interface {
