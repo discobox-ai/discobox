@@ -55,9 +55,14 @@ func resolveIdentity() (identity, error) {
 	}
 	spec.UID, spec.GID = uid, gid
 	if spec.Empty() && spec.Group == "" {
-		// The manifest named nobody. Provision nothing and leave the image's own
-		// account in place.
-		return identity{}, nil
+		// The manifest named nobody. Provision no account and leave the image's
+		// own identity in place (ADR 0025 §5) -- but callers still need concrete
+		// values for it (e.g. to expand a harness's %HOME%-templated volumes), so
+		// resolve them the same way any other missing id is resolved: ask the OS,
+		// never fabricate (§6). This process is that identity already: nothing
+		// has changed uid/gid yet, so its own current ids are the image's own
+		// user, and /etc/passwd answers the rest.
+		return resolveCurrentIdentity(int64(os.Getuid()), int64(os.Getgid()))
 	}
 	if spec.UID == nil {
 		return identity{}, errors.New("DISCOBOX_USER_UID is required when a sandbox user is configured")
@@ -106,6 +111,37 @@ func resolveIdentity() (identity, error) {
 		id.home = filepath.Join("/home", id.name)
 	}
 	return id, nil
+}
+
+// resolveCurrentIdentity answers "who is this process already" from
+// /etc/passwd, for the manifest-named-nobody case: boot runs as PID 1 before
+// anything here has called setuid, so its own uid/gid are the image's actual
+// starting identity (root, absent a Dockerfile USER, or whatever account the
+// image chose). configured stays false -- this is what the image already is,
+// not a user anyone asked to provision.
+//
+// The ids are passed in rather than read here so this is testable against a
+// fixed passwd table instead of whatever account happens to run the tests.
+func resolveCurrentIdentity(uid, gid int64) (identity, error) {
+	resolved, err := runuser.Resolve(runuser.User{UID: &uid, GID: &gid})
+	if err != nil {
+		return identity{}, fmt.Errorf("resolve image's own user: %w", err)
+	}
+	// runuser.Resolve reports a uid with no passwd entry as unknown rather than
+	// fatal, because a bare uid can still run a process. Here it cannot: name
+	// and home are what the process environment and a harness's
+	// %HOME%-templated volumes are built from, and an empty home is refused
+	// downstream as a missing path. Name the cause here instead of letting it
+	// resurface there as a blank.
+	if resolved.Name == "" || resolved.HomeDirectory == "" {
+		return identity{}, fmt.Errorf("image runs as uid %d, which has no /etc/passwd entry: cannot resolve its name and home", uid)
+	}
+	return identity{
+		uid:  int(*resolved.UID),
+		gid:  int(*resolved.GID),
+		name: resolved.Name,
+		home: resolved.HomeDirectory,
+	}, nil
 }
 
 // envID reads an optional numeric id. Absent means absent -- it never falls back

@@ -1,16 +1,25 @@
 package boot
 
 import (
+	"os"
+	osuser "os/user"
 	"slices"
+	"strconv"
+	"strings"
 	"testing"
 
 	"github.com/obot-platform/discobox/sandbox-agent/runuser"
 )
 
 // An empty environment means the manifest named nobody, so boot provisions no
-// account and the image's own user stands. It must not become root: absent is
-// not a request for the most privileged identity available (ADR 0025 §5).
-func TestResolveIdentityWithNoUserConfiguredProvisionsNothing(t *testing.T) {
+// account and the image's own user stands (ADR 0025 §5) -- but it must still
+// answer who that is, resolved from /etc/passwd against this process's own
+// current uid/gid rather than invented (§6): nothing here has called setuid
+// yet, so those are the image's starting identity already. A blank answer
+// used to reach harness.ResolveVolumes and crash boot the moment a harness
+// image declared a %HOME%-templated volume (e.g. claude-code's), since an
+// empty expansion is refused as a missing path.
+func TestResolveIdentityWithNoUserConfiguredResolvesTheImagesOwnUser(t *testing.T) {
 	for _, key := range []string{"DISCOBOX_USER_UID", "DISCOBOX_USER_GID", "DISCOBOX_USER_NAME", "DISCOBOX_USER_HOME", "DISCOBOX_USER_GROUP"} {
 		t.Setenv(key, "")
 	}
@@ -19,10 +28,34 @@ func TestResolveIdentityWithNoUserConfiguredProvisionsNothing(t *testing.T) {
 		t.Fatalf("resolve identity: %v", err)
 	}
 	if id.configured {
-		t.Fatalf("identity = %#v, want unconfigured", id)
+		t.Fatalf("identity = %#v, want unconfigured: nobody asked to provision a user", id)
 	}
-	if id.name != "" || id.uid != 0 || id.gid != 0 {
-		t.Fatalf("identity = %#v, want nothing invented", id)
+	if id.uid != os.Getuid() || id.gid != os.Getgid() {
+		t.Fatalf("identity = %#v, want this process's own uid/gid %d/%d", id, os.Getuid(), os.Getgid())
+	}
+	current, err := osuser.LookupId(strconv.Itoa(os.Getuid()))
+	if err != nil {
+		t.Fatalf("look up this process's own passwd entry: %v", err)
+	}
+	if id.name != current.Username || id.home != current.HomeDir {
+		t.Fatalf("identity = %#v, want name/home %q/%q", id, current.Username, current.HomeDir)
+	}
+}
+
+// An image running as a uid its own /etc/passwd has no entry for cannot answer
+// for its name and home, and runuser.Resolve reports that as unknown rather
+// than fatal -- a bare uid can still run a process. Boot needs both: they build
+// the process environment and expand a harness's %HOME%-templated volumes. So
+// it must fail here, naming the cause, rather than carry blanks downstream and
+// resurface as a missing path.
+func TestResolveCurrentIdentityRejectsAUidWithNoPasswdEntry(t *testing.T) {
+	t.Cleanup(runuser.FixedDatabase())
+	id, err := resolveCurrentIdentity(4242, 4242)
+	if err == nil {
+		t.Fatalf("identity = %#v, want an error: uid 4242 has no passwd entry", id)
+	}
+	if !strings.Contains(err.Error(), "4242") {
+		t.Fatalf("error = %q, want the uid named in it", err)
 	}
 }
 
