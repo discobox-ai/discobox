@@ -5,10 +5,12 @@ package execs
 import (
 	"fmt"
 	"syscall"
+
+	"github.com/obot-platform/discobox/sandboxuser"
 )
 
 func agentSysProcAttr(user *User) (*syscall.SysProcAttr, error) {
-	if !user.Empty() {
+	if sandboxuser.Named(user) {
 		return nil, fmt.Errorf("exec user is not supported on windows")
 	}
 	return nil, nil
@@ -19,7 +21,7 @@ func AgentSysProcAttr(user *User) (*syscall.SysProcAttr, error) {
 }
 
 func userEnvDefaults(user *User) (map[string]string, error) {
-	if !user.Empty() {
+	if sandboxuser.Named(user) {
 		return nil, fmt.Errorf("exec user is not supported on windows")
 	}
 	return nil, nil
