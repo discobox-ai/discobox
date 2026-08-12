@@ -14,6 +14,7 @@ COPY id ./id
 COPY layout ./layout
 COPY proxy ./proxy
 COPY sandboxconfig ./sandboxconfig
+COPY sandboxuser ./sandboxuser
 COPY gormdb ./gormdb
 COPY pool-agent/go.mod pool-agent/go.sum ./pool-agent/
 COPY pool-agent/cmd ./pool-agent/cmd

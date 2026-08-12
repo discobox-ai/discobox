@@ -1,16 +1,12 @@
 package execs
 
 import (
-	"bufio"
-	"fmt"
 	"os"
-	osuser "os/user"
 	"strings"
-)
 
-// passwdPath is the OS user database ResolveShell reads. It is a variable so
-// tests can point it at a fixture instead of the host's real database.
-var passwdPath = "/etc/passwd"
+	"github.com/obot-platform/discobox/sandbox-agent/runuser"
+	"github.com/obot-platform/discobox/sandboxuser"
+)
 
 // fallbackShell is the last resort when nothing else resolves: every Unix has
 // it, so a shell exec never fails for want of a shell.
@@ -30,23 +26,17 @@ func ResolveShell(user *User, env map[string]string) (string, error) {
 	if user != nil {
 		name = strings.TrimSpace(user.Name)
 	}
-	if name == "" {
-		if user.Empty() {
-			if current, err := osuser.Current(); err == nil {
-				name = strings.TrimSpace(current.Username)
-			}
-		} else {
-			// A run user given only as a UID still has a login shell whenever the
-			// OS database knows the UID.
-			resolved, _, err := ResolveNameAndHome(user)
-			if err != nil {
-				return "", err
-			}
-			name = resolved
+	if name == "" && !sandboxuser.Named(user) {
+		// The exec inherits the agent's own identity, so the shell to resolve is
+		// that account's. Who this process is belongs to runuser, which owns the
+		// image layer for everyone (ADR 0032 §6).
+		resolved, err := runuser.Resolve(runuser.Layers{Image: runuser.Current()}, sandboxuser.FieldName)
+		if err == nil {
+			name = strings.TrimSpace(resolved.Name)
 		}
 	}
 	if name != "" {
-		shell, err := passwdShell(name)
+		shell, _, err := runuser.LoginShell(name)
 		if err != nil {
 			return "", err
 		}
@@ -99,32 +89,6 @@ func QuoteShellCommand(argv []string) []byte {
 	}
 	b.WriteByte('\n')
 	return []byte(b.String())
-}
-
-// passwdShell reads the shell field of name's passwd entry. os/user does not
-// expose it, so the database is parsed directly. A missing entry is not an
-// error: the caller falls back, since a user can run a process without one.
-func passwdShell(name string) (string, error) {
-	file, err := os.Open(passwdPath)
-	if err != nil {
-		if os.IsNotExist(err) {
-			return "", nil
-		}
-		return "", fmt.Errorf("read %s: %w", passwdPath, err)
-	}
-	defer file.Close()
-	scanner := bufio.NewScanner(file)
-	for scanner.Scan() {
-		fields := strings.Split(scanner.Text(), ":")
-		if len(fields) < 7 || fields[0] != name {
-			continue
-		}
-		return strings.TrimSpace(fields[6]), nil
-	}
-	if err := scanner.Err(); err != nil {
-		return "", fmt.Errorf("read %s: %w", passwdPath, err)
-	}
-	return "", nil
 }
 
 // isLoginShell rejects the shells a system uses to refuse interactive logins.

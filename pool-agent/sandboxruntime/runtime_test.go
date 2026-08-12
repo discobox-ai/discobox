@@ -17,9 +17,13 @@ import (
 	workerclient "github.com/obot-platform/discobox/pool-agent/api/gen"
 	workerapimodel "github.com/obot-platform/discobox/pool-agent/api/model"
 	"github.com/obot-platform/discobox/sandboxconfig"
+	"github.com/obot-platform/discobox/sandboxuser"
 )
 
-func TestSandboxUserResolvesUIDGIDAndDefaults(t *testing.T) {
+// What the request gave is forwarded verbatim. What it did not give stays
+// unset -- including the home directory, which used to be guessed as
+// /home/<name> here and then traveled inward looking like a resolved fact.
+func TestSandboxUserForwardsWhatTheRequestGave(t *testing.T) {
 	req := &workerapimodel.PoolSandboxCreateRequest{
 		Config: workerapimodel.SandboxConfig{
 			User: workerclient.NewOptSandboxUser(workerapimodel.SandboxUser{
@@ -30,12 +34,36 @@ func TestSandboxUserResolvesUIDGIDAndDefaults(t *testing.T) {
 		},
 	}
 	user := resolveSandboxUser(req)
-	if user.uid != 1000 || user.gid != 1001 || user.name != "sandbox" || user.homeDirectory != "/home/sandbox" {
+	if idOf(user.UID) != 1000 || idOf(user.GID) != 1001 || user.Name != "sandbox" {
 		t.Fatalf("resolveSandboxUser = %#v", user)
 	}
+	if user.HomeDirectory != "" {
+		t.Fatalf("home = %q, want unset: the account's home lives in the image", user.HomeDirectory)
+	}
 	env := envWithSandboxUser(map[string]string{}, user)
-	if env["DISCOBOX_USER_UID"] != "1000" || env["DISCOBOX_USER_GID"] != "1001" || env["DISCOBOX_USER_NAME"] != "sandbox" || env["DISCOBOX_USER_HOME"] != "/home/sandbox" {
+	if env["DISCOBOX_USER_UID"] != "1000" || env["DISCOBOX_USER_GID"] != "1001" || env["DISCOBOX_USER_NAME"] != "sandbox" {
 		t.Fatalf("envWithSandboxUser = %#v", env)
+	}
+	// Absent stays absent on the wire too, so boot can tell "not given" from a
+	// value and resolve it against the account database itself.
+	if _, ok := env["DISCOBOX_USER_HOME"]; ok {
+		t.Fatalf("DISCOBOX_USER_HOME = %q, want unset", env["DISCOBOX_USER_HOME"])
+	}
+}
+
+// An explicit home is forwarded: the request stating it outright is the one way
+// the pool agent can know it.
+func TestSandboxUserForwardsAnExplicitHome(t *testing.T) {
+	user := resolveSandboxUser(&workerapimodel.PoolSandboxCreateRequest{
+		Config: workerapimodel.SandboxConfig{
+			User: workerclient.NewOptSandboxUser(workerapimodel.SandboxUser{
+				Name:          workerclient.NewOptString("sandbox"),
+				HomeDirectory: workerclient.NewOptString("/var/home/sandbox"),
+			}),
+		},
+	})
+	if user.HomeDirectory != "/var/home/sandbox" {
+		t.Fatalf("home = %q, want the requested one", user.HomeDirectory)
 	}
 }
 
@@ -54,7 +82,7 @@ func TestSandboxUserWithNoUserRequestedIsLeftUnset(t *testing.T) {
 	} {
 		t.Run(name, func(t *testing.T) {
 			user := resolveSandboxUser(req)
-			if user.uid != unsetID || user.gid != unsetID || user.name != "" || user.homeDirectory != "" {
+			if user.UID != nil || user.GID != nil || user.Name != "" || user.HomeDirectory != "" {
 				t.Fatalf("resolveSandboxUser = %#v, want everything unset", user)
 			}
 			// An absent variable is how boot tells "no user configured" from
@@ -79,11 +107,11 @@ func TestSandboxUserNameAloneInventsNoIDs(t *testing.T) {
 			}),
 		},
 	})
-	if user.name != "dev" {
-		t.Fatalf("name = %q, want dev", user.name)
+	if user.Name != "dev" {
+		t.Fatalf("name = %q, want dev", user.Name)
 	}
-	if user.uid != unsetID || user.gid != unsetID {
-		t.Fatalf("ids = %d/%d, want both unset", user.uid, user.gid)
+	if user.UID != nil || user.GID != nil {
+		t.Fatalf("ids = %d/%d, want both unset", idOf(user.UID), idOf(user.GID))
 	}
 }
 
@@ -97,7 +125,7 @@ func TestSandboxUserUIDAloneLeavesTheGIDUnset(t *testing.T) {
 			}),
 		},
 	})
-	if user.uid != 1000 || user.gid != unsetID {
+	if idOf(user.UID) != 1000 || user.GID != nil {
 		t.Fatalf("resolveSandboxUser = %#v, want uid 1000 with an unset gid", user)
 	}
 	env := envWithSandboxUser(map[string]string{}, user)
@@ -116,8 +144,8 @@ func TestChownSpecOmitsUnsetIDs(t *testing.T) {
 		want     string
 	}{
 		{1000, 2000, "1000:2000"},
-		{1000, unsetID, "1000"},
-		{unsetID, 2000, ":2000"},
+		{1000, -1, "1000"},
+		{-1, 2000, ":2000"},
 	} {
 		if got := chownSpec(tc.uid, tc.gid); got != tc.want {
 			t.Fatalf("chownSpec(%d,%d) = %q, want %q", tc.uid, tc.gid, got, tc.want)
@@ -126,7 +154,7 @@ func TestChownSpecOmitsUnsetIDs(t *testing.T) {
 }
 
 func TestSandboxUserEnvPreservesExplicitHomeAndUser(t *testing.T) {
-	user := sandboxUserIdentity{uid: 1000, gid: 1000, name: "sandbox", homeDirectory: "/home/sandbox"}
+	user := sandboxuser.User{UID: sandboxuser.ID(1000), GID: sandboxuser.ID(1000), Name: "sandbox", HomeDirectory: "/home/sandbox"}
 	env := envWithSandboxUser(map[string]string{"HOME": "/custom", "USER": "custom"}, user)
 	if env["HOME"] != "/custom" || env["USER"] != "custom" {
 		t.Fatalf("env overrides = %#v", env)
@@ -430,8 +458,11 @@ func TestWriteSandboxManifestIsWorldReadable(t *testing.T) {
 // resolveSandboxUser-driven code paths without requiring the privilege a real
 // cross-user switch would need (setting Credential to any uid this process
 // doesn't already run as fails with EPERM unless the process is root).
-func currentUser() sandboxUserIdentity {
-	return sandboxUserIdentity{uid: os.Getuid(), gid: os.Getgid()}
+func currentUser() sandboxuser.User {
+	return sandboxuser.User{
+		UID: sandboxuser.ID(int64(os.Getuid())),
+		GID: sandboxuser.ID(int64(os.Getgid())),
+	}
 }
 
 func TestRunGitWithSafeDirectoriesUsesTemporaryGlobalConfig(t *testing.T) {
@@ -453,13 +484,13 @@ func TestCheckoutGitSourceChecksOutBranchAtPinnedCommit(t *testing.T) {
 		t.Fatal(err)
 	}
 	git(t, repo, "add", "README.md")
-	git(t, repo, "-c", "user.name=Test", "-c", "user.email=test@example.com", "commit", "-m", "one")
+	git(t, repo, "-c", "user.Name=Test", "-c", "user.email=test@example.com", "commit", "-m", "one")
 	pinned := gitOutput(t, repo, "rev-parse", "HEAD")
 	if err := os.WriteFile(filepath.Join(repo, "README.md"), []byte("two\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
 	git(t, repo, "add", "README.md")
-	git(t, repo, "-c", "user.name=Test", "-c", "user.email=test@example.com", "commit", "-m", "two")
+	git(t, repo, "-c", "user.Name=Test", "-c", "user.email=test@example.com", "commit", "-m", "two")
 	latest := gitOutput(t, repo, "rev-parse", "HEAD")
 
 	source := workerapimodel.GitSource{
@@ -504,7 +535,7 @@ func TestMaterializeGitSourceRestoresDirtySnapshotAsUnstagedChanges(t *testing.T
 		t.Fatal(err)
 	}
 	git(t, sourceRepo, "add", "README.md", "deleted.txt")
-	git(t, sourceRepo, "-c", "user.name=Test", "-c", "user.email=test@example.com", "commit", "-m", "base")
+	git(t, sourceRepo, "-c", "user.Name=Test", "-c", "user.email=test@example.com", "commit", "-m", "base")
 	baseCommit := gitOutput(t, sourceRepo, "rev-parse", "HEAD")
 
 	if err := os.WriteFile(filepath.Join(sourceRepo, "README.md"), []byte("dirty\n"), 0o644); err != nil {
@@ -517,7 +548,7 @@ func TestMaterializeGitSourceRestoresDirtySnapshotAsUnstagedChanges(t *testing.T
 		t.Fatal(err)
 	}
 	git(t, sourceRepo, "add", "-A")
-	git(t, sourceRepo, "-c", "user.name=Test", "-c", "user.email=test@example.com", "commit", "-m", "snapshot")
+	git(t, sourceRepo, "-c", "user.Name=Test", "-c", "user.email=test@example.com", "commit", "-m", "snapshot")
 	snapshotCommit := gitOutput(t, sourceRepo, "rev-parse", "HEAD")
 	snapshotRef := "refs/discobox/run/snap_test"
 	git(t, sourceRepo, "update-ref", snapshotRef, snapshotCommit)
@@ -591,7 +622,7 @@ func TestMaterializeGitSourceLeavesLiveCloneDeliveredWorkspaceAlone(t *testing.T
 		t.Fatal(err)
 	}
 	git(t, sourceRepo, "add", "-A")
-	git(t, sourceRepo, "-c", "user.name=Test", "-c", "user.email=test@example.com", "commit", "-m", "base")
+	git(t, sourceRepo, "-c", "user.Name=Test", "-c", "user.email=test@example.com", "commit", "-m", "base")
 	baseCommit := gitOutput(t, sourceRepo, "rev-parse", "HEAD")
 
 	source := workerapimodel.GitSource{
@@ -618,7 +649,7 @@ func TestMaterializeGitSourceLeavesLiveCloneDeliveredWorkspaceAlone(t *testing.T
 		t.Fatal(err)
 	}
 	git(t, target, "add", "-A")
-	git(t, target, "-c", "user.name=Sandbox", "-c", "user.email=sandbox@example.com", "commit", "-m", "sandbox work")
+	git(t, target, "-c", "user.Name=Sandbox", "-c", "user.email=sandbox@example.com", "commit", "-m", "sandbox work")
 	sandboxCommit := gitOutput(t, target, "rev-parse", "HEAD")
 	if err := os.WriteFile(filepath.Join(target, "README.md"), []byte("edited in the sandbox\n"), 0o644); err != nil {
 		t.Fatal(err)
@@ -654,7 +685,7 @@ func TestMaterializeGitSourceWithRemoteURLDoesNotRewriteOrigin(t *testing.T) {
 	ctx := context.Background()
 	sourceRepo := t.TempDir()
 	git(t, sourceRepo, "init", "-b", "main")
-	git(t, sourceRepo, "-c", "user.name=Test", "-c", "user.email=test@example.com", "commit", "--allow-empty", "-m", "base")
+	git(t, sourceRepo, "-c", "user.Name=Test", "-c", "user.email=test@example.com", "commit", "--allow-empty", "-m", "base")
 
 	cloneURL := "file://" + sourceRepo
 	source := workerapimodel.GitSource{
@@ -840,7 +871,7 @@ func TestPushIntoInitializedSourceUpdatesWorkingTree(t *testing.T) {
 	client := t.TempDir()
 	git(t, client, "init", "-b", "main")
 	git(t, client, "config", "user.email", "test@example.com")
-	git(t, client, "config", "user.name", "Test")
+	git(t, client, "config", "user.Name", "Test")
 	if err := os.WriteFile(filepath.Join(client, "README.md"), []byte("pushed\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
@@ -892,7 +923,7 @@ func TestMaterializeGitSourceWithPushDeliveryRestoresDirtyWorkspace(t *testing.T
 	client := t.TempDir()
 	git(t, client, "init", "-b", "main")
 	git(t, client, "config", "user.email", "test@example.com")
-	git(t, client, "config", "user.name", "Test")
+	git(t, client, "config", "user.Name", "Test")
 	if err := os.WriteFile(filepath.Join(client, "README.md"), []byte("base\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
@@ -972,7 +1003,7 @@ func TestMaterializePushedSourcesCompletesExistingSandbox(t *testing.T) {
 	client := t.TempDir()
 	git(t, client, "init", "-b", "main")
 	git(t, client, "config", "user.email", "test@example.com")
-	git(t, client, "config", "user.name", "Test")
+	git(t, client, "config", "user.Name", "Test")
 	if err := os.WriteFile(filepath.Join(client, "README.md"), []byte("pushed\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
@@ -1046,7 +1077,7 @@ func TestMaterializePushedSourcesLeavesCloneDeliveredSourcesAlone(t *testing.T) 
 	}
 	git(t, target, "init", "-b", "main")
 	git(t, target, "config", "user.email", "test@example.com")
-	git(t, target, "config", "user.name", "Test")
+	git(t, target, "config", "user.Name", "Test")
 	if err := os.WriteFile(filepath.Join(target, "README.md"), []byte("committed\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
@@ -1088,7 +1119,7 @@ func TestMaterializePushedSourcesIsANoOpOnceFinalized(t *testing.T) {
 	client := t.TempDir()
 	git(t, client, "init", "-b", "main")
 	git(t, client, "config", "user.email", "test@example.com")
-	git(t, client, "config", "user.name", "Test")
+	git(t, client, "config", "user.Name", "Test")
 	if err := os.WriteFile(filepath.Join(client, "README.md"), []byte("pushed\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
@@ -1197,11 +1228,17 @@ func TestResolveSandboxUserNamedUserIsNotRoot(t *testing.T) {
 		},
 	}
 	got := resolveSandboxUser(req)
-	if got.uid == 0 || got.gid == 0 {
-		t.Fatalf("named user resolved to root: uid=%d gid=%d", got.uid, got.gid)
+	if got.UID != nil || got.GID != nil {
+		t.Fatalf("named user invented ids: uid=%d gid=%d", idOf(got.UID), idOf(got.GID))
 	}
-	if got.name != "dev" || got.homeDirectory != "/home/dev" {
-		t.Fatalf("got %q home %q", got.name, got.homeDirectory)
+	if got.Name != "dev" {
+		t.Fatalf("name = %q, want dev", got.Name)
+	}
+	// The home directory is no longer guessed from the name. /home/<name> is a
+	// convention, and which one this account actually has is a fact that lives
+	// in the image's own passwd file (ADR 0032 §5).
+	if got.HomeDirectory != "" {
+		t.Fatalf("home = %q, want unset: only the sandbox can answer that", got.HomeDirectory)
 	}
 }
 
@@ -1217,8 +1254,8 @@ func TestResolveSandboxUserExplicitRootIsHonoured(t *testing.T) {
 			}),
 		},
 	}
-	if got := resolveSandboxUser(req); got.uid != 0 {
-		t.Fatalf("explicit root uid = %d, want 0", got.uid)
+	if got := resolveSandboxUser(req); idOf(got.UID) != 0 {
+		t.Fatalf("explicit root uid = %d, want 0", idOf(got.UID))
 	}
 }
 
@@ -1300,4 +1337,13 @@ func TestValidateCreateRequestRefusesAnUnresolvedRequest(t *testing.T) {
 			}
 		})
 	}
+}
+
+// idOf renders an optional id for assertions, using -1 for absent so a failure
+// prints the value rather than a pointer.
+func idOf(v *int64) int64 {
+	if v == nil {
+		return -1
+	}
+	return *v
 }

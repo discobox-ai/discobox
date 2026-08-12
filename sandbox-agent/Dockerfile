@@ -18,6 +18,7 @@ COPY harness ./harness
 COPY id ./id
 COPY proxy ./proxy
 COPY sandboxconfig ./sandboxconfig
+COPY sandboxuser ./sandboxuser
 COPY sandbox-agent ./sandbox-agent
 
 RUN --mount=type=cache,target=/go/pkg/mod,sharing=locked \

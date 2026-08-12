@@ -185,13 +185,9 @@ func execDefaultsFromEffective(effective sandboxconfig.Config) ExecDefaults {
 	out.HomeDirectory = strings.TrimSpace(effective.User.HomeDirectory)
 	out.UID = effective.User.UID
 	out.GID = effective.User.GID
-	// Groups are all-or-nothing (ADR 0025 §2). The create request's replace the
-	// image label's rather than adding to them, so a caller can run with fewer
-	// groups than the image declares.
-	out.AdditionalGroups = append([]string(nil), effective.User.AdditionalGroups...)
-	if len(out.AdditionalGroups) == 0 {
-		out.AdditionalGroups = append([]string(nil), effective.AdditionalGroups...)
-	}
+	// Which of the two declaring layers wins is sandboxconfig's to say, so that
+	// boot and the exec defaults cannot answer it differently (ADR 0025 §2).
+	out.AdditionalGroups = effective.SandboxGroups()
 	return out
 }
 

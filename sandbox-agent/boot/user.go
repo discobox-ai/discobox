@@ -12,6 +12,7 @@ import (
 	"strings"
 
 	"github.com/obot-platform/discobox/sandbox-agent/runuser"
+	"github.com/obot-platform/discobox/sandboxuser"
 )
 
 // identity is the resolved sandbox user, sourced from the DISCOBOX_USER_* env
@@ -31,117 +32,100 @@ type identity struct {
 
 var sudoersNameRE = regexp.MustCompile(`^[A-Za-z_][A-Za-z0-9_.-]*\$?$`)
 
-// resolveIdentity reads the manifest's user out of the environment and fills in
-// whatever it left out by asking the OS, never by defaulting it (ADR 0025 §6).
+// resolveIdentity works out who this sandbox runs as, from the manifest's user
+// (which the pool agent forwards as DISCOBOX_USER_*) layered over the image's
+// own identity. Precedence and completion belong to runuser; this function
+// supplies the layers and declares what it needs (ADR 0032 §1).
 //
-// Nothing is invented. A missing uid does not become 0, a missing gid does not
-// become the uid, and a primary group given by name is resolved against the
-// image's own /etc/group. An account the manifest names but the image lacks is
-// created by ensureUser afterwards, which is why resolution tolerates a uid that
-// does not resolve yet.
+// What it needs differs between the two cases, and that difference is the whole
+// reason boot cannot simply ask for everything. When the manifest names nobody,
+// the image's account exists by definition and every field is available. When
+// it names somebody, that account may not exist yet -- ensureUser is about to
+// create it -- so only the ids can be required, and the descriptive fields are
+// asked for separately and allowed to be absent.
 func resolveIdentity() (identity, error) {
-	spec := runuser.User{
-		Name:          strings.TrimSpace(os.Getenv("DISCOBOX_USER_NAME")),
-		Group:         strings.TrimSpace(os.Getenv("DISCOBOX_USER_GROUP")),
-		HomeDirectory: strings.TrimSpace(os.Getenv("DISCOBOX_USER_HOME")),
-	}
-	uid, err := envID("DISCOBOX_USER_UID")
+	manifest, err := manifestUser()
 	if err != nil {
 		return identity{}, err
 	}
-	gid, err := envID("DISCOBOX_USER_GID")
-	if err != nil {
-		return identity{}, err
-	}
-	spec.UID, spec.GID = uid, gid
-	if spec.Empty() && spec.Group == "" {
-		// The manifest named nobody. Provision no account and leave the image's
-		// own identity in place (ADR 0025 §5) -- but callers still need concrete
-		// values for it (e.g. to expand a harness's %HOME%-templated volumes), so
-		// resolve them the same way any other missing id is resolved: ask the OS,
-		// never fabricate (§6). This process is that identity already: nothing
-		// has changed uid/gid yet, so its own current ids are the image's own
-		// user, and /etc/passwd answers the rest.
-		return resolveCurrentIdentity(int64(os.Getuid()), int64(os.Getgid()))
-	}
-	if spec.UID == nil {
-		return identity{}, errors.New("DISCOBOX_USER_UID is required when a sandbox user is configured")
-	}
-	// A group given by name resolves here; a missing gid is left to ensureGroup,
-	// which creates the group when the image has none. Resolve cannot answer for
-	// an account that does not exist yet, so only the group is resolved now.
-	if spec.Group != "" {
-		if spec.GID != nil {
-			return identity{}, errors.New("DISCOBOX_USER_GID and DISCOBOX_USER_GROUP are mutually exclusive")
-		}
-		resolved, ok := runuser.LookupGroupID(spec.Group)
-		if !ok {
-			return identity{}, fmt.Errorf("DISCOBOX_USER_GROUP %q is not a group in this image", spec.Group)
-		}
-		gid := int64(resolved)
-		spec.GID = &gid
-	}
-	if spec.GID == nil {
-		// No group was named. The account's own entry knows its default group;
-		// if there is no account yet there is nothing to go on, and guessing the
-		// uid is exactly the coincidence ADR 0025 §6 forbids.
-		found, err := runuser.Resolve(runuser.User{UID: spec.UID})
+	layers := runuser.Layers{Image: runuser.Current(), Manifest: manifest}
+
+	if !sandboxuser.Named(manifest) {
+		// The manifest named nobody, so the sandbox runs as whatever the image
+		// already is (ADR 0025 §5) -- but callers still need concrete values for
+		// it, to build the process environment and to expand %HOME%-templated
+		// volumes. Nothing is deferred here: boot runs as PID 1 before anything
+		// has called setuid, so the image's account is this process's own and
+		// /etc/passwd answers for all of it.
+		resolved, err := runuser.Resolve(layers, sandboxuser.Complete)
 		if err != nil {
-			return identity{}, fmt.Errorf("resolve sandbox user gid: %w", err)
+			return identity{}, fmt.Errorf("resolve the image's own user: %w", err)
 		}
-		spec.GID = found.GID
+		return identity{
+			uid:  int(*resolved.UID),
+			gid:  int(*resolved.GID),
+			name: resolved.Name,
+			home: resolved.HomeDirectory,
+		}, nil
 	}
-	id := identity{uid: int(*spec.UID), gid: int(*spec.GID), name: spec.Name, home: spec.HomeDirectory, configured: true}
-	if id.name == "" || id.home == "" {
-		// Fill name and home from the account when it already exists; a fresh
-		// account has neither, and ensureUser creates it from what we do have.
-		if name, home, err := runuser.NameAndHome(&spec); err == nil {
-			if id.name == "" {
-				id.name = name
-			}
-			if id.home == "" {
-				id.home = home
-			}
-		}
+
+	// Only the ids are required. A gid the manifest did not give is taken from
+	// the account's own entry, never from the uid -- uid == gid is a useradd
+	// coincidence, and guessing it runs the process under whatever group happens
+	// to hold that number (ADR 0025 §6).
+	resolved, err := runuser.Resolve(layers, sandboxuser.FieldUID|sandboxuser.FieldGID)
+	if err != nil {
+		return identity{}, fmt.Errorf("resolve sandbox user: %w", err)
+	}
+	id := identity{uid: int(*resolved.UID), gid: int(*resolved.GID), configured: true}
+
+	// Name and home come from the account when it already exists. A fresh one
+	// has neither, which is not an error: boot is the thing that gives them to
+	// it. Asking without them in `need` is how that expectation is stated.
+	if described, err := runuser.Resolve(layers, sandboxuser.Complete); err == nil {
+		id.name, id.home = described.Name, described.HomeDirectory
+	}
+	if id.name == "" {
+		id.name = strings.TrimSpace(manifest.Name)
 	}
 	if id.name == "" {
 		return identity{}, errors.New("DISCOBOX_USER_NAME is required for a user the image does not already have")
 	}
 	if id.home == "" {
+		id.home = strings.TrimSpace(manifest.HomeDirectory)
+	}
+	if id.home == "" {
+		// The account is being created here, so this is a decision about where
+		// its home goes rather than a guess about where it already is. Nothing
+		// outside the sandbox may make this choice (ADR 0032 §5); boot may,
+		// because it is the thing that creates the directory.
 		id.home = filepath.Join("/home", id.name)
 	}
 	return id, nil
 }
 
-// resolveCurrentIdentity answers "who is this process already" from
-// /etc/passwd, for the manifest-named-nobody case: boot runs as PID 1 before
-// anything here has called setuid, so its own uid/gid are the image's actual
-// starting identity (root, absent a Dockerfile USER, or whatever account the
-// image chose). configured stays false -- this is what the image already is,
-// not a user anyone asked to provision.
-//
-// The ids are passed in rather than read here so this is testable against a
-// fixed passwd table instead of whatever account happens to run the tests.
-func resolveCurrentIdentity(uid, gid int64) (identity, error) {
-	resolved, err := runuser.Resolve(runuser.User{UID: &uid, GID: &gid})
+// manifestUser reads the manifest's user out of the environment the pool agent
+// injected. Absent is absent: an unset id stays nil rather than becoming 0 or
+// borrowing the other one.
+func manifestUser() (*runuser.User, error) {
+	out := &runuser.User{
+		Name:          strings.TrimSpace(os.Getenv("DISCOBOX_USER_NAME")),
+		GroupName:     strings.TrimSpace(os.Getenv("DISCOBOX_USER_GROUP")),
+		HomeDirectory: strings.TrimSpace(os.Getenv("DISCOBOX_USER_HOME")),
+	}
+	uid, err := envID("DISCOBOX_USER_UID")
 	if err != nil {
-		return identity{}, fmt.Errorf("resolve image's own user: %w", err)
+		return nil, err
 	}
-	// runuser.Resolve reports a uid with no passwd entry as unknown rather than
-	// fatal, because a bare uid can still run a process. Here it cannot: name
-	// and home are what the process environment and a harness's
-	// %HOME%-templated volumes are built from, and an empty home is refused
-	// downstream as a missing path. Name the cause here instead of letting it
-	// resurface there as a blank.
-	if resolved.Name == "" || resolved.HomeDirectory == "" {
-		return identity{}, fmt.Errorf("image runs as uid %d, which has no /etc/passwd entry: cannot resolve its name and home", uid)
+	gid, err := envID("DISCOBOX_USER_GID")
+	if err != nil {
+		return nil, err
 	}
-	return identity{
-		uid:  int(*resolved.UID),
-		gid:  int(*resolved.GID),
-		name: resolved.Name,
-		home: resolved.HomeDirectory,
-	}, nil
+	out.UID, out.GID = uid, gid
+	if err := out.Validate(); err != nil {
+		return nil, fmt.Errorf("DISCOBOX_USER_GID and DISCOBOX_USER_GROUP: %w", err)
+	}
+	return out, nil
 }
 
 // envID reads an optional numeric id. Absent means absent -- it never falls back

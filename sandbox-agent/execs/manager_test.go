@@ -8,6 +8,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/obot-platform/discobox/harness"
 	"github.com/obot-platform/discobox/sandbox-agent/nestedbridge"
 	"github.com/obot-platform/discobox/sandbox-agent/runuser"
 	"github.com/obot-platform/discobox/sandboxconfig"
@@ -725,13 +726,16 @@ func TestManagerRequestGroupsSurviveAManifestWithNoUser(t *testing.T) {
 		if got := created.User.AdditionalGroups; len(got) != 1 || got[0] != "docker" {
 			t.Fatalf("additionalGroups = %v, want [docker] from the request", got)
 		}
-		// The ids are this process's own, since that is what the exec would
-		// have inherited had it named no groups.
-		if created.User.UID == nil || *created.User.UID != int64(os.Getuid()) {
-			t.Fatalf("uid = %v, want this process's own %d", created.User.UID, os.Getuid())
+		// The ids are the image's own, since that is what the exec would have
+		// inherited had it named no groups. They come from the fixture rather
+		// than from os.Getuid: asserting a resolver against the same call it
+		// makes cannot fail, and cannot tell a uid from a gid on the usual
+		// developer account where the two are equal.
+		if got := uidOf(created.User); got != 1500 {
+			t.Fatalf("uid = %d, want the image's own 1500", got)
 		}
-		if created.User.GID == nil || *created.User.GID != int64(os.Getgid()) {
-			t.Fatalf("gid = %v, want this process's own %d", created.User.GID, os.Getgid())
+		if got := gidOf(created.User); got != 1600 {
+			t.Fatalf("gid = %d, want the image's own 1600", got)
 		}
 	})
 
@@ -742,6 +746,121 @@ func TestManagerRequestGroupsSurviveAManifestWithNoUser(t *testing.T) {
 		}
 		if created.User != nil {
 			t.Fatalf("user = %#v, want none: nothing was asked for, so the exec inherits", created.User)
+		}
+	})
+}
+
+// A request naming only a primary group means "the usual user, but with this
+// primary group", the same way a request naming only supplementary groups means
+// "the usual user, plus these". emptyUser ignores Group for exactly the reason
+// it ignores AdditionalGroups -- a request carrying only a group still names no
+// one to run as -- so the group has to be read off the request before the
+// identity fallback and applied after it. Otherwise the fallback discards it
+// silently, and the exec keeps the manifest user's own primary group instead of
+// the one that was asked for: more access than was requested, in the direction
+// nobody notices.
+func TestManagerRequestPrimaryGroupSurvivesTheIdentityFallback(t *testing.T) {
+	t.Cleanup(runuser.FixedDatabase())
+	uid := int64(1000)
+	gid := int64(2000)
+
+	newManager := func(t *testing.T, defaultUser *User) *Manager {
+		t.Helper()
+		manager, err := NewManagerWithConfig(ManagerConfig{
+			WorkingRoot: "/workspace",
+			RuntimeDir:  t.TempDir(),
+			Env:         testEffectiveEnv(),
+			Units:       &fakeUnitManager{},
+			DefaultUser: defaultUser,
+		})
+		if err != nil {
+			t.Fatalf("new manager: %v", err)
+		}
+		return manager
+	}
+
+	// docker is gid 997 in the fixed group database and the manifest user's own
+	// primary group is 2000, so the requested group and the inherited one are
+	// never confusable -- and neither is confusable with the uid, which is 1000.
+	const dockerGID = int64(997)
+
+	t.Run("group only keeps the manifest identity", func(t *testing.T) {
+		manager := newManager(t, &User{Name: "dev", UID: &uid, GID: &gid})
+		created, err := manager.Create(context.Background(), CreateRequest{
+			Command: []string{"pwd"},
+			User:    &User{GroupName: "docker"},
+		})
+		if err != nil {
+			t.Fatalf("create exec: %v", err)
+		}
+		if created.User == nil {
+			t.Fatal("exec ran with no user")
+		}
+		if got := gidOf(created.User); got != dockerGID {
+			t.Fatalf("gid = %d, want %d (docker) from the request, not the manifest user's own", got, dockerGID)
+		}
+		// Only the primary group was chosen; the identity is still the
+		// manifest's, since the request named no one to run as.
+		if created.User.Name != "dev" || created.User.UID == nil || *created.User.UID != uid {
+			t.Fatalf("identity = %+v, want the manifest's dev/%d", created.User, uid)
+		}
+	})
+
+	// The shape the CLI actually produces: `--group docker,video` with no
+	// `--user` sends the first group as a name and the rest as supplementary
+	// (applySandboxExecGroups). Honoring the supplementary list while dropping
+	// the primary would satisfy half the request and report success.
+	t.Run("primary and supplementary groups arrive together", func(t *testing.T) {
+		manager := newManager(t, &User{Name: "dev", UID: &uid, GID: &gid})
+		created, err := manager.Create(context.Background(), CreateRequest{
+			Command: []string{"pwd"},
+			User:    &User{GroupName: "docker", AdditionalGroups: []string{"video"}},
+		})
+		if err != nil {
+			t.Fatalf("create exec: %v", err)
+		}
+		if got := gidOf(created.User); got != dockerGID {
+			t.Fatalf("gid = %d, want %d (docker) as the primary group", got, dockerGID)
+		}
+		if got := created.User.AdditionalGroups; len(got) != 1 || got[0] != "video" {
+			t.Fatalf("additionalGroups = %v, want [video]", got)
+		}
+	})
+
+	t.Run("group only survives a manifest with no user", func(t *testing.T) {
+		manager := newManager(t, nil)
+		created, err := manager.Create(context.Background(), CreateRequest{
+			Command: []string{"pwd"},
+			User:    &User{GroupName: "docker"},
+		})
+		if err != nil {
+			t.Fatalf("create exec: %v", err)
+		}
+		if created.User == nil {
+			t.Fatal("exec ran with no user, discarding the group the request named")
+		}
+		if got := gidOf(created.User); got != dockerGID {
+			t.Fatalf("gid = %d, want %d (docker) from the request", got, dockerGID)
+		}
+		// As with groups, the uid is the image's own: a credential cannot carry
+		// a group without one, and that is the id the exec would have inherited
+		// anyway.
+		if got := uidOf(created.User); got != 1500 {
+			t.Fatalf("uid = %d, want the image's own 1500", got)
+		}
+	})
+
+	t.Run("gid and group together stay mutually exclusive", func(t *testing.T) {
+		manager := newManager(t, &User{Name: "dev", UID: &uid, GID: &gid})
+		root := int64(0)
+		// A request that names its own identity is not a fallback case, so the
+		// hoisted group must not quietly overwrite the gid it also named. Two
+		// answers to one question is a malformed request, and stays an error.
+		if _, err := manager.Create(context.Background(), CreateRequest{
+			Command: []string{"pwd"},
+			User:    &User{UID: &uid, GID: &root, GroupName: "docker"},
+		}); err == nil {
+			t.Fatal("a request naming both gid and group was accepted; it must stay mutually exclusive")
 		}
 	})
 }
@@ -856,5 +975,72 @@ func TestHomeDirFallsBackToEnvHome(t *testing.T) {
 	}
 	if got := HomeDir(nil, nil); got != "" {
 		t.Fatalf("HomeDir with nothing to resolve = %q, want empty", got)
+	}
+}
+
+// gidOf reports a resolved user's gid, or -1 when it has none, so a failing
+// assertion prints the id rather than a pointer address.
+func gidOf(user *User) int64 {
+	if user == nil || user.GID == nil {
+		return -1
+	}
+	return *user.GID
+}
+
+// uidOf reports a resolved user's uid, or -1 when it has none, so a failing
+// assertion prints the id rather than a pointer address.
+func uidOf(user *User) int64 {
+	if user == nil || user.UID == nil {
+		return -1
+	}
+	return *user.UID
+}
+
+// The pool agent cannot resolve the sandbox user's home when the request did
+// not state one -- the account lives in the image -- so it forwards %HOME%
+// unexpanded and the sandbox substitutes it, exactly as it does for
+// %LOCAL_SUBNETS%. Expanding it outside against a blank would have produced
+// real paths pointing at the wrong place (ADR 0032 §5).
+func TestManagerExpandsDeferredHomeTokenInEnv(t *testing.T) {
+	t.Cleanup(runuser.FixedDatabase())
+	runner := &fakeUnitManager{}
+	manager, err := NewManagerWithConfig(ManagerConfig{
+		WorkingRoot: "/workspace",
+		RuntimeDir:  t.TempDir(),
+		Env:         map[string]string{"CLAUDE_CONFIG_DIR": harness.HomeToken + "/.claude"},
+		Units:       runner,
+		DefaultUser: &User{Name: "dev"},
+	})
+	if err != nil {
+		t.Fatalf("new manager: %v", err)
+	}
+	if _, err := manager.Create(context.Background(), CreateRequest{Command: []string{"pwd"}}); err != nil {
+		t.Fatalf("create exec: %v", err)
+	}
+	if got := runner.starts[0].Env["CLAUDE_CONFIG_DIR"]; got != "/home/dev/.claude" {
+		t.Fatalf("CLAUDE_CONFIG_DIR = %q, want /home/dev/.claude", got)
+	}
+}
+
+// With no home resolvable at all the token is left alone. A literal %HOME% is
+// visibly wrong; "/.claude" is a real path that silently is not the one anyone
+// meant.
+func TestManagerLeavesTheHomeTokenWhenNoHomeIsKnown(t *testing.T) {
+	t.Cleanup(runuser.FixedEffectiveIDs(4242424, 4242424))
+	runner := &fakeUnitManager{}
+	manager, err := NewManagerWithConfig(ManagerConfig{
+		WorkingRoot: "/workspace",
+		RuntimeDir:  t.TempDir(),
+		Env:         map[string]string{"CLAUDE_CONFIG_DIR": harness.HomeToken + "/.claude"},
+		Units:       runner,
+	})
+	if err != nil {
+		t.Fatalf("new manager: %v", err)
+	}
+	if _, err := manager.Create(context.Background(), CreateRequest{Command: []string{"pwd"}}); err != nil {
+		t.Fatalf("create exec: %v", err)
+	}
+	if got := runner.starts[0].Env["CLAUDE_CONFIG_DIR"]; got != harness.HomeToken+"/.claude" {
+		t.Fatalf("CLAUDE_CONFIG_DIR = %q, want the token left in place", got)
 	}
 }

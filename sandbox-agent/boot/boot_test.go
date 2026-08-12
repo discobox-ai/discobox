@@ -1,10 +1,7 @@
 package boot
 
 import (
-	"os"
-	osuser "os/user"
 	"slices"
-	"strconv"
 	"strings"
 	"testing"
 
@@ -20,6 +17,7 @@ import (
 // image declared a %HOME%-templated volume (e.g. claude-code's), since an
 // empty expansion is refused as a missing path.
 func TestResolveIdentityWithNoUserConfiguredResolvesTheImagesOwnUser(t *testing.T) {
+	t.Cleanup(runuser.FixedDatabase())
 	for _, key := range []string{"DISCOBOX_USER_UID", "DISCOBOX_USER_GID", "DISCOBOX_USER_NAME", "DISCOBOX_USER_HOME", "DISCOBOX_USER_GROUP"} {
 		t.Setenv(key, "")
 	}
@@ -30,27 +28,29 @@ func TestResolveIdentityWithNoUserConfiguredResolvesTheImagesOwnUser(t *testing.
 	if id.configured {
 		t.Fatalf("identity = %#v, want unconfigured: nobody asked to provision a user", id)
 	}
-	if id.uid != os.Getuid() || id.gid != os.Getgid() {
-		t.Fatalf("identity = %#v, want this process's own uid/gid %d/%d", id, os.Getuid(), os.Getgid())
+	// The fixture's effective ids, which deliberately differ from each other so
+	// a uid/gid transposition cannot pass. Asserting against os.Getuid here --
+	// as this test used to -- would have held for any implementation.
+	if id.uid != 1500 || id.gid != 1600 {
+		t.Fatalf("identity = %#v, want the image's own 1500/1600", id)
 	}
-	current, err := osuser.LookupId(strconv.Itoa(os.Getuid()))
-	if err != nil {
-		t.Fatalf("look up this process's own passwd entry: %v", err)
-	}
-	if id.name != current.Username || id.home != current.HomeDir {
-		t.Fatalf("identity = %#v, want name/home %q/%q", id, current.Username, current.HomeDir)
+	if id.name != "image" || id.home != "/home/image" {
+		t.Fatalf("identity = %#v, want the image account's name and home", id)
 	}
 }
 
 // An image running as a uid its own /etc/passwd has no entry for cannot answer
-// for its name and home, and runuser.Resolve reports that as unknown rather
-// than fatal -- a bare uid can still run a process. Boot needs both: they build
-// the process environment and expand a harness's %HOME%-templated volumes. So
-// it must fail here, naming the cause, rather than carry blanks downstream and
-// resurface as a missing path.
-func TestResolveCurrentIdentityRejectsAUidWithNoPasswdEntry(t *testing.T) {
+// for its name and home. Boot needs both -- they build the process environment
+// and expand a harness's %HOME%-templated volumes -- so it must fail here,
+// naming the cause, rather than carry blanks downstream to resurface as a
+// missing path.
+func TestResolveIdentityRejectsAnImageUidWithNoPasswdEntry(t *testing.T) {
 	t.Cleanup(runuser.FixedDatabase())
-	id, err := resolveCurrentIdentity(4242, 4242)
+	t.Cleanup(runuser.FixedEffectiveIDs(4242, 4242))
+	for _, key := range []string{"DISCOBOX_USER_UID", "DISCOBOX_USER_GID", "DISCOBOX_USER_NAME", "DISCOBOX_USER_HOME", "DISCOBOX_USER_GROUP"} {
+		t.Setenv(key, "")
+	}
+	id, err := resolveIdentity()
 	if err == nil {
 		t.Fatalf("identity = %#v, want an error: uid 4242 has no passwd entry", id)
 	}

@@ -11,11 +11,13 @@ import (
 	"strings"
 	"time"
 
+	"github.com/obot-platform/discobox/harness"
 	"github.com/obot-platform/discobox/id"
 	"github.com/obot-platform/discobox/sandbox-agent/nestedbridge"
 	"github.com/obot-platform/discobox/sandbox-agent/runuser"
 	"github.com/obot-platform/discobox/sandbox-agent/shimproxy"
 	"github.com/obot-platform/discobox/sandboxconfig"
+	"github.com/obot-platform/discobox/sandboxuser"
 )
 
 type Status string
@@ -278,8 +280,25 @@ func EnvWithRuntimeDefaults(env map[string]string, user *User) map[string]string
 	if env == nil {
 		env = map[string]string{}
 	}
+	// The image's env may still carry %HOME%: the pool agent expands it only
+	// when the request stated a home outright, because the account otherwise
+	// lives in the image and only the sandbox can look it up. Expanding it there
+	// against a blank would turn "$HOME/.config" into "/.config" -- a real path
+	// pointing at the wrong place. It is deferred here for the same reason
+	// %LOCAL_SUBNETS% is (ADR 0032 §5).
+	home := ""
+	if user != nil {
+		home = strings.TrimSpace(user.HomeDirectory)
+	}
+	if home == "" {
+		home = strings.TrimSpace(env["HOME"])
+	}
 	for key, value := range env {
-		env[key] = sandboxconfig.ResolveLocalSubnetsToken(value, nestedbridge.LocalSubnets())
+		value = sandboxconfig.ResolveLocalSubnetsToken(value, nestedbridge.LocalSubnets())
+		if home != "" {
+			value = strings.ReplaceAll(value, harness.HomeToken, home)
+		}
+		env[key] = value
 	}
 	if _, ok := env["TERM"]; !ok {
 		env["TERM"] = defaultTerm
@@ -659,8 +678,8 @@ func expandHome(path, home string) (string, error) {
 // to ResolveWorkdir's `~` expansion, shared so the exec and terminal layers
 // cannot disagree about where home is.
 func HomeDir(user *User, env map[string]string) string {
-	if _, home, err := ResolveNameAndHome(user); err == nil && strings.TrimSpace(home) != "" {
-		return home
+	if user != nil && strings.TrimSpace(user.HomeDirectory) != "" {
+		return strings.TrimSpace(user.HomeDirectory)
 	}
 	return strings.TrimSpace(env["HOME"])
 }
@@ -694,95 +713,47 @@ func resolveCommand(req CreateRequest, user *User, env map[string]string) ([]str
 }
 
 // ResolveUser answers "who would an exec created from this request run as," and
-// is the only way to ask. It returns the identity fully resolved: the request's
-// where it gave one and the manifest's where it did not, groups per ADR 0025 §2,
-// and every id filled in from passwd per §6 -- so the result never carries a
-// name to look up, a nil gid, or an unresolved group.
+// is the only way to ask. The layers are the sandbox's own image identity, the
+// manifest's declared user, and this request's override; precedence and
+// completion both belong to runuser, so this method supplies inputs and does no
+// merging of its own (ADR 0032 §1).
 //
 // The manager owns this because it owns the exec primitive. Layers built on top
 // (terminal) ask rather than reconstruct: a second construction of the same
 // identity drifts, which is how terminals came to run without the manifest's
 // supplementary groups while plain execs kept them. Pass the zero CreateRequest
 // for the sandbox's default identity.
+//
+// An exec needs the whole identity, not just a credential: its environment
+// carries USER, LOGNAME and HOME, and `~` in a workdir expands against the home
+// of whoever it actually runs as.
 func (m *Manager) ResolveUser(req CreateRequest) (*User, error) {
-	user := m.resolveUser(req)
-	if user == nil {
+	layers := m.layers(req.User)
+	if !sandboxuser.Named(layers.Manifest) && !sandboxuser.Named(layers.Request) {
+		// Nobody asked for anybody. The exec inherits this process's identity
+		// wholesale, which a nil user is how we express: the launch path sets no
+		// Credential at all and the child simply keeps what it was given (ADR
+		// 0025 §5). Resolving the image layer here instead would produce a
+		// Credential that says the same thing, but only if the image's account
+		// happens to have a passwd entry -- and saying nothing cannot fail.
 		return nil, nil
 	}
-	resolved, err := runuser.Resolve(*user)
+	resolved, err := runuser.Resolve(layers, sandboxuser.Complete)
 	if err != nil {
 		return nil, err
 	}
 	return &resolved, nil
 }
 
-// resolveUser picks the identity an exec runs as, without inventing any part of
-// it. In particular a nil GID stays nil rather than being back-filled from the
-// UID: UIDs and GIDs are separate namespaces, so uid==gid is a coincidence of
-// common useradd defaults, and the primary group is looked up from the uid at
-// launch (userCredential). Back-filling here silently ran the process under
-// whatever group happened to hold that number and made that lookup unreachable.
-//
-// Supplementary groups are all-or-nothing, never merged: a request that names
-// none inherits the sandbox manifest's, and a request that names any uses
-// exactly those. Merging would make the manifest a floor the caller could not
-// get under, so an exec could never run with fewer groups than the sandbox.
-// Either way /etc/passwd and /etc/group are consulted only at launch, to resolve
-// those names to ids and drop any the image never created (resolveGroups).
-//
-// Identity and membership are separate choices: naming a user does not by itself
-// touch groups. Without this, `exec --user dev` ran with an empty supplementary
-// set while the identical default-user exec kept "docker".
-func (m *Manager) resolveUser(req CreateRequest) *User {
-	// Groups are read off the request before the identity fallback, so asking
-	// for groups alone ("the usual user, plus these") keeps them: emptyUser
-	// deliberately ignores AdditionalGroups, since a request carrying only
-	// groups still names no one to run as.
-	var groups []string
-	if req.User != nil {
-		groups = append([]string(nil), req.User.AdditionalGroups...)
+// layers assembles what this sandbox knows about who to run as. The image layer
+// is this process's own identity: the agent's unit sets no User=, so the ids it
+// runs under are the ones the image's USER directive selected.
+func (m *Manager) layers(request *User) runuser.Layers {
+	return runuser.Layers{
+		Image:    runuser.Current(),
+		Manifest: m.defaultUser,
+		Request:  request,
 	}
-	user := req.User
-	if user.Empty() {
-		user = m.defaultUser
-	}
-	resolved := user.Clone()
-	if resolved == nil {
-		if len(groups) == 0 {
-			// Nobody to drop to and no groups asked for: run with this
-			// process's own identity and group set, which is the image's own
-			// user (ADR 0025 §5). A nil user is how that is expressed -- the
-			// launch path sets no Credential and the child simply inherits.
-			return nil
-		}
-		// The manifest named no user, but the request named groups, and those
-		// must still be honored: a request naming any groups runs with exactly
-		// those, so an exec can run with *fewer* than the sandbox has (ADR 0025
-		// §2). Inheriting the ambient set is precisely what it asked us not to
-		// do, and dropping the groups silently fails open -- more access than
-		// was requested, which is the direction nobody notices.
-		//
-		// A Credential cannot carry groups without ids, so borrow the ids this
-		// process already runs as. They are the same ones the exec would have
-		// inherited: boot execs the init target without changing user and the
-		// agent's unit sets no User=, so this process is the image's own user.
-		uid, gid := int64(os.Getuid()), int64(os.Getgid())
-		return &User{UID: &uid, GID: &gid, AdditionalGroups: groups}
-	}
-	if len(groups) == 0 {
-		groups = m.manifestGroups()
-	}
-	resolved.AdditionalGroups = groups
-	return resolved
-}
-
-// manifestGroups returns the supplementary groups the sandbox manifest declared,
-// which an exec runs with unless its request named groups of its own.
-func (m *Manager) manifestGroups() []string {
-	if m.defaultUser == nil {
-		return nil
-	}
-	return append([]string(nil), m.defaultUser.AdditionalGroups...)
 }
 
 // DefaultUser returns the sandbox's resolved default user — the identity

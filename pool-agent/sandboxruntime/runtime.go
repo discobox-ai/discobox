@@ -31,6 +31,7 @@ import (
 	"github.com/obot-platform/discobox/harness"
 	"github.com/obot-platform/discobox/layout"
 	"github.com/obot-platform/discobox/sandboxconfig"
+	"github.com/obot-platform/discobox/sandboxuser"
 
 	"github.com/obot-platform/discobox/pool-agent/execidentity"
 	"github.com/obot-platform/discobox/pool-agent/internalhttp"
@@ -546,7 +547,7 @@ func (r *DockerSandboxRuntime) materializePushedSources(ctx context.Context, san
 // prepareSandboxVolumes also returns the primary source's ProjectLayer
 // contribution (nil if the source has no .discobox/project.json), read once
 // here at clone time — never inside the running sandbox (ADR 0012 §7).
-func (r *DockerSandboxRuntime) prepareSandboxVolumes(ctx context.Context, sandboxID string, req *workerapimodel.PoolSandboxCreateRequest, user sandboxUserIdentity) ([]mount.Mount, *sandboxconfig.ProjectLayer, error) {
+func (r *DockerSandboxRuntime) prepareSandboxVolumes(ctx context.Context, sandboxID string, req *workerapimodel.PoolSandboxCreateRequest, user sandboxuser.User) ([]mount.Mount, *sandboxconfig.ProjectLayer, error) {
 	// Creating a container against this tree is what unarchiving is: the tree is
 	// reused as it stands, and clearing the marker is the whole of what makes it
 	// a live sandbox again (ADR 0022 §6). Clearing it first means a create that
@@ -583,7 +584,7 @@ func (r *DockerSandboxRuntime) prepareSandboxVolumes(ctx context.Context, sandbo
 		if err := r.materializeGitSource(ctx, source.git, sourcePoolPath, source.slug, user); err != nil {
 			return nil, nil, fmt.Errorf("materialize source %q: %w", source.slug, err)
 		}
-		if err := prepareOwnedDirectory(ctx, sourcePoolPath, user.uid, user.gid); err != nil {
+		if err := prepareOwnedDirectory(ctx, sourcePoolPath, chownID(user.UID), chownID(user.GID)); err != nil {
 			return nil, nil, fmt.Errorf("set source ownership %q: %w", source.slug, err)
 		}
 		// The primary source is always first when present (sandboxSources).
@@ -806,23 +807,18 @@ func buildSandboxDocument(projectID, sandboxID, poolID, controlPlanePublicKey, r
 		// sandbox-agent installs harness files and launches commands against the
 		// same home directory.
 		user := resolveSandboxUser(req)
-		uid, gid := user.optionalUID(), user.optionalGID()
-		doc.Runtime.User = sandboxconfig.User{
-			Name:             user.name,
-			UID:              uid,
-			GID:              gid,
-			GroupName:        user.groupName,
-			HomeDirectory:    user.homeDirectory,
-			AdditionalGroups: append([]string(nil), user.additionalGroups...),
-		}
+		doc.Runtime.User = user
 		// The sandbox-agent bind-mounts each worker-materialized source from
 		// /.discobox/sources/<slug> onto its target as this same user (ADR 0007).
 		for _, source := range sandboxSources(req) {
 			doc.Runtime.Sources = append(doc.Runtime.Sources, sandboxconfig.Source{
 				Slug:   source.slug,
 				Target: source.target,
-				UID:    derefID(uid),
-				GID:    derefID(gid),
+				// Absent when the request gave no ids: boot then chowns with
+				// the identity it resolved, which it has in hand and which is
+				// the better answer anyway (ADR 0032 §5).
+				UID: user.UID,
+				GID: user.GID,
 			})
 		}
 		if resolved, ok := req.ResolvedHarnessConfig.Get(); ok {
@@ -844,7 +840,7 @@ func buildSandboxDocument(projectID, sandboxID, poolID, controlPlanePublicKey, r
 				doc.Image.Files = documentFiles(files)
 			}
 			if env, ok := resolved.Env.Get(); ok {
-				doc.Image.Env = harness.ExpandEnvHomeTokens(map[string]string(env), user.homeDirectory)
+				doc.Image.Env = harness.ExpandEnvHomeTokens(map[string]string(env), user.HomeDirectory)
 			}
 			if volumes, ok := resolved.Volumes.Get(); ok {
 				doc.Image.Volumes = documentVolumes(volumes)
@@ -1799,69 +1795,54 @@ func optString(opt workerclient.OptString) string {
 // than guessed at.
 const unsetID = -1
 
-// optionalUID and optionalGID render an unset id as nil, so the manifest
-// distinguishes "the request did not say" from a real 0.
-func (s sandboxUserIdentity) optionalUID() *int64 { return optionalID(s.uid) }
-func (s sandboxUserIdentity) optionalGID() *int64 { return optionalID(s.gid) }
-
-func optionalID(v int) *int64 {
-	if v == unsetID {
-		return nil
-	}
-	out := int64(v)
-	return &out
-}
-
-func derefID(v *int64) int64 {
+// chownID renders an id for chown(2), whose own vocabulary for "leave this
+// field unchanged" is -1. That is the only place -1 survives: as a value the
+// syscall defines, at the moment of the call. Everywhere else absent is nil
+// (ADR 0032 §3), because a sentinel is only ever as good as every conversion
+// between it and the real thing -- and the conversion that turned unset into 0
+// is what chowned sandbox source trees to root.
+func chownID(v *int64) int {
 	if v == nil {
-		return 0
+		return -1
 	}
-	return *v
+	return int(*v)
 }
 
-type sandboxUserIdentity struct {
-	uid              int
-	gid              int
-	name             string
-	groupName        string
-	homeDirectory    string
-	additionalGroups []string
-}
-
-// resolveSandboxUser reads the request's user without completing it. The pool
-// agent cannot resolve a sandbox's names -- the account and the group live in
-// the image, and boot may still have to create them -- so it forwards what it
-// was given and leaves the rest unset (ADR 0025 §4).
+// resolveSandboxUser reads the request's user without completing it.
+//
+// The pool agent cannot complete one: the account and the group live in the
+// image, and boot may still have to create them (ADR 0025 §4). It calls
+// sandboxuser.Merge, which performs no lookups, so this is enforced by the API
+// it is given rather than by remembering a rule -- and it holds one layer up
+// too, since this module cannot import the resolver at all.
 //
 // Nothing is invented. A missing gid does not become the uid, a bare name does
-// not become uid 1000, and an absent user does not become root: the sandbox then
-// runs as whatever the image already is (§5).
-func resolveSandboxUser(req *workerapimodel.PoolSandboxCreateRequest) sandboxUserIdentity {
-	out := sandboxUserIdentity{uid: unsetID, gid: unsetID}
+// not become uid 1000, an absent user does not become root, and a name does not
+// become /home/<name>: that last one was written here under a comment claiming
+// nothing was invented, and it is a guess about the image's own passwd file
+// made from outside the image. What the request did not say stays unset, and
+// the sandbox answers for it later.
+func resolveSandboxUser(req *workerapimodel.PoolSandboxCreateRequest) sandboxuser.User {
 	if req == nil {
-		return out
+		return sandboxuser.User{}
 	}
 	user, ok := req.Config.User.Get()
 	if !ok {
-		return out
+		return sandboxuser.User{}
+	}
+	requested := &sandboxuser.User{
+		Name:             strings.TrimSpace(optString(user.Name)),
+		GroupName:        strings.TrimSpace(optString(user.GroupName)),
+		HomeDirectory:    cleanContainerPath(optString(user.HomeDirectory)),
+		AdditionalGroups: append([]string(nil), user.AdditionalGroups...),
 	}
 	if uid, ok := user.UID.Get(); ok {
-		out.uid = int(uid)
+		requested.UID = sandboxuser.ID(uid)
 	}
 	if gid, ok := user.Gid.Get(); ok {
-		out.gid = int(gid)
+		requested.GID = sandboxuser.ID(gid)
 	}
-	out.groupName = strings.TrimSpace(optString(user.GroupName))
-	out.additionalGroups = append([]string(nil), user.AdditionalGroups...)
-	if name := strings.TrimSpace(optString(user.Name)); name != "" {
-		out.name = name
-	}
-	if home := cleanContainerPath(optString(user.HomeDirectory)); home != "" {
-		out.homeDirectory = home
-	} else if out.name != "" && out.name != "root" {
-		out.homeDirectory = path.Join("/home", out.name)
-	}
-	return out
+	return sandboxuser.Merge(sandboxuser.Layers{Request: requested})
 }
 
 func sourceWorkingDirectory(req *workerapimodel.PoolSandboxCreateRequest) string {
@@ -2054,8 +2035,9 @@ func (r *DockerSandboxRuntime) daemonPath(containerPath string) string {
 // process at materialize time (prepareSandboxVolumes only chowns it after this
 // function returns), so those same operations run under the calling process's
 // own identity there, matching who actually created the clone.
-func (r *DockerSandboxRuntime) materializeGitSource(ctx context.Context, source workerapimodel.GitSource, target, slug string, user sandboxUserIdentity) error {
-	identity := sandboxUserIdentity{uid: -1, gid: -1}
+func (r *DockerSandboxRuntime) materializeGitSource(ctx context.Context, source workerapimodel.GitSource, target, slug string, user sandboxuser.User) error {
+	// git runs deliberately as the caller, not as the sandbox user.
+	identity := sandboxuser.User{}
 	if gitSourceAwaitsPush(source) {
 		identity = user
 	}
@@ -2087,29 +2069,29 @@ func (r *DockerSandboxRuntime) materializeGitSource(ctx context.Context, source 
 			// A push-delivered repository with no commits is still waiting for
 			// the client. There is nothing to reset, clean, or check out yet,
 			// and every one of those fails against an unborn branch.
-			if !gitHasCommits(ctx, target, identity.uid, identity.gid) {
+			if !gitHasCommits(ctx, target, chownID(identity.UID), chownID(identity.GID)) {
 				return nil
 			}
 		}
 		// A prior create attempt may have already restored a dirty workspace.
 		// Return the repository to a clean state before materializing the desired
 		// checkout again so this operation remains retry-safe.
-		if err := runGit(ctx, target, identity.uid, identity.gid, "reset", "--hard"); err != nil {
+		if err := runGit(ctx, target, chownID(identity.UID), chownID(identity.GID), "reset", "--hard"); err != nil {
 			return err
 		}
-		if err := runGit(ctx, target, identity.uid, identity.gid, "clean", "-fd"); err != nil {
+		if err := runGit(ctx, target, chownID(identity.UID), chownID(identity.GID), "clean", "-fd"); err != nil {
 			return err
 		}
-		if err := checkoutGitSource(ctx, target, source, identity.uid, identity.gid); err != nil {
+		if err := checkoutGitSource(ctx, target, source, chownID(identity.UID), chownID(identity.GID)); err != nil {
 			return err
 		}
-		if err := r.restoreGitWorkspace(ctx, target, source, fetchURL, identity.uid, identity.gid); err != nil {
+		if err := r.restoreGitWorkspace(ctx, target, source, fetchURL, chownID(identity.UID), chownID(identity.GID)); err != nil {
 			return err
 		}
 		if err := r.rewriteOriginRemote(ctx, target, source, slug, identity); err != nil {
 			return err
 		}
-		return markGitSourceMaterialized(target, user.uid, user.gid)
+		return markGitSourceMaterialized(target, chownID(user.UID), chownID(user.GID))
 	} else if !os.IsNotExist(err) {
 		return err
 	}
@@ -2128,19 +2110,19 @@ func (r *DockerSandboxRuntime) materializeGitSource(ctx context.Context, source 
 		}
 	}
 	args = append(args, fetchURL, target)
-	if err := runGitWithSafeDirectories(ctx, "", identity.uid, identity.gid, gitSafeDirectories(fetchURL, r.hostMountPrefix), args...); err != nil {
+	if err := runGitWithSafeDirectories(ctx, "", chownID(identity.UID), chownID(identity.GID), gitSafeDirectories(fetchURL, r.hostMountPrefix), args...); err != nil {
 		return err
 	}
-	if err := checkoutGitSource(ctx, target, source, identity.uid, identity.gid); err != nil {
+	if err := checkoutGitSource(ctx, target, source, chownID(identity.UID), chownID(identity.GID)); err != nil {
 		return err
 	}
-	if err := r.restoreGitWorkspace(ctx, target, source, fetchURL, identity.uid, identity.gid); err != nil {
+	if err := r.restoreGitWorkspace(ctx, target, source, fetchURL, chownID(identity.UID), chownID(identity.GID)); err != nil {
 		return err
 	}
 	if err := r.rewriteOriginRemote(ctx, target, source, slug, identity); err != nil {
 		return err
 	}
-	return markGitSourceMaterialized(target, user.uid, user.gid)
+	return markGitSourceMaterialized(target, chownID(user.UID), chownID(user.GID))
 }
 
 // rewriteOriginRemote points a clone-delivered local source's "origin" remote
@@ -2152,14 +2134,14 @@ func (r *DockerSandboxRuntime) materializeGitSource(ctx context.Context, source 
 // source is only ever materialized once (ADR 0026): it runs once, at the end
 // of the same materialize call that clones and restores the workspace, before
 // that source is marked materialized.
-func (r *DockerSandboxRuntime) rewriteOriginRemote(ctx context.Context, target string, source workerapimodel.GitSource, slug string, identity sandboxUserIdentity) error {
+func (r *DockerSandboxRuntime) rewriteOriginRemote(ctx context.Context, target string, source workerapimodel.GitSource, slug string, identity sandboxuser.User) error {
 	if gitSourceAwaitsPush(source) || slug == "" {
 		return nil
 	}
 	if strings.TrimSpace(optString(source.LocalDirectory)) == "" {
 		return nil
 	}
-	return runGit(ctx, target, identity.uid, identity.gid, "remote", "set-url", "origin", path.Join(sandboxOriginsMount, slug))
+	return runGit(ctx, target, chownID(identity.UID), chownID(identity.GID), "remote", "set-url", "origin", path.Join(sandboxOriginsMount, slug))
 }
 
 func (r *DockerSandboxRuntime) restoreGitWorkspace(ctx context.Context, repo string, source workerapimodel.GitSource, fetchURL string, uid, gid int) error {
@@ -2507,30 +2489,31 @@ func envList(values map[string]string) []string {
 	return out
 }
 
-func envWithSandboxUser(values map[string]string, user sandboxUserIdentity) map[string]string {
-	out := copyMap(values)
-	// Only what the request gave is stamped. An absent variable means absent,
-	// which is how boot tells "no user configured" from "uid 0" (ADR 0025 §5).
-	if user.uid != unsetID {
-		out["DISCOBOX_USER_UID"] = fmt.Sprintf("%d", user.uid)
+func envWithSandboxUser(values map[string]string, user sandboxuser.User) map[string]string {
+	out := map[string]string{}
+	for key, value := range values {
+		out[key] = value
 	}
-	if user.gid != unsetID {
-		out["DISCOBOX_USER_GID"] = fmt.Sprintf("%d", user.gid)
+	if user.UID != nil {
+		out["DISCOBOX_USER_UID"] = fmt.Sprintf("%d", *user.UID)
 	}
-	if user.groupName != "" {
-		out["DISCOBOX_USER_GROUP"] = user.groupName
+	if user.GID != nil {
+		out["DISCOBOX_USER_GID"] = fmt.Sprintf("%d", *user.GID)
 	}
-	if user.name != "" {
-		out["DISCOBOX_USER_NAME"] = user.name
+	if user.GroupName != "" {
+		out["DISCOBOX_USER_GROUP"] = user.GroupName
 	}
-	if user.homeDirectory != "" {
-		out["DISCOBOX_USER_HOME"] = user.homeDirectory
+	if user.Name != "" {
+		out["DISCOBOX_USER_NAME"] = user.Name
 	}
-	if _, ok := out["HOME"]; !ok && user.homeDirectory != "" {
-		out["HOME"] = user.homeDirectory
+	if user.HomeDirectory != "" {
+		out["DISCOBOX_USER_HOME"] = user.HomeDirectory
 	}
-	if _, ok := out["USER"]; !ok && user.name != "" {
-		out["USER"] = user.name
+	if _, ok := out["HOME"]; !ok && user.HomeDirectory != "" {
+		out["HOME"] = user.HomeDirectory
+	}
+	if _, ok := out["USER"]; !ok && user.Name != "" {
+		out["USER"] = user.Name
 	}
 	return out
 }

@@ -2,20 +2,17 @@ package execs
 
 import (
 	"context"
-	"os"
-	"path/filepath"
 	"testing"
+
+	"github.com/obot-platform/discobox/sandbox-agent/runuser"
 )
 
-func writePasswd(t *testing.T, content string) {
+// writePasswd is now runuser's business: the passwd format is parsed in one
+// place (ADR 0032 §6), so these tests use its fixture rather than a second
+// pointer at a second file.
+func writePasswd(t *testing.T, _ string) {
 	t.Helper()
-	path := filepath.Join(t.TempDir(), "passwd")
-	if err := os.WriteFile(path, []byte(content), 0o600); err != nil {
-		t.Fatalf("write passwd fixture: %v", err)
-	}
-	previous := passwdPath
-	passwdPath = path
-	t.Cleanup(func() { passwdPath = previous })
+	t.Cleanup(runuser.FixedDatabase())
 }
 
 func TestResolveShellUsesPasswdEntry(t *testing.T) {
@@ -83,8 +80,12 @@ func TestManagerRunsResolvedShellForShellRequest(t *testing.T) {
 	manager, err := NewManagerWithConfig(ManagerConfig{
 		WorkingRoot: "/workspace",
 		RuntimeDir:  t.TempDir(),
-		Env:         map[string]string{"SHELL": "/usr/bin/zsh"},
+		// $SHELL is deliberately something else: the run user's own passwd entry
+		// is the authority on their shell, not the environment the agent happens
+		// to carry.
+		Env:         map[string]string{"SHELL": "/bin/ignored"},
 		Units:       runner,
+		DefaultUser: &User{Name: "dev"},
 	})
 	if err != nil {
 		t.Fatalf("new manager: %v", err)
@@ -102,6 +103,28 @@ func TestManagerRunsResolvedShellForShellRequest(t *testing.T) {
 	// actually runs.
 	if len(runner.starts) != 1 || runner.starts[0].Command[0] != want[0] {
 		t.Fatalf("started command = %v, want %v", runner.starts, want)
+	}
+}
+
+// With no user configured anywhere, the shell is the image account's own -- the
+// exec inherits that identity, so it inherits its shell too.
+func TestManagerFallsBackToTheImageAccountsShell(t *testing.T) {
+	writePasswd(t, "")
+	manager, err := NewManagerWithConfig(ManagerConfig{
+		WorkingRoot: "/workspace",
+		RuntimeDir:  t.TempDir(),
+		Env:         map[string]string{"SHELL": "/bin/ignored"},
+		Units:       &fakeUnitManager{},
+	})
+	if err != nil {
+		t.Fatalf("new manager: %v", err)
+	}
+	exec, err := manager.Create(context.Background(), CreateRequest{Shell: true, TTY: true})
+	if err != nil {
+		t.Fatalf("create shell exec: %v", err)
+	}
+	if exec.Command[0] != "/bin/bash" {
+		t.Fatalf("command = %v, want the image account's /bin/bash", exec.Command)
 	}
 }
 

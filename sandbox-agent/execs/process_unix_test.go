@@ -9,6 +9,7 @@ import (
 	"testing"
 
 	"github.com/obot-platform/discobox/sandbox-agent/runuser"
+	"github.com/obot-platform/discobox/sandboxuser"
 )
 
 // A uid with no account cannot have its primary group resolved, and the old
@@ -34,40 +35,45 @@ func TestUserCredentialUsesExplicitGID(t *testing.T) {
 	}
 }
 
-func TestUserEnvDefaultsResolveHomeForNamedUser(t *testing.T) {
-	current, err := osuser.Current()
-	if err != nil {
-		t.Skipf("current user unavailable: %v", err)
-	}
-	if current.Username == "" || current.HomeDir == "" {
-		t.Skipf("current user lacks username or home: %#v", current)
-	}
+// The process environment describes whoever the exec runs as. It is built from
+// the resolved identity rather than by looking the user up again: resolution
+// happens once, in runuser, and a second lookup here is how the two came to
+// disagree about where home was.
+func TestUserEnvDefaultsDescribeTheResolvedUser(t *testing.T) {
+	t.Cleanup(runuser.FixedDatabase())
 
-	env, err := userEnvDefaults(&User{Name: current.Username})
-	if err != nil {
-		t.Fatalf("user env defaults: %v", err)
-	}
-	if env["USER"] == "" || env["LOGNAME"] == "" || env["HOME"] != current.HomeDir {
-		t.Fatalf("env = %#v, want current user home", env)
+	for name, layer := range map[string]*User{
+		"by name": {Name: "dev"},
+		// A numeric identity gets its name and home from the same passwd entry,
+		// so both spellings of the same user produce the same environment.
+		"by uid": {UID: sandboxuser.ID(1000)},
+	} {
+		t.Run(name, func(t *testing.T) {
+			resolved, err := runuser.Resolve(runuser.Layers{Manifest: layer}, sandboxuser.Complete)
+			if err != nil {
+				t.Fatalf("resolve: %v", err)
+			}
+			env, err := userEnvDefaults(&resolved)
+			if err != nil {
+				t.Fatalf("user env defaults: %v", err)
+			}
+			if env["USER"] != "dev" || env["LOGNAME"] != "dev" || env["HOME"] != "/home/dev" {
+				t.Fatalf("env = %#v, want dev's name and home", env)
+			}
+		})
 	}
 }
 
-func TestUserEnvDefaultsResolveHomeForNumericUser(t *testing.T) {
-	current, err := osuser.Current()
-	if err != nil {
-		t.Skipf("current user unavailable: %v", err)
-	}
-	uid, err := strconv.ParseInt(current.Uid, 10, 64)
-	if err != nil || current.HomeDir == "" {
-		t.Skipf("current user lacks numeric uid or home: %#v", current)
-	}
-
-	env, err := userEnvDefaults(&User{UID: &uid})
+// An identity that was never resolved must not quietly produce a half-built
+// environment: the fields are absent because nobody filled them, not because
+// the user has no name.
+func TestUserEnvDefaultsOnAnEmptyUserYieldsNothing(t *testing.T) {
+	env, err := userEnvDefaults(&User{UID: sandboxuser.ID(1000)})
 	if err != nil {
 		t.Fatalf("user env defaults: %v", err)
 	}
-	if env["HOME"] != current.HomeDir {
-		t.Fatalf("env = %#v, want current user home", env)
+	if len(env) != 0 {
+		t.Fatalf("env = %#v, want nothing: no name or home was resolved", env)
 	}
 }
 
@@ -131,7 +137,7 @@ func TestCredentialResolvesPrimaryGroupRatherThanGuessing(t *testing.T) {
 // forms themselves are covered by TestLookupGroupIDAcceptsNamesAndNumbers.
 func TestResolveGroupsSkipsUnknownAndDeduplicates(t *testing.T) {
 	t.Cleanup(runuser.FixedDatabase())
-	got := resolveGroups([]string{"docker", "997", "no-such-group", " ", "video"})
+	got := runuser.Groups([]string{"docker", "997", "no-such-group", " ", "video"})
 	if len(got) != 2 || got[0] != 997 || got[1] != 44 {
 		t.Fatalf("groups = %v, want [997 44]: docker by name, 997 the same gid again, unknown and blank dropped", got)
 	}

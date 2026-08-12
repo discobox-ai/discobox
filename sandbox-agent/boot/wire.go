@@ -112,8 +112,16 @@ func applyOwnership(target string, v harness.ResolvedVolume) error {
 }
 
 // wireSources bind-mounts each worker-materialized source from
-// /.discobox/sources/<slug> onto its manifest target as the sandbox user.
-func (b *booter) wireSources(sources []sandboxconfig.Source) error {
+// /.discobox/sources/<slug> onto its manifest target, owned by the sandbox user.
+//
+// Ownership comes from the manifest only when the pool agent actually knew it;
+// otherwise it comes from id, the identity this flow just resolved. The pool
+// agent cannot resolve a sandbox's account (ADR 0025 §4), so when the manifest
+// named no user there is nothing for it to publish -- and the previous shape,
+// where those fields were plain ints, could not say so. Absent arrived as 0 and
+// this chown handed the primary source tree to root, in precisely the case
+// where the sandbox is least likely to be running as root (ADR 0032 §5).
+func (b *booter) wireSources(sources []sandboxconfig.Source, id identity) error {
 	for _, s := range sources {
 		src := filepath.Join(sourcesMountPath, s.Slug)
 		if _, err := os.Stat(src); err != nil {
@@ -129,7 +137,8 @@ func (b *booter) wireSources(sources []sandboxconfig.Source) error {
 		if err := bindMount(src, s.Target, false); err != nil {
 			return fmt.Errorf("wire source %s: %w", s.Slug, err)
 		}
-		if err := os.Chown(s.Target, int(s.UID), int(s.GID)); err != nil {
+		uid, gid := sourceOwner(s, id)
+		if err := os.Chown(s.Target, uid, gid); err != nil {
 			return fmt.Errorf("chown source %s: %w", s.Target, err)
 		}
 	}
@@ -159,4 +168,23 @@ func loadEffectiveConfig() (sandboxconfig.Config, error) {
 
 func loadResolvedVolumes(id identity, volumes []harness.Volume) ([]harness.ResolvedVolume, error) {
 	return harness.ResolveVolumes(volumes, harness.VolumeRuntime{Home: id.home, UID: id.uid, GID: id.gid})
+}
+
+// sourceOwner decides who owns a wired source: the manifest's ids when the pool
+// agent actually knew them, and otherwise the identity boot resolved.
+//
+// It is separate from wireSources because this is the whole of the decision and
+// none of it needs a privileged syscall to exercise. The bug it replaces was
+// never in the chown -- it was in an absent id arriving as 0 with no way to
+// tell it from a deliberate root, which is a question about values rather than
+// about mounting.
+func sourceOwner(s sandboxconfig.Source, id identity) (uid, gid int) {
+	uid, gid = id.uid, id.gid
+	if s.UID != nil {
+		uid = int(*s.UID)
+	}
+	if s.GID != nil {
+		gid = int(*s.GID)
+	}
+	return uid, gid
 }

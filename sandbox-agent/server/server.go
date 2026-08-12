@@ -6,7 +6,6 @@ import (
 	"errors"
 	"log/slog"
 	"net/http"
-	"strings"
 	"time"
 
 	"github.com/go-chi/chi/v5"
@@ -22,6 +21,7 @@ import (
 	agentstore "github.com/obot-platform/discobox/sandbox-agent/store"
 	"github.com/obot-platform/discobox/sandbox-agent/terminal"
 	"github.com/obot-platform/discobox/sandboxconfig"
+	"github.com/obot-platform/discobox/sandboxuser"
 )
 
 type Identity struct {
@@ -201,18 +201,24 @@ func newRouterAndManager(cfg Config) (*chi.Mux, *terminal.Service, *execs.Manage
 	return router, manager, execManager, localStore, nil
 }
 
+// execDefaultUser is the manifest layer: the sandbox's declared user, as the
+// exec defaults carry it. Whether it names anybody is asked of sandboxuser.Named
+// rather than re-tested here -- that predicate having been written per-site is
+// what let an exec naming only a group fall through the gap between two copies
+// of it (ADR 0032 §1).
 func execDefaultUser(defaults config.ExecDefaults) *execs.User {
-	if strings.TrimSpace(defaults.Username) == "" && defaults.UID == nil && defaults.GID == nil && strings.TrimSpace(defaults.GroupName) == "" {
-		return nil
-	}
-	return &execs.User{
+	user := &execs.User{
 		Name:             defaults.Username,
 		UID:              cloneInt64(defaults.UID),
 		GID:              cloneInt64(defaults.GID),
-		Group:            defaults.GroupName,
+		GroupName:        defaults.GroupName,
 		HomeDirectory:    defaults.HomeDirectory,
 		AdditionalGroups: append([]string(nil), defaults.AdditionalGroups...),
 	}
+	if !sandboxuser.Named(user) {
+		return nil
+	}
+	return user
 }
 
 func cloneInt64(in *int64) *int64 {

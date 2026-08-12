@@ -8,6 +8,7 @@ import (
 	"strings"
 
 	"github.com/obot-platform/discobox/harness"
+	"github.com/obot-platform/discobox/sandboxuser"
 )
 
 // Document is the full, unmerged input to Effective. Runtime is assembled by
@@ -86,8 +87,18 @@ type AgentRuntime struct {
 type Source struct {
 	Slug   string `json:"slug"`
 	Target string `json:"target"`
-	UID    int64  `json:"uid,omitempty"`
-	GID    int64  `json:"gid,omitempty"`
+	// UID and GID are the ownership the sandbox must give the mounted source.
+	// They are pointers because the pool agent frequently cannot know them --
+	// the account lives in the image and may not exist until boot creates it --
+	// and absent has to be expressible. As plain ints, "not given" arrived as 0
+	// and boot chowned the primary source tree to root, in exactly the case
+	// (no manifest user) where the sandbox is least likely to be running as
+	// root (ADR 0032 §3).
+	//
+	// Absent means boot supplies the identity it resolved, which it has in hand
+	// at that point and which is the better answer anyway.
+	UID *int64 `json:"uid,omitempty"`
+	GID *int64 `json:"gid,omitempty"`
 }
 
 // User is the sandbox user identity as the manifest publishes it. Fields the
@@ -95,17 +106,11 @@ type Source struct {
 // names or invent its ids, so it forwards what it was told and the sandbox
 // resolves the rest (ADR 0025 §4). A wholly empty User means the manifest named
 // nobody and the image's own account stands (§5).
-type User struct {
-	Name string `json:"name,omitempty"`
-	UID  *int64 `json:"uid,omitempty"`
-	GID  *int64 `json:"gid,omitempty"`
-	// GroupName is the primary group by name, mutually exclusive with GID and
-	// resolvable only inside the sandbox.
-	GroupName     string `json:"groupName,omitempty"`
-	HomeDirectory string `json:"homeDirectory,omitempty"`
-	// AdditionalGroups are supplementary groups, each a name or a numeric GID.
-	AdditionalGroups []string `json:"additionalGroups,omitempty"`
-}
+// User is the identity a sandbox runs as. It is an alias rather than a parallel
+// type: the API, the manifest, the pool agent, and the launch path all describe
+// identity with one vocabulary, so a field cannot mean one thing here and
+// something else one layer in (ADR 0025 §1).
+type User = sandboxuser.User
 
 // File is a file to write into the harness's home directory when the harness
 // is installed.
@@ -186,4 +191,23 @@ func ResolveLocalSubnetsToken(value string, subnets []string) string {
 	}
 	value = strings.ReplaceAll(value, LocalSubnetsToken, strings.Join(subnets, ","))
 	return strings.Trim(strings.ReplaceAll(value, ",,", ","), ",")
+}
+
+// SandboxGroups is the supplementary set the sandbox's user belongs to.
+//
+// Two layers can name one: the harness image declares groups as a label, and a
+// create request may name its own. They are all-or-nothing rather than unioned
+// (ADR 0025 §2), so a request naming any replaces the label's entirely and a
+// request naming none inherits them.
+//
+// It exists as one function because it was two. Boot materialized the image
+// label's groups into /etc/group while the exec defaults preferred the
+// manifest user's, so a sandbox that declared its own groups had them in every
+// exec's credential while the OS account was never added to them. Which list
+// is authoritative is one question and must have one answer.
+func (c Config) SandboxGroups() []string {
+	if len(c.User.AdditionalGroups) > 0 {
+		return append([]string(nil), c.User.AdditionalGroups...)
+	}
+	return append([]string(nil), c.AdditionalGroups...)
 }

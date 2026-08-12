@@ -577,7 +577,7 @@ func execUserFromAPI(opt sandboxapi.OptSandboxUser) *execs.User {
 	}
 	user := &execs.User{
 		Name:          strings.TrimSpace(in.Name.Or("")),
-		Group:         strings.TrimSpace(in.GroupName.Or("")),
+		GroupName:     strings.TrimSpace(in.GroupName.Or("")),
 		HomeDirectory: strings.TrimSpace(in.HomeDirectory.Or("")),
 		// Groups are all-or-nothing (ADR 0025 §2): an empty list here means the
 		// sandbox's own, which Manager.resolveUser fills in.

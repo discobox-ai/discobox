@@ -55,7 +55,7 @@ func (b *booter) provision(logger *slog.Logger, id identity) error {
 		if effective, err = loadEffectiveConfig(); err != nil {
 			return fmt.Errorf("load sandbox config: %w", err)
 		}
-		if err := b.ensureAdditionalGroups(id, effective.AdditionalGroups); err != nil {
+		if err := b.ensureAdditionalGroups(id, effective.SandboxGroups()); err != nil {
 			return fmt.Errorf("ensure additional groups: %w", err)
 		}
 		if err := b.wireConfig(); err != nil {
@@ -76,7 +76,7 @@ func (b *booter) provision(logger *slog.Logger, id identity) error {
 		return fmt.Errorf("seed home: %w", err)
 	}
 	if worker {
-		if err := b.wireSources(effective.Sources); err != nil {
+		if err := b.wireSources(effective.Sources, id); err != nil {
 			return err
 		}
 		if len(effective.Sources) > 0 {

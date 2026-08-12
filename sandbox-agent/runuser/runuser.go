@@ -1,202 +1,246 @@
 // Package runuser answers one question, for everything inside a sandbox that
-// has to launch a process as somebody: given what a caller asked for, who does
-// the process actually run as?
+// has to launch a process as somebody: given what each layer asked for, who
+// does the process actually run as?
 //
-// Call Resolve. It returns a User with nothing left to work out -- no name to
-// look up, no nil gid, no unresolved group -- so callers can use the fields
-// directly instead of each re-deriving them and drifting apart. That drift is
-// what ADR 0025 was written about: terminals lost the sandbox's supplementary
-// groups, the boot flow defaulted a missing uid to root and a missing gid to the
-// uid, and an exec that named a user ran with no groups at all.
+// Call Resolve with the layers and the fields you need. It returns a User with
+// nothing left to work out for those fields -- no name to look up, no nil gid,
+// no unresolved group -- so callers use the fields directly instead of each
+// re-deriving them and drifting apart. That drift is what ADR 0025 was written
+// about and what ADR 0032 removed the room for: terminals lost the sandbox's
+// supplementary groups, the boot flow defaulted a missing uid to root and a
+// missing gid to the uid, and an exec naming only a group either lost it or
+// failed outright depending on how it was spelled.
 //
-// Resolution reads the image's own /etc/passwd and /etc/group, which is the
-// only place a sandbox's users and groups exist -- so this package is usable
-// only from inside the sandbox. The control plane and the pool agent cannot
-// resolve these names and must not try (ADR 0025 §4).
+// This package is the only one that resolves against the image's own
+// /etc/passwd and /etc/group (ADR 0032 §6), which is the only place a sandbox's
+// users and groups exist -- so it is usable only from inside the sandbox. The
+// control plane and the pool agent cannot resolve these names and must not try
+// (ADR 0025 §4); they use sandboxuser.Merge, which has no way to.
 package runuser
 
 import (
+	"bufio"
 	"errors"
 	"fmt"
+	"os"
 	osuser "os/user"
 	"strconv"
 	"strings"
+
+	"github.com/obot-platform/discobox/sandboxuser"
 )
 
-// User is a run identity: who to be, and which groups to carry. Every field is
-// optional on the way in; Resolve fills in whatever the caller left out.
-type User struct {
-	Name string `json:"name,omitempty"`
-	UID  *int64 `json:"uid,omitempty"`
-	GID  *int64 `json:"gid,omitempty"`
-	// Group is the primary group by name, mutually exclusive with GID. Resolve
-	// turns it into GID and clears it, so nothing downstream has to know which
-	// of the two a caller supplied.
-	Group         string `json:"group,omitempty"`
-	HomeDirectory string `json:"homeDirectory,omitempty"`
-	// AdditionalGroups are supplementary groups, each a group name or a numeric
-	// GID. Whoever supplied the list is the authority on membership; the group
-	// file is consulted only to resolve an entry to an id (ADR 0025 §3).
-	AdditionalGroups []string `json:"additionalGroups,omitempty"`
-}
+// The identity vocabulary is shared with everything outside the sandbox, so it
+// is one type rather than a parallel one that has to be converted (ADR 0025 §1).
+type (
+	User   = sandboxuser.User
+	Layers = sandboxuser.Layers
+	Fields = sandboxuser.Fields
+)
 
-// Empty reports whether a user names nobody to run as. Groups are deliberately
-// not considered: a request carrying only groups still has to borrow an
-// identity from somewhere, which is what lets callers express "the usual user,
-// plus these groups" (ADR 0025 §2).
-func (u *User) Empty() bool {
-	return u == nil || strings.TrimSpace(u.Name) == "" && u.UID == nil && u.GID == nil && strings.TrimSpace(u.HomeDirectory) == ""
-}
-
-// Clone returns a deep copy, so a caller's slice cannot be mutated through the
-// copy or vice versa.
-func (u *User) Clone() *User {
-	if u.Empty() {
-		return nil
-	}
-	out := *u
-	out.Name = strings.TrimSpace(out.Name)
-	out.Group = strings.TrimSpace(out.Group)
-	out.HomeDirectory = strings.TrimSpace(out.HomeDirectory)
-	out.UID = cloneInt64(u.UID)
-	out.GID = cloneInt64(u.GID)
-	out.AdditionalGroups = append([]string(nil), u.AdditionalGroups...)
-	return &out
-}
+// passwdPath is the account database the login-shell lookup parses. os/user
+// does not expose the shell field, so it is read directly; it is a variable so
+// tests can point it at a fixture.
+var passwdPath = "/etc/passwd"
 
 // The passwd/group database is reached through these indirections so tests can
 // supply a fixed table instead of depending on whatever accounts the machine
-// running them happens to have.
+// running them happens to have. effectiveIDs is here for the same reason: the
+// image layer is "who this process already is", and a test that reads the real
+// getuid can only ever assert it against itself.
 var (
 	lookupUserByName  = osuser.Lookup
 	lookupUserByID    = osuser.LookupId
 	lookupGroupByName = osuser.LookupGroup
+	effectiveIDs      = func() (int64, int64) { return int64(os.Getuid()), int64(os.Getgid()) }
 )
 
-// Resolve fills in everything the caller left out, by asking the OS rather than
-// defaulting it (ADR 0025 §6). A name supplies both ids from its passwd entry; a
-// uid with no group supplies the gid of that uid's entry -- its real default
-// group, never 0 and never the uid, because uid==gid is a useradd coincidence
-// rather than a rule. A named primary group resolves through the same path as
-// the supplementary ones, so they cannot resolve by different rules.
+// Current is the image layer: who this process already is. Inside a sandbox
+// that is the image's own account -- boot runs as PID 1 before anything has
+// called setuid, and the agent's unit sets no User=, so the running ids are the
+// ones the Dockerfile's USER directive selected.
 //
-// Only what is missing is looked up. A user that already carries its ids, name,
-// and home needs no account to exist yet, which matters because the boot flow
-// resolves identities for accounts it is about to create.
+// It reports ids only. Completing them to a name and home is Resolve's job, and
+// whether that completion is required is the caller's to declare.
+func Current() *User {
+	uid, gid := effectiveIDs()
+	return &User{UID: &uid, GID: &gid}
+}
+
+// Resolve merges the layers by precedence (sandboxuser.Merge) and then
+// completes every field in need against the image's own account database.
 //
-// An error means the identity cannot be honored -- an unknown name, a uid with
-// no passwd entry, or gid and group name given together. Callers must not fall
-// back to a default on error; that is the guess this package exists to remove.
-func Resolve(user User) (User, error) {
-	if user.Empty() {
-		return user, nil
-	}
-	needsGroup := user.GID == nil && strings.TrimSpace(user.Group) == ""
-	if name := strings.TrimSpace(user.Name); name != "" && (user.UID == nil || needsGroup) {
-		found, err := lookupUserByName(name)
-		if err != nil {
-			return user, fmt.Errorf("resolve run user %q: %w", name, err)
-		}
-		if user.UID == nil {
-			uid, err := strconv.ParseInt(found.Uid, 10, 64)
-			if err != nil {
-				return user, fmt.Errorf("resolve run user %q uid %q: %w", name, found.Uid, err)
-			}
-			user.UID = &uid
-		}
-		if needsGroup {
-			gid, err := strconv.ParseInt(found.Gid, 10, 64)
-			if err != nil {
-				return user, fmt.Errorf("resolve run user %q gid %q: %w", name, found.Gid, err)
-			}
-			user.GID = &gid
+// Completion asks; it never defaults (ADR 0025 §6). A name supplies both ids
+// from its passwd entry; a uid with no group supplies the gid of that uid's
+// entry -- its real default group, never 0 and never the uid, because uid==gid
+// is a useradd coincidence rather than a rule. A named primary group resolves
+// through the same path as a supplementary one, so the two cannot disagree.
+//
+// A field in need that cannot be determined is an *UnresolvedError naming it.
+// There is no third outcome and in particular no zero standing in for an answer:
+// 0 is root, "" is no home, and both read as answers at every call site
+// downstream (ADR 0032 §2). A caller that knows a field is undeterminable in its
+// context leaves it out of need, which is an explicit claim rather than a
+// silent gap.
+//
+// Fields outside need are cleared rather than half-filled, so an unrequested
+// field cannot be mistaken for a resolved one.
+func Resolve(l Layers, need Fields) (User, error) {
+	for _, layer := range []*User{l.Request, l.Manifest, l.Image} {
+		if err := layer.Validate(); err != nil {
+			return User{}, err
 		}
 	}
-	if group := strings.TrimSpace(user.Group); group != "" {
-		if user.GID != nil {
-			return user, errors.New("run user gid and group are mutually exclusive")
-		}
+	user := sandboxuser.Merge(l)
+
+	// The primary group first: a named one is the caller's explicit choice and
+	// must not be quietly overtaken by the passwd entry's default below.
+	if group := strings.TrimSpace(user.GroupName); group != "" {
 		gid, ok := LookupGroupID(group)
 		if !ok {
-			return user, fmt.Errorf("resolve run user group %q: no such group", group)
+			return User{}, sandboxuser.Unresolved(sandboxuser.FieldGID,
+				fmt.Sprintf("group %q is not a group in this image", group))
 		}
 		resolved := int64(gid)
 		user.GID = &resolved
-		user.Group = ""
+		user.GroupName = ""
 	}
-	if user.UID == nil {
-		return user, errors.New("run user uid is required")
-	}
-	if user.GID == nil {
-		found, err := lookupUserByID(strconv.FormatInt(*user.UID, 10))
+
+	// A name is the one input that can supply ids, so it is consulted whenever
+	// something it could answer is still missing.
+	if name := strings.TrimSpace(user.Name); name != "" && (user.UID == nil || user.GID == nil) {
+		found, err := lookupUserByName(name)
 		if err != nil {
-			return user, fmt.Errorf("resolve run user uid %d primary group: %w", *user.UID, err)
+			// An account the manifest names but the image has not created yet is
+			// not an error in itself; it is only an error if it was needed to
+			// answer something. Fall through and let the per-field checks decide.
+			if !isUnknownUser(err) {
+				return User{}, fmt.Errorf("resolve run user %q: %w", name, err)
+			}
+		} else {
+			if user.UID == nil {
+				uid, err := parseID(found.Uid, "uid", name)
+				if err != nil {
+					return User{}, err
+				}
+				user.UID = &uid
+			}
+			if user.GID == nil {
+				gid, err := parseID(found.Gid, "gid", name)
+				if err != nil {
+					return User{}, err
+				}
+				user.GID = &gid
+			}
 		}
-		gid, err := strconv.ParseInt(found.Gid, 10, 64)
-		if err != nil {
-			return user, fmt.Errorf("resolve run user uid %d gid %q: %w", *user.UID, found.Gid, err)
-		}
-		user.GID = &gid
 	}
-	// Name and home come from the same entry. Without them a uid-only identity
-	// leaves USER/LOGNAME/HOME unset in the process environment and resolves the
-	// login shell against a half-known user, so "resolved" has to mean all four
-	// fields rather than just the ids.
-	if strings.TrimSpace(user.Name) == "" || strings.TrimSpace(user.HomeDirectory) == "" {
-		name, home, err := NameAndHome(&user)
-		if err != nil {
-			return user, err
+
+	if need.Has(sandboxuser.FieldUID) && user.UID == nil {
+		return User{}, sandboxuser.Unresolved(sandboxuser.FieldUID,
+			"no layer named a uid and no name resolved to one")
+	}
+
+	// Only a uid can answer for the rest, so everything below needs one --
+	// whether or not the caller asked for the uid itself.
+	if user.UID != nil {
+		if user.GID == nil && need.Has(sandboxuser.FieldGID) {
+			found, err := lookupUserByID(strconv.FormatInt(*user.UID, 10))
+			if err != nil {
+				return User{}, sandboxuser.Unresolved(sandboxuser.FieldGID,
+					fmt.Sprintf("uid %d has no passwd entry to take a primary group from", *user.UID))
+			}
+			gid, err := parseID(found.Gid, "gid", strconv.FormatInt(*user.UID, 10))
+			if err != nil {
+				return User{}, err
+			}
+			user.GID = &gid
 		}
-		if strings.TrimSpace(user.Name) == "" {
-			user.Name = name
-		}
-		if strings.TrimSpace(user.HomeDirectory) == "" {
-			user.HomeDirectory = home
+		if err := completeNameAndHome(&user, need); err != nil {
+			return User{}, err
 		}
 	}
+
+	clearUnrequested(&user, need)
 	return user, nil
 }
 
-// NameAndHome resolves the effective login name and home directory. Values set
-// explicitly win; anything unset is filled from the passwd database by name,
-// then by UID.
-//
-// A name that does not exist is an error; a UID that does not resolve is
-// reported as unknown (empty) rather than fatal, since a bare UID can still run
-// a process without a passwd entry.
-func NameAndHome(user *User) (name, home string, err error) {
-	if user.Empty() {
-		return "", "", nil
+// completeNameAndHome fills the two descriptive fields from the uid's passwd
+// entry. They come from the same entry and are filled together: a uid-only
+// identity with neither leaves USER/LOGNAME/HOME unset in the process
+// environment and resolves the login shell against a half-known user.
+func completeNameAndHome(user *User, need Fields) error {
+	wantName := need.Has(sandboxuser.FieldName) && strings.TrimSpace(user.Name) == ""
+	wantHome := need.Has(sandboxuser.FieldHome) && strings.TrimSpace(user.HomeDirectory) == ""
+	if !wantName && !wantHome {
+		return nil
 	}
-	name = strings.TrimSpace(user.Name)
-	home = strings.TrimSpace(user.HomeDirectory)
-	switch {
-	case name != "":
-		found, lookupErr := lookupUserByName(name)
-		if lookupErr != nil {
-			return "", "", fmt.Errorf("resolve run user %q: %w", name, lookupErr)
+	found, err := lookupUserByID(strconv.FormatInt(*user.UID, 10))
+	if err != nil {
+		field := sandboxuser.FieldName
+		if !wantName {
+			field = sandboxuser.FieldHome
 		}
-		if home == "" {
-			home = strings.TrimSpace(found.HomeDir)
-		}
-	case user.UID != nil:
-		if found, lookupErr := lookupUserByID(strconv.FormatInt(*user.UID, 10)); lookupErr == nil {
-			if name == "" {
-				name = strings.TrimSpace(found.Username)
-			}
-			if home == "" {
-				home = strings.TrimSpace(found.HomeDir)
-			}
+		return sandboxuser.Unresolved(field,
+			fmt.Sprintf("uid %d has no passwd entry", *user.UID))
+	}
+	if wantName {
+		if name := strings.TrimSpace(found.Username); name != "" {
+			user.Name = name
+		} else {
+			return sandboxuser.Unresolved(sandboxuser.FieldName,
+				fmt.Sprintf("uid %d has a passwd entry with no name", *user.UID))
 		}
 	}
-	return name, home, nil
+	if wantHome {
+		if home := strings.TrimSpace(found.HomeDir); home != "" {
+			user.HomeDirectory = home
+		} else {
+			return sandboxuser.Unresolved(sandboxuser.FieldHome,
+				fmt.Sprintf("uid %d has a passwd entry with no home directory", *user.UID))
+		}
+	}
+	return nil
 }
 
-// Groups resolves supplementary group entries to the GIDs a process runs with,
-// dropping any the image never created. A missing group is skipped rather than
-// fatal, mirroring the boot flow -- the two must not disagree about the same
-// image, and a harness Dockerfile that forgot to install a package must not
-// break every process in the sandbox.
+// clearUnrequested drops what the caller did not ask for. A field that was
+// never completed must not travel on looking like an answer, and the caller
+// said it does not need it.
+func clearUnrequested(user *User, need Fields) {
+	if !need.Has(sandboxuser.FieldUID) {
+		user.UID = nil
+	}
+	if !need.Has(sandboxuser.FieldGID) {
+		user.GID = nil
+	}
+	if !need.Has(sandboxuser.FieldName) {
+		user.Name = ""
+	}
+	if !need.Has(sandboxuser.FieldHome) {
+		user.HomeDirectory = ""
+	}
+	if !need.Has(sandboxuser.FieldGroups) {
+		user.AdditionalGroups = nil
+	}
+}
+
+func parseID(raw, kind, subject string) (int64, error) {
+	parsed, err := strconv.ParseInt(raw, 10, 64)
+	if err != nil {
+		return 0, fmt.Errorf("resolve run user %q %s %q: %w", subject, kind, raw, err)
+	}
+	return parsed, nil
+}
+
+func isUnknownUser(err error) bool {
+	var unknownName osuser.UnknownUserError
+	var unknownID osuser.UnknownUserIdError
+	return errors.As(err, &unknownName) || errors.As(err, &unknownID)
+}
+
+// Groups resolves supplementary entries -- names or numeric GIDs -- to ids for
+// a credential, dropping what the image never created and collapsing
+// duplicates. Membership is the caller's to decide; the group file is consulted
+// only to put a number to it (ADR 0025 §3).
 func Groups(entries []string) []uint32 {
 	if len(entries) == 0 {
 		return nil
@@ -218,35 +262,69 @@ func Groups(entries []string) []uint32 {
 		seen[gid] = struct{}{}
 		out = append(out, gid)
 	}
+	if len(out) == 0 {
+		return nil
+	}
 	return out
 }
 
-// LookupGroupID resolves one group entry -- a name or a numeric GID -- to a GID.
-// Numeric is tried first, so a group literally named "997" cannot shadow gid
-// 997, and a bare GID resolves even with no group-file line: the id is the
-// authority and the file only names it.
+// LookupGroupID turns one entry -- a group name or a numeric GID -- into a GID.
+// A numeric entry resolves as an id before it is tried as a name, so a group
+// literally named "997" cannot shadow gid 997, and a bare GID resolves even
+// with no group-file line: the id is the authority and the file only names it.
 func LookupGroupID(entry string) (uint32, bool) {
+	entry = strings.TrimSpace(entry)
+	if entry == "" {
+		return 0, false
+	}
 	if parsed, err := strconv.ParseInt(entry, 10, 64); err == nil {
 		if parsed < 0 || parsed > int64(^uint32(0)) {
 			return 0, false
 		}
 		return uint32(parsed), true
 	}
-	group, err := lookupGroupByName(entry)
+	found, err := lookupGroupByName(entry)
 	if err != nil {
 		return 0, false
 	}
-	parsed, err := strconv.ParseInt(group.Gid, 10, 64)
+	parsed, err := strconv.ParseInt(found.Gid, 10, 64)
 	if err != nil || parsed < 0 || parsed > int64(^uint32(0)) {
 		return 0, false
 	}
 	return uint32(parsed), true
 }
 
-func cloneInt64(in *int64) *int64 {
-	if in == nil {
-		return nil
+// LoginShell reports the shell field of name's passwd entry, and whether the
+// entry existed. os/user does not expose that field, so the database is parsed
+// directly -- which is why this lives here rather than in execs: the format of
+// /etc/passwd is knowledge this package already carries, and two packages
+// should not each hold a copy of it (ADR 0032 §6).
+//
+// A missing entry is not an error. A user can run a process without one; the
+// caller falls back to $SHELL and then to a probe of the usual paths.
+func LoginShell(name string) (string, bool, error) {
+	name = strings.TrimSpace(name)
+	if name == "" {
+		return "", false, nil
 	}
-	out := *in
-	return &out
+	file, err := os.Open(passwdPath)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return "", false, nil
+		}
+		return "", false, fmt.Errorf("read %s: %w", passwdPath, err)
+	}
+	defer file.Close()
+	scanner := bufio.NewScanner(file)
+	for scanner.Scan() {
+		fields := strings.Split(scanner.Text(), ":")
+		if len(fields) < 7 || fields[0] != name {
+			continue
+		}
+		return strings.TrimSpace(fields[6]), true, nil
+	}
+	if err := scanner.Err(); err != nil {
+		return "", false, fmt.Errorf("read %s: %w", passwdPath, err)
+	}
+	return "", false, nil
 }

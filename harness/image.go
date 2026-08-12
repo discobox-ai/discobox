@@ -164,11 +164,22 @@ func expandVolumeToken(value string, rt VolumeRuntime) string {
 	return replacer.Replace(value)
 }
 
-// ExpandEnvHomeTokens replaces the %HOME% token in every value of an
-// image-declared env map with the sandbox's resolved home directory. The
-// caller (pool-agent, before assembling ImageLayer.Env) is the only place
-// that knows the resolved user's home; precedence between image and runtime
-// env is sandboxconfig.Effective's job, not this package's.
+// HomeToken is the placeholder an image-declared env value uses for the
+// sandbox user's home directory. It survives into sandbox.json whenever the
+// pool agent cannot resolve that home, and the sandbox expands it on the way
+// into a process environment -- the same treatment sandboxconfig.LocalSubnetsToken
+// gets for the same reason (ADR 0032 §5).
+const HomeToken = "%HOME%"
+
+// ExpandEnvHomeTokens replaces HomeToken in every value of an image-declared
+// env map with the sandbox user's home directory.
+//
+// An empty home leaves the token in place rather than substituting a blank.
+// The pool agent only knows the home when the request stated it outright; the
+// account otherwise lives in the image, where only the sandbox can look it up.
+// Expanding to "" there would turn "$HOME/.config" into "/.config" -- a real
+// path, pointing at the wrong place, indistinguishable downstream from one
+// somebody meant.
 func ExpandEnvHomeTokens(env map[string]string, home string) map[string]string {
 	if len(env) == 0 {
 		return nil
@@ -179,7 +190,11 @@ func ExpandEnvHomeTokens(env map[string]string, home string) map[string]string {
 		if key == "" {
 			continue
 		}
-		out[key] = strings.ReplaceAll(value, "%HOME%", home)
+		if home == "" {
+			out[key] = value
+			continue
+		}
+		out[key] = strings.ReplaceAll(value, HomeToken, home)
 	}
 	return out
 }

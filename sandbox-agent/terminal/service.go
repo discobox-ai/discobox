@@ -22,6 +22,8 @@ import (
 	"github.com/obot-platform/discobox/harness/registry"
 	"github.com/obot-platform/discobox/sandbox-agent/config"
 	"github.com/obot-platform/discobox/sandbox-agent/execs"
+	"github.com/obot-platform/discobox/sandbox-agent/runuser"
+	"github.com/obot-platform/discobox/sandboxuser"
 )
 
 // ErrNotFound is returned when a terminal (exec) is not found. It aliases the
@@ -557,16 +559,20 @@ func renderHarnessFileTemplate(name, content string, sandboxConfig map[string]an
 	return rendered.String(), nil
 }
 
-// resolveHome resolves the home directory to install harness files into, matching
-// how process env defaults resolve HOME (execs.ResolveUser): an explicit home,
-// then the run user's /etc/passwd entry, then the harness process's own $HOME.
+// resolveHome resolves the home directory to install harness files into,
+// matching how process env defaults resolve HOME: an explicit home, then the
+// run user's own account entry, then the harness process's own $HOME.
 func (i FileInstaller) resolveHome() (string, error) {
 	if home := strings.TrimSpace(i.HomeDirectory); home != "" {
 		return home, nil
 	}
-	_, home, err := execs.ResolveNameAndHome(&execs.User{Name: i.Name, UID: i.UID, GID: i.GID})
-	if err != nil {
-		return "", fmt.Errorf("resolve home directory: %w", err)
+	resolved, err := runuser.Resolve(
+		runuser.Layers{Manifest: &runuser.User{Name: i.Name, UID: i.UID, GID: i.GID}},
+		sandboxuser.FieldHome,
+	)
+	home := ""
+	if err == nil {
+		home = strings.TrimSpace(resolved.HomeDirectory)
 	}
 	if home == "" {
 		home = strings.TrimSpace(os.Getenv("HOME"))
