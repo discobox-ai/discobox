@@ -1,7 +1,9 @@
 # 0017 — Orchestration is generation convergence; a resource has state and desired state
 
 - **Status**: Accepted 2026-07-30. **Amendment Accepted 2026-08-04** — §§2, 5, 7
-  revised; §§9–13 added.
+  revised; §§9–13 added. §7's single-field derivation superseded by
+  [ADR 0034](0034-sandbox-state-and-runtime-state-are-separate-fields.md) for
+  sandboxes; everything else stands.
 - **Date**: 2026-07-30
 - **Relates to**: [ADR 0016](0016-sandbox-image-upgrades-are-explicit-and-in-place.md),
   whose re-pin rule this model would have made correct by construction, and
