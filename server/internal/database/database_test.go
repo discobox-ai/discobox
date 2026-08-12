@@ -374,8 +374,8 @@ func TestMigrateDeduplicatesSandboxNames(t *testing.T) {
 		t.Fatalf("initial migrate: %v", err)
 	}
 
-	project := &model.Project{ID: "project-1", OwnerUserID: "user-1", Name: "Project", Slug: "project"}
-	other := &model.Project{ID: "project-2", OwnerUserID: "user-1", Name: "Other", Slug: "other"}
+	project := &model.Project{ID: "project-1", OwnerUserID: "user-1", Name: "Project"}
+	other := &model.Project{ID: "project-2", OwnerUserID: "user-1", Name: "Other"}
 	for _, p := range []*model.Project{project, other} {
 		if err := db.Write.Create(p).Error; err != nil {
 			t.Fatalf("create project: %v", err)

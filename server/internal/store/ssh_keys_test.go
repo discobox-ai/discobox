@@ -14,7 +14,7 @@ func TestSSHKeyCreateGetListDelete(t *testing.T) {
 	s, db := newTestStoreWithDB(t, nil)
 
 	if err := db.Write.WithContext(ctx).Create(&model.Project{
-		ID: "project-2", OwnerUserID: "user-1", Name: "Project 2", Slug: "project-2",
+		ID: "project-2", OwnerUserID: "user-1", Name: "Project 2",
 	}).Error; err != nil {
 		t.Fatalf("create project-2: %v", err)
 	}

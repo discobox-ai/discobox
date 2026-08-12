@@ -1,6 +1,7 @@
 package cli
 
 import (
+	"context"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -37,7 +38,7 @@ func TestGeneratedIdentityIsReadableByOpenSSH(t *testing.T) {
 
 	// -y derives the public key from the private one, which requires actually
 	// parsing it.
-	out, err := exec.Command("ssh-keygen", "-y", "-f", path).Output()
+	out, err := exec.CommandContext(context.Background(), "ssh-keygen", "-y", "-f", path).Output()
 	if err != nil {
 		t.Fatalf("ssh-keygen could not read the generated key: %v", err)
 	}

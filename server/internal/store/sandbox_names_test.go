@@ -25,8 +25,8 @@ func newSandboxNameTestStore(t *testing.T) (*store.Store, *database.DB) {
 		t.Fatalf("migrate db: %v", err)
 	}
 	for _, project := range []*model.Project{
-		{ID: "project-1", OwnerUserID: "user-1", Name: "Project", Slug: "project"},
-		{ID: "project-2", OwnerUserID: "user-1", Name: "Other", Slug: "other"},
+		{ID: "project-1", OwnerUserID: "user-1", Name: "Project"},
+		{ID: "project-2", OwnerUserID: "user-1", Name: "Other"},
 	} {
 		if err := db.Write.WithContext(ctx).Create(project).Error; err != nil {
 			t.Fatalf("create project: %v", err)

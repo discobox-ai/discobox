@@ -52,6 +52,9 @@ func (f *fakeSandboxService) AcquireSandboxHTTPClient(ctx context.Context, proje
 func (f *fakeSandboxService) FallbackHarnessConfig(context.Context, string) (*model.HarnessConfig, error) {
 	return nil, nil
 }
+func (f *fakeSandboxService) PurgeSandbox(context.Context, string, string) error {
+	panic("not implemented")
+}
 func (f *fakeSandboxService) ListSandboxes(context.Context, string, string, string) ([]model.Sandbox, error) {
 	panic("not implemented")
 }
@@ -316,4 +319,8 @@ func waitForCalls(t *testing.T, svc *fakeSandboxService, n int) {
 		time.Sleep(10 * time.Millisecond)
 	}
 	t.Fatalf("timed out waiting for %d AcquireSandboxHTTPClient call(s), got %d", n, len(svc.acquireCalls))
+}
+
+func (f *fakeSandboxService) UnarchiveSandbox(context.Context, string, string) error {
+	panic("not implemented")
 }

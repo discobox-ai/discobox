@@ -32,9 +32,10 @@ func TestResolveUsername(t *testing.T) {
 	}{
 		{name: "exact sbx_ id", username: sandbox.ID, wantProjectID: acme, wantSandboxID: sandbox.ID},
 		{name: "sbx_ id prefix", username: sandbox.ID[:len(sandbox.ID)-4], wantProjectID: acme, wantSandboxID: sandbox.ID},
-		{name: "sandbox short id . project slug", username: sandboxShort + "." + "acme", wantProjectID: acme, wantSandboxID: sandbox.ID},
+		// Slugs are gone: a project is addressed by ID, and by name as the
+		// convenience the name's per-owner uniqueness makes safe.
 		{name: "sandbox short id . project name", username: sandboxShort + "." + "Acme", wantProjectID: acme, wantSandboxID: sandbox.ID},
-		{name: "sandbox scoped to the wrong project does not resolve", username: sandboxShort + "." + "other-co", wantErr: true},
+		{name: "sandbox scoped to the wrong project does not resolve", username: sandboxShort + "." + "Other Co", wantErr: true},
 		{name: "project name containing the split character", username: idpkg.RandomPart(otherSandbox.ID)[:6] + "." + "Other Co", wantProjectID: other, wantSandboxID: otherSandbox.ID},
 		{name: "unknown project", username: sandboxShort + ".nosuch", wantErr: true},
 		{name: "unknown sandbox id", username: "sbx_nosuchbox00000", wantErr: true},
@@ -95,7 +96,7 @@ func newRouteTestStore(t *testing.T) *store.Store {
 func createRouteFixtureProject(t *testing.T, s *store.Store, id, name, slug string) string {
 	t.Helper()
 	ctx := context.Background()
-	if err := s.UpsertProject(ctx, &model.Project{ID: id, OwnerUserID: "user-1", Name: name, Slug: slug}); err != nil {
+	if err := s.UpsertProject(ctx, &model.Project{ID: id, OwnerUserID: "user-1", Name: name}); err != nil {
 		t.Fatalf("create project %s: %v", id, err)
 	}
 	return id

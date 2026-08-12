@@ -38,7 +38,7 @@ func (f *sshConfigFakeServer) start(t *testing.T) *httptest.Server {
 			// Deliberately not the flag value: --write names its files after
 			// the resolved ID, and this proves it resolves rather than reusing
 			// whatever -p happened to say.
-			_, _ = w.Write([]byte(`{"id":"` + resolvedTestProjectID + `","name":"P","slug":"p","ownerUserId":"user-1",
+			_, _ = w.Write([]byte(`{"id":"` + resolvedTestProjectID + `","name":"P","ownerUserId":"user-1",
 				"default":true,"createdAt":"2026-01-01T00:00:00Z","updatedAt":"2026-01-01T00:00:00Z"}`))
 		case r.URL.Path == "/ssh":
 			_, _ = w.Write([]byte(f.ingress))
@@ -73,7 +73,7 @@ func (f *sshConfigFakeServer) sandboxesJSON() string {
 	entries := make([]string, 0, len(f.sandboxes))
 	for _, sandbox := range f.sandboxes {
 		entries = append(entries, fmt.Sprintf(`{"id":%q,"projectId":"project-1","createdByUserId":"user-1",
-			"config":{"name":%q,"image":"discobox-sandbox-agent:local","cpuVcpus":1,"memoryBytes":1,"storageBytes":1},
+			"config":{"name":%q,"image":"discobox-sandbox-agent:local"},
 			"runtime":{"desiredState":"present","state":"running","generation":1,"observedGeneration":1},
 			"createdAt":"2026-01-01T00:00:00Z","updatedAt":"2026-01-01T00:00:00Z"}`, sandbox.id, sandbox.name))
 	}
@@ -91,9 +91,9 @@ func runSSHConfig(t *testing.T, fake *sshConfigFakeServer, extraArgs ...string) 
 	t.Helper()
 	server := fake.start(t)
 	identity := filepath.Join(t.TempDir(), "id_ed25519")
-	// Belt and braces alongside --identity-file: cliStateDir honours
+	// Belt and braces alongside --identity-file: cliStateDir honors
 	// XDG_STATE_HOME, so even a future test that forgets the flag cannot
-	// generate or enrol a key in the developer's real state directory.
+	// generate or enroll a key in the developer's real state directory.
 	t.Setenv("XDG_STATE_HOME", t.TempDir())
 
 	cmd := NewRootCommand()
