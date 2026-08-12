@@ -4,6 +4,7 @@ package database
 import (
 	"context"
 	"fmt"
+	"strings"
 
 	"gorm.io/gorm"
 	"gorm.io/gorm/logger"
@@ -185,6 +186,17 @@ func dropRetiredColumn(db *gorm.DB, model any, table, column string) error {
 		if !tx.Migrator().HasColumn(model, column) {
 			return nil
 		}
+		if tx.Name() == "sqlite" {
+			// SQLite's ALTER TABLE DROP COLUMN refuses a column that is still
+			// covered by an index: a database created before the column was
+			// retired can carry one (e.g. a uniqueIndex struct tag from when
+			// the field still existed), and AutoMigrate never drops indexes
+			// any more than it drops columns. Postgres has no such
+			// restriction — dropping a column there drops its indexes too.
+			if err := dropIndexesCoveringColumn(tx, table, column); err != nil {
+				return err
+			}
+		}
 		return tx.Exec(fmt.Sprintf("ALTER TABLE %q DROP COLUMN %q", table, column)).Error
 	}
 	if db.Name() != "sqlite" {
@@ -197,6 +209,41 @@ func dropRetiredColumn(db *gorm.DB, model any, table, column string) error {
 		defer tx.Exec("PRAGMA foreign_keys = ON")
 		return drop(tx)
 	})
+}
+
+// dropIndexesCoveringColumn drops every SQLite index that references column,
+// so a subsequent ALTER TABLE DROP COLUMN is not refused. Indexes whose name
+// starts with sqlite_ back an inline PRIMARY KEY/UNIQUE constraint rather than
+// a real CREATE INDEX statement; SQLite does not allow dropping those
+// directly, and a retired application column is never part of one.
+func dropIndexesCoveringColumn(tx *gorm.DB, table, column string) error {
+	var indexes []struct {
+		Name string `gorm:"column:name"`
+	}
+	if err := tx.Raw(fmt.Sprintf("PRAGMA index_list(%q)", table)).Scan(&indexes).Error; err != nil {
+		return err
+	}
+	for _, index := range indexes {
+		if strings.HasPrefix(index.Name, "sqlite_") {
+			continue
+		}
+		var columns []struct {
+			Name string `gorm:"column:name"`
+		}
+		if err := tx.Raw(fmt.Sprintf("PRAGMA index_info(%q)", index.Name)).Scan(&columns).Error; err != nil {
+			return err
+		}
+		for _, c := range columns {
+			if c.Name != column {
+				continue
+			}
+			if err := tx.Exec(fmt.Sprintf("DROP INDEX %q", index.Name)).Error; err != nil {
+				return err
+			}
+			break
+		}
+	}
+	return nil
 }
 
 // Close closes the underlying database pools.

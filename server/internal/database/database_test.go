@@ -307,10 +307,15 @@ func TestMigrateDropsLegacyProjectSlugColumn(t *testing.T) {
 	if err := db.Migrate(ctx); err != nil {
 		t.Fatalf("initial migrate: %v", err)
 	}
-	// Re-add the column the way AutoMigrate wrote it: NOT NULL, and quoted as
-	// GORM quotes identifiers, so this is the schema a real upgrade meets.
+	// Re-add the column and its unique index the way AutoMigrate wrote them
+	// (NOT NULL, and a uniqueIndex struct tag), so this is the schema a real
+	// upgrade meets — including the index that a plain ALTER TABLE DROP
+	// COLUMN refuses to drop past.
 	if err := db.Write.Exec("ALTER TABLE projects ADD COLUMN `slug` text NOT NULL DEFAULT ''").Error; err != nil {
 		t.Fatalf("re-add legacy slug column: %v", err)
+	}
+	if err := db.Write.Exec("CREATE UNIQUE INDEX `idx_projects_slug` ON `projects`(`slug`)").Error; err != nil {
+		t.Fatalf("re-add legacy slug index: %v", err)
 	}
 	if !db.Write.Migrator().HasColumn(&model.Project{}, "slug") {
 		t.Fatal("legacy slug column was not re-added")
