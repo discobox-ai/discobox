@@ -689,3 +689,59 @@ func TestManagerRequestGroupsReplaceTheManifests(t *testing.T) {
 		})
 	}
 }
+
+// A sandbox whose manifest names no user runs as the image's own account, and
+// a plain exec expresses that by carrying no user at all: the launch path sets
+// no Credential and the child inherits (ADR 0025 §5). A request that names
+// groups is the exception. Those groups still have to be honored -- a request
+// naming any runs with exactly those, which is how an exec runs with *fewer*
+// groups than the sandbox (§2) -- and honoring them means a Credential, which
+// cannot carry groups without ids. Dropping them instead fails open, granting
+// the ambient set the caller explicitly asked to narrow.
+func TestManagerRequestGroupsSurviveAManifestWithNoUser(t *testing.T) {
+	t.Cleanup(runuser.FixedDatabase())
+	manager, err := NewManagerWithConfig(ManagerConfig{
+		WorkingRoot: "/workspace",
+		RuntimeDir:  t.TempDir(),
+		Env:         testEffectiveEnv(),
+		Units:       &fakeUnitManager{},
+		// No DefaultUser: the manifest named nobody.
+	})
+	if err != nil {
+		t.Fatalf("new manager: %v", err)
+	}
+
+	t.Run("a request naming groups keeps them", func(t *testing.T) {
+		created, err := manager.Create(context.Background(), CreateRequest{
+			Command: []string{"pwd"},
+			User:    &User{AdditionalGroups: []string{"docker"}},
+		})
+		if err != nil {
+			t.Fatalf("create exec: %v", err)
+		}
+		if created.User == nil {
+			t.Fatal("exec ran with no user, discarding the groups the request named")
+		}
+		if got := created.User.AdditionalGroups; len(got) != 1 || got[0] != "docker" {
+			t.Fatalf("additionalGroups = %v, want [docker] from the request", got)
+		}
+		// The ids are this process's own, since that is what the exec would
+		// have inherited had it named no groups.
+		if created.User.UID == nil || *created.User.UID != int64(os.Getuid()) {
+			t.Fatalf("uid = %v, want this process's own %d", created.User.UID, os.Getuid())
+		}
+		if created.User.GID == nil || *created.User.GID != int64(os.Getgid()) {
+			t.Fatalf("gid = %v, want this process's own %d", created.User.GID, os.Getgid())
+		}
+	})
+
+	t.Run("a request naming nothing still inherits", func(t *testing.T) {
+		created, err := manager.Create(context.Background(), CreateRequest{Command: []string{"pwd"}})
+		if err != nil {
+			t.Fatalf("create exec: %v", err)
+		}
+		if created.User != nil {
+			t.Fatalf("user = %#v, want none: nothing was asked for, so the exec inherits", created.User)
+		}
+	})
+}

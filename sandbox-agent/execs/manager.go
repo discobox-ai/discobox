@@ -693,7 +693,26 @@ func (m *Manager) resolveUser(req CreateRequest) *User {
 	}
 	resolved := user.Clone()
 	if resolved == nil {
-		return nil
+		if len(groups) == 0 {
+			// Nobody to drop to and no groups asked for: run with this
+			// process's own identity and group set, which is the image's own
+			// user (ADR 0025 §5). A nil user is how that is expressed -- the
+			// launch path sets no Credential and the child simply inherits.
+			return nil
+		}
+		// The manifest named no user, but the request named groups, and those
+		// must still be honored: a request naming any groups runs with exactly
+		// those, so an exec can run with *fewer* than the sandbox has (ADR 0025
+		// §2). Inheriting the ambient set is precisely what it asked us not to
+		// do, and dropping the groups silently fails open -- more access than
+		// was requested, which is the direction nobody notices.
+		//
+		// A Credential cannot carry groups without ids, so borrow the ids this
+		// process already runs as. They are the same ones the exec would have
+		// inherited: boot execs the init target without changing user and the
+		// agent's unit sets no User=, so this process is the image's own user.
+		uid, gid := int64(os.Getuid()), int64(os.Getgid())
+		return &User{UID: &uid, GID: &gid, AdditionalGroups: groups}
 	}
 	if len(groups) == 0 {
 		groups = m.manifestGroups()
