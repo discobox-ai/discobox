@@ -83,3 +83,5 @@ require (
 )
 
 replace github.com/obot-platform/discobox/gormdb => ../gormdb
+
+replace github.com/charmbracelet/x/ansi => github.com/ibuildthecloud/x/ansi v0.11.8-0.20260812210801-6732c251dd85
