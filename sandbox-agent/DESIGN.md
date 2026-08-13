@@ -204,10 +204,27 @@ development images without a registry.
   and the prompt is not passed, since a shell would run it as a command. The
   launched exec is tagged `primary` in metadata by the sandbox-agent; that tag
   cannot be requested through the terminal create API.
+- The primary launch is single-flighted. Boot launches it from a goroutine
+  started just before the HTTP server serves, and clients attach without first
+  polling for a terminal (ADR 0039), so boot and a first attach overlap by
+  construction. Concurrent callers of `EnsurePrimary`/`ResolvePrimary` join the
+  one launch in flight and take its result; exactly one terminal is created or
+  revived and the durable launched-marker is read and written once, so the
+  prompt cannot run twice. Reviving in place (ADR 0038) does not remove the
+  need: two callers finding the same dead record would otherwise revive it
+  twice. Joining is also the readiness wait: the launch completes only after
+  install and start, so `ResolvePrimary` never hands back a terminal whose shim
+  is not listening yet. The launch runs under a context detached from whichever
+  caller started it — an attach that times out must not abort an install that
+  boot and other joiners are waiting on — while each joiner waits under its own
+  context, bounded by `terminalReadyTimeout`, which bounds a revive addressed by
+  a terminal's own id equally. A failed launch is reported to everyone joined to
+  it and clears the latch, so the next attach retries.
 - `"primary"` (`terminal.PrimaryExecID`) is a virtual exec id accepted anywhere
   the exec API takes one. It always names the sandbox's current primary
   terminal; attach and start resolve it through `terminal.ResolvePrimary`, which
-  relaunches a stopped primary, while reads (get, logs, events, delete) resolve
+  relaunches a stopped primary and returns the terminal that launch produced
+  rather than re-scanning, while reads (get, logs, events, delete) resolve
   it read-only so a client's done-check observes a real exit instead of
   triggering a resume. A real exec id never relaunches: an id names one session,
   and once the shim behind it is gone the attach fails with `execs.ErrSessionGone`

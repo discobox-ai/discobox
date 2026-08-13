@@ -52,6 +52,21 @@ func (h *handler) AttachSandboxExecOnce(context.Context, sandboxapi.AttachSandbo
 	return sandboxapi.AttachSandboxExecOnceOK{}, statusError{status: http.StatusNotImplemented, message: "sandbox exec one-shot attach is not implemented by generated handler"}
 }
 
+// terminalReadyTimeout bounds how long a caller waits for a terminal to be
+// launched or revived, installed and started — the sandbox-agent's own tier of
+// the readiness wait (ADR 0039). It sits inside the tiers above it so that a
+// harness that cannot install is reported as exactly that, rather than as a
+// generic control-plane deadline.
+//
+// It covers a revive as much as a first launch: since ADR 0038 both do the same
+// work, and a client attaching to a dead terminal waits for exactly the same
+// install and start.
+//
+// It bounds the caller's wait only. The primary launch itself is detached (see
+// terminal.Service.ensurePrimary), so a caller giving up here never aborts an
+// install that other waiters, or the boot launch, are still relying on.
+const terminalReadyTimeout = 90 * time.Second
+
 // resolveExecID maps the virtual primary exec id to the sandbox's primary
 // terminal, and revives a dead terminal addressed by its own id (ADR 0038): a
 // terminal's exec id is its durable identity, so attach/start on an ended
@@ -59,6 +74,11 @@ func (h *handler) AttachSandboxExecOnce(context.Context, sandboxapi.AttachSandbo
 // (non-terminal) exec ids pass through unchanged. Use it for attach/start,
 // where resuming is the goal.
 func (h *handler) resolveExecID(ctx context.Context, execID string) (string, error) {
+	// Both branches below can launch or revive a terminal, which is the work
+	// the readiness budget exists to bound. An id that passes through unchanged
+	// waits for nothing, so the deadline costs it nothing.
+	ctx, cancel := context.WithTimeout(ctx, terminalReadyTimeout)
+	defer cancel()
 	if execID == terminal.PrimaryExecID {
 		exec, err := h.terminals.ResolvePrimary(ctx)
 		if err != nil {

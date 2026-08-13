@@ -107,6 +107,21 @@ type Service struct {
 	// an exec plus this layer, so install belongs here rather than in execs.
 	installingMu sync.Mutex
 	installing   map[string]struct{}
+
+	// launchMu guards launch, the single in-flight primary-terminal launch.
+	// See ensurePrimary for why the launch is single-flighted rather than
+	// merely locked (ADR 0039).
+	launchMu sync.Mutex
+	launch   *primaryLaunch
+}
+
+// primaryLaunch is one in-flight attempt to bring the primary terminal up.
+// Callers that find one already running join it and take its result instead of
+// starting a second launch.
+type primaryLaunch struct {
+	done chan struct{}
+	exec execs.Exec
+	err  error
 }
 
 func NewService(cfg ServiceConfig) (*Service, error) {
@@ -373,12 +388,20 @@ func IsPrimary(e execs.Exec) bool { return e.Metadata[metadataPrimary] == "true"
 const PrimaryExecID = "primary"
 
 // ResolvePrimary ensures the primary terminal is live — relaunching it with the
-// harness's relaunch command when it has stopped — and returns it. It prefers a
-// running/starting primary and otherwise falls back to the most recent primary
-// (e.g. one that just exited, so a late attacher can still replay it).
+// harness's relaunch command when it has stopped — and returns it.
+//
+// It returns the terminal the launch actually produced rather than re-scanning,
+// so an attach connects to the exec it waited behind. Only when there was
+// nothing to launch does it fall back to a scan, which prefers a
+// running/starting primary and otherwise takes the most recent one (e.g. one
+// that just exited, so a late attacher can still replay it).
 func (s *Service) ResolvePrimary(ctx context.Context) (execs.Exec, error) {
-	if err := s.EnsurePrimary(ctx, s.bootPrompt); err != nil {
+	exec, err := s.ensurePrimary(ctx, s.bootPrompt)
+	if err != nil {
 		return execs.Exec{}, err
+	}
+	if strings.TrimSpace(exec.ID) != "" {
+		return exec, nil
 	}
 	if exec, ok := selectLivePrimary(s.List()); ok {
 		return exec, nil
@@ -429,13 +452,98 @@ const ShellHarnessID = "shell"
 // relaunch command — and when no harness is configured it runs a plain shell.
 // It is a no-op when a live primary terminal already exists.
 func (s *Service) EnsurePrimary(ctx context.Context, prompt []string) error {
+	_, err := s.ensurePrimary(ctx, prompt)
+	return err
+}
+
+// ensurePrimary brings the primary terminal up and returns it, collapsing
+// concurrent callers onto a single launch.
+//
+// Boot launches the primary in a goroutine started just before the HTTP server
+// begins serving, so boot and a first attach are concurrent by construction —
+// and with clients no longer polling for a primary before attaching (ADR 0039),
+// the attach arrives squarely inside that window. Left as a check-then-act this
+// races two ways: the scan runs before the other caller's record is visible
+// (execs.Manager keeps no in-process lock; List re-reads from disk), so both
+// launch a primary; and both read PrimaryTerminalLaunched as false before
+// either marks it, so both pass the prompt as argv instead of one launching and
+// one resuming. Reviving in place (ADR 0038) narrows neither race: two callers
+// that both find the same dead record still revive it twice.
+//
+// A zero exec with a nil error means a live primary already existed and nothing
+// was launched.
+func (s *Service) ensurePrimary(ctx context.Context, prompt []string) (execs.Exec, error) {
+	s.launchMu.Lock()
+	if launch := s.launch; launch != nil {
+		// Someone is already launching. Join them: their result is ours.
+		s.launchMu.Unlock()
+		return s.awaitPrimaryLaunch(ctx, launch)
+	}
+	if _, ok := livePrimary(s.List()); ok {
+		s.launchMu.Unlock()
+		return execs.Exec{}, nil
+	}
+	launch := &primaryLaunch{done: make(chan struct{})}
+	s.launch = launch
+	s.launchMu.Unlock()
+	// The launch is detached from whichever caller happened to start it: an
+	// attach that times out, or a client that disconnects, must not abort an
+	// install that boot and every other joiner are waiting on. Each joiner
+	// waits under its own context instead.
+	go s.runPrimaryLaunch(context.WithoutCancel(ctx), launch, prompt)
+	return s.awaitPrimaryLaunch(ctx, launch)
+}
+
+// awaitPrimaryLaunch waits for a launch to finish under the caller's own
+// context, which is what bounds an attach's wait for a slow harness install.
+func (s *Service) awaitPrimaryLaunch(ctx context.Context, launch *primaryLaunch) (execs.Exec, error) {
+	select {
+	case <-launch.done:
+		return launch.exec, launch.err
+	case <-ctx.Done():
+		return execs.Exec{}, ctx.Err()
+	}
+}
+
+// runPrimaryLaunch performs the launch and hands its result to everyone joined
+// to it. The latch is cleared before the result is published, so a failed
+// launch is reported to the current joiners and the next caller retries rather
+// than inheriting the failure forever.
+func (s *Service) runPrimaryLaunch(ctx context.Context, launch *primaryLaunch, prompt []string) {
+	exec, err := s.launchPrimary(ctx, prompt)
+	s.launchMu.Lock()
+	if s.launch == launch {
+		s.launch = nil
+	}
+	s.launchMu.Unlock()
+	launch.exec, launch.err = exec, err
+	close(launch.done)
+}
+
+// livePrimary is the primary terminal that makes a launch unnecessary: one
+// already starting or running. It is deliberately narrower than
+// selectLivePrimary, which also settles for an exited primary.
+func livePrimary(list []execs.Exec) (execs.Exec, bool) {
+	for _, existing := range list {
+		if IsPrimary(existing) && (existing.Status == execs.StatusStarting || existing.Status == execs.StatusRunning) {
+			return existing, true
+		}
+	}
+	return execs.Exec{}, false
+}
+
+// launchPrimary brings the primary terminal up and returns it: a dead primary is
+// revived under its own id (ADR 0038), and only a sandbox with no primary record
+// at all gets a fresh one. It runs under the single-flight latch, so it is never
+// concurrent with itself.
+func (s *Service) launchPrimary(ctx context.Context, prompt []string) (execs.Exec, error) {
 	var newest *execs.Exec
 	for _, existing := range s.List() {
 		if !IsPrimary(existing) {
 			continue
 		}
 		if existing.Status == execs.StatusStarting || existing.Status == execs.StatusRunning {
-			return nil
+			return existing, nil
 		}
 		if newest == nil || existing.CreatedAt.After(newest.CreatedAt) {
 			e := existing
@@ -445,25 +553,28 @@ func (s *Service) EnsurePrimary(ctx context.Context, prompt []string) error {
 	if newest != nil {
 		// A dead primary is revived under its own id, never replaced by a
 		// sibling record. Newest wins over records that predate ADR 0038.
-		if _, err := s.Revive(ctx, newest.ID); err != nil {
-			return err
+		revived, err := s.Revive(ctx, newest.ID)
+		if err != nil {
+			return execs.Exec{}, err
 		}
 		if s.primaryState != nil {
-			return s.primaryState.MarkPrimaryTerminalLaunched(ctx)
+			if err := s.primaryState.MarkPrimaryTerminalLaunched(ctx); err != nil {
+				return execs.Exec{}, err
+			}
 		}
-		return nil
+		return revived, nil
 	}
 	harness, harnessID, err := s.resolveHarness("")
 	if err != nil {
 		// A genuine misconfiguration (a requested harness that doesn't match the
 		// sandbox's resolved harness). The absent-harness case is not an error: it
 		// resolves to the shell harness.
-		return err
+		return execs.Exec{}, err
 	}
 	launched := false
 	if s.primaryState != nil {
 		if launched, err = s.primaryState.PrimaryTerminalLaunched(ctx); err != nil {
-			return err
+			return execs.Exec{}, err
 		}
 	}
 	request := primaryCreateRequest(harness, harnessID, prompt, launched)
@@ -474,15 +585,18 @@ func (s *Service) EnsurePrimary(ctx context.Context, prompt []string) error {
 	}
 	created, err := s.Create(ctx, request)
 	if err != nil {
-		return err
+		return execs.Exec{}, err
 	}
-	if _, err := s.Start(ctx, created.ID); err != nil {
-		return err
+	started, err := s.Start(ctx, created.ID)
+	if err != nil {
+		return execs.Exec{}, err
 	}
 	if s.primaryState != nil {
-		return s.primaryState.MarkPrimaryTerminalLaunched(ctx)
+		if err := s.primaryState.MarkPrimaryTerminalLaunched(ctx); err != nil {
+			return execs.Exec{}, err
+		}
 	}
-	return nil
+	return started, nil
 }
 
 func primaryCreateRequest(harness config.Harness, harnessID string, prompt []string, launched bool) CreateRequest {
