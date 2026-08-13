@@ -37,12 +37,13 @@ const (
 	spawnSHA  = "1111111111111111111111111111111111111111"
 	headSHA   = "2222222222222222222222222222222222222222"
 	otherSHA  = "3333333333333333333333333333333333333333"
+	hostSHA   = "4444444444444444444444444444444444444444"
 	sourceFmt = `[{"slug":"code","target":"/workspace","clean":%s,"branch":"main","headCommit":"%s","observedAt":"2026-08-12T00:00:00Z"}]`
 )
 
 func TestSandboxGitStatusChanges(t *testing.T) {
 	appliedHead := []apimodel.AppliedSourceCommit{{
-		Slug: "code", Commit: headSHA, AppliedAt: time.Date(2026, 8, 12, 0, 0, 0, 0, time.UTC),
+		Slug: "code", Commit: headSHA, HostCommit: hostSHA, AppliedAt: time.Date(2026, 8, 12, 0, 0, 0, 0, time.UTC),
 	}}
 	cases := []struct {
 		name    string
@@ -167,5 +168,20 @@ func TestSandboxGitColumn(t *testing.T) {
 	unreported := gitStateSandbox(t, spawnSHA, "", nil)
 	if got := sandboxGitColumn(unreported); got != "main@1111111" {
 		t.Fatalf("git column = %q, want the spawn position", got)
+	}
+	// An applied sandbox shows the host-side commit its apply produced — the
+	// SHA findable in the local repository — not its own head.
+	applied := gitStateSandbox(t, spawnSHA, sprintfSources("true", headSHA), []apimodel.AppliedSourceCommit{{
+		Slug: "code", Commit: headSHA, HostCommit: hostSHA, AppliedAt: time.Date(2026, 8, 12, 0, 0, 0, 0, time.UTC),
+	}})
+	if got := sandboxGitColumn(applied); got != "main@4444444" {
+		t.Fatalf("git column = %q, want the applied host commit", got)
+	}
+	// Commits past the last apply put the head back on the row.
+	aheadAgain := gitStateSandbox(t, spawnSHA, sprintfSources("true", otherSHA), []apimodel.AppliedSourceCommit{{
+		Slug: "code", Commit: headSHA, HostCommit: hostSHA, AppliedAt: time.Date(2026, 8, 12, 0, 0, 0, 0, time.UTC),
+	}})
+	if got := sandboxGitColumn(aheadAgain); got != "main@3333333" {
+		t.Fatalf("git column = %q, want the reported head", got)
 	}
 }

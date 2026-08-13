@@ -73,6 +73,12 @@ type GitState struct {
 	Commit  string // head, short
 	Dirty   bool   // uncommitted content in the working tree
 	Applied bool   // clean, and the head commit was the last one applied
+
+	// AppliedCommit is the host-side commit the apply produced, short. A
+	// cherry-pick onto a different parent mints a new SHA, so this — not the
+	// sandbox head — is the one findable in the local repository. Set only
+	// when Applied.
+	AppliedCommit string
 }
 
 // Sandbox is the row model: what a picker needs to tell one sandbox from
@@ -145,11 +151,16 @@ func (s Sandbox) up() bool {
 // most losable first: a star for uncommitted content — reported dirt, or the
 // snapshot carried in at create — an up arrow for committed work no apply
 // has landed, and a check for a head commit an apply has landed, which is
-// the state where nothing in the sandbox would be lost.
+// the state where nothing in the sandbox would be lost. An applied row shows
+// the host-side commit its apply produced rather than the sandbox head: that
+// is the SHA findable in the local repository.
 func (s Sandbox) base() string {
 	branch, commit := s.Branch, s.Commit
 	if s.Git.Known {
 		branch, commit = s.Git.Branch, s.Git.Commit
+		if s.Git.Applied && !s.Git.Dirty && s.Git.AppliedCommit != "" {
+			commit = s.Git.AppliedCommit
+		}
 	}
 	if branch == "" && commit == "" {
 		return ""

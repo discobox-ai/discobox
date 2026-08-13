@@ -7,7 +7,6 @@ import (
 	"sort"
 	"strconv"
 	"strings"
-	"time"
 
 	"github.com/spf13/cobra"
 
@@ -236,25 +235,26 @@ func sourceWorkdir(source apimodel.GitSource) string {
 	return ""
 }
 
-// lastAppliedCommit returns the sandbox-side commit named by the most recent
-// AppliedSourceCommit for slug, narrowing what a repeat apply needs to send
-// per ADR 0014 §2.
-func lastAppliedCommit(sandbox *apimodel.Sandbox, slug string) string {
+// lastApplied returns the most recent AppliedSourceCommit for slug: its
+// sandbox-side commit narrows what a repeat apply needs to send per ADR 0014
+// §2, and its host-side commit is the SHA a listing shows for an applied
+// sandbox.
+func lastApplied(sandbox *apimodel.Sandbox, slug string) (apimodel.AppliedSourceCommit, bool) {
 	entries, ok := sandbox.Runtime.AppliedCommits.Get()
 	if !ok {
-		return ""
+		return apimodel.AppliedSourceCommit{}, false
 	}
-	var latest string
-	var latestAt time.Time
+	var latest apimodel.AppliedSourceCommit
+	found := false
 	for _, entry := range entries {
 		if entry.Slug != slug {
 			continue
 		}
-		if latest == "" || entry.AppliedAt.After(latestAt) {
-			latest, latestAt = entry.Commit, entry.AppliedAt
+		if !found || entry.AppliedAt.After(latest.AppliedAt) {
+			latest, found = entry, true
 		}
 	}
-	return latest
+	return latest, found
 }
 
 // applyOneSource applies one source and accounts for everything it did along
@@ -331,7 +331,9 @@ func (a *App) applyOneSource(ctx context.Context, printer applyPrinter, client *
 	report.SandboxTip = tip
 	printer.detail("sandbox tip %s", shortSHA(tip))
 
-	report.Base, report.BaseOrigin = lastAppliedCommit(sandbox, entry.slug), baseOriginLastApplied
+	if last, ok := lastApplied(sandbox, entry.slug); ok {
+		report.Base, report.BaseOrigin = last.Commit, baseOriginLastApplied
+	}
 	if report.Base == "" {
 		report.BaseOrigin = baseOriginMergeBase
 		report.Base, err = gitapply.MergeBase(ctx, repoRoot, tip)

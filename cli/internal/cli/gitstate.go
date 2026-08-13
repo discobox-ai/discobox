@@ -29,6 +29,12 @@ type sandboxGitState struct {
 	// clean tree can be applied — dirty content is by definition not.
 	Applied bool
 
+	// AppliedHostCommit is the host-side commit that apply produced, full SHA.
+	// Cherry-picking onto a different parent always mints a new object, so this
+	// — not the sandbox head — is the SHA findable in the local repository. Set
+	// only when Applied.
+	AppliedHostCommit string
+
 	// The diff stat the agent measured: what the sandbox holds against the
 	// spawn commit, forwarded to the merge base with upstream once the
 	// sandbox has fetched so pulled commits do not count (ADR 0018's rule,
@@ -72,12 +78,19 @@ func (g sandboxGitState) changes(spawnCommit string) string {
 }
 
 // position is the branch@commit the sandbox is sitting on, in the launcher's
-// spelling, starred when the working tree holds uncommitted content.
+// spelling, starred when the working tree holds uncommitted content. An
+// applied sandbox shows the host-side commit its apply produced instead of its
+// own head: everything here has landed, so the useful SHA is the one findable
+// in the local repository.
 func (g sandboxGitState) position() string {
 	if !g.Known || (g.Branch == "" && g.Commit == "") {
 		return ""
 	}
-	out := g.Branch + "@" + shortCommit(g.Commit)
+	commit := g.Commit
+	if g.Applied && g.AppliedHostCommit != "" {
+		commit = g.AppliedHostCommit
+	}
+	out := g.Branch + "@" + shortCommit(commit)
 	if !g.Clean {
 		out += "*"
 	}
@@ -125,8 +138,10 @@ func sandboxGitStatus(sb apimodel.Sandbox) sandboxGitState {
 		state.DiffAdded = int(status.DiffAdded.Or(0))
 		state.DiffDeleted = int(status.DiffDeleted.Or(0))
 	}
-	applied := lastAppliedCommit(&sb, slug)
-	state.Applied = applied != "" && state.Clean && state.Commit == applied
+	if applied, ok := lastApplied(&sb, slug); ok && state.Clean && state.Commit == applied.Commit {
+		state.Applied = true
+		state.AppliedHostCommit = strings.TrimSpace(applied.HostCommit)
+	}
 	return state
 }
 

@@ -182,11 +182,12 @@ func toTUISandbox(sb apimodel.Sandbox) tui.Sandbox {
 	}
 	if git := sandboxGitStatus(sb); git.Known {
 		row.Git = tui.GitState{
-			Known:   true,
-			Branch:  git.Branch,
-			Commit:  shortCommit(git.Commit),
-			Dirty:   !git.Clean,
-			Applied: git.Applied,
+			Known:         true,
+			Branch:        git.Branch,
+			Commit:        shortCommit(git.Commit),
+			Dirty:         !git.Clean,
+			Applied:       git.Applied,
+			AppliedCommit: shortCommit(git.AppliedHostCommit),
 		}
 		if git.DiffKnown {
 			row.Diff = tui.DiffStat{

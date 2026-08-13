@@ -339,7 +339,9 @@ of the work, most losable first: `*` in warning while the tree holds
 uncommitted content, `⇡` in the default text for work committed ahead of every
 host, which no apply has landed, `✓` in green when the head commit is the last one applied — the state
 where nothing in the sandbox would be lost — and unmarked dim when it sits
-clean where it was cut. The column beside it spells the mark out
+clean where it was cut. An applied row shows the host-side commit its apply
+produced rather than the sandbox head, since that is the SHA findable in the
+local repository. The column beside it spells the mark out
 (`dirty` / `ahead` / `applied` / `clean` / `-`), in the mark's color, so
 the code never has to be decoded — the same words `disco ls` prints. Until anything reports, the row falls
 back to the spawn position, starred when a snapshot of uncommitted work was
