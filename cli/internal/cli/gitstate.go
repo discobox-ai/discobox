@@ -50,7 +50,7 @@ type sandboxGitState struct {
 //
 //   - "dirty":     uncommitted changes in the working tree
 //   - "applied":   clean, and the head commit was the last one applied to a host
-//   - "committed": clean, with commits the sandbox made that no apply has landed
+//   - "ahead":     clean, with commits the sandbox made that no apply has landed
 //   - "clean":     clean and still on the commit it was spawned from
 //   - "-":         no agent has reported yet
 //
@@ -65,7 +65,7 @@ func (g sandboxGitState) changes(spawnCommit string) string {
 	case g.Applied:
 		return "applied"
 	case g.Commit != "" && g.Commit != spawnCommit:
-		return "committed"
+		return "ahead"
 	default:
 		return "clean"
 	}

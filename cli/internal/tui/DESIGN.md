@@ -336,13 +336,15 @@ branch@commit, and once the sandbox's agent has reported (`GitState`, relayed
 with the listing per ADR 0030) it is the position the working tree is on today
 rather than the commit the sandbox was cut from. The mark on it is the state
 of the work, most losable first: `*` in warning while the tree holds
-uncommitted content, `⇡` in the default text for committed work no apply has
-landed, `✓` in green when the head commit is the last one applied — the state
+uncommitted content, `⇡` in the default text for work committed ahead of every
+host, which no apply has landed, `✓` in green when the head commit is the last one applied — the state
 where nothing in the sandbox would be lost — and unmarked dim when it sits
-clean where it was cut. Until anything reports, the row falls
+clean where it was cut. The column beside it spells the mark out
+(`dirty` / `ahead` / `applied` / `clean` / `-`), in the mark's color, so
+the code never has to be decoded — the same words `disco ls` prints. Until anything reports, the row falls
 back to the spawn position, starred when a snapshot of uncommitted work was
 carried in. `disco ls` prints the same column, plus the derivation spelled as
-a word (`dirty` / `committed` / `applied` / `clean`), from the same
+a word (`dirty` / `ahead` / `applied` / `clean`), from the same
 `cli.sandboxGitStatus` seam — one derivation, two spellings.
 
 **Diffstats arrive with the listing.** The sandbox-agent measures

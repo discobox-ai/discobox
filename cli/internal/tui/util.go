@@ -142,10 +142,12 @@ func since(t time.Time, now time.Time) string {
 	}
 }
 
-// lastUsedText is the column: an age with "ago" on it, or nothing at all when
-// the sandbox has never been touched.
-func lastUsedText(s Sandbox, now time.Time) string {
-	age := since(s.LastUsed, now)
+// createdText is the column: the sandbox's age with "ago" on it. Creation is
+// the one timestamp a user's action put there — nothing yet records real
+// access — so the row says how old the discobox is rather than pretending to
+// know when it was last touched.
+func createdText(s Sandbox, now time.Time) string {
+	age := since(s.Created, now)
 	if age == "" {
 		return ""
 	}

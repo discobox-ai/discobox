@@ -51,7 +51,7 @@ func TestRowCarriesTheColumns(t *testing.T) {
 	send(t, m, key("tab"))
 
 	row := rowFor(t, m, "fix flaky pool reaper tests")
-	for _, want := range []string{"claude", "main@a3f9c21*", "2m ago", "+142", "−38"} {
+	for _, want := range []string{"claude", "main@a3f9c21*", "dirty", "2m ago", "+142", "−38"} {
 		if !strings.Contains(row, want) {
 			t.Errorf("row %q missing %q", row, want)
 		}

@@ -7,7 +7,6 @@ import (
 	"os"
 	"strings"
 	"testing"
-	"time"
 
 	apiclientgen "github.com/obot-platform/discobox/api/gen"
 	apimodel "github.com/obot-platform/discobox/api/model"
@@ -65,23 +64,6 @@ func TestToTUISandboxMarksSnapshotSources(t *testing.T) {
 	}
 	if !row.Dirty {
 		t.Fatal("a snapshot source should mark the row dirty")
-	}
-}
-
-// The runtime's own activity timestamp is what the row is ranked and dated by;
-// the record's update time is only the fallback for a sandbox nothing has
-// reported activity for.
-func TestSandboxLastUsedPrefersRuntimeActivity(t *testing.T) {
-	active := time.Date(2026, 8, 7, 12, 0, 0, 0, time.UTC)
-	updated := time.Date(2026, 8, 6, 12, 0, 0, 0, time.UTC)
-
-	sandbox := apimodel.Sandbox{UpdatedAt: updated, CreatedAt: updated}
-	if got := sandboxLastUsed(sandbox); !got.Equal(updated) {
-		t.Fatalf("without activity: %v, want %v", got, updated)
-	}
-	sandbox.Runtime.LastActiveAt = apiclientgen.NewOptDateTime(active)
-	if got := sandboxLastUsed(sandbox); !got.Equal(active) {
-		t.Fatalf("with activity: %v, want %v", got, active)
 	}
 }
 

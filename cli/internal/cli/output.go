@@ -54,11 +54,14 @@ func (a *App) writeSandbox(cmd *cobra.Command, sandbox *apimodel.Sandbox) error 
 	return tw.Flush()
 }
 
-// writeSandboxes lists sandboxes most recently used first, the same order and
+// writeSandboxes lists sandboxes newest-created first, the same order and
 // row the launcher's list draws: state, harness, where the work sits in git,
-// and whether that work has landed anywhere.
+// and whether that work has landed anywhere. Creation is the one timestamp a
+// user's action put there: nothing yet records real access (the runtime's
+// LastActiveAt moves for reconciler-driven reasons), and a list that reorders
+// for reasons the user did not cause is a list they cannot read.
 func (a *App) writeSandboxes(cmd *cobra.Command, sandboxes []apimodel.Sandbox, showFolder bool) error {
-	sandboxes = sortedByRecency(sandboxes, sandboxLastUsed)
+	sandboxes = sortedByRecency(sandboxes, func(sandbox apimodel.Sandbox) time.Time { return sandbox.CreatedAt })
 	if a.quiet {
 		return writeResourceIDs(cmd.OutOrStdout(), sandboxes, func(sandbox apimodel.Sandbox) string { return sandbox.ID })
 	}
@@ -67,9 +70,9 @@ func (a *App) writeSandboxes(cmd *cobra.Command, sandboxes []apimodel.Sandbox, s
 	}
 	tw := tabwriter.NewWriter(cmd.OutOrStdout(), 0, 0, 2, ' ', 0)
 	if showFolder {
-		fmt.Fprintln(tw, "ID\tNAME\tSTATE\tHARNESS\tGIT\tCHANGES\tDIFF\tUPGRADE\tERROR\tLAST USED\tFOLDER")
+		fmt.Fprintln(tw, "ID\tNAME\tSTATE\tHARNESS\tGIT\tCHANGES\tDIFF\tUPGRADE\tERROR\tCREATED\tFOLDER")
 	} else {
-		fmt.Fprintln(tw, "ID\tNAME\tSTATE\tHARNESS\tGIT\tCHANGES\tDIFF\tUPGRADE\tERROR\tLAST USED")
+		fmt.Fprintln(tw, "ID\tNAME\tSTATE\tHARNESS\tGIT\tCHANGES\tDIFF\tUPGRADE\tERROR\tCREATED")
 	}
 	for _, sandbox := range sandboxes {
 		git := sandboxGitStatus(sandbox)
@@ -83,7 +86,7 @@ func (a *App) writeSandboxes(cmd *cobra.Command, sandboxes []apimodel.Sandbox, s
 			git.diffColumn(),
 			sandboxUpgradeState(sandbox),
 			truncateTableValue(sandboxMessage(sandbox), 80),
-			formatTime(sandboxLastUsed(sandbox)),
+			formatTime(sandbox.CreatedAt),
 		)
 		if showFolder {
 			fmt.Fprintf(tw, "\t%s", sandboxFolder(sandbox))

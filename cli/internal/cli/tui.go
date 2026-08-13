@@ -129,7 +129,9 @@ func (d *apiDataSource) Session(ctx context.Context) (tui.Session, error) {
 	return session, nil
 }
 
-// List is every sandbox in the project, most recently used first. The window
+// List is every sandbox in the project, newest-created first — the same
+// order `disco ls` prints, for the same reason: creation is the one
+// timestamp a user's action put there. The window
 // filters to the ones started here itself, on a key, so the listing is not
 // narrowed before it gets there.
 func (d *apiDataSource) List(ctx context.Context) ([]tui.Sandbox, error) {
@@ -141,7 +143,7 @@ func (d *apiDataSource) List(ctx context.Context) ([]tui.Sandbox, error) {
 	if err != nil {
 		return nil, err
 	}
-	sandboxes := sortedByRecency(body.GetSandboxes(), sandboxLastUsed)
+	sandboxes := sortedByRecency(body.GetSandboxes(), func(sb apimodel.Sandbox) time.Time { return sb.CreatedAt })
 	out := make([]tui.Sandbox, 0, len(sandboxes))
 	for _, sb := range sandboxes {
 		out = append(out, toTUISandbox(sb))
@@ -151,11 +153,11 @@ func (d *apiDataSource) List(ctx context.Context) ([]tui.Sandbox, error) {
 
 func toTUISandbox(sb apimodel.Sandbox) tui.Sandbox {
 	row := tui.Sandbox{
-		ID:       sb.ID,
-		Name:     sb.Config.Name,
-		State:    toTUIState(sandboxDisplayState(sb)),
-		Message:  sandboxMessage(sb),
-		LastUsed: sandboxLastUsed(sb),
+		ID:      sb.ID,
+		Name:    sb.Config.Name,
+		State:   toTUIState(sandboxDisplayState(sb)),
+		Message: sandboxMessage(sb),
+		Created: sb.CreatedAt,
 	}
 	if origin, ok := sb.Origin.Get(); ok {
 		row.Folder = origin.ProjectPath
@@ -217,15 +219,6 @@ func toTUIState(state string) tui.State {
 	default:
 		return tui.StateStopped
 	}
-}
-
-// sandboxLastUsed is when the sandbox was last touched: the runtime's own
-// activity timestamp, or the record's, which is what moved it up the list.
-func sandboxLastUsed(sb apimodel.Sandbox) time.Time {
-	if at, ok := sb.Runtime.LastActiveAt.Get(); ok && !at.IsZero() {
-		return at
-	}
-	return recencyTime(sb.UpdatedAt, sb.CreatedAt)
 }
 
 func shortCommit(commit string) string {

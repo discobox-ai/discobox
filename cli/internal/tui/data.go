@@ -99,11 +99,11 @@ type Sandbox struct {
 	// the spawn fields above are the fallback until it does.
 	Git GitState
 
-	Usage    Usage
-	Diff     DiffStat
-	LastUsed time.Time // last attach, exec or apply
-	Upgrade  bool      // running an image older than its harness config resolves to
-	Message  string    // error detail, shown when the row is under the cursor
+	Usage   Usage
+	Diff    DiffStat
+	Created time.Time // when the sandbox was created
+	Upgrade bool      // running an image older than its harness config resolves to
+	Message string    // error detail, shown when the row is under the cursor
 }
 
 // Session is what the window knows about where it is running: the project and
@@ -160,7 +160,7 @@ func (s Sandbox) base() string {
 		out += "*"
 	case s.Git.Applied:
 		out += "✓"
-	case s.committed():
+	case s.ahead():
 		out += "⇡"
 	}
 	return out
@@ -175,14 +175,31 @@ func (s Sandbox) dirty() bool {
 	return s.Dirty
 }
 
-// committed reports whether the sandbox holds committed work that no apply
-// has landed anywhere: its reported head has moved off the commit it was
-// spawned from, and is not the last applied one. It needs both commits to
-// answer — a sandbox with no recorded spawn commit cannot say its head has
-// moved.
-func (s Sandbox) committed() bool {
+// ahead reports whether the sandbox holds committed work that no apply has
+// landed anywhere: its reported head has moved off the commit it was spawned
+// from, and is not the last applied one. It needs both commits to answer — a
+// sandbox with no recorded spawn commit cannot say its head has moved.
+func (s Sandbox) ahead() bool {
 	return s.Git.Known && !s.Git.Dirty && !s.Git.Applied &&
 		s.Git.Commit != "" && s.Commit != "" && s.Git.Commit != s.Commit
+}
+
+// changes is the git column's mark spelled out: the one-word state of the
+// work, for the column beside the position so the mark never has to be
+// decoded. The two agree by construction — same predicates, same order.
+func (s Sandbox) changes() string {
+	switch {
+	case s.dirty():
+		return "dirty"
+	case s.Git.Applied:
+		return "applied"
+	case s.ahead():
+		return "ahead"
+	case s.Git.Known:
+		return "clean"
+	default:
+		return "-"
+	}
 }
 
 // Exec is one exec session in a sandbox, as the workspace's tab strip needs
@@ -322,7 +339,7 @@ type DataSource interface {
 	// options panel are drawn from.
 	Session(ctx context.Context) (Session, error)
 
-	// List is the project's sandboxes, most recently used first.
+	// List is the project's sandboxes, newest-created first.
 	List(ctx context.Context) ([]Sandbox, error)
 
 	// Run creates a sandbox and delivers its source, which is what Enter does.

@@ -7,11 +7,11 @@ import (
 	"charm.land/lipgloss/v2"
 )
 
-// sandboxList is the upper pane: every sandbox in the project, most recently
-// used first.
+// sandboxList is the upper pane: every sandbox in the project, newest-created
+// first.
 //
 // A row is one line: a glyph for the state, the name, the harness, where it
-// came from, when it was last used and what it has changed. The fixed width
+// came from, how old it is and what it has changed. The fixed width
 // columns drop off the right end as the terminal narrows — the name and the
 // glyph are what the eye actually picks a sandbox by, and neither ever goes.
 type sandboxList struct {
@@ -97,7 +97,7 @@ func (l *sandboxList) rows() []Sandbox {
 }
 
 // folders are the origins the header can filter to: every folder the project's
-// sandboxes were started from, most recently used first, with this session's
+// sandboxes were started from, newest sandbox first, with this session's
 // own directory leading whether or not anything was started from it yet.
 //
 // It is derived from the listing rather than asked for separately: the folders
@@ -348,7 +348,7 @@ func (l *sandboxList) view(st *styles, focused bool) string {
 }
 
 // row draws one sandbox. Widths are budgeted left to right and the columns
-// drop off the right end as the terminal narrows: the last used time goes
+// drop off the right end as the terminal narrows: the age goes
 // first, then the origin, then the diffstat, and the name never goes at all.
 func (l *sandboxList) row(st *styles, s Sandbox, i int, focused bool) string {
 	// The cursor belongs to the pane that has focus. With the prompt focused
@@ -375,7 +375,7 @@ func (l *sandboxList) row(st *styles, s Sandbox, i int, focused bool) string {
 	// monochrome — so the glyph goes and the word comes back.
 	//
 	// Columns are added in the order they matter and the last that fits wins:
-	// where it came from, then when it was last used, then what it has
+	// where it came from, then how old it is, then what it has
 	// changed. The diffstat is the first to go, because it is the one thing
 	// the apply action will tell you anyway.
 	//
@@ -415,14 +415,17 @@ func (l *sandboxList) row(st *styles, s Sandbox, i int, focused bool) string {
 		baseStyle = st.statusWA
 	case s.Git.Applied:
 		baseStyle = st.add
-	case s.committed():
-		// Committed work no apply has landed is the state to notice before
+	case s.ahead():
+		// Work no apply has landed is the state to notice before
 		// archiving, so it stands in the default text against rows that are
 		// dim because nothing on them is at stake.
 		baseStyle = st.name
 	}
 	addCol(baseStyle.Render(pad(s.base(), 14)), 15)
-	addCol(st.dimText.Render(pad(lastUsedText(s, l.now()), 7)), 8)
+	// The mark spelled out, in the mark's own color. It is added right after
+	// the position so the two survive a narrowing terminal together.
+	addCol(baseStyle.Render(pad(s.changes(), 7)), 8)
+	addCol(st.dimText.Render(pad(createdText(s, l.now()), 7)), 8)
 	addCol(usage(st, s), usageWidth+1)
 	stat := ""
 	if s.hasDiff() {
