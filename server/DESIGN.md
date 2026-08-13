@@ -276,6 +276,14 @@ control plane records it as observed state: no desired state, no generation, no
 operation. A generation versions the spec, and nothing the runtime saw changes
 what was asked for.
 
+Recording is not the end of it: a report that actually changes a sandbox's state
+or error also publishes a project event, so clients watching the stream see a
+sandbox start rather than only learning about it by asking again. Unchanged
+reports publish nothing, since the complete sync repeats every sandbox on its
+interval. Provisioning progress arrives on the same channel in its own array and
+lands on `runtime.provisionProgress`, published the same way; it marks nothing
+dirty, because work in flight is not drift (ADR 0039).
+
 The one case that looks like an exception is a container that is gone. It is
 still an observation — the reconciler learns about it through a dirty mark, and
 its idempotent ensure rebuilds the container from the spec already recorded.

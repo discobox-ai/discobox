@@ -266,6 +266,12 @@ var observedSandboxColumns = []string{
 	"state_reported_at",
 	"state_report_boot",
 	"state_report_seq",
+	// Provisioning progress is observed on the same channel by the same agent
+	// and written only by its report path (ADR 0039), so it belongs to the same
+	// rule: a slow load-modify-save elsewhere must not replay a stale pull
+	// percentage over a newer one.
+	"provision_progress",
+	"provision_progress_at",
 }
 
 func (s *Store) UpdateSandbox(ctx context.Context, sandbox *model.Sandbox, options ...SandboxGetOption) error {

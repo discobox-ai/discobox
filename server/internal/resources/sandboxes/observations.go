@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"log/slog"
+	"time"
 
 	"github.com/obot-platform/discobox/server/internal/model"
 	"github.com/obot-platform/discobox/server/internal/store"
@@ -65,3 +66,19 @@ func (s *Service) observationNeedsReconcile(sandbox *model.Sandbox) bool {
 // including "this sandbox's container is gone", which is drift from a spec that
 // nobody edited. A dirty mark is the whole mechanism (ADR 0017 §1), and the
 // reconciler's idempotent ensure is what makes acting on one cheap.
+
+// ReportSandboxProgress records provisioning progress a pool agent observed on
+// the sandboxes it hosts (ADR 0039).
+//
+// Nothing is marked dirty. Progress means work is proceeding — an image pull in
+// flight — which is the opposite of drift for the reconciler to repair; the
+// state report that follows it is what carries any change worth acting on.
+func (s *Service) ReportSandboxProgress(ctx context.Context, poolID string, reportedAt time.Time, reports []store.SandboxProgressReport) error {
+	if err := s.store.ApplySandboxProgressReports(ctx, poolID, reportedAt, reports); err != nil {
+		if errors.Is(err, store.ErrNotFound) {
+			return nil // pool is gone; its reports are about nothing we own
+		}
+		return err
+	}
+	return nil
+}

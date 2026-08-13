@@ -2,6 +2,8 @@ package store
 
 import (
 	"context"
+	"encoding/json"
+	"errors"
 	"time"
 
 	"gorm.io/gorm"
@@ -124,6 +126,25 @@ func (s *Store) ApplySandboxStateReports(ctx context.Context, batch SandboxState
 				Updates(sandbox).Error; err != nil {
 				return err
 			}
+			// A runtime state that actually moved is a change to the resource,
+			// so it is published like any other. Without this the one
+			// transition clients care about most — a sandbox becoming usable —
+			// reached the database and nothing else: no event on the stream,
+			// and (by design, see observationNeedsReconcile) no reconcile
+			// either, so a client waiting to attach had nothing to wait on
+			// (ADR 0039).
+			//
+			// Only real changes are published. The complete sync re-reports
+			// every sandbox on this pool on its interval, and an event per
+			// sandbox per sync would be a heartbeat wearing a resource event's
+			// clothes.
+			if previous != sandbox.RuntimeState {
+				event, err := createProjectEvent(ctx, tx, model.EventActionUpdated, sandbox)
+				if err != nil {
+					return err
+				}
+				txStore.publishProjectEvent(ctx, event)
+			}
 			if missing || previous != sandbox.RuntimeState {
 				changed = append(changed, SandboxObservation{Sandbox: *sandbox, RuntimeMissing: missing})
 			}
@@ -159,4 +180,62 @@ func (s *Store) listSandboxesForPool(ctx context.Context, tx *gorm.DB, projectID
 		Where("project_id = ? AND pool_id = ?", projectID, poolID).
 		Find(&sandboxes).Error
 	return sandboxes, err
+}
+
+// SandboxProgressReport is one report of provisioning progress on one sandbox.
+type SandboxProgressReport struct {
+	SandboxID string
+	Progress  json.RawMessage
+}
+
+// ApplySandboxProgressReports records provisioning progress and publishes it.
+//
+// It is deliberately not part of ApplySandboxStateReports: progress carries no
+// observed state, takes no part in the complete-sync rule that a sandbox
+// omitted from a batch has lost its container, and must never mark a sandbox
+// dirty — an image pull in flight is work proceeding normally, not drift for
+// the reconciler to repair.
+//
+// Progress is already throttled by the reporting agent, so every accepted
+// report is published: that stream is the point (ADR 0039).
+func (s *Store) ApplySandboxProgressReports(ctx context.Context, poolID string, reportedAt time.Time, reports []SandboxProgressReport) error {
+	if len(reports) == 0 {
+		return nil
+	}
+	return s.Transaction(ctx, func(txStore *Store, tx *gorm.DB) error {
+		pool, err := txStore.GetPoolByID(ctx, poolID)
+		if err != nil {
+			return err
+		}
+		for _, report := range reports {
+			sandbox, err := txStore.GetSandbox(ctx, pool.ProjectID, report.SandboxID)
+			if err != nil {
+				if errors.Is(err, ErrNotFound) {
+					// The pool reported on a sandbox this control plane does not
+					// have. Nothing to record, and nothing wrong.
+					continue
+				}
+				return err
+			}
+			// A pool may only report on sandboxes it hosts.
+			if sandbox.PoolID != poolID {
+				continue
+			}
+			observedAt := reportedAt
+			sandbox.ProvisionProgress = report.Progress
+			sandbox.ProvisionProgressAt = &observedAt
+			if err := tx.Model(&model.Sandbox{}).
+				Where("id = ?", sandbox.ID).
+				Select("provision_progress", "provision_progress_at").
+				Updates(sandbox).Error; err != nil {
+				return err
+			}
+			event, err := createProjectEvent(ctx, tx, model.EventActionUpdated, sandbox)
+			if err != nil {
+				return err
+			}
+			txStore.publishProjectEvent(ctx, event)
+		}
+		return nil
+	})
 }

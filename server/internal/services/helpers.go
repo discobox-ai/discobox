@@ -220,6 +220,12 @@ func SandboxToAPI(sandbox *model.Sandbox, fallback *model.HarnessConfig) (server
 	if sandbox.AgentStatusObservedAt != nil {
 		runtime["agentStatusObservedAt"] = *sandbox.AgentStatusObservedAt
 	}
+	if len(sandbox.ProvisionProgress) > 0 {
+		runtime["provisionProgress"] = sandbox.ProvisionProgress
+	}
+	if sandbox.ProvisionProgressAt != nil {
+		runtime["provisionProgressAt"] = *sandbox.ProvisionProgressAt
+	}
 	fields := map[string]any{
 		"id":              sandbox.ID,
 		"projectId":       sandbox.ProjectID,

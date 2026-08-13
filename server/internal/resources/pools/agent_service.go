@@ -12,6 +12,7 @@ import (
 
 	"github.com/go-faster/jx"
 
+	serverapi "github.com/obot-platform/discobox/api/gen"
 	apimodel "github.com/obot-platform/discobox/api/model"
 	"github.com/obot-platform/discobox/pool-agent/poolauth"
 	"github.com/obot-platform/discobox/server/internal/apperrors"
@@ -26,6 +27,11 @@ import (
 // sandbox control plane, which owns the sandbox rows.
 type SandboxStateReporter interface {
 	ReportSandboxStates(ctx context.Context, batch store.SandboxStateReportBatch) error
+	// ReportSandboxProgress records provisioning progress on sandboxes this
+	// pool hosts (ADR 0039). It rides the same channel as state but is applied
+	// separately: progress carries no observed state and takes no part in the
+	// complete-sync rule.
+	ReportSandboxProgress(ctx context.Context, poolID string, reportedAt time.Time, reports []store.SandboxProgressReport) error
 }
 
 // SetSandboxStateReporter wires the sandbox service dependency for
@@ -254,6 +260,33 @@ func (s *Service) ReportPoolSandboxStates(ctx context.Context, poolID string, in
 		Reports:    reports,
 	}
 	if err := s.sandboxReporter.ReportSandboxStates(ctx, batch); err != nil {
+		return mapAPIError(err, "pool not found")
+	}
+	progress := make([]store.SandboxProgressReport, 0, len(input.Progress))
+	for _, entry := range input.Progress {
+		sandboxID := strings.TrimSpace(entry.SandboxId)
+		if sandboxID == "" {
+			continue
+		}
+		// The stored blob is the client-facing shape, not the agent-facing one:
+		// the two schemas are separate contracts, and SandboxProvisionProgress
+		// forbids additional properties, so passing the agent's entry through
+		// verbatim would embed a sandboxId that clients then fail to decode.
+		observed := serverapi.SandboxProvisionProgress{}
+		if pull, ok := entry.Pull.Get(); ok {
+			// A conversion rather than a field-by-field copy: the two shapes are
+			// identical today, and if the agent-facing and client-facing schemas
+			// ever diverge this stops compiling, which is where that divergence
+			// should be noticed.
+			observed.Pull = serverapi.NewOptSandboxPullProgress(serverapi.SandboxPullProgress(pull))
+		}
+		payload, err := json.Marshal(observed)
+		if err != nil {
+			return err
+		}
+		progress = append(progress, store.SandboxProgressReport{SandboxID: sandboxID, Progress: payload})
+	}
+	if err := s.sandboxReporter.ReportSandboxProgress(ctx, poolID, input.ReportedAt, progress); err != nil {
 		return mapAPIError(err, "pool not found")
 	}
 	return nil
