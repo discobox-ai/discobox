@@ -5194,6 +5194,52 @@ func (o OptPool) Or(d Pool) Pool {
 	return d
 }
 
+// NewOptPoolSandboxPullProgress returns new OptPoolSandboxPullProgress with value set to v.
+func NewOptPoolSandboxPullProgress(v PoolSandboxPullProgress) OptPoolSandboxPullProgress {
+	return OptPoolSandboxPullProgress{
+		Value: v,
+		Set:   true,
+	}
+}
+
+// OptPoolSandboxPullProgress is optional PoolSandboxPullProgress.
+type OptPoolSandboxPullProgress struct {
+	Value PoolSandboxPullProgress
+	Set   bool
+}
+
+// IsSet returns true if OptPoolSandboxPullProgress was set.
+func (o OptPoolSandboxPullProgress) IsSet() bool { return o.Set }
+
+// Reset unsets value.
+func (o *OptPoolSandboxPullProgress) Reset() {
+	var v PoolSandboxPullProgress
+	o.Value = v
+	o.Set = false
+}
+
+// SetTo sets value to v.
+func (o *OptPoolSandboxPullProgress) SetTo(v PoolSandboxPullProgress) {
+	o.Set = true
+	o.Value = v
+}
+
+// Get returns value and boolean that denotes whether value was set.
+func (o OptPoolSandboxPullProgress) Get() (v PoolSandboxPullProgress, ok bool) {
+	if !o.Set {
+		return v, false
+	}
+	return o.Value, true
+}
+
+// Or returns value if set, or given parameter if does not.
+func (o OptPoolSandboxPullProgress) Or(d PoolSandboxPullProgress) PoolSandboxPullProgress {
+	if v, ok := o.Get(); ok {
+		return v
+	}
+	return d
+}
+
 // NewOptSandboxConfigEnv returns new OptSandboxConfigEnv with value set to v.
 func NewOptSandboxConfigEnv(v SandboxConfigEnv) OptSandboxConfigEnv {
 	return OptSandboxConfigEnv{
@@ -5602,6 +5648,98 @@ func (o OptSandboxProviderInstance) Get() (v SandboxProviderInstance, ok bool) {
 
 // Or returns value if set, or given parameter if does not.
 func (o OptSandboxProviderInstance) Or(d SandboxProviderInstance) SandboxProviderInstance {
+	if v, ok := o.Get(); ok {
+		return v
+	}
+	return d
+}
+
+// NewOptSandboxProvisionProgress returns new OptSandboxProvisionProgress with value set to v.
+func NewOptSandboxProvisionProgress(v SandboxProvisionProgress) OptSandboxProvisionProgress {
+	return OptSandboxProvisionProgress{
+		Value: v,
+		Set:   true,
+	}
+}
+
+// OptSandboxProvisionProgress is optional SandboxProvisionProgress.
+type OptSandboxProvisionProgress struct {
+	Value SandboxProvisionProgress
+	Set   bool
+}
+
+// IsSet returns true if OptSandboxProvisionProgress was set.
+func (o OptSandboxProvisionProgress) IsSet() bool { return o.Set }
+
+// Reset unsets value.
+func (o *OptSandboxProvisionProgress) Reset() {
+	var v SandboxProvisionProgress
+	o.Value = v
+	o.Set = false
+}
+
+// SetTo sets value to v.
+func (o *OptSandboxProvisionProgress) SetTo(v SandboxProvisionProgress) {
+	o.Set = true
+	o.Value = v
+}
+
+// Get returns value and boolean that denotes whether value was set.
+func (o OptSandboxProvisionProgress) Get() (v SandboxProvisionProgress, ok bool) {
+	if !o.Set {
+		return v, false
+	}
+	return o.Value, true
+}
+
+// Or returns value if set, or given parameter if does not.
+func (o OptSandboxProvisionProgress) Or(d SandboxProvisionProgress) SandboxProvisionProgress {
+	if v, ok := o.Get(); ok {
+		return v
+	}
+	return d
+}
+
+// NewOptSandboxPullProgress returns new OptSandboxPullProgress with value set to v.
+func NewOptSandboxPullProgress(v SandboxPullProgress) OptSandboxPullProgress {
+	return OptSandboxPullProgress{
+		Value: v,
+		Set:   true,
+	}
+}
+
+// OptSandboxPullProgress is optional SandboxPullProgress.
+type OptSandboxPullProgress struct {
+	Value SandboxPullProgress
+	Set   bool
+}
+
+// IsSet returns true if OptSandboxPullProgress was set.
+func (o OptSandboxPullProgress) IsSet() bool { return o.Set }
+
+// Reset unsets value.
+func (o *OptSandboxPullProgress) Reset() {
+	var v SandboxPullProgress
+	o.Value = v
+	o.Set = false
+}
+
+// SetTo sets value to v.
+func (o *OptSandboxPullProgress) SetTo(v SandboxPullProgress) {
+	o.Set = true
+	o.Value = v
+}
+
+// Get returns value and boolean that denotes whether value was set.
+func (o OptSandboxPullProgress) Get() (v SandboxPullProgress, ok bool) {
+	if !o.Set {
+		return v, false
+	}
+	return o.Value, true
+}
+
+// Or returns value if set, or given parameter if does not.
+func (o OptSandboxPullProgress) Or(d SandboxPullProgress) SandboxPullProgress {
 	if v, ok := o.Get(); ok {
 		return v
 	}
@@ -6523,6 +6661,115 @@ func (s *PoolDesiredState) UnmarshalText(data []byte) error {
 	}
 }
 
+// Progress on one sandbox that is being provisioned. It is deliberately not a
+// PoolSandboxState: a state observation always carries an observed state, and progress
+// has none to report.
+// Ref: #/components/schemas/PoolSandboxProgress
+type PoolSandboxProgress struct {
+	Pull OptPoolSandboxPullProgress `json:"pull"`
+	// Sandbox the progress is about.
+	SandboxId string `json:"sandboxId"`
+}
+
+// GetPull returns the value of Pull.
+func (s *PoolSandboxProgress) GetPull() OptPoolSandboxPullProgress {
+	return s.Pull
+}
+
+// GetSandboxId returns the value of SandboxId.
+func (s *PoolSandboxProgress) GetSandboxId() string {
+	return s.SandboxId
+}
+
+// SetPull sets the value of Pull.
+func (s *PoolSandboxProgress) SetPull(val OptPoolSandboxPullProgress) {
+	s.Pull = val
+}
+
+// SetSandboxId sets the value of SandboxId.
+func (s *PoolSandboxProgress) SetSandboxId(val string) {
+	s.SandboxId = val
+}
+
+// An image pull as a status line wants it rather than as the daemon reports it. Both
+// totals grow while the manifest is walked, so current/total is a ratio at a moment
+// rather than progress toward a fixed target.
+// Ref: #/components/schemas/PoolSandboxPullProgress
+type PoolSandboxPullProgress struct {
+	// Bytes downloaded so far, across the layers reported.
+	Current OptInt64 `json:"current"`
+	// True on the final report for a pull that finished.
+	Done OptBool `json:"done"`
+	// Image reference being pulled.
+	Image string `json:"image"`
+	// Layers heard about so far, which grows as the manifest is walked.
+	Layers OptInt `json:"layers"`
+	// Layers fully pulled, including layers already present on the host.
+	LayersComplete OptInt `json:"layersComplete"`
+	// Total bytes of the layers whose size has been reported.
+	Total OptInt64 `json:"total"`
+}
+
+// GetCurrent returns the value of Current.
+func (s *PoolSandboxPullProgress) GetCurrent() OptInt64 {
+	return s.Current
+}
+
+// GetDone returns the value of Done.
+func (s *PoolSandboxPullProgress) GetDone() OptBool {
+	return s.Done
+}
+
+// GetImage returns the value of Image.
+func (s *PoolSandboxPullProgress) GetImage() string {
+	return s.Image
+}
+
+// GetLayers returns the value of Layers.
+func (s *PoolSandboxPullProgress) GetLayers() OptInt {
+	return s.Layers
+}
+
+// GetLayersComplete returns the value of LayersComplete.
+func (s *PoolSandboxPullProgress) GetLayersComplete() OptInt {
+	return s.LayersComplete
+}
+
+// GetTotal returns the value of Total.
+func (s *PoolSandboxPullProgress) GetTotal() OptInt64 {
+	return s.Total
+}
+
+// SetCurrent sets the value of Current.
+func (s *PoolSandboxPullProgress) SetCurrent(val OptInt64) {
+	s.Current = val
+}
+
+// SetDone sets the value of Done.
+func (s *PoolSandboxPullProgress) SetDone(val OptBool) {
+	s.Done = val
+}
+
+// SetImage sets the value of Image.
+func (s *PoolSandboxPullProgress) SetImage(val string) {
+	s.Image = val
+}
+
+// SetLayers sets the value of Layers.
+func (s *PoolSandboxPullProgress) SetLayers(val OptInt) {
+	s.Layers = val
+}
+
+// SetLayersComplete sets the value of LayersComplete.
+func (s *PoolSandboxPullProgress) SetLayersComplete(val OptInt) {
+	s.LayersComplete = val
+}
+
+// SetTotal sets the value of Total.
+func (s *PoolSandboxPullProgress) SetTotal(val OptInt64) {
+	s.Total = val
+}
+
 // Ref: #/components/schemas/PoolSandboxState
 type PoolSandboxState struct {
 	// Sandbox the observation is about.
@@ -7219,6 +7466,10 @@ type ReportPoolSandboxStatesBody struct {
 	ReportedAt time.Time `json:"reportedAt"`
 	// Monotonic counter within bootId, so a delayed delta cannot overwrite a newer sync.
 	Sequence int64 `json:"sequence"`
+	// Provisioning progress on sandboxes this agent hosts: work that is underway and has
+	// no state transition to announce it, an image pull above all (ADR 0032). It is
+	// always a delta and is unaffected by `complete`, which describes `states` only.
+	Progress []PoolSandboxProgress `json:"progress"`
 	// The observed sandbox states.
 	States []PoolSandboxState `json:"states"`
 }
@@ -7246,6 +7497,11 @@ func (s *ReportPoolSandboxStatesBody) GetReportedAt() time.Time {
 // GetSequence returns the value of Sequence.
 func (s *ReportPoolSandboxStatesBody) GetSequence() int64 {
 	return s.Sequence
+}
+
+// GetProgress returns the value of Progress.
+func (s *ReportPoolSandboxStatesBody) GetProgress() []PoolSandboxProgress {
+	return s.Progress
 }
 
 // GetStates returns the value of States.
@@ -7276,6 +7532,11 @@ func (s *ReportPoolSandboxStatesBody) SetReportedAt(val time.Time) {
 // SetSequence sets the value of Sequence.
 func (s *ReportPoolSandboxStatesBody) SetSequence(val int64) {
 	s.Sequence = val
+}
+
+// SetProgress sets the value of Progress.
+func (s *ReportPoolSandboxStatesBody) SetProgress(val []PoolSandboxProgress) {
+	s.Progress = val
 }
 
 // SetStates sets the value of States.
@@ -9726,13 +9987,113 @@ func (*SandboxProviderInstance) createSandboxProviderInstanceRes() {}
 func (*SandboxProviderInstance) getSandboxProviderInstanceRes()    {}
 func (*SandboxProviderInstance) updateSandboxProviderInstanceRes() {}
 
+// Work underway on a sandbox that has no state transition to announce it, reported by
+// the hosting pool-agent (ADR 0032). A client waiting to attach reads this to say what
+// it is waiting for; an image pull is the case that matters, because it is the longest.
+// Ref: #/components/schemas/SandboxProvisionProgress
+type SandboxProvisionProgress struct {
+	Pull OptSandboxPullProgress `json:"pull"`
+}
+
+// GetPull returns the value of Pull.
+func (s *SandboxProvisionProgress) GetPull() OptSandboxPullProgress {
+	return s.Pull
+}
+
+// SetPull sets the value of Pull.
+func (s *SandboxProvisionProgress) SetPull(val OptSandboxPullProgress) {
+	s.Pull = val
+}
+
+// An image pull as a status line wants it. Both totals grow while the manifest is
+// walked, so current/total is a ratio at a moment rather than progress toward a fixed
+// target: a client must not render it as a bar that can only move forward.
+// Ref: #/components/schemas/SandboxPullProgress
+type SandboxPullProgress struct {
+	// Bytes downloaded so far, across the layers reported.
+	Current OptInt64 `json:"current"`
+	// True on the final report for a pull that finished.
+	Done OptBool `json:"done"`
+	// Image reference being pulled.
+	Image string `json:"image"`
+	// Layers heard about so far, which grows as the manifest is walked.
+	Layers OptInt `json:"layers"`
+	// Layers fully pulled, including layers already present on the host.
+	LayersComplete OptInt `json:"layersComplete"`
+	// Total bytes of the layers whose size has been reported.
+	Total OptInt64 `json:"total"`
+}
+
+// GetCurrent returns the value of Current.
+func (s *SandboxPullProgress) GetCurrent() OptInt64 {
+	return s.Current
+}
+
+// GetDone returns the value of Done.
+func (s *SandboxPullProgress) GetDone() OptBool {
+	return s.Done
+}
+
+// GetImage returns the value of Image.
+func (s *SandboxPullProgress) GetImage() string {
+	return s.Image
+}
+
+// GetLayers returns the value of Layers.
+func (s *SandboxPullProgress) GetLayers() OptInt {
+	return s.Layers
+}
+
+// GetLayersComplete returns the value of LayersComplete.
+func (s *SandboxPullProgress) GetLayersComplete() OptInt {
+	return s.LayersComplete
+}
+
+// GetTotal returns the value of Total.
+func (s *SandboxPullProgress) GetTotal() OptInt64 {
+	return s.Total
+}
+
+// SetCurrent sets the value of Current.
+func (s *SandboxPullProgress) SetCurrent(val OptInt64) {
+	s.Current = val
+}
+
+// SetDone sets the value of Done.
+func (s *SandboxPullProgress) SetDone(val OptBool) {
+	s.Done = val
+}
+
+// SetImage sets the value of Image.
+func (s *SandboxPullProgress) SetImage(val string) {
+	s.Image = val
+}
+
+// SetLayers sets the value of Layers.
+func (s *SandboxPullProgress) SetLayers(val OptInt) {
+	s.Layers = val
+}
+
+// SetLayersComplete sets the value of LayersComplete.
+func (s *SandboxPullProgress) SetLayersComplete(val OptInt) {
+	s.LayersComplete = val
+}
+
+// SetTotal sets the value of Total.
+func (s *SandboxPullProgress) SetTotal(val OptInt64) {
+	s.Total = val
+}
+
 // Ref: #/components/schemas/SandboxRuntime
 type SandboxRuntime struct {
 	// Latest sandbox-agent-reported git/session/connection status, pushed periodically by the hosting
 	// pool-agent.
 	AgentStatus OptNilSandboxRuntimeAgentStatus `json:"agentStatus"`
 	// When agentStatus was observed by sandbox-agent.
-	AgentStatusObservedAt OptDateTime `json:"agentStatusObservedAt"`
+	AgentStatusObservedAt OptDateTime                 `json:"agentStatusObservedAt"`
+	ProvisionProgress     OptSandboxProvisionProgress `json:"provisionProgress"`
+	// When provisionProgress was observed.
+	ProvisionProgressAt OptDateTime `json:"provisionProgressAt"`
 	// History of successful disco apply runs that landed this sandbox's commits on a host, most recent
 	// last. Client-reported; append-only.
 	AppliedCommits OptNilAppliedSourceCommitArray `json:"appliedCommits"`
@@ -9780,6 +10141,16 @@ func (s *SandboxRuntime) GetAgentStatus() OptNilSandboxRuntimeAgentStatus {
 // GetAgentStatusObservedAt returns the value of AgentStatusObservedAt.
 func (s *SandboxRuntime) GetAgentStatusObservedAt() OptDateTime {
 	return s.AgentStatusObservedAt
+}
+
+// GetProvisionProgress returns the value of ProvisionProgress.
+func (s *SandboxRuntime) GetProvisionProgress() OptSandboxProvisionProgress {
+	return s.ProvisionProgress
+}
+
+// GetProvisionProgressAt returns the value of ProvisionProgressAt.
+func (s *SandboxRuntime) GetProvisionProgressAt() OptDateTime {
+	return s.ProvisionProgressAt
 }
 
 // GetAppliedCommits returns the value of AppliedCommits.
@@ -9855,6 +10226,16 @@ func (s *SandboxRuntime) SetAgentStatus(val OptNilSandboxRuntimeAgentStatus) {
 // SetAgentStatusObservedAt sets the value of AgentStatusObservedAt.
 func (s *SandboxRuntime) SetAgentStatusObservedAt(val OptDateTime) {
 	s.AgentStatusObservedAt = val
+}
+
+// SetProvisionProgress sets the value of ProvisionProgress.
+func (s *SandboxRuntime) SetProvisionProgress(val OptSandboxProvisionProgress) {
+	s.ProvisionProgress = val
+}
+
+// SetProvisionProgressAt sets the value of ProvisionProgressAt.
+func (s *SandboxRuntime) SetProvisionProgressAt(val OptDateTime) {
+	s.ProvisionProgressAt = val
 }
 
 // SetAppliedCommits sets the value of AppliedCommits.

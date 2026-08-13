@@ -2029,6 +2029,12 @@ components:
                     description: When agentStatus was observed by sandbox-agent
                     format: date-time
                     type: string
+                provisionProgress:
+                    $ref: '#/components/schemas/SandboxProvisionProgress'
+                provisionProgressAt:
+                    description: When provisionProgress was observed
+                    format: date-time
+                    type: string
                 appliedCommits:
                     description: History of successful disco apply runs that landed this sandbox's commits on a host, most recent last. Client-reported; append-only.
                     items:
@@ -2885,6 +2891,14 @@ components:
                     description: Monotonic counter within bootId, so a delayed delta cannot overwrite a newer sync
                     format: int64
                     type: integer
+                progress:
+                    description: |-
+                        Provisioning progress on sandboxes this agent hosts: work that is underway and has
+                        no state transition to announce it, an image pull above all (ADR 0032). It is
+                        always a delta and is unaffected by `complete`, which describes `states` only.
+                    items:
+                        $ref: '#/components/schemas/PoolSandboxProgress'
+                    type: array
                 states:
                     description: The observed sandbox states
                     items:
@@ -2896,6 +2910,91 @@ components:
                 - reportedAt
                 - complete
                 - states
+            type: object
+        SandboxProvisionProgress:
+            additionalProperties: false
+            description: |-
+                Work underway on a sandbox that has no state transition to announce it, reported by
+                the hosting pool-agent (ADR 0032). A client waiting to attach reads this to say what
+                it is waiting for; an image pull is the case that matters, because it is the longest.
+            properties:
+                pull:
+                    $ref: '#/components/schemas/SandboxPullProgress'
+            type: object
+        SandboxPullProgress:
+            additionalProperties: false
+            description: |-
+                An image pull as a status line wants it. Both totals grow while the manifest is
+                walked, so current/total is a ratio at a moment rather than progress toward a fixed
+                target: a client must not render it as a bar that can only move forward.
+            properties:
+                current:
+                    description: Bytes downloaded so far, across the layers reported
+                    format: int64
+                    type: integer
+                done:
+                    description: True on the final report for a pull that finished
+                    type: boolean
+                image:
+                    description: Image reference being pulled
+                    type: string
+                layers:
+                    description: Layers heard about so far, which grows as the manifest is walked
+                    type: integer
+                layersComplete:
+                    description: Layers fully pulled, including layers already present on the host
+                    type: integer
+                total:
+                    description: Total bytes of the layers whose size has been reported
+                    format: int64
+                    type: integer
+            required:
+                - image
+            type: object
+        PoolSandboxProgress:
+            additionalProperties: false
+            description: |-
+                Progress on one sandbox that is being provisioned. It is deliberately not a
+                PoolSandboxState: a state observation always carries an observed state, and progress
+                has none to report.
+            properties:
+                pull:
+                    $ref: '#/components/schemas/PoolSandboxPullProgress'
+                sandboxId:
+                    description: Sandbox the progress is about
+                    type: string
+            required:
+                - sandboxId
+            type: object
+        PoolSandboxPullProgress:
+            additionalProperties: false
+            description: |-
+                An image pull as a status line wants it rather than as the daemon reports it. Both
+                totals grow while the manifest is walked, so current/total is a ratio at a moment
+                rather than progress toward a fixed target.
+            properties:
+                current:
+                    description: Bytes downloaded so far, across the layers reported
+                    format: int64
+                    type: integer
+                done:
+                    description: True on the final report for a pull that finished
+                    type: boolean
+                image:
+                    description: Image reference being pulled
+                    type: string
+                layers:
+                    description: Layers heard about so far, which grows as the manifest is walked
+                    type: integer
+                layersComplete:
+                    description: Layers fully pulled, including layers already present on the host
+                    type: integer
+                total:
+                    description: Total bytes of the layers whose size has been reported
+                    format: int64
+                    type: integer
+            required:
+                - image
             type: object
         PoolSandboxState:
             additionalProperties: false
