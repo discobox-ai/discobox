@@ -260,11 +260,6 @@ func TestRootCommandHelp(t *testing.T) {
 	if command, _, err := cmd.Find([]string{"shell"}); err != nil || command.Name() != "shell" {
 		t.Fatalf("find root shell: command=%v err=%v", command, err)
 	}
-	// status is a root command of its own: `git status` for the sandbox's
-	// working trees, alongside diff and apply.
-	if command, _, err := cmd.Find([]string{"status"}); err != nil || command.Name() != "status" {
-		t.Fatalf("find root status: command=%v err=%v", command, err)
-	}
 	for _, unavailableAtRoot := range []string{"sandbox", "terminal", "exec", "provider", "job", "harnesses", "hooks", "server"} {
 		command, _, err := cmd.Find([]string{unavailableAtRoot})
 		if err == nil && command.Name() == unavailableAtRoot {

@@ -50,8 +50,8 @@ func FetchSource(ctx context.Context, repoRoot, serverURL, projectID, sandboxID,
 // endpoint, and everything that is not receive-pack is served under
 // ScopeSandboxRead, so upload-pack advertises every ref the sandbox has. Any
 // ref the sandbox creates is therefore fetchable with no new server capability
-// — which is what lets `disco diff --base local` bring the sandbox's working
-// state to this machine.
+// — which is what lets `disco apply` bring the sandbox's working state to
+// this machine.
 func Fetch(ctx context.Context, repoRoot, serverURL, projectID, sandboxID, token string, source apimodel.GitSource, refspec string) error {
 	slug := source.Slug.Or("")
 	repoURL, err := sandboxcreate.SandboxGitRepositoryURL(serverURL, projectID, sandboxID, source)

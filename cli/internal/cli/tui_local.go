@@ -15,23 +15,20 @@ import (
 	"github.com/obot-platform/discobox/cli/internal/tui"
 )
 
-// The commands that read a discobox and print — diff and status — are not
-// terminals in the discobox. They run here: resolving the base over the exec
-// API, pulling the patch, rendering it, and paging it with your own pager.
+// The commands that act on a discobox from this machine — apply — are not
+// terminals in the discobox. They run here, over the API.
 //
-// To draw one in a pane it is given a terminal of its own. `disco diff` runs as
+// To draw one in a pane it is given a terminal of its own. The command runs as
 // a child process on a local pty sized to the pane, with that pty as its
 // controlling terminal, and the pane draws what comes back.
 //
-// The controlling terminal is the part that matters. A pager reads its keys from
-// /dev/tty rather than from stdin, which is where the patch is arriving — so
-// without one, `less` would take its keys from the real terminal, out from under
-// the window that is drawing it. With one, /dev/tty is the pty, and the pager is
-// simply an application in the pane like any other.
+// The controlling terminal is the part that matters: anything the command
+// starts that reads its keys from /dev/tty reads them from the pty, and so
+// from the pane, rather than from the real terminal out from under the window.
 //
 // Running the command rather than reimplementing it is the point: what a pane
-// shows is `disco diff`, with its rendering, its base resolution and its pager,
-// and not a second answer that drifts from the one a shell gives.
+// shows is `disco apply`, with its own flag defaults and rendering, and not a
+// second answer that drifts from the one a shell gives.
 
 // localCommand is a command running on a pty of its own, presented as a
 // terminal a pane can draw.
@@ -69,8 +66,8 @@ func (d *apiDataSource) openLocalCommand(ctx context.Context, action tui.Interac
 // into, and presents it as a terminal.
 //
 // pty.StartWithSize is what makes the pty the command's controlling terminal,
-// which is the point: a pager reads its keys from /dev/tty, and without one it
-// would take them from the real terminal instead of from the pane.
+// which is the point: anything reading its keys from /dev/tty gets the pane's,
+// and without one it would take them from the real terminal instead.
 func startOnPTY(command *exec.Cmd, cols, rows int) (tui.Terminal, error) {
 	//nolint:gosec // sizes are terminal dimensions
 	tty, err := pty.StartWithSize(command, &pty.Winsize{Cols: uint16(cols), Rows: uint16(rows)})
@@ -119,7 +116,7 @@ func (c *localCommand) Resize(cols, rows int) error {
 }
 
 // Close ends the command and releases the pty. Closing the pty is what unblocks
-// a pending Read; the process is signaled first so a pager waiting on a key
+// a pending Read; the process is signaled first so a command waiting on a key
 // does not outlive the pane it was drawn in.
 func (c *localCommand) Close() error {
 	c.closeOnce.Do(func() {

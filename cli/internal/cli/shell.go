@@ -80,8 +80,7 @@ the remote process, and shell exits with its exit code.`,
 // current project directory (matchSandboxArg); a match consumes it as
 // SANDBOX_ID and leaves the rest as the command. No match — including no
 // args at all — means every argument is the command, and the sandbox falls
-// back to the same picker `disco apply`/`disco diff` use when SANDBOX_ID is
-// omitted.
+// back to the same picker `disco apply` uses when SANDBOX_ID is omitted.
 func (a *App) resolveShellTarget(cmd *cobra.Command, args []string) (projectID, sandboxID string, client *apiclientgen.Client, cmdArgs []string, err error) {
 	projectID, err = a.projectIDValue()
 	if err != nil {

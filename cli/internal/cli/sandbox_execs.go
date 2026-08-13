@@ -775,7 +775,7 @@ type sandboxExecUser struct {
 // it wrote once it exits, rather than streaming it.
 //
 // This is for the callers that have to read the output before they can act on
-// it — `disco apply`'s dirty-tree check, `disco diff`'s rendered view — where
+// it — `disco apply`'s dirty-tree check — where
 // an attach would hand them bytes they can only buffer themselves. An exit code
 // of -1 means the exec ended without recording one.
 func (a *App) sandboxCommandOutput(ctx context.Context, projectID, sandboxID, workdir string, command []string) (stdout, stderr string, exitCode int, err error) {

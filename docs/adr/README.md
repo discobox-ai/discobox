@@ -70,7 +70,7 @@ Nygard-style ADRs (see adr.github.io) combined with current-state design docs:
 | [0015](0015-nested-docker-builds-trust-the-mitm-proxy-via-nri.md) | Nested Docker builds and containers trust the MITM proxy via an NRI plugin | Superseded by [0020](0020-nested-docker-trust-is-injected-by-a-runc-wrapper.md) |
 | [0016](0016-sandbox-image-upgrades-are-explicit-and-in-place.md) | Sandbox image upgrades are explicit, in-place, and digest-driven | Accepted (harnessless part superseded by [0032](0032-every-sandbox-has-a-harness-config-and-shell-is-the-built-in.md)) |
 | [0017](0017-resource-state-is-desired-and-observed-with-no-operations.md) | Orchestration is generation convergence; a resource has state and desired state | Accepted (§7 superseded for sandboxes by [0034](0034-sandbox-state-and-runtime-state-are-separate-fields.md)) |
-| [0018](0018-disco-diff-resolves-its-base-inside-the-sandbox.md) | `disco diff` resolves its base inside the sandbox | Accepted |
+| [0018](0018-disco-diff-resolves-its-base-inside-the-sandbox.md) | `disco diff` resolves its base inside the sandbox | Superseded by [0037](0037-drop-disco-diff-and-disco-status.md) |
 | [0019](0019-one-server-per-data-directory-enforced-by-a-file-lock.md) | One server per data directory, enforced by an advisory file lock | Proposed |
 | [0020](0020-nested-docker-trust-is-injected-by-a-runc-wrapper.md) | Nested Docker trust is injected by a runc wrapper, not an NRI plugin | Accepted |
 | [0021](0021-upgrade-is-a-re-pin-and-preserves-power-state.md) | Upgrade is a desired-state re-pin, and replacing a container preserves its power state | Accepted |
@@ -88,3 +88,5 @@ Nygard-style ADRs (see adr.github.io) combined with current-state design docs:
 | [0033](0033-user-resolution-is-one-layered-resolver-with-declared-gaps.md) | User resolution is one layered resolver, and every gap is declared | Accepted |
 | [0034](0034-sandbox-state-and-runtime-state-are-separate-fields.md) | Sandbox `state` and `runtime_state` are separate fields | Accepted |
 | [0035](0035-repair-is-one-rebuild-intent-plus-a-start-instruction.md) | Repair is one rebuild intent, plus a start instruction | Accepted |
+| [0036](0036-termpane-selection-is-a-mouse-only-cell-space-overlay.md) | Termpane selection is a mouse-only cell-space overlay | Accepted |
+| [0037](0037-drop-disco-diff-and-disco-status.md) | Drop `disco diff` and `disco status` | Accepted |

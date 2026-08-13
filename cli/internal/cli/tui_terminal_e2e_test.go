@@ -54,7 +54,13 @@ func TestPaneTerminalsE2E(t *testing.T) {
 			ctx, cancel := context.WithTimeout(t.Context(), 60*time.Second)
 			defer cancel()
 
-			term, err := ds.Open(ctx, action, sandboxID, 80, 24)
+			var term tui.Terminal
+			var err error
+			if action == tui.InteractShell {
+				_, term, err = ds.NewShell(ctx, sandboxID, 80, 24)
+			} else {
+				term, err = ds.OpenExec(ctx, sandboxID, tui.ExecPrimary, 80, 24)
+			}
 			if err != nil {
 				t.Fatalf("open: %v", err)
 			}
@@ -123,7 +129,7 @@ func truncateForLog(s string) string {
 	return s
 }
 
-// TestLocalCommandPaneE2E runs `disco status` on a pty of its own and reads
+// TestLocalCommandPaneE2E runs `disco list` on a pty of its own and reads
 // what comes back, which is the whole of what a pane would draw.
 //
 // It is the same opt-in as the pane terminals above, and for the same reason:
@@ -132,11 +138,7 @@ func truncateForLog(s string) string {
 // terminal.
 func TestLocalCommandPaneE2E(t *testing.T) {
 	if os.Getenv(paneE2EEnv) != "1" {
-		t.Skip("set " + paneE2EEnv + "=1, with DISCOBOX_PANE_E2E_SANDBOX naming a running discobox")
-	}
-	sandboxID := strings.TrimSpace(os.Getenv("DISCOBOX_PANE_E2E_SANDBOX"))
-	if sandboxID == "" {
-		t.Fatal("DISCOBOX_PANE_E2E_SANDBOX is required")
+		t.Skip("set " + paneE2EEnv + "=1 against a running server")
 	}
 
 	app := &App{
@@ -156,7 +158,7 @@ func TestLocalCommandPaneE2E(t *testing.T) {
 	if binary == "" {
 		t.Skip("set DISCOBOX_PANE_E2E_BINARY to a built disco")
 	}
-	args := append(app.globalFlags(), "status", sandboxID)
+	args := append(app.globalFlags(), "list")
 	command := exec.CommandContext(ctx, binary, args...)
 	command.Env = append(os.Environ(), "DISCOBOX_TOKEN="+app.token)
 	term, err := startOnPTY(command, 100, 30)
@@ -169,5 +171,5 @@ func TestLocalCommandPaneE2E(t *testing.T) {
 	if strings.TrimSpace(stripEscapes(out)) == "" {
 		t.Fatal("the command produced no output at all")
 	}
-	t.Logf("status: %q", truncateForLog(out))
+	t.Logf("list: %q", truncateForLog(out))
 }

@@ -1,6 +1,6 @@
 # 0018 — `disco diff` resolves its base inside the sandbox
 
-- **Status**: Accepted
+- **Status**: Superseded by [0037](0037-drop-disco-diff-and-disco-status.md)
 - **Date**: 2026-07-30
 
 ## Context

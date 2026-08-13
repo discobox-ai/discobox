@@ -14,7 +14,6 @@ transport helpers where OpenAPI does not model the stream.
 | `internal/origin` | Resolves the client host and project directory a sandbox is created from. Host identity itself is shared, in the root module's `internal/hostid`. |
 | `internal/tui` | The `disco tui` launcher: Bubble Tea presentation and interaction state, expressed against its own `DataSource` interface. See [`internal/tui/DESIGN.md`](internal/tui/DESIGN.md). |
 | `internal/keys` | The leader: its default, its `DISCOBOX_LEADER` override, normalization, and the byte a raw stream matches it as. Owned here because the launcher's panes and a plain attach must reserve the same key. |
-| `internal/diffrender` | Unified-diff parsing and terminal layout, with no knowledge of sandboxes or the API. |
 
 ## UI Dependency Direction
 
@@ -24,20 +23,20 @@ transport helpers where OpenAPI does not model the stream.
   frontend contracts only; API and terminal adapters belong outside it.
 - `internal/cli` may adapt generated API clients and terminal transports to the
   TUI's interfaces, but must not become the owner of logic shared by frontends.
-- The launcher never reimplements a command. `apply` is the Cobra command
-  itself: `apiDataSource.Interact` builds it, binds it to the streams `tea.Exec`
-  hands over while the window is suspended, and executes it.
-- `diff` and `status` are drawn in a pane instead, and are the same commands —
-  spawned as a child `disco diff <id>` on a local pty sized to the pane
-  (`tui_local.go`). The pty is the child's *controlling* terminal, which is the
-  point: a pager reads its keys from `/dev/tty`, so without one `less` would
-  take them from the real terminal, out from under the window drawing it. The
-  child inherits this invocation's `--server`, `--project` and `--chdir`; the
-  token goes through the environment rather than the argument list, which every
+- The launcher never reimplements a command. From the list, `apply` is the
+  Cobra command itself: `apiDataSource.Interact` builds it, binds it to the
+  streams `tea.Exec` hands over while the window is suspended, and executes it.
+- On the workspace screen, `apply` is drawn in an overlay pane instead, and is
+  the same command — spawned as a child `disco apply <id>` on a local pty sized
+  to the pane (`tui_local.go`). The pty is the child's *controlling* terminal,
+  so anything reading its keys from `/dev/tty` reads them from the pane rather
+  than from the real terminal, out from under the window drawing it. The child
+  inherits this invocation's `--server`, `--project` and `--chdir`; the token
+  goes through the environment rather than the argument list, which every
   process on the machine can read.
-- Either way what runs is `disco diff` with its own rendering, flag defaults,
-  pager and terminal detection, not a second implementation that drifts from it.
-  A launcher that cannot be reproduced from a shell is the thing to avoid.
+- Either way what runs is `disco apply` with its own flag defaults and terminal
+  detection, not a second implementation that drifts from it. A launcher that
+  cannot be reproduced from a shell is the thing to avoid.
 - Bare `disco` runs the launcher when stdin and stdout are both terminals, and
   prints its help otherwise (`App.runTUI`, reached from the root command's
   `RunE` and from `disco tui`). Typing a program's name is how you ask for it,
@@ -120,8 +119,8 @@ sees one flat `[]string` and cannot tell SANDBOX_ID from CMD apart, so
 
 A match consumes `args[0]` as SANDBOX_ID and leaves the rest as CMD. No
 match — including no arguments at all — means every argument is CMD, and the
-sandbox falls back to the same picker `disco apply`/`disco diff` use when
-SANDBOX_ID is omitted.
+sandbox falls back to the same picker `disco apply` uses when SANDBOX_ID is
+omitted.
 
 `disco shell` with no command runs the sandbox user's login shell. The CLI
 never names that shell: it sets `shell: true` on the exec create request and
@@ -196,7 +195,7 @@ as the table: the order is the CLI's answer, not a table-rendering detail.
 
 Commands that act on "the sandbox I am working in" take a sandbox identifier —
 as `--sandbox-id` (`box exec`, `box terminal`), an optional positional
-`SANDBOX_ID` (`status`, `diff`, `apply`, `attach`, `box get`), or a leading
+`SANDBOX_ID` (`apply`, `attach`, `box get`), or a leading
 positional argument shared with the command itself (`shell`, resolved by
 `resolveShellTarget` rather than `selectSandbox`) — and fall back to
 `selectSandbox` (`internal/cli/picker.go`) when it's omitted, never to a guess:
@@ -502,194 +501,6 @@ Everything that shells out to git shares it — `sandboxcreate.DeliverSource`
 (push at create) and `sandboxapply.FetchSource` (fetch at apply) — so the local
 socket, which is the default endpoint, is not a server only half the CLI can
 reach.
-
-## Status
-
-`disco status` (`internal/cli/status.go`) is `git status` for a sandbox's source
-working trees. It is deliberately thin: it selects a sandbox the way `apply` and
-`diff` do — optional positional `SANDBOX_ID`, otherwise `selectSandbox` — shares
-`selectSources` so `--source` means the same thing in all three, and runs one
-`git status` per source in that source's working directory.
-
-- No scratch index, unlike `diff`: `git status` already reports files git has
-  never been told about, so the working tree as it stands is exactly the
-  subject and nothing has to be constructed to see it.
-- No `sh -c` either. The command is argv, so a user-supplied pathspec is an
-  argument and never shell syntax; pathspecs come after `--`, which is also what
-  keeps the optional `SANDBOX_ID` positional unambiguous (`cmd.ArgsLenAtDash`).
-- The output streams through the normal exec attach, unparsed and unrendered.
-  Nothing here has to understand git's output, and a PTY — asked for only when
-  stdin, stdout, and stderr are all terminals — gets git's own color and
-  columns for free.
-- The flags are `git status`'s own, in git's spelling, for the subset that still
-  means something against a working tree that is not on this machine. `-s` is
-  therefore git's `--short`, and `--source` has no shorthand in this command.
-  A mode-taking flag needs its value attached with `=` (`-u=no`), because pflag
-  reads git's compact `-uno` as further shorthands.
-- `--color` is `-c color.status=<when>`, not a flag: `git status` has none of
-  its own. `auto` is git's default and is passed nothing, so a PTY colors and a
-  pipe does not, with no special case.
-- Per-source headings are printed only when there is more than one source, and
-  only to stdout when stdout is a terminal and no machine-readable format
-  (`--porcelain`, `-z`) was asked for; otherwise they go to stderr, so
-  `disco status --porcelain` is git's bytes and nothing else.
-- A source that cannot be reported is reported and the rest still run; the
-  command's error is the closing verdict, as in `apply` and `diff`.
-
-There is no pager, following `git status` itself.
-
-## Diff
-
-`disco diff` (`internal/cli/diff.go`) answers "what has this sandbox changed?"
-It selects a sandbox exactly like `apply` — optional positional `SANDBOX_ID`,
-otherwise `selectSandbox` — and shares `selectSources` with it, so `--source`
-names the same thing in both.
-
-- The base is `checkout.commit`, so `disco diff` means what
-  `git diff <that commit>` means inside the sandbox. It is displaced only by
-  the merge base with `refs/remotes/origin/<checkout.refName>`, and only when
-  that merge base is a strict descendant of `checkout.commit` — so it excludes
-  commits the sandbox pulled rather than wrote, is a no-op when nothing was
-  integrated, and never moves the base backwards after an upstream rewrite. `--base` overrides both, and takes the
-  keyword `snapshot` for the dirty-workspace ref.
-- Resolution happens **inside the sandbox**, from its own refs
-  (`internal/cli/diff_base.go`), and the chosen base and its reason are
-  reported with every diff. See
-  [ADR 0018](../docs/adr/0018-disco-diff-resolves-its-base-inside-the-sandbox.md)
-  for why it is not computed locally the way `apply`'s is, and why the
-  dirty-workspace snapshot is not the default: excluding work the user handed
-  the sandbox makes the command answer "nothing changed" about a workspace
-  full of changes.
-- The right-hand side is the sandbox's whole working state written into a
-  scratch index (`GIT_INDEX_FILE`, seeded from the real index for its stat
-  cache) as a tree object, so the diff is tree against tree. Comparing against
-  the working tree instead cannot see files git was never told about, and
-  against a base that *does* contain them reports them as deletions. The
-  repository's own index is never touched — no `git add` into it, not even an
-  intent-to-add — so diffing cannot disturb the work going on in the sandbox.
-- Pathspecs narrow the `git add` as well as the diff. Only what they cover is
-  ever read, so entries outside them keep whatever the seeded index held and
-  untracked files outside them are never hashed — without this, a diff of one
-  directory still pays to hash the whole tree and then discards it.
-- Building that tree is the expensive part: `git add` hashes and compresses
-  every untracked file into the sandbox's object database, on every run,
-  leaving unreachable objects behind. `checkUntrackedPayload`
-  (`internal/cli/diff_untracked.go`) measures the payload first with
-  `git ls-files -o` — the same walk, honoring the same ignore rules, without
-  the hashing — and past `--max-untracked` refuses, naming the largest
-  directories. It runs once per source before the mode branch, so one
-  measurement covers the streamed diff, the rendered one, and the commit
-  `--base local` fetches. It never silently excludes: a diff that omits an
-  agent's work is worse than one that says why it stopped.
-- The diff runs *inside* the sandbox, not by fetching to this machine. That is
-  what lets it show uncommitted work, which `apply`'s fetch cannot see, and it
-  needs no local repository at all.
-- The whole thing is one `sh -c` script per source, with every word shell-quoted
-  in Go (`shellCommand`), which is what lets a user-supplied pathspec through
-  safely.
-- A source that cannot be diffed is reported and the rest still run; the
-  command's error is the closing verdict, as in `apply`.
-
-### Flags
-
-The flags are `git diff`'s own, in git's spelling, for the subset that still
-means something here. The ones that choose *what* to compare are deliberately
-absent: the right-hand side is always the sandbox's working tree, and the left
-is the base above, which `--base` is the one way to override. Pathspecs come after `--`, so the optional
-`SANDBOX_ID` positional stays unambiguous (`cmd.ArgsLenAtDash`).
-
-Flags that select one of git's own output formats (`--stat`, `--numstat`,
-`--name-only`, …) are passed straight through *and* switch off rendering: what
-they ask for is git's output, so rendering it would be answering a different
-question.
-
-### Two Output Paths
-
-| | when | how |
-| --- | --- | --- |
-| Rendered | stdout is a terminal and no raw-output flag | capture, parse, lay out |
-| Passed through | redirected, `--patch`, or a git output format | stream the exec |
-
-- Rendered output is a document, so its per-source headings go to stdout with
-  it. Passed-through output is a patch, so nothing but the patch reaches stdout
-  and the headings go to stderr — `disco diff > sandbox.patch` stays a patch
-  file `git apply` accepts.
-- The rendered path is the only one that buys the whole diff up front
-  (`sandboxCommandOutput`): layout cannot start until the text is complete. The
-  passed-through path streams via the normal exec attach, which is what a piped
-  patch or a very large diff wants, and which gets a PTY — and therefore git's
-  own color — only when all three streams are terminals.
-- Resolving the base is its own exec, ahead of the diff, so the base and its
-  reason can be reported rather than inferred from the output.
-- `diffView` makes every terminal-dependent decision once — render or stream,
-  width, color, background, pager — against the **real** stdout, before the
-  pager replaces it. Measuring width or querying the background once output
-  goes down a pipe answers about the pipe, not the screen. The color profile is
-  likewise detected from the terminal and only then forwarded to the pager.
-
-### Paging
-
-At a terminal the output is paged, following git: `DISCOBOX_PAGER`, `GIT_PAGER`,
-`PAGER`, then `less`, with `LESS=FRX` and `LV=-c` supplied only when the user
-has not set them. `R` is not optional — without it a rendered diff arrives as
-literal escape codes. A pager of `cat` means "do not page", and `--no-pager`
-says the same on the command line. Nothing redirected is ever paged, which is
-what keeps `disco diff > x.patch` and the tests writing straight through.
-
-Quitting the pager closes the pipe, so every write after that fails with
-`EPIPE`. That is a reader who has seen enough, not a failure: it ends the run
-without an error, without a nonzero exit, and without starting the next source
-whose output nothing would read either. No signal is involved — Go re-raises
-SIGPIPE only for writes to fd 1 and 2, and the pager's stdin is neither, so the
-deferred close still runs and the pager exits cleanly instead of being orphaned.
-A redirected `disco diff | head` is not paged, writes to fd 1, and dies on
-SIGPIPE like any other Unix tool, which is the behavior to keep.
-
-Under a pager the streamed path asks for no PTY — stdout is a pipe — so git
-would emit no color of its own; it is passed `--color=always` explicitly
-instead, exactly as git does for itself. The rendered path never gets that flag:
-it colors the patch itself, and escape codes in the text would corrupt the
-parse.
-
-### Comparing Against This Machine
-
-`--base local` and `--apply-preview` are the two modes whose sides start out on
-different machines (`internal/cli/diff_local.go`). Two working trees cannot be
-diffed where they sit and only committed objects travel, so the sandbox's
-working state is written as a tree, wrapped in a commit under
-`refs/discobox/diff/<sandbox>/<slug>` with `HEAD` as its parent — which keeps
-the fetch incremental — and fetched through the same proxy `apply` uses. This
-machine's side is built by `gitutil.CurrentWorkspaceTree`. Neither index is
-touched on either end.
-
-They differ only in the left-hand side, which is why they live in `diff` rather
-than in `apply`: every other flag — the git ones, the pathspecs, the rendered
-view, the pager — is unaffected by that choice.
-
-- `--base local` compares against this machine's working tree, so your own
-  uncommitted work counts as a difference.
-- `--apply-preview` compares against **where `apply` would start** — the last
-  recorded `AppliedSourceCommit` for the source, else `gitapply.MergeBase` with
-  local `HEAD`, both resolved here because that is where `apply` resolves them.
-  It answers "what would applying this land here?", and excludes your own local
-  work entirely. It is exclusive with `--base`, which it chooses itself.
-
-Both need the source's local repository, resolved by `apply`'s own
-`resolveApplyHostDir` and overridable with `--dir slug=path`. That precondition
-is exactly what ADR 0018 keeps out of the default base, which is why these are
-opt-in.
-- `--color=auto|always|never` is git's, and only decides color. Rendering is
-  decided by the terminal and the flags above, never by `--color`.
-
-Rendering itself lives in `internal/diffrender`, not here: it is a unified-diff
-parser plus a layout — including syntax highlighting of the code inside the
-diff — with no knowledge of sandboxes, and `internal/tui` may want it later. See
-that package for the layout and highlighting rules.
-
-The diff algorithm is never ours. git computes every diff, inside the sandbox,
-so `-w`, `-M`, and `-U` behave exactly as they do in a shell and the output
-stays a patch `git apply` accepts. The only comparison this repository performs
-is the intra-line emphasis in `diffrender`, over two already-paired lines.
 
 ## Apply Output
 

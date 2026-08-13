@@ -38,12 +38,6 @@ type App struct {
 	// validate resolves it from the environment, so it is empty until then —
 	// read it through leader() rather than directly.
 	leaderKey string
-
-	// pagerRestoresScreen asks any pager this invocation starts to put the
-	// screen back on the way out, instead of leaving its last page on it the
-	// way git does. Only the launcher wants that: it owns the screen and is
-	// about to redraw over whatever the pager left. See pagerEnvDefaults.
-	pagerRestoresScreen bool
 }
 
 func NewRootCommand() *cobra.Command {
@@ -96,8 +90,6 @@ func NewRootCommand() *cobra.Command {
 	cmd.AddCommand(app.newListCommand())
 	cmd.AddCommand(app.newShellCommand())
 	cmd.AddCommand(app.newAttachCommand())
-	cmd.AddCommand(app.newStatusCommand())
-	cmd.AddCommand(app.newDiffCommand())
 	cmd.AddCommand(app.newApplyCommand())
 	cmd.AddCommand(app.newToolsCommand())
 	cmd.AddCommand(app.newConfigureCommand())
