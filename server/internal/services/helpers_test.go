@@ -149,7 +149,7 @@ func TestSandboxToAPIOmitsUnobservedRuntimeState(t *testing.T) {
 			ObservedGeneration: 1,
 		},
 	}
-	out, err := SandboxToAPI(sandbox)
+	out, err := SandboxToAPI(sandbox, nil)
 	if err != nil {
 		t.Fatalf("SandboxToAPI: %v", err)
 	}
