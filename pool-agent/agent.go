@@ -249,6 +249,39 @@ func Serve(ctx context.Context, logger *slog.Logger, bootstrap Bootstrap, regist
 				States:          states,
 			})
 		})
+		// Provisioning progress rides the same channel, reported by whoever is
+		// doing the work rather than derived from the Docker event stream, so it
+		// is a sink to hold rather than a stream to watch (ADR 0039). It shares
+		// the boot id and sequence, so the control plane orders progress and
+		// state against each other exactly as it already orders state.
+		go runtime.WatchSandboxProgress(ctx, func(reportCtx context.Context, observed sandboxruntime.SandboxProgressObservation) error {
+			progress := SandboxProgress{SandboxID: observed.SandboxID}
+			if observed.Pull != nil {
+				progress.Pull = &SandboxPullProgress{
+					Image:          observed.Pull.Image,
+					Layers:         observed.Pull.Layers,
+					LayersComplete: observed.Pull.LayersComplete,
+					Current:        observed.Pull.Current,
+					Total:          observed.Pull.Total,
+					Done:           observed.Pull.Done,
+				}
+			}
+			return reporter.ReportSandboxStates(reportCtx, SandboxStateRequest{
+				ControlPlaneURL: bootstrap.ControlPlaneURL,
+				ProjectID:       bootstrap.ProjectID,
+				PoolID:          bootstrap.PoolID,
+				PrivateKey:      registration.PrivateKey,
+				BootID:          bootID,
+				Sequence:        sequence.Add(1),
+				ReportedAt:      time.Now().UTC(),
+				// A progress report carries no state observation, so States is
+				// empty and Complete is false: a complete sync's "every sandbox
+				// I host" claim is about States, and marking this one complete
+				// would read as "this pool hosts nothing".
+				States:   []SandboxState{},
+				Progress: []SandboxProgress{progress},
+			})
+		})
 		// reporter's concrete client (HTTPClient in production) also implements
 		// SandboxAgentStatusClient; test doubles that only implement
 		// SandboxStateClient simply skip starting the poller.

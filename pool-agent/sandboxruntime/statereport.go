@@ -86,6 +86,52 @@ func (r *DockerSandboxRuntime) PublishSandboxState(ctx context.Context, sandboxI
 	}
 }
 
+// SandboxProgressObservation is one report of provisioning progress on one
+// sandbox: work that is underway and has no state transition to announce it.
+//
+// It rides the state channel rather than getting one of its own because it is
+// the same kind of fact — something only this process can see about a sandbox
+// it hosts — and because a waiting client needs it interleaved with the state
+// changes it sits between (ADR 0039).
+type SandboxProgressObservation struct {
+	SandboxID string
+	// Pull is set while the sandbox's image is being pulled.
+	Pull *PullProgress
+}
+
+// PublishSandboxProgress reports provisioning progress immediately, if a
+// watcher is running. It is best-effort in the same way PublishSandboxState is:
+// progress that nobody is listening for is dropped rather than queued, and the
+// complete sync remains the thing that makes the channel correct.
+func (r *DockerSandboxRuntime) PublishSandboxProgress(ctx context.Context, observation SandboxProgressObservation) {
+	publish, _ := r.progressPublisher.Load().(func(context.Context, SandboxProgressObservation) error)
+	if publish == nil || strings.TrimSpace(observation.SandboxID) == "" {
+		return
+	}
+	if err := publish(ctx, observation); err != nil {
+		slog.DebugContext(ctx, "publish sandbox progress", "sandboxId", observation.SandboxID, "error", err)
+	}
+}
+
+// PublishSandboxPullProgress is PublishSandboxProgress for the one kind of
+// progress that exists today, named for its caller's benefit.
+func (r *DockerSandboxRuntime) PublishSandboxPullProgress(ctx context.Context, sandboxID string, pull PullProgress) {
+	r.PublishSandboxProgress(ctx, SandboxProgressObservation{SandboxID: sandboxID, Pull: &pull})
+}
+
+// WatchSandboxProgress installs the progress sink for as long as ctx lives. It
+// is separate from WatchSandboxStates because progress is reported by whoever
+// is doing the work, not derived from the Docker event stream, so there is
+// nothing here to watch — only a sink to hold.
+func (r *DockerSandboxRuntime) WatchSandboxProgress(ctx context.Context, publish func(context.Context, SandboxProgressObservation) error) {
+	if publish == nil {
+		return
+	}
+	r.progressPublisher.Store(publish)
+	defer r.progressPublisher.Store((func(context.Context, SandboxProgressObservation) error)(nil))
+	<-ctx.Done()
+}
+
 // WatchSandboxStates runs the state channel until ctx ends.
 func (r *DockerSandboxRuntime) WatchSandboxStates(ctx context.Context, logger *slog.Logger, publish func(context.Context, SandboxStateBatch) error) {
 	if logger == nil {

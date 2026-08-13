@@ -154,6 +154,30 @@ type SandboxState struct {
 	Error     string `json:"error,omitempty"`
 }
 
+// SandboxProgress is provisioning progress on one sandbox: work underway that
+// has no state transition to announce it, an image pull above all (ADR 0039).
+//
+// It rides the state channel but is deliberately not a SandboxState. A state
+// observation always carries an observed state and progress has none, and a
+// complete sync's "every sandbox I host" claim is about states only.
+type SandboxProgress struct {
+	SandboxID string               `json:"sandboxId"`
+	Pull      *SandboxPullProgress `json:"pull,omitempty"`
+}
+
+// SandboxPullProgress is an image pull as a status line wants it: bytes against
+// bytes and layers against layers. Both totals grow while the manifest is
+// walked, so the pair is a ratio at a moment rather than progress toward a
+// fixed target.
+type SandboxPullProgress struct {
+	Image          string `json:"image"`
+	Layers         int    `json:"layers"`
+	LayersComplete int    `json:"layersComplete"`
+	Current        int64  `json:"current"`
+	Total          int64  `json:"total"`
+	Done           bool   `json:"done,omitempty"`
+}
+
 // SandboxStateRequest is one delivery on the state channel.
 type SandboxStateRequest struct {
 	ControlPlaneURL string             `json:"-"`
@@ -173,6 +197,9 @@ type SandboxStateRequest struct {
 	// no longer has a container.
 	Complete bool           `json:"complete"`
 	States   []SandboxState `json:"states"`
+	// Progress is always a delta and is unaffected by Complete, which describes
+	// States only.
+	Progress []SandboxProgress `json:"progress,omitempty"`
 }
 
 // MintSandboxAgentStatusTokensRequest asks the control plane for short-lived,

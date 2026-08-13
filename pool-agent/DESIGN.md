@@ -50,6 +50,17 @@ The agent is the only component that can see whether a sandbox is running, so it
 says so on its own schedule rather than in reply to anything (ADR 0017 §10). The
 control plane holds no opinion about power state and never asks for one.
 
+Provisioning **progress** rides the same channel in its own `progress` array
+(ADR 0039): work underway that has no state transition to announce it, an image
+pull above all. It is reported by whoever is doing the work rather than derived
+from the Docker event stream, so it is a sink to hold rather than a stream to
+watch. It is always a delta and is unaffected by `complete`, which describes
+`states` only — a progress report is not a sync claiming this pool hosts one
+sandbox. Pull progress is aggregated for a status line (bytes against bytes,
+layers against layers) and throttled, because the daemon emits per layer per
+transition; the download phase alone supplies the byte counts, since `Extracting`
+re-reports the same layer and counting both would nearly double the total.
+
 Two deliveries, both load-bearing:
 
 - **Deltas**, from the Docker event stream — `start`, `die`, `stop`, `destroy`.

@@ -189,6 +189,10 @@ type DockerSandboxRuntime struct {
 	// (see statereport.go). Power operations use it to announce a transition
 	// they are about to make.
 	statePublisher atomic.Value
+	// progressPublisher is the same channel's sink for provisioning progress
+	// that has no state transition to hang off — an image pull, above all
+	// (see statereport.go, ADR 0039).
+	progressPublisher atomic.Value
 }
 
 type DockerSandboxRuntimeConfig struct {
@@ -301,7 +305,7 @@ func (r *DockerSandboxRuntime) CreateSandbox(ctx context.Context, req *workerapi
 	normalizeSandboxConfig(&req.Config)
 	config := req.Config
 	imageName := strings.TrimSpace(optString(config.Image))
-	imageName, err := r.resolveSandboxImage(ctx, imageName, strings.TrimSpace(optString(config.ImageDigest)))
+	imageName, err := r.resolveSandboxImage(ctx, sandboxID, imageName, strings.TrimSpace(optString(config.ImageDigest)))
 	if err != nil {
 		return nil, err
 	}
@@ -419,7 +423,7 @@ func (r *DockerSandboxRuntime) observedSandbox(ctx context.Context, sandboxID st
 // against the pin, would make every such sandbox look drifted and be replaced
 // silently, performing an upgrade nobody asked for. An empty pin means unpinned:
 // resolve the reference and run whatever it names.
-func (r *DockerSandboxRuntime) resolveSandboxImage(ctx context.Context, imageName, pinnedDigest string) (string, error) {
+func (r *DockerSandboxRuntime) resolveSandboxImage(ctx context.Context, sandboxID, imageName, pinnedDigest string) (string, error) {
 	if pinnedDigest != "" {
 		// A pinned image already on the host is authoritative, whatever the tag
 		// points at now.
@@ -429,7 +433,7 @@ func (r *DockerSandboxRuntime) resolveSandboxImage(ctx context.Context, imageNam
 			return "", err
 		}
 	}
-	if err := r.ensureImageAvailable(ctx, imageName); err != nil {
+	if err := r.ensureImageAvailable(ctx, sandboxID, imageName); err != nil {
 		return "", err
 	}
 	inspected, err := r.client.ImageInspect(ctx, imageName)
@@ -515,7 +519,16 @@ func specDrifted(recordedFingerprint, containerImageID, fingerprint, pinnedDiges
 	return !imageMatchesPin(containerImageID, pinnedDigest)
 }
 
-func (r *DockerSandboxRuntime) ensureImageAvailable(ctx context.Context, imageName string) error {
+// ensureImageAvailable pulls the sandbox's image if the host does not have it,
+// reporting progress as it goes.
+//
+// An image pull is the longest thing an attach can end up waiting behind, so it
+// is also the one that most needs to be visible: a multi-gigabyte pull and a
+// hung control plane look identical to a client watching a silent socket
+// (ADR 0039). Progress is reported per sandbox because that is what a waiting
+// client asked about; the pull itself is per image and may well be feeding
+// several sandboxes at once.
+func (r *DockerSandboxRuntime) ensureImageAvailable(ctx context.Context, sandboxID, imageName string) error {
 	if _, err := r.client.ImageInspect(ctx, imageName); err == nil {
 		return nil
 	} else if !cerrdefs.IsNotFound(err) {
@@ -526,7 +539,14 @@ func (r *DockerSandboxRuntime) ensureImageAvailable(ctx context.Context, imageNa
 		return fmt.Errorf("pull image %q: %w", imageName, err)
 	}
 	defer pull.Close()
-	if err := pull.Wait(ctx); err != nil {
+	// JSONMessages rather than Wait: Wait drains the daemon's progress stream
+	// and discards it, which is exactly the information a waiting client needs.
+	// Draining is what runs the pull, so this replaces Wait rather than adding
+	// to it.
+	err = consumePullProgress(ctx, pull.JSONMessages(ctx), imageName, func(progress PullProgress) {
+		r.PublishSandboxPullProgress(ctx, sandboxID, progress)
+	}, nil)
+	if err != nil {
 		return fmt.Errorf("pull image %q: %w", imageName, err)
 	}
 	return nil
