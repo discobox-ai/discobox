@@ -1111,16 +1111,21 @@ type SandboxAgentSessionStatus struct {
 	// Underlying exec process status.
 	ExecStatus string    `json:"execStatus"`
 	HarnessId  OptString `json:"harnessId"`
+	// Last time a client acted on this session - attached, typed, or is attached right now. Absent when
+	// no client ever has.
+	LastAccessedAt OptDateTime `json:"lastAccessedAt"`
 	// Most recent harness lifecycle hook event name, when known.
 	LastEvent   OptString   `json:"lastEvent"`
 	LastEventAt OptDateTime `json:"lastEventAt"`
-	// Session display name, usually the sandbox's initial prompt.
-	Name      OptString   `json:"name"`
-	Primary   bool        `json:"primary"`
-	StartedAt OptDateTime `json:"startedAt"`
+	Primary     bool        `json:"primary"`
+	StartedAt   OptDateTime `json:"startedAt"`
 	// Derived harness session state.
 	State      SandboxAgentSessionStatusState `json:"state"`
 	TerminalId string                         `json:"terminalId"`
+	// Window title the program in the session last set (OSC 0/2), read from its terminal emulator.
+	// Absent when the session never titled itself - the sandbox's name and prompt are already on the
+	// record, so nothing is backfilled here.
+	Title OptString `json:"title"`
 }
 
 // GetAttacherCount returns the value of AttacherCount.
@@ -1138,6 +1143,11 @@ func (s *SandboxAgentSessionStatus) GetHarnessId() OptString {
 	return s.HarnessId
 }
 
+// GetLastAccessedAt returns the value of LastAccessedAt.
+func (s *SandboxAgentSessionStatus) GetLastAccessedAt() OptDateTime {
+	return s.LastAccessedAt
+}
+
 // GetLastEvent returns the value of LastEvent.
 func (s *SandboxAgentSessionStatus) GetLastEvent() OptString {
 	return s.LastEvent
@@ -1146,11 +1156,6 @@ func (s *SandboxAgentSessionStatus) GetLastEvent() OptString {
 // GetLastEventAt returns the value of LastEventAt.
 func (s *SandboxAgentSessionStatus) GetLastEventAt() OptDateTime {
 	return s.LastEventAt
-}
-
-// GetName returns the value of Name.
-func (s *SandboxAgentSessionStatus) GetName() OptString {
-	return s.Name
 }
 
 // GetPrimary returns the value of Primary.
@@ -1173,6 +1178,11 @@ func (s *SandboxAgentSessionStatus) GetTerminalId() string {
 	return s.TerminalId
 }
 
+// GetTitle returns the value of Title.
+func (s *SandboxAgentSessionStatus) GetTitle() OptString {
+	return s.Title
+}
+
 // SetAttacherCount sets the value of AttacherCount.
 func (s *SandboxAgentSessionStatus) SetAttacherCount(val int64) {
 	s.AttacherCount = val
@@ -1188,6 +1198,11 @@ func (s *SandboxAgentSessionStatus) SetHarnessId(val OptString) {
 	s.HarnessId = val
 }
 
+// SetLastAccessedAt sets the value of LastAccessedAt.
+func (s *SandboxAgentSessionStatus) SetLastAccessedAt(val OptDateTime) {
+	s.LastAccessedAt = val
+}
+
 // SetLastEvent sets the value of LastEvent.
 func (s *SandboxAgentSessionStatus) SetLastEvent(val OptString) {
 	s.LastEvent = val
@@ -1196,11 +1211,6 @@ func (s *SandboxAgentSessionStatus) SetLastEvent(val OptString) {
 // SetLastEventAt sets the value of LastEventAt.
 func (s *SandboxAgentSessionStatus) SetLastEventAt(val OptDateTime) {
 	s.LastEventAt = val
-}
-
-// SetName sets the value of Name.
-func (s *SandboxAgentSessionStatus) SetName(val OptString) {
-	s.Name = val
 }
 
 // SetPrimary sets the value of Primary.
@@ -1221,6 +1231,11 @@ func (s *SandboxAgentSessionStatus) SetState(val SandboxAgentSessionStatusState)
 // SetTerminalId sets the value of TerminalId.
 func (s *SandboxAgentSessionStatus) SetTerminalId(val string) {
 	s.TerminalId = val
+}
+
+// SetTitle sets the value of Title.
+func (s *SandboxAgentSessionStatus) SetTitle(val OptString) {
+	s.Title = val
 }
 
 // Derived harness session state.
@@ -1295,9 +1310,11 @@ func (s *SandboxAgentSessionStatusState) UnmarshalText(data []byte) error {
 
 // Ref: #/components/schemas/SandboxAgentStatusResponse
 type SandboxAgentStatusResponse struct {
-	ObservedAt time.Time                     `json:"observedAt"`
-	Sessions   []SandboxAgentSessionStatus   `json:"sessions"`
-	Sources    []SandboxAgentGitSourceStatus `json:"sources"`
+	ObservedAt time.Time `json:"observedAt"`
+	// Terminal sessions only, live and ended alike - every terminal a record still exists for, typically
+	// just the primary. One-shot execs are not sessions and never appear.
+	Sessions []SandboxAgentSessionStatus   `json:"sessions"`
+	Sources  []SandboxAgentGitSourceStatus `json:"sources"`
 }
 
 // GetObservedAt returns the value of ObservedAt.

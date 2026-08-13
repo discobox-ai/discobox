@@ -548,8 +548,12 @@ components:
                     type: string
                 primary:
                     type: boolean
-                name:
-                    description: Session display name, usually the sandbox's initial prompt.
+                title:
+                    description: Window title the program in the session last set (OSC 0/2), read from its terminal emulator. Absent when the session never titled itself - the sandbox's name and prompt are already on the record, so nothing is backfilled here.
+                    type: string
+                lastAccessedAt:
+                    description: Last time a client acted on this session - attached, typed, or is attached right now. Absent when no client ever has.
+                    format: date-time
                     type: string
                 state:
                     description: Derived harness session state.
@@ -592,6 +596,7 @@ components:
                         $ref: '#/components/schemas/SandboxAgentGitSourceStatus'
                     type: array
                 sessions:
+                    description: Terminal sessions only, live and ended alike - every terminal a record still exists for, typically just the primary. One-shot execs are not sessions and never appear.
                     items:
                         $ref: '#/components/schemas/SandboxAgentSessionStatus'
                     type: array

@@ -8128,8 +8128,13 @@ type SandboxAgentSessionStatus struct {
 	TerminalId string    `json:"terminalId"`
 	HarnessId  OptString `json:"harnessId"`
 	Primary    bool      `json:"primary"`
-	// Session display name, usually the sandbox's initial prompt.
-	Name OptString `json:"name"`
+	// Window title the program in the session last set (OSC 0/2), read from its terminal emulator.
+	// Absent when the session never titled itself - the sandbox's name and prompt are already on the
+	// record, so nothing is backfilled here.
+	Title OptString `json:"title"`
+	// Last time a client acted on this session - attached, typed, or is attached right now. Absent when
+	// no client ever has.
+	LastAccessedAt OptDateTime `json:"lastAccessedAt"`
 	// Derived harness session state.
 	State SandboxAgentSessionStatusState `json:"state"`
 	// Most recent harness lifecycle hook event name, when known.
@@ -8157,9 +8162,14 @@ func (s *SandboxAgentSessionStatus) GetPrimary() bool {
 	return s.Primary
 }
 
-// GetName returns the value of Name.
-func (s *SandboxAgentSessionStatus) GetName() OptString {
-	return s.Name
+// GetTitle returns the value of Title.
+func (s *SandboxAgentSessionStatus) GetTitle() OptString {
+	return s.Title
+}
+
+// GetLastAccessedAt returns the value of LastAccessedAt.
+func (s *SandboxAgentSessionStatus) GetLastAccessedAt() OptDateTime {
+	return s.LastAccessedAt
 }
 
 // GetState returns the value of State.
@@ -8207,9 +8217,14 @@ func (s *SandboxAgentSessionStatus) SetPrimary(val bool) {
 	s.Primary = val
 }
 
-// SetName sets the value of Name.
-func (s *SandboxAgentSessionStatus) SetName(val OptString) {
-	s.Name = val
+// SetTitle sets the value of Title.
+func (s *SandboxAgentSessionStatus) SetTitle(val OptString) {
+	s.Title = val
+}
+
+// SetLastAccessedAt sets the value of LastAccessedAt.
+func (s *SandboxAgentSessionStatus) SetLastAccessedAt(val OptDateTime) {
+	s.LastAccessedAt = val
 }
 
 // SetState sets the value of State.
@@ -8366,9 +8381,11 @@ func (s *SandboxAgentStatusEntryStatus) init() SandboxAgentStatusEntryStatus {
 
 // Ref: #/components/schemas/SandboxAgentStatusResponse
 type SandboxAgentStatusResponse struct {
-	Sources    []SandboxAgentGitSourceStatus `json:"sources"`
-	Sessions   []SandboxAgentSessionStatus   `json:"sessions"`
-	ObservedAt time.Time                     `json:"observedAt"`
+	Sources []SandboxAgentGitSourceStatus `json:"sources"`
+	// Terminal sessions only, live and ended alike - every terminal a record still exists for, typically
+	// just the primary. One-shot execs are not sessions and never appear.
+	Sessions   []SandboxAgentSessionStatus `json:"sessions"`
+	ObservedAt time.Time                   `json:"observedAt"`
 }
 
 // GetSources returns the value of Sources.

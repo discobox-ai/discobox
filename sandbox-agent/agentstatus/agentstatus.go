@@ -35,16 +35,26 @@ type GitSourceStatus struct {
 
 // SessionStatus is the observed state of one harness terminal.
 type SessionStatus struct {
-	TerminalID    string     `json:"terminalId"`
-	HarnessID     string     `json:"harnessId,omitempty"`
-	Primary       bool       `json:"primary"`
-	Name          string     `json:"name,omitempty"`
-	State         string     `json:"state"`
-	LastEvent     string     `json:"lastEvent,omitempty"`
-	LastEventAt   *time.Time `json:"lastEventAt,omitempty"`
-	StartedAt     *time.Time `json:"startedAt,omitempty"`
-	AttacherCount int        `json:"attacherCount"`
-	ExecStatus    string     `json:"execStatus"`
+	TerminalID string `json:"terminalId"`
+	HarnessID  string `json:"harnessId,omitempty"`
+	Primary    bool   `json:"primary"`
+	// Title is the window title the program in the session last set (OSC
+	// 0/2), read from its shim's screen emulator. It is the session's own
+	// name for itself — a harness usually titles it after what it is doing —
+	// and is deliberately not backfilled from anything else: the sandbox's
+	// name and its prompt are already on the record, and a session that
+	// never titled itself reports no title at all.
+	Title string `json:"title,omitempty"`
+	// LastAccessedAt is the last time a client acted on this session —
+	// attached, typed, or is attached right now — as the shim reports it.
+	// Absent when no client ever has.
+	LastAccessedAt *time.Time `json:"lastAccessedAt,omitempty"`
+	State          string     `json:"state"`
+	LastEvent      string     `json:"lastEvent,omitempty"`
+	LastEventAt    *time.Time `json:"lastEventAt,omitempty"`
+	StartedAt      *time.Time `json:"startedAt,omitempty"`
+	AttacherCount  int        `json:"attacherCount"`
+	ExecStatus     string     `json:"execStatus"`
 }
 
 // Response is the full status payload sandbox-agent's status endpoint

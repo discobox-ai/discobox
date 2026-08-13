@@ -62,6 +62,17 @@ type shimRuntime struct {
 	// it rather than failing on a closed descriptor.
 	inputClosed bool
 	status      Exec
+	// lastAccess is the last time a client acted on this exec: an attach
+	// connecting, or any frame it sent. Kept here rather than derived,
+	// because the stream does not timestamp its traffic.
+	lastAccess time.Time
+}
+
+// touchAccess records that a client just acted on this exec.
+func (r *shimRuntime) touchAccess() {
+	r.mu.Lock()
+	r.lastAccess = time.Now().UTC()
+	r.mu.Unlock()
 }
 
 func RunShim(ctx context.Context, cfg ShimConfig) error {
@@ -182,11 +193,24 @@ func (r *shimRuntime) handler() http.Handler {
 func (r *shimRuntime) handleStatus(w http.ResponseWriter, _ *http.Request) {
 	r.mu.Lock()
 	status := r.status
+	access := r.lastAccess
 	r.mu.Unlock()
 	// Computed live rather than tracked in r.status: attach/detach happens on
 	// the stream directly and does not otherwise touch this shim's status
-	// snapshot, so a query-time count is simpler and always current.
+	// snapshot, so a query-time count is simpler and always current. The
+	// title is the same shape of fact — the emulator holds the current one.
 	status.AttacherCount = len(r.stream.Attachers())
+	status.Title = r.stream.Title()
+	// A client that is attached right now is accessing the exec right now,
+	// even if it has not typed; otherwise access is the last time one
+	// connected or sent a frame.
+	if status.AttacherCount > 0 {
+		now := time.Now().UTC()
+		status.LastAccessedAt = &now
+	} else if !access.IsZero() {
+		at := access
+		status.LastAccessedAt = &at
+	}
 	writeJSON(w, status)
 }
 
@@ -207,6 +231,7 @@ func (r *shimRuntime) serve() {
 }
 
 func (r *shimRuntime) handleAttach(w http.ResponseWriter, req *http.Request) {
+	r.touchAccess()
 	repaint, _ := strconv.ParseBool(req.URL.Query().Get("replay"))
 	r.stream.HandleAttach(w, repaint)
 }
@@ -338,6 +363,7 @@ func attachFrameType(stream LogStream) byte {
 }
 
 func (r *shimRuntime) handleAttachFrame(next frame.Frame) error {
+	r.touchAccess()
 	switch next.Type {
 	case frame.Input:
 		return r.writeInput(next.Payload)

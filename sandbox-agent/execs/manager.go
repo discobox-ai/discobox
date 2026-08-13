@@ -64,6 +64,15 @@ type Exec struct {
 	// stream, reported live by the shim on every /status query (see
 	// shimRuntime.handleStatus) rather than tracked as persisted state.
 	AttacherCount int `json:"attacherCount,omitempty"`
+	// Title is the window title the program running in the exec last set
+	// (OSC 0/2), read live from the shim's screen emulator like AttacherCount.
+	// Empty for a program that never set one and for pipe execs, which have
+	// no emulator.
+	Title string `json:"title,omitempty"`
+	// LastAccessedAt is the last time a client acted on this exec — attached,
+	// typed, or is attached right now — reported live by the shim like
+	// AttacherCount. Absent when no client ever has, or once the shim is gone.
+	LastAccessedAt *time.Time `json:"lastAccessedAt,omitempty"`
 }
 
 type CreateRequest struct {
@@ -921,6 +930,8 @@ func mergeExecStatus(base, status Exec) Exec {
 		base.ExitedAt = status.ExitedAt
 	}
 	base.AttacherCount = status.AttacherCount
+	base.Title = status.Title
+	base.LastAccessedAt = status.LastAccessedAt
 	return base
 }
 

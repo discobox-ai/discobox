@@ -1838,6 +1838,12 @@ func (s *SandboxAgentSessionStatus) encodeFields(e *jx.Encoder) {
 		}
 	}
 	{
+		if s.LastAccessedAt.Set {
+			e.FieldStart("lastAccessedAt")
+			s.LastAccessedAt.Encode(e, json.EncodeDateTime)
+		}
+	}
+	{
 		if s.LastEvent.Set {
 			e.FieldStart("lastEvent")
 			s.LastEvent.Encode(e)
@@ -1847,12 +1853,6 @@ func (s *SandboxAgentSessionStatus) encodeFields(e *jx.Encoder) {
 		if s.LastEventAt.Set {
 			e.FieldStart("lastEventAt")
 			s.LastEventAt.Encode(e, json.EncodeDateTime)
-		}
-	}
-	{
-		if s.Name.Set {
-			e.FieldStart("name")
-			s.Name.Encode(e)
 		}
 	}
 	{
@@ -1873,19 +1873,26 @@ func (s *SandboxAgentSessionStatus) encodeFields(e *jx.Encoder) {
 		e.FieldStart("terminalId")
 		e.Str(s.TerminalId)
 	}
+	{
+		if s.Title.Set {
+			e.FieldStart("title")
+			s.Title.Encode(e)
+		}
+	}
 }
 
-var jsonFieldsNameOfSandboxAgentSessionStatus = [10]string{
-	0: "attacherCount",
-	1: "execStatus",
-	2: "harnessId",
-	3: "lastEvent",
-	4: "lastEventAt",
-	5: "name",
-	6: "primary",
-	7: "startedAt",
-	8: "state",
-	9: "terminalId",
+var jsonFieldsNameOfSandboxAgentSessionStatus = [11]string{
+	0:  "attacherCount",
+	1:  "execStatus",
+	2:  "harnessId",
+	3:  "lastAccessedAt",
+	4:  "lastEvent",
+	5:  "lastEventAt",
+	6:  "primary",
+	7:  "startedAt",
+	8:  "state",
+	9:  "terminalId",
+	10: "title",
 }
 
 // Decode decodes SandboxAgentSessionStatus from json.
@@ -1931,6 +1938,16 @@ func (s *SandboxAgentSessionStatus) Decode(d *jx.Decoder) error {
 			}(); err != nil {
 				return errors.Wrap(err, "decode field \"harnessId\"")
 			}
+		case "lastAccessedAt":
+			if err := func() error {
+				s.LastAccessedAt.Reset()
+				if err := s.LastAccessedAt.Decode(d, json.DecodeDateTime); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"lastAccessedAt\"")
+			}
 		case "lastEvent":
 			if err := func() error {
 				s.LastEvent.Reset()
@@ -1950,16 +1967,6 @@ func (s *SandboxAgentSessionStatus) Decode(d *jx.Decoder) error {
 				return nil
 			}(); err != nil {
 				return errors.Wrap(err, "decode field \"lastEventAt\"")
-			}
-		case "name":
-			if err := func() error {
-				s.Name.Reset()
-				if err := s.Name.Decode(d); err != nil {
-					return err
-				}
-				return nil
-			}(); err != nil {
-				return errors.Wrap(err, "decode field \"name\"")
 			}
 		case "primary":
 			requiredBitSet[0] |= 1 << 6
@@ -2004,6 +2011,16 @@ func (s *SandboxAgentSessionStatus) Decode(d *jx.Decoder) error {
 				return nil
 			}(); err != nil {
 				return errors.Wrap(err, "decode field \"terminalId\"")
+			}
+		case "title":
+			if err := func() error {
+				s.Title.Reset()
+				if err := s.Title.Decode(d); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"title\"")
 			}
 		default:
 			return errors.Errorf("unexpected field %q", k)

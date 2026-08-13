@@ -31,7 +31,6 @@ type handler struct {
 	resourceRetention int
 	sources           []sandboxconfig.Source
 	harnessTypeID     string
-	prompt            []string
 	execUser          *execs.User
 }
 
@@ -433,7 +432,7 @@ func (h *handler) GetSandboxAgentStatus(ctx context.Context, _ sandboxapi.GetSan
 	if h.store != nil {
 		hooks = h.store
 	}
-	sessions := agentstatus.ComputeSessionStatus(ctx, terminals, h.harnessTypeID, h.prompt, hooks)
+	sessions := agentstatus.ComputeSessionStatus(ctx, terminals, h.harnessTypeID, hooks)
 
 	response := sandboxapi.SandboxAgentStatusResponse{
 		ObservedAt: observedAt,
@@ -500,8 +499,11 @@ func sandboxAgentSessionStatus(in agentstatus.SessionStatus) sandboxapi.SandboxA
 	if in.HarnessID != "" {
 		out.HarnessId = sandboxapi.NewOptString(in.HarnessID)
 	}
-	if in.Name != "" {
-		out.Name = sandboxapi.NewOptString(in.Name)
+	if in.Title != "" {
+		out.Title = sandboxapi.NewOptString(in.Title)
+	}
+	if in.LastAccessedAt != nil {
+		out.LastAccessedAt = sandboxapi.NewOptDateTime(*in.LastAccessedAt)
 	}
 	if in.LastEvent != "" {
 		out.LastEvent = sandboxapi.NewOptString(in.LastEvent)

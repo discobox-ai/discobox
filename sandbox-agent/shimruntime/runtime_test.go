@@ -205,3 +205,21 @@ func TestRedrawAfterReplayRestoresSize(t *testing.T) {
 		t.Fatalf("size not restored after jiggle: got %dx%d", size.Rows, size.Cols)
 	}
 }
+
+// Title reads back the OSC title the program last set, for the shim's status
+// report; a runtime with no screen (a pipe exec) has none to give.
+func TestTitleReadsTheEmulatorTitle(t *testing.T) {
+	done := make(chan struct{})
+	defer close(done)
+	r := New("test", done, nil)
+	if got := r.Title(); got != "" {
+		t.Fatalf("title = %q before EnableScreen, want empty", got)
+	}
+	_, tty := screenPipe(t)
+	r.EnableScreen(24, 80, DefaultScrollbackLines, tty)
+
+	r.Broadcast(frame.Stdout, []byte("\x1b]0;fixing the reaper\x07output"))
+	if got := r.Title(); got != "fixing the reaper" {
+		t.Fatalf("title = %q, want the OSC title", got)
+	}
+}

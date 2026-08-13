@@ -22,39 +22,39 @@ type HookLister interface {
 // backward to the most recent state-defining event.
 const hookHistoryLimit = 200
 
-// ComputeSessionStatus derives one SessionStatus per terminal exec.
+// ComputeSessionStatus derives one SessionStatus per terminal session.
 // harnessTypeID selects the harness driver (claude-code, etc.) used to derive
 // a fine-grained state from recorded hook events; execs without a matching
 // harness.SessionStateDeriver, or with no hooks recorded yet, fall back to a
-// generic state derived from the exec's own process liveness. prompt is the
-// sandbox's resolved initial prompt, used as the primary terminal's session
-// name — already exactly "the first prompt," with no transcript parsing
-// needed.
-func ComputeSessionStatus(ctx context.Context, terminals []execs.Exec, harnessTypeID string, prompt []string, hooks HookLister) []SessionStatus {
-	if len(terminals) == 0 {
-		return nil
-	}
+// generic state derived from the exec's own process liveness.
+//
+// all is the manager's whole listing, and not all of it is a session: it
+// filters to terminal-mode execs (every terminal carries a harnessId — shell
+// is a harness too, ADR 0032). One-shot commands are not sessions and never
+// appear; a terminal that has ended still does, with its exited or failed
+// state, for as long as its record exists — deletion is what removes it.
+func ComputeSessionStatus(ctx context.Context, all []execs.Exec, harnessTypeID string, hooks HookLister) []SessionStatus {
 	deriver := sessionStateDeriverFor(harnessTypeID)
-	name := strings.Join(prompt, " ")
-	out := make([]SessionStatus, 0, len(terminals))
-	for _, exec := range terminals {
-		out = append(out, sessionStatusForExec(ctx, exec, name, deriver, hooks))
+	var out []SessionStatus
+	for _, exec := range all {
+		if terminal.HarnessID(exec) == "" {
+			continue
+		}
+		out = append(out, sessionStatusForExec(ctx, exec, deriver, hooks))
 	}
 	return out
 }
 
-func sessionStatusForExec(ctx context.Context, exec execs.Exec, primaryName string, deriver harness.SessionStateDeriver, hooks HookLister) SessionStatus {
-	primary := terminal.IsPrimary(exec)
+func sessionStatusForExec(ctx context.Context, exec execs.Exec, deriver harness.SessionStateDeriver, hooks HookLister) SessionStatus {
 	status := SessionStatus{
-		TerminalID:    exec.ID,
-		HarnessID:     terminal.HarnessID(exec),
-		Primary:       primary,
-		AttacherCount: exec.AttacherCount,
-		ExecStatus:    string(exec.Status),
-		StartedAt:     exec.StartedAt,
-	}
-	if primary {
-		status.Name = primaryName
+		TerminalID:     exec.ID,
+		HarnessID:      terminal.HarnessID(exec),
+		Primary:        terminal.IsPrimary(exec),
+		Title:          exec.Title,
+		LastAccessedAt: exec.LastAccessedAt,
+		AttacherCount:  exec.AttacherCount,
+		ExecStatus:     string(exec.Status),
+		StartedAt:      exec.StartedAt,
 	}
 
 	state, lastEvent, lastEventAt := "", "", time.Time{}

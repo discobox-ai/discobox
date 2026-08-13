@@ -13749,9 +13749,15 @@ func (s *SandboxAgentSessionStatus) encodeFields(e *jx.Encoder) {
 		e.Bool(s.Primary)
 	}
 	{
-		if s.Name.Set {
-			e.FieldStart("name")
-			s.Name.Encode(e)
+		if s.Title.Set {
+			e.FieldStart("title")
+			s.Title.Encode(e)
+		}
+	}
+	{
+		if s.LastAccessedAt.Set {
+			e.FieldStart("lastAccessedAt")
+			s.LastAccessedAt.Encode(e, json.EncodeDateTime)
 		}
 	}
 	{
@@ -13786,17 +13792,18 @@ func (s *SandboxAgentSessionStatus) encodeFields(e *jx.Encoder) {
 	}
 }
 
-var jsonFieldsNameOfSandboxAgentSessionStatus = [10]string{
-	0: "terminalId",
-	1: "harnessId",
-	2: "primary",
-	3: "name",
-	4: "state",
-	5: "lastEvent",
-	6: "lastEventAt",
-	7: "startedAt",
-	8: "attacherCount",
-	9: "execStatus",
+var jsonFieldsNameOfSandboxAgentSessionStatus = [11]string{
+	0:  "terminalId",
+	1:  "harnessId",
+	2:  "primary",
+	3:  "title",
+	4:  "lastAccessedAt",
+	5:  "state",
+	6:  "lastEvent",
+	7:  "lastEventAt",
+	8:  "startedAt",
+	9:  "attacherCount",
+	10: "execStatus",
 }
 
 // Decode decodes SandboxAgentSessionStatus from json.
@@ -13842,18 +13849,28 @@ func (s *SandboxAgentSessionStatus) Decode(d *jx.Decoder) error {
 			}(); err != nil {
 				return errors.Wrap(err, "decode field \"primary\"")
 			}
-		case "name":
+		case "title":
 			if err := func() error {
-				s.Name.Reset()
-				if err := s.Name.Decode(d); err != nil {
+				s.Title.Reset()
+				if err := s.Title.Decode(d); err != nil {
 					return err
 				}
 				return nil
 			}(); err != nil {
-				return errors.Wrap(err, "decode field \"name\"")
+				return errors.Wrap(err, "decode field \"title\"")
+			}
+		case "lastAccessedAt":
+			if err := func() error {
+				s.LastAccessedAt.Reset()
+				if err := s.LastAccessedAt.Decode(d, json.DecodeDateTime); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"lastAccessedAt\"")
 			}
 		case "state":
-			requiredBitSet[0] |= 1 << 4
+			requiredBitSet[0] |= 1 << 5
 			if err := func() error {
 				if err := s.State.Decode(d); err != nil {
 					return err
@@ -13893,7 +13910,7 @@ func (s *SandboxAgentSessionStatus) Decode(d *jx.Decoder) error {
 				return errors.Wrap(err, "decode field \"startedAt\"")
 			}
 		case "attacherCount":
-			requiredBitSet[1] |= 1 << 0
+			requiredBitSet[1] |= 1 << 1
 			if err := func() error {
 				v, err := d.Int64()
 				s.AttacherCount = int64(v)
@@ -13905,7 +13922,7 @@ func (s *SandboxAgentSessionStatus) Decode(d *jx.Decoder) error {
 				return errors.Wrap(err, "decode field \"attacherCount\"")
 			}
 		case "execStatus":
-			requiredBitSet[1] |= 1 << 1
+			requiredBitSet[1] |= 1 << 2
 			if err := func() error {
 				v, err := d.Str()
 				s.ExecStatus = string(v)
@@ -13926,8 +13943,8 @@ func (s *SandboxAgentSessionStatus) Decode(d *jx.Decoder) error {
 	// Validate required fields.
 	var failures []validate.FieldError
 	for i, mask := range [2]uint8{
-		0b00010101,
-		0b00000011,
+		0b00100101,
+		0b00000110,
 	} {
 		if result := (requiredBitSet[i] & mask) ^ mask; result != 0 {
 			// Mask only required fields and check equality to mask using XOR.

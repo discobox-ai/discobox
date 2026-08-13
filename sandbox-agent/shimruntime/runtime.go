@@ -71,6 +71,18 @@ func (r *Runtime) EnableScreen(rows, cols uint16, scrollbackLines int, tty *os.F
 	go r.pumpScreenResponses(screen, tty)
 }
 
+// Title is the window title the program last set (OSC 0/2), held by the
+// screen emulator as it goes past. Empty for a program that never set one,
+// and always empty for pipe execs, which have no screen to hold it.
+func (r *Runtime) Title() string {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	if r.screen == nil {
+		return ""
+	}
+	return r.screen.title
+}
+
 // Observe feeds the screen emulator, implementing host.Replayer. It runs under
 // the stream lock, so it must not block — see pumpScreenResponses.
 func (r *Runtime) Observe(payload []byte) {

@@ -158,7 +158,6 @@ func newRouterAndManager(cfg Config) (*chi.Mux, *terminal.Service, *execs.Manage
 		resourceRetention: cfg.Resources.RetentionCount,
 		sources:           cfg.Sources,
 		harnessTypeID:     cfg.Harness.TypeID,
-		prompt:            cfg.Prompt,
 		execUser:          execManager.DefaultUser(),
 	}
 	generated, err := sandboxapi.NewServer(handler)
