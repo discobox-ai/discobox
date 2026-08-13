@@ -39,18 +39,40 @@ type Usage struct {
 	DiskPercent   int
 }
 
-// DiffStat is what a sandbox has changed against the commit it was cut from.
+// DiffStat is what a sandbox has changed: committed and uncommitted tracked
+// changes both, as `git diff --shortstat` counts them, against the spawn
+// commit — forwarded to the merge base with upstream once the sandbox has
+// fetched, so pulled commits do not count as its changes.
 //
-// It is not part of a sandbox listing: the server does not track it, so it
-// costs a git invocation inside the sandbox to find out. The list fetches it in
-// the background for the rows on screen, and Known separates "nothing changed"
-// from "not asked yet".
+// It arrives with the listing: the sandbox-agent resolves the base and
+// reports the stat with the rest of its status, so
+// no git runs anywhere on the list's behalf — the fetch-per-row this replaced
+// woke every stopped sandbox just to draw a column. Known separates "nothing
+// changed" from "nothing reported yet".
 type DiffStat struct {
 	Known bool
 
 	Added   int
 	Deleted int
 	Files   int
+}
+
+// GitState is where a sandbox's work sits right now, as its own agent last
+// reported it: the branch and commit the primary source's working tree is on,
+// whether anything there is uncommitted, and whether the head commit has been
+// landed on a host by an apply.
+//
+// It arrives with the listing — the agent pushes it through the control plane —
+// so unlike the diffstat it costs nothing to show. Known separates "nothing
+// has reported yet", where the row falls back to the position the sandbox was
+// spawned at, from a report of any kind.
+type GitState struct {
+	Known bool
+
+	Branch  string
+	Commit  string // head, short
+	Dirty   bool   // uncommitted content in the working tree
+	Applied bool   // clean, and the head commit was the last one applied
 }
 
 // Sandbox is the row model: what a picker needs to tell one sandbox from
@@ -72,6 +94,10 @@ type Sandbox struct {
 	Branch string
 	Commit string // the commit it was spawned from, short
 	Dirty  bool   // spawned from a snapshot on top of that commit
+
+	// Git is where the work sits now, when the sandbox's agent has reported;
+	// the spawn fields above are the fallback until it does.
+	Git GitState
 
 	Usage    Usage
 	Diff     DiffStat
@@ -113,18 +139,86 @@ func (s Sandbox) up() bool {
 	return s.State == StateRunning || s.State == StateStarting
 }
 
-// base is the commit the sandbox was spawned from. A star marks the ones
-// carrying uncommitted work that was snapshotted on top of it.
+// base is where the sandbox's work sits in git. Once its agent has reported,
+// that is the position the tree is on right now; until then it is the commit
+// the sandbox was spawned from. The mark on it is the state of the work,
+// most losable first: a star for uncommitted content — reported dirt, or the
+// snapshot carried in at create — an up arrow for committed work no apply
+// has landed, and a check for a head commit an apply has landed, which is
+// the state where nothing in the sandbox would be lost.
 func (s Sandbox) base() string {
-	if s.Branch == "" && s.Commit == "" {
+	branch, commit := s.Branch, s.Commit
+	if s.Git.Known {
+		branch, commit = s.Git.Branch, s.Git.Commit
+	}
+	if branch == "" && commit == "" {
 		return ""
 	}
-	out := s.Branch + "@" + s.Commit
-	if s.Dirty {
+	out := branch + "@" + commit
+	switch {
+	case s.dirty():
 		out += "*"
+	case s.Git.Applied:
+		out += "✓"
+	case s.committed():
+		out += "⇡"
 	}
 	return out
 }
+
+// dirty reports whether the sandbox holds uncommitted content: what its agent
+// reports once there is a report, the snapshot it was created over until then.
+func (s Sandbox) dirty() bool {
+	if s.Git.Known {
+		return s.Git.Dirty
+	}
+	return s.Dirty
+}
+
+// committed reports whether the sandbox holds committed work that no apply
+// has landed anywhere: its reported head has moved off the commit it was
+// spawned from, and is not the last applied one. It needs both commits to
+// answer — a sandbox with no recorded spawn commit cannot say its head has
+// moved.
+func (s Sandbox) committed() bool {
+	return s.Git.Known && !s.Git.Dirty && !s.Git.Applied &&
+		s.Git.Commit != "" && s.Commit != "" && s.Git.Commit != s.Commit
+}
+
+// Exec is one exec session in a sandbox, as the workspace's tab strip needs
+// it: enough to key a tab, title it, order it, and decide whether it should be
+// attached at all.
+type Exec struct {
+	ID string
+
+	// Command is what the exec is running, for titling its tab: the startup
+	// command a harness terminal types into its shell when there is one, the
+	// argv otherwise.
+	Command []string
+
+	// Harness is the harness slug when this exec is a harness terminal, and
+	// empty for a plain shell.
+	Harness string
+
+	// Primary marks the sandbox's primary harness terminal, which is the
+	// workspace's left half rather than ever a tab.
+	Primary bool
+
+	Tty bool
+
+	// Live is whether the exec can be attached to: it exists and has not
+	// exited, failed or been lost.
+	Live bool
+
+	// CreatedAt orders the tabs, oldest first, so they hold their places as
+	// the listing changes around them.
+	CreatedAt time.Time
+}
+
+// ExecPrimary is the virtual exec id of the sandbox's primary terminal. The
+// sandbox resolves it to the current primary session — and relaunches one that
+// has stopped — so the workspace never has to know its concrete id.
+const ExecPrimary = "primary"
 
 // RunRequest is what Enter in the prompt asks for: `disco run`'s arguments, and
 // nothing the command does not have.
@@ -165,58 +259,32 @@ const (
 // Interaction is an action that owns a terminal for as long as it runs.
 //
 // Two of them — attach and shell — are terminals in their own right, and are
-// drawn in a pane inside the window. The rest run a command that wants the real
-// terminal, a pager most of all, and the window steps aside for those.
+// drawn in a pane inside the window. Apply runs a command that wants the real
+// terminal, and the window steps aside for it.
 type Interaction string
 
 const (
 	InteractAttach Interaction = "attach"
 	InteractShell  Interaction = "shell"
-	InteractDiff   Interaction = "diff"
 	InteractApply  Interaction = "apply"
-	InteractStatus Interaction = "status"
 )
 
-// paneable reports whether an interaction can be drawn in a pane from the
+// paneable reports whether an interaction can be drawn in the window from the
 // discobox list.
 //
-// Attach and shell are terminals in the discobox. Diff and status are this
-// CLI's own commands, given a terminal of their own so they can be drawn beside
-// one — they read and print, so a pane is exactly where they belong.
+// Attach and shell are terminals in the discobox, and open the workspace
+// screen.
 //
 // Apply is not among them here, because the list can act on several discoboxes
-// at once and a pane shows one. On the pane screen, where there is only ever
-// the one, it runs like the others; see Interaction.slotted.
+// at once and a pane shows one. On the workspace screen, where there is only
+// ever the one, it runs like the others.
 func (a Interaction) paneable() bool {
 	switch a {
-	case InteractAttach, InteractShell, InteractDiff, InteractStatus:
+	case InteractAttach, InteractShell:
 		return true
 	default:
 		return false
 	}
-}
-
-// slotted reports whether the interaction is one of the pane screen's two
-// standing terminals rather than a command that runs and finishes.
-//
-// This is the whole shape of that screen: a spot for the harness and a spot for
-// a shell, one of each, either of which may be empty and can be opened where it
-// stands. Everything else — diff, status, apply — takes the screen for as long
-// as it runs and gives it back, so the two terminals are still there, still
-// running, still where they were.
-func (a Interaction) slotted() bool {
-	return a == InteractAttach || a == InteractShell
-}
-
-// holdsOnExit reports whether a pane should stay on screen after what was
-// running in it finishes.
-//
-// A shell that exits is gone, and so is a harness session that ends: the pane
-// has nothing left to show. A command that ran, printed and returned is the
-// opposite — `disco status` on a clean tree is over in a moment, and a pane that
-// vanished with it would be a screen you never got to read.
-func (a Interaction) holdsOnExit() bool {
-	return !a.slotted()
 }
 
 // TerminalConnectionState is what the transport underneath a pane is doing. A
@@ -257,10 +325,6 @@ type DataSource interface {
 	// List is the project's sandboxes, most recently used first.
 	List(ctx context.Context) ([]Sandbox, error)
 
-	// DiffStat is what one sandbox has changed. It runs git inside the sandbox,
-	// so the list only asks for the rows it is showing.
-	DiffStat(ctx context.Context, sandboxID string) (DiffStat, error)
-
 	// Run creates a sandbox and delivers its source, which is what Enter does.
 	Run(ctx context.Context, req RunRequest) (Sandbox, error)
 
@@ -279,8 +343,25 @@ type DataSource interface {
 	// the real terminal's streams. The window is suspended for the duration.
 	Interact(ctx context.Context, action Interaction, sandboxIDs []string, stdin io.Reader, stdout, stderr io.Writer) error
 
-	// Open connects a terminal the window will draw in a pane, sized to the
-	// pane it is going into. Every interaction but a multi-discobox apply comes
-	// through here.
+	// Open connects a terminal for one of the CLI's own commands — apply —
+	// sized to the overlay it is going into. The discobox's terminals come
+	// through OpenExec and NewShell instead.
 	Open(ctx context.Context, action Interaction, sandboxID string, cols, rows int) (Terminal, error)
+
+	// Execs is a snapshot of a sandbox's exec sessions. The workspace polls it
+	// while it is open; it is a snapshot rather than a stream because the
+	// control plane has no exec event stream yet — exec state lives on the
+	// sandbox, proxied through — and the seam is shaped so a stream can
+	// replace the poll without moving anything else.
+	Execs(ctx context.Context, sandboxID string) ([]Exec, error)
+
+	// OpenExec attaches to one existing exec session, sized for the pane it
+	// goes into. execID may be ExecPrimary, which the sandbox resolves — and
+	// revives — itself.
+	OpenExec(ctx context.Context, sandboxID, execID string, cols, rows int) (Terminal, error)
+
+	// NewShell creates, attaches and starts a fresh interactive shell exec,
+	// returning its identity along with the terminal so the tab it becomes is
+	// keyed by the same id the listing will report.
+	NewShell(ctx context.Context, sandboxID string, cols, rows int) (Exec, Terminal, error)
 }

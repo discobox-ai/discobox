@@ -99,6 +99,20 @@ type Source struct {
 	// at that point and which is the better answer anyway.
 	UID *int64 `json:"uid,omitempty"`
 	GID *int64 `json:"gid,omitempty"`
+	// BaseCommit is the commit the source was spawned at, from the create
+	// request's checkout. The sandbox-agent measures its reported diff stat
+	// against it, which is what lets a listing show what a sandbox has changed
+	// without running git from outside. Absent when the source has no recorded
+	// checkout commit; the diff stat is then simply not reported.
+	BaseCommit string `json:"baseCommit,omitempty"`
+	// UpstreamRef is the remote-tracking ref the source would fetch upstream
+	// into, derived from the branch it was cloned at. Once the sandbox has
+	// fetched, the diff stat's base moves forward to the merge base with this
+	// ref, so commits the sandbox pulled rather than wrote stop counting as
+	// its changes — the same rule `disco diff` resolves with. The ref is
+	// verified in the repository rather than assumed, so naming one that does
+	// not exist (a push-delivered source has no remote at all) costs nothing.
+	UpstreamRef string `json:"upstreamRef,omitempty"`
 }
 
 // User is the sandbox user identity as the manifest publishes it. Fields the

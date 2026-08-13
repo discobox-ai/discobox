@@ -4,8 +4,6 @@ import (
 	"context"
 	"fmt"
 	"io"
-	"regexp"
-	"strconv"
 	"strings"
 	"time"
 
@@ -33,7 +31,7 @@ The window opens with the cursor in a prompt: type what the sandbox should do
 and press Enter to run it in a new one, or press Enter on an empty prompt to
 create one with nothing given to the harness. Tab moves to the list of
 sandboxes you already have, where every action is a single letter — Enter
-attaches, s opens a shell, d diffs, y applies, x archives — and Shift-Tab opens
+attaches, s opens a shell, y applies, x archives — and Shift-Tab opens
 "disco run"'s options.
 
 Attaching or opening a shell draws the sandbox's terminal in the window itself.
@@ -81,9 +79,6 @@ func (a *App) runTUI(cmd *cobra.Command, leaderFlag string) error {
 	if err != nil {
 		return err
 	}
-	// The launcher owns the screen, so a pager it starts has to give it back
-	// rather than leaving its last page on it for the window to redraw over.
-	a.pagerRestoresScreen = true
 	ds := &apiDataSource{app: a, client: client, projectID: projectID}
 	return tui.Run(cmd.Context(), ds, tui.WithLeader(leaderKey))
 }
@@ -183,6 +178,23 @@ func toTUISandbox(sb apimodel.Sandbox) tui.Sandbox {
 		// which is exactly what the starred commit on the row means.
 		row.Dirty = sourceSnapshotRef(source) != ""
 	}
+	if git := sandboxGitStatus(sb); git.Known {
+		row.Git = tui.GitState{
+			Known:   true,
+			Branch:  git.Branch,
+			Commit:  shortCommit(git.Commit),
+			Dirty:   !git.Clean,
+			Applied: git.Applied,
+		}
+		if git.DiffKnown {
+			row.Diff = tui.DiffStat{
+				Known:   true,
+				Files:   git.DiffFiles,
+				Added:   git.DiffAdded,
+				Deleted: git.DiffDeleted,
+			}
+		}
+	}
 	return row
 }
 
@@ -221,69 +233,6 @@ func shortCommit(commit string) string {
 		return commit[:7]
 	}
 	return commit
-}
-
-// DiffStat is what one sandbox has changed against the commit `disco diff`
-// would diff it against, as `git diff --shortstat` reports it.
-//
-// It is tracked changes only. Untracked files are part of what `disco diff`
-// shows, but finding them costs another round trip into the sandbox for a
-// column that exists to rank rows, and a stat that sometimes waits twice as
-// long is worse than one that is honest about counting commits and edits.
-func (d *apiDataSource) DiffStat(ctx context.Context, sandboxID string) (tui.DiffStat, error) {
-	res, err := d.client.GetSandbox(ctx, apiclientgen.GetSandboxParams{ProjectId: d.projectID, SandboxId: sandboxID})
-	if err != nil {
-		return tui.DiffStat{}, err
-	}
-	sandbox, err := expectResponse[apimodel.Sandbox](res)
-	if err != nil {
-		return tui.DiffStat{}, err
-	}
-	sources, err := selectSources(sandbox, "")
-	if err != nil || len(sources) == 0 {
-		return tui.DiffStat{}, err
-	}
-	// The primary source is what the row is about. A sandbox with several is
-	// rare, and a row cannot show a column per source anyway.
-	entry := sources[0]
-	workdir := sourceWorkdir(entry.source)
-	base, _, err := d.app.resolveDiffBase(ctx, d.projectID, sandboxID, workdir, entry.source, "")
-	if err != nil {
-		return tui.DiffStat{}, err
-	}
-	stdout, stderr, code, err := d.app.sandboxCommandOutput(ctx, d.projectID, sandboxID, workdir,
-		[]string{"git", "--no-pager", "diff", "--shortstat", base.Commit})
-	if err != nil {
-		return tui.DiffStat{}, err
-	}
-	if code != 0 {
-		return tui.DiffStat{}, fmt.Errorf("git diff --shortstat: %s", strings.TrimSpace(stderr+stdout))
-	}
-	return parseShortstat(stdout), nil
-}
-
-// shortstatNumbers picks the three counts out of git's summary line, which
-// reads "3 files changed, 61 insertions(+), 12 deletions(-)" — with any of the
-// three clauses absent when it is zero.
-var shortstatNumbers = regexp.MustCompile(`(\d+) (files? changed|insertions?\(\+\)|deletions?\(-\))`)
-
-func parseShortstat(out string) tui.DiffStat {
-	stat := tui.DiffStat{Known: true}
-	for _, match := range shortstatNumbers.FindAllStringSubmatch(out, -1) {
-		n, err := strconv.Atoi(match[1])
-		if err != nil {
-			continue
-		}
-		switch {
-		case strings.HasPrefix(match[2], "file"):
-			stat.Files = n
-		case strings.HasPrefix(match[2], "insertion"):
-			stat.Added = n
-		case strings.HasPrefix(match[2], "deletion"):
-			stat.Deleted = n
-		}
-	}
-	return stat
 }
 
 // Dirty reports whether the source directory has uncommitted work, which is the
@@ -452,9 +401,9 @@ func (d *apiDataSource) Rename(ctx context.Context, sandboxID, name string) erro
 // streams, while the window is suspended.
 //
 // It builds and executes the actual Cobra command rather than calling into its
-// internals, so what the launcher runs is `disco diff`, `disco apply` and
-// `disco status` — with their own flag defaults, their pager, their terminal
-// detection — and not a second implementation that drifts from them.
+// internals, so what the launcher runs is `disco apply` — with its own flag
+// defaults and terminal detection — and not a second implementation that
+// drifts from it.
 //
 // The two actions that are terminals rather than commands, attach and shell,
 // are drawn in the window instead; see Open.
@@ -462,12 +411,8 @@ func (d *apiDataSource) Interact(ctx context.Context, action tui.Interaction, sa
 	for i, id := range sandboxIDs {
 		var cmd *cobra.Command
 		switch action {
-		case tui.InteractDiff:
-			cmd = d.app.newDiffCommand()
 		case tui.InteractApply:
 			cmd = d.app.newApplyCommand()
-		case tui.InteractStatus:
-			cmd = d.app.newStatusCommand()
 		default:
 			// Attach and shell are terminals the window draws itself; they go
 			// through Open, not through a command that wants the real terminal.

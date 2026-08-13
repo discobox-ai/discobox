@@ -40,8 +40,9 @@ func TestEnterRunsThePromptAndAttaches(t *testing.T) {
 	}
 	// Attaching is a terminal the window draws itself, not a command it steps
 	// aside for.
-	if len(ds.opens) != 1 || !strings.HasPrefix(ds.opens[0], "attach sbx_created ") {
-		t.Fatalf("opens = %v, want an attach on the new sandbox", ds.opens)
+	opened := ds.execOpened()
+	if len(opened) != 1 || !strings.HasPrefix(opened[0], "sbx_created primary ") {
+		t.Fatalf("execOpens = %v, want an attach on the new sandbox", opened)
 	}
 	if len(ds.interacts) != 0 {
 		t.Fatalf("interacts = %v, want the window not to step aside", ds.interacts)
@@ -176,11 +177,17 @@ func TestListLettersRunActions(t *testing.T) {
 	send(t, m, key("tab"))
 
 	send(t, m, key("s"))
-	if len(ds.opens) != 1 || !strings.HasPrefix(ds.opens[0], "shell sbx_one ") {
-		t.Fatalf("opens = %v", ds.opens)
+	shelled := false
+	for _, open := range ds.execOpened() {
+		if strings.HasPrefix(open, "sbx_one exec_shell") {
+			shelled = true
+		}
+	}
+	if !shelled {
+		t.Fatalf("execOpens = %v, want a shell in the box under the cursor", ds.execOpened())
 	}
 	// A shell keeps ctrl+c for itself, so the leader carries detach there.
-	send(t, m, key("ctrl+a"), key("q"))
+	send(t, m, key("ctrl+a"), key("d"))
 	send(t, m, key("t"))
 	if len(ds.did) != 1 || ds.did[0] != "stop sbx_one" {
 		t.Fatalf("did = %v", ds.did)
@@ -450,33 +457,22 @@ func TestRefreshKeepsTheCursorOnItsSandbox(t *testing.T) {
 	}
 }
 
-// A diffstat already fetched is not thrown away by the refresh that lands a
-// moment later, or the column would blink empty every few seconds.
-func TestRefreshKeepsFetchedDiffstats(t *testing.T) {
-	ds := newFakeSource(Sandbox{ID: "sbx_one", Name: "one", State: StateRunning, Folder: "/src/disco2"})
-	ds.stats["sbx_one"] = DiffStat{Added: 3, Deleted: 1, Files: 2}
+// The diffstat arrives on the row with the listing itself — the agent
+// reports it with the rest of its status — so a refresh carries it like any
+// other field and nothing is fetched on the list's behalf.
+func TestDiffstatArrivesWithTheListing(t *testing.T) {
+	ds := newFakeSource(Sandbox{
+		ID: "sbx_one", Name: "one", State: StateRunning, Folder: "/src/disco2",
+		Diff: DiffStat{Known: true, Added: 3, Deleted: 1, Files: 2},
+	})
 	m := newTestModel(t, ds)
 
 	if got := m.list.all[0].Diff; !got.Known || got.Added != 3 {
-		t.Fatalf("diffstat = %+v, want the fetched one", got)
+		t.Fatalf("diffstat = %+v, want the listed one", got)
 	}
 	send(t, m, tickMsg{})
 	if got := m.list.all[0].Diff; !got.Known || got.Added != 3 {
-		t.Fatalf("diffstat = %+v after refresh, want the fetched one kept", got)
-	}
-}
-
-// A sandbox that cannot be asked settles at "nothing changed" rather than being
-// asked again on every frame.
-func TestUnfetchableDiffstatSettles(t *testing.T) {
-	ds := newFakeSource(Sandbox{ID: "sbx_one", Name: "one", State: StateStopped, Folder: "/src/disco2"})
-	m := newTestModel(t, ds)
-
-	if got := m.list.all[0].Diff; !got.Known || got.Files != 0 {
-		t.Fatalf("diffstat = %+v, want a known empty one", got)
-	}
-	if pending := m.list.pendingDiffs(); len(pending) != 0 {
-		t.Fatalf("pending = %v, want none", pending)
+		t.Fatalf("diffstat = %+v after refresh, want the listed one kept", got)
 	}
 }
 
@@ -659,10 +655,10 @@ func TestLeaderReachesThePaneAndTheKeyLists(t *testing.T) {
 	d.key("enter")
 	d.wait("the pane", func() bool { return m.focus == focusPane })
 
-	if !strings.Contains(m.hints(), "ctrl+b q detach") {
+	if !strings.Contains(m.hints(), "ctrl+b d detach") {
 		t.Errorf("the key list should name the leader: %q", m.hints())
 	}
-	if !strings.Contains(m.helpText(), "ctrl+b q") {
+	if !strings.Contains(m.helpText(), "ctrl+b d") {
 		t.Error("the help should name the leader")
 	}
 
@@ -673,8 +669,8 @@ func TestLeaderReachesThePaneAndTheKeyLists(t *testing.T) {
 		t.Fatalf("typed %q, want the default leader to reach the sandbox", got)
 	}
 	d.key("ctrl+b")
-	d.key("q")
-	d.wait("the pane to close", func() bool { return len(m.panes) == 0 })
+	d.key("d")
+	d.wait("the workspace to close", func() bool { return !m.inPanes() })
 }
 
 // Tab goes round the window in the order it is drawn, bottom to top: the

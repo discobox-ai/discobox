@@ -68,23 +68,6 @@ func (l *sandboxList) setAll(all []Sandbox) {
 	if s := l.current(); s != nil {
 		onID = s.ID
 	}
-
-	// Diffstats are fetched separately and arrive later than the listing that
-	// carries the rest of the row, so a refresh keeps the ones already known
-	// rather than blanking the column every few seconds.
-	stats := make(map[string]DiffStat, len(l.all))
-	for _, s := range l.all {
-		if s.Diff.Known {
-			stats[s.ID] = s.Diff
-		}
-	}
-	for i, s := range all {
-		if !s.Diff.Known {
-			if stat, ok := stats[s.ID]; ok {
-				all[i].Diff = stat
-			}
-		}
-	}
 	l.all = all
 
 	if onID != "" {
@@ -96,32 +79,6 @@ func (l *sandboxList) setAll(all []Sandbox) {
 		}
 	}
 	l.clamp()
-}
-
-// setDiff records a diffstat fetched in the background.
-func (l *sandboxList) setDiff(id string, stat DiffStat) {
-	for i := range l.all {
-		if l.all[i].ID == id {
-			l.all[i].Diff = stat
-			return
-		}
-	}
-}
-
-// pendingDiffs are the sandboxes on screen whose diffstat has not been fetched
-// yet. Asking costs a git invocation inside the sandbox, so only the rows being
-// shown are worth asking about, and only the ones with a working tree to look
-// at: an archived sandbox has no container to run git in.
-func (l *sandboxList) pendingDiffs() []string {
-	rows := l.rows()
-	var out []string
-	for i := l.offset; i < len(rows) && i < l.offset+max(l.height, 1); i++ {
-		if rows[i].Diff.Known || rows[i].State == StateArchived {
-			continue
-		}
-		out = append(out, rows[i].ID)
-	}
-	return out
 }
 
 // rows is what is actually displayed, after the two filters.
@@ -420,7 +377,7 @@ func (l *sandboxList) row(st *styles, s Sandbox, i int, focused bool) string {
 	// Columns are added in the order they matter and the last that fits wins:
 	// where it came from, then when it was last used, then what it has
 	// changed. The diffstat is the first to go, because it is the one thing
-	// the diff and apply actions will tell you anyway.
+	// the apply action will tell you anyway.
 	//
 	// Where it came from is not among them; see the origin comment below.
 	glyph := st.color
@@ -444,13 +401,25 @@ func (l *sandboxList) row(st *styles, s Sandbox, i int, focused bool) string {
 	addCol("  "+st.dimText.Render(pad(s.Harness, 7)), 9)
 	addCol(up, 2)
 
-	// The commit the sandbox was cut at. Where it came from is not a column:
-	// it is the header's dropdown, and every row on screen has already been
-	// filtered to it — a column repeating the same value on every row is a
-	// column spent saying nothing.
+	// Where the work sits in git — the reported position once the sandbox's
+	// agent has spoken, the spawn commit until then. Where it came from is not
+	// a column: it is the header's dropdown, and every row on screen has
+	// already been filtered to it — a column repeating the same value on every
+	// row is a column spent saying nothing.
+	//
+	// The color is the state of the work: warning for uncommitted content that
+	// only the sandbox holds, green for a head commit an apply has landed.
 	baseStyle := st.dimText
-	if s.Dirty {
+	switch {
+	case s.dirty():
 		baseStyle = st.statusWA
+	case s.Git.Applied:
+		baseStyle = st.add
+	case s.committed():
+		// Committed work no apply has landed is the state to notice before
+		// archiving, so it stands in the default text against rows that are
+		// dim because nothing on them is at stake.
+		baseStyle = st.name
 	}
 	addCol(baseStyle.Render(pad(s.base(), 14)), 15)
 	addCol(st.dimText.Render(pad(lastUsedText(s, l.now()), 7)), 8)

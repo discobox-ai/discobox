@@ -54,7 +54,121 @@ func gitStatusForSource(ctx context.Context, source sandboxconfig.Source, user *
 	status.Truncated = truncated
 	status.Branch, status.HeadCommit, status.Ahead, status.Behind = parseBranchHeader(output)
 	status.Clean = !hasFileChanges(output)
+	// The diff stat lets a listing show what a sandbox has changed without
+	// running git from outside — the point of reporting status at all. A base
+	// the repository does not have (or a failure of any kind) drops the stat,
+	// not the source: the status above is still true.
+	if base, ok := resolveDiffBase(sourceCtx, source, user); ok {
+		if files, added, deleted, ok := runDiffShortstat(sourceCtx, source.Target, base, user); ok {
+			status.DiffBase = base
+			status.DiffFiles, status.DiffAdded, status.DiffDeleted = files, added, deleted
+		}
+	}
 	return status
+}
+
+// resolveDiffBase is the commit the diff stat measures from: the commit the
+// source was spawned at, forwarded to the merge base with its upstream
+// tracking ref once the sandbox has fetched — so commits it pulled rather
+// than wrote stop counting as its changes. This is ADR 0018's base
+// resolution, carried into the agent when the command that ran it went away
+// (ADR 0037).
+func resolveDiffBase(ctx context.Context, source sandboxconfig.Source, user *execs.User) (string, bool) {
+	spawn := strings.TrimSpace(source.BaseCommit)
+	if spawn == "" {
+		return "", false
+	}
+	base, err := gitOutput(ctx, source.Target, user, "rev-parse", "--verify", "--quiet", spawn+"^{commit}")
+	if err != nil {
+		return "", false
+	}
+	upstream := strings.TrimSpace(source.UpstreamRef)
+	if upstream == "" {
+		return base, true
+	}
+	// The upstream ref is verified rather than assumed: a push-delivered
+	// source has no remote at all, and an unfetched clone's tip is the spawn
+	// commit anyway. When it does resolve, only ever move forward — a
+	// rewritten upstream leaves a merge base *older* than the spawn commit,
+	// and taking it would widen the diff with commits the sandbox never wrote.
+	tip, err := gitOutput(ctx, source.Target, user, "rev-parse", "--verify", "--quiet", upstream+"^{commit}")
+	if err != nil {
+		return base, true
+	}
+	merged, err := gitOutput(ctx, source.Target, user, "merge-base", "HEAD", tip)
+	if err != nil {
+		return base, true
+	}
+	if merged != base && gitRun(ctx, source.Target, user, "merge-base", "--is-ancestor", base, merged) == nil {
+		return merged, true
+	}
+	return base, true
+}
+
+// runDiffShortstat counts what the working tree holds that base does not —
+// committed and uncommitted tracked changes both, untracked files not — as
+// `git diff --shortstat` reports it.
+func runDiffShortstat(ctx context.Context, dir, base string, user *execs.User) (files, added, deleted int, ok bool) {
+	out, err := gitOutput(ctx, dir, user, "diff", "--shortstat", base)
+	if err != nil {
+		return 0, 0, 0, false
+	}
+	files, added, deleted = parseShortstat(out)
+	return files, added, deleted, true
+}
+
+// gitOutput runs one git command in dir as the sandbox's user and returns its
+// trimmed stdout.
+func gitOutput(ctx context.Context, dir string, user *execs.User, args ...string) (string, error) {
+	cmd := exec.CommandContext(ctx, "git", append([]string{"-C", dir}, args...)...) //nolint:gosec // args are fixed subcommands plus manifest-authored refs, passed as argv, never through a shell.
+	attr, err := execs.AgentSysProcAttr(user)
+	if err != nil {
+		return "", err
+	}
+	cmd.SysProcAttr = attr
+	var stdout bytes.Buffer
+	cmd.Stdout = &stdout
+	if err := cmd.Run(); err != nil {
+		return "", err
+	}
+	return strings.TrimSpace(stdout.String()), nil
+}
+
+// gitRun runs one git command in dir as the sandbox's user for its exit
+// status alone.
+func gitRun(ctx context.Context, dir string, user *execs.User, args ...string) error {
+	cmd := exec.CommandContext(ctx, "git", append([]string{"-C", dir}, args...)...) //nolint:gosec // args are fixed subcommands plus manifest-authored refs, passed as argv, never through a shell.
+	attr, err := execs.AgentSysProcAttr(user)
+	if err != nil {
+		return err
+	}
+	cmd.SysProcAttr = attr
+	return cmd.Run()
+}
+
+// parseShortstat picks the counts out of git's summary line, which reads
+// "3 files changed, 61 insertions(+), 12 deletions(-)" — with any clause
+// absent when it is zero, and the whole line absent when nothing changed.
+func parseShortstat(out string) (files, added, deleted int) {
+	for _, clause := range strings.Split(out, ",") {
+		fields := strings.Fields(clause)
+		if len(fields) < 2 {
+			continue
+		}
+		n, err := strconv.Atoi(fields[0])
+		if err != nil {
+			continue
+		}
+		switch {
+		case strings.HasPrefix(fields[1], "file"):
+			files = n
+		case strings.HasPrefix(fields[1], "insertion"):
+			added = n
+		case strings.HasPrefix(fields[1], "deletion"):
+			deleted = n
+		}
+	}
+	return files, added, deleted
 }
 
 func runGitStatus(ctx context.Context, dir string, user *execs.User) (output string, truncated bool, err error) {

@@ -4,9 +4,9 @@
 //
 // It runs on the alternate screen: it takes the whole terminal while it is up,
 // and leaves what was on screen before exactly as it was when it exits. Actions
-// that own the terminal — a pager, and the commands behind diff, apply and
-// status — suspend the window, which drops back to the primary screen and hands
-// them the real streams; attach and a shell are drawn in the window itself.
+// that own the terminal — the command behind apply — suspend the window, which
+// drops back to the primary screen and hands them the real streams; attach and
+// a shell are drawn in the window itself.
 package tui
 
 import (
@@ -53,15 +53,24 @@ type Model struct {
 	opts   *optionSet
 	logo   logo
 
-	// The discobox's two terminals, in the two spots the pane screen has, and
-	// which of them has focus. See pane.go.
-	panes   []*pane
-	focused int
-	// paneOrder is which spot is on which side, exchanged by the swap key.
-	paneOrder [2]Interaction
-	// overlay is the command that has the screen over those two while it runs.
+	// The workspace screen: the discobox's primary terminal on the left, and
+	// its other live sessions as tabs on the right, following the server. See
+	// workspace.go.
+	terminal *pane
+	shells   []*pane
+	// activeShell is the tab that is visible, and focused while onShells.
+	activeShell int
+	onShells    bool
+	// connecting is the exec ids with an attach in flight, so a poll that
+	// still lists them does not open a second pane onto the same session.
+	connecting map[string]bool
+	// wsGen numbers workspaces. Detaching bumps it, and a poll tick or an
+	// open still in flight from the one that was left is stale and dropped.
+	wsGen int
+	// overlay is the command that has the screen over the workspace while it
+	// runs.
 	overlay *pane
-	// paneBox is the discobox the pane screen is showing. Every pane on it is
+	// paneBox is the discobox the workspace is showing. Every pane on it is
 	// that one, and so is everything the leader's keys act on.
 	paneBox    Sandbox
 	nextPaneID int
@@ -101,11 +110,6 @@ type Model struct {
 	// terminal around it. It is a field only so a test can run one without a
 	// terminal to release; nothing in the window ever replaces it.
 	exec func(tea.ExecCommand, tea.ExecCallback) tea.Cmd
-
-	// fetching is the diffstat currently in flight. One at a time: the column
-	// is a convenience, and a screenful of concurrent git invocations inside
-	// sandboxes is not a convenience.
-	fetching string
 
 	// statusGen counts messages, so a timer can tell whether it is the last one
 	// out.
@@ -207,31 +211,6 @@ func (m *Model) refresh() tea.Cmd {
 	}
 }
 
-// fetchDiff asks for one visible row's diffstat, if one is waiting and nothing
-// else is in flight.
-func (m *Model) fetchDiff() tea.Cmd {
-	if m.fetching != "" {
-		return nil
-	}
-	pending := m.list.pendingDiffs()
-	if len(pending) == 0 {
-		return nil
-	}
-	id := pending[0]
-	m.fetching = id
-	return func() tea.Msg {
-		stat, err := m.ds.DiffStat(m.ctx, id)
-		// A sandbox that cannot be asked — stopped, mid-start, no working tree
-		// — is recorded as having nothing, so the column settles instead of
-		// asking again on every frame.
-		if err != nil {
-			return diffLoadedMsg{id: id, stat: DiffStat{Known: true}}
-		}
-		stat.Known = true
-		return diffLoadedMsg{id: id, stat: stat}
-	}
-}
-
 // ---------------------------------------------------------------------------
 // messages
 
@@ -243,11 +222,6 @@ type sessionLoadedMsg struct {
 type listLoadedMsg struct {
 	sandboxes []Sandbox
 	err       error
-}
-
-type diffLoadedMsg struct {
-	id   string
-	stat DiffStat
 }
 
 type tickMsg struct{}
@@ -334,14 +308,7 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		m.list.setAll(msg.sandboxes)
 		m.layout()
-		return m, m.fetchDiff()
-
-	case diffLoadedMsg:
-		if m.fetching == msg.id {
-			m.fetching = ""
-		}
-		m.list.setDiff(msg.id, msg.stat)
-		return m, m.fetchDiff()
+		return m, nil
 
 	case tickMsg:
 		return m, tea.Batch(m.refresh(), m.tick())
@@ -397,6 +364,23 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	case paneOpenedMsg:
 		return m, m.paneOpened(msg)
+
+	case workspaceExecsMsg:
+		return m, m.workspaceExecs(msg)
+
+	case workspaceTermMsg:
+		return m, m.workspaceTermOpened(msg)
+
+	case workspaceTickMsg:
+		if msg.gen != m.wsGen {
+			return m, nil
+		}
+		return m, tea.Batch(m.listExecs(msg.gen), m.workspaceTick(msg.gen))
+
+	case paneMsg:
+		// Addressed to the pane it came from, which may exist before the
+		// screen does: a tab can connect while the primary is still opening.
+		return m, m.updatePaneMsg(msg)
 
 	case runActionMsg:
 		return m, m.actOn(msg.key, msg.targets)
@@ -622,7 +606,6 @@ func (m *Model) updateList(msg tea.KeyPressMsg) tea.Cmd {
 			return nil
 		}
 		m.list.move(1)
-		return m.fetchDiff()
 	case "up", "k":
 		// Off the top is the folder filter, which is drawn above the list; off
 		// the bottom is the prompt, which is drawn below it. Neither edge is a
@@ -632,7 +615,6 @@ func (m *Model) updateList(msg tea.KeyPressMsg) tea.Cmd {
 			return nil
 		}
 		m.list.move(-1)
-		return m.fetchDiff()
 	case "left", "h":
 		// A long name is ellipsized; the row under the cursor can be walked
 		// sideways to read the rest of it.
@@ -643,16 +625,12 @@ func (m *Model) updateList(msg tea.KeyPressMsg) tea.Cmd {
 		}
 	case "pgdown":
 		m.list.move(m.list.height)
-		return m.fetchDiff()
 	case "pgup":
 		m.list.move(-m.list.height)
-		return m.fetchDiff()
 	case "home", "g":
 		m.list.moveTo(0)
-		return m.fetchDiff()
 	case "end", "G":
 		m.list.moveTo(len(m.list.rows()) - 1)
-		return m.fetchDiff()
 
 	case "esc":
 		if m.list.visual {
@@ -819,10 +797,9 @@ func (m *Model) updateOptions(msg tea.KeyPressMsg) tea.Cmd {
 // than disappearing and leaving you wondering where upgrade went.
 func (m *Model) actions(targets []Sandbox) []action {
 	one := len(targets) == 1
-	anyDiff, anyUpgrade, anyRunning, anyStopped := false, false, false, false
+	anyUpgrade, anyRunning, anyStopped := false, false, false
 	anyArchived, allArchived := false, len(targets) > 0
 	for _, s := range targets {
-		anyDiff = anyDiff || s.hasDiff()
 		anyUpgrade = anyUpgrade || s.Upgrade
 		anyRunning = anyRunning || s.State == StateRunning
 		anyStopped = anyStopped || s.State == StateStopped
@@ -830,33 +807,29 @@ func (m *Model) actions(targets []Sandbox) []action {
 		allArchived = allArchived && s.State == StateArchived
 	}
 	attachable := one && targets[0].attachable()
-	// Diff and apply run git in the sandbox, so an archived one — which has no
-	// container to run it in — cannot take them however much it changed. A
+	// Apply runs git in the sandbox, so an archived one — which has no
+	// container to run it in — cannot take it however much it changed. A
 	// diffstat that has not come back yet is not the same answer as "nothing
-	// changed", so they stay available until it has.
-	diffable, diffWhy := false, "nothing has changed yet"
+	// changed", so it stays available until it has.
+	applyable, applyWhy := false, "nothing has changed yet"
 	for _, s := range targets {
 		if s.State == StateArchived {
 			continue
 		}
 		if s.hasDiff() || !s.Diff.Known {
-			diffable = true
+			applyable = true
 		}
 	}
-	if !diffable && anyArchived {
-		diffWhy = "an archived box has no working tree to look at"
+	if !applyable && anyArchived {
+		applyWhy = "an archived box has no working tree to look at"
 	}
 	return []action{
 		{key: "a", label: "attach", detail: "join the harness terminal", enabled: attachable,
 			why: attachWhy(one, targets)},
 		{key: "s", label: "shell", detail: "open a shell in the box", enabled: attachable,
 			why: attachWhy(one, targets)},
-		{key: "d", label: "diff", detail: "show what changed in the box", enabled: diffable,
-			why: diffWhy},
-		{key: "y", label: "apply", detail: "bring the changes back to " + m.session.Directory, enabled: diffable,
-			why: diffWhy},
-		{key: "i", label: "status", detail: "changed files, one per line", enabled: diffable,
-			why: diffWhy},
+		{key: "y", label: "apply", detail: "bring the changes back to " + m.session.Directory, enabled: applyable,
+			why: applyWhy},
 		{key: renameKey, label: "rename", detail: "type a new name for the box", enabled: one,
 			why: "takes exactly one box"},
 		{key: "u", label: "upgrade", detail: "re-pin to the current harness image", enabled: anyUpgrade,
@@ -941,14 +914,19 @@ func (m *Model) actOn(key string, targets []Sandbox) tea.Cmd {
 	}
 
 	if action, ok := interactions[key]; ok {
-		// On the pane screen there is one discobox and two spots for its
-		// terminals: attach and shell go to theirs, and a command that runs and
+		// On the workspace screen there is one discobox: attach goes back to
+		// its terminal, shell opens a fresh tab, and a command that runs and
 		// finishes takes the screen over them until it does.
 		if m.inPanes() {
-			if action.slotted() {
-				return m.openSlot(action)
+			switch action {
+			case InteractAttach:
+				m.onShells = false
+				return nil
+			case InteractShell:
+				return m.newShell()
+			default:
+				return m.openOverlay(action, targets[0])
 			}
-			return m.openOverlay(action, targets[0])
 		}
 		// From the list, a terminal is drawn in the window; a command that
 		// wants the real terminal gets it, and the window steps aside.
@@ -956,7 +934,7 @@ func (m *Model) actOn(key string, targets []Sandbox) tea.Cmd {
 			if len(targets) != 1 {
 				return status("%s takes exactly one box", action)
 			}
-			return m.openPane(action, targets[0])
+			return m.openFromList(action, targets[0])
 		}
 		return m.interact(action, ids)
 	}
@@ -996,9 +974,7 @@ var verbs = map[string]Verb{
 var interactions = map[string]Interaction{
 	"a": InteractAttach,
 	"s": InteractShell,
-	"d": InteractDiff,
 	"y": InteractApply,
-	"i": InteractStatus,
 }
 
 // runVerb applies a lifecycle verb to every target, in one command: the window
@@ -1047,8 +1023,8 @@ func (m *Model) verbDone(msg verbDoneMsg) tea.Cmd {
 // rename
 
 // renameKey is the letter rename answers to in the list. It is deliberately not
-// bound on the pane screen: there the leader plus `e` exchanges the two spots,
-// and the discobox on screen is one you are already looking at by name.
+// bound on the workspace screen: rename needs a name typed into a dialog, and
+// the discobox on screen is one you are already looking at by name.
 const renameKey = "e"
 
 // renameMsg is an accepted name on its way back to the live model, the same way
@@ -1170,7 +1146,7 @@ func (m *Model) created(msg createdMsg) tea.Cmd {
 	if msg.req.Detach {
 		return tea.Batch(m.refresh(), m.report(false, "created %s", msg.sandbox.ID))
 	}
-	return tea.Batch(m.refresh(), m.openPane(InteractAttach, msg.sandbox))
+	return tea.Batch(m.refresh(), m.openFromList(InteractAttach, msg.sandbox))
 }
 
 // ---------------------------------------------------------------------------
@@ -1202,17 +1178,20 @@ func (m *Model) layout() {
 		m.compactLayout()
 		return
 	}
-	// Panes take the whole window: a terminal wants every row it can get, and
-	// the list underneath is not what you are looking at.
+	// The workspace takes the whole window: a terminal wants every row it can
+	// get, and the list underneath is not what you are looking at. Every pane
+	// is sized for the box it is drawn in, the hidden tabs included — flipping
+	// to one must show a screen drawn at the size it is shown at.
 	if m.inPanes() {
-		cols, rows := m.paneCells(len(m.panes))
-		for _, p := range m.panes {
-			p.term.SetSize(cols, rows)
+		if m.terminal != nil {
+			m.terminal.term.SetSize(m.paneCells(m.paneWidthOf(m.terminal)))
+		}
+		for _, p := range m.shells {
+			p.term.SetSize(m.paneCells(m.paneWidthOf(p)))
 		}
 		if m.overlay != nil {
 			// It has the screen, whatever is under it.
-			cols, rows = m.paneCells(1)
-			m.overlay.term.SetSize(cols, rows)
+			m.overlay.term.SetSize(m.paneCells(m.width))
 		}
 		return
 	}
@@ -1388,7 +1367,7 @@ func (m *Model) viewHeaderLeft() string {
 // the one that is, is the way out.
 func (m *Model) viewHeaderRight() string {
 	if p := m.focusedPane(); p != nil {
-		return m.st.dimText.Render(m.detachHint() + " detach")
+		return m.st.dimText.Render(m.detachHint() + " detach  ·  " + m.leader() + " " + paneQuitKey + " quit")
 	}
 	return m.st.dimText.Render("F1 help  ·  Ctrl-C quit")
 }
@@ -1498,29 +1477,25 @@ func (m *Model) hints() string {
 			if p.term.ScrollbackLen() > 0 {
 				hints = "finished · ↑↓ pgup/pgdn scroll · q closes"
 			}
+			if p != m.overlay {
+				hints += " · ←/→ pane"
+			}
 			return hints
 		}
-		// A spot is the discobox's own terminal and you detach from it; the
-		// command over them is this CLI's, and you close it.
+		// A workspace terminal is the discobox's own and you detach from the
+		// whole workspace; the command over them is this CLI's, and you close
+		// it alone.
 		what, out := "the box", "detach"
-		if !p.action.slotted() {
+		if p == m.overlay {
 			what, out = string(p.action), "close"
 		}
 		hints := "every key goes to " + what + " · " + m.detachHint() + " " + out
 		if m.overlay == nil {
-			// The empty spot is worth a key; two full ones are worth the keys
-			// that get between them.
-			if _, at := m.slotFor(InteractAttach); at < 0 {
-				hints += " · " + m.leader() + " a attach"
-			}
-			if _, at := m.slotFor(InteractShell); at < 0 {
-				hints += " · " + m.leader() + " s shell"
-			}
-			if len(m.panes) > 1 {
+			hints += " · " + m.leader() + " s shell"
+			if len(m.shells) > 0 {
 				hints += " · " + m.leader() + " ←/→ pane"
-				hints += " · " + m.leader() + " " + paneSwapKey + " swap"
+				hints += " · " + m.leader() + " 0-9 jump"
 			}
-			hints += " · " + m.leader() + " d diff"
 		}
 		if p.term.MouseMode() != termpane.MouseNone {
 			hints += " · " + m.paneMouseHint() + " mouse"
@@ -1605,9 +1580,9 @@ func (m *Model) helpText() string {
 		"  both. A range being drawn counts as selected.",
 		"    ↓ past the end returns to the prompt, and so do Tab and Esc.",
 		"",
-		"  A row reads: state · name · harness · the folder and commit it",
-		"  was spawned from · when it was last used · what it is using of",
-		"  its cpu, memory and disk · what it has changed.",
+		"  A row reads: state · name · harness · where its work sits in",
+		"  git · when it was last used · what it is using of its cpu,",
+		"  memory and disk · what it has changed.",
 		"",
 		"      ● running    ◐ starting    ○ stopped    ▪ archived",
 		"      ✗ error — the row shows the error under the cursor",
@@ -1616,13 +1591,23 @@ func (m *Model) helpText() string {
 		"  glyph gives way to the state spelled out in a column.",
 		"      ↑ an upgrade is available, to the current harness image",
 		"",
-		"  A starred commit — main@a3f9c21* — means the discobox was cut",
-		"  from a snapshot of uncommitted work on top of it, and a folder",
-		"  in blue is one other than this one.",
+		"  main@a3f9c21 is the discobox's branch and commit, as its own",
+		"  agent last reported them — until it reports, the commit it was",
+		"  spawned from. The mark on it is the state of the work, most",
+		"  losable first:",
+		"      *  uncommitted changes, which only the discobox holds",
+		"      ⇡  committed work that no apply has landed anywhere",
+		"      ✓  the head commit is the last one applied — nothing here",
+		"         would be lost",
+		"      unmarked, it sits clean on the commit it was cut from",
+		"",
+		"  +N −N at the row's end is what it has changed — lines added",
+		"  and deleted against the commit it was cut from, pulled",
+		"  upstream work not counted.",
 		"",
 		"    Enter  attach          s  shell",
-		"    d      diff            y  apply back to this directory",
-		"    i      status          u  upgrade to the current image",
+		"    y      apply back to this directory",
+		"    u      upgrade to the current image",
 		"    e      rename          t  stop",
 		"    T      start           x  archive",
 		"    U      unarchive       P  purge",
@@ -1631,62 +1616,60 @@ func (m *Model) helpText() string {
 		"  rename opens the name it already has, to be edited rather than",
 		"  retyped: Enter accepts it, Esc leaves it alone.",
 		"",
-		"  attach, shell, diff and status are drawn in the window itself,",
-		"  in a pane with the border round it: the first two are the",
-		"  discobox's own terminals, and the other two are given one so",
-		"  they can be read beside them. apply takes the real terminal,",
-		"  because the list can act on several discoboxes at once and a",
-		"  pane shows one.",
+		"  attach and shell open the workspace, drawn in the window",
+		"  itself. apply takes the real terminal, because the list can",
+		"  act on several discoboxes at once and a pane shows one.",
 		"",
 		"───────────────────────────────────────────────────────────────",
-		"The pane screen",
+		"The workspace screen",
 		"",
-		"  It is one discobox and two spots for its terminals: the harness",
-		"  on one side and a shell on the other. Either may be empty, and",
-		"  an empty one is opened where it stands — so there is never a",
-		"  second shell where the harness should be, and the two spots",
-		"  stay the two spots.",
+		"  It is one discobox as the server has it: the primary terminal",
+		"  on the left, and every other live session as a tab on the",
+		"  right, one visible at a time. Attaching joins them all, and a",
+		"  shell started from anywhere — another window, another machine —",
+		"  appears as a tab on its own. With no sessions besides the",
+		"  primary, it takes the whole width.",
 		"",
 		"  Every command in the list is here too, on the key it has there,",
 		"  behind the leader, acting on the discobox on screen:",
 		"",
-		"    " + m.leader() + " a       attach, in its spot",
-		"    " + m.leader() + " s       shell, in its spot",
-		"    " + m.leader() + " d / i   diff / status",
+		"    " + m.leader() + " a       back to the primary terminal",
+		"    " + m.leader() + " s       a new shell, in a new tab",
 		"    " + m.leader() + " y       apply back to this directory",
 		"    " + m.leader() + " x / U   archive / unarchive",
 		"    " + m.leader() + " u       upgrade      " + m.leader() + " t / T   stop / start",
 		"",
-		"  diff, status and apply run in the screen itself, over both",
-		"  spots, for as long as they take — and the terminals underneath",
-		"  are untouched: still connected, still running, still where you",
-		"  left them when the command exits. The rest run against the",
-		"  server and report on the status line, and the pane screen stays",
-		"  up while they do.",
+		"  apply runs in the screen itself, over the workspace, for as",
+		"  long as it takes — and the terminals underneath are untouched:",
+		"  still connected, still running, still where you left them when",
+		"  the command exits. The rest run against the server and report",
+		"  on the status line, and the workspace stays up while they do.",
 		"",
-		"  Every other key goes to the pane. Which ones do not depends on",
-		"  what is in it:",
+		"  Every other key goes to the focused pane. Which ones do not",
+		"  depends on what is in it:",
 		"",
-		"    " + m.leader() + " " + paneDetachAlt + "       detach, leaving whatever is in the pane",
-		"                   running. The same key in every pane: Ctrl-C is the",
-		"                   application's, in a harness as much as in a shell,",
-		"                   because someone who types it to stop an agent and",
-		"                   gets a detached session instead has not stopped",
-		"                   anything and cannot tell from the screen. It also",
-		"                   closes a finished command, as does q on its own",
-		"                   once there is nothing left to type at",
-		"    " + m.leader() + " ← / " + m.leader() + " →  move between the two, or h and l. Hold",
-		"                   Ctrl and they keep going: " + m.leader() + " ^← ^← walks",
-		"                   across without pressing the leader again",
-		"    " + m.leader() + " " + paneSwapKey + "       exchange them, left for right",
+		"    " + m.leader() + " " + paneDetachAlt + "       detach from the whole workspace, leaving",
+		"                   every session running. The same key everywhere:",
+		"                   Ctrl-C is the application's, in a harness as much",
+		"                   as in a shell, because someone who types it to",
+		"                   stop an agent and gets a detached session instead",
+		"                   has not stopped anything and cannot tell from the",
+		"                   screen. A finished pane is different: there is",
+		"                   nothing left to type at, so q, Esc or Enter on its",
+		"                   own dismisses it",
+		"    " + m.leader() + " " + paneQuitKey + "       quit the window entirely, every session",
+		"                   left running — the exit Ctrl-C is everywhere else",
+		"    " + m.leader() + " ← / " + m.leader() + " →  move between the terminal and the tabs,",
+		"                   or h and l. Hold Ctrl and they keep going:",
+		"                   " + m.leader() + " ^→ ^→ walks across without pressing the",
+		"                   leader again",
+		"    " + m.leader() + " 0-9     jump straight there: 0 is the terminal,",
+		"                   1-9 the tab wearing that number",
 		"    " + m.paneMouseHint() + "       give the mouse to the box, or take it back",
 		"",
-		"  The harness opens on the left and a shell on the right, which",
-		"  keeps the place your eye already has — and if you would rather",
-		"  they were the other way round, swap them: the sides stay",
-		"  swapped for as long as the screen does. Each pane has its own",
-		"  way out, and the keys along the bottom are the focused one's.",
-		"  Closing one leaves the other running.",
+		"  A shell that exits keeps its last screen as a tab to be read;",
+		"  q, Esc or Enter dismisses it. Detach is the workspace's, not a",
+		"  pane's: the way to be rid of one shell is to exit it.",
 		"",
 		"  A finished command is a screen to read rather than a terminal",
 		"  to type at: ↑ ↓, pgup/pgdn, g and G walk through output longer",
@@ -1699,7 +1682,7 @@ func (m *Model) helpText() string {
 		"  selection.",
 		"",
 		"  Ctrl-C reaches the program in every pane, and quits the window",
-		"  only when no pane is up.",
+		"  only when no pane is up; from inside one, " + m.leader() + " " + paneQuitKey + " is the quit.",
 		"",
 		"───────────────────────────────────────────────────────────────",
 		"Back in the discobox list",

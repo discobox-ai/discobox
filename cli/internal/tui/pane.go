@@ -1,8 +1,9 @@
 package tui
 
 import (
-	"fmt"
+	"strconv"
 	"strings"
+	"time"
 
 	tea "charm.land/bubbletea/v2"
 	"charm.land/lipgloss/v2"
@@ -14,13 +15,13 @@ import (
 // A pane is a discobox's terminal drawn in the window rather than by handing
 // the real terminal over.
 //
-// The screen is two spots side by side, one for each of the discobox's
-// terminals: the harness you attached to, and a shell to do something while it
-// works. Either may be empty, and an empty one is opened where it stands rather
-// than by leaving for the list — so there is never a second shell instead of
-// the attach you wanted, and the two spots are always the same two spots.
+// The screen is the discobox's workspace: its primary terminal on the left,
+// and every other live session as a tab on the right — one visible at a time.
+// The workspace mirrors the server rather than remembering what was opened
+// here: attaching draws every session the discobox has, and a session started
+// from anywhere appears as a tab on its own. See workspace.go.
 //
-// Over them, a command that runs and finishes — diff, status, apply — takes the
+// Over them, a command that runs and finishes — apply — takes the
 // whole screen for as long as it runs. The terminals underneath are untouched:
 // still connected, still running, still where they were when it comes back.
 //
@@ -29,14 +30,18 @@ import (
 
 const (
 	paneMouseKey = "m"
-	paneSwapKey  = "e"
 	paneLeftKey  = "h"
 	paneRightKey = "l"
 	// paneDetachAlt is the detach key behind the leader, for a pane whose
-	// application needs Ctrl-C more than the window does. It is q rather than
-	// the d screen, tmux, and a plain `disco attach` all use, because the leader
-	// here also carries the list's own keys and d among them is diff.
-	paneDetachAlt = "q"
+	// application needs Ctrl-C more than the window does. It is the d screen,
+	// tmux, and a plain `disco attach` all detach on. The leader also carries
+	// the list's own keys, but none of them is d anymore — it was diff, until
+	// diff left the CLI.
+	paneDetachAlt = "d"
+	// paneQuitKey quits the whole window from behind the leader. Ctrl-C quits
+	// everywhere else but belongs to the application inside a pane, so the
+	// leader carries the exit here — beside d, which only detaches.
+	paneQuitKey = "q"
 	// paneInterruptKey is the application's everywhere, and never the window's.
 	// The one exception is a pane whose command has finished, where there is
 	// nothing left to interrupt and it means done like the rest of them.
@@ -46,9 +51,9 @@ const (
 // pane is one terminal in the window.
 type pane struct {
 	// id addresses this pane in the messages its own commands produce. Without
-	// it a pane closing would be reported as "a pane closed", and with two of
-	// them the window would have to guess which — and a guess that lands on the
-	// wrong one closes a session nobody asked to end.
+	// it a pane closing would be reported as "a pane closed", and with several
+	// of them the window would have to guess which — and a guess that lands on
+	// the wrong one closes a session nobody asked to end.
 	id int
 
 	term    *termpane.Model
@@ -57,12 +62,21 @@ type pane struct {
 	sandbox Sandbox
 	status  string
 
-	// exited is set when what was running in the pane finished and the pane was
-	// kept anyway, so its last screen can be read. See Interaction.holdsOnExit.
+	// execID keys the pane to the server session it is drawing, which is what
+	// lets the workspace's poll tell a session it already shows from one it
+	// has to open. Empty for the overlay, which is no session at all.
+	execID string
+	// title is what to call the tab until the application names itself.
+	title string
+	// created is when the session was created, which is the tab order.
+	created time.Time
+
+	// exited is set when what was running in the pane finished and the pane
+	// was kept anyway, so its last screen can be read.
 	exited bool
 }
 
-// detachHint is how to get out of a pane, as the key lists spell it.
+// detachHint is how to get out of the workspace, as the key lists spell it.
 //
 // It is the same in every pane, and Ctrl-C is not it. A harness attach used to
 // take Ctrl-C as "back out of this", which is a fine reading of the key right
@@ -95,22 +109,26 @@ type toggleMouseMsg struct{}
 // command, on the discobox the screen is showing.
 type paneActionMsg struct{ key string }
 
-// movePaneMsg is the leader plus h or l: focus the pane that way.
+// movePaneMsg is the leader plus h or l: move focus that way, between the
+// terminal and the shell tabs.
 type movePaneMsg struct{ delta int }
 
-// swapPanesMsg is the leader plus e: exchange the two spots, for when the one
-// you are working in would rather be on the other side.
-type swapPanesMsg struct{}
+// jumpPaneMsg is the leader plus a digit: focus the pane wearing that number —
+// 0 the terminal, 1 through 9 the tab whose label carries the ordinal.
+type jumpPaneMsg struct{ n int }
 
-// paneOpenedMsg carries a connected terminal back to the model.
+// quitPaneMsg is the leader plus q: quit the whole window, every session left
+// running. It is the same exit Ctrl-C is everywhere else, spelled behind the
+// leader because inside a pane Ctrl-C belongs to the application.
+type quitPaneMsg struct{}
+
+// paneOpenedMsg carries a connected overlay terminal back to the model. The
+// workspace's own terminals arrive as workspaceTermMsg instead; see
+// workspace.go.
 type paneOpenedMsg struct {
 	action  Interaction
 	sandbox Sandbox
 	term    Terminal
-	// at is where the pane goes among the ones already open.
-	at int
-	// overlay puts it over the two spots instead of into one of them.
-	overlay bool
 }
 
 // paneEventMsg is a connection state change under an open pane.
@@ -145,52 +163,42 @@ func fromPane(id int, cmd tea.Cmd) tea.Cmd {
 	}
 }
 
-// paneByID finds the pane a message came from, and where it is: the index of
-// its spot, or overlayAt when it is the one over them.
-func (m *Model) paneByID(id int) (*pane, int) {
+// paneByID finds the pane a message came from: the overlay, the terminal, or
+// one of the shell tabs.
+func (m *Model) paneByID(id int) *pane {
 	if m.overlay != nil && m.overlay.id == id {
-		return m.overlay, overlayAt
+		return m.overlay
 	}
-	for i, p := range m.panes {
+	if m.terminal != nil && m.terminal.id == id {
+		return m.terminal
+	}
+	for _, p := range m.shells {
 		if p.id == id {
-			return p, i
+			return p
 		}
 	}
-	return nil, -1
+	return nil
 }
 
-// overlayAt is where the overlay is, which is not among the spots.
-const overlayAt = -2
-
 // inPanes reports whether the window is showing terminals rather than the list.
-func (m *Model) inPanes() bool { return len(m.panes) > 0 || m.overlay != nil }
+func (m *Model) inPanes() bool { return m.terminal != nil || m.overlay != nil }
 
 // focusedPane is the pane every key goes to: the overlay while one is up, since
-// it has the screen, and otherwise the spot with focus.
+// it has the screen, and otherwise the terminal or the visible shell tab.
 func (m *Model) focusedPane() *pane {
 	if m.overlay != nil {
 		return m.overlay
 	}
-	if m.focused < 0 || m.focused >= len(m.panes) {
-		return nil
+	if m.onShells && m.activeShell >= 0 && m.activeShell < len(m.shells) {
+		return m.shells[m.activeShell]
 	}
-	return m.panes[m.focused]
+	return m.terminal
 }
 
-// slotFor is the spot running act, if it is open.
-func (m *Model) slotFor(act Interaction) (*pane, int) {
-	for i, p := range m.panes {
-		if p.action == act {
-			return p, i
-		}
-	}
-	return nil, -1
-}
-
-// currentBox is the discobox the pane screen is showing, as the list last saw
-// it. The pane was opened on a snapshot, and what a command may do to it — a
-// diffstat that has since arrived, a state that has since changed — moves on
-// without it.
+// currentBox is the discobox the workspace is showing, as the list last saw
+// it. The workspace was opened on a snapshot, and what a command may do to it
+// — a diffstat that has since arrived, a state that has since changed — moves
+// on without it.
 func (m *Model) currentBox() Sandbox {
 	for _, s := range m.list.all {
 		if s.ID == m.paneBox.ID {
@@ -200,122 +208,46 @@ func (m *Model) currentBox() Sandbox {
 	return m.paneBox
 }
 
-// openPane opens a terminal from the list, on the discobox under the cursor. It
-// replaces whatever was open: this is a different discobox, or the same one
-// started over, and either way what was on screen was about something else.
-func (m *Model) openPane(act Interaction, sandbox Sandbox) tea.Cmd {
-	m.closePanes()
-	m.paneBox = sandbox
-	// Which side each spot is on is a preference that lasts as long as the
-	// screen does, and this is a new one.
-	m.paneOrder = [2]Interaction{InteractAttach, InteractShell}
-	return m.connectPane(act, sandbox, 0, !act.slotted())
-}
-
-// openSlot fills one of the two spots, or moves to it when it is already full.
-//
-// Going to the one that is open rather than saying so is the answer to the same
-// keystroke either way: you pressed the key for the harness, and the harness is
-// what you get.
-func (m *Model) openSlot(act Interaction) tea.Cmd {
-	if _, at := m.slotFor(act); at >= 0 {
-		m.focused = at
-		return nil
-	}
-	return m.connectPane(act, m.currentBox(), m.slotIndex(act), false)
-}
-
-// slotIndex is which side a spot goes on: the order the two are in, which swap
-// exchanges, applied to whichever of them is already up.
-func (m *Model) slotIndex(act Interaction) int {
-	if len(m.panes) == 0 {
-		return 0
-	}
-	if act == m.paneOrder[0] {
-		return 0
-	}
-	return len(m.panes)
-}
-
-// openOverlay runs a command over the two spots, in a screen of its own.
+// openOverlay runs a command over the workspace, in a screen of its own.
 //
 // It has the screen because it is the thing you asked for and it is over when
-// it is over — a diff you opened to read is not something to read in half a
+// it is over — a report you opened to read is not something to read in half a
 // window beside a harness scrolling past. What is underneath keeps running,
 // unresized and unredrawn, and is exactly where it was when the command exits.
 func (m *Model) openOverlay(act Interaction, sandbox Sandbox) tea.Cmd {
 	if m.overlay != nil {
 		return status("%s is still up — close it first", m.overlay.action)
 	}
-	return m.connectPane(act, sandbox, 0, true)
-}
-
-// swapPanes exchanges the two, carrying focus with the terminal rather than
-// leaving it on the side of the screen: you swapped the panes, not your place
-// in them.
-//
-// The order it swaps is the screen's, not just this pair's, so a spot closed
-// and opened again comes back on the side you put it.
-func (m *Model) swapPanes() tea.Cmd {
-	m.paneOrder[0], m.paneOrder[1] = m.paneOrder[1], m.paneOrder[0]
-	if len(m.panes) < 2 {
-		// There is no side to be on with one pane, but there will be: the
-		// order is what the next one to open goes by.
-		return status("%s opens on the left now", m.paneOrder[0])
-	}
-	m.panes[0], m.panes[1] = m.panes[1], m.panes[0]
-	m.focused = 1 - m.focused
-	return nil
-}
-
-// connectPane opens a terminal for a spot, or for the screen over them. The
-// pane is sized before it is opened: the size is what the far end is told, and
-// a terminal that starts at the wrong size draws itself wrong before anything
-// can correct it.
-func (m *Model) connectPane(act Interaction, sandbox Sandbox, at int, overlay bool) tea.Cmd {
 	// A terminal wants the whole screen, so opening one opens the window out
-	// even when nothing has asked for the list yet.
+	// even when nothing has asked for the list yet. The overlay is sized
+	// before it is opened: the size is what the far end is told, and a
+	// terminal that starts at the wrong size draws itself wrong before
+	// anything can correct it.
 	m.expanded = true
 	m.busy = string(act) + "…"
-
-	// An overlay has the screen to itself; a spot has its share of it.
-	boxes := len(m.panes) + 1
-	if overlay {
-		boxes = 1
-	}
-	cols, rows := m.paneCells(boxes)
+	cols, rows := m.paneCells(m.width)
 	ctx, ds, id := m.ctx, m.ds, sandbox.ID
 	return func() tea.Msg {
 		term, err := ds.Open(ctx, act, id, cols, rows)
 		if err != nil {
-			return statusMsg{text: fmt.Sprintf("%s: %v", act, err), err: true}
+			return statusMsg{text: string(act) + ": " + err.Error(), err: true}
 		}
-		return paneOpenedMsg{action: act, sandbox: sandbox, term: term, at: at, overlay: overlay}
+		return paneOpenedMsg{action: act, sandbox: sandbox, term: term}
 	}
 }
 
-// paneOpened starts drawing a connected terminal.
+// paneOpened starts drawing a connected overlay terminal.
 func (m *Model) paneOpened(msg paneOpenedMsg) tea.Cmd {
 	m.busy = ""
 	m.nextPaneID++
 	p := &pane{
 		id:      m.nextPaneID,
-		term:    termpane.New(m.paneOptions(msg.overlay)...),
+		term:    termpane.New(m.paneOptions(true)...),
 		stream:  msg.term,
 		action:  msg.action,
 		sandbox: msg.sandbox,
 	}
-
-	if msg.overlay {
-		m.overlay = p
-	} else {
-		at := min(max(msg.at, 0), len(m.panes))
-		m.panes = append(m.panes, nil)
-		copy(m.panes[at+1:], m.panes[at:])
-		m.panes[at] = p
-		m.focused = at
-	}
-
+	m.overlay = p
 	m.focus = focusPane
 	m.prompt.Blur()
 	m.layout()
@@ -327,10 +259,11 @@ func (m *Model) paneOpened(msg paneOpenedMsg) tea.Cmd {
 
 // paneOptions are the keys a pane keeps for the window rather than passing on.
 //
-// A spot carries the whole key map, because every one of them is about the
-// discobox on screen and the screen is where you are. The overlay carries only
-// its way out and the mouse: it is one command running to completion, and a key
-// that opened something else over it would be a key that lost it.
+// A workspace terminal carries the whole key map, because every one of them is
+// about the discobox on screen and the screen is where you are. The overlay
+// carries only its way out and the mouse: it is one command running to
+// completion, and a key that opened something else over it would be a key that
+// lost it.
 func (m *Model) paneOptions(overlay bool) []termpane.Option {
 	opts := []termpane.Option{
 		// No bare detach key: nothing the window reserves stands between a
@@ -339,23 +272,29 @@ func (m *Model) paneOptions(overlay bool) []termpane.Option {
 		termpane.WithPrefix(m.leader(), ""),
 		termpane.WithPrefixBinding(paneMouseKey, toggleMouseMsg{}),
 		termpane.WithPrefixBinding(paneDetachAlt, termpane.DetachMsg{}),
+		termpane.WithPrefixBinding(paneQuitKey, quitPaneMsg{}),
 	}
 	if overlay {
 		return opts
 	}
 	opts = append(opts,
-		termpane.WithPrefixBinding(paneSwapKey, swapPanesMsg{}),
-		// Moving between panes is something you do in runs, so it holds
-		// the leader open while Ctrl is down: leader, then Ctrl-← Ctrl-←
-		// walks across without pressing the leader again. The arrows and
-		// the letters are the same binding, so neither has to be learned.
+		// Moving between the terminal and the tabs is something you do in
+		// runs, so it holds the leader open while Ctrl is down: leader, then
+		// Ctrl-← Ctrl-← walks across without pressing the leader again. The
+		// arrows and the letters are the same binding, so neither has to be
+		// learned.
 		termpane.WithRepeatingPrefixBinding(paneLeftKey, movePaneMsg{delta: -1}),
 		termpane.WithRepeatingPrefixBinding(paneRightKey, movePaneMsg{delta: 1}),
 		termpane.WithRepeatingPrefixBinding("left", movePaneMsg{delta: -1}),
 		termpane.WithRepeatingPrefixBinding("right", movePaneMsg{delta: 1}),
 	)
+	// The digits jump straight to a pane by the number its label wears, the
+	// way tmux selects windows: 0 is the terminal, 1 through 9 the tabs.
+	for n := 0; n <= 9; n++ {
+		opts = append(opts, termpane.WithPrefixBinding(strconv.Itoa(n), jumpPaneMsg{n: n}))
+	}
 	// Every command the list offers, on the key it has there. One key map for
-	// the two screens is the point: the pane screen is a discobox with the
+	// the two screens is the point: the workspace is a discobox with the
 	// cursor on it, and what you can do to it does not change with where you
 	// are looking at it from.
 	for key := range interactions {
@@ -385,35 +324,15 @@ func (m *Model) paneEvents(term Terminal) tea.Cmd {
 	}
 }
 
-// closePane ends one session and takes it off the screen. Whatever is left
-// keeps running.
-func (m *Model) closePane(at int) {
-	if at == overlayAt {
-		m.closeOverlay()
-		return
-	}
-	if at < 0 || at >= len(m.panes) {
-		return
-	}
-	_ = m.panes[at].term.Close()
-	m.panes = append(m.panes[:at], m.panes[at+1:]...)
-	m.focused = min(m.focused, max(len(m.panes)-1, 0))
-	if len(m.panes) > 0 {
-		m.layout()
-		return
-	}
-	m.leavePanes()
-}
-
 // closeOverlay ends the command that had the screen and gives it back to the
-// two spots, which have been running underneath the whole time.
+// workspace, which has been running underneath the whole time.
 func (m *Model) closeOverlay() {
 	if m.overlay == nil {
 		return
 	}
 	_ = m.overlay.term.Close()
 	m.overlay = nil
-	if len(m.panes) > 0 {
+	if m.terminal != nil {
 		m.layout()
 		return
 	}
@@ -422,26 +341,12 @@ func (m *Model) closeOverlay() {
 	m.leavePanes()
 }
 
-// closePanes ends every session and puts the window back the way it was.
-func (m *Model) closePanes() {
-	if m.overlay != nil {
-		_ = m.overlay.term.Close()
-		m.overlay = nil
-	}
-	for _, p := range m.panes {
-		_ = p.term.Close()
-	}
-	m.panes = nil
-	m.focused = 0
-	m.leavePanes()
-}
-
-// leavePanes returns focus to where a pane was opened from.
+// leavePanes returns focus to where the screen was opened from.
 func (m *Model) leavePanes() {
 	if m.focus != focusPane {
 		return
 	}
-	// Back to the list, which is where the pane was opened from, with the
+	// Back to the list, which is where the screen was opened from, with the
 	// cursor still on the discobox it was opened on. Landing in the prompt would
 	// mean two presses to act on the one you were just looking at.
 	m.prompt.Blur()
@@ -449,18 +354,6 @@ func (m *Model) leavePanes() {
 	if len(m.list.rows()) == 0 {
 		m.backToPrompt()
 	}
-}
-
-// movePane shifts focus between panes. It stops at the ends rather than
-// wrapping: two panes side by side have a left and a right, and a focus that
-// jumps the long way round is one you have to look for.
-func (m *Model) movePane(delta int) tea.Cmd {
-	next := m.focused + delta
-	if next < 0 || next >= len(m.panes) {
-		return nil
-	}
-	m.focused = next
-	return nil
 }
 
 // updatePane routes a key or a mouse event to the pane with focus. Everything a
@@ -489,7 +382,7 @@ func (m *Model) updatePane(msg tea.Msg) tea.Cmd {
 	}
 	if mouse, ok := msg.(tea.MouseMsg); ok {
 		// In cells relative to the focused pane's grid. A click on the window's
-		// own chrome, or on the other pane, lands outside it and is dropped.
+		// own chrome, or on another pane, lands outside it and is dropped.
 		if m.paneMouse {
 			x, y := m.focusedOrigin()
 			p.term.SendMouse(translateMouse(mouse, x, y))
@@ -507,7 +400,7 @@ func (m *Model) updatePane(msg tea.Msg) tea.Cmd {
 // still has a read in flight, and its parting message must not be taken for the
 // survivor's.
 func (m *Model) updatePaneMsg(tagged paneMsg) tea.Cmd {
-	p, at := m.paneByID(tagged.id)
+	p := m.paneByID(tagged.id)
 	if p == nil {
 		// Its pane is already gone; nothing left to tell.
 		return nil
@@ -525,11 +418,8 @@ func (m *Model) updatePaneMsg(tagged paneMsg) tea.Cmd {
 		// the same enabled checks, the same confirmations, the same reports.
 		return m.actOn(msg.key, []Sandbox{m.currentBox()})
 
-	case swapPanesMsg:
-		return m.swapPanes()
-
 	case movePaneMsg:
-		if at == overlayAt {
+		if p == m.overlay {
 			return nil
 		}
 		// A run of these is one chord: the pane it fired in is left armed while
@@ -545,27 +435,33 @@ func (m *Model) updatePaneMsg(tagged paneMsg) tea.Cmd {
 		}
 		return cmd
 
+	case jumpPaneMsg:
+		if p == m.overlay {
+			return nil
+		}
+		return m.jumpPane(msg.n)
+
+	case quitPaneMsg:
+		// The same exit Ctrl-C is outside a pane: the window goes, and every
+		// session keeps running without it.
+		m.quit = true
+		return tea.Quit
+
 	case termpane.DetachMsg:
-		// Detaching leaves the session running: it is the discobox's terminal,
-		// and closing the window onto it is not the same as ending it.
-		m.closePane(at)
-		m.layout()
-		return tea.Batch(m.refresh(), status("detached — the terminal is still running"))
+		if p == m.overlay {
+			// The overlay is this CLI's own command, so leaving it closes it.
+			m.closeOverlay()
+			m.layout()
+			return tea.Batch(m.refresh(), status("%s closed", p.action))
+		}
+		// Detaching leaves every session running: they are the discobox's
+		// terminals, and closing the window onto them is not the same as
+		// ending them.
+		m.closeWorkspace()
+		return tea.Batch(m.refresh(), status("detached — the discobox is still running"))
 
 	case termpane.ClosedMsg:
-		action := p.action
-		if action.holdsOnExit() && msg.Err == nil {
-			// Keep the last screen up to be read; any key takes it away.
-			p.exited = true
-			p.status = "finished"
-			return m.refresh()
-		}
-		m.closePane(at)
-		m.layout()
-		if msg.Err != nil {
-			return tea.Batch(m.refresh(), m.report(true, "%s: %v", action, msg.Err))
-		}
-		return tea.Batch(m.refresh(), status("%s session ended", action))
+		return m.paneClosed(p, msg)
 
 	case paneEventMsg:
 		switch msg.event.State {
@@ -582,13 +478,52 @@ func (m *Model) updatePaneMsg(tagged paneMsg) tea.Cmd {
 	return fromPane(p.id, cmd)
 }
 
+// paneClosed handles a session or command ending on its own.
+//
+// Where the pane sits decides what happens: the primary terminal ending ends
+// the workspace, since a workspace is a view onto that session; a shell tab
+// and a finished command hold their last screen to be read — an apply with
+// little to say is over in a moment, and a pane that vanished with it would be
+// a screen you never got to read. Only an error closes a pane unread, and is
+// reported instead.
+func (m *Model) paneClosed(p *pane, msg termpane.ClosedMsg) tea.Cmd {
+	action := p.action
+	switch {
+	case p == m.terminal:
+		m.closeWorkspace()
+		if msg.Err != nil {
+			return tea.Batch(m.refresh(), m.report(true, "%s: %v", action, msg.Err))
+		}
+		return tea.Batch(m.refresh(), status("the session ended"))
+
+	case msg.Err == nil:
+		// Keep the last screen up to be read; the keys that mean done take it
+		// away.
+		p.exited = true
+		p.status = "finished"
+		return m.refresh()
+
+	case p == m.overlay:
+		m.closeOverlay()
+		m.layout()
+		return tea.Batch(m.refresh(), m.report(true, "%s: %v", action, msg.Err))
+
+	default:
+		m.closeShell(m.shellIndex(p))
+		m.layout()
+		return tea.Batch(m.refresh(), m.report(true, "%s: %v", action, msg.Err))
+	}
+}
+
 // readFinished handles a key on a pane whose command has finished.
 //
 // Only the keys that mean "done" close it. Anything else would take the screen
 // away mid-read, which for output longer than the pane is exactly when you are
-// still working through it.
+// still working through it — except left and right, which on a shell tab keep
+// meaning what they mean everywhere on the workspace: go look at another pane,
+// leaving this one held.
 func (m *Model) readFinished(p *pane, key tea.KeyPressMsg) tea.Cmd {
-	_, rows := m.paneCells(m.paneBoxes())
+	_, rows := m.paneCells(m.paneWidthOf(p))
 	switch keyName(key) {
 	case "up", "k":
 		p.term.Scroll(1)
@@ -602,12 +537,29 @@ func (m *Model) readFinished(p *pane, key tea.KeyPressMsg) tea.Cmd {
 		p.term.Scroll(p.term.ScrollbackLen())
 	case "end", "G":
 		p.term.Scroll(-p.term.ScrollbackLen())
+	case "left", "h":
+		if p != m.overlay {
+			return m.movePane(-1)
+		}
+	case "right", "l":
+		if p != m.overlay {
+			return m.movePane(1)
+		}
 	case "q", "esc", "enter", paneInterruptKey:
-		_, at := m.paneByID(p.id)
-		m.closePane(at)
-		m.layout()
+		m.dismissPane(p)
 	}
 	return nil
+}
+
+// dismissPane takes a finished pane off the screen: the overlay back to the
+// workspace, a shell tab out of the strip.
+func (m *Model) dismissPane(p *pane) {
+	if p == m.overlay {
+		m.closeOverlay()
+	} else if i := m.shellIndex(p); i >= 0 {
+		m.closeShell(i)
+	}
+	m.layout()
 }
 
 // wheelLines is how far one turn of the wheel moves the view.
@@ -622,56 +574,47 @@ func wheelLines(wheel tea.MouseWheelMsg) int {
 	}
 }
 
-// paneBoxes is how many terminals are drawn side by side: one when the overlay
-// has the screen, and otherwise a box per spot.
-func (m *Model) paneBoxes() int {
-	if m.overlay != nil {
-		return 1
-	}
-	return len(m.panes)
-}
-
 // paneRows is the height every pane gets: the banner, the border's own two
 // edges, and the status line at the bottom.
 func (m *Model) paneRows() int { return m.height - 4 }
 
-// paneCells is the terminal size one of n panes implies: its share of the
-// screen, less its border and a cell of air inside it on each side.
-func (m *Model) paneCells(n int) (cols, rows int) {
-	return max(m.paneWidth(n)-2-2*boxPad, 1), max(m.paneRows(), 1)
+// paneCells is the terminal size a pane of the given box width implies: the
+// box, less its border and a cell of air inside it on each side.
+func (m *Model) paneCells(width int) (cols, rows int) {
+	return max(width-2-2*boxPad, 1), max(m.paneRows(), 1)
 }
 
-// paneWidth is the width of one box when n are side by side. The leftmost takes
-// any odd cell, so the two are never more than one apart.
-func (m *Model) paneWidth(n int) int {
-	if n < 1 {
-		n = 1
+// paneWidthOf is the width of the box a pane is drawn in: the whole window for
+// the overlay and for a terminal with no tabs beside it, half of it for each
+// side of the split. The right half takes any odd cell, so the two are never
+// more than one apart.
+func (m *Model) paneWidthOf(p *pane) int {
+	if p == m.overlay || len(m.shells) == 0 {
+		return max(m.width, 4)
 	}
-	return max(m.width/n, 4)
+	if p == m.terminal {
+		return max(m.width/2, 4)
+	}
+	return max(m.width-m.width/2, 4)
 }
 
-// paneOrigin is where a pane's grid begins on screen: past its border's left
-// edge and the cell of air inside it, and down past the banner and the border's
-// top edge.
+// focusedOrigin is where the pane every key goes to was drawn: past its
+// border's left edge and the cell of air inside it, and down past the banner
+// and the border's top edge.
 //
-// The cursor and every mouse event are placed against this, so it is worked out
-// once rather than counted twice.
-func (m *Model) paneOrigin(i int) (x, y int) {
-	width := m.paneWidth(m.paneBoxes())
-	return i*width + 1 + boxPad, 2
-}
-
-// focusedOrigin is where the pane every key goes to was drawn. The overlay is
-// the only box on screen, so it starts where the first one would.
+// The cursor and every mouse event are placed against this, so it is worked
+// out once rather than counted twice.
 func (m *Model) focusedOrigin() (x, y int) {
-	if m.overlay != nil {
-		return m.paneOrigin(0)
+	p := m.focusedPane()
+	if p != nil && p != m.overlay && p != m.terminal && len(m.shells) > 0 {
+		// A shell tab: its box starts where the terminal's ends.
+		return m.width/2 + 1 + boxPad, 2
 	}
-	return m.paneOrigin(m.focused)
+	return 1 + boxPad, 2
 }
 
-// viewPaneWindow draws the whole screen for the open panes: the captions above,
-// the bordered terminals side by side, and the keys below.
+// viewPaneWindow draws the whole screen for the open workspace: the captions
+// above, the bordered terminals side by side, and the keys below.
 //
 // The grid rows come back from the library already fitted to the cell and are
 // put between the border's sides without passing through anything that could
@@ -702,23 +645,21 @@ func (m *Model) viewPaneWindow() string {
 	// The overlay has the screen while it is up. What is under it is not drawn
 	// half-covered or dimmed behind it: it is not there, and it is all still
 	// there when the command exits.
-	drawn, focused := m.panes, m.focused
-	if m.overlay != nil {
-		drawn, focused = []*pane{m.overlay}, 0
+	var body string
+	switch {
+	case m.overlay != nil:
+		body = m.viewPaneBox(m.overlay, m.width, true)
+	case len(m.shells) == 0:
+		body = m.viewPaneBox(m.terminal, m.width, true)
+	default:
+		// The terminal on the left, the tabbed shells on the right; the right
+		// half takes any cell the division left over so the row comes out
+		// exactly the width.
+		left := m.viewPaneBox(m.terminal, m.width/2, !m.onShells)
+		right := m.viewShellBox(m.width-m.width/2, m.onShells)
+		body = lipgloss.JoinHorizontal(lipgloss.Top, left, right)
 	}
-
-	// Each pane is a block of its own, joined side by side; the last takes any
-	// cell the division left over so the row comes out exactly the width.
-	blocks := make([]string, 0, len(drawn))
-	width := m.paneWidth(len(drawn))
-	for i, p := range drawn {
-		w := width
-		if i == len(drawn)-1 {
-			w = m.width - i*width
-		}
-		blocks = append(blocks, m.viewPaneBox(p, w, i == focused))
-	}
-	rows = append(rows, strings.Split(lipgloss.JoinHorizontal(lipgloss.Top, blocks...), "\n")...)
+	rows = append(rows, strings.Split(body, "\n")...)
 	rows = append(rows, " "+pad+padANSI(m.st.dimText.Render(m.hints()), max(inner-2*boxPad, 1))+pad+" ")
 	return strings.Join(rows, "\n")
 }

@@ -930,6 +930,18 @@ type SandboxAgentGitSourceStatus struct {
 	Behind OptInt64  `json:"behind"`
 	Branch OptString `json:"branch"`
 	Clean  bool      `json:"clean"`
+	// Lines added against diffBase.
+	DiffAdded OptInt64 `json:"diffAdded"`
+	// Commit the diff stat is measured against - the commit the source was spawned at, forwarded to the
+	// merge base with the source's upstream tracking ref once the sandbox has fetched, so pulled commits
+	// do not count as the sandbox's changes. Absent when no base commit was recorded or the repository
+	// does not have it, in which case no diff stat is reported.
+	DiffBase OptString `json:"diffBase"`
+	// Lines deleted against diffBase.
+	DiffDeleted OptInt64 `json:"diffDeleted"`
+	// Files changed against diffBase, as git diff --shortstat counts them (tracked changes only,
+	// committed and uncommitted).
+	DiffFiles OptInt64 `json:"diffFiles"`
 	// Non-fatal error observing this source (e.g. missing directory, not a git repository).
 	Error      OptString `json:"error"`
 	HeadCommit OptString `json:"headCommit"`
@@ -960,6 +972,26 @@ func (s *SandboxAgentGitSourceStatus) GetBranch() OptString {
 // GetClean returns the value of Clean.
 func (s *SandboxAgentGitSourceStatus) GetClean() bool {
 	return s.Clean
+}
+
+// GetDiffAdded returns the value of DiffAdded.
+func (s *SandboxAgentGitSourceStatus) GetDiffAdded() OptInt64 {
+	return s.DiffAdded
+}
+
+// GetDiffBase returns the value of DiffBase.
+func (s *SandboxAgentGitSourceStatus) GetDiffBase() OptString {
+	return s.DiffBase
+}
+
+// GetDiffDeleted returns the value of DiffDeleted.
+func (s *SandboxAgentGitSourceStatus) GetDiffDeleted() OptInt64 {
+	return s.DiffDeleted
+}
+
+// GetDiffFiles returns the value of DiffFiles.
+func (s *SandboxAgentGitSourceStatus) GetDiffFiles() OptInt64 {
+	return s.DiffFiles
 }
 
 // GetError returns the value of Error.
@@ -1015,6 +1047,26 @@ func (s *SandboxAgentGitSourceStatus) SetBranch(val OptString) {
 // SetClean sets the value of Clean.
 func (s *SandboxAgentGitSourceStatus) SetClean(val bool) {
 	s.Clean = val
+}
+
+// SetDiffAdded sets the value of DiffAdded.
+func (s *SandboxAgentGitSourceStatus) SetDiffAdded(val OptInt64) {
+	s.DiffAdded = val
+}
+
+// SetDiffBase sets the value of DiffBase.
+func (s *SandboxAgentGitSourceStatus) SetDiffBase(val OptString) {
+	s.DiffBase = val
+}
+
+// SetDiffDeleted sets the value of DiffDeleted.
+func (s *SandboxAgentGitSourceStatus) SetDiffDeleted(val OptInt64) {
+	s.DiffDeleted = val
+}
+
+// SetDiffFiles sets the value of DiffFiles.
+func (s *SandboxAgentGitSourceStatus) SetDiffFiles(val OptInt64) {
+	s.DiffFiles = val
 }
 
 // SetError sets the value of Error.

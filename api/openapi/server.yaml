@@ -506,6 +506,21 @@ components:
                 behind:
                     format: int64
                     type: integer
+                diffBase:
+                    description: Commit the diff stat is measured against - the commit the source was spawned at, forwarded to the merge base with the source's upstream tracking ref once the sandbox has fetched, so pulled commits do not count as the sandbox's changes. Absent when no base commit was recorded or the repository does not have it, in which case no diff stat is reported.
+                    type: string
+                diffFiles:
+                    description: Files changed against diffBase, as git diff --shortstat counts them (tracked changes only, committed and uncommitted).
+                    format: int64
+                    type: integer
+                diffAdded:
+                    description: Lines added against diffBase.
+                    format: int64
+                    type: integer
+                diffDeleted:
+                    description: Lines deleted against diffBase.
+                    format: int64
+                    type: integer
                 porcelain:
                     description: Bounded git status --porcelain=v2 output for this source.
                     type: string

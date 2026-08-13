@@ -85,24 +85,6 @@ func TestSandboxLastUsedPrefersRuntimeActivity(t *testing.T) {
 	}
 }
 
-// git omits whichever of the three clauses is zero, so the parse cannot assume
-// all of them are there.
-func TestParseShortstat(t *testing.T) {
-	for _, tc := range []struct {
-		out  string
-		want tui.DiffStat
-	}{
-		{" 3 files changed, 61 insertions(+), 12 deletions(-)\n", tui.DiffStat{Known: true, Files: 3, Added: 61, Deleted: 12}},
-		{" 1 file changed, 1 insertion(+)\n", tui.DiffStat{Known: true, Files: 1, Added: 1}},
-		{" 2 files changed, 8 deletions(-)\n", tui.DiffStat{Known: true, Files: 2, Deleted: 8}},
-		{"", tui.DiffStat{Known: true}},
-	} {
-		if got := parseShortstat(tc.out); got != tc.want {
-			t.Errorf("parseShortstat(%q) = %+v, want %+v", tc.out, got, tc.want)
-		}
-	}
-}
-
 // The ref half of -C DIR@REF says which commit to cut from; the working tree
 // being asked about is the directory's either way.
 func TestSourceDirectoryDropsTheRef(t *testing.T) {

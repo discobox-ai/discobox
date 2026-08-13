@@ -21,7 +21,6 @@ type fakeSource struct {
 
 	session   Session
 	sandboxes []Sandbox
-	stats     map[string]DiffStat
 	dirty     bool
 
 	listErr   error
@@ -31,13 +30,27 @@ type fakeSource struct {
 	openErr   error
 	renameErr error
 
+	// execs is what the workspace's poll is told is running; execsErr fails
+	// the listing, openExecErr every attach, openExecErrFor one exec's
+	// attach, newShellErr the shell create.
+	execs          []Exec
+	execsErr       error
+	openExecErr    error
+	openExecErrFor map[string]error
+	newShellErr    error
+	// newShellID names the next exec NewShell creates.
+	newShellID int
+
 	// Calls, in order.
 	runs      []RunRequest
 	did       []string // "verb id"
 	renames   []string // "id name"
 	interacts []string // "action id,id"
 	opens     []string // "action id colsxrows"
+	execOpens []string // "id execID colsxrows"
 	terminals []*fakeTerminal
+	// execTerminals is the terminal serving each exec attach, by exec id.
+	execTerminals map[string]*fakeTerminal
 }
 
 func newFakeSource(sandboxes ...Sandbox) *fakeSource {
@@ -51,7 +64,6 @@ func newFakeSource(sandboxes ...Sandbox) *fakeSource {
 			DefaultHarness: "claude",
 		},
 		sandboxes: sandboxes,
-		stats:     map[string]DiffStat{},
 		createdID: "sbx_created",
 	}
 }
@@ -65,16 +77,6 @@ func (f *fakeSource) List(context.Context) ([]Sandbox, error) {
 		return nil, f.listErr
 	}
 	return append([]Sandbox(nil), f.sandboxes...), nil
-}
-
-func (f *fakeSource) DiffStat(_ context.Context, id string) (DiffStat, error) {
-	f.mu.Lock()
-	defer f.mu.Unlock()
-	stat, ok := f.stats[id]
-	if !ok {
-		return DiffStat{}, fmt.Errorf("no stat for %s", id)
-	}
-	return stat, nil
 }
 
 func (f *fakeSource) Run(_ context.Context, req RunRequest) (Sandbox, error) {
@@ -128,6 +130,91 @@ func (f *fakeSource) Open(_ context.Context, action Interaction, id string, cols
 	term := newFakeTerminal()
 	f.terminals = append(f.terminals, term)
 	return term, nil
+}
+
+func (f *fakeSource) Execs(context.Context, string) ([]Exec, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	if f.execsErr != nil {
+		return nil, f.execsErr
+	}
+	return append([]Exec(nil), f.execs...), nil
+}
+
+func (f *fakeSource) OpenExec(_ context.Context, id, execID string, cols, rows int) (Terminal, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.execOpens = append(f.execOpens, fmt.Sprintf("%s %s %dx%d", id, execID, cols, rows))
+	if f.openExecErr != nil {
+		return nil, f.openExecErr
+	}
+	if err := f.openExecErrFor[execID]; err != nil {
+		return nil, err
+	}
+	return f.newExecTerminal(execID), nil
+}
+
+func (f *fakeSource) NewShell(_ context.Context, id string, cols, rows int) (Exec, Terminal, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	if f.newShellErr != nil {
+		return Exec{}, nil, f.newShellErr
+	}
+	f.newShellID++
+	exec := Exec{
+		ID:        fmt.Sprintf("exec_shell%d", f.newShellID),
+		Command:   []string{"/bin/zsh"},
+		Tty:       true,
+		Live:      true,
+		CreatedAt: time.Date(2026, 8, 7, 12, 0, f.newShellID, 0, time.UTC),
+	}
+	// The listing reports it from now on, the way the server would.
+	f.execs = append(f.execs, exec)
+	f.execOpens = append(f.execOpens, fmt.Sprintf("%s %s %dx%d", id, exec.ID, cols, rows))
+	return exec, f.newExecTerminal(exec.ID), nil
+}
+
+// newExecTerminal wires a fake terminal to an exec id; f.mu is held.
+func (f *fakeSource) newExecTerminal(execID string) *fakeTerminal {
+	term := newFakeTerminal()
+	f.terminals = append(f.terminals, term)
+	if f.execTerminals == nil {
+		f.execTerminals = map[string]*fakeTerminal{}
+	}
+	f.execTerminals[execID] = term
+	return term
+}
+
+// execTerm is the terminal serving one exec id's attach.
+func (f *fakeSource) execTerm(execID string) *fakeTerminal {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return f.execTerminals[execID]
+}
+
+// addExec puts a session into the listing, as one started elsewhere would be.
+func (f *fakeSource) addExec(exec Exec) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.execs = append(f.execs, exec)
+}
+
+// execOpened is every attach asked for so far, as "sandbox exec colsxrows".
+func (f *fakeSource) execOpened() []string {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return append([]string(nil), f.execOpens...)
+}
+
+// endExec removes an exec from the listing, as an exited session would be.
+func (f *fakeSource) endExec(execID string) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	for i := range f.execs {
+		if f.execs[i].ID == execID {
+			f.execs[i].Live = false
+		}
+	}
 }
 
 // fakeTerminal is a sandbox terminal on the end of a pipe: what a test sends

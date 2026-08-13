@@ -20,6 +20,17 @@ type GitSourceStatus struct {
 	Truncated  bool      `json:"truncated,omitempty"`
 	Error      string    `json:"error,omitempty"`
 	ObservedAt time.Time `json:"observedAt"`
+
+	// DiffBase is the commit the diff counts below are measured against: the
+	// commit the source was spawned at per the manifest, forwarded to the
+	// merge base with the manifest's upstream tracking ref once the sandbox
+	// has fetched (see resolveDiffBase). Empty when the manifest recorded no
+	// base commit or the repository does not have it, in which case the
+	// counts mean nothing and are omitted with it.
+	DiffBase    string `json:"diffBase,omitempty"`
+	DiffFiles   int    `json:"diffFiles"`
+	DiffAdded   int    `json:"diffAdded"`
+	DiffDeleted int    `json:"diffDeleted"`
 }
 
 // SessionStatus is the observed state of one harness terminal.

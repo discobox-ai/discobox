@@ -20,7 +20,9 @@ flowchart LR
     P -->|Enter| Run["DataSource.Run → attach"]
     L -->|u t T x U P| Verb["DataSource.Do"]
     L -->|e| Rename["dialog → DataSource.Rename"]
-    L -->|Enter s d y i| Exec["tea.Exec → DataSource.Interact"]
+    L -->|Enter s| WS["workspace → Execs / OpenExec / NewShell"]
+    L -->|d i| Overlay["overlay pane → DataSource.Open"]
+    L -->|y| Exec["tea.Exec → DataSource.Interact"]
 ```
 
 ## Decisions
@@ -67,14 +69,13 @@ action printed. On the alternate screen the runtime handles both — it drops to
 the primary screen around an exec and repaints on resize.
 
 **Three kinds of action.** A `Verb` goes to the API and returns, so the window
-stays up and reports on its status line. Most `Interaction`s are drawn in a pane
-(`Interaction.paneable`, `pane.go`, over the `termpane` module): attach and
-shell are the discobox's own terminals, and diff and status are the CLI's own
-commands given a terminal of their own so they can be read beside one. From the
-list, apply suspends the window through `tea.Exec` — the list can act on several
-discoboxes at once and a pane shows one. The `exec` field on the model is that
-handoff, and exists as a field only so a test can run an action without a
-terminal to release.
+stays up and reports on its status line. Attach and shell are drawn in the
+window (`Interaction.paneable`, `pane.go`/`workspace.go`, over the `termpane`
+module): they open the workspace screen onto the discobox's own terminals.
+From the list, apply suspends the window through `tea.Exec` — the list can act
+on several discoboxes at once and a pane shows one. The `exec` field on the
+model is that handoff, and exists as a field only so a test can run an action
+without a terminal to release.
 
 **Rename is a third kind, and only in the list** (`renameKey`, `askRename`). It
 is not a `Verb` — a verb is a word the window already has, and this one needs a
@@ -83,49 +84,79 @@ name typed first — so `e` opens the input dialog on the name the discobox
 and a blank line would make that a retype. Enter on the unchanged name is the
 same as Esc, since neither asked for anything. It takes exactly one discobox,
 because a name is a name and a selection cannot share one. It is deliberately
-absent from `verbs`/`interactions`, which is what keeps it off the pane screen:
-there the leader plus `e` exchanges the two spots, and a discobox you are
+absent from `verbs`/`interactions`, which is what keeps it off the workspace
+screen: rename needs a name typed into a dialog, and a discobox you are
 already looking at is one you know the name of.
 
-**The pane screen is one discobox in two spots, and everything you can do to
-it.** `Model.panes` holds at most one pane per `Interaction.slotted` action —
-the harness on one side and a shell on the other — so a screen cannot end up as
-two shells, and an empty spot is a spot rather than an absence: the leader plus
-`a` or `s` fills the one that is empty *where it stands*, and goes to the one
-that is full rather than stacking a second beside it. `Model.paneOrder` is which
-side each spot is on, exchanged by the leader plus `e` and outlasting the
-terminals in it. The leader plus `h`/`l` or the arrows moves between them,
-stopping at the ends rather than wrapping; focus goes with the terminal rather
-than staying on a side of the screen. Each pane carries its own detach key
-(`paneKeys`), and the header and key hints show the focused one's.
+**The workspace screen is one discobox as the server has it** (`workspace.go`).
+Opening it attaches to the primary terminal — the virtual `ExecPrimary` id,
+which the sandbox resolves and revives itself — *and* to every other live TTY
+session the exec listing reports, harness terminals included: `Model.terminal`
+on the left half, `Model.shells` as tabs on the right, one visible at a time
+(`activeShell`), in session-creation order. The workspace mirrors the server
+rather than remembering what was opened here, so a shell started from another
+window appears as a tab on its own, and the leader plus `s` always creates a
+new session rather than going to one. With no tabs the terminal takes the full
+width; the leader plus `a` is a place, not an opener — it focuses the terminal.
+
+While the screen is up, a generation-guarded tick loop polls `DataSource.Execs`
+(~2s) and opens a tab for every live TTY session it does not already show,
+deduped by exec id against open tabs and in-flight attaches (`connecting`) —
+which is also what folds the leader-`s` optimistic tab and its listing entry
+into one. It is a poll rather than a subscription because the control plane has
+no exec event stream: exec state lives on the sandbox-agent and `/execs` is a
+raw proxy, so there is nothing server-side to subscribe to yet. The seam is a
+snapshot so that a real stream, when one exists, replaces the tick loop and
+nothing else. The poll only ever *adds*: the attach streams deliver their own
+exits (`termpane.ClosedMsg` is the sole driver of the exited transition), so
+each tab transition has exactly one writer. Detach (`leader d`) leaves the
+whole workspace — every stream closed at once, every session still running —
+and `wsGen` is bumped so stale ticks and in-flight opens are dropped rather
+than resurrecting a screen that was left. The primary session ending ends the
+workspace too: it is above all a view onto that session.
+
+The tab strip is laid into the right box's top border (`tabbedEdge`, a
+`titledEdge` with several titles), so it costs no grid row and both halves come
+out the same height. Tabs are titled by the application's own title, else the
+session's command basename, else its harness, else its id tail; the visible tab
+is lit and never clipped, and an overgrown strip shows a window around it with
+an ellipsis at the clipped end. Hidden tabs keep emulating off-screen at their
+drawn size, so flipping to one shows where it is now.
 
 `Model.paneBox` is the discobox the screen is showing, and every one of the
 list's own keys is bound behind the leader against it (`paneOptions` over
 `interactions` and `verbs`, dispatched through the list's own `actOn`) — one key
 map for the two screens, with the same enabled checks and the same
 confirmations. `currentBox` re-reads it from the listing at dispatch time, since
-the pane was opened on a snapshot and a diffstat that has since arrived changes
-what is offered.
+the workspace was opened on a snapshot and a diffstat that has since arrived
+changes what is offered. The leader plus `h`/`l` or the arrows moves along the
+strip the screen is — the terminal, then the tabs — stopping at the ends rather
+than wrapping, and the leader plus a digit jumps straight to the pane wearing
+that number, tmux-style: 0 the terminal, 1–9 the tab whose label carries the
+ordinal.
 
-**A command that finishes takes the screen over both spots.** `Model.overlay` is
-diff, status or apply running full width while the two terminals stay connected,
-unresized and undrawn underneath — a diff you opened to read is not something to
-read in half a window beside a harness scrolling past, and when it exits the
-spots are exactly as they were. It is the only place apply runs in a pane: there
-is one discobox on this screen, so the reason the list has for suspending does
-not apply. `focusedPane` returns it while it is up, which is what puts the keys,
-the cursor, the mouse and the hints on it without a second path through any of
-them; `paneByID` reports it as `overlayAt`, which is not a spot.
+**A command that finishes takes the screen over the workspace.** `Model.overlay`
+is apply running full width while the terminals stay connected, unresized and
+undrawn underneath — its report is not something to read in half a window
+beside a harness scrolling past, and when it exits the workspace is exactly as
+it was. It is the only place apply runs in a pane: there is one discobox on
+this screen, so the reason the list has for suspending does not apply.
+`focusedPane` returns it while it is up, which is what puts the keys, the
+cursor, the mouse and the hints on it without a second path through any of
+them.
 
-**A finished command keeps its screen, and can be read back through.**
-`Interaction.holdsOnExit` — anything that is not one of the two spots. A shell
-that exits is gone and its pane has nothing left to show; a command that ran,
-printed and returned is the opposite, and `disco status` on a clean tree is over
-in a moment. The pane stays and says so, and its keys become the reader's
-(`readFinished`): the arrows and pgup/pgdn walk back through output longer than
-the pane, `g`/`G` jump to the ends, the wheel scrolls, and only the keys that
-mean done — `q`, Esc, Enter, Ctrl-C — take it away. A stray key leaves the screen
-alone, since output worth scrolling is output you are still working through.
+**A finished pane keeps its screen, and can be read back through.** The
+distinction is positional now: the primary does not hold (its end is the
+workspace's), while a shell tab and the overlay do. A shell that exits stays as
+a readable tab, and a command that ran, printed and returned stays as the
+screen — an apply with little to say is over in a moment, and a pane that
+vanished with it would be a screen you never got to read. The pane says so, and
+its keys become the reader's (`readFinished`): the arrows and pgup/pgdn walk
+back through output longer than the pane, `g`/`G` jump to the ends, the wheel
+scrolls, `h`/`l` still leave for another pane, and only the keys that mean done
+— `q`, Esc, Enter, Ctrl-C — dismiss it. Dismissal is local tab closure, not
+detach: the session is already over, and the way to be rid of a *running* shell
+is to exit it — there is deliberately no kill-tab key.
 
 **Messages from a pane are addressed to it** (`paneMsg`, `fromPane`). Every
 command a pane produces is tagged with its id, because `termpane.ClosedMsg` says
@@ -148,7 +179,7 @@ transport's status appearing on the right does not shift it, and `spreadCenter`
 silently disappears at some widths is worse than a shortened one. The captions are indented to line up with the
 terminal's own output rather than with the border.
 
-The title the application sets is laid into the top border (`paneBorderTop`) as
+The title the application sets is laid into the top border (`titledEdge`) as
 `──[ title ]──`, not above it: it names the terminal rather than the window, and
 a border is a line the eye already follows, so a word set into it costs no row.
 The brackets are what make it read as set into the line — bare text with space
@@ -160,22 +191,23 @@ Unattached the window is the other way round: one box holding all of it. The two
 are different shapes because they are different things — a launcher is a window
 with parts, and a pane is a terminal with captions. Focus becomes `focusPane` and *every* key goes to the sandbox
 except the reserved ones — and which those are depends on what is in the pane
-(`paneKeys`).
+(`paneOptions`).
 
 **Ctrl-C is the application's, in every pane.** Nothing the window reserves
 stands between a program and its own interrupt, so `paneOptions` passes an empty
-detach key to `termpane.WithPrefix` and the only way out is `leader q` — `d`,
-which is what screen, tmux and a plain `disco attach` detach on, is diff here,
-because this leader also carries the list's keys. An attach used to take
+detach key to `termpane.WithPrefix` and the ways out are `leader d` — the
+key screen, tmux and a plain `disco attach` all detach on, free again now that
+diff has left the CLI — and `leader q`, which quits the whole window, the exit
+Ctrl-C is everywhere else. Both sit in the header's top right. An attach used to take
 Ctrl-C as "back out of this", which reads well right up until it is wrong:
 someone who types it to stop an agent and gets a detached session instead has
 not stopped anything, and nothing on the screen says so. One key with two
 meanings depending on what is in the pane is worse than the keystroke it saved.
-The window's own Ctrl-C-quits is therefore suppressed for the whole pane screen
-rather than for the panes that took the key. Either way the leader plus `m` hands
-the mouse back and forth, and the second key of a leader pair matches with or
-without Ctrl held. Typing the leader itself takes it twice in full: its bare
-letter is `a` under the default Ctrl-A, and that is attach.
+The window's own Ctrl-C-quits is therefore suppressed for the whole workspace
+screen rather than for the panes that took the key. Either way the leader plus
+`m` hands the mouse back and forth, and the second key of a leader pair matches
+with or without Ctrl held. Typing the leader itself takes it twice in full: its
+bare letter is `a` under the default Ctrl-A, and that is attach.
 
 **The leader is configurable, and it is not this package's.** `--leader`/
 `DISCOBOX_LEADER` (`internal/keys.NormalizeLeader`, `WithLeader`) because the
@@ -191,7 +223,7 @@ The mouse reaches the sandbox only while something in it has asked for one
 (`paneMouseMode` mirrors `termpane.MouseMode` into `View.MouseMode`), so native
 selection is only lost while it is being used — and `ctrl+a m` takes it back for
 when you would rather copy a stack trace than click on it. Events are translated
-out of screen space by `paneOriginX`/`paneOriginY`, the same origin the cursor
+out of screen space by `focusedOrigin`, the same origin the cursor
 is placed at. Detaching returns to the list with the cursor still on the sandbox it was opened on.
 
 The title an application sets goes two places: the middle of the window's header
@@ -210,12 +242,6 @@ using a bordered lipgloss style, because such a style re-wraps any line as wide
 as the box — and a re-wrapped terminal grid shifts every row below the wrap,
 putting the hardware cursor on the wrong line for the rest of the session.
 `paneCursor`'s offsets are exact for the same reason.
-
-**A pager has to give the screen back.** `LESS=FRX` is git's default and right
-at a shell — you quit `less` and the diff is still above your prompt — but under
-the launcher it leaves a screenful for the window to redraw over. `disco tui`
-sets `App.pagerRestoresScreen`, which drops the `X` so less uses the alternate
-screen and restores on exit. See `cli/internal/cli/pager.go`.
 
 **An action takes the window's rows, not the ones under them.** The runtime
 flushes and leaves the cursor on the frame's last row, so `interactExec.Run`
@@ -248,8 +274,8 @@ a picture, so the block moves, not the lines within it.
 
 **One data seam.** Everything the window needs is on `DataSource` (`data.go`),
 implemented once in `cli.apiDataSource`. The interactive actions there build and
-execute the real Cobra commands, so the launcher runs `disco attach`, `disco
-diff` and the rest rather than a second implementation that drifts from them.
+execute the real Cobra commands, so the launcher runs `disco apply` and the
+rest rather than a second implementation that drifts from them.
 
 **Color is a value, not a global.** `detectColor` reads the profile once and
 `styles.color` carries it. Without color the state glyph gives way to the state
@@ -305,12 +331,30 @@ the list to type something and coming back is not the same as arriving at it.
 `resetCursor` clears `visited` when the folder changes: a different set of
 sandboxes is a list nobody has chosen a row in.
 
-**Diffstats are fetched lazily.** They are not part of a sandbox listing — each
-one costs a `git diff --shortstat` inside the sandbox — so only the rows on
-screen are asked about, one at a time (`fetchDiff`, `pendingDiffs`), and a
-refresh keeps the ones already known. `DiffStat.Known` separates "nothing
-changed" from "not asked yet", which is what keeps diff and apply available on a
-row whose stat has not landed.
+**The git column is where the work sits now.** Every row carries a
+branch@commit, and once the sandbox's agent has reported (`GitState`, relayed
+with the listing per ADR 0030) it is the position the working tree is on today
+rather than the commit the sandbox was cut from. The mark on it is the state
+of the work, most losable first: `*` in warning while the tree holds
+uncommitted content, `⇡` in the default text for committed work no apply has
+landed, `✓` in green when the head commit is the last one applied — the state
+where nothing in the sandbox would be lost — and unmarked dim when it sits
+clean where it was cut. Until anything reports, the row falls
+back to the spawn position, starred when a snapshot of uncommitted work was
+carried in. `disco ls` prints the same column, plus the derivation spelled as
+a word (`dirty` / `committed` / `applied` / `clean`), from the same
+`cli.sandboxGitStatus` seam — one derivation, two spellings.
+
+**Diffstats arrive with the listing.** The sandbox-agent measures
+`git diff --shortstat` against the spawn commit its manifest records,
+forwarded to the merge base with upstream once the sandbox has fetched so
+pulled commits do not count (ADR 0018's base rule, carried into the agent by
+ADR 0037), and reports the counts with the rest of its status — so the column
+costs the list nothing and no git runs anywhere on its behalf. This replaced
+a fetch-per-row through `DataSource.DiffStat`, whose exec woke every stopped
+sandbox just to draw a column. `DiffStat.Known` separates "nothing changed"
+from "nothing reported yet", which is what keeps apply available on a row
+whose report has not landed.
 
 **Keys are matched by name, not keystroke.** Bubble Tea reports a typed `V` as
 `shift+v` and a space as `space`; the key list promises letters, so `keyName`
@@ -336,7 +380,8 @@ gets the product's.
 | `theme.go` | the palette and every style, built against the detected profile |
 | `logo.go` | the mark, embedded from `logo.chars` as captured |
 | `editor.go` | Alt-E: the prompt in `$EDITOR` |
-| `pane.go` | the terminal pane: opening, detaching, its chrome and cursor |
+| `pane.go` | one terminal pane: its keys, messages, chrome and cursor |
+| `workspace.go` | the workspace screen: open, poll/reconcile, tabs, detach |
 | `interact.go` | the `tea.ExecCommand` adapter for the command-shaped actions |
 
 ## Looking at it without a terminal

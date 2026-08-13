@@ -468,6 +468,15 @@ func sandboxAgentGitSourceStatus(in agentstatus.GitSourceStatus) sandboxapi.Sand
 	if in.Behind != 0 {
 		out.Behind = sandboxapi.NewOptInt64(int64(in.Behind))
 	}
+	// The counts only mean something relative to their base, so all four
+	// travel together: zero counts against a base are "no changes", which is
+	// an answer, not an absence.
+	if in.DiffBase != "" {
+		out.DiffBase = sandboxapi.NewOptString(in.DiffBase)
+		out.DiffFiles = sandboxapi.NewOptInt64(int64(in.DiffFiles))
+		out.DiffAdded = sandboxapi.NewOptInt64(int64(in.DiffAdded))
+		out.DiffDeleted = sandboxapi.NewOptInt64(int64(in.DiffDeleted))
+	}
 	if in.Porcelain != "" {
 		out.Porcelain = sandboxapi.NewOptString(in.Porcelain)
 	}

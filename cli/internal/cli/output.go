@@ -40,23 +40,25 @@ func (a *App) writeSandbox(cmd *cobra.Command, sandbox *apimodel.Sandbox) error 
 		return writeJSON(cmd.OutOrStdout(), sandbox)
 	}
 	tw := tabwriter.NewWriter(cmd.OutOrStdout(), 0, 0, 2, ' ', 0)
-	fmt.Fprintln(tw, "ID\tNAME\tSTATE\tERROR\tUPDATED")
-	fmt.Fprintf(tw, "%s\t%s\t%s\t%s\t%s\n",
+	fmt.Fprintln(tw, "ID\tNAME\tSTATE\tHARNESS\tGIT\tCHANGES\tERROR\tUPDATED")
+	fmt.Fprintf(tw, "%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\n",
 		sandbox.ID,
 		sandbox.Config.Name,
 		sandboxDisplayState(*sandbox),
+		sandboxHarness(*sandbox),
+		sandboxGitColumn(*sandbox),
+		sandboxGitStatus(*sandbox).changes(sandboxSpawnCommit(*sandbox)),
 		truncateTableValue(sandboxMessage(*sandbox), 80),
 		formatTime(sandbox.UpdatedAt),
 	)
 	return tw.Flush()
 }
 
-// writeSandboxes lists sandboxes newest-created first. It reports creation
-// rather than update time, unlike the other listings here: a sandbox's
-// UpdatedAt moves for reconciler-driven reasons a user did not ask for, so it
-// reorders the list they are trying to read.
+// writeSandboxes lists sandboxes most recently used first, the same order and
+// row the launcher's list draws: state, harness, where the work sits in git,
+// and whether that work has landed anywhere.
 func (a *App) writeSandboxes(cmd *cobra.Command, sandboxes []apimodel.Sandbox, showFolder bool) error {
-	sandboxes = sortedByRecency(sandboxes, func(sandbox apimodel.Sandbox) time.Time { return sandbox.CreatedAt })
+	sandboxes = sortedByRecency(sandboxes, sandboxLastUsed)
 	if a.quiet {
 		return writeResourceIDs(cmd.OutOrStdout(), sandboxes, func(sandbox apimodel.Sandbox) string { return sandbox.ID })
 	}
@@ -65,33 +67,75 @@ func (a *App) writeSandboxes(cmd *cobra.Command, sandboxes []apimodel.Sandbox, s
 	}
 	tw := tabwriter.NewWriter(cmd.OutOrStdout(), 0, 0, 2, ' ', 0)
 	if showFolder {
-		fmt.Fprintln(tw, "ID\tNAME\tSTATE\tUPGRADE\tERROR\tCREATED\tFOLDER")
+		fmt.Fprintln(tw, "ID\tNAME\tSTATE\tHARNESS\tGIT\tCHANGES\tDIFF\tUPGRADE\tERROR\tLAST USED\tFOLDER")
 	} else {
-		fmt.Fprintln(tw, "ID\tNAME\tSTATE\tUPGRADE\tERROR\tCREATED")
+		fmt.Fprintln(tw, "ID\tNAME\tSTATE\tHARNESS\tGIT\tCHANGES\tDIFF\tUPGRADE\tERROR\tLAST USED")
 	}
 	for _, sandbox := range sandboxes {
-		if showFolder {
-			fmt.Fprintf(tw, "%s\t%s\t%s\t%s\t%s\t%s\t%s\n",
-				sandbox.ID,
-				sandbox.Config.Name,
-				sandboxDisplayState(sandbox),
-				sandboxUpgradeState(sandbox),
-				truncateTableValue(sandboxMessage(sandbox), 80),
-				formatTime(sandbox.CreatedAt),
-				sandboxFolder(sandbox),
-			)
-			continue
-		}
-		fmt.Fprintf(tw, "%s\t%s\t%s\t%s\t%s\t%s\n",
+		git := sandboxGitStatus(sandbox)
+		fmt.Fprintf(tw, "%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s",
 			sandbox.ID,
 			sandbox.Config.Name,
 			sandboxDisplayState(sandbox),
+			sandboxHarness(sandbox),
+			sandboxGitColumn(sandbox),
+			git.changes(sandboxSpawnCommit(sandbox)),
+			git.diffColumn(),
 			sandboxUpgradeState(sandbox),
 			truncateTableValue(sandboxMessage(sandbox), 80),
-			formatTime(sandbox.CreatedAt),
+			formatTime(sandboxLastUsed(sandbox)),
 		)
+		if showFolder {
+			fmt.Fprintf(tw, "\t%s", sandboxFolder(sandbox))
+		}
+		fmt.Fprintln(tw)
 	}
 	return tw.Flush()
+}
+
+// sandboxHarness is the harness the sandbox runs, by the name a user would
+// type; "-" for a sandbox that is just a shell.
+func sandboxHarness(sandbox apimodel.Sandbox) string {
+	cfg, ok := sandbox.HarnessConfig.Get()
+	if !ok {
+		return "-"
+	}
+	if cfg.Slug != "" {
+		return cfg.Slug
+	}
+	if cfg.Name != "" {
+		return cfg.Name
+	}
+	return "-"
+}
+
+// sandboxGitColumn is where the sandbox's primary source sits in git: the
+// reported branch@commit, starred when the working tree is dirty. Until an
+// agent reports, it falls back to the position the sandbox was spawned at,
+// starred when a snapshot of uncommitted work was carried in — the launcher's
+// base column, spelled the same way.
+func sandboxGitColumn(sandbox apimodel.Sandbox) string {
+	if position := sandboxGitStatus(sandbox).position(); position != "" {
+		return position
+	}
+	source, ok := sandbox.Config.Source.Get()
+	if !ok {
+		return "-"
+	}
+	checkout, ok := source.Checkout.Get()
+	if !ok {
+		return "-"
+	}
+	branch := strings.TrimSpace(checkout.RefName.Or(""))
+	commit := shortCommit(strings.TrimSpace(checkout.Commit.Or("")))
+	if branch == "" && commit == "" {
+		return "-"
+	}
+	out := branch + "@" + commit
+	if sourceSnapshotRef(source) != "" {
+		out += "*"
+	}
+	return out
 }
 
 // sandboxFolder is the client-side project directory a sandbox was started

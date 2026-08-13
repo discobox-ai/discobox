@@ -7,6 +7,8 @@ import (
 	"io"
 	"sync"
 
+	apiclientgen "github.com/obot-platform/discobox/api/gen"
+	apimodel "github.com/obot-platform/discobox/api/model"
 	"github.com/obot-platform/discobox/cli/internal/tui"
 	"github.com/obot-platform/discobox/execstream"
 	"github.com/obot-platform/discobox/execstream/client"
@@ -14,56 +16,98 @@ import (
 	"github.com/obot-platform/discobox/execstream/resume"
 )
 
-// Open connects a terminal for the launcher to draw in a pane.
-//
-// Attach targets the virtual "primary" exec id, so the sandbox-agent resolves
-// the sandbox's current primary terminal and relaunches it when it has stopped:
-// the client never creates a terminal, and a session that ended is revived by
-// attaching to it. A shell is the other thing — a new interactive exec of the
-// sandbox user's login shell, which is what `disco shell` with no command runs.
+// Open connects a terminal for one of this CLI's own commands — apply — drawn
+// in the launcher's overlay. The discobox's terminals come through OpenExec
+// and NewShell instead.
 func (d *apiDataSource) Open(ctx context.Context, action tui.Interaction, sandboxID string, cols, rows int) (tui.Terminal, error) {
 	switch action {
-	case tui.InteractAttach:
-		// Nothing to start: the agent resolves the sandbox's current primary
-		// terminal and relaunches it if it has stopped.
-		return d.openFramedTerminal(ctx, sandboxID, primaryExecID, cols, rows)
-
-	case tui.InteractShell:
-		// Only the sandbox can say which shell its user has, so the request
-		// asks for one rather than naming it.
-		body, err := createSandboxExecBody(sandboxExecCreateOptions{
-			interactive: true, tty: true, shell: true, env: paneTerminalEnv(),
-		}, nil)
-		if err != nil {
-			return nil, err
-		}
-		exec, err := d.app.createSandboxExec(ctx, d.projectID, sandboxID, body)
-		if err != nil {
-			return nil, err
-		}
-		term, err := d.openFramedTerminal(ctx, sandboxID, exec.ID, cols, rows)
-		if err != nil {
-			return nil, err
-		}
-		// A created exec is not a running one. It is started only once the
-		// attach is up and its size is known, which is the order
-		// attachSandboxExec uses: started first, its opening output would go
-		// out before anything was listening, and it would draw itself at
-		// whatever size the sandbox guessed.
-		if _, err := d.app.startSandboxExec(ctx, d.projectID, sandboxID, exec.ID); err != nil {
-			_ = term.Close()
-			return nil, err
-		}
-		return term, nil
-
-	case tui.InteractDiff, tui.InteractStatus, tui.InteractApply:
-		// These are this CLI's own commands rather than terminals in the
-		// discobox; see tui_local.go.
+	case tui.InteractApply:
+		// These run on this machine rather than in the discobox; see
+		// tui_local.go.
 		return d.openLocalCommand(ctx, action, sandboxID, cols, rows)
-
 	default:
 		return nil, fmt.Errorf("%s is not a terminal", action)
 	}
+}
+
+// Execs is the sandbox's exec sessions as the workspace's tab strip needs
+// them.
+func (d *apiDataSource) Execs(ctx context.Context, sandboxID string) ([]tui.Exec, error) {
+	execs, err := d.app.listSandboxExecs(ctx, d.projectID, sandboxID)
+	if err != nil {
+		return nil, err
+	}
+	out := make([]tui.Exec, 0, len(execs))
+	for _, exec := range execs {
+		out = append(out, tuiExec(exec))
+	}
+	return out, nil
+}
+
+// tuiExec maps one API exec record to the launcher's own type, keeping API
+// types out of the tui package.
+func tuiExec(exec apimodel.SandboxExec) tui.Exec {
+	// The startup command is what a harness terminal is actually running in
+	// the foreground; the argv is the shell it was typed into.
+	command := exec.StartupCommand
+	if len(command) == 0 {
+		command = exec.Command
+	}
+	live := false
+	switch exec.Status {
+	case apiclientgen.SandboxExecStatusInstalling,
+		apiclientgen.SandboxExecStatusStarting,
+		apiclientgen.SandboxExecStatusRunning:
+		live = true
+	}
+	return tui.Exec{
+		ID:        exec.ID,
+		Command:   command,
+		Harness:   exec.HarnessId.Value,
+		Primary:   exec.Primary.Value,
+		Tty:       exec.Tty,
+		Live:      live,
+		CreatedAt: exec.CreatedAt,
+	}
+}
+
+// OpenExec attaches to one existing exec session. tui.ExecPrimary is spelled
+// the same as the wire's virtual primary id, and the sandbox resolves it —
+// relaunching a primary terminal that has stopped — so nothing is started
+// here.
+func (d *apiDataSource) OpenExec(ctx context.Context, sandboxID, execID string, cols, rows int) (tui.Terminal, error) {
+	return d.openFramedTerminal(ctx, sandboxID, execID, cols, rows)
+}
+
+// NewShell creates, attaches and starts a fresh interactive shell exec — what
+// `disco shell` with no command runs. Only the sandbox can say which shell its
+// user has, so the request asks for one rather than naming it.
+func (d *apiDataSource) NewShell(ctx context.Context, sandboxID string, cols, rows int) (tui.Exec, tui.Terminal, error) {
+	body, err := createSandboxExecBody(sandboxExecCreateOptions{
+		interactive: true, tty: true, shell: true, env: paneTerminalEnv(),
+	}, nil)
+	if err != nil {
+		return tui.Exec{}, nil, err
+	}
+	exec, err := d.app.createSandboxExec(ctx, d.projectID, sandboxID, body)
+	if err != nil {
+		return tui.Exec{}, nil, err
+	}
+	term, err := d.openFramedTerminal(ctx, sandboxID, exec.ID, cols, rows)
+	if err != nil {
+		return tui.Exec{}, nil, err
+	}
+	// A created exec is not a running one. It is started only once the attach
+	// is up and its size is known, which is the order attachSandboxExec uses:
+	// started first, its opening output would go out before anything was
+	// listening, and it would draw itself at whatever size the sandbox
+	// guessed.
+	started, err := d.app.startSandboxExec(ctx, d.projectID, sandboxID, exec.ID)
+	if err != nil {
+		_ = term.Close()
+		return tui.Exec{}, nil, err
+	}
+	return tuiExec(started), term, nil
 }
 
 func (d *apiDataSource) openFramedTerminal(ctx context.Context, sandboxID, execID string, cols, rows int) (tui.Terminal, error) {

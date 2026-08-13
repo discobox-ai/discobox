@@ -7952,6 +7952,18 @@ type SandboxAgentGitSourceStatus struct {
 	HeadCommit OptString `json:"headCommit"`
 	Ahead      OptInt64  `json:"ahead"`
 	Behind     OptInt64  `json:"behind"`
+	// Commit the diff stat is measured against - the commit the source was spawned at, forwarded to the
+	// merge base with the source's upstream tracking ref once the sandbox has fetched, so pulled commits
+	// do not count as the sandbox's changes. Absent when no base commit was recorded or the repository
+	// does not have it, in which case no diff stat is reported.
+	DiffBase OptString `json:"diffBase"`
+	// Files changed against diffBase, as git diff --shortstat counts them (tracked changes only,
+	// committed and uncommitted).
+	DiffFiles OptInt64 `json:"diffFiles"`
+	// Lines added against diffBase.
+	DiffAdded OptInt64 `json:"diffAdded"`
+	// Lines deleted against diffBase.
+	DiffDeleted OptInt64 `json:"diffDeleted"`
 	// Bounded git status --porcelain=v2 output for this source.
 	Porcelain OptString `json:"porcelain"`
 	// Whether porcelain output was truncated to the capture limit.
@@ -7994,6 +8006,26 @@ func (s *SandboxAgentGitSourceStatus) GetAhead() OptInt64 {
 // GetBehind returns the value of Behind.
 func (s *SandboxAgentGitSourceStatus) GetBehind() OptInt64 {
 	return s.Behind
+}
+
+// GetDiffBase returns the value of DiffBase.
+func (s *SandboxAgentGitSourceStatus) GetDiffBase() OptString {
+	return s.DiffBase
+}
+
+// GetDiffFiles returns the value of DiffFiles.
+func (s *SandboxAgentGitSourceStatus) GetDiffFiles() OptInt64 {
+	return s.DiffFiles
+}
+
+// GetDiffAdded returns the value of DiffAdded.
+func (s *SandboxAgentGitSourceStatus) GetDiffAdded() OptInt64 {
+	return s.DiffAdded
+}
+
+// GetDiffDeleted returns the value of DiffDeleted.
+func (s *SandboxAgentGitSourceStatus) GetDiffDeleted() OptInt64 {
+	return s.DiffDeleted
 }
 
 // GetPorcelain returns the value of Porcelain.
@@ -8049,6 +8081,26 @@ func (s *SandboxAgentGitSourceStatus) SetAhead(val OptInt64) {
 // SetBehind sets the value of Behind.
 func (s *SandboxAgentGitSourceStatus) SetBehind(val OptInt64) {
 	s.Behind = val
+}
+
+// SetDiffBase sets the value of DiffBase.
+func (s *SandboxAgentGitSourceStatus) SetDiffBase(val OptString) {
+	s.DiffBase = val
+}
+
+// SetDiffFiles sets the value of DiffFiles.
+func (s *SandboxAgentGitSourceStatus) SetDiffFiles(val OptInt64) {
+	s.DiffFiles = val
+}
+
+// SetDiffAdded sets the value of DiffAdded.
+func (s *SandboxAgentGitSourceStatus) SetDiffAdded(val OptInt64) {
+	s.DiffAdded = val
+}
+
+// SetDiffDeleted sets the value of DiffDeleted.
+func (s *SandboxAgentGitSourceStatus) SetDiffDeleted(val OptInt64) {
+	s.DiffDeleted = val
 }
 
 // SetPorcelain sets the value of Porcelain.

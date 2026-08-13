@@ -843,6 +843,12 @@ func buildSandboxDocument(projectID, sandboxID, poolID, controlPlanePublicKey, r
 				// the better answer anyway (ADR 0033 §5).
 				UID: user.UID,
 				GID: user.GID,
+				// Where the agent's reported diff stat measures from: the
+				// commit the source was spawned at, forwarded to the merge
+				// base with the upstream tracking ref once the sandbox has
+				// fetched.
+				BaseCommit:  sourceBaseCommit(source.git),
+				UpstreamRef: sourceUpstreamRef(source.git),
 			})
 		}
 		if resolved, ok := req.ResolvedHarnessConfig.Get(); ok {
@@ -2316,6 +2322,34 @@ func (r *DockerSandboxRuntime) initGitSource(ctx context.Context, source workera
 // was initialized for a push has none until the client delivers one.
 func gitHasCommits(ctx context.Context, repo string, uid, gid int) bool {
 	return runGit(ctx, repo, uid, gid, "rev-parse", "--verify", "--quiet", "HEAD") == nil
+}
+
+// sourceBaseCommit is the commit the create request pinned the source to,
+// which the sandbox-agent's diff stat is measured against. Empty when the
+// request recorded none.
+func sourceBaseCommit(source workerapimodel.GitSource) string {
+	checkout, ok := source.Checkout.Get()
+	if !ok {
+		return ""
+	}
+	return strings.TrimSpace(optString(checkout.Commit))
+}
+
+// sourceUpstreamRef is the remote-tracking ref the source would fetch upstream
+// into, derived from the branch it was cloned at — the same derivation
+// `disco diff` uses. Only a clone at a branch names one; anything else falls
+// back to origin's default branch, which the sandbox-agent verifies in the
+// repository before using.
+func sourceUpstreamRef(source workerapimodel.GitSource) string {
+	checkout, ok := source.Checkout.Get()
+	if !ok {
+		return "refs/remotes/origin/HEAD"
+	}
+	refName := strings.TrimSpace(optString(checkout.RefName))
+	if refName == "" || strings.TrimSpace(optString(checkout.RefType)) != "branch" {
+		return "refs/remotes/origin/HEAD"
+	}
+	return "refs/remotes/origin/" + refName
 }
 
 // gitSourceInitialBranch returns the branch the client is expected to push, or

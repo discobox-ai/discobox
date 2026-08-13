@@ -13436,6 +13436,30 @@ func (s *SandboxAgentGitSourceStatus) encodeFields(e *jx.Encoder) {
 		}
 	}
 	{
+		if s.DiffBase.Set {
+			e.FieldStart("diffBase")
+			s.DiffBase.Encode(e)
+		}
+	}
+	{
+		if s.DiffFiles.Set {
+			e.FieldStart("diffFiles")
+			s.DiffFiles.Encode(e)
+		}
+	}
+	{
+		if s.DiffAdded.Set {
+			e.FieldStart("diffAdded")
+			s.DiffAdded.Encode(e)
+		}
+	}
+	{
+		if s.DiffDeleted.Set {
+			e.FieldStart("diffDeleted")
+			s.DiffDeleted.Encode(e)
+		}
+	}
+	{
 		if s.Porcelain.Set {
 			e.FieldStart("porcelain")
 			s.Porcelain.Encode(e)
@@ -13459,7 +13483,7 @@ func (s *SandboxAgentGitSourceStatus) encodeFields(e *jx.Encoder) {
 	}
 }
 
-var jsonFieldsNameOfSandboxAgentGitSourceStatus = [11]string{
+var jsonFieldsNameOfSandboxAgentGitSourceStatus = [15]string{
 	0:  "slug",
 	1:  "target",
 	2:  "clean",
@@ -13467,10 +13491,14 @@ var jsonFieldsNameOfSandboxAgentGitSourceStatus = [11]string{
 	4:  "headCommit",
 	5:  "ahead",
 	6:  "behind",
-	7:  "porcelain",
-	8:  "truncated",
-	9:  "error",
-	10: "observedAt",
+	7:  "diffBase",
+	8:  "diffFiles",
+	9:  "diffAdded",
+	10: "diffDeleted",
+	11: "porcelain",
+	12: "truncated",
+	13: "error",
+	14: "observedAt",
 }
 
 // Decode decodes SandboxAgentGitSourceStatus from json.
@@ -13558,6 +13586,46 @@ func (s *SandboxAgentGitSourceStatus) Decode(d *jx.Decoder) error {
 			}(); err != nil {
 				return errors.Wrap(err, "decode field \"behind\"")
 			}
+		case "diffBase":
+			if err := func() error {
+				s.DiffBase.Reset()
+				if err := s.DiffBase.Decode(d); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"diffBase\"")
+			}
+		case "diffFiles":
+			if err := func() error {
+				s.DiffFiles.Reset()
+				if err := s.DiffFiles.Decode(d); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"diffFiles\"")
+			}
+		case "diffAdded":
+			if err := func() error {
+				s.DiffAdded.Reset()
+				if err := s.DiffAdded.Decode(d); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"diffAdded\"")
+			}
+		case "diffDeleted":
+			if err := func() error {
+				s.DiffDeleted.Reset()
+				if err := s.DiffDeleted.Decode(d); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"diffDeleted\"")
+			}
 		case "porcelain":
 			if err := func() error {
 				s.Porcelain.Reset()
@@ -13589,7 +13657,7 @@ func (s *SandboxAgentGitSourceStatus) Decode(d *jx.Decoder) error {
 				return errors.Wrap(err, "decode field \"error\"")
 			}
 		case "observedAt":
-			requiredBitSet[1] |= 1 << 2
+			requiredBitSet[1] |= 1 << 6
 			if err := func() error {
 				v, err := json.DecodeDateTime(d)
 				s.ObservedAt = v
@@ -13611,7 +13679,7 @@ func (s *SandboxAgentGitSourceStatus) Decode(d *jx.Decoder) error {
 	var failures []validate.FieldError
 	for i, mask := range [2]uint8{
 		0b00000111,
-		0b00000100,
+		0b01000000,
 	} {
 		if result := (requiredBitSet[i] & mask) ^ mask; result != 0 {
 			// Mask only required fields and check equality to mask using XOR.

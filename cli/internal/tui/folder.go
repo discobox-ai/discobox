@@ -76,7 +76,7 @@ func (m *Model) selectFolder(choice string) tea.Cmd {
 	m.opts.setFolder(m.list.folder)
 	m.list.resetCursor()
 	m.layout()
-	return tea.Batch(m.fetchDiff(), status("showing %s", m.folderLabel()))
+	return status("showing %s", m.folderLabel())
 }
 
 // updateFolder handles the header's dropdown. Left and right change it in
@@ -100,7 +100,7 @@ func (m *Model) updateFolder(msg tea.KeyPressMsg) tea.Cmd {
 		}
 		m.focus = focusList
 		m.list.moveTo(0)
-		return m.fetchDiff()
+		return nil
 	case "esc", "tab":
 		m.backToPrompt()
 		return nil
