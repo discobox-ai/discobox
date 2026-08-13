@@ -248,7 +248,7 @@ require (
 	github.com/ldez/tagliatelle v0.7.2 // indirect
 	github.com/ldez/usetesting v0.5.0 // indirect
 	github.com/leonklingele/grouper v1.1.2 // indirect
-	github.com/lucasb-eyer/go-colorful v1.4.0 // indirect
+	github.com/lucasb-eyer/go-colorful v1.4.1 // indirect
 	github.com/macabu/inamedparam v0.2.0 // indirect
 	github.com/magiconair/properties v1.8.6 // indirect
 	github.com/manuelarte/embeddedstructfieldcheck v0.4.0 // indirect
@@ -258,7 +258,7 @@ require (
 	github.com/matoous/godox v1.1.0 // indirect
 	github.com/mattn/go-colorable v0.1.14 // indirect
 	github.com/mattn/go-isatty v0.0.21 // indirect
-	github.com/mattn/go-runewidth v0.0.24 // indirect
+	github.com/mattn/go-runewidth v0.0.27 // indirect
 	github.com/mdlayher/socket v0.6.0 // indirect
 	github.com/mdlayher/vsock v1.3.0 // indirect
 	github.com/mgechev/revive v1.15.0 // indirect
@@ -418,4 +418,4 @@ replace github.com/obot-platform/discobox => ..
 
 replace github.com/obot-platform/discobox/pool-agent => ../pool-agent
 
-replace github.com/charmbracelet/x/ansi => github.com/ibuildthecloud/x/ansi v0.11.8-0.20260812210801-6732c251dd85
+replace github.com/charmbracelet/x/ansi => github.com/ibuildthecloud/x/ansi v0.11.9-0.20260813023456-57e8cef06953

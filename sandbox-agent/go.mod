@@ -49,10 +49,10 @@ require (
 	github.com/jackc/puddle/v2 v2.2.2 // indirect
 	github.com/jinzhu/inflection v1.0.0 // indirect
 	github.com/jinzhu/now v1.1.5 // indirect
-	github.com/lucasb-eyer/go-colorful v1.4.0 // indirect
+	github.com/lucasb-eyer/go-colorful v1.4.1 // indirect
 	github.com/mattn/go-colorable v0.1.14 // indirect
 	github.com/mattn/go-isatty v0.0.21 // indirect
-	github.com/mattn/go-runewidth v0.0.24 // indirect
+	github.com/mattn/go-runewidth v0.0.27 // indirect
 	github.com/muesli/cancelreader v0.2.2 // indirect
 	github.com/ogen-go/ogen v1.20.3 // indirect
 	github.com/remyoudompheng/bigfft v0.0.0-20230129092748-24d4a6f8daec // indirect
@@ -84,4 +84,4 @@ require (
 
 replace github.com/obot-platform/discobox/gormdb => ../gormdb
 
-replace github.com/charmbracelet/x/ansi => github.com/ibuildthecloud/x/ansi v0.11.8-0.20260812210801-6732c251dd85
+replace github.com/charmbracelet/x/ansi => github.com/ibuildthecloud/x/ansi v0.11.9-0.20260813023456-57e8cef06953

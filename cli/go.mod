@@ -142,4 +142,4 @@ replace github.com/obot-platform/discobox/server => ../server
 
 replace github.com/obot-platform/discobox/termpane => ../termpane
 
-replace github.com/charmbracelet/x/ansi => github.com/ibuildthecloud/x/ansi v0.11.8-0.20260812210801-6732c251dd85
+replace github.com/charmbracelet/x/ansi => github.com/ibuildthecloud/x/ansi v0.11.9-0.20260813023456-57e8cef06953
