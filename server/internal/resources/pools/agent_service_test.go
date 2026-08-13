@@ -229,3 +229,38 @@ func decodeTestPublicKey(t *testing.T, text string) paseto.V4AsymmetricPublicKey
 	}
 	return key
 }
+
+// reportedLastAccess is the newest client access the payload carries: the max
+// of the sessions' lastAccessedAt, taken as observedAt when a client is
+// attached at observation, and nil when the payload says nothing about access.
+func TestReportedLastAccess(t *testing.T) {
+	observed := time.Date(2026, 8, 13, 12, 0, 0, 0, time.UTC)
+	access := observed.Add(-10 * time.Minute)
+	older := observed.Add(-2 * time.Hour)
+
+	sessions := func(body string) map[string]jx.Raw {
+		return map[string]jx.Raw{"sessions": jx.Raw(body)}
+	}
+
+	if got := reportedLastAccess(map[string]jx.Raw{}, observed); got != nil {
+		t.Fatalf("no sessions: %v, want nil", got)
+	}
+	if got := reportedLastAccess(sessions(`[]`), observed); got != nil {
+		t.Fatalf("empty sessions: %v, want nil", got)
+	}
+	if got := reportedLastAccess(sessions(`[{"terminalId":"t1","primary":true,"state":"running","attacherCount":0,"execStatus":"running"}]`), observed); got != nil {
+		t.Fatalf("never accessed: %v, want nil", got)
+	}
+	got := reportedLastAccess(sessions(
+		`[{"terminalId":"t1","primary":true,"state":"running","attacherCount":0,"execStatus":"running","lastAccessedAt":"`+older.Format(time.RFC3339)+`"},`+
+			`{"terminalId":"t2","primary":false,"state":"running","attacherCount":0,"execStatus":"running","lastAccessedAt":"`+access.Format(time.RFC3339)+`"}]`), observed)
+	if got == nil || !got.Equal(access) {
+		t.Fatalf("max of session access = %v, want %v", got, access)
+	}
+	// A client attached at observation is access at observation.
+	got = reportedLastAccess(sessions(
+		`[{"terminalId":"t1","primary":true,"state":"running","attacherCount":1,"execStatus":"running","lastAccessedAt":"`+older.Format(time.RFC3339)+`"}]`), observed)
+	if got == nil || !got.Equal(observed) {
+		t.Fatalf("attached now = %v, want %v", got, observed)
+	}
+}

@@ -314,17 +314,27 @@ func (s *Store) UpdateSandbox(ctx context.Context, sandbox *model.Sandbox, optio
 // reconciliation. It also does not publish a project event: unlike a
 // lifecycle change, a routine status refresh on every running sandbox every
 // poll interval is not something the UI event stream needs to fan out.
-func (s *Store) UpdateSandboxAgentStatus(ctx context.Context, projectID, sandboxID string, status json.RawMessage, observedAt time.Time) error {
+// lastActiveAt, when non-nil, is the newest client access the report carried
+// (an attach, a keystroke, or a client attached at observation); it only ever
+// moves last_active_at forward, so a late or re-delivered report cannot walk
+// real activity back.
+func (s *Store) UpdateSandboxAgentStatus(ctx context.Context, projectID, sandboxID string, status json.RawMessage, observedAt time.Time, lastActiveAt *time.Time) error {
 	write, err := s.getWrite(ctx)
 	if err != nil {
 		return err
 	}
+	columns := map[string]any{
+		"agent_status":             status,
+		"agent_status_observed_at": observedAt,
+	}
+	if lastActiveAt != nil {
+		columns["last_active_at"] = gorm.Expr(
+			"CASE WHEN last_active_at IS NULL OR last_active_at < ? THEN ? ELSE last_active_at END",
+			*lastActiveAt, *lastActiveAt)
+	}
 	result := write.WithContext(ctx).Model(&model.Sandbox{}).
 		Where("project_id = ? AND id = ?", projectID, sandboxID).
-		UpdateColumns(map[string]any{
-			"agent_status":             status,
-			"agent_status_observed_at": observedAt,
-		})
+		UpdateColumns(columns)
 	if result.Error != nil {
 		return result.Error
 	}

@@ -330,7 +330,7 @@ func TestUpdateSandboxAgentStatusRoundTrip(t *testing.T) {
 
 	observedAt := time.Now().UTC().Truncate(time.Second)
 	payload := json.RawMessage(`{"sessions":[{"state":"running"}]}`)
-	if err := s.UpdateSandboxAgentStatus(ctx, "project-1", sandbox.ID, payload, observedAt); err != nil {
+	if err := s.UpdateSandboxAgentStatus(ctx, "project-1", sandbox.ID, payload, observedAt, nil); err != nil {
 		t.Fatalf("update agent status: %v", err)
 	}
 
@@ -354,7 +354,7 @@ func TestUpdateSandboxAgentStatusUnknownSandboxReturnsNotFound(t *testing.T) {
 	ctx := context.Background()
 	s := newTestStore(t)
 	createTestPool(t, s, "project-1", "pool-1")
-	if err := s.UpdateSandboxAgentStatus(ctx, "project-1", "does-not-exist", json.RawMessage(`{}`), time.Now().UTC()); !errors.Is(err, store.ErrNotFound) {
+	if err := s.UpdateSandboxAgentStatus(ctx, "project-1", "does-not-exist", json.RawMessage(`{}`), time.Now().UTC(), nil); !errors.Is(err, store.ErrNotFound) {
 		t.Fatalf("update agent status for unknown sandbox = %v, want ErrNotFound", err)
 	}
 }
@@ -376,7 +376,7 @@ func TestUpdateSandboxAgentStatusComposesWithConcurrentFieldUpdates(t *testing.T
 	}
 
 	observedAt := time.Now().UTC().Truncate(time.Second)
-	if err := s.UpdateSandboxAgentStatus(ctx, "project-1", sandbox.ID, json.RawMessage(`{"sessions":[]}`), observedAt); err != nil {
+	if err := s.UpdateSandboxAgentStatus(ctx, "project-1", sandbox.ID, json.RawMessage(`{"sessions":[]}`), observedAt, nil); err != nil {
 		t.Fatalf("update agent status: %v", err)
 	}
 
@@ -436,4 +436,58 @@ func newTestStoreWithDB(t *testing.T, sealer secrets.Sealer) (*store.Store, *dat
 	}
 
 	return store.New(db.Write, db.Read, store.WithSealer(sealer)), db
+}
+
+// The reported access time only ever moves LastActiveAt forward: a late or
+// re-delivered report cannot walk real activity back, and a report carrying
+// no access leaves it alone.
+func TestUpdateSandboxAgentStatusLastActiveOnlyMovesForward(t *testing.T) {
+	ctx := context.Background()
+	s := newTestStore(t)
+	createTestPool(t, s, "project-1", "pool-1")
+	sandbox := &model.Sandbox{
+		ID:              "sandbox-1",
+		ProjectID:       "project-1",
+		PoolID:          "pool-1",
+		CreatedByUserID: "user-1",
+		Name:            "sandbox-1",
+	}
+	if err := s.CreateSandbox(ctx, sandbox); err != nil {
+		t.Fatalf("create sandbox: %v", err)
+	}
+
+	first := time.Date(2026, 8, 13, 10, 0, 0, 0, time.UTC)
+	if err := s.UpdateSandboxAgentStatus(ctx, "project-1", sandbox.ID, json.RawMessage(`{}`), first, &first); err != nil {
+		t.Fatalf("update: %v", err)
+	}
+	got, err := s.GetSandbox(ctx, "project-1", sandbox.ID)
+	if err != nil {
+		t.Fatalf("get: %v", err)
+	}
+	if got.LastActiveAt == nil || !got.LastActiveAt.Equal(first) {
+		t.Fatalf("lastActiveAt = %v, want %v", got.LastActiveAt, first)
+	}
+
+	earlier := first.Add(-time.Hour)
+	if err := s.UpdateSandboxAgentStatus(ctx, "project-1", sandbox.ID, json.RawMessage(`{}`), earlier, &earlier); err != nil {
+		t.Fatalf("update older: %v", err)
+	}
+	if got, err = s.GetSandbox(ctx, "project-1", sandbox.ID); err != nil || !got.LastActiveAt.Equal(first) {
+		t.Fatalf("lastActiveAt = %v (err %v), want unchanged %v", got.LastActiveAt, err, first)
+	}
+
+	later := first.Add(time.Hour)
+	if err := s.UpdateSandboxAgentStatus(ctx, "project-1", sandbox.ID, json.RawMessage(`{}`), later, &later); err != nil {
+		t.Fatalf("update newer: %v", err)
+	}
+	if got, err = s.GetSandbox(ctx, "project-1", sandbox.ID); err != nil || !got.LastActiveAt.Equal(later) {
+		t.Fatalf("lastActiveAt = %v (err %v), want %v", got.LastActiveAt, err, later)
+	}
+
+	if err := s.UpdateSandboxAgentStatus(ctx, "project-1", sandbox.ID, json.RawMessage(`{}`), later, nil); err != nil {
+		t.Fatalf("update without access: %v", err)
+	}
+	if got, err = s.GetSandbox(ctx, "project-1", sandbox.ID); err != nil || !got.LastActiveAt.Equal(later) {
+		t.Fatalf("lastActiveAt = %v (err %v), want untouched %v", got.LastActiveAt, err, later)
+	}
 }

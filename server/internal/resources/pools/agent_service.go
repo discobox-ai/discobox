@@ -10,6 +10,9 @@ import (
 	"strings"
 	"time"
 
+	"github.com/go-faster/jx"
+
+	apimodel "github.com/obot-platform/discobox/api/model"
 	"github.com/obot-platform/discobox/pool-agent/poolauth"
 	"github.com/obot-platform/discobox/server/internal/apperrors"
 	"github.com/obot-platform/discobox/server/internal/auth"
@@ -162,11 +165,45 @@ func (s *Service) ReportSandboxAgentStatus(ctx context.Context, poolID string, i
 		if err != nil {
 			continue
 		}
-		if err := s.store.UpdateSandboxAgentStatus(ctx, pool.ProjectID, sandboxID, status, entry.ObservedAt); err != nil && !errors.Is(err, store.ErrNotFound) {
+		lastActive := reportedLastAccess(entry.Status, entry.ObservedAt)
+		if err := s.store.UpdateSandboxAgentStatus(ctx, pool.ProjectID, sandboxID, status, entry.ObservedAt, lastActive); err != nil && !errors.Is(err, store.ErrNotFound) {
 			return err
 		}
 	}
 	return nil
+}
+
+// reportedLastAccess is the newest client access the status payload carries:
+// the max of the sessions' lastAccessedAt, taken as observedAt when any
+// session has a client attached at observation. This is what makes the
+// sandbox's LastActiveAt mean "a person touched it" — the shim under each
+// terminal records attaches and keystrokes, the report carries them here,
+// and the store only ever moves the column forward. The payload is opaque to
+// this service (it is relayed as the sandbox-agent sent it), so the sessions
+// are decoded here into the schema type they were sent as; a payload without
+// them yields nil, which updates nothing.
+func reportedLastAccess(status map[string]jx.Raw, observedAt time.Time) *time.Time {
+	raw, ok := status["sessions"]
+	if !ok {
+		return nil
+	}
+	var sessions []apimodel.SandboxAgentSessionStatus
+	if err := json.Unmarshal(raw, &sessions); err != nil {
+		return nil
+	}
+	var latest time.Time
+	for _, session := range sessions {
+		if session.AttacherCount > 0 && observedAt.After(latest) {
+			latest = observedAt
+		}
+		if at, ok := session.LastAccessedAt.Get(); ok && at.After(latest) {
+			latest = at
+		}
+	}
+	if latest.IsZero() {
+		return nil
+	}
+	return &latest
 }
 
 // ReportPoolSandboxStates records a batch of sandbox state observations from
