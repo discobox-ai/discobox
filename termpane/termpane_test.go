@@ -852,6 +852,69 @@ func TestRepeatingBindingsHoldThePrefix(t *testing.T) {
 	}
 }
 
+// Mid-run the open prefix belongs to the run, not to the binding table: after
+// prefix ctrl-l ctrl-l, letting go of Ctrl and typing a bound letter must type
+// it, not fire the binding — the prefix was held open for the run, never
+// re-pressed.
+func TestARunTakesOnlyItsOwnKeys(t *testing.T) {
+	type moved struct{}
+	type acted struct{}
+	newRun := func() (*Model, *fakeStream) {
+		m, stream, _ := attach(t, 40, 5,
+			WithPrefix("ctrl+a", "ctrl+c"),
+			WithRepeatingPrefixBinding("l", moved{}),
+			WithPrefixBinding("x", acted{}))
+		m.Update(tea.KeyPressMsg{Code: 'a', Mod: tea.ModCtrl})
+		if _, cmd := m.Update(tea.KeyPressMsg{Code: 'l', Mod: tea.ModCtrl}); cmd == nil {
+			t.Fatal("the run should have started")
+		}
+		return m, stream
+	}
+
+	// A bound letter after the run is the application's first keystroke.
+	m, stream := newRun()
+	if _, cmd := m.Update(key("x")); cmd != nil {
+		t.Fatalf("got %T, want the bound letter to end the run unfired", cmd())
+	}
+	if got := stream.sent(t, "x"); !strings.Contains(got, "x") {
+		t.Fatalf("sent %q, want the letter delivered to the application", got)
+	}
+
+	// So is the repeating key itself once Ctrl is let go.
+	m, stream = newRun()
+	if _, cmd := m.Update(key("l")); cmd != nil {
+		t.Fatal("a bare repeating key should end the run, not fire")
+	}
+	if got := stream.sent(t, "l"); !strings.Contains(got, "l") {
+		t.Fatalf("sent %q, want the key delivered to the application", got)
+	}
+
+	// While Ctrl is held, even a non-repeating bound key ends the run and is
+	// delivered: the run's vocabulary is the repeating keys and nothing else.
+	m, stream = newRun()
+	if _, cmd := m.Update(tea.KeyPressMsg{Code: 'x', Mod: tea.ModCtrl}); cmd != nil {
+		t.Fatal("a non-repeating binding must not fire mid-run")
+	}
+	if got := stream.sent(t, "\x18"); !strings.Contains(got, "\x18") {
+		t.Fatalf("sent %q, want ctrl+x delivered to the application", got)
+	}
+
+	// And a carried run — armed by the host on the pane focus moved to — is
+	// the same run: the repeating key continues it, a letter ends it.
+	m, stream = newRun()
+	m.SetPrefixArmed(false)
+	m.SetPrefixArmed(true) // what a host does to the pane it moves onto
+	if _, cmd := m.Update(tea.KeyPressMsg{Code: 'l', Mod: tea.ModCtrl}); cmd == nil {
+		t.Fatal("the carried run should continue under Ctrl")
+	}
+	if _, cmd := m.Update(key("x")); cmd != nil {
+		t.Fatal("a letter should end the carried run unfired")
+	}
+	if got := stream.sent(t, "x"); !strings.Contains(got, "x") {
+		t.Fatalf("sent %q, want the letter delivered to the application", got)
+	}
+}
+
 // The title belongs to the stream. Reattaching starts with none, and takes
 // whatever the new far end announces — which, for a session that set its title
 // long before this client arrived, is what its repaint snapshot replays.

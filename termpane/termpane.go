@@ -38,6 +38,8 @@ import (
 	uv "github.com/charmbracelet/ultraviolet"
 	"github.com/charmbracelet/x/ansi"
 	"github.com/charmbracelet/x/vt"
+
+	"github.com/obot-platform/discobox/termpane/selection"
 )
 
 // Stream is a terminal to draw: its output to read, its input to write, and a
@@ -73,10 +75,24 @@ type Model struct {
 
 	// prefixArmed is set between the prefix key and the key it qualifies.
 	prefixArmed bool
+	// prefixRepeat is set when the armed prefix was held open by a repeating
+	// binding: the pane is mid-run, and only the repeating keys — still under
+	// Ctrl — mean anything. Any other key ends the run and is the
+	// application's, rather than consulting the whole binding table the way a
+	// freshly pressed prefix does.
+	prefixRepeat bool
 
 	// scroll is how many lines back through the scrollback the view is, zero
 	// being the live screen. See Scroll.
 	scroll int
+
+	// Selection state; see select.go. sel exists while attached, seized is
+	// the host's mouse override, and selShot/selAlt are what the selection
+	// read when it was made — the reference reconcileSelection clears against.
+	sel     *selection.Model
+	seized  bool
+	selShot string
+	selAlt  bool
 
 	// Written by the emulator's callbacks, which run on whichever goroutine is
 	// feeding it, and read when a frame is drawn.
@@ -96,6 +112,8 @@ type options struct {
 	prefix     string
 	detach     string
 	bindings   map[string]prefixBinding
+	highlight  func(uv.Style) uv.Style
+	wheelLines int
 }
 
 // prefixBinding is a key reserved behind the prefix and what it emits.
@@ -158,6 +176,12 @@ func WithPrefixBinding(key string, msg tea.Msg) Option {
 // repeat flag on a timer; keying it to the modifier instead means a sequence
 // ends when you stop holding it rather than when a clock runs out, which is
 // both quicker and never ambiguous.
+//
+// While the run is open, only the repeating keys — still under Ctrl — are
+// taken. Any other key ends the run and goes to the application, bound letters
+// included: the prefix was held open for the run, not re-pressed, so the key
+// after it is the first keystroke of whatever you type next rather than a
+// second command.
 func WithRepeatingPrefixBinding(key string, msg tea.Msg) Option {
 	return bindPrefix(key, prefixBinding{msg: msg, repeat: true})
 }
@@ -194,6 +218,9 @@ func (m *Model) SetSize(cols, rows int) {
 		return
 	}
 	m.cols, m.rows = cols, rows
+	// Columns mean nothing across a resize — the emulator does not reflow —
+	// so whatever was selected no longer names the same text.
+	m.clearSelection()
 	if m.emu != nil {
 		m.emu.Resize(cols, rows)
 	}
@@ -225,6 +252,8 @@ func (m *Model) Attach(stream Stream) tea.Cmd {
 	m.emu.SetCallbacks(m.callbacks())
 	m.watchMouseModes()
 	m.emu.Focus()
+	m.sel = selection.New(emuGrid{m})
+	m.selShot = ""
 
 	m.stream = stream
 	m.reader = newReader(stream)
@@ -330,6 +359,9 @@ func (m *Model) Update(msg tea.Msg) (*Model, tea.Cmd) {
 		if m.emu != nil {
 			_, _ = m.emu.Write(msg.data)
 		}
+		// A selection whose text this output overwrote is cleared before it
+		// can highlight something nobody selected.
+		m.reconcileSelection()
 		// New output pins the view back to the live screen. A pane scrolled
 		// away from what is happening in it, with no way to notice, is a pane
 		// that looks hung.
@@ -361,10 +393,29 @@ func (m *Model) handleKey(msg tea.KeyPressMsg) tea.Cmd {
 	if m.emu == nil {
 		return nil
 	}
+	if cmd, taken := m.copyChord(msg); taken {
+		return cmd
+	}
 	name := msg.String()
 
 	if m.prefixArmed {
-		m.prefixArmed = false
+		inRun := m.prefixRepeat
+		m.prefixArmed, m.prefixRepeat = false, false
+		if inRun {
+			// Mid-run the prefix is open only as a courtesy to the run: the
+			// repeating keys, still under Ctrl, continue it. Anything else —
+			// a bound letter included — ends the run and belongs to the
+			// application, or a run of moves followed by a word would fire a
+			// binding per letter.
+			for key, bound := range m.opts.bindings {
+				if bound.repeat && msg.Mod&tea.ModCtrl != 0 && afterPrefix(name, key) {
+					m.prefixArmed, m.prefixRepeat = true, true
+					return func() tea.Msg { return bound.msg }
+				}
+			}
+			m.SendKey(msg)
+			return nil
+		}
 		switch {
 		case name == m.opts.prefix:
 			// The prefix twice is how you type one. This one is matched
@@ -387,7 +438,7 @@ func (m *Model) handleKey(msg tea.KeyPressMsg) tea.Cmd {
 			// A repeating binding leaves the prefix armed while Ctrl is still
 			// down, so a run of them is one chord rather than one per step.
 			if bound.repeat && msg.Mod&tea.ModCtrl != 0 {
-				m.prefixArmed = true
+				m.prefixArmed, m.prefixRepeat = true, true
 			}
 			return func() tea.Msg { return bound.msg }
 		}
@@ -478,8 +529,12 @@ func parseKeyName(name string) (rune, tea.KeyMod, bool) {
 // does anything.
 func (m *Model) PrefixArmed() bool { return m.prefixArmed }
 
-// SetPrefixArmed opens or closes the prefix sequence. See PrefixArmed.
-func (m *Model) SetPrefixArmed(armed bool) { m.prefixArmed = armed }
+// SetPrefixArmed opens or closes the prefix sequence. Opening it opens the
+// run form — only the repeating keys, still under Ctrl, are taken; anything
+// else goes to the application — because carrying a mid-run sequence to the
+// pane focus moved to is what the setter exists for, and a run must mean the
+// same thing on the pane it lands on as on the one it left.
+func (m *Model) SetPrefixArmed(armed bool) { m.prefixArmed, m.prefixRepeat = armed, armed }
 
 // SendKey forwards one key press to the terminal, encoded the way the
 // application on the other end has asked for it — cursor-key mode, keypad mode
@@ -524,8 +579,17 @@ func (m *Model) View() []string {
 	if m.emu != nil {
 		lines = strings.Split(m.emu.Render(), "\n")
 	}
+	selected := m.emu != nil && m.sel != nil && m.sel.Active()
 	for i := range out {
-		out[i] = fitCells(m.lineAt(i-m.scroll, lines), m.cols)
+		row := m.lineAt(i-m.scroll, lines)
+		if selected {
+			// A row the selection touches is re-rendered from its cells with
+			// the highlight applied; every other row keeps the fast path.
+			if highlighted, ok := m.highlightRow(i); ok {
+				row = highlighted
+			}
+		}
+		out[i] = fitCells(row, m.cols)
 	}
 	return out
 }
@@ -656,8 +720,9 @@ func (m *Model) detach() error {
 		m.stream = nil
 	}
 	m.attached = false
-	m.prefixArmed = false
+	m.prefixArmed, m.prefixRepeat = false, false
 	m.forwardDone, m.forwardOut = nil, nil
+	m.sel, m.selShot = nil, ""
 	return err
 }
 

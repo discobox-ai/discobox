@@ -103,14 +103,55 @@ application also wants — Ctrl-C being the obvious one — while leaving a way 
 type it. What *happens* on detach is the host's decision; the pane keeps
 running.
 
-**The mouse is mirrored, not seized.** `MouseMode()` reports what the
-application has asked for, read off the stream by a CSI handler that returns
-`false` so the emulator still applies the sequence (`mouse.go`). A host mirrors
-it into its own mouse reporting, so the user only loses native selection while
-something is actually using the mouse. `SendMouse` takes coordinates relative to
-the grid — the same origin as `Cursor` — and drops anything outside it; the
-emulator drops anything the application never asked for, so forwarding can be
-unconditional.
+**The mouse is mirrored — unless the host seizes it.** `MouseMode()` reports
+what the application has asked for, read off the stream by a CSI handler that
+returns `false` so the emulator still applies the sequence (`mouse.go`). A host
+mirrors it into its own mouse reporting, so the user only loses native
+selection while something is actually using the mouse. `SendMouse` takes
+coordinates relative to the grid — the same origin as `Cursor` — and drops
+anything outside it; the emulator drops anything the application never asked
+for, so forwarding can be unconditional.
+
+`HandleMouse` is the router over that (`select.go`): while the application has
+the mouse and the host has not called `SetSeized(true)`, every event forwards
+and selection is inert; otherwise the left button drives selection. Any nonzero
+mouse mode counts as the application having the mouse — stealing motion events
+an application subscribed to button events for breaks its drags in ways nobody
+can debug. Seizing suppresses forwarding entirely; what arms it, and showing
+that it is armed, are the host's, because "why is vim ignoring my clicks" must
+be answerable from the chrome. The wheel goes to whoever can actually scroll: an
+application with the mouse is forwarded the event; one without it on the
+alternate screen is sent arrow keys — xterm's alternate-scroll bargain, and
+the only scrolling a pager understands, there being no scrollback there to
+offer — and everything else scrolls the pane's own scrollback. A host with a
+different wheel policy keeps those events instead of delegating them.
+
+**Selection is a cell-space overlay, mouse only** (ADR 0036). The gesture
+machine and extraction live in the `selection` subpackage against a small
+`Grid` interface; `select.go` adapts the emulator to it as one absolute line
+space — scrollback first, live screen after — so a selection keeps naming the
+same text while output scrolls it into history, and selecting across the
+boundary is no special case. Rows the selection touches are re-rendered from
+their cells with a style transform (reverse video by default, `WithHighlight`
+to theme) so highlight and copied text are read from the same cells and cannot
+disagree; every other row keeps the fast `Render()` path. A finished gesture
+returns a command carrying `CopyMsg` — the pane never touches a clipboard.
+While a selection is showing — and only then — the copy chords (ctrl+c,
+ctrl+shift+c, super+c) re-emit it and clear the highlight, outranking both the
+application's interrupt and the pane's own reserved keys: the visible
+selection is the mode, and clearing it means the second press is the
+interrupt, or the detach, that the key otherwise is. Classic terminals cannot
+distinguish the enhanced chords from plain ctrl+c and deliver the form that is
+caught anyway; macOS cmd+c never reaches a terminal application at all, which
+is why copy happens on release — the clipboard is written before the habit
+keystroke, whose no-op nobody notices.
+Extraction joins soft-wrapped rows without a newline, detected for now by the
+full-width heuristic behind `Grid.Wrapped` until the upstream wrap flag lands.
+A selection whose coordinates stop meaning what they meant is cleared, never
+left to slide: content overwritten in place (the post-output text no longer
+reads back identical), a resize (no reflow, so columns are meaningless), an
+alt-screen switch, or output while a full scrollback is evicting under a
+selection that touches it.
 
 Reading modes off the stream also means it makes no difference whether a mode
 arrived from the application just now or from a reattach snapshot replaying what
@@ -131,10 +172,16 @@ prefix armed after it fires, as long as the key that fired it was held with
 Ctrl, so `prefix ^← ^← ^←` is one chord rather than three. It is for the
 bindings you use in runs — walking across panes, resizing — where pressing the
 prefix per step is the whole cost of the operation. Letting go of Ctrl ends it,
-which is the release the fingers already make. The armed state is readable and
-settable (`PrefixArmed`, `SetPrefixArmed`) because a host whose binding moves
-focus to another pane has to carry the sequence there, or the run stops on its
-own first step.
+which is the release the fingers already make. While the run is open, only the
+repeating keys — still under Ctrl — are taken; any other key, bound letters
+included, ends the run and goes to the application. The prefix was held open
+for the run, never re-pressed, so the key after it is the first keystroke of
+whatever is typed next rather than a second command — without this, a run of
+moves followed by typing fires a binding per letter. The armed state is
+readable and settable (`PrefixArmed`, `SetPrefixArmed`) because a host whose
+binding moves focus to another pane has to carry the sequence there, or the
+run stops on its own first step; setting it armed opens the run form, since
+the carry is the only thing it is for.
 
 **Scrollback can be looked at.** `Scroll` moves the view back through what has
 scrolled off, `View` draws those rows in place of the screen's, and any new
@@ -144,4 +191,7 @@ drive it is the host's business, as with everything else here.
 
 ## Not here
 
-There is no copy mode: scrollback can be read but not selected from.
+There is no keyboard copy mode — no movable cursor, no vim motions, no search.
+Keyboard selection belongs to the applications in the pane and to the user's
+terminal emulator; the mouse path above covers the rest, scrollback included,
+via drag with edge autoscroll.
