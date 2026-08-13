@@ -211,6 +211,23 @@ func (r *SandboxReconciler) ensure(ctx context.Context, sandbox *model.Sandbox, 
 	}
 
 	firstCreate := sandboxHasNeverRun(sandbox.State)
+	// A repair rides exactly this generation (ADR 0035): tear the runtime down
+	// first — container and disposable pool-host state dropped, durable tree
+	// kept — so the create below rebuilds from the retained tree instead of
+	// adopting whatever broken container or stale material survived. The
+	// teardown is the same provider Archive an archive uses, and it is
+	// idempotent, so a retry within this generation is safe; a later
+	// generation no longer matches and never tears down again.
+	if sandbox.RepairGeneration == generation && !firstCreate {
+		if err := r.archiveSandbox(ctx, sandbox); err != nil {
+			sandbox.ObservedGeneration = generation
+			sandbox.RecordFailure(model.SandboxStateFailed, err.Error())
+			if updateErr := r.update(ctx, sandbox, generation); updateErr != nil {
+				return reconcile.Result{}, updateErr
+			}
+			return reconcile.Result{}, err
+		}
+	}
 	if err := r.createSandbox(ctx, sandbox, firstCreate); err != nil {
 		sandbox.ObservedGeneration = generation
 		sandbox.RecordFailure(model.SandboxStateFailed, err.Error())

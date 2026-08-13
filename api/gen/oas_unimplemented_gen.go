@@ -646,6 +646,20 @@ func (UnimplementedHandler) RegisterPool(ctx context.Context, req *RegisterPoolB
 	return r, ht.ErrNotImplemented
 }
 
+// RepairSandbox implements repair-sandbox operation.
+//
+// Rebuild the sandbox in place and start it (ADR 0035). The container and disposable runtime state
+// are torn down, the container is recreated against the durable data that was kept, and a start is
+// issued - one operation for the archive-unarchive-start sequence. Recording the repair intent also
+// clears a settled failure, so this is the way out of an error state. The rebuild is driven in the
+// request; a request that dies leaves the intent recorded and the rebuild converging in the
+// background, stopped, starting on first use. Conflicts if the sandbox is archived or being deleted.
+//
+// POST /projects/{projectId}/sandboxes/{sandboxId}/repair
+func (UnimplementedHandler) RepairSandbox(ctx context.Context, params RepairSandboxParams) (r RepairSandboxRes, _ error) {
+	return r, ht.ErrNotImplemented
+}
+
 // ReportPoolSandboxStates implements report-pool-sandbox-states operation.
 //
 // Report observed sandbox states from the pool agent.

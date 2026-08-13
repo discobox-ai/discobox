@@ -265,6 +265,10 @@ type RegisterPoolRes interface {
 	registerPoolRes()
 }
 
+type RepairSandboxRes interface {
+	repairSandboxRes()
+}
+
 type ReportPoolSandboxStatesRes interface {
 	reportPoolSandboxStatesRes()
 }

@@ -520,6 +520,57 @@ func (s *Service) RestartSandbox(ctx context.Context, projectID, sandboxID strin
 	return s.instructSandbox(ctx, projectID, sandboxID, sandboxRestart)
 }
 
+// RepairSandbox rebuilds the sandbox in place and starts it (ADR 0035).
+//
+// It is one existence intent, not a workflow: the recorded generation carries
+// RepairGeneration, which makes the reconciler's ensure tear the runtime down
+// (provider Archive — container and disposable state dropped, durable tree
+// kept) before the ordinary create rebuilds it. Recording intent is also what
+// clears a latched ErrorMessage, so repair is the way out of a settled failure
+// (ADR 0017 §4).
+//
+// Like purge, the request then drives that sandbox's reconcile inline so the
+// caller learns whether the rebuild landed. A request that dies loses only the
+// synchronous answer — the intent and its dirty mark are already durable, the
+// rebuild converges in the background, and on-demand start covers first use.
+// After a clean converge the service forwards the same start instruction an
+// explicit start would; power stays unorchestrated (ADR 0017 §9), so a repair
+// whose rebuild landed but whose start failed is a healthy stopped sandbox.
+func (s *Service) RepairSandbox(ctx context.Context, projectID, sandboxID string) (*model.Sandbox, error) {
+	sandbox, err := s.store.GetSandbox(ctx, projectID, sandboxID)
+	if err != nil {
+		return nil, mapAPIError(err, "sandbox not found")
+	}
+	if sandbox.DesiredState == model.DesiredStateDeleted {
+		return nil, apperrors.NewStatusError(http.StatusConflict, "sandbox is being deleted")
+	}
+	if sandbox.DesiredState == model.DesiredStateArchived {
+		return nil, apperrors.NewStatusError(http.StatusConflict, "sandbox is archived; unarchive it instead")
+	}
+	if _, err := s.recordSandboxIntent(ctx, projectID, sandboxID, model.DesiredStatePresent, func(sb *model.Sandbox) {
+		sb.RepairGeneration = sb.Generation
+	}); err != nil {
+		return nil, mapAPIError(err, "sandbox not found")
+	}
+	// The Result is discarded rather than honored: this call is outside the
+	// engine, so there is no claimed row to arm a timer on, and the background
+	// engine re-arms whatever the next reconcile of this row returns.
+	if _, err := s.NewSandboxReconciler().Reconcile(ctx, SandboxDirtyID(projectID, sandboxID)); err != nil {
+		return nil, fmt.Errorf("repair sandbox: %w", err)
+	}
+	// Reconcile settles rather than returning an error when it records a
+	// failure on the resource (ADR 0017 §4), so read the verdict off the row.
+	sandbox, err = s.store.GetSandbox(ctx, projectID, sandboxID)
+	if err != nil {
+		return nil, mapAPIError(err, "sandbox not found")
+	}
+	if sandbox.ErrorMessage != nil {
+		return nil, apperrors.NewStatusError(http.StatusConflict,
+			fmt.Sprintf("sandbox repair failed: %s", *sandbox.ErrorMessage))
+	}
+	return s.instructSandbox(ctx, projectID, sandboxID, sandboxStart)
+}
+
 func (s *Service) instructSandbox(ctx context.Context, projectID, sandboxID string, instruction sandboxInstruction) (*model.Sandbox, error) {
 	sandbox, err := s.store.GetSandbox(ctx, projectID, sandboxID)
 	if err != nil {

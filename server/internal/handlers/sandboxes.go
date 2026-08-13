@@ -122,6 +122,18 @@ func (h *Handler) RestartSandbox(ctx context.Context, req *apimodel.RestartSandb
 	return &body, nil
 }
 
+func (h *Handler) RepairSandbox(ctx context.Context, params serverapi.RepairSandboxParams) (serverapi.RepairSandboxRes, error) {
+	sandbox, err := h.services.Sandboxes.RepairSandbox(ctx, params.ProjectId, params.SandboxId)
+	if err != nil {
+		return apiError(err), nil
+	}
+	body, err := services.SandboxToAPI(sandbox, h.fallbackHarnessConfig(ctx, params.ProjectId))
+	if err != nil {
+		return nil, err
+	}
+	return &body, nil
+}
+
 func (h *Handler) UpgradeSandbox(ctx context.Context, req *apimodel.UpgradeSandboxBody, params serverapi.UpgradeSandboxParams) (serverapi.UpgradeSandboxRes, error) {
 	sandbox, err := h.services.Sandboxes.UpgradeSandbox(ctx, params.ProjectId, params.SandboxId, *req)
 	if err != nil {

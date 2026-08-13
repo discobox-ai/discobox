@@ -639,8 +639,15 @@ type Sandbox struct {
 	AppliedCommits    []AppliedSourceCommit `gorm:"column:applied_commits;type:text;serializer:json" json:"appliedCommits,omitempty" doc:"History of successful disco apply runs that landed this sandbox's commits on a host (ADR 0014). Client-reported; append-only."`
 	OriginKey         *string               `gorm:"column:origin_key;type:text;index" json:"-" doc:"Indexed identity of Origin. Derived from Origin; used to list the sandboxes created from one client project directory."`
 	ProviderState     json.RawMessage       `gorm:"column:provider_state;type:text" json:"providerState,omitempty" doc:"Non-secret provider state"`
-	SecretState       []byte                `gorm:"column:secret_state" json:"-"`
-	LastActiveAt      *time.Time            `gorm:"column:last_active_at;index" json:"lastActiveAt,omitempty" doc:"Last observed activity timestamp" format:"date-time"`
+	// RepairGeneration marks one generation as a repair (ADR 0035): when it
+	// equals Generation, ensure tears the runtime down (provider Archive:
+	// container and disposable state dropped, durable tree kept) before the
+	// ordinary create rebuilds it. Naming exactly one generation is what makes
+	// repair one-shot: retries within the generation re-run an idempotent
+	// teardown, later generations never tear down again.
+	RepairGeneration int64      `gorm:"column:repair_generation;not null;default:0" json:"-" doc:"Generation whose ensure rebuilds from a teardown (ADR 0035)"`
+	SecretState      []byte     `gorm:"column:secret_state" json:"-"`
+	LastActiveAt     *time.Time `gorm:"column:last_active_at;index" json:"lastActiveAt,omitempty" doc:"Last observed activity timestamp" format:"date-time"`
 	// RuntimeState is the power axis: what the container is doing, as observed
 	// by the pool agent hosting it. Store.ApplySandboxStateReports is its only
 	// writer, and Store.UpdateSandbox omits it so no other path can carry a

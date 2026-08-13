@@ -72,6 +72,7 @@ const (
 	ReconcileSandboxOperation                 OperationName = "ReconcileSandbox"
 	RefreshHarnessConfigImageOperation        OperationName = "RefreshHarnessConfigImage"
 	RegisterPoolOperation                     OperationName = "RegisterPool"
+	RepairSandboxOperation                    OperationName = "RepairSandbox"
 	ReportPoolSandboxStatesOperation          OperationName = "ReportPoolSandboxStates"
 	ReportSandboxAgentStatusOperation         OperationName = "ReportSandboxAgentStatus"
 	ResolveSandboxSecretOperation             OperationName = "ResolveSandboxSecret"

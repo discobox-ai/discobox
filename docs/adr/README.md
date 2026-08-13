@@ -87,3 +87,4 @@ Nygard-style ADRs (see adr.github.io) combined with current-state design docs:
 | [0032](0032-every-sandbox-has-a-harness-config-and-shell-is-the-built-in.md) | Every sandbox has a harness config, and `shell` is the built-in one | Accepted |
 | [0033](0033-user-resolution-is-one-layered-resolver-with-declared-gaps.md) | User resolution is one layered resolver, and every gap is declared | Accepted |
 | [0034](0034-sandbox-state-and-runtime-state-are-separate-fields.md) | Sandbox `state` and `runtime_state` are separate fields | Accepted |
+| [0035](0035-repair-is-one-rebuild-intent-plus-a-start-instruction.md) | Repair is one rebuild intent, plus a start instruction | Accepted |

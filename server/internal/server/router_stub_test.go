@@ -299,6 +299,10 @@ func (s *routerTestServices) RestartSandbox(_ context.Context, projectID, sandbo
 	return s.instructSandbox(projectID, sandboxID)
 }
 
+func (s *routerTestServices) RepairSandbox(_ context.Context, projectID, sandboxID string) (*model.Sandbox, error) {
+	return s.instructSandbox(projectID, sandboxID)
+}
+
 func (s *routerTestServices) UpgradeSandbox(_ context.Context, projectID, sandboxID string, _ services.UpgradeSandboxBody) (*model.Sandbox, error) {
 	return s.instructSandbox(projectID, sandboxID)
 }

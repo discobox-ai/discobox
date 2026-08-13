@@ -67,6 +67,7 @@ container (ADR 0022 §1). See [ADR 0022](../../../../docs/adr/0022-sandbox-delet
 | `DELETE /sandboxes/{id}` | `archived` | orchestrated, 202 |
 | `POST .../unarchive` | `present` | orchestrated, 202 |
 | `POST .../purge` | `deleted` | **converges in the request**, 204 |
+| `POST .../repair` | `present` | **converges in the request**, 200 + start instruction |
 
 Delete archives, because getting a sandbox out of the way is the common request
 and the recoverable one. `archive.go` holds the archive branch and retention;
@@ -81,6 +82,17 @@ returning the provider's answer. It is not a second deletion path: the intent an
 its dirty mark are durable before the inline attempt starts, so a purge that
 fails or loses its client still converges in the background. The row is deleted
 only after the provider confirms the data is gone.
+
+Repair (ADR 0035) is archive, unarchive, and start as one operation, for a
+sandbox that is wedged — typically a settled failure whose container or
+disposable pool-host state is broken while its durable tree is fine. It is one
+present-intent whose generation is named by `Sandbox.RepairGeneration`; for
+exactly that generation, `ensure` runs the provider's `Archive` teardown before
+the ordinary create, so the rebuild starts from the retained tree. Recording
+the intent is what clears a latched `ErrorMessage`. Like purge, the request
+drives the reconcile inline so the caller gets the verdict; unlike everything
+else here, a clean converge is followed by the same start instruction an
+explicit start sends — still an instruction, never stored intent.
 
 Retention: an archived sandbox is purged once it has been archived longer than
 `Project.ArchiveRetentionSeconds` (default `DefaultArchiveRetention`, 24h). The

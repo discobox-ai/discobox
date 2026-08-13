@@ -67,6 +67,7 @@ func (a *App) newSandboxCommand() *cobra.Command {
 	cmd.AddCommand(a.newSandboxStartCommand())
 	cmd.AddCommand(a.newSandboxStopCommand())
 	cmd.AddCommand(a.newSandboxRestartCommand())
+	cmd.AddCommand(a.newSandboxRepairCommand())
 	cmd.AddCommand(a.newSandboxUpgradeCommand())
 	return cmd
 }
@@ -422,6 +423,37 @@ func (a *App) newSandboxRestartCommand() *cobra.Command {
 	}
 	cmd.Flags().BoolVar(&force, "force", false, "Force restart if supported")
 	return cmd
+}
+
+func (a *App) newSandboxRepairCommand() *cobra.Command {
+	return &cobra.Command{
+		Use:   "repair SANDBOX_ID",
+		Short: "Repair a sandbox by rebuilding it in place",
+		Long: `Repair a sandbox by rebuilding it in place.
+
+The container and its disposable runtime state are torn down, the container is
+recreated against the workspace data that was kept, and the sandbox is started
+- archive, unarchive, and start as one operation. Use this to recover a
+sandbox stuck in an error state; the workspace and its uncommitted changes
+survive.`,
+		Args:              cobra.ExactArgs(1),
+		ValidArgsFunction: a.completeSandboxes,
+		RunE: func(cmd *cobra.Command, args []string) error {
+			projectID, sandboxID, client, err := a.sandboxRequest(cmd.Context(), args[0])
+			if err != nil {
+				return err
+			}
+			sandboxRes, err := client.RepairSandbox(cmd.Context(), apiclientgen.RepairSandboxParams{ProjectId: projectID, SandboxId: sandboxID})
+			if err != nil {
+				return err
+			}
+			sandbox, err := expectResponse[apimodel.Sandbox](sandboxRes)
+			if err != nil {
+				return err
+			}
+			return a.writeSandbox(cmd, sandbox)
+		},
+	}
 }
 
 func (a *App) newSandboxUpgradeCommand() *cobra.Command {

@@ -1598,6 +1598,7 @@ func (*ErrorModelStatusCode) reconcilePoolRes()                    {}
 func (*ErrorModelStatusCode) reconcileSandboxRes()                 {}
 func (*ErrorModelStatusCode) refreshHarnessConfigImageRes()        {}
 func (*ErrorModelStatusCode) registerPoolRes()                     {}
+func (*ErrorModelStatusCode) repairSandboxRes()                    {}
 func (*ErrorModelStatusCode) reportPoolSandboxStatesRes()          {}
 func (*ErrorModelStatusCode) reportSandboxAgentStatusRes()         {}
 func (*ErrorModelStatusCode) resolveSandboxSecretRes()             {}
@@ -7935,6 +7936,7 @@ func (*Sandbox) configureHarnessConfigRes()    {}
 func (*Sandbox) createSandboxRes()             {}
 func (*Sandbox) getSandboxRes()                {}
 func (*Sandbox) reconcileSandboxRes()          {}
+func (*Sandbox) repairSandboxRes()             {}
 func (*Sandbox) restartSandboxRes()            {}
 func (*Sandbox) startSandboxRes()              {}
 func (*Sandbox) stopSandboxRes()               {}
