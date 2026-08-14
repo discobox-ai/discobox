@@ -237,7 +237,18 @@ never both, because they can land on the same clipboard with the last writer
 winning, and OSC 52 is the writer terminals mis-decode. `ctrl+a m` seizes the
 mouse from a sandbox that asked for it, for
 when you would rather copy a stack trace than click on it; the seizure is the
-window's, applied to whichever pane events route to. Detaching returns to the
+window's, applied to whichever pane events route to.
+
+The chrome — the header with the sandbox id, the hints line, the borders — is
+selectable too (`chrome.go`): a press no pane claims drives a second
+`selection.Model` over the composed frame itself, drawn back into cells
+(`parseChrome`), flat rows with nothing wrapped. The word rules make the
+sandbox id one double-click. One selection is on screen at a time — a pane
+press clears the chrome's and vice versa — and a chrome selection whose rows
+no longer read back identically is cleared rather than left highlighting
+whatever the recompose moved under it, which means header selections live and
+status-line selections honestly die. Copies and copy chords go through the
+same `copyText` path as the panes'. Detaching returns to the
 list with the cursor still on the sandbox it was opened on.
 
 The title an application sets goes two places: the middle of the window's header

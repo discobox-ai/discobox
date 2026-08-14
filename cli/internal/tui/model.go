@@ -22,6 +22,7 @@ import (
 	"charm.land/lipgloss/v2"
 
 	"github.com/obot-platform/discobox/termpane"
+	"github.com/obot-platform/discobox/termpane/selection"
 )
 
 type focusArea int
@@ -86,6 +87,16 @@ type Model struct {
 	// every mouse event until the button is released: a drag that crosses a
 	// border must not change hands mid-gesture. Zero when no gesture is open.
 	mouseCapture int
+
+	// The chrome's own selection — header, hints, borders — behind the
+	// panes' rich one; see chrome.go. lastFrame is the frame as last
+	// composed, which is what a chrome press selects from, and chromeShot is
+	// what the selection read when it was made.
+	chromeGrid    *frameGrid
+	chromeSel     *selection.Model
+	chromeShot    string
+	chromeCapture bool
+	lastFrame     string
 
 	// leaderKey is the pane's prefix; empty takes the default. See Model.leader.
 	leaderKey string
@@ -167,18 +178,20 @@ func New(ctx context.Context, ds DataSource, options ...Option) *Model {
 
 	session := Session{DefaultProject: "default"}
 	m := &Model{
-		ctx:     ctx,
-		ds:      ds,
-		st:      st,
-		list:    newSandboxList(session),
-		prompt:  ta,
-		logo:    newLogo(color),
-		focus:   focusPrompt,
-		session: session,
-		exec:    tea.Exec,
-		copyOS:  func(text string) error { return osClipboard(ctx, text) },
-		noise:   newNoise(),
+		ctx:        ctx,
+		ds:         ds,
+		st:         st,
+		list:       newSandboxList(session),
+		prompt:     ta,
+		logo:       newLogo(color),
+		focus:      focusPrompt,
+		session:    session,
+		exec:       tea.Exec,
+		copyOS:     func(text string) error { return osClipboard(ctx, text) },
+		chromeGrid: &frameGrid{},
+		noise:      newNoise(),
 	}
+	m.chromeSel = selection.New(m.chromeGrid)
 	// The label above the field already says what an empty prompt does, and the
 	// placeholder is gone the moment you type.
 	m.prompt.Placeholder = m.placeholder()
@@ -296,6 +309,8 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case tea.WindowSizeMsg:
 		m.width, m.height = msg.Width, msg.Height
 		m.ready = true
+		// Columns mean nothing across a resize; see the panes' own clearing.
+		m.chromeSel.Clear()
 		m.layout()
 		return m, nil
 
@@ -834,6 +849,14 @@ func (m *Model) actions(targets []Sandbox) []action {
 	if !applyable && anyArchived {
 		applyWhy = "an archived box has no working tree to look at"
 	}
+	// A row named by its terminal's title is not showing the configured name,
+	// which is the one rename edits: accepting a rename there would change
+	// nothing on screen.
+	renameable, renameWhy := one, "takes exactly one box"
+	if one && targets[0].NameIsTitle {
+		renameable = false
+		renameWhy = "the name shown is the terminal's title, which the harness sets — a rename would not change it"
+	}
 	return []action{
 		{key: "a", label: "attach", detail: "join the harness terminal", enabled: attachable,
 			why: attachWhy(one, targets)},
@@ -841,8 +864,8 @@ func (m *Model) actions(targets []Sandbox) []action {
 			why: attachWhy(one, targets)},
 		{key: "y", label: "apply", detail: "bring the changes back to " + m.session.Directory, enabled: applyable,
 			why: applyWhy},
-		{key: renameKey, label: "rename", detail: "type a new name for the box", enabled: one,
-			why: "takes exactly one box"},
+		{key: renameKey, label: "rename", detail: "type a new name for the box", enabled: renameable,
+			why: renameWhy},
 		{key: "u", label: "upgrade", detail: "re-pin to the current harness image", enabled: anyUpgrade,
 			why: "already on the current image"},
 		{key: "t", label: "stop", detail: "power the box off, keeping its disk", enabled: anyRunning,
@@ -1270,7 +1293,7 @@ func (m *Model) View() tea.View {
 		// A pane wears the border itself. Everything else — the header, what
 		// the sandbox is called, the keys — sits outside it, the way a caption
 		// sits outside the thing it captions.
-		content = m.viewPaneWindow()
+		content = m.paintChrome(m.viewPaneWindow())
 	default:
 		rows := []string{m.viewHeader(m.inner()), ""}
 		rows = append(rows, strings.Split(body, "\n")...)
@@ -1635,7 +1658,9 @@ func (m *Model) helpText() string {
 		"    .      every action, as a menu",
 		"",
 		"  rename opens the name it already has, to be edited rather than",
-		"  retyped: Enter accepts it, Esc leaves it alone.",
+		"  retyped: Enter accepts it, Esc leaves it alone. A box whose",
+		"  harness has titled its terminal shows that title instead, and",
+		"  cannot be renamed: the harness owns the name on screen.",
 		"",
 		"  attach and shell open the workspace, drawn in the window",
 		"  itself. apply takes the real terminal, because the list can",

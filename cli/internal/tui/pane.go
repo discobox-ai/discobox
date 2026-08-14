@@ -375,6 +375,13 @@ func (m *Model) updatePane(msg tea.Msg) tea.Cmd {
 	if mouse, ok := msg.(tea.MouseMsg); ok {
 		return m.routeMouse(mouse)
 	}
+	// A chrome selection takes the copy chords the way a pane's own would;
+	// with none showing, every key is the pane's as usual.
+	if key, ok := msg.(tea.KeyPressMsg); ok {
+		if cmd, taken := m.chromeChord(key); taken {
+			return cmd
+		}
+	}
 	// A pane whose command has finished is a screen to read, not a terminal to
 	// type at. Its keys are the reader's: the arrows walk back through output
 	// longer than the pane, and the ones that mean "done" take it away.
@@ -409,21 +416,7 @@ func (m *Model) updatePaneMsg(tagged paneMsg) tea.Cmd {
 		return status("mouse handed back to the box")
 
 	case termpane.CopyMsg:
-		// The OS clipboard first, and OSC 52 only when there is none to
-		// write — an SSH session, a box with no clipboard tool. Not both:
-		// they can land on the same clipboard (WSL's is Windows'), the last
-		// writer wins, and OSC 52 is the path terminals are known to
-		// mis-decode. See osClipboard.
-		text, copyOS := msg.Text, m.copyOS
-		return tea.Batch(
-			func() tea.Msg {
-				if copyOS(text) == nil {
-					return nil
-				}
-				return tea.SetClipboard(text)()
-			},
-			status("copied"),
-		)
+		return m.copyText(msg.Text)
 
 	case paneActionMsg:
 		// The list's dispatcher, on the one discobox this screen is showing:
@@ -581,6 +574,10 @@ func (m *Model) dismissPane(p *pane) {
 // pane's own HandleMouse decides what the event does: selection, forwarding
 // to an application that asked for the mouse, or the wheel.
 func (m *Model) routeMouse(msg tea.MouseMsg) tea.Cmd {
+	// A gesture the chrome latched stays the chrome's; see chrome.go.
+	if m.chromeCapture {
+		return m.chromeMouse(msg)
+	}
 	var x, y int
 	p := m.paneByID(m.mouseCapture)
 	if p != nil {
@@ -590,13 +587,18 @@ func (m *Model) routeMouse(msg tea.MouseMsg) tea.Cmd {
 		p, x, y = m.paneAt(mouse.X, mouse.Y)
 	}
 	if p == nil {
-		return nil
+		// Nobody's grid, so it is the chrome's: the header, the hints, the
+		// borders are selectable text too.
+		return m.chromeMouse(msg)
 	}
 	switch ev := msg.(type) {
 	case tea.MouseClickMsg:
 		if ev.Button == tea.MouseLeft {
 			m.mouseCapture = p.id
 			m.focusPane(p)
+			// One selection on screen at a time.
+			m.chromeSel.Clear()
+			m.clearPaneSelections(p)
 		}
 	case tea.MouseReleaseMsg:
 		if ev.Button == tea.MouseLeft {
@@ -649,6 +651,24 @@ func (m *Model) focusPane(p *pane) {
 	if i := m.shellIndex(p); i >= 0 {
 		m.onShells, m.activeShell = true, i
 	}
+}
+
+// copyText puts selected text on the clipboard: the OS clipboard first, and
+// OSC 52 only when there is none to write — an SSH session, a box with no
+// clipboard tool. Not both: they can land on the same clipboard (WSL's is
+// Windows'), the last writer wins, and OSC 52 is the path terminals are
+// known to mis-decode. See osClipboard.
+func (m *Model) copyText(text string) tea.Cmd {
+	copyOS := m.copyOS
+	return tea.Batch(
+		func() tea.Msg {
+			if copyOS(text) == nil {
+				return nil
+			}
+			return tea.SetClipboard(text)()
+		},
+		status("copied"),
+	)
 }
 
 // wheelLines is how far one turn of the wheel moves the view.
