@@ -46,19 +46,48 @@ func TestBuildIsPointedAtThePoolBuilder(t *testing.T) {
 	if !slices.Contains(argv, "--builder") || !slices.Contains(argv, dockercache.BuilderName) {
 		t.Errorf("build does not name the pool builder: %v", argv)
 	}
-	if !slices.Contains(argv, "-t") || !slices.Contains(argv, "app:1") {
-		t.Errorf("the user's own arguments were lost: %v", argv)
+	// The user's tag is applied locally after the pull, not pushed: a tag may
+	// name any registry, and rewriting arbitrary tag syntax to be pushable to
+	// the pool would be a source of surprises.
+	if slices.Contains(argv, "app:1") {
+		t.Errorf("the user's tag was pushed to the pool registry: %v", argv)
+	}
+	if !slices.Contains(got.Tags, "app:1") {
+		t.Errorf("the user's tag was dropped rather than deferred: %v", got.Tags)
+	}
+	if !slices.Contains(argv, "--push") || !slices.Contains(argv, got.RegistryRef) {
+		t.Errorf("build does not push to the pool registry: %v", argv)
+	}
+	if !strings.HasPrefix(got.RegistryRef, dockercache.PoolRegistry+"/") {
+		t.Errorf("registry reference is not in the pool registry: %q", got.RegistryRef)
 	}
 }
 
-func TestUntaggedBuildStillLandsInTheLocalImageStore(t *testing.T) {
+func TestUntaggedBuildStillHasSomethingToPush(t *testing.T) {
 	withMaterial(t)
-	// The case with no name at all: there is nothing to push to a registry, so
-	// --load is the only way the result comes back. Without it the image
-	// vanishes into the build cache and `docker images` shows nothing.
-	argv := argvAfterDocker(t, dockercache.Rewrite([]string{"build", "."}))
-	if !slices.Contains(argv, "--load") {
-		t.Errorf("untagged build has no --load, so its image is unreachable: %v", argv)
+	// A build naming no tag has nothing to push on its own, so a reference is
+	// synthesized for it. Without one the result would stay in the pool and
+	// `docker images` would show nothing.
+	got := dockercache.Rewrite([]string{"build", "."})
+	if got.RegistryRef == "" {
+		t.Fatal("untagged build has no reference, so its result cannot come back")
+	}
+	if len(got.Tags) != 0 {
+		t.Errorf("untagged build invented a tag: %v", got.Tags)
+	}
+	if !slices.Contains(argvAfterDocker(t, got), got.RegistryRef) {
+		t.Error("the synthesized reference is not what the build pushes")
+	}
+}
+
+func TestEachBuildPushesToItsOwnReference(t *testing.T) {
+	withMaterial(t)
+	// Two builds must not collide in the pool registry, or a concurrent build
+	// could pull the other's result.
+	first := dockercache.Rewrite([]string{"build", "."})
+	second := dockercache.Rewrite([]string{"build", "."})
+	if first.RegistryRef == second.RegistryRef {
+		t.Errorf("two builds share a reference: %q", first.RegistryRef)
 	}
 }
 
@@ -68,9 +97,9 @@ func TestAnExplicitOutputChoiceIsNotOverridden(t *testing.T) {
 		{"build", "--push", "-t", "reg/app:1", "."},
 		{"build", "--output", "type=oci,dest=out.tar", "."},
 	} {
-		argv := argvAfterDocker(t, dockercache.Rewrite(args))
-		if slices.Contains(argv, "--load") {
-			t.Errorf("--load was added on top of %v, overriding the user's choice", args)
+		got := dockercache.Rewrite(args)
+		if got.Rewritten {
+			t.Errorf("%v names its own output and was rewritten anyway", args)
 		}
 	}
 }

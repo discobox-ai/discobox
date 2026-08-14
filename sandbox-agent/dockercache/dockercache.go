@@ -53,6 +53,23 @@ const (
 	// bridgeConfig is written by pool-agent for a sandbox whose pool runs a
 	// builder. Its absence is what tells this shim to leave a build alone.
 	bridgeConfig = "/etc/discobox/proxy/bridge-buildkit.json"
+
+	// PoolRegistry is the pool's build-output registry. A build pushes here and
+	// the result is pulled back, instead of --load streaming the whole image
+	// over the session every time.
+	//
+	// --load serializes the entire image on every build, even one that was
+	// fully cached, because the docker exporter has no way to ask the local
+	// daemon what it already holds. A registry is content-addressed at both
+	// ends: the push uploads only blobs the registry lacks, and the pull fetches
+	// only blobs this daemon lacks.
+	PoolRegistry = "discobox-pool-proxy:5000"
+
+	// untaggedRepo holds results of builds that named no tag. There is nothing
+	// to push without a name, so one is synthesized per build; the local tag is
+	// dropped afterwards so `docker images` shows the dangling entry a plain
+	// `docker build` produces.
+	untaggedRepo = "_build"
 )
 
 // bridgeConfigPath locates the forwarder's config. It is a variable only so
@@ -66,6 +83,11 @@ type Args struct {
 	// Rewritten reports whether the command was pointed at the pool builder.
 	// False means it was passed through untouched.
 	Rewritten bool
+	// RegistryRef is the synthesized reference this build pushes to and is
+	// pulled back from.
+	RegistryRef string
+	// Tags are the tags the user asked for, applied locally after the pull.
+	Tags []string
 }
 
 // Rewrite returns the command line to exec for a user's `docker` invocation.
@@ -89,21 +111,27 @@ func Rewrite(args []string) Args {
 		return pass()
 	}
 
-	rewritten := make([]string, 0, len(args)+6)
+	// An explicit output is the user saying where the result goes; pushing it
+	// somewhere of our choosing as well would be wrong.
+	if hasOutputFlag(args[idx:]) {
+		return pass()
+	}
+
+	tags, rest := splitTags(args[idx+1:])
+	ref := newRegistryRef()
+	rewritten := make([]string, 0, len(args)+8)
 	rewritten = append(rewritten, args[:idx]...)
 	// `docker build` is an alias for `docker buildx build`, but it pins the
 	// default instance. Spelling out the subcommand is what lets --builder take
 	// effect.
-	rewritten = append(rewritten, "buildx", "build", "--builder", BuilderName)
-	if !hasOutputFlag(args[idx:]) {
-		// `docker build` puts its result in the local image store. A remote
-		// builder does not, so without this the image silently vanishes into
-		// the build cache — including for an untagged build, which has no name
-		// to push anywhere and can only come back this way.
-		rewritten = append(rewritten, "--load")
+	rewritten = append(rewritten, "buildx", "build", "--builder", BuilderName, "--push", "-t", ref)
+	rewritten = append(rewritten, rest...)
+	return Args{
+		Argv:        append([]string{RealDocker}, rewritten...),
+		Rewritten:   true,
+		RegistryRef: ref,
+		Tags:        tags,
 	}
-	rewritten = append(rewritten, args[idx+1:]...)
-	return Args{Argv: append([]string{RealDocker}, rewritten...), Rewritten: true}
 }
 
 // poolBuilderAvailable reports whether this sandbox's pool runs a builder. The
@@ -186,6 +214,30 @@ var globalFlagsWithValue = map[string]bool{
 	"--config": true, "--context": true, "-c": true, "--host": true, "-H": true,
 	"--log-level": true, "-l": true, "--tlscacert": true, "--tlscert": true,
 	"--tlskey": true,
+}
+
+// splitTags removes the user's -t/--tag flags, returning their values and the
+// remaining arguments. They are applied locally after the pull instead: a tag
+// may name any registry, and rewriting arbitrary tag syntax to be pushable to
+// the pool would be a source of surprises.
+func splitTags(args []string) (tags, rest []string) {
+	for i := 0; i < len(args); i++ {
+		a := args[i]
+		switch {
+		case a == "-t" || a == "--tag":
+			if i+1 < len(args) {
+				tags = append(tags, args[i+1])
+				i++
+			}
+		case strings.HasPrefix(a, "--tag="):
+			tags = append(tags, strings.TrimPrefix(a, "--tag="))
+		case strings.HasPrefix(a, "-t="):
+			tags = append(tags, strings.TrimPrefix(a, "-t="))
+		default:
+			rest = append(rest, a)
+		}
+	}
+	return tags, rest
 }
 
 // hasBuilderFlag reports whether the user chose a builder themselves.
