@@ -93,3 +93,4 @@ Nygard-style ADRs (see adr.github.io) combined with current-state design docs:
 | [0038](0038-terminal-identity-is-the-exec-id-terminals-revive-in-place.md) | Terminal identity is the exec id, and terminals revive in place | Accepted |
 | [0039](0039-attach-waits-for-readiness-at-every-tier.md) | Attach waits for readiness at every tier | Accepted |
 | [0040](0040-discobox-images-are-reclaimed-by-label-and-local-age.md) | Discobox images are reclaimed by label and local tag age | Accepted |
+| [0041](0041-dev-hot-reload-is-watchnbuild.md) | Dev hot reload is watchnbuild, not Air | Proposed |
