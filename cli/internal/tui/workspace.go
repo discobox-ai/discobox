@@ -108,6 +108,13 @@ func (m *Model) workspaceTick(gen int) tea.Cmd {
 // opened as a tab. Nothing is ever closed here — the attach streams deliver
 // their own exits, and a held pane is a local artifact the listing knows
 // nothing about — so each transition has exactly one writer.
+//
+// A listing that failed is not reported. The workspace is opened on a sandbox
+// that may still be provisioning, where the listing is answered "not yet" and
+// only the attach waits for the sandbox to become reachable (ADR 0039) — so
+// the listing's error would be noise the user cannot act on, and the poll
+// retries it seconds later. The attach is the reporter: it waits, and if it
+// fails the workspace closes saying why.
 func (m *Model) workspaceExecs(msg workspaceExecsMsg) tea.Cmd {
 	if msg.gen != m.wsGen {
 		return nil
@@ -141,9 +148,6 @@ func (m *Model) workspaceExecs(msg workspaceExecsMsg) tea.Cmd {
 	term, shells := m.columns(len(open) + len(m.shells))
 	if first {
 		cmds = append(cmds, m.openExec(msg.gen, Exec{ID: ExecPrimary, Primary: true}, term))
-		if msg.err != nil {
-			cmds = append(cmds, m.report(true, "cannot list sessions: %v", msg.err))
-		}
 	}
 	for _, exec := range open {
 		m.connecting[exec.ID] = true
