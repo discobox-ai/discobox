@@ -421,6 +421,14 @@ func (m *Matcher) ShouldCacheResponse(resp *http.Response) bool {
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
 		return false
 	}
+	// A 206 carries only the requested range, so storing it as a whole entity
+	// would serve a truncated body to the next caller who asks for the lot.
+	// VerifyDigestHex catches that for a URL naming its own digest, but returns
+	// nil when the path carries none — there, a partial body would be cached
+	// silently. Registry clients do use ranges to resume large layer pulls.
+	if resp.StatusCode == http.StatusPartialContent {
+		return false
+	}
 	if strings.Contains(strings.ToLower(resp.Header.Get("Cache-Control")), "no-store") {
 		return false
 	}
@@ -430,8 +438,37 @@ func (m *Matcher) ShouldCacheResponse(resp *http.Response) bool {
 	return true
 }
 
+// GenerateKey derives the cache key for a request.
+//
+// Content-addressed URLs are keyed on the digest alone, so one blob is stored
+// once however many repositories, tags or registries reference it — which is
+// exactly the shape of a pool's traffic, where many sandboxes build from
+// overlapping bases. Keying on the path instead stores a private copy per
+// repository. This is safe only because a pool shares one set of pull
+// credentials: the digest carries no notion of who was authorized for it.
+//
+// Everything else falls back to host and path, deliberately *excluding* the
+// query string. Registry blob fetches answer 307 to a CDN URL whose signature
+// lives in the query and changes on every request; keying on the full URL would
+// miss every time, silently.
 func (m *Matcher) GenerateKey(req *http.Request) string {
+	if digest := digestFromPath(req.URL.Path); digest != "" {
+		return "sha256:" + digest
+	}
 	return req.URL.Host + req.URL.Path
+}
+
+// digestFromPath returns the lowercase sha256 hex a path names, if any.
+func digestFromPath(path string) string {
+	matches := sha256DigestRe.FindStringSubmatch(path)
+	if len(matches) == 0 {
+		return ""
+	}
+	digest := matches[1]
+	if digest == "" && len(matches) > 2 {
+		digest = matches[2]
+	}
+	return strings.ToLower(digest)
 }
 
 func (m *Matcher) VerifyDigestHex(path, actual string) error {

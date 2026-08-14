@@ -4,6 +4,7 @@ import (
 	"context"
 	"io"
 	"net/http"
+	"net/http/httptest"
 	"os"
 	"path/filepath"
 	"strings"
@@ -157,5 +158,51 @@ func storeCacheEntry(t *testing.T, c *Cache, req *http.Request, body string) {
 	}
 	if err := put.Commit(); err != nil {
 		t.Fatalf("Commit() error = %v", err)
+	}
+}
+
+func TestPartialContentIsNotCachedAsAWholeEntity(t *testing.T) {
+	m, err := NewMatcher(nil, true)
+	if err != nil {
+		t.Fatalf("NewMatcher: %v", err)
+	}
+	resp := &http.Response{
+		StatusCode: http.StatusPartialContent,
+		Header:     http.Header{"Content-Type": []string{"application/octet-stream"}},
+	}
+	// Storing a range response as the full body serves a truncated layer to the
+	// next caller. Registry clients use ranges to resume large layer pulls.
+	if m.ShouldCacheResponse(resp) {
+		t.Error("a 206 was accepted for caching as a whole entity")
+	}
+}
+
+func TestDigestURLsShareOneEntryAcrossRepositories(t *testing.T) {
+	m, err := NewMatcher(nil, true)
+	if err != nil {
+		t.Fatalf("NewMatcher: %v", err)
+	}
+	const digest = "c64c687cbea9300178b30c95835354e34c4e4febc4badfe27102879de0483b5e"
+	first := httptest.NewRequestWithContext(context.Background(), http.MethodGet, "https://registry-1.docker.io/v2/library/alpine/blobs/sha256:"+digest, nil)
+	second := httptest.NewRequestWithContext(context.Background(), http.MethodGet, "https://ghcr.io/v2/someorg/someapp/blobs/sha256:"+digest, nil)
+
+	if got, want := m.GenerateKey(first), m.GenerateKey(second); got != want {
+		t.Errorf("the same blob keyed twice: %q vs %q — a pool would store one layer once per repository", got, want)
+	}
+}
+
+func TestSignedRedirectTargetsCollapseOntoOneKey(t *testing.T) {
+	m, err := NewMatcher(nil, true)
+	if err != nil {
+		t.Fatalf("NewMatcher: %v", err)
+	}
+	// A registry answers a blob GET with a 307 to a CDN URL whose signature is
+	// regenerated per request. Keying on the whole URL would never hit.
+	base := "https://production.cloudfront.docker.com/registry-v2/docker/registry/v2/blobs/sha256/c6/c64c687cbea9300178b30c95835354e34c4e4febc4badfe27102879de0483b5e/data"
+	one := httptest.NewRequestWithContext(context.Background(), http.MethodGet, base+"?Expires=1786516488&Signature=AAAA&Key-Pair-Id=K1", nil)
+	two := httptest.NewRequestWithContext(context.Background(), http.MethodGet, base+"?Expires=1786599999&Signature=BBBB&Key-Pair-Id=K1", nil)
+
+	if got, want := m.GenerateKey(one), m.GenerateKey(two); got != want {
+		t.Errorf("two signings of one blob keyed differently: %q vs %q — hit rate would be zero", got, want)
 	}
 }
