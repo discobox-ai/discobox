@@ -1,4 +1,4 @@
-package dockercache
+package dockercache_test
 
 import (
 	"os"
@@ -6,143 +6,143 @@ import (
 	"slices"
 	"strings"
 	"testing"
+
+	"github.com/obot-platform/discobox/sandbox-agent/dockercache"
 )
 
-func withIndex(t *testing.T, home string) {
+// withMaterial stages the client certificate material a sandbox is given, which
+// is what makes the pool builder reachable at all.
+func withMaterial(t *testing.T) {
 	t.Helper()
-	dir := CacheDir(home)
-	if err := os.MkdirAll(dir, 0o755); err != nil {
-		t.Fatalf("mkdir cache: %v", err)
-	}
-	if err := os.WriteFile(filepath.Join(dir, "index.json"), []byte("{}"), 0o644); err != nil {
-		t.Fatalf("write index.json: %v", err)
-	}
-}
-
-func joined(a Args) string { return strings.Join(a.Argv, " ") }
-
-// `docker build` has no --cache-to, so it must be promoted to buildx.
-func TestRewritePromotesLegacyBuild(t *testing.T) {
-	home := t.TempDir()
-	got := Rewrite([]string{"build", "-t", "x", "."}, home)
-
-	if !got.Injected {
-		t.Fatalf("expected cache injection, got %v", got.Argv)
-	}
-	want := []string{RealDocker, "buildx", "build", "-t", "x", "."}
-	if !slices.Equal(got.Argv[:len(want)], want) {
-		t.Fatalf("argv = %v, want prefix %v", got.Argv, want)
-	}
-	if !strings.Contains(joined(got), "--cache-to type=local,dest="+CacheDir(home)+",mode=max") {
-		t.Fatalf("missing cache-to: %v", got.Argv)
-	}
-}
-
-// Importing from a directory with no prior export makes BuildKit error, so
-// --cache-from appears only once an index.json exists.
-func TestRewriteImportsOnlyWhenCacheExists(t *testing.T) {
-	home := t.TempDir()
-	if strings.Contains(joined(Rewrite([]string{"build", "."}, home)), "--cache-from") {
-		t.Fatal("cache-from must not be injected before any export exists")
-	}
-	withIndex(t, home)
-	if !strings.Contains(joined(Rewrite([]string{"build", "."}, home)), "--cache-from type=local,src="+CacheDir(home)) {
-		t.Fatal("cache-from must be injected once a cache exists")
-	}
-}
-
-func TestRewriteBuildxBuildIsNotDoublePromoted(t *testing.T) {
-	home := t.TempDir()
-	got := Rewrite([]string{"buildx", "build", "."}, home)
-
-	if !got.Injected {
-		t.Fatalf("expected injection, got %v", got.Argv)
-	}
-	var n int
-	for _, a := range got.Argv {
-		if a == "build" {
-			n++
+	dir := t.TempDir()
+	for _, name := range []string{"mtls-ca.crt", "client.crt", "client.key"} {
+		if err := os.WriteFile(filepath.Join(dir, name), []byte("x"), 0o600); err != nil {
+			t.Fatalf("stage %s: %v", name, err)
 		}
 	}
-	if n != 1 {
-		t.Fatalf("expected exactly one build token, got %d: %v", n, got.Argv)
+	dockercache.SetMaterialDir(dir)
+	t.Cleanup(func() { dockercache.SetMaterialDir(t.TempDir()) })
+}
+
+func argvAfterDocker(t *testing.T, got dockercache.Args) []string {
+	t.Helper()
+	if len(got.Argv) == 0 || got.Argv[0] != dockercache.RealDocker {
+		t.Fatalf("argv does not exec the real docker CLI: %v", got.Argv)
 	}
-	want := []string{RealDocker, "buildx", "build", "."}
-	if !slices.Equal(got.Argv[:len(want)], want) {
-		t.Fatalf("argv = %v, want prefix %v", got.Argv, want)
+	return got.Argv[1:]
+}
+
+func TestBuildIsPointedAtThePoolBuilder(t *testing.T) {
+	withMaterial(t)
+	got := dockercache.Rewrite([]string{"build", "-t", "app:1", "."})
+	if !got.Rewritten {
+		t.Fatalf("build was not rewritten: %v", got.Argv)
+	}
+	argv := argvAfterDocker(t, got)
+
+	// `docker build` is an alias for `docker buildx build` that pins the default
+	// instance, so the subcommand must be spelled out for --builder to take.
+	if argv[0] != "buildx" || argv[1] != "build" {
+		t.Errorf("subcommand not spelled out, so --builder will be ignored: %v", argv)
+	}
+	if !slices.Contains(argv, "--builder") || !slices.Contains(argv, dockercache.BuilderName) {
+		t.Errorf("build does not name the pool builder: %v", argv)
+	}
+	if !slices.Contains(argv, "-t") || !slices.Contains(argv, "app:1") {
+		t.Errorf("the user's own arguments were lost: %v", argv)
 	}
 }
 
-// An explicit user choice always wins over the injected default.
-func TestRewriteRespectsUserCacheFlags(t *testing.T) {
-	home := t.TempDir()
-	withIndex(t, home)
+func TestUntaggedBuildStillLandsInTheLocalImageStore(t *testing.T) {
+	withMaterial(t)
+	// The case with no name at all: there is nothing to push to a registry, so
+	// --load is the only way the result comes back. Without it the image
+	// vanishes into the build cache and `docker images` shows nothing.
+	argv := argvAfterDocker(t, dockercache.Rewrite([]string{"build", "."}))
+	if !slices.Contains(argv, "--load") {
+		t.Errorf("untagged build has no --load, so its image is unreachable: %v", argv)
+	}
+}
+
+func TestAnExplicitOutputChoiceIsNotOverridden(t *testing.T) {
+	withMaterial(t)
 	for _, args := range [][]string{
-		{"build", "--cache-from", "type=registry,ref=r/x", "."},
-		{"build", "--cache-to=type=inline", "."},
-		{"buildx", "build", "--cache-from", "type=gha", "."},
+		{"build", "--push", "-t", "reg/app:1", "."},
+		{"build", "--output", "type=oci,dest=out.tar", "."},
 	} {
-		got := Rewrite(args, home)
-		if got.Injected {
-			t.Fatalf("must not inject over user flags for %v: %v", args, got.Argv)
-		}
-		if !slices.Equal(got.Argv, append([]string{RealDocker}, args...)) {
-			t.Fatalf("args mutated: %v", got.Argv)
+		argv := argvAfterDocker(t, dockercache.Rewrite(args))
+		if slices.Contains(argv, "--load") {
+			t.Errorf("--load was added on top of %v, overriding the user's choice", args)
 		}
 	}
 }
 
-// Only build commands are touched; everything else passes through byte-for-byte.
-func TestRewritePassesThroughNonBuild(t *testing.T) {
-	home := t.TempDir()
+func TestAnExplicitBuilderWins(t *testing.T) {
+	withMaterial(t)
+	got := dockercache.Rewrite([]string{"build", "--builder", "mine", "."})
+	if got.Rewritten {
+		t.Error("the user named a builder and the shim overrode it, removing the escape hatch")
+	}
+}
+
+func TestBuildxIsLeftAlone(t *testing.T) {
+	withMaterial(t)
+	// A user reaching for buildx directly has chosen their own semantics, and
+	// buildx already honors the selected builder.
+	got := dockercache.Rewrite([]string{"buildx", "build", "."})
+	if got.Rewritten {
+		t.Errorf("docker buildx was rewritten: %v", got.Argv)
+	}
+}
+
+func TestNonBuildCommandsPassStraightThrough(t *testing.T) {
+	withMaterial(t)
 	for _, args := range [][]string{
-		{"run", "--rm", "alpine", "true"},
+		{"run", "--rm", "alpine"},
 		{"ps"},
-		{"buildx", "ls"},
-		{"builder", "prune", "-f"},
-		{},
+		{"images"},
 	} {
-		got := Rewrite(args, home)
-		if got.Injected {
-			t.Fatalf("must not inject for %v", args)
+		got := dockercache.Rewrite(args)
+		if got.Rewritten {
+			t.Errorf("%v was rewritten but is not a build", args)
 		}
-		if !slices.Equal(got.Argv, append([]string{RealDocker}, args...)) {
-			t.Fatalf("args mutated for %v: %v", args, got.Argv)
+		if !slices.Equal(argvAfterDocker(t, got), args) {
+			t.Errorf("%v was altered: %v", args, got.Argv)
 		}
 	}
 }
 
-// A global flag taking a separate value must not have its value mistaken for
-// the subcommand -- `docker --context foo build .` is still a build.
-func TestRewriteFindsBuildBehindGlobalFlags(t *testing.T) {
-	home := t.TempDir()
-	for _, args := range [][]string{
-		{"--context", "foo", "build", "."},
-		{"--log-level=debug", "build", "."},
-		{"-H", "unix:///x.sock", "buildx", "build", "."},
-	} {
-		if got := Rewrite(args, home); !got.Injected {
-			t.Fatalf("expected injection for %v, got %v", args, got.Argv)
-		}
+func TestGlobalFlagsBeforeTheSubcommandAreHandled(t *testing.T) {
+	withMaterial(t)
+	// A value-taking global flag would otherwise hide the subcommand behind it.
+	argv := argvAfterDocker(t, dockercache.Rewrite([]string{"--context", "remote", "build", "."}))
+	if argv[0] != "--context" || argv[1] != "remote" {
+		t.Errorf("global flags were reordered: %v", argv)
 	}
-	// ...and a value that merely looks like a subcommand is not one.
-	if got := Rewrite([]string{"--context", "build", "ps"}, home); got.Injected {
-		t.Fatalf("--context's value must not be read as the subcommand: %v", got.Argv)
+	if !slices.Contains(argv, "--builder") {
+		t.Errorf("build behind a global flag was not rewritten: %v", argv)
 	}
 }
 
-// A read-only or missing cache volume must degrade to an uncached build, never
-// break the user's command.
-func TestRewriteFallsBackWhenCacheDirUnusable(t *testing.T) {
-	home := filepath.Join(t.TempDir(), "nope")
-	if err := os.WriteFile(home, []byte("not a dir"), 0o644); err != nil {
-		t.Fatalf("write file: %v", err)
+func TestWithoutClientMaterialTheBuildStaysLocal(t *testing.T) {
+	// No certificate means the mediator cannot authenticate this sandbox, so
+	// there is no pool builder to reach. Building locally is worse than sharing
+	// a cache and far better than failing.
+	dockercache.SetMaterialDir(t.TempDir())
+	got := dockercache.Rewrite([]string{"build", "."})
+	if got.Rewritten {
+		t.Error("build was pointed at a builder this sandbox cannot authenticate to")
 	}
-	got := Rewrite([]string{"build", "."}, home)
-	if got.Injected {
-		t.Fatalf("expected pass-through when cache dir cannot be created: %v", got.Argv)
-	}
-	if !slices.Equal(got.Argv, []string{RealDocker, "build", "."}) {
-		t.Fatalf("argv = %v", got.Argv)
+}
+
+func TestTheShimNeverInjectsCacheFlags(t *testing.T) {
+	withMaterial(t)
+	argv := argvAfterDocker(t, dockercache.Rewrite([]string{"build", "."}))
+	// A shared builder's cache is its own state. Cache flags would reintroduce
+	// the per-sandbox import/export this design exists to remove.
+	for _, flag := range argv {
+		if strings.HasPrefix(flag, "--cache-from") || strings.HasPrefix(flag, "--cache-to") {
+			t.Errorf("cache flag %q reintroduced: %v", flag, argv)
+		}
 	}
 }

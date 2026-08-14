@@ -1,35 +1,33 @@
-// Package dockercache rewrites a sandbox user's `docker build` invocation to
-// import and export a BuildKit local cache on the pool-shared cache volume, so
-// a build in one sandbox is reused by every other sandbox in the same pool.
+// Package dockercache points a sandbox user's `docker build` at the pool-shared
+// BuildKit builder, so a build in one sandbox is reused by every other sandbox
+// in the same pool.
 //
-// This is a PATH shim over the `docker` CLI rather than daemon configuration
-// because there is no daemon- or buildx-side setting for a default
-// --cache-from/--cache-to: the flags exist only on the build command line, so
-// the command line is the only place they can be injected. The sandbox user's
-// own Dockerfiles and commands stay unchanged, which is the same requirement
-// that shaped docs/adr/0015.
+// This is a PATH shim over the `docker` CLI because `docker build` cannot be
+// pointed at a builder any other way. Measured against a mediator counting
+// solves, with a clean DOCKER_CONFIG holding exactly one builder:
 //
-// A single shared cache directory is deliberate. BuildKit's local cache is an
-// OCI layout whose blobs are content-addressed, so two sandboxes exporting the
-// same layer converge on one file; giving each sandbox its own directory would
-// instead store a private copy of every layer (mode=max exports intermediate
-// layers too, so the duplication is total). Concurrent export is safe enough to
-// rely on: buildkit's client/ociindex takes an exclusive flock around index.json
-// and merges into it rather than overwriting, and content-store blob writes land
-// via ingest-then-rename. See Limitations below for the residual race.
+//	docker buildx build (no flag)                  -> uses the selected builder
+//	docker build --builder <name>                  -> uses it
+//	BUILDX_BUILDER=<name> docker build             -> uses it, but loses --load
+//	docker build, selected via `buildx use`        -> IGNORES it
 //
-// # Limitations
+// Bare `docker build` pins the `default` instance whatever is selected —
+// buildx's own --debug output reports `building with "default" instance using
+// docker driver` — so only an explicit flag routes it. BUILDX_BUILDER routes but
+// drops the image into the build cache unless every invocation also passes
+// --load, which fails the "works out of the box" requirement.
 //
-// index.json is locked with TryLock, not a blocking Lock, so two builds whose
-// exports overlap in that brief final window can surface "could not lock" and
-// fail the solve. Re-running the build succeeds (and hits the cache it just
-// wrote). This shim deliberately does not capture output to detect and retry
-// that: piping the build's stderr would drop Docker out of TTY progress mode,
-// which is a worse everyday cost than a rare, self-healing failure.
+// Only build commands are rewritten; everything else is exec'd straight through,
+// and `docker buildx` is left entirely alone. `docker buildx use default` remains
+// the user's escape hatch back to the in-sandbox builder.
+//
+// See docs/adr/0039-builds-run-on-a-pool-shared-buildkit.md.
 package dockercache
 
 import (
+	"context"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 )
@@ -38,80 +36,105 @@ import (
 // /usr/local/bin/docker, ahead of this on PATH.
 const RealDocker = "/usr/bin/docker"
 
-// cacheSubdir is appended to the user's home directory. It sits under
-// ~/.cache so it rides whatever the sandbox already backs that directory with,
-// rather than naming a second cache location of its own.
-const cacheSubdir = ".cache/discobox/buildkit"
+const (
+	// BuilderName is the buildx instance pointing at the pool's mediator.
+	BuilderName = "discobox-pool"
 
-// CacheDir returns the shared BuildKit cache directory for the given home
-// directory.
-func CacheDir(home string) string {
-	return filepath.Join(home, cacheSubdir)
-}
+	// MediatorURL is the mediator's endpoint. The host is the pool's network
+	// alias, so the mTLS ServerName check holds whatever address the pool has.
+	MediatorURL = "tcp://discobox-pool-proxy:17081"
+
+	// proxyMaterial holds the client certificate the sandbox already uses for
+	// the egress proxy. Reusing it is the point: client ID is the sandbox ID,
+	// which is already the proxy's tenant boundary, so a build and its egress
+	// are attributed to the same subject and no new key material exists.
+	proxyMaterial = "/etc/discobox/proxy"
+)
+
+// materialDir is where the sandbox's client material lives. It is a variable
+// only so tests can point it at a fixture; production never reassigns it.
+var materialDir = proxyMaterial
 
 // Args is the result of rewriting a docker command line.
 type Args struct {
 	// Argv is the full argument vector to exec, including argv[0].
 	Argv []string
-	// Injected reports whether cache flags were added. False means the
-	// command was passed through untouched.
-	Injected bool
+	// Rewritten reports whether the command was pointed at the pool builder.
+	// False means it was passed through untouched.
+	Rewritten bool
 }
 
 // Rewrite returns the command line to exec for a user's `docker` invocation.
-// args excludes argv[0]. Anything that is not a build command, and any build
-// that already carries its own cache flags, is passed through unchanged so an
-// explicit user choice always wins.
-func Rewrite(args []string, home string) Args {
+// args excludes argv[0].
+func Rewrite(args []string) Args {
 	pass := func() Args {
 		return Args{Argv: append([]string{RealDocker}, args...)}
-	}
-
-	// Without an absolute home there is no well-defined cache location, and a
-	// relative one would be created wherever the user happened to be.
-	if !filepath.IsAbs(home) {
-		return pass()
 	}
 	kind, idx := buildCommand(args)
 	if kind == notBuild {
 		return pass()
 	}
-	if hasCacheFlag(args[idx:]) {
+	// An explicit --builder is the user saying where this build goes; a shim
+	// that overrode it would take away the escape hatch.
+	if hasBuilderFlag(args[idx:]) {
+		return pass()
+	}
+	if !poolBuilderAvailable() {
+		// No client material means no pool builder to reach. Building locally
+		// is worse than sharing a cache, but far better than failing.
 		return pass()
 	}
 
-	dir := CacheDir(home)
-	if err := os.MkdirAll(dir, 0o755); err != nil {
-		// The cache volume may be missing or read-only. A build that runs
-		// without cache is strictly better than one that fails to start.
-		return pass()
+	rewritten := make([]string, 0, len(args)+6)
+	rewritten = append(rewritten, args[:idx]...)
+	// `docker build` is an alias for `docker buildx build`, but it pins the
+	// default instance. Spelling out the subcommand is what lets --builder take
+	// effect.
+	rewritten = append(rewritten, "buildx", "build", "--builder", BuilderName)
+	if !hasOutputFlag(args[idx:]) {
+		// `docker build` puts its result in the local image store. A remote
+		// builder does not, so without this the image silently vanishes into
+		// the build cache — including for an untagged build, which has no name
+		// to push anywhere and can only come back this way.
+		rewritten = append(rewritten, "--load")
 	}
+	rewritten = append(rewritten, args[idx+1:]...)
+	return Args{Argv: append([]string{RealDocker}, rewritten...), Rewritten: true}
+}
 
-	rewritten := make([]string, 0, len(args)+4)
-	if kind == buildLegacy {
-		// `docker build` runs the classic builder, which has no --cache-to.
-		// Only `docker buildx build` speaks the BuildKit exporter flags, so
-		// the invocation is promoted. The containerd image store
-		// (daemon.json features.containerd-snapshotter) is what makes the
-		// result of a buildx build directly runnable, so this promotion does
-		// not strand the image behind a missing --load.
-		rewritten = append(rewritten, args[:idx]...)
-		rewritten = append(rewritten, "buildx", "build")
-		rewritten = append(rewritten, args[idx+1:]...)
-	} else {
-		rewritten = append(rewritten, args...)
+// poolBuilderAvailable reports whether this sandbox has the client material the
+// mediator requires. Without it the connection cannot be authenticated, so
+// there is no point rewriting the command.
+func poolBuilderAvailable() bool {
+	for _, name := range []string{"mtls-ca.crt", "client.crt", "client.key"} {
+		if _, err := os.Stat(filepath.Join(materialDir, name)); err != nil {
+			return false
+		}
 	}
+	return true
+}
 
-	// Import only when a previous export exists: pointing --cache-from at an
-	// empty directory makes BuildKit report a missing-cache error.
-	if _, err := os.Stat(filepath.Join(dir, "index.json")); err == nil {
-		rewritten = append(rewritten, "--cache-from", "type=local,src="+dir)
+// EnsureBuilder creates the buildx instance if it does not exist yet.
+//
+// It runs lazily, on the first build, rather than at boot: buildx state lives
+// under the invoking user's $DOCKER_CONFIG, which is on the sandbox's
+// persistent data volume, so a boot-time provision would have to guess the user
+// and would leave a stale definition behind whenever the endpoint or the
+// certificate paths changed.
+func EnsureBuilder(ctx context.Context) error {
+	if exec.CommandContext(ctx, RealDocker, "buildx", "inspect", BuilderName).Run() == nil {
+		return nil
 	}
-	// mode=max exports intermediate layers, not just the final ones, which is
-	// what makes a *different* Dockerfile sharing early stages hit the cache.
-	rewritten = append(rewritten, "--cache-to", "type=local,dest="+dir+",mode=max")
-
-	return Args{Argv: append([]string{RealDocker}, rewritten...), Injected: true}
+	opts := strings.Join([]string{
+		"cacert=" + filepath.Join(materialDir, "mtls-ca.crt"),
+		"cert=" + filepath.Join(materialDir, "client.crt"),
+		"key=" + filepath.Join(materialDir, "client.key"),
+		"servername=discobox-pool-proxy",
+	}, ",")
+	//nolint:gosec // Every argument is a package constant; none comes from the user's command line.
+	return exec.CommandContext(ctx, RealDocker, "buildx", "create",
+		"--name", BuilderName, "--driver", "remote",
+		"--driver-opt", opts, MediatorURL).Run()
 }
 
 type buildKind int
@@ -119,7 +142,6 @@ type buildKind int
 const (
 	notBuild buildKind = iota
 	buildLegacy
-	buildBuildx
 )
 
 // buildCommand locates the build subcommand, returning its kind and the index
@@ -135,11 +157,9 @@ func buildCommand(args []string) (buildKind, int) {
 	case "build":
 		return buildLegacy, i
 	case "buildx":
-		j, ok := nextOperand(args, i+1)
-		if !ok || args[j] != "build" {
-			return notBuild, 0
-		}
-		return buildBuildx, j
+		// `docker buildx` is left alone: a user reaching for it directly has
+		// chosen their own builder semantics.
+		return notBuild, 0
 	default:
 		return notBuild, 0
 	}
@@ -173,11 +193,25 @@ var globalFlagsWithValue = map[string]bool{
 	"--tlskey": true,
 }
 
-// hasCacheFlag reports whether the user already specified cache handling.
-func hasCacheFlag(args []string) bool {
+// hasBuilderFlag reports whether the user chose a builder themselves.
+func hasBuilderFlag(args []string) bool {
 	for _, a := range args {
-		if a == "--cache-from" || a == "--cache-to" ||
-			strings.HasPrefix(a, "--cache-from=") || strings.HasPrefix(a, "--cache-to=") {
+		if a == "--builder" || strings.HasPrefix(a, "--builder=") {
+			return true
+		}
+	}
+	return false
+}
+
+// hasOutputFlag reports whether the user already said where the result goes.
+// Adding --load on top of --push or an explicit --output would override a
+// deliberate choice.
+func hasOutputFlag(args []string) bool {
+	for _, a := range args {
+		switch {
+		case a == "--load", a == "--push", a == "-o", a == "--output":
+			return true
+		case strings.HasPrefix(a, "--output="), strings.HasPrefix(a, "-o="):
 			return true
 		}
 	}
