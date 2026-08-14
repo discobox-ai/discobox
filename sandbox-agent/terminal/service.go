@@ -256,6 +256,79 @@ func (s *Service) Create(ctx context.Context, req CreateRequest) (execs.Exec, er
 	return created, nil
 }
 
+// Revive relaunches a dead terminal-mode exec in place under its own id: a
+// terminal's exec id is its durable identity (ADR 0038), so attaching to or
+// starting an ended terminal resumes it rather than addressing a dead record.
+// The harness's relaunch command runs as a fresh login shell's typed-in job
+// (ADR 0027) in a new unit generation, with env and secrets re-resolved
+// exactly as Create resolves them. A live terminal is returned untouched;
+// non-terminal execs are never revived.
+func (s *Service) Revive(ctx context.Context, id string) (execs.Exec, error) {
+	exec, ok := s.execs.Get(id)
+	if !ok {
+		return execs.Exec{}, ErrNotFound
+	}
+	if HarnessID(exec) == "" {
+		return execs.Exec{}, fmt.Errorf("exec %s is not a terminal", id)
+	}
+	switch exec.Status {
+	case execs.StatusExited, execs.StatusFailed, execs.StatusLost:
+	default:
+		return exec, nil
+	}
+	harness, harnessID, err := s.resolveHarness(HarnessID(exec))
+	if err != nil {
+		return execs.Exec{}, err
+	}
+	base := s.env
+	if s.secretEnv != nil {
+		// Read fresh at every run, same as Create: sentinels rotate
+		// independently of sandbox.json (ADR 0012 §3).
+		base = execs.MergeEnv(base, s.secretEnv())
+	}
+	env := execs.EnvWithRuntimeDefaults(execs.MergeEnv(base, nil), s.defaultUser)
+	env["DISCOBOX_TERMINAL_ID"] = id
+	if s.hookSocketPath != "" {
+		env["DISCOBOX_HOOK_SOCKET"] = s.hookSocketPath
+	}
+	// Hook and file setup is idempotent and re-ensured per run — the previous
+	// run's environment may predate a reboot or a config change.
+	s.markInstalling(id)
+	defer s.unmarkInstalling(id)
+	if err := s.installer.EnsureInstalled(ctx, harness, exec.Workdir, env); err != nil {
+		return execs.Exec{}, err
+	}
+	revived, err := s.execs.Relaunch(ctx, execs.RelaunchRequest{
+		ID:             id,
+		Env:            env,
+		User:           cloneUser(s.defaultUser),
+		StartupCommand: reviveStartupCommand(harness, harnessID, s.harnessMode),
+	})
+	if err != nil {
+		return execs.Exec{}, err
+	}
+	return s.execs.Start(ctx, revived.ID)
+}
+
+// reviveStartupCommand is the command a revived terminal types into its fresh
+// login shell: the harness's relaunch (resume) command when it has one, the
+// bare harness command otherwise — never the initial prompt, which belongs to
+// the terminal's first run only. The shell harness types nothing (the shell IS
+// the terminal, recorded as the exec's own command), and config mode always
+// runs the image-owned command exactly (see EnsurePrimary).
+func reviveStartupCommand(harness config.Harness, harnessID, harnessMode string) []string {
+	switch {
+	case harnessID == ShellHarnessID:
+		return nil
+	case harnessMode == "config":
+		return append([]string{}, harness.Command...)
+	case len(harness.RelaunchCommand) > 0:
+		return append([]string{}, harness.RelaunchCommand...)
+	default:
+		return append([]string{}, harness.Command...)
+	}
+}
+
 // markInstalling records that an exec's harness setup is running.
 func (s *Service) markInstalling(id string) {
 	s.installingMu.Lock()
@@ -351,14 +424,34 @@ const ShellHarnessID = "shell"
 
 // EnsurePrimary launches the sandbox's primary terminal on sandbox start. Every
 // sandbox has one: on the first start it runs the resolved harness with the
-// sandbox prompt as arguments, on subsequent starts it runs the harness's relaunch
-// command to resume the previous session, and when no harness is configured it
-// runs a plain shell. It is a no-op when a live primary terminal already exists.
+// sandbox prompt as arguments, on subsequent starts it revives the existing
+// primary record in place (ADR 0038) — same exec id, running the harness's
+// relaunch command — and when no harness is configured it runs a plain shell.
+// It is a no-op when a live primary terminal already exists.
 func (s *Service) EnsurePrimary(ctx context.Context, prompt []string) error {
+	var newest *execs.Exec
 	for _, existing := range s.List() {
-		if IsPrimary(existing) && (existing.Status == execs.StatusStarting || existing.Status == execs.StatusRunning) {
+		if !IsPrimary(existing) {
+			continue
+		}
+		if existing.Status == execs.StatusStarting || existing.Status == execs.StatusRunning {
 			return nil
 		}
+		if newest == nil || existing.CreatedAt.After(newest.CreatedAt) {
+			e := existing
+			newest = &e
+		}
+	}
+	if newest != nil {
+		// A dead primary is revived under its own id, never replaced by a
+		// sibling record. Newest wins over records that predate ADR 0038.
+		if _, err := s.Revive(ctx, newest.ID); err != nil {
+			return err
+		}
+		if s.primaryState != nil {
+			return s.primaryState.MarkPrimaryTerminalLaunched(ctx)
+		}
+		return nil
 	}
 	harness, harnessID, err := s.resolveHarness("")
 	if err != nil {

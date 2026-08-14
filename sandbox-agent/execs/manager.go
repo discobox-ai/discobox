@@ -4,10 +4,12 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"net/http"
 	"os"
 	"path/filepath"
 	"sort"
+	"strconv"
 	"strings"
 	"time"
 
@@ -546,6 +548,125 @@ func (m *Manager) Start(ctx context.Context, id string) (Exec, error) {
 	_ = m.observe(ctx, current)
 	_ = m.recordEvent(ctx, id, "exec.started", "exec started", map[string]any{"unit": current.Unit, "pid": current.PID})
 	return cloneExec(current), nil
+}
+
+// RelaunchRequest carries the per-run inputs for reviving an existing exec
+// record under a new transient-unit generation (ADR 0038). Identity fields —
+// id, command, workdir, TTY, metadata — come from the record; env and user are
+// supplied fresh by the caller because they are not persisted durably and are
+// deliberately re-resolved per run (e.g. live secret sentinels, ADR 0012 §3).
+type RelaunchRequest struct {
+	ID             string
+	Env            map[string]string
+	User           *User
+	StartupCommand []string
+	Rows           uint16
+	Cols           uint16
+}
+
+// Relaunch revives an ended exec record in place: same exec id, socket, and
+// runtime paths, a fresh transient unit generation. The exec id is the durable
+// identity a terminal keeps across runs (ADR 0038); Relaunch itself stays a
+// generic exec primitive — what command a revived terminal resumes with is the
+// terminal layer's business, carried here as StartupCommand like any other.
+// A record that is still starting or running is returned untouched.
+func (m *Manager) Relaunch(ctx context.Context, req RelaunchRequest) (Exec, error) {
+	exec, ok := m.Get(req.ID)
+	if !ok {
+		return Exec{}, ErrNotFound
+	}
+	switch exec.Status {
+	case StatusExited, StatusFailed, StatusLost:
+	default:
+		return cloneExec(exec), nil
+	}
+	if len(exec.Command) == 0 {
+		return Exec{}, fmt.Errorf("exec %s has no recorded command to relaunch", req.ID)
+	}
+	user, err := m.ResolveUser(CreateRequest{User: req.User})
+	if err != nil {
+		return Exec{}, err
+	}
+	env := EnvWithRuntimeDefaults(MergeEnv(m.env, req.Env), user)
+	// Fence the previous run: the shim outlives its command to serve replay,
+	// and it holds the socket path the new generation must bind. Only an ended
+	// run is ever fenced — the status switch above returns live ones untouched.
+	if err := m.units.Stop(ctx, exec.Unit); err != nil {
+		return Exec{}, err
+	}
+	_ = os.Remove(exec.SocketPath)
+	current := m.withRuntimePaths(exec)
+	current.Status = StatusStarting
+	current.StartupCommand = append([]string{}, req.StartupCommand...)
+	current.Env = cloneMap(env)
+	current.User = user.Clone()
+	current.Unit = nextUnitGeneration(exec.ID, exec.Unit)
+	current.PID = 0
+	current.ExitCode = nil
+	current.Error = ""
+	current.StartedAt = nil
+	current.ExitedAt = nil
+	current.AttacherCount = 0
+	current.Title = ""
+	current.LastAccessedAt = nil
+	if err := writeRuntime(current.RuntimePath, current); err != nil {
+		return Exec{}, err
+	}
+	_ = m.observe(ctx, current)
+	_ = m.recordEvent(ctx, current.ID, "exec.relaunched", "exec relaunched", map[string]any{
+		"unit":    current.Unit,
+		"command": current.Command,
+	})
+	result, err := m.units.Start(ctx, StartRequest{
+		ID:             current.ID,
+		Unit:           current.Unit,
+		Command:        current.Command,
+		StartupCommand: current.StartupCommand,
+		Workdir:        current.Workdir,
+		Env:            cloneMap(env),
+		User:           user.Clone(),
+		TTY:            current.TTY,
+		Metadata:       cloneMap(current.Metadata),
+		SocketPath:     current.SocketPath,
+		RuntimePath:    current.RuntimePath,
+		DatabasePath:   m.databasePath,
+		Rows:           req.Rows,
+		Cols:           req.Cols,
+	})
+	if err != nil {
+		current.Status = StatusFailed
+		current.Error = err.Error()
+		exitedAt := time.Now().UTC()
+		current.ExitedAt = &exitedAt
+		_ = writeRuntime(current.RuntimePath, current)
+		_ = m.observe(ctx, current)
+		_ = m.recordEvent(ctx, current.ID, "exec.start.failed", "exec start failed", map[string]any{"error": err.Error()})
+		return current, err
+	}
+	if result.Unit != "" {
+		current.Unit = result.Unit
+	}
+	_ = writeRuntime(current.RuntimePath, current)
+	_ = m.observe(ctx, current)
+	_ = m.recordEvent(ctx, current.ID, "exec.prepared", "exec prepared", map[string]any{"unit": current.Unit})
+	return cloneExec(current), nil
+}
+
+// nextUnitGeneration names the transient unit for an exec's next run. Every
+// run gets its own unit (ADR 0038 §2): systemd retains transient-unit state
+// after exit, so reusing a name would need a reset-failed dance and would make
+// the audit trail's unit references ambiguous across runs. The first run is
+// the bare "discobox-exec-<id>" (see Create); revives append -g2, -g3, …,
+// which the "discobox-exec-*" listing glob still matches.
+func nextUnitGeneration(id, current string) string {
+	base := "discobox-exec-" + id
+	generation := 2
+	if suffix, ok := strings.CutPrefix(current, base+"-g"); ok {
+		if n, err := strconv.Atoi(suffix); err == nil && n >= generation {
+			generation = n + 1
+		}
+	}
+	return base + "-g" + strconv.Itoa(generation)
 }
 
 func (m *Manager) Attach(ctx context.Context, w http.ResponseWriter, r *http.Request, id string, replay bool) error {

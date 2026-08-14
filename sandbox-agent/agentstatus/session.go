@@ -32,7 +32,10 @@ const hookHistoryLimit = 200
 // filters to terminal-mode execs (every terminal carries a harnessId — shell
 // is a harness too, ADR 0032). One-shot commands are not sessions and never
 // appear; a terminal that has ended still does, with its exited or failed
-// state, for as long as its record exists — deletion is what removes it.
+// state, for as long as its record exists — deletion is what removes it. A
+// terminal revives in place under its own exec id (ADR 0038), so the list
+// holds one entry per terminal identity, showing its current run's state; an
+// ended entry means "not running, revivable by attach", not a dead sibling.
 func ComputeSessionStatus(ctx context.Context, all []execs.Exec, harnessTypeID string, hooks HookLister) []SessionStatus {
 	deriver := sessionStateDeriverFor(harnessTypeID)
 	var out []SessionStatus

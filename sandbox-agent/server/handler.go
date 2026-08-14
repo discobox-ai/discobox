@@ -52,19 +52,29 @@ func (h *handler) AttachSandboxExecOnce(context.Context, sandboxapi.AttachSandbo
 	return sandboxapi.AttachSandboxExecOnceOK{}, statusError{status: http.StatusNotImplemented, message: "sandbox exec one-shot attach is not implemented by generated handler"}
 }
 
-// resolveExecID maps the virtual primary exec id to the sandbox's current
-// primary terminal, relaunching it when it has stopped; every other id passes
-// through unchanged. Use it for attach/start, where resuming a stopped primary
-// is the goal.
+// resolveExecID maps the virtual primary exec id to the sandbox's primary
+// terminal, and revives a dead terminal addressed by its own id (ADR 0038): a
+// terminal's exec id is its durable identity, so attach/start on an ended
+// terminal resumes it in place rather than addressing a dead record. Plain
+// (non-terminal) exec ids pass through unchanged. Use it for attach/start,
+// where resuming is the goal.
 func (h *handler) resolveExecID(ctx context.Context, execID string) (string, error) {
-	if execID != terminal.PrimaryExecID {
-		return execID, nil
+	if execID == terminal.PrimaryExecID {
+		exec, err := h.terminals.ResolvePrimary(ctx)
+		if err != nil {
+			return "", err
+		}
+		return exec.ID, nil
 	}
-	exec, err := h.terminals.ResolvePrimary(ctx)
-	if err != nil {
-		return "", err
+	if exec, ok := h.execs.Get(execID); ok && terminal.HarnessID(exec) != "" {
+		switch exec.Status {
+		case execs.StatusExited, execs.StatusFailed, execs.StatusLost:
+			if _, err := h.terminals.Revive(ctx, execID); err != nil {
+				return "", err
+			}
+		}
 	}
-	return exec.ID, nil
+	return execID, nil
 }
 
 // resolveExecIDReadOnly maps the virtual primary exec id to the current primary
@@ -104,9 +114,10 @@ func (h *handler) attachExecHTTP(w http.ResponseWriter, r *http.Request, execID 
 	}
 }
 
-// sessionGoneMessage explains an attach to an exec whose session has ended, and
-// points at the recovery: the primary terminal is relaunchable through the
-// virtual "primary" exec id, while any other exec has to be recreated.
+// sessionGoneMessage explains an attach to an exec whose session has ended,
+// and points at the recovery: any terminal revives under its own id on the
+// next attach (ADR 0038) — reaching here means this one's revive failed —
+// while a plain exec has to be recreated.
 func (h *handler) sessionGoneMessage(execID string) string {
 	message := "sandbox exec " + execID + " has ended"
 	exec, ok := h.execs.Get(execID)
@@ -119,8 +130,8 @@ func (h *handler) sessionGoneMessage(execID string) string {
 		}
 	}
 	message += " and its session is no longer available to attach"
-	if ok && terminal.IsPrimary(exec) {
-		return message + `; attach exec id "` + terminal.PrimaryExecID + `" to relaunch the sandbox's primary terminal`
+	if ok && terminal.HarnessID(exec) != "" {
+		return message + "; attach it again to relaunch it"
 	}
 	return message + "; create a new exec to run it again"
 }

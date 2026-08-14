@@ -21,7 +21,7 @@ runtime operations.
 | `execs` | The sandbox runtime primitive: exec lifecycle, runtime metadata, systemd unit abstraction, stdout/stderr or PTY logging, shim launch, status socket, and attach. Harness terminals are execs. |
 | `execs` (`shim.go`) | Per-exec child process: the local Unix socket attach/status/start API, the audit log, and the runtime status file. It no longer owns the process itself — see `procio`. |
 | `procio` | Running a process and owning its descriptors: PTY versus pipes, stdin close, signal mapping, and exit status. No sockets, no frames, no attach — which is what makes its traps testable with a real process and nothing else. |
-| `terminal` | Harness-terminal layer built on top of `execs`: image harness resolution, hook/file setup, and primary-terminal lifecycle. A terminal is an exec created in harness mode, tagged `harnessId`/`primary` in exec metadata; all runtime mechanics belong to `execs`. |
+| `terminal` | Harness-terminal layer built on top of `execs`: image harness resolution, hook/file setup, primary-terminal lifecycle, and revive-in-place. A terminal is an exec created in harness mode, tagged `harnessId`/`primary` in exec metadata, and its exec id is its durable identity across runs (ADR 0038); all runtime mechanics belong to `execs`. |
 | `shimruntime` | The platform half of an exec attach: Unix socket setup, the HTTP upgrade, the PTY, and the screen emulator behind repaint-on-attach. The stream itself — attachers, ordering, buffering, exit retention — is the root module's `execstream/host`, which this drives and implements `host.Replayer` for. |
 | `hooks` | Local Unix-socket collector and publisher protocol for coding-harness lifecycle hook payloads. |
 | `runcca` | The sandbox's runc wrapper (`cmd/discobox-runc`): installed as `runc` ahead of the real one on containerd's and dockerd's PATH, it mounts the sandbox's CA trust bundles and injects proxy-trust env into every container's OCI spec, so a user's Dockerfile or `docker run` never needs MITM awareness. See ADR 0020, which supersedes 0015's NRI plugin — containerd invokes NRI only from its CRI path, which dockerd does not use. Handles both `runc create` (the `docker run` path, via the containerd shim) and `runc run` (the `docker build` path, via BuildKit's executor). Bundles are staged per boot by `discobox-trust-ca.service` under `/run/discobox/proxy/ca-bundles`; they cannot live beside the CA in `/etc/discobox/proxy`, which is pool-agent's read-only mount. |
@@ -80,7 +80,9 @@ runtime operations.
   not preserve stale `starting` or `running` state when the unit is gone. "Gone"
   means unloaded, not inactive: `systemctl show` succeeds for a unit systemd
   never heard of and calls it inactive, so `UnitStatus.Loaded` — not a status
-  error — is what demotes a vanished exec to `lost`.
+  error — is what demotes a vanished exec to `lost`. For a terminal, `exited`/
+  `failed`/`lost` means "not running, revivable" rather than gone: its exec id
+  is a durable identity, and attach/start relaunches it in place (ADR 0038).
 - Resolve an exec's workdir after its run user and env, never before: an empty
   request takes the sandbox's configured default (the primary source
   directory), a relative path joins the working root, and a leading `~`/`~/`
@@ -109,9 +111,18 @@ runtime operations.
   the `shell` fallback (which already is the shell) — `StartupCommand` set to the
   resolved harness command. `execs.Manager` never learns what a harness is;
   `StartupCommand` is a generic exec-primitive capability, not a harness concept.
-  Plain execs and terminals currently use separate `execs.Manager` instances
-  (distinct runtime dirs); the API-level merge to a single `/execs` surface is
-  pending.
+  One `execs.Manager` runtime backs both plain execs and terminals.
+- A terminal's exec id is its durable identity (ADR 0038). Attaching to or
+  starting an ended terminal — its own id or the virtual `primary` alias —
+  revives it in place: `terminal.Service.Revive` re-resolves env/secrets and
+  the harness relaunch command (never the initial prompt), re-ensures hooks and
+  files, and calls the generic `execs.Manager.Relaunch`, which fences the old
+  run and starts a fresh transient unit generation (`discobox-exec-<id>-g<N>`)
+  under the same exec id, socket, and runtime paths. Exec fields describe the
+  current run; per-run history stays in the append-only event log and
+  transcript store. Plain execs are never revived. `EnsurePrimary` revives the
+  newest dead primary record on later boots instead of creating a sibling, so
+  the session list holds one entry per terminal identity.
 - A harness terminal never execs the harness binary directly. `execs.Manager`
   resolves `Shell: true` to the run user's login shell (as for a plain `shell:
   true` exec) and reports that shell as the exec's `Command` — what is literally
