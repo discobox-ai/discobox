@@ -10,18 +10,16 @@ import (
 	"github.com/obot-platform/discobox/sandbox-agent/dockercache"
 )
 
-// withMaterial stages the client certificate material a sandbox is given, which
-// is what makes the pool builder reachable at all.
+// withMaterial stages the forwarder config pool-agent writes for a sandbox
+// whose pool runs a builder, which is what makes one reachable at all.
 func withMaterial(t *testing.T) {
 	t.Helper()
-	dir := t.TempDir()
-	for _, name := range []string{"mtls-ca.crt", "client.crt", "client.key"} {
-		if err := os.WriteFile(filepath.Join(dir, name), []byte("x"), 0o600); err != nil {
-			t.Fatalf("stage %s: %v", name, err)
-		}
+	path := filepath.Join(t.TempDir(), "bridge-buildkit.json")
+	if err := os.WriteFile(path, []byte("{}"), 0o600); err != nil {
+		t.Fatalf("stage forwarder config: %v", err)
 	}
-	dockercache.SetMaterialDir(dir)
-	t.Cleanup(func() { dockercache.SetMaterialDir(t.TempDir()) })
+	dockercache.SetBridgeConfigPath(path)
+	t.Cleanup(func() { dockercache.SetBridgeConfigPath(filepath.Join(t.TempDir(), "absent")) })
 }
 
 func argvAfterDocker(t *testing.T, got dockercache.Args) []string {
@@ -124,11 +122,10 @@ func TestGlobalFlagsBeforeTheSubcommandAreHandled(t *testing.T) {
 	}
 }
 
-func TestWithoutClientMaterialTheBuildStaysLocal(t *testing.T) {
-	// No certificate means the mediator cannot authenticate this sandbox, so
-	// there is no pool builder to reach. Building locally is worse than sharing
-	// a cache and far better than failing.
-	dockercache.SetMaterialDir(t.TempDir())
+func TestWithoutAPoolBuilderTheBuildStaysLocal(t *testing.T) {
+	// No forwarder config means this pool runs no builder. Building locally is
+	// worse than sharing a cache and far better than failing.
+	dockercache.SetBridgeConfigPath(filepath.Join(t.TempDir(), "absent"))
 	got := dockercache.Rewrite([]string{"build", "."})
 	if got.Rewritten {
 		t.Error("build was pointed at a builder this sandbox cannot authenticate to")

@@ -28,7 +28,6 @@ import (
 	"context"
 	"os"
 	"os/exec"
-	"path/filepath"
 	"strings"
 )
 
@@ -40,20 +39,25 @@ const (
 	// BuilderName is the buildx instance pointing at the pool's mediator.
 	BuilderName = "discobox-pool"
 
-	// MediatorURL is the mediator's endpoint. The host is the pool's network
-	// alias, so the mTLS ServerName check holds whatever address the pool has.
-	MediatorURL = "tcp://discobox-pool-proxy:17081"
+	// MediatorURL is the sandbox-local forwarder that fronts the pool's
+	// BuildKit mediator. It is plaintext loopback, private to this sandbox.
+	//
+	// buildx is not pointed at the mediator directly, even though it can carry
+	// a client certificate: builds run as the sandbox user, the mTLS client key
+	// is root-owned, and making that key readable by every process in the
+	// sandbox to suit one tool would hand out the sandbox's proxy identity.
+	// The forwarder holds the key instead, exactly as the HTTP proxy bridge
+	// does for every other client that cannot present one.
+	MediatorURL = "tcp://127.0.0.1:17082"
 
-	// proxyMaterial holds the client certificate the sandbox already uses for
-	// the egress proxy. Reusing it is the point: client ID is the sandbox ID,
-	// which is already the proxy's tenant boundary, so a build and its egress
-	// are attributed to the same subject and no new key material exists.
-	proxyMaterial = "/etc/discobox/proxy"
+	// bridgeConfig is written by pool-agent for a sandbox whose pool runs a
+	// builder. Its absence is what tells this shim to leave a build alone.
+	bridgeConfig = "/etc/discobox/proxy/bridge-buildkit.json"
 )
 
-// materialDir is where the sandbox's client material lives. It is a variable
-// only so tests can point it at a fixture; production never reassigns it.
-var materialDir = proxyMaterial
+// bridgeConfigPath locates the forwarder's config. It is a variable only so
+// tests can point it at a fixture; production never reassigns it.
+var bridgeConfigPath = bridgeConfig
 
 // Args is the result of rewriting a docker command line.
 type Args struct {
@@ -80,7 +84,7 @@ func Rewrite(args []string) Args {
 		return pass()
 	}
 	if !poolBuilderAvailable() {
-		// No client material means no pool builder to reach. Building locally
+		// No pool builder to reach. Building locally
 		// is worse than sharing a cache, but far better than failing.
 		return pass()
 	}
@@ -102,16 +106,12 @@ func Rewrite(args []string) Args {
 	return Args{Argv: append([]string{RealDocker}, rewritten...), Rewritten: true}
 }
 
-// poolBuilderAvailable reports whether this sandbox has the client material the
-// mediator requires. Without it the connection cannot be authenticated, so
-// there is no point rewriting the command.
+// poolBuilderAvailable reports whether this sandbox's pool runs a builder. The
+// forwarder's config is written only when it does, so its absence means there
+// is nothing to point a build at.
 func poolBuilderAvailable() bool {
-	for _, name := range []string{"mtls-ca.crt", "client.crt", "client.key"} {
-		if _, err := os.Stat(filepath.Join(materialDir, name)); err != nil {
-			return false
-		}
-	}
-	return true
+	_, err := os.Stat(bridgeConfigPath)
+	return err == nil
 }
 
 // EnsureBuilder creates the buildx instance if it does not exist yet.
@@ -125,16 +125,11 @@ func EnsureBuilder(ctx context.Context) error {
 	if exec.CommandContext(ctx, RealDocker, "buildx", "inspect", BuilderName).Run() == nil {
 		return nil
 	}
-	opts := strings.Join([]string{
-		"cacert=" + filepath.Join(materialDir, "mtls-ca.crt"),
-		"cert=" + filepath.Join(materialDir, "client.crt"),
-		"key=" + filepath.Join(materialDir, "client.key"),
-		"servername=discobox-pool-proxy",
-	}, ",")
+	// No TLS options: the forwarder terminates mTLS on this sandbox's behalf,
+	// so what buildx dials is plaintext loopback.
 	//nolint:gosec // Every argument is a package constant; none comes from the user's command line.
 	return exec.CommandContext(ctx, RealDocker, "buildx", "create",
-		"--name", BuilderName, "--driver", "remote",
-		"--driver-opt", opts, MediatorURL).Run()
+		"--name", BuilderName, "--driver", "remote", MediatorURL).Run()
 }
 
 type buildKind int

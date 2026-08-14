@@ -292,6 +292,7 @@ RUN rustup --version >/dev/null 2>&1 \
 COPY sandbox-agent/image/profile.d/sandbox-dev-tools.sh /etc/profile.d/sandbox-dev-tools.sh
 COPY sandbox-agent/image/systemd/discobox-sandbox-agent.service /etc/systemd/system/discobox-sandbox-agent.service
 COPY sandbox-agent/image/systemd/discobox-proxy-bridge.service /etc/systemd/system/discobox-proxy-bridge.service
+COPY sandbox-agent/image/systemd/discobox-buildkit-bridge.service /etc/systemd/system/discobox-buildkit-bridge.service
 COPY sandbox-agent/image/systemd/discobox-trust-ca.service /etc/systemd/system/discobox-trust-ca.service
 COPY sandbox-agent/image/systemd/discobox-render-proxy-env.service /etc/systemd/system/discobox-render-proxy-env.service
 COPY sandbox-agent/image/systemd/containerd.service.d/runc-ca.conf /etc/systemd/system/containerd.service.d/runc-ca.conf
@@ -335,6 +336,7 @@ RUN chmod 0755 /usr/local/bin/discobox-sandbox-agent \
     && systemctl enable \
         discobox-sandbox-agent.service \
         discobox-proxy-bridge.service \
+        discobox-buildkit-bridge.service \
         discobox-trust-ca.service \
         discobox-render-proxy-env.service \
         x11-display.socket \

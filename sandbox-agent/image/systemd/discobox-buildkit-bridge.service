@@ -1,0 +1,24 @@
+[Unit]
+Description=Discobox Sandbox BuildKit Bridge
+Documentation=https://github.com/obot-platform/discobox
+After=network-online.target
+Wants=network-online.target
+# Absent for a sandbox with no pool builder, which then simply builds locally.
+ConditionPathExists=/etc/discobox/proxy/bridge-buildkit.json
+
+[Service]
+Type=simple
+# The same forwarder the HTTP proxy bridge uses, pointed at the pool's BuildKit
+# mediator. It runs as root because it holds the sandbox's mTLS client key;
+# buildx runs as the sandbox user and cannot read that key, and making the key
+# world-readable to suit one tool would expose the sandbox's proxy identity to
+# every process in it.
+ExecStart=/usr/local/bin/discobox-sandbox-agent proxy-bridge --config /etc/discobox/proxy/bridge-buildkit.json
+StandardOutput=journal+console
+StandardError=journal+console
+Restart=on-failure
+RestartSec=2s
+KillMode=mixed
+
+[Install]
+WantedBy=multi-user.target

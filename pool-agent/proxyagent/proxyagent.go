@@ -68,6 +68,22 @@ const (
 	// processes use as their HTTP/HTTPS/ALL proxy.
 	SandboxForwarderListen = "127.0.0.1:17008"
 
+	// SandboxBuildkitBridgeListen is where a sandbox-local forwarder accepts
+	// plaintext connections for the pool's BuildKit mediator.
+	//
+	// It exists for the same reason the HTTP forwarder does: the client cannot
+	// present the mTLS certificate itself. buildx runs as the sandbox user,
+	// while the client key is root-owned — reading it is not something a
+	// sandbox user can do, and the key must not be world-readable just to make
+	// one tool work. The forwarder runs as root, holds the key, and speaks
+	// plaintext to loopback, which is private to this sandbox.
+	SandboxBuildkitBridgeListen = "127.0.0.1:17082"
+
+	// BuildkitMediatorURL is the pool endpoint that forwarder dials. The port
+	// mirrors buildkitagent.MediatorListen; it is duplicated rather than
+	// imported to keep the proxy wiring independent of the builder's.
+	BuildkitMediatorURL = "https://" + ServerName + ":17081"
+
 	// UnitEnvironmentFile is read by the proxy systemd unit. The pool agent
 	// process writes it so the unit, which runs with a clean systemd
 	// environment, learns which pool it serves and how to reach the control
@@ -489,6 +505,24 @@ func EnsureSandboxMaterial(projectID, poolID, sandboxID string) (*SandboxMateria
 		return nil, fmt.Errorf("write nested-docker bridge config: %w", err)
 	}
 
+	// The sandbox's forwarder for the pool's BuildKit mediator. Unlike the two
+	// above it carries a listen address, because loopback inside the sandbox is
+	// known here and needs no discovery.
+	buildkitBridge := bridgeConfig{
+		ListenAddress:  SandboxBuildkitBridgeListen,
+		PoolProxyURL:   BuildkitMediatorURL,
+		MTLSCAPath:     filepath.Join(SandboxProxyMount, "mtls-ca.crt"),
+		ClientCertPath: filepath.Join(SandboxProxyMount, "client.crt"),
+		ClientKeyPath:  filepath.Join(SandboxProxyMount, "client.key"),
+	}
+	buildkitBridgeJSON, err := json.MarshalIndent(&buildkitBridge, "", "  ")
+	if err != nil {
+		return nil, err
+	}
+	if err := os.WriteFile(resolve(filepath.Join(writeDir, "bridge-buildkit.json")), buildkitBridgeJSON, 0o600); err != nil {
+		return nil, fmt.Errorf("write buildkit bridge config: %w", err)
+	}
+
 	proxyURL := "http://" + SandboxForwarderListen
 	env := map[string]string{
 		"HTTP_PROXY":  proxyURL,
@@ -505,7 +539,7 @@ func EnsureSandboxMaterial(projectID, poolID, sandboxID string) (*SandboxMateria
 		// reaching its sandboxes, for one) is sent out through the egress
 		// proxy instead of straight there.
 		// ServerName is exempted by name, not left to the subnet token. Go's
-		// NO_PROXY does honour CIDR entries, but only consults them when the
+		// NO_PROXY does honor CIDR entries, but only consults them when the
 		// request host is an IP literal (httpproxy.useProxy guards the IP
 		// matchers on a successful netip.ParseAddr); it never resolves a name
 		// to test it against a subnet. Sandboxes address the pool by its

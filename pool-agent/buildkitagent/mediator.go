@@ -138,10 +138,22 @@ func sandboxID(ctx context.Context) (string, error) {
 }
 
 func (m *Mediator) handle(_ any, ss grpc.ServerStream) error {
+	err := m.forward(ss)
+	if err != nil && !errors.Is(err, io.EOF) && !errors.Is(err, context.Canceled) {
+		// Without this a mediator failure is invisible: the client sees only a
+		// stalled connection, and nothing else here logs per stream.
+		method, _ := grpc.MethodFromServerStream(ss)
+		m.logger.Warn("buildkit stream failed", "method", method, "error", err)
+	}
+	return err
+}
+
+func (m *Mediator) forward(ss grpc.ServerStream) error {
 	method, ok := grpc.MethodFromServerStream(ss)
 	if !ok {
 		return errors.New("no method on stream")
 	}
+	m.logger.Debug("buildkit stream", "method", method)
 	ctx := ss.Context()
 	// Refuse anything we cannot attribute. A build whose owner is unknown is a
 	// build no policy can be applied to.
