@@ -268,11 +268,44 @@ func (m *Mediator) rewriteGatewaySolve(data []byte, id string) ([]byte, error) {
 	if err := proto.Unmarshal(data, &req); err != nil {
 		return nil, fmt.Errorf("decode gateway solve from %s: %w", id, err)
 	}
+	// buildx drives the dockerfile frontend through the gateway, so this is
+	// where a build's options actually arrive. The equivalent fields on
+	// Control/Solve are empty for a buildx client.
+	req.FrontendOpt = withBuildProxy(req.FrontendOpt, id)
 	out, err := proto.Marshal(&req)
 	if err != nil {
 		return nil, fmt.Errorf("encode gateway solve for %s: %w", id, err)
 	}
 	return out, nil
+}
+
+// withBuildProxy points every RUN step at the forwarder bound into its own
+// network namespace, so build egress leaves through the pool proxy carrying
+// the owning sandbox's identity.
+//
+// The values are set, never merged: buildx forwards the client's own proxy
+// environment as build-args, and a sandbox's HTTP_PROXY names its own loopback
+// — which inside a pool-side build container is that container's loopback,
+// where nothing listens. Honouring it would hang every build.
+//
+// The dockerfile frontend treats these names specially: they reach every RUN
+// without an ARG declaration, are excluded from the cache key (so a per-sandbox
+// address does not fragment the shared cache), and never land in the image
+// config or history.
+func withBuildProxy(opts map[string]string, sandboxID string) map[string]string {
+	if opts == nil {
+		opts = map[string]string{}
+	}
+	proxyURL := BuildProxyURL(sandboxID)
+	for _, name := range []string{"HTTP_PROXY", "HTTPS_PROXY", "http_proxy", "https_proxy"} {
+		opts["build-arg:"+name] = proxyURL
+	}
+	// Loopback must stay direct: the forwarder itself listens there, and a
+	// build step that proxied its own loopback would loop back into it.
+	for _, name := range []string{"NO_PROXY", "no_proxy"} {
+		opts["build-arg:"+name] = "127.0.0.1,localhost,::1"
+	}
+	return opts
 }
 
 // stripInsecure removes entitlements a sandbox may not request, preserving the

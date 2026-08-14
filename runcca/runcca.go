@@ -107,6 +107,25 @@ type Config struct {
 	// It is called at the point of use, never cached: the nested Docker bridge
 	// and any user-created networks appear only after the sandbox has booted.
 	LocalSubnets func() []string
+
+	// RewriteEnv adjusts an existing spec env value in place before the
+	// container sees it. The pool uses it to strip the sandbox identity from
+	// the proxy URL the mediator injected, which the build itself has no use
+	// for. A nil func leaves values untouched.
+	RewriteEnv func(name, value string) string
+
+	// Hooks are OCI hooks to install into the spec, keyed by hook name
+	// ("createRuntime", "poststop"). Each value is the full argv to run.
+	//
+	// Only the pool uses these, to bind a per-build egress forwarder into the
+	// build step's own network namespace. A sandbox needs nothing of the sort:
+	// its containers reach a forwarder on the Docker bridge, which is already
+	// private to that sandbox.
+	//
+	// Hooks are appended to whatever the spec declares. BuildKit sets none, so
+	// in practice there is nothing to merge with — but overwriting a hook a
+	// runtime relied on would be far worse than not installing ours.
+	Hooks map[string][]string
 }
 
 func (c Config) withDefaults() Config {
@@ -192,6 +211,12 @@ func Adjust(bundleDir, containerID string, cfg Config) (bool, error) {
 		return false, err
 	}
 	if addEnv(spec, env) {
+		changed = true
+	}
+	if addHooks(spec, cfg.Hooks) {
+		changed = true
+	}
+	if rewriteSpecEnv(spec, cfg.RewriteEnv) {
 		changed = true
 	}
 	if !changed {
@@ -434,6 +459,73 @@ func existingMountDests(spec map[string]any) map[string]struct{} {
 		}
 	}
 	return out
+}
+
+// rewriteSpecEnv lets a caller adjust values the spec already carries.
+func rewriteSpecEnv(spec map[string]any, rewrite func(string, string) string) bool {
+	if rewrite == nil {
+		return false
+	}
+	process, ok := spec["process"].(map[string]any)
+	if !ok {
+		return false
+	}
+	list, _ := process["env"].([]any)
+	changed := false
+	for i, e := range list {
+		entry, ok := e.(string)
+		if !ok {
+			continue
+		}
+		name, value, found := strings.Cut(entry, "=")
+		if !found {
+			continue
+		}
+		if updated := rewrite(name, value); updated != value {
+			list[i] = name + "=" + updated
+			changed = true
+		}
+	}
+	if changed {
+		process["env"] = list
+	}
+	return changed
+}
+
+// addHooks appends the configured OCI hooks, preserving any the spec already
+// declares. Names are sorted so the resulting spec is stable across runs.
+func addHooks(spec map[string]any, hooks map[string][]string) bool {
+	if len(hooks) == 0 {
+		return false
+	}
+	existing, _ := spec["hooks"].(map[string]any)
+	if existing == nil {
+		existing = map[string]any{}
+	}
+	names := make([]string, 0, len(hooks))
+	for name := range hooks {
+		names = append(names, name)
+	}
+	sort.Strings(names)
+
+	changed := false
+	for _, name := range names {
+		argv := hooks[name]
+		if len(argv) == 0 {
+			continue
+		}
+		args := make([]any, 0, len(argv))
+		for _, a := range argv {
+			args = append(args, a)
+		}
+		list, _ := existing[name].([]any)
+		existing[name] = append(list, map[string]any{"path": argv[0], "args": args})
+		changed = true
+	}
+	if changed {
+		spec["hooks"] = existing
+	}
+	return changed
 }
 
 // addEnv appends each proxy-trust variable the container does not already set.

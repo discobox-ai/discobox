@@ -69,6 +69,19 @@ const (
 	// holds regardless of the pool's address.
 	MediatorURL = "tcp://" + RegistryServerName + ":17081"
 
+	// BuildForwarderPort is the port a per-build forwarder binds on the build
+	// step's OWN loopback. Every build uses the same port because each has its
+	// own network namespace, so the address is private to it — and that privacy
+	// is what identifies the build, exactly as a sandbox's loopback forwarder
+	// identifies the sandbox.
+	BuildForwarderPort = 17009
+
+	// envProjectID and envPoolID are read by the runc wrapper, which inherits
+	// buildkitd's environment. It needs them to find the client certificate of
+	// the sandbox that owns a build.
+	envProjectID = "DISCOBOX_PROJECT_ID"
+	envPoolID    = "DISCOBOX_POOL_ID"
+
 	// MITMCAPath is where the pool's MITM CA is staged for the runc wrapper.
 	// The wrapper is exec'd by buildkitd with no arguments identifying the
 	// pool, so the CA is placed at a fixed path rather than one it would have
@@ -133,7 +146,7 @@ func Prepare(projectID, poolID, mitmCASource string) error {
 	if err := os.WriteFile(resolve(ConfigFile), []byte(renderConfig()), 0o600); err != nil {
 		return fmt.Errorf("write buildkitd config: %w", err)
 	}
-	if err := os.WriteFile(resolve(UnitEnvironmentFile), []byte(renderUnitEnvironment(stateRoot)), 0o600); err != nil {
+	if err := os.WriteFile(resolve(UnitEnvironmentFile), []byte(renderUnitEnvironment(stateRoot, projectID, poolID)), 0o600); err != nil {
 		return fmt.Errorf("write buildkitd unit environment: %w", err)
 	}
 	if err := os.WriteFile(resolve(RegistryEnvironmentFile), []byte(renderRegistryEnvironment(registryRoot)), 0o600); err != nil {
@@ -183,13 +196,17 @@ func renderConfig() string {
 
 // renderUnitEnvironment is separated from the write so its contents can be
 // asserted without touching the container's /etc.
-func renderUnitEnvironment(stateRoot string) string {
+func renderUnitEnvironment(stateRoot, projectID, poolID string) string {
 	var b strings.Builder
 	fmt.Fprintf(&b, "DISCOBOX_BUILDKIT_ROOT=%s\n", stateRoot)
 	fmt.Fprintf(&b, "DISCOBOX_BUILDKIT_ADDR=unix://%s\n", Socket)
 	fmt.Fprintf(&b, "DISCOBOX_BUILDKIT_MAX_PARALLELISM=%d\n", maxParallelism())
 	fmt.Fprintf(&b, "DISCOBOX_BUILDKIT_GC_KEEPSTORAGE=%s\n", gcKeepStorage)
 	fmt.Fprintf(&b, "DISCOBOX_BUILDKIT_RUNC=%s\n", filepath.Join(WrapperDir, "runc"))
+	// The runc wrapper inherits this environment, and needs the pool's identity
+	// to locate the client certificate of the sandbox that owns a build.
+	fmt.Fprintf(&b, "%s=%s\n", envProjectID, projectID)
+	fmt.Fprintf(&b, "%s=%s\n", envPoolID, poolID)
 	// buildkitd resolves and pulls base images itself, before any build
 	// container exists, so nothing injected into a container's spec can give it
 	// egress. A pool has no route off-box except the proxy.
