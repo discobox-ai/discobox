@@ -81,6 +81,32 @@ func TestUntaggedBuildStillHasSomethingToPush(t *testing.T) {
 	}
 }
 
+func TestIdenticalBuildsProduceTheSameImage(t *testing.T) {
+	withMaterial(t)
+	// buildx attests provenance whenever the output is a registry, and that
+	// provenance records the build rather than its result — so two builds of
+	// identical content get different index digests, and the same Dockerfile
+	// shows a different image ID in every sandbox even on a full cache hit.
+	// Plain `docker build` attests nothing; moving the transport to a registry
+	// must not change what the user ends up holding.
+	argv := argvAfterDocker(t, dockercache.Rewrite([]string{"build", "."}))
+	if !slices.Contains(argv, "--provenance=false") {
+		t.Errorf("build attests provenance, so its image ID varies per build: %v", argv)
+	}
+}
+
+func TestAnAskedForAttestationSurvives(t *testing.T) {
+	withMaterial(t)
+	// Someone who asked for provenance or an SBOM wants it; turning it off
+	// under them would drop what they asked for without saying so.
+	for _, flag := range []string{"--provenance=true", "--sbom=true", "--attest", "--provenance"} {
+		argv := argvAfterDocker(t, dockercache.Rewrite([]string{"build", flag, "."}))
+		if slices.Contains(argv, "--provenance=false") {
+			t.Errorf("%s was overridden by the shim: %v", flag, argv)
+		}
+	}
+}
+
 func TestTheSynthesizedReferenceIsActuallyPushable(t *testing.T) {
 	withMaterial(t)
 	// The name is synthesized, so nothing upstream validates it until the

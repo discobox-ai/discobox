@@ -129,6 +129,17 @@ func Rewrite(args []string) Args {
 	// default instance. Spelling out the subcommand is what lets --builder take
 	// effect.
 	rewritten = append(rewritten, "buildx", "build", "--builder", BuilderName, "--push", "-t", ref)
+	// Pushing is what turns attestations on: buildx attaches provenance by
+	// default whenever the output is a registry, which wraps the image in an
+	// index alongside an attestation manifest. That provenance records this
+	// build — its start time and its own reference — so two builds of identical
+	// content produce different index digests, and `docker images` shows a
+	// different ID in each sandbox even on a complete cache hit. Plain
+	// `docker build` attests nothing, and the transport should not change what
+	// the user gets.
+	if !hasAttestationFlag(args[idx:]) {
+		rewritten = append(rewritten, "--provenance=false")
+	}
 	rewritten = append(rewritten, rest...)
 	return Args{
 		Argv:        append([]string{RealDocker}, rewritten...),
@@ -248,6 +259,21 @@ func splitTags(args []string) (tags, rest []string) {
 func hasBuilderFlag(args []string) bool {
 	for _, a := range args {
 		if a == "--builder" || strings.HasPrefix(a, "--builder=") {
+			return true
+		}
+	}
+	return false
+}
+
+// hasAttestationFlag reports whether the user has already said what to attest.
+// Someone who asked for provenance or an SBOM wants it, and disabling it under
+// them would silently drop what they asked for.
+func hasAttestationFlag(args []string) bool {
+	for _, a := range args {
+		switch {
+		case a == "--provenance", a == "--sbom", a == "--attest":
+			return true
+		case strings.HasPrefix(a, "--provenance="), strings.HasPrefix(a, "--sbom="), strings.HasPrefix(a, "--attest="):
 			return true
 		}
 	}
