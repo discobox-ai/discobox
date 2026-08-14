@@ -10,6 +10,14 @@ Type=simple
 # the certificate bundle they authenticate with, and both run with a clean
 # systemd environment.
 EnvironmentFile=/etc/discobox/proxy.env
+# grpc-go 1.67 began rejecting TLS connections whose client negotiated no ALPN
+# protocol, before any stream exists. buildx's client does not send one, so
+# every build failed as a bare connection timeout with nothing logged server
+# side — while buildctl, which ships a newer grpc-go that does send ALPN,
+# worked against the same endpoint and made this look buildx-specific.
+# Sandboxes reach this listener only over the per-pool internal network, and
+# the connection is still mTLS; ALPN enforcement is not what authenticates it.
+Environment=GRPC_ENFORCE_ALPN_ENABLED=false
 ExecStart=/usr/local/bin/discobox-pool-agent buildkit-mediator
 Restart=on-failure
 RestartSec=2s
