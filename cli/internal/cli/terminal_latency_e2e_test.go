@@ -68,9 +68,8 @@ func TestTerminalLatencyE2E(t *testing.T) {
 	ctx, cancel := context.WithTimeout(resume.WithObserver(t.Context(), annotations), time.Duration(samples)*sampleTimeout+2*time.Minute)
 	defer cancel()
 
-	if _, err := app.waitForPrimaryTerminal(ctx, io.Discard, projectID, sandboxID, 2*time.Minute); err != nil {
-		t.Fatal(err)
-	}
+	// No wait for the primary terminal first: the attach waits for it, through
+	// the same tiers a real attach does (ADR 0039).
 	conn, err := app.openReconnectingSandboxExecAttach(ctx, projectID, sandboxID, primaryExecID, execAttachOptions{replay: true})
 	if err != nil {
 		t.Fatal(err)

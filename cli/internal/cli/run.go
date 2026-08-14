@@ -2,13 +2,9 @@ package cli
 
 import (
 	"context"
-	"errors"
 	"fmt"
-	"io"
 	"strings"
-	"time"
 
-	apiclientgen "github.com/obot-platform/discobox/api/gen"
 	apimodel "github.com/obot-platform/discobox/api/model"
 	"github.com/obot-platform/discobox/cli/internal/sandboxcreate"
 	"github.com/spf13/cobra"
@@ -79,7 +75,7 @@ time.`,
 			if opts.detach {
 				return a.writeSandbox(cmd, sandbox)
 			}
-			return a.attachRunSandbox(cmd, client, projectID, sandbox)
+			return a.attachRunSandbox(cmd, projectID, sandbox)
 		},
 	}
 	cmd.Flags().StringArrayVarP(&opts.prompt.Env, "env", "e", nil, "Environment variable as KEY=VALUE or KEY from the local environment; repeat for multiple variables. A KEY whose name contains KEY, TOKEN, PASS, or SECRET is treated as a secret; use KEY!=VALUE to force it to be a plain environment variable")
@@ -140,105 +136,31 @@ func dirtyWorkspacePrompt(workspace sandboxcreate.DirtyWorkspace) string {
 	return fmt.Sprintf("%s has %d uncommitted %s (%s)", workspace.RepoRoot, len(paths), pluralize("change", len(paths)), summary)
 }
 
-// attachRunSandbox waits for the freshly created sandbox to start and for its
-// default terminal to come up, then attaches the caller's stdio to it. Every
-// sandbox gets one primary terminal from the sandbox-agent — the configured
-// harness, or a plain shell when it has none — so run attaches to it unless
-// --detach was passed.
-func (a *App) attachRunSandbox(cmd *cobra.Command, client *apiclientgen.Client, projectID string, sandbox *apimodel.Sandbox) error {
+// attachRunSandbox attaches the caller's stdio to the freshly created
+// sandbox's default terminal. Every sandbox gets one primary terminal from the
+// sandbox-agent — the configured harness, or a plain shell when it has none —
+// so run attaches to it unless --detach was passed.
+//
+// It does not wait for the sandbox first. The attach itself waits, at every
+// tier that can see something the one above it cannot: the control plane for
+// the sandbox to be dispatched and its pool to be up, the pool agent for the
+// container, and the sandbox agent for the primary terminal's launch and
+// install (ADR 0039). Polling here for readiness the server already knows
+// about cost one request per second of provisioning and had to be reinvented
+// by every client.
+//
+// Source delivery is the exception and stays above this call: a sandbox whose
+// source must be pushed cannot start until this client pushes it, so nothing
+// server-side can subsume that step.
+func (a *App) attachRunSandbox(cmd *cobra.Command, projectID string, sandbox *apimodel.Sandbox) error {
 	ctx := cmd.Context()
-	stderr := cmd.ErrOrStderr()
-	fmt.Fprintf(stderr, "Created sandbox %s, provisioning (fetching source, starting container)...\n", sandbox.ID)
-	if _, err := a.waitForSandbox(cmd, client, projectID, sandbox.ID, 2*time.Minute); err != nil {
-		return err
-	}
-	fmt.Fprintln(stderr, "Sandbox running, preparing default terminal...")
-	terminal, err := a.waitForPrimaryTerminal(ctx, stderr, projectID, sandbox.ID, 2*time.Minute)
-	if err != nil {
-		return err
-	}
-	fmt.Fprintf(stderr, "Attaching to terminal %s (%s to detach)\n", terminal.ID, a.detachHint())
-	// Attach the virtual primary id rather than the id just polled for: the
-	// sandbox-agent resolves it to whichever exec is currently primary and
-	// relaunches a stopped one, so a primary that ended between the wait and the
-	// attach is resumed instead of failing on a dead session. Replay is on, so the
-	// sandbox-agent's own driving of the terminal before run connects is shown
-	// from the start rather than only output produced after the attach. If the
-	// sandbox itself stops, the attach ends — run does not restart the sandbox.
+	fmt.Fprintf(cmd.ErrOrStderr(), "Created sandbox %s, attaching when it is ready (%s to detach)...\n", sandbox.ID, a.detachHint())
+	// Attach the virtual primary id: the sandbox-agent resolves it to whichever
+	// exec is currently primary and relaunches a stopped one, so a primary that
+	// ended before the attach is resumed instead of failing on a dead session.
+	// Replay is on, so the sandbox-agent's own driving of the terminal before
+	// run connects is shown from the start rather than only output produced
+	// after the attach. If the sandbox itself stops, the attach ends — run does
+	// not restart the sandbox.
 	return a.attachSandboxTerminal(ctx, projectID, sandbox.ID, primaryExecID, execAttachOptions{}, cmd.InOrStdin(), cmd.OutOrStdout(), cmd.ErrOrStderr())
-}
-
-// waitForPrimaryTerminal polls the sandbox terminals until the primary
-// (default) terminal launched by the sandbox-agent is ready to attach. The
-// primary appears in the "installing" phase while its hooks and files are
-// prepared, so this reports that phase to
-// progress and only returns once the terminal is past installing.
-func (a *App) waitForPrimaryTerminal(ctx context.Context, progress io.Writer, projectID, sandboxID string, timeout time.Duration) (apimodel.SandboxExec, error) {
-	if timeout > 0 {
-		var cancel func()
-		ctx, cancel = context.WithTimeout(ctx, timeout)
-		defer cancel()
-	}
-	ticker := time.NewTicker(time.Second)
-	defer ticker.Stop()
-	var lastErr error
-	announcedInstalling := false
-	for {
-		if terminals, err := a.listSandboxTerminals(ctx, projectID, sandboxID); err != nil {
-			lastErr = err
-		} else if terminal, ok := primaryTerminal(terminals); ok {
-			lastErr = nil
-			if terminal.Status == apiclientgen.SandboxExecStatusInstalling {
-				if !announcedInstalling && progress != nil {
-					fmt.Fprintf(progress, "Preparing harness %s...\n", runHarnessLabel(terminal))
-					announcedInstalling = true
-				}
-			} else {
-				return terminal, nil
-			}
-		} else {
-			lastErr = nil
-		}
-		select {
-		case <-ctx.Done():
-			if lastErr != nil {
-				return apimodel.SandboxExec{}, fmt.Errorf("waiting for sandbox terminal: %w", lastErr)
-			}
-			if errors.Is(ctx.Err(), context.DeadlineExceeded) {
-				if announcedInstalling {
-					return apimodel.SandboxExec{}, errors.New("timed out while the harness was still preparing hooks and files (see `disco box terminal logs`)")
-				}
-				return apimodel.SandboxExec{}, errors.New("timed out waiting for the sandbox's default terminal; it may have failed to start (see `disco box terminal logs`)")
-			}
-			return apimodel.SandboxExec{}, fmt.Errorf("waiting for sandbox terminal: %w", ctx.Err())
-		case <-ticker.C:
-		}
-	}
-}
-
-// runHarnessLabel names the harness a terminal runs for progress messages, falling
-// back to a generic label when the harness id is not set.
-func runHarnessLabel(terminal apimodel.SandboxExec) string {
-	if harness := strings.TrimSpace(terminal.HarnessId.Or("")); harness != "" {
-		return fmt.Sprintf("%q", harness)
-	}
-	return "harness"
-}
-
-// primaryTerminal selects the sandbox's default terminal: the one flagged
-// primary by the sandbox-agent, falling back to the oldest terminal.
-func primaryTerminal(terminals []apimodel.SandboxExec) (apimodel.SandboxExec, bool) {
-	var oldest *apimodel.SandboxExec
-	for i := range terminals {
-		if terminals[i].Primary.Or(false) {
-			return terminals[i], true
-		}
-		if oldest == nil || terminals[i].CreatedAt.Before(oldest.CreatedAt) {
-			oldest = &terminals[i]
-		}
-	}
-	if oldest != nil {
-		return *oldest, true
-	}
-	return apimodel.SandboxExec{}, false
 }

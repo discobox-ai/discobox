@@ -268,6 +268,17 @@ session, `execstream/client`.
   rejected the attach with a definitive status (`404`, `409`) its own message is
   reported verbatim instead: it knows why, and the client's inference would only
   repeat or contradict it.
+- Nothing polls for readiness before attaching. `disco run` creates, delivers
+  the source if it must be pushed, and attaches; the attach itself waits, at
+  each tier for what only that tier can see — the control plane for the sandbox
+  to be dispatched to a live pool and to be usable rather than mid-delivery, the
+  pool agent for the container, the sandbox agent for the primary terminal's
+  launch and install (ADR 0039). The two loops that used to sit here — poll
+  until `displayState: running`, then poll the exec list until a primary exists
+  past `installing` — cost a request per second of provisioning for facts the
+  server knew the instant they changed, and every client had to reimplement
+  them. `--wait` on `box sandbox create` is a different thing and stays: there
+  the wait *is* what was asked for.
 - `primary` (`primaryExecID`) is accepted wherever a terminal/exec ID is: it is
   the sandbox-agent's virtual id for the current primary terminal, so it must
   bypass short-ID resolution and reach the agent unchanged. It is the only
@@ -575,7 +586,7 @@ sequences the calls and hands the user the terminal in between:
 3. attach to the virtual `"primary"` exec (`primaryExecID`) — **this is what
    launches the configure command**, since the sandbox-agent defers the primary
    terminal in config mode. That ordering is why seeding always lands first, and
-   why there is no `waitForPrimaryTerminal` here: no terminal exists until attach.
+   why nothing waits for a terminal to appear first: none exists until attach.
 4. `POST .../configure/commit` — the server reads the command's real exit status,
    applies the secrets and files it wrote, and deletes the sandbox.
 
