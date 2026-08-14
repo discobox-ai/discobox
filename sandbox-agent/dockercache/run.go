@@ -104,9 +104,9 @@ func runQuiet(ctx context.Context, args ...string) int {
 func newRegistryRef() string {
 	var raw [8]byte
 	if _, err := rand.Read(raw[:]); err != nil {
-		return fmt.Sprintf("%s/%s/build:latest", PoolRegistry, untaggedRepo)
+		return fmt.Sprintf("%s/%s/fallback:build", PoolRegistry, buildRepo)
 	}
-	return fmt.Sprintf("%s/%s/%s:build", PoolRegistry, untaggedRepo, hex.EncodeToString(raw[:]))
+	return fmt.Sprintf("%s/%s/%s:build", PoolRegistry, buildRepo, hex.EncodeToString(raw[:]))
 }
 
 // execDirect replaces this process with the real docker CLI.

@@ -7,6 +7,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/distribution/reference"
 	"github.com/obot-platform/discobox/sandbox-agent/dockercache"
 )
 
@@ -77,6 +78,22 @@ func TestUntaggedBuildStillHasSomethingToPush(t *testing.T) {
 	}
 	if !slices.Contains(argvAfterDocker(t, got), got.RegistryRef) {
 		t.Error("the synthesized reference is not what the build pushes")
+	}
+}
+
+func TestTheSynthesizedReferenceIsActuallyPushable(t *testing.T) {
+	withMaterial(t)
+	// The name is synthesized, so nothing upstream validates it until the
+	// client parses the command line — at which point the build fails before
+	// it starts, with an error about a reference the user never wrote. This
+	// checks it against the real grammar rather than a guess at one: a path
+	// component must begin with an alphanumeric, which is what a name like
+	// "_build" quietly violates.
+	for _, argv := range [][]string{{"build", "."}, {"build", "-t", "app:v1", "."}} {
+		got := dockercache.Rewrite(argv)
+		if _, err := reference.ParseNormalizedNamed(got.RegistryRef); err != nil {
+			t.Errorf("docker build %v pushes to an unparseable reference %q: %v", argv, got.RegistryRef, err)
+		}
 	}
 }
 

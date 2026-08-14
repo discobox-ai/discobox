@@ -65,11 +65,15 @@ const (
 	// only blobs this daemon lacks.
 	PoolRegistry = "discobox-pool-proxy:5000"
 
-	// untaggedRepo holds results of builds that named no tag. There is nothing
-	// to push without a name, so one is synthesized per build; the local tag is
-	// dropped afterwards so `docker images` shows the dangling entry a plain
-	// `docker build` produces.
-	untaggedRepo = "_build"
+	// buildRepo is the repository every build's result is pushed to. A push
+	// needs a name and the user's own tag cannot serve as one — it may already
+	// name a registry this pool cannot reach, or one they did not mean to
+	// publish to — so a reference is synthesized here per build.
+	//
+	// The leading component may not start with `_`: a repository path component
+	// must begin with an alphanumeric, and a name that violates the reference
+	// grammar is rejected by the client before any build starts.
+	buildRepo = "discobox-build"
 )
 
 // bridgeConfigPath locates the forwarder's config. It is a variable only so
