@@ -1,0 +1,19 @@
+[Unit]
+Description=Discobox Pool BuildKit Mediator
+Documentation=https://github.com/obot-platform/discobox
+After=discobox-buildkitd.service
+Wants=discobox-buildkitd.service
+
+[Service]
+Type=simple
+# Shares the proxy unit's environment: both need the pool identity to address
+# the certificate bundle they authenticate with, and both run with a clean
+# systemd environment.
+EnvironmentFile=/etc/discobox/proxy.env
+ExecStart=/usr/local/bin/discobox-pool-agent buildkit-mediator
+Restart=on-failure
+RestartSec=2s
+KillMode=mixed
+
+[Install]
+WantedBy=multi-user.target
