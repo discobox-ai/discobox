@@ -109,6 +109,17 @@ func TestIntegrationReclaimRemovesOnlyUnusedLabeledImages(t *testing.T) {
 		}
 	}
 
+	// Surviving is not enough for an in-use image: the daemon refuses to delete
+	// one but will untag it without complaint, so an unguarded pass leaves the
+	// container running with an image nothing can name again.
+	inspect, err := cli.ImageInspect(ctx, used)
+	if err != nil {
+		t.Fatalf("inspect in-use image: %v", err)
+	}
+	if len(inspect.RepoTags) == 0 {
+		t.Fatalf("in-use image %s was stripped of its tags", used)
+	}
+
 	// Keep must win over age for an image nothing runs, which is how a
 	// development base image survives.
 	kept, err := Reclaim(ctx, cli, Options{Retention: time.Nanosecond, Now: time.Now().Add(time.Minute), Keep: []string{used}})

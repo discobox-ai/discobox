@@ -315,7 +315,7 @@ func Reclaim(ctx context.Context, cli *client.Client, opts Options) (Result, err
 	result := Result{Scanned: len(candidates)}
 	for _, candidate := range Reclaimable(candidates, inUse, keep, retention, now) {
 		if err := remove(ctx, cli, candidate); err != nil {
-			logger.DebugContext(ctx, "retaining Discobox image the daemon declined to remove",
+			logger.DebugContext(ctx, "retained Discobox image that could not be reclaimed",
 				"image", candidate.ID, "tags", candidate.RepoTags, "error", err)
 			continue
 		}
@@ -345,6 +345,22 @@ func imagesInUse(ctx context.Context, cli *client.Client) (map[string]struct{}, 
 		}
 	}
 	return inUse, nil
+}
+
+// imageInUse reports whether any container on the daemon was created from this
+// image.
+//
+// The ancestor filter also matches containers created from images built on top
+// of it, which errs in the safe direction: a base image whose descendant is
+// running stays.
+func imageInUse(ctx context.Context, cli *client.Client, imageID string) (bool, error) {
+	filters := client.Filters{}
+	filters = filters.Add("ancestor", imageID)
+	containers, err := cli.ContainerList(ctx, client.ContainerListOptions{All: true, Filters: filters})
+	if err != nil {
+		return false, fmt.Errorf("list containers using image %s: %w", imageID, err)
+	}
+	return len(containers.Items) > 0, nil
 }
 
 func labeledImages(ctx context.Context, cli *client.Client) ([]Candidate, error) {
@@ -386,6 +402,22 @@ func labeledImages(ctx context.Context, cli *client.Client) ([]Candidate, error)
 // image store dropping the final reference already reclaims the image, which is
 // why a not-found on the final call is success.
 func remove(ctx context.Context, cli *client.Client, candidate Candidate) error {
+	// Re-checked immediately before mutating, scoped to this one image, because
+	// the daemon guards the two steps below unequally: it refuses to delete an
+	// image a container is using, but it will untag one without complaint. The
+	// pass-level in-use set was collected before an inspect per candidate, so a
+	// container created in between would be missed, and losing that race strips
+	// the references off a live image — the container keeps running while
+	// nothing can name its image again, and the delete then fails, leaving it
+	// dangling and unnamed. The up-front set makes the pass cheap; this makes it
+	// safe.
+	inUse, err := imageInUse(ctx, cli, candidate.ID)
+	if err != nil {
+		return err
+	}
+	if inUse {
+		return fmt.Errorf("image %s is in use by a container", candidate.ID)
+	}
 	for _, reference := range candidate.RepoTags {
 		if _, err := cli.ImageRemove(ctx, reference, client.ImageRemoveOptions{}); err != nil && !cerrdefs.IsNotFound(err) {
 			return fmt.Errorf("remove image reference %s: %w", reference, err)

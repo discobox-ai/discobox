@@ -58,6 +58,16 @@ have not arrived locally within a retention window.
    state is not a statement about images. Containers are enumerated with
    `All: true` and their resolved `ImageID`s form the in-use set.
 
+   Usage is then re-checked per image immediately before removal, scoped with
+   the `ancestor` filter. The daemon guards the two removal steps unequally: it
+   refuses to delete an image a container is using, but it will **untag** one
+   without complaint. Since removal untags before deleting, the daemon is only a
+   backstop for half the sequence, and a container created after the pass-level
+   snapshot would otherwise have the references stripped from its image — the
+   container keeps running while nothing can name its image again, and the
+   delete then fails, leaving it dangling and unnamed. The up-front set keeps
+   the pass cheap; the re-check makes it safe.
+
 4. **A keep set covers what is needed but not yet running.** The host reaper
    keeps the engine's configured pool image and every reference and ID in the
    development image manifest. This is what protects a base image that only
@@ -150,7 +160,9 @@ have not arrived locally within a retention window.
   store, untagging the last reference already reclaims the image.
 - An image with several tags cannot be deleted by ID without force. The reaper
   removes each reference first, then the ID, so it never needs `Force` and can
-  never yank an image out from under a container the daemon knows about.
+  never yank an image out from under a container the daemon knows about. That
+  ordering is also why usage is re-checked per image first: untagging is the one
+  step the daemon does not refuse for an image in use.
 - Two Docker provider instances sharing one host daemon each run a reaper. They
   are idempotent, but each keeps only its own configured pool image, so an
   instance with no pools may have its (unused) pool image reclaimed and re-pulled
