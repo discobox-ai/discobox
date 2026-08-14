@@ -8,7 +8,6 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/obot-platform/discobox/sandbox-agent/nestedbridge"
 	"github.com/obot-platform/discobox/sandboxconfig"
 )
 
@@ -22,6 +21,9 @@ type fixture struct {
 // newFixture stages what pool-agent writes and discobox-trust-ca.service
 // prepares at boot: the manifest, both bridge configs, the raw MITM CA, and
 // the fallback bundles.
+// testLocalSubnets stands in for a sandbox's directly-connected networks.
+var testLocalSubnets = []string{"172.30.0.0/16", "10.88.0.0/16"}
+
 func newFixture(t *testing.T, staged []string, env map[string]string, proxyEnvs []string) fixture {
 	t.Helper()
 	root := t.TempDir()
@@ -65,6 +67,9 @@ func newFixture(t *testing.T, staged []string, env map[string]string, proxyEnvs 
 		LoopbackBridge: writeBridge("bridge.json", "127.0.0.1:17008"),
 		NestedBridge:   writeBridge("bridge-docker.json", "172.30.0.1:17008"),
 		StagingRoot:    filepath.Join(root, "staging"),
+		// Injected rather than read from this machine's real interfaces, so the
+		// assertions below are the same everywhere the suite runs.
+		LocalSubnets: func() []string { return testLocalSubnets },
 	}}
 }
 
@@ -626,7 +631,7 @@ func TestAdjustResolvesLocalSubnetsToken(t *testing.T) {
 			t.Fatalf("empty entry in NO_PROXY: %q", noProxy)
 		}
 	}
-	for _, cidr := range nestedbridge.LocalSubnets() {
+	for _, cidr := range testLocalSubnets {
 		if !strings.Contains(noProxy, cidr) {
 			t.Fatalf("local subnet %s missing from %q", cidr, noProxy)
 		}

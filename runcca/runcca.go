@@ -56,7 +56,6 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/obot-platform/discobox/sandbox-agent/nestedbridge"
 	"github.com/obot-platform/discobox/sandboxconfig"
 )
 
@@ -79,7 +78,11 @@ const (
 	// dockerd chooses its own default-bridge subnet (daemon.json pins no
 	// "bip"), so the address is only known once docker0 exists. An absent file
 	// means no forwarder is up yet, and callers degrade rather than guess.
-	DefaultNestedBridge = nestedbridge.DefaultPublishPath
+	//
+	// It is spelled out rather than imported from the sandbox-agent package
+	// that writes it: this package is shared with the pool, which has no nested
+	// bridge at all, and the pool must not depend on sandbox-agent to say so.
+	DefaultNestedBridge = "/run/discobox/proxy/nested-forwarder.json"
 	// DefaultStagingRoot holds per-container seeded trust stores. /run is
 	// tmpfs, so these are ephemeral and never land on durable storage.
 	DefaultStagingRoot = "/run/discobox/runc-ca"
@@ -94,6 +97,16 @@ type Config struct {
 	LoopbackBridge string
 	NestedBridge   string
 	StagingRoot    string
+
+	// LocalSubnets resolves sandboxconfig.LocalSubnetsToken to this host's
+	// directly-connected networks. It is injected rather than imported because
+	// only a sandbox can answer it — the pool has no nested Docker bridge and
+	// no token to resolve. A nil func leaves the token unresolved, which is
+	// correct wherever nothing sets it.
+	//
+	// It is called at the point of use, never cached: the nested Docker bridge
+	// and any user-created networks appear only after the sandbox has booted.
+	LocalSubnets func() []string
 }
 
 func (c Config) withDefaults() Config {
@@ -499,7 +512,11 @@ func proxyEnv(cfg Config) (map[string]string, error) {
 		// which wrote it, and this is the point where the real networks are
 		// known. Enumerating here rather than at boot matters because the
 		// nested-Docker bridge and any user-created networks appear later.
-		value = sandboxconfig.ResolveLocalSubnetsToken(value, nestedbridge.LocalSubnets())
+		var localSubnets []string
+		if cfg.LocalSubnets != nil {
+			localSubnets = cfg.LocalSubnets()
+		}
+		value = sandboxconfig.ResolveLocalSubnetsToken(value, localSubnets)
 		if loopback != "" && strings.Contains(value, loopback) {
 			// This value names the sandbox-local forwarder, which is the
 			// container's *own* loopback once inside — unreachable. Rewrite it

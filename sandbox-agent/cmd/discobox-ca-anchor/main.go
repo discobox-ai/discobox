@@ -17,7 +17,7 @@ import (
 	"os"
 	"path/filepath"
 
-	"github.com/obot-platform/discobox/sandbox-agent/runcca"
+	"github.com/obot-platform/discobox/runcca"
 )
 
 func main() {

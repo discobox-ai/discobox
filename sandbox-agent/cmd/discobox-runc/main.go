@@ -10,7 +10,8 @@ import (
 	"os"
 	"syscall"
 
-	"github.com/obot-platform/discobox/sandbox-agent/runcca"
+	"github.com/obot-platform/discobox/runcca"
+	"github.com/obot-platform/discobox/sandbox-agent/nestedbridge"
 )
 
 func main() {
@@ -23,12 +24,12 @@ func main() {
 	// reported and stepped over.
 	switch {
 	case runcca.IsDelete(args):
-		if err := runcca.Cleanup(id, runcca.Config{}); err != nil {
+		if err := runcca.Cleanup(id, runcca.Config{LocalSubnets: nestedbridge.LocalSubnets}); err != nil {
 			fmt.Fprintf(os.Stderr, "discobox-runc: staged trust store not reclaimed: %v\n", err)
 		}
 	default:
 		if bundle, ok := runcca.BundleDir(args); ok {
-			if _, err := runcca.Adjust(bundle, id, runcca.Config{}); err != nil {
+			if _, err := runcca.Adjust(bundle, id, runcca.Config{LocalSubnets: nestedbridge.LocalSubnets}); err != nil {
 				fmt.Fprintf(os.Stderr, "discobox-runc: proxy trust not injected: %v\n", err)
 			}
 		}

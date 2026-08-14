@@ -17,6 +17,7 @@ COPY gormdb ./gormdb
 COPY harness ./harness
 COPY id ./id
 COPY proxy ./proxy
+COPY runcca ./runcca
 COPY sandboxconfig ./sandboxconfig
 COPY sandboxuser ./sandboxuser
 COPY sandbox-agent ./sandbox-agent
@@ -314,7 +315,7 @@ COPY sandbox-agent/image/discobox-vnc-websockify /usr/local/bin/discobox-vnc-web
 COPY --from=sandbox-agent-builder /out/discobox-sandbox-agent /usr/local/bin/discobox-sandbox-agent
 # Installs as `runc` on a directory prepended to containerd's and dockerd's
 # PATH, so every container either one starts has the MITM CA bundles and proxy
-# env injected into its OCI spec. See the sandbox-agent/runcca package.
+# env injected into its OCI spec. See the shared runcca package.
 COPY --from=sandbox-agent-builder /out/discobox-runc /opt/discobox/bin/runc
 COPY --from=sandbox-agent-builder /out/discobox-ca-anchor /usr/local/bin/discobox-ca-anchor
 # Installs as `docker`, ahead of the real CLI at /usr/bin/docker on PATH, to
