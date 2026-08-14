@@ -162,8 +162,9 @@ is to exit it — there is deliberately no kill-tab key.
 command a pane produces is tagged with its id, because `termpane.ClosedMsg` says
 only "the session ended" — and a pane that has just been closed still has a read
 in flight, whose parting message would otherwise be taken for the survivor's and
-close a session nobody asked to end. Keys and mouse events go to the focused
-pane; everything a pane's own commands produced goes to the pane it came from.
+close a session nobody asked to end. Keys go to the focused pane; mouse events
+go to the pane under the pointer (`routeMouse`); everything a pane's own
+commands produced goes to the pane it came from.
 
 **A pane takes the whole window, and wears the border itself.** Attached, the
 purple box is drawn around the terminal grid with a cell of air inside it, so
@@ -205,9 +206,10 @@ not stopped anything, and nothing on the screen says so. One key with two
 meanings depending on what is in the pane is worse than the keystroke it saved.
 The window's own Ctrl-C-quits is therefore suppressed for the whole workspace
 screen rather than for the panes that took the key. Either way the leader plus
-`m` hands the mouse back and forth, and the second key of a leader pair matches
-with or without Ctrl held. Typing the leader itself takes it twice in full: its
-bare letter is `a` under the default Ctrl-A, and that is attach.
+`m` takes the mouse from a box that is using it and gives it back, and the
+second key of a leader pair matches with or without Ctrl held. Typing the
+leader itself takes it twice in full: its bare letter is `a` under the default
+Ctrl-A, and that is attach.
 
 **The leader is configurable, and it is not this package's.** `--leader`/
 `DISCOBOX_LEADER` (`internal/keys.NormalizeLeader`, `WithLeader`) because the
@@ -219,12 +221,24 @@ from every program the window ever draws. Its default and its spelling live in
 the same key: one leader for both terminals discobox shows you is one thing to
 learn and one thing to change.
 
-The mouse reaches the sandbox only while something in it has asked for one
-(`paneMouseMode` mirrors `termpane.MouseMode` into `View.MouseMode`), so native
-selection is only lost while it is being used — and `ctrl+a m` takes it back for
-when you would rather copy a stack trace than click on it. Events are translated
-out of screen space by `focusedOrigin`, the same origin the cursor
-is placed at. Detaching returns to the list with the cursor still on the sandbox it was opened on.
+The terminal always reports the mouse while panes are up (`paneMouseMode`):
+native selection is traded for the panes' own, which is every multiplexer's
+bargain. Events route by position rather than focus — a left press latches the
+pane it landed in until release (`routeMouse`, `paneAt`, `Model.mouseCapture`)
+and also focuses it — and are translated into that pane's grid at the same
+origin its cursor is placed at (`paneOrigin`). What an event *does* is the
+pane's decision (`termpane.HandleMouse`, ADR 0036): forwarded to a sandbox
+that asked for the mouse, selection otherwise, the wheel to whoever can
+scroll. A finished selection — or a copy chord over one — arrives as
+`termpane.CopyMsg` and goes to the OS clipboard (`osClipboard`, which crosses
+the WSL boundary as base64 because everything else there decodes by code
+page), falling back to OSC 52 only when there is no OS clipboard to write —
+never both, because they can land on the same clipboard with the last writer
+winning, and OSC 52 is the writer terminals mis-decode. `ctrl+a m` seizes the
+mouse from a sandbox that asked for it, for
+when you would rather copy a stack trace than click on it; the seizure is the
+window's, applied to whichever pane events route to. Detaching returns to the
+list with the cursor still on the sandbox it was opened on.
 
 The title an application sets goes two places: the middle of the window's header
 (`spreadCenter`), which says what is in the window, and the real terminal's own

@@ -98,11 +98,13 @@ func (m *Model) leader() string {
 // paneMouseHint is the mouse toggle, as the key lists spell it.
 func (m *Model) paneMouseHint() string { return m.leader() + " " + paneMouseKey }
 
-// toggleMouseMsg is the leader plus m: hand the mouse to the box, or keep it.
+// toggleMouseMsg is the leader plus m: take the mouse from the box, or give
+// it back.
 //
-// While the terminal is reporting the mouse you lose your own selection in it,
-// which is the bargain every multiplexer makes and usually the right one — but
-// only you know when you would rather copy a stack trace than click on it.
+// While nothing in the box has asked for the mouse there is nothing to take —
+// drag selects and copies on its own. The toggle is for the programs that did
+// ask, vim and htop and their kind, when you would rather copy a stack trace
+// than click on it. Taken, the box sees no mouse at all.
 type toggleMouseMsg struct{}
 
 // paneActionMsg is the leader plus one of the list's own action keys: the same
@@ -367,25 +369,18 @@ func (m *Model) updatePane(msg tea.Msg) tea.Cmd {
 	if tagged, ok := msg.(paneMsg); ok {
 		return m.updatePaneMsg(tagged)
 	}
+	// The mouse routes by position rather than focus — a pointer names the
+	// pane it is over — and works on finished panes too, where the last
+	// screen still selects and scrolls.
+	if mouse, ok := msg.(tea.MouseMsg); ok {
+		return m.routeMouse(mouse)
+	}
 	// A pane whose command has finished is a screen to read, not a terminal to
 	// type at. Its keys are the reader's: the arrows walk back through output
 	// longer than the pane, and the ones that mean "done" take it away.
 	if p.exited {
 		if key, ok := msg.(tea.KeyPressMsg); ok {
 			return m.readFinished(p, key)
-		}
-		if wheel, ok := msg.(tea.MouseWheelMsg); ok {
-			p.term.Scroll(wheelLines(wheel))
-			return nil
-		}
-		return nil
-	}
-	if mouse, ok := msg.(tea.MouseMsg); ok {
-		// In cells relative to the focused pane's grid. A click on the window's
-		// own chrome, or on another pane, lands outside it and is dropped.
-		if m.paneMouse {
-			x, y := m.focusedOrigin()
-			p.term.SendMouse(translateMouse(mouse, x, y))
 		}
 		return nil
 	}
@@ -407,11 +402,28 @@ func (m *Model) updatePaneMsg(tagged paneMsg) tea.Cmd {
 	}
 	switch msg := tagged.msg.(type) {
 	case toggleMouseMsg:
-		m.paneMouse = !m.paneMouse
-		if m.paneMouse {
-			return status("mouse goes to the box when it asks for it")
+		m.mouseSeized = !m.mouseSeized
+		if m.mouseSeized {
+			return status("mouse taken from the box — drag selects; %s gives it back", m.paneMouseHint())
 		}
-		return status("mouse stays with your terminal — selection works again")
+		return status("mouse handed back to the box")
+
+	case termpane.CopyMsg:
+		// The OS clipboard first, and OSC 52 only when there is none to
+		// write — an SSH session, a box with no clipboard tool. Not both:
+		// they can land on the same clipboard (WSL's is Windows'), the last
+		// writer wins, and OSC 52 is the path terminals are known to
+		// mis-decode. See osClipboard.
+		text, copyOS := msg.Text, m.copyOS
+		return tea.Batch(
+			func() tea.Msg {
+				if copyOS(text) == nil {
+					return nil
+				}
+				return tea.SetClipboard(text)()
+			},
+			status("copied"),
+		)
 
 	case paneActionMsg:
 		// The list's dispatcher, on the one discobox this screen is showing:
@@ -562,6 +574,83 @@ func (m *Model) dismissPane(p *pane) {
 	m.layout()
 }
 
+// routeMouse sends a mouse event to the pane it belongs to: the one a
+// left-button gesture started in while one is open, and otherwise the pane
+// under the pointer. A left press also focuses the pane it landed in — with a
+// mouse in hand, pointing at the thing is how you say which one you mean. The
+// pane's own HandleMouse decides what the event does: selection, forwarding
+// to an application that asked for the mouse, or the wheel.
+func (m *Model) routeMouse(msg tea.MouseMsg) tea.Cmd {
+	var x, y int
+	p := m.paneByID(m.mouseCapture)
+	if p != nil {
+		x, y = m.paneOrigin(p)
+	} else {
+		mouse := msg.Mouse()
+		p, x, y = m.paneAt(mouse.X, mouse.Y)
+	}
+	if p == nil {
+		return nil
+	}
+	switch ev := msg.(type) {
+	case tea.MouseClickMsg:
+		if ev.Button == tea.MouseLeft {
+			m.mouseCapture = p.id
+			m.focusPane(p)
+		}
+	case tea.MouseReleaseMsg:
+		if ev.Button == tea.MouseLeft {
+			m.mouseCapture = 0
+		}
+	case tea.MouseWheelMsg:
+		// A finished pane has no application left to consult about the
+		// wheel; its held screen scrolls directly.
+		if p.exited {
+			p.term.Scroll(wheelLines(ev))
+			return nil
+		}
+	}
+	p.term.SetSeized(m.mouseSeized)
+	return fromPane(p.id, p.term.HandleMouse(translateMouse(msg, x, y)))
+}
+
+// paneAt is the pane whose grid is under a screen position, with the origin
+// that grid was drawn at. The overlay owns the whole screen while it is up;
+// otherwise the terminal is on the left and the visible shell tab on the
+// right. The chrome between and around them belongs to no pane.
+func (m *Model) paneAt(x, y int) (*pane, int, int) {
+	candidates := []*pane{m.overlay}
+	if m.overlay == nil {
+		candidates = candidates[:0]
+		candidates = append(candidates, m.terminal)
+		if m.activeShell >= 0 && m.activeShell < len(m.shells) {
+			candidates = append(candidates, m.shells[m.activeShell])
+		}
+	}
+	for _, p := range candidates {
+		if p == nil {
+			continue
+		}
+		ox, oy := m.paneOrigin(p)
+		cols, rows := m.paneCells(m.paneWidthOf(p))
+		if x >= ox && x < ox+cols && y >= oy && y < oy+rows {
+			return p, ox, oy
+		}
+	}
+	return nil, 0, 0
+}
+
+// focusPane moves focus to a pane the mouse chose.
+func (m *Model) focusPane(p *pane) {
+	if p == m.overlay || p == m.terminal {
+		m.onShells = false
+		return
+	}
+	if i := m.shellIndex(p); i >= 0 {
+		m.onShells, m.activeShell = true, i
+	}
+}
+
 // wheelLines is how far one turn of the wheel moves the view.
 func wheelLines(wheel tea.MouseWheelMsg) int {
 	switch wheel.Button {
@@ -598,14 +687,13 @@ func (m *Model) paneWidthOf(p *pane) int {
 	return max(m.width-m.width/2, 4)
 }
 
-// focusedOrigin is where the pane every key goes to was drawn: past its
-// border's left edge and the cell of air inside it, and down past the banner
-// and the border's top edge.
+// paneOrigin is where a pane's grid was drawn: past its border's left edge
+// and the cell of air inside it, and down past the banner and the border's
+// top edge.
 //
 // The cursor and every mouse event are placed against this, so it is worked
 // out once rather than counted twice.
-func (m *Model) focusedOrigin() (x, y int) {
-	p := m.focusedPane()
+func (m *Model) paneOrigin(p *pane) (x, y int) {
 	if p != nil && p != m.overlay && p != m.terminal && len(m.shells) > 0 {
 		// A shell tab: its box starts where the terminal's ends.
 		return m.width/2 + 1 + boxPad, 2
@@ -701,26 +789,25 @@ func (m *Model) paneCursor() *tea.Cursor {
 	if p == nil {
 		return nil
 	}
-	x, y := m.focusedOrigin()
+	x, y := m.paneOrigin(p)
 	return p.term.Cursor(x, y)
 }
 
-// paneMouseMode mirrors what the focused pane's application has asked for, so
-// the terminal reports the mouse only while something is using it — and only
-// while the mouse has been handed over at all.
+// paneMouseMode is what the window asks the real terminal to report. While
+// panes are up the mouse is always reported: selection and click-to-focus
+// need the events even when nothing in the box asked for a mouse — which is
+// the bargain every multiplexer strikes, native selection traded for the
+// panes' own. All-motion is requested only when the focused application wants
+// it and the mouse has not been seized away from it.
 func (m *Model) paneMouseMode() tea.MouseMode {
-	p := m.focusedPane()
-	if p == nil || !m.paneMouse {
+	if !m.inPanes() {
 		return tea.MouseModeNone
 	}
-	switch p.term.MouseMode() {
-	case termpane.MouseAllMotion:
+	if p := m.focusedPane(); p != nil && !m.mouseSeized &&
+		p.term.MouseMode() == termpane.MouseAllMotion {
 		return tea.MouseModeAllMotion
-	case termpane.MouseCellMotion:
-		return tea.MouseModeCellMotion
-	default:
-		return tea.MouseModeNone
 	}
+	return tea.MouseModeCellMotion
 }
 
 // translateMouse moves an event from the screen into a pane's grid.

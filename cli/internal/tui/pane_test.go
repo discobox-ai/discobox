@@ -10,6 +10,8 @@ import (
 	tea "charm.land/bubbletea/v2"
 	"charm.land/lipgloss/v2"
 	"github.com/charmbracelet/x/ansi"
+
+	"github.com/obot-platform/discobox/termpane"
 )
 
 // openWorkspace drives the window into the workspace on the first sandbox.
@@ -19,6 +21,8 @@ func openWorkspace(t *testing.T, ds *fakeSource, act string) (*driver, *Model, *
 	m := New(t.Context(), ds)
 	m.logo = logo{}
 	m.expanded = true
+	// A test copy must not clobber the developer's actual clipboard.
+	m.copyOS = func(string) error { return nil }
 	d := newDriver(t, m)
 	d.start()
 	d.wait("the listing", func() bool { return len(m.list.rows()) > 0 })
@@ -428,7 +432,7 @@ func TestPaneCursorLandsOnTheGrid(t *testing.T) {
 	}
 	// The border and the air inside it across; the header, the line naming the
 	// box, and the border's top edge down.
-	originX, originY := m.focusedOrigin()
+	originX, originY := m.paneOrigin(m.focusedPane())
 	if cursor.X != originX+3 || cursor.Y != originY {
 		t.Fatalf("cursor at %d,%d, want %d,%d", cursor.X, cursor.Y, originX+3, originY)
 	}
@@ -548,21 +552,25 @@ func TestCtrlCNeverQuitsFromAPane(t *testing.T) {
 	}
 }
 
-// The mouse goes to the sandbox only while something in it has asked for one,
-// so the terminal's own selection is only lost while it is being used.
-func TestMouseIsMirroredFromTheSandbox(t *testing.T) {
+// While panes are up the terminal always reports the mouse — selection and
+// click-to-focus need the events — and a sandbox that asked for the mouse is
+// forwarded them, translated out of screen space.
+func TestMouseIsForwardedToTheSandboxThatAskedForIt(t *testing.T) {
 	ds := newFakeSource(testSandboxes()...)
 	d, m, term := openWorkspace(t, ds, "enter")
 
-	if m.View().MouseMode != tea.MouseModeNone {
-		t.Fatal("nothing has asked for the mouse yet")
+	if m.View().MouseMode != tea.MouseModeCellMotion {
+		t.Fatal("a workspace should report the mouse for selection")
 	}
 
 	term.send("\x1b[?1000h\x1b[?1006hCLICKS")
-	d.wait("mouse mode", func() bool { return m.View().MouseMode == tea.MouseModeCellMotion })
+	d.wait("mouse mode", func() bool {
+		p := m.focusedPane()
+		return p != nil && p.term.MouseMode() != termpane.MouseNone
+	})
 
 	// A click on the grid reaches the sandbox, translated out of screen space.
-	originX, originY := m.focusedOrigin()
+	originX, originY := m.paneOrigin(m.focusedPane())
 	d.dispatch(tea.MouseClickMsg{X: originX + 4, Y: originY + 2, Button: tea.MouseLeft})
 	if got := term.typed("\x1b[<"); !strings.Contains(got, "\x1b[<0;5;3") {
 		t.Fatalf("typed %q, want a click at grid cell 4,2", got)
@@ -576,31 +584,90 @@ func TestMouseIsMirroredFromTheSandbox(t *testing.T) {
 	}
 }
 
-// ctrl+a m hands the mouse back, for when you would rather copy a stack trace
-// than click on it.
-func TestPrefixMTogglesTheMouse(t *testing.T) {
+// ctrl+a m takes the mouse from a sandbox that is using it, for when you
+// would rather copy a stack trace than click on it. The terminal keeps
+// reporting either way: the events drive selection while the mouse is taken.
+func TestPrefixMSeizesTheMouse(t *testing.T) {
 	ds := newFakeSource(testSandboxes()...)
 	d, m, term := openWorkspace(t, ds, "enter")
 
 	term.send("\x1b[?1000h\x1b[?1006hCLICKS")
-	d.wait("mouse mode", func() bool { return m.View().MouseMode == tea.MouseModeCellMotion })
+	d.wait("mouse mode", func() bool {
+		p := m.focusedPane()
+		return p != nil && p.term.MouseMode() != termpane.MouseNone
+	})
 
 	d.key("ctrl+a")
 	d.key("m")
-	if m.paneMouse {
-		t.Fatal("ctrl+a m should hand the mouse back")
+	if !m.mouseSeized {
+		t.Fatal("ctrl+a m should take the mouse")
 	}
-	if m.View().MouseMode != tea.MouseModeNone {
-		t.Fatal("with the mouse handed back the terminal should stop reporting it")
+	if m.View().MouseMode != tea.MouseModeCellMotion {
+		t.Fatal("the terminal keeps reporting while the mouse is taken")
 	}
-	if !strings.Contains(m.status, "selection") {
+	if !strings.Contains(m.status, "mouse") {
 		t.Fatalf("status = %q, want it to say what changed", m.status)
 	}
 
+	// Taken, a click drives selection rather than the sandbox.
+	before := len(term.typed(""))
+	originX, originY := m.paneOrigin(m.focusedPane())
+	d.dispatch(tea.MouseClickMsg{X: originX, Y: originY, Button: tea.MouseLeft})
+	d.dispatch(tea.MouseReleaseMsg{X: originX, Y: originY, Button: tea.MouseLeft})
+	if after := len(term.typed("")); after != before {
+		t.Fatal("a seized click reached the sandbox")
+	}
+
 	d.key("ctrl+a")
 	d.key("m")
-	if !m.paneMouse || m.View().MouseMode != tea.MouseModeCellMotion {
-		t.Fatal("ctrl+a m again should give it back to the sandbox")
+	if m.mouseSeized {
+		t.Fatal("ctrl+a m again should give the mouse back")
+	}
+}
+
+// Dragging over a pane whose sandbox never asked for the mouse selects, and
+// releasing copies: the clipboard commands run and the status line says so.
+func TestDragSelectsAndCopiesFromThePane(t *testing.T) {
+	ds := newFakeSource(testSandboxes()...)
+	d, m, term := openWorkspace(t, ds, "enter")
+
+	term.send("hello world")
+	d.wait("output", func() bool { return strings.Contains(frameText(m), "hello world") })
+
+	originX, originY := m.paneOrigin(m.focusedPane())
+	d.dispatch(tea.MouseClickMsg{X: originX, Y: originY, Button: tea.MouseLeft})
+	d.dispatch(tea.MouseMotionMsg{X: originX + 4, Y: originY, Button: tea.MouseLeft})
+	d.dispatch(tea.MouseReleaseMsg{X: originX + 4, Y: originY, Button: tea.MouseLeft})
+	d.wait("the copy", func() bool { return m.status == "copied" })
+	if got := m.focusedPane().term.SelectionText(); got != "hello" {
+		t.Fatalf("selected %q, want %q", got, "hello")
+	}
+}
+
+// Clicking a pane focuses it: with a mouse in hand, pointing at the thing is
+// how you say which one you mean.
+func TestClickFocusesThePaneUnderIt(t *testing.T) {
+	ds := newFakeSource(testSandboxes()...)
+	d, m, _ := openWorkspace(t, ds, "enter")
+
+	d.key("ctrl+a")
+	d.key("s")
+	d.wait("the first tab", func() bool { return len(m.shells) == 1 })
+	d.wait("the tab to have focus", func() bool { return m.onShells })
+
+	click := func(x, y int) {
+		d.dispatch(tea.MouseClickMsg{X: x, Y: y, Button: tea.MouseLeft})
+		d.dispatch(tea.MouseReleaseMsg{X: x, Y: y, Button: tea.MouseLeft})
+	}
+	x, y := m.paneOrigin(m.terminal)
+	click(x, y)
+	if m.onShells {
+		t.Fatal("clicking the terminal should focus it")
+	}
+	x, y = m.paneOrigin(m.shells[0])
+	click(x, y)
+	if !m.onShells {
+		t.Fatal("clicking the tab should focus it back")
 	}
 }
 

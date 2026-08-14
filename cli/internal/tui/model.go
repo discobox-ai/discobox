@@ -75,10 +75,17 @@ type Model struct {
 	paneBox    Sandbox
 	nextPaneID int
 
-	// paneMouse is whether the mouse is handed to the sandbox at all. On by
-	// default, and the leader plus m gives it back when you would rather
-	// select text.
-	paneMouse bool
+	// mouseSeized is whether the leader plus m has taken the mouse from the
+	// box: while set, nothing is forwarded and every event drives the panes'
+	// own selection. Selection needs no seizing while nothing in the box has
+	// asked for the mouse — it simply works — so this is for vim and htop and
+	// their kind, when you would rather copy a stack trace than click on it.
+	mouseSeized bool
+
+	// mouseCapture is the pane a left-button gesture started in, which owns
+	// every mouse event until the button is released: a drag that crosses a
+	// border must not change hands mid-gesture. Zero when no gesture is open.
+	mouseCapture int
 
 	// leaderKey is the pane's prefix; empty takes the default. See Model.leader.
 	leaderKey string
@@ -110,6 +117,10 @@ type Model struct {
 	// terminal around it. It is a field only so a test can run one without a
 	// terminal to release; nothing in the window ever replaces it.
 	exec func(tea.ExecCommand, tea.ExecCallback) tea.Cmd
+
+	// copyOS writes the OS clipboard. A field for the same reason exec is:
+	// a test copy must not clobber the developer's actual clipboard.
+	copyOS func(string) error
 
 	// statusGen counts messages, so a timer can tell whether it is the last one
 	// out.
@@ -156,17 +167,17 @@ func New(ctx context.Context, ds DataSource, options ...Option) *Model {
 
 	session := Session{DefaultProject: "default"}
 	m := &Model{
-		ctx:       ctx,
-		ds:        ds,
-		st:        st,
-		list:      newSandboxList(session),
-		prompt:    ta,
-		logo:      newLogo(color),
-		focus:     focusPrompt,
-		session:   session,
-		exec:      tea.Exec,
-		paneMouse: true,
-		noise:     newNoise(),
+		ctx:     ctx,
+		ds:      ds,
+		st:      st,
+		list:    newSandboxList(session),
+		prompt:  ta,
+		logo:    newLogo(color),
+		focus:   focusPrompt,
+		session: session,
+		exec:    tea.Exec,
+		copyOS:  func(text string) error { return osClipboard(ctx, text) },
+		noise:   newNoise(),
 	}
 	// The label above the field already says what an empty prompt does, and the
 	// placeholder is gone the moment you type.
@@ -1497,8 +1508,12 @@ func (m *Model) hints() string {
 				hints += " · " + m.leader() + " 0-9 jump"
 			}
 		}
-		if p.term.MouseMode() != termpane.MouseNone {
-			hints += " · " + m.paneMouseHint() + " mouse"
+		// The seize toggle only matters while something in the box has the
+		// mouse; the rest of the time selection simply works.
+		if m.mouseSeized {
+			hints += " · " + m.paneMouseHint() + " mouse back"
+		} else if p.term.MouseMode() != termpane.MouseNone {
+			hints += " · " + m.paneMouseHint() + " take mouse"
 		}
 		return hints
 	case focusFolder:
@@ -1671,7 +1686,8 @@ func (m *Model) helpText() string {
 		"                   leader again",
 		"    " + m.leader() + " 0-9     jump straight there: 0 is the terminal,",
 		"                   1-9 the tab wearing that number",
-		"    " + m.paneMouseHint() + "       give the mouse to the box, or take it back",
+		"    " + m.paneMouseHint() + "       take the mouse from a box that is using it,",
+		"                   to select and copy; press again to give it back",
 		"",
 		"  A shell that exits keeps its last screen as a tab to be read;",
 		"  q, Esc or Enter dismisses it. Detach is the workspace's, not a",
