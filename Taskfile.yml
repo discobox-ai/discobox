@@ -151,30 +151,13 @@ tasks:
       - dev:docker-image-watch
 
   dev:server:
-    desc: Run discobox-server with Air hot reload
-    cmds:
-      - touch .env
-      - go tool air
-
-  dev:cli:
-    desc: Recompile the disco CLI with Air hot reload
-    cmds:
-      - go tool air -c .air.cli.toml
-
-  dev-wnb:
-    desc: "Like dev, but hot-reloads with watchnbuild instead of Air (see .wnb.yaml)"
-    deps:
-      - dev-wnb:server
-      - dev:docker-image-watch
-
-  dev-wnb:server:
-    desc: Run discobox-server with watchnbuild hot reload
+    desc: Run discobox-server with watchnbuild hot reload (see .wnb.yaml)
     cmds:
       - touch .env
       - go tool watchnbuild
 
-  dev-wnb:cli:
-    desc: Recompile the disco CLI with watchnbuild hot reload
+  dev:cli:
+    desc: Recompile the disco CLI with watchnbuild hot reload (see .wnb.cli.yaml)
     cmds:
       - go tool watchnbuild -config .wnb.cli.yaml
 
@@ -354,4 +337,4 @@ tasks:
   clean:
     desc: Remove local build artifacts
     cmds:
-      - rm -rf build build-errors.log
+      - rm -rf build

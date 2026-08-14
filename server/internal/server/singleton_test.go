@@ -53,7 +53,7 @@ func TestAcquireSingletonBlocksSecondHolder(t *testing.T) {
 }
 
 // TestAcquireSingletonProceedsAfterRelease covers the handoff: the incumbent
-// exiting must let the waiter in, which is what makes an air rebuild recover
+// exiting must let the waiter in, which is what makes a dev rebuild recover
 // instead of leaving two servers.
 func TestAcquireSingletonProceedsAfterRelease(t *testing.T) {
 	dir := t.TempDir()

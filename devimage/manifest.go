@@ -134,7 +134,7 @@ func Read(path string) (Manifest, error) {
 }
 
 // WriteAtomic installs a validated manifest without exposing a partial file to
-// an Air-restarted server.
+// a hot-reload-restarted server.
 func WriteAtomic(path string, manifest Manifest) error {
 	canonical, err := NewManifest(manifest.Images)
 	if err != nil {

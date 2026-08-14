@@ -1,17 +1,13 @@
-# watchnbuild config for `task dev-wnb` — the parallel of .air.toml.
+# watchnbuild config for `task dev` (and `task dev:server`).
 #
-# Differences from the air setup, on purpose:
+# The watch set is the whole tree minus what a build writes, rather than an
+# allowlist of directories: server/ and cli/ import a long and growing list of
+# root packages, and an allowlist silently stops rebuilding whenever a new one
+# is added.
 #
-#   - air used an `include_dir` allowlist that had gone stale: it named seven
-#     directories that no longer exist at the repo root, and omitted the root
-#     packages server/ and cli/ actually import (internal, execstream,
-#     devimage, harness, localipc, layout, controlplane, randomname). Editing
-#     any of those did not trigger a rebuild. wnb watches the whole tree and
-#     excludes what a build writes, so a new root package is covered the day
-#     it is added.
-#   - no stop_signal: discobox-server's signal.NotifyContext takes SIGINT and
-#     SIGTERM through the same shutdown path, so air's send_interrupt bought
-#     nothing. TERM is wnb's default and the right signal for a supervisor.
+# stop_signal is deliberately unset: discobox-server's signal.NotifyContext
+# takes SIGINT and SIGTERM through the same shutdown path, and TERM is wnb's
+# default and the right signal for a supervisor.
 
 watch:
   # extensions is deliberately unset: wnb's built-in source list already
@@ -23,10 +19,9 @@ watch:
 debounce: 1s
 
 build:
-  # No `rm -f build/disco` (air had one): go build already replaces the
-  # output atomically, so it works over a running binary, and it leaves the
-  # previous binary in place when compilation fails. The rm only guaranteed
-  # that a failed build left you with no CLI at all.
+  # Nothing removes the old binaries first: go build replaces its output
+  # atomically, so it works over a running binary, and it leaves the previous
+  # binary in place when compilation fails rather than leaving you with none.
   command: >-
     cd cli && go build -o ../build/disco ./cmd/disco &&
     cd ../server && go build -gcflags="all=-N -l" -o ../build/discobox-server ./cmd/discobox-server &&
@@ -35,9 +30,10 @@ build:
 
 run:
   command: ./build/discobox-server
-  # Matches air's kill_delay. A grace this long is only safe because wnb
-  # stays responsive while stopping: Ctrl-C a second time and the process
-  # group is killed immediately rather than waiting out the ten minutes.
+  # Long enough to let a shutdown that is draining sandboxes finish. A grace
+  # this long is only safe because wnb stays responsive while stopping: Ctrl-C
+  # a second time and the process group is killed immediately rather than
+  # waiting out the ten minutes.
   grace: 10m
 
 retry:

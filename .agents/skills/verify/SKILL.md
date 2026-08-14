@@ -5,20 +5,21 @@ description: How to drive a running `task dev` instance to verify sandbox/pool-a
 
 # Verifying against `task dev`
 
-`task dev` runs two long-lived pieces: `dev:server` (discobox-server under Air
-hot reload) and `dev:docker-image-watch` (rebuilds pool/sandbox/harness images
-on source changes, writes the resulting digest to `.env`).
+`task dev` runs two long-lived pieces: `dev:server` (discobox-server under
+watchnbuild hot reload) and `dev:docker-image-watch` (rebuilds
+pool/sandbox/harness images on source changes, writes the resulting digest to
+`.env`).
 
 ## Finding the real dev server
 
 Multiple `discobox-server` processes may be running (leftover from other
-sessions/background jobs). Find the one actually owned by `task dev`'s Air
-process, not just any listener:
+sessions/background jobs). Find the one actually owned by `task dev`'s
+watchnbuild process, not just any listener:
 
 ```bash
-ps aux | grep -E "air|task dev"        # find the `go tool air` PID
-pstree -p <air-pid>                    # its child discobox-server is the real one
-ss -ltnp | grep discobox-server        # match PID -> port
+ps aux | grep -E "watchnbuild|task dev"   # find the `go tool watchnbuild` PID
+pstree -p <wnb-pid>                       # its child discobox-server is the real one
+ss -ltnp | grep discobox-server           # match PID -> port
 ```
 
 The CLI binary is at `./build/disco`. Drive it against that port:

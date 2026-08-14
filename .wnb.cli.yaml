@@ -1,12 +1,11 @@
-# watchnbuild config for `task dev-wnb:cli` — the parallel of .air.cli.toml.
+# watchnbuild config for `task dev:cli`.
 #
-# air needed a long-lived process to supervise, so .air.cli.toml ran
-# `sh -c 'echo ...; sleep 2147483647'` as a stand-in. wnb treats an omitted
-# run command as a build-only loop, so the placeholder is gone.
+# There is no run command: wnb treats that as a build-only loop, which is all
+# the CLI needs.
 #
 # watch.paths is an allowlist here (unlike .wnb.yaml) so that editing the
 # server does not relink the CLI: this config is usually run alongside
-# `task dev-wnb`. The cost is that root files outside these directories —
+# `task dev`. The cost is that root files outside these directories —
 # go.work, the root go.mod — do not trigger; a manual rebuild covers the rare
 # case where that matters.
 
@@ -18,9 +17,8 @@ watch:
 debounce: 1s
 
 build:
-  # No `rm -f build/disco` (air had one): go build replaces the output
-  # atomically and leaves the old binary alone when compilation fails, so the
-  # rm only ensured a failed build left you with no CLI.
+  # Nothing removes build/disco first: go build replaces the output atomically
+  # and leaves the old binary in place when compilation fails.
   command: cd cli && go build -o ../build/disco ./cmd/disco
   grace: 2s
 
