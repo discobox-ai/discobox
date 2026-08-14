@@ -191,6 +191,18 @@ from it can never disagree.
 The sort happens before the output-mode branch, so `-o json` is ordered the same
 as the table: the order is the CLI's answer, not a table-rendering detail.
 
+## Sandbox Display Name
+
+The NAME a sandbox listing shows (`sandboxDisplayName`,
+`internal/cli/session_title.go`) is the window title its primary terminal last
+set, when one has, and the configured (generated) name until then: the title is
+what the harness says the work is about, which tells rows apart better than two
+generated names. The title travels in the agent-status payload with the git
+state, so it costs the listing nothing. Display only — name *resolution*
+(`matchSandboxArg`, `--name` updates) still works on the configured name, and
+the TUI disables rename on a title-named row for exactly that reason
+(`Sandbox.NameIsTitle`).
+
 ## Choosing a Sandbox Interactively
 
 Commands that act on "the sandbox I am working in" take a sandbox identifier —

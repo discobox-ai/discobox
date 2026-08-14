@@ -159,6 +159,9 @@ func toTUISandbox(sb apimodel.Sandbox) tui.Sandbox {
 		Message: sandboxMessage(sb),
 		Created: sb.CreatedAt,
 	}
+	if title := sandboxPrimaryTerminalTitle(sb); title != "" {
+		row.Name, row.NameIsTitle = title, true
+	}
 	if origin, ok := sb.Origin.Get(); ok {
 		row.Folder = origin.ProjectPath
 	}

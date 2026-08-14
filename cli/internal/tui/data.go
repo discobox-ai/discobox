@@ -91,6 +91,11 @@ type Sandbox struct {
 	Name  string
 	State State
 
+	// NameIsTitle marks a Name taken from the primary terminal's window title
+	// rather than the sandbox's configured name. Rename edits the configured
+	// name — which such a row is not showing — so it is disabled there.
+	NameIsTitle bool
+
 	Harness string
 
 	// Folder is the client directory the sandbox was started from. It is not a

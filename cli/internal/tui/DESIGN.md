@@ -83,7 +83,10 @@ name typed first — so `e` opens the input dialog on the name the discobox
 *already has*: the usual edit is a word added to a name that is nearly right,
 and a blank line would make that a retype. Enter on the unchanged name is the
 same as Esc, since neither asked for anything. It takes exactly one discobox,
-because a name is a name and a selection cannot share one. It is deliberately
+because a name is a name and a selection cannot share one. A row named by its
+primary terminal's window title (`Sandbox.NameIsTitle`) refuses rename with the
+reason: the configured name is not the one on screen there, so accepting a new
+one would visibly change nothing. It is deliberately
 absent from `verbs`/`interactions`, which is what keeps it off the workspace
 screen: rename needs a name typed into a dialog, and a discobox you are
 already looking at is one you know the name of.

@@ -312,6 +312,23 @@ func TestRenameTakesExactlyOneBox(t *testing.T) {
 	}
 }
 
+// A row named by its terminal's title refuses rename: the configured name is
+// not the one on screen, so accepting a new one would visibly change nothing.
+func TestRenameRefusedWhenNameIsTerminalTitle(t *testing.T) {
+	boxes := testSandboxes()
+	boxes[0].NameIsTitle = true
+	ds := newFakeSource(boxes...)
+	m := newTestModel(t, ds)
+	send(t, m, key("tab"), key("e"))
+
+	if m.dialog == nil || m.dialog.kind != dlgMessage {
+		t.Fatalf("rename on a title-named row should say why, got %+v", m.dialog)
+	}
+	if len(ds.renames) != 0 {
+		t.Fatalf("renames = %v", ds.renames)
+	}
+}
+
 // An action that does not apply says why rather than doing nothing.
 func TestUnavailableActionExplainsItself(t *testing.T) {
 	ds := newFakeSource(testSandboxes()...)
