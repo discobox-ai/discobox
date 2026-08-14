@@ -92,3 +92,4 @@ Nygard-style ADRs (see adr.github.io) combined with current-state design docs:
 | [0037](0037-drop-disco-diff-and-disco-status.md) | Drop `disco diff` and `disco status` | Accepted |
 | [0038](0038-terminal-identity-is-the-exec-id-terminals-revive-in-place.md) | Terminal identity is the exec id, and terminals revive in place | Accepted |
 | [0039](0039-attach-waits-for-readiness-at-every-tier.md) | Attach waits for readiness at every tier | Accepted |
+| [0040](0040-discobox-images-are-reclaimed-by-label-and-local-age.md) | Discobox images are reclaimed by label and local tag age | Accepted |
