@@ -99,6 +99,16 @@ proxy, and the SSH ingress's TCP tunnel route (ADR 0024 §7) — start a stopped
 sandbox before proxying (`server/autostart.go`), and ten concurrent requests
 produce one start. Control operations never auto-start.
 
+The latch also waits for a container that is not there yet, which is this tier's
+half of the attach wait (ADR 0039): a rebuild — repair, or a recreate after
+runtime loss — leaves a window where the sandbox's tree is here and its
+container is between removal and recreation, and falling through it produced
+"no inspectable IP address" from the proxy about a fact the caller could not act
+on. The wait is for a sandbox this pool holds the tree of, under a budget
+shorter than the control plane's, so the tier that can see the container is the
+one that reports it missing. An id whose tree is not here is not late, it is
+wrong, and is answered immediately.
+
 Archived sandboxes are exempt from that latch and fail those routes with 409.
 `archive` and `delete` take the same per-sandbox mutex, and both answer only once
 the work is done rather than accepting it: each is a destructive act on state

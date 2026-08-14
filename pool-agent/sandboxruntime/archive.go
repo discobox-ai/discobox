@@ -54,6 +54,15 @@ func (r *DockerSandboxRuntime) SandboxIsArchived(sandboxID string) bool {
 	return sandboxIsArchived(r.sandboxRoot(sandboxID))
 }
 
+// hostsSandbox reports whether this pool holds the sandbox's tree, which is the
+// durable half of a sandbox and outlives its container. It is what tells a
+// sandbox whose container is being rebuilt from one this pool has never heard
+// of: the first is worth waiting for, the second never arrives.
+func (r *DockerSandboxRuntime) hostsSandbox(sandboxID string) bool {
+	_, err := os.Stat(r.sandboxRoot(sandboxID))
+	return err == nil
+}
+
 // ArchiveSandbox tears the sandbox's runtime down and keeps its data.
 //
 // It takes the same per-sandbox power lock as start and stop, which is what

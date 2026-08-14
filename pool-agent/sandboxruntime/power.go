@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"sync"
+	"time"
 
 	"github.com/moby/moby/client"
 
@@ -59,6 +60,19 @@ func (r *DockerSandboxRuntime) RestartSandbox(ctx context.Context, sandboxID str
 // start as an explicit instruction, so an implicitly started sandbox reports
 // starting and then running exactly like any other.
 func (r *DockerSandboxRuntime) EnsureSandboxRunning(ctx context.Context, sandboxID string) error {
+	// A sandbox whose container is not there yet is waited for, not failed
+	// (ADR 0039 tier 2). This tier is the only one that can see the container,
+	// and a rebuild — repair, or a recreate after runtime loss — leaves a
+	// window where this pool holds the sandbox's tree and its container is
+	// between removal and recreation. Falling through it produced "no
+	// inspectable IP address" from the proxy, about a fact the caller could
+	// not act on.
+	//
+	// The wait is outside the lock: the create it is waiting for takes the same
+	// lock, so holding it here would wait for something it was blocking.
+	if err := r.waitForSandboxContainer(ctx, sandboxID); err != nil {
+		return err
+	}
 	lock := r.sandboxLock(sandboxID)
 	lock.Lock()
 	defer lock.Unlock()
@@ -76,6 +90,46 @@ func (r *DockerSandboxRuntime) EnsureSandboxRunning(ctx context.Context, sandbox
 		return nil
 	}
 	return r.startLocked(ctx, sandboxID)
+}
+
+// sandboxContainerWaitTimeout bounds the wait for a container that is being
+// rebuilt. It is strictly shorter than the control plane's own wait, so a
+// container that never appears is reported by this tier — the only one that can
+// see it — rather than by a deadline two levels out (ADR 0039).
+const (
+	sandboxContainerWaitTimeout  = 90 * time.Second
+	sandboxContainerPollInterval = 250 * time.Millisecond
+)
+
+// waitForSandboxContainer returns as soon as the sandbox has a container, and
+// waits for one only when this pool is holding the sandbox's tree.
+//
+// An id whose tree is not here is not late, it is wrong: waiting on it would
+// turn a prompt error into a minute and a half of silence on every route
+// autoStart wraps. An archived sandbox is not waited on either — its container
+// is gone by intent (ADR 0022 §5) — and is left to the archive answer its
+// caller gives.
+func (r *DockerSandboxRuntime) waitForSandboxContainer(ctx context.Context, sandboxID string) error {
+	deadline := time.Now().Add(sandboxContainerWaitTimeout)
+	for {
+		_, err := r.GetSandbox(ctx, sandboxID)
+		if err == nil || !errors.Is(err, ErrNotFound) {
+			return err
+		}
+		if r.SandboxIsArchived(sandboxID) || !r.hostsSandbox(sandboxID) {
+			return nil
+		}
+		if !time.Now().Before(deadline) {
+			// The caller reports the container that never came back; there is
+			// nothing more specific this tier can say about it.
+			return err
+		}
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		case <-time.After(sandboxContainerPollInterval):
+		}
+	}
 }
 
 func (r *DockerSandboxRuntime) startLocked(ctx context.Context, sandboxID string) error {
