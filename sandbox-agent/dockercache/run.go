@@ -14,7 +14,7 @@ import (
 // Run executes a user's docker command line and returns the exit code to use.
 //
 // Anything that is not a build we point at the pool builder is exec'd, replacing
-// this process, so stdio, TTY behaviour and signals are the real docker CLI's
+// this process, so stdio, TTY behavior and signals are the real docker CLI's
 // with no wrapper in the data path.
 //
 // A build is different: its result has to come back from the pool, and that is
@@ -42,7 +42,7 @@ func Run(args []string) int {
 // docker exporter cannot ask the local daemon what it already holds. Both ends
 // of a registry are content-addressed, so only missing blobs move.
 func buildViaRegistry(ctx context.Context, a Args) int {
-	if code := runPassthrough(a.Argv); code != 0 {
+	if code := runPassthrough(ctx, a.Argv); code != 0 {
 		return code
 	}
 	// Pull before tagging: there is nothing local to tag until it lands.
@@ -72,9 +72,9 @@ func buildViaRegistry(ctx context.Context, a Args) int {
 
 // runPassthrough runs a command with this process's stdio, so build progress
 // renders normally.
-func runPassthrough(argv []string) int {
+func runPassthrough(ctx context.Context, argv []string) int {
 	//nolint:gosec // argv is this shim's own rewrite of the user's command line.
-	cmd := exec.Command(argv[0], argv[1:]...)
+	cmd := exec.CommandContext(ctx, argv[0], argv[1:]...)
 	cmd.Stdin, cmd.Stdout, cmd.Stderr = os.Stdin, os.Stdout, os.Stderr
 	if err := cmd.Run(); err != nil {
 		var exit *exec.ExitError
