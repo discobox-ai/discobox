@@ -3,6 +3,7 @@ package tui
 import (
 	"context"
 	"io"
+	"strings"
 	"time"
 
 	"github.com/obot-platform/discobox/termpane"
@@ -130,11 +131,12 @@ type Sandbox struct {
 }
 
 // Session is what the window knows about where it is running: the project and
-// directory every command it runs inherits, and the choices the run options
-// panel offers.
+// the directory every command it runs inherits.
 //
 // It is read once at startup. The project is a property of the session the way
-// `disco -p` is a property of a shell, not something the window changes.
+// `disco -p` is a property of a shell, not something the window changes. What
+// the run options offer as a harness is not here — that is the harnesses, which
+// are read on their own and change while the window is up.
 type Session struct {
 	Project        string
 	DefaultProject string
@@ -143,11 +145,127 @@ type Session struct {
 	// and Branch is what is checked out in it.
 	Directory string
 	Branch    string
+}
 
-	// Harnesses are the project's configured harness slugs, most useful first,
-	// and DefaultHarness is the one an unset --harness resolves to.
-	Harnesses      []string
-	DefaultHarness string
+// HarnessState is what a harness is set to, and so whether a discobox can be
+// run on it. It is the one thing the harnesses screen is really about: a
+// harness that has never been through its own setup has no credentials to work
+// with.
+type HarnessState string
+
+const (
+	// HarnessEnabled has been through its configure flow and can be run.
+	HarnessEnabled HarnessState = "enabled"
+	// HarnessDisabled has not, or has been taken back out of use.
+	HarnessDisabled HarnessState = "disabled"
+	// HarnessFailed tried and did not finish. The reason is on the harness.
+	HarnessFailed HarnessState = "failed"
+)
+
+// Harness is one of the project's harness configs, as the harnesses screen
+// draws it.
+//
+// It carries what the row needs, what the config card shows, and what decides
+// which actions apply. The secrets are the environment variables the image
+// declares and nothing more: which secret is bound to each costs a request of
+// its own, so the card asks for it when it is opened. See
+// DataSource.HarnessSecrets.
+type Harness struct {
+	ID    string
+	Name  string
+	Slug  string
+	State HarnessState
+
+	// Default is the harness a discobox is created on when nothing says otherwise.
+	Default bool
+	// BuiltIn harnesses come with the server rather than being registered by hand.
+	BuiltIn bool
+	// Error is why the configure flow did not finish, when it did not.
+	Error string
+
+	Image  string
+	Digest string
+
+	Run      []string
+	Relaunch []string
+
+	Secrets []HarnessSecret
+	Files   []HarnessFile
+
+	Updated time.Time
+}
+
+// HarnessSecret is one environment variable a harness runs with.
+//
+// In a listing only the declaration is filled in: the name, whether it is
+// required, and the group it is one of. HarnessSecrets fills in the rest —
+// which of the project's secrets is actually bound to it — including the
+// bindings the image never declared, which are the ones bound by hand.
+type HarnessSecret struct {
+	Name     string
+	Required bool
+	// OneOf names a group of alternatives, of which the harness needs one.
+	OneOf string
+	// Declared is false for a binding the image never asked for.
+	Declared bool
+
+	// SecretID is the project secret bound to this variable, empty when nothing
+	// is. The rest describes it, and is filled in only when the secret is one
+	// this project can see.
+	SecretID   string
+	SecretType string
+	SecretName string
+	Anonymous  bool
+}
+
+// HarnessFile is one file a harness carries into every discobox it runs in.
+type HarnessFile struct {
+	Path    string
+	Content string
+
+	// Configured marks a file the configure flow wrote. It overlays the
+	// image-declared file of the same path, which is why it is listed first.
+	Configured bool
+	CreateOnly bool
+	Template   bool
+}
+
+// HarnessVerb is a harness action that runs against the API and returns,
+// leaving the window up — the counterpart of Verb for the harnesses screen.
+// Enabling is not among them: it is an interactive flow that owns the terminal.
+type HarnessVerb string
+
+const (
+	HarnessDisable    HarnessVerb = "disable"
+	HarnessSetDefault HarnessVerb = "set default"
+)
+
+// done is what the status line says once the verb has run.
+func (v HarnessVerb) done(name string) string {
+	if v == HarnessSetDefault {
+		return name + " is now the default"
+	}
+	return "disabled " + name
+}
+
+// displayName is what the harness is called on screen: its name, the slug it is
+// run by, or failing both the id, which is the one thing it always has.
+func (h Harness) displayName() string {
+	if name := strings.TrimSpace(h.Name); name != "" {
+		return name
+	}
+	if slug := strings.TrimSpace(h.Slug); slug != "" {
+		return slug
+	}
+	return h.ID
+}
+
+// flagName is what `disco run --harness` takes for this harness.
+func (h Harness) flagName() string {
+	if slug := strings.TrimSpace(h.Slug); slug != "" {
+		return slug
+	}
+	return strings.TrimSpace(h.Name)
 }
 
 func (s Sandbox) hasDiff() bool { return s.Diff.Known && s.Diff.Files > 0 }
@@ -271,7 +389,7 @@ type RunRequest struct {
 	Prompt  string
 	Harness string // empty is the project default
 
-	// NoHarness asks for a sandbox with no agent in it, just a shell. It is a
+	// NoHarness asks for a sandbox with no harness in it, just a shell. It is a
 	// different answer from an empty Harness, which takes the project default.
 	NoHarness bool
 
@@ -383,6 +501,30 @@ type DataSource interface {
 	// Rename gives one sandbox a new name. It is not a Verb: a verb is a word
 	// the window already has, and this one needs the name typed first.
 	Rename(ctx context.Context, sandboxID, name string) error
+
+	// Harnesses is the project's harnesses, oldest first, which is the order
+	// they were registered in. It is read at startup as well as by the harnesses
+	// screen: the run options offer the harnesses it reports, so enabling one
+	// makes it selectable without reopening the window.
+	Harnesses(ctx context.Context) ([]Harness, error)
+
+	// HarnessSecrets is one harness's environment variables with the project
+	// secret bound to each, for the config card. It is a request of its own, so it
+	// is made when the card is opened rather than for every row of a listing.
+	HarnessSecrets(ctx context.Context, harnessID string) ([]HarnessSecret, error)
+
+	// DoHarness runs a lifecycle verb against one harness.
+	DoHarness(ctx context.Context, verb HarnessVerb, harnessID string) error
+
+	// ConfigureHarness runs the harness's own interactive setup with the real
+	// terminal's streams. The window is suspended for the duration: the flow
+	// asks questions and the harness draws its own screen to ask them on.
+	ConfigureHarness(ctx context.Context, harnessID string, stdin io.Reader, stdout, stderr io.Writer) error
+
+	// EditHarnessFile opens one of the harness's files in the user's editor and
+	// saves what it wrote back, reporting whether anything changed. The window
+	// is suspended for it, for the same reason.
+	EditHarnessFile(ctx context.Context, harnessID, path string, stdin io.Reader, stdout, stderr io.Writer) (bool, error)
 
 	// Interact runs a terminal-owning action against the given sandboxes, with
 	// the real terminal's streams. The window is suspended for the duration.

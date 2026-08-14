@@ -23,6 +23,11 @@ type fakeSource struct {
 	sandboxes []Sandbox
 	dirty     bool
 
+	harnesses   []Harness
+	harnessErr  error
+	secrets     []HarnessSecret
+	editChanged bool
+
 	listErr   error
 	runErr    error
 	createdID string
@@ -51,6 +56,9 @@ type fakeSource struct {
 	terminals []*fakeTerminal
 	// execTerminals is the terminal serving each exec attach, by exec id.
 	execTerminals map[string]*fakeTerminal
+	didHarness    []string // "verb id"
+	configured    []string // harness id
+	editedFiles   []string // "id path"
 }
 
 func newFakeSource(sandboxes ...Sandbox) *fakeSource {
@@ -60,11 +68,49 @@ func newFakeSource(sandboxes ...Sandbox) *fakeSource {
 			DefaultProject: "default",
 			Directory:      "/src/disco2",
 			Branch:         "main",
-			Harnesses:      []string{"claude", "codex"},
-			DefaultHarness: "claude",
 		},
 		sandboxes: sandboxes,
 		createdID: "sbx_created",
+		harnesses: testHarnesses(),
+	}
+}
+
+// testHarnesses is what a project usually looks like: the two harnesses the
+// server ships, both set up and one of them the default, plus two the project
+// registered itself — one never set up, one whose setup did not finish. The
+// second row is what makes every action apply somewhere: `s` applies only to a
+// harness that is enabled and not already the default.
+func testHarnesses() []Harness {
+	now := time.Date(2026, 8, 7, 12, 0, 0, 0, time.UTC)
+	return []Harness{
+		{
+			ID: "hc_claude", Name: "Claude", Slug: "claude", State: HarnessEnabled,
+			Default: true, BuiltIn: true, Image: "ghcr.io/example/claude:latest",
+			Run:     []string{"claude"},
+			Secrets: []HarnessSecret{{Name: "ANTHROPIC_API_KEY", Required: true, Declared: true}},
+			Files: []HarnessFile{
+				{Path: ".claude.json", Content: "{}", Configured: true},
+				{Path: "settings.json", Content: "{}"},
+			},
+			Updated: now.Add(-2 * time.Hour),
+		},
+		{
+			ID: "hc_codex", Name: "Codex", Slug: "codex", State: HarnessEnabled,
+			BuiltIn: true, Image: "ghcr.io/example/codex:latest",
+			Run:     []string{"codex"},
+			Secrets: []HarnessSecret{{Name: "OPENAI_API_KEY", Required: true, Declared: true}},
+			Files:   []HarnessFile{{Path: "config.toml", Content: "{}", Configured: true}},
+			Updated: now.Add(-30 * time.Minute),
+		},
+		{
+			ID: "hc_custom", Name: "Custom", Slug: "custom", State: HarnessDisabled,
+			Image: "ghcr.io/example/custom:latest", Run: []string{"custom"},
+			Updated: now.Add(-72 * time.Hour),
+		},
+		{
+			ID: "hc_scratch", Name: "Scratch", Slug: "scratch", State: HarnessFailed,
+			Error: "the setup exited before it finished", Updated: now.Add(-time.Minute),
+		},
 	}
 }
 
@@ -217,6 +263,42 @@ func (f *fakeSource) endExec(execID string) {
 	}
 }
 
+func (f *fakeSource) Harnesses(context.Context) ([]Harness, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	if f.harnessErr != nil {
+		return nil, f.harnessErr
+	}
+	return append([]Harness(nil), f.harnesses...), nil
+}
+
+func (f *fakeSource) HarnessSecrets(_ context.Context, _ string) ([]HarnessSecret, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return append([]HarnessSecret(nil), f.secrets...), nil
+}
+
+func (f *fakeSource) DoHarness(_ context.Context, verb HarnessVerb, id string) error {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.didHarness = append(f.didHarness, string(verb)+" "+id)
+	return nil
+}
+
+func (f *fakeSource) ConfigureHarness(_ context.Context, id string, _ io.Reader, _, _ io.Writer) error {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.configured = append(f.configured, id)
+	return nil
+}
+
+func (f *fakeSource) EditHarnessFile(_ context.Context, id, path string, _ io.Reader, _, _ io.Writer) (bool, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.editedFiles = append(f.editedFiles, id+" "+path)
+	return f.editChanged, nil
+}
+
 // fakeTerminal is a sandbox terminal on the end of a pipe: what a test sends
 // lands on the pane's screen, and what the pane types lands in typed().
 type fakeTerminal struct {
@@ -316,6 +398,7 @@ func newTestModel(t *testing.T, ds DataSource) *Model {
 	// out into. The opening prompt has its own tests, in compact_test.go.
 	m.expanded = true
 	m.list.now = func() time.Time { return time.Date(2026, 8, 7, 12, 0, 0, 0, time.UTC) }
+	m.harnesses.now = m.list.now
 	// The runtime is what releases the terminal around an action; there is none
 	// here, so the action is simply run and its result handed back.
 	m.exec = func(c tea.ExecCommand, done tea.ExecCallback) tea.Cmd {
@@ -419,6 +502,8 @@ func key(spec string) tea.KeyPressMsg {
 		return tea.KeyPressMsg{Code: 'd', Mod: tea.ModCtrl}
 	case "f1":
 		return tea.KeyPressMsg{Code: tea.KeyF1}
+	case "f3":
+		return tea.KeyPressMsg{Code: tea.KeyF3}
 	}
 	runes := []rune(spec)
 	if len(runes) == 1 && runes[0] >= 'A' && runes[0] <= 'Z' {

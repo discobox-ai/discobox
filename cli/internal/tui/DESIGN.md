@@ -16,6 +16,7 @@ flowchart LR
     M --> P["prompt (composer)"]
     M --> L["sandboxList"]
     M --> O["optionSet (Shift-Tab)"]
+    M --> A["harnessList (F3)"]
     M --> D["dialog (menu, confirm, input, help)"]
     P -->|Enter| Run["DataSource.Run → attach"]
     L -->|u t T x U P| Verb["DataSource.Do"]
@@ -23,6 +24,9 @@ flowchart LR
     L -->|Enter s| WS["workspace → Execs / OpenExec / NewShell"]
     L -->|d i| Overlay["overlay pane → DataSource.Open"]
     L -->|y| Exec["tea.Exec → DataSource.Interact"]
+    A -->|d s| AVerb["DataSource.DoHarness"]
+    A -->|e f| AExec["tea.Exec → ConfigureHarness / EditHarnessFile"]
+    A --> O
 ```
 
 ## Decisions
@@ -388,6 +392,49 @@ there the mark is the taller of the two and centering is what stops the prompt
 reading as a caption on it. The art's own rows stay aligned to each other: it is
 a picture, so the block moves, not the lines within it.
 
+**The harnesses are the window's, not another program's** (`harnesses.go`).
+`disco configure` was a menu of its own over the same harnesses. It is this
+screen now — `WithHarnesses()` opens the window straight onto it — because
+choosing a harness to run and setting one up are the same job from two ends, and
+two lists of harnesses with two sets of keys is one too many. `F3` opens it from
+anywhere in the window, and Enter on the run options' harness row does too: that
+row is a choice of harness, so the other thing you do with harnesses is one key
+from it.
+
+It is drawn as the discobox list is drawn and acts as it does — chevron cursor,
+colored state glyph, a letter per action, the same modal layer for the file
+picker, the confirmation and the card — because it is the same kind of screen.
+`e` enables or reconfigures, `d` disables (asking first, since deconfigure
+deletes what the setup wrote, and releasing the project default when the target
+holds it), `s` makes it the default, `v` reads the whole configuration, `f`
+edits one of its files.
+
+It stops short of two of the list's keys. There is no `.` action menu: that
+answers eleven verbs over a multi-selection, and five actions on one row are
+already all on the hint line. There is no `r` either — the screen re-reads
+itself on the tick while it is up, and after every action, so a key for it would
+ask for what is already happening.
+
+The two that need a terminal — the harness's own setup and `$EDITOR` — go
+through `tea.Exec` (`harnessExec`) rather than a pane: they are programs that ask
+questions and draw their own screen to ask them on, which is the same reason
+apply suspends the window. `F3` is a function key because the prompt takes every
+letter as text and the list has spent them on its own actions, and it is inert
+inside a pane, where every key is the sandbox's.
+
+The listing is read at startup, not when the screen is opened, because the run
+options' harness choices are built from it (`optionSet.setHarnesses`): enabling
+one makes it selectable without the window being reopened, and the default leads
+the list so an unchanged option emits no `--harness` at all. It is the one source
+of what harnesses exist — `Session` carries none — and is re-read after every
+action rather than on a clock, except while the screen itself is up.
+
+The config card is the one place the window shows a file's contents, capped at a
+screenful with a note saying `f` opens the rest in an editor: a card is
+something to glance at. Which secret answers each variable a harness needs
+costs a request of its own (`HarnessSecrets`), so it is asked for when the card
+is opened rather than for every row of a listing.
+
 **One data seam.** Everything the window needs is on `DataSource` (`data.go`),
 implemented once in `cli.apiDataSource`. The interactive actions there build and
 execute the real Cobra commands, so the launcher runs `disco apply` and the
@@ -489,7 +536,8 @@ gets the product's.
 
 | file | what it holds |
 | --- | --- |
-| `data.go` | `Sandbox`, `Session`, `RunRequest`, `Verb`, `Interaction`, `DataSource` |
+| `data.go` | `Sandbox`, `Session`, `Harness`, `RunRequest`, `Verb`, `Interaction`, `DataSource` |
+| `harnesses.go` | the harnesses screen: the list, its actions, the config card, `F3` |
 | `folder.go` | the header's folder filter: the choices, the dropdown, and applying one |
 | `compact.go` | the opening window: the prompt beside the mark, and opening out |
 | `shimmer.go` | the opening glint over "discobox" in the placeholder |
@@ -511,4 +559,4 @@ go test ./internal/tui -run TestFrames -v
 ```
 
 renders every state — prompt, list, multiselect, visual, archived, action menu,
-options, help — to the test log.
+options, harnesses, the config card, help — to the test log.

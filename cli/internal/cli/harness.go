@@ -507,6 +507,20 @@ func (a *App) harnessRequest(ctx context.Context, harnessArg string) (projectID 
 	harnessID, err = a.resolveHarnessConfigID(ctx, client, projectID, harnessArg)
 	return projectID, harnessID, client, err
 }
+
+// harnessDisplayName is what a harness is called in a message: its name, the
+// slug it is run by, or failing both the id, which is the one thing it always
+// has.
+func harnessDisplayName(cfg apimodel.HarnessConfig) string {
+	if name := strings.TrimSpace(cfg.Name); name != "" {
+		return name
+	}
+	if slug := strings.TrimSpace(cfg.Slug); slug != "" {
+		return slug
+	}
+	return cfg.ID
+}
+
 func (a *App) listHarnessConfigs(ctx context.Context, client *apiclientgen.Client, projectID string) ([]apimodel.HarnessConfig, error) {
 	res, err := client.ListHarnessConfigs(ctx, apiclientgen.ListHarnessConfigsParams{ProjectId: projectID})
 	if err != nil {

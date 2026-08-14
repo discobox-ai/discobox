@@ -54,6 +54,11 @@ type Model struct {
 	opts   *optionSet
 	logo   logo
 
+	// harnesses is the project's harnesses: the screen that manages them, and
+	// the listing the run options' harness choices are built from. It is read
+	// whether or not the screen is up. See harnesses.go.
+	harnesses *harnessList
+
 	// The workspace screen: the discobox's primary terminal on the left, and
 	// its other live sessions as tabs on the right, following the server. See
 	// workspace.go.
@@ -127,7 +132,11 @@ type Model struct {
 
 	focus       focusArea
 	optionsOpen bool
-	dialog      *dialog
+	// harnessesOpen is whether the harnesses screen has the window. Like the
+	// options panel it stands in place of the launcher rather than inside it, and
+	// every key belongs to it while it is up.
+	harnessesOpen bool
+	dialog        *dialog
 
 	session Session
 	status  string
@@ -160,6 +169,14 @@ type Option func(*Model)
 // Empty takes the default.
 func WithLeader(key string) Option {
 	return func(m *Model) { m.leaderKey = key }
+}
+
+// WithHarnesses opens the window on the harnesses screen, which is what
+// `disco configure` is: the same window, opened on the screen that command is
+// about. The window is opened out with it — the screen is the whole of it, and
+// the opening prompt has no room for one.
+func WithHarnesses() Option {
+	return func(m *Model) { m.harnessesOpen, m.expanded = true, true }
 }
 
 func New(ctx context.Context, ds DataSource, options ...Option) *Model {
@@ -197,6 +214,7 @@ func New(ctx context.Context, ds DataSource, options ...Option) *Model {
 		ds:         ds,
 		st:         st,
 		list:       newSandboxList(session),
+		harnesses:  newHarnessList(),
 		prompt:     ta,
 		logo:       newLogo(color),
 		focus:      focusPrompt,
@@ -217,11 +235,13 @@ func New(ctx context.Context, ds DataSource, options ...Option) *Model {
 	return m
 }
 
-// Init loads what the window is drawn from. The session comes first because
-// the header, the filter and the run options are all read from it; the listing
-// follows on its own, so a slow server delays the rows rather than the window.
+// Init loads what the window is drawn from. The session comes first because the
+// header and the filter are read from it; the listing and the harnesses follow
+// on their own, so a slow server delays the rows rather than the window. The
+// harnesses are read here rather than when their screen is opened because the
+// run options offer them as the harness to run.
 func (m *Model) Init() tea.Cmd {
-	return tea.Batch(textarea.Blink, m.loadSession(), m.refresh(), m.tick(), m.startShimmer())
+	return tea.Batch(textarea.Blink, m.loadSession(), m.refresh(), m.loadHarnesses(), m.tick(), m.startShimmer())
 }
 
 // ---------------------------------------------------------------------------
@@ -341,6 +361,9 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.list.folder = msg.session.Directory
 		m.opts = newOptions(msg.session)
 		m.opts.setFolder(m.list.folder)
+		// The two loads race, and either order has to end with the panel
+		// offering the harnesses that are actually there.
+		m.opts.setHarnesses(m.harnesses.all)
 		return m, nil
 
 	case listLoadedMsg:
@@ -352,7 +375,15 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, nil
 
 	case tickMsg:
-		return m, tea.Batch(m.refresh(), m.tick())
+		cmds := []tea.Cmd{m.refresh(), m.tick()}
+		// Harnesses change when somebody changes them, which is here — so they are
+		// re-read after every action rather than on a clock. The exception is
+		// the screen itself, where a listing going stale under the cursor is
+		// exactly what a stale listing costs.
+		if m.harnessesOpen {
+			cmds = append(cmds, m.loadHarnesses())
+		}
+		return m, tea.Batch(cmds...)
 
 	case statusMsg:
 		// A message is an answer to the last key, so it goes when the next
@@ -425,6 +456,26 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	case runActionMsg:
 		return m, m.actOn(msg.key, msg.targets)
+
+	case harnessesLoadedMsg:
+		return m, m.harnessesLoaded(msg)
+
+	case harnessVerbMsg:
+		return m, m.runHarnessVerb(msg.verb, msg.harness)
+
+	case harnessFileMsg:
+		return m, m.editHarnessFile(msg.harness, msg.path)
+
+	case harnessDoneMsg:
+		return m, m.harnessDone(msg)
+
+	case harnessCardMsg:
+		m.busy = ""
+		if msg.err != nil {
+			return m, m.report(true, "cannot read the harness: %v", msg.err)
+		}
+		m.dialog = textDialog(msg.title, msg.body)
+		return m, nil
 
 	case editorDoneMsg:
 		m.promptEdited(msg)
@@ -508,6 +559,24 @@ func (m *Model) updateKey(msg tea.KeyPressMsg) tea.Cmd {
 	if keyName(msg) == "f1" {
 		m.dialog = textDialog("Keys", m.helpText())
 		return nil
+	}
+	// The harnesses screen is on a function key because the prompt takes every
+	// letter and the list has spent them on its own actions — the same reason
+	// help is on F1 and the editor on F2. It is a toggle: the key that opened
+	// it puts it away, wherever the screen was reached from.
+	//
+	// Not from a pane, where every key is the sandbox's: a window key that
+	// reached past a terminal would be a key the program in it could never
+	// receive. The leader's keys are the way to the window from there.
+	if keyName(msg) == harnessesKey && !m.inPanes() {
+		if m.harnessesOpen {
+			m.closeHarnesses()
+			return nil
+		}
+		return m.openHarnesses()
+	}
+	if m.harnessesOpen {
+		return m.updateHarnesses(msg)
 	}
 
 	switch m.focus {
@@ -803,6 +872,12 @@ func (m *Model) updateOptions(msg tea.KeyPressMsg) tea.Cmd {
 	case "right", "l", " ":
 		opt.cycle(1)
 	case "enter":
+		// The harness row is a choice of harness, and the other thing you do with
+		// harnesses is set them up — so Enter on it goes there. The value itself
+		// changes with left and right, the way every other choice here does.
+		if m.opts.cursor == optHarness {
+			return m.openHarnesses()
+		}
 		switch opt.kind {
 		case optText:
 			m.dialog = inputDialog(opt.label, opt.hint, opt.placeholder, opt.value, func(v string) tea.Cmd {
@@ -1208,6 +1283,16 @@ func (m *Model) inner() int {
 	return max(m.width-boxChrome, 1)
 }
 
+// bodyWidth is what a full-window list gets: everything inside the box, less
+// the mark when there is width to spare for one beside it. The mark gives its
+// columns back on a terminal narrow enough that the rows need them more.
+func (m *Model) bodyWidth() int {
+	if m.showLogo() {
+		return m.inner() - m.logo.column()
+	}
+	return m.inner()
+}
+
 // boxPad is the breathing room between the border and the content. Content
 // butted straight against a border reads as spilling out of it.
 const boxPad = 1
@@ -1223,6 +1308,11 @@ func (m *Model) layout() {
 	if m.width <= 0 || m.height <= 0 {
 		return
 	}
+	// The harnesses screen is a window of its own, and is measured whether or not
+	// it is up: it is opened by a key that can be pressed on any frame, and a
+	// list sized on the frame after that would open with no rows in it.
+	m.harnesses.width, m.harnesses.height = m.bodyWidth(), max(m.height-harnessesChrome, 0)
+	m.harnesses.clamp()
 	if !m.expanded && !m.inPanes() {
 		m.compactLayout()
 		return
@@ -1254,18 +1344,11 @@ func (m *Model) layout() {
 	// terminal this short the composer is the whole point.
 	room := max(m.height-promptH-windowChrome, 0)
 
-	// The mark sits to the left of the list, and gives the columns back on a
-	// terminal narrow enough that the list needs them more.
-	listW := m.inner()
-	if m.showLogo() {
-		listW = m.inner() - m.logo.column()
-	}
-
 	// The window fills the terminal, so the list takes every row the composer
 	// and the chrome leave it and pads the rest. A list shorter than its pane
 	// is a pane with space at the bottom, which is what a full-screen window
 	// looks like — not a reason to shrink the frame.
-	m.list.width, m.list.height = listW, room
+	m.list.width, m.list.height = m.bodyWidth(), room
 	m.list.clamp()
 	m.prompt.SetWidth(max(m.inner()-2, 10))
 	m.prompt.SetHeight(promptH)
@@ -1309,6 +1392,11 @@ func (m *Model) View() tea.View {
 		// the sandbox is called, the keys — sits outside it, the way a caption
 		// sits outside the thing it captions.
 		content = m.paintChrome(m.viewPaneWindow())
+	case m.harnessesOpen:
+		// The harnesses screen is the window while it is up, drawn in the same box
+		// with the same header: it is another list of things you act on, not a
+		// panel over the launcher.
+		content = m.viewHarnesses()
 	default:
 		rows := []string{m.viewHeader(m.inner()), ""}
 		rows = append(rows, strings.Split(body, "\n")...)
@@ -1437,7 +1525,10 @@ func (m *Model) viewHeaderRight() string {
 	if p := m.focusedPane(); p != nil {
 		return m.st.dimText.Render(m.detachHint() + " detach  ·  " + m.leader() + " " + paneQuitKey + " quit")
 	}
-	return m.st.dimText.Render("F1 help  ·  Ctrl-C quit")
+	// The harnesses screen is advertised here rather than on the status line
+	// because it is reachable from every one of the window's own screens, and
+	// the status line says what the screen you are on can do.
+	return m.st.dimText.Render("F1 help  ·  F3 harnesses  ·  Ctrl-C quit")
 }
 
 // windowTitle is what the terminal running this window should call itself.
@@ -1541,6 +1632,9 @@ func (m *Model) viewStatus() string {
 }
 
 func (m *Model) hints() string {
+	if m.harnessesOpen {
+		return m.harnessHints()
+	}
 	switch m.focus {
 	case focusPane:
 		p := m.focusedPane()
@@ -1646,6 +1740,7 @@ func (m *Model) helpText() string {
 		"    Tab            round the window: the prompt, the discoboxes, the",
 		"                   folder they are filtered to, and back",
 		"    Shift-Tab      run options",
+		"    " + HarnessesKeyName + "             the harnesses, and back",
 		"",
 		"───────────────────────────────────────────────────────────────",
 		"In the discobox list",
@@ -1810,6 +1905,36 @@ func (m *Model) helpText() string {
 		"  It is why a row carries no folder column: every row on screen",
 		"  has already been filtered to one, so a column would repeat the",
 		"  same value all the way down.",
+		"",
+		"───────────────────────────────────────────────────────────────",
+		"The harnesses (" + HarnessesKeyName + ")",
+		"",
+		"  The harnesses a discobox can be run on, and everything you do to",
+		"  them. It is `disco configure`: that command opens the window",
+		"  here. Enter on the run options' harness row does too, since",
+		"  that row is a choice of harness.",
+		"",
+		"    ↑ ↓ / k j      move            g / G   first / last",
+		"    e or Enter     enable it, or set it up again. The harness's own",
+		"                   setup takes the terminal and asks its own",
+		"                   questions; the window comes back when it exits",
+		"    d              disable it, which deletes the secrets and files",
+		"                   its setup created. It asks first, and releases",
+		"                   the project default when it is that",
+		"    s              make it the default, which is what a discobox",
+		"                   with no harness of its own runs",
+		"    v              its whole configuration: what it runs, which",
+		"                   secret answers each variable it needs, and the",
+		"                   files it carries",
+		"    f              edit one of those files in $EDITOR",
+		"    Esc or " + HarnessesKeyName + "      back to the launcher",
+		"",
+		"      ● enabled    ○ disabled    ✗ its setup did not finish",
+		"      ★ the project default",
+		"",
+		"  Every harness the project has is offered on the run options,",
+		"  enabled or not — one that needs no credentials is runnable",
+		"  without ever being set up — and the default leads the list.",
 		"",
 		"───────────────────────────────────────────────────────────────",
 		"Run options (Shift-Tab)",

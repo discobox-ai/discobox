@@ -162,16 +162,16 @@ baseline. Deconfigure deletes exactly those secrets and their bindings, clears
 those files, and sets `Configured=false` — leaving the baseline intact so the
 harness can simply be configured again. `UpdateHarnessConfig` can replace either
 file set (`files`, `configuredFiles`), which is how the CLI's file editing
-(`harnesses edit`, `disco configure` f) applies hand edits without a
-reconfigure; edited configured files remain owned by the configure lifecycle
+(`harnesses edit`, and `f` on the launcher's harnesses screen) applies hand edits
+without a reconfigure; edited configured files remain owned by the configure lifecycle
 and are still cleared on deconfigure.
 
 Deconfigure is **refused for the project default** (409): the default must always
 point at a configured harness, or `run` with no explicit harness would resolve to
 an unconfigured one and be rejected at sandbox create. The client releases the
 default first — `UnsetDefaultHarnessConfig` (`DELETE .../default`) clears it, and
-`disco configure` does this automatically when disabling the default. Deleting a
-default harness is fine: the store cascade clears the pointer and the resolver
+the CLI's harnesses screen does this automatically when disabling the default.
+Deleting a default harness is fine: the store cascade clears the pointer and the resolver
 degrades to agent-less.
 
 ## Boundaries

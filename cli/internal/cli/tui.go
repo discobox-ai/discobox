@@ -42,6 +42,10 @@ mouse over or takes it back — and the leader is Ctrl-A unless --leader or
 DISCOBOX_LEADER says otherwise, worth changing when it collides with something
 you run in your sandboxes. It is the same leader "disco attach" detaches behind.
 
+F3 opens the harnesses — the same screen "disco configure" opens — where an
+harness is enabled, disabled, made the project default, or has its files edited.
+What is enabled there is what the run options offer as the harness to run.
+
 The window takes the whole terminal while it is up, and puts back what was on
 screen when it exits. Press F1 for the keys, and Ctrl-C to quit once no
 sandbox terminal is up.`,
@@ -58,12 +62,13 @@ sandbox terminal is up.`,
 	return cmd
 }
 
-// runTUI starts the launcher. It is reached two ways — `disco tui`, and `disco`
-// with nothing to do — so it lives here rather than inside either one's RunE.
+// runTUI starts the launcher. It is reached three ways — `disco tui`, `disco`
+// with nothing to do, and `disco configure`, which is the launcher opened on
+// its harnesses screen — so it lives here rather than inside any one's RunE.
 //
 // leaderFlag is --leader, empty when it was not given: the environment's leader
 // is already resolved on the App, and only an explicit flag displaces it.
-func (a *App) runTUI(cmd *cobra.Command, leaderFlag string) error {
+func (a *App) runTUI(cmd *cobra.Command, leaderFlag string, options ...tui.Option) error {
 	leaderKey := a.leader()
 	if leaderFlag != "" {
 		var err error
@@ -80,7 +85,7 @@ func (a *App) runTUI(cmd *cobra.Command, leaderFlag string) error {
 		return err
 	}
 	ds := &apiDataSource{app: a, client: client, projectID: projectID}
-	return tui.Run(cmd.Context(), ds, tui.WithLeader(leaderKey))
+	return tui.Run(cmd.Context(), ds, append([]tui.Option{tui.WithLeader(leaderKey)}, options...)...)
 }
 
 // apiDataSource is the launcher's one seam onto the rest of the CLI. Everything
@@ -109,23 +114,9 @@ func (d *apiDataSource) Session(ctx context.Context) (tui.Session, error) {
 	if branch, ok := gitutil.CurrentBranch(ctx, origin.ProjectPath); ok {
 		session.Branch = branch
 	}
-
-	// A project with no harness configs is a usable project — every sandbox in
-	// it is a shell — so a listing that fails leaves the harness option empty
-	// rather than refusing to open the window.
-	if configs, err := d.app.listHarnessConfigs(ctx, d.client, d.projectID); err == nil {
-		defaultID, _ := d.app.defaultHarnessConfigID(ctx, d.client, d.projectID)
-		for _, cfg := range configs {
-			name := cfg.Slug
-			if name == "" {
-				name = cfg.Name
-			}
-			session.Harnesses = append(session.Harnesses, name)
-			if cfg.ID == defaultID {
-				session.DefaultHarness = name
-			}
-		}
-	}
+	// The harnesses are not here: they are read on their own by Harnesses,
+	// which is what both the run options and the harnesses screen are drawn
+	// from. See tui_harnesses.go.
 	return session, nil
 }
 

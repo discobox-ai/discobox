@@ -47,6 +47,9 @@ transport helpers where OpenAPI does not model the stream.
   handing it to the launcher. The leader there comes from the environment only:
   a flag would have to be persistent to be reachable, and every subcommand would
   carry one that means nothing to it.
+- `disco configure` is the same launcher opened on its harnesses screen
+  (`tui.WithHarnesses()`), not a window of its own. See *Harness Configure
+  Step*.
 - `DISCOBOX_LEADER` sets the prefix key, normalized by `keys.NormalizeLeader`:
   a bare letter is taken as Ctrl-that, since a leader that is not a chord would
   be a character you could never type, and only a letter is accepted because the
@@ -621,15 +624,22 @@ sequences the calls and hands the user the terminal in between:
    applies the secrets and files it wrote, and deletes the sandbox.
 
 `runHarnessConfigure` takes streams rather than a `*cobra.Command` so its caller
-can hand it the real terminal via `tea.Exec`: the inline `disco configure` menu
-(`internal/cli/configure.go`) does exactly that.
+can hand it the real terminal via `tea.Exec`: the launcher's harnesses screen
+does exactly that, through `apiDataSource.ConfigureHarness`.
 
-`disco configure` (aliases `config`, `conf`, `c`, `init`) is a small inline (no
-alternate screen) Bubble Tea menu over the project's harnesses for the common
-enable/reconfigure, disable, and set-default actions. Enable/reconfigure reuses
-`runHarnessConfigure` through `tea.Exec`; disable and set-default are plain API
-calls. Disable confirms first, since deconfigure deletes the agent's secrets and
-files. It is the focused counterpart to the `box harnesses` subcommands.
+`disco configure` (aliases `config`, `conf`, `c`, `init`) is the launcher opened
+on that screen — `tui.WithHarnesses()`, reachable in the window itself on `F3` —
+and nothing else. It is not a second menu over the same harnesses: managing them
+and running something on one are the same job from two ends, and one list with
+one set of keys is what the window already provides.
+
+The window's half of the data seam lives in `internal/cli/tui_harnesses.go`:
+`Harnesses`/`HarnessSecrets` map harness configs (plus the project's default
+pointer and secret bindings) onto `tui.Harness`, `DoHarness` runs disable and
+set-default, and `ConfigureHarness`/`EditHarnessFile` are the two that need the
+real terminal and reuse `runHarnessConfigure` and `editHarnessFile` unchanged.
+Disable releases the project default first when the target holds it, since the
+server refuses to deconfigure a default harness.
 
 Re-running reconfigures and clobbers any in-flight attempt. Nothing here parses
 the configure output or creates secrets: a client that crashes mid-flow cannot

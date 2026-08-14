@@ -25,6 +25,12 @@ func TestFrames(t *testing.T) {
 		{"archived", func(m *Model) { send(t, m, key("tab"), key("A"), key("G")) }},
 		{"actions", func(m *Model) { send(t, m, key("tab"), key(".")) }},
 		{"options", func(m *Model) { send(t, m, key("shift+tab")) }},
+		{"harnesses", func(m *Model) { send(t, m, key("f3")) }},
+		// The second row is the one every action applies to, so it is the frame
+		// that shows the whole hint line — s included.
+		{"harnesses-default", func(m *Model) { send(t, m, key("f3"), key("j")) }},
+		{"harness-config", func(m *Model) { send(t, m, key("f3"), key("v")) }},
+		{"harness-files", func(m *Model) { send(t, m, key("f3"), key("f")) }},
 		{"help", func(m *Model) { send(t, m, key("f1")) }},
 		{"folder", func(m *Model) { send(t, m, key("tab"), key("up")) }},
 		{"folder-open", func(m *Model) { send(t, m, key("tab"), key("up"), key("enter")) }},

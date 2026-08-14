@@ -127,35 +127,21 @@ const (
 	optSource
 )
 
-// noHarness is the choice that runs a shell instead of an agent. It is spelled
+// noHarness is the choice that runs a shell instead of a harness. It is spelled
 // out rather than left as an empty row, because a list with a blank option in
 // it reads as a bug.
 const noHarness = "none (shell)"
 
 func newOptions(session Session) *optionSet {
-	// The project default leads, so the common case is index zero and emits no
-	// flag at all — the same shape every other option here has.
-	choices := make([]string, 0, len(session.Harnesses)+1)
-	if session.DefaultHarness != "" {
-		choices = append(choices, session.DefaultHarness)
-	}
-	for _, h := range session.Harnesses {
-		if h != session.DefaultHarness {
-			choices = append(choices, h)
-		}
-	}
-	choices = append(choices, noHarness)
-
-	harnessHint := "--harness · the first is the project default"
-	if session.DefaultHarness != "" {
-		harnessHint = "--harness · empty is the project default, which is " + session.DefaultHarness
-	}
-
+	// The choices are the project's harnesses, which are loaded on their own
+	// and arrive here through setHarnesses. Until they do the row is empty
+	// rather than offering "none (shell)" as if it were the default: a panel
+	// that names the wrong harness for a moment is worse than one that names
+	// none.
 	return &optionSet{session: session, opts: []*option{
 		optHarness: {
 			label: "Harness", kind: optChoice,
-			choices: choices,
-			hint:    harnessHint,
+			hint: harnessesHint,
 		},
 		optDirty: {
 			label: "Uncommitted changes", kind: optChoice,
@@ -180,6 +166,55 @@ func newOptions(session Session) *optionSet {
 			hint:        "-C · the directory and ref the discobox is cut from, as DIR@REF",
 		},
 	}}
+}
+
+// harnessesHint is what the harness row says while nothing has been chosen on
+// it.
+const harnessesHint = "--harness · " + HarnessesKeyName + " enables, disables and picks the default harness"
+
+// setHarnesses rebuilds the harness choices from the harnesses the window knows
+// about. The project default leads, so the common case is index zero and emits
+// no flag at all — the same shape every other option here has.
+//
+// The listing is the one source of what harnesses there are: enabling one on
+// the harnesses screen puts it here without the window being reopened, and
+// disabling the one that was chosen falls back to the default rather than
+// leaving a name the run would be refused for.
+func (o *optionSet) setHarnesses(harnesses []Harness) {
+	harness := o.opts[optHarness]
+	chosen := ""
+	if harness.idx > 0 && harness.idx < len(harness.choices) {
+		chosen = harness.choices[harness.idx]
+	}
+
+	var def string
+	choices := make([]string, 0, len(harnesses)+1)
+	for _, harness := range harnesses {
+		if harness.Default {
+			def = harness.flagName()
+		}
+	}
+	if def != "" {
+		choices = append(choices, def)
+	}
+	for _, harness := range harnesses {
+		if name := harness.flagName(); name != "" && name != def {
+			choices = append(choices, name)
+		}
+	}
+	choices = append(choices, noHarness)
+
+	harness.choices = choices
+	harness.idx = 0
+	for i, choice := range choices {
+		if choice == chosen {
+			harness.idx = i
+		}
+	}
+	harness.hint = harnessesHint
+	if def != "" {
+		harness.hint = "--harness · unset is the project default, which is " + def + " · " + HarnessesKeyName + " manages them"
+	}
 }
 
 // setFolder points the run source at the folder the header has moved to. An
@@ -245,7 +280,7 @@ func (o *optionSet) request(prompt string) RunRequest {
 	if h := o.opts[optHarness]; h.changed() {
 		req.Harness = h.choices[h.idx]
 		if req.Harness == noHarness {
-			// An explicitly empty harness is how the CLI spells "no agent, just
+			// An explicitly empty harness is how the CLI spells "no harness, just
 			// a shell", and is different from not passing the flag at all.
 			req.Harness = ""
 			req.NoHarness = true

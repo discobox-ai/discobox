@@ -73,8 +73,11 @@ func (m *Model) openFromList(act Interaction, sandbox Sandbox) tea.Cmd {
 func (m *Model) openWorkspace(sandbox Sandbox, freshShell bool) tea.Cmd {
 	m.paneBox = sandbox
 	// A terminal wants the whole screen, so opening one opens the window out
-	// even when nothing has asked for the list yet.
+	// even when nothing has asked for the list yet — and nothing else can still
+	// have it. The prompt can start a discobox and be on the harnesses screen by
+	// the time it is created, which is the one way the two ever meet.
 	m.expanded = true
+	m.harnessesOpen = false
 	m.busy = "attach…"
 	m.connecting = map[string]bool{}
 	gen := m.wsGen

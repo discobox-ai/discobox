@@ -62,7 +62,8 @@ func (a *App) newHarnessEditCommand() *cobra.Command {
 		Short: "Edit one of a harness config's files in your editor",
 		Long: `Open one of a harness config's files in $VISUAL/$EDITOR and save the result back.
 
-PATH is the file's path as shown by "harnesses get" or the disco configure menu.
+PATH is the file's path as shown by "harnesses get" or the launcher's harnesses
+screen, which is what "disco configure" opens.
 Files written by the configure flow are edited in place of the configured set;
 image-declared files are edited in the declared set.`,
 		Args:              cobra.ExactArgs(2),
@@ -105,7 +106,7 @@ func (a *App) editHarnessFile(ctx context.Context, client *apiclientgen.Client, 
 	if !ok {
 		refs := harnessFileRefs(cfg)
 		if len(refs) == 0 {
-			return false, fmt.Errorf("%s has no files to edit", configureDisplayName(*cfg))
+			return false, fmt.Errorf("%s has no files to edit", harnessDisplayName(*cfg))
 		}
 		paths := make([]string, 0, len(refs))
 		for _, r := range refs {
