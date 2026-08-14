@@ -128,7 +128,11 @@ different wheel policy keeps those events instead of delegating them.
 
 **Selection is a cell-space overlay, mouse only** (ADR 0036). The gesture
 machine and extraction live in the `selection` subpackage against a small
-`Grid` interface; `select.go` adapts the emulator to it as one absolute line
+`Grid` interface. A double-click's idea of a word is vte-shaped: letters,
+digits, the underscore, and a configurable set of gluing punctuation
+(`WithWordChars`), whose default — xfce4-terminal's effective set less the
+comma — brings out a path, URL, or `--flag` in one click while the shell's
+own operators still split; `select.go` adapts the emulator to it as one absolute line
 space — scrollback first, live screen after — so a selection keeps naming the
 same text while output scrolls it into history, and selecting across the
 boundary is no special case. Rows the selection touches are re-rendered from

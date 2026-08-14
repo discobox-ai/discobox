@@ -32,6 +32,13 @@ func WithWheelLines(lines int) Option {
 	return func(o *options) { o.wheelLines = lines }
 }
 
+// WithWordChars replaces the punctuation a double-click treats as part of a
+// word, in the shape of vte's word-char-exceptions. The default is
+// [selection.DefaultWordChars].
+func WithWordChars(chars string) Option {
+	return func(o *options) { o.wordChars = &chars }
+}
+
 // copyChord catches the copy keys — ctrl+c, ctrl+shift+c, super+c — while a
 // selection is showing, and only then: the highlight on screen is what makes
 // the chord mean copy rather than whatever it means to the application.

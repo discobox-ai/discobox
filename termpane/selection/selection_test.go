@@ -129,7 +129,7 @@ func TestWrappedLinesJoinWithoutNewline(t *testing.T) {
 }
 
 func TestDoubleClickSelectsWord(t *testing.T) {
-	g := newGrid(20, "one two-three four")
+	g := newGrid(20, "one two)three four")
 	m, now := sel(g)
 	click(m, now, 2, 0, 5)
 	if text, _ := m.MouseUp(); text != "two" {
@@ -137,11 +137,44 @@ func TestDoubleClickSelectsWord(t *testing.T) {
 	}
 }
 
+// The word punctuation glues the tokens people double-click on in a terminal:
+// paths, URLs, flags, host:port pairs come out whole.
+func TestDoubleClickSelectsAWholePath(t *testing.T) {
+	g := newGrid(40, "ls /usr/local/bin now", "a --include-dirty b", "u@h.co:8080,")
+	m, now := sel(g)
+	click(m, now, 2, 0, 8)
+	if text, _ := m.MouseUp(); text != "/usr/local/bin" {
+		t.Fatalf("got %q", text)
+	}
+	click(m, now, 2, 1, 6)
+	if text, _ := m.MouseUp(); text != "--include-dirty" {
+		t.Fatalf("got %q", text)
+	}
+	// The comma is not glue: it trails a token far more often than it sits
+	// inside one.
+	click(m, now, 2, 2, 3)
+	if text, _ := m.MouseUp(); text != "u@h.co:8080" {
+		t.Fatalf("got %q", text)
+	}
+}
+
 func TestDoubleClickPunctuationGroupsOnlyItself(t *testing.T) {
-	g := newGrid(20, "a --- b")
+	g := newGrid(20, "a *** b")
 	m, now := sel(g)
 	click(m, now, 2, 0, 3)
-	if text, _ := m.MouseUp(); text != "---" {
+	if text, _ := m.MouseUp(); text != "***" {
+		t.Fatalf("got %q", text)
+	}
+}
+
+// SetWordChars carries a terminal profile's own setting over: what is glue is
+// the host's to decide.
+func TestWordCharsAreConfigurable(t *testing.T) {
+	g := newGrid(20, "a/b c")
+	m, now := sel(g)
+	m.SetWordChars("")
+	click(m, now, 2, 0, 0)
+	if text, _ := m.MouseUp(); text != "a" {
 		t.Fatalf("got %q", text)
 	}
 }

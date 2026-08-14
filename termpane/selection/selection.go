@@ -68,6 +68,16 @@ func (p Point) before(q Point) bool {
 // to count as one gesture growing. The conventional desktop default.
 const doubleClickWindow = 400 * time.Millisecond
 
+// DefaultWordChars is the punctuation a double-click treats as part of a
+// word, on top of letters, digits and the underscore. It is xfce4-terminal's
+// effective set less the comma: enough glue that a path, a URL, an email, a
+// host:port or a --flag comes out in one double-click, which is what people
+// double-click on in a terminal — while the comma stays a separator, since it
+// trails a token at the end of a list far more often than it sits inside one.
+// Punctuation outside the set — parens, quotes, semicolons, the shell's own
+// operators — still splits.
+const DefaultWordChars = "-./?%&#:_=+@~"
+
 // Model is one selection over one grid. The zero value is not usable; build
 // one with [New].
 type Model struct {
@@ -91,12 +101,22 @@ type Model struct {
 	clicks   int
 	lastDown time.Time
 	lastAt   Point
+
+	// wordChars is the punctuation admitted to the word class. See
+	// SetWordChars.
+	wordChars string
 }
 
 // New builds a selection over a grid.
 func New(grid Grid) *Model {
-	return &Model{grid: grid, now: time.Now}
+	return &Model{grid: grid, now: time.Now, wordChars: DefaultWordChars}
 }
+
+// SetWordChars replaces the punctuation a double-click treats as part of a
+// word — the shape of vte's word-char-exceptions, so a terminal profile's
+// setting can be carried over as it is. Letters, digits and the underscore
+// are always word characters; an empty string leaves only them.
+func (m *Model) SetWordChars(chars string) { m.wordChars = chars }
 
 // MouseDown starts or grows a gesture at an absolute position. block is
 // whether the block modifier was held, which selects the rectangle between
@@ -380,17 +400,18 @@ func (m *Model) cellWidth(p Point) int {
 }
 
 // classAt is the double-click character class of a cell: blanks group with
-// blanks and word characters with word characters, while each distinct
-// punctuation glyph groups only with itself — so a run of dashes is one
-// selection and "foo(bar" breaks at the paren. That is xterm's default
-// arrangement.
+// blanks; letters, digits, the underscore and the configured word
+// punctuation ([DefaultWordChars]) are all one word class, so a path or a
+// URL comes out in one double-click; and each remaining punctuation glyph
+// groups only with itself, so a run of stars is one selection and "foo(bar"
+// breaks at the paren.
 func (m *Model) classAt(p Point) string {
 	c := m.grid.Cell(p.Line, p.Col)
 	if c == nil || c.IsZero() || strings.TrimSpace(c.Content) == "" {
 		return " "
 	}
 	r := []rune(c.Content)[0]
-	if r == '_' || unicode.IsLetter(r) || unicode.IsDigit(r) {
+	if r == '_' || unicode.IsLetter(r) || unicode.IsDigit(r) || strings.ContainsRune(m.wordChars, r) {
 		return "w"
 	}
 	return c.Content

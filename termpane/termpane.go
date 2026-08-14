@@ -114,6 +114,8 @@ type options struct {
 	bindings   map[string]prefixBinding
 	highlight  func(uv.Style) uv.Style
 	wheelLines int
+	// wordChars is nil for the selection package's default; see WithWordChars.
+	wordChars *string
 }
 
 // prefixBinding is a key reserved behind the prefix and what it emits.
@@ -253,6 +255,9 @@ func (m *Model) Attach(stream Stream) tea.Cmd {
 	m.watchMouseModes()
 	m.emu.Focus()
 	m.sel = selection.New(emuGrid{m})
+	if m.opts.wordChars != nil {
+		m.sel.SetWordChars(*m.opts.wordChars)
+	}
 	m.selShot = ""
 
 	m.stream = stream
