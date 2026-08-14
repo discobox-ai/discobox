@@ -85,7 +85,7 @@ func ServeBuildForwarder(ctx context.Context, containerID, sandboxID string, pid
 	}
 	certDir := filepath.Join(layout.ProxyCerts(projectID, poolID), "clients", filepath.Clean(sandboxID))
 
-	listener, err := listenInNetns(pid)
+	listener, err := listenInNetns(ctx, pid)
 	if err != nil {
 		return err
 	}
@@ -159,7 +159,7 @@ func StopBuildForwarder(containerID string) error {
 // namespace. The thread is left locked and unusable for anything else after a
 // failed restore, which is why that case ends the process rather than
 // continuing with an unknown namespace.
-func listenInNetns(pid int) (net.Listener, error) {
+func listenInNetns(ctx context.Context, pid int) (net.Listener, error) {
 	runtime.LockOSThread()
 	defer runtime.UnlockOSThread()
 
@@ -178,7 +178,8 @@ func listenInNetns(pid int) (net.Listener, error) {
 	if err := unix.Setns(int(target.Fd()), unix.CLONE_NEWNET); err != nil {
 		return nil, fmt.Errorf("enter build netns: %w", err)
 	}
-	listener, listenErr := net.Listen("tcp", BuildProxyAddress())
+	var config net.ListenConfig
+	listener, listenErr := config.Listen(ctx, "tcp", BuildProxyAddress())
 	if err := unix.Setns(int(own.Fd()), unix.CLONE_NEWNET); err != nil {
 		// This thread is now in a namespace that is about to disappear, and
 		// there is no way to put it back. Carrying on would mean forwarding a
@@ -209,7 +210,7 @@ func readyPath(containerID string) string {
 const PoolProxyURL = "https://" + RegistryServerName + ":17080"
 
 // BuildProxyAddress is where a per-build forwarder listens, inside the build
-// step's own network namespace. Everything that binds, injects, or recognises
+// step's own network namespace. Everything that binds, injects, or recognizes
 // that address derives it here: a listener and a matcher that disagreed would
 // leave the build with a proxy variable pointing at nothing.
 func BuildProxyAddress() string {

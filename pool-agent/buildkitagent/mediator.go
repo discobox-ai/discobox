@@ -286,7 +286,7 @@ func (m *Mediator) rewriteGatewaySolve(data []byte, id string) ([]byte, error) {
 // The values are set, never merged: buildx forwards the client's own proxy
 // environment as build-args, and a sandbox's HTTP_PROXY names its own loopback
 // — which inside a pool-side build container is that container's loopback,
-// where nothing listens. Honouring it would hang every build.
+// where nothing listens. Honoring it would hang every build.
 //
 // The dockerfile frontend treats these names specially: they reach every RUN
 // without an ARG declaration, are excluded from the cache key (so a per-sandbox
