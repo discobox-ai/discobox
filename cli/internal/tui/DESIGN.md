@@ -264,9 +264,13 @@ The title an application sets goes two places: the middle of the window's header
 title bar (`windowTitle` → `View.WindowTitle`), which is how you find the window
 among the others you have open. In the header it is centered in the row rather
 than in the gap beside the folder name, so it does not jitter as that changes
-length, and dropped outright when there is no room to center it. With no pane
-the terminal's title is left exactly as the shell that started the window left
-it. Messages the window does not handle fall through to the pane, because the
+length, and dropped outright when there is no room to center it. The title bar
+always carries the primary terminal's title — never the focused shell tab's or
+the overlay's — because it is read from outside the window, where what matters
+is which discobox this is and what its agent is doing; a tab or a report is
+something you are doing inside the window and already looking at. With no
+primary the terminal's title is left exactly as the shell that started the
+window left it. Messages the window does not handle fall through to the pane, because the
 terminal's output arrives as `termpane`'s own unexported messages and nothing
 here can name them.
 

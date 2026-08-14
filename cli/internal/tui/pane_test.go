@@ -671,10 +671,10 @@ func TestClickFocusesThePaneUnderIt(t *testing.T) {
 	}
 }
 
-// A pane's title goes to the terminal's own title bar as well as the header:
-// the header says what is in the window, and the title bar is how you find the
-// window among the others you have open.
-func TestTheTerminalTitleFollowsThePane(t *testing.T) {
+// The primary terminal's title goes to the terminal's own title bar as well as
+// the header: the header says what is in the window, and the title bar is how
+// you find the window among the others you have open.
+func TestTheTerminalTitleFollowsThePrimaryPane(t *testing.T) {
 	ds := newFakeSource(testSandboxes()...)
 	d, m, term := openWorkspace(t, ds, "enter")
 
@@ -693,6 +693,27 @@ func TestTheTerminalTitleFollowsThePane(t *testing.T) {
 	d.wait("the workspace to close", func() bool { return !m.inPanes() })
 	if got := m.View().WindowTitle; got != "" {
 		t.Fatalf("title = %q, want the terminal's own left alone", got)
+	}
+}
+
+// A shell tab is something you are doing inside this window, so it never takes
+// the window's name: the title bar is read from outside, where what matters is
+// which discobox this is and what its agent is doing.
+func TestTheTerminalTitleIgnoresTheFocusedTab(t *testing.T) {
+	ds := newFakeSource(testSandboxes()...)
+	d, m, term := openWorkspace(t, ds, "s")
+	d.wait("the tab", func() bool { return len(m.shells) == 1 })
+	d.wait("the tab to have focus", func() bool { return m.onShells })
+
+	term.send("\x1b]2;go test ./...\x07")
+	d.wait("the title", func() bool { return m.View().WindowTitle == "go test ./..." })
+
+	ds.execTerm("exec_shell1").send("\x1b]2;less config.yaml\x07")
+	d.wait("the tab's own title", func() bool {
+		return strings.TrimSpace(m.shells[0].term.Title()) == "less config.yaml"
+	})
+	if got, want := m.View().WindowTitle, "go test ./..."; got != want {
+		t.Fatalf("title = %q, want the primary's %q", got, want)
 	}
 }
 

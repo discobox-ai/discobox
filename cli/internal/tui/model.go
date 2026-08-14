@@ -1413,16 +1413,23 @@ func (m *Model) viewHeaderRight() string {
 
 // windowTitle is what the terminal running this window should call itself.
 //
-// A pane's title goes here as well as into the header: the header says what is
-// in the window, and the terminal's own title bar is how you find the window
-// among the others you have open — a tab reading "go test ./..." is worth more
-// than one reading the name of the program that launched it.
+// The primary terminal's title goes here as well as into the header: the header
+// says what is in the window, and the terminal's own title bar is how you find
+// the window among the others you have open — a tab reading "go test ./..." is
+// worth more than one reading the name of the program that launched it.
 //
-// With no pane it is empty, which leaves the title as whatever started this
+// It is the primary rather than whatever has focus because the title bar is
+// read from outside the window, where the point is which discobox this is and
+// what its agent is doing. A shell tab opened to look something up, or a report
+// on the screen for as long as it takes to read, is a thing you are doing
+// inside this window and already looking at; renaming the window after it would
+// churn the tab you find it by.
+//
+// With no primary it is empty, which leaves the title as whatever started this
 // window set it: a launcher with nothing running in it has nothing to say that
 // the terminal's own title does not already.
 func (m *Model) windowTitle() string {
-	p := m.focusedPane()
+	p := m.terminal
 	if p == nil {
 		return ""
 	}
