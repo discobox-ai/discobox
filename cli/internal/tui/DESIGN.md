@@ -96,7 +96,8 @@ Opening it attaches to the primary terminal — the virtual `ExecPrimary` id,
 which the sandbox resolves and revives itself — *and* to every other live TTY
 session the exec listing reports, harness terminals included: `Model.terminal`
 on the left half, `Model.shells` as tabs on the right, one visible at a time
-(`activeShell`), in session-creation order. The workspace mirrors the server
+(`activeShell`), in session-creation order — unless one column has been
+maximized over the other, below. The workspace mirrors the server
 rather than remembering what was opened here, so a shell started from another
 window appears as a tab on its own, and the leader plus `s` always creates a
 new session rather than going to one. With no tabs the terminal takes the full
@@ -125,6 +126,25 @@ session's command basename, else its harness, else its id tail; the visible tab
 is lit and never clipped, and an overgrown strip shows a window around it with
 an ellipsis at the clipped end. Hidden tabs keep emulating off-screen at their
 drawn size, so flipping to one shows where it is now.
+
+**Either column can take the whole window** (`maximized`, `toggleMaximized`).
+Each box wears a `[+]`/`[-]` button at the right end of its top border
+(`zoomControl`, laid in by `titledEdge` and `tabbedEdge` the same way the
+titles are), and `leader z` is the same toggle — a workspace control only a
+mouse can reach is one half the users cannot reach at all. `columns` is the one
+place the two widths are worked out, by tab count rather than off the model, so
+the attaches that are sized before their panes exist agree with the layout they
+land in. The hidden column is sized for the whole window too, on the rule that
+already governs hidden tabs: it keeps emulating, and coming back to it must show
+a screen drawn at the size it is shown at.
+
+Which column is maximized *follows the focus* rather than being pinned, so
+there is exactly one visible box and it is always the one taking the keys.
+Pressing a button therefore also focuses its box, and `leader ←/→` or a digit
+moves the maximized view rather than typing into something off-screen. The last
+tab closing drops the maximize, since there is then nothing to maximize over.
+`onScreen` is what is actually drawn, and the mouse routes against it: the
+overlay alone, the two columns of a split, or the single maximized box.
 
 `Model.paneBox` is the discobox the screen is showing, and every one of the
 list's own keys is bound behind the leader against it (`paneOptions` over

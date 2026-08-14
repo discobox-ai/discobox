@@ -38,6 +38,11 @@ const (
 	// the list's own keys, but none of them is d anymore — it was diff, until
 	// diff left the CLI.
 	paneDetachAlt = "d"
+	// paneZoomKey maximizes the focused column over the other and restores it,
+	// the same toggle the boxes' own [+]/[-] button is. It is z because that is
+	// what tmux zooms a pane on, and because a workspace key nothing but a
+	// mouse can reach is one half the users cannot reach at all.
+	paneZoomKey = "z"
 	// paneQuitKey quits the whole window from behind the leader. Ctrl-C quits
 	// everywhere else but belongs to the application inside a pane, so the
 	// leader carries the exit here — beside d, which only detaches.
@@ -118,6 +123,10 @@ type movePaneMsg struct{ delta int }
 // jumpPaneMsg is the leader plus a digit: focus the pane wearing that number —
 // 0 the terminal, 1 through 9 the tab whose label carries the ordinal.
 type jumpPaneMsg struct{ n int }
+
+// zoomPaneMsg is the leader plus z: give the focused column the whole window,
+// or give the window back to the split.
+type zoomPaneMsg struct{}
 
 // quitPaneMsg is the leader plus q: quit the whole window, every session left
 // running. It is the same exit Ctrl-C is everywhere else, spelled behind the
@@ -289,6 +298,7 @@ func (m *Model) paneOptions(overlay bool) []termpane.Option {
 		termpane.WithRepeatingPrefixBinding(paneRightKey, movePaneMsg{delta: 1}),
 		termpane.WithRepeatingPrefixBinding("left", movePaneMsg{delta: -1}),
 		termpane.WithRepeatingPrefixBinding("right", movePaneMsg{delta: 1}),
+		termpane.WithPrefixBinding(paneZoomKey, zoomPaneMsg{}),
 	)
 	// The digits jump straight to a pane by the number its label wears, the
 	// way tmux selects windows: 0 is the terminal, 1 through 9 the tabs.
@@ -445,6 +455,15 @@ func (m *Model) updatePaneMsg(tagged paneMsg) tea.Cmd {
 			return nil
 		}
 		return m.jumpPane(msg.n)
+
+	case zoomPaneMsg:
+		if p == m.overlay || len(m.shells) == 0 {
+			// Nothing beside it to maximize over: the box already has the
+			// window, and saying so beats a key that looks broken.
+			return status("nothing to maximize — the box has the window")
+		}
+		m.toggleMaximized(m.onShells)
+		return nil
 
 	case quitPaneMsg:
 		// The same exit Ctrl-C is outside a pane: the window goes, and every
@@ -624,17 +643,10 @@ func (m *Model) routeMouse(msg tea.MouseMsg) tea.Cmd {
 // paneAt is the pane whose grid is under a screen position, with the origin
 // that grid was drawn at. The overlay owns the whole screen while it is up;
 // otherwise the terminal is on the left and the visible shell tab on the
-// right. The chrome between and around them belongs to no pane.
+// right, or the one maximized box owns the screen alone. The chrome between and
+// around them belongs to no pane.
 func (m *Model) paneAt(x, y int) (*pane, int, int) {
-	candidates := []*pane{m.overlay}
-	if m.overlay == nil {
-		candidates = candidates[:0]
-		candidates = append(candidates, m.terminal)
-		if m.activeShell >= 0 && m.activeShell < len(m.shells) {
-			candidates = append(candidates, m.shells[m.activeShell])
-		}
-	}
-	for _, p := range candidates {
+	for _, p := range m.onScreen() {
 		if p == nil {
 			continue
 		}
@@ -645,6 +657,33 @@ func (m *Model) paneAt(x, y int) (*pane, int, int) {
 		}
 	}
 	return nil, 0, 0
+}
+
+// onScreen is the panes actually drawn: the overlay alone while one is up, the
+// two columns of a split, and otherwise the single box the screen is — the
+// terminal with no tabs beside it, or whichever side was maximized.
+//
+// Only these can be pointed at. A pane left off the screen is still emulating,
+// but the position the mouse names belongs to whatever is drawn there.
+func (m *Model) onScreen() []*pane {
+	switch {
+	case m.overlay != nil:
+		return []*pane{m.overlay}
+	case m.split():
+		return []*pane{m.terminal, m.visibleShell()}
+	case m.maximized && m.onShells:
+		return []*pane{m.visibleShell()}
+	default:
+		return []*pane{m.terminal}
+	}
+}
+
+// visibleShell is the tab being drawn, or nil when there are none.
+func (m *Model) visibleShell() *pane {
+	if len(m.shells) == 0 {
+		return nil
+	}
+	return m.shells[min(max(m.activeShell, 0), len(m.shells)-1)]
 }
 
 // focusPane moves focus to a pane the mouse chose.
@@ -665,11 +704,24 @@ type tabSpan struct {
 	start, end int
 }
 
-// focusChromeAt applies a press on the chrome to what the cell means: a tab
-// label is that tab, and any other cell of a pane's box is that pane.
+// zoomSpan is where one box's maximize control sits on the boxes' top border
+// row, in absolute screen columns, both ends inclusive. shells says which of
+// the two columns it belongs to.
+type zoomSpan struct {
+	shells     bool
+	start, end int
+}
+
+// focusChromeAt applies a press on the chrome to what the cell means: the
+// maximize button is that box taking the window or giving it back, a tab label
+// is that tab, and any other cell of a pane's box is that pane.
 func (m *Model) focusChromeAt(x, y int) {
 	if m.overlay != nil {
 		// One box with nothing beside it; a border press chooses nothing.
+		return
+	}
+	if shells, ok := m.zoomAt(x, y); ok {
+		m.toggleMaximized(shells)
 		return
 	}
 	if i := m.tabAt(x, y); i >= 0 {
@@ -681,6 +733,36 @@ func (m *Model) focusChromeAt(x, y int) {
 	}
 }
 
+// zoomAt is the box whose maximize control is under a screen position. The
+// spans were recorded when the boxes were drawn, and only a box actually on
+// screen records one.
+func (m *Model) zoomAt(x, y int) (shells, ok bool) {
+	if y != 1 {
+		return false, false
+	}
+	for _, s := range m.zoomSpans {
+		if x >= s.start && x <= s.end {
+			return s.shells, true
+		}
+	}
+	return false, false
+}
+
+// toggleMaximized gives one column the whole window, or hands the window back
+// to the split.
+//
+// Which column is maximized follows the focus, so pressing the control also
+// moves focus onto the box it was pressed on: the box you asked to see is the
+// box the keys should be going to, and the alternative is a screen showing one
+// pane while another takes the typing.
+func (m *Model) toggleMaximized(shells bool) {
+	m.maximized = !m.maximized
+	if m.maximized {
+		m.onShells = shells && len(m.shells) > 0
+	}
+	m.layout()
+}
+
 // tabAt is the tab whose label is under a screen position, -1 for none. The
 // strip is the shell box's top border row, and the spans were recorded when
 // it was drawn.
@@ -688,7 +770,7 @@ func (m *Model) tabAt(x, y int) int {
 	if y != 1 || len(m.shells) == 0 {
 		return -1
 	}
-	rel := x - m.width/2
+	rel := x - m.shellLeft()
 	for _, s := range m.tabSpans {
 		if rel >= s.start && rel <= s.end {
 			return s.index
@@ -699,15 +781,19 @@ func (m *Model) tabAt(x, y int) int {
 
 // paneBoxAt is the pane whose box — border and title row included — is under
 // a screen position: the body rows between the header above and the hints
-// below, split down the middle when there are tabs.
+// below, split down the middle when there are tabs beside the terminal and
+// belonging to the one box on screen when there are not.
 func (m *Model) paneBoxAt(x, y int) *pane {
 	if y < 1 || y > m.paneRows()+2 {
 		return nil
 	}
-	if len(m.shells) == 0 || x < m.width/2 {
-		return m.terminal
+	if m.split() && x >= m.width/2 {
+		return m.visibleShell()
 	}
-	return m.shells[min(m.activeShell, len(m.shells)-1)]
+	if !m.split() && m.maximized && m.onShells {
+		return m.visibleShell()
+	}
+	return m.terminal
 }
 
 // copyText puts selected text on the clipboard: the OS clipboard first, and
@@ -750,18 +836,52 @@ func (m *Model) paneCells(width int) (cols, rows int) {
 	return max(width-2-2*boxPad, 1), max(m.paneRows(), 1)
 }
 
-// paneWidthOf is the width of the box a pane is drawn in: the whole window for
-// the overlay and for a terminal with no tabs beside it, half of it for each
-// side of the split. The right half takes any odd cell, so the two are never
-// more than one apart.
+// split reports whether the workspace is drawn as two columns: it has tabs to
+// put beside the terminal, and neither side has been maximized over the other.
+func (m *Model) split() bool { return len(m.shells) > 0 && !m.maximized }
+
+// columns is the box widths of the workspace's two sides, for the given number
+// of tabs. It takes the count rather than reading it off the model because the
+// first attaches are sized before their panes exist, and a primary sized for a
+// window it is about to share is a terminal that draws itself wrong before
+// anything can correct it.
+//
+// In a split the two share the window and the right side takes any odd cell, so
+// they are never more than one apart. Otherwise only one box is on screen — no
+// tabs at all, or one side maximized over the other — and whichever it is has
+// the whole window. The hidden side is sized for the window too: it keeps
+// emulating off-screen, and flipping to it must show a screen drawn at the size
+// it is shown at.
+func (m *Model) columns(tabs int) (term, shells int) {
+	if tabs == 0 || m.maximized {
+		full := max(m.width, 4)
+		return full, full
+	}
+	return max(m.width/2, 4), max(m.width-m.width/2, 4)
+}
+
+// paneWidthOf is the width of the box a pane is drawn in. The overlay has the
+// whole window whatever the workspace under it is doing; everything else takes
+// its side's column.
 func (m *Model) paneWidthOf(p *pane) int {
-	if p == m.overlay || len(m.shells) == 0 {
+	if p == m.overlay {
 		return max(m.width, 4)
 	}
+	term, shells := m.columns(len(m.shells))
 	if p == m.terminal {
-		return max(m.width/2, 4)
+		return term
 	}
-	return max(m.width-m.width/2, 4)
+	return shells
+}
+
+// shellLeft is the column the shell box's border starts at: past the
+// terminal's half in a split, and the window's own left edge when the shells
+// are the maximized side.
+func (m *Model) shellLeft() int {
+	if m.split() {
+		return m.width / 2
+	}
+	return 0
 }
 
 // paneOrigin is where a pane's grid was drawn: past its border's left edge
@@ -772,8 +892,9 @@ func (m *Model) paneWidthOf(p *pane) int {
 // out once rather than counted twice.
 func (m *Model) paneOrigin(p *pane) (x, y int) {
 	if p != nil && p != m.overlay && p != m.terminal && len(m.shells) > 0 {
-		// A shell tab: its box starts where the terminal's ends.
-		return m.width/2 + 1 + boxPad, 2
+		// A shell tab: its box starts where the terminal's ends, or at the
+		// window's edge when it is the maximized one.
+		return m.shellLeft() + 1 + boxPad, 2
 	}
 	return 1 + boxPad, 2
 }
@@ -795,6 +916,11 @@ func (m *Model) viewPaneWindow() string {
 	// shell to act on this one, and muted rather than foreground, because it is
 	// there to be looked up when wanted rather than read on every glance. What
 	// each pane is running is in its own border.
+	// The drawing pass owns where the border's controls landed: they are only
+	// there when they were drawn this frame, and a span left over from a box
+	// that is no longer on screen is a click target pointing at nothing.
+	m.tabSpans, m.zoomSpans = m.tabSpans[:0], m.zoomSpans[:0]
+
 	name := m.st.dimText.Render(m.paneBox.ID)
 	right := m.viewHeaderRight()
 	// What the transport is doing displaces the keys while it is doing it: it
@@ -814,15 +940,20 @@ func (m *Model) viewPaneWindow() string {
 	switch {
 	case m.overlay != nil:
 		body = m.viewPaneBox(m.overlay, m.width, true)
-	case len(m.shells) == 0:
-		body = m.viewPaneBox(m.terminal, m.width, true)
-	default:
+	case m.split():
 		// The terminal on the left, the tabbed shells on the right; the right
 		// half takes any cell the division left over so the row comes out
 		// exactly the width.
 		left := m.viewPaneBox(m.terminal, m.width/2, !m.onShells)
 		right := m.viewShellBox(m.width-m.width/2, m.onShells)
 		body = lipgloss.JoinHorizontal(lipgloss.Top, left, right)
+	case m.maximized && m.onShells:
+		// Maximized: the column with focus has the window and the other is not
+		// drawn at all — still attached, still emulating, and back where it was
+		// the moment the button gives the window back.
+		body = m.viewShellBox(m.width, true)
+	default:
+		body = m.viewPaneBox(m.terminal, m.width, true)
 	}
 	rows = append(rows, strings.Split(body, "\n")...)
 	rows = append(rows, " "+pad+padANSI(m.st.dimText.Render(m.hints()), max(inner-2*boxPad, 1))+pad+" ")
@@ -851,12 +982,45 @@ func (m *Model) viewPaneBox(p *pane, width int, focused bool) string {
 	if title == "" {
 		title = string(p.action)
 	}
-	rows := []string{titledEdge(m.st, edge, title, inner)}
+	control := ""
+	if p == m.terminal {
+		control = m.zoomControl(edge, false, 0, width)
+	}
+	rows := []string{titledEdge(m.st, edge, title, control, inner)}
 	for _, line := range p.term.View() {
 		rows = append(rows, side+pad+padANSI(line, grid)+pad+side)
 	}
 	rows = append(rows, edge.Render("╰"+strings.Repeat("─", inner)+"╯"))
 	return strings.Join(rows, "\n")
+}
+
+// zoomControl is a box's maximize button, set into the right end of its top
+// border the way the title is set into the middle of it — `[+]` to take the
+// window, `[-]` to give it back — and records where it landed so a click on it
+// can be routed back to the box that drew it.
+//
+// It is drawn only when there are two columns to choose between: with a single
+// box on screen — an overlay, or a terminal with no tabs beside it — there is
+// nothing to maximize over, and a button whose two states look the same is a
+// button that lies about what it does.
+//
+// zoomMinWidth is the box width below which the button goes rather than the
+// border: a control that overruns its own corner is worse than no control, and
+// the keys reach the same toggle at any width.
+func (m *Model) zoomControl(edge lipgloss.Style, shells bool, left, width int) string {
+	const zoomMinWidth = 12
+	if m.overlay != nil || len(m.shells) == 0 || width < zoomMinWidth {
+		return ""
+	}
+	glyph := "+"
+	if m.maximized {
+		glyph = "-"
+	}
+	// `…[+]─╮`: the bracketed cells end two columns short of the box's right
+	// edge, leaving the rule cell that keeps it off the corner.
+	end := left + width - 3
+	m.zoomSpans = append(m.zoomSpans, zoomSpan{shells: shells, start: end - 2, end: end})
+	return edge.Render("[") + m.st.dimText.Render(glyph) + edge.Render("]")
 }
 
 // paneCursor is where the hardware cursor goes: the focused pane's own idea of

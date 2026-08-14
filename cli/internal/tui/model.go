@@ -62,6 +62,11 @@ type Model struct {
 	// activeShell is the tab that is visible, and focused while onShells.
 	activeShell int
 	onShells    bool
+	// maximized is whether one column has the whole window instead of the two
+	// sharing it. Which column that is follows the focus — onShells — so there
+	// is one visible box and it is always the one the keys go to. See
+	// toggleMaximized.
+	maximized bool
 	// connecting is the exec ids with an attach in flight, so a poll that
 	// still lists them does not open a second pane onto the same session.
 	connecting map[string]bool
@@ -102,6 +107,11 @@ type Model struct {
 	// border, recorded as the strip is drawn (tabbedEdge) so a click on
 	// [2 bash] can mean tab 2. Box-relative columns.
 	tabSpans []tabSpan
+
+	// zoomSpans is where each box's maximize control sits, recorded as the
+	// boxes are drawn (zoomControl) so a click on [+] can mean that box.
+	// Absolute screen columns.
+	zoomSpans []zoomSpan
 
 	// leaderKey is the pane's prefix; empty takes the default. See Model.leader.
 	leaderKey string
@@ -1337,7 +1347,7 @@ func (m *Model) box(title string, rows []string) string {
 	edge := inner + 2*boxPad
 
 	out := make([]string, 0, len(rows)+2)
-	out = append(out, titledEdge(m.st, m.st.frame, title, edge))
+	out = append(out, titledEdge(m.st, m.st.frame, title, "", edge))
 	for _, row := range rows {
 		out = append(out, side+pad+padANSI(row, inner)+pad+side)
 	}
@@ -1345,7 +1355,8 @@ func (m *Model) box(title string, rows []string) string {
 	return strings.Join(out, "\n")
 }
 
-// titledEdge draws a box's top edge with a title laid into it.
+// titledEdge draws a box's top edge with a title laid into it, and an already
+// rendered control — the maximize button, or nothing — laid into its right end.
 //
 // It goes on the border rather than above it because the border is a line the
 // eye already follows, so a word set into it costs no row at all — and because
@@ -1355,19 +1366,28 @@ func (m *Model) box(title string, rows []string) string {
 // The brackets are what make it read as set into the line rather than as a gap
 // in it: bare text with space either side leaves the border looking broken where
 // the title sits. A title with no room for rule on both sides is dropped.
-func titledEdge(st *styles, edge lipgloss.Style, title string, width int) string {
+func titledEdge(st *styles, edge lipgloss.Style, title, control string, width int) string {
+	// The control keeps a cell of rule between it and the corner, the way the
+	// title keeps rule on both sides, and the title is centered in what it
+	// leaves rather than in the whole edge — a title that slid under the button
+	// as the box narrowed would read as one label.
+	tail := edge.Render("╮")
+	if control != "" {
+		tail = control + edge.Render("─╮")
+		width = max(width-lipgloss.Width(control)-1, 0)
+	}
 	rule := strings.Repeat("─", width)
 	if title = strings.TrimSpace(title); title == "" {
-		return edge.Render("╭" + rule + "╮")
+		return edge.Render("╭"+rule) + tail
 	}
 	label := edge.Render("[") + st.headerBar.Render(" "+title+" ") + edge.Render("]")
 	labelW := lipgloss.Width(label)
 	if labelW > width-4 {
-		return edge.Render("╭" + rule + "╮")
+		return edge.Render("╭"+rule) + tail
 	}
 	left := (width - labelW) / 2
 	return edge.Render("╭"+strings.Repeat("─", left)) + label +
-		edge.Render(strings.Repeat("─", width-left-labelW)+"╮")
+		edge.Render(strings.Repeat("─", width-left-labelW)) + tail
 }
 
 // altView is a frame on the alternate screen, for the layers that stand in
@@ -1541,6 +1561,11 @@ func (m *Model) hints() string {
 			if len(m.shells) > 0 {
 				hints += " · " + m.leader() + " ←/→ pane"
 				hints += " · " + m.leader() + " 0-9 jump"
+				zoom := " maximize"
+				if m.maximized {
+					zoom = " restore"
+				}
+				hints += " · " + m.leader() + " " + paneZoomKey + zoom
 			}
 		}
 		// The seize toggle only matters while something in the box has the
@@ -1723,6 +1748,11 @@ func (m *Model) helpText() string {
 		"                   leader again",
 		"    " + m.leader() + " 0-9     jump straight there: 0 is the terminal,",
 		"                   1-9 the tab wearing that number",
+		"    " + m.leader() + " " + paneZoomKey + "       give the focused column the whole window and",
+		"                   hide the other, or give the window back — the",
+		"                   same toggle as the [+] / [-] button each box",
+		"                   wears at the right of its top border. What is",
+		"                   hidden stays connected and stays running",
 		"    " + m.paneMouseHint() + "       take the mouse from a box that is using it,",
 		"                   to select and copy; press again to give it back",
 		"",

@@ -135,21 +135,19 @@ func (m *Model) workspaceExecs(msg workspaceExecsMsg) tea.Cmd {
 		sort.SliceStable(open, func(i, j int) bool { return execBefore(open[i], open[j]) })
 	}
 
+	// Sized for the box they will be drawn in, counting the tabs about to
+	// arrive as well as the ones already here: the full window when there is
+	// one box, the halves when there are two. See columns.
+	term, shells := m.columns(len(open) + len(m.shells))
 	if first {
-		// Sized for the box it will be drawn in: the full window when the
-		// workspace has no tabs, the left half when it does.
-		width := m.width
-		if len(open) > 0 || len(m.shells) > 0 {
-			width = m.width / 2
-		}
-		cmds = append(cmds, m.openExec(msg.gen, Exec{ID: ExecPrimary, Primary: true}, width))
+		cmds = append(cmds, m.openExec(msg.gen, Exec{ID: ExecPrimary, Primary: true}, term))
 		if msg.err != nil {
 			cmds = append(cmds, m.report(true, "cannot list sessions: %v", msg.err))
 		}
 	}
 	for _, exec := range open {
 		m.connecting[exec.ID] = true
-		cmds = append(cmds, m.openExec(msg.gen, exec, m.width-m.width/2))
+		cmds = append(cmds, m.openExec(msg.gen, exec, shells))
 	}
 	return tea.Batch(cmds...)
 }
@@ -173,7 +171,8 @@ func (m *Model) openExec(gen int, exec Exec, width int) tea.Cmd {
 func (m *Model) newShell() tea.Cmd {
 	m.busy = "shell…"
 	gen := m.wsGen
-	cols, rows := m.paneCells(m.width - m.width/2)
+	_, shells := m.columns(len(m.shells) + 1)
+	cols, rows := m.paneCells(shells)
 	ctx, ds, id := m.ctx, m.ds, m.paneBox.ID
 	return func() tea.Msg {
 		exec, term, err := ds.NewShell(ctx, id, cols, rows)
@@ -327,7 +326,10 @@ func (m *Model) closeShell(i int) {
 	}
 	m.activeShell = min(m.activeShell, max(len(m.shells)-1, 0))
 	if len(m.shells) == 0 {
+		// Nothing left to share the window with, so there is nothing left to
+		// maximize over either; the terminal takes it back on its own.
 		m.onShells = false
+		m.maximized = false
 	}
 	m.layout()
 }
@@ -353,6 +355,7 @@ func (m *Model) closeWorkspace() {
 	m.shells = nil
 	m.activeShell = 0
 	m.onShells = false
+	m.maximized = false
 	m.leavePanes()
 }
 
@@ -462,10 +465,23 @@ func (m *Model) viewShellBox(width int, focused bool) string {
 // a window of tabs around it is shown with an ellipsis at the clipped end.
 func (m *Model) tabbedEdge(edge lipgloss.Style, inner int) string {
 	rule := func(n int) string { return strings.Repeat("─", max(n, 0)) }
+	// The maximize button shares the line, at the far end; the strip gets what
+	// it leaves. See zoomControl.
+	control := m.zoomControl(edge, true, m.shellLeft(), inner+2)
+	reserve := 0
+	if control != "" {
+		reserve = lipgloss.Width(control) + 1
+	}
+	tail := func(cells int) string {
+		out := edge.Render(rule(inner - cells - reserve))
+		if control != "" {
+			out += control + edge.Render("─")
+		}
+		return out + edge.Render("╮")
+	}
 	// The strip is a click target as well as a label row, so where each tab
 	// lands is recorded as it is drawn — the drawing loop is the one place
 	// that knows. Columns are box-relative: the corner is cell zero.
-	m.tabSpans = m.tabSpans[:0]
 	labels := make([]string, len(m.shells))
 	widths := make([]int, len(m.shells))
 	for i := range m.shells {
@@ -474,13 +490,13 @@ func (m *Model) tabbedEdge(edge lipgloss.Style, inner int) string {
 	}
 
 	active := min(m.activeShell, len(labels)-1)
-	avail := inner - 2 // a cell of rule survives at each end
+	avail := inner - 2 - reserve // a cell of rule survives at each end
 	if widths[active] > avail {
 		// Even alone the visible tab does not fit: shorten its label as a last
 		// resort, and below any readable size give the row back to the rule.
 		keep := avail - 4
 		if keep < 1 {
-			return edge.Render("╭" + rule(inner) + "╮")
+			return edge.Render("╭") + tail(0)
 		}
 		labels[active] = string([]rune(labels[active])[:keep])
 		widths[active] = keep + 4
@@ -534,6 +550,6 @@ func (m *Model) tabbedEdge(edge lipgloss.Style, inner int) string {
 		out.WriteString(edge.Render("…"))
 		cells++
 	}
-	out.WriteString(edge.Render(rule(inner-cells) + "╮"))
+	out.WriteString(tail(cells))
 	return out.String()
 }

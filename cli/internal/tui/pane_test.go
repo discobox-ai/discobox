@@ -126,6 +126,78 @@ func TestATabSplitsTheScreen(t *testing.T) {
 	}
 }
 
+// The leader plus z is the same toggle the boxes' [+] button is, so the
+// workspace maximizes without a mouse: the focused column takes the window,
+// and the hidden one is resized for it too — it keeps emulating off-screen,
+// and flipping back to it must show a screen drawn at the size it is shown at.
+func TestLeaderZMaximizesTheFocusedColumn(t *testing.T) {
+	ds := newFakeSource(testSandboxes()...)
+	d, m, _ := openWorkspace(t, ds, "enter")
+	d.key("ctrl+a")
+	d.key("s")
+	d.wait("the tab", func() bool { return len(m.shells) == 1 })
+	d.wait("the tab focused", func() bool { return m.onShells })
+
+	d.key("ctrl+a")
+	d.key("z")
+	d.wait("the tab maximized", func() bool { return m.maximized })
+
+	full, fullRows := m.paneCells(m.width)
+	for what, term := range map[string]*fakeTerminal{
+		"the tab":      ds.execTerm("exec_shell1"),
+		"the terminal": ds.execTerm(ExecPrimary),
+	} {
+		if got := term.size(); got != [2]int{full, fullRows} {
+			t.Fatalf("%s is %v, want the whole window %dx%d", what, got, full, fullRows)
+		}
+	}
+	if !strings.Contains(frameText(m), "ctrl+a z restore") {
+		t.Fatalf("the hints should offer the way back:\n%s", frameText(m))
+	}
+
+	// And back to the split.
+	d.key("ctrl+a")
+	d.key("z")
+	d.wait("the split back", func() bool { return !m.maximized })
+	cols, rows := m.paneCells(m.width / 2)
+	if got := ds.execTerm(ExecPrimary).size(); got != [2]int{cols, rows} {
+		t.Fatalf("the terminal is %v, want the left half %dx%d", got, cols, rows)
+	}
+}
+
+// With nothing beside it there is nothing to maximize over, so the key says so
+// rather than looking broken.
+func TestLeaderZWithNoTabsSaysSo(t *testing.T) {
+	ds := newFakeSource(testSandboxes()...)
+	d, m, _ := openWorkspace(t, ds, "enter")
+
+	d.key("ctrl+a")
+	d.key("z")
+	d.wait("the report", func() bool { return strings.Contains(m.status, "nothing to maximize") })
+	if m.maximized {
+		t.Fatal("a lone box should not maximize over nothing")
+	}
+}
+
+// The last tab closing gives the window back on its own: there is nothing left
+// to maximize over, and a workspace stuck maximized would hide the next tab.
+func TestClosingTheLastTabDropsTheMaximize(t *testing.T) {
+	ds := newFakeSource(testSandboxes()...)
+	d, m, _ := openWorkspace(t, ds, "enter")
+	d.key("ctrl+a")
+	d.key("s")
+	d.wait("the tab", func() bool { return len(m.shells) == 1 })
+	m.toggleMaximized(true)
+
+	m.closeShell(0)
+	if m.maximized {
+		t.Fatal("the last tab closing should give the window back")
+	}
+	if got := m.paneWidthOf(m.terminal); got != m.width {
+		t.Fatalf("the terminal is %d cells wide, want the whole window (%d)", got, m.width)
+	}
+}
+
 // Resizing the window resizes every terminal with it.
 func TestResizingTheWindowResizesTheTerminal(t *testing.T) {
 	ds := newFakeSource(testSandboxes()...)
