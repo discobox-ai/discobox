@@ -96,3 +96,4 @@ Nygard-style ADRs (see adr.github.io) combined with current-state design docs:
 | [0041](0041-dev-hot-reload-is-watchnbuild.md) | Dev hot reload is watchnbuild, not Air | Proposed |
 | [0042](0042-git-authorship-identity-is-a-first-class-sandbox-property.md) | Git authorship identity is a first-class sandbox property | Proposed |
 | [0043](0043-shell-is-an-ordinary-harness-image.md) | `shell` is an ordinary harness image | Accepted |
+| [0044](0044-builds-run-on-a-pool-shared-buildkit.md) | Builds run on a pool-shared BuildKit, bound to a sandbox by a mediator | Accepted |
