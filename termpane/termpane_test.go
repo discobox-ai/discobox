@@ -83,6 +83,24 @@ func (f *fakeStream) sent(t *testing.T, want string) string {
 	}
 }
 
+// sentN is sent for a substring expected more than once: it waits for the nth
+// occurrence. Input reaches the far end through a goroutine of its own, so a
+// test that goes on to clear what has been written has to wait for all of it,
+// not just the first — the rest would land afterwards and read as new.
+func (f *fakeStream) sentN(t *testing.T, want string, n int) string {
+	t.Helper()
+	deadline := time.Now().Add(2 * time.Second)
+	for {
+		f.mu.Lock()
+		got := string(f.written)
+		f.mu.Unlock()
+		if strings.Count(got, want) >= n || time.Now().After(deadline) {
+			return got
+		}
+		time.Sleep(time.Millisecond)
+	}
+}
+
 func (f *fakeStream) resizes() [][2]int {
 	f.mu.Lock()
 	defer f.mu.Unlock()
@@ -237,6 +255,106 @@ func TestPasteReachesTheFarEnd(t *testing.T) {
 	if got := stream.sent(t, "pasted"); !strings.Contains(got, "pasted") {
 		t.Fatalf("sent %q, want the pasted text", got)
 	}
+}
+
+// An application that has asked for bracketed paste gets its markers, and one
+// that has not gets the text bare.
+func TestPasteIsBracketedOnlyWhenAsked(t *testing.T) {
+	m, stream, cmd := attach(t, 40, 5)
+
+	m.Update(tea.PasteMsg{Content: "plain"})
+	if got := stream.sent(t, "plain"); strings.Contains(got, "\x1b[200~") {
+		t.Fatalf("sent %q, want no markers before the application asked", got)
+	}
+
+	stream.send("\x1b[?2004h" + "asked")
+	pump(t, m, cmd, "asked")
+
+	// Waited on by the closing marker, which is the last thing the pane writes.
+	m.Update(tea.PasteMsg{Content: "bracketed"})
+	if got := stream.sent(t, "\x1b[201~"); !strings.Contains(got, "\x1b[200~bracketed\x1b[201~") {
+		t.Fatalf("sent %q, want the paste bracketed", got)
+	}
+}
+
+// A paste carrying the end marker cannot close its own paste: everything after
+// it would arrive as though it had been typed.
+func TestPasteMarkersAreStrippedFromTheText(t *testing.T) {
+	m, stream, cmd := attach(t, 40, 5)
+	stream.send("\x1b[?2004h" + "asked")
+	pump(t, m, cmd, "asked")
+
+	m.Update(tea.PasteMsg{Content: "safe\x1b[201~rm -rf /\rmore\x1b[200~"})
+	// Waiting on the pane's own closing marker, which is the last thing it
+	// writes: waiting on the text would race the end of the paste.
+	got := stream.sent(t, "\x1b[201~")
+	if want := "\x1b[200~saferm -rf /\rmore\x1b[201~"; got != want {
+		t.Fatalf("sent %q, want %q", got, want)
+	}
+}
+
+// A far end that stops accepting input must not take the host down with it. The
+// emulator's input pipe is synchronous, and everything that writes to it — a
+// paste, a key, the emulator's own replies to the far end's queries — runs on
+// the update goroutine, so a forwarder that gave up would block the window
+// forever on the next keystroke.
+func TestInputSurvivesAStreamThatFails(t *testing.T) {
+	m, stream, _ := attach(t, 40, 5)
+
+	stream.mu.Lock()
+	stream.err = errors.New("the far end is gone")
+	stream.mu.Unlock()
+
+	// The first send is the one that fails the write and ends the forwarding.
+	m.Update(tea.PasteMsg{Content: "first"})
+
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		// Enough to fill anything holding what cannot be sent.
+		for range 200 {
+			m.Update(tea.KeyPressMsg{Code: 'a', Text: "a"})
+		}
+		m.Update(tea.PasteMsg{Content: strings.Repeat("x", 4*inputChunk)})
+	}()
+	select {
+	case <-done:
+	case <-time.After(5 * time.Second):
+		t.Fatal("input blocked the host after the stream failed")
+	}
+}
+
+// A paste is handed off rather than written through: the host goroutine must
+// not wait on a far end that is slow to take it.
+func TestALargePasteDoesNotWaitOnTheFarEnd(t *testing.T) {
+	m := New()
+	m.SetSize(40, 5)
+	stream := &slowStream{fakeStream: newFakeStream(), delay: 50 * time.Millisecond}
+	if cmd := m.Attach(stream); cmd == nil {
+		t.Fatal("Attach returned no command to pump the stream")
+	}
+	t.Cleanup(func() { _ = m.Close() })
+
+	// Enough chunks that writing them through at the stream's pace would take
+	// well over a second — and few enough to fit the backlog, which is the
+	// point: the host hands the paste over and carries on.
+	start := time.Now()
+	m.Update(tea.PasteMsg{Content: strings.Repeat("x", 32*inputChunk)})
+	if took := time.Since(start); took > 500*time.Millisecond {
+		t.Fatalf("the paste held the host for %v", took)
+	}
+}
+
+// slowStream is a far end that takes its time, the way a pty whose program is
+// not reading its input does.
+type slowStream struct {
+	*fakeStream
+	delay time.Duration
+}
+
+func (s *slowStream) Write(p []byte) (int, error) {
+	time.Sleep(s.delay)
+	return s.fakeStream.Write(p)
 }
 
 // The detach key is a press of its own, and it does not reach the application.

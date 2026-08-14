@@ -171,8 +171,9 @@ func TestApplicationMouseWinsUnlessSeized(t *testing.T) {
 	if m.HasSelection() {
 		t.Fatal("selection active while the application owned the mouse")
 	}
-	stream.sent(t, "\x1b[M")
-	if got := stream.sent(t, ""); !strings.Contains(got, "\x1b[M") {
+	// All three, not just the first: what is still in flight would arrive after
+	// the clear below and read as an event forwarded while seized.
+	if got := stream.sentN(t, "\x1b[M", 3); strings.Count(got, "\x1b[M") != 3 {
 		t.Fatalf("mouse events were not forwarded: %q", got)
 	}
 

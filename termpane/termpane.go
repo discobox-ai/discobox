@@ -277,7 +277,7 @@ func (m *Model) Attach(stream Stream) tea.Cmd {
 	// they are running in. An emulator whose replies are never collected fills
 	// its buffer and wedges the moment something asks it a question.
 	m.forwardDone, m.forwardOut = make(chan struct{}), make(chan struct{})
-	go m.forwardInput(m.emu, stream, m.forwardDone, m.forwardOut)
+	startForwarding(m.emu, stream, m.forwardDone, m.forwardOut)
 
 	return m.reader.next()
 }
@@ -331,9 +331,43 @@ func cursorShape(style vt.CursorStyle) tea.CursorShape {
 	}
 }
 
-func (m *Model) forwardInput(emu *vt.Emulator, stream Stream, done, exited chan struct{}) {
+// inputChunk is the most input taken off the emulator at once.
+const inputChunk = 32 * 1024
+
+// inputBacklog is how many chunks may be waiting for the far end before the
+// pane pushes back on whoever is producing them. Two megabytes is far more than
+// typing produces and more than any paste anyone means, so in practice the
+// backlog absorbs the whole of what is sent and the host never waits; past it,
+// waiting is the only honest answer, since the alternative is either dropping
+// input or growing without bound.
+const inputBacklog = 64
+
+// startForwarding connects the emulator's input side to the stream.
+//
+// It is two goroutines rather than one because a write to the far end can take
+// arbitrarily long — a stalled pty, a reconnecting transport — and the pipe
+// behind the emulator is synchronous: whoever last called Paste or SendKey is
+// held until the bytes are read. That caller is the host's update goroutine, so
+// a slow stream reached directly from the drain would freeze the window for as
+// long as the far end took. The drain keeps the pipe moving; the writer waits.
+func startForwarding(emu *vt.Emulator, stream Stream, done, exited chan struct{}) {
+	backlog := make(chan []byte, inputBacklog)
+	dead := make(chan struct{})
+	go writeInput(stream, backlog, dead, done)
+	go drainInput(emu, backlog, dead, done, exited)
+}
+
+// drainInput copies the emulator's input side into the backlog.
+//
+// It is the pipe's only reader, and it goes on reading for as long as the pane
+// is attached — including after the far end is gone, when what it reads is
+// dropped. A pipe with no reader blocks its writers forever, and its writers are
+// Paste, SendKey and the emulator's own replies to the far end's queries: every
+// one of them runs on the host's update goroutine. A drain that gave up on a
+// dead stream would take the window down with the pane.
+func drainInput(emu *vt.Emulator, backlog chan<- []byte, dead, done <-chan struct{}, exited chan<- struct{}) {
 	defer close(exited)
-	buf := make([]byte, 32*1024)
+	buf := make([]byte, inputChunk)
 	for {
 		n, err := emu.Read(buf)
 		// A read that returned because detach woke it carries the wake-up byte
@@ -345,11 +379,38 @@ func (m *Model) forwardInput(emu *vt.Emulator, stream Stream, done, exited chan 
 		default:
 		}
 		if n > 0 {
-			if _, werr := stream.Write(buf[:n]); werr != nil {
+			// The buffer is reused, so the writer is handed its own copy.
+			chunk := make([]byte, n)
+			copy(chunk, buf[:n])
+			// Once the far end is dead the backlog fills and stays full, at
+			// which point this only ever takes the dead case: reading and
+			// dropping, which is the point.
+			select {
+			case backlog <- chunk:
+			case <-dead:
+			case <-done:
 				return
 			}
 		}
 		if err != nil {
+			return
+		}
+	}
+}
+
+// writeInput sends the backlog on to the far end. A failed write ends it —
+// there is nothing left to send input to — and closing dead tells the drain to
+// stop queueing for it. That the session is over is the reader's to report; a
+// pane does not learn it twice.
+func writeInput(stream Stream, backlog <-chan []byte, dead chan<- struct{}, done <-chan struct{}) {
+	defer close(dead)
+	for {
+		select {
+		case chunk := <-backlog:
+			if _, err := stream.Write(chunk); err != nil {
+				return
+			}
+		case <-done:
 			return
 		}
 	}
@@ -383,7 +444,7 @@ func (m *Model) Update(msg tea.Msg) (*Model, tea.Cmd) {
 		// application's own paste markers when it has asked for them, and sends
 		// it plain when it has not.
 		if m.emu != nil {
-			m.emu.Paste(msg.Content)
+			m.emu.Paste(stripPasteMarkers(msg.Content))
 		}
 		return m, nil
 
@@ -391,6 +452,28 @@ func (m *Model) Update(msg tea.Msg) (*Model, tea.Cmd) {
 		return m, m.handleKey(msg)
 	}
 	return m, nil
+}
+
+// pasteMarkers begin and end a bracketed paste, in the 7-bit form everything
+// writes and the 8-bit form some far ends still parse.
+var pasteMarkers = []string{"\x1b[200~", "\x1b[201~", "\x9b200~", "\x9b201~"}
+
+// stripPasteMarkers takes the paste markers out of text about to be pasted.
+//
+// The end marker is the one that matters. Text carrying it closes the paste
+// early on the far end, and everything after it arrives as though it had been
+// typed: a clipboard ending "\x1b[201~rm -rf /\r" would run. Filtering it is
+// what every terminal emulator does, and a pane is one. The start marker goes
+// with it, a paste that appears to begin twice being nothing the far end asked
+// for.
+//
+// Nothing else is touched. A paste is the user's own text, and a terminal that
+// second-guesses it is a terminal that mangles what people paste.
+func stripPasteMarkers(text string) string {
+	for _, marker := range pasteMarkers {
+		text = strings.ReplaceAll(text, marker, "")
+	}
+	return text
 }
 
 // handleKey applies the reserved prefix, if there is one, and sends the rest.
@@ -731,8 +814,8 @@ func (m *Model) detach() error {
 	return err
 }
 
-// stopForwarder gets the input forwarder out of the emulator before the
-// emulator is closed under it.
+// stopForwarder gets the input drain out of the emulator before the emulator is
+// closed under it. The writer it feeds leaves on the same signal.
 //
 // Closing the emulator is what would unblock its Read, and it is what the
 // obvious version of this does — but Emulator.Read and Emulator.Close both
@@ -740,13 +823,13 @@ func (m *Model) detach() error {
 // closing while a read is in flight is a data race. (The unblocking itself is
 // safe: it goes through an io.Pipe. It is the flag that races.)
 //
-// So the forwarder is woken instead of interrupted: a byte written to the
+// So the drain is woken instead of interrupted: a byte written to the
 // emulator's input pipe — the same pipe its Read is waiting on — returns that
-// read, the forwarder sees the done signal and leaves without forwarding it,
-// and only then is the emulator closed, with nothing inside Read to race.
+// read, the drain sees the done signal and leaves without forwarding it, and
+// only then is the emulator closed, with nothing inside Read to race.
 //
 // The write itself is on a goroutine because an io.Pipe write blocks until it
-// is read: if the forwarder has already gone, nothing will read it, and the
+// is read: if the drain has already gone, nothing will read it, and the
 // close below is what releases it.
 func (m *Model) stopForwarder(emu *vt.Emulator) {
 	if m.forwardDone == nil {

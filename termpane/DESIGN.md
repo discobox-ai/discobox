@@ -29,8 +29,9 @@ flowchart LR
     M -->|Write| E["vt.Emulator"]
     E -->|Render| Host
     M -->|SendKey/SendText/Paste| E
-    E -->|input side| F["forwarder goroutine"]
-    F -->|Write| S
+    E -->|input side| D["drain goroutine"]
+    D -->|backlog| W["writer goroutine"]
+    W -->|Write| S
 ```
 
 ## Decisions
@@ -59,14 +60,35 @@ works and is the application's own negotiated mode rather than a guess. A
 modified cursor key takes the CSI form even in application-cursor mode, because
 the SS3 form has nowhere to put a modifier.
 
-**Detaching the forwarder is a handshake, not a kill.** `Emulator.Read` and
+**Input is drained and written by separate goroutines.** The pipe behind the
+emulator is synchronous — `Paste` and `SendKey` are held until their bytes are
+read — and every one of its writers runs on the host's update goroutine, the
+emulator's automatic replies included. So the drain never writes to the stream
+itself: it copies into a bounded backlog that the writer empties at whatever
+pace the far end allows. A stalled pty or a reconnecting transport costs the
+host nothing until the backlog fills, which is two megabytes further on than
+typing or any real paste reaches.
+
+**The drain never gives up while attached.** A failed write ends the *writer*;
+the drain goes on reading and drops what it reads. A drain that returned would
+leave the pipe with no reader, and the next paste or keystroke — on the update
+goroutine — would block on it forever, with nothing left able to run the detach
+that would release it. One dead pane must not be a dead window. That the session
+is over is the reader's to report, so nothing is reported twice.
+
+**Paste markers are stripped from pasted text.** Text carrying `ESC [ 201 ~`
+would close its own paste early on the far end, and everything after it would
+arrive as though typed — a clipboard ending `\x1b[201~rm -rf /\r` would run.
+Every terminal filters this and a pane is a terminal. Nothing else about a paste
+is touched: it is the user's own text.
+
+**Detaching the drain is a handshake, not a kill.** `Emulator.Read` and
 `Emulator.Close` both touch the emulator's `closed` flag with no synchronization
 between them, so closing while a read is in flight is a data race — the obvious
-implementation, and one the race detector catches. Instead the forwarder is
-*woken*: a byte written to `InputPipe()` (the writer side of the very pipe its
-`Read` waits on) returns that read, the forwarder sees the done signal and
-leaves without forwarding the byte, and only then is the emulator closed. See
-`stopForwarder`.
+implementation, and one the race detector catches. Instead the drain is *woken*:
+a byte written to `InputPipe()` (the writer side of the very pipe its `Read`
+waits on) returns that read, the drain sees the done signal and leaves without
+forwarding the byte, and only then is the emulator closed. See `stopForwarder`.
 
 **End of file is an exit, not an error.** `ClosedMsg.Err` is nil when a stream
 simply ends, so a host is not left reporting every normal exit as a failure. A
