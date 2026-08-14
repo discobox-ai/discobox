@@ -108,17 +108,17 @@ type Service struct {
 	installingMu sync.Mutex
 	installing   map[string]struct{}
 
-	// launchMu guards launch, the single in-flight primary-terminal launch.
-	// See ensurePrimary for why the launch is single-flighted rather than
-	// merely locked (ADR 0039).
+	// launchMu guards launches, the in-flight terminal launches keyed by what
+	// is being launched. See singleFlightLaunch for why bringing a terminal up
+	// is single-flighted rather than merely locked (ADR 0039).
 	launchMu sync.Mutex
-	launch   *primaryLaunch
+	launches map[string]*terminalLaunch
 }
 
-// primaryLaunch is one in-flight attempt to bring the primary terminal up.
-// Callers that find one already running join it and take its result instead of
-// starting a second launch.
-type primaryLaunch struct {
+// terminalLaunch is one in-flight attempt to bring a terminal up — a first
+// launch or a revive. Callers that find one already running join it and take
+// its result instead of starting a second.
+type terminalLaunch struct {
 	done chan struct{}
 	exec execs.Exec
 	err  error
@@ -153,6 +153,7 @@ func NewService(cfg ServiceConfig) (*Service, error) {
 		harnessMode:  strings.TrimSpace(cfg.HarnessMode),
 		bootPrompt:   append([]string(nil), cfg.Prompt...),
 		installing:   map[string]struct{}{},
+		launches:     map[string]*terminalLaunch{},
 	}
 	if s.installer == nil {
 		s.installer = CompositeInstaller{Installers: []Installer{
@@ -278,7 +279,20 @@ func (s *Service) Create(ctx context.Context, req CreateRequest) (execs.Exec, er
 // (ADR 0027) in a new unit generation, with env and secrets re-resolved
 // exactly as Create resolves them. A live terminal is returned untouched;
 // non-terminal execs are never revived.
+//
+// Concurrent callers collapse onto one revive keyed by the terminal's id.
+// Without that they race: both read the same dead record, both derive the next
+// unit generation from the same stale unit name and so land on the *same* name,
+// and the second one's socket removal (which fences the previous run) deletes
+// the socket the first one's shim has just bound, leaving a live run nothing
+// can attach to.
 func (s *Service) Revive(ctx context.Context, id string) (execs.Exec, error) {
+	return s.singleFlightLaunch(ctx, id, func(ctx context.Context) (execs.Exec, error) {
+		return s.revive(ctx, id)
+	})
+}
+
+func (s *Service) revive(ctx context.Context, id string) (execs.Exec, error) {
 	exec, ok := s.execs.Get(id)
 	if !ok {
 		return execs.Exec{}, ErrNotFound
@@ -462,62 +476,78 @@ func (s *Service) EnsurePrimary(ctx context.Context, prompt []string) error {
 // Boot launches the primary in a goroutine started just before the HTTP server
 // begins serving, so boot and a first attach are concurrent by construction —
 // and with clients no longer polling for a primary before attaching (ADR 0039),
-// the attach arrives squarely inside that window. Left as a check-then-act this
-// races two ways: the scan runs before the other caller's record is visible
-// (execs.Manager keeps no in-process lock; List re-reads from disk), so both
-// launch a primary; and both read PrimaryTerminalLaunched as false before
-// either marks it, so both pass the prompt as argv instead of one launching and
-// one resuming. Reviving in place (ADR 0038) narrows neither race: two callers
-// that both find the same dead record still revive it twice.
+// the attach arrives squarely inside that window.
 //
-// A zero exec with a nil error means a live primary already existed and nothing
-// was launched.
+// The whole decision runs under the latch, not just the launch: the record
+// exists in `starting` from the moment execs.Create writes it, long before its
+// shim is listening, so a caller that checked liveness outside the latch would
+// return a terminal nothing can attach to yet.
 func (s *Service) ensurePrimary(ctx context.Context, prompt []string) (execs.Exec, error) {
-	s.launchMu.Lock()
-	if launch := s.launch; launch != nil {
-		// Someone is already launching. Join them: their result is ours.
-		s.launchMu.Unlock()
-		return s.awaitPrimaryLaunch(ctx, launch)
-	}
-	if _, ok := livePrimary(s.List()); ok {
-		s.launchMu.Unlock()
-		return execs.Exec{}, nil
-	}
-	launch := &primaryLaunch{done: make(chan struct{})}
-	s.launch = launch
-	s.launchMu.Unlock()
-	// The launch is detached from whichever caller happened to start it: an
-	// attach that times out, or a client that disconnects, must not abort an
-	// install that boot and every other joiner are waiting on. Each joiner
-	// waits under its own context instead.
-	go s.runPrimaryLaunch(context.WithoutCancel(ctx), launch, prompt)
-	return s.awaitPrimaryLaunch(ctx, launch)
+	return s.singleFlightLaunch(ctx, primaryLaunchKey, func(ctx context.Context) (execs.Exec, error) {
+		return s.launchPrimary(ctx, prompt)
+	})
 }
 
-// awaitPrimaryLaunch waits for a launch to finish under the caller's own
-// context, which is what bounds an attach's wait for a slow harness install.
-func (s *Service) awaitPrimaryLaunch(ctx context.Context, launch *primaryLaunch) (execs.Exec, error) {
+// primaryLaunchKey is the single-flight key for bringing the primary terminal
+// up. It is deliberately the virtual primary exec id, which is not a real exec
+// id, so it can never collide with a revive keyed by a terminal's own id.
+//
+// A revive the primary launch decides on is keyed by the record's id, not by
+// this, so an attach addressing that terminal directly contends on the same
+// key rather than reviving it a second time.
+const primaryLaunchKey = PrimaryExecID
+
+// singleFlightLaunch runs fn for key, collapsing concurrent callers onto one
+// run and handing them all its result.
+//
+// Bringing a terminal up is a check-then-act — read the record, decide it needs
+// launching, then create or relaunch it — and nothing underneath serializes it:
+// execs.Manager keeps no in-process lock, and List re-reads from disk. Two
+// callers therefore both decide to act. For a first launch that means two
+// primary terminals and a prompt that runs twice; for a revive it is worse than
+// duplicated work, because both compute the next unit generation from the same
+// stale record and land on the same unit name, and the second run's
+// os.Remove(SocketPath) deletes the socket the first run's shim just bound.
+//
+// fn runs under a context detached from whichever caller started it: an attach
+// that times out, or a client that disconnects, must not abort a launch that
+// other joiners — or boot — are waiting on. Each joiner waits under its own
+// context instead. The key is released before the result is published, so a
+// failed launch is reported to everyone joined to it and the next caller
+// retries rather than inheriting the failure.
+func (s *Service) singleFlightLaunch(ctx context.Context, key string, fn func(context.Context) (execs.Exec, error)) (execs.Exec, error) {
+	s.launchMu.Lock()
+	if launch, ok := s.launches[key]; ok {
+		// Someone is already launching this terminal. Join them: their result
+		// is ours.
+		s.launchMu.Unlock()
+		return s.awaitLaunch(ctx, launch)
+	}
+	launch := &terminalLaunch{done: make(chan struct{})}
+	s.launches[key] = launch
+	s.launchMu.Unlock()
+	go func() {
+		exec, err := fn(context.WithoutCancel(ctx))
+		s.launchMu.Lock()
+		if s.launches[key] == launch {
+			delete(s.launches, key)
+		}
+		s.launchMu.Unlock()
+		launch.exec, launch.err = exec, err
+		close(launch.done)
+	}()
+	return s.awaitLaunch(ctx, launch)
+}
+
+// awaitLaunch waits for a launch to finish under the caller's own context,
+// which is what bounds an attach's wait for a slow harness install.
+func (s *Service) awaitLaunch(ctx context.Context, launch *terminalLaunch) (execs.Exec, error) {
 	select {
 	case <-launch.done:
 		return launch.exec, launch.err
 	case <-ctx.Done():
 		return execs.Exec{}, ctx.Err()
 	}
-}
-
-// runPrimaryLaunch performs the launch and hands its result to everyone joined
-// to it. The latch is cleared before the result is published, so a failed
-// launch is reported to the current joiners and the next caller retries rather
-// than inheriting the failure forever.
-func (s *Service) runPrimaryLaunch(ctx context.Context, launch *primaryLaunch, prompt []string) {
-	exec, err := s.launchPrimary(ctx, prompt)
-	s.launchMu.Lock()
-	if s.launch == launch {
-		s.launch = nil
-	}
-	s.launchMu.Unlock()
-	launch.exec, launch.err = exec, err
-	close(launch.done)
 }
 
 // livePrimary is the primary terminal that makes a launch unnecessary: one
@@ -534,7 +564,7 @@ func livePrimary(list []execs.Exec) (execs.Exec, bool) {
 
 // launchPrimary brings the primary terminal up and returns it: a dead primary is
 // revived under its own id (ADR 0038), and only a sandbox with no primary record
-// at all gets a fresh one. It runs under the single-flight latch, so it is never
+// at all gets a fresh one. It runs under the primary launch key, so it is never
 // concurrent with itself.
 func (s *Service) launchPrimary(ctx context.Context, prompt []string) (execs.Exec, error) {
 	var newest *execs.Exec
@@ -553,6 +583,8 @@ func (s *Service) launchPrimary(ctx context.Context, prompt []string) (execs.Exe
 	if newest != nil {
 		// A dead primary is revived under its own id, never replaced by a
 		// sibling record. Newest wins over records that predate ADR 0038.
+		// Revive latches on that id, so an attach addressing this terminal
+		// directly joins this revive instead of starting a second one.
 		revived, err := s.Revive(ctx, newest.ID)
 		if err != nil {
 			return execs.Exec{}, err

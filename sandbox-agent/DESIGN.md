@@ -204,22 +204,36 @@ development images without a registry.
   and the prompt is not passed, since a shell would run it as a command. The
   launched exec is tagged `primary` in metadata by the sandbox-agent; that tag
   cannot be requested through the terminal create API.
-- The primary launch is single-flighted. Boot launches it from a goroutine
+- Bringing a terminal up is single-flighted, keyed by what is being brought up
+  (`Service.singleFlightLaunch`). Boot launches the primary from a goroutine
   started just before the HTTP server serves, and clients attach without first
   polling for a terminal (ADR 0039), so boot and a first attach overlap by
-  construction. Concurrent callers of `EnsurePrimary`/`ResolvePrimary` join the
-  one launch in flight and take its result; exactly one terminal is created or
-  revived and the durable launched-marker is read and written once, so the
-  prompt cannot run twice. Reviving in place (ADR 0038) does not remove the
-  need: two callers finding the same dead record would otherwise revive it
-  twice. Joining is also the readiness wait: the launch completes only after
-  install and start, so `ResolvePrimary` never hands back a terminal whose shim
-  is not listening yet. The launch runs under a context detached from whichever
-  caller started it — an attach that times out must not abort an install that
-  boot and other joiners are waiting on — while each joiner waits under its own
-  context, bounded by `terminalReadyTimeout`, which bounds a revive addressed by
-  a terminal's own id equally. A failed launch is reported to everyone joined to
-  it and clears the latch, so the next attach retries.
+  construction. Both a first launch and a revive are check-then-act over records
+  nothing else serializes — `execs.Manager` keeps no in-process lock and `List`
+  re-reads from disk — so concurrent callers otherwise both act:
+    - A duplicated **first launch** gives the sandbox two primary terminals, and
+      both callers read the durable launched-marker before either writes it, so
+      the prompt runs twice.
+    - A duplicated **revive** is worse than wasted work. Both callers derive the
+      next unit generation from the same stale record, so they land on the same
+      unit name, and the second one's socket removal — which exists to fence the
+      *previous* run — deletes the socket the first one's shim has just bound,
+      leaving a live run nothing can attach to.
+  The primary launch is keyed by the virtual `"primary"` id, which is never a
+  real exec id; a revive is keyed by the terminal's own exec id, which is its
+  durable identity (ADR 0038). A primary launch that decides to revive uses the
+  record's id, so an attach addressing that terminal directly contends on the
+  same key rather than reviving it a second time.
+- Joining a launch is also the readiness wait: it completes only after install
+  and start, so `ResolvePrimary` never hands back a terminal whose shim is not
+  listening yet. The whole decision runs under the latch, not just the launch —
+  a record exists in `starting` from the moment `execs.Create` writes it, so a
+  liveness check outside the latch would return a terminal nothing can attach to
+  yet. Each launch runs under a context detached from whichever caller started
+  it — an attach that times out must not abort an install that boot and other
+  joiners are waiting on — while each joiner waits under its own context,
+  bounded by `terminalReadyTimeout`. A failed launch is reported to everyone
+  joined to it and clears the key, so the next attach retries.
 - `"primary"` (`terminal.PrimaryExecID`) is a virtual exec id accepted anywhere
   the exec API takes one. It always names the sandbox's current primary
   terminal; attach and start resolve it through `terminal.ResolvePrimary`, which
