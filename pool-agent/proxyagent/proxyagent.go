@@ -504,8 +504,21 @@ func EnsureSandboxMaterial(projectID, poolID, sandboxID string) (*SandboxMateria
 		// env. Without it, traffic to a sandbox's own networks (a pool agent
 		// reaching its sandboxes, for one) is sent out through the egress
 		// proxy instead of straight there.
-		"NO_PROXY": "127.0.0.1,localhost,::1," + sandboxconfig.LocalSubnetsToken,
-		"no_proxy": "127.0.0.1,localhost,::1," + sandboxconfig.LocalSubnetsToken,
+		// ServerName is exempted by name, not left to the subnet token. Go's
+		// NO_PROXY does honour CIDR entries, but only consults them when the
+		// request host is an IP literal (httpproxy.useProxy guards the IP
+		// matchers on a successful netip.ParseAddr); it never resolves a name
+		// to test it against a subnet. Sandboxes address the pool by its
+		// alias, so no CIDR the token expands to can ever match, and a client
+		// would route through the sandbox's own egress proxy — which
+		// MITMs the connection and presents a certificate signed by the MITM
+		// CA, where the caller expects the mTLS CA. That is not hypothetical:
+		// it is what stopped buildx reaching the pool's BuildKit mediator,
+		// reported as "certificate signed by unknown authority". Tools that
+		// ignore the proxy environment (openssl) succeed against the same
+		// endpoint, which makes the failure look like anything but a proxy.
+		"NO_PROXY": "127.0.0.1,localhost,::1," + ServerName + "," + sandboxconfig.LocalSubnetsToken,
+		"no_proxy": "127.0.0.1,localhost,::1," + ServerName + "," + sandboxconfig.LocalSubnetsToken,
 		// Node.js (and Claude Code, which runs on Node), Python's ssl module
 		// and requests/certifi, and pip all bundle their own root store and
 		// ignore the system bundle, so each needs pointing at it explicitly.

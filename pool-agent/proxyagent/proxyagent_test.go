@@ -267,3 +267,23 @@ func TestUnitEnvironmentOmitsAbsentProxyVars(t *testing.T) {
 		t.Fatalf("expected nothing forwarded, got %q", got)
 	}
 }
+
+func TestSandboxEnvironmentExemptsThePoolByName(t *testing.T) {
+	withTestRoot(t)
+
+	material, err := EnsureSandboxMaterial("proj", "pool", "sbx_1")
+	if err != nil {
+		t.Fatalf("EnsureSandboxMaterial: %v", err)
+	}
+	for _, name := range []string{"NO_PROXY", "no_proxy"} {
+		// The pool must be exempt by name. The subnet token resolves to CIDRs,
+		// and NO_PROXY matching never resolves a hostname to compare against
+		// one, so without this a client addressing the pool by its alias is
+		// routed through the sandbox's own egress proxy — which MITMs it and
+		// serves a certificate signed by the MITM CA, where the caller expects
+		// the mTLS CA.
+		if !strings.Contains(material.Env[name], ServerName) {
+			t.Errorf("%s does not exempt %s: %q", name, ServerName, material.Env[name])
+		}
+	}
+}
