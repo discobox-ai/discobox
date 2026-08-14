@@ -90,3 +90,4 @@ Nygard-style ADRs (see adr.github.io) combined with current-state design docs:
 | [0035](0035-repair-is-one-rebuild-intent-plus-a-start-instruction.md) | Repair is one rebuild intent, plus a start instruction | Accepted |
 | [0036](0036-termpane-selection-is-a-mouse-only-cell-space-overlay.md) | Termpane selection is a mouse-only cell-space overlay | Accepted |
 | [0037](0037-drop-disco-diff-and-disco-status.md) | Drop `disco diff` and `disco status` | Accepted |
+| [0038](0038-terminal-identity-is-the-exec-id-terminals-revive-in-place.md) | Terminal identity is the exec id, and terminals revive in place | Accepted |
