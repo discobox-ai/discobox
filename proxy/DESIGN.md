@@ -126,6 +126,32 @@ Key properties:
 Audit redaction covers every header whose value was swapped, in addition to
 rewrite-rule headers and credential-like header names.
 
+## Response Cache
+
+The cache is pool-wide and admits by URL pattern. As wired by
+`pool-agent/proxyagent`, the patterns admit registry **blobs only**, in both
+spellings a pull sees: the v2 API's `/v2/<name>/blobs/sha256:<hex>` and the
+storage layout's `/blobs/sha256/<ab>/<hex>/data`. This is what makes upstream
+image pulls cheap across a pool, including base-image pulls by the pool-shared
+builder (`pool-agent/DESIGN.md`) and plain `docker pull` in a sandbox, which no
+build cache ever sees — see
+[ADR 0039](../docs/adr/0039-builds-run-on-a-pool-shared-buildkit.md) §12.
+
+Two properties the patterns depend on:
+
+- **Digest-bearing URLs only, because there is no TTL.** A blob URL names its
+  own content, so a stored entry can never be stale. A tag manifest is the
+  opposite — the same URL answers differently tomorrow — so admitting one would
+  pin a moving tag forever.
+- **Sharing across a pool is sound**, because a digest names content rather than
+  an entitlement, and a pool already shares one set of pull credentials. Cache
+  events still carry the requesting client's identity for audit.
+
+Entries are keyed by digest rather than by full URL, so the same blob fetched
+through different registry mirrors or paths hits once. A partial response is
+never stored: a `206` body is a fragment, and storing it under a key that claims
+to be the whole object would serve truncated content to the next reader.
+
 ## Runtime Policy
 
 Header rewrite rules are deterministic. Exact host matches win before wildcard

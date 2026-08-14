@@ -22,6 +22,8 @@ from the future in-sandbox `sandbox-agent` API.
 | `vsock` | Guest AF_VSOCK listener and host-CID HTTP transport primitives. |
 | `sandboxruntime` | Local sandbox runtime implementations used by the pool host server. Provisions the five primary volumes (`/.discobox/{data,cache,config,sources,secrets}`) and mounts them into every sandbox; `cache` is the pool-local directory shared across the pool's sandboxes. Also binds each clone-delivered local source's real origin directory, read-only, onto `/.discobox/origins/<slug>` (ADR 0026). In-sandbox path wiring for the primary volumes is delegated to the sandbox-agent init flow (ADR 0007). |
 | `proxyagent` | Worker-scoped proxy wiring: certificate bundle preparation, the `proxy` subcommand entrypoint, and per-sandbox client material staging. |
+| `buildkitagent` | The pool-shared BuildKit builder, its output registry, the mediator that binds a build to the sandbox that asked for it, and the per-build egress forwarder. See [Pool-Shared Builds](#pool-shared-builds). |
+| `cmd/discobox-pool-runc` | The pool's runc wrapper, installed as `runc` ahead of BuildKit's own. Injects MITM trust and the per-build egress hooks into each build step's OCI spec. |
 | `systemd` | Linux/systemd namespace startup and child reaping helpers, with non-Linux stubs. |
 | `imagereap` | Rules for reclaiming unused Discobox images from a Docker daemon (ADR 0040). Shared with the server, which applies them to the daemon pool containers run on; see [Image Reclamation](#image-reclamation). |
 
@@ -342,6 +344,73 @@ flowchart LR
   It forwards local plaintext proxy traffic to the pool host proxy over mTLS.
 - Sentinel secret swapping is not yet wired: the proxy runs with a nil resolver,
   so it records and forwards traffic but does not substitute secrets.
+
+## Pool-Shared Builds
+
+`docker build` in any sandbox runs on one BuildKit daemon here, so the pool's
+sandboxes share a solver cache
+([ADR 0039](../docs/adr/0039-builds-run-on-a-pool-shared-buildkit.md)).
+`docker run` stays in the sandbox: a nested run's bind mounts name sandbox
+paths that do not exist out here.
+
+```mermaid
+flowchart LR
+    subgraph sandbox["sandbox container"]
+        cli["docker build (shim)"] -->|"tcp://127.0.0.1:17082"| sbridge["discobox-buildkit-bridge"]
+    end
+    subgraph pool["pool container"]
+        sbridge -->|"mTLS client cert"| med["mediator :17081"]
+        med -->|"unix socket"| bkd["buildkitd"]
+        bkd -->|"--oci-worker-binary"| wrap["discobox-pool-runc"]
+        subgraph step["build step netns"]
+            fwd["forwarder :17009"]
+        end
+        wrap -.->|"createRuntime / poststop"| fwd
+        fwd -->|"mTLS as the owning sandbox"| wproxy["pool proxy :17080"]
+        bkd -->|"push"| reg["registry :5000"]
+    end
+    cli -->|"pull result"| reg
+```
+
+Four boundaries, each doing one job:
+
+- **The mediator is the identity boundary.** buildkitd listens on a Unix socket
+  only; sandboxes cannot reach it. The mediator terminates mTLS, takes the
+  sandbox ID from the client certificate's CN, and rewrites the solve request.
+  It is a raw-codec gRPC proxy — it decodes only the two solve methods and
+  passes every other frame through untouched, so it does not have to track
+  BuildKit's protocol surface.
+- **Egress is bound per build, in the build's own network namespace.** The
+  mediator injects `HTTP_PROXY=http://<sandboxID>@127.0.0.1:17009` as a
+  build-arg; the runc wrapper reads the sandbox back out of it, installs
+  `createRuntime`/`poststop` hooks, and strips the identity before the container
+  sees it. The forwarder holds that sandbox's client certificate, so a `RUN`
+  step's traffic is attributed and policed exactly as the sandbox's own is. The
+  port is the same for every build because each build has its own namespace:
+  the address is private to it, which is what identifies it — the same argument
+  ADR 0020 makes for a sandbox's loopback forwarder. Build-args are **set**, not
+  merged: buildx forwards the client's proxy environment, and a sandbox's
+  `HTTP_PROXY` names a loopback that, inside a pool-side build container, is
+  that container's own.
+- **CA trust stays a plain spec edit**, shared with the sandbox through the root
+  `runcca` package. It needs no identity — there is one pool-wide MITM CA — so
+  it needs none of the above.
+- **Results travel by registry, not `--load`.** buildkitd pushes to a pool-local
+  `registry:2`; the sandbox's shim pulls the result back and applies the user's
+  tags. Both ends of a registry are content-addressed, so a cached rebuild moves
+  only what is missing, where `--load` reships the whole image every time.
+
+buildkitd and the registry both reach upstreams through the same pool proxy as
+everything else: base-image pulls happen in buildkitd itself, before any build
+container exists, so nothing injected into a spec could cover them. The proxy's
+blob cache is what makes those pulls cheap across the pool — see
+[proxy/DESIGN.md](../proxy/DESIGN.md).
+
+`buildkitd`'s state root is wiped of its `net` directory on every start
+(`ExecStartPre`). Netns files are nsfs bind mounts; after a container restart
+the mount is gone but the file remains, and BuildKit reuses it and fails with
+`unknown FS magic ef53` — which surfaces as builds that silently lose their
+network rather than as a startup error.
 
 ## Sandbox Image Identity
 
