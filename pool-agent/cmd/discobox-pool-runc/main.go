@@ -72,12 +72,7 @@ func config(hooks map[string][]string) runcca.Config {
 		// to inject regardless of which sandbox owns the build.
 		SandboxJSON: "",
 		Hooks:       hooks,
-		RewriteEnv: func(name, value string) string {
-			if strings.EqualFold(name, "HTTP_PROXY") || strings.EqualFold(name, "http_proxy") {
-				return buildkitagent.StripProxyIdentity(value)
-			}
-			return value
-		},
+		RewriteEnv: buildkitagent.StripProxyEnv,
 	}
 }
 

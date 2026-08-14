@@ -85,25 +85,9 @@ func ServeBuildForwarder(ctx context.Context, containerID, sandboxID string, pid
 	}
 	certDir := filepath.Join(layout.ProxyCerts(projectID, poolID), "clients", filepath.Clean(sandboxID))
 
-	// The namespace must be entered on this thread, and the listening socket
-	// created from it, so the thread is pinned for the process's lifetime. Go
-	// schedules goroutines across threads; a socket created without this could
-	// be bound in the pool's namespace instead of the build's, which would
-	// silently hand every build the same address.
-	runtime.LockOSThread()
-	nsPath := fmt.Sprintf("/proc/%d/ns/net", pid)
-	handle, err := os.Open(resolve(nsPath))
+	listener, err := listenInNetns(pid)
 	if err != nil {
-		return fmt.Errorf("open build netns: %w", err)
-	}
-	defer handle.Close()
-	if err := unix.Setns(int(handle.Fd()), unix.CLONE_NEWNET); err != nil {
-		return fmt.Errorf("enter build netns: %w", err)
-	}
-
-	listener, err := net.Listen("tcp", fmt.Sprintf("127.0.0.1:%d", BuildForwarderPort))
-	if err != nil {
-		return fmt.Errorf("bind inside build netns: %w", err)
+		return err
 	}
 	forwarder, err := bridge.New(ctx, bridge.Config{
 		WorkerProxyURL: PoolProxyURL,
@@ -155,6 +139,62 @@ func StopBuildForwarder(containerID string) error {
 	return nil
 }
 
+// listenInNetns binds the forwarder's port inside a build step's network
+// namespace and returns to the caller's own namespace before handing the
+// listener back.
+//
+// Returning is the whole point. A network namespace is a property of the
+// process, not of one socket: a forwarder that stayed in the build's namespace
+// could accept the build's connections but could no longer reach the pool
+// proxy — every request would fail inside the forwarder, and the build would
+// see a proxy answering 500 rather than a missing one. A listening socket keeps
+// the namespace it was created in, and accepted connections inherit it from the
+// listener, so moving back costs nothing.
+//
+// The thread is pinned across the whole sequence because setns acts on the
+// calling thread, and Go moves goroutines between threads freely. Without the
+// pin the listen could run on a thread that never entered the namespace —
+// binding in the pool's namespace and silently handing every build one shared
+// address — and the restore could leave some other thread behind in a build's
+// namespace. The thread is left locked and unusable for anything else after a
+// failed restore, which is why that case ends the process rather than
+// continuing with an unknown namespace.
+func listenInNetns(pid int) (net.Listener, error) {
+	runtime.LockOSThread()
+	defer runtime.UnlockOSThread()
+
+	own, err := os.Open(resolve("/proc/thread-self/ns/net"))
+	if err != nil {
+		return nil, fmt.Errorf("open own netns: %w", err)
+	}
+	defer own.Close()
+
+	target, err := os.Open(resolve(fmt.Sprintf("/proc/%d/ns/net", pid)))
+	if err != nil {
+		return nil, fmt.Errorf("open build netns: %w", err)
+	}
+	defer target.Close()
+
+	if err := unix.Setns(int(target.Fd()), unix.CLONE_NEWNET); err != nil {
+		return nil, fmt.Errorf("enter build netns: %w", err)
+	}
+	listener, listenErr := net.Listen("tcp", BuildProxyAddress())
+	if err := unix.Setns(int(own.Fd()), unix.CLONE_NEWNET); err != nil {
+		// This thread is now in a namespace that is about to disappear, and
+		// there is no way to put it back. Carrying on would mean forwarding a
+		// build's traffic from inside that build, which is exactly the
+		// confusion this function exists to prevent.
+		if listener != nil {
+			_ = listener.Close()
+		}
+		return nil, fmt.Errorf("return from build netns: %w", err)
+	}
+	if listenErr != nil {
+		return nil, fmt.Errorf("bind inside build netns: %w", listenErr)
+	}
+	return listener, nil
+}
+
 func pidPath(containerID string) string {
 	return filepath.Join(forwarderRuntimeDir, filepath.Clean(containerID)+".pid")
 }
@@ -168,6 +208,14 @@ func readyPath(containerID string) string {
 // builder's wiring does not depend on the proxy's.
 const PoolProxyURL = "https://" + RegistryServerName + ":17080"
 
+// BuildProxyAddress is where a per-build forwarder listens, inside the build
+// step's own network namespace. Everything that binds, injects, or recognises
+// that address derives it here: a listener and a matcher that disagreed would
+// leave the build with a proxy variable pointing at nothing.
+func BuildProxyAddress() string {
+	return fmt.Sprintf("127.0.0.1:%d", BuildForwarderPort)
+}
+
 // BuildProxyURL is the proxy address injected into one sandbox's builds. The
 // sandbox ID rides as userinfo so the runc wrapper can read back which
 // sandbox's certificate the forwarder should present.
@@ -176,7 +224,7 @@ const PoolProxyURL = "https://" + RegistryServerName + ":17080"
 // namespace, so this address resolves to nothing anywhere else, and the string
 // grants nothing on its own.
 func BuildProxyURL(sandboxID string) string {
-	return fmt.Sprintf("http://%s@127.0.0.1:%d", sandboxID, BuildForwarderPort)
+	return fmt.Sprintf("http://%s@%s", sandboxID, BuildProxyAddress())
 }
 
 // SandboxFromProxyURL recovers the sandbox ID from a BuildProxyURL value, and
@@ -192,10 +240,26 @@ func SandboxFromProxyURL(value string) string {
 	if !ok || id == "" {
 		return ""
 	}
-	if addr != fmt.Sprintf("127.0.0.1:%d", BuildForwarderPort) {
+	if addr != BuildProxyAddress() {
 		return ""
 	}
 	return id
+}
+
+// StripProxyEnv is the runc wrapper's spec-editing rule: for any variable that
+// can carry the build's proxy address, return the value the container should
+// see instead.
+//
+// It lives beside BuildProxyURL rather than in the wrapper because the set of
+// variables that carry the identity is decided here, by whatever the mediator
+// injects. Splitting the two is how HTTPS_PROXY came to be left untouched while
+// HTTP_PROXY was cleaned.
+func StripProxyEnv(name, value string) string {
+	switch strings.ToUpper(name) {
+	case "HTTP_PROXY", "HTTPS_PROXY", "ALL_PROXY":
+		return StripProxyIdentity(value)
+	}
+	return value
 }
 
 // StripProxyIdentity removes the userinfo before the container sees the value.
@@ -205,5 +269,5 @@ func StripProxyIdentity(value string) string {
 	if SandboxFromProxyURL(value) == "" {
 		return value
 	}
-	return fmt.Sprintf("http://127.0.0.1:%d", BuildForwarderPort)
+	return "http://" + BuildProxyAddress()
 }
