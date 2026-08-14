@@ -44,7 +44,16 @@ func sandboxAgentTerminalProxyHandler(service services.SandboxService) http.Hand
 			return
 		}
 
-		lease, sandboxModel, err := service.AcquireSandboxHTTPClient(r.Context(), projectID, sandboxID, scopes)
+		// An attach is a caller saying "I want to use this sandbox now", so it
+		// waits for a sandbox that is still coming up rather than being
+		// refused by one (ADR 0039 tier 1). Every other exec route keeps the
+		// fail-fast answer: they are asked on a cadence, and a poll that
+		// blocks is worse than one that is told no.
+		acquire := service.AcquireSandboxHTTPClient
+		if strings.HasSuffix(r.URL.Path, "/attach") {
+			acquire = service.AwaitSandboxHTTPClient
+		}
+		lease, sandboxModel, err := acquire(r.Context(), projectID, sandboxID, scopes)
 		if err != nil {
 			writeSandboxAgentProxyError(w, statusCodeForProxyError(err), err.Error())
 			return

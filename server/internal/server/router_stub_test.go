@@ -226,6 +226,12 @@ func (s *routerTestServices) AcquireSandboxHTTPClient(_ context.Context, project
 	return s.sandboxLease, &sandbox, nil
 }
 
+// AwaitSandboxHTTPClient is the waiting acquire. The stub's sandboxes are
+// always either there or not, so the two answer the same.
+func (s *routerTestServices) AwaitSandboxHTTPClient(ctx context.Context, projectID, sandboxID string, scopes []string) (*services.HTTPClientLease, *model.Sandbox, error) {
+	return s.AcquireSandboxHTTPClient(ctx, projectID, sandboxID, scopes)
+}
+
 func (s *routerTestServices) UpdateSandbox(_ context.Context, projectID, sandboxID string, input services.UpdateSandboxBody) (*model.Sandbox, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()

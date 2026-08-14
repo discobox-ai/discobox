@@ -49,6 +49,12 @@ func (f *fakeSandboxService) AcquireSandboxHTTPClient(ctx context.Context, proje
 	return nil, nil, errors.New("fakeSandboxService: no lease configured")
 }
 
+// AwaitSandboxHTTPClient records and answers exactly like the acquire it
+// waits on; nothing in these tests is provisioning.
+func (f *fakeSandboxService) AwaitSandboxHTTPClient(ctx context.Context, projectID, sandboxID string, scopes []string) (*services.HTTPClientLease, *model.Sandbox, error) {
+	return f.AcquireSandboxHTTPClient(ctx, projectID, sandboxID, scopes)
+}
+
 func (f *fakeSandboxService) FallbackHarnessConfig(context.Context, string) (*model.HarnessConfig, error) {
 	return nil, nil
 }

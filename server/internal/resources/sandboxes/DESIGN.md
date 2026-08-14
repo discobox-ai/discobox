@@ -57,6 +57,47 @@ the agent's report produces. `DesiredState` answers existence only: `present`,
 `archived`, or `deleted`. Start, stop, and restart are refused with 409 on an
 archived sandbox — it has no container to power.
 
+## Attach waits, acquire does not
+
+`AcquireSandboxHTTPClient` is the choke point every route onto a sandbox goes
+through, and it answers now: the sandbox exists, and its pool is up.
+
+`AwaitSandboxHTTPClient` (`attach_wait.go`) is the same acquire for a caller
+that means "I want to use this sandbox now" — the exec attach, and nothing else.
+It waits for a sandbox that is still being provisioned instead of refusing it,
+which is what lets a client create a sandbox and attach to it in the next call
+rather than polling for readiness (ADR 0039 tier 1).
+
+- The wait is event-driven. It subscribes to the project's event fanout before
+  its first attempt, so the transition that opens the gate cannot land in the
+  window between a failed acquire and the subscription. Only events about this
+  sandbox or the pool hosting it count. A slow re-check runs underneath as a
+  backstop, because the broker drops events into a subscriber that is not
+  reading and a dropped wake-up would otherwise cost the whole budget; it does
+  not count as progress.
+- Three refusals are "not yet": no runtime state naming a pool, a pool that is
+  not taking traffic, and a sandbox that is reachable but not usable yet. Every
+  other refusal is an answer and is returned immediately, as is any refusal for
+  a sandbox that is failed, archived, or on its way out — no event will clear
+  those.
+- Reachable is not usable, and the gap is push-delivered source. Such a sandbox
+  has a container — and so a runtime state naming its pool — from the moment it
+  parks at `awaiting_source`, so the acquire succeeds while its workspace is
+  still empty; attaching then would auto-start it and launch the harness against
+  an unmaterialized workspace. So the wait also holds while the sandbox is
+  parked, and while its generation is unobserved — the window after
+  complete-source-push in which the reconciler materializes what was pushed.
+  The push itself goes through the git proxy, which does *not* wait, so the
+  delivery a wait is waiting on can never be blocked by it.
+- The budget is a stall timeout, not a duration cap. Progress restarts it, so an
+  image pull that keeps reporting takes as long as it takes while a sandbox that
+  has gone silent gives up. Tiers below take budgets that fit inside it, so the
+  innermost stage to stall is the one that reports.
+
+Only this tier waits on control-plane facts; what the container and the sandbox
+agent are doing is waited on by the tiers that can see them
+(`pool-agent/DESIGN.md`, `sandbox-agent/DESIGN.md`).
+
 ## Existence is three-valued
 
 `archived` is not a power state but a third form of existence: as data, with no

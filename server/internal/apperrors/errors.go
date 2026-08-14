@@ -12,9 +12,15 @@ var (
 )
 
 // StatusError carries an HTTP response status for API-facing errors.
+//
+// Cause is the condition the status was chosen for, kept so a caller can still
+// match the sentinel with errors.Is while the API keeps the status and the
+// message it serves. It is optional: a status error that has nothing more
+// specific to say leaves it nil.
 type StatusError struct {
 	Status  int
 	Message string
+	Cause   error
 }
 
 func (e StatusError) Error() string {
@@ -23,6 +29,10 @@ func (e StatusError) Error() string {
 
 func (e StatusError) StatusCode() int {
 	return e.Status
+}
+
+func (e StatusError) Unwrap() error {
+	return e.Cause
 }
 
 // NewStatusError returns an error carrying an HTTP status code.

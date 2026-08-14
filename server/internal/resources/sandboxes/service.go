@@ -19,6 +19,7 @@ import (
 	services "github.com/obot-platform/discobox/server/internal/services"
 
 	sandboxauth "github.com/obot-platform/discobox/server/internal/auth/sandbox"
+	eventbroker "github.com/obot-platform/discobox/server/internal/events"
 	sandbox "github.com/obot-platform/discobox/server/internal/sandbox"
 	"github.com/obot-platform/discobox/server/internal/store"
 )
@@ -31,6 +32,7 @@ type Service struct {
 	sandboxProviders   *sandbox.ProviderManager
 	providerStore      any
 	sandboxAuth        *sandboxauth.Manager
+	broker             *eventbroker.Broker
 	defaultUserID      string
 	defaultImage       string
 	defaultImageDigest string
@@ -62,6 +64,15 @@ func (s *Service) RegisterJobs(opts ...reconcile.RegisterOption) error {
 
 func (s *Service) SetSandboxAuthManager(manager *sandboxauth.Manager) {
 	s.sandboxAuth = manager
+}
+
+// SetEventBroker installs the in-process project event fanout. It is what makes
+// AwaitSandboxHTTPClient a wait rather than a poll: the transitions it waits on
+// are published on commit, so the wait wakes on them instead of asking
+// (ADR 0039 tier 1). Without a broker the wait degrades to the fail-fast
+// acquire it wraps.
+func (s *Service) SetEventBroker(broker *eventbroker.Broker) {
+	s.broker = broker
 }
 
 // SetDefaultSandboxImage records the image a sandbox with no harness config
@@ -386,7 +397,14 @@ func (s *Service) AcquireSandboxHTTPClient(ctx context.Context, projectID, sandb
 	// reasons (State active, ErrorMessage set) still serves the sandboxes it
 	// already hosts, so traffic onto them must not be refused for it.
 	if pool.State == model.PoolStateOffline || !pool.Ready {
-		return nil, sandboxModel, apperrors.NewStatusError(http.StatusConflict, fmt.Sprintf("sandbox pool is not reachable: pool=%s state=%s ready=%t", pool.ID, pool.State, pool.Ready))
+		return nil, sandboxModel, apperrors.StatusError{
+			Status:  http.StatusConflict,
+			Message: fmt.Sprintf("sandbox pool is not reachable: pool=%s state=%s ready=%t", pool.ID, pool.State, pool.Ready),
+			// A pool that is not up yet is a condition a wait can resolve, and
+			// the sentinel is how AwaitSandboxHTTPClient tells it apart from
+			// the refusals that are answers.
+			Cause: ErrSandboxPoolNotReachable,
+		}
 	}
 	if s.sandboxProviders == nil {
 		return nil, nil, fmt.Errorf("sandbox provider manager is required")

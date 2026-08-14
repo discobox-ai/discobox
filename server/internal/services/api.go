@@ -140,6 +140,12 @@ type SandboxService interface {
 	CompleteSandboxApply(ctx context.Context, projectID, sandboxID string, input CompleteSandboxApplyBody) (*model.Sandbox, error)
 	ReconcileSandbox(ctx context.Context, projectID, sandboxID string) (*model.Sandbox, error)
 	AcquireSandboxHTTPClient(ctx context.Context, projectID, sandboxID string, scopes []string) (*HTTPClientLease, *model.Sandbox, error)
+	// AwaitSandboxHTTPClient is the same acquire for a caller that means "I
+	// want to use this sandbox now": it waits for a sandbox that is still
+	// being provisioned to become reachable instead of refusing the request
+	// (ADR 0039 tier 1). Callers that want the fail-fast answer keep using
+	// AcquireSandboxHTTPClient.
+	AwaitSandboxHTTPClient(ctx context.Context, projectID, sandboxID string, scopes []string) (*HTTPClientLease, *model.Sandbox, error)
 	AssignSandboxHarnessSecrets(ctx context.Context, projectID, sandboxID, harnessConfigID string) (map[string]string, error)
 }
 
