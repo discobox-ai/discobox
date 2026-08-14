@@ -26,6 +26,7 @@ import (
 	"github.com/obot-platform/discobox/layout"
 	poolagent "github.com/obot-platform/discobox/pool-agent"
 	"github.com/obot-platform/discobox/pool-agent/endpoint"
+	"github.com/obot-platform/discobox/pool-agent/imagereap"
 	"github.com/obot-platform/discobox/pool-agent/proxyagent"
 	"github.com/obot-platform/discobox/server/internal/model"
 	sandbox "github.com/obot-platform/discobox/server/internal/sandbox"
@@ -131,6 +132,11 @@ type Config struct {
 	// DevelopmentImageSync converges watcher-built images onto each destination
 	// Docker daemon before the pool-agent container is reconciled.
 	DevelopmentImageSync *DevelopmentImageSynchronizer `json:"-"`
+	// ImageRetention overrides how long the pool's own Docker daemon keeps an
+	// unused Discobox image (ADR 0039). Zero leaves the pool agent on its
+	// default, which is deliberate: an unset override must serialize away here
+	// so it does not change configRevision and recreate every existing pool.
+	ImageRetention time.Duration `json:"imageRetention,omitempty"`
 }
 
 // Engine runs pool-agent containers over Driver-provided Docker access. It
@@ -139,6 +145,9 @@ type Engine struct {
 	driver         Driver
 	cfg            Config
 	configRevision string
+	// imageReclaim throttles the reclamation passes that pool reconciles drive
+	// (see reclaimImagesForPool).
+	imageReclaim imageReclaimThrottle
 }
 
 // New creates a worker runtime engine over a VM driver.
@@ -174,6 +183,21 @@ func New(cfg Config, driver Driver) (*Engine, error) {
 	}
 	cfg.CgroupNSMode = strings.TrimSpace(cfg.CgroupNSMode)
 	cfg.HostMounts = NormalizeHostMounts(cfg.HostMounts)
+	// Resolved here so every backend gets the same policy without repeating it
+	// in five engineConfig functions. An explicit setting always wins; otherwise
+	// a daemon the image watcher is driving takes the development window, and
+	// everything else stays zero — which is what keeps configRevision, and
+	// therefore every existing production pool, unchanged on upgrade.
+	if cfg.ImageRetention == 0 {
+		retention, err := imagereap.ConfiguredRetention()
+		if err != nil {
+			return nil, err
+		}
+		if retention == 0 && cfg.DevelopmentImageSync != nil {
+			retention = imagereap.DevelopmentRetention
+		}
+		cfg.ImageRetention = retention
+	}
 	return &Engine{driver: driver, cfg: cfg, configRevision: configRevision(cfg)}, nil
 }
 
@@ -230,6 +254,7 @@ func (e *Engine) EnsurePool(ctx context.Context, _ *model.Project, provider *mod
 	if err != nil {
 		return err
 	}
+	e.reclaimImagesForPool(ctx, lease.Client, pool.ID)
 	return e.recordPoolRuntime(pool, vmInfo, inst, recreated)
 }
 
@@ -414,7 +439,7 @@ func (e *Engine) createPoolContainer(ctx context.Context, cli *client.Client, po
 	config := &container.Config{
 		Image:  e.cfg.Image,
 		Labels: labels,
-		Env:    envList(BootEnv(bootstrap)),
+		Env:    envList(e.poolContainerEnv(bootstrap)),
 		Cmd:    e.cfg.Command,
 	}
 	hostConfig := &container.HostConfig{

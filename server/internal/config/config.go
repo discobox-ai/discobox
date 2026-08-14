@@ -18,6 +18,7 @@ import (
 	"github.com/obot-platform/discobox/gormdb"
 	"github.com/obot-platform/discobox/internal/hostid"
 	"github.com/obot-platform/discobox/localipc"
+	"github.com/obot-platform/discobox/pool-agent/imagereap"
 	"github.com/obot-platform/discobox/server/internal/harnessdefs"
 	"github.com/obot-platform/discobox/server/internal/sandbox"
 )
@@ -139,6 +140,12 @@ func Load() (*Config, error) {
 			return nil, err
 		}
 		cfg.DevelopmentImages = manifest.Images
+	}
+	// Validated here, though it is read where it is used (dockerworker.New, and
+	// the pool agent for its own daemon), so a typo fails startup with a clear
+	// message instead of quietly taking one provider down with it.
+	if _, err := imagereap.ConfiguredRetention(); err != nil {
+		return nil, err
 	}
 	cfg.OTelMetricsEnabled = strings.EqualFold(getEnv("OTEL_METRICS_EXPORTER", "none"), "otlp")
 	cfg.OTelMetricExportInterval = getEnvMillisecondsDuration("OTEL_METRIC_EXPORT_INTERVAL", time.Second)

@@ -17,8 +17,9 @@ import (
 // TestStartWorkerWatcherNeverFailsInitOnScanError proves that a failing
 // initial drift scan cannot fail provider initialization (and therefore
 // cannot crash-loop server startup). The driver points at an unreachable
-// Docker endpoint, so the scan and watch loop error on every call; the scan
-// runs in the background and its failure is only logged.
+// Docker endpoint, so the scan, the watch loop, and the image reaper error on
+// every call; all three run in the background and their failures are only
+// logged.
 func TestStartWorkerWatcherNeverFailsInitOnScanError(t *testing.T) {
 	cli, err := client.New(client.WithHost("tcp://127.0.0.1:1"))
 	if err != nil {
@@ -31,8 +32,8 @@ func TestStartWorkerWatcherNeverFailsInitOnScanError(t *testing.T) {
 		t.Fatalf("new engine: %v", err)
 	}
 
-	if err := startPoolWatcher(driver, engine, &recordingPoolManager{}, &model.SandboxProviderInstance{ID: "provider-1", ProjectID: "project-1"}); err != nil {
-		t.Fatalf("startPoolWatcher returned error: %v", err)
+	if err := startBackgroundWatchers(driver, engine, &recordingPoolManager{}, &model.SandboxProviderInstance{ID: "provider-1", ProjectID: "project-1"}); err != nil {
+		t.Fatalf("startBackgroundWatchers returned error: %v", err)
 	}
 	// Give the background goroutine time to run the doomed scan and enter the
 	// watch loop; a propagated failure or panic would surface here.

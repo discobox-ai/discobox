@@ -107,6 +107,39 @@ receive the same images over their existing VSOCK, SSH, or configured Docker
 transport. Synchronization failures fail pool reconciliation rather than
 allowing a host with incomplete development images to become ready.
 
+## Image Reclamation
+
+The engine also reclaims what it put on a daemon. Discobox images are labeled at
+build time (`harness.ReclaimLabel`), and a labeled image is removed once no
+container refers to it and it has been on the daemon longer than the retention
+window. The rules live in `imagereap`, shared with the pool agent, which applies
+the same pass to its own daemon; ADR 0039 covers why local arrival time rather
+than the image's `Created` timestamp decides staleness.
+
+The window is 24h, or 15m when `DevelopmentImageSync` is set — the image watcher
+supersedes an image every few minutes, so the production window would reclaim
+nothing before the disk filled. That field is the whole development signal;
+there is no separate mode flag. An explicit `DISCOBOX_IMAGE_RETENTION` overrides
+both, and the engine propagates whatever it resolves into the pool container's
+environment, so one setting governs the host daemon and every pool daemon under
+it. The sweep interval is derived from the window (half of it, clamped to
+[1m, 1h]) rather than configured, which is also how a pool inherits the
+development cadence: it is handed a retention, not a mode.
+
+Reclamation runs from two places, because the two daemons are reached
+differently. `EnsurePool` reclaims on the daemon behind the pool it just
+reconciled, throttled to once per interval per pool: a VM backend has no
+long-lived host Docker client for a standing loop to hold, and one superseded
+pool image per upgrade is exactly what an upgrade's own reconcile then clears.
+The local Docker provider additionally runs a standing hourly loop over the host
+daemon, where development rebuilds deposit an image per build with no pool
+activity required to notice.
+
+`Engine.imageKeepReferences` is what the container check cannot infer: the
+configured pool image, which has no container while every pool is stopped, and
+the development image set, whose sandbox base is run by nothing yet is the base
+every harness image is built `FROM`.
+
 Pool runtime lifecycle is not the same as pool row deletion. The engine
 replaces the pool-agent container (and a VM driver may replace the VM) for an
 existing pool during reconciliation or repair, but the pool row and pool ID

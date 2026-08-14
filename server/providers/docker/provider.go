@@ -88,7 +88,7 @@ func newFromInstance(ctx context.Context, instance *model.SandboxProviderInstanc
 		_ = driver.Close()
 		return nil, err
 	}
-	if err := startPoolWatcher(driver, engine, poolManager, instance); err != nil {
+	if err := startBackgroundWatchers(driver, engine, poolManager, instance); err != nil {
 		_ = engine.Close()
 		return nil, err
 	}

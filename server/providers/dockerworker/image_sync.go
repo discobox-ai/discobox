@@ -63,6 +63,30 @@ func newDevelopmentImageSynchronizer(images []devimage.Image, source dockerClien
 	}, nil
 }
 
+// KeepReferences names every development image, by reference and by ID, for the
+// image reaper's keep set.
+//
+// These have to survive on age alone, because the container check cannot see
+// that they are needed: nothing ever runs the sandbox-agent base image directly,
+// yet every harness image is built FROM it, so reclaiming it would break the
+// next harness build. Both spellings are returned because an image may be named
+// either way and the reaper matches whichever it finds.
+func (s *DevelopmentImageSynchronizer) KeepReferences() []string {
+	if s == nil {
+		return nil
+	}
+	references := make([]string, 0, 2*len(s.images))
+	for _, image := range s.images {
+		if reference := strings.TrimSpace(image.Reference); reference != "" {
+			references = append(references, reference)
+		}
+		if id := strings.TrimSpace(image.ID); id != "" {
+			references = append(references, id)
+		}
+	}
+	return references
+}
+
 // Ensure converges the configured development images onto destination. Calls
 // for the same Docker daemon and manifest coalesce so concurrent pool
 // reconciles do not upload the same archive more than once.

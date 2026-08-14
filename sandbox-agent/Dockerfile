@@ -350,3 +350,8 @@ ENTRYPOINT ["/usr/local/bin/discobox-sandbox-agent", "init"]
 CMD ["/sbin/init"]
 
 FROM sandbox-base AS sandbox-agent
+
+# Every harness image is built FROM this one and inherits the label through the
+# image config, which is also how it survives a pull — that inheritance is why no
+# harness Dockerfile repeats it. See harness.ReclaimLabel and ADR 0039.
+LABEL io.discobox.reclaimable.v1=true

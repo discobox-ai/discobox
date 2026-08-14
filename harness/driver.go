@@ -32,6 +32,15 @@ const (
 	// when a harness image is registered.
 	ImageLabel = "io.discobox.image.v1"
 
+	// ReclaimLabel marks an image as one Discobox built and may therefore
+	// delete once nothing uses it (ADR 0039). It is set by the pool-agent and
+	// sandbox-agent Dockerfiles; harness images and anything else built FROM the
+	// sandbox base inherit it through the image config, which is also what
+	// carries it across a pull — a label cannot be added to an image after it
+	// arrives.
+	ReclaimLabel      = "io.discobox.reclaimable.v1"
+	ReclaimLabelValue = "true"
+
 	// ConfigureOutputPath is where a harness's configure command writes the
 	// secrets and files it collected, for the control plane to read back before
 	// the ephemeral configure sandbox is deleted.

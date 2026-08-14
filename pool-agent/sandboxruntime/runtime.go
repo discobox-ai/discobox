@@ -34,6 +34,7 @@ import (
 	"github.com/obot-platform/discobox/sandboxuser"
 
 	"github.com/obot-platform/discobox/pool-agent/execidentity"
+	"github.com/obot-platform/discobox/pool-agent/imagereap"
 	"github.com/obot-platform/discobox/pool-agent/internalhttp"
 	"github.com/obot-platform/discobox/pool-agent/proxyagent"
 
@@ -1136,6 +1137,50 @@ func (r *DockerSandboxRuntime) reconcileSandboxVolumes(ctx context.Context, logg
 		liveSet[id] = struct{}{}
 	}
 	reapDeadSandboxVolumes(r.sandboxesRoot(), liveSet, retention, time.Now(), logger)
+}
+
+// WatchImages reclaims unused Discobox images from this pool's Docker daemon on
+// a slow interval (ADR 0039).
+//
+// The pool agent owns this daemon, so it is the thing that reclaims it: images
+// land here by sync and by pull, they persist in the pool's /var/lib/docker
+// volume across pool container replacement, and nothing else is in a position to
+// clean them up when the control plane cannot be reached.
+func (r *DockerSandboxRuntime) WatchImages(ctx context.Context, logger *slog.Logger) {
+	if logger == nil {
+		logger = slog.Default()
+	}
+	retention, err := imagereap.RetentionFromEnv()
+	if err != nil {
+		// A bad value must not take the pool down, and refusing to reclaim is
+		// the safe direction, so fall back to the default and say so.
+		logger.Warn("invalid image retention, using default", "error", err, "retention", imagereap.DefaultRetention)
+		retention = imagereap.DefaultRetention
+	}
+	// Derived from the window, so a development pool — which is handed a short
+	// retention by the control plane and has no other way to know it is one —
+	// reclaims on a development cadence too.
+	ticker := time.NewTicker(imagereap.ReclaimInterval(retention))
+	defer ticker.Stop()
+	for {
+		r.reclaimImages(ctx, logger, retention)
+		select {
+		case <-ctx.Done():
+			return
+		case <-ticker.C:
+		}
+	}
+}
+
+func (r *DockerSandboxRuntime) reclaimImages(ctx context.Context, logger *slog.Logger, retention time.Duration) {
+	// Every image this daemon still needs is one a container refers to, and
+	// imagereap already treats a stopped container as usage, so this pool needs
+	// no keep set of its own. An image synced or pulled but not yet run is
+	// covered by retention, and re-synced or re-pulled on demand if it does age
+	// out.
+	if _, err := imagereap.Reclaim(ctx, r.client, imagereap.Options{Retention: retention, Logger: logger}); err != nil {
+		logger.Warn("reclaim unused Discobox images", "error", err)
+	}
 }
 
 // SyncKnownPools reaps whole orphaned pools on this shared host daemon: any pool

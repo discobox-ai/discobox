@@ -29,6 +29,10 @@ FROM debian:13-slim
 ENV container=docker
 ENV DISCOBOX_AGENT_PORT=3002
 
+# Marks the image as Discobox's to reclaim once no container uses it. See
+# harness.ReclaimLabel and ADR 0039.
+LABEL io.discobox.reclaimable.v1=true
+
 RUN apt-get update \
     && apt-get install -y --no-install-recommends \
         ca-certificates \

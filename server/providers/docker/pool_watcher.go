@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 	"log"
+	"log/slog"
 	"strings"
 	"time"
 
@@ -20,11 +21,14 @@ import (
 	"github.com/obot-platform/discobox/server/providers/poolruntime"
 )
 
-// startPoolWatcher starts the pool runtime drift watcher for the provider
-// instance. The initial drift scan and the event watch both run in the
-// background so provider initialization never blocks on, or fails because of,
-// Docker connectivity. The watcher stops when the local driver closes.
-func startPoolWatcher(driver *LocalDriver, engine *dockerworker.Engine, manager poolruntime.PoolManager, provider *model.SandboxProviderInstance) error {
+// startBackgroundWatchers starts the provider instance's background loops over
+// the local Docker daemon: the pool runtime drift watcher, and the image reaper
+// that reclaims Discobox images the daemon no longer needs.
+//
+// Everything runs in the background so provider initialization never blocks on,
+// or fails because of, Docker connectivity, and everything shares one cancel so
+// closing the local driver stops all of it.
+func startBackgroundWatchers(driver *LocalDriver, engine *dockerworker.Engine, manager poolruntime.PoolManager, provider *model.SandboxProviderInstance) error {
 	if manager == nil {
 		return fmt.Errorf("pool manager is required")
 	}
@@ -45,7 +49,31 @@ func startPoolWatcher(driver *LocalDriver, engine *dockerworker.Engine, manager 
 	driver.watcherCancel = cancel
 	driver.watcherMu.Unlock()
 	go watcher.run(watchCtx)
+	go reclaimImages(watchCtx, driver.client, engine, provider.ID)
 	return nil
+}
+
+// reclaimImages reclaims unused Discobox images from the daemon this provider
+// instance hosts its pools on, on a slow interval, until the driver closes
+// (ADR 0039).
+//
+// This is the daemon `task dev` rebuilds onto and the one an upgrade pulls onto,
+// so it accumulates a superseded image per build and per upgrade with nothing
+// else to clean it up. A failed pass is logged and retried on the next tick: the
+// daemon being briefly unreachable is not a reason to stop reclaiming.
+func reclaimImages(ctx context.Context, cli *client.Client, engine *dockerworker.Engine, providerID string) {
+	ticker := time.NewTicker(engine.ImageReclaimInterval())
+	defer ticker.Stop()
+	for {
+		if err := engine.ReclaimImages(ctx, cli, slog.Default()); err != nil && ctx.Err() == nil {
+			log.Printf("docker image reaper for provider %s failed: %v", providerID, err)
+		}
+		select {
+		case <-ctx.Done():
+			return
+		case <-ticker.C:
+		}
+	}
 }
 
 // run performs an initial best-effort drift scan and then watches for runtime

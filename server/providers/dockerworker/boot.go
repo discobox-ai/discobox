@@ -4,6 +4,7 @@ import (
 	"strings"
 
 	poolagent "github.com/obot-platform/discobox/pool-agent"
+	"github.com/obot-platform/discobox/pool-agent/imagereap"
 )
 
 // BootEnv renders the pool-agent bootstrap contract as container environment
@@ -27,6 +28,22 @@ func BootEnv(bootstrap poolagent.Bootstrap) map[string]string {
 		if strings.TrimSpace(value) == "" {
 			delete(env, key)
 		}
+	}
+	return env
+}
+
+// poolContainerEnv is the pool-agent's whole environment: the bootstrap
+// contract, plus engine-level policy the agent applies to its own Docker daemon.
+//
+// The policy is kept out of Bootstrap deliberately. Bootstrap is identity and
+// transport — "a backend is expressed entirely in the URLs it renders" — and
+// image retention is neither. Policy that was never configured is omitted rather
+// than defaulted, so a deployment that sets nothing produces the same container
+// configuration, and the same revision, as before this existed.
+func (e *Engine) poolContainerEnv(bootstrap poolagent.Bootstrap) map[string]string {
+	env := BootEnv(bootstrap)
+	if e.cfg.ImageRetention > 0 {
+		env[imagereap.RetentionEnv] = e.cfg.ImageRetention.String()
 	}
 	return env
 }

@@ -290,6 +290,7 @@ func Serve(ctx context.Context, logger *slog.Logger, bootstrap Bootstrap, regist
 		}
 	}
 	go runtime.WatchProxyMaterial(ctx, logger)
+	go runtime.WatchImages(ctx, logger)
 	return ServeWithRuntime(ctx, logger, bootstrap, registration, runtime)
 }
 

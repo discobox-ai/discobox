@@ -23,6 +23,7 @@ from the future in-sandbox `sandbox-agent` API.
 | `sandboxruntime` | Local sandbox runtime implementations used by the pool host server. Provisions the five primary volumes (`/.discobox/{data,cache,config,sources,secrets}`) and mounts them into every sandbox; `cache` is the pool-local directory shared across the pool's sandboxes. Also binds each clone-delivered local source's real origin directory, read-only, onto `/.discobox/origins/<slug>` (ADR 0026). In-sandbox path wiring for the primary volumes is delegated to the sandbox-agent init flow (ADR 0007). |
 | `proxyagent` | Worker-scoped proxy wiring: certificate bundle preparation, the `proxy` subcommand entrypoint, and per-sandbox client material staging. |
 | `systemd` | Linux/systemd namespace startup and child reaping helpers, with non-Linux stubs. |
+| `imagereap` | Rules for reclaiming unused Discobox images from a Docker daemon (ADR 0039). Shared with the server, which applies them to the daemon pool containers run on; see [Image Reclamation](#image-reclamation). |
 
 ## Startup Flow
 
@@ -377,6 +378,32 @@ reports what it saw, and identity does the rest.
 
 Policy lives in the control plane; this module only enforces the identity it is
 handed.
+
+## Image Reclamation
+
+The agent reclaims unused Discobox images from its own Docker daemon on a
+standing loop (`WatchImages`). It owns that daemon, images land on it by sync and
+by pull, and they outlive the pool container in the pool's `/var/lib/docker`
+volume — so nothing else is positioned to clean them up, least of all a control
+plane that may be unreachable.
+
+`imagereap` holds the rules and is shared with the server, which reaps the
+daemon pool containers run *on* the same way. An image goes when it carries
+`harness.ReclaimLabel`, no container refers to it, and it arrived here longer
+ago than the retention window. Arrival is the daemon's `LastTagTime`, not
+`Created`, which is when whoever published the image built it; see ADR 0039.
+
+The window arrives as `DISCOBOX_IMAGE_RETENTION` in the container environment,
+defaulting to 24h to match `sandboxVolumeRetention`. The loop's own interval is
+derived from it (`imagereap.ReclaimInterval`) rather than fixed, because that is
+the only thing that tells a development pool it is one: the control plane hands
+this agent a retention, never a mode, so a short window is what makes the sweep
+keep pace with a rebuild loop that supersedes an image every few minutes.
+
+Usage counts stopped containers, so a stopped sandbox keeps its image. This
+pool needs no keep set of its own: everything it still needs has a container,
+and an image synced or pulled but not yet run is covered by retention and simply
+re-fetched if it does age out.
 
 ## Boundary Rules
 
