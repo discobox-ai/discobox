@@ -143,7 +143,15 @@ runtime operations.
 side is in [pool-agent/DESIGN.md](../pool-agent/DESIGN.md)). Three pieces here:
 
 - `dockercache` rewrites `docker build` onto a buildx `remote` instance and
-  brings the result back through the pool registry.
+  brings the result back through the pool registry. It pushes to a name
+  synthesized per build, pulls it back, and applies the user's tags locally.
+  Attestations are disabled unless asked for: buildx attests provenance
+  whenever the output is a registry, and that provenance describes the build
+  rather than its result, so identical content would otherwise get a different
+  image ID in every sandbox. A tagged build's synthesized name is removed
+  afterwards; an untagged one keeps it, because removing an image's last
+  reference deletes the image and there is no way to untag a pulled image into
+  the `<none>:<none>` entry a local build leaves.
 - `discobox-buildkit-bridge.service` is a second `proxy/bridge` instance —
   `127.0.0.1:17082` to the pool mediator over mTLS — for the same reason the
   proxy bridge exists at all: buildx would otherwise need the sandbox's client

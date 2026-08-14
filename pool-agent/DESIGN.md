@@ -383,15 +383,23 @@ Four boundaries, each doing one job:
 - **Egress is bound per build, in the build's own network namespace.** The
   mediator injects `HTTP_PROXY=http://<sandboxID>@127.0.0.1:17009` as a
   build-arg; the runc wrapper reads the sandbox back out of it, installs
-  `createRuntime`/`poststop` hooks, and strips the identity before the container
-  sees it. The forwarder holds that sandbox's client certificate, so a `RUN`
-  step's traffic is attributed and policed exactly as the sandbox's own is. The
-  port is the same for every build because each build has its own namespace:
-  the address is private to it, which is what identifies it — the same argument
-  ADR 0020 makes for a sandbox's loopback forwarder. Build-args are **set**, not
-  merged: buildx forwards the client's proxy environment, and a sandbox's
-  `HTTP_PROXY` names a loopback that, inside a pool-side build container, is
-  that container's own.
+  `createRuntime`/`poststop` hooks, and strips the identity from every proxy
+  spelling before the container sees it. The forwarder holds that sandbox's
+  client certificate, so a `RUN` step's traffic is attributed and policed
+  exactly as the sandbox's own is. The port is the same for every build because
+  each build has its own namespace: the address is private to it, which is what
+  identifies it — the same argument ADR 0020 makes for a sandbox's loopback
+  forwarder. Build-args are **set**, not merged: buildx forwards the client's
+  proxy environment, and a sandbox's `HTTP_PROXY` names a loopback that, inside
+  a pool-side build container, is that container's own.
+
+  The forwarder enters the build's namespace only long enough to bind, then
+  returns to the pool's. A namespace belongs to the process, not to one socket:
+  one that stayed inside could accept the build's connections but could no
+  longer reach the pool proxy. A listening socket keeps the namespace it was
+  created in and accepted connections inherit it, so going back costs nothing.
+  The thread stays pinned across the whole sequence, because `setns` acts on the
+  calling thread and Go moves goroutines between threads freely.
 - **CA trust stays a plain spec edit**, shared with the sandbox through the root
   `runcca` package. It needs no identity — there is one pool-wide MITM CA — so
   it needs none of the above.
@@ -405,6 +413,14 @@ everything else: base-image pulls happen in buildkitd itself, before any build
 container exists, so nothing injected into a spec could cover them. The proxy's
 blob cache is what makes those pulls cheap across the pool — see
 [proxy/DESIGN.md](../proxy/DESIGN.md).
+
+The pool registry is the one exception, and both units carry it in `NO_PROXY`.
+It is a pool-internal hop with no route off-box, and proxying it means the MITM
+proxy answering a plaintext registry's port over TLS: every push then fails on
+an `EOF` from a URL nothing spelled as `https`, which reads as a broken registry
+rather than a routing mistake. Declaring the registry plaintext in
+`buildkitd.toml` does not help, because a proxied request never arrives as
+plaintext whatever the client believes.
 
 `buildkitd`'s state root is wiped of its `net` directory on every start
 (`ExecStartPre`). Netns files are nsfs bind mounts; after a container restart

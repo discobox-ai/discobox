@@ -62,6 +62,11 @@ func buildViaRegistry(ctx context.Context, a Args) int {
 		// looking exactly as it would after a local build.
 		_ = runQuiet(ctx, "rmi", a.RegistryRef)
 	}
+	// An untagged build keeps it. Nothing else names the image, and removing an
+	// image's last reference deletes the image — there is no way to untag a
+	// pulled image into the dangling `<none>:<none>` entry a local build
+	// leaves. So an untagged build shows up under this name instead of that
+	// one; the image and its ID are the same either way.
 	return 0
 }
 

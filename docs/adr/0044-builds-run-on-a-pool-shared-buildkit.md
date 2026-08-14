@@ -311,6 +311,29 @@ The registry serves the pool, so a sandbox can pull images built by its peers.
 That is the pool sharing boundary again, and it is the same boundary the shared
 build cache already has.
 
+The push reference is **synthesized per build**, never derived from the user's
+tag. A tag may already name a registry — one this pool cannot reach, or one the
+user did not mean to publish to — and rewriting tag syntax to be pushable here
+would be both fragile and surprising. A random name under a reserved repository
+is neither.
+
+Two consequences follow, both measured rather than assumed:
+
+- **Attestations are off.** buildx attaches provenance whenever the output is a
+  registry, and that provenance describes the build — its start time, its own
+  reference — not its result. Identical content therefore produced different
+  index digests, so two sandboxes with a full cache hit on every layer still
+  showed different image IDs. Plain `docker build` attests nothing, and the
+  transport must not decide what the user ends up holding, so the shim passes
+  `--provenance=false` unless the user asked for an attestation.
+- **An untagged build keeps its synthesized name.** After a tagged build the
+  reference is removed and `docker images` reads exactly as it would after a
+  local build. An untagged one cannot do that: nothing else names the image, and
+  removing an image's last reference deletes the image. There is no way to untag
+  a pulled image into the dangling `<none>:<none>` entry a local build leaves,
+  so the reference stays. The image and its ID are identical either way; only
+  the name shown differs.
+
 ### 12. Upstream pull caching belongs to the proxy, not a registry mirror
 
 Caching upstream registry pulls is a *different* job from storing build output,
