@@ -240,8 +240,11 @@ func RunProxy(ctx context.Context, logger *slog.Logger) error {
 	// carries no notion of who was authorized for it.
 	//
 	// Scoped to digest-bearing URLs only. There is no TTL here — correct for
-	// immutable blobs, wrong for anything else — so a mutable tag manifest must
-	// never be admitted.
+	// anything named by its own digest, wrong for anything else — so a tag
+	// manifest must never be admitted. It never is: a tag carries no `sha256:`,
+	// which is what both the content-aware arm and these patterns key on.
+	// A digest-addressed manifest is admitted by the content-aware arm and is
+	// as immutable as a blob.
 	cfg.Cache.Enabled = true
 	cfg.Cache.ContentAware = true
 	cfg.Cache.Patterns = []string{`^/v2/.*/blobs/sha256:[a-fA-F0-9]{64}$`, `/blobs/sha256/[a-fA-F0-9]{2}/[a-fA-F0-9]{64}/data$`}

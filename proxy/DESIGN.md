@@ -128,26 +128,35 @@ rewrite-rule headers and credential-like header names.
 
 ## Response Cache
 
-The cache is pool-wide and admits by URL pattern. As wired by
-`pool-agent/proxyagent`, the patterns admit registry **blobs only**, in both
-spellings a pull sees: the v2 API's `/v2/<name>/blobs/sha256:<hex>` and the
-storage layout's `/blobs/sha256/<ab>/<hex>/data`. This is what makes upstream
-image pulls cheap across a pool, including base-image pulls by the pool-shared
-builder (`pool-agent/DESIGN.md`) and plain `docker pull` in a sandbox, which no
-build cache ever sees — see
+The cache is pool-wide. It makes upstream image pulls cheap across a pool,
+covering both base-image pulls by the pool-shared builder
+(`pool-agent/DESIGN.md`) and a plain `docker pull` in a sandbox, which no build
+cache ever sees — see
 [ADR 0039](../docs/adr/0039-builds-run-on-a-pool-shared-buildkit.md) §12.
 
-Two properties the patterns depend on:
+Admission has two arms, and as wired by `pool-agent/proxyagent` both are
+restricted to URLs that name their own content:
 
-- **Digest-bearing URLs only, because there is no TTL.** A blob URL names its
-  own content, so a stored entry can never be stale. A tag manifest is the
-  opposite — the same URL answers differently tomorrow — so admitting one would
-  pin a moving tag forever.
-- **Sharing across a pool is sound**, because a digest names content rather than
-  an entitlement, and a pool already shares one set of pull credentials. Cache
-  events still carry the requesting client's identity for audit.
+- **Content-aware**: any registry request whose path contains `sha256:` and
+  whose `Accept` is a Docker media type. This covers blobs and
+  digest-addressed manifests alike.
+- **Patterns**: the two blob spellings a pull actually sees — the v2 API's
+  `/v2/<name>/blobs/sha256:<hex>` and the storage layout's
+  `/blobs/sha256/<ab>/<hex>/data`, which is what a redirect to a CDN serves.
 
-Entries are keyed by digest rather than by full URL, so the same blob fetched
+The single rule underneath is that **there is no TTL**, so nothing mutable may
+be admitted. A digest names its content, so a stored entry can never be stale,
+whether it is a blob or a manifest. A *tag* manifest is the opposite — the same
+URL answers differently tomorrow — and it carries no `sha256:`, which is exactly
+why it falls through both arms. A pull of `busybox:1.36` shows the split
+directly: `/manifests/1.36` is refused and `/manifests/sha256:...` is stored.
+
+Sharing across a pool is sound for the same reason: a digest names content
+rather than an entitlement, and a pool already shares one set of pull
+credentials. Cache events still carry the requesting client's identity for
+audit.
+
+Entries are keyed by digest rather than by full URL, so the same content fetched
 through different registry mirrors or paths hits once. A partial response is
 never stored: a `206` body is a fragment, and storing it under a key that claims
 to be the whole object would serve truncated content to the next reader.
