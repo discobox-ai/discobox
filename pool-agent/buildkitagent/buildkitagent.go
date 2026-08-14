@@ -230,6 +230,11 @@ func renderRegistryEnvironment(registryRoot string) string {
 // as everything else in the pool, and systemd resets the environment for units,
 // so without this they try to reach origins directly. A registry that cannot
 // resolve its upstream fails as an opaque 404 rather than a connection error.
+//
+// The pool registry is excepted. It is a pool-internal hop with no route
+// off-box, and proxying it is worse than pointless: the MITM proxy answers a
+// plaintext registry's port over TLS, so every push fails on an `EOF` from a
+// URL the builder never spelled as `https`.
 func proxyEnvironment(environ []string) string {
 	wanted := map[string]bool{
 		"HTTP_PROXY": true, "HTTPS_PROXY": true, "ALL_PROXY": true,
@@ -238,14 +243,38 @@ func proxyEnvironment(environ []string) string {
 		"SSL_CERT_FILE": true, "SSL_CERT_DIR": true,
 	}
 	var b strings.Builder
+	seen := map[string]bool{}
 	for _, entry := range environ {
 		name, value, ok := strings.Cut(entry, "=")
 		if !ok || !wanted[name] || strings.TrimSpace(value) == "" {
 			continue
 		}
+		if name == "NO_PROXY" || name == "no_proxy" {
+			value = withRegistryBypass(value)
+			seen[name] = true
+		}
 		fmt.Fprintf(&b, "%s=%s\n", name, value)
 	}
+	// A pool that handed this process no NO_PROXY still needs the registry
+	// bypassed, so the variable is written rather than merely amended.
+	for _, name := range []string{"NO_PROXY", "no_proxy"} {
+		if !seen[name] {
+			fmt.Fprintf(&b, "%s=%s\n", name, RegistryServerName)
+		}
+	}
 	return b.String()
+}
+
+// withRegistryBypass adds the pool registry's host to a NO_PROXY value. Go
+// matches a hostname entry against the request's host with the port ignored, so
+// the bare name covers the registry and every other port the pool answers on.
+func withRegistryBypass(value string) string {
+	for _, entry := range strings.Split(value, ",") {
+		if strings.EqualFold(strings.TrimSpace(entry), RegistryServerName) {
+			return value
+		}
+	}
+	return value + "," + RegistryServerName
 }
 
 // readFile is a thin wrapper so mediator.go reads through the same test-root

@@ -125,6 +125,60 @@ func TestPrepareForwardsProxyEnvironmentToBothUnits(t *testing.T) {
 	}
 }
 
+func TestThePoolRegistryIsNeverReachedThroughTheProxy(t *testing.T) {
+	t.Setenv("HTTPS_PROXY", "http://127.0.0.1:17008")
+	t.Setenv("NO_PROXY", "127.0.0.1,localhost")
+	t.Setenv("no_proxy", "127.0.0.1,localhost")
+	root := prepare(t)
+
+	// Declaring the registry plaintext is not enough on its own: a proxied
+	// request never reaches it as plaintext. The MITM proxy answers the
+	// registry's port over TLS, so a push fails with `EOF` against a URL the
+	// builder never spelled as https — which reads as a broken registry rather
+	// than as a routing mistake.
+	for _, file := range []string{buildkitagent.UnitEnvironmentFile, buildkitagent.RegistryEnvironmentFile} {
+		body := read(t, root, file)
+		for _, name := range []string{"NO_PROXY", "no_proxy"} {
+			line := lineFor(t, body, name)
+			if !strings.Contains(line, buildkitagent.RegistryServerName) {
+				t.Errorf("%s: %s does not bypass the pool registry: %q", file, name, line)
+			}
+			if !strings.Contains(line, "127.0.0.1") {
+				t.Errorf("%s: %s dropped what the pool already bypassed: %q", file, name, line)
+			}
+		}
+	}
+}
+
+func TestTheRegistryIsBypassedEvenWithNoInheritedNoProxy(t *testing.T) {
+	t.Setenv("HTTPS_PROXY", "http://127.0.0.1:17008")
+	t.Setenv("NO_PROXY", "")
+	t.Setenv("no_proxy", "")
+	root := prepare(t)
+
+	// A pool that set no NO_PROXY at all still must not proxy its own
+	// registry, so the variable is written rather than only amended.
+	for _, name := range []string{"NO_PROXY", "no_proxy"} {
+		line := lineFor(t, read(t, root, buildkitagent.UnitEnvironmentFile), name)
+		if !strings.Contains(line, buildkitagent.RegistryServerName) {
+			t.Errorf("%s does not bypass the pool registry: %q", name, line)
+		}
+	}
+}
+
+// lineFor returns the `NAME=...` line of an EnvironmentFile, so a test asserts
+// against one variable rather than against the whole file's text.
+func lineFor(t *testing.T, body, name string) string {
+	t.Helper()
+	for line := range strings.SplitSeq(body, "\n") {
+		if strings.HasPrefix(line, name+"=") {
+			return line
+		}
+	}
+	t.Fatalf("%s is not set:\n%s", name, body)
+	return ""
+}
+
 func TestPrepareRejectsAnUnscopedPool(t *testing.T) {
 	buildkitagent.SetTestRoot(t.TempDir())
 	t.Cleanup(func() { buildkitagent.SetTestRoot("") })
