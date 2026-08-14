@@ -49,6 +49,52 @@ func TestReclaimableAgesOutUnusedImages(t *testing.T) {
 	assertIDs(t, Reclaimable(candidates, nil, nil, retention, now), "sha256:stale", "sha256:boundary")
 }
 
+// The regression that ate a developer's images: the watcher had built a new
+// sandbox base, but the server's keep set was the manifest it loaded at startup,
+// which still named the previous one. Age then made the *current* image — the
+// one the next harness build layers on — look like garbage, and reclaiming it
+// stranded the watcher, which only rebuilds when a source file changes.
+func TestReclaimableNeverTakesTheNewestImageOfARepository(t *testing.T) {
+	now := time.Now()
+	old := now.Add(-4 * time.Hour)
+	current := now.Add(-30 * time.Minute)
+	candidates := []Candidate{
+		// The image the stale keep set still names.
+		{ID: "sha256:previous", RepoTags: []string{"discobox-sandbox-agent:dev-old"}, LastLocal: old},
+		// The build in flight: newer, in no keep set yet, and past retention.
+		{ID: "sha256:current", RepoTags: []string{"discobox-sandbox-agent:local", "discobox-sandbox-agent:dev-new"}, LastLocal: current},
+	}
+	keep := set("discobox-sandbox-agent:dev-old")
+
+	assertIDs(t, Reclaimable(candidates, nil, keep, 15*time.Minute, now))
+
+	// Without the stale keep entry the superseded image still goes; only the
+	// newest is protected, so this reclaims rather than hoarding.
+	assertIDs(t, Reclaimable(candidates, nil, nil, 15*time.Minute, now), "sha256:previous")
+}
+
+func TestReclaimableTracksNewestPerRepositoryIndependently(t *testing.T) {
+	now := time.Now()
+	// Everything here is well past retention, so only the newest-per-repository
+	// rule decides what survives.
+	stale := now.Add(-30 * 24 * time.Hour)
+	candidates := []Candidate{
+		{ID: "sha256:agent-old", RepoTags: []string{"discobox-sandbox-agent:dev-a"}, LastLocal: stale},
+		{ID: "sha256:agent-new", RepoTags: []string{"discobox-sandbox-agent:dev-b"}, LastLocal: stale.Add(time.Hour)},
+		{ID: "sha256:pool-old", RepoTags: []string{"discobox-pool-agent:dev-a"}, LastLocal: stale},
+		{ID: "sha256:pool-new", RepoTags: []string{"discobox-pool-agent:dev-b"}, LastLocal: stale.Add(2 * time.Hour)},
+		// A registry reference with a port must not be split at the port colon,
+		// which would make every port a repository of its own.
+		{ID: "sha256:ported", RepoTags: []string{"localhost:5000/discobox:v1"}, LastLocal: stale},
+		// Untagged images belong to no repository, so nothing protects them.
+		{ID: "sha256:dangling", LastLocal: stale},
+	}
+
+	// The single ported image is the newest of its own repository, so it stays.
+	assertIDs(t, Reclaimable(candidates, nil, nil, retention, now),
+		"sha256:agent-old", "sha256:pool-old", "sha256:dangling")
+}
+
 func TestReclaimableKeepsImagesAnyContainerUses(t *testing.T) {
 	now := time.Now()
 	// Old enough to go, but a container — which may well be a stopped sandbox —
@@ -65,7 +111,9 @@ func TestReclaimableHonorsKeepByIDTagAndDigest(t *testing.T) {
 		{ID: "sha256:byid", LastLocal: old},
 		{ID: "sha256:bytag", RepoTags: []string{"discobox-sandbox-agent:dev-abc"}, LastLocal: old},
 		{ID: "sha256:bydigest", RepoDigests: []string{"ghcr.io/x/y@sha256:dd"}, LastLocal: old},
-		{ID: "sha256:unkept", RepoTags: []string{"discobox-sandbox-agent:dev-old"}, LastLocal: old},
+		// Older than the kept one in the same repository, so newest-per-repository
+		// does not protect it and only the keep set is under test here.
+		{ID: "sha256:unkept", RepoTags: []string{"discobox-sandbox-agent:dev-old"}, LastLocal: old.Add(-time.Hour)},
 	}
 	keep := set("sha256:byid", "discobox-sandbox-agent:dev-abc", "ghcr.io/x/y@sha256:dd")
 

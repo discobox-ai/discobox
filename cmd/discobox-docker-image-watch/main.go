@@ -91,10 +91,27 @@ func run(ctx context.Context) error {
 	}
 	ticker := time.NewTicker(time.Second)
 	defer ticker.Stop()
+	// A separate, slower beat for "is the image still there", which costs a
+	// Docker call where the file check costs a stat.
+	presence := time.NewTicker(missingImageCheckInterval)
+	defer presence.Stop()
 	for {
 		select {
 		case <-ctx.Done():
 			return ctx.Err()
+		case <-presence.C:
+			missing, err := missingImageSpecs(ctx, repoRoot, specs)
+			if err != nil {
+				log.Printf("check built images: %v", err)
+				continue
+			}
+			if len(missing) == 0 {
+				continue
+			}
+			log.Printf("rebuilding %s: built image no longer on the daemon", strings.Join(specNames(missing), ", "))
+			if err := buildChangedImages(ctx, repoRoot, specs, missing); err != nil {
+				log.Printf("build failed: %v", err)
+			}
 		case <-ticker.C:
 			var changedSpecs []imageSpec
 			for _, spec := range specs {
@@ -107,16 +124,82 @@ func run(ctx context.Context) error {
 			if len(changedSpecs) == 0 {
 				continue
 			}
-			names := make([]string, 0, len(changedSpecs))
-			for _, spec := range changedSpecs {
-				names = append(names, spec.name)
-			}
-			log.Printf("Docker inputs changed for %s; rebuilding", strings.Join(names, ", "))
+			log.Printf("Docker inputs changed for %s; rebuilding", strings.Join(specNames(changedSpecs), ", "))
 			if err := buildChangedImages(ctx, repoRoot, specs, changedSpecs); err != nil {
 				log.Printf("build failed: %v", err)
 			}
 		}
 	}
+}
+
+// missingImageCheckInterval paces the check for built images that have left the
+// daemon.
+const missingImageCheckInterval = 15 * time.Second
+
+// missingImageSpecs returns the specs whose built image is no longer on the
+// daemon.
+//
+// Rebuilding on a file change alone is not enough, because a built image can
+// leave without any file changing: image reclamation removes a superseded one
+// (ADR 0039), and a developer's own `docker system prune` removes all of them.
+// Nothing then rebuilds it, while `.env` and the manifest keep naming it, so
+// every pool reconcile fails against an image that cannot come back. This is the
+// level-triggered half the watcher was missing: what it published must still
+// exist, not merely have existed once.
+func missingImageSpecs(ctx context.Context, repoRoot string, specs []imageSpec) ([]imageSpec, error) {
+	if buildModeEnabled() {
+		// Nothing is built on this host, so there is no local image to miss.
+		return nil, nil
+	}
+	present, err := commandOutput(ctx, repoRoot, "docker", "image", "ls", "--format", "{{.Repository}}:{{.Tag}}")
+	if err != nil {
+		return nil, err
+	}
+	tags := map[string]struct{}{}
+	for _, tag := range strings.Fields(present) {
+		tags[tag] = struct{}{}
+	}
+	return missingFrom(specs, tags), nil
+}
+
+// missingFrom is the decision behind missingImageSpecs, over the set of image
+// references the daemon reports.
+func missingFrom(specs []imageSpec, present map[string]struct{}) []imageSpec {
+	missing := make([]imageSpec, 0, len(specs))
+	for _, spec := range specs {
+		if _, ok := present[spec.baseImage]; !ok {
+			missing = append(missing, spec)
+		}
+	}
+	// A rebuilt sandbox-agent is a new base, so every image layered on it has to
+	// be rebuilt too — otherwise the manifest would publish harness images built
+	// on a base that no longer exists.
+	if !containsSpec(missing, sandboxAgentSpecName) {
+		return missing
+	}
+	for _, spec := range specs {
+		if spec.sandboxBase && !containsSpec(missing, spec.name) {
+			missing = append(missing, spec)
+		}
+	}
+	return missing
+}
+
+func containsSpec(specs []imageSpec, name string) bool {
+	for _, spec := range specs {
+		if spec.name == name {
+			return true
+		}
+	}
+	return false
+}
+
+func specNames(specs []imageSpec) []string {
+	names := make([]string, 0, len(specs))
+	for _, spec := range specs {
+		names = append(names, spec.name)
+	}
+	return names
 }
 
 func findRepoRoot() (string, error) {

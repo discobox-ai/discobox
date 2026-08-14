@@ -140,6 +140,11 @@ configured pool image, which has no container while every pool is stopped, and
 the development image set, whose sandbox base is run by nothing yet is the base
 every harness image is built `FROM`.
 
+That keep set is a startup snapshot, so it cannot be the only protection: an
+image built after the server started is in no keep set at all. `imagereap` never
+reclaims the newest image of a repository for exactly this reason — see ADR 0039
+§5.
+
 Pool runtime lifecycle is not the same as pool row deletion. The engine
 replaces the pool-agent container (and a VM driver may replace the VM) for an
 existing pool during reconciliation or repair, but the pool row and pool ID

@@ -38,14 +38,21 @@ func TestIntegrationReclaimRemovesOnlyUnusedLabeledImages(t *testing.T) {
 	defer func() { _ = cli.Close() }()
 
 	unique := fmt.Sprint(time.Now().UnixNano())
-	// Two tags on one image: removal by ID alone fails on this, which is the
-	// case that forced untag-first.
-	unused := buildTestImage(ctx, t, cli, "discobox-imagereap-unused-"+unique+":a", true)
-	tagImage(ctx, t, cli, unused, "discobox-imagereap-unused-"+unique+":b")
+	repository := "discobox-imagereap-" + unique
+
+	// A superseded build and the one that replaced it, in one repository. The
+	// superseded one carries two tags, because removal by ID alone fails on a
+	// multi-tagged image — the case that forced untag-first.
+	superseded := buildTestImage(ctx, t, cli, repository+":v1", true)
+	tagImage(ctx, t, cli, superseded, repository+":v1-alias")
+	current := buildTestImage(ctx, t, cli, repository+":v2", true)
+	if superseded == current {
+		t.Fatal("test images are identical; the newest-per-repository rule cannot be exercised")
+	}
 	used := buildTestImage(ctx, t, cli, "discobox-imagereap-used-"+unique+":a", true)
 	unlabeled := buildTestImage(ctx, t, cli, "discobox-imagereap-unlabeled-"+unique+":a", false)
 	t.Cleanup(func() {
-		for _, image := range []string{unused, used, unlabeled} {
+		for _, image := range []string{superseded, current, used, unlabeled} {
 			_, _ = cli.ImageRemove(context.Background(), image, client.ImageRemoveOptions{Force: true, PruneChildren: true})
 		}
 	})
@@ -73,13 +80,19 @@ func TestIntegrationReclaimRemovesOnlyUnusedLabeledImages(t *testing.T) {
 		t.Fatalf("reclaimed %v within the retention window", fresh.Removed)
 	}
 
-	// Now age everything out. Only the unused labeled image may go.
+	// Now age everything out. Only the superseded labeled image may go.
 	result, err := Reclaim(ctx, cli, Options{Retention: time.Nanosecond, Now: time.Now().Add(time.Minute)})
 	if err != nil {
 		t.Fatalf("reclaim: %v", err)
 	}
-	if !containsID(result.Removed, unused) {
-		t.Fatalf("removed = %v, want the unused labeled image %s", result.Removed, unused)
+	if !containsID(result.Removed, superseded) {
+		t.Fatalf("removed = %v, want the superseded image %s", result.Removed, superseded)
+	}
+	// The newest of a repository is the current build by construction — the one
+	// a mutable tag points at and the next build layers on — and reclaiming it
+	// is what stranded a developer's watcher.
+	if containsID(result.Removed, current) {
+		t.Fatalf("removed the newest image of its repository: %s", current)
 	}
 	if containsID(result.Removed, used) {
 		t.Fatalf("removed the image a stopped container still uses: %s", used)
@@ -87,11 +100,13 @@ func TestIntegrationReclaimRemovesOnlyUnusedLabeledImages(t *testing.T) {
 	if containsID(result.Removed, unlabeled) {
 		t.Fatalf("removed an unlabeled image Discobox does not own: %s", unlabeled)
 	}
-	if _, err := cli.ImageInspect(ctx, unused); err == nil || !cerrdefs.IsNotFound(err) {
+	if _, err := cli.ImageInspect(ctx, superseded); err == nil || !cerrdefs.IsNotFound(err) {
 		t.Fatalf("multi-tagged image survived removal: %v", err)
 	}
-	if _, err := cli.ImageInspect(ctx, used); err != nil {
-		t.Fatalf("in-use image did not survive: %v", err)
+	for _, survivor := range []string{current, used, unlabeled} {
+		if _, err := cli.ImageInspect(ctx, survivor); err != nil {
+			t.Fatalf("image %s did not survive: %v", survivor, err)
+		}
 	}
 
 	// Keep must win over age for an image nothing runs, which is how a

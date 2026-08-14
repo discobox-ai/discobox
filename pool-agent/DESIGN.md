@@ -402,8 +402,9 @@ keep pace with a rebuild loop that supersedes an image every few minutes.
 
 Usage counts stopped containers, so a stopped sandbox keeps its image. This
 pool needs no keep set of its own: everything it still needs has a container,
-and an image synced or pulled but not yet run is covered by retention and simply
-re-fetched if it does age out.
+and an image synced or pulled but not yet run is covered by retention, by the
+rule that the newest image of a repository is never reclaimed (ADR 0039 §5), and
+by simply being re-fetched if it does age out.
 
 ## Boundary Rules
 

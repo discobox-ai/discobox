@@ -65,20 +65,35 @@ have not arrived locally within a retention window.
    `discobox-sandbox-agent:dev-<hash>` directly, so the container check alone
    would reclaim the base that the next harness build needs.
 
-5. **Two reapers, one per daemon owner.** The pool agent reaps its own pool's
+5. **The newest image of a repository is never reclaimed.** A keep set is a
+   snapshot somebody else took, and it can be stale in both directions: the
+   server loads the development manifest once at startup, so an image built
+   after that is in no keep set at all, and during a rebuild pass — which takes
+   far longer than the development window — the manifest on disk still names
+   the *previous* build. Age then makes the freshly built image look like
+   garbage precisely because it is the one being built on.
+
+   The newest image in a repository is the current one by construction: it is
+   what the mutable tag (`:local`, `:latest`) points at and what the next build
+   layers on. Keeping it costs one image per repository — the one you would keep
+   anyway — and every superseded build is still reclaimed. This is a floor under
+   the other rules, not a replacement for them, because deletion is irreversible
+   and the keep set is only as fresh as whoever published it.
+
+6. **Two reapers, one per daemon owner.** The pool agent reaps its own pool's
    Docker daemon, because it owns that daemon and keeps running when the control
    plane cannot reach it. The server reaps the host daemon through the Docker
    provider, matching the existing rule that drivers provide connectivity while
    the engine owns the daemon's contents.
 
-6. **Retention is 24h, overridable with `DISCOBOX_IMAGE_RETENTION`.** It matches
+7. **Retention is 24h, overridable with `DISCOBOX_IMAGE_RETENTION`.** It matches
    `sandboxVolumeRetention`, the window the pool agent already applies to a dead
    sandbox's volume tree, for the same reason: a window long enough that an
    accidental removal and a same-day recreate cost nothing. The server
    propagates a configured value into the pool container's environment so one
    setting governs both daemons.
 
-7. **A daemon the image watcher drives gets 15 minutes instead.** `task dev`
+8. **A daemon the image watcher drives gets 15 minutes instead.** `task dev`
    supersedes a multi-gigabyte image every few minutes, so a day of grace is a
    day of images — the window has to be shorter than the loop producing them or
    it reclaims nothing that matters. The signal is
@@ -90,7 +105,7 @@ have not arrived locally within a retention window.
    here: anything still wanted is named by a container or by the current
    development manifest, and both are checked before age is.
 
-8. **The sweep interval is derived from the window, not configured.** Half of
+9. **The sweep interval is derived from the window, not configured.** Half of
    it, clamped to [1m, 1h]. The two are useless apart — a 15-minute window swept
    hourly reclaims on the hour anyway — and deriving it is also what carries the
    development cadence into a pool, which has no other way to know it is one:
@@ -140,3 +155,15 @@ have not arrived locally within a retention window.
   are idempotent, but each keeps only its own configured pool image, so an
   instance with no pools may have its (unused) pool image reclaimed and re-pulled
   on next use.
+- Reclamation makes a built image disappear without any source file changing,
+  which the development image watcher had no way to notice: it rebuilt on file
+  changes only, so a reclaimed image was never rebuilt while `.env` and the
+  manifest went on naming it, and every pool reconcile failed against an image
+  that could not come back. The watcher therefore also rebuilds a spec whose
+  image has left the daemon. That covers `docker system prune` and a manual
+  `rmi` too, which could always have caused this and simply never had a reason
+  to happen.
+- One image per repository survives forever, including repositories nothing uses
+  any more (a harness that was removed, or the throwaway `discobot-dockerfile-test`
+  builds). That is the price of never deleting the current build of anything, and
+  it is bounded by the number of repositories rather than by build churn.

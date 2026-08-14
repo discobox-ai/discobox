@@ -143,9 +143,10 @@ func (c Candidate) references() []string {
 //
 // inUse holds the image IDs containers refer to, keep holds references and IDs
 // that must survive regardless of age, and now is the clock. An image is
-// reclaimable only when it is in neither set and its local age exceeds
-// retention.
+// reclaimable only when it is in neither set, is not the newest of its
+// repository, and its local age exceeds retention.
 func Reclaimable(candidates []Candidate, inUse, keep map[string]struct{}, retention time.Duration, now time.Time) []Candidate {
+	newest := newestPerRepository(candidates)
 	reclaimable := make([]Candidate, 0, len(candidates))
 	for _, candidate := range candidates {
 		if candidate.ID == "" {
@@ -155,6 +156,9 @@ func Reclaimable(candidates []Candidate, inUse, keep map[string]struct{}, retent
 			continue
 		}
 		if keepsAny(keep, candidate.references()) {
+			continue
+		}
+		if _, current := newest[candidate.ID]; current {
 			continue
 		}
 		// No knowable local age. Reclaiming on a guess here would mean deleting
@@ -168,6 +172,68 @@ func Reclaimable(candidates []Candidate, inUse, keep map[string]struct{}, retent
 		reclaimable = append(reclaimable, candidate)
 	}
 	return reclaimable
+}
+
+// newestPerRepository returns the IDs of the most recently arrived image in
+// each repository.
+//
+// This is the floor under every other rule, and it exists because deletion is
+// irreversible while "what is current" is not something this pass can know
+// reliably. A keep set is a snapshot somebody else took: the server loads the
+// development manifest once at startup, so an image built after that is in no
+// keep set at all, and during a rebuild pass — which takes far longer than the
+// development window — the manifest on disk still names the *previous* build.
+// Age then makes the freshly built image look like garbage precisely because it
+// is the one being built on, and reclaiming it strands the watcher, which only
+// rebuilds when a source file changes.
+//
+// The newest image in a repository is the current one by construction: that is
+// what the mutable tag (`:local`, `:latest`) points at and what the next build
+// layers on. Keeping it costs one image per repository — the one you would keep
+// anyway — and every superseded build is still reclaimed.
+func newestPerRepository(candidates []Candidate) map[string]struct{} {
+	newest := map[string]time.Time{}
+	for _, candidate := range candidates {
+		for _, repository := range repositories(candidate) {
+			if at, ok := newest[repository]; !ok || candidate.LastLocal.After(at) {
+				newest[repository] = candidate.LastLocal
+			}
+		}
+	}
+	current := make(map[string]struct{}, len(newest))
+	for _, candidate := range candidates {
+		for _, repository := range repositories(candidate) {
+			// Equal rather than identical, so a tie protects both rather than
+			// picking one and reclaiming the other.
+			if candidate.LastLocal.Equal(newest[repository]) {
+				current[candidate.ID] = struct{}{}
+				break
+			}
+		}
+	}
+	return current
+}
+
+// repositories returns the repository of each of an image's tags. An untagged
+// image belongs to none, so nothing protects it as "current".
+func repositories(candidate Candidate) []string {
+	names := make([]string, 0, len(candidate.RepoTags))
+	for _, tag := range candidate.RepoTags {
+		if name := repositoryOf(tag); name != "" {
+			names = append(names, name)
+		}
+	}
+	return names
+}
+
+// repositoryOf strips the tag from a reference, leaving the repository. The
+// colon must come after the last slash or it is a registry port, not a tag.
+func repositoryOf(reference string) string {
+	slash := strings.LastIndex(reference, "/")
+	if colon := strings.LastIndex(reference, ":"); colon > slash {
+		return reference[:colon]
+	}
+	return reference
 }
 
 func keepsAny(keep map[string]struct{}, references []string) bool {
