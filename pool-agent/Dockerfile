@@ -13,6 +13,7 @@ COPY harness ./harness
 COPY id ./id
 COPY layout ./layout
 COPY proxy ./proxy
+COPY runcca ./runcca
 COPY sandboxconfig ./sandboxconfig
 COPY sandboxuser ./sandboxuser
 COPY gormdb ./gormdb
@@ -22,7 +23,8 @@ COPY pool-agent ./pool-agent
 WORKDIR /src/pool-agent
 RUN --mount=type=cache,target=/go/pkg/mod,sharing=locked \
     --mount=type=cache,target=/root/.cache/go-build,sharing=locked \
-    CGO_ENABLED=0 GOOS=$TARGETOS GOARCH=$TARGETARCH go build -trimpath -ldflags="-s -w" -o /out/discobox-pool-agent ./cmd/discobox-pool-agent
+    CGO_ENABLED=0 GOOS=$TARGETOS GOARCH=$TARGETARCH go build -trimpath -ldflags="-s -w" -o /out/discobox-pool-agent ./cmd/discobox-pool-agent \
+    && CGO_ENABLED=0 GOOS=$TARGETOS GOARCH=$TARGETARCH go build -trimpath -ldflags="-s -w" -o /out/discobox-pool-runc ./cmd/discobox-pool-runc
 
 FROM debian:13-slim
 
@@ -130,8 +132,36 @@ RUN apt-get update \
 COPY --from=build /out/discobox-pool-agent /usr/local/bin/discobox-pool-agent
 COPY pool-agent/image/systemd/discobox-proxy.service /etc/systemd/system/discobox-proxy.service
 
-RUN mkdir -p /var/lib/docker /var/lib/discobox /var/lib/discobox/proxy /etc/discobox \
-    && systemctl enable docker.service discobox-proxy.service
+# The pool-shared builder and its output registry (ADR 0039). Both are taken
+# from their upstream images rather than fetched as release tarballs, so the
+# binary set stays exactly what those projects ship and test together.
+#
+# BuildKit's CNI plugins are the `buildkit-cni-*` binaries in /usr/bin, not a
+# /opt/cni/bin tree: `--oci-worker-net=bridge` generates its own CNI config
+# against them, which is why no cni.json is needed here.
+COPY --from=moby/buildkit:v0.32.2 /usr/bin/buildkitd /usr/local/bin/buildkitd
+COPY --from=moby/buildkit:v0.32.2 /usr/bin/buildctl /usr/local/bin/buildctl
+COPY --from=moby/buildkit:v0.32.2 /usr/bin/buildkit-runc /usr/bin/buildkit-runc
+COPY --from=moby/buildkit:v0.32.2 /usr/bin/buildkit-cni-bridge /usr/bin/buildkit-cni-bridge
+COPY --from=moby/buildkit:v0.32.2 /usr/bin/buildkit-cni-firewall /usr/bin/buildkit-cni-firewall
+COPY --from=moby/buildkit:v0.32.2 /usr/bin/buildkit-cni-host-local /usr/bin/buildkit-cni-host-local
+COPY --from=moby/buildkit:v0.32.2 /usr/bin/buildkit-cni-loopback /usr/bin/buildkit-cni-loopback
+COPY --from=registry:2.8.3 /bin/registry /usr/local/bin/registry
+
+COPY pool-agent/image/systemd/discobox-buildkitd.service /etc/systemd/system/discobox-buildkitd.service
+COPY pool-agent/image/systemd/discobox-registry.service /etc/systemd/system/discobox-registry.service
+COPY pool-agent/image/systemd/discobox-buildkit-mediator.service /etc/systemd/system/discobox-buildkit-mediator.service
+COPY pool-agent/image/registry.yml /etc/discobox/registry.yml
+
+# Installs as `runc` on the directory prepended to buildkitd's PATH, and is what
+# --oci-worker-binary points at. It seeds the pool's MITM CA into every build
+# step, so a user's Dockerfile needs no awareness of the proxy (ADR 0020/0039).
+COPY --from=build /out/discobox-pool-runc /opt/discobox/bin/runc
+
+RUN mkdir -p /var/lib/docker /var/lib/discobox /var/lib/discobox/proxy /etc/discobox /opt/discobox/bin \
+    && systemctl enable docker.service discobox-proxy.service \
+        discobox-buildkitd.service discobox-registry.service \
+        discobox-buildkit-mediator.service
 
 EXPOSE 3002
 VOLUME ["/var/lib/docker", "/var/lib/discobox"]

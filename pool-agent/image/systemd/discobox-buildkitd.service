@@ -1,0 +1,40 @@
+[Unit]
+Description=Discobox Pool BuildKit
+Documentation=https://github.com/obot-platform/discobox
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+# Rendered by pool-agent before systemd boots, so the unit finds a complete
+# configuration on first start rather than racing the agent for it.
+EnvironmentFile=/etc/discobox/buildkitd.env
+# The wrapper directory goes ahead of the real runc, the same PATH-ordering
+# trick ADR 0020 uses in the sandbox. buildkitd is also pointed at the wrapper
+# explicitly below; the PATH entry covers anything that resolves runc by name.
+Environment=PATH=/opt/discobox/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+ExecStartPre=/usr/bin/install -d -m 0700 ${DISCOBOX_BUILDKIT_ROOT}
+# Discard the previous run's network namespaces, keeping the build cache beside
+# them. A netns is a bind mount of nsfs; once this container restarts the mount
+# is gone and only an empty file is left on the state volume, which is ext4. CNI
+# refuses to release those ("unknown FS magic ... ef53") and buildkitd comes up
+# degraded — the symptom is that it stops honouring HTTPS_PROXY and dials
+# registries directly, which in a pool means every build fails to resolve its
+# base image. Nothing of value is lost: a namespace cannot outlive the boot that
+# created it, so this state is never worth persisting.
+ExecStartPre=/bin/sh -c 'rm -rf "${DISCOBOX_BUILDKIT_ROOT}/net"'
+ExecStart=/usr/local/bin/buildkitd \
+    --config /etc/discobox/buildkitd.toml \
+    --root ${DISCOBOX_BUILDKIT_ROOT} \
+    --addr ${DISCOBOX_BUILDKIT_ADDR} \
+    --oci-worker-binary ${DISCOBOX_BUILDKIT_RUNC} \
+    --oci-worker-net bridge \
+    --oci-max-parallelism ${DISCOBOX_BUILDKIT_MAX_PARALLELISM} \
+    --oci-worker-gc \
+    --oci-worker-gc-keepstorage ${DISCOBOX_BUILDKIT_GC_KEEPSTORAGE}
+Restart=on-failure
+RestartSec=2s
+KillMode=mixed
+
+[Install]
+WantedBy=multi-user.target

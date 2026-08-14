@@ -1,0 +1,30 @@
+# Pool build-output registry. This is a store, not a cache: sandboxes push
+# build results here and pull them back, replacing `--load`'s whole-image
+# tarball with a content-addressed transfer (ADR 0030 decision 11).
+#
+# Caching *upstream* pulls is a different job and belongs to the proxy
+# (decision 12), so nothing here is configured as a pull-through mirror —
+# proxy mode would also disable push, which is the one thing this must do.
+#
+# Storage root and listen address are overridden per pool by
+# /etc/discobox/registry.env, which pool-agent renders.
+version: 0.1
+log:
+  level: info
+  formatter: text
+storage:
+  filesystem:
+    rootdirectory: /var/lib/discobox/registry
+  delete:
+    enabled: true
+  cache:
+    blobdescriptor: inmemory
+http:
+  addr: 0.0.0.0:5000
+  headers:
+    X-Content-Type-Options: [nosniff]
+health:
+  storagedriver:
+    enabled: true
+    interval: 10s
+    threshold: 3

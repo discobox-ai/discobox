@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"net"
 	"os"
 	"runtime"
 	"strconv"
@@ -15,6 +16,7 @@ import (
 	"github.com/obot-platform/discobox/id"
 
 	"github.com/obot-platform/discobox/layout"
+	"github.com/obot-platform/discobox/pool-agent/buildkitagent"
 	"github.com/obot-platform/discobox/pool-agent/endpoint"
 	"github.com/obot-platform/discobox/pool-agent/poolauth"
 	"github.com/obot-platform/discobox/pool-agent/proxyagent"
@@ -42,7 +44,14 @@ func RunAgent(ctx context.Context, logger *slog.Logger) error {
 	if err := proxyagent.WriteUnitEnvironment(bootstrap.HostMountPrefix, bootstrap.ControlPlaneURL, bootstrap.ProjectID, bootstrap.PoolID); err != nil {
 		return err
 	}
-	if _, err := proxyagent.PrepareBundle(bootstrap.ProjectID, bootstrap.PoolID); err != nil {
+	bundle, err := proxyagent.PrepareBundle(bootstrap.ProjectID, bootstrap.PoolID)
+	if err != nil {
+		return err
+	}
+	// Render the shared builder's and its registry's configuration for the same
+	// reason and at the same point: both run as systemd units with a clean
+	// environment, and every path they own is pool-scoped (ADR 0039).
+	if err := buildkitagent.Prepare(bootstrap.ProjectID, bootstrap.PoolID, bundle.MITMCAPath); err != nil {
 		return err
 	}
 	systemd, err := agentsystemd.StartNamespace(ctx, logger)
@@ -342,4 +351,42 @@ func availableMemoryBytes() int64 {
 		}
 	}
 	return 0
+}
+
+// RunBuildkitMediator serves the pool's BuildKit mediator. It is the entrypoint
+// for the mediator systemd unit inside the pool container.
+//
+// It is the only route from a sandbox to buildkitd, and it terminates mTLS with
+// the same certificate bundle the proxy uses, so a build is attributed to the
+// sandbox whose client certificate opened the connection (ADR 0039 decision 2).
+func RunBuildkitMediator(ctx context.Context, logger *slog.Logger) error {
+	if logger == nil {
+		logger = slog.Default()
+	}
+	projectID := strings.TrimSpace(os.Getenv("DISCOBOX_PROJECT_ID"))
+	poolID := strings.TrimSpace(os.Getenv("DISCOBOX_POOL_ID"))
+	if projectID == "" || poolID == "" {
+		return fmt.Errorf("mediator unit environment names no pool")
+	}
+	bundle, err := proxyagent.PrepareBundle(projectID, poolID)
+	if err != nil {
+		return fmt.Errorf("prepare mediator certificates: %w", err)
+	}
+	tlsConfig, err := buildkitagent.ClientTLSConfig(bundle.ServerCertPath, bundle.ServerKeyPath, bundle.MTLSCAPath)
+	if err != nil {
+		return err
+	}
+	mediator, err := buildkitagent.NewMediator(logger)
+	if err != nil {
+		return err
+	}
+	defer mediator.Close()
+
+	var listenConfig net.ListenConfig
+	listener, err := listenConfig.Listen(ctx, "tcp", buildkitagent.MediatorListen)
+	if err != nil {
+		return fmt.Errorf("listen on %s: %w", buildkitagent.MediatorListen, err)
+	}
+	logger.Info("buildkit mediator serving", "addr", buildkitagent.MediatorListen)
+	return mediator.Serve(ctx, listener, tlsConfig)
 }

@@ -1,0 +1,19 @@
+[Unit]
+Description=Discobox Pool Build Registry
+Documentation=https://github.com/obot-platform/discobox
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+# Rendered by pool-agent before systemd boots. Storage root and listen address
+# are pool-scoped, so the unit cannot address its own state without this.
+EnvironmentFile=/etc/discobox/registry.env
+ExecStartPre=/usr/bin/install -d -m 0700 ${REGISTRY_STORAGE_FILESYSTEM_ROOTDIRECTORY}
+ExecStart=/usr/local/bin/registry serve /etc/discobox/registry.yml
+Restart=on-failure
+RestartSec=2s
+KillMode=mixed
+
+[Install]
+WantedBy=multi-user.target
