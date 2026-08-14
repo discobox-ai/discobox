@@ -234,6 +234,17 @@ func RunProxy(ctx context.Context, logger *slog.Logger) error {
 	// pools from different projects can share one Docker daemon, and a shared
 	// audit database would interleave their request histories.
 	cfg.DatabaseDSN = resolve(layout.ProxyAuditDB(projectID, poolID))
+	// Registry blobs are content-addressed and immutable, so caching them is
+	// safe and is where nearly all the bytes are. A pool shares one set of pull
+	// credentials, which is what makes a pool-wide blob cache sound: the digest
+	// carries no notion of who was authorized for it.
+	//
+	// Scoped to digest-bearing URLs only. There is no TTL here — correct for
+	// immutable blobs, wrong for anything else — so a mutable tag manifest must
+	// never be admitted.
+	cfg.Cache.Enabled = true
+	cfg.Cache.ContentAware = true
+	cfg.Cache.Patterns = []string{`^/v2/.*/blobs/sha256:[a-fA-F0-9]{64}$`, `/blobs/sha256/[a-fA-F0-9]{2}/[a-fA-F0-9]{64}/data$`}
 	cfg.Cache.Dir = resolve(layout.ProxyCache(projectID, poolID))
 	cfg.Recording.StreamDir = resolve(layout.ProxyStreams(projectID, poolID))
 	cfg.Recording.BodyDir = resolve(layout.ProxyBodies(projectID, poolID))
