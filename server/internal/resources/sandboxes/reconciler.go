@@ -237,10 +237,17 @@ func (r *SandboxReconciler) ensure(ctx context.Context, sandbox *model.Sandbox, 
 		return reconcile.Result{}, err
 	}
 
-	if sandbox.State == model.SandboxStateAwaitingSource {
-		// Parked waiting for the client's push. The generation is fully handled
-		// — there is nothing further to do until the client acts — so record it
-		// as observed and arm the give-up timer off StateChangedAt.
+	// Parked waiting for the client's push. The generation is fully handled —
+	// there is nothing further to do until the client acts — so record it as
+	// observed and arm the give-up timer off StateChangedAt.
+	//
+	// The question is whether the push is still outstanding, not what state the
+	// sandbox is in: `awaiting_source` is where the resume starts from, and
+	// createSandbox above leaves it in place rather than clearing it, so keying
+	// on the state re-parked the sandbox it had just materialized the source
+	// into. It then sat at `awaiting_source` forever — running, with its source
+	// in place, and reported as still provisioning.
+	if awaitingSourcePush(sandbox) {
 		sandbox.ObservedGeneration = generation
 		if err := r.update(ctx, sandbox, generation); err != nil {
 			return reconcile.Result{}, err
