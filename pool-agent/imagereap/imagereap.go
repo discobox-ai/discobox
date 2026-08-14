@@ -1,5 +1,5 @@
 // Package imagereap reclaims disk on a Docker daemon by removing Discobox
-// images that nothing uses any more (ADR 0039).
+// images that nothing uses any more (ADR 0040).
 //
 // Two things make an image reclaimable, and both are required. The image must
 // carry harness.ReclaimLabel, which is the boundary of what Discobox is entitled

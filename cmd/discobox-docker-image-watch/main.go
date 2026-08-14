@@ -141,7 +141,7 @@ const missingImageCheckInterval = 15 * time.Second
 //
 // Rebuilding on a file change alone is not enough, because a built image can
 // leave without any file changing: image reclamation removes a superseded one
-// (ADR 0039), and a developer's own `docker system prune` removes all of them.
+// (ADR 0040), and a developer's own `docker system prune` removes all of them.
 // Nothing then rebuilds it, while `.env` and the manifest keep naming it, so
 // every pool reconcile fails against an image that cannot come back. This is the
 // level-triggered half the watcher was missing: what it published must still

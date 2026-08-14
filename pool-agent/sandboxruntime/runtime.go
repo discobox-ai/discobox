@@ -1140,7 +1140,7 @@ func (r *DockerSandboxRuntime) reconcileSandboxVolumes(ctx context.Context, logg
 }
 
 // WatchImages reclaims unused Discobox images from this pool's Docker daemon on
-// a slow interval (ADR 0039).
+// a slow interval (ADR 0040).
 //
 // The pool agent owns this daemon, so it is the thing that reclaims it: images
 // land here by sync and by pull, they persist in the pool's /var/lib/docker

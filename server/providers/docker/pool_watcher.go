@@ -55,7 +55,7 @@ func startBackgroundWatchers(driver *LocalDriver, engine *dockerworker.Engine, m
 
 // reclaimImages reclaims unused Discobox images from the daemon this provider
 // instance hosts its pools on, on a slow interval, until the driver closes
-// (ADR 0039).
+// (ADR 0040).
 //
 // This is the daemon `task dev` rebuilds onto and the one an upgrade pulls onto,
 // so it accumulates a superseded image per build and per upgrade with nothing

@@ -133,7 +133,7 @@ type Config struct {
 	// Docker daemon before the pool-agent container is reconciled.
 	DevelopmentImageSync *DevelopmentImageSynchronizer `json:"-"`
 	// ImageRetention overrides how long the pool's own Docker daemon keeps an
-	// unused Discobox image (ADR 0039). Zero leaves the pool agent on its
+	// unused Discobox image (ADR 0040). Zero leaves the pool agent on its
 	// default, which is deliberate: an unset override must serialize away here
 	// so it does not change configRevision and recreate every existing pool.
 	ImageRetention time.Duration `json:"imageRetention,omitempty"`

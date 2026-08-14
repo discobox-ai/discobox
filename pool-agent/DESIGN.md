@@ -23,7 +23,7 @@ from the future in-sandbox `sandbox-agent` API.
 | `sandboxruntime` | Local sandbox runtime implementations used by the pool host server. Provisions the five primary volumes (`/.discobox/{data,cache,config,sources,secrets}`) and mounts them into every sandbox; `cache` is the pool-local directory shared across the pool's sandboxes. Also binds each clone-delivered local source's real origin directory, read-only, onto `/.discobox/origins/<slug>` (ADR 0026). In-sandbox path wiring for the primary volumes is delegated to the sandbox-agent init flow (ADR 0007). |
 | `proxyagent` | Worker-scoped proxy wiring: certificate bundle preparation, the `proxy` subcommand entrypoint, and per-sandbox client material staging. |
 | `systemd` | Linux/systemd namespace startup and child reaping helpers, with non-Linux stubs. |
-| `imagereap` | Rules for reclaiming unused Discobox images from a Docker daemon (ADR 0039). Shared with the server, which applies them to the daemon pool containers run on; see [Image Reclamation](#image-reclamation). |
+| `imagereap` | Rules for reclaiming unused Discobox images from a Docker daemon (ADR 0040). Shared with the server, which applies them to the daemon pool containers run on; see [Image Reclamation](#image-reclamation). |
 
 ## Startup Flow
 
@@ -391,7 +391,7 @@ plane that may be unreachable.
 daemon pool containers run *on* the same way. An image goes when it carries
 `harness.ReclaimLabel`, no container refers to it, and it arrived here longer
 ago than the retention window. Arrival is the daemon's `LastTagTime`, not
-`Created`, which is when whoever published the image built it; see ADR 0039.
+`Created`, which is when whoever published the image built it; see ADR 0040.
 
 The window arrives as `DISCOBOX_IMAGE_RETENTION` in the container environment,
 defaulting to 24h to match `sandboxVolumeRetention`. The loop's own interval is
@@ -403,7 +403,7 @@ keep pace with a rebuild loop that supersedes an image every few minutes.
 Usage counts stopped containers, so a stopped sandbox keeps its image. This
 pool needs no keep set of its own: everything it still needs has a container,
 and an image synced or pulled but not yet run is covered by retention, by the
-rule that the newest image of a repository is never reclaimed (ADR 0039 §5), and
+rule that the newest image of a repository is never reclaimed (ADR 0040 §5), and
 by simply being re-fetched if it does age out.
 
 ## Boundary Rules

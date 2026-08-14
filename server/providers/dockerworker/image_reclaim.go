@@ -12,7 +12,7 @@ import (
 )
 
 // ReclaimImages removes the Discobox images on cli that nothing uses and that
-// have outlived the retention window (ADR 0039).
+// have outlived the retention window (ADR 0040).
 //
 // It lives here for the same reason image sync does: a driver provides
 // connectivity, and the engine owns what is on the daemon behind it. That makes

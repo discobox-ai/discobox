@@ -113,7 +113,7 @@ The engine also reclaims what it put on a daemon. Discobox images are labeled at
 build time (`harness.ReclaimLabel`), and a labeled image is removed once no
 container refers to it and it has been on the daemon longer than the retention
 window. The rules live in `imagereap`, shared with the pool agent, which applies
-the same pass to its own daemon; ADR 0039 covers why local arrival time rather
+the same pass to its own daemon; ADR 0040 covers why local arrival time rather
 than the image's `Created` timestamp decides staleness.
 
 The window is 24h, or 15m when `DevelopmentImageSync` is set — the image watcher
@@ -142,7 +142,7 @@ every harness image is built `FROM`.
 
 That keep set is a startup snapshot, so it cannot be the only protection: an
 image built after the server started is in no keep set at all. `imagereap` never
-reclaims the newest image of a repository for exactly this reason — see ADR 0039
+reclaims the newest image of a repository for exactly this reason — see ADR 0040
 §5.
 
 Pool runtime lifecycle is not the same as pool row deletion. The engine
