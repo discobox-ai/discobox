@@ -242,7 +242,12 @@ window's, applied to whichever pane events route to.
 The chrome — the header with the sandbox id, the hints line, the borders — is
 selectable too (`chrome.go`): a press no pane claims drives a second
 `selection.Model` over the composed frame itself, drawn back into cells
-(`parseChrome`), flat rows with nothing wrapped. The word rules make the
+(`parseChrome`), flat rows with nothing wrapped. Before the selection, the
+press means what the cell means (`focusChromeAt`): a tab label selects its
+tab — the strip records where each label landed as it is drawn
+(`tabbedEdge`, `Model.tabSpans`) — and any other cell of a pane's box
+focuses that pane; the gesture then continues into the chrome selection, so
+border text stays drag-selectable. The word rules make the
 sandbox id one double-click. One selection is on screen at a time — a pane
 press clears the chrome's and vice versa — and a chrome selection whose rows
 no longer read back identically is cleared rather than left highlighting

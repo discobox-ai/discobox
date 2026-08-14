@@ -462,6 +462,10 @@ func (m *Model) viewShellBox(width int, focused bool) string {
 // a window of tabs around it is shown with an ellipsis at the clipped end.
 func (m *Model) tabbedEdge(edge lipgloss.Style, inner int) string {
 	rule := func(n int) string { return strings.Repeat("─", max(n, 0)) }
+	// The strip is a click target as well as a label row, so where each tab
+	// lands is recorded as it is drawn — the drawing loop is the one place
+	// that knows. Columns are box-relative: the corner is cell zero.
+	m.tabSpans = m.tabSpans[:0]
 	labels := make([]string, len(m.shells))
 	widths := make([]int, len(m.shells))
 	for i := range m.shells {
@@ -523,6 +527,7 @@ func (m *Model) tabbedEdge(edge lipgloss.Style, inner int) string {
 		out.WriteString(edge.Render("["))
 		out.WriteString(st.Render(" " + labels[i] + " "))
 		out.WriteString(edge.Render("]"))
+		m.tabSpans = append(m.tabSpans, tabSpan{index: i, start: 1 + cells, end: cells + widths[i]})
 		cells += widths[i]
 	}
 	if hi < len(labels)-1 {

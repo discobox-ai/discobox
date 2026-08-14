@@ -98,6 +98,11 @@ type Model struct {
 	chromeCapture bool
 	lastFrame     string
 
+	// tabSpans is where each visible tab label sits in the shell box's top
+	// border, recorded as the strip is drawn (tabbedEdge) so a click on
+	// [2 bash] can mean tab 2. Box-relative columns.
+	tabSpans []tabSpan
+
 	// leaderKey is the pane's prefix; empty takes the default. See Model.leader.
 	leaderKey string
 

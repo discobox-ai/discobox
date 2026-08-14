@@ -77,6 +77,58 @@ func TestChromeAndPaneSelectionsAreExclusive(t *testing.T) {
 	}
 }
 
+// Clicking a tab's label in the strip selects that tab, the way the leader's
+// digits do.
+func TestClickingATabLabelSelectsIt(t *testing.T) {
+	ds := newFakeSource(testSandboxes()...)
+	d, m, _ := openWorkspace(t, ds, "enter")
+	for want := 1; want <= 2; want++ {
+		d.key("ctrl+a")
+		d.key("s")
+		d.wait("the tabs", func() bool { return len(m.shells) == want })
+	}
+	d.wait("the second tab focused", func() bool { return m.onShells && m.activeShell == 1 })
+
+	// Drawing the strip is what records where the labels are.
+	_ = rawFrame(m)
+	if len(m.tabSpans) != 2 {
+		t.Fatalf("tabSpans = %v, want both tabs", m.tabSpans)
+	}
+	span := m.tabSpans[0]
+	x := m.width/2 + (span.start+span.end)/2
+	d.dispatch(tea.MouseClickMsg{X: x, Y: 1, Button: tea.MouseLeft})
+	d.dispatch(tea.MouseReleaseMsg{X: x, Y: 1, Button: tea.MouseLeft})
+	if !m.onShells || m.activeShell != 0 {
+		t.Fatalf("onShells=%v activeShell=%d, want the clicked tab", m.onShells, m.activeShell)
+	}
+}
+
+// Clicking anywhere on a pane's box — its border, its title — focuses that
+// pane, not just clicks on its grid.
+func TestClickingABorderFocusesItsPane(t *testing.T) {
+	ds := newFakeSource(testSandboxes()...)
+	d, m, _ := openWorkspace(t, ds, "enter")
+	d.key("ctrl+a")
+	d.key("s")
+	d.wait("the tab", func() bool { return len(m.shells) == 1 })
+	d.wait("the tab focused", func() bool { return m.onShells })
+
+	// The terminal's title row, left of the split.
+	d.dispatch(tea.MouseClickMsg{X: 2, Y: 1, Button: tea.MouseLeft})
+	d.dispatch(tea.MouseReleaseMsg{X: 2, Y: 1, Button: tea.MouseLeft})
+	if m.onShells {
+		t.Fatal("clicking the terminal's border should focus the terminal")
+	}
+
+	// The shell box's bottom border, right of the split.
+	x, y := m.width/2+2, m.paneRows()+2
+	d.dispatch(tea.MouseClickMsg{X: x, Y: y, Button: tea.MouseLeft})
+	d.dispatch(tea.MouseReleaseMsg{X: x, Y: y, Button: tea.MouseLeft})
+	if !m.onShells {
+		t.Fatal("clicking the shell box's border should focus the tab")
+	}
+}
+
 // The copy chords work over a chrome selection the way they do over a
 // pane's, and are swallowed rather than reaching the sandbox.
 func TestCopyChordOverAChromeSelection(t *testing.T) {

@@ -587,8 +587,13 @@ func (m *Model) routeMouse(msg tea.MouseMsg) tea.Cmd {
 		p, x, y = m.paneAt(mouse.X, mouse.Y)
 	}
 	if p == nil {
-		// Nobody's grid, so it is the chrome's: the header, the hints, the
-		// borders are selectable text too.
+		// Nobody's grid — but a press may still point at something: a tab
+		// label means that tab, a pane's border means that pane. The gesture
+		// then continues into the chrome's selection either way, so border
+		// text stays drag-selectable.
+		if click, ok := msg.(tea.MouseClickMsg); ok && click.Button == tea.MouseLeft {
+			m.focusChromeAt(click.X, click.Y)
+		}
 		return m.chromeMouse(msg)
 	}
 	switch ev := msg.(type) {
@@ -651,6 +656,58 @@ func (m *Model) focusPane(p *pane) {
 	if i := m.shellIndex(p); i >= 0 {
 		m.onShells, m.activeShell = true, i
 	}
+}
+
+// tabSpan is where one tab label sits in the shell box's top border, in
+// box-relative columns, both ends inclusive.
+type tabSpan struct {
+	index      int
+	start, end int
+}
+
+// focusChromeAt applies a press on the chrome to what the cell means: a tab
+// label is that tab, and any other cell of a pane's box is that pane.
+func (m *Model) focusChromeAt(x, y int) {
+	if m.overlay != nil {
+		// One box with nothing beside it; a border press chooses nothing.
+		return
+	}
+	if i := m.tabAt(x, y); i >= 0 {
+		m.onShells, m.activeShell = true, i
+		return
+	}
+	if p := m.paneBoxAt(x, y); p != nil {
+		m.focusPane(p)
+	}
+}
+
+// tabAt is the tab whose label is under a screen position, -1 for none. The
+// strip is the shell box's top border row, and the spans were recorded when
+// it was drawn.
+func (m *Model) tabAt(x, y int) int {
+	if y != 1 || len(m.shells) == 0 {
+		return -1
+	}
+	rel := x - m.width/2
+	for _, s := range m.tabSpans {
+		if rel >= s.start && rel <= s.end {
+			return s.index
+		}
+	}
+	return -1
+}
+
+// paneBoxAt is the pane whose box — border and title row included — is under
+// a screen position: the body rows between the header above and the hints
+// below, split down the middle when there are tabs.
+func (m *Model) paneBoxAt(x, y int) *pane {
+	if y < 1 || y > m.paneRows()+2 {
+		return nil
+	}
+	if len(m.shells) == 0 || x < m.width/2 {
+		return m.terminal
+	}
+	return m.shells[min(m.activeShell, len(m.shells)-1)]
 }
 
 // copyText puts selected text on the clipboard: the OS clipboard first, and
