@@ -163,11 +163,11 @@ func TestConfigureModelDisableDefaultUnsetsFirst(t *testing.T) {
 // The footer must stay a constant height whether or not a status is showing, so
 // the list above it never shifts. It is always exactly two trailing lines.
 func TestConfigureModelFooterHeightIsStable(t *testing.T) {
-	m := configureTestModel(apimodel.HarnessConfig{ID: "h1", Name: "opencode", CreatedAt: time.Unix(1, 0)})
+	m := configureTestModel(apimodel.HarnessConfig{ID: "h1", Name: "codex", CreatedAt: time.Unix(1, 0)})
 
 	noStatus := m.View().Content
 
-	m.status = "enable opencode before making it the default"
+	m.status = "enable codex before making it the default"
 	m.statusIsError = true
 	withError := m.View().Content
 
@@ -175,7 +175,7 @@ func TestConfigureModelFooterHeightIsStable(t *testing.T) {
 		t.Fatalf("view height changed with status: no-status=%d with-error=%d", a, b)
 	}
 	msg, _ := m.footerLines()
-	if !strings.Contains(msg, "✗") || !strings.Contains(msg, "enable opencode") {
+	if !strings.Contains(msg, "✗") || !strings.Contains(msg, "enable codex") {
 		t.Fatalf("error footer = %q, want a ✗-prefixed error bar", msg)
 	}
 }

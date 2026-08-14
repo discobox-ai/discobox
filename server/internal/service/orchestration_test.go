@@ -258,13 +258,13 @@ func TestCreateSandboxPinsDefaultHarnessConfig(t *testing.T) {
 
 	harness := &model.HarnessConfig{
 		ProjectID: projectID,
-		Slug:      "opencode",
-		Name:      "OpenCode",
-		Image:     "discobox-harness-opencode:local",
+		Slug:      "codex",
+		Name:      "Codex CLI",
+		Image:     "discobox-harness-codex:local",
 		// Only configured harnesses are selectable, so a sandbox can pin this one.
 		Configured: true,
 		RunCommand: []string{
-			"opencode",
+			"codex",
 		},
 	}
 	if err := st.CreateHarnessConfig(ctx, harness); err != nil {

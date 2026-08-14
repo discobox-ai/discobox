@@ -117,7 +117,7 @@ func TestApplyHarnessConfigSecretsOptionalUnboundIsAllowed(t *testing.T) {
 	ctx := context.Background()
 	svc, st := newBindingFixture(t)
 	config := &model.HarnessConfig{
-		ProjectID: "project-1", Slug: "opencode", Name: "opencode", RunCommand: []string{"opencode"},
+		ProjectID: "project-1", Slug: "claude-code", Name: "claude-code", RunCommand: []string{"claude"},
 		Secrets: []model.HarnessConfigSecret{{Name: "ANTHROPIC_API_KEY", Required: false}},
 	}
 	if err := st.CreateHarnessConfig(ctx, config); err != nil {

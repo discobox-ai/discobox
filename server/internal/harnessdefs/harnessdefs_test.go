@@ -10,7 +10,7 @@ func TestSeedsCoverIncludedHarnesses(t *testing.T) {
 	for _, seed := range seeds {
 		bySlug[seed.Slug] = seed
 	}
-	for _, slug := range []string{"codex", "claude-code", "opencode"} {
+	for _, slug := range []string{"codex", "claude-code"} {
 		seed, ok := bySlug[slug]
 		if !ok || seed.Image == "" || seed.Name == "" {
 			t.Fatalf("seed %q = %#v, want a named seed with an image", slug, seed)
@@ -22,7 +22,6 @@ func TestImageEnvVar(t *testing.T) {
 	cases := map[string]string{
 		"codex":       "DISCOBOX_HARNESS_CODEX_IMAGE",
 		"claude-code": "DISCOBOX_HARNESS_CLAUDE_CODE_IMAGE",
-		"opencode":    "DISCOBOX_HARNESS_OPENCODE_IMAGE",
 	}
 	for id, want := range cases {
 		if got := ImageEnvVar(id); got != want {
@@ -41,8 +40,8 @@ func TestSeedsApplyImageOverrides(t *testing.T) {
 		t.Fatalf("codex image = %q, want override applied", got)
 	}
 	// Harnesses without an override keep their baked-in image.
-	if got := bySlug["opencode"].Image; got == "discobox-harness-codex:dev-abc" || got == "" {
-		t.Fatalf("opencode image = %q, want baked-in", got)
+	if got := bySlug["claude-code"].Image; got == "discobox-harness-codex:dev-abc" || got == "" {
+		t.Fatalf("claude-code image = %q, want baked-in", got)
 	}
 }
 
@@ -52,8 +51,8 @@ func TestImageOverridesFromEnv(t *testing.T) {
 	if overrides["codex"] != "discobox-harness-codex:dev-xyz" {
 		t.Fatalf("overrides[codex] = %q, want trimmed value", overrides["codex"])
 	}
-	if _, ok := overrides["opencode"]; ok {
-		t.Fatalf("overrides = %v, want no opencode entry", overrides)
+	if _, ok := overrides["claude-code"]; ok {
+		t.Fatalf("overrides = %v, want no claude-code entry", overrides)
 	}
 }
 

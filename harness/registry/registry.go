@@ -7,7 +7,6 @@ import (
 	"github.com/obot-platform/discobox/harness"
 	claudecode "github.com/obot-platform/discobox/harness/claude-code"
 	codexcli "github.com/obot-platform/discobox/harness/codex-cli"
-	"github.com/obot-platform/discobox/harness/opencode"
 )
 
 type Installer struct {
@@ -20,7 +19,6 @@ func DefaultDrivers() []harness.Driver {
 	return []harness.Driver{
 		claudecode.Driver{},
 		codexcli.Driver{},
-		opencode.Driver{},
 	}
 }
 

@@ -100,11 +100,9 @@ tasks:
         vars: { HARNESS: codex }
       - task: build:harness-image
         vars: { HARNESS: claude-code }
-      - task: build:harness-image
-        vars: { HARNESS: opencode }
 
   build:harness-image:
-    desc: Build one harness-specific sandbox image (HARNESS=codex|claude-code|opencode, SANDBOX_AGENT_IMAGE defaults to the local base)
+    desc: Build one harness-specific sandbox image (HARNESS=codex|claude-code, SANDBOX_AGENT_IMAGE defaults to the local base)
     requires:
       vars: [HARNESS]
     vars:

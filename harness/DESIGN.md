@@ -39,13 +39,12 @@ sandbox terminals.
   writes files and collected secret values to `ConfigureOutputPath`; definitions
   without interactive setup leave it nil. Configure files use the same
   home-relative contract as all harness files; configure commands run from the
-  sandbox workdir and must use `$HOME` when invoking one of those files. All
-  three included harnesses support config mode — see
+  sandbox workdir and must use `$HOME` when invoking one of those files. Both
+  included harnesses support config mode — see
   [Configure flows](#configure-flows).
 - Provider-specific implementations live in one folder per harness:
   - `claude-code`
   - `codex-cli`
-  - `opencode`
 - `registry` selects the driver from the image harness type ID, can install all
   drivers for hook/bootstrap workflows, and exposes
   `Definitions()` for the control plane to surface built-in harness configs.
@@ -58,9 +57,6 @@ subject to repo trust prompts or user/project override:
 - Claude Code: `/etc/claude-code/managed-settings.json` on Linux/WSL.
 - Codex CLI: `/.codex/hooks.json` as a system hook layer. System hooks are
   treated as managed and trusted by policy.
-- opencode: `/etc/opencode/opencode.json` as managed config, plus
-  `/etc/opencode/plugins/` with `OPENCODE_CONFIG_DIR=/etc/opencode` for the
-  launched terminal so the root-owned plugin directory is loaded.
 
 Drivers must be idempotent and preserve unrelated settings where the harness uses
 a single shared JSON object.
@@ -150,17 +146,3 @@ key is the default choice. Every path ends in a `codex exec` check with the
 chosen key in the environment; a failed check returns to the prompt. Nothing in
 this flow performs a ChatGPT login, so there is no auth file to move aside as the
 claude-code flow does.
-
-### opencode
-
-`opencode/configure.sh` settles the two providers independently — Anthropic and
-OpenAI — and requires at least one. Each provider offers keep / replace / remove
-when the seed lists it, and a skippable prompt when it does not. Because output
-is authoritative, a provider left out is removed from the harness config.
-
-Each key is checked alone, with the other provider's variable unset, so a key
-cannot pass on the strength of the other one. The verification model is
-discovered rather than hardcoded: `opencode models` lists only the providers
-whose credential is present in the environment, so asking with just the one key
-set both picks a model that exists in this image's opencode and proves the key is
-wired to the expected provider.

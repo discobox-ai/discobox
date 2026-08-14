@@ -3,7 +3,7 @@
 A test-only harness whose configure flow succeeds instantly without any real
 credential. It exists to exercise and troubleshoot the harness configure
 pipeline end to end — the only other way to drive that pipeline is a real
-harness (codex, claude-code, opencode), which stops at an interactive
+harness (codex, claude-code), which stops at an interactive
 credential prompt.
 
 One run of `configure` against this image proves the whole chain:

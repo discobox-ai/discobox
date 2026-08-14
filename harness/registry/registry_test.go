@@ -12,7 +12,6 @@ import (
 	"github.com/obot-platform/discobox/harness"
 	claudecode "github.com/obot-platform/discobox/harness/claude-code"
 	codexcli "github.com/obot-platform/discobox/harness/codex-cli"
-	"github.com/obot-platform/discobox/harness/opencode"
 )
 
 func TestDefinitionsCoverKnownHarnesses(t *testing.T) {
@@ -27,7 +26,7 @@ func TestDefinitionsCoverKnownHarnesses(t *testing.T) {
 		}
 		byID[definition.ID] = definition
 	}
-	for _, id := range []string{"claude-code", "codex", "opencode"} {
+	for _, id := range []string{"claude-code", "codex"} {
 		_, ok := byID[id]
 		if !ok {
 			t.Fatalf("missing definition %q", id)
@@ -51,18 +50,8 @@ func TestInstallerWritesManagedHarnessFiles(t *testing.T) {
 
 	assertJSONPath(t, filepath.Join(root, "etc/claude-code/managed-settings.json"), "hooks")
 	assertJSONPath(t, filepath.Join(root, ".codex/hooks.json"), "hooks")
-	assertJSONPath(t, filepath.Join(root, "etc/opencode/opencode.json"), "$schema")
 	assertMode(t, filepath.Join(root, "etc/claude-code/managed-settings.json"), 0o644)
 	assertMode(t, filepath.Join(root, ".codex/hooks.json"), 0o644)
-	assertMode(t, filepath.Join(root, "etc/opencode/opencode.json"), 0o644)
-	if env["OPENCODE_CONFIG_DIR"] != filepath.Join(root, "etc/opencode") {
-		t.Fatalf("OPENCODE_CONFIG_DIR = %q", env["OPENCODE_CONFIG_DIR"])
-	}
-	pluginPath := filepath.Join(root, "etc/opencode/plugins/discobox-hook-publish.js")
-	if _, err := os.Stat(pluginPath); err != nil {
-		t.Fatalf("opencode plugin missing: %v", err)
-	}
-	assertMode(t, pluginPath, 0o644)
 }
 
 func TestInstallerPreservesExistingConfigAndIsIdempotent(t *testing.T) {
@@ -93,11 +82,6 @@ func TestInstallerPreservesExistingConfigAndIsIdempotent(t *testing.T) {
     ]
   }
 }`)
-	writeFile(t, filepath.Join(root, "etc/opencode/opencode.json"), `{
-  "$schema": "https://opencode.ai/config.json",
-  "theme": "system"
-}`)
-
 	installer := Installer{
 		Drivers:     DefaultDrivers(),
 		ManagedRoot: root,
@@ -116,7 +100,6 @@ func TestInstallerPreservesExistingConfigAndIsIdempotent(t *testing.T) {
 	}
 	assertMode(t, filepath.Join(root, "etc/claude-code/managed-settings.json"), 0o644)
 	assertMode(t, filepath.Join(root, ".codex/hooks.json"), 0o644)
-	assertMode(t, filepath.Join(root, "etc/opencode/opencode.json"), 0o644)
 
 	claude := first["etc/claude-code/managed-settings.json"]
 	if _, ok := claude["permissions"].(map[string]any); !ok {
@@ -131,11 +114,6 @@ func TestInstallerPreservesExistingConfigAndIsIdempotent(t *testing.T) {
 	}
 	assertCommandHook(t, codex, "Stop", "existing-codex-hook")
 	assertCommandHook(t, codex, "Stop", "discobox-hook-publish --provider codex-cli --event Stop")
-
-	opencode := first["etc/opencode/opencode.json"]
-	if opencode["theme"] != "system" {
-		t.Fatalf("opencode config lost existing theme: %#v", opencode)
-	}
 }
 
 func TestDriverForHarnessSelectsByImageType(t *testing.T) {
@@ -145,7 +123,6 @@ func TestDriverForHarnessSelectsByImageType(t *testing.T) {
 	}{
 		{harness: harness.Harness{TypeID: "claude-code"}, want: claudecode.Driver{}.ID()},
 		{harness: harness.Harness{TypeID: "codex"}, want: codexcli.Driver{}.ID()},
-		{harness: harness.Harness{TypeID: "opencode"}, want: opencode.Driver{}.ID()},
 	}
 	for _, tc := range cases {
 		got := DriverForHarness(tc.harness)
@@ -215,7 +192,6 @@ func readJSONFiles(t *testing.T, root string) map[string]map[string]any {
 	paths := []string{
 		"etc/claude-code/managed-settings.json",
 		".codex/hooks.json",
-		"etc/opencode/opencode.json",
 	}
 	result := map[string]map[string]any{}
 	for _, path := range paths {

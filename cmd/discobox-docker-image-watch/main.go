@@ -55,7 +55,6 @@ type harnessImage struct {
 var harnessImages = []harnessImage{
 	{name: "codex", dir: "codex-cli"},
 	{name: "claude-code", dir: "claude-code"},
-	{name: "opencode", dir: "opencode"},
 }
 
 func main() {

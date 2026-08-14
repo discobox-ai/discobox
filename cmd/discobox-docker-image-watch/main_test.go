@@ -26,8 +26,8 @@ func loadDockerImageSpecs(t *testing.T) ([]imageSpec, string) {
 
 func TestDockerImageSpecsBuildAllDevImagesAndUpdateEnv(t *testing.T) {
 	specs, _ := loadDockerImageSpecs(t)
-	if len(specs) != 5 {
-		t.Fatalf("image specs = %d, want worker, sandbox, and three harnesses", len(specs))
+	if len(specs) != 4 {
+		t.Fatalf("image specs = %d, want worker, sandbox, and two harnesses", len(specs))
 	}
 
 	gotNames := make([]string, 0, len(specs))
@@ -42,7 +42,7 @@ func TestDockerImageSpecsBuildAllDevImagesAndUpdateEnv(t *testing.T) {
 			gotEnvKeys[spec.envDigestKey] = true
 		}
 	}
-	wantNames := []string{"pool-agent", "sandbox-agent", "harness-codex", "harness-claude-code", "harness-opencode"}
+	wantNames := []string{"pool-agent", "sandbox-agent", "harness-codex", "harness-claude-code"}
 	if !reflect.DeepEqual(gotNames, wantNames) {
 		t.Fatalf("image build order = %#v, want %#v", gotNames, wantNames)
 	}
@@ -53,7 +53,6 @@ func TestDockerImageSpecsBuildAllDevImagesAndUpdateEnv(t *testing.T) {
 		"DISCOBOX_DEFAULT_SANDBOX_IMAGE_DIGEST",
 		"DISCOBOX_HARNESS_CODEX_IMAGE",
 		"DISCOBOX_HARNESS_CLAUDE_CODE_IMAGE",
-		"DISCOBOX_HARNESS_OPENCODE_IMAGE",
 	} {
 		if !gotEnvKeys[key] {
 			t.Errorf("watcher does not update %s", key)
@@ -64,7 +63,7 @@ func TestDockerImageSpecsBuildAllDevImagesAndUpdateEnv(t *testing.T) {
 func TestDockerImageSpecsIncludeIndependentlyWatchedHarnesses(t *testing.T) {
 	specs, repoRoot := loadDockerImageSpecs(t)
 	sandboxDockerfile := filepath.Join(repoRoot, "sandbox-agent", "Dockerfile")
-	for _, name := range []string{"codex", "claude-code", "opencode"} {
+	for _, name := range []string{"codex", "claude-code"} {
 		var found *imageSpec
 		for i := range specs {
 			if specs[i].name == "harness-"+name {
@@ -104,7 +103,6 @@ func TestUpdateEnvUpdatesAllImageReferencesWithoutDroppingUserValues(t *testing.
 		"DISCOBOX_DEFAULT_SANDBOX_IMAGE_DIGEST": "sha256:sandbox",
 		"DISCOBOX_HARNESS_CODEX_IMAGE":          "discobox-harness-codex:dev-codex",
 		"DISCOBOX_HARNESS_CLAUDE_CODE_IMAGE":    "discobox-harness-claude-code:dev-claude",
-		"DISCOBOX_HARNESS_OPENCODE_IMAGE":       "discobox-harness-opencode:dev-opencode",
 		devimage.SyncEnv:                        "true",
 		devimage.ManifestEnv:                    "/tmp/discobox-dev-images.json",
 	}
@@ -137,7 +135,7 @@ func TestHarnessSpecsThreadSandboxAgentBase(t *testing.T) {
 			if spec.sandboxBase {
 				t.Fatalf("%s should not mark itself as a sandbox-base consumer", spec.name)
 			}
-		case "harness-codex", "harness-claude-code", "harness-opencode":
+		case "harness-codex", "harness-claude-code":
 			if !spec.sandboxBase {
 				t.Fatalf("%s does not thread the sandbox-agent base image", spec.name)
 			}
@@ -158,7 +156,7 @@ func TestSandboxAgentFirstOrdersBaseBeforeHarnesses(t *testing.T) {
 	in := []imageSpec{
 		{name: "harness-codex", sandboxBase: true},
 		{name: "sandbox-agent"},
-		{name: "harness-opencode", sandboxBase: true},
+		{name: "harness-claude-code", sandboxBase: true},
 	}
 	got := sandboxAgentFirst(in)
 	if got[0].name != sandboxAgentSpecName {
