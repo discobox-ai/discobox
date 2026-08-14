@@ -38,6 +38,24 @@ func splitPoolDirtyID(id string) (projectID, poolID string, err error) {
 // under the same pool identity with a fresh bootstrap token.
 var poolRegistrationTimeout = 2 * time.Minute
 
+// poolHeartbeatTimeout is how long a registered pool may go without a status
+// heartbeat before the reconciler reads it as `offline`. The agent reports
+// every 30s (pool-agent statusReportInterval), so this is three missed beats:
+// long enough that one slow report or dropped connection does not flap the
+// state, short enough that a dead host is called out within a scan or two.
+var poolHeartbeatTimeout = 90 * time.Second
+
+// heartbeatStale reports a pool whose agent has stopped answering: it has
+// heartbeated before, and the last beat is older than poolHeartbeatTimeout. A
+// pool that has never heartbeated is not stale — it is still registering, and
+// that path has its own timeout (registrationExpired).
+func heartbeatStale(pool *model.Pool) bool {
+	if poolHeartbeatTimeout <= 0 || pool.LastSeenAt == nil {
+		return false
+	}
+	return time.Since(*pool.LastSeenAt) > poolHeartbeatTimeout
+}
+
 // PoolReconciler converges one pool's runtime host toward its desired state.
 // It implements reconcile.Reconciler (and reconcile.Scanner as the drift and
 // lost-mark backstop).
@@ -111,9 +129,12 @@ func (r *PoolReconciler) reconcileActive(ctx context.Context, pool *model.Pool, 
 	}
 
 	// Converged with no recorded error means this generation has already been
-	// brought up once and we are re-checking it, not launching it.
+	// brought up once and we are re-checking it, not launching it. The pending
+	// stamp is for launches only: a created pool's runtime keeps serving what
+	// it already hosts while a spec change or retry converges, so repainting
+	// it `pending` would misreport a live host as not-yet-up.
 	alreadySuccessful := pool.Converged() && pool.ErrorMessage == nil
-	if !alreadySuccessful {
+	if !alreadySuccessful && !pool.EverCreated() {
 		pool.SetState(model.PoolStatePending)
 		if err := r.update(ctx, pool, generation); err != nil {
 			return reconcile.Result{}, err
@@ -176,6 +197,15 @@ func (r *PoolReconciler) reconcileActive(ctx context.Context, pool *model.Pool, 
 	// forever. Nothing else writes a pool's ErrorMessage, and a competing
 	// intent is already caught by the generation guard above.
 	current.ErrorMessage = nil
+	// `offline` is a liveness observation, not a convergence verdict (ADR
+	// 0017 §4): the host stopped answering and is expected back. It is derived
+	// here, after the success derivation, so a runtime that converged but
+	// whose agent has gone silent still reads offline. The message is derived
+	// with it — freshly, every pass, so it is never a latch.
+	if state == model.PoolStateActive && heartbeatStale(current) {
+		current.RecordFailure(model.PoolStateOffline,
+			fmt.Sprintf("pool agent has not reported since %s", current.LastSeenAt.UTC().Format(time.RFC3339)))
+	}
 	if err := r.update(ctx, current, generation); err != nil {
 		return reconcile.Result{}, err
 	}
@@ -264,22 +294,33 @@ func (r *PoolReconciler) reconcileDeleted(ctx context.Context, pool *model.Pool,
 
 // failReconcile records a failed active reconcile. A pool whose runtime never
 // completed its initial create reports the terminal-looking "failed" phase
-// (there is no runtime yet), and one that was already created drops to
-// "offline" (its runtime is stateful and must be reconciled back to health).
-// Neither is schedulable until it recovers. Either way the failure is
-// attributed to the generation that produced it, so a recorded failure with
-// ObservedGeneration == Generation means "the latest intent was attempted,
-// and it lost" — schedulers rely on that to tell a settled failure from one
-// with a repair pending.
+// (there is no runtime yet). A created pool keeps its state: its runtime is
+// stateful and stays serving whatever it already hosts, so a failed
+// convergence is an ErrorMessage against this generation, not a state — a
+// live, heartbeating pool with a failing reconcile is degraded, not offline.
+// `offline` is reserved for its ADR 0017 §4 meaning, a host that stopped
+// answering, which is derived from heartbeat staleness. Either way the
+// failure is attributed to the generation that produced it, so a recorded
+// failure with ObservedGeneration == Generation means "the latest intent was
+// attempted, and it lost" — schedulers rely on that to tell a settled failure
+// from one with a repair pending.
+//
+// Ready and Schedulable are cleared only on the never-created path: for a
+// created pool they are the agent's facts (see the ownership table in
+// DESIGN.md), and a live agent would repaint them within a heartbeat anyway.
 func (r *PoolReconciler) failReconcile(pool *model.Pool, generation int64, message string) {
 	pool.ObservedGeneration = generation
-	pool.Ready = false
-	pool.Schedulable = false
 	if !pool.EverCreated() {
+		pool.Ready = false
+		pool.Schedulable = false
 		pool.RecordFailure(model.PoolStateFailed, message)
 		return
 	}
-	pool.RecordFailure(model.PoolStateOffline, message)
+	if heartbeatStale(pool) {
+		pool.RecordFailure(model.PoolStateOffline, message)
+		return
+	}
+	pool.ErrorMessage = &message
 }
 
 // repairAssignedPool repairs a pool whose reconcile failed while sandboxes

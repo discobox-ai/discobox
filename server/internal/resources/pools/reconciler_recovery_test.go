@@ -2,6 +2,8 @@ package pools
 
 import (
 	"context"
+	"errors"
+	"strings"
 	"testing"
 	"time"
 
@@ -39,8 +41,9 @@ func TestReconcileClearsARecordedFailureOnSuccess(t *testing.T) {
 		LastSeenAt:   &registeredAt,
 	}
 	pool.DesiredState = model.DesiredStatePresent
-	// The state an earlier failed reconcile leaves behind: a created pool that
-	// dropped to offline, with the reason recorded against its generation.
+	// The state an earlier failure left behind: offline with the reason
+	// recorded against its generation (the shape a stale-heartbeat verdict
+	// writes, and what pre-liveness-semantics failures wrote).
 	pool.RecordFailure(model.PoolStateOffline, "runtime did not converge")
 	if err := appStore.CreatePool(ctx, pool); err != nil {
 		t.Fatalf("create pool: %v", err)
@@ -112,6 +115,141 @@ func TestReconcilePromotesAPoolThatRegisteredAfterConverging(t *testing.T) {
 	if updated.State != model.PoolStateActive {
 		t.Fatalf("state = %q, want %q: the agent has registered", updated.State, model.PoolStateActive)
 	}
+}
+
+// TestFailedReconcileKeepsALiveCreatedPoolActive pins the offline/degraded
+// split: a created pool whose agent is heartbeating stays `active` when a
+// reconcile fails — the failure lands as ErrorMessage, and the agent-owned
+// health flags are left alone. Spelling every failed convergence as `offline`
+// is what made a live, serving pool read as unreachable (and blocked traffic
+// onto its sandboxes) over an image-sync error that only affects future
+// creates.
+func TestFailedReconcileKeepsALiveCreatedPoolActive(t *testing.T) {
+	ctx := context.Background()
+	appStore := newPoolReconcilerTestStore(t)
+	manager := sandbox.NewProviderManager()
+	manager.RegisterProvider("stub", failingPoolProvider{stubPoolProvider{}})
+
+	provider := &model.SandboxProviderInstance{ID: "provider-1", ProjectID: "project-1", Type: "stub", Name: "stub"}
+	if err := appStore.CreateSandboxProviderInstance(ctx, provider); err != nil {
+		t.Fatalf("create provider: %v", err)
+	}
+	now := time.Now().UTC()
+	pool := &model.Pool{
+		ID:           "pool-1",
+		ProjectID:    "project-1",
+		PoolManifest: model.PoolManifest{Name: "pool-1", ProviderInstanceID: provider.ID},
+		Ready:        true,
+		Schedulable:  true,
+		RegisteredAt: &now,
+		LastSeenAt:   &now,
+	}
+	pool.DesiredState = model.DesiredStatePresent
+	pool.SetState(model.PoolStateActive)
+	pool.ObservedGeneration = pool.Generation
+	if err := appStore.CreatePool(ctx, pool); err != nil {
+		t.Fatalf("create pool: %v", err)
+	}
+
+	reconciler := NewPoolReconciler(appStore, manager, NewControlPlane(appStore, nil))
+	if _, err := reconciler.Reconcile(ctx, PoolDirtyID(pool.ProjectID, pool.ID)); err == nil {
+		t.Fatal("reconcile succeeded, want the provider's failure")
+	}
+
+	updated, err := appStore.GetPool(ctx, pool.ProjectID, pool.ID)
+	if err != nil {
+		t.Fatalf("get pool: %v", err)
+	}
+	if updated.State != model.PoolStateActive {
+		t.Fatalf("state = %q, want %q: a heartbeating pool with a failing reconcile is degraded, not offline", updated.State, model.PoolStateActive)
+	}
+	if updated.ErrorMessage == nil || *updated.ErrorMessage != "runtime did not converge" {
+		t.Fatalf("error message = %v, want the reconcile failure recorded", updated.ErrorMessage)
+	}
+	if !updated.Ready || !updated.Schedulable {
+		t.Fatalf("ready=%t schedulable=%t, want the agent's flags left alone", updated.Ready, updated.Schedulable)
+	}
+	if !updated.Converged() {
+		t.Fatalf("generations = %d/%d, want the failure attributed to the attempted generation", updated.ObservedGeneration, updated.Generation)
+	}
+}
+
+// TestStaleHeartbeatReadsOffline pins what `offline` now means (ADR 0017 §4):
+// the agent stopped answering. The runtime converges fine — the container is
+// there — but the last heartbeat is past the timeout, so the reconciler's
+// verdict is offline, with a freshly derived message. A resumed heartbeat plus
+// the reconcile it triggers reads the pool back to active.
+func TestStaleHeartbeatReadsOffline(t *testing.T) {
+	ctx := context.Background()
+	appStore := newPoolReconcilerTestStore(t)
+	manager := sandbox.NewProviderManager()
+	manager.RegisterProvider("stub", stubPoolProvider{})
+
+	provider := &model.SandboxProviderInstance{ID: "provider-1", ProjectID: "project-1", Type: "stub", Name: "stub"}
+	if err := appStore.CreateSandboxProviderInstance(ctx, provider); err != nil {
+		t.Fatalf("create provider: %v", err)
+	}
+	registeredAt := time.Now().UTC().Add(-time.Hour)
+	stale := time.Now().UTC().Add(-2 * poolHeartbeatTimeout)
+	pool := &model.Pool{
+		ID:           "pool-1",
+		ProjectID:    "project-1",
+		PoolManifest: model.PoolManifest{Name: "pool-1", ProviderInstanceID: provider.ID},
+		Ready:        true,
+		Schedulable:  true,
+		RegisteredAt: &registeredAt,
+		LastSeenAt:   &stale,
+	}
+	pool.DesiredState = model.DesiredStatePresent
+	pool.SetState(model.PoolStateActive)
+	pool.ObservedGeneration = pool.Generation
+	if err := appStore.CreatePool(ctx, pool); err != nil {
+		t.Fatalf("create pool: %v", err)
+	}
+
+	reconciler := NewPoolReconciler(appStore, manager, NewControlPlane(appStore, nil))
+	if _, err := reconciler.Reconcile(ctx, PoolDirtyID(pool.ProjectID, pool.ID)); err != nil {
+		t.Fatalf("reconcile: %v", err)
+	}
+
+	updated, err := appStore.GetPool(ctx, pool.ProjectID, pool.ID)
+	if err != nil {
+		t.Fatalf("get pool: %v", err)
+	}
+	if updated.State != model.PoolStateOffline {
+		t.Fatalf("state = %q, want %q: the agent has not heartbeated within the timeout", updated.State, model.PoolStateOffline)
+	}
+	if updated.ErrorMessage == nil || !strings.Contains(*updated.ErrorMessage, "has not reported") {
+		t.Fatalf("error message = %v, want the staleness cause", updated.ErrorMessage)
+	}
+
+	// The agent comes back: a heartbeat refreshes LastSeenAt, and the
+	// reconcile it triggers proves recovery.
+	if _, err := appStore.UpdatePoolStatus(ctx, pool.ID, true, true, false, 1, 1<<30, 1<<30, nil); err != nil {
+		t.Fatalf("heartbeat: %v", err)
+	}
+	if _, err := reconciler.Reconcile(ctx, PoolDirtyID(pool.ProjectID, pool.ID)); err != nil {
+		t.Fatalf("reconcile after recovery: %v", err)
+	}
+	recovered, err := appStore.GetPool(ctx, pool.ProjectID, pool.ID)
+	if err != nil {
+		t.Fatalf("get pool: %v", err)
+	}
+	if recovered.State != model.PoolStateActive {
+		t.Fatalf("state = %q, want %q after the agent resumed heartbeating", recovered.State, model.PoolStateActive)
+	}
+	if recovered.ErrorMessage != nil {
+		t.Fatalf("error message = %q, want none after recovery", *recovered.ErrorMessage)
+	}
+}
+
+// failingPoolProvider converges nothing: every pool reconcile fails the same
+// way, standing in for a runtime step that keeps losing (an unpullable image,
+// an unreachable daemon).
+type failingPoolProvider struct{ stubPoolProvider }
+
+func (failingPoolProvider) ReconcilePool(context.Context, sandbox.PoolManager, *model.Project, *model.SandboxProviderInstance, *model.Pool) error {
+	return errors.New("runtime did not converge")
 }
 
 func newPoolReconcilerTestStore(t *testing.T) *store.Store {

@@ -78,6 +78,16 @@ func (s *Service) UpdatePoolStatus(ctx context.Context, poolID string, input ser
 	if err != nil {
 		return nil, mapAPIError(err, "pool not found")
 	}
+	// A heartbeat from a pool recorded `offline` is the observation that the
+	// host is back. Like registration (ADR 0017 §10), it reaches the
+	// reconciler as a dirty mark rather than by writing State here; the mark
+	// is what promotes the pool back to `active` promptly instead of waiting
+	// for the drift scan.
+	if pool.State == model.PoolStateOffline && s.pools != nil {
+		if err := s.pools.SchedulePoolReconciliation(ctx, pool.ProjectID, pool.ID); err != nil {
+			return nil, err
+		}
+	}
 	return pool, nil
 }
 

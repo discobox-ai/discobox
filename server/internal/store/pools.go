@@ -243,7 +243,8 @@ func (s *Store) RegisterPool(ctx context.Context, poolID string, tokenHash []byt
 // repaint `active` over a recorded `offline` every few seconds, so a pool whose
 // reconcile was failing read as active with an error message attached. A pool
 // that recovers is returned to `active` by the reconcile that proves it, not by
-// the heartbeat.
+// the heartbeat — the service layer marks an offline pool dirty when its agent
+// reports back in, which is what makes that reconcile prompt.
 func (s *Store) UpdatePoolStatus(ctx context.Context, poolID string, ready, schedulable, degraded bool, availableCPUVCPUs float64, availableMemoryBytes, availableStorageBytes int64, conditions []byte) (*model.Pool, error) {
 	write, err := s.getWrite(ctx)
 	if err != nil {
@@ -281,10 +282,13 @@ func (s *Store) UpdatePoolStatus(ctx context.Context, poolID string, ready, sche
 }
 
 // SchedulablePoolForSandbox gates placement: the sandbox's pool must be
-// active, ready, schedulable, and unrevoked. No capacity is gated — sandboxes
-// share their pool's overcommitted CPU/memory/storage envelope with no
-// per-sandbox reservation (docs/adr/0029). There is no candidate search — the
-// pool is the host.
+// ready, schedulable, unrevoked, and not offline. Ready and Schedulable are
+// the agent's own word; the offline check covers their blind spot — an agent
+// that stopped answering leaves its last (stale) flags behind, and `offline`
+// is the reconciler's verdict that the host is gone. No capacity is gated —
+// sandboxes share their pool's overcommitted CPU/memory/storage envelope with
+// no per-sandbox reservation (docs/adr/0029). There is no candidate search —
+// the pool is the host.
 func (s *Store) SchedulablePoolForSandbox(ctx context.Context, sandbox *model.Sandbox) (*model.Pool, error) {
 	if sandbox == nil || sandbox.PoolID == "" {
 		return nil, ErrNotFound
@@ -295,6 +299,7 @@ func (s *Store) SchedulablePoolForSandbox(ctx context.Context, sandbox *model.Sa
 	}
 	if pool.RevokedAt != nil ||
 		pool.DesiredState != model.DesiredStatePresent ||
+		pool.State == model.PoolStateOffline ||
 		!pool.Ready || !pool.Schedulable {
 		return nil, ErrNotFound
 	}

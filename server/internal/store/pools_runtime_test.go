@@ -116,6 +116,33 @@ func TestSchedulablePoolForSandboxRequiresReadiness(t *testing.T) {
 	}
 }
 
+// TestSchedulablePoolForSandboxRefusesOfflinePool pins the offline check's
+// reason to exist: Ready and Schedulable are the agent's last words, and an
+// agent that stopped answering leaves them behind looking healthy. `offline`
+// is the reconciler's verdict that the host is gone, so it must veto the
+// stale flags.
+func TestSchedulablePoolForSandboxRefusesOfflinePool(t *testing.T) {
+	ctx := context.Background()
+	s := newTestStore(t)
+	createTestPool(t, s, "project-1", "pool-1")
+	if _, err := s.UpdatePoolStatus(ctx, "pool-1", true, true, false, 1, 1<<30, 1<<30, nil); err != nil {
+		t.Fatalf("update status: %v", err)
+	}
+
+	pool, err := s.GetPool(ctx, "project-1", "pool-1")
+	if err != nil {
+		t.Fatalf("get pool: %v", err)
+	}
+	pool.RecordFailure(model.PoolStateOffline, "pool agent has not reported")
+	if err := s.UpdatePoolWithGeneration(ctx, pool, pool.Generation); err != nil {
+		t.Fatalf("record offline: %v", err)
+	}
+
+	if _, err := s.SchedulablePoolForSandbox(ctx, sandboxForClaim("project-1", "pool-1")); !errors.Is(err, store.ErrNotFound) {
+		t.Fatalf("schedulable pool error = %v, want ErrNotFound for an offline pool", err)
+	}
+}
+
 func TestPoolGenerationOptions(t *testing.T) {
 	ctx := context.Background()
 	s := newTestStore(t)

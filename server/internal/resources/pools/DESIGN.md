@@ -58,8 +58,24 @@ flowchart LR
   place when sandboxes are assigned; a runtime whose agent never registers
   within the timeout is repaired with a fresh bootstrap token; delete removes
   the runtime and then the row. Failure latching follows `EverCreated`:
-  never-registered pools may fail terminally, created pools drop to the
-  retryable offline phase.
+  never-registered pools may fail terminally; a created pool keeps its state
+  and records the failure as `ErrorMessage` — its runtime keeps serving what
+  it already hosts, so a failed convergence is not a phase.
+
+## Offline is a liveness verdict
+
+`offline` means exactly its ADR 0017 §4 sense: the pool agent stopped
+answering and the host is expected back. It is derived from heartbeat
+staleness (`LastSeenAt` older than `poolHeartbeatTimeout`, three missed 30s
+beats), never from a failed reconcile — a heartbeating pool whose reconcile is
+failing is `active` with an `ErrorMessage`, not offline. The reconciler still
+owns the write (staleness is checked on every pass, including the 60s drift
+scan); a heartbeat arriving at an offline pool marks it dirty so the reconcile
+that proves recovery runs promptly. Consumers gate accordingly: placement
+(`SchedulablePoolForSandbox`) and sandbox traffic
+(`AcquireSandboxHTTPClient`) refuse offline pools — the last-reported
+`Ready`/`Schedulable` flags are stale facts from a silent agent — but neither
+refuses a pool for an unconverged reconcile.
 
 Reconciliation is level-triggered: intent writers mark `(pool, id)` dirty and
 the engine (`internal/reconcile`) drives convergence; `ScanDirty` re-checks

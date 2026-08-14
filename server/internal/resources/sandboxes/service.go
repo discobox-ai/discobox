@@ -380,8 +380,13 @@ func (s *Service) AcquireSandboxHTTPClient(ctx context.Context, projectID, sandb
 	if err != nil {
 		return nil, sandboxModel, mapAPIError(err, "sandbox pool not found")
 	}
-	if pool.State != model.PoolStateActive || !pool.Ready {
-		return nil, sandboxModel, apperrors.NewStatusError(http.StatusConflict, fmt.Sprintf("sandbox pool is not active: pool=%s state=%s ready=%t", pool.ID, pool.State, pool.Ready))
+	// The gate is liveness, not convergence: `offline` is the reconciler's
+	// verdict that the pool agent stopped answering, and Ready is the agent's
+	// own word on taking work. A pool whose reconcile is failing for other
+	// reasons (State active, ErrorMessage set) still serves the sandboxes it
+	// already hosts, so traffic onto them must not be refused for it.
+	if pool.State == model.PoolStateOffline || !pool.Ready {
+		return nil, sandboxModel, apperrors.NewStatusError(http.StatusConflict, fmt.Sprintf("sandbox pool is not reachable: pool=%s state=%s ready=%t", pool.ID, pool.State, pool.Ready))
 	}
 	if s.sandboxProviders == nil {
 		return nil, nil, fmt.Errorf("sandbox provider manager is required")
