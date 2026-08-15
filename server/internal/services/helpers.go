@@ -138,6 +138,41 @@ func SandboxUserFromModel(sandbox *model.Sandbox) *serverapi.SandboxUser {
 	return user
 }
 
+// SandboxGitFields is the sandbox's git authorship as the model stores it. Like
+// the run user it is recorded verbatim — the control plane has no way to check
+// that a name or address is the one its owner meant — but unlike the run user
+// nothing about it is ever resolved inside the sandbox: boot writes what it was
+// given (ADR 0042).
+type SandboxGitFields struct {
+	UserName  *string
+	UserEmail *string
+}
+
+func SandboxGitToModel(value OptSandboxGitIdentity) SandboxGitFields {
+	git, ok := value.Get()
+	if !ok {
+		return SandboxGitFields{}
+	}
+	return SandboxGitFields{
+		UserName:  OptStringPtr(git.UserName),
+		UserEmail: OptStringPtr(git.UserEmail),
+	}
+}
+
+func SandboxGitFromModel(sandbox *model.Sandbox) *serverapi.SandboxGitIdentity {
+	if sandbox == nil || sandbox.GitUserName == nil && sandbox.GitUserEmail == nil {
+		return nil
+	}
+	git := &serverapi.SandboxGitIdentity{}
+	if sandbox.GitUserName != nil {
+		git.SetUserName(serverapi.NewOptString(*sandbox.GitUserName))
+	}
+	if sandbox.GitUserEmail != nil {
+		git.SetUserEmail(serverapi.NewOptString(*sandbox.GitUserEmail))
+	}
+	return git
+}
+
 func SandboxToAPI(sandbox *model.Sandbox, fallback *model.HarnessConfig) (serverapi.Sandbox, error) {
 	if sandbox == nil {
 		return serverapi.Sandbox{}, nil
@@ -181,6 +216,9 @@ func SandboxToAPI(sandbox *model.Sandbox, fallback *model.HarnessConfig) (server
 	}
 	if user := SandboxUserFromModel(sandbox); user != nil {
 		config["user"] = user
+	}
+	if git := SandboxGitFromModel(sandbox); git != nil {
+		config["git"] = git
 	}
 	runtime := map[string]any{
 		"desiredState":       sandbox.DesiredState,

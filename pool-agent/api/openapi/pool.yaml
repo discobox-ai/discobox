@@ -223,6 +223,8 @@ components:
                     additionalProperties:
                         type: string
                     type: object
+                git:
+                    "$ref": "#/components/schemas/SandboxGitIdentity"
                 image:
                     type: string
                 imageDigest:
@@ -294,6 +296,17 @@ components:
                 uid:
                     format: int64
                     type: integer
+            type: object
+        SandboxGitIdentity:
+            additionalProperties: false
+            description: |-
+                Git authorship identity, forwarded to the sandbox verbatim. Authorship, not
+                run identity: see SandboxUser for the account a process runs as (ADR 0042).
+            properties:
+                userEmail:
+                    type: string
+                userName:
+                    type: string
             type: object
         PoolSandboxCreateRequest:
             additionalProperties: false

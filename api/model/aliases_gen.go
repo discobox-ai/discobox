@@ -84,6 +84,7 @@ type SandboxExecEventsResponse = apigen.SandboxExecEventsResponse
 type SandboxExecLogEntry = apigen.SandboxExecLogEntry
 type SandboxExecLogsResponse = apigen.SandboxExecLogsResponse
 type SandboxExecsResponse = apigen.SandboxExecsResponse
+type SandboxGitIdentity = apigen.SandboxGitIdentity
 type SandboxHarnessSecretsResponse = apigen.SandboxHarnessSecretsResponse
 type SandboxProviderCatalogItem = apigen.SandboxProviderCatalogItem
 type SandboxProviderInstance = apigen.SandboxProviderInstance

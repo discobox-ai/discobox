@@ -194,6 +194,7 @@ func (s *Service) CreateSandbox(ctx context.Context, projectID string, input ser
 		return nil, err
 	}
 	user := services.SandboxUserToModel(config.User)
+	git := services.SandboxGitToModel(config.Git)
 	harnessMode := "run"
 	if mode, ok := config.HarnessMode.Get(); ok {
 		harnessMode = string(mode)
@@ -251,6 +252,8 @@ func (s *Service) CreateSandbox(ctx context.Context, projectID string, input ser
 			UserGroupName:        user.GroupName,
 			UserAdditionalGroups: user.AdditionalGroups,
 			HomeDirectory:        user.HomeDirectory,
+			GitUserName:          git.UserName,
+			GitUserEmail:         git.UserEmail,
 		},
 		SourceRoot: sourceRoot,
 		Origin:     origin,

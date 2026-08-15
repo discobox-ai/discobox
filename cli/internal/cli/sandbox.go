@@ -43,6 +43,8 @@ type sandboxCreateOptions struct {
 	// makes it indistinguishable from omitting the flag.
 	userUIDSet    bool
 	homeDirectory string
+	gitUserName   string
+	gitUserEmail  string
 	wait          bool
 	waitTimeout   time.Duration
 }
@@ -521,6 +523,8 @@ func addCreateFlags(cmd *cobra.Command, opts *sandboxCreateOptions) {
 	cmd.Flags().Int64Var(&opts.userUID, "user-uid", 0, "UID to use inside the sandbox")
 	cmd.Flags().StringSliceVar(&opts.userGroups, "user-group", nil, "Groups for the sandbox user, each a name or a numeric GID. The first is the primary group and the rest are supplementary; omit to use the image's own groups")
 	cmd.Flags().StringVar(&opts.homeDirectory, "home-directory", "", "User home directory to use inside the sandbox")
+	cmd.Flags().StringVar(&opts.gitUserName, "git-user-name", "", "Value for git's user.name inside the sandbox. Unlike `disco run`, this command infers nothing from the local environment")
+	cmd.Flags().StringVar(&opts.gitUserEmail, "git-user-email", "", "Value for git's user.email inside the sandbox")
 	cmd.Flags().BoolVar(&opts.wait, "wait", false, "Wait for sandbox to reach running or fail")
 	cmd.Flags().DurationVar(&opts.waitTimeout, "wait-timeout", 2*time.Minute, "Maximum time to wait")
 }
@@ -570,7 +574,20 @@ func createSandboxBody(opts sandboxCreateOptions) (*apimodel.CreateSandboxBody, 
 	if user, ok := sandboxUserFromCreateOptions(opts); ok {
 		config.SetUser(apiclientgen.NewOptSandboxUser(user))
 	}
+	if git, ok := sandboxGitFromCreateOptions(opts); ok {
+		config.SetGit(apiclientgen.NewOptSandboxGitIdentity(git))
+	}
 	return body, nil
+}
+
+// sandboxGitFromCreateOptions builds the git authorship from explicit flags
+// only. This command is the flag-driven path, so unlike `disco run` it reads
+// nothing from the local git config: what it creates is what was asked for.
+func sandboxGitFromCreateOptions(opts sandboxCreateOptions) (apimodel.SandboxGitIdentity, bool) {
+	git := apimodel.SandboxGitIdentity{}
+	git.SetUserName(optString(opts.gitUserName))
+	git.SetUserEmail(optString(opts.gitUserEmail))
+	return git, git.UserName.Set || git.UserEmail.Set
 }
 
 func sandboxUserFromCreateOptions(opts sandboxCreateOptions) (apimodel.SandboxUser, bool) {

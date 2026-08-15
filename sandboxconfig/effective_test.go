@@ -15,10 +15,15 @@ func TestEffective_SingleWriterFields(t *testing.T) {
 			Sources:   []Source{{Slug: "main", Target: "/workspace"}},
 			Model:     "claude",
 			User:      User{Name: "sandbox"},
+			Git:       GitIdentity{UserName: "Ada Lovelace", UserEmail: "ada@example.com"},
 		},
 		Image: ImageLayer{HarnessID: "h1", HarnessName: "Harness One"},
 	}
 	cfg, prov := Effective(doc)
+
+	if cfg.Git != (GitIdentity{UserName: "Ada Lovelace", UserEmail: "ada@example.com"}) {
+		t.Errorf("Git = %+v, want the runtime layer's identity copied through", cfg.Git)
+	}
 
 	if cfg.SandboxID != "sbx_1" {
 		t.Errorf("SandboxID = %q, want sbx_1", cfg.SandboxID)

@@ -58,7 +58,8 @@ func normalizePromptOptions(opts PromptOptions) (PromptOptions, error) {
 }
 
 // BuildPromptSandboxBody resolves all client-side prompt inputs into the
-// control-plane create request, including Git snapshots and local user identity.
+// control-plane create request, including Git snapshots, local user identity,
+// and the local Git authorship the sandbox should commit under.
 func BuildPromptSandboxBody(ctx context.Context, opts PromptOptions) (*apimodel.CreateSandboxBody, error) {
 	opts, err := normalizePromptOptions(opts)
 	if err != nil {
@@ -111,6 +112,7 @@ func BuildPromptSandboxBody(ctx context.Context, opts PromptOptions) (*apimodel.
 	}
 	body.SetOrigin(apiclientgen.NewOptOrigin(resolvedOrigin))
 	userIdentity.setCreateSandboxUser(body)
+	setCreateSandboxGit(body, resolveGitIdentity(ctx, sourceArg))
 	return body, nil
 }
 

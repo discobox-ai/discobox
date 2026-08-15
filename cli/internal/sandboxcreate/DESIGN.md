@@ -4,8 +4,16 @@ This package owns UI-independent client-side preparation and submission of
 sandbox create requests.
 
 - Frontends provide typed options; this package resolves source refs, snapshots
-  dirty local workspaces, captures local user identity, classifies environment
-  and secret inputs, builds the API body, and submits prompt sandbox creates.
+  dirty local workspaces, captures local user identity, captures the local Git
+  authorship, classifies environment and secret inputs, builds the API body, and
+  submits prompt sandbox creates.
+- Git authorship is read with git's own resolution from the source directory, so
+  a repository-local `user.email` beats the global one. Unset stays unset: git is
+  the authority on whether an identity is configured, and a `$USER@$(hostname)`
+  fallback here would only relocate the wrong answer
+  ([ADR 0042](../../../docs/adr/0042-git-authorship-identity-is-a-first-class-sandbox-property.md)).
+  This inference belongs to the prompt path only — `disco box sandbox create` is
+  flag-driven and reads nothing from the environment.
 - Whether a dirty workspace is snapshotted is the caller's policy
   (`PromptOptions.IncludeDirty`), and asking is the caller's UI
   (`ConfirmIncludeDirty`); this package decides only when the question applies.

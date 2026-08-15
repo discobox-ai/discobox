@@ -150,6 +150,8 @@ type CreateOptions struct {
 	UserGroupName         *string
 	UserAdditionalGroups  []string
 	HomeDirectory         *string
+	GitUserName           *string
+	GitUserEmail          *string
 	ResolvedHarnessConfig *ResolvedHarnessConfig
 	AgentServerURL        string
 	OAuthRedirectBase     string

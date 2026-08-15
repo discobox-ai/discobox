@@ -9,7 +9,11 @@ internal contract between pool-agent and sandbox-agent, not a REST schema.
 ## Layers
 
 - `RuntimeLayer`: control-plane/pool-agent-owned identity, resources,
-  sources, model/prompt/user, and per-sandbox env/files. `User` records the
+  sources, model/prompt/user, and per-sandbox env/files. `Git` is authorship,
+  never run identity — a separate field precisely because `User` is shared with
+  `exec create`, where a committer has no meaning
+  ([ADR 0042](../docs/adr/0042-git-authorship-identity-is-a-first-class-sandbox-property.md)).
+  `User` records the
   request verbatim — every field optional, names unresolved, a wholly empty
   `User` meaning the image's own account — because only the sandbox can resolve
   it ([ADR 0025](../docs/adr/0025-the-sandbox-user-is-one-contract-resolved-inside-the-sandbox.md)). Its `Image` is the

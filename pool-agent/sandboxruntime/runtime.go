@@ -846,6 +846,16 @@ func buildSandboxDocument(projectID, sandboxID, poolID, controlPlanePublicKey, r
 		if env, ok := config.Env.Get(); ok {
 			doc.Runtime.Env = map[string]string(env)
 		}
+		// Authorship, forwarded verbatim. Unlike the run user below there is
+		// nothing here for the pool to resolve or complete: git identity is
+		// whatever the caller said it was, and boot writes exactly that
+		// (ADR 0042 §3).
+		if git, ok := config.Git.Get(); ok {
+			doc.Runtime.Git = sandboxconfig.GitIdentity{
+				UserName:  optString(git.UserName),
+				UserEmail: optString(git.UserEmail),
+			}
+		}
 		// The pool owns the effective sandbox user used for the home mount and
 		// container environment. Publish that fully resolved identity even when
 		// the request omitted or partially specified config.user, so the

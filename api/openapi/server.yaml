@@ -1826,6 +1826,9 @@ components:
                         type: string
                     description: Environment variables available to sandbox-harness terminals and execs by default.
                     type: object
+                git:
+                    $ref: '#/components/schemas/SandboxGitIdentity'
+                    description: Git authorship identity to seed the sandbox user's ~/.gitconfig with
                 image:
                     description: Sandbox base image
                     type: string
@@ -1885,6 +1888,9 @@ components:
                         type: string
                     description: Environment variables available to sandbox-harness terminals and execs by default.
                     type: object
+                git:
+                    $ref: '#/components/schemas/SandboxGitIdentity'
+                    description: Git authorship identity to seed the sandbox user's ~/.gitconfig with
                 image:
                     description: Sandbox base image. Defaults to the server configured sandbox image when omitted.
                     type: string
@@ -2222,6 +2228,30 @@ components:
                     description: UID to use inside the sandbox
                     format: int64
                     type: integer
+            type: object
+        SandboxGitIdentity:
+            additionalProperties: false
+            description: |-
+                Git authorship identity for work done inside the sandbox. Both fields are
+                optional; omitting the whole object leaves the sandbox's git identity
+                unconfigured, exactly as an image ships it (ADR 0042 §3).
+
+                This is authorship, not run identity — see SandboxUser for the account a
+                process runs as. The two are independent: a sandbox running as the image's
+                own user still commits as the caller, and a sandbox with a named run user
+                may have no git identity to give.
+
+                Boot seeds each key into the sandbox user's ~/.gitconfig only where git
+                resolves no value for it already, so an identity configured inside the
+                sandbox is never overwritten and each key is decided independently
+                (ADR 0042 §4).
+            properties:
+                userEmail:
+                    description: Value for git's user.email inside the sandbox.
+                    type: string
+                userName:
+                    description: Value for git's user.name inside the sandbox.
+                    type: string
             type: object
         SandboxProviderCatalogItem:
             additionalProperties: false

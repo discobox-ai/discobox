@@ -5608,6 +5608,52 @@ func (o OptSandboxExecMetadata) Or(d SandboxExecMetadata) SandboxExecMetadata {
 	return d
 }
 
+// NewOptSandboxGitIdentity returns new OptSandboxGitIdentity with value set to v.
+func NewOptSandboxGitIdentity(v SandboxGitIdentity) OptSandboxGitIdentity {
+	return OptSandboxGitIdentity{
+		Value: v,
+		Set:   true,
+	}
+}
+
+// OptSandboxGitIdentity is optional SandboxGitIdentity.
+type OptSandboxGitIdentity struct {
+	Value SandboxGitIdentity
+	Set   bool
+}
+
+// IsSet returns true if OptSandboxGitIdentity was set.
+func (o OptSandboxGitIdentity) IsSet() bool { return o.Set }
+
+// Reset unsets value.
+func (o *OptSandboxGitIdentity) Reset() {
+	var v SandboxGitIdentity
+	o.Value = v
+	o.Set = false
+}
+
+// SetTo sets value to v.
+func (o *OptSandboxGitIdentity) SetTo(v SandboxGitIdentity) {
+	o.Set = true
+	o.Value = v
+}
+
+// Get returns value and boolean that denotes whether value was set.
+func (o OptSandboxGitIdentity) Get() (v SandboxGitIdentity, ok bool) {
+	if !o.Set {
+		return v, false
+	}
+	return o.Value, true
+}
+
+// Or returns value if set, or given parameter if does not.
+func (o OptSandboxGitIdentity) Or(d SandboxGitIdentity) SandboxGitIdentity {
+	if v, ok := o.Get(); ok {
+		return v
+	}
+	return d
+}
+
 // NewOptSandboxProviderInstance returns new OptSandboxProviderInstance with value set to v.
 func NewOptSandboxProviderInstance(v SandboxProviderInstance) OptSandboxProviderInstance {
 	return OptSandboxProviderInstance{
@@ -8737,6 +8783,8 @@ type SandboxConfig struct {
 	Description OptString `json:"description"`
 	// Environment variables available to sandbox-harness terminals and execs by default.
 	Env OptSandboxConfigEnv `json:"env"`
+	// Git authorship identity to seed the sandbox user's ~/.gitconfig with.
+	Git OptSandboxGitIdentity `json:"git"`
 	// Sandbox base image.
 	Image string `json:"image"`
 	// Config digest of the image this sandbox is pinned to. Written at create and by an upgrade, never
@@ -8787,6 +8835,11 @@ func (s *SandboxConfig) GetDescription() OptString {
 // GetEnv returns the value of Env.
 func (s *SandboxConfig) GetEnv() OptSandboxConfigEnv {
 	return s.Env
+}
+
+// GetGit returns the value of Git.
+func (s *SandboxConfig) GetGit() OptSandboxGitIdentity {
+	return s.Git
 }
 
 // GetImage returns the value of Image.
@@ -8857,6 +8910,11 @@ func (s *SandboxConfig) SetDescription(val OptString) {
 // SetEnv sets the value of Env.
 func (s *SandboxConfig) SetEnv(val OptSandboxConfigEnv) {
 	s.Env = val
+}
+
+// SetGit sets the value of Git.
+func (s *SandboxConfig) SetGit(val OptSandboxGitIdentity) {
+	s.Git = val
 }
 
 // SetImage sets the value of Image.
@@ -8978,6 +9036,8 @@ type SandboxCreateConfig struct {
 	Description OptString `json:"description"`
 	// Environment variables available to sandbox-harness terminals and execs by default.
 	Env OptSandboxCreateConfigEnv `json:"env"`
+	// Git authorship identity to seed the sandbox user's ~/.gitconfig with.
+	Git OptSandboxGitIdentity `json:"git"`
 	// Sandbox base image. Defaults to the server configured sandbox image when omitted.
 	Image OptString `json:"image"`
 	// Sandbox name.
@@ -9028,6 +9088,11 @@ func (s *SandboxCreateConfig) GetDescription() OptString {
 // GetEnv returns the value of Env.
 func (s *SandboxCreateConfig) GetEnv() OptSandboxCreateConfigEnv {
 	return s.Env
+}
+
+// GetGit returns the value of Git.
+func (s *SandboxCreateConfig) GetGit() OptSandboxGitIdentity {
+	return s.Git
 }
 
 // GetImage returns the value of Image.
@@ -9098,6 +9163,11 @@ func (s *SandboxCreateConfig) SetDescription(val OptString) {
 // SetEnv sets the value of Env.
 func (s *SandboxCreateConfig) SetEnv(val OptSandboxCreateConfigEnv) {
 	s.Env = val
+}
+
+// SetGit sets the value of Git.
+func (s *SandboxCreateConfig) SetGit(val OptSandboxGitIdentity) {
+	s.Git = val
 }
 
 // SetImage sets the value of Image.
@@ -9737,6 +9807,45 @@ func (s *SandboxExecsResponse) SetExecs(val []SandboxExec) {
 }
 
 func (*SandboxExecsResponse) listSandboxExecsRes() {}
+
+// Git authorship identity for work done inside the sandbox. Both fields are
+// optional; omitting the whole object leaves the sandbox's git identity
+// unconfigured, exactly as an image ships it (ADR 0042 §3).
+// This is authorship, not run identity — see SandboxUser for the account a
+// process runs as. The two are independent: a sandbox running as the image's
+// own user still commits as the caller, and a sandbox with a named run user
+// may have no git identity to give.
+// Boot seeds each key into the sandbox user's ~/.gitconfig only where git
+// resolves no value for it already, so an identity configured inside the
+// sandbox is never overwritten and each key is decided independently
+// (ADR 0042 §4).
+// Ref: #/components/schemas/SandboxGitIdentity
+type SandboxGitIdentity struct {
+	// Value for git's user.email inside the sandbox.
+	UserEmail OptString `json:"userEmail"`
+	// Value for git's user.name inside the sandbox.
+	UserName OptString `json:"userName"`
+}
+
+// GetUserEmail returns the value of UserEmail.
+func (s *SandboxGitIdentity) GetUserEmail() OptString {
+	return s.UserEmail
+}
+
+// GetUserName returns the value of UserName.
+func (s *SandboxGitIdentity) GetUserName() OptString {
+	return s.UserName
+}
+
+// SetUserEmail sets the value of UserEmail.
+func (s *SandboxGitIdentity) SetUserEmail(val OptString) {
+	s.UserEmail = val
+}
+
+// SetUserName sets the value of UserName.
+func (s *SandboxGitIdentity) SetUserName(val OptString) {
+	s.UserName = val
+}
 
 // Ref: #/components/schemas/SandboxHarnessSecretsResponse
 type SandboxHarnessSecretsResponse struct {

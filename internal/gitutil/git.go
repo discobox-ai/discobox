@@ -156,6 +156,24 @@ func CurrentBranch(ctx context.Context, repoRoot string) (string, bool) {
 	return branch, branch != ""
 }
 
+// ConfigValue reads one config key with git's own resolution, run from dir: a
+// repository-local value wins over the global one, which is how work-versus-
+// personal identity is normally separated. An empty dir uses the process
+// working directory.
+//
+// Unset is not an error -- `git config --get` simply exits 1 -- so this returns
+// an ok bool like CurrentBranch rather than an error nobody would act on. git
+// is the authority on whether a key is configured; a caller that gets false
+// must leave the value absent rather than substitute one of its own.
+func ConfigValue(ctx context.Context, dir, key string) (string, bool) {
+	out, err := Output(ctx, dir, nil, nil, "config", "--get", key)
+	if err != nil {
+		return "", false
+	}
+	value := strings.TrimSpace(out)
+	return value, value != ""
+}
+
 func StatusChanges(ctx context.Context, repoRoot string) ([]StatusChange, error) {
 	out, err := Output(ctx, repoRoot, nil, nil, "status", "--porcelain=v1", "-z", "--untracked-files=all")
 	if err != nil {

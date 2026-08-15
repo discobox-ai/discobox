@@ -76,6 +76,11 @@ func (b *booter) provision(logger *slog.Logger, id identity) error {
 		return fmt.Errorf("seed home: %w", err)
 	}
 	if worker {
+		// After seedHome: it chowns the home tree recursively, so a .gitconfig
+		// written before it would be owned correctly only by coincidence.
+		if err := b.seedGitConfig(id, effective.Git); err != nil {
+			return fmt.Errorf("seed git config: %w", err)
+		}
 		if err := b.wireSources(effective.Sources, id); err != nil {
 			return err
 		}

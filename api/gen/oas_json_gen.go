@@ -9276,6 +9276,39 @@ func (s *OptSandboxExecMetadata) UnmarshalJSON(data []byte) error {
 	return s.Decode(d)
 }
 
+// Encode encodes SandboxGitIdentity as json.
+func (o OptSandboxGitIdentity) Encode(e *jx.Encoder) {
+	if !o.Set {
+		return
+	}
+	o.Value.Encode(e)
+}
+
+// Decode decodes SandboxGitIdentity from json.
+func (o *OptSandboxGitIdentity) Decode(d *jx.Decoder) error {
+	if o == nil {
+		return errors.New("invalid: unable to decode OptSandboxGitIdentity to nil")
+	}
+	o.Set = true
+	if err := o.Value.Decode(d); err != nil {
+		return err
+	}
+	return nil
+}
+
+// MarshalJSON implements stdjson.Marshaler.
+func (s OptSandboxGitIdentity) MarshalJSON() ([]byte, error) {
+	e := jx.Encoder{}
+	s.Encode(&e)
+	return e.Bytes(), nil
+}
+
+// UnmarshalJSON implements stdjson.Unmarshaler.
+func (s *OptSandboxGitIdentity) UnmarshalJSON(data []byte) error {
+	d := jx.DecodeBytes(data)
+	return s.Decode(d)
+}
+
 // Encode encodes SandboxProviderInstance as json.
 func (o OptSandboxProviderInstance) Encode(e *jx.Encoder) {
 	if !o.Set {
@@ -14977,6 +15010,12 @@ func (s *SandboxConfig) encodeFields(e *jx.Encoder) {
 		}
 	}
 	{
+		if s.Git.Set {
+			e.FieldStart("git")
+			s.Git.Encode(e)
+		}
+	}
+	{
 		e.FieldStart("image")
 		e.Str(s.Image)
 	}
@@ -15020,7 +15059,7 @@ func (s *SandboxConfig) encodeFields(e *jx.Encoder) {
 	}
 }
 
-var jsonFieldsNameOfSandboxConfig = [14]string{
+var jsonFieldsNameOfSandboxConfig = [15]string{
 	0:  "harnessConfigId",
 	1:  "harnessMode",
 	2:  "model",
@@ -15028,13 +15067,14 @@ var jsonFieldsNameOfSandboxConfig = [14]string{
 	4:  "modelServiceTier",
 	5:  "description",
 	6:  "env",
-	7:  "image",
-	8:  "imageDigest",
-	9:  "name",
-	10: "prompt",
-	11: "source",
-	12: "sourceCodeReferences",
-	13: "user",
+	7:  "git",
+	8:  "image",
+	9:  "imageDigest",
+	10: "name",
+	11: "prompt",
+	12: "source",
+	13: "sourceCodeReferences",
+	14: "user",
 }
 
 // Decode decodes SandboxConfig from json.
@@ -15116,8 +15156,18 @@ func (s *SandboxConfig) Decode(d *jx.Decoder) error {
 			}(); err != nil {
 				return errors.Wrap(err, "decode field \"env\"")
 			}
+		case "git":
+			if err := func() error {
+				s.Git.Reset()
+				if err := s.Git.Decode(d); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"git\"")
+			}
 		case "image":
-			requiredBitSet[0] |= 1 << 7
+			requiredBitSet[1] |= 1 << 0
 			if err := func() error {
 				v, err := d.Str()
 				s.Image = string(v)
@@ -15139,7 +15189,7 @@ func (s *SandboxConfig) Decode(d *jx.Decoder) error {
 				return errors.Wrap(err, "decode field \"imageDigest\"")
 			}
 		case "name":
-			requiredBitSet[1] |= 1 << 1
+			requiredBitSet[1] |= 1 << 2
 			if err := func() error {
 				v, err := d.Str()
 				s.Name = string(v)
@@ -15209,8 +15259,8 @@ func (s *SandboxConfig) Decode(d *jx.Decoder) error {
 	// Validate required fields.
 	var failures []validate.FieldError
 	for i, mask := range [2]uint8{
-		0b10000000,
-		0b00000010,
+		0b00000000,
+		0b00000101,
 	} {
 		if result := (requiredBitSet[i] & mask) ^ mask; result != 0 {
 			// Mask only required fields and check equality to mask using XOR.
@@ -15458,6 +15508,12 @@ func (s *SandboxCreateConfig) encodeFields(e *jx.Encoder) {
 		}
 	}
 	{
+		if s.Git.Set {
+			e.FieldStart("git")
+			s.Git.Encode(e)
+		}
+	}
+	{
 		if s.Image.Set {
 			e.FieldStart("image")
 			s.Image.Encode(e)
@@ -15507,7 +15563,7 @@ func (s *SandboxCreateConfig) encodeFields(e *jx.Encoder) {
 	}
 }
 
-var jsonFieldsNameOfSandboxCreateConfig = [14]string{
+var jsonFieldsNameOfSandboxCreateConfig = [15]string{
 	0:  "harnessConfigId",
 	1:  "harnessMode",
 	2:  "model",
@@ -15515,13 +15571,14 @@ var jsonFieldsNameOfSandboxCreateConfig = [14]string{
 	4:  "modelServiceTier",
 	5:  "description",
 	6:  "env",
-	7:  "image",
-	8:  "name",
-	9:  "prompt",
-	10: "secrets",
-	11: "source",
-	12: "sourceCodeReferences",
-	13: "user",
+	7:  "git",
+	8:  "image",
+	9:  "name",
+	10: "prompt",
+	11: "secrets",
+	12: "source",
+	13: "sourceCodeReferences",
+	14: "user",
 }
 
 // Decode decodes SandboxCreateConfig from json.
@@ -15603,6 +15660,16 @@ func (s *SandboxCreateConfig) Decode(d *jx.Decoder) error {
 			}(); err != nil {
 				return errors.Wrap(err, "decode field \"env\"")
 			}
+		case "git":
+			if err := func() error {
+				s.Git.Reset()
+				if err := s.Git.Decode(d); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"git\"")
+			}
 		case "image":
 			if err := func() error {
 				s.Image.Reset()
@@ -15614,7 +15681,7 @@ func (s *SandboxCreateConfig) Decode(d *jx.Decoder) error {
 				return errors.Wrap(err, "decode field \"image\"")
 			}
 		case "name":
-			requiredBitSet[1] |= 1 << 0
+			requiredBitSet[1] |= 1 << 1
 			if err := func() error {
 				v, err := d.Str()
 				s.Name = string(v)
@@ -15702,7 +15769,7 @@ func (s *SandboxCreateConfig) Decode(d *jx.Decoder) error {
 	var failures []validate.FieldError
 	for i, mask := range [2]uint8{
 		0b00000000,
-		0b00000001,
+		0b00000010,
 	} {
 		if result := (requiredBitSet[i] & mask) ^ mask; result != 0 {
 			// Mask only required fields and check equality to mask using XOR.
@@ -17134,6 +17201,86 @@ func (s *SandboxExecsResponse) MarshalJSON() ([]byte, error) {
 
 // UnmarshalJSON implements stdjson.Unmarshaler.
 func (s *SandboxExecsResponse) UnmarshalJSON(data []byte) error {
+	d := jx.DecodeBytes(data)
+	return s.Decode(d)
+}
+
+// Encode implements json.Marshaler.
+func (s *SandboxGitIdentity) Encode(e *jx.Encoder) {
+	e.ObjStart()
+	s.encodeFields(e)
+	e.ObjEnd()
+}
+
+// encodeFields encodes fields.
+func (s *SandboxGitIdentity) encodeFields(e *jx.Encoder) {
+	{
+		if s.UserEmail.Set {
+			e.FieldStart("userEmail")
+			s.UserEmail.Encode(e)
+		}
+	}
+	{
+		if s.UserName.Set {
+			e.FieldStart("userName")
+			s.UserName.Encode(e)
+		}
+	}
+}
+
+var jsonFieldsNameOfSandboxGitIdentity = [2]string{
+	0: "userEmail",
+	1: "userName",
+}
+
+// Decode decodes SandboxGitIdentity from json.
+func (s *SandboxGitIdentity) Decode(d *jx.Decoder) error {
+	if s == nil {
+		return errors.New("invalid: unable to decode SandboxGitIdentity to nil")
+	}
+
+	if err := d.ObjBytes(func(d *jx.Decoder, k []byte) error {
+		switch string(k) {
+		case "userEmail":
+			if err := func() error {
+				s.UserEmail.Reset()
+				if err := s.UserEmail.Decode(d); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"userEmail\"")
+			}
+		case "userName":
+			if err := func() error {
+				s.UserName.Reset()
+				if err := s.UserName.Decode(d); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"userName\"")
+			}
+		default:
+			return errors.Errorf("unexpected field %q", k)
+		}
+		return nil
+	}); err != nil {
+		return errors.Wrap(err, "decode SandboxGitIdentity")
+	}
+
+	return nil
+}
+
+// MarshalJSON implements stdjson.Marshaler.
+func (s *SandboxGitIdentity) MarshalJSON() ([]byte, error) {
+	e := jx.Encoder{}
+	s.Encode(&e)
+	return e.Bytes(), nil
+}
+
+// UnmarshalJSON implements stdjson.Unmarshaler.
+func (s *SandboxGitIdentity) UnmarshalJSON(data []byte) error {
 	d := jx.DecodeBytes(data)
 	return s.Decode(d)
 }

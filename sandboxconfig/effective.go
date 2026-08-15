@@ -22,6 +22,9 @@ type Config struct {
 	ModelServiceTier    string   `json:"modelServiceTier,omitempty"`
 	Prompt              []string `json:"prompt,omitempty"`
 	User                User     `json:"user"`
+	// Git is authorship, not run identity (ADR 0042 §1). Single-writer: no
+	// image or project layer contributes to it.
+	Git GitIdentity `json:"git"`
 
 	Env         map[string]string `json:"env,omitempty"`
 	ProxyEnvs   []string          `json:"proxyEnvs,omitempty"`
@@ -74,6 +77,7 @@ func Effective(doc Document) (Config, Provenance) {
 		ModelServiceTier:    doc.Runtime.ModelServiceTier,
 		Prompt:              cloneStrings(doc.Runtime.Prompt),
 		User:                doc.Runtime.User,
+		Git:                 doc.Runtime.Git,
 
 		HarnessMode:      doc.Runtime.HarnessMode,
 		Volumes:          cloneVolumes(doc.Image.Volumes),

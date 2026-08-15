@@ -44,6 +44,7 @@ type RuntimeLayer struct {
 	ModelServiceTier    string            `json:"modelServiceTier,omitempty"`
 	Prompt              []string          `json:"prompt,omitempty"`
 	User                User              `json:"user"`
+	Git                 GitIdentity       `json:"git"`
 	Env                 map[string]string `json:"env,omitempty"`
 
 	// ProxyEnvs names the subset of Env's keys that carry proxy-trust
@@ -125,6 +126,27 @@ type Source struct {
 // identity with one vocabulary, so a field cannot mean one thing here and
 // something else one layer in (ADR 0025 §1).
 type User = sandboxuser.User
+
+// GitIdentity is the authorship the sandbox commits under. It is deliberately
+// not part of User: User is the account a process runs as, one schema shared
+// with exec create (ADR 0025 §1), and a single exec has no committer of its own.
+// The two are independently absent — a sandbox running as the image's own
+// account still commits as the caller — so neither nests in the other.
+//
+// Runtime-owned and single-writer: no image or project layer contributes to it.
+// Either field may be empty; boot writes only what it was given.
+type GitIdentity struct {
+	UserName  string `json:"userName,omitempty"`
+	UserEmail string `json:"userEmail,omitempty"`
+}
+
+// Configured reports whether anything was named at all. It is the one test for
+// "did the request give a git identity", so adding a field here means teaching
+// this function rather than every call site — the same rule sandboxuser.Named
+// follows for run identity.
+func (g GitIdentity) Configured() bool {
+	return strings.TrimSpace(g.UserName) != "" || strings.TrimSpace(g.UserEmail) != ""
+}
 
 // File is a file to write into the harness's home directory when the harness
 // is installed.

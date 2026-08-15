@@ -12,6 +12,7 @@ import (
 	"strings"
 
 	"github.com/obot-platform/discobox/sandbox-agent/runuser"
+	"github.com/obot-platform/discobox/sandboxconfig"
 	"github.com/obot-platform/discobox/sandboxuser"
 )
 
@@ -286,6 +287,87 @@ func (b *booter) seedHome(id identity) error {
 		return os.Lchown(id.home, id.uid, id.gid)
 	}
 	return b.run("chown", "-R", "--no-dereference", fmt.Sprintf("%d:%d", id.uid, id.gid), id.home)
+}
+
+// gitConfigArgv builds a `git config` invocation pinned to the sandbox user's
+// own config, run through env(1) because the booter's runner takes no
+// environment of its own.
+//
+// Both variables are set, and neither is redundant. GIT_CONFIG_GLOBAL names the
+// exact file to write, so the destination cannot drift to
+// $XDG_CONFIG_HOME/git/config depending on what the image happens to export.
+// HOME covers everything else git resolves against the user rather than against
+// that one path.
+func gitConfigArgv(id identity, args ...string) []string {
+	argv := []string{
+		"env",
+		"HOME=" + id.home,
+		"GIT_CONFIG_GLOBAL=" + filepath.Join(id.home, ".gitconfig"),
+		"git", "config",
+	}
+	return append(argv, args...)
+}
+
+// gitConfigSet reports whether git already resolves a value for key. The read is
+// deliberately not scoped to --global: an image that shipped an identity in
+// /etc/gitconfig has an answer, and boot is not entitled to a second opinion
+// about it.
+//
+// A key set to the empty string counts as unset. Git will happily store one, and
+// it commits no better than a missing key does.
+func (b *booter) gitConfigSet(id identity, key string) bool {
+	argv := gitConfigArgv(id, "--get", key)
+	out, ok := b.lookup(argv[0], argv[1:]...)
+	return ok && strings.TrimSpace(out) != ""
+}
+
+// seedGitConfig seeds the sandbox user's git identity, so work done inside the
+// sandbox is attributed to whoever asked for it rather than to git's
+// user@hostname fallback.
+//
+// It fills in each key independently, and only where git has no answer already
+// (ADR 0042 §4) -- it does not ask whether ~/.gitconfig exists. Those are
+// different questions: a file holding aliases and a signing key but no identity
+// is exactly the case that most needs seeding, and treating its existence as
+// "already configured" would skip the sandbox that needed this most. Per-key
+// also means a user who set only user.email keeps it and still gets a name.
+//
+// Git itself is the authority on what is set, rather than boot parsing the file:
+// the same rule the CLI follows when reading the identity on the way in.
+//
+// Runs after seedHome, which recursively chowns the whole tree: a file written
+// before that would be correctly owned by luck rather than by construction, and
+// one written after has to say so itself. Writing via git also means an existing
+// file is replaced through a lock-and-rename, which leaves it owned by boot --
+// so the chown below is what a rewrite needs, not only a fresh file.
+func (b *booter) seedGitConfig(id identity, git sandboxconfig.GitIdentity) error {
+	if !git.Configured() {
+		return nil
+	}
+	// A sandbox whose image ships no git has nothing to configure, and must not
+	// fail to boot over it -- the same rule ensureAdditionalGroups applies to a
+	// group the image never created.
+	if !b.exists("git", "--version") {
+		return nil
+	}
+	wrote := false
+	for _, entry := range []struct{ key, value string }{
+		{"user.name", strings.TrimSpace(git.UserName)},
+		{"user.email", strings.TrimSpace(git.UserEmail)},
+	} {
+		if entry.value == "" || b.gitConfigSet(id, entry.key) {
+			continue
+		}
+		argv := gitConfigArgv(id, "--global", entry.key, entry.value)
+		if err := b.run(argv[0], argv[1:]...); err != nil {
+			return err
+		}
+		wrote = true
+	}
+	if !wrote {
+		return nil
+	}
+	return os.Chown(filepath.Join(id.home, ".gitconfig"), id.uid, id.gid)
 }
 
 func dirExists(path string) bool {

@@ -1,13 +1,16 @@
 package sandboxcreate
 
 import (
+	"context"
 	"fmt"
 	"os/user"
 	"regexp"
 	"strconv"
+	"strings"
 
 	apiclientgen "github.com/obot-platform/discobox/api/gen"
 	apimodel "github.com/obot-platform/discobox/api/model"
+	"github.com/obot-platform/discobox/internal/gitutil"
 )
 
 var runUnixUserNamePattern = regexp.MustCompile(`^[a-z_][a-z0-9_-]{0,31}\$?$`)
@@ -60,6 +63,45 @@ func parseRunNumericUserID(value string) (int64, bool) {
 
 func validRunUnixUserName(value string) bool {
 	return runUnixUserNamePattern.MatchString(value)
+}
+
+// resolveGitIdentity reads the git authorship the sandbox should commit under,
+// with git's own resolution from the local source directory -- so a
+// repository-local override wins over the global one (ADR 0042 §3).
+//
+// sourceArg is the create request's source, @REF suffix and all. A remote
+// repository has no local worktree, so the read falls back to the process
+// working directory, mirroring how ResolveOrigin already resolves an origin for
+// a remote source.
+//
+// An unconfigured identity is left absent. git is the authority on whether one
+// is set, and $USER@$(hostname) here would only relocate the wrong fallback this
+// exists to replace.
+func resolveGitIdentity(ctx context.Context, sourceArg string) apimodel.SandboxGitIdentity {
+	source, _, _ := splitRunSourceRef(sourceArg)
+	dir := strings.TrimSpace(source)
+	if dir == "" || isRemoteGitSource(dir) {
+		// Empty means git runs in this process's own directory, which is the
+		// intended fallback -- no need to fail the create over a cwd lookup.
+		dir = ""
+	}
+	git := apimodel.SandboxGitIdentity{}
+	if name, ok := gitutil.ConfigValue(ctx, dir, "user.name"); ok {
+		git.SetUserName(apiclientgen.NewOptString(name))
+	}
+	if email, ok := gitutil.ConfigValue(ctx, dir, "user.email"); ok {
+		git.SetUserEmail(apiclientgen.NewOptString(email))
+	}
+	return git
+}
+
+// setCreateSandboxGit attaches the identity only when git actually had one, so
+// an unconfigured machine sends no `git` object at all rather than an empty one.
+func setCreateSandboxGit(body *apimodel.CreateSandboxBody, git apimodel.SandboxGitIdentity) {
+	if !git.UserName.Set && !git.UserEmail.Set {
+		return
+	}
+	body.Config.SetGit(apiclientgen.NewOptSandboxGitIdentity(git))
 }
 
 func (u runUserIdentity) setCreateSandboxUser(body *apimodel.CreateSandboxBody) {

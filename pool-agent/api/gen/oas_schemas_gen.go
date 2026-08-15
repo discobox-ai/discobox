@@ -1671,6 +1671,52 @@ func (o OptSandboxConfigSourceCodeReferences) Or(d SandboxConfigSourceCodeRefere
 	return d
 }
 
+// NewOptSandboxGitIdentity returns new OptSandboxGitIdentity with value set to v.
+func NewOptSandboxGitIdentity(v SandboxGitIdentity) OptSandboxGitIdentity {
+	return OptSandboxGitIdentity{
+		Value: v,
+		Set:   true,
+	}
+}
+
+// OptSandboxGitIdentity is optional SandboxGitIdentity.
+type OptSandboxGitIdentity struct {
+	Value SandboxGitIdentity
+	Set   bool
+}
+
+// IsSet returns true if OptSandboxGitIdentity was set.
+func (o OptSandboxGitIdentity) IsSet() bool { return o.Set }
+
+// Reset unsets value.
+func (o *OptSandboxGitIdentity) Reset() {
+	var v SandboxGitIdentity
+	o.Value = v
+	o.Set = false
+}
+
+// SetTo sets value to v.
+func (o *OptSandboxGitIdentity) SetTo(v SandboxGitIdentity) {
+	o.Set = true
+	o.Value = v
+}
+
+// Get returns value and boolean that denotes whether value was set.
+func (o OptSandboxGitIdentity) Get() (v SandboxGitIdentity, ok bool) {
+	if !o.Set {
+		return v, false
+	}
+	return o.Value, true
+}
+
+// Or returns value if set, or given parameter if does not.
+func (o OptSandboxGitIdentity) Or(d SandboxGitIdentity) SandboxGitIdentity {
+	if v, ok := o.Get(); ok {
+		return v
+	}
+	return d
+}
+
 // NewOptSandboxUpdateConfig returns new OptSandboxUpdateConfig with value set to v.
 func NewOptSandboxUpdateConfig(v SandboxUpdateConfig) OptSandboxUpdateConfig {
 	return OptSandboxUpdateConfig{
@@ -2584,6 +2630,7 @@ type SandboxConfig struct {
 	ModelServiceTier    OptString                   `json:"modelServiceTier"`
 	Description         OptString                   `json:"description"`
 	Env                 OptSandboxConfigEnv         `json:"env"`
+	Git                 OptSandboxGitIdentity       `json:"git"`
 	Image               OptString                   `json:"image"`
 	// Config digest the image must resolve to. The runtime runs this image and replaces a container
 	// built from any other, so a moved tag never silently changes a running sandbox (ADR 0016).
@@ -2638,6 +2685,11 @@ func (s *SandboxConfig) GetDescription() OptString {
 // GetEnv returns the value of Env.
 func (s *SandboxConfig) GetEnv() OptSandboxConfigEnv {
 	return s.Env
+}
+
+// GetGit returns the value of Git.
+func (s *SandboxConfig) GetGit() OptSandboxGitIdentity {
+	return s.Git
 }
 
 // GetImage returns the value of Image.
@@ -2718,6 +2770,11 @@ func (s *SandboxConfig) SetDescription(val OptString) {
 // SetEnv sets the value of Env.
 func (s *SandboxConfig) SetEnv(val OptSandboxConfigEnv) {
 	s.Env = val
+}
+
+// SetGit sets the value of Git.
+func (s *SandboxConfig) SetGit(val OptSandboxGitIdentity) {
+	s.Git = val
 }
 
 // SetImage sets the value of Image.
@@ -2826,6 +2883,34 @@ func (s *SandboxConfigSourceCodeReferences) init() SandboxConfigSourceCodeRefere
 		*s = m
 	}
 	return m
+}
+
+// Git authorship identity, forwarded to the sandbox verbatim. Authorship, not
+// run identity: see SandboxUser for the account a process runs as (ADR 0042).
+// Ref: #/components/schemas/SandboxGitIdentity
+type SandboxGitIdentity struct {
+	UserEmail OptString `json:"userEmail"`
+	UserName  OptString `json:"userName"`
+}
+
+// GetUserEmail returns the value of UserEmail.
+func (s *SandboxGitIdentity) GetUserEmail() OptString {
+	return s.UserEmail
+}
+
+// GetUserName returns the value of UserName.
+func (s *SandboxGitIdentity) GetUserName() OptString {
+	return s.UserName
+}
+
+// SetUserEmail sets the value of UserEmail.
+func (s *SandboxGitIdentity) SetUserEmail(val OptString) {
+	s.UserEmail = val
+}
+
+// SetUserName sets the value of UserName.
+func (s *SandboxGitIdentity) SetUserName(val OptString) {
+	s.UserName = val
 }
 
 // Ref: #/components/schemas/SandboxUpdateConfig

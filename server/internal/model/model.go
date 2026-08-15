@@ -595,6 +595,8 @@ type SandboxManifest struct {
 	UserGroupName        *string              `gorm:"column:user_group_name;type:text" json:"userGroupName,omitempty" doc:"Primary group name to use inside the sandbox, resolved inside it"`
 	UserAdditionalGroups []string             `gorm:"column:user_additional_groups;type:text;serializer:json" json:"userAdditionalGroups,omitempty" doc:"Supplementary groups, each a group name or a numeric GID"`
 	HomeDirectory        *string              `gorm:"column:home_directory;type:text" json:"homeDirectory,omitempty" doc:"User home directory to use inside the sandbox"`
+	GitUserName          *string              `gorm:"column:git_user_name;type:text" json:"gitUserName,omitempty" doc:"Value for git's user.name inside the sandbox"`
+	GitUserEmail         *string              `gorm:"column:git_user_email;type:text" json:"gitUserEmail,omitempty" doc:"Value for git's user.email inside the sandbox"`
 }
 
 // Fingerprint is the spec digest the runtime compares a container against

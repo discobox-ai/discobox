@@ -409,6 +409,12 @@ func poolCreateRequestFromOptions(sandboxID string, opts sandbox.CreateOptions) 
 	if user.Name.Set || user.UID.Set || user.Gid.Set || user.GroupName.Set || user.HomeDirectory.Set || len(user.AdditionalGroups) > 0 {
 		config.User = poolclient.NewOptSandboxUser(user)
 	}
+	git := poolapimodel.SandboxGitIdentity{}
+	git.SetUserName(poolOptStringPtr(opts.GitUserName))
+	git.SetUserEmail(poolOptStringPtr(opts.GitUserEmail))
+	if git.UserName.Set || git.UserEmail.Set {
+		config.Git = poolclient.NewOptSandboxGitIdentity(git)
+	}
 	return out
 }
 

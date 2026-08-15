@@ -14,7 +14,7 @@ runtime operations.
 | Package/path | Ownership |
 | --- | --- |
 | `cmd/discobox-sandbox-agent` | Binary entrypoint, config loading, signal handling, and server startup. Also dispatches the `init` PID-1 subcommand. |
-| `boot` | The PID-1 `init` flow: resolves the sandbox user (replacing the retired `entrypoint.sh`), wires image-declared data/cache volumes and manifest sources from the primary volumes, binds the config volume onto `/etc/discobox`, writes desktop drop-ins, then execs the container's real init (systemd). See ADR 0007. |
+| `boot` | The PID-1 `init` flow: resolves the sandbox user (replacing the retired `entrypoint.sh`), wires image-declared data/cache volumes and manifest sources from the primary volumes, binds the config volume onto `/etc/discobox`, seeds the user's `~/.gitconfig`, writes desktop drop-ins, then execs the container's real init (systemd). See ADR 0007. |
 | `config` | Local boot/config file parsing, environment overrides, defaults, and validation. Owns `image.json` parsing, including the `volumes` declaration and `%HOME%`/`%UID%`/`%GID%` token resolution. |
 | `server` | HTTP router, generated OpenAPI handler adapter, PASETO auth middleware, and identity/scope validation. Also hand-registers the exec attach/start routes and, for ADR 0024's SSH ingress, `GET .../tcp/attach` (`tcp_attach.go`): dials `host:port` from inside this process — sharing the sandbox's network namespace, unlike the pool-agent's container-IP-only `/http/{port}` — and bridges the raw TCP bytes to `execstream/frame` `Input`/`Stdout`/`CloseInput` frames over a websocket, gated by the `tcp:connect` scope. |
 | `runuser` | The sandbox's run identity: merges the image/manifest/request layers ([`sandboxuser`](../sandboxuser/DESIGN.md)) and completes them against the image's own passwd/group database. The **only** package that reads those files for resolution, so faking them fakes them for every consumer including the `setuid` path. Used by `boot`, `execs`, and `terminal` so none of them derives identity separately. See [runuser/DESIGN.md](runuser/DESIGN.md). |
@@ -245,6 +245,20 @@ development images without a registry.
   → `409`, whose message reports the exit status and points at `"primary"` when
   the dead exec was the primary terminal. The control plane proxies exec ids
   opaquely, so clients just send this value.
+- Git authorship is seeded per key, never overwritten. `boot.seedGitConfig`
+  applies `sandbox.json`'s `git` object to `<home>/.gitconfig` after `seedHome`
+  — after, because `seedHome` chowns the tree recursively, and because git's
+  lock-and-rename leaves a rewritten file owned by boot. It sets `user.name` and
+  `user.email` independently, and only where `git config --get` resolves nothing;
+  the unit is the key, not the file, since a `.gitconfig` holding only aliases
+  has no identity and is exactly the case that needs seeding. The read is not
+  scoped to `--global`, so an identity the image shipped in `/etc/gitconfig`
+  counts as an answer. Git is asked rather than the file parsed — the same rule
+  the CLI follows reading the identity on the way in — and an image with no `git`
+  skips the step rather than failing to boot. Changing your local git identity
+  therefore does not propagate into existing sandboxes; see
+  [ADR 0042](../docs/adr/0042-git-authorship-identity-is-a-first-class-sandbox-property.md)
+  for the condition for revisiting that.
 - Run identity is owned by [`runuser`](runuser/DESIGN.md): one call resolves who
   a process runs as, so nothing re-derives it. `execs.User` is that package's
   type. `execs.Manager.ResolveUser` is the entry point for execs and terminals —
