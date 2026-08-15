@@ -159,9 +159,9 @@ func Rewrite(args []string) Args {
 
 // iidFile returns the path `--iidfile` names, or "".
 //
-// It is `-q` in file form and wrong in the same way: buildx writes the digest
-// of what it pushed, which names nothing in the local daemon. CI reads that
-// file to decide what to run or scan next.
+// It is `-q` in file form and wrong in the same way: buildx writes a digest of
+// what it pushed, which the local daemon does not answer to. CI reads that file
+// to decide what to run or scan next.
 func iidFile(args []string) string {
 	for i, a := range args {
 		if path, ok := strings.CutPrefix(a, "--iidfile="); ok {
@@ -176,10 +176,10 @@ func iidFile(args []string) string {
 
 // hasQuietFlag reports whether the user asked for `-q`.
 //
-// `docker build -q` exists to print one thing: the local image ID, which
+// `docker build -q` exists to print one thing: the local image id, which
 // `IMG=$(docker build -q .)` then runs. Pushing changes what buildx prints
-// there — it reports the digest of the pushed manifest instead, which names
-// nothing in the local daemon — so the shim has to supply the answer itself.
+// there — a digest of the pushed artifact, which the local daemon does not
+// answer to — so the shim has to supply the answer itself.
 func hasQuietFlag(args []string) bool {
 	for _, a := range args {
 		switch {

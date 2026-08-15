@@ -45,8 +45,8 @@ func Run(args []string) int {
 // of a registry are content-addressed, so only missing blobs move.
 func buildViaRegistry(ctx context.Context, a Args) int {
 	// Under -q, buildx's own stdout is discarded. Pushing changes what it
-	// prints there: the digest of the pushed manifest, which names nothing in
-	// the local daemon, where `docker build -q` promises an id that
+	// prints there to a digest of the pushed artifact, which the local daemon
+	// does not answer to, where `docker build -q` promises an id that
 	// `docker run $(docker build -q .)` can use. The real answer is not known
 	// until the pull lands, so it is printed below.
 	if code := runPassthrough(ctx, a.Argv, a.Quiet); code != 0 {
@@ -57,9 +57,9 @@ func buildViaRegistry(ctx context.Context, a Args) int {
 		notice("build succeeded but its result could not be pulled from the pool registry")
 		return code
 	}
-	// Both of these report the built image's id, and buildx filled them in with
-	// the digest of what it pushed. Correct them from the local daemon, which
-	// only now knows the answer.
+	// Both of these report the built image's id, and buildx filled them in
+	// with a digest of what it pushed. Correct them from the local daemon,
+	// which is the only thing that can say what the id is here.
 	if a.Quiet || a.IIDFile != "" {
 		id, err := imageID(ctx, a.RegistryRef)
 		if err != nil {
