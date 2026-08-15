@@ -21,7 +21,7 @@
 // and `docker buildx` is left entirely alone. `docker buildx use default` remains
 // the user's escape hatch back to the in-sandbox builder.
 //
-// See docs/adr/0039-builds-run-on-a-pool-shared-buildkit.md.
+// See docs/adr/0044-builds-run-on-a-pool-shared-buildkit.md.
 package dockercache
 
 import (

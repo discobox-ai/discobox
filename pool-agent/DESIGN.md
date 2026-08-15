@@ -349,7 +349,7 @@ flowchart LR
 
 `docker build` in any sandbox runs on one BuildKit daemon here, so the pool's
 sandboxes share a solver cache
-([ADR 0039](../docs/adr/0039-builds-run-on-a-pool-shared-buildkit.md)).
+([ADR 0044](../docs/adr/0044-builds-run-on-a-pool-shared-buildkit.md)).
 `docker run` stays in the sandbox: a nested run's bind mounts name sandbox
 paths that do not exist out here.
 

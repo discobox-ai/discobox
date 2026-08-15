@@ -2,7 +2,7 @@
 // registry into the pool agent. It owns the on-disk locations for builder state
 // and renders the configuration both systemd units read before systemd boots.
 //
-// See docs/adr/0039-builds-run-on-a-pool-shared-buildkit.md. Builds run here
+// See docs/adr/0044-builds-run-on-a-pool-shared-buildkit.md. Builds run here
 // rather than in each sandbox so a pool's sandboxes share one build cache;
 // `docker run` stays in the sandbox, because a nested run's bind mounts name
 // sandbox paths that do not exist out here.

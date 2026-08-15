@@ -132,7 +132,7 @@ The cache is pool-wide. It makes upstream image pulls cheap across a pool,
 covering both base-image pulls by the pool-shared builder
 (`pool-agent/DESIGN.md`) and a plain `docker pull` in a sandbox, which no build
 cache ever sees — see
-[ADR 0039](../docs/adr/0039-builds-run-on-a-pool-shared-buildkit.md) §12.
+[ADR 0044](../docs/adr/0044-builds-run-on-a-pool-shared-buildkit.md) §12.
 
 Admission has two arms, and as wired by `pool-agent/proxyagent` both are
 restricted to URLs that name their own content:

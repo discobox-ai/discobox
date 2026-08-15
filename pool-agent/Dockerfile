@@ -132,7 +132,7 @@ RUN apt-get update \
 COPY --from=build /out/discobox-pool-agent /usr/local/bin/discobox-pool-agent
 COPY pool-agent/image/systemd/discobox-proxy.service /etc/systemd/system/discobox-proxy.service
 
-# The pool-shared builder and its output registry (ADR 0039). Both are taken
+# The pool-shared builder and its output registry (ADR 0044). Both are taken
 # from their upstream images rather than fetched as release tarballs, so the
 # binary set stays exactly what those projects ship and test together.
 #
@@ -155,7 +155,7 @@ COPY pool-agent/image/registry.yml /etc/discobox/registry.yml
 
 # Installs as `runc` on the directory prepended to buildkitd's PATH, and is what
 # --oci-worker-binary points at. It seeds the pool's MITM CA into every build
-# step, so a user's Dockerfile needs no awareness of the proxy (ADR 0020/0039).
+# step, so a user's Dockerfile needs no awareness of the proxy (ADR 0020/0044).
 COPY --from=build /out/discobox-pool-runc /opt/discobox/bin/runc
 
 RUN mkdir -p /var/lib/docker /var/lib/discobox /var/lib/discobox/proxy /etc/discobox /opt/discobox/bin \

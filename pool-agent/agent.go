@@ -50,7 +50,7 @@ func RunAgent(ctx context.Context, logger *slog.Logger) error {
 	}
 	// Render the shared builder's and its registry's configuration for the same
 	// reason and at the same point: both run as systemd units with a clean
-	// environment, and every path they own is pool-scoped (ADR 0039).
+	// environment, and every path they own is pool-scoped (ADR 0044).
 	if err := buildkitagent.Prepare(bootstrap.ProjectID, bootstrap.PoolID, bundle.MITMCAPath); err != nil {
 		return err
 	}
@@ -358,7 +358,7 @@ func availableMemoryBytes() int64 {
 //
 // It is the only route from a sandbox to buildkitd, and it terminates mTLS with
 // the same certificate bundle the proxy uses, so a build is attributed to the
-// sandbox whose client certificate opened the connection (ADR 0039 decision 2).
+// sandbox whose client certificate opened the connection (ADR 0044 decision 2).
 func RunBuildkitMediator(ctx context.Context, logger *slog.Logger) error {
 	if logger == nil {
 		logger = slog.Default()
