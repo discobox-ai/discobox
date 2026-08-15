@@ -107,6 +107,40 @@ func TestAnAskedForAttestationSurvives(t *testing.T) {
 	}
 }
 
+func TestQuietIsRecognisedInEverySpelling(t *testing.T) {
+	withMaterial(t)
+	// `IMG=$(docker build -q .)` is the whole contract of -q, and pushing
+	// changes what buildx prints there to a digest that names nothing locally.
+	// A spelling missed here is a script that silently gets an unusable id.
+	quiet := [][]string{
+		{"build", "-q", "."},
+		{"build", "--quiet", "."},
+		{"build", "--quiet=true", "."},
+		{"build", ".", "-q"},
+		{"build", "-qf", "Dockerfile", "."}, // combined shorts
+		{"build", "-q", "-t", "app:v1", "."},
+	}
+	for _, argv := range quiet {
+		if !dockercache.Rewrite(argv).Quiet {
+			t.Errorf("docker %v was not read as quiet", argv)
+		}
+	}
+
+	loud := [][]string{
+		{"build", "."},
+		{"build", "--quiet=false", "."},
+		{"build", "-t", "app:v1", "."},
+		{"build", "-f", "Dockerfile.q", "."},
+		{"build", "-fDockerfileq", "."},      // a filename ending in q, not -q
+		{"build", "-t", "quiet/app:v1", "."}, // a tag, not a flag
+	}
+	for _, argv := range loud {
+		if dockercache.Rewrite(argv).Quiet {
+			t.Errorf("docker %v was read as quiet", argv)
+		}
+	}
+}
+
 func TestTheSynthesizedReferenceIsActuallyPushable(t *testing.T) {
 	withMaterial(t)
 	// The name is synthesized, so nothing upstream validates it until the

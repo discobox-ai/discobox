@@ -92,6 +92,9 @@ type Args struct {
 	RegistryRef string
 	// Tags are the tags the user asked for, applied locally after the pull.
 	Tags []string
+	// Quiet reports that the user asked for `-q`, whose whole contract is the
+	// one line it prints on stdout.
+	Quiet bool
 }
 
 // Rewrite returns the command line to exec for a user's `docker` invocation.
@@ -146,7 +149,48 @@ func Rewrite(args []string) Args {
 		Rewritten:   true,
 		RegistryRef: ref,
 		Tags:        tags,
+		Quiet:       hasQuietFlag(args[idx:]),
 	}
+}
+
+// hasQuietFlag reports whether the user asked for `-q`.
+//
+// `docker build -q` exists to print one thing: the local image ID, which
+// `IMG=$(docker build -q .)` then runs. Pushing changes what buildx prints
+// there — it reports the digest of the pushed manifest instead, which names
+// nothing in the local daemon — so the shim has to supply the answer itself.
+func hasQuietFlag(args []string) bool {
+	for _, a := range args {
+		switch {
+		case a == "-q", a == "--quiet":
+			return true
+		case strings.HasPrefix(a, "--quiet="):
+			// The one spelling that turns it back off.
+			return a == "--quiet=true"
+		case len(a) > 1 && a[0] == '-' && !strings.HasPrefix(a, "--"):
+			if quietInShortCluster(a[1:]) {
+				return true
+			}
+		}
+	}
+	return false
+}
+
+// quietInShortCluster reads a run of combined short flags: `-qf Dockerfile` is
+// `-q -f Dockerfile`. Scanning for a bare 'q' is not enough, because a short
+// flag that takes a value swallows the rest of the token — `-fDockerfileq` is
+// a filename ending in q, not a request for quiet.
+func quietInShortCluster(cluster string) bool {
+	for _, c := range cluster {
+		if c == 'q' {
+			return true
+		}
+		if strings.ContainsRune("tfom", c) {
+			// Everything after this is that flag's value.
+			return false
+		}
+	}
+	return false
 }
 
 // poolBuilderAvailable reports whether this sandbox's pool runs a builder. The

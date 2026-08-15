@@ -6,8 +6,10 @@ import (
 	"encoding/hex"
 	"errors"
 	"fmt"
+	"io"
 	"os"
 	"os/exec"
+	"strings"
 	"syscall"
 )
 
@@ -42,13 +44,26 @@ func Run(args []string) int {
 // docker exporter cannot ask the local daemon what it already holds. Both ends
 // of a registry are content-addressed, so only missing blobs move.
 func buildViaRegistry(ctx context.Context, a Args) int {
-	if code := runPassthrough(ctx, a.Argv); code != 0 {
+	// Under -q, buildx's own stdout is discarded. Pushing changes what it
+	// prints there: the digest of the pushed manifest, which names nothing in
+	// the local daemon, where `docker build -q` promises an id that
+	// `docker run $(docker build -q .)` can use. The real answer is not known
+	// until the pull lands, so it is printed below.
+	if code := runPassthrough(ctx, a.Argv, a.Quiet); code != 0 {
 		return code
 	}
 	// Pull before tagging: there is nothing local to tag until it lands.
 	if code := runQuiet(ctx, "pull", a.RegistryRef); code != 0 {
 		notice("build succeeded but its result could not be pulled from the pool registry")
 		return code
+	}
+	if a.Quiet {
+		id, err := imageID(ctx, a.RegistryRef)
+		if err != nil {
+			notice(fmt.Sprintf("build succeeded but its image id could not be read: %v", err))
+			return 1
+		}
+		fmt.Println(id)
 	}
 	for _, tag := range a.Tags {
 		if code := runQuiet(ctx, "tag", a.RegistryRef, tag); code != 0 {
@@ -70,12 +85,31 @@ func buildViaRegistry(ctx context.Context, a Args) int {
 	return 0
 }
 
+// imageID returns the local image id of a reference, in the `sha256:...` form
+// `docker build -q` prints.
+func imageID(ctx context.Context, ref string) (string, error) {
+	//nolint:gosec // Both arguments are this shim's own.
+	out, err := exec.CommandContext(ctx, RealDocker, "image", "inspect", "--format", "{{.Id}}", ref).Output()
+	if err != nil {
+		return "", err
+	}
+	id := strings.TrimSpace(string(out))
+	if id == "" {
+		return "", errors.New("no id reported")
+	}
+	return id, nil
+}
+
 // runPassthrough runs a command with this process's stdio, so build progress
-// renders normally.
-func runPassthrough(ctx context.Context, argv []string) int {
+// renders normally. discardStdout drops what the command writes there, for the
+// one case where this shim owns stdout rather than the build.
+func runPassthrough(ctx context.Context, argv []string, discardStdout bool) int {
 	//nolint:gosec // argv is this shim's own rewrite of the user's command line.
 	cmd := exec.CommandContext(ctx, argv[0], argv[1:]...)
 	cmd.Stdin, cmd.Stdout, cmd.Stderr = os.Stdin, os.Stdout, os.Stderr
+	if discardStdout {
+		cmd.Stdout = io.Discard
+	}
 	if err := cmd.Run(); err != nil {
 		var exit *exec.ExitError
 		if errors.As(err, &exit) {
