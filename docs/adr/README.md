@@ -84,7 +84,7 @@ Nygard-style ADRs (see adr.github.io) combined with current-state design docs:
 | [0029](0029-sandboxes-have-no-per-sandbox-resource-requests.md) | Sandboxes have no per-sandbox resource requests | Accepted |
 | [0030](0030-pool-agent-polls-and-pushes-sandbox-agent-status.md) | Pool-agent polls sandbox-agent status and pushes it to the control plane | Accepted |
 | [0031](0031-agent-credentials-are-a-portable-protocol-with-ephemeral-sentinels.md) | Agent credentials are a portable list/request/get protocol with pool-agent-minted ephemeral sentinels | Proposed |
-| [0032](0032-every-sandbox-has-a-harness-config-and-shell-is-the-built-in.md) | Every sandbox has a harness config, and `shell` is the built-in one | Accepted |
+| [0032](0032-every-sandbox-has-a-harness-config-and-shell-is-the-built-in.md) | Every sandbox has a harness config, and `shell` is the built-in one | Accepted (§2 `shell`'s image superseded by [0043](0043-shell-is-an-ordinary-harness-image.md)) |
 | [0033](0033-user-resolution-is-one-layered-resolver-with-declared-gaps.md) | User resolution is one layered resolver, and every gap is declared | Accepted |
 | [0034](0034-sandbox-state-and-runtime-state-are-separate-fields.md) | Sandbox `state` and `runtime_state` are separate fields | Accepted |
 | [0035](0035-repair-is-one-rebuild-intent-plus-a-start-instruction.md) | Repair is one rebuild intent, plus a start instruction | Accepted |
@@ -95,3 +95,4 @@ Nygard-style ADRs (see adr.github.io) combined with current-state design docs:
 | [0040](0040-discobox-images-are-reclaimed-by-label-and-local-age.md) | Discobox images are reclaimed by label and local tag age | Accepted |
 | [0041](0041-dev-hot-reload-is-watchnbuild.md) | Dev hot reload is watchnbuild, not Air | Proposed |
 | [0042](0042-git-authorship-identity-is-a-first-class-sandbox-property.md) | Git authorship identity is a first-class sandbox property | Proposed |
+| [0043](0043-shell-is-an-ordinary-harness-image.md) | `shell` is an ordinary harness image | Accepted |
