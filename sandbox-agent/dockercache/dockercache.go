@@ -95,6 +95,9 @@ type Args struct {
 	// Quiet reports that the user asked for `-q`, whose whole contract is the
 	// one line it prints on stdout.
 	Quiet bool
+	// IIDFile is the path the user asked the image id to be written to. It is
+	// `-q` in file form and needs the same correction.
+	IIDFile string
 }
 
 // Rewrite returns the command line to exec for a user's `docker` invocation.
@@ -150,7 +153,25 @@ func Rewrite(args []string) Args {
 		RegistryRef: ref,
 		Tags:        tags,
 		Quiet:       hasQuietFlag(args[idx:]),
+		IIDFile:     iidFile(args[idx:]),
 	}
+}
+
+// iidFile returns the path `--iidfile` names, or "".
+//
+// It is `-q` in file form and wrong in the same way: buildx writes the digest
+// of what it pushed, which names nothing in the local daemon. CI reads that
+// file to decide what to run or scan next.
+func iidFile(args []string) string {
+	for i, a := range args {
+		if path, ok := strings.CutPrefix(a, "--iidfile="); ok {
+			return path
+		}
+		if a == "--iidfile" && i+1 < len(args) {
+			return args[i+1]
+		}
+	}
+	return ""
 }
 
 // hasQuietFlag reports whether the user asked for `-q`.

@@ -57,13 +57,24 @@ func buildViaRegistry(ctx context.Context, a Args) int {
 		notice("build succeeded but its result could not be pulled from the pool registry")
 		return code
 	}
-	if a.Quiet {
+	// Both of these report the built image's id, and buildx filled them in with
+	// the digest of what it pushed. Correct them from the local daemon, which
+	// only now knows the answer.
+	if a.Quiet || a.IIDFile != "" {
 		id, err := imageID(ctx, a.RegistryRef)
 		if err != nil {
 			notice(fmt.Sprintf("build succeeded but its image id could not be read: %v", err))
 			return 1
 		}
-		fmt.Println(id)
+		if a.Quiet {
+			fmt.Println(id)
+		}
+		if a.IIDFile != "" {
+			if err := os.WriteFile(a.IIDFile, []byte(id), 0o644); err != nil { //nolint:gosec // The user asked for this file; docker writes it world-readable too.
+				notice(fmt.Sprintf("build succeeded but its image id could not be written to %s: %v", a.IIDFile, err))
+				return 1
+			}
+		}
 	}
 	for _, tag := range a.Tags {
 		if code := runQuiet(ctx, "tag", a.RegistryRef, tag); code != 0 {

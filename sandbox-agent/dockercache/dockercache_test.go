@@ -141,6 +141,23 @@ func TestQuietIsRecognisedInEverySpelling(t *testing.T) {
 	}
 }
 
+func TestTheIIDFileIsRecognised(t *testing.T) {
+	withMaterial(t)
+	// --iidfile is -q in file form, and CI reads that file to decide what to
+	// run or scan next. buildx fills it with the digest of what it pushed.
+	for _, argv := range [][]string{
+		{"build", "--iidfile", "/tmp/iid", "."},
+		{"build", "--iidfile=/tmp/iid", "."},
+	} {
+		if got := dockercache.Rewrite(argv).IIDFile; got != "/tmp/iid" {
+			t.Errorf("docker %v reported iidfile %q", argv, got)
+		}
+	}
+	if got := dockercache.Rewrite([]string{"build", "."}).IIDFile; got != "" {
+		t.Errorf("a build with no --iidfile reported %q", got)
+	}
+}
+
 func TestTheSynthesizedReferenceIsActuallyPushable(t *testing.T) {
 	withMaterial(t)
 	// The name is synthesized, so nothing upstream validates it until the
