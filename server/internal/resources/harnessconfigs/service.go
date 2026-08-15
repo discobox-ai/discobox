@@ -24,25 +24,6 @@ type Service struct {
 	harnessImages map[string]string
 	sandboxes     SandboxRuntime
 	dirtier       Dirtier
-	// defaultSandboxImage/Digest is the image the reserved `shell` built-in
-	// runs: the sandbox agent itself, with no harness product on top
-	// (ADR 0025 §2).
-	defaultSandboxImage       string
-	defaultSandboxImageDigest string
-}
-
-// SetDefaultSandboxImage records the image the `shell` built-in is seeded
-// against. Seeding keeps that config on the current image the same way it keeps
-// the other built-ins current, which is what lets an agent upgrade reach a
-// sandbox running no harness product.
-//
-// The digest is taken rather than inspected because this image is the one that
-// deliberately has no harness label to read: it is the agent, not a harness
-// product built on it. Without a digest there is no identity to pin, and the
-// built-in is not seeded at all.
-func (s *Service) SetDefaultSandboxImage(image, digest string) {
-	s.defaultSandboxImage = strings.TrimSpace(image)
-	s.defaultSandboxImageDigest = strings.TrimSpace(digest)
 }
 
 func NewService(store *store.Store) *Service {
@@ -86,26 +67,22 @@ func (s *Service) CreateHarnessConfig(ctx context.Context, projectID string, inp
 	}
 	// The image label is authoritative. Inspect it once here to snapshot the
 	// harness metadata onto the config; nothing re-reads it afterward.
-	var inspected *imageMetadata
-	if s.inspector != nil {
-		metadata, inspectErr := s.inspector.Inspect(ctx, image)
-		if inspectErr != nil {
-			return nil, apperrors.NewStatusError(http.StatusBadRequest, inspectErr.Error())
-		}
-		inspected = &metadata
+	if s.inspector == nil {
+		return nil, apperrors.NewStatusError(http.StatusServiceUnavailable, "image inspection is unavailable")
+	}
+	inspected, err := s.inspector.Inspect(ctx, image)
+	if err != nil {
+		return nil, apperrors.NewStatusError(http.StatusBadRequest, err.Error())
 	}
 
-	imageDigest := ""
 	name := strings.TrimSpace(input.Name.Or(""))
 	slug := strings.TrimSpace(input.Slug.Or(""))
-	if inspected != nil {
-		imageDigest = inspected.Digest
-		if name == "" {
-			name = strings.TrimSpace(inspected.Harness.Name)
-		}
-		if slug == "" {
-			slug = strings.TrimSpace(inspected.Harness.ID)
-		}
+	imageDigest := inspected.Digest
+	if name == "" {
+		name = strings.TrimSpace(inspected.Harness.Name)
+	}
+	if slug == "" {
+		slug = strings.TrimSpace(inspected.Harness.ID)
 	}
 	if slug == "" && name != "" {
 		slug = harnessdefs.Slugify(name)
@@ -130,21 +107,14 @@ func (s *Service) CreateHarnessConfig(ctx context.Context, projectID string, inp
 		return nil, err
 	}
 
-	var runCommand, relaunchCommand, configCommand []string
-	var files []model.HarnessConfigFile
-	if apiFiles, ok := input.Files.Get(); ok {
-		files = services.HarnessConfigFilesToModel(apiFiles)
-	}
-	var secrets []model.HarnessConfigSecret
-	var env map[string]string
-	var volumes []harness.Volume
-	var additionalGroups []string
-	if inspected != nil {
-		runCommand, relaunchCommand, configCommand, files, secrets, env, volumes, additionalGroups = harnessMetadataFields(inspected.ImageMetadata)
-	}
-	if len(runCommand) == 0 {
-		return nil, apperrors.NewStatusError(http.StatusBadRequest, "harness config run command is required")
-	}
+	// The label is the whole snapshot, `input.Files` included: the image owns
+	// its seed files at registration, and `UpdateHarnessConfig` is where a
+	// caller changes them afterward.
+	//
+	// No check that a run command came back, either: an image that declares
+	// none runs the sandbox user's login shell, which the sandbox resolves for
+	// itself (ADR 0043). The label validator already rejects a blank one.
+	runCommand, relaunchCommand, configCommand, files, secrets, env, volumes, additionalGroups := harnessMetadataFields(inspected.ImageMetadata)
 
 	config := &model.HarnessConfig{
 		ProjectID:        projectID,
@@ -197,9 +167,6 @@ func (s *Service) UpdateHarnessConfig(ctx context.Context, projectID, configID s
 	if apiFiles, ok := input.ConfiguredFiles.Get(); ok {
 		config.ConfiguredFiles = services.HarnessConfigFilesToModel(apiFiles)
 	}
-	if len(config.RunCommand) == 0 {
-		return nil, apperrors.NewStatusError(http.StatusBadRequest, "harness config run command is required when no definition is provided")
-	}
 	if err := s.store.UpdateHarnessConfig(ctx, config); err != nil {
 		return nil, err
 	}
@@ -240,9 +207,6 @@ func (s *Service) RefreshHarnessConfigImage(ctx context.Context, projectID, conf
 		return nil, apperrors.NewStatusError(http.StatusBadRequest, err.Error())
 	}
 	runCommand, relaunchCommand, configCommand, files, secrets, env, volumes, additionalGroups := harnessMetadataFields(metadata.ImageMetadata)
-	if len(runCommand) == 0 {
-		return nil, apperrors.NewStatusError(http.StatusBadRequest, "harness config run command is required")
-	}
 	previousDigest := config.ImageDigest
 	config.ImageDigest = metadata.Digest
 	config.RunCommand, config.RelaunchCommand, config.ConfigCommand = runCommand, relaunchCommand, configCommand
@@ -403,18 +367,11 @@ func (s *Service) SeedBuiltIns(ctx context.Context, projectID string) error {
 		if err != nil && !errors.Is(err, store.ErrNotFound) {
 			return err
 		}
-		// A seed carrying its own digest is not inspected: the `shell` built-in
-		// runs the sandbox agent image, which has no harness label, and reading
-		// one is exactly what would fail.
-		metadata := imageMetadata{Digest: strings.TrimSpace(seed.Digest)}
-		if metadata.Digest == "" {
-			inspected, inspectErr := s.inspector.Inspect(ctx, image)
-			if inspectErr != nil {
-				slog.WarnContext(ctx, "skip built-in harness seed; image unavailable",
-					"slug", seed.Slug, "image", image, "error", inspectErr)
-				continue
-			}
-			metadata = inspected
+		metadata, inspectErr := s.inspector.Inspect(ctx, image)
+		if inspectErr != nil {
+			slog.WarnContext(ctx, "skip built-in harness seed; image unavailable",
+				"slug", seed.Slug, "image", image, "error", inspectErr)
+			continue
 		}
 		if existing != nil && existing.Image == image && existing.ImageDigest == metadata.Digest {
 			continue
@@ -422,9 +379,15 @@ func (s *Service) SeedBuiltIns(ctx context.Context, projectID string) error {
 		if existing == nil {
 			config := &model.HarnessConfig{
 				ProjectID: projectID, Slug: seed.Slug, Name: seed.Name,
-				BuiltIn: true, Configured: seed.Slug == harnessdefs.ShellSlug, Image: image, ImageDigest: metadata.Digest,
+				BuiltIn: true, Image: image, ImageDigest: metadata.Digest,
 			}
 			config.RunCommand, config.RelaunchCommand, config.ConfigCommand, config.Files, config.Secrets, config.Env, config.Volumes, config.AdditionalGroups = harnessMetadataFields(metadata.ImageMetadata)
+			// Born configured when there is nothing to collect. `shell` is the
+			// harness that lands here, but by declaring no secrets rather than
+			// by being itself: a fresh project has to be usable before anyone
+			// configures anything, and an image with no credentials already is.
+			// Only set at creation — reseeding never revisits Configured.
+			config.Configured = len(config.Secrets) == 0
 			if err := s.store.CreateHarnessConfig(ctx, config); err != nil {
 				return err
 			}
@@ -446,23 +409,11 @@ func (s *Service) SeedBuiltIns(ctx context.Context, projectID string) error {
 	return nil
 }
 
-// seeds are the built-in harness configs: the registry's harness products,
-// plus the reserved `shell` config whose image is the sandbox agent itself
-// (ADR 0025 §2). `shell` is appended rather than registered because the
-// registry describes images built on top of the agent, and this one is the
-// agent. It is skipped when no default sandbox image is configured, the same
-// way a product seed is skipped when its image is unavailable.
+// seeds are the built-in harness configs: every harness in the registry,
+// `shell` included. It is the end of the resolution chain rather than a
+// different kind of thing, so nothing here treats it differently (ADR 0043).
 func (s *Service) seeds() []harnessdefs.Seed {
-	seeds := harnessdefs.Seeds(s.harnessImages)
-	if image, digest := strings.TrimSpace(s.defaultSandboxImage), strings.TrimSpace(s.defaultSandboxImageDigest); image != "" && digest != "" {
-		seeds = append(seeds, harnessdefs.Seed{
-			Slug:   harnessdefs.ShellSlug,
-			Name:   harnessdefs.ShellName,
-			Image:  image,
-			Digest: digest,
-		})
-	}
-	return seeds
+	return harnessdefs.Seeds(s.harnessImages)
 }
 
 // harnessMetadataFields snapshots the mutable config fields declared by a

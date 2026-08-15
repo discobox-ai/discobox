@@ -157,7 +157,8 @@ func TestSandboxReconcileExecutorDelegatesToProvider(t *testing.T) {
 
 func TestCreateSandboxUsesDefaultSandboxImage(t *testing.T) {
 	ctx := context.Background()
-	svc, _, _, projectID := newSandboxTestService(t, nil)
+	svc, _, st, projectID := newSandboxTestService(t, nil)
+	clearSeededHarnessConfigs(ctx, t, st, projectID)
 	svc.SetDefaultSandboxImage("discobox-sandbox-agent:default", "sha256:default")
 	provider := &recordingSandboxProvider{}
 	svc.RegisterSandboxProvider("recording", provider)
@@ -191,7 +192,8 @@ func TestCreateSandboxUsesDefaultSandboxImage(t *testing.T) {
 
 func TestCreateSandboxExplicitImageOverridesDefault(t *testing.T) {
 	ctx := context.Background()
-	svc, _, _, projectID := newSandboxTestService(t, nil)
+	svc, _, st, projectID := newSandboxTestService(t, nil)
+	clearSeededHarnessConfigs(ctx, t, st, projectID)
 	svc.SetDefaultSandboxImage("discobox-sandbox-agent:default", "sha256:default")
 	provider := &recordingSandboxProvider{}
 	svc.RegisterSandboxProvider("recording", provider)
@@ -685,4 +687,24 @@ func mustParseURL(t *testing.T, value string) url.URL {
 		t.Fatalf("parse url %q: %v", value, err)
 	}
 	return *parsed
+}
+
+// clearSeededHarnessConfigs removes whatever SeedBuiltIns managed to create.
+//
+// Seeding inspects real images, so which built-ins exist depends on what this
+// machine's Docker daemon happens to hold — and a seeded config supplies the
+// sandbox's image, which is exactly what the tests around it are measuring.
+// These tests are about the path taken when *no* harness config resolves, so
+// they state that outright instead of inheriting it from the environment.
+func clearSeededHarnessConfigs(ctx context.Context, t *testing.T, st *store.Store, projectID string) {
+	t.Helper()
+	configs, err := st.ListHarnessConfigs(ctx, projectID)
+	if err != nil {
+		t.Fatalf("list harness configs: %v", err)
+	}
+	for _, config := range configs {
+		if err := st.DeleteHarnessConfig(ctx, projectID, config.ID); err != nil {
+			t.Fatalf("delete harness config %s: %v", config.ID, err)
+		}
+	}
 }

@@ -137,7 +137,7 @@ func TestUpgradeTargetIgnoresConfigModeSandboxes(t *testing.T) {
 func shellConfig(t *testing.T, st *store.Store, image, digest string) *model.HarnessConfig {
 	t.Helper()
 	config := &model.HarnessConfig{
-		ProjectID: "project-1", Slug: harnessdefs.ShellSlug, Name: harnessdefs.ShellName,
+		ProjectID: "project-1", Slug: harnessdefs.ShellSlug, Name: "Shell",
 		BuiltIn: true, Configured: true, Image: image, ImageDigest: digest,
 	}
 	if err := st.CreateHarnessConfig(context.Background(), config); err != nil {

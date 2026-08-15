@@ -6,8 +6,10 @@ sandbox terminals.
 ## Image Contract
 
 - One sandbox image contains at most one harness. Its immutable identity,
-  run/relaunch commands, seed files, secret declarations, optional config
-  command, env defaults, and declarative volumes are published in the
+  run/relaunch commands (`runCommand` optional — omitting it declares that the
+  sandbox resolves the user's login shell, ADR 0043 §2), seed files, secret
+  declarations, optional config command, env defaults, and declarative volumes
+  are published in the
   `io.discobox.image.v1` OCI image label (`harness.ImageMetadata`) for
   server-side registration. There is no baked-in file inside the image
   carrying this data — `image.json` is the build-time authoring source the
@@ -45,6 +47,10 @@ sandbox terminals.
 - Provider-specific implementations live in one folder per harness:
   - `claude-code`
   - `codex-cli`
+  - `shell` — the login shell, and the end of the resolution chain. Its
+    Dockerfile installs nothing (the base image already ships the shell) and it
+    declares no `runCommand`, no secrets, and no configure flow. It is otherwise
+    an ordinary harness in every mechanism that touches it (ADR 0043).
 - `registry` selects the driver from the image harness type ID, can install all
   drivers for hook/bootstrap workflows, and exposes
   `Definitions()` for the control plane to surface built-in harness configs.

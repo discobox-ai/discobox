@@ -24,22 +24,14 @@ type Seed struct {
 	Name string
 	// Image is the harness image, already resolved against any env override.
 	Image string
-	// Digest, when set, is the image's already-known identity and is used in
-	// place of inspecting the image. The reserved `shell` built-in sets it:
-	// its image is the sandbox agent, which deliberately declares no harness
-	// label to read, and whose identity the server is configured with anyway.
-	Digest string
 }
 
-// ShellSlug is the reserved slug of the built-in that ends the harness
-// resolution chain (ADR 0025). It is not in the registry: the registry holds
-// harness products, each built on top of the sandbox agent image, while this
-// one *is* the sandbox agent image with no product on it. Its name is reserved
-// so nothing else can claim the end of the chain.
+// ShellSlug is the slug of the harness that ends the resolution chain: the one
+// a sandbox falls back to when nothing else is selected (ADR 0025, ADR 0043).
+// It is an ordinary registry harness — `harness/shell`, built on the sandbox
+// agent image like every other — and this name is reserved only so that
+// nothing else can claim the end of the chain.
 const ShellSlug = "shell"
-
-// ShellName is the display name of the ShellSlug built-in.
-const ShellName = "Shell"
 
 // Seeds returns the built-in harness configs to seed, with each image replaced
 // by imageOverrides[slug] when present. Dev builds inject freshly tagged images

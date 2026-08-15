@@ -3,25 +3,25 @@
 `internal/resources/harnessconfigs` owns project-scoped harness config behavior.
 
 A harness config is the **only** harness concept — there is no separate
-definition. The three included harnesses are seeded as built-in configs
+definition. Every harness in the registry is seeded as a built-in config
 (`SeedBuiltIns`); everything else is a user-registered image.
 
-`shell` is a fourth built-in, and the one every other rule bends around
-(ADR 0025). It is the end of the harness resolution chain, so a sandbox always
-has a harness config:
+`shell` is one of those registry harnesses, not a different kind of thing
+(ADR 0043): `harness/shell`, built on the sandbox agent base like its siblings,
+inspected and seeded by the same code path with no branch of its own. What is
+still true of it, and true *by rule* rather than by slug:
 
-- Its image is the server's default sandbox image — the agent itself, not a
-  harness product built on top of one. It therefore has no
-  `io.discobox.harness.v1` label to inspect, and is seeded from the configured
-  image *and digest* rather than by inspection. No digest means no seed: an
-  identity that cannot be pinned is not one an upgrade could ever compare.
-- It is born `Configured`. Every other built-in starts unconfigured, visible
-  but unselectable; this one has no credentials to collect, and a fresh project
-  has to be usable before anyone configures anything.
-- It carries **no run command**. The control plane cannot know the run user's
-  login shell, so the sandbox resolves it: `sandbox-agent`'s terminal layer
-  treats a declared harness with no command as that shell, keeping the declared
-  harness identity. `runCommand` is optional in the API schema for this reason.
+- It is the end of the harness resolution chain, so a sandbox always has a
+  harness config. Only its slug is reserved, so nothing else can claim that end
+  (ADR 0032 §3).
+- It carries **no run command**, which is a declaration and not a gap: the
+  sandbox resolves the run user's login shell, the only place that knows whether
+  that is bash, zsh, or fish. `sandbox-agent`'s terminal layer treats a declared
+  harness with no command as that shell, keeping the declared harness identity.
+- It is born `Configured` — because it declares no secrets, which is the rule
+  for every built-in. A harness with no credentials to collect is ready when
+  seeded, and a fresh project has to be usable before anyone configures
+  anything.
 - `configure` refuses it — stated as "its image declares no configure command"
   rather than by slug, since that is true of any such image. Deleting it is
   already refused by the built-in rule.
@@ -32,6 +32,10 @@ has a harness config:
   it **once** per image (local Docker daemon first, registry fallback) and
   snapshots the digest, run/relaunch argv, files, and secret declarations onto the
   config. Nothing re-reads the label afterward.
+- `runCommand` is **optional**, and omitting it means "run the login shell"
+  (ADR 0043 §2) — so neither registration nor refresh requires one. A *blank*
+  command is still rejected: declaring nothing and declaring an empty string are
+  different.
 - Built-in configs **track** their image: `SeedBuiltIns` clobbers `Image` and
   re-snapshots the label whenever the resolved image changes, which is how a dev
   rebuild (`DISCOBOX_HARNESS_<SLUG>_IMAGE` → `.env` → server restart) reaches a

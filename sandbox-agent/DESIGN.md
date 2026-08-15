@@ -179,7 +179,7 @@ images. `task build:images` builds only the pool host, sandbox base, and include
 harness images.
 
 `task dev` starts `cmd/discobox-docker-image-watch`, which initially builds the
-pool, base sandbox, Codex, and Claude Code images. Each harness
+pool, base sandbox, Codex, Claude Code, and Shell images. Each harness
 Dockerfile extends `discobox-sandbox-agent:local` through its
 `SANDBOX_AGENT_IMAGE` argument. The watcher tracks shared Docker/runtime inputs
 plus each harness folder's Dockerfile, `image.json`, and configure script.

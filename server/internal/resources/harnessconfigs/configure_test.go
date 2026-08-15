@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"net/http"
+	"slices"
 	"testing"
 
 	"github.com/obot-platform/discobox/harness"
@@ -555,5 +556,79 @@ func TestApplyConfigureOutputUpdatesBoundSecretInPlace(t *testing.T) {
 	}
 	if grant.Host != "new.example.com" {
 		t.Fatalf("grant host = %q, want new.example.com", grant.Host)
+	}
+}
+
+// `shell` is seeded from the registry like any other harness — same inspect,
+// same snapshot — and what it declares is what it gets. The `docker` group is
+// why that matters: the image ships the Docker CLI, which checks group
+// membership, so without it Docker works as the sandbox user under a coding
+// harness and not under a plain shell.
+//
+// It carries no run command, which is the declaration that the sandbox resolves
+// the login shell, and it is born configured because it collects no credentials
+// — derived from the empty secret list, not from its slug (ADR 0043).
+func TestSeedBuiltInsSeedsShellLikeAnyOtherHarness(t *testing.T) {
+	ctx := context.Background()
+	st := newTestStore(t)
+
+	const image = "discobox-harness-shell:local"
+	inspector := &stubInspector{byImage: map[string]imageMetadata{
+		image: {Digest: "sha256:shell", ImageMetadata: harness.ImageMetadata{
+			APIVersion:       harness.ImageAPIVersion,
+			AdditionalGroups: []string{"docker"},
+			Harness:          &harness.Image{ID: "shell", Name: "Shell"},
+		}},
+	}}
+	svc := &Service{store: st, inspector: inspector, harnessImages: map[string]string{"shell": image}}
+	if err := svc.SeedBuiltIns(ctx, "project-1"); err != nil {
+		t.Fatalf("seed: %v", err)
+	}
+
+	got, err := st.GetHarnessConfigBySlug(ctx, "project-1", "shell")
+	if err != nil {
+		t.Fatalf("get: %v", err)
+	}
+	if !slices.Equal(got.AdditionalGroups, []string{"docker"}) {
+		t.Fatalf("additionalGroups = %v, want [docker] so a non-root shell can use Docker", got.AdditionalGroups)
+	}
+	if got.Image != image || got.ImageDigest != "sha256:shell" {
+		t.Fatalf("image = %q digest = %q, want the inspected identity", got.Image, got.ImageDigest)
+	}
+	if len(got.RunCommand) != 0 {
+		t.Fatalf("runCommand = %v, want none so the sandbox resolves the login shell", got.RunCommand)
+	}
+	if !got.Configured || !got.BuiltIn {
+		t.Fatalf("configured = %t builtIn = %t, want both true", got.Configured, got.BuiltIn)
+	}
+}
+
+// The flip side: a harness that does declare secrets is seeded unconfigured, so
+// deriving Configured from "collects nothing" cannot make a credential-hungry
+// harness look ready to run.
+func TestSeedBuiltInsLeavesHarnessesWithSecretsUnconfigured(t *testing.T) {
+	ctx := context.Background()
+	st := newTestStore(t)
+
+	const image = "discobox-harness-codex:local"
+	inspector := &stubInspector{byImage: map[string]imageMetadata{
+		image: {Digest: "sha256:codex", ImageMetadata: harness.ImageMetadata{
+			Harness: &harness.Image{
+				ID: "codex", Name: "Codex", RunCommand: []string{"codex"},
+				Secrets: []harness.Secret{{Name: "OPENAI_API_KEY", Required: true}},
+			},
+		}},
+	}}
+	svc := &Service{store: st, inspector: inspector, harnessImages: map[string]string{"codex": image}}
+	if err := svc.SeedBuiltIns(ctx, "project-1"); err != nil {
+		t.Fatalf("seed: %v", err)
+	}
+
+	got, err := st.GetHarnessConfigBySlug(ctx, "project-1", "codex")
+	if err != nil {
+		t.Fatalf("get: %v", err)
+	}
+	if got.Configured {
+		t.Fatal("configured = true, want false for a harness that still needs a credential")
 	}
 }

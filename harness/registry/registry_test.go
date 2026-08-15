@@ -21,16 +21,29 @@ func TestDefinitionsCoverKnownHarnesses(t *testing.T) {
 	}
 	byID := map[string]harness.Definition{}
 	for _, definition := range definitions {
-		if definition.ID == "" || definition.Name == "" || definition.Image == "" || definition.Configure == nil {
-			t.Fatalf("definition %#v must identify a configurable image", definition)
+		if definition.ID == "" || definition.Name == "" || definition.Image == "" {
+			t.Fatalf("definition %#v must identify an image", definition)
 		}
 		byID[definition.ID] = definition
 	}
+	// Configure is what enables the interactive setup flow, so it tracks
+	// whether the harness has credentials to collect — not whether it is a
+	// harness. `shell` has none, and `configure` refuses it on those grounds.
 	for _, id := range []string{"claude-code", "codex"} {
-		_, ok := byID[id]
+		definition, ok := byID[id]
 		if !ok {
 			t.Fatalf("missing definition %q", id)
 		}
+		if definition.Configure == nil {
+			t.Fatalf("definition %q must be configurable", id)
+		}
+	}
+	shell, ok := byID["shell"]
+	if !ok {
+		t.Fatal("missing definition \"shell\"; it is the end of the harness resolution chain")
+	}
+	if shell.Configure != nil {
+		t.Fatalf("shell definition = %#v, want no configure flow: it collects no credentials", shell)
 	}
 }
 

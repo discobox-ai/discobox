@@ -9,6 +9,7 @@ import (
 	"testing"
 
 	"github.com/obot-platform/discobox/devimage"
+	"github.com/obot-platform/discobox/harness"
 )
 
 func loadDockerImageSpecs(t *testing.T) ([]imageSpec, string) {
@@ -26,8 +27,8 @@ func loadDockerImageSpecs(t *testing.T) ([]imageSpec, string) {
 
 func TestDockerImageSpecsBuildAllDevImagesAndUpdateEnv(t *testing.T) {
 	specs, _ := loadDockerImageSpecs(t)
-	if len(specs) != 4 {
-		t.Fatalf("image specs = %d, want worker, sandbox, and two harnesses", len(specs))
+	if len(specs) != 5 {
+		t.Fatalf("image specs = %d, want worker, sandbox, and three harnesses", len(specs))
 	}
 
 	gotNames := make([]string, 0, len(specs))
@@ -42,7 +43,7 @@ func TestDockerImageSpecsBuildAllDevImagesAndUpdateEnv(t *testing.T) {
 			gotEnvKeys[spec.envDigestKey] = true
 		}
 	}
-	wantNames := []string{"pool-agent", "sandbox-agent", "harness-codex", "harness-claude-code"}
+	wantNames := []string{"pool-agent", "sandbox-agent", "harness-codex", "harness-claude-code", "harness-shell"}
 	if !reflect.DeepEqual(gotNames, wantNames) {
 		t.Fatalf("image build order = %#v, want %#v", gotNames, wantNames)
 	}
@@ -53,6 +54,7 @@ func TestDockerImageSpecsBuildAllDevImagesAndUpdateEnv(t *testing.T) {
 		"DISCOBOX_DEFAULT_SANDBOX_IMAGE_DIGEST",
 		"DISCOBOX_HARNESS_CODEX_IMAGE",
 		"DISCOBOX_HARNESS_CLAUDE_CODE_IMAGE",
+		"DISCOBOX_HARNESS_SHELL_IMAGE",
 	} {
 		if !gotEnvKeys[key] {
 			t.Errorf("watcher does not update %s", key)
@@ -63,7 +65,7 @@ func TestDockerImageSpecsBuildAllDevImagesAndUpdateEnv(t *testing.T) {
 func TestDockerImageSpecsIncludeIndependentlyWatchedHarnesses(t *testing.T) {
 	specs, repoRoot := loadDockerImageSpecs(t)
 	sandboxDockerfile := filepath.Join(repoRoot, "sandbox-agent", "Dockerfile")
-	for _, name := range []string{"codex", "claude-code"} {
+	for _, name := range []string{"codex", "claude-code", "shell"} {
 		var found *imageSpec
 		for i := range specs {
 			if specs[i].name == "harness-"+name {
@@ -135,7 +137,7 @@ func TestHarnessSpecsThreadSandboxAgentBase(t *testing.T) {
 			if spec.sandboxBase {
 				t.Fatalf("%s should not mark itself as a sandbox-base consumer", spec.name)
 			}
-		case "harness-codex", "harness-claude-code":
+		case "harness-codex", "harness-claude-code", "harness-shell":
 			if !spec.sandboxBase {
 				t.Fatalf("%s does not thread the sandbox-agent base image", spec.name)
 			}
@@ -171,6 +173,34 @@ func TestDevImageTag(t *testing.T) {
 	got := devImageTag("discobox-sandbox-agent:dev-", "sha256:0123456789abcdef0000")
 	if got != "discobox-sandbox-agent:dev-0123456789ab" {
 		t.Fatalf("devImageTag = %q", got)
+	}
+}
+
+// An image whose Dockerfile turns HARNESS_METADATA into the io.discobox.image.v1
+// label must be built with that argument, or it ships an empty label the server
+// refuses to read — and the failure is quiet: the harness config it feeds is
+// simply skipped at seeding.
+func TestSpecsPassImageMetadataToEveryLabeledImage(t *testing.T) {
+	specs, _ := loadDockerImageSpecs(t)
+	labeled := 0
+	for _, spec := range specs {
+		data, err := os.ReadFile(filepath.Join(spec.contextDir, spec.dockerfile))
+		if err != nil {
+			t.Fatal(err)
+		}
+		if !strings.Contains(string(data), "LABEL "+harness.ImageLabel+"=") {
+			continue
+		}
+		labeled++
+		if spec.metadataFile == "" {
+			t.Errorf("%s declares %s but its spec has no image.json to fill it from", spec.name, harness.ImageLabel)
+		}
+		if !contains(spec.buildArgs, "HARNESS_METADATA=") {
+			t.Errorf("%s has no HARNESS_METADATA= placeholder for buildImage to fill in: %#v", spec.name, spec.buildArgs)
+		}
+	}
+	if labeled != len(harnessImages) {
+		t.Fatalf("labeled images = %d, want one per harness image (%d)", labeled, len(harnessImages))
 	}
 }
 

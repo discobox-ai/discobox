@@ -134,9 +134,6 @@ func (s *Service) SetSandboxAuthManager(manager *sandboxauth.Manager) {
 
 func (s *Service) SetDefaultSandboxImage(image, digest string) {
 	s.Service.SetDefaultSandboxImage(image, digest)
-	// The same image seeds the reserved `shell` harness config, which is what
-	// a sandbox with no harness product runs (ADR 0025 §2).
-	s.harnessConfigs.SetDefaultSandboxImage(image, digest)
 }
 
 func (s *Service) SetHostID(hostID string) {

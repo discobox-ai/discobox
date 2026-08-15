@@ -103,8 +103,12 @@ func validateImageMetadata(metadata harness.ImageMetadata) error {
 	if strings.TrimSpace(h.Name) == "" {
 		return fmt.Errorf("%s label requires harness name", harness.ImageLabel)
 	}
-	if len(h.RunCommand) == 0 || strings.TrimSpace(h.RunCommand[0]) == "" {
-		return fmt.Errorf("%s label requires runCommand", harness.ImageLabel)
+	// An omitted runCommand is a declaration, not an omission: it means the
+	// sandbox resolves the user's login shell, which is the only place that
+	// knows whether it is bash, zsh, or fish (ADR 0025 §3, ADR 0043). A
+	// *present but blank* command is still a broken image.
+	if len(h.RunCommand) > 0 && strings.TrimSpace(h.RunCommand[0]) == "" {
+		return fmt.Errorf("%s label has a blank runCommand", harness.ImageLabel)
 	}
 	if h.Config != nil && (len(h.Config.Command) == 0 || strings.TrimSpace(h.Config.Command[0]) == "") {
 		return fmt.Errorf("%s label config mode requires command", harness.ImageLabel)
