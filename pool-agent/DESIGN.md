@@ -380,6 +380,15 @@ Four boundaries, each doing one job:
   It is a raw-codec gRPC proxy — it decodes only the two solve methods and
   passes every other frame through untouched, so it does not have to track
   BuildKit's protocol surface.
+- **Each sandbox gets a registry namespace of its own.** The pool registry has
+  no authentication, so a repository path is a capability: build output is
+  protected only by `discobox-build/<random hex>` being unguessable. A sandbox's
+  namespace for publishing its local base images is therefore an unguessable
+  token, minted once per sandbox and staged with the rest of its proxy material
+  as `registry-namespace` — not the sandbox ID, which a peer can derive. It is
+  world-readable inside the sandbox, whose own user is the tenant it belongs to.
+  When the registry authenticates, the namespace should become the sandbox ID
+  and the token should go. See ADR 0045.
 - **A stop drains the builds it is carrying.** A build is one long-lived stream
   through the mediator, so stopping the server closes it and the client sees
   `Unavailable: error reading from server: EOF` with nothing to resume from.

@@ -167,6 +167,18 @@ side is in [pool-agent/DESIGN.md](../pool-agent/DESIGN.md)). Three pieces here:
   however the build ends; an untagged one keeps it, because removing an image's
   last reference deletes the image and there is no way to untag a pulled image
   into the `<none>:<none>` entry a local build leaves.
+- Local base images are published and redirected. The pool builder has no
+  access to this daemon's image store, so `FROM discobox-sandbox-agent:local`
+  normalises to docker.io/library and goes to Hub — the one way a pool-shared
+  build visibly is not a local one. The shim scans the build's `FROM`
+  instructions (`localbase.go`), and for each reference that names no registry
+  and exists locally, pushes it into this sandbox's registry namespace and adds
+  `--build-context <ref>=docker-image://<that>`, which BuildKit's frontend
+  resolves before it resolves an image. The push is metadata for anything the
+  pool built, since the registry already holds its layers. It is here rather
+  than in the mediator because the mediator cannot see a build's sources
+  (ADR 0044); it degrades to leaving the build untouched at every step. See
+  ADR 0045.
 - Tagging retries. `docker tag` is not atomic in the containerd image store —
   the daemon creates the record, and finding the name taken, deletes it and
   creates it again — so two builds tagging one name with different targets can

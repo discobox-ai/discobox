@@ -68,6 +68,13 @@ const (
 	// processes use as their HTTP/HTTPS/ALL proxy.
 	SandboxForwarderListen = "127.0.0.1:17008"
 
+	// RegistryNamespaceFile is the sandbox's namespace in the pool build
+	// registry, staged with the rest of its proxy material and read by the
+	// docker shim. It is world-readable inside the sandbox: the boundary it
+	// defends is other sandboxes, and this sandbox's own user is the tenant it
+	// belongs to.
+	RegistryNamespaceFile = "registry-namespace"
+
 	// SandboxBuildkitBridgeListen is where a sandbox-local forwarder accepts
 	// plaintext connections for the pool's BuildKit mediator.
 	//
@@ -517,6 +524,10 @@ func EnsureSandboxMaterial(projectID, poolID, sandboxID string) (*SandboxMateria
 	}
 	if err := os.WriteFile(resolve(filepath.Join(writeDir, "bridge-docker.json")), dockerBridgeJSON, 0o600); err != nil {
 		return nil, fmt.Errorf("write nested-docker bridge config: %w", err)
+	}
+
+	if err := ensureRegistryNamespace(filepath.Join(writeDir, RegistryNamespaceFile)); err != nil {
+		return nil, err
 	}
 
 	// The sandbox's forwarder for the pool's BuildKit mediator. Unlike the two

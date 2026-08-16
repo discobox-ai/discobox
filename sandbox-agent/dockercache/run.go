@@ -34,6 +34,10 @@ func Run(args []string) int {
 		// anything this shim could substitute.
 		notice(fmt.Sprintf("pool builder unavailable: %v", err))
 	}
+	// The pool builder has no access to this daemon's image store, so a base
+	// image that only exists here is published and redirected first. See
+	// localbase.go.
+	a.Argv = append(a.Argv, localBaseContexts(ctx, args)...)
 	return buildViaRegistry(ctx, a)
 }
 
