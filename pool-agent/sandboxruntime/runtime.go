@@ -29,6 +29,7 @@ import (
 	"github.com/moby/moby/api/types/network"
 	"github.com/moby/moby/client"
 	"github.com/obot-platform/discobox/harness"
+	"github.com/obot-platform/discobox/id"
 	"github.com/obot-platform/discobox/layout"
 	"github.com/obot-platform/discobox/sandboxconfig"
 	"github.com/obot-platform/discobox/sandboxuser"
@@ -344,6 +345,7 @@ func (r *DockerSandboxRuntime) CreateSandbox(ctx context.Context, req *workerapi
 	name := sandboxContainerName(r.poolID, sandboxID)
 	cfg := &container.Config{
 		Image:        imageName,
+		Hostname:     sandboxHostname(sandboxID),
 		Labels:       r.labels(sandboxID, strings.TrimSpace(optString(config.SpecFingerprint))),
 		Env:          envList(envWithSandboxUser(baseEnv, user)),
 		WorkingDir:   sourceWorkingDirectory(req),
@@ -1817,6 +1819,25 @@ func sandboxContainerName(poolID, sandboxID string) string {
 		return '-'
 	}, name)
 	return strings.Trim(name, "-_.")
+}
+
+// sandboxHostname is what `hostname` reports inside the sandbox: the sandbox
+// ID without its "sbx_" prefix, so a shell prompt names the sandbox a user can
+// address instead of a random container ID. The result is reduced to a legal
+// RFC 1123 label; an ID that survives nothing usable returns "", which leaves
+// Docker's container-ID default in place.
+func sandboxHostname(sandboxID string) string {
+	host := strings.ToLower(strings.TrimSpace(id.RandomPart(sandboxID)))
+	host = strings.Map(func(r rune) rune {
+		if r >= 'a' && r <= 'z' || r >= '0' && r <= '9' || r == '-' {
+			return r
+		}
+		return '-'
+	}, host)
+	if len(host) > 63 {
+		host = host[:63]
+	}
+	return strings.Trim(host, "-")
 }
 
 // poolCacheRoot is the shared cache directory for every sandbox this pool runs

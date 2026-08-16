@@ -1339,6 +1339,26 @@ func TestValidateCreateRequestRefusesAnUnresolvedRequest(t *testing.T) {
 	}
 }
 
+func TestSandboxHostnameDropsThePrefixAndStaysALegalLabel(t *testing.T) {
+	for _, tc := range []struct {
+		name      string
+		sandboxID string
+		want      string
+	}{
+		{name: "generated id", sandboxID: "sbx_dfzx0123456789ab", want: "dfzx0123456789ab"},
+		{name: "no prefix", sandboxID: "bare0123456789ab", want: "bare0123456789ab"},
+		{name: "illegal characters", sandboxID: "sbx_A b/c", want: "a-b-c"},
+		{name: "trims edge hyphens", sandboxID: "sbx_-abc-", want: "abc"},
+		{name: "nothing usable", sandboxID: "sbx_", want: ""},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := sandboxHostname(tc.sandboxID); got != tc.want {
+				t.Fatalf("sandboxHostname(%q) = %q, want %q", tc.sandboxID, got, tc.want)
+			}
+		})
+	}
+}
+
 // idOf renders an optional id for assertions, using -1 for absent so a failure
 // prints the value rather than a pointer.
 func idOf(v *int64) int64 {
