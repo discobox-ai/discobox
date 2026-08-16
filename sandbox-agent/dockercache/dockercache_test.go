@@ -25,7 +25,7 @@ func withMaterial(t *testing.T) {
 
 func argvAfterDocker(t *testing.T, got dockercache.Args) []string {
 	t.Helper()
-	if len(got.Argv) == 0 || got.Argv[0] != dockercache.RealDocker {
+	if len(got.Argv) == 0 || got.Argv[0] != dockercache.DockerCLI() {
 		t.Fatalf("argv does not exec the real docker CLI: %v", got.Argv)
 	}
 	return got.Argv[1:]

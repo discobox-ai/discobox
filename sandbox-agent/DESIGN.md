@@ -164,9 +164,17 @@ side is in [pool-agent/DESIGN.md](../pool-agent/DESIGN.md)). Three pieces here:
   whenever the output is a registry, and that provenance describes the build
   rather than its result, so identical content would otherwise get a different
   image ID in every sandbox. A tagged build's synthesized name is removed
-  afterwards; an untagged one keeps it, because removing an image's last
-  reference deletes the image and there is no way to untag a pulled image into
-  the `<none>:<none>` entry a local build leaves.
+  however the build ends; an untagged one keeps it, because removing an image's
+  last reference deletes the image and there is no way to untag a pulled image
+  into the `<none>:<none>` entry a local build leaves.
+- Tagging retries. `docker tag` is not atomic in the containerd image store —
+  the daemon creates the record, and finding the name taken, deletes it and
+  creates it again — so two builds tagging one name with different targets can
+  interleave and leave the loser with `AlreadyExists`. Bringing the result back
+  through the registry is what exposes this: a local `docker build -t` names
+  the image as part of the build, while this shim tags it afterwards. `task
+  dev`'s image watcher rebuilding a `:local` image alongside a hand-run build
+  is the case that hits it.
 - `discobox-buildkit-bridge.service` is a second `proxy/bridge` instance —
   `127.0.0.1:17082` to the pool mediator over mTLS — for the same reason the
   proxy bridge exists at all: buildx would otherwise need the sandbox's client

@@ -31,9 +31,9 @@ import (
 	"strings"
 )
 
-// RealDocker is the docker CLI this shim wraps. The shim installs as
+// realDocker is the docker CLI this shim wraps. The shim installs as
 // /usr/local/bin/docker, ahead of this on PATH.
-const RealDocker = "/usr/bin/docker"
+const realDocker = "/usr/bin/docker"
 
 const (
 	// BuilderName is the buildx instance pointing at the pool's mediator.
@@ -80,6 +80,10 @@ const (
 // tests can point it at a fixture; production never reassigns it.
 var bridgeConfigPath = bridgeConfig
 
+// dockerCLI is the docker binary every subprocess here runs. It is a variable
+// only so tests can point it at a stub; production never reassigns it.
+var dockerCLI = realDocker
+
 // Args is the result of rewriting a docker command line.
 type Args struct {
 	// Argv is the full argument vector to exec, including argv[0].
@@ -104,7 +108,7 @@ type Args struct {
 // args excludes argv[0].
 func Rewrite(args []string) Args {
 	pass := func() Args {
-		return Args{Argv: append([]string{RealDocker}, args...)}
+		return Args{Argv: append([]string{dockerCLI}, args...)}
 	}
 	kind, idx := buildCommand(args)
 	if kind == notBuild {
@@ -148,7 +152,7 @@ func Rewrite(args []string) Args {
 	}
 	rewritten = append(rewritten, rest...)
 	return Args{
-		Argv:        append([]string{RealDocker}, rewritten...),
+		Argv:        append([]string{dockerCLI}, rewritten...),
 		Rewritten:   true,
 		RegistryRef: ref,
 		Tags:        tags,
@@ -230,13 +234,13 @@ func poolBuilderAvailable() bool {
 // and would leave a stale definition behind whenever the endpoint or the
 // certificate paths changed.
 func EnsureBuilder(ctx context.Context) error {
-	if exec.CommandContext(ctx, RealDocker, "buildx", "inspect", BuilderName).Run() == nil {
+	if exec.CommandContext(ctx, dockerCLI, "buildx", "inspect", BuilderName).Run() == nil {
 		return nil
 	}
 	// No TLS options: the forwarder terminates mTLS on this sandbox's behalf,
 	// so what buildx dials is plaintext loopback.
 	//nolint:gosec // Every argument is a package constant; none comes from the user's command line.
-	return exec.CommandContext(ctx, RealDocker, "buildx", "create",
+	return exec.CommandContext(ctx, dockerCLI, "buildx", "create",
 		"--name", BuilderName, "--driver", "remote", MediatorURL).Run()
 }
 

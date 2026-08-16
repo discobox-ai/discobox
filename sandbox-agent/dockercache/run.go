@@ -11,6 +11,7 @@ import (
 	"os/exec"
 	"strings"
 	"syscall"
+	"time"
 )
 
 // Run executes a user's docker command line and returns the exit code to use.
@@ -57,6 +58,21 @@ func buildViaRegistry(ctx context.Context, a Args) int {
 		notice("build succeeded but its result could not be pulled from the pool registry")
 		return code
 	}
+	// The synthesized reference has served its purpose once the image is here,
+	// and it is dropped however this returns. On success the image survives
+	// under the user's own tags, so dropping this one leaves `docker images`
+	// looking exactly as it would after a local build. On failure it would
+	// otherwise stay behind as a discobox-build/<hex>:build entry that names a
+	// whole image and that nothing will ever clean up.
+	//
+	// An untagged build keeps it. Nothing else names the image, and removing an
+	// image's last reference deletes the image — there is no way to untag a
+	// pulled image into the dangling `<none>:<none>` entry a local build
+	// leaves. So an untagged build shows up under this name instead of that
+	// one; the image and its ID are the same either way.
+	if len(a.Tags) > 0 {
+		defer func() { _ = runQuiet(ctx, "rmi", a.RegistryRef) }()
+	}
 	// Both of these report the built image's id, and buildx filled them in
 	// with a digest of what it pushed. Correct them from the local daemon,
 	// which is the only thing that can say what the id is here.
@@ -77,30 +93,71 @@ func buildViaRegistry(ctx context.Context, a Args) int {
 		}
 	}
 	for _, tag := range a.Tags {
-		if code := runQuiet(ctx, "tag", a.RegistryRef, tag); code != 0 {
-			notice(fmt.Sprintf("could not tag the result as %s", tag))
-			return code
+		if err := tagResult(ctx, a.RegistryRef, tag); err != nil {
+			notice(fmt.Sprintf("could not tag the result as %s: %v", tag, err))
+			return 1
 		}
 	}
-	if len(a.Tags) > 0 {
-		// The synthesized reference has served its purpose. The image survives
-		// under the user's own tags, so dropping this one leaves `docker images`
-		// looking exactly as it would after a local build.
-		_ = runQuiet(ctx, "rmi", a.RegistryRef)
-	}
-	// An untagged build keeps it. Nothing else names the image, and removing an
-	// image's last reference deletes the image — there is no way to untag a
-	// pulled image into the dangling `<none>:<none>` entry a local build
-	// leaves. So an untagged build shows up under this name instead of that
-	// one; the image and its ID are the same either way.
 	return 0
+}
+
+// tagAttempts is how many times a tag is tried before the build is called
+// failed, and tagRetryPause is the wait between them. Three is not a guess at
+// how contended the daemon is: the losing tag is complete by the time it is
+// rejected, so the retry contends with nothing unless a third build lands in
+// the same instant.
+const (
+	tagAttempts   = 3
+	tagRetryPause = 100 * time.Millisecond
+)
+
+// tagResult applies one of the user's tags to the pulled image, retrying a tag
+// another build raced us for.
+//
+// `docker tag` is not atomic in the containerd image store: the daemon creates
+// the image record, and finding the name taken, deletes it and creates it
+// again. Two builds tagging the same name with different targets can interleave
+// so that the second create finds the name back and fails with AlreadyExists —
+// which is what `task dev`'s image watcher rebuilding an image does to a
+// hand-run `task build:images` tagging the same `:local` name. There is nothing
+// wrong with the losing tag, and it wins as soon as it is asked again.
+//
+// This shim is why it is worth retrying at all: a local `docker build -t` has
+// the builder name the image as part of the build, while a build that comes
+// back from the pool registry has to be tagged afterwards, so every build here
+// goes through the racy path.
+//
+// Output is captured rather than passed through: a first attempt that is going
+// to be retried should not print an error the user cannot act on, and only the
+// last one is worth reporting.
+func tagResult(ctx context.Context, ref, tag string) error {
+	var last error
+	for attempt := 0; attempt < tagAttempts; attempt++ {
+		if attempt > 0 {
+			select {
+			case <-ctx.Done():
+				return ctx.Err()
+			case <-time.After(tagRetryPause):
+			}
+		}
+		//nolint:gosec // Both arguments are this shim's own reference and the user's tag.
+		out, err := exec.CommandContext(ctx, dockerCLI, "tag", ref, tag).CombinedOutput()
+		if err == nil {
+			return nil
+		}
+		last = err
+		if detail := strings.TrimSpace(string(out)); detail != "" {
+			last = errors.New(detail)
+		}
+	}
+	return last
 }
 
 // imageID returns the local image id of a reference, in the `sha256:...` form
 // `docker build -q` prints.
 func imageID(ctx context.Context, ref string) (string, error) {
 	//nolint:gosec // Both arguments are this shim's own.
-	out, err := exec.CommandContext(ctx, RealDocker, "image", "inspect", "--format", "{{.Id}}", ref).Output()
+	out, err := exec.CommandContext(ctx, dockerCLI, "image", "inspect", "--format", "{{.Id}}", ref).Output()
 	if err != nil {
 		return "", err
 	}
@@ -136,7 +193,7 @@ func runPassthrough(ctx context.Context, argv []string, discardStdout bool) int 
 // transfer steps are plumbing; their progress is not the user's build log.
 func runQuiet(ctx context.Context, args ...string) int {
 	//nolint:gosec // Every argument is either a package constant or this shim's own reference.
-	cmd := exec.CommandContext(ctx, RealDocker, args...)
+	cmd := exec.CommandContext(ctx, dockerCLI, args...)
 	cmd.Stderr = os.Stderr
 	if err := cmd.Run(); err != nil {
 		var exit *exec.ExitError
