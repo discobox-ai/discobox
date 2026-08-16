@@ -99,3 +99,4 @@ Nygard-style ADRs (see adr.github.io) combined with current-state design docs:
 | [0044](0044-builds-run-on-a-pool-shared-buildkit.md) | Builds run on a pool-shared BuildKit, bound to a sandbox by a mediator | Accepted |
 | [0045](0045-a-directory-with-no-repository-is-delivered-by-push.md) | A directory with no repository is delivered by push | Accepted |
 | [0046](0046-listening-ports-are-polled-and-probed-in-the-background.md) | Listening ports are discovered by a standing poller and probed for HTTP | Accepted |
+| [0045](0045-local-base-images-resolve-through-a-per-sandbox-registry-namespace.md) | Local base images resolve through a per-sandbox registry namespace | Accepted |
