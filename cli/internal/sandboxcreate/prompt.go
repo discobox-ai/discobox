@@ -60,14 +60,18 @@ func normalizePromptOptions(opts PromptOptions) (PromptOptions, error) {
 // BuildPromptSandboxBody resolves all client-side prompt inputs into the
 // control-plane create request, including Git snapshots, local user identity,
 // and the local Git authorship the sandbox should commit under.
-func BuildPromptSandboxBody(ctx context.Context, opts PromptOptions) (*apimodel.CreateSandboxBody, error) {
+//
+// It also returns the local source the request was resolved from, which the
+// caller closes once the source has been delivered — see LocalSource. The
+// source is nil with an error: nothing survives a build that failed.
+func BuildPromptSandboxBody(ctx context.Context, opts PromptOptions) (*apimodel.CreateSandboxBody, *LocalSource, error) {
 	opts, err := normalizePromptOptions(opts)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 	name, err := randomname.Generate()
 	if err != nil {
-		return nil, fmt.Errorf("generate sandbox name: %w", err)
+		return nil, nil, fmt.Errorf("generate sandbox name: %w", err)
 	}
 	body := &apimodel.CreateSandboxBody{Config: apimodel.SandboxCreateConfig{Name: name}}
 	if len(opts.Prompt) > 0 {
@@ -78,7 +82,7 @@ func BuildPromptSandboxBody(ctx context.Context, opts PromptOptions) (*apimodel.
 	}
 	env, secrets, err := EnvAndSecretsFromOptions(opts.Env, opts.Secret)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 	if len(env) > 0 {
 		body.Config.SetEnv(apiclientgen.NewOptSandboxCreateConfigEnv(apiclientgen.SandboxCreateConfigEnv(env)))
@@ -88,7 +92,7 @@ func BuildPromptSandboxBody(ctx context.Context, opts PromptOptions) (*apimodel.
 	}
 	userIdentity, _, err := resolveRunUserIdentity()
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 	sourceArg := opts.Source
 	if opts.Ref != "" {
@@ -99,21 +103,24 @@ func BuildPromptSandboxBody(ctx context.Context, opts PromptOptions) (*apimodel.
 		Confirm:      opts.ConfirmIncludeDirty,
 	})
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
+	local := source.localSource()
 	apiSource, err := source.apiGitSource()
 	if err != nil {
-		return nil, err
+		local.Close()
+		return nil, nil, err
 	}
 	body.Config.SetSource(apiclientgen.NewOptGitSource(*apiSource))
 	resolvedOrigin, err := ResolveOrigin(ctx, sourceArg)
 	if err != nil {
-		return nil, err
+		local.Close()
+		return nil, nil, err
 	}
 	body.SetOrigin(apiclientgen.NewOptOrigin(resolvedOrigin))
 	userIdentity.setCreateSandboxUser(body)
 	setCreateSandboxGit(body, resolveGitIdentity(ctx, sourceArg))
-	return body, nil
+	return body, local, nil
 }
 
 type promptSandboxCreator interface {
@@ -127,30 +134,35 @@ type promptSandboxCreator interface {
 const nameConflictAttempts = 5
 
 // CreatePromptSandbox builds, submits, and decodes a prompt sandbox request,
-// picking another name if the generated one is already taken.
+// picking another name if the generated one is already taken, and returns the
+// local source it was resolved from for the caller to deliver and then close.
+// The source is nil with an error.
 //
 // Only this path retries: the name here is generated (BuildPromptSandboxBody),
 // so replacing it costs the caller nothing. A name the user typed is theirs,
 // and `box sandbox create --name` reports the conflict instead.
-func CreatePromptSandbox(ctx context.Context, client promptSandboxCreator, projectID string, opts PromptOptions) (*apimodel.Sandbox, error) {
-	body, err := BuildPromptSandboxBody(ctx, opts)
+func CreatePromptSandbox(ctx context.Context, client promptSandboxCreator, projectID string, opts PromptOptions) (*apimodel.Sandbox, *LocalSource, error) {
+	body, local, err := BuildPromptSandboxBody(ctx, opts)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 	for attempt := 1; ; attempt++ {
 		res, err := client.CreateSandbox(ctx, body, apiclientgen.CreateSandboxParams{ProjectId: projectID})
 		if err != nil {
-			return nil, err
+			local.Close()
+			return nil, nil, err
 		}
 		if sandbox, ok := res.(*apimodel.Sandbox); ok {
-			return sandbox, nil
+			return sandbox, local, nil
 		}
 		if attempt >= nameConflictAttempts || !isNameConflict(res) {
-			return nil, createResponseError(res)
+			local.Close()
+			return nil, nil, createResponseError(res)
 		}
 		name, err := randomname.Generate()
 		if err != nil {
-			return nil, fmt.Errorf("generate sandbox name: %w", err)
+			local.Close()
+			return nil, nil, fmt.Errorf("generate sandbox name: %w", err)
 		}
 		body.Config.Name = name
 	}

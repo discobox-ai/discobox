@@ -51,11 +51,13 @@ func sandboxPrimarySource(sandbox *apimodel.Sandbox) (apimodel.GitSource, bool) 
 }
 
 // DeliverSource pushes a sandbox's source into its Git repository and reports
-// the push complete, returning once the sandbox is free to start.
+// the push complete, returning once the sandbox is free to start. It pushes out
+// of the local source the create resolved, which is the only place a throwaway
+// repository's commits exist.
 //
 // It is a no-op unless the server asked for a push, so callers can invoke it
 // unconditionally after create.
-func DeliverSource(ctx context.Context, client sourceDeliveryClient, projectID string, sandbox *apimodel.Sandbox, sourceArg, serverURL, token string) error {
+func DeliverSource(ctx context.Context, client sourceDeliveryClient, projectID string, sandbox *apimodel.Sandbox, local *LocalSource, serverURL, token string) error {
 	if !SourceNeedsPush(sandbox) {
 		return nil
 	}
@@ -64,7 +66,7 @@ func DeliverSource(ctx context.Context, client sourceDeliveryClient, projectID s
 	if err != nil {
 		return err
 	}
-	repoRoot, err := localSourceRoot(ctx, sourceArg)
+	repoRoot, err := local.pushRoot()
 	if err != nil {
 		return err
 	}
@@ -109,15 +111,15 @@ func pushRefs(source apimodel.GitSource) (commit, branch, snapshotRef string, er
 	return commit, branch, snapshotRef, nil
 }
 
-func localSourceRoot(ctx context.Context, sourceArg string) (string, error) {
-	source, _, _ := splitRunSourceRef(sourceArg)
-	source = strings.TrimSpace(source)
-	if source == "" || isRemoteGitSource(source) {
-		// Only a local directory is ever pushed; a remote source is cloned by
-		// the sandbox itself and never reaches this path.
-		return "", fmt.Errorf("source %q is not a local repository to push from", sourceArg)
+// pushRoot is the repository a push runs out of. Only a local source is ever
+// pushed — a remote one is cloned by the sandbox itself and resolves no
+// repository here — so a source without one is a sandbox that should never have
+// been asked for a push.
+func (s *LocalSource) pushRoot() (string, error) {
+	if s == nil || strings.TrimSpace(s.repoRoot) == "" {
+		return "", fmt.Errorf("the sandbox expects a source push, but its source was not resolved from a local repository")
 	}
-	return gitutil.Root(ctx, source)
+	return s.repoRoot, nil
 }
 
 // SandboxGitRepositoryURL is the control plane's proxy to the sandbox's

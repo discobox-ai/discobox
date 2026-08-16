@@ -2,6 +2,7 @@ package cli
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"os"
 	"sort"
@@ -277,9 +278,13 @@ func (a *App) applyOneSource(ctx context.Context, printer applyPrinter, client *
 	}
 	report.HostPathOrigin = dirOrigin
 	repoRoot, err := gitutil.Root(ctx, hostDir)
+	if errors.Is(err, gitutil.ErrNotARepository) {
+		printer.bareSourceHeader(entry.slug)
+		return fail("%s is not a Git repository", hostDir)
+	}
 	if err != nil {
 		printer.bareSourceHeader(entry.slug)
-		return fail("%s is not a Git repository: %v", hostDir, err)
+		return fail("read the Git repository at %s: %v", hostDir, err)
 	}
 	report.HostPath = repoRoot
 	report.HostBranch, _ = gitutil.CurrentBranch(ctx, repoRoot)

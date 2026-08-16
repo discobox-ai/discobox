@@ -35,7 +35,11 @@ print it without attaching.
 Uncommitted changes in the source directory are carried into the sandbox as a
 snapshot on top of the checked-out commit. By default run asks before doing that
 when there is a terminal to ask on; --include-dirty=true|false answers ahead of
-time.`,
+time.
+
+A source directory that is not in a Git repository works too: everything in it
+is carried into the sandbox as uncommitted changes on an empty first commit,
+and nothing is written to the directory itself.`,
 		Example: `  disco run fix the failing tests
   disco run --include-dirty=false fix the failing tests
   disco run -e GITHUB_TOKEN -e MODE=test fix the failing tests
@@ -58,17 +62,23 @@ time.`,
 			if err != nil {
 				return err
 			}
-			sandbox, err := sandboxcreate.CreatePromptSandbox(cmd.Context(), client, projectID, parsedOpts)
+			sandbox, local, err := sandboxcreate.CreatePromptSandbox(cmd.Context(), client, projectID, parsedOpts)
 			if err != nil {
 				return err
 			}
+			// The local source is done as soon as it has been delivered, which
+			// for a directory that is not a repository means deleting the
+			// repository built over it. The defer covers the paths that never
+			// reach the delivery.
+			defer local.Close()
 			// A server that cannot reach this directory waits for us to push it.
 			gitServerURL, releaseGitServerURL, err := a.gitServerURL(cmd.Context())
 			if err != nil {
 				return err
 			}
-			err = sandboxcreate.DeliverSource(cmd.Context(), client, projectID, sandbox, parsedOpts.Source, gitServerURL, a.token)
+			err = sandboxcreate.DeliverSource(cmd.Context(), client, projectID, sandbox, local, gitServerURL, a.token)
 			releaseGitServerURL()
+			local.Close()
 			if err != nil {
 				return err
 			}

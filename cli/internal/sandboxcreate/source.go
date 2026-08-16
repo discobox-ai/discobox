@@ -2,6 +2,7 @@ package sandboxcreate
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"net/url"
 	"os"
@@ -27,6 +28,7 @@ const (
 	defaultRunWorkingDir     = "/workspace/source"
 	defaultRemoteBranch      = "HEAD"
 	runSnapshotCommitMessage = "disco run workspace snapshot\n"
+	runEmptyBaseMessage      = "disco run empty base\n"
 )
 
 // IncludeDirty decides whether uncommitted local work is carried into the
@@ -88,10 +90,48 @@ type resolvedRunSource struct {
 	Kind           string
 	URL            string
 	LocalDirectory string
-	RepoRoot       string
-	Checkout       resolvedRunSourceCheckout
-	Workspace      resolvedRunSourceWorkspace
-	Destination    resolvedRunSourceDestination
+	// RepoRoot is where git commands for this source run: the repository root
+	// of a local source, and the throwaway repository built over the directory
+	// when the directory is in no repository at all.
+	RepoRoot string
+	// NoLocalRepository states that LocalDirectory holds no repository, so
+	// nothing can be cloned from it however reachable it is.
+	NoLocalRepository bool
+	Checkout          resolvedRunSourceCheckout
+	Workspace         resolvedRunSourceWorkspace
+	Destination       resolvedRunSourceDestination
+	// cleanup releases the throwaway repository, and is nil for a source that
+	// did not need one.
+	cleanup func()
+}
+
+// LocalSource is the local repository a create resolved its source from, and
+// that a push delivers that source out of. Close releases it: a directory with
+// no repository of its own got a throwaway one built over it, which is deleted
+// once the source has reached the sandbox, and a real repository has nothing to
+// release.
+//
+// It is carried from create to delivery rather than resolved twice, because a
+// throwaway repository cannot be found again: it holds the only copy of the
+// base commit and the workspace snapshot that the sandbox was configured
+// against.
+type LocalSource struct {
+	repoRoot string
+	cleanup  func()
+}
+
+func (s resolvedRunSource) localSource() *LocalSource {
+	return &LocalSource{repoRoot: s.RepoRoot, cleanup: s.cleanup}
+}
+
+// Close releases the local source. It is safe to call on a nil source and to
+// call more than once, so a caller can defer it and still close early.
+func (s *LocalSource) Close() {
+	if s == nil || s.cleanup == nil {
+		return
+	}
+	s.cleanup()
+	s.cleanup = nil
 }
 
 type resolvedRunSourceCheckout struct {
@@ -165,6 +205,9 @@ func (s resolvedRunSource) apiGitSource() (*apimodel.GitSource, error) {
 		source.SetURL(apiclientgen.NewOptURI(*u))
 	}
 	source.SetLocalDirectory(optionalString(s.LocalDirectory))
+	if s.NoLocalRepository {
+		source.SetNoLocalRepository(apiclientgen.NewOptBool(true))
+	}
 	checkout := apimodel.GitSourceCheckout{}
 	checkout.SetCommit(optionalString(s.Checkout.Commit))
 	checkout.SetRefName(optionalString(s.Checkout.RefName))
@@ -200,6 +243,9 @@ func resolveLocalRunSource(ctx context.Context, source, ref string, explicitRef 
 		return resolvedRunSource{}, fmt.Errorf("source %s is not a directory", absSource)
 	}
 	repoRoot, err := gitutil.Root(ctx, absSource)
+	if errors.Is(err, gitutil.ErrNotARepository) {
+		return resolveDirectoryRunSource(ctx, absSource, ref, explicitRef, opts)
+	}
 	if err != nil {
 		return resolvedRunSource{}, err
 	}
@@ -249,23 +295,121 @@ func resolveLocalRunSource(ctx context.Context, source, ref string, explicitRef 
 	if !include {
 		return resolved, nil
 	}
-	snapshotID, err := id.New(id.PrefixSnapshot)
+	workspace, err := snapshotWorkspace(ctx, repoRoot, workspaceTree)
 	if err != nil {
 		return resolvedRunSource{}, err
 	}
-	snapshotCommit, err := gitutil.CommitTree(ctx, repoRoot, workspaceTree.Tree, workspaceTree.BaseCommit, runSnapshotCommitMessage)
+	resolved.Workspace = workspace
+	return resolved, nil
+}
+
+// snapshotWorkspace records a dirty working tree as a commit on top of the
+// commit it differs from, under a ref of our own so no branch is disturbed. The
+// sandbox reads the difference between the two back out as uncommitted changes.
+func snapshotWorkspace(ctx context.Context, repoRoot string, tree gitutil.WorkspaceTree) (resolvedRunSourceWorkspace, error) {
+	snapshotID, err := id.New(id.PrefixSnapshot)
 	if err != nil {
-		return resolvedRunSource{}, err
+		return resolvedRunSourceWorkspace{}, err
+	}
+	snapshotCommit, err := gitutil.CommitTree(ctx, repoRoot, tree.Tree, tree.BaseCommit, runSnapshotCommitMessage)
+	if err != nil {
+		return resolvedRunSourceWorkspace{}, err
 	}
 	snapshotRef := runSnapshotRefPrefix + snapshotID
 	if err := gitutil.UpdateRef(ctx, repoRoot, snapshotRef, snapshotCommit); err != nil {
-		return resolvedRunSource{}, err
+		return resolvedRunSourceWorkspace{}, err
 	}
-	resolved.Workspace = resolvedRunSourceWorkspace{
+	return resolvedRunSourceWorkspace{
 		Mode:        runWorkspaceModeDirty,
 		SnapshotRef: snapshotRef,
-		BaseCommit:  workspaceTree.BaseCommit,
+		BaseCommit:  tree.BaseCommit,
+	}, nil
+}
+
+// resolveDirectoryRunSource prepares a source from a directory that is in no
+// Git repository.
+//
+// The directory's content is the uncommitted work of a repository that does not
+// exist yet, so this builds that repository outside the directory, commits an
+// empty root commit as the base, and snapshots the whole directory on top of it
+// as a dirty workspace. The sandbox comes up with the directory's files as
+// uncommitted changes, which is what they are, and the user's directory is left
+// untouched — no .git appears in it, and the repository is deleted once the
+// source has been delivered.
+//
+// Nobody is asked about this. The dirty-workspace question offers the last
+// commit as its alternative, and there is none here: excluding the content
+// would start the sandbox on an empty directory.
+func resolveDirectoryRunSource(ctx context.Context, dir, ref string, explicitRef bool, opts runSourceOptions) (resolvedRunSource, error) {
+	if explicitRef {
+		return resolvedRunSource{}, fmt.Errorf("%s is not a Git repository, so it has no ref %q to check out", dir, ref)
 	}
+	if opts.IncludeDirty == IncludeDirtyNever {
+		return resolvedRunSource{}, fmt.Errorf("--include-dirty=false leaves nothing to run: %s is not a Git repository, so everything in it is uncommitted", dir)
+	}
+	repoRoot, cleanup, err := gitutil.InitOverWorkTree(ctx, dir)
+	if err != nil {
+		return resolvedRunSource{}, err
+	}
+	resolved, err := directoryRunSource(ctx, dir, repoRoot)
+	if err != nil {
+		cleanup()
+		return resolvedRunSource{}, err
+	}
+	resolved.cleanup = cleanup
+	return resolved, nil
+}
+
+// directoryRunSource fills in the source that repoRoot, a fresh repository over
+// dir, describes.
+func directoryRunSource(ctx context.Context, dir, repoRoot string) (resolvedRunSource, error) {
+	emptyTree, err := gitutil.EmptyTree(ctx, repoRoot)
+	if err != nil {
+		return resolvedRunSource{}, err
+	}
+	baseCommit, err := gitutil.CommitTree(ctx, repoRoot, emptyTree, "", runEmptyBaseMessage)
+	if err != nil {
+		return resolvedRunSource{}, err
+	}
+	branch, ok := gitutil.CurrentBranch(ctx, repoRoot)
+	if !ok {
+		return resolvedRunSource{}, fmt.Errorf("new git repository for %s has no branch checked out", dir)
+	}
+	// The base commit has to be on the branch, not just in the object database:
+	// it is what the sandbox checks out, and what the snapshot is measured
+	// against on both ends.
+	if err := gitutil.UpdateRef(ctx, repoRoot, "refs/heads/"+branch, baseCommit); err != nil {
+		return resolvedRunSource{}, err
+	}
+	resolved := resolvedRunSource{
+		Kind:              runSourceKindGit,
+		LocalDirectory:    dir,
+		RepoRoot:          repoRoot,
+		NoLocalRepository: true,
+		Checkout: resolvedRunSourceCheckout{
+			Commit:  baseCommit,
+			RefName: branch,
+			RefType: runSourceRefTypeBranch,
+		},
+		Workspace:   resolvedRunSourceWorkspace{Mode: runWorkspaceModeClean},
+		Destination: localRunDestination(dir, dir),
+	}
+	workspaceTree, cleanup, err := gitutil.CurrentWorkspaceTree(ctx, repoRoot)
+	if err != nil {
+		return resolvedRunSource{}, err
+	}
+	defer cleanup()
+	if !workspaceTree.Dirty {
+		// An empty directory. There is nothing to snapshot, and the sandbox
+		// starts on the empty base commit — which is the point of running in
+		// one.
+		return resolved, nil
+	}
+	workspace, err := snapshotWorkspace(ctx, repoRoot, workspaceTree)
+	if err != nil {
+		return resolvedRunSource{}, err
+	}
+	resolved.Workspace = workspace
 	return resolved, nil
 }
 

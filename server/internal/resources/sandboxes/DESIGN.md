@@ -234,6 +234,14 @@ Neither implies the other — a Docker provider on a remote server binds fine,
 just not to the caller's files. Unknowns resolve to `push`: a needless push is
 slow, a bind of an unreachable path fails.
 
+`GitSource.NoLocalRepository` forces `push` ahead of both checks. It says the
+directory the source came from is in no Git repository, so there is nothing at
+that path to clone however reachable it is — the client resolved the source from
+a repository of its own. That is a fact about the client's filesystem, which the
+server cannot see and the client cannot get wrong; the decision it feeds is
+still made here, which is why a client still may not ask for `push` outright.
+See [ADR 0045](../../../../docs/adr/0045-a-directory-with-no-repository-is-delivered-by-push.md).
+
 ```mermaid
 sequenceDiagram
     participant C as Client

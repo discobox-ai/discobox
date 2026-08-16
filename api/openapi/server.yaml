@@ -896,6 +896,9 @@ components:
                 localDirectory:
                     description: Absolute local Git repository directory accessible to the worker
                     type: string
+                noLocalRepository:
+                    description: Whether localDirectory holds no Git repository at all, so nothing can be cloned from it however reachable it is. The client resolved this source from a repository of its own and can only deliver it by push. localDirectory still records the directory the source came from.
+                    type: boolean
                 slug:
                     description: Stable URL-safe source slug used to address the source as a sandbox Git repository
                     maxLength: 63

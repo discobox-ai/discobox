@@ -17,6 +17,11 @@ func TestSourceNeedsPush(t *testing.T) {
 		dir := "/src/alpha"
 		return &model.GitSource{Kind: "git", LocalDirectory: &dir}
 	}
+	directorySource := func() *model.GitSource {
+		source := localSource()
+		source.NoLocalRepository = true
+		return source
+	}
 	remoteSource := func() *model.GitSource {
 		url := "https://github.com/obot-platform/discobox.git"
 		return &model.GitSource{Kind: "git", URL: &url}
@@ -39,6 +44,11 @@ func TestSourceNeedsPush(t *testing.T) {
 			name: "local source on the same host binds", definition: binds, serverHost: serverHost,
 			origin: sameHost, source: localSource(), want: false,
 			why: "the provider runs here and the client is here, so the files resolve",
+		},
+		{
+			name: "a directory with no repository pushes even from this host", definition: binds, serverHost: serverHost,
+			origin: sameHost, source: directorySource(), want: true,
+			why: "the path resolves here, but holds no repository to clone from",
 		},
 		{
 			name: "local source from another host pushes", definition: binds, serverHost: serverHost,

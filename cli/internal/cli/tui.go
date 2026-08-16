@@ -302,17 +302,22 @@ func (d *apiDataSource) Run(ctx context.Context, req tui.RunRequest) (tui.Sandbo
 		return tui.Sandbox{}, err
 	}
 
-	sandbox, err := sandboxcreate.CreatePromptSandbox(ctx, d.client, d.projectID, opts)
+	sandbox, local, err := sandboxcreate.CreatePromptSandbox(ctx, d.client, d.projectID, opts)
 	if err != nil {
 		return tui.Sandbox{}, err
 	}
+	// The local source is done as soon as it has been delivered, which for a
+	// directory that is not a repository means deleting the repository built
+	// over it. The defer covers the paths that never reach the delivery.
+	defer local.Close()
 	// A server that cannot reach this directory waits for us to push it.
 	gitServerURL, releaseGitServerURL, err := d.app.gitServerURL(ctx)
 	if err != nil {
 		return tui.Sandbox{}, err
 	}
-	err = sandboxcreate.DeliverSource(ctx, d.client, d.projectID, sandbox, opts.Source, gitServerURL, d.app.token)
+	err = sandboxcreate.DeliverSource(ctx, d.client, d.projectID, sandbox, local, gitServerURL, d.app.token)
 	releaseGitServerURL()
+	local.Close()
 	if err != nil {
 		return tui.Sandbox{}, err
 	}

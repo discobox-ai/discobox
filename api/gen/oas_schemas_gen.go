@@ -1694,6 +1694,10 @@ type GitSource struct {
 	Kind GitSourceKind `json:"kind"`
 	// Absolute local Git repository directory accessible to the worker.
 	LocalDirectory OptString `json:"localDirectory"`
+	// Whether localDirectory holds no Git repository at all, so nothing can be cloned from it however
+	// reachable it is. The client resolved this source from a repository of its own and can only deliver
+	// it by push. localDirectory still records the directory the source came from.
+	NoLocalRepository OptBool `json:"noLocalRepository"`
 	// Stable URL-safe source slug used to address the source as a sandbox Git repository.
 	Slug OptString `json:"slug"`
 	// Remote Git source URL.
@@ -1725,6 +1729,11 @@ func (s *GitSource) GetKind() GitSourceKind {
 // GetLocalDirectory returns the value of LocalDirectory.
 func (s *GitSource) GetLocalDirectory() OptString {
 	return s.LocalDirectory
+}
+
+// GetNoLocalRepository returns the value of NoLocalRepository.
+func (s *GitSource) GetNoLocalRepository() OptBool {
+	return s.NoLocalRepository
 }
 
 // GetSlug returns the value of Slug.
@@ -1765,6 +1774,11 @@ func (s *GitSource) SetKind(val GitSourceKind) {
 // SetLocalDirectory sets the value of LocalDirectory.
 func (s *GitSource) SetLocalDirectory(val OptString) {
 	s.LocalDirectory = val
+}
+
+// SetNoLocalRepository sets the value of NoLocalRepository.
+func (s *GitSource) SetNoLocalRepository(val OptBool) {
+	s.NoLocalRepository = val
 }
 
 // SetSlug sets the value of Slug.

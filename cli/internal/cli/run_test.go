@@ -193,7 +193,7 @@ func TestCreateRunSandboxBodyUsesSplitSourceRef(t *testing.T) {
 	git := runSourceTestGit(t, repo)
 	commit := strings.TrimSpace(git("rev-parse", "HEAD"))
 
-	body, err := sandboxcreate.BuildPromptSandboxBody(t.Context(), sandboxcreate.PromptOptions{
+	body, local, err := sandboxcreate.BuildPromptSandboxBody(t.Context(), sandboxcreate.PromptOptions{
 		Source: repo + "@HEAD",
 		Prompt: []string{"hello", "world"},
 		Env:    []string{"RUN_BODY_ENV=value"},
@@ -201,6 +201,7 @@ func TestCreateRunSandboxBodyUsesSplitSourceRef(t *testing.T) {
 	if err != nil {
 		t.Fatalf("createRunSandboxBody: %v", err)
 	}
+	defer local.Close()
 	if len(body.Config.Prompt) != 2 || body.Config.Prompt[0] != "hello" || body.Config.Prompt[1] != "world" {
 		t.Fatalf("prompt = %#v, want [hello world]", body.Config.Prompt)
 	}
@@ -224,7 +225,7 @@ func TestCreateRunSandboxBodyUsesSplitSourceRef(t *testing.T) {
 func TestCreateRunSandboxBodySecrets(t *testing.T) {
 	repo := newRunSourceTestRepo(t)
 
-	body, err := sandboxcreate.BuildPromptSandboxBody(t.Context(), sandboxcreate.PromptOptions{
+	body, local, err := sandboxcreate.BuildPromptSandboxBody(t.Context(), sandboxcreate.PromptOptions{
 		Source: repo,
 		Env:    []string{"PLAIN=value"},
 		Secret: []string{"OPENAI_API_KEY=sk-secret", "GITHUB_TOKEN=<sec_123>"},
@@ -232,6 +233,7 @@ func TestCreateRunSandboxBodySecrets(t *testing.T) {
 	if err != nil {
 		t.Fatalf("createRunSandboxBody: %v", err)
 	}
+	defer local.Close()
 	env, ok := body.Config.Env.Get()
 	if !ok || env["PLAIN"] != "value" {
 		t.Fatalf("env = %#v ok=%t, want PLAIN", env, ok)

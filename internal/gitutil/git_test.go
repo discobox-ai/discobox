@@ -2,6 +2,7 @@ package gitutil
 
 import (
 	"context"
+	"errors"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -117,5 +118,101 @@ func TestNoTracerIsNotAnError(t *testing.T) {
 	gitRun(t, dir, "init", "--initial-branch=main")
 	if _, err := Output(context.Background(), dir, nil, nil, "rev-parse", "--is-inside-work-tree"); err != nil {
 		t.Fatalf("output without a tracer: %v", err)
+	}
+}
+
+func TestRootReportsADirectoryOutsideAnyRepositoryDistinctly(t *testing.T) {
+	ctx := context.Background()
+	dir := t.TempDir()
+
+	_, err := Root(ctx, dir)
+	if !errors.Is(err, ErrNotARepository) {
+		t.Fatalf("Root outside a repository: err = %v, want ErrNotARepository", err)
+	}
+
+	gitRun(t, dir, "init", "--initial-branch=main")
+	root, err := Root(ctx, dir)
+	if err != nil {
+		t.Fatalf("Root inside a repository: %v", err)
+	}
+	if resolved, symErr := filepath.EvalSymlinks(dir); symErr == nil && root != resolved {
+		t.Fatalf("root = %q, want %q", root, resolved)
+	}
+}
+
+func TestInitOverWorkTreeLeavesTheWorkTreeUntouched(t *testing.T) {
+	ctx := context.Background()
+	work := t.TempDir()
+	if err := os.WriteFile(filepath.Join(work, "a.txt"), []byte("a\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.MkdirAll(filepath.Join(work, "sub"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(work, "sub", "b.txt"), []byte("b\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	// An ignored file stays ignored: the repository reads the working tree's
+	// own rules, exactly as one living inside it would.
+	if err := os.WriteFile(filepath.Join(work, ".gitignore"), []byte("skipped\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(work, "skipped"), []byte("x\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	repo, cleanup, err := InitOverWorkTree(ctx, work)
+	if err != nil {
+		t.Fatalf("InitOverWorkTree: %v", err)
+	}
+	if _, err := os.Stat(filepath.Join(work, ".git")); !os.IsNotExist(err) {
+		t.Fatalf("stat %s/.git = %v, want the work tree to have no repository in it", work, err)
+	}
+
+	changes, err := StatusChanges(ctx, repo)
+	if err != nil {
+		t.Fatalf("StatusChanges: %v", err)
+	}
+	var paths []string
+	for _, change := range changes {
+		paths = append(paths, change.Path)
+	}
+	want := []string{".gitignore", "a.txt", "sub/b.txt"}
+	if strings.Join(paths, ",") != strings.Join(want, ",") {
+		t.Fatalf("status paths = %v, want %v", paths, want)
+	}
+
+	// The empty tree plus a root commit is a usable HEAD, which is what makes
+	// the working tree snapshottable as a change against nothing.
+	empty, err := EmptyTree(ctx, repo)
+	if err != nil {
+		t.Fatalf("EmptyTree: %v", err)
+	}
+	base, err := CommitTree(ctx, repo, empty, "", "base\n")
+	if err != nil {
+		t.Fatalf("CommitTree: %v", err)
+	}
+	branch, ok := CurrentBranch(ctx, repo)
+	if !ok {
+		t.Fatal("a fresh repository reported no branch")
+	}
+	if err := UpdateRef(ctx, repo, "refs/heads/"+branch, base); err != nil {
+		t.Fatalf("UpdateRef: %v", err)
+	}
+	tree, treeCleanup, err := CurrentWorkspaceTree(ctx, repo)
+	if err != nil {
+		t.Fatalf("CurrentWorkspaceTree: %v", err)
+	}
+	defer treeCleanup()
+	if !tree.Dirty || tree.BaseCommit != base || tree.BaseTree != empty {
+		t.Fatalf("tree = %+v, want the work tree dirty against the empty root commit %s", tree, base)
+	}
+
+	cleanup()
+	if _, err := os.Stat(repo); !os.IsNotExist(err) {
+		t.Fatalf("stat %s = %v, want the repository removed", repo, err)
+	}
+	if _, err := os.Stat(filepath.Join(work, "a.txt")); err != nil {
+		t.Fatalf("the work tree did not survive its repository: %v", err)
 	}
 }

@@ -18,6 +18,11 @@ sandbox create requests.
   (`PromptOptions.IncludeDirty`), and asking is the caller's UI
   (`ConfirmIncludeDirty`); this package decides only when the question applies.
   See the CLI design doc's "Uncommitted Work at Create".
+- A source directory in no Git repository gets a throwaway repository built over
+  it, and is delivered by push. Create returns that as a `LocalSource`, which
+  delivery pushes out of and the caller closes; see the CLI design doc's "A
+  Directory That Is Not a Repository" and
+  [ADR 0045](../../../docs/adr/0045-a-directory-with-no-repository-is-delivered-by-push.md).
 - Do not depend on `internal/cli` or `internal/tui`. Both frontends consume this
   package through their adapters.
 - Keep terminal waiting, attach, progress output, and rendering in the frontend

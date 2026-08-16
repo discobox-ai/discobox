@@ -378,14 +378,20 @@ type HarnessConfigSecret struct {
 
 // GitSource describes a Git source to materialize into a sandbox.
 type GitSource struct {
-	Kind           string                `json:"kind" doc:"Source kind. Currently only git is supported." enum:"git"`
-	Delivery       string                `json:"delivery,omitempty" doc:"How the source reaches the sandbox: clone fetches it from url or localDirectory, push has the client push it into the sandbox's Git repository. Defaults to clone." enum:"clone,push"`
-	Slug           *string               `json:"slug,omitempty" doc:"Stable URL-safe source slug used to address the source as a sandbox Git repository"`
-	URL            *string               `json:"url,omitempty" doc:"Remote Git source URL" format:"uri"`
-	LocalDirectory *string               `json:"localDirectory,omitempty" doc:"Absolute local Git repository directory accessible to the worker"`
-	Checkout       *GitSourceCheckout    `json:"checkout,omitempty" doc:"Immutable checkout target and optional user-facing ref identity"`
-	Workspace      *GitSourceWorkspace   `json:"workspace,omitempty" doc:"Workspace materialization mode for this source"`
-	Destination    *GitSourceDestination `json:"destination,omitempty" doc:"Sandbox destination paths for this source"`
+	Kind           string  `json:"kind" doc:"Source kind. Currently only git is supported." enum:"git"`
+	Delivery       string  `json:"delivery,omitempty" doc:"How the source reaches the sandbox: clone fetches it from url or localDirectory, push has the client push it into the sandbox's Git repository. Defaults to clone." enum:"clone,push"`
+	Slug           *string `json:"slug,omitempty" doc:"Stable URL-safe source slug used to address the source as a sandbox Git repository"`
+	URL            *string `json:"url,omitempty" doc:"Remote Git source URL" format:"uri"`
+	LocalDirectory *string `json:"localDirectory,omitempty" doc:"Absolute local Git repository directory accessible to the worker"`
+	// NoLocalRepository is a fact about the client's filesystem, not a claim
+	// about what this server can reach: the directory the source came from is
+	// in no repository, so there is nothing there to clone whatever the
+	// provider could see. Delivery stays the server's decision; this is one of
+	// its inputs.
+	NoLocalRepository bool                  `json:"noLocalRepository,omitempty" doc:"Whether localDirectory holds no Git repository at all, so nothing can be cloned from it however reachable it is. The client resolved this source from a repository of its own and can only deliver it by push. localDirectory still records the directory the source came from."`
+	Checkout          *GitSourceCheckout    `json:"checkout,omitempty" doc:"Immutable checkout target and optional user-facing ref identity"`
+	Workspace         *GitSourceWorkspace   `json:"workspace,omitempty" doc:"Workspace materialization mode for this source"`
+	Destination       *GitSourceDestination `json:"destination,omitempty" doc:"Sandbox destination paths for this source"`
 }
 
 // Root returns the normalized identity of the source repository, independent of

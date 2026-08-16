@@ -485,6 +485,12 @@ dirty — without it the sandbox comes up clean and the edits are lost), and the
 reports the push complete. It pushes the commit the server recorded at create,
 by explicit refspec, rather than whatever the local branch now points at.
 
+The push runs out of the `sandboxcreate.LocalSource` that create returned, not
+out of a repository re-resolved from the source argument. For a directory with
+no repository (below) that repository is a throwaway one holding the only copy
+of what the sandbox was configured against, so it cannot be found again. Callers
+`Close` it as soon as the source has been delivered.
+
 The push goes through the control plane's Git proxy, never directly to the
 sandbox, which sits on a network the client cannot reach.
 
@@ -509,6 +515,31 @@ happens:
   `false` before it calls the shared create at all.
 - `true` is rejected for a remote URL or an explicit `@REF`, because a snapshot
   only ever sits on top of HEAD of a local working tree.
+
+## A Directory That Is Not a Repository
+
+Running against a directory in no Git repository is the same mechanism one step
+further out: the directory's whole content is the uncommitted work of a
+repository that does not exist yet.
+
+`gitutil.InitOverWorkTree` builds that repository in a temporary directory whose
+`core.worktree` points at the user's, so git acts on their files while writing
+only into the temporary repository — no `.git` appears in the directory, and
+deleting the repository leaves it as it was found. The base is a root commit of
+the empty tree, the directory is snapshotted on top of it exactly as a dirty
+workspace, and the sandbox comes up with the files as uncommitted changes.
+
+- The source records `noLocalRepository`, and `localDirectory` still names the
+  user's directory — never the temporary repository, which is one create's
+  implementation detail. That flag is what makes the server choose `push`: there
+  is nothing at that path to clone however reachable it is.
+- Nothing is asked. The dirty-workspace question offers the last commit as its
+  alternative and there is none, so `--include-dirty=false` and an explicit
+  `@REF` are both rejected rather than reinterpreted.
+- An empty directory is not an error: it snapshots nothing and the sandbox
+  starts on the empty commit, which is the point of running in one.
+
+See [ADR 0045](../docs/adr/0045-a-directory-with-no-repository-is-delivered-by-push.md).
 
 ## Git Transport to the Server
 

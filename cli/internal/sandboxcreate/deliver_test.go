@@ -1,6 +1,9 @@
 package sandboxcreate
 
 import (
+	"context"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 
@@ -158,5 +161,43 @@ func TestGitPushAuthArgs(t *testing.T) {
 	plain := GitAuthArgs("  ", []string{"push", "url"})
 	if len(plain) != 2 {
 		t.Fatalf("args = %v, want no auth override without a token", plain)
+	}
+}
+
+// A throwaway repository has to be able to deliver, since it holds the only
+// copy of what the sandbox was configured against: the push carries the base
+// commit and the snapshot, and the sandbox can reconstruct the directory from
+// the two.
+func TestPushSourceDeliversADirectoryWithNoRepository(t *testing.T) {
+	ctx := context.Background()
+	dir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(dir, "a.txt"), []byte("a\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	source, err := resolveRunSource(ctx, dir, runSourceOptions{IncludeDirty: IncludeDirtyAuto})
+	if err != nil {
+		t.Fatalf("resolveRunSource: %v", err)
+	}
+	local := source.localSource()
+	defer local.Close()
+
+	sandboxRepo := t.TempDir()
+	runSourceTestGit(t, sandboxRepo)("init", "--bare")
+	repoRoot, err := local.pushRoot()
+	if err != nil {
+		t.Fatalf("pushRoot: %v", err)
+	}
+	if err := pushSource(ctx, repoRoot, sandboxRepo, "", source.Checkout.Commit, source.Checkout.RefName, source.Workspace.SnapshotRef); err != nil {
+		t.Fatalf("pushSource: %v", err)
+	}
+
+	git := runSourceTestGit(t, sandboxRepo)
+	if head := strings.TrimSpace(git("rev-parse", "refs/heads/"+source.Checkout.RefName)); head != source.Checkout.Commit {
+		t.Fatalf("branch %s = %s, want the base commit %s", source.Checkout.RefName, head, source.Checkout.Commit)
+	}
+	restored := strings.Fields(git("diff", "--name-only", source.Checkout.Commit, source.Workspace.SnapshotRef))
+	if strings.Join(restored, ",") != "a.txt" {
+		t.Fatalf("delivered snapshot = %v, want the directory's files", restored)
 	}
 }

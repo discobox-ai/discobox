@@ -3,6 +3,7 @@ package gitutil
 import (
 	"bytes"
 	"context"
+	"errors"
 	"fmt"
 	"os"
 	"os/exec"
@@ -131,12 +132,67 @@ func Output(ctx context.Context, dir string, stdin []byte, extraEnv map[string]s
 	return string(out), nil
 }
 
+// ErrNotARepository reports that a directory, and every directory above it, is
+// outside any Git repository. It is a distinct error because it is the one git
+// failure a caller can answer instead of report: a create can build a
+// repository of its own over such a directory, where it can do nothing about a
+// missing git or an unreadable object store.
+var ErrNotARepository = errors.New("not a git repository")
+
 func Root(ctx context.Context, dir string) (string, error) {
 	out, err := Output(ctx, dir, nil, nil, "rev-parse", "--show-toplevel")
 	if err != nil {
+		// git reports this as a plain exit 128, which it also uses for every
+		// other fatal error, so its message is the only thing that separates
+		// them.
+		if strings.Contains(strings.ToLower(err.Error()), "not a git repository") {
+			return "", fmt.Errorf("resolve git root: %w", ErrNotARepository)
+		}
 		return "", fmt.Errorf("resolve git root: %w", err)
 	}
 	return filepath.Clean(strings.TrimSpace(out)), nil
+}
+
+// InitOverWorkTree creates a Git repository for the directory at workTree,
+// storing the repository outside that directory, and returns the path that
+// every other function here takes in place of a repository root, plus a cleanup
+// that deletes the repository.
+//
+// A directory that is not in any repository can be snapshotted, committed, and
+// pushed this way while nothing is ever written inside it: no .git appears, and
+// the cleanup leaves the directory exactly as it was found. git resolves the
+// working tree from the repository's core.worktree, so status, add,
+// write-tree, and push all act on workTree even though no command ever runs
+// there.
+//
+// HEAD is left pointing at the branch git itself would have created, so
+// init.defaultBranch is honored. That branch does not exist until a caller
+// commits to it.
+func InitOverWorkTree(ctx context.Context, workTree string) (string, func(), error) {
+	noop := func() {}
+	abs, err := filepath.Abs(workTree)
+	if err != nil {
+		return "", noop, fmt.Errorf("resolve work tree %s: %w", workTree, err)
+	}
+	dir, err := os.MkdirTemp("", "discobox-git-repo-*")
+	if err != nil {
+		return "", noop, fmt.Errorf("create temporary git repository directory: %w", err)
+	}
+	cleanup := func() { _ = os.RemoveAll(dir) }
+	// --bare puts the repository at dir itself, rather than in a dir/.git that
+	// exists only to hold it. It is then told it is not bare after all, because
+	// it does have a working tree — one that lives somewhere else.
+	if _, err := Output(ctx, "", nil, nil, "init", "--bare", dir); err != nil {
+		cleanup()
+		return "", noop, fmt.Errorf("initialize git repository for %s: %w", abs, err)
+	}
+	for _, setting := range [][2]string{{"core.bare", "false"}, {"core.worktree", abs}} {
+		if _, err := Output(ctx, dir, nil, nil, "config", setting[0], setting[1]); err != nil {
+			cleanup()
+			return "", noop, fmt.Errorf("configure git repository for %s: %w", abs, err)
+		}
+	}
+	return dir, cleanup, nil
 }
 
 func ResolveCommit(ctx context.Context, repoRoot, rev string) (string, error) {
@@ -273,6 +329,17 @@ func CurrentWorkspaceTree(ctx context.Context, repoRoot string) (WorkspaceTree, 
 		Tree:       tree,
 		Dirty:      tree != "" && tree != baseTree,
 	}, cleanup, nil
+}
+
+// EmptyTree writes the tree of a repository with no files into repoRoot and
+// returns its ID. It is the tree a history with no content starts from, so it
+// is what a root commit created before anything is tracked commits.
+func EmptyTree(ctx context.Context, repoRoot string) (string, error) {
+	out, err := Output(ctx, repoRoot, []byte{}, nil, "hash-object", "-t", "tree", "-w", "--stdin")
+	if err != nil {
+		return "", fmt.Errorf("write empty git tree: %w", err)
+	}
+	return strings.TrimSpace(out), nil
 }
 
 func CommitTree(ctx context.Context, repoRoot, tree, parent, message string) (string, error) {

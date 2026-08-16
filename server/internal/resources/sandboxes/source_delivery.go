@@ -133,6 +133,14 @@ func sourceNeedsPush(definition sandbox.ProviderDefinition, serverHostID string,
 		// the sandbox clones it directly and no client is involved.
 		return false
 	}
+	if source.NoLocalRepository {
+		// The directory is in no repository, so there is nothing at that path
+		// to clone even from this machine. Only the client holds this source,
+		// in a repository of its own, and only a push can deliver it. This is
+		// not the client asking for a push: it reported what its filesystem
+		// holds, which the server cannot see, and the conclusion is drawn here.
+		return true
+	}
 	if !definition.LocalSourceBind {
 		return true
 	}
