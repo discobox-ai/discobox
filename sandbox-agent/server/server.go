@@ -172,7 +172,12 @@ func newRouterAndManager(cfg Config) (agentRuntime, error) {
 	manager.SetHookSocketPath(harnesshooks.SocketPath(cfg.RuntimeDir))
 	portsWatch, err := newPortsWatcher(cfg, execManager)
 	if err != nil {
-		return agentRuntime{}, err
+		// Telemetry must not be what keeps a sandbox from booting. A sandbox
+		// whose run identity does not resolve is broken for execs too, and it
+		// has to come up far enough to be diagnosed — so this reports no ports
+		// rather than substituting a guess for the uid or failing startup.
+		slog.Default().Warn("sandbox agent listening port watcher disabled", "error", err)
+		portsWatch = nil
 	}
 	handler := &handler{
 		identity:          cfg.Identity,
