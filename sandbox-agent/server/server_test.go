@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"net/netip"
 	"os"
 	"path/filepath"
 	"strings"
@@ -14,8 +15,10 @@ import (
 	"time"
 
 	"aidanwoods.dev/go-paseto"
+	sandboxapi "github.com/obot-platform/discobox/api/sandboxgen"
 	"github.com/obot-platform/discobox/sandbox-agent/config"
 	"github.com/obot-platform/discobox/sandbox-agent/execs"
+	"github.com/obot-platform/discobox/sandbox-agent/ports"
 	agentstore "github.com/obot-platform/discobox/sandbox-agent/store"
 	"github.com/obot-platform/discobox/sandbox-agent/terminal"
 )
@@ -90,6 +93,7 @@ func TestGetSandboxAgentStatusRequiresStatusReadScope(t *testing.T) {
 	var body struct {
 		Sources    []any  `json:"sources"`
 		Sessions   []any  `json:"sessions"`
+		Ports      []any  `json:"ports"`
 		ObservedAt string `json:"observedAt"`
 	}
 	if err := json.Unmarshal(resp.Body.Bytes(), &body); err != nil {
@@ -98,8 +102,55 @@ func TestGetSandboxAgentStatusRequiresStatusReadScope(t *testing.T) {
 	if body.Sources == nil || len(body.Sources) != 0 {
 		t.Fatalf("sources = %v, want an empty array (no sources configured)", body.Sources)
 	}
+	if body.Ports == nil || len(body.Ports) != 0 {
+		t.Fatalf("ports = %v, want an empty array (nothing listening)", body.Ports)
+	}
 	if body.ObservedAt == "" {
 		t.Fatal("observedAt is empty")
+	}
+}
+
+// TestGetSandboxAgentStatusReportsWatchedPorts covers the one status component
+// read from a snapshot rather than computed per request (ADR 0046).
+func TestGetSandboxAgentStatusReportsWatchedPorts(t *testing.T) {
+	procRoot := filepath.Join(t.TempDir(), "proc")
+	if err := os.MkdirAll(filepath.Join(procRoot, "net"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	table := "  sl  local_address rem_address   st tx_queue rx_queue tr tm->when retrnsmt   uid  timeout inode\n" +
+		"   0: 0100007F:1435 00000000:0000 0A 00000000:00000000 00:00000000 00000000  4242        0 51001 1 0000 100 0 0 10 0\n"
+	if err := os.WriteFile(filepath.Join(procRoot, "net", "tcp"), []byte(table), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	watcher := ports.New(ports.Config{
+		UID:      4242,
+		ProcRoot: procRoot,
+		Probe:    func(context.Context, netip.AddrPort) ports.Protocol { return ports.ProtocolHTTP },
+	})
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	go watcher.Run(ctx)
+
+	agent := &handler{ports: watcher}
+	deadline := time.Now().Add(2 * time.Second)
+	for {
+		status, err := agent.GetSandboxAgentStatus(ctx, sandboxapi.GetSandboxAgentStatusParams{})
+		if err != nil {
+			t.Fatalf("get status: %v", err)
+		}
+		if len(status.Ports) == 1 && status.Ports[0].Protocol == "http" {
+			if status.Ports[0].Port != 5173 {
+				t.Fatalf("port = %d, want 5173", status.Ports[0].Port)
+			}
+			if got := status.Ports[0].Addresses; len(got) != 1 || got[0] != "127.0.0.1" {
+				t.Fatalf("addresses = %v, want [127.0.0.1]", got)
+			}
+			return
+		}
+		if time.Now().After(deadline) {
+			t.Fatalf("status never reported the watched port: %+v", status.Ports)
+		}
+		time.Sleep(5 * time.Millisecond)
 	}
 }
 

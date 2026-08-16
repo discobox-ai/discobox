@@ -5,7 +5,10 @@ import (
 	"encoding/json"
 	"errors"
 	"log/slog"
+	"net"
 	"net/http"
+	"os"
+	"strconv"
 	"time"
 
 	"github.com/go-chi/chi/v5"
@@ -16,6 +19,7 @@ import (
 	"github.com/obot-platform/discobox/sandbox-agent/config"
 	"github.com/obot-platform/discobox/sandbox-agent/execs"
 	harnesshooks "github.com/obot-platform/discobox/sandbox-agent/hooks"
+	"github.com/obot-platform/discobox/sandbox-agent/ports"
 	"github.com/obot-platform/discobox/sandbox-agent/resources"
 	"github.com/obot-platform/discobox/sandbox-agent/secretswatch"
 	agentstore "github.com/obot-platform/discobox/sandbox-agent/store"
@@ -80,11 +84,26 @@ func ConfigFromHarnessConfig(cfg config.Config) Config {
 }
 
 func NewRouter(cfg Config) (*chi.Mux, error) {
-	router, _, _, _, err := newRouterAndManager(cfg)
-	return router, err
+	built, err := newRouterAndManager(cfg)
+	return built.router, err
 }
 
-func newRouterAndManager(cfg Config) (*chi.Mux, *terminal.Service, *execs.Manager, *agentstore.Store, error) {
+// agentRuntime is everything newRouterAndManager builds. Serve owns the pieces
+// that need a context to run under; NewRouter takes only the router.
+type agentRuntime struct {
+	router     *chi.Mux
+	terminals  *terminal.Service
+	execs      *execs.Manager
+	store      *agentstore.Store
+	portsWatch *ports.Watcher
+	listenAddr string
+}
+
+// defaultListenAddress is where the agent serves when the manifest names no
+// address. It is also what the port watcher excludes from what it reports.
+const defaultListenAddress = ":3003"
+
+func newRouterAndManager(cfg Config) (agentRuntime, error) {
 	if cfg.WorkingRoot == "" {
 		cfg.WorkingRoot = "/workspace"
 	}
@@ -97,12 +116,15 @@ func newRouterAndManager(cfg Config) (*chi.Mux, *terminal.Service, *execs.Manage
 	if cfg.Resources.RetentionCount <= 0 {
 		cfg.Resources.RetentionCount = 300
 	}
+	if cfg.ListenAddress == "" {
+		cfg.ListenAddress = defaultListenAddress
+	}
 	localStore := cfg.Store
 	execAudit := cfg.ExecAuditRecorder
 	if localStore == nil && execAudit == nil {
 		st, err := agentstore.Open(context.Background(), cfg.DatabasePath)
 		if err != nil {
-			return nil, nil, nil, nil, err
+			return agentRuntime{}, err
 		}
 		localStore = st
 		execAudit = st
@@ -112,7 +134,7 @@ func newRouterAndManager(cfg Config) (*chi.Mux, *terminal.Service, *execs.Manage
 	}
 	authenticator, err := NewSignedTokenAuthenticator(cfg.Identity, cfg.ControlPlanePublicKey)
 	if err != nil {
-		return nil, nil, nil, nil, err
+		return agentRuntime{}, err
 	}
 	// One exec runtime backs both plain execs and terminals.
 	execManager, err := execs.NewManagerWithConfig(execs.ManagerConfig{
@@ -127,7 +149,7 @@ func newRouterAndManager(cfg Config) (*chi.Mux, *terminal.Service, *execs.Manage
 		Logs:           localStore,
 	})
 	if err != nil {
-		return nil, nil, nil, nil, err
+		return agentRuntime{}, err
 	}
 	manager, err := terminal.NewService(terminal.ServiceConfig{
 		Execs:         execManager,
@@ -145,9 +167,13 @@ func newRouterAndManager(cfg Config) (*chi.Mux, *terminal.Service, *execs.Manage
 		Prompt:        cfg.Prompt,
 	})
 	if err != nil {
-		return nil, nil, nil, nil, err
+		return agentRuntime{}, err
 	}
 	manager.SetHookSocketPath(harnesshooks.SocketPath(cfg.RuntimeDir))
+	portsWatch, err := newPortsWatcher(cfg, execManager)
+	if err != nil {
+		return agentRuntime{}, err
+	}
 	handler := &handler{
 		identity:          cfg.Identity,
 		terminals:         manager,
@@ -159,10 +185,11 @@ func newRouterAndManager(cfg Config) (*chi.Mux, *terminal.Service, *execs.Manage
 		sources:           cfg.Sources,
 		harnessTypeID:     cfg.Harness.TypeID,
 		execUser:          execManager.DefaultUser(),
+		ports:             portsWatch,
 	}
 	generated, err := sandboxapi.NewServer(handler)
 	if err != nil {
-		return nil, nil, nil, nil, err
+		return agentRuntime{}, err
 	}
 
 	router := chi.NewRouter()
@@ -197,7 +224,53 @@ func newRouterAndManager(cfg Config) (*chi.Mux, *terminal.Service, *execs.Manage
 		protected.Get("/api/projects/{projectId}/sandboxes/{sandboxId}/tcp/attach", handler.attachTCPTunnelHTTP)
 		protected.Mount("/", generated)
 	})
-	return router, manager, execManager, localStore, nil
+	return agentRuntime{
+		router:     router,
+		terminals:  manager,
+		execs:      execManager,
+		store:      localStore,
+		portsWatch: portsWatch,
+		listenAddr: cfg.ListenAddress,
+	}, nil
+}
+
+// newPortsWatcher wires the listening-port watcher to the identity the sandbox
+// actually runs processes as. That identity is asked of the exec manager rather
+// than rebuilt from the manifest (see REVIEW.md), and a manifest that names
+// nobody means an exec inherits this process's own identity (ADR 0025 §5), so
+// that is the uid whose sockets count.
+//
+// The agent's own listener is excluded by port. The uid filter already excludes
+// it in the normal case, where the agent is root and the sandbox user is not,
+// but a sandbox whose run user *is* root would otherwise report the control
+// port as one of its own services.
+func newPortsWatcher(cfg Config, execManager *execs.Manager) (*ports.Watcher, error) {
+	user, err := execManager.ResolveUser(execs.CreateRequest{})
+	if err != nil {
+		return nil, err
+	}
+	uid := int64(os.Getuid())
+	if user != nil && user.UID != nil {
+		uid = *user.UID
+	}
+	return ports.New(ports.Config{
+		UID:          uid,
+		ExcludePorts: listenPorts(cfg.ListenAddress),
+	}), nil
+}
+
+// listenPorts is the agent's own listen port, or nothing when the address does
+// not name one it could collide with.
+func listenPorts(address string) []int {
+	_, portText, err := net.SplitHostPort(address)
+	if err != nil {
+		return nil
+	}
+	port, err := strconv.Atoi(portText)
+	if err != nil || port <= 0 {
+		return nil
+	}
+	return []int{port}
 }
 
 // execDefaultUser is the manifest layer: the sandbox's declared user, as the
@@ -232,20 +305,17 @@ func Serve(ctx context.Context, logger *slog.Logger, cfg Config) error {
 	if logger == nil {
 		logger = slog.Default()
 	}
-	addr := cfg.ListenAddress
-	if addr == "" {
-		addr = ":3003"
-	}
 	if cfg.SecretEnv == nil {
 		watcher := secretswatch.Watch(ctx, "", func(err error) {
 			logger.Warn("sandbox agent secrets watch", "error", err)
 		})
 		cfg.SecretEnv = watcher.Env
 	}
-	router, manager, execManager, localStore, err := newRouterAndManager(cfg)
+	built, err := newRouterAndManager(cfg)
 	if err != nil {
 		return err
 	}
+	manager, execManager, localStore := built.terminals, built.execs, built.store
 	// Config mode defers the primary terminal to the first attach. The configure
 	// command is interactive and reads inputs seeded into the sandbox after it is
 	// running, so launching it at boot would race that seeding. Attaching to the
@@ -260,14 +330,18 @@ func Serve(ctx context.Context, logger *slog.Logger, cfg Config) error {
 		}()
 	}
 	go execReconcileLoop(ctx, logger, execManager)
+	// The listening-port watcher is the one status component with a standing
+	// loop behind it, because classifying a port means connecting to whatever
+	// is behind it (ADR 0046).
+	go built.portsWatch.Run(ctx)
 	go func() {
 		if err := harnesshooks.Serve(ctx, harnesshooks.SocketPath(cfg.RuntimeDir), localStore); err != nil && !errors.Is(err, context.Canceled) {
 			logger.Debug("sandbox agent hook collector stopped", "error", err)
 		}
 	}()
 	httpServer := &http.Server{
-		Addr:              addr,
-		Handler:           router,
+		Addr:              built.listenAddr,
+		Handler:           built.router,
 		ReadHeaderTimeout: 10 * time.Second,
 		// No ReadTimeout/WriteTimeout: those set absolute per-request conn
 		// deadlines that survive the websocket hijack in exec attach

@@ -61,19 +61,20 @@ var yamlOwnedEnums = map[string]string{
 	// Both axes now diverge per resource, which is what a single embedded tag
 	// cannot express: the shared tag is the union, and each resource's schema
 	// narrows it (ADR 0017 §2, ADR 0022 §1).
-	"Pool.desiredState":               "per-resource narrowing: a pool cannot be archived, so it omits the sandbox-only value in the shared tag",
-	"Pool.state":                      "per-resource narrowing of the embedded ResourceLifecycle, whose shared tag is the union of both vocabularies",
-	"SandboxRuntime.state":            "per-resource narrowing of the embedded ResourceLifecycle",
-	"SandboxRuntime.displayState":     "derived presentation state computed by the API layer, not stored on the model",
-	"PoolSandboxState.state":          "the pool agent's reporting vocabulary: the states a runtime can actually observe, a subset of the model's",
-	"SandboxConfig.harnessMode":       "model.Sandbox.HarnessMode is untagged text; run/config is a contract-level restriction",
-	"SandboxCreateConfig.harnessMode": "model.Sandbox.HarnessMode is untagged text; run/config is a contract-level restriction",
-	"SandboxExec.status":              "exec lifecycle is owned by the sandbox-agent",
-	"SandboxAgentSessionStatus.state": "harness session state is computed and owned by sandbox-agent; the server stores AgentStatus as opaque JSON",
-	"SandboxExecLogEntry.stream":      "exec log streams are owned by the sandbox-agent",
-	"HarnessVolume.volume":            "value set is owned by harness.VolumeKind in the root module, not a server/internal/model enum tag",
-	"SandboxUpgrade.reason":           "derived at read time by services.SandboxUpgrade from the pin and the harness config; nothing on the model stores it",
-	"CreateProjectBody.copy[]":        "names the resource kinds a project copy takes; a request-shaping vocabulary with no persisted field behind it",
+	"Pool.desiredState":                  "per-resource narrowing: a pool cannot be archived, so it omits the sandbox-only value in the shared tag",
+	"Pool.state":                         "per-resource narrowing of the embedded ResourceLifecycle, whose shared tag is the union of both vocabularies",
+	"SandboxRuntime.state":               "per-resource narrowing of the embedded ResourceLifecycle",
+	"SandboxRuntime.displayState":        "derived presentation state computed by the API layer, not stored on the model",
+	"PoolSandboxState.state":             "the pool agent's reporting vocabulary: the states a runtime can actually observe, a subset of the model's",
+	"SandboxConfig.harnessMode":          "model.Sandbox.HarnessMode is untagged text; run/config is a contract-level restriction",
+	"SandboxCreateConfig.harnessMode":    "model.Sandbox.HarnessMode is untagged text; run/config is a contract-level restriction",
+	"SandboxExec.status":                 "exec lifecycle is owned by the sandbox-agent",
+	"SandboxAgentSessionStatus.state":    "harness session state is computed and owned by sandbox-agent; the server stores AgentStatus as opaque JSON",
+	"SandboxAgentListeningPort.protocol": "what a listening port speaks is established by sandbox-agent probing it (ADR 0046); the server stores AgentStatus as opaque JSON",
+	"SandboxExecLogEntry.stream":         "exec log streams are owned by the sandbox-agent",
+	"HarnessVolume.volume":               "value set is owned by harness.VolumeKind in the root module, not a server/internal/model enum tag",
+	"SandboxUpgrade.reason":              "derived at read time by services.SandboxUpgrade from the pin and the harness config; nothing on the model stores it",
+	"CreateProjectBody.copy[]":           "names the resource kinds a project copy takes; a request-shaping vocabulary with no persisted field behind it",
 }
 
 func TestModelEnumTagsMatchOpenAPI(t *testing.T) {

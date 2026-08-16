@@ -191,6 +191,39 @@ components:
                 - clean
                 - observedAt
             type: object
+        SandboxAgentListeningPort:
+            additionalProperties: false
+            properties:
+                addresses:
+                    description: Every local address bound to this port - a wildcard address for a wildcard bind, 127.0.0.1 for a loopback-only one. A port is reachable from inside the sandbox's network namespace either way, so this describes the bind rather than reachability.
+                    items:
+                        type: string
+                    type: array
+                firstSeenAt:
+                    description: When this port was first observed listening. Survives a restart of whatever is behind it, as long as the port itself never went away in between.
+                    format: date-time
+                    type: string
+                port:
+                    description: TCP port the sandbox user's own processes are listening on.
+                    format: int64
+                    type: integer
+                protocol:
+                    description: |
+                        What the port turned out to speak, established by probing it once when it
+                        appeared. tcp means reached and not HTTP (a database, an SSH daemon, an
+                        HTTP/2-only server); unknown means not classified yet or unreachable when
+                        probed, and is retried.
+                    enum:
+                        - http
+                        - https
+                        - tcp
+                        - unknown
+                    type: string
+            required:
+                - port
+                - protocol
+                - firstSeenAt
+            type: object
         SandboxAgentSessionStatus:
             additionalProperties: false
             properties:
@@ -246,6 +279,11 @@ components:
                 observedAt:
                     format: date-time
                     type: string
+                ports:
+                    description: TCP ports the sandbox user's own processes are listening on. Unlike sources and sessions this is a snapshot from a standing watcher rather than computed per request, since classifying a port means connecting to it (ADR 0046); it can be up to one watcher interval stale.
+                    items:
+                        $ref: '#/components/schemas/SandboxAgentListeningPort'
+                    type: array
                 sessions:
                     description: Terminal sessions only, live and ended alike - every terminal a record still exists for, typically just the primary. One-shot execs are not sessions and never appear.
                     items:
@@ -258,6 +296,7 @@ components:
             required:
                 - sources
                 - sessions
+                - ports
                 - observedAt
             type: object
         SandboxExec:

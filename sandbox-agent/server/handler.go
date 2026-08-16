@@ -15,6 +15,7 @@ import (
 	sandboxapi "github.com/obot-platform/discobox/api/sandboxgen"
 	"github.com/obot-platform/discobox/sandbox-agent/agentstatus"
 	"github.com/obot-platform/discobox/sandbox-agent/execs"
+	"github.com/obot-platform/discobox/sandbox-agent/ports"
 	"github.com/obot-platform/discobox/sandbox-agent/resources"
 	"github.com/obot-platform/discobox/sandbox-agent/store"
 	"github.com/obot-platform/discobox/sandbox-agent/terminal"
@@ -32,6 +33,7 @@ type handler struct {
 	sources           []sandboxconfig.Source
 	harnessTypeID     string
 	execUser          *execs.User
+	ports             *ports.Watcher
 }
 
 type terminalStore interface {
@@ -451,7 +453,10 @@ func (h *handler) ListHarnessHooks(ctx context.Context, params sandboxapi.ListHa
 
 // GetSandboxAgentStatus computes git/session/connection status fresh on every
 // call: sandbox-agent never caches or pushes this on its own initiative, it
-// only ever answers inbound authenticated requests (see ADR 0030).
+// only ever answers inbound authenticated requests (see ADR 0030). Listening
+// ports are the exception — they are read from the standing watcher's snapshot,
+// because establishing what a port speaks means connecting to it and that is
+// not something to redo on every poll (ADR 0046).
 func (h *handler) GetSandboxAgentStatus(ctx context.Context, _ sandboxapi.GetSandboxAgentStatusParams) (*sandboxapi.SandboxAgentStatusResponse, error) {
 	observedAt := time.Now().UTC()
 	sources := agentstatus.ComputeGitStatus(ctx, h.sources, h.execUser)
@@ -464,11 +469,13 @@ func (h *handler) GetSandboxAgentStatus(ctx context.Context, _ sandboxapi.GetSan
 		hooks = h.store
 	}
 	sessions := agentstatus.ComputeSessionStatus(ctx, terminals, h.harnessTypeID, hooks)
+	listening := h.ports.Snapshot()
 
 	response := sandboxapi.SandboxAgentStatusResponse{
 		ObservedAt: observedAt,
 		Sources:    make([]sandboxapi.SandboxAgentGitSourceStatus, 0, len(sources)),
 		Sessions:   make([]sandboxapi.SandboxAgentSessionStatus, 0, len(sessions)),
+		Ports:      make([]sandboxapi.SandboxAgentListeningPort, 0, len(listening)),
 	}
 	for _, source := range sources {
 		response.Sources = append(response.Sources, sandboxAgentGitSourceStatus(source))
@@ -476,7 +483,19 @@ func (h *handler) GetSandboxAgentStatus(ctx context.Context, _ sandboxapi.GetSan
 	for _, session := range sessions {
 		response.Sessions = append(response.Sessions, sandboxAgentSessionStatus(session))
 	}
+	for _, port := range listening {
+		response.Ports = append(response.Ports, sandboxAgentListeningPort(port))
+	}
 	return &response, nil
+}
+
+func sandboxAgentListeningPort(in ports.Port) sandboxapi.SandboxAgentListeningPort {
+	return sandboxapi.SandboxAgentListeningPort{
+		Port:        int64(in.Port),
+		Addresses:   append([]string(nil), in.Addresses...),
+		Protocol:    sandboxapi.SandboxAgentListeningPortProtocol(in.Protocol),
+		FirstSeenAt: in.FirstSeenAt,
+	}
 }
 
 func sandboxAgentGitSourceStatus(in agentstatus.GitSourceStatus) sandboxapi.SandboxAgentGitSourceStatus {

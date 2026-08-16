@@ -28,7 +28,8 @@ runtime operations.
 | `nestedbridge` | Discovers the nested Docker daemon's bridge address and publishes it under `/run` for the bridge-facing proxy forwarder and the runc wrapper. Also enumerates this sandbox's own directly-connected IPv4 networks (`LocalSubnets`), the resolution target for `sandboxconfig.LocalSubnetsToken`. |
 | `proxyenv` | Renders `sandbox.json`'s proxy-trust env (`Env`/`ProxyEnvs`) as a systemd `EnvironmentFile`, for `docker.service` — started by socket activation, not spawned by sandbox-agent, so it inherits no container env and cannot be reached by any per-container injection. Resolves `sandboxconfig.LocalSubnetsToken` against `nestedbridge.LocalSubnets()`, the same substitution `runcca.proxyEnv` applies for nested containers. Run at boot by `discobox-render-proxy-env.service`, ordered before `docker.service`, writing to `/run/discobox/proxy/proxy.env` (not `/etc/discobox`, which is pool-agent's read-only mount). |
 | `dockercache` | The sandbox's `docker` CLI wrapper (`cmd/discobox-docker`): installed as `docker` ahead of the real CLI on PATH, it points `docker build` at the pool-shared BuildKit builder so a build in one sandbox is reused by the others (ADR 0044). It provisions a buildx `remote` instance against the pool mediator, rewrites the build to push its result to the pool registry, then pulls the result back and applies the user's tags — `--load` would reship the whole image on every build, cached or not. Only `docker build` is rewritten; `docker buildx` and everything else is exec'd straight through, so a user who reaches for buildx directly gets buildx. |
-| `agentstatus` | Computes the status a pool agent polls (ADR 0030): per-source git status and a diff stat against the manifest's base commit via bounded `git status`/`git diff --shortstat` shelling, and per terminal session (every terminal still on record, never one-shot execs) the harness session state (plus the OSC title each session's program last set, read from its shim's emulator) via the root module's `harness.SessionStateDeriver` capability (full state machine for claude-code; generic exec-liveness fallback otherwise). Computed fresh on every call, never cached. |
+| `agentstatus` | Computes the status a pool agent polls (ADR 0030): per-source git status and a diff stat against the manifest's base commit via bounded `git status`/`git diff --shortstat` shelling, and per terminal session (every terminal still on record, never one-shot execs) the harness session state (plus the OSC title each session's program last set, read from its shim's emulator) via the root module's `harness.SessionStateDeriver` capability (full state machine for claude-code; generic exec-liveness fallback otherwise). Computed fresh on every call, never cached. Listening ports travel in the same payload but come from `ports` instead. |
+| `ports` | The sandbox's listening TCP ports: a standing watcher that reads `/proc/net/tcp{,6}` for sockets in `TCP_LISTEN` owned by the run user's uid, and probes each newly seen socket once to classify it `http`/`https`/`tcp` (ADR 0046). The only status component that is a cached snapshot rather than computed per request, because classifying a port means connecting to a user's process. |
 | `resources` | Opaque cgroup/procfs/systemd-style resource snapshot collection for exec runtimes. |
 | `store` | Sandbox-local SQLite/GORM audit log, observed terminal state snapshots, retained resource blobs, and compressed exec/terminal transcript chunks (see ADR 0028). |
 | `Dockerfile` | Debian-based base sandbox runtime image with Docker, development tools, Chromium, socket-activated desktop access, code-server, and Nix tooling. Harness image builds live in their owning `harness/<type>` folders. |
@@ -98,8 +99,22 @@ runtime operations.
   observations instead of an in-memory cache.
 - The status endpoint (`GET .../status`, `status:read` scope) is answered
   fresh on every request from the authenticated caller — pool-agent's standing
-  poll loop, per ADR 0030. It is never cached and sandbox-agent never pushes
-  it anywhere on its own initiative, consistent with the boundary rule above.
+  poll loop, per ADR 0030 — with one exception, `ports`. Sandbox-agent never
+  pushes status anywhere on its own initiative, consistent with the boundary
+  rule above.
+- `ports` is that exception, and the reason is specific to it
+  ([ADR 0046](../docs/adr/0046-listening-ports-are-polled-and-probed-in-the-background.md)):
+  what a listening port speaks can only be learned by connecting to a user's
+  process and writing a request at it, and the answer does not change while
+  that socket lives. So `ports.Watcher` scans and probes on its own interval,
+  caches each result against the socket inodes behind the port, and the handler
+  reports its snapshot. Discovery is a `/proc/net/tcp{,6}` read filtered by the
+  uid `execs.Manager.ResolveUser` returns — never a uid derived some other way,
+  and never the manifest layer unresolved (see [REVIEW.md](REVIEW.md)) — so a
+  port belongs to the sandbox's own processes by construction rather than by a
+  guess about which ports are "user" ports. A new component wanting the same
+  exemption needs the same argument; this is not a precedent for caching status
+  in general.
 - A terminal is one primitive: an exec created in harness mode. The `terminal`
   layer resolves the image harness (or the `shell` fallback harness — a login
   shell — when the image has no harness, or when the manifest declares a

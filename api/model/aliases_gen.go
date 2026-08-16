@@ -72,6 +72,7 @@ type SSHIngress = apigen.SSHIngress
 type SSHKey = apigen.SSHKey
 type Sandbox = apigen.Sandbox
 type SandboxAgentGitSourceStatus = apigen.SandboxAgentGitSourceStatus
+type SandboxAgentListeningPort = apigen.SandboxAgentListeningPort
 type SandboxAgentSessionStatus = apigen.SandboxAgentSessionStatus
 type SandboxAgentStatusEntry = apigen.SandboxAgentStatusEntry
 type SandboxAgentStatusResponse = apigen.SandboxAgentStatusResponse

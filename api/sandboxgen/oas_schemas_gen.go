@@ -1104,6 +1104,123 @@ func (s *SandboxAgentGitSourceStatus) SetTruncated(val OptBool) {
 	s.Truncated = val
 }
 
+// Ref: #/components/schemas/SandboxAgentListeningPort
+type SandboxAgentListeningPort struct {
+	// Every local address bound to this port - a wildcard address for a wildcard bind, 127.0.0.1 for a
+	// loopback-only one. A port is reachable from inside the sandbox's network namespace either way, so
+	// this describes the bind rather than reachability.
+	Addresses []string `json:"addresses"`
+	// When this port was first observed listening. Survives a restart of whatever is behind it, as long
+	// as the port itself never went away in between.
+	FirstSeenAt time.Time `json:"firstSeenAt"`
+	// TCP port the sandbox user's own processes are listening on.
+	Port int64 `json:"port"`
+	// What the port turned out to speak, established by probing it once when it
+	// appeared. tcp means reached and not HTTP (a database, an SSH daemon, an
+	// HTTP/2-only server); unknown means not classified yet or unreachable when
+	// probed, and is retried.
+	Protocol SandboxAgentListeningPortProtocol `json:"protocol"`
+}
+
+// GetAddresses returns the value of Addresses.
+func (s *SandboxAgentListeningPort) GetAddresses() []string {
+	return s.Addresses
+}
+
+// GetFirstSeenAt returns the value of FirstSeenAt.
+func (s *SandboxAgentListeningPort) GetFirstSeenAt() time.Time {
+	return s.FirstSeenAt
+}
+
+// GetPort returns the value of Port.
+func (s *SandboxAgentListeningPort) GetPort() int64 {
+	return s.Port
+}
+
+// GetProtocol returns the value of Protocol.
+func (s *SandboxAgentListeningPort) GetProtocol() SandboxAgentListeningPortProtocol {
+	return s.Protocol
+}
+
+// SetAddresses sets the value of Addresses.
+func (s *SandboxAgentListeningPort) SetAddresses(val []string) {
+	s.Addresses = val
+}
+
+// SetFirstSeenAt sets the value of FirstSeenAt.
+func (s *SandboxAgentListeningPort) SetFirstSeenAt(val time.Time) {
+	s.FirstSeenAt = val
+}
+
+// SetPort sets the value of Port.
+func (s *SandboxAgentListeningPort) SetPort(val int64) {
+	s.Port = val
+}
+
+// SetProtocol sets the value of Protocol.
+func (s *SandboxAgentListeningPort) SetProtocol(val SandboxAgentListeningPortProtocol) {
+	s.Protocol = val
+}
+
+// What the port turned out to speak, established by probing it once when it
+// appeared. tcp means reached and not HTTP (a database, an SSH daemon, an
+// HTTP/2-only server); unknown means not classified yet or unreachable when
+// probed, and is retried.
+type SandboxAgentListeningPortProtocol string
+
+const (
+	SandboxAgentListeningPortProtocolHTTP    SandboxAgentListeningPortProtocol = "http"
+	SandboxAgentListeningPortProtocolHTTPS   SandboxAgentListeningPortProtocol = "https"
+	SandboxAgentListeningPortProtocolTCP     SandboxAgentListeningPortProtocol = "tcp"
+	SandboxAgentListeningPortProtocolUnknown SandboxAgentListeningPortProtocol = "unknown"
+)
+
+// AllValues returns all SandboxAgentListeningPortProtocol values.
+func (SandboxAgentListeningPortProtocol) AllValues() []SandboxAgentListeningPortProtocol {
+	return []SandboxAgentListeningPortProtocol{
+		SandboxAgentListeningPortProtocolHTTP,
+		SandboxAgentListeningPortProtocolHTTPS,
+		SandboxAgentListeningPortProtocolTCP,
+		SandboxAgentListeningPortProtocolUnknown,
+	}
+}
+
+// MarshalText implements encoding.TextMarshaler.
+func (s SandboxAgentListeningPortProtocol) MarshalText() ([]byte, error) {
+	switch s {
+	case SandboxAgentListeningPortProtocolHTTP:
+		return []byte(s), nil
+	case SandboxAgentListeningPortProtocolHTTPS:
+		return []byte(s), nil
+	case SandboxAgentListeningPortProtocolTCP:
+		return []byte(s), nil
+	case SandboxAgentListeningPortProtocolUnknown:
+		return []byte(s), nil
+	default:
+		return nil, errors.Errorf("invalid value: %q", s)
+	}
+}
+
+// UnmarshalText implements encoding.TextUnmarshaler.
+func (s *SandboxAgentListeningPortProtocol) UnmarshalText(data []byte) error {
+	switch SandboxAgentListeningPortProtocol(data) {
+	case SandboxAgentListeningPortProtocolHTTP:
+		*s = SandboxAgentListeningPortProtocolHTTP
+		return nil
+	case SandboxAgentListeningPortProtocolHTTPS:
+		*s = SandboxAgentListeningPortProtocolHTTPS
+		return nil
+	case SandboxAgentListeningPortProtocolTCP:
+		*s = SandboxAgentListeningPortProtocolTCP
+		return nil
+	case SandboxAgentListeningPortProtocolUnknown:
+		*s = SandboxAgentListeningPortProtocolUnknown
+		return nil
+	default:
+		return errors.Errorf("invalid value: %q", data)
+	}
+}
+
 // Ref: #/components/schemas/SandboxAgentSessionStatus
 type SandboxAgentSessionStatus struct {
 	// Number of clients currently attached to this terminal.
@@ -1311,6 +1428,10 @@ func (s *SandboxAgentSessionStatusState) UnmarshalText(data []byte) error {
 // Ref: #/components/schemas/SandboxAgentStatusResponse
 type SandboxAgentStatusResponse struct {
 	ObservedAt time.Time `json:"observedAt"`
+	// TCP ports the sandbox user's own processes are listening on. Unlike sources and sessions this is a
+	// snapshot from a standing watcher rather than computed per request, since classifying a port means
+	// connecting to it (ADR 0046); it can be up to one watcher interval stale.
+	Ports []SandboxAgentListeningPort `json:"ports"`
 	// Terminal sessions only, live and ended alike - every terminal a record still exists for, typically
 	// just the primary. One-shot execs are not sessions and never appear.
 	Sessions []SandboxAgentSessionStatus   `json:"sessions"`
@@ -1320,6 +1441,11 @@ type SandboxAgentStatusResponse struct {
 // GetObservedAt returns the value of ObservedAt.
 func (s *SandboxAgentStatusResponse) GetObservedAt() time.Time {
 	return s.ObservedAt
+}
+
+// GetPorts returns the value of Ports.
+func (s *SandboxAgentStatusResponse) GetPorts() []SandboxAgentListeningPort {
+	return s.Ports
 }
 
 // GetSessions returns the value of Sessions.
@@ -1335,6 +1461,11 @@ func (s *SandboxAgentStatusResponse) GetSources() []SandboxAgentGitSourceStatus 
 // SetObservedAt sets the value of ObservedAt.
 func (s *SandboxAgentStatusResponse) SetObservedAt(val time.Time) {
 	s.ObservedAt = val
+}
+
+// SetPorts sets the value of Ports.
+func (s *SandboxAgentStatusResponse) SetPorts(val []SandboxAgentListeningPort) {
+	s.Ports = val
 }
 
 // SetSessions sets the value of Sessions.

@@ -3,9 +3,18 @@
 // session state, and active attach connection counts (see ADR 0030). It is
 // computed fresh on every call, never cached or pushed on its own initiative
 // — sandbox-agent only ever answers inbound authenticated requests.
+//
+// Listening ports are the one exception to "computed fresh". They are
+// discovered and classified by a standing watcher ([ports.Watcher]) and read
+// here as a snapshot, because classifying a port means connecting to a user's
+// process and the answer does not change while its socket lives (ADR 0046).
 package agentstatus
 
-import "time"
+import (
+	"time"
+
+	"github.com/obot-platform/discobox/sandbox-agent/ports"
+)
 
 // GitSourceStatus is the observed git state of one mounted source.
 type GitSourceStatus struct {
@@ -60,7 +69,11 @@ type SessionStatus struct {
 // Response is the full status payload sandbox-agent's status endpoint
 // returns, and what pool-agent relays (opaquely) to discobox-server.
 type Response struct {
-	Sources    []GitSourceStatus `json:"sources"`
-	Sessions   []SessionStatus   `json:"sessions"`
-	ObservedAt time.Time         `json:"observedAt"`
+	Sources  []GitSourceStatus `json:"sources"`
+	Sessions []SessionStatus   `json:"sessions"`
+	// Ports are the TCP ports the sandbox user's own processes are listening
+	// on, each classified by what it speaks, so a client can offer a forward
+	// onto one without being told its number.
+	Ports      []ports.Port `json:"ports"`
+	ObservedAt time.Time    `json:"observedAt"`
 }
