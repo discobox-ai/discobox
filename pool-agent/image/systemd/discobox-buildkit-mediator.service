@@ -22,6 +22,12 @@ ExecStart=/usr/local/bin/discobox-pool-agent buildkit-mediator
 Restart=on-failure
 RestartSec=2s
 KillMode=mixed
+# A stop drains the builds already on the mediator rather than cutting their
+# streams (buildkitagent.BuildDrain, 10 minutes). systemd's default stop timeout
+# is well under that and would SIGKILL the drain partway, so it is raised past
+# it: the mediator gives up on its own, and this is only the backstop for a
+# mediator that does not.
+TimeoutStopSec=11min
 
 [Install]
 WantedBy=multi-user.target

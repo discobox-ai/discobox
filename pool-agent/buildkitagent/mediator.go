@@ -10,6 +10,7 @@ import (
 	"log/slog"
 	"net"
 	"sync"
+	"time"
 
 	controlapi "github.com/moby/buildkit/api/services/control"
 	gatewayapi "github.com/moby/buildkit/frontend/gateway/pb"
@@ -99,6 +100,21 @@ func NewMediator(logger *slog.Logger) (*Mediator, error) {
 // Close releases the upstream connection.
 func (m *Mediator) Close() error { return m.upstream.Close() }
 
+// BuildDrain is how long a stopping mediator carries the builds already on it
+// before it gives up on them.
+//
+// A build is one long-lived stream, so a stop that closes it takes the build
+// with it — the client sees `Unavailable: error reading from server: EOF` and
+// has nothing to resume from. buildkitd is a unit of its own and keeps both the
+// build and its cache, so the loss is the wait rather than the work; a restart
+// that drains loses neither.
+//
+// It is bounded rather than unbounded because a stuck build must not hold a
+// restart open forever. Ten minutes clears a cold image build, which is the
+// long case worth waiting for. The unit's TimeoutStopSec has to stay above this
+// or systemd kills the drain partway and the bound here means nothing.
+const BuildDrain = 10 * time.Minute
+
 // Serve accepts mTLS connections until ctx is canceled.
 func (m *Mediator) Serve(ctx context.Context, listener net.Listener, tlsConfig *tls.Config) error {
 	srv := grpc.NewServer(
@@ -108,9 +124,30 @@ func (m *Mediator) Serve(ctx context.Context, listener net.Listener, tlsConfig *
 	)
 	go func() {
 		<-ctx.Done()
-		srv.Stop()
+		m.drain(srv, BuildDrain)
 	}()
 	return srv.Serve(listener)
+}
+
+// drain stops the server, letting the builds it is carrying finish first.
+//
+// GracefulStop closes the listeners and then waits on the streams still open,
+// which is the whole point: a build that has already started runs to its end.
+// Stop is what bounds it — called while GracefulStop is waiting, it tears the
+// remaining streams down and GracefulStop returns.
+func (m *Mediator) drain(srv *grpc.Server, within time.Duration) {
+	drained := make(chan struct{})
+	go func() {
+		srv.GracefulStop()
+		close(drained)
+	}()
+	select {
+	case <-drained:
+	case <-time.After(within):
+		m.logger.Warn("builds still running at shutdown, stopping anyway", "waited", within)
+		srv.Stop()
+		<-drained
+	}
 }
 
 // sandboxID returns the identity of the peer whose certificate opened this

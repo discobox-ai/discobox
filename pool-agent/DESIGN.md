@@ -380,6 +380,16 @@ Four boundaries, each doing one job:
   It is a raw-codec gRPC proxy — it decodes only the two solve methods and
   passes every other frame through untouched, so it does not have to track
   BuildKit's protocol surface.
+- **A stop drains the builds it is carrying.** A build is one long-lived stream
+  through the mediator, so stopping the server closes it and the client sees
+  `Unavailable: error reading from server: EOF` with nothing to resume from.
+  Shutdown therefore uses gRPC's `GracefulStop`, bounded by
+  `buildkitagent.BuildDrain` (10 minutes) before falling back to the hard stop,
+  so a stuck build cannot hold a restart open. buildkitd is a separate unit and
+  keeps both the build and its cache either way — what a drain saves is the
+  wait, not the work. The unit's `TimeoutStopSec` must stay above the drain, or
+  systemd kills it partway and the bound means nothing. A crash is not drained:
+  `Restart=on-failure` brings the mediator back with the streams already gone.
 - **Egress is bound per build, in the build's own network namespace.** The
   mediator injects `HTTP_PROXY=http://<sandboxID>@127.0.0.1:17009` as a
   build-arg; the runc wrapper reads the sandbox back out of it, installs
