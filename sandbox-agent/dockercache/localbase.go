@@ -45,7 +45,7 @@ var namespacePath = registryNamespaceFile
 // Everything here degrades to nothing. A build whose bases are all remote, a
 // sandbox with no namespace staged, an unreadable Dockerfile: each returns no
 // arguments and leaves the build exactly as it was, because the alternative to
-// redirecting a base is the behaviour that shipped before this existed.
+// redirecting a base is the behavior that shipped before this existed.
 func localBaseContexts(ctx context.Context, args []string) []string {
 	namespace := readNamespace()
 	if namespace == "" {
@@ -266,7 +266,7 @@ func readVariable(s string) (name, rest string, ok bool) {
 	}
 	end := len(s)
 	for i := 0; i < len(s); i++ {
-		if !(s[i] == '_' || (s[i] >= 'a' && s[i] <= 'z') || (s[i] >= 'A' && s[i] <= 'Z') || (s[i] >= '0' && s[i] <= '9')) {
+		if s[i] != '_' && (s[i] < 'a' || s[i] > 'z') && (s[i] < 'A' || s[i] > 'Z') && (s[i] < '0' || s[i] > '9') {
 			end = i
 			break
 		}

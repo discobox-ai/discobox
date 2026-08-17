@@ -74,7 +74,7 @@ func TestADialogIsCentered(t *testing.T) {
 	if first < 0 {
 		t.Fatal("the help dialog drew nothing")
 	}
-	// Centred vertically: the blank rows above and below differ by at most one,
+	// Centered vertically: the blank rows above and below differ by at most one,
 	// which is what an odd number of spare rows leaves.
 	above, below := first, len(lines)-1-last
 	if diff := above - below; diff > 1 || diff < -1 {
