@@ -82,14 +82,15 @@ func (s *Service) GetJob(ctx context.Context, projectID, jobID string) (*model.J
 	return &job, nil
 }
 
-// ForceJob pulls a pending/backoff mark forward so it is claimable now.
+// ForceJob pulls a pending, backoff, or scheduled mark forward so it is
+// claimable now.
 func (s *Service) ForceJob(ctx context.Context, projectID, jobID string) (*model.Job, error) {
 	mark, err := s.findMark(ctx, projectID, jobID)
 	if err != nil {
 		return nil, err
 	}
 	if mark.ClaimedBy != nil {
-		return nil, apperrors.NewStatusError(http.StatusConflict, "job is not pending or in backoff")
+		return nil, apperrors.NewStatusError(http.StatusConflict, "job is already running")
 	}
 	engine, err := s.getEngine()
 	if err != nil {
@@ -139,13 +140,21 @@ func markInProject(mark reconcile.DirtyResource, projectID string, _ map[string]
 	}
 }
 
+// jobFromMark projects a dirty mark into the API job shape. A future not_before
+// is one of two things the engine stores the same way: a failure backoff, told
+// by attempts > 0 and carrying the last error, or a reconciler-armed timer
+// (Result.RequeueAt) that is not a failure at all — reported as "scheduled" so
+// a healthy retention or park deadline is not mistaken for a retry loop.
 func jobFromMark(mark reconcile.DirtyResource) model.Job {
 	status := "pending"
 	switch {
 	case mark.ClaimedBy != nil:
 		status = "running"
-	case mark.NotBefore.After(time.Now()):
+	case !mark.NotBefore.After(time.Now()):
+	case mark.Attempts > 0:
 		status = "backoff"
+	default:
+		status = "scheduled"
 	}
 	resourceID := mark.ResourceID
 	if idx := strings.LastIndex(resourceID, "/"); idx >= 0 {
@@ -156,6 +165,7 @@ func jobFromMark(mark reconcile.DirtyResource) model.Job {
 		Type:         mark.ResourceType + ".reconcile",
 		Status:       status,
 		Attempts:     mark.Attempts,
+		Error:        mark.LastError,
 		WorkerID:     mark.ClaimedBy,
 		ResourceType: mark.ResourceType,
 		ResourceID:   resourceID,

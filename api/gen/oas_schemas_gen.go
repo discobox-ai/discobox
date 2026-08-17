@@ -2710,13 +2710,13 @@ type Job struct {
 	ID string `json:"id"`
 	// Job executor type.
 	Type string `json:"type"`
-	// Persisted job lifecycle state.
+	// Job lifecycle state. `scheduled` is a reconciler-armed timer (a
+	// retention or park deadline) with nothing wrong; `backoff` is a
+	// failed reconcile waiting to retry, with `error` saying why.
 	Status JobStatus `json:"status"`
-	// Number of execution attempts.
+	// Consecutive failed attempts since the last success.
 	Attempts int `json:"attempts"`
-	// Maximum execution attempts before failure.
-	MaxAttempts int `json:"maxAttempts"`
-	// Latest execution or dispatch error.
+	// Error of the latest failed attempt; cleared once an attempt succeeds.
 	Error OptString `json:"error"`
 	// Human-readable execution result or operator note.
 	Message OptString `json:"message"`
@@ -2758,11 +2758,6 @@ func (s *Job) GetStatus() JobStatus {
 // GetAttempts returns the value of Attempts.
 func (s *Job) GetAttempts() int {
 	return s.Attempts
-}
-
-// GetMaxAttempts returns the value of MaxAttempts.
-func (s *Job) GetMaxAttempts() int {
-	return s.MaxAttempts
 }
 
 // GetError returns the value of Error.
@@ -2840,11 +2835,6 @@ func (s *Job) SetAttempts(val int) {
 	s.Attempts = val
 }
 
-// SetMaxAttempts sets the value of MaxAttempts.
-func (s *Job) SetMaxAttempts(val int) {
-	s.MaxAttempts = val
-}
-
 // SetError sets the value of Error.
 func (s *Job) SetError(val OptString) {
 	s.Error = val
@@ -2903,11 +2893,14 @@ func (s *Job) SetUpdatedAt(val time.Time) {
 func (*Job) forceJobRes() {}
 func (*Job) getJobRes()   {}
 
-// Persisted job lifecycle state.
+// Job lifecycle state. `scheduled` is a reconciler-armed timer (a
+// retention or park deadline) with nothing wrong; `backoff` is a
+// failed reconcile waiting to retry, with `error` saying why.
 type JobStatus string
 
 const (
 	JobStatusPending   JobStatus = "pending"
+	JobStatusScheduled JobStatus = "scheduled"
 	JobStatusBackoff   JobStatus = "backoff"
 	JobStatusRunning   JobStatus = "running"
 	JobStatusCompleted JobStatus = "completed"
@@ -2919,6 +2912,7 @@ const (
 func (JobStatus) AllValues() []JobStatus {
 	return []JobStatus{
 		JobStatusPending,
+		JobStatusScheduled,
 		JobStatusBackoff,
 		JobStatusRunning,
 		JobStatusCompleted,
@@ -2931,6 +2925,8 @@ func (JobStatus) AllValues() []JobStatus {
 func (s JobStatus) MarshalText() ([]byte, error) {
 	switch s {
 	case JobStatusPending:
+		return []byte(s), nil
+	case JobStatusScheduled:
 		return []byte(s), nil
 	case JobStatusBackoff:
 		return []byte(s), nil
@@ -2952,6 +2948,9 @@ func (s *JobStatus) UnmarshalText(data []byte) error {
 	switch JobStatus(data) {
 	case JobStatusPending:
 		*s = JobStatusPending
+		return nil
+	case JobStatusScheduled:
+		*s = JobStatusScheduled
 		return nil
 	case JobStatusBackoff:
 		*s = JobStatusBackoff

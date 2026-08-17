@@ -1090,9 +1090,13 @@ components:
                     description: Job executor type
                     type: string
                 status:
-                    description: Persisted job lifecycle state
+                    description: |-
+                        Job lifecycle state. `scheduled` is a reconciler-armed timer (a
+                        retention or park deadline) with nothing wrong; `backoff` is a
+                        failed reconcile waiting to retry, with `error` saying why.
                     enum:
                         - pending
+                        - scheduled
                         - backoff
                         - running
                         - completed
@@ -1100,13 +1104,10 @@ components:
                         - canceled
                     type: string
                 attempts:
-                    description: Number of execution attempts
-                    type: integer
-                maxAttempts:
-                    description: Maximum execution attempts before failure
+                    description: Consecutive failed attempts since the last success
                     type: integer
                 error:
-                    description: Latest execution or dispatch error
+                    description: Error of the latest failed attempt; cleared once an attempt succeeds
                     type: string
                 message:
                     description: Human-readable execution result or operator note
@@ -1147,7 +1148,6 @@ components:
                 - type
                 - status
                 - attempts
-                - maxAttempts
                 - resourceType
                 - resourceId
                 - scheduledAt
@@ -3366,7 +3366,7 @@ paths:
                             schema:
                                 $ref: '#/components/schemas/ErrorModel'
                     description: Error
-            summary: Force a pending or backoff job to run immediately
+            summary: Force a pending, scheduled, or backoff job to run immediately
             tags:
                 - jobs
     /api/pools/register:

@@ -5359,10 +5359,6 @@ func (s *Job) encodeFields(e *jx.Encoder) {
 		e.Int(s.Attempts)
 	}
 	{
-		e.FieldStart("maxAttempts")
-		e.Int(s.MaxAttempts)
-	}
-	{
 		if s.Error.Set {
 			e.FieldStart("error")
 			s.Error.Encode(e)
@@ -5420,23 +5416,22 @@ func (s *Job) encodeFields(e *jx.Encoder) {
 	}
 }
 
-var jsonFieldsNameOfJob = [16]string{
+var jsonFieldsNameOfJob = [15]string{
 	0:  "id",
 	1:  "type",
 	2:  "status",
 	3:  "attempts",
-	4:  "maxAttempts",
-	5:  "error",
-	6:  "message",
-	7:  "metadata",
-	8:  "workerId",
-	9:  "resourceType",
-	10: "resourceId",
-	11: "scheduledAt",
-	12: "startedAt",
-	13: "completedAt",
-	14: "createdAt",
-	15: "updatedAt",
+	4:  "error",
+	5:  "message",
+	6:  "metadata",
+	7:  "workerId",
+	8:  "resourceType",
+	9:  "resourceId",
+	10: "scheduledAt",
+	11: "startedAt",
+	12: "completedAt",
+	13: "createdAt",
+	14: "updatedAt",
 }
 
 // Decode decodes Job from json.
@@ -5494,18 +5489,6 @@ func (s *Job) Decode(d *jx.Decoder) error {
 			}(); err != nil {
 				return errors.Wrap(err, "decode field \"attempts\"")
 			}
-		case "maxAttempts":
-			requiredBitSet[0] |= 1 << 4
-			if err := func() error {
-				v, err := d.Int()
-				s.MaxAttempts = int(v)
-				if err != nil {
-					return err
-				}
-				return nil
-			}(); err != nil {
-				return errors.Wrap(err, "decode field \"maxAttempts\"")
-			}
 		case "error":
 			if err := func() error {
 				s.Error.Reset()
@@ -5548,7 +5531,7 @@ func (s *Job) Decode(d *jx.Decoder) error {
 				return errors.Wrap(err, "decode field \"workerId\"")
 			}
 		case "resourceType":
-			requiredBitSet[1] |= 1 << 1
+			requiredBitSet[1] |= 1 << 0
 			if err := func() error {
 				v, err := d.Str()
 				s.ResourceType = string(v)
@@ -5560,7 +5543,7 @@ func (s *Job) Decode(d *jx.Decoder) error {
 				return errors.Wrap(err, "decode field \"resourceType\"")
 			}
 		case "resourceId":
-			requiredBitSet[1] |= 1 << 2
+			requiredBitSet[1] |= 1 << 1
 			if err := func() error {
 				v, err := d.Str()
 				s.ResourceId = string(v)
@@ -5572,7 +5555,7 @@ func (s *Job) Decode(d *jx.Decoder) error {
 				return errors.Wrap(err, "decode field \"resourceId\"")
 			}
 		case "scheduledAt":
-			requiredBitSet[1] |= 1 << 3
+			requiredBitSet[1] |= 1 << 2
 			if err := func() error {
 				v, err := json.DecodeDateTime(d)
 				s.ScheduledAt = v
@@ -5604,7 +5587,7 @@ func (s *Job) Decode(d *jx.Decoder) error {
 				return errors.Wrap(err, "decode field \"completedAt\"")
 			}
 		case "createdAt":
-			requiredBitSet[1] |= 1 << 6
+			requiredBitSet[1] |= 1 << 5
 			if err := func() error {
 				v, err := json.DecodeDateTime(d)
 				s.CreatedAt = v
@@ -5616,7 +5599,7 @@ func (s *Job) Decode(d *jx.Decoder) error {
 				return errors.Wrap(err, "decode field \"createdAt\"")
 			}
 		case "updatedAt":
-			requiredBitSet[1] |= 1 << 7
+			requiredBitSet[1] |= 1 << 6
 			if err := func() error {
 				v, err := json.DecodeDateTime(d)
 				s.UpdatedAt = v
@@ -5637,8 +5620,8 @@ func (s *Job) Decode(d *jx.Decoder) error {
 	// Validate required fields.
 	var failures []validate.FieldError
 	for i, mask := range [2]uint8{
-		0b00011111,
-		0b11001110,
+		0b00001111,
+		0b01100111,
 	} {
 		if result := (requiredBitSet[i] & mask) ^ mask; result != 0 {
 			// Mask only required fields and check equality to mask using XOR.
@@ -5702,6 +5685,8 @@ func (s *JobStatus) Decode(d *jx.Decoder) error {
 	switch JobStatus(v) {
 	case JobStatusPending:
 		*s = JobStatusPending
+	case JobStatusScheduled:
+		*s = JobStatusScheduled
 	case JobStatusBackoff:
 		*s = JobStatusBackoff
 	case JobStatusRunning:

@@ -16,9 +16,15 @@ flowchart LR
 ```
 
 - A "job" is a pending reconcile mark: id `type:resource-id`, status derived
-  from claim state and `not_before` (pending / backoff / running).
-- `ForceJob` pulls a backed-off mark forward (`MarkDirty`), making it claimable
-  immediately.
+  from claim state, `not_before`, and `attempts`:
+  - `running` — claimed by a node.
+  - `pending` — claimable now.
+  - `scheduled` — future `not_before` with `attempts == 0`: a reconciler timer
+    (`Result.RequeueAt`, e.g. archive retention or a park deadline). Healthy.
+  - `backoff` — future `not_before` with `attempts > 0`: the last reconcile
+    failed; `error` carries the engine's `last_error` for that row.
+- `ForceJob` pulls a scheduled or backed-off mark forward (`MarkDirty`), making
+  it claimable immediately.
 - Terminal history is not served here: a reconcile's outcome lives on the
   resource itself (`Phase`, `LastOperationStatus`, `ErrorMessage`) and in
   project events.

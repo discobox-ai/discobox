@@ -955,7 +955,7 @@ func TestJobsCommandListsProjectJobs(t *testing.T) {
 			t.Fatalf("path = %q, want project jobs path", got)
 		}
 		w.Header().Set("Content-Type", "application/json")
-		_, _ = w.Write([]byte(`{"jobs":[{"id":"` + jobID + `","type":"sandbox.reconcile","status":"failed","attempts":1,"maxAttempts":1,"error":"failed to launch sandbox because the worker container exited before it could register with the control plane","resourceType":"sandbox","resourceId":"` + resourceID + `","scheduledAt":"2026-06-17T00:00:00Z","createdAt":"2026-06-17T00:00:00Z","updatedAt":"2026-06-17T00:00:01Z"}]}`))
+		_, _ = w.Write([]byte(`{"jobs":[{"id":"` + jobID + `","type":"sandbox.reconcile","status":"failed","attempts":1,"error":"failed to launch sandbox because the worker container exited before it could register with the control plane","resourceType":"sandbox","resourceId":"` + resourceID + `","scheduledAt":"2026-06-17T00:00:00Z","createdAt":"2026-06-17T00:00:00Z","updatedAt":"2026-06-17T00:00:01Z"}]}`))
 	}))
 	t.Cleanup(server.Close)
 
@@ -985,7 +985,7 @@ func TestJobsParentQuietCommandPrintsFullIDsOnly(t *testing.T) {
 			t.Fatalf("path = %q, want project jobs path", got)
 		}
 		w.Header().Set("Content-Type", "application/json")
-		_, _ = w.Write([]byte(`{"jobs":[{"id":"` + jobID + `","type":"sandbox.reconcile","status":"pending","attempts":0,"maxAttempts":3,"resourceType":"sandbox","resourceId":"sandbox-1","scheduledAt":"2026-06-17T00:00:00Z","createdAt":"2026-06-17T00:00:00Z","updatedAt":"2026-06-17T00:00:01Z"}]}`))
+		_, _ = w.Write([]byte(`{"jobs":[{"id":"` + jobID + `","type":"sandbox.reconcile","status":"pending","attempts":0,"resourceType":"sandbox","resourceId":"sandbox-1","scheduledAt":"2026-06-17T00:00:00Z","createdAt":"2026-06-17T00:00:00Z","updatedAt":"2026-06-17T00:00:01Z"}]}`))
 	}))
 	t.Cleanup(server.Close)
 
@@ -1022,7 +1022,6 @@ func TestJobsTableSortsByRecencyDescending(t *testing.T) {
 			Type:         "worker.reconcile",
 			Status:       apiclientgen.JobStatusCompleted,
 			Attempts:     1,
-			MaxAttempts:  3,
 			ResourceType: "worker",
 			ResourceId:   resource,
 			CreatedAt:    createdAt,
@@ -1063,7 +1062,6 @@ func TestJobsTableShowsFutureSchedule(t *testing.T) {
 			Type:         "workerprovider.reconcile",
 			Status:       apiclientgen.JobStatusBackoff,
 			Attempts:     1,
-			MaxAttempts:  3,
 			ResourceType: "provider",
 			ResourceId:   "provider-1",
 			ScheduledAt:  time.Now().Add(5 * time.Minute),
@@ -1272,7 +1270,7 @@ func TestJobGetCommandShowsError(t *testing.T) {
 			t.Fatalf("path = %q, want project job path", got)
 		}
 		w.Header().Set("Content-Type", "application/json")
-		_, _ = w.Write([]byte(`{"id":"job-1","type":"worker.reconcile","status":"failed","attempts":1,"maxAttempts":1,"error":"container exited","message":"worker container exited","metadata":{"containerId":"abc123"},"resourceType":"worker","resourceId":"worker-1","scheduledAt":"2026-06-17T00:00:00Z","createdAt":"2026-06-17T00:00:00Z","updatedAt":"2026-06-17T00:00:01Z"}`))
+		_, _ = w.Write([]byte(`{"id":"job-1","type":"worker.reconcile","status":"failed","attempts":1,"error":"container exited","message":"worker container exited","metadata":{"containerId":"abc123"},"resourceType":"worker","resourceId":"worker-1","scheduledAt":"2026-06-17T00:00:00Z","createdAt":"2026-06-17T00:00:00Z","updatedAt":"2026-06-17T00:00:01Z"}`))
 	}))
 	t.Cleanup(server.Close)
 
@@ -1303,7 +1301,7 @@ func TestJobRunNowCommandForcesJob(t *testing.T) {
 		}
 		sawForce = true
 		w.Header().Set("Content-Type", "application/json")
-		_, _ = w.Write([]byte(`{"id":"job-1","type":"worker.reconcile","status":"pending","attempts":1,"maxAttempts":3,"resourceType":"worker","resourceId":"worker-1","scheduledAt":"2026-06-17T00:00:00Z","createdAt":"2026-06-17T00:00:00Z","updatedAt":"2026-06-17T00:00:01Z"}`))
+		_, _ = w.Write([]byte(`{"id":"job-1","type":"worker.reconcile","status":"pending","attempts":1,"resourceType":"worker","resourceId":"worker-1","scheduledAt":"2026-06-17T00:00:00Z","createdAt":"2026-06-17T00:00:00Z","updatedAt":"2026-06-17T00:00:01Z"}`))
 	}))
 	t.Cleanup(server.Close)
 

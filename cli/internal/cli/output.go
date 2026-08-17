@@ -6,6 +6,7 @@ import (
 	"io"
 	"os"
 	"sort"
+	"strconv"
 	"strings"
 	"text/tabwriter"
 	"time"
@@ -687,7 +688,7 @@ func (a *App) writeJobs(cmd *cobra.Command, jobs []apimodel.Job) error {
 			job.ID,
 			job.Type,
 			string(job.Status),
-			fmt.Sprintf("%d/%d", job.Attempts, job.MaxAttempts),
+			strconv.Itoa(job.Attempts),
 			job.ResourceType + "/" + job.ResourceId,
 			formatTime(job.CreatedAt),
 			formatFutureTime(now, job.ScheduledAt),
@@ -745,7 +746,7 @@ func (a *App) writeJob(cmd *cobra.Command, job *apimodel.Job) error {
 	fmt.Fprintf(tw, "ID\t%s\n", job.ID)
 	fmt.Fprintf(tw, "TYPE\t%s\n", job.Type)
 	fmt.Fprintf(tw, "STATUS\t%s\n", job.Status)
-	fmt.Fprintf(tw, "ATTEMPTS\t%d/%d\n", job.Attempts, job.MaxAttempts)
+	fmt.Fprintf(tw, "ATTEMPTS\t%d\n", job.Attempts)
 	if job.WorkerId.Set && job.WorkerId.Value != "" {
 		fmt.Fprintf(tw, "WORKER\t%s\n", job.WorkerId.Value)
 	}

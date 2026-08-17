@@ -68,7 +68,7 @@ func (a *App) newJobRunNowCommand() *cobra.Command {
 	return &cobra.Command{
 		Use:               "run-now JOB_ID",
 		Aliases:           []string{"force"},
-		Short:             "Run a pending or backoff job now",
+		Short:             "Run a pending, scheduled, or backoff job now",
 		Args:              cobra.ExactArgs(1),
 		ValidArgsFunction: a.completeJobs,
 		RunE: func(cmd *cobra.Command, args []string) error {

@@ -4662,7 +4662,7 @@ func (s *Server) handleDenySecretRequestRequest(args [2]string, argsEscaped bool
 
 // handleForceJobRequest handles force-job operation.
 //
-// Force a pending or backoff job to run immediately.
+// Force a pending, scheduled, or backoff job to run immediately.
 //
 // POST /projects/{projectId}/jobs/{jobId}/force
 func (s *Server) handleForceJobRequest(args [2]string, argsEscaped bool, w http.ResponseWriter, r *http.Request) {
@@ -4754,7 +4754,7 @@ func (s *Server) handleForceJobRequest(args [2]string, argsEscaped bool, w http.
 		mreq := middleware.Request{
 			Context:          ctx,
 			OperationName:    ForceJobOperation,
-			OperationSummary: "Force a pending or backoff job to run immediately",
+			OperationSummary: "Force a pending, scheduled, or backoff job to run immediately",
 			OperationID:      "force-job",
 			Body:             nil,
 			RawBody:          rawBody,

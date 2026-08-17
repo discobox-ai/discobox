@@ -240,7 +240,7 @@ type Invoker interface {
 	DenySecretRequest(ctx context.Context, params DenySecretRequestParams) (DenySecretRequestRes, error)
 	// ForceJob invokes force-job operation.
 	//
-	// Force a pending or backoff job to run immediately.
+	// Force a pending, scheduled, or backoff job to run immediately.
 	//
 	// POST /projects/{projectId}/jobs/{jobId}/force
 	ForceJob(ctx context.Context, params ForceJobParams) (ForceJobRes, error)
@@ -3955,7 +3955,7 @@ func (c *Client) sendDenySecretRequest(ctx context.Context, params DenySecretReq
 
 // ForceJob invokes force-job operation.
 //
-// Force a pending or backoff job to run immediately.
+// Force a pending, scheduled, or backoff job to run immediately.
 //
 // POST /projects/{projectId}/jobs/{jobId}/force
 func (c *Client) ForceJob(ctx context.Context, params ForceJobParams) (ForceJobRes, error) {

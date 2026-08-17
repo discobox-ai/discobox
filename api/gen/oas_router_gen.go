@@ -3885,7 +3885,7 @@ func (s *Server) FindPath(method string, u *url.URL) (r Route, _ bool) {
 											switch method {
 											case "POST":
 												r.name = ForceJobOperation
-												r.summary = "Force a pending or backoff job to run immediately"
+												r.summary = "Force a pending, scheduled, or backoff job to run immediately"
 												r.operationID = "force-job"
 												r.operationGroup = ""
 												r.pathPattern = "/projects/{projectId}/jobs/{jobId}/force"

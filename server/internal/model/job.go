@@ -11,7 +11,6 @@ type Job struct {
 	Type         string          `json:"type"`
 	Status       string          `json:"status"`
 	Attempts     int             `json:"attempts"`
-	MaxAttempts  int             `json:"maxAttempts"`
 	Error        *string         `json:"error,omitempty"`
 	Message      *string         `json:"message,omitempty"`
 	Metadata     json.RawMessage `json:"metadata,omitempty"`

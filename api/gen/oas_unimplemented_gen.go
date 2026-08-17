@@ -316,7 +316,7 @@ func (UnimplementedHandler) DenySecretRequest(ctx context.Context, params DenySe
 
 // ForceJob implements force-job operation.
 //
-// Force a pending or backoff job to run immediately.
+// Force a pending, scheduled, or backoff job to run immediately.
 //
 // POST /projects/{projectId}/jobs/{jobId}/force
 func (UnimplementedHandler) ForceJob(ctx context.Context, params ForceJobParams) (r ForceJobRes, _ error) {
