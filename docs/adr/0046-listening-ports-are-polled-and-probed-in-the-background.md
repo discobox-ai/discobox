@@ -50,20 +50,25 @@ reports the poller's latest snapshot rather than computing one.** Concretely:
    the case where the sandbox user *is* root.
 
 2. **Classification is one probe per socket, cached by inode.** A listener is
-   probed the first time it is seen: connect, send a minimal HTTP/1.1 `GET /`,
-   and classify the answer as `http`, `https`, or `tcp` (reached, speaks
-   something else). The result is keyed by the socket inodes backing the port,
-   so a restarted server is re-probed and a long-lived one is not. A probe that
-   fails to connect yields `unknown` and is retried on the next tick — the port
-   may have been closing, or the process may not have been ready.
+   probed the first time it is seen: connect, send a minimal HTTP/1.1
+   `HEAD /`, and classify the answer as `http`, `https`, or `tcp` (reached,
+   speaks something else). The result is keyed by the socket inodes backing the
+   port, so a restarted server is re-probed and a long-lived one is not. A probe
+   that fails to connect yields `unknown` and is retried on the next tick — the
+   port may have been closing, or the process may not have been ready.
+
+   `HEAD` rather than `GET` because only the status line is ever read. A `GET`
+   would have a dev server render the page, compile the route, or ship a bundle
+   to produce a body the probe immediately discards — real work, charged to the
+   user's process, for nothing. A server that will not do `HEAD` answers `405`
+   or `501`, which is still an HTTP status line and still classifies.
 
    The same request is repeated inside a TLS handshake when, and only when, the
    plaintext answer leaves TLS open: a TLS record, a hang-up without a word, or
    an HTTP `400`. That last case is not a detail — Go's `net/http`, nginx, and
    Apache all answer a plaintext request to an HTTPS port with a *plaintext*
    `400`, so "the reply began with `HTTP/`" is not on its own proof that a port
-   is not TLS. Any other status, `404` very much included, is proof, and costs
-   the one connection.
+   is not TLS. Any other status is proof, and costs the one connection.
 
 3. **The status endpoint reads the snapshot.** `GET .../status` gains a `ports`
    array beside `sources` and `sessions`, and it is the one part of that

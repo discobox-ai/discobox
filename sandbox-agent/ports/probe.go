@@ -52,6 +52,11 @@ const httpBadRequest = 400
 // is the only source (ADR 0046). One connection for the common case, a second
 // only when the plaintext answer leaves TLS open as a possibility.
 //
+// The question is HEAD, not GET, because only the status line is ever read: a
+// GET would have a dev server render the page, compile the route, or ship a
+// bundle to produce a body the probe discards. A server that will not do HEAD
+// answers 405 or 501, which is still an HTTP status line and still classifies.
+//
 // It writes an HTTP request line at whatever is listening, which a non-HTTP
 // service will log as a malformed request. That happens once per socket, not
 // once per poll, which is the whole reason results are cached.
@@ -71,7 +76,7 @@ func Probe(ctx context.Context, target netip.AddrPort) Protocol {
 		return ProtocolHTTPS
 	}
 	// The handshake settled it: whatever the plaintext exchange suggested
-	// stands, including an HTTP server that really does answer GET / with 400.
+	// stands, including an HTTP server that really does answer HEAD / with 400.
 	return plaintext
 }
 
@@ -82,7 +87,8 @@ func mayBeTLS(reply []byte, plaintext Protocol) bool {
 		// A server that answered in HTTP parsed the request as HTTP — unless
 		// it called it malformed, which is exactly what an HTTPS server does
 		// with plaintext (Go's net/http, nginx, and Apache all answer 400).
-		// Any other status, 404 very much included, proves plain HTTP.
+		// Any other status proves plain HTTP: a 404 from a server with no root
+		// route, a 405 from one that will not do HEAD.
 		return statusCode(reply) == httpBadRequest
 	}
 	// An alert record, a handshake record, or a hang-up without a word is what
@@ -165,7 +171,7 @@ func readReply(conn net.Conn) []byte {
 }
 
 func probeRequest(target netip.AddrPort) []byte {
-	return []byte("GET / HTTP/1.1\r\n" +
+	return []byte("HEAD / HTTP/1.1\r\n" +
 		"Host: " + target.String() + "\r\n" +
 		"User-Agent: discobox-sandbox-agent (port probe)\r\n" +
 		"Accept: */*\r\n" +

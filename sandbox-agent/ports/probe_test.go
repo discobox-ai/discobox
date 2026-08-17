@@ -115,7 +115,7 @@ func TestProbeReportsUnknownWhenNothingIsListening(t *testing.T) {
 	}
 }
 
-func TestProbeIdentifiesHTTPWhenTheServerAnswersGETSlashWith404(t *testing.T) {
+func TestProbeIdentifiesHTTPWhenTheServerHasNoRootRoute(t *testing.T) {
 	// A dev server with no route at / is the everyday case, and a 404 is proof
 	// the request was parsed as HTTP -- it must not cost a second connection.
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
@@ -125,6 +125,43 @@ func TestProbeIdentifiesHTTPWhenTheServerAnswersGETSlashWith404(t *testing.T) {
 
 	if got := Probe(context.Background(), serverTarget(t, server)); got != ProtocolHTTP {
 		t.Fatalf("Probe = %q, want http", got)
+	}
+}
+
+func TestProbeIdentifiesHTTPWhenTheServerRefusesHEAD(t *testing.T) {
+	// The probe asks HEAD so a dev server does not render a page to produce a
+	// body it discards. A server that only handles GET says so in HTTP, which
+	// is all the classification needs.
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodGet {
+			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+			return
+		}
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer server.Close()
+
+	if got := Probe(context.Background(), serverTarget(t, server)); got != ProtocolHTTP {
+		t.Fatalf("Probe = %q, want http", got)
+	}
+}
+
+func TestProbeAsksHEADSoNoBodyIsProduced(t *testing.T) {
+	methods := make(chan string, 4)
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		methods <- r.Method
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer server.Close()
+
+	if got := Probe(context.Background(), serverTarget(t, server)); got != ProtocolHTTP {
+		t.Fatalf("Probe = %q, want http", got)
+	}
+	close(methods)
+	for method := range methods {
+		if method != http.MethodHead {
+			t.Fatalf("server saw a %s, want only HEAD", method)
+		}
 	}
 }
 
