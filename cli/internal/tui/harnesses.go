@@ -379,16 +379,31 @@ func harnessActions(h Harness) []action {
 	if h.Default {
 		defaultWhy = "already the default"
 	}
+	// A harness whose image declares no setup — `shell` is the one that ships
+	// that way — has nothing to enable and nothing to turn off. The server
+	// refuses both, and disabling it would be a door that only opens one way,
+	// so neither is offered rather than offered and rejected.
+	nothingToSetUp := "it needs no setup — there is nothing to run"
 	return []action{
-		{key: "e", label: enable, detail: detail, enabled: true},
-		{key: "d", label: "disable", detail: "delete its secrets and configuration", enabled: h.State == HarnessEnabled,
-			why: "not enabled, so there is nothing to take away"},
+		{key: "e", label: enable, detail: detail, enabled: h.Configurable,
+			why: nothingToSetUp},
+		{key: "d", label: "disable", detail: "delete its secrets and configuration",
+			enabled: h.Configurable && h.State == HarnessEnabled,
+			why:     disableWhy(h, nothingToSetUp)},
 		{key: "s", label: "default", detail: "run it when a discobox says no harness", enabled: h.State == HarnessEnabled && !h.Default,
 			why: defaultWhy},
 		{key: "v", label: "config", detail: "everything the harness is set to", enabled: true},
 		{key: "f", label: "files", detail: "edit one of its files in $EDITOR", enabled: len(h.Files) > 0,
 			why: "it carries no files"},
 	}
+}
+
+// disableWhy says which of the two reasons disable does not apply for.
+func disableWhy(h Harness, nothingToSetUp string) string {
+	if !h.Configurable {
+		return nothingToSetUp
+	}
+	return "not enabled, so there is nothing to take away"
 }
 
 // harnessAct runs an action against the harness under the cursor.

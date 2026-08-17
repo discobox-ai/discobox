@@ -43,18 +43,21 @@ func (d *apiDataSource) Harnesses(ctx context.Context) ([]tui.Harness, error) {
 
 func toTUIHarness(cfg apimodel.HarnessConfig, defaultID string) tui.Harness {
 	harness := tui.Harness{
-		ID:       cfg.ID,
-		Name:     strings.TrimSpace(cfg.Name),
-		Slug:     strings.TrimSpace(cfg.Slug),
-		State:    harnessState(cfg),
-		Default:  cfg.ID == defaultID,
-		BuiltIn:  cfg.BuiltIn,
-		Error:    strings.TrimSpace(cfg.ConfigureError.Or("")),
-		Image:    cfg.Image.Or(""),
-		Digest:   cfg.ImageDigest.Or(""),
-		Run:      cfg.RunCommand,
-		Relaunch: cfg.RelaunchCommand.Or(nil),
-		Updated:  cfg.UpdatedAt,
+		ID:      cfg.ID,
+		Name:    strings.TrimSpace(cfg.Name),
+		Slug:    strings.TrimSpace(cfg.Slug),
+		State:   harnessState(cfg),
+		Default: cfg.ID == defaultID,
+		BuiltIn: cfg.BuiltIn,
+		// What the server decides both enable and disable on: an image that
+		// declares no configure command has neither to offer.
+		Configurable: len(cfg.ConfigCommand.Or(nil)) > 0,
+		Error:        strings.TrimSpace(cfg.ConfigureError.Or("")),
+		Image:        cfg.Image.Or(""),
+		Digest:       cfg.ImageDigest.Or(""),
+		Run:          cfg.RunCommand,
+		Relaunch:     cfg.RelaunchCommand.Or(nil),
+		Updated:      cfg.UpdatedAt,
 	}
 	for _, secret := range cfg.Secrets.Or(nil) {
 		harness.Secrets = append(harness.Secrets, tui.HarnessSecret{

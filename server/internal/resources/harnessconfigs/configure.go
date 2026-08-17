@@ -580,6 +580,18 @@ func (s *Service) DeconfigureHarnessConfig(ctx context.Context, projectID, confi
 	if err != nil {
 		return nil, apiError(err, "harness config not found")
 	}
+	// Refused for a harness with nothing to configure, because configure is
+	// what would undo it and configure refuses that harness too. Turning one
+	// off is a door that only opens one way: the config keeps its
+	// image-declared baseline but is marked unconfigured, the create path
+	// rejects an unconfigured harness, a built-in cannot be deleted, and
+	// seeding never revisits Configured. The reserved `shell` built-in is what
+	// lands here — born configured because it declares no secrets, and with no
+	// configure command to run again.
+	if len(config.ConfigCommand) == 0 {
+		return nil, apperrors.NewStatusError(http.StatusConflict,
+			fmt.Sprintf("harness %q has nothing to configure, so there is nothing to turn off: its image declares no configure command", config.Slug))
+	}
 	// The project default must always point at a configured harness, so the
 	// default cannot be turned off in place: the client unsets or switches the
 	// default first. Deconfiguring it here would leave `run` with no explicit

@@ -66,6 +66,10 @@ func TestDeconfigureDefaultHarnessConfigIsRefused(t *testing.T) {
 		t.Fatalf("get harness config: %v", err)
 	}
 	config.Configured = true
+	// A harness that can be configured again is the one this is about; a
+	// harness with nothing to configure is refused before the default is
+	// even considered.
+	config.ConfigCommand = []string{"/usr/local/libexec/discobox/configure-codex"}
 	if err := st.UpdateHarnessConfig(ctx, config); err != nil {
 		t.Fatalf("mark configured: %v", err)
 	}

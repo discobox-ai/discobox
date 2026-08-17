@@ -85,7 +85,7 @@ func testHarnesses() []Harness {
 	return []Harness{
 		{
 			ID: "hc_claude", Name: "Claude", Slug: "claude", State: HarnessEnabled,
-			Default: true, BuiltIn: true, Image: "ghcr.io/example/claude:latest",
+			Default: true, BuiltIn: true, Configurable: true, Image: "ghcr.io/example/claude:latest",
 			Run:     []string{"claude"},
 			Secrets: []HarnessSecret{{Name: "ANTHROPIC_API_KEY", Required: true, Declared: true}},
 			Files: []HarnessFile{
@@ -96,7 +96,7 @@ func testHarnesses() []Harness {
 		},
 		{
 			ID: "hc_codex", Name: "Codex", Slug: "codex", State: HarnessEnabled,
-			BuiltIn: true, Image: "ghcr.io/example/codex:latest",
+			BuiltIn: true, Configurable: true, Image: "ghcr.io/example/codex:latest",
 			Run:     []string{"codex"},
 			Secrets: []HarnessSecret{{Name: "OPENAI_API_KEY", Required: true, Declared: true}},
 			Files:   []HarnessFile{{Path: "config.toml", Content: "{}", Configured: true}},
@@ -104,12 +104,20 @@ func testHarnesses() []Harness {
 		},
 		{
 			ID: "hc_custom", Name: "Custom", Slug: "custom", State: HarnessDisabled,
-			Image: "ghcr.io/example/custom:latest", Run: []string{"custom"},
+			Configurable: true, Image: "ghcr.io/example/custom:latest", Run: []string{"custom"},
 			Updated: now.Add(-72 * time.Hour),
 		},
 		{
 			ID: "hc_scratch", Name: "Scratch", Slug: "scratch", State: HarnessFailed,
-			Error: "the setup exited before it finished", Updated: now.Add(-time.Minute),
+			Configurable: true,
+			Error:        "the setup exited before it finished", Updated: now.Add(-time.Minute),
+		},
+		{
+			// The reserved built-in: no setup to run, so neither enabling nor
+			// disabling applies to it. Born enabled because it needs nothing.
+			ID: "hc_shell", Name: "Shell", Slug: "shell", State: HarnessEnabled,
+			BuiltIn: true, Image: "ghcr.io/example/shell:latest",
+			Updated: now.Add(-96 * time.Hour),
 		},
 	}
 }

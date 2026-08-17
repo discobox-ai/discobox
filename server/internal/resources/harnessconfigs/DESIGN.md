@@ -166,6 +166,14 @@ file set (`files`, `configuredFiles`), which is how the CLI's file editing
 without a reconfigure; edited configured files remain owned by the configure lifecycle
 and are still cleared on deconfigure.
 
+Deconfigure is also **refused for a harness with nothing to configure** (409):
+configure is what would undo it, and configure refuses that harness too, so
+turning one off would be a door that only opens one way — the create path
+rejects an unconfigured harness, a built-in cannot be deleted, and seeding never
+revisits `Configured`. The reserved `shell` built-in is what lands there, born
+configured because it declares no secrets. For the same reason the refusal to
+delete a built-in only points at `deconfigure` where that would do something.
+
 Deconfigure is **refused for the project default** (409): the default must always
 point at a configured harness, or `run` with no explicit harness would resolve to
 an unconfigured one and be rejected at sandbox create. The client releases the

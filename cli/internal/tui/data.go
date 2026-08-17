@@ -180,6 +180,11 @@ type Harness struct {
 	Default bool
 	// BuiltIn harnesses come with the server rather than being registered by hand.
 	BuiltIn bool
+	// Configurable is whether the image declares a setup command to run. The
+	// reserved `shell` built-in declares none — it is a login shell with no
+	// credentials to collect — and neither enabling nor disabling applies to
+	// one, since the server refuses both.
+	Configurable bool
 	// Error is why the configure flow did not finish, when it did not.
 	Error string
 

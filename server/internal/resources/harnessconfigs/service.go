@@ -265,6 +265,20 @@ func (s *Service) UnsetDefaultHarnessConfig(ctx context.Context, projectID, conf
 	return s.store.GetProject(ctx, projectID)
 }
 
+// builtInDeleteHint is what to do instead of deleting a built-in, when there is
+// anything to do. A harness already off has nothing to turn off, and one whose
+// image declares no configure command cannot be turned off at all.
+func builtInDeleteHint(config *model.HarnessConfig) string {
+	switch {
+	case !config.Configured:
+		return "; it is already off"
+	case len(config.ConfigCommand) == 0:
+		return ""
+	default:
+		return fmt.Sprintf("; run `disco box harness deconfigure %s` to turn it off", config.Slug)
+	}
+}
+
 func (s *Service) DeleteHarnessConfig(ctx context.Context, projectID, configID string) error {
 	if _, err := s.store.GetProject(ctx, projectID); err != nil {
 		return apiError(err, "project not found")
@@ -274,10 +288,12 @@ func (s *Service) DeleteHarnessConfig(ctx context.Context, projectID, configID s
 		return apiError(err, "harness config not found")
 	}
 	// Deleting a built-in is meaningless: the server seeds it again on the next
-	// start. Deconfiguring is the way to turn one off.
+	// start. Deconfiguring is the way to turn one off — but only where that
+	// would do something, so the refusal does not send anyone to a command that
+	// answers "already off" or refuses them in turn.
 	if config.BuiltIn {
 		return apperrors.NewStatusError(http.StatusConflict,
-			fmt.Sprintf("harness %q is built in and cannot be deleted; run `disco box harness deconfigure %s` to turn it off", config.Slug, config.Slug))
+			fmt.Sprintf("harness %q is built in and cannot be deleted%s", config.Slug, builtInDeleteHint(config)))
 	}
 	if err := s.store.DeleteHarnessConfig(ctx, projectID, configID); err != nil {
 		if errors.Is(err, store.ErrInUse) {

@@ -248,7 +248,7 @@ func TestHarnessChoicesFollowTheListing(t *testing.T) {
 	m := newTestModel(t, ds)
 
 	harness := m.opts.opts[optHarness]
-	want := []string{"claude", "codex", "custom", "scratch", noHarness}
+	want := []string{"claude", "codex", "custom", "scratch", "shell", noHarness}
 	if strings.Join(harness.choices, ",") != strings.Join(want, ",") {
 		t.Fatalf("choices = %v, want %v", harness.choices, want)
 	}
@@ -288,7 +288,7 @@ func TestOptionsHarnessRowOpensTheScreen(t *testing.T) {
 // it.
 func TestHarnessesFailedRowShowsTheError(t *testing.T) {
 	m := newTestModel(t, newFakeSource())
-	send(t, m, key("f3"), key("G"))
+	send(t, m, key("f3"), key("G"), key("k"))
 	if !strings.Contains(plainFrame(m), "the setup exited before it finished") {
 		t.Fatalf("a failed harness should say why under the cursor:\n%s", plainFrame(m))
 	}

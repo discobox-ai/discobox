@@ -241,6 +241,7 @@ func TestDeconfigureRemovesOnlyConfigureCreatedAssets(t *testing.T) {
 	config := &model.HarnessConfig{
 		ProjectID: "project-1", Slug: "codex", Name: "Codex", BuiltIn: true,
 		Image: "discobox-harness-codex:local", RunCommand: []string{"codex"},
+		ConfigCommand:       []string{"/usr/local/libexec/discobox/configure-codex"},
 		Files:               baselineFiles,
 		Configured:          true,
 		ConfiguredFiles:     []model.HarnessConfigFile{{Path: "auth.json", Content: "secret"}},
@@ -630,5 +631,72 @@ func TestSeedBuiltInsLeavesHarnessesWithSecretsUnconfigured(t *testing.T) {
 	}
 	if got.Configured {
 		t.Fatal("configured = true, want false for a harness that still needs a credential")
+	}
+}
+
+// A harness with nothing to configure cannot be turned off, because configure
+// is what would turn it back on and configure refuses it too. Without this the
+// reserved `shell` built-in is one keystroke from being permanently unusable:
+// unconfigured harnesses are rejected at sandbox create, a built-in cannot be
+// deleted, and seeding never revisits Configured.
+func TestDeconfigureIsRefusedWhenThereIsNothingToConfigure(t *testing.T) {
+	ctx := context.Background()
+	st := newTestStore(t)
+
+	config := &model.HarnessConfig{
+		ProjectID: "project-1", Slug: "shell", Name: "Shell", BuiltIn: true,
+		Image: "discobox-harness-shell:local",
+		// No ConfigCommand and no secrets: born configured, with no setup to run.
+		Configured: true,
+	}
+	if err := st.CreateHarnessConfig(ctx, config); err != nil {
+		t.Fatalf("create harness config: %v", err)
+	}
+
+	svc := &Service{store: st, inspector: &stubInspector{}}
+	if _, err := svc.DeconfigureHarnessConfig(ctx, "project-1", config.ID); err == nil {
+		t.Fatal("deconfiguring a harness with nothing to configure should be refused")
+	}
+
+	after, err := st.GetHarnessConfig(ctx, "project-1", config.ID)
+	if err != nil {
+		t.Fatalf("get harness config: %v", err)
+	}
+	if !after.Configured {
+		t.Fatal("the refused deconfigure must leave the harness configured")
+	}
+}
+
+// The refusal to delete a built-in points at deconfigure only where that would
+// do something. Sending someone to a command that answers "already off", or
+// that refuses them in turn, is worse than saying nothing.
+func TestBuiltInDeleteHintOnlySuggestsWhatWouldWork(t *testing.T) {
+	configurable := []string{"/usr/local/libexec/discobox/configure-codex"}
+	for _, tc := range []struct {
+		name   string
+		config *model.HarnessConfig
+		want   string
+	}{
+		{
+			name:   "on and configurable, so it can be turned off",
+			config: &model.HarnessConfig{Slug: "codex", Configured: true, ConfigCommand: configurable},
+			want:   "; run `disco box harness deconfigure codex` to turn it off",
+		},
+		{
+			name:   "already off",
+			config: &model.HarnessConfig{Slug: "opencode", Configured: false, ConfigCommand: configurable},
+			want:   "; it is already off",
+		},
+		{
+			name:   "nothing to configure, so it cannot be turned off at all",
+			config: &model.HarnessConfig{Slug: "shell", Configured: true},
+			want:   "",
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := builtInDeleteHint(tc.config); got != tc.want {
+				t.Fatalf("hint = %q, want %q", got, tc.want)
+			}
+		})
 	}
 }
