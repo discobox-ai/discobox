@@ -119,10 +119,15 @@ stateDiagram-v2
   authority on when it next needs attention. Same `seq` guard, so a mid-run mark
   makes the update miss and its own earlier `not_before` stands — intent beats
   the timer.
-- **Failure** → release the claim, `attempts++`,
+- **Failure** → release the claim, `attempts++`, `last_error = err`,
   `not_before = now + backoff(attempts)` (exponential, capped). The row stays
-  dirty until a reconcile finally succeeds. This also serves as flap damping
-  for hot resources: a resource that keeps failing backs off automatically.
+  dirty until a reconcile finally succeeds, which resets `attempts` and clears
+  `last_error`. This also serves as flap damping for hot resources: a resource
+  that keeps failing backs off automatically. There is no attempt cap.
+- A future `not_before` therefore means one of two things, told apart by
+  `attempts`: a failure backoff (`attempts > 0`, `last_error` set) or an armed
+  reconciler timer (`attempts == 0`). Observers (`ListDirty`, the jobs API)
+  must not read every future `not_before` as a failure.
 - **Panic** → recovered and treated as failure.
 
 ## Periodic scan (the backstop)

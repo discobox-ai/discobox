@@ -202,10 +202,52 @@ func TestFailureBacksOffThenConverges(t *testing.T) {
 		}
 		return row.Attempts >= 1 && row.ClaimedBy == nil && row.NotBefore.After(time.Now().Add(-time.Millisecond))
 	})
+	// The failure is on the row, not only in the log: ListDirty reports why.
+	dirty, err := e.ListDirty(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(dirty) != 1 || dirty[0].LastError == nil || *dirty[0].LastError != "boom" {
+		t.Fatalf("expected one dirty row with last error %q, got %+v", "boom", dirty)
+	}
 	// Stays dirty with backoff until it finally converges.
 	waitFor(t, "eventual convergence", func() bool { return rowCount(t, db) == 0 })
 	if n := r.runs.Load(); n != 3 {
 		t.Fatalf("expected 3 runs (2 failures + success), got %d", n)
+	}
+}
+
+func TestSuccessAfterFailureClearsLastError(t *testing.T) {
+	e, db := testEngine(t)
+	r := &fakeReconciler{}
+	r.fail.Store(1)
+	// After the one failure, succeed with a timer so the row survives and its
+	// settled shape can be inspected.
+	r.onRun = func(context.Context, string) Result { return RequeueAfter(time.Hour) }
+	if err := e.Register("sandbox", r); err != nil {
+		t.Fatal(err)
+	}
+	start(t, e)
+
+	if err := e.MarkDirty(context.Background(), "sandbox", "sb-1"); err != nil {
+		t.Fatal(err)
+	}
+	waitFor(t, "armed after recovery", func() bool {
+		var row dirtyRow
+		if err := db.First(&row, "resource_id = ?", "sb-1").Error; err != nil {
+			return false
+		}
+		return row.ClaimedBy == nil && row.NotBefore.After(time.Now().Add(30*time.Minute))
+	})
+	dirty, err := e.ListDirty(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(dirty) != 1 || dirty[0].Attempts != 0 || dirty[0].LastError != nil {
+		t.Fatalf("expected a clean armed row (attempts 0, no error), got %+v", dirty)
+	}
+	if n := r.runs.Load(); n != 2 {
+		t.Fatalf("expected 2 runs (failure + success), got %d", n)
 	}
 }
 

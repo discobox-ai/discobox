@@ -182,6 +182,7 @@ type dirtyRow struct {
 	Seq          int64      // bumped on every mark; detects re-marks during a run
 	NotBefore    time.Time  `gorm:"index"` // earliest claim time (timers, backoff)
 	Attempts     int        // consecutive failures since last success
+	LastError    *string    `gorm:"type:text"` // why the last run failed; nil once a run succeeds
 	ClaimedBy    *string    `gorm:"size:128"`
 	LeaseExpires *time.Time // claim is void after this; dead nodes release implicitly
 	MarkedAt     time.Time
@@ -195,10 +196,17 @@ func (dirtyRow) TableName() string { return "reconcile_dirty" }
 type DirtyResource struct {
 	ResourceType string
 	ResourceID   string
-	NotBefore    time.Time
-	Attempts     int
-	ClaimedBy    *string
-	MarkedAt     time.Time
+	// NotBefore is the earliest claim time. In the future it means one of two
+	// things, told apart by Attempts: a failure backoff (Attempts > 0) or a
+	// reconciler timer armed via Result.RequeueAt (Attempts == 0).
+	NotBefore time.Time
+	// Attempts counts consecutive failures since the last success.
+	Attempts int
+	// LastError is the error of the most recent failed run, cleared by the next
+	// success. Set exactly when Attempts > 0.
+	LastError *string
+	ClaimedBy *string
+	MarkedAt  time.Time
 }
 
 // ListDirty returns the current dirty set (optionally filtered by resource
@@ -219,6 +227,7 @@ func (e *Engine) ListDirty(ctx context.Context, resourceType ...string) ([]Dirty
 			ResourceID:   r.ResourceID,
 			NotBefore:    r.NotBefore,
 			Attempts:     r.Attempts,
+			LastError:    r.LastError,
 			ClaimedBy:    r.ClaimedBy,
 			MarkedAt:     r.MarkedAt,
 		})

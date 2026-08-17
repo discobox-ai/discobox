@@ -246,7 +246,7 @@ func (e *Engine) execute(row dirtyRow) {
 				"type", row.ResourceType, "id", row.ResourceID,
 				"attempts", row.Attempts+1, "err", err)
 		}
-		e.release(row)
+		e.release(row, err)
 		return
 	}
 	e.complete(row, result)
@@ -267,7 +267,7 @@ func (e *Engine) execute(row dirtyRow) {
 // timer honest about newer intent: a mid-run mark makes the guarded update miss
 // and its own earlier not_before stands, so intent still beats the timer.
 func (e *Engine) complete(row dirtyRow, result Result) {
-	settled := map[string]any{"claimed_by": nil, "lease_expires": nil, "attempts": 0}
+	settled := map[string]any{"claimed_by": nil, "lease_expires": nil, "attempts": 0, "last_error": nil}
 
 	var res *gorm.DB
 	if result.RequeueAt.IsZero() {
@@ -298,8 +298,10 @@ func (e *Engine) complete(row dirtyRow, result Result) {
 	e.wake()
 }
 
-// release returns a failed row to the dirty set with exponential backoff.
-func (e *Engine) release(row dirtyRow) {
+// release returns a failed row to the dirty set with exponential backoff and
+// records why, so the dirty set itself says what is wrong rather than only the
+// log.
+func (e *Engine) release(row dirtyRow, cause error) {
 	backoff := e.opt.BackoffBase << row.Attempts
 	if backoff > e.opt.BackoffMax || backoff <= 0 {
 		backoff = e.opt.BackoffMax
@@ -310,6 +312,7 @@ func (e *Engine) release(row dirtyRow) {
 			"claimed_by":    nil,
 			"lease_expires": nil,
 			"attempts":      gorm.Expr("attempts + 1"),
+			"last_error":    cause.Error(),
 			"not_before":    time.Now().Add(backoff),
 		})
 }
