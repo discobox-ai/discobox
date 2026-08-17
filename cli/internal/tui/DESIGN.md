@@ -377,6 +377,21 @@ composer's own rules stop short of the border so they read as separators rather
 than as the box broken in half. A dialog stands *in place of* the window and
 carries its own border instead.
 
+**A dialog takes most of the window, centered** (`dialogWidth`/`dialogHeight`).
+It is the only thing on screen while it is up, so a box pinned to a fixed 90
+columns in the top-left left a wide terminal empty on two sides of a card that
+was scrolling. It takes 90% of each axis, and all of an axis below the
+threshold where a margin costs more than the frame gives. The run options panel
+is sized by the same rule: it is the same kind of modal surface, and two of them
+at two sizes read as two different things.
+
+Height is an allowance, not a size — a dialog grows into it and stops at its
+content — so the config card fills a tall terminal while "Disable Codex?" stays
+the size of the question. Body lines are truncated to the inner width as well as
+wrapped to it: a line the wrapper cannot break comes back wider than the box,
+lipgloss wraps it again, and the extra row makes the frame taller than the
+terminal.
+
 **The window fits the terminal.** `windowChrome` is what the box, header, list
 title, blanks, composer and status cost before a single sandbox is drawn; the
 list gives up rows for the composer as it grows and takes none at all when

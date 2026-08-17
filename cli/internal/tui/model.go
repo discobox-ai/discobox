@@ -1366,10 +1366,10 @@ func (m *Model) View() tea.View {
 	// it puts the window back. It carries its own border, so it needs none of
 	// the frame below.
 	if m.dialog != nil {
-		return m.altView(m.dialog.view(m.st, m.width))
+		return m.altView(m.center(m.dialog.view(m.st, m.width, m.height)))
 	}
 	if m.optionsOpen {
-		return m.altView(m.opts.view(m.st, m.width, m.prompt.Value()))
+		return m.altView(m.center(m.opts.view(m.st, m.width, m.prompt.Value())))
 	}
 
 	// The header spans the window; under it the mark stands beside the list,
@@ -1480,6 +1480,17 @@ func titledEdge(st *styles, edge lipgloss.Style, title, control string, width in
 
 // altView is a frame on the alternate screen, for the layers that stand in
 // place of the window rather than inside it.
+// center puts a modal surface in the middle of the terminal. A dialog is the
+// only thing on screen while it is up, so the window it is drawn over is empty
+// space, and hanging it off the top-left corner leaves all of that space on two
+// sides of it.
+func (m *Model) center(content string) string {
+	if m.width <= 0 || m.height <= 0 {
+		return content
+	}
+	return lipgloss.Place(m.width, m.height, lipgloss.Center, lipgloss.Center, content)
+}
+
 func (m *Model) altView(content string) tea.View {
 	view := tea.NewView(content)
 	view.AltScreen = true

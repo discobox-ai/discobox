@@ -390,8 +390,11 @@ func (o *optionSet) command(prompt string) string {
 }
 
 func (o *optionSet) view(st *styles, width int, prompt string) string {
-	boxWidth := min(max(width-4, 30), 84)
-	inner := max(boxWidth-6, 20)
+	// The same box the dialogs get: this panel stands in place of the window
+	// exactly as they do, and two modal surfaces at two sizes read as two
+	// different kinds of thing.
+	boxWidth := dialogWidth(width)
+	inner := max(boxWidth-dialogChromeWidth, 20)
 
 	var b strings.Builder
 	b.WriteString(st.dialogTitle.Render("Run Options"))

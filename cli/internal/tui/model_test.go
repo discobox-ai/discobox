@@ -340,7 +340,7 @@ func TestUnavailableActionExplainsItself(t *testing.T) {
 	if m.dialog == nil {
 		t.Fatal(". should open the action menu")
 	}
-	if !strings.Contains(m.dialog.view(m.st, 120), "already on the current image") {
+	if !strings.Contains(m.dialog.view(m.st, 120, 40), "already on the current image") {
 		t.Fatal("the menu should keep upgrade, with the reason it is unavailable")
 	}
 }
@@ -424,7 +424,7 @@ func TestTheFolderDropdownListsTheKnownFolders(t *testing.T) {
 	if m.dialog == nil {
 		t.Fatal("enter on the folder filter should open the dropdown")
 	}
-	view := m.dialog.view(m.st, 120)
+	view := m.dialog.view(m.st, 120, 40)
 	for _, want := range []string{"/src/disco2", "/src/obot", allFolders, "where this window is running"} {
 		if !strings.Contains(view, want) {
 			t.Errorf("the dropdown is missing %q:\n%s", want, view)

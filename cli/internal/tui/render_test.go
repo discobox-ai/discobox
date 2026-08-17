@@ -449,7 +449,7 @@ func TestMenuLabelsFitTheirContent(t *testing.T) {
 	if m.dialog == nil {
 		t.Fatal("the dropdown should be open")
 	}
-	view := m.dialog.view(m.st, 120)
+	view := m.dialog.view(m.st, 120, 40)
 	if !strings.Contains(view, long) {
 		t.Errorf("the dropdown truncated the path:\n%s", view)
 	}

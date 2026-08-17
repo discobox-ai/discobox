@@ -178,9 +178,54 @@ func (d *dialog) update(msg tea.KeyPressMsg) (tea.Cmd, bool) {
 	return nil, false
 }
 
-func (d *dialog) view(st *styles, width int) string {
-	boxWidth := min(max(width-4, 24), 90)
-	inner := max(boxWidth-6, 16)
+// How much of the window a dialog takes.
+//
+// A dialog is the only thing on screen while it is up, so the old fixed 90
+// columns left most of a wide terminal empty around a card that was scrolling.
+// It takes most of the window instead, and all of a window small enough that a
+// margin costs more than the frame gives.
+//
+// Height is an allowance rather than a size: a dialog grows into it and stops
+// at its content, so the config card fills the screen and "Disable Codex?"
+// stays the size of the question.
+const (
+	dialogFillPercent = 90
+	// Below these the dialog takes the whole window rather than most of it.
+	dialogFullWidthBelow  = 80
+	dialogFullHeightBelow = 24
+	// dialogMinWidth is the narrowest worth drawing: the action rows put a key,
+	// a label column and a reason on one line. A window narrower than this gets
+	// all of it, which is the most there is to give.
+	dialogMinWidth = 48
+)
+
+// dialogWidth and dialogHeight are the box's outside extent, border included.
+func dialogWidth(window int) int  { return dialogExtent(window, dialogFullWidthBelow, dialogMinWidth) }
+func dialogHeight(window int) int { return dialogExtent(window, dialogFullHeightBelow, 0) }
+
+func dialogExtent(window, fullBelow, minimum int) int {
+	if window <= 0 {
+		return minimum
+	}
+	extent := window
+	if window >= fullBelow {
+		extent = window * dialogFillPercent / 100
+	}
+	// Never wider than the window: on a terminal narrower than the minimum, the
+	// whole of it is all there is.
+	return min(max(extent, minimum), window)
+}
+
+// dialogChrome is what the box costs around its content: the border and the
+// padding either side. See styles.dialog.
+const (
+	dialogChromeWidth  = 2 + 2*2
+	dialogChromeHeight = 2 + 2*1
+)
+
+func (d *dialog) view(st *styles, width, height int) string {
+	boxWidth := dialogWidth(width)
+	inner := max(boxWidth-dialogChromeWidth, 16)
 
 	var b strings.Builder
 	titleStyle := st.dialogTitle
@@ -190,9 +235,20 @@ func (d *dialog) view(st *styles, width int) string {
 	b.WriteString(titleStyle.Render(truncate(d.title, inner)))
 	b.WriteString("\n\n")
 
-	const maxBody = 18
+	// What the body may take: the box's allowance, less its chrome, the title
+	// and the blank under it, and the three rows the scroll hint and footer
+	// need under it.
+	maxBody := max(dialogHeight(height)-dialogChromeHeight-2-3, 3)
 	if d.body != "" {
 		lines := wrap(d.body, inner)
+		// Wrapping is not enough on its own: a line the wrapper could not break
+		// — the help text's key columns are one long run of spaces and words —
+		// comes back wider than the box, and lipgloss wraps it again into a row
+		// the height was not budgeted for. One row over is a frame one row
+		// taller than the terminal.
+		for i, line := range lines {
+			lines[i] = truncate(line, inner)
+		}
 		if d.kind == dlgText || d.kind == dlgMessage {
 			d.offset = min(max(d.offset, 0), max(len(lines)-maxBody, 0))
 			end := min(d.offset+maxBody, len(lines))
