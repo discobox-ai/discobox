@@ -174,6 +174,17 @@ func spread(left, right string, w int) string {
 	return left + strings.Repeat(" ", gap) + right
 }
 
+// centerRoom is how wide a middle fragment may be on a spreadCenter row: the
+// row less the fragments on either side, less a cell of air against each of
+// them so the middle never touches its neighbors.
+//
+// A caller that composes its middle out of parts asks for the room first and
+// drops parts whole to fit it, rather than handing spreadCenter something it
+// has to cut mid-word.
+func centerRoom(left, right string, w int) int {
+	return w - lipgloss.Width(left) - lipgloss.Width(right) - 2
+}
+
 // spreadCenter lays a left, a middle and a right fragment out on one row, with
 // the middle centered in the row itself rather than in the gap between the other
 // two — so it does not shift as they change length.
@@ -187,8 +198,7 @@ func spreadCenter(left, middle, right string, w int) string {
 		return spread(left, right, w)
 	}
 	leftW, rightW := lipgloss.Width(left), lipgloss.Width(right)
-	// A cell of air on each side, so the middle never touches its neighbors.
-	room := w - leftW - rightW - 2
+	room := centerRoom(left, right, w)
 	if room < 4 {
 		return spread(left, right, w)
 	}

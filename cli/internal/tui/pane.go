@@ -210,6 +210,10 @@ func (m *Model) focusedPane() *pane {
 // it. The workspace was opened on a snapshot, and what a command may do to it
 // — a diffstat that has since arrived, a state that has since changed — moves
 // on without it.
+//
+// It is what the keys dispatch against and what the header reads, so the two
+// answer from the same listing: a screen that offers "apply" is a screen whose
+// header already said there was something to apply.
 func (m *Model) currentBox() Sandbox {
 	for _, s := range m.list.all {
 		if s.ID == m.paneBox.ID {
@@ -909,19 +913,12 @@ func (m *Model) viewPaneWindow() string {
 	inner := max(m.width-2, 1)
 	pad := strings.Repeat(" ", boxPad)
 
-	// Every pane is the same discobox, so it is identified once — folded into
-	// the banner rather than given a line of its own, and centered in it.
-	//
-	// The id rather than the name, because the id is what you would type at a
-	// shell to act on this one, and muted rather than foreground, because it is
-	// there to be looked up when wanted rather than read on every glance. What
-	// each pane is running is in its own border.
 	// The drawing pass owns where the border's controls landed: they are only
 	// there when they were drawn this frame, and a span left over from a box
 	// that is no longer on screen is a click target pointing at nothing.
 	m.tabSpans, m.zoomSpans = m.tabSpans[:0], m.zoomSpans[:0]
 
-	name := m.st.dimText.Render(m.paneBox.ID)
+	left := m.viewHeaderLeft()
 	right := m.viewHeaderRight()
 	// What the transport is doing displaces the keys while it is doing it: it
 	// is the more urgent of the two, and the keys are on the status line too.
@@ -929,8 +926,10 @@ func (m *Model) viewPaneWindow() string {
 		right = m.st.statusWA.Render(p.status)
 	}
 
+	headerW := max(inner-2*boxPad, 1)
+	center := m.viewPaneHeaderCenter(centerRoom(left, right, headerW))
 	rows := []string{
-		" " + pad + spreadCenter(m.viewHeaderLeft(), name, right, max(inner-2*boxPad, 1)) + pad + " ",
+		" " + pad + spreadCenter(left, center, right, headerW) + pad + " ",
 	}
 
 	// The overlay has the screen while it is up. What is under it is not drawn
@@ -958,6 +957,54 @@ func (m *Model) viewPaneWindow() string {
 	rows = append(rows, strings.Split(body, "\n")...)
 	rows = append(rows, " "+pad+padANSI(m.st.dimText.Render(m.hints()), max(inner-2*boxPad, 1))+pad+" ")
 	return strings.Join(rows, "\n")
+}
+
+// viewPaneHeaderCenter is the middle of the workspace's header: which discobox
+// this is, and where its work sits in git.
+//
+// Every pane is the same discobox, so it is identified once — folded into the
+// banner rather than given a line of its own. The id rather than the name,
+// because the id is what you would type at a shell to act on this one, and
+// muted rather than foreground, because it is there to be looked up when
+// wanted rather than read on every glance. What each pane is running is in its
+// own border.
+//
+// The git position, its state spelled out, and the diffstat are the list's own
+// columns, drawn by the list's own functions in the list's own colors, and read
+// live off the listing (currentBox) rather than off the snapshot the workspace
+// was opened on — a header saying "clean" over a session that has been
+// committing for an hour is worse than no header at all. The listing refreshes
+// itself on the tick whichever screen is up, so this follows along for free.
+//
+// The fields are dropped whole from the right when the row is too narrow for
+// them — the diffstat first, which the apply report gives you anyway, then the
+// word, whose mark is on the position regardless — so a narrow window loses a
+// field rather than showing half of one. That is the list's own drop order.
+func (m *Model) viewPaneHeaderCenter(room int) string {
+	box := m.currentBox()
+	git := gitStyle(m.st, box)
+
+	parts := []string{m.st.dimText.Render(box.ID)}
+	if base := box.base(); base != "" {
+		parts = append(parts, git.Render(base))
+	}
+	// The list pads this into a column, so it spells the empty answer as a
+	// dash; here there is no column to fill and nothing to say, so it is left
+	// off entirely.
+	if changes := box.changes(); changes != "-" {
+		parts = append(parts, git.Render(changes))
+	}
+	if stat := diffText(m.st, box); stat != "" {
+		parts = append(parts, stat)
+	}
+
+	for len(parts) > 1 {
+		if out := strings.Join(parts, "  "); lipgloss.Width(out) <= room {
+			return out
+		}
+		parts = parts[:len(parts)-1]
+	}
+	return parts[0]
 }
 
 // viewPaneBox draws one pane: its border, with what it is running set into the

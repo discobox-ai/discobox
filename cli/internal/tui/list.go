@@ -407,31 +407,14 @@ func (l *sandboxList) row(st *styles, s Sandbox, i int, focused bool) string {
 	// already been filtered to it — a column repeating the same value on every
 	// row is a column spent saying nothing.
 	//
-	// The color is the state of the work: warning for uncommitted content that
-	// only the sandbox holds, green for a head commit an apply has landed.
-	baseStyle := st.dimText
-	switch {
-	case s.dirty():
-		baseStyle = st.statusWA
-	case s.Git.Applied:
-		baseStyle = st.add
-	case s.ahead():
-		// Work no apply has landed is the state to notice before
-		// archiving, so it stands in the default text against rows that are
-		// dim because nothing on them is at stake.
-		baseStyle = st.name
-	}
+	baseStyle := gitStyle(st, s)
 	addCol(baseStyle.Render(pad(s.base(), 14)), 15)
 	// The mark spelled out, in the mark's own color. It is added right after
 	// the position so the two survive a narrowing terminal together.
 	addCol(baseStyle.Render(pad(s.changes(), 7)), 8)
 	addCol(st.dimText.Render(pad(createdText(s, l.now()), 7)), 8)
 	addCol(usage(st, s), usageWidth+1)
-	stat := ""
-	if s.hasDiff() {
-		stat = st.add.Render("+"+itoa(s.Diff.Added)) + " " + st.del.Render("−"+itoa(s.Diff.Deleted))
-	}
-	addCol(padANSI(stat, 11), 11)
+	addCol(padANSI(diffText(st, s), 11), 11)
 
 	// The cursor is a chevron, and selection is a background — difftui's
 	// file list, which is a picker like this one rather than a diff.
@@ -474,4 +457,37 @@ func (l *sandboxList) row(st *styles, s Sandbox, i int, focused bool) string {
 	default:
 		return line
 	}
+}
+
+// gitStyle is the color the git position and its spelled-out mark are drawn
+// in: the state of the work. Warning for uncommitted content that only the
+// sandbox holds, green for a head commit an apply has landed, and the default
+// text for committed work no apply has landed — the state to notice before
+// archiving, so it stands against rows that are dim because nothing on them is
+// at stake.
+//
+// It is one function rather than a switch per drawing site so the list row and
+// the workspace header cannot drift apart on what a color means.
+func gitStyle(st *styles, s Sandbox) lipgloss.Style {
+	switch {
+	case s.dirty():
+		return st.statusWA
+	case s.Git.Applied:
+		return st.add
+	case s.ahead():
+		return st.name
+	default:
+		return st.dimText
+	}
+}
+
+// diffText is the diffstat as both the row and the workspace header draw it:
+// what the sandbox has changed, in the diff's own two colors. Empty when
+// nothing has been reported or nothing has changed, which is the same answer
+// as far as anything drawing it is concerned.
+func diffText(st *styles, s Sandbox) string {
+	if !s.hasDiff() {
+		return ""
+	}
+	return st.add.Render("+"+itoa(s.Diff.Added)) + " " + st.del.Render("−"+itoa(s.Diff.Deleted))
 }

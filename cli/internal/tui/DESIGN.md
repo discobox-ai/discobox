@@ -203,6 +203,26 @@ transport's status appearing on the right does not shift it, and `spreadCenter`
 silently disappears at some widths is worse than a shortened one. The captions are indented to line up with the
 terminal's own output rather than with the border.
 
+**Where the work sits in git rides in the banner beside the id**
+(`viewPaneHeaderCenter`): the position and its mark, the mark spelled out, and
+the diffstat — the list's own git columns, drawn by the list's own `gitStyle`
+and `diffText` in the list's own colors, so the two screens cannot drift apart
+on what a color or a mark means. It is read through `currentBox` off the
+listing the tick refreshes whichever screen is up, not off the snapshot the
+workspace was opened on: a header saying "clean" over a session that has been
+committing for an hour is worse than no header at all, and it is the same read
+the leader keys dispatch against, so a screen that offers `apply` is one whose
+banner already said there was something to apply. It costs no request — the
+agent pushes git state and the diffstat through the control plane with the
+listing.
+
+The fields drop *whole* from the right as the window narrows, in the list's own
+order — the diffstat first, which the apply report gives you anyway, then the
+word, whose mark is on the position regardless — so a narrow window loses a
+field rather than showing half of one. `centerRoom` is what they are measured
+against, the same width `spreadCenter` would have cut them to, which is what
+keeps the two from disagreeing about what fits.
+
 The title the application sets is laid into the top border (`titledEdge`) as
 `──[ title ]──`, not above it: it names the terminal rather than the window, and
 a border is a line the eye already follows, so a word set into it costs no row.
@@ -274,17 +294,17 @@ border text stays drag-selectable. The word rules make the
 sandbox id one double-click. One selection is on screen at a time — a pane
 press clears the chrome's and vice versa — and a chrome selection whose rows
 no longer read back identically is cleared rather than left highlighting
-whatever the recompose moved under it, which means header selections live and
-status-line selections honestly die. Copies and copy chords go through the
+whatever the recompose moved under it, which means status-line selections
+honestly die — and so does a header selection the moment the git state under
+it moves, which is the same honesty: the row it was made on is no longer the
+row on screen. Copies and copy chords go through the
 same `copyText` path as the panes'. Detaching returns to the
 list with the cursor still on the sandbox it was opened on.
 
-The title an application sets goes two places: the middle of the window's header
-(`spreadCenter`), which says what is in the window, and the real terminal's own
-title bar (`windowTitle` → `View.WindowTitle`), which is how you find the window
-among the others you have open. In the header it is centered in the row rather
-than in the gap beside the folder name, so it does not jitter as that changes
-length, and dropped outright when there is no room to center it. The title bar
+The title an application sets goes two places: its own pane's top border
+(`titledEdge`), which says what that terminal is running, and the real
+terminal's own title bar (`windowTitle` → `View.WindowTitle`), which is how you
+find the window among the others you have open. The title bar
 always carries the primary terminal's title — never the focused shell tab's or
 the overlay's — because it is read from outside the window, where what matters
 is which discobox this is and what its agent is doing; a tab or a report is

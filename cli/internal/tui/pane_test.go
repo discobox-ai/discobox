@@ -1014,11 +1014,15 @@ func TestAnEndedSessionIsNotHeld(t *testing.T) {
 }
 
 // The discobox is identified once, folded into the banner rather than given a
-// line of its own, and centered in it. Its id rather than its name: that is
-// what you would type at a shell to act on this one.
+// line of its own, and centered in it along with where its work sits. Its id
+// rather than its name: that is what you would type at a shell to act on this
+// one.
 func TestTheDiscoboxIDIsCenteredInTheBanner(t *testing.T) {
 	ds := newFakeSource(testSandboxes()...)
 	d, m, _ := openWorkspace(t, ds, "enter")
+
+	// The id leads the banner's middle; the git columns follow it.
+	const middle = "sbx_one  main@a3f9c21*  dirty  +142 −38"
 
 	nameRow := func() string { return ansi.Strip(strings.Split(rawFrame(m), "\n")[0]) }
 	centeredAt := func(row, name string) bool {
@@ -1028,8 +1032,11 @@ func TestTheDiscoboxIDIsCenteredInTheBanner(t *testing.T) {
 	}
 
 	row := nameRow()
-	if !centeredAt(row, "sbx_one") {
-		t.Fatalf("the id is not centered: %q", row)
+	if !strings.Contains(row, middle) {
+		t.Fatalf("the banner does not carry %q: %q", middle, row)
+	}
+	if !centeredAt(row, middle) {
+		t.Fatalf("the banner's middle is not centered: %q", row)
 	}
 	if strings.Contains(row, "fix flaky pool reaper tests") {
 		t.Fatalf("the banner should carry the id, not the name: %q", row)
@@ -1054,8 +1061,73 @@ func TestTheDiscoboxIDIsCenteredInTheBanner(t *testing.T) {
 	if got := strings.Count(nameRow(), "sbx_one"); got != 1 {
 		t.Fatalf("the id appears %d times over the split, want once", got)
 	}
-	if !centeredAt(nameRow(), "sbx_one") {
-		t.Fatalf("the id is not centered over the split: %q", nameRow())
+	if !centeredAt(nameRow(), middle) {
+		t.Fatalf("the banner's middle is not centered over the split: %q", nameRow())
+	}
+}
+
+// The banner's git status is the listing's, live: the workspace was opened on
+// a snapshot, and a session that commits while you watch it must not leave the
+// header saying what was true when you attached.
+func TestTheBannerFollowsTheListingsGitStatus(t *testing.T) {
+	ds := newFakeSource(testSandboxes()...)
+	d, m, _ := openWorkspace(t, ds, "enter")
+
+	nameRow := func() string { return ansi.Strip(strings.Split(rawFrame(m), "\n")[0]) }
+	if !strings.Contains(nameRow(), "main@a3f9c21*  dirty") {
+		t.Fatalf("the banner does not show the sandbox as dirty: %q", nameRow())
+	}
+
+	// The agent reports: the work is committed, and an apply has landed it on
+	// the host under a commit of its own.
+	moved := testSandboxes()
+	moved[0].Git = GitState{
+		Known: true, Branch: "main", Commit: "b17e004",
+		Applied: true, AppliedCommit: "9dd21fa",
+	}
+	moved[0].Diff = DiffStat{Known: true, Added: 12, Deleted: 3, Files: 2}
+	ds.mu.Lock()
+	ds.sandboxes = moved
+	ds.mu.Unlock()
+	d.dispatch(tickMsg{})
+	d.wait("the refresh", func() bool { return strings.Contains(nameRow(), "applied") })
+
+	if got := nameRow(); !strings.Contains(got, "main@9dd21fa✓  applied  +12 −3") {
+		t.Fatalf("the banner did not follow the listing: %q", got)
+	}
+}
+
+// The banner's fields drop whole from the right as the window narrows — the
+// diffstat first, then the word whose mark the position carries anyway — so a
+// narrow window loses a field rather than showing half of one. The id never
+// goes: it is what identifies the window.
+func TestTheBannersGitFieldsDropWholeAsItNarrows(t *testing.T) {
+	ds := newFakeSource(testSandboxes()...)
+	d, m, _ := openWorkspace(t, ds, "enter")
+
+	nameRow := func() string { return ansi.Strip(strings.Split(rawFrame(m), "\n")[0]) }
+	for _, tc := range []struct {
+		width int
+		want  []string
+		gone  []string
+	}{
+		{120, []string{"sbx_one", "main@a3f9c21*", "dirty", "+142 −38"}, nil},
+		{100, []string{"sbx_one", "main@a3f9c21*", "dirty"}, []string{"+142", "−38"}},
+		{90, []string{"sbx_one", "main@a3f9c21*"}, []string{"dirty", "+142"}},
+		{80, []string{"sbx_one"}, []string{"a3f9c21", "dirty", "+142"}},
+	} {
+		d.dispatch(sizeMsg(tc.width, 40))
+		row := nameRow()
+		for _, want := range tc.want {
+			if !strings.Contains(row, want) {
+				t.Fatalf("at %d columns the banner dropped %q: %q", tc.width, want, row)
+			}
+		}
+		for _, gone := range tc.gone {
+			if strings.Contains(row, gone) {
+				t.Fatalf("at %d columns the banner still carries %q: %q", tc.width, gone, row)
+			}
+		}
 	}
 }
 
