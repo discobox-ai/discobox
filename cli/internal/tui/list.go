@@ -491,3 +491,26 @@ func diffText(st *styles, s Sandbox) string {
 	}
 	return st.add.Render("+"+itoa(s.Diff.Added)) + " " + st.del.Render("−"+itoa(s.Diff.Deleted))
 }
+
+// portsText is what the sandbox is serving, as `protocol/number` per port. The
+// protocol leads because it is what decides whether a port is worth opening at
+// all — `http/5173` is a page, `tcp/5432` is a database — and it is the shorter,
+// more repetitive half, so leading with it lines the numbers up to be scanned.
+//
+// The bind address is not shown. A forward dials from inside the sandbox, where
+// a loopback-only listener answers exactly as a wildcard one does, so the
+// address would be a column that never changes what you can do.
+//
+// Empty when nothing is listening, which is also what a sandbox whose agent has
+// not reported yet looks like — there is no third thing to say and no room to
+// say it in.
+func portsText(st *styles, s Sandbox) string {
+	if len(s.Ports) == 0 {
+		return ""
+	}
+	parts := make([]string, 0, len(s.Ports))
+	for _, port := range s.Ports {
+		parts = append(parts, port.Protocol+"/"+itoa(port.Number))
+	}
+	return st.info.Render(strings.Join(parts, ", "))
+}

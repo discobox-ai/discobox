@@ -1097,6 +1097,88 @@ func TestTheBannerFollowsTheListingsGitStatus(t *testing.T) {
 	}
 }
 
+// What the sandbox is serving rides the same banner, as protocol/number per
+// port: the whole point of knowing a port is listening is knowing whether it is
+// a page you could open, and the address it is bound on decides nothing a
+// forward from inside the sandbox cares about.
+func TestTheBannerCarriesTheListeningPorts(t *testing.T) {
+	serving := testSandboxes()
+	serving[0].Ports = []Port{
+		{Number: 22, Protocol: "tcp"},
+		{Number: 5173, Protocol: "http"},
+		{Number: 8443, Protocol: "https"},
+	}
+	ds := newFakeSource(serving...)
+	d, m, _ := openWorkspace(t, ds, "enter")
+	d.dispatch(sizeMsg(180, 40))
+
+	nameRow := func() string { return ansi.Strip(strings.Split(rawFrame(m), "\n")[0]) }
+	if got := nameRow(); !strings.Contains(got, "tcp/22, http/5173, https/8443") {
+		t.Fatalf("the banner does not carry the listening ports: %q", got)
+	}
+}
+
+// A sandbox serving nothing says nothing: an empty list is not a field worth
+// the width, and it reads the same as an agent that has not reported yet.
+func TestTheBannerOmitsPortsWhenNothingIsListening(t *testing.T) {
+	ds := newFakeSource(testSandboxes()...)
+	_, m, _ := openWorkspace(t, ds, "enter")
+
+	row := ansi.Strip(strings.Split(rawFrame(m), "\n")[0])
+	if strings.Contains(row, "/") && strings.Contains(row, "tcp") {
+		t.Fatalf("the banner carries a port for a sandbox serving nothing: %q", row)
+	}
+	if !strings.Contains(row, "sbx_one  main@a3f9c21*  dirty") {
+		t.Fatalf("the rest of the banner should be unchanged: %q", row)
+	}
+}
+
+// The ports follow the listing the way the git fields do, so a dev server
+// started in one of these panes shows up in the header above it.
+func TestTheBannerFollowsTheListingsPorts(t *testing.T) {
+	ds := newFakeSource(testSandboxes()...)
+	d, m, _ := openWorkspace(t, ds, "enter")
+	d.dispatch(sizeMsg(180, 40))
+
+	nameRow := func() string { return ansi.Strip(strings.Split(rawFrame(m), "\n")[0]) }
+	if strings.Contains(nameRow(), "http/") {
+		t.Fatalf("the banner should start with nothing listening: %q", nameRow())
+	}
+
+	served := testSandboxes()
+	served[0].Ports = []Port{{Number: 5173, Protocol: "http"}}
+	ds.mu.Lock()
+	ds.sandboxes = served
+	ds.mu.Unlock()
+	d.dispatch(tickMsg{})
+	d.wait("the refresh", func() bool { return strings.Contains(nameRow(), "http/5173") })
+}
+
+// The ports go first as the window narrows: they are the one field with no
+// bound on its width, so dropping them whole is what keeps the git fields —
+// whose widths are known — on screen.
+func TestTheBannerDropsPortsBeforeTheGitFields(t *testing.T) {
+	serving := testSandboxes()
+	serving[0].Ports = []Port{{Number: 5173, Protocol: "http"}, {Number: 8443, Protocol: "https"}}
+	ds := newFakeSource(serving...)
+	d, m, _ := openWorkspace(t, ds, "enter")
+
+	nameRow := func() string { return ansi.Strip(strings.Split(rawFrame(m), "\n")[0]) }
+	d.dispatch(sizeMsg(140, 40))
+	if got := nameRow(); !strings.Contains(got, "http/5173") || !strings.Contains(got, "+142 −38") {
+		t.Fatalf("at 140 columns the banner should carry both: %q", got)
+	}
+
+	d.dispatch(sizeMsg(120, 40))
+	got := nameRow()
+	if strings.Contains(got, "http/5173") {
+		t.Fatalf("at 120 columns the ports should have gone first: %q", got)
+	}
+	if !strings.Contains(got, "+142 −38") {
+		t.Fatalf("at 120 columns the diffstat should have outlived the ports: %q", got)
+	}
+}
+
 // The banner's fields drop whole from the right as the window narrows — the
 // diffstat first, then the word whose mark the position carries anyway — so a
 // narrow window loses a field rather than showing half of one. The id never

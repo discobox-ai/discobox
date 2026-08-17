@@ -216,12 +216,24 @@ banner already said there was something to apply. It costs no request — the
 agent pushes git state and the diffstat through the control plane with the
 listing.
 
-The fields drop *whole* from the right as the window narrows, in the list's own
-order — the diffstat first, which the apply report gives you anyway, then the
-word, whose mark is on the position regardless — so a narrow window loses a
-field rather than showing half of one. `centerRoom` is what they are measured
-against, the same width `spreadCenter` would have cut them to, which is what
-keeps the two from disagreeing about what fits.
+**What the discobox is serving rides at the end of it** (`portsText`): one
+`protocol/number` per listening port, from the same push
+([ADR 0046](../../../docs/adr/0046-listening-ports-are-polled-and-probed-in-the-background.md)).
+The protocol leads because it is what decides whether a port is worth opening —
+`http/5173` is a page, `tcp/5432` is a database — and the bind address is left
+off entirely: a forward dials from *inside* the sandbox, where a loopback-only
+listener answers exactly as a wildcard one does, so the address would be a field
+that never changes what you can do. Nothing listening prints nothing, which is
+also what an agent that has not reported yet looks like.
+
+The fields drop *whole* from the right as the window narrows — the ports first,
+then, in the list's own order, the diffstat, which the apply report gives you
+anyway, then the word, whose mark is on the position regardless — so a narrow
+window loses a field rather than showing half of one. The ports go first
+because they are the only field with no bound on their width: a compose stack
+brings up as many as it likes. `centerRoom` is what they are measured against,
+the same width `spreadCenter` would have cut them to, which is what keeps the
+two from disagreeing about what fits.
 
 The title the application sets is laid into the top border (`titledEdge`) as
 `──[ title ]──`, not above it: it names the terminal rather than the window, and

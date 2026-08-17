@@ -81,6 +81,15 @@ type GitState struct {
 	AppliedCommit string
 }
 
+// Port is one TCP port a sandbox's own processes are listening on, and what it
+// turned out to speak. The address it is bound on is not carried: a forward
+// dials from inside the sandbox, where every reported port answers, so the
+// number and the protocol are the whole of what is actionable.
+type Port struct {
+	Number   int
+	Protocol string // http, https, tcp, or unknown while a probe has not answered
+}
+
 // Sandbox is the row model: what a picker needs to tell one sandbox from
 // another, plus what the actions need to know about whether they apply.
 //
@@ -109,6 +118,9 @@ type Sandbox struct {
 	// Git is where the work sits now, when the sandbox's agent has reported;
 	// the spawn fields above are the fallback until it does.
 	Git GitState
+
+	// Ports are what the sandbox is serving right now, ordered by number.
+	Ports []Port
 
 	Usage   Usage
 	Diff    DiffStat

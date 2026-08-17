@@ -960,7 +960,7 @@ func (m *Model) viewPaneWindow() string {
 }
 
 // viewPaneHeaderCenter is the middle of the workspace's header: which discobox
-// this is, and where its work sits in git.
+// this is, where its work sits in git, and what it is serving.
 //
 // Every pane is the same discobox, so it is identified once — folded into the
 // banner rather than given a line of its own. The id rather than the name,
@@ -976,10 +976,17 @@ func (m *Model) viewPaneWindow() string {
 // committing for an hour is worse than no header at all. The listing refreshes
 // itself on the tick whichever screen is up, so this follows along for free.
 //
+// The listening ports come last because they are the only field with no bound
+// on their width — a compose stack brings up as many as it likes — so dropping
+// them whole is what keeps the git fields, whose widths are known, on screen.
+// They are also the field a pane can answer for itself: the server is in one of
+// these terminals.
+//
 // The fields are dropped whole from the right when the row is too narrow for
-// them — the diffstat first, which the apply report gives you anyway, then the
-// word, whose mark is on the position regardless — so a narrow window loses a
-// field rather than showing half of one. That is the list's own drop order.
+// them — the ports first, then the diffstat, which the apply report gives you
+// anyway, then the word, whose mark is on the position regardless — so a narrow
+// window loses a field rather than showing half of one. From the diffstat down
+// that is the list's own drop order.
 func (m *Model) viewPaneHeaderCenter(room int) string {
 	box := m.currentBox()
 	git := gitStyle(m.st, box)
@@ -996,6 +1003,9 @@ func (m *Model) viewPaneHeaderCenter(room int) string {
 	}
 	if stat := diffText(m.st, box); stat != "" {
 		parts = append(parts, stat)
+	}
+	if listening := portsText(m.st, box); listening != "" {
+		parts = append(parts, listening)
 	}
 
 	for len(parts) > 1 {

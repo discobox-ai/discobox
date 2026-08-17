@@ -181,6 +181,7 @@ func toTUISandbox(sb apimodel.Sandbox) tui.Sandbox {
 		// which is exactly what the starred commit on the row means.
 		row.Dirty = sourceSnapshotRef(source) != ""
 	}
+	row.Ports = sandboxListeningPorts(sb)
 	if git := sandboxGitStatus(sb); git.Known {
 		row.Git = tui.GitState{
 			Known:         true,
