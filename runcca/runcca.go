@@ -202,7 +202,7 @@ func Adjust(bundleDir, containerID string, cfg Config) (bool, error) {
 		return false, fmt.Errorf("parse oci spec %s: %w", path, err)
 	}
 
-	changed, err := addTrustMounts(spec, bundleDir, containerID, cfg)
+	changed, bundle, err := addTrustMounts(spec, bundleDir, containerID, cfg)
 	if err != nil {
 		return false, err
 	}
@@ -211,6 +211,12 @@ func Adjust(bundleDir, containerID string, cfg Config) (bool, error) {
 		return false, err
 	}
 	if addEnv(spec, env) {
+		changed = true
+	}
+	// After the manifest, never over it: addEnv only adds a name nothing has
+	// set, so a sandbox's own values win and a pool-side build container —
+	// which has no manifest to read — gets these from the mount alone.
+	if addEnv(spec, trustEnv(bundle)) {
 		changed = true
 	}
 	if addHooks(spec, cfg.Hooks) {
@@ -252,18 +258,18 @@ func Cleanup(containerID string, cfg Config) error {
 }
 
 // addTrustMounts seeds each trust store and appends the resulting bind mounts.
-func addTrustMounts(spec map[string]any, bundleDir, containerID string, cfg Config) (bool, error) {
+func addTrustMounts(spec map[string]any, bundleDir, containerID string, cfg Config) (bool, string, error) {
 	ca, err := os.ReadFile(cfg.MITMCA)
 	if err != nil {
 		// No MITM proxy configured for this sandbox: nothing to inject, and
 		// that is a normal local-development state rather than an error.
 		if os.IsNotExist(err) {
-			return false, nil
+			return false, "", nil
 		}
-		return false, fmt.Errorf("read mitm ca %s: %w", cfg.MITMCA, err)
+		return false, "", fmt.Errorf("read mitm ca %s: %w", cfg.MITMCA, err)
 	}
 	if containerID == "" {
-		return false, errors.New("no container id on the runc command line")
+		return false, "", errors.New("no container id on the runc command line")
 	}
 
 	rootfs := specRootPath(spec, bundleDir)
@@ -275,6 +281,10 @@ func addTrustMounts(spec map[string]any, bundleDir, containerID string, cfg Conf
 		mounts = current
 	}
 	changed := false
+	// The first store actually installed, as the container will see it. It is
+	// what the clients that ignore the system store are pointed at, and the
+	// first is the Debian path every one of them accepts.
+	installed := ""
 
 	for _, store := range trustStores() {
 		if _, taken := existing[store.dir]; taken {
@@ -282,7 +292,10 @@ func addTrustMounts(spec map[string]any, bundleDir, containerID string, cfg Conf
 		}
 		dst := filepath.Join(staging, store.dir)
 		if err := seedTrustStore(filepath.Join(rootfs, store.dir), dst, store, ca, cfg); err != nil {
-			return changed, err
+			return changed, installed, err
+		}
+		if installed == "" {
+			installed = filepath.Join(store.dir, store.bundle)
 		}
 		mounts = append(mounts, map[string]any{
 			"destination": store.dir,
@@ -303,11 +316,11 @@ func addTrustMounts(spec map[string]any, bundleDir, containerID string, cfg Conf
 		}
 		src := filepath.Join(staging, "anchors", strings.ReplaceAll(strings.TrimPrefix(dir, "/"), "/", "_")+".crt")
 		if err := os.MkdirAll(filepath.Dir(src), 0o755); err != nil {
-			return changed, fmt.Errorf("stage anchor dir: %w", err)
+			return changed, installed, fmt.Errorf("stage anchor dir: %w", err)
 		}
 		//nolint:gosec // A trust anchor is public and must be readable by every user in the container.
 		if err := os.WriteFile(src, ca, 0o644); err != nil {
-			return changed, fmt.Errorf("stage anchor %s: %w", src, err)
+			return changed, installed, fmt.Errorf("stage anchor %s: %w", src, err)
 		}
 		mounts = append(mounts, map[string]any{
 			"destination": dest,
@@ -321,7 +334,32 @@ func addTrustMounts(spec map[string]any, bundleDir, containerID string, cfg Conf
 	if changed {
 		spec["mounts"] = mounts
 	}
-	return changed, nil
+	return changed, installed, nil
+}
+
+// trustEnv names the bundle for the clients that will not find it themselves.
+//
+// Installing the trust store covers everything that reads the system one —
+// curl, git, apt, wget, the OpenSSL CLI. Node.js, Python's ssl module,
+// requests/certifi and pip each carry a root store of their own and ignore it,
+// so each needs pointing at the bundle explicitly. pool-agent already says this
+// for a sandbox's own processes and names the same four variables; a container
+// gets them here, from the mount that put the bundle there, because whoever
+// installs the trust material is who knows where it landed.
+//
+// Without this a build behind the MITM proxy fails on `npm install` with
+// "unable to verify the first certificate" while curl in the same RUN step
+// succeeds, which reads as anything but a trust problem.
+func trustEnv(bundle string) map[string]string {
+	if bundle == "" {
+		return nil
+	}
+	return map[string]string{
+		"SSL_CERT_FILE":       bundle,
+		"NODE_EXTRA_CA_CERTS": bundle,
+		"REQUESTS_CA_BUNDLE":  bundle,
+		"PIP_CERT":            bundle,
+	}
 }
 
 // specRootPath resolves the container's root filesystem from the spec.

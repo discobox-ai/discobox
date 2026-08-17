@@ -657,3 +657,66 @@ func TestLocalSubnetsTokenLeavesNoEmptyEntries(t *testing.T) {
 		}
 	}
 }
+
+// Installing the trust store is not enough on its own. Node.js, Python's ssl
+// module, requests/certifi and pip each carry a root store of their own and
+// ignore the system one, so the container is told where the bundle is. Without
+// this a build behind the MITM proxy fails on `npm install` with "unable to
+// verify the first certificate" while curl in the same step succeeds.
+func TestAdjustNamesTheBundleForClientsThatIgnoreTheSystemStore(t *testing.T) {
+	// No manifest env at all: this is the pool-side build container, which has
+	// no sandbox.json to read and got nothing before.
+	f := newFixture(t, []string{"debian.pem"}, nil, nil)
+	bundle := writeBundle(t, f.dir, map[string]any{"process": map[string]any{"env": []any{}}}, "IMAGE-CA\n")
+
+	if _, err := Adjust(bundle, "cid", f.cfg); err != nil {
+		t.Fatalf("Adjust: %v", err)
+	}
+
+	env := specEnv(t, readSpec(t, bundle))
+	for _, name := range []string{"SSL_CERT_FILE", "NODE_EXTRA_CA_CERTS", "REQUESTS_CA_BUNDLE", "PIP_CERT"} {
+		want := name + "=/etc/ssl/certs/ca-certificates.crt"
+		if !slices.Contains(env, want) {
+			t.Errorf("%s is not named for the container: %v", name, env)
+		}
+	}
+}
+
+// A container that says where its own trust lives keeps saying it: the bundle
+// is named only where nothing has named it already.
+func TestAdjustDoesNotOverrideATrustPathTheContainerSets(t *testing.T) {
+	f := newFixture(t, []string{"debian.pem"}, nil, nil)
+	spec := map[string]any{"process": map[string]any{"env": []any{"NODE_EXTRA_CA_CERTS=/opt/mine.pem"}}}
+	bundle := writeBundle(t, f.dir, spec, "IMAGE-CA\n")
+
+	if _, err := Adjust(bundle, "cid", f.cfg); err != nil {
+		t.Fatalf("Adjust: %v", err)
+	}
+
+	env := specEnv(t, readSpec(t, bundle))
+	if !slices.Contains(env, "NODE_EXTRA_CA_CERTS=/opt/mine.pem") {
+		t.Fatalf("the container's own value was replaced: %v", env)
+	}
+	if slices.Contains(env, "NODE_EXTRA_CA_CERTS=/etc/ssl/certs/ca-certificates.crt") {
+		t.Fatalf("both values were injected: %v", env)
+	}
+}
+
+// Nothing to install means nothing to name: a pool or sandbox with no MITM
+// proxy has no bundle, and inventing these would point every client at a file
+// that is not there.
+func TestAdjustNamesNoBundleWithoutAMitmCA(t *testing.T) {
+	f := newFixture(t, []string{"debian.pem"}, nil, nil)
+	f.cfg.MITMCA = filepath.Join(t.TempDir(), "absent.crt")
+	bundle := writeBundle(t, f.dir, map[string]any{"process": map[string]any{"env": []any{}}}, "IMAGE-CA\n")
+
+	if _, err := Adjust(bundle, "cid", f.cfg); err != nil {
+		t.Fatalf("Adjust: %v", err)
+	}
+
+	for _, entry := range specEnv(t, readSpec(t, bundle)) {
+		if strings.HasPrefix(entry, "NODE_EXTRA_CA_CERTS=") {
+			t.Fatalf("named a bundle that was never installed: %q", entry)
+		}
+	}
+}

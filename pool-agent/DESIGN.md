@@ -380,6 +380,15 @@ Four boundaries, each doing one job:
   It is a raw-codec gRPC proxy — it decodes only the two solve methods and
   passes every other frame through untouched, so it does not have to track
   BuildKit's protocol surface.
+- **A build container is told where its trust lives.** The runc wrapper mounts
+  the pool's MITM CA into every build step, which covers curl, git and apt — but
+  Node, Python's `ssl`, requests/certifi and pip each bundle a root store and
+  ignore the system one. The wrapper names the bundle it installed in
+  `SSL_CERT_FILE`/`NODE_EXTRA_CA_CERTS`/`REQUESTS_CA_BUNDLE`/`PIP_CERT`. It has
+  to come from the mount rather than from `sandbox.json`, which is what a
+  sandbox's own containers use: a pool-side build container has no manifest.
+  Without it a build fails on `npm install` with "unable to verify the first
+  certificate" while curl in the same `RUN` step succeeds.
 - **Each sandbox gets a registry namespace of its own.** The pool registry has
   no authentication, so a repository path is a capability: build output is
   protected only by `discobox-build/<random hex>` being unguessable. A sandbox's
