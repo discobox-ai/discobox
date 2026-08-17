@@ -1154,37 +1154,83 @@ func TestTheBannerFollowsTheListingsPorts(t *testing.T) {
 	d.wait("the refresh", func() bool { return strings.Contains(nameRow(), "http/5173") })
 }
 
-// The ports go first as the window narrows: they are the one field with no
-// bound on its width, so dropping them whole is what keeps the git fields —
-// whose widths are known — on screen.
-func TestTheBannerDropsPortsBeforeTheGitFields(t *testing.T) {
+// The banner's middle is what the window is about; its edges are context the
+// screen carries elsewhere. So a row too narrow for all three gives the edges
+// up first, in the order they are worth least here: the keys, which the hints
+// line under the grid repeats; then the program's own name, which you can see
+// you are in; then the folder, which every row of the list already shared.
+func TestTheBannerGivesUpItsEdgesBeforeItsMiddle(t *testing.T) {
 	serving := testSandboxes()
 	serving[0].Ports = []Port{{Number: 5173, Protocol: "http"}, {Number: 8443, Protocol: "https"}}
 	ds := newFakeSource(serving...)
 	d, m, _ := openWorkspace(t, ds, "enter")
 
+	const middle = "sbx_one  main@a3f9c21*  dirty  +142 −38  http/5173, https/8443"
 	nameRow := func() string { return ansi.Strip(strings.Split(rawFrame(m), "\n")[0]) }
-	d.dispatch(sizeMsg(140, 40))
-	if got := nameRow(); !strings.Contains(got, "http/5173") || !strings.Contains(got, "+142 −38") {
-		t.Fatalf("at 140 columns the banner should carry both: %q", got)
-	}
 
-	d.dispatch(sizeMsg(120, 40))
-	got := nameRow()
-	if strings.Contains(got, "http/5173") {
-		t.Fatalf("at 120 columns the ports should have gone first: %q", got)
-	}
-	if !strings.Contains(got, "+142 −38") {
-		t.Fatalf("at 120 columns the diffstat should have outlived the ports: %q", got)
+	for _, tc := range []struct {
+		width  int
+		what   string
+		keys   bool
+		brand  bool
+		folder bool
+	}{
+		{width: 140, what: "room for everything", keys: true, brand: true, folder: true},
+		{width: 120, what: "the keys go first", brand: true, folder: true},
+		{width: 92, what: "then the program's own name", folder: true},
+		{width: 80, what: "then the folder"},
+	} {
+		d.dispatch(sizeMsg(tc.width, 40))
+		row := nameRow()
+		// Whatever went, the middle is still whole: that is the point of the
+		// order — the edges pay for it.
+		if !strings.Contains(row, middle) {
+			t.Fatalf("%s: the middle is not whole at %d columns: %q", tc.what, tc.width, row)
+		}
+		if got := strings.Contains(row, "detach"); got != tc.keys {
+			t.Fatalf("%s: keys shown = %v at %d columns: %q", tc.what, got, tc.width, row)
+		}
+		// The folder path contains "disco2", so the brand is looked for where
+		// only the brand can be: at the head of the row.
+		if got := strings.HasPrefix(strings.TrimSpace(row), "disco"); got != tc.brand {
+			t.Fatalf("%s: brand shown = %v at %d columns: %q", tc.what, got, tc.width, row)
+		}
+		if got := strings.Contains(row, "/src/disco2"); got != tc.folder {
+			t.Fatalf("%s: folder shown = %v at %d columns: %q", tc.what, got, tc.width, row)
+		}
 	}
 }
 
-// The banner's fields drop whole from the right as the window narrows — the
-// diffstat first, then the word whose mark the position carries anyway — so a
-// narrow window loses a field rather than showing half of one. The id never
-// goes: it is what identifies the window.
-func TestTheBannersGitFieldsDropWholeAsItNarrows(t *testing.T) {
+// What the transport is doing holds its place all the way down. It displaces
+// the keys while it is happening, and unlike them it is written down nowhere
+// else on the screen, so it is not one of the things the row gives up.
+func TestTheBannerKeepsATransportStatusAsItNarrows(t *testing.T) {
 	ds := newFakeSource(testSandboxes()...)
+	d, m, _ := openWorkspace(t, ds, "enter")
+	m.terminal.status = "reconnecting…"
+
+	nameRow := func() string { return ansi.Strip(strings.Split(rawFrame(m), "\n")[0]) }
+	for _, width := range []int{140, 100, 80, 60} {
+		d.dispatch(sizeMsg(width, 40))
+		row := nameRow()
+		if !strings.Contains(row, "reconnecting") {
+			t.Fatalf("at %d columns the status was given up: %q", width, row)
+		}
+		if !strings.Contains(row, "sbx_one") {
+			t.Fatalf("at %d columns the id was given up: %q", width, row)
+		}
+	}
+}
+
+// Once there are no edges left to give, the middle drops its own fields whole
+// from the right — the ports first, then the diffstat, which the apply report
+// gives you anyway, then the word, whose mark the position carries regardless —
+// so a narrow window loses a field rather than showing half of one. The id
+// never goes: it is what identifies the window.
+func TestTheBannersMiddleDropsFieldsWholeAsItNarrows(t *testing.T) {
+	serving := testSandboxes()
+	serving[0].Ports = []Port{{Number: 5173, Protocol: "http"}, {Number: 8443, Protocol: "https"}}
+	ds := newFakeSource(serving...)
 	d, m, _ := openWorkspace(t, ds, "enter")
 
 	nameRow := func() string { return ansi.Strip(strings.Split(rawFrame(m), "\n")[0]) }
@@ -1193,10 +1239,11 @@ func TestTheBannersGitFieldsDropWholeAsItNarrows(t *testing.T) {
 		want  []string
 		gone  []string
 	}{
-		{120, []string{"sbx_one", "main@a3f9c21*", "dirty", "+142 −38"}, nil},
-		{100, []string{"sbx_one", "main@a3f9c21*", "dirty"}, []string{"+142", "−38"}},
-		{90, []string{"sbx_one", "main@a3f9c21*"}, []string{"dirty", "+142"}},
-		{80, []string{"sbx_one"}, []string{"a3f9c21", "dirty", "+142"}},
+		{70, []string{"sbx_one", "main@a3f9c21*", "dirty", "+142 −38", "http/5173"}, nil},
+		{60, []string{"sbx_one", "main@a3f9c21*", "dirty", "+142 −38"}, []string{"http/5173"}},
+		{44, []string{"sbx_one", "main@a3f9c21*", "dirty"}, []string{"http/5173", "+142"}},
+		{34, []string{"sbx_one", "main@a3f9c21*"}, []string{"dirty", "+142"}},
+		{27, []string{"sbx_one"}, []string{"a3f9c21", "dirty", "+142"}},
 	} {
 		d.dispatch(sizeMsg(tc.width, 40))
 		row := nameRow()

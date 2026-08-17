@@ -918,18 +918,9 @@ func (m *Model) viewPaneWindow() string {
 	// that is no longer on screen is a click target pointing at nothing.
 	m.tabSpans, m.zoomSpans = m.tabSpans[:0], m.zoomSpans[:0]
 
-	left := m.viewHeaderLeft()
-	right := m.viewHeaderRight()
-	// What the transport is doing displaces the keys while it is doing it: it
-	// is the more urgent of the two, and the keys are on the status line too.
-	if p := m.focusedPane(); p != nil && p.status != "" {
-		right = m.st.statusWA.Render(p.status)
-	}
-
 	headerW := max(inner-2*boxPad, 1)
-	center := m.viewPaneHeaderCenter(centerRoom(left, right, headerW))
 	rows := []string{
-		" " + pad + spreadCenter(left, center, right, headerW) + pad + " ",
+		" " + pad + m.viewPaneHeader(headerW) + pad + " ",
 	}
 
 	// The overlay has the screen while it is up. What is under it is not drawn
@@ -959,8 +950,59 @@ func (m *Model) viewPaneWindow() string {
 	return strings.Join(rows, "\n")
 }
 
-// viewPaneHeaderCenter is the middle of the workspace's header: which discobox
-// this is, where its work sits in git, and what it is serving.
+// viewPaneHeader is the workspace's banner: where you are on the left, which
+// discobox this is and what it is doing in the middle, and the way out on the
+// right.
+//
+// The middle is what this window is about; the edges are context that is
+// written down elsewhere on the screen. So a row too narrow for all three gives
+// up the edges first, one at a time, and only a middle that still does not fit
+// starts dropping its own fields.
+//
+// The order is what each edge is worth here:
+//
+//   - the keys, first, because the hints line under the grid says the same
+//     thing and is never dropped;
+//   - then "disco", which names the program rather than the work — you know
+//     which program you are in, you are looking at it;
+//   - then the folder, which every row of the list this workspace was opened
+//     from already shared, and which the list is one key away.
+//
+// What the transport is doing is not among them. It displaces the keys while it
+// is happening — it is the more urgent of the two — and unlike them it is
+// written down nowhere else, so it holds its place all the way down.
+func (m *Model) viewPaneHeader(w int) string {
+	folder := m.viewFolder()
+	full := m.viewHeaderBrand() + folder
+
+	keys, pinned := m.viewHeaderRight(), false
+	if p := m.focusedPane(); p != nil && p.status != "" {
+		keys, pinned = m.st.statusWA.Render(p.status), true
+	}
+
+	// Each concession is the row with one more edge given up, widest first.
+	concessions := [][2]string{{full, keys}}
+	if !pinned {
+		concessions = append(concessions, [2]string{full, ""})
+		keys = ""
+	}
+	concessions = append(concessions, [2]string{folder, keys}, [2]string{"", keys})
+
+	fields := m.paneHeaderFields()
+	middle := strings.Join(fields, "  ")
+	for _, sides := range concessions {
+		if lipgloss.Width(middle) <= centerRoom(sides[0], sides[1], w) {
+			return spreadCenter(sides[0], middle, sides[1], w)
+		}
+	}
+	// Nothing left on the edges to give. What the middle can still drop is its
+	// own, against the room the barest row leaves it.
+	bare := concessions[len(concessions)-1]
+	return spreadCenter(bare[0], dropToFit(fields, centerRoom(bare[0], bare[1], w)), bare[1], w)
+}
+
+// paneHeaderFields is the middle of the workspace's header, field by field:
+// which discobox this is, where its work sits in git, and what it is serving.
 //
 // Every pane is the same discobox, so it is identified once — folded into the
 // banner rather than given a line of its own. The id rather than the name,
@@ -982,39 +1024,32 @@ func (m *Model) viewPaneWindow() string {
 // They are also the field a pane can answer for itself: the server is in one of
 // these terminals.
 //
-// The fields are dropped whole from the right when the row is too narrow for
-// them — the ports first, then the diffstat, which the apply report gives you
-// anyway, then the word, whose mark is on the position regardless — so a narrow
-// window loses a field rather than showing half of one. From the diffstat down
-// that is the list's own drop order.
-func (m *Model) viewPaneHeaderCenter(room int) string {
+// They are returned in the order they are given up in, last first, once
+// viewPaneHeader has run out of edges to drop: the ports, then the diffstat,
+// which the apply report gives you anyway, then the word, whose mark is on the
+// position regardless. From the diffstat down that is the list's own drop
+// order. The id leads and never goes — it is what identifies the window.
+func (m *Model) paneHeaderFields() []string {
 	box := m.currentBox()
 	git := gitStyle(m.st, box)
 
-	parts := []string{m.st.dimText.Render(box.ID)}
+	fields := []string{m.st.dimText.Render(box.ID)}
 	if base := box.base(); base != "" {
-		parts = append(parts, git.Render(base))
+		fields = append(fields, git.Render(base))
 	}
 	// The list pads this into a column, so it spells the empty answer as a
 	// dash; here there is no column to fill and nothing to say, so it is left
 	// off entirely.
 	if changes := box.changes(); changes != "-" {
-		parts = append(parts, git.Render(changes))
+		fields = append(fields, git.Render(changes))
 	}
 	if stat := diffText(m.st, box); stat != "" {
-		parts = append(parts, stat)
+		fields = append(fields, stat)
 	}
 	if listening := portsText(m.st, box); listening != "" {
-		parts = append(parts, listening)
+		fields = append(fields, listening)
 	}
-
-	for len(parts) > 1 {
-		if out := strings.Join(parts, "  "); lipgloss.Width(out) <= room {
-			return out
-		}
-		parts = parts[:len(parts)-1]
-	}
-	return parts[0]
+	return fields
 }
 
 // viewPaneBox draws one pane: its border, with what it is running set into the

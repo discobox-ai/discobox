@@ -185,6 +185,26 @@ func centerRoom(left, right string, w int) int {
 	return w - lipgloss.Width(left) - lipgloss.Width(right) - 2
 }
 
+// dropToFit joins fields into a row of at most room columns, dropping them
+// whole from the right until they fit rather than cutting one mid-word: a
+// narrow window should lose a field, not show half of one.
+//
+// The first field always survives. It is the one the rest qualify, so a row
+// that cannot hold it has nothing worth saying anyway, and the caller's own
+// truncation is what deals with that.
+func dropToFit(fields []string, room int) string {
+	for len(fields) > 1 {
+		if out := strings.Join(fields, "  "); lipgloss.Width(out) <= room {
+			return out
+		}
+		fields = fields[:len(fields)-1]
+	}
+	if len(fields) == 0 {
+		return ""
+	}
+	return fields[0]
+}
+
 // spreadCenter lays a left, a middle and a right fragment out on one row, with
 // the middle centered in the row itself rather than in the gap between the other
 // two — so it does not shift as they change length.

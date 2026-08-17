@@ -204,7 +204,7 @@ silently disappears at some widths is worse than a shortened one. The captions a
 terminal's own output rather than with the border.
 
 **Where the work sits in git rides in the banner beside the id**
-(`viewPaneHeaderCenter`): the position and its mark, the mark spelled out, and
+(`paneHeaderFields`): the position and its mark, the mark spelled out, and
 the diffstat — the list's own git columns, drawn by the list's own `gitStyle`
 and `diffText` in the list's own colors, so the two screens cannot drift apart
 on what a color or a mark means. It is read through `currentBox` off the
@@ -216,7 +216,7 @@ banner already said there was something to apply. It costs no request — the
 agent pushes git state and the diffstat through the control plane with the
 listing.
 
-**What the discobox is serving rides at the end of it** (`portsText`): one
+**What the discobox is serving rides at the end of them** (`portsText`): one
 `protocol/number` per listening port, from the same push
 ([ADR 0046](../../../docs/adr/0046-listening-ports-are-polled-and-probed-in-the-background.md)).
 The protocol leads because it is what decides whether a port is worth opening —
@@ -226,14 +226,30 @@ listener answers exactly as a wildcard one does, so the address would be a field
 that never changes what you can do. Nothing listening prints nothing, which is
 also what an agent that has not reported yet looks like.
 
-The fields drop *whole* from the right as the window narrows — the ports first,
-then, in the list's own order, the diffstat, which the apply report gives you
-anyway, then the word, whose mark is on the position regardless — so a narrow
-window loses a field rather than showing half of one. The ports go first
-because they are the only field with no bound on their width: a compose stack
-brings up as many as it likes. `centerRoom` is what they are measured against,
-the same width `spreadCenter` would have cut them to, which is what keeps the
-two from disagreeing about what fits.
+**The banner's edges are given up before its middle** (`viewPaneHeader`). The
+middle is what the window is about; the edges are context the screen carries
+elsewhere, so a row too narrow for all three drops edges first, one at a time,
+in the order each is worth least *here*:
+
+1. the keys, because the hints line under the grid says the same thing and is
+   never dropped;
+2. then `disco` itself — it names the program rather than the work, and you can
+   see which program you are in;
+3. then the folder, which every row of the list this workspace was opened from
+   already shared, and which the list is one key away.
+
+What the transport is doing is not among them: it displaces the keys while it
+is happening, and unlike them it is written down nowhere else, so it holds its
+place all the way down.
+
+Only a middle that still does not fit drops its own fields, whole from the
+right — the ports first, since they are the only field with no bound on their
+width (a compose stack brings up as many as it likes), then, in the list's own
+order, the diffstat, which the apply report gives you anyway, then the word,
+whose mark is on the position regardless. The id never goes. `dropToFit` is the
+shared step and `centerRoom` is what it measures against, the same width
+`spreadCenter` would have cut them to, which is what keeps the two from
+disagreeing about what fits.
 
 The title the application sets is laid into the top border (`titledEdge`) as
 `──[ title ]──`, not above it: it names the terminal rather than the window, and

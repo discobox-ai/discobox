@@ -1412,13 +1412,22 @@ func (m *Model) viewHeader(width int) string {
 // viewHeaderLeft is where you are: the project when it is not the usual one,
 // and the folder the window is working in.
 func (m *Model) viewHeaderLeft() string {
-	left := m.st.headerLabel.Render("disco  ")
-	// The project is named only when it is not the one you are almost always
-	// in — a header that says "default" every time teaches you to skip it.
+	return m.viewHeaderBrand() + m.viewFolder()
+}
+
+// viewHeaderBrand is the program's own name, and the project it is pointed at
+// when that is not the one you are almost always in — a header that says
+// "default" every time teaches you to skip it.
+//
+// It is a piece of its own rather than the head of viewHeaderLeft because the
+// workspace's banner gives it up separately from the folder beside it when the
+// row runs out of room (viewPaneHeader).
+func (m *Model) viewHeaderBrand() string {
+	brand := m.st.headerLabel.Render("disco  ")
 	if m.session.Project != "" && m.session.Project != m.session.DefaultProject {
-		left += m.st.headerBar.Render(m.session.Project) + m.st.headerLabel.Render("  ")
+		brand += m.st.headerBar.Render(m.session.Project) + m.st.headerLabel.Render("  ")
 	}
-	return left + m.viewFolder()
+	return brand
 }
 
 // viewHeaderRight is the keys that work where you are. A pane owns the
