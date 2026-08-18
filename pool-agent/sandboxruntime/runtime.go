@@ -34,6 +34,7 @@ import (
 	"github.com/obot-platform/discobox/sandboxconfig"
 	"github.com/obot-platform/discobox/sandboxuser"
 
+	"github.com/obot-platform/discobox/pool-agent/buildkitagent"
 	"github.com/obot-platform/discobox/pool-agent/execidentity"
 	"github.com/obot-platform/discobox/pool-agent/imagereap"
 	"github.com/obot-platform/discobox/pool-agent/internalhttp"
@@ -1014,10 +1015,32 @@ func (r *DockerSandboxRuntime) DeleteSandbox(ctx context.Context, sandboxID stri
 	if err := proxyagent.RemoveSandboxMaterial(r.projectID, r.poolID, sandboxID); err != nil {
 		return err
 	}
+	// Before the tree goes, since the tree is what names them: every image this
+	// sandbox published into the pool registry to build from (ADR 0045) is
+	// removed with it. A purge that left them would leave repositories nothing
+	// can name — the namespace is unguessable and its only record was here — and
+	// so nothing could ever clean up.
+	if err := r.removePublishedImages(sandboxID); err != nil {
+		return err
+	}
 	if err := os.RemoveAll(r.sandboxRoot(sandboxID)); err != nil {
 		return fmt.Errorf("remove sandbox data for %s: %w", sandboxID, err)
 	}
 	return nil
+}
+
+// removePublishedImages drops the sandbox's registry namespace and everything
+// under it. A sandbox that never built has no namespace staged, which is not an
+// error: there is nothing of its to remove.
+func (r *DockerSandboxRuntime) removePublishedImages(sandboxID string) error {
+	namespace, err := proxyagent.ReadRegistryNamespace(proxyagent.RegistryNamespacePath(r.projectID, r.poolID, sandboxID))
+	if err != nil {
+		if os.IsNotExist(err) {
+			return nil
+		}
+		return err
+	}
+	return buildkitagent.RemoveRegistryNamespace(r.projectID, r.poolID, namespace)
 }
 
 const (

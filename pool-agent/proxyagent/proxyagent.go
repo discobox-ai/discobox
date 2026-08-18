@@ -526,7 +526,14 @@ func EnsureSandboxMaterial(projectID, poolID, sandboxID string) (*SandboxMateria
 		return nil, fmt.Errorf("write nested-docker bridge config: %w", err)
 	}
 
-	if err := ensureRegistryNamespace(filepath.Join(writeDir, RegistryNamespaceFile)); err != nil {
+	// Minted in the sandbox's durable tree and copied into the material it
+	// reads from, so an archive that drops the material does not drop the
+	// namespace with it. See RegistryNamespacePath.
+	durableNamespace := RegistryNamespacePath(projectID, poolID, sandboxID)
+	if err := ensureRegistryNamespace(durableNamespace); err != nil {
+		return nil, err
+	}
+	if err := copyFile(filepath.Join(writeDir, RegistryNamespaceFile), durableNamespace, 0o644); err != nil {
 		return nil, err
 	}
 

@@ -389,6 +389,20 @@ Four boundaries, each doing one job:
   sandbox's own containers use: a pool-side build container has no manifest.
   Without it a build fails on `npm install` with "unable to verify the first
   certificate" while curl in the same `RUN` step succeeds.
+- **A purge takes the sandbox's published images with it.** `DeleteSandbox`
+  removes the sandbox's registry namespace and every repository under it, before
+  removing the durable tree — because the tree is what names them. The namespace
+  is unguessable and kept nowhere else, so a purge that skipped this would leave
+  repositories nothing could ever name, and therefore nothing could ever clean
+  up. There is no repository-delete in the distribution API, so the names go by
+  removing the directory registry:2 keeps them in; the blobs are reclaimed by
+  the registry's own garbage collection, a pass over shared content that is not
+  one sandbox's purge to run.
+- **The namespace lives in the durable tree, not the staged material.** The
+  material is disposable — archiving deletes it and creation stages it again —
+  but the repositories the namespace names are not. An unarchive that minted a
+  fresh one would orphan everything published under the old one. The durable
+  tree has the lifetime wanted: it survives archive, and purge removes it.
 - **Each sandbox gets a registry namespace of its own.** The pool registry has
   no authentication, so a repository path is a capability: build output is
   protected only by `discobox-build/<random hex>` being unguessable. A sandbox's
