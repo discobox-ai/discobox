@@ -11,9 +11,12 @@ definition. Every harness in the registry is seeded as a built-in config
 inspected and seeded by the same code path with no branch of its own. What is
 still true of it, and true *by rule* rather than by slug:
 
-- It is the end of the harness resolution chain, so a sandbox always has a
-  harness config. Only its slug is reserved, so nothing else can claim that end
-  (ADR 0032 §3).
+- Its slug is reserved so nothing else can claim it (ADR 0032 §3). It is no
+  longer the end of the resolution chain: create resolves an explicit harness or
+  the project default and refuses when it has neither (ADR 0046). `shell` is
+  reached by being named or by being the default, like any other harness — what
+  still ends at it is the upgrade of sandboxes made before every sandbox carried
+  a harness config, which adopt it.
 - It carries **no run command**, which is a declaration and not a gap: the
   sandbox resolves the run user's login shell, the only place that knows whether
   that is bash, zsh, or fish. `sandbox-agent`'s terminal layer treats a declared
@@ -179,8 +182,9 @@ point at a configured harness, or `run` with no explicit harness would resolve t
 an unconfigured one and be rejected at sandbox create. The client releases the
 default first — `UnsetDefaultHarnessConfig` (`DELETE .../default`) clears it, and
 the CLI's harnesses screen does this automatically when disabling the default.
-Deleting a default harness is fine: the store cascade clears the pointer and the resolver
-degrades to agent-less.
+Deleting a default harness is fine: the store cascade clears the pointer, and a
+project with no default refuses a create that names no harness (ADR 0046) rather
+than resolving to one nobody chose.
 
 ## Boundaries
 

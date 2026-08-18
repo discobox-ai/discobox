@@ -37,7 +37,7 @@ func reconcileSandbox(ctx context.Context, t *testing.T, svc *service.Service, e
 
 func TestSandboxReconcileExecutorDelegatesToProvider(t *testing.T) {
 	ctx := context.Background()
-	svc, _, _, projectID := newSandboxTestService(t, nil)
+	svc, _, st, projectID := newSandboxTestService(t, nil)
 	provider := &recordingSandboxProvider{}
 	svc.RegisterSandboxProvider("recording", provider)
 	if got := svc.DefaultSandboxProviderName(); got != "recording" {
@@ -55,7 +55,8 @@ func TestSandboxReconcileExecutorDelegatesToProvider(t *testing.T) {
 	sourceURL := mustParseURL(t, "https://example.com/repo.git")
 	poolID := createPoolForInstance(ctx, t, svc, projectID, providerInstance.ID)
 	sb, err := svc.CreateSandbox(ctx, projectID, services.CreateSandboxBody{
-		PoolId: serverapi.NewOptString(poolID),
+		HarnessName: serverapi.NewOptString(imagelessHarnessConfig(ctx, t, st, projectID)),
+		PoolId:      serverapi.NewOptString(poolID),
 		Config: serverapi.SandboxCreateConfig{
 			Name: "sandbox-1",
 			Source: serverapi.NewOptGitSource(serverapi.GitSource{
@@ -158,7 +159,7 @@ func TestSandboxReconcileExecutorDelegatesToProvider(t *testing.T) {
 func TestCreateSandboxUsesDefaultSandboxImage(t *testing.T) {
 	ctx := context.Background()
 	svc, _, st, projectID := newSandboxTestService(t, nil)
-	clearSeededHarnessConfigs(ctx, t, st, projectID)
+	harnessSlug := imagelessHarnessConfig(ctx, t, st, projectID)
 	svc.SetDefaultSandboxImage("discobox-sandbox-agent:default", "sha256:default")
 	provider := &recordingSandboxProvider{}
 	svc.RegisterSandboxProvider("recording", provider)
@@ -173,8 +174,9 @@ func TestCreateSandboxUsesDefaultSandboxImage(t *testing.T) {
 
 	poolID := createPoolForInstance(ctx, t, svc, projectID, providerInstance.ID)
 	sb, err := svc.CreateSandbox(ctx, projectID, services.CreateSandboxBody{
-		PoolId: serverapi.NewOptString(poolID),
-		Config: serverapi.SandboxCreateConfig{Name: "sandbox-default-image"},
+		HarnessName: serverapi.NewOptString(harnessSlug),
+		PoolId:      serverapi.NewOptString(poolID),
+		Config:      serverapi.SandboxCreateConfig{Name: "sandbox-default-image"},
 	})
 	if err != nil {
 		t.Fatalf("create sandbox: %v", err)
@@ -193,7 +195,7 @@ func TestCreateSandboxUsesDefaultSandboxImage(t *testing.T) {
 func TestCreateSandboxExplicitImageOverridesDefault(t *testing.T) {
 	ctx := context.Background()
 	svc, _, st, projectID := newSandboxTestService(t, nil)
-	clearSeededHarnessConfigs(ctx, t, st, projectID)
+	harnessSlug := imagelessHarnessConfig(ctx, t, st, projectID)
 	svc.SetDefaultSandboxImage("discobox-sandbox-agent:default", "sha256:default")
 	provider := &recordingSandboxProvider{}
 	svc.RegisterSandboxProvider("recording", provider)
@@ -208,7 +210,8 @@ func TestCreateSandboxExplicitImageOverridesDefault(t *testing.T) {
 
 	poolID := createPoolForInstance(ctx, t, svc, projectID, providerInstance.ID)
 	sb, err := svc.CreateSandbox(ctx, projectID, services.CreateSandboxBody{
-		PoolId: serverapi.NewOptString(poolID),
+		HarnessName: serverapi.NewOptString(harnessSlug),
+		PoolId:      serverapi.NewOptString(poolID),
 		Config: serverapi.SandboxCreateConfig{
 			Name:  "sandbox-explicit-image",
 			Image: serverapi.NewOptString("custom:sandbox"),
@@ -689,13 +692,28 @@ func mustParseURL(t *testing.T, value string) url.URL {
 	return *parsed
 }
 
-// clearSeededHarnessConfigs removes whatever SeedBuiltIns managed to create.
+// imagelessHarnessConfig replaces whatever SeedBuiltIns managed to create with
+// one configured harness that carries no image of its own, and returns its slug.
 //
 // Seeding inspects real images, so which built-ins exist depends on what this
 // machine's Docker daemon happens to hold — and a seeded config supplies the
 // sandbox's image, which is exactly what the tests around it are measuring.
-// These tests are about the path taken when *no* harness config resolves, so
-// they state that outright instead of inheriting it from the environment.
+// A harness with no image is how the default sandbox image is still reached now
+// that a sandbox must resolve one (ADR 0046); these tests used to say "no
+// harness config at all", which create no longer allows.
+func imagelessHarnessConfig(ctx context.Context, t *testing.T, st *store.Store, projectID string) string {
+	t.Helper()
+	clearSeededHarnessConfigs(ctx, t, st, projectID)
+	config := &model.HarnessConfig{
+		ProjectID: projectID, Slug: "imageless", Name: "Imageless", Configured: true,
+	}
+	if err := st.CreateHarnessConfig(ctx, config); err != nil {
+		t.Fatalf("create imageless harness config: %v", err)
+	}
+	return config.Slug
+}
+
+// clearSeededHarnessConfigs removes whatever SeedBuiltIns managed to create.
 func clearSeededHarnessConfigs(ctx context.Context, t *testing.T, st *store.Store, projectID string) {
 	t.Helper()
 	configs, err := st.ListHarnessConfigs(ctx, projectID)

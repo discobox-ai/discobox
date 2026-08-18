@@ -42,7 +42,8 @@ func TestCompleteSandboxApplyRecordsCommit(t *testing.T) {
 	svc, _, st, projectID := newSandboxTestService(t, nil)
 
 	created, err := svc.CreateSandbox(ctx, projectID, services.CreateSandboxBody{
-		Config: serverapi.SandboxCreateConfig{Name: "alpha"},
+		HarnessName: serverapi.NewOptString("shell"),
+		Config:      serverapi.SandboxCreateConfig{Name: "alpha"},
 	})
 	if err != nil {
 		t.Fatalf("create sandbox: %v", err)
@@ -91,7 +92,8 @@ func TestCompleteSandboxApplyAccumulates(t *testing.T) {
 	svc, _, st, projectID := newSandboxTestService(t, nil)
 
 	created, err := svc.CreateSandbox(ctx, projectID, services.CreateSandboxBody{
-		Config: serverapi.SandboxCreateConfig{Name: "alpha"},
+		HarnessName: serverapi.NewOptString("shell"),
+		Config:      serverapi.SandboxCreateConfig{Name: "alpha"},
 	})
 	if err != nil {
 		t.Fatalf("create sandbox: %v", err)
@@ -130,7 +132,8 @@ func TestCompleteSandboxApplyRejectsUnknownSlug(t *testing.T) {
 	svc, _, st, projectID := newSandboxTestService(t, nil)
 
 	created, err := svc.CreateSandbox(ctx, projectID, services.CreateSandboxBody{
-		Config: serverapi.SandboxCreateConfig{Name: "alpha"},
+		HarnessName: serverapi.NewOptString("shell"),
+		Config:      serverapi.SandboxCreateConfig{Name: "alpha"},
 	})
 	if err != nil {
 		t.Fatalf("create sandbox: %v", err)

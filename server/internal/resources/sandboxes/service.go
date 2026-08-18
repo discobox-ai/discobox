@@ -201,8 +201,8 @@ func (s *Service) CreateSandbox(ctx context.Context, projectID string, input ser
 	}
 	image := strings.TrimSpace(config.Image.Or(""))
 	imageDigest := ""
-	if harnessConfigID != nil && strings.TrimSpace(*harnessConfigID) != "" && harnessMode != "config" {
-		harnessConfig, err := s.store.GetHarnessConfig(ctx, projectID, strings.TrimSpace(*harnessConfigID))
+	if harnessConfigID != "" && harnessMode != "config" {
+		harnessConfig, err := s.store.GetHarnessConfig(ctx, projectID, harnessConfigID)
 		if err != nil {
 			return nil, mapAPIError(err, "harness config not found")
 		}
@@ -235,7 +235,7 @@ func (s *Service) CreateSandbox(ctx context.Context, projectID string, input ser
 		Name:            config.Name,
 		Description:     services.OptStringPtr(config.Description),
 		SandboxManifest: model.SandboxManifest{
-			HarnessConfigID:      harnessConfigID,
+			HarnessConfigID:      &harnessConfigID,
 			HarnessMode:          harnessMode,
 			Model:                services.OptStringPtr(config.Model),
 			ModelServiceTier:     services.OptStringPtr(config.ModelServiceTier),
@@ -269,12 +269,12 @@ func (s *Service) CreateSandbox(ctx context.Context, projectID string, input ser
 	// harnessMode "config" is exempt: the configure flow is how a harness's
 	// secrets are obtained in the first place, so requiring them to already exist
 	// would make an unconfigured harness impossible to configure.
-	if harnessConfigID != nil && strings.TrimSpace(*harnessConfigID) != "" {
+	if harnessConfigID != "" {
 		if harnessMode == "config" {
 			// Config mode instead offers the previous configuration's secrets back
 			// under PREV_-prefixed names, so the configure flow can verify and keep
 			// an existing credential without it ever being re-typed or re-read.
-			previousAssignments, err := s.applyPreviousConfigureSecrets(ctx, projectID, sandbox, strings.TrimSpace(*harnessConfigID))
+			previousAssignments, err := s.applyPreviousConfigureSecrets(ctx, projectID, sandbox, harnessConfigID)
 			if err != nil {
 				return nil, err
 			}
@@ -284,7 +284,7 @@ func (s *Service) CreateSandbox(ctx context.Context, projectID string, input ser
 			for _, in := range config.Secrets {
 				inlineEnvs[strings.TrimSpace(in.Env)] = struct{}{}
 			}
-			harnessAssignments, err := s.applyHarnessConfigSecrets(ctx, projectID, sandbox, strings.TrimSpace(*harnessConfigID), inlineEnvs)
+			harnessAssignments, err := s.applyHarnessConfigSecrets(ctx, projectID, sandbox, harnessConfigID, inlineEnvs)
 			if err != nil {
 				return nil, err
 			}
@@ -294,31 +294,38 @@ func (s *Service) CreateSandbox(ctx context.Context, projectID string, input ser
 	return s.createSandboxIntent(ctx, sandbox, assignments)
 }
 
-func (s *Service) resolveHarnessConfigID(ctx context.Context, project *model.Project, harnessConfigID, harnessName services.OptString) (*string, error) {
+// resolveHarnessConfigID is which harness a sandbox runs: what the request
+// names, else the project default, else nothing — which is an error (ADR 0046).
+//
+// The chain used to end at the built-in `shell`, so it always terminated. That
+// answered a project with a harness configured and no default set with a shell,
+// which is indistinguishable from a working setup until you are inside the
+// sandbox wondering where the harness went.
+func (s *Service) resolveHarnessConfigID(ctx context.Context, project *model.Project, harnessConfigID, harnessName services.OptString) (string, error) {
 	if project == nil {
-		return nil, fmt.Errorf("project is required")
+		return "", fmt.Errorf("project is required")
 	}
 	if id, ok := harnessConfigID.Get(); ok && id != "" {
 		config, err := s.store.GetHarnessConfig(ctx, project.ID, id)
 		if err != nil {
-			return nil, mapAPIError(err, "harness config not found")
+			return "", mapAPIError(err, "harness config not found")
 		}
-		return &config.ID, nil
+		return config.ID, nil
 	}
 	name, ok := harnessName.Get()
 	if ok && strings.TrimSpace(name) != "" {
 		selector := strings.TrimSpace(name)
 		// Prefer the stable slug (e.g. "codex"), then fall back to the display name.
 		if config, err := s.store.GetHarnessConfigBySlug(ctx, project.ID, selector); err == nil {
-			return &config.ID, nil
+			return config.ID, nil
 		} else if !errors.Is(err, store.ErrNotFound) {
-			return nil, mapAPIError(err, "harness config not found")
+			return "", mapAPIError(err, "harness config not found")
 		}
 		config, err := s.store.GetHarnessConfigByName(ctx, project.ID, selector)
 		if err != nil {
-			return nil, mapAPIError(err, "harness config not found")
+			return "", mapAPIError(err, "harness config not found")
 		}
-		return &config.ID, nil
+		return config.ID, nil
 	}
 	// No explicit selector: pin the project default so the sandbox always carries a
 	// concrete harness config. Resolving the harness at create time is what makes its
@@ -326,40 +333,15 @@ func (s *Service) resolveHarnessConfigID(ctx context.Context, project *model.Pro
 	if strings.TrimSpace(project.DefaultHarnessConfigID) != "" {
 		config, err := s.store.GetHarnessConfig(ctx, project.ID, project.DefaultHarnessConfigID)
 		if err == nil {
-			return &config.ID, nil
+			return config.ID, nil
 		}
 		if !errors.Is(err, store.ErrNotFound) {
-			return nil, mapAPIError(err, "harness config not found")
+			return "", mapAPIError(err, "harness config not found")
 		}
-		// The default was deleted. That is an absent default like any other,
-		// not a reason to create a structurally different sandbox (ADR 0025 §5).
+		// The default was deleted. That is an absent default like any other.
 	}
-	// The end of the chain: every sandbox carries a harness config, and the one
-	// that runs no harness product runs `shell` (ADR 0025 §1).
-	fallback, err := s.fallbackHarnessConfig(ctx, project.ID)
-	if err != nil {
-		return nil, err
-	}
-	if fallback == nil {
-		return nil, nil
-	}
-	return &fallback.ID, nil
-}
-
-// fallbackHarnessConfig is the reserved `shell` built-in, or nil when seeding
-// has not created it — which happens only when no default sandbox image is
-// configured, or its image could not be inspected. A nil fallback leaves the
-// sandbox without a harness config rather than failing the create: refusing to
-// make a sandbox at all would be a worse answer than the one this ADR removes.
-func (s *Service) fallbackHarnessConfig(ctx context.Context, projectID string) (*model.HarnessConfig, error) {
-	config, err := s.store.GetHarnessConfigBySlug(ctx, projectID, harnessdefs.ShellSlug)
-	if err != nil {
-		if errors.Is(err, store.ErrNotFound) {
-			return nil, nil
-		}
-		return nil, err
-	}
-	return config, nil
+	return "", apperrors.NewStatusError(http.StatusConflict,
+		"no harness given and this project has no default; pass --harness, or set one with `disco box harness set-default <harness>`")
 }
 
 func (s *Service) GetSandbox(ctx context.Context, projectID, sandboxID string) (*model.Sandbox, error) {
@@ -726,6 +708,24 @@ func (s *Service) upgradeTarget(ctx context.Context, sb *model.Sandbox) (Upgrade
 		return UpgradeTarget{Image: sb.Image, Digest: sb.ImageDigest}, nil
 	}
 	return UpgradeTarget{Image: target.Image, Digest: target.Digest, Available: available}, nil
+}
+
+// fallbackHarnessConfig is the reserved `shell` built-in, or nil when seeding
+// has not created it.
+//
+// It is no longer where create's resolution chain ends (ADR 0046): a sandbox
+// names its harness or the project does. What still needs it is the migration
+// of sandboxes made before every sandbox carried a harness config, which adopt
+// this one on upgrade — a legacy path, not a default.
+func (s *Service) fallbackHarnessConfig(ctx context.Context, projectID string) (*model.HarnessConfig, error) {
+	config, err := s.store.GetHarnessConfigBySlug(ctx, projectID, harnessdefs.ShellSlug)
+	if err != nil {
+		if errors.Is(err, store.ErrNotFound) {
+			return nil, nil
+		}
+		return nil, err
+	}
+	return config, nil
 }
 
 // FallbackHarnessConfig exposes the reserved `shell` config to the API mappers,

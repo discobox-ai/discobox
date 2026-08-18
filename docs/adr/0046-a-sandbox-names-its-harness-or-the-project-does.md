@@ -39,10 +39,16 @@ Create refuses with a message naming both ways forward: pass `--harness`, or set
 a project default. A harness that resolves but is not configured is refused as
 before, unchanged.
 
-`harnessdefs.ShellSlug` and `Service.fallbackHarnessConfig` go with it. `shell`
-remains an ordinary seeded built-in (0032 §2, 0043) — selectable by name and
-eligible to be the project default like any other. What it stops being is the
-answer to a question nobody asked.
+`shell` remains an ordinary seeded built-in (0032 §2, 0043) — selectable by name
+and eligible to be the project default like any other. What it stops being is
+the answer to a question nobody asked.
+
+`harnessdefs.ShellSlug` and `Service.fallbackHarnessConfig` stay, because create
+is not their only caller: a sandbox made before every sandbox carried a harness
+config (`HarnessConfigID == nil`) adopts the `shell` config when it is upgraded,
+and the API reports that as its available upgrade. That is a migration for rows
+that predate the contract, not a default for new ones, and it ends when the last
+of them is converged.
 
 `resolveHarnessConfigID` now returns a plain `string`: every path either
 resolves an id or errors, so the pointer that meant "no harness config" has

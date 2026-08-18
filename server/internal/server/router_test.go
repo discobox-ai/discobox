@@ -767,7 +767,7 @@ func TestProjectStreamReceivesSandboxMutation(t *testing.T) {
 	readProjectStreamMessage(wsCtx, t, conn, "subscribed", "")
 	readProjectStreamMessage(wsCtx, t, conn, "event", "connected")
 
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, server.URL+"/projects/default/sandboxes", strings.NewReader(`{"config":{"name":"live","description":"test sandbox"}}`))
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, server.URL+"/projects/default/sandboxes", strings.NewReader(`{"harnessName":"shell","config":{"name":"live","description":"test sandbox"}}`))
 	if err != nil {
 		t.Fatalf("new request: %v", err)
 	}
