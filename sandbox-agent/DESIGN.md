@@ -53,6 +53,15 @@ runtime operations.
   user-created networks only exist after the sandbox has booted, so a value
   resolved earlier goes stale. `execs.EnvWithRuntimeDefaults`, `runcca.proxyEnv`,
   and `proxyenv.Render` are the three current call sites.
+- Where home is, when nobody is named. A sandbox whose manifest carries no user
+  runs as this process's identity (ADR 0025 §5) — saying nothing about *who* is
+  not knowing nothing about *where*. `EnvWithRuntimeDefaults` completes home
+  from that identity's own account when no layer supplies one, which is what
+  expands `%HOME%` in the image's PATH, defaults `HOME`, and gives `~` and the
+  harness file installer somewhere to resolve to. Every sandbox the server
+  creates for itself lands here: a configure sandbox names no user, and
+  installing a harness's files into one used to fail on a home the exec starting
+  two lines later had no trouble finding.
 - Load the single immutable harness contract from
   `/usr/share/discobox/image.json`. Commands, static files, and config-mode
   behavior are image-owned; the sandbox manifest contributes selection, mode,

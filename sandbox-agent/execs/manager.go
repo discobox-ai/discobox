@@ -304,6 +304,17 @@ func EnvWithRuntimeDefaults(env map[string]string, user *User) map[string]string
 	if home == "" {
 		home = strings.TrimSpace(env["HOME"])
 	}
+	if home == "" {
+		// Nobody was named, so the exec inherits this process's identity (ADR
+		// 0025 §5) — which is still an identity, and its account still has a
+		// home. Saying nothing about *who* to run as does not mean knowing
+		// nothing about where home is, and a sandbox the server creates for
+		// itself names no user: a configure sandbox reached here with %HOME%
+		// unexpanded in PATH and no HOME to install a harness's files into.
+		if resolved, err := runuser.Resolve(runuser.Layers{Image: runuser.Current()}, sandboxuser.FieldHome); err == nil {
+			home = strings.TrimSpace(resolved.HomeDirectory)
+		}
+	}
 	for key, value := range env {
 		value = sandboxconfig.ResolveLocalSubnetsToken(value, nestedbridge.LocalSubnets())
 		if home != "" {
@@ -323,10 +334,14 @@ func EnvWithRuntimeDefaults(env map[string]string, user *User) map[string]string
 				env["LOGNAME"] = name
 			}
 		}
-		if home := strings.TrimSpace(user.HomeDirectory); home != "" {
-			if _, ok := env["HOME"]; !ok {
-				env["HOME"] = home
-			}
+	}
+	// Whatever home resolved to, from any layer: an exec that knows where home
+	// is must say so, or every client that reads HOME rather than passwd —
+	// which is most of them — disagrees with the workdir this same value
+	// expanded `~` against.
+	if home != "" {
+		if _, ok := env["HOME"]; !ok {
+			env["HOME"] = home
 		}
 	}
 	return env

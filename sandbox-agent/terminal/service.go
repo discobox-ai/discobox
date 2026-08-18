@@ -22,8 +22,6 @@ import (
 	"github.com/obot-platform/discobox/harness/registry"
 	"github.com/obot-platform/discobox/sandbox-agent/config"
 	"github.com/obot-platform/discobox/sandbox-agent/execs"
-	"github.com/obot-platform/discobox/sandbox-agent/runuser"
-	"github.com/obot-platform/discobox/sandboxuser"
 )
 
 // ErrNotFound is returned when a terminal (exec) is not found. It aliases the
@@ -159,10 +157,11 @@ func NewService(cfg ServiceConfig) (*Service, error) {
 		s.installer = CompositeInstaller{Installers: []Installer{
 			HookInstaller{},
 			FileInstaller{
-				Name:          cfg.ExecDefaults.Username,
+				// The run user as the exec layer resolved it, not the manifest
+				// fields it was resolved from: a sandbox whose manifest names
+				// nobody still runs as somebody, and the files belong to them.
+				User:          defaultUser,
 				HomeDirectory: cfg.ExecDefaults.HomeDirectory,
-				UID:           cfg.ExecDefaults.UID,
-				GID:           cfg.ExecDefaults.GID,
 				SandboxConfig: cfg.SandboxConfig,
 			},
 		}}
@@ -747,18 +746,20 @@ func harnessFromConfig(h config.Harness) harness.Harness {
 
 // FileInstaller writes a harness's configured files into its home directory.
 type FileInstaller struct {
-	Name          string
+	// User is the run user, already resolved through every layer the exec
+	// path uses. Nil means the manifest named nobody and the harness inherits
+	// this process's identity, which is still an identity with a home.
+	User *execs.User
+	// HomeDirectory is the manifest's explicit home, when it carries one.
 	HomeDirectory string
-	UID           *int64
-	GID           *int64
 	SandboxConfig map[string]any
 }
 
-func (i FileInstaller) EnsureInstalled(_ context.Context, harness config.Harness, _ string, _ map[string]string) error {
+func (i FileInstaller) EnsureInstalled(_ context.Context, harness config.Harness, _ string, env map[string]string) error {
 	if len(harness.Files) == 0 {
 		return nil
 	}
-	home, err := i.resolveHome()
+	home, err := i.resolveHome(env)
 	if err != nil {
 		return fmt.Errorf("harness %q %w", harness.ID, err)
 	}
@@ -775,7 +776,7 @@ func (i FileInstaller) EnsureInstalled(_ context.Context, harness config.Harness
 				return fmt.Errorf("harness %q file %q: %w", harness.ID, file.Path, err)
 			}
 		}
-		if err := writeHarnessFile(path, content, file.CreateOnly, i.UID, i.GID); err != nil {
+		if err := writeHarnessFile(path, content, file.CreateOnly, i.uid(), i.gid()); err != nil {
 			return fmt.Errorf("harness %q file %q: %w", harness.ID, file.Path, err)
 		}
 	}
@@ -798,28 +799,45 @@ func renderHarnessFileTemplate(name, content string, sandboxConfig map[string]an
 	return rendered.String(), nil
 }
 
+// uid and gid are who the installed files belong to: the resolved run user,
+// or nobody in particular when the harness inherits this process's identity —
+// which is what the files already get by being written by it.
+func (i FileInstaller) uid() *int64 {
+	if i.User == nil {
+		return nil
+	}
+	return i.User.UID
+}
+
+func (i FileInstaller) gid() *int64 {
+	if i.User == nil {
+		return nil
+	}
+	return i.User.GID
+}
+
 // resolveHome resolves the home directory to install harness files into,
-// matching how process env defaults resolve HOME: an explicit home, then the
-// run user's own account entry, then the harness process's own $HOME.
-func (i FileInstaller) resolveHome() (string, error) {
+// exactly as the exec layer resolves HOME for the process that will read them:
+// an explicit home, then the run user execs.HomeDir yields against the harness
+// env, then this process's own $HOME.
+//
+// It asks the exec layer rather than resolving again from the manifest. The
+// manifest is one of three layers — the image's own identity is another — and
+// resolving from it alone fails wherever the manifest names nobody, which is
+// every sandbox the server creates for itself. A configure sandbox is created
+// with no user at all, and installing a harness's files into it died on a home
+// the exec running two lines later had no trouble finding (ADR 0025 §5).
+func (i FileInstaller) resolveHome(env map[string]string) (string, error) {
 	if home := strings.TrimSpace(i.HomeDirectory); home != "" {
 		return home, nil
 	}
-	resolved, err := runuser.Resolve(
-		runuser.Layers{Manifest: &runuser.User{Name: i.Name, UID: i.UID, GID: i.GID}},
-		sandboxuser.FieldHome,
-	)
-	home := ""
-	if err == nil {
-		home = strings.TrimSpace(resolved.HomeDirectory)
+	if home := execs.HomeDir(i.User, env); home != "" {
+		return home, nil
 	}
-	if home == "" {
-		home = strings.TrimSpace(os.Getenv("HOME"))
+	if home := strings.TrimSpace(os.Getenv("HOME")); home != "" {
+		return home, nil
 	}
-	if home == "" {
-		return "", fmt.Errorf("has files to install but no home directory could be resolved for the run user")
-	}
-	return home, nil
+	return "", fmt.Errorf("has files to install but no home directory could be resolved for the run user")
 }
 
 func homeRelativePath(home, requested string) (string, error) {

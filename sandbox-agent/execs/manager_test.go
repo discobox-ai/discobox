@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"os"
+	"os/user"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -909,10 +910,18 @@ func TestManagerExpandsTildeWorkdirAgainstUserHome(t *testing.T) {
 	}
 }
 
-// TestManagerTildeWorkdirWithoutHomeFails documents the deliberate choice not
-// to silently fall back: a caller that asked for home and got the source
-// directory instead would only find out when files landed in the wrong place.
-func TestManagerTildeWorkdirWithoutHomeFails(t *testing.T) {
+// `~` resolves to a real home or fails; what it must never do is quietly
+// become the source directory, which a caller would only discover when files
+// landed in the wrong place.
+//
+// With nobody named the exec inherits this process's identity (ADR 0025 §5),
+// and that identity's account has a home — so `~` is that home. It is the same
+// value the env's HOME carries, because both come from the one resolution.
+func TestManagerTildeWorkdirResolvesToTheRunningIdentitysHome(t *testing.T) {
+	current, err := user.Current()
+	if err != nil || strings.TrimSpace(current.HomeDir) == "" {
+		t.Skip("this process has no resolvable home")
+	}
 	runner := &fakeUnitManager{}
 	manager, err := NewManagerWithConfig(ManagerConfig{
 		WorkingRoot:    "/workspace",
@@ -924,11 +933,18 @@ func TestManagerTildeWorkdirWithoutHomeFails(t *testing.T) {
 		t.Fatalf("new manager: %v", err)
 	}
 
-	if _, err := manager.Create(context.Background(), CreateRequest{
+	created, err := manager.Create(context.Background(), CreateRequest{
 		Command: []string{"pwd"},
 		Workdir: "~",
-	}); err == nil {
-		t.Fatal("expected ~ with no resolvable home directory to fail")
+	})
+	if err != nil {
+		t.Fatalf("create exec: %v", err)
+	}
+	if created.Workdir != current.HomeDir {
+		t.Fatalf("workdir = %q, want this process's home %q", created.Workdir, current.HomeDir)
+	}
+	if created.Workdir == "/workspace/project" {
+		t.Fatal("~ became the source directory, which is the substitution this must never make")
 	}
 }
 
