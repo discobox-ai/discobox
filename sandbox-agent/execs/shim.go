@@ -309,14 +309,21 @@ func (r *shimRuntime) startCommand() error {
 }
 
 // writeStartupCommand types the resolved startup command into the process's
-// input once, immediately after it starts, exactly as attach input arrives —
-// see Exec.StartupCommand for why this is how a harness terminal gets real job
-// control.
+// input once, exactly as attach input arrives — see Exec.StartupCommand for why
+// this is how a harness terminal gets real job control.
+//
+// It waits for the shell's line editor first. Written the instant the process
+// starts, the bytes reach a terminal whose ECHO is still on, so the kernel
+// echoes them and then the editor displays the same line again once it has read
+// them — the command appears twice, once above the prompt and once on it. The
+// wait is bounded and costs about ten checks against a real shell; a process
+// that never takes the terminal is written to anyway.
 func (r *shimRuntime) writeStartupCommand() error {
 	payload := QuoteShellCommand(r.cfg.StartupCommand)
 	if len(payload) == 0 {
 		return nil
 	}
+	r.proc.WaitForLineEditor()
 	if _, err := r.proc.WriteInput(payload); err != nil {
 		return err
 	}

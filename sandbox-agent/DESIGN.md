@@ -133,7 +133,16 @@ runtime operations.
   injects the hook/terminal env, then calls `execs.Manager` with `TTY`,
   `harnessId`/`primary` metadata, `Shell: true`, and — for every harness except
   the `shell` fallback (which already is the shell) — `StartupCommand` set to the
-  resolved harness command. `execs.Manager` never learns what a harness is;
+  resolved harness command, typed in once the shell's line editor has taken the
+  terminal (`procio.WaitForLineEditor`). Written the instant the process starts,
+  those bytes reach a PTY whose ECHO is still on: the kernel echoes them and the
+  editor then displays the same line again when it reads them, so the command
+  lands on screen twice, once above the prompt and once on it. It is a poll
+  because Linux offers nothing to wait on — a PTY in packet mode is documented
+  to report slave state changes as `TIOCPKT_IOCTL`, but that bit is BSD's and is
+  not implemented here, verified against a real shell. A shell was measured
+  taking ~10ms to prep, about ten checks; the wait is capped, and a program that
+  never takes the terminal is written to anyway. `execs.Manager` never learns what a harness is;
   `StartupCommand` is a generic exec-primitive capability, not a harness concept.
   One `execs.Manager` runtime backs both plain execs and terminals.
 - A **configure sandbox is the exception**: its command is the exec itself

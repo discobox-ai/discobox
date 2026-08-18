@@ -17,6 +17,7 @@ require (
 	github.com/klauspost/compress v1.18.5
 	github.com/obot-platform/discobox v0.0.0
 	github.com/obot-platform/discobox/gormdb v0.0.0
+	golang.org/x/sys v0.47.0
 	gorm.io/gorm v1.31.1
 )
 
@@ -73,7 +74,6 @@ require (
 	golang.org/x/exp v0.0.0-20250819193227-8b4c13bb791b // indirect
 	golang.org/x/net v0.56.0 // indirect
 	golang.org/x/sync v0.21.0 // indirect
-	golang.org/x/sys v0.47.0 // indirect
 	golang.org/x/text v0.38.0 // indirect
 	gopkg.in/yaml.v2 v2.4.0 // indirect
 	gorm.io/driver/postgres v1.6.0 // indirect
