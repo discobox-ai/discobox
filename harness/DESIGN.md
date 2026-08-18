@@ -127,9 +127,25 @@ same choice (Claude subscription vs. Anthropic Console account), and both
 choices write their result to disk, so the script only needs to inspect what's
 there once the user leaves the session (`/exit` or Ctrl-D).
 
-- When the seed lists a secret whose `PREV_` variable is set, the user is
-  offered a keep/replace choice up front; keeping reuses the existing
-  credential with `usePrevious` and never launches `claude` at all.
+- When the seed lists a secret whose `PREV_` variable is set, the session opens
+  **already signed in**: `seed_previous_credential` writes that sentinel where
+  Claude Code reads a credential, replaying the previously captured file so the
+  seeded session carries the same scopes the real login had. There is no
+  keep-or-replace question — the answer is whatever the user does in the
+  session. Reconfigure is usually about a setting (model, theme, statusline),
+  and a flow that either kept the credential without launching `claude` or
+  launched it signed out made changing one cost a fresh login.
+- Afterwards `detect_credential` decides what changed by comparing what it finds
+  against the sentinel it seeded. The sentinel is a value the script chose, so
+  finding it still in place proves nothing re-authenticated, and the credential
+  is reported back as `usePrevious` rather than as a value. A *changed*
+  credential wins over an unchanged one in either shape: signing in to a Console
+  account leaves the subscription file untouched, so stopping at the first
+  credential found would report "unchanged" and discard the account the user
+  just switched to.
+- A seeded credential that fails verification stops being seeded. Another round
+  would sign the session back in with it and detect "unchanged" again, offering
+  a retry that cannot succeed until the user signs in afresh.
 - Otherwise the script prints an instruction banner and waits for Enter
   (`confirm_launch`) before starting anything. Two things the banner has to do,
   because the failure mode is a confused user rather than a broken script:

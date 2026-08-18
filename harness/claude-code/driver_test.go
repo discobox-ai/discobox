@@ -137,6 +137,21 @@ func TestDefinitionConfigure(t *testing.T) {
 	if strings.Contains(script, `\033[`) && !strings.Contains(script, "NO_COLOR") {
 		t.Fatalf("configure script colorizes without honoring NO_COLOR: %s", script)
 	}
+	// Reconfigure opens the session already signed in, so it can be used to
+	// change a setting without re-authenticating. The old keep-or-replace prompt
+	// made that impossible: keeping never launched claude at all.
+	if !strings.Contains(script, "seed_previous_credential") {
+		t.Fatalf("configure script does not sign the reconfigure session in: %s", script)
+	}
+	if strings.Contains(script, "Keep the existing credential") {
+		t.Fatalf("configure script still asks keep-or-replace up front: %s", script)
+	}
+	// What was seeded is a sentinel we chose, so finding it still in place is
+	// what proves nothing re-authenticated -- that comparison is the whole
+	// change check, and without it every reconfigure would store a credential.
+	if !strings.Contains(script, `!= "$SEEDED_SENTINEL"`) {
+		t.Fatalf("configure script does not detect auth changes by comparison: %s", script)
+	}
 	// The launch's exit status is what separates "you did not sign in" from
 	// "claude would not run", and the retry prompt is useless if the script
 	// cannot tell the user which happened.

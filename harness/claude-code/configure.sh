@@ -262,6 +262,131 @@ clear_captured_credential() {
 	fi
 }
 
+# seed_previous_credential puts the existing credential back where Claude Code
+# reads it, so the session below opens already signed in.
+#
+# This is what lets a reconfigure be about anything else. Reconfigure is usually
+# about settings -- model, theme, statusline -- and a flow that either kept the
+# credential without launching claude, or launched it signed out, made changing a
+# setting cost a fresh login.
+#
+# What is written is the PREV_ sentinel, not the credential: the proxy swaps it
+# on outbound requests, so the session is genuinely signed in while this sandbox
+# never holds the real token. The sentinel is also how the change check works
+# afterwards -- it is a value we know, so finding it still in place means nothing
+# re-authenticated (see detect_credential).
+seed_previous_credential() {
+	[ -n "$PREVIOUS_ENV" ] || return 0
+	eval "SEEDED_SENTINEL=\${PREV_$PREVIOUS_ENV:-}"
+	[ -n "$SEEDED_SENTINEL" ] || return 0
+	if [ "$PREVIOUS_ENV" = "$OAUTH_ENV" ]; then
+		# Replay the credentials file the last run captured, with the sentinel in
+		# place of its template action, so the seeded session carries the same
+		# scopes the real login had. Without them Claude Code would limit itself
+		# to inference and the user would see a downgraded session that the
+		# credential does not actually deserve.
+		CLAUDE_CONFIGURE_PREVIOUS="$PREVIOUS_CONFIG" \
+			CLAUDE_CONFIGURE_CREDENTIALS_PATH="$CREDENTIALS_PATH" \
+			CLAUDE_CONFIGURE_CREDENTIALS_FILE="$CREDENTIALS_FILE" \
+			CLAUDE_CONFIGURE_SENTINEL="$SEEDED_SENTINEL" \
+			CLAUDE_CONFIGURE_EXPIRES_AT="$CREDENTIALS_EXPIRES_AT" node <<-'NODE_EOF'
+			const fs = require('fs');
+			const nodePath = require('path');
+			let previous = {};
+			try {
+				previous = JSON.parse(fs.readFileSync(process.env.CLAUDE_CONFIGURE_PREVIOUS, 'utf8')) || {};
+			} catch (err) {
+				previous = {};
+			}
+			const kept = (previous.files || []).find((f) => f && f.path === process.env.CLAUDE_CONFIGURE_CREDENTIALS_PATH);
+			let blob = null;
+			if (kept && typeof kept.content === 'string') {
+				try {
+					blob = (JSON.parse(kept.content.replace(/\{\{[^}]*\}\}/g, process.env.CLAUDE_CONFIGURE_SENTINEL)) || {}).claudeAiOauth || null;
+				} catch (err) {
+					blob = null;
+				}
+			}
+			if (!blob) {
+				// Configured before the credentials file existed, so no scopes were
+				// captured. Seed enough to be signed in; a session that wants more
+				// can /login, which is exactly the change this flow detects.
+				blob = { expiresAt: Number(process.env.CLAUDE_CONFIGURE_EXPIRES_AT) };
+			}
+			blob.accessToken = process.env.CLAUDE_CONFIGURE_SENTINEL;
+			blob.refreshToken = blob.refreshToken || 'discobox-refresh-happens-in-the-control-plane';
+			const file = process.env.CLAUDE_CONFIGURE_CREDENTIALS_FILE;
+			fs.mkdirSync(nodePath.dirname(file), { recursive: true });
+			fs.writeFileSync(file, JSON.stringify({ claudeAiOauth: blob }, null, 2), { mode: 0o600 });
+		NODE_EOF
+	else
+		CLAUDE_CONFIGURE_CONFIG_FILE="$CLAUDE_CONFIG_FILE" \
+			CLAUDE_CONFIGURE_SENTINEL="$SEEDED_SENTINEL" node <<-'NODE_EOF'
+			const fs = require('fs');
+			const file = process.env.CLAUDE_CONFIGURE_CONFIG_FILE;
+			let config = {};
+			try {
+				config = JSON.parse(fs.readFileSync(file, 'utf8')) || {};
+			} catch (err) {
+				config = {};
+			}
+			config.primaryApiKey = process.env.CLAUDE_CONFIGURE_SENTINEL;
+			fs.writeFileSync(file, JSON.stringify(config, null, 2));
+		NODE_EOF
+	fi
+}
+
+# detect_credential works out what the session left behind, setting ENV_NAME,
+# TOKEN, OUTPUT_TYPE and KEEP_PREVIOUS. Returns non-zero when there is nothing.
+#
+# A value equal to $SEEDED_SENTINEL was not written by a login -- it is what
+# seed_previous_credential put there -- so the credential is unchanged and is
+# reported back as usePrevious rather than as a value. Anything else is a real
+# login and is captured.
+#
+# A *changed* credential wins over an unchanged one, in either shape. Signing in
+# to a Console account leaves the subscription file untouched, so checking the
+# subscription first and stopping there would report "unchanged" and quietly
+# discard the account the user just switched to.
+detect_credential() {
+	detected_oauth=""
+	detected_key=""
+	OAUTH_PAYLOAD_FILE=$(mktemp)
+	if detected_oauth=$(extract_oauth_payload); then :; else detected_oauth=""; fi
+	if detected_key=$(extract_primary_api_key); then :; else detected_key=""; fi
+
+	if [ -n "$detected_oauth" ] && [ "$detected_oauth" != "$SEEDED_SENTINEL" ]; then
+		ENV_NAME="$OAUTH_ENV"
+		OUTPUT_TYPE="oauth"
+		TOKEN="$detected_oauth"
+		return 0
+	fi
+	if [ -n "$detected_key" ] && [ "$detected_key" != "$SEEDED_SENTINEL" ]; then
+		ENV_NAME="$API_KEY_ENV"
+		OUTPUT_TYPE="bearer"
+		TOKEN="$detected_key"
+		rm -f "$OAUTH_PAYLOAD_FILE"
+		OAUTH_PAYLOAD_FILE=""
+		return 0
+	fi
+	if [ -n "$SEEDED_SENTINEL" ] && { [ -n "$detected_oauth" ] || [ -n "$detected_key" ]; }; then
+		ENV_NAME="$PREVIOUS_ENV"
+		if [ "$ENV_NAME" = "$OAUTH_ENV" ]; then
+			OUTPUT_TYPE="oauth"
+		else
+			OUTPUT_TYPE="bearer"
+		fi
+		TOKEN="$SEEDED_SENTINEL"
+		KEEP_PREVIOUS=yes
+		rm -f "$OAUTH_PAYLOAD_FILE"
+		OAUTH_PAYLOAD_FILE=""
+		return 0
+	fi
+	rm -f "$OAUTH_PAYLOAD_FILE"
+	OAUTH_PAYLOAD_FILE=""
+	return 1
+}
+
 # confirm_launch holds the instructions on screen until the user is ready.
 # claude draws a TUI that repaints the terminal, so anything printed right
 # before launching it is gone before it can be read -- and more so as Claude
@@ -271,7 +396,11 @@ clear_captured_credential() {
 # End of input is not "yes": nobody is there, and launching an interactive TUI
 # at nobody wedges the configure flow rather than failing it.
 confirm_launch() {
-	printf '%s' "${C_BOLD}Press Enter to start Claude Code, then run ${C_CMD}/login${C_RESET}${C_BOLD}.${C_RESET} "
+	if [ -n "$SEEDED_SENTINEL" ]; then
+		printf '%s' "${C_BOLD}Press Enter to start Claude Code.${C_RESET} "
+	else
+		printf '%s' "${C_BOLD}Press Enter to start Claude Code, then run ${C_CMD}/login${C_RESET}${C_BOLD}.${C_RESET} "
+	fi
 	if ! read -r _launch_ack; then
 		echo >&2
 		echo "No input; aborting without configuring Claude Code." >&2
@@ -460,73 +589,50 @@ ENV_NAME=""
 TOKEN=""
 OUTPUT_TYPE="bearer"
 KEEP_PREVIOUS=""
+SEEDED_SENTINEL=""
 
-if [ -n "$PREVIOUS_ENV" ]; then
-	printf 'Keep the existing credential (%s)? [Y/n] ' "$(env_label "$PREVIOUS_ENV")"
-	# End of input means nobody is there to answer: stop rather than spin.
-	if ! read -r keep_choice; then
-		echo >&2
-		echo "No input; aborting without configuring Claude Code." >&2
-		exit 1
-	fi
-	case "${keep_choice:-y}" in
-	[nN]*) ;;
-	*)
-		ENV_NAME="$PREVIOUS_ENV"
-		if [ "$ENV_NAME" = "$OAUTH_ENV" ]; then
-			OUTPUT_TYPE="oauth"
-		else
-			OUTPUT_TYPE="bearer"
-		fi
-		KEEP_PREVIOUS=yes
-		eval "TOKEN=\${PREV_$PREVIOUS_ENV}"
-		echo "Checking the existing credential…"
-		if ! verify_credential "$ENV_NAME" "$TOKEN"; then
-			echo
-			echo "The existing credential no longer works; let's set up a new one." >&2
-			ENV_NAME=""
-			TOKEN=""
-			OUTPUT_TYPE="bearer"
-			KEEP_PREVIOUS=""
-		fi
-		;;
-	esac
-	echo
-fi
+# Open the session already signed in when there is a credential to sign in with.
+# There is no keep-or-replace question any more: the answer is whatever the user
+# does in the session, and asking up front made changing a setting cost a login.
+seed_previous_credential
 
 while [ -z "$ENV_NAME" ]; do
 	printf '%s\n' "${C_BOLD}${C_WARN}================================================================${C_RESET}"
 	printf '%s\n' "${C_BOLD}${C_WARN} Setting up Claude Code — this is configuration, not a session${C_RESET}"
 	printf '%s\n' "${C_BOLD}${C_WARN}================================================================${C_RESET}"
 	echo
-	echo "Discobox is about to start Claude Code so you can sign in and set"
-	echo "it up. This is a throwaway setup sandbox: it exists only to capture"
-	echo "your login and settings, and it is deleted the moment you leave."
+	echo "Discobox is about to start Claude Code so you can set it up. This is"
+	echo "a throwaway setup sandbox: it exists only to capture your login and"
+	echo "settings, and it is deleted the moment you leave."
 	printf '%s\n' "${C_BOLD}Do not start real work in here — none of it is kept.${C_RESET}"
 	echo
-	printf '%s\n' "${C_BOLD}You must do both of these:${C_RESET}"
-	echo
-	printf '%s\n' "  1. ${C_BOLD}${C_CMD}/login${C_RESET}   Sign in, with a Claude subscription or an Anthropic"
-	echo "              Console account. Nothing can be saved without it."
-	printf '%s\n' "  2. ${C_BOLD}${C_CMD}/exit${C_RESET}    Leave Claude Code when you're done. Setup only"
-	echo "              finishes once you exit — staying in blocks it."
-	echo
-	echo "Worth doing while you're in there:"
-	echo
-	printf '%s\n' "  ${C_CMD}/model${C_RESET}      Pick the model this harness runs with"
-	printf '%s\n' "  ${C_CMD}/config${C_RESET}     Theme, statusline, and the rest"
-	echo
-	printf '%s\n' "Then ${C_BOLD}${C_CMD}/exit${C_RESET} (or Ctrl-D) and Discobox will save your setup."
+	if [ -n "$SEEDED_SENTINEL" ]; then
+		printf '%s\n' "${C_BOLD}You are already signed in ($(env_label "$PREVIOUS_ENV")).${C_RESET}"
+		echo "Change whatever you like — settings, model, or the account itself."
+		echo
+		printf '%s\n' "  ${C_CMD}/model${C_RESET}      Pick the model this harness runs with"
+		printf '%s\n' "  ${C_CMD}/config${C_RESET}     Theme, statusline, and the rest"
+		printf '%s\n' "  ${C_CMD}/login${C_RESET}      Only if you want to switch accounts"
+		echo
+		printf '%s\n' "${C_BOLD}Leave with ${C_CMD}/exit${C_RESET}${C_BOLD} (or Ctrl-D) when you're done — setup only"
+		printf '%s\n' "finishes once you exit.${C_RESET} Your sign-in is kept unless you replace it."
+	else
+		printf '%s\n' "${C_BOLD}You must do both of these:${C_RESET}"
+		echo
+		printf '%s\n' "  1. ${C_BOLD}${C_CMD}/login${C_RESET}   Sign in, with a Claude subscription or an Anthropic"
+		echo "              Console account. Nothing can be saved without it."
+		printf '%s\n' "  2. ${C_BOLD}${C_CMD}/exit${C_RESET}    Leave Claude Code when you're done. Setup only"
+		echo "              finishes once you exit — staying in blocks it."
+		echo
+		echo "Worth doing while you're in there:"
+		echo
+		printf '%s\n' "  ${C_CMD}/model${C_RESET}      Pick the model this harness runs with"
+		printf '%s\n' "  ${C_CMD}/config${C_RESET}     Theme, statusline, and the rest"
+		echo
+		printf '%s\n' "Then ${C_BOLD}${C_CMD}/exit${C_RESET} (or Ctrl-D) and Discobox will save your setup."
+	fi
 	echo
 	confirm_launch
-
-	# Start from no credential at all. This sandbox is handed the same configured
-	# files a run sandbox gets, which now include a templated credentials file —
-	# and rendered here it names a sentinel this sandbox does not have, since the
-	# configure flow binds PREV_-prefixed names instead. Left in place it would
-	# read as "already signed in" and suppress the login this whole flow exists
-	# to perform.
-	rm -f "$CREDENTIALS_FILE"
 
 	# claude needs a real TTY for its interactive UI; run it under script.
 	set +e
@@ -535,18 +641,7 @@ while [ -z "$ENV_NAME" ]; do
 	set -e
 	echo
 
-	OAUTH_PAYLOAD_FILE=$(mktemp)
-	if TOKEN=$(extract_oauth_payload); then
-		ENV_NAME="$OAUTH_ENV"
-		OUTPUT_TYPE="oauth"
-	elif TOKEN=$(extract_primary_api_key); then
-		ENV_NAME="$API_KEY_ENV"
-		OUTPUT_TYPE="bearer"
-		rm -f "$OAUTH_PAYLOAD_FILE"
-		OAUTH_PAYLOAD_FILE=""
-	else
-		rm -f "$OAUTH_PAYLOAD_FILE"
-		OAUTH_PAYLOAD_FILE=""
+	if ! detect_credential; then
 		if [ "$claude_status" -ne 0 ]; then
 			# Not "the user skipped the login": claude refused to run at all, and
 			# saying so points at the message it printed just above rather than
@@ -561,9 +656,22 @@ while [ -z "$ENV_NAME" ]; do
 		continue
 	fi
 
-	echo "Verifying the credential…"
+	if [ -n "$KEEP_PREVIOUS" ]; then
+		echo "The credential is unchanged; checking it still works…"
+	else
+		echo "Verifying the credential…"
+	fi
 	if ! verify_credential "$ENV_NAME" "$TOKEN"; then
 		echo
+		if [ -n "$KEEP_PREVIOUS" ]; then
+			# The existing credential is the thing that failed -- revoked, most
+			# likely. Stop seeding it: another round would sign the session back
+			# in with it and detect "unchanged" again, and the user would be
+			# offered a retry that cannot succeed until they sign in afresh.
+			printf '%s\n' "${C_ERR}${C_BOLD}The existing credential no longer works. Sign in again to replace it.${C_RESET}" >&2
+			SEEDED_SENTINEL=""
+			KEEP_PREVIOUS=""
+		fi
 		clear_captured_credential
 		[ -n "$OAUTH_PAYLOAD_FILE" ] && rm -f "$OAUTH_PAYLOAD_FILE"
 		ENV_NAME=""
