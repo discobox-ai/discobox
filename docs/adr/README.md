@@ -101,3 +101,4 @@ Nygard-style ADRs (see adr.github.io) combined with current-state design docs:
 | [0046](0046-listening-ports-are-polled-and-probed-in-the-background.md) | Listening ports are discovered by a standing poller and probed for HTTP | Accepted |
 | [0047](0047-local-base-images-resolve-through-a-per-sandbox-registry-namespace.md) | Local base images resolve through a per-sandbox registry namespace | Accepted |
 | [0048](0048-a-sandbox-names-its-harness-or-the-project-does.md) | A sandbox names its harness, or the project does | Accepted (supersedes [0032](0032-every-sandbox-has-a-harness-config-and-shell-is-the-built-in.md) §1's fallback step) |
+| [0049](0049-forwarded-ports-are-bound-near-their-number-and-held.md) | Forwarded ports are bound near their own number, and held once given | Accepted |
