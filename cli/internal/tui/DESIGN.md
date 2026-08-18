@@ -216,15 +216,26 @@ banner already said there was something to apply. It costs no request — the
 agent pushes git state and the diffstat through the control plane with the
 listing.
 
-**What the discobox is serving rides at the end of them** (`portsText`): one
-`protocol/number` per listening port, from the same push
-([ADR 0046](../../../docs/adr/0046-listening-ports-are-polled-and-probed-in-the-background.md)).
-The protocol leads because it is what decides whether a port is worth opening —
-`http/5173` is a page, `tcp/5432` is a database — and the bind address is left
-off entirely: a forward dials from *inside* the sandbox, where a loopback-only
-listener answers exactly as a wildcard one does, so the address would be a field
-that never changes what you can do. Nothing listening prints nothing, which is
-also what an agent that has not reported yet looks like.
+**What the discobox is serving rides at the end of them** (`portsText`), from
+the same push
+([ADR 0046](../../../docs/adr/0046-listening-ports-are-polled-and-probed-in-the-background.md)),
+grouped by protocol — `http:3000,5173,8080 · https:8443 · tcp:22,5432,6379`.
+Grouped rather than one `protocol/port` per port because the protocol is the
+repetitive half: a sandbox running three dev servers said "http" three times for
+no information, on the row least able to spare it. The protocol leads its group
+because it is what decides whether a port is worth opening — `http:5173` is a
+page, `tcp:5432` is a database — and the groups run in that order of usefulness,
+web first, with any protocol this CLI does not know keeping its own name and
+following them. `unknown` draws as `?`: the longest word for the least
+information, on the one port where the number is all there is to say. The
+separator is the hints line's own `·`, so a group reads as "and" rather than as
+a new banner field, which is two spaces.
+
+The bind address is left off entirely: a forward dials from *inside* the
+sandbox, where a loopback-only listener answers exactly as a wildcard one does,
+so the address would be a field that never changes what you can do. Nothing
+listening prints nothing, which is also what an agent that has not reported yet
+looks like.
 
 **The banner's edges are given up before its middle** (`viewPaneHeader`). The
 middle is what the window is about; the edges are context the screen carries

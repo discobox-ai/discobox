@@ -1,6 +1,7 @@
 package tui
 
 import (
+	"sort"
 	"strings"
 	"time"
 
@@ -492,10 +493,27 @@ func diffText(st *styles, s Sandbox) string {
 	return st.add.Render("+"+itoa(s.Diff.Added)) + " " + st.del.Render("−"+itoa(s.Diff.Deleted))
 }
 
-// portsText is what the sandbox is serving, as `protocol/number` per port. The
-// protocol leads because it is what decides whether a port is worth opening at
-// all — `http/5173` is a page, `tcp/5432` is a database — and it is the shorter,
-// more repetitive half, so leading with it lines the numbers up to be scanned.
+// portsText is what the sandbox is serving, grouped by protocol:
+//
+//	http:3000,5173,8080 · https:8443 · tcp:22,5432,6379
+//
+// Grouped rather than one `protocol/port` per listening port, because the
+// protocol is the repetitive half: a sandbox running three dev servers said
+// "http" three times for no information. Naming it once per group is what keeps
+// this readable on a header row when a compose stack is up.
+//
+// The protocol leads its group because it is what decides whether a port is
+// worth opening at all — `http:5173` is a page, `tcp:5432` is a database — and
+// the groups run in that order of usefulness, web first. A protocol this CLI
+// does not know, from a newer agent, keeps its own name and follows them: it is
+// not this end's business to rename or drop what it was told.
+//
+// `unknown` is drawn as `?`. It is the longest word for the least information,
+// and a port whose probe has not answered yet is exactly the case where the
+// number is all there is to say.
+//
+// The separator is the hints line's own `·`, so a group reads as "and" rather
+// than as a new banner field, which is two spaces.
 //
 // The bind address is not shown. A forward dials from inside the sandbox, where
 // a loopback-only listener answers exactly as a wildcard one does, so the
@@ -508,9 +526,47 @@ func portsText(st *styles, s Sandbox) string {
 	if len(s.Ports) == 0 {
 		return ""
 	}
-	parts := make([]string, 0, len(s.Ports))
+	groups := map[string][]int{}
+	var order []string
 	for _, port := range s.Ports {
-		parts = append(parts, port.Protocol+"/"+itoa(port.Number))
+		if _, seen := groups[port.Protocol]; !seen {
+			order = append(order, port.Protocol)
+		}
+		groups[port.Protocol] = append(groups[port.Protocol], port.Number)
 	}
-	return st.info.Render(strings.Join(parts, ", "))
+	sort.SliceStable(order, func(i, j int) bool {
+		return protocolRank(order[i]) < protocolRank(order[j])
+	})
+
+	parts := make([]string, 0, len(order))
+	for _, protocol := range order {
+		numbers := groups[protocol]
+		sort.Ints(numbers)
+		text := make([]string, 0, len(numbers))
+		for _, number := range numbers {
+			text = append(text, itoa(number))
+		}
+		parts = append(parts, protocolLabel(protocol)+":"+strings.Join(text, ","))
+	}
+	return st.info.Render(strings.Join(parts, " · "))
+}
+
+// protocolOrder is the order the groups are drawn in: what you would act on
+// first. Anything not named here follows, in port order.
+var protocolOrder = []string{"http", "https", "tcp", "unknown"}
+
+func protocolRank(protocol string) int {
+	for rank, known := range protocolOrder {
+		if protocol == known {
+			return rank
+		}
+	}
+	return len(protocolOrder)
+}
+
+func protocolLabel(protocol string) string {
+	if protocol == "" || protocol == "unknown" {
+		return "?"
+	}
+	return protocol
 }

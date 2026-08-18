@@ -1113,7 +1113,7 @@ func TestTheBannerCarriesTheListeningPorts(t *testing.T) {
 	d.dispatch(sizeMsg(180, 40))
 
 	nameRow := func() string { return ansi.Strip(strings.Split(rawFrame(m), "\n")[0]) }
-	if got := nameRow(); !strings.Contains(got, "tcp/22, http/5173, https/8443") {
+	if got := nameRow(); !strings.Contains(got, "http:5173 · https:8443 · tcp:22") {
 		t.Fatalf("the banner does not carry the listening ports: %q", got)
 	}
 }
@@ -1125,8 +1125,10 @@ func TestTheBannerOmitsPortsWhenNothingIsListening(t *testing.T) {
 	_, m, _ := openWorkspace(t, ds, "enter")
 
 	row := ansi.Strip(strings.Split(rawFrame(m), "\n")[0])
-	if strings.Contains(row, "/") && strings.Contains(row, "tcp") {
-		t.Fatalf("the banner carries a port for a sandbox serving nothing: %q", row)
+	for _, group := range []string{"http:", "https:", "tcp:", "?:"} {
+		if strings.Contains(row, group) {
+			t.Fatalf("the banner carries %q for a sandbox serving nothing: %q", group, row)
+		}
 	}
 	if !strings.Contains(row, "sbx_one  main@a3f9c21*  dirty") {
 		t.Fatalf("the rest of the banner should be unchanged: %q", row)
@@ -1151,7 +1153,7 @@ func TestTheBannerFollowsTheListingsPorts(t *testing.T) {
 	ds.sandboxes = served
 	ds.mu.Unlock()
 	d.dispatch(tickMsg{})
-	d.wait("the refresh", func() bool { return strings.Contains(nameRow(), "http/5173") })
+	d.wait("the refresh", func() bool { return strings.Contains(nameRow(), "http:5173") })
 }
 
 // The banner's middle is what the window is about; its edges are context the
@@ -1165,7 +1167,7 @@ func TestTheBannerGivesUpItsEdgesBeforeItsMiddle(t *testing.T) {
 	ds := newFakeSource(serving...)
 	d, m, _ := openWorkspace(t, ds, "enter")
 
-	const middle = "sbx_one  main@a3f9c21*  dirty  +142 −38  http/5173, https/8443"
+	const middle = "sbx_one  main@a3f9c21*  dirty  +142 −38  http:5173 · https:8443"
 	nameRow := func() string { return ansi.Strip(strings.Split(rawFrame(m), "\n")[0]) }
 
 	for _, tc := range []struct {
@@ -1239,9 +1241,9 @@ func TestTheBannersMiddleDropsFieldsWholeAsItNarrows(t *testing.T) {
 		want  []string
 		gone  []string
 	}{
-		{70, []string{"sbx_one", "main@a3f9c21*", "dirty", "+142 −38", "http/5173"}, nil},
-		{60, []string{"sbx_one", "main@a3f9c21*", "dirty", "+142 −38"}, []string{"http/5173"}},
-		{44, []string{"sbx_one", "main@a3f9c21*", "dirty"}, []string{"http/5173", "+142"}},
+		{70, []string{"sbx_one", "main@a3f9c21*", "dirty", "+142 −38", "http:5173"}, nil},
+		{60, []string{"sbx_one", "main@a3f9c21*", "dirty", "+142 −38"}, []string{"http:5173"}},
+		{44, []string{"sbx_one", "main@a3f9c21*", "dirty"}, []string{"http:5173", "+142"}},
 		{34, []string{"sbx_one", "main@a3f9c21*"}, []string{"dirty", "+142"}},
 		{27, []string{"sbx_one"}, []string{"a3f9c21", "dirty", "+142"}},
 	} {
