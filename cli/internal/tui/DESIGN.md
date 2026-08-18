@@ -492,8 +492,27 @@ whether or not it was chosen, on the reasoning that it is what the sandbox will
 picked it, which is both a line you stop reading and a claim the window cannot
 stand behind — an unset harness emits no `--harness` at all, and what it
 resolves to is settled by the server at create, from the default as it is then
-rather than as this listing last saw it. Only a chosen one is named now,
-`none (shell)` included, since choosing that is a choice.
+rather than as this listing last saw it. Only a chosen one is named now.
+
+The strip goes with it: with nothing chosen there is nothing to introduce, so
+the `⏵⏵` marker is not drawn either and the line is empty. A marker that is
+always there is one more thing on screen that never changes.
+
+**The harness row claims nothing it cannot stand behind.** Index zero is the
+project default where the project has one, and `(default)` where it does not —
+never whichever harness happens to have been registered first, which is what put
+a name there that the window then emitted no flag for. There is no `none` among
+the choices: running without a coding harness is the `shell` harness (ADR 0043),
+one of the project's like any other, so a second way to say it would be a second
+thing to keep true.
+
+Choosing a harness that has never been through its setup stops the run and
+offers the setup instead (`askToSetUpHarness`). The server refuses that sandbox
+at create, so the alternative is the same refusal a few seconds later with
+nothing to do about it; yes runs the same flow `e` runs on the harnesses screen.
+A harness that declares no setup is told apart from one that is merely missing
+it — there is nothing to offer, so the window says so rather than asking a
+question whose yes does nothing.
 
 **Focus is a ladder, and its ends stop.** The folder filter sits above the list
 sits above the prompt, and the arrows climb it: Up off the top of the list

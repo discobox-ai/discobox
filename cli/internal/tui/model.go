@@ -460,6 +460,9 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case harnessesLoadedMsg:
 		return m, m.harnessesLoaded(msg)
 
+	case harnessSetupMsg:
+		return m, m.configureHarness(msg.harness)
+
 	case harnessVerbMsg:
 		return m, m.runHarnessVerb(msg.verb, msg.harness)
 
@@ -1209,6 +1212,9 @@ func (m *Model) interact(act Interaction, ids []string) tea.Cmd {
 // a sandbox of your own to work in, with no harness given anything to do.
 func (m *Model) run() tea.Cmd {
 	req := m.opts.request(m.prompt.Value())
+	if cmd, stop := m.askToSetUpHarness(req); stop {
+		return cmd
+	}
 	if req.IncludeDirty != "" {
 		return m.create(req)
 	}
@@ -1219,6 +1225,48 @@ func (m *Model) run() tea.Cmd {
 		dirty, err := m.ds.Dirty(m.ctx, req.Source)
 		return dirtyCheckedMsg{req: req, dirty: dirty, err: err}
 	}
+}
+
+// askToSetUpHarness stops a run whose harness cannot run, and offers the way
+// out. It reports whether the run was stopped.
+//
+// A harness that has never been through its setup has no credentials, and the
+// server refuses the sandbox at create — so the alternative to asking here is
+// an error a few seconds later saying the same thing with nothing to do about
+// it. The offer is the same configure flow the harnesses screen runs.
+func (m *Model) askToSetUpHarness(req RunRequest) (tea.Cmd, bool) {
+	if req.Harness == "" {
+		// Nothing chosen: whatever the project default resolves to at create is
+		// the server's answer, and it is entitled to give it.
+		return nil, false
+	}
+	harness, ok := m.harnessNamed(req.Harness)
+	if !ok || harness.State == HarnessEnabled {
+		return nil, false
+	}
+	name := harness.displayName()
+	if !harness.Configurable {
+		// Nothing to offer: it declares no setup, so it is not the setup that
+		// is missing. Saying so beats a confirm whose yes does nothing.
+		return m.report(true, "%s cannot be run and has no setup to run", name), true
+	}
+	m.dialog = confirmDialog("Set up "+name+"?",
+		name+" has not been set up, so a discobox cannot be created on it. Run its setup now? It takes the terminal and asks its own questions.",
+		func(string) tea.Cmd {
+			return func() tea.Msg { return harnessSetupMsg{harness: harness} }
+		})
+	return nil, true
+}
+
+// harnessNamed finds the harness a run request names, by the same name the
+// request carries it as — what `--harness` takes.
+func (m *Model) harnessNamed(name string) (Harness, bool) {
+	for _, harness := range m.harnesses.all {
+		if harness.flagName() == name {
+			return harness, true
+		}
+	}
+	return Harness{}, false
 }
 
 func (m *Model) dirtyChecked(msg dirtyCheckedMsg) tea.Cmd {

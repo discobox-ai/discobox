@@ -25,16 +25,51 @@ func TestTheChipStripIsSilentAboutAnUnsetHarness(t *testing.T) {
 	}
 }
 
-// "none (shell)" is a choice, not a default, so it is named.
-func TestTheChipStripNamesAnExplicitNoHarness(t *testing.T) {
+// There is no "none" among the choices: running without a coding harness is
+// the `shell` harness, which is one of the project's like any other.
+func TestTheHarnessChoicesOfferNoNone(t *testing.T) {
 	m := newTestModel(t, newFakeSource())
+	for _, choice := range m.opts.opts[optHarness].choices {
+		if strings.Contains(strings.ToLower(choice), "none") {
+			t.Fatalf("choices = %v, want no none-shaped entry", m.opts.opts[optHarness].choices)
+		}
+	}
+}
+
+// With no project default there is nothing to lead with, so index zero names no
+// harness rather than promoting whichever was registered first — which is how
+// the strip came to announce one nobody had chosen.
+func TestWithNoProjectDefaultNoHarnessIsClaimed(t *testing.T) {
+	ds := newFakeSource()
+	for i := range ds.harnesses {
+		ds.harnesses[i].Default = false
+	}
+	m := newTestModel(t, ds)
+
 	harness := m.opts.opts[optHarness]
-	harness.idx = len(harness.choices) - 1
-	if harness.display() != noHarness {
-		t.Fatalf("the last choice is %q, want %q", harness.display(), noHarness)
+	if harness.choices[0] != unsetHarness {
+		t.Fatalf("leading choice = %q, want %q", harness.choices[0], unsetHarness)
+	}
+	if m.opts.request("").Harness != "" {
+		t.Fatal("an unset harness must emit no --harness")
+	}
+	if chips := m.opts.chips(newStyles(false)); strings.Contains(chips, unsetHarness) {
+		t.Fatalf("chips = %q, want nothing for an unset harness", chips)
+	}
+}
+
+// With nothing chosen the strip has nothing to introduce, so it is not there at
+// all. The marker on its own is one more thing on screen that never changes.
+func TestTheChipStripIsEmptyUntilSomethingIsChosen(t *testing.T) {
+	m := newTestModel(t, newFakeSource())
+	st := newStyles(false)
+
+	if chips := m.opts.chips(st); chips != "" {
+		t.Fatalf("chips = %q, want an empty line when everything is default", chips)
 	}
 
-	if chips := m.opts.chips(newStyles(false)); !strings.Contains(chips, "no harness") {
-		t.Fatalf("chips = %q, want the explicit no-harness choice named", chips)
+	m.opts.opts[optDetach].value = "on"
+	if chips := m.opts.chips(st); !strings.Contains(chips, "⏵⏵") || !strings.Contains(chips, "detached") {
+		t.Fatalf("chips = %q, want the marker back once there is something to say", chips)
 	}
 }

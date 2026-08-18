@@ -265,6 +265,12 @@ type harnessesLoadedMsg struct {
 	err       error
 }
 
+// harnessSetupMsg carries a confirmed "set it up" back to the live model. The
+// prompt asks it when a run names a harness that has never been through its
+// setup; a dialog closed over the model by value and cannot run anything
+// against it.
+type harnessSetupMsg struct{ harness Harness }
+
 // harnessVerbMsg is a confirmed verb on its way back to the live model.
 type harnessVerbMsg struct {
 	verb    HarnessVerb

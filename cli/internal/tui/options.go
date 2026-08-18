@@ -127,10 +127,14 @@ const (
 	optSource
 )
 
-// noHarness is the choice that runs a shell instead of a harness. It is spelled
-// out rather than left as an empty row, because a list with a blank option in
+// unsetHarness is what the harness row says when nothing has been chosen on it.
+// It is spelled out rather than left blank, because a list with an empty row in
 // it reads as a bug.
-const noHarness = "none (shell)"
+//
+// There is no "none" among the choices. Running without a coding harness is the
+// `shell` harness (ADR 0043), which is one of the project's like any other, so
+// an entry meaning the same thing would be a second way to say it.
+const unsetHarness = "(default)"
 
 func newOptions(session Session) *optionSet {
 	// The choices are the project's harnesses, which are loaded on their own
@@ -188,21 +192,27 @@ func (o *optionSet) setHarnesses(harnesses []Harness) {
 	}
 
 	var def string
-	choices := make([]string, 0, len(harnesses)+1)
 	for _, harness := range harnesses {
 		if harness.Default {
 			def = harness.flagName()
 		}
 	}
+	choices := make([]string, 0, len(harnesses)+1)
 	if def != "" {
 		choices = append(choices, def)
+	} else {
+		// Nothing to lead with. Promoting whichever harness happens to be
+		// registered first would put a name at index zero that the window then
+		// treats as the default and emits no flag for — which is how the strip
+		// came to announce a harness nobody had chosen and the project had not
+		// named.
+		choices = append(choices, unsetHarness)
 	}
 	for _, harness := range harnesses {
 		if name := harness.flagName(); name != "" && name != def {
 			choices = append(choices, name)
 		}
 	}
-	choices = append(choices, noHarness)
 
 	harness.choices = choices
 	harness.idx = 0
@@ -211,7 +221,7 @@ func (o *optionSet) setHarnesses(harnesses []Harness) {
 			harness.idx = i
 		}
 	}
-	harness.hint = harnessesHint
+	harness.hint = "--harness · no project default, so pick one · " + HarnessesKeyName + " manages them"
 	if def != "" {
 		harness.hint = "--harness · unset is the project default, which is " + def + " · " + HarnessesKeyName + " manages them"
 	}
@@ -279,12 +289,6 @@ func (o *optionSet) request(prompt string) RunRequest {
 	}
 	if h := o.opts[optHarness]; h.changed() {
 		req.Harness = h.choices[h.idx]
-		if req.Harness == noHarness {
-			// An explicitly empty harness is how the CLI spells "no harness, just
-			// a shell", and is different from not passing the flag at all.
-			req.Harness = ""
-			req.NoHarness = true
-		}
 	}
 	switch o.opts[optDirty].idx {
 	case 1:
@@ -313,9 +317,7 @@ func (o *optionSet) chips(st *styles) string {
 	// to is the server's to decide at create — from the project default as it
 	// is then, not as this listing last saw it.
 	if harness := o.opts[optHarness]; harness.changed() {
-		if harness.display() == noHarness {
-			add("no harness")
-		} else if harness.display() != "" {
+		if harness.display() != "" {
 			add(harness.display())
 		}
 	}
@@ -350,6 +352,12 @@ func (o *optionSet) chips(st *styles) string {
 		add(source)
 	}
 
+	// Nothing chosen, nothing to say. The marker introduces the answers given,
+	// so on its own it introduces nothing and is one more thing on screen that
+	// never changes.
+	if len(parts) == 0 {
+		return ""
+	}
 	return st.chipOn.Render("⏵⏵ ") + strings.Join(parts, st.chip.Render(" · "))
 }
 
@@ -366,10 +374,7 @@ func (o *optionSet) command(prompt string) string {
 		args = append(args, "-C", shellQuote(req.Source))
 	}
 	args = append(args, "run")
-	switch {
-	case req.NoHarness:
-		args = append(args, "--harness", "''")
-	case req.Harness != "":
+	if req.Harness != "" {
 		args = append(args, "--harness", req.Harness)
 	}
 	if req.IncludeDirty != "" {

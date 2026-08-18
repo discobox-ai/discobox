@@ -248,7 +248,7 @@ func TestHarnessChoicesFollowTheListing(t *testing.T) {
 	m := newTestModel(t, ds)
 
 	harness := m.opts.opts[optHarness]
-	want := []string{"claude", "codex", "custom", "scratch", "shell", noHarness}
+	want := []string{"claude", "codex", "custom", "scratch", "shell"}
 	if strings.Join(harness.choices, ",") != strings.Join(want, ",") {
 		t.Fatalf("choices = %v, want %v", harness.choices, want)
 	}
@@ -360,5 +360,64 @@ func TestHarnessHintsOfferTheDefault(t *testing.T) {
 
 	if hints := m.harnessHints(); !strings.Contains(hints, "s default") {
 		t.Fatalf("hints = %q, want the default offered on an enabled non-default harness", hints)
+	}
+}
+
+// Running on a harness that has never been set up is refused by the server at
+// create, so the window asks first and offers the way out — the same setup the
+// harnesses screen runs.
+func TestRunningAnUnconfiguredHarnessOffersToSetItUp(t *testing.T) {
+	ds := newFakeSource()
+	m := newTestModel(t, ds)
+
+	// Custom is registered and disabled, which is the case worth asking about.
+	harness := m.opts.opts[optHarness]
+	for i, choice := range harness.choices {
+		if choice == "custom" {
+			harness.idx = i
+		}
+	}
+	send(t, m, typeString("do the thing")...)
+	send(t, m, key("enter"))
+
+	if m.dialog == nil || m.dialog.kind != dlgConfirm {
+		t.Fatal("running an unconfigured harness should ask before failing at create")
+	}
+	if len(ds.runs) != 0 {
+		t.Fatalf("runs = %v, want the run held until the harness works", ds.runs)
+	}
+
+	// Yes runs its setup, on the terminal, the way e does on the screen.
+	send(t, m, key("y"))
+	if len(ds.configured) != 1 || ds.configured[0] != "hc_custom" {
+		t.Fatalf("configured = %v, want the chosen harness set up", ds.configured)
+	}
+}
+
+// A harness that declares no setup cannot be short of one, so there is nothing
+// to offer and the window says so instead of asking a question whose yes does
+// nothing.
+func TestRunningAHarnessWithNoSetupSaysSoRatherThanAsking(t *testing.T) {
+	ds := newFakeSource()
+	for i := range ds.harnesses {
+		if ds.harnesses[i].ID == "hc_shell" {
+			ds.harnesses[i].State = HarnessDisabled
+		}
+	}
+	m := newTestModel(t, ds)
+
+	harness := m.opts.opts[optHarness]
+	for i, choice := range harness.choices {
+		if choice == "shell" {
+			harness.idx = i
+		}
+	}
+	send(t, m, key("enter"))
+
+	if m.dialog != nil && m.dialog.kind == dlgConfirm {
+		t.Fatal("a harness with no setup should not be offered one")
+	}
+	if !strings.Contains(plainFrame(m), "no setup to run") {
+		t.Fatalf("the window should say why it cannot run:\n%s", plainFrame(m))
 	}
 }

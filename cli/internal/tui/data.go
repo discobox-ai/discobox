@@ -394,10 +394,6 @@ type RunRequest struct {
 	Prompt  string
 	Harness string // empty is the project default
 
-	// NoHarness asks for a sandbox with no harness in it, just a shell. It is a
-	// different answer from an empty Harness, which takes the project default.
-	NoHarness bool
-
 	// IncludeDirty is `--include-dirty`: "", "true" or "false". Empty is auto,
 	// which asks — and nothing in a full-screen window can ask, so the launcher
 	// resolves it before the sandbox is created.
