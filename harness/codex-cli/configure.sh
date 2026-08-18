@@ -1,11 +1,12 @@
 #!/bin/sh
 # Runs as the configure sandbox's primary terminal (see harness.Configure on the
 # codex-cli Definition). Collects an OpenAI API key, verifies it actually works
-# with `codex exec`, and writes it to /run/discobox/harness-configure.json for
-# discobox to apply to the HarnessConfig.
+# with `codex exec`, and writes it to
+# /run/discobox/configure/harness-configure.json for discobox to apply to the
+# HarnessConfig.
 #
-# Reconfigure: /run/discobox/harness-previous-config.json lists the secrets a
-# previous run stored, without their values. Each one's value is available as
+# Reconfigure: /run/discobox/configure/harness-previous-config.json lists the
+# secrets a previous run stored, without their values. Each value is available as
 # $PREV_<ENV_NAME> — a sentinel the proxy swaps for the real credential on the
 # way out, so the old key can be exercised here without ever being readable in
 # this sandbox. Keeping it is reported back as usePrevious, not as a value.
@@ -13,8 +14,8 @@
 # Only the credential is captured; this flow returns no files.
 set -eu
 
-PREVIOUS_CONFIG=/run/discobox/harness-previous-config.json
-OUTPUT=/run/discobox/harness-configure.json
+PREVIOUS_CONFIG=/run/discobox/configure/harness-previous-config.json
+OUTPUT=/run/discobox/configure/harness-configure.json
 
 API_KEY_ENV=OPENAI_API_KEY
 SECRET_LABEL='OpenAI API key'
@@ -90,7 +91,9 @@ collect_api_key() {
 # write_output records the result: either the key just collected, or a
 # usePrevious marker that keeps the secret the control plane already holds.
 write_output() {
-	mkdir -p /run/discobox
+	# sandbox-agent creates this directory for the sandbox user in config mode;
+	# /run/discobox itself is root-owned and stays that way.
+	mkdir -p "$(dirname "$OUTPUT")"
 	CODEX_CONFIGURE_ENV_NAME="$API_KEY_ENV" \
 		CODEX_CONFIGURE_NAME="$SECRET_LABEL" \
 		CODEX_CONFIGURE_TOKEN="${1:-}" \

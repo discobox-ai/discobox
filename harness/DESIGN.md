@@ -69,12 +69,19 @@ a single shared JSON object.
 
 ## Configure flows
 
-A configure command's contract is two fixed paths and one env prefix:
+A configure command's contract is one fixed directory, two fixed paths in it,
+and one env prefix:
 
+- Both paths live under `ConfigureDir` (`/run/discobox/configure`), created by
+  sandbox-agent in config mode, **owned by the sandbox user, mode 0700**. It is
+  not `/run/discobox` itself: that is root-owned and holds the resolved secrets
+  file, the proxy's CA bundles and trust env, and the control-plane and buildkit
+  sockets, so a configure command running as a non-root user gets this one
+  writable subdirectory rather than write access to all of them.
 - It **writes** its result to `ConfigureOutputPath`
-  (`/run/discobox/harness-configure.json`).
+  (`<ConfigureDir>/harness-configure.json`).
 - It **may read** the previous run's output from `ConfigurePreviousConfigPath`
-  (`/run/discobox/harness-previous-config.json`), seeded before the command
+  (`<ConfigureDir>/harness-previous-config.json`), seeded before the command
   starts. Same shape, but **no secret values** — it says which secrets exist, not
   what they are.
 - Each of those secrets is offered as `ConfigurePreviousEnvPrefix` + its env
@@ -113,36 +120,92 @@ public harness file.
 
 ### Claude Code
 
-`claude-code/configure.sh` collects exactly one Anthropic credential and returns
-it as a secret:
+`claude-code/configure.sh` launches a bare, interactive `claude` and lets the
+user sign in and configure it the way they normally would, rather than
+reimplementing an auth menu: Claude Code's own onboarding already offers the
+same choice (Claude subscription vs. Anthropic Console account), and both
+choices write their result to disk, so the script only needs to inspect what's
+there once the user leaves the session (`/exit` or Ctrl-D).
 
-- The user picks an API key (`ANTHROPIC_API_KEY`, a `bearer` secret), a Claude
-  subscription login (`CLAUDE_CODE_OAUTH_TOKEN`, an `oauth` secret), or — when
-  the seed lists a secret whose `PREV_` variable is set — the existing
-  credential, which is kept with `usePrevious` and never handled by the script.
-- The subscription path runs `claude /login` (equivalent to starting claude and
-  typing `/login`), which writes the rotating OAuth blob (access token +
-  **refresh token** + expiry) to `~/.claude/.credentials.json`. The script
-  returns that whole blob plus the fixed Anthropic `tokenUrl`/`clientId` as an
-  `oauth`-typed secret value, so the control plane can refresh the access token
-  as it expires (see `resources/harnessconfigs/DESIGN.md` → OAuth secrets). It
-  deliberately does **not** use `claude setup-token`: that mints a single
-  long-lived token with no refresh token, which cannot rotate.
+- When the seed lists a secret whose `PREV_` variable is set, the user is
+  offered a keep/replace choice up front; keeping reuses the existing
+  credential with `usePrevious` and never launches `claude` at all.
+- Otherwise the script prints an instruction banner and waits for Enter
+  (`confirm_launch`) before starting anything. Two things the banner has to do,
+  because the failure mode is a confused user rather than a broken script:
+  - Say **this is configuration, not a session**. The user is dropped into a CLI
+    they know, in a sandbox that is deleted the moment they leave, so the
+    default reading — "my working session has started" — is the wrong one.
+  - Separate the **required** steps (`/login`, then `/exit`; setup captures
+    nothing without the first and cannot finish before the second) from the
+    optional ones (`/model`, `/config`). Color carries that split — the heading
+    and the required steps are emphasized, commands are cyan — degrading to
+    identical wording when `NO_COLOR` is set or either stream is not a terminal,
+    since this also lands in logs.
+
+  The wait is the point: `claude` repaints the terminal as it starts, and
+  increasingly runs full-screen, so a banner printed straight into a launch is
+  gone before it can be read. It then runs `claude` under `script` (it needs a
+  real TTY), and once the user exits, checks two locations in a fixed order:
+  - `~/.claude/.credentials.json` — a subscription `/login` writes the
+    rotating OAuth blob (access token + **refresh token** + expiry) here. The
+    script returns that whole blob plus the fixed Anthropic
+    `tokenUrl`/`clientId` as an `oauth`-typed secret
+    (`CLAUDE_CODE_OAUTH_TOKEN`), so the control plane can refresh the access
+    token as it expires (see `resources/harnessconfigs/DESIGN.md` → OAuth
+    secrets). This is why the subscription path is `/login` and not `claude
+    setup-token`: only `/login` yields a refresh token.
+    The blob's `scopes` and `subscriptionType` are copied out with it. They are
+    not credentials — they say what the login may do — and `/login` is the only
+    moment they can be read. Claude Code gates Remote Control on finding
+    `user:profile` recorded beside the token, so they are captured rather than
+    assumed; guessing a scope the token lacks turns a clear refusal into a 401.
+  - `primaryApiKey` in `~/.claude.json` — an Anthropic Console account login
+    writes its long-lived managed key here. The script returns it as a plain
+    `bearer` secret (`ANTHROPIC_API_KEY`), and a later sandbox gets its sentinel
+    back **in the same field it was read from**. That rendering lives in the
+    image's own `.claude.json` template rather than coming back from configure:
+    unlike the subscription credential there is no captured metadata to replay,
+    only the sentinel, so nothing needs to be carried across.
+
+  Neither credential is exported as an environment variable. Both are declared
+  `delivery: file` (`harness.SecretDeliveryFile`), so the sentinel is minted and
+  rendered into the file the CLI reads, and the variable is withheld — a CLI
+  that finds both prefers the variable, and the variable carries none of the
+  metadata the file does.
+  If neither is present, the script reports whether `claude` exited non-zero
+  (it would not run) or cleanly (the user didn't sign in) and offers to relaunch
+  it. Every retry goes through `confirm_retry`, so the loop only turns when a
+  person asks it to: an attempt that fails before reaching the user fails again
+  the instant it is retried, and looping on that is a busy loop rather than a
+  retry. A candidate that fails verification is cleared
+  (`clear_captured_credential`) before the retry, so a stale artifact from an
+  earlier attempt in the same sandbox can't be mistaken for a fresh one.
 - The configure sandbox has no source, so the image's `.claude.json` template
   trusts no directory. The script first merges `hasTrustDialogAccepted` for the
-  workspace into `~/.claude.json`, so `claude /login` (and the `claude -p`
-  verification) run without stopping at the trust dialog. This touches only
-  trust/onboarding, never a credential, and is not returned as a harness file.
+  workspace into `~/.claude.json`, so the interactive session (and the
+  `claude -p` verification) run without stopping at the trust dialog. This
+  touches only trust/onboarding, never a credential, and `.claude.json` is not
+  returned as a harness file.
+- The image's baseline `.claude/settings.json` sets
+  `permissions.defaultMode: bypassPermissions`, which Claude Code refuses to
+  honor as root. That is why the configure sandbox runs as a non-root account
+  (`harness.ConfigureUserName`, uid `ConfigureUserUID`) rather than the image's
+  root — see `resources/harnessconfigs/DESIGN.md` → configure flow.
 - Every path ends in a `claude -p` check with only the chosen variable in the
   environment (and the credentials file moved aside), so a credential that
-  cannot actually talk to the API never reaches a `HarnessConfig`. A failed
-  check returns to the menu; the script exits non-zero rather than looping when
-  stdin is closed, which fails the configure flow.
-- It returns **no files**: credential files must never become public harness
-  files, and Claude Code's non-secret settings (`.claude.json`,
-  `.claude/settings.json`) belong to the image's declared harness files. A
-  snapshot of the ephemeral configure sandbox would override them — including
-  the per-sandbox trust template — for every later sandbox.
+  cannot actually talk to the API never reaches a `HarnessConfig`. The script
+  exits non-zero rather than looping when stdin is closed — at the keep/replace
+  prompt or at `confirm_retry` — which fails the configure flow.
+- It returns **one file**: a snapshot of `~/.claude/settings.json`, exactly as
+  the user left it (theme, model, statusline, ... — whatever they touched
+  during the session, or nothing, if they touched nothing). This is
+  deliberately narrower than "return everything the sandbox has" —
+  `~/.claude.json` is still never returned, since besides the credential
+  already extracted above it carries this sandbox's own per-workspace trust
+  map, which must not override a real sandbox's trust state. See
+  `resources/harnessconfigs/DESIGN.md` for how a returned file actually
+  reaches a later sandbox.
 
 ### Codex CLI
 

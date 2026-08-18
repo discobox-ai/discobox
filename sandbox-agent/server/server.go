@@ -321,6 +321,14 @@ func Serve(ctx context.Context, logger *slog.Logger, cfg Config) error {
 		return err
 	}
 	manager, execManager, localStore := built.terminals, built.execs, built.store
+	if cfg.HarnessMode == "config" {
+		// Before anything can be seeded: the configure command runs as the
+		// sandbox user, and this is the only part of root-owned /run/discobox
+		// it may write.
+		if err := ensureConfigureDir(execManager.DefaultUser()); err != nil {
+			return err
+		}
+	}
 	// Config mode defers the primary terminal to the first attach. The configure
 	// command is interactive and reads inputs seeded into the sandbox after it is
 	// running, so launching it at boot would race that seeding. Attaching to the

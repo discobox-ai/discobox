@@ -8,10 +8,12 @@ import (
 	"net/http"
 	"slices"
 	"testing"
+	"time"
 
 	"github.com/obot-platform/discobox/harness"
 	"github.com/obot-platform/discobox/server/internal/database"
 	"github.com/obot-platform/discobox/server/internal/model"
+	services "github.com/obot-platform/discobox/server/internal/services"
 	"github.com/obot-platform/discobox/server/internal/store"
 )
 
@@ -698,5 +700,70 @@ func TestBuiltInDeleteHintOnlySuggestsWhatWouldWork(t *testing.T) {
 				t.Fatalf("hint = %q, want %q", got, tc.want)
 			}
 		})
+	}
+}
+
+// stubSandboxRuntime records the create body the configure flow builds. Only
+// CreateSandbox is exercised; the rest satisfies the interface.
+type stubSandboxRuntime struct {
+	created services.CreateSandboxBody
+}
+
+func (s *stubSandboxRuntime) CreateSandbox(_ context.Context, projectID string, input services.CreateSandboxBody) (*model.Sandbox, error) {
+	s.created = input
+	return &model.Sandbox{ID: "sandbox-1", ProjectID: projectID}, nil
+}
+
+func (s *stubSandboxRuntime) DeleteSandbox(context.Context, string, string) error { return nil }
+
+func (s *stubSandboxRuntime) AcquireSandboxHTTPClient(context.Context, string, string, []string) (*services.HTTPClientLease, *model.Sandbox, error) {
+	return nil, nil, errors.New("not used")
+}
+
+type stubDirtier struct{}
+
+func (stubDirtier) MarkDirtyAt(context.Context, string, string, time.Time) error { return nil }
+
+// The configure sandbox names its own account: it has no source and no caller
+// identity to mirror, and root is the one identity it must not use. A harness
+// CLI may refuse to run as root -- Claude Code refuses bypassPermissions there
+// -- so configuring as root would collect a credential under an identity no run
+// sandbox ever uses.
+func TestConfigureSandboxRunsAsNonRootUser(t *testing.T) {
+	ctx := context.Background()
+	st := newTestStore(t)
+
+	config := &model.HarnessConfig{
+		ProjectID: "project-1", Slug: "claude", Name: "Claude",
+		Image:         "discobox-harness-claude-code:local",
+		ConfigCommand: []string{"/usr/local/libexec/discobox/configure-claude-code"},
+	}
+	if err := st.CreateHarnessConfig(ctx, config); err != nil {
+		t.Fatalf("create harness config: %v", err)
+	}
+
+	runtime := &stubSandboxRuntime{}
+	svc := &Service{store: st, inspector: &stubInspector{}, sandboxes: runtime, dirtier: stubDirtier{}}
+	if _, err := svc.ConfigureHarnessConfig(ctx, "project-1", config.ID); err != nil {
+		t.Fatalf("configure: %v", err)
+	}
+
+	user, ok := runtime.created.Config.User.Get()
+	if !ok {
+		t.Fatal("configure sandbox requested no user, so it would run as the image's root")
+	}
+	if uid, ok := user.UID.Get(); !ok || uid == 0 {
+		t.Fatalf("configure sandbox uid = %v (set=%v), want a non-root uid", uid, ok)
+	}
+	if uid, _ := user.UID.Get(); uid != harness.ConfigureUserUID {
+		t.Fatalf("configure sandbox uid = %d, want %d", uid, harness.ConfigureUserUID)
+	}
+	if gid, _ := user.Gid.Get(); gid != harness.ConfigureUserGID {
+		t.Fatalf("configure sandbox gid = %d, want %d", gid, harness.ConfigureUserGID)
+	}
+	// boot creates an account the image does not have, and requires a name to
+	// create it under (ADR 0025 §4).
+	if name, _ := user.Name.Get(); name != harness.ConfigureUserName {
+		t.Fatalf("configure sandbox user name = %q, want %q", name, harness.ConfigureUserName)
 	}
 }

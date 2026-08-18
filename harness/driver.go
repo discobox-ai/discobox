@@ -41,6 +41,18 @@ const (
 	ReclaimLabel      = "io.discobox.reclaimable.v1"
 	ReclaimLabelValue = "true"
 
+	// ConfigureDir is the one directory the configure flow exchanges files in.
+	// It is **not** /run/discobox itself: that holds the resolved secrets file
+	// (ADR 0012 §3), the proxy's CA bundles and rendered trust env (ADR 0020),
+	// and the control-plane and buildkit sockets, all root-owned. A configure
+	// command runs as the sandbox user (ConfigureUserName), so it needs a
+	// directory it can write, and widening /run/discobox to get one would let
+	// that user replace any of those entries.
+	//
+	// sandbox-agent creates it in config mode, owned by the sandbox user and
+	// mode 0700, so the widening stops at this directory (see
+	// sandbox-agent/server → ensureConfigureDir).
+	//
 	// ConfigureOutputPath is where a harness's configure command writes the
 	// secrets and files it collected, for the control plane to read back before
 	// the ephemeral configure sandbox is deleted.
@@ -50,10 +62,11 @@ const (
 	// pre-fill from it. It carries files and secret *metadata* only — never a
 	// secret value.
 	//
-	// Both are fixed points of the image contract rather than per-image settings —
-	// the configure commands hardcode them too.
-	ConfigureOutputPath         = "/run/discobox/harness-configure.json"
-	ConfigurePreviousConfigPath = "/run/discobox/harness-previous-config.json"
+	// All three are fixed points of the image contract rather than per-image
+	// settings — the configure commands hardcode them too.
+	ConfigureDir                = "/run/discobox/configure"
+	ConfigureOutputPath         = ConfigureDir + "/harness-configure.json"
+	ConfigurePreviousConfigPath = ConfigureDir + "/harness-previous-config.json"
 
 	// ConfigurePreviousEnvPrefix prefixes the environment variable carrying a
 	// previously configured secret into the configure sandbox: a secret bound to
@@ -67,6 +80,21 @@ const (
 	// harness CLI silently authenticate with the old credential, which would make
 	// the configure flow's choice ambiguous and its verification meaningless.
 	ConfigurePreviousEnvPrefix = "PREV_"
+
+	// ConfigureUserName, ConfigureUserUID, and ConfigureUserGID are the account
+	// the configure sandbox runs as. Unlike a run sandbox, whose user mirrors
+	// the caller's own (ADR 0025 §5), a configure sandbox has no source and no
+	// caller identity to mirror, so the flow names one itself. The image does
+	// not carry this account; boot creates it (ADR 0025 §4).
+	//
+	// The point is that it is **not root**. A harness CLI is entitled to refuse
+	// to run as root — Claude Code refuses `bypassPermissions` there — and a
+	// configure sandbox that ran as root would be configuring the harness under
+	// an identity no real sandbox ever uses, so a credential could verify here
+	// and still be collected by a CLI that will not start later.
+	ConfigureUserName = "discobox"
+	ConfigureUserUID  = 10000
+	ConfigureUserGID  = 10000
 )
 
 type Harness struct {
@@ -111,7 +139,7 @@ type Definition struct {
 
 // Configure declares the provider resources and environment for an ephemeral
 // configuration sandbox. The image supplies the configuration command and is
-// expected to write /run/discobox/harness-configure.json before exiting.
+// expected to write ConfigureOutputPath before exiting.
 type Configure struct {
 	Image        string
 	Env          map[string]string
@@ -137,11 +165,35 @@ type File struct {
 // sharing a group form an at-least-one requirement, satisfied when any member is
 // present (e.g. an API key or an OAuth token). Ungrouped required secrets each
 // must be satisfied independently.
+// Delivery says how the sandbox hands this credential to the harness. Empty
+// (SecretDeliveryEnv) exports Name into the harness's environment. See
+// SecretDeliveryFile for the other case.
 type Secret struct {
 	Name       string
 	Required   bool
 	OneOfGroup string
+	Delivery   string
 }
+
+const (
+	// SecretDeliveryEnv exports the secret's sentinel as the environment
+	// variable the secret names. It is the default and the empty value.
+	SecretDeliveryEnv = ""
+
+	// SecretDeliveryFile means the harness reads this credential from a file
+	// the harness config installs, and the variable is deliberately **not**
+	// exported. The sentinel is still minted and still published to the
+	// sandbox's secret map, so a templated file can place it (`.secrets.NAME`);
+	// only the environment export is withheld.
+	//
+	// Withholding it is the point, not a tidiness preference. A CLI that reads
+	// both prefers the variable, and a credential arriving that way carries
+	// none of the metadata a file does — Claude Code, handed
+	// CLAUDE_CODE_OAUTH_TOKEN, finds no `scopes` beside it and limits itself to
+	// inference, refusing Remote Control, even when the file beside it says
+	// otherwise. Exporting it would silently defeat the file.
+	SecretDeliveryFile = "file"
+)
 
 // HookInstallRequest is the input to installing a harness's hook integration.
 type HookInstallRequest struct {

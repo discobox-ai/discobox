@@ -4540,12 +4540,19 @@ func (s *HarnessConfigSecret) encodeFields(e *jx.Encoder) {
 			s.OneOfGroup.Encode(e)
 		}
 	}
+	{
+		if s.Delivery.Set {
+			e.FieldStart("delivery")
+			s.Delivery.Encode(e)
+		}
+	}
 }
 
-var jsonFieldsNameOfHarnessConfigSecret = [3]string{
+var jsonFieldsNameOfHarnessConfigSecret = [4]string{
 	0: "name",
 	1: "required",
 	2: "oneOfGroup",
+	3: "delivery",
 }
 
 // Decode decodes HarnessConfigSecret from json.
@@ -4588,6 +4595,16 @@ func (s *HarnessConfigSecret) Decode(d *jx.Decoder) error {
 				return nil
 			}(); err != nil {
 				return errors.Wrap(err, "decode field \"oneOfGroup\"")
+			}
+		case "delivery":
+			if err := func() error {
+				s.Delivery.Reset()
+				if err := s.Delivery.Decode(d); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"delivery\"")
 			}
 		default:
 			return errors.Errorf("unexpected field %q", k)
@@ -4856,6 +4873,46 @@ func (s *HarnessConfigSecretBinding) MarshalJSON() ([]byte, error) {
 
 // UnmarshalJSON implements stdjson.Unmarshaler.
 func (s *HarnessConfigSecretBinding) UnmarshalJSON(data []byte) error {
+	d := jx.DecodeBytes(data)
+	return s.Decode(d)
+}
+
+// Encode encodes HarnessConfigSecretDelivery as json.
+func (s HarnessConfigSecretDelivery) Encode(e *jx.Encoder) {
+	e.Str(string(s))
+}
+
+// Decode decodes HarnessConfigSecretDelivery from json.
+func (s *HarnessConfigSecretDelivery) Decode(d *jx.Decoder) error {
+	if s == nil {
+		return errors.New("invalid: unable to decode HarnessConfigSecretDelivery to nil")
+	}
+	v, err := d.StrBytes()
+	if err != nil {
+		return err
+	}
+	// Try to use constant string.
+	switch HarnessConfigSecretDelivery(v) {
+	case HarnessConfigSecretDeliveryEnv:
+		*s = HarnessConfigSecretDeliveryEnv
+	case HarnessConfigSecretDeliveryFile:
+		*s = HarnessConfigSecretDeliveryFile
+	default:
+		*s = HarnessConfigSecretDelivery(v)
+	}
+
+	return nil
+}
+
+// MarshalJSON implements stdjson.Marshaler.
+func (s HarnessConfigSecretDelivery) MarshalJSON() ([]byte, error) {
+	e := jx.Encoder{}
+	s.Encode(&e)
+	return e.Bytes(), nil
+}
+
+// UnmarshalJSON implements stdjson.Unmarshaler.
+func (s *HarnessConfigSecretDelivery) UnmarshalJSON(data []byte) error {
 	d := jx.DecodeBytes(data)
 	return s.Decode(d)
 }
@@ -7941,6 +7998,39 @@ func (s OptHarnessConfig) MarshalJSON() ([]byte, error) {
 
 // UnmarshalJSON implements stdjson.Unmarshaler.
 func (s *OptHarnessConfig) UnmarshalJSON(data []byte) error {
+	d := jx.DecodeBytes(data)
+	return s.Decode(d)
+}
+
+// Encode encodes HarnessConfigSecretDelivery as json.
+func (o OptHarnessConfigSecretDelivery) Encode(e *jx.Encoder) {
+	if !o.Set {
+		return
+	}
+	e.Str(string(o.Value))
+}
+
+// Decode decodes HarnessConfigSecretDelivery from json.
+func (o *OptHarnessConfigSecretDelivery) Decode(d *jx.Decoder) error {
+	if o == nil {
+		return errors.New("invalid: unable to decode OptHarnessConfigSecretDelivery to nil")
+	}
+	o.Set = true
+	if err := o.Value.Decode(d); err != nil {
+		return err
+	}
+	return nil
+}
+
+// MarshalJSON implements stdjson.Marshaler.
+func (s OptHarnessConfigSecretDelivery) MarshalJSON() ([]byte, error) {
+	e := jx.Encoder{}
+	s.Encode(&e)
+	return e.Bytes(), nil
+}
+
+// UnmarshalJSON implements stdjson.Unmarshaler.
+func (s *OptHarnessConfigSecretDelivery) UnmarshalJSON(data []byte) error {
 	d := jx.DecodeBytes(data)
 	return s.Decode(d)
 }

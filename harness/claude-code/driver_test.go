@@ -33,18 +33,41 @@ func TestDefinitionConfigure(t *testing.T) {
 	if !strings.Contains(script, "usePrevious") {
 		t.Fatalf("configure script cannot report keeping the previous secret: %s", script)
 	}
-	// The subscription path signs in with /login and captures the rotating OAuth
-	// blob (refresh token included) as an oauth secret, not the non-rotating
-	// `claude setup-token`, so the control plane can refresh the access token.
+	// A subscription login (chosen from inside the interactive session, not
+	// driven by this script) captures the rotating OAuth blob (refresh token
+	// included) as an oauth secret, not the non-rotating `claude setup-token`,
+	// so the control plane can refresh the access token.
 	if !strings.Contains(script, "/login") {
-		t.Fatalf("configure script offers no subscription login: %s", script)
+		t.Fatalf("configure script does not document a subscription login: %s", script)
 	}
 	if !strings.Contains(script, "refreshToken") || !strings.Contains(script, "'oauth'") {
 		t.Fatalf("configure script does not capture a rotating oauth credential: %s", script)
 	}
-	// The configure sandbox has no source, so the workspace is not trusted by the
-	// image template; the script must trust it itself or `claude /login` stops at
-	// the trust dialog.
+	// The scopes the login actually carries are only knowable here, and a client
+	// gates features on the ones recorded beside the token, so they are copied
+	// out with it rather than assumed later.
+	if !strings.Contains(script, "oauth.scopes") {
+		t.Fatalf("configure script does not capture the login's scopes: %s", script)
+	}
+	// The credentials template is JSON-encoded to become the file's content, so
+	// a quote inside a template action arrives at the renderer backslash-escaped
+	// and the parser rejects it. Dotted field access has no quotes to escape;
+	// `index .secrets "NAME"` does, and would break every sandbox launch while
+	// still letting configure report success.
+	if !strings.Contains(script, "{{ .secrets.${") {
+		t.Fatalf("configure script does not build the credentials template by field access: %s", script)
+	}
+	if strings.Contains(script, `index .secrets`) {
+		t.Fatalf("configure script quotes a key inside a template action, which cannot survive JSON encoding: %s", script)
+	}
+	// An Anthropic Console account login is the other credential shape claude's
+	// own onboarding offers; its long-lived managed key lands in primaryApiKey.
+	if !strings.Contains(script, "primaryApiKey") {
+		t.Fatalf("configure script does not capture a console-managed API key: %s", script)
+	}
+	// The configure sandbox has no source, so the workspace is not trusted by
+	// the image template; the script must trust it itself or the interactive
+	// session stops at the trust dialog.
 	if !strings.Contains(script, "hasTrustDialogAccepted") {
 		t.Fatalf("configure script does not pre-trust the workspace for login: %s", script)
 	}
@@ -54,10 +77,71 @@ func TestDefinitionConfigure(t *testing.T) {
 	if !strings.Contains(script, "claude -p") {
 		t.Fatalf("configure script does not verify the credential with a test prompt: %s", script)
 	}
-	// Credentials are secrets, never public harness files: the flow returns the
-	// credential as a secret and leaves the non-secret files to the image.
-	if strings.Contains(script, "files.push(") || strings.Contains(script, ".credentials.json'") {
-		t.Fatalf("configure script exposes credential state as a public harness file: %s", script)
+	// The credential itself is a secret, never a public harness file: only the
+	// settings snapshot is returned as a file, and only from SETTINGS_FILE, not
+	// from the files that hold or derive from a credential.
+	if !strings.Contains(script, "files.push(") || !strings.Contains(script, "CLAUDE_CONFIGURE_SETTINGS_PATH") {
+		t.Fatalf("configure script does not capture the settings file: %s", script)
+	}
+	writeOutputStart := strings.Index(script, "write_output() {")
+	if writeOutputStart < 0 {
+		t.Fatal("configure script has no write_output function")
+	}
+	writeOutputBody := script[writeOutputStart:]
+	writeOutputEnd := strings.Index(writeOutputBody, "\n}\n")
+	if writeOutputEnd < 0 {
+		t.Fatal("configure script's write_output function has no closing brace")
+	}
+	if strings.Contains(writeOutputBody[:writeOutputEnd], ".credentials.json") {
+		t.Fatalf("configure script's output writer reads the credentials file directly: %s", script)
+	}
+	// Every retry is gated on a person asking for one. An attempt that fails
+	// without ever reaching the user -- claude refusing to start, say -- fails
+	// again the instant it is retried, so an ungated `continue` is a busy loop
+	// rather than a retry.
+	if !strings.Contains(script, "confirm_retry") {
+		t.Fatalf("configure script retries without asking, so a failing launch spins: %s", script)
+	}
+	loopStart := strings.Index(script, "while [ -z \"$ENV_NAME\" ]; do")
+	if loopStart < 0 {
+		t.Fatal("configure script has no credential-collection loop")
+	}
+	loop := script[loopStart:]
+	if loopEnd := strings.Index(loop, "\ndone\n"); loopEnd >= 0 {
+		loop = loop[:loopEnd]
+	}
+	// Split on `continue`: every segment but the last is the code leading up to
+	// one, and each has to have asked before taking it.
+	segments := strings.Split(loop, "continue")
+	for _, leadingUpToAContinue := range segments[:len(segments)-1] {
+		if !strings.Contains(leadingUpToAContinue, "confirm_retry") {
+			t.Fatalf("configure script's loop continues without confirm_retry, so it can spin: %s", script)
+		}
+	}
+	// claude repaints the terminal on start, and is moving to a full-screen UI,
+	// so the banner naming /login, /model and /config has to be acknowledged
+	// before the launch or the user never sees it.
+	if !strings.Contains(script, "confirm_launch") {
+		t.Fatalf("configure script launches claude without holding its instructions on screen: %s", script)
+	}
+	// /login and /exit are the two steps setup cannot finish without, and a
+	// user dropped into a familiar CLI will read it as a working session unless
+	// told otherwise, so the banner names both alongside the optional ones.
+	for _, command := range []string{"/login", "/exit", "/model", "/config"} {
+		if !strings.Contains(script, command) {
+			t.Fatalf("configure script does not point the user at %s: %s", command, script)
+		}
+	}
+	// Emphasis is opt-out, not unconditional: this output is also read from a
+	// log, and a hardcoded escape sequence would land there too.
+	if strings.Contains(script, `\033[`) && !strings.Contains(script, "NO_COLOR") {
+		t.Fatalf("configure script colorizes without honoring NO_COLOR: %s", script)
+	}
+	// The launch's exit status is what separates "you did not sign in" from
+	// "claude would not run", and the retry prompt is useless if the script
+	// cannot tell the user which happened.
+	if !strings.Contains(script, "claude_status") {
+		t.Fatalf("configure script ignores whether claude actually ran: %s", script)
 	}
 }
 

@@ -2384,6 +2384,10 @@ type HarnessConfigSecret struct {
 	// Groups a required secret with alternatives; the requirement is satisfied when at least one member
 	// of the group is present.
 	OneOfGroup OptString `json:"oneOfGroup"`
+	// How the credential reaches the harness. env (the default) exports the variable named by name; file
+	// withholds that export because the harness reads the credential from a file the harness config
+	// installs.
+	Delivery OptHarnessConfigSecretDelivery `json:"delivery"`
 }
 
 // GetName returns the value of Name.
@@ -2401,6 +2405,11 @@ func (s *HarnessConfigSecret) GetOneOfGroup() OptString {
 	return s.OneOfGroup
 }
 
+// GetDelivery returns the value of Delivery.
+func (s *HarnessConfigSecret) GetDelivery() OptHarnessConfigSecretDelivery {
+	return s.Delivery
+}
+
 // SetName sets the value of Name.
 func (s *HarnessConfigSecret) SetName(val string) {
 	s.Name = val
@@ -2414,6 +2423,11 @@ func (s *HarnessConfigSecret) SetRequired(val OptBool) {
 // SetOneOfGroup sets the value of OneOfGroup.
 func (s *HarnessConfigSecret) SetOneOfGroup(val OptString) {
 	s.OneOfGroup = val
+}
+
+// SetDelivery sets the value of Delivery.
+func (s *HarnessConfigSecret) SetDelivery(val OptHarnessConfigSecretDelivery) {
+	s.Delivery = val
 }
 
 // Binds one of a harness config's environment variables to a project secret.
@@ -2518,6 +2532,50 @@ func (s *HarnessConfigSecretBinding) SetUpdatedAt(val time.Time) {
 }
 
 func (*HarnessConfigSecretBinding) setHarnessConfigSecretBindingRes() {}
+
+// How the credential reaches the harness. env (the default) exports the variable named by name; file
+// withholds that export because the harness reads the credential from a file the harness config
+// installs.
+type HarnessConfigSecretDelivery string
+
+const (
+	HarnessConfigSecretDeliveryEnv  HarnessConfigSecretDelivery = "env"
+	HarnessConfigSecretDeliveryFile HarnessConfigSecretDelivery = "file"
+)
+
+// AllValues returns all HarnessConfigSecretDelivery values.
+func (HarnessConfigSecretDelivery) AllValues() []HarnessConfigSecretDelivery {
+	return []HarnessConfigSecretDelivery{
+		HarnessConfigSecretDeliveryEnv,
+		HarnessConfigSecretDeliveryFile,
+	}
+}
+
+// MarshalText implements encoding.TextMarshaler.
+func (s HarnessConfigSecretDelivery) MarshalText() ([]byte, error) {
+	switch s {
+	case HarnessConfigSecretDeliveryEnv:
+		return []byte(s), nil
+	case HarnessConfigSecretDeliveryFile:
+		return []byte(s), nil
+	default:
+		return nil, errors.Errorf("invalid value: %q", s)
+	}
+}
+
+// UnmarshalText implements encoding.TextUnmarshaler.
+func (s *HarnessConfigSecretDelivery) UnmarshalText(data []byte) error {
+	switch HarnessConfigSecretDelivery(data) {
+	case HarnessConfigSecretDeliveryEnv:
+		*s = HarnessConfigSecretDeliveryEnv
+		return nil
+	case HarnessConfigSecretDeliveryFile:
+		*s = HarnessConfigSecretDeliveryFile
+		return nil
+	default:
+		return errors.Errorf("invalid value: %q", data)
+	}
+}
 
 // Ref: #/components/schemas/HarnessHookLog
 type HarnessHookLog struct {
@@ -4026,6 +4084,52 @@ func (o OptHarnessConfig) Get() (v HarnessConfig, ok bool) {
 
 // Or returns value if set, or given parameter if does not.
 func (o OptHarnessConfig) Or(d HarnessConfig) HarnessConfig {
+	if v, ok := o.Get(); ok {
+		return v
+	}
+	return d
+}
+
+// NewOptHarnessConfigSecretDelivery returns new OptHarnessConfigSecretDelivery with value set to v.
+func NewOptHarnessConfigSecretDelivery(v HarnessConfigSecretDelivery) OptHarnessConfigSecretDelivery {
+	return OptHarnessConfigSecretDelivery{
+		Value: v,
+		Set:   true,
+	}
+}
+
+// OptHarnessConfigSecretDelivery is optional HarnessConfigSecretDelivery.
+type OptHarnessConfigSecretDelivery struct {
+	Value HarnessConfigSecretDelivery
+	Set   bool
+}
+
+// IsSet returns true if OptHarnessConfigSecretDelivery was set.
+func (o OptHarnessConfigSecretDelivery) IsSet() bool { return o.Set }
+
+// Reset unsets value.
+func (o *OptHarnessConfigSecretDelivery) Reset() {
+	var v HarnessConfigSecretDelivery
+	o.Value = v
+	o.Set = false
+}
+
+// SetTo sets value to v.
+func (o *OptHarnessConfigSecretDelivery) SetTo(v HarnessConfigSecretDelivery) {
+	o.Set = true
+	o.Value = v
+}
+
+// Get returns value and boolean that denotes whether value was set.
+func (o OptHarnessConfigSecretDelivery) Get() (v HarnessConfigSecretDelivery, ok bool) {
+	if !o.Set {
+		return v, false
+	}
+	return o.Value, true
+}
+
+// Or returns value if set, or given parameter if does not.
+func (o OptHarnessConfigSecretDelivery) Or(d HarnessConfigSecretDelivery) HarnessConfigSecretDelivery {
 	if v, ok := o.Get(); ok {
 		return v
 	}

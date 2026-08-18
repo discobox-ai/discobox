@@ -132,6 +132,15 @@ func (s *Service) ConfigureHarnessConfig(ctx context.Context, projectID, configI
 	input.Config.SetHarnessConfigId(serverapi.NewOptString(config.ID))
 	input.Config.SetHarnessMode(serverapi.NewOptSandboxCreateConfigHarnessMode(serverapi.SandboxCreateConfigHarnessModeConfig))
 	input.Config.SetImage(serverapi.NewOptString(config.Image))
+	// Run the configure command as a real, non-root account. A run sandbox
+	// mirrors the caller's own user; this one has no caller to mirror, so the
+	// flow names the account and boot creates it. Configuring as root would
+	// exercise the harness CLI under an identity no run sandbox ever uses.
+	configureUser := serverapi.SandboxUser{}
+	configureUser.SetName(serverapi.NewOptString(harness.ConfigureUserName))
+	configureUser.SetUID(serverapi.NewOptInt64(harness.ConfigureUserUID))
+	configureUser.SetGid(serverapi.NewOptInt64(harness.ConfigureUserGID))
+	input.Config.SetUser(serverapi.NewOptSandboxUser(configureUser))
 
 	created, err := s.sandboxes.CreateSandbox(ctx, projectID, input)
 	if err != nil {

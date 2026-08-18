@@ -10,10 +10,10 @@ One run of `configure` against this image proves the whole chain:
 
 - the ephemeral `harnessMode=config` sandbox starts and defers its primary
   terminal
-- `configure/attach` seeds `/run/discobox/harness-previous-config.json`
+- `configure/attach` seeds `/run/discobox/configure/harness-previous-config.json`
   **before** the configure command runs (the script echoes what it found)
 - attaching the virtual `primary` exec launches the configure command
-- the command writes `/run/discobox/harness-configure.json` and exits 0
+- the command writes `/run/discobox/configure/harness-configure.json` and exits 0
 - `configure/commit` reads the real exit status, applies the declared secret
   (`STUB_TOKEN` → `stub-token`, with its binding and `harnessConfig`-scoped
   grant) and file (`stub.json`), marks the harness configured, and deletes the

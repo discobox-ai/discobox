@@ -172,6 +172,12 @@ components:
                 oneOfGroup:
                     description: Groups a required secret with alternatives; the requirement is satisfied when at least one member of the group is present.
                     type: string
+                delivery:
+                    description: How the credential reaches the harness. env (the default) exports the variable named by name; file withholds that export because the harness reads the credential from a file the harness config installs.
+                    enum:
+                        - env
+                        - file
+                    type: string
             required:
                 - name
             type: object
@@ -3958,7 +3964,7 @@ paths:
             description: |-
                 Launch the harness's interactive configure flow and return the ephemeral sandbox running it.
                 The caller attaches to the returned sandbox's primary terminal. The server watches that terminal:
-                on exit 0 it reads /run/discobox/harness-configure.json from the sandbox, applies the secrets and
+                on exit 0 it reads /run/discobox/configure/harness-configure.json from the sandbox, applies the secrets and
                 files it declares, and marks the harness configured; on a non-zero exit the harness is left
                 unconfigured and configureError is set. The sandbox is deleted either way.
                 Re-running configure on an already configured harness is allowed.

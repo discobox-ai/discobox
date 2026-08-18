@@ -81,7 +81,8 @@ type Handler interface {
 	//
 	// Launch the harness's interactive configure flow and return the ephemeral sandbox running it.
 	// The caller attaches to the returned sandbox's primary terminal. The server watches that terminal:
-	// on exit 0 it reads /run/discobox/harness-configure.json from the sandbox, applies the secrets and
+	// on exit 0 it reads /run/discobox/configure/harness-configure.json from the sandbox, applies the
+	// secrets and
 	// files it declares, and marks the harness configured; on a non-zero exit the harness is left
 	// unconfigured and configureError is set. The sandbox is deleted either way.
 	// Re-running configure on an already configured harness is allowed.
