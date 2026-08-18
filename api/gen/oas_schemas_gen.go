@@ -8090,6 +8090,12 @@ type Sandbox struct {
 	CreatedBy OptUser `json:"createdBy"`
 	// Creating user ID.
 	CreatedByUserId string `json:"createdByUserId"`
+	// Name to show for this sandbox in a listing, computed by the server so every
+	// client shows the same one: the window title the primary terminal last set,
+	// the sandbox's configured name until one has, and the sandbox ID if it has
+	// no name either. The title is what the harness says the work is about,
+	// which tells two sandboxes apart better than two generated names do.
+	DisplayName string `json:"displayName"`
 	// Stable sandbox ID.
 	ID string `json:"id"`
 	// Client host and project directory the sandbox was created from. Immutable after create.
@@ -8134,6 +8140,11 @@ func (s *Sandbox) GetCreatedBy() OptUser {
 // GetCreatedByUserId returns the value of CreatedByUserId.
 func (s *Sandbox) GetCreatedByUserId() string {
 	return s.CreatedByUserId
+}
+
+// GetDisplayName returns the value of DisplayName.
+func (s *Sandbox) GetDisplayName() string {
+	return s.DisplayName
 }
 
 // GetID returns the value of ID.
@@ -8199,6 +8210,11 @@ func (s *Sandbox) SetCreatedBy(val OptUser) {
 // SetCreatedByUserId sets the value of CreatedByUserId.
 func (s *Sandbox) SetCreatedByUserId(val string) {
 	s.CreatedByUserId = val
+}
+
+// SetDisplayName sets the value of DisplayName.
+func (s *Sandbox) SetDisplayName(val string) {
+	s.DisplayName = val
 }
 
 // SetID sets the value of ID.

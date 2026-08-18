@@ -153,14 +153,12 @@ func (d *apiDataSource) List(ctx context.Context) ([]tui.Sandbox, error) {
 
 func toTUISandbox(sb apimodel.Sandbox) tui.Sandbox {
 	row := tui.Sandbox{
-		ID:      sb.ID,
-		Name:    sb.Config.Name,
-		State:   toTUIState(sandboxDisplayState(sb)),
-		Message: sandboxMessage(sb),
-		Created: sb.CreatedAt,
-	}
-	if title := sandboxPrimaryTerminalTitle(sb); title != "" {
-		row.Name, row.NameIsTitle = title, true
+		ID:          sb.ID,
+		Name:        sb.DisplayName,
+		NameIsTitle: sandboxNameIsTitle(sb),
+		State:       toTUIState(sandboxDisplayState(sb)),
+		Message:     sandboxMessage(sb),
+		Created:     sb.CreatedAt,
 	}
 	if origin, ok := sb.Origin.Get(); ok {
 		row.Folder = origin.ProjectPath

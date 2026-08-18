@@ -72,10 +72,10 @@ func (f *sshConfigFakeServer) start(t *testing.T) *httptest.Server {
 func (f *sshConfigFakeServer) sandboxesJSON() string {
 	entries := make([]string, 0, len(f.sandboxes))
 	for _, sandbox := range f.sandboxes {
-		entries = append(entries, fmt.Sprintf(`{"id":%q,"projectId":"project-1","createdByUserId":"user-1",
+		entries = append(entries, fmt.Sprintf(`{"id":%q,"projectId":"project-1","createdByUserId":"user-1","displayName":%q,
 			"config":{"name":%q,"image":"discobox-sandbox-agent:local"},
 			"runtime":{"desiredState":"present","state":"ready","runtimeState":"running","displayState":"running","generation":1,"observedGeneration":1},
-			"createdAt":"2026-01-01T00:00:00Z","updatedAt":"2026-01-01T00:00:00Z"}`, sandbox.id, sandbox.name))
+			"createdAt":"2026-01-01T00:00:00Z","updatedAt":"2026-01-01T00:00:00Z"}`, sandbox.id, sandbox.name, sandbox.name))
 	}
 	return `{"sandboxes":[` + strings.Join(entries, ",") + `]}`
 }

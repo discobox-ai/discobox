@@ -193,15 +193,14 @@ as the table: the order is the CLI's answer, not a table-rendering detail.
 
 ## Sandbox Display Name
 
-The NAME a sandbox listing shows (`sandboxDisplayName`,
-`internal/cli/session_title.go`) is the window title its primary terminal last
-set, when one has, and the configured (generated) name until then: the title is
-what the harness says the work is about, which tells rows apart better than two
-generated names. The title travels in the agent-status payload with the git
-state, so it costs the listing nothing. Display only — name *resolution*
-(`matchSandboxArg`, `--name` updates) still works on the configured name, and
-the TUI disables rename on a title-named row for exactly that reason
-(`Sandbox.NameIsTitle`).
+The NAME a sandbox listing shows is `Sandbox.displayName`, computed by the
+server (`services.SandboxDisplayName`) and read verbatim here — `disco ls`, the
+launcher, and any other client name a sandbox the same way because none of them
+derives it. Display only — name *resolution* (`matchSandboxArg`, `--name`
+updates) still works on the configured name, and the TUI disables rename on a
+row whose display name is not the configured one (`sandboxNameIsTitle`,
+`internal/cli/sandbox_name.go`, feeding `Sandbox.NameIsTitle`) because a rename
+would change nothing on screen.
 
 ## Choosing a Sandbox Interactively
 

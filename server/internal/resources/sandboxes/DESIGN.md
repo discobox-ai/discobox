@@ -203,6 +203,20 @@ pool agent starts it on demand when that happens.
 See [ADR 0017](../../../../docs/adr/0017-resource-state-is-desired-and-observed-with-no-operations.md)
 §§9–13.
 
+## Display name
+
+`Sandbox.displayName` is what a listing calls a sandbox, computed on the server
+(`services.SandboxDisplayName`) so `disco ls`, the launcher, and any other
+client agree: the window title the primary terminal last set, the configured
+name until one has, and the sandbox ID when it has no name either. The title is
+what the harness says the work is about, which tells two sandboxes apart better
+than two generated names do.
+
+It reads the title out of the last agent-status report already on the row
+(ADR 0030) — nothing is woken to name a listing — and it is display only. Name
+resolution and rename still act on `config.name`, which is left untouched
+beside it.
+
 ## Source delivery
 
 A sandbox's source reaches it one of two ways, stated on `GitSource.Delivery`

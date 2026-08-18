@@ -44,7 +44,7 @@ func (a *App) writeSandbox(cmd *cobra.Command, sandbox *apimodel.Sandbox) error 
 	fmt.Fprintln(tw, "ID\tNAME\tSTATE\tHARNESS\tGIT\tCHANGES\tERROR\tUPDATED")
 	fmt.Fprintf(tw, "%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\n",
 		sandbox.ID,
-		truncateTableValue(sandboxDisplayName(*sandbox), 40),
+		truncateTableValue(sandbox.DisplayName, 40),
 		sandboxDisplayState(*sandbox),
 		sandboxHarness(*sandbox),
 		sandboxGitColumn(*sandbox),
@@ -79,7 +79,7 @@ func (a *App) writeSandboxes(cmd *cobra.Command, sandboxes []apimodel.Sandbox, s
 		git := sandboxGitStatus(sandbox)
 		fmt.Fprintf(tw, "%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s",
 			sandbox.ID,
-			truncateTableValue(sandboxDisplayName(sandbox), 40),
+			truncateTableValue(sandbox.DisplayName, 40),
 			sandboxDisplayState(sandbox),
 			sandboxHarness(sandbox),
 			sandboxGitColumn(sandbox),

@@ -8,6 +8,7 @@ import (
 	"regexp"
 	"sort"
 	"strings"
+	"time"
 
 	serverapi "github.com/obot-platform/discobox/api/gen"
 	apimodel "github.com/obot-platform/discobox/api/model"
@@ -268,6 +269,7 @@ func SandboxToAPI(sandbox *model.Sandbox, fallback *model.HarnessConfig) (server
 		"id":              sandbox.ID,
 		"projectId":       sandbox.ProjectID,
 		"createdByUserId": sandbox.CreatedByUserID,
+		"displayName":     SandboxDisplayName(sandbox),
 		"createdAt":       sandbox.CreatedAt,
 		"updatedAt":       sandbox.UpdatedAt,
 		"config":          config,
@@ -423,6 +425,62 @@ func SandboxDisplayState(sandbox *model.Sandbox) string {
 		// Includes the empty state, which is a row that was never given one.
 		return "error"
 	}
+}
+
+// SandboxDisplayName is the name a listing shows for a sandbox: the window
+// title its primary terminal last set, the sandbox's own configured name until
+// one has, and the sandbox ID when it has no name either. The title is what the
+// harness says the work is about, which tells two sandboxes apart better than
+// two generated names do.
+//
+// It is computed here, next to the display state it sits beside on the wire, so
+// every client names a sandbox the same way rather than each rediscovering the
+// rule.
+func SandboxDisplayName(sandbox *model.Sandbox) string {
+	if sandbox == nil {
+		return ""
+	}
+	if title := sandboxPrimaryTerminalTitle(sandbox); title != "" {
+		return title
+	}
+	if name := strings.TrimSpace(sandbox.Name); name != "" {
+		return name
+	}
+	return sandbox.ID
+}
+
+// sandboxPrimaryTerminalTitle is the window title the sandbox's primary
+// terminal last set (OSC 0/2), as sandbox-agent reported it with the rest of
+// its status (ADR 0030) — already on the sandbox row, so naming a listing wakes
+// nothing. Empty when no primary session has titled itself, which is the
+// caller's cue to fall back to the configured name. Sessions live and ended
+// alike are on the record; the newest primary is the one whose title the user
+// last saw.
+func sandboxPrimaryTerminalTitle(sandbox *model.Sandbox) string {
+	if len(sandbox.AgentStatus) == 0 {
+		return ""
+	}
+	var status struct {
+		Sessions []apimodel.SandboxAgentSessionStatus `json:"sessions"`
+	}
+	if err := json.Unmarshal(sandbox.AgentStatus, &status); err != nil {
+		return ""
+	}
+	title, startedAt := "", time.Time{}
+	for _, session := range status.Sessions {
+		if !session.Primary {
+			continue
+		}
+		sessionTitle := strings.TrimSpace(session.Title.Or(""))
+		if sessionTitle == "" {
+			continue
+		}
+		sessionStartedAt := session.StartedAt.Or(time.Time{})
+		if title == "" || sessionStartedAt.After(startedAt) {
+			title, startedAt = sessionTitle, sessionStartedAt
+		}
+	}
+	return title
 }
 
 func SandboxesToAPI(sandboxes []model.Sandbox, fallback *model.HarnessConfig) ([]serverapi.Sandbox, error) {

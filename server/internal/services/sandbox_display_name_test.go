@@ -1,22 +1,19 @@
-package cli
+package services
 
 import (
 	"testing"
 
-	apiclientgen "github.com/obot-platform/discobox/api/gen"
-	apimodel "github.com/obot-platform/discobox/api/model"
+	"github.com/obot-platform/discobox/server/internal/model"
 )
 
 // titledSandbox builds a sandbox named "generated-name" whose agent status
 // carries the given sessions payload, empty for no report at all.
-func titledSandbox(sessions string) apimodel.Sandbox {
-	sb := apimodel.Sandbox{}
-	sb.Config.Name = "generated-name"
+func titledSandbox(sessions string) *model.Sandbox {
+	sandbox := &model.Sandbox{ID: "sbx_abc12345000000p3", ProjectID: "p1", CreatedByUserID: "u1", Name: "generated-name"}
 	if sessions != "" {
-		status := apiclientgen.SandboxRuntimeAgentStatus{"sessions": []byte(sessions)}
-		sb.Runtime.AgentStatus = apiclientgen.NewOptNilSandboxRuntimeAgentStatus(status)
+		sandbox.AgentStatus = []byte(`{"sources":[],"observedAt":"2026-08-12T00:00:00Z","sessions":` + sessions + `}`)
 	}
-	return sb
+	return sandbox
 }
 
 func TestSandboxDisplayName(t *testing.T) {
@@ -59,25 +56,41 @@ func TestSandboxDisplayName(t *testing.T) {
 			sessions: `[{"terminalId":"exc_1","primary":true,"title":"   ","state":"running","attacherCount":0,"execStatus":"running"}]`,
 			want:     "generated-name",
 		},
+		{
+			name:     "unreadable report falls back to the configured name",
+			sessions: `"not an array"`,
+			want:     "generated-name",
+		},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			if got := sandboxDisplayName(titledSandbox(tc.sessions)); got != tc.want {
+			if got := SandboxDisplayName(titledSandbox(tc.sessions)); got != tc.want {
 				t.Fatalf("display name = %q, want %q", got, tc.want)
 			}
 		})
 	}
 }
 
-// The launcher's row carries the same name the table shows, and the flag that
-// tells rename the configured name is not the one on screen.
-func TestToTUISandboxPrefersPrimaryTerminalTitle(t *testing.T) {
-	titled := toTUISandbox(titledSandbox(`[{"terminalId":"exc_1","primary":true,"title":"fix the reaper","state":"running","attacherCount":0,"execStatus":"running"}]`))
-	if titled.Name != "fix the reaper" || !titled.NameIsTitle {
-		t.Fatalf("row = %q (NameIsTitle=%t), want the title, flagged", titled.Name, titled.NameIsTitle)
+// A sandbox with no name of its own is still identifiable: the ID is the last
+// fallback, so a listing never shows a blank cell.
+func TestSandboxDisplayNameFallsBackToID(t *testing.T) {
+	sandbox := titledSandbox("")
+	sandbox.Name = ""
+	if got := SandboxDisplayName(sandbox); got != sandbox.ID {
+		t.Fatalf("display name = %q, want the sandbox ID %q", got, sandbox.ID)
 	}
-	untitled := toTUISandbox(titledSandbox(""))
-	if untitled.Name != "generated-name" || untitled.NameIsTitle {
-		t.Fatalf("row = %q (NameIsTitle=%t), want the configured name, unflagged", untitled.Name, untitled.NameIsTitle)
+}
+
+func TestSandboxToAPIIncludesCalculatedDisplayName(t *testing.T) {
+	sandbox := titledSandbox(`[{"terminalId":"exc_1","primary":true,"title":"fix the reaper","state":"running","attacherCount":0,"execStatus":"running"}]`)
+	out, err := SandboxToAPI(sandbox, nil)
+	if err != nil {
+		t.Fatalf("SandboxToAPI: %v", err)
+	}
+	if out.DisplayName != "fix the reaper" {
+		t.Fatalf("displayName = %q, want the primary terminal's title", out.DisplayName)
+	}
+	if out.Config.Name != "generated-name" {
+		t.Fatalf("config.name = %q, want the configured name left alone", out.Config.Name)
 	}
 }

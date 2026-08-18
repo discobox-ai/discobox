@@ -2161,6 +2161,14 @@ components:
                 createdByUserId:
                     description: Creating user ID
                     type: string
+                displayName:
+                    description: |-
+                        Name to show for this sandbox in a listing, computed by the server so every
+                        client shows the same one: the window title the primary terminal last set,
+                        the sandbox's configured name until one has, and the sandbox ID if it has
+                        no name either. The title is what the harness says the work is about,
+                        which tells two sandboxes apart better than two generated names do.
+                    type: string
                 id:
                     description: Stable sandbox ID
                     type: string
@@ -2187,6 +2195,7 @@ components:
                 - id
                 - projectId
                 - createdByUserId
+                - displayName
                 - config
                 - runtime
                 - createdAt
