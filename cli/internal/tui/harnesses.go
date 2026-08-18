@@ -282,10 +282,18 @@ type harnessesLoadedMsg struct {
 type harnessSetupMsg struct {
 	harness    Harness
 	andDefault bool
+	// resume is the run this interrupted, run once the harness can carry it.
+	resume *RunRequest
 }
 
 // harnessDefaultMsg carries a chosen default back to the live model.
-type harnessDefaultMsg struct{ harness Harness }
+type harnessDefaultMsg struct {
+	harness Harness
+	resume  *RunRequest
+}
+
+// resumeRunMsg is the run a harness question interrupted, now answered.
+type resumeRunMsg struct{ req RunRequest }
 
 // harnessVerbMsg is a confirmed verb on its way back to the live model.
 type harnessVerbMsg struct {
@@ -310,6 +318,9 @@ type harnessDoneMsg struct {
 	// intent, not two: a setup that left the project still without one would
 	// ask the same question again on the next prompt.
 	andDefault *Harness
+	// resume is the run that was waiting on this, once everything it was
+	// waiting for has happened.
+	resume *RunRequest
 }
 
 // harnessCardMsg is the config card, once the secret bindings behind it have
@@ -473,7 +484,7 @@ func (m *Model) harnessAct(key string) tea.Cmd {
 		})
 		return nil
 	case "s":
-		return m.runHarnessVerb(HarnessSetDefault, harness)
+		return m.runHarnessVerb(HarnessSetDefault, harness, nil)
 	case "v":
 		return m.showHarnessCard(harness)
 	case "f":
@@ -485,14 +496,14 @@ func (m *Model) harnessAct(key string) tea.Cmd {
 
 // runHarnessVerb sends one verb to the API. Nothing takes the terminal, so the
 // screen stays up and reports on its own status line.
-func (m *Model) runHarnessVerb(verb HarnessVerb, harness Harness) tea.Cmd {
+func (m *Model) runHarnessVerb(verb HarnessVerb, harness Harness, resume *RunRequest) tea.Cmd {
 	name := harness.displayName()
 	m.busy = string(verb) + " " + name + "…"
 	return func() tea.Msg {
 		if err := m.ds.DoHarness(m.ctx, verb, harness.ID); err != nil {
 			return harnessDoneMsg{err: fmt.Errorf("%s %s: %w", verb, name, err)}
 		}
-		return harnessDoneMsg{text: verb.done(name)}
+		return harnessDoneMsg{text: verb.done(name), resume: resume}
 	}
 }
 
@@ -503,12 +514,12 @@ func (m *Model) runHarnessVerb(verb HarnessVerb, harness Harness) tea.Cmd {
 // exactly as it does for apply, rather than trying to draw it in a pane. The
 // flow itself is the CLI's, on the far side of the data seam.
 func (m *Model) configureHarness(harness Harness) tea.Cmd {
-	return m.configureHarnessThen(harness, nil)
+	return m.configureHarnessThen(harness, nil, nil)
 }
 
 // configureHarnessThen runs the setup and, when andDefault is set, makes that
 // harness the project default once it succeeds.
-func (m *Model) configureHarnessThen(harness Harness, andDefault *Harness) tea.Cmd {
+func (m *Model) configureHarnessThen(harness Harness, andDefault *Harness, resume *RunRequest) tea.Cmd {
 	name := harness.displayName()
 	m.busy = "configuring " + name + "…"
 	exec := &harnessExec{run: func(stdin io.Reader, stdout, stderr io.Writer) error {
@@ -518,7 +529,7 @@ func (m *Model) configureHarnessThen(harness Harness, andDefault *Harness) tea.C
 		if err != nil {
 			return harnessDoneMsg{err: fmt.Errorf("configure %s: %w", name, err)}
 		}
-		return harnessDoneMsg{text: "configured " + name, andDefault: andDefault}
+		return harnessDoneMsg{text: "configured " + name, andDefault: andDefault, resume: resume}
 	})
 }
 
@@ -553,10 +564,19 @@ func (m *Model) harnessDone(msg harnessDoneMsg) tea.Cmd {
 	}
 	if msg.andDefault != nil {
 		// The listing is re-read by the verb's own completion, so it is not
-		// asked for twice here.
-		return m.runHarnessVerb(HarnessSetDefault, *msg.andDefault)
+		// asked for twice here. The run rides along with it: it is waiting on
+		// the default, not on the setup that earned it.
+		return m.runHarnessVerb(HarnessSetDefault, *msg.andDefault, msg.resume)
 	}
-	return tea.Batch(m.loadHarnesses(), m.report(false, "%s", msg.text))
+	done := tea.Batch(m.loadHarnesses(), m.report(false, "%s", msg.text))
+	if msg.resume == nil {
+		return done
+	}
+	// The run that asked the question, now that it has an answer. It resumes
+	// past the questions rather than at the top: they have been answered, and
+	// the listing this just re-read has not necessarily caught up yet.
+	req := *msg.resume
+	return tea.Batch(done, func() tea.Msg { return resumeRunMsg{req: req} })
 }
 
 // harnessFilesDialog is the file picker: the harness's files, the ones its

@@ -520,6 +520,14 @@ apart by `harness.ShellSlug`, the reserved name, rather than by a literal of the
 launcher's own. A project holding nothing else says so instead of opening a menu
 with no choices on it.
 
+Both questions interrupt a run, so answering one runs it. The request travels
+with the choice and comes back as `resumeRunMsg` once everything it was waiting
+for has happened — the setup, then the default. It resumes at `startRun`, past
+the questions rather than at the top of `run`: they have been answered, and the
+listing has not necessarily caught up, so re-asking would ask the same one
+twice. A setup that fails resumes nothing; the harness still cannot carry the
+run, and the reason has just been reported.
+
 None of this fires before the listing has landed: an empty listing and one still
 in flight look the same and mean opposite things, so a prompt is never refused
 on the strength of what has not arrived.

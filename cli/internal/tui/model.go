@@ -462,15 +462,18 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	case harnessSetupMsg:
 		if msg.andDefault {
-			return m, m.configureHarnessThen(msg.harness, &msg.harness)
+			return m, m.configureHarnessThen(msg.harness, &msg.harness, msg.resume)
 		}
-		return m, m.configureHarness(msg.harness)
+		return m, m.configureHarnessThen(msg.harness, nil, msg.resume)
 
 	case harnessDefaultMsg:
-		return m, m.chooseDefaultHarness(msg.harness)
+		return m, m.chooseDefaultHarness(msg)
+
+	case resumeRunMsg:
+		return m, m.startRun(msg.req)
 
 	case harnessVerbMsg:
-		return m, m.runHarnessVerb(msg.verb, msg.harness)
+		return m, m.runHarnessVerb(msg.verb, msg.harness, nil)
 
 	case harnessFileMsg:
 		return m, m.editHarnessFile(msg.harness, msg.path)
@@ -1218,6 +1221,14 @@ func (m *Model) run() tea.Cmd {
 	if cmd, stop := m.askToSetUpHarness(req); stop {
 		return cmd
 	}
+	return m.startRun(req)
+}
+
+// startRun is the run itself, past the questions about which harness it lands
+// on. A run those questions interrupted resumes here rather than at run(): they
+// have already been answered, and asking again against a listing that has not
+// caught up yet would ask the same one twice.
+func (m *Model) startRun(req RunRequest) tea.Cmd {
 	if req.IncludeDirty != "" {
 		return m.create(req)
 	}
@@ -1273,7 +1284,7 @@ func (m *Model) askForADefaultHarness(req RunRequest) (tea.Cmd, bool) {
 		items, func(key string) tea.Cmd {
 			for i, harness := range chosen {
 				if itoa(i+1) == key {
-					return func() tea.Msg { return harnessDefaultMsg{harness: harness} }
+					return func() tea.Msg { return harnessDefaultMsg{harness: harness, resume: &req} }
 				}
 			}
 			return nil
@@ -1284,12 +1295,13 @@ func (m *Model) askForADefaultHarness(req RunRequest) (tea.Cmd, bool) {
 }
 
 // chooseDefaultHarness acts on that choice: a harness that already works
-// becomes the default outright, and one that does not is set up first.
-func (m *Model) chooseDefaultHarness(harness Harness) tea.Cmd {
-	if harness.State == HarnessEnabled {
-		return m.runHarnessVerb(HarnessSetDefault, harness)
+// becomes the default outright, and one that does not is set up first. Either
+// way the run that asked the question runs when it is answered.
+func (m *Model) chooseDefaultHarness(msg harnessDefaultMsg) tea.Cmd {
+	if msg.harness.State == HarnessEnabled {
+		return m.runHarnessVerb(HarnessSetDefault, msg.harness, msg.resume)
 	}
-	return m.configureHarnessThen(harness, &harness)
+	return m.configureHarnessThen(msg.harness, &msg.harness, msg.resume)
 }
 
 // projectDefaultHarness is the harness the project runs when nothing says
@@ -1341,7 +1353,7 @@ func (m *Model) askToSetUpHarness(req RunRequest) (tea.Cmd, bool) {
 	m.dialog = confirmDialog("Set up "+name+"?",
 		name+" has not been set up, so a discobox cannot be created on it. Run its setup now? It takes the terminal and asks its own questions.",
 		func(string) tea.Cmd {
-			return func() tea.Msg { return harnessSetupMsg{harness: harness} }
+			return func() tea.Msg { return harnessSetupMsg{harness: harness, resume: &req} }
 		})
 	return nil, true
 }

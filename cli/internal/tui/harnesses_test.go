@@ -1,6 +1,7 @@
 package tui
 
 import (
+	"errors"
 	"strings"
 	"testing"
 
@@ -563,5 +564,90 @@ func TestAPromptBeforeTheListingLandsIsNotRefused(t *testing.T) {
 	}
 	if strings.Contains(plainFrame(m), "no harness to run") {
 		t.Fatalf("a listing in flight is not an empty project:\n%s", plainFrame(m))
+	}
+}
+
+// The question interrupted a run, so answering it runs. Choosing a harness that
+// already works sets the default and then submits the prompt that asked.
+func TestChoosingADefaultResumesTheRunThatAsked(t *testing.T) {
+	ds := noDefaultSource(t)
+	m := newTestModel(t, ds)
+	send(t, m, typeString("fix the reaper")...)
+	send(t, m, key("enter"), key("1"))
+
+	if len(ds.runs) != 1 {
+		t.Fatalf("runs = %v, want the interrupted run submitted once its harness was chosen", ds.runs)
+	}
+	if got := ds.runs[0].Prompt; got != "fix the reaper" {
+		t.Fatalf("prompt = %q, want the one that was waiting", got)
+	}
+}
+
+// Same when the chosen harness had to be set up first: the run waits for the
+// setup and the default, then goes.
+func TestSettingUpAChosenDefaultResumesTheRunThatAsked(t *testing.T) {
+	ds := noDefaultSource(t)
+	m := newTestModel(t, ds)
+	send(t, m, typeString("fix the reaper")...)
+	send(t, m, key("enter"))
+
+	for i, item := range m.dialog.items {
+		if item.label == "Custom" {
+			send(t, m, key(itoa(i+1)))
+			break
+		}
+	}
+
+	if len(ds.configured) != 1 || len(ds.didHarness) != 1 {
+		t.Fatalf("configured = %v, did = %v, want both before the run", ds.configured, ds.didHarness)
+	}
+	if len(ds.runs) != 1 || ds.runs[0].Prompt != "fix the reaper" {
+		t.Fatalf("runs = %v, want the interrupted run submitted after the setup", ds.runs)
+	}
+}
+
+// Accepting the offer to set up a harness the run named also resumes it: the
+// run was interrupted the same way and is waiting for the same thing.
+func TestSettingUpANamedHarnessResumesTheRunThatAsked(t *testing.T) {
+	ds := newFakeSource()
+	m := newTestModel(t, ds)
+	harness := m.opts.opts[optHarness]
+	for i, choice := range harness.choices {
+		if choice == "custom" {
+			harness.idx = i
+		}
+	}
+	send(t, m, typeString("fix the reaper")...)
+	send(t, m, key("enter"), key("y"))
+
+	if len(ds.configured) != 1 || ds.configured[0] != "hc_custom" {
+		t.Fatalf("configured = %v, want the named harness set up", ds.configured)
+	}
+	if len(ds.runs) != 1 || ds.runs[0].Prompt != "fix the reaper" {
+		t.Fatalf("runs = %v, want the interrupted run submitted after the setup", ds.runs)
+	}
+}
+
+// A setup that fails leaves the run unsubmitted: the harness still cannot carry
+// it, and running anyway would fail at create for the reason just reported.
+func TestAFailedSetupDoesNotResumeTheRun(t *testing.T) {
+	ds := noDefaultSource(t)
+	ds.configureErr = errors.New("the setup exited before it finished")
+	m := newTestModel(t, ds)
+	send(t, m, typeString("fix the reaper")...)
+	send(t, m, key("enter"))
+
+	for i, item := range m.dialog.items {
+		if item.label == "Custom" {
+			send(t, m, key(itoa(i+1)))
+			break
+		}
+	}
+
+	if len(ds.runs) != 0 {
+		t.Fatalf("runs = %v, want nothing run after a setup that failed", ds.runs)
+	}
+	if len(ds.didHarness) != 0 {
+		t.Fatalf("did = %v, want no default set from a setup that failed", ds.didHarness)
 	}
 }

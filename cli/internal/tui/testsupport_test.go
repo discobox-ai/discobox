@@ -23,10 +23,11 @@ type fakeSource struct {
 	sandboxes []Sandbox
 	dirty     bool
 
-	harnesses   []Harness
-	harnessErr  error
-	secrets     []HarnessSecret
-	editChanged bool
+	harnesses    []Harness
+	harnessErr   error
+	configureErr error
+	secrets      []HarnessSecret
+	editChanged  bool
 
 	listErr   error
 	runErr    error
@@ -297,7 +298,7 @@ func (f *fakeSource) ConfigureHarness(_ context.Context, id string, _ io.Reader,
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	f.configured = append(f.configured, id)
-	return nil
+	return f.configureErr
 }
 
 func (f *fakeSource) EditHarnessFile(_ context.Context, id, path string, _ io.Reader, _, _ io.Writer) (bool, error) {
