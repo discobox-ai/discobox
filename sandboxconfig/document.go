@@ -174,6 +174,11 @@ type ImageLayer struct {
 	Files   []File            `json:"files,omitempty"`
 	Volumes []harness.Volume  `json:"volumes,omitempty"`
 	Env     map[string]string `json:"env,omitempty"`
+	// Secrets are the harness's declared credentials. The sandbox needs them
+	// for their Delivery alone: a secret delivered by file must not also be
+	// exported as an environment variable, and only the declaration says which
+	// (harness.SecretDeliveryFile). Image-owned; no other layer may set it.
+	Secrets []harness.Secret `json:"secrets,omitempty"`
 	// AdditionalGroups names OS groups (already present in the image, e.g.
 	// "docker") the sandbox user is added to at boot, alongside its own
 	// primary group. Image-owned only, like Volumes: no other layer grants

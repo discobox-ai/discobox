@@ -374,6 +374,11 @@ type HarnessConfigSecret struct {
 	// OneOfGroup ties a required secret to a set of alternatives: required secrets
 	// sharing a group are satisfied when at least one member is present.
 	OneOfGroup string `json:"oneOfGroup,omitempty" doc:"Groups a required secret with alternatives; the requirement is satisfied when at least one member of the group is present"`
+	// Delivery says how the sandbox hands the credential to the harness. Empty
+	// exports Name into the harness's environment; "file" withholds that export
+	// because the harness reads the credential from an installed file instead.
+	// See harness.SecretDeliveryFile for why withholding it matters.
+	Delivery string `json:"delivery,omitempty" doc:"How the credential reaches the harness: env exports the variable named by name, file withholds it because the harness reads the credential from a file the harness config installs" enum:"env,file"`
 }
 
 // GitSource describes a Git source to materialize into a sandbox.
@@ -875,6 +880,20 @@ type SecretValue struct {
 	TokenURL             string `json:"tokenUrl,omitempty"`
 	ClientID             string `json:"clientId,omitempty"`
 	AccessTokenExpiresAt int64  `json:"accessTokenExpiresAt,omitempty"` // unix milliseconds; 0 means unknown
+	// Scopes and SubscriptionType describe what the grant is, not what it is —
+	// non-secret metadata the authorization server returned alongside the token.
+	// They are recorded because a client may gate features on them locally: Claude
+	// Code refuses Remote Control unless the credential it reads carries the
+	// `user:profile` scope, so a sandbox handed only a token is limited to
+	// inference regardless of what the token is actually good for.
+	//
+	// They are captured at login rather than assumed. Which scopes a login yields
+	// depends on the account and the flow, and claiming one the token does not
+	// have trades a clear client-side refusal for an opaque upstream 401. A
+	// rotation carries them forward untouched — a refresh returns a new token for
+	// the same grant, not a new grant.
+	Scopes           []string `json:"scopes,omitempty"`
+	SubscriptionType string   `json:"subscriptionType,omitempty"`
 }
 
 // SecretRequest records a runtime ask for a secret that has no covering grant.

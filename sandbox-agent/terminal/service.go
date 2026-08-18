@@ -12,8 +12,10 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"maps"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"sync"
 	"text/template"
@@ -96,6 +98,7 @@ type Service struct {
 	harness        config.Harness
 	env            map[string]string
 	secretEnv      func() map[string]string
+	fileSecrets    []string
 	defaultUser    *execs.User
 	hookSocketPath string
 	installer      Installer
@@ -149,6 +152,7 @@ func NewService(cfg ServiceConfig) (*Service, error) {
 		harness:      cloneHarness(cfg.Harness),
 		env:          cloneMap(cfg.Env),
 		secretEnv:    cfg.SecretEnv,
+		fileSecrets:  append([]string(nil), cfg.Harness.FileSecrets...),
 		defaultUser:  defaultUser,
 		installer:    cfg.Installer,
 		primaryState: cfg.PrimaryState,
@@ -167,10 +171,35 @@ func NewService(cfg ServiceConfig) (*Service, error) {
 				User:          defaultUser,
 				HomeDirectory: cfg.ExecDefaults.HomeDirectory,
 				SandboxConfig: cfg.SandboxConfig,
+				Secrets:       cfg.SecretEnv,
 			},
 		}}
 	}
 	return s, nil
+}
+
+// exportedSecretEnv is the sentinel map minus the harness's file-delivered
+// credentials. Those still exist as sentinels -- FileInstaller renders them
+// into the file the harness reads -- but they must not also appear in its
+// environment: a CLI that reads both prefers the variable, and a credential
+// arriving that way carries none of the metadata the file does, so exporting it
+// silently defeats the file (harness.SecretDeliveryFile).
+//
+// Withholding is by explicit declaration only. A sentinel nobody declared --
+// bound to this sandbox by hand -- is exported exactly as before.
+func (s *Service) exportedSecretEnv() map[string]string {
+	env := s.secretEnv()
+	if len(env) == 0 || len(s.fileSecrets) == 0 {
+		return env
+	}
+	out := make(map[string]string, len(env))
+	for name, sentinel := range env {
+		if slices.Contains(s.fileSecrets, name) {
+			continue
+		}
+		out[name] = sentinel
+	}
+	return out
 }
 
 func (s *Service) SetHookSocketPath(path string) {
@@ -210,7 +239,7 @@ func (s *Service) Create(ctx context.Context, req CreateRequest) (execs.Exec, er
 		// Read fresh at every exec: the secrets file is refreshed
 		// independently of sandbox.json (grant approval, rotation, OAuth
 		// refresh), so a stale in-memory copy would miss updates (ADR 0012 §3).
-		base = execs.MergeEnv(base, s.secretEnv())
+		base = execs.MergeEnv(base, s.exportedSecretEnv())
 	}
 	env := execs.EnvWithRuntimeDefaults(execs.MergeEnv(base, req.Env), s.defaultUser)
 	// Resolved after env for the same reason the exec layer does it: `~`
@@ -329,7 +358,7 @@ func (s *Service) revive(ctx context.Context, id string) (execs.Exec, error) {
 	if s.secretEnv != nil {
 		// Read fresh at every run, same as Create: sentinels rotate
 		// independently of sandbox.json (ADR 0012 §3).
-		base = execs.MergeEnv(base, s.secretEnv())
+		base = execs.MergeEnv(base, s.exportedSecretEnv())
 	}
 	env := execs.EnvWithRuntimeDefaults(execs.MergeEnv(base, nil), s.defaultUser)
 	env["DISCOBOX_TERMINAL_ID"] = id
@@ -771,6 +800,18 @@ type FileInstaller struct {
 	// HomeDirectory is the manifest's explicit home, when it carries one.
 	HomeDirectory string
 	SandboxConfig map[string]any
+	// Secrets returns the sandbox's env-name -> sentinel map, so a templated
+	// file can place a sentinel where a harness expects to read a credential.
+	//
+	// It is read here rather than taken from the process environment on purpose:
+	// a harness that authenticates from a file has no reason to also carry the
+	// variable, and this is what lets that variable stop being exported. What
+	// lands in the file is a sentinel — non-secret by construction — which the
+	// proxy swaps on the way out, exactly as it does for the env-var form.
+	//
+	// Read fresh per install for the same reason the exec env is (ADR 0012 §3):
+	// the secrets file is refreshed independently of sandbox.json.
+	Secrets func() map[string]string
 }
 
 func (i FileInstaller) EnsureInstalled(_ context.Context, harness config.Harness, _ string, env map[string]string) error {
@@ -789,7 +830,7 @@ func (i FileInstaller) EnsureInstalled(_ context.Context, harness config.Harness
 		}
 		content := file.Content
 		if file.Template {
-			content, err = renderHarnessFileTemplate(file.Path, content, i.SandboxConfig)
+			content, err = renderHarnessFileTemplate(file.Path, content, i.templateContext())
 			if err != nil {
 				return fmt.Errorf("harness %q file %q: %w", harness.ID, file.Path, err)
 			}
@@ -799,6 +840,29 @@ func (i FileInstaller) EnsureInstalled(_ context.Context, harness config.Harness
 		}
 	}
 	return nil
+}
+
+// templateContext is the sandbox config a harness file renders against, plus
+// `secrets` — the env-name -> sentinel map — under its own key. A copy, so the
+// added key never mutates the shared config, and so a config that already
+// carried `secrets` cannot be shadowed silently.
+func (i FileInstaller) templateContext() map[string]any {
+	var sentinels map[string]string
+	if i.Secrets != nil {
+		sentinels = i.Secrets()
+	}
+	out := make(map[string]any, len(i.SandboxConfig)+1)
+	maps.Copy(out, i.SandboxConfig)
+	// Always present, even empty. A template that asks whether a credential
+	// exists (`{{ if .secrets.NAME }}`) must be able to ask: with the key
+	// missing entirely, that walk fails the render rather than answering "no",
+	// which would break a file the sandbox needs over a secret it does not
+	// have.
+	if sentinels == nil {
+		sentinels = map[string]string{}
+	}
+	out["secrets"] = sentinels
+	return out
 }
 
 func renderHarnessFileTemplate(name, content string, sandboxConfig map[string]any) (string, error) {

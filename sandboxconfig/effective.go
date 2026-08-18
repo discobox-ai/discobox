@@ -33,6 +33,7 @@ type Config struct {
 	Files                   []File           `json:"files,omitempty"`
 	Volumes                 []harness.Volume `json:"volumes,omitempty"`
 	AdditionalGroups        []string         `json:"additionalGroups,omitempty"`
+	Secrets                 []harness.Secret `json:"secrets,omitempty"`
 	WorkingDirectorySubpath string           `json:"workingDirectorySubpath,omitempty"`
 }
 
@@ -82,6 +83,7 @@ func Effective(doc Document) (Config, Provenance) {
 		HarnessMode:      doc.Runtime.HarnessMode,
 		Volumes:          cloneVolumes(doc.Image.Volumes),
 		AdditionalGroups: cloneStrings(doc.Image.AdditionalGroups),
+		Secrets:          append([]harness.Secret(nil), doc.Image.Secrets...),
 	}
 
 	cfg.Harness = Harness{

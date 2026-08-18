@@ -450,7 +450,13 @@ func harnessMetadataFields(metadata harness.ImageMetadata) (runCommand, relaunch
 	}
 	secrets = make([]model.HarnessConfigSecret, 0, len(image.Secrets))
 	for _, secret := range image.Secrets {
-		secrets = append(secrets, model.HarnessConfigSecret{Name: secret.Name, Required: secret.Required, OneOfGroup: secret.OneOfGroup})
+		secrets = append(secrets, model.HarnessConfigSecret{
+			Name: secret.Name, Required: secret.Required, OneOfGroup: secret.OneOfGroup,
+			// Delivery decides whether the sentinel is exported into the
+			// harness's environment at all, so dropping it here would leave
+			// every later layer with nothing to act on.
+			Delivery: secret.Delivery,
+		})
 	}
 	if len(metadata.Env) > 0 {
 		env = make(map[string]string, len(metadata.Env))

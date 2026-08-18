@@ -35,11 +35,11 @@
         "path": ".claude.json",
         "createOnly": true,
         "template": true,
-        "content": "{\n  \"hasCompletedOnboarding\": true\n  {{- range .sources }}{{- if eq .slug \"primary\" }},\n  \"projects\": {\n    {{ .target | json }}: {\n      \"hasTrustDialogAccepted\": true\n    }\n  }\n  {{- end }}{{- end }}\n}"
+        "content": "{\n  \"hasCompletedOnboarding\": true\n  {{- if .secrets.ANTHROPIC_API_KEY }},\n  \"primaryApiKey\": {{ .secrets.ANTHROPIC_API_KEY | json }}\n  {{- end }}\n  {{- range .sources }}{{- if eq .slug \"primary\" }},\n  \"projects\": {\n    {{ .target | json }}: {\n      \"hasTrustDialogAccepted\": true\n    }\n  }\n  {{- end }}{{- end }}\n}"
       },
       {
         "path": ".claude/settings.json",
-        "content": "{\"theme\":\"dark\",\"skipDangerousModePermissionPrompt\":true}"
+        "content": "{\"theme\":\"dark\",\"skipDangerousModePermissionPrompt\":true,\"permissions\":{\"defaultMode\":\"bypassPermissions\"}}"
       },
       {
         "path": ".config/pnpm/config.yaml",
@@ -51,12 +51,14 @@
       {
         "name": "ANTHROPIC_API_KEY",
         "required": true,
-        "oneOfGroup": "auth"
+        "oneOfGroup": "auth",
+        "delivery": "file"
       },
       {
         "name": "CLAUDE_CODE_OAUTH_TOKEN",
         "required": true,
-        "oneOfGroup": "auth"
+        "oneOfGroup": "auth",
+        "delivery": "file"
       }
     ],
     "config": {

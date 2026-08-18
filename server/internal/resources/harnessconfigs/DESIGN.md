@@ -88,6 +88,20 @@ sequenceDiagram
 - Re-configuring is allowed and clobbers any in-flight attempt, so an abandoned
   run cannot wedge a harness. The reconciler is a **janitor only**: it reaps
   configure sandboxes left uncommitted past `configureTTL`, and touches no agent.
+- The configure sandbox runs as `harness.ConfigureUserName`/`ConfigureUserUID`
+  (`discobox`, 10000), **not root**. A run sandbox mirrors the caller's own user
+  (ADR 0025 §5); this one has no source and no caller identity to mirror, so the
+  flow names the account and boot creates it (ADR 0025 §4). A harness CLI is
+  entitled to refuse to run as root — Claude Code refuses `bypassPermissions`
+  there — so configuring as root would verify a credential under an identity no
+  run sandbox ever uses.
+- Because of that, both `ConfigureOutputPath` and `ConfigurePreviousConfigPath`
+  live under `harness.ConfigureDir` (`/run/discobox/configure`), which
+  sandbox-agent creates in config mode owned by that user, mode 0700.
+  `/run/discobox` itself stays root-owned — it holds the resolved secrets file,
+  the proxy CA bundles and trust env, and the control-plane and buildkit
+  sockets — so the seed write and the command's own output go into the one
+  subdirectory the sandbox user owns rather than widening all of it.
 - To exercise or troubleshoot this whole flow without a real credential, use the
   stub harness fixture: `test/harness-stub/README.md`.
 
@@ -135,6 +149,21 @@ the refresh material (`refreshToken`, `tokenUrl`, `clientId`,
 `accessTokenExpiresAt`) that **never leaves the control plane**: the resolve
 handler emits `Token` alone.
 
+It may also carry `scopes` and `subscriptionType`. These are **not** credentials
+— they describe what the grant is allowed to do — and they are recorded because
+a client may gate features on the scopes it finds recorded next to the token:
+Claude Code refuses Remote Control unless the credential it reads carries
+`user:profile`, so a sandbox handed a bare token is limited to inference no
+matter what the token is actually good for.
+
+They are **captured at login, never assumed.** Which scopes a login yields
+depends on the account and the flow, and claiming one the token does not have
+trades a clear client-side refusal for an opaque upstream 401. `/login` is the
+only moment they are visible — the authorization server returns them alongside
+the token and they appear nowhere else — so the configure command copies them
+out of the credentials file it just read. A rotation carries them forward
+untouched: a refresh mints a new token for the *same* grant, not a new grant.
+
 Refresh happens lazily inside `ResolveSandboxSecret` (`resources/secrets`), the
 one place that decrypts and hands out a value:
 
@@ -157,17 +186,40 @@ This is why the OAuth path uses `/login` rather than `claude setup-token`: only
 `/login` yields a rotating refresh token; `setup-token` mints a single
 long-lived token with nothing to refresh.
 
-## Deconfigure
+## Delivering configured files to a sandbox
 
 `ConfiguredFiles` and `ConfiguredSecretIDs` record what the configure flow
 produced, deliberately kept **separate** from the image-declared `Files`/`Secrets`
-baseline. Deconfigure deletes exactly those secrets and their bindings, clears
-those files, and sets `Configured=false` — leaving the baseline intact so the
-harness can simply be configured again. `UpdateHarnessConfig` can replace either
-file set (`files`, `configuredFiles`), which is how the CLI's file editing
-(`harnesses edit`, and `f` on the launcher's harnesses screen) applies hand edits
-without a reconfigure; edited configured files remain owned by the configure lifecycle
-and are still cleared on deconfigure.
+baseline. This package only stores that split; a later sandbox create resolves
+it back into one effective set by path, mirroring ADR 0012's `Files` overlay
+rule (image and runtime entries merge by path, a matching path replaces):
+
+- `reconciler.createOptionsFromSandbox` reads both `cfg.Files` and
+  `cfg.ConfiguredFiles` off the stored `HarnessConfig` onto
+  `sandbox.ResolvedHarnessConfig`'s two matching fields.
+- `poolruntime.agent_client` forwards both across the server→pool-agent
+  boundary as two fields on the wire (`pool-agent/api/openapi/pool.yaml`'s
+  `ResolvedHarnessConfig` schema), since that boundary is an independently
+  generated OpenAPI contract, not a shared Go type.
+- `pool-agent/sandboxruntime.buildSandboxDocument` assigns the image baseline to
+  `sandboxconfig.Document.Image.Files` and the configured overlay to
+  `Document.Runtime.Files` — **not** the same field — so `sandboxconfig.Effective`'s
+  existing `mergeFiles(image, runtime, project)` does the actual overlay-by-path,
+  the same function that already merges a project's `.discobox/project.json`
+  `FilesAdd` in (`sandboxconfig/effective.go`). No merge logic lives in this
+  package; it only owns getting the two inputs to the one function that merges
+  them.
+
+## Deconfigure
+
+Deconfigure deletes exactly the secrets and their bindings the configure flow
+created, clears `ConfiguredFiles`, and sets `Configured=false` — leaving the
+baseline intact so the harness can simply be configured again.
+`UpdateHarnessConfig` can replace either file set (`files`, `configuredFiles`),
+which is how the CLI's file editing (`harnesses edit`, and `f` on the launcher's
+harnesses screen) applies hand edits without a reconfigure; edited configured
+files remain owned by the configure lifecycle and are still cleared on
+deconfigure.
 
 Deconfigure is also **refused for a harness with nothing to configure** (409):
 configure is what would undo it, and configure refuses that harness too, so

@@ -68,6 +68,15 @@ type Harness struct {
 	Command         []string      `json:"command"`
 	RelaunchCommand []string      `json:"relaunchCommand,omitempty"`
 	Files           []HarnessFile `json:"files,omitempty"`
+	// FileSecrets names the declared credentials the harness reads from an
+	// installed file, whose sentinel is therefore withheld from the harness's
+	// environment (harness.SecretDeliveryFile).
+	//
+	// It names what to withhold rather than what to export, so a secret nobody
+	// declared -- one bound to this sandbox by hand -- keeps reaching the
+	// environment as it always has. Only an explicit declaration takes a
+	// variable away.
+	FileSecrets []string `json:"fileSecrets,omitempty"`
 }
 
 // HarnessFile is a file to write into the harness's home directory when the harness
@@ -163,6 +172,7 @@ func configFromEffective(effective sandboxconfig.Config) Config {
 			Command:         cloneCommand(harnessCommand),
 			RelaunchCommand: cloneCommand(effective.Harness.RelaunchCommand),
 			Files:           harnessFilesFromEffective(effective.Files),
+			FileSecrets:     fileDeliveredSecretNames(effective.Secrets),
 		}
 	}
 	return cfg
@@ -199,6 +209,23 @@ func publicKey(values map[string]string) string {
 }
 
 const ControlPlanePublicKeyName = "controlPlane"
+
+// fileDeliveredSecretNames lists the declared secrets the harness reads from an
+// installed file, so their sentinels can be kept out of its environment: a CLI
+// that reads both prefers the variable and would silently ignore the file
+// (harness.SecretDeliveryFile).
+func fileDeliveredSecretNames(secrets []harness.Secret) []string {
+	var out []string
+	for _, secret := range secrets {
+		if secret.Delivery != harness.SecretDeliveryFile {
+			continue
+		}
+		if name := strings.TrimSpace(secret.Name); name != "" {
+			out = append(out, name)
+		}
+	}
+	return out
+}
 
 func harnessFilesFromEffective(in []sandboxconfig.File) []HarnessFile {
 	if len(in) == 0 {

@@ -6,6 +6,7 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"slices"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -175,5 +176,51 @@ func TestResolveOAuthServesStaleTokenWhenRefreshFails(t *testing.T) {
 	// Refresh failed, but a token is on hand: serve it and let use-time 401 decide.
 	if res.Value == nil || res.Value.Token != "stale-but-present" {
 		t.Fatalf("resolved token = %#v, want stale-but-present", res.Value)
+	}
+}
+
+// Scopes describe the grant, and a refresh returns a new token for the same
+// grant — so a rotation must carry them forward. Losing them silently downgrades
+// the credential: a client that gates on the recorded scopes (Claude Code needs
+// `user:profile` for Remote Control) would fall back to inference-only the first
+// time the token aged out, long after configure appeared to succeed.
+func TestResolveOAuthRotationPreservesCapturedScopes(t *testing.T) {
+	ctx := context.Background()
+	svc, st := newResolveFixture(t)
+
+	tokenSrv := newOAuthTokenServer(t, "new-access", "rt-2", 28800)
+	sec := mustOAuthSecret(t, st, "claude", model.SecretValue{
+		Token:                "old-access",
+		RefreshToken:         "rt-1",
+		TokenURL:             tokenSrv.server.URL,
+		ClientID:             "client-x",
+		AccessTokenExpiresAt: time.Now().UTC().Add(-time.Minute).UnixMilli(), // expired
+		Scopes:               []string{"user:inference", "user:profile"},
+		SubscriptionType:     "max",
+	})
+	mustGrant(t, st, sec.ID, model.SecretGrantScopeProject, "project-1")
+	createSandbox(t, st, "sb-1", "pool-1")
+	mustAssign(t, st, "sb-1", sec.ID, "SENTINEL-OA")
+
+	if _, err := svc.ResolveSandboxSecret(ctx, "pool-1", "sb-1", "SENTINEL-OA", "api.anthropic.com"); err != nil {
+		t.Fatalf("resolve: %v", err)
+	}
+
+	reloaded, err := st.GetSecret(ctx, "project-1", sec.ID)
+	if err != nil {
+		t.Fatalf("reload secret: %v", err)
+	}
+	val, err := st.OpenSecretValue(ctx, reloaded)
+	if err != nil {
+		t.Fatalf("open value: %v", err)
+	}
+	if val.Token != "new-access" {
+		t.Fatalf("token = %q, want the rotated one", val.Token)
+	}
+	if !slices.Equal(val.Scopes, []string{"user:inference", "user:profile"}) {
+		t.Fatalf("scopes after rotation = %#v, want them carried forward", val.Scopes)
+	}
+	if val.SubscriptionType != "max" {
+		t.Fatalf("subscriptionType after rotation = %q, want max", val.SubscriptionType)
 	}
 }
