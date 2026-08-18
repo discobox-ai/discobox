@@ -90,6 +90,7 @@ func NewRootCommand() *cobra.Command {
 	cmd.AddCommand(app.newListCommand())
 	cmd.AddCommand(app.newShellCommand())
 	cmd.AddCommand(app.newAttachCommand())
+	cmd.AddCommand(app.newProxyCommand())
 	cmd.AddCommand(app.newApplyCommand())
 	cmd.AddCommand(app.newToolsCommand())
 	cmd.AddCommand(app.newConfigureCommand())

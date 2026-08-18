@@ -13,6 +13,7 @@ transport helpers where OpenAPI does not model the stream.
 | `internal/sandboxcreate` | UI-independent client-side sandbox request preparation and creation, including prompt options, source resolution, workspace snapshots, environment/secrets, local user identity, and source push delivery. |
 | `internal/origin` | Resolves the client host and project directory a sandbox is created from. Host identity itself is shared, in the root module's `internal/hostid`. |
 | `internal/tui` | The `disco tui` launcher: Bubble Tea presentation and interaction state, expressed against its own `DataSource` interface. See [`internal/tui/DESIGN.md`](internal/tui/DESIGN.md). |
+| `internal/portforward` | Frontend-independent dynamic port forwarding: local listeners kept in sync with a remote's announced ports, over a caller-supplied dialer. |
 | `internal/keys` | The leader: its default, its `DISCOBOX_LEADER` override, normalization, and the byte a raw stream matches it as. Owned here because the launcher's panes and a plain attach must reserve the same key. |
 
 ## UI Dependency Direction
@@ -352,6 +353,44 @@ session, `execstream/client`.
   the application echoed it. Follow the status interpretation and hysteresis
   policy in [`execstream/resume/DESIGN.md`](../execstream/resume/DESIGN.md)
   when exposing these events in a CLI or TUI.
+
+## Port Forwarding (ADR 0049)
+
+`disco proxy` holds a local port open for every port a sandbox is listening on.
+The mechanics are `internal/portforward`, which knows nothing about sandboxes:
+it is given a `Dialer` and a set of `Target`s, and owns picking local ports,
+accepting, splicing, and reporting. `internal/cli/proxy.go` supplies the two
+sandbox-shaped halves — the listing (`sandboxPortTargets`, the same agent
+report the launcher's rows are drawn from) and the transport
+(`sandboxTCPDialer`, `internal/cli/tcp_tunnel.go`) — and prints the events. The
+launcher will supply the same two halves and draw them instead.
+
+- The transport is the control plane's `/api/projects/{p}/sandboxes/{s}/tcp/attach`
+  websocket, which is ADR 0024 §3's tunnel exposed at the HTTP edge. Each
+  forwarded connection is one websocket, and `tcpTunnelConn` presents its
+  `Input`/`Stdout`/`CloseInput` frames as a `net.Conn`, so everything above it
+  is a plain TCP proxy and a half-close survives the trip (ADR 0024 §4).
+- A port is bound at its own number when that is free and at the nearest one
+  above it when it is not, so a sandbox's 8080 is `localhost:8081` when
+  something local already has 8080. A privileged port gets one try at its own
+  number and then the search at its unprivileged twin — 80 becomes 8080, 443
+  becomes 8443 — because scanning 80..144 as an ordinary user only ever ends at
+  a random ephemeral port.
+- Bindings are sticky. A port that drops off the listing keeps its local port
+  and is reported gone; the same number is reused when it comes back. A dev
+  server restarting is the common case, and a URL the user has open must not
+  move under them.
+- `--port` narrows the set to the ports named, and forwards them whether or not
+  the listing mentions them yet. Naming a port asserts it is there, and the
+  report is a poll behind (ADR 0046); a flag that waits for the listing to agree
+  is useless in the minute after a server starts, which is the minute it is
+  reached for. What the listing does say about a named port — the address to
+  dial, what it speaks — is still used.
+- The listing is polled rather than streamed. The project event stream carries
+  resource identities, not bodies, so a change would have to be followed by the
+  same read this loop already does; the ports themselves reach the control plane
+  on the sandbox-agent's own cadence (ADR 0046), which is what bounds freshness
+  either way.
 
 ## SSH Keys and Config (ADR 0024)
 
