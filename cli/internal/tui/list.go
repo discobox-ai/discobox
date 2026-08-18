@@ -515,24 +515,32 @@ func diffText(st *styles, s Sandbox) string {
 // The separator is the hints line's own `·`, so a group reads as "and" rather
 // than as a new banner field, which is two spaces.
 //
-// The bind address is not shown. A forward dials from inside the sandbox, where
-// a loopback-only listener answers exactly as a wildcard one does, so the
-// address would be a column that never changes what you can do.
+// forwarded is the workspace's port forward: the local port standing in for
+// each sandbox port, which turns that port's entry into `8082->8080` and, when
+// it speaks a web protocol, into a link to it. It is empty everywhere else —
+// the list has no forward, and a row that claimed one would be offering a port
+// nothing is listening on.
+//
+// The sandbox's own bind address is still not shown. A forward dials from
+// inside the sandbox, where a loopback-only listener answers exactly as a
+// wildcard one does, so the address would be a column that never changes what
+// you can do; the local port, which is the one you can type, is the half worth
+// the space.
 //
 // Empty when nothing is listening, which is also what a sandbox whose agent has
 // not reported yet looks like — there is no third thing to say and no room to
 // say it in.
-func portsText(st *styles, s Sandbox) string {
+func portsText(st *styles, s Sandbox, forwarded map[int]int) string {
 	if len(s.Ports) == 0 {
 		return ""
 	}
-	groups := map[string][]int{}
+	groups := map[string][]Port{}
 	var order []string
 	for _, port := range s.Ports {
 		if _, seen := groups[port.Protocol]; !seen {
 			order = append(order, port.Protocol)
 		}
-		groups[port.Protocol] = append(groups[port.Protocol], port.Number)
+		groups[port.Protocol] = append(groups[port.Protocol], port)
 	}
 	sort.SliceStable(order, func(i, j int) bool {
 		return protocolRank(order[i]) < protocolRank(order[j])
@@ -540,15 +548,56 @@ func portsText(st *styles, s Sandbox) string {
 
 	parts := make([]string, 0, len(order))
 	for _, protocol := range order {
-		numbers := groups[protocol]
-		sort.Ints(numbers)
-		text := make([]string, 0, len(numbers))
-		for _, number := range numbers {
-			text = append(text, itoa(number))
+		ports := groups[protocol]
+		sort.Slice(ports, func(i, j int) bool { return ports[i].Number < ports[j].Number })
+		text := make([]string, 0, len(ports))
+		for _, port := range ports {
+			text = append(text, portEntry(port, forwarded))
 		}
 		parts = append(parts, protocolLabel(protocol)+":"+strings.Join(text, ","))
 	}
 	return st.info.Render(strings.Join(parts, " · "))
+}
+
+// portEntry is one port in its group: the number on its own, or `local->remote`
+// when the workspace's forward has given it a local port.
+//
+// Both numbers are drawn even when they are the same. `1234->1234` says the
+// port is reachable here, which a bare `1234` — the shape every unforwarded
+// port already has — cannot; the arrow is the mark of "this one is open", and a
+// mark that disappears exactly when the forward got what it asked for would be
+// the wrong way round.
+//
+// A web port is also a link to the local end of it, so the port a sandbox is
+// serving is one click away rather than a URL to assemble by hand. Only the
+// forwarded ones: a link to a port nothing is listening on is worse than no
+// link. Only the web ones: OSC 8 hands the URL to whatever opens
+// `http://`, and there is nothing sensible for a browser to do with a Postgres
+// socket.
+func portEntry(port Port, forwarded map[int]int) string {
+	local, ok := forwarded[port.Number]
+	if !ok {
+		return itoa(port.Number)
+	}
+	text := itoa(local) + "->" + itoa(port.Number)
+	scheme, web := portScheme(port.Protocol)
+	if !web {
+		return text
+	}
+	return hyperlink(scheme+"://localhost:"+itoa(local), text)
+}
+
+// portScheme is the URL scheme a protocol is reachable under, and whether it is
+// one at all. The forward is a byte pipe, so a port speaking https is https at
+// the local end too — with the certificate's name not matching, which is
+// inherent to forwarding it and not something a scheme choice here can fix.
+func portScheme(protocol string) (string, bool) {
+	switch protocol {
+	case "http", "https":
+		return protocol, true
+	default:
+		return "", false
+	}
 }
 
 // protocolOrder is the order the groups are drawn in: what you would act on

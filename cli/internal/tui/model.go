@@ -78,6 +78,10 @@ type Model struct {
 	// wsGen numbers workspaces. Detaching bumps it, and a poll tick or an
 	// open still in flight from the one that was left is stale and dropped.
 	wsGen int
+	// forward holds the workspace's port forward while it is open: the local
+	// ports standing in for what the discobox is serving, which the header
+	// draws as arrows. See workspace.go.
+	forward Forward
 	// overlay is the command that has the screen over the workspace while it
 	// runs.
 	overlay *pane
@@ -448,6 +452,17 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, nil
 		}
 		return m, tea.Batch(m.listExecs(msg.gen), m.workspaceTick(msg.gen))
+
+	case workspaceForwardMsg:
+		return m, m.workspaceForward(msg)
+
+	case workspaceForwardChangedMsg:
+		// Nothing to apply: the header reads the forward itself. This is the
+		// redraw, and re-arming the wait is what keeps it coming.
+		if msg.gen != m.wsGen || m.forward == nil {
+			return m, nil
+		}
+		return m, m.forwardEvents(msg.gen, m.forward)
 
 	case paneMsg:
 		// Addressed to the pane it came from, which may exist before the

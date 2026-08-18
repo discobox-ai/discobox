@@ -25,6 +25,17 @@ func padANSI(s string, w int) string {
 	return ansi.Truncate(s, w, "…")
 }
 
+// hyperlink makes text clickable, by the OSC 8 escape terminals have agreed on
+// for it. The sequences occupy no cells, so everything that measures or
+// truncates this row goes on measuring the text.
+//
+// A terminal that does not know OSC 8 shows the text and drops the rest, which
+// is the whole reason the label reads as what it is — `8082->8080`, not "open"
+// — rather than being a word that only means something where the link works.
+func hyperlink(url, text string) string {
+	return ansi.SetHyperlink(url) + text + ansi.ResetHyperlink()
+}
+
 // truncate shortens text to w display cells without padding.
 func truncate(s string, w int) string {
 	if w <= 0 {

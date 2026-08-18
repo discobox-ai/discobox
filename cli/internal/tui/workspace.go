@@ -54,6 +54,18 @@ type workspaceTermMsg struct {
 // workspaceTickMsg asks for the next poll of the exec listing.
 type workspaceTickMsg struct{ gen int }
 
+// workspaceForwardMsg carries the port forward the workspace opened with, or
+// the reason there is none.
+type workspaceForwardMsg struct {
+	gen     int
+	forward Forward
+	err     error
+}
+
+// workspaceForwardChangedMsg is the forward saying its bindings differ. It
+// carries nothing: the header redraws from the forward itself.
+type workspaceForwardChangedMsg struct{ gen int }
+
 // openFromList opens a terminal screen from the list, on the discobox under
 // the cursor. It replaces whatever was open: this is a different discobox, or
 // the same one started over, and either way what was on screen was about
@@ -81,11 +93,83 @@ func (m *Model) openWorkspace(sandbox Sandbox, freshShell bool) tea.Cmd {
 	m.busy = "attach…"
 	m.connecting = map[string]bool{}
 	gen := m.wsGen
-	cmds := []tea.Cmd{m.listExecs(gen), m.workspaceTick(gen)}
+	cmds := []tea.Cmd{m.listExecs(gen), m.workspaceTick(gen), m.startForward(gen)}
 	if freshShell {
 		cmds = append(cmds, m.newShell())
 	}
 	return tea.Batch(cmds...)
+}
+
+// startForward opens the workspace's port forward. It is opened with the
+// workspace rather than on a key: the header already lists what the discobox is
+// serving, and a port you can see and cannot open is the gap this closes — so
+// the reachable form of that list is what the screen shows from the moment it
+// is up.
+func (m *Model) startForward(gen int) tea.Cmd {
+	ctx, ds, id := m.ctx, m.ds, m.paneBox.ID
+	return func() tea.Msg {
+		forward, err := ds.Forward(ctx, id)
+		return workspaceForwardMsg{gen: gen, forward: forward, err: err}
+	}
+}
+
+// workspaceForward takes ownership of the forward, or reports why there is
+// none. A workspace that was left while it was opening closes it here: nothing
+// else holds it, and the local ports it bound are this window's.
+func (m *Model) workspaceForward(msg workspaceForwardMsg) tea.Cmd {
+	if msg.gen != m.wsGen {
+		if msg.forward != nil {
+			_ = msg.forward.Close()
+		}
+		return nil
+	}
+	if msg.err != nil {
+		// The terminals are the screen; the ports are what rides on its
+		// header. Losing them is worth saying once and is not worth closing
+		// anything over.
+		return status("ports are not being forwarded: %v", msg.err)
+	}
+	if msg.forward == nil {
+		return nil
+	}
+	m.forward = msg.forward
+	return m.forwardEvents(msg.gen, msg.forward)
+}
+
+// forwardEvents waits for the next change to what is bound. Like the panes'
+// connection events it re-arms itself, and like them it stops when the window's
+// context ends or the channel closes.
+func (m *Model) forwardEvents(gen int, forward Forward) tea.Cmd {
+	ctx := m.ctx
+	return func() tea.Msg {
+		select {
+		case <-ctx.Done():
+			return nil
+		case _, ok := <-forward.Events():
+			if !ok {
+				return nil
+			}
+			return workspaceForwardChangedMsg{gen: gen}
+		}
+	}
+}
+
+// forwardedPorts is what the header draws its arrows from: the sandbox port a
+// local one stands in for. Empty while nothing is forwarded, which is also what
+// every screen but the workspace sees.
+func (m *Model) forwardedPorts() map[int]int {
+	if m.forward == nil {
+		return nil
+	}
+	bindings := m.forward.Bindings()
+	if len(bindings) == 0 {
+		return nil
+	}
+	forwarded := make(map[int]int, len(bindings))
+	for _, binding := range bindings {
+		forwarded[binding.Port] = binding.Local
+	}
+	return forwarded
 }
 
 // listExecs asks the server what is running in the workspace's discobox.
@@ -348,6 +432,13 @@ func (m *Model) closeWorkspace() {
 	m.wsGen++
 	m.connecting = nil
 	m.busy = ""
+	if m.forward != nil {
+		// The local ports go with the screen that opened them. A forward left
+		// running behind a closed workspace is a listener nothing on screen
+		// accounts for.
+		_ = m.forward.Close()
+		m.forward = nil
+	}
 	if m.overlay != nil {
 		_ = m.overlay.term.Close()
 		m.overlay = nil

@@ -47,6 +47,14 @@ type fakeSource struct {
 	// newShellID names the next exec NewShell creates.
 	newShellID int
 
+	// forward is what the workspace's port forward reports, and forwardErr
+	// fails opening one. forwards counts the ones opened and closed, so a test
+	// can hold the window to the rule that a workspace releases its ports.
+	forward       *fakeForward
+	forwardErr    error
+	forwardsOpen  int
+	forwardsClose int
+
 	// Calls, in order.
 	runs      []RunRequest
 	did       []string // "verb id"
@@ -207,6 +215,74 @@ func (f *fakeSource) OpenExec(_ context.Context, id, execID string, cols, rows i
 		return nil, err
 	}
 	return f.newExecTerminal(execID), nil
+}
+
+func (f *fakeSource) Forward(context.Context, string) (Forward, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	if f.forwardErr != nil {
+		return nil, f.forwardErr
+	}
+	f.forwardsOpen++
+	if f.forward == nil {
+		f.forward = newFakeForward()
+	}
+	f.forward.source = f
+	return f.forward, nil
+}
+
+// fakeForward is a port forward the test drives: bind names a local port for a
+// sandbox port and wakes the window exactly as a real bind does.
+type fakeForward struct {
+	source *fakeSource
+
+	mu       sync.Mutex
+	bindings []Binding
+	closed   bool
+	changed  chan struct{}
+}
+
+func newFakeForward(bindings ...Binding) *fakeForward {
+	return &fakeForward{bindings: bindings, changed: make(chan struct{}, 1)}
+}
+
+func (f *fakeForward) Bindings() []Binding {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return append([]Binding(nil), f.bindings...)
+}
+
+func (f *fakeForward) Events() <-chan struct{} { return f.changed }
+
+func (f *fakeForward) Close() error {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	if f.closed {
+		return nil
+	}
+	f.closed = true
+	close(f.changed)
+	if f.source != nil {
+		f.source.mu.Lock()
+		f.source.forwardsClose++
+		f.source.mu.Unlock()
+	}
+	return nil
+}
+
+// bind adds a binding and wakes whoever is waiting, the way a forwarder that
+// just took a local port does.
+func (f *fakeForward) bind(binding Binding) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	if f.closed {
+		return
+	}
+	f.bindings = append(f.bindings, binding)
+	select {
+	case f.changed <- struct{}{}:
+	default:
+	}
 }
 
 func (f *fakeSource) NewShell(_ context.Context, id string, cols, rows int) (Exec, Terminal, error) {

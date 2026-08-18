@@ -1046,7 +1046,7 @@ func (m *Model) paneHeaderFields() []string {
 	if stat := diffText(m.st, box); stat != "" {
 		fields = append(fields, stat)
 	}
-	if listening := portsText(m.st, box); listening != "" {
+	if listening := portsText(m.st, box, m.forwardedPorts()); listening != "" {
 		fields = append(fields, listening)
 	}
 	return fields

@@ -482,6 +482,34 @@ type Terminal interface {
 	Events() <-chan TerminalEvent
 }
 
+// Binding is one sandbox port reachable at a local one, while a Forward is
+// open. Local is what a browser on this machine connects to; Port is what the
+// sandbox is serving on inside itself.
+type Binding struct {
+	Port  int
+	Local int
+}
+
+// Forward is a running port forward onto one sandbox: every port it announces,
+// held open at a local port for as long as the workspace showing it is.
+//
+// The window does not drive it. It has no address to dial with — a Port drops
+// the bind address for the reason portsText gives — and nothing to decide: the
+// set follows what the sandbox announces, which is the same thing the header is
+// already drawn from. So the seam is "start one, draw what it bound, close it".
+type Forward interface {
+	// Bindings is what is forwarded right now, in sandbox-port order. It is
+	// read while drawing, so it must be safe to call from the render.
+	Bindings() []Binding
+
+	// Events wakes the window when Bindings would answer differently. It
+	// carries nothing: the window redraws from Bindings, and a per-connection
+	// event has nothing for it to say. Closed when the forward is.
+	Events() <-chan struct{}
+
+	io.Closer
+}
+
 // DataSource is everything the window needs from the outside. It is implemented
 // once, in the cli package, over the same API client and code paths the
 // non-interactive commands use: the launcher runs `disco`'s commands rather
@@ -552,6 +580,11 @@ type DataSource interface {
 	// goes into. execID may be ExecPrimary, which the sandbox resolves — and
 	// revives — itself.
 	OpenExec(ctx context.Context, sandboxID, execID string, cols, rows int) (Terminal, error)
+
+	// Forward starts forwarding one sandbox's listening ports to local ports,
+	// for as long as the returned Forward is open. The workspace opens one when
+	// it opens and closes it when it detaches.
+	Forward(ctx context.Context, sandboxID string) (Forward, error)
 
 	// NewShell creates, attaches and starts a fresh interactive shell exec,
 	// returning its identity along with the terminal so the tab it becomes is

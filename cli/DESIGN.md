@@ -386,6 +386,14 @@ launcher will supply the same two halves and draw them instead.
   is useless in the minute after a server starts, which is the minute it is
   reached for. What the listing does say about a named port — the address to
   dial, what it speaks — is still used.
+- The launcher runs the same forwarder. Opening a workspace opens one
+  (`apiDataSource.Forward`, `internal/cli/tui_forward.go`) and detaching closes
+  it, so the local ports live as long as the screen showing them; the window
+  sees only a `tui.Forward` — what is bound, and a wake-up when that changes —
+  and draws the sandbox ports on its header as `8082->8080`, with the web ones
+  linked to `http://localhost:8082`. It binds loopback only, with no `--address`
+  to widen it: a window has no business opening a sandbox's ports to the network
+  on the strength of having been attached to.
 - The listing is polled rather than streamed. The project event stream carries
   resource identities, not bodies, so a change would have to be followed by the
   same read this loop already does; the ports themselves reach the control plane

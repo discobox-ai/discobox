@@ -240,6 +240,38 @@ so the address would be a field that never changes what you can do. Nothing
 listening prints nothing, which is also what an agent that has not reported yet
 looks like.
 
+**The workspace forwards those ports, and the header says where to** —
+`http:8082->8080,3000->3000 · tcp:5433->5432`. Opening the workspace opens a port
+forward (`DataSource.Forward`, `startForward`) and detaching closes it, so the
+local ports live exactly as long as the screen that shows them; the mechanics
+are `internal/portforward`, the same forwarder `disco proxy` runs, over the same
+tunnel. A port that gets bound while the screen is up appears on it with no key
+pressed: the forward wakes the window (`Forward.Events`) and the header redraws
+from `Forward.Bindings`.
+
+Both numbers are drawn even when they match. `3000->3000` says the port is
+reachable *here*, which a bare `3000` — the shape every unforwarded port already
+has — cannot; the arrow is the mark of "this one is open", and a mark that
+vanished exactly when the forward got the number it asked for would be the wrong
+way round.
+
+A forwarded **web** port is also an OSC 8 link to the local end of it
+(`portEntry`, `hyperlink`), so a dev server is one click away rather than a URL
+to assemble by hand. Only forwarded ones, because a link to a port nothing is
+listening on is worse than no link, and only web ones, because OSC 8 hands the
+URL to whatever opens `http://` and there is nothing for a browser to do with a
+Postgres socket. The sequences occupy no cells, so every measure and truncation
+on this row goes on working on the text; a terminal that does not know OSC 8
+shows `8082->8080` and drops the rest, which is why the label is the numbers
+rather than a word like "open" that would only mean something where the link
+works.
+
+The window never drives the forward. It has no address to dial with — a `Port`
+drops the bind address, above — and nothing to decide: the set follows what the
+sandbox announces, which is what the header is already drawn from. So the seam
+is "start one, draw what it bound, close it", and the polling, the local port
+search and the splicing stay on the other side of it.
+
 **The banner's edges are given up before its middle** (`viewPaneHeader`). The
 middle is what the window is about; the edges are context the screen carries
 elsewhere, so a row too narrow for all three drops edges first, one at a time,
@@ -618,7 +650,7 @@ gets the product's.
 | `logo.go` | the mark, embedded from `logo.chars` as captured |
 | `editor.go` | Alt-E: the prompt in `$EDITOR` |
 | `pane.go` | one terminal pane: its keys, messages, chrome and cursor |
-| `workspace.go` | the workspace screen: open, poll/reconcile, tabs, detach |
+| `workspace.go` | the workspace screen: open, poll/reconcile, tabs, detach, the port forward |
 | `interact.go` | the `tea.ExecCommand` adapter for the command-shaped actions |
 
 ## Looking at it without a terminal
