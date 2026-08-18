@@ -270,17 +270,28 @@ func TestHarnessChoicesFollowTheListing(t *testing.T) {
 	}
 }
 
-// Enter on the harness row goes to where harnesses are set up, since that row
-// is a choice of harness.
-func TestOptionsHarnessRowOpensTheScreen(t *testing.T) {
+// Enter on the harness row advances the choice, the way it does on every other
+// row of the panel. It used to leave for the harnesses screen, which made one
+// row of a picker behave unlike the rest of it; F3 is how that screen is
+// reached, and the row's own hint says so.
+func TestEnterOnTheHarnessRowChangesTheChoice(t *testing.T) {
 	m := newTestModel(t, newFakeSource())
 	send(t, m, key("shift+tab"))
 	if !m.optionsOpen {
 		t.Fatal("Shift-Tab should open the run options")
 	}
+	before := m.opts.opts[optHarness].display()
+
 	send(t, m, key("enter"))
-	if !m.harnessesOpen || m.optionsOpen {
-		t.Fatalf("Enter on the harness row should open the harnesses screen: harnesses=%v options=%v", m.harnessesOpen, m.optionsOpen)
+
+	if m.harnessesOpen {
+		t.Fatal("Enter on the harness row should not leave the panel")
+	}
+	if !m.optionsOpen {
+		t.Fatal("Enter on the harness row should stay in the run options")
+	}
+	if after := m.opts.opts[optHarness].display(); after == before {
+		t.Fatalf("harness = %q both before and after Enter, want the choice advanced", after)
 	}
 }
 

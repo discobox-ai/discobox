@@ -875,12 +875,6 @@ func (m *Model) updateOptions(msg tea.KeyPressMsg) tea.Cmd {
 	case "right", "l", " ":
 		opt.cycle(1)
 	case "enter":
-		// The harness row is a choice of harness, and the other thing you do with
-		// harnesses is set them up — so Enter on it goes there. The value itself
-		// changes with left and right, the way every other choice here does.
-		if m.opts.cursor == optHarness {
-			return m.openHarnesses()
-		}
 		switch opt.kind {
 		case optText:
 			m.dialog = inputDialog(opt.label, opt.hint, opt.placeholder, opt.value, func(v string) tea.Cmd {
@@ -1970,8 +1964,7 @@ func (m *Model) helpText() string {
 		"",
 		"  The harnesses a discobox can be run on, and everything you do to",
 		"  them. It is `disco configure`: that command opens the window",
-		"  here. Enter on the run options' harness row does too, since",
-		"  that row is a choice of harness.",
+		"  here.",
 		"",
 		"    ↑ ↓ / k j      move            g / G   first / last",
 		"    e or Enter     enable it, or set it up again. The harness's own",

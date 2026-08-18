@@ -26,7 +26,6 @@ flowchart LR
     L -->|y| Exec["tea.Exec → DataSource.Interact"]
     A -->|d s| AVerb["DataSource.DoHarness"]
     A -->|e f| AExec["tea.Exec → ConfigureHarness / EditHarnessFile"]
-    A --> O
 ```
 
 ## Decisions
@@ -412,9 +411,8 @@ a picture, so the block moves, not the lines within it.
 screen now — `WithHarnesses()` opens the window straight onto it — because
 choosing a harness to run and setting one up are the same job from two ends, and
 two lists of harnesses with two sets of keys is one too many. `F3` opens it from
-anywhere in the window, and Enter on the run options' harness row does too: that
-row is a choice of harness, so the other thing you do with harnesses is one key
-from it.
+anywhere in the window, including from the run options, whose harness row names
+`F3` in its hint.
 
 It is drawn as the discobox list is drawn and acts as it does — chevron cursor,
 colored state glyph, a letter per action, the same modal layer for the file
