@@ -519,6 +519,8 @@ func (r *SandboxReconciler) createOptionsFromSandbox(ctx context.Context, sb *mo
 				RelaunchCommand:  cfg.RelaunchCommand,
 				ConfigCommand:    cfg.ConfigCommand,
 				Files:            cfg.Files,
+				ConfiguredFiles:  cfg.ConfiguredFiles,
+				Secrets:          cfg.Secrets,
 				Env:              cfg.Env,
 				Volumes:          cfg.Volumes,
 				AdditionalGroups: cfg.AdditionalGroups,

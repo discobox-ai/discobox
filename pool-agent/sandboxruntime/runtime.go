@@ -774,6 +774,26 @@ func writeSandboxManifest(path string, data []byte) error {
 	return os.Chmod(path, 0o644)
 }
 
+// documentHarnessSecrets carries the harness's declared credentials onto the
+// image layer. The sandbox reads them for Delivery alone: a file-delivered
+// secret must not also be exported as an environment variable, and only this
+// declaration says which (harness.SecretDeliveryFile).
+func documentHarnessSecrets(secrets []workerapimodel.HarnessSecret) []harness.Secret {
+	if len(secrets) == 0 {
+		return nil
+	}
+	out := make([]harness.Secret, 0, len(secrets))
+	for _, secret := range secrets {
+		out = append(out, harness.Secret{
+			Name:       secret.Name,
+			Required:   secret.Required.Or(false),
+			OneOfGroup: secret.OneOfGroup.Or(""),
+			Delivery:   secret.Delivery.Or(""),
+		})
+	}
+	return out
+}
+
 func documentFiles(files []workerapimodel.HarnessConfigFile) []sandboxconfig.File {
 	if len(files) == 0 {
 		return nil
@@ -902,6 +922,12 @@ func buildSandboxDocument(projectID, sandboxID, poolID, controlPlanePublicKey, r
 			}
 			if files, ok := resolved.Files.Get(); ok {
 				doc.Image.Files = documentFiles(files)
+			}
+			if configuredFiles, ok := resolved.ConfiguredFiles.Get(); ok {
+				doc.Runtime.Files = documentFiles(configuredFiles)
+			}
+			if secrets, ok := resolved.Secrets.Get(); ok {
+				doc.Image.Secrets = documentHarnessSecrets(secrets)
 			}
 			if env, ok := resolved.Env.Get(); ok {
 				doc.Image.Env = harness.ExpandEnvHomeTokens(map[string]string(env), user.HomeDirectory)

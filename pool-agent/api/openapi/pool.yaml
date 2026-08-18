@@ -132,6 +132,22 @@ components:
                 snapshotRef:
                     type: string
             type: object
+        HarnessSecret:
+            additionalProperties: false
+            description: A credential the harness declares. The sandbox reads this for delivery alone -- a file-delivered secret must not also be exported as an environment variable.
+            properties:
+                name:
+                    type: string
+                required:
+                    type: boolean
+                oneOfGroup:
+                    type: string
+                delivery:
+                    description: env (default) exports the variable named by name; file withholds that export because the harness reads the credential from an installed file.
+                    type: string
+            required:
+                - name
+            type: object
         HarnessVolume:
             additionalProperties: false
             description: An image-declared path the sandbox-agent wires from a primary volume during boot.
@@ -157,6 +173,11 @@ components:
             additionalProperties: false
             properties:
                 files:
+                    items:
+                        "$ref": "#/components/schemas/HarnessConfigFile"
+                    nullable: true
+                    type: array
+                configuredFiles:
                     items:
                         "$ref": "#/components/schemas/HarnessConfigFile"
                     nullable: true
@@ -190,6 +211,11 @@ components:
                 volumes:
                     items:
                         "$ref": "#/components/schemas/HarnessVolume"
+                    nullable: true
+                    type: array
+                secrets:
+                    items:
+                        "$ref": "#/components/schemas/HarnessSecret"
                     nullable: true
                     type: array
                 additionalGroups:

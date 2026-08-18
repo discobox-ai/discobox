@@ -431,6 +431,48 @@ func TestBuildSandboxDocumentIncludesSelectedHarnessIdentityAndFiles(t *testing.
 	}
 }
 
+func TestBuildSandboxDocumentOverlaysConfiguredFilesOntoRuntimeLayer(t *testing.T) {
+	req := &workerapimodel.PoolSandboxCreateRequest{
+		ResolvedHarnessConfig: workerclient.NewOptResolvedHarnessConfig(workerapimodel.ResolvedHarnessConfig{
+			ID: "claude", Name: "Claude",
+			Files: workerclient.NewOptNilHarnessConfigFileArray([]workerapimodel.HarnessConfigFile{
+				{Path: ".claude/settings.json", Content: `{"theme":"dark"}`},
+				{Path: ".claude.json", Content: `{}`},
+			}),
+			ConfiguredFiles: workerclient.NewOptNilHarnessConfigFileArray([]workerapimodel.HarnessConfigFile{
+				// Overlays the image baseline's settings.json by path with what the
+				// configure flow captured.
+				{Path: ".claude/settings.json", Content: `{"theme":"light"}`},
+			}),
+		}),
+	}
+
+	doc := buildSandboxDocument("project-1", "sandbox-1", "pool-1", "public-key", "sha256:image", req, nil, nil)
+	if len(doc.Image.Files) != 2 {
+		t.Fatalf("image files = %+v, want the unmodified image baseline", doc.Image.Files)
+	}
+	if len(doc.Runtime.Files) != 1 || doc.Runtime.Files[0].Path != ".claude/settings.json" || doc.Runtime.Files[0].Content != `{"theme":"light"}` {
+		t.Fatalf("runtime files = %+v, want configured settings.json alone", doc.Runtime.Files)
+	}
+
+	cfg, _ := sandboxconfig.Effective(doc)
+	var settings, claudeJSON *sandboxconfig.File
+	for i := range cfg.Files {
+		switch cfg.Files[i].Path {
+		case ".claude/settings.json":
+			settings = &cfg.Files[i]
+		case ".claude.json":
+			claudeJSON = &cfg.Files[i]
+		}
+	}
+	if settings == nil || settings.Content != `{"theme":"light"}` {
+		t.Fatalf("effective settings.json = %+v, want the configured overlay to win", settings)
+	}
+	if claudeJSON == nil || claudeJSON.Content != `{}` {
+		t.Fatalf("effective .claude.json = %+v, want the untouched image baseline", claudeJSON)
+	}
+}
+
 func TestWriteSandboxManifestIsWorldReadable(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "sandbox.json")
 	if err := os.WriteFile(path, []byte("old"), 0o600); err != nil {

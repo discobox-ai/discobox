@@ -269,6 +269,31 @@ func newWorkerAgentClient(lease *transport.HTTPClientLease) (*poolclient.Client,
 	return poolclient.NewClient(strings.TrimRight(baseURL, "/"), workerSecuritySource{lease: lease}, poolclient.WithClient(httpClient))
 }
 
+// poolHarnessConfigSecrets forwards the harness's declared credentials. Only
+// the declaration crosses here -- never a value: what the sandbox needs is
+// Delivery, which says whether the sentinel is exported as an environment
+// variable or withheld because the harness reads it from a file.
+func poolHarnessConfigSecrets(secrets []model.HarnessConfigSecret) poolclient.OptNilHarnessSecretArray {
+	if len(secrets) == 0 {
+		return poolclient.OptNilHarnessSecretArray{}
+	}
+	out := make([]poolapimodel.HarnessSecret, 0, len(secrets))
+	for _, secret := range secrets {
+		entry := poolapimodel.HarnessSecret{
+			Name:     secret.Name,
+			Required: poolclient.NewOptBool(secret.Required),
+		}
+		if secret.OneOfGroup != "" {
+			entry.OneOfGroup = poolclient.NewOptString(secret.OneOfGroup)
+		}
+		if secret.Delivery != "" {
+			entry.Delivery = poolclient.NewOptString(secret.Delivery)
+		}
+		out = append(out, entry)
+	}
+	return poolclient.NewOptNilHarnessSecretArray(out)
+}
+
 func poolHarnessConfigFiles(files []model.HarnessConfigFile) poolclient.OptNilHarnessConfigFileArray {
 	if len(files) == 0 {
 		return poolclient.OptNilHarnessConfigFileArray{}
@@ -347,7 +372,9 @@ func poolCreateRequestFromOptions(sandboxID string, opts sandbox.CreateOptions) 
 		rhc := opts.ResolvedHarnessConfig
 		resolved := poolapimodel.ResolvedHarnessConfig{
 			ID: rhc.ID, Name: rhc.Name,
-			Files: poolHarnessConfigFiles(rhc.Files),
+			Files:           poolHarnessConfigFiles(rhc.Files),
+			ConfiguredFiles: poolHarnessConfigFiles(rhc.ConfiguredFiles),
+			Secrets:         poolHarnessConfigSecrets(rhc.Secrets),
 		}
 		if rhc.Description != "" {
 			resolved.Description = poolclient.NewOptString(rhc.Description)

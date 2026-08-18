@@ -532,6 +532,58 @@ func (s *HarnessConfigFile) SetTemplate(val OptBool) {
 	s.Template = val
 }
 
+// A credential the harness declares. The sandbox reads this for delivery alone -- a file-delivered
+// secret must not also be exported as an environment variable.
+// Ref: #/components/schemas/HarnessSecret
+type HarnessSecret struct {
+	Name       string    `json:"name"`
+	Required   OptBool   `json:"required"`
+	OneOfGroup OptString `json:"oneOfGroup"`
+	// Env (default) exports the variable named by name; file withholds that export because the harness
+	// reads the credential from an installed file.
+	Delivery OptString `json:"delivery"`
+}
+
+// GetName returns the value of Name.
+func (s *HarnessSecret) GetName() string {
+	return s.Name
+}
+
+// GetRequired returns the value of Required.
+func (s *HarnessSecret) GetRequired() OptBool {
+	return s.Required
+}
+
+// GetOneOfGroup returns the value of OneOfGroup.
+func (s *HarnessSecret) GetOneOfGroup() OptString {
+	return s.OneOfGroup
+}
+
+// GetDelivery returns the value of Delivery.
+func (s *HarnessSecret) GetDelivery() OptString {
+	return s.Delivery
+}
+
+// SetName sets the value of Name.
+func (s *HarnessSecret) SetName(val string) {
+	s.Name = val
+}
+
+// SetRequired sets the value of Required.
+func (s *HarnessSecret) SetRequired(val OptBool) {
+	s.Required = val
+}
+
+// SetOneOfGroup sets the value of OneOfGroup.
+func (s *HarnessSecret) SetOneOfGroup(val OptString) {
+	s.OneOfGroup = val
+}
+
+// SetDelivery sets the value of Delivery.
+func (s *HarnessSecret) SetDelivery(val OptString) {
+	s.Delivery = val
+}
+
 // An image-declared path the sandbox-agent wires from a primary volume during boot.
 // Ref: #/components/schemas/HarnessVolume
 type HarnessVolume struct {
@@ -1166,6 +1218,69 @@ func (o OptNilHarnessConfigFileArray) Get() (v []HarnessConfigFile, ok bool) {
 
 // Or returns value if set, or given parameter if does not.
 func (o OptNilHarnessConfigFileArray) Or(d []HarnessConfigFile) []HarnessConfigFile {
+	if v, ok := o.Get(); ok {
+		return v
+	}
+	return d
+}
+
+// NewOptNilHarnessSecretArray returns new OptNilHarnessSecretArray with value set to v.
+func NewOptNilHarnessSecretArray(v []HarnessSecret) OptNilHarnessSecretArray {
+	return OptNilHarnessSecretArray{
+		Value: v,
+		Set:   true,
+	}
+}
+
+// OptNilHarnessSecretArray is optional nullable []HarnessSecret.
+type OptNilHarnessSecretArray struct {
+	Value []HarnessSecret
+	Set   bool
+	Null  bool
+}
+
+// IsSet returns true if OptNilHarnessSecretArray was set.
+func (o OptNilHarnessSecretArray) IsSet() bool { return o.Set }
+
+// Reset unsets value.
+func (o *OptNilHarnessSecretArray) Reset() {
+	var v []HarnessSecret
+	o.Value = v
+	o.Set = false
+	o.Null = false
+}
+
+// SetTo sets value to v.
+func (o *OptNilHarnessSecretArray) SetTo(v []HarnessSecret) {
+	o.Set = true
+	o.Null = false
+	o.Value = v
+}
+
+// IsNull returns true if value is Null.
+func (o OptNilHarnessSecretArray) IsNull() bool { return o.Null }
+
+// SetToNull sets value to null.
+func (o *OptNilHarnessSecretArray) SetToNull() {
+	o.Set = true
+	o.Null = true
+	var v []HarnessSecret
+	o.Value = v
+}
+
+// Get returns value and boolean that denotes whether value was set.
+func (o OptNilHarnessSecretArray) Get() (v []HarnessSecret, ok bool) {
+	if o.Null {
+		return v, false
+	}
+	if !o.Set {
+		return v, false
+	}
+	return o.Value, true
+}
+
+// Or returns value if set, or given parameter if does not.
+func (o OptNilHarnessSecretArray) Or(d []HarnessSecret) []HarnessSecret {
 	if v, ok := o.Get(); ok {
 		return v
 	}
@@ -2499,6 +2614,7 @@ func (s *PoolSyncRequest) SetKnownPoolIds(val []string) {
 // Ref: #/components/schemas/ResolvedHarnessConfig
 type ResolvedHarnessConfig struct {
 	Files            OptNilHarnessConfigFileArray   `json:"files"`
+	ConfiguredFiles  OptNilHarnessConfigFileArray   `json:"configuredFiles"`
 	ID               string                         `json:"id"`
 	Name             string                         `json:"name"`
 	Description      OptString                      `json:"description"`
@@ -2507,12 +2623,18 @@ type ResolvedHarnessConfig struct {
 	ConfigCommand    OptNilStringArray              `json:"configCommand"`
 	Env              OptNilResolvedHarnessConfigEnv `json:"env"`
 	Volumes          OptNilHarnessVolumeArray       `json:"volumes"`
+	Secrets          OptNilHarnessSecretArray       `json:"secrets"`
 	AdditionalGroups OptNilStringArray              `json:"additionalGroups"`
 }
 
 // GetFiles returns the value of Files.
 func (s *ResolvedHarnessConfig) GetFiles() OptNilHarnessConfigFileArray {
 	return s.Files
+}
+
+// GetConfiguredFiles returns the value of ConfiguredFiles.
+func (s *ResolvedHarnessConfig) GetConfiguredFiles() OptNilHarnessConfigFileArray {
+	return s.ConfiguredFiles
 }
 
 // GetID returns the value of ID.
@@ -2555,6 +2677,11 @@ func (s *ResolvedHarnessConfig) GetVolumes() OptNilHarnessVolumeArray {
 	return s.Volumes
 }
 
+// GetSecrets returns the value of Secrets.
+func (s *ResolvedHarnessConfig) GetSecrets() OptNilHarnessSecretArray {
+	return s.Secrets
+}
+
 // GetAdditionalGroups returns the value of AdditionalGroups.
 func (s *ResolvedHarnessConfig) GetAdditionalGroups() OptNilStringArray {
 	return s.AdditionalGroups
@@ -2563,6 +2690,11 @@ func (s *ResolvedHarnessConfig) GetAdditionalGroups() OptNilStringArray {
 // SetFiles sets the value of Files.
 func (s *ResolvedHarnessConfig) SetFiles(val OptNilHarnessConfigFileArray) {
 	s.Files = val
+}
+
+// SetConfiguredFiles sets the value of ConfiguredFiles.
+func (s *ResolvedHarnessConfig) SetConfiguredFiles(val OptNilHarnessConfigFileArray) {
+	s.ConfiguredFiles = val
 }
 
 // SetID sets the value of ID.
@@ -2603,6 +2735,11 @@ func (s *ResolvedHarnessConfig) SetEnv(val OptNilResolvedHarnessConfigEnv) {
 // SetVolumes sets the value of Volumes.
 func (s *ResolvedHarnessConfig) SetVolumes(val OptNilHarnessVolumeArray) {
 	s.Volumes = val
+}
+
+// SetSecrets sets the value of Secrets.
+func (s *ResolvedHarnessConfig) SetSecrets(val OptNilHarnessSecretArray) {
+	s.Secrets = val
 }
 
 // SetAdditionalGroups sets the value of AdditionalGroups.

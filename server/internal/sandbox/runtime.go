@@ -173,13 +173,22 @@ type UpdateOptions struct {
 // ResolvedHarnessConfig is the sandbox-local harness configuration captured
 // at sandbox create time.
 type ResolvedHarnessConfig struct {
-	ID               string
-	Name             string
-	Description      string
-	RunCommand       []string
-	RelaunchCommand  []string
-	ConfigCommand    []string
-	Files            []model.HarnessConfigFile
+	ID              string
+	Name            string
+	Description     string
+	RunCommand      []string
+	RelaunchCommand []string
+	ConfigCommand   []string
+	Files           []model.HarnessConfigFile
+	// ConfiguredFiles overlays Files by path (docs/adr/0012 §1's Files
+	// overlay rule): files captured by the harness's configure flow, kept
+	// separate from the image baseline so a reconfigure never has to
+	// reconstruct or duplicate it.
+	ConfiguredFiles []model.HarnessConfigFile
+	// Secrets are the harness's declared credentials, carried for their
+	// Delivery: a file-delivered secret must not also be exported into the
+	// harness's environment (harness.SecretDeliveryFile).
+	Secrets          []model.HarnessConfigSecret
 	Env              map[string]string
 	Volumes          []harness.Volume
 	AdditionalGroups []string
