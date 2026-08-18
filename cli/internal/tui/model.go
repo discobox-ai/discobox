@@ -1245,7 +1245,7 @@ func (m *Model) startRun(req RunRequest) tea.Cmd {
 // no default, and asks which harness should be the default. It reports whether
 // the run was stopped.
 //
-// The server refuses this create outright (ADR 0046), so the alternative to
+// The server refuses this create outright (ADR 0048), so the alternative to
 // asking is the same refusal a moment later with the answer left to the user to
 // find. Asking here is also the only point that knows what the project has to
 // offer.

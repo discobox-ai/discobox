@@ -206,7 +206,7 @@ side is in [pool-agent/DESIGN.md](../pool-agent/DESIGN.md)). Three pieces here:
   pool built, since the registry already holds its layers. It is here rather
   than in the mediator because the mediator cannot see a build's sources
   (ADR 0044); it degrades to leaving the build untouched at every step. See
-  ADR 0045.
+  ADR 0047.
 - Tagging retries. `docker tag` is not atomic in the containerd image store —
   the daemon creates the record, and finding the name taken, deletes it and
   creates it again — so two builds tagging one name with different targets can

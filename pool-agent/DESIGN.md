@@ -411,7 +411,7 @@ Four boundaries, each doing one job:
   as `registry-namespace` — not the sandbox ID, which a peer can derive. It is
   world-readable inside the sandbox, whose own user is the tenant it belongs to.
   When the registry authenticates, the namespace should become the sandbox ID
-  and the token should go. See ADR 0045.
+  and the token should go. See ADR 0047.
 - **A stop drains the builds it is carrying.** A build is one long-lived stream
   through the mediator, so stopping the server closes it and the client sees
   `Unavailable: error reading from server: EOF` with nothing to resume from.

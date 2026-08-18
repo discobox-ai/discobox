@@ -1,4 +1,4 @@
-# 0046 — A sandbox names its harness, or the project does
+# 0048 — A sandbox names its harness, or the project does
 
 - **Status**: Accepted
 - **Date**: 2026-08-18

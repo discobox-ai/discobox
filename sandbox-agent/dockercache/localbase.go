@@ -24,7 +24,7 @@ import (
 // So the shim publishes those bases into this sandbox's registry namespace and
 // points the build at them with `--build-context`, which BuildKit's dockerfile
 // frontend resolves *before* it resolves an image. Nothing about the Dockerfile
-// or the command line changes. See ADR 0045.
+// or the command line changes. See ADR 0047.
 //
 // It is done here rather than in the mediator because the mediator cannot see
 // what a build is built from: for a dockerfile build the frontend generates its

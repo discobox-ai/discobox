@@ -32,7 +32,7 @@ func TestResolveHarnessConfigIDDefaultsToProjectDefault(t *testing.T) {
 	}
 }
 
-// Nothing named and no default is an error, not a shell (ADR 0046). The chain
+// Nothing named and no default is an error, not a shell (ADR 0048). The chain
 // used to end at the built-in `shell`, which answered a project with a harness
 // configured and no default set with a sandbox that had no harness in it.
 func TestResolveHarnessConfigIDFailsWithNothingToResolve(t *testing.T) {

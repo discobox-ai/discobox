@@ -699,7 +699,7 @@ func mustParseURL(t *testing.T, value string) url.URL {
 // machine's Docker daemon happens to hold — and a seeded config supplies the
 // sandbox's image, which is exactly what the tests around it are measuring.
 // A harness with no image is how the default sandbox image is still reached now
-// that a sandbox must resolve one (ADR 0046); these tests used to say "no
+// that a sandbox must resolve one (ADR 0048); these tests used to say "no
 // harness config at all", which create no longer allows.
 func imagelessHarnessConfig(ctx context.Context, t *testing.T, st *store.Store, projectID string) string {
 	t.Helper()

@@ -295,7 +295,7 @@ func (s *Service) CreateSandbox(ctx context.Context, projectID string, input ser
 }
 
 // resolveHarnessConfigID is which harness a sandbox runs: what the request
-// names, else the project default, else nothing — which is an error (ADR 0046).
+// names, else the project default, else nothing — which is an error (ADR 0048).
 //
 // The chain used to end at the built-in `shell`, so it always terminated. That
 // answered a project with a harness configured and no default set with a shell,
@@ -713,7 +713,7 @@ func (s *Service) upgradeTarget(ctx context.Context, sb *model.Sandbox) (Upgrade
 // fallbackHarnessConfig is the reserved `shell` built-in, or nil when seeding
 // has not created it.
 //
-// It is no longer where create's resolution chain ends (ADR 0046): a sandbox
+// It is no longer where create's resolution chain ends (ADR 0048): a sandbox
 // names its harness or the project does. What still needs it is the migration
 // of sandboxes made before every sandbox carried a harness config, which adopt
 // this one on upgrade — a legacy path, not a default.

@@ -13,7 +13,7 @@ still true of it, and true *by rule* rather than by slug:
 
 - Its slug is reserved so nothing else can claim it (ADR 0032 §3). It is no
   longer the end of the resolution chain: create resolves an explicit harness or
-  the project default and refuses when it has neither (ADR 0046). `shell` is
+  the project default and refuses when it has neither (ADR 0048). `shell` is
   reached by being named or by being the default, like any other harness — what
   still ends at it is the upgrade of sandboxes made before every sandbox carried
   a harness config, which adopt it.
@@ -183,7 +183,7 @@ an unconfigured one and be rejected at sandbox create. The client releases the
 default first — `UnsetDefaultHarnessConfig` (`DELETE .../default`) clears it, and
 the CLI's harnesses screen does this automatically when disabling the default.
 Deleting a default harness is fine: the store cascade clears the pointer, and a
-project with no default refuses a create that names no harness (ADR 0046) rather
+project with no default refuses a create that names no harness (ADR 0048) rather
 than resolving to one nobody chose.
 
 ## Boundaries

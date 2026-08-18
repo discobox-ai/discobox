@@ -1016,7 +1016,7 @@ func (r *DockerSandboxRuntime) DeleteSandbox(ctx context.Context, sandboxID stri
 		return err
 	}
 	// Before the tree goes, since the tree is what names them: every image this
-	// sandbox published into the pool registry to build from (ADR 0045) is
+	// sandbox published into the pool registry to build from (ADR 0047) is
 	// removed with it. A purge that left them would leave repositories nothing
 	// can name — the namespace is unguessable and its only record was here — and
 	// so nothing could ever clean up.

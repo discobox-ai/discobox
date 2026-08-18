@@ -1,4 +1,4 @@
-# 0045 — Local base images resolve through a per-sandbox registry namespace
+# 0047 — Local base images resolve through a per-sandbox registry namespace
 
 - **Status**: Accepted
 - **Date**: 2026-08-16

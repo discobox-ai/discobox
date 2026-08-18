@@ -221,7 +221,7 @@ listing.
 
 **What the discobox is serving rides at the end of them** (`portsText`), from
 the same push
-([ADR 0046](../../../docs/adr/0046-listening-ports-are-polled-and-probed-in-the-background.md)),
+([ADR 0048](../../../docs/adr/0046-listening-ports-are-polled-and-probed-in-the-background.md)),
 grouped by protocol — `http:3000,5173,8080 · https:8443 · tcp:22,5432,6379`.
 Grouped rather than one `protocol/port` per port because the protocol is the
 repetitive half: a sandbox running three dev servers said "http" three times for
@@ -506,7 +506,7 @@ thing to keep true.
 
 Submitting a prompt in a project with no default and nothing chosen stops the
 run and asks which harness the project should run (`askForADefaultHarness`).
-The server refuses that create outright (ADR 0046), so the alternative is the
+The server refuses that create outright (ADR 0048), so the alternative is the
 same refusal a moment later with the answer left to the user to find — and this
 is the only point that knows what the project has to offer. A harness that
 already works becomes the default outright; one that does not is set up first
