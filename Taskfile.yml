@@ -153,7 +153,21 @@ tasks:
       - dev:docker-image-watch
 
   dev:server:
-    desc: Run discobox-server with watchnbuild hot reload (see .wnb.yaml)
+    desc: Run discobox-server with watchnbuild hot reload, HTTP and SSH on loopback
+    env:
+      # A development server opens both TCP front doors it keeps shut in
+      # production, so curling the API and ssh-ing into a sandbox need no setup.
+      # They are opt-in normally because each is a machine-wide surface — and on
+      # Windows a firewall prompt (server/DESIGN.md "Listen Endpoints"). Bound
+      # to loopback here, which is not one.
+      #
+      # Either can be overridden from the environment:
+      #     DISCOBOX_SSH_LISTEN=:22222 go tool task dev
+      #
+      # Not from .env, though: the server loads that with godotenv, which does
+      # not replace a variable already set, and these are set here.
+      DISCOBOX_SERVER_LISTEN: '{{.DISCOBOX_SERVER_LISTEN | default "http://127.0.0.1:8080"}}'
+      DISCOBOX_SSH_LISTEN: '{{.DISCOBOX_SSH_LISTEN | default "127.0.0.1:3222"}}'
     cmds:
       - touch .env
       - go tool watchnbuild

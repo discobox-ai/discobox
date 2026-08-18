@@ -151,6 +151,13 @@ git subprocesses that cannot speak anything else (see [cli](../cli/DESIGN.md)).
 `cfg.Listen` is threaded to the provider factories so a backend picks a
 transport this server actually answers on rather than assuming one exists.
 
+`task dev` opts into both on loopback — `http://127.0.0.1:8080` and
+`127.0.0.1:3222` — so a development server can be curled and ssh-ed into with
+nothing to configure. Loopback is what makes that safe to default: the reason
+these are opt-in is that they are machine-wide surfaces, and a loopback bind is
+not one. Either is overridden from the environment, not from `.env`, which the
+server loads with godotenv and which does not replace a variable already set.
+
 The SSH control-plane ingress (ADR 0024) follows the same opt-in rule on its
 own listener: `DISCOBOX_SSH_LISTEN` binds a second, independent TCP listener
 when set, and binds nothing when unset. What clients dial is a separate
