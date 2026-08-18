@@ -11,6 +11,7 @@ import (
 	"regexp"
 	"strings"
 
+	"github.com/obot-platform/discobox/harness"
 	"github.com/obot-platform/discobox/harness/registry"
 )
 
@@ -31,7 +32,7 @@ type Seed struct {
 // It is an ordinary registry harness — `harness/shell`, built on the sandbox
 // agent image like every other — and this name is reserved only so that
 // nothing else can claim the end of the chain.
-const ShellSlug = "shell"
+const ShellSlug = harness.ShellSlug
 
 // Seeds returns the built-in harness configs to seed, with each image replaced
 // by imageOverrides[slug] when present. Dev builds inject freshly tagged images

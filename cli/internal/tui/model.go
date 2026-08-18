@@ -461,7 +461,13 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, m.harnessesLoaded(msg)
 
 	case harnessSetupMsg:
+		if msg.andDefault {
+			return m, m.configureHarnessThen(msg.harness, &msg.harness)
+		}
 		return m, m.configureHarness(msg.harness)
+
+	case harnessDefaultMsg:
+		return m, m.chooseDefaultHarness(msg.harness)
 
 	case harnessVerbMsg:
 		return m, m.runHarnessVerb(msg.verb, msg.harness)
@@ -1206,6 +1212,9 @@ func (m *Model) interact(act Interaction, ids []string) tea.Cmd {
 // a sandbox of your own to work in, with no harness given anything to do.
 func (m *Model) run() tea.Cmd {
 	req := m.opts.request(m.prompt.Value())
+	if cmd, stop := m.askForADefaultHarness(req); stop {
+		return cmd
+	}
 	if cmd, stop := m.askToSetUpHarness(req); stop {
 		return cmd
 	}
@@ -1219,6 +1228,91 @@ func (m *Model) run() tea.Cmd {
 		dirty, err := m.ds.Dirty(m.ctx, req.Source)
 		return dirtyCheckedMsg{req: req, dirty: dirty, err: err}
 	}
+}
+
+// askForADefaultHarness stops a run that has named no harness in a project with
+// no default, and asks which harness should be the default. It reports whether
+// the run was stopped.
+//
+// The server refuses this create outright (ADR 0046), so the alternative to
+// asking is the same refusal a moment later with the answer left to the user to
+// find. Asking here is also the only point that knows what the project has to
+// offer.
+//
+// `shell` is not among the choices. It runs like any other harness and is
+// chosen like any other, but a project whose default is a login shell has no
+// coding harness by default, which is the state this is trying to leave.
+func (m *Model) askForADefaultHarness(req RunRequest) (tea.Cmd, bool) {
+	if req.Harness != "" || m.projectDefaultHarness() != nil {
+		return nil, false
+	}
+	if !m.harnesses.loaded {
+		// The listing has not landed yet, so there is nothing to ask about with
+		// any confidence. The server refuses a create it cannot resolve, which
+		// is the answer this would only be guessing at.
+		return nil, false
+	}
+	candidates := m.defaultCandidates()
+	if len(candidates) == 0 {
+		return m.report(true, "this project has no harness to run; register one with `disco box harnesses create`"), true
+	}
+
+	items := make([]action, 0, len(candidates))
+	for i, harness := range candidates {
+		detail := "make it the project default"
+		if harness.State != HarnessEnabled {
+			detail = "set it up, then make it the default"
+		}
+		items = append(items, action{
+			key: itoa(i + 1), label: harness.displayName(), detail: detail, enabled: true,
+		})
+	}
+	chosen := candidates
+	menu := actionsDialog("Which harness should this project run?",
+		"Nothing is set as the project default, so a discobox has no harness to start.",
+		items, func(key string) tea.Cmd {
+			for i, harness := range chosen {
+				if itoa(i+1) == key {
+					return func() tea.Msg { return harnessDefaultMsg{harness: harness} }
+				}
+			}
+			return nil
+		})
+	menu.footer = "Enter chooses · Esc cancels"
+	m.dialog = menu
+	return nil, true
+}
+
+// chooseDefaultHarness acts on that choice: a harness that already works
+// becomes the default outright, and one that does not is set up first.
+func (m *Model) chooseDefaultHarness(harness Harness) tea.Cmd {
+	if harness.State == HarnessEnabled {
+		return m.runHarnessVerb(HarnessSetDefault, harness)
+	}
+	return m.configureHarnessThen(harness, &harness)
+}
+
+// projectDefaultHarness is the harness the project runs when nothing says
+// otherwise, or nil when it has named none.
+func (m *Model) projectDefaultHarness() *Harness {
+	for _, harness := range m.harnesses.all {
+		if harness.Default {
+			return &harness
+		}
+	}
+	return nil
+}
+
+// defaultCandidates are the harnesses worth offering as a project default: all
+// of them except `shell`, in the order the listing reports.
+func (m *Model) defaultCandidates() []Harness {
+	var out []Harness
+	for _, harness := range m.harnesses.all {
+		if !harness.Shell {
+			out = append(out, harness)
+		}
+	}
+	return out
 }
 
 // askToSetUpHarness stops a run whose harness cannot run, and offers the way

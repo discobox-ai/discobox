@@ -116,7 +116,7 @@ func testHarnesses() []Harness {
 			// The reserved built-in: no setup to run, so neither enabling nor
 			// disabling applies to it. Born enabled because it needs nothing.
 			ID: "hc_shell", Name: "Shell", Slug: "shell", State: HarnessEnabled,
-			BuiltIn: true, Image: "ghcr.io/example/shell:latest",
+			BuiltIn: true, Shell: true, Image: "ghcr.io/example/shell:latest",
 			Updated: now.Add(-96 * time.Hour),
 		},
 	}

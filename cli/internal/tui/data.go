@@ -180,6 +180,11 @@ type Harness struct {
 	Default bool
 	// BuiltIn harnesses come with the server rather than being registered by hand.
 	BuiltIn bool
+	// Shell is the reserved `shell` harness: a plain login shell, not a coding
+	// harness. It runs like any other and is chosen like any other, but it is
+	// not offered as a project's default, since defaulting to it is the same as
+	// having no coding harness at all.
+	Shell bool
 	// Configurable is whether the image declares a setup command to run. The
 	// reserved `shell` built-in declares none — it is a login shell with no
 	// credentials to collect — and neither enabling nor disabling applies to

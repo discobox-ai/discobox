@@ -10,6 +10,7 @@ import (
 	apiclientgen "github.com/obot-platform/discobox/api/gen"
 	apimodel "github.com/obot-platform/discobox/api/model"
 	"github.com/obot-platform/discobox/cli/internal/tui"
+	"github.com/obot-platform/discobox/harness"
 )
 
 // The launcher's harnesses screen, on this side of the seam. What the window
@@ -49,6 +50,7 @@ func toTUIHarness(cfg apimodel.HarnessConfig, defaultID string) tui.Harness {
 		State:   harnessState(cfg),
 		Default: cfg.ID == defaultID,
 		BuiltIn: cfg.BuiltIn,
+		Shell:   strings.TrimSpace(cfg.Slug) == harness.ShellSlug,
 		// What the server decides both enable and disable on: an image that
 		// declares no configure command has neither to offer.
 		Configurable: len(cfg.ConfigCommand.Or(nil)) > 0,

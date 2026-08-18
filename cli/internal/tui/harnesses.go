@@ -41,6 +41,12 @@ type harnessList struct {
 	cursor int
 	offset int
 
+	// loaded is whether the listing has arrived at least once. An empty listing
+	// and one that has not landed yet look the same in `all` and mean opposite
+	// things: the first says the project has no harnesses, the second says
+	// nothing at all, and a prompt must not be refused on the strength of it.
+	loaded bool
+
 	width, height int
 
 	// now is when the frame is being drawn, so the age column is a pure
@@ -55,6 +61,7 @@ func newHarnessList() *harnessList { return &harnessList{now: time.Now} }
 // today, but a cursor that follows the harness is the cursor that acts on the
 // one you were looking at.
 func (l *harnessList) setAll(all []Harness) {
+	l.loaded = true
 	var onID string
 	if h := l.current(); h != nil {
 		onID = h.ID
@@ -269,7 +276,16 @@ type harnessesLoadedMsg struct {
 // prompt asks it when a run names a harness that has never been through its
 // setup; a dialog closed over the model by value and cannot run anything
 // against it.
-type harnessSetupMsg struct{ harness Harness }
+//
+// andDefault makes it the project default afterwards, which is what the prompt
+// asks for when the project had no default to run with in the first place.
+type harnessSetupMsg struct {
+	harness    Harness
+	andDefault bool
+}
+
+// harnessDefaultMsg carries a chosen default back to the live model.
+type harnessDefaultMsg struct{ harness Harness }
 
 // harnessVerbMsg is a confirmed verb on its way back to the live model.
 type harnessVerbMsg struct {
@@ -289,6 +305,11 @@ type harnessFileMsg struct {
 type harnessDoneMsg struct {
 	text string
 	err  error
+	// andDefault is a harness to make the project default once this action has
+	// succeeded. Setting up a harness because the project had no default is one
+	// intent, not two: a setup that left the project still without one would
+	// ask the same question again on the next prompt.
+	andDefault *Harness
 }
 
 // harnessCardMsg is the config card, once the secret bindings behind it have
@@ -482,6 +503,12 @@ func (m *Model) runHarnessVerb(verb HarnessVerb, harness Harness) tea.Cmd {
 // exactly as it does for apply, rather than trying to draw it in a pane. The
 // flow itself is the CLI's, on the far side of the data seam.
 func (m *Model) configureHarness(harness Harness) tea.Cmd {
+	return m.configureHarnessThen(harness, nil)
+}
+
+// configureHarnessThen runs the setup and, when andDefault is set, makes that
+// harness the project default once it succeeds.
+func (m *Model) configureHarnessThen(harness Harness, andDefault *Harness) tea.Cmd {
 	name := harness.displayName()
 	m.busy = "configuring " + name + "…"
 	exec := &harnessExec{run: func(stdin io.Reader, stdout, stderr io.Writer) error {
@@ -491,7 +518,7 @@ func (m *Model) configureHarness(harness Harness) tea.Cmd {
 		if err != nil {
 			return harnessDoneMsg{err: fmt.Errorf("configure %s: %w", name, err)}
 		}
-		return harnessDoneMsg{text: "configured " + name}
+		return harnessDoneMsg{text: "configured " + name, andDefault: andDefault}
 	})
 }
 
@@ -523,6 +550,11 @@ func (m *Model) harnessDone(msg harnessDoneMsg) tea.Cmd {
 	m.busy = ""
 	if msg.err != nil {
 		return tea.Batch(m.loadHarnesses(), m.report(true, "%v", msg.err))
+	}
+	if msg.andDefault != nil {
+		// The listing is re-read by the verb's own completion, so it is not
+		// asked for twice here.
+		return m.runHarnessVerb(HarnessSetDefault, *msg.andDefault)
 	}
 	return tea.Batch(m.loadHarnesses(), m.report(false, "%s", msg.text))
 }

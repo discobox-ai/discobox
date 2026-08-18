@@ -432,3 +432,136 @@ func TestRunningAHarnessWithNoSetupSaysSoRatherThanAsking(t *testing.T) {
 		t.Fatalf("the window should say why it cannot run:\n%s", plainFrame(m))
 	}
 }
+
+// noDefaultSource is a project that has never chosen a default: what a fresh
+// one looks like before anybody has set anything up.
+func noDefaultSource(t *testing.T) *fakeSource {
+	t.Helper()
+	ds := newFakeSource()
+	for i := range ds.harnesses {
+		ds.harnesses[i].Default = false
+	}
+	return ds
+}
+
+// Submitting a prompt with nothing chosen and no project default asks which
+// harness the project should run, rather than letting the server refuse the
+// create a moment later.
+func TestAPromptWithNoDefaultAsksForOne(t *testing.T) {
+	ds := noDefaultSource(t)
+	m := newTestModel(t, ds)
+	send(t, m, typeString("do the thing")...)
+	send(t, m, key("enter"))
+
+	if m.dialog == nil || m.dialog.kind != dlgActions {
+		t.Fatal("a prompt with no harness and no default should ask for one")
+	}
+	if len(ds.runs) != 0 {
+		t.Fatalf("runs = %v, want the run held until the project has a harness", ds.runs)
+	}
+	// `shell` runs like any other harness but is not a coding harness, so it is
+	// not offered as the thing a project runs by default.
+	for _, item := range m.dialog.items {
+		if strings.EqualFold(item.label, "Shell") {
+			t.Fatalf("shell should not be offered as a project default: %v", m.dialog.items)
+		}
+	}
+}
+
+// Choosing a harness that already works makes it the default outright.
+func TestChoosingAWorkingHarnessMakesItTheDefault(t *testing.T) {
+	ds := noDefaultSource(t)
+	m := newTestModel(t, ds)
+	send(t, m, key("enter"))
+
+	// Claude is the first candidate and is enabled.
+	send(t, m, key("1"))
+
+	if len(ds.didHarness) != 1 || ds.didHarness[0] != "set default hc_claude" {
+		t.Fatalf("did = %v, want the chosen harness made default", ds.didHarness)
+	}
+	if len(ds.configured) != 0 {
+		t.Fatalf("configured = %v, want no setup for a harness that already works", ds.configured)
+	}
+}
+
+// Choosing one that has never been set up runs its setup first and makes it the
+// default afterwards — one intent, not two. A setup that left the project still
+// without a default would ask the same question on the next prompt.
+func TestChoosingAnUnconfiguredHarnessSetsItUpThenDefaultsIt(t *testing.T) {
+	ds := noDefaultSource(t)
+	m := newTestModel(t, ds)
+	send(t, m, key("enter"))
+
+	// Custom is registered and disabled.
+	var chose bool
+	for i, item := range m.dialog.items {
+		if item.label == "Custom" {
+			send(t, m, key(itoa(i+1)))
+			chose = true
+			break
+		}
+	}
+	if !chose {
+		t.Fatalf("Custom should be among the candidates: %v", m.dialog.items)
+	}
+
+	if len(ds.configured) != 1 || ds.configured[0] != "hc_custom" {
+		t.Fatalf("configured = %v, want the chosen harness set up", ds.configured)
+	}
+	if len(ds.didHarness) != 1 || ds.didHarness[0] != "set default hc_custom" {
+		t.Fatalf("did = %v, want it made default once its setup succeeded", ds.didHarness)
+	}
+}
+
+// A project with nothing but `shell` has nothing to offer, and says so rather
+// than opening a menu with no choices on it.
+func TestAProjectWithOnlyShellSaysThereIsNothingToRun(t *testing.T) {
+	ds := newFakeSource()
+	ds.harnesses = []Harness{{
+		ID: "hc_shell", Name: "Shell", Slug: "shell", State: HarnessEnabled,
+		BuiltIn: true, Shell: true,
+	}}
+	m := newTestModel(t, ds)
+	send(t, m, key("enter"))
+
+	if m.dialog != nil && m.dialog.kind == dlgActions {
+		t.Fatal("there is nothing to choose between, so no menu should open")
+	}
+	if !strings.Contains(plainFrame(m), "no harness to run") {
+		t.Fatalf("the window should say the project has nothing to run:\n%s", plainFrame(m))
+	}
+}
+
+// With a default set, a prompt just runs.
+func TestAPromptWithADefaultDoesNotAsk(t *testing.T) {
+	ds := newFakeSource()
+	m := newTestModel(t, ds)
+	send(t, m, typeString("go")...)
+	send(t, m, key("enter"))
+
+	if m.dialog != nil && m.dialog.kind == dlgActions {
+		t.Fatal("a project with a default should not be asked for one")
+	}
+}
+
+// A prompt submitted before the listing has landed is not refused on the
+// strength of what has not arrived. An empty listing and one still in flight
+// look the same and mean opposite things; the server refuses a create it cannot
+// resolve, which is the answer this would only be guessing at.
+func TestAPromptBeforeTheListingLandsIsNotRefused(t *testing.T) {
+	ds := noDefaultSource(t)
+	m := newTestModel(t, ds)
+	// Put the model back where it is a moment after opening: nothing loaded.
+	m.harnesses.loaded = false
+	m.harnesses.all = nil
+
+	send(t, m, key("enter"))
+
+	if m.dialog != nil && m.dialog.kind == dlgActions {
+		t.Fatal("nothing is known about the project's harnesses yet, so nothing should be asked")
+	}
+	if strings.Contains(plainFrame(m), "no harness to run") {
+		t.Fatalf("a listing in flight is not an empty project:\n%s", plainFrame(m))
+	}
+}

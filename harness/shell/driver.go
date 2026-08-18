@@ -15,11 +15,11 @@ import (
 
 type Driver struct{}
 
-func (Driver) ID() string { return "shell" }
+func (Driver) ID() string { return harness.ShellSlug }
 
 func (Driver) Definition() harness.Definition {
 	return harness.Definition{
-		ID: "shell", Name: "Shell",
+		ID: harness.ShellSlug, Name: "Shell",
 		Description: "An interactive login shell, with no coding harness on top.",
 		Image:       "discobox-harness-shell:local",
 	}

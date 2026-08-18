@@ -504,6 +504,26 @@ the choices: running without a coding harness is the `shell` harness (ADR 0043),
 one of the project's like any other, so a second way to say it would be a second
 thing to keep true.
 
+Submitting a prompt in a project with no default and nothing chosen stops the
+run and asks which harness the project should run (`askForADefaultHarness`).
+The server refuses that create outright (ADR 0046), so the alternative is the
+same refusal a moment later with the answer left to the user to find — and this
+is the only point that knows what the project has to offer. A harness that
+already works becomes the default outright; one that does not is set up first
+and made the default when that succeeds, because a setup that left the project
+still without one would ask the same question on the next prompt.
+
+`shell` is not among those choices. It runs like any other harness and is chosen
+like any other, but a project whose default is a login shell has no coding
+harness by default, which is the state the question exists to leave. It is told
+apart by `harness.ShellSlug`, the reserved name, rather than by a literal of the
+launcher's own. A project holding nothing else says so instead of opening a menu
+with no choices on it.
+
+None of this fires before the listing has landed: an empty listing and one still
+in flight look the same and mean opposite things, so a prompt is never refused
+on the strength of what has not arrived.
+
 Choosing a harness that has never been through its setup stops the run and
 offers the setup instead (`askToSetUpHarness`). The server refuses that sandbox
 at create, so the alternative is the same refusal a few seconds later with
