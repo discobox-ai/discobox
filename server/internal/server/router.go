@@ -94,6 +94,7 @@ func NewRouter(svc services.Services) (*chi.Mux, error) {
 	registerSandboxGitRoutes(router, svc.Sandboxes)
 	registerSandboxHTTPRoutes(router, svc.Sandboxes)
 	registerSandboxAgentTerminalRoutes(router, svc.Sandboxes)
+	registerSandboxTCPRoutes(router, svc.Sandboxes)
 	generated, err := handlers.NewServer(svc)
 	if err != nil {
 		return nil, err
@@ -189,6 +190,7 @@ func NewApp(ctx context.Context, writeDB, readDB *gorm.DB, options ...AppOptions
 	registerSandboxGitRoutes(router, appServices)
 	registerSandboxHTTPRoutes(router, appServices)
 	registerSandboxAgentTerminalRoutes(router, appServices)
+	registerSandboxTCPRoutes(router, appServices)
 	generated, err := handlers.NewServer(svc)
 	if err != nil {
 		return nil, services.Services{}, nil, err

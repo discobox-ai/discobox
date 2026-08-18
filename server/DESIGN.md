@@ -80,6 +80,14 @@ Current proxy routes:
   forwarding layer and sandbox-agent implementation own serving that API; the
   server owns project authorization, scope selection, and lease/token injection
   only.
+- `/api/projects/{projectId}/sandboxes/{sandboxId}/tcp/attach?host=&port=`
+  forwards the websocket upgrade to the sandbox-agent `/tcp/attach` endpoint,
+  which dials `host:port` from inside the sandbox's network namespace and
+  speaks `execstream/frame` over it (ADR 0024 §§3-4). It is that tunnel exposed
+  at the HTTP edge for clients that are not speaking SSH; `internal/sshd`
+  reaches the same endpoint in-process for `direct-tcpip` channels. Everything
+  past the handshake is the tunnel's own framing, so the server validates the
+  target, authorizes the project, and injects the lease, and owns nothing else.
 
 Proxy handlers must request the narrow worker-agent token scopes needed for the
 flow. The git proxy requests `sandbox:read` and `sandbox:write` because Git HTTP
@@ -88,7 +96,8 @@ proxy requests only `sandbox:http`; worker-agent support for this route must
 require that scope rather than accepting the broader sandbox read/write scopes.
 The harness-terminal proxy requests `terminal:read` for listing and resource reads
 and `terminal:write` for create, attach, and delete because attach streams carry
-input, resize, and signal frames.
+input, resize, and signal frames. The TCP tunnel proxy requests only
+`tcp:connect`, the scope ADR 0024 §3 defines for it.
 
 Authorization must be decidable from request attributes available before body
 interpretation: authenticated principal, method, route/path parameters, query
