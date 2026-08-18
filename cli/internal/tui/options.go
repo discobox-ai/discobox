@@ -302,21 +302,22 @@ func (o *optionSet) request(prompt string) RunRequest {
 // word.
 func (o *optionSet) chips(st *styles) string {
 	parts := []string{}
-	add := func(changed bool, text string) {
-		style := st.chip
-		if changed {
-			style = st.chipOn
-		}
-		parts = append(parts, style.Render(text))
+	add := func(text string) {
+		parts = append(parts, st.chipOn.Render(text))
 	}
 
-	// The harness is what the sandbox will actually be, so it reads as a
-	// value rather than as a setting: lit whether or not it was changed.
-	harness := o.opts[optHarness]
-	if harness.display() == noHarness {
-		add(true, "no harness")
-	} else if harness.display() != "" {
-		add(true, harness.display())
+	// Only when it is not the harness that would have run anyway. The strip
+	// named the default like a choice that had been made, which is both a line
+	// you stop reading and a claim the window is not entitled to make: an
+	// unset harness emits no `--harness` at all, and what an unset one resolves
+	// to is the server's to decide at create — from the project default as it
+	// is then, not as this listing last saw it.
+	if harness := o.opts[optHarness]; harness.changed() {
+		if harness.display() == noHarness {
+			add("no harness")
+		} else if harness.display() != "" {
+			add(harness.display())
+		}
 	}
 
 	// Only the answers that were given. Auto is what the option already does,
@@ -324,29 +325,29 @@ func (o *optionSet) chips(st *styles) string {
 	// one thing on it that was chosen.
 	switch o.opts[optDirty].idx {
 	case 1:
-		add(true, "+dirty")
+		add("+dirty")
 	case 2:
-		add(true, "clean")
+		add("clean")
 	}
 
 	// Attaching is what happens unless you say otherwise, and a line that
 	// says what was always going to happen is a line you stop reading.
 	if o.opts[optDetach].changed() {
-		add(true, "detached")
+		add("detached")
 	}
 
 	if n := len(o.opts[optEnv].items); n > 0 {
-		add(true, plural(n, "env", "env"))
+		add(plural(n, "env", "env"))
 	}
 	if n := len(o.opts[optSecret].items); n > 0 {
-		add(true, plural(n, "secret", "secrets"))
+		add(plural(n, "secret", "secrets"))
 	}
 
 	// The source is only worth a chip when it is not where the window says it
 	// is. The header already names the folder the window is working in, and a
 	// strip that repeats it teaches you to stop reading the strip.
 	if source := o.opts[optSource].display(); source != o.sourceLabel() {
-		add(true, source)
+		add(source)
 	}
 
 	return st.chipOn.Render("⏵⏵ ") + strings.Join(parts, st.chip.Render(" · "))

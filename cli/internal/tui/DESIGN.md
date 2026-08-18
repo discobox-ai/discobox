@@ -486,6 +486,15 @@ resolves to, and the chip strip shows the source only when an override makes it
 differ from what the header says — a strip repeating the header is one you stop
 reading.
 
+The harness is on the strip by the same rule, and used not to be: it was lit
+whether or not it was chosen, on the reasoning that it is what the sandbox will
+*be* rather than a setting. That named the project default as though someone had
+picked it, which is both a line you stop reading and a claim the window cannot
+stand behind — an unset harness emits no `--harness` at all, and what it
+resolves to is settled by the server at create, from the default as it is then
+rather than as this listing last saw it. Only a chosen one is named now,
+`none (shell)` included, since choosing that is a choice.
+
 **Focus is a ladder, and its ends stop.** The folder filter sits above the list
 sits above the prompt, and the arrows climb it: Up off the top of the list
 reaches the filter, Down past the bottom returns to the prompt. Neither end
