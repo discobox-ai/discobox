@@ -45,7 +45,7 @@ func (p *Process) WaitForLineEditor() bool {
 	for {
 		// The master answers for the slave's line discipline, so the fd this
 		// already holds is the one to ask.
-		termios, err := unix.IoctlGetTermios(fd, unix.TCGETS)
+		termios, err := unix.IoctlGetTermios(fd, termiosGetRequest)
 		if err != nil {
 			// The TTY went away, or is not one this can ask. Either way there
 			// is nothing to wait for.
