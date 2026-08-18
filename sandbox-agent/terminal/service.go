@@ -87,6 +87,10 @@ type ServiceConfig struct {
 }
 
 // Service is the harness-terminal layer over execs.Manager.
+// configHarnessMode is the sandbox that exists to run a harness's setup once,
+// rather than to be worked in. See sandbox-agent/config.
+const configHarnessMode = "config"
+
 type Service struct {
 	execs          *execs.Manager
 	harness        config.Harness
@@ -252,7 +256,20 @@ func (s *Service) Create(ctx context.Context, req CreateRequest) (execs.Exec, er
 	// nothing. A child of the shell is not orphaned, so Ctrl-Z stops it and
 	// the shell is left to hand back a prompt, same as any local terminal. The
 	// shell fallback harness IS that shell, so it needs no command typed in.
-	if harnessID != ShellHarnessID {
+	//
+	// A configure flow is the exception, and runs its command as the exec
+	// itself. What the flow is *for* is the command's exit status — the server
+	// reads it to decide whether the setup worked — and a command typed into a
+	// shell does not have one the exec can report: the shell outlives it, so
+	// the terminal never reaches "exited" until somebody types exit, and the
+	// code it reports then is the shell's. Job control is worth a login shell
+	// for a harness you sit in front of; it is not worth the answer to "did
+	// this succeed" for a program that runs once and ends.
+	switch {
+	case s.harnessMode == configHarnessMode:
+		execReq.Shell = false
+		execReq.Command = command
+	case harnessID != ShellHarnessID:
 		execReq.StartupCommand = command
 	}
 	created, err := s.execs.Create(ctx, execReq)
@@ -342,14 +359,15 @@ func (s *Service) revive(ctx context.Context, id string) (execs.Exec, error) {
 // login shell: the harness's relaunch (resume) command when it has one, the
 // bare harness command otherwise — never the initial prompt, which belongs to
 // the terminal's first run only. The shell harness types nothing (the shell IS
-// the terminal, recorded as the exec's own command), and config mode always
-// runs the image-owned command exactly (see EnsurePrimary).
+// the terminal, recorded as the exec's own command), and neither does a
+// configure flow, whose command is the exec's own for the same reason and is
+// what a relaunch re-runs.
 func reviveStartupCommand(harness config.Harness, harnessID, harnessMode string) []string {
 	switch {
 	case harnessID == ShellHarnessID:
 		return nil
-	case harnessMode == "config":
-		return append([]string{}, harness.Command...)
+	case harnessMode == configHarnessMode:
+		return nil
 	case len(harness.RelaunchCommand) > 0:
 		return append([]string{}, harness.RelaunchCommand...)
 	default:
@@ -609,7 +627,7 @@ func (s *Service) launchPrimary(ctx context.Context, prompt []string) (execs.Exe
 		}
 	}
 	request := primaryCreateRequest(harness, harnessID, prompt, launched)
-	if s.harnessMode == "config" {
+	if s.harnessMode == configHarnessMode {
 		// The image-owned config command is exact: never append the normal prompt
 		// and never replace it with the normal relaunch command.
 		request.command = append([]string{}, harness.Command...)

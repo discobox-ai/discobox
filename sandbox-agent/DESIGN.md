@@ -136,6 +136,16 @@ runtime operations.
   resolved harness command. `execs.Manager` never learns what a harness is;
   `StartupCommand` is a generic exec-primitive capability, not a harness concept.
   One `execs.Manager` runtime backs both plain execs and terminals.
+- A **configure sandbox is the exception**: its command is the exec itself
+  (`Shell: false`), not a job typed into a login shell. What the flow is for is
+  the command's exit status — the server reads it to decide whether the setup
+  worked and whether to apply what it wrote — and a command typed into a shell
+  has none the exec can report: the shell outlives it, so the terminal never
+  reaches `exited` until somebody types `exit`, and the code reported then is
+  the shell's. Job control is worth a login shell for a harness you sit in front
+  of; it is not worth the answer to "did this succeed" for a program that runs
+  once and ends. A revived configure terminal types nothing in either — a
+  relaunch re-runs the exec's own command, which is already the setup.
 - A terminal's exec id is its durable identity (ADR 0038). Attaching to or
   starting an ended terminal — its own id or the virtual `primary` alias —
   revives it in place: `terminal.Service.Revive` re-resolves env/secrets and
