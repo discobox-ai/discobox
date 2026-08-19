@@ -134,11 +134,12 @@ identity the exec runs as. `box exec create --shell` is the same request in
 raw form.
 
 `disco tools` groups the everyday development tools run *against* a sandbox —
-`git` and `ssh` today. Which sandbox is the one thing every tool has in common,
-so `--sandbox-id` is a persistent flag on `tools` itself and every subcommand
-inherits it. Everything else belongs to the subcommand that means it, including
-where the tool runs: `git` runs inside the sandbox and takes `--source`/`-s`,
-while `ssh` runs on this machine and connects to the sandbox. Each then drives the same exec create/attach/status sequence as
+`git`, `ssh`, and `vscode` today. Which sandbox is the one thing every tool has
+in common, so `--sandbox-id` is a persistent flag on `tools` itself and every
+subcommand inherits it. Everything else belongs to the subcommand that means it,
+including where the tool runs: `git` runs inside the sandbox and takes
+`--source`/`-s`, while `ssh` and `vscode` run on this machine and connect to the
+sandbox. Each then drives the same exec create/attach/status sequence as
 `disco shell`. Flag parsing stops at the first positional argument
 (`SetInterspersed(false)`), so everything from there on reaches the tool verbatim.
 
@@ -181,6 +182,41 @@ bridge lives in this process, so honouring it would tear the connection down
 under the backgrounded ssh — which is exactly what it did before the check
 existed, silently. Backgrounding the whole command keeps both lifetimes
 together and leaves one process to kill.
+
+`disco tools vscode` opens a sandbox in VS Code over Remote-SSH. Remote-SSH
+drives the system `ssh` binary and reads `ssh_config`, so the only way to hand
+it a host is to put the host where ssh finds it: the command refreshes the
+project's managed config (`buildManagedSSHConfig` + `writeManagedSSHConfig`, the
+same files `box ssh-config --write` owns) and then runs `code --remote
+ssh-remote+<alias> <workdir>`.
+
+Nothing is held open afterwards, which is the point of ADR 0057: the written
+stanzas reach the server through a `ProxyCommand`, so the editor reconnects on
+its own, tomorrow as much as now, with no port on the server to depend on. The alias is the sandbox's first surviving
+`Host` pattern — its name where the name is unambiguous, its ID where it is not
+— which is why `buildManagedSSHConfig` returns the aliases rather than letting a
+caller guess them.
+
+The window opens on the primary source's working directory, or the one
+`--source` names. `tools git` can leave the directory unsaid because an exec
+with no workdir lands in the sandbox's default; an SSH session cannot, because
+it lands in the run user's home (`server/internal/sshd/DESIGN.md`). A sandbox
+that never reported where its source landed still opens, on the host with no
+folder.
+
+The editor binary is resolved *before* anything is written: it is the one
+failure nothing can fix after the fact. `--editor`, then `$DISCOBOX_VSCODE`,
+then the first of `code`, `code-insiders`, `codium`, `cursor`, `windsurf` on
+PATH — all the same CLI, so the only question is which is installed.
+
+It runs with `DONT_PROMPT_WSL_INSTALL=1` (`vscodeQuietWSLPrompt`), always rather
+than only under WSL: the variable means nothing elsewhere, and a conditional is
+a second thing to get wrong. VS Code's launcher asks "install VS Code in Windows
+instead… Continue anyway? [y/N]" when it finds itself inside WSL. That warning
+is aimed at someone typing `code`; here the binary has already been chosen, and
+on a machine where the sandbox is reachable the Linux build is the right one.
+Unset, the prompt reads from a stdin nobody is typing at and the command hangs
+or takes the default No.
 
 ## Listing Order
 

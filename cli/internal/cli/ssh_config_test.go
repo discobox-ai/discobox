@@ -26,6 +26,10 @@ type sshConfigFakeServer struct {
 type sshConfigFakeSandbox struct {
 	id   string
 	name string
+	// workdir is where the primary source's working tree sits inside the
+	// sandbox, which is the directory an editor opens on. Empty leaves the
+	// sandbox with no source at all.
+	workdir string
 }
 
 func (f *sshConfigFakeServer) start(t *testing.T) *httptest.Server {
@@ -61,6 +65,14 @@ func (f *sshConfigFakeServer) start(t *testing.T) *httptest.Server {
 				"createdAt":"2026-01-01T00:00:00Z","updatedAt":"2026-01-01T00:00:00Z"}`))
 		case r.URL.Path == "/projects/project-1/sandboxes":
 			_, _ = w.Write([]byte(f.sandboxesJSON()))
+		case strings.HasPrefix(r.URL.Path, "/projects/project-1/sandboxes/") && r.Method == http.MethodGet:
+			id := strings.TrimPrefix(r.URL.Path, "/projects/project-1/sandboxes/")
+			body, ok := f.sandboxJSON(id)
+			if !ok {
+				w.WriteHeader(http.StatusNotFound)
+				return
+			}
+			_, _ = w.Write([]byte(body))
 		default:
 			t.Errorf("unexpected path %s %s", r.Method, r.URL.Path)
 			w.WriteHeader(http.StatusNotFound)
@@ -79,6 +91,27 @@ func (f *sshConfigFakeServer) sandboxesJSON() string {
 			"createdAt":"2026-01-01T00:00:00Z","updatedAt":"2026-01-01T00:00:00Z"}`, sandbox.id, sandbox.name, sandbox.name))
 	}
 	return `{"sandboxes":[` + strings.Join(entries, ",") + `]}`
+}
+
+// sandboxJSON is one sandbox as GetSandbox returns it, carrying the primary
+// source the editor opens on.
+func (f *sshConfigFakeServer) sandboxJSON(id string) (string, bool) {
+	for _, sandbox := range f.sandboxes {
+		if sandbox.id != id {
+			continue
+		}
+		source := ""
+		if sandbox.workdir != "" {
+			source = fmt.Sprintf(`,"source":{"kind":"git","slug":"primary","url":"https://example.com/repo.git",
+				"destination":{"directory":%q,"workingDirectory":%q}}`, sandbox.workdir, sandbox.workdir)
+		}
+		return fmt.Sprintf(`{"id":%q,"projectId":"project-1","createdByUserId":"user-1","displayName":%q,
+			"config":{"name":%q,"image":"discobox-sandbox-agent:local"%s},
+			"runtime":{"desiredState":"present","state":"ready","runtimeState":"running","displayState":"running","generation":1,"observedGeneration":1},
+			"createdAt":"2026-01-01T00:00:00Z","updatedAt":"2026-01-01T00:00:00Z"}`,
+			sandbox.id, sandbox.name, sandbox.name, source), true
+	}
+	return "", false
 }
 
 // resolvedTestProjectID is what GET /projects/project-1 resolves to.

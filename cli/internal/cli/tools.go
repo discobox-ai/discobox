@@ -13,7 +13,7 @@ import (
 // newToolsCommand groups the commands that run a familiar development tool
 // against a sandbox, with the tool's own arguments passed through untouched.
 // Where the tool itself runs is the tool's business: `git` runs inside the
-// sandbox, `ssh` runs here and connects to it.
+// sandbox, while `ssh` and `vscode` run here and connect to it.
 func (a *App) newToolsCommand() *cobra.Command {
 	var sandboxID string
 	cmd := &cobra.Command{
@@ -27,7 +27,8 @@ current project directory: the only one when there is one, otherwise you are
 asked to pick.
 
 Each tool decides where it runs and what else it needs: git runs inside the
-sandbox and takes --source, ssh runs here and connects to the sandbox.`,
+sandbox and takes --source, ssh and vscode run here and connect to the
+sandbox.`,
 	}
 	// Which sandbox a tool acts on is the one thing every tool has in common,
 	// so it is asked once here and inherited. Everything else, including where
@@ -37,6 +38,7 @@ sandbox and takes --source, ssh runs here and connects to the sandbox.`,
 
 	cmd.AddCommand(a.newToolsGitCommand(&sandboxID))
 	cmd.AddCommand(a.newToolsSSHCommand(&sandboxID))
+	cmd.AddCommand(a.newToolsVSCodeCommand(&sandboxID))
 	return cmd
 }
 

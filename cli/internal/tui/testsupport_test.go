@@ -35,6 +35,7 @@ type fakeSource struct {
 
 	openErr   error
 	renameErr error
+	editorErr error
 
 	// execs is what the workspace's poll is told is running; execsErr fails
 	// the listing, openExecErr every attach, openExecErrFor one exec's
@@ -67,6 +68,7 @@ type fakeSource struct {
 	runs      []RunRequest
 	did       []string // "verb id"
 	renames   []string // "id name"
+	editors   []string // sandbox ids handed to VS Code
 	interacts []string // "action id,id"
 	opens     []string // "action id colsxrows"
 	execOpens []string // "id execID colsxrows"
@@ -182,6 +184,21 @@ func (f *fakeSource) Rename(_ context.Context, id, name string) error {
 		}
 	}
 	return nil
+}
+
+// openedEditors is the sandboxes handed to VS Code, read under the lock so a
+// test driving the model on its own goroutines can look at it safely.
+func (f *fakeSource) openedEditors() []string {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return append([]string(nil), f.editors...)
+}
+
+func (f *fakeSource) OpenEditor(_ context.Context, id string) error {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.editors = append(f.editors, id)
+	return f.editorErr
 }
 
 func (f *fakeSource) Interact(_ context.Context, action Interaction, ids []string, _ io.Reader, _, _ io.Writer) error {

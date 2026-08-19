@@ -426,6 +426,9 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case renameDoneMsg:
 		return m, m.renameDone(msg)
 
+	case editorOpenedMsg:
+		return m, m.editorOpened(msg)
+
 	case interactDoneMsg:
 		m.busy = ""
 		cmds := []tea.Cmd{m.refresh()}
@@ -974,6 +977,8 @@ func (m *Model) actions(targets []Sandbox) []action {
 			why: attachWhy(one, targets)},
 		{key: "y", label: "apply", detail: "bring the changes back to " + m.session.Directory, enabled: applyable,
 			why: applyWhy},
+		{key: vscodeKey, label: "vscode", detail: "open the box in VS Code, in a window of its own", enabled: attachable,
+			why: attachWhy(one, targets)},
 		{key: renameKey, label: "rename", detail: "type a new name for the box", enabled: renameable,
 			why: renameWhy},
 		{key: "u", label: "upgrade", detail: "re-pin to the current harness image", enabled: anyUpgrade,
@@ -1055,6 +1060,9 @@ func (m *Model) actOn(key string, targets []Sandbox) tea.Cmd {
 
 	if key == renameKey {
 		return m.askRename(targets[0])
+	}
+	if key == vscodeKey {
+		return m.openEditor(targets[0])
 	}
 
 	if action, ok := interactions[key]; ok {
@@ -1163,6 +1171,43 @@ func (m *Model) verbDone(msg verbDoneMsg) tea.Cmd {
 	default:
 		return tea.Batch(m.refresh(), m.report(true, "%s: %d of %d failed: %v", msg.verb, failed, len(msg.ids), firstErr))
 	}
+}
+
+// ---------------------------------------------------------------------------
+// vscode
+
+// vscodeKey is the letter VS Code answers to, in the list and behind the leader
+// alike. It is bound on the workspace screen too, where it is the same sandbox
+// opened a second way: the terminal stays where it is and the editor arrives
+// beside it.
+const vscodeKey = "v"
+
+// editorOpenedMsg is what came of handing a sandbox to the editor.
+type editorOpenedMsg struct {
+	name string
+	err  error
+}
+
+// openEditor hands one sandbox to VS Code and reports on the status line.
+//
+// Nothing is suspended for it. The editor is another program in another window,
+// and the CLI's part is over as soon as it has been told which host to connect
+// to — so this is a request that returns, like a verb, rather than something
+// that owns the screen.
+func (m *Model) openEditor(box Sandbox) tea.Cmd {
+	m.busy = "vscode…"
+	ctx, ds, id, name := m.ctx, m.ds, box.ID, box.Name
+	return func() tea.Msg {
+		return editorOpenedMsg{name: name, err: ds.OpenEditor(ctx, id)}
+	}
+}
+
+func (m *Model) editorOpened(msg editorOpenedMsg) tea.Cmd {
+	m.busy = ""
+	if msg.err != nil {
+		return m.report(true, "vscode: %v", msg.err)
+	}
+	return m.report(false, "opened %s in VS Code", msg.name)
 }
 
 // ---------------------------------------------------------------------------
@@ -1972,6 +2017,7 @@ func (m *Model) helpText() string {
 		"  upstream work not counted.",
 		"",
 		"    Enter  attach          s  shell",
+		"    v      open it in VS Code, in a window of its own",
 		"    y      apply back to this directory",
 		"    u      upgrade to the current image",
 		"    e      rename          t  stop",
@@ -1987,6 +2033,11 @@ func (m *Model) helpText() string {
 		"  attach and shell open the workspace, drawn in the window",
 		"  itself. apply takes the real terminal, because the list can",
 		"  act on several discoboxes at once and a pane shows one.",
+		"",
+		"  vscode takes neither. It edits the box in place over",
+		"  Remote-SSH, so the editor is another program in another",
+		"  window and this one carries on: the terminal and the editor",
+		"  are two views of the same box, open at once.",
 		"",
 		"───────────────────────────────────────────────────────────────",
 		"The workspace screen",
@@ -2012,6 +2063,7 @@ func (m *Model) helpText() string {
 		"                   " + paneTerminalKey + " because that is what screen and tmux create a",
 		"                   window on; t is stop, which the list has it on",
 		"    " + m.leader() + " s       a new shell, in a new tab",
+		"    " + m.leader() + " " + vscodeKey + "       open it in VS Code, in a window of its own",
 		"    " + m.leader() + " y       apply back to this directory",
 		"    " + m.leader() + " x / U   archive / unarchive",
 		"    " + m.leader() + " u       upgrade      " + m.leader() + " t / T   stop / start",

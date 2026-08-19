@@ -1558,3 +1558,26 @@ func TestTheLeaderDetachesFromAnyPane(t *testing.T) {
 		t.Fatalf("focus = %v, want the list", m.focus)
 	}
 }
+
+// ctrl+a v opens the workspace's own discobox in VS Code. Nothing on screen
+// moves: the editor is another window, and the terminals stay attached — which
+// is the whole point of binding it here rather than only in the list.
+func TestPrefixVOpensTheWorkspaceBoxInVSCode(t *testing.T) {
+	ds := newFakeSource(testSandboxes()...)
+	d, m, term := openWorkspace(t, ds, "enter")
+
+	d.key("ctrl+a")
+	d.key("v")
+	d.wait("the editor", func() bool { return len(ds.openedEditors()) == 1 })
+
+	if got := ds.openedEditors(); got[0] != "sbx_one" {
+		t.Fatalf("editors = %v, want the box on screen", got)
+	}
+	if !m.inPanes() {
+		t.Fatal("opening an editor should leave the workspace up")
+	}
+	// The leader consumed the key; the sandbox never saw it.
+	if got := term.typed("v"); strings.Contains(got, "v") {
+		t.Fatalf("typed %q, want the leader to take the key", got)
+	}
+}

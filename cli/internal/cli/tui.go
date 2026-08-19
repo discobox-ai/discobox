@@ -389,6 +389,29 @@ func (d *apiDataSource) Rename(ctx context.Context, sandboxID, name string) erro
 	return err
 }
 
+// OpenEditor opens one sandbox in VS Code, by running `disco tools vscode`.
+//
+// It runs the command rather than reimplementing it for the same reason
+// Interact does: what the window opens is the command, with its own editor
+// discovery and its own ssh_config handling, not a second version of them.
+//
+// Nothing it writes reaches the screen. The window is a full-screen program
+// that a stray line of stderr would draw over, and the command's progress
+// reporting — which key it enrolled, which config it wrote — is not what
+// someone pressing a key in a list is waiting to read. What went wrong still
+// comes back as the error, which the status line reports.
+func (d *apiDataSource) OpenEditor(ctx context.Context, sandboxID string) error {
+	sandboxFlag := ""
+	cmd := d.app.newToolsVSCodeCommand(&sandboxFlag)
+	cmd.SetContext(ctx)
+	cmd.SetArgs([]string{sandboxID})
+	cmd.SetIn(strings.NewReader(""))
+	cmd.SetOut(io.Discard)
+	cmd.SetErr(io.Discard)
+	cmd.SilenceUsage, cmd.SilenceErrors = true, true
+	return cmd.Execute()
+}
+
 // Interact runs one of the command-shaped actions with the real terminal's
 // streams, while the window is suspended.
 //

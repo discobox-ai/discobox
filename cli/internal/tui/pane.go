@@ -367,6 +367,11 @@ func (m *Model) paneOptions(overlay bool) []termpane.Option {
 	// the two screens is the point: the workspace is a discobox with the
 	// cursor on it, and what you can do to it does not change with where you
 	// are looking at it from.
+	//
+	// vscode is in neither table — it is a request that returns, not a verb
+	// against the API nor an interaction that owns a terminal — so it is bound
+	// on its own. See Model.openEditor.
+	opts = append(opts, termpane.WithPrefixBinding(vscodeKey, paneActionMsg{key: vscodeKey}))
 	for key := range interactions {
 		opts = append(opts, termpane.WithPrefixBinding(key, paneActionMsg{key: key}))
 	}

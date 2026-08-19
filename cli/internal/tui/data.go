@@ -545,6 +545,15 @@ type DataSource interface {
 	// the window already has, and this one needs the name typed first.
 	Rename(ctx context.Context, sandboxID, name string) error
 
+	// OpenEditor opens one sandbox in VS Code, in a window of its own.
+	//
+	// It is neither a Verb nor an Interaction: it changes nothing about the
+	// sandbox, and it takes no terminal — the editor is a separate program in a
+	// separate window, and this returns as soon as it has been handed the
+	// sandbox. The window stays exactly where it was, which is the point: the
+	// terminal and the editor are two views of one sandbox, open at once.
+	OpenEditor(ctx context.Context, sandboxID string) error
+
 	// Harnesses is the project's harnesses, oldest first, which is the order
 	// they were registered in. It is read at startup as well as by the harnesses
 	// screen: the run options offer the harnesses it reports, so enabling one

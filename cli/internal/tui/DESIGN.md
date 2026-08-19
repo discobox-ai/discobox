@@ -24,6 +24,7 @@ flowchart LR
     L -->|Enter s| WS["workspace → Execs / OpenExec / NewShell / NewTerminal"]
     L -->|d i| Overlay["overlay pane → DataSource.Open"]
     L -->|y| Exec["tea.Exec → DataSource.Interact"]
+    L -->|v| Editor["DataSource.OpenEditor"]
     A -->|d s| AVerb["DataSource.DoHarness"]
     A -->|e f| AExec["tea.Exec → ConfigureHarness / EditHarnessFile"]
 ```
@@ -71,7 +72,7 @@ before `tea.Exec`, because an inline frame stayed painted above whatever the
 action printed. On the alternate screen the runtime handles both — it drops to
 the primary screen around an exec and repaints on resize.
 
-**Three kinds of action.** A `Verb` goes to the API and returns, so the window
+**Four kinds of action.** A `Verb` goes to the API and returns, so the window
 stays up and reports on its status line. Attach and shell are drawn in the
 window (`Interaction.paneable`, `pane.go`/`workspace.go`, over the `termpane`
 module): they open the workspace screen onto the discobox's own terminals.
@@ -93,6 +94,20 @@ one would visibly change nothing. It is deliberately
 absent from `verbs`/`interactions`, which is what keeps it off the workspace
 screen: rename needs a name typed into a dialog, and a discobox you are
 already looking at is one you know the name of.
+
+**vscode is a fourth kind, and is bound on both screens** (`vscodeKey`,
+`openEditor`, `DataSource.OpenEditor`). It is neither a `Verb` — it changes
+nothing about the discobox — nor an `Interaction` — it takes no terminal: `v`
+runs `disco tools vscode`, which hands the sandbox to the editor and returns.
+The editor is another program in another window, so the window carries on
+exactly where it was, and the workspace binds it too (`paneOptions`): the
+terminal on screen and the editor beside it are two views of one discobox, open
+at once. Because it is in neither `verbs` nor `interactions`, both the pane's
+key map and `actOn` name it explicitly, the way `renameKey` is named. The
+command writes an `ssh_config` and prints what it wrote, so `apiDataSource`
+gives it `io.Discard` for both streams — a stray line of stderr would draw over
+a full-screen window — and lets the error carry what went wrong to the status
+line.
 
 **The workspace screen is one discobox as the server has it** (`workspace.go`).
 Opening it attaches to the primary terminal — the virtual `ExecPrimary` id,

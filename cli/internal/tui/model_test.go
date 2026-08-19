@@ -717,3 +717,56 @@ func TestTabGoesRoundTheWindow(t *testing.T) {
 		t.Fatalf("esc from the folder filter landed on %v", m.focus)
 	}
 }
+
+// ---------------------------------------------------------------------------
+// vscode
+
+// TestVSCodeOpensTheBoxUnderTheCursor: v is a request that returns, so the
+// window stays where it was and says what happened on its status line.
+func TestVSCodeOpensTheBoxUnderTheCursor(t *testing.T) {
+	ds := newFakeSource(testSandboxes()...)
+	m := newTestModel(t, ds)
+	send(t, m, key("tab"), key("v"))
+
+	if len(ds.editors) != 1 || ds.editors[0] != "sbx_one" {
+		t.Fatalf("editors = %v", ds.editors)
+	}
+	if m.dialog != nil {
+		t.Fatalf("v should open nothing over the window, got %+v", m.dialog)
+	}
+	if m.focus != focusList {
+		t.Fatalf("focus = %v, want the list it was pressed from", m.focus)
+	}
+	if !strings.Contains(m.status, "VS Code") {
+		t.Fatalf("status = %q, want it to report the window that opened", m.status)
+	}
+}
+
+// A failure to reach the editor is the status line's, not a dialog's: nothing
+// about the box changed, and there is nothing to answer.
+func TestVSCodeReportsFailureOnTheStatusLine(t *testing.T) {
+	ds := newFakeSource(testSandboxes()...)
+	ds.editorErr = errors.New("no VS Code command found on PATH")
+	m := newTestModel(t, ds)
+	send(t, m, key("tab"), key("v"))
+
+	if !m.statusE || !strings.Contains(m.status, "no VS Code command") {
+		t.Fatalf("status = %q (error %v), want the failure reported", m.status, m.statusE)
+	}
+}
+
+// An archived box has no container to run an editor server in, so v is refused
+// with the reason rather than sent and failed.
+func TestVSCodeRefusedOnAnArchivedBox(t *testing.T) {
+	ds := newFakeSource(testSandboxes()...)
+	m := newTestModel(t, ds)
+	// The archived row is the last one, and only shown once A asks for it.
+	send(t, m, key("tab"), key("A"), key("G"), key("v"))
+
+	if len(ds.editors) != 0 {
+		t.Fatalf("an archived box should not reach the editor, got %v", ds.editors)
+	}
+	if m.dialog == nil || m.dialog.kind != dlgMessage {
+		t.Fatalf("v on an archived box should say why, got %+v", m.dialog)
+	}
+}
