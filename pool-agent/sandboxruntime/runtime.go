@@ -749,8 +749,16 @@ func (r *DockerSandboxRuntime) prepareSandboxVolumes(ctx context.Context, sandbo
 	if err := clearSandboxArchiveMarker(r.sandboxRoot(sandboxID)); err != nil {
 		return nil, nil, fmt.Errorf("clear sandbox archive marker: %w", err)
 	}
+	// Only the root itself. What lives under it is the sandbox's home, written
+	// by the sandbox user, and this agent never writes a byte of it -- so the
+	// create path has nothing to assert there and taking ownership away is a
+	// correctness bug, not merely a slow one. Unarchiving is a create against a
+	// tree that is already full (above), which is exactly when a recursive chown
+	// here reached files: it handed everything the sandbox had ever written to
+	// root, and the only thing that gave it back was the sandbox's own boot-time
+	// walk -- which covers home's own filesystem and nothing mounted under it.
 	dataHostPath := r.sandboxDataRootPath(sandboxID)
-	if err := prepareOwnedTree(ctx, dataHostPath, 0, 0); err != nil {
+	if err := prepareOwnedMountpoint(dataHostPath, 0, 0); err != nil {
 		return nil, nil, fmt.Errorf("prepare sandbox data volume: %w", err)
 	}
 	cacheHostPath := r.poolCacheRoot()
@@ -1135,8 +1143,10 @@ func buildSandboxDocument(projectID, sandboxID, poolID, controlPlanePublicKey, r
 }
 
 // prepareOwnedTree creates dir and asserts ownership over everything inside it.
-// Use it only for roots this agent itself materializes and whose size one
-// sandbox bounds -- the per-sandbox data, config, sources, and secrets trees.
+// Use it only for roots this agent itself materializes end to end and whose size
+// one sandbox bounds -- the per-sandbox config and secrets trees, and each
+// source checkout it clones. A tree the sandbox writes is not one of them, no
+// matter how small: ownership there is the sandbox's answer, not this agent's.
 func prepareOwnedTree(ctx context.Context, dir string, uid, gid int) error {
 	if err := os.MkdirAll(dir, 0o755); err != nil {
 		return err
@@ -1157,6 +1167,12 @@ func prepareOwnedTree(ctx context.Context, dir string, uid, gid int) error {
 // cold page cache), and sandbox-agent's seedHome immediately chowned the cache
 // back to the sandbox user on the way up. The two passes fought over the same
 // inodes on every single start.
+//
+// It is also what the sandbox's data root needs, for the stronger reason: that
+// tree is the sandbox's home, and a create that walks it takes files away from
+// the user who wrote them. Being repaired on the way back up is not a defense --
+// the repair is a different component's walk, with its own limits, and a rule
+// that only holds while two passes agree exactly is not a rule.
 func prepareOwnedMountpoint(dir string, uid, gid int) error {
 	if err := os.MkdirAll(dir, 0o755); err != nil {
 		return err
