@@ -2,6 +2,7 @@ package secrets_test
 
 import (
 	"context"
+	"encoding/base64"
 	"encoding/json"
 	"io"
 	"net/http"
@@ -223,4 +224,129 @@ func TestResolveOAuthRotationPreservesCapturedScopes(t *testing.T) {
 	if val.SubscriptionType != "max" {
 		t.Fatalf("subscriptionType after rotation = %q, want max", val.SubscriptionType)
 	}
+}
+
+// A token endpoint may answer without `expires_in` — it is conventional, not
+// guaranteed, and OpenAI's is the endpoint the Codex ChatGPT credential
+// refreshes against. Recording "unknown" there is not a neutral fallback:
+// oauthNeedsRefresh reads unknown as "refresh now", so every later resolve
+// refreshes again, and each one spends a refresh token that rotates on use. A
+// JWT access token states its own expiry, so the rotation must read it.
+func TestResolveOAuthDerivesExpiryFromJWTWhenEndpointOmitsExpiresIn(t *testing.T) {
+	ctx := context.Background()
+	svc, st := newResolveFixture(t)
+
+	exp := time.Now().UTC().Add(8 * time.Hour).Truncate(time.Second)
+	rotatedAccess := testJWT(t, exp)
+	callCount := &atomic.Int32{}
+	tokenSrv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		callCount.Add(1)
+		w.Header().Set("Content-Type", "application/json")
+		// No expires_in.
+		_ = json.NewEncoder(w).Encode(map[string]any{
+			"access_token":  rotatedAccess,
+			"refresh_token": "rt-2",
+			"token_type":    "Bearer",
+		})
+	}))
+	t.Cleanup(tokenSrv.Close)
+
+	sec := mustOAuthSecret(t, st, "codex", model.SecretValue{
+		Token:                "old-access",
+		RefreshToken:         "rt-1",
+		TokenURL:             tokenSrv.URL,
+		ClientID:             "client-x",
+		AccessTokenExpiresAt: time.Now().UTC().Add(-time.Minute).UnixMilli(), // expired
+	})
+	mustGrant(t, st, sec.ID, model.SecretGrantScopeProject, "project-1")
+	createSandbox(t, st, "sb-1", "pool-1")
+	mustAssign(t, st, "sb-1", sec.ID, "SENTINEL-OD")
+
+	res, err := svc.ResolveSandboxSecret(ctx, "pool-1", "sb-1", "SENTINEL-OD", "chatgpt.com")
+	if err != nil {
+		t.Fatalf("resolve: %v", err)
+	}
+	if res.Value == nil || res.Value.Token != rotatedAccess {
+		t.Fatalf("resolved token = %#v, want the rotated one", res.Value)
+	}
+
+	reloaded, err := st.GetSecret(ctx, "project-1", sec.ID)
+	if err != nil {
+		t.Fatalf("reload secret: %v", err)
+	}
+	val, err := st.OpenSecretValue(ctx, reloaded)
+	if err != nil {
+		t.Fatalf("open value: %v", err)
+	}
+	if got := val.AccessTokenExpiresAt; got != exp.UnixMilli() {
+		t.Fatalf("persisted expiry = %d, want the token's own exp %d", got, exp.UnixMilli())
+	}
+
+	// The point of recording it: the next resolve must not refresh again.
+	if _, err := svc.ResolveSandboxSecret(ctx, "pool-1", "sb-1", "SENTINEL-OD", "chatgpt.com"); err != nil {
+		t.Fatalf("second resolve: %v", err)
+	}
+	if calls := callCount.Load(); calls != 1 {
+		t.Fatalf("token endpoint calls = %d, want 1 (the second resolve had a known, fresh expiry)", calls)
+	}
+}
+
+// A non-JWT access token (Anthropic's, for one) leaves the expiry unknown, which
+// is the pre-existing behavior and must stay: guessing an expiry for a token
+// that never stated one would defer a refresh past the point the token dies.
+func TestResolveOAuthLeavesExpiryUnknownForOpaqueToken(t *testing.T) {
+	ctx := context.Background()
+	svc, st := newResolveFixture(t)
+
+	tokenSrv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		//nolint:gosec // Test literals, not real credentials.
+		_ = json.NewEncoder(w).Encode(map[string]any{
+			"access_token":  "opaque-rotated-token-with-no-claims",
+			"refresh_token": "rt-2",
+			"token_type":    "Bearer",
+		})
+	}))
+	t.Cleanup(tokenSrv.Close)
+
+	sec := mustOAuthSecret(t, st, "claude", model.SecretValue{
+		Token:                "old-access",
+		RefreshToken:         "rt-1",
+		TokenURL:             tokenSrv.URL,
+		ClientID:             "client-x",
+		AccessTokenExpiresAt: time.Now().UTC().Add(-time.Minute).UnixMilli(),
+	})
+	mustGrant(t, st, sec.ID, model.SecretGrantScopeProject, "project-1")
+	createSandbox(t, st, "sb-1", "pool-1")
+	mustAssign(t, st, "sb-1", sec.ID, "SENTINEL-OE")
+
+	if _, err := svc.ResolveSandboxSecret(ctx, "pool-1", "sb-1", "SENTINEL-OE", "api.anthropic.com"); err != nil {
+		t.Fatalf("resolve: %v", err)
+	}
+	reloaded, err := st.GetSecret(ctx, "project-1", sec.ID)
+	if err != nil {
+		t.Fatalf("reload secret: %v", err)
+	}
+	val, err := st.OpenSecretValue(ctx, reloaded)
+	if err != nil {
+		t.Fatalf("open value: %v", err)
+	}
+	if val.AccessTokenExpiresAt != 0 {
+		t.Fatalf("expiry = %d, want 0 (the token states none)", val.AccessTokenExpiresAt)
+	}
+}
+
+// testJWT builds an unsigned JWT carrying only an exp claim. Nothing verifies
+// the signature; the expiry is all the refresh path reads.
+func testJWT(t *testing.T, exp time.Time) string {
+	t.Helper()
+	enc := func(v any) string {
+		raw, err := json.Marshal(v)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return base64.RawURLEncoding.EncodeToString(raw)
+	}
+	return enc(map[string]string{"alg": "none", "typ": "JWT"}) + "." +
+		enc(map[string]int64{"exp": exp.Unix()}) + ".signature"
 }

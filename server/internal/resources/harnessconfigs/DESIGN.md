@@ -174,6 +174,13 @@ one place that decrypts and hands out a value:
   resolves onto one upstream refresh, and the persisted write is guarded by the
   row's `updated_at` (`UpdateSecretValueIfUnchanged`) so a refresh in another
   process cannot be clobbered.
+- The rotated token's expiry comes from the response's `expires_in`, and from
+  the access token's own `exp` claim when the endpoint omits it (JWT access
+  tokens state it; OpenAI's are, Anthropic's are not). Recording "unknown"
+  instead is not a neutral fallback: an unknown expiry means "refresh now" on
+  every later resolve, and each refresh spends a refresh token that rotates on
+  use. A token that states no expiry still records none — guessing one would
+  defer the refresh past the point the token dies.
 - The resolution's `ExpiresAt` is capped at `min(grant expiry, token expiry)`,
   so the proxy's per-`(client, sentinel, host)` cache lapses at token expiry and
   re-resolves — which is what triggers the next refresh. The **grant stays

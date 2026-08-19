@@ -3,6 +3,7 @@ package secrets
 import (
 	"bytes"
 	"context"
+	"encoding/base64"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -203,9 +204,43 @@ func refreshOAuthToken(ctx context.Context, val *model.SecretValue) (*model.Secr
 	if out.ExpiresIn > 0 {
 		rotated.AccessTokenExpiresAt = time.Now().UTC().Add(time.Duration(out.ExpiresIn) * time.Second).UnixMilli()
 	} else {
-		rotated.AccessTokenExpiresAt = 0
+		// expires_in is conventional, not guaranteed. Leaving the expiry unknown
+		// is not a neutral fallback: oauthNeedsRefresh treats unknown as "refresh
+		// now", so every subsequent resolve would refresh again — and since the
+		// refresh token rotates on use, that spends one per request. A JWT access
+		// token states its own expiry, so read it before giving up.
+		rotated.AccessTokenExpiresAt = jwtExpiryMillis(out.AccessToken)
 	}
 	return &rotated, nil
+}
+
+// jwtExpiryMillis returns the `exp` claim of a JWT access token in unix
+// milliseconds, or 0 when the token is not a JWT or carries no usable exp.
+//
+// The claim is read without verifying the signature, which is safe because
+// nothing is authorized by it. The value only decides when the server refreshes
+// ahead of expiry: a forged-early answer costs an extra refresh, and a
+// forged-late one costs a use-time 401 — the same two outcomes an unknown expiry
+// already produces. The token itself is one this server just received from the
+// endpoint it holds the client credentials for.
+func jwtExpiryMillis(token string) int64 {
+	parts := strings.Split(strings.TrimSpace(token), ".")
+	if len(parts) != 3 || parts[1] == "" {
+		return 0
+	}
+	// JWT payloads are unpadded base64url, but tolerate padding rather than
+	// discard an expiry over an encoder's habit.
+	payload, err := base64.RawURLEncoding.DecodeString(strings.TrimRight(parts[1], "="))
+	if err != nil {
+		return 0
+	}
+	var claims struct {
+		Exp int64 `json:"exp"`
+	}
+	if err := json.Unmarshal(payload, &claims); err != nil || claims.Exp <= 0 {
+		return 0
+	}
+	return claims.Exp * 1000
 }
 
 // oauthResolutionExpiry caps the grant expiry the proxy caches against by the
