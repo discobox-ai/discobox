@@ -286,7 +286,14 @@ func (s *Service) ReportPoolSandboxStates(ctx context.Context, poolID string, in
 			// should be noticed.
 			observed.Pull = serverapi.NewOptSandboxPullProgress(serverapi.SandboxPullProgress(pull))
 		}
-		payload, err := json.Marshal(observed)
+		// ogen's own encoder, not encoding/json. An unset ogen optional
+		// marshals to zero bytes, which encoding/json rejects out of a
+		// json.Marshaler with "unexpected end of JSON input" — so
+		// json.Marshal(observed) worked for exactly as long as every report
+		// carried a pull, and 500'd on the first phase that had nothing to
+		// measure. Encode skips unset fields instead, which is what the wire
+		// wants anyway.
+		payload, err := observed.MarshalJSON()
 		if err != nil {
 			return err
 		}

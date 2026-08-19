@@ -133,7 +133,13 @@ func (r *DockerSandboxRuntime) PublishSandboxProgress(ctx context.Context, obser
 		return
 	}
 	if err := publish(ctx, observation); err != nil {
-		slog.DebugContext(ctx, "publish sandbox progress", "sandboxId", observation.SandboxID, "error", err)
+		// Warn rather than Debug, unlike the state channel above. A dropped
+		// state observation is repaired by the next complete sync; progress has
+		// no sync behind it, so a report that fails is simply lost, and the
+		// record a waiting client reads (ADR 0055) is silently wrong. The
+		// agent's default handler drops Debug, which made exactly that
+		// invisible.
+		slog.WarnContext(ctx, "publish sandbox progress", "sandboxId", observation.SandboxID, "phase", observation.Phase, "error", err)
 	}
 }
 
