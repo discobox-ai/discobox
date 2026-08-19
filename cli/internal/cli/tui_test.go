@@ -174,3 +174,37 @@ func TestPaneTerminalEnvCarriesTheColorSettings(t *testing.T) {
 		t.Fatalf("NO_COLOR = %q, want it carried across", env["NO_COLOR"])
 	}
 }
+
+// The row carries the power axis alongside the narrowed display state, because
+// displayState folds it away: an errored sandbox reads `error` whatever its
+// container is doing, and the launcher's attach guard needs the difference
+// between a latched failure over a live container and one with nothing behind
+// it. The API omits runtimeState until an agent has reported (ADR 0034 §2), so
+// presence is the signal.
+func TestToTUISandboxCarriesTheRuntimeAxis(t *testing.T) {
+	errored := func(runtimeState string) tui.Sandbox {
+		runtime := apimodel.SandboxRuntime{
+			State:        "failed",
+			DesiredState: "present",
+			DisplayState: apiclientgen.NewOptSandboxRuntimeDisplayState("error"),
+			ErrorMessage: apiclientgen.NewOptString("bind source pruned"),
+		}
+		if runtimeState != "" {
+			runtime.RuntimeState = apiclientgen.NewOptSandboxRuntimeRuntimeState(
+				apiclientgen.SandboxRuntimeRuntimeState(runtimeState))
+		}
+		return toTUISandbox(apimodel.Sandbox{Runtime: runtime})
+	}
+
+	live := errored("running")
+	if live.State != tui.StateError {
+		t.Fatalf("state = %q, want error: the x still shows", live.State)
+	}
+	if !live.HasRuntime {
+		t.Fatal("a reported container should set HasRuntime")
+	}
+
+	if errored("").HasRuntime {
+		t.Fatal("an unreported container should leave HasRuntime false")
+	}
+}

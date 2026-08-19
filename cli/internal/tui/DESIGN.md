@@ -81,6 +81,24 @@ on several discoboxes at once and a pane shows one. The `exec` field on the
 model is that handoff, and exists as a field only so a test can run an action
 without a terminal to release.
 
+**The row carries both of the server's state axes** (`Sandbox.State`,
+`Sandbox.HasRuntime`). Existence and power are separate fields on the server
+(ADR 0034 §§1–2), and its `displayState` — which `State` is narrowed from —
+merges them error-first: a latched `ErrorMessage` reads `error` however healthily
+the container is running, and a settled failure is never cleared without new
+intent (ADR 0017 §4). That is right for the mark on the row and wrong for the
+guards, so the row keeps the power axis beside it. `HasRuntime` is the presence
+of `runtimeState` on the wire, which the API omits until the pool agent has
+reported (absent is not `stopped`).
+
+`attachable` asks that axis, not the state name: anything with a container can be
+joined, because the pool agent starts a stopped one on demand when the attach
+arrives (ADR 0017 §12), and only archived — no container by intent — and a box
+nothing ever reported on are refused. An errored discobox with a live container
+attaches, and `attachWhy` sends the one that has nothing behind it to repair
+(ADR 0035) rather than naming its state back at it. Guards written as a list of
+states are the wedge ADR 0017 §4 describes; this one used to be exactly that.
+
 **Rename is a third kind, and only in the list** (`renameKey`, `askRename`). It
 is not a `Verb` — a verb is a word the window already has, and this one needs a
 name typed first — so `e` opens the input dialog on the name the discobox

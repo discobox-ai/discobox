@@ -101,6 +101,19 @@ type Sandbox struct {
 	Name  string
 	State State
 
+	// HasRuntime is the power axis, carried beside State because State
+	// collapses it. The server keeps existence and power as two fields
+	// (ADR 0034 §§1–2), and its displayState re-merges them error-first: a
+	// latched ErrorMessage reads `error` however healthily the container is
+	// running. That is the right thing to *draw* and the wrong thing to gate
+	// on, so the row keeps the second axis.
+	//
+	// It is true once the pool agent has observed a container for this box —
+	// running, stopped, or in transition. Absent is not `stopped`: it is a
+	// sandbox no agent has ever reported on, which for an errored one means
+	// the create never produced anything to report.
+	HasRuntime bool
+
 	// NameIsTitle marks a Name taken from the primary terminal's window title
 	// rather than the sandbox's configured name. Rename edits the configured
 	// name — which such a row is not showing — so it is disabled there.
@@ -280,8 +293,33 @@ func (h Harness) flagName() string {
 
 func (s Sandbox) hasDiff() bool { return s.Diff.Known && s.Diff.Files > 0 }
 
+// attachable reports whether there is a container to attach to. It asks the
+// power axis, not the lifecycle one, because that is the question: the pool
+// agent starts a stopped sandbox on demand when the attach arrives (ADR 0017
+// §12), so anything it has observed a container for can be joined.
+//
+// The states are consulted only for the two answers power cannot give.
+// Archived has no container by intent, whatever a stale report last said
+// (ADR 0022 §5). Starting is a sandbox mid-create whose agent has not reported
+// yet, and the attach waits for it rather than being refused by it (ADR 0039
+// tier 1).
+//
+// Error is deliberately not on that list. A settled failure latches on the row
+// and nothing clears it without new intent (ADR 0017 §4), so an errored box may
+// have a perfectly good container — a failure on a later generation, or a
+// transient one — and refusing it made archive/unarchive the only way to reach
+// work that was never unreachable. The x and the reason still show; they just
+// no longer bar the door. An error with no container is the case that is
+// genuinely stuck, and it is the one this still refuses.
+//
+// Spelling this as a list of states is what ADR 0017 §4 warns against — the
+// wedge it describes came from a guard written `State == "stopped"` when it
+// meant "is anything relying on this container".
 func (s Sandbox) attachable() bool {
-	return s.State == StateRunning || s.State == StateStarting || s.State == StateStopped
+	if s.State == StateArchived {
+		return false
+	}
+	return s.HasRuntime || s.State == StateStarting
 }
 
 // up reports whether the sandbox is running anything, and so whether its usage

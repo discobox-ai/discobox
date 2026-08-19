@@ -1013,14 +1013,27 @@ func (m *Model) actions(targets []Sandbox) []action {
 	}
 }
 
+// attachWhy names what is missing, which for the two ways a box can have no
+// container is not the same thing. Archived is reversible by intent and says
+// so. Anything else with nothing to attach to is a create or rebuild that never
+// produced a container, and a settled failure is never retried on its own
+// (ADR 0017 §4) — repair is the intent that rebuilds it (ADR 0035).
+//
+// The state name is not the reason. "the box is error" described the row rather
+// than the obstacle, and it was wrong as often as not: the boxes it refused
+// mostly had a container and a stale error latched over it.
 func attachWhy(one bool, targets []Sandbox) string {
 	if !one {
 		return "takes exactly one box"
 	}
-	if len(targets) == 1 && !targets[0].attachable() {
-		return "the box is " + string(targets[0].State)
+	box := targets[0]
+	if box.attachable() {
+		return ""
 	}
-	return ""
+	if box.State == StateArchived {
+		return "the box is archived — unarchive it first"
+	}
+	return "the box has no container; repair rebuilds it"
 }
 
 func actionTitle(targets []Sandbox) string {

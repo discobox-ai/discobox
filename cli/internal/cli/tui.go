@@ -148,8 +148,14 @@ func toTUISandbox(sb apimodel.Sandbox) tui.Sandbox {
 		Name:        sb.DisplayName,
 		NameIsTitle: sandboxNameIsTitle(sb),
 		State:       toTUIState(sandboxDisplayState(sb)),
-		Message:     sandboxMessage(sb),
-		Created:     sb.CreatedAt,
+		// The presence of runtimeState is the signal, not its value: the API
+		// omits the field entirely until the pool agent has reported on this
+		// sandbox, and empty is not `stopped` (ADR 0034 §2). displayState folds
+		// that axis away — an errored box reads `error` whatever its container
+		// is doing — so the row carries it separately for the guards.
+		HasRuntime: sb.Runtime.RuntimeState.IsSet(),
+		Message:    sandboxMessage(sb),
+		Created:    sb.CreatedAt,
 	}
 	if origin, ok := sb.Origin.Get(); ok {
 		row.Folder = origin.ProjectPath
