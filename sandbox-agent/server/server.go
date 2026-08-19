@@ -347,6 +347,11 @@ func Serve(ctx context.Context, logger *slog.Logger, cfg Config) error {
 		}()
 	}
 	go execReconcileLoop(ctx, logger, execManager)
+	// A harness that reads its credential from a file can clear that file on an
+	// upstream 401 it did nothing to cause, and cannot put it back: the refresh
+	// token it holds is a placeholder. This restores the sentinel so the next
+	// launch is signed in. See terminal/secretfiles.go.
+	go manager.WatchSecretFiles(ctx, logger)
 	// The listening-port watcher is the one status component with a standing
 	// loop behind it, because classifying a port means connecting to whatever
 	// is behind it (ADR 0046).

@@ -85,6 +85,10 @@ func (n *noopInstaller) EnsureInstalled(_ context.Context, harness config.Harnes
 	return nil
 }
 
+func (n *noopInstaller) RestoreSecretFiles(context.Context, config.Harness, map[string]string) ([]string, error) {
+	return nil, nil
+}
+
 func newTestService(t *testing.T, installer Installer) (*Service, *fakeUnits) {
 	t.Helper()
 	dir := t.TempDir()
@@ -161,6 +165,10 @@ func (h hookInstaller) EnsureInstalled(ctx context.Context, _ config.Harness, _ 
 		h.during(ctx)
 	}
 	return h.err
+}
+
+func (h hookInstaller) RestoreSecretFiles(context.Context, config.Harness, map[string]string) ([]string, error) {
+	return nil, nil
 }
 
 // While the install command runs, the terminal record already exists and is

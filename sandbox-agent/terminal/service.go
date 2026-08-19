@@ -49,6 +49,10 @@ type CreateRequest struct {
 
 type Installer interface {
 	EnsureInstalled(context.Context, config.Harness, string, map[string]string) error
+	// RestoreSecretFiles re-installs the harness files whose delivered sentinel
+	// is no longer in the file on disk, and returns the paths it restored. See
+	// secretfiles.go for why a delivered credential needs restoring at all.
+	RestoreSecretFiles(context.Context, config.Harness, map[string]string) ([]string, error)
 }
 
 // PrimaryStateStore records, durably across sandbox restarts, whether the
@@ -779,6 +783,21 @@ func (i CompositeInstaller) EnsureInstalled(ctx context.Context, harness config.
 	return nil
 }
 
+func (i CompositeInstaller) RestoreSecretFiles(ctx context.Context, harness config.Harness, env map[string]string) ([]string, error) {
+	var restored []string
+	for _, installer := range i.Installers {
+		if installer == nil {
+			continue
+		}
+		paths, err := installer.RestoreSecretFiles(ctx, harness, env)
+		if err != nil {
+			return restored, err
+		}
+		restored = append(restored, paths...)
+	}
+	return restored, nil
+}
+
 type HookInstaller struct {
 	ManagedRoot      string
 	PublisherCommand string
@@ -806,6 +825,13 @@ func harnessFromConfig(h config.Harness) harness.Harness {
 		Name:    h.Name,
 		Command: append([]string{}, h.Command...),
 	}
+}
+
+// RestoreSecretFiles is a no-op: hooks carry no credential. Installing them is
+// idempotent, but nothing outside this process rewrites them, so there is
+// nothing to reconcile between launches.
+func (i HookInstaller) RestoreSecretFiles(context.Context, config.Harness, map[string]string) ([]string, error) {
+	return nil, nil
 }
 
 // FileInstaller writes a harness's configured files into its home directory.

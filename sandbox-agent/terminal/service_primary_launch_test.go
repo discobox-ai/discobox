@@ -51,6 +51,10 @@ func (b *blockingInstaller) EnsureInstalled(_ context.Context, _ config.Harness,
 	return b.err
 }
 
+func (b *blockingInstaller) RestoreSecretFiles(context.Context, config.Harness, map[string]string) ([]string, error) {
+	return nil, nil
+}
+
 // hold closes nothing and installs a fresh gate, so the next install blocks.
 func (b *blockingInstaller) hold() {
 	b.mu.Lock()

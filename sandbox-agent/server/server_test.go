@@ -520,6 +520,10 @@ func (sandboxAgentNoopInstaller) EnsureInstalled(context.Context, config.Harness
 	return nil
 }
 
+func (sandboxAgentNoopInstaller) RestoreSecretFiles(context.Context, config.Harness, map[string]string) ([]string, error) {
+	return nil, nil
+}
+
 func (sandboxAgentNoopAudit) RecordExecEvent(context.Context, string, string, string, map[string]any) error {
 	return nil
 }
