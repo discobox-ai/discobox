@@ -16,7 +16,7 @@ import (
 	apiclientgen "github.com/obot-platform/discobox/api/gen"
 	"github.com/obot-platform/discobox/cli/internal/keys"
 	"github.com/obot-platform/discobox/controlplane"
-	"github.com/obot-platform/discobox/localipc"
+	"github.com/obot-platform/discobox/endpoint"
 	discoboxserver "github.com/obot-platform/discobox/server"
 )
 
@@ -74,7 +74,7 @@ func NewRootCommand() *cobra.Command {
 			return app.runTUI(cmd, "")
 		},
 	}
-	cmd.PersistentFlags().StringVar(&app.serverURL, "server", envOrDefault("DISCOBOX_SERVER", localipc.DefaultEndpoint()), "Discobox API server endpoint")
+	cmd.PersistentFlags().StringVar(&app.serverURL, "server", envOrDefault("DISCOBOX_SERVER", endpoint.DefaultEndpoint()), "Discobox API server endpoint")
 	cmd.PersistentFlags().StringVarP(&app.projectID, "project", "p", envOrDefault("DISCOBOX_PROJECT", defaultProjectAlias), "Project ID for this invocation; use default for the user's default project")
 	cmd.PersistentFlags().StringVarP(&app.source, "chdir", "C", ".", "Source directory or Git repository to act on, optionally with @REF; its Git repository root identifies the sandboxes ls lists and run creates")
 	// Beta: the flag works but is undocumented until the source-selection UX is
@@ -165,20 +165,16 @@ func shouldAutoLaunchServer(noStart bool) bool {
 
 func (a *App) httpClientWithAutoStart(autoStart bool) (string, *http.Client, error) {
 	transport := http.DefaultTransport
-	baseURL := a.serverURL
-	if isLocalEndpoint(a.serverURL) {
-		if autoStart {
-			if err := a.ensureLocalServer(context.Background()); err != nil {
-				return "", nil, err
-			}
-		}
-		localBaseURL, client, err := localipc.HTTPClient(a.serverURL, transport)
-		if err != nil {
+	if autoStart && a.serverEndpoint().AutoLaunchable() {
+		if err := a.ensureLocalServer(context.Background()); err != nil {
 			return "", nil, err
 		}
-		baseURL = localBaseURL
-		transport = client.Transport
 	}
+	baseURL, client, err := endpoint.HTTPClient(a.serverURL, transport)
+	if err != nil {
+		return "", nil, err
+	}
+	transport = client.Transport
 	if a.debug {
 		transport = debugTransport{
 			out:  a.errOut,
@@ -210,19 +206,26 @@ func (a *App) httpClientWithAutoStart(autoStart bool) (string, *http.Client, err
 // API client uses. An http(s) endpoint is already addressable and is returned
 // as-is, with nothing to release.
 func (a *App) gitServerURL(ctx context.Context) (string, func(), error) {
-	if !isLocalEndpoint(a.serverURL) {
+	if a.serverEndpoint().DirectlyDialable() {
 		return a.serverURL, func() {}, nil
 	}
-	proxy, err := localipc.StartLoopbackProxy(ctx, a.serverURL)
+	proxy, err := endpoint.StartLoopbackProxy(ctx, a.serverURL)
 	if err != nil {
 		return "", nil, err
 	}
 	return proxy.BaseURL(), func() { _ = proxy.Close() }, nil
 }
 
-func isLocalEndpoint(endpoint string) bool {
-	endpoint = strings.TrimSpace(strings.ToLower(endpoint))
-	return strings.HasPrefix(endpoint, "unix://") || strings.HasPrefix(endpoint, "npipe://")
+// serverEndpoint parses --server so callers can ask what the endpoint supports
+// rather than pattern-matching its scheme. A malformed endpoint answers "no" to
+// every capability; the error itself surfaces from the call that goes on to use
+// the endpoint, where it can say what failed.
+func (a *App) serverEndpoint() endpoint.Endpoint {
+	parsed, err := endpoint.Parse(a.serverURL)
+	if err != nil {
+		return endpoint.Endpoint{}
+	}
+	return parsed
 }
 
 func (a *App) ensureLocalServer(ctx context.Context) error {
@@ -230,7 +233,7 @@ func (a *App) ensureLocalServer(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
-	return localipc.EnsureRunning(ctx, localipc.LaunchOptions{
+	return endpoint.EnsureRunning(ctx, endpoint.LaunchOptions{
 		Endpoint: a.serverURL,
 		Command:  command,
 		Args:     []string{"server"},
@@ -292,7 +295,7 @@ func (a *App) newServerShutdownCommand() *cobra.Command {
 				return err
 			}
 			resp, err := requestServerShutdown(cmd.Context(), baseURL, httpClient)
-			if err != nil && isLocalEndpoint(a.serverURL) {
+			if err != nil && a.serverEndpoint().AutoLaunchable() {
 				baseURL, httpClient = defaultHTTPShutdownClient()
 				resp, err = requestServerShutdown(cmd.Context(), baseURL, httpClient)
 			}

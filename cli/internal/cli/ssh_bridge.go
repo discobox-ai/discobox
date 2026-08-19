@@ -17,7 +17,7 @@ import (
 // transport the API already answers on.
 //
 // `ssh` speaks TCP to a host and port and nothing else, and the local endpoint
-// is usually a unix socket. localipc.StartLoopbackProxy cannot serve here: it
+// is usually a unix socket. endpoint.StartLoopbackProxy cannot serve here: it
 // is an HTTP reverse proxy, and these are not HTTP bytes. So each accepted
 // connection is spliced to a `GET /ssh/connect` websocket, whose byte stream
 // the server hands to the same sshd its TCP listener feeds.

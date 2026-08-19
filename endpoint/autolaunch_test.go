@@ -1,4 +1,4 @@
-package localipc
+package endpoint
 
 import "testing"
 

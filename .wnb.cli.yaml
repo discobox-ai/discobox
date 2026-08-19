@@ -10,7 +10,7 @@
 # case where that matters.
 
 watch:
-  paths: [api, cli, execstream, id, internal, layout, localipc, randomname, sandboxconfig]
+  paths: [api, cli, endpoint, execstream, id, internal, layout, randomname, sandboxconfig]
   exclude: ["*_test.go"]
   exclude_dirs: [build, node_modules, vendor, testdata]
 

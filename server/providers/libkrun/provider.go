@@ -12,9 +12,9 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/obot-platform/discobox/localipc"
-	"github.com/obot-platform/discobox/pool-agent/endpoint"
+	"github.com/obot-platform/discobox/endpoint"
 	guestvsock "github.com/obot-platform/discobox/pool-agent/vsock"
+	"github.com/obot-platform/discobox/pool-agent/wire"
 	"github.com/obot-platform/discobox/server/internal/model"
 	sandbox "github.com/obot-platform/discobox/server/internal/sandbox"
 	"github.com/obot-platform/discobox/server/providers/dockerworker"
@@ -81,8 +81,8 @@ func Validate(data json.RawMessage) error {
 			return fmt.Errorf("libkrun %s must be an absolute path", name)
 		}
 	}
-	endpoint := effectiveControlPlaneSocket(cfg.ControlPlaneSocket)
-	parsed, err := localipc.Parse(endpoint)
+	socket := effectiveControlPlaneSocket(cfg.ControlPlaneSocket)
+	parsed, err := endpoint.Parse(socket)
 	if err != nil {
 		return fmt.Errorf("libkrun controlPlaneSocket: %w", err)
 	}
@@ -123,8 +123,8 @@ func newFromInstance(_ context.Context, instance *model.SandboxProviderInstance,
 		// Both directions are VSOCK for a libkrun microVM: the guest dials host
 		// CID 2 for the control plane, and the agent listens on its own VSOCK
 		// port. The schemes are the whole configuration.
-		ControlPlaneURL:      endpoint.VSOCKURL(guestvsock.HostCID, controlPlaneVSOCKPort),
-		AgentListenURL:       endpoint.VSOCKListenURL(agentVSOCKPort),
+		ControlPlaneURL:      wire.VSOCKURL(guestvsock.HostCID, controlPlaneVSOCKPort),
+		AgentListenURL:       wire.VSOCKListenURL(agentVSOCKPort),
 		Image:                dockerworker.EffectivePoolImage(cfg.WorkerImage),
 		Labels:               map[string]string{labelProviderType: ProviderType},
 		DevelopmentImageSync: imageSync,
@@ -137,13 +137,13 @@ func newFromInstance(_ context.Context, instance *model.SandboxProviderInstance,
 }
 
 func driverConfig(cfg Config) DriverConfig {
-	endpoint, _ := localipc.Parse(effectiveControlPlaneSocket(cfg.ControlPlaneSocket))
+	parsed, _ := endpoint.Parse(effectiveControlPlaneSocket(cfg.ControlPlaneSocket))
 	return DriverConfig{
 		RootImage:          cfg.RootImage,
 		KernelImage:        cfg.KernelImage,
 		StateDir:           effectiveStateDir(cfg.StateDir),
 		RuntimeDir:         effectiveRuntimeDir(cfg.RuntimeDir),
-		ControlPlaneSocket: endpoint.Value,
+		ControlPlaneSocket: parsed.Value,
 		LauncherPath:       cfg.LauncherPath,
 		MkfsPath:           cfg.MkfsPath,
 		VCPUs:              effectiveInt(cfg.VCPUs, defaultVCPUs),
@@ -155,7 +155,7 @@ func driverConfig(cfg Config) DriverConfig {
 
 func effectiveControlPlaneSocket(value string) string {
 	if strings.TrimSpace(value) == "" {
-		return localipc.DefaultEndpoint()
+		return endpoint.DefaultEndpoint()
 	}
 	return strings.TrimSpace(value)
 }
@@ -190,7 +190,7 @@ func Definition() sandbox.ProviderDefinition {
 			{Key: "cacheDiskGiB", Label: "Cache Disk (GiB)", Type: "number", Placeholder: strconv.FormatInt(defaultCacheDiskGiB, 10)},
 			{Key: "stateDir", Label: "VM State Directory", Type: "string", Placeholder: defaultStateDir(), Advanced: true},
 			{Key: "runtimeDir", Label: "VM Runtime Directory", Type: "string", Placeholder: defaultRuntimeDir(), Advanced: true},
-			{Key: "controlPlaneSocket", Label: "Control Plane Unix Socket", Type: "string", Placeholder: localipc.DefaultEndpoint(), Advanced: true},
+			{Key: "controlPlaneSocket", Label: "Control Plane Unix Socket", Type: "string", Placeholder: endpoint.DefaultEndpoint(), Advanced: true},
 			{Key: "launcherPath", Label: "discobox-krun Path", Type: "string", Placeholder: "discobox-krun", Advanced: true},
 			{Key: "mkfsPath", Label: "mkfs.ext4 Path", Type: "string", Placeholder: "mkfs.ext4", Advanced: true},
 		},

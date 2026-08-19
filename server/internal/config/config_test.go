@@ -8,8 +8,8 @@ import (
 
 	"github.com/obot-platform/discobox/controlplane"
 	"github.com/obot-platform/discobox/devimage"
+	"github.com/obot-platform/discobox/endpoint"
 	"github.com/obot-platform/discobox/gormdb"
-	"github.com/obot-platform/discobox/localipc"
 )
 
 const (
@@ -22,7 +22,7 @@ const (
 // defaultListen is what an unconfigured server listens on: local IPC and
 // nothing else. HTTP is opt-in on every platform.
 func defaultListen() []string {
-	return []string{localipc.DefaultEndpoint()}
+	return []string{endpoint.DefaultEndpoint()}
 }
 
 func TestLoadDefaults(t *testing.T) {
@@ -235,7 +235,7 @@ func TestLoadServerEndpointAddsDefaultLocalIPC(t *testing.T) {
 		t.Fatalf("Load() error = %v", err)
 	}
 
-	want := []string{localipc.DefaultEndpoint(), "http://127.0.0.1:19090"}
+	want := []string{endpoint.DefaultEndpoint(), "http://127.0.0.1:19090"}
 	if !reflect.DeepEqual(cfg.Listen, want) {
 		t.Fatalf("Listen = %#v, want %#v", cfg.Listen, want)
 	}

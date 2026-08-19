@@ -13,8 +13,8 @@ import (
 	"time"
 
 	"github.com/obot-platform/discobox/controlplane"
-	"github.com/obot-platform/discobox/pool-agent/endpoint"
 	"github.com/obot-platform/discobox/pool-agent/poolauth"
+	"github.com/obot-platform/discobox/pool-agent/wire"
 )
 
 const (
@@ -38,7 +38,7 @@ const (
 // Bootstrap is the VM boot contract used by the control plane and pool agent.
 //
 // Both directions are addressed by a single URL each, and the scheme alone
-// decides the transport (see pool-agent/endpoint). A backend is therefore
+// decides the transport (see pool-agent/wire). A backend is therefore
 // expressed entirely in the URLs it renders — http:// for a pool that shares the
 // host network, vsock://2:3001 for a libkrun microVM, unix:///... for a guest
 // whose helper terminates the socket — with no transport-specific field here.
@@ -80,11 +80,11 @@ func (b Bootstrap) Validate() error {
 	}
 	// Validating here means an unreachable transport is rejected at boot with a
 	// clear message, rather than at the first request.
-	if _, err := endpoint.Parse(b.ControlPlaneURL); err != nil {
+	if _, err := wire.Parse(b.ControlPlaneURL); err != nil {
 		return fmt.Errorf("control plane URL: %w", err)
 	}
 	if listen := strings.TrimSpace(b.AgentListenURL); listen != "" {
-		if _, err := endpoint.Parse(listen); err != nil {
+		if _, err := wire.Parse(listen); err != nil {
 			return fmt.Errorf("agent listen URL: %w", err)
 		}
 	}

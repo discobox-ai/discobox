@@ -110,7 +110,7 @@ func TestAPIDataSourceRunUsesSharedRunCreation(t *testing.T) {
 		t.Fatalf("new client: %v", err)
 	}
 	ds := &apiDataSource{
-		app:       &App{},
+		app:       &App{serverURL: server.URL},
 		client:    client,
 		projectID: "project-1",
 	}

@@ -25,8 +25,8 @@ import (
 	"github.com/moby/moby/client"
 
 	poolagent "github.com/obot-platform/discobox/pool-agent"
-	"github.com/obot-platform/discobox/pool-agent/endpoint"
 	guestvsock "github.com/obot-platform/discobox/pool-agent/vsock"
+	"github.com/obot-platform/discobox/pool-agent/wire"
 	"github.com/obot-platform/discobox/server/internal/model"
 	sandbox "github.com/obot-platform/discobox/server/internal/sandbox"
 	"github.com/obot-platform/discobox/server/providers/dockerworker"
@@ -180,8 +180,8 @@ func TestLibkrunEndToEnd(t *testing.T) {
 	}
 	bootstrapToken := base64.RawURLEncoding.EncodeToString(bootstrapTokenBytes)
 	engine, err := dockerworker.New(dockerworker.Config{
-		ControlPlaneURL:    endpoint.VSOCKURL(guestvsock.HostCID, controlPlaneVSOCKPort),
-		AgentListenURL:     endpoint.VSOCKListenURL(agentVSOCKPort),
+		ControlPlaneURL:    wire.VSOCKURL(guestvsock.HostCID, controlPlaneVSOCKPort),
+		AgentListenURL:     wire.VSOCKListenURL(agentVSOCKPort),
 		Image:              poolImage,
 		DockerReadyTimeout: 90 * time.Second,
 	}, driver)

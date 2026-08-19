@@ -15,7 +15,7 @@ import (
 	"github.com/fsnotify/fsnotify"
 
 	"github.com/obot-platform/discobox/layout"
-	"github.com/obot-platform/discobox/pool-agent/endpoint"
+	"github.com/obot-platform/discobox/pool-agent/wire"
 	"github.com/obot-platform/discobox/proxy"
 )
 
@@ -124,7 +124,7 @@ func newSecretResolver(projectID, poolID string) *secretResolver {
 	// inherits it from the unit environment file.
 	client := &http.Client{Timeout: resolveHTTPTimeout}
 	if url := strings.TrimSpace(os.Getenv(envControlPlaneURL)); url != "" {
-		if _, resolved, err := endpoint.HTTPClient(url, resolveHTTPTimeout); err == nil {
+		if _, resolved, err := wire.HTTPClient(url, resolveHTTPTimeout); err == nil {
 			client = resolved
 		}
 	}

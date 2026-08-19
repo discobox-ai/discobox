@@ -15,7 +15,7 @@ import (
 	"strings"
 
 	"github.com/obot-platform/discobox/controlplane"
-	"github.com/obot-platform/discobox/localipc"
+	"github.com/obot-platform/discobox/endpoint"
 	"github.com/obot-platform/discobox/server/internal/model"
 	sandbox "github.com/obot-platform/discobox/server/internal/sandbox"
 	"github.com/obot-platform/discobox/server/providers/dockerworker"
@@ -169,8 +169,8 @@ type controlPlaneReach struct {
 // pool that starts and never registers.
 func resolveControlPlaneReach(listenEndpoints []string, daemonHost string) (controlPlaneReach, error) {
 	var httpEndpoint string
-	for _, endpoint := range listenEndpoints {
-		parsed, err := localipc.Parse(endpoint)
+	for _, raw := range listenEndpoints {
+		parsed, err := endpoint.Parse(raw)
 		if err != nil {
 			continue
 		}

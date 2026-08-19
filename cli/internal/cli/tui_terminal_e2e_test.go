@@ -12,7 +12,7 @@ import (
 	"github.com/charmbracelet/x/ansi"
 
 	"github.com/obot-platform/discobox/cli/internal/tui"
-	"github.com/obot-platform/discobox/localipc"
+	"github.com/obot-platform/discobox/endpoint"
 )
 
 const paneE2EEnv = "DISCOBOX_PANE_E2E"
@@ -38,7 +38,7 @@ func TestPaneTerminalsE2E(t *testing.T) {
 	}
 
 	app := &App{
-		serverURL: envOrDefault("DISCOBOX_PANE_E2E_SERVER", localipc.DefaultEndpoint()),
+		serverURL: envOrDefault("DISCOBOX_PANE_E2E_SERVER", endpoint.DefaultEndpoint()),
 		projectID: envOrDefault("DISCOBOX_PANE_E2E_PROJECT", defaultProjectAlias),
 		token:     os.Getenv("DISCOBOX_TOKEN"),
 		noStart:   true,
@@ -142,7 +142,7 @@ func TestLocalCommandPaneE2E(t *testing.T) {
 	}
 
 	app := &App{
-		serverURL: envOrDefault("DISCOBOX_PANE_E2E_SERVER", localipc.DefaultEndpoint()),
+		serverURL: envOrDefault("DISCOBOX_PANE_E2E_SERVER", endpoint.DefaultEndpoint()),
 		projectID: envOrDefault("DISCOBOX_PANE_E2E_PROJECT", defaultProjectAlias),
 		token:     os.Getenv("DISCOBOX_TOKEN"),
 		source:    ".",

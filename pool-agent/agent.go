@@ -17,12 +17,12 @@ import (
 
 	"github.com/obot-platform/discobox/layout"
 	"github.com/obot-platform/discobox/pool-agent/buildkitagent"
-	"github.com/obot-platform/discobox/pool-agent/endpoint"
 	"github.com/obot-platform/discobox/pool-agent/poolauth"
 	"github.com/obot-platform/discobox/pool-agent/proxyagent"
 	"github.com/obot-platform/discobox/pool-agent/sandboxruntime"
 	poolserver "github.com/obot-platform/discobox/pool-agent/server"
 	agentsystemd "github.com/obot-platform/discobox/pool-agent/systemd"
+	"github.com/obot-platform/discobox/pool-agent/wire"
 )
 
 // RunProxy runs the pool-scoped proxy server. It is the entrypoint for the
@@ -64,7 +64,7 @@ func RunAgent(ctx context.Context, logger *slog.Logger) error {
 
 	// The control plane URL's scheme selects the transport; nothing here knows
 	// whether that is IP, VSOCK, or a Unix socket served by a guest helper.
-	baseURL, controlPlaneHTTPClient, err := endpoint.HTTPClient(bootstrap.ControlPlaneURL, 0)
+	baseURL, controlPlaneHTTPClient, err := wire.HTTPClient(bootstrap.ControlPlaneURL, 0)
 	if err != nil {
 		return fmt.Errorf("resolve control plane transport: %w", err)
 	}
@@ -307,7 +307,7 @@ func Serve(ctx context.Context, logger *slog.Logger, bootstrap Bootstrap, regist
 func ServeWithRuntime(ctx context.Context, logger *slog.Logger, bootstrap Bootstrap, registration *Registration, runtime sandboxruntime.Runtime) error {
 	// The listen URL's scheme selects the transport, so a VSOCK-only or
 	// socket-only pool needs no special case here.
-	listener, err := endpoint.Listen(bootstrap.AgentListenURL)
+	listener, err := wire.Listen(bootstrap.AgentListenURL)
 	if err != nil {
 		return fmt.Errorf("listen on pool-agent endpoint %q: %w", bootstrap.AgentListenURL, err)
 	}

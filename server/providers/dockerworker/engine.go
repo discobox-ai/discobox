@@ -25,9 +25,9 @@ import (
 
 	"github.com/obot-platform/discobox/layout"
 	poolagent "github.com/obot-platform/discobox/pool-agent"
-	"github.com/obot-platform/discobox/pool-agent/endpoint"
 	"github.com/obot-platform/discobox/pool-agent/imagereap"
 	"github.com/obot-platform/discobox/pool-agent/proxyagent"
+	"github.com/obot-platform/discobox/pool-agent/wire"
 	"github.com/obot-platform/discobox/server/internal/model"
 	sandbox "github.com/obot-platform/discobox/server/internal/sandbox"
 	"github.com/obot-platform/discobox/server/internal/transport"
@@ -165,13 +165,13 @@ func New(cfg Config, driver Driver) (*Engine, error) {
 		if cfg.AgentPort == 0 {
 			cfg.AgentPort = defaultAgentPort
 		}
-		cfg.AgentListenURL = endpoint.TCPListenURL(cfg.AgentPort)
+		cfg.AgentListenURL = wire.TCPListenURL(cfg.AgentPort)
 	}
-	if _, err := endpoint.Parse(cfg.AgentListenURL); err != nil {
+	if _, err := wire.Parse(cfg.AgentListenURL); err != nil {
 		return nil, fmt.Errorf("dockerworker agent listen URL: %w", err)
 	}
 	if strings.TrimSpace(cfg.ControlPlaneURL) != "" {
-		if _, err := endpoint.Parse(cfg.ControlPlaneURL); err != nil {
+		if _, err := wire.Parse(cfg.ControlPlaneURL); err != nil {
 			return nil, fmt.Errorf("dockerworker control plane URL: %w", err)
 		}
 	}
@@ -447,7 +447,7 @@ func (e *Engine) createPoolContainer(ctx context.Context, cli *client.Client, po
 		ExtraHosts: append([]string(nil), e.cfg.ExtraHosts...),
 	}
 	// Only an IP listener has a port Docker can publish or curl can probe.
-	listen, err := endpoint.Parse(e.cfg.AgentListenURL)
+	listen, err := wire.Parse(e.cfg.AgentListenURL)
 	if err != nil {
 		return nil, fmt.Errorf("agent listen URL: %w", err)
 	}

@@ -1,4 +1,4 @@
-// Package endpoint resolves the pool agent's transport from a URL, so that the
+// Package wire resolves the pool agent's transport from a URL, so that the
 // scheme — and nothing else — decides how bytes reach the other side.
 //
 // The control plane and the pool agent address each other with a single URL
@@ -14,10 +14,12 @@
 // that terminates the agent API on VSOCK or a Unix socket needs no special case
 // above the transport layer either.
 //
-// This mirrors localipc, which already resolves the CLI-to-server transport by
-// scheme; the two are separate because they serve different hops and different
-// scheme sets.
-package endpoint
+// The root module's endpoint package resolves the other hop — client to control
+// plane — by the same method. The two stay separate because this one owns
+// vsock, whose dependency belongs to the guest side rather than to the module
+// every component imports, and because each hop's listen and dial contracts
+// answer to its own callers.
+package wire
 
 import (
 	"context"

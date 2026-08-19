@@ -212,7 +212,7 @@ database is what two servers corrupt each other over — duplicates reconcile th
 same pools against each other and thrash their runtimes. An endpoint-scoped lock
 would miss a second server started with a different `DISCOBOX_SERVER_LISTEN`.
 
-Binding proves nothing about who else is running: `localipc.Listen` unlinks a
+Binding proves nothing about who else is running: `endpoint.Listen` unlinks a
 unix socket path before binding, so the second server rebinds the path and both
 keep serving — the incumbent keeps a listener on an orphaned inode, and because
 `/shutdown` is addressed by path, nothing can ever ask it to leave again. The

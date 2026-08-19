@@ -11,7 +11,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/obot-platform/discobox/localipc"
+	"github.com/obot-platform/discobox/endpoint"
 )
 
 func TestListenAllFailsWhenAnyEndpointCannotBind(t *testing.T) {
@@ -46,8 +46,8 @@ func TestListenAllFailsWhenAnyEndpointCannotBind(t *testing.T) {
 }
 
 func TestShutdownExistingLocalServerUsesLocalEndpoint(t *testing.T) {
-	endpoint := "unix://" + filepath.Join(t.TempDir(), "server.sock")
-	listener, _, cleanup, err := localipc.Listen(endpoint)
+	raw := "unix://" + filepath.Join(t.TempDir(), "server.sock")
+	listener, _, cleanup, err := endpoint.Listen(raw)
 	if err != nil {
 		t.Fatalf("Listen() error = %v", err)
 	}
@@ -69,15 +69,15 @@ func TestShutdownExistingLocalServerUsesLocalEndpoint(t *testing.T) {
 		_ = httpServer.Serve(listener)
 	}()
 
-	shutdownExistingLocalServer(context.Background(), []string{endpoint, "http://127.0.0.1:1"})
+	shutdownExistingLocalServer(context.Background(), []string{raw, "http://127.0.0.1:1"})
 	if shutdowns.Load() != 1 {
 		t.Fatalf("shutdown requests = %d, want 1", shutdowns.Load())
 	}
 }
 
 func TestShutdownExistingLocalServerIgnoresUnavailableSocket(t *testing.T) {
-	endpoint := "unix://" + filepath.Join(t.TempDir(), "missing.sock")
-	shutdownExistingLocalServer(context.Background(), []string{endpoint})
+	raw := "unix://" + filepath.Join(t.TempDir(), "missing.sock")
+	shutdownExistingLocalServer(context.Background(), []string{raw})
 }
 
 func TestShutdownExistingLocalServerFallsBackToHTTP(t *testing.T) {

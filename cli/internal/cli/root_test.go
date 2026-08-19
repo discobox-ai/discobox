@@ -1339,7 +1339,7 @@ func TestHTTPClientAddsAuthorizationHeader(t *testing.T) {
 	}))
 	t.Cleanup(server.Close)
 
-	app := &App{token: "token-1"}
+	app := &App{serverURL: server.URL, token: "token-1"}
 	req, err := http.NewRequestWithContext(context.Background(), http.MethodGet, server.URL, nil)
 	if err != nil {
 		t.Fatalf("new request: %v", err)
@@ -1414,7 +1414,7 @@ func TestHTTPClientDebugLogsAddedHeaders(t *testing.T) {
 	t.Cleanup(server.Close)
 
 	var log bytes.Buffer
-	app := &App{token: "token-1", debug: true, errOut: &log}
+	app := &App{serverURL: server.URL, token: "token-1", debug: true, errOut: &log}
 	req, err := http.NewRequestWithContext(context.Background(), http.MethodGet, server.URL, nil)
 	if err != nil {
 		t.Fatalf("new request: %v", err)

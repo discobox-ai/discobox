@@ -7,7 +7,7 @@ import (
 	"time"
 
 	"github.com/obot-platform/discobox/devimage"
-	"github.com/obot-platform/discobox/localipc"
+	"github.com/obot-platform/discobox/endpoint"
 	poolagentauth "github.com/obot-platform/discobox/server/internal/auth/poolagent"
 	sandboxauth "github.com/obot-platform/discobox/server/internal/auth/sandbox"
 	eventbroker "github.com/obot-platform/discobox/server/internal/events"
@@ -77,7 +77,7 @@ func New(store *store.Store, engine *reconcile.Engine, options Options, broker .
 		b = broker[0]
 	}
 	if len(options.ListenEndpoints) == 0 {
-		options.ListenEndpoints = []string{localipc.DefaultEndpoint()}
+		options.ListenEndpoints = []string{endpoint.DefaultEndpoint()}
 	}
 	manager := sandbox.NewProviderManager()
 	poolControlPlane := pools.NewControlPlane(store, engine)

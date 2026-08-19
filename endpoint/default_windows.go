@@ -1,6 +1,6 @@
 //go:build windows
 
-package localipc
+package endpoint
 
 func DefaultEndpoint() string {
 	return `npipe:////./pipe/discobox`

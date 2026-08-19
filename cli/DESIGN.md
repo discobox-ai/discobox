@@ -153,7 +153,7 @@ not need.
 the endpoint the CLI already uses: a loopback TCP port opened for the life of
 the command splices each connection to a `GET /ssh/connect` websocket, whose
 byte stream the server hands to the same sshd its TCP listener feeds.
-`localipc.StartLoopbackProxy` cannot serve this — it is an HTTP reverse proxy,
+`endpoint.StartLoopbackProxy` cannot serve this — it is an HTTP reverse proxy,
 and these are not HTTP bytes.
 
 Everything the session needs is passed on the command line, so nothing is
@@ -615,7 +615,7 @@ See [ADR 0045](../docs/adr/0045-a-directory-with-no-repository-is-delivered-by-p
 
 `git` is a subprocess that only understands URLs, so it cannot use the CLI's
 local-IPC transport. `App.gitServerURL` bridges the gap: for a `unix://` or
-`npipe://` endpoint it starts `localipc.StartLoopbackProxy`, a loopback HTTP
+`npipe://` endpoint it starts `endpoint.StartLoopbackProxy`, a loopback HTTP
 listener that reverse-proxies onto the same server the API client uses, and
 returns that address for the duration of the command. An `http(s)` endpoint is
 already addressable and is returned unchanged.

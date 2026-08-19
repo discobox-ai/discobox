@@ -3,13 +3,13 @@ package config
 import (
 	"testing"
 
-	"github.com/obot-platform/discobox/localipc"
+	"github.com/obot-platform/discobox/endpoint"
 )
 
 func hasScheme(t *testing.T, endpoints []string, scheme string) bool {
 	t.Helper()
-	for _, endpoint := range endpoints {
-		parsed, err := localipc.Parse(endpoint)
+	for _, raw := range endpoints {
+		parsed, err := endpoint.Parse(raw)
 		if err != nil {
 			continue
 		}

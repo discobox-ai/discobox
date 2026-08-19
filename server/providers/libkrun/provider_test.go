@@ -9,7 +9,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/obot-platform/discobox/localipc"
+	"github.com/obot-platform/discobox/endpoint"
 )
 
 func TestProviderIdentity(t *testing.T) {
@@ -134,7 +134,7 @@ func TestDriverConfigUsesVSOCKAndStorageDefaults(t *testing.T) {
 	if cfg.ControlPlaneSocket == "" {
 		t.Fatal("control plane socket default is empty")
 	}
-	if parsed, err := localipc.Parse(localipc.DefaultEndpoint()); err != nil || cfg.ControlPlaneSocket != parsed.Value {
+	if parsed, err := endpoint.Parse(endpoint.DefaultEndpoint()); err != nil || cfg.ControlPlaneSocket != parsed.Value {
 		t.Fatalf("control plane socket = %q, parsed default = %#v, err = %v", cfg.ControlPlaneSocket, parsed, err)
 	}
 	if cfg.VCPUs != defaultVCPUs || cfg.MemoryMiB != defaultMemoryMiB {

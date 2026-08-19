@@ -15,7 +15,7 @@ import (
 	"github.com/joho/godotenv"
 	"go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp"
 
-	"github.com/obot-platform/discobox/localipc"
+	"github.com/obot-platform/discobox/endpoint"
 	"github.com/obot-platform/discobox/server/internal/config"
 	"github.com/obot-platform/discobox/server/internal/database"
 	"github.com/obot-platform/discobox/server/internal/secrets"
@@ -210,17 +210,17 @@ func listenAll(ctx context.Context, endpoints []string) ([]serverListener, error
 // whoever holds the endpoint, then retries until reclaimTimeout elapses. This
 // replaces a fixed post-shutdown sleep with a verified reclaim: we bind as soon
 // as the address is actually free rather than guessing a drain time.
-func listenWithReclaim(ctx context.Context, endpoint string) (serverListener, error) {
+func listenWithReclaim(ctx context.Context, raw string) (serverListener, error) {
 	deadline := time.Now().Add(reclaimTimeout)
 	for {
-		listener, display, cleanup, err := localipc.Listen(endpoint)
+		listener, display, cleanup, err := endpoint.Listen(raw)
 		if err == nil {
 			return serverListener{Listener: listener, display: display, cleanup: cleanup}, nil
 		}
 		if !errors.Is(err, syscall.EADDRINUSE) || !time.Now().Before(deadline) {
 			return serverListener{}, err
 		}
-		requestEndpointShutdown(ctx, endpoint)
+		requestEndpointShutdown(ctx, raw)
 		select {
 		case <-ctx.Done():
 			return serverListener{}, ctx.Err()
@@ -249,10 +249,10 @@ func shutdownExistingLocalServer(ctx context.Context, endpoints []string) {
 
 // requestEndpointShutdown POSTs /shutdown to a single endpoint, ignoring any
 // error (including an unreachable endpoint).
-func requestEndpointShutdown(ctx context.Context, endpoint string) {
+func requestEndpointShutdown(ctx context.Context, raw string) {
 	shutdownCtx, cancel := context.WithTimeout(ctx, 2*time.Second)
 	defer cancel()
-	baseURL, client, err := localipc.HTTPClient(endpoint, nil)
+	baseURL, client, err := endpoint.HTTPClient(raw, nil)
 	if err != nil {
 		return
 	}
@@ -268,7 +268,7 @@ func requestEndpointShutdown(ctx context.Context, endpoint string) {
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
 		return
 	}
-	log.Printf("requested shutdown of existing server at %s", endpoint)
+	log.Printf("requested shutdown of existing server at %s", raw)
 }
 
 func serveAll(server *http.Server, listeners []serverListener) error {

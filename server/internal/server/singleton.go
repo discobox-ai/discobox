@@ -31,7 +31,7 @@ var errLockBusy = errors.New("lock held by another process")
 // acquireSingleton blocks until this process is the only server running against
 // dataDir, and returns a release function.
 //
-// A unix socket bind cannot report EADDRINUSE — localipc.Listen unlinks the
+// A unix socket bind cannot report EADDRINUSE — endpoint.Listen unlinks the
 // path first — so binding the endpoint proves nothing about who else is
 // running. Before the listen set defaulted to a unix socket, a duplicate server
 // was stopped by the kernel refusing the second TCP bind (see the reclaim loop

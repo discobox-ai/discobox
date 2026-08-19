@@ -15,9 +15,9 @@ import (
 
 	"github.com/obot-platform/discobox/controlplane"
 	"github.com/obot-platform/discobox/devimage"
+	"github.com/obot-platform/discobox/endpoint"
 	"github.com/obot-platform/discobox/gormdb"
 	"github.com/obot-platform/discobox/internal/hostid"
-	"github.com/obot-platform/discobox/localipc"
 	"github.com/obot-platform/discobox/pool-agent/imagereap"
 	"github.com/obot-platform/discobox/server/internal/harnessdefs"
 	"github.com/obot-platform/discobox/server/internal/sandbox"
@@ -156,8 +156,8 @@ func Load() (*Config, error) {
 	if len(cfg.Listen) == 0 {
 		return nil, fmt.Errorf("DISCOBOX_SERVER_LISTEN must include at least one endpoint")
 	}
-	for _, endpoint := range cfg.Listen {
-		if _, err := localipc.Parse(endpoint); err != nil {
+	for _, raw := range cfg.Listen {
+		if _, err := endpoint.Parse(raw); err != nil {
 			return nil, fmt.Errorf("DISCOBOX_SERVER_LISTEN: %w", err)
 		}
 	}
@@ -232,8 +232,8 @@ func listenEndpoints() []string {
 // containers whenever its daemon is local. HTTP is for the cases that genuinely
 // reach the control plane over IP: a remote Docker daemon, or a cloud backend.
 func requireLocalListenEndpoint(endpoints []string) []string {
-	for _, endpoint := range endpoints {
-		parsed, err := localipc.Parse(endpoint)
+	for _, raw := range endpoints {
+		parsed, err := endpoint.Parse(raw)
 		if err != nil {
 			continue
 		}
@@ -241,7 +241,7 @@ func requireLocalListenEndpoint(endpoints []string) []string {
 			return endpoints
 		}
 	}
-	return append([]string{localipc.DefaultEndpoint()}, endpoints...)
+	return append([]string{endpoint.DefaultEndpoint()}, endpoints...)
 }
 
 func splitListenEndpoints(value string) []string {
