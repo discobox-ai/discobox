@@ -552,6 +552,18 @@ type Terminal interface {
 	Events() <-chan TerminalEvent
 }
 
+// ExitReporter is a Terminal that ran a command and can say how it ended.
+//
+// Only some can. A command this machine ran has a result, and a pane that read
+// "finished" over a failed one would be a screen agreeing with itself while the
+// output above it says otherwise. A session inside a discobox has no such
+// answer: it ended because the shell in it ended, which is not a verdict on
+// anything.
+type ExitReporter interface {
+	// ExitStatus is the command's exit code, and whether it has ended.
+	ExitStatus() (code int, done bool)
+}
+
 // Binding is one sandbox port reachable at a local one, while a Forward is
 // open. Local is what a browser on this machine connects to; Port is what the
 // sandbox is serving on inside itself.

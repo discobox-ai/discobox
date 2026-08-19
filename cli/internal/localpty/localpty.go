@@ -19,6 +19,7 @@ package localpty
 import (
 	"context"
 	"io"
+	"time"
 )
 
 // PTY is a command running on a pseudo-terminal of its own.
@@ -38,6 +39,27 @@ type PTY interface {
 	// window mid-layout is not an error.
 	Resize(cols, rows int) error
 }
+
+// ExitReporter is a PTY that can say how its command ended.
+//
+// It is a second interface rather than part of PTY because what draws these
+// also draws terminals that are not local commands — a session inside a
+// discobox ends when the session ends, which is not a result anyone ran for.
+// Both implementations here are one.
+type ExitReporter interface {
+	// ExitStatus is the command's exit code, and whether it has ended.
+	//
+	// It is asked at end of file, which is the output stopping rather than the
+	// process being reaped: those are two events, and the caller is between
+	// them. So it waits briefly for the second rather than answering that a
+	// command that has plainly finished is still running.
+	ExitStatus() (code int, done bool)
+}
+
+// exitGrace is how long ExitStatus waits for that second event. It is the gap
+// between a command's last byte and its exit being collected here, which is
+// microseconds when it happens at all.
+const exitGrace = 250 * time.Millisecond
 
 // Command is a program to run on a pty.
 //

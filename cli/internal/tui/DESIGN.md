@@ -262,7 +262,13 @@ workspace's), while every other tab and the overlay do. A terminal or shell
 that exits stays as
 a readable tab, and a command that ran, printed and returned stays as the
 screen — an apply with little to say is over in a moment, and a pane that
-vanished with it would be a screen you never got to read. The pane says so, and
+vanished with it would be a screen you never got to read. What it says it was is
+the command's own result where there is one (`exitVerdict`, over the optional
+`ExitReporter`): a nonzero exit reads "failed · exit N" in the banner and the
+hints, in the error color, because a screen captioned "finished" over an apply
+that printed why it could not is disagreeing with itself. A terminal that is a
+session rather than a command has no such verdict and is simply finished. The
+pane says so, and
 its keys become the reader's (`readFinished`): the arrows and pgup/pgdn walk
 back through output longer than the pane, `g`/`G` jump to the ends, the wheel
 scrolls, `h`/`l` still leave for another pane, and only the keys that mean done

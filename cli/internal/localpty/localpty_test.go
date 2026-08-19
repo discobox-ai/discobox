@@ -31,6 +31,9 @@ func TestMain(m *testing.M) {
 		helperSizes()
 	case "print":
 		fmt.Print("done\r\n")
+	case "fail":
+		fmt.Print("that did not work\r\n")
+		os.Exit(3)
 	case "wait":
 		time.Sleep(time.Hour)
 	}
@@ -115,6 +118,35 @@ func TestAFinishedCommandReadsAsEndOfFile(t *testing.T) {
 	}
 	if !strings.Contains(seen.String(), "done") {
 		t.Fatalf("output = %q, want what the command printed", seen.String())
+	}
+}
+
+// How a command ended is worth knowing, because a pane that says "finished"
+// over a command that failed is a screen disagreeing with the output above it.
+func TestExitStatusIsTheCommandsOwn(t *testing.T) {
+	for _, tc := range []struct {
+		mode string
+		want int
+	}{
+		{"print", 0},
+		{"fail", 3},
+	} {
+		p := helper(t, tc.mode, 80, 24)
+		// The status is asked for where the pane asks for it: at end of file,
+		// with the output read out.
+		_, _ = io.Copy(io.Discard, p)
+
+		reporter, ok := p.(ExitReporter)
+		if !ok {
+			t.Fatal("a local command should be able to say how it ended")
+		}
+		code, done := reporter.ExitStatus()
+		if !done {
+			t.Fatalf("%s: the command has ended and the status says otherwise", tc.mode)
+		}
+		if code != tc.want {
+			t.Fatalf("%s: exit = %d, want %d", tc.mode, code, tc.want)
+		}
 	}
 }
 

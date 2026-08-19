@@ -1622,3 +1622,57 @@ func TestTheWorkspaceShowsWhatItIsWaitingFor(t *testing.T) {
 		t.Fatalf("the workspace does not say what it is doing:\n%s", plainFrame(m))
 	}
 }
+
+// A command that failed says so, at both ends of the pane it ran in. The stream
+// ending is not the same fact as the command working, and a screen captioned
+// "finished" over an apply that could not cherry-pick contradicts the reason
+// printed above it.
+func TestAFailedCommandSaysSoRatherThanFinished(t *testing.T) {
+	ds := newFakeSource(testSandboxes()...)
+	d, m, _ := openWorkspace(t, ds, "enter")
+	d.key("ctrl+a")
+	d.key("y") // apply
+	d.wait("the command", func() bool { return m.overlay != nil })
+
+	apply := ds.terminals[len(ds.terminals)-1]
+	apply.mu.Lock()
+	code := 1
+	apply.exit = &code
+	apply.mu.Unlock()
+	apply.send("nothing to apply: the cherry-pick failed\r\n")
+	apply.Close()
+	d.wait("the pane to settle", func() bool { return m.overlay != nil && m.overlay.exited })
+
+	if !m.overlay.failed {
+		t.Fatal("a command that exited nonzero should be marked failed")
+	}
+	if !strings.Contains(m.overlay.status, "failed") || !strings.Contains(m.overlay.status, "1") {
+		t.Fatalf("status = %q, want it to say it failed and with what", m.overlay.status)
+	}
+	frame := plainFrame(m)
+	if !strings.Contains(frame, "failed") {
+		t.Fatalf("the screen does not say the command failed:\n%s", frame)
+	}
+	if strings.Contains(frame, "finished") {
+		t.Fatalf("the screen still calls a failed command finished:\n%s", frame)
+	}
+}
+
+// A command that worked, and a terminal that is not a command at all, are both
+// just over: a session ending is not a verdict on anything, and a pane that
+// read failure into one would be inventing news.
+func TestAPaneWithNoVerdictIsSimplyFinished(t *testing.T) {
+	ds := newFakeSource(testSandboxes()...)
+	d, m, _ := openWorkspace(t, ds, "enter")
+	d.key("ctrl+a")
+	d.key("y") // apply
+	d.wait("the command", func() bool { return m.overlay != nil })
+
+	apply := ds.terminals[len(ds.terminals)-1]
+	apply.Close()
+	d.wait("the pane to settle", func() bool { return m.overlay != nil && m.overlay.exited })
+
+	if m.overlay.failed || m.overlay.status != "finished" {
+		t.Fatalf("status = %q failed = %v, want it simply finished", m.overlay.status, m.overlay.failed)
+	}
+}

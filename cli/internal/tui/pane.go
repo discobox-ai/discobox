@@ -1,6 +1,7 @@
 package tui
 
 import (
+	"fmt"
 	"strconv"
 	"strings"
 	"time"
@@ -90,6 +91,10 @@ type pane struct {
 	// exited is set when what was running in the pane finished and the pane
 	// was kept anyway, so its last screen can be read.
 	exited bool
+	// failed is set with it when what finished did so badly. It is what the
+	// banner and the hints are colored by: the same screen either way, and a
+	// word that is not the same word.
+	failed bool
 }
 
 // name is what to call a pane: what the application inside it says it is,
@@ -601,7 +606,7 @@ func (m *Model) paneClosed(p *pane, msg termpane.ClosedMsg) tea.Cmd {
 		// Keep the last screen up to be read; the keys that mean done take it
 		// away.
 		p.exited = true
-		p.status = "finished"
+		p.status, p.failed = exitVerdict(p.stream)
 		return m.refresh()
 
 	case p == m.overlay:
@@ -613,6 +618,27 @@ func (m *Model) paneClosed(p *pane, msg termpane.ClosedMsg) tea.Cmd {
 		m.closeTab(p)
 		return tea.Batch(m.refresh(), m.report(true, "%s: %v", action, msg.Err))
 	}
+}
+
+// exitVerdict is what a pane that has ended says it was, and whether that is
+// bad news.
+//
+// A command that failed says so. The stream ending is not the same fact as the
+// command succeeding — an apply that could not cherry-pick prints its reason
+// and exits nonzero, and a pane that answered "finished" over it would be
+// contradicting the screen it is captioning. Where there is no exit status to
+// have (a session in a discobox, a stream that never was a process), the
+// stream ending is all there is to say.
+func exitVerdict(stream Terminal) (string, bool) {
+	reporter, ok := stream.(ExitReporter)
+	if !ok {
+		return "finished", false
+	}
+	code, done := reporter.ExitStatus()
+	if !done || code == 0 {
+		return "finished", false
+	}
+	return fmt.Sprintf("failed · exit %d", code), true
 }
 
 // readFinished handles a key on a pane whose command has finished.
@@ -1045,7 +1071,13 @@ func (m *Model) viewPaneHeader(w int) string {
 
 	keys, pinned := m.viewHeaderRight(), false
 	if p := m.focusedPane(); p != nil && p.status != "" {
-		keys, pinned = m.st.statusWA.Render(p.status), true
+		// A command that failed is not the same news as one that is
+		// reconnecting or one that is over, and the banner is where it is read.
+		style := m.st.statusWA
+		if p.failed {
+			style = m.st.statusER
+		}
+		keys, pinned = style.Render(p.status), true
 	}
 
 	// Each concession is the row with one more edge given up, widest first.

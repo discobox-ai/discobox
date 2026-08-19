@@ -470,6 +470,21 @@ type fakeTerminal struct {
 	mu    sync.Mutex
 	input []byte
 	sizes [][2]int
+	// exit is the command's exit code, for a terminal standing in for a local
+	// command. Nil is a terminal that is not one and has no result to give.
+	exit *int
+}
+
+// ExitStatus makes this terminal an [ExitReporter] when a test has given it a
+// result to report, and not one otherwise — the same split the real terminals
+// have between a local command and a session in a discobox.
+func (f *fakeTerminal) ExitStatus() (int, bool) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	if f.exit == nil {
+		return 0, false
+	}
+	return *f.exit, true
 }
 
 func newFakeTerminal() *fakeTerminal {

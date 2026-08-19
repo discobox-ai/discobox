@@ -70,4 +70,16 @@ func (a *App) globalFlags() []string {
 // Events never fires: there is no connection under a local command to lose.
 func (c *localCommand) Events() <-chan tui.TerminalEvent { return c.events }
 
+// ExitStatus passes on how the command ended, which is what lets a finished
+// pane say "failed" rather than "finished". It is forwarded by hand because the
+// embedded PTY is an interface, and the one it holds is only sometimes an
+// ExitReporter.
+func (c *localCommand) ExitStatus() (int, bool) {
+	reporter, ok := c.PTY.(localpty.ExitReporter)
+	if !ok {
+		return 0, false
+	}
+	return reporter.ExitStatus()
+}
+
 var _ tui.Terminal = (*localCommand)(nil)

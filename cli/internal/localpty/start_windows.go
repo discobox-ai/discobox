@@ -9,6 +9,7 @@ import (
 	"io"
 	"os"
 	"sync"
+	"time"
 	"unsafe"
 
 	"golang.org/x/sys/windows"
@@ -72,6 +73,7 @@ func start(ctx context.Context, cmd Command, cols, rows int) (PTY, error) {
 		process: process,
 		in:      os.NewFile(uintptr(inWrite), "conpty-in"),
 		out:     os.NewFile(uintptr(outRead), "conpty-out"),
+		waited:  make(chan struct{}),
 		done:    make(chan struct{}),
 	}
 	go p.watchExit(process)
@@ -161,10 +163,27 @@ type conPTY struct {
 	console windows.Handle
 	process windows.Handle
 
+	// waited is closed once the command has exited and code is its exit status.
+	waited chan struct{}
+	code   int
+
 	// done ends the context watcher when the pty is closed for any other
 	// reason, so a long-lived context does not hold a goroutine per command.
 	done      chan struct{}
 	closeOnce sync.Once
+}
+
+// ExitStatus is the command's exit code, once there is one. The wait is the
+// interface's, and is over before it starts here: the code is collected before
+// the console closes, and the console closing is what ends the read that sends
+// anyone looking for it.
+func (p *conPTY) ExitStatus() (int, bool) {
+	select {
+	case <-p.waited:
+		return p.code, true
+	case <-time.After(exitGrace):
+		return 0, false
+	}
 }
 
 // watchExit releases the console when the command finishes.
@@ -181,6 +200,14 @@ type conPTY struct {
 // close it while the wait is on it.
 func (p *conPTY) watchExit(process windows.Handle) {
 	_, _ = windows.WaitForSingleObject(process, windows.INFINITE)
+	// Collected before the console goes, so that the end of file the pane is
+	// about to read is never ahead of the answer to how the command ended.
+	var code uint32
+	if err := windows.GetExitCodeProcess(process, &code); err == nil {
+		p.code = int(int32(code))
+	}
+	close(p.waited)
+
 	p.closeConsole()
 	p.mu.Lock()
 	defer p.mu.Unlock()
@@ -310,4 +337,7 @@ func closeHandles(handles ...windows.Handle) {
 	}
 }
 
-var _ PTY = (*conPTY)(nil)
+var (
+	_ PTY          = (*conPTY)(nil)
+	_ ExitReporter = (*conPTY)(nil)
+)

@@ -1982,9 +1982,16 @@ func (m *Model) hints() string {
 			return ""
 		}
 		if p.exited {
-			hints := "finished · q closes"
+			// The same word the banner is using: a pane that failed says so at
+			// both ends of itself, rather than reporting the end of the stream
+			// as a result.
+			done := p.status
+			if done == "" {
+				done = "finished"
+			}
+			hints := done + " · q closes"
 			if p.term.ScrollbackLen() > 0 {
-				hints = "finished · ↑↓ pgup/pgdn scroll · q closes"
+				hints = done + " · ↑↓ pgup/pgdn scroll · q closes"
 			}
 			if p != m.overlay {
 				hints += " · ←/→ pane"
