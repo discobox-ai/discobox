@@ -14,6 +14,7 @@ import (
 	"os/exec"
 	"path"
 	"path/filepath"
+	"reflect"
 	"sort"
 	"strconv"
 	"strings"
@@ -273,24 +274,31 @@ func (r *DockerSandboxRuntime) CreateSandbox(ctx context.Context, req *workerapi
 		if err != nil {
 			return nil, err
 		}
+		// The control plane changed this sandbox's spec — an image upgrade
+		// (ADR 0021 §1) or any other manifest edit.
+		reason := "a spec change"
 		if !drifted {
 			// The container already exists, but a push-delivered source is only
 			// materialized once the client has pushed, which necessarily happens
 			// after the container was created and parked. This create is that
 			// resume, so finish those sources rather than returning a sandbox whose
 			// workspace is still empty.
-			if err := r.materializePushedSources(ctx, sandboxID, req); err != nil {
+			rebuild, err := r.settleDeliveredSources(ctx, sandboxID, req)
+			if err != nil {
 				return nil, err
 			}
-			return existing, nil
+			if !rebuild {
+				return existing, nil
+			}
+			reason = "the project configuration its delivered source declares"
 		}
-		// The control plane changed this sandbox's spec — an image upgrade
-		// (ADR 0021 §1) or any other manifest edit. Remove the container and
-		// fall through to build a new one; the sandbox's state lives in the
-		// pool-host binds prepared below, not in the container, so it survives.
+		// Remove the container and fall through to build a new one; the
+		// sandbox's state lives in the pool-host binds prepared below, not in
+		// the container, so it survives.
 		replacedRunning = existing.Status == StatusRunning
-		slog.InfoContext(ctx, "replacing sandbox container for a spec change",
+		slog.InfoContext(ctx, "replacing sandbox container",
 			"sandboxId", sandboxID,
+			"reason", reason,
 			"imageDigest", strings.TrimSpace(optString(req.Config.ImageDigest)),
 			"specFingerprint", strings.TrimSpace(optString(req.Config.SpecFingerprint)),
 			"running", replacedRunning)
@@ -338,6 +346,11 @@ func (r *DockerSandboxRuntime) CreateSandbox(ctx context.Context, req *workerapi
 		Target:   filepath.Join(sandboxConfigMount, "proxy"),
 		ReadOnly: true,
 	})
+	// Published beside the document it belongs to, and before the container
+	// exists, so a sandbox whose sources are all in place never waits.
+	if err := r.refreshSourcesReady(sandboxID, req); err != nil {
+		return nil, err
+	}
 	if err := r.writeSandboxHarnessConfig(ctx, sandboxID, imageName, req, proxyMaterial.Env, project); err != nil {
 		return nil, err
 	}
@@ -560,6 +573,130 @@ func (r *DockerSandboxRuntime) ensureImageAvailable(ctx context.Context, sandbox
 	return nil
 }
 
+// settleDeliveredSources finishes the sources a client delivers by push, and
+// reports whether the sandbox's container has to be rebuilt to run what it now
+// holds.
+//
+// This is the first moment a delivered source's content exists on this host.
+// The project layer inside it (.discobox/project.json, ADR 0012 §7) could not
+// be read when the container was created — the repository was empty, which is
+// what the client was pushing into — so it is read here, and a project that
+// declares its own harness command or files is honored by building the
+// container again against a document that includes it. Nothing is lost by
+// replacing the container: the sandbox holds its harness launch until this
+// publishes readiness, so it has not run anything yet, and its state lives in
+// the pool-host binds rather than in the container.
+//
+// A sandbox with nothing outstanding does no work here, which is what keeps a
+// repeat create — a retry, a later reconcile — from rebuilding forever: once a
+// rebuilt container's document records the project layer, there is no longer a
+// pending delivery to re-read it from.
+func (r *DockerSandboxRuntime) settleDeliveredSources(ctx context.Context, sandboxID string, req *workerapimodel.PoolSandboxCreateRequest) (bool, error) {
+	if len(r.pendingSourceDeliveries(sandboxID, req)) == 0 {
+		return false, nil
+	}
+	if err := r.materializePushedSources(ctx, sandboxID, req); err != nil {
+		return false, err
+	}
+	changed, err := r.projectLayerChanged(sandboxID, req)
+	if err != nil {
+		return false, err
+	}
+	if changed {
+		// The rebuild publishes readiness itself, once the document that
+		// carries the project layer has been written.
+		return true, nil
+	}
+	return false, r.refreshSourcesReady(sandboxID, req)
+}
+
+// pendingSourceDeliveries are the sandbox's sources whose content is not in
+// place yet. It reads the materialized marker rather than the request's
+// delivery mode, so it answers for what is actually on disk: a push that has
+// not landed leaves its source unmarked, and the sandbox keeps waiting.
+func (r *DockerSandboxRuntime) pendingSourceDeliveries(sandboxID string, req *workerapimodel.PoolSandboxCreateRequest) []sandboxSource {
+	var out []sandboxSource
+	for _, source := range sandboxSources(req) {
+		if !gitSourceMaterialized(r.sandboxSourcePath(sandboxID, source.slug)) {
+			out = append(out, source)
+		}
+	}
+	return out
+}
+
+// refreshSourcesReady publishes whether every source is in place, as the file
+// the sandbox waits on before launching its harness
+// (sandboxconfig.SourcesReadyFileName).
+//
+// It is deliberately not the per-source materialized marker the sandbox could
+// read for itself: this is written only where the document beside it is final
+// too, so a sandbox that starts on it can never be running a configuration
+// that is about to be replaced.
+func (r *DockerSandboxRuntime) refreshSourcesReady(sandboxID string, req *workerapimodel.PoolSandboxCreateRequest) error {
+	path := filepath.Join(r.sandboxConfigRoot(sandboxID), sandboxconfig.SourcesReadyFileName)
+	if len(r.pendingSourceDeliveries(sandboxID, req)) > 0 {
+		if err := os.Remove(path); err != nil && !os.IsNotExist(err) {
+			return fmt.Errorf("clear sandbox source readiness: %w", err)
+		}
+		return nil
+	}
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		return fmt.Errorf("publish sandbox source readiness: %w", err)
+	}
+	//nolint:gosec // a public runtime signal read by the sandbox, like sandbox.json beside it.
+	if err := os.WriteFile(path, nil, 0o644); err != nil {
+		return fmt.Errorf("publish sandbox source readiness: %w", err)
+	}
+	return nil
+}
+
+// projectLayerChanged reports whether the project layer readable from the
+// sandbox's primary source now differs from the one the written document was
+// built against. Both being absent is no change, which is the ordinary case: a
+// delivered source that declares nothing leaves the sandbox exactly as it was
+// configured.
+func (r *DockerSandboxRuntime) projectLayerChanged(sandboxID string, req *workerapimodel.PoolSandboxCreateRequest) (bool, error) {
+	if req == nil {
+		return false, nil
+	}
+	if _, hasPrimary := req.Config.Source.Get(); !hasPrimary {
+		// Only the primary source carries a project layer (prepareSandboxVolumes).
+		return false, nil
+	}
+	sources := sandboxSources(req)
+	if len(sources) == 0 {
+		return false, nil
+	}
+	current, err := readProjectLayer(r.sandboxSourcePath(sandboxID, sources[0].slug))
+	if err != nil {
+		return false, err
+	}
+	recorded, err := r.recordedProjectLayer(sandboxID)
+	if err != nil {
+		return false, err
+	}
+	return !reflect.DeepEqual(current, recorded), nil
+}
+
+// recordedProjectLayer reads back the project layer the sandbox's written
+// document was built from. The document keeps every layer's raw input beside
+// the merged result (ADR 0012 §8), so what the project contributed is
+// recoverable without re-deriving it.
+func (r *DockerSandboxRuntime) recordedProjectLayer(sandboxID string) (*sandboxconfig.ProjectLayer, error) {
+	data, err := os.ReadFile(filepath.Join(r.sandboxConfigRoot(sandboxID), sandboxDocumentName))
+	if err != nil {
+		if os.IsNotExist(err) {
+			return nil, nil
+		}
+		return nil, err
+	}
+	var file sandboxDocumentFile
+	if err := json.Unmarshal(data, &file); err != nil {
+		return nil, fmt.Errorf("parse %s: %w", sandboxDocumentName, err)
+	}
+	return file.Provenance.Project, nil
+}
+
 // materializePushedSources completes the push-delivered sources of a sandbox
 // that already exists, checking out the commit the client pushed and restoring
 // its workspace.
@@ -751,12 +888,16 @@ func (r *DockerSandboxRuntime) writeSandboxHarnessConfig(ctx context.Context, sa
 	if err != nil {
 		return err
 	}
-	path := filepath.Join(configDir, "sandbox.json")
+	path := filepath.Join(configDir, sandboxDocumentName)
 	if err := writeSandboxManifest(path, data); err != nil {
 		return err
 	}
 	return chownRecursive(ctx, configDir, 0, 0)
 }
+
+// sandboxDocumentName is the sandbox's effective configuration, in the config
+// volume the sandbox sees read-only at /etc/discobox.
+const sandboxDocumentName = "sandbox.json"
 
 // sandboxDocumentFile is the on-disk sandbox.json shape (ADR 0012 §8): the
 // effective config's fields sit at the top level, with a diagnostic
@@ -911,6 +1052,10 @@ func buildSandboxDocument(projectID, sandboxID, poolID, controlPlanePublicKey, r
 				// fetched.
 				BaseCommit:  sourceBaseCommit(source.git),
 				UpstreamRef: sourceUpstreamRef(source.git),
+				// The client still owes this one: the sandbox holds its harness
+				// launch until the push lands and this pool agent reports the
+				// sandbox settled.
+				AwaitsDelivery: gitSourceAwaitsPush(source.git),
 			})
 		}
 		if resolved, ok := req.ResolvedHarnessConfig.Get(); ok {

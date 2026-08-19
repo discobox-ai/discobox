@@ -86,6 +86,12 @@ type ServiceConfig struct {
 	// can be relaunched on demand (it is ignored once the primary has launched
 	// once and relaunch uses the harness's relaunch command instead).
 	Prompt []string
+	// AwaitSources blocks until the sandbox's sources are in place, and is
+	// cleared for every sandbox that already had them when its container was
+	// created (see sourcesready.Gate). Only the primary terminal's very first
+	// launch waits on it: by the time anything is revived, the source it was
+	// waiting for has been there for the whole life of the record.
+	AwaitSources func(context.Context) error
 }
 
 // Service is the harness-terminal layer over execs.Manager.
@@ -105,6 +111,7 @@ type Service struct {
 	primaryState   PrimaryStateStore
 	harnessMode    string
 	bootPrompt     []string
+	awaitSources   func(context.Context) error
 
 	// installing tracks exec IDs whose hook and file setup is still running.
 	// The record exists (execs status "starting") before its process launches, so
@@ -158,6 +165,7 @@ func NewService(cfg ServiceConfig) (*Service, error) {
 		primaryState: cfg.PrimaryState,
 		harnessMode:  strings.TrimSpace(cfg.HarnessMode),
 		bootPrompt:   append([]string(nil), cfg.Prompt...),
+		awaitSources: cfg.AwaitSources,
 		installing:   map[string]struct{}{},
 		launches:     map[string]*terminalLaunch{},
 	}
@@ -641,6 +649,15 @@ func (s *Service) launchPrimary(ctx context.Context, prompt []string) (execs.Exe
 			}
 		}
 		return revived, nil
+	}
+	// Nothing has ever run in this sandbox, so this is the launch that would
+	// run against a source that has not arrived. A revive above is past this
+	// point by construction: the terminal it revives could not have been
+	// created before the source was there.
+	if s.awaitSources != nil {
+		if err := s.awaitSources(ctx); err != nil {
+			return execs.Exec{}, fmt.Errorf("wait for the sandbox's source: %w", err)
+		}
 	}
 	harness, harnessID, err := s.resolveHarness("")
 	if err != nil {

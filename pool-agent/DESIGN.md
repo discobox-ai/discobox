@@ -286,6 +286,17 @@ flowchart LR
 - Normalize provider-owned source destination defaults before both mounting
   sources and writing the public sandbox manifest so manifest consumers observe
   the paths actually used by the runtime.
+- A push-delivered source's arrival is where the sandbox settles. The resume
+  create materializes it, then re-reads its `.discobox/project.json` — the first
+  moment that file exists on this host, since the repository was empty when the
+  container was built — and, when the project declares anything the baked
+  document does not already record, removes the container and rebuilds it
+  against a document that includes it. Nothing is lost: the sandbox holds its
+  harness launch until `/etc/discobox/ready` is published, which happens only
+  beside a final document, so it has not run anything yet. A sandbox with
+  nothing outstanding does no work here, which is what stops a repeated create
+  from rebuilding forever. See
+  [ADR 0055](../docs/adr/0055-a-delivered-source-settles-before-its-sandbox-runs.md).
 - A source is materialized exactly once, whatever its delivery mode. The first
   create clones (or parks an empty repository for a push delivery and finalizes
   it on the resume) and records a marker in the repository's `.git`; every later

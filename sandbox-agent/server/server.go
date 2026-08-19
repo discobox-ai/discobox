@@ -22,6 +22,7 @@ import (
 	"github.com/obot-platform/discobox/sandbox-agent/ports"
 	"github.com/obot-platform/discobox/sandbox-agent/resources"
 	"github.com/obot-platform/discobox/sandbox-agent/secretswatch"
+	"github.com/obot-platform/discobox/sandbox-agent/sourcesready"
 	agentstore "github.com/obot-platform/discobox/sandbox-agent/store"
 	"github.com/obot-platform/discobox/sandbox-agent/terminal"
 	"github.com/obot-platform/discobox/sandboxconfig"
@@ -165,6 +166,9 @@ func newRouterAndManager(cfg Config) (agentRuntime, error) {
 		PrimaryState:  localStore,
 		HarnessMode:   cfg.HarnessMode,
 		Prompt:        cfg.Prompt,
+		// nil for every sandbox whose sources were in place before its
+		// container was created, which is all of them but a push-delivered one.
+		AwaitSources: sourcesready.Gate(cfg.Sources, "", slog.Default()),
 	})
 	if err != nil {
 		return agentRuntime{}, err

@@ -106,6 +106,16 @@ type Source struct {
 	// without running git from outside. Absent when the source has no recorded
 	// checkout commit; the diff stat is then simply not reported.
 	BaseCommit string `json:"baseCommit,omitempty"`
+	// AwaitsDelivery marks a source whose content is not in place when the
+	// sandbox's container is created: the client pushes it in afterwards, and
+	// pool-agent materializes it on the resume that follows (ADR 0001). Absent
+	// means the source was fully materialized before the container existed,
+	// which is every clone-delivered source.
+	//
+	// The sandbox holds its harness launch when any source carries this, until
+	// pool-agent reports the sandbox settled (SourcesReadyFileName), so nothing
+	// runs against a workspace that has not arrived.
+	AwaitsDelivery bool `json:"awaitsDelivery,omitempty"`
 	// UpstreamRef is the remote-tracking ref the source would fetch upstream
 	// into, derived from the branch it was cloned at. Once the sandbox has
 	// fetched, the diff stat's base moves forward to the merge base with this
@@ -252,3 +262,43 @@ func (c Config) SandboxGroups() []string {
 	}
 	return append([]string(nil), c.AdditionalGroups...)
 }
+
+// SandboxConfigDir is where the sandbox's config volume is bound inside the
+// container, and so where every file in this contract is read from. Boot places
+// the bind (sandbox-agent/boot); pool-agent writes the files behind it from the
+// host, and the mount is read-only so nothing inside can answer itself.
+const SandboxConfigDir = "/etc/discobox"
+
+// SourcesReadyFileName is the file pool-agent creates in the config volume once
+// every one of the sandbox's sources is materialized and the document beside it
+// is final. It is the signal a sandbox whose source arrives by push waits on
+// before running anything: until the client's push has landed and been checked
+// out, the workspace is an empty repository, and the configuration the project
+// itself declares (.discobox/project.json) cannot have been read yet either.
+//
+// It is a separate signal from the per-source materialized marker deliberately.
+// That marker is written the moment a source's checkout completes, which is
+// before pool-agent has re-read the project layer and decided whether the
+// container has to be rebuilt to honor it — a sandbox gated on it would launch
+// its harness against a configuration about to be replaced.
+const SourcesReadyFileName = "ready"
+
+// SourcesReadyPath is SourcesReadyFileName as the sandbox sees it.
+const SourcesReadyPath = SandboxConfigDir + "/" + SourcesReadyFileName
+
+// SourcesAwaitDelivery reports whether any of these sources is still to be
+// delivered by the sandbox's client, which is what makes the readiness signal
+// apply. A config that predates the field says no, which is correct for it:
+// every source it names was materialized before its container existed.
+func SourcesAwaitDelivery(sources []Source) bool {
+	for _, source := range sources {
+		if source.AwaitsDelivery {
+			return true
+		}
+	}
+	return false
+}
+
+// AwaitsSourceDelivery reports whether the sandbox is waiting on its client for
+// any of its sources.
+func (c Config) AwaitsSourceDelivery() bool { return SourcesAwaitDelivery(c.Sources) }

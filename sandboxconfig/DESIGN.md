@@ -26,7 +26,10 @@ internal contract between pool-agent and sandbox-agent, not a REST schema.
   rebuilt in place, so registration is not a one-time read (ADR 0016).
 - `ProjectLayer`: the resolved source repository's contribution, read once by
   pool-agent at the commit it clones. Optional — nil when the project
-  supplies nothing.
+  supplies nothing. A source the client delivers by push is empty at that
+  moment, so pool-agent reads it again when the push lands and rebuilds the
+  container if the project declared anything
+  ([ADR 0055](../docs/adr/0055-a-delivered-source-settles-before-its-sandbox-runs.md)).
 
 Each layer type lists only the attributes that layer may set. Where two
 layers legitimately contribute to the same named attribute (e.g.
@@ -54,6 +57,23 @@ field category:
 further merging happens at boot. `Provenance` carries the raw per-layer
 inputs for the diagnostic `_provenance` sibling key; it is never decoded by
 any runtime component and its shape may change freely.
+
+## Readiness
+
+`Source.AwaitsDelivery` marks a source whose content is not in place when the
+container is created — a push-delivered one, still being sent by the client.
+`SourcesReadyFileName` (`/etc/discobox/ready`) is pool-agent's signal that every
+source is materialized *and* the document beside it is final; the sandbox holds
+its first harness launch on it, so nothing runs against an empty workspace or a
+configuration about to be replaced.
+
+The signal is deliberately not the per-source materialized marker the sandbox
+could read for itself: that marker is written when a checkout completes, which
+is before pool-agent has re-read the project layer and decided whether the
+container must be rebuilt to honor it. Only pool-agent can say the sandbox has
+settled. A config that names no source awaiting delivery — every clone-delivered
+sandbox, and every sandbox created before the field — waits on nothing.
+See [ADR 0055](../docs/adr/0055-a-delivered-source-settles-before-its-sandbox-runs.md).
 
 Secret values (resolved sentinels) are excluded from `Document` entirely —
 see `docs/adr/0012-sandbox-config-is-three-attribute-owned-layers.md` §3.
