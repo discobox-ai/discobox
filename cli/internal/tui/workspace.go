@@ -1,7 +1,6 @@
 package tui
 
 import (
-	"fmt"
 	"path"
 	"sort"
 	"strings"
@@ -19,6 +18,11 @@ import (
 // the exec listing keeps the tabs following the server, so a shell started
 // from another window appears here on its own. Detaching leaves the workspace:
 // every stream is closed at once, and every session keeps running.
+//
+// Which side a session is drawn on is the server's own answer rather than a
+// layout this window remembers: a harness terminal is a terminal and goes on
+// the left beside the primary, and everything else is a shell and goes on the
+// right. See terminalExec.
 //
 // The poll is a poll rather than a subscription because the control plane has
 // no exec event stream yet — exec state lives on the sandbox and is proxied
@@ -40,14 +44,18 @@ type workspaceExecsMsg struct {
 	err   error
 }
 
-// workspaceTermMsg carries one connected workspace terminal back to the
-// model: the primary, an existing session's attach, or a shell the leader
+// workspaceTermMsg carries one connected workspace session back to the model:
+// the primary, an existing session's attach, or a terminal or shell the leader
 // asked for — which arrives with focus.
 type workspaceTermMsg struct {
-	gen   int
-	exec  Exec
-	term  Terminal
-	err   error
+	gen  int
+	exec Exec
+	term Terminal
+	err  error
+	// asked is what the leader asked for, empty for a session the poll opened
+	// on its own. A create that failed carries no session record to say what
+	// it would have been, so this is what such a failure is reported as.
+	asked Interaction
 	focus bool
 }
 
@@ -207,7 +215,7 @@ func (m *Model) workspaceExecs(msg workspaceExecsMsg) tea.Cmd {
 		return nil
 	}
 	var cmds []tea.Cmd
-	first := m.terminal == nil && !m.connecting[ExecPrimary]
+	first := m.primary() == nil && !m.connecting[ExecPrimary]
 	if first {
 		// The primary is opened from the first answer whatever it says: a
 		// workspace is above all a view onto that session, and the sandbox
@@ -216,32 +224,52 @@ func (m *Model) workspaceExecs(msg workspaceExecsMsg) tea.Cmd {
 	}
 
 	var open []Exec
+	newShells := 0
 	if msg.err == nil {
 		for _, exec := range msg.execs {
 			if !exec.Live || !exec.Tty || exec.Primary || exec.ID == "" {
 				continue
 			}
-			if m.shellByExec(exec.ID) != nil || m.connecting[exec.ID] {
+			if m.paneByExec(exec.ID) != nil || m.connecting[exec.ID] {
 				continue
 			}
 			open = append(open, exec)
+			if !terminalExec(exec) {
+				newShells++
+			}
 		}
 		sort.SliceStable(open, func(i, j int) bool { return execBefore(open[i], open[j]) })
 	}
 
-	// Sized for the box they will be drawn in, counting the tabs about to
+	// Sized for the box they will be drawn in, counting the shells about to
 	// arrive as well as the ones already here: the full window when there is
-	// one box, the halves when there are two. See columns.
-	term, shells := m.columns(len(open) + len(m.shells))
+	// one box, the halves when there are two. Only the shells decide that —
+	// another terminal is a tab in the box the primary already has. See
+	// columns.
+	term, shells := m.columns(newShells + m.shells.len())
 	if first {
 		cmds = append(cmds, m.openExec(msg.gen, Exec{ID: ExecPrimary, Primary: true}, term))
 	}
 	for _, exec := range open {
 		m.connecting[exec.ID] = true
-		cmds = append(cmds, m.openExec(msg.gen, exec, shells))
+		width := shells
+		if terminalExec(exec) {
+			width = term
+		}
+		cmds = append(cmds, m.openExec(msg.gen, exec, width))
 	}
 	return tea.Batch(cmds...)
 }
+
+// terminalExec reports whether a session belongs on the workspace's left: the
+// primary, or another of the discobox's harness terminals. Everything else is
+// a shell and goes on the right.
+//
+// It is the server's own record that answers, not a layout this window keeps:
+// a terminal is created in harness mode and carries the harness it runs, so
+// reopening the workspace draws the same two columns anyone else's window
+// would.
+func terminalExec(exec Exec) bool { return exec.Primary || exec.Harness != "" }
 
 // openExec connects one workspace terminal. The pane is sized before it is
 // opened: the size is what the far end is told, and a terminal that starts at
@@ -262,20 +290,40 @@ func (m *Model) openExec(gen int, exec Exec, width int) tea.Cmd {
 func (m *Model) newShell() tea.Cmd {
 	m.busy = "shell…"
 	gen := m.wsGen
-	_, shells := m.columns(len(m.shells) + 1)
+	_, shells := m.columns(m.shells.len() + 1)
 	cols, rows := m.paneCells(shells)
 	ctx, ds, id := m.ctx, m.ds, m.paneBox.ID
 	return func() tea.Msg {
 		exec, term, err := ds.NewShell(ctx, id, cols, rows)
-		return workspaceTermMsg{gen: gen, exec: exec, term: term, err: err, focus: true}
+		return workspaceTermMsg{gen: gen, exec: exec, term: term, err: err, asked: InteractShell, focus: true}
 	}
 }
 
-// workspaceTermOpened starts drawing one connected workspace terminal, or
-// reports why there is none. A failed shell degrades to a report — the
-// workspace is still a workspace without it, and the poll retries while the
-// listing still says it is live — but a failed primary closes the screen: a
-// workspace without its terminal is not one.
+// newTerminal opens another of the discobox's own terminals — the same harness
+// the primary runs — as a focused tab beside it. It is the left column's
+// counterpart of newShell, and like it the tab is keyed by the exec id the
+// server hands back, which is what keeps the poll from opening a second pane
+// onto the same session.
+//
+// The left box does not change width for it: another terminal is a tab in the
+// box the primary already has, not a third column.
+func (m *Model) newTerminal() tea.Cmd {
+	m.busy = "terminal…"
+	gen := m.wsGen
+	term, _ := m.columns(m.shells.len())
+	cols, rows := m.paneCells(term)
+	ctx, ds, id := m.ctx, m.ds, m.paneBox.ID
+	return func() tea.Msg {
+		exec, term, err := ds.NewTerminal(ctx, id, cols, rows)
+		return workspaceTermMsg{gen: gen, exec: exec, term: term, err: err, asked: InteractTerminal, focus: true}
+	}
+}
+
+// workspaceTermOpened starts drawing one connected workspace session, or
+// reports why there is none. A failed terminal or shell degrades to a report —
+// the workspace is still a workspace without it, and the poll retries while
+// the listing still says it is live — but a failed primary closes the screen:
+// a workspace without its primary terminal is not one.
 func (m *Model) workspaceTermOpened(msg workspaceTermMsg) tea.Cmd {
 	if msg.gen != m.wsGen {
 		// From a workspace that has since been left; its stream must not leak.
@@ -287,12 +335,25 @@ func (m *Model) workspaceTermOpened(msg workspaceTermMsg) tea.Cmd {
 	m.busy = ""
 	delete(m.connecting, msg.exec.ID)
 	primary := msg.exec.ID == ExecPrimary
+	terminal := primary || terminalExec(msg.exec) || msg.asked == InteractTerminal
+
+	// What this pane is, in the words the list uses: the primary is the
+	// attach, another harness session is a terminal, and everything else is a
+	// shell. A create that failed carries no session record, so there what was
+	// asked for is what is reported.
+	action := InteractShell
+	switch {
+	case primary:
+		action = InteractAttach
+	case msg.asked != "":
+		action = msg.asked
+	case terminal:
+		action = InteractTerminal
+	}
 
 	if msg.err != nil {
-		action := InteractShell
 		if primary {
 			m.closeWorkspace()
-			action = InteractAttach
 		}
 		// Re-fit what did open: a primary sized for a split whose tabs never
 		// arrived should take the width back.
@@ -301,22 +362,24 @@ func (m *Model) workspaceTermOpened(msg workspaceTermMsg) tea.Cmd {
 	}
 
 	if !primary {
-		if existing := m.shellByExec(msg.exec.ID); existing != nil {
-			// The poll and a leader-s race onto the same session; the tab that
-			// arrived first is the tab.
+		if existing := m.paneByExec(msg.exec.ID); existing != nil {
+			// The poll and a leader key race onto the same session; the tab
+			// that arrived first is the tab.
 			_ = msg.term.Close()
 			if msg.focus {
-				m.onShells = true
-				m.activeShell = m.shellIndex(existing)
+				m.focusPane(existing)
 			}
 			return nil
 		}
 	}
 
 	m.nextPaneID++
-	action := InteractShell
-	if primary {
-		action = InteractAttach
+	// The primary is attached under the virtual id, which carries no session
+	// record to name it by: until its harness titles its own terminal it is
+	// what it is, the attach.
+	title := ""
+	if !primary {
+		title = execTitle(msg.exec)
 	}
 	p := &pane{
 		id:      m.nextPaneID,
@@ -325,17 +388,18 @@ func (m *Model) workspaceTermOpened(msg workspaceTermMsg) tea.Cmd {
 		action:  action,
 		sandbox: m.paneBox,
 		execID:  msg.exec.ID,
-		title:   execTitle(msg.exec),
+		title:   title,
+		primary: primary,
 	}
 
-	if primary {
-		m.terminal = p
-	} else {
-		at := m.insertShell(p, msg.exec)
-		if msg.focus {
-			m.onShells = true
-			m.activeShell = at
-		}
+	col := &m.shells
+	if terminal {
+		col = &m.terminals
+	}
+	at := col.insert(p, msg.exec, m.column() == col)
+	if msg.focus {
+		m.onShells = col == &m.shells
+		col.active = at
 	}
 	// Focus moves to the screen only once there is a screen: a tab that lands
 	// before the primary keeps emulating off-screen until it does.
@@ -350,30 +414,6 @@ func (m *Model) workspaceTermOpened(msg workspaceTermMsg) tea.Cmd {
 	)
 }
 
-// insertShell puts a tab where its session's age says it goes, so the strip
-// holds its order as the listing changes around it, and returns where it
-// landed.
-func (m *Model) insertShell(p *pane, exec Exec) int {
-	p.created = exec.CreatedAt
-	at := len(m.shells)
-	for i, s := range m.shells {
-		if execBefore(exec, Exec{ID: s.execID, CreatedAt: s.created}) {
-			at = i
-			break
-		}
-	}
-	m.shells = append(m.shells, nil)
-	copy(m.shells[at+1:], m.shells[at:])
-	m.shells[at] = p
-	if at <= m.activeShell && m.onShells {
-		// The tab being worked in stays the tab being worked in; an arrival
-		// must not move the keys onto a different session mid-word.
-		m.activeShell++
-	}
-	m.activeShell = min(m.activeShell, len(m.shells)-1)
-	return at
-}
-
 // execBefore orders tabs: by when their sessions were created, oldest first,
 // with the id as the tie-break so the order is stable whatever the listing's.
 func execBefore(a, b Exec) bool {
@@ -383,42 +423,28 @@ func execBefore(a, b Exec) bool {
 	return a.ID < b.ID
 }
 
-// shellByExec finds the tab drawing the given session, held panes included.
-func (m *Model) shellByExec(execID string) *pane {
-	for _, p := range m.shells {
-		if p.execID == execID {
-			return p
-		}
+// paneByExec finds the pane drawing the given session on either side of the
+// workspace, held panes included.
+func (m *Model) paneByExec(execID string) *pane {
+	if p := m.terminals.byExec(execID); p != nil {
+		return p
 	}
-	return nil
+	return m.shells.byExec(execID)
 }
 
-// shellIndex is where a tab sits in the strip, or -1 when it is not one.
-func (m *Model) shellIndex(p *pane) int {
-	for i, s := range m.shells {
-		if s == p {
-			return i
-		}
-	}
-	return -1
-}
-
-// closeShell ends one tab's stream and takes it out of the strip. It is how a
-// held pane is dismissed and how an errored one is dropped — never how a
-// running session is ended: that is the session's own to do.
-func (m *Model) closeShell(i int) {
-	if i < 0 || i >= len(m.shells) {
+// closeTab takes one pane off the screen: its stream is closed and it leaves
+// its column. It is how a held pane is dismissed and how an errored one is
+// dropped — never how a running session is ended, which is the session's own
+// to do.
+func (m *Model) closeTab(p *pane) {
+	col, i := m.paneColumn(p)
+	if col == nil {
 		return
 	}
-	_ = m.shells[i].term.Close()
-	m.shells = append(m.shells[:i], m.shells[i+1:]...)
-	if i < m.activeShell {
-		m.activeShell--
-	}
-	m.activeShell = min(m.activeShell, max(len(m.shells)-1, 0))
-	if len(m.shells) == 0 {
+	col.close(i)
+	if m.shells.len() == 0 {
 		// Nothing left to share the window with, so there is nothing left to
-		// maximize over either; the terminal takes it back on its own.
+		// maximize over either; the terminals take it back on their own.
 		m.onShells = false
 		m.maximized = false
 	}
@@ -443,56 +469,65 @@ func (m *Model) closeWorkspace() {
 		_ = m.overlay.term.Close()
 		m.overlay = nil
 	}
-	if m.terminal != nil {
-		_ = m.terminal.term.Close()
-		m.terminal = nil
-	}
-	for _, p := range m.shells {
-		_ = p.term.Close()
-	}
-	m.shells = nil
-	m.activeShell = 0
+	m.terminals.closeAll()
+	m.shells.closeAll()
 	m.onShells = false
 	m.maximized = false
 	m.leavePanes()
 }
 
-// movePane shifts focus along the strip the screen is: the terminal, then the
-// shell tabs one by one. It stops at the ends rather than wrapping — the
-// screen has a left and a right, and a focus that jumps the long way round is
-// one you have to look for.
+// panes is the whole screen as one strip, left to right: the terminals, the
+// primary first, then the shells. It is what the leader's movement and its
+// digits count along, so a pane wears the same number wherever the focus
+// happens to be.
+func (m *Model) panes() []*pane {
+	return append(append([]*pane{}, m.terminals.panes...), m.shells.panes...)
+}
+
+// paneOrdinal is where the focused pane sits in that strip, or -1 when nothing
+// on the workspace has the keys.
+func (m *Model) paneOrdinal() int {
+	if m.column().visible() == nil {
+		return -1
+	}
+	if m.onShells {
+		return m.terminals.len() + m.shells.active
+	}
+	return m.terminals.active
+}
+
+// focusOrdinal puts the keys on the pane wearing that number, clamped to the
+// strip's ends.
+func (m *Model) focusOrdinal(n int) {
+	n = min(max(n, 0), max(m.terminals.len()+m.shells.len()-1, 0))
+	if n < m.terminals.len() {
+		m.onShells, m.terminals.active = false, n
+		return
+	}
+	m.onShells, m.shells.active = true, n-m.terminals.len()
+}
+
+// movePane shifts focus along that strip. It stops at the ends rather than
+// wrapping — the screen has a left and a right, and a focus that jumps the
+// long way round is one you have to look for.
 func (m *Model) movePane(delta int) tea.Cmd {
-	if !m.onShells {
-		if delta > 0 && len(m.shells) > 0 {
-			m.onShells = true
-		}
+	at := m.paneOrdinal()
+	if at < 0 {
 		return nil
 	}
-	next := m.activeShell + delta
-	if next < 0 {
-		m.onShells = false
-		return nil
-	}
-	if next >= len(m.shells) {
-		return nil
-	}
-	m.activeShell = next
+	m.focusOrdinal(at + delta)
 	return nil
 }
 
-// jumpPane focuses a pane by the number its label wears: 0 is the terminal,
-// and 1 through 9 the tab strip's ordinals. A number with no tab under it is
-// answered rather than swallowed — a jump that lands nowhere should say so.
+// jumpPane focuses a pane by the number its label wears: 0 is the primary
+// terminal, all the way on the left, and the rest are counted across the
+// screen from it. A number with no pane under it is answered rather than
+// swallowed — a jump that lands nowhere should say so.
 func (m *Model) jumpPane(n int) tea.Cmd {
-	if n == 0 {
-		m.onShells = false
-		return nil
+	if n >= m.terminals.len()+m.shells.len() {
+		return status("no pane %d", n)
 	}
-	if n > len(m.shells) {
-		return status("no tab %d", n)
-	}
-	m.onShells = true
-	m.activeShell = n - 1
+	m.focusOrdinal(n)
 	return nil
 }
 
@@ -514,58 +549,31 @@ func execTitle(exec Exec) string {
 	return exec.ID
 }
 
-// shellTabTitle is one tab's label: its place in the strip, what it is
-// running, and whether it is over.
-func (m *Model) shellTabTitle(i int) string {
-	p := m.shells[i]
-	title := strings.TrimSpace(p.term.Title())
-	if title == "" {
-		title = p.title
+// tabBase is where a column's numbering starts: the terminals from 0, the
+// primary among them, and the shells straight after them. One press of the
+// leader and a digit therefore means one pane on the whole screen.
+func (m *Model) tabBase(shells bool) int {
+	if shells {
+		return m.terminals.len()
 	}
-	if title == "" {
-		title = string(p.action)
-	}
-	title = fmt.Sprintf("%d %s", i+1, title)
-	if p.exited {
-		title += " ·done"
-	}
-	return title
+	return 0
 }
 
-// viewShellBox draws the workspace's right half: the visible tab's grid, with
-// the whole strip laid into the top border. Only the visible tab is drawn; the
-// others keep emulating off-screen, so flipping to one shows where it is now.
-func (m *Model) viewShellBox(width int, focused bool) string {
-	p := m.shells[min(m.activeShell, len(m.shells)-1)]
-	edge := m.st.frame
-	if !focused {
-		edge = m.st.rule
-	}
-	inner := max(width-2, 1)
-	grid := max(inner-2*boxPad, 1)
-	side := edge.Render("│")
-	pad := strings.Repeat(" ", boxPad)
-
-	rows := []string{m.tabbedEdge(edge, inner)}
-	for _, line := range p.term.View() {
-		rows = append(rows, side+pad+padANSI(line, grid)+pad+side)
-	}
-	rows = append(rows, edge.Render("╰"+strings.Repeat("─", inner)+"╯"))
-	return strings.Join(rows, "\n")
-}
-
-// tabbedEdge is the shell box's top border with the tab strip laid into it —
-// a titledEdge with several titles: `╭─[ 1 zsh ]─[ 2 claude ]───╮`. The border
-// is a line the eye already follows, so the strip costs no row, and both grids
+// tabbedEdge is a column's top border with its tab strip laid into it — a
+// titledEdge with several titles: `╭─[ 1 zsh ]─[ 2 claude ]───╮`. The border is
+// a line the eye already follows, so the strip costs no row, and both grids
 // come out the same height.
 //
 // The visible tab is lit and never clipped; when the strip outgrows the line,
 // a window of tabs around it is shown with an ellipsis at the clipped end.
-func (m *Model) tabbedEdge(edge lipgloss.Style, inner int) string {
+//
+// left is the screen column the box starts at, so a click on a label can be
+// routed back to the tab that drew it whichever side it is on, and control is
+// the box's already-drawn maximize button, which shares the line.
+func (m *Model) tabbedEdge(col *column, shells bool, left int, control string, edge lipgloss.Style, inner int) string {
 	rule := func(n int) string { return strings.Repeat("─", max(n, 0)) }
 	// The maximize button shares the line, at the far end; the strip gets what
 	// it leaves. See zoomControl.
-	control := m.zoomControl(edge, true, m.shellLeft(), inner+2)
 	reserve := 0
 	if control != "" {
 		reserve = lipgloss.Width(control) + 1
@@ -580,14 +588,15 @@ func (m *Model) tabbedEdge(edge lipgloss.Style, inner int) string {
 	// The strip is a click target as well as a label row, so where each tab
 	// lands is recorded as it is drawn — the drawing loop is the one place
 	// that knows. Columns are box-relative: the corner is cell zero.
-	labels := make([]string, len(m.shells))
-	widths := make([]int, len(m.shells))
-	for i := range m.shells {
-		labels[i] = m.shellTabTitle(i)
+	base := m.tabBase(shells)
+	labels := make([]string, col.len())
+	widths := make([]int, col.len())
+	for i := range col.panes {
+		labels[i] = col.label(i, base)
 		widths[i] = len([]rune(labels[i])) + 4 // brackets and their padding
 	}
 
-	active := min(m.activeShell, len(labels)-1)
+	active := min(max(col.active, 0), len(labels)-1)
 	avail := inner - 2 - reserve // a cell of rule survives at each end
 	if widths[active] > avail {
 		// Even alone the visible tab does not fit: shorten its label as a last
@@ -641,7 +650,12 @@ func (m *Model) tabbedEdge(edge lipgloss.Style, inner int) string {
 		out.WriteString(edge.Render("["))
 		out.WriteString(st.Render(" " + labels[i] + " "))
 		out.WriteString(edge.Render("]"))
-		m.tabSpans = append(m.tabSpans, tabSpan{index: i, start: 1 + cells, end: cells + widths[i]})
+		m.tabSpans = append(m.tabSpans, tabSpan{
+			shells: shells,
+			index:  i,
+			start:  left + 1 + cells,
+			end:    left + cells + widths[i],
+		})
 		cells += widths[i]
 	}
 	if hi < len(labels)-1 {

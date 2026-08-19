@@ -59,14 +59,13 @@ type Model struct {
 	// whether or not the screen is up. See harnesses.go.
 	harnesses *harnessList
 
-	// The workspace screen: the discobox's primary terminal on the left, and
-	// its other live sessions as tabs on the right, following the server. See
-	// workspace.go.
-	terminal *pane
-	shells   []*pane
-	// activeShell is the tab that is visible, and focused while onShells.
-	activeShell int
-	onShells    bool
+	// The workspace screen: the discobox's terminals on the left, the primary
+	// among them, and its shells as tabs on the right, both following the
+	// server. See workspace.go.
+	terminals column
+	shells    column
+	// onShells is which of the two columns has the keys.
+	onShells bool
 	// maximized is whether one column has the whole window instead of the two
 	// sharing it. Which column that is follows the focus — onShells — so there
 	// is one visible box and it is always the one the keys go to. See
@@ -1065,7 +1064,9 @@ func (m *Model) actOn(key string, targets []Sandbox) tea.Cmd {
 		if m.inPanes() {
 			switch action {
 			case InteractAttach:
-				m.onShells = false
+				// Back to the primary, which is what attach means here: it is
+				// the session the workspace is a view onto.
+				m.focusOrdinal(0)
 				return nil
 			case InteractShell:
 				return m.newShell()
@@ -1485,10 +1486,7 @@ func (m *Model) layout() {
 	// is sized for the box it is drawn in, the hidden tabs included — flipping
 	// to one must show a screen drawn at the size it is shown at.
 	if m.inPanes() {
-		if m.terminal != nil {
-			m.terminal.term.SetSize(m.paneCells(m.paneWidthOf(m.terminal)))
-		}
-		for _, p := range m.shells {
+		for _, p := range m.panes() {
 			p.term.SetSize(m.paneCells(m.paneWidthOf(p)))
 		}
 		if m.overlay != nil {
@@ -1723,7 +1721,7 @@ func (m *Model) viewHeaderRight() string {
 // window set it: a launcher with nothing running in it has nothing to say that
 // the terminal's own title does not already.
 func (m *Model) windowTitle() string {
-	p := m.terminal
+	p := m.primary()
 	if p == nil {
 		return ""
 	}
@@ -1834,10 +1832,19 @@ func (m *Model) hints() string {
 		}
 		hints := "every key goes to " + what + " · " + m.detachHint() + " " + out
 		if m.overlay == nil {
+			// Only the shell is offered here. Another terminal is the advanced
+			// one of the two — a second harness session, next to a shell it
+			// sounds exactly like — and a hints line that names both spends its
+			// scarcest row teaching a distinction most people never need. It is
+			// in the help, under the key that opens it.
 			hints += " · " + m.leader() + " s shell"
-			if len(m.shells) > 0 {
+			if len(m.panes()) > 1 {
 				hints += " · " + m.leader() + " ←/→ pane"
 				hints += " · " + m.leader() + " 0-9 jump"
+			}
+			// Only with two columns on screen is there anything to maximize
+			// over: more terminals are more tabs in the one box.
+			if m.shells.len() > 0 {
 				zoom := " maximize"
 				if m.maximized {
 					zoom = " restore"
@@ -1984,17 +1991,26 @@ func (m *Model) helpText() string {
 		"───────────────────────────────────────────────────────────────",
 		"The workspace screen",
 		"",
-		"  It is one discobox as the server has it: the primary terminal",
-		"  on the left, and every other live session as a tab on the",
-		"  right, one visible at a time. Attaching joins them all, and a",
-		"  shell started from anywhere — another window, another machine —",
-		"  appears as a tab on its own. With no sessions besides the",
-		"  primary, it takes the whole width.",
+		"  It is one discobox as the server has it: its terminals on the",
+		"  left, the primary among them, and its shells on the right, one",
+		"  of each visible at a time. Attaching joins them all, and a",
+		"  session started from anywhere — another window, another machine —",
+		"  appears on its own, on the side the server's own record puts it:",
+		"  a harness terminal is a terminal, everything else is a shell.",
+		"  With no shells the terminals take the whole width.",
+		"",
+		"  Every pane wears the number it answers to, counted across the",
+		"  screen from the primary, which is always 0 and always the",
+		"  leftmost tab of the left box.",
 		"",
 		"  Every command in the list is here too, on the key it has there,",
 		"  behind the leader, acting on the discobox on screen:",
 		"",
 		"    " + m.leader() + " a       back to the primary terminal",
+		"    " + m.leader() + " " + paneTerminalKey + "       another terminal, beside the primary — a fresh",
+		"                   session of the harness this discobox runs. It is",
+		"                   " + paneTerminalKey + " because that is what screen and tmux create a",
+		"                   window on; t is stop, which the list has it on",
 		"    " + m.leader() + " s       a new shell, in a new tab",
 		"    " + m.leader() + " y       apply back to this directory",
 		"    " + m.leader() + " x / U   archive / unarchive",
@@ -2020,12 +2036,12 @@ func (m *Model) helpText() string {
 		"                   own dismisses it",
 		"    " + m.leader() + " " + paneQuitKey + "       quit the window entirely, every session",
 		"                   left running — the exit Ctrl-C is everywhere else",
-		"    " + m.leader() + " ← / " + m.leader() + " →  move between the terminal and the tabs,",
+		"    " + m.leader() + " ← / " + m.leader() + " →  move along the screen, terminals then shells,",
 		"                   or h and l. Hold Ctrl and they keep going:",
 		"                   " + m.leader() + " ^→ ^→ walks across without pressing the",
 		"                   leader again",
-		"    " + m.leader() + " 0-9     jump straight there: 0 is the terminal,",
-		"                   1-9 the tab wearing that number",
+		"    " + m.leader() + " 0-9     jump straight there: 0 is the primary,",
+		"                   and the rest wear their number in the strip",
 		"    " + m.leader() + " " + paneZoomKey + "       give the focused column the whole window and",
 		"                   hide the other, or give the window back — the",
 		"                   same toggle as the [+] / [-] button each box",
@@ -2034,9 +2050,11 @@ func (m *Model) helpText() string {
 		"    " + m.paneMouseHint() + "       take the mouse from a box that is using it,",
 		"                   to select and copy; press again to give it back",
 		"",
-		"  A shell that exits keeps its last screen as a tab to be read;",
-		"  q, Esc or Enter dismisses it. Detach is the workspace's, not a",
-		"  pane's: the way to be rid of one shell is to exit it.",
+		"  A shell or a terminal that exits keeps its last screen as a tab",
+		"  to be read; q, Esc or Enter dismisses it. Detach is the",
+		"  workspace's, not a pane's: the way to be rid of a running one is",
+		"  to exit it. The primary is the exception: the workspace is above",
+		"  all a view onto that session, so its ending ends the screen.",
 		"",
 		"  A finished command is a screen to read rather than a terminal",
 		"  to type at: ↑ ↓, pgup/pgdn, g and G walk through output longer",

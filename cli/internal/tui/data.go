@@ -370,11 +370,14 @@ type Exec struct {
 	Command []string
 
 	// Harness is the harness slug when this exec is a harness terminal, and
-	// empty for a plain shell.
+	// empty for a plain shell. It is also which column the workspace draws the
+	// session in: a harness terminal is a terminal and goes on the left, and a
+	// shell goes on the right. See terminalExec.
 	Harness string
 
-	// Primary marks the sandbox's primary harness terminal, which is the
-	// workspace's left half rather than ever a tab.
+	// Primary marks the sandbox's primary harness terminal, which is the first
+	// of the workspace's left column and the session the screen is a view
+	// onto.
 	Primary bool
 
 	Tty bool
@@ -436,6 +439,12 @@ const (
 	InteractAttach Interaction = "attach"
 	InteractShell  Interaction = "shell"
 	InteractApply  Interaction = "apply"
+	// InteractTerminal is another of the discobox's own terminals, opened
+	// beside the primary. It is not one of the list's actions — the list opens
+	// a discobox, and which terminal of it you want is a question you can only
+	// have once you are looking at the workspace — so it names the workspace's
+	// leader-c pane rather than a key anything dispatches on.
+	InteractTerminal Interaction = "terminal"
 )
 
 // paneable reports whether an interaction can be drawn in the window from the
@@ -590,4 +599,10 @@ type DataSource interface {
 	// returning its identity along with the terminal so the tab it becomes is
 	// keyed by the same id the listing will report.
 	NewShell(ctx context.Context, sandboxID string, cols, rows int) (Exec, Terminal, error)
+
+	// NewTerminal does the same for one of the sandbox's own harness
+	// terminals: a session of the harness it already runs, created in terminal
+	// mode so the listing reports it as a terminal and every window draws it
+	// beside the primary. Which harness that is, is the sandbox's answer.
+	NewTerminal(ctx context.Context, sandboxID string, cols, rows int) (Exec, Terminal, error)
 }

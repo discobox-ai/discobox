@@ -44,8 +44,16 @@ type fakeSource struct {
 	openExecErr    error
 	openExecErrFor map[string]error
 	newShellErr    error
-	// newShellID names the next exec NewShell creates.
-	newShellID int
+	// newTerminalErr fails the terminal create.
+	newTerminalErr error
+	// newShellID names the next exec NewShell creates, and newTerminalID the
+	// next one NewTerminal does.
+	newShellID    int
+	newTerminalID int
+	// terminalHarness is the harness the sandbox runs, which is what a
+	// terminal it creates is reported with — and what puts it in the
+	// workspace's left column.
+	terminalHarness string
 
 	// forward is what the workspace's port forward reports, and forwardErr
 	// fails opening one. forwards counts the ones opened and closed, so a test
@@ -298,6 +306,31 @@ func (f *fakeSource) NewShell(_ context.Context, id string, cols, rows int) (Exe
 		Tty:       true,
 		Live:      true,
 		CreatedAt: time.Date(2026, 8, 7, 12, 0, f.newShellID, 0, time.UTC),
+	}
+	// The listing reports it from now on, the way the server would.
+	f.execs = append(f.execs, exec)
+	f.execOpens = append(f.execOpens, fmt.Sprintf("%s %s %dx%d", id, exec.ID, cols, rows))
+	return exec, f.newExecTerminal(exec.ID), nil
+}
+
+func (f *fakeSource) NewTerminal(_ context.Context, id string, cols, rows int) (Exec, Terminal, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	if f.newTerminalErr != nil {
+		return Exec{}, nil, f.newTerminalErr
+	}
+	f.newTerminalID++
+	harness := f.terminalHarness
+	if harness == "" {
+		harness = "claude-code"
+	}
+	exec := Exec{
+		ID:        fmt.Sprintf("exec_term%d", f.newTerminalID),
+		Command:   []string{"claude"},
+		Harness:   harness,
+		Tty:       true,
+		Live:      true,
+		CreatedAt: time.Date(2026, 8, 7, 13, 0, f.newTerminalID, 0, time.UTC),
 	}
 	// The listing reports it from now on, the way the server would.
 	f.execs = append(f.execs, exec)

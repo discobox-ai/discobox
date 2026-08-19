@@ -83,9 +83,31 @@ func (d *apiDataSource) OpenExec(ctx context.Context, sandboxID, execID string, 
 // `disco shell` with no command runs. Only the sandbox can say which shell its
 // user has, so the request asks for one rather than naming it.
 func (d *apiDataSource) NewShell(ctx context.Context, sandboxID string, cols, rows int) (tui.Exec, tui.Terminal, error) {
-	body, err := createSandboxExecBody(sandboxExecCreateOptions{
+	return d.newSandboxSession(ctx, sandboxID, sandboxExecCreateOptions{
 		interactive: true, tty: true, shell: true, env: paneTerminalEnv(),
-	}, nil)
+	}, cols, rows)
+}
+
+// NewTerminal creates, attaches and starts another of the sandbox's own
+// harness terminals — a second session of whatever harness it already runs.
+// Which harness that is, is the sandbox's answer and not this machine's, so
+// the request names none: an exec created with no command, no shell and no
+// harness is a terminal on the sandbox's configured harness.
+func (d *apiDataSource) NewTerminal(ctx context.Context, sandboxID string, cols, rows int) (tui.Exec, tui.Terminal, error) {
+	return d.newSandboxSession(ctx, sandboxID, sandboxExecCreateOptions{
+		interactive: true, tty: true, terminal: true, env: paneTerminalEnv(),
+	}, cols, rows)
+}
+
+// newSandboxSession is what both of them are: create the exec, attach to it,
+// and only then start it.
+//
+// A created exec is not a running one. It is started once the attach is up and
+// its size is known, which is the order attachSandboxExec uses: started first,
+// its opening output would go out before anything was listening, and it would
+// draw itself at whatever size the sandbox guessed.
+func (d *apiDataSource) newSandboxSession(ctx context.Context, sandboxID string, opts sandboxExecCreateOptions, cols, rows int) (tui.Exec, tui.Terminal, error) {
+	body, err := createSandboxExecBody(opts, nil)
 	if err != nil {
 		return tui.Exec{}, nil, err
 	}
@@ -97,11 +119,6 @@ func (d *apiDataSource) NewShell(ctx context.Context, sandboxID string, cols, ro
 	if err != nil {
 		return tui.Exec{}, nil, err
 	}
-	// A created exec is not a running one. It is started only once the attach
-	// is up and its size is known, which is the order attachSandboxExec uses:
-	// started first, its opening output would go out before anything was
-	// listening, and it would draw itself at whatever size the sandbox
-	// guessed.
 	started, err := d.app.startSandboxExec(ctx, d.projectID, sandboxID, exec.ID)
 	if err != nil {
 		_ = term.Close()

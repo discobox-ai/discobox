@@ -38,6 +38,12 @@ const (
 	// the list's own keys, but none of them is d anymore — it was diff, until
 	// diff left the CLI.
 	paneDetachAlt = "d"
+	// paneTerminalKey opens another of the discobox's own terminals, beside
+	// the primary on the left. It is c because that is what screen and tmux
+	// create a window on, and this leader is screen's; t, the obvious letter,
+	// is stop — a command the list already has on it, and the workspace keeps
+	// the list's key map.
+	paneTerminalKey = "c"
 	// paneZoomKey maximizes the focused column over the other and restores it,
 	// the same toggle the boxes' own [+]/[-] button is. It is z because that is
 	// what tmux zooms a pane on, and because a workspace key nothing but a
@@ -76,9 +82,26 @@ type pane struct {
 	// created is when the session was created, which is the tab order.
 	created time.Time
 
+	// primary marks the discobox's primary terminal, which is the one pane on
+	// the screen whose ending ends the workspace. It is the first tab of the
+	// terminals column and always wears 0.
+	primary bool
+
 	// exited is set when what was running in the pane finished and the pane
 	// was kept anyway, so its last screen can be read.
 	exited bool
+}
+
+// name is what to call a pane: what the application inside it says it is,
+// else what was asked for when it was opened.
+func (p *pane) name() string {
+	if title := strings.TrimSpace(p.term.Title()); title != "" {
+		return title
+	}
+	if p.title != "" {
+		return p.title
+	}
+	return string(p.action)
 }
 
 // detachHint is how to get out of the workspace, as the key lists spell it.
@@ -116,13 +139,17 @@ type toggleMouseMsg struct{}
 // command, on the discobox the screen is showing.
 type paneActionMsg struct{ key string }
 
-// movePaneMsg is the leader plus h or l: move focus that way, between the
-// terminal and the shell tabs.
+// movePaneMsg is the leader plus h or l: move focus that way, along the strip
+// the screen is — the terminals, then the shells.
 type movePaneMsg struct{ delta int }
 
 // jumpPaneMsg is the leader plus a digit: focus the pane wearing that number —
-// 0 the terminal, 1 through 9 the tab whose label carries the ordinal.
+// 0 the primary, and the rest counted across the screen from it.
 type jumpPaneMsg struct{ n int }
+
+// newTerminalMsg is the leader plus c: another of the discobox's terminals,
+// opened beside the primary and focused.
+type newTerminalMsg struct{}
 
 // zoomPaneMsg is the leader plus z: give the focused column the whole window,
 // or give the window back to the split.
@@ -180,10 +207,7 @@ func (m *Model) paneByID(id int) *pane {
 	if m.overlay != nil && m.overlay.id == id {
 		return m.overlay
 	}
-	if m.terminal != nil && m.terminal.id == id {
-		return m.terminal
-	}
-	for _, p := range m.shells {
+	for _, p := range append(append([]*pane{}, m.terminals.panes...), m.shells.panes...) {
 		if p.id == id {
 			return p
 		}
@@ -192,7 +216,7 @@ func (m *Model) paneByID(id int) *pane {
 }
 
 // inPanes reports whether the window is showing terminals rather than the list.
-func (m *Model) inPanes() bool { return m.terminal != nil || m.overlay != nil }
+func (m *Model) inPanes() bool { return m.terminals.len() > 0 || m.overlay != nil }
 
 // focusedPane is the pane every key goes to: the overlay while one is up, since
 // it has the screen, and otherwise the terminal or the visible shell tab.
@@ -200,10 +224,39 @@ func (m *Model) focusedPane() *pane {
 	if m.overlay != nil {
 		return m.overlay
 	}
-	if m.onShells && m.activeShell >= 0 && m.activeShell < len(m.shells) {
-		return m.shells[m.activeShell]
+	return m.column().visible()
+}
+
+// column is the side of the workspace the keys are in: the shells while the
+// focus is on them, the terminals otherwise.
+func (m *Model) column() *column {
+	if m.onShells {
+		return &m.shells
 	}
-	return m.terminal
+	return &m.terminals
+}
+
+// paneColumn is the column a pane is in and where it sits in it, or nil and -1
+// for one that is in neither — the overlay, or a pane already closed.
+func (m *Model) paneColumn(p *pane) (*column, int) {
+	if i := m.terminals.index(p); i >= 0 {
+		return &m.terminals, i
+	}
+	if i := m.shells.index(p); i >= 0 {
+		return &m.shells, i
+	}
+	return nil, -1
+}
+
+// primary is the discobox's primary terminal, or nil before it has arrived. It
+// is the head of the terminals column: every other session is created later,
+// and the primary is attached under a virtual id with no creation time at all,
+// so it sorts first whatever order the attaches land in.
+func (m *Model) primary() *pane {
+	if p := m.terminals.first(); p != nil && p.primary {
+		return p
+	}
+	return nil
 }
 
 // currentBox is the discobox the workspace is showing, as the list last saw
@@ -303,6 +356,7 @@ func (m *Model) paneOptions(overlay bool) []termpane.Option {
 		termpane.WithRepeatingPrefixBinding("left", movePaneMsg{delta: -1}),
 		termpane.WithRepeatingPrefixBinding("right", movePaneMsg{delta: 1}),
 		termpane.WithPrefixBinding(paneZoomKey, zoomPaneMsg{}),
+		termpane.WithPrefixBinding(paneTerminalKey, newTerminalMsg{}),
 	)
 	// The digits jump straight to a pane by the number its label wears, the
 	// way tmux selects windows: 0 is the terminal, 1 through 9 the tabs.
@@ -348,7 +402,7 @@ func (m *Model) closeOverlay() {
 	}
 	_ = m.overlay.term.Close()
 	m.overlay = nil
-	if m.terminal != nil {
+	if m.terminals.len() > 0 {
 		m.layout()
 		return
 	}
@@ -460,8 +514,14 @@ func (m *Model) updatePaneMsg(tagged paneMsg) tea.Cmd {
 		}
 		return m.jumpPane(msg.n)
 
+	case newTerminalMsg:
+		if p == m.overlay {
+			return nil
+		}
+		return m.newTerminal()
+
 	case zoomPaneMsg:
-		if p == m.overlay || len(m.shells) == 0 {
+		if p == m.overlay || m.shells.len() == 0 {
 			// Nothing beside it to maximize over: the box already has the
 			// window, and saying so beats a key that looks broken.
 			return status("nothing to maximize — the box has the window")
@@ -517,7 +577,7 @@ func (m *Model) updatePaneMsg(tagged paneMsg) tea.Cmd {
 func (m *Model) paneClosed(p *pane, msg termpane.ClosedMsg) tea.Cmd {
 	action := p.action
 	switch {
-	case p == m.terminal:
+	case p.primary:
 		m.closeWorkspace()
 		if msg.Err != nil {
 			return tea.Batch(m.refresh(), m.report(true, "%s: %v", action, msg.Err))
@@ -537,8 +597,7 @@ func (m *Model) paneClosed(p *pane, msg termpane.ClosedMsg) tea.Cmd {
 		return tea.Batch(m.refresh(), m.report(true, "%s: %v", action, msg.Err))
 
 	default:
-		m.closeShell(m.shellIndex(p))
-		m.layout()
+		m.closeTab(p)
 		return tea.Batch(m.refresh(), m.report(true, "%s: %v", action, msg.Err))
 	}
 }
@@ -584,10 +643,10 @@ func (m *Model) readFinished(p *pane, key tea.KeyPressMsg) tea.Cmd {
 func (m *Model) dismissPane(p *pane) {
 	if p == m.overlay {
 		m.closeOverlay()
-	} else if i := m.shellIndex(p); i >= 0 {
-		m.closeShell(i)
+		m.layout()
+		return
 	}
-	m.layout()
+	m.closeTab(p)
 }
 
 // routeMouse sends a mouse event to the pane it belongs to: the one a
@@ -674,36 +733,32 @@ func (m *Model) onScreen() []*pane {
 	case m.overlay != nil:
 		return []*pane{m.overlay}
 	case m.split():
-		return []*pane{m.terminal, m.visibleShell()}
+		return []*pane{m.terminals.visible(), m.shells.visible()}
 	case m.maximized && m.onShells:
-		return []*pane{m.visibleShell()}
+		return []*pane{m.shells.visible()}
 	default:
-		return []*pane{m.terminal}
+		return []*pane{m.terminals.visible()}
 	}
-}
-
-// visibleShell is the tab being drawn, or nil when there are none.
-func (m *Model) visibleShell() *pane {
-	if len(m.shells) == 0 {
-		return nil
-	}
-	return m.shells[min(max(m.activeShell, 0), len(m.shells)-1)]
 }
 
 // focusPane moves focus to a pane the mouse chose.
 func (m *Model) focusPane(p *pane) {
-	if p == m.overlay || p == m.terminal {
-		m.onShells = false
+	if p == m.overlay {
 		return
 	}
-	if i := m.shellIndex(p); i >= 0 {
-		m.onShells, m.activeShell = true, i
+	col, i := m.paneColumn(p)
+	if col == nil {
+		return
 	}
+	m.onShells = col == &m.shells
+	col.active = i
 }
 
-// tabSpan is where one tab label sits in the shell box's top border, in
-// box-relative columns, both ends inclusive.
+// tabSpan is where one tab label sits on the boxes' top border row, in
+// absolute screen columns, both ends inclusive. shells says which of the two
+// columns drew it, since both wear a strip once they hold more than one pane.
 type tabSpan struct {
+	shells     bool
 	index      int
 	start, end int
 }
@@ -728,8 +783,9 @@ func (m *Model) focusChromeAt(x, y int) {
 		m.toggleMaximized(shells)
 		return
 	}
-	if i := m.tabAt(x, y); i >= 0 {
-		m.onShells, m.activeShell = true, i
+	if shells, i, ok := m.tabAt(x, y); ok {
+		m.onShells = shells
+		m.column().active = i
 		return
 	}
 	if p := m.paneBoxAt(x, y); p != nil {
@@ -762,25 +818,24 @@ func (m *Model) zoomAt(x, y int) (shells, ok bool) {
 func (m *Model) toggleMaximized(shells bool) {
 	m.maximized = !m.maximized
 	if m.maximized {
-		m.onShells = shells && len(m.shells) > 0
+		m.onShells = shells && m.shells.len() > 0
 	}
 	m.layout()
 }
 
-// tabAt is the tab whose label is under a screen position, -1 for none. The
-// strip is the shell box's top border row, and the spans were recorded when
-// it was drawn.
-func (m *Model) tabAt(x, y int) int {
-	if y != 1 || len(m.shells) == 0 {
-		return -1
+// tabAt is the tab whose label is under a screen position, with the column it
+// is in. The strips are the boxes' top border row, and the spans were recorded
+// when they were drawn.
+func (m *Model) tabAt(x, y int) (shells bool, index int, ok bool) {
+	if y != 1 {
+		return false, -1, false
 	}
-	rel := x - m.shellLeft()
 	for _, s := range m.tabSpans {
-		if rel >= s.start && rel <= s.end {
-			return s.index
+		if x >= s.start && x <= s.end {
+			return s.shells, s.index, true
 		}
 	}
-	return -1
+	return false, -1, false
 }
 
 // paneBoxAt is the pane whose box — border and title row included — is under
@@ -792,12 +847,12 @@ func (m *Model) paneBoxAt(x, y int) *pane {
 		return nil
 	}
 	if m.split() && x >= m.width/2 {
-		return m.visibleShell()
+		return m.shells.visible()
 	}
 	if !m.split() && m.maximized && m.onShells {
-		return m.visibleShell()
+		return m.shells.visible()
 	}
-	return m.terminal
+	return m.terminals.visible()
 }
 
 // copyText puts selected text on the clipboard: the OS clipboard first, and
@@ -842,7 +897,7 @@ func (m *Model) paneCells(width int) (cols, rows int) {
 
 // split reports whether the workspace is drawn as two columns: it has tabs to
 // put beside the terminal, and neither side has been maximized over the other.
-func (m *Model) split() bool { return len(m.shells) > 0 && !m.maximized }
+func (m *Model) split() bool { return m.shells.len() > 0 && !m.maximized }
 
 // columns is the box widths of the workspace's two sides, for the given number
 // of tabs. It takes the count rather than reading it off the model because the
@@ -871,11 +926,11 @@ func (m *Model) paneWidthOf(p *pane) int {
 	if p == m.overlay {
 		return max(m.width, 4)
 	}
-	term, shells := m.columns(len(m.shells))
-	if p == m.terminal {
-		return term
+	term, shells := m.columns(m.shells.len())
+	if m.shells.index(p) >= 0 {
+		return shells
 	}
-	return shells
+	return term
 }
 
 // shellLeft is the column the shell box's border starts at: past the
@@ -895,8 +950,8 @@ func (m *Model) shellLeft() int {
 // The cursor and every mouse event are placed against this, so it is worked
 // out once rather than counted twice.
 func (m *Model) paneOrigin(p *pane) (x, y int) {
-	if p != nil && p != m.overlay && p != m.terminal && len(m.shells) > 0 {
-		// A shell tab: its box starts where the terminal's ends, or at the
+	if p != nil && p != m.overlay && m.shells.index(p) >= 0 {
+		// A shell tab: its box starts where the terminals' box ends, or at the
 		// window's edge when it is the maximized one.
 		return m.shellLeft() + 1 + boxPad, 2
 	}
@@ -929,21 +984,21 @@ func (m *Model) viewPaneWindow() string {
 	var body string
 	switch {
 	case m.overlay != nil:
-		body = m.viewPaneBox(m.overlay, m.width, true)
+		body = m.viewOverlayBox(m.width)
 	case m.split():
-		// The terminal on the left, the tabbed shells on the right; the right
-		// half takes any cell the division left over so the row comes out
-		// exactly the width.
-		left := m.viewPaneBox(m.terminal, m.width/2, !m.onShells)
-		right := m.viewShellBox(m.width-m.width/2, m.onShells)
+		// The terminals on the left, the shells on the right; the right half
+		// takes any cell the division left over so the row comes out exactly
+		// the width.
+		left := m.viewColumnBox(&m.terminals, false, 0, m.width/2, !m.onShells)
+		right := m.viewColumnBox(&m.shells, true, m.width/2, m.width-m.width/2, m.onShells)
 		body = lipgloss.JoinHorizontal(lipgloss.Top, left, right)
 	case m.maximized && m.onShells:
 		// Maximized: the column with focus has the window and the other is not
 		// drawn at all — still attached, still emulating, and back where it was
 		// the moment the button gives the window back.
-		body = m.viewShellBox(m.width, true)
+		body = m.viewColumnBox(&m.shells, true, 0, m.width, true)
 	default:
-		body = m.viewPaneBox(m.terminal, m.width, true)
+		body = m.viewColumnBox(&m.terminals, false, 0, m.width, true)
 	}
 	rows = append(rows, strings.Split(body, "\n")...)
 	rows = append(rows, " "+pad+padANSI(m.st.dimText.Render(m.hints()), max(inner-2*boxPad, 1))+pad+" ")
@@ -1052,33 +1107,63 @@ func (m *Model) paneHeaderFields() []string {
 	return fields
 }
 
-// viewPaneBox draws one pane: its border, with what it is running set into the
-// top of it, around its grid.
+// viewColumnBox draws one side of the workspace: the visible pane's grid, with
+// the column's tab strip — or, while it holds one pane, that pane's title —
+// laid into the top border. Only the visible pane is drawn; the others keep
+// emulating off-screen, so flipping to one shows where it is now.
 //
-// The border of the pane with focus is lit and the others are not. With two
+// The border of the box with focus is lit and the other is not. With two
 // terminals side by side and every key going to one of them, which one that is
 // has to be visible without looking for it.
-func (m *Model) viewPaneBox(p *pane, width int, focused bool) string {
+func (m *Model) viewColumnBox(col *column, shells bool, left, width int, focused bool) string {
+	p := col.visible()
+	if p == nil {
+		return ""
+	}
 	edge := m.st.frame
 	if !focused {
 		edge = m.st.rule
 	}
 	inner := max(width-2, 1)
+	// A workspace of one pane is not a strip: it wears its own name, the way a
+	// box with nothing to choose between always has. The moment there is a
+	// second pane anywhere on the screen every one of them wears the number it
+	// answers to, this box's own included — the numbers appear exactly when
+	// they mean something.
+	//
+	// The strip is built only when it is drawn: building it records where its
+	// labels landed, and a click target for a tab nobody can see points at
+	// nothing.
+	// The maximize button is the box's whichever way its top is drawn, and it
+	// is worked out once: drawing it records where it landed, and a second
+	// span for the same button is a click target nothing needs.
+	control := m.zoomControl(edge, shells, left, width)
+	top := titledEdge(m.st, edge, p.name(), control, inner)
+	if len(m.panes()) > 1 {
+		top = m.tabbedEdge(col, shells, left, control, edge, inner)
+	}
+	return m.viewPaneBox(p, top, edge, width)
+}
+
+// viewOverlayBox draws the command that has the screen over the workspace. It
+// is one pane with the window to itself, so it wears its own name and no
+// control: there is nothing beside it to maximize over.
+func (m *Model) viewOverlayBox(width int) string {
+	edge := m.st.frame
+	inner := max(width-2, 1)
+	return m.viewPaneBox(m.overlay, titledEdge(m.st, edge, m.overlay.name(), "", inner), edge, width)
+}
+
+// viewPaneBox draws one pane's grid inside a box whose top border has already
+// been built — a strip of tabs, or a title — with a cell of air between the
+// border and the terminal's own output.
+func (m *Model) viewPaneBox(p *pane, top string, edge lipgloss.Style, width int) string {
+	inner := max(width-2, 1)
 	grid := max(inner-2*boxPad, 1)
 	side := edge.Render("│")
 	pad := strings.Repeat(" ", boxPad)
 
-	// Until the application says what it is, what it is is what was asked for:
-	// a shell, or the harness you attached to.
-	title := strings.TrimSpace(p.term.Title())
-	if title == "" {
-		title = string(p.action)
-	}
-	control := ""
-	if p == m.terminal {
-		control = m.zoomControl(edge, false, 0, width)
-	}
-	rows := []string{titledEdge(m.st, edge, title, control, inner)}
+	rows := []string{top}
 	for _, line := range p.term.View() {
 		rows = append(rows, side+pad+padANSI(line, grid)+pad+side)
 	}
@@ -1101,7 +1186,7 @@ func (m *Model) viewPaneBox(p *pane, width int, focused bool) string {
 // the keys reach the same toggle at any width.
 func (m *Model) zoomControl(edge lipgloss.Style, shells bool, left, width int) string {
 	const zoomMinWidth = 12
-	if m.overlay != nil || len(m.shells) == 0 || width < zoomMinWidth {
+	if m.overlay != nil || m.shells.len() == 0 || width < zoomMinWidth {
 		return ""
 	}
 	glyph := "+"

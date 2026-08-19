@@ -100,7 +100,7 @@ func TestAForwardThatFailsLeavesTheWorkspaceOpen(t *testing.T) {
 		return strings.Contains(m.status, "ports are not being forwarded")
 	})
 
-	if m.terminal == nil {
+	if m.primary() == nil {
 		t.Fatal("the workspace should still be open")
 	}
 	if m.forward != nil {

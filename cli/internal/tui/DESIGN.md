@@ -21,7 +21,7 @@ flowchart LR
     P -->|Enter| Run["DataSource.Run → attach"]
     L -->|u t T x U P| Verb["DataSource.Do"]
     L -->|e| Rename["dialog → DataSource.Rename"]
-    L -->|Enter s| WS["workspace → Execs / OpenExec / NewShell"]
+    L -->|Enter s| WS["workspace → Execs / OpenExec / NewShell / NewTerminal"]
     L -->|d i| Overlay["overlay pane → DataSource.Open"]
     L -->|y| Exec["tea.Exec → DataSource.Interact"]
     A -->|d s| AVerb["DataSource.DoHarness"]
@@ -97,14 +97,35 @@ already looking at is one you know the name of.
 **The workspace screen is one discobox as the server has it** (`workspace.go`).
 Opening it attaches to the primary terminal — the virtual `ExecPrimary` id,
 which the sandbox resolves and revives itself — *and* to every other live TTY
-session the exec listing reports, harness terminals included: `Model.terminal`
-on the left half, `Model.shells` as tabs on the right, one visible at a time
-(`activeShell`), in session-creation order — unless one column has been
-maximized over the other, below. The workspace mirrors the server
-rather than remembering what was opened here, so a shell started from another
-window appears as a tab on its own, and the leader plus `s` always creates a
-new session rather than going to one. With no tabs the terminal takes the full
-width; the leader plus `a` is a place, not an opener — it focuses the terminal.
+session the exec listing reports. Both sides are the same thing, a `column`
+(`column.go`): a strip of panes with one visible at a time, in
+session-creation order. `Model.terminals` is the left, `Model.shells` the
+right, and `onShells` says which has the keys — unless one column has been
+maximized over the other, below.
+
+**Which side a session is drawn on is the server's own record, not a layout
+this window keeps** (`terminalExec`, ADR-0054). A harness terminal — the
+primary, or any exec created in terminal mode, which carries the harness it
+runs — is a terminal and goes on the left; everything else is a shell and goes
+on the right. So the workspace mirrors the server rather than remembering what
+was opened here: a session started from another window appears on its own side,
+and reopening the screen restores the same two columns anyone else's window
+would draw.
+
+The leader plus `s` always creates a new shell and plus `c` a new terminal —
+never going to one; `a` is a place rather than an opener, and focuses the
+primary. With no shells the terminals take the full width, and another
+terminal is a tab in the box the primary already has rather than a third
+column.
+
+**The primary is pane 0, always, and always the leftmost tab.** It is attached
+under the virtual id, which carries no creation time, so it sorts to the head
+of its column whatever order the attaches land in — and it is the one pane
+whose ending ends the workspace (`pane.primary`). The numbering runs across
+the screen from it, terminals then shells, which is what the leader's digits
+and its arrows count along (`panes`, `paneOrdinal`, `focusOrdinal`). A column
+draws its strip once there is more than one pane on the whole screen: the
+numbers appear exactly when they mean something.
 
 While the screen is up, a generation-guarded tick loop polls `DataSource.Execs`
 (~2s) and opens a tab for every live TTY session it does not already show,
@@ -122,13 +143,15 @@ and `wsGen` is bumped so stale ticks and in-flight opens are dropped rather
 than resurrecting a screen that was left. The primary session ending ends the
 workspace too: it is above all a view onto that session.
 
-The tab strip is laid into the right box's top border (`tabbedEdge`, a
-`titledEdge` with several titles), so it costs no grid row and both halves come
-out the same height. Tabs are titled by the application's own title, else the
-session's command basename, else its harness, else its id tail; the visible tab
-is lit and never clipped, and an overgrown strip shows a window around it with
-an ellipsis at the clipped end. Hidden tabs keep emulating off-screen at their
-drawn size, so flipping to one shows where it is now.
+A tab strip is laid into its box's top border (`tabbedEdge`, a `titledEdge`
+with several titles), so it costs no grid row and both halves come out the same
+height. Tabs are titled by the application's own title, else the session's
+command basename, else its harness, else its id tail — the primary by its
+action, since the virtual id names no session — and each carries the number it
+answers to. The visible tab is lit and never clipped, and an overgrown strip
+shows a window around it with an ellipsis at the clipped end. Hidden tabs keep
+emulating off-screen at their drawn size, so flipping to one shows where it is
+now.
 
 **Either column can take the whole window** (`maximized`, `toggleMaximized`).
 Each box wears a `[+]`/`[-]` button at the right end of its top border
@@ -156,10 +179,16 @@ map for the two screens, with the same enabled checks and the same
 confirmations. `currentBox` re-reads it from the listing at dispatch time, since
 the workspace was opened on a snapshot and a diffstat that has since arrived
 changes what is offered. The leader plus `h`/`l` or the arrows moves along the
-strip the screen is — the terminal, then the tabs — stopping at the ends rather
-than wrapping, and the leader plus a digit jumps straight to the pane wearing
-that number, tmux-style: 0 the terminal, 1–9 the tab whose label carries the
-ordinal.
+strip the screen is — the terminals, then the shells — stopping at the ends
+rather than wrapping, and the leader plus a digit jumps straight to the pane
+wearing that number, tmux-style: 0 the primary, and the rest counted across the
+screen from it.
+
+Two of the list's keys mean something else here, because from the workspace
+they are openers rather than places: `a` focuses the primary, and `s` opens
+another shell. The third opener has no counterpart in the list — `c` opens
+another terminal, on screen's and tmux's create key, since `t` is stop and the
+key map is the list's.
 
 **A command that finishes takes the screen over the workspace.** `Model.overlay`
 is apply running full width while the terminals stay connected, unresized and
@@ -173,7 +202,8 @@ them.
 
 **A finished pane keeps its screen, and can be read back through.** The
 distinction is positional now: the primary does not hold (its end is the
-workspace's), while a shell tab and the overlay do. A shell that exits stays as
+workspace's), while every other tab and the overlay do. A terminal or shell
+that exits stays as
 a readable tab, and a command that ran, printed and returned stays as the
 screen — an apply with little to say is over in a moment, and a pane that
 vanished with it would be a screen you never got to read. The pane says so, and
@@ -380,7 +410,7 @@ The title an application sets goes two places: its own pane's top border
 (`titledEdge`), which says what that terminal is running, and the real
 terminal's own title bar (`windowTitle` → `View.WindowTitle`), which is how you
 find the window among the others you have open. The title bar
-always carries the primary terminal's title — never the focused shell tab's or
+always carries the primary terminal's title — never the focused tab's or
 the overlay's — because it is read from outside the window, where what matters
 is which discobox this is and what its agent is doing; a tab or a report is
 something you are doing inside the window and already looking at. With no
@@ -651,6 +681,7 @@ gets the product's.
 | `logo.go` | the mark, embedded from `logo.chars` as captured |
 | `editor.go` | Alt-E: the prompt in `$EDITOR` |
 | `pane.go` | one terminal pane: its keys, messages, chrome and cursor |
+| `column.go` | one side of the workspace: a strip of panes, one visible |
 | `workspace.go` | the workspace screen: open, poll/reconcile, tabs, detach, the port forward |
 | `interact.go` | the `tea.ExecCommand` adapter for the command-shaped actions |
 

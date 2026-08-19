@@ -38,6 +38,11 @@ type sandboxExecCreateOptions struct {
 	interactive bool
 	detach      bool
 	shell       bool
+	// terminal creates a harness terminal rather than a plain exec: a session
+	// of the sandbox's own configured harness, which is what the launcher's
+	// workspace opens beside the primary. There is no flag for it — which
+	// harness a sandbox runs is its own answer, so there is nothing to pass.
+	terminal bool
 }
 
 func (a *App) newSandboxExecCommand() *cobra.Command {
@@ -172,13 +177,21 @@ func (a *App) sandboxExecRequest(ctx context.Context, sandboxArg string) (string
 func createSandboxExecBody(opts sandboxExecCreateOptions, command []string) (*apimodel.CreateSandboxExecRequest, error) {
 	body := &apimodel.CreateSandboxExecRequest{}
 	// Which shell to run is the sandbox's answer, not this machine's: the local
-	// $SHELL says nothing about the run user inside the sandbox.
-	if opts.shell {
+	// $SHELL says nothing about the run user inside the sandbox. Which harness
+	// a terminal runs is the sandbox's answer for the same reason, and a
+	// request that names neither a command nor a shell nor a harness is a
+	// terminal on the one it is configured with.
+	switch {
+	case opts.terminal:
+		if len(command) > 0 {
+			return nil, fmt.Errorf("a command cannot be combined with a terminal")
+		}
+	case opts.shell:
 		if len(command) > 0 {
 			return nil, fmt.Errorf("a command cannot be combined with --shell")
 		}
 		body.SetShell(apiclientgen.NewOptBool(true))
-	} else {
+	default:
 		body.SetCommand(append([]string{}, command...))
 	}
 	body.SetWorkdir(optString(opts.workdir))

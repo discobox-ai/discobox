@@ -85,21 +85,28 @@ func TestClickingATabLabelSelectsIt(t *testing.T) {
 	for want := 1; want <= 2; want++ {
 		d.key("ctrl+a")
 		d.key("s")
-		d.wait("the tabs", func() bool { return len(m.shells) == want })
+		d.wait("the tabs", func() bool { return m.shells.len() == want })
 	}
-	d.wait("the second tab focused", func() bool { return m.onShells && m.activeShell == 1 })
+	d.wait("the second tab focused", func() bool { return m.onShells && m.shells.active == 1 })
 
-	// Drawing the strip is what records where the labels are.
+	// Drawing the strips is what records where the labels are: the primary
+	// wears one too now that there is more than one pane to number.
 	_ = rawFrame(m)
-	if len(m.tabSpans) != 2 {
+	var spans []tabSpan
+	for _, span := range m.tabSpans {
+		if span.shells {
+			spans = append(spans, span)
+		}
+	}
+	if len(spans) != 2 {
 		t.Fatalf("tabSpans = %v, want both tabs", m.tabSpans)
 	}
-	span := m.tabSpans[0]
-	x := m.width/2 + (span.start+span.end)/2
+	span := spans[0]
+	x := (span.start + span.end) / 2
 	d.dispatch(tea.MouseClickMsg{X: x, Y: 1, Button: tea.MouseLeft})
 	d.dispatch(tea.MouseReleaseMsg{X: x, Y: 1, Button: tea.MouseLeft})
-	if !m.onShells || m.activeShell != 0 {
-		t.Fatalf("onShells=%v activeShell=%d, want the clicked tab", m.onShells, m.activeShell)
+	if !m.onShells || m.shells.active != 0 {
+		t.Fatalf("onShells=%v activeShell=%d, want the clicked tab", m.onShells, m.shells.active)
 	}
 }
 
@@ -110,7 +117,7 @@ func TestClickingABorderFocusesItsPane(t *testing.T) {
 	d, m, _ := openWorkspace(t, ds, "enter")
 	d.key("ctrl+a")
 	d.key("s")
-	d.wait("the tab", func() bool { return len(m.shells) == 1 })
+	d.wait("the tab", func() bool { return m.shells.len() == 1 })
 	d.wait("the tab focused", func() bool { return m.onShells })
 
 	// The terminal's title row, left of the split.
@@ -136,7 +143,7 @@ func TestClickingTheMaximizeButtonTakesTheWindow(t *testing.T) {
 	d, m, _ := openWorkspace(t, ds, "enter")
 	d.key("ctrl+a")
 	d.key("s")
-	d.wait("the tab", func() bool { return len(m.shells) == 1 })
+	d.wait("the tab", func() bool { return m.shells.len() == 1 })
 	d.wait("the tab focused", func() bool { return m.onShells })
 
 	// Drawing the boxes is what records where their buttons are.
@@ -148,7 +155,7 @@ func TestClickingTheMaximizeButtonTakesTheWindow(t *testing.T) {
 	if !m.maximized || m.onShells {
 		t.Fatalf("maximized=%v onShells=%v, want the terminal with the window", m.maximized, m.onShells)
 	}
-	if got := m.paneWidthOf(m.terminal); got != m.width {
+	if got := m.paneWidthOf(m.primary()); got != m.width {
 		t.Fatalf("the terminal is %d cells wide, want the whole window (%d)", got, m.width)
 	}
 	if strings.Contains(frameText(m), "1 zsh") {
@@ -170,7 +177,7 @@ func TestClickingTheMaximizeButtonTakesTheWindow(t *testing.T) {
 	if !m.maximized || !m.onShells {
 		t.Fatalf("maximized=%v onShells=%v, want the tabs with the window", m.maximized, m.onShells)
 	}
-	if got := m.paneWidthOf(m.shells[0]); got != m.width {
+	if got := m.paneWidthOf(m.shells.panes[0]); got != m.width {
 		t.Fatalf("the tab is %d cells wide, want the whole window (%d)", got, m.width)
 	}
 }
@@ -183,9 +190,9 @@ func TestAMaximizedShellBoxIsStillClickable(t *testing.T) {
 	for want := 1; want <= 2; want++ {
 		d.key("ctrl+a")
 		d.key("s")
-		d.wait("the tabs", func() bool { return len(m.shells) == want })
+		d.wait("the tabs", func() bool { return m.shells.len() == want })
 	}
-	d.wait("the second tab focused", func() bool { return m.onShells && m.activeShell == 1 })
+	d.wait("the second tab focused", func() bool { return m.onShells && m.shells.active == 1 })
 
 	m.toggleMaximized(true)
 	_ = rawFrame(m)
@@ -194,8 +201,8 @@ func TestAMaximizedShellBoxIsStillClickable(t *testing.T) {
 	}
 	span := m.tabSpans[0]
 	clickAt(d, (span.start+span.end)/2, 1)
-	if !m.onShells || m.activeShell != 0 {
-		t.Fatalf("onShells=%v activeShell=%d, want the clicked tab", m.onShells, m.activeShell)
+	if !m.onShells || m.shells.active != 0 {
+		t.Fatalf("onShells=%v activeShell=%d, want the clicked tab", m.onShells, m.shells.active)
 	}
 
 	// The grid moved with the box: a press past the old split lands in it.
