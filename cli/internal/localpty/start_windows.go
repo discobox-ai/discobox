@@ -17,7 +17,7 @@ import (
 
 // minBuild is Windows 10 1809, the first build with a pseudo-console. Below it
 // there is nothing to fall back to that would still be a terminal, so Start
-// says so instead. See ADR 0054.
+// says so instead. See ADR 0062.
 const minBuild = 17763
 
 // waitForExit is how long Close waits for a terminated child before releasing

@@ -15,7 +15,7 @@ import (
 // To draw one in a pane it is given a terminal of its own. The command runs as
 // a child process on a local pty sized to the pane, with that pty as its
 // controlling terminal, and the pane draws what comes back. Where the pty comes
-// from is localpty's problem, and differs by platform; see ADR 0054.
+// from is localpty's problem, and differs by platform; see ADR 0062.
 //
 // The controlling terminal is the part that matters: anything the command
 // starts that reads its keys from the terminal reads them from the pty, and so

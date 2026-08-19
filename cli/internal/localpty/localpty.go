@@ -1,5 +1,5 @@
 // Package localpty runs one of this CLI's own commands on a pseudo-terminal of
-// its own, for the launcher to draw in a pane. See ADR 0054.
+// its own, for the launcher to draw in a pane. See ADR 0062.
 //
 // The pty is the point. It is what gives the child a controlling terminal, so
 // anything the command starts that reads its keys from the terminal — git, a
