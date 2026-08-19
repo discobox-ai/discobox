@@ -113,3 +113,4 @@ Nygard-style ADRs (see adr.github.io) combined with current-state design docs:
 | [0058](0058-a-push-delivered-source-has-a-pool-side-origin.md) | A push-delivered source has a pool-side origin the client re-pushes into | Accepted |
 | [0059](0059-a-rejected-swapped-credential-is-retried-once.md) | A rejected swapped credential is retried once, and the delivered file is restored | Accepted |
 | [0060](0060-provisioning-progress-is-a-recorded-phase-the-client-polls.md) | Provisioning progress is a recorded phase, polled by the waiting client | Accepted |
+| [0061](0061-the-client-facing-project-event-stream-is-removed.md) | The client-facing project event stream is removed | Accepted |
