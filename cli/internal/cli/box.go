@@ -19,6 +19,7 @@ func (a *App) newBoxCommand() *cobra.Command {
 	cmd.AddCommand(a.newServerCommand())
 	cmd.AddCommand(a.newSSHKeyCommand())
 	cmd.AddCommand(a.newSSHConfigCommand())
+	cmd.AddCommand(a.newSSHProxyCommand())
 	cmd.AddCommand(a.newIrohIDCommand())
 	return cmd
 }

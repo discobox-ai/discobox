@@ -107,10 +107,10 @@ func Run(ctx context.Context) error {
 		return fmt.Errorf("initialize app: %w", err)
 	}
 
-	// One sshd behind both front doors. The route is registered here rather
-	// than inside NewApp because sshd needs the services NewApp returns, and
-	// registering it on the same router keeps SSH reachable wherever the API
-	// is — which is what `disco tools ssh` relies on.
+	// SSH's only front door. The route is registered here rather than inside
+	// NewApp because sshd needs the services NewApp returns, and registering it
+	// on the same router keeps SSH reachable wherever the API is — which is
+	// what both `disco tools ssh` and a written ssh_config rely on.
 	sshServer, err := newSSHServer(cfg, sshHostKey, appServices, appStore)
 	if err != nil {
 		return err
@@ -132,9 +132,6 @@ func Run(ctx context.Context) error {
 		log.Printf("listening on %s", listener.display)
 		log.Printf("openapi spec available at %s/openapi.yaml", listener.display)
 		log.Printf("api docs available at %s/docs", listener.display)
-	}
-	if err := startSSHListener(ctx, cfg, sshServer); err != nil {
-		return fmt.Errorf("start SSH listener: %w", err)
 	}
 	handler := otelhttp.NewHandler(router, "discobox-server")
 	activity := newActivityTracker()

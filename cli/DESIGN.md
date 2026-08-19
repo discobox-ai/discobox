@@ -439,13 +439,27 @@ level or layering on the attach transports above.
   authenticated `CreateSSHKey` API call that follows, never agent presence
   itself (ADR 0024 §6).
 - `disco box ssh-config` emits one `ssh_config(5)` `Host` stanza per sandbox in
-  the current project plus a `known_hosts` line. Both the address and the host
-  key come from `GET /ssh` (public, `server/internal/auth/DESIGN.md`), so
-  nothing here hard-codes a port: `--host`/`--port` are overrides for what the
-  server cannot know about, such as reaching it through a local forward, and
-  are unset by default. The `known_hosts` host field is bracketed
-  (`[host]:port`) for every port but 22, which `ssh` looks up under the bare
-  hostname instead.
+  the current project plus a `known_hosts` line. The stanzas name **no address**
+  (ADR 0057): they carry a `ProxyCommand` that runs this executable as `disco
+  --server <endpoint> box ssh-proxy`, which splices its own stdio onto `GET
+  /ssh/connect` — the same door `disco tools ssh`'s bridge dials, with `ssh`
+  owning the process instead of a loopback port. There is no other way in: the
+  server binds no SSH port. Everything built on `ssh` rather than on our client
+  — Remote-SSH, `scp`, `git` — reaches a sandbox wherever this CLI reaches the
+  API, and nothing has to be configured, published, or firewalled for it.
+- The `ProxyCommand` records the absolute path from `os.Executable()` and the
+  `--server` value, both shell-quoted: ssh runs it through a shell, with
+  whatever environment its caller had — and that caller is often a GUI editor
+  whose PATH and environment are not the shell's. The quoting is `/bin/sh`'s
+  everywhere but Windows, where OpenSSH hands the line to `%COMSPEC%`.
+- The host key is verified under `HostKeyAlias`, one name per project
+  (`<project id>.discobox.internal`), which is also the `known_hosts` host
+  field. A stanza with no address gives ssh nothing to derive a name from. The
+  project ID is resolved for printing as well as writing, since the alias is
+  derived from it. (`knownHostsHost`'s bracketed `[host]:port` form survives for
+  `tools ssh`'s temporary known_hosts, which really is per port.)
+- `GET /ssh` carries the host key and nothing else — `sshHostKey` is the one
+  reader — because there is no address to discover and nothing to enable.
 - It also generates and enrolls the key it points at, so the emitted config
   works on its own: an ed25519 key under the CLI state directory
   (`<state>/ssh/id_ed25519`, `0600`), enrolled in the project when the project
@@ -488,12 +502,12 @@ level or layering on the attach transports above.
   after an existing `Host *` block would lose every setting that block sets. It
   is idempotent — re-running after creating a sandbox refreshes the stanzas and
   leaves one `Include`.
-- A server with no SSH ingress writes an *empty* config rather than failing:
-  these files mirror the server, so a project that stopped offering SSH must
-  stop offering stanzas pointing at a port nothing answers on. The `Include`
-  stays, so re-enabling needs no further edit to `~/.ssh/config`. Printing has
-  nothing to mirror, so it still reports the error instead of emitting empty
-  output to paste.
+- A project with no sandboxes writes an *empty* config rather than skipping the
+  write: these files mirror the server, so a project whose last sandbox is gone
+  must stop offering stanzas for it. The `Include` and the `known_hosts` line
+  stay — the host key belongs to the server, not to any sandbox — so the next
+  populated run needs no further edit to `~/.ssh/config` and no second trip to
+  re-pin the same server.
 - Only the written form carries `UserKnownHostsFile`, pointing at the
   known_hosts it just wrote. Pinning the host key there keeps
   `StrictHostKeyChecking` meaningful without editing the file that records the

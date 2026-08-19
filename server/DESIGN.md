@@ -180,28 +180,19 @@ git subprocesses that cannot speak anything else (see [cli](../cli/DESIGN.md)).
 `cfg.Listen` is threaded to the provider factories so a backend picks a
 transport this server actually answers on rather than assuming one exists.
 
-`task dev` opts into both on loopback — `http://127.0.0.1:8080` and
-`127.0.0.1:3222` — so a development server can be curled and ssh-ed into with
-nothing to configure. Loopback is what makes that safe to default: the reason
-these are opt-in is that they are machine-wide surfaces, and a loopback bind is
-not one. Either is overridden from the environment, not from `.env`, which the
-server loads with godotenv and which does not replace a variable already set.
+`task dev` opts into HTTP on loopback — `http://127.0.0.1:8080` — so a
+development server can be curled with nothing to configure. Loopback is what
+makes that safe to default: the reason it is opt-in is that a machine-wide
+surface is, and a loopback bind is not one. It is overridden from the
+environment, not from `.env`, which the server loads with godotenv and which
+does not replace a variable already set.
 
-The SSH control-plane ingress (ADR 0024) follows the same opt-in rule on its
-own listener: `DISCOBOX_SSH_LISTEN` binds a second, independent TCP listener
-when set, and binds nothing when unset. What clients dial is a separate
-setting, `DISCOBOX_SSH_ADVERTISE_ADDRESS`, because a bind address is routinely
-not dialable — `:3222` names no host, `0.0.0.0:3222` is not an address — and
-the reachable endpoint may be a load balancer, port mapping, or tunnel in
-front of this process. Unset, it derives from the bind address with a wildcard
-host replaced by loopback. `GET /ssh` serves it alongside the host key so
-clients discover the endpoint instead of hard-coding a port; it answers
-`{"enabled": false}` rather than 404 when SSH is off, which a client cannot
-otherwise tell from an unknown route. It is started in `Run` alongside
-`listenAll`'s HTTP listeners, not folded into `serveAll`: an SSH connection
-has no request/response cycle for `http.Server.Shutdown` to drain, so
-`internal/sshd.Server.Serve` has its own `ctx`-driven listener lifecycle
-instead. See [`internal/sshd/DESIGN.md`](internal/sshd/DESIGN.md).
+The SSH control-plane ingress (ADR 0024) binds **no listener of its own**. It is
+served on the router, at `GET /ssh/connect`, so it is reachable wherever the API
+is and there is no second endpoint to configure, publish, or firewall (ADR
+0052). `GET /ssh` serves the host key clients pin, and nothing else: there is no
+address to discover and no way to turn SSH off. See
+[`internal/sshd/DESIGN.md`](internal/sshd/DESIGN.md).
 
 ## Single Server Per Data Directory
 

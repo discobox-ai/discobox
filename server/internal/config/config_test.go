@@ -69,9 +69,6 @@ func TestLoadDefaults(t *testing.T) {
 	if cfg.OTelMetricExportInterval != time.Second {
 		t.Fatalf("OTelMetricExportInterval = %s, want 1s", cfg.OTelMetricExportInterval)
 	}
-	if cfg.SSHListen != "" {
-		t.Fatalf("SSHListen = %q, want empty (disabled by default)", cfg.SSHListen)
-	}
 }
 
 func TestLoadEnvironmentOverrides(t *testing.T) {
@@ -91,7 +88,6 @@ func TestLoadEnvironmentOverrides(t *testing.T) {
 	t.Setenv("DISCOBOX_ENCRYPTION_KEY", "key")
 	t.Setenv("OTEL_METRICS_EXPORTER", "otlp")
 	t.Setenv("OTEL_METRIC_EXPORT_INTERVAL", "5000")
-	t.Setenv("DISCOBOX_SSH_LISTEN", ":3222")
 
 	cfg, err := Load()
 	if err != nil {
@@ -147,9 +143,6 @@ func TestLoadEnvironmentOverrides(t *testing.T) {
 	}
 	if cfg.OTelMetricExportInterval != 5*time.Second {
 		t.Fatalf("OTelMetricExportInterval = %s, want 5s", cfg.OTelMetricExportInterval)
-	}
-	if cfg.SSHListen != ":3222" {
-		t.Fatalf("SSHListen = %q, want :3222", cfg.SSHListen)
 	}
 }
 
@@ -284,7 +277,6 @@ func TestLoadRejectsInvalidValues(t *testing.T) {
 		{name: "poll interval", key: "DISPATCHER_POLL_INTERVAL", val: "-1s"},
 		{name: "sandbox concurrency", key: "SANDBOX_RECONCILE_JOB_CONCURRENCY", val: "0"},
 		{name: "otel metric export interval", key: "OTEL_METRIC_EXPORT_INTERVAL", val: "0s"},
-		{name: "ssh listen missing port", key: "DISCOBOX_SSH_LISTEN", val: "localhost"},
 	}
 
 	for _, tt := range tests {
@@ -307,8 +299,6 @@ func clearConfigEnv(t *testing.T) {
 		"DISCOBOX_SERVER",
 		"DISCOBOX_SERVER_LISTEN",
 		"DISCOBOX_SERVER_IDLE_TIMEOUT",
-		"DISCOBOX_SSH_LISTEN",
-		"DISCOBOX_SSH_ADVERTISE_ADDRESS",
 		"DISCOBOX_DATA_DIR",
 		"DISCOBOX_CONFIG_DIR",
 		"DISCOBOX_CACHE_DIR",
@@ -326,64 +316,5 @@ func clearConfigEnv(t *testing.T) {
 		"OTEL_METRIC_EXPORT_INTERVAL",
 	} {
 		t.Setenv(key, "")
-	}
-}
-
-// TestSSHAdvertiseAddressDerivesADialableEndpoint covers the distinction the
-// discovery API exists for: a bind address is not an address a client can
-// dial, so a wildcard host becomes loopback rather than being served as-is.
-func TestSSHAdvertiseAddressDerivesADialableEndpoint(t *testing.T) {
-	for _, tc := range []struct {
-		name       string
-		listen     string
-		advertised string
-		want       string
-	}{
-		{name: "no host", listen: ":3222", want: "127.0.0.1:3222"},
-		{name: "ipv4 wildcard", listen: "0.0.0.0:3222", want: "127.0.0.1:3222"},
-		{name: "ipv6 wildcard", listen: "[::]:3222", want: "127.0.0.1:3222"},
-		{name: "specific host is dialable already", listen: "10.0.0.5:3222", want: "10.0.0.5:3222"},
-		{name: "explicit advertisement wins", listen: ":3222", advertised: "ssh.example.com:22", want: "ssh.example.com:22"},
-		{name: "disabled", listen: "", want: ""},
-	} {
-		t.Run(tc.name, func(t *testing.T) {
-			clearConfigEnv(t)
-			t.Setenv("DISCOBOX_DATA_DIR", t.TempDir())
-			if tc.listen != "" {
-				t.Setenv("DISCOBOX_SSH_LISTEN", tc.listen)
-			}
-			if tc.advertised != "" {
-				t.Setenv("DISCOBOX_SSH_ADVERTISE_ADDRESS", tc.advertised)
-			}
-			cfg, err := Load()
-			if err != nil {
-				t.Fatalf("load config: %v", err)
-			}
-			if cfg.SSHAdvertiseAddress != tc.want {
-				t.Fatalf("SSHAdvertiseAddress = %q, want %q", cfg.SSHAdvertiseAddress, tc.want)
-			}
-		})
-	}
-}
-
-func TestSSHAdvertiseAddressRejectsUnusableValues(t *testing.T) {
-	for _, tc := range []struct{ name, listen, advertised string }{
-		{name: "bare port", listen: ":3222", advertised: "3222"},
-		{name: "host without port", listen: ":3222", advertised: "ssh.example.com"},
-		// Advertising an ingress that was never started would hand clients an
-		// address nothing answers on.
-		{name: "advertised without a listener", advertised: "ssh.example.com:3222"},
-	} {
-		t.Run(tc.name, func(t *testing.T) {
-			clearConfigEnv(t)
-			t.Setenv("DISCOBOX_DATA_DIR", t.TempDir())
-			if tc.listen != "" {
-				t.Setenv("DISCOBOX_SSH_LISTEN", tc.listen)
-			}
-			t.Setenv("DISCOBOX_SSH_ADVERTISE_ADDRESS", tc.advertised)
-			if _, err := Load(); err == nil {
-				t.Fatal("expected an error")
-			}
-		})
 	}
 }

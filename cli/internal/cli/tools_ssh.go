@@ -11,7 +11,6 @@ import (
 	"github.com/spf13/cobra"
 
 	apiclientgen "github.com/obot-platform/discobox/api/gen"
-	apimodel "github.com/obot-platform/discobox/api/model"
 	execclient "github.com/obot-platform/discobox/execstream/client"
 )
 
@@ -70,16 +69,9 @@ func (a *App) runToolsSSH(cmd *cobra.Command, sandboxArg string, args []string) 
 	if err != nil {
 		return err
 	}
-	ingressRes, err := client.GetSSHIngress(cmd.Context())
+	hostKey, err := a.sshHostKey(cmd, client)
 	if err != nil {
 		return err
-	}
-	ingress, err := expectResponse[apimodel.SSHIngress](ingressRes)
-	if err != nil {
-		return err
-	}
-	if !ingress.Enabled {
-		return fmt.Errorf("this server cannot serve SSH")
 	}
 
 	bridge, err := a.startSSHBridge(cmd.Context())
@@ -88,7 +80,7 @@ func (a *App) runToolsSSH(cmd *cobra.Command, sandboxArg string, args []string) 
 	}
 	defer bridge.Close()
 
-	knownHosts, cleanup, err := writeTemporaryKnownHosts(bridge.port(), ingress.HostKey.Or(""))
+	knownHosts, cleanup, err := writeTemporaryKnownHosts(bridge.port(), hostKey)
 	if err != nil {
 		return err
 	}

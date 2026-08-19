@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"sync"
 	"testing"
@@ -83,7 +84,10 @@ func (f *sshConfigFakeServer) sandboxesJSON() string {
 // resolvedTestProjectID is what GET /projects/project-1 resolves to.
 const resolvedTestProjectID = "proj_resolved00001"
 
-const sshConfigEnabledIngress = `{"enabled":true,"address":"ssh.example.com:3222","hostKey":"ssh-ed25519 AAAAfakehostkey=="}`
+// sshConfigEnabledIngress is the whole of GET /ssh: a host key to pin. There is
+// no address to advertise and nothing to enable — SSH reaches the server over
+// the transport the API already answers on, and that is the only way in.
+const sshConfigEnabledIngress = `{"hostKey":"ssh-ed25519 AAAAfakehostkey=="}`
 
 // runSSHConfig executes ssh-config against fake, always with an identity file
 // inside the test's temp dir so no test can read or write the real one.
@@ -125,11 +129,12 @@ func TestSSHConfigEmitsAFriendlyNameAndTheID(t *testing.T) {
 		// Bare first: it is what anyone actually types. The qualified alias
 		// stays as the unambiguous spelling.
 		"Host cheerful_poincare cheerful_poincare.discobox.internal sbx_devbox00000001 sbx_devbox00000001.discobox.internal\n",
-		"    HostName ssh.example.com\n",
-		"    Port 3222\n",
 		// The name is cosmetic; the ID is what routes.
 		"    User sbx_devbox00000001\n",
 		"    IdentitiesOnly yes\n",
+		// One name for the server's key, whatever the alias and whatever the
+		// address, so one known_hosts line covers the project.
+		"    HostKeyAlias " + resolvedTestProjectID + ".discobox.internal\n",
 	} {
 		if !strings.Contains(out, want) {
 			t.Fatalf("output missing %q; got:\n%s", want, out)
@@ -137,6 +142,69 @@ func TestSSHConfigEmitsAFriendlyNameAndTheID(t *testing.T) {
 	}
 	if !strings.Contains(out, "    IdentityFile ") {
 		t.Fatalf("output has no IdentityFile:\n%s", out)
+	}
+}
+
+// TestSSHConfigTunnelsThroughTheCLI is the whole transport: the stanza names no
+// address at all and reaches the ingress the same way every other request does,
+// because the server binds no SSH port.
+func TestSSHConfigTunnelsThroughTheCLI(t *testing.T) {
+	fake := &sshConfigFakeServer{
+		ingress:   sshConfigEnabledIngress,
+		sandboxes: []sshConfigFakeSandbox{{id: "sbx_devbox00000001", name: "devbox"}},
+	}
+	out, _, err := runSSHConfig(t, fake)
+	if err != nil {
+		t.Fatalf("execute ssh-config: %v", err)
+	}
+	if !strings.Contains(out, " box ssh-proxy\n") {
+		t.Fatalf("output has no ProxyCommand naming the proxy subcommand:\n%s", out)
+	}
+	// An address in a stanza would be dialed instead of the proxy, and there is
+	// no server port for it to reach.
+	for _, unwanted := range []string{"HostName", "\n    Port "} {
+		if strings.Contains(out, unwanted) {
+			t.Fatalf("a stanza should name no address, but contains %q:\n%s", unwanted, out)
+		}
+	}
+}
+
+// TestSSHConfigNeedsAHostKey: without one there is nothing to verify the server
+// against, and a config that cannot verify it is worse than none.
+func TestSSHConfigNeedsAHostKey(t *testing.T) {
+	fake := &sshConfigFakeServer{
+		ingress:   `{"hostKey":""}`,
+		sandboxes: []sshConfigFakeSandbox{{id: "sbx_devbox00000001", name: "devbox"}},
+	}
+	_, _, err := runSSHConfig(t, fake)
+	if err == nil {
+		t.Fatal("expected ssh-config to fail with no host key")
+	}
+	if !strings.Contains(err.Error(), "host key") {
+		t.Fatalf("error should say what is missing, got: %v", err)
+	}
+}
+
+// TestSSHProxyCommandLineQuotesItsWords: ssh hands ProxyCommand to /bin/sh, and
+// the executable's path routinely has a space in it on macOS and Windows.
+func TestSSHProxyCommandLineQuotesItsWords(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		// Windows takes the other branch: %COMSPEC% quoting, and a path that
+		// cannot hold the quote character this asserts on.
+		t.Skip("POSIX shell quoting")
+	}
+	line, err := sshProxyCommandLine("unix:///run/disco's dir/api.sock")
+	if err != nil {
+		t.Fatalf("sshProxyCommandLine: %v", err)
+	}
+	if !strings.HasSuffix(line, " box ssh-proxy") {
+		t.Fatalf("ProxyCommand does not end in the subcommand it names: %q", line)
+	}
+	if !strings.Contains(line, `'unix:///run/disco'\''s dir/api.sock'`) {
+		t.Fatalf("ProxyCommand does not quote the endpoint for a shell: %q", line)
+	}
+	if !strings.HasPrefix(line, "'/") && !strings.HasPrefix(line, `'`) {
+		t.Fatalf("ProxyCommand does not quote the executable: %q", line)
 	}
 }
 
@@ -246,43 +314,6 @@ func TestSSHConfigDoesNotReEnrollAKnownKey(t *testing.T) {
 	}
 }
 
-func TestSSHConfigFlagsOverrideTheAdvertisedAddress(t *testing.T) {
-	fake := &sshConfigFakeServer{
-		ingress:   sshConfigEnabledIngress,
-		sandboxes: []sshConfigFakeSandbox{{id: "sbx_devbox00000001", name: "devbox"}},
-	}
-	out, _, err := runSSHConfig(t, fake, "--host", "127.0.0.1", "--port", "22022")
-	if err != nil {
-		t.Fatalf("execute ssh-config: %v", err)
-	}
-	for _, want := range []string{
-		"    HostName 127.0.0.1\n",
-		"    Port 22022\n",
-		"[127.0.0.1]:22022 ssh-ed25519 AAAAfakehostkey==",
-	} {
-		if !strings.Contains(out, want) {
-			t.Fatalf("output missing %q; got:\n%s", want, out)
-		}
-	}
-	if strings.Contains(out, "ssh.example.com") {
-		t.Fatalf("advertised address leaked past the overrides:\n%s", out)
-	}
-}
-
-// TestSSHConfigReportsDisabledIngress: SSH is opt-in, so "not enabled" is an
-// ordinary answer the document carries, and the client should say so rather
-// than emit a config pointing nowhere.
-func TestSSHConfigReportsDisabledIngress(t *testing.T) {
-	fake := &sshConfigFakeServer{ingress: `{"enabled":false}`}
-	_, _, err := runSSHConfig(t, fake)
-	if err == nil {
-		t.Fatal("expected ssh-config to fail when the server has no SSH ingress")
-	}
-	if !strings.Contains(err.Error(), "DISCOBOX_SSH_LISTEN") {
-		t.Fatalf("error should name the setting that enables SSH, got: %v", err)
-	}
-}
-
 func TestKnownHostsHost(t *testing.T) {
 	for _, tc := range []struct {
 		host string
@@ -389,28 +420,5 @@ func TestSSHConfigSkipsASandboxWithNoUnambiguousPattern(t *testing.T) {
 		if strings.Contains(out, broken) {
 			t.Fatalf("emitted a Host line with no patterns, which breaks ssh_config:\n%s", out)
 		}
-	}
-}
-
-// TestSSHConfigReportsNoAddressToWrite covers a server that can serve SSH but
-// binds no TCP port: there is nothing for a persisted config to point at, and
-// the error should say which setting gives it one and which command needs none
-// — rather than failing on the empty address it was handed.
-func TestSSHConfigReportsNoAddressToWrite(t *testing.T) {
-	fake := &sshConfigFakeServer{
-		ingress:   `{"enabled":true,"hostKey":"ssh-ed25519 AAAAfakehostkey=="}`,
-		sandboxes: []sshConfigFakeSandbox{{id: "sbx_devbox00000001", name: "devbox"}},
-	}
-	_, _, err := runSSHConfig(t, fake)
-	if err == nil {
-		t.Fatal("expected ssh-config to fail with no advertised address")
-	}
-	for _, want := range []string{"DISCOBOX_SSH_LISTEN", "disco tools ssh"} {
-		if !strings.Contains(err.Error(), want) {
-			t.Fatalf("error should mention %q, got: %v", want, err)
-		}
-	}
-	if strings.Contains(err.Error(), "missing port") {
-		t.Fatalf("the empty address should be reported as its own case, got: %v", err)
 	}
 }

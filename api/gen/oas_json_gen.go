@@ -13313,28 +13313,14 @@ func (s *SSHIngress) encodeFields(e *jx.Encoder) {
 		}
 	}
 	{
-		if s.Address.Set {
-			e.FieldStart("address")
-			s.Address.Encode(e)
-		}
-	}
-	{
-		e.FieldStart("enabled")
-		e.Bool(s.Enabled)
-	}
-	{
-		if s.HostKey.Set {
-			e.FieldStart("hostKey")
-			s.HostKey.Encode(e)
-		}
+		e.FieldStart("hostKey")
+		e.Str(s.HostKey)
 	}
 }
 
-var jsonFieldsNameOfSSHIngress = [4]string{
+var jsonFieldsNameOfSSHIngress = [2]string{
 	0: "$schema",
-	1: "address",
-	2: "enabled",
-	3: "hostKey",
+	1: "hostKey",
 }
 
 // Decode decodes SSHIngress from json.
@@ -13356,32 +13342,12 @@ func (s *SSHIngress) Decode(d *jx.Decoder) error {
 			}(); err != nil {
 				return errors.Wrap(err, "decode field \"$schema\"")
 			}
-		case "address":
-			if err := func() error {
-				s.Address.Reset()
-				if err := s.Address.Decode(d); err != nil {
-					return err
-				}
-				return nil
-			}(); err != nil {
-				return errors.Wrap(err, "decode field \"address\"")
-			}
-		case "enabled":
-			requiredBitSet[0] |= 1 << 2
-			if err := func() error {
-				v, err := d.Bool()
-				s.Enabled = bool(v)
-				if err != nil {
-					return err
-				}
-				return nil
-			}(); err != nil {
-				return errors.Wrap(err, "decode field \"enabled\"")
-			}
 		case "hostKey":
+			requiredBitSet[0] |= 1 << 1
 			if err := func() error {
-				s.HostKey.Reset()
-				if err := s.HostKey.Decode(d); err != nil {
+				v, err := d.Str()
+				s.HostKey = string(v)
+				if err != nil {
 					return err
 				}
 				return nil
@@ -13398,7 +13364,7 @@ func (s *SSHIngress) Decode(d *jx.Decoder) error {
 	// Validate required fields.
 	var failures []validate.FieldError
 	for i, mask := range [1]uint8{
-		0b00000100,
+		0b00000010,
 	} {
 		if result := (requiredBitSet[i] & mask) ^ mask; result != 0 {
 			// Mask only required fields and check equality to mask using XOR.

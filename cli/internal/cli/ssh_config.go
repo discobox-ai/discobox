@@ -2,8 +2,6 @@ package cli
 
 import (
 	"fmt"
-	"net"
-	"strconv"
 	"strings"
 
 	"github.com/spf13/cobra"
@@ -14,8 +12,6 @@ import (
 )
 
 func (a *App) newSSHConfigCommand() *cobra.Command {
-	var host string
-	var port int
 	var identityFile string
 	var write bool
 	cmd := &cobra.Command{
@@ -27,9 +23,10 @@ func (a *App) newSSHConfigCommand() *cobra.Command {
 			"With --write, the stanzas and the server's host key are written to files this\n" +
 			"command owns and rewrites, and ~/.ssh/config gains a single Include line pointing\n" +
 			"at them. Nothing else in ~/.ssh is edited.\n\n" +
-			"The address comes from the server, which knows where its SSH ingress is reachable;\n" +
-			"--host and --port override it for cases the server cannot know about, such as a\n" +
-			"local port forward.",
+			"The stanzas name no address. They carry a ProxyCommand that reaches the server's\n" +
+			"SSH ingress over the same endpoint every other request uses, which is the only way\n" +
+			"in: the server binds no SSH port of its own. So ssh — and anything built on it,\n" +
+			"such as VS Code Remote-SSH — connects wherever this CLI does.",
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			client, err := a.apiClient()
 			if err != nil {
@@ -39,99 +36,159 @@ func (a *App) newSSHConfigCommand() *cobra.Command {
 			if err != nil {
 				return err
 			}
-			// The written files are named after the project, so resolve what
-			// the flag means: "default" is a server-side alias, and the same
-			// project reached as "default" and by ID must not end up owning two
-			// files and two Include lines.
-			resolvedProjectID := projectID
-			if write {
-				if resolvedProjectID, err = a.concreteProjectID(cmd, client, projectID); err != nil {
-					return err
-				}
-			}
-
-			ingressRes, err := client.GetSSHIngress(cmd.Context())
-			if err != nil {
-				return err
-			}
-			ingress, err := expectResponse[apimodel.SSHIngress](ingressRes)
-			if err != nil {
-				return err
-			}
-			if !ingress.Enabled {
-				// --write mirrors the server into local files, and "no SSH
-				// here" is a state to mirror: an empty config replaces stanzas
-				// that would otherwise keep pointing at a port nothing answers
-				// on. Printing has nothing to mirror and nothing to emit, so it
-				// still says why rather than producing empty output to paste.
-				if write {
-					fmt.Fprintf(cmd.ErrOrStderr(), "this server has no SSH ingress; wrote an empty config\n")
-					return writeManagedSSHConfig(cmd, resolvedProjectID, "", "", "")
-				}
-				return fmt.Errorf("this server has no SSH ingress: set DISCOBOX_SSH_LISTEN to enable it")
-			}
-			address := strings.TrimSpace(ingress.Address.Or(""))
-			if address == "" {
-				// The server can serve SSH but binds no TCP port, so there is
-				// no address a persisted config could point at. `disco tools
-				// ssh` needs none: it carries the session over this same
-				// endpoint for the life of the command.
-				return fmt.Errorf("this server has no SSH address to write a config for: " +
-					"set DISCOBOX_SSH_LISTEN to give it one, or connect with `disco tools ssh`")
-			}
-			ingressHost, ingressPort, err := net.SplitHostPort(address)
-			if err != nil {
-				return fmt.Errorf("server advertised an unusable SSH address %q: %w", address, err)
-			}
-			// Flags are overrides, never defaults: an unset flag means "use
-			// what the server advertises", which is the whole point of asking.
-			if !cmd.Flags().Changed("host") {
-				host = ingressHost
-			}
-			if !cmd.Flags().Changed("port") {
-				if port, err = strconv.Atoi(ingressPort); err != nil {
-					return fmt.Errorf("server advertised an unusable SSH port %q: %w", ingressPort, err)
-				}
-			}
-
-			identityFile, err = a.resolveSSHIdentity(cmd, client, projectID, identityFile)
+			// The written files are named after the project and the host key
+			// is verified under a name derived from it, so resolve what the
+			// flag means either way: "default" is a server-side alias, and the
+			// same project reached as "default" and by ID must not end up
+			// owning two files, two Include lines, and two known_hosts names.
+			resolvedProjectID, err := a.concreteProjectID(cmd, client, projectID)
 			if err != nil {
 				return err
 			}
 
-			sandboxesRes, err := client.ListSandboxes(cmd.Context(), apiclientgen.ListSandboxesParams{ProjectId: projectID})
+			hostKey, err := a.sshHostKey(cmd, client)
 			if err != nil {
 				return err
 			}
-			sandboxesBody, err := expectResponse[apimodel.ListSandboxesBody](sandboxesRes)
-			if err != nil {
-				return err
-			}
-
-			stanzas := renderSSHConfig(sshConfigRender{
-				sandboxes:    sandboxesBody.GetSandboxes(),
-				host:         host,
-				port:         port,
-				identityFile: identityFile,
-				// Only the written config can point at a known_hosts file,
-				// because only it owns one.
-				knownHostsFile: knownHostsFileFor(write, resolvedProjectID),
+			built, err := a.buildManagedSSHConfig(cmd, managedSSHConfigRequest{
+				client:            client,
+				projectID:         projectID,
+				resolvedProjectID: resolvedProjectID,
+				identityFile:      identityFile,
+				hostKey:           hostKey,
+				write:             write,
 			})
+			if err != nil {
+				return err
+			}
 			if write {
-				return writeManagedSSHConfig(cmd, resolvedProjectID, stanzas, knownHostsHost(host, port), ingress.HostKey.Or(""))
+				return writeManagedSSHConfig(cmd, resolvedProjectID, built.stanzas, built.hostKeyAlias, built.hostKey)
 			}
 			out := cmd.OutOrStdout()
-			fmt.Fprint(out, stanzas)
-			fmt.Fprintf(out, "\n# add to your known_hosts:\n# %s %s\n",
-				knownHostsHost(host, port), ingress.HostKey.Or(""))
+			fmt.Fprint(out, built.stanzas)
+			fmt.Fprintf(out, "\n# add to your known_hosts:\n# %s %s\n", built.hostKeyAlias, built.hostKey)
 			return nil
 		},
 	}
-	cmd.Flags().StringVar(&host, "host", "", "Override the address ssh clients should dial (default: whatever the server advertises)")
-	cmd.Flags().IntVar(&port, "port", 0, "Override the SSH port (default: whatever the server advertises)")
 	cmd.Flags().StringVar(&identityFile, "identity-file", "", "Private key to use, generated and enrolled if absent (default: the CLI's own managed key)")
 	cmd.Flags().BoolVarP(&write, "write", "w", false, "Write the config where ssh will find it, instead of printing it")
 	return cmd
+}
+
+// managedSSHConfigRequest is what rendering a project's stanzas needs that the
+// renderer cannot work out for itself.
+type managedSSHConfigRequest struct {
+	client *apiclientgen.Client
+	// projectID is what was asked for, which the API takes; resolvedProjectID
+	// is what it turned out to be, which names the files and the host key.
+	projectID         string
+	resolvedProjectID string
+	// identityFile is the caller's --identity-file, empty to let
+	// resolveSSHIdentity choose and enroll one.
+	identityFile string
+	hostKey      string
+	// write decides whether the stanzas may name a known_hosts file, since only
+	// a written config owns one.
+	write bool
+}
+
+// managedSSHConfig is a project's emitted ssh_config: the stanzas, the name the
+// host key is verified under, the key itself, and the Host pattern each sandbox
+// answers to.
+//
+// The aliases are what a caller handing a host to another program needs — `disco
+// tools vscode` builds a Remote-SSH target out of one — and they cannot be
+// guessed from outside, since a contested pattern is dropped from every stanza
+// that wanted it.
+type managedSSHConfig struct {
+	stanzas      string
+	hostKeyAlias string
+	hostKey      string
+	aliases      map[string]string
+}
+
+// buildManagedSSHConfig resolves the key, lists the project's sandboxes, and
+// renders the stanzas. It does not decide what to do with them: `ssh-config`
+// prints or writes them, and `tools vscode` writes them and opens an editor on
+// one.
+func (a *App) buildManagedSSHConfig(cmd *cobra.Command, req managedSSHConfigRequest) (managedSSHConfig, error) {
+	proxyCommand, err := sshProxyCommandLine(a.serverURL)
+	if err != nil {
+		return managedSSHConfig{}, err
+	}
+	identityFile, err := a.resolveSSHIdentity(cmd, req.client, req.projectID, req.identityFile)
+	if err != nil {
+		return managedSSHConfig{}, err
+	}
+	sandboxesRes, err := req.client.ListSandboxes(cmd.Context(), apiclientgen.ListSandboxesParams{ProjectId: req.projectID})
+	if err != nil {
+		return managedSSHConfig{}, err
+	}
+	sandboxesBody, err := expectResponse[apimodel.ListSandboxesBody](sandboxesRes)
+	if err != nil {
+		return managedSSHConfig{}, err
+	}
+	sandboxes := sandboxesBody.GetSandboxes()
+
+	render := sshConfigRender{
+		sandboxes:    sandboxes,
+		proxyCommand: proxyCommand,
+		hostKeyAlias: sshHostKeyAlias(req.resolvedProjectID),
+		identityFile: identityFile,
+		// Only the written config can point at a known_hosts file, because
+		// only it owns one.
+		knownHostsFile: knownHostsFileFor(req.write, req.resolvedProjectID),
+	}
+
+	// The first surviving pattern is the alias to hand out: they are emitted
+	// friendliest-first, so this is the sandbox's name where the name is
+	// unambiguous and its ID where it is not.
+	patterns := sshConfigHostPatterns(sandboxes)
+	aliases := make(map[string]string, len(sandboxes))
+	for i, sandbox := range sandboxes {
+		if len(patterns[i]) > 0 {
+			aliases[sandbox.ID] = patterns[i][0]
+		}
+	}
+	return managedSSHConfig{
+		stanzas:      renderSSHConfig(render),
+		hostKeyAlias: render.hostKeyAlias,
+		hostKey:      req.hostKey,
+		aliases:      aliases,
+	}, nil
+}
+
+// sshHostKey is the server's host public key, which every emitted stanza pins
+// and nothing else in the document needs.
+//
+// `GET /ssh` used to answer two more questions — whether the server serves SSH,
+// and at what address — and answers neither now: it serves SSH over the
+// transport the API already answers on, and that is the only way in (ADR 0057).
+func (a *App) sshHostKey(cmd *cobra.Command, client *apiclientgen.Client) (string, error) {
+	res, err := client.GetSSHIngress(cmd.Context())
+	if err != nil {
+		return "", err
+	}
+	ingress, err := expectResponse[apimodel.SSHIngress](res)
+	if err != nil {
+		return "", err
+	}
+	hostKey := strings.TrimSpace(ingress.HostKey)
+	if hostKey == "" {
+		return "", fmt.Errorf("server advertised no SSH host key to verify against")
+	}
+	return hostKey, nil
+}
+
+// sshHostKeyAlias is the name every one of a project's stanzas verifies the
+// server's host key under, and so the host field of its known_hosts line.
+//
+// One name per project rather than per address: a proxied stanza has no address
+// for ssh to derive a name from, and a direct one would tie the entry to the
+// address of the day. It is qualified into the same discobox-owned namespace
+// the host patterns are, so it cannot be mistaken for a real hostname.
+func sshHostKeyAlias(projectID string) string {
+	return projectID + hostAliasSuffix
 }
 
 // hostAliasSuffix qualifies each pattern into an obviously discobox-owned

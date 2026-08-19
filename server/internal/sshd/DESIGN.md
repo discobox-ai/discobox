@@ -1,11 +1,14 @@
 # sshd Design
 
 `internal/sshd` is the SSH control-plane ingress ADR 0024 describes: a real
-SSH server (`golang.org/x/crypto/ssh`) listening on `DISCOBOX_SSH_LISTEN`
-that maps SSH session channels onto the existing exec primitive and serves
-`direct-tcpip` through a new sandbox-agent endpoint. The sandbox runs no
-`sshd` — every SSH primitive here is translated into the same `execs`
-primitive and `execstream/frame` codec the CLI already drives.
+SSH server (`golang.org/x/crypto/ssh`) that maps SSH session channels onto the
+existing exec primitive and serves `direct-tcpip` through a new sandbox-agent
+endpoint. The sandbox runs no `sshd` — every SSH primitive here is translated
+into the same `execs` primitive and `execstream/frame` codec the CLI already
+drives.
+
+It binds no listener. The one way in is `GET /ssh/connect` on the API router
+(ADR 0057); there is no `Serve(net.Listener)` and no port to configure.
 
 ## Why this package authenticates independently of `internal/auth`
 
@@ -128,25 +131,28 @@ the channel before accepting, matching what a real `sshd` does for a
 refused `-L` target. See `sandbox-agent/DESIGN.md` for the sandbox-side
 dial and pump, and `pool-agent/DESIGN.md` for the proxy route.
 
-## Two front doors, one server
+## One front door
 
-`sshd.Server` is fed by two things: the optional TCP listener
-(`DISCOBOX_SSH_LISTEN`), and `GET /ssh/connect`, which accepts a websocket and
-hands `websocket.NetConn`'s byte stream to the same `handleConn`. Both
-authenticate identically, because authentication is inside the SSH protocol.
+`sshd.Server` is fed by one thing: `GET /ssh/connect` (`connect_route.go`),
+which accepts a websocket and hands `websocket.NetConn`'s byte stream to
+`handleConn`.
 
-That is what lets `disco tools ssh` work against a server that binds no SSH
-port: reaching the server the way the CLI already reaches it needs no new
-machine-wide surface. The route is exempt from HTTP auth for the same reason
-the TCP listener needs none — SSH authenticates by public key before any
-channel exists, and an HTTP credential in front of it would only be a second
-lock on the same door.
+There was a second — a TCP listener on `DISCOBOX_SSH_LISTEN` — and ADR 0057
+removed it. It bought nothing the route does not already provide, and cost an
+operator a port to configure, publish, and firewall before any of this worked.
+Now SSH is reachable wherever the API is, which is the property every client
+needs: `disco tools ssh` splices a loopback port onto this route, and a
+persisted `ssh_config` reaches it through a `ProxyCommand` that runs `disco box
+ssh-proxy` — which is how every tool built on the `ssh` binary rather than on
+our client gets in: VS Code Remote-SSH, `scp`, `git`. See `cli/DESIGN.md`.
 
-So `GET /ssh` answers two different questions. `enabled` is whether this server
-can serve SSH at all, which is always true; `address` is the advertised TCP
-endpoint, which is absent when none is configured. A client that needs a
-persistent `ssh_config` needs the address; `disco tools ssh` needs only
-`enabled` and the host key.
+The route is exempt from HTTP auth: SSH authenticates by public key inside its
+own protocol, before any channel exists, and an HTTP credential in front of it
+would only be a second lock on the same door.
+
+`GET /ssh` therefore answers one question — what host key to pin. There is no
+address to advertise, because there is nowhere else to dial, and nothing to
+enable, because every server serves it.
 
 ## Endpoint discovery
 

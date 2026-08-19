@@ -3,12 +3,15 @@ package sshd
 import (
 	"context"
 	"errors"
-	"net"
+	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
+	"github.com/coder/websocket"
+	"github.com/go-chi/chi/v5"
 	"golang.org/x/crypto/ssh"
 
 	"github.com/obot-platform/discobox/server/internal/auth"
@@ -105,13 +108,15 @@ func (f *fakeSandboxService) AssignSandboxHarnessSecrets(context.Context, string
 }
 
 // testHarness wires a Server against an in-memory store fixture and a
-// fakeSandboxService, and returns a client-side ssh.ClientConfig plus the
-// listener address once Serve is running.
+// fakeSandboxService, and serves it the way production does: behind
+// `GET /ssh/connect` on an httptest server. That is the only front door there
+// is (ADR 0057), so a test that dials it is testing the real path rather than a
+// listener kept alive for tests.
 type testHarness struct {
 	t         *testing.T
 	server    *Server
 	sandboxes *fakeSandboxService
-	addr      string
+	url       string
 }
 
 func newTestHarness(t *testing.T) *testHarness {
@@ -136,26 +141,44 @@ func newTestHarness(t *testing.T) *testHarness {
 		t.Fatalf("new server: %v", err)
 	}
 
-	ln, err := new(net.ListenConfig).Listen(context.Background(), "tcp", "127.0.0.1:0")
-	if err != nil {
-		t.Fatalf("listen: %v", err)
-	}
-	ctx, cancel := context.WithCancel(context.Background())
-	t.Cleanup(cancel)
-	go func() { _ = srv.Serve(ctx, ln) }()
-	t.Cleanup(func() { _ = ln.Close() })
+	router := chi.NewRouter()
+	RegisterConnectRoute(router, srv)
+	httpServer := httptest.NewServer(router)
+	t.Cleanup(httpServer.Close)
 
-	return &testHarness{t: t, server: srv, sandboxes: sandboxes, addr: ln.Addr().String()}
+	return &testHarness{
+		t: t, server: srv, sandboxes: sandboxes,
+		url: "ws" + strings.TrimPrefix(httpServer.URL, "http") + "/ssh/connect",
+	}
 }
 
+// dial opens an SSH connection the way a client does: a websocket onto
+// /ssh/connect, with the SSH protocol spoken over its byte stream.
 func (h *testHarness) dial(user string, signer ssh.Signer) (*ssh.Client, error) {
+	handshake, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	wsConn, resp, err := websocket.Dial(handshake, h.url, nil)
+	if resp != nil && resp.Body != nil {
+		_ = resp.Body.Close()
+	}
+	if err != nil {
+		return nil, err
+	}
+	// Not the handshake context: it is canceled when this returns, and the
+	// connection outlives the dial that opened it.
+	conn := websocket.NetConn(context.Background(), wsConn, websocket.MessageBinary)
 	config := &ssh.ClientConfig{
 		User:            user,
 		Auth:            []ssh.AuthMethod{ssh.PublicKeys(signer)},
 		HostKeyCallback: ssh.InsecureIgnoreHostKey(), //nolint:gosec // test dials our own freshly generated local server; nothing to verify against
 		Timeout:         5 * time.Second,
 	}
-	return ssh.Dial("tcp", h.addr, config)
+	sshConn, chans, reqs, err := ssh.NewClientConn(conn, h.url, config)
+	if err != nil {
+		_ = conn.Close()
+		return nil, err
+	}
+	return ssh.NewClient(sshConn, chans, reqs), nil
 }
 
 func newTestSigner(t *testing.T) ssh.Signer {

@@ -8025,22 +8025,15 @@ type RevokeSecretGrantNoContent struct{}
 
 func (*RevokeSecretGrantNoContent) revokeSecretGrantRes() {}
 
-// How SSH clients reach this server's SSH ingress. Discovered rather than assumed, so a client never
-// hard-codes a port and an operator can move the endpoint.
+// What an SSH client needs to verify this server. There is no address to discover; SSH reaches the
+// server over the same endpoint every other request uses, so the host key is the whole document.
 // Ref: #/components/schemas/SSHIngress
 type SSHIngress struct {
 	// A URL to the JSON Schema for this object.
 	Schema OptURI `json:"$schema"`
-	// The host:port SSH clients should dial, parseable by net.SplitHostPort. This is the advertised
-	// endpoint, not the bind address: it may name a load balancer, a port mapping, or a tunnel in front
-	// of the server. Absent when SSH is not enabled.
-	Address OptString `json:"address"`
-	// Whether this server has an SSH ingress at all. It is opt-in, so false is a normal answer rather
-	// than an error.
-	Enabled bool `json:"enabled"`
 	// The server's SSH host public key as an authorized_keys(5)-shaped "type base64" line, for a
-	// known_hosts entry. Absent when SSH is not enabled.
-	HostKey OptString `json:"hostKey"`
+	// known_hosts entry.
+	HostKey string `json:"hostKey"`
 }
 
 // GetSchema returns the value of Schema.
@@ -8048,18 +8041,8 @@ func (s *SSHIngress) GetSchema() OptURI {
 	return s.Schema
 }
 
-// GetAddress returns the value of Address.
-func (s *SSHIngress) GetAddress() OptString {
-	return s.Address
-}
-
-// GetEnabled returns the value of Enabled.
-func (s *SSHIngress) GetEnabled() bool {
-	return s.Enabled
-}
-
 // GetHostKey returns the value of HostKey.
-func (s *SSHIngress) GetHostKey() OptString {
+func (s *SSHIngress) GetHostKey() string {
 	return s.HostKey
 }
 
@@ -8068,18 +8051,8 @@ func (s *SSHIngress) SetSchema(val OptURI) {
 	s.Schema = val
 }
 
-// SetAddress sets the value of Address.
-func (s *SSHIngress) SetAddress(val OptString) {
-	s.Address = val
-}
-
-// SetEnabled sets the value of Enabled.
-func (s *SSHIngress) SetEnabled(val bool) {
-	s.Enabled = val
-}
-
 // SetHostKey sets the value of HostKey.
-func (s *SSHIngress) SetHostKey(val OptString) {
+func (s *SSHIngress) SetHostKey(val string) {
 	s.HostKey = val
 }
 

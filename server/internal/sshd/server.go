@@ -94,26 +94,6 @@ func NewServer(opts Options) (*Server, error) {
 	}, nil
 }
 
-// Serve accepts connections on ln until ctx is canceled. It always returns a
-// non-nil error; a canceled context surfaces as the listener's close error,
-// which the caller should treat as a clean shutdown.
-func (s *Server) Serve(ctx context.Context, ln net.Listener) error {
-	go func() {
-		<-ctx.Done()
-		_ = ln.Close()
-	}()
-	for {
-		conn, err := ln.Accept()
-		if err != nil {
-			if ctx.Err() != nil {
-				return ctx.Err()
-			}
-			return err
-		}
-		go s.handleConn(ctx, conn)
-	}
-}
-
 func (s *Server) handleConn(ctx context.Context, conn net.Conn) {
 	defer conn.Close()
 

@@ -1,8 +1,9 @@
 #!/usr/bin/env bats
 #
-# End-to-end coverage of ADR 0024 (SSH is a control-plane ingress onto execs):
-# a plain `ssh`/`scp` client, with no Discobox-specific software, reaching a
-# real sandbox through discobox-server's SSH listener.
+# End-to-end coverage of ADR 0024 (SSH is a control-plane ingress onto execs)
+# and ADR 0057 (the server binds no SSH port): a stock `ssh`/`scp` client, with
+# no Discobox-specific software of its own, reaching a real sandbox through
+# `GET /ssh/connect` by way of the `ProxyCommand` an ssh_config carries.
 #
 # This is the one suite that proves the whole session-mapping chain works
 # against the real sandbox-agent/pool-agent, not mocks: SSH session-channel
@@ -10,8 +11,8 @@
 # exec's frame-based stdout/stderr/exit really do turn back into SSH data and
 # an exit-status.
 #
-# Builds and starts its own server (like sandbox_upgrade.bats), rather than
-# requiring `task dev`, so DISCOBOX_SSH_LISTEN can be set for this run only.
+# Builds and starts its own server (like sandbox_upgrade.bats) rather than
+# requiring `task dev`, so it owns its database, pool, and enrolled key.
 
 setup_file() {
   export REPO_ROOT="$(cd "${BATS_TEST_FILENAME%/*}/../.." && pwd)"
@@ -35,7 +36,6 @@ setup_file() {
   : >"$DISCOBOX_BATS_KNOWN_HOSTS"
 
   export DISCOBOX_BATS_PORT="$(free_port)"
-  export DISCOBOX_BATS_SSH_PORT="$(free_port)"
   export DISCOBOX_BATS_SERVER="http://127.0.0.1:$DISCOBOX_BATS_PORT"
   export DISCOBOX_BATS_SOCKET="$DISCOBOX_BATS_TMP/server.sock"
 
@@ -53,7 +53,6 @@ setup_file() {
 
   PORT="$DISCOBOX_BATS_PORT" \
   DISCOBOX_SERVER_LISTEN="unix://$DISCOBOX_BATS_SOCKET,http://127.0.0.1:$DISCOBOX_BATS_PORT" \
-  DISCOBOX_SSH_LISTEN="127.0.0.1:$DISCOBOX_BATS_SSH_PORT" \
   DATABASE_DSN="$DISCOBOX_BATS_DB" \
   DISCOBOX_DATA_DIR="$DISCOBOX_BATS_DATA_DIR" \
   DISCOBOX_CONFIG_DIR="$DISCOBOX_BATS_CONFIG_DIR" \
@@ -197,6 +196,13 @@ sys.exit(1)
 PY
 }
 
+# ssh_proxy_command is what every stanza this project writes carries, and what
+# this suite dials through: the server binds no SSH port, so reaching it means
+# running the CLI as a ProxyCommand (ADR 0057).
+ssh_proxy_command() {
+  printf '%s --server %s box ssh-proxy' "$REPO_ROOT/build/disco" "$DISCOBOX_BATS_SERVER"
+}
+
 # ssh_client runs an ssh/scp client against this suite's server, trusting its
 # freshly generated host key on first connect and pinning it afterward — the
 # same accept-new-then-pin a real user's known_hosts does, scoped to this
@@ -206,7 +212,7 @@ ssh_client() {
   shift
   "$cmd" \
     -i "$DISCOBOX_BATS_SSH_KEY" \
-    -p "$DISCOBOX_BATS_SSH_PORT" \
+    -o ProxyCommand="$(ssh_proxy_command)" \
     -o StrictHostKeyChecking=accept-new \
     -o UserKnownHostsFile="$DISCOBOX_BATS_KNOWN_HOSTS" \
     -o ConnectTimeout=10 \
@@ -244,7 +250,8 @@ ssh_client() {
   local stray="$DISCOBOX_BATS_TMP/id_ed25519_stray"
   ssh-keygen -t ed25519 -N "" -f "$stray" -C "bats@stray" >/dev/null
 
-  run ssh -i "$stray" -p "$DISCOBOX_BATS_SSH_PORT" \
+  run ssh -i "$stray" \
+    -o ProxyCommand="$(ssh_proxy_command)" \
     -o StrictHostKeyChecking=accept-new -o UserKnownHostsFile="$DISCOBOX_BATS_KNOWN_HOSTS" \
     -o ConnectTimeout=10 -o BatchMode=yes \
     "$DISCOBOX_BATS_SANDBOX_ID@127.0.0.1" 'echo should-not-run'

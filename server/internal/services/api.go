@@ -228,30 +228,21 @@ type ProjectEventService interface {
 	SubscribeProjectEvents(ctx context.Context, projectID string) (<-chan model.ProjectEvent, func(), error)
 }
 
-// SSHIngress is how a client reaches this server's SSH ingress (ADR 0024). It
-// is a resolved value rather than a service: the address is configuration and
-// the host key is loaded once at startup, so there is nothing to call.
+// SSHIngress is what a client needs to verify this server's SSH ingress (ADR
+// 0024, ADR 0057). It is a resolved value rather than a service: the host key
+// is loaded once at startup, so there is nothing to call.
 //
-// Enabled and Address answer different questions. Every server can serve SSH
-// over the transport its API already answers on, so Enabled is about the
-// server being able to at all. Address is the advertised TCP endpoint, which is
-// opted into separately because a machine-wide port is: empty means SSH is
-// reachable but has no address to write into an ssh_config, which is exactly
-// the case `disco tools ssh` exists for.
-//
-// Address is the advertised endpoint, never the bind address — ":3222" names
-// no host and "0.0.0.0:3222" is not dialable, and the reachable endpoint may
-// be a load balancer or tunnel in front of this process.
+// The host key is all of it. Every server serves SSH, over the one transport
+// its API already answers on (`GET /ssh/connect`), so there is no address to
+// advertise and nothing to enable — only a key to pin.
 type SSHIngress struct {
-	Enabled bool
-	Address string
 	HostKey string
 }
 
 // Services groups the dependencies needed by the API operations.
 type Services struct {
-	// SSH is served by GET /ssh so clients discover the SSH endpoint instead
-	// of hard-coding a port.
+	// SSH is served by GET /ssh so a client can pin the host key before it
+	// holds any other credential.
 	SSH SSHIngress
 
 	Projects       ProjectService

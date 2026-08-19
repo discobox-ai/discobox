@@ -3314,7 +3314,7 @@ components:
             type: object
         SSHIngress:
             additionalProperties: false
-            description: How SSH clients reach this server's SSH ingress. Discovered rather than assumed, so a client never hard-codes a port and an operator can move the endpoint.
+            description: What an SSH client needs to verify this server. There is no address to discover; SSH reaches the server over the same endpoint every other request uses, so the host key is the whole document.
             properties:
                 $schema:
                     description: A URL to the JSON Schema for this object.
@@ -3322,17 +3322,11 @@ components:
                     format: uri
                     readOnly: true
                     type: string
-                address:
-                    description: 'The host:port SSH clients should dial, parseable by net.SplitHostPort. This is the advertised endpoint, not the bind address: it may name a load balancer, a port mapping, or a tunnel in front of the server. Absent when SSH is not enabled.'
-                    type: string
-                enabled:
-                    description: Whether this server has an SSH ingress at all. It is opt-in, so false is a normal answer rather than an error.
-                    type: boolean
                 hostKey:
-                    description: The server's SSH host public key as an authorized_keys(5)-shaped "type base64" line, for a known_hosts entry. Absent when SSH is not enabled.
+                    description: The server's SSH host public key as an authorized_keys(5)-shaped "type base64" line, for a known_hosts entry.
                     type: string
             required:
-                - enabled
+                - hostKey
             type: object
 info:
     title: Discobox Sandbox Manager

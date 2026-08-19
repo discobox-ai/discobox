@@ -13,18 +13,72 @@ import (
 	"github.com/coder/websocket"
 )
 
+// sshConnectDialer opens one byte stream to the server's sshd over the
+// transport the API already answers on: a `GET /ssh/connect` websocket, whose
+// stream the server hands to the same sshd its TCP listener feeds.
+//
+// It is the one piece both ways of reaching that sshd without a TCP port share
+// — the loopback bridge below, and the `ProxyCommand` an emitted ssh_config
+// names (ssh_proxy.go) — so neither owns the URL or the client.
+type sshConnectDialer struct {
+	url    string
+	client *http.Client
+}
+
+// sshConnectDialer resolves the endpoint once, so a bridge serving many
+// connections does not rebuild it per connection.
+func (a *App) sshConnectDialer() (sshConnectDialer, error) {
+	baseURL, httpClient, err := a.httpClient()
+	if err != nil {
+		return sshConnectDialer{}, err
+	}
+	socketURL, err := sshConnectWebSocketURL(baseURL)
+	if err != nil {
+		return sshConnectDialer{}, err
+	}
+	return sshConnectDialer{url: socketURL, client: httpClient}, nil
+}
+
+// dial returns the websocket as a net.Conn. Closing it closes the websocket.
+func (d sshConnectDialer) dial(ctx context.Context) (net.Conn, error) {
+	wsConn, resp, err := websocket.Dial(ctx, d.url, &websocket.DialOptions{HTTPClient: d.client})
+	if resp != nil && resp.Body != nil {
+		// The handshake response body carries nothing once the connection is
+		// upgraded, but it is still a body: leaving it open leaks the
+		// underlying connection on every session.
+		_ = resp.Body.Close()
+	}
+	if err != nil {
+		return nil, err
+	}
+	return websocket.NetConn(ctx, wsConn, websocket.MessageBinary), nil
+}
+
+// spliceSSHConnect pumps bytes both ways until either side finishes or the
+// context is canceled. Neither stream is closed here: the caller owns both.
+func spliceSSHConnect(ctx context.Context, local io.ReadWriter, remote io.ReadWriter) {
+	done := make(chan struct{}, 2)
+	go func() { _, _ = io.Copy(remote, local); done <- struct{}{} }()
+	go func() { _, _ = io.Copy(local, remote); done <- struct{}{} }()
+	select {
+	case <-done:
+	case <-ctx.Done():
+	}
+}
+
 // sshBridge is a loopback TCP port that carries SSH to the server over the
 // transport the API already answers on.
 //
 // `ssh` speaks TCP to a host and port and nothing else, and the local endpoint
 // is usually a unix socket. endpoint.StartLoopbackProxy cannot serve here: it
-// is an HTTP reverse proxy, and these are not HTTP bytes. So each accepted
-// connection is spliced to a `GET /ssh/connect` websocket, whose byte stream
-// the server hands to the same sshd its TCP listener feeds.
+// is an HTTP reverse proxy, and these are not HTTP bytes.
 //
 // The port exists for the life of one command. Nothing about it is written
 // down, which is the point: connecting to a sandbox should not require the
-// server to hold a machine-wide SSH port open.
+// server to hold a machine-wide SSH port open. A persisted ssh_config cannot
+// name a port that only exists while a command runs, so what `disco box
+// ssh-config` writes reaches the same sshd through a `ProxyCommand` instead;
+// see ssh_proxy.go.
 type sshBridge struct {
 	listener net.Listener
 	cancel   context.CancelFunc
@@ -50,11 +104,7 @@ func (b *sshBridge) Close() error {
 // closed. Errors on individual connections surface to `ssh` as a closed
 // connection, which is what it already knows how to report.
 func (a *App) startSSHBridge(ctx context.Context) (*sshBridge, error) {
-	baseURL, httpClient, err := a.httpClient()
-	if err != nil {
-		return nil, err
-	}
-	socketURL, err := sshConnectWebSocketURL(baseURL)
+	dialer, err := a.sshConnectDialer()
 	if err != nil {
 		return nil, err
 	}
@@ -73,35 +123,20 @@ func (a *App) startSSHBridge(ctx context.Context) (*sshBridge, error) {
 			if err != nil {
 				return
 			}
-			go bridge.serve(ctx, conn, socketURL, httpClient)
+			go bridge.serve(ctx, conn, dialer)
 		}
 	}()
 	return bridge, nil
 }
 
-func (b *sshBridge) serve(ctx context.Context, conn net.Conn, socketURL string, httpClient *http.Client) {
+func (b *sshBridge) serve(ctx context.Context, conn net.Conn, dialer sshConnectDialer) {
 	defer conn.Close()
-	wsConn, resp, err := websocket.Dial(ctx, socketURL, &websocket.DialOptions{HTTPClient: httpClient})
-	if resp != nil && resp.Body != nil {
-		// The handshake response body carries nothing once the connection is
-		// upgraded, but it is still a body: leaving it open leaks the
-		// underlying connection on every bridged session.
-		_ = resp.Body.Close()
-	}
+	remote, err := dialer.dial(ctx)
 	if err != nil {
 		return
 	}
-	defer wsConn.Close(websocket.StatusNormalClosure, "done")
-	remote := websocket.NetConn(ctx, wsConn, websocket.MessageBinary)
 	defer remote.Close()
-
-	done := make(chan struct{}, 2)
-	go func() { _, _ = io.Copy(remote, conn); done <- struct{}{} }()
-	go func() { _, _ = io.Copy(conn, remote); done <- struct{}{} }()
-	select {
-	case <-done:
-	case <-ctx.Done():
-	}
+	spliceSSHConnect(ctx, conn, remote)
 }
 
 // sshConnectWebSocketURL turns the API base URL into the websocket URL for the

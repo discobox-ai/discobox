@@ -50,9 +50,18 @@ func knownHostsFileFor(write bool, projectID string) string {
 }
 
 type sshConfigRender struct {
-	sandboxes      []apimodel.Sandbox
-	host           string
-	port           int
+	sandboxes []apimodel.Sandbox
+
+	// proxyCommand carries the connection. Nothing here names an address: the
+	// server binds no SSH port, so the stanzas reach it the same way every
+	// other request does (ADR 0057).
+	proxyCommand string
+
+	// hostKeyAlias is what the stanzas verify the host key under, and so the
+	// host field of the matching known_hosts line. Without an address there is
+	// nothing for ssh to derive one from.
+	hostKeyAlias string
+
 	identityFile   string
 	knownHostsFile string
 }
@@ -73,13 +82,17 @@ func renderSSHConfig(in sshConfigRender) string {
 			continue
 		}
 		fmt.Fprintf(&out, "Host %s\n", strings.Join(patterns[i], " "))
-		fmt.Fprintf(&out, "    HostName %s\n", in.host)
-		fmt.Fprintf(&out, "    Port %d\n", in.port)
+		// No HostName and no Port: there is no address to dial. ssh runs the
+		// ProxyCommand and speaks its protocol over its stdio.
+		fmt.Fprintf(&out, "    ProxyCommand %s\n", in.proxyCommand)
 		fmt.Fprintf(&out, "    User %s\n", sandbox.ID)
 		fmt.Fprintf(&out, "    IdentityFile %s\n", in.identityFile)
 		// Without IdentitiesOnly, ssh offers every agent key before this one
 		// and can exhaust MaxAuthTries before reaching it.
 		fmt.Fprintf(&out, "    IdentitiesOnly yes\n")
+		// One name for the server's key, across every alias, so one known_hosts
+		// line covers the whole project.
+		fmt.Fprintf(&out, "    HostKeyAlias %s\n", in.hostKeyAlias)
 		if in.knownHostsFile != "" {
 			fmt.Fprintf(&out, "    UserKnownHostsFile %s\n", in.knownHostsFile)
 		}
@@ -99,10 +112,9 @@ func managedConfigHeader(projectID string) string {
 // writeManagedSSHConfig writes the stanzas and the server's host key, then
 // ensures ~/.ssh/config includes them.
 //
-// stanzas is empty when the server has no SSH ingress, and that writes an empty
+// stanzas is empty when the project has no sandboxes, and that writes an empty
 // config rather than skipping the write: these files mirror the server, so a
-// project that stopped offering SSH must stop offering stanzas that point at a
-// port nothing answers on.
+// project whose last sandbox is gone must stop offering stanzas for it.
 func writeManagedSSHConfig(cmd *cobra.Command, projectID, stanzas, knownHostsHost, hostKey string) error {
 	configPath, knownHostsPath := managedSSHConfigPath(projectID), managedKnownHostsPath(projectID)
 	if err := os.MkdirAll(filepath.Dir(configPath), 0o700); err != nil {

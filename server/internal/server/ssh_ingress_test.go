@@ -41,12 +41,11 @@ func getSSHIngress(t *testing.T, router http.Handler) (int, map[string]any) {
 	return resp.Code, body
 }
 
-// TestSSHIngressRouteAdvertisesTheDialableEndpoint is what lets a client stop
-// hard-coding a port: the address and host key come from the server.
-func TestSSHIngressRouteAdvertisesTheDialableEndpoint(t *testing.T) {
+// TestSSHIngressRouteServesTheHostKey is what a client needs before it holds
+// any other credential: the key to pin, and nothing else — there is no address
+// to discover, because SSH reaches this server the one way (ADR 0057).
+func TestSSHIngressRouteServesTheHostKey(t *testing.T) {
 	router := newSSHIngressRouterForTest(services.SSHIngress{
-		Enabled: true,
-		Address: "ssh.example.com:3222",
 		HostKey: "ssh-ed25519 AAAAfakehostkey==",
 	})
 
@@ -54,40 +53,20 @@ func TestSSHIngressRouteAdvertisesTheDialableEndpoint(t *testing.T) {
 	if status != http.StatusOK {
 		t.Fatalf("GET /ssh status = %d, want %d", status, http.StatusOK)
 	}
-	if body["enabled"] != true {
-		t.Fatalf("enabled = %v, want true", body["enabled"])
-	}
-	if body["address"] != "ssh.example.com:3222" {
-		t.Fatalf("address = %v, want ssh.example.com:3222", body["address"])
-	}
 	if body["hostKey"] != "ssh-ed25519 AAAAfakehostkey==" {
-		t.Fatalf("hostKey = %v, want the advertised host key", body["hostKey"])
+		t.Fatalf("hostKey = %v, want the server's host key", body["hostKey"])
 	}
-}
-
-// TestSSHIngressRouteAnswersWhenDisabled: the ingress is opt-in, so a client
-// must be able to tell "this server has no SSH" from "this server has no such
-// route", which a 404 cannot express.
-func TestSSHIngressRouteAnswersWhenDisabled(t *testing.T) {
-	router := newSSHIngressRouterForTest(services.SSHIngress{})
-
-	status, body := getSSHIngress(t, router)
-	if status != http.StatusOK {
-		t.Fatalf("GET /ssh status = %d, want %d", status, http.StatusOK)
-	}
-	if body["enabled"] != false {
-		t.Fatalf("enabled = %v, want false", body["enabled"])
-	}
-	if _, ok := body["address"]; ok {
-		t.Fatalf("a disabled ingress must not advertise an address, got %v", body["address"])
-	}
-	if _, ok := body["hostKey"]; ok {
-		t.Fatalf("a disabled ingress must not advertise a host key, got %v", body["hostKey"])
+	// The address and the enabled flag are gone, not empty: a client that still
+	// reads them would be reading a distinction this server no longer draws.
+	for _, dropped := range []string{"address", "enabled"} {
+		if _, ok := body[dropped]; ok {
+			t.Fatalf("GET /ssh still carries %q: %v", dropped, body[dropped])
+		}
 	}
 }
 
 // TestSSHIngressIsPublic pins the auth exemption: ssh-config has to read this
-// before any other credential exists, and neither field is a credential.
+// before any other credential exists, and a host public key is not one.
 func TestSSHIngressIsPublic(t *testing.T) {
 	if !auth.IsPublicPath("/ssh") {
 		t.Fatal("/ssh must be reachable without authentication")
