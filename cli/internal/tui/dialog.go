@@ -33,6 +33,10 @@ type dialog struct {
 	input  textinput.Model
 	err    bool
 
+	// defaultNo makes Enter mean no rather than yes, for a question whose
+	// costly answer is yes. Only dlgConfirm reads it.
+	defaultNo bool
+
 	// action receives the result: the chosen action's key, the entered text,
 	// or "yes" for a confirmed question. It is not called on cancel.
 	action func(result string) tea.Cmd
@@ -132,7 +136,15 @@ func (d *dialog) update(msg tea.KeyPressMsg) (tea.Cmd, bool) {
 
 	case dlgConfirm:
 		switch strings.ToLower(keyName(msg)) {
-		case "y", "enter":
+		case "enter":
+			if d.defaultNo {
+				return d.cancel(), true
+			}
+			if d.action != nil {
+				return d.action("yes"), true
+			}
+			return nil, true
+		case "y":
 			if d.action != nil {
 				return d.action("yes"), true
 			}
@@ -266,10 +278,16 @@ func (d *dialog) view(st *styles, width, height int) string {
 	switch d.kind {
 	case dlgConfirm:
 		b.WriteString("\n")
+		yes, no := "yes", "no"
+		if d.defaultNo {
+			no += " (Enter)"
+		} else {
+			yes += " (Enter)"
+		}
 		b.WriteString(st.key.Render("y"))
-		b.WriteString(" yes   ")
+		b.WriteString(" " + yes + "   ")
 		b.WriteString(st.key.Render("n"))
-		b.WriteString(" no")
+		b.WriteString(" " + no)
 	case dlgMessage, dlgText:
 		b.WriteString("\n")
 		b.WriteString(st.dimText.Render("Esc closes"))

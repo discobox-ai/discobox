@@ -89,6 +89,8 @@ func TestDirtyWorkspaceIsAskedAboutAndBothAnswersCreate(t *testing.T) {
 	}{
 		{"y", "true"},
 		{"n", "false"},
+		// Enter is no: the working tree is carried in only when asked for.
+		{"enter", "false"},
 	} {
 		ds := newFakeSource()
 		ds.dirty = true

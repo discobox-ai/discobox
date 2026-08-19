@@ -1525,6 +1525,9 @@ func (m *Model) dirtyChecked(msg dirtyCheckedMsg) tea.Cmd {
 			req.IncludeDirty = "true"
 			return func() tea.Msg { return createMsg{req: req} }
 		})
+	// Enter means no here: carrying the working tree in is the answer that
+	// changes what the sandbox sees, so it has to be asked for.
+	m.dialog.defaultNo = true
 	// Answering no is answering, not canceling, so the sandbox is still
 	// created — from the last commit.
 	m.dialog.onCancel = func() tea.Cmd {
