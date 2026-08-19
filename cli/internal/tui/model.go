@@ -1944,20 +1944,31 @@ func (m *Model) viewLabel(width int) string {
 // viewStatus is the bottom line: the keys, or what just happened. A message
 // displaces the keys until the next one is pressed.
 func (m *Model) viewStatus() string {
-	left := "  " + m.st.dimText.Render(m.hints())
-	switch {
-	case m.statusE:
-		left = "  " + m.st.statusER.Render("✗ "+m.status)
-	case m.status != "":
-		left = "  " + m.st.statusOK.Render(m.status)
-	case m.busy != "":
-		left = "  " + m.st.statusWA.Render(m.busy)
-	}
+	left := "  " + m.statusLine()
 	right := ""
 	if n := m.list.selectionCount(); n > 0 {
 		right = m.st.statusWA.Render(plural(n, "selected", "selected")) + "  "
 	}
 	return spread(left, right, m.inner())
+}
+
+// statusLine is what the bottom line of any screen says: the keys, or what just
+// happened over them.
+//
+// Every screen draws it, the workspace included. A command that failed there —
+// an apply that could not start, a key that could not do what it was pressed
+// for — has nowhere else to say so, and a report the screen it was made on
+// cannot show is a key that looks like it did nothing at all.
+func (m *Model) statusLine() string {
+	switch {
+	case m.statusE:
+		return m.st.statusER.Render("✗ " + m.status)
+	case m.status != "":
+		return m.st.statusOK.Render(m.status)
+	case m.busy != "":
+		return m.st.statusWA.Render(m.busy)
+	}
+	return m.st.dimText.Render(m.hints())
 }
 
 func (m *Model) hints() string {

@@ -1581,3 +1581,44 @@ func TestPrefixVOpensTheWorkspaceBoxInVSCode(t *testing.T) {
 		t.Fatalf("typed %q, want the leader to take the key", got)
 	}
 }
+
+// A command that cannot start says so on the screen it was asked for. The
+// workspace draws its own bottom line, so a report it did not carry was a key
+// that looked like it did nothing — and the window that was waiting for the
+// command stops saying it is.
+func TestAFailedCommandReportsOnTheWorkspace(t *testing.T) {
+	ds := newFakeSource(testSandboxes()...)
+	ds.openErr = errors.New("no pty here")
+	d, m, _ := openWorkspace(t, ds, "enter")
+
+	d.key("ctrl+a")
+	d.key("y") // apply
+	d.wait("the report", func() bool { return m.status != "" })
+
+	if m.overlay != nil {
+		t.Fatal("nothing opened, so nothing should be over the workspace")
+	}
+	if !m.statusE || !strings.Contains(m.status, "no pty here") {
+		t.Fatalf("status = %q (error %v), want the reason apply did not start", m.status, m.statusE)
+	}
+	if m.busy != "" {
+		t.Fatalf("busy = %q, want the window to have stopped waiting", m.busy)
+	}
+	if !strings.Contains(plainFrame(m), "no pty here") {
+		t.Fatalf("the workspace does not show the report:\n%s", plainFrame(m))
+	}
+}
+
+// While a command is starting the workspace says so, in place of the keys: the
+// screen it takes is not up yet, and a key that appears to have done nothing
+// for as long as the server takes is the same key twice.
+func TestTheWorkspaceShowsWhatItIsWaitingFor(t *testing.T) {
+	ds := newFakeSource(testSandboxes()...)
+	d, m, _ := openWorkspace(t, ds, "enter")
+
+	m.busy = "apply…"
+	d.dispatch(sizeMsg(m.width, m.height))
+	if !strings.Contains(plainFrame(m), "apply…") {
+		t.Fatalf("the workspace does not say what it is doing:\n%s", plainFrame(m))
+	}
+}

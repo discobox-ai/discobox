@@ -160,13 +160,18 @@ type zoomPaneMsg struct{}
 // leader because inside a pane Ctrl-C belongs to the application.
 type quitPaneMsg struct{}
 
-// paneOpenedMsg carries a connected overlay terminal back to the model. The
-// workspace's own terminals arrive as workspaceTermMsg instead; see
-// workspace.go.
+// paneOpenedMsg carries a connected overlay terminal back to the model, or the
+// reason there is none. The workspace's own terminals arrive as
+// workspaceTermMsg instead; see workspace.go.
+//
+// A failure comes back the same way a success does rather than as a bare
+// status: the open left the window busy, and only the handler that was waiting
+// for the answer knows it has stopped waiting.
 type paneOpenedMsg struct {
 	action  Interaction
 	sandbox Sandbox
 	term    Terminal
+	err     error
 }
 
 // paneEventMsg is a connection state change under an open pane.
@@ -297,16 +302,19 @@ func (m *Model) openOverlay(act Interaction, sandbox Sandbox) tea.Cmd {
 	ctx, ds, id := m.ctx, m.ds, sandbox.ID
 	return func() tea.Msg {
 		term, err := ds.Open(ctx, act, id, cols, rows)
-		if err != nil {
-			return statusMsg{text: string(act) + ": " + err.Error(), err: true}
-		}
-		return paneOpenedMsg{action: act, sandbox: sandbox, term: term}
+		return paneOpenedMsg{action: act, sandbox: sandbox, term: term, err: err}
 	}
 }
 
-// paneOpened starts drawing a connected overlay terminal.
+// paneOpened starts drawing a connected overlay terminal, or reports why there
+// is none.
 func (m *Model) paneOpened(msg paneOpenedMsg) tea.Cmd {
 	m.busy = ""
+	if msg.err != nil {
+		// Nothing was opened, so the screen is the workspace it already was —
+		// which is where the report has to be legible. See statusLine.
+		return m.report(true, "%s: %v", msg.action, msg.err)
+	}
 	m.nextPaneID++
 	p := &pane{
 		id:      m.nextPaneID,
@@ -1006,7 +1014,7 @@ func (m *Model) viewPaneWindow() string {
 		body = m.viewColumnBox(&m.terminals, false, 0, m.width, true)
 	}
 	rows = append(rows, strings.Split(body, "\n")...)
-	rows = append(rows, " "+pad+padANSI(m.st.dimText.Render(m.hints()), max(inner-2*boxPad, 1))+pad+" ")
+	rows = append(rows, " "+pad+padANSI(m.statusLine(), max(inner-2*boxPad, 1))+pad+" ")
 	return strings.Join(rows, "\n")
 }
 
