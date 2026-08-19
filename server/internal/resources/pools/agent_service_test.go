@@ -70,7 +70,7 @@ func newAgentServiceTestFixture(t *testing.T) (*Service, *poolagentauth.Manager)
 		t.Fatalf("create sandbox-b: %v", err)
 	}
 
-	return NewService(appStore, controlPlane), agentAuth
+	return NewService(appStore, nil, controlPlane), agentAuth
 }
 
 // TestMintSandboxAgentStatusTokensScopeIsAlwaysStatusRead is the load-bearing

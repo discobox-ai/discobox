@@ -326,7 +326,7 @@ func (r *PoolReconciler) failReconcile(pool *model.Pool, generation int64, messa
 // repairAssignedPool repairs a pool whose reconcile failed while sandboxes
 // are assigned: the runtime is stateful, so it is replaced in place rather
 // than latched to failure.
-func (r *PoolReconciler) repairAssignedPool(ctx context.Context, runtimeProvider sandbox.PoolRuntimeReconciler, project *model.Project, provider *model.SandboxProviderInstance, pool *model.Pool, cause error) error {
+func (r *PoolReconciler) repairAssignedPool(ctx context.Context, runtimeProvider sandbox.PoolRuntime, project *model.Project, provider *model.SandboxProviderInstance, pool *model.Pool, cause error) error {
 	assigned, err := r.store.CountSandboxesForPool(ctx, pool.ProjectID, pool.ID)
 	if err != nil {
 		return err
@@ -341,7 +341,7 @@ func (r *PoolReconciler) repairAssignedPool(ctx context.Context, runtimeProvider
 	return nil
 }
 
-func (r *PoolReconciler) resolve(ctx context.Context, pool *model.Pool) (*model.Project, *model.SandboxProviderInstance, sandbox.PoolRuntimeReconciler, error) {
+func (r *PoolReconciler) resolve(ctx context.Context, pool *model.Pool) (*model.Project, *model.SandboxProviderInstance, sandbox.PoolRuntime, error) {
 	project, err := r.store.GetProject(ctx, pool.ProjectID)
 	if err != nil {
 		return nil, nil, nil, err
@@ -363,7 +363,7 @@ func (r *PoolReconciler) resolve(ctx context.Context, pool *model.Pool) (*model.
 	if err != nil {
 		return nil, nil, nil, err
 	}
-	poolRuntime, ok := runtimeProvider.(sandbox.PoolRuntimeReconciler)
+	poolRuntime, ok := runtimeProvider.(sandbox.PoolRuntime)
 	if !ok {
 		return project, provider, nil, nil
 	}

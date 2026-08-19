@@ -28,6 +28,16 @@
   belong in `dockerworker.Engine`; anything backend-specific belongs behind
   `dockerworker.Driver`. A new backend should only implement VM CRUD plus the
   two connection methods.
+- The pool host console must never carry `LabelPoolAgent` (drift detection
+  reconciles and deletes what does) or the pool agent's
+  `discobox.sandbox.managed` label. It is not a pool runtime and not a sandbox.
+- Do not gate the console on pool readiness, registration, health, or a
+  provider instance being enabled. It is opened when those are false; each
+  check would withhold it exactly then. For the same reason it must keep
+  reaching the host through the driver's Docker client, never through the pool
+  agent.
+- Keep console teardown in `RemovePool`. Nothing reconciles the console, so
+  pool deletion is the only thing that removes it.
 - Do not add optional provider metadata, status, or lifecycle interfaces.
   `sandbox.Provider`, `workerpool.WorkerProvider`, and `dockerworker.Driver`
   state required behavior directly. Optional feature interfaces need a runtime

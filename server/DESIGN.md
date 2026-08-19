@@ -89,6 +89,26 @@ Current proxy routes:
   past the handshake is the tunnel's own framing, so the server validates the
   target, authorizes the project, and injects the lease, and owns nothing else.
 
+### Pool Host Console
+
+`/api/projects/{projectId}/pools/{poolId}/console` is hand-wired next to the
+proxies above but is not one of them: nothing is forwarded to a pool agent. The
+control plane terminates the websocket itself and pumps `execstream/frame`
+between the client and a TTY the provider opened on the pool host
+(`server/providers/DESIGN.md#pool-host-console`), so the console answers on a
+host whose pool agent never came up — the case an operator opens one for.
+
+That is also why it takes no pool-agent token scope: there is no pool-agent
+request to scope. Authorization is `ProjectAuthorizer` alone, which today makes
+any project member able to open a root shell on that project's pool hosts. It
+is an administrative capability waiting on an administrative role
+(docs/adr/0051).
+
+The route rejects before upgrading, so a caller whose pool host is unreachable
+reads the reason instead of watching a websocket close, and it passes the
+terminal size on the open (`?rows=&cols=`) so the first prompt is drawn at the
+caller's size.
+
 Proxy handlers must request the narrow worker-agent token scopes needed for the
 flow. The git proxy requests `sandbox:read` and `sandbox:write` because Git HTTP
 uses method and service-specific read/write behavior. The sandbox HTTP port

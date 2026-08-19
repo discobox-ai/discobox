@@ -274,7 +274,7 @@ func newPoolReconcilerTestStore(t *testing.T) *store.Store {
 }
 
 // stubPoolProvider is a provider whose pool runtime always converges. Only the
-// PoolRuntimeReconciler half is exercised; the sandbox surface is present
+// PoolRuntime half is exercised; the sandbox surface is present
 // because the reconciler resolves providers through sandbox.Provider.
 type stubPoolProvider struct{}
 
@@ -288,6 +288,10 @@ func (stubPoolProvider) RepairPool(context.Context, sandbox.PoolManager, *model.
 
 func (stubPoolProvider) RemovePool(context.Context, sandbox.PoolManager, *model.Project, *model.SandboxProviderInstance, *model.Pool) error {
 	return nil
+}
+
+func (stubPoolProvider) OpenConsole(context.Context, *model.SandboxProviderInstance, *model.Pool, sandbox.ConsoleOptions) (sandbox.PTY, error) {
+	return nil, errors.New("no console in unit tests")
 }
 
 func (stubPoolProvider) Initialize(context.Context, *model.SandboxProviderInstance) error { return nil }

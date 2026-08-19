@@ -7,6 +7,7 @@ import (
 	serverapi "github.com/obot-platform/discobox/api/gen"
 	apimodel "github.com/obot-platform/discobox/api/model"
 	"github.com/obot-platform/discobox/server/internal/model"
+	sandbox "github.com/obot-platform/discobox/server/internal/sandbox"
 	"github.com/obot-platform/discobox/server/internal/transport"
 )
 
@@ -171,6 +172,10 @@ type PoolService interface {
 	SetDefaultPool(ctx context.Context, projectID, poolID string) (*model.Project, error)
 	UnsetDefaultPool(ctx context.Context, projectID, poolID string) (*model.Project, error)
 	ReconcilePool(ctx context.Context, projectID, poolID string) (*model.Pool, error)
+	// OpenPoolConsole attaches to the pool host's administrative console: a
+	// privileged root shell on the machine running the pool's runtime, for
+	// debugging the backend itself.
+	OpenPoolConsole(ctx context.Context, projectID, poolID string, opts sandbox.ConsoleOptions) (sandbox.PTY, error)
 
 	RegisterPool(ctx context.Context, input RegisterPoolBody) (*RegisterPoolResponseBody, error)
 	UpdatePoolStatus(ctx context.Context, poolID string, input UpdatePoolStatusBody) (*model.Pool, error)

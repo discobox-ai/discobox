@@ -400,6 +400,26 @@ launcher will supply the same two halves and draw them instead.
   on the sandbox-agent's own cadence (ADR 0046), which is what bounds freshness
   either way.
 
+## Pool Host Console
+
+`disco box pool console [POOL_ID]` attaches this terminal to a root shell on
+the machine hosting a pool's runtime — a WSL guest, a libkrun microVM, a
+droplet, the local Docker host — for debugging that backend
+([ADR 0051](../docs/adr/0051-the-pool-console-attaches-through-the-driver.md)).
+
+It reuses the attach machinery rather than inventing a second one: the same
+`execstream/client.Session` with raw mode, resize tracking, and the leader-key
+detach chord that `disco attach` uses, over a websocket to the control plane's
+console route. What differs is that there is no exec to create or start first
+and no reconnecting transport — the console container is persistent, so a
+dropped connection is reopened by running the command again, and there is no
+session state on the client worth resuming.
+
+The initial terminal size travels as query parameters on the open, because the
+console's shell is started by the server before the session's own resize
+tracking has said anything, and a first prompt drawn at 80x24 would then be
+repainted.
+
 ## SSH Keys and Config (ADR 0024)
 
 `disco box ssh-key` and `disco box ssh-config` are the CLI-side counterpart

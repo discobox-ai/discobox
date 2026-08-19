@@ -47,14 +47,15 @@ sandbox's pool must be ready and schedulable — there is no candidate search
 and no capacity check; sandboxes share their pool's CPU/memory/storage
 envelope with no per-sandbox reservation, docs/adr/0029), capacity waits,
 bootstrap credential minting, pool runtime convergence
-(`sandbox.PoolRuntimeReconciler`), and user-sandbox operations through the
+(`sandbox.PoolRuntime`), and user-sandbox operations through the
 pool-agent API. Docker never appears at this layer or above: the boundary
 contract downward is the `poolruntime.RuntimeProvider` interface, and the
 runtime contract for sandboxes is the pool-agent HTTP API reached through
 `transport.HTTPClientLease`.
 
-`poolruntime.RuntimeProvider` is a five-method interface: `Close`,
-`EnsurePool`, `RepairPool`, `RemovePool`, and `AcquirePoolAgentClient`.
+`poolruntime.RuntimeProvider` is a six-method interface: `Close`,
+`EnsurePool`, `RepairPool`, `RemovePool`, `AcquirePoolAgentClient`, and
+`OpenConsole`.
 `dockerworker.Engine` is its only implementation. The engine owns everything
 Docker: launching the pool-agent container with boot env, socket bind and host
 mounts, scoped volumes, the per-pool sandbox proxy network, health waits,
@@ -161,6 +162,47 @@ The control plane launches the pool-agent container over the VM's Docker
 daemon on every backend. Cloud VM images therefore stay generic: DigitalOcean
 cloud-init only installs and enables Docker; bootstrap identity travels as
 container environment rendered by `dockerworker.BootEnv`.
+
+## Pool Host Console
+
+`Engine.OpenConsole` gives an operator a root shell on the machine hosting a
+pool: a privileged container in the host's PID, IPC, network, UTS, and cgroup
+namespaces, running the pool image, with the host filesystem bind-mounted at
+`/host` and the host's Docker socket in place. (The pool image carries the
+Docker *client* for this: Debian's `docker.io` ships only the daemon, and a
+console with the daemon's socket and no client can inspect it only by hand.) It exists to debug the backends
+themselves — a WSL or macOS VM that will not bring Docker up, an agent that
+never registers — which is why it is engine-owned and reached through
+`Driver.AcquireDockerClient` rather than through the pool agent: the agent is
+one of the things a broken host is not running. It is exposed as
+`sandbox.PoolRuntime.OpenConsole` and served at the control-plane edge (see
+[server](../DESIGN.md#pool-host-console)).
+
+The console is deliberately outside the pool's convergence machinery:
+
+- It is created once per pool host and reattached, so a capture or a trace
+  started in it survives the operator detaching. Its shell is PID 1 in the
+  container, so typing `exit` stops the container and the next console starts a
+  fresh shell in it.
+- It is replaced only when it was built from another image or an older console
+  layout (`LabelConsoleConfig`); there is no drift reconcile, no health wait,
+  and no pool-readiness gate, because a console is asked for precisely when the
+  pool is not healthy.
+- It carries `LabelPoolConsole`, never `LabelPoolAgent`. Pool runtime drift
+  detection reconciles and deletes containers carrying the pool-agent label,
+  and a console is not a pool runtime. The pool agent's own reaping is keyed
+  off `discobox.sandbox.managed`, which the console also does not carry.
+- Nothing reconciles it away, so `RemovePool` removes it as part of pool
+  teardown.
+- It gets no pool envelope: the console is not workload, and an operator
+  debugging a host that is out of memory should not be capped by the pool's
+  share of it.
+
+The host filesystem is bound at the daemon's default (private) propagation.
+`rslave` would reflect mounts made on the host after the console started, but
+the daemon refuses it unless `/` is already shared or slave, which it is not on
+a stock host or a WSL distro. The console shares the host PID namespace, so
+`nsenter -t 1 -a` reaches the host's live mount table anyway.
 
 ## Pool Runtime Drift
 

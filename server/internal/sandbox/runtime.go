@@ -194,15 +194,31 @@ type ResolvedHarnessConfig struct {
 	AdditionalGroups []string
 }
 
-// PoolRuntimeReconciler reconciles provider-owned runtime state for a Pool:
-// the pool is its own runtime host, so these converge one container/VM/pod.
+// PoolRuntime is the provider surface for a pool's own runtime host: the pool
+// is its own runtime host, so these converge and operate one container/VM/pod.
 // The caller owns pool lifecycle persistence and job semantics. RepairPool is
 // only for preserving in-place repair of pools with assigned sandboxes;
 // delete reconciliation must use RemovePool and must not fall back to repair.
-type PoolRuntimeReconciler interface {
+type PoolRuntime interface {
 	ReconcilePool(ctx context.Context, manager PoolManager, project *model.Project, provider *model.SandboxProviderInstance, pool *model.Pool) error
 	RepairPool(ctx context.Context, manager PoolManager, project *model.Project, provider *model.SandboxProviderInstance, pool *model.Pool, reason string) error
 	RemovePool(ctx context.Context, manager PoolManager, project *model.Project, provider *model.SandboxProviderInstance, pool *model.Pool) error
+	// OpenConsole attaches to the pool host's administrative console: a root
+	// shell in the host's own namespaces, for operators debugging the backend
+	// itself. It deliberately does not go through the pool agent, because the
+	// agent is one of the things a broken host stops running.
+	OpenConsole(ctx context.Context, provider *model.SandboxProviderInstance, pool *model.Pool, opts ConsoleOptions) (PTY, error)
+}
+
+// ConsoleOptions configures one attach to a pool host console.
+//
+// It carries only the terminal size, because the console session outlives any
+// one attach: the container is created once per pool host and reattached, so
+// anything baked in at creation would be whatever the first caller happened to
+// ask for. Size is a property of the TTY and is applied on every attach.
+type ConsoleOptions struct {
+	Rows int
+	Cols int
 }
 
 // AttachOptions configures an interactive PTY.

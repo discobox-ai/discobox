@@ -12,6 +12,7 @@ import (
 
 	"github.com/obot-platform/discobox/id"
 	"github.com/obot-platform/discobox/server/internal/model"
+	sandbox "github.com/obot-platform/discobox/server/internal/sandbox"
 	appservice "github.com/obot-platform/discobox/server/internal/service"
 	services "github.com/obot-platform/discobox/server/internal/services"
 )
@@ -31,6 +32,8 @@ type routerTestServices struct {
 	sandboxes      map[string]model.Sandbox
 	sandboxLease   *services.HTTPClientLease
 	sandboxScopes  []string
+	console        *stubPoolConsole
+	consoleErr     error
 }
 
 func newRouterTestServices() *routerTestServices {
@@ -769,6 +772,23 @@ func (s *routerTestServices) DeleteSandboxProviderInstance(_ context.Context, pr
 
 func (s *routerTestServices) ReconcilePool(_ context.Context, projectID, poolID string) (*model.Pool, error) {
 	return s.GetPool(context.Background(), projectID, poolID)
+}
+
+// OpenPoolConsole hands out the stub console the test installed, so the console
+// route can be exercised without a provider or a Docker daemon.
+func (s *routerTestServices) OpenPoolConsole(_ context.Context, projectID, poolID string, opts sandbox.ConsoleOptions) (sandbox.PTY, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.consoleErr != nil {
+		return nil, s.consoleErr
+	}
+	if s.console == nil {
+		return nil, apperrors.NewStatusError(http.StatusNotFound, "pool not found")
+	}
+	s.console.projectID = projectID
+	s.console.poolID = poolID
+	s.console.openOpts = opts
+	return s.console, nil
 }
 
 func (s *routerTestServices) SetDefaultPool(ctx context.Context, projectID, poolID string) (*model.Project, error) {

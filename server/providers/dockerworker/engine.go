@@ -527,6 +527,11 @@ func (e *Engine) removePoolContainer(ctx context.Context, cli *client.Client, po
 	if _, err := cli.ContainerRemove(ctx, name, client.ContainerRemoveOptions{Force: true, RemoveVolumes: true}); err != nil && !cerrdefs.IsNotFound(err) {
 		return err
 	}
+	// The console is engine-created but reconcile-free, so pool teardown is the
+	// only thing that would ever remove it.
+	if err := e.removeConsoleContainer(ctx, cli, poolID); err != nil {
+		return err
+	}
 	return e.removeSandboxNetwork(ctx, cli, poolID)
 }
 

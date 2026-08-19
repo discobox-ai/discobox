@@ -57,6 +57,10 @@ type RuntimeProvider interface {
 	// AcquirePoolAgentClient returns an HTTP client lease that reaches the pool
 	// agent API for the pool.
 	AcquirePoolAgentClient(ctx context.Context, pool *model.Pool) (*transport.HTTPClientLease, error)
+	// OpenConsole attaches to the pool host's administrative console. It reaches
+	// the host runtime directly, not through the pool agent, so it answers on a
+	// host whose agent is exactly what refuses to come up.
+	OpenConsole(ctx context.Context, provider *model.SandboxProviderInstance, pool *model.Pool, opts sandbox.ConsoleOptions) (sandbox.PTY, error)
 }
 
 // Provider is a sandbox provider backed by pool hosts.
@@ -162,6 +166,18 @@ func (p *Provider) RemovePool(ctx context.Context, _ sandbox.PoolManager, projec
 // deadline (pools.armRegistrationTimeout). Arming it from here meant a provider
 // call made on the pool's own reconcile path marking that same pool dirty,
 // which the engine now rejects outright: see reconcile.ErrSelfMark.
+
+// OpenConsole opens the pool host's administrative console. Unlike every other
+// pool-scoped operation here it consults no pool state and waits for no
+// capacity: a console is asked for precisely when the pool is not answering,
+// so gating it on the pool being ready would withhold it exactly when it is
+// needed.
+func (p *Provider) OpenConsole(ctx context.Context, provider *model.SandboxProviderInstance, pool *model.Pool, opts sandbox.ConsoleOptions) (sandbox.PTY, error) {
+	if pool == nil {
+		return nil, fmt.Errorf("pool is required")
+	}
+	return p.runtimeProvider.OpenConsole(ctx, provider, pool, opts)
+}
 
 func (p *Provider) Create(ctx context.Context, ref sandbox.SandboxRef, state []byte, opts sandbox.CreateOptions) (*sandbox.Sandbox, []byte, error) {
 	if p.manager == nil {

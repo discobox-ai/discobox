@@ -32,6 +32,10 @@ flowchart LR
   refuses the project's default pool, and submits delete intent; the
   reconciler removes the runtime, then deletes the row. The seeded pool is
   not otherwise special — after first install it is an ordinary pool.
+  `OpenPoolConsole` also lives here, and is the one pool operation that checks
+  nothing: it resolves the pool's provider and asks for an administrative
+  console on the pool host, without requiring the pool to be ready, registered,
+  or its provider instance enabled (`server/providers/DESIGN.md`).
 - `agent_service.go` — the pool agent surface: bootstrap-token registration
   (`RegisterPool`), heartbeats (`UpdatePoolStatus`), sandbox-state reports
   (`ReportPoolSandboxStates`, ADR 0017 §10), and (ADR 0030)
@@ -54,7 +58,7 @@ flowchart LR
   can tell a pending retry from a settled failure).
 - `reconciler.go` — `PoolReconciler`: converges the pool's single runtime
   host (container/VM/pod) toward its desired state through the provider's
-  `PoolRuntimeReconciler`. Active pools are drift-checked and repaired in
+  `PoolRuntime`. Active pools are drift-checked and repaired in
   place when sandboxes are assigned; a runtime whose agent never registers
   within the timeout is repaired with a fresh bootstrap token; delete removes
   the runtime and then the row. Failure latching follows `EverCreated`:

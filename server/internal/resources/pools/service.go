@@ -13,18 +13,20 @@ import (
 
 	"github.com/obot-platform/discobox/server/internal/apperrors"
 	"github.com/obot-platform/discobox/server/internal/model"
+	sandbox "github.com/obot-platform/discobox/server/internal/sandbox"
 	services "github.com/obot-platform/discobox/server/internal/services"
 	"github.com/obot-platform/discobox/server/internal/store"
 )
 
 type Service struct {
 	store           *store.Store
+	providers       *sandbox.ProviderManager
 	pools           *ControlPlane
 	sandboxReporter SandboxStateReporter
 }
 
-func NewService(appStore *store.Store, controlPlane *ControlPlane) *Service {
-	return &Service{store: appStore, pools: controlPlane}
+func NewService(appStore *store.Store, providerManager *sandbox.ProviderManager, controlPlane *ControlPlane) *Service {
+	return &Service{store: appStore, providers: providerManager, pools: controlPlane}
 }
 
 func mapAPIError(err error, notFoundMessage string) error {
@@ -191,4 +193,38 @@ func (s *Service) DeletePool(ctx context.Context, projectID, poolID string) erro
 		return mapAPIError(err, "pool not found")
 	}
 	return nil
+}
+
+// OpenPoolConsole attaches to the pool host's administrative console.
+//
+// It resolves the pool's provider and asks it for the console directly. It
+// deliberately does not require the pool to be ready, registered, or
+// schedulable, and it does not refuse a disabled provider instance: a console
+// is asked for when the pool is broken, and every one of those checks would
+// withhold it exactly then.
+func (s *Service) OpenPoolConsole(ctx context.Context, projectID, poolID string, opts sandbox.ConsoleOptions) (sandbox.PTY, error) {
+	pool, err := s.store.GetPool(ctx, projectID, poolID)
+	if err != nil {
+		return nil, mapAPIError(err, "pool not found")
+	}
+	provider, err := s.store.GetSandboxProviderInstance(ctx, projectID, pool.ProviderInstanceID)
+	if err != nil {
+		return nil, mapAPIError(err, "pool provider instance not found")
+	}
+	if s.providers == nil {
+		return nil, apperrors.NewStatusError(http.StatusServiceUnavailable, "sandbox provider manager is not configured")
+	}
+	instance, err := s.providers.ResolveInstance(ctx, provider)
+	if err != nil {
+		return nil, err
+	}
+	runtime, ok := instance.(sandbox.PoolRuntime)
+	if !ok {
+		return nil, apperrors.NewStatusError(http.StatusNotImplemented, fmt.Sprintf("provider %q hosts no pool runtime to open a console on", provider.Type))
+	}
+	console, err := runtime.OpenConsole(ctx, provider, pool, opts)
+	if err != nil {
+		return nil, err
+	}
+	return console, nil
 }

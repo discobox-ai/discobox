@@ -152,6 +152,7 @@ type testRuntimeProvider struct {
 	staticToken  bool
 	acquireErrs  []error
 	acquireCalls int
+	consoleCalls int
 }
 
 func (p *testRuntimeProvider) Close() error { return nil }
@@ -170,6 +171,11 @@ func (p *testRuntimeProvider) RepairPool(context.Context, *model.Project, *model
 
 func (p *testRuntimeProvider) RemovePool(context.Context, *model.Project, *model.SandboxProviderInstance, *model.Pool) error {
 	return nil
+}
+
+func (p *testRuntimeProvider) OpenConsole(context.Context, *model.SandboxProviderInstance, *model.Pool, sandbox.ConsoleOptions) (sandbox.PTY, error) {
+	p.consoleCalls++
+	return nil, errors.New("no console in unit tests")
 }
 
 func (p *testRuntimeProvider) AcquirePoolAgentClient(context.Context, *model.Pool) (*transport.HTTPClientLease, error) {

@@ -20,7 +20,7 @@ type ProviderConfigField = contract.ProviderConfigField
 type ProviderDefinition = contract.ProviderDefinition
 type StateEvent = contract.StateEvent
 type HTTPClientLease = transport.HTTPClientLease
-type PoolRuntimeReconciler = contract.PoolRuntimeReconciler
+type PoolRuntime = contract.PoolRuntime
 type PoolManager = contract.PoolManager
 
 var ErrNotFound = contract.ErrNotFound
