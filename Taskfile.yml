@@ -10,11 +10,16 @@ vars:
   # startup, so this is derived from IROH_TAG rather than restating its
   # condition and drifting from it.
   DEV_LISTEN: '{{if .IROH_TAG}}iroh://{{end}}'
-  BINARY: build/discobox-server
+  # Windows resolves an extensionless name through PATHEXT, so `disco` there
+  # finds `disco.exe` first. Without the suffix a build lands beside whatever
+  # .exe was left by an earlier one, and the shell keeps running the stale
+  # binary while the build reports success.
+  EXE: '{{if eq OS "windows"}}.exe{{end}}'
+  BINARY: build/discobox-server{{.EXE}}
   SERVER_MAIN: ./cmd/discobox-server
-  CLI_BINARY: build/disco
+  CLI_BINARY: build/disco{{.EXE}}
   CLI_MAIN: ./cmd/disco
-  HOOKS_BINARY: build/discobox-hooks
+  HOOKS_BINARY: build/discobox-hooks{{.EXE}}
   HOOKS_MAIN: ./cmd/discobox-hooks
   PACKAGES: ./...
 
@@ -57,6 +62,13 @@ tasks:
 
   build:cli:
     desc: Compile disco CLI
+    deps:
+      # disco embeds the server, and with it the guest relay (root.go runs the
+      # server in-process for `disco box server`). Without this the CLI still
+      # compiles -- the go:embed target is a directory a committed README
+      # satisfies -- and then fails every wslc pool at runtime with an error
+      # telling the user to run a build task.
+      - build:cp-relay
     cmds:
       - mkdir -p build
       - rm -f {{.CLI_BINARY}}
@@ -78,8 +90,10 @@ tasks:
       # gzipped it costs about 1 MB. The artifact is gitignored; without it the
       # server still builds and only the wslc provider refuses to start.
       - cd pool-agent && GOOS=linux GOARCH=amd64 go build -trimpath -ldflags="-s -w" -o ../build/discobox-cp-relay ./cmd/discobox-cp-relay
-      - gzip -9 -c build/discobox-cp-relay > {{.RELAY_OUT}}
-      - 'echo "embedded guest relay is $(wc -c < {{.RELAY_OUT}}) bytes compressed"'
+      # Compressed by a Go helper rather than gzip(1) and a shell redirect:
+      # Windows ships no gzip, Git's is absent from a PowerShell or cmd PATH,
+      # and a gzip whose stdout reaches a console refuses to write at all.
+      - go run ./cmd/discobox-gzip build/discobox-cp-relay {{.RELAY_OUT}}
 
   build:vz-guest:
     desc: Build the macOS pool guest image and stage it where the vz provider finds it
@@ -195,13 +209,20 @@ tasks:
       - ./{{.BINARY}}
 
   dev:
-    desc: Run the server and Docker image watcher development tasks
+    desc: "Run the server and Docker image watcher (`-- N` shifts the API port by N)"
     deps:
       - dev:server
       - dev:docker-image-watch
 
   dev:server:
     desc: Run discobox-server with watchnbuild hot reload on the local socket
+    deps:
+      # The guest relay is embedded into the server binary at compile time, so
+      # it has to exist before the first build. Without it a Windows dev server
+      # starts fine and then fails every wslc pool with ErrNotBuilt, which reads
+      # like a provider bug rather than a missing build step. Hot rebuilds reuse
+      # the artifact; rerun `task build:cp-relay` after changing the relay.
+      - build:cp-relay
     env:
       # A development server listens where every other server does: the local
       # socket or named pipe, plus iroh where the build carries it. So

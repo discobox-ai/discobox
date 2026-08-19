@@ -19,7 +19,7 @@ debounce: 1s
 build:
   # Nothing removes build/disco first: go build replaces the output atomically
   # and leaves the old binary in place when compilation fails.
-  command: cd cli && go build -o ../build/disco ./cmd/disco
+  command: cd cli && go build -o ../build/disco$(go env GOEXE) ./cmd/disco
   grace: 2s
 
 # no run: — build-only.

@@ -26,13 +26,14 @@ build:
   # rebuild: an unsigned binary has no virtualization entitlement, and the vz
   # provider cannot start a pool without it.
   command: >-
-    cd cli && go build -o ../build/disco ./cmd/disco &&
-    cd ../server && go build -gcflags="all=-N -l" -o ../build/discobox-server ./cmd/discobox-server &&
+    EXE=$(go env GOEXE) &&
+    cd cli && go build -o ../build/disco$EXE ./cmd/disco &&
+    cd ../server && go build -gcflags="all=-N -l" -o ../build/discobox-server$EXE ./cmd/discobox-server &&
     cd .. && go tool task sign:server build:hooks
   grace: 2s
 
 run:
-  command: ./build/discobox-server
+  command: ./build/discobox-server$(go env GOEXE)
   # Long enough to let a shutdown that is draining sandboxes finish. A grace
   # this long is only safe because wnb stays responsive while stopping: Ctrl-C
   # a second time and the process group is killed immediately rather than
