@@ -1,6 +1,7 @@
 {
   "apiVersion": "discobox.dev/image/v1",
   "env": {
+    "DISPLAY": ":0",
     "NIX_CONFIG": "experimental-features = nix-command flakes",
     "NIX_REMOTE": "daemon",
     "NPM_CONFIG_PREFIX": "%HOME%/.npm-global",

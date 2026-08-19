@@ -123,5 +123,13 @@ func TestIncludedImageJSONFilesAreValid(t *testing.T) {
 		if metadata.Harness == nil {
 			t.Errorf("%s declares no harness", match)
 		}
+		// Every harness image extends the sandbox-agent base, which ships the
+		// desktop, and nothing merges the base's env into a harness manifest
+		// (harness/DESIGN.md) — so each one has to declare DISPLAY itself.
+		// Forgetting it is silent: every GUI tool in that sandbox fails with
+		// "cannot open display" and nothing else says why.
+		if got := metadata.Env["DISPLAY"]; got != ":0" {
+			t.Errorf("%s env DISPLAY = %q, want \":0\"", match, got)
+		}
 	}
 }

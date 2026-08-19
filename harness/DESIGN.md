@@ -27,6 +27,19 @@ sandbox terminals.
   selected by the `SANDBOX_AGENT_IMAGE` build argument, and must repeat any
   base env/volumes they still need (the harness's own `image.json` is the
   final image's sole metadata source; nothing merges with the base image's).
+  The `Dockerfile` and the `image.json` beside it therefore go together: what
+  the image installs and what it declares are one authoring unit, and every
+  base-provided fact is restated by hand until there is a composition pattern
+  for these manifests. `DISPLAY` and the `NIX_*`/`PATH` block are the current
+  cost of that.
+- Every `image.json` declares `DISPLAY=:0`, because the base image ships the
+  socket-activated desktop (Xorg dummy on `:0`, openbox, x11vnc, websockify —
+  see [`sandbox-agent/DESIGN.md`](../sandbox-agent/DESIGN.md)) unconditionally,
+  and every harness extends that base. Without it nothing in a sandbox can open
+  a window: `DISPLAY` reaches an exec only through `sandbox.json`'s env, which
+  is where the image layer lands. It is safe to declare always because nothing
+  runs until something connects — `xvfb.service` is `static`, pulled up on
+  demand by `x11-display.socket` — so an unused `DISPLAY` starts no X server.
 - `harnessMode: config` selects the image-owned interactive config command;
   normal or omitted mode selects the image-owned run/relaunch commands.
 
