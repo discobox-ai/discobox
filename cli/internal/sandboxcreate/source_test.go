@@ -4,7 +4,9 @@ import (
 	"context"
 	"os"
 	"os/exec"
+	"path"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 
@@ -23,8 +25,8 @@ func TestResolveRunSourceCleanLocalBranch(t *testing.T) {
 	if source.Kind != runSourceKindGit || source.LocalDirectory != repo || source.RepoRoot != repo {
 		t.Fatalf("source identity = %#v, want local git repo %s", source, repo)
 	}
-	if source.Destination.Directory != repo || source.Destination.WorkingDirectory != repo {
-		t.Fatalf("destination = %#v, want repo root", source.Destination)
+	if want := wantRunDestination(t, repo, repo); source.Destination != want {
+		t.Fatalf("destination = %#v, want %#v", source.Destination, want)
 	}
 	if source.Checkout.Commit != baseCommit || source.Checkout.RefName != "feature-foo" || source.Checkout.RefType != runSourceRefTypeBranch {
 		t.Fatalf("checkout = %#v, want feature branch at %s", source.Checkout, baseCommit)
@@ -200,8 +202,8 @@ func TestResolveRunSourceLocalSubdirectoryUsesRepoRootDestinationAndSubdirWorkin
 	if source.LocalDirectory != repo || source.RepoRoot != repo {
 		t.Fatalf("source identity = %#v, want repo root %s", source, repo)
 	}
-	if source.Destination.Directory != repo || source.Destination.WorkingDirectory != subdir {
-		t.Fatalf("destination = %#v, want directory %s working directory %s", source.Destination, repo, subdir)
+	if want := wantRunDestination(t, repo, subdir); source.Destination != want {
+		t.Fatalf("destination = %#v, want %#v", source.Destination, want)
 	}
 }
 
@@ -217,8 +219,8 @@ func TestResolveRunSourceLocalSubdirectoryOutsideCurrentWorkingDirectoryKeepsSub
 	if err != nil {
 		t.Fatalf("resolveRunSource: %v", err)
 	}
-	if source.Destination.Directory != repo || source.Destination.WorkingDirectory != subdir {
-		t.Fatalf("destination = %#v, want directory %s working directory %s", source.Destination, repo, subdir)
+	if want := wantRunDestination(t, repo, subdir); source.Destination != want {
+		t.Fatalf("destination = %#v, want %#v", source.Destination, want)
 	}
 }
 
@@ -230,8 +232,8 @@ func TestResolveRunSourceLocalRepoRootOutsideCurrentWorkingDirectoryUsesRepoRoot
 	if err != nil {
 		t.Fatalf("resolveRunSource: %v", err)
 	}
-	if source.Destination.Directory != repo || source.Destination.WorkingDirectory != repo {
-		t.Fatalf("destination = %#v, want repo root", source.Destination)
+	if want := wantRunDestination(t, repo, repo); source.Destination != want {
+		t.Fatalf("destination = %#v, want %#v", source.Destination, want)
 	}
 }
 
@@ -375,8 +377,8 @@ func TestResolveRunSourceDirectoryWithoutRepositoryCarriesEverythingAsASnapshot(
 	if _, err := os.Stat(filepath.Join(dir, ".git")); !os.IsNotExist(err) {
 		t.Fatalf("stat %s/.git = %v, want the user's directory left alone", dir, err)
 	}
-	if source.Destination.Directory != dir || source.Destination.WorkingDirectory != dir {
-		t.Fatalf("destination = %#v, want the directory itself", source.Destination)
+	if want := wantRunDestination(t, dir, dir); source.Destination != want {
+		t.Fatalf("destination = %#v, want %#v", source.Destination, want)
 	}
 	if source.Checkout.Commit == "" || source.Checkout.RefName == "" || source.Checkout.RefType != runSourceRefTypeBranch {
 		t.Fatalf("checkout = %#v, want a branch at the empty base commit", source.Checkout)
@@ -477,4 +479,32 @@ func testLocalSources(source resolvedRunSource) *LocalSources {
 	local := &LocalSources{}
 	local.add("", source)
 	return local
+}
+
+// wantRunDestination is where a local repo root and working directory land
+// inside the sandbox on the platform the test is running on.
+//
+// On a POSIX host the destination mirrors the host path, because a POSIX path
+// is already usable inside the sandbox. Windows paths are not -- the sandbox
+// runs Linux -- so there the source goes to the default container location and
+// the working directory keeps only its position within the repository. The
+// invariant both share, and what these tests are really about, is that the
+// working directory sits at the same relative position under the source root.
+func wantRunDestination(t *testing.T, repoRoot, workingDirectory string) resolvedRunSourceDestination {
+	t.Helper()
+	if runtime.GOOS != "windows" {
+		return resolvedRunSourceDestination{Directory: repoRoot, WorkingDirectory: workingDirectory}
+	}
+	want := resolvedRunSourceDestination{
+		Directory:        defaultRunSourceDir,
+		WorkingDirectory: defaultRunWorkingDir,
+	}
+	rel, err := filepath.Rel(repoRoot, workingDirectory)
+	if err != nil {
+		t.Fatalf("relative path of %s within %s: %v", workingDirectory, repoRoot, err)
+	}
+	if rel != "." {
+		want.WorkingDirectory = path.Join(defaultRunSourceDir, filepath.ToSlash(rel))
+	}
+	return want
 }

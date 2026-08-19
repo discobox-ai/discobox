@@ -8,6 +8,7 @@ import (
 	"os"
 	"path"
 	"path/filepath"
+	"runtime"
 	"strings"
 
 	apiclientgen "github.com/obot-platform/discobox/api/gen"
@@ -759,10 +760,35 @@ func localRunDestination(repoRoot, sourceDir string) resolvedRunSourceDestinatio
 	if dir := filepath.Clean(sourceDir); pathInsideDirectory(repoRoot, dir) {
 		workingDirectory = dir
 	}
+	if runtime.GOOS == "windows" {
+		return windowsRunDestination(repoRoot, workingDirectory)
+	}
 	return resolvedRunSourceDestination{
 		Directory:        repoRoot,
 		WorkingDirectory: workingDirectory,
 	}
+}
+
+// windowsRunDestination places the source at the default container location
+// rather than mirroring the host path.
+//
+// Mirroring only works because a POSIX host path is already a valid path inside
+// the sandbox. A Windows one is not: the sandbox runs Linux, and the daemon
+// rejects "E:\src\project" outright as not absolute, so the sandbox fails
+// before it receives its source. The subdirectory the user asked to run in is
+// still honored, by its position within the repository rather than by its
+// spelling on this machine.
+func windowsRunDestination(repoRoot, workingDirectory string) resolvedRunSourceDestination {
+	destination := resolvedRunSourceDestination{
+		Directory:        defaultRunSourceDir,
+		WorkingDirectory: defaultRunWorkingDir,
+	}
+	rel, err := filepath.Rel(repoRoot, workingDirectory)
+	if err != nil || rel == "." {
+		return destination
+	}
+	destination.WorkingDirectory = path.Join(defaultRunSourceDir, filepath.ToSlash(rel))
+	return destination
 }
 
 func pathInsideDirectory(root, path string) bool {

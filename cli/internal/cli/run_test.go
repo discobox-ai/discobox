@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 
@@ -109,8 +110,15 @@ func TestRunCommandCreatesSandbox(t *testing.T) {
 		t.Fatalf("checkout = %#v, want commit %s", checkout, commit)
 	}
 	destination := source["destination"].(map[string]any)
-	if destination["directory"] != repo || destination["workingDirectory"] != repo {
-		t.Fatalf("destination = %#v, want repo root", destination)
+	// A POSIX host path doubles as a sandbox path, so the destination mirrors
+	// the repo root there. Windows paths do not -- the sandbox runs Linux -- so
+	// the source lands at the default container location instead.
+	wantDir := repo
+	if runtime.GOOS == "windows" {
+		wantDir = "/workspace/source"
+	}
+	if destination["directory"] != wantDir || destination["workingDirectory"] != wantDir {
+		t.Fatalf("destination = %#v, want %s", destination, wantDir)
 	}
 	workspace := source["workspace"].(map[string]any)
 	if workspace["mode"] != "clean" {
@@ -154,8 +162,15 @@ func TestRunCommandDefaultsSourceToCurrentDirectory(t *testing.T) {
 		t.Fatalf("localDirectory = %q, want %s", source["localDirectory"], repo)
 	}
 	destination := source["destination"].(map[string]any)
-	if destination["directory"] != repo || destination["workingDirectory"] != repo {
-		t.Fatalf("destination = %#v, want repo root", destination)
+	// A POSIX host path doubles as a sandbox path, so the destination mirrors
+	// the repo root there. Windows paths do not -- the sandbox runs Linux -- so
+	// the source lands at the default container location instead.
+	wantDir := repo
+	if runtime.GOOS == "windows" {
+		wantDir = "/workspace/source"
+	}
+	if destination["directory"] != wantDir || destination["workingDirectory"] != wantDir {
+		t.Fatalf("destination = %#v, want %s", destination, wantDir)
 	}
 	prompt, ok := config["prompt"].([]any)
 	if !ok || len(prompt) != 2 || prompt[0] != "fix" || prompt[1] != "tests" {
