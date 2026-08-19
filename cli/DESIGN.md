@@ -618,6 +618,54 @@ mechanism they use is the primary source's, not a second one:
 - Only the primary source names a working directory. A reference says where it
   goes and nothing about where the harness starts.
 
+## Declared Sources
+
+A repository can name the others it is worked on with, in
+`.discobox/sources.json` at the primary source's root:
+
+```json
+{"foo": "https://github.com/acme/foo"}
+```
+
+`disco run` and the launcher both bring them in, as source code references
+resolved exactly like `--include`:
+
+- **A local checkout wins.** `foo` is looked for at the sibling of the primary
+  source — `../foo` — and used when it is a directory, with its own
+  dirty-workspace question and its own delivery. It is used whatever its
+  `origin` says: a fork checked out next door is the usual reason for a
+  mismatch and is what the caller has. The disagreement is reported rather than
+  resolved silently, because a directory that merely shares the name looks
+  identical from here.
+- **A clone lands at the same path.** With no checkout, the declared URL is
+  cloned to the sibling path the checkout would have occupied, not to
+  `/workspace/<name>`. That is the point of declaring a source: `../foo` from
+  the primary source resolves inside the sandbox whether or not the caller had
+  foo checked out, so a script in the repository works for everyone.
+- **The value is a Git URL, never a path.** Where a source is looked for locally
+  is not the file's to say — the checkout is found by name, beside the primary
+  source — so only the URL to fall back to belongs here. A path is refused
+  rather than resolved: relative to the caller's working directory it would
+  quietly bring in some other repository.
+- `--include` outranks a declaration of the same source, and a declaration that
+  resolves to something already brought in is skipped rather than refused.
+- Only the primary source's file is read. There is no recursion, so a declared
+  source's own declarations do nothing.
+- The file is read from the working tree, not the checked-out commit. With
+  `--include-dirty=false` the sandbox runs committed code from a source list the
+  caller can see on disk, which is the less surprising of the two.
+- A remote primary source declares nothing: the file lives in a checkout, and
+  reading it would mean cloning the repository here first, which is the
+  sandbox's job.
+- `--declared-sources=false` leaves them out, for a caller who wants only what
+  they named — or does not want a large clone on every run.
+
+`sandboxcreate` resolves them and reports through
+`PromptOptions.ReportDeclaredSource`; `disco run` prints one line per source on
+stderr. The launcher passes no reporter — it owns its screen and has no status
+line for per-source progress — so it brings the same sources in silently. See
+[ADR 0056](../docs/adr/0056-a-repository-declares-the-sources-it-is-worked-on-with.md).
+
 ## A Directory That Is Not a Repository
 
 Running against a directory in no Git repository is the same mechanism one step

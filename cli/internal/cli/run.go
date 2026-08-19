@@ -13,6 +13,9 @@ import (
 type runCommandOptions struct {
 	prompt sandboxcreate.PromptOptions
 	detach bool
+	// declaredSources is the flag's positive form: the option it settles is
+	// "skip them", because bringing them in is what declaring them asks for.
+	declaredSources bool
 }
 
 func (a *App) newRunCommand() *cobra.Command {
@@ -44,7 +47,17 @@ and nothing is written to the directory itself.
 -i brings extra sources into the same sandbox, repeat it for more than one. Each
 is resolved exactly like the source directory is, uncommitted changes included,
 and a local one keeps its own absolute path inside the sandbox, so ../foo shows
-up at the path readlink -f ../foo prints.`,
+up at the path readlink -f ../foo prints.
+
+A repository can name the others it is worked on with, in .discobox/sources.json
+at its root:
+
+  {"foo": "https://github.com/acme/foo"}
+
+Each is brought in the way -i would: the ../foo you already have checked out
+when there is one, and a clone of the URL when there is not. Either way it lands
+at the same path beside the source, so ../foo means the same thing inside the
+sandbox as it does here. --declared-sources=false leaves them out.`,
 		Example: `  disco run fix the failing tests
   disco run --include-dirty=false fix the failing tests
   disco run -i ../foo -i ../bar make them share one client
@@ -56,6 +69,8 @@ up at the path readlink -f ../foo prints.`,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			opts.prompt.Source = a.source
 			opts.prompt.ConfirmIncludeDirty = confirmIncludeDirty(cmd)
+			opts.prompt.SkipDeclaredSources = !opts.declaredSources
+			opts.prompt.ReportDeclaredSource = reportDeclaredSource(cmd)
 			parsedOpts, err := sandboxcreate.ParsePromptOptions(opts.prompt, args)
 			if err != nil {
 				return err
@@ -99,6 +114,7 @@ up at the path readlink -f ../foo prints.`,
 	cmd.Flags().StringArrayVarP(&opts.prompt.Include, "include", "i", nil, "Additional source directory or Git repository to bring into the sandbox, optionally with @REF; repeat for more than one. A local directory keeps its own absolute path inside the sandbox and is named after itself, so -i ../foo is the source foo")
 	cmd.Flags().StringVarP(&opts.prompt.Harness, "harness", "H", "", "Harness config to run, by slug (e.g. codex), name, or ID; defaults to the project default")
 	cmd.Flags().BoolVarP(&opts.detach, "detach", "d", false, "Create the sandbox and print it without attaching to its terminal")
+	cmd.Flags().BoolVar(&opts.declaredSources, "declared-sources", true, "Bring in the sources the repository declares in .discobox/sources.json, using a local checkout beside the source directory when there is one")
 	cmd.Flags().Var(&opts.prompt.IncludeDirty, "include-dirty", "Carry uncommitted changes in the local source into the sandbox: true, false, or auto (ask when the workspace is dirty and this is a terminal)")
 	cmd.Flags().Lookup("include-dirty").NoOptDefVal = string(sandboxcreate.IncludeDirtyAlways)
 	return cmd
@@ -135,6 +151,32 @@ func confirmIncludeDirty(cmd *cobra.Command) sandboxcreate.ConfirmIncludeDirtyFu
 			return false, err
 		}
 		return choice == "include", nil
+	}
+}
+
+// reportDeclaredSource says where each source the repository declared came
+// from. It is stderr rather than stdout: a declared source is context for what
+// is being created, not part of the sandbox record -d prints.
+//
+// It is always reported, never only on a surprise. These sources are in the
+// sandbox because a file in the repository asked for them, which is exactly the
+// kind of thing a caller who did not write that file needs told.
+func reportDeclaredSource(cmd *cobra.Command) sandboxcreate.ReportDeclaredSourceFunc {
+	return func(source sandboxcreate.DeclaredSource) {
+		out := cmd.ErrOrStderr()
+		switch {
+		case !source.Local:
+			fmt.Fprintf(out, "source %s: cloning %s (no checkout at %s)\n",
+				source.Name, source.URL, source.Checkout)
+		case source.Origin != "":
+			// The checkout is used anyway — a fork next door is the usual
+			// reason, and is what the caller has — but a directory that only
+			// shares the name looks identical from here, so say which it is.
+			fmt.Fprintf(out, "source %s: %s (origin %s, declared %s)\n",
+				source.Name, source.Checkout, source.Origin, source.URL)
+		default:
+			fmt.Fprintf(out, "source %s: %s\n", source.Name, source.Checkout)
+		}
 	}
 }
 

@@ -22,6 +22,14 @@ sandbox create requests.
   source is and filed as the request's `sourceCodeReferences` under the sandbox
   directory each lands in. This package settles their slugs and destinations;
   see the CLI design doc's "Extra Sources".
+- The primary source's own `.discobox/sources.json` names more of them
+  (`declared.go`). It is read here, on the client, because deciding what a
+  declared source resolves to means looking at this machine's disk for a
+  checkout of it — which is also why it is not a field of `.discobox/project.json`,
+  read by pool-agent out of the materialized clone. Reporting is the frontend's
+  (`ReportDeclaredSource`); this package prints nothing. See the CLI design
+  doc's "Declared Sources" and
+  [ADR 0056](../../../docs/adr/0056-a-repository-declares-the-sources-it-is-worked-on-with.md).
 - A source directory in no Git repository gets a throwaway repository built over
   it, and is delivered by push. Create returns every source's repository as
   `LocalSources`, which delivery pushes out of and the caller closes; see the

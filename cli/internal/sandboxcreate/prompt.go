@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"path/filepath"
 	"strings"
 
 	apiclientgen "github.com/obot-platform/discobox/api/gen"
@@ -22,10 +23,18 @@ type PromptOptions struct {
 	// each a directory, or a repository URL, in the same form Source takes. They
 	// become the sandbox's source code references.
 	Include []string
-	Prompt  []string
-	Env     []string
-	Secret  []string
-	Harness string
+	// SkipDeclaredSources leaves the sources the primary source's repository
+	// declares in .discobox/sources.json out of the sandbox. The zero value
+	// brings them in, which is what declaring them asks for; a caller sets this
+	// when it wants only what it named itself.
+	SkipDeclaredSources bool
+	// ReportDeclaredSource is told what each declared source resolved to, for a
+	// frontend to show. Leave it nil when there is nowhere to show it.
+	ReportDeclaredSource ReportDeclaredSourceFunc
+	Prompt               []string
+	Env                  []string
+	Secret               []string
+	Harness              string
 	// IncludeDirty decides what happens to uncommitted work in a local source.
 	// The zero value is "auto": ask through ConfirmIncludeDirty when there is
 	// one, and otherwise include it.
@@ -118,7 +127,7 @@ func BuildPromptSandboxBody(ctx context.Context, opts PromptOptions) (*apimodel.
 		return nil, nil, err
 	}
 	body.Config.SetSource(apiclientgen.NewOptGitSource(*apiSource))
-	if err := setSourceCodeReferences(ctx, body, local, opts.Include, source, sourceOptions); err != nil {
+	if err := setSourceCodeReferences(ctx, body, local, opts, source, sourceOptions); err != nil {
 		local.Close()
 		return nil, nil, err
 	}
@@ -133,9 +142,14 @@ func BuildPromptSandboxBody(ctx context.Context, opts PromptOptions) (*apimodel.
 	return body, local, nil
 }
 
-// setSourceCodeReferences resolves the `--include` sources and files them on
-// the create request, recording each one's local repository so delivery can
-// push out of it.
+// setSourceCodeReferences resolves the extra sources and files them on the
+// create request, recording each one's local repository so delivery can push
+// out of it.
+//
+// Two things put a source here: `--include`, which the caller named, and the
+// primary source's own .discobox/sources.json, which the repository declared.
+// The caller's win — an explicitly named source is not overridden by a
+// declaration of the same thing — and are resolved first for that reason.
 //
 // Every reference is resolved the same way the primary source was, uncommitted
 // work and all: each is a separate working tree, so each gets its own answer to
@@ -145,36 +159,100 @@ func BuildPromptSandboxBody(ctx context.Context, opts PromptOptions) (*apimodel.
 // sources that would land on top of each other are refused rather than silently
 // collapsed into one — including a reference that resolves to the primary
 // source's own directory.
-func setSourceCodeReferences(ctx context.Context, body *apimodel.CreateSandboxBody, local *LocalSources, include []string, primary resolvedRunSource, opts runSourceOptions) error {
-	if len(include) == 0 {
+func setSourceCodeReferences(ctx context.Context, body *apimodel.CreateSandboxBody, local *LocalSources, opts PromptOptions, primary resolvedRunSource, sourceOptions runSourceOptions) error {
+	declared, err := declaredPromptSources(opts, primary)
+	if err != nil {
+		return err
+	}
+	if len(opts.Include) == 0 && len(declared) == 0 {
 		return nil
 	}
-	references := make(apiclientgen.SandboxCreateConfigSourceCodeReferences, len(include))
+	references := make(apiclientgen.SandboxCreateConfigSourceCodeReferences, len(opts.Include)+len(declared))
 	// The server names the primary source "primary", so no reference may take
 	// that name either.
 	used := map[string]struct{}{"primary": {}}
-	for _, arg := range include {
+	add := func(reference resolvedReference) {
+		local.add(reference.Key, reference.Resolved)
+		references[reference.Key] = *reference.APISource
+	}
+	for _, arg := range opts.Include {
 		if strings.TrimSpace(arg) == "" {
 			return errors.New("--include needs a source directory or Git repository")
 		}
-		reference, err := resolveRunSourceReference(ctx, arg, opts, used)
+		reference, err := resolveNamedReference(ctx, arg, referencePlacement{}, sourceOptions, used)
 		if err != nil {
 			return err
 		}
-		_, taken := references[reference.Key]
-		if taken || reference.Key == primary.Destination.Directory {
+		if taken(references, primary, reference.Key) {
 			reference.Resolved.close()
 			return fmt.Errorf("--include %s resolves to %s, which is already included", arg, reference.Key)
 		}
-		local.add(reference.Key, reference.Resolved)
-		apiSource, err := reference.Resolved.apiGitSource()
-		if err != nil {
-			return err
-		}
-		references[reference.Key] = *apiSource
+		add(reference)
 	}
-	body.Config.SetSourceCodeReferences(apiclientgen.NewOptSandboxCreateConfigSourceCodeReferences(references))
+	primaryRoot := primary.Destination.Directory
+	for _, name := range declaredSourceNames(declared) {
+		arg, report := resolveDeclaredSourceArg(ctx, primaryRoot, name, declared[name])
+		placement := referencePlacement{Name: name, Root: filepath.Dir(primaryRoot)}
+		reference, err := resolveNamedReference(ctx, arg, placement, sourceOptions, used)
+		if err != nil {
+			return fmt.Errorf("declared source %q (%s): %w", name, declared[name], err)
+		}
+		if taken(references, primary, reference.Key) {
+			// Already brought in by --include, or the sandbox's own source. The
+			// declaration asked for it to be there, and it is.
+			reference.Resolved.close()
+			delete(used, reference.Resolved.Slug)
+			continue
+		}
+		add(reference)
+		if opts.ReportDeclaredSource != nil {
+			opts.ReportDeclaredSource(report)
+		}
+	}
+	if len(references) > 0 {
+		body.Config.SetSourceCodeReferences(apiclientgen.NewOptSandboxCreateConfigSourceCodeReferences(references))
+	}
 	return nil
+}
+
+// resolveNamedReference resolves one extra source and builds its API shape, so
+// a caller that decides not to keep it can close it without having half-filed
+// it on the request.
+func resolveNamedReference(ctx context.Context, arg string, placement referencePlacement, opts runSourceOptions, used map[string]struct{}) (resolvedReference, error) {
+	reference, err := resolveRunSourceReference(ctx, arg, placement, opts, used)
+	if err != nil {
+		return resolvedReference{}, err
+	}
+	apiSource, err := reference.Resolved.apiGitSource()
+	if err != nil {
+		reference.Resolved.close()
+		return resolvedReference{}, err
+	}
+	reference.APISource = apiSource
+	return reference, nil
+}
+
+// taken reports whether something already occupies the sandbox directory a
+// reference wants.
+func taken(references apiclientgen.SandboxCreateConfigSourceCodeReferences, primary resolvedRunSource, key string) bool {
+	if _, ok := references[key]; ok {
+		return true
+	}
+	return key == primary.Destination.Directory
+}
+
+// declaredPromptSources are the sources the primary source's repository
+// declares, or nothing when the caller opted out or the source is not one this
+// machine holds.
+//
+// A remote primary source declares nothing here: the file lives in a checkout,
+// and there is none — reading it would mean cloning the repository on this
+// machine first, which is the sandbox's job, not the client's.
+func declaredPromptSources(opts PromptOptions, primary resolvedRunSource) (map[string]string, error) {
+	if opts.SkipDeclaredSources || primary.Destination.Directory == "" || primary.URL != "" {
+		return nil, nil
+	}
+	return readDeclaredSources(primary.Destination.Directory)
 }
 
 type promptSandboxCreator interface {

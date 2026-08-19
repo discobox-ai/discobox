@@ -600,29 +600,49 @@ type resolvedReference struct {
 	// places the source in.
 	Key      string
 	Resolved resolvedRunSource
+	// APISource is the request shape of Resolved, built once the reference is
+	// known to be one the request keeps.
+	APISource *apimodel.GitSource
 }
 
-// resolveRunSourceReference resolves an extra source named by `--include`.
+// referencePlacement decides what an extra source is called and, when it has no
+// host path of its own, where it goes.
+//
+// `--include` leaves both to the source: `-i ../foo` is the source foo, and a
+// remote one lands under /workspace. A declared source (.discobox/sources.json)
+// sets both, because its whole point is that the sandbox looks the same however
+// the source was obtained: it takes the name the repository declared, and a
+// remote fallback is placed at the sibling path the local checkout would have
+// occupied, so `../foo` from the primary source resolves inside the sandbox
+// whether or not the caller had foo checked out.
+type referencePlacement struct {
+	// Name is the source's name; empty takes it from the source itself.
+	Name string
+	// Root is where a source with no host path of its own is placed; empty
+	// means /workspace.
+	Root string
+}
+
+// resolveRunSourceReference resolves an extra source brought in alongside the
+// primary one.
 //
 // It is the same resolution the primary source gets — a local repository, a
 // directory in no repository, or a remote URL, each asked about its own
 // uncommitted work — and differs only in where the result lands and what it is
 // called. A local source keeps its own absolute host path inside the sandbox,
 // exactly as the primary source does, so a path means the same thing on both
-// sides of the sandbox boundary. A remote one has no host path to keep and goes
-// under /workspace.
+// sides of the sandbox boundary.
 //
-// The slug is the directory's own name, which is what `-i ../foo` means: the
-// source is called foo. used carries the names already taken by earlier
-// references so two of them cannot both claim one; a collision with the primary
-// source's own slug is the server's to resolve, and the client reads the
-// resolved slug back off the created sandbox rather than assuming it.
-func resolveRunSourceReference(ctx context.Context, arg string, opts runSourceOptions, used map[string]struct{}) (resolvedReference, error) {
+// used carries the names already taken by earlier references so two of them
+// cannot both claim one; a collision with the primary source's own slug is the
+// server's to resolve, and the client reads the resolved slug back off the
+// created sandbox rather than assuming it.
+func resolveRunSourceReference(ctx context.Context, arg string, placement referencePlacement, opts runSourceOptions, used map[string]struct{}) (resolvedReference, error) {
 	resolved, err := resolveRunSource(ctx, arg, opts)
 	if err != nil {
 		return resolvedReference{}, err
 	}
-	directory, name := referenceDestination(resolved)
+	directory, name := referenceDestination(resolved, placement)
 	if directory == "" {
 		resolved.close()
 		return resolvedReference{}, fmt.Errorf("cannot tell where to put source %s in the sandbox", arg)
@@ -637,16 +657,28 @@ func resolveRunSourceReference(ctx context.Context, arg string, opts runSourceOp
 
 // referenceDestination is the sandbox directory an extra source is placed in,
 // and the name it takes from.
-func referenceDestination(resolved resolvedRunSource) (directory, name string) {
+func referenceDestination(resolved resolvedRunSource, placement referencePlacement) (directory, name string) {
 	if resolved.URL != "" {
-		name = remoteSourceName(resolved.URL)
-		return path.Join(referenceRunSourceRoot, slugifySource(name)), name
+		name = placement.Name
+		if name == "" {
+			name = remoteSourceName(resolved.URL)
+		}
+		root := placement.Root
+		if root == "" {
+			root = referenceRunSourceRoot
+		}
+		return path.Join(filepath.ToSlash(root), slugifySource(name)), name
 	}
 	// The local destination is the repository root, not the directory that was
 	// named: running against a subdirectory brings in the repository that holds
-	// it, and the source is named after what it actually is.
+	// it, and the source is named after what it actually is unless the caller
+	// named it.
 	directory = filepath.ToSlash(resolved.Destination.Directory)
-	return directory, path.Base(directory)
+	name = placement.Name
+	if name == "" {
+		name = path.Base(directory)
+	}
+	return directory, name
 }
 
 // remoteSourceName is the repository name a remote URL ends in.
