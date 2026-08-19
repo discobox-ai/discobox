@@ -91,7 +91,7 @@ Nygard-style ADRs (see adr.github.io) combined with current-state design docs:
 | [0036](0036-termpane-selection-is-a-mouse-only-cell-space-overlay.md) | Termpane selection is a mouse-only cell-space overlay | Accepted |
 | [0037](0037-drop-disco-diff-and-disco-status.md) | Drop `disco diff` and `disco status` | Accepted |
 | [0038](0038-terminal-identity-is-the-exec-id-terminals-revive-in-place.md) | Terminal identity is the exec id, and terminals revive in place | Accepted |
-| [0039](0039-attach-waits-for-readiness-at-every-tier.md) | Attach waits for readiness at every tier | Accepted |
+| [0039](0039-attach-waits-for-readiness-at-every-tier.md) | Attach waits for readiness at every tier | Accepted (progress-frame transport superseded by [0060](0060-provisioning-progress-is-a-recorded-phase-the-client-polls.md)) |
 | [0040](0040-discobox-images-are-reclaimed-by-label-and-local-age.md) | Discobox images are reclaimed by label and local tag age | Accepted |
 | [0041](0041-dev-hot-reload-is-watchnbuild.md) | Dev hot reload is watchnbuild, not Air | Proposed |
 | [0042](0042-git-authorship-identity-is-a-first-class-sandbox-property.md) | Git authorship identity is a first-class sandbox property | Proposed |
@@ -112,3 +112,4 @@ Nygard-style ADRs (see adr.github.io) combined with current-state design docs:
 | [0057](0057-ssh-reaches-the-server-only-through-the-cli-transport.md) | SSH reaches the server only through the transport the API answers on | Accepted (supersedes [0024](0024-ssh-is-a-control-plane-ingress-onto-execs.md) §1's TCP listener) |
 | [0058](0058-a-push-delivered-source-has-a-pool-side-origin.md) | A push-delivered source has a pool-side origin the client re-pushes into | Accepted |
 | [0059](0059-a-rejected-swapped-credential-is-retried-once.md) | A rejected swapped credential is retried once, and the delivered file is restored | Accepted |
+| [0060](0060-provisioning-progress-is-a-recorded-phase-the-client-polls.md) | Provisioning progress is a recorded phase, polled by the waiting client | Accepted |
