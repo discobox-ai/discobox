@@ -76,7 +76,7 @@ Nygard-style ADRs (see adr.github.io) combined with current-state design docs:
 | [0021](0021-upgrade-is-a-re-pin-and-preserves-power-state.md) | Upgrade is a desired-state re-pin, and replacing a container preserves its power state | Accepted |
 | [0022](0022-sandbox-deletion-is-archive-then-confirmed-purge.md) | Sandbox deletion is archive, then confirmed purge | Accepted |
 | [0023](0023-projects-are-created-by-copy-and-deleted-only-when-empty.md) | A project is created by copying an existing one, and deleted only when empty | Accepted |
-| [0024](0024-ssh-is-a-control-plane-ingress-onto-execs.md) | SSH is a control-plane ingress onto execs, and forwarded TCP terminates inside the sandbox | Accepted |
+| [0024](0024-ssh-is-a-control-plane-ingress-onto-execs.md) | SSH is a control-plane ingress onto execs, and forwarded TCP terminates inside the sandbox | Accepted (§1's TCP listener superseded by [0057](0057-ssh-reaches-the-server-only-through-the-cli-transport.md)) |
 | [0025](0025-the-sandbox-user-is-one-contract-resolved-inside-the-sandbox.md) | The sandbox user is one contract, resolved inside the sandbox | Accepted (§6 launch-time re-lookup superseded by [0033](0033-user-resolution-is-one-layered-resolver-with-declared-gaps.md)) |
 | [0026](0026-local-source-origin-is-bind-mounted-live-into-the-sandbox.md) | A local source's origin is bind-mounted live into the sandbox | Proposed |
 | [0027](0027-harness-terminals-run-as-a-shells-typed-in-job.md) | Harness terminals run as a shell's typed-in job, not as the exec's own process | Accepted |
@@ -109,3 +109,4 @@ Nygard-style ADRs (see adr.github.io) combined with current-state design docs:
 | [0054](0054-the-workspaces-columns-are-terminals-and-shells.md) | The workspace's two columns are terminals and shells, as the server records them | Accepted |
 | [0055](0055-a-delivered-source-settles-before-its-sandbox-runs.md) | A delivered source settles before its sandbox runs | Proposed |
 | [0056](0056-a-repository-declares-the-sources-it-is-worked-on-with.md) | A repository declares the sources it is worked on with | Proposed |
+| [0057](0057-ssh-reaches-the-server-only-through-the-cli-transport.md) | SSH reaches the server only through the transport the API answers on | Accepted (supersedes [0024](0024-ssh-is-a-control-plane-ingress-onto-execs.md) §1's TCP listener) |
