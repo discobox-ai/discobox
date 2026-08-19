@@ -107,8 +107,15 @@ the decision rather than in a reader's notes:
 - The child is started with `windows.CreateProcess` and a `STARTUPINFOEX`
   carrying a one-entry attribute list with the `HPCON`, plus
   `EXTENDED_STARTUPINFO_PRESENT`. The `STARTUPINFO`'s standard handles stay
-  zero and `STARTF_USESTDHANDLES` is not set — set either and the pseudoconsole
-  is ignored, with no error to say so.
+  zero **and `STARTF_USESTDHANDLES` is set** — the arrangement that reads like
+  the wrong one. Without the flag, `CreateProcess` copies the parent's own
+  standard handles into the child and they outrank the console it was just
+  attached to: the pseudoconsole is created, the child joins it, and everything
+  it prints goes to whatever the window's stdout happened to be, with no error
+  anywhere. With the flag and no handles the child starts with none, and the
+  console it is attached to supplies them. *(Amended during implementation:
+  this ADR was drafted saying the opposite, from the MS sample, which works only
+  because that sample's parent has console handles to copy.)*
 - The command line and the environment block are built here, because `os/exec`
   is not doing it: `windows.ComposeCommandLine` for argv, a UTF-16 double-null
   block for the environment. The API token continues to reach the child through
@@ -119,6 +126,12 @@ the decision rather than in a reader's notes:
 - Reads report `ERROR_BROKEN_PIPE` where Unix reports `EIO`. Both map to
   `io.EOF` inside the implementation that knows which platform it is on, never
   in the pane.
+- A pseudoconsole does not close when its client exits, the way a pty does when
+  its last slave descriptor goes: it holds the write end of the output pipe, so
+  a finished command would leave a reader waiting forever and a pane that never
+  learns it finished. The process is therefore waited on, and the console closed
+  when it exits — which flushes what the command last printed and ends the read.
+  *(Amended during implementation; the draft assumed the Unix behaviour.)*
 - Cancelling the context kills the child, matching what `exec.CommandContext`
   gives the Unix path.
 

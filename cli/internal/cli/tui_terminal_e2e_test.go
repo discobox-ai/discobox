@@ -7,10 +7,9 @@ import (
 	"testing"
 	"time"
 
-	"os/exec"
-
 	"github.com/charmbracelet/x/ansi"
 
+	"github.com/obot-platform/discobox/cli/internal/localpty"
 	"github.com/obot-platform/discobox/cli/internal/tui"
 	"github.com/obot-platform/discobox/endpoint"
 )
@@ -158,13 +157,17 @@ func TestLocalCommandPaneE2E(t *testing.T) {
 	if binary == "" {
 		t.Skip("set DISCOBOX_PANE_E2E_BINARY to a built disco")
 	}
-	args := append(app.globalFlags(), "list")
-	command := exec.CommandContext(ctx, binary, args...)
-	command.Env = append(os.Environ(), "DISCOBOX_TOKEN="+app.token)
-	term, err := startOnPTY(command, 100, 30)
+	pty, err := localpty.Start(ctx, localpty.Command{
+		Path: binary,
+		Args: append(app.globalFlags(), "list"),
+		Env:  append(os.Environ(), "DISCOBOX_TOKEN="+app.token),
+	}, 100, 30)
 	if err != nil {
 		t.Fatalf("start: %v", err)
 	}
+	// Wrapped the way the launcher wraps it, so what is read here is what a
+	// pane would be drawing.
+	term := &localCommand{PTY: pty, events: make(chan tui.TerminalEvent)}
 	defer term.Close()
 
 	out := readFor(ctx, term, 20*time.Second)

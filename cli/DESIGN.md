@@ -37,6 +37,13 @@ transport helpers where OpenAPI does not model the stream.
   inherits this invocation's `--server`, `--project` and `--chdir`; the token
   goes through the environment rather than the argument list, which every
   process on the machine can read.
+- Where that pty comes from is `internal/localpty`, whose `PTY` is everything a
+  pane needs of one: read, write, resize, close, and `io.EOF` when the command
+  exits. Unix opens a pty pair through `creack/pty`; Windows creates a
+  pseudo-console and starts the child itself, because a ConPTY is attached
+  through a thread attribute `os/exec` cannot carry — so `localpty.Start` takes
+  argv rather than an `*exec.Cmd`. See
+  [ADR 0054](../docs/adr/0054-the-cli-owns-its-pty-seam-and-windows-gets-conpty.md).
 - Either way what runs is `disco apply` with its own flag defaults and terminal
   detection, not a second implementation that drifts from it. A launcher that
   cannot be reproduced from a shell is the thing to avoid.
