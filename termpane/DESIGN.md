@@ -58,7 +58,9 @@ XTerm modifyOtherKeys".) Those are encoded in xterm's form before the emulator
 is asked; everything else, Alt included, is left to it, since what it does there
 works and is the application's own negotiated mode rather than a guess. A
 modified cursor key takes the CSI form even in application-cursor mode, because
-the SS3 form has nowhere to put a modifier.
+the SS3 form has nowhere to put a modifier. Backspace is the exception with no
+form to encode: xterm sends DEL shifted or not, so Shift-Backspace is folded
+onto Backspace (`unshiftBackspace`) rather than given a sequence of its own.
 
 **Input is drained and written by separate goroutines.** The pipe behind the
 emulator is synchronous — `Paste` and `SendKey` are held until their bytes are

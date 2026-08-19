@@ -95,3 +95,16 @@ func modifiedKeySeq(key tea.Key) string {
 	}
 	return ""
 }
+
+// unshiftBackspace folds Shift-Backspace onto Backspace.
+//
+// xterm has no modified form for Backspace: shifted or not, it sends the same
+// DEL. The emulator matches keys by exact equality, so the shifted key would
+// reach the application as silence — a Backspace that deletes nothing on any
+// terminal that reports the modifier. Ctrl and Alt are left as they are.
+func unshiftBackspace(key tea.Key) tea.Key {
+	if key.Code == uv.KeyBackspace {
+		key.Mod &^= uv.ModShift
+	}
+	return key
+}

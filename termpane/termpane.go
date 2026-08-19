@@ -645,7 +645,7 @@ func (m *Model) SendKey(msg tea.KeyPressMsg) {
 	if m.emu == nil {
 		return
 	}
-	key := msg.Key()
+	key := unshiftBackspace(msg.Key())
 	if key.Text != "" && key.Mod&(tea.ModCtrl|tea.ModAlt) == 0 {
 		m.emu.SendText(key.Text)
 		return

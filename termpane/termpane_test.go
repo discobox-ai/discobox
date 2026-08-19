@@ -799,6 +799,27 @@ func TestModifiedSpecialKeysReachTheApplication(t *testing.T) {
 	}
 }
 
+// Shift-Backspace is Backspace. Backspace has no modified form to encode —
+// xterm sends DEL either way — and the emulator drops the shifted key, so
+// without the fold in keys.go it reaches the application as silence.
+func TestShiftBackspaceIsBackspace(t *testing.T) {
+	for _, tc := range []struct {
+		name string
+		key  tea.KeyPressMsg
+	}{
+		{"backspace", tea.KeyPressMsg{Code: tea.KeyBackspace}},
+		{"shift+backspace", tea.KeyPressMsg{Code: tea.KeyBackspace, Mod: tea.ModShift}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			m, stream, _ := attach(t, 40, 5)
+			m.Update(tc.key)
+			if got := stream.sent(t, "\x7f"); got != "\x7f" {
+				t.Fatalf("sent %q, want DEL", got)
+			}
+		})
+	}
+}
+
 // A modified cursor key takes the CSI form whether or not the application has
 // asked for application cursor keys: that is what xterm does, and the SS3 form
 // the emulator uses for the unmodified key has nowhere to put a modifier.
