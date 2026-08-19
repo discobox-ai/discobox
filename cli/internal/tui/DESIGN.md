@@ -22,8 +22,7 @@ flowchart LR
     L -->|u t T x U P| Verb["DataSource.Do"]
     L -->|e| Rename["dialog → DataSource.Rename"]
     L -->|Enter s| WS["workspace → Execs / OpenExec / NewShell / NewTerminal"]
-    L -->|d i| Overlay["overlay pane → DataSource.Open"]
-    L -->|y| Exec["tea.Exec → DataSource.Interact"]
+    L -->|y| Overlay["overlay pane → DataSource.Open"]
     L -->|v| Editor["DataSource.OpenEditor"]
     A -->|d s| AVerb["DataSource.DoHarness"]
     A -->|e f| AExec["tea.Exec → ConfigureHarness / EditHarnessFile"]
@@ -88,13 +87,15 @@ every door onto the screen. The empty frame is held for a couple of the
 renderer's own frames, because it flushes on its own clock rather than on ours.
 
 **Four kinds of action.** A `Verb` goes to the API and returns, so the window
-stays up and reports on its status line. Attach and shell are drawn in the
-window (`Interaction.paneable`, `pane.go`/`workspace.go`, over the `termpane`
-module): they open the workspace screen onto the discobox's own terminals.
-From the list, apply suspends the window through `tea.Exec` — the list can act
-on several discoboxes at once and a pane shows one. The `exec` field on the
-model is that handoff, and exists as a field only so a test can run an action
-without a terminal to release.
+stays up and reports on its status line. An `Interaction` is drawn in the window
+(`pane.go`/`workspace.go`, over the `termpane` module): attach and shell open
+the workspace screen onto the discobox's own terminals, and apply is an overlay
+pane over whichever screen asked for it. Every interaction takes exactly one
+discobox, which is what a pane shows, and says so on the menu with the reason
+when a selection holds more. The window never steps aside for a discobox
+action; the `exec` field is the `tea.Exec` handoff the *harnesses* screen still
+needs, and exists as a field only so a test can run one without a terminal to
+release.
 
 **The row carries both of the server's state axes** (`Sandbox.State`,
 `Sandbox.HasRuntime`). Existence and power are separate fields on the server
@@ -246,15 +247,16 @@ another shell. The third opener has no counterpart in the list — `c` opens
 another terminal, on screen's and tmux's create key, since `t` is stop and the
 key map is the list's.
 
-**A command that finishes takes the screen over the workspace.** `Model.overlay`
-is apply running full width while the terminals stay connected, unresized and
-undrawn underneath — its report is not something to read in half a window
-beside a harness scrolling past, and when it exits the workspace is exactly as
-it was. It is the only place apply runs in a pane: there is one discobox on
-this screen, so the reason the list has for suspending does not apply.
-`focusedPane` returns it while it is up, which is what puts the keys, the
-cursor, the mouse and the hints on it without a second path through any of
-them.
+**A command that finishes takes the screen.** `Model.overlay` is apply running
+full width — over the workspace, where the terminals stay connected, unresized
+and undrawn underneath, and over the list, where it is the whole screen. Its
+report is not something to read in half a window beside a harness scrolling
+past, and when it closes what was under it is exactly as it was: the workspace
+still running, or the list on the row it was opened from (`closeOverlay` →
+`leavePanes`). `openOverlay` sets `paneBox` either way, so the banner names the
+discobox the command is running against on both paths. `focusedPane` returns the
+overlay while it is up, which is what puts the keys, the cursor, the mouse and
+the hints on it without a second path through any of them.
 
 **A finished pane keeps its screen, and can be read back through.** The
 distinction is positional now: the primary does not hold (its end is the
@@ -555,8 +557,8 @@ ask for what is already happening.
 
 The two that need a terminal — the harness's own setup and `$EDITOR` — go
 through `tea.Exec` (`harnessExec`) rather than a pane: they are programs that ask
-questions and draw their own screen to ask them on, which is the same reason
-apply suspends the window. `F3` is a function key because the prompt takes every
+questions and draw their own screen to ask them on, and unlike apply they are
+not one of this CLI's own commands with a discobox to name. `F3` is a function key because the prompt takes every
 letter as text and the list has spent them on its own actions, and it is inert
 inside a pane, where every key is the sandbox's.
 
@@ -778,7 +780,6 @@ the newest one where the busy line goes.
 | `pane.go` | one terminal pane: its keys, messages, chrome and cursor |
 | `column.go` | one side of the workspace: a strip of panes, one visible |
 | `workspace.go` | the workspace screen: open, poll/reconcile, tabs, detach, the port forward |
-| `interact.go` | the `tea.ExecCommand` adapter for the command-shaped actions |
 | `narration.go` | what a slow operation is doing, on the busy line |
 
 ## Looking at it without a terminal

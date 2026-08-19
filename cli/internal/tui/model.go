@@ -332,13 +332,6 @@ type verbDoneMsg struct {
 	errs []error
 }
 
-// interactDoneMsg reports that a terminal-owning action returned and the window
-// has redrawn.
-type interactDoneMsg struct {
-	action Interaction
-	err    error
-}
-
 // runActionMsg carries a choice out of the action menu. The menu cannot run the
 // action itself: a dialog closes over the model by value, so it emits the
 // choice and the update loop runs it against the live model.
@@ -461,14 +454,6 @@ func (m *Model) update(msg tea.Msg) tea.Cmd {
 
 	case editorOpenedMsg:
 		return m.editorOpened(msg)
-
-	case interactDoneMsg:
-		m.busy = ""
-		cmds := []tea.Cmd{m.refresh()}
-		if msg.err != nil {
-			cmds = append(cmds, m.report(true, "%s: %v", msg.action, msg.err))
-		}
-		return tea.Batch(cmds...)
 
 	case folderChosenMsg:
 		return m.selectFolder(msg.folder)
@@ -1003,21 +988,19 @@ func (m *Model) actions(targets []Sandbox) []action {
 		repairWhy = "an archived box is unarchived, not repaired"
 	}
 	attachable := one && targets[0].attachable()
-	// Apply runs git in the sandbox, so an archived one — which has no
-	// container to run it in — cannot take it however much it changed. A
-	// diffstat that has not come back yet is not the same answer as "nothing
-	// changed", so it stays available until it has.
-	applyable, applyWhy := false, "nothing has changed yet"
-	for _, s := range targets {
-		if s.State == StateArchived {
-			continue
+	// Apply is drawn in a pane, which shows one discobox, and it runs git in
+	// the sandbox — so an archived one, which has no container to run it in,
+	// cannot take it however much it changed. A diffstat that has not come back
+	// yet is not the same answer as "nothing changed", so it stays available
+	// until it has.
+	applyable, applyWhy := one, "takes exactly one box"
+	if one {
+		switch box := targets[0]; {
+		case box.State == StateArchived:
+			applyable, applyWhy = false, "an archived box has no working tree to look at"
+		case !box.hasDiff() && box.Diff.Known:
+			applyable, applyWhy = false, "nothing has changed yet"
 		}
-		if s.hasDiff() || !s.Diff.Known {
-			applyable = true
-		}
-	}
-	if !applyable && anyArchived {
-		applyWhy = "an archived box has no working tree to look at"
 	}
 	// A row named by its terminal's title is not showing the configured name,
 	// which is the one rename edits: accepting a rename there would change
@@ -1138,31 +1121,34 @@ func (m *Model) actOn(key string, targets []Sandbox) tea.Cmd {
 	}
 
 	if action, ok := interactions[key]; ok {
-		// On the workspace screen there is one discobox: attach goes back to
-		// its terminal, shell opens a fresh tab, and a command that runs and
-		// finishes takes the screen over them until it does.
-		if m.inPanes() {
-			switch action {
-			case InteractAttach:
-				// Back to the primary, which is what attach means here: it is
-				// the session the workspace is a view onto.
+		// Every interaction is drawn in the window, and a pane shows one
+		// discobox. The enabled check has already said so with the reason; this
+		// is the menu's own path, where the key was not offered.
+		if len(targets) != 1 {
+			return status("%s takes exactly one box", action)
+		}
+		box := targets[0]
+		switch action {
+		case InteractAttach:
+			// On the workspace screen the terminal is already there — back to
+			// the primary, which is what attach means there: it is the session
+			// the workspace is a view onto. From the list it is the screen to
+			// open.
+			if m.inPanes() {
 				m.focusOrdinal(0)
 				return nil
-			case InteractShell:
+			}
+			return m.openFromList(action, box)
+		case InteractShell:
+			if m.inPanes() {
 				return m.newShell()
-			default:
-				return m.openOverlay(action, targets[0])
 			}
+			return m.openFromList(action, box)
+		default:
+			// A command that runs and finishes takes the screen, over the
+			// workspace when there is one and over the list when there is not.
+			return m.openOverlay(action, box)
 		}
-		// From the list, a terminal is drawn in the window; a command that
-		// wants the real terminal gets it, and the window steps aside.
-		if action.paneable() {
-			if len(targets) != 1 {
-				return status("%s takes exactly one box", action)
-			}
-			return m.openFromList(action, targets[0])
-		}
-		return m.interact(action, ids)
 	}
 
 	verb, ok := verbs[key]
@@ -1332,17 +1318,6 @@ func (m *Model) renameDone(msg renameDoneMsg) tea.Cmd {
 		return m.report(true, "rename: %v", msg.err)
 	}
 	return tea.Batch(m.refresh(), m.report(false, "renamed to %s", msg.name))
-}
-
-// interact suspends the window and hands the terminal to the action for as long
-// as it runs. tea.Exec drops out of the alternate screen and restores the
-// terminal around it, so the command runs on the screen the window was started
-// from and the window comes back over the top of it.
-func (m *Model) interact(act Interaction, ids []string) tea.Cmd {
-	m.busy = string(act) + "…"
-	return m.exec(&interactExec{ctx: m.ctx, ds: m.ds, action: act, ids: ids}, func(err error) tea.Msg {
-		return interactDoneMsg{action: act, err: err}
-	})
 }
 
 // ---------------------------------------------------------------------------
@@ -2163,8 +2138,10 @@ func (m *Model) helpText() string {
 		"  cannot be renamed: the harness owns the name on screen.",
 		"",
 		"  attach and shell open the workspace, drawn in the window",
-		"  itself. apply takes the real terminal, because the list can",
-		"  act on several discoboxes at once and a pane shows one.",
+		"  itself. apply runs in the window too, in a screen of its own,",
+		"  and stays up when it is done for the report to be read —",
+		"  q closes it. All three take one discobox, which is what a",
+		"  screen shows.",
 		"",
 		"  vscode takes neither. It edits the box in place over",
 		"  Remote-SSH, so the editor is another program in another",
@@ -2202,10 +2179,11 @@ func (m *Model) helpText() string {
 		"    " + m.leader() + " R       repair",
 		"",
 		"  apply runs in the screen itself, over the workspace, for as",
-		"  long as it takes — and the terminals underneath are untouched:",
-		"  still connected, still running, still where you left them when",
-		"  the command exits. The rest run against the server and report",
-		"  on the status line, and the workspace stays up while they do.",
+		"  long as it takes and for as long as its report is up — and the",
+		"  terminals underneath are untouched: still connected, still",
+		"  running, still where you left them when it closes. The rest run",
+		"  against the server and report on the status line, and the",
+		"  workspace stays up while they do.",
 		"",
 		"  Every other key goes to the focused pane. Which ones do not",
 		"  depends on what is in it:",

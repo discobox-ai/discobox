@@ -26,17 +26,15 @@ transport helpers where OpenAPI does not model the stream.
   frontend contracts only; API and terminal adapters belong outside it.
 - `internal/cli` may adapt generated API clients and terminal transports to the
   TUI's interfaces, but must not become the owner of logic shared by frontends.
-- The launcher never reimplements a command. From the list, `apply` is the
-  Cobra command itself: `apiDataSource.Interact` builds it, binds it to the
-  streams `tea.Exec` hands over while the window is suspended, and executes it.
-- On the workspace screen, `apply` is drawn in an overlay pane instead, and is
-  the same command — spawned as a child `disco apply <id>` on a local pty sized
-  to the pane (`tui_local.go`). The pty is the child's *controlling* terminal,
-  so anything reading its keys from `/dev/tty` reads them from the pane rather
-  than from the real terminal, out from under the window drawing it. The child
-  inherits this invocation's `--server`, `--project` and `--chdir`; the token
-  goes through the environment rather than the argument list, which every
-  process on the machine can read.
+- The launcher never reimplements a command, and never steps aside for one.
+  `apply` is drawn in an overlay pane from either screen — the list and the
+  workspace — and is the Cobra command itself, spawned as a child
+  `disco apply <id>` on a local pty sized to the pane (`tui_local.go`). The pty
+  is the child's *controlling* terminal, so anything reading its keys from
+  `/dev/tty` reads them from the pane rather than from the real terminal, out
+  from under the window drawing it. The child inherits this invocation's
+  `--server`, `--project` and `--chdir`; the token goes through the environment
+  rather than the argument list, which every process on the machine can read.
 - Where that pty comes from is `internal/localpty`, whose `PTY` is everything a
   pane needs of one: read, write, resize, close, and `io.EOF` when the command
   exits. Unix opens a pty pair through `creack/pty`; Windows creates a
@@ -44,7 +42,7 @@ transport helpers where OpenAPI does not model the stream.
   through a thread attribute `os/exec` cannot carry — so `localpty.Start` takes
   argv rather than an `*exec.Cmd`. See
   [ADR 0062](../docs/adr/0062-the-cli-owns-its-pty-seam-and-windows-gets-conpty.md).
-- Either way what runs is `disco apply` with its own flag defaults and terminal
+- What runs is therefore `disco apply` with its own flag defaults and terminal
   detection, not a second implementation that drifts from it. A launcher that
   cannot be reproduced from a shell is the thing to avoid.
 - Bare `disco` runs the launcher when stdin and stdout are both terminals, and
@@ -419,9 +417,10 @@ session, `execstream/client`.
   `SignalReady` and `OtherErr` are set to match: they only make sense once
   replay is in play, and only exist on the TTY branch.
 - Connection lifecycle notifications are transport events, not terminal output.
-  CLI attach ignores them. Nothing renders them today: the launcher suspends
-  itself and hands the real terminal to `disco attach` rather than embedding a
-  pane, so there is no second consumer to notify.
+  CLI attach ignores them; the launcher, which draws the session in a pane,
+  renders them as that pane's status (`framedTerminal.Events` →
+  `tui.TerminalEvent`), because a reconnect never appears in the output — the
+  stream simply carries on — so it is reported there or not at all.
 - Resumable attaches can subscribe to timing events without parsing terminal
   output. A websocket heartbeat measures the physical proxy path to the
   sandbox-agent; an action-acknowledgement sample measures from client

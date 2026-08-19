@@ -40,8 +40,8 @@ func TestAttachDrawsInTheWindow(t *testing.T) {
 	ds := newFakeSource(testSandboxes()...)
 	d, m, term := openWorkspace(t, ds, "enter")
 
-	if len(ds.interacts) != 0 {
-		t.Fatalf("interacts = %v, want the window not to step aside", ds.interacts)
+	if len(ds.opens) != 0 {
+		t.Fatalf("opens = %v, want no command drawn over it", ds.opens)
 	}
 	term.send("hello from the sandbox")
 	d.wait("output", func() bool { return strings.Contains(frameText(m), "hello from the sandbox") })
@@ -951,19 +951,60 @@ func TestSplitPanesShareTheScreen(t *testing.T) {
 	}
 }
 
-// apply writes to the repository on this machine and can stop to ask about it,
-// so from the list the window steps aside for it rather than drawing it in a
-// pane.
-func TestApplyStillTakesTheRealTerminal(t *testing.T) {
+// apply is the same command from either screen: drawn in a pane that takes the
+// screen, over the workspace when there is one and over the list when there is
+// not. The window never steps aside for it.
+func TestApplyFromTheListDrawsInAPane(t *testing.T) {
 	ds := newFakeSource(testSandboxes()...)
 	m := newTestModel(t, ds)
-	send(t, m, key("tab"), key("y"))
+	d := newDriver(t, m)
+	d.start()
+	d.key("tab")
+	d.key("y")
+	d.wait("the command", func() bool { return m.overlay != nil })
 
-	if len(ds.opens) != 0 {
-		t.Fatalf("opens = %v, want apply not drawn in a pane", ds.opens)
+	if m.overlay.action != InteractApply {
+		t.Fatalf("overlay = %s, want apply", m.overlay.action)
 	}
-	if len(ds.interacts) != 1 || ds.interacts[0] != "apply sbx_one" {
-		t.Fatalf("interacts = %v", ds.interacts)
+	if len(ds.opens) != 1 || !strings.HasPrefix(ds.opens[0], "apply sbx_one ") {
+		t.Fatalf("opens = %v, want apply drawn on the box under the cursor", ds.opens)
+	}
+	// There is no workspace under it: apply is the whole screen, and the
+	// banner still names the discobox it is running against.
+	if m.terminals.len() != 0 || m.shells.len() != 0 {
+		t.Fatal("apply from the list should not attach to anything")
+	}
+	if !strings.Contains(plainFrame(m), "sbx_one") {
+		t.Errorf("the banner should name the box:\n%s", plainFrame(m))
+	}
+
+	// It ends the way it ends — this one could not cherry-pick — and the screen
+	// is held either way, for the report to be read.
+	apply := ds.terminals[len(ds.terminals)-1]
+	apply.mu.Lock()
+	code := 1
+	apply.exit = &code
+	apply.mu.Unlock()
+	apply.send("cherry-pick failed: conflicts in server/main.go\r\n")
+	d.wait("output", func() bool { return strings.Contains(frameText(m), "cherry-pick failed") })
+	apply.Close()
+	d.wait("the pane to settle", func() bool { return m.overlay != nil && m.overlay.exited })
+
+	if !strings.Contains(plainFrame(m), "cherry-pick failed") {
+		t.Errorf("the report should still be up:\n%s", plainFrame(m))
+	}
+	if !strings.Contains(plainFrame(m), "failed") {
+		t.Errorf("it should say how the command ended:\n%s", plainFrame(m))
+	}
+
+	// Closing it goes back to the list it was opened from, on the same row.
+	d.key("q")
+	d.wait("the pane to close", func() bool { return m.overlay == nil })
+	if m.focus != focusList {
+		t.Fatalf("focus = %v, want the list it was opened from", m.focus)
+	}
+	if m.inPanes() {
+		t.Fatal("nothing should be left on screen")
 	}
 }
 

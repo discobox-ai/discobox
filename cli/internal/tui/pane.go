@@ -286,7 +286,9 @@ func (m *Model) currentBox() Sandbox {
 	return m.paneBox
 }
 
-// openOverlay runs a command over the workspace, in a screen of its own.
+// openOverlay runs a command in a screen of its own, over whatever it was
+// started from: the workspace when one is open, and the list when the command
+// is all that is on screen.
 //
 // It has the screen because it is the thing you asked for and it is over when
 // it is over — a report you opened to read is not something to read in half a
@@ -296,6 +298,11 @@ func (m *Model) openOverlay(act Interaction, sandbox Sandbox) tea.Cmd {
 	if m.overlay != nil {
 		return status("%s is still up — close it first", m.overlay.action)
 	}
+	// The discobox the screen is about, which the banner reads and the leader
+	// keys dispatch against. Over a workspace it is the one already open, which
+	// is where this box came from; from the list it is the row the cursor is
+	// on.
+	m.paneBox = sandbox
 	// A terminal wants the whole screen, so opening one opens the window out
 	// even when nothing has asked for the list yet. The overlay is sized
 	// before it is opened: the size is what the far end is told, and a
@@ -412,8 +419,9 @@ func (m *Model) paneEvents(term Terminal) tea.Cmd {
 	}
 }
 
-// closeOverlay ends the command that had the screen and gives it back to the
-// workspace, which has been running underneath the whole time.
+// closeOverlay ends the command that had the screen and gives it back to what
+// was under it: the workspace, which has been running the whole time, or the
+// list it was opened from.
 func (m *Model) closeOverlay() {
 	if m.overlay == nil {
 		return

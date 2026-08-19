@@ -419,9 +419,10 @@ func (d *apiDataSource) Rename(ctx context.Context, sandboxID, name string) erro
 
 // OpenEditor opens one sandbox in VS Code, by running `disco tools vscode`.
 //
-// It runs the command rather than reimplementing it for the same reason
-// Interact does: what the window opens is the command, with its own editor
-// discovery and its own ssh_config handling, not a second version of them.
+// It runs the command rather than reimplementing it for the same reason an
+// overlay pane runs `disco apply`: what the window opens is the command, with
+// its own editor discovery and its own ssh_config handling, not a second
+// version of them.
 //
 // Nothing it writes reaches the screen. The window is a full-screen program
 // that a stray line of stderr would draw over, and the command's progress
@@ -438,48 +439,4 @@ func (d *apiDataSource) OpenEditor(ctx context.Context, sandboxID string) error 
 	cmd.SetErr(io.Discard)
 	cmd.SilenceUsage, cmd.SilenceErrors = true, true
 	return cmd.Execute()
-}
-
-// Interact runs one of the command-shaped actions with the real terminal's
-// streams, while the window is suspended.
-//
-// It builds and executes the actual Cobra command rather than calling into its
-// internals, so what the launcher runs is `disco apply` — with its own flag
-// defaults and terminal detection — and not a second implementation that
-// drifts from it.
-//
-// The two actions that are terminals rather than commands, attach and shell,
-// are drawn in the window instead; see Open.
-func (d *apiDataSource) Interact(ctx context.Context, action tui.Interaction, sandboxIDs []string, stdin io.Reader, stdout, stderr io.Writer) error {
-	for i, id := range sandboxIDs {
-		var cmd *cobra.Command
-		switch action {
-		case tui.InteractApply:
-			cmd = d.app.newApplyCommand()
-		default:
-			// Attach and shell are terminals the window draws itself; they go
-			// through Open, not through a command that wants the real terminal.
-			return fmt.Errorf("%s is not a command", action)
-		}
-		// Several sandboxes in one run need telling apart, and only the ones
-		// that print do: attach and shell take exactly one.
-		if len(sandboxIDs) > 1 {
-			if i > 0 {
-				fmt.Fprintln(stdout)
-			}
-			fmt.Fprintf(stderr, "── %s\n", id)
-		}
-		cmd.SetContext(ctx)
-		cmd.SetArgs([]string{id})
-		cmd.SetIn(stdin)
-		cmd.SetOut(stdout)
-		cmd.SetErr(stderr)
-		// The window reports the failure on its status line, so the command
-		// neither prints it again nor follows it with a page of usage.
-		cmd.SilenceUsage, cmd.SilenceErrors = true, true
-		if err := cmd.Execute(); err != nil {
-			return err
-		}
-	}
-	return nil
 }

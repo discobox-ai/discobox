@@ -76,7 +76,6 @@ type fakeSource struct {
 	did       []string // "verb id"
 	renames   []string // "id name"
 	editors   []string // sandbox ids handed to VS Code
-	interacts []string // "action id,id"
 	opens     []string // "action id colsxrows"
 	execOpens []string // "id execID colsxrows"
 	terminals []*fakeTerminal
@@ -224,13 +223,6 @@ func (f *fakeSource) OpenEditor(_ context.Context, id string) error {
 	defer f.mu.Unlock()
 	f.editors = append(f.editors, id)
 	return f.editorErr
-}
-
-func (f *fakeSource) Interact(_ context.Context, action Interaction, ids []string, _ io.Reader, _, _ io.Writer) error {
-	f.mu.Lock()
-	defer f.mu.Unlock()
-	f.interacts = append(f.interacts, string(action)+" "+strings.Join(ids, ","))
-	return nil
 }
 
 func (f *fakeSource) Open(_ context.Context, action Interaction, id string, cols, rows int) (Terminal, error) {

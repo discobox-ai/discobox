@@ -489,11 +489,12 @@ const (
 	VerbPurge     Verb = "purge"
 )
 
-// Interaction is an action that owns a terminal for as long as it runs.
+// Interaction is an action that owns a terminal for as long as it runs. Every
+// one of them is drawn in the window: attach and shell are terminals in the
+// discobox and open the workspace screen onto them, and apply is a command of
+// this CLI's own, drawn in a pane over whatever it was started from.
 //
-// Two of them — attach and shell — are terminals in their own right, and are
-// drawn in a pane inside the window. Apply runs a command that wants the real
-// terminal, and the window steps aside for it.
+// Each takes exactly one discobox, which is what a pane shows.
 type Interaction string
 
 const (
@@ -507,24 +508,6 @@ const (
 	// leader-c pane rather than a key anything dispatches on.
 	InteractTerminal Interaction = "terminal"
 )
-
-// paneable reports whether an interaction can be drawn in the window from the
-// discobox list.
-//
-// Attach and shell are terminals in the discobox, and open the workspace
-// screen.
-//
-// Apply is not among them here, because the list can act on several discoboxes
-// at once and a pane shows one. On the workspace screen, where there is only
-// ever the one, it runs like the others.
-func (a Interaction) paneable() bool {
-	switch a {
-	case InteractAttach, InteractShell:
-		return true
-	default:
-		return false
-	}
-}
 
 // TerminalConnectionState is what the transport underneath a pane is doing. A
 // reconnect is invisible in the output — the stream simply carries on — so it is
@@ -662,10 +645,6 @@ type DataSource interface {
 	// saves what it wrote back, reporting whether anything changed. The window
 	// is suspended for it, for the same reason.
 	EditHarnessFile(ctx context.Context, harnessID, path string, stdin io.Reader, stdout, stderr io.Writer) (bool, error)
-
-	// Interact runs a terminal-owning action against the given sandboxes, with
-	// the real terminal's streams. The window is suspended for the duration.
-	Interact(ctx context.Context, action Interaction, sandboxIDs []string, stdin io.Reader, stdout, stderr io.Writer) error
 
 	// Open connects a terminal for one of the CLI's own commands — apply —
 	// sized to the overlay it is going into. The discobox's terminals come

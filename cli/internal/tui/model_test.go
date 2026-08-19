@@ -60,8 +60,8 @@ func TestEnterRunsThePromptAndAttaches(t *testing.T) {
 	if len(opened) != 1 || !strings.HasPrefix(opened[0], "sbx_created primary ") {
 		t.Fatalf("execOpens = %v, want an attach on the new sandbox", opened)
 	}
-	if len(ds.interacts) != 0 {
-		t.Fatalf("interacts = %v, want the window not to step aside", ds.interacts)
+	if len(ds.opens) != 0 {
+		t.Fatalf("opens = %v, want no command drawn over it", ds.opens)
 	}
 	if m.prompt.Value() != "" {
 		t.Fatalf("the prompt should be spent, got %q", m.prompt.Value())
@@ -381,9 +381,9 @@ func TestArchivedSandboxesCannotBeDiffed(t *testing.T) {
 			}
 		}
 	}
-	send(t, m, key("d"))
-	if len(ds.interacts) != 0 {
-		t.Fatalf("nothing should have run, got %v", ds.interacts)
+	send(t, m, key("y"))
+	if len(ds.opens) != 0 {
+		t.Fatalf("nothing should have run, got %v", ds.opens)
 	}
 }
 
