@@ -4,6 +4,7 @@ import (
 	"context"
 	"crypto/ed25519"
 	"encoding/base64"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"log/slog"
@@ -104,44 +105,82 @@ func NewSignedTokenAuthenticator(identity Identity, publicKeyText string) (*Sign
 
 func (a *SignedTokenAuthenticator) Middleware(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		// Every rejection below answers with a bare status, because a caller
-		// that failed to authenticate is told nothing. The reason is logged
-		// instead: three unrelated failures otherwise collapse into one opaque
-		// 401 that no amount of reading the control plane's side can tell
-		// apart.
+		// Every rejection below answers in the declared error shape with a
+		// coarse reason, because a caller that failed to authenticate can
+		// otherwise tell nothing apart: three unrelated failures collapse into
+		// one opaque 401 that no amount of reading the control plane's side can
+		// diagnose. The underlying cause stays in this agent's log.
 		tokenText, ok := bearerToken(r.Header.Get("Authorization"))
 		if !ok {
-			a.reject(r, w, http.StatusUnauthorized, "no bearer token", nil)
+			a.reject(r, w, http.StatusUnauthorized, reasonMissingToken, nil)
 			return
 		}
 		token, err := a.parseToken(tokenText)
 		if err != nil {
-			a.reject(r, w, http.StatusUnauthorized, "token did not verify", err)
+			// The token did not verify. Which way it failed is the whole
+			// diagnosis -- an expired one means clocks, a bad signature means
+			// this agent holds a different control-plane key than the caller
+			// signs with -- and the two are indistinguishable from the outside.
+			a.reject(r, w, http.StatusUnauthorized, reasonInvalidToken, err)
 			return
 		}
 		claims, err := signedTokenClaimsFromToken(token)
 		if err != nil {
-			a.reject(r, w, http.StatusUnauthorized, "token claims are unreadable", err)
+			a.reject(r, w, http.StatusUnauthorized, reasonMissingClaims, err)
 			return
 		}
 		if err := a.authorizeRequestPath(r.URL.Path, claims); err != nil {
-			a.reject(r, w, http.StatusForbidden, "token does not authorize this route", err)
+			a.reject(r, w, http.StatusForbidden, reasonForbidden, err)
 			return
 		}
 		next.ServeHTTP(w, r.WithContext(withSignedTokenClaims(r.Context(), claims)))
 	})
 }
 
-// reject answers with a bare status and records why.
-func (a *SignedTokenAuthenticator) reject(r *http.Request, w http.ResponseWriter, status int, reason string, err error) {
+// Reasons a request was refused. They are coarse on purpose: enough to tell a
+// clock problem from a key problem without answering finer questions for
+// whoever is asking.
+const (
+	reasonMissingToken  = "missing_token"
+	reasonInvalidToken  = "invalid_token"
+	reasonMissingClaims = "missing_claims"
+	reasonForbidden     = "insufficient_scope"
+)
+
+// reject refuses a request in the shape the API says it will, and records why.
+//
+// Two things were wrong with http.Error here. It writes text/plain, and the
+// spec declares application/json for every error, so the generated client could
+// not decode the response at all: a 401 reached the control plane as
+// "unexpected Content-Type: text/plain" wrapped in decoder frames, with the
+// status buried and the cause absent. And all four refusals looked identical,
+// so neither end could say which one happened.
+//
+// The reason goes in the body because the agent's own log lives inside a pool
+// guest, where whoever is reading the control plane's log cannot get at it. The
+// cause is logged rather than sent: it is the detailed one, and the control
+// plane already learns what it needs from the reason.
+func (a *SignedTokenAuthenticator) reject(r *http.Request, w http.ResponseWriter, status int, reason string, cause error) {
 	slog.WarnContext(r.Context(), "rejected a control-plane request",
 		"status", status,
 		"reason", reason,
 		"method", r.Method,
 		"path", r.URL.Path,
 		"pool_id", a.identity.PoolID,
-		"error", err)
-	http.Error(w, http.StatusText(status), status)
+		"error", cause)
+
+	body, err := json.Marshal(map[string]any{
+		"status": status,
+		"title":  http.StatusText(status),
+		"detail": reason,
+	})
+	if err != nil {
+		http.Error(w, http.StatusText(status), status)
+		return
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(status)
+	_, _ = w.Write(body)
 }
 
 func (a *SignedTokenAuthenticator) parseToken(tokenText string) (*paseto.Token, error) {
