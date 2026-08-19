@@ -148,8 +148,18 @@ type Model struct {
 
 	// busy is what the window is waiting on — creating a sandbox, running a
 	// verb — shown in place of the key hints so a slow server does not read as
-	// a dead window.
+	// a dead window. An operation that can say more than "busy" replaces it as
+	// it goes; see narration.go.
 	busy string
+
+	// busyGen numbers the operations that narrate themselves onto the busy
+	// line, so a report from one the window has moved on from is dropped rather
+	// than overwriting what replaced it.
+	busyGen int
+
+	// stopNarrating ends a narration that follows something other than a call —
+	// the provisioning watch, which runs until it is told to stop.
+	stopNarrating func()
 
 	// exec hands a terminal-owning action to the runtime, which releases the
 	// terminal around it. It is a field only so a test can run one without a
@@ -387,6 +397,9 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			cmds = append(cmds, m.loadHarnesses())
 		}
 		return m, tea.Batch(cmds...)
+
+	case narrationMsg:
+		return m, m.narrated(msg)
 
 	case statusMsg:
 		// A message is an answer to the last key, so it goes when the next
@@ -1491,13 +1504,21 @@ type createMsg struct{ req RunRequest }
 
 func (m *Model) create(req RunRequest) tea.Cmd {
 	m.busy = "creating the discobox…"
-	return func() tea.Msg {
-		sandbox, err := m.ds.Run(m.ctx, req)
+	// Create resolves a source, may snapshot a dirty tree, and may push the
+	// whole thing to a server that cannot reach this directory. Which of those
+	// is underway is knowable only here, so the shared creation path reports it
+	// and the busy line follows along (ADR 0060).
+	feed, next := m.narrate()
+	create := func() tea.Msg {
+		defer feed.close()
+		sandbox, err := m.ds.Run(m.ctx, req, feed.report)
 		return createdMsg{sandbox: sandbox, req: req, err: err}
 	}
+	return tea.Batch(create, next)
 }
 
 func (m *Model) created(msg createdMsg) tea.Cmd {
+	m.endNarration()
 	m.busy = ""
 	if msg.err != nil {
 		return m.report(true, "cannot create the discobox: %v", msg.err)

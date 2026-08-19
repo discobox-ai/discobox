@@ -272,7 +272,13 @@ func (s *Service) ReportPoolSandboxStates(ctx context.Context, poolID string, in
 		// the two schemas are separate contracts, and SandboxProvisionProgress
 		// forbids additional properties, so passing the agent's entry through
 		// verbatim would embed a sandboxId that clients then fail to decode.
-		observed := serverapi.SandboxProvisionProgress{}
+		// The phase crosses the two schemas as a bare string conversion because
+		// ogen enums are string-typed, so unlike the pull struct below this one
+		// would not stop compiling if the vocabularies diverged. That is what
+		// TestProvisionPhaseVocabulariesMatch pins instead.
+		observed := serverapi.SandboxProvisionProgress{
+			Phase: serverapi.SandboxProvisionPhase(entry.Phase),
+		}
 		if pull, ok := entry.Pull.Get(); ok {
 			// A conversion rather than a field-by-field copy: the two shapes are
 			// identical today, and if the agent-facing and client-facing schemas

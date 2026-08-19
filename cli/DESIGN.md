@@ -320,6 +320,13 @@ session, `execstream/client`.
   server knew the instant they changed, and every client had to reimplement
   them. `--wait` on `box sandbox create` is a different thing and stays: there
   the wait *is* what was asked for.
+- The wait is narrated, and the narration never gates it. `attachSandboxTerminal`
+  starts `watchProvisioning` before the dial and takes it down the moment the
+  dial returns — which is exactly when there is nothing left to wait for, since
+  the sandbox agent accepts the websocket only once the primary terminal is
+  launched and installed. It reads the discobox's recorded phase rather than
+  deciding anything from it, and an unreadable discobox says nothing rather than
+  saying something wrong. See "Saying What a Wait Is For".
 - `primary` (`primaryExecID`) is accepted wherever a terminal/exec ID is: it is
   the sandbox-agent's virtual id for the current primary terminal, so it must
   bypass short-ID resolution and reach the agent unchanged. It is the only
@@ -628,6 +635,12 @@ sandbox, which sits on a network the client cannot reach.
 two repository URLs, the bearer token as a config override rather than in the
 URL, and the client-side ref names.
 
+`CreatePromptSandbox` and `DeliverSource` both take a `sandboxcreate.Report` and
+call it as they enter each step. These steps are this process's own work, so
+nothing else can say which one is underway; the words live in `sandboxcreate`
+so `disco run` and the launcher cannot describe the same stage differently,
+while where the line is drawn and when it is cleared stays each frontend's.
+
 See [ADR 0001](../docs/adr/0001-sandbox-origin-and-remote-source-push.md).
 
 ## Re-delivering Source (`disco push`)
@@ -655,6 +668,42 @@ rewrites away routinely. Uncommitted changes are reported, never pushed.
 as `origin/<that branch>`, leaving the branch it tracks alone.
 
 See [ADR 0058](../docs/adr/0058-a-push-delivered-source-has-a-pool-side-origin.md).
+
+## Saying What a Wait Is For
+
+Creating a discobox and attaching to it can take minutes behind a cold image
+pull, and neither the create nor the attach says anything while it does. Two
+mechanisms fill that in, and they cover disjoint halves of the wait
+([ADR 0060](../docs/adr/0060-provisioning-progress-is-a-recorded-phase-the-client-polls.md)).
+
+**Client-side steps** are reported by `sandboxcreate` as it takes them, above.
+
+**Provisioning** is the pool agent's work, recorded on the discobox as
+`runtime.provisionProgress` and read back by `watchProvisioning`. It polls,
+deliberately: each read is the current truth, so a missed update is not a lost
+one and there is no gap to recover from. This is not the readiness poll ADR 0039
+removed — that one gated the attach and cost a round trip per second for an
+answer the server volunteered; this one runs beside an attach that is already
+correct, ends when the attach connects, and its worst failure is a late line.
+
+`provisionStatus` turns one discobox into one line, most specific answer first:
+a settled failure or a parked source push is an answer, a recorded phase beats
+any inference from state, and a phase that has not been restated within
+`provisionProgressFresh` is describing the past rather than the present — the
+record is the last report and is never cleared. A discobox with nothing left to
+provision reports **nothing**, so the caller keeps its own line: what remains
+then is the harness install and the terminal launch, which no channel reports
+upward. A phase this build does not know is spelled out rather than dropped,
+because a CLI is routinely older than the control plane it talks to.
+
+The first read waits one interval. An attach onto a running discobox connects
+inside it and asks the server nothing at all, so narration costs a request only
+when there is a wait worth narrating.
+
+`statusLine` is where it lands for the commands: one rewritable line on a
+terminal, appended lines off one, and cleared before the stream is handed to
+anything else. The launcher renders the same reports on its busy line instead;
+see the launcher's design doc.
 
 ## Uncommitted Work at Create
 

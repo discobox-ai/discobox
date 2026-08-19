@@ -702,6 +702,34 @@ counts, key hints, menu details. The API type is still `Sandbox`; only what is
 rendered changes, so the code keeps the control plane's word for it and the user
 gets the product's.
 
+## The Busy Line Says What It Is Waiting For
+
+The busy line answers "is this window alive"; creating a discobox is where that
+stops being enough. Behind a cold image pull the wait is minutes, and one word
+held for all of it is indistinguishable from a hang
+([ADR 0060](../../../docs/adr/0060-provisioning-progress-is-a-recorded-phase-the-client-polls.md)).
+
+Two kinds of work report onto that line, and `narration.go` makes them the same
+to the window. Creating and pushing a source are the client's own steps,
+reported by the shared creation path through `DataSource.Run`. Provisioning is
+the pool agent's, read off the discobox record by `DataSource.WatchProvisioning`
+while the attach waits. Both arrive as lines; the window's only job is to put
+the newest one where the busy line goes.
+
+- One operation owns the line. Opening a feed ends the one before it, and each
+  feed carries the generation it was opened at, so a report still in flight when
+  an operation ends is dropped rather than landing on what replaced it.
+- Reports never block the work. The feed is buffered and its sends are dropped
+  when full: a status line must not be able to stall what it describes.
+- The operation closes its feed when it returns, which is what releases the
+  command reading it. That is why the reader is batched alongside the work
+  rather than started independently — the two have the same lifetime.
+- The workspace's watch ends when a session connects, not when the workspace
+  closes: the discobox agent accepts an attach only once the terminal is
+  launched and installed, so a connected session means there is nothing left to
+  say. It reports nothing at all for a discobox that is already up, so attaching
+  to a running one still shows only `attach…`.
+
 ## Files
 
 | file | what it holds |
@@ -722,6 +750,7 @@ gets the product's.
 | `column.go` | one side of the workspace: a strip of panes, one visible |
 | `workspace.go` | the workspace screen: open, poll/reconcile, tabs, detach, the port forward |
 | `interact.go` | the `tea.ExecCommand` adapter for the command-shaped actions |
+| `narration.go` | what a slow operation is doing, on the busy line |
 
 ## Looking at it without a terminal
 

@@ -10658,6 +10658,10 @@ func (s *PoolSandboxProgress) Encode(e *jx.Encoder) {
 // encodeFields encodes fields.
 func (s *PoolSandboxProgress) encodeFields(e *jx.Encoder) {
 	{
+		e.FieldStart("phase")
+		s.Phase.Encode(e)
+	}
+	{
 		if s.Pull.Set {
 			e.FieldStart("pull")
 			s.Pull.Encode(e)
@@ -10669,9 +10673,10 @@ func (s *PoolSandboxProgress) encodeFields(e *jx.Encoder) {
 	}
 }
 
-var jsonFieldsNameOfPoolSandboxProgress = [2]string{
-	0: "pull",
-	1: "sandboxId",
+var jsonFieldsNameOfPoolSandboxProgress = [3]string{
+	0: "phase",
+	1: "pull",
+	2: "sandboxId",
 }
 
 // Decode decodes PoolSandboxProgress from json.
@@ -10683,6 +10688,16 @@ func (s *PoolSandboxProgress) Decode(d *jx.Decoder) error {
 
 	if err := d.ObjBytes(func(d *jx.Decoder, k []byte) error {
 		switch string(k) {
+		case "phase":
+			requiredBitSet[0] |= 1 << 0
+			if err := func() error {
+				if err := s.Phase.Decode(d); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"phase\"")
+			}
 		case "pull":
 			if err := func() error {
 				s.Pull.Reset()
@@ -10694,7 +10709,7 @@ func (s *PoolSandboxProgress) Decode(d *jx.Decoder) error {
 				return errors.Wrap(err, "decode field \"pull\"")
 			}
 		case "sandboxId":
-			requiredBitSet[0] |= 1 << 1
+			requiredBitSet[0] |= 1 << 2
 			if err := func() error {
 				v, err := d.Str()
 				s.SandboxId = string(v)
@@ -10715,7 +10730,7 @@ func (s *PoolSandboxProgress) Decode(d *jx.Decoder) error {
 	// Validate required fields.
 	var failures []validate.FieldError
 	for i, mask := range [1]uint8{
-		0b00000010,
+		0b00000101,
 	} {
 		if result := (requiredBitSet[i] & mask) ^ mask; result != 0 {
 			// Mask only required fields and check equality to mask using XOR.
@@ -10757,6 +10772,54 @@ func (s *PoolSandboxProgress) MarshalJSON() ([]byte, error) {
 
 // UnmarshalJSON implements stdjson.Unmarshaler.
 func (s *PoolSandboxProgress) UnmarshalJSON(data []byte) error {
+	d := jx.DecodeBytes(data)
+	return s.Decode(d)
+}
+
+// Encode encodes PoolSandboxProvisionPhase as json.
+func (s PoolSandboxProvisionPhase) Encode(e *jx.Encoder) {
+	e.Str(string(s))
+}
+
+// Decode decodes PoolSandboxProvisionPhase from json.
+func (s *PoolSandboxProvisionPhase) Decode(d *jx.Decoder) error {
+	if s == nil {
+		return errors.New("invalid: unable to decode PoolSandboxProvisionPhase to nil")
+	}
+	v, err := d.StrBytes()
+	if err != nil {
+		return err
+	}
+	// Try to use constant string.
+	switch PoolSandboxProvisionPhase(v) {
+	case PoolSandboxProvisionPhasePullingImage:
+		*s = PoolSandboxProvisionPhasePullingImage
+	case PoolSandboxProvisionPhasePreparingVolumes:
+		*s = PoolSandboxProvisionPhasePreparingVolumes
+	case PoolSandboxProvisionPhaseMaterializingSource:
+		*s = PoolSandboxProvisionPhaseMaterializingSource
+	case PoolSandboxProvisionPhaseCreatingContainer:
+		*s = PoolSandboxProvisionPhaseCreatingContainer
+	case PoolSandboxProvisionPhaseStartingContainer:
+		*s = PoolSandboxProvisionPhaseStartingContainer
+	case PoolSandboxProvisionPhaseWaitingForAgent:
+		*s = PoolSandboxProvisionPhaseWaitingForAgent
+	default:
+		*s = PoolSandboxProvisionPhase(v)
+	}
+
+	return nil
+}
+
+// MarshalJSON implements stdjson.Marshaler.
+func (s PoolSandboxProvisionPhase) MarshalJSON() ([]byte, error) {
+	e := jx.Encoder{}
+	s.Encode(&e)
+	return e.Bytes(), nil
+}
+
+// UnmarshalJSON implements stdjson.Unmarshaler.
+func (s *PoolSandboxProvisionPhase) UnmarshalJSON(data []byte) error {
 	d := jx.DecodeBytes(data)
 	return s.Decode(d)
 }
@@ -18241,6 +18304,54 @@ func (s *SandboxProviderInstance) UnmarshalJSON(data []byte) error {
 	return s.Decode(d)
 }
 
+// Encode encodes SandboxProvisionPhase as json.
+func (s SandboxProvisionPhase) Encode(e *jx.Encoder) {
+	e.Str(string(s))
+}
+
+// Decode decodes SandboxProvisionPhase from json.
+func (s *SandboxProvisionPhase) Decode(d *jx.Decoder) error {
+	if s == nil {
+		return errors.New("invalid: unable to decode SandboxProvisionPhase to nil")
+	}
+	v, err := d.StrBytes()
+	if err != nil {
+		return err
+	}
+	// Try to use constant string.
+	switch SandboxProvisionPhase(v) {
+	case SandboxProvisionPhasePullingImage:
+		*s = SandboxProvisionPhasePullingImage
+	case SandboxProvisionPhasePreparingVolumes:
+		*s = SandboxProvisionPhasePreparingVolumes
+	case SandboxProvisionPhaseMaterializingSource:
+		*s = SandboxProvisionPhaseMaterializingSource
+	case SandboxProvisionPhaseCreatingContainer:
+		*s = SandboxProvisionPhaseCreatingContainer
+	case SandboxProvisionPhaseStartingContainer:
+		*s = SandboxProvisionPhaseStartingContainer
+	case SandboxProvisionPhaseWaitingForAgent:
+		*s = SandboxProvisionPhaseWaitingForAgent
+	default:
+		*s = SandboxProvisionPhase(v)
+	}
+
+	return nil
+}
+
+// MarshalJSON implements stdjson.Marshaler.
+func (s SandboxProvisionPhase) MarshalJSON() ([]byte, error) {
+	e := jx.Encoder{}
+	s.Encode(&e)
+	return e.Bytes(), nil
+}
+
+// UnmarshalJSON implements stdjson.Unmarshaler.
+func (s *SandboxProvisionPhase) UnmarshalJSON(data []byte) error {
+	d := jx.DecodeBytes(data)
+	return s.Decode(d)
+}
+
 // Encode implements json.Marshaler.
 func (s *SandboxProvisionProgress) Encode(e *jx.Encoder) {
 	e.ObjStart()
@@ -18251,6 +18362,10 @@ func (s *SandboxProvisionProgress) Encode(e *jx.Encoder) {
 // encodeFields encodes fields.
 func (s *SandboxProvisionProgress) encodeFields(e *jx.Encoder) {
 	{
+		e.FieldStart("phase")
+		s.Phase.Encode(e)
+	}
+	{
 		if s.Pull.Set {
 			e.FieldStart("pull")
 			s.Pull.Encode(e)
@@ -18258,8 +18373,9 @@ func (s *SandboxProvisionProgress) encodeFields(e *jx.Encoder) {
 	}
 }
 
-var jsonFieldsNameOfSandboxProvisionProgress = [1]string{
-	0: "pull",
+var jsonFieldsNameOfSandboxProvisionProgress = [2]string{
+	0: "phase",
+	1: "pull",
 }
 
 // Decode decodes SandboxProvisionProgress from json.
@@ -18267,9 +18383,20 @@ func (s *SandboxProvisionProgress) Decode(d *jx.Decoder) error {
 	if s == nil {
 		return errors.New("invalid: unable to decode SandboxProvisionProgress to nil")
 	}
+	var requiredBitSet [1]uint8
 
 	if err := d.ObjBytes(func(d *jx.Decoder, k []byte) error {
 		switch string(k) {
+		case "phase":
+			requiredBitSet[0] |= 1 << 0
+			if err := func() error {
+				if err := s.Phase.Decode(d); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"phase\"")
+			}
 		case "pull":
 			if err := func() error {
 				s.Pull.Reset()
@@ -18286,6 +18413,38 @@ func (s *SandboxProvisionProgress) Decode(d *jx.Decoder) error {
 		return nil
 	}); err != nil {
 		return errors.Wrap(err, "decode SandboxProvisionProgress")
+	}
+	// Validate required fields.
+	var failures []validate.FieldError
+	for i, mask := range [1]uint8{
+		0b00000001,
+	} {
+		if result := (requiredBitSet[i] & mask) ^ mask; result != 0 {
+			// Mask only required fields and check equality to mask using XOR.
+			//
+			// If XOR result is not zero, result is not equal to expected, so some fields are missed.
+			// Bits of fields which would be set are actually bits of missed fields.
+			missed := bits.OnesCount8(result)
+			for bitN := 0; bitN < missed; bitN++ {
+				bitIdx := bits.TrailingZeros8(result)
+				fieldIdx := i*8 + bitIdx
+				var name string
+				if fieldIdx < len(jsonFieldsNameOfSandboxProvisionProgress) {
+					name = jsonFieldsNameOfSandboxProvisionProgress[fieldIdx]
+				} else {
+					name = strconv.Itoa(fieldIdx)
+				}
+				failures = append(failures, validate.FieldError{
+					Name:  name,
+					Error: validate.ErrFieldRequired,
+				})
+				// Reset bit.
+				result &^= 1 << bitIdx
+			}
+		}
+	}
+	if len(failures) > 0 {
+		return &validate.Error{Fields: failures}
 	}
 
 	return nil

@@ -264,7 +264,7 @@ func Serve(ctx context.Context, logger *slog.Logger, bootstrap Bootstrap, regist
 		// the boot id and sequence, so the control plane orders progress and
 		// state against each other exactly as it already orders state.
 		go runtime.WatchSandboxProgress(ctx, func(reportCtx context.Context, observed sandboxruntime.SandboxProgressObservation) error {
-			progress := SandboxProgress{SandboxID: observed.SandboxID}
+			progress := SandboxProgress{SandboxID: observed.SandboxID, Phase: observed.Phase}
 			if observed.Pull != nil {
 				progress.Pull = &SandboxPullProgress{
 					Image:          observed.Pull.Image,

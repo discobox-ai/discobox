@@ -83,7 +83,14 @@ sandbox as it does here. --declared-sources=false leaves them out.`,
 			if err != nil {
 				return err
 			}
-			sandbox, local, err := sandboxcreate.CreatePromptSandbox(cmd.Context(), client, projectID, parsedOpts)
+			// Creating and delivering a source are this client's own work, so
+			// nothing but this process can say which of them is underway
+			// (ADR 0060). The line comes back down before anything else is
+			// written to stderr.
+			status := newStatusLine(cmd.ErrOrStderr())
+			defer status.clear()
+			report := func(step sandboxcreate.Step) { status.set(string(step)) }
+			sandbox, local, err := sandboxcreate.CreatePromptSandbox(cmd.Context(), client, projectID, parsedOpts, report)
 			if err != nil {
 				return err
 			}
@@ -97,9 +104,10 @@ sandbox as it does here. --declared-sources=false leaves them out.`,
 			if err != nil {
 				return err
 			}
-			err = sandboxcreate.DeliverSource(cmd.Context(), client, projectID, sandbox, local, gitServerURL, a.token)
+			err = sandboxcreate.DeliverSource(cmd.Context(), client, projectID, sandbox, local, gitServerURL, a.token, report)
 			releaseGitServerURL()
 			local.Close()
+			status.clear()
 			if err != nil {
 				return err
 			}

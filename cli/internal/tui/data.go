@@ -570,7 +570,19 @@ type DataSource interface {
 	List(ctx context.Context) ([]Sandbox, error)
 
 	// Run creates a sandbox and delivers its source, which is what Enter does.
-	Run(ctx context.Context, req RunRequest) (Sandbox, error)
+	// It reports each step it passes through — the steps are this client's own
+	// work, so nothing else can say which one is underway — and the window puts
+	// them where it says what it is busy with.
+	Run(ctx context.Context, req RunRequest, report func(string)) (Sandbox, error)
+
+	// WatchProvisioning reports what a sandbox that is not usable yet is being
+	// made to do, until ctx ends. It blocks, and is meant to run beside a wait
+	// rather than instead of one: an attach blocks until every tier reports
+	// ready, and this is the only thing that can say what it is blocked on.
+	//
+	// It reports nothing for a sandbox with nothing left to provision, so a
+	// window that starts one against a running discobox draws no line at all.
+	WatchProvisioning(ctx context.Context, sandboxID string, report func(string))
 
 	// Dirty reports whether the source directory has uncommitted work, so the
 	// window can settle --include-dirty=auto before it creates anything.

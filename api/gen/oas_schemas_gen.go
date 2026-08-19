@@ -6846,9 +6846,15 @@ func (s *PoolDesiredState) UnmarshalText(data []byte) error {
 // has none to report.
 // Ref: #/components/schemas/PoolSandboxProgress
 type PoolSandboxProgress struct {
-	Pull OptPoolSandboxPullProgress `json:"pull"`
+	Phase PoolSandboxProvisionPhase  `json:"phase"`
+	Pull  OptPoolSandboxPullProgress `json:"pull"`
 	// Sandbox the progress is about.
 	SandboxId string `json:"sandboxId"`
+}
+
+// GetPhase returns the value of Phase.
+func (s *PoolSandboxProgress) GetPhase() PoolSandboxProvisionPhase {
+	return s.Phase
 }
 
 // GetPull returns the value of Pull.
@@ -6861,6 +6867,11 @@ func (s *PoolSandboxProgress) GetSandboxId() string {
 	return s.SandboxId
 }
 
+// SetPhase sets the value of Phase.
+func (s *PoolSandboxProgress) SetPhase(val PoolSandboxProvisionPhase) {
+	s.Phase = val
+}
+
 // SetPull sets the value of Pull.
 func (s *PoolSandboxProgress) SetPull(val OptPoolSandboxPullProgress) {
 	s.Pull = val
@@ -6869,6 +6880,79 @@ func (s *PoolSandboxProgress) SetPull(val OptPoolSandboxPullProgress) {
 // SetSandboxId sets the value of SandboxId.
 func (s *PoolSandboxProgress) SetSandboxId(val string) {
 	s.SandboxId = val
+}
+
+// What the pool agent is doing to a sandbox right now. It is the agent-facing twin of
+// SandboxProvisionPhase and must carry the same values; the two are separate schemas
+// because they are separate contracts, and a test pins them to each other.
+// Ref: #/components/schemas/PoolSandboxProvisionPhase
+type PoolSandboxProvisionPhase string
+
+const (
+	PoolSandboxProvisionPhasePullingImage        PoolSandboxProvisionPhase = "pulling_image"
+	PoolSandboxProvisionPhasePreparingVolumes    PoolSandboxProvisionPhase = "preparing_volumes"
+	PoolSandboxProvisionPhaseMaterializingSource PoolSandboxProvisionPhase = "materializing_source"
+	PoolSandboxProvisionPhaseCreatingContainer   PoolSandboxProvisionPhase = "creating_container"
+	PoolSandboxProvisionPhaseStartingContainer   PoolSandboxProvisionPhase = "starting_container"
+	PoolSandboxProvisionPhaseWaitingForAgent     PoolSandboxProvisionPhase = "waiting_for_agent"
+)
+
+// AllValues returns all PoolSandboxProvisionPhase values.
+func (PoolSandboxProvisionPhase) AllValues() []PoolSandboxProvisionPhase {
+	return []PoolSandboxProvisionPhase{
+		PoolSandboxProvisionPhasePullingImage,
+		PoolSandboxProvisionPhasePreparingVolumes,
+		PoolSandboxProvisionPhaseMaterializingSource,
+		PoolSandboxProvisionPhaseCreatingContainer,
+		PoolSandboxProvisionPhaseStartingContainer,
+		PoolSandboxProvisionPhaseWaitingForAgent,
+	}
+}
+
+// MarshalText implements encoding.TextMarshaler.
+func (s PoolSandboxProvisionPhase) MarshalText() ([]byte, error) {
+	switch s {
+	case PoolSandboxProvisionPhasePullingImage:
+		return []byte(s), nil
+	case PoolSandboxProvisionPhasePreparingVolumes:
+		return []byte(s), nil
+	case PoolSandboxProvisionPhaseMaterializingSource:
+		return []byte(s), nil
+	case PoolSandboxProvisionPhaseCreatingContainer:
+		return []byte(s), nil
+	case PoolSandboxProvisionPhaseStartingContainer:
+		return []byte(s), nil
+	case PoolSandboxProvisionPhaseWaitingForAgent:
+		return []byte(s), nil
+	default:
+		return nil, errors.Errorf("invalid value: %q", s)
+	}
+}
+
+// UnmarshalText implements encoding.TextUnmarshaler.
+func (s *PoolSandboxProvisionPhase) UnmarshalText(data []byte) error {
+	switch PoolSandboxProvisionPhase(data) {
+	case PoolSandboxProvisionPhasePullingImage:
+		*s = PoolSandboxProvisionPhasePullingImage
+		return nil
+	case PoolSandboxProvisionPhasePreparingVolumes:
+		*s = PoolSandboxProvisionPhasePreparingVolumes
+		return nil
+	case PoolSandboxProvisionPhaseMaterializingSource:
+		*s = PoolSandboxProvisionPhaseMaterializingSource
+		return nil
+	case PoolSandboxProvisionPhaseCreatingContainer:
+		*s = PoolSandboxProvisionPhaseCreatingContainer
+		return nil
+	case PoolSandboxProvisionPhaseStartingContainer:
+		*s = PoolSandboxProvisionPhaseStartingContainer
+		return nil
+	case PoolSandboxProvisionPhaseWaitingForAgent:
+		*s = PoolSandboxProvisionPhaseWaitingForAgent
+		return nil
+	default:
+		return errors.Errorf("invalid value: %q", data)
+	}
 }
 
 // An image pull as a status line wants it rather than as the daemon reports it. Both
@@ -10350,17 +10434,105 @@ func (*SandboxProviderInstance) createSandboxProviderInstanceRes() {}
 func (*SandboxProviderInstance) getSandboxProviderInstanceRes()    {}
 func (*SandboxProviderInstance) updateSandboxProviderInstanceRes() {}
 
+// What a provisioning sandbox is being made to do right now, named for a client that
+// is waiting to attach and wants to know what it is waiting for (ADR 0060). It is an
+// observation and never a state: it decides nothing, and it is history the moment the
+// phase ends. pulling_image is the phase that carries pull byte counts; the rest are
+// named work with no denominator to report.
+// Ref: #/components/schemas/SandboxProvisionPhase
+type SandboxProvisionPhase string
+
+const (
+	SandboxProvisionPhasePullingImage        SandboxProvisionPhase = "pulling_image"
+	SandboxProvisionPhasePreparingVolumes    SandboxProvisionPhase = "preparing_volumes"
+	SandboxProvisionPhaseMaterializingSource SandboxProvisionPhase = "materializing_source"
+	SandboxProvisionPhaseCreatingContainer   SandboxProvisionPhase = "creating_container"
+	SandboxProvisionPhaseStartingContainer   SandboxProvisionPhase = "starting_container"
+	SandboxProvisionPhaseWaitingForAgent     SandboxProvisionPhase = "waiting_for_agent"
+)
+
+// AllValues returns all SandboxProvisionPhase values.
+func (SandboxProvisionPhase) AllValues() []SandboxProvisionPhase {
+	return []SandboxProvisionPhase{
+		SandboxProvisionPhasePullingImage,
+		SandboxProvisionPhasePreparingVolumes,
+		SandboxProvisionPhaseMaterializingSource,
+		SandboxProvisionPhaseCreatingContainer,
+		SandboxProvisionPhaseStartingContainer,
+		SandboxProvisionPhaseWaitingForAgent,
+	}
+}
+
+// MarshalText implements encoding.TextMarshaler.
+func (s SandboxProvisionPhase) MarshalText() ([]byte, error) {
+	switch s {
+	case SandboxProvisionPhasePullingImage:
+		return []byte(s), nil
+	case SandboxProvisionPhasePreparingVolumes:
+		return []byte(s), nil
+	case SandboxProvisionPhaseMaterializingSource:
+		return []byte(s), nil
+	case SandboxProvisionPhaseCreatingContainer:
+		return []byte(s), nil
+	case SandboxProvisionPhaseStartingContainer:
+		return []byte(s), nil
+	case SandboxProvisionPhaseWaitingForAgent:
+		return []byte(s), nil
+	default:
+		return nil, errors.Errorf("invalid value: %q", s)
+	}
+}
+
+// UnmarshalText implements encoding.TextUnmarshaler.
+func (s *SandboxProvisionPhase) UnmarshalText(data []byte) error {
+	switch SandboxProvisionPhase(data) {
+	case SandboxProvisionPhasePullingImage:
+		*s = SandboxProvisionPhasePullingImage
+		return nil
+	case SandboxProvisionPhasePreparingVolumes:
+		*s = SandboxProvisionPhasePreparingVolumes
+		return nil
+	case SandboxProvisionPhaseMaterializingSource:
+		*s = SandboxProvisionPhaseMaterializingSource
+		return nil
+	case SandboxProvisionPhaseCreatingContainer:
+		*s = SandboxProvisionPhaseCreatingContainer
+		return nil
+	case SandboxProvisionPhaseStartingContainer:
+		*s = SandboxProvisionPhaseStartingContainer
+		return nil
+	case SandboxProvisionPhaseWaitingForAgent:
+		*s = SandboxProvisionPhaseWaitingForAgent
+		return nil
+	default:
+		return errors.Errorf("invalid value: %q", data)
+	}
+}
+
 // Work underway on a sandbox that has no state transition to announce it, reported by
 // the hosting pool-agent (ADR 0032). A client waiting to attach reads this to say what
-// it is waiting for; an image pull is the case that matters, because it is the longest.
+// it is waiting for. The phase always says what is happening; pull refines the one
+// phase that can report how far in it is, because an image pull is the longest thing
+// an attach waits behind.
 // Ref: #/components/schemas/SandboxProvisionProgress
 type SandboxProvisionProgress struct {
-	Pull OptSandboxPullProgress `json:"pull"`
+	Phase SandboxProvisionPhase  `json:"phase"`
+	Pull  OptSandboxPullProgress `json:"pull"`
+}
+
+// GetPhase returns the value of Phase.
+func (s *SandboxProvisionProgress) GetPhase() SandboxProvisionPhase {
+	return s.Phase
 }
 
 // GetPull returns the value of Pull.
 func (s *SandboxProvisionProgress) GetPull() OptSandboxPullProgress {
 	return s.Pull
+}
+
+// SetPhase sets the value of Phase.
+func (s *SandboxProvisionProgress) SetPhase(val SandboxProvisionPhase) {
+	s.Phase = val
 }
 
 // SetPull sets the value of Pull.

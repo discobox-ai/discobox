@@ -86,6 +86,26 @@ func (r *DockerSandboxRuntime) PublishSandboxState(ctx context.Context, sandboxI
 	}
 }
 
+// Provisioning phases. These name what this agent is doing to a sandbox that
+// has no state transition to announce it, for a client that is waiting to
+// attach and wants to know what it is waiting for (ADR 0060).
+//
+// They are not states and never become any: nothing branches on a phase, and
+// the phase a sandbox was last in means nothing once it is up. That is the
+// whole reason they ride the progress array rather than the state one.
+//
+// PhasePullingImage is the only phase with a denominator to report; the rest
+// are named work. Reporting them anyway is the point — a client that can say
+// "creating the container" is not looking at a hang.
+const (
+	PhasePullingImage        = "pulling_image"
+	PhasePreparingVolumes    = "preparing_volumes"
+	PhaseMaterializingSource = "materializing_source"
+	PhaseCreatingContainer   = "creating_container"
+	PhaseStartingContainer   = "starting_container"
+	PhaseWaitingForAgent     = "waiting_for_agent"
+)
+
 // SandboxProgressObservation is one report of provisioning progress on one
 // sandbox: work that is underway and has no state transition to announce it.
 //
@@ -95,7 +115,11 @@ func (r *DockerSandboxRuntime) PublishSandboxState(ctx context.Context, sandboxI
 // changes it sits between (ADR 0039).
 type SandboxProgressObservation struct {
 	SandboxID string
-	// Pull is set while the sandbox's image is being pulled.
+	// Phase is what is being done, and is always set: a report that cannot say
+	// what it is about is worth less than no report at all.
+	Phase string
+	// Pull refines PhasePullingImage with how far in it is. No other phase
+	// sets it.
 	Pull *PullProgress
 }
 
@@ -105,7 +129,7 @@ type SandboxProgressObservation struct {
 // complete sync remains the thing that makes the channel correct.
 func (r *DockerSandboxRuntime) PublishSandboxProgress(ctx context.Context, observation SandboxProgressObservation) {
 	publish, _ := r.progressPublisher.Load().(func(context.Context, SandboxProgressObservation) error)
-	if publish == nil || strings.TrimSpace(observation.SandboxID) == "" {
+	if publish == nil || strings.TrimSpace(observation.SandboxID) == "" || strings.TrimSpace(observation.Phase) == "" {
 		return
 	}
 	if err := publish(ctx, observation); err != nil {
@@ -113,10 +137,17 @@ func (r *DockerSandboxRuntime) PublishSandboxProgress(ctx context.Context, obser
 	}
 }
 
-// PublishSandboxPullProgress is PublishSandboxProgress for the one kind of
-// progress that exists today, named for its caller's benefit.
+// PublishSandboxPullProgress reports the image pull, the one phase that can say
+// how far in it is.
 func (r *DockerSandboxRuntime) PublishSandboxPullProgress(ctx context.Context, sandboxID string, pull PullProgress) {
-	r.PublishSandboxProgress(ctx, SandboxProgressObservation{SandboxID: sandboxID, Pull: &pull})
+	r.PublishSandboxProgress(ctx, SandboxProgressObservation{SandboxID: sandboxID, Phase: PhasePullingImage, Pull: &pull})
+}
+
+// PublishSandboxPhase reports a phase that has nothing to measure — which is
+// every phase but the pull. It is the call the create path makes at each of its
+// own boundaries.
+func (r *DockerSandboxRuntime) PublishSandboxPhase(ctx context.Context, sandboxID, phase string) {
+	r.PublishSandboxProgress(ctx, SandboxProgressObservation{SandboxID: sandboxID, Phase: phase})
 }
 
 // WatchSandboxProgress installs the progress sink for as long as ctx lives. It

@@ -5,11 +5,13 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"os"
+	"slices"
 	"strings"
 	"testing"
 
 	apiclientgen "github.com/obot-platform/discobox/api/gen"
 	apimodel "github.com/obot-platform/discobox/api/model"
+	"github.com/obot-platform/discobox/cli/internal/sandboxcreate"
 	"github.com/obot-platform/discobox/cli/internal/tui"
 )
 
@@ -114,13 +116,24 @@ func TestAPIDataSourceRunUsesSharedRunCreation(t *testing.T) {
 		client:    client,
 		projectID: "project-1",
 	}
+	var steps []string
 	sandbox, err := ds.Run(t.Context(), tui.RunRequest{
 		Harness: "codex",
 		Source:  repo + "@HEAD",
 		Prompt:  "fix the failing tests",
-	})
+	}, func(step string) { steps = append(steps, step) })
 	if err != nil {
 		t.Fatalf("run: %v", err)
+	}
+	// The launcher's create says what it is doing on the way through, in the
+	// same words `disco run` uses, because both call the same creation path
+	// (ADR 0060). A source the server can reach needs no push, so the delivery
+	// reports nothing here.
+	if want := []string{
+		string(sandboxcreate.StepPreparingSource),
+		string(sandboxcreate.StepCreating),
+	}; !slices.Equal(steps, want) {
+		t.Fatalf("reported steps = %q, want %q", steps, want)
 	}
 	if sandbox.ID != "sbx_9qk5n25t2hh2rv00" {
 		t.Fatalf("sandbox ID = %q", sandbox.ID)

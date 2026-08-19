@@ -33,6 +33,13 @@ type fakeSource struct {
 	runErr    error
 	createdID string
 
+	// runSteps is what Run reports as it goes, and provisionLines what the
+	// provisioning watch reports; watched records which discoboxes the window
+	// asked about.
+	runSteps       []string
+	provisionLines []string
+	watched        []string
+
 	openErr   error
 	renameErr error
 	editorErr error
@@ -152,14 +159,32 @@ func (f *fakeSource) List(context.Context) ([]Sandbox, error) {
 	return append([]Sandbox(nil), f.sandboxes...), nil
 }
 
-func (f *fakeSource) Run(_ context.Context, req RunRequest) (Sandbox, error) {
+func (f *fakeSource) Run(_ context.Context, req RunRequest, report func(string)) (Sandbox, error) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	f.runs = append(f.runs, req)
+	for _, step := range f.runSteps {
+		report(step)
+	}
 	if f.runErr != nil {
 		return Sandbox{}, f.runErr
 	}
 	return Sandbox{ID: f.createdID, Name: req.Prompt, State: StateStarting}, nil
+}
+
+// WatchProvisioning reports whatever the test staged and returns. The real one
+// blocks until it is stopped, but it also reports nothing at all for a discobox
+// that is already up — which is every discobox in these tests — so returning is
+// the faithful behavior for a fake with nothing staged, and it keeps a window
+// under test from waiting on a watch that will never say anything.
+func (f *fakeSource) WatchProvisioning(_ context.Context, sandboxID string, report func(string)) {
+	f.mu.Lock()
+	f.watched = append(f.watched, sandboxID)
+	lines := append([]string(nil), f.provisionLines...)
+	f.mu.Unlock()
+	for _, line := range lines {
+		report(line)
+	}
 }
 
 func (f *fakeSource) Dirty(context.Context, string) (bool, error) { return f.dirty, nil }
@@ -564,9 +589,16 @@ func send(t *testing.T, m *Model, msgs ...tea.Msg) *Model {
 	return m
 }
 
+// drainDepth bounds how far a chain of commands is followed. It is a guard
+// against a cycle rather than a claim about how deep the window's command trees
+// go, so it has room to spare: an operation that narrates itself batches its
+// reporting alongside its work, which puts the work one level deeper than the
+// batch and every message it produces deeper still.
+const drainDepth = 8
+
 func drain(t *testing.T, m *Model, cmd tea.Cmd, depth int) {
 	t.Helper()
-	if cmd == nil || depth > 6 {
+	if cmd == nil || depth > drainDepth {
 		return
 	}
 	msg, ok := runQuickly(cmd)

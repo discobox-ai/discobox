@@ -101,7 +101,11 @@ func (m *Model) openWorkspace(sandbox Sandbox, freshShell bool) tea.Cmd {
 	m.busy = "attach…"
 	m.connecting = map[string]bool{}
 	gen := m.wsGen
-	cmds := []tea.Cmd{m.listExecs(gen), m.workspaceTick(gen), m.startForward(gen)}
+	// The attach waits for the discobox to become attachable, which behind a
+	// cold image pull is minutes (ADR 0039). Say what it is waiting for while
+	// it does; the watch reports nothing for a discobox that is already up, so
+	// attaching to a running one still shows only "attach…" (ADR 0060).
+	cmds := []tea.Cmd{m.listExecs(gen), m.workspaceTick(gen), m.startForward(gen), m.watchProvisioning(sandbox.ID)}
 	if freshShell {
 		cmds = append(cmds, m.newShell())
 	}
@@ -332,6 +336,10 @@ func (m *Model) workspaceTermOpened(msg workspaceTermMsg) tea.Cmd {
 		}
 		return nil
 	}
+	// A connected session is the end of the wait this screen narrates: the
+	// discobox agent accepts the attach only once the terminal is launched and
+	// installed, so there is nothing left to say about getting here.
+	m.endNarration()
 	m.busy = ""
 	delete(m.connecting, msg.exec.ID)
 	primary := msg.exec.ID == ExecPrimary
@@ -457,6 +465,7 @@ func (m *Model) closeTab(p *pane) {
 func (m *Model) closeWorkspace() {
 	m.wsGen++
 	m.connecting = nil
+	m.endNarration()
 	m.busy = ""
 	if m.forward != nil {
 		// The local ports go with the screen that opened them. A forward left

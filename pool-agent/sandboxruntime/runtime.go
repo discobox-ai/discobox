@@ -287,6 +287,7 @@ func (r *DockerSandboxRuntime) CreateSandbox(ctx context.Context, req *workerapi
 			// after the container was created and parked. This create is that
 			// resume, so finish those sources rather than returning a sandbox whose
 			// workspace is still empty.
+			r.PublishSandboxPhase(ctx, sandboxID, PhaseMaterializingSource)
 			rebuild, err := r.settleDeliveredSources(ctx, sandboxID, req)
 			if err != nil {
 				return nil, err
@@ -329,6 +330,7 @@ func (r *DockerSandboxRuntime) CreateSandbox(ctx context.Context, req *workerapi
 		return nil, err
 	}
 	user := resolveSandboxUser(req)
+	r.PublishSandboxPhase(ctx, sandboxID, PhasePreparingVolumes)
 	mounts, project, err := r.prepareSandboxVolumes(ctx, sandboxID, req, user)
 	if err != nil {
 		return nil, err
@@ -390,6 +392,7 @@ func (r *DockerSandboxRuntime) CreateSandbox(ctx context.Context, req *workerapi
 			proxyagent.SandboxNetworkName(r.poolID): {},
 		},
 	}
+	r.PublishSandboxPhase(ctx, sandboxID, PhaseCreatingContainer)
 	created, err := r.client.ContainerCreate(ctx, client.ContainerCreateOptions{Config: cfg, HostConfig: hostCfg, NetworkingConfig: netCfg, Name: name})
 	if err != nil {
 		return nil, err
@@ -406,9 +409,15 @@ func (r *DockerSandboxRuntime) CreateSandbox(ctx context.Context, req *workerapi
 		return r.observedSandbox(ctx, sandboxID)
 	}
 	r.PublishSandboxState(ctx, sandboxID, StateStarting)
+	r.PublishSandboxPhase(ctx, sandboxID, PhaseStartingContainer)
 	if _, err := r.client.ContainerStart(ctx, created.ID, client.ContainerStartOptions{}); err != nil {
 		return nil, err
 	}
+	// The container is up and the agent inside it is not yet answering. This is
+	// the last phase the pool agent can see: what happens after it is the
+	// sandbox agent's own boot, which reports on no channel this one owns
+	// (ADR 0060).
+	r.PublishSandboxPhase(ctx, sandboxID, PhaseWaitingForAgent)
 	if err := r.waitForSandboxAgent(ctx, sandboxID); err != nil {
 		return nil, err
 	}

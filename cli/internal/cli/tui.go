@@ -269,8 +269,9 @@ func sourceDirectory(source string) string {
 }
 
 // Run creates the sandbox Enter asked for and delivers its source, which is
-// exactly what `disco run` does before it attaches.
-func (d *apiDataSource) Run(ctx context.Context, req tui.RunRequest) (tui.Sandbox, error) {
+// exactly what `disco run` does before it attaches — including saying which of
+// those steps is underway, on the same words the command uses (ADR 0060).
+func (d *apiDataSource) Run(ctx context.Context, req tui.RunRequest, report func(string)) (tui.Sandbox, error) {
 	opts := sandboxcreate.PromptOptions{
 		Source:  strings.TrimSpace(req.Source),
 		Harness: strings.TrimSpace(req.Harness),
@@ -300,7 +301,12 @@ func (d *apiDataSource) Run(ctx context.Context, req tui.RunRequest) (tui.Sandbo
 		return tui.Sandbox{}, err
 	}
 
-	sandbox, local, err := sandboxcreate.CreatePromptSandbox(ctx, d.client, d.projectID, opts)
+	step := func(step sandboxcreate.Step) {
+		if report != nil {
+			report(string(step))
+		}
+	}
+	sandbox, local, err := sandboxcreate.CreatePromptSandbox(ctx, d.client, d.projectID, opts, step)
 	if err != nil {
 		return tui.Sandbox{}, err
 	}
@@ -313,13 +319,19 @@ func (d *apiDataSource) Run(ctx context.Context, req tui.RunRequest) (tui.Sandbo
 	if err != nil {
 		return tui.Sandbox{}, err
 	}
-	err = sandboxcreate.DeliverSource(ctx, d.client, d.projectID, sandbox, local, gitServerURL, d.app.token)
+	err = sandboxcreate.DeliverSource(ctx, d.client, d.projectID, sandbox, local, gitServerURL, d.app.token, step)
 	releaseGitServerURL()
 	local.Close()
 	if err != nil {
 		return tui.Sandbox{}, err
 	}
 	return toTUISandbox(*sandbox), nil
+}
+
+// WatchProvisioning says what a discobox that is not usable yet is being made
+// to do, on the same reading of the same record `disco run` narrates from.
+func (d *apiDataSource) WatchProvisioning(ctx context.Context, sandboxID string, report func(string)) {
+	d.app.watchProvisioning(ctx, d.projectID, sandboxID, report)
 }
 
 // Do runs a lifecycle verb against one sandbox. These go straight to the API

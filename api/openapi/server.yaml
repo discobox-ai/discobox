@@ -3001,15 +3001,36 @@ components:
                 - complete
                 - states
             type: object
+        SandboxProvisionPhase:
+            description: |-
+                What a provisioning sandbox is being made to do right now, named for a client that
+                is waiting to attach and wants to know what it is waiting for (ADR 0060). It is an
+                observation and never a state: it decides nothing, and it is history the moment the
+                phase ends. pulling_image is the phase that carries pull byte counts; the rest are
+                named work with no denominator to report.
+            enum:
+                - pulling_image
+                - preparing_volumes
+                - materializing_source
+                - creating_container
+                - starting_container
+                - waiting_for_agent
+            type: string
         SandboxProvisionProgress:
             additionalProperties: false
             description: |-
                 Work underway on a sandbox that has no state transition to announce it, reported by
                 the hosting pool-agent (ADR 0032). A client waiting to attach reads this to say what
-                it is waiting for; an image pull is the case that matters, because it is the longest.
+                it is waiting for. The phase always says what is happening; pull refines the one
+                phase that can report how far in it is, because an image pull is the longest thing
+                an attach waits behind.
             properties:
+                phase:
+                    $ref: '#/components/schemas/SandboxProvisionPhase'
                 pull:
                     $ref: '#/components/schemas/SandboxPullProgress'
+            required:
+                - phase
             type: object
         SandboxPullProgress:
             additionalProperties: false
@@ -3041,6 +3062,19 @@ components:
             required:
                 - image
             type: object
+        PoolSandboxProvisionPhase:
+            description: |-
+                What the pool agent is doing to a sandbox right now. It is the agent-facing twin of
+                SandboxProvisionPhase and must carry the same values; the two are separate schemas
+                because they are separate contracts, and a test pins them to each other.
+            enum:
+                - pulling_image
+                - preparing_volumes
+                - materializing_source
+                - creating_container
+                - starting_container
+                - waiting_for_agent
+            type: string
         PoolSandboxProgress:
             additionalProperties: false
             description: |-
@@ -3048,6 +3082,8 @@ components:
                 PoolSandboxState: a state observation always carries an observed state, and progress
                 has none to report.
             properties:
+                phase:
+                    $ref: '#/components/schemas/PoolSandboxProvisionPhase'
                 pull:
                     $ref: '#/components/schemas/PoolSandboxPullProgress'
                 sandboxId:
@@ -3055,6 +3091,7 @@ components:
                     type: string
             required:
                 - sandboxId
+                - phase
             type: object
         PoolSandboxPullProgress:
             additionalProperties: false

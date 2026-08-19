@@ -161,8 +161,11 @@ type SandboxState struct {
 // observation always carries an observed state and progress has none, and a
 // complete sync's "every sandbox I host" claim is about states only.
 type SandboxProgress struct {
-	SandboxID string               `json:"sandboxId"`
-	Pull      *SandboxPullProgress `json:"pull,omitempty"`
+	SandboxID string `json:"sandboxId"`
+	// Phase is what is being done, and is always set. Pull refines the one
+	// phase that can say how far in it is (ADR 0060).
+	Phase string               `json:"phase"`
+	Pull  *SandboxPullProgress `json:"pull,omitempty"`
 }
 
 // SandboxPullProgress is an image pull as a status line wants it: bytes against

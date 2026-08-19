@@ -273,11 +273,13 @@ const nameConflictAttempts = 5
 // Only this path retries: the name here is generated (BuildPromptSandboxBody),
 // so replacing it costs the caller nothing. A name the user typed is theirs,
 // and `box sandbox create --name` reports the conflict instead.
-func CreatePromptSandbox(ctx context.Context, client promptSandboxCreator, projectID string, opts PromptOptions) (*apimodel.Sandbox, *LocalSources, error) {
+func CreatePromptSandbox(ctx context.Context, client promptSandboxCreator, projectID string, opts PromptOptions, report Report) (*apimodel.Sandbox, *LocalSources, error) {
+	report.step(StepPreparingSource)
 	body, local, err := BuildPromptSandboxBody(ctx, opts)
 	if err != nil {
 		return nil, nil, err
 	}
+	report.step(StepCreating)
 	for attempt := 1; ; attempt++ {
 		res, err := client.CreateSandbox(ctx, body, apiclientgen.CreateSandboxParams{ProjectId: projectID})
 		if err != nil {

@@ -1962,6 +1962,48 @@ func (s PoolDesiredState) Validate() error {
 	}
 }
 
+func (s *PoolSandboxProgress) Validate() error {
+	if s == nil {
+		return validate.ErrNilPointer
+	}
+
+	var failures []validate.FieldError
+	if err := func() error {
+		if err := s.Phase.Validate(); err != nil {
+			return err
+		}
+		return nil
+	}(); err != nil {
+		failures = append(failures, validate.FieldError{
+			Name:  "phase",
+			Error: err,
+		})
+	}
+	if len(failures) > 0 {
+		return &validate.Error{Fields: failures}
+	}
+	return nil
+}
+
+func (s PoolSandboxProvisionPhase) Validate() error {
+	switch s {
+	case "pulling_image":
+		return nil
+	case "preparing_volumes":
+		return nil
+	case "materializing_source":
+		return nil
+	case "creating_container":
+		return nil
+	case "starting_container":
+		return nil
+	case "waiting_for_agent":
+		return nil
+	default:
+		return errors.Errorf("invalid value: %v", s)
+	}
+}
+
 func (s *PoolSandboxState) Validate() error {
 	if s == nil {
 		return validate.ErrNilPointer
@@ -2236,6 +2278,31 @@ func (s *ReportPoolSandboxStatesBody) Validate() error {
 	}
 
 	var failures []validate.FieldError
+	if err := func() error {
+		var failures []validate.FieldError
+		for i, elem := range s.Progress {
+			if err := func() error {
+				if err := elem.Validate(); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				failures = append(failures, validate.FieldError{
+					Name:  fmt.Sprintf("[%d]", i),
+					Error: err,
+				})
+			}
+		}
+		if len(failures) > 0 {
+			return &validate.Error{Fields: failures}
+		}
+		return nil
+	}(); err != nil {
+		failures = append(failures, validate.FieldError{
+			Name:  "progress",
+			Error: err,
+		})
+	}
 	if err := func() error {
 		if s.States == nil {
 			return errors.New("nil is invalid value")
@@ -3135,12 +3202,72 @@ func (s *SandboxProviderInstance) Validate() error {
 	return nil
 }
 
+func (s SandboxProvisionPhase) Validate() error {
+	switch s {
+	case "pulling_image":
+		return nil
+	case "preparing_volumes":
+		return nil
+	case "materializing_source":
+		return nil
+	case "creating_container":
+		return nil
+	case "starting_container":
+		return nil
+	case "waiting_for_agent":
+		return nil
+	default:
+		return errors.Errorf("invalid value: %v", s)
+	}
+}
+
+func (s *SandboxProvisionProgress) Validate() error {
+	if s == nil {
+		return validate.ErrNilPointer
+	}
+
+	var failures []validate.FieldError
+	if err := func() error {
+		if err := s.Phase.Validate(); err != nil {
+			return err
+		}
+		return nil
+	}(); err != nil {
+		failures = append(failures, validate.FieldError{
+			Name:  "phase",
+			Error: err,
+		})
+	}
+	if len(failures) > 0 {
+		return &validate.Error{Fields: failures}
+	}
+	return nil
+}
+
 func (s *SandboxRuntime) Validate() error {
 	if s == nil {
 		return validate.ErrNilPointer
 	}
 
 	var failures []validate.FieldError
+	if err := func() error {
+		if value, ok := s.ProvisionProgress.Get(); ok {
+			if err := func() error {
+				if err := value.Validate(); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return err
+			}
+		}
+		return nil
+	}(); err != nil {
+		failures = append(failures, validate.FieldError{
+			Name:  "provisionProgress",
+			Error: err,
+		})
+	}
 	if err := func() error {
 		if value, ok := s.AppliedCommits.Get(); ok {
 			if err := func() error {

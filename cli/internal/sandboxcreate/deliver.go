@@ -86,16 +86,21 @@ func sourceAwaitsPush(source apimodel.GitSource) bool {
 //
 // It is a no-op unless the server asked for a push, so callers can invoke it
 // unconditionally after create.
-func DeliverSource(ctx context.Context, client sourceDeliveryClient, projectID string, sandbox *apimodel.Sandbox, local *LocalSources, serverURL, token string) error {
+func DeliverSource(ctx context.Context, client sourceDeliveryClient, projectID string, sandbox *apimodel.Sandbox, local *LocalSources, serverURL, token string, report Report) error {
 	pending := pushDeliveredSources(sandbox)
 	if len(pending) == 0 {
 		return nil
 	}
 	// The origin repositories only exist once the sandbox is provisioned, so
 	// there is nothing to push into until it parks.
+	report.step(StepAwaitingSource)
 	if err := awaitSourceRequested(ctx, client, projectID, sandbox.ID); err != nil {
 		return err
 	}
+	// One step for the push as a whole rather than one per repository: a
+	// sandbox cut from several sources pushes them back to back, and naming
+	// each would be a line that changes faster than it can be read.
+	report.step(StepPushingSource)
 	pushed := make(apiclientgen.CompleteSandboxSourcePushBodySources, len(pending))
 	for _, entry := range pending {
 		commit, branch, snapshotRef, err := pushRefs(entry.source)

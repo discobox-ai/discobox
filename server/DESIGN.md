@@ -330,6 +330,13 @@ interval. Provisioning progress arrives on the same channel in its own array and
 lands on `runtime.provisionProgress`, published the same way; it marks nothing
 dirty, because work in flight is not drift (ADR 0039).
 
+The stored blob is the client-facing shape, not the agent-facing one: the two
+are separate schemas because they are separate contracts, and the client-facing
+one forbids additional properties. Both carry the same phase vocabulary, pinned
+to each other by a test — the pull crosses as a struct conversion that stops
+compiling if the shapes diverge, but ogen enums are string-typed and a phase
+would cross a widening gap in silence.
+
 The one case that looks like an exception is a container that is gone. It is
 still an observation — the reconciler learns about it through a dirty mark, and
 its idempotent ensure rebuilds the container from the spec already recorded.

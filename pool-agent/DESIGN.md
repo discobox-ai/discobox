@@ -54,15 +54,31 @@ says so on its own schedule rather than in reply to anything (ADR 0017 §10). Th
 control plane holds no opinion about power state and never asks for one.
 
 Provisioning **progress** rides the same channel in its own `progress` array
-(ADR 0039): work underway that has no state transition to announce it, an image
-pull above all. It is reported by whoever is doing the work rather than derived
-from the Docker event stream, so it is a sink to hold rather than a stream to
-watch. It is always a delta and is unaffected by `complete`, which describes
-`states` only — a progress report is not a sync claiming this pool hosts one
-sandbox. Pull progress is aggregated for a status line (bytes against bytes,
-layers against layers) and throttled, because the daemon emits per layer per
-transition; the download phase alone supplies the byte counts, since `Extracting`
-re-reports the same layer and counting both would nearly double the total.
+(ADR 0039): work underway that has no state transition to announce it. It is
+reported by whoever is doing the work rather than derived from the Docker event
+stream, so it is a sink to hold rather than a stream to watch. It is always a
+delta and is unaffected by `complete`, which describes `states` only — a progress
+report is not a sync claiming this pool hosts one sandbox.
+
+Every report carries a **phase**, and `CreateSandbox` publishes one at each
+boundary it already has: pulling the image, preparing volumes, materializing a
+pushed source, creating the container, starting it, waiting for the sandbox
+agent. A phase is never a state — nothing branches on one, and the phase a
+sandbox finished in means nothing once it is up — which is why these ride the
+progress array rather than the state one (ADR 0060). A report with no phase is
+dropped rather than sent.
+
+Pull progress refines the one phase that can say how far in it is, aggregated
+for a status line (bytes against bytes, layers against layers) and throttled,
+because the daemon emits per layer per transition; the download phase alone
+supplies the byte counts, since `Extracting` re-reports the same layer and
+counting both would nearly double the total. Both totals grow while the manifest
+is walked, so the pair is a ratio at a moment and never progress toward a fixed
+target.
+
+Waiting for the sandbox agent is the last phase this agent can see. What happens
+after it is the sandbox agent's own boot, which reports on no channel this one
+owns; a client names that stage by inference instead (ADR 0060).
 
 Two deliveries, both load-bearing:
 

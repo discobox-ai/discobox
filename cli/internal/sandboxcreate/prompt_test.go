@@ -39,7 +39,7 @@ func (f *fakeCreator) CreateSandbox(_ context.Context, body *apimodel.CreateSand
 // user's to see.
 func TestCreatePromptSandboxRetriesAGeneratedNameConflict(t *testing.T) {
 	creator := &fakeCreator{conflicts: 2}
-	sandbox, local, err := CreatePromptSandbox(context.Background(), creator, "project-1", PromptOptions{Source: newRunSourceTestRepo(t)})
+	sandbox, local, err := CreatePromptSandbox(context.Background(), creator, "project-1", PromptOptions{Source: newRunSourceTestRepo(t)}, nil)
 	if err != nil {
 		t.Fatalf("create prompt sandbox: %v", err)
 	}
@@ -66,7 +66,7 @@ func TestCreatePromptSandboxRetriesAGeneratedNameConflict(t *testing.T) {
 // from becoming an infinite loop of sandbox creations.
 func TestCreatePromptSandboxGivesUpOnAPersistentConflict(t *testing.T) {
 	creator := &fakeCreator{conflicts: 100}
-	_, _, err := CreatePromptSandbox(context.Background(), creator, "project-1", PromptOptions{Source: newRunSourceTestRepo(t)})
+	_, _, err := CreatePromptSandbox(context.Background(), creator, "project-1", PromptOptions{Source: newRunSourceTestRepo(t)}, nil)
 	if err == nil {
 		t.Fatal("expected a persistent conflict to surface")
 	}
@@ -79,7 +79,7 @@ func TestCreatePromptSandboxGivesUpOnAPersistentConflict(t *testing.T) {
 // ours to fix by renaming.
 func TestCreatePromptSandboxDoesNotRetryOtherFailures(t *testing.T) {
 	creator := &fakeCreator{conflicts: 100, status: http.StatusBadRequest}
-	if _, _, err := CreatePromptSandbox(context.Background(), creator, "project-1", PromptOptions{Source: newRunSourceTestRepo(t)}); err == nil {
+	if _, _, err := CreatePromptSandbox(context.Background(), creator, "project-1", PromptOptions{Source: newRunSourceTestRepo(t)}, nil); err == nil {
 		t.Fatal("expected the error to surface")
 	}
 	if len(creator.names) != 1 {

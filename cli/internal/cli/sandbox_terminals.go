@@ -338,7 +338,22 @@ func (a *App) writeSandboxTerminals(cmd *cobra.Command, terminals []apimodel.San
 // scrollback replay and detach-chord handling. See detachFilter.
 func (a *App) attachSandboxTerminal(ctx context.Context, projectID, sandboxID, terminalID string, opts execAttachOptions, stdin io.Reader, stdout, stderr io.Writer) error {
 	opts.replay = true
+	// The dial blocks for as long as the sandbox takes to become attachable —
+	// every tier below waits for the readiness only it can see (ADR 0039) —
+	// which behind a cold image pull is minutes on a silent socket. Say what it
+	// is waiting for while it waits (ADR 0060).
+	//
+	// The narration ends when the dial returns, which is exactly when there is
+	// nothing left to wait for: the sandbox-agent accepts the websocket only
+	// after the primary terminal is launched and installed, so a connection in
+	// hand means the terminal is about to draw. Clearing here also keeps the
+	// status line from ever sharing the screen with it.
+	status := newStatusLine(stderr)
+	watching, stopWatching := context.WithCancel(ctx)
+	go a.watchProvisioning(watching, projectID, sandboxID, status.set)
 	frames, err := a.openReconnectingSandboxExecAttach(ctx, projectID, sandboxID, terminalID, opts)
+	stopWatching()
+	status.clear()
 	if err != nil {
 		return a.execAttachError(ctx, projectID, sandboxID, terminalID, err)
 	}

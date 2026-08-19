@@ -37,8 +37,14 @@ sandbox create requests.
   [ADR 0045](../../../docs/adr/0045-a-directory-with-no-repository-is-delivered-by-push.md).
 - Do not depend on `internal/cli` or `internal/tui`. Both frontends consume this
   package through their adapters.
-- Keep terminal waiting, attach, progress output, and rendering in the frontend
-  packages; those behaviors begin after sandbox creation.
+- Keep terminal waiting, attach, and rendering in the frontend packages; those
+  behaviors begin after sandbox creation. The one thing that does not begin
+  after it is naming the steps taken here: `CreatePromptSandbox` and
+  `DeliverSource` take a `Report` and call it as they enter each one, because
+  no round trip can tell a process what it is currently doing
+  ([ADR 0060](../../../docs/adr/0060-provisioning-progress-is-a-recorded-phase-the-client-polls.md)).
+  The words are `Step` constants here so the two frontends cannot describe one
+  stage differently; where the line is drawn and when it is cleared is theirs.
 - The sandbox name is generated here (`randomname`), and sandbox names are
   unique within a project, so `CreatePromptSandbox` retries a 409 with a fresh
   name a bounded number of times. Only a generated name is replaced this way: a
