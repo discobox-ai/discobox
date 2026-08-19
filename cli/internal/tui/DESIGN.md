@@ -672,7 +672,12 @@ whose report has not landed.
 
 **Keys are matched by name, not keystroke.** Bubble Tea reports a typed `V` as
 `shift+v` and a space as `space`; the key list promises letters, so `keyName`
-prefers the text the terminal sent.
+prefers the text the terminal sent. Shift-Backspace is folded onto Backspace
+before anything looks at it (`unshiftBackspace`, at the head of `updateKey`):
+a terminal on the Kitty keyboard protocol reports the two as different keys,
+nothing — here or in the textarea's key map — binds the shifted one, and a
+Backspace that deletes nothing because Shift was held is not a key anyone can
+use.
 
 **A sandbox is a "discobox" on screen**, or a "box" where the column is tight —
 counts, key hints, menu details. The API type is still `Sandbox`; only what is

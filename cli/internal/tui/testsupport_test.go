@@ -619,6 +619,10 @@ func key(spec string) tea.KeyPressMsg {
 		return tea.KeyPressMsg{Code: tea.KeyTab, Mod: tea.ModShift}
 	case "esc":
 		return tea.KeyPressMsg{Code: tea.KeyEscape}
+	case "backspace":
+		return tea.KeyPressMsg{Code: tea.KeyBackspace}
+	case "shift+backspace":
+		return tea.KeyPressMsg{Code: tea.KeyBackspace, Mod: tea.ModShift}
 	case " ":
 		return tea.KeyPressMsg{Code: tea.KeySpace, Text: " "}
 	case "ctrl+j":

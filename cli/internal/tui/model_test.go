@@ -24,6 +24,22 @@ func TestOpensInThePrompt(t *testing.T) {
 	}
 }
 
+// Shift-Backspace is Backspace. A terminal on the Kitty keyboard protocol
+// reports it as its own key, and a prompt that ignored it would be a prompt
+// where deleting a character depends on where your left hand happens to be.
+func TestShiftBackspaceDeletesInThePrompt(t *testing.T) {
+	m := newTestModel(t, newFakeSource(testSandboxes()...))
+	send(t, m, typeString("fix the reaperx")...)
+	send(t, m, key("shift+backspace"))
+	if got := m.prompt.Value(); got != "fix the reaper" {
+		t.Fatalf("prompt = %q, want shift+backspace to delete a character", got)
+	}
+	send(t, m, key("backspace"))
+	if got := m.prompt.Value(); got != "fix the reape" {
+		t.Fatalf("prompt = %q, want backspace to delete a character", got)
+	}
+}
+
 // Enter with a prompt is the whole point of the window: it creates the sandbox
 // and attaches to it, and the prompt is spent.
 func TestEnterRunsThePromptAndAttaches(t *testing.T) {

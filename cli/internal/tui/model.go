@@ -556,7 +556,24 @@ func keyName(msg tea.KeyPressMsg) string {
 	return " "
 }
 
+// unshiftBackspace folds Shift-Backspace onto Backspace.
+//
+// A terminal that speaks the Kitty keyboard protocol reports the two as
+// different keys, and nothing binds the shifted one — not the handlers here,
+// not the textarea's key map — so on those terminals a key that deletes a
+// character everywhere else does nothing at all. Shift is not a modifier
+// Backspace has a meaning for; it is the same key with a finger left on Shift.
+// Ctrl and Alt are left alone, because Alt-Backspace is delete-word.
+func unshiftBackspace(msg tea.KeyPressMsg) tea.KeyPressMsg {
+	if msg.Code == tea.KeyBackspace {
+		msg.Mod &^= tea.ModShift
+	}
+	return msg
+}
+
 func (m *Model) updateKey(msg tea.KeyPressMsg) tea.Cmd {
+	msg = unshiftBackspace(msg)
+
 	// The opening flourish is over the moment there is anything to do.
 	m.stopShimmer()
 

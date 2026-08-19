@@ -198,7 +198,9 @@ func (m *pickerModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if m.cursor < len(m.matches)-1 {
 			m.cursor++
 		}
-	case "backspace":
+	case "backspace", "shift+backspace":
+		// Shift means nothing on Backspace, but a terminal on the Kitty
+		// keyboard protocol reports it as its own key.
 		if q := []rune(m.query); len(q) > 0 {
 			m.query = string(q[:len(q)-1])
 			m.refilter()
