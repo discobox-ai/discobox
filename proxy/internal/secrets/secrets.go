@@ -69,6 +69,13 @@ const (
 	// refreshTimeout bounds a background refresh so a hung control plane cannot
 	// leak goroutines; the served value is unaffected while it runs.
 	refreshTimeout = 30 * time.Second
+	// previousValueGrace is how long the value served before a change stays
+	// available as a retry fallback. A rotating credential is typically minted
+	// well ahead of the moment the old one stops working — the control plane
+	// refreshes an OAuth token five minutes before it expires — so the value a
+	// rotation displaced is usually still good, and is the only other value
+	// there is to try when the new one is rejected.
+	previousValueGrace = 2 * time.Minute
 )
 
 // Swapper detects sentinels in requests and substitutes resolved values.
@@ -80,10 +87,20 @@ type Swapper struct {
 	refreshTTL time.Duration
 	sentinels  map[string][]string
 
-	mu         sync.Mutex
-	cache      map[string]cacheEntry
+	mu    sync.Mutex
+	cache map[string]cacheEntry
+	// previous is what each key resolved to before its most recent change,
+	// kept for previousValueGrace. It is deliberately not part of cacheEntry:
+	// Invalidate drops the entry, and the whole point of this memory is to
+	// outlive the value that was just rejected.
+	previous   map[string]previousValue
 	refreshing map[string]struct{}
 	now        func() time.Time
+}
+
+type previousValue struct {
+	value string
+	until time.Time
 }
 
 type cacheEntry struct {
@@ -128,6 +145,7 @@ func New(resolver Resolver, cfg Config) *Swapper {
 		refreshTTL: refreshTTL,
 		sentinels:  sentinels,
 		cache:      map[string]cacheEntry{},
+		previous:   map[string]previousValue{},
 		refreshing: map[string]struct{}{},
 		now:        time.Now,
 	}
@@ -317,6 +335,9 @@ func (s *Swapper) triggerRefresh(clientID, sentinel, host, key string) {
 
 func (s *Swapper) store(key string, entry cacheEntry) {
 	s.mu.Lock()
+	if old, ok := s.cache[key]; ok && !old.denied && old.value != "" && old.value != entry.value {
+		s.previous[key] = previousValue{value: old.value, until: s.now().Add(previousValueGrace)}
+	}
 	s.cache[key] = entry
 	s.mu.Unlock()
 }
@@ -332,6 +353,82 @@ func (s *Swapper) deferRefresh(key string, refreshAt time.Time) {
 	}
 	entry.refreshAt = refreshAt
 	s.cache[key] = entry
+}
+
+// ApplyPrevious substitutes sentinels in req's headers for the value that was
+// being served before the most recent change, when there is one and it is still
+// within previousValueGrace. It exists for one case: the upstream rejected a
+// freshly rotated credential that it has not started honoring yet, where
+// resolving again only produces the same rejected value and the displaced one
+// is the only thing left to try.
+//
+// Headers only. A query-param swap rewrites the URL, and a retry is not worth
+// reconstructing one.
+func (s *Swapper) ApplyPrevious(req *http.Request, clientID string) Result {
+	if req == nil || !s.Active(clientID) {
+		return Result{}
+	}
+	sentinels := s.sentinels[clientID]
+	host := extractHost(req.Host)
+	now := s.now()
+	var res Result
+	for name, values := range req.Header {
+		for i, value := range values {
+			out := value
+			swapped := false
+			for _, sentinel := range sentinels {
+				if !strings.Contains(out, sentinel) {
+					continue
+				}
+				prev, ok := s.previousFor(clientID, sentinel, host, now)
+				if !ok {
+					continue
+				}
+				out = strings.ReplaceAll(out, sentinel, prev)
+				swapped = true
+			}
+			if swapped {
+				req.Header[name][i] = out
+				res.Headers = append(res.Headers, http.CanonicalHeaderKey(name))
+			}
+		}
+	}
+	dedupe(&res.Headers)
+	return res
+}
+
+func (s *Swapper) previousFor(clientID, sentinel, host string, now time.Time) (string, bool) {
+	key := clientID + "\x00" + sentinel + "\x00" + host
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	prev, ok := s.previous[key]
+	if !ok {
+		return "", false
+	}
+	if !now.Before(prev.until) {
+		delete(s.previous, key)
+		return "", false
+	}
+	return prev.value, true
+}
+
+// Invalidate drops whatever this client's sentinels resolved to for host, so
+// the next Apply resolves them again rather than serving a cached value.
+//
+// It exists for the one thing a cache cannot know on its own: the upstream
+// rejected the value. A token rotation the proxy has not caught up with looks
+// exactly like a valid cache entry until something 401s on it, and only the
+// response path sees that.
+func (s *Swapper) Invalidate(clientID, host string) {
+	if s == nil {
+		return
+	}
+	host = extractHost(host)
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	for _, sentinel := range s.sentinels[clientID] {
+		delete(s.cache, clientID+"\x00"+sentinel+"\x00"+host)
+	}
 }
 
 func (s *Swapper) evict(key string) {

@@ -135,6 +135,16 @@ Key properties:
 - **Caching.** Resolved values are cached per `(clientID, sentinel, host)` until
   the grant expiry (capped by `PositiveTTLSeconds`); denials are cached briefly
   (`NegativeTTLSeconds`); transient resolver errors are not cached.
+- **A rejected credential is retried once, with a different one.** A swapped
+  request that comes back `401` is not the sandbox's error — it holds a
+  sentinel, and everything behind it belongs to the control plane — so the proxy
+  re-sends it rather than passing the rejection down. It tries a freshly
+  resolved value first (the cache was stale across a rotation), then the value
+  the last rotation displaced, still within `previousValueGrace` (the proxy
+  moved onto a credential the upstream has not started honouring yet). If
+  neither differs from what was rejected there is nothing new to send, and the
+  401 is passed through. Only header swaps with a body small enough to hold are
+  retryable; see [ADR 0059](../docs/adr/0059-a-rejected-swapped-credential-is-retried-once.md).
 
 Audit redaction covers every header whose value was swapped, in addition to
 rewrite-rule headers and credential-like header names.

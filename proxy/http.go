@@ -1,6 +1,7 @@
 package proxy
 
 import (
+	"bytes"
 	"context"
 	"crypto/tls"
 	"errors"
@@ -55,6 +56,15 @@ type requestMeta struct {
 	requestBodyBytes     int64
 	swappedHeaders       []string
 	auditURL             string
+	// preSwapHeader is the request's headers as the sandbox sent them, with the
+	// sentinels still in place. It is what a retry re-swaps from; re-swapping
+	// the outbound headers would look for a sentinel that is no longer there.
+	preSwapHeader http.Header
+	// retryBody holds the request body when the request is eligible for an
+	// unauthorized retry, which is the only reason it is in memory at all.
+	retryBody []byte
+	retryable bool
+	retried   bool
 }
 
 type responseStream struct {
@@ -275,6 +285,7 @@ func (h *httpProxy) setupHandlers() {
 		}
 		rewriteSpan.End()
 		h.swapSecrets(req, meta, client)
+		h.bufferRetryBody(req, meta)
 		h.captureRequestBody(req, meta)
 		return req, nil
 	})
@@ -290,6 +301,9 @@ func (h *httpProxy) setupHandlers() {
 		}
 		if meta.cacheHit {
 			return resp
+		}
+		if retried := h.retryRejectedSwap(resp, ctx, meta); retried != nil {
+			resp = retried
 		}
 
 		if upgradedProtocol, isUpgrade := getUpgradeProtocol(ctx.Req, resp); isUpgrade {
@@ -417,6 +431,7 @@ func (h *httpProxy) swapSecrets(req *http.Request, meta *requestMeta, client cli
 	preURL := requestURL(req)
 	_, span := proxyTracer().Start(meta.ctx, "proxy.secret_swap")
 	defer span.End()
+	preSwapHeader := req.Header.Clone()
 	result := swapper.Apply(meta.ctx, req, client.ID)
 	if !result.Swapped() {
 		span.SetAttributes(attribute.Bool("proxy.secret_swap.swapped", false))
@@ -426,6 +441,10 @@ func (h *httpProxy) swapSecrets(req *http.Request, meta *requestMeta, client cli
 		return
 	}
 	meta.swappedHeaders = result.Headers
+	// A query swap rewrote the URL, so the retry path — which rebuilds a
+	// request from the pre-swap headers — cannot reproduce this request.
+	meta.retryable = len(result.QueryParams) == 0
+	meta.preSwapHeader = preSwapHeader
 	if len(result.QueryParams) > 0 {
 		// A swapped value now lives in the outbound URL; audit the pre-swap URL
 		// so the real value is never persisted.
@@ -436,6 +455,159 @@ func (h *httpProxy) swapSecrets(req *http.Request, meta *requestMeta, client cli
 		attribute.Int("proxy.secret_swap.headers", len(result.Headers)),
 		attribute.Int("proxy.secret_swap.query_params", len(result.QueryParams)),
 	)
+}
+
+// unauthorizedRetryMaxBody bounds what a retryable request holds in memory. A
+// body larger than this is streamed as before and its 401 is passed through:
+// buffering a request of unbounded size to make a retry possible would trade a
+// rare recoverable failure for a common memory one.
+const unauthorizedRetryMaxBody = 8 << 20
+
+// bufferRetryBody reads a swapped request's body into memory so the request can
+// be sent a second time if the upstream rejects the credential. A body that
+// does not fit is left streaming and the request stops being retryable.
+func (h *httpProxy) bufferRetryBody(req *http.Request, meta *requestMeta) {
+	if !meta.retryable || req.Body == nil || req.Body == http.NoBody {
+		return
+	}
+	buffered, err := io.ReadAll(io.LimitReader(req.Body, unauthorizedRetryMaxBody+1))
+	if err != nil || int64(len(buffered)) > unauthorizedRetryMaxBody {
+		// Hand back exactly what the transport would have read: what came out
+		// of the body so far, then the rest of it (or the error it stopped on).
+		meta.retryable = false
+		req.Body = joinedBody{Reader: io.MultiReader(bytes.NewReader(buffered), req.Body), closer: req.Body}
+		return
+	}
+	_ = req.Body.Close()
+	meta.retryBody = buffered
+	req.Body = io.NopCloser(bytes.NewReader(buffered))
+}
+
+// joinedBody re-fronts an already partly-read body without taking ownership of
+// closing anything but the original.
+type joinedBody struct {
+	io.Reader
+	closer io.Closer
+}
+
+func (b joinedBody) Close() error { return b.closer.Close() }
+
+// retryRejectedSwap sends a request once more when the upstream rejected the
+// credential the proxy swapped into it, returning the retry's response or nil
+// to keep the original.
+//
+// A 401 on a swapped request is not the sandbox's error: the sandbox holds a
+// sentinel, which cannot expire, and everything behind it belongs to the
+// control plane. It is worth one more attempt because a harness reading that
+// 401 will conclude its login is gone — Claude Code clears its credentials file
+// and cannot restore it, since the refresh token it holds is a placeholder.
+//
+// There are exactly two other values to try, and both are tried in the order
+// that a rejection makes them likely:
+//
+//  1. A freshly resolved one. The cached value is stale whenever the control
+//     plane rotated the credential and the proxy has not caught up, which is
+//     invisible until something 401s on it.
+//  2. The value the last rotation displaced, still within its grace. This is
+//     the opposite failure: the proxy did catch up, onto a token the upstream
+//     has not started honoring yet.
+//
+// If neither produces a different credential there is nothing new to send, and
+// re-sending the rejected one would only spend an upstream request to fail the
+// same way.
+func (h *httpProxy) retryRejectedSwap(resp *http.Response, ctx *goproxy.ProxyCtx, meta *requestMeta) *http.Response {
+	if resp.StatusCode != http.StatusUnauthorized || meta.retried || !meta.retryable {
+		return nil
+	}
+	if len(meta.swappedHeaders) == 0 || meta.preSwapHeader == nil {
+		return nil
+	}
+	swapper := h.secretSwapper()
+	if swapper == nil {
+		return nil
+	}
+	req := ctx.Req
+	meta.retried = true
+
+	_, span := proxyTracer().Start(meta.ctx, "proxy.secret_swap.retry")
+	defer span.End()
+
+	// Read the displaced value before invalidating: invalidation drops the
+	// cache entry, and this asks about the value behind it.
+	previous := h.rebuiltRequest(req, meta)
+	previousResult := swapper.ApplyPrevious(previous, meta.client.ID)
+
+	swapper.Invalidate(meta.client.ID, req.Host)
+	resolved := h.rebuiltRequest(req, meta)
+	resolvedResult := swapper.Apply(meta.ctx, resolved, meta.client.ID)
+
+	var retryReq *http.Request
+	var source string
+	switch {
+	case resolvedResult.Swapped() && !sameHeaderValues(req.Header, resolved.Header, meta.swappedHeaders):
+		retryReq, source = resolved, "resolved"
+	case previousResult.Swapped() && !sameHeaderValues(req.Header, previous.Header, meta.swappedHeaders):
+		retryReq, source = previous, "previous"
+	default:
+		span.SetAttributes(attribute.Bool("proxy.secret_swap.retry.attempted", false))
+		return nil
+	}
+
+	retryResp, err := ctx.RoundTrip(retryReq)
+	if err != nil {
+		// The original 401 is still intact and unread; returning it beats
+		// turning a rejected request into a proxy error.
+		recordSpanError(span, err)
+		return nil
+	}
+
+	// The 401 was a real exchange with the upstream and is audited as one; the
+	// retry is audited as its own by the normal response path.
+	h.audit.RecordHTTP(h.auditEvent(req, resp, meta, time.Since(meta.start), false))
+	drainAndClose(resp.Body)
+
+	span.SetAttributes(
+		attribute.Bool("proxy.secret_swap.retry.attempted", true),
+		attribute.String("proxy.secret_swap.retry.credential", source),
+		attribute.Int("proxy.secret_swap.retry.status", retryResp.StatusCode),
+	)
+	ctx.Req = retryReq
+	meta.start = time.Now()
+	return retryResp
+}
+
+// rebuiltRequest is the same request again, with the sentinels back in its
+// headers and its body ready to be read from the start.
+func (h *httpProxy) rebuiltRequest(req *http.Request, meta *requestMeta) *http.Request {
+	out := req.Clone(meta.ctx)
+	out.Header = meta.preSwapHeader.Clone()
+	body := meta.retryBody
+	out.Body = io.NopCloser(bytes.NewReader(body))
+	out.ContentLength = int64(len(body))
+	out.GetBody = func() (io.ReadCloser, error) { return io.NopCloser(bytes.NewReader(body)), nil }
+	return out
+}
+
+// sameHeaderValues reports whether every named header holds the same values in
+// both, which for the swapped headers means the retry would send the same
+// credential that was just rejected.
+func sameHeaderValues(a, b http.Header, names []string) bool {
+	for _, name := range names {
+		if !slices.Equal(a.Values(name), b.Values(name)) {
+			return false
+		}
+	}
+	return true
+}
+
+// drainAndClose discards a response body the proxy is replacing, so the
+// upstream connection can be reused rather than torn down.
+func drainAndClose(body io.ReadCloser) {
+	if body == nil {
+		return
+	}
+	_, _ = io.Copy(io.Discard, io.LimitReader(body, 1<<20))
+	_ = body.Close()
 }
 
 func (h *httpProxy) captureRequestBody(req *http.Request, meta *requestMeta) {

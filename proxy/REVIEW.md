@@ -42,5 +42,11 @@
   come from `Config.Secrets`.
 - On resolver denial, pending approval, or error, leave the sentinel in place
   (fail-closed on the secret). Do not swap partially or block the request.
+- A 401 on a *swapped* request is retried once, and only ever with a credential
+  that differs from the one just rejected. Never retry the same value, never
+  retry more than once, and never retry a request whose body was too large to
+  hold — a retry must not become a way to duplicate or amplify upstream load.
+- Keep the previous-value memory out of the cache entry. `Invalidate` drops the
+  entry, and the fallback exists precisely to outlive the value being dropped.
 - Do not scan or swap request bodies while the request-body audit spool would
   capture the swapped value.

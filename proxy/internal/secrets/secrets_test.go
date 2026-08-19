@@ -351,3 +351,76 @@ func TestSoftRefreshDeniedInvalidates(t *testing.T) {
 		return !swapped && v == "Bearer SENTINEL"
 	})
 }
+
+// applyPrevious runs ApplyPrevious over a request bearing sentinel and reports
+// the resulting Authorization header.
+func applyPrevious(t *testing.T, sw *Swapper, clientID, sentinel string) (string, bool) {
+	t.Helper()
+	req := newRequest(t, http.MethodGet, "https://api.example.com/")
+	req.Header.Set("Authorization", "Bearer "+sentinel)
+	res := sw.ApplyPrevious(req, clientID)
+	return req.Header.Get("Authorization"), res.Swapped()
+}
+
+// When a rotation replaces a value, the one it displaced stays available: the
+// upstream may not have started honoring the new credential yet, and the
+// displaced one is the only other thing to try.
+func TestPreviousValueAvailableAfterRotation(t *testing.T) {
+	now := time.Unix(1000, 0)
+	value := "FIRST"
+	resolver := &fakeResolver{fn: func(ResolveRequest) (ResolveResult, error) {
+		return ResolveResult{Value: value, ExpiresAt: now.Add(30 * time.Second)}, nil
+	}}
+	sw := New(resolver, Config{Sentinels: map[string][]string{"sandbox-1": {"SENTINEL"}}})
+	sw.now = func() time.Time { return now }
+
+	if got, _ := swapAuth(t, sw, "sandbox-1", "SENTINEL"); got != "Bearer FIRST" {
+		t.Fatalf("Authorization = %q, want the first value", got)
+	}
+	if _, ok := applyPrevious(t, sw, "sandbox-1", "SENTINEL"); ok {
+		t.Fatal("ApplyPrevious swapped with nothing displaced yet")
+	}
+
+	// Rotation: past the hard expiry, the next use resolves and stores anew.
+	now = now.Add(time.Minute)
+	value = "SECOND"
+	if got, _ := swapAuth(t, sw, "sandbox-1", "SENTINEL"); got != "Bearer SECOND" {
+		t.Fatalf("Authorization = %q, want the rotated value", got)
+	}
+	if got, ok := applyPrevious(t, sw, "sandbox-1", "SENTINEL"); !ok || got != "Bearer FIRST" {
+		t.Fatalf("ApplyPrevious = %q (swapped %v), want the displaced value", got, ok)
+	}
+
+	// Invalidating the rejected value must not take the fallback with it: the
+	// retry path invalidates before it re-resolves.
+	sw.Invalidate("sandbox-1", "api.example.com")
+	if got, ok := applyPrevious(t, sw, "sandbox-1", "SENTINEL"); !ok || got != "Bearer FIRST" {
+		t.Fatalf("ApplyPrevious after Invalidate = %q (swapped %v), want the displaced value", got, ok)
+	}
+
+	now = now.Add(previousValueGrace + time.Second)
+	if _, ok := applyPrevious(t, sw, "sandbox-1", "SENTINEL"); ok {
+		t.Fatal("ApplyPrevious swapped past the grace window")
+	}
+}
+
+// Invalidate drops the cached value so the next use resolves again.
+func TestInvalidateForcesReresolve(t *testing.T) {
+	now := time.Unix(1000, 0)
+	resolver := &fakeResolver{fn: func(ResolveRequest) (ResolveResult, error) {
+		return ResolveResult{Value: "REAL", ExpiresAt: now.Add(time.Hour)}, nil
+	}}
+	sw := New(resolver, Config{Sentinels: map[string][]string{"sandbox-1": {"SENTINEL"}}})
+	sw.now = func() time.Time { return now }
+
+	swapAuth(t, sw, "sandbox-1", "SENTINEL")
+	swapAuth(t, sw, "sandbox-1", "SENTINEL")
+	if calls := resolver.calls.Load(); calls != 1 {
+		t.Fatalf("resolver called %d times, want the second use served from cache", calls)
+	}
+	sw.Invalidate("sandbox-1", "api.example.com:443")
+	swapAuth(t, sw, "sandbox-1", "SENTINEL")
+	if calls := resolver.calls.Load(); calls != 2 {
+		t.Fatalf("resolver called %d times after Invalidate, want a fresh resolve", calls)
+	}
+}
