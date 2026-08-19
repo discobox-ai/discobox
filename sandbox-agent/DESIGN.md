@@ -76,11 +76,13 @@ runtime operations.
   the cache volume is shared across concurrently running sandboxes. Sources are
   bind-mounted from `/.discobox/sources/<slug>` onto the targets named in the
   manifest. See ADR 0007.
-- A clone-delivered local source's live origin, when present, arrives at
-  `/.discobox/origins/<slug>` as a plain read-only bind the pool host already
-  made directly onto that final path before the container started — unlike
-  `sources`, `boot` does not rebind it from anywhere; it is simply present by
-  the time `boot` runs. See ADR 0026.
+- A source's origin, when it has one, arrives at `/.discobox/origins/<slug>` as a
+  plain read-only bind the pool host already made directly onto that final path
+  before the container started — unlike `sources`, `boot` does not rebind it from
+  anywhere; it is simply present by the time `boot` runs. Behind it is the
+  developer's live directory for a clone-delivered source (ADR 0026) or the
+  repository the client pushes into for a push-delivered one (ADR 0058); either
+  way it is the repository `origin` names. See ADR 0026.
 - Render templated harness files locally at installation time against the public
   `SandboxConfig` object from the manifest. Keep API field names as the template
   surface and expose only deterministic, non-secret formatting helpers.

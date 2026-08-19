@@ -13,10 +13,26 @@ import (
 )
 
 func registerSandboxGitRoutes(router chi.Router, service *sandboxService) {
-	router.Handle("/api/project/{projectId}/pool/{poolId}/sandboxes/{sandboxId}/git-repositories/*", service.autoStart(service.sandboxGitHTTPHandler()))
+	router.Handle("/api/project/{projectId}/pool/{poolId}/sandboxes/{sandboxId}/git-repositories/*", service.autoStart(service.sandboxGitHTTPHandler(service.sandboxWorktreeLocation)))
+	// A push-delivered source's origin repository is a different repository from
+	// the worktree above, addressed by its own route rather than a synthesized
+	// repository id: source slugs are client-supplied, so any suffix convention
+	// could collide with a real one (ADR 0058 §3).
+	router.Handle("/api/project/{projectId}/pool/{poolId}/sandboxes/{sandboxId}/git-origins/*", service.autoStart(service.sandboxGitHTTPHandler(service.sandboxOriginLocation)))
 }
 
-func (s *sandboxService) sandboxGitHTTPHandler() http.Handler {
+// gitLocator resolves the repository one of the two git routes serves.
+type gitLocator func(ctx context.Context, sandboxID, repositoryID string) (sandboxruntime.GitRepositoryLocation, error)
+
+func (s *sandboxService) sandboxWorktreeLocation(ctx context.Context, sandboxID, repositoryID string) (sandboxruntime.GitRepositoryLocation, error) {
+	return s.runtime.GitRepositoryPath(ctx, sandboxID, repositoryID)
+}
+
+func (s *sandboxService) sandboxOriginLocation(ctx context.Context, sandboxID, slug string) (sandboxruntime.GitRepositoryLocation, error) {
+	return s.runtime.GitOriginPath(ctx, sandboxID, slug)
+}
+
+func (s *sandboxService) sandboxGitHTTPHandler(locate gitLocator) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if err := s.authorize(chi.URLParam(r, "projectId"), chi.URLParam(r, "poolId")); err != nil {
 			http.Error(w, err.Error(), statusCodeForGitError(err))
@@ -32,7 +48,7 @@ func (s *sandboxService) sandboxGitHTTPHandler() http.Handler {
 			return
 		}
 
-		location, err := s.runtime.GitRepositoryPath(r.Context(), chi.URLParam(r, "sandboxId"), repositoryID)
+		location, err := locate(r.Context(), chi.URLParam(r, "sandboxId"), repositoryID)
 		if err != nil {
 			http.Error(w, err.Error(), statusCodeForGitError(err))
 			return

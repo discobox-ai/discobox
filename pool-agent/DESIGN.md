@@ -20,7 +20,7 @@ from the future in-sandbox `sandbox-agent` API.
 | `.` | Root `poolagent` Go package: boot contract, registration flow, status reporting, the standing sandbox-agent status poller (`statuspoll.go`, ADR 0030), and high-level command orchestration. |
 | `server` | Pool-local HTTP server, health/metadata endpoints, and generated sandbox API route/auth adapter. |
 | `vsock` | Guest AF_VSOCK listener and host-CID HTTP transport primitives. |
-| `sandboxruntime` | Local sandbox runtime implementations used by the pool host server. Provisions the five primary volumes (`/.discobox/{data,cache,config,sources,secrets}`) and mounts them into every sandbox; `cache` is the pool-local directory shared across the pool's sandboxes. Also binds each clone-delivered local source's real origin directory, read-only, onto `/.discobox/origins/<slug>` (ADR 0026). In-sandbox path wiring for the primary volumes is delegated to the sandbox-agent init flow (ADR 0007). |
+| `sandboxruntime` | Local sandbox runtime implementations used by the pool host server. Provisions the five primary volumes (`/.discobox/{data,cache,config,sources,secrets}`) and mounts them into every sandbox; `cache` is the pool-local directory shared across the pool's sandboxes. Also binds each source's origin, read-only, onto `/.discobox/origins/<slug>`: the real host directory for a clone-delivered local source (ADR 0026), and a pool-side bare repository the client pushes into for a push-delivered one (ADR 0058). In-sandbox path wiring for the primary volumes is delegated to the sandbox-agent init flow (ADR 0007). |
 | `proxyagent` | Worker-scoped proxy wiring: certificate bundle preparation, the `proxy` subcommand entrypoint, and per-sandbox client material staging. |
 | `buildkitagent` | The pool-shared BuildKit builder, its output registry, the mediator that binds a build to the sandbox that asked for it, and the per-build egress forwarder. See [Pool-Shared Builds](#pool-shared-builds). |
 | `cmd/discobox-pool-runc` | The pool's runc wrapper, installed as `runc` ahead of BuildKit's own. Injects MITM trust and the per-build egress hooks into each build step's OCI spec. |
@@ -270,19 +270,25 @@ flowchart LR
   `/var/lib/discobox/cache/projects/{project}/pools/{pool}/cache`.
   The sandbox-agent wires everything else from the image's declarative volume
   list and the manifest source list. See ADR 0007.
-- For every source (primary or `SourceCodeReferences`) that is clone-delivered
-  from a `LocalDirectory`, the pool host also binds that real host directory,
-  read-only, directly onto `/.discobox/origins/<slug>` — the same `<slug>` as
-  the corresponding `/.discobox/sources/<slug>`. Unlike the five primary roots,
-  this is not one pool-owned volume: each origin is an independent bind of an
-  arbitrary external directory the pool host does not own or provision, so
-  there is nothing here for the sandbox-agent to rebind or for the pool host to
-  reap. `materializeGitSource` rewrites the cloned repository's `origin` remote
-  to that in-sandbox path once materialized, so a sandbox can `git fetch`/`git
-  rebase` against the developer's real, live working directory whenever it
-  shares a host with the pool. Push-delivered sources are unaffected: they are
-  push-delivered precisely because no on-disk origin is reachable from this
-  host. See ADR 0026.
+- Every source with a `LocalDirectory` gets an origin bound, read-only, directly
+  onto `/.discobox/origins/<slug>` — the same `<slug>` as the corresponding
+  `/.discobox/sources/<slug>`. `materializeGitSource` rewrites the repository's
+  `origin` remote to that in-sandbox path, so `git fetch origin` and `git rebase
+  origin/<branch>` are ordinary git inside the sandbox whichever way the source
+  was delivered. What differs is only what sits behind the bind:
+  - **Clone-delivered**: the developer's own host directory, live. Not a
+    pool-owned volume — an independent bind of an external directory the pool
+    host neither owns nor provisions, so there is nothing to rebind or reap. See
+    ADR 0026.
+  - **Push-delivered**: a bare repository at
+    `.../sandboxes/{sandbox}/origins/{slug}.git`, created by `initGitOrigin` at
+    provisioning time and owned by the sandbox user, which the client pushes into
+    through the `git-origins` route and re-pushes into whenever the sandbox needs
+    newer commits. It is under the sandbox's own tree, so archive, purge and the
+    volume reaper cover it already; it is deliberately not under `sources/`,
+    which the sandbox can write. See ADR 0058.
+  A source with no local directory is a remote URL, whose origin is that remote,
+  and gets no bind.
 - Normalize provider-owned source destination defaults before both mounting
   sources and writing the public sandbox manifest so manifest consumers observe
   the paths actually used by the runtime.
@@ -297,10 +303,16 @@ flowchart LR
   nothing outstanding does no work here, which is what stops a repeated create
   from rebuilding forever. See
   [ADR 0055](../docs/adr/0055-a-delivered-source-settles-before-its-sandbox-runs.md).
-- A source is materialized exactly once, whatever its delivery mode. The first
-  create clones (or parks an empty repository for a push delivery and finalizes
-  it on the resume) and records a marker in the repository's `.git`; every later
-  create returns without touching the workspace. Create is re-driven for reasons
+- A source is materialized exactly once, whatever its delivery mode, and always
+  by cloning: a clone-delivered source clones the client's directory, a
+  push-delivered one clones its own origin repository once the client's push has
+  landed there, which is also where its dirty-workspace snapshot ref is fetched
+  from. Before that push there is nothing to clone, so materializing is a no-op
+  and the sandbox stays parked. `git init` in the worktree and
+  `receive.denyCurrentBranch=updateInstead` are no longer part of delivery: the
+  working tree comes from a checkout either way. The first create that completes
+  records a marker in the repository's `.git`; every later create returns without
+  touching the workspace. Create is re-driven for reasons
   unrelated to sources — resume, re-pin, reconcile after a failure — and by then
   the sandbox owns the workspace, so re-materializing would discard uncommitted
   work and move the branch off commits made inside the sandbox.

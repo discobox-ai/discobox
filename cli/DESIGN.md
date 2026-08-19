@@ -11,6 +11,8 @@ transport helpers where OpenAPI does not model the stream.
 | `cmd/disco` | Binary entrypoint. |
 | `internal/cli` | Cobra command tree, output formatting, local server auto-start, TUI API adapter, and the attach transports and policy layered on `execstream/client`. |
 | `internal/sandboxcreate` | UI-independent client-side sandbox request preparation and creation, including prompt options, source resolution, workspace snapshots, environment/secrets, local user identity, and source push delivery. |
+| `internal/sandboxgit` | The client's git transport to a sandbox: the worktree and origin repository URLs the control plane proxies, bearer-token auth on those requests, and the client-side ref names that record what has been sent. Shared by create, apply and push. |
+| `internal/sandboxpush` | `disco push`: re-delivering a push-delivered source's commits into the origin repository its sandbox fetches from, under a lease (ADR 0058). |
 | `internal/origin` | Resolves the client host and project directory a sandbox is created from. Host identity itself is shared, in the root module's `internal/hostid`. |
 | `internal/tui` | The `disco tui` launcher: Bubble Tea presentation and interaction state, expressed against its own `DataSource` interface. See [`internal/tui/DESIGN.md`](internal/tui/DESIGN.md). |
 | `internal/portforward` | Frontend-independent dynamic port forwarding: local listeners kept in sync with a remote's announced ports, over a caller-supplied dialer. |
@@ -600,11 +602,13 @@ own filesystem and binds the source instead of asking for a push.
 After create, `sandboxcreate.DeliverSource` is called unconditionally and is a
 no-op unless the server marked a source `delivery: push`. When it did, the
 client waits for the sandbox to reach `awaiting_source`, pushes each such
-source's commit to its branch (plus the workspace snapshot ref, when that
-workspace is dirty — without it the sandbox comes up clean and the edits are
-lost), and then reports the pushes complete. It pushes the commits the server
-recorded at create, by explicit refspec, rather than whatever the local branches
-now point at.
+source's commit to its branch in that source's *origin* repository (plus the
+workspace snapshot ref, when that workspace is dirty — without it the sandbox
+comes up clean and the edits are lost), and then reports the pushes complete. It
+pushes the commits the server recorded at create, by explicit refspec, rather
+than whatever the local branches now point at, and records each under
+`refs/discobox/origin/<sandbox>/<slug>/<branch>` as the lease a later
+`disco push` holds.
 
 Delivery is decided per source, so the primary source and each `--include`
 reference (below) are pushed or bound independently. Every push-delivered source
@@ -620,8 +624,37 @@ of what the sandbox was configured against, so it cannot be found again. Callers
 
 The push goes through the control plane's Git proxy, never directly to the
 sandbox, which sits on a network the client cannot reach.
+`internal/sandboxgit` owns that addressing for every direction it runs in — the
+two repository URLs, the bearer token as a config override rather than in the
+URL, and the client-side ref names.
 
 See [ADR 0001](../docs/adr/0001-sandbox-origin-and-remote-source-push.md).
+
+## Re-delivering Source (`disco push`)
+
+`disco push` (`internal/cli/push.go`, `internal/sandboxpush`) sends local commits
+into the origin repository a push-delivered source's sandbox fetches from, so
+work done here since create can be rebased onto there. It acts per source —
+every push-delivered source of the sandbox, or the one `--source` names — since
+delivery is decided per source and a reference can need a push while the primary
+source is bound. Nothing in the sandbox moves: it gains `origin/<branch>`, and
+whoever is working in it rebases when they choose. It is transport only — no
+phase, no completion call, no state change.
+
+The ref update is a lease rather than a force or a plain fast-forward. A local
+rebase or amend is the normal way a branch moves, so non-fast-forward has to be
+possible; a stale second machine silently rewinding a sandbox's origin does not.
+So the push is `--force-with-lease` against the commit this client last pushed;
+with no such record git's own fast-forward rule stands and only `--force` can
+rewind. Before pushing, a history sharing no merge base with the commit the
+sandbox was created from is refused — nothing there could rebase onto it —
+deliberately *not* requiring that commit to be an ancestor, which a local rebase
+rewrites away routinely. Uncommitted changes are reported, never pushed.
+
+`--branch` pushes another local branch under its own name, which the sandbox sees
+as `origin/<that branch>`, leaving the branch it tracks alone.
+
+See [ADR 0058](../docs/adr/0058-a-push-delivered-source-has-a-pool-side-origin.md).
 
 ## Uncommitted Work at Create
 
@@ -751,9 +784,9 @@ returns that address for the duration of the command. An `http(s)` endpoint is
 already addressable and is returned unchanged.
 
 Everything that shells out to git shares it — `sandboxcreate.DeliverSource`
-(push at create) and `sandboxapply.FetchSource` (fetch at apply) — so the local
-socket, which is the default endpoint, is not a server only half the CLI can
-reach.
+(push at create), `sandboxapply.FetchSource` (fetch at apply) and
+`sandboxpush.Push` (re-push) — so the local socket, which is the default
+endpoint, is not a server only half the CLI can reach.
 
 ## Apply Output
 

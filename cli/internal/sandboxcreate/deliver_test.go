@@ -148,48 +148,6 @@ func TestPushRefs(t *testing.T) {
 	})
 }
 
-func TestSandboxGitRepositoryURL(t *testing.T) {
-	source := pushSourceFixture(t, nil)
-
-	got, err := SandboxGitRepositoryURL("https://disco.example.com/", "proj_1", "sbx_1", source)
-	if err != nil {
-		t.Fatalf("SandboxGitRepositoryURL: %v", err)
-	}
-	want := "https://disco.example.com/projects/proj_1/sandboxes/sbx_1/git-repositories/primary.git"
-	if got != want {
-		t.Fatalf("url = %q, want %q", got, want)
-	}
-
-	// A local server binds the source instead of asking for a push, so a socket
-	// endpoint here means the client and server disagree about reachability.
-	if _, err := SandboxGitRepositoryURL("unix:///run/discobox.sock", "proj_1", "sbx_1", source); err == nil {
-		t.Fatal("pushing to a unix endpoint: got nil error, want failure")
-	}
-
-	noSlug := pushSourceFixture(t, func(s *apimodel.GitSource) { s.Slug = apiclientgen.OptString{} })
-	if _, err := SandboxGitRepositoryURL("https://disco.example.com", "proj_1", "sbx_1", noSlug); err == nil {
-		t.Fatal("source with no slug: got nil error, want failure")
-	}
-}
-
-// The token must ride on the request header, not in the URL, which would land
-// it in the repository's remote config and in process listings.
-func TestGitPushAuthArgs(t *testing.T) {
-	args := GitAuthArgs("secret-token", []string{"push", "https://disco.example.com/x.git"})
-	joined := strings.Join(args, " ")
-	if !strings.Contains(joined, "-c http.extraHeader=Authorization: Bearer secret-token") {
-		t.Fatalf("args = %v, want the token as an extraHeader config override", args)
-	}
-	if strings.Contains(args[len(args)-1], "secret-token") {
-		t.Fatalf("token leaked into the push URL: %v", args)
-	}
-
-	plain := GitAuthArgs("  ", []string{"push", "url"})
-	if len(plain) != 2 {
-		t.Fatalf("args = %v, want no auth override without a token", plain)
-	}
-}
-
 // A throwaway repository has to be able to deliver, since it holds the only
 // copy of what the sandbox was configured against: the push carries the base
 // commit and the snapshot, and the sandbox can reconstruct the directory from

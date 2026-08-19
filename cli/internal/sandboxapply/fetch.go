@@ -8,7 +8,7 @@ import (
 	"fmt"
 
 	apimodel "github.com/obot-platform/discobox/api/model"
-	"github.com/obot-platform/discobox/cli/internal/sandboxcreate"
+	"github.com/obot-platform/discobox/cli/internal/sandboxgit"
 	"github.com/obot-platform/discobox/internal/gitutil"
 )
 
@@ -23,11 +23,10 @@ func FetchRef(sandboxID, slug string) string {
 // current tip at FetchRef(sandboxID, slug), and returns that tip's commit
 // SHA.
 //
-// It reuses the exact URL and bearer-token auth construction
-// cli/internal/sandboxcreate uses to push a source at create
-// (SandboxGitRepositoryURL, GitAuthArgs) — the git-repositories proxy already
-// grants fetch under ScopeSandboxRead, so no new server capability is needed,
-// only the read direction of the same transport (ADR 0014 §1).
+// It reuses the exact URL and bearer-token auth construction the delivery push
+// uses (sandboxgit.RepositoryURL, sandboxgit.AuthArgs) — the git-repositories
+// proxy already grants fetch under ScopeSandboxRead, so no new server capability
+// is needed, only the read direction of the same transport (ADR 0014 §1).
 func FetchSource(ctx context.Context, repoRoot, serverURL, projectID, sandboxID, token string, source apimodel.GitSource) (string, error) {
 	slug, ok := source.Slug.Get()
 	if !ok || slug == "" {
@@ -54,11 +53,11 @@ func FetchSource(ctx context.Context, repoRoot, serverURL, projectID, sandboxID,
 // this machine.
 func Fetch(ctx context.Context, repoRoot, serverURL, projectID, sandboxID, token string, source apimodel.GitSource, refspec string) error {
 	slug := source.Slug.Or("")
-	repoURL, err := sandboxcreate.SandboxGitRepositoryURL(serverURL, projectID, sandboxID, source)
+	repoURL, err := sandboxgit.RepositoryURL(serverURL, projectID, sandboxID, source)
 	if err != nil {
 		return err
 	}
-	args := sandboxcreate.GitAuthArgs(token, []string{"fetch", repoURL, refspec})
+	args := sandboxgit.AuthArgs(token, []string{"fetch", repoURL, refspec})
 	if _, err := gitutil.Output(ctx, repoRoot, nil, nil, args...); err != nil {
 		return fmt.Errorf("fetch source %q from sandbox: %w", slug, err)
 	}

@@ -92,6 +92,14 @@ func SandboxSources(projectID, poolID, sandboxID string) string {
 	return path.Join(Sandbox(projectID, poolID, sandboxID), "sources")
 }
 
+// SandboxOrigins holds one bare repository per push-delivered source, which the
+// client pushes into and the sandbox sees as its `origin` (ADR 0058). Unlike
+// the subtrees above it is not itself mounted: each repository under it is
+// bound individually, read-only, at /.discobox/origins/<slug>.
+func SandboxOrigins(projectID, poolID, sandboxID string) string {
+	return path.Join(Sandbox(projectID, poolID, sandboxID), "origins")
+}
+
 // --- disposable cache ------------------------------------------------------
 
 // ProjectCachePools is the parent of every pool's cache in a project.

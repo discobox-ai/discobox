@@ -415,6 +415,57 @@ func TestPoolSandboxGitRepositoryRouteServesCheckedOutRepository(t *testing.T) {
 	}
 }
 
+// The origin route serves a source's own bare repository, on its own path, with
+// the same scope rules: a re-push from the client lands there and the sandbox's
+// checkout is untouched (ADR 0058 §3).
+func TestPoolSandboxGitOriginRouteServesTheOriginRepository(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("requires a POSIX host: git line-ending translation")
+	}
+	ctx := context.Background()
+	runtime := poolagent.NewMemorySandboxRuntime()
+	if _, err := runtime.CreateSandbox(ctx, &workerapimodel.PoolSandboxCreateRequest{
+		SandboxId: "sandbox-1",
+		Config: workerapimodel.SandboxConfig{
+			Image: workerclient.NewOptString("alpine"),
+		},
+	}); err != nil {
+		t.Fatalf("create sandbox: %v", err)
+	}
+
+	origin := filepath.Join(t.TempDir(), "primary.git")
+	git(t, "", "init", "--bare", "-b", "main", origin)
+	runtime.SetGitOriginPath("sandbox-1", "primary", origin)
+
+	controlPlaneKey, signToken := workerAgentTestSigner(t)
+	readToken := signToken("project-1", "pool-1", "sandbox-1", poolagentserver.ScopeSandboxRead)
+	writeToken := signToken("project-1", "pool-1", "sandbox-1", poolagentserver.ScopeSandboxRead, poolagentserver.ScopeSandboxWrite)
+	server := httptest.NewServer(poolagent.NewSandboxHandler(poolagent.Bootstrap{ProjectID: "project-1", PoolID: "pool-1", ControlPlaneKey: controlPlaneKey}, runtime))
+	defer server.Close()
+
+	originURL := server.URL + "/api/project/project-1/pool/pool-1/sandboxes/sandbox-1/git-origins/primary.git"
+	clientRepo := filepath.Join(t.TempDir(), "client")
+	git(t, "", "init", "-b", "main", clientRepo)
+	if err := os.WriteFile(filepath.Join(clientRepo, "README.md"), []byte("one\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	git(t, clientRepo, "add", "README.md")
+	git(t, clientRepo, "-c", "user.name=Test", "-c", "user.email=test@example.com", "commit", "-m", "one")
+	pushed := gitOutput(t, clientRepo, "rev-parse", "HEAD")
+	git(t, clientRepo, "-c", "http.extraHeader=Authorization: Bearer "+writeToken, "push", originURL, "main")
+
+	if got := gitOutput(t, origin, "rev-parse", "refs/heads/main"); got != pushed {
+		t.Fatalf("origin main = %q, want the pushed commit %q", got, pushed)
+	}
+	if out := gitOutput(t, "", "-c", "http.extraHeader=Authorization: Bearer "+readToken, "ls-remote", originURL, "refs/heads/main"); !strings.Contains(out, pushed) {
+		t.Fatalf("ls-remote output = %q, want the pushed commit", out)
+	}
+	// A read token must not be able to move the sandbox's origin.
+	if err := gitErr(clientRepo, "-c", "http.extraHeader=Authorization: Bearer "+readToken, "push", originURL, "main:other"); err == nil {
+		t.Fatal("read-only token push to the origin succeeded, want failure")
+	}
+}
+
 type recordingClient struct {
 	req  poolagent.RegisterRequest
 	resp *poolagent.RegisterResponse

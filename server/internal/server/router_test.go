@@ -196,6 +196,59 @@ func TestNewRouterGeneratedErrorsUseProblemJSON(t *testing.T) {
 	}
 }
 
+// A push into a source's origin repository takes its own route to its own
+// repository on the pool, and needs the write scope because it is a
+// receive-pack (ADR 0058 §3).
+func TestSandboxGitOriginRouteProxiesReceivePackToPool(t *testing.T) {
+	ctx := context.Background()
+	stubs := newRouterTestServices()
+	stubs.sandboxes["sandbox-1"] = model.Sandbox{
+		ID:              "sandbox-1",
+		ProjectID:       testDefaultProjectID,
+		CreatedByUserID: service.DefaultUserID,
+		Name:            "sandbox",
+		PoolID:          "pool-1",
+	}
+	projectID := testDefaultProjectID
+	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		wantPath := "/api/project/" + projectID + "/pool/pool-1/sandboxes/sandbox-1/git-origins/primary.git/git-receive-pack"
+		if r.URL.Path != wantPath {
+			t.Fatalf("upstream path = %q, want %q", r.URL.Path, wantPath)
+		}
+		w.Header().Set("Content-Type", "application/x-git-receive-pack-result")
+		_, _ = w.Write([]byte("push accepted"))
+	}))
+	t.Cleanup(upstream.Close)
+	stubs.sandboxLease = transport.NewHTTPClientLeaseWithBaseURLAndAuth(upstream.Client(), upstream.URL, "worker-token", func() {})
+
+	router, err := NewRouter(services.Services{
+		Projects:       stubs,
+		HarnessConfigs: stubs,
+		Sandboxes:      stubs,
+		Providers:      stubs,
+		Pools:          stubs,
+		Jobs:           stubs,
+		Events:         stubs,
+	})
+	if err != nil {
+		t.Fatalf("new router: %v", err)
+	}
+	resp := httptest.NewRecorder()
+	req := scopedUserRequest(ctx, http.MethodPost, "/projects/"+projectID+"/sandboxes/sandbox-1/git-origins/primary.git/git-receive-pack", nil, poolagentauth.ScopeSandboxWrite)
+	req.Header.Set("Authorization", "Bearer user-token")
+	router.ServeHTTP(resp, req)
+
+	if resp.Code != http.StatusOK {
+		t.Fatalf("POST git-receive-pack status = %d, body = %s", resp.Code, resp.Body.String())
+	}
+	if body := resp.Body.String(); body != "push accepted" {
+		t.Fatalf("body = %q, want push accepted", body)
+	}
+	if !slices.Equal(stubs.sandboxScopes, []string{poolagentauth.ScopeSandboxWrite}) {
+		t.Fatalf("sandbox HTTP scopes = %#v", stubs.sandboxScopes)
+	}
+}
+
 func TestSandboxGitRepositoryRouteProxiesToPool(t *testing.T) {
 	ctx := context.Background()
 	stubs := newRouterTestServices()

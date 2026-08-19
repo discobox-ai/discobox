@@ -613,7 +613,7 @@ func TestMaterializeGitSourceRestoresDirtySnapshotAsUnstagedChanges(t *testing.T
 	target := filepath.Join(t.TempDir(), "target")
 	runtime := &DockerSandboxRuntime{}
 	for attempt := 1; attempt <= 2; attempt++ {
-		if err := runtime.materializeGitSource(ctx, source, target, "primary", currentUser()); err != nil {
+		if err := runtime.materializeGitSource(ctx, source, target, "", "primary", currentUser()); err != nil {
 			t.Fatalf("materialize dirty git source attempt %d: %v", attempt, err)
 		}
 		// origin must be rewritten to the in-sandbox path on every attempt, and
@@ -678,7 +678,7 @@ func TestMaterializeGitSourceLeavesLiveCloneDeliveredWorkspaceAlone(t *testing.T
 	}
 	target := filepath.Join(t.TempDir(), "target")
 	runtime := &DockerSandboxRuntime{}
-	if err := runtime.materializeGitSource(ctx, source, target, "primary", currentUser()); err != nil {
+	if err := runtime.materializeGitSource(ctx, source, target, "", "primary", currentUser()); err != nil {
 		t.Fatalf("materialize clone source: %v", err)
 	}
 	if !gitSourceMaterialized(target) {
@@ -701,7 +701,7 @@ func TestMaterializeGitSourceLeavesLiveCloneDeliveredWorkspaceAlone(t *testing.T
 	}
 
 	// The repeat create must be a no-op.
-	if err := runtime.materializeGitSource(ctx, source, target, "primary", currentUser()); err != nil {
+	if err := runtime.materializeGitSource(ctx, source, target, "", "primary", currentUser()); err != nil {
 		t.Fatalf("materialize clone source again: %v", err)
 	}
 
@@ -736,7 +736,7 @@ func TestMaterializeGitSourceWithRemoteURLDoesNotRewriteOrigin(t *testing.T) {
 	}
 	target := filepath.Join(t.TempDir(), "target")
 	runtime := &DockerSandboxRuntime{}
-	if err := runtime.materializeGitSource(ctx, source, target, "primary", currentUser()); err != nil {
+	if err := runtime.materializeGitSource(ctx, source, target, "", "primary", currentUser()); err != nil {
 		t.Fatalf("materialize remote git source: %v", err)
 	}
 	if got := gitOutput(t, target, "remote", "get-url", "origin"); got != cloneURL {
@@ -744,37 +744,36 @@ func TestMaterializeGitSourceWithRemoteURLDoesNotRewriteOrigin(t *testing.T) {
 	}
 }
 
-// A push-delivered source has no on-disk origin reachable from this host —
-// that unreachability is precisely why push was chosen over a bind — so
-// materialize must not add an "origin" remote even when LocalDirectory
-// happens to be set.
-func TestMaterializeGitSourceWithPushDeliveryAndLocalDirectoryAddsNoOriginRemote(t *testing.T) {
+// A push-delivered source's origin is the repository the client pushed into,
+// which the sandbox sees at /.discobox/origins/<slug> — the same path, and the
+// same meaning, a clone-delivered source's live bind has (ADR 0058 §2).
+func TestMaterializeGitSourceWithPushDeliveryPointsOriginAtTheSandboxPath(t *testing.T) {
+	requirePOSIXHost(t)
 	ctx := context.Background()
-	source := workerapimodel.GitSource{
-		Kind:           workerclient.GitSourceKindGit,
-		Delivery:       workerclient.NewOptGitSourceDelivery(workerclient.GitSourceDeliveryPush),
-		LocalDirectory: workerclient.NewOptString("/does/not/exist"),
-		Checkout: workerclient.NewOptGitSourceCheckout(workerapimodel.GitSourceCheckout{
-			RefName: workerclient.NewOptString("main"),
-			RefType: workerclient.NewOptString("branch"),
-		}),
-	}
-	target := filepath.Join(t.TempDir(), "target")
+	source := pushDeliveredSource("main")
 	runtime := &DockerSandboxRuntime{}
-	if err := runtime.materializeGitSource(ctx, source, target, "primary", currentUser()); err != nil {
+	origin := filepath.Join(t.TempDir(), "primary.git")
+	if err := runtime.initGitOrigin(ctx, origin, currentUser()); err != nil {
+		t.Fatalf("init git origin: %v", err)
+	}
+	pushCommitToOrigin(t, origin, "main")
+
+	target := filepath.Join(t.TempDir(), "target")
+	if err := runtime.materializeGitSource(ctx, source, target, origin, "primary", currentUser()); err != nil {
 		t.Fatalf("materialize push source: %v", err)
 	}
-	if remotes := gitOutput(t, target, "remote"); remotes != "" {
-		t.Fatalf("remotes = %q, want none", remotes)
+	if got, want := gitOutput(t, target, "remote", "get-url", "origin"), "/.discobox/origins/primary"; got != want {
+		t.Fatalf("origin = %q, want %q", got, want)
 	}
 }
 
-// originMounts must add one read-only bind per clone-delivered local source —
-// primary and SourceCodeReferences alike — and none for a push-delivered
-// local source or a remote-URL source. This is the pure piece of
-// prepareSandboxVolumes' origin-mount logic (ADR 0026); it needs no real
-// filesystem state or privilege to exercise directly.
-func TestOriginMountsCoversLocalCloneDeliveredSourcesOnly(t *testing.T) {
+// originMounts must add one read-only bind per source with an origin the sandbox
+// can reach: the real host directory for a clone-delivered local source, the
+// pool-side pushed repository for a push-delivered one, and nothing for a
+// remote-URL source, whose origin is that remote (ADR 0026, ADR 0058 §2). This
+// is the pure piece of prepareSandboxVolumes' origin-mount logic; it needs no
+// real filesystem state or privilege to exercise directly.
+func TestOriginMountsCoverEveryReachableOrigin(t *testing.T) {
 	req := &workerapimodel.PoolSandboxCreateRequest{
 		SandboxId: "sandbox-1",
 		Config: workerapimodel.SandboxConfig{
@@ -800,14 +799,15 @@ func TestOriginMountsCoversLocalCloneDeliveredSourcesOnly(t *testing.T) {
 		},
 	}
 	identity := func(p string) string { return p }
-	mounts := originMounts(sandboxSources(req), identity)
+	originPath := func(slug string) string { return "/pool/origins/" + slug + ".git" }
+	mounts := originMounts(sandboxSources(req), originPath, identity)
 
 	byTarget := map[string]mount.Mount{}
 	for _, m := range mounts {
 		byTarget[m.Target] = m
 	}
-	if len(byTarget) != 2 {
-		t.Fatalf("origin mounts = %#v, want exactly 2 (primary and ref)", byTarget)
+	if len(byTarget) != 3 {
+		t.Fatalf("origin mounts = %#v, want exactly 3 (primary, ref and pushed)", byTarget)
 	}
 	primary, ok := byTarget[sandboxOriginsMount+"/primary"]
 	if !ok || primary.Source != "/host/primary" || !primary.ReadOnly || primary.Type != mount.TypeBind {
@@ -817,6 +817,47 @@ func TestOriginMountsCoversLocalCloneDeliveredSourcesOnly(t *testing.T) {
 	if !ok || ref.Source != "/host/ref" || !ref.ReadOnly || ref.Type != mount.TypeBind {
 		t.Fatalf("ref origin mount = %#v, origins = %#v", ref, byTarget)
 	}
+	// A push-delivered source's origin is the pool-side repository, never the
+	// client directory that is unreachable from this host — which is why the
+	// source is push-delivered in the first place.
+	pushed, ok := byTarget[sandboxOriginsMount+"/pushed"]
+	if !ok || pushed.Source != "/pool/origins/pushed.git" || !pushed.ReadOnly || pushed.Type != mount.TypeBind {
+		t.Fatalf("pushed origin mount = %#v, origins = %#v", pushed, byTarget)
+	}
+}
+
+// pushDeliveredSource is a push-delivered source checked out at a branch, or at a
+// bare commit when the branch is empty.
+func pushDeliveredSource(branch string) workerapimodel.GitSource {
+	source := workerapimodel.GitSource{
+		Kind:           workerclient.GitSourceKindGit,
+		Delivery:       workerclient.NewOptGitSourceDelivery(workerclient.GitSourceDeliveryPush),
+		LocalDirectory: workerclient.NewOptString("/does/not/exist"),
+	}
+	if branch != "" {
+		source.Checkout = workerclient.NewOptGitSourceCheckout(workerapimodel.GitSourceCheckout{
+			RefName: workerclient.NewOptString(branch),
+			RefType: workerclient.NewOptString("branch"),
+		})
+	}
+	return source
+}
+
+// pushCommitToOrigin does what the client does: commit in a repository of its
+// own and push that branch into the source's origin repository.
+func pushCommitToOrigin(t *testing.T, origin, branch string) string {
+	t.Helper()
+	client := t.TempDir()
+	git(t, client, "init", "-b", branch)
+	git(t, client, "config", "user.email", "test@example.com")
+	git(t, client, "config", "user.name", "Test")
+	if err := os.WriteFile(filepath.Join(client, "README.md"), []byte("pushed\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	git(t, client, "add", "README.md")
+	git(t, client, "commit", "-m", "pushed")
+	git(t, client, "push", origin, branch)
+	return gitOutput(t, client, "rev-parse", "HEAD")
 }
 
 func mustURL(t *testing.T, raw string) url.URL {
@@ -856,81 +897,116 @@ func gitOutput(t *testing.T, dir string, args ...string) string {
 	return strings.TrimSpace(string(out))
 }
 
-// A push-delivered source must end up holding a real repository, because git
-// http-backend only serves a repository that already exists.
-func TestMaterializeGitSourceWithPushDeliveryInitializesRepository(t *testing.T) {
+// Provisioning creates the origin repository before any source exists: it is
+// what the client pushes into while the sandbox parks (ADR 0058 §1). Bare,
+// refusing deletes, and allowing the non-fast-forward a local rebase produces.
+func TestInitGitOriginIsBareAndRefusesDeletes(t *testing.T) {
+	requirePOSIXHost(t)
 	ctx := context.Background()
-	source := workerapimodel.GitSource{
-		Kind:     workerclient.GitSourceKindGit,
-		Delivery: workerclient.NewOptGitSourceDelivery(workerclient.GitSourceDeliveryPush),
-		Checkout: workerclient.NewOptGitSourceCheckout(workerapimodel.GitSourceCheckout{
-			RefName: workerclient.NewOptString("main"),
-			RefType: workerclient.NewOptString("branch"),
-		}),
-	}
-	target := filepath.Join(t.TempDir(), "target")
 	runtime := &DockerSandboxRuntime{}
+	origin := filepath.Join(t.TempDir(), "primary.git")
 
-	// Materializing twice must be safe: create is retried.
+	// Twice: create is retried, and the second call must leave the repository
+	// exactly as it stands.
 	for attempt := 1; attempt <= 2; attempt++ {
-		if err := runtime.materializeGitSource(ctx, source, target, "primary", currentUser()); err != nil {
-			t.Fatalf("materialize push source attempt %d: %v", attempt, err)
+		if err := runtime.initGitOrigin(ctx, origin, currentUser()); err != nil {
+			t.Fatalf("init git origin attempt %d: %v", attempt, err)
 		}
-		if _, err := os.Stat(filepath.Join(target, ".git")); err != nil {
-			t.Fatalf("attempt %d: repository was not initialized: %v", attempt, err)
-		}
-		// The pushed branch must be the checked-out one, or
-		// receive.denyCurrentBranch=updateInstead leaves the working tree empty.
-		if branch := gitOutput(t, target, "branch", "--show-current"); branch != "main" {
-			t.Fatalf("initial branch after attempt %d = %q, want main", attempt, branch)
-		}
+	}
+	if got := gitOutput(t, origin, "rev-parse", "--is-bare-repository"); got != "true" {
+		t.Fatalf("is-bare-repository = %q, want true", got)
+	}
+	if got := gitOutput(t, origin, "config", "--get", "receive.denyDeletes"); got != "true" {
+		t.Fatalf("receive.denyDeletes = %q, want true", got)
+	}
+	if got := gitOutput(t, origin, "config", "--get", "receive.denyNonFastForwards"); got != "false" {
+		t.Fatalf("receive.denyNonFastForwards = %q, want false", got)
+	}
+
+	// Re-initializing an origin that already holds pushed commits must never
+	// discard them: the client's history lives here between pushes.
+	pushed := pushCommitToOrigin(t, origin, "main")
+	if err := runtime.initGitOrigin(ctx, origin, currentUser()); err != nil {
+		t.Fatalf("init git origin after a push: %v", err)
+	}
+	if got := gitOutput(t, origin, "rev-parse", "refs/heads/main"); got != pushed {
+		t.Fatalf("main = %q after re-init, want the pushed commit %q", got, pushed)
 	}
 }
 
-// The end state the push path depends on: a client pushing into the initialized
-// repository lands its commit *and* its files in the sandbox's working tree.
-func TestPushIntoInitializedSourceUpdatesWorkingTree(t *testing.T) {
+// A source checked out at a bare commit or tag names no branch, so the branch its
+// commits land on is the client's choice. The origin's HEAD follows what actually
+// arrived, which is what makes origin/HEAD — the upstream ref such a source
+// tracks — resolve once the sandbox clones, without the pool host having to know
+// the name the client picked.
+func TestMaterializeGitSourceHeadsTheOriginAtWhatTheClientPushed(t *testing.T) {
 	requirePOSIXHost(t)
 	ctx := context.Background()
-	source := workerapimodel.GitSource{
-		Kind:     workerclient.GitSourceKindGit,
-		Delivery: workerclient.NewOptGitSourceDelivery(workerclient.GitSourceDeliveryPush),
-		Checkout: workerclient.NewOptGitSourceCheckout(workerapimodel.GitSourceCheckout{
-			RefName: workerclient.NewOptString("main"),
-			RefType: workerclient.NewOptString("branch"),
-		}),
-	}
-	target := filepath.Join(t.TempDir(), "target")
+	source := pushDeliveredSource("")
 	runtime := &DockerSandboxRuntime{}
-	if err := runtime.materializeGitSource(ctx, source, target, "primary", currentUser()); err != nil {
+	origin := filepath.Join(t.TempDir(), "primary.git")
+	if err := runtime.initGitOrigin(ctx, origin, currentUser()); err != nil {
+		t.Fatalf("init git origin: %v", err)
+	}
+	// git init points HEAD at init.defaultBranch, which is not what the client
+	// pushes — so "has anything been pushed" cannot be asked of HEAD either.
+	pushed := pushCommitToOrigin(t, origin, "discobox-source")
+
+	target := filepath.Join(t.TempDir(), "target")
+	if err := runtime.materializeGitSource(ctx, source, target, origin, "primary", currentUser()); err != nil {
 		t.Fatalf("materialize push source: %v", err)
 	}
-	// git http-backend serves the repository with these settings; apply them
-	// here so this exercises the same receive behavior a real push gets.
-	git(t, target, "config", "http.receivepack", "true")
-	git(t, target, "config", "receive.denyCurrentBranch", "updateInstead")
-
-	client := t.TempDir()
-	git(t, client, "init", "-b", "main")
-	git(t, client, "config", "user.email", "test@example.com")
-	git(t, client, "config", "user.Name", "Test")
-	if err := os.WriteFile(filepath.Join(client, "README.md"), []byte("pushed\n"), 0o644); err != nil {
-		t.Fatal(err)
+	if got, want := gitOutput(t, origin, "symbolic-ref", "HEAD"), "refs/heads/discobox-source"; got != want {
+		t.Fatalf("origin HEAD = %q, want %q", got, want)
 	}
-	git(t, client, "add", "README.md")
-	git(t, client, "commit", "-m", "pushed")
-	pushed := gitOutput(t, client, "rev-parse", "HEAD")
-	git(t, client, "push", target, "main")
+	if got := gitOutput(t, target, "rev-parse", "refs/remotes/origin/HEAD"); got != pushed {
+		t.Fatalf("origin/HEAD in the sandbox = %q, want the pushed commit %q", got, pushed)
+	}
+}
 
+// Until the client pushes there is nothing to clone, so materializing is a
+// no-op and the sandbox stays parked. The push completes it: the commit and its
+// files land in the working tree by checkout, the way a clone-delivered source's
+// do.
+func TestMaterializeGitSourceWaitsForThePushThenClonesTheOrigin(t *testing.T) {
+	requirePOSIXHost(t)
+	ctx := context.Background()
+	source := pushDeliveredSource("main")
+	runtime := &DockerSandboxRuntime{}
+	origin := filepath.Join(t.TempDir(), "primary.git")
+	if err := runtime.initGitOrigin(ctx, origin, currentUser()); err != nil {
+		t.Fatalf("init git origin: %v", err)
+	}
+	target := filepath.Join(t.TempDir(), "target")
+
+	if err := runtime.materializeGitSource(ctx, source, target, origin, "primary", currentUser()); err != nil {
+		t.Fatalf("materialize before the push: %v", err)
+	}
+	if _, err := os.Stat(filepath.Join(target, ".git")); !os.IsNotExist(err) {
+		t.Fatalf("a source was materialized before the client pushed (stat err = %v)", err)
+	}
+
+	pushed := pushCommitToOrigin(t, origin, "main")
+	if err := runtime.materializeGitSource(ctx, source, target, origin, "primary", currentUser()); err != nil {
+		t.Fatalf("materialize after the push: %v", err)
+	}
 	if head := gitOutput(t, target, "rev-parse", "HEAD"); head != pushed {
-		t.Fatalf("sandbox HEAD = %q, want pushed commit %q", head, pushed)
+		t.Fatalf("HEAD = %q, want the pushed commit %q", head, pushed)
+	}
+	if branch := gitOutput(t, target, "branch", "--show-current"); branch != "main" {
+		t.Fatalf("branch = %q, want main", branch)
 	}
 	data, err := os.ReadFile(filepath.Join(target, "README.md"))
 	if err != nil {
 		t.Fatalf("pushed file is not in the working tree: %v", err)
 	}
 	if string(data) != "pushed\n" {
-		t.Fatalf("pushed file = %q, want pushed content", data)
+		t.Fatalf("pushed file = %q, want the pushed content", data)
+	}
+	// The sandbox tracks the origin it will fetch from, so a later re-push is
+	// something it can rebase onto.
+	if got, want := gitOutput(t, target, "rev-parse", "refs/remotes/origin/main"), pushed; got != want {
+		t.Fatalf("origin/main = %q, want %q", got, want)
 	}
 }
 
@@ -943,7 +1019,7 @@ func TestMaterializeGitSourceWithoutDeliveryOrCloneSourceFails(t *testing.T) {
 	runtime := &DockerSandboxRuntime{}
 	target := filepath.Join(t.TempDir(), "target")
 
-	err := runtime.materializeGitSource(ctx, workerapimodel.GitSource{Kind: workerclient.GitSourceKindGit}, target, "primary", currentUser())
+	err := runtime.materializeGitSource(ctx, workerapimodel.GitSource{Kind: workerclient.GitSourceKindGit}, target, "", "primary", currentUser())
 	if err == nil {
 		t.Fatal("materialize source with no url, no localDirectory, and no push delivery: got nil error, want failure")
 	}
@@ -1002,17 +1078,23 @@ func TestMaterializeGitSourceWithPushDeliveryRestoresDirtyWorkspace(t *testing.T
 	target := filepath.Join(t.TempDir(), "target")
 	runtime := &DockerSandboxRuntime{}
 
-	// Provision: an empty repository parked for the push.
-	if err := runtime.materializeGitSource(ctx, source, target, "primary", currentUser()); err != nil {
+	// Provision: the origin repository the client pushes into.
+	origin := filepath.Join(t.TempDir(), "primary.git")
+	if err := runtime.initGitOrigin(ctx, origin, currentUser()); err != nil {
+		t.Fatalf("init git origin: %v", err)
+	}
+	if err := runtime.materializeGitSource(ctx, source, target, origin, "primary", currentUser()); err != nil {
 		t.Fatalf("materialize push source: %v", err)
 	}
-	git(t, target, "config", "receive.denyCurrentBranch", "updateInstead")
 
-	// The client pushes its branch and the snapshot ref.
-	git(t, client, "push", target, "main", "+"+snapshotRef+":"+snapshotRef)
+	// The client pushes its branch and the snapshot ref. The snapshot is not a
+	// branch or a tag, so the clone below does not bring it: it is fetched
+	// explicitly out of the origin, exactly as a clone-delivered source's is
+	// fetched out of the client's directory.
+	git(t, client, "push", origin, "main", "+"+snapshotRef+":"+snapshotRef)
 
-	// Resume: the same call now finishes the checkout and restores the workspace.
-	if err := runtime.materializeGitSource(ctx, source, target, "primary", currentUser()); err != nil {
+	// Resume: the same call now clones, checks out and restores the workspace.
+	if err := runtime.materializeGitSource(ctx, source, target, origin, "primary", currentUser()); err != nil {
 		t.Fatalf("materialize after push: %v", err)
 	}
 
@@ -1079,13 +1161,16 @@ func TestMaterializePushedSourcesCompletesExistingSandbox(t *testing.T) {
 		},
 	}
 	target := runtime.sandboxSourcePath(sandboxID, "primary")
+	origin := runtime.sandboxOriginPath(sandboxID, "primary")
 
-	// Provision parks an empty repository.
-	if err := runtime.materializeGitSource(ctx, source, target, "primary", currentUser()); err != nil {
+	// Provision creates the origin and parks; the client pushes into it.
+	if err := runtime.initGitOrigin(ctx, origin, currentUser()); err != nil {
+		t.Fatalf("init git origin: %v", err)
+	}
+	if err := runtime.materializeGitSource(ctx, source, target, origin, "primary", currentUser()); err != nil {
 		t.Fatalf("materialize push source: %v", err)
 	}
-	git(t, target, "config", "receive.denyCurrentBranch", "updateInstead")
-	git(t, client, "push", target, "main")
+	git(t, client, "push", origin, "main")
 
 	// The resume create.
 	if err := runtime.materializePushedSources(ctx, sandboxID, req); err != nil {
@@ -1192,13 +1277,16 @@ func TestMaterializePushedSourcesIsANoOpOnceFinalized(t *testing.T) {
 		},
 	}
 	target := runtime.sandboxSourcePath(sandboxID, "primary")
+	origin := runtime.sandboxOriginPath(sandboxID, "primary")
 
-	// Provision parks an empty repository, then the client pushes.
-	if err := runtime.materializeGitSource(ctx, source, target, "primary", currentUser()); err != nil {
+	// Provision creates the origin and parks, then the client pushes into it.
+	if err := runtime.initGitOrigin(ctx, origin, currentUser()); err != nil {
+		t.Fatalf("init git origin: %v", err)
+	}
+	if err := runtime.materializeGitSource(ctx, source, target, origin, "primary", currentUser()); err != nil {
 		t.Fatalf("materialize push source: %v", err)
 	}
-	git(t, target, "config", "receive.denyCurrentBranch", "updateInstead")
-	git(t, client, "push", target, "main")
+	git(t, client, "push", origin, "main")
 
 	// The resume create finalizes the source.
 	if err := runtime.materializePushedSources(ctx, sandboxID, req); err != nil {

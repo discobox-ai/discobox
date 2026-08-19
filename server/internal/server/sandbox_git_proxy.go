@@ -17,10 +17,15 @@ import (
 )
 
 func registerSandboxGitRoutes(router chi.Router, service services.SandboxService) {
-	router.Handle("/projects/{projectId}/sandboxes/{sandboxId}/git-repositories/*", sandboxGitProxyHandler(service))
+	router.Handle("/projects/{projectId}/sandboxes/{sandboxId}/git-repositories/*", sandboxGitProxyHandler(service, "git-repositories"))
+	// The origin repository a push-delivered source is pushed into is a
+	// different repository from the sandbox's worktree, on its own route for the
+	// same reason the pool agent gives it one (ADR 0058 §3). Both proxy the same
+	// way and derive scopes identically.
+	router.Handle("/projects/{projectId}/sandboxes/{sandboxId}/git-origins/*", sandboxGitProxyHandler(service, "git-origins"))
 }
 
-func sandboxGitProxyHandler(service services.SandboxService) http.Handler {
+func sandboxGitProxyHandler(service services.SandboxService, kind string) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if service == nil {
 			http.Error(w, "sandbox service is not configured", http.StatusServiceUnavailable)
@@ -50,7 +55,7 @@ func sandboxGitProxyHandler(service services.SandboxService) http.Handler {
 			return
 		}
 
-		target, err := sandboxGitProxyTargetURL(lease.BaseURL, sandboxModel.ProjectID, strings.TrimSpace(sandboxModel.PoolID), sandboxModel.ID, repositoryID, suffix)
+		target, err := sandboxGitProxyTargetURL(lease.BaseURL, sandboxModel.ProjectID, strings.TrimSpace(sandboxModel.PoolID), sandboxModel.ID, kind, repositoryID, suffix)
 		if err != nil {
 			http.Error(w, err.Error(), http.StatusInternalServerError)
 			return
@@ -98,8 +103,8 @@ func validSandboxGitRepositoryID(value string) bool {
 	return true
 }
 
-func sandboxGitProxyTargetURL(baseURL, projectID, poolID, sandboxID, repositoryID, suffix string) (*url.URL, error) {
-	return sandboxagentclient.TargetURL(baseURL, projectID, poolID, sandboxID, fmt.Sprintf("/git-repositories/%s.git%s", url.PathEscape(repositoryID), suffix))
+func sandboxGitProxyTargetURL(baseURL, projectID, poolID, sandboxID, kind, repositoryID, suffix string) (*url.URL, error) {
+	return sandboxagentclient.TargetURL(baseURL, projectID, poolID, sandboxID, fmt.Sprintf("/%s/%s.git%s", kind, url.PathEscape(repositoryID), suffix))
 }
 
 func sandboxPoolReverseProxy(target *url.URL, lease *services.HTTPClientLease) *httputil.ReverseProxy {

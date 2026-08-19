@@ -70,6 +70,14 @@ Current proxy routes:
   is exposed as `/projects/{projectId}/sandboxes/{sandboxId}/git-repositories/*`
   and forwards to the pool-agent git route
   `/api/project/{projectId}/pool/{poolId}/sandboxes/{sandboxId}/git-repositories/{repository}.git...`.
+  It serves the sandbox's own worktree repository.
+- `/projects/{projectId}/sandboxes/{sandboxId}/git-origins/{slug}.git...` forwards
+  the same way to the pool-agent `git-origins` route, and serves a
+  push-delivered source's origin repository instead — a different repository, on
+  its own route rather than a synthesized repository id, because source slugs are
+  client-supplied and any suffix convention could collide with a real one. Both
+  routes derive scopes identically: `receive-pack` needs `ScopeSandboxWrite`,
+  everything else `ScopeSandboxRead`. See ADR 0058 §3.
 - `/projects/{projectId}/sandboxes/{sandboxId}/http/{port}/{path...}` forwards
   to the pool-agent route
   `/api/project/{projectId}/pool/{poolId}/sandboxes/{sandboxId}/http/{port}/{path...}`.
@@ -136,6 +144,16 @@ authenticated worker principal, such as `/api/workers/{workerId}/status`.
 Agent-observed sandbox state is reported at
 `/api/pools/{poolId}/sandbox-states` under the same pool-principal rule; the
 sandbox IDs are runtime evidence, not user authorization input.
+
+## Delivering and Re-delivering Source (`disco push`)
+
+A push-delivered source's commits arrive over the `git-origins` proxy above:
+create's delivery push (ADR 0001) and every later `disco push` (ADR 0058) write
+the same bare repository, which the sandbox fetches from as `origin`. Only
+delivery at create involves the control plane's state machine — `awaiting_source`
+plus `CompleteSandboxSourcePush`. A re-push is transport and nothing else: no
+phase, no completion call, and no server-side validation of what was pushed. The
+server stays a byte proxy, as it is for the worktree route.
 
 ## Applying Sandbox Commits to a Host (`disco apply`)
 

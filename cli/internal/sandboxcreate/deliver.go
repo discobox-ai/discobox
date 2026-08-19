@@ -3,13 +3,13 @@ package sandboxcreate
 import (
 	"context"
 	"fmt"
-	"net/url"
 	"sort"
 	"strings"
 	"time"
 
 	apiclientgen "github.com/obot-platform/discobox/api/gen"
 	apimodel "github.com/obot-platform/discobox/api/model"
+	"github.com/obot-platform/discobox/cli/internal/sandboxgit"
 	"github.com/obot-platform/discobox/internal/gitutil"
 )
 
@@ -75,9 +75,9 @@ func sourceAwaitsPush(source apimodel.GitSource) bool {
 	return ok && delivery == apiclientgen.GitSourceDeliveryPush
 }
 
-// DeliverSource pushes a sandbox's push-delivered sources into their Git
-// repositories and reports the pushes complete, returning once the sandbox is
-// free to start. Each push runs out of the local source the create resolved,
+// DeliverSource pushes a sandbox's push-delivered sources into the origin
+// repositories they will fetch from and reports the pushes complete, returning
+// once the sandbox is free to start. Each push runs out of the local source the create resolved,
 // which is the only place a throwaway repository's commits exist.
 //
 // Every push-delivered source is pushed before any of them is reported: the
@@ -91,8 +91,8 @@ func DeliverSource(ctx context.Context, client sourceDeliveryClient, projectID s
 	if len(pending) == 0 {
 		return nil
 	}
-	// The repositories only exist once the sandbox is provisioned, so there is
-	// nothing to push into until it parks.
+	// The origin repositories only exist once the sandbox is provisioned, so
+	// there is nothing to push into until it parks.
 	if err := awaitSourceRequested(ctx, client, projectID, sandbox.ID); err != nil {
 		return err
 	}
@@ -110,13 +110,18 @@ func DeliverSource(ctx context.Context, client sourceDeliveryClient, projectID s
 		if err != nil {
 			return err
 		}
-		repoURL, err := SandboxGitRepositoryURL(serverURL, projectID, sandbox.ID, entry.source)
+		originURL, err := sandboxgit.OriginURL(serverURL, projectID, sandbox.ID, entry.source)
 		if err != nil {
 			return err
 		}
-		if err := pushSource(ctx, repoRoot, repoURL, token, commit, branch, snapshotRef); err != nil {
+		if err := pushSource(ctx, repoRoot, originURL, token, commit, branch, snapshotRef); err != nil {
 			return err
 		}
+		// The commit just delivered is the lease every later `disco push` of this
+		// source leases against (ADR 0058 §6). A failure to record it must not
+		// fail the create: the source is delivered either way, and the only cost
+		// is that the next push has no lease to hold.
+		_ = gitutil.UpdateRef(ctx, repoRoot, sandboxgit.OriginLeaseRef(sandbox.ID, slug, pushBranch(branch)), commit)
 		pushed[slug] = commit
 	}
 	return completeSourcePush(ctx, client, projectID, sandbox.ID, pushed)
@@ -166,29 +171,6 @@ func (s *LocalSources) pushRoot(key string) (string, error) {
 	return "", fmt.Errorf("the sandbox expects a push for source %s, but it was not resolved from a local repository", key)
 }
 
-// SandboxGitRepositoryURL is the control plane's proxy to the sandbox's
-// repository. The push goes through the server rather than to the sandbox: the
-// sandbox sits on a private network the client cannot reach.
-func SandboxGitRepositoryURL(serverURL, projectID, sandboxID string, source apimodel.GitSource) (string, error) {
-	base := strings.TrimRight(strings.TrimSpace(serverURL), "/")
-	parsed, err := url.Parse(base)
-	if err != nil {
-		return "", fmt.Errorf("parse server URL %q: %w", serverURL, err)
-	}
-	if parsed.Scheme != "http" && parsed.Scheme != "https" {
-		// git only speaks URLs, so callers bridge a unix socket or named pipe
-		// endpoint to a loopback HTTP address before they get here. Reaching
-		// this means a caller passed the raw endpoint instead.
-		return "", fmt.Errorf("cannot reach the sandbox repository at server endpoint %q: an HTTP endpoint is required", serverURL)
-	}
-	slug := strings.TrimSpace(source.Slug.Or(""))
-	if slug == "" {
-		return "", fmt.Errorf("sandbox source has no slug to address its repository")
-	}
-	return fmt.Sprintf("%s/projects/%s/sandboxes/%s/git-repositories/%s.git",
-		base, url.PathEscape(projectID), url.PathEscape(sandboxID), url.PathEscape(slug)), nil
-}
-
 // awaitSourceRequested waits until the sandbox is parked waiting for its
 // source. Pushing earlier would race the repository into existence.
 func awaitSourceRequested(ctx context.Context, client sourceDeliveryClient, projectID, sandboxID string) error {
@@ -219,8 +201,8 @@ func awaitSourceRequested(ctx context.Context, client sourceDeliveryClient, proj
 	}
 }
 
-// pushSource sends the commit, and any workspace snapshot, into the sandbox's
-// repository.
+// pushSource sends the commit, and any workspace snapshot, into the source's
+// origin repository, which the sandbox then clones (ADR 0058 §4).
 //
 // The commit is pushed to its branch by explicit refspec rather than by pushing
 // the local branch: the local branch may have moved on since create, and the
@@ -228,37 +210,27 @@ func awaitSourceRequested(ctx context.Context, client sourceDeliveryClient, proj
 // dirty workspace's uncommitted changes, which the sandbox re-applies on top.
 func pushSource(ctx context.Context, repoRoot, repoURL, token, commit, branch, snapshotRef string) error {
 	refspecs := make([]string, 0, 2)
-	if branch != "" {
-		refspecs = append(refspecs, commit+":refs/heads/"+branch)
-	} else {
-		refspecs = append(refspecs, commit+":refs/heads/"+detachedPushBranch)
-	}
+	refspecs = append(refspecs, commit+":refs/heads/"+pushBranch(branch))
 	if snapshotRef != "" {
 		refspecs = append(refspecs, "+"+snapshotRef+":"+snapshotRef)
 	}
 	args := []string{"push", repoURL}
 	args = append(args, refspecs...)
-	if _, err := gitutil.Output(ctx, repoRoot, nil, nil, GitAuthArgs(token, args)...); err != nil {
+	if _, err := gitutil.Output(ctx, repoRoot, nil, nil, sandboxgit.AuthArgs(token, args)...); err != nil {
 		return fmt.Errorf("push source to sandbox: %w", err)
 	}
 	return nil
 }
 
-// detachedPushBranch receives a commit that no branch names, which is what a
-// source checked out at a bare commit or tag resolves to. The sandbox checks
-// out the commit itself; this only gives the push somewhere to land.
-const detachedPushBranch = "discobox-source"
-
-// GitAuthArgs carries the caller's bearer token on the request. It is
-// passed as a git config override rather than embedded in the URL, which would
-// put the token in the repository's remote configuration and in process
-// listings.
-func GitAuthArgs(token string, args []string) []string {
-	token = strings.TrimSpace(token)
-	if token == "" {
-		return args
+// pushBranch is the branch a commit lands on in the origin repository: the
+// source's own branch, or the conventional one for a source that names none —
+// checked out at a bare commit or tag. The sandbox checks out the commit itself;
+// this only gives the push somewhere to land, and gives the origin a HEAD.
+func pushBranch(branch string) string {
+	if branch != "" {
+		return branch
 	}
-	return append([]string{"-c", "http.extraHeader=Authorization: Bearer " + token}, args...)
+	return sandboxgit.SourcePushBranch
 }
 
 func completeSourcePush(ctx context.Context, client sourceDeliveryClient, projectID, sandboxID string, pushed apiclientgen.CompleteSandboxSourcePushBodySources) error {

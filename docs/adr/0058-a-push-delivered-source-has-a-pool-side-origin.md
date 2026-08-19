@@ -70,11 +70,16 @@ because they are the receiving end of the push:
 - `receive.denyNonFastForwards=false`. Non-fast-forward is the *normal* case
   (see §6), so it is allowed deliberately rather than by default.
 
-Its `HEAD` is set to the branch the client will push — `gitSourceInitialBranch`,
-or `discobox-source` for a source checked out at a bare commit or tag. `git
-init --bare` otherwise points `HEAD` at an `init.defaultBranch` that never
-exists, so the clone in §4 would leave `refs/remotes/origin/HEAD` unset — and
-that is exactly the ref `sourceUpstreamRef` names for a non-branch checkout.
+Its `HEAD` is pointed at a branch that exists just before the clone in §4, not
+at creation: `git init --bare` points `HEAD` at an `init.defaultBranch` that may
+never be pushed, which would leave `refs/remotes/origin/HEAD` unset after the
+clone — exactly the ref `sourceUpstreamRef` names for a non-branch checkout — and
+makes the clone warn. Nothing else in a bare repository depends on `HEAD`, so it
+is set once both facts are known: what the source names, and what the client
+actually pushed. A source that names no branch has its `HEAD` follow what
+arrived, so the pool host never has to hold the client's name for that branch.
+For the same reason, "has the client pushed yet" is asked of `refs/heads`, never
+of `HEAD`.
 
 ### 2. It is bound read-only at `/.discobox/origins/<slug>`
 
@@ -150,17 +155,26 @@ with the same repository can both push to one sandbox, and the older one would
 silently rewind the sandbox's `origin` under a rebase already in flight.
 
 So the update is `--force-with-lease`, leased against a client-side record of
-what *this* client last pushed: `refs/discobox/origin/<sandboxID>/<slug>` in the
-client's own repository, written by the create-time delivery push and updated
-after every successful `disco push`. This is the existing ref convention —
+what *this* client last pushed:
+`refs/discobox/origin/<sandboxID>/<slug>/<branch>` in the client's own
+repository, written by the create-time delivery push and updated after every
+successful `disco push`. This is the existing ref convention —
 `refs/discobox/run/<id>` for snapshots (ADR 0001), `refs/discobox/apply/...`
-for fetched sandbox commits (ADR 0014).
+for fetched sandbox commits (ADR 0014). The branch is part of the ref because a
+lease protects one ref: a client that also pushes a second branch for the
+sandbox to rebase onto has said nothing about where the first should be.
 
 The lease is a real one, not a re-read: leasing against a value just read back
 with `ls-remote` only narrows the race, while leasing against "where I left it"
 answers the question that matters — *has anyone else moved this since I last
-pushed?* A missing local ref means this client has never pushed to this sandbox,
-so it cannot lease; that refuses and requires an explicit `--force`.
+pushed?*
+
+With no such record — a second machine, a fresh clone — there is nothing to lease
+against, and the push falls back to git's own fast-forward rule. That is the
+right floor: a fast-forward cannot lose a commit, so a first push from a machine
+that is simply ahead just works, while anything that would rewind is refused
+until `--force`. Refusing every leaseless push outright would stop the safe case
+for no gain.
 
 Before the push, and refusable the same way:
 
@@ -324,6 +338,11 @@ stops.
 - The lease lives in the client's repository, so it is per-clone. A second
   machine, or a fresh clone, has no lease and must pass `--force` for its first
   push — deliberately, since that push is the one that would rewind the mirror.
+- A sandbox created before this decision has no origin repository, and nothing
+  builds one for it: its source was already materialized, so the create that
+  would provision one leaves the workspace alone by design. Such a sandbox keeps
+  working and cannot be pushed to; `disco push` against it fails as a missing
+  repository. Given a disposable local state root this is not worth a backfill.
 - The lease ref is per-clone, so on a machine that has never pushed to a
   sandbox the launcher offers push even when the mirror is already current.
   This is the same conservative direction apply already takes with an
