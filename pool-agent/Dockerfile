@@ -41,6 +41,10 @@ RUN apt-get update \
         curl \
         dbus \
         docker.io \
+        # The daemon package ships dockerd but no client. The client is here for
+        # the pool host console (docs/adr/0051), which binds this daemon's socket
+        # and is where an operator debugs a backend by hand.
+        docker-cli \
         git \
         systemd \
         systemd-sysv \
