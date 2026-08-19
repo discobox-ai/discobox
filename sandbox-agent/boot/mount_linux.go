@@ -4,6 +4,7 @@ package boot
 
 import (
 	"fmt"
+	"os"
 	"os/exec"
 	"syscall"
 )
@@ -58,4 +59,15 @@ func execInit(argv, env []string) error {
 		return fmt.Errorf("resolve init target %q: %w", argv[0], err)
 	}
 	return syscall.Exec(path, argv, env)
+}
+
+// fileDevice reports the number of the device fi lives on, which is what
+// distinguishes one mounted filesystem from another. Used to keep a recursive
+// walk from descending into a mounted volume.
+func fileDevice(fi os.FileInfo) (uint64, bool) {
+	st, ok := fi.Sys().(*syscall.Stat_t)
+	if !ok {
+		return 0, false
+	}
+	return st.Dev, true
 }

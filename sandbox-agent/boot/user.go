@@ -286,7 +286,49 @@ func (b *booter) seedHome(id identity) error {
 	if id.uid == 0 {
 		return os.Lchown(id.home, id.uid, id.gid)
 	}
-	return b.run("chown", "-R", "--no-dereference", fmt.Sprintf("%d:%d", id.uid, id.gid), id.home)
+	return chownTreeOnOwnFilesystem(id.home, id.uid, id.gid)
+}
+
+// chownTreeOnOwnFilesystem chowns root and everything under it that lives on
+// root's own filesystem, never descending into a volume mounted underneath.
+//
+// The recursion is here for the directories boot itself creates as root on the
+// way to a mountpoint -- ~/.cargo on the way to ~/.cargo/registry, ~/go/pkg on
+// the way to ~/go/pkg/mod -- which wireVolume leaves root-owned because
+// applyOwnership chowns only the mountpoint. Those live on home's filesystem.
+//
+// What it must not walk is the volumes themselves. The shared pool cache and
+// the source trees are mounted under home, they already have the ownership
+// wireVolume/wireSources and the pool agent gave them, and they are large:
+// ~4.7*10^5 inodes on a working machine, which cost ~14s of every boot on a
+// cold page cache. GNU chown has no --one-file-system, hence the explicit walk.
+func chownTreeOnOwnFilesystem(root string, uid, gid int) error {
+	fi, err := os.Lstat(root)
+	if err != nil {
+		return err
+	}
+	// An unreportable device number means every path compares equal below, so
+	// the walk degrades to covering the whole tree rather than skipping it.
+	rootDev, haveDev := fileDevice(fi)
+	return filepath.WalkDir(root, func(p string, d os.DirEntry, err error) error {
+		if err != nil {
+			return err
+		}
+		if p != root && haveDev {
+			info, err := d.Info()
+			if err != nil {
+				return err
+			}
+			if dev, ok := fileDevice(info); ok && dev != rootDev {
+				if d.IsDir() {
+					return filepath.SkipDir
+				}
+				return nil
+			}
+		}
+		//nolint:gosec // The tree is the sandbox user's own home; Lchown avoids following symlinks out of it.
+		return os.Lchown(p, uid, gid)
+	})
 }
 
 // gitConfigArgv builds a `git config` invocation pinned to the sandbox user's
@@ -335,7 +377,7 @@ func (b *booter) gitConfigSet(id identity, key string) bool {
 // Git itself is the authority on what is set, rather than boot parsing the file:
 // the same rule the CLI follows when reading the identity on the way in.
 //
-// Runs after seedHome, which recursively chowns the whole tree: a file written
+// Runs after seedHome, which recursively chowns the home tree: a file written
 // before that would be correctly owned by luck rather than by construction, and
 // one written after has to say so itself. Writing via git also means an existing
 // file is replaced through a lock-and-rename, which leaves it owned by boot --

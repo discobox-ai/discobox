@@ -53,3 +53,25 @@ Decision record: [ADR 0025](../docs/adr/0025-the-sandbox-user-is-one-contract-re
 - Identity resolution is cross-platform; keep it out of `_unix.go` files. Only
   the credential and `SysProcAttr` construction are platform-specific. Build with
   `GOOS=windows` before relying on that split.
+
+## Boot cost
+
+Boot runs before anything in the sandbox is usable, so work here is latency the
+user waits on every single start.
+
+- **Never let a recursive walk under `$HOME` cross into a mounted volume.** The
+  shared pool cache and the source trees are mounted *under* home
+  (`~/.cache`, `~/go/pkg/mod`, `~/.local/share/pnpm`, the source targets). They
+  are unbounded — ~5*10^5 inodes on a working machine — and they already have
+  the ownership `wireVolume`/`wireSources` and the pool agent gave them. Walking
+  them cost ~14s of every boot on a cold page cache. `seedHome` uses
+  `chownTreeOnOwnFilesystem` for exactly this reason; GNU `chown` has no
+  `--one-file-system`, so reaching for `chown -R` reintroduces the bug.
+- **What the recursion is actually for** is the intermediate directories boot
+  creates as root on the way to a mountpoint — `~/.cargo` above
+  `~/.cargo/registry`, `~/go/pkg` above `~/go/pkg/mod` — because
+  `applyOwnership` chowns only the mountpoint. Those live on home's own
+  filesystem, so the same-filesystem walk still covers them.
+- **Ownership has one owner per path.** If the pool agent already owns a tree,
+  boot must not assert it again. Both sides asserting produced two full walks of
+  the same inodes, in opposite directions, on every start.

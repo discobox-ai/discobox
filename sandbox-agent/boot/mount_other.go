@@ -2,7 +2,10 @@
 
 package boot
 
-import "fmt"
+import (
+	"fmt"
+	"os"
+)
 
 // The sandbox-agent init flow only runs inside the Linux sandbox container.
 // These stubs let the package compile on other platforms (for tooling and the
@@ -16,3 +19,7 @@ func overlayMount(string, string, string, string) error {
 	return errUnsupported
 }
 func execInit([]string, []string) error { return errUnsupported }
+
+// fileDevice cannot report a device number here, so callers fall back to
+// treating every path as one filesystem.
+func fileDevice(os.FileInfo) (uint64, bool) { return 0, false }
