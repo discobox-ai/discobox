@@ -93,8 +93,35 @@ func newFromInstance(ctx context.Context, instance *model.SandboxProviderInstanc
 		return nil, err
 	}
 	definition := Definition()
-	definition.LocalSourceBind = localSourceBindSupported(driver.DaemonHost())
+	definition.LocalSourceRoots = localSourceRoots(driver.DaemonHost(), engine.HostMounts())
 	return poolruntime.New(engine, definition, poolManager), nil
+}
+
+// localSourceRoots are the host paths a sandbox on this instance can clone a
+// local source directory from.
+//
+// Two things have to hold, and the host mounts are the second: the daemon must
+// share a filesystem with this process, and the path must be one of the ones
+// this instance carries into its pool workers. A pool worker sees a host
+// directory only if it was mounted for it (dockerworker.Engine.containerMounts),
+// so the mounts are the whole answer — the sources are named here rather than
+// their in-container targets, because the caller compares them against a path
+// on this machine.
+//
+// They come from the engine's normalized configuration rather than the raw
+// instance config, so the roots claimed here and the mounts actually made
+// cannot drift.
+func localSourceRoots(daemonHost string, hostMounts []dockerworker.HostMount) []string {
+	if !localSourceBindSupported(daemonHost) {
+		return nil
+	}
+	roots := make([]string, 0, len(hostMounts))
+	for _, hostMount := range hostMounts {
+		if source := strings.TrimSpace(hostMount.Source); source != "" {
+			roots = append(roots, source)
+		}
+	}
+	return roots
 }
 
 // localSourceBindSupported reports whether containers on daemonHost share a

@@ -37,20 +37,27 @@ type ProviderDefinition struct {
 	Description  string                `json:"description,omitempty"`
 	ConfigFields []ProviderConfigField `json:"configFields,omitempty"`
 
-	// LocalSourceBind reports whether this provider instance runs its sandboxes
-	// on the control plane's own filesystem, so a client-local source directory
-	// can be bind-mounted and cloned in place.
+	// LocalSourceRoots are the host paths under which a client-local source
+	// directory can be bind-mounted and cloned in place, because this provider
+	// instance runs its sandboxes on the control plane's own filesystem and
+	// exposes those paths to them.
+	//
+	// Reachability is a property of the path, not of the provider: a Docker
+	// instance mounts the host directories its configuration names and nothing
+	// else, so a directory outside them is as unreachable as one on another
+	// machine. A provider that shares the whole filesystem says "/". Empty
+	// means no local directory is reachable at all.
 	//
 	// This is per instance, not per driver: the same driver is local or remote
-	// depending on its configuration, so instances decide it at construction
+	// depending on its configuration, so instances fill it in at construction
 	// rather than the package-level Definition doing so. It answers only "can
-	// this provider reach the control plane's files"; whether those are the
-	// *client's* files additionally requires the client to be on the same host,
-	// which the provider cannot know. Callers must check both.
+	// this provider reach the control plane's files at this path"; whether
+	// those are the *client's* files additionally requires the client to be on
+	// the same host, which the provider cannot know. Callers must check both.
 	//
-	// Default false: a wrong false costs a source push, a wrong true produces a
+	// Default empty: a missing root costs a source push, a wrong one produces a
 	// sandbox bound to a path that does not exist.
-	LocalSourceBind bool `json:"localSourceBind,omitempty"`
+	LocalSourceRoots []string `json:"localSourceRoots,omitempty"`
 }
 
 // ProviderStatus describes runtime provider availability.

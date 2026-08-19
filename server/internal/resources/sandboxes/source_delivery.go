@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"net/http"
+	"path/filepath"
 	"sort"
 	"strings"
 	"time"
@@ -177,12 +178,14 @@ func pushDeliveredSources(sb *model.Sandbox) []gitSourceEntry {
 // client pushing into the sandbox's repository, rather than by the sandbox
 // cloning the client's directory through a bind mount.
 //
-// A local source directory is only reachable when the provider runs sandboxes
-// on this filesystem *and* the client is on this machine. Neither condition
+// A local source directory is only reachable when the provider exposes that
+// path to its sandboxes *and* the client is on this machine. Neither condition
 // implies the other: a Docker provider on a remote server binds happily, just
-// not to the caller's files. Comparing host IDs is what separates the two, and
-// it works because a co-located CLI and server resolve the same identity from
-// the same file.
+// not to the caller's files, and one on this machine binds only the host
+// directories it was configured with. Comparing host IDs is what separates the
+// first pair, and it works because a co-located CLI and server resolve the same
+// identity from the same file; the provider's local source roots settle the
+// second.
 //
 // Unknowns resolve to true. A needless push is slow; a bind of a path the
 // sandbox cannot see fails outright.
@@ -203,7 +206,11 @@ func sourceNeedsPush(definition sandbox.ProviderDefinition, serverHostID string,
 		// holds, which the server cannot see, and the conclusion is drawn here.
 		return true
 	}
-	if !definition.LocalSourceBind {
+	if !localSourceRootsCover(definition.LocalSourceRoots, *source.LocalDirectory) {
+		// Either the provider reaches none of this filesystem, or it reaches it
+		// somewhere other than where this directory lives. A provider that
+		// mounts /home cannot clone /workspace/source, and the clone fails in
+		// the pool agent long after this decision if it is made anyway.
 		return true
 	}
 	if strings.TrimSpace(serverHostID) == "" {
@@ -215,4 +222,30 @@ func sourceNeedsPush(definition sandbox.ProviderDefinition, serverHostID string,
 		return true
 	}
 	return strings.TrimSpace(origin.HostID) != strings.TrimSpace(serverHostID)
+}
+
+// localSourceRootsCover reports whether a local source directory lies under one
+// of the host paths a provider exposes to its sandboxes.
+//
+// Containment is by path element, so /home covers /home/darren/src but /home-old
+// is not covered by /home. A root of "/" covers everything, which is how a
+// provider that shares its whole filesystem says so. Anything that is not an
+// absolute path — on either side — is covered by nothing: the comparison is
+// between two host paths, and a relative one names no place.
+func localSourceRootsCover(roots []string, directory string) bool {
+	directory = filepath.Clean(strings.TrimSpace(directory))
+	if !filepath.IsAbs(directory) {
+		return false
+	}
+	for _, root := range roots {
+		root = filepath.Clean(strings.TrimSpace(root))
+		if !filepath.IsAbs(root) {
+			continue
+		}
+		if root == string(filepath.Separator) || directory == root ||
+			strings.HasPrefix(directory, root+string(filepath.Separator)) {
+			return true
+		}
+	}
+	return false
 }

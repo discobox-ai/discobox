@@ -26,8 +26,11 @@ func TestSourceNeedsPush(t *testing.T) {
 		url := "https://github.com/obot-platform/discobox.git"
 		return &model.GitSource{Kind: "git", URL: &url}
 	}
-	binds := sandbox.ProviderDefinition{LocalSourceBind: true}
-	remoteProvider := sandbox.ProviderDefinition{LocalSourceBind: false}
+	binds := sandbox.ProviderDefinition{LocalSourceRoots: []string{"/src"}}
+	remoteProvider := sandbox.ProviderDefinition{}
+	// A provider that reaches this filesystem, but not where the source lives.
+	elsewhere := sandbox.ProviderDefinition{LocalSourceRoots: []string{"/home", "/Users"}}
+	everything := sandbox.ProviderDefinition{LocalSourceRoots: []string{"/"}}
 	sameHost := &model.Origin{HostID: serverHost, ProjectPath: "/src/alpha"}
 	otherHost := &model.Origin{HostID: clientHost, ProjectPath: "/src/alpha"}
 
@@ -59,6 +62,31 @@ func TestSourceNeedsPush(t *testing.T) {
 			name: "local source on a non-binding provider pushes", definition: remoteProvider, serverHost: serverHost,
 			origin: sameHost, source: localSource(), want: true,
 			why: "the client is here, but the provider runs sandboxes elsewhere",
+		},
+		{
+			name: "local source outside the provider's roots pushes", definition: elsewhere, serverHost: serverHost,
+			origin: sameHost, source: localSource(), want: true,
+			why: "the provider runs here, but carries no host mount the directory sits under",
+		},
+		{
+			name: "a provider that shares the whole filesystem binds", definition: everything, serverHost: serverHost,
+			origin: sameHost, source: localSource(), want: false,
+			why: "a root of / covers every path on this machine",
+		},
+		{
+			name: "a root is not a prefix match on the name", definition: sandbox.ProviderDefinition{LocalSourceRoots: []string{"/src-old"}},
+			serverHost: serverHost, origin: sameHost, source: localSource(), want: true,
+			why: "/src-old does not contain /src/alpha, however alike the two spell",
+		},
+		{
+			name: "the root itself is covered", definition: sandbox.ProviderDefinition{LocalSourceRoots: []string{"/src/alpha"}},
+			serverHost: serverHost, origin: sameHost, source: localSource(), want: false,
+			why: "a directory mounted exactly is reachable at itself",
+		},
+		{
+			name: "a relative root covers nothing", definition: sandbox.ProviderDefinition{LocalSourceRoots: []string{"src"}},
+			serverHost: serverHost, origin: sameHost, source: localSource(), want: true,
+			why: "a relative path names no place on this machine",
 		},
 		{
 			name: "remote source never pushes", definition: remoteProvider, serverHost: serverHost,

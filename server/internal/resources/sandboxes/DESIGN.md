@@ -236,12 +236,22 @@ are set: a source with nothing to clone from is a malformed request and fails.
   local directory bind-mounted into the pool host.
 - `push` — the client pushes the source into the sandbox's own Git repository.
 
-`sourceNeedsPush` requires **both** that the provider instance runs sandboxes on
-this filesystem (`ProviderDefinition.LocalSourceBind`) and that the client is on
-this machine (`Origin.HostID` equals the server's, via `internal/hostid`).
-Neither implies the other — a Docker provider on a remote server binds fine,
-just not to the caller's files. Unknowns resolve to `push`: a needless push is
-slow, a bind of an unreachable path fails.
+`sourceNeedsPush` requires **both** that the provider instance exposes the
+source's path to its sandboxes (the directory lies under one of
+`ProviderDefinition.LocalSourceRoots`) and that the client is on this machine
+(`Origin.HostID` equals the server's, via `internal/hostid`). Neither implies
+the other — a Docker provider on a remote server binds fine, just not to the
+caller's files. Unknowns resolve to `push`: a needless push is slow, a bind of
+an unreachable path fails.
+
+Reachability is a property of the path, not of the provider. A Docker instance
+carries the host directories its `hostMounts` name into its pool workers and
+nothing else, so a checkout outside them — `/workspace/src` on an instance
+mounting `/home` — is as unreachable as one on another machine, and is
+delivered by `push` rather than failing in the pool agent with
+`repository '/host/…' does not exist`. The roots come from the engine that
+makes those mounts (`dockerworker.Engine.HostMounts`), so the claim and the
+mounts cannot drift.
 
 The decision is made per source, for the primary `Source` and every
 `SourceCodeReferences` entry alike: a reference is a local directory the sandbox

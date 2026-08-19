@@ -212,6 +212,13 @@ func (e *Engine) Close() error {
 // Image returns the pool-agent container image the engine launches.
 func (e *Engine) Image() string { return e.cfg.Image }
 
+// HostMounts are the host paths this engine carries into its workers, cleaned
+// and deduplicated as the engine will mount them. A worker sees a host
+// directory only if it is one of these, so callers deciding what a sandbox can
+// reach on this filesystem read them from here rather than re-deriving them
+// from a provider's raw configuration.
+func (e *Engine) HostMounts() []HostMount { return e.cfg.HostMounts }
+
 // ConfigRevision identifies the desired worker container configuration. It is
 // stamped as a label and compared to detect drift.
 func (e *Engine) ConfigRevision() string { return e.configRevision }
