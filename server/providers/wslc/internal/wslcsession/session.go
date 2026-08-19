@@ -3,6 +3,7 @@
 package wslcsession
 
 import (
+	"errors"
 	"fmt"
 	"net"
 	"runtime"
@@ -46,12 +47,53 @@ type Session struct {
 	stopped   bool
 	closeOnce sync.Once
 
+	// procMu/procs track the guest-process references this session has handed
+	// out but not yet taken back. Teardown is the reason they are tracked at
+	// all: a conn that is never closed, or closed after Close, would otherwise
+	// hold an IWSLCProcess reference forever, and the VM lives until its last
+	// reference is released. See the drain in comThread.
+	procMu sync.Mutex
+	procs  map[wslcProcess]struct{}
+
 	mgr  sessionManager
 	sess wslcSession
 
 	bridgeDir  string
 	bridgeDone bool
 }
+
+// ErrSessionExists reports that a VM of the requested name is already running.
+//
+// wslc keys sessions by display name and refuses a duplicate. Because a session
+// belongs to the process that created it and dies with it, this means an
+// earlier process is still alive or has not finished exiting -- not that
+// anything is misconfigured. Callers can match it to retry rather than treat
+// the pool as failed.
+var ErrSessionExists = errors.New("wslcsession: session already exists")
+
+// createSessionError explains a CreateSession failure.
+//
+// A bare HRESULT says nothing, and the one callers actually hit is not a
+// misconfiguration: 0x800700B7 means a VM of this name is already running,
+// left by a process that exited without closing it. There is no API to
+// enumerate or reattach to that session -- the session manager exposes only
+// CreateSession -- and the VM is a Host Compute Service one, so it does not
+// appear in `wsl --list` either. hcsdiag is what can see and end it, from an
+// elevated prompt. Every other failure is returned unchanged, so a real fault
+// is not mistaken for a collision.
+func createSessionError(err error, displayName string) error {
+	if !isHRESULT(err, hrErrorAlreadyExists) {
+		return err
+	}
+	return fmt.Errorf("%w: a VM named %q is already running, left by a process that did not shut "+
+		"down cleanly; end it with `hcsdiag kill <id>` using the id `hcsdiag list` reports for "+
+		"that name, both from an elevated prompt: %w", ErrSessionExists, displayName, err)
+}
+
+// activateManager is how comThread reaches the session manager, indirected so a
+// test can stand in a fake for it -- the real one reaches a Windows service and
+// creates an actual VM, which no test can assert the lifetime of.
+var activateManager = activateSessionManager
 
 // NewSession creates a brand-new dedicated wslc VM. This can take a while
 // the first time (VM boot).
@@ -95,7 +137,7 @@ func (s *Session) comThread(opts Options, initErr chan<- error) {
 		return
 	}
 
-	mgr, err := activateSessionManager()
+	mgr, err := activateManager()
 	if err != nil {
 		fail(err)
 		return
@@ -104,7 +146,7 @@ func (s *Session) comThread(opts Options, initErr chan<- error) {
 	sess, err := mgr.CreateSession(opts)
 	if err != nil {
 		mgr.Release()
-		fail(err)
+		fail(createSessionError(err, opts.DisplayName))
 		return
 	}
 
@@ -128,6 +170,22 @@ func (s *Session) comThread(opts Options, initErr chan<- error) {
 		req()
 	}
 
+	// Release whatever guest-process references are still outstanding, before
+	// the session itself goes.
+	//
+	// This is the last moment they can be released. Close has already set
+	// stopped, so do() no-ops from here on and a guestConn closing later --
+	// net/http retiring an idle connection on its own schedule is the case
+	// that happens -- can no longer reach this thread to release anything. A
+	// reference left here is leaked for the life of the process, and because
+	// the VM is torn down only when its last reference goes (see the type
+	// doc), the VM outlives the Close that was supposed to end it. Every
+	// later CreateSession for the same display name then fails with
+	// ErrSessionExists, naming a process that did not shut down cleanly --
+	// which is this one, still running.
+	for _, process := range s.takeProcesses() {
+		process.Release()
+	}
 	_ = s.sess.Terminate() // best-effort
 	s.sess.Release()
 	s.mgr.Release()
@@ -266,6 +324,11 @@ func (s *Session) StartProcess(executable string, argv []string) (net.Conn, erro
 	var callErr error
 	s.do(func() {
 		process, callErr = s.sess.CreateRootNamespaceProcess(executable, argv, true)
+		if callErr == nil {
+			// Tracked here rather than after do() returns, so a reference that
+			// exists is always one teardown knows about.
+			s.trackProcess(process)
+		}
 	})
 	if callErr != nil {
 		return nil, fmt.Errorf("wslcsession: start guest process %q: %w", executable, callErr)
@@ -289,8 +352,53 @@ func (s *Session) StartProcess(executable string, argv []string) (net.Conn, erro
 
 // releaseProcess is used by guestConn.Close to release the IWSLCProcess
 // reference on the session's COM thread.
+//
+// The claim and the release happen together inside the COM thread's own call,
+// so this and teardown cannot both release the same reference, and a call that
+// arrives too late to run -- do() no-ops once Close has stopped the session --
+// claims nothing and leaves the reference for the drain in comThread. Either
+// one releases it exactly once; neither can drop it.
 func (s *Session) releaseProcess(process wslcProcess) {
-	s.do(process.Release)
+	s.do(func() {
+		if s.claimProcess(process) {
+			process.Release()
+		}
+	})
+}
+
+// trackProcess records a reference handed out to a caller.
+func (s *Session) trackProcess(process wslcProcess) {
+	s.procMu.Lock()
+	defer s.procMu.Unlock()
+	if s.procs == nil {
+		s.procs = make(map[wslcProcess]struct{})
+	}
+	s.procs[process] = struct{}{}
+}
+
+// claimProcess takes ownership of releasing process, reporting whether this
+// caller is the one that got it. A reference already claimed is not released
+// twice.
+func (s *Session) claimProcess(process wslcProcess) bool {
+	s.procMu.Lock()
+	defer s.procMu.Unlock()
+	if _, ok := s.procs[process]; !ok {
+		return false
+	}
+	delete(s.procs, process)
+	return true
+}
+
+// takeProcesses claims every reference still outstanding, for teardown.
+func (s *Session) takeProcesses() []wslcProcess {
+	s.procMu.Lock()
+	defer s.procMu.Unlock()
+	out := make([]wslcProcess, 0, len(s.procs))
+	for process := range s.procs {
+		out = append(out, process)
+	}
+	s.procs = nil
+	return out
 }
 
 func (s *Session) ensureBridgeMounted() (string, error) {

@@ -146,7 +146,15 @@ func (d *Driver) EnsureVM(ctx context.Context, poolID string, _ dockerworker.VMS
 	// can never register.
 	relay, err := startRelay(ctx, session, poolID, d.relayStagingDir, d.streams)
 	if err != nil {
-		_ = session.Close()
+		// The VM has to actually go here, not just be dropped: it holds the
+		// name, and a VM left running under it makes every retry of this
+		// function fail with ErrSessionExists for the life of the process,
+		// with no handle left to close it by. Close ending the VM is what
+		// makes the next attempt a fresh one rather than a wedge.
+		if closeErr := session.Close(); closeErr != nil {
+			return nil, fmt.Errorf("start control-plane relay for %s: %w (the VM could not be torn down either: %w)",
+				poolID, err, closeErr)
+		}
 		return nil, fmt.Errorf("start control-plane relay for %s: %w", poolID, err)
 	}
 
@@ -171,9 +179,25 @@ func (d *Driver) StopVM(_ context.Context, poolID string) error {
 		relay.close()
 	}
 	if session == nil {
-		return nil
+		// Nothing here holds this pool's VM. Saying so is not pedantry: a bare
+		// nil reads as "stopped it", and a repair that believes that goes on to
+		// create a VM whose name may still be taken by one this process cannot
+		// see. ErrNotFound is what RepairPool already tolerates, so the caller
+		// keeps its behavior and stops being told something untrue.
+		return fmt.Errorf("wslc VM for %s: %w", poolID, sandbox.ErrNotFound)
 	}
-	return session.Close()
+	if err := session.Close(); err != nil {
+		// The handle goes back: a session that would not close is the one thing
+		// that must not be forgotten, since it is holding the pool's name and
+		// this is the only reference to it left.
+		d.mu.Lock()
+		if _, taken := d.sessions[poolID]; !taken {
+			d.sessions[poolID] = session
+		}
+		d.mu.Unlock()
+		return err
+	}
+	return nil
 }
 
 // DeleteVM stops the VM and removes its persistent storage directory.
