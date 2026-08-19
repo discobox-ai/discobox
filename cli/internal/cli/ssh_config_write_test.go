@@ -14,7 +14,7 @@ func runSSHConfigWrite(t *testing.T, fake *sshConfigFakeServer) (home, state, st
 	t.Helper()
 	home = t.TempDir()
 	state = t.TempDir()
-	t.Setenv("HOME", home)
+	setHome(t, home)
 	t.Setenv("XDG_STATE_HOME", state)
 
 	server := fake.start(t)
@@ -30,6 +30,18 @@ func runSSHConfigWrite(t *testing.T, fake *sshConfigFakeServer) (home, state, st
 		t.Fatalf("--write should not print the config, got:\n%s", out.String())
 	}
 	return home, state, errOut.String()
+}
+
+// setHome redirects the home directory a test writes into, on every platform.
+//
+// HOME alone is not enough: os.UserHomeDir reads USERPROFILE on Windows and
+// ignores HOME entirely, so a test that sets only HOME there writes into the
+// developer's own profile — which for these tests means prepending an Include
+// line to their real ~/.ssh/config, once per run.
+func setHome(t *testing.T, home string) {
+	t.Helper()
+	t.Setenv("HOME", home)
+	t.Setenv("USERPROFILE", home)
 }
 
 func managedPaths(state string) (config, knownHosts string) {
@@ -132,7 +144,7 @@ func TestSSHConfigWriteIsIdempotent(t *testing.T) {
 func TestSSHConfigWritePreservesAndPrecedesExistingConfig(t *testing.T) {
 	home := t.TempDir()
 	state := t.TempDir()
-	t.Setenv("HOME", home)
+	setHome(t, home)
 	t.Setenv("XDG_STATE_HOME", state)
 	if err := os.MkdirAll(filepath.Join(home, ".ssh"), 0o700); err != nil {
 		t.Fatal(err)
@@ -190,7 +202,7 @@ func TestHasSSHConfigInclude(t *testing.T) {
 func TestSSHConfigWriteEmptiesTheConfigWhenTheProjectDoes(t *testing.T) {
 	home := t.TempDir()
 	state := t.TempDir()
-	t.Setenv("HOME", home)
+	setHome(t, home)
 	t.Setenv("XDG_STATE_HOME", state)
 	configPath, knownHostsPath := managedPaths(state)
 
@@ -238,7 +250,7 @@ func TestSSHConfigWriteEmptiesTheConfigWhenTheProjectDoes(t *testing.T) {
 func TestSSHConfigWriteIsScopedPerProject(t *testing.T) {
 	home := t.TempDir()
 	state := t.TempDir()
-	t.Setenv("HOME", home)
+	setHome(t, home)
 	t.Setenv("XDG_STATE_HOME", state)
 
 	// Two projects on two servers, each resolving to its own ID.
@@ -278,5 +290,89 @@ func TestSSHConfigWriteIsScopedPerProject(t *testing.T) {
 	}
 	if !strings.Contains(userConfig, resolvedTestProjectID) {
 		t.Fatalf("the Include should name the project's own file:\n%s", userConfig)
+	}
+}
+
+// An Include this CLI wrote to a state directory it no longer uses is removed
+// rather than left behind.
+//
+// It is not tidiness: ssh fails outright on an Include it will not read, and
+// the file at the old path is exactly the one whose permissions it refuses on
+// Windows. Left there, the line breaks every connection through this config —
+// including the one the new Include was written to make work.
+func TestSSHConfigWriteDropsAnIncludeFromAnOldStateDirectory(t *testing.T) {
+	home, state := t.TempDir(), t.TempDir()
+	setHome(t, home)
+	t.Setenv("XDG_STATE_HOME", state)
+
+	// What a previous version left: its own Include, plus one of the user's
+	// own that has nothing to do with us.
+	oldState := filepath.Join(t.TempDir(), "old")
+	stale := filepath.Join(oldState, "discobox", "cli", "ssh", "proj_old0000000001", "config")
+	userConfig := filepath.Join(home, ".ssh", "config")
+	if err := os.MkdirAll(filepath.Dir(userConfig), 0o700); err != nil {
+		t.Fatalf("mkdir: %v", err)
+	}
+	existing := "Include " + stale + "\n\nInclude " + filepath.Join(home, "work", "ssh_config") + "\n\nHost *\n    IdentityFile ~/.ssh/id_rsa\n"
+	if err := os.WriteFile(userConfig, []byte(existing), 0o600); err != nil {
+		t.Fatalf("write: %v", err)
+	}
+
+	server := writeFakeServer().start(t)
+	cmd := NewRootCommand()
+	var out, errOut strings.Builder
+	cmd.SetOut(&out)
+	cmd.SetErr(&errOut)
+	cmd.SetArgs([]string{"--server", server.URL, "--project", "project-1", "box", "ssh-config", "--write"})
+	if err := cmd.Execute(); err != nil {
+		t.Fatalf("execute ssh-config --write: %v", err)
+	}
+
+	got := readFile(t, userConfig)
+	if strings.Contains(got, stale) {
+		t.Fatalf("the stale Include survived:\n%s", got)
+	}
+	if !strings.Contains(errOut.String(), "removed a stale Include") {
+		t.Fatalf("removing it should be reported, got:\n%s", errOut.String())
+	}
+	// The user's own Include and their own settings are none of our business.
+	for _, want := range []string{filepath.Join(home, "work", "ssh_config"), "IdentityFile ~/.ssh/id_rsa"} {
+		if !strings.Contains(got, want) {
+			t.Fatalf("the rewrite dropped %q:\n%s", want, got)
+		}
+	}
+	config, _ := managedPaths(state)
+	if !strings.Contains(got, "Include "+config) {
+		t.Fatalf("the new Include is missing:\n%s", got)
+	}
+}
+
+// A second project's Include lives in the same state directory and is not
+// stale: one per project is the design.
+func TestSSHConfigWriteKeepsOtherProjectsIncludes(t *testing.T) {
+	home, state := t.TempDir(), t.TempDir()
+	setHome(t, home)
+	t.Setenv("XDG_STATE_HOME", state)
+
+	other := filepath.Join(state, "discobox", "cli", "ssh", "proj_other000000001", "config")
+	userConfig := filepath.Join(home, ".ssh", "config")
+	if err := os.MkdirAll(filepath.Dir(userConfig), 0o700); err != nil {
+		t.Fatalf("mkdir: %v", err)
+	}
+	if err := os.WriteFile(userConfig, []byte("Include "+other+"\n"), 0o600); err != nil {
+		t.Fatalf("write: %v", err)
+	}
+
+	server := writeFakeServer().start(t)
+	cmd := NewRootCommand()
+	cmd.SetOut(&strings.Builder{})
+	cmd.SetErr(&strings.Builder{})
+	cmd.SetArgs([]string{"--server", server.URL, "--project", "project-1", "box", "ssh-config", "--write"})
+	if err := cmd.Execute(); err != nil {
+		t.Fatalf("execute ssh-config --write: %v", err)
+	}
+
+	if got := readFile(t, userConfig); !strings.Contains(got, other) {
+		t.Fatalf("another project's Include was dropped:\n%s", got)
 	}
 }

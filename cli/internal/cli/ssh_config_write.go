@@ -117,7 +117,7 @@ func managedConfigHeader(projectID string) string {
 // project whose last sandbox is gone must stop offering stanzas for it.
 func writeManagedSSHConfig(cmd *cobra.Command, projectID, stanzas, knownHostsHost, hostKey string) error {
 	configPath, knownHostsPath := managedSSHConfigPath(projectID), managedKnownHostsPath(projectID)
-	if err := os.MkdirAll(filepath.Dir(configPath), 0o700); err != nil {
+	if err := ensureStateDir(filepath.Dir(configPath)); err != nil {
 		return fmt.Errorf("create SSH config directory: %w", err)
 	}
 	// Pinning the host key here rather than in ~/.ssh/known_hosts keeps
@@ -135,12 +135,20 @@ func writeManagedSSHConfig(cmd *cobra.Command, projectID, stanzas, knownHostsHos
 	if err := os.WriteFile(configPath, []byte(managedConfigHeader(projectID)+stanzas), 0o600); err != nil {
 		return fmt.Errorf("write SSH config: %w", err)
 	}
+	// The files as well as the directory they are in: a run before this one may
+	// have left them readable by whoever the profile grants, and ssh refuses a
+	// config it does not like the look of rather than ignoring it.
+	for _, path := range []string{knownHostsPath, configPath} {
+		if err := restrictToUser(path); err != nil {
+			return fmt.Errorf("restrict %s to this user: %w", filepath.Base(path), err)
+		}
+	}
 
 	userConfig, err := userSSHConfigPath()
 	if err != nil {
 		return err
 	}
-	added, err := ensureSSHConfigInclude(userConfig, configPath)
+	added, dropped, err := ensureSSHConfigInclude(userConfig, configPath)
 	if err != nil {
 		return err
 	}
@@ -149,54 +157,171 @@ func writeManagedSSHConfig(cmd *cobra.Command, projectID, stanzas, knownHostsHos
 	if added {
 		fmt.Fprintf(stderr, "added an Include for it to %s\n", userConfig)
 	}
+	for _, stale := range dropped {
+		fmt.Fprintf(stderr, "removed a stale Include of %s\n", stale)
+	}
 	return nil
 }
 
-// ensureSSHConfigInclude adds an Include for managed to the user's ssh_config,
-// reporting whether it had to. It is idempotent, so repeated --write runs leave
-// one line rather than a growing pile.
+// ensureSSHConfigInclude adds an Include for managed to the user's ssh_config
+// and drops the ones this CLI wrote that no longer point anywhere it manages,
+// reporting what it did on each count. It is idempotent, so repeated --write
+// runs leave one line rather than a growing pile.
 //
 // The line goes at the top because ssh_config takes the *first* value obtained
 // for each keyword: an Include placed after a `Host *` block the user already
 // has would lose every setting that block also sets.
-func ensureSSHConfigInclude(userConfig, managed string) (bool, error) {
+//
+// Dropping the stale ones is not tidiness. ssh fails outright on an Include it
+// will not read — one whose permissions it dislikes, in particular — so a line
+// left pointing into a directory this CLI has moved out of breaks every
+// connection through this config, including the ones the new line was written
+// to make work.
+func ensureSSHConfigInclude(userConfig, managed string) (bool, []string, error) {
 	include := "Include " + managed
 	existing, err := os.ReadFile(userConfig)
 	if err != nil && !os.IsNotExist(err) {
-		return false, fmt.Errorf("read %s: %w", userConfig, err)
+		return false, nil, fmt.Errorf("read %s: %w", userConfig, err)
 	}
-	if hasSSHConfigInclude(string(existing), managed) {
-		return false, nil
+	cleaned, dropped := dropStaleManagedIncludes(string(existing), managed)
+	if hasSSHConfigInclude(cleaned, managed) && len(dropped) == 0 {
+		return false, nil, nil
 	}
 	if err := os.MkdirAll(filepath.Dir(userConfig), 0o700); err != nil {
-		return false, fmt.Errorf("create SSH directory: %w", err)
+		return false, nil, fmt.Errorf("create SSH directory: %w", err)
 	}
-	body := include + "\n"
-	if len(existing) > 0 {
-		body += "\n" + string(existing)
+	added := !hasSSHConfigInclude(cleaned, managed)
+	body := cleaned
+	if added {
+		body = include + "\n"
+		if len(cleaned) > 0 {
+			body += "\n" + cleaned
+		}
 	}
 	// Written through a temp file in the same directory so an interrupted run
 	// cannot leave the user with a truncated ssh_config.
 	tmp, err := os.CreateTemp(filepath.Dir(userConfig), ".discobox-ssh-config-*")
 	if err != nil {
-		return false, fmt.Errorf("write %s: %w", userConfig, err)
+		return false, nil, fmt.Errorf("write %s: %w", userConfig, err)
 	}
 	defer os.Remove(tmp.Name())
 	if err := tmp.Chmod(0o600); err != nil {
 		_ = tmp.Close()
-		return false, fmt.Errorf("write %s: %w", userConfig, err)
+		return false, nil, fmt.Errorf("write %s: %w", userConfig, err)
+	}
+	// Chmod is the whole story on Unix and none of it on Windows, where the
+	// file this replaces is one ssh reads and checks. Restricted before the
+	// rename, so what lands is already private.
+	if err := restrictToUser(tmp.Name()); err != nil {
+		_ = tmp.Close()
+		return false, nil, fmt.Errorf("write %s: %w", userConfig, err)
 	}
 	if _, err := tmp.WriteString(body); err != nil {
 		_ = tmp.Close()
-		return false, fmt.Errorf("write %s: %w", userConfig, err)
+		return false, nil, fmt.Errorf("write %s: %w", userConfig, err)
 	}
 	if err := tmp.Close(); err != nil {
-		return false, fmt.Errorf("write %s: %w", userConfig, err)
+		return false, nil, fmt.Errorf("write %s: %w", userConfig, err)
 	}
 	if err := os.Rename(tmp.Name(), userConfig); err != nil {
-		return false, fmt.Errorf("write %s: %w", userConfig, err)
+		return false, nil, fmt.Errorf("write %s: %w", userConfig, err)
 	}
-	return true, nil
+	return added, dropped, nil
+}
+
+// dropStaleManagedIncludes removes Include lines that name a file this CLI
+// generates but no longer writes, returning the config without them and the
+// paths dropped.
+//
+// A managed path is recognized by its shape — <anything>/discobox/cli/ssh/<project>/config
+// — which is what this CLI has always written and nothing else has reason to.
+// Anything matching that shape and sitting outside the current state directory
+// was written by an older version that kept its state somewhere else, and is
+// now a path with nothing behind it or, worse, a file whose permissions ssh
+// refuses. Includes under the current state directory are left alone however
+// many there are: one per project is the design.
+//
+// The user's own Includes are untouched. Only this shape is ours to remove.
+func dropStaleManagedIncludes(config, managed string) (string, []string) {
+	state := filepath.Clean(cliStateDir())
+	var kept []string
+	var dropped []string
+	for _, line := range strings.Split(config, "\n") {
+		if path, ok := sshConfigIncludePath(line); ok &&
+			isManagedSSHConfigPath(path) &&
+			!strings.EqualFold(path, filepath.Clean(managed)) &&
+			!withinDir(state, path) {
+			dropped = append(dropped, path)
+			continue
+		}
+		kept = append(kept, line)
+	}
+	if len(dropped) == 0 {
+		return config, nil
+	}
+	// A dropped line leaves a blank behind, and a run of them accumulates: the
+	// file is rewritten without the gaps rather than growing one per removal.
+	return collapseBlankRuns(strings.Join(kept, "\n")), dropped
+}
+
+// sshConfigIncludePath is the path an Include line names, if the line is one.
+func sshConfigIncludePath(line string) (string, bool) {
+	trimmed := strings.TrimSpace(line)
+	if trimmed == "" || strings.HasPrefix(trimmed, "#") {
+		return "", false
+	}
+	fields := strings.Fields(trimmed)
+	// Exactly one path: an Include naming several files is not one of ours, and
+	// picking one of them out of it would be rewriting a line we did not write.
+	if len(fields) != 2 || !strings.EqualFold(fields[0], "include") {
+		return "", false
+	}
+	return filepath.Clean(strings.Trim(fields[1], `"`)), true
+}
+
+// isManagedSSHConfigPath reports whether path has the shape this CLI writes:
+// .../discobox/cli/ssh/<project>/config.
+func isManagedSSHConfigPath(path string) bool {
+	dir, file := filepath.Split(filepath.Clean(path))
+	if !strings.EqualFold(file, "config") {
+		return false
+	}
+	parts := strings.Split(filepath.ToSlash(filepath.Clean(dir)), "/")
+	if len(parts) < 4 {
+		return false
+	}
+	tail := parts[len(parts)-4:]
+	return strings.EqualFold(tail[0], "discobox") &&
+		strings.EqualFold(tail[1], "cli") &&
+		strings.EqualFold(tail[2], "ssh")
+}
+
+// withinDir reports whether path is dir or sits under it.
+func withinDir(dir, path string) bool {
+	rel, err := filepath.Rel(filepath.Clean(dir), filepath.Clean(path))
+	if err != nil {
+		return false
+	}
+	return rel != ".." && !strings.HasPrefix(rel, ".."+string(filepath.Separator))
+}
+
+// collapseBlankRuns leaves at most one blank line where there were several, so
+// removing lines from the middle of a config does not leave it full of holes.
+func collapseBlankRuns(config string) string {
+	var out []string
+	blank := false
+	for _, line := range strings.Split(config, "\n") {
+		if strings.TrimSpace(line) == "" {
+			if blank {
+				continue
+			}
+			blank = true
+		} else {
+			blank = false
+		}
+		out = append(out, line)
+	}
+	return strings.Join(out, "\n")
 }
 
 // hasSSHConfigInclude reports whether config already includes managed, matching

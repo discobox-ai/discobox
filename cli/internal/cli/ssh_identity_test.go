@@ -28,13 +28,10 @@ func TestGeneratedIdentityIsReadableByOpenSSH(t *testing.T) {
 		t.Fatal("expected a freshly generated identity")
 	}
 
-	info, err := os.Stat(path)
-	if err != nil {
-		t.Fatalf("stat identity: %v", err)
-	}
-	if perm := info.Mode().Perm(); perm != 0o600 {
-		t.Fatalf("identity permissions = %o, want 600 (ssh refuses a group/world-readable key)", perm)
-	}
+	// Whatever "only this user" means on the platform running the test: a mode
+	// on Unix, an access list on Windows. ssh refuses a private key anyone else
+	// can reach, and refuses it in the same words either way.
+	assertPrivateToUser(t, path)
 
 	// -y derives the public key from the private one, which requires actually
 	// parsing it.

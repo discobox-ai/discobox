@@ -27,17 +27,6 @@ type recentSelection struct {
 	At time.Time `json:"at"`
 }
 
-// cliStateDir is the CLI's XDG state directory.
-func cliStateDir() string {
-	if value := strings.TrimSpace(os.Getenv("XDG_STATE_HOME")); value != "" {
-		return filepath.Join(value, "discobox", "cli")
-	}
-	if home, err := os.UserHomeDir(); err == nil && home != "" {
-		return filepath.Join(home, ".local", "state", "discobox", "cli")
-	}
-	return filepath.Join(os.TempDir(), "discobox-cli-state")
-}
-
 func recentSelectionsPath() string {
 	return filepath.Join(cliStateDir(), recentSelectionsFile)
 }
@@ -80,7 +69,7 @@ func rememberSelection(key, id string) error {
 	if err != nil {
 		return err
 	}
-	if err := os.MkdirAll(cliStateDir(), 0o755); err != nil {
+	if err := ensureStateDir(cliStateDir()); err != nil {
 		return err
 	}
 	// Write through a temporary file so a crash mid-write cannot leave the

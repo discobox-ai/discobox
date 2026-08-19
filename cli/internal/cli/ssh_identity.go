@@ -39,7 +39,7 @@ func loadOrCreateSSHIdentity(path string) (publicKeyLine string, created bool, e
 		return "", false, err
 	}
 
-	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
+	if err := ensureStateDir(filepath.Dir(path)); err != nil {
 		return "", false, fmt.Errorf("create SSH identity directory: %w", err)
 	}
 	pub, priv, err := ed25519.GenerateKey(rand.Reader)
@@ -70,6 +70,12 @@ func loadOrCreateSSHIdentity(path string) (publicKeyLine string, created bool, e
 	}
 	if err := file.Close(); err != nil {
 		return "", false, fmt.Errorf("write SSH identity: %w", err)
+	}
+	// The private key is the reason any of this is restricted: ssh refuses to
+	// use one another principal can read, and on Windows the 0600 above did not
+	// make it so.
+	if err := restrictToUser(path); err != nil {
+		return "", false, fmt.Errorf("restrict SSH identity to this user: %w", err)
 	}
 
 	sshPub, err := ssh.NewPublicKey(pub)

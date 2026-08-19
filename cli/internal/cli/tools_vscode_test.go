@@ -58,7 +58,7 @@ func editorArgs(t *testing.T, record string) []string {
 func runToolsVSCodeCmd(t *testing.T, fake *sshConfigFakeServer, args ...string) (home, state, stderr string, err error) {
 	t.Helper()
 	home, state = t.TempDir(), t.TempDir()
-	t.Setenv("HOME", home)
+	setHome(t, home)
 	t.Setenv("XDG_STATE_HOME", state)
 
 	server := fake.start(t)

@@ -84,6 +84,34 @@ transport helpers where OpenAPI does not model the stream.
   (opt-in, `DISCOBOX_PANE_E2E=1`) is what catches the omission, since a pane
   attached to an unstarted exec draws an empty screen forever with no error.
 
+## CLI State Directory
+
+`cliStateDir()` (`internal/cli/statedir.go`) is `<state>` throughout this
+document: the picker's memory, this machine's iroh identity, the SSH identity,
+and the generated per-project `ssh_config` files. It is state the CLI derives,
+not configuration anyone edits, so it follows each platform's convention for
+that — `$XDG_STATE_HOME` or `~/.local/state` on Unix, `%LOCALAPPDATA%` on
+Windows, which is the local one rather than the roaming `%APPDATA%`: an SSH
+identity belongs to a machine, and a path to a generated config on this disk
+means nothing on another. `XDG_STATE_HOME` overrides it everywhere, Windows
+included, because nothing there sets it by accident.
+
+Everything created under it goes through `ensureStateDir`, which creates the
+directory *and* restricts it to this user. The two are one step because a mode
+is not a permission on Windows: `os.WriteFile(path, data, 0600)` sets the
+read-only attribute at most and never writes an ACL, so a file lands with
+whatever its parent grants — and a profile that grants a group anything grants
+it on every private key written underneath. `restrictToUser`
+(`statedir_windows.go`) replaces the inherited list with this user, SYSTEM and
+Administrators, and takes ownership; on Unix it is a no-op, because the mode
+bits already said it. Files are restricted individually as well as inheriting
+from the directory, since a run before the fix may have left one readable.
+
+This is not cosmetic: OpenSSH refuses to read a config, a `known_hosts` or a
+private key another principal can reach, and reports only "Bad owner or
+permissions". `assertPrivateToUser` in the tests checks the real thing on each
+platform — the mode on Unix, the owner and every ACE on Windows.
+
 Local server auto-launch is a release-only capability. Normal and development
 builds leave it disabled; release CLI binaries opt in at build time by setting
 `cli.serverAutoLaunch` to `true` with the Go linker's `-X` flag. `--no-start`
@@ -279,7 +307,7 @@ positional argument shared with the command itself (`shell`, resolved by
   matches is most recently updated. Typing hands ranking entirely to the query:
   the remembered pick gets no standing edge once the user says what they want.
 - The last pick per `recentKey` is remembered in
-  `$XDG_STATE_HOME/discobox/cli/recent-selections.json` (`internal/cli/recent.go`),
+  `<state>/recent-selections.json` (`internal/cli/recent.go`),
   keyed `sandbox:<projectID>` because the candidate list is per project. It is
   derived convenience state, not configuration, so it lives under state, is
   written atomically, is trimmed to the most recent entries, and every read and
@@ -514,7 +542,7 @@ level or layering on the attach transports above.
   reader — because there is no address to discover and nothing to enable.
 - It also generates and enrolls the key it points at, so the emitted config
   works on its own: an ed25519 key under the CLI state directory
-  (`<state>/ssh/id_ed25519`, `0600`), enrolled in the project when the project
+  (`<state>/ssh/id_ed25519`, private to this user), enrolled in the project when the project
   does not already list its fingerprint. Enrollment keys on the fingerprint,
   not on having just generated the key, so repeat runs and second projects do
   not pile up duplicates. The private key is written in OpenSSH's own format,
@@ -541,7 +569,14 @@ level or layering on the attach transports above.
   whole file.
 - `--write` writes the stanzas and the server's host key to two files under the
   CLI state directory, beside the generated key, and adds one `Include` line to
-  `~/.ssh/config`. Both files are scoped to the project — `<state>/ssh/<project
+  `~/.ssh/config`. It also removes the `Include` lines it wrote to a state
+  directory it no longer uses (`dropStaleManagedIncludes`, recognizing the
+  `.../discobox/cli/ssh/<project>/config` shape it writes and nothing else
+  does). ssh fails outright on an `Include` it will not read, so a line left
+  pointing at a moved — or, on Windows, wrongly permissioned — file breaks every
+  connection through the config, the ones the new line was written to enable
+  included. Other projects' lines under the current state directory stay: one
+  per project is the design, and the user's own `Include`s are never touched. Both files are scoped to the project — `<state>/ssh/<project
   id>/{config,known_hosts}`, one `Include` each — because a run only knows
   about the project it was given: a shared file would drop every other
   project's stanzas on each write, and two projects can live on different

@@ -1062,11 +1062,11 @@ func TestComputeSessionPaths(t *testing.T) {
 func TestXDGPathFallbacks(t *testing.T) {
 	t.Setenv("XDG_STATE_HOME", "")
 	t.Setenv("XDG_RUNTIME_DIR", "")
-	if got := xdgStateHome(); got == "" || filepath.Base(got) != "state" {
-		t.Fatalf("xdgStateHome fallback = %q", got)
+	if got := stateHome(); got == "" || got != defaultStateHome() {
+		t.Fatalf("state home fallback = %q, want the platform's own %q", got, defaultStateHome())
 	}
-	if got := xdgRuntimeHome(); got == "" || filepath.Base(got) != "run" {
-		t.Fatalf("xdgRuntimeHome fallback = %q", got)
+	if got := runtimeHome(); got == "" || filepath.Base(got) != "run" {
+		t.Fatalf("runtime home fallback = %q", got)
 	}
 }
 

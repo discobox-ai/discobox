@@ -39,13 +39,10 @@ func TestLoadOrCreateIrohIdentityWritesPrivateFile(t *testing.T) {
 	if _, _, err := loadOrCreateIrohIdentity(path); err != nil {
 		t.Fatalf("loadOrCreateIrohIdentity() error = %v", err)
 	}
-	info, err := os.Stat(path)
-	if err != nil {
-		t.Fatalf("stat identity: %v", err)
-	}
-	if perm := info.Mode().Perm(); perm != 0o600 {
-		t.Fatalf("identity mode = %o, want 600", perm)
-	}
+	// A private key, so whatever "only this user" means here: a mode on Unix,
+	// an access list on Windows, which the mode would not have set.
+	assertPrivateToUser(t, path)
+	assertPrivateToUser(t, filepath.Dir(path))
 }
 
 // A broken identity must be reported, not silently replaced: overwriting it

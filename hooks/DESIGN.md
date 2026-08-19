@@ -46,7 +46,7 @@ Only hook configuration lives in the Git repository. Runtime/session state must
 use XDG-style paths outside the repo:
 
 - hook definitions: `$GIT_ROOT/.discobox/hooks`
-- database: `$XDG_STATE_HOME/discobox/session/<session>/hooks/<repo-key>/`, falling back to `~/.local/state`
+- database: `$XDG_STATE_HOME/discobox/session/<session>/hooks/<repo-key>/`, falling back to each platform's own state home — `~/.local/state` on Unix, `%LOCALAPPDATA%` on Windows (`statehome_unix.go`, `statehome_windows.go`)
 - socket, startup lock, and runtime metadata: `$XDG_RUNTIME_DIR/discobox/session/<session>/hooks/<repo-key>/`, falling back to the state directory's `run` subdirectory
 
 The session directory is the root namespace for all future session-scoped Discobox

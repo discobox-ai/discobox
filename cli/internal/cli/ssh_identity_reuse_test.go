@@ -34,7 +34,7 @@ func TestSSHConfigReusesAnAlreadyEnrolledUserKey(t *testing.T) {
 	fake := writeFakeServer()
 	home := t.TempDir()
 	state := t.TempDir()
-	t.Setenv("HOME", home)
+	setHome(t, home)
 	t.Setenv("XDG_STATE_HOME", state)
 	keyPath := enrolledUserKey(t, fake, home, "id_ed25519", true)
 
@@ -70,7 +70,7 @@ func TestSSHConfigDoesNotAdoptAnUnenrolledUserKey(t *testing.T) {
 	fake := writeFakeServer()
 	home := t.TempDir()
 	state := t.TempDir()
-	t.Setenv("HOME", home)
+	setHome(t, home)
 	t.Setenv("XDG_STATE_HOME", state)
 	keyPath := enrolledUserKey(t, fake, home, "id_ed25519", false)
 
@@ -103,7 +103,7 @@ func TestSSHConfigIgnoresAnEnrolledKeyWithNoPrivateHalf(t *testing.T) {
 	fake := writeFakeServer()
 	home := t.TempDir()
 	state := t.TempDir()
-	t.Setenv("HOME", home)
+	setHome(t, home)
 	t.Setenv("XDG_STATE_HOME", state)
 	keyPath := enrolledUserKey(t, fake, home, "id_ed25519", true)
 	// Keep the .pub, take away the private half — a key copied from elsewhere.
@@ -135,7 +135,7 @@ func TestSSHConfigPrefersTheManagedKeyOnceItExists(t *testing.T) {
 	fake := writeFakeServer()
 	home := t.TempDir()
 	state := t.TempDir()
-	t.Setenv("HOME", home)
+	setHome(t, home)
 	t.Setenv("XDG_STATE_HOME", state)
 	enrolledUserKey(t, fake, home, "id_ed25519", true)
 

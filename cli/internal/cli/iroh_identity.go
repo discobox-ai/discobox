@@ -36,7 +36,7 @@ func loadOrCreateIrohIdentity(path string) (id endpoint.IrohID, created bool, er
 		return endpoint.IrohID{}, false, err
 	}
 
-	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
+	if err := ensureStateDir(filepath.Dir(path)); err != nil {
 		return endpoint.IrohID{}, false, fmt.Errorf("create iroh identity directory: %w", err)
 	}
 	pub, priv, err := ed25519.GenerateKey(rand.Reader)
@@ -50,6 +50,9 @@ func loadOrCreateIrohIdentity(path string) (id endpoint.IrohID, created bool, er
 	pemBytes := pem.EncodeToMemory(&pem.Block{Type: "PRIVATE KEY", Bytes: der})
 	if err := os.WriteFile(path, pemBytes, 0o600); err != nil {
 		return endpoint.IrohID{}, false, fmt.Errorf("write iroh identity: %w", err)
+	}
+	if err := restrictToUser(path); err != nil {
+		return endpoint.IrohID{}, false, fmt.Errorf("restrict iroh identity to this user: %w", err)
 	}
 	newID, err := endpoint.IrohIDFromPublicKey(pub)
 	if err != nil {

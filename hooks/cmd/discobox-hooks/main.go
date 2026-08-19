@@ -2033,8 +2033,8 @@ func computeSessionPaths(repoRoot, sessionID string) sessionPaths {
 	root := filepath.Clean(repoRoot)
 	repoKey := repoStateKey(root)
 	sessionID = safePathComponent(sessionID)
-	stateDir := filepath.Join(xdgStateHome(), "discobox", "session", sessionID, "hooks", repoKey)
-	runtimeDir := filepath.Join(xdgRuntimeHome(), "discobox", "session", sessionID, "hooks", repoKey)
+	stateDir := filepath.Join(stateHome(), "discobox", "session", sessionID, "hooks", repoKey)
+	runtimeDir := filepath.Join(runtimeHome(), "discobox", "session", sessionID, "hooks", repoKey)
 	return sessionPaths{
 		SessionID:  sessionID,
 		RepoRoot:   root,
@@ -2231,21 +2231,30 @@ func repoStateKey(repoRoot string) string {
 	return hex.EncodeToString(sum[:])[:16]
 }
 
-func xdgStateHome() string {
+// stateHome is where a session's hook state lives: XDG_STATE_HOME where it is
+// set, and otherwise the platform's own place for state a program derives
+// rather than a user edits (see statehome_unix.go, statehome_windows.go).
+//
+// The variable is honored on every platform, Windows included. Nothing there
+// sets it by accident, and the runner is run from shells that may.
+func stateHome() string {
 	if v := os.Getenv("XDG_STATE_HOME"); v != "" {
 		return filepath.Clean(v)
 	}
-	if home, err := os.UserHomeDir(); err == nil && home != "" {
-		return filepath.Join(home, ".local", "state")
+	if home := defaultStateHome(); home != "" {
+		return home
 	}
 	return filepath.Join(os.TempDir(), "discobox-state")
 }
 
-func xdgRuntimeHome() string {
+// runtimeHome is where the socket and the lock live: what XDG_RUNTIME_DIR names
+// where there is one, and a directory under the state home where there is not —
+// which is every Windows machine, since it has no such variable.
+func runtimeHome() string {
 	if v := os.Getenv("XDG_RUNTIME_DIR"); v != "" {
 		return filepath.Clean(v)
 	}
-	return filepath.Join(xdgStateHome(), "run")
+	return filepath.Join(stateHome(), "run")
 }
 
 func safePathComponent(s string) string {
