@@ -2,6 +2,7 @@ package wslc
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"net"
 	"net/http"
@@ -201,8 +202,13 @@ func (d *Driver) StopVM(_ context.Context, poolID string) error {
 }
 
 // DeleteVM stops the VM and removes its persistent storage directory.
+//
+// A VM this process never held is not an obstacle to deleting the storage --
+// the usual way to reach here is a pool being removed after a restart, when
+// nothing is running for it at all. StopVM reports that as ErrNotFound, the
+// same thing RepairPool passes over.
 func (d *Driver) DeleteVM(ctx context.Context, poolID string) error {
-	if err := d.StopVM(ctx, poolID); err != nil {
+	if err := d.StopVM(ctx, poolID); err != nil && !errors.Is(err, sandbox.ErrNotFound) {
 		return err
 	}
 	if d.storageDir == "" {
