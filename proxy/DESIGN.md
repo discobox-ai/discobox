@@ -78,6 +78,19 @@ the upgraded tunnel, spools raw bidirectional payload frames to disk, and audits
 protocol type, spool file metadata, drop counters, and client-to-server and
 server-to-client byte counts. Raw upgraded payloads are not persisted to SQLite.
 
+The 101 handshake response must reach the client **as one write**, not one per
+header fragment. A WebSocket client parses that response itself, before any
+framing exists to reassemble it, so whatever read boundaries the proxy creates
+are the ones it sees — and writing a header field at a time onto a TLS
+connection puts each fragment in its own TLS record. Strict clients count that:
+tungstenite (Rust) rejects a handshake arriving in more than 64 reads averaging
+under 128 bytes as a slow-loris attempt ("Attack attempt detected"), which
+roughly 17 response headers is enough to trigger, and any CDN-fronted endpoint
+sends that many. `goproxy` buffers the response head for this reason as of
+v1.8.5; `TestHTTPProxyMITMUpgradeHandshakeIsNotFragmented` pins the property
+from the client's side so a regression surfaces here rather than as a harness
+silently downgrading its transport.
+
 ## Sentinel Secret Swapping
 
 Sandboxes are provisioned with **sentinels** — convincing fake credentials
