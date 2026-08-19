@@ -29,8 +29,10 @@ why it is worth starting early and independently.
   covers a hard-coded allow-list.
 - `server/internal/auth/context.go` — `Principal` is the only request identity
   in context; `PrincipalTypeUser` and `PrincipalTypePool` exist today.
-- `server/internal/projectstream/project_stream_socket.go` — the project
-  websocket/SSE streams. These need the same credential, not just REST.
+- There is no longer a project websocket/SSE stream: it was removed
+  ([ADR 0061](../../adr/0061-the-client-facing-project-event-stream-is-removed.md)).
+  If this work still wants one, it is built to this consumer's contract and
+  authorized with the same credential from the start.
 
 Read `server/internal/auth/DESIGN.md` and `REVIEW.md` before designing. Two
 rules there bind this work directly:
@@ -53,10 +55,10 @@ rules there bind this work directly:
    project alias for users; a service principal always supplies a concrete
    project ID and must not use the alias.
 4. Credential storage, issuance, and revocation.
-5. The same credential must work on `server/internal/projectstream` websocket
-   and SSE connections, not only on REST.
-6. The generated client must be able to attach the credential to both normal
-   REST requests and stream requests.
+5. If an event stream is built (see above), the same credential must work on it
+   and not only on REST.
+6. The generated client must be able to attach the credential to normal REST
+   requests, and to any stream request added with it.
 7. Update `server/internal/auth/DESIGN.md` in the same change.
 
 ## Out of scope

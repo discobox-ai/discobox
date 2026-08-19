@@ -105,6 +105,5 @@ func tcpProxyTestServices(stubs *routerTestServices) services.Services {
 		Providers:      stubs,
 		Pools:          stubs,
 		Jobs:           stubs,
-		Events:         stubs,
 	}
 }

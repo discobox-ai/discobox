@@ -29,15 +29,19 @@ enqueue hints, and upstream re-reads before believing anything.
   `restart` (`:4341`), `upgrade` (`:4382`), `reconcile` (`:4423`),
   `PATCH` (`:4176`), `DELETE` (`:4112`). Pools have `default` (`:3932`),
   `reconcile` (`:4001`), `PATCH` (`:3892`), `DELETE` (`:3828`).
-- Events: `server/internal/events` (project event broker),
-  `server/internal/store/resource_events.go`, `server/internal/projectstream/`
-  (websocket + SSE). The wire shapes are `ResourceChangedEvent`
-  (`server.yaml:1473`), `ResourceListedEvent` (`:1565`), and the
-  list-start/finish envelope. Managed sandboxes continue to appear as ordinary
-  sandbox resources in these streams — there is no separate managed stream.
-- The stream already supports an initial snapshot when history is enabled, which
-  is how a reconnecting subscriber closes its observation gap. There is no
-  resume-from-sequence.
+- Events: `server/internal/events` (project event broker) and
+  `server/internal/store/resource_events.go`. There is no client-facing
+  transport on top of them any more: the websocket and SSE streams promised a
+  resumable list-then-watch they could not deliver and were removed
+  ([ADR 0061](../../adr/0061-the-client-facing-project-event-stream-is-removed.md)),
+  which also took the `ResourceChangedEvent`/`ResourceListedEvent` wire shapes
+  and the list-start/finish envelope with them.
+- So this plan builds the stream it wants rather than inheriting one. What it
+  describes below — enqueue hints, with polling as the correctness mechanism and
+  a re-read before believing anything — is exactly what the broker already
+  provides and materially less than what was removed. Managed sandboxes would
+  appear as ordinary sandbox resources on it; there is no separate managed
+  stream.
 
 ## Scope
 

@@ -220,14 +220,6 @@ type SSHKeyService interface {
 	DeleteSSHKey(ctx context.Context, projectID, keyID string) error
 }
 
-// ProjectEventService provides project-scoped resource snapshots and live subscription.
-type ProjectEventService interface {
-	MaxProjectEventSeq(ctx context.Context, projectID string) (int64, error)
-	ListProjectEventsAfterSeq(ctx context.Context, projectID string, afterSeq int64, resourceTypes []string) ([]model.ProjectEvent, error)
-	ListProjectResourceSnapshots(ctx context.Context, projectID string, resourceTypes []string, seq int64) ([]model.ProjectEvent, error)
-	SubscribeProjectEvents(ctx context.Context, projectID string) (<-chan model.ProjectEvent, func(), error)
-}
-
 // SSHIngress is what a client needs to verify this server's SSH ingress (ADR
 // 0024, ADR 0057). It is a resolved value rather than a service: the host key
 // is loaded once at startup, so there is nothing to call.
@@ -251,7 +243,6 @@ type Services struct {
 	Providers      SandboxProviderInstanceService
 	Pools          PoolService
 	Jobs           JobService
-	Events         ProjectEventService
 	Secrets        SecretService
 	SSHKeys        SSHKeyService
 }

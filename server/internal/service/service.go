@@ -12,7 +12,6 @@ import (
 	sandboxauth "github.com/obot-platform/discobox/server/internal/auth/sandbox"
 	eventbroker "github.com/obot-platform/discobox/server/internal/events"
 	"github.com/obot-platform/discobox/server/internal/reconcile"
-	resourceevents "github.com/obot-platform/discobox/server/internal/resources/events"
 	"github.com/obot-platform/discobox/server/internal/resources/harnessconfigs"
 	resourcejobs "github.com/obot-platform/discobox/server/internal/resources/jobs"
 	"github.com/obot-platform/discobox/server/internal/resources/pools"
@@ -41,7 +40,6 @@ type Service struct {
 	services.SandboxProviderInstanceService
 	services.PoolService
 	services.JobService
-	services.ProjectEventService
 	services.SecretService
 	services.SSHKeyService
 
@@ -107,7 +105,6 @@ func New(store *store.Store, engine *reconcile.Engine, options Options, broker .
 		SandboxProviderInstanceService: providerService,
 		PoolService:                    poolService,
 		JobService:                     jobsService,
-		ProjectEventService:            resourceevents.NewService(store, b),
 		SecretService:                  secrets.NewService(store),
 		SSHKeyService:                  sshkeys.NewService(store),
 

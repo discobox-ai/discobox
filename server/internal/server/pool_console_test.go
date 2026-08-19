@@ -89,7 +89,6 @@ func newPoolConsoleTestServer(t *testing.T, stubs *routerTestServices) *httptest
 		Providers:      stubs,
 		Pools:          stubs,
 		Jobs:           stubs,
-		Events:         stubs,
 	})
 	if err != nil {
 		t.Fatalf("new router: %v", err)

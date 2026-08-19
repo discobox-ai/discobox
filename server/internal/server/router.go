@@ -14,7 +14,6 @@ import (
 	sandboxauth "github.com/obot-platform/discobox/server/internal/auth/sandbox"
 	"github.com/obot-platform/discobox/server/internal/events"
 	"github.com/obot-platform/discobox/server/internal/handlers"
-	"github.com/obot-platform/discobox/server/internal/projectstream"
 	"github.com/obot-platform/discobox/server/internal/reconcile"
 	sandbox "github.com/obot-platform/discobox/server/internal/sandbox"
 	"github.com/obot-platform/discobox/server/internal/secrets"
@@ -90,7 +89,6 @@ func NewRouter(svc services.Services) (*chi.Mux, error) {
 	router := chi.NewRouter()
 	RegisterHealthRoutes(router)
 	RegisterDocsRoutes(router)
-	registerProjectStreamTransports(router, svc.Events)
 	registerSandboxGitRoutes(router, svc.Sandboxes)
 	registerSandboxHTTPRoutes(router, svc.Sandboxes)
 	registerSandboxAgentTerminalRoutes(router, svc.Sandboxes)
@@ -102,11 +100,6 @@ func NewRouter(svc services.Services) (*chi.Mux, error) {
 	}
 	router.Mount("/", generated)
 	return router, nil
-}
-
-func registerProjectStreamTransports(router chi.Router, service services.ProjectEventService) {
-	projectstream.RegisterProjectStreamRoutes(router, service)
-	projectstream.RegisterProjectStreamSSERoutes(router, service)
 }
 
 // NewApp creates the app backed by persistent services. Alongside the router
@@ -171,7 +164,6 @@ func NewApp(ctx context.Context, writeDB, readDB *gorm.DB, options ...AppOptions
 		Providers:      appServices,
 		Pools:          appServices,
 		Jobs:           appServices,
-		Events:         appServices,
 		Secrets:        appServices,
 		SSHKeys:        appServices,
 	}
@@ -187,7 +179,6 @@ func NewApp(ctx context.Context, writeDB, readDB *gorm.DB, options ...AppOptions
 	))
 	RegisterHealthRoutes(router)
 	RegisterDocsRoutes(router)
-	registerProjectStreamTransports(router, appServices)
 	registerSandboxGitRoutes(router, appServices)
 	registerSandboxHTTPRoutes(router, appServices)
 	registerSandboxAgentTerminalRoutes(router, appServices)

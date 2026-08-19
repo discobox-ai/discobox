@@ -112,7 +112,3 @@ func (s *Store) DeleteHarnessConfig(ctx context.Context, projectID, configID str
 	})
 	return err
 }
-
-func (s *Store) ListHarnessConfigSnapshots(ctx context.Context, projectID string) ([]model.HarnessConfig, error) {
-	return s.ListHarnessConfigs(ctx, projectID)
-}

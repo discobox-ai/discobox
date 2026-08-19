@@ -23,7 +23,6 @@ func newSSHIngressRouterForTest(ingress services.SSHIngress) *chi.Mux {
 		Providers:      stubs,
 		Pools:          stubs,
 		Jobs:           stubs,
-		Events:         stubs,
 	})
 	return router
 }

@@ -10,10 +10,7 @@ import (
 	"slices"
 	"strings"
 	"testing"
-	"time"
 
-	"github.com/coder/websocket"
-	"github.com/coder/websocket/wsjson"
 	"github.com/go-chi/chi/v5"
 	serverapi "github.com/obot-platform/discobox/api/gen"
 	"github.com/obot-platform/discobox/gormdb"
@@ -36,7 +33,6 @@ func newStubRouterForTest() *chi.Mux {
 		Providers:      stubs,
 		Pools:          stubs,
 		Jobs:           stubs,
-		Events:         stubs,
 	})
 	return router
 }
@@ -70,7 +66,6 @@ func TestNewOpenAPIRouterServesOpenAPIAndScalarDocs(t *testing.T) {
 		Providers:      stubs,
 		Pools:          stubs,
 		Jobs:           stubs,
-		Events:         stubs,
 	})
 	if err != nil {
 		t.Fatalf("new OpenAPI router: %v", err)
@@ -228,7 +223,6 @@ func TestSandboxGitOriginRouteProxiesReceivePackToPool(t *testing.T) {
 		Providers:      stubs,
 		Pools:          stubs,
 		Jobs:           stubs,
-		Events:         stubs,
 	})
 	if err != nil {
 		t.Fatalf("new router: %v", err)
@@ -287,7 +281,6 @@ func TestSandboxGitRepositoryRouteProxiesToPool(t *testing.T) {
 		Providers:      stubs,
 		Pools:          stubs,
 		Jobs:           stubs,
-		Events:         stubs,
 	})
 	if err != nil {
 		t.Fatalf("new router: %v", err)
@@ -339,7 +332,6 @@ func TestSandboxGitRepositoryRouteUsesWriteScopeForReceivePack(t *testing.T) {
 		Providers:      stubs,
 		Pools:          stubs,
 		Jobs:           stubs,
-		Events:         stubs,
 	})
 	if err != nil {
 		t.Fatalf("new router: %v", err)
@@ -394,7 +386,6 @@ func TestSandboxHTTPRouteProxiesPortToWorker(t *testing.T) {
 		Providers:      stubs,
 		Pools:          stubs,
 		Jobs:           stubs,
-		Events:         stubs,
 	})
 	if err != nil {
 		t.Fatalf("new router: %v", err)
@@ -459,7 +450,6 @@ func TestSandboxExecListRouteProxiesToSandboxAgent(t *testing.T) {
 		Providers:      stubs,
 		Pools:          stubs,
 		Jobs:           stubs,
-		Events:         stubs,
 	})
 	if err != nil {
 		t.Fatalf("new router: %v", err)
@@ -501,7 +491,6 @@ func TestSandboxExecProxyErrorUsesJSON(t *testing.T) {
 		Providers:      stubs,
 		Pools:          stubs,
 		Jobs:           stubs,
-		Events:         stubs,
 	})
 	if err != nil {
 		t.Fatalf("new router: %v", err)
@@ -562,7 +551,6 @@ func TestSandboxExecAttachRouteUsesWriteScope(t *testing.T) {
 		Providers:      stubs,
 		Pools:          stubs,
 		Jobs:           stubs,
-		Events:         stubs,
 	})
 	if err != nil {
 		t.Fatalf("new router: %v", err)
@@ -610,7 +598,6 @@ func TestSandboxHarnessHookRouteUsesExecReadScope(t *testing.T) {
 		Providers:      stubs,
 		Pools:          stubs,
 		Jobs:           stubs,
-		Events:         stubs,
 	})
 	if err != nil {
 		t.Fatalf("new router: %v", err)
@@ -658,7 +645,6 @@ func TestSandboxExecRoutesUseExecScopes(t *testing.T) {
 		Providers:      stubs,
 		Pools:          stubs,
 		Jobs:           stubs,
-		Events:         stubs,
 	})
 	if err != nil {
 		t.Fatalf("new router: %v", err)
@@ -706,7 +692,6 @@ func TestSandboxExecAttachRouteUsesExecWriteScope(t *testing.T) {
 		Providers:      stubs,
 		Pools:          stubs,
 		Jobs:           stubs,
-		Events:         stubs,
 	})
 	if err != nil {
 		t.Fatalf("new router: %v", err)
@@ -778,88 +763,5 @@ func TestNewAppResolvesDefaultProjectAlias(t *testing.T) {
 	}
 	if !project.Default {
 		t.Fatal("expected default project flag")
-	}
-}
-
-func TestProjectStreamReceivesSandboxMutation(t *testing.T) {
-	skipWithoutDocker(t)
-	ctx := context.Background()
-	db := newAppTestDB(ctx, t)
-
-	router, _, _, err := NewApp(ctx, db.Write, db.Read)
-	if err != nil {
-		t.Fatalf("new database router: %v", err)
-	}
-	server := httptest.NewServer(router)
-	t.Cleanup(server.Close)
-
-	wsCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
-	defer cancel()
-	conn, wsResp, err := websocket.Dial(wsCtx, "ws"+strings.TrimPrefix(server.URL, "http")+"/projects/default/stream", nil)
-	if wsResp != nil && wsResp.Body != nil {
-		defer wsResp.Body.Close()
-	}
-	if err != nil {
-		t.Fatalf("dial project stream: %v", err)
-	}
-	defer func() {
-		if err := conn.CloseNow(); err != nil {
-			t.Fatalf("close project stream: %v", err)
-		}
-	}()
-
-	list := false
-	if err := wsjson.Write(wsCtx, conn, map[string]any{
-		"type":   "subscribe",
-		"stream": "sandbox",
-		"list":   list,
-	}); err != nil {
-		t.Fatalf("subscribe project stream: %v", err)
-	}
-
-	readProjectStreamMessage(wsCtx, t, conn, "subscribed", "")
-	readProjectStreamMessage(wsCtx, t, conn, "event", "connected")
-
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, server.URL+"/projects/default/sandboxes", strings.NewReader(`{"harnessName":"shell","config":{"name":"live","description":"test sandbox"}}`))
-	if err != nil {
-		t.Fatalf("new request: %v", err)
-	}
-	req.Header.Set("Content-Type", "application/json")
-	resp, err := http.DefaultClient.Do(req)
-	if err != nil {
-		t.Fatalf("create sandbox: %v", err)
-	}
-	defer resp.Body.Close()
-	if resp.StatusCode != http.StatusAccepted {
-		body, _ := io.ReadAll(resp.Body)
-		t.Fatalf("create sandbox status = %d: %s", resp.StatusCode, string(body))
-	}
-
-	msg := readProjectStreamMessage(wsCtx, t, conn, "event", model.EventTypeResourceChanged)
-	var event model.ProjectEvent
-	if err := json.Unmarshal(msg.Data, &event); err != nil {
-		t.Fatalf("decode project event: %v", err)
-	}
-	if event.ResourceType != "sandbox" || event.Action != model.EventActionCreated {
-		t.Fatalf("event = %#v, want sandbox created event", event)
-	}
-}
-
-type projectStreamTestMessage struct {
-	Type  string          `json:"type"`
-	Event string          `json:"event,omitempty"`
-	Data  json.RawMessage `json:"data,omitempty"`
-}
-
-func readProjectStreamMessage(ctx context.Context, t *testing.T, conn *websocket.Conn, wantType, wantEvent string) projectStreamTestMessage {
-	t.Helper()
-	for {
-		var msg projectStreamTestMessage
-		if err := wsjson.Read(ctx, conn, &msg); err != nil {
-			t.Fatalf("read project stream: %v", err)
-		}
-		if msg.Type == wantType && (wantEvent == "" || msg.Event == wantEvent) {
-			return msg
-		}
 	}
 }

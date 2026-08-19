@@ -351,54 +351,6 @@ func (s *routerTestServices) AssignSandboxHarnessSecrets(_ context.Context, proj
 	return map[string]string{}, nil
 }
 
-func (s *routerTestServices) MaxProjectEventSeq(_ context.Context, projectID string) (int64, error) {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-
-	if projectID != s.project.ID {
-		return 0, apperrors.NewStatusError(http.StatusNotFound, "project not found")
-	}
-	return 0, nil
-}
-
-func (s *routerTestServices) ListProjectEventsAfterSeq(_ context.Context, projectID string, _ int64, _ []string) ([]model.ProjectEvent, error) {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-
-	if projectID != s.project.ID {
-		return nil, apperrors.NewStatusError(http.StatusNotFound, "project not found")
-	}
-	return []model.ProjectEvent{}, nil
-}
-
-func (s *routerTestServices) ListProjectResourceSnapshots(_ context.Context, projectID string, _ []string, _ int64) ([]model.ProjectEvent, error) {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-
-	if projectID != s.project.ID {
-		return nil, apperrors.NewStatusError(http.StatusNotFound, "project not found")
-	}
-	return []model.ProjectEvent{}, nil
-}
-
-func (s *routerTestServices) SubscribeProjectEvents(ctx context.Context, projectID string) (<-chan model.ProjectEvent, func(), error) {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-
-	if projectID != s.project.ID {
-		return nil, nil, apperrors.NewStatusError(http.StatusNotFound, "project not found")
-	}
-	ch := make(chan model.ProjectEvent)
-	unsubscribe := func() {
-		select {
-		case <-ctx.Done():
-		default:
-			close(ch)
-		}
-	}
-	return ch, unsubscribe, nil
-}
-
 func (s *routerTestServices) ConfigureHarnessConfig(_ context.Context, projectID, configID string) (*model.Sandbox, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()

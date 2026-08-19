@@ -12,7 +12,6 @@ import (
 func NewOpenAPIRouter(services services.Services) (*chi.Mux, error) {
 	router := chi.NewRouter()
 	RegisterDocsRoutes(router)
-	registerProjectStreamTransports(router, services.Events)
 	registerSandboxGitRoutes(router, services.Sandboxes)
 	registerSandboxHTTPRoutes(router, services.Sandboxes)
 	registerSandboxAgentTerminalRoutes(router, services.Sandboxes)

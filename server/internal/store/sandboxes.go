@@ -410,23 +410,6 @@ func deleteSandboxSecretsTx(tx *gorm.DB, projectID, sandboxID string) error {
 		Delete(&model.Secret{}).Error
 }
 
-func (s *Store) ListSandboxSnapshots(ctx context.Context, projectID string) ([]model.Sandbox, error) {
-	read, err := s.getRead(ctx)
-	if err != nil {
-		return nil, err
-	}
-	var sandboxes []model.Sandbox
-	err = read.
-		Preload("Project").
-		Preload("Pool").
-		Preload("Pool.ProviderInstance").
-		Preload("HarnessConfig").
-		Where("project_id = ?", projectID).
-		Order("created_at ASC").
-		Find(&sandboxes).Error
-	return sandboxes, err
-}
-
 func (s *Store) sealSandboxForWrite(ctx context.Context, sandbox *model.Sandbox) (*model.Sandbox, error) {
 	if sandbox.ID == "" {
 		if err := sandbox.BeforeCreate(nil); err != nil {

@@ -439,11 +439,11 @@ launcher will supply the same two halves and draw them instead.
   linked to `http://localhost:8082`. It binds loopback only, with no `--address`
   to widen it: a window has no business opening a sandbox's ports to the network
   on the strength of having been attached to.
-- The listing is polled rather than streamed. The project event stream carries
-  resource identities, not bodies, so a change would have to be followed by the
-  same read this loop already does; the ports themselves reach the control plane
-  on the sandbox-agent's own cadence (ADR 0046), which is what bounds freshness
-  either way.
+- The listing is polled rather than streamed. There is no project event stream
+  to subscribe to — the one that existed promised a resumable list-then-watch it
+  could not deliver and was removed (ADR 0061) — and the ports themselves reach
+  the control plane on the sandbox-agent's own cadence (ADR 0046), which is what
+  bounds freshness either way.
 
 ## Pool Host Console
 

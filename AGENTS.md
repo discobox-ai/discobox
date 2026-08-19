@@ -14,7 +14,6 @@
 - `server/internal/sandbox`: sandbox provider Go contract, provider manager, and shared provider types.
 - `server/internal/store`: database access, split by resource.
 - `server/internal/database`: database setup and resolution.
-- `server/internal/projectstream`: project event streaming websocket and SSE routes.
 - `server/internal/events`: project event broker.
 - `server/internal/auth/sandbox`: sandbox and pool agent authentication helpers.
 - `server/providers`: Docker, VM, cloud, and pool-backed provider implementations.

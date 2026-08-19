@@ -180,60 +180,6 @@ func TestQuietListWritersPrintFullIDsOnly(t *testing.T) {
 	}
 }
 
-func TestWriteEventPrintsEventIDInsteadOfSeqWhenPresent(t *testing.T) {
-	app := &App{output: "table"}
-	cmd := &cobra.Command{}
-	var out bytes.Buffer
-	cmd.SetOut(&out)
-	eventID := "evt_9qk5n25t2hh2rv00"
-	msg := &apiclientgen.ProjectEventMessage{
-		Event: apiclientgen.ProjectEventNameResourceChanged,
-		Data: &apiclientgen.ResourceChangedEvent{
-			ID:           eventID,
-			Seq:          42,
-			Action:       apimodel.EventActionUpdated,
-			ResourceType: "sandbox",
-			ResourceID:   "sandbox-1",
-			CreatedAt:    time.Date(2026, 6, 17, 4, 0, 0, 0, time.UTC),
-		},
-	}
-
-	if err := app.writeEvent(cmd, msg); err != nil {
-		t.Fatalf("writeEvent: %v", err)
-	}
-	output := out.String()
-	if !strings.Contains(output, eventID) {
-		t.Fatalf("event output = %q, want short event ID", output)
-	}
-	if strings.Contains(output, "seq=42") {
-		t.Fatalf("event output = %q, did not expect sequence when event ID is present", output)
-	}
-}
-
-func TestWriteEventFallsBackToSeqWhenIDMissing(t *testing.T) {
-	app := &App{output: "table"}
-	cmd := &cobra.Command{}
-	var out bytes.Buffer
-	cmd.SetOut(&out)
-	msg := &apiclientgen.ProjectEventMessage{
-		Event: apiclientgen.ProjectEventNameResourceChanged,
-		Data: &apiclientgen.ResourceChangedEvent{
-			Seq:          42,
-			Action:       apimodel.EventActionUpdated,
-			ResourceType: "sandbox",
-			ResourceID:   "sandbox-1",
-			CreatedAt:    time.Date(2026, 6, 17, 4, 0, 0, 0, time.UTC),
-		},
-	}
-
-	if err := app.writeEvent(cmd, msg); err != nil {
-		t.Fatalf("writeEvent: %v", err)
-	}
-	if output := out.String(); !strings.Contains(output, "seq=42") {
-		t.Fatalf("event output = %q, want sequence fallback", output)
-	}
-}
-
 func TestRootCommandHelp(t *testing.T) {
 	cmd := NewRootCommand()
 	if cmd.Name() != "disco" {
@@ -246,8 +192,8 @@ func TestRootCommandHelp(t *testing.T) {
 	if err := cmd.Execute(); err != nil {
 		t.Fatalf("execute help: %v", err)
 	}
-	if !bytes.Contains(out.Bytes(), []byte("events")) {
-		t.Fatalf("help output = %q, want events command", out.String())
+	if !bytes.Contains(out.Bytes(), []byte("\n  run ")) {
+		t.Fatalf("help output = %q, want visible run command", out.String())
 	}
 	if !bytes.Contains(out.Bytes(), []byte("\n  box ")) {
 		t.Fatalf("help output = %q, want visible box command", out.String())

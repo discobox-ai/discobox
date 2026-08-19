@@ -49,9 +49,6 @@ Current transition state:
   constructs the generated OpenAPI server.
 - `internal/services` owns service interfaces and aliases generated server DTOs for
   server packages during the generated-server migration.
-- Project stream websocket and SSE routes stay hand-wired in
-  `internal/projectstream`; generated OpenAPI scaffolding does not own streaming
-  transport mechanics, and ogen skips `text/event-stream` operations.
 
 New endpoints should prefer the contract-first generated path. Keep streaming
 transports hand-wired unless the generator can own them behavior-compatibly.
@@ -360,7 +357,6 @@ See ADR 0017 §§9–10.
 | `internal/resources/jobs` | Server-wide durable job manager and dispatcher lifecycle. |
 | `internal/service` | Root API service aggregation, default data initialization, service startup, and job executor registration. |
 | `internal/resources/harnessconfigs` | Harness config definition and project-scoped harness config API behavior. |
-| `internal/resources/events` | Project event query and subscription service behavior. |
 | `internal/resources/projects` | Project read service behavior. |
 | `internal/resources/sandboxes` | Sandbox API service behavior, sandbox reconcile executor/payload, sandbox runtime reconciliation, and sandbox provider catalog helpers. |
 | `internal/resources/workers` | Worker API service behavior, provider-facing worker manager, worker and pool reconcilers, and worker runtime reconciliation. |
@@ -368,8 +364,7 @@ See ADR 0017 §§9–10.
 | `internal/resources/providers` | Provider-instance API service behavior (backend identity only) and startup reconciliation. |
 | `internal/database` | Database config, connection setup, and migrations. |
 | `internal/store` | Persistence methods, resource transactions, project events, and durable job records. |
-| `internal/events` | In-process project event broker for committed resource events. |
-| `internal/projectstream` | Websocket/SSE project event streaming transports. |
+| `internal/events` | In-process project event broker for committed resource events. It has no client-facing transport: the events are lossy wake-ups for waits inside this process (ADR 0061). |
 | `internal/auth/sandbox` | Sandbox access issuer keys and worker/sandbox auth token helpers. |
 | `internal/secrets` | Encryption/sealing interfaces and implementations used by server persistence. |
 | `internal/config` | Server configuration loading. |
@@ -402,10 +397,8 @@ See ADR 0017 §§9–10.
 | `internal/auth` | [`internal/auth/DESIGN.md`](internal/auth/DESIGN.md) |
 | `internal/database` | [`internal/database/DESIGN.md`](internal/database/DESIGN.md) |
 | `internal/model` | [`internal/model/DESIGN.md`](internal/model/DESIGN.md) |
-| `internal/projectstream` | [`internal/projectstream/DESIGN.md`](internal/projectstream/DESIGN.md) |
 | `internal/resources` | [`internal/resources/DESIGN.md`](internal/resources/DESIGN.md) |
 | `internal/resources/harnessconfigs` | [`internal/resources/harnessconfigs/DESIGN.md`](internal/resources/harnessconfigs/DESIGN.md) |
-| `internal/resources/events` | [`internal/resources/events/DESIGN.md`](internal/resources/events/DESIGN.md) |
 | `internal/resources/jobs` | [`internal/resources/jobs/DESIGN.md`](internal/resources/jobs/DESIGN.md) |
 | `internal/resources/pools` | [`internal/resources/pools/DESIGN.md`](internal/resources/pools/DESIGN.md) |
 | `internal/resources/providers` | [`internal/resources/providers/DESIGN.md`](internal/resources/providers/DESIGN.md) |
