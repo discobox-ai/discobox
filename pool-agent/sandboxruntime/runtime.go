@@ -605,23 +605,27 @@ func (r *DockerSandboxRuntime) prepareSandboxVolumes(ctx context.Context, sandbo
 		return nil, nil, fmt.Errorf("clear sandbox archive marker: %w", err)
 	}
 	dataHostPath := r.sandboxDataRootPath(sandboxID)
-	if err := prepareOwnedDirectory(ctx, dataHostPath, 0, 0); err != nil {
+	if err := prepareOwnedTree(ctx, dataHostPath, 0, 0); err != nil {
 		return nil, nil, fmt.Errorf("prepare sandbox data volume: %w", err)
 	}
 	cacheHostPath := r.poolCacheRoot()
-	if err := prepareOwnedDirectory(ctx, cacheHostPath, 0, 0); err != nil {
+	if err := prepareOwnedMountpoint(cacheHostPath, 0, 0); err != nil {
 		return nil, nil, fmt.Errorf("prepare pool cache volume: %w", err)
 	}
 	configHostPath := r.sandboxConfigRoot(sandboxID)
-	if err := prepareOwnedDirectory(ctx, configHostPath, 0, 0); err != nil {
+	if err := prepareOwnedTree(ctx, configHostPath, 0, 0); err != nil {
 		return nil, nil, fmt.Errorf("prepare sandbox config volume: %w", err)
 	}
+	// Only the root itself: every source under it is materialized and then
+	// chowned to the sandbox user below, so asserting root over the tree here
+	// just walks each checkout an extra time to set ownership that the very
+	// next step overwrites.
 	sourcesHostPath := r.sandboxSourcesRoot(sandboxID)
-	if err := prepareOwnedDirectory(ctx, sourcesHostPath, 0, 0); err != nil {
+	if err := prepareOwnedMountpoint(sourcesHostPath, 0, 0); err != nil {
 		return nil, nil, fmt.Errorf("prepare sandbox sources volume: %w", err)
 	}
 	secretsHostPath := r.sandboxSecretsRoot(sandboxID)
-	if err := prepareOwnedDirectory(ctx, secretsHostPath, 0, 0); err != nil {
+	if err := prepareOwnedTree(ctx, secretsHostPath, 0, 0); err != nil {
 		return nil, nil, fmt.Errorf("prepare sandbox secrets volume: %w", err)
 	}
 	var project *sandboxconfig.ProjectLayer
@@ -632,7 +636,7 @@ func (r *DockerSandboxRuntime) prepareSandboxVolumes(ctx context.Context, sandbo
 		if err := r.materializeGitSource(ctx, source.git, sourcePoolPath, source.slug, user); err != nil {
 			return nil, nil, fmt.Errorf("materialize source %q: %w", source.slug, err)
 		}
-		if err := prepareOwnedDirectory(ctx, sourcePoolPath, chownID(user.UID), chownID(user.GID)); err != nil {
+		if err := prepareOwnedTree(ctx, sourcePoolPath, chownID(user.UID), chownID(user.GID)); err != nil {
 			return nil, nil, fmt.Errorf("set source ownership %q: %w", source.slug, err)
 		}
 		// The primary source is always first when present (sandboxSources).
@@ -966,7 +970,10 @@ func buildSandboxDocument(projectID, sandboxID, poolID, controlPlanePublicKey, r
 	return doc
 }
 
-func prepareOwnedDirectory(ctx context.Context, dir string, uid, gid int) error {
+// prepareOwnedTree creates dir and asserts ownership over everything inside it.
+// Use it only for roots this agent itself materializes and whose size one
+// sandbox bounds -- the per-sandbox data, config, sources, and secrets trees.
+func prepareOwnedTree(ctx context.Context, dir string, uid, gid int) error {
 	if err := os.MkdirAll(dir, 0o755); err != nil {
 		return err
 	}
@@ -974,6 +981,30 @@ func prepareOwnedDirectory(ctx context.Context, dir string, uid, gid int) error 
 		return err
 	}
 	return chownRecursive(ctx, dir, uid, gid)
+}
+
+// prepareOwnedMountpoint creates dir and owns the directory itself, never what
+// is inside it. A bind-mount source only needs its own ownership to be right:
+// the contents belong to whoever legitimately wrote them.
+//
+// This is what the shared pool cache needs. Asserting root ownership over that
+// whole tree was both unbounded and pointless: it grows without limit (tens of
+// gigabytes and ~10^6 inodes on a working machine, so ~37s of every create on a
+// cold page cache), and sandbox-agent's seedHome immediately chowned the cache
+// back to the sandbox user on the way up. The two passes fought over the same
+// inodes on every single start.
+func prepareOwnedMountpoint(dir string, uid, gid int) error {
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		return err
+	}
+	if err := os.Chmod(dir, 0o755); err != nil {
+		return err
+	}
+	if uid == unsetID && gid == unsetID {
+		return nil
+	}
+	//nolint:gosec // dir is a pool-owned root path, not attacker-controlled.
+	return os.Lchown(dir, uid, gid)
 }
 
 func (r *DockerSandboxRuntime) GetSandbox(ctx context.Context, sandboxID string) (*Sandbox, error) {
