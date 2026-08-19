@@ -67,6 +67,17 @@ subject to repo trust prompts or user/project override:
 Drivers must be idempotent and preserve unrelated settings where the harness uses
 a single shared JSON object.
 
+The same preference decides where a harness image's *policy* baseline goes when
+the CLI has a system layer for it. The codex image bakes
+`/etc/codex/config.toml` (`codex-cli/system-config.toml`) with
+`approval_policy = "never"` and `sandbox_mode = "danger-full-access"` — the
+sandbox is the isolation boundary, so Codex's own approval prompts and inner
+sandbox would only guard a machine that exists to be written to. It is the
+*system* layer and not the harness's `.codex/config.toml` file precisely because
+that file is the user's: the configure flow captures whatever the user left in
+it, and a baseline living there would be replaced by that capture on the first
+reconfigure.
+
 ## Configure flows
 
 A configure command's contract is one fixed directory, two fixed paths in it,
@@ -225,9 +236,69 @@ there once the user leaves the session (`/exit` or Ctrl-D).
 
 ### Codex CLI
 
-`codex-cli/configure.sh` collects one OpenAI API key without echoing it. When the
-seed lists `OPENAI_API_KEY` and its `PREV_` variable is set, keeping the existing
-key is the default choice. Every path ends in a `codex exec` check with the
-chosen key in the environment; a failed check returns to the prompt. Nothing in
-this flow performs a ChatGPT login, so there is no auth file to move aside as the
-claude-code flow does.
+`codex-cli/configure.sh` follows the claude-code shape: it launches a bare,
+interactive `codex` and lets the user sign in and configure it the way they
+normally would, then inspects what codex itself wrote. Codex's onboarding
+already offers every sign-in this flow would otherwise reimplement — ChatGPT in
+a browser, **ChatGPT by device code**, or an API key — and all of them write
+`$CODEX_HOME/auth.json`, so the script only has to read what the session left
+behind. Device code is the one that works here and the banner says so: the
+sandbox has no browser, and codex's browser flow completes against a callback
+server on the sandbox's own localhost.
+
+- **Both credentials are delivered as a file, never an environment variable**
+  (`delivery: file`). This is not the tidiness argument claude-code makes; codex
+  leaves no choice. The interactive TUI reads no credential variable at all
+  (only `codex exec` honors `CODEX_API_KEY`), and a ChatGPT token has no
+  variable to be read from in the first place. `~/.codex/auth.json` is the one
+  delivery both halves of the harness agree on, so the flow returns it as a
+  templated harness file with the sentinel in the credential's place.
+- An **API key** sign-in leaves `{"OPENAI_API_KEY": "sk-…"}`, stored as a plain
+  `bearer` secret (`OPENAI_API_KEY`).
+- A **ChatGPT** sign-in leaves `tokens.{id_token, access_token, refresh_token,
+  account_id}`, stored as an `oauth` secret (`CODEX_OAUTH_TOKEN`) with OpenAI's
+  fixed token endpoint and client id and the access token's own `exp`, so the
+  control plane refreshes it as it expires (see
+  `resources/harnessconfigs/DESIGN.md` → OAuth secrets). Two details of the
+  returned file follow from the credential living in the control plane:
+  - `last_refresh` is far future. Codex rotates a token whose `last_refresh` is
+    older than 28 days, and a rotation from inside a sandbox could not succeed —
+    the refresh token is not there — nor does it need to, since a sentinel does
+    not go stale.
+  - The account travels as **claims in an unsigned `id_token`**, rebuilt from
+    the real one, not as the signed token codex wrote. Codex needs the claims —
+    it addresses the ChatGPT backend with the account id, and refuses to start
+    without a plan type — and never verifies the signature, so re-signing buys
+    nothing while keeping a signed identity assertion out of a harness file that
+    is not a secret. The plan type is also recorded on the secret as
+    `subscriptionType`, the same non-secret "what this grant is" metadata
+    claude-code records scopes as.
+- Reconfigure seeds the previous auth.json back with the `PREV_` sentinel in
+  place of its template action, so the session opens **already signed in** and
+  changing a model or theme costs no re-authentication. Detection is the same
+  comparison claude-code makes: a value equal to the seeded sentinel proves
+  nothing re-authenticated and comes back as `usePrevious`.
+  - Codex has no `/login`; the way to change accounts from a signed-in session
+    is `/logout`, which signs out **and exits**. So a session that comes back
+    with no credential after being seeded is a deliberate logout, and the script
+    says so and offers to start codex again rather than reporting a missed step.
+  - Whatever the script does *not* seed, it removes. A configured harness
+    delivers its own auth.json into the configure sandbox like any other file,
+    but its template renders against secrets this sandbox does not have (they
+    arrive `PREV_`-prefixed), so what lands is a credential-shaped file with
+    nothing behind it — which codex reads as "signed in", skipping the sign-in
+    screen the user came for. For the same reason the image declares **no**
+    baseline auth.json: an empty one authenticates every sandbox with nothing.
+- Verification runs `codex exec` against the auth.json as it stands, which is
+  exactly what a run sandbox will do. There is no environment variable to point
+  codex at one credential instead of another, so the file is the subject of the
+  check and the environment is scrubbed of the variables `codex exec` would
+  otherwise prefer over it.
+- It returns **two files**: that auth.json, and `~/.codex/config.toml` as the
+  user left it. Codex keeps settings and directory trust in one file, so
+  returning it verbatim would make this throwaway sandbox's trust map the
+  harness's. The `[projects]` tables are stripped and one templated stanza put
+  back — the same one the image declares, trusting the sandbox's primary source
+  wherever it lands. That is also why the script trusts the workspace before
+  launching: without it the session opens on the trust screen instead of the
+  sign-in screen.

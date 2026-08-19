@@ -1,0 +1,10 @@
+# Codex system configuration layer (/etc/codex/config.toml), baked into the
+# harness image. It sits below ${CODEX_HOME}/config.toml, so anything the user
+# sets during configure — or inside a sandbox — wins over these defaults.
+#
+# The sandbox is the isolation boundary, so Codex's own approval prompts and
+# inner sandbox would only be guarding a machine that exists to be written to,
+# and would stop an unattended run dead. This mirrors the Claude Code image's
+# `permissions.defaultMode: bypassPermissions` baseline.
+approval_policy = "never"
+sandbox_mode = "danger-full-access"

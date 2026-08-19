@@ -7,6 +7,13 @@ ARG HARNESS_METADATA
 LABEL io.discobox.image.v1=${HARNESS_METADATA}
 
 RUN npm install -g @openai/codex \
-    && install -d -m 0755 /usr/local/libexec/discobox
+    && install -d -m 0755 /usr/local/libexec/discobox /etc/codex
+
+# Codex's system config layer: below the user's ~/.codex/config.toml, so these
+# are defaults a user (or the configure flow's captured settings) can override,
+# and above nothing the sandbox writes. The sandbox is itself the isolation
+# boundary, so Codex's own approval prompts and inner sandbox would only ask
+# about a machine that exists to be written to.
+COPY --chmod=0644 system-config.toml /etc/codex/config.toml
 
 COPY --chmod=0755 configure.sh /usr/local/libexec/discobox/configure-codex

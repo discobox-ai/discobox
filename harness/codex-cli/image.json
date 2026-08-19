@@ -33,6 +33,11 @@
     ],
     "files": [
       {
+        "path": ".codex/config.toml",
+        "template": true,
+        "content": "# Managed by Discobox. Policy defaults (approval, sandbox) are the image's\n# system layer, /etc/codex/config.toml, which this file may override.\n{{- range .sources }}{{- if eq .slug \"primary\" }}\n[projects.{{ .target | json }}]\ntrust_level = \"trusted\"\n{{- end }}{{- end }}\n"
+      },
+      {
         "path": ".config/pnpm/config.yaml",
         "createOnly": true,
         "content": "storeDir: ~/.local/share/pnpm\n"
@@ -41,7 +46,15 @@
     "secrets": [
       {
         "name": "OPENAI_API_KEY",
-        "required": true
+        "required": true,
+        "oneOfGroup": "auth",
+        "delivery": "file"
+      },
+      {
+        "name": "CODEX_OAUTH_TOKEN",
+        "required": true,
+        "oneOfGroup": "auth",
+        "delivery": "file"
       }
     ],
     "config": {
