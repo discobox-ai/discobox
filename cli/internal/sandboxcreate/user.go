@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os/user"
 	"regexp"
+	"runtime"
 	"strconv"
 	"strings"
 
@@ -23,7 +24,39 @@ type runUserIdentity struct {
 	IDsUsable     bool
 }
 
+// windowsRunUser is the identity a create carries from a Windows client.
+//
+// Windows has nothing POSIX to capture. user.Current() there answers with a SID
+// for the ids, a DOMAIN\name for the name, and a C:\Users home -- three values
+// a Linux sandbox cannot use, which is why every field below is rejected. What
+// remains is an empty identity, and an empty identity means the image's own
+// user (ADR 0025 sec 5): the sandbox runs as root on any harness image without a
+// USER directive, which is not the sandbox the person on Windows asked for.
+// They asked for the one their colleagues on Linux and macOS get.
+//
+// So Windows supplies a fixed identity instead of a translated one. This is not
+// the host inventing an id it should have asked for (ADR 0025 sec 4) -- there is
+// no local answer to ask for, and nothing to get wrong. It is the client
+// stating, as a whole request, the user it wants the sandbox to have; boot then
+// creates that account exactly as it would for one a Linux client named.
+//
+// 1000 is the first non-system id on every distro the harness images build from,
+// and "disco" names the product rather than impersonating the Windows account,
+// whose name would only be a coincidence in the sandbox. The home directory is
+// deliberately absent: boot resolves it from the account when the image already
+// has a "disco", and defaults to /home/disco when it does not, which is the same
+// "ask where you can, decide only where you must" rule the rest of this follows.
+var windowsRunUser = runUserIdentity{
+	Name:      "disco",
+	UID:       1000,
+	GID:       1000,
+	IDsUsable: true,
+}
+
 func resolveRunUserIdentity() (runUserIdentity, bool, error) {
+	if runtime.GOOS == "windows" {
+		return windowsRunUser, true, nil
+	}
 	current, err := user.Current()
 	if err != nil {
 		return runUserIdentity{}, false, fmt.Errorf("resolve current user: %w", err)
@@ -44,7 +77,9 @@ func parseRunUserIdentity(current *user.User) (runUserIdentity, bool, error) {
 	if validRunUnixUserName(current.Username) {
 		identity.Name = current.Username
 	}
-	identity.HomeDirectory = current.HomeDir
+	if validRunHomeDirectory(current.HomeDir) {
+		identity.HomeDirectory = current.HomeDir
+	}
 	if uidOK && gidOK && uid != 0 {
 		identity.UID = uid
 		identity.GID = gid
@@ -63,6 +98,20 @@ func parseRunNumericUserID(value string) (int64, bool) {
 
 func validRunUnixUserName(value string) bool {
 	return runUnixUserNamePattern.MatchString(value)
+}
+
+// validRunHomeDirectory reports whether this machine's home directory is one
+// the sandbox could actually use.
+//
+// The sandbox runs Linux, so only a POSIX absolute path means anything there.
+// A home like "C:\Users\alice" is not merely useless: sending it makes the
+// request carry a user whose every other field was already rejected as
+// unusable, and the sandbox then fails to start because nothing in it can
+// resolve a uid. Windows itself no longer reaches here -- it answers with
+// windowsRunUser instead -- but the check stays: it is the guard for a home
+// this sandbox could not use, not a guard for one operating system.
+func validRunHomeDirectory(value string) bool {
+	return strings.HasPrefix(value, "/")
 }
 
 // resolveGitIdentity reads the git authorship the sandbox should commit under,

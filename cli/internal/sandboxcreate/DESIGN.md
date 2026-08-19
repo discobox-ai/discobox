@@ -14,6 +14,14 @@ sandbox create requests.
   ([ADR 0042](../../../docs/adr/0042-git-authorship-identity-is-a-first-class-sandbox-property.md)).
   This inference belongs to the prompt path only — `disco box sandbox create` is
   flag-driven and reads nothing from the environment.
+- Local user identity is captured from the client machine, except on Windows,
+  which has no POSIX identity to capture and instead sends a fixed one: `disco`,
+  uid/gid 1000, home left to the sandbox. Translating a SID and a `C:\Users`
+  home yields nothing usable, and sending nothing means the image's own user
+  ([ADR 0025](../../../docs/adr/0025-the-sandbox-user-is-one-contract-resolved-inside-the-sandbox.md)
+  §5) — root on most harness images. A stated identity is not a guess about the
+  local machine, because there is no local answer to get wrong.
+
 - Whether a dirty workspace is snapshotted is the caller's policy
   (`PromptOptions.IncludeDirty`), and asking is the caller's UI
   (`ConfirmIncludeDirty`); this package decides only when the question applies.

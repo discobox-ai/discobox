@@ -2,6 +2,7 @@ package sandboxcreate
 
 import (
 	"os/user"
+	"runtime"
 	"testing"
 
 	apiclientgen "github.com/obot-platform/discobox/api/gen"
@@ -87,5 +88,51 @@ func TestRunUserIdentitySetsUsernameWithoutIDs(t *testing.T) {
 	}
 	if sandboxUser.UID.Set || sandboxUser.Gid.Set {
 		t.Fatalf("uid/gid options were set unexpectedly: %#v", body)
+	}
+}
+
+func TestWindowsRunUserIsAUsableSandboxIdentity(t *testing.T) {
+	if !validRunUnixUserName(windowsRunUser.Name) {
+		t.Fatalf("windows user name %q is not a usable unix name", windowsRunUser.Name)
+	}
+	if windowsRunUser.UID != 1000 || windowsRunUser.GID != 1000 || !windowsRunUser.IDsUsable {
+		t.Fatalf("windows identity = %#v, want uid/gid 1000 marked usable", windowsRunUser)
+	}
+	// Absent on purpose: boot resolves the home from the account it creates or
+	// finds, so naming one here would move an existing account's home instead.
+	if windowsRunUser.HomeDirectory != "" {
+		t.Fatalf("windows home directory = %q, want it left to the sandbox", windowsRunUser.HomeDirectory)
+	}
+}
+
+func TestWindowsRunUserSetsSandboxCreateUserFields(t *testing.T) {
+	body := &apimodel.CreateSandboxBody{Config: apimodel.SandboxCreateConfig{Name: "run"}}
+	windowsRunUser.setCreateSandboxUser(body)
+
+	sandboxUser, ok := body.Config.User.Get()
+	if !ok {
+		t.Fatal("sandbox user was not set")
+	}
+	if sandboxUser.Name.Value != "disco" || sandboxUser.UID.Value != 1000 || sandboxUser.Gid.Value != 1000 {
+		t.Fatalf("body user = name %q uid %d gid %d, want disco/1000/1000", sandboxUser.Name.Value, sandboxUser.UID.Value, sandboxUser.Gid.Value)
+	}
+	if !sandboxUser.UID.Set || !sandboxUser.Gid.Set {
+		t.Fatalf("uid/gid options were not set: %#v", sandboxUser)
+	}
+	if sandboxUser.HomeDirectory.Set {
+		t.Fatalf("home directory was sent as %q, want absent", sandboxUser.HomeDirectory.Value)
+	}
+}
+
+func TestResolveRunUserIdentityOnWindowsIsFixed(t *testing.T) {
+	if runtime.GOOS != "windows" {
+		t.Skip("windows-only path")
+	}
+	identity, ok, err := resolveRunUserIdentity()
+	if err != nil {
+		t.Fatalf("resolveRunUserIdentity: %v", err)
+	}
+	if !ok || identity != windowsRunUser {
+		t.Fatalf("identity = %#v, ok=%t, want %#v", identity, ok, windowsRunUser)
 	}
 }
