@@ -110,3 +110,4 @@ Nygard-style ADRs (see adr.github.io) combined with current-state design docs:
 | [0055](0055-a-delivered-source-settles-before-its-sandbox-runs.md) | A delivered source settles before its sandbox runs | Proposed |
 | [0056](0056-a-repository-declares-the-sources-it-is-worked-on-with.md) | A repository declares the sources it is worked on with | Proposed |
 | [0057](0057-ssh-reaches-the-server-only-through-the-cli-transport.md) | SSH reaches the server only through the transport the API answers on | Accepted (supersedes [0024](0024-ssh-is-a-control-plane-ingress-onto-execs.md) §1's TCP listener) |
+| [0058](0058-a-push-delivered-source-has-a-pool-side-origin.md) | A push-delivered source has a pool-side origin the client re-pushes into | Accepted |
