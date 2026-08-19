@@ -10,24 +10,27 @@ watchnbuild hot reload) and `dev:docker-image-watch` (rebuilds
 pool/sandbox/harness images on source changes, writes the resulting digest to
 `.env`).
 
-## Finding the real dev server
+## Driving the dev server
+
+`task dev` binds the local socket and nothing else, which is the same endpoint
+`disco` dials with no `--server`. The CLI binary is at `./build/disco`:
+
+```bash
+./build/disco --project default box sandbox create \
+  --name verify-x --harness claude-code --wait --wait-timeout 150s
+docker ps --format '{{.ID}}\t{{.Image}}\t{{.Names}}' | grep <sandbox-id>
+```
+
+Pass `--no-start` when a command must fail rather than launch a server of its
+own: without a `task dev` running, the CLI starts one on that socket itself.
 
 Multiple `discobox-server` processes may be running (leftover from other
-sessions/background jobs). Find the one actually owned by `task dev`'s
-watchnbuild process, not just any listener:
+sessions/background jobs). To confirm the one holding the socket is `task dev`'s
+rather than a stray:
 
 ```bash
 ps aux | grep -E "watchnbuild|task dev"   # find the `go tool watchnbuild` PID
 pstree -p <wnb-pid>                       # its child discobox-server is the real one
-ss -ltnp | grep discobox-server           # match PID -> port
-```
-
-The CLI binary is at `./build/disco`. Drive it against that port:
-
-```bash
-./build/disco --server "http://127.0.0.1:<port>" --project default box sandbox create \
-  --name verify-x --harness claude-code --wait --wait-timeout 150s
-docker ps --format '{{.ID}}\t{{.Image}}\t{{.Names}}' | grep <sandbox-id>
 ```
 
 `--image <tag>` on `box sandbox create` does **not** reliably override the
@@ -107,6 +110,6 @@ the data root rather than concluding the environment cannot nest.
 ## Cleanup
 
 ```bash
-./build/disco --server "http://127.0.0.1:<port>" --project default box sandbox delete <id> [<id>...]
+./build/disco --project default box sandbox delete <id> [<id>...]
 docker rm -f <ad-hoc-test-containers>
 ```

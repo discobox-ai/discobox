@@ -180,10 +180,11 @@ git subprocesses that cannot speak anything else (see [cli](../cli/DESIGN.md)).
 `cfg.Listen` is threaded to the provider factories so a backend picks a
 transport this server actually answers on rather than assuming one exists.
 
-`task dev` opts into HTTP on loopback — `http://127.0.0.1:8080` — so a
-development server can be curled with nothing to configure. Loopback is what
-makes that safe to default: the reason it is opt-in is that a machine-wide
-surface is, and a loopback bind is not one. It is overridden from the
+`task dev` opts into nothing. It binds the local socket every other server
+binds, plus `iroh://` on the platforms whose build carries the transport (ADR
+0053), so `disco` reaches a development server with no `--server` and the dev
+loop runs the transport users actually get instead of the one nothing ships. A
+tool that needs a URL asks for one in `DISCOBOX_SERVER_LISTEN` — from the
 environment, not from `.env`, which the server loads with godotenv and which
 does not replace a variable already set.
 

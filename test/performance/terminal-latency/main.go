@@ -19,6 +19,8 @@ import (
 	"sync"
 	"sync/atomic"
 	"time"
+
+	"github.com/obot-platform/discobox/endpoint"
 )
 
 const readyMarker = "DISCOBOX_LATENCY_READY"
@@ -47,7 +49,7 @@ type options struct {
 
 func main() {
 	var opts options
-	flag.StringVar(&opts.server, "server", "http://127.0.0.1:18080", "Discobox server URL")
+	flag.StringVar(&opts.server, "server", "", "Discobox server endpoint (default: the endpoint disco dials on its own)")
 	flag.StringVar(&opts.project, "project", "default", "Discobox project")
 	flag.StringVar(&opts.sandbox, "sandbox", "", "sandbox ID running the terminal-latency harness")
 	flag.StringVar(&opts.sandboxName, "sandbox-name", "", "sandbox name shown in the TUI")
@@ -75,6 +77,12 @@ func main() {
 }
 
 func run(opts options) error {
+	// An unset endpoint resolves here rather than at the flag, so the empty
+	// value run.sh passes when it was told nothing means the same thing as
+	// omitting the flag, and the report records the endpoint that was used.
+	if strings.TrimSpace(opts.server) == "" {
+		opts.server = endpoint.DefaultEndpoint()
+	}
 	if strings.TrimSpace(opts.sandbox) == "" {
 		return errors.New("--sandbox is required")
 	}

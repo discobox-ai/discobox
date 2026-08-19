@@ -10,6 +10,10 @@
 set -euo pipefail
 
 export PORT="${PORT:-8080}"
+# This service publishes the API over HTTP (the `http:`/`path:` headers above),
+# so it names the TCP endpoint itself. `task dev:server` binds only the local
+# socket, which nothing outside this container can reach.
+export DISCOBOX_SERVER_LISTEN="${DISCOBOX_SERVER_LISTEN:-http://127.0.0.1:$PORT}"
 export DISCOBOX_DATA_DIR="${DISCOBOX_DATA_DIR:-$PWD/.tmp/discobox/data}"
 export DISCOBOX_CONFIG_DIR="${DISCOBOX_CONFIG_DIR:-$PWD/.tmp/discobox/config}"
 export DISCOBOX_CACHE_DIR="${DISCOBOX_CACHE_DIR:-$PWD/.tmp/discobox/cache}"

@@ -16,6 +16,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/obot-platform/discobox/endpoint"
 	"github.com/obot-platform/discobox/execstream/frame"
 	"github.com/obot-platform/discobox/execstream/resume"
 )
@@ -38,7 +39,7 @@ func TestTerminalLatencyE2E(t *testing.T) {
 		t.Skip("set " + terminalLatencyE2EEnv + "=1 and use go tool task perf:terminal")
 	}
 
-	serverURL := envOrDefault("DISCOBOX_TERMINAL_LATENCY_SERVER", "http://127.0.0.1:18080")
+	serverURL := envOrDefault("DISCOBOX_TERMINAL_LATENCY_SERVER", endpoint.DefaultEndpoint())
 	projectID := envOrDefault("DISCOBOX_TERMINAL_LATENCY_PROJECT", defaultProjectAlias)
 	sandboxID := strings.TrimSpace(os.Getenv("DISCOBOX_TERMINAL_LATENCY_SANDBOX"))
 	if sandboxID == "" {

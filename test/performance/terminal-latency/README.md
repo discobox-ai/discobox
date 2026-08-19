@@ -78,7 +78,9 @@ DISCOBOX_TERMINAL_LATENCY_KEEP=1 go tool task perf:terminal
 ```
 
 `DISCOBOX_TERMINAL_LATENCY_SERVER`, `..._PROJECT`, `..._TIMEOUT`, and
-`..._OUTPUT_DIR` are also supported. `DISCOBOX_TOKEN` is passed through when
+`..._OUTPUT_DIR` are also supported. Unset, the run uses the endpoint `disco`
+dials on its own — the local socket `task dev` binds — so a server reached any
+other way is named there and nowhere else. `DISCOBOX_TOKEN` is passed through when
 set. The default loads can be changed with `..._SPINNER_HZ`,
 `..._SPINNER_BYTES`, `..._SCREEN_HZ`, and `..._SCREEN_BYTES`.
 

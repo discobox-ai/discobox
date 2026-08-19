@@ -5,6 +5,11 @@ vars:
   # dev build carries the tag there and nowhere else — `task dev` has to work on
   # a Mac (ADR 0053). DISCOBOX_DEV_IROH=0 turns it off where it would apply.
   IROH_TAG: '{{if and (eq OS "linux") (ne .DISCOBOX_DEV_IROH "0")}}-tags=iroh{{end}}'
+  # What `task dev` adds to the local socket the server always binds. iroh only
+  # where the tag above applies: naming a scheme the build does not carry fails
+  # startup, so this is derived from IROH_TAG rather than restating its
+  # condition and drifting from it.
+  DEV_LISTEN: '{{if .IROH_TAG}}iroh://{{end}}'
   BINARY: build/discobox-server
   SERVER_MAIN: ./cmd/discobox-server
   CLI_BINARY: build/disco
@@ -157,32 +162,38 @@ tasks:
       - dev:docker-image-watch
 
   dev:server:
-    desc: Run discobox-server with watchnbuild hot reload, HTTP on loopback
+    desc: Run discobox-server with watchnbuild hot reload on the local socket
     env:
-      # A development server opens the TCP front door it keeps shut in
-      # production, so curling the API needs no setup. It is opt-in normally
-      # because it is a machine-wide surface — and on Windows a firewall prompt
-      # (server/DESIGN.md "Listen Endpoints"). Bound to loopback here, which is
-      # not one. SSH needs no equivalent: it is reached over this same endpoint.
+      # A development server listens where every other server does: the local
+      # socket or named pipe, plus iroh where the build carries it. So
+      # `./build/disco` reaches it with no --server and no port to look up, and
+      # the dev loop exercises the transport users actually get.
       #
-      # Overridden from the environment:
-      #     DISCOBOX_SERVER_LISTEN=http://127.0.0.1:9090 go tool task dev
+      # No TCP endpoint. It is opt-in everywhere else because it is a
+      # machine-wide surface — and on Windows a firewall prompt (server/DESIGN.md
+      # "Listen Endpoints") — and defaulting it here made the one configuration
+      # nobody ships the only one anybody develops against. Ask for it when a
+      # tool needs a URL; the local socket comes along on its own, iroh does not:
+      #     DISCOBOX_SERVER_LISTEN=http://127.0.0.1:8080 go tool task dev
       #
-      # Not from .env, though: the server loads that with godotenv, which does
-      # not replace a variable already set, and these are set here.
-      DISCOBOX_SERVER_LISTEN: '{{.DISCOBOX_SERVER_LISTEN | default "http://127.0.0.1:8080,iroh://"}}'
+      # Overridden from the environment, not from .env: the server loads that
+      # with godotenv, which does not replace a variable already set, and these
+      # are set here.
+      DISCOBOX_SERVER_LISTEN: '{{.DISCOBOX_SERVER_LISTEN | default .DEV_LISTEN}}'
       # A development build carries the iroh transport (ADR 0052 §4), so the
       # tagged code path is compiled on every reload. A build tag no pipeline
       # compiles is dead code that still occupies a file. It applies to the CLI
       # too, which .wnb.yaml builds alongside the server, so a disco built here
       # can dial an iroh:// endpoint.
       #
-      # DISCOBOX_SERVER_LISTEN above names iroh://, so the server binds an iroh
-      # endpoint and logs the ID to dial it with. Reaching it needs that ID in
-      # <data dir>/authorized_ids — `disco box iroh-id` prints the one to add.
+      # DEV_LISTEN names iroh:// wherever this tag applies, so the server binds
+      # an iroh endpoint and logs the ID to dial it with. Reaching it needs that
+      # ID in <data dir>/authorized_ids — `disco box iroh-id` prints the one to
+      # add.
       #
-      # Opt out with DISCOBOX_DEV_IROH=0. Clearing GOFLAGS does not: `default`
-      # treats an empty value as unset and substitutes the tag straight back.
+      # Opt out with DISCOBOX_DEV_IROH=0, which drops the listener with the tag.
+      # Clearing GOFLAGS does not: `default` treats an empty value as unset and
+      # substitutes the tag straight back.
       GOFLAGS: '{{.IROH_TAG}}'
     cmds:
       - touch .env

@@ -5,7 +5,10 @@ umask 077
 repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/../../.." && pwd)"
 cd "$repo_root"
 
-server="${DISCOBOX_TERMINAL_LATENCY_SERVER:-http://127.0.0.1:${PORT:-18080}}"
+# Empty means "wherever this machine's disco talks to": `task dev` binds the
+# local socket and nothing else, and the path of that socket is the CLI's to
+# resolve, not this script's to recompute.
+server="${DISCOBOX_TERMINAL_LATENCY_SERVER:-}"
 project="${DISCOBOX_TERMINAL_LATENCY_PROJECT:-default}"
 samples="${DISCOBOX_TERMINAL_LATENCY_SAMPLES:-100}"
 interval="${DISCOBOX_TERMINAL_LATENCY_INTERVAL:-20ms}"
@@ -27,7 +30,7 @@ harness_name="latency-$resource_id"
 sandbox_name=""
 container_id=""
 
-for command in curl docker go jq timeout tmux; do
+for command in docker go jq timeout tmux; do
 	if ! command -v "$command" >/dev/null 2>&1; then
 		echo "terminal latency: $command is required" >&2
 		exit 1
@@ -35,10 +38,6 @@ for command in curl docker go jq timeout tmux; do
 done
 if ! docker info >/dev/null 2>&1; then
 	echo "terminal latency: the Docker daemon is unavailable" >&2
-	exit 1
-fi
-if ! curl -fsS "$server/openapi.yaml" >/dev/null; then
-	echo "terminal latency: no development server at $server; start one with 'go tool task dev'" >&2
 	exit 1
 fi
 if ! [[ "$samples" =~ ^[1-9][0-9]*$ ]]; then
@@ -88,9 +87,22 @@ echo "Building the current CLI and deterministic latency harness image..."
 go tool task build:cli
 go tool task build:terminal-latency-image
 
-cli=("$repo_root/build/disco" --server "$server" --project "$project" --no-start --output json)
+cli=("$repo_root/build/disco")
+if [ -n "$server" ]; then
+	cli+=(--server "$server")
+fi
+cli+=(--project "$project" --no-start --output json)
 if [ -n "${DISCOBOX_TOKEN:-}" ]; then
 	cli+=(--token "$DISCOBOX_TOKEN")
+fi
+
+# Reachability is checked through the CLI rather than curl: the server may be
+# listening on a unix socket, an iroh endpoint, or a URL, and disco is what
+# resolves all three. --no-start above keeps a missing server a failure instead
+# of launching one.
+if ! "${cli[@]}" box harness ls >/dev/null 2>&1; then
+	echo "terminal latency: no development server at ${server:-the default endpoint}; start one with 'go tool task dev'" >&2
+	exit 1
 fi
 
 harness_id=""
