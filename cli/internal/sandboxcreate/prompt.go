@@ -16,8 +16,12 @@ import (
 // a prompt. Frontends should populate this type and let this package normalize
 // and resolve the request consistently.
 type PromptOptions struct {
-	Source  string
-	Ref     string
+	Source string
+	Ref    string
+	// Include names extra sources brought into the sandbox alongside Source,
+	// each a directory, or a repository URL, in the same form Source takes. They
+	// become the sandbox's source code references.
+	Include []string
 	Prompt  []string
 	Env     []string
 	Secret  []string
@@ -61,10 +65,10 @@ func normalizePromptOptions(opts PromptOptions) (PromptOptions, error) {
 // control-plane create request, including Git snapshots, local user identity,
 // and the local Git authorship the sandbox should commit under.
 //
-// It also returns the local source the request was resolved from, which the
-// caller closes once the source has been delivered — see LocalSource. The
-// source is nil with an error: nothing survives a build that failed.
-func BuildPromptSandboxBody(ctx context.Context, opts PromptOptions) (*apimodel.CreateSandboxBody, *LocalSource, error) {
+// It also returns the local sources the request was resolved from, which the
+// caller closes once they have been delivered — see LocalSources. They are nil
+// with an error: nothing survives a build that failed.
+func BuildPromptSandboxBody(ctx context.Context, opts PromptOptions) (*apimodel.CreateSandboxBody, *LocalSources, error) {
 	opts, err := normalizePromptOptions(opts)
 	if err != nil {
 		return nil, nil, err
@@ -98,20 +102,26 @@ func BuildPromptSandboxBody(ctx context.Context, opts PromptOptions) (*apimodel.
 	if opts.Ref != "" {
 		sourceArg += "@" + opts.Ref
 	}
-	source, err := resolveRunSource(ctx, sourceArg, runSourceOptions{
+	sourceOptions := runSourceOptions{
 		IncludeDirty: opts.IncludeDirty,
 		Confirm:      opts.ConfirmIncludeDirty,
-	})
+	}
+	source, err := resolveRunSource(ctx, sourceArg, sourceOptions)
 	if err != nil {
 		return nil, nil, err
 	}
-	local := source.localSource()
+	local := &LocalSources{}
+	local.add("", source)
 	apiSource, err := source.apiGitSource()
 	if err != nil {
 		local.Close()
 		return nil, nil, err
 	}
 	body.Config.SetSource(apiclientgen.NewOptGitSource(*apiSource))
+	if err := setSourceCodeReferences(ctx, body, local, opts.Include, source, sourceOptions); err != nil {
+		local.Close()
+		return nil, nil, err
+	}
 	resolvedOrigin, err := ResolveOrigin(ctx, sourceArg)
 	if err != nil {
 		local.Close()
@@ -121,6 +131,50 @@ func BuildPromptSandboxBody(ctx context.Context, opts PromptOptions) (*apimodel.
 	userIdentity.setCreateSandboxUser(body)
 	setCreateSandboxGit(body, resolveGitIdentity(ctx, sourceArg))
 	return body, local, nil
+}
+
+// setSourceCodeReferences resolves the `--include` sources and files them on
+// the create request, recording each one's local repository so delivery can
+// push out of it.
+//
+// Every reference is resolved the same way the primary source was, uncommitted
+// work and all: each is a separate working tree, so each gets its own answer to
+// the dirty-workspace question rather than inheriting the primary source's.
+//
+// The reference key is the sandbox directory the source lands in, so two
+// sources that would land on top of each other are refused rather than silently
+// collapsed into one — including a reference that resolves to the primary
+// source's own directory.
+func setSourceCodeReferences(ctx context.Context, body *apimodel.CreateSandboxBody, local *LocalSources, include []string, primary resolvedRunSource, opts runSourceOptions) error {
+	if len(include) == 0 {
+		return nil
+	}
+	references := make(apiclientgen.SandboxCreateConfigSourceCodeReferences, len(include))
+	// The server names the primary source "primary", so no reference may take
+	// that name either.
+	used := map[string]struct{}{"primary": {}}
+	for _, arg := range include {
+		if strings.TrimSpace(arg) == "" {
+			return errors.New("--include needs a source directory or Git repository")
+		}
+		reference, err := resolveRunSourceReference(ctx, arg, opts, used)
+		if err != nil {
+			return err
+		}
+		_, taken := references[reference.Key]
+		if taken || reference.Key == primary.Destination.Directory {
+			reference.Resolved.close()
+			return fmt.Errorf("--include %s resolves to %s, which is already included", arg, reference.Key)
+		}
+		local.add(reference.Key, reference.Resolved)
+		apiSource, err := reference.Resolved.apiGitSource()
+		if err != nil {
+			return err
+		}
+		references[reference.Key] = *apiSource
+	}
+	body.Config.SetSourceCodeReferences(apiclientgen.NewOptSandboxCreateConfigSourceCodeReferences(references))
+	return nil
 }
 
 type promptSandboxCreator interface {
@@ -135,13 +189,13 @@ const nameConflictAttempts = 5
 
 // CreatePromptSandbox builds, submits, and decodes a prompt sandbox request,
 // picking another name if the generated one is already taken, and returns the
-// local source it was resolved from for the caller to deliver and then close.
-// The source is nil with an error.
+// local sources it was resolved from for the caller to deliver and then close.
+// They are nil with an error.
 //
 // Only this path retries: the name here is generated (BuildPromptSandboxBody),
 // so replacing it costs the caller nothing. A name the user typed is theirs,
 // and `box sandbox create --name` reports the conflict instead.
-func CreatePromptSandbox(ctx context.Context, client promptSandboxCreator, projectID string, opts PromptOptions) (*apimodel.Sandbox, *LocalSource, error) {
+func CreatePromptSandbox(ctx context.Context, client promptSandboxCreator, projectID string, opts PromptOptions) (*apimodel.Sandbox, *LocalSources, error) {
 	body, local, err := BuildPromptSandboxBody(ctx, opts)
 	if err != nil {
 		return nil, nil, err

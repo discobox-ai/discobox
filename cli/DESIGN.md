@@ -548,18 +548,25 @@ the same file, which is how the server recognizes a request as coming from its
 own filesystem and binds the source instead of asking for a push.
 
 After create, `sandboxcreate.DeliverSource` is called unconditionally and is a
-no-op unless the server marked the source `delivery: push`. When it did, the
-client waits for the sandbox to reach `awaiting_source`, pushes the source's
-commit to its branch (plus the workspace snapshot ref, when the workspace is
-dirty — without it the sandbox comes up clean and the edits are lost), and then
-reports the push complete. It pushes the commit the server recorded at create,
-by explicit refspec, rather than whatever the local branch now points at.
+no-op unless the server marked a source `delivery: push`. When it did, the
+client waits for the sandbox to reach `awaiting_source`, pushes each such
+source's commit to its branch (plus the workspace snapshot ref, when that
+workspace is dirty — without it the sandbox comes up clean and the edits are
+lost), and then reports the pushes complete. It pushes the commits the server
+recorded at create, by explicit refspec, rather than whatever the local branches
+now point at.
 
-The push runs out of the `sandboxcreate.LocalSource` that create returned, not
-out of a repository re-resolved from the source argument. For a directory with
+Delivery is decided per source, so the primary source and each `--include`
+reference (below) are pushed or bound independently. Every push-delivered source
+is pushed before any of them is reported: the sandbox resumes on that one
+report, keyed by source slug, and resuming it earlier would start the harness
+against a workspace still missing a source.
+
+The pushes run out of the `sandboxcreate.LocalSources` that create returned, not
+out of repositories re-resolved from the source arguments. For a directory with
 no repository (below) that repository is a throwaway one holding the only copy
 of what the sandbox was configured against, so it cannot be found again. Callers
-`Close` it as soon as the source has been delivered.
+`Close` them as soon as the sources have been delivered.
 
 The push goes through the control plane's Git proxy, never directly to the
 sandbox, which sits on a network the client cannot reach.
@@ -585,6 +592,31 @@ happens:
   `false` before it calls the shared create at all.
 - `true` is rejected for a remote URL or an explicit `@REF`, because a snapshot
   only ever sits on top of HEAD of a local working tree.
+
+## Extra Sources
+
+`disco run -i DIR` brings more sources into the same sandbox, repeated for more
+than one. They become the create request's `sourceCodeReferences`, and the
+mechanism they use is the primary source's, not a second one:
+
+- Each is resolved by the same `resolveRunSource` — a local repository, a
+  directory in no repository, or a remote URL, with the same `@REF` handling —
+  so a reference carries a checkout commit and, when its working tree is dirty,
+  its own snapshot. The dirty question is per source, because a working tree is:
+  each reference is asked about its own uncommitted work rather than inheriting
+  the primary source's answer.
+- A local source keeps its own absolute path inside the sandbox, exactly as the
+  primary source does, so `-i ../foo` lands at what `readlink -f ../foo` prints
+  and a path means the same thing on both sides of the boundary. That path is
+  also the reference's key in the request. A remote source has no host path to
+  keep and goes under `/workspace/<slug>`.
+- The slug is the directory's own name — `-i ../foo` is the source `foo` — and
+  is what addresses its Git repository in a push. Two references that would take
+  the same name are numbered here rather than left to the server, so the slug
+  the client pushes to is the slug the server records. The primary source sends
+  no slug at all: the server names it `primary`.
+- Only the primary source names a working directory. A reference says where it
+  goes and nothing about where the harness starts.
 
 ## A Directory That Is Not a Repository
 

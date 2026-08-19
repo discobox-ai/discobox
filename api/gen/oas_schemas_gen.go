@@ -365,9 +365,11 @@ func (s *CompleteSandboxApplyBody) SetSlug(val string) {
 type CompleteSandboxSourcePushBody struct {
 	// A URL to the JSON Schema for this object.
 	Schema OptURI `json:"$schema"`
-	// Full 40-character SHA-1 of the commit the client pushed. Confirms the push delivered the source's
-	// checkout commit, which was fixed at create; a value that does not match it is rejected.
-	Commit string `json:"commit"`
+	// Commit the client pushed for each push-delivered source, keyed by source slug. Every
+	// push-delivered source of the sandbox must appear, and each commit confirms that source's checkout
+	// commit, which was fixed at create; a missing source or a commit that does not match is rejected.
+	// The sandbox resumes once all of them are delivered.
+	Sources CompleteSandboxSourcePushBodySources `json:"sources"`
 }
 
 // GetSchema returns the value of Schema.
@@ -375,9 +377,9 @@ func (s *CompleteSandboxSourcePushBody) GetSchema() OptURI {
 	return s.Schema
 }
 
-// GetCommit returns the value of Commit.
-func (s *CompleteSandboxSourcePushBody) GetCommit() string {
-	return s.Commit
+// GetSources returns the value of Sources.
+func (s *CompleteSandboxSourcePushBody) GetSources() CompleteSandboxSourcePushBodySources {
+	return s.Sources
 }
 
 // SetSchema sets the value of Schema.
@@ -385,9 +387,24 @@ func (s *CompleteSandboxSourcePushBody) SetSchema(val OptURI) {
 	s.Schema = val
 }
 
-// SetCommit sets the value of Commit.
-func (s *CompleteSandboxSourcePushBody) SetCommit(val string) {
-	s.Commit = val
+// SetSources sets the value of Sources.
+func (s *CompleteSandboxSourcePushBody) SetSources(val CompleteSandboxSourcePushBodySources) {
+	s.Sources = val
+}
+
+// Commit the client pushed for each push-delivered source, keyed by source slug. Every
+// push-delivered source of the sandbox must appear, and each commit confirms that source's checkout
+// commit, which was fixed at create; a missing source or a commit that does not match is rejected.
+// The sandbox resumes once all of them are delivered.
+type CompleteSandboxSourcePushBodySources map[string]string
+
+func (s *CompleteSandboxSourcePushBodySources) init() CompleteSandboxSourcePushBodySources {
+	m := *s
+	if m == nil {
+		m = map[string]string{}
+		*s = m
+	}
+	return m
 }
 
 // Ref: #/components/schemas/CreateHarnessConfigBody

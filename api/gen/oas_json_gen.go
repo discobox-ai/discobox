@@ -693,14 +693,14 @@ func (s *CompleteSandboxSourcePushBody) encodeFields(e *jx.Encoder) {
 		}
 	}
 	{
-		e.FieldStart("commit")
-		e.Str(s.Commit)
+		e.FieldStart("sources")
+		s.Sources.Encode(e)
 	}
 }
 
 var jsonFieldsNameOfCompleteSandboxSourcePushBody = [2]string{
 	0: "$schema",
-	1: "commit",
+	1: "sources",
 }
 
 // Decode decodes CompleteSandboxSourcePushBody from json.
@@ -722,17 +722,15 @@ func (s *CompleteSandboxSourcePushBody) Decode(d *jx.Decoder) error {
 			}(); err != nil {
 				return errors.Wrap(err, "decode field \"$schema\"")
 			}
-		case "commit":
+		case "sources":
 			requiredBitSet[0] |= 1 << 1
 			if err := func() error {
-				v, err := d.Str()
-				s.Commit = string(v)
-				if err != nil {
+				if err := s.Sources.Decode(d); err != nil {
 					return err
 				}
 				return nil
 			}(); err != nil {
-				return errors.Wrap(err, "decode field \"commit\"")
+				return errors.Wrap(err, "decode field \"sources\"")
 			}
 		default:
 			return errors.Errorf("unexpected field %q", k)
@@ -786,6 +784,62 @@ func (s *CompleteSandboxSourcePushBody) MarshalJSON() ([]byte, error) {
 
 // UnmarshalJSON implements stdjson.Unmarshaler.
 func (s *CompleteSandboxSourcePushBody) UnmarshalJSON(data []byte) error {
+	d := jx.DecodeBytes(data)
+	return s.Decode(d)
+}
+
+// Encode implements json.Marshaler.
+func (s CompleteSandboxSourcePushBodySources) Encode(e *jx.Encoder) {
+	e.ObjStart()
+	s.encodeFields(e)
+	e.ObjEnd()
+}
+
+// encodeFields implements json.Marshaler.
+func (s CompleteSandboxSourcePushBodySources) encodeFields(e *jx.Encoder) {
+	for k, elem := range s {
+		e.FieldStart(k)
+
+		e.Str(elem)
+	}
+}
+
+// Decode decodes CompleteSandboxSourcePushBodySources from json.
+func (s *CompleteSandboxSourcePushBodySources) Decode(d *jx.Decoder) error {
+	if s == nil {
+		return errors.New("invalid: unable to decode CompleteSandboxSourcePushBodySources to nil")
+	}
+	m := s.init()
+	if err := d.ObjBytes(func(d *jx.Decoder, k []byte) error {
+		var elem string
+		if err := func() error {
+			v, err := d.Str()
+			elem = string(v)
+			if err != nil {
+				return err
+			}
+			return nil
+		}(); err != nil {
+			return errors.Wrapf(err, "decode field %q", k)
+		}
+		m[string(k)] = elem
+		return nil
+	}); err != nil {
+		return errors.Wrap(err, "decode CompleteSandboxSourcePushBodySources")
+	}
+
+	return nil
+}
+
+// MarshalJSON implements stdjson.Marshaler.
+func (s CompleteSandboxSourcePushBodySources) MarshalJSON() ([]byte, error) {
+	e := jx.Encoder{}
+	s.Encode(&e)
+	return e.Bytes(), nil
+}
+
+// UnmarshalJSON implements stdjson.Unmarshaler.
+func (s *CompleteSandboxSourcePushBodySources) UnmarshalJSON(data []byte) error {
 	d := jx.DecodeBytes(data)
 	return s.Decode(d)
 }

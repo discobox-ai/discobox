@@ -39,9 +39,15 @@ time.
 
 A source directory that is not in a Git repository works too: everything in it
 is carried into the sandbox as uncommitted changes on an empty first commit,
-and nothing is written to the directory itself.`,
+and nothing is written to the directory itself.
+
+-i brings extra sources into the same sandbox, repeat it for more than one. Each
+is resolved exactly like the source directory is, uncommitted changes included,
+and a local one keeps its own absolute path inside the sandbox, so ../foo shows
+up at the path readlink -f ../foo prints.`,
 		Example: `  disco run fix the failing tests
   disco run --include-dirty=false fix the failing tests
+  disco run -i ../foo -i ../bar make them share one client
   disco run -e GITHUB_TOKEN -e MODE=test fix the failing tests
   disco run -s OPENAI_API_KEY=sk-... -s GITHUB_TOKEN=<sec_123> fix the failing tests
   disco run -d fix the failing tests
@@ -90,6 +96,7 @@ and nothing is written to the directory itself.`,
 	}
 	cmd.Flags().StringArrayVarP(&opts.prompt.Env, "env", "e", nil, "Environment variable as KEY=VALUE or KEY from the local environment; repeat for multiple variables. A KEY whose name contains KEY, TOKEN, PASS, or SECRET is treated as a secret; use KEY!=VALUE to force it to be a plain environment variable")
 	cmd.Flags().StringArrayVarP(&opts.prompt.Secret, "secret", "s", nil, "Secret injected as a sentinel placeholder resolved by the proxy at runtime, as KEY=VALUE (inline value) or KEY=<SECRET_ID> (reference an existing secret); repeat for multiple secrets")
+	cmd.Flags().StringArrayVarP(&opts.prompt.Include, "include", "i", nil, "Additional source directory or Git repository to bring into the sandbox, optionally with @REF; repeat for more than one. A local directory keeps its own absolute path inside the sandbox and is named after itself, so -i ../foo is the source foo")
 	cmd.Flags().StringVarP(&opts.prompt.Harness, "harness", "H", "", "Harness config to run, by slug (e.g. codex), name, or ID; defaults to the project default")
 	cmd.Flags().BoolVarP(&opts.detach, "detach", "d", false, "Create the sandbox and print it without attaching to its terminal")
 	cmd.Flags().Var(&opts.prompt.IncludeDirty, "include-dirty", "Carry uncommitted changes in the local source into the sandbox: true, false, or auto (ask when the workspace is dirty and this is a terminal)")

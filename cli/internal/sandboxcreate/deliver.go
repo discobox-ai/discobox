@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"net/url"
+	"sort"
 	"strings"
 	"time"
 
@@ -29,60 +30,96 @@ const (
 	awaitSourceTimeout = 10 * time.Minute
 )
 
-// SourceNeedsPush reports whether the server expects this client to deliver the
-// sandbox's source by pushing it.
+// pushDeliveredSource is one source of a sandbox the server expects this client
+// to push, and the key it was created under: empty for the primary source, and
+// the source code reference key for a reference.
+type pushDeliveredSource struct {
+	key    string
+	source apimodel.GitSource
+}
+
+// pushDeliveredSources are the sandbox's sources the server expects this client
+// to deliver by pushing them, primary first.
 //
 // The server decides this, not the client: it knows whether the sandbox's
-// provider can reach the caller's filesystem. The client only reads the answer.
-func SourceNeedsPush(sandbox *apimodel.Sandbox) bool {
-	source, ok := sandboxPrimarySource(sandbox)
-	if !ok {
-		return false
+// provider can reach the caller's filesystem, and it decides it per source — a
+// reference can need a push while the primary source is bound, and the other
+// way round. The client only reads the answers.
+func pushDeliveredSources(sandbox *apimodel.Sandbox) []pushDeliveredSource {
+	if sandbox == nil {
+		return nil
 	}
+	var out []pushDeliveredSource
+	if source, ok := sandbox.Config.Source.Get(); ok && sourceAwaitsPush(source) {
+		out = append(out, pushDeliveredSource{source: source})
+	}
+	references, ok := sandbox.Config.SourceCodeReferences.Get()
+	if !ok {
+		return out
+	}
+	keys := make([]string, 0, len(references))
+	for key := range references {
+		keys = append(keys, key)
+	}
+	sort.Strings(keys)
+	for _, key := range keys {
+		if source := references[key]; sourceAwaitsPush(source) {
+			out = append(out, pushDeliveredSource{key: key, source: source})
+		}
+	}
+	return out
+}
+
+func sourceAwaitsPush(source apimodel.GitSource) bool {
 	delivery, ok := source.Delivery.Get()
 	return ok && delivery == apiclientgen.GitSourceDeliveryPush
 }
 
-func sandboxPrimarySource(sandbox *apimodel.Sandbox) (apimodel.GitSource, bool) {
-	if sandbox == nil {
-		return apimodel.GitSource{}, false
-	}
-	return sandbox.Config.Source.Get()
-}
-
-// DeliverSource pushes a sandbox's source into its Git repository and reports
-// the push complete, returning once the sandbox is free to start. It pushes out
-// of the local source the create resolved, which is the only place a throwaway
-// repository's commits exist.
+// DeliverSource pushes a sandbox's push-delivered sources into their Git
+// repositories and reports the pushes complete, returning once the sandbox is
+// free to start. Each push runs out of the local source the create resolved,
+// which is the only place a throwaway repository's commits exist.
+//
+// Every push-delivered source is pushed before any of them is reported: the
+// sandbox resumes on that report, and resuming it while a source is still
+// missing would start the harness against an incomplete workspace.
 //
 // It is a no-op unless the server asked for a push, so callers can invoke it
 // unconditionally after create.
-func DeliverSource(ctx context.Context, client sourceDeliveryClient, projectID string, sandbox *apimodel.Sandbox, local *LocalSource, serverURL, token string) error {
-	if !SourceNeedsPush(sandbox) {
+func DeliverSource(ctx context.Context, client sourceDeliveryClient, projectID string, sandbox *apimodel.Sandbox, local *LocalSources, serverURL, token string) error {
+	pending := pushDeliveredSources(sandbox)
+	if len(pending) == 0 {
 		return nil
 	}
-	source, _ := sandboxPrimarySource(sandbox)
-	commit, branch, snapshotRef, err := pushRefs(source)
-	if err != nil {
-		return err
-	}
-	repoRoot, err := local.pushRoot()
-	if err != nil {
-		return err
-	}
-	repoURL, err := SandboxGitRepositoryURL(serverURL, projectID, sandbox.ID, source)
-	if err != nil {
-		return err
-	}
-	// The repository only exists once the sandbox is provisioned, so there is
+	// The repositories only exist once the sandbox is provisioned, so there is
 	// nothing to push into until it parks.
 	if err := awaitSourceRequested(ctx, client, projectID, sandbox.ID); err != nil {
 		return err
 	}
-	if err := pushSource(ctx, repoRoot, repoURL, token, commit, branch, snapshotRef); err != nil {
-		return err
+	pushed := make(apiclientgen.CompleteSandboxSourcePushBodySources, len(pending))
+	for _, entry := range pending {
+		commit, branch, snapshotRef, err := pushRefs(entry.source)
+		if err != nil {
+			return err
+		}
+		slug := strings.TrimSpace(entry.source.Slug.Or(""))
+		if slug == "" {
+			return fmt.Errorf("sandbox source has no slug to address its repository")
+		}
+		repoRoot, err := local.pushRoot(entry.key)
+		if err != nil {
+			return err
+		}
+		repoURL, err := SandboxGitRepositoryURL(serverURL, projectID, sandbox.ID, entry.source)
+		if err != nil {
+			return err
+		}
+		if err := pushSource(ctx, repoRoot, repoURL, token, commit, branch, snapshotRef); err != nil {
+			return err
+		}
+		pushed[slug] = commit
 	}
-	return completeSourcePush(ctx, client, projectID, sandbox.ID, commit)
+	return completeSourcePush(ctx, client, projectID, sandbox.ID, pushed)
 }
 
 // pushRefs reads what to push from the source the server recorded. The commit
@@ -111,15 +148,22 @@ func pushRefs(source apimodel.GitSource) (commit, branch, snapshotRef string, er
 	return commit, branch, snapshotRef, nil
 }
 
-// pushRoot is the repository a push runs out of. Only a local source is ever
-// pushed — a remote one is cloned by the sandbox itself and resolves no
-// repository here — so a source without one is a sandbox that should never have
-// been asked for a push.
-func (s *LocalSource) pushRoot() (string, error) {
-	if s == nil || strings.TrimSpace(s.repoRoot) == "" {
+// pushRoot is the repository a push of the source filed under key runs out of.
+// Only a local source is ever pushed — a remote one is cloned by the sandbox
+// itself and resolves no repository here — so a source without one is a sandbox
+// that should never have been asked for a push.
+func (s *LocalSources) pushRoot(key string) (string, error) {
+	if s != nil {
+		for _, source := range s.sources {
+			if source.key == key && strings.TrimSpace(source.repoRoot) != "" {
+				return source.repoRoot, nil
+			}
+		}
+	}
+	if key == "" {
 		return "", fmt.Errorf("the sandbox expects a source push, but its source was not resolved from a local repository")
 	}
-	return s.repoRoot, nil
+	return "", fmt.Errorf("the sandbox expects a push for source %s, but it was not resolved from a local repository", key)
 }
 
 // SandboxGitRepositoryURL is the control plane's proxy to the sandbox's
@@ -217,9 +261,9 @@ func GitAuthArgs(token string, args []string) []string {
 	return append([]string{"-c", "http.extraHeader=Authorization: Bearer " + token}, args...)
 }
 
-func completeSourcePush(ctx context.Context, client sourceDeliveryClient, projectID, sandboxID, commit string) error {
+func completeSourcePush(ctx context.Context, client sourceDeliveryClient, projectID, sandboxID string, pushed apiclientgen.CompleteSandboxSourcePushBodySources) error {
 	res, err := client.CompleteSandboxSourcePush(ctx,
-		&apimodel.CompleteSandboxSourcePushBody{Commit: commit},
+		&apimodel.CompleteSandboxSourcePushBody{Sources: pushed},
 		apiclientgen.CompleteSandboxSourcePushParams{ProjectId: projectID, SandboxId: sandboxID})
 	if err != nil {
 		return err

@@ -234,6 +234,13 @@ Neither implies the other — a Docker provider on a remote server binds fine,
 just not to the caller's files. Unknowns resolve to `push`: a needless push is
 slow, a bind of an unreachable path fails.
 
+The decision is made per source, for the primary `Source` and every
+`SourceCodeReferences` entry alike: a reference is a local directory the sandbox
+either binds or cannot see, exactly as the primary source is, and one the
+sandbox cannot reach is exactly as undeliverable. A sandbox can therefore bind
+its primary source and still wait for a push of a reference, or the other way
+round.
+
 `GitSource.NoLocalRepository` forces `push` ahead of both checks. It says the
 directory the source came from is in no Git repository, so there is nothing at
 that path to clone however reachable it is — the client resolved the source from
@@ -252,17 +259,29 @@ sequenceDiagram
     S->>W: create (no url/localDirectory)
     W->>W: git init -b <branch>
     S->>S: state = awaiting_source
-    C->>S: git push <commit>:refs/heads/<branch> (+ snapshot ref)
-    S->>W: proxied git-receive-pack
-    C->>S: complete-source-push (confirms commit)
+    loop every push-delivered source
+        C->>S: git push <commit>:refs/heads/<branch> (+ snapshot ref)
+        S->>W: proxied git-receive-pack
+    end
+    C->>S: complete-source-push (confirms every source's commit)
     S->>W: create again → materialize → checkout + restore
     W->>W: start harness
 ```
 
 The push transport is the pre-existing sandbox Git proxy
 (`internal/server/sandbox_git_proxy.go` → `pool-agent/githttp`); delivery adds
-no transport. The commit is fixed at create in `Checkout.Commit`;
-`complete-source-push` only confirms it, and a mismatch is refused.
+no transport. Each source has its own repository there, addressed by its slug.
+The commit is fixed at create in `Checkout.Commit`; `complete-source-push` only
+confirms it, and a mismatch is refused.
+
+Completion is one report for the whole sandbox, not one per source: the client
+pushes every push-delivered source and then names them all, keyed by slug, in a
+single `complete-source-push`. Resuming per source would start the harness
+against a workspace still missing the sources not yet pushed, so the report is
+refused unless it covers every one of them — a missing source, an unknown slug,
+or a commit that is not the one the source names all leave the sandbox parked.
+`SourceDeliveredAt` therefore stays one timestamp: it records that the client
+finished delivering, which is the only moment the sandbox can act on.
 
 Waiting is bounded: `StateChangedAt` anchors the deadline and the reconcile
 returns it as `reconcile.Result.RequeueAt`, which wakes the sandbox to fail it.

@@ -665,8 +665,10 @@ func park(t *testing.T, st *store.Store, projectID, sandboxID string) {
 	if err != nil {
 		t.Fatalf("get sandbox: %v", err)
 	}
+	primarySlug := "primary"
 	sb.Source = &model.GitSource{
 		Kind:     "git",
+		Slug:     &primarySlug,
 		Delivery: model.GitSourceDeliveryPush,
 		// The commit is resolved by the client at create, before any push.
 		Checkout: &model.GitSourceCheckout{Commit: &parkedCommit},
@@ -691,7 +693,7 @@ func TestCompleteSandboxSourcePushRecordsCommitAndResumes(t *testing.T) {
 	park(t, st, projectID, created.ID)
 
 	resumed, err := svc.CompleteSandboxSourcePush(ctx, projectID, created.ID,
-		services.CompleteSandboxSourcePushBody{Commit: strings.ToUpper(parkedCommit)})
+		services.CompleteSandboxSourcePushBody{Sources: map[string]string{"primary": strings.ToUpper(parkedCommit)}})
 	if err != nil {
 		t.Fatalf("complete source push: %v", err)
 	}
@@ -733,7 +735,7 @@ func TestCompleteSandboxSourcePushRejectsSandboxNotAwaitingSource(t *testing.T) 
 
 	// A clone-delivered sandbox has nothing to push.
 	_, err = svc.CompleteSandboxSourcePush(ctx, projectID, created.ID,
-		services.CompleteSandboxSourcePushBody{Commit: parkedCommit})
+		services.CompleteSandboxSourcePushBody{Sources: map[string]string{"primary": parkedCommit}})
 	if err == nil {
 		t.Fatal("completing a push for a clone-delivered sandbox: got nil error, want conflict")
 	}
@@ -751,7 +753,7 @@ func TestCompleteSandboxSourcePushRejectsSandboxNotAwaitingSource(t *testing.T) 
 		t.Fatal(err)
 	}
 	_, err = svc.CompleteSandboxSourcePush(ctx, projectID, created.ID,
-		services.CompleteSandboxSourcePushBody{Commit: parkedCommit})
+		services.CompleteSandboxSourcePushBody{Sources: map[string]string{"primary": parkedCommit}})
 	if err == nil {
 		t.Fatal("completing a push for a running sandbox: got nil error, want conflict")
 	}
@@ -786,7 +788,7 @@ func TestCompleteSandboxSourcePushRejectsMismatchedCommit(t *testing.T) {
 	park(t, st, projectID, created.ID)
 
 	_, err = svc.CompleteSandboxSourcePush(ctx, projectID, created.ID,
-		services.CompleteSandboxSourcePushBody{Commit: "fedcba9876543210fedcba9876543210fedcba98"})
+		services.CompleteSandboxSourcePushBody{Sources: map[string]string{"primary": "fedcba9876543210fedcba9876543210fedcba98"}})
 	if err == nil {
 		t.Fatal("completing a push with a different commit: got nil error, want conflict")
 	}

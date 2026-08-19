@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"net/http"
+	"sort"
 	"strings"
 	"time"
 
@@ -13,22 +14,30 @@ import (
 	"github.com/obot-platform/discobox/server/internal/sandbox"
 )
 
-// resolveSourceDelivery records how a sandbox's source reaches it, so every
-// later stage reads a stated intent instead of re-deriving it. The decision
-// needs the provider, the client's origin, and this server's identity together,
-// and only create has all three. The provider instance is the one backing the
-// sandbox's pool, resolved by the caller.
+// resolveSourceDelivery records how each of a sandbox's sources reaches it, so
+// every later stage reads a stated intent instead of re-deriving it. The
+// decision needs the provider, the client's origin, and this server's identity
+// together, and only create has all three. The provider instance is the one
+// backing the sandbox's pool, resolved by the caller.
+//
+// Every source is decided the same way: the primary one and each source code
+// reference alike are local directories the sandbox either binds or cannot see,
+// and a reference the sandbox cannot reach is exactly as undeliverable as a
+// primary one. The provider is resolved once for all of them.
 //
 // A client may not ask for push delivery: whether a bind is possible is the
 // server's to know, and a client claiming otherwise would either force a
 // needless push or assert a reachability it cannot verify.
-func (s *Service) resolveSourceDelivery(ctx context.Context, source *model.GitSource, origin *model.Origin, providerInstance *model.SandboxProviderInstance) error {
-	if source == nil {
+func (s *Service) resolveSourceDelivery(ctx context.Context, source *model.GitSource, refs model.SourceCodeReferences, origin *model.Origin, providerInstance *model.SandboxProviderInstance) error {
+	sources := sandboxGitSources(source, refs)
+	if len(sources) == 0 {
 		return nil
 	}
-	if source.Delivery == model.GitSourceDeliveryPush {
-		return apperrors.NewStatusError(http.StatusBadRequest,
-			"source delivery is decided by the server and cannot be requested")
+	for _, entry := range sources {
+		if entry.source.Delivery == model.GitSourceDeliveryPush {
+			return apperrors.NewStatusError(http.StatusBadRequest,
+				"source delivery is decided by the server and cannot be requested")
+		}
 	}
 	provider, err := s.sandboxProviders.ResolveInstance(ctx, providerInstance)
 	if err != nil {
@@ -37,15 +46,48 @@ func (s *Service) resolveSourceDelivery(ctx context.Context, source *model.GitSo
 		// because a sandbox whose provider never instantiates cannot run at all,
 		// so no bind is ever attempted. Nothing here can be concluded about a
 		// provider that does come up later.
-		source.Delivery = model.GitSourceDeliveryClone
+		for _, entry := range sources {
+			entry.source.Delivery = model.GitSourceDeliveryClone
+			entry.store()
+		}
 		return nil //nolint:nilerr // an uninstantiated provider is not a create failure
 	}
-	if sourceNeedsPush(provider.Definition(), s.hostID, origin, source) {
-		source.Delivery = model.GitSourceDeliveryPush
-		return nil
+	for _, entry := range sources {
+		if sourceNeedsPush(provider.Definition(), s.hostID, origin, entry.source) {
+			entry.source.Delivery = model.GitSourceDeliveryPush
+		} else {
+			entry.source.Delivery = model.GitSourceDeliveryClone
+		}
+		entry.store()
 	}
-	source.Delivery = model.GitSourceDeliveryClone
 	return nil
+}
+
+// gitSourceEntry is one of a sandbox's sources, addressable for mutation. A
+// source code reference lives in a map, whose values cannot be taken the
+// address of, so store writes the mutated copy back under its key; for the
+// primary source, which is already a pointer, it does nothing.
+type gitSourceEntry struct {
+	source *model.GitSource
+	store  func()
+}
+
+// sandboxGitSources is every source a sandbox materializes, primary first.
+func sandboxGitSources(source *model.GitSource, refs model.SourceCodeReferences) []gitSourceEntry {
+	var out []gitSourceEntry
+	if source != nil {
+		out = append(out, gitSourceEntry{source: source, store: func() {}})
+	}
+	keys := make([]string, 0, len(refs))
+	for key := range refs {
+		keys = append(keys, key)
+	}
+	sort.Strings(keys)
+	for _, key := range keys {
+		ref := refs[key]
+		out = append(out, gitSourceEntry{source: &ref, store: func() { refs[key] = ref }})
+	}
+	return out
 }
 
 // sourcePushTimeout bounds how long a sandbox waits for a client to push its
@@ -96,19 +138,39 @@ func armSourceAwaitTimeout(sb *model.Sandbox) reconcile.Result {
 }
 
 // awaitingSourcePush reports whether a sandbox is provisioned but cannot start
-// yet, because its source arrives by a client push that has not been reported
-// complete. Starting the harness now would run it against an empty workspace.
+// yet, because at least one of its sources arrives by a client push that has
+// not been reported complete. Starting the harness now would run it against a
+// workspace missing that source.
+//
+// Delivery is reported once for the whole sandbox, not per source: the client
+// pushes every push-delivered source and then reports them together
+// (CompleteSandboxSourcePush), so one timestamp answers for all of them.
 //
 // This asks only whether the push has been reported, not what was pushed: the
 // commit to check out was fixed at create and never changes.
 func awaitingSourcePush(sb *model.Sandbox) bool {
-	if sb == nil || sb.Source == nil {
+	if sb == nil {
 		return false
 	}
-	if sb.Source.Delivery != model.GitSourceDeliveryPush {
+	if len(pushDeliveredSources(sb)) == 0 {
 		return false
 	}
 	return sb.SourceDeliveredAt == nil
+}
+
+// pushDeliveredSources is every source of a sandbox the client must push,
+// primary first. A sandbox with none of them never parks.
+func pushDeliveredSources(sb *model.Sandbox) []gitSourceEntry {
+	if sb == nil {
+		return nil
+	}
+	var out []gitSourceEntry
+	for _, entry := range sandboxGitSources(sb.Source, sb.SourceCodeReferences) {
+		if entry.source.Delivery == model.GitSourceDeliveryPush {
+			out = append(out, entry)
+		}
+	}
+	return out
 }
 
 // sourceNeedsPush reports whether a sandbox's source must be delivered by the

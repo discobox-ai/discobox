@@ -190,7 +190,7 @@ func (s *Service) CreateSandbox(ctx context.Context, projectID string, input ser
 	if key := origin.Key(); key != "" {
 		originKey = &key
 	}
-	if err := s.resolveSourceDelivery(ctx, source, origin, provider); err != nil {
+	if err := s.resolveSourceDelivery(ctx, source, sourceCodeReferences, origin, provider); err != nil {
 		return nil, err
 	}
 	user := services.SandboxUserToModel(config.User)
@@ -744,28 +744,34 @@ type UpgradeTarget struct {
 }
 
 // CompleteSandboxSourcePush reports that a client finished pushing into a
-// push-delivered sandbox's repository, resuming the sandbox that has been
+// push-delivered sandbox's repositories, resuming the sandbox that has been
 // parked in awaiting_source since it was provisioned.
 //
-// The commit is a confirmation, not an instruction. What to check out was fixed
-// at create, in the source's Checkout.Commit: the client resolved it from its
-// own repository before the sandbox existed, and the push only makes those
-// objects reachable. Accepting a different commit here would let a resumed
-// sandbox run something other than what its source says it runs, so a mismatch
-// is refused rather than recorded.
+// The report covers every push-delivered source at once — the primary source
+// and any source code reference the sandbox cannot reach on its own. A sandbox
+// missing one of them would start against an incomplete workspace, so the
+// resume waits for all of them rather than resuming per source.
 //
-// The server does not verify the commit is present in the sandbox's repository:
-// that means a round trip to the worker, and the reconcile that follows fails
-// on a missing commit anyway, with a better message than this endpoint could
-// produce.
+// The commits are a confirmation, not an instruction. What to check out was
+// fixed at create, in each source's Checkout.Commit: the client resolved it
+// from its own repository before the sandbox existed, and the push only makes
+// those objects reachable. Accepting a different commit here would let a
+// resumed sandbox run something other than what its source says it runs, so a
+// mismatch is refused rather than recorded.
+//
+// The server does not verify the commits are present in the sandbox's
+// repositories: that means a round trip to the worker, and the reconcile that
+// follows fails on a missing commit anyway, with a better message than this
+// endpoint could produce.
 func (s *Service) CompleteSandboxSourcePush(ctx context.Context, projectID, sandboxID string, input services.CompleteSandboxSourcePushBody) (*model.Sandbox, error) {
 	existing, err := s.store.GetSandbox(ctx, projectID, sandboxID)
 	if err != nil {
 		return nil, mapAPIError(err, "sandbox not found")
 	}
-	if existing.Source == nil || existing.Source.Delivery != model.GitSourceDeliveryPush {
+	pending := pushDeliveredSources(existing)
+	if len(pending) == 0 {
 		return nil, apperrors.NewStatusError(http.StatusConflict,
-			"sandbox source is not push-delivered; nothing is waiting to be pushed")
+			"no sandbox source is push-delivered; nothing is waiting to be pushed")
 	}
 	// Reject anything but a sandbox that is actually waiting. A completion for
 	// an already-started sandbox would otherwise restart it out from under
@@ -774,17 +780,8 @@ func (s *Service) CompleteSandboxSourcePush(ctx context.Context, projectID, sand
 		return nil, apperrors.NewStatusError(http.StatusConflict,
 			fmt.Sprintf("sandbox is not awaiting its source (state %q)", existing.State))
 	}
-	expected := ""
-	if existing.Source.Checkout != nil && existing.Source.Checkout.Commit != nil {
-		expected = strings.ToLower(strings.TrimSpace(*existing.Source.Checkout.Commit))
-	}
-	if expected == "" {
-		return nil, apperrors.NewStatusError(http.StatusConflict,
-			"sandbox source does not name a commit to check out")
-	}
-	if reported := strings.ToLower(strings.TrimSpace(input.Commit)); reported != expected {
-		return nil, apperrors.NewStatusError(http.StatusConflict,
-			fmt.Sprintf("pushed commit %q does not match the source's commit %q", reported, expected))
+	if err := verifySourcePushCommits(pending, input.Sources); err != nil {
+		return nil, err
 	}
 	now := time.Now().UTC()
 	sandbox, err := s.recordSandboxIntent(ctx, projectID, sandboxID, model.DesiredStatePresent, func(sb *model.Sandbox) {
@@ -794,6 +791,53 @@ func (s *Service) CompleteSandboxSourcePush(ctx context.Context, projectID, sand
 		return nil, mapAPIError(err, "sandbox not found")
 	}
 	return sandbox, nil
+}
+
+// verifySourcePushCommits checks the client's report against what the sandbox
+// is waiting for: every push-delivered source named, each at the commit its
+// checkout fixed at create, and nothing else. A slug the sandbox does not push
+// is refused rather than ignored — it means the client pushed into a
+// repository this sandbox does not materialize from, so its own report is
+// wrong about what was delivered.
+func verifySourcePushCommits(pending []gitSourceEntry, reported map[string]string) error {
+	expected := make(map[string]string, len(pending))
+	for _, entry := range pending {
+		slug := ""
+		if entry.source.Slug != nil {
+			slug = strings.TrimSpace(*entry.source.Slug)
+		}
+		if slug == "" {
+			return apperrors.NewStatusError(http.StatusConflict,
+				"sandbox source has no slug to report a push for")
+		}
+		commit := ""
+		if entry.source.Checkout != nil && entry.source.Checkout.Commit != nil {
+			commit = strings.ToLower(strings.TrimSpace(*entry.source.Checkout.Commit))
+		}
+		if commit == "" {
+			return apperrors.NewStatusError(http.StatusConflict,
+				fmt.Sprintf("sandbox source %q does not name a commit to check out", slug))
+		}
+		expected[slug] = commit
+	}
+	for slug := range reported {
+		if _, ok := expected[strings.TrimSpace(slug)]; !ok {
+			return apperrors.NewStatusError(http.StatusConflict,
+				fmt.Sprintf("source %q is not awaiting a push", strings.TrimSpace(slug)))
+		}
+	}
+	for slug, commit := range expected {
+		value, ok := reported[slug]
+		if !ok {
+			return apperrors.NewStatusError(http.StatusConflict,
+				fmt.Sprintf("source %q was not reported as pushed", slug))
+		}
+		if reportedCommit := strings.ToLower(strings.TrimSpace(value)); reportedCommit != commit {
+			return apperrors.NewStatusError(http.StatusConflict,
+				fmt.Sprintf("pushed commit %q for source %q does not match the source's commit %q", reportedCommit, slug, commit))
+		}
+	}
+	return nil
 }
 
 // CompleteSandboxApply records a successful `disco apply` (ADR 0014): the

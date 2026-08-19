@@ -147,6 +147,28 @@ func TestAwaitingSourcePush(t *testing.T) {
 			want:    false,
 			why:     "there is nothing to deliver",
 		},
+		{
+			name: "a push-delivered reference waits even behind a bound primary source",
+			sandbox: &model.Sandbox{SandboxManifest: model.SandboxManifest{
+				Source: &model.GitSource{Kind: "git", Delivery: model.GitSourceDeliveryClone},
+				SourceCodeReferences: model.SourceCodeReferences{
+					"/src/foo": *pushSource(),
+				},
+			}},
+			want: true,
+			why:  "starting now would run the harness against a workspace missing that source",
+		},
+		{
+			name: "clone-delivered references never wait",
+			sandbox: &model.Sandbox{SandboxManifest: model.SandboxManifest{
+				Source: &model.GitSource{Kind: "git", Delivery: model.GitSourceDeliveryClone},
+				SourceCodeReferences: model.SourceCodeReferences{
+					"/src/foo": model.GitSource{Kind: "git", Delivery: model.GitSourceDeliveryClone},
+				},
+			}},
+			want: false,
+			why:  "the sandbox fetches every one of them itself",
+		},
 	}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
@@ -230,4 +252,51 @@ func TestParkForSourcePushAnchorsAndExpires(t *testing.T) {
 			t.Fatalf("phase = %q, want it still awaiting_source", sb.State)
 		}
 	})
+}
+
+// The client reports every push-delivered source at once, so a report that
+// covers only some of them must not resume the sandbox: it would start against
+// a workspace missing whatever was left out.
+func TestVerifySourcePushCommits(t *testing.T) {
+	const primaryCommit = "0123456789abcdef0123456789abcdef01234567"
+	const referenceCommit = "fedcba9876543210fedcba9876543210fedcba98"
+	slug := func(value string) *string { return &value }
+
+	pending := func() []gitSourceEntry {
+		return pushDeliveredSources(&model.Sandbox{SandboxManifest: model.SandboxManifest{
+			Source: &model.GitSource{
+				Kind: "git", Slug: slug("primary"), Delivery: model.GitSourceDeliveryPush,
+				Checkout: &model.GitSourceCheckout{Commit: slug(primaryCommit)},
+			},
+			SourceCodeReferences: model.SourceCodeReferences{
+				"/src/foo": {
+					Kind: "git", Slug: slug("foo"), Delivery: model.GitSourceDeliveryPush,
+					Checkout: &model.GitSourceCheckout{Commit: slug(referenceCommit)},
+				},
+			},
+		}})
+	}
+
+	if err := verifySourcePushCommits(pending(), map[string]string{
+		"primary": strings.ToUpper(primaryCommit),
+		"foo":     referenceCommit,
+	}); err != nil {
+		t.Fatalf("a complete report was rejected: %v", err)
+	}
+	if err := verifySourcePushCommits(pending(), map[string]string{"primary": primaryCommit}); err == nil {
+		t.Fatal("a report missing a source was accepted")
+	}
+	if err := verifySourcePushCommits(pending(), map[string]string{
+		"primary": primaryCommit,
+		"foo":     primaryCommit,
+	}); err == nil {
+		t.Fatal("a source reported at another source's commit was accepted")
+	}
+	if err := verifySourcePushCommits(pending(), map[string]string{
+		"primary": primaryCommit,
+		"foo":     referenceCommit,
+		"bar":     referenceCommit,
+	}); err == nil {
+		t.Fatal("a report naming a source the sandbox does not push was accepted")
+	}
 }

@@ -362,7 +362,7 @@ func TestResolveRunSourceDirectoryWithoutRepositoryCarriesEverythingAsASnapshot(
 	if err != nil {
 		t.Fatalf("resolveRunSource: %v", err)
 	}
-	local := source.localSource()
+	local := testLocalSources(source)
 
 	// The directory is what the sandbox mirrors and what apply comes back to;
 	// the repository the source was built in is somewhere else entirely.
@@ -415,7 +415,7 @@ func TestResolveRunSourceEmptyDirectoryWithoutRepositoryStartsFromTheEmptyCommit
 	if err != nil {
 		t.Fatalf("resolveRunSource: %v", err)
 	}
-	defer source.localSource().Close()
+	defer testLocalSources(source).Close()
 
 	// Nothing to carry is not an error: an empty directory is a legitimate
 	// place to start, and the sandbox gets the empty commit it checks out.
@@ -458,8 +458,8 @@ func TestResolveRunSourceLocalRepositoryPushesOutOfThatRepository(t *testing.T) 
 	if source.NoLocalRepository {
 		t.Fatal("a real repository was reported as having none")
 	}
-	local := source.localSource()
-	root, err := local.pushRoot()
+	local := testLocalSources(source)
+	root, err := local.pushRoot("")
 	if err != nil || root != repo {
 		t.Fatalf("pushRoot = %q, %v, want the repository %s", root, err, repo)
 	}
@@ -469,4 +469,12 @@ func TestResolveRunSourceLocalRepositoryPushesOutOfThatRepository(t *testing.T) 
 	if _, err := os.Stat(filepath.Join(repo, ".git")); err != nil {
 		t.Fatalf("stat %s/.git = %v, want the user's repository untouched", repo, err)
 	}
+}
+
+// testLocalSources is the single-source LocalSources a create builds for a
+// sandbox with no source code references.
+func testLocalSources(source resolvedRunSource) *LocalSources {
+	local := &LocalSources{}
+	local.add("", source)
+	return local
 }

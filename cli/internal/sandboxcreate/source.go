@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"net/url"
 	"os"
+	"path"
 	"path/filepath"
 	"strings"
 
@@ -17,16 +18,21 @@ import (
 )
 
 const (
-	runSourceKindGit         = "git"
-	runWorkspaceModeClean    = "clean"
-	runWorkspaceModeDirty    = "dirty"
-	runSourceRefTypeBranch   = "branch"
-	runSourceRefTypeTag      = "tag"
-	runSourceRefTypeCommit   = "commit"
-	runSnapshotRefPrefix     = "refs/discobox/run/"
-	defaultRunSourceDir      = "/workspace/source"
-	defaultRunWorkingDir     = "/workspace/source"
-	defaultRemoteBranch      = "HEAD"
+	runSourceKindGit       = "git"
+	runWorkspaceModeClean  = "clean"
+	runWorkspaceModeDirty  = "dirty"
+	runSourceRefTypeBranch = "branch"
+	runSourceRefTypeTag    = "tag"
+	runSourceRefTypeCommit = "commit"
+	runSnapshotRefPrefix   = "refs/discobox/run/"
+	defaultRunSourceDir    = "/workspace/source"
+	defaultRunWorkingDir   = "/workspace/source"
+	defaultRemoteBranch    = "HEAD"
+	// referenceRunSourceRoot holds an extra source that has no host path of its
+	// own to keep, which is every remote one.
+	referenceRunSourceRoot = "/workspace"
+	// maxRunSourceSlugLen is the API's slug limit.
+	maxRunSourceSlugLen      = 63
 	runSnapshotCommitMessage = "disco run workspace snapshot\n"
 	runEmptyBaseMessage      = "disco run empty base\n"
 )
@@ -87,7 +93,12 @@ type runSourceOptions struct {
 }
 
 type resolvedRunSource struct {
-	Kind           string
+	Kind string
+	// Slug names this source's repository in the sandbox, and is what a push
+	// addresses. It is set only for a source code reference, whose name is the
+	// client's to choose; the primary source leaves it to the server, which
+	// calls it "primary".
+	Slug           string
 	URL            string
 	LocalDirectory string
 	// RepoRoot is where git commands for this source run: the repository root
@@ -105,33 +116,57 @@ type resolvedRunSource struct {
 	cleanup func()
 }
 
-// LocalSource is the local repository a create resolved its source from, and
-// that a push delivers that source out of. Close releases it: a directory with
-// no repository of its own got a throwaway one built over it, which is deleted
-// once the source has reached the sandbox, and a real repository has nothing to
-// release.
+// LocalSources are the local repositories a create resolved its sources from —
+// the primary source and every `--include` reference — and that a push delivers
+// those sources out of. Close releases them: a directory with no repository of
+// its own got a throwaway one built over it, which is deleted once the source
+// has reached the sandbox, and a real repository has nothing to release.
 //
-// It is carried from create to delivery rather than resolved twice, because a
-// throwaway repository cannot be found again: it holds the only copy of the
+// They are carried from create to delivery rather than resolved twice, because
+// a throwaway repository cannot be found again: it holds the only copy of the
 // base commit and the workspace snapshot that the sandbox was configured
 // against.
-type LocalSource struct {
+type LocalSources struct {
+	sources []localSource
+}
+
+// localSource is one resolved source's repository, addressed by the same key
+// the create request filed the source under: empty for the primary source, and
+// the source code reference key — the sandbox directory it lands in — for a
+// reference.
+type localSource struct {
+	key      string
 	repoRoot string
 	cleanup  func()
 }
 
-func (s resolvedRunSource) localSource() *LocalSource {
-	return &LocalSource{repoRoot: s.RepoRoot, cleanup: s.cleanup}
+// add records the repository a resolved source was built from. The zero key is
+// the primary source.
+func (s *LocalSources) add(key string, resolved resolvedRunSource) {
+	s.sources = append(s.sources, localSource{key: key, repoRoot: resolved.RepoRoot, cleanup: resolved.cleanup})
 }
 
-// Close releases the local source. It is safe to call on a nil source and to
+// Close releases every local source. It is safe to call on a nil value and to
 // call more than once, so a caller can defer it and still close early.
-func (s *LocalSource) Close() {
-	if s == nil || s.cleanup == nil {
+func (s *LocalSources) Close() {
+	if s == nil {
 		return
 	}
-	s.cleanup()
-	s.cleanup = nil
+	for i := range s.sources {
+		if s.sources[i].cleanup == nil {
+			continue
+		}
+		s.sources[i].cleanup()
+		s.sources[i].cleanup = nil
+	}
+}
+
+// close releases the throwaway repository a resolved source built, for the
+// paths that fail before it is handed to a LocalSources.
+func (s resolvedRunSource) close() {
+	if s.cleanup != nil {
+		s.cleanup()
+	}
 }
 
 type resolvedRunSourceCheckout struct {
@@ -197,6 +232,7 @@ func OriginKey(ctx context.Context, sourceArg string) (string, error) {
 
 func (s resolvedRunSource) apiGitSource() (*apimodel.GitSource, error) {
 	source := &apimodel.GitSource{Kind: apiclientgen.GitSourceKindGit}
+	source.SetSlug(optionalString(s.Slug))
 	if s.URL != "" {
 		u, err := url.Parse(s.URL)
 		if err != nil {
@@ -555,6 +591,123 @@ func splitRunSourceRef(value string) (string, string, bool) {
 		return value, "", false
 	}
 	return value[:at], value[at+1:], true
+}
+
+// resolvedReference is one extra source brought into the sandbox alongside the
+// primary one, and the key the create request files it under.
+type resolvedReference struct {
+	// Key is the SourceCodeReferences key, which is the directory the sandbox
+	// places the source in.
+	Key      string
+	Resolved resolvedRunSource
+}
+
+// resolveRunSourceReference resolves an extra source named by `--include`.
+//
+// It is the same resolution the primary source gets — a local repository, a
+// directory in no repository, or a remote URL, each asked about its own
+// uncommitted work — and differs only in where the result lands and what it is
+// called. A local source keeps its own absolute host path inside the sandbox,
+// exactly as the primary source does, so a path means the same thing on both
+// sides of the sandbox boundary. A remote one has no host path to keep and goes
+// under /workspace.
+//
+// The slug is the directory's own name, which is what `-i ../foo` means: the
+// source is called foo. used carries the names already taken by earlier
+// references so two of them cannot both claim one; a collision with the primary
+// source's own slug is the server's to resolve, and the client reads the
+// resolved slug back off the created sandbox rather than assuming it.
+func resolveRunSourceReference(ctx context.Context, arg string, opts runSourceOptions, used map[string]struct{}) (resolvedReference, error) {
+	resolved, err := resolveRunSource(ctx, arg, opts)
+	if err != nil {
+		return resolvedReference{}, err
+	}
+	directory, name := referenceDestination(resolved)
+	if directory == "" {
+		resolved.close()
+		return resolvedReference{}, fmt.Errorf("cannot tell where to put source %s in the sandbox", arg)
+	}
+	slug := uniqueSlug(slugifySource(name), used)
+	resolved.Slug = slug
+	// Only the primary source decides where the harness starts, so a reference
+	// carries a directory and nothing else.
+	resolved.Destination = resolvedRunSourceDestination{Directory: directory}
+	return resolvedReference{Key: directory, Resolved: resolved}, nil
+}
+
+// referenceDestination is the sandbox directory an extra source is placed in,
+// and the name it takes from.
+func referenceDestination(resolved resolvedRunSource) (directory, name string) {
+	if resolved.URL != "" {
+		name = remoteSourceName(resolved.URL)
+		return path.Join(referenceRunSourceRoot, slugifySource(name)), name
+	}
+	// The local destination is the repository root, not the directory that was
+	// named: running against a subdirectory brings in the repository that holds
+	// it, and the source is named after what it actually is.
+	directory = filepath.ToSlash(resolved.Destination.Directory)
+	return directory, path.Base(directory)
+}
+
+// remoteSourceName is the repository name a remote URL ends in.
+func remoteSourceName(value string) string {
+	trimmed := strings.TrimSuffix(strings.TrimRight(strings.TrimSpace(value), "/"), ".git")
+	if u, err := url.Parse(trimmed); err == nil && u.Path != "" {
+		return path.Base(u.Path)
+	}
+	// An scp-style remote (git@host:owner/repo) is not a URL; its path is
+	// whatever follows the colon.
+	if _, rest, ok := strings.Cut(trimmed, ":"); ok {
+		return path.Base(rest)
+	}
+	return path.Base(trimmed)
+}
+
+// uniqueSlug settles a slug this client can guarantee: the name itself when it
+// is free, and a numbered variant when an earlier source already took it. The
+// number has to fit inside the API's slug limit, so a name long enough to fill
+// it gives up its tail rather than the suffix.
+func uniqueSlug(base string, used map[string]struct{}) string {
+	if base == "" {
+		base = "source"
+	}
+	slug := base
+	for i := 2; ; i++ {
+		if _, taken := used[slug]; !taken {
+			used[slug] = struct{}{}
+			return slug
+		}
+		suffix := fmt.Sprintf("-%d", i)
+		slug = strings.TrimRight(truncateSlug(base, maxRunSourceSlugLen-len(suffix)), "-") + suffix
+	}
+}
+
+func truncateSlug(value string, maxLen int) string {
+	if len(value) <= maxLen {
+		return value
+	}
+	return value[:maxLen]
+}
+
+// slugifySource reduces a directory or repository name to the slug shape the
+// API accepts: lowercase alphanumerics and dashes, no leading or trailing dash.
+func slugifySource(value string) string {
+	var b strings.Builder
+	lastDash := false
+	for _, r := range strings.ToLower(strings.TrimSpace(value)) {
+		switch {
+		case (r >= 'a' && r <= 'z') || (r >= '0' && r <= '9'):
+			b.WriteRune(r)
+			lastDash = false
+		case b.Len() > 0 && !lastDash:
+			b.WriteByte('-')
+			lastDash = true
+		}
+		if b.Len() >= maxRunSourceSlugLen {
+			break
+		}
+	}
+	return strings.Trim(b.String(), "-")
 }
 
 func defaultRunDestination() resolvedRunSourceDestination {
