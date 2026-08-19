@@ -128,6 +128,13 @@ type Model struct {
 	// as into the full launcher. See compact.go.
 	expanded bool
 
+	// printed is whether the last frame was drawn inline — that is, printed on
+	// the screen the window was started from, which the alternate screen does
+	// not take with it. clearing is the window holding still while those rows
+	// are erased. Both are compact.go's; see clearPrinted.
+	printed  bool
+	clearing bool
+
 	// shimmer is the frame the opening glint is on, or zero when there is none.
 	// See shimmer.go.
 	shimmer int
@@ -352,7 +359,20 @@ func status(format string, args ...any) tea.Cmd {
 // ---------------------------------------------------------------------------
 // update
 
+// Update is the window's one entry point for a message. Everything it does is
+// in update below; what is here is the one thing that has to happen around
+// every message rather than in any handler — the opening prompt being wiped off
+// the screen it was printed on, the first time the window takes the whole
+// terminal. See clearPrinted.
 func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
+	if _, ok := msg.(screenClearedMsg); ok {
+		m.clearing, m.printed = false, false
+		return m, nil
+	}
+	return m, m.clearPrinted(m.update(msg))
+}
+
+func (m *Model) update(msg tea.Msg) tea.Cmd {
 	switch msg := msg.(type) {
 	case tea.WindowSizeMsg:
 		m.width, m.height = msg.Width, msg.Height
@@ -360,11 +380,11 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		// Columns mean nothing across a resize; see the panes' own clearing.
 		m.chromeSel.Clear()
 		m.layout()
-		return m, nil
+		return nil
 
 	case sessionLoadedMsg:
 		if msg.err != nil {
-			return m, m.report(true, "cannot read the session: %v", msg.err)
+			return m.report(true, "cannot read the session: %v", msg.err)
 		}
 		m.session = msg.session
 		m.list.session = msg.session
@@ -377,15 +397,15 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		// The two loads race, and either order has to end with the panel
 		// offering the harnesses that are actually there.
 		m.opts.setHarnesses(m.harnesses.all)
-		return m, nil
+		return nil
 
 	case listLoadedMsg:
 		if msg.err != nil {
-			return m, m.report(true, "cannot list discoboxes: %v", msg.err)
+			return m.report(true, "cannot list discoboxes: %v", msg.err)
 		}
 		m.list.setAll(msg.sandboxes)
 		m.layout()
-		return m, nil
+		return nil
 
 	case tickMsg:
 		cmds := []tea.Cmd{m.refresh(), m.tick()}
@@ -396,10 +416,10 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if m.harnessesOpen {
 			cmds = append(cmds, m.loadHarnesses())
 		}
-		return m, tea.Batch(cmds...)
+		return tea.Batch(cmds...)
 
 	case narrationMsg:
-		return m, m.narrated(msg)
+		return m.narrated(msg)
 
 	case statusMsg:
 		// A message is an answer to the last key, so it goes when the next
@@ -408,7 +428,7 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.status, m.statusE = msg.text, msg.err
 		m.statusGen++
 		expires := m.statusGen
-		return m, tea.Tick(statusHolds, func(time.Time) tea.Msg {
+		return tea.Tick(statusHolds, func(time.Time) tea.Msg {
 			return statusExpiredMsg{generation: expires}
 		})
 
@@ -416,31 +436,31 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if msg.generation == m.statusGen {
 			m.status, m.statusE = "", false
 		}
-		return m, nil
+		return nil
 
 	case dirtyCheckedMsg:
-		return m, m.dirtyChecked(msg)
+		return m.dirtyChecked(msg)
 
 	case createMsg:
-		return m, m.create(msg.req)
+		return m.create(msg.req)
 
 	case createdMsg:
-		return m, m.created(msg)
+		return m.created(msg)
 
 	case runVerbMsg:
-		return m, m.runVerb(msg.verb, msg.ids)
+		return m.runVerb(msg.verb, msg.ids)
 
 	case verbDoneMsg:
-		return m, m.verbDone(msg)
+		return m.verbDone(msg)
 
 	case renameMsg:
-		return m, m.rename(msg.id, msg.name)
+		return m.rename(msg.id, msg.name)
 
 	case renameDoneMsg:
-		return m, m.renameDone(msg)
+		return m.renameDone(msg)
 
 	case editorOpenedMsg:
-		return m, m.editorOpened(msg)
+		return m.editorOpened(msg)
 
 	case interactDoneMsg:
 		m.busy = ""
@@ -448,90 +468,90 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if msg.err != nil {
 			cmds = append(cmds, m.report(true, "%s: %v", msg.action, msg.err))
 		}
-		return m, tea.Batch(cmds...)
+		return tea.Batch(cmds...)
 
 	case folderChosenMsg:
-		return m, m.selectFolder(msg.folder)
+		return m.selectFolder(msg.folder)
 
 	case paneOpenedMsg:
-		return m, m.paneOpened(msg)
+		return m.paneOpened(msg)
 
 	case workspaceExecsMsg:
-		return m, m.workspaceExecs(msg)
+		return m.workspaceExecs(msg)
 
 	case workspaceTermMsg:
-		return m, m.workspaceTermOpened(msg)
+		return m.workspaceTermOpened(msg)
 
 	case workspaceTickMsg:
 		if msg.gen != m.wsGen {
-			return m, nil
+			return nil
 		}
-		return m, tea.Batch(m.listExecs(msg.gen), m.workspaceTick(msg.gen))
+		return tea.Batch(m.listExecs(msg.gen), m.workspaceTick(msg.gen))
 
 	case workspaceForwardMsg:
-		return m, m.workspaceForward(msg)
+		return m.workspaceForward(msg)
 
 	case workspaceForwardChangedMsg:
 		// Nothing to apply: the header reads the forward itself. This is the
 		// redraw, and re-arming the wait is what keeps it coming.
 		if msg.gen != m.wsGen || m.forward == nil {
-			return m, nil
+			return nil
 		}
-		return m, m.forwardEvents(msg.gen, m.forward)
+		return m.forwardEvents(msg.gen, m.forward)
 
 	case paneMsg:
 		// Addressed to the pane it came from, which may exist before the
 		// screen does: a tab can connect while the primary is still opening.
-		return m, m.updatePaneMsg(msg)
+		return m.updatePaneMsg(msg)
 
 	case runActionMsg:
-		return m, m.actOn(msg.key, msg.targets)
+		return m.actOn(msg.key, msg.targets)
 
 	case harnessesLoadedMsg:
-		return m, m.harnessesLoaded(msg)
+		return m.harnessesLoaded(msg)
 
 	case harnessSetupMsg:
 		if msg.andDefault {
-			return m, m.configureHarnessThen(msg.harness, &msg.harness, msg.resume)
+			return m.configureHarnessThen(msg.harness, &msg.harness, msg.resume)
 		}
-		return m, m.configureHarnessThen(msg.harness, nil, msg.resume)
+		return m.configureHarnessThen(msg.harness, nil, msg.resume)
 
 	case harnessDefaultMsg:
-		return m, m.chooseDefaultHarness(msg)
+		return m.chooseDefaultHarness(msg)
 
 	case resumeRunMsg:
-		return m, m.startRun(msg.req)
+		return m.startRun(msg.req)
 
 	case harnessVerbMsg:
-		return m, m.runHarnessVerb(msg.verb, msg.harness, nil)
+		return m.runHarnessVerb(msg.verb, msg.harness, nil)
 
 	case harnessFileMsg:
-		return m, m.editHarnessFile(msg.harness, msg.path)
+		return m.editHarnessFile(msg.harness, msg.path)
 
 	case harnessDoneMsg:
-		return m, m.harnessDone(msg)
+		return m.harnessDone(msg)
 
 	case harnessCardMsg:
 		m.busy = ""
 		if msg.err != nil {
-			return m, m.report(true, "cannot read the harness: %v", msg.err)
+			return m.report(true, "cannot read the harness: %v", msg.err)
 		}
 		m.dialog = textDialog(msg.title, msg.body)
-		return m, nil
+		return nil
 
 	case editorDoneMsg:
 		m.promptEdited(msg)
-		return m, nil
+		return nil
 
 	case shimmerTickMsg:
-		return m, m.advanceShimmer(msg)
+		return m.advanceShimmer(msg)
 
 	case tea.KeyPressMsg:
 		cmd := m.updateKey(msg)
 		// The composer's height is a function of its contents, so geometry is
 		// recomputed after every key rather than only on a resize.
 		m.layout()
-		return m, cmd
+		return cmd
 	}
 
 	// Anything the window itself does not handle goes to whatever is focused.
@@ -539,11 +559,11 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	// as the pane library's own messages, which nothing here can name, and
 	// holding any of them back stops the pane dead.
 	if m.inPanes() {
-		return m, m.updatePane(msg)
+		return m.updatePane(msg)
 	}
 	var cmd tea.Cmd
 	m.prompt, cmd = m.prompt.Update(msg)
-	return m, cmd
+	return cmd
 }
 
 // report sets the status line. It is the one path a handler uses to say what
@@ -1626,8 +1646,23 @@ func (m *Model) layout() {
 	m.prompt.SetHeight(promptH)
 }
 
+// View draws the window. It records what it drew as well: a frame with anything
+// on it, drawn inline, is text printed on the screen the window was started
+// from, and an empty inline frame is that text erased. That is what clearPrinted
+// goes on.
 func (m *Model) View() tea.View {
+	view := m.view()
+	m.printed = !view.AltScreen && view.Content != ""
+	return view
+}
+
+func (m *Model) view() tea.View {
 	if m.quit {
+		return tea.NewView("")
+	}
+	// Nothing at all, inline, while the rows the opening prompt printed are
+	// erased off the screen it printed them on. See clearPrinted.
+	if m.clearing {
 		return tea.NewView("")
 	}
 	if !m.ready {
@@ -1679,7 +1714,7 @@ func (m *Model) View() tea.View {
 	view := tea.NewView(content)
 	// The whole terminal, once the window has opened out — but not before: the
 	// opening prompt is inline, sitting under the command that started it.
-	view.AltScreen = m.expanded || m.inPanes()
+	view.AltScreen = m.takesScreen()
 	view.MouseMode = m.paneMouseMode()
 	view.WindowTitle = m.windowTitle()
 	// The cursor belongs to whatever is drawing one. A pane places it where the
@@ -1761,6 +1796,14 @@ func (m *Model) center(content string) string {
 		return content
 	}
 	return lipgloss.Place(m.width, m.height, lipgloss.Center, lipgloss.Center, content)
+}
+
+// takesScreen reports whether the frame the window draws now is the whole
+// terminal. Everything but the opening prompt is: a modal and the options panel
+// stand in place of the window rather than inside it, and both can be up before
+// the window has opened out.
+func (m *Model) takesScreen() bool {
+	return m.expanded || m.inPanes() || m.dialog != nil || m.optionsOpen
 }
 
 func (m *Model) altView(content string) tea.View {

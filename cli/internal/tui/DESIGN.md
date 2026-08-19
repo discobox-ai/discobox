@@ -72,6 +72,21 @@ before `tea.Exec`, because an inline frame stayed painted above whatever the
 action printed. On the alternate screen the runtime handles both — it drops to
 the primary screen around an exec and repaints on resize.
 
+**The prompt comes off the screen before the window takes it**
+(`clearPrinted`). The opening prompt is printed on the primary screen;
+everything else the window draws is on the alternate one, and switching screens
+does not take the printed rows with it. They stay where they were, behind the
+window, and whatever the window later drops back onto the primary screen lands
+in the middle of them — a harness setup run through `tea.Exec` prints straight
+over the old prompt. So the first frame that takes the whole terminal — opening
+out, a modal, the options panel, a pane — is held back for one empty inline
+frame, which is how the renderer is asked to erase the rows it printed; it is
+the only thing that knows where they are, which is why this is a frame of
+nothing rather than an escape sequence of ours. `View` records what it drew
+(`printed`) and `Update` reads it, so this is one place rather than a call at
+every door onto the screen. The empty frame is held for a couple of the
+renderer's own frames, because it flushes on its own clock rather than on ours.
+
 **Four kinds of action.** A `Verb` goes to the API and returns, so the window
 stays up and reports on its status line. Attach and shell are drawn in the
 window (`Interaction.paneable`, `pane.go`/`workspace.go`, over the `termpane`

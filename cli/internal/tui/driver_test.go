@@ -45,6 +45,10 @@ func (d *driver) key(spec string) {
 func (d *driver) dispatch(msg tea.Msg) {
 	d.t.Helper()
 	_, cmd := d.m.Update(msg)
+	// The runtime draws after every message, and the window reads back what it
+	// drew: a frame with anything on it, drawn inline, is the prompt printed on
+	// the screen the window was started from. See clearPrinted.
+	d.m.View()
 	d.run(cmd)
 }
 

@@ -99,6 +99,46 @@ func TestReachingPastThePromptOpensTheWindowOut(t *testing.T) {
 	}
 }
 
+// The opening prompt is printed on the screen the window was started from, and
+// everything else the window draws is on the other one. What was printed comes
+// off before it goes: it stays on the primary screen otherwise, and whatever
+// the window later drops back there — a harness setup that takes the terminal —
+// lands in the middle of it.
+func TestThePromptComesOffTheScreenBeforeTheWindowTakesIt(t *testing.T) {
+	for _, tc := range []struct {
+		name string
+		open func(d *driver)
+	}{
+		// Both ways to the alternate screen from the opening prompt: opening
+		// the window out, and a modal standing in place of it.
+		{"opening out", func(d *driver) { d.dispatch(key("tab")) }},
+		{"a modal over it", func(d *driver) { d.dispatch(key("enter")) }},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			ds := newFakeSource(testSandboxes()...)
+			// Enter on a dirty working tree asks about it, in a modal.
+			ds.dirty = true
+			d, m := newCompactModel(t, ds)
+			if view := m.View(); view.AltScreen || view.Content == "" {
+				t.Fatal("the window should open inline, with the prompt printed on it")
+			}
+
+			tc.open(d)
+			d.wait("the prompt to come off the screen", func() bool { return m.View().Content == "" })
+			if m.View().AltScreen {
+				t.Fatal("the frame that erases the prompt has to be inline: the rows it erases are")
+			}
+
+			d.settle()
+			view := m.View()
+			if !view.AltScreen || view.Content == "" {
+				t.Fatalf("the window should take the screen once the prompt is off it: altScreen=%v, content=%q",
+					view.AltScreen, view.Content)
+			}
+		})
+	}
+}
+
 // Typing a prompt and running it does not open the window out on its own — but
 // the terminal it attaches to does, because a terminal wants the whole screen.
 func TestRunningFromTheOpeningPromptOpensOutForTheTerminal(t *testing.T) {

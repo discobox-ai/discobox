@@ -2,7 +2,9 @@ package tui
 
 import (
 	"strings"
+	"time"
 
+	tea "charm.land/bubbletea/v2"
 	"charm.land/lipgloss/v2"
 )
 
@@ -24,6 +26,38 @@ func (m *Model) expand() {
 	}
 	m.expanded = true
 	m.layout()
+}
+
+// screenClearedMsg says the empty frame below has had its moment.
+type screenClearedMsg struct{}
+
+// clearPause is how long that frame is held. The renderer flushes on its own
+// clock — 60 frames a second — rather than on ours, so the frame has to be the
+// current one across one of its ticks; a couple of them is a pause nobody sees
+// on the way to a screen. Missing the window costs the prompt left behind, which
+// is where this started, and nothing worse.
+const clearPause = 40 * time.Millisecond
+
+// clearPrinted holds the window on one empty inline frame the first time it
+// takes the whole terminal, so the opening prompt comes off the screen it was
+// printed on before the window moves to the other one.
+//
+// The prompt is printed inline, under the command that started it, and
+// everything else the window draws is on the alternate screen. Switching
+// screens does not take the printed rows along: they stay on the primary
+// screen, behind the window, and whatever the window later drops back onto it
+// lands in the middle of them — a harness setup run through tea.Exec prints
+// straight over the old prompt, which reads as a screen drawn twice.
+//
+// An empty inline frame is how the renderer is asked to erase the rows it
+// printed, and it is the only thing that knows where they are — hence a frame
+// of nothing rather than an escape sequence of our own.
+func (m *Model) clearPrinted(cmd tea.Cmd) tea.Cmd {
+	if m.clearing || !m.printed || !m.takesScreen() {
+		return cmd
+	}
+	m.clearing = true
+	return tea.Batch(cmd, tea.Tick(clearPause, func(time.Time) tea.Msg { return screenClearedMsg{} }))
 }
 
 // compactLayout sizes the opening window: the composer beside the mark, as wide
