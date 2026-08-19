@@ -50,7 +50,11 @@ const (
 	// HTTPBaseURL without duplicating this value.
 	SandboxAgentPort         = 3003
 	sandboxAgentReadyTimeout = 30 * time.Second
-	sandboxAgentPollInterval = 100 * time.Millisecond
+	// A pass is one container inspect and one loopback GET, so the interval is
+	// what actually bounds how late a ready sandbox is noticed. It is short
+	// because this is create latency a person waits through, and because a pass
+	// costs well under a millisecond now that it no longer lists containers.
+	sandboxAgentPollInterval = 25 * time.Millisecond
 
 	// The pool host provisions four host-backed roots and mounts them at these
 	// fixed container paths. The sandbox-agent (running as PID 1) wires
@@ -1547,22 +1551,60 @@ func (r *DockerSandboxRuntime) HTTPBaseURL(ctx context.Context, sandboxID string
 	return &url.URL{Scheme: "http", Host: fmt.Sprintf("%s:%d", ip, port)}, nil
 }
 
+// waitForSandboxAgent blocks until the sandbox-agent answers /healthz, and is
+// on the critical path of every create: nothing the caller asked for exists
+// until it returns.
+//
+// The container is resolved once, by ID, rather than looked up each pass.
+// Finding a sandbox by label costs a ContainerList -- ~20ms against a local
+// daemon, against ~0.7ms for inspecting a container already named -- and the
+// previous shape paid it twice per pass, once in GetSandbox and again inside
+// HTTPBaseURL, which resolves the sandbox all over again to reach its IP. That
+// was ~43ms of Docker traffic per pass on a loop whose whole job is to notice a
+// state change quickly.
+//
+// The per-pass inspect stays. It is what detects a container that died on the
+// way up, and at sub-millisecond cost there is nothing to gain by sampling the
+// container's fate less often than its agent's health.
+//
+// This does not make a create much faster, and it was not expected to once the
+// wait was measured: ~859ms of it is the sandbox genuinely booting -- ~433ms of
+// PID 1 provisioning before systemd starts, ~372ms of systemd, then the agent
+// binding its port. Polling overhead never had more than ~120ms to give back.
+// Shortening this loop is not the lever; the boot is.
 func (r *DockerSandboxRuntime) waitForSandboxAgent(ctx context.Context, sandboxID string) error {
 	ctx, cancel := context.WithTimeout(ctx, sandboxAgentReadyTimeout)
 	defer cancel()
+	containers, err := r.client.ContainerList(ctx, client.ContainerListOptions{All: true, Filters: r.filters(sandboxID)})
+	if err != nil {
+		return err
+	}
+	if len(containers.Items) == 0 {
+		return ErrNotFound
+	}
+	containerID := containers.Items[0].ID
 	var lastErr error
 	for {
-		sb, err := r.GetSandbox(ctx, sandboxID)
+		inspect, err := r.client.ContainerInspect(ctx, containerID, client.ContainerInspectOptions{})
 		if err != nil {
 			lastErr = err
 		} else {
+			sb := r.sandboxFromInspect(ctx, inspect.Container)
 			if err := sandboxAgentTerminalStateError(sb); err != nil {
 				return err
 			}
-			base, err := r.HTTPBaseURL(ctx, sandboxID, SandboxAgentPort)
-			if err == nil {
-				healthURL := *base
-				healthURL.Path = "/healthz"
+			// Read from the same inspect that just reported the container's
+			// state, rather than asking the daemon a second time for an address
+			// that cannot change while it runs.
+			ip := containerIPAddress(inspect.Container)
+			if ip == "" {
+				lastErr = fmt.Errorf("sandbox %q does not have an inspectable IP address", sandboxID)
+			} else {
+				healthURL := url.URL{
+					Scheme: "http",
+					Host:   fmt.Sprintf("%s:%d", ip, SandboxAgentPort),
+					Path:   "/healthz",
+				}
 				req, reqErr := http.NewRequestWithContext(ctx, http.MethodGet, healthURL.String(), nil)
 				if reqErr != nil {
 					return reqErr
@@ -1581,8 +1623,6 @@ func (r *DockerSandboxRuntime) waitForSandboxAgent(ctx context.Context, sandboxI
 				} else {
 					lastErr = reqErr
 				}
-			} else {
-				lastErr = err
 			}
 		}
 		select {
