@@ -372,7 +372,7 @@ flowchart LR
     cli -->|"pull result"| reg
 ```
 
-Four boundaries, each doing one job:
+Each boundary does one job:
 
 - **The mediator is the identity boundary.** buildkitd listens on a Unix socket
   only; sandboxes cannot reach it. The mediator terminates mTLS, takes the
@@ -380,6 +380,13 @@ Four boundaries, each doing one job:
   It is a raw-codec gRPC proxy — it decodes only the two solve methods and
   passes every other frame through untouched, so it does not have to track
   BuildKit's protocol surface.
+- **Build state lives outside the sandbox-visible cache.** buildkitd's store and
+  the registry's blobs are under `layout.PoolBuild`, a sibling of
+  `layout.PoolCache` rather than a child. `PoolCache` is bind-mounted whole into
+  every sandbox at `/.discobox/cache`, and the sandbox user holds sudo, so mode
+  bits inside that mount are not a boundary. Everything under `PoolCache` is a
+  harness-declared target path mirrored onto the host; no pool-agent component
+  writes there. See [ADR 0050](../docs/adr/0050-pool-build-state-is-not-sandbox-visible.md).
 - **A build container is told where its trust lives.** The runc wrapper mounts
   the pool's MITM CA into every build step, which covers curl, git and apt — but
   Node, Python's `ssl`, requests/certifi and pip each bundle a root store and
@@ -556,6 +563,8 @@ by simply being re-fetched if it does age out.
 - Build the pool-agent image from the repository root with
   `docker build -f pool-agent/Dockerfile ... .` so the Dockerfile can copy
   root support packages without vendoring them.
+- Never write pool-agent state under `layout.PoolCache`. It is mounted into
+  every sandbox; pool-scoped state belongs under `layout.PoolBuild`.
 - Do not import server internals or provider implementation packages.
 - Keep future in-sandbox agent API implementation code in the `sandbox-agent`
   module; pool-local provider operation routes and their generated server

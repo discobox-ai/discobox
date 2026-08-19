@@ -9,7 +9,9 @@
 package buildkitagent
 
 import (
+	"errors"
 	"fmt"
+	"log/slog"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -91,16 +93,42 @@ const (
 
 // StateRoot is buildkitd's state directory: the content store, snapshots, and
 // the solver cache that makes this shared at all. It lives on the pool's
-// disposable cache volume because it is regenerable and pool-scoped.
+// disposable build tree because it is regenerable and pool-scoped.
 func StateRoot(projectID, poolID string) string {
-	return filepath.Join(layout.PoolCache(projectID, poolID), "buildkit")
+	return filepath.Join(layout.PoolBuild(projectID, poolID), "buildkit")
 }
 
 // RegistryRoot is the pool registry's blob storage. It holds build output, not
 // cache, but it is still regenerable from the sandboxes' sources, so it shares
 // the disposable tree rather than the durable one.
 func RegistryRoot(projectID, poolID string) string {
-	return filepath.Join(layout.PoolCache(projectID, poolID), "registry")
+	return filepath.Join(layout.PoolBuild(projectID, poolID), "registry")
+}
+
+// legacyRoots are where StateRoot and RegistryRoot used to live: inside
+// layout.PoolCache, which is bind-mounted whole into every sandbox. ADR 0050
+// moved them out to layout.PoolBuild, a sibling no sandbox can reach.
+//
+// They are deleted rather than migrated. Both trees are regenerable, and a
+// leftover copy is not merely wasted disk: it stays inside the mount, which is
+// the exact thing the move was for.
+func legacyRoots(projectID, poolID string) []string {
+	cache := layout.PoolCache(projectID, poolID)
+	return []string{filepath.Join(cache, "buildkit"), filepath.Join(cache, "registry")}
+}
+
+// purgeLegacyRoots removes the pre-ADR-0050 locations. A failure is logged by
+// the caller rather than fatal: the pool must still boot, and what is left
+// behind is stale cache -- wasteful and wrong, but not a reason to have no
+// builder at all.
+func purgeLegacyRoots(projectID, poolID string) error {
+	var errs []error
+	for _, dir := range legacyRoots(projectID, poolID) {
+		if err := os.RemoveAll(resolve(dir)); err != nil {
+			errs = append(errs, fmt.Errorf("remove legacy build state %s: %w", dir, err))
+		}
+	}
+	return errors.Join(errs...)
 }
 
 // maxParallelism bounds concurrent build steps. BuildKit's default is 0
@@ -131,6 +159,12 @@ const gcKeepStorage = "10000,10000,50000"
 func Prepare(projectID, poolID, mitmCASource string) error {
 	if strings.TrimSpace(projectID) == "" || strings.TrimSpace(poolID) == "" {
 		return fmt.Errorf("buildkit configuration needs a project and pool")
+	}
+	// Before creating the new roots, so a pool that has already been through
+	// this cannot pay for the walk twice, and so the sandbox-visible cache is
+	// clean by the time any sandbox mounts it (ADR 0050).
+	if err := purgeLegacyRoots(projectID, poolID); err != nil {
+		slog.Warn("purge pre-ADR-0050 build state", "error", err)
 	}
 	stateRoot := StateRoot(projectID, poolID)
 	registryRoot := RegistryRoot(projectID, poolID)

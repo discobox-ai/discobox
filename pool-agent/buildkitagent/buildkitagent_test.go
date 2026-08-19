@@ -6,6 +6,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/obot-platform/discobox/layout"
 	"github.com/obot-platform/discobox/pool-agent/buildkitagent"
 )
 
@@ -29,7 +30,7 @@ func read(t *testing.T, root, path string) string {
 	return string(data)
 }
 
-func TestPreparePlacesStateOnThePoolCacheVolume(t *testing.T) {
+func TestPreparePlacesStateOnTheDisposableTree(t *testing.T) {
 	root := prepare(t)
 
 	// Builder state and registry blobs are regenerable, so they belong on the
@@ -184,5 +185,57 @@ func TestPrepareRejectsAnUnscopedPool(t *testing.T) {
 	t.Cleanup(func() { buildkitagent.SetTestRoot("") })
 	if err := buildkitagent.Prepare("", "pool", ""); err == nil {
 		t.Error("Prepare accepted an empty project, which would write pool state to a shared path")
+	}
+}
+
+// ADR 0050. layout.PoolCache is bind-mounted whole into every sandbox, and the
+// sandbox user holds sudo, so build state kept under it is readable and
+// writable by every sandbox in the pool. Being on the disposable tree is not
+// enough — it has to be outside that particular directory.
+func TestBuildStateIsOutsideTheSandboxVisibleCache(t *testing.T) {
+	cache := layout.PoolCache("proj", "pool")
+	for _, dir := range []string{
+		buildkitagent.StateRoot("proj", "pool"),
+		buildkitagent.RegistryRoot("proj", "pool"),
+	} {
+		if dir == cache || strings.HasPrefix(dir, cache+"/") {
+			t.Errorf("%s is inside the sandbox-visible cache %s", dir, cache)
+		}
+	}
+}
+
+// A pool upgraded across ADR 0050 still has the old directories, and they are
+// still inside the mount. Leaving them would make the move pointless, so
+// Prepare removes them rather than migrating them.
+func TestPreparePurgesPreADR0050BuildState(t *testing.T) {
+	root := t.TempDir()
+	buildkitagent.SetTestRoot(root)
+	t.Cleanup(func() { buildkitagent.SetTestRoot("") })
+
+	cache := filepath.Join(root, layout.PoolCache("proj", "pool"))
+	legacyBuildkit := filepath.Join(cache, "buildkit")
+	legacyRegistry := filepath.Join(cache, "registry")
+	// A sandbox's own cache content sits in the same directory and must survive.
+	sandboxCache := filepath.Join(cache, "home", "dev", ".cache")
+	for _, dir := range []string{legacyBuildkit, legacyRegistry, sandboxCache} {
+		if err := os.MkdirAll(dir, 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(filepath.Join(dir, "marker"), []byte("x"), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	if err := buildkitagent.Prepare("proj", "pool", ""); err != nil {
+		t.Fatalf("Prepare: %v", err)
+	}
+
+	for _, dir := range []string{legacyBuildkit, legacyRegistry} {
+		if _, err := os.Stat(dir); !os.IsNotExist(err) {
+			t.Errorf("%s still exists inside the sandbox-visible cache (stat err %v)", dir, err)
+		}
+	}
+	if _, err := os.Stat(filepath.Join(sandboxCache, "marker")); err != nil {
+		t.Errorf("Prepare destroyed a sandbox's own cache content: %v", err)
 	}
 }

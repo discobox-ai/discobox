@@ -101,8 +101,23 @@ func ProjectCachePools(projectID string) string {
 
 // PoolCache is the cache shared by every sandbox one pool runs. It is separate
 // from the durable tree so a backend can back it with disposable storage.
+//
+// It is bind-mounted whole into every sandbox, so everything under it is a
+// harness-declared target path mirrored onto the host, and nothing under it is
+// privileged. Pool-agent state belongs in PoolBuild instead (ADR 0050).
 func PoolCache(projectID, poolID string) string {
 	return path.Join(ProjectCachePools(projectID), poolID, "cache")
+}
+
+// PoolBuild holds the pool's own build machinery: BuildKit's state and the pool
+// registry's blobs. A sibling of PoolCache rather than a child, because no
+// sandbox may reach it -- PoolCache is mounted into every sandbox, and mode
+// bits are not a boundary against a sandbox user holding sudo (ADR 0050).
+//
+// Disposable like its sibling: everything here rebuilds from the sandboxes'
+// sources.
+func PoolBuild(projectID, poolID string) string {
+	return path.Join(ProjectCachePools(projectID), poolID, "build")
 }
 
 // --- proxy material --------------------------------------------------------

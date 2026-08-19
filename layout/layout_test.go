@@ -1,6 +1,7 @@
 package layout
 
 import (
+	"path/filepath"
 	"reflect"
 	"strings"
 	"testing"
@@ -17,6 +18,7 @@ func TestPathsMatchTheEstablishedLayout(t *testing.T) {
 		"sandbox secrets":   {SandboxSecrets("prj", "pool", "sb"), "/var/lib/discobox/projects/prj/pools/pool/sandboxes/sb/secrets"},
 		"sandbox sources":   {SandboxSources("prj", "pool", "sb"), "/var/lib/discobox/projects/prj/pools/pool/sandboxes/sb/sources"},
 		"pool cache":        {PoolCache("prj", "pool"), "/var/lib/discobox/cache/projects/prj/pools/pool/cache"},
+		"pool build":        {PoolBuild("prj", "pool"), "/var/lib/discobox/cache/projects/prj/pools/pool/build"},
 		"proxy certs":       {ProxyCerts("prj", "pool"), "/var/lib/discobox/proxy/projects/prj/pools/pool/certs"},
 		"proxy pool":        {ProxyPool("prj", "pool"), "/var/lib/discobox/proxy/projects/prj/pools/pool"},
 		"proxy pool sboxes": {ProxyPoolSandboxes("prj", "pool"), "/var/lib/discobox/proxy/projects/prj/pools/pool/sandboxes"},
@@ -36,6 +38,7 @@ func TestPoolStateIsAlwaysScopedToItsPool(t *testing.T) {
 		"PoolData":                PoolData,
 		"PoolSandboxes":           PoolSandboxes,
 		"PoolCache":               PoolCache,
+		"PoolBuild":               PoolBuild,
 		"ProxyPool":               ProxyPool,
 		"ProxyPoolSandboxes":      ProxyPoolSandboxes,
 		"ProxySecretsFile":        ProxySecretsFile,
@@ -131,5 +134,20 @@ func TestHostMappingTrimsTrailingSeparators(t *testing.T) {
 	mapping := NewHostMapping("/var/lib/docker/discobox/")
 	if got, want := mapping.HostRoot(), "/var/lib/docker/discobox"; got != want {
 		t.Fatalf("HostRoot() = %q, want %q", got, want)
+	}
+}
+
+// ADR 0050: PoolCache is bind-mounted whole into every sandbox, so the pool's
+// build state must not live under it. A sibling is the only shape that keeps
+// build state out of that mount without relying on mode bits a sandbox user
+// with sudo can step over.
+func TestPoolBuildIsNotInsideTheSandboxVisibleCache(t *testing.T) {
+	cache := PoolCache("prj", "pool")
+	build := PoolBuild("prj", "pool")
+	if build == cache || strings.HasPrefix(build, cache+"/") {
+		t.Fatalf("PoolBuild %q is inside the sandbox-visible PoolCache %q", build, cache)
+	}
+	if filepath.Dir(build) != filepath.Dir(cache) {
+		t.Errorf("PoolBuild %q and PoolCache %q are not siblings", build, cache)
 	}
 }
