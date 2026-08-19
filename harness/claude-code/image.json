@@ -17,7 +17,8 @@
     { "path": "%HOME%/go/pkg/mod", "volume": "cache", "uid": "%UID%", "gid": "%GID%", "mode": "0755" },
     { "path": "%HOME%/.cargo/registry", "volume": "cache", "uid": "%UID%", "gid": "%GID%", "mode": "0755" },
     { "path": "%HOME%/.cargo/git", "volume": "cache", "uid": "%UID%", "gid": "%GID%", "mode": "0755" },
-    { "path": "%HOME%/.rustup", "volume": "cache", "uid": "%UID%", "gid": "%GID%", "mode": "0755" }
+    { "path": "%HOME%/.rustup", "volume": "cache", "uid": "%UID%", "gid": "%GID%", "mode": "0755" },
+    { "path": "%HOME%/.vscode-server", "volume": "cache", "uid": "%UID%", "gid": "%GID%", "mode": "0755" }
   ],
   "additionalGroups": ["docker"],
   "harness": {
