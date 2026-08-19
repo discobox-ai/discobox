@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
+	"runtime"
 	"strings"
 
 	tea "charm.land/bubbletea/v2"
@@ -50,7 +51,7 @@ func editPrompt(ctx context.Context, text string) tea.Cmd {
 }
 
 // editorCommand resolves the editor the way every tool that shells out to one
-// does: $VISUAL, then $EDITOR, then vi.
+// does: $VISUAL, then $EDITOR, then the platform's default.
 //
 // The variable may carry arguments — "code -w", "emacsclient -nw" — so it is
 // split on spaces rather than treated as a bare program name. That is not a
@@ -59,7 +60,7 @@ func editPrompt(ctx context.Context, text string) tea.Cmd {
 func editorCommand(ctx context.Context, path string) (*exec.Cmd, error) {
 	editor := firstSet("VISUAL", "EDITOR")
 	if editor == "" {
-		editor = "vi"
+		editor = defaultEditor()
 	}
 	parts := strings.Fields(editor)
 	if len(parts) == 0 {
@@ -72,6 +73,22 @@ func editorCommand(ctx context.Context, path string) (*exec.Cmd, error) {
 	// The context is the window's: quitting it should not leave an editor
 	// holding the terminal.
 	return exec.CommandContext(ctx, program, append(parts[1:], path)...), nil
+}
+
+// defaultEditor is what to run when neither variable is set. Windows has no
+// vi, but Windows 11 ships edit.exe — a terminal editor that takes over the
+// screen the way this code expects — with notepad as the backstop for builds
+// without it.
+func defaultEditor() string {
+	if runtime.GOOS != "windows" {
+		return "vi"
+	}
+	for _, candidate := range []string{"edit.exe", "notepad.exe"} {
+		if _, err := exec.LookPath(candidate); err == nil {
+			return candidate
+		}
+	}
+	return "notepad.exe"
 }
 
 func firstSet(names ...string) string {

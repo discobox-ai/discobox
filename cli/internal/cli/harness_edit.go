@@ -8,6 +8,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime"
 	"strings"
 
 	"github.com/spf13/cobra"
@@ -198,12 +199,28 @@ func editInEditor(ctx context.Context, path, content string, stdin io.Reader, st
 }
 
 // editorCommand resolves the editor argv from $VISUAL then $EDITOR, splitting
-// on whitespace so values like "code --wait" work, defaulting to vi.
+// on whitespace so values like "code --wait" work, falling back to the
+// platform's default editor.
 func editorCommand() []string {
 	for _, env := range []string{"VISUAL", "EDITOR"} {
 		if value := strings.TrimSpace(os.Getenv(env)); value != "" {
 			return strings.Fields(value)
 		}
 	}
-	return []string{"vi"}
+	return []string{defaultEditor()}
+}
+
+// defaultEditor is what to run when neither variable is set. Windows has no
+// vi, but Windows 11 ships edit.exe — a terminal editor that behaves the way
+// this code expects — with notepad as the backstop for builds without it.
+func defaultEditor() string {
+	if runtime.GOOS != "windows" {
+		return "vi"
+	}
+	for _, candidate := range []string{"edit.exe", "notepad.exe"} {
+		if _, err := exec.LookPath(candidate); err == nil {
+			return candidate
+		}
+	}
+	return "notepad.exe"
 }
