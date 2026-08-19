@@ -179,6 +179,25 @@ reads back identical), a resize (no reflow, so columns are meaningless), an
 alt-screen switch, or output while a full scrollback is evicting under a
 selection that touches it.
 
+**The application's own copies are selections too** (`clipboard.go`). An
+application that has learned it is on a remote terminal copies by writing
+OSC 52 — vim with `clipboard=unnamed`, tmux's `set-clipboard`, anything using
+the `Ms` capability — and the emulator has no handler for it, so the pane is
+the only place it can be caught. A copy is held on the model and handed out of
+`Update` as the same `CopyMsg` a finished selection produces: what a host does
+with copied text does not depend on which end started it. Only the selections
+that mean a clipboard are taken (`c`, `p`, `s`, and the empty default); xterm's
+cut buffers are registers, not a clipboard. A clear (empty payload, or anything
+that is not base64) is dropped — an application emptying its own clipboard is
+no reason to empty the user's — and the last copy in a burst is the one
+delivered, which is what the clipboard would have been left holding anyway.
+
+**A clipboard *read* is answered with silence.** `OSC 52 ; c ; ?` asks the
+terminal to send back what is on the clipboard, which would let anything that
+can print inside the pane collect whatever the user last copied for something
+else. xterm ships it disabled, and a pane has no way to ask the host's
+permission, so the sequence is consumed and nothing is written back.
+
 Reading modes off the stream also means it makes no difference whether a mode
 arrived from the application just now or from a reattach snapshot replaying what
 it set before this client existed. They are the same bytes.

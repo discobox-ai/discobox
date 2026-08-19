@@ -8,10 +8,13 @@ import (
 	"github.com/charmbracelet/x/vt"
 )
 
-// CopyMsg is a finished selection. Text is what the user selected; putting it
-// on a clipboard — tea.SetClipboard, an OS clipboard, both — is the host's
-// business. The selection stays highlighted in the pane until something
-// replaces or clears it.
+// CopyMsg is text the pane is handing over to be copied: a finished mouse
+// selection, or an OSC 52 copy the application in the pane made itself. Putting
+// it on a clipboard — tea.SetClipboard, an OS clipboard, both — is the host's
+// business, and does not depend on which of the two it was.
+//
+// A selection stays highlighted in the pane until something replaces or clears
+// it; an application's copy leaves the screen alone.
 type CopyMsg struct{ Text string }
 
 // WithHighlight replaces how selected cells are drawn. The default toggles

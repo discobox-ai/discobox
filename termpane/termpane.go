@@ -105,6 +105,11 @@ type Model struct {
 	cursorColor   color.Color
 	bells         int
 	mouseModes    map[int]bool
+	// clip is an OSC 52 copy the application made, waiting for the update loop
+	// to turn it into a CopyMsg; hasClip distinguishes a copy of nothing from
+	// no copy. See clipboard.go.
+	clip    string
+	hasClip bool
 }
 
 type options struct {
@@ -253,6 +258,7 @@ func (m *Model) Attach(stream Stream) tea.Cmd {
 	}
 	m.emu.SetCallbacks(m.callbacks())
 	m.watchMouseModes()
+	m.watchClipboard()
 	m.emu.Focus()
 	m.sel = selection.New(emuGrid{m})
 	if m.opts.wordChars != nil {
@@ -268,6 +274,8 @@ func (m *Model) Attach(stream Stream) tea.Cmd {
 	// The title belongs to the stream, not to the pane: a new one announces
 	// its own, and a far end with none should not be wearing the last one's.
 	m.title = ""
+	// A copy the last stream made and never had delivered dies with it.
+	m.clip, m.hasClip = "", false
 	m.mu.Unlock()
 	_ = stream.Resize(m.cols, m.rows)
 
@@ -432,7 +440,9 @@ func (m *Model) Update(msg tea.Msg) (*Model, tea.Cmd) {
 		// away from what is happening in it, with no way to notice, is a pane
 		// that looks hung.
 		m.scroll = 0
-		return m, m.reader.next()
+		// Output is also where an application's own copy arrives; the write
+		// above is what parsed it. See clipboard.go.
+		return m, tea.Batch(m.takeClipboard(), m.reader.next())
 
 	case closedMsg:
 		m.attached = false

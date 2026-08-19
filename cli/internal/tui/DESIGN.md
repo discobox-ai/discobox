@@ -346,7 +346,8 @@ and also focuses it — and are translated into that pane's grid at the same
 origin its cursor is placed at (`paneOrigin`). What an event *does* is the
 pane's decision (`termpane.HandleMouse`, ADR 0036): forwarded to a sandbox
 that asked for the mouse, selection otherwise, the wheel to whoever can
-scroll. A finished selection — or a copy chord over one — arrives as
+scroll. A finished selection — or a copy chord over one, or an OSC 52 copy the
+sandbox's own application made — arrives as
 `termpane.CopyMsg` and goes to the OS clipboard (`osClipboard`, which crosses
 the WSL boundary as base64 because everything else there decodes by code
 page), falling back to OSC 52 only when there is no OS clipboard to write —
