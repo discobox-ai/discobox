@@ -99,11 +99,20 @@ func (s *ControlPlane) CreateSandboxAgentToken(ctx context.Context, claims poola
 
 // SchedulePoolReconciliation marks the pool dirty (drift-driven reconcile, no
 // intent change).
+//
+// Drift-driven is why this does not shorten a failure backoff. Every caller
+// here is reacting to a pool that would not serve them -- an agent client that
+// would not connect, a scheduler that found no capacity -- so they all fire
+// exactly when the pool is already failing, and there are as many of them as
+// there are sandboxes on it. Letting each one cancel the backoff turns one
+// broken pool into a retry loop that runs as fast as the failure returns. What
+// they want is for the pool to be reconciled, not for it to be reconciled now;
+// new intent (SchedulePoolRepair, SubmitPoolDelete) is what means now.
 func (s *ControlPlane) SchedulePoolReconciliation(ctx context.Context, projectID, poolID string) error {
 	if s.engine == nil {
 		return errors.New("reconcile engine is required")
 	}
-	return s.engine.MarkDirty(ctx, PoolResourceType, PoolDirtyID(projectID, poolID))
+	return s.engine.MarkDirtyDrift(ctx, PoolResourceType, PoolDirtyID(projectID, poolID))
 }
 
 // A pool's timer form is deliberately absent. "Re-check this pool at T" is the

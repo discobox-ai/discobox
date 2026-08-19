@@ -254,8 +254,38 @@ func (e *Engine) MarkDirtyTx(ctx context.Context, tx *gorm.DB, resourceType, id 
 	return e.MarkDirtyAtTx(ctx, tx, resourceType, id, time.Now())
 }
 
+// MarkDirtyDrift marks a resource dirty for a drift-driven reconcile: someone
+// observed that the world may have moved, rather than asking for something new.
+//
+// It differs from MarkDirty in exactly one way, and only on a row that is
+// already failing: it does not shorten an active failure backoff. A drift mark
+// carries no new information for a reconcile that just failed -- the reconciler
+// would read the same state and fail the same way -- so pulling the row forward
+// only costs an attempt, and it costs it immediately, because the mark lands as
+// soon as the failure is observed.
+//
+// That is how a backoff stops existing. Anything watching a broken resource
+// marks it, the mark cancels the wait, the retry fails, and the watcher marks
+// it again: a pool whose VM will not start collects thousands of attempts a
+// minute, one per observer per failure, and the exponential backoff that was
+// supposed to space them out is overwritten before it is ever waited on.
+//
+// Intent still wins. MarkDirty and MarkDirtyTx are unchanged, so a caller that
+// changed what the resource should be -- a repair, a delete, a new generation
+// -- still preempts the backoff, which is the one case worth interrupting it
+// for.
+func (e *Engine) MarkDirtyDrift(ctx context.Context, resourceType, id string) error {
+	return e.markDirtyAtTx(ctx, e.db, resourceType, id, time.Now(), false)
+}
+
 // MarkDirtyAtTx is MarkDirtyAt inside the caller's transaction.
 func (e *Engine) MarkDirtyAtTx(ctx context.Context, tx *gorm.DB, resourceType, id string, at time.Time) error {
+	return e.markDirtyAtTx(ctx, tx, resourceType, id, at, true)
+}
+
+// markDirtyAtTx is the one implementation. overrideBackoff says whether this
+// mark may pull a row forward out of a failure backoff; see MarkDirtyDrift.
+func (e *Engine) markDirtyAtTx(ctx context.Context, tx *gorm.DB, resourceType, id string, at time.Time, overrideBackoff bool) error {
 	if resourceType == "" || id == "" {
 		return fmt.Errorf("reconcile: resource type and id are required")
 	}
@@ -276,8 +306,7 @@ func (e *Engine) MarkDirtyAtTx(ctx context.Context, tx *gorm.DB, resourceType, i
 			"seq":       gorm.Expr("reconcile_dirty.seq + 1"),
 			"marked_at": now,
 			// Pull forward, never push back. `excluded` works on SQLite and Postgres.
-			"not_before": gorm.Expr(
-				"CASE WHEN excluded.not_before < reconcile_dirty.not_before THEN excluded.not_before ELSE reconcile_dirty.not_before END"),
+			"not_before": gorm.Expr(pullForwardExpr(overrideBackoff)),
 			"updated_at": now,
 		}),
 	}).Create(&row).Error
@@ -286,4 +315,21 @@ func (e *Engine) MarkDirtyAtTx(ctx context.Context, tx *gorm.DB, resourceType, i
 	}
 	e.wake()
 	return nil
+}
+
+// pullForwardExpr builds the not_before assignment for an upsert.
+//
+// attempts is the whole distinction: release() sets it on every failed
+// reconcile and complete() clears it on every successful one, so `attempts > 0`
+// means "the last attempt failed and this not_before is its backoff" -- as
+// opposed to a reconciler's own requeue timer, which settles attempts to 0 and
+// which drift may still pull forward, because a timer is a guess about when to
+// look again and an observation beats it.
+func pullForwardExpr(overrideBackoff bool) string {
+	guard := "reconcile_dirty.attempts = 0 AND "
+	if overrideBackoff {
+		guard = ""
+	}
+	return "CASE WHEN " + guard +
+		"excluded.not_before < reconcile_dirty.not_before THEN excluded.not_before ELSE reconcile_dirty.not_before END"
 }
