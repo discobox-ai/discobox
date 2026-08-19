@@ -1,6 +1,10 @@
 version: "3"
 
 vars:
+  # The iroh transport's bindings ship linux/amd64 and linux/arm64 only, so the
+  # dev build carries the tag there and nowhere else — `task dev` has to work on
+  # a Mac (ADR 0053). DISCOBOX_DEV_IROH=0 turns it off where it would apply.
+  IROH_TAG: '{{if and (eq OS "linux") (ne .DISCOBOX_DEV_IROH "0")}}-tags=iroh{{end}}'
   BINARY: build/discobox-server
   SERVER_MAIN: ./cmd/discobox-server
   CLI_BINARY: build/disco
@@ -166,14 +170,32 @@ tasks:
       #
       # Not from .env, though: the server loads that with godotenv, which does
       # not replace a variable already set, and these are set here.
-      DISCOBOX_SERVER_LISTEN: '{{.DISCOBOX_SERVER_LISTEN | default "http://127.0.0.1:8080"}}'
+      DISCOBOX_SERVER_LISTEN: '{{.DISCOBOX_SERVER_LISTEN | default "http://127.0.0.1:8080,iroh://"}}'
       DISCOBOX_SSH_LISTEN: '{{.DISCOBOX_SSH_LISTEN | default "127.0.0.1:3222"}}'
+      # A development build carries the iroh transport (ADR 0052 §4), so the
+      # tagged code path is compiled on every reload. A build tag no pipeline
+      # compiles is dead code that still occupies a file. It applies to the CLI
+      # too, which .wnb.yaml builds alongside the server, so a disco built here
+      # can dial an iroh:// endpoint.
+      #
+      # DISCOBOX_SERVER_LISTEN above names iroh://, so the server binds an iroh
+      # endpoint and logs the ID to dial it with. Reaching it needs that ID in
+      # <data dir>/authorized_ids — `disco box iroh-id` prints the one to add.
+      #
+      # Opt out with DISCOBOX_DEV_IROH=0. Clearing GOFLAGS does not: `default`
+      # treats an empty value as unset and substitutes the tag straight back.
+      GOFLAGS: '{{.IROH_TAG}}'
     cmds:
       - touch .env
       - go tool watchnbuild
 
   dev:cli:
     desc: Recompile the disco CLI with watchnbuild hot reload (see .wnb.cli.yaml)
+    env:
+      # The same iroh build tag dev:server uses, for the same reason: this task
+      # is run alongside `task dev`, and a CLI that cannot dial iroh:// while
+      # the server can serve it is a confusing pair to debug.
+      GOFLAGS: '{{.IROH_TAG}}'
     cmds:
       - go tool watchnbuild -config .wnb.cli.yaml
 
@@ -271,6 +293,19 @@ tasks:
       - cd gormdb && go test ./...
       - cd hooks && go test ./...
       - cd sandbox-agent && go test ./...
+      - task: test:iroh
+
+  test:iroh:
+    desc: Run the optional iroh transport's tests (ADR 0052 §4, ADR 0053)
+    # Platform-restricted for the same reason as check:iroh.
+    platforms: [linux/amd64, linux/arm64]
+    env:
+      CGO_ENABLED: '1'
+    cmds:
+      # Same reason as check:iroh: the tagged transport is only exercised if
+      # something asks for it by name.
+      - go test -tags iroh ./endpoint/...
+      - cd cli && go test -tags iroh ./internal/cli/...
 
   check:
     desc: Run static checks
@@ -283,6 +318,23 @@ tasks:
       - cd gormdb && "$(go -C .. tool -n golangci-lint)" run
       - cd hooks && "$(go -C .. tool -n golangci-lint)" run
       - cd sandbox-agent && "$(go -C .. tool -n golangci-lint)" run
+      - task: check:iroh
+
+  check:iroh:
+    desc: Static checks for the optional iroh transport (ADR 0052 §4, ADR 0053)
+    # The bindings ship linux/amd64 and linux/arm64 only, so this pass is
+    # skipped elsewhere rather than failing a macOS or Windows developer's
+    # `task check` over a build they cannot produce yet (ADR 0053).
+    platforms: [linux/amd64, linux/arm64]
+    env:
+      CGO_ENABLED: '1'
+    cmds:
+      # The iroh transport is behind a build tag, so the default run above never
+      # compiles it. A build configuration no pipeline checks is code that rots
+      # unnoticed, so it gets its own pass rather than being taken on trust.
+      - go tool golangci-lint run --build-tags iroh
+      - cd cli && "$(go -C .. tool -n golangci-lint)" run --build-tags iroh
+      - cd server && "$(go -C .. tool -n golangci-lint)" run --build-tags iroh
 
   dagger:check:
     desc: Run Dagger workspace checks (Go lint/tests, shellcheck) in containers

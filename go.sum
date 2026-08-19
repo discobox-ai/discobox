@@ -42,6 +42,8 @@ dev.gaijin.team/go/exhaustruct/v4 v4.0.0 h1:873r7aNneqoBB3IaFIzhvt2RFYTuHgmMjoKf
 dev.gaijin.team/go/exhaustruct/v4 v4.0.0/go.mod h1:aZ/k2o4Y05aMJtiux15x8iXaumE88YdiB0Ai4fXOzPI=
 dev.gaijin.team/go/golib v0.6.0 h1:v6nnznFTs4bppib/NyU1PQxobwDHwCXXl15P7DV5Zgo=
 dev.gaijin.team/go/golib v0.6.0/go.mod h1:uY1mShx8Z/aNHWDyAkZTkX+uCi5PdX7KsG1eDQa2AVE=
+git.coopcloud.tech/decentral1se/iroh-go v0.0.0-20260731195909-77011195d3d6 h1:iKebeWN/eDL1iM9MNAXYkQ60dy1YELpZ1F1w3SZTBb4=
+git.coopcloud.tech/decentral1se/iroh-go v0.0.0-20260731195909-77011195d3d6/go.mod h1:UdtdmIaX3URspGOweIFN1Xlv0KuRyHGKo7PDjtUxPqE=
 github.com/4meepo/tagalign v1.4.3 h1:Bnu7jGWwbfpAie2vyl63Zup5KuRv21olsPIha53BJr8=
 github.com/4meepo/tagalign v1.4.3/go.mod h1:00WwRjiuSbrRJnSVeGWPLp2epS5Q/l4UEy0apLLS37c=
 github.com/Abirdcfly/dupword v0.1.7 h1:2j8sInznrje4I0CMisSL6ipEBkeJUJAmK1/lfoNGWrQ=

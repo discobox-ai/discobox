@@ -1,6 +1,6 @@
 module github.com/obot-platform/discobox/pool-agent
 
-go 1.26.0
+go 1.26.1
 
 replace github.com/obot-platform/discobox => ..
 

@@ -104,3 +104,5 @@ Nygard-style ADRs (see adr.github.io) combined with current-state design docs:
 | [0049](0049-forwarded-ports-are-bound-near-their-number-and-held.md) | Forwarded ports are bound near their own number, and held once given | Accepted |
 | [0050](0050-pool-build-state-is-not-sandbox-visible.md) | Pool build state lives outside the sandbox-visible cache | Accepted |
 | [0051](0051-the-pool-console-attaches-through-the-driver.md) | The pool host console attaches through the driver's Docker client | Accepted |
+| [0052](0052-iroh-is-an-optional-endpoint-scheme.md) | iroh is an optional endpoint scheme, and each hop names its endpoint package | Accepted (§4's "build the remaining targets now" superseded by [0053](0053-iroh-is-development-only-until-it-builds-everywhere.md)) |
+| [0053](0053-iroh-is-development-only-until-it-builds-everywhere.md) | iroh is a development-only capability until it builds for macOS and Windows | Accepted |

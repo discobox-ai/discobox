@@ -165,10 +165,14 @@ func shouldAutoLaunchServer(noStart bool) bool {
 
 func (a *App) httpClientWithAutoStart(autoStart bool) (string, *http.Client, error) {
 	transport := http.DefaultTransport
-	if autoStart && a.serverEndpoint().AutoLaunchable() {
+	parsed := a.serverEndpoint()
+	if autoStart && parsed.AutoLaunchable() {
 		if err := a.ensureLocalServer(context.Background()); err != nil {
 			return "", nil, err
 		}
+	}
+	if err := configureIrohForEndpoint(parsed); err != nil {
+		return "", nil, err
 	}
 	baseURL, client, err := endpoint.HTTPClient(a.serverURL, transport)
 	if err != nil {

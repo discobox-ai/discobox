@@ -29,6 +29,8 @@ func Listen(endpoint string) (net.Listener, string, func(), error) {
 			return nil, "", nil, err
 		}
 		return listener, parsed.Raw, func() { _ = listener.Close() }, nil
+	case "iroh":
+		return irohListen(parsed)
 	case "https", "unix":
 		return nil, "", nil, fmt.Errorf("server listen endpoint %q is not supported on this platform", endpoint)
 	default:

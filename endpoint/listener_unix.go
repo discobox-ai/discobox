@@ -40,6 +40,8 @@ func Listen(endpoint string) (net.Listener, string, func(), error) {
 			_ = os.Remove(parsed.Value)
 		}
 		return listener, parsed.Raw, cleanup, nil
+	case "iroh":
+		return irohListen(parsed)
 	case "https", "npipe":
 		return nil, "", nil, fmt.Errorf("server listen endpoint %q is not supported on this platform", endpoint)
 	default:

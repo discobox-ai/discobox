@@ -30,6 +30,12 @@ type Endpoint struct {
 	Raw    string
 	Scheme string
 	Value  string
+	// IrohAddrs are direct socket addresses to try for an iroh peer, carried
+	// as repeated ?addr= parameters. An endpoint ID is not routable on its own:
+	// resolving one needs a discovery service, and until a deployment has one
+	// the address has to travel with the ID. This is the ticket idea in URL
+	// form, and it is also what makes two peers on one machine reachable.
+	IrohAddrs []string
 }
 
 func Parse(raw string) (Endpoint, error) {
@@ -59,6 +65,23 @@ func Parse(raw string) (Endpoint, error) {
 			return Endpoint{}, fmt.Errorf("npipe endpoint %q must include a pipe path", raw)
 		}
 		return Endpoint{Raw: raw, Scheme: scheme, Value: value}, nil
+	case "iroh":
+		// "iroh://" with no ID is the listen form: a server's identity comes
+		// from its key file, so there is nothing about the address to
+		// configure. "iroh://<endpoint-id>" is the dial form, where the ID is
+		// the entire address.
+		host := strings.TrimSpace(u.Host)
+		if host == "" {
+			if path := strings.Trim(u.Path, "/"); path != "" {
+				return Endpoint{}, fmt.Errorf("iroh endpoint %q must be iroh://<endpoint-id>, or iroh:// to listen", raw)
+			}
+			return Endpoint{Raw: raw, Scheme: scheme}, nil
+		}
+		id, err := ParseIrohID(host)
+		if err != nil {
+			return Endpoint{}, err
+		}
+		return Endpoint{Raw: raw, Scheme: scheme, Value: id.String(), IrohAddrs: u.Query()["addr"]}, nil
 	default:
 		return Endpoint{}, fmt.Errorf("unsupported endpoint scheme %q in %q", u.Scheme, raw)
 	}
@@ -84,6 +107,18 @@ func (e Endpoint) AutoLaunchable() bool {
 // needs the bridge and must never be launched.
 func (e Endpoint) DirectlyDialable() bool {
 	return e.Scheme == "http" || e.Scheme == "https"
+}
+
+// IrohID returns the endpoint ID this endpoint dials. It reports an error for
+// the listen form, which names no peer, and for any other scheme.
+func (e Endpoint) IrohID() (IrohID, error) {
+	if e.Scheme != "iroh" {
+		return IrohID{}, fmt.Errorf("endpoint %q is not an iroh endpoint", e.Raw)
+	}
+	if e.Value == "" {
+		return IrohID{}, fmt.Errorf("iroh endpoint %q names no endpoint ID to dial", e.Raw)
+	}
+	return ParseIrohID(e.Value)
 }
 
 func npipePath(u *url.URL) string {
@@ -122,6 +157,12 @@ func HTTPClient(endpoint string, base http.RoundTripper) (baseURL string, client
 	case "npipe":
 		transport, err := npipeRoundTripper(parsed.Value, base) //nolint:staticcheck // SA4023: npipeRoundTripper is a stub that always errors on non-Windows; the check is meaningful on Windows.
 		if err != nil {                                         //nolint:staticcheck // SA4023: see above; comparison is only tautological on non-Windows builds.
+			return "", nil, err
+		}
+		return LogicalHTTPBaseURL, &http.Client{Transport: transport}, nil
+	case "iroh":
+		transport, err := irohRoundTripper(parsed, base)
+		if err != nil {
 			return "", nil, err
 		}
 		return LogicalHTTPBaseURL, &http.Client{Transport: transport}, nil

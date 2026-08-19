@@ -1,6 +1,6 @@
 module github.com/obot-platform/discobox/cli
 
-go 1.26.0
+go 1.26.1
 
 require (
 	github.com/coder/websocket v1.8.14
@@ -12,6 +12,8 @@ require (
 	golang.org/x/crypto v0.53.0
 	golang.org/x/term v0.44.0
 )
+
+require git.coopcloud.tech/decentral1se/iroh-go v0.0.0-20260731195909-77011195d3d6 // indirect
 
 require (
 	github.com/AdaLogics/go-fuzz-headers v0.0.0-20240806141605-e8a1dd7889d6 // indirect

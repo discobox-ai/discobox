@@ -117,6 +117,9 @@ func Run(ctx context.Context) error {
 	}
 	sshd.RegisterConnectRoute(router, sshServer)
 
+	if err := configureIroh(cfg.DataDir, cfg.Listen); err != nil {
+		return err
+	}
 	listeners, err := listenAll(ctx, cfg.Listen)
 	if err != nil {
 		return fmt.Errorf("listen: %w", err)

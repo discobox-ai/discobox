@@ -1,9 +1,10 @@
 module github.com/obot-platform/discobox
 
-go 1.26.0
+go 1.26.1
 
 require (
 	aidanwoods.dev/go-paseto v1.6.0
+	git.coopcloud.tech/decentral1se/iroh-go v0.0.0-20260731195909-77011195d3d6
 	github.com/Microsoft/go-winio v0.6.2
 	github.com/adrg/xdg v0.5.3
 	github.com/coder/websocket v1.8.14
