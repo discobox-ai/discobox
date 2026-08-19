@@ -786,10 +786,12 @@ func TestOriginMountsCoverEveryReachableOrigin(t *testing.T) {
 					Kind:           workerclient.GitSourceKindGit,
 					LocalDirectory: workerclient.NewOptString("/host/ref"),
 				},
+				// No LocalDirectory: the wire withholds it for a pushed
+				// source, so an origin mount keyed on that field would skip
+				// exactly the source that needs one.
 				"pushed": {
-					Kind:           workerclient.GitSourceKindGit,
-					Delivery:       workerclient.NewOptGitSourceDelivery(workerclient.GitSourceDeliveryPush),
-					LocalDirectory: workerclient.NewOptString("/host/pushed"),
+					Kind:     workerclient.GitSourceKindGit,
+					Delivery: workerclient.NewOptGitSourceDelivery(workerclient.GitSourceDeliveryPush),
 				},
 				"remote": {
 					Kind: workerclient.GitSourceKindGit,
@@ -817,9 +819,9 @@ func TestOriginMountsCoverEveryReachableOrigin(t *testing.T) {
 	if !ok || ref.Source != "/host/ref" || !ref.ReadOnly || ref.Type != mount.TypeBind {
 		t.Fatalf("ref origin mount = %#v, origins = %#v", ref, byTarget)
 	}
-	// A push-delivered source's origin is the pool-side repository, never the
-	// client directory that is unreachable from this host — which is why the
-	// source is push-delivered in the first place.
+	// A push-delivered source's origin is the pool-side repository. The client
+	// directory is unreachable from this host — which is why the source is
+	// push-delivered — so the wire does not even carry it.
 	pushed, ok := byTarget[sandboxOriginsMount+"/pushed"]
 	if !ok || pushed.Source != "/pool/origins/pushed.git" || !pushed.ReadOnly || pushed.Type != mount.TypeBind {
 		t.Fatalf("pushed origin mount = %#v, origins = %#v", pushed, byTarget)
@@ -828,11 +830,14 @@ func TestOriginMountsCoverEveryReachableOrigin(t *testing.T) {
 
 // pushDeliveredSource is a push-delivered source checked out at a branch, or at a
 // bare commit when the branch is empty.
+//
+// It carries no LocalDirectory and no URL, which is what the pool agent actually
+// receives for a pushed source: poolGitSource withholds both so this host cannot
+// try to reach a client filesystem it has no route to.
 func pushDeliveredSource(branch string) workerapimodel.GitSource {
 	source := workerapimodel.GitSource{
-		Kind:           workerclient.GitSourceKindGit,
-		Delivery:       workerclient.NewOptGitSourceDelivery(workerclient.GitSourceDeliveryPush),
-		LocalDirectory: workerclient.NewOptString("/does/not/exist"),
+		Kind:     workerclient.GitSourceKindGit,
+		Delivery: workerclient.NewOptGitSourceDelivery(workerclient.GitSourceDeliveryPush),
 	}
 	if branch != "" {
 		source.Checkout = workerclient.NewOptGitSourceCheckout(workerapimodel.GitSourceCheckout{

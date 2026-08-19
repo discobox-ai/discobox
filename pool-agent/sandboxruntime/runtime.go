@@ -830,13 +830,9 @@ func (r *DockerSandboxRuntime) prepareSandboxVolumes(ctx context.Context, sandbo
 func originMounts(sources []sandboxSource, originPath func(slug string) string, daemonPath func(string) string) []mount.Mount {
 	var mounts []mount.Mount
 	for _, source := range sources {
-		local := strings.TrimSpace(optString(source.git.LocalDirectory))
-		if local == "" {
+		host := sourceOriginHostPath(source.git, source.slug, originPath)
+		if host == "" {
 			continue
-		}
-		host := local
-		if gitSourceAwaitsPush(source.git) {
-			host = originPath(source.slug)
 		}
 		mounts = append(mounts, mount.Mount{
 			Type:     mount.TypeBind,
@@ -2613,10 +2609,9 @@ func (r *DockerSandboxRuntime) materializeGitSource(ctx context.Context, source 
 // of the same materialize call that clones and restores the workspace, before
 // that source is marked materialized.
 func (r *DockerSandboxRuntime) rewriteOriginRemote(ctx context.Context, target string, source workerapimodel.GitSource, slug string, identity sandboxuser.User) error {
-	if slug == "" {
-		return nil
-	}
-	if strings.TrimSpace(optString(source.LocalDirectory)) == "" {
+	// The same test the mount is built from, so the remote is rewritten exactly
+	// when something is bound at the path it is rewritten to.
+	if sourceOriginHostPath(source, slug, func(string) string { return slug }) == "" {
 		return nil
 	}
 	return runGit(ctx, target, chownID(identity.UID), chownID(identity.GID), "remote", "set-url", "origin", path.Join(sandboxOriginsMount, slug))
@@ -2747,6 +2742,27 @@ func gitSourceCloneURL(source workerapimodel.GitSource, hostMountPrefix string) 
 		return sourceURL.String(), nil
 	}
 	return "", fmt.Errorf("source URL or localDirectory is required")
+}
+
+// sourceOriginHostPath is the host directory bound at /.discobox/origins/<slug>,
+// or empty for a source with no origin the sandbox can reach.
+//
+// A push-delivered source always has one: the pool-side repository the client
+// pushes into. Its LocalDirectory is deliberately *not* forwarded on the wire —
+// poolGitSource withholds it so this host cannot try to reach a client filesystem
+// it has no route to — so that field says nothing about a pushed source's origin
+// and must not be tested for one.
+//
+// A clone-delivered source's origin is the directory it was cloned from, when it
+// has one. A source with neither is a remote URL, whose origin is that remote.
+func sourceOriginHostPath(source workerapimodel.GitSource, slug string, originPath func(slug string) string) string {
+	if gitSourceAwaitsPush(source) {
+		if slug == "" {
+			return ""
+		}
+		return originPath(slug)
+	}
+	return strings.TrimSpace(optString(source.LocalDirectory))
 }
 
 // gitSourceAwaitsPush reports whether the client delivers this source by
