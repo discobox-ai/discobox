@@ -107,6 +107,45 @@ fails as above).
 If you hit this error in an ad-hoc probe container, mount a real filesystem at
 the data root rather than concluding the environment cannot nest.
 
+## Windows / wslc, without `task dev`
+
+On Windows there is no `task dev` and no host Docker. The server runs behind the
+npipe endpoint the CLI defaults to, so a live provider/pool is usually already
+there — check before assuming a cold start:
+
+```bash
+go tool task build:cli                     # -> build/disco.exe (deps: build:cp-relay)
+./build/disco.exe box provider ls          # wslc provider
+./build/disco.exe box pool ls              # state=active ready=true means you can create
+```
+
+Drive it exactly as a user would, from a source directory:
+
+```bash
+cd <some-git-repo>
+/e/src/disco2/build/disco.exe run -d --harness shell --include-dirty=false "probe"
+/e/src/disco2/build/disco.exe shell <name> sh -lc 'id; echo $HOME'
+/e/src/disco2/build/disco.exe box sandbox purge <id>     # `delete` only archives
+```
+
+`disco shell <SANDBOX> -- cmd` works. It did not before 2026-08-18 -- the `--`
+arrived as the command's argv[0] and the sandbox 500'd saying it is not an
+executable -- so a build older than that needs the `--` dropped.
+
+To see the create request itself rather than its effect — which is the surface
+for anything in `cli/internal/sandboxcreate` — point `--server` at a listener
+that logs the body and answers 503. Nothing in the `run` path calls the API
+before the create POST, so no fake project or harness is needed:
+
+```bash
+./build/disco.exe --server http://127.0.0.1:18719 --project p-verify   run -d --include-dirty=false "prompt"     # body lands in your capture log
+```
+
+For the same code path on Linux, cross-build (`cd cli && GOOS=linux GOARCH=amd64
+go build -o /tmp/disco ./cmd/disco`) and run it plus the capture listener inside
+WSL, both on WSL's own loopback -- reaching a Windows-side listener from WSL2 is
+the fiddly part, and running both sides in the guest avoids it.
+
 ## Cleanup
 
 ```bash

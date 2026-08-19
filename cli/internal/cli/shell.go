@@ -18,7 +18,7 @@ import (
 // apart, so RunE resolves it: see resolveShellTarget.
 func (a *App) newShellCommand() *cobra.Command {
 	cmd := &cobra.Command{
-		Use:   "shell [SANDBOX_ID] [CMD...]",
+		Use:   "shell [SANDBOX_ID] [--] [CMD...]",
 		Short: "Run a command in a sandbox, or its login shell",
 		Long: `Run a command in a sandbox and stream it to this terminal, or open its login
 shell.
@@ -30,6 +30,10 @@ Otherwise there is no SANDBOX_ID: every argument is the command, and the
 sandbox is taken from "disco ls" instead — the only one when there is one,
 otherwise you are asked to pick.
 
+A -- ends this command's own arguments: everything after it is the command,
+whatever it looks like. Before the sandbox it also means no argument names one,
+so "disco shell -- ls" runs "ls" even in a project with a sandbox called ls.
+
 Without a command this starts the sandbox user's login shell. Which shell that
 is is resolved inside the sandbox from that user's passwd entry, so it is the
 sandbox's shell, not this machine's.
@@ -40,13 +44,15 @@ the remote process, and shell exits with its exit code.`,
 		Example: `  disco shell
   disco shell go test ./...
   disco shell sbx_01hq bash
-  disco shell sbx_01hq -- ls -la`,
+  disco shell sbx_01hq -- ls -la
+  disco shell -- git log --oneline`,
 		Args: cobra.ArbitraryArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			projectID, sandboxID, _, cmdArgs, err := a.resolveShellTarget(cmd, args)
 			if err != nil {
 				return err
 			}
+			cmdArgs = trimCommandSeparator(cmdArgs)
 			// A PTY is only correct when every stream this exec touches is one:
 			// allocating one for a pipe would echo input back and dress output in
 			// escape sequences the consumer never asked for.
@@ -74,6 +80,34 @@ the remote process, and shell exits with its exit code.`,
 	return cmd
 }
 
+// trimCommandSeparator drops the -- that ends shell's own arguments, leaving
+// the command it introduced.
+//
+// Cobra cannot do this itself here. shell sets SetInterspersed(false) so its
+// flags stop at the first positional -- which is the sandbox -- and pflag only
+// recognizes a -- while it is still parsing flags (parseArgs in pflag's
+// flag.go: the non-flag branch appends the rest verbatim and returns). So the
+// separator in the documented `disco shell sbx_01hq -- ls -la` arrives as an
+// ordinary argument, and without this it became the command's argv[0] and the
+// sandbox reported that -- is not an executable.
+//
+// Only the leading one goes. That is the rule every shell follows: past the
+// separator every argument is literal, -- included, so `disco shell sbx -- --
+// x` runs `-- x` exactly as `env -- -- x` does. A -- anywhere else was typed
+// as part of the command and belongs to it -- `disco shell git log -- path`
+// must reach git intact.
+//
+// `disco tools ssh` shares resolveShellTarget but not this, because its
+// arguments are ssh's and splitSSHArgs already reads the separator the way ssh
+// does: it distinguishes a remote command from ssh's own options, which is a
+// finer answer than dropping the token here would leave it room to give.
+func trimCommandSeparator(args []string) []string {
+	if len(args) > 0 && args[0] == "--" {
+		return args[1:]
+	}
+	return args
+}
+
 // resolveShellTarget splits shell's positional arguments into the sandbox and
 // the command, since Cobra sees one flat list and cannot tell them apart on
 // its own. args[0] is tried against the sandboxes "disco ls" shows for the
@@ -81,6 +115,14 @@ the remote process, and shell exits with its exit code.`,
 // SANDBOX_ID and leaves the rest as the command. No match — including no
 // args at all — means every argument is the command, and the sandbox falls
 // back to the same picker `disco apply` uses when SANDBOX_ID is omitted.
+//
+// A leading -- turns that guess off. It is the one case where the caller has
+// said outright that no argument names a sandbox, so `disco shell -- ls` runs
+// ls even where a sandbox is called ls -- which is the whole reason to reach
+// for the separator. pflag consumed that -- before RunE ever saw the arguments
+// (it comes before the first positional, so flags are still being parsed) and
+// left ArgsLenAtDash behind to say where it was; 0 means nothing preceded it.
+// Nothing is trimmed for it here for the same reason: the token is already gone.
 func (a *App) resolveShellTarget(cmd *cobra.Command, args []string) (projectID, sandboxID string, client *apiclientgen.Client, cmdArgs []string, err error) {
 	projectID, err = a.projectIDValue()
 	if err != nil {
@@ -90,18 +132,22 @@ func (a *App) resolveShellTarget(cmd *cobra.Command, args []string) (projectID, 
 	if err != nil {
 		return "", "", nil, nil, err
 	}
+	// -1 is "no -- was parsed", which is also what a command with flag parsing
+	// disabled reports -- `disco tools ssh` reaches here that way, and reads its
+	// own separator later.
+	namesSandbox := cmd.Flags().ArgsLenAtDash() != 0
 	// A full generated ID needs no listing to recognize: its shape alone is
 	// unambiguous, and the server is the one that validates it exists — the same
 	// no-round-trip-it-doesn't-need path a fully-specified --sandbox-id takes
 	// elsewhere.
-	if len(args) > 0 && idpkg.IsGenerated(args[0]) {
+	if namesSandbox && len(args) > 0 && idpkg.IsGenerated(args[0]) {
 		return projectID, args[0], client, args[1:], nil
 	}
 	sandboxes, err := a.listProjectSandboxes(cmd.Context(), client, projectID, false)
 	if err != nil {
 		return "", "", nil, nil, err
 	}
-	if len(args) > 0 {
+	if namesSandbox && len(args) > 0 {
 		id, ok, matchErr := matchSandboxArg(args[0], sandboxes)
 		if matchErr != nil {
 			return "", "", nil, nil, matchErr
