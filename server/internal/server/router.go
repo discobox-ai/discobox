@@ -107,7 +107,11 @@ func NewRouter(svc services.Services) (*chi.Mux, error) {
 // caller — the SSH ingress (ADR 0024) — can drive the same
 // AcquireSandboxHTTPClient choke point and username resolution an HTTP
 // caller would, without a wrapper or a second service assembly.
-func NewApp(ctx context.Context, writeDB, readDB *gorm.DB, options ...AppOptions) (*chi.Mux, services.Services, *store.Store, error) {
+// The returned shutdown function stops the reconcile engine and closes every
+// provider. It is separate from the router because a provider owns resources
+// outside this process -- a wslc pool VM, for one -- that outlive the HTTP
+// server unless something closes them.
+func NewApp(ctx context.Context, writeDB, readDB *gorm.DB, options ...AppOptions) (*chi.Mux, services.Services, *store.Store, func(context.Context) error, error) {
 	opts := DefaultAppOptions()
 	if len(options) > 0 {
 		opts = options[0]
@@ -125,11 +129,11 @@ func NewApp(ctx context.Context, writeDB, readDB *gorm.DB, options ...AppOptions
 		PollInterval: opts.DispatcherPollInterval,
 	})
 	if err != nil {
-		return nil, services.Services{}, nil, err
+		return nil, services.Services{}, nil, nil, err
 	}
 	developmentImageSync, err := dockerworker.NewDevelopmentImageSynchronizer(opts.DevelopmentImages)
 	if err != nil {
-		return nil, services.Services{}, nil, fmt.Errorf("configure development image synchronization: %w", err)
+		return nil, services.Services{}, nil, nil, fmt.Errorf("configure development image synchronization: %w", err)
 	}
 	// Pool backends that cannot be dialed inward hand their guest-initiated
 	// control-plane connections to this hub; Serve treats it as one more
@@ -151,10 +155,10 @@ func NewApp(ctx context.Context, writeDB, readDB *gorm.DB, options ...AppOptions
 	}
 	appServices.SetWorkerAgentAuthManager(poolagentauth.NewManager(appStore, opts.SecretSealer))
 	if _, err := appServices.InitializeDefaults(ctx, opts.UserID); err != nil {
-		return nil, services.Services{}, nil, err
+		return nil, services.Services{}, nil, nil, err
 	}
 	if err := appServices.Start(ctx); err != nil {
-		return nil, services.Services{}, nil, err
+		return nil, services.Services{}, nil, nil, err
 	}
 	svc := services.Services{
 		SSH:            opts.SSHIngress,
@@ -186,8 +190,8 @@ func NewApp(ctx context.Context, writeDB, readDB *gorm.DB, options ...AppOptions
 	registerPoolConsoleRoutes(router, appServices)
 	generated, err := handlers.NewServer(svc)
 	if err != nil {
-		return nil, services.Services{}, nil, err
+		return nil, services.Services{}, nil, nil, err
 	}
 	router.Mount("/", generated)
-	return router, svc, appStore, nil
+	return router, svc, appStore, appServices.Stop, nil
 }

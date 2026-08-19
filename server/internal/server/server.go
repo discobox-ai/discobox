@@ -89,7 +89,7 @@ func Run(ctx context.Context) error {
 		return err
 	}
 
-	router, appServices, appStore, err := NewApp(ctx, db.Write, db.Read, AppOptions{
+	router, appServices, appStore, shutdownApp, err := NewApp(ctx, db.Write, db.Read, AppOptions{
 		SSHIngress:                     sshIngress,
 		ControlPlaneStreams:            controlPlaneStreams,
 		UserID:                         service.DefaultUserID,
@@ -172,6 +172,16 @@ func Run(ctx context.Context) error {
 		defer cancel()
 		if err := httpServer.Shutdown(shutdownCtx); err != nil {
 			log.Printf("graceful shutdown: %v", err)
+		}
+	}()
+	// Runs however serve returns, not only on cancellation, so a listener error
+	// tears the backends down too. The HTTP server has already stopped
+	// accepting by then, so nothing new arrives mid-teardown.
+	defer func() {
+		shutdownCtx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+		defer cancel()
+		if err := shutdownApp(shutdownCtx); err != nil {
+			log.Printf("shut down services: %v", err)
 		}
 	}()
 	return serveAll(httpServer, listeners)

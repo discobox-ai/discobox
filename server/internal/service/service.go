@@ -161,12 +161,25 @@ func (s *Service) Start(ctx context.Context) error {
 	return nil
 }
 
-// Stop shuts down the reconcile engine, waiting for in-flight reconciles.
+// Stop shuts down the reconcile engine, waiting for in-flight reconciles, then
+// closes every provider.
+//
+// Provider close is what releases a backend's own resources -- for wslc, the
+// COM session whose lifetime is the pool VM's. Losing the handle when the
+// process dies happens to tear that VM down too, but only after the service
+// notices, and only for a backend whose resources are bound to this process at
+// all. Closing them here makes teardown deterministic rather than incidental.
+//
+// The engine stops first: a reconcile still in flight may be talking to a
+// provider, and closing underneath it would fail the operation rather than let
+// it finish.
 func (s *Service) Stop(ctx context.Context) error {
-	if s.engine == nil {
-		return nil
+	var err error
+	if s.engine != nil {
+		err = s.engine.Stop(ctx)
 	}
-	return s.engine.Stop(ctx)
+	s.SandboxProviderManager().Shutdown()
+	return err
 }
 
 func (s *Service) registerReconcilers() error {
