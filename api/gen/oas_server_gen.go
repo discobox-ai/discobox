@@ -286,6 +286,12 @@ type Handler interface {
 	//
 	// GET /projects/{projectId}/providers/{providerId}
 	GetSandboxProviderInstance(ctx context.Context, params GetSandboxProviderInstanceParams) (GetSandboxProviderInstanceRes, error)
+	// GetSandboxService implements get-sandbox-service operation.
+	//
+	// Get a declared service in a sandbox.
+	//
+	// GET /api/projects/{projectId}/sandboxes/{sandboxId}/services/{serviceId}
+	GetSandboxService(ctx context.Context, params GetSandboxServiceParams) (GetSandboxServiceRes, error)
 	// GetSecret implements get-secret operation.
 	//
 	// Get a secret.
@@ -376,6 +382,21 @@ type Handler interface {
 	//
 	// GET /projects/{projectId}/providers
 	ListSandboxProviderInstances(ctx context.Context, params ListSandboxProviderInstancesParams) (ListSandboxProviderInstancesRes, error)
+	// ListSandboxServiceLogs implements list-sandbox-service-logs operation.
+	//
+	// Returns the transcript of the service's current or last run. A service that has never run has an
+	// empty transcript rather than an error.
+	//
+	// GET /api/projects/{projectId}/sandboxes/{sandboxId}/services/{serviceId}/logs
+	ListSandboxServiceLogs(ctx context.Context, params ListSandboxServiceLogsParams) (ListSandboxServiceLogsRes, error)
+	// ListSandboxServices implements list-sandbox-services operation.
+	//
+	// Lists the services declared under .discobox/services in the sandbox's primary source, each with
+	// the state of the exec running it. Declarations are re-read on every request, so a service file
+	// added or edited while the sandbox is up appears immediately.
+	//
+	// GET /api/projects/{projectId}/sandboxes/{sandboxId}/services
+	ListSandboxServices(ctx context.Context, params ListSandboxServicesParams) (ListSandboxServicesRes, error)
 	// ListSandboxes implements list-sandboxes operation.
 	//
 	// List sandboxes.
@@ -482,6 +503,13 @@ type Handler interface {
 	//
 	// POST /projects/{projectId}/sandboxes/{sandboxId}/restart
 	RestartSandbox(ctx context.Context, req *RestartSandboxBody, params RestartSandboxParams) (RestartSandboxRes, error)
+	// RestartSandboxService implements restart-sandbox-service operation.
+	//
+	// Stops the service if it is running and starts it again under the same exec ID. A service that is
+	// not running is simply started.
+	//
+	// POST /api/projects/{projectId}/sandboxes/{sandboxId}/services/{serviceId}/restart
+	RestartSandboxService(ctx context.Context, params RestartSandboxServiceParams) (RestartSandboxServiceRes, error)
 	// RevokeSecretGrant implements revoke-secret-grant operation.
 	//
 	// Revoke a secret grant.
@@ -524,12 +552,26 @@ type Handler interface {
 	//
 	// POST /api/projects/{projectId}/sandboxes/{sandboxId}/execs/{execId}/start
 	StartSandboxExec(ctx context.Context, params StartSandboxExecParams) (StartSandboxExecRes, error)
+	// StartSandboxService implements start-sandbox-service operation.
+	//
+	// Starts the service, or returns it unchanged when it is already running. A service that has run
+	// before is relaunched under its existing exec ID rather than given a new one.
+	//
+	// POST /api/projects/{projectId}/sandboxes/{sandboxId}/services/{serviceId}/start
+	StartSandboxService(ctx context.Context, params StartSandboxServiceParams) (StartSandboxServiceRes, error)
 	// StopSandbox implements stop-sandbox operation.
 	//
 	// Stop a sandbox.
 	//
 	// POST /projects/{projectId}/sandboxes/{sandboxId}/stop
 	StopSandbox(ctx context.Context, req *StopSandboxBody, params StopSandboxParams) (StopSandboxRes, error)
+	// StopSandboxService implements stop-sandbox-service operation.
+	//
+	// Ends the service's run and keeps its record, so its output is still readable and starting it again
+	// resumes the same exec identity.
+	//
+	// POST /api/projects/{projectId}/sandboxes/{sandboxId}/services/{serviceId}/stop
+	StopSandboxService(ctx context.Context, params StopSandboxServiceParams) (StopSandboxServiceRes, error)
 	// StreamSandboxExecResources implements stream-sandbox-exec-resources operation.
 	//
 	// Stream opaque resource snapshots for a sandbox exec.

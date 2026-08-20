@@ -16,6 +16,7 @@ import (
 	"github.com/discobox-ai/discobox/sandbox-agent/execs"
 	"github.com/discobox-ai/discobox/sandbox-agent/ports"
 	"github.com/discobox-ai/discobox/sandbox-agent/resources"
+	"github.com/discobox-ai/discobox/sandbox-agent/services"
 	"github.com/discobox-ai/discobox/sandbox-agent/store"
 	"github.com/discobox-ai/discobox/sandbox-agent/terminal"
 	"github.com/discobox-ai/discobox/sandboxconfig"
@@ -26,6 +27,7 @@ type handler struct {
 	identity          Identity
 	execs             *execs.Manager
 	terminals         *terminal.Service
+	services          *services.Manager
 	store             terminalStore
 	resourceCollector resources.Collector
 	resourceInterval  time.Duration

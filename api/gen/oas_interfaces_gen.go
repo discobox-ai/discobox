@@ -165,6 +165,10 @@ type GetSandboxRes interface {
 	getSandboxRes()
 }
 
+type GetSandboxServiceRes interface {
+	getSandboxServiceRes()
+}
+
 type GetSecretRequestRes interface {
 	getSecretRequestRes()
 }
@@ -223,6 +227,14 @@ type ListSandboxProviderCatalogRes interface {
 
 type ListSandboxProviderInstancesRes interface {
 	listSandboxProviderInstancesRes()
+}
+
+type ListSandboxServiceLogsRes interface {
+	listSandboxServiceLogsRes()
+}
+
+type ListSandboxServicesRes interface {
+	listSandboxServicesRes()
 }
 
 type ListSandboxesRes interface {
@@ -285,6 +297,10 @@ type RestartSandboxRes interface {
 	restartSandboxRes()
 }
 
+type RestartSandboxServiceRes interface {
+	restartSandboxServiceRes()
+}
+
 type RevokeSecretGrantRes interface {
 	revokeSecretGrantRes()
 }
@@ -313,8 +329,16 @@ type StartSandboxRes interface {
 	startSandboxRes()
 }
 
+type StartSandboxServiceRes interface {
+	startSandboxServiceRes()
+}
+
 type StopSandboxRes interface {
 	stopSandboxRes()
+}
+
+type StopSandboxServiceRes interface {
+	stopSandboxServiceRes()
 }
 
 type StreamSandboxExecResourcesRes interface {

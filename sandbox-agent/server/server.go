@@ -22,6 +22,7 @@ import (
 	"github.com/discobox-ai/discobox/sandbox-agent/ports"
 	"github.com/discobox-ai/discobox/sandbox-agent/resources"
 	"github.com/discobox-ai/discobox/sandbox-agent/secretswatch"
+	"github.com/discobox-ai/discobox/sandbox-agent/services"
 	"github.com/discobox-ai/discobox/sandbox-agent/sourcesready"
 	agentstore "github.com/discobox-ai/discobox/sandbox-agent/store"
 	"github.com/discobox-ai/discobox/sandbox-agent/terminal"
@@ -95,6 +96,7 @@ type agentRuntime struct {
 	router     *chi.Mux
 	terminals  *terminal.Service
 	execs      *execs.Manager
+	services   *services.Manager
 	store      *agentstore.Store
 	portsWatch *ports.Watcher
 	listenAddr string
@@ -174,6 +176,20 @@ func newRouterAndManager(cfg Config) (agentRuntime, error) {
 		return agentRuntime{}, err
 	}
 	manager.SetHookSocketPath(harnesshooks.SocketPath(cfg.RuntimeDir))
+	// Services are declared in the primary source's working tree, which is the
+	// directory an exec that names no workdir starts in. Asking the exec
+	// manager rather than reading the config keeps the two from disagreeing
+	// about where that is (ADR 0063 §1).
+	serviceManager, err := newServiceManager(execManager)
+	if err != nil {
+		// A sandbox whose default workdir does not resolve is broken for every
+		// exec, not just for services, and it has to come up far enough to be
+		// diagnosed. The service routes then answer "not available here"
+		// rather than reporting an empty listing, which would read as "this
+		// repository declares no services".
+		slog.Default().Warn("sandbox agent services disabled", "error", err)
+		serviceManager = nil
+	}
 	portsWatch, err := newPortsWatcher(cfg, execManager)
 	if err != nil {
 		// Telemetry must not be what keeps a sandbox from booting. A sandbox
@@ -187,6 +203,7 @@ func newRouterAndManager(cfg Config) (agentRuntime, error) {
 		identity:          cfg.Identity,
 		terminals:         manager,
 		execs:             execManager,
+		services:          serviceManager,
 		store:             localStore,
 		resourceCollector: cfg.ResourceCollector,
 		resourceInterval:  cfg.Resources.SampleInterval,
@@ -237,10 +254,21 @@ func newRouterAndManager(cfg Config) (agentRuntime, error) {
 		router:     router,
 		terminals:  manager,
 		execs:      execManager,
+		services:   serviceManager,
 		store:      localStore,
 		portsWatch: portsWatch,
 		listenAddr: cfg.ListenAddress,
 	}, nil
+}
+
+// newServiceManager resolves where this sandbox's service declarations live
+// and wires the service layer to the exec primitive that runs them.
+func newServiceManager(execManager *execs.Manager) (*services.Manager, error) {
+	root, err := execManager.DefaultWorkdir()
+	if err != nil {
+		return nil, err
+	}
+	return services.NewManager(services.ManagerConfig{Execs: execManager, Root: root})
 }
 
 // newPortsWatcher wires the listening-port watcher to the identity the sandbox
@@ -343,6 +371,21 @@ func Serve(ctx context.Context, logger *slog.Logger, cfg Config) error {
 			case err == nil, errors.Is(err, context.Canceled):
 			default:
 				logger.Error("launch primary terminal", "error", err)
+			}
+		}()
+	}
+	// The repository's declared services come up alongside the primary
+	// terminal (ADR 0063 §5). Like the primary launch this runs from a
+	// goroutine started before the server serves, so a slow service script
+	// cannot hold up the agent answering — and a config-mode sandbox starts
+	// none, since it exists to run one setup command and end, not to be worked
+	// in.
+	if cfg.HarnessMode != "config" && built.services != nil {
+		go func() {
+			switch err := built.services.EnsureStarted(ctx, logger); {
+			case err == nil, errors.Is(err, context.Canceled):
+			default:
+				logger.Error("start sandbox services", "error", err)
 			}
 		}()
 	}

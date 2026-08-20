@@ -1688,12 +1688,18 @@ func (*ErrorResponseStatusCode) deleteSandboxExecRes()              {}
 func (*ErrorResponseStatusCode) getSandboxAgentStatusRes()          {}
 func (*ErrorResponseStatusCode) getSandboxExecRes()                 {}
 func (*ErrorResponseStatusCode) getSandboxExecResourcesRes()        {}
+func (*ErrorResponseStatusCode) getSandboxServiceRes()              {}
 func (*ErrorResponseStatusCode) listHarnessHooksRes()               {}
 func (*ErrorResponseStatusCode) listSandboxExecEventsRes()          {}
 func (*ErrorResponseStatusCode) listSandboxExecLogsRes()            {}
 func (*ErrorResponseStatusCode) listSandboxExecResourceHistoryRes() {}
 func (*ErrorResponseStatusCode) listSandboxExecsRes()               {}
+func (*ErrorResponseStatusCode) listSandboxServiceLogsRes()         {}
+func (*ErrorResponseStatusCode) listSandboxServicesRes()            {}
+func (*ErrorResponseStatusCode) restartSandboxServiceRes()          {}
 func (*ErrorResponseStatusCode) startSandboxExecRes()               {}
+func (*ErrorResponseStatusCode) startSandboxServiceRes()            {}
+func (*ErrorResponseStatusCode) stopSandboxServiceRes()             {}
 func (*ErrorResponseStatusCode) streamSandboxExecResourcesRes()     {}
 
 // Ref: #/components/schemas/GitSource
@@ -10088,7 +10094,11 @@ type SandboxExec struct {
 	// Process exit code when the exec has exited.
 	ExitCode OptInt64 `json:"exitCode"`
 	// Runtime error detail when the exec failed.
-	Error     OptString   `json:"error"`
+	Error OptString `json:"error"`
+	// Whether this run ended because it was asked to stop rather than on its own. It cannot be inferred
+	// after the fact - a stopped process and one killed by a signal it did not choose leave the same
+	// record - so it is recorded when the stop is requested and cleared by the next run.
+	Stopped   OptBool     `json:"stopped"`
 	CreatedAt time.Time   `json:"createdAt"`
 	StartedAt OptDateTime `json:"startedAt"`
 	ExitedAt  OptDateTime `json:"exitedAt"`
@@ -10158,6 +10168,11 @@ func (s *SandboxExec) GetExitCode() OptInt64 {
 // GetError returns the value of Error.
 func (s *SandboxExec) GetError() OptString {
 	return s.Error
+}
+
+// GetStopped returns the value of Stopped.
+func (s *SandboxExec) GetStopped() OptBool {
+	return s.Stopped
 }
 
 // GetCreatedAt returns the value of CreatedAt.
@@ -10248,6 +10263,11 @@ func (s *SandboxExec) SetExitCode(val OptInt64) {
 // SetError sets the value of Error.
 func (s *SandboxExec) SetError(val OptString) {
 	s.Error = val
+}
+
+// SetStopped sets the value of Stopped.
+func (s *SandboxExec) SetStopped(val OptBool) {
+	s.Stopped = val
 }
 
 // SetCreatedAt sets the value of CreatedAt.
@@ -10489,7 +10509,8 @@ func (s *SandboxExecLogsResponse) SetEntries(val []SandboxExecLogEntry) {
 	s.Entries = val
 }
 
-func (*SandboxExecLogsResponse) listSandboxExecLogsRes() {}
+func (*SandboxExecLogsResponse) listSandboxExecLogsRes()    {}
+func (*SandboxExecLogsResponse) listSandboxServiceLogsRes() {}
 
 // Caller-supplied exec metadata.
 type SandboxExecMetadata map[string]string
@@ -11625,6 +11646,262 @@ func (s *SandboxSecretInput) SetSecretId(val OptString) {
 func (s *SandboxSecretInput) SetValue(val OptString) {
 	s.Value = val
 }
+
+// A service the sandbox's primary source declares under .discobox/services, together with the state
+// of the exec running it.
+// Ref: #/components/schemas/SandboxService
+type SandboxService struct {
+	// Stable filename-derived service ID, with any numeric ordering prefix and known extension removed -
+	// 10-discobox-api.sh is discobox-api.
+	ID string `json:"id"`
+	// Display name from the declaration's front matter, defaulted from the filename.
+	Name string `json:"name"`
+	// What the service is for, from the declaration's front matter.
+	Description OptString `json:"description"`
+	// Absolute path to the declaring script inside the sandbox.
+	Path OptString `json:"path"`
+	// The declaring file's own name. It orders the listing, which is what the numeric prefix stripped
+	// from the ID is for.
+	FileName OptString `json:"fileName"`
+	// Why this declaration cannot run - a missing shebang, a missing executable bit, a duplicate ID. A
+	// service with a problem is listed rather than dropped, because one that silently fails to appear is
+	// indistinguishable from one nobody declared.
+	Problem OptString `json:"problem"`
+	// Service state, derived from the exec running it. stopped covers both a
+	// service that has never run and one stopped on request; exited is a
+	// process that ended by itself successfully. Nothing is restarted
+	// automatically.
+	Status SandboxServiceStatus `json:"status"`
+	// Exec running this service, absent when none ever has. It is durable across restarts, so a client
+	// keyed on it keeps its place when the service is restarted.
+	ExecId OptString `json:"execId"`
+	// Sandbox-local process ID when known.
+	Pid OptInt64 `json:"pid"`
+	// Exit code of the last run when it has ended.
+	ExitCode  OptInt64    `json:"exitCode"`
+	StartedAt OptDateTime `json:"startedAt"`
+	ExitedAt  OptDateTime `json:"exitedAt"`
+	// Why the last run failed, when it did.
+	Error OptString `json:"error"`
+}
+
+// GetID returns the value of ID.
+func (s *SandboxService) GetID() string {
+	return s.ID
+}
+
+// GetName returns the value of Name.
+func (s *SandboxService) GetName() string {
+	return s.Name
+}
+
+// GetDescription returns the value of Description.
+func (s *SandboxService) GetDescription() OptString {
+	return s.Description
+}
+
+// GetPath returns the value of Path.
+func (s *SandboxService) GetPath() OptString {
+	return s.Path
+}
+
+// GetFileName returns the value of FileName.
+func (s *SandboxService) GetFileName() OptString {
+	return s.FileName
+}
+
+// GetProblem returns the value of Problem.
+func (s *SandboxService) GetProblem() OptString {
+	return s.Problem
+}
+
+// GetStatus returns the value of Status.
+func (s *SandboxService) GetStatus() SandboxServiceStatus {
+	return s.Status
+}
+
+// GetExecId returns the value of ExecId.
+func (s *SandboxService) GetExecId() OptString {
+	return s.ExecId
+}
+
+// GetPid returns the value of Pid.
+func (s *SandboxService) GetPid() OptInt64 {
+	return s.Pid
+}
+
+// GetExitCode returns the value of ExitCode.
+func (s *SandboxService) GetExitCode() OptInt64 {
+	return s.ExitCode
+}
+
+// GetStartedAt returns the value of StartedAt.
+func (s *SandboxService) GetStartedAt() OptDateTime {
+	return s.StartedAt
+}
+
+// GetExitedAt returns the value of ExitedAt.
+func (s *SandboxService) GetExitedAt() OptDateTime {
+	return s.ExitedAt
+}
+
+// GetError returns the value of Error.
+func (s *SandboxService) GetError() OptString {
+	return s.Error
+}
+
+// SetID sets the value of ID.
+func (s *SandboxService) SetID(val string) {
+	s.ID = val
+}
+
+// SetName sets the value of Name.
+func (s *SandboxService) SetName(val string) {
+	s.Name = val
+}
+
+// SetDescription sets the value of Description.
+func (s *SandboxService) SetDescription(val OptString) {
+	s.Description = val
+}
+
+// SetPath sets the value of Path.
+func (s *SandboxService) SetPath(val OptString) {
+	s.Path = val
+}
+
+// SetFileName sets the value of FileName.
+func (s *SandboxService) SetFileName(val OptString) {
+	s.FileName = val
+}
+
+// SetProblem sets the value of Problem.
+func (s *SandboxService) SetProblem(val OptString) {
+	s.Problem = val
+}
+
+// SetStatus sets the value of Status.
+func (s *SandboxService) SetStatus(val SandboxServiceStatus) {
+	s.Status = val
+}
+
+// SetExecId sets the value of ExecId.
+func (s *SandboxService) SetExecId(val OptString) {
+	s.ExecId = val
+}
+
+// SetPid sets the value of Pid.
+func (s *SandboxService) SetPid(val OptInt64) {
+	s.Pid = val
+}
+
+// SetExitCode sets the value of ExitCode.
+func (s *SandboxService) SetExitCode(val OptInt64) {
+	s.ExitCode = val
+}
+
+// SetStartedAt sets the value of StartedAt.
+func (s *SandboxService) SetStartedAt(val OptDateTime) {
+	s.StartedAt = val
+}
+
+// SetExitedAt sets the value of ExitedAt.
+func (s *SandboxService) SetExitedAt(val OptDateTime) {
+	s.ExitedAt = val
+}
+
+// SetError sets the value of Error.
+func (s *SandboxService) SetError(val OptString) {
+	s.Error = val
+}
+
+func (*SandboxService) getSandboxServiceRes()     {}
+func (*SandboxService) restartSandboxServiceRes() {}
+func (*SandboxService) startSandboxServiceRes()   {}
+func (*SandboxService) stopSandboxServiceRes()    {}
+
+// Service state, derived from the exec running it. stopped covers both a
+// service that has never run and one stopped on request; exited is a
+// process that ended by itself successfully. Nothing is restarted
+// automatically.
+type SandboxServiceStatus string
+
+const (
+	SandboxServiceStatusStopped  SandboxServiceStatus = "stopped"
+	SandboxServiceStatusStarting SandboxServiceStatus = "starting"
+	SandboxServiceStatusRunning  SandboxServiceStatus = "running"
+	SandboxServiceStatusExited   SandboxServiceStatus = "exited"
+	SandboxServiceStatusFailed   SandboxServiceStatus = "failed"
+)
+
+// AllValues returns all SandboxServiceStatus values.
+func (SandboxServiceStatus) AllValues() []SandboxServiceStatus {
+	return []SandboxServiceStatus{
+		SandboxServiceStatusStopped,
+		SandboxServiceStatusStarting,
+		SandboxServiceStatusRunning,
+		SandboxServiceStatusExited,
+		SandboxServiceStatusFailed,
+	}
+}
+
+// MarshalText implements encoding.TextMarshaler.
+func (s SandboxServiceStatus) MarshalText() ([]byte, error) {
+	switch s {
+	case SandboxServiceStatusStopped:
+		return []byte(s), nil
+	case SandboxServiceStatusStarting:
+		return []byte(s), nil
+	case SandboxServiceStatusRunning:
+		return []byte(s), nil
+	case SandboxServiceStatusExited:
+		return []byte(s), nil
+	case SandboxServiceStatusFailed:
+		return []byte(s), nil
+	default:
+		return nil, errors.Errorf("invalid value: %q", s)
+	}
+}
+
+// UnmarshalText implements encoding.TextUnmarshaler.
+func (s *SandboxServiceStatus) UnmarshalText(data []byte) error {
+	switch SandboxServiceStatus(data) {
+	case SandboxServiceStatusStopped:
+		*s = SandboxServiceStatusStopped
+		return nil
+	case SandboxServiceStatusStarting:
+		*s = SandboxServiceStatusStarting
+		return nil
+	case SandboxServiceStatusRunning:
+		*s = SandboxServiceStatusRunning
+		return nil
+	case SandboxServiceStatusExited:
+		*s = SandboxServiceStatusExited
+		return nil
+	case SandboxServiceStatusFailed:
+		*s = SandboxServiceStatusFailed
+		return nil
+	default:
+		return errors.Errorf("invalid value: %q", data)
+	}
+}
+
+// Ref: #/components/schemas/SandboxServicesResponse
+type SandboxServicesResponse struct {
+	Services []SandboxService `json:"services"`
+}
+
+// GetServices returns the value of Services.
+func (s *SandboxServicesResponse) GetServices() []SandboxService {
+	return s.Services
+}
+
+// SetServices sets the value of Services.
+func (s *SandboxServicesResponse) SetServices(val []SandboxService) {
+	s.Services = val
+}
+
+func (*SandboxServicesResponse) listSandboxServicesRes() {}
 
 // Ref: #/components/schemas/SandboxUpdateConfig
 type SandboxUpdateConfig struct {

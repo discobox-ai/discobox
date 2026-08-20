@@ -21,6 +21,7 @@ runtime operations.
 | `execs` | The sandbox runtime primitive: exec lifecycle, runtime metadata, systemd unit abstraction, stdout/stderr or PTY logging, shim launch, status socket, and attach. Harness terminals are execs. |
 | `execs` (`shim.go`) | Per-exec child process: the local Unix socket attach/status/start API, the audit log, and the runtime status file. It no longer owns the process itself — see `procio`. |
 | `procio` | Running a process and owning its descriptors: PTY versus pipes, stdin close, signal mapping, and exit status. No sockets, no frames, no attach — which is what makes its traps testable with a real process and nothing else. |
+| [`services`](services) | The repository's declared services: the scripts under the primary source's `.discobox/services`, which the sandbox starts at boot and `disco box services` and the workspace act on afterwards ([ADR 0063](../docs/adr/0063-services-are-declared-execs-the-sandbox-starts-for-you.md)). Like `terminal` it is a typed layer over `execs` and owns no runtime of its own: a service is an exec created with `Shell`/`ShellCommandLine` (the script, under the run user's login shell), on pipes rather than a PTY, tagged `serviceId`/`serviceName` in exec metadata. It keeps no state — declarations are re-read from disk on every listing, and run state is the exec record — so two clients, or a client and the boot flow, cannot disagree about what is running. |
 | `terminal` | Harness-terminal layer built on top of `execs`: image harness resolution, hook/file setup, primary-terminal lifecycle, and revive-in-place. A terminal is an exec created in harness mode, tagged `harnessId`/`primary` in exec metadata, and its exec id is its durable identity across runs (ADR 0038); all runtime mechanics belong to `execs`. Also owns the one thing about an installed file that outlives its install (`secretfiles.go`): a templated file that rendered a sentinel must still contain it, because a harness reading an upstream 401 as an expired login clears its own credential file and cannot restore it — the refresh token it holds is a placeholder, since refreshing happens in the control plane. A standing loop re-renders any such file, so the next launch is signed in. See ADR 0059. |
 | `shimruntime` | The platform half of an exec attach: Unix socket setup, the HTTP upgrade, the PTY, and the screen emulator behind repaint-on-attach. The stream itself — attachers, ordering, buffering, exit retention — is the root module's `execstream/host`, which this drives and implements `host.Replayer` for. |
 | `hooks` | Local Unix-socket collector and publisher protocol for coding-harness lifecycle hook payloads. |
@@ -127,6 +128,28 @@ runtime operations.
   guess about which ports are "user" ports. A new component wanting the same
   exemption needs the same argument; this is not a precedent for caching status
   in general.
+- A **service is the second typed layer over `execs`**, and the rules that make
+  it one are worth stating separately from the terminal's. It is declared in the
+  repository, not in the manifest: nothing about pool-agent, `sandbox.json`, or
+  sandbox creation knows services exist, and the sandbox discovers them from
+  inside itself once it is running. Its exec id is a durable identity the way a
+  terminal's is (ADR 0038), so `Restart` is `execs.Relaunch` plus `Start` under
+  the same id and a client keyed on it keeps its place. Nothing supervises it:
+  a service that exits is reported with its exit status and left alone
+  (ADR 0063 §4), so there is no desired state to persist and no reconcile loop
+  to run. And it runs on **pipes, never a PTY** — a service's output is read
+  after the fact, and `frame.Stdout`/`frame.Stderr` stay distinct all the way to
+  `disco box services logs`.
+- `execs.Manager.Stop` is not `Delete`. Stop ends the run, removes the shim's
+  socket so an attach reports the session gone rather than dialing a dead one,
+  and marks the record `stopped`; Delete also discards the record and the
+  transcript. The `stopped` flag is written at the one place a stop is
+  requested because it cannot be inferred afterwards — a stopped process and one
+  killed by a signal it did not choose leave the same record — and it is
+  persisted (`ExecState.Stopped`) because the runtime file carrying it is on
+  tmpfs, so after a reboot the record is all there is. Without it the reconcile
+  loop finds the unit gone and calls the exec `lost`, which is true of a unit
+  that vanished underneath a live exec and wrong for one that was asked to stop.
 - A terminal is one primitive: an exec created in harness mode. The `terminal`
   layer resolves the image harness (or the `shell` fallback harness — a login
   shell — when the image has no harness, or when the manifest declares a

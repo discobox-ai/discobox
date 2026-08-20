@@ -369,6 +369,9 @@ components:
                         - failed
                         - lost
                     type: string
+                stopped:
+                    description: Whether this run ended because it was asked to stop rather than on its own. It cannot be inferred after the fact - a stopped process and one killed by a signal it did not choose leave the same record - so it is recorded when the stop is requested and cleared by the next run.
+                    type: boolean
                 tty:
                     description: Whether the exec process was started with a PTY.
                     type: boolean
@@ -462,6 +465,76 @@ components:
                     type: array
             required:
                 - execs
+            type: object
+        SandboxService:
+            additionalProperties: false
+            description: A service the sandbox's primary source declares under .discobox/services, together with the state of the exec running it.
+            properties:
+                description:
+                    description: What the service is for, from the declaration's front matter.
+                    type: string
+                error:
+                    description: Why the last run failed, when it did.
+                    type: string
+                execId:
+                    description: Exec running this service, absent when none ever has. It is durable across restarts, so a client keyed on it keeps its place when the service is restarted.
+                    type: string
+                exitCode:
+                    description: Exit code of the last run when it has ended.
+                    format: int64
+                    type: integer
+                exitedAt:
+                    format: date-time
+                    type: string
+                fileName:
+                    description: The declaring file's own name. It orders the listing, which is what the numeric prefix stripped from the ID is for.
+                    type: string
+                id:
+                    description: Stable filename-derived service ID, with any numeric ordering prefix and known extension removed - 10-discobox-api.sh is discobox-api.
+                    type: string
+                name:
+                    description: Display name from the declaration's front matter, defaulted from the filename.
+                    type: string
+                path:
+                    description: Absolute path to the declaring script inside the sandbox.
+                    type: string
+                pid:
+                    description: Sandbox-local process ID when known.
+                    format: int64
+                    type: integer
+                problem:
+                    description: Why this declaration cannot run - a missing shebang, a missing executable bit, a duplicate ID. A service with a problem is listed rather than dropped, because one that silently fails to appear is indistinguishable from one nobody declared.
+                    type: string
+                startedAt:
+                    format: date-time
+                    type: string
+                status:
+                    description: |
+                        Service state, derived from the exec running it. stopped covers both a
+                        service that has never run and one stopped on request; exited is a
+                        process that ended by itself successfully. Nothing is restarted
+                        automatically.
+                    enum:
+                        - stopped
+                        - starting
+                        - running
+                        - exited
+                        - failed
+                    type: string
+            required:
+                - id
+                - name
+                - status
+            type: object
+        SandboxServicesResponse:
+            additionalProperties: false
+            properties:
+                services:
+                    items:
+                        $ref: '#/components/schemas/SandboxService'
+                    type: array
+            required:
+                - services
             type: object
         SandboxUser:
             additionalProperties: false
@@ -1037,6 +1110,233 @@ paths:
             summary: List recent sandbox harness hook payload logs.
             tags:
                 - Harness Hooks
+    /api/projects/{projectId}/sandboxes/{sandboxId}/services:
+        get:
+            description: Lists the services declared under .discobox/services in the sandbox's primary source, each with the state of the exec running it. Declarations are re-read on every request, so a service file added or edited while the sandbox is up appears immediately.
+            operationId: list-sandbox-services
+            parameters:
+                - description: Project that owns the sandbox.
+                  in: path
+                  name: projectId
+                  required: true
+                  schema:
+                    type: string
+                - description: Sandbox resource ID.
+                  in: path
+                  name: sandboxId
+                  required: true
+                  schema:
+                    type: string
+            responses:
+                "200":
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/SandboxServicesResponse'
+                    description: Declared services in the sandbox.
+                default:
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/ErrorResponse'
+                    description: Error response.
+            summary: List declared services in a sandbox.
+            tags:
+                - Sandbox Services
+    /api/projects/{projectId}/sandboxes/{sandboxId}/services/{serviceId}:
+        get:
+            operationId: get-sandbox-service
+            parameters:
+                - description: Project that owns the sandbox.
+                  in: path
+                  name: projectId
+                  required: true
+                  schema:
+                    type: string
+                - description: Sandbox resource ID.
+                  in: path
+                  name: sandboxId
+                  required: true
+                  schema:
+                    type: string
+                - description: Service ID, as declared under .discobox/services.
+                  in: path
+                  name: serviceId
+                  required: true
+                  schema:
+                    type: string
+            responses:
+                "200":
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/SandboxService'
+                    description: Declared service.
+                default:
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/ErrorResponse'
+                    description: Error response.
+            summary: Get a declared service in a sandbox.
+            tags:
+                - Sandbox Services
+    /api/projects/{projectId}/sandboxes/{sandboxId}/services/{serviceId}/logs:
+        get:
+            description: Returns the transcript of the service's current or last run. A service that has never run has an empty transcript rather than an error.
+            operationId: list-sandbox-service-logs
+            parameters:
+                - description: Project that owns the sandbox.
+                  in: path
+                  name: projectId
+                  required: true
+                  schema:
+                    type: string
+                - description: Sandbox resource ID.
+                  in: path
+                  name: sandboxId
+                  required: true
+                  schema:
+                    type: string
+                - description: Service ID, as declared under .discobox/services.
+                  in: path
+                  name: serviceId
+                  required: true
+                  schema:
+                    type: string
+            responses:
+                "200":
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/SandboxExecLogsResponse'
+                    description: Service output log entries.
+                default:
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/ErrorResponse'
+                    description: Error response.
+            summary: List logs for a sandbox service.
+            tags:
+                - Sandbox Services
+    /api/projects/{projectId}/sandboxes/{sandboxId}/services/{serviceId}/restart:
+        post:
+            description: Stops the service if it is running and starts it again under the same exec ID. A service that is not running is simply started.
+            operationId: restart-sandbox-service
+            parameters:
+                - description: Project that owns the sandbox.
+                  in: path
+                  name: projectId
+                  required: true
+                  schema:
+                    type: string
+                - description: Sandbox resource ID.
+                  in: path
+                  name: sandboxId
+                  required: true
+                  schema:
+                    type: string
+                - description: Service ID, as declared under .discobox/services.
+                  in: path
+                  name: serviceId
+                  required: true
+                  schema:
+                    type: string
+            responses:
+                "200":
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/SandboxService'
+                    description: The service after the change.
+                default:
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/ErrorResponse'
+                    description: Error response.
+            summary: Restart a sandbox service.
+            tags:
+                - Sandbox Services
+    /api/projects/{projectId}/sandboxes/{sandboxId}/services/{serviceId}/start:
+        post:
+            description: Starts the service, or returns it unchanged when it is already running. A service that has run before is relaunched under its existing exec ID rather than given a new one.
+            operationId: start-sandbox-service
+            parameters:
+                - description: Project that owns the sandbox.
+                  in: path
+                  name: projectId
+                  required: true
+                  schema:
+                    type: string
+                - description: Sandbox resource ID.
+                  in: path
+                  name: sandboxId
+                  required: true
+                  schema:
+                    type: string
+                - description: Service ID, as declared under .discobox/services.
+                  in: path
+                  name: serviceId
+                  required: true
+                  schema:
+                    type: string
+            responses:
+                "200":
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/SandboxService'
+                    description: The service after the change.
+                default:
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/ErrorResponse'
+                    description: Error response.
+            summary: Start a sandbox service.
+            tags:
+                - Sandbox Services
+    /api/projects/{projectId}/sandboxes/{sandboxId}/services/{serviceId}/stop:
+        post:
+            description: Ends the service's run and keeps its record, so its output is still readable and starting it again resumes the same exec identity.
+            operationId: stop-sandbox-service
+            parameters:
+                - description: Project that owns the sandbox.
+                  in: path
+                  name: projectId
+                  required: true
+                  schema:
+                    type: string
+                - description: Sandbox resource ID.
+                  in: path
+                  name: sandboxId
+                  required: true
+                  schema:
+                    type: string
+                - description: Service ID, as declared under .discobox/services.
+                  in: path
+                  name: serviceId
+                  required: true
+                  schema:
+                    type: string
+            responses:
+                "200":
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/SandboxService'
+                    description: The service after the change.
+                default:
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/ErrorResponse'
+                    description: Error response.
+            summary: Stop a sandbox service.
+            tags:
+                - Sandbox Services
     /api/projects/{projectId}/sandboxes/{sandboxId}/status:
         get:
             operationId: get-sandbox-agent-status

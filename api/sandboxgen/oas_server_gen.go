@@ -60,6 +60,12 @@ type Handler interface {
 	//
 	// GET /api/projects/{projectId}/sandboxes/{sandboxId}/execs/{execId}/resources
 	GetSandboxExecResources(ctx context.Context, params GetSandboxExecResourcesParams) (*ResourceSnapshot, error)
+	// GetSandboxService implements get-sandbox-service operation.
+	//
+	// Get a declared service in a sandbox.
+	//
+	// GET /api/projects/{projectId}/sandboxes/{sandboxId}/services/{serviceId}
+	GetSandboxService(ctx context.Context, params GetSandboxServiceParams) (*SandboxService, error)
 	// ListHarnessHooks implements list-harness-hooks operation.
 	//
 	// List recent sandbox harness hook payload logs.
@@ -90,12 +96,48 @@ type Handler interface {
 	//
 	// GET /api/projects/{projectId}/sandboxes/{sandboxId}/execs
 	ListSandboxExecs(ctx context.Context, params ListSandboxExecsParams) (*SandboxExecsResponse, error)
+	// ListSandboxServiceLogs implements list-sandbox-service-logs operation.
+	//
+	// Returns the transcript of the service's current or last run. A service that has never run has an
+	// empty transcript rather than an error.
+	//
+	// GET /api/projects/{projectId}/sandboxes/{sandboxId}/services/{serviceId}/logs
+	ListSandboxServiceLogs(ctx context.Context, params ListSandboxServiceLogsParams) (*SandboxExecLogsResponse, error)
+	// ListSandboxServices implements list-sandbox-services operation.
+	//
+	// Lists the services declared under .discobox/services in the sandbox's primary source, each with
+	// the state of the exec running it. Declarations are re-read on every request, so a service file
+	// added or edited while the sandbox is up appears immediately.
+	//
+	// GET /api/projects/{projectId}/sandboxes/{sandboxId}/services
+	ListSandboxServices(ctx context.Context, params ListSandboxServicesParams) (*SandboxServicesResponse, error)
+	// RestartSandboxService implements restart-sandbox-service operation.
+	//
+	// Stops the service if it is running and starts it again under the same exec ID. A service that is
+	// not running is simply started.
+	//
+	// POST /api/projects/{projectId}/sandboxes/{sandboxId}/services/{serviceId}/restart
+	RestartSandboxService(ctx context.Context, params RestartSandboxServiceParams) (*SandboxService, error)
 	// StartSandboxExec implements start-sandbox-exec operation.
 	//
 	// Starts a prepared sandbox exec after any desired attach stream has connected.
 	//
 	// POST /api/projects/{projectId}/sandboxes/{sandboxId}/execs/{execId}/start
 	StartSandboxExec(ctx context.Context, params StartSandboxExecParams) (*SandboxExec, error)
+	// StartSandboxService implements start-sandbox-service operation.
+	//
+	// Starts the service, or returns it unchanged when it is already running. A service that has run
+	// before is relaunched under its existing exec ID rather than given a new one.
+	//
+	// POST /api/projects/{projectId}/sandboxes/{sandboxId}/services/{serviceId}/start
+	StartSandboxService(ctx context.Context, params StartSandboxServiceParams) (*SandboxService, error)
+	// StopSandboxService implements stop-sandbox-service operation.
+	//
+	// Ends the service's run and keeps its record, so its output is still readable and starting it again
+	// resumes the same exec identity.
+	//
+	// POST /api/projects/{projectId}/sandboxes/{sandboxId}/services/{serviceId}/stop
+	StopSandboxService(ctx context.Context, params StopSandboxServiceParams) (*SandboxService, error)
 	// StreamSandboxExecResources implements stream-sandbox-exec-resources operation.
 	//
 	// Stream opaque resource snapshots for a sandbox exec.

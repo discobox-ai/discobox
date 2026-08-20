@@ -7,9 +7,10 @@ import (
 	serverapi "github.com/discobox-ai/discobox/api/gen"
 )
 
-// Sandbox exec (and harness-terminal) operations are served inside the sandbox and
-// reverse-proxied by the control plane, so the generated control-plane handler
-// only needs not-implemented stubs to satisfy the interface.
+// Sandbox exec, service, and harness-terminal operations are served inside the
+// sandbox and reverse-proxied by the control plane, so the generated
+// control-plane handler only needs not-implemented stubs to satisfy the
+// interface.
 
 func (h *Handler) AttachSandboxExec(context.Context, serverapi.AttachSandboxExecParams) (serverapi.AttachSandboxExecRes, error) {
 	return sandboxAgentRuntimeNotImplemented(), nil
@@ -60,6 +61,30 @@ func (h *Handler) ListSandboxExecResourceHistory(context.Context, serverapi.List
 }
 
 func (h *Handler) ListSandboxExecs(context.Context, serverapi.ListSandboxExecsParams) (serverapi.ListSandboxExecsRes, error) {
+	return sandboxAgentRuntimeNotImplemented(), nil
+}
+
+func (h *Handler) ListSandboxServices(context.Context, serverapi.ListSandboxServicesParams) (serverapi.ListSandboxServicesRes, error) {
+	return sandboxAgentRuntimeNotImplemented(), nil
+}
+
+func (h *Handler) GetSandboxService(context.Context, serverapi.GetSandboxServiceParams) (serverapi.GetSandboxServiceRes, error) {
+	return sandboxAgentRuntimeNotImplemented(), nil
+}
+
+func (h *Handler) ListSandboxServiceLogs(context.Context, serverapi.ListSandboxServiceLogsParams) (serverapi.ListSandboxServiceLogsRes, error) {
+	return sandboxAgentRuntimeNotImplemented(), nil
+}
+
+func (h *Handler) StartSandboxService(context.Context, serverapi.StartSandboxServiceParams) (serverapi.StartSandboxServiceRes, error) {
+	return sandboxAgentRuntimeNotImplemented(), nil
+}
+
+func (h *Handler) StopSandboxService(context.Context, serverapi.StopSandboxServiceParams) (serverapi.StopSandboxServiceRes, error) {
+	return sandboxAgentRuntimeNotImplemented(), nil
+}
+
+func (h *Handler) RestartSandboxService(context.Context, serverapi.RestartSandboxServiceParams) (serverapi.RestartSandboxServiceRes, error) {
 	return sandboxAgentRuntimeNotImplemented(), nil
 }
 
