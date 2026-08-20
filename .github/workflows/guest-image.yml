@@ -1,0 +1,125 @@
+# The macOS pool guest image has its own build and its own release line
+# (ADR 0062 §3).
+#
+# It is not cut with the discobox release. It is a Debian userland that boots
+# dockerd and two VSOCK helpers, so its inputs change when Debian, the kernel,
+# or Docker changes — not when Discobox does. Publishing it per discobox tag
+# would push hundreds of megabytes per release and, worse, would make a guest
+# fix require a product release and a product release imply a new guest.
+#
+# The server pins a digest, so the two lines move independently in both
+# directions.
+name: Guest image
+
+on:
+  push:
+    tags:
+      - "guest/v*"
+  pull_request:
+    paths:
+      - "server/providers/vz/image/**"
+      - "pool-agent/vsock/**"
+      - "pool-agent/cmd/discobox-vsock-guest/**"
+      - ".github/workflows/guest-image.yml"
+  # A guest release is mostly a distribution snapshot, so it is rebuilt on a
+  # cadence even when nothing in this repository changed. This run only builds:
+  # publishing stays tag-driven so a security rebuild is still a deliberate
+  # release someone pins.
+  schedule:
+    - cron: "0 6 * * 1"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: guest-image-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    # A native arm64 runner, not QEMU: the build installs an arm64 kernel,
+    # generates an initrd, and runs mkfs.ext4 over the whole root filesystem.
+    # Emulating that costs an hour to save nothing.
+    runs-on: ubuntu-24.04-arm
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6.0.2
+
+      - name: Set up Buildx
+        uses: docker/setup-buildx-action@v3.11.1
+
+      - name: Build guest artifacts
+        uses: docker/build-push-action@v6.18.0
+        with:
+          context: .
+          file: server/providers/vz/image/Dockerfile
+          platforms: linux/arm64
+          outputs: type=local,dest=guest-artifacts
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      # A guest image that publishes a kernel the hypervisor cannot load, or a
+      # root filesystem that will not mount, fails silently: the VM boots to a
+      # blank console. Both are cheap to check here and impossible to diagnose
+      # from macOS.
+      - name: Verify the boot artifacts
+        run: |
+          set -euo pipefail
+          cd guest-artifacts
+          ls -l
+          for artifact in vmlinux initrd.img root.ext4; do
+            test -s "$artifact" || { echo "missing or empty: $artifact" >&2; exit 1; }
+          done
+          # Virtualization.framework requires an uncompressed arm64 Image, which
+          # carries "ARMd" at offset 0x38.
+          magic=$(dd if=vmlinux bs=1 skip=56 count=4 status=none)
+          test "$magic" = "ARMd" || { echo "vmlinux is not an uncompressed arm64 kernel Image" >&2; exit 1; }
+          sudo dumpe2fs -h root.ext4 | grep -q "Filesystem volume name:   discobox-root"
+          echo "guest artifacts verified"
+
+      # A git tag of guest/v1.2.3 carries a slash, which is not a legal Docker
+      # tag. The prefix is what scopes the guest's release line in the git tag
+      # namespace; the image tag is the version alone.
+      - name: Resolve the image tag
+        id: version
+        if: startsWith(github.ref, 'refs/tags/guest/v')
+        run: echo "tag=${GITHUB_REF_NAME#guest/}" >> "$GITHUB_OUTPUT"
+
+      - name: Log in to ghcr.io
+        if: startsWith(github.ref, 'refs/tags/guest/v')
+        uses: docker/login-action@v3.6.0
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Publish the guest image
+        id: publish
+        if: startsWith(github.ref, 'refs/tags/guest/v')
+        uses: docker/build-push-action@v6.18.0
+        with:
+          context: .
+          file: server/providers/vz/image/Dockerfile
+          platforms: linux/arm64
+          push: true
+          # guest/v1.2.3 publishes :v1.2.3. The tag is a convenience; the server
+          # pins the digest this step reports.
+          tags: ghcr.io/${{ github.repository_owner }}/discobox-vz-guest:${{ steps.version.outputs.tag }}
+          cache-from: type=gha
+
+      - name: Report the digest to pin
+        if: startsWith(github.ref, 'refs/tags/guest/v')
+        run: |
+          {
+            echo "### Guest image published"
+            echo
+            echo 'Pin this in `server/providers/vz/provider.go` (`DefaultGuestImage`):'
+            echo
+            echo '```go'
+            echo 'const DefaultGuestImage = "ghcr.io/${{ github.repository_owner }}/discobox-vz-guest@${{ steps.publish.outputs.digest }}"'
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
