@@ -209,6 +209,50 @@ func TestStartCreatesAPipeExecTaggedWithItsService(t *testing.T) {
 	if !strings.HasPrefix(start.Command[2], "'") {
 		t.Errorf("command line = %q, want the script path quoted", start.Command[2])
 	}
+	// And it runs in the repository root it was declared in, so the relative
+	// paths a service script reads its own repository through resolve.
+	if start.Workdir != root {
+		t.Errorf("workdir = %q, want the repository root %q", start.Workdir, root)
+	}
+}
+
+// The workdir is named on the request rather than left to the exec default, so
+// a service still runs where its declaration lives when the two differ.
+func TestAServiceRunsInItsDeclaringRepositoryRoot(t *testing.T) {
+	root := t.TempDir()
+	units := newFakeUnits(t)
+	execManager, err := execs.NewManagerWithConfig(execs.ManagerConfig{
+		WorkingRoot: root,
+		// A sandbox whose execs start somewhere else entirely.
+		DefaultWorkdir: t.TempDir(),
+		RuntimeDir:     filepath.Join(t.TempDir(), "rt"),
+		Env:            map[string]string{"PATH": "/usr/bin", "SHELL": "/bin/sh"},
+		Units:          units,
+	})
+	if err != nil {
+		t.Fatalf("new exec manager: %v", err)
+	}
+	manager, err := NewManager(ManagerConfig{Execs: execManager, Root: root})
+	if err != nil {
+		t.Fatalf("new service manager: %v", err)
+	}
+	writeService(t, root, "10-api.sh", apiScript, 0o755)
+
+	if _, err := manager.Start(context.Background(), "api"); err != nil {
+		t.Fatalf("start: %v", err)
+	}
+	if got := units.starts[0].Workdir; got != root {
+		t.Fatalf("workdir = %q, want the declaring root %q", got, root)
+	}
+
+	// And a restart resumes there: the workdir is the record's, not the
+	// default's, so nothing re-derives it per run.
+	if _, err := manager.Restart(context.Background(), "api"); err != nil {
+		t.Fatalf("restart: %v", err)
+	}
+	if got := units.starts[1].Workdir; got != root {
+		t.Fatalf("workdir after restart = %q, want %q", got, root)
+	}
 }
 
 // Starting a running service changes nothing: the verb is idempotent, which is

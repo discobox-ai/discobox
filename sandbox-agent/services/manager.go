@@ -63,8 +63,9 @@ type Service struct {
 // ManagerConfig wires the service layer to the exec primitive it runs on.
 type ManagerConfig struct {
 	Execs *execs.Manager
-	// Root is the directory DirName is resolved under: the sandbox's primary
-	// source directory, which is where an exec that names no workdir starts.
+	// Root is the repository root services are declared in and run in: the
+	// sandbox's primary source directory, which DirName is resolved under and
+	// which is also where an exec that names no workdir starts.
 	Root string
 }
 
@@ -267,6 +268,14 @@ func (m *Manager) startLocked(ctx context.Context, def Definition) (execs.Exec, 
 	created, err := m.execs.Create(ctx, execs.CreateRequest{
 		Shell:            true,
 		ShellCommandLine: execs.QuoteShellArg(def.Path),
+		// A service runs in the repository root it was declared in, named
+		// rather than left to the exec default. The two resolve to the same
+		// directory today — discovery is rooted at that default — but a
+		// service script reads its own repository through relative paths, and
+		// which directory those are relative to must be a property of the
+		// declaration rather than a coincidence of two derivations agreeing.
+		// It is recorded on the exec, so a restart resumes in the same place.
+		Workdir: m.root,
 		// Pipes, not a PTY: a service's output is read after the fact, and
 		// stdout and stderr are worth keeping apart (ADR 0063 §3).
 		TTY: false,
