@@ -114,3 +114,4 @@ Nygard-style ADRs (see adr.github.io) combined with current-state design docs:
 | [0059](0059-a-rejected-swapped-credential-is-retried-once.md) | A rejected swapped credential is retried once, and the delivered file is restored | Accepted |
 | [0060](0060-provisioning-progress-is-a-recorded-phase-the-client-polls.md) | Provisioning progress is a recorded phase, polled by the waiting client | Accepted |
 | [0061](0061-the-client-facing-project-event-stream-is-removed.md) | The client-facing project event stream is removed | Accepted |
+| [0062](0062-macos-pools-run-vz-vms-with-an-independently-released-guest-image.md) | macOS pools run Virtualization.framework VMs, and the VM guest image is an independently released artifact | Accepted |
