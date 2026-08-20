@@ -528,7 +528,8 @@ func (s *Service) RestartSandbox(ctx context.Context, projectID, sandboxID strin
 	return s.instructSandbox(ctx, projectID, sandboxID, sandboxRestart)
 }
 
-// RepairSandbox rebuilds the sandbox in place and starts it (ADR 0035).
+// RepairSandbox rebuilds the sandbox in place, on its harness config's current
+// image, and starts it (ADR 0035, ADR 0062).
 //
 // It is one existence intent, not a workflow: the recorded generation carries
 // RepairGeneration, which makes the reconciler's ensure tear the runtime down
@@ -536,6 +537,13 @@ func (s *Service) RestartSandbox(ctx context.Context, projectID, sandboxID strin
 // kept) before the ordinary create rebuilds it. Recording intent is also what
 // clears a latched ErrorMessage, so repair is the way out of a settled failure
 // (ADR 0017 §4).
+//
+// The same intent carries the re-pin an upgrade would (ADR 0062 §1). The
+// teardown has already discarded everything a re-pin costs, so rebuilding on
+// the older of two images buys nothing — and a stale image is itself a way for
+// a sandbox to be wedged (ADR 0016), which a repair that kept the pin would
+// rebuild verbatim and report as fixed. No target is not an error here, unlike
+// upgrade: the re-pin is a rider on the rebuild, not the thing asked for.
 //
 // Like purge, the request then drives that sandbox's reconcile inline so the
 // caller learns whether the rebuild landed. A request that dies loses only the
@@ -555,8 +563,13 @@ func (s *Service) RepairSandbox(ctx context.Context, projectID, sandboxID string
 	if sandbox.DesiredState == model.DesiredStateArchived {
 		return nil, apperrors.NewStatusError(http.StatusConflict, "sandbox is archived; unarchive it instead")
 	}
+	repin, err := s.currentImageRepin(ctx, sandbox)
+	if err != nil {
+		return nil, err
+	}
 	if _, err := s.recordSandboxIntent(ctx, projectID, sandboxID, model.DesiredStatePresent, func(sb *model.Sandbox) {
 		sb.RepairGeneration = sb.Generation
+		repin.apply(sb)
 	}); err != nil {
 		return nil, mapAPIError(err, "sandbox not found")
 	}
@@ -636,17 +649,17 @@ func (s *Service) UpgradeSandbox(ctx context.Context, projectID, sandboxID strin
 	if err != nil {
 		return nil, mapAPIError(err, "sandbox not found")
 	}
-	target, err := s.upgradeTarget(ctx, existing)
+	repin, err := s.currentImageRepin(ctx, existing)
 	if err != nil {
 		return nil, err
 	}
-	if !target.Available {
+	if !repin.Available {
 		// Distinguish "nothing newer" from "nothing to move to". A config-mode
 		// sandbox, one whose harness config was deleted or declares no image,
 		// and one whose target image has no known digest all have nothing to
 		// move to, and telling their owner they are running "the current image"
 		// asserts something that is not true of them.
-		if strings.TrimSpace(target.Digest) == "" {
+		if strings.TrimSpace(repin.Digest) == "" {
 			return nil, apperrors.NewStatusError(http.StatusConflict,
 				"sandbox has no image to upgrade to")
 		}
@@ -656,58 +669,88 @@ func (s *Service) UpgradeSandbox(ctx context.Context, projectID, sandboxID strin
 	// The re-pin is the whole instruction: a changed image digest changes the
 	// spec fingerprint, and the pool host rebuilds any container that does not
 	// match it (ADR 0017 §5). There is no restart counter to bump.
-	adopt := ""
-	if existing.HarnessConfigID == nil {
-		// Converging a sandbox created before every sandbox carried a harness
-		// config: the upgrade adopts one as well as re-pinning the image
-		// (ADR 0025 §4). This is the whole migration — explicit, in place, and
-		// visible in the listing first.
-		fallback, err := s.fallbackHarnessConfig(ctx, projectID)
-		if err != nil {
-			return nil, err
-		}
-		if fallback != nil {
-			adopt = fallback.ID
-		}
-	}
-	sandbox, err := s.recordSandboxIntent(ctx, projectID, sandboxID, model.DesiredStatePresent, func(sb *model.Sandbox) {
-		sb.Image = target.Image
-		sb.ImageDigest = target.Digest
-		if adopt != "" {
-			sb.HarnessConfigID = &adopt
-		}
-	})
+	sandbox, err := s.recordSandboxIntent(ctx, projectID, sandboxID, model.DesiredStatePresent, repin.apply)
 	if err != nil {
 		return nil, mapAPIError(err, "sandbox not found")
 	}
 	return sandbox, nil
 }
 
-// upgradeTarget reports what an upgrade would move the sandbox to, loading the
-// harness config the shared rule needs. The rule itself lives in
-// services.SandboxUpgradeTarget so this and the read path that reports an
-// available upgrade cannot answer differently.
-func (s *Service) upgradeTarget(ctx context.Context, sb *model.Sandbox) (UpgradeTarget, error) {
+// imageRepin is the change that moves a sandbox onto its harness config's
+// current image: the pin itself, and the harness config a legacy sandbox adopts
+// along with it.
+//
+// It exists because two operations write it — upgrade, whose whole content it
+// is, and repair, which carries it on the rebuild it was already doing
+// (ADR 0062 §1). They must not be able to pin differently, and the difference
+// between them is only what an unavailable target means, which each decides for
+// itself before calling apply.
+type imageRepin struct {
+	Image  string
+	Digest string
+
+	// HarnessConfigID is set only when the re-pin also adopts a config: a
+	// sandbox created before every sandbox carried one resolves its target
+	// through the fallback `shell` config, and pinning that config's image
+	// without adopting the config would leave the row describing an image no
+	// config of its own names (ADR 0025 §4). This is the whole migration —
+	// explicit, in place, and visible in the listing first.
+	HarnessConfigID string
+
+	// Available is whether the target differs from what the sandbox runs now.
+	// When it does not, Image and Digest report the current pin, so a caller
+	// can tell "already applied" from "nothing to move to".
+	Available bool
+}
+
+// apply writes the re-pin onto the sandbox being recorded. An unavailable
+// target writes nothing: the sandbox keeps the pin it has.
+func (r imageRepin) apply(sb *model.Sandbox) {
+	if !r.Available {
+		return
+	}
+	sb.Image = r.Image
+	sb.ImageDigest = r.Digest
+	if r.HarnessConfigID != "" {
+		adopt := r.HarnessConfigID
+		sb.HarnessConfigID = &adopt
+	}
+}
+
+// currentImageRepin resolves what moving the sandbox onto its harness config's
+// current image would change, without changing anything. It loads the config
+// the shared rule needs; the rule itself lives in services.SandboxUpgradeTarget
+// so this and the read path that reports an available upgrade cannot answer
+// differently.
+func (s *Service) currentImageRepin(ctx context.Context, sb *model.Sandbox) (imageRepin, error) {
 	var config *model.HarnessConfig
 	var err error
+	adopt := ""
 	if sb.HarnessConfigID == nil {
-		// Not converged yet: it upgrades to the fallback, adopting it.
+		// Not converged yet: it moves to the fallback, adopting it.
 		if config, err = s.fallbackHarnessConfig(ctx, sb.ProjectID); err != nil {
-			return UpgradeTarget{}, err
+			return imageRepin{}, err
+		}
+		if config != nil {
+			adopt = config.ID
 		}
 	} else if config, err = s.store.GetHarnessConfig(ctx, sb.ProjectID, strings.TrimSpace(*sb.HarnessConfigID)); err != nil {
 		if !errors.Is(err, store.ErrNotFound) {
-			return UpgradeTarget{}, err
+			return imageRepin{}, err
 		}
 		config = nil
 	}
 	target, available := services.SandboxUpgradeTarget(sb, config)
 	if target.Digest == "" {
 		// Nothing to move to: report what it runs now, so callers can tell that
-		// apart from an upgrade that is merely already applied.
-		return UpgradeTarget{Image: sb.Image, Digest: sb.ImageDigest}, nil
+		// apart from a re-pin that is merely already applied.
+		return imageRepin{Image: sb.Image, Digest: sb.ImageDigest}, nil
 	}
-	return UpgradeTarget{Image: target.Image, Digest: target.Digest, Available: available}, nil
+	repin := imageRepin{Image: target.Image, Digest: target.Digest, Available: available}
+	if available {
+		repin.HarnessConfigID = adopt
+	}
+	return repin, nil
 }
 
 // fallbackHarnessConfig is the reserved `shell` built-in, or nil when seeding
@@ -733,14 +776,6 @@ func (s *Service) fallbackHarnessConfig(ctx context.Context, projectID string) (
 // service applies.
 func (s *Service) FallbackHarnessConfig(ctx context.Context, projectID string) (*model.HarnessConfig, error) {
 	return s.fallbackHarnessConfig(ctx, projectID)
-}
-
-// UpgradeTarget is what an upgrade would pin the sandbox to, and whether that
-// differs from what it runs now.
-type UpgradeTarget struct {
-	Image     string
-	Digest    string
-	Available bool
 }
 
 // CompleteSandboxSourcePush reports that a client finished pushing into a

@@ -430,14 +430,18 @@ func (a *App) newSandboxRestartCommand() *cobra.Command {
 func (a *App) newSandboxRepairCommand() *cobra.Command {
 	return &cobra.Command{
 		Use:   "repair SANDBOX_ID",
-		Short: "Repair a sandbox by rebuilding it in place",
+		Short: "Repair a sandbox by rebuilding it on the current image",
 		Long: `Repair a sandbox by rebuilding it in place.
 
 The container and its disposable runtime state are torn down, the container is
 recreated against the workspace data that was kept, and the sandbox is started
 - archive, unarchive, and start as one operation. Use this to recover a
 sandbox stuck in an error state; the workspace and its uncommitted changes
-survive.`,
+survive.
+
+The rebuild always lands on the image its harness config resolves to now, so a
+repair is an upgrade as well: the teardown has already discarded everything a
+re-pin costs, and a stale image is itself a way for a sandbox to be wedged.`,
 		Args:              cobra.ExactArgs(1),
 		ValidArgsFunction: a.completeSandboxes,
 		RunE: func(cmd *cobra.Command, args []string) error {

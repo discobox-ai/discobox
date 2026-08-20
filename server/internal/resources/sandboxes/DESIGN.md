@@ -31,9 +31,10 @@ flowchart LR
   says so in its own listing.
 - The upgrade rule has exactly one implementation,
   `services.SandboxUpgradeTarget`, called both by the read path that reports an
-  available upgrade and by `UpgradeSandbox` which applies one. They were
-  separate implementations and drifted: a sandbox could accept an upgrade the
-  listing said it did not have.
+  available upgrade and by `Service.currentImageRepin`, which resolves the
+  change `UpgradeSandbox` and `RepairSandbox` apply. They were separate
+  implementations and drifted: a sandbox could accept an upgrade the listing
+  said it did not have.
 - A sandbox name is unique within its project (`idx_sandbox_project_name`),
   like a pool's or a harness config's. It is an addressable handle, not a
   label: `disco box ssh-config` emits it as an `ssh_config` `Host` alias, and
@@ -134,6 +135,14 @@ the intent is what clears a latched `ErrorMessage`. Like purge, the request
 drives the reconcile inline so the caller gets the verdict; unlike everything
 else here, a clean converge is followed by the same start instruction an
 explicit start sends — still an instruction, never stored intent.
+
+That same intent carries the re-pin an upgrade would (ADR 0062): repair always
+rebuilds on the harness config's current image. `currentImageRepin` is the one
+resolver both operations write through, so they cannot pin differently, and
+`imageRepin.apply` is what each hands `recordSandboxIntent`. The two differ only
+in what an unavailable target means — upgrade 409s, because the re-pin is what
+it was asked for; repair proceeds on the pin it has, because the re-pin is a
+rider on a rebuild that is happening anyway.
 
 Retention: an archived sandbox is purged once it has been archived longer than
 `Project.ArchiveRetentionSeconds` (default `DefaultArchiveRetention`, 24h). The

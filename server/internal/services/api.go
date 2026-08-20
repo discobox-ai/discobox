@@ -133,6 +133,8 @@ type SandboxService interface {
 	RestartSandbox(ctx context.Context, projectID, sandboxID string, input RestartSandboxBody) (*model.Sandbox, error)
 	// RepairSandbox rebuilds the sandbox in place — teardown, recreate against
 	// the durable tree, then a start instruction — as one intent (ADR 0035).
+	// The rebuild lands on the harness config's current image: the same intent
+	// carries the re-pin an upgrade would (ADR 0062).
 	RepairSandbox(ctx context.Context, projectID, sandboxID string) (*model.Sandbox, error)
 	// UpgradeSandbox re-pins the sandbox to its harness config's current image.
 	// The pool agent recreates the container from it and keeps the power state
