@@ -168,7 +168,7 @@ discobox with three services and no shell still draws its terminal at the full
 width. Within the column the two kinds are *grouped* rather than strictly aged
 (`execBefore`): a service usually starts before the terminals do — boot
 launches both and a harness has files to install first — so strict age would
-put services above the primary's neighbours and push them along. `column.insert`
+put services above the primary's neighbors and push them along. `column.insert`
 therefore carries `pane.service` into the comparison, since a pane described
 by id and age alone would sort as though it were a terminal.
 

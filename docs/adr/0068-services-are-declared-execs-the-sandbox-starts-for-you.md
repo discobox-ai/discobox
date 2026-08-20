@@ -176,7 +176,7 @@ shell still draws its terminal at the full width.
 Within the column the two kinds are grouped rather than strictly aged:
 `[terminals, services]`. A service usually starts *before* the terminals do —
 boot launches both and a harness has files to install first — so strict age
-would put services above the primary's neighbours and push them along.
+would put services above the primary's neighbors and push them along.
 
 Two things follow from decision 3. A service pane is read-only: it takes no keys
 and sends no resize, because there is nothing at the far end reading stdin. It

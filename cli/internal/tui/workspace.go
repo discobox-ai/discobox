@@ -451,7 +451,7 @@ func (m *Model) workspaceTermOpened(msg workspaceTermMsg) tea.Cmd {
 // The left side is [terminals, services]: the terminals are what you are
 // working in, and a service that started before them — they usually do, since
 // boot launches both and a harness has files to install first — would
-// otherwise land above the primary's neighbours and push them along. Grouping
+// otherwise land above the primary's neighbors and push them along. Grouping
 // beats strict age here because the two kinds are used differently, and the
 // group a pane is in is what the digits count along.
 func execBefore(a, b Exec) bool {
