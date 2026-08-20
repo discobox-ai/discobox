@@ -475,9 +475,14 @@ type Exec struct {
 	// workspace through this same listing rather than a poll of its own.
 	Service string
 	// ServiceName is the service's display name, which is what its tab is
-	// called. It rides along on the exec record so the tab strip needs nothing
-	// but this listing to draw itself.
+	// called.
 	ServiceName string
+	// ServiceOrder is where the service sits in the repository's declaration
+	// order — the order `.discobox/services` lists in, which the numeric
+	// filename prefix is for. Services are ordered by it rather than by when
+	// their process happened to start, so the tab strip reads the way the
+	// directory does and holds still across a restart.
+	ServiceOrder int
 
 	Tty bool
 
@@ -740,6 +745,12 @@ type DataSource interface {
 	// the exec listing; this is what can also see the ones that are not, and
 	// is read when the menu is opened rather than polled.
 	Services(ctx context.Context, sandboxID string) ([]Service, error)
+
+	// ServiceLogs is the transcript of a service's current or last run, as the
+	// bytes it wrote. It is read for a service that is not running, whose pane
+	// has no stream to attach to and whose output is the point of looking at
+	// it. A service that never ran has none, which is not an error.
+	ServiceLogs(ctx context.Context, sandboxID, serviceID string) ([]byte, error)
 
 	// DoService runs a lifecycle verb against one of the sandbox's declared
 	// services. It returns when the sandbox has acted; what the service is

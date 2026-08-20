@@ -71,10 +71,12 @@ type fakeSource struct {
 	// services is what the services menu is told the discobox declares,
 	// servicesErr fails reading them, and serviceActs records every verb the
 	// window ran, as "<verb> <sandbox> <service>".
-	services    []Service
-	servicesErr error
-	serviceErr  error
-	serviceActs []string
+	services       []Service
+	servicesErr    error
+	serviceErr     error
+	serviceActs    []string
+	serviceLogs    map[string][]byte
+	serviceLogsErr error
 
 	// forward is what the workspace's port forward reports, and forwardErr
 	// fails opening one. forwards counts the ones opened and closed, so a test
@@ -410,6 +412,29 @@ func (f *fakeSource) Services(context.Context, string) ([]Service, error) {
 		return nil, f.servicesErr
 	}
 	return append([]Service(nil), f.services...), nil
+}
+
+// setServices moves what the service poll reports while a workspace is up.
+func (f *fakeSource) setServices(services []Service) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.services = services
+}
+
+// acts is every service verb the window has run.
+func (f *fakeSource) acts() []string {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return append([]string(nil), f.serviceActs...)
+}
+
+func (f *fakeSource) ServiceLogs(_ context.Context, _, serviceID string) ([]byte, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	if f.serviceLogsErr != nil {
+		return nil, f.serviceLogsErr
+	}
+	return f.serviceLogs[serviceID], nil
 }
 
 func (f *fakeSource) DoService(_ context.Context, verb ServiceVerb, sandboxID, serviceID string) error {

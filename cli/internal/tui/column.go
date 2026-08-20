@@ -48,6 +48,10 @@ func (c *column) byExec(execID string) *pane {
 	return nil
 }
 
+// all is every pane in the strip, for a caller that has to look at each of
+// them. The slice is the column's own, so it is read and not kept.
+func (c *column) all() []*pane { return c.panes }
+
 // index is where a pane sits in the strip, or -1 when it is not in this one.
 func (c *column) index(p *pane) int {
 	for i, s := range c.panes {

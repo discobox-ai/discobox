@@ -104,6 +104,11 @@ type pane struct {
 	// what makes the pane read-only: there is nothing at the far end reading
 	// stdin.
 	service string
+	// serviceRun identifies the run this pane was opened on, so the poll can
+	// tell a pane that is still looking at what the server reports from one
+	// whose service has since restarted, stopped or been fixed. See
+	// Service.runKey.
+	serviceRun string
 
 	// exited is set when what was running in the pane finished and the pane
 	// was kept anyway, so its last screen can be read.

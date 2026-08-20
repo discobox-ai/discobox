@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 	"sync"
+	"time"
 
 	apiclientgen "github.com/discobox-ai/discobox/api/gen"
 	apimodel "github.com/discobox-ai/discobox/api/model"
@@ -98,13 +99,52 @@ func (d *apiDataSource) Services(ctx context.Context, sandboxID string) ([]tui.S
 	}
 	out := make([]tui.Service, 0, len(services))
 	for _, service := range services {
-		out = append(out, tui.Service{
+		mapped := tui.Service{
 			ID:          service.ID,
 			Name:        service.Name,
 			Description: service.Description.Or(""),
 			Status:      string(service.Status),
 			Problem:     service.Problem.Or(""),
-		})
+			FileName:    service.FileName.Or(""),
+			ExecID:      service.ExecId.Or(""),
+			StartedAt:   service.StartedAt.Or(time.Time{}),
+			Error:       service.Error.Or(""),
+		}
+		if code, ok := service.ExitCode.Get(); ok {
+			exit := int(code)
+			mapped.ExitCode = &exit
+		}
+		out = append(out, mapped)
+	}
+	return out, nil
+}
+
+// ServiceLogs is a service's transcript as the bytes it wrote, for the pane
+// that draws a service with no running process. The two streams are merged
+// here — a pane is one screen, and that is what a terminal does with them.
+func (d *apiDataSource) ServiceLogs(ctx context.Context, sandboxID, serviceID string) ([]byte, error) {
+	client, err := d.app.apiClient()
+	if err != nil {
+		return nil, err
+	}
+	res, err := client.ListSandboxServiceLogs(ctx, apiclientgen.ListSandboxServiceLogsParams{
+		ProjectId: d.projectID,
+		SandboxId: sandboxID,
+		ServiceId: serviceID,
+	})
+	if err != nil {
+		return nil, err
+	}
+	body, err := expectResponse[apimodel.SandboxExecLogsResponse](res)
+	if err != nil {
+		return nil, err
+	}
+	var out []byte
+	for _, entry := range body.GetEntries() {
+		if entry.Stream == apiclientgen.SandboxExecLogEntryStreamInput {
+			continue
+		}
+		out = append(out, entry.Data...)
 	}
 	return out, nil
 }

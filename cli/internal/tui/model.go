@@ -510,7 +510,13 @@ func (m *Model) update(msg tea.Msg) tea.Cmd {
 		if msg.gen != m.wsGen {
 			return nil
 		}
-		return tea.Batch(m.listExecs(msg.gen), m.workspaceTick(msg.gen))
+		return tea.Batch(m.listExecs(msg.gen), m.listServices(msg.gen), m.workspaceTick(msg.gen))
+
+	case workspaceServicesMsg:
+		return m.workspaceServices(msg)
+
+	case serviceTermMsg:
+		return m.serviceTermOpened(msg)
 
 	case workspaceForwardMsg:
 		return m.workspaceForward(msg)
@@ -556,16 +562,16 @@ func (m *Model) update(msg tea.Msg) tea.Cmd {
 		return m.harnessDone(msg)
 
 	case servicesMsg:
-		return m, m.showServices(msg)
+		return m.showServices(msg)
 
 	case serviceMenuMsg:
-		return m, m.showServiceMenu(msg.service)
+		return m.showServiceMenu(msg.service)
 
 	case serviceVerbMsg:
-		return m, m.runServiceVerb(msg.verb, msg.service)
+		return m.runServiceVerb(msg.verb, msg.service)
 
 	case serviceDoneMsg:
-		return m, m.serviceDone(msg)
+		return m.serviceDone(msg)
 
 	case harnessCardMsg:
 		m.busy = ""
@@ -2259,6 +2265,11 @@ func (m *Model) helpText() string {
 		"  started for you when the discobox booted. The left side is what",
 		"  the discobox runs on your behalf; the right is what you opened",
 		"  by hand. A service pane is read-only: nothing reads its input.",
+		"",
+		"  A service that failed, ended, or cannot run at all has a tab too,",
+		"  marked, saying why and showing what it printed — the one you",
+		"  need to hear about is the one that is not running. A service you",
+		"  stopped yourself has no tab; you know.",
 		"",
 		"  Every pane wears the number it answers to, counted across the",
 		"  screen from the primary, which is always 0 and always the",

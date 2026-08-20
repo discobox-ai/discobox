@@ -1,7 +1,11 @@
 package tui
 
 import (
+	"fmt"
+	"io"
 	"strings"
+	"sync"
+	"time"
 
 	tea "charm.land/bubbletea/v2"
 )
@@ -30,6 +34,21 @@ type Service struct {
 	// executable bit. Such a service is listed, because the alternative is a
 	// file the author believes is a service and that nothing ever mentions.
 	Problem string
+
+	// FileName is the declaring file, which is what a pane points at when it
+	// has to say where to go and fix something.
+	FileName string
+	// ExecID is the exec running, or last run, for this service. Empty when
+	// none ever has.
+	ExecID string
+	// StartedAt is when the current or last run began. With ExecID it says
+	// whether a pane is looking at the run the server is reporting: a restart
+	// keeps the exec id (ADR 0038) and moves this.
+	StartedAt time.Time
+	// ExitCode is how the last run ended, absent when it has not ended.
+	ExitCode *int
+	// Error is what the last run failed with, when it did.
+	Error string
 }
 
 // runnable reports whether this declaration can be acted on at all.
@@ -183,4 +202,186 @@ func (m *Model) serviceDone(msg serviceDoneMsg) tea.Cmd {
 		return m.report(true, "cannot %s %s: %v", msg.verb, msg.name, msg.err)
 	}
 	return m.report(false, "%s", msg.verb.done(msg.name))
+}
+
+// A service's pane is keyed by the service rather than by the exec running it.
+// The exec is the run; the service is the thing, and it outlives any run of
+// itself — stopped, restarted under the same id (ADR 0038), or never started at
+// all. Keying on the service is what lets one tab follow it through all of
+// that, and what lets a service with no exec have a tab at all.
+func servicePaneID(id string) string { return "service:" + id }
+
+// paneWorthy reports whether a service should have a tab.
+//
+// Running is obvious. The rest is the answer to "would its absence be a
+// surprise": a service that failed, one that ended on its own, and a
+// declaration that cannot run are all things you would otherwise learn about
+// only by pressing a key you had no reason to press. A service you stopped
+// yourself is the one case where absence says the right thing — you know, and a
+// tab you have to dismiss every time would be the window nagging.
+func (s Service) paneWorthy() bool {
+	switch {
+	case !s.runnable():
+		return true
+	case s.live():
+		return true
+	case s.Status == "failed", s.Status == "exited":
+		return true
+	default:
+		return false
+	}
+}
+
+// live reports whether there is a running process to attach to.
+func (s Service) live() bool { return s.Status == "running" || s.Status == "starting" }
+
+// runKey identifies the run a pane is looking at, so the workspace can notice
+// when it is looking at a stale one. A restart keeps the exec id and moves the
+// start time; a stop clears the liveness; a fixed declaration clears the
+// problem. Any of those means the pane has to be opened again.
+func (s Service) runKey() string {
+	return fmt.Sprintf("%s|%s|%s|%s", s.ExecID, s.StartedAt.UTC().Format(time.RFC3339Nano), s.Status, s.Problem)
+}
+
+// tabMark is the sign the tab strip wears beside a service that is not running:
+// enough to tell "it is fine" from "go and look" without opening it.
+func (s Service) tabMark() string {
+	switch {
+	case !s.runnable(), s.Status == "failed":
+		return " ✗"
+	case s.Status == "exited":
+		return " ·"
+	default:
+		return ""
+	}
+}
+
+// paneStatus is the word the pane's own header wears for a service that is not
+// running, so the state is readable without reading the card.
+func (s Service) paneStatus() string {
+	if !s.runnable() {
+		return "cannot run"
+	}
+	return s.Status
+}
+
+// card is what a pane draws for a service with no stream of its own: what it
+// is, what state it is in, why, and then whatever its last run printed.
+//
+// It is written as terminal output rather than laid out with the window's
+// styles because that is what it is — the pane is a terminal, and this is the
+// one place the window writes into one. CRLF throughout: the pane sets LNM for
+// a service, but this text is not the service's and should not depend on it.
+func (s Service) card(logs []byte) []byte {
+	var b strings.Builder
+	b.WriteString(s.displayName() + "\r\n")
+	b.WriteString(strings.Repeat("─", len([]rune(s.displayName()))) + "\r\n\r\n")
+	switch {
+	case !s.runnable():
+		b.WriteString("cannot run\r\n\r\n")
+		b.WriteString(wrapCard(s.Problem) + "\r\n\r\n")
+		b.WriteString(".discobox/services/" + s.FileName + "\r\n")
+	case s.Status == "failed":
+		b.WriteString("failed\r\n\r\n")
+		if detail := strings.TrimSpace(s.Error); detail != "" {
+			b.WriteString(wrapCard(detail) + "\r\n\r\n")
+		} else if s.ExitCode != nil {
+			fmt.Fprintf(&b, "exit code %d\r\n\r\n", *s.ExitCode)
+		}
+	case s.Status == "exited":
+		b.WriteString("exited\r\n\r\n")
+		if s.ExitCode != nil {
+			fmt.Fprintf(&b, "exit code %d\r\n\r\n", *s.ExitCode)
+		}
+	default:
+		b.WriteString(s.Status + "\r\n\r\n")
+	}
+	if description := strings.TrimSpace(s.Description); description != "" {
+		b.WriteString(wrapCard(description) + "\r\n\r\n")
+	}
+	if len(logs) > 0 {
+		b.WriteString("── last output ──\r\n\r\n")
+		// The transcript is the program's own bytes, line feeds and all. The
+		// pane's LNM draws them as newlines, the same way the running service's
+		// output is drawn.
+		b.Write(logs)
+		if !strings.HasSuffix(string(logs), "\n") {
+			b.WriteString("\r\n")
+		}
+	}
+	return []byte(b.String())
+}
+
+// cardWidth is what the card wraps its prose at. It is a fixed, narrow measure
+// rather than the pane's width: the card is read, not filled, and a reason
+// running the width of a maximized window is harder to read than one that does
+// not.
+const cardWidth = 64
+
+func wrapCard(text string) string {
+	words := strings.Fields(text)
+	if len(words) == 0 {
+		return ""
+	}
+	var lines []string
+	line := words[0]
+	for _, word := range words[1:] {
+		if len([]rune(line))+1+len([]rune(word)) > cardWidth {
+			lines = append(lines, line)
+			line = word
+			continue
+		}
+		line += " " + word
+	}
+	return strings.Join(append(lines, line), "\r\n")
+}
+
+// textTerminal is a Terminal over a fixed block of text: the card a service
+// with no running process is drawn from.
+//
+// It is a stream rather than a special kind of pane because a pane already
+// knows how to draw a stream, scroll it, and let it be selected and copied.
+// Inventing a second kind of pane to show text would mean teaching the tab
+// strip, the focus, the mouse and the layout about it; handing the existing one
+// some bytes teaches them nothing.
+type textTerminal struct {
+	text   []byte
+	events chan TerminalEvent
+	done   chan struct{}
+	once   sync.Once
+}
+
+func newTextTerminal(text []byte) *textTerminal {
+	return &textTerminal{text: text, events: make(chan TerminalEvent), done: make(chan struct{})}
+}
+
+// Read delivers the text once and then blocks until close.
+//
+// It blocks rather than reporting EOF because EOF is an ending, and the pane
+// treats one as a session that finished: it would mark the pane exited and
+// offer to dismiss it. Nothing ended here — the service is simply not running,
+// which is the state the pane is reporting — so the stream stays open and the
+// pane stays a pane until the workspace replaces it.
+func (t *textTerminal) Read(p []byte) (int, error) {
+	if len(t.text) > 0 {
+		n := copy(p, t.text)
+		t.text = t.text[n:]
+		return n, nil
+	}
+	<-t.done
+	return 0, io.EOF
+}
+
+// Write drops what it is given. A read-only pane sends nothing, so the only
+// writer here is the emulator answering a query about itself, and the answer
+// has nowhere to go.
+func (t *textTerminal) Write(p []byte) (int, error) { return len(p), nil }
+
+func (t *textTerminal) Resize(int, int) error { return nil }
+
+func (t *textTerminal) Events() <-chan TerminalEvent { return t.events }
+
+func (t *textTerminal) Close() error {
+	t.once.Do(func() { close(t.done) })
+	return nil
 }

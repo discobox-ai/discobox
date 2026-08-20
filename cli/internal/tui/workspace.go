@@ -59,8 +59,26 @@ type workspaceTermMsg struct {
 	focus bool
 }
 
-// workspaceTickMsg asks for the next poll of the exec listing.
+// workspaceTickMsg asks for the next poll of the exec and service listings.
 type workspaceTickMsg struct{ gen int }
+
+// workspaceServicesMsg is one answer from the service listing.
+type workspaceServicesMsg struct {
+	gen      int
+	services []Service
+	err      error
+}
+
+// serviceTermMsg carries one opened service pane back to the model: the
+// service it is for, and the stream it draws — an attach to its running
+// process, or the card describing why there is none.
+type serviceTermMsg struct {
+	gen     int
+	service Service
+	order   int
+	term    Terminal
+	err     error
+}
 
 // workspaceForwardMsg carries the port forward the workspace opened with, or
 // the reason there is none.
@@ -105,7 +123,7 @@ func (m *Model) openWorkspace(sandbox Sandbox, freshShell bool) tea.Cmd {
 	// cold image pull is minutes (ADR 0039). Say what it is waiting for while
 	// it does; the watch reports nothing for a discobox that is already up, so
 	// attaching to a running one still shows only "attach…" (ADR 0060).
-	cmds := []tea.Cmd{m.listExecs(gen), m.workspaceTick(gen), m.startForward(gen), m.watchProvisioning(sandbox.ID)}
+	cmds := []tea.Cmd{m.listExecs(gen), m.listServices(gen), m.workspaceTick(gen), m.startForward(gen), m.watchProvisioning(sandbox.ID)}
 	if freshShell {
 		cmds = append(cmds, m.newShell())
 	}
@@ -184,6 +202,21 @@ func (m *Model) forwardedPorts() map[int]int {
 	return forwarded
 }
 
+// listServices asks the server what the discobox's repository declares.
+//
+// It is a second poll beside the exec listing, which the tabs were otherwise
+// drawn from alone. That listing only knows about services that are running —
+// a service is an exec, and one that never started or that failed at boot has
+// no exec to report — so a tab strip drawn from it alone is silent about
+// exactly the service you need to hear about.
+func (m *Model) listServices(gen int) tea.Cmd {
+	ctx, ds, id := m.ctx, m.ds, m.paneBox.ID
+	return func() tea.Msg {
+		services, err := ds.Services(ctx, id)
+		return workspaceServicesMsg{gen: gen, services: services, err: err}
+	}
+}
+
 // listExecs asks the server what is running in the workspace's discobox.
 func (m *Model) listExecs(gen int) tea.Cmd {
 	ctx, ds, id := m.ctx, m.ds, m.paneBox.ID
@@ -231,14 +264,10 @@ func (m *Model) workspaceExecs(msg workspaceExecsMsg) tea.Cmd {
 	newShells := 0
 	if msg.err == nil {
 		for _, exec := range msg.execs {
-			// A service is drawn like any other tab but is not a TTY session:
-			// it runs on pipes, because its output is read rather than typed
-			// at (ADR 0063 §3). That is the one place the tab strip stops
-			// being "every live TTY session" (ADR 0054 §2).
-			if !exec.Live || exec.Primary || exec.ID == "" {
-				continue
-			}
-			if !exec.Tty && exec.Service == "" {
+			// Services come from their own listing, not this one: a service
+			// that is not running has no exec here at all, and it is exactly
+			// the one whose absence has to be visible. See workspaceServices.
+			if !exec.Live || !exec.Tty || exec.Primary || exec.ID == "" || serviceExec(exec) {
 				continue
 			}
 			if m.paneByExec(exec.ID) != nil || m.connecting[exec.ID] {
@@ -270,6 +299,139 @@ func (m *Model) workspaceExecs(msg workspaceExecsMsg) tea.Cmd {
 		cmds = append(cmds, m.openExec(msg.gen, exec, width))
 	}
 	return tea.Batch(cmds...)
+}
+
+// workspaceServices reconciles the service tabs against one answer from the
+// service listing.
+//
+// Unlike the exec listing this one both opens and closes: a service is a
+// declaration, and the listing is the whole truth about it, so a pane whose
+// service has stopped, been fixed, or been deleted from the repository has
+// nothing left to draw. Each service therefore has exactly one writer — this —
+// and the pane follows the service rather than any one run of it.
+//
+// A failed listing is not reported, for the reason the exec listing's is not:
+// a workspace can be opened on a sandbox that is still coming up, where this is
+// answered "not yet" and the poll retries seconds later.
+func (m *Model) workspaceServices(msg workspaceServicesMsg) tea.Cmd {
+	if msg.gen != m.wsGen || msg.err != nil {
+		return nil
+	}
+	declared := make(map[string]bool, len(msg.services))
+	var cmds []tea.Cmd
+	for i, service := range msg.services {
+		declared[service.ID] = true
+		paneID := servicePaneID(service.ID)
+		existing := m.paneByExec(paneID)
+		if !service.paneWorthy() {
+			// Stopped on purpose: the tab goes, because its absence is the
+			// right thing to say and a pane to dismiss would not be.
+			if existing != nil {
+				m.closeTab(existing)
+			}
+			continue
+		}
+		if m.connecting[paneID] {
+			continue
+		}
+		if existing != nil {
+			if existing.serviceRun == service.runKey() {
+				continue
+			}
+			// The run moved on under it — restarted, stopped, fixed — so what
+			// it is drawing is not what the server is reporting.
+			m.closeTab(existing)
+		}
+		m.connecting[paneID] = true
+		cmds = append(cmds, m.openService(msg.gen, service, i))
+	}
+	// A declaration deleted from the repository takes its tab with it.
+	for _, p := range append(m.terminals.all(), m.shells.all()...) {
+		if p.service != "" && !declared[p.service] {
+			m.closeTab(p)
+		}
+	}
+	if len(cmds) == 0 {
+		return nil
+	}
+	return tea.Batch(cmds...)
+}
+
+// openService connects one service's pane: its running process when it has
+// one, and otherwise the card saying why it does not, with whatever its last
+// run printed under it.
+func (m *Model) openService(gen int, service Service, order int) tea.Cmd {
+	term, _ := m.columns(m.shells.len())
+	cols, rows := m.paneCells(term)
+	ctx, ds, id := m.ctx, m.ds, m.paneBox.ID
+	return func() tea.Msg {
+		if service.live() && service.ExecID != "" {
+			stream, err := ds.OpenExec(ctx, id, service.ExecID, cols, rows)
+			return serviceTermMsg{gen: gen, service: service, order: order, term: stream, err: err}
+		}
+		// A service that is not running has no stream, so the pane is handed
+		// the one thing there is to say about it. Its transcript is read here
+		// rather than left to a key: after a crash the output is the reason,
+		// and a reason you have to go and ask for is one you find out about
+		// later than you needed to.
+		logs, err := ds.ServiceLogs(ctx, id, service.ID)
+		if err != nil {
+			// Not fatal to the pane: the card without the transcript still
+			// says what happened, which is more than an absent tab does.
+			logs = nil
+		}
+		return serviceTermMsg{gen: gen, service: service, order: order, term: newTextTerminal(service.card(logs))}
+	}
+}
+
+// serviceTermOpened starts drawing one service, or drops it and lets the poll
+// try again. A service that cannot be opened is not worth reporting on the
+// status line: the poll is on a two-second cadence and would say it again and
+// again about a sandbox that is simply still coming up.
+func (m *Model) serviceTermOpened(msg serviceTermMsg) tea.Cmd {
+	if msg.gen != m.wsGen {
+		if msg.term != nil {
+			_ = msg.term.Close()
+		}
+		return nil
+	}
+	paneID := servicePaneID(msg.service.ID)
+	delete(m.connecting, paneID)
+	if msg.err != nil || msg.term == nil {
+		return nil
+	}
+	if existing := m.paneByExec(paneID); existing != nil {
+		_ = msg.term.Close()
+		return nil
+	}
+	m.nextPaneID++
+	p := &pane{
+		id:     m.nextPaneID,
+		term:   termpane.New(m.paneOptions(false, true)...),
+		stream: msg.term,
+		// A service is never typed at, so its pane is read-only whether it is
+		// drawing a live process or a card.
+		action:     InteractService,
+		sandbox:    m.paneBox,
+		execID:     paneID,
+		title:      msg.service.displayName() + msg.service.tabMark(),
+		service:    msg.service.ID,
+		serviceRun: msg.service.runKey(),
+	}
+	if !msg.service.live() {
+		p.status = msg.service.paneStatus()
+	}
+	at := m.terminals.insert(p, Exec{
+		ID: paneID, Service: msg.service.ID, ServiceName: msg.service.Name, ServiceOrder: msg.order,
+	}, m.column() == &m.terminals)
+	_ = at
+	if m.inPanes() {
+		m.layout()
+	}
+	return tea.Batch(
+		fromPane(p.id, p.term.Attach(msg.term)),
+		fromPane(p.id, m.paneEvents(msg.term)),
+	)
 }
 
 // terminalExec reports whether a session belongs on the workspace's left: the

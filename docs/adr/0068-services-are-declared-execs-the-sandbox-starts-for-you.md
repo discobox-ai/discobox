@@ -154,18 +154,32 @@ is resuming and one it is retrying.
 
 ### 7. The workspace draws services in the left column, after the terminals
 
-*(Amended before this decision shipped: services were first placed in the
-right-hand column, and moved to the left one. The reasoning below is the
-amended version; the mechanism — one listing, one metadata key, no
-client-side layout state — never changed.)*
+*(Amended twice before this decision shipped: services were first placed in the
+right-hand column and moved to the left one, and were first drawn from the exec
+listing alone and given a listing of their own. The reasoning below is the
+amended version.)*
 
 [ADR 0054](0054-the-workspaces-columns-are-terminals-and-shells.md) made the
 workspace's two columns the two kinds of session the server records: harness
 terminals on the left, every other TTY session as a tab on the right. Services
-join the **left** column, after the terminals, and are drawn from the same
-`GET /execs` listing the workspace already polls, keyed on the same
-`metadata.serviceId` decision 2 sets. No second poll and no client-side layout
-state, which was ADR 0054's whole point.
+join the **left** column, after the terminals.
+
+They are drawn from a listing of their own, polled beside the exec listing.
+Drawing them from `GET /execs` alone — which is what ADR 0054's "no second
+poll" would have bought — is silent about precisely the service that needs
+saying: a service is an exec, so one that never started, failed at boot, or
+cannot run at all has no exec to appear in it. A tab strip that only ever shows
+working services is one where a broken declaration is indistinguishable from a
+service nobody wrote, which is the failure decision 1 already refuses in the
+listing. The client-side layout state ADR 0054 rejected is still absent: which
+services have tabs, and in what order, is entirely the server's answer.
+
+A tab is for a service whose absence would be a surprise: running, failed,
+exited, or an unrunnable declaration. One stopped on purpose has none — you
+know, and a pane to dismiss every time is the window nagging. A pane with no
+live process to attach to draws what there is to say instead: the state, the
+reason, and the last run's output, since after a crash the output is the
+reason.
 
 The left side is what the discobox is running on your behalf — the harness
 working on the code, and the code itself running — while the right side is what
@@ -176,7 +190,9 @@ shell still draws its terminal at the full width.
 Within the column the two kinds are grouped rather than strictly aged:
 `[terminals, services]`. A service usually starts *before* the terminals do —
 boot launches both and a harness has files to install first — so strict age
-would put services above the primary's neighbors and push them along.
+would put services above the primary's neighbors and push them along. Services
+are ordered among themselves as the repository declares them, which is what the
+numeric filename prefix was for and what `disco box services ls` already shows.
 
 Two things follow from decision 3. A service pane is read-only: it takes no keys
 and sends no resize, because there is nothing at the far end reading stdin. It

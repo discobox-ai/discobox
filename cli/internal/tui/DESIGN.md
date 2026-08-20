@@ -25,7 +25,8 @@ flowchart LR
     L -->|u t T x U P| Verb["DataSource.Do"]
     L -->|e| Rename["dialog → DataSource.Rename"]
     L -->|Enter s| WS["workspace → Execs / OpenExec / NewShell / NewTerminal"]
-    WS -->|leader S| Svc["services menu → Services / DoService"]
+    WS -->|poll| Svc["services → Services / ServiceLogs"]
+    WS -->|leader S| SvcMenu["services menu → DoService"]
     L -->|y| Overlay["overlay pane → DataSource.Open"]
     L -->|v| Editor["DataSource.OpenEditor"]
     A -->|d s| AVerb["DataSource.DoHarness"]
@@ -156,10 +157,32 @@ a full-screen window — and lets the error carry what went wrong to the status
 line.
 
 **Services are the left column's second group, and their panes are read-only**
-(`services.go`, ADR 0063 §7). A service is an exec the discobox started from
-the repository's `.discobox/services`, so it arrives in the same `GET /execs`
-listing the tabs are already drawn from — keyed on `metadata.serviceId`, with
-no second poll and no client-side state, which was ADR 0054's whole point.
+(`services.go`, ADR 0063 §7).
+
+They are drawn from a **listing of their own**, polled beside the exec listing,
+and this is the one place the workspace needs a second seam. A service is an
+exec, so a running one is in `GET /execs` — but a service that never started,
+failed at boot, or cannot run at all has no exec to be in it, and that is
+exactly the service whose absence has to be visible. A tab strip drawn from the
+exec listing alone is silent about the only one you need to hear about.
+
+Which services get a tab is "would its absence be a surprise": running, failed,
+exited, or an unrunnable declaration. A service **stopped on purpose** does
+not — you know, and a pane to dismiss every time would be the window nagging.
+A pane with no live process draws a card instead: what it is, what state it is
+in, why, and then whatever its last run printed, since after a crash the output
+is the reason. The card is a `textTerminal` rather than a new kind of pane,
+because a pane already knows how to draw, scroll, select and copy a stream, and
+teaching the tab strip, the focus, the mouse and the layout about a second kind
+would buy none of that.
+
+Unlike the exec listing, the service listing **both opens and closes** panes: a
+service is a declaration and the listing is the whole truth about it, so each
+service has exactly one writer. A pane records the run it was opened on
+(`pane.serviceRun`, `Service.runKey`) so the poll can tell one still looking at
+what the server reports from one whose service has since restarted — which
+keeps the same exec id (ADR 0038) and moves only its start time — stopped, or
+been fixed.
 
 The left side is `[terminals, services]`: what the discobox is running on your
 behalf, the harness working on the code and the code itself running, while the
@@ -170,7 +193,11 @@ width. Within the column the two kinds are *grouped* rather than strictly aged
 launches both and a harness has files to install first — so strict age would
 put services above the primary's neighbors and push them along. `column.insert`
 therefore carries `pane.service` into the comparison, since a pane described
-by id and age alone would sort as though it were a terminal.
+by id and age alone would sort as though it were a terminal. Services are then
+ordered among themselves by `Exec.ServiceOrder`, their position in the
+repository's declaration order, so the strip reads the way `.discobox/services`
+does — and the way `disco box services ls` does — and holds still across a
+restart.
 
 Two things follow from a service running on pipes rather than a PTY: the pane
 sends nothing and translates bare line feeds (`termpane.WithReadOnly` — there
