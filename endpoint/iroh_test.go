@@ -3,6 +3,7 @@ package endpoint
 import (
 	"crypto/ed25519"
 	"crypto/rand"
+	"errors"
 	"strings"
 	"testing"
 )
@@ -115,14 +116,20 @@ func TestIrohEndpointCapabilities(t *testing.T) {
 	}
 }
 
-// The scheme is recognized in every build so the failure names the missing
-// capability instead of the scheme.
-func TestIrohEndpointReportsBuildSupport(t *testing.T) {
+// Reaching an iroh endpoint needs an identity, and this process has none until
+// [ConfigureIroh] installs one. The failure has to name that rather than the
+// scheme, which is understood perfectly well.
+func TestIrohEndpointRequiresAnIdentity(t *testing.T) {
 	raw := "iroh://" + strings.Repeat("ab", IrohIDSize)
-	if _, _, err := HTTPClient(raw, nil); err == nil {
-		t.Fatal("HTTPClient() succeeded, want the unimplemented-transport error")
-	} else if strings.Contains(err.Error(), "unsupported endpoint scheme") {
-		t.Fatalf("HTTPClient() error = %v, want a message about iroh support", err)
+	_, _, err := HTTPClient(raw, nil)
+	if err == nil {
+		t.Fatal("HTTPClient() succeeded without an iroh identity configured")
+	}
+	if strings.Contains(err.Error(), "unsupported endpoint scheme") {
+		t.Fatalf("HTTPClient() error = %v, want it to name the missing identity", err)
+	}
+	if !errors.Is(err, errIrohNotConfigured) {
+		t.Fatalf("HTTPClient() error = %v, want errIrohNotConfigured", err)
 	}
 }
 

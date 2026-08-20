@@ -1,5 +1,3 @@
-//go:build iroh
-
 package endpoint
 
 import (

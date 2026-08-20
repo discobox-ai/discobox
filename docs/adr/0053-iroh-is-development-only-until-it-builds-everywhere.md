@@ -1,6 +1,6 @@
 # 0053 — iroh is a development-only capability until it builds for macOS and Windows
 
-- **Status**: Accepted
+- **Status**: Superseded by [0067](0067-iroh-ships-in-every-build.md)
 - **Date**: 2026-08-19
 
 ## Context

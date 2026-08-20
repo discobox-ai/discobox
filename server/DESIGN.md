@@ -204,9 +204,9 @@ git subprocesses that cannot speak anything else (see [cli](../cli/DESIGN.md)).
 transport this server actually answers on rather than assuming one exists.
 
 `task dev` opts into nothing. It binds the local socket every other server
-binds, plus `iroh://` on the platforms whose build carries the transport (ADR
-0053), so `discobox` reaches a development server with no `--server` and the dev
-loop runs the transport users actually get instead of the one nothing ships. A
+binds, plus `iroh://`, which every build carries (ADR 0067), so `discobox`
+reaches a development server with no `--server` and the dev loop runs exactly
+the transports users get. A
 tool that needs a URL asks for one in `DISCOBOX_SERVER_LISTEN` — from the
 environment, not from `.env`, which the server loads with godotenv and which
 does not replace a variable already set.

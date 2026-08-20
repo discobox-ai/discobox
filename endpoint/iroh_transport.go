@@ -1,5 +1,3 @@
-//go:build iroh
-
 package endpoint
 
 import (
@@ -26,18 +24,9 @@ const irohALPN = "discobox/http/1"
 // stopped answering cannot hold up a shutdown.
 const irohTeardownTimeout = 5 * time.Second
 
-// errIrohNotConfigured is returned when this build is asked to act on an iroh
-// endpoint before [ConfigureIroh] has installed an identity.
+// errIrohNotConfigured is returned when an iroh endpoint is acted on before
+// [ConfigureIroh] has installed an identity.
 var errIrohNotConfigured = errors.New("iroh endpoint used before ConfigureIroh")
-
-// init installs the real transport over the refusing defaults in
-// iroh_default.go. This is the only thing the build tag decides.
-func init() {
-	configureIroh = configureIrohFFI
-	localIrohID = localIrohIDFFI
-	irohRoundTripper = irohRoundTripperFFI
-	irohListen = irohListenFFI
-}
 
 // IrohEndpoint is a bound iroh endpoint: one identity, one UDP socket, one
 // admission policy. A process normally has exactly one — two would mean two
@@ -190,7 +179,7 @@ var (
 	defaultIroh   *IrohEndpoint
 )
 
-func configureIrohFFI(cfg IrohConfig) error {
+func configureIroh(cfg IrohConfig) error {
 	created, err := NewIrohEndpoint(cfg)
 	if err != nil {
 		return err
@@ -204,7 +193,7 @@ func configureIrohFFI(cfg IrohConfig) error {
 	return nil
 }
 
-func localIrohIDFFI() (IrohID, error) {
+func localIrohID() (IrohID, error) {
 	configured, err := defaultIrohEndpoint()
 	if err != nil {
 		return IrohID{}, err
@@ -225,7 +214,7 @@ func defaultIrohEndpoint() (*IrohEndpoint, error) {
 // gets its own bidirectional QUIC stream, which is what the unix transport gets
 // from a socket connection and what keeps hijack — and therefore websockets —
 // working.
-func irohRoundTripperFFI(target Endpoint, base http.RoundTripper) (http.RoundTripper, error) {
+func irohRoundTripper(target Endpoint, base http.RoundTripper) (http.RoundTripper, error) {
 	configured, err := defaultIrohEndpoint()
 	if err != nil {
 		return nil, err
@@ -324,7 +313,7 @@ func locate(locator func(IrohID) []string, id IrohID) []string {
 
 // irohListen binds this machine's endpoint and presents accepted streams as a
 // net.Listener, so the ordinary control-plane handler serves them unchanged.
-func irohListenFFI(Endpoint) (net.Listener, string, func(), error) {
+func irohListen(Endpoint) (net.Listener, string, func(), error) {
 	configured, err := defaultIrohEndpoint()
 	if err != nil {
 		return nil, "", nil, err

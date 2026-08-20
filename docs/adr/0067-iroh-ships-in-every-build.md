@@ -1,6 +1,6 @@
 # 0067 — iroh ships in every build
 
-- **Status**: Proposed
+- **Status**: Accepted
 - **Date**: 2026-08-20
 
 ## Context

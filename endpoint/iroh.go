@@ -92,8 +92,8 @@ const irohNetwork = "iroh"
 // the QUIC handshake before the connection ever reaches a handler, so a
 // principal can be built from the connection rather than from anything the
 // client claims. It reads the identity off the address rather than the
-// concrete type, so callers need no build tag — a build without iroh support
-// never accepts one of these connections, and the answer there is false.
+// concrete type, so a caller does not have to name the transport's types to
+// ask, and a connection from any other scheme simply answers false.
 func IrohPeer(conn net.Conn) (IrohID, bool) {
 	if conn == nil {
 		return IrohID{}, false
@@ -129,9 +129,7 @@ func IrohURLWithAddrs(id IrohID, addrs []string) string {
 }
 
 // IrohConfig is the identity and admission policy of this process's iroh
-// endpoint. It is declared in every build so that callers wiring it up need no
-// build tag of their own; a binary without iroh support rejects
-// [ConfigureIroh] rather than failing to compile around it.
+// endpoint.
 type IrohConfig struct {
 	// SecretKey is the ed25519 key this process answers as. Its public half is
 	// the endpoint ID peers dial.

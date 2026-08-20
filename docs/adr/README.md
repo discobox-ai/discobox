@@ -105,7 +105,7 @@ Nygard-style ADRs (see adr.github.io) combined with current-state design docs:
 | [0050](0050-pool-build-state-is-not-sandbox-visible.md) | Pool build state lives outside the sandbox-visible cache | Accepted |
 | [0051](0051-the-pool-console-attaches-through-the-driver.md) | The pool host console attaches through the driver's Docker client | Accepted |
 | [0052](0052-iroh-is-an-optional-endpoint-scheme.md) | iroh is an optional endpoint scheme, and each hop names its endpoint package | Accepted (§4's "build the remaining targets now" superseded by [0053](0053-iroh-is-development-only-until-it-builds-everywhere.md)) |
-| [0053](0053-iroh-is-development-only-until-it-builds-everywhere.md) | iroh is a development-only capability until it builds for macOS and Windows | Accepted |
+| [0053](0053-iroh-is-development-only-until-it-builds-everywhere.md) | iroh is a development-only capability until it builds for macOS and Windows | Superseded by [0067](0067-iroh-ships-in-every-build.md) |
 | [0054](0054-the-workspaces-columns-are-terminals-and-shells.md) | The workspace's two columns are terminals and shells, as the server records them | Accepted |
 | [0055](0055-a-delivered-source-settles-before-its-sandbox-runs.md) | A delivered source settles before its sandbox runs | Proposed |
 | [0056](0056-a-repository-declares-the-sources-it-is-worked-on-with.md) | A repository declares the sources it is worked on with | Proposed |
@@ -119,4 +119,4 @@ Nygard-style ADRs (see adr.github.io) combined with current-state design docs:
 | [0064](0064-repair-rebuilds-on-the-current-image.md) | Repair rebuilds on the current image | Accepted (amends [0035](0035-repair-is-one-rebuild-intent-plus-a-start-instruction.md) §1) |
 | [0065](0065-the-cli-owns-its-pty-seam-and-windows-gets-conpty.md) | The CLI owns its pty seam, and Windows gets ConPTY | Accepted |
 | [0066](0066-the-build-is-nix-plus-taskfile-and-github-actions-only-triggers-it.md) | The build is Nix plus the Taskfile, and GitHub Actions only triggers it | Proposed |
-| [0067](0067-iroh-ships-in-every-build.md) | iroh ships in every build | Proposed |
+| [0067](0067-iroh-ships-in-every-build.md) | iroh ships in every build | Accepted (supersedes [0053](0053-iroh-is-development-only-until-it-builds-everywhere.md)) |
