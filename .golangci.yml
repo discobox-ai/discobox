@@ -40,8 +40,8 @@ linters:
       require-explanation: true
       require-specific: true
       # Whether a nolint directive is "used" varies with the golangci/gosec
-      # version (local vs the dagger go module's pinned image), so unused
-      # directives cannot be reported stably across environments.
+      # version, so unused directives cannot be reported stably across
+      # environments.
       allow-unused: true
     revive:
       enable-default-rules: true
@@ -66,7 +66,7 @@ linters:
     rules:
       # Explicit: the common-false-positives preset excludes G115 in newer
       # golangci-lint versions but not in all older ones; pin the behavior so
-      # local and containerized (dagger) lint agree regardless of version.
+      # local and CI lint agree regardless of version.
       - text: "G115:"
         linters:
           - gosec

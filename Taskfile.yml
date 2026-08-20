@@ -406,37 +406,6 @@ tasks:
       - cd cli && "$(go -C .. tool -n golangci-lint)" run --build-tags iroh
       - cd server && "$(go -C .. tool -n golangci-lint)" run --build-tags iroh
 
-  dagger:check:
-    desc: Run Dagger workspace checks (Go lint/tests, shellcheck) in containers
-    env:
-      DAGGER_X_RELEASE: v1.0.0-beta.6
-    cmds:
-      - dagger check {{.CLI_ARGS}}
-
-  release:stage:
-    desc: "Build the release into build/release for local inspection (TAG=vX.Y.Z to override the inferred patch bump)"
-    env:
-      DAGGER_X_RELEASE: v1.0.0-beta.6
-    cmds:
-      - dagger call release stage {{if .TAG}}--tag={{.TAG}}{{end}} --output=build/release
-
-  release:push:
-    desc: Publish the staged build/release to GitHub (tag, images, release assets)
-    env:
-      DAGGER_X_RELEASE: v1.0.0-beta.6
-    cmds:
-      - dagger call release push --staged=build/release --username="$(gh api user -q .login)" --token=cmd:"gh auth token"
-      - git fetch origin --tags
-
-  release:
-    desc: "Full release: dagger check, then stage+push in one dagger call (TAG=vX.Y.Z to override)"
-    env:
-      DAGGER_X_RELEASE: v1.0.0-beta.6
-    cmds:
-      - task: dagger:check
-      - dagger call release publish {{if .TAG}}--tag={{.TAG}}{{end}} --username="$(gh api user -q .login)" --token=cmd:"gh auth token"
-      - git fetch origin --tags
-
   check-hooks:
     desc: Run hooks checks
     cmds:

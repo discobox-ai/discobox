@@ -1,7 +1,0 @@
-[["version","1"]]
-["","git.head",["https://github.com/dagger/dang-sdk"],"6c63cd08652f87c903f3b6fbc5e2fc26505b067a","float"]
-["","git.head",["https://github.com/dagger/eslint"],"3d163b9cfaf9d6a7ccefb63011cc560884f03e66","float"]
-["","git.head",["https://github.com/dagger/go"],"5683fb4f7e2e909a453eba727fb982077d5d11b5","float"]
-["","git.head",["https://github.com/dagger/prettier"],"10186fcf88311664d7e613d69e29184acb405a23","float"]
-["","git.head",["https://github.com/dagger/shellcheck"],"34bcb268f4483fa31ea9e33b6a86aa7892144323","float"]
-["","git.head",["https://github.com/dagger/vitest"],"a91afde4de4073a907ab0d7298570725dd63569d","float"]
