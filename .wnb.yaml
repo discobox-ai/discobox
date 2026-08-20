@@ -22,10 +22,13 @@ build:
   # Nothing removes the old binaries first: go build replaces its output
   # atomically, so it works over a running binary, and it leaves the previous
   # binary in place when compilation fails rather than leaving you with none.
+  # sign:server is a no-op off macOS. On macOS it is mandatory on every
+  # rebuild: an unsigned binary has no virtualization entitlement, and the vz
+  # provider cannot start a pool without it.
   command: >-
     cd cli && go build -o ../build/disco ./cmd/disco &&
     cd ../server && go build -gcflags="all=-N -l" -o ../build/discobox-server ./cmd/discobox-server &&
-    cd .. && go tool task build:hooks
+    cd .. && go tool task sign:server build:hooks
   grace: 2s
 
 run:

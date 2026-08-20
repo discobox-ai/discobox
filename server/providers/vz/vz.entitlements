@@ -1,0 +1,18 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<!--
+	  Creating a Virtualization.framework VM requires this entitlement, so an
+	  unsigned discobox-server cannot start a pool on macOS. Ad-hoc signing
+	  (codesign -s -) is enough locally; distribution needs Developer ID
+	  signing and notarization.
+
+	  com.apple.vm.networking is deliberately absent: it is required only for
+	  bridged networking, which Apple grants by request and which would put pool
+	  guests on the user's LAN. The vz driver uses the framework's NAT instead.
+	-->
+	<key>com.apple.security.virtualization</key>
+	<true/>
+</dict>
+</plist>

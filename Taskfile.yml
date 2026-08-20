@@ -40,6 +40,20 @@ tasks:
     cmds:
       - mkdir -p build
       - cd server && go build -o ../{{.BINARY}} {{.SERVER_MAIN}}
+      - task: sign:server
+
+  sign:server:
+    desc: Codesign discobox-server with the Virtualization entitlement (macOS only)
+    # Creating a Virtualization.framework VM requires the entitlement, and it
+    # only exists on a signed binary, so every rebuild has to be re-signed. This
+    # is why `go run` cannot start a macOS server that runs pools. Ad-hoc
+    # signing is enough locally; distribution needs Developer ID and
+    # notarization. Task skips the whole target off darwin.
+    platforms: [darwin]
+    vars:
+      ENTITLEMENTS: server/providers/vz/vz.entitlements
+    cmds:
+      - codesign --force --sign - --entitlements {{.ENTITLEMENTS}} {{.BINARY}}
 
   build:cli:
     desc: Compile disco CLI
@@ -66,6 +80,31 @@ tasks:
       - cd pool-agent && GOOS=linux GOARCH=amd64 go build -trimpath -ldflags="-s -w" -o ../build/discobox-cp-relay ./cmd/discobox-cp-relay
       - gzip -9 -c build/discobox-cp-relay > {{.RELAY_OUT}}
       - 'echo "embedded guest relay is $(wc -c < {{.RELAY_OUT}}) bytes compressed"'
+
+  build:vz-guest:
+    desc: Build the macOS pool guest image and stage it where the vz provider finds it
+    # Docker is required to *build* a guest image; it is never required to run
+    # one. This is the bootstrap of the bootstrap: with no guest published yet,
+    # or with local changes to image/, build it here and every vz pool picks it
+    # up. Delete the directory to go back to the published image.
+    platforms: [darwin]
+    vars:
+      GUEST_DIR: '{{.GUEST_DIR | default "$HOME/Library/Application Support/discobox/vz/guest/local"}}'
+    cmds:
+      - |
+        set -eu
+        dest="{{.GUEST_DIR}}"
+        staging="$(mktemp -d "${TMPDIR:-/tmp}/discobox-vz-guest.XXXXXX")"
+        trap 'rm -rf "$staging"' EXIT
+        # A pool may be booting from $dest right now, so the artifacts are built
+        # aside and swapped in rather than written in place.
+        docker build           --platform linux/arm64           --file server/providers/vz/image/Dockerfile           --output "type=local,dest=$staging"           .
+        mkdir -p "$(dirname "$dest")"
+        rm -rf "$dest"
+        mv "$staging" "$dest"
+        trap - EXIT
+        ls -l "$dest"
+        echo "staged guest artifacts in $dest; recreate a vz pool to boot them"
 
   build:pool-agent-image:
     desc: Build the systemd Docker pool image

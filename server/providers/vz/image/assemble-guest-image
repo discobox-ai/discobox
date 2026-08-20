@@ -1,0 +1,92 @@
+#!/bin/sh
+# Turn an exported guest root filesystem into the boot artifact set
+# Virtualization.framework consumes: an uncompressed kernel, an initrd, and a
+# raw ext4 root filesystem.
+#
+# Everything here runs inside the image build (ADR 0062 §6). mkfs.ext4 -d
+# populates an image file without a loop device and without privileges, which
+# is what lets this same build run on a developer's Linux box, in CI, and on
+# BuildKit inside a running pool VM.
+set -eu
+
+rootfs=${1:?usage: assemble-guest-image ROOTFS OUTPUT_DIR}
+out=${2:?usage: assemble-guest-image ROOTFS OUTPUT_DIR}
+arch=${TARGETARCH:-arm64}
+slack_mib=${ROOT_SLACK_MIB:-192}
+
+mkdir -p "$out"
+
+kernel=$(find "$rootfs/boot" -maxdepth 1 -name 'vmlinuz-*' | sort -V | tail -n 1)
+initrd=$(find "$rootfs/boot" -maxdepth 1 -name 'initrd.img-*' | sort -V | tail -n 1)
+if [ -z "$kernel" ] || [ -z "$initrd" ]; then
+    echo "assemble-guest-image: no kernel or initrd in $rootfs/boot" >&2
+    exit 1
+fi
+
+# An arm64 Image carries "ARMd" at offset 0x38. This is both how a compression
+# format is confirmed to have produced a kernel and how an already-uncompressed
+# vmlinuz is recognised.
+is_kernel_image() {
+    [ -s "$1" ] && [ "$(dd if="$1" bs=1 skip=56 count=4 2>/dev/null)" = "ARMd" ]
+}
+
+case "$arch" in
+arm64)
+    # Virtualization.framework requires an uncompressed kernel. Which form
+    # Debian ships is not a constant: the trixie arm64 kernel is already a raw
+    # Image, while other flavours and releases are gzipped. Detect rather than
+    # assume, so a Debian change is not a silent boot failure on macOS. Doing it
+    # here also means the published artifact is always bootable and the server
+    # never carries a kernel decompressor.
+    if is_kernel_image "$kernel"; then
+        echo "assemble-guest-image: $kernel is already an uncompressed kernel Image"
+        cp "$kernel" "$out/vmlinux"
+    else
+        for format in gzip zstd xz lz4; do
+            case "$format" in
+            gzip) gzip -dc "$kernel" >"$out/vmlinux" 2>/dev/null || true ;;
+            zstd) zstd -dc "$kernel" >"$out/vmlinux" 2>/dev/null || true ;;
+            xz) xz -dc "$kernel" >"$out/vmlinux" 2>/dev/null || true ;;
+            lz4) lz4 -dc "$kernel" >"$out/vmlinux" 2>/dev/null || true ;;
+            esac
+            if is_kernel_image "$out/vmlinux"; then
+                echo "assemble-guest-image: decompressed $kernel with $format"
+                break
+            fi
+            rm -f "$out/vmlinux"
+        done
+    fi
+    if ! is_kernel_image "$out/vmlinux"; then
+        echo "assemble-guest-image: $kernel is not an arm64 kernel Image and no known compression produced one" >&2
+        exit 1
+    fi
+    ;;
+*)
+    # Intel Macs are deferred in ADR 0062: an amd64 bzImage needs the payload
+    # extracted from its boot stub, which is real work with no consumer yet.
+    echo "assemble-guest-image: unsupported architecture $arch (ADR 0062 defers Intel Macs)" >&2
+    exit 1
+    ;;
+esac
+
+cp "$initrd" "$out/initrd.img"
+
+# BuildKit supplies /etc/resolv.conf as a bind mount during RUN steps, so the
+# exported tree carries the builder's resolver. The guest resolves through
+# systemd-resolved against the DHCP server Virtualization.framework's NAT
+# provides.
+rm -f "$rootfs/etc/resolv.conf"
+ln -s /run/systemd/resolve/resolv.conf "$rootfs/etc/resolv.conf"
+
+# Size the root filesystem to its contents rather than to a fixed ceiling. It is
+# read-only and never grows, and every byte of slack is a byte pulled over the
+# network on a machine's first pool start and written to disk on extraction.
+used_mib=$(du -sm "$rootfs" | cut -f1)
+root_mib=$(( used_mib * 115 / 100 + slack_mib ))
+truncate -s "${root_mib}M" "$out/root.ext4"
+# No journal: the root filesystem is attached read-only, so a journal is dead
+# weight in an artifact whose size is a distribution cost.
+mkfs.ext4 -F -q -L discobox-root -O ^has_journal -d "$rootfs" "$out/root.ext4"
+
+echo "guest artifacts:"
+ls -l "$out"

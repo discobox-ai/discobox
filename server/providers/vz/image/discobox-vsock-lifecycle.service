@@ -1,0 +1,12 @@
+[Unit]
+Description=Accept orderly shutdown requests over VSOCK
+After=basic.target
+
+[Service]
+Type=simple
+ExecStart=/usr/local/bin/discobox-vsock-guest lifecycle --port 3003
+Restart=on-failure
+RestartSec=1s
+
+[Install]
+WantedBy=multi-user.target

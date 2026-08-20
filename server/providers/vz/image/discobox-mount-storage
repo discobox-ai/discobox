@@ -1,0 +1,61 @@
+#!/bin/sh
+# The root disk is read-only, so everything that survives a pool restart lives
+# on the data disk (/dev/vdb) and everything disposable on the cache disk
+# (/dev/vdc). containerd's state moves with Docker's: with the containerd
+# snapshotter it holds the actual layer content and every container snapshot,
+# so losing it is not recoverable.
+set -eu
+
+wait_for_block_device() {
+    device=$1
+    attempts=0
+    while [ ! -b "$device" ]; do
+        attempts=$((attempts + 1))
+        if [ "$attempts" -ge 300 ]; then
+            echo "timed out waiting for $device" >&2
+            exit 1
+        fi
+        sleep 0.1
+    done
+}
+
+wait_for_block_device /dev/vdb
+wait_for_block_device /dev/vdc
+
+# The host creates both disks empty, so the guest owns first-boot formatting.
+if ! blkid /dev/vdb >/dev/null 2>&1; then
+    mkfs.ext4 -F -q -L discobox-data /dev/vdb
+fi
+if ! blkid /dev/vdc >/dev/null 2>&1; then
+    mkfs.ext4 -F -q -L discobox-cache /dev/vdc
+fi
+
+if ! mountpoint -q /var/lib/discobox; then
+    mount -t ext4 -o rw /dev/vdb /var/lib/discobox
+fi
+
+# The host grows the sparse image when the configured disk size increases, so
+# the filesystem is grown to match here. Online growth of a mounted ext4 is
+# supported and is a no-op when the filesystem already fills the device.
+resize2fs /dev/vdb || true
+
+install -d -m 0755 \
+    /var/lib/discobox/cache \
+    /var/lib/discobox/docker \
+    /var/lib/discobox/containerd \
+    /var/lib/discobox/projects \
+    /var/lib/discobox/proxy
+
+if ! mountpoint -q /var/lib/discobox/cache; then
+    mount -t ext4 -o rw /dev/vdc /var/lib/discobox/cache
+fi
+
+resize2fs /dev/vdc || true
+
+if ! mountpoint -q /var/lib/docker; then
+    mount --bind /var/lib/discobox/docker /var/lib/docker
+fi
+
+if ! mountpoint -q /var/lib/containerd; then
+    mount --bind /var/lib/discobox/containerd /var/lib/containerd
+fi

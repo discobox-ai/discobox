@@ -48,6 +48,15 @@ build_dockerfile() {
     .claude/worktrees/*)
       return 0
       ;;
+    */providers/vz/image/Dockerfile|server/providers/vz/image/Dockerfile)
+      # The macOS guest image is arm64-only (ADR 0052 defers Intel Macs), and it
+      # installs a kernel, generates an initrd, and runs mkfs.ext4 over the whole
+      # root filesystem. Building that under QEMU on an amd64 host costs far more
+      # than this hook is for, and building it natively is exactly what its own
+      # workflow does on an arm64 runner (.github/workflows/guest-image.yml).
+      echo "[dockerfile-test-builds] skipping $dockerfile (arm64-only; built by the guest-image workflow)"
+      return 0
+      ;;
   esac
   if [ ! -f "$dockerfile" ]; then
     return 0

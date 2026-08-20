@@ -1,0 +1,13 @@
+# Virtualization.framework's NAT attachment runs a DHCP server, so the guest
+# takes its address, route, and resolver from the lease rather than from the
+# fixed private addressing a passt-backed libkrun guest configures by hand.
+[Match]
+Name=en*
+
+[Network]
+DHCP=ipv4
+IPv6AcceptRA=no
+
+[DHCPv4]
+UseDNS=yes
+UseDomains=yes

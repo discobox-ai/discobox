@@ -1,0 +1,15 @@
+[Unit]
+Description=Mount Discobox data and cache disks
+DefaultDependencies=no
+After=systemd-tmpfiles-setup-dev.service
+Before=local-fs.target containerd.service docker.service docker.socket discobox-vsock-docker.service
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+ExecStart=/usr/local/sbin/discobox-mount-storage
+StandardOutput=journal+console
+StandardError=journal+console
+
+[Install]
+WantedBy=local-fs.target

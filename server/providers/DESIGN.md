@@ -35,10 +35,12 @@ flowchart TD
     do["digitalocean.Driver\ndroplet CRUD by pool tag ·\ndocker over SSH · agent at public IP"]
     execd["execvm.Driver\ndelegates every op to an external\ncommand (shell-script backends)"]
     libkrun["libkrun.Driver\nlibkrun process · persistent disks ·\nUnix/VSOCK connection leases"]
-    future["(later) k8s / ec2 / apple / windows\nsame shape; pool runs as a pod on k8s"]
+    vz["vz.Driver (macOS)\nVirtualization.framework VM ·\nregistry-seeded guest · VSOCK leases"]
+    wslc["wslc.Driver (Windows)\nWSL Containers VM ·\nrelay-multiplexed leases"]
+    future["(later) k8s / ec2\nsame shape; pool runs as a pod on k8s"]
 
     pool --> engine --> driver
-    driver --> local & do & execd & libkrun & future
+    driver --> local & do & execd & libkrun & vz & wslc & future
 ```
 
 `server/providers/poolruntime.Provider` is the registered `sandbox.Provider`
@@ -107,6 +109,16 @@ usually performs no transfer, while libkrun, DigitalOcean, and exec drivers
 receive the same images over their existing VSOCK, SSH, or configured Docker
 transport. Synchronization failures fail pool reconciliation rather than
 allowing a host with incomplete development images to become ready.
+
+The manifest has a second form. On a host with no Docker daemon of its own —
+Windows and macOS, where the daemon lives inside the pool's VM — the watcher
+describes each image instead of building it, and the engine builds it on the
+destination daemon's embedded BuildKit, streaming the repository as the build
+context over the driver's existing transport. Copy-mode addresses images by
+built image ID; build-mode addresses them by a reference content-addressed over
+the image's inputs, which is its freshness key. This is what makes development
+work at all on a host that never installs Docker, and it is the step the `vz`
+backend depends on to build its own pool image after the guest boots.
 
 ## Image Reclamation
 
@@ -297,6 +309,7 @@ opt-in (see [server](../DESIGN.md#listen-endpoints)):
 | Backend | Agent reaches the control plane by |
 | --- | --- |
 | `libkrun` | VSOCK to the host CID |
+| `vz` | VSOCK to the host CID, accepted by the driver's own listener |
 | `wslc` | `unix://` socket served by the in-guest relay |
 | `docker`, local daemon | `unix://` the control plane's own socket, bind-mounted into the pool container at the same path (`Config.RelaySocketDir`) |
 | `docker`, remote daemon | the configured HTTP listener, rewritten to the container-resolvable host-gateway address |
@@ -316,6 +329,41 @@ environment by `dockerworker.BootEnv` and injected into the pool-agent
 container by the engine, uniformly on every backend. VM drivers only need
 their platform's Docker bring-up; they never carry bootstrap secrets in VM
 user data.
+
+## Guest Image Artifacts
+
+`server/providers/guestimage` resolves the boot artifacts a VM driver needs —
+kernel, initrd, root filesystem — from an OCI image, with no Docker daemon on
+the host (ADR 0052 §5). It pulls by digest with go-containerregistry, caches one
+directory per digest, and accepts a local override directory instead.
+
+It is provider-neutral on purpose. Today only `vz` uses it; libkrun builds its
+root image and kernel on the host with `docker-buildx`, and adopting this is
+part of its convergence.
+
+Two properties are load-bearing rather than incidental:
+
+- The cache is content-addressed by manifest digest, so a new guest release
+  lands beside the old one and an interrupted extraction is never mistaken for a
+  complete one — extraction stages into a temporary directory and renames it.
+- Only the artifacts a driver names are extracted. The guest image is a release
+  artifact, not a tree to search.
+
+The override directory is how a guest image built from local sources is booted.
+`dockerworker.BuildArtifacts` produces one: it builds a Dockerfile on a pool's
+own Docker daemon through the same BuildKit session that carries development
+image builds, and streams the final `FROM scratch` stage back to a host
+directory. That is what closes the bootstrap loop — the registry seeds the first
+VM on a machine, and from then on a pool VM is the builder for its own successor
+(ADR 0052 §6, §7).
+
+## macOS (vz) Driver
+
+`server/providers/vz` gives each pool one Virtualization.framework VM. The
+framework is part of macOS, so this backend ships no launcher, no hypervisor
+library, and no VM image to install: a Mac needs a codesigned `discobox-server`
+and a network, and in particular no Docker daemon. See
+[vz/DESIGN.md](vz/DESIGN.md).
 
 ## DigitalOcean Driver
 

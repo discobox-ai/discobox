@@ -1,4 +1,4 @@
-//go:build !windows
+//go:build !windows && !darwin
 
 package providers
 
@@ -7,7 +7,8 @@ import (
 	"github.com/obot-platform/discobox/server/providers/poolruntime"
 )
 
-// registerPlatformProviderFactories registers no additional providers. The only
-// platform-specific provider today is wslc, which exists on Windows only.
+// registerPlatformProviderFactories registers no additional providers. The
+// platform-specific providers are wslc on Windows and vz on macOS; neither can
+// start anywhere else.
 func registerPlatformProviderFactories(*sandbox.ProviderManager, poolruntime.PoolManager, FactoryOptions) {
 }
