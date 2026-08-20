@@ -153,6 +153,17 @@ are preserved: recovery is strictly in-place, and pool-local state survives in
 named Docker volumes. Pool row deletion is intent-based and allowed only after
 the control plane proves no sandbox is assigned to the pool.
 
+Removing a pool does not require reaching its Docker daemon. `RemovePool`
+removes the pool container first, but a *connection* failure is logged and
+skipped rather than returned: nothing about retrying makes a daemon reachable,
+so failing there strands the pool row and its disks permanently — which is
+exactly what a VM guest that boots without bringing Docker up would cause. The
+skip leaks nothing, because `DeleteVM` destroys the guest and everything in it,
+and on the local Docker driver, where `DeleteVM` is a no-op, the drift watcher
+reclaims a managed pool container that no longer has a pool row. A daemon that
+answers and still refuses the removal is reporting something a retry can fix,
+and that error keeps driving the reconcile.
+
 `RepairPool` is the recovery hook for pools whose runtime is known to be
 unhealthy, including a runtime whose agent never registered within the
 registration timeout. The engine replaces the container and replaces the VM

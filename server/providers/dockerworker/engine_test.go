@@ -4,6 +4,8 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"net/http"
+	"net/http/httptest"
 	"strings"
 	"testing"
 
@@ -538,4 +540,98 @@ func hasVolumeMount(mounts []mount.Mount, source, target string) bool {
 		}
 	}
 	return false
+}
+
+// deadDaemonDriver owns a VM whose Docker daemon cannot be reached: a guest
+// that booted but never brought dockerd up, which is the case the pool host
+// console exists for.
+type deadDaemonDriver struct {
+	nopDriver
+	deleteCalls int
+}
+
+func (d *deadDaemonDriver) AcquireDockerClient(context.Context, string) (*DockerClientLease, error) {
+	cli, err := NewDockerClientForHost("unix:///nonexistent/discobox-dead-daemon.sock")
+	if err != nil {
+		return nil, err
+	}
+	return NewDockerClientLease(cli, func() { _ = cli.Close() }), nil
+}
+
+func (d *deadDaemonDriver) DeleteVM(context.Context, string) error {
+	d.deleteCalls++
+	return nil
+}
+
+// refusingDaemonDriver reaches a daemon that answers and then refuses.
+type refusingDaemonDriver struct {
+	nopDriver
+	host        string
+	deleteCalls int
+}
+
+func (d *refusingDaemonDriver) AcquireDockerClient(context.Context, string) (*DockerClientLease, error) {
+	// Built the way the other daemon fakes here are, so the client talks plain
+	// HTTP to the test server instead of negotiating TLS.
+	cli, err := testDockerClient(d.host)
+	if err != nil {
+		return nil, err
+	}
+	return NewDockerClientLease(cli, func() { _ = cli.Close() }), nil
+}
+
+func (d *refusingDaemonDriver) DeleteVM(context.Context, string) error {
+	d.deleteCalls++
+	return nil
+}
+
+// A pool whose daemon cannot be reached must still delete. Nothing about
+// retrying makes a daemon reachable, so refusing here strands the pool row and
+// its disks forever. Skipping the container removal leaks nothing: DeleteVM
+// destroys the guest and everything in it, and on the local Docker driver —
+// where DeleteVM is a no-op — the drift watcher reclaims a managed pool
+// container that no longer has a pool row.
+func TestRemovePoolDeletesTheVMWhenItsDaemonIsUnreachable(t *testing.T) {
+	driver := &deadDaemonDriver{}
+	engine, err := New(Config{Image: "worker-image"}, driver)
+	if err != nil {
+		t.Fatalf("New: %v", err)
+	}
+	pool := &model.Pool{ID: "pool-1", Ready: true, Schedulable: true, Degraded: true}
+	if err := engine.RemovePool(t.Context(), &model.Project{}, &model.SandboxProviderInstance{}, pool); err != nil {
+		t.Fatalf("RemovePool: %v", err)
+	}
+	if driver.deleteCalls != 1 {
+		t.Errorf("DeleteVM calls = %d, want 1", driver.deleteCalls)
+	}
+	if pool.Ready || pool.Schedulable || pool.Degraded {
+		t.Errorf("pool runtime flags survived removal: %+v", pool)
+	}
+	if pool.RuntimeState != nil {
+		t.Error("pool runtime state survived removal")
+	}
+}
+
+// A daemon that answers and refuses is reporting something a retry can fix, so
+// that error must keep driving the reconcile rather than being swallowed
+// alongside the unreachable case.
+func TestRemovePoolSurfacesAReachableDaemonsFailure(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusInternalServerError)
+		_, _ = w.Write([]byte(`{"message":"device or resource busy"}`))
+	}))
+	t.Cleanup(server.Close)
+
+	driver := &refusingDaemonDriver{host: server.URL}
+	engine, err := New(Config{Image: "worker-image"}, driver)
+	if err != nil {
+		t.Fatalf("New: %v", err)
+	}
+	pool := &model.Pool{ID: "pool-1"}
+	if err := engine.RemovePool(t.Context(), &model.Project{}, &model.SandboxProviderInstance{}, pool); err == nil {
+		t.Fatal("RemovePool succeeded against a daemon that refused the removal")
+	}
+	if driver.deleteCalls != 0 {
+		t.Errorf("DeleteVM was called %d times despite a live daemon refusing", driver.deleteCalls)
+	}
 }

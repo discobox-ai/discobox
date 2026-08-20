@@ -9,6 +9,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"log/slog"
 	"net/netip"
 	"regexp"
 	"sort"
@@ -300,8 +301,26 @@ func (e *Engine) RemovePool(ctx context.Context, _ *model.Project, _ *model.Sand
 	} else {
 		removeErr := e.removePoolContainer(ctx, lease.Client, pool.ID)
 		lease.Release()
+		// A daemon that cannot be reached is not a reason to refuse a delete.
+		// Nothing about retrying makes it reachable, so returning here strands
+		// the pool row and its disks permanently — which is exactly what happens
+		// to a VM guest that boots but never brings Docker up, the case the pool
+		// host console exists for.
+		//
+		// Skipping the removal leaks nothing. On a VM backend, DeleteVM below
+		// destroys the guest and every container in it. On the local Docker
+		// driver, where DeleteVM is a no-op, the drift watcher reclaims a
+		// managed pool container that no longer has a pool row.
+		//
+		// Only connection failures are tolerated: a daemon that answers and
+		// still refuses the removal is reporting something a retry can fix, and
+		// that error keeps driving the reconcile as before.
 		if removeErr != nil {
-			return removeErr
+			if !client.IsErrConnectionFailed(removeErr) {
+				return removeErr
+			}
+			slog.WarnContext(ctx, "removing pool runtime without reaching its Docker daemon",
+				"pool_id", pool.ID, "error", removeErr)
 		}
 	}
 	if err := e.driver.DeleteVM(ctx, pool.ID); err != nil && !errors.Is(err, sandbox.ErrNotFound) {
