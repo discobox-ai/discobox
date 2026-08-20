@@ -92,6 +92,23 @@ a byte written to `InputPipe()` (the writer side of the very pipe its `Read`
 waits on) returns that read, the drain sees the done signal and leaves without
 forwarding the byte, and only then is the emulator closed. See `stopForwarder`.
 
+**A read-only pane also supplies the line discipline** (`WithReadOnly`). The
+option is for a far end with no input side to reach — a process on pipes rather
+than a PTY — so it drops keys, text and pastes, and stops sending resizes:
+there is no terminal there whose size could be wrong.
+
+Being on pipes has a second consequence that is easy to miss. A pipe has no
+line discipline, so nothing has turned the program's `\n` into `\r\n`, and a
+terminal reads a bare LF as "down one row, same column". Feed a pipe's output
+to an emulator untouched and every line starts where the last one ended — the
+staircase. The pane sets LNM (`ansi.SetModeLineFeedNewLine`) on the emulator at
+attach rather than rewriting the stream: it is the terminal's own switch for
+exactly this, a lone CR still overwrites its line so progress output works, a
+CRLF still moves one line, and nothing modifies the bytes on their way to a
+transcript. LNM also governs what the Return key sends, which is why it rides
+on read-only rather than being an option of its own — only a pane that sends
+nothing can set it without changing its input.
+
 **End of file is an exit, not an error.** `ClosedMsg.Err` is nil when a stream
 simply ends, so a host is not left reporting every normal exit as a failure. A
 host whose stream is a local pty has one more of these to map: Linux fails a

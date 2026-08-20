@@ -142,12 +142,15 @@ func WithScrollback(lines int) Option {
 }
 
 // WithReadOnly draws a stream nothing types at: keys, text and pastes are not
-// forwarded, and a resize is applied to the emulator without being sent on.
+// forwarded, a resize is applied to the emulator without being sent on, and
+// bare line feeds are drawn as newlines (LNM).
 //
 // It is for a far end with no input side to reach — a process running on pipes
-// rather than a PTY, whose output is watched rather than driven. Everything
-// else about the pane is unchanged: it draws, it scrolls, and text in it can
-// still be selected and copied.
+// rather than a PTY, whose output is watched rather than driven. That is also
+// why the line feeds need handling: a pipe has no line discipline, so nothing
+// has turned the program's LFs into CRLFs, and a terminal reads a bare LF as
+// "down one row, same column". Everything else about the pane is unchanged: it
+// draws, it scrolls, and text in it can still be selected and copied.
 //
 // The emulator's own replies to the queries applications make are still
 // collected and sent. They are not input in this sense, and an emulator whose
@@ -273,6 +276,22 @@ func (m *Model) Attach(stream Stream) tea.Cmd {
 	m.emu = vt.NewEmulator(m.cols, m.rows)
 	if m.opts.scrollback > 0 {
 		m.emu.SetScrollbackSize(m.opts.scrollback)
+	}
+	if m.opts.readOnly {
+		// A read-only far end is a process on pipes, and a pipe has no line
+		// discipline. On a PTY the kernel's ONLCR turns every LF into CRLF
+		// before the bytes are ever read; here they arrive as bare LFs, and LF
+		// means "down one row, same column" to a terminal — which draws each
+		// line one step right of the last. LNM is the terminal's own switch
+		// for supplying that carriage return, so the pane sets it rather than
+		// rewriting the stream: a lone CR still overwrites its line, a CRLF
+		// still moves one line, and the bytes reaching the transcript are the
+		// bytes the program wrote.
+		//
+		// It is set here rather than offered separately because the mode also
+		// governs what the Return key sends, which only a pane that sends
+		// nothing can set without changing its input.
+		_, _ = m.emu.Write([]byte(ansi.SetModeLineFeedNewLine))
 	}
 	m.emu.SetCallbacks(m.callbacks())
 	m.watchMouseModes()
