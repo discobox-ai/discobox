@@ -43,6 +43,12 @@ func Parse(raw string) (Endpoint, error) {
 	if raw == "" {
 		return Endpoint{}, fmt.Errorf("endpoint is required")
 	}
+	// An iroh ticket is not a URL. It carries the same address the iroh://
+	// form spells out, in the single token iroh tools paste around, so it is
+	// accepted wherever an endpoint is.
+	if strings.HasPrefix(raw, irohTicketPrefix) && !strings.Contains(raw, "://") {
+		return parseIrohTicket(raw)
+	}
 	u, err := url.Parse(raw)
 	if err != nil {
 		return Endpoint{}, err

@@ -4,6 +4,7 @@ import (
 	"crypto/ed25519"
 	"crypto/rand"
 	"errors"
+	"slices"
 	"strings"
 	"testing"
 )
@@ -196,5 +197,73 @@ func TestIrohURLDialsTheID(t *testing.T) {
 	}
 	if got != id {
 		t.Fatalf("round trip = %s, want %s", got, id)
+	}
+}
+
+// The ticket and the URL are two spellings of one address, so an endpoint has
+// to survive the round trip through either.
+func TestIrohTicketRoundTrips(t *testing.T) {
+	pub, _, err := ed25519.GenerateKey(rand.Reader)
+	if err != nil {
+		t.Fatalf("generate key: %v", err)
+	}
+	id, err := IrohIDFromPublicKey(pub)
+	if err != nil {
+		t.Fatalf("IrohIDFromPublicKey() error = %v", err)
+	}
+	addrs := []string{"127.0.0.1:41234", "[::1]:41235"}
+
+	fromURL, err := Parse(IrohURLWithAddrs(id, addrs))
+	if err != nil {
+		t.Fatalf("Parse(url) error = %v", err)
+	}
+	ticket, err := IrohTicket(fromURL)
+	if err != nil {
+		t.Fatalf("IrohTicket() error = %v", err)
+	}
+
+	// A ticket is an endpoint anywhere an endpoint is taken, so --server and
+	// DISCOBOX_SERVER_LISTEN accept the thing the server printed.
+	fromTicket, err := Parse(ticket)
+	if err != nil {
+		t.Fatalf("Parse(ticket) error = %v", err)
+	}
+	if fromTicket.Scheme != "iroh" {
+		t.Fatalf("Scheme = %q, want iroh", fromTicket.Scheme)
+	}
+	if fromTicket.Value != fromURL.Value {
+		t.Fatalf("ticket carries %q, want %q", fromTicket.Value, fromURL.Value)
+	}
+	if !slices.Equal(fromTicket.IrohAddrs, fromURL.IrohAddrs) {
+		t.Fatalf("ticket addresses = %v, want %v", fromTicket.IrohAddrs, fromURL.IrohAddrs)
+	}
+	// Raw keeps the ticket, so an error about this endpoint names what the
+	// operator actually pasted.
+	if fromTicket.Raw != ticket {
+		t.Fatalf("Raw = %q, want the ticket", fromTicket.Raw)
+	}
+}
+
+// Only an iroh endpoint has a ticket.
+func TestIrohTicketRejectsOtherSchemes(t *testing.T) {
+	parsed, err := Parse("unix:///tmp/discobox/server.sock")
+	if err != nil {
+		t.Fatalf("Parse() error = %v", err)
+	}
+	if _, err := IrohTicket(parsed); err == nil {
+		t.Fatal("IrohTicket() accepted a unix endpoint")
+	}
+}
+
+// A string that starts like a ticket but is not one has to fail as a ticket,
+// not as an unsupported scheme, or the message sends someone looking for a
+// typo in a scheme they never wrote.
+func TestParseRejectsAMalformedTicket(t *testing.T) {
+	_, err := Parse("endpointnotarealticket")
+	if err == nil {
+		t.Fatal("Parse() accepted a malformed ticket")
+	}
+	if strings.Contains(err.Error(), "unsupported endpoint scheme") {
+		t.Fatalf("error = %v, want it to name the ticket", err)
 	}
 }

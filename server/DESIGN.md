@@ -203,6 +203,12 @@ are the default socket and pipe, and `iroh://` is the identity in the server's
 key file. `unix://,iroh://` therefore reads as "where I always listen, plus
 iroh".
 
+An iroh endpoint is logged twice: as a URL and as a ticket. The URL is the form
+to read — its endpoint ID is the value a peer puts in `authorized_ids` — and
+the ticket is the form to paste, carrying the same address with no query string
+for a shell or a chat client to mangle. Both are accepted wherever an endpoint
+is, so either can be handed to `--server`.
+
 Nothing in the system requires HTTP. Pool backends reach the control plane over
 whatever transport their guest can dial — see
 [providers](providers/DESIGN.md#control-plane-reachability) — and the CLI dials

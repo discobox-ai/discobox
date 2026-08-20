@@ -130,6 +130,13 @@ func Run(ctx context.Context) error {
 	listeners = append(listeners, serverListener{Listener: controlPlaneStreams, display: "pool control-plane streams"})
 	for _, listener := range listeners {
 		log.Printf("listening on %s", listener.display)
+		// An iroh endpoint is also printed as a ticket. The URL is the form to
+		// read — its endpoint ID is what goes in a peer's authorized_ids — and
+		// the ticket is the form to paste, with no query string for a shell or
+		// a chat client to mangle. Both dial the same server.
+		if ticket, err := irohTicket(listener.display); err == nil {
+			log.Printf("or dial it with the ticket %s", ticket)
+		}
 		log.Printf("openapi spec available at %s/openapi.yaml", listener.display)
 		log.Printf("api docs available at %s/docs", listener.display)
 	}

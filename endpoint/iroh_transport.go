@@ -171,6 +171,63 @@ func parseIrohAddrs(addrs []string) ([]netip.AddrPort, error) {
 	return out, nil
 }
 
+// irohTicketPrefix is what an iroh endpoint ticket starts with. It is how a
+// ticket is told from a URL without trying to decode every endpoint string as
+// one, which would load the iroh library for endpoints that have nothing to do
+// with iroh.
+const irohTicketPrefix = "endpoint"
+
+// IrohTicket renders an iroh endpoint as the ticket other iroh implementations
+// accept: the same endpoint ID and addresses in one opaque token, with nothing
+// for a shell, a chat client or a query string to mangle.
+//
+// It is not shorter than the URL by much — the URL's length is its address
+// list, which a ticket carries too — so both are worth printing. The URL is
+// the one an operator reads the endpoint ID out of, which is the value that
+// goes in authorized_ids; the ticket is the one they paste.
+func IrohTicket(target Endpoint) (string, error) {
+	if target.Scheme != "iroh" {
+		return "", fmt.Errorf("endpoint %q is not an iroh endpoint", target.Raw)
+	}
+	id, err := target.IrohID()
+	if err != nil {
+		return "", err
+	}
+	addrs, err := parseIrohAddrs(target.IrohAddrs)
+	if err != nil {
+		return "", err
+	}
+	ticket, err := iroh.AddrOf(iroh.EndpointID(id)).WithDirectAddrs(addrs...).Ticket()
+	if err != nil {
+		return "", fmt.Errorf("encode iroh ticket: %w", err)
+	}
+	return string(ticket), nil
+}
+
+// parseIrohTicket decodes the ticket form into the same endpoint the URL form
+// describes.
+//
+// A relay named in the ticket is not carried. This endpoint reaches peers
+// through its own relay configuration and discovery, so the peer's opinion
+// about which relay to use is redundant with what we would do anyway; a
+// deployment that needs a specific relay configures one rather than inheriting
+// it from whoever pasted a ticket.
+func parseIrohTicket(raw string) (Endpoint, error) {
+	ticket, err := iroh.ParseTicket(raw)
+	if err != nil {
+		return Endpoint{}, fmt.Errorf("iroh ticket: %w", err)
+	}
+	addr, err := ticket.Addr()
+	if err != nil {
+		return Endpoint{}, fmt.Errorf("iroh ticket: %w", err)
+	}
+	parsed := Endpoint{Raw: raw, Scheme: "iroh", Value: IrohID(addr.ID).String()}
+	for _, direct := range addr.DirectAddrs {
+		parsed.IrohAddrs = append(parsed.IrohAddrs, direct.String())
+	}
+	return parsed, nil
+}
+
 // The process's default endpoint, installed by ConfigureIroh. Listen and
 // HTTPClient resolve an iroh:// endpoint through it, so the schemes that have
 // no identity to configure keep their existing call signatures.

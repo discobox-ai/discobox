@@ -68,3 +68,16 @@ func hasIrohEndpoint(listenEndpoints []string) bool {
 	}
 	return false
 }
+
+// irohTicket renders a listener's iroh URL as a ticket, and reports an error
+// for every other scheme so the caller can simply not print one.
+func irohTicket(display string) (string, error) {
+	parsed, err := endpoint.Parse(display)
+	if err != nil {
+		return "", err
+	}
+	if parsed.Scheme != "iroh" {
+		return "", fmt.Errorf("endpoint %q is not an iroh endpoint", display)
+	}
+	return endpoint.IrohTicket(parsed)
+}
