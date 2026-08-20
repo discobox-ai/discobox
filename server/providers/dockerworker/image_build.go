@@ -37,15 +37,9 @@ func buildImages(ctx context.Context, destination *client.Client, daemonID strin
 		return err
 	}
 
-	// The BuildKit grpc session rides the same transport as the Docker API, so
-	// VM drivers reach it over their existing tunnel. This requires a Docker
-	// client whose own base transport carries the driver's dialer; see
-	// NewDockerClientForDialer.
-	bk, err := bkclient.New(ctx, "", bkclient.WithContextDialer(func(ctx context.Context, _ string) (net.Conn, error) {
-		return destination.DialHijack(ctx, "/grpc", "h2c", nil)
-	}))
+	bk, err := connectBuildKit(ctx, destination, daemonID)
 	if err != nil {
-		return fmt.Errorf("connect to BuildKit on Docker daemon %s: %w", daemonID, err)
+		return err
 	}
 	defer func() {
 		_ = bk.Close()
@@ -68,8 +62,25 @@ func buildImages(ctx context.Context, destination *client.Client, daemonID strin
 	return nil
 }
 
-func buildImage(ctx context.Context, bk *bkclient.Client, image devimage.Image) error {
-	spec := image.Build
+// connectBuildKit dials the daemon's embedded BuildKit.
+//
+// The BuildKit grpc session rides the same transport as the Docker API, so VM
+// drivers reach it over their existing tunnel. This requires a Docker client
+// whose own base transport carries the driver's dialer; see
+// NewDockerClientForDialer.
+func connectBuildKit(ctx context.Context, destination *client.Client, daemonID string) (*bkclient.Client, error) {
+	bk, err := bkclient.New(ctx, "", bkclient.WithContextDialer(func(ctx context.Context, _ string) (net.Conn, error) {
+		return destination.DialHijack(ctx, "/grpc", "h2c", nil)
+	}))
+	if err != nil {
+		return nil, fmt.Errorf("connect to BuildKit on Docker daemon %s: %w", daemonID, err)
+	}
+	return bk, nil
+}
+
+// frontendAttrs renders a build specification as dockerfile.v0 frontend
+// attributes.
+func frontendAttrs(spec *devimage.BuildSpec) map[string]string {
 	attrs := map[string]string{"filename": spec.Dockerfile}
 	if platform := strings.TrimSpace(spec.Platform); platform != "" {
 		attrs["platform"] = platform
@@ -80,17 +91,12 @@ func buildImage(ctx context.Context, bk *bkclient.Client, image devimage.Image) 
 	for key, value := range spec.Args {
 		attrs["build-arg:"+key] = value
 	}
+	return attrs
+}
 
-	opt := bkclient.SolveOpt{
-		Frontend:      "dockerfile.v0",
-		FrontendAttrs: attrs,
-		LocalDirs:     map[string]string{"context": spec.Context, "dockerfile": spec.Context},
-		Exports: []bkclient.ExportEntry{{
-			Type:  mobyExporter,
-			Attrs: map[string]string{"name": image.Reference},
-		}},
-	}
-
+// solve runs one build and returns its error decorated with the tail of the
+// build's own output.
+func solve(ctx context.Context, bk *bkclient.Client, opt bkclient.SolveOpt, label string) error {
 	// Solve closes statusCh; draining it is required or the solve blocks.
 	// The build's own output is captured as it streams: without it a failure
 	// reports only "exit code: 1" and the compiler error that actually explains
@@ -103,8 +109,8 @@ func buildImage(ctx context.Context, bk *bkclient.Client, image devimage.Image) 
 		for status := range statusCh {
 			for _, vertex := range status.Vertexes {
 				if vertex.Error != "" {
-					slog.WarnContext(ctx, "development image build step failed",
-						"image", image.Reference, "step", vertex.Name, "error", vertex.Error)
+					slog.WarnContext(ctx, "image build step failed",
+						"build", label, "step", vertex.Name, "error", vertex.Error)
 				}
 			}
 			for _, entry := range status.Logs {
@@ -120,6 +126,19 @@ func buildImage(ctx context.Context, bk *bkclient.Client, image devimage.Image) 
 		}
 	}
 	return err
+}
+
+func buildImage(ctx context.Context, bk *bkclient.Client, image devimage.Image) error {
+	spec := image.Build
+	return solve(ctx, bk, bkclient.SolveOpt{
+		Frontend:      "dockerfile.v0",
+		FrontendAttrs: frontendAttrs(spec),
+		LocalDirs:     map[string]string{"context": spec.Context, "dockerfile": spec.Context},
+		Exports: []bkclient.ExportEntry{{
+			Type:  mobyExporter,
+			Attrs: map[string]string{"name": image.Reference},
+		}},
+	}, image.Reference)
 }
 
 // buildLogLimit bounds retained build output. Only the tail matters — that is
