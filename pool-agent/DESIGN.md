@@ -288,8 +288,8 @@ flowchart LR
   list and the manifest source list. See ADR 0007.
 - Every source with a `LocalDirectory` gets an origin bound, read-only, directly
   onto `/.discobox/origins/<slug>` — the same `<slug>` as the corresponding
-  `/.discobox/sources/<slug>`. `materializeGitSource` rewrites the repository's
-  `origin` remote to that in-sandbox path, so `git fetch origin` and `git rebase
+  `/.discobox/sources/<slug>`. `ensureOriginRemote` points the repository's
+  `origin` remote at that in-sandbox path, so `git fetch origin` and `git rebase
   origin/<branch>` are ordinary git inside the sandbox whichever way the source
   was delivered. What differs is only what sits behind the bind:
   - **Clone-delivered**: the developer's own host directory, live. Not a
@@ -305,6 +305,21 @@ flowchart LR
     which the sandbox can write. See ADR 0058.
   A source with no local directory is a remote URL, whose origin is that remote,
   and gets no bind.
+- The `origin` remote is asserted on every create, not once at delivery, and
+  deliberately outside `materializeGitSource`: it belongs to the sandbox rather
+  than to the delivery that filled it, and materializing is once-only for
+  reasons that have nothing to do with the remote. `ensureOriginRemote` adds it
+  when it is missing, corrects it when it points elsewhere, restores the fetch
+  refspec a remote is useless without, and otherwise leaves it alone, so `repair` (ADR 0035) puts a sandbox back the way provisioning
+  would have built it — including a sandbox created before this host bound
+  origins at all, whose worktree was pushed into directly and so has no remote
+  of any kind, and one whose remote was retargeted by hand from inside. It runs
+  as the sandbox user, which owns the checkout at both call sites, and is a
+  no-op on a push-delivered source that has not been delivered yet: there is no
+  repository to configure until the clone runs. Two call sites, because a
+  create either builds volumes (`prepareSandboxVolumes`) or resumes a pushed
+  source against an existing container (`materializePushedSources`), and each
+  finishes with the source in place.
 - Normalize provider-owned source destination defaults before both mounting
   sources and writing the public sandbox manifest so manifest consumers observe
   the paths actually used by the runtime.
@@ -331,7 +346,8 @@ flowchart LR
   touching the workspace. Create is re-driven for reasons
   unrelated to sources — resume, re-pin, reconcile after a failure — and by then
   the sandbox owns the workspace, so re-materializing would discard uncommitted
-  work and move the branch off commits made inside the sandbox.
+  work and move the branch off commits made inside the sandbox. The origin
+  remote is not covered by that rule; see `ensureOriginRemote` above.
 - Forward the sandbox user; never complete it. The pool host cannot resolve a
   sandbox's account or group — both live in the image, and `boot` may still have
   to create them — so it publishes exactly what `config.user` gave and leaves the
