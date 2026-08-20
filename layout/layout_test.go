@@ -84,14 +84,46 @@ func TestProxyCredentialFilesAreNotShared(t *testing.T) {
 	}
 }
 
-func TestMountRootsAreTheThreeTrees(t *testing.T) {
+func TestMountRootsAreTheTopLevelTrees(t *testing.T) {
 	want := []string{
 		"/var/lib/discobox/projects",
 		"/var/lib/discobox/cache",
 		"/var/lib/discobox/proxy",
+		"/var/lib/discobox/identity",
 	}
 	if got := MountRoots(); !reflect.DeepEqual(got, want) {
 		t.Fatalf("MountRoots() = %v, want %v", got, want)
+	}
+}
+
+// The pool's identity key authenticates as the pool. It must not sit anywhere a
+// reaper enumerates in order to delete, nor anywhere a sandbox's own tree is
+// derived from (ADR 0063).
+func TestPoolIdentityIsOutsideEveryScannedTree(t *testing.T) {
+	key := PoolIdentityKey("prj", "pool-1")
+	for name, scanned := range map[string]string{
+		"project data": ProjectData("prj"),
+		"pool data":    PoolData("prj", "pool-1"),
+		"pool cache":   PoolCache("prj", "pool-1"),
+		"sandbox tree": Sandbox("prj", "pool-1", "sbx-1"),
+	} {
+		if strings.HasPrefix(key, scanned+"/") {
+			t.Errorf("identity key %s is inside the %s tree %s", key, name, scanned)
+		}
+	}
+	if !strings.HasPrefix(key, "/var/lib/discobox/identity/") {
+		t.Errorf("identity key = %s, want it under the identity tree", key)
+	}
+}
+
+// Every pool on a shared host daemon binds the same tree, so identities must
+// not collide.
+func TestPoolIdentityIsPerPool(t *testing.T) {
+	if PoolIdentityKey("prj", "pool-1") == PoolIdentityKey("prj", "pool-2") {
+		t.Fatal("two pools share one identity key path")
+	}
+	if PoolIdentityKey("prj-a", "pool-1") == PoolIdentityKey("prj-b", "pool-1") {
+		t.Fatal("two projects share one identity key path")
 	}
 }
 

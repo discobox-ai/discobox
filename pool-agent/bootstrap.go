@@ -5,10 +5,12 @@ import (
 	"context"
 	"crypto/ed25519"
 	"crypto/rand"
+	"encoding/base64"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"os"
+	"path/filepath"
 	"strings"
 	"time"
 
@@ -96,6 +98,11 @@ type Config struct {
 	Bootstrap Bootstrap
 	Client    Client
 	KeySource KeySource
+	// ForceRegister registers even when the key was loaded from disk. It is for
+	// the one case a stored key cannot resolve on its own: a control plane that
+	// no longer recognises this key, which must be told about it again before
+	// any request will authenticate.
+	ForceRegister bool
 }
 
 // Client registers a booted pool with the control plane.
@@ -258,11 +265,25 @@ type Registration struct {
 	Bootstrap  Bootstrap
 	PublicKey  string
 	PrivateKey ed25519.PrivateKey
+	// FromStoredKey reports that this pool was already registered under a key
+	// loaded from disk, so no bootstrap token was spent. A caller whose first
+	// authenticated request is then rejected knows the control plane has
+	// forgotten this key and that registering again is worth trying.
+	FromStoredKey bool
+}
+
+// KeyMaterial is a pool's identity keypair and where it came from.
+type KeyMaterial struct {
+	PublicKey  string
+	PrivateKey ed25519.PrivateKey
+	// Loaded reports that the key already existed, which means the control
+	// plane was told about it during an earlier registration.
+	Loaded bool
 }
 
 // KeySource generates or loads the pool identity keypair.
 type KeySource interface {
-	KeyPair(ctx context.Context) (publicKey string, privateKey ed25519.PrivateKey, err error)
+	KeyPair(ctx context.Context) (KeyMaterial, error)
 }
 
 // Run performs the startup registration flow once.
@@ -279,9 +300,24 @@ func Run(ctx context.Context, cfg Config) (*Registration, error) {
 	if keySource == nil {
 		keySource = GenerateKeySource{}
 	}
-	publicKey, privateKey, err := keySource.KeyPair(ctx)
+	material, err := keySource.KeyPair(ctx)
 	if err != nil {
 		return nil, err
+	}
+	publicKey, privateKey := material.PublicKey, material.PrivateKey
+	// A key that was already on disk was published to the control plane by the
+	// registration that created it, and the assertion it signs authenticates
+	// every request from here on. Registering again would spend a single-use
+	// bootstrap token to tell the control plane something it already knows —
+	// and the token baked into this container was spent the first time
+	// (ADR 0063).
+	if material.Loaded && !cfg.ForceRegister {
+		return &Registration{
+			Bootstrap:     bootstrap,
+			PublicKey:     publicKey,
+			PrivateKey:    privateKey,
+			FromStoredKey: true,
+		}, nil
 	}
 	resp, err := client.RegisterPool(ctx, RegisterRequest{
 		ControlPlaneURL: bootstrap.ControlPlaneURL,
@@ -328,14 +364,104 @@ func controlPlaneURLFromEnv() string {
 // GenerateKeySource creates a fresh Ed25519 keypair.
 type GenerateKeySource struct{}
 
-func (GenerateKeySource) KeyPair(context.Context) (string, ed25519.PrivateKey, error) {
+func (GenerateKeySource) KeyPair(context.Context) (KeyMaterial, error) {
+	return generateKeyMaterial()
+}
+
+func generateKeyMaterial() (KeyMaterial, error) {
 	pub, priv, err := ed25519.GenerateKey(rand.Reader)
 	if err != nil {
-		return "", nil, fmt.Errorf("generate pool keypair: %w", err)
+		return KeyMaterial{}, fmt.Errorf("generate pool keypair: %w", err)
 	}
 	publicKey, err := poolauth.EncodePublicKey(pub)
 	if err != nil {
-		return "", nil, err
+		return KeyMaterial{}, err
 	}
-	return publicKey, priv, nil
+	return KeyMaterial{PublicKey: publicKey, PrivateKey: priv}, nil
+}
+
+// FileKeySource keeps the pool's identity keypair on durable pool storage and
+// reuses it across restarts, so an agent that comes back is still the same pool
+// and needs no bootstrap token to say so (ADR 0063).
+//
+// The key is the pool's identity: whoever holds it can authenticate as this
+// pool. It is written 0600 in a directory no sandbox tree is derived from and
+// no reaper enumerates.
+type FileKeySource struct {
+	// Path is the key file. Its directory is created if absent.
+	Path string
+}
+
+func (f FileKeySource) KeyPair(context.Context) (KeyMaterial, error) {
+	path := strings.TrimSpace(f.Path)
+	if path == "" {
+		return KeyMaterial{}, errors.New("pool identity key path is required")
+	}
+	switch material, err := loadKeyMaterial(path); {
+	case err == nil:
+		return material, nil
+	case !errors.Is(err, os.ErrNotExist):
+		// A key that exists but cannot be read is not the same as no key:
+		// generating a new one here would silently change the pool's identity
+		// and require a bootstrap token that has already been spent.
+		return KeyMaterial{}, err
+	}
+
+	material, err := generateKeyMaterial()
+	if err != nil {
+		return KeyMaterial{}, err
+	}
+	if err := storeKeyMaterial(path, material.PrivateKey); err != nil {
+		return KeyMaterial{}, err
+	}
+	return material, nil
+}
+
+func loadKeyMaterial(path string) (KeyMaterial, error) {
+	encoded, err := os.ReadFile(path)
+	if err != nil {
+		return KeyMaterial{}, err
+	}
+	decoded, err := base64.StdEncoding.DecodeString(strings.TrimSpace(string(encoded)))
+	if err != nil {
+		return KeyMaterial{}, fmt.Errorf("decode pool identity key %s: %w", path, err)
+	}
+	if len(decoded) != ed25519.PrivateKeySize {
+		return KeyMaterial{}, fmt.Errorf("pool identity key %s has length %d, want %d", path, len(decoded), ed25519.PrivateKeySize)
+	}
+	privateKey := ed25519.PrivateKey(decoded)
+	publicKey, err := poolauth.EncodePublicKey(privateKey.Public().(ed25519.PublicKey))
+	if err != nil {
+		return KeyMaterial{}, err
+	}
+	return KeyMaterial{PublicKey: publicKey, PrivateKey: privateKey, Loaded: true}, nil
+}
+
+// storeKeyMaterial writes the key through a temporary file in the same
+// directory, so an interrupted write can never leave a truncated key that the
+// next start would refuse to load.
+func storeKeyMaterial(path string, privateKey ed25519.PrivateKey) error {
+	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
+		return fmt.Errorf("create pool identity directory: %w", err)
+	}
+	file, err := os.CreateTemp(filepath.Dir(path), ".agent.key-")
+	if err != nil {
+		return fmt.Errorf("create pool identity key: %w", err)
+	}
+	defer func() { _ = os.Remove(file.Name()) }()
+	if err := file.Chmod(0o600); err != nil {
+		_ = file.Close()
+		return fmt.Errorf("secure pool identity key: %w", err)
+	}
+	if _, err := file.WriteString(base64.StdEncoding.EncodeToString(privateKey)); err != nil {
+		_ = file.Close()
+		return fmt.Errorf("write pool identity key: %w", err)
+	}
+	if err := file.Close(); err != nil {
+		return fmt.Errorf("write pool identity key: %w", err)
+	}
+	if err := os.Rename(file.Name(), path); err != nil {
+		return fmt.Errorf("publish pool identity key: %w", err)
+	}
+	return nil
 }

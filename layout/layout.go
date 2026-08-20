@@ -34,13 +34,33 @@ const (
 	dataTree  = ContainerRoot + "/projects"
 	cacheTree = ContainerRoot + "/cache"
 	proxyTree = ContainerRoot + "/proxy"
+	// identityTree holds credentials that authenticate a pool to the control
+	// plane. It is deliberately not under dataTree: the pool-sync reaper and the
+	// volume reaper both enumerate that tree in order to delete from it, and a
+	// sandbox's own subtree is derived from it, so a key that authenticates as
+	// the pool belongs in neither (ADR 0063).
+	identityTree = ContainerRoot + "/identity"
 )
 
 // MountRoots returns the trees a backend must make available to a pool. Docker
 // does not create a missing bind source, so a driver whose host lacks these has
 // to create them before the pool container starts.
 func MountRoots() []string {
-	return []string{dataTree, cacheTree, proxyTree}
+	return []string{dataTree, cacheTree, proxyTree, identityTree}
+}
+
+// PoolIdentity is one pool's private credential directory. It is pool-scoped
+// because a shared host daemon runs every pool's container against the same
+// tree.
+func PoolIdentity(projectID, poolID string) string {
+	return path.Join(identityTree, projectID, poolID)
+}
+
+// PoolIdentityKey is the pool agent's Ed25519 identity key: the key whose
+// public half the control plane records as Pool.PublicKey, and whose signature
+// authenticates every agent request afterwards.
+func PoolIdentityKey(projectID, poolID string) string {
+	return path.Join(PoolIdentity(projectID, poolID), "agent.key")
 }
 
 // --- durable sandbox state -------------------------------------------------

@@ -75,14 +75,33 @@ func RunAgent(ctx context.Context, logger *slog.Logger) error {
 	// by the proxy unit's environment written before this point.
 	bootstrap.ControlPlaneURL = baseURL
 	client := NewHTTPClient(baseURL, WithHTTPClient(controlPlaneHTTPClient))
-	registration, err := Run(ctx, Config{Bootstrap: bootstrap, Client: client})
+	// The identity key lives on the pool's durable storage, so an agent that
+	// restarts without its container is still this pool and spends no bootstrap
+	// token to prove it (ADR 0063).
+	keySource := FileKeySource{Path: layout.PoolIdentityKey(bootstrap.ProjectID, bootstrap.PoolID)}
+	registration, err := Run(ctx, Config{Bootstrap: bootstrap, Client: client, KeySource: keySource})
 	if err != nil {
 		return err
 	}
-	logger.Info("pool registered", "poolID", bootstrap.PoolID)
+	logger.Info("pool identity ready", "poolID", bootstrap.PoolID, "storedKey", registration.FromStoredKey)
 
 	if err := startStatusReporter(ctx, logger, bootstrap, registration, client, statusReportInterval); err != nil {
-		return err
+		if !registration.FromStoredKey {
+			return err
+		}
+		// The first authenticated request is the only proof that the control
+		// plane still knows this key. When it does not — a restored database, a
+		// recreated pool row — registering publishes the same key again rather
+		// than minting a new identity, so nothing else about the pool changes.
+		logger.Warn("pool status rejected with a stored identity key; registering it again",
+			"poolID", bootstrap.PoolID, "error", err)
+		registration, err = Run(ctx, Config{Bootstrap: bootstrap, Client: client, KeySource: keySource, ForceRegister: true})
+		if err != nil {
+			return err
+		}
+		if err := startStatusReporter(ctx, logger, bootstrap, registration, client, statusReportInterval); err != nil {
+			return err
+		}
 	}
 
 	startResolveTokenRefresher(ctx, logger, bootstrap, registration)

@@ -138,6 +138,14 @@ service may use those body fields only to redeem the short-lived, one-time
 bootstrap token against the bootstrapped worker and issue the first runtime
 worker token. Subsequent worker authorization must use request metadata and the
 authenticated worker principal, such as `/api/workers/{workerId}/status`.
+
+Redemption happens once per pool, not once per agent start. The agent keeps its
+identity keypair on the pool's durable storage and reuses it, so a restart
+authenticates with the assertion that key signs rather than spending another
+one-time token — which the pool no longer has, since nothing re-mints one for a
+container that survives. Registering again is reserved for the case where the
+control plane no longer recognises the key, and republishes the same key rather
+than minting a new identity (ADR 0063).
 Agent-observed sandbox state is reported at
 `/api/pools/{poolId}/sandbox-states` under the same pool-principal rule; the
 sandbox IDs are runtime evidence, not user authorization input.
