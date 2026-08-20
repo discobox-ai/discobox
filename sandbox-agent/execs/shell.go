@@ -83,12 +83,18 @@ func QuoteShellCommand(argv []string) []byte {
 		if i > 0 {
 			b.WriteByte(' ')
 		}
-		b.WriteByte('\'')
-		b.WriteString(strings.ReplaceAll(arg, "'", `'\''`))
-		b.WriteByte('\'')
+		b.WriteString(QuoteShellArg(arg))
 	}
 	b.WriteByte('\n')
 	return []byte(b.String())
+}
+
+// QuoteShellArg renders one argument so a POSIX shell reads it as the single
+// literal word it is. Single quotes are the only form that needs no knowledge
+// of what is inside them; the closing/escape/reopening dance is how a single
+// quote itself gets through.
+func QuoteShellArg(arg string) string {
+	return "'" + strings.ReplaceAll(arg, "'", `'\''`) + "'"
 }
 
 // isLoginShell rejects the shells a system uses to refuse interactive logins.

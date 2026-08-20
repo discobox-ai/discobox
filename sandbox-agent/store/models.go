@@ -36,12 +36,17 @@ type HarnessHookLog struct {
 func (HarnessHookLog) TableName() string { return "harness_hook_logs" }
 
 type ExecState struct {
-	ExecID     string     `gorm:"primaryKey" json:"execId"`
-	Unit       string     `gorm:"index" json:"unit,omitempty"`
-	Status     string     `gorm:"index" json:"status"`
-	PID        int64      `json:"pid,omitempty"`
-	ExitCode   *int64     `json:"exitCode,omitempty"`
-	Error      string     `json:"error,omitempty"`
+	ExecID   string `gorm:"primaryKey" json:"execId"`
+	Unit     string `gorm:"index" json:"unit,omitempty"`
+	Status   string `gorm:"index" json:"status"`
+	PID      int64  `json:"pid,omitempty"`
+	ExitCode *int64 `json:"exitCode,omitempty"`
+	Error    string `json:"error,omitempty"`
+	// Stopped records that this run ended on request rather than on its own.
+	// It is persisted because the runtime file that also carries it is on
+	// tmpfs: after a reboot the record is all there is, and a stopped exec
+	// must not come back as one that crashed.
+	Stopped    bool       `json:"stopped,omitempty"`
 	CreatedAt  time.Time  `json:"createdAt"`
 	StartedAt  *time.Time `json:"startedAt,omitempty"`
 	ExitedAt   *time.Time `json:"exitedAt,omitempty"`

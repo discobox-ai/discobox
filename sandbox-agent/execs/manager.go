@@ -57,12 +57,18 @@ type Exec struct {
 	PID            int64             `json:"pid,omitempty"`
 	ExitCode       *int64            `json:"exitCode,omitempty"`
 	Error          string            `json:"error,omitempty"`
-	CreatedAt      time.Time         `json:"createdAt"`
-	StartedAt      *time.Time        `json:"startedAt,omitempty"`
-	ExitedAt       *time.Time        `json:"exitedAt,omitempty"`
-	Metadata       map[string]string `json:"metadata,omitempty"`
-	SocketPath     string            `json:"socketPath,omitempty"`
-	RuntimePath    string            `json:"runtimePath,omitempty"`
+	// Stopped marks a run that ended because somebody asked it to, rather than
+	// on its own. It is recorded at the one place a stop is requested, because
+	// it cannot be inferred afterwards: a stopped process and a process killed
+	// by a signal it did not choose leave the same record behind. Cleared by
+	// the next run.
+	Stopped     bool              `json:"stopped,omitempty"`
+	CreatedAt   time.Time         `json:"createdAt"`
+	StartedAt   *time.Time        `json:"startedAt,omitempty"`
+	ExitedAt    *time.Time        `json:"exitedAt,omitempty"`
+	Metadata    map[string]string `json:"metadata,omitempty"`
+	SocketPath  string            `json:"socketPath,omitempty"`
+	RuntimePath string            `json:"runtimePath,omitempty"`
 	// AttacherCount is the number of clients currently attached to this exec's
 	// stream, reported live by the shim on every /status query (see
 	// shimRuntime.handleStatus) rather than tracked as persisted state.
@@ -543,6 +549,46 @@ func (m *Manager) Delete(ctx context.Context, id string) error {
 	return nil
 }
 
+// Stop ends an exec's current run and keeps its record: the unit is stopped,
+// the shim's socket is removed so an attach reports the session gone rather
+// than dialing a dead one, and the record is marked stopped.
+//
+// It is the counterpart of Relaunch and the opposite of Delete: Delete also
+// discards the record and the transcript, which is teardown, while this leaves
+// an exec that can be started again under the same id (ADR 0038).
+//
+// The status is written here rather than left to the reconcile loop, which
+// would find the unit unloaded and call the exec lost — true of a unit that
+// vanished underneath a live exec, and wrong for one that was asked to stop.
+func (m *Manager) Stop(ctx context.Context, id string) (Exec, error) {
+	exec, ok := m.Get(id)
+	if !ok {
+		return Exec{}, ErrNotFound
+	}
+	if err := m.units.Stop(ctx, exec.Unit); err != nil {
+		return Exec{}, err
+	}
+	_ = m.recordEvent(ctx, id, "exec.stop.requested", "exec stop requested", map[string]any{"unit": exec.Unit})
+	current := m.withRuntimePaths(exec)
+	_ = os.Remove(current.SocketPath)
+	current.Status = StatusExited
+	current.Stopped = true
+	current.PID = 0
+	current.Error = ""
+	if current.ExitedAt == nil {
+		exitedAt := time.Now().UTC()
+		current.ExitedAt = &exitedAt
+	}
+	current.AttacherCount = 0
+	current.LastAccessedAt = nil
+	if err := writeRuntime(current.RuntimePath, current); err != nil {
+		return Exec{}, err
+	}
+	_ = m.observe(ctx, current)
+	_ = m.recordEvent(ctx, id, "exec.stopped", "exec stopped", map[string]any{"unit": current.Unit})
+	return cloneExec(current), nil
+}
+
 func (m *Manager) Start(ctx context.Context, id string) (Exec, error) {
 	exec, ok := m.readRuntime(id)
 	if !ok {
@@ -616,6 +662,7 @@ func (m *Manager) Relaunch(ctx context.Context, req RelaunchRequest) (Exec, erro
 	_ = os.Remove(exec.SocketPath)
 	current := m.withRuntimePaths(exec)
 	current.Status = StatusStarting
+	current.Stopped = false
 	current.StartupCommand = append([]string{}, req.StartupCommand...)
 	current.Env = cloneMap(env)
 	current.User = user.Clone()
@@ -776,6 +823,23 @@ func (m *Manager) WaitForExit(ctx context.Context, id string, timeout, poll time
 		case <-time.After(poll):
 		}
 	}
+}
+
+// DefaultWorkdir is where an exec that names no workdir starts: the sandbox's
+// configured default (its primary source directory), resolved against the run
+// user's home exactly as a create would resolve it.
+//
+// It is asked of the manager rather than read off the config, because the
+// answer is a resolution — a relative default joins the working root, a `~`
+// expands against a home only the resolved user knows — and a second copy of
+// that resolution drifts from the one execs actually start in.
+func (m *Manager) DefaultWorkdir() (string, error) {
+	user, err := m.ResolveUser(CreateRequest{})
+	if err != nil {
+		return "", err
+	}
+	env := EnvWithRuntimeDefaults(m.env, user)
+	return m.resolveWorkdir("", HomeDir(user, env))
 }
 
 // ResolveWorkdir resolves a requested workdir against the manager's working

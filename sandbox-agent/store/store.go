@@ -150,6 +150,7 @@ func (s *Store) ObserveExec(ctx context.Context, current execs.Exec) error {
 		PID:        current.PID,
 		ExitCode:   current.ExitCode,
 		Error:      current.Error,
+		Stopped:    current.Stopped,
 		CreatedAt:  current.CreatedAt,
 		StartedAt:  current.StartedAt,
 		ExitedAt:   current.ExitedAt,
@@ -248,6 +249,7 @@ func (s *Store) LoadExecRecords(ctx context.Context) ([]execs.Exec, error) {
 			exec.PID = state.PID
 			exec.ExitCode = state.ExitCode
 			exec.Error = state.Error
+			exec.Stopped = state.Stopped
 			exec.StartedAt = state.StartedAt
 			exec.ExitedAt = state.ExitedAt
 		}
