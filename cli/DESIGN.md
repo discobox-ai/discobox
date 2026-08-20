@@ -41,7 +41,7 @@ transport helpers where OpenAPI does not model the stream.
   pseudo-console and starts the child itself, because a ConPTY is attached
   through a thread attribute `os/exec` cannot carry — so `localpty.Start` takes
   argv rather than an `*exec.Cmd`. See
-  [ADR 0062](../docs/adr/0062-the-cli-owns-its-pty-seam-and-windows-gets-conpty.md).
+  [ADR 0065](../docs/adr/0065-the-cli-owns-its-pty-seam-and-windows-gets-conpty.md).
 - What runs is therefore `disco apply` with its own flag defaults and terminal
   detection, not a second implementation that drifts from it. A launcher that
   cannot be reproduced from a shell is the thing to avoid.
