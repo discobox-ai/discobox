@@ -23,7 +23,7 @@ func TestListenAllFailsWhenAnyEndpointCannotBind(t *testing.T) {
 	}
 	defer occupied.Close()
 
-	socketPath := filepath.Join(t.TempDir(), "server.sock")
+	socketPath := testSocketPath(t)
 	// Bound the reclaim so the test doesn't wait the full reclaimTimeout while
 	// the occupied (non-HTTP) port refuses to release.
 	reclaimCtx, cancel := context.WithTimeout(ctx, 500*time.Millisecond)
@@ -46,7 +46,7 @@ func TestListenAllFailsWhenAnyEndpointCannotBind(t *testing.T) {
 }
 
 func TestShutdownExistingLocalServerUsesLocalEndpoint(t *testing.T) {
-	raw := "unix://" + filepath.Join(t.TempDir(), "server.sock")
+	raw := "unix://" + testSocketPath(t)
 	listener, _, cleanup, err := endpoint.Listen(raw)
 	if err != nil {
 		t.Fatalf("Listen() error = %v", err)

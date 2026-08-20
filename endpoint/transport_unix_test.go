@@ -5,13 +5,12 @@ package endpoint
 import (
 	"context"
 	"net/http"
-	"path/filepath"
 	"testing"
 	"time"
 )
 
 func TestHTTPClientUsesUnixSocket(t *testing.T) {
-	endpoint := "unix://" + filepath.Join(t.TempDir(), "server.sock")
+	endpoint := "unix://" + testSocketPath(t)
 	listener, _, cleanup, err := Listen(endpoint)
 	if err != nil {
 		t.Fatalf("Listen() error = %v", err)
@@ -55,7 +54,7 @@ func TestHTTPClientUsesUnixSocket(t *testing.T) {
 }
 
 func TestEnsureRunningUsesExistingUnixServer(t *testing.T) {
-	endpoint := "unix://" + filepath.Join(t.TempDir(), "server.sock")
+	endpoint := "unix://" + testSocketPath(t)
 	listener, _, cleanup, err := Listen(endpoint)
 	if err != nil {
 		t.Fatalf("Listen() error = %v", err)
