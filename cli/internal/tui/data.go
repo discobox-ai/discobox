@@ -258,6 +258,30 @@ type HarnessFile struct {
 	Template   bool
 }
 
+// ServiceVerb is a lifecycle action against one of a discobox's declared
+// services. Like a HarnessVerb it runs against the API and returns, leaving the
+// window up: a service is not something you sit in front of, so acting on one
+// never takes the screen.
+type ServiceVerb string
+
+const (
+	ServiceStart   ServiceVerb = "start"
+	ServiceStop    ServiceVerb = "stop"
+	ServiceRestart ServiceVerb = "restart"
+)
+
+// done is what the status line says once the verb has run.
+func (v ServiceVerb) done(name string) string {
+	switch v {
+	case ServiceStart:
+		return "started " + name
+	case ServiceStop:
+		return "stopped " + name
+	default:
+		return "restarted " + name
+	}
+}
+
 // HarnessVerb is a harness action that runs against the API and returns,
 // leaving the window up — the counterpart of Verb for the harnesses screen.
 // Enabling is not among them: it is an interactive flow that owns the terminal.
@@ -445,6 +469,16 @@ type Exec struct {
 	// onto.
 	Primary bool
 
+	// Service is the id of the declared service this exec runs, empty for
+	// every session that is not one. A service is an exec the sandbox started
+	// from the repository's `.discobox/services` (ADR 0063), and it reaches the
+	// workspace through this same listing rather than a poll of its own.
+	Service string
+	// ServiceName is the service's display name, which is what its tab is
+	// called. It rides along on the exec record so the tab strip needs nothing
+	// but this listing to draw itself.
+	ServiceName string
+
 	Tty bool
 
 	// Live is whether the exec can be attached to: it exists and has not
@@ -512,6 +546,10 @@ const (
 	// have once you are looking at the workspace — so it names the workspace's
 	// leader-c pane rather than a key anything dispatches on.
 	InteractTerminal Interaction = "terminal"
+	// InteractService is a pane onto one of the discobox's declared services.
+	// Nothing opens one: services arrive in the exec listing already running,
+	// so this names what such a pane is rather than an action that creates it.
+	InteractService Interaction = "service"
 )
 
 // TerminalConnectionState is what the transport underneath a pane is doing. A
@@ -696,4 +734,16 @@ type DataSource interface {
 	// mode so the listing reports it as a terminal and every window draws it
 	// beside the primary. Which harness that is, is the sandbox's answer.
 	NewTerminal(ctx context.Context, sandboxID string, cols, rows int) (Exec, Terminal, error)
+
+	// Services is the sandbox's declared services, in declaration order,
+	// running or not. The workspace's tabs already draw the running ones from
+	// the exec listing; this is what can also see the ones that are not, and
+	// is read when the menu is opened rather than polled.
+	Services(ctx context.Context, sandboxID string) ([]Service, error)
+
+	// DoService runs a lifecycle verb against one of the sandbox's declared
+	// services. It returns when the sandbox has acted; what the service is
+	// doing afterwards arrives through the exec listing like everything else,
+	// so there is nothing here for the window to remember.
+	DoService(ctx context.Context, verb ServiceVerb, sandboxID, serviceID string) error
 }

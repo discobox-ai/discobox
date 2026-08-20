@@ -25,6 +25,7 @@ flowchart LR
     L -->|u t T x U P| Verb["DataSource.Do"]
     L -->|e| Rename["dialog → DataSource.Rename"]
     L -->|Enter s| WS["workspace → Execs / OpenExec / NewShell / NewTerminal"]
+    WS -->|leader S| Svc["services menu → Services / DoService"]
     L -->|y| Overlay["overlay pane → DataSource.Open"]
     L -->|v| Editor["DataSource.OpenEditor"]
     A -->|d s| AVerb["DataSource.DoHarness"]
@@ -153,6 +154,26 @@ command writes an `ssh_config` and prints what it wrote, so `apiDataSource`
 gives it `io.Discard` for both streams — a stray line of stderr would draw over
 a full-screen window — and lets the error carry what went wrong to the status
 line.
+
+**Services are tabs on the right, and their panes are read-only**
+(`services.go`, ADR 0063 §7). A service is an exec the discobox started from
+the repository's `.discobox/services`, so it arrives in the same `GET /execs`
+listing the tabs are already drawn from — keyed on `metadata.serviceId`, with
+no second poll and no client-side state, which was ADR 0054's whole point. Two
+things follow from a service running on pipes rather than a PTY: the pane sends
+nothing (`termpane.WithReadOnly`, since there is no stdin at the far end to
+reach), and the right column is no longer only TTY sessions — the one clause of
+ADR 0054 §2 this widens, and only for sessions the sandbox itself records as
+services.
+
+The running services are therefore already on screen, which is what decides
+what a key has to reach: the ones that are *not*. `leader S` opens the menu of
+everything declared, read from the server each time rather than cached — a
+service stopped from another window, or one whose file was added a minute ago,
+is exactly what it is being opened to find out about. Choosing one offers
+start, stop and restart, all three always, because the sandbox settles what each
+means for the state the service is actually in and a menu that greys out the
+verb you came for is arguing with a service that has since moved on.
 
 **The workspace screen is one discobox as the server has it** (`workspace.go`).
 Opening it attaches to the primary terminal — the virtual `ExecPrimary` id,
@@ -840,6 +861,7 @@ the newest one where the busy line goes.
 | `pane.go` | one terminal pane: its keys, messages, chrome and cursor |
 | `column.go` | one side of the workspace: a strip of panes, one visible |
 | `workspace.go` | the workspace screen: open, poll/reconcile, tabs, detach, the port forward |
+| `services.go` | the discobox's declared services: the menu behind the leader, and the three verbs |
 | `narration.go` | what a slow operation is doing, on the busy line |
 
 ## Looking at it without a terminal

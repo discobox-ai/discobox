@@ -70,6 +70,12 @@ func (a *App) completeExecs(sandboxID *string) cobra.CompletionFunc {
 	}
 }
 
+func (a *App) completeServices(sandboxID *string) cobra.CompletionFunc {
+	return func(cmd *cobra.Command, _ []string, toComplete string) ([]string, cobra.ShellCompDirective) {
+		return a.completeSandboxScopedResource(cmd, sandboxID, toComplete, a.listServiceCompletions)
+	}
+}
+
 func (a *App) completeProjectResource(cmd *cobra.Command, toComplete string, list func(context.Context, *apiclientgen.Client, string) ([]string, error)) ([]string, cobra.ShellCompDirective) {
 	projectID, err := a.projectIDValue()
 	if err != nil {

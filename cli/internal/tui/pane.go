@@ -58,6 +58,17 @@ const (
 	// The one exception is a pane whose command has finished, where there is
 	// nothing left to interrupt and it means done like the rest of them.
 	paneInterruptKey = keys.Interrupt
+	// paneServicesKey opens the discobox's services: everything its repository
+	// declares under `.discobox/services`, and the three verbs.
+	//
+	// It is a menu rather than three more bindings because the running
+	// services are already on screen as tabs, and what a key has to reach is
+	// the ones that are not — which means naming a service, not acting on the
+	// pane in front of you. S rather than s, which is a shell; the workspace
+	// carries the list's key map whole, and none of the verbs on it (t, T)
+	// could be reused here without meaning the discobox on one pane and a
+	// service on another.
+	paneServicesKey = "S"
 )
 
 // pane is one terminal in the window.
@@ -87,6 +98,12 @@ type pane struct {
 	// the screen whose ending ends the workspace. It is the first tab of the
 	// terminals column and always wears 0.
 	primary bool
+
+	// service is the declared service this pane is drawing, empty for every
+	// other pane. It is what the lifecycle keys act on, and its presence is
+	// what makes the pane read-only: there is nothing at the far end reading
+	// stdin.
+	service string
 
 	// exited is set when what was running in the pane finished and the pane
 	// was kept anyway, so its last screen can be read.
@@ -155,6 +172,9 @@ type jumpPaneMsg struct{ n int }
 // newTerminalMsg is the leader plus c: another of the discobox's terminals,
 // opened beside the primary and focused.
 type newTerminalMsg struct{}
+
+// openServicesMsg is the leader plus S: open the discobox's declared services.
+type openServicesMsg struct{}
 
 // zoomPaneMsg is the leader plus z: give the focused column the whole window,
 // or give the window back to the split.
@@ -330,7 +350,7 @@ func (m *Model) paneOpened(msg paneOpenedMsg) tea.Cmd {
 	m.nextPaneID++
 	p := &pane{
 		id:      m.nextPaneID,
-		term:    termpane.New(m.paneOptions(true)...),
+		term:    termpane.New(m.paneOptions(true, false)...),
 		stream:  msg.term,
 		action:  msg.action,
 		sandbox: msg.sandbox,
@@ -352,7 +372,11 @@ func (m *Model) paneOpened(msg paneOpenedMsg) tea.Cmd {
 // carries only its way out and the mouse: it is one command running to
 // completion, and a key that opened something else over it would be a key that
 // lost it.
-func (m *Model) paneOptions(overlay bool) []termpane.Option {
+// paneOptions is the key map a pane is built with. overlay is a command taking
+// the screen, which carries only the window's own keys; readOnly is a pane onto
+// something with no input side, which draws and is navigated but never typed
+// at.
+func (m *Model) paneOptions(overlay, readOnly bool) []termpane.Option {
 	opts := []termpane.Option{
 		// No bare detach key: nothing the window reserves stands between a
 		// program and its own interrupt. The way out is behind the leader, and
@@ -361,6 +385,9 @@ func (m *Model) paneOptions(overlay bool) []termpane.Option {
 		termpane.WithPrefixBinding(paneMouseKey, toggleMouseMsg{}),
 		termpane.WithPrefixBinding(paneDetachAlt, termpane.DetachMsg{}),
 		termpane.WithPrefixBinding(paneQuitKey, quitPaneMsg{}),
+	}
+	if readOnly {
+		opts = append(opts, termpane.WithReadOnly())
 	}
 	if overlay {
 		return opts
@@ -377,6 +404,7 @@ func (m *Model) paneOptions(overlay bool) []termpane.Option {
 		termpane.WithRepeatingPrefixBinding("right", movePaneMsg{delta: 1}),
 		termpane.WithPrefixBinding(paneZoomKey, zoomPaneMsg{}),
 		termpane.WithPrefixBinding(paneTerminalKey, newTerminalMsg{}),
+		termpane.WithPrefixBinding(paneServicesKey, openServicesMsg{}),
 	)
 	// The digits jump straight to a pane by the number its label wears, the
 	// way tmux selects windows: 0 is the terminal, 1 through 9 the tabs.
@@ -545,6 +573,12 @@ func (m *Model) updatePaneMsg(tagged paneMsg) tea.Cmd {
 			return nil
 		}
 		return m.newTerminal()
+
+	case openServicesMsg:
+		if p == m.overlay {
+			return nil
+		}
+		return m.openServices()
 
 	case zoomPaneMsg:
 		if p == m.overlay || m.shells.len() == 0 {

@@ -231,7 +231,14 @@ func (m *Model) workspaceExecs(msg workspaceExecsMsg) tea.Cmd {
 	newShells := 0
 	if msg.err == nil {
 		for _, exec := range msg.execs {
-			if !exec.Live || !exec.Tty || exec.Primary || exec.ID == "" {
+			// A service is drawn like any other tab but is not a TTY session:
+			// it runs on pipes, because its output is read rather than typed
+			// at (ADR 0063 §3). That is the one place the tab strip stops
+			// being "every live TTY session" (ADR 0054 §2).
+			if !exec.Live || exec.Primary || exec.ID == "" {
+				continue
+			}
+			if !exec.Tty && exec.Service == "" {
 				continue
 			}
 			if m.paneByExec(exec.ID) != nil || m.connecting[exec.ID] {
@@ -273,7 +280,19 @@ func (m *Model) workspaceExecs(msg workspaceExecsMsg) tea.Cmd {
 // a terminal is created in harness mode and carries the harness it runs, so
 // reopening the workspace draws the same two columns anyone else's window
 // would.
-func terminalExec(exec Exec) bool { return exec.Primary || exec.Harness != "" }
+func terminalExec(exec Exec) bool {
+	// A service is a right-hand tab whatever else its record says: it is a
+	// process the discobox runs for you, not a session of the harness you are
+	// talking to.
+	if exec.Service != "" {
+		return false
+	}
+	return exec.Primary || exec.Harness != ""
+}
+
+// serviceExec reports whether a session is one of the discobox's declared
+// services, and so whether its pane is read-only and its lifecycle keys apply.
+func serviceExec(exec Exec) bool { return exec.Service != "" }
 
 // openExec connects one workspace terminal. The pane is sized before it is
 // opened: the size is what the far end is told, and a terminal that starts at
@@ -353,6 +372,8 @@ func (m *Model) workspaceTermOpened(msg workspaceTermMsg) tea.Cmd {
 	switch {
 	case primary:
 		action = InteractAttach
+	case serviceExec(msg.exec):
+		action = InteractService
 	case msg.asked != "":
 		action = msg.asked
 	case terminal:
@@ -382,6 +403,9 @@ func (m *Model) workspaceTermOpened(msg workspaceTermMsg) tea.Cmd {
 	}
 
 	m.nextPaneID++
+	// A service runs on pipes, so its pane draws and is navigated but is never
+	// typed at: there is no stdin at the far end to reach (ADR 0063 §7).
+	service := serviceExec(msg.exec)
 	// The primary is attached under the virtual id, which carries no session
 	// record to name it by: until its harness titles its own terminal it is
 	// what it is, the attach.
@@ -391,13 +415,14 @@ func (m *Model) workspaceTermOpened(msg workspaceTermMsg) tea.Cmd {
 	}
 	p := &pane{
 		id:      m.nextPaneID,
-		term:    termpane.New(m.paneOptions(false)...),
+		term:    termpane.New(m.paneOptions(false, service)...),
 		stream:  msg.term,
 		action:  action,
 		sandbox: m.paneBox,
 		execID:  msg.exec.ID,
 		title:   title,
 		primary: primary,
+		service: msg.exec.Service,
 	}
 
 	col := &m.shells
@@ -544,6 +569,14 @@ func (m *Model) jumpPane(n int) tea.Cmd {
 // program its session is running, the harness it is, or as a last resort the
 // tail of its id.
 func execTitle(exec Exec) string {
+	// A service's name is the one thing about it a person chose, and its argv
+	// is the login shell every service shares.
+	if name := strings.TrimSpace(exec.ServiceName); name != "" && exec.Service != "" {
+		return name
+	}
+	if exec.Service != "" {
+		return exec.Service
+	}
 	if len(exec.Command) > 0 {
 		if base := path.Base(exec.Command[0]); base != "" && base != "." && base != "/" {
 			return base

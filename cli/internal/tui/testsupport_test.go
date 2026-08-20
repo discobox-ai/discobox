@@ -68,6 +68,14 @@ type fakeSource struct {
 	// workspace's left column.
 	terminalHarness string
 
+	// services is what the services menu is told the discobox declares,
+	// servicesErr fails reading them, and serviceActs records every verb the
+	// window ran, as "<verb> <sandbox> <service>".
+	services    []Service
+	servicesErr error
+	serviceErr  error
+	serviceActs []string
+
 	// forward is what the workspace's port forward reports, and forwardErr
 	// fails opening one. forwards counts the ones opened and closed, so a test
 	// can hold the window to the rule that a workspace releases its ports.
@@ -393,6 +401,25 @@ func (f *fakeSource) NewTerminal(_ context.Context, id string, cols, rows int) (
 	f.execs = append(f.execs, exec)
 	f.execOpens = append(f.execOpens, fmt.Sprintf("%s %s %dx%d", id, exec.ID, cols, rows))
 	return exec, f.newExecTerminal(exec.ID), nil
+}
+
+func (f *fakeSource) Services(context.Context, string) ([]Service, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	if f.servicesErr != nil {
+		return nil, f.servicesErr
+	}
+	return append([]Service(nil), f.services...), nil
+}
+
+func (f *fakeSource) DoService(_ context.Context, verb ServiceVerb, sandboxID, serviceID string) error {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	if f.serviceErr != nil {
+		return f.serviceErr
+	}
+	f.serviceActs = append(f.serviceActs, fmt.Sprintf("%s %s %s", verb, sandboxID, serviceID))
+	return nil
 }
 
 // newExecTerminal wires a fake terminal to an exec id; f.mu is held.

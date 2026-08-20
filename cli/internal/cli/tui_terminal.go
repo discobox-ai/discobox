@@ -60,15 +60,63 @@ func tuiExec(exec apimodel.SandboxExec) tui.Exec {
 		apiclientgen.SandboxExecStatusRunning:
 		live = true
 	}
+	// A service names itself in exec metadata, which is what lets the
+	// workspace draw its tab from this one listing rather than a poll of its
+	// own (ADR 0063 §7).
+	metadata := map[string]string(exec.Metadata.Value)
 	return tui.Exec{
-		ID:        exec.ID,
-		Command:   command,
-		Harness:   exec.HarnessId.Value,
-		Primary:   exec.Primary.Value,
-		Tty:       exec.Tty,
-		Live:      live,
-		CreatedAt: exec.CreatedAt,
+		ID:          exec.ID,
+		Command:     command,
+		Harness:     exec.HarnessId.Value,
+		Primary:     exec.Primary.Value,
+		Service:     metadata[sandboxServiceIDMetadata],
+		ServiceName: metadata[sandboxServiceNameMetadata],
+		Tty:         exec.Tty,
+		Live:        live,
+		CreatedAt:   exec.CreatedAt,
 	}
+}
+
+// The exec metadata keys the sandbox-agent tags a service's exec with. They
+// must match services.MetadataServiceID/Name in the sandbox-agent; the control
+// plane proxies exec metadata opaquely, so this is where the two agree.
+const (
+	sandboxServiceIDMetadata   = "serviceId"
+	sandboxServiceNameMetadata = "serviceName"
+)
+
+// Services is the sandbox's declared services, running or not — what the
+// workspace's services menu is drawn from.
+func (d *apiDataSource) Services(ctx context.Context, sandboxID string) ([]tui.Service, error) {
+	client, err := d.app.apiClient()
+	if err != nil {
+		return nil, err
+	}
+	services, err := listSandboxServices(ctx, client, d.projectID, sandboxID)
+	if err != nil {
+		return nil, err
+	}
+	out := make([]tui.Service, 0, len(services))
+	for _, service := range services {
+		out = append(out, tui.Service{
+			ID:          service.ID,
+			Name:        service.Name,
+			Description: service.Description.Or(""),
+			Status:      string(service.Status),
+			Problem:     service.Problem.Or(""),
+		})
+	}
+	return out, nil
+}
+
+// DoService runs one lifecycle verb against one declared service.
+func (d *apiDataSource) DoService(ctx context.Context, verb tui.ServiceVerb, sandboxID, serviceID string) error {
+	client, err := d.app.apiClient()
+	if err != nil {
+		return err
+	}
+	_, err = actOnSandboxService(ctx, client, string(verb), d.projectID, sandboxID, serviceID)
+	return err
 }
 
 // OpenExec attaches to one existing exec session. tui.ExecPrimary is spelled

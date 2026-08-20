@@ -555,6 +555,18 @@ func (m *Model) update(msg tea.Msg) tea.Cmd {
 	case harnessDoneMsg:
 		return m.harnessDone(msg)
 
+	case servicesMsg:
+		return m, m.showServices(msg)
+
+	case serviceMenuMsg:
+		return m, m.showServiceMenu(msg.service)
+
+	case serviceVerbMsg:
+		return m, m.runServiceVerb(msg.verb, msg.service)
+
+	case serviceDoneMsg:
+		return m, m.serviceDone(msg)
+
 	case harnessCardMsg:
 		m.busy = ""
 		if msg.err != nil {
@@ -2242,6 +2254,11 @@ func (m *Model) helpText() string {
 		"  a harness terminal is a terminal, everything else is a shell.",
 		"  With no shells the terminals take the whole width.",
 		"",
+		"  Its services are tabs on the right too — the scripts this",
+		"  repository declares under .discobox/services, started for you",
+		"  when the discobox booted. A service pane is read-only: nothing",
+		"  is reading its input.",
+		"",
 		"  Every pane wears the number it answers to, counted across the",
 		"  screen from the primary, which is always 0 and always the",
 		"  leftmost tab of the left box.",
@@ -2255,6 +2272,9 @@ func (m *Model) helpText() string {
 		"                   " + paneTerminalKey + " because that is what screen and tmux create a",
 		"                   window on; t is stop, which the list has it on",
 		"    " + m.leader() + " s       a new shell, in a new tab",
+		"    " + m.leader() + " " + paneServicesKey + "       this repository's services — including the ones",
+		"                   that are not running, which no tab can show —",
+		"                   and start / stop / restart for any of them",
 		"    " + m.leader() + " " + vscodeKey + "       open it in VS Code, in a window of its own",
 		"    " + m.leader() + " y       apply back to this directory",
 		"    " + m.leader() + " x / U   archive / unarchive",

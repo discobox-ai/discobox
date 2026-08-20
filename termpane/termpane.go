@@ -114,6 +114,7 @@ type Model struct {
 
 type options struct {
 	scrollback int
+	readOnly   bool
 	prefix     string
 	detach     string
 	bindings   map[string]prefixBinding
@@ -138,6 +139,21 @@ type Option func(*options)
 // default is the emulator's own, which is 10,000 lines.
 func WithScrollback(lines int) Option {
 	return func(o *options) { o.scrollback = lines }
+}
+
+// WithReadOnly draws a stream nothing types at: keys, text and pastes are not
+// forwarded, and a resize is applied to the emulator without being sent on.
+//
+// It is for a far end with no input side to reach — a process running on pipes
+// rather than a PTY, whose output is watched rather than driven. Everything
+// else about the pane is unchanged: it draws, it scrolls, and text in it can
+// still be selected and copied.
+//
+// The emulator's own replies to the queries applications make are still
+// collected and sent. They are not input in this sense, and an emulator whose
+// replies go nowhere wedges on the first question it is asked.
+func WithReadOnly() Option {
+	return func(o *options) { o.readOnly = true }
 }
 
 // WithPrefix reserves the pane's two keys: the detach key, which emits
@@ -231,7 +247,9 @@ func (m *Model) SetSize(cols, rows int) {
 	if m.emu != nil {
 		m.emu.Resize(cols, rows)
 	}
-	if m.stream != nil {
+	// A read-only pane resizes its emulator and stops there: the far end has
+	// no terminal whose size could be wrong.
+	if m.stream != nil && !m.opts.readOnly {
 		_ = m.stream.Resize(cols, rows)
 	}
 }
@@ -277,7 +295,9 @@ func (m *Model) Attach(stream Stream) tea.Cmd {
 	// A copy the last stream made and never had delivered dies with it.
 	m.clip, m.hasClip = "", false
 	m.mu.Unlock()
-	_ = stream.Resize(m.cols, m.rows)
+	if !m.opts.readOnly {
+		_ = stream.Resize(m.cols, m.rows)
+	}
 
 	// Everything the emulator produces on its input side goes to the far end:
 	// the keys and text sent below, and — the part that is easy to miss — the
@@ -453,7 +473,7 @@ func (m *Model) Update(msg tea.Msg) (*Model, tea.Cmd) {
 		// Bracketed paste from the host terminal. The emulator wraps it in the
 		// application's own paste markers when it has asked for them, and sends
 		// it plain when it has not.
-		if m.emu != nil {
+		if m.emu != nil && !m.opts.readOnly {
 			m.emu.Paste(stripPasteMarkers(msg.Content))
 		}
 		return m, nil
@@ -642,7 +662,7 @@ func (m *Model) SetPrefixArmed(armed bool) { m.prefixArmed, m.prefixRepeat = arm
 // because the key encoder works from the unshifted code: routed as a key, an
 // uppercase letter arrives lowercase and "!" arrives as "1".
 func (m *Model) SendKey(msg tea.KeyPressMsg) {
-	if m.emu == nil {
+	if m.emu == nil || m.opts.readOnly {
 		return
 	}
 	key := unshiftBackspace(msg.Key())
@@ -660,7 +680,7 @@ func (m *Model) SendKey(msg tea.KeyPressMsg) {
 
 // SendText writes text to the terminal as though it had been typed.
 func (m *Model) SendText(text string) {
-	if m.emu != nil {
+	if m.emu != nil && !m.opts.readOnly {
 		m.emu.SendText(text)
 	}
 }

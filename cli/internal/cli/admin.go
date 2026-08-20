@@ -11,6 +11,7 @@ func (a *App) newAdminCommand() *cobra.Command {
 	cmd.AddCommand(a.newSandboxCommand())
 	cmd.AddCommand(a.newSandboxTerminalsCommand())
 	cmd.AddCommand(a.newSandboxExecCommand())
+	cmd.AddCommand(a.newSandboxServiceCommand())
 	cmd.AddCommand(a.newProviderCommand())
 	cmd.AddCommand(a.newPoolCommand())
 	cmd.AddCommand(a.newJobCommand())
