@@ -14,7 +14,12 @@ require (
 	golang.org/x/term v0.44.0
 )
 
-require git.coopcloud.tech/decentral1se/iroh-go v0.0.0-20260731195909-77011195d3d6 // indirect
+require (
+	git.coopcloud.tech/decentral1se/iroh-go v0.0.0-20260731195909-77011195d3d6 // indirect
+	github.com/Code-Hex/go-infinity-channel v1.0.0 // indirect
+	github.com/Code-Hex/vz/v3 v3.7.1 // indirect
+	golang.org/x/mod v0.37.0 // indirect
+)
 
 require (
 	github.com/AdaLogics/go-fuzz-headers v0.0.0-20240806141605-e8a1dd7889d6 // indirect
