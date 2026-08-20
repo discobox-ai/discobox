@@ -118,3 +118,4 @@ Nygard-style ADRs (see adr.github.io) combined with current-state design docs:
 | [0063](0063-a-pool-agent-keeps-its-identity-key-and-registers-once.md) | A pool agent keeps its identity key, and registers once | Accepted |
 | [0064](0064-repair-rebuilds-on-the-current-image.md) | Repair rebuilds on the current image | Accepted (amends [0035](0035-repair-is-one-rebuild-intent-plus-a-start-instruction.md) §1) |
 | [0065](0065-the-cli-owns-its-pty-seam-and-windows-gets-conpty.md) | The CLI owns its pty seam, and Windows gets ConPTY | Accepted |
+| [0066](0066-the-build-is-nix-plus-taskfile-and-github-actions-only-triggers-it.md) | The build is Nix plus the Taskfile, and GitHub Actions only triggers it | Proposed |
