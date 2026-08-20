@@ -365,22 +365,38 @@ func (m *Model) openService(gen int, service Service, order int) tea.Cmd {
 	cols, rows := m.paneCells(term)
 	ctx, ds, id := m.ctx, m.ds, m.paneBox.ID
 	return func() tea.Msg {
-		if service.live() && service.ExecID != "" {
-			stream, err := ds.OpenExec(ctx, id, service.ExecID, cols, rows)
-			return serviceTermMsg{gen: gen, service: service, order: order, term: stream, err: err}
-		}
-		// A service that is not running has no stream, so the pane is handed
-		// the one thing there is to say about it. Its transcript is read here
-		// rather than left to a key: after a crash the output is the reason,
-		// and a reason you have to go and ask for is one you find out about
-		// later than you needed to.
+		// The transcript is read for both kinds of pane, and read first.
+		//
+		// A plain exec has no screen to repaint from, so attaching to a running
+		// service starts at "now": without this the pane sits empty until the
+		// service next says something, which for a server that has finished
+		// booting is a long time. It is read before the attach rather than
+		// after, so the seam between the two can only lose a moment of output
+		// rather than repeat one — a repeated chunk reads as the service having
+		// done something twice, which is worse than a gap.
 		logs, err := ds.ServiceLogs(ctx, id, service.ID)
 		if err != nil {
-			// Not fatal to the pane: the card without the transcript still
-			// says what happened, which is more than an absent tab does.
+			// Not fatal to the pane: a live one still has its stream, and a
+			// card without the transcript still says what happened, which is
+			// more than an absent tab does.
 			logs = nil
 		}
-		return serviceTermMsg{gen: gen, service: service, order: order, term: newTextTerminal(service.card(logs))}
+		history := tailHistory(logs)
+		if service.live() && service.ExecID != "" {
+			stream, err := ds.OpenExec(ctx, id, service.ExecID, cols, rows)
+			if err != nil {
+				return serviceTermMsg{gen: gen, service: service, order: order, err: err}
+			}
+			return serviceTermMsg{
+				gen: gen, service: service, order: order,
+				term: &historyTerminal{history: history, Terminal: stream},
+			}
+		}
+		// A service that is not running has no stream, so the pane is handed
+		// the one thing there is to say about it. Its output is part of that:
+		// after a crash the output is the reason, and a reason you have to go
+		// and ask for is one you find out about later than you needed to.
+		return serviceTermMsg{gen: gen, service: service, order: order, term: newTextTerminal(service.card(history))}
 	}
 }
 
@@ -421,11 +437,26 @@ func (m *Model) serviceTermOpened(msg serviceTermMsg) tea.Cmd {
 	if !msg.service.live() {
 		p.status = msg.service.paneStatus()
 	}
-	at := m.terminals.insert(p, Exec{
+	// A service never takes the keys on arrival. Nobody asked for it — it
+	// appeared because the discobox is running it — and it is read-only, so
+	// focus there is focus nowhere. The pane being worked in stays the pane
+	// being worked in, by pointer rather than by index: the arrival may have
+	// shifted it along the strip.
+	working := m.terminals.visible()
+	m.terminals.insert(p, Exec{
 		ID: paneID, Service: msg.service.ID, ServiceName: msg.service.Name, ServiceOrder: msg.order,
 	}, m.column() == &m.terminals)
-	_ = at
+	if working != nil {
+		if i := m.terminals.index(working); i >= 0 {
+			m.terminals.active = i
+		}
+	}
 	if m.inPanes() {
+		// The first pane to arrive may be a service — the primary is still
+		// launching its harness, which takes seconds — and a window drawing a
+		// pane with the keys still in the prompt takes them nowhere.
+		m.focus = focusPane
+		m.prompt.Blur()
 		m.layout()
 	}
 	return tea.Batch(
@@ -589,6 +620,14 @@ func (m *Model) workspaceTermOpened(msg workspaceTermMsg) tea.Cmd {
 		col = &m.terminals
 	}
 	at := col.insert(p, msg.exec, m.column() == col)
+	if primary {
+		// The workspace lands on the primary: it is the session the screen is
+		// a view onto, and the one whose ending ends it. A tab that arrived
+		// while it was still launching — a service, a terminal opened
+		// elsewhere — must not be left holding the keys. It sets the index
+		// only, so a shell explicitly asked for still keeps them.
+		col.active = at
+	}
 	if msg.focus {
 		m.onShells = col == &m.shells
 		col.active = at

@@ -181,6 +181,17 @@ live process to attach to draws what there is to say instead: the state, the
 reason, and the last run's output, since after a crash the output is the
 reason.
 
+A service's pane opens on its transcript either way. Decision 3's pipes have a
+consequence here too: a plain exec has no screen to repaint from, so attaching
+to a *running* service starts at "now" and shows nothing until it next speaks.
+The history is played in ahead of the live stream, tailed to what a pane can
+usefully hold.
+
+The keys never land on a service. Nobody asked for it, and it is read-only, so
+focus there is focus nowhere; the workspace lands on the primary, which usually
+arrives last because it waits on its harness install while a service is already
+running.
+
 The left side is what the discobox is running on your behalf — the harness
 working on the code, and the code itself running — while the right side is what
 you opened by hand. Grouping them that way also keeps the split honest: only

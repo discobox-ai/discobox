@@ -176,6 +176,25 @@ because a pane already knows how to draw, scroll, select and copy a stream, and
 teaching the tab strip, the focus, the mouse and the layout about a second kind
 would buy none of that.
 
+**A service pane opens on its history, and never on the keys.** A plain exec
+has no screen to repaint from (`shimruntime.EnableScreen` installs the replayer
+for TTY execs only), so attaching to a running service starts at "now" and the
+pane sits empty until it next says something — which for a server that has
+finished booting is a long time. The transcript is played in ahead of the live
+stream (`historyTerminal`), tailed at a line boundary so the cut never lands
+inside an escape sequence. It is read *before* the attach, so the seam can only
+lose a moment of output rather than repeat one: a repeated chunk reads as the
+service having done something twice, which is worse than a gap.
+
+Focus stays off it. Nobody asked for a service — it appeared because the
+discobox is running it — and it is read-only, so focus there is focus nowhere.
+An arriving service preserves the pane being worked in by pointer rather than
+index, since the arrival may have shifted it along the strip; and the primary
+claims its column's active index when it lands, because it usually lands *last*
+(it waits on its harness install while a service is already running) and would
+otherwise leave the tab that got there first holding the keys. It sets the index
+only, so a shell explicitly asked for still keeps them.
+
 Unlike the exec listing, the service listing **both opens and closes** panes: a
 service is a declaration and the listing is the whole truth about it, so each
 service has exactly one writer. A pane records the run it was opened on

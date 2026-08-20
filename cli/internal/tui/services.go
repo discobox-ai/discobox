@@ -1,6 +1,7 @@
 package tui
 
 import (
+	"bytes"
 	"fmt"
 	"io"
 	"strings"
@@ -384,4 +385,49 @@ func (t *textTerminal) Events() <-chan TerminalEvent { return t.events }
 func (t *textTerminal) Close() error {
 	t.once.Do(func() { close(t.done) })
 	return nil
+}
+
+// historyTerminal plays a block of history and then hands over to a live
+// stream. It is what a service's pane is opened on: a plain exec has no screen
+// to repaint from, so attaching to a running service starts at "now" and the
+// pane sits empty until the service says something next — which for a server
+// that has finished booting can be a long time.
+//
+// Writes, resizes, events and close all belong to the live stream. Only Read is
+// interposed.
+type historyTerminal struct {
+	history []byte
+	Terminal
+}
+
+func (t *historyTerminal) Read(p []byte) (int, error) {
+	if len(t.history) > 0 {
+		n := copy(p, t.history)
+		t.history = t.history[n:]
+		return n, nil
+	}
+	return t.Terminal.Read(p)
+}
+
+// historyLimit bounds how much of a transcript is played into a pane on open.
+//
+// A dev server left running for a day has a transcript far longer than anything
+// worth reading, and every byte of it is parsed by the emulator before the pane
+// draws. The cap is generous enough to hold what you would scroll back through
+// and small enough that opening a workspace does not stall on it.
+const historyLimit = 256 << 10
+
+// tailHistory is the last of a transcript, cut at a line boundary so the first
+// line drawn is a whole one — and, more to the point, so the cut never lands
+// inside an escape sequence and leaves the emulator interpreting the remainder
+// as text.
+func tailHistory(logs []byte) []byte {
+	if len(logs) <= historyLimit {
+		return logs
+	}
+	tail := logs[len(logs)-historyLimit:]
+	if at := bytes.IndexByte(tail, '\n'); at >= 0 && at+1 < len(tail) {
+		return tail[at+1:]
+	}
+	return tail
 }

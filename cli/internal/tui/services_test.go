@@ -124,6 +124,137 @@ func TestAFailedServiceShowsItsLastOutput(t *testing.T) {
 	}
 }
 
+// A plain exec has no screen to repaint from, so attaching to a running
+// service starts at "now" and the pane would sit empty until it next said
+// something. Its transcript is played in first.
+func TestARunningServicePaneOpensOnItsHistory(t *testing.T) {
+	ds := newFakeSource(testSandboxes()...)
+	ds.services = []Service{runningService("otel", "OTEL", "exec_svc1")}
+	ds.execs = []Exec{serviceExecRecord("exec_svc1", "otel", "OTEL")}
+	ds.serviceLogs = map[string][]byte{"otel": []byte("Dashboard is running\r\n")}
+	d, m, _ := openWorkspace(t, ds, "enter")
+	d.wait("the service tab", func() bool { return m.terminals.len() == 2 })
+	focusService(d, m)
+	d.wait("the history", func() bool { return strings.Contains(plainFrame(m), "Dashboard is running") })
+
+	// And the live stream carries on from there, into the same pane.
+	ds.execTerm("exec_svc1").send("request served\r\n")
+	d.wait("the live output", func() bool { return strings.Contains(plainFrame(m), "request served") })
+	if !strings.Contains(plainFrame(m), "Dashboard is running") {
+		t.Fatalf("the history was lost when the live stream started:\n%s", plainFrame(m))
+	}
+}
+
+// A transcript longer than a pane could usefully hold is cut, at a line
+// boundary so the cut never lands inside an escape sequence.
+func TestHistoryIsTailedAtALineBoundary(t *testing.T) {
+	line := strings.Repeat("x", 99) + "\n"
+	logs := []byte(strings.Repeat(line, (historyLimit/len(line))+50))
+	got := tailHistory(logs)
+	if len(got) > historyLimit {
+		t.Fatalf("history is %d bytes, want at most %d", len(got), historyLimit)
+	}
+	if !strings.HasPrefix(string(got), "x") {
+		t.Fatalf("history starts mid-line: %q", string(got[:20]))
+	}
+	if short := []byte("short\n"); len(tailHistory(short)) != len(short) {
+		t.Fatal("a transcript under the limit must be played whole")
+	}
+}
+
+// A service never takes the keys. Nobody asked for it — it appeared because
+// the discobox is running it — and it is read-only, so focus there is focus
+// nowhere.
+func TestAServiceDoesNotTakeTheFocus(t *testing.T) {
+	ds := newFakeSource(testSandboxes()...)
+	ds.services = []Service{runningService("otel", "OTEL", "exec_svc1")}
+	ds.execs = []Exec{serviceExecRecord("exec_svc1", "otel", "OTEL")}
+	d, m, _ := openWorkspace(t, ds, "enter")
+	d.wait("the service tab", func() bool { return m.terminals.len() == 2 })
+	d.settle()
+
+	if m.terminals.active != 0 || !m.terminals.panes[0].primary {
+		t.Fatalf("active = %d, want the primary at 0", m.terminals.active)
+	}
+	if m.onShells {
+		t.Fatal("the keys must stay in the terminals column")
+	}
+}
+
+// The primary usually arrives last — it waits on its harness install, while a
+// service is already running — so the tab that got there first must not be
+// left holding the keys.
+func TestThePrimaryTakesTheFocusWhenItArrivesAfterAService(t *testing.T) {
+	ds := newFakeSource(testSandboxes()...)
+	d, m, _ := openWorkspace(t, ds, "enter")
+
+	// Start over with the arrivals under the test's control: a service first,
+	// the primary after it.
+	m.closeWorkspace()
+	gen := m.wsGen
+	d.dispatch(serviceTermMsg{
+		gen:     gen,
+		service: runningService("otel", "OTEL", "exec_svc1"),
+		term:    newFakeTerminal(),
+	})
+	if m.terminals.len() != 1 {
+		t.Fatalf("terminals = %d, want the service", m.terminals.len())
+	}
+	d.dispatch(workspaceTermMsg{gen: gen, exec: Exec{ID: ExecPrimary, Primary: true}, term: newFakeTerminal()})
+
+	if m.terminals.len() != 2 {
+		t.Fatalf("terminals = %d, want both", m.terminals.len())
+	}
+	if m.terminals.active != 0 || !m.terminals.panes[0].primary {
+		t.Fatalf("active = %d (%q), want the primary at 0",
+			m.terminals.active, m.terminals.panes[m.terminals.active].execID)
+	}
+}
+
+// A shell asked for by hand keeps the keys even when the primary lands after
+// it: the primary claims the index in its own column, not the window's focus.
+func TestAnAskedForShellKeepsTheFocusWhenThePrimaryArrives(t *testing.T) {
+	ds := newFakeSource(testSandboxes()...)
+	d, m, _ := openWorkspace(t, ds, "enter")
+
+	m.closeWorkspace()
+	gen := m.wsGen
+	d.dispatch(workspaceTermMsg{
+		gen:   gen,
+		exec:  Exec{ID: "exec_shell1", Command: []string{"/bin/zsh"}, Tty: true, Live: true},
+		term:  newFakeTerminal(),
+		asked: InteractShell,
+		focus: true,
+	})
+	d.dispatch(workspaceTermMsg{gen: gen, exec: Exec{ID: ExecPrimary, Primary: true}, term: newFakeTerminal()})
+
+	if !m.onShells {
+		t.Fatal("the shell that was asked for must keep the keys")
+	}
+}
+
+// A service arriving beside a terminal you are working in must not move the
+// keys off it, even though it lands further along the strip.
+func TestAnArrivingServiceLeavesTheWorkingPaneAlone(t *testing.T) {
+	ds := newFakeSource(testSandboxes()...)
+	d, m, _ := openWorkspace(t, ds, "enter")
+	d.key("ctrl+a")
+	d.key(paneTerminalKey)
+	d.wait("the terminal", func() bool { return m.terminals.len() == 2 })
+	if m.terminals.active != 1 {
+		t.Fatalf("active = %d, want the terminal just opened", m.terminals.active)
+	}
+	working := m.terminals.panes[1]
+
+	ds.setServices([]Service{{ID: "otel", Name: "OTEL", Status: "failed"}})
+	d.wait("the service tab", func() bool { return m.terminals.len() == 3 })
+
+	if m.terminals.visible() != working {
+		t.Fatalf("the keys moved to %q; they belong to the pane being worked in",
+			m.terminals.panes[m.terminals.active].execID)
+	}
+}
+
 // A service stopped on purpose has no tab: its absence says the right thing,
 // and a pane to dismiss every time would be the window nagging.
 func TestAStoppedServiceHasNoTab(t *testing.T) {
