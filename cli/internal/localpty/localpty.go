@@ -83,7 +83,7 @@ type Command struct {
 // Start runs cmd on a pty sized to cols by rows, with the pty as the command's
 // controlling terminal.
 //
-// Cancelling ctx ends the command, as it does for exec.CommandContext. So does
+// Canceling ctx ends the command, as it does for exec.CommandContext. So does
 // closing the returned PTY, which is the launcher's way of dismissing a pane
 // whose command is still running.
 //

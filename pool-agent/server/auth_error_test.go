@@ -75,7 +75,7 @@ func refuse(t *testing.T, authorization string) *httptest.ResponseRecorder {
 		t.Fatal("a refused request reached the handler")
 	}))
 
-	request := httptest.NewRequest(http.MethodPost, "/api/projects/p1/pools/pool_1/sync", strings.NewReader("{}"))
+	request := httptest.NewRequestWithContext(t.Context(), http.MethodPost, "/api/projects/p1/pools/pool_1/sync", strings.NewReader("{}"))
 	if authorization != "" {
 		request.Header.Set("Authorization", authorization)
 	}

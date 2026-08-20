@@ -100,7 +100,7 @@ type Config struct {
 	KeySource KeySource
 	// ForceRegister registers even when the key was loaded from disk. It is for
 	// the one case a stored key cannot resolve on its own: a control plane that
-	// no longer recognises this key, which must be told about it again before
+	// no longer recognizes this key, which must be told about it again before
 	// any request will authenticate.
 	ForceRegister bool
 }
@@ -430,7 +430,11 @@ func loadKeyMaterial(path string) (KeyMaterial, error) {
 		return KeyMaterial{}, fmt.Errorf("pool identity key %s has length %d, want %d", path, len(decoded), ed25519.PrivateKeySize)
 	}
 	privateKey := ed25519.PrivateKey(decoded)
-	publicKey, err := poolauth.EncodePublicKey(privateKey.Public().(ed25519.PublicKey))
+	public, ok := privateKey.Public().(ed25519.PublicKey)
+	if !ok {
+		return KeyMaterial{}, fmt.Errorf("pool identity key %s is not ed25519", path)
+	}
+	publicKey, err := poolauth.EncodePublicKey(public)
 	if err != nil {
 		return KeyMaterial{}, err
 	}

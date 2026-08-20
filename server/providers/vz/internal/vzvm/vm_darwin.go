@@ -28,6 +28,18 @@ type VM struct {
 // Supported reports whether this build can run VMs.
 func Supported() error { return nil }
 
+// entitlementHint decorates a framework failure with the one cause that is
+// almost always responsible during development and gives no useful message of
+// its own: an unsigned binary. Creating a VM without
+// com.apple.security.virtualization fails at the framework boundary with an
+// opaque internal error.
+func entitlementHint(err error) error {
+	if err == nil {
+		return nil
+	}
+	return fmt.Errorf("%w (a server binary without the com.apple.security.virtualization entitlement cannot start a VM; run `go tool task build:server` to build and sign one)", err)
+}
+
 // CreateDiskImage creates a sparse raw disk image. Virtualization.framework
 // accepts raw images only — there is no QCOW2 path — so a pool's durable and
 // disposable disks are plain files that APFS keeps sparse until written.
