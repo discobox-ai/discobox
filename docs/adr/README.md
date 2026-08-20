@@ -115,3 +115,4 @@ Nygard-style ADRs (see adr.github.io) combined with current-state design docs:
 | [0060](0060-provisioning-progress-is-a-recorded-phase-the-client-polls.md) | Provisioning progress is a recorded phase, polled by the waiting client | Accepted |
 | [0061](0061-the-client-facing-project-event-stream-is-removed.md) | The client-facing project event stream is removed | Accepted |
 | [0062](0062-macos-pools-run-vz-vms-with-an-independently-released-guest-image.md) | macOS pools run Virtualization.framework VMs, and the VM guest image is an independently released artifact | Accepted |
+| [0063](0063-a-pool-agent-keeps-its-identity-key-and-registers-once.md) | A pool agent keeps its identity key, and registers once | Accepted |
