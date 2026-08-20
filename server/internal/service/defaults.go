@@ -174,9 +174,14 @@ func defaultSandboxProviderForOS(projectID, providerID string) *model.SandboxPro
 		provider.Name = "Docker"
 		provider.Config = defaultDockerProviderConfig()
 	case "darwin":
-		provider.Type = "macos"
+		// Every field of the vz config has a default (see its Definition), so the
+		// built-in instance carries no configuration of its own, exactly as on
+		// Windows. A Mac therefore gets a working default pool with nothing
+		// installed and nothing configured, which is the whole point of ADR 0052:
+		// the guest image is pulled from a registry and the pool builds its own
+		// images inside the VM it boots.
+		provider.Type = "vz"
 		provider.Name = "macOS"
-		provider.Disabled = true
 	case "windows":
 		// Every field of the wslc config has a default (see its Definition), so
 		// the built-in instance carries no configuration of its own.

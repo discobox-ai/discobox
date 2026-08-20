@@ -73,6 +73,9 @@ func (db *DB) Migrate(ctx context.Context) error {
 	if err := migrateLibkrunProviderType(write); err != nil {
 		return err
 	}
+	if err := migrateMacOSProviderType(write); err != nil {
+		return err
+	}
 	if err := dropLegacyPoolBootstrapTokenConstraint(write); err != nil {
 		return err
 	}
@@ -162,6 +165,9 @@ const (
 	legacyLibkrunProviderType = "local-vm"
 	libkrunProviderType       = "libkrun"
 
+	placeholderMacOSProviderType = "macos"
+	vzProviderType               = "vz"
+
 	legacyPoolBootForeignKey  = "fk_pools_bootstrap_tokens"
 	poolBootCascadeForeignKey = "fk_pool_bootstrap_tokens_pool"
 )
@@ -172,6 +178,21 @@ func migrateLibkrunProviderType(db *gorm.DB) error {
 	return db.Model(&model.SandboxProviderInstance{}).
 		Where("type = ?", legacyLibkrunProviderType).
 		Update("type", libkrunProviderType).Error
+}
+
+// migrateMacOSProviderType replaces the placeholder installed on macOS before a
+// backend existed there.
+//
+// "macos" was never a registered provider type: the seed created it disabled so
+// that a Mac had a default provider row and a Default pool to bind to, and both
+// were inert. Rewriting the type in place — rather than seeding a new instance —
+// keeps that Default pool, and any pool a user pointed at it, working against
+// the backend that now exists. The instance is enabled for the same reason: it
+// was only ever disabled because it could not run anything.
+func migrateMacOSProviderType(db *gorm.DB) error {
+	return db.Model(&model.SandboxProviderInstance{}).
+		Where("type = ?", placeholderMacOSProviderType).
+		Updates(map[string]any{"type": vzProviderType, "disabled": false}).Error
 }
 
 // dropLegacyPoolBootstrapTokenConstraint completes the upgrade from the

@@ -122,6 +122,71 @@ func TestMigrateRenamesLocalVMProvidersToLibkrun(t *testing.T) {
 	}
 }
 
+// A Mac installed before the vz backend existed carries a disabled provider of
+// type "macos" — a placeholder that was never a registered provider type — and
+// a Default pool bound to it. The upgrade must adopt that instance rather than
+// leave it inert, or the pool a fresh install was given can never start.
+func TestMigrateAdoptsThePlaceholderMacOSProvider(t *testing.T) {
+	ctx := context.Background()
+	db, err := database.New(database.Config{
+		Driver: gormdb.DriverSQLite,
+		DSN:    "sqlite3://" + filepath.Join(t.TempDir(), "discobox.db"),
+	})
+	if err != nil {
+		t.Fatalf("open database: %v", err)
+	}
+	t.Cleanup(func() {
+		if err := db.Close(); err != nil {
+			t.Fatalf("close database: %v", err)
+		}
+	})
+	if err := db.Migrate(ctx); err != nil {
+		t.Fatalf("initial migrate: %v", err)
+	}
+
+	project := &model.Project{ID: "project-1", OwnerUserID: "user-1", Name: "Project"}
+	if err := db.Write.Create(project).Error; err != nil {
+		t.Fatalf("create project: %v", err)
+	}
+	provider := &model.SandboxProviderInstance{
+		ID:        "provider-1",
+		ProjectID: project.ID,
+		Type:      "macos",
+		Name:      "macOS",
+		Disabled:  true,
+	}
+	if err := db.Write.Create(provider).Error; err != nil {
+		t.Fatalf("create placeholder provider: %v", err)
+	}
+	pool := &model.Pool{ID: "pool-1", ProjectID: project.ID, PoolManifest: model.PoolManifest{Name: "Default", ProviderInstanceID: provider.ID}}
+	if err := db.Write.Create(pool).Error; err != nil {
+		t.Fatalf("create pool: %v", err)
+	}
+
+	if err := db.Migrate(ctx); err != nil {
+		t.Fatalf("upgrade migrate: %v", err)
+	}
+
+	var got model.SandboxProviderInstance
+	if err := db.Write.First(&got, "id = ?", provider.ID).Error; err != nil {
+		t.Fatalf("read migrated provider: %v", err)
+	}
+	if got.Type != "vz" {
+		t.Fatalf("provider type = %q, want vz", got.Type)
+	}
+	// The placeholder was disabled only because it could not run anything.
+	if got.Disabled {
+		t.Fatal("adopted provider is still disabled")
+	}
+	var gotPool model.Pool
+	if err := db.Write.First(&gotPool, "id = ?", pool.ID).Error; err != nil {
+		t.Fatalf("read preserved pool: %v", err)
+	}
+	if gotPool.ProviderInstanceID != provider.ID {
+		t.Fatalf("pool provider = %q, want %s", gotPool.ProviderInstanceID, provider.ID)
+	}
+}
+
 // TestMigrateDropsJobQueueArtifactsWithForeignKeys reproduces upgrading a
 // database from the job-queue era: sandboxes still carry last_job_id and
 // jobqueue tables exist, with live FK-linked rows. SQLite drops columns by
