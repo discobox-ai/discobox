@@ -1,16 +1,17 @@
 #!/bin/bash
 #---
 # name: Discobox API
-# description: Runs discobox-server with watchnbuild hot reload on port 8080
+# description: The full dev loop: discobox-server with hot reload, plus the development image watcher
 #---
 
 set -euo pipefail
 
 export PORT="${PORT:-8080}"
-# The endpoint is named here rather than declared: `task dev:server` binds only
-# the local socket, which nothing outside this container can reach. Once it is
-# listening on a TCP port the sandbox finds and forwards it on its own
-# (ADR 0046), which is why a service declares no port.
+# The endpoint is named here rather than declared: `task dev` binds only the
+# local socket, which nothing outside this container can reach. It reads this
+# from the environment (Taskfile `dev:server`), which is why exporting it here
+# works. Once the server is listening on a TCP port the sandbox finds and
+# forwards it on its own (ADR 0046), which is why a service declares no port.
 export DISCOBOX_SERVER_LISTEN="${DISCOBOX_SERVER_LISTEN:-http://127.0.0.1:$PORT}"
 export DISCOBOX_DATA_DIR="${DISCOBOX_DATA_DIR:-$PWD/.tmp/discobox/data}"
 export DISCOBOX_CONFIG_DIR="${DISCOBOX_CONFIG_DIR:-$PWD/.tmp/discobox/config}"
@@ -24,4 +25,11 @@ export OTEL_METRIC_EXPORT_INTERVAL="${OTEL_METRIC_EXPORT_INTERVAL:-1000}"
 
 mkdir -p "$DISCOBOX_DATA_DIR" "$DISCOBOX_CONFIG_DIR" "$DISCOBOX_CACHE_DIR" "$DISCOBOX_STATE_DIR"
 
-exec go tool task dev:server
+# `dev` rather than `dev:server`: it runs the development image watcher
+# alongside the server, so the pool, sandbox and harness images this server
+# hands out are rebuilt from the tree it is being edited in. A server running
+# against stale images is the confusing half of the dev loop.
+#
+# Relative paths above resolve against the repository root, because that is
+# where a service runs: the directory its own declaration was found in.
+exec go tool task dev
