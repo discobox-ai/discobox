@@ -23,6 +23,10 @@
 - **Signing is not optional.** A change to how the server binary is built must
   keep `sign:server` in the path, or macOS pools stop starting with an opaque
   framework error.
+- **Do not replace the clock step with NTP, or make it conditional.** The guest
+  is hours off precisely when the Mac has slept, which is the case an NTP
+  daemon refuses to correct on its own. Every 401 in both directions traces
+  back here.
 - **Guest image changes are a separate release.** Editing `image/` does not ship
   with the server; it ships when a `guest/v*` tag is cut and `DefaultGuestImage`
   is re-pinned.

@@ -73,6 +73,27 @@ address from the lease. Bridged networking is not used: it needs the
 `com.apple.vm.networking` entitlement, which Apple grants by request, and it
 would put pool guests on the user's LAN.
 
+## Clock
+
+The guest steps its clock to the host's every 30s, reading
+`/sys/class/rtc/rtc0/since_epoch` — Virtualization.framework's PL031 RTC is the
+host's clock, live, so this needs no NTP server and no network.
+
+It is not optional bookkeeping. Linux reads the RTC once at boot, and nothing
+tells the guest that the Mac suspended, so a laptop that sleeps wakes a guest
+believing no time passed. Every credential in the system is time-bounded: the
+agent's assertions carry a five-minute lifetime, and the control plane's scoped
+tokens are parsed with `NewParserForValidNow`. A guest hours behind the host
+therefore mints tokens the control plane reads as long expired *and* rejects
+control-plane tokens as not yet valid — both surfacing as bare 401s, in both
+directions at once.
+
+Two mechanics are load-bearing. `hwclock --hctosys` cannot do this: it waits for
+an RTC update interrupt that PL031 never raises, times out, and exits without
+setting anything. And the step is unconditional — NTP daemons refuse a large
+offset without operator intervention, which is precisely backwards here, since
+the offset is large exactly because the Mac slept.
+
 ## Guest artifact boundary
 
 Three artifacts, resolved by `server/providers/guestimage`: an uncompressed

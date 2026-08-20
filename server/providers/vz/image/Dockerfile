@@ -85,6 +85,9 @@ COPY server/providers/vz/image/discobox-storage.service /etc/systemd/system/disc
 COPY --chmod=0755 server/providers/vz/image/discobox-mount-storage /usr/local/sbin/discobox-mount-storage
 COPY server/providers/vz/image/discobox-vsock-docker.service /etc/systemd/system/discobox-vsock-docker.service
 COPY server/providers/vz/image/discobox-vsock-lifecycle.service /etc/systemd/system/discobox-vsock-lifecycle.service
+COPY --chmod=0755 server/providers/vz/image/discobox-sync-clock /usr/local/sbin/discobox-sync-clock
+COPY server/providers/vz/image/discobox-timesync.service /etc/systemd/system/discobox-timesync.service
+COPY server/providers/vz/image/discobox-timesync.timer /etc/systemd/system/discobox-timesync.timer
 COPY server/providers/vz/image/docker.service.d/10-discobox.conf /etc/systemd/system/docker.service.d/10-discobox.conf
 COPY server/providers/vz/image/10-discobox.network /etc/systemd/network/10-discobox.network
 COPY server/providers/vz/image/discobox-vsock.conf /etc/modules-load.d/discobox-vsock.conf
@@ -102,6 +105,7 @@ RUN mkdir -p \
         discobox-storage.service \
         discobox-vsock-docker.service \
         discobox-vsock-lifecycle.service \
+        discobox-timesync.timer \
         docker.service \
         docker.socket \
         systemd-networkd.service \

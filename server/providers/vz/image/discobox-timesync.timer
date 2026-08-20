@@ -1,0 +1,10 @@
+[Unit]
+Description=Keep the guest clock in step with the host
+
+[Timer]
+OnBootSec=30s
+OnUnitActiveSec=30s
+AccuracySec=1s
+
+[Install]
+WantedBy=timers.target

@@ -1,0 +1,9 @@
+[Unit]
+Description=Resynchronise the guest clock from the host-backed RTC
+After=discobox-storage.service
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/sbin/discobox-sync-clock
+StandardOutput=journal+console
+StandardError=journal+console
