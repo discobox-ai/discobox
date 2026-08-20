@@ -366,6 +366,16 @@ func (d *apiDataSource) Do(ctx context.Context, verb tui.Verb, sandboxID string)
 		_, err = expectResponse[apimodel.Sandbox](res)
 		return err
 
+	case tui.VerbRepair:
+		// Repair converges in the request (ADR 0035), so this call is as long
+		// as the rebuild is — the window shows its busy line meanwhile.
+		res, err := d.client.RepairSandbox(ctx, apiclientgen.RepairSandboxParams{ProjectId: d.projectID, SandboxId: sandboxID})
+		if err != nil {
+			return err
+		}
+		_, err = expectResponse[apimodel.Sandbox](res)
+		return err
+
 	case tui.VerbArchive:
 		res, err := d.client.DeleteSandbox(ctx, apiclientgen.DeleteSandboxParams{ProjectId: d.projectID, SandboxId: sandboxID})
 		if err != nil {

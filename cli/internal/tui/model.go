@@ -966,14 +966,21 @@ func (m *Model) updateOptions(msg tea.KeyPressMsg) tea.Cmd {
 // than disappearing and leaving you wondering where upgrade went.
 func (m *Model) actions(targets []Sandbox) []action {
 	one := len(targets) == 1
-	anyUpgrade, anyRunning, anyStopped := false, false, false
+	anyUpgrade, anyRepair, anyRunning, anyStopped := false, false, false, false
 	anyArchived, allArchived := false, len(targets) > 0
 	for _, s := range targets {
 		anyUpgrade = anyUpgrade || s.Upgrade
+		anyRepair = anyRepair || s.repairable()
 		anyRunning = anyRunning || s.State == StateRunning
 		anyStopped = anyStopped || s.State == StateStopped
 		anyArchived = anyArchived || s.State == StateArchived
 		allArchived = allArchived && s.State == StateArchived
+	}
+	// Repair rebuilds; it is not something to reach for on a box that is
+	// working, so the reason says which of the two it is looking at.
+	repairWhy := "nothing is wrong with it — repair rebuilds a box that is broken or was never built"
+	if !anyRepair && anyArchived {
+		repairWhy = "an archived box is unarchived, not repaired"
 	}
 	attachable := one && targets[0].attachable()
 	// Apply runs git in the sandbox, so an archived one — which has no
@@ -1013,6 +1020,8 @@ func (m *Model) actions(targets []Sandbox) []action {
 			why: renameWhy},
 		{key: "u", label: "upgrade", detail: "re-pin to the current harness image", enabled: anyUpgrade,
 			why: "already on the current image"},
+		{key: repairKey, label: "repair", detail: "rebuild a broken box on the current image, keeping its work", enabled: anyRepair,
+			why: repairWhy},
 		{key: "t", label: "stop", detail: "power the box off, keeping its disk", enabled: anyRunning,
 			why: "not running"},
 		{key: "T", label: "start", detail: "power a stopped box back on", enabled: anyStopped,
@@ -1159,13 +1168,19 @@ type runVerbMsg struct {
 	ids  []string
 }
 
+// repairKey is the letter repair answers to. It is R rather than r, which
+// refreshes the list — and the shift is no loss on an action that rebuilds a
+// container, next to one that redraws a table.
+const repairKey = "R"
+
 var verbs = map[string]Verb{
-	"u": VerbUpgrade,
-	"t": VerbStop,
-	"T": VerbStart,
-	"x": VerbArchive,
-	"U": VerbUnarchive,
-	"P": VerbPurge,
+	"u":       VerbUpgrade,
+	repairKey: VerbRepair,
+	"t":       VerbStop,
+	"T":       VerbStart,
+	"x":       VerbArchive,
+	"U":       VerbUnarchive,
+	"P":       VerbPurge,
 }
 
 var interactions = map[string]Interaction{
@@ -2071,6 +2086,8 @@ func (m *Model) helpText() string {
 		"    v      open it in VS Code, in a window of its own",
 		"    y      apply back to this directory",
 		"    u      upgrade to the current image",
+		"    R      repair — rebuild a broken discobox in place, on the",
+		"           current image, keeping its workspace and its changes",
 		"    e      rename          t  stop",
 		"    T      start           x  archive",
 		"    U      unarchive       P  purge",
@@ -2118,6 +2135,7 @@ func (m *Model) helpText() string {
 		"    " + m.leader() + " y       apply back to this directory",
 		"    " + m.leader() + " x / U   archive / unarchive",
 		"    " + m.leader() + " u       upgrade      " + m.leader() + " t / T   stop / start",
+		"    " + m.leader() + " R       repair",
 		"",
 		"  apply runs in the screen itself, over the workspace, for as",
 		"  long as it takes — and the terminals underneath are untouched:",
@@ -2177,6 +2195,7 @@ func (m *Model) helpText() string {
 		"",
 		"  The keys along the bottom are only the ones the discoboxes under",
 		"  the cursor can take: upgrade appears when one is available,",
+		"  repair when a discobox is in error or was never built,",
 		"  unarchive when something is archived, purge only for archived",
 		"  discoboxes. Archiving is reversible and asks nothing; purge",
 		"  destroys the disk and asks first.",

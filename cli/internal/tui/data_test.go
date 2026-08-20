@@ -103,3 +103,29 @@ func TestAttachWhyNamesTheObstacle(t *testing.T) {
 		})
 	}
 }
+
+// repairable is attachable read the other way: the two shapes with nothing to
+// join are the two repair rebuilds.
+func TestRepairableIsTheWedge(t *testing.T) {
+	cases := []struct {
+		name string
+		s    Sandbox
+		want bool
+	}{
+		{"errored with a container", Sandbox{State: StateError, HasRuntime: true}, true},
+		{"errored with no container", Sandbox{State: StateError}, true},
+		{"never reported on", Sandbox{State: StateStopped}, true},
+		{"running", Sandbox{State: StateRunning, HasRuntime: true}, false},
+		{"stopped, with a container", Sandbox{State: StateStopped, HasRuntime: true}, false},
+		{"starting is a create in flight, not a wedge", Sandbox{State: StateStarting}, false},
+		{"archived is unarchived instead", Sandbox{State: StateArchived}, false},
+		{"archived and errored is still unarchived", Sandbox{State: StateArchived, HasRuntime: true}, false},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := tc.s.repairable(); got != tc.want {
+				t.Fatalf("repairable = %t, want %t", got, tc.want)
+			}
+		})
+	}
+}

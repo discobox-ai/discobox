@@ -322,6 +322,28 @@ func (s Sandbox) attachable() bool {
 	return s.HasRuntime || s.State == StateStarting
 }
 
+// repairable reports whether repair is offered for this box.
+//
+// It is the counterpart of attachable, and asks the same two axes for the
+// opposite answer: a box with a latched error, or one nothing has ever reported
+// a container for, is the wedge repair exists for (ADR 0035) — the first may be
+// broken behind a container that looks fine, the second never got one built.
+// Everything else is working, and repair is a rebuild, not a refresh.
+//
+// Two states answer for themselves, as they do in attachable. Archived has no
+// container by intent, and unarchive is what brings it back; the server refuses
+// repair on it with the same reasoning (ADR 0035). Starting is a create still
+// in flight whose agent has not reported yet — its missing container is the
+// operation running, not a wedge, and tearing it down is the opposite of
+// waiting for it (ADR 0039 tier 1).
+func (s Sandbox) repairable() bool {
+	switch s.State {
+	case StateArchived, StateStarting:
+		return false
+	}
+	return s.State == StateError || !s.HasRuntime
+}
+
 // up reports whether the sandbox is running anything, and so whether its usage
 // figures would mean anything.
 func (s Sandbox) up() bool {
@@ -461,6 +483,7 @@ const (
 	VerbStart     Verb = "start"
 	VerbStop      Verb = "stop"
 	VerbUpgrade   Verb = "upgrade"
+	VerbRepair    Verb = "repair"
 	VerbArchive   Verb = "archive"
 	VerbUnarchive Verb = "unarchive"
 	VerbPurge     Verb = "purge"

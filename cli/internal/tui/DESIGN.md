@@ -99,6 +99,14 @@ attaches, and `attachWhy` sends the one that has nothing behind it to repair
 (ADR 0035) rather than naming its state back at it. Guards written as a list of
 states are the wedge ADR 0017 §4 describes; this one used to be exactly that.
 
+`repairable` is that pair read the other way, and is what puts repair (`R`,
+`VerbRepair`) on the list: a latched error, or no container ever reported, are
+the two shapes ADR 0035 exists for, and they are exactly where `attachWhy`
+already points. So the reason the list gives for refusing attach names an action
+the list now offers. Repair rebuilds on the current image (ADR 0062), which is
+why its detail says so and why it is not merely a heavier upgrade: upgrade needs
+a newer image to exist, repair needs the discobox to be broken.
+
 **Rename is a third kind, and only in the list** (`renameKey`, `askRename`). It
 is not a `Verb` — a verb is a word the window already has, and this one needs a
 name typed first — so `e` opens the input dialog on the name the discobox

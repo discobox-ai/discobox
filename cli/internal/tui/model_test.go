@@ -786,3 +786,63 @@ func TestVSCodeRefusedOnAnArchivedBox(t *testing.T) {
 		t.Fatalf("v on an archived box should say why, got %+v", m.dialog)
 	}
 }
+
+// wedgedSandbox is what repair is for: a settled failure the reconciler will
+// never retry on its own (ADR 0017 §4).
+func wedgedSandbox() Sandbox {
+	return Sandbox{
+		ID: "sbx_wedged", Name: "wedged", State: StateError, HasRuntime: true,
+		Harness: "claude", Folder: "/src/disco2", Branch: "main", Commit: "a3f9c21",
+		Message: "create failed: no such file or directory",
+	}
+}
+
+// R repairs the discobox under the cursor, so recovering a wedged one never
+// means leaving the window for `disco box sandbox repair`.
+func TestRepairRunsOnAWedgedBox(t *testing.T) {
+	ds := newFakeSource(wedgedSandbox())
+	m := newTestModel(t, ds)
+	send(t, m, key("tab"), key("R"))
+
+	if len(ds.did) != 1 || ds.did[0] != "repair sbx_wedged" {
+		t.Fatalf("did = %v, want a repair on the box under the cursor", ds.did)
+	}
+}
+
+// Repair rebuilds, so it is offered on the two shapes that need rebuilding and
+// refused — with the reason, on the menu — on a box that is working.
+func TestRepairIsRefusedOnAHealthyBox(t *testing.T) {
+	ds := newFakeSource(testSandboxes()...)
+	m := newTestModel(t, ds)
+	send(t, m, key("tab"))
+
+	send(t, m, key("R"))
+	if len(ds.did) != 0 {
+		t.Fatalf("did = %v, want nothing: the box under the cursor is running", ds.did)
+	}
+	if m.dialog == nil || !strings.Contains(m.dialog.view(m.st, 120, 40), "nothing is wrong with it") {
+		t.Fatal("a refused repair should say why")
+	}
+}
+
+// An archived discobox is unarchived, not repaired — the server refuses it for
+// the same reason (ADR 0035), so the reason names the action that does work.
+func TestRepairPointsAnArchivedBoxAtUnarchive(t *testing.T) {
+	ds := newFakeSource(testSandboxes()...)
+	m := newTestModel(t, ds)
+	send(t, m, key("tab"), key("A"), key("G"))
+
+	for _, a := range m.actions(m.list.targets()) {
+		if a.key != repairKey {
+			continue
+		}
+		if a.enabled {
+			t.Fatal("repair should be refused on an archived box")
+		}
+		if !strings.Contains(a.why, "unarchive") {
+			t.Fatalf("why = %q, want it to point at unarchive", a.why)
+		}
+		return
+	}
+	t.Fatal("repair should stay on the menu with its reason")
+}
