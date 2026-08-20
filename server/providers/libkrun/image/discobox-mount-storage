@@ -26,7 +26,10 @@ install -d -m 0755 \
     /var/lib/discobox/docker \
     /var/lib/discobox/containerd \
     /var/lib/discobox/projects \
-    /var/lib/discobox/proxy
+    /var/lib/discobox/proxy \
+    /var/lib/discobox/identity
+
+chmod 0700 /var/lib/discobox/identity
 
 if ! mountpoint -q /var/lib/discobox/cache; then
     mount -t ext4 -o rw /dev/vdc /var/lib/discobox/cache
