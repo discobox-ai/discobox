@@ -32,6 +32,16 @@ func registerSandboxProxyRoutes(router chi.Router, service *sandboxService) {
 	router.Method(http.MethodGet, "/api/project/{projectId}/pool/{poolId}/sandboxes/{sandboxId}/execs/{execId}/resources/history", service.autoStart(service.sandboxAgentProxyHandler()))
 	router.Method(http.MethodGet, "/api/project/{projectId}/pool/{poolId}/sandboxes/{sandboxId}/execs/{execId}/resources/stream", service.autoStart(service.sandboxAgentProxyHandler()))
 
+	// A service is an exec (ADR 0063), reached the same way and gated by the
+	// same scopes. It needs its own registrations because this router names
+	// every sandbox-agent path it forwards rather than forwarding a prefix.
+	router.Method(http.MethodGet, "/api/project/{projectId}/pool/{poolId}/sandboxes/{sandboxId}/services", service.autoStart(service.sandboxAgentProxyHandler()))
+	router.Method(http.MethodGet, "/api/project/{projectId}/pool/{poolId}/sandboxes/{sandboxId}/services/{serviceId}", service.autoStart(service.sandboxAgentProxyHandler()))
+	router.Method(http.MethodGet, "/api/project/{projectId}/pool/{poolId}/sandboxes/{sandboxId}/services/{serviceId}/logs", service.autoStart(service.sandboxAgentProxyHandler()))
+	router.Method(http.MethodPost, "/api/project/{projectId}/pool/{poolId}/sandboxes/{sandboxId}/services/{serviceId}/start", service.autoStart(service.sandboxAgentProxyHandler()))
+	router.Method(http.MethodPost, "/api/project/{projectId}/pool/{poolId}/sandboxes/{sandboxId}/services/{serviceId}/stop", service.autoStart(service.sandboxAgentProxyHandler()))
+	router.Method(http.MethodPost, "/api/project/{projectId}/pool/{poolId}/sandboxes/{sandboxId}/services/{serviceId}/restart", service.autoStart(service.sandboxAgentProxyHandler()))
+
 	// direct-tcpip tunnel (ADR 0024 §3). Reuses sandboxAgentProxyHandler and
 	// autoStart unchanged: the handler already generically forwards any
 	// /api/project/.../sandboxes/{sandboxId}/* suffix to the sandbox-agent,
@@ -129,6 +139,16 @@ func sandboxAgentRequiredScope(r *http.Request) string {
 			return ScopeTCPConnect
 		}
 		return ""
+	}
+	if strings.Contains(r.URL.Path, "/services") {
+		switch r.Method {
+		case http.MethodGet:
+			return ScopeExecRead
+		case http.MethodPost:
+			return ScopeExecWrite
+		default:
+			return ""
+		}
 	}
 	if strings.Contains(r.URL.Path, "/execs") {
 		if strings.HasSuffix(r.URL.Path, "/attach") {

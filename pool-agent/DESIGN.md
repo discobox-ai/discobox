@@ -110,6 +110,14 @@ report carries no error message: what this channel feeds is the control plane's
 runtime state field, and the field that records why something failed belongs to
 the reconciler (ADR 0034 §7).
 
+The sandbox-agent proxy names every path it forwards
+(`server/sandbox_proxy.go`), rather than forwarding a prefix, so that the scope
+each one needs is decided here and an unknown path is refused rather than
+tunnelled. The cost is that a route reaching the sandbox is three registrations,
+not one — control plane, here, and the sandbox-agent's own generated router —
+and a route added at the ends but not the middle 404s with nothing to say why.
+Adding one means adding it in all three.
+
 Power operations (`start`, `stop`, `restart`) answer with acceptance only, and
 serialise per sandbox on one mutex. That is also what makes on-demand start safe:
 sandbox-directed routes — the HTTP proxy, the sandbox-agent proxy, the Git
