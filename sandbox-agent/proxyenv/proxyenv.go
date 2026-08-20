@@ -2,13 +2,24 @@
 // EnvironmentFile, for units systemd starts directly rather than sandbox-agent
 // spawning them.
 //
-// dockerd is the one that matters: it resolves and pulls images itself, before
-// any container exists, so no container-level injection (the runc wrapper of
-// docs/adr/0020) can reach it, and it is started by docker.socket activation
-// rather than spawned by sandbox-agent, so it inherits none of the sandbox's
-// proxy env either way. Without this file, every image pull inside a sandbox
-// fails to resolve its registry: the sandbox has no route off-box, and all
-// egress must cross the pool proxy.
+// Two consumers, and the rule is the same for both: a socket-activated daemon
+// inherits none of the sandbox's proxy env, and the traffic that matters is
+// its own rather than a container's, so no container-level injection (the runc
+// wrapper of docs/adr/0020) can reach it either.
+//
+//   - dockerd resolves and pulls images itself, before any container exists.
+//     Without this file every image pull inside a sandbox fails to resolve its
+//     registry: the sandbox has no route off-box, and all egress must cross
+//     the pool proxy.
+//   - nix-daemon is the store's only writer, so the `nix` a user runs
+//     evaluates locally and hands every substitution and build to it. The
+//     user's shell has the proxy env; the process doing the downloading does
+//     not, and `nix develop` fails with "Could not resolve host:
+//     cache.nixos.org".
+//
+// The MITM bundle rides the same file (SSL_CERT_FILE), which is what nix needs
+// on top of the proxy URL — it reads NIX_SSL_CERT_FILE, then SSL_CERT_FILE,
+// before falling back to a fixed path list.
 //
 // The source of truth is sandbox.json's Env/ProxyEnvs (ADR 0015 decisions 2-3:
 // the env map as the single naming point). This package derives the
@@ -90,8 +101,9 @@ func Render(sandboxJSONPath string) ([]byte, error) {
 // WriteFile renders sandboxJSONPath's proxy-trust env to outPath. When Render
 // produces nothing (no proxy-trust vars declared), any stale file at outPath
 // from a previous boot is removed rather than left behind, and outPath's
-// absence is not an error: docker.service.d/proxy.conf's EnvironmentFile
-// reference is optional (a leading `-`) for exactly this case.
+// absence is not an error: the EnvironmentFile in each consuming drop-in
+// (docker.service.d/proxy.conf, nix-daemon.service.d/proxy.conf) is optional
+// (a leading `-`) for exactly this case.
 func WriteFile(sandboxJSONPath, outPath string) error {
 	content, err := Render(sandboxJSONPath)
 	if err != nil {
