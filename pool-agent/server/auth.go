@@ -6,6 +6,7 @@ import (
 	"encoding/base64"
 	"errors"
 	"fmt"
+	"log/slog"
 	"net/http"
 	"strings"
 
@@ -103,27 +104,44 @@ func NewSignedTokenAuthenticator(identity Identity, publicKeyText string) (*Sign
 
 func (a *SignedTokenAuthenticator) Middleware(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		// Every rejection below answers with a bare status, because a caller
+		// that failed to authenticate is told nothing. The reason is logged
+		// instead: three unrelated failures otherwise collapse into one opaque
+		// 401 that no amount of reading the control plane's side can tell
+		// apart.
 		tokenText, ok := bearerToken(r.Header.Get("Authorization"))
 		if !ok {
-			http.Error(w, http.StatusText(http.StatusUnauthorized), http.StatusUnauthorized)
+			a.reject(r, w, http.StatusUnauthorized, "no bearer token", nil)
 			return
 		}
 		token, err := a.parseToken(tokenText)
 		if err != nil {
-			http.Error(w, http.StatusText(http.StatusUnauthorized), http.StatusUnauthorized)
+			a.reject(r, w, http.StatusUnauthorized, "token did not verify", err)
 			return
 		}
 		claims, err := signedTokenClaimsFromToken(token)
 		if err != nil {
-			http.Error(w, http.StatusText(http.StatusUnauthorized), http.StatusUnauthorized)
+			a.reject(r, w, http.StatusUnauthorized, "token claims are unreadable", err)
 			return
 		}
 		if err := a.authorizeRequestPath(r.URL.Path, claims); err != nil {
-			http.Error(w, http.StatusText(http.StatusForbidden), http.StatusForbidden)
+			a.reject(r, w, http.StatusForbidden, "token does not authorize this route", err)
 			return
 		}
 		next.ServeHTTP(w, r.WithContext(withSignedTokenClaims(r.Context(), claims)))
 	})
+}
+
+// reject answers with a bare status and records why.
+func (a *SignedTokenAuthenticator) reject(r *http.Request, w http.ResponseWriter, status int, reason string, err error) {
+	slog.WarnContext(r.Context(), "rejected a control-plane request",
+		"status", status,
+		"reason", reason,
+		"method", r.Method,
+		"path", r.URL.Path,
+		"pool_id", a.identity.PoolID,
+		"error", err)
+	http.Error(w, http.StatusText(status), status)
 }
 
 func (a *SignedTokenAuthenticator) parseToken(tokenText string) (*paseto.Token, error) {
