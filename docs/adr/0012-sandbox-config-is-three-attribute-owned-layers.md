@@ -127,7 +127,7 @@ type Document struct {
 ### 2. One shared library is the merge behavior — and pool-agent is its only runtime caller
 
 `Effective(doc Document) Config` lives in the root module
-(`github.com/obot-platform/discobox`) as a well-tested library, but it has
+(`github.com/discobox-ai/discobox`) as a well-tested library, but it has
 exactly one caller at runtime: pool-agent, once, when it resolves a sandbox's
 configuration at source-clone time. Sandbox-agent does not import it and does
 not merge anything — by the time a container boots, the merge has already

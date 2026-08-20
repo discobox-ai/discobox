@@ -121,4 +121,5 @@ Nygard-style ADRs (see adr.github.io) combined with current-state design docs:
 | [0066](0066-the-build-is-nix-plus-taskfile-and-github-actions-only-triggers-it.md) | The build is Nix plus the Taskfile, and GitHub Actions only triggers it | Accepted |
 | [0067](0067-iroh-ships-in-every-build.md) | iroh ships in every build | Accepted (supersedes [0053](0053-iroh-is-development-only-until-it-builds-everywhere.md)) |
 | [0068](0068-container-images-share-one-base-image.md) | Container images share one base image | Accepted |
+| [0068](0068-services-are-declared-execs-the-sandbox-starts-for-you.md) | Services are declared execs the sandbox starts for you | Accepted |
 | [0069](0069-staging-pool-images-is-a-condition.md) | Staging a pool's images is a condition, not a state | Accepted |
