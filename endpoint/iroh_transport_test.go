@@ -71,8 +71,8 @@ func TestIrohServesHTTPAndWebSockets(t *testing.T) {
 		ConnContext: func(ctx context.Context, c net.Conn) context.Context {
 			// This is the seam the authenticator will read: the peer's
 			// verified identity, carried from the connection into the request.
-			if ider, ok := c.(interface{ RemoteID() IrohID }); ok {
-				seenPeer = ider.RemoteID()
+			if peer, ok := IrohPeer(c); ok {
+				seenPeer = peer
 			}
 			return ctx
 		},

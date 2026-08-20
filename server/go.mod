@@ -49,7 +49,6 @@ require (
 	codeberg.org/polyfloyd/go-errorlint v1.9.0 // indirect
 	dev.gaijin.team/go/exhaustruct/v4 v4.0.0 // indirect
 	dev.gaijin.team/go/golib v0.6.0 // indirect
-	git.coopcloud.tech/decentral1se/iroh-go v0.0.0-20260731195909-77011195d3d6 // indirect
 	github.com/4meepo/tagalign v1.4.3 // indirect
 	github.com/Abirdcfly/dupword v0.1.7 // indirect
 	github.com/AdaLogics/go-fuzz-headers v0.0.0-20240806141605-e8a1dd7889d6 // indirect
@@ -139,6 +138,15 @@ require (
 	github.com/dave/dst v0.27.3 // indirect
 	github.com/davecgh/go-spew v1.1.2-0.20180830191138-d8f796af33cc // indirect
 	github.com/denis-tingaikin/go-header v0.5.0 // indirect
+	github.com/discobox-ai/iroh-go v0.2.0 // indirect
+	github.com/discobox-ai/iroh-go/libs/darwin_amd64 v0.2.0 // indirect
+	github.com/discobox-ai/iroh-go/libs/darwin_arm64 v0.2.0 // indirect
+	github.com/discobox-ai/iroh-go/libs/linux_amd64 v0.2.0 // indirect
+	github.com/discobox-ai/iroh-go/libs/linux_amd64_musl v0.2.0 // indirect
+	github.com/discobox-ai/iroh-go/libs/linux_arm64 v0.2.0 // indirect
+	github.com/discobox-ai/iroh-go/libs/linux_arm64_musl v0.2.0 // indirect
+	github.com/discobox-ai/iroh-go/libs/windows_amd64 v0.2.0 // indirect
+	github.com/discobox-ai/iroh-go/libs/windows_arm64 v0.2.0 // indirect
 	github.com/distribution/reference v0.6.0 // indirect
 	github.com/dlclark/regexp2 v1.12.0 // indirect
 	github.com/docker/cli v28.2.2+incompatible // indirect
@@ -148,7 +156,7 @@ require (
 	github.com/docker/go-units v0.5.0 // indirect
 	github.com/dominikbraun/graph v0.23.0 // indirect
 	github.com/dustin/go-humanize v1.0.1 // indirect
-	github.com/ebitengine/purego v0.10.0 // indirect
+	github.com/ebitengine/purego v0.10.2 // indirect
 	github.com/elazarl/goproxy v1.9.0 // indirect
 	github.com/elliotchance/orderedmap/v3 v3.1.0 // indirect
 	github.com/envoyproxy/go-control-plane/envoy v1.36.0 // indirect

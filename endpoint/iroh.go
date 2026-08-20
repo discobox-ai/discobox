@@ -4,6 +4,7 @@ import (
 	"crypto/ed25519"
 	"encoding/hex"
 	"fmt"
+	"net"
 	"net/url"
 	"strings"
 )
@@ -77,6 +78,35 @@ func (id IrohID) PublicKey() ed25519.PublicKey {
 	out := make(ed25519.PublicKey, IrohIDSize)
 	copy(out, id[:])
 	return out
+}
+
+// irohNetwork is the [net.Addr] network name an iroh connection reports. It
+// is the one thing that identifies such a connection without naming the
+// transport's types, which only a build carrying iroh has.
+const irohNetwork = "iroh"
+
+// IrohPeer reports the endpoint ID at the far end of an accepted connection,
+// and whether there is one.
+//
+// This is the seam an authenticator reads: the peer's identity is proven by
+// the QUIC handshake before the connection ever reaches a handler, so a
+// principal can be built from the connection rather than from anything the
+// client claims. It reads the identity off the address rather than the
+// concrete type, so callers need no build tag — a build without iroh support
+// never accepts one of these connections, and the answer there is false.
+func IrohPeer(conn net.Conn) (IrohID, bool) {
+	if conn == nil {
+		return IrohID{}, false
+	}
+	addr := conn.RemoteAddr()
+	if addr == nil || addr.Network() != irohNetwork {
+		return IrohID{}, false
+	}
+	id, err := ParseIrohID(addr.String())
+	if err != nil {
+		return IrohID{}, false
+	}
+	return id, true
 }
 
 // IrohURL renders the endpoint URL that dials id.

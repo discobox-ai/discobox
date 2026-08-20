@@ -4,11 +4,11 @@ go 1.26.1
 
 require (
 	aidanwoods.dev/go-paseto v1.6.0
-	git.coopcloud.tech/decentral1se/iroh-go v0.0.0-20260731195909-77011195d3d6
 	github.com/Microsoft/go-winio v0.6.2
 	github.com/adrg/xdg v0.5.3
 	github.com/coder/websocket v1.8.14
 	github.com/discobox-ai/discobox/gormdb v0.0.0
+	github.com/discobox-ai/iroh-go v0.2.0
 	github.com/elazarl/goproxy v1.9.0
 	github.com/go-faster/errors v0.7.1
 	github.com/go-faster/jx v1.2.0
@@ -328,7 +328,15 @@ require (
 
 require (
 	aidanwoods.dev/go-result v0.3.1 // indirect
-	github.com/ebitengine/purego v0.10.0 // indirect
+	github.com/discobox-ai/iroh-go/libs/darwin_amd64 v0.2.0 // indirect
+	github.com/discobox-ai/iroh-go/libs/darwin_arm64 v0.2.0 // indirect
+	github.com/discobox-ai/iroh-go/libs/linux_amd64 v0.2.0 // indirect
+	github.com/discobox-ai/iroh-go/libs/linux_amd64_musl v0.2.0 // indirect
+	github.com/discobox-ai/iroh-go/libs/linux_arm64 v0.2.0 // indirect
+	github.com/discobox-ai/iroh-go/libs/linux_arm64_musl v0.2.0 // indirect
+	github.com/discobox-ai/iroh-go/libs/windows_amd64 v0.2.0 // indirect
+	github.com/discobox-ai/iroh-go/libs/windows_arm64 v0.2.0 // indirect
+	github.com/ebitengine/purego v0.10.2 // indirect
 	github.com/fatih/camelcase v1.0.0 // indirect
 	github.com/fatih/gomodifytags v1.17.1-0.20250423142747-f3939df9aa3c // indirect
 	github.com/glebarez/go-sqlite v1.21.2 // indirect

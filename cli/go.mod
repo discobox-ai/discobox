@@ -4,9 +4,9 @@ go 1.26.1
 
 require (
 	github.com/coder/websocket v1.8.14
-	github.com/go-faster/jx v1.2.0
 	github.com/discobox-ai/discobox v0.0.0
 	github.com/discobox-ai/discobox/server v0.0.0
+	github.com/go-faster/jx v1.2.0
 	github.com/spf13/cobra v1.10.2
 	github.com/spf13/pflag v1.0.10
 	golang.org/x/crypto v0.53.0
@@ -15,9 +15,18 @@ require (
 )
 
 require (
-	git.coopcloud.tech/decentral1se/iroh-go v0.0.0-20260731195909-77011195d3d6 // indirect
 	github.com/Code-Hex/go-infinity-channel v1.0.0 // indirect
 	github.com/Code-Hex/vz/v3 v3.7.1 // indirect
+	github.com/discobox-ai/iroh-go v0.2.0 // indirect
+	github.com/discobox-ai/iroh-go/libs/darwin_amd64 v0.2.0 // indirect
+	github.com/discobox-ai/iroh-go/libs/darwin_arm64 v0.2.0 // indirect
+	github.com/discobox-ai/iroh-go/libs/linux_amd64 v0.2.0 // indirect
+	github.com/discobox-ai/iroh-go/libs/linux_amd64_musl v0.2.0 // indirect
+	github.com/discobox-ai/iroh-go/libs/linux_arm64 v0.2.0 // indirect
+	github.com/discobox-ai/iroh-go/libs/linux_arm64_musl v0.2.0 // indirect
+	github.com/discobox-ai/iroh-go/libs/windows_amd64 v0.2.0 // indirect
+	github.com/discobox-ai/iroh-go/libs/windows_arm64 v0.2.0 // indirect
+	github.com/ebitengine/purego v0.10.2 // indirect
 	golang.org/x/mod v0.37.0 // indirect
 )
 
@@ -77,6 +86,7 @@ require (
 	github.com/containerd/errdefs/pkg v0.3.0 // indirect
 	github.com/containerd/stargz-snapshotter/estargz v0.16.3 // indirect
 	github.com/creack/pty v1.1.24
+	github.com/discobox-ai/discobox/termpane v0.0.0
 	github.com/distribution/reference v0.6.0 // indirect
 	github.com/docker/cli v28.2.2+incompatible // indirect
 	github.com/docker/distribution v2.8.3+incompatible // indirect
@@ -108,7 +118,6 @@ require (
 	github.com/moby/moby/api v1.54.2 // indirect
 	github.com/moby/moby/client v0.4.1 // indirect
 	github.com/muesli/cancelreader v0.2.2 // indirect
-	github.com/discobox-ai/discobox/termpane v0.0.0
 	github.com/ogen-go/ogen v1.20.3 // indirect
 	github.com/opencontainers/go-digest v1.0.0 // indirect
 	github.com/opencontainers/image-spec v1.1.1 // indirect
