@@ -5,10 +5,10 @@ import "fmt"
 // A column is one side of the workspace: a strip of panes with one visible at
 // a time, ordered by when their sessions were created.
 //
-// Both sides are the same thing now — the discobox's terminals on the left,
-// its shells on the right — so the strip, its labels and its arithmetic are
-// written once. What differs is what goes in them (see terminalExec) and that
-// the left column's first pane is the primary, whose ending ends the
+// Both sides are the same thing — the discobox's terminals and services on the
+// left, its shells on the right — so the strip, its labels and its arithmetic
+// are written once. What differs is what goes in them (see terminalExec) and
+// that the left column's first pane is the primary, whose ending ends the
 // workspace.
 type column struct {
 	panes []*pane
@@ -68,7 +68,10 @@ func (c *column) insert(p *pane, exec Exec, focused bool) int {
 	p.created = exec.CreatedAt
 	at := len(c.panes)
 	for i, s := range c.panes {
-		if execBefore(exec, Exec{ID: s.execID, CreatedAt: s.created}) {
+		// The pane's own service is carried into the comparison: the ordering
+		// groups services after everything else in the column, and a pane
+		// described without it would be sorted as though it were a terminal.
+		if execBefore(exec, Exec{ID: s.execID, CreatedAt: s.created, Service: s.service}) {
 			at = i
 			break
 		}

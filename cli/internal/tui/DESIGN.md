@@ -155,16 +155,29 @@ gives it `io.Discard` for both streams — a stray line of stderr would draw ove
 a full-screen window — and lets the error carry what went wrong to the status
 line.
 
-**Services are tabs on the right, and their panes are read-only**
+**Services are the left column's second group, and their panes are read-only**
 (`services.go`, ADR 0063 §7). A service is an exec the discobox started from
 the repository's `.discobox/services`, so it arrives in the same `GET /execs`
 listing the tabs are already drawn from — keyed on `metadata.serviceId`, with
-no second poll and no client-side state, which was ADR 0054's whole point. Two
-things follow from a service running on pipes rather than a PTY: the pane sends
-nothing (`termpane.WithReadOnly`, since there is no stdin at the far end to
-reach), and the right column is no longer only TTY sessions — the one clause of
-ADR 0054 §2 this widens, and only for sessions the sandbox itself records as
-services.
+no second poll and no client-side state, which was ADR 0054's whole point.
+
+The left side is `[terminals, services]`: what the discobox is running on your
+behalf, the harness working on the code and the code itself running, while the
+right side is what you opened by hand. Only shells split the window, so a
+discobox with three services and no shell still draws its terminal at the full
+width. Within the column the two kinds are *grouped* rather than strictly aged
+(`execBefore`): a service usually starts before the terminals do — boot
+launches both and a harness has files to install first — so strict age would
+put services above the primary's neighbours and push them along. `column.insert`
+therefore carries `pane.service` into the comparison, since a pane described
+by id and age alone would sort as though it were a terminal.
+
+Two things follow from a service running on pipes rather than a PTY: the pane
+sends nothing and translates bare line feeds (`termpane.WithReadOnly` — there
+is no stdin at the far end to reach, and no line discipline to have supplied
+the carriage returns), and a column is no longer only TTY sessions, the one
+clause of ADR 0054 §2 this widens, and only for sessions the sandbox itself
+records as services.
 
 The running services are therefore already on screen, which is what decides
 what a key has to reach: the ones that are *not*. `leader S` opens the menu of

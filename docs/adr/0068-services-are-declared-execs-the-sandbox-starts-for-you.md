@@ -152,28 +152,55 @@ the one place a stop is requested, means the listing can say *stopped* rather
 than *exited (unknown)* and `restart` knows the difference between a service it
 is resuming and one it is retrying.
 
-### 7. The workspace draws services as tabs in the right-hand column
+### 7. The workspace draws services in the left column, after the terminals
+
+*(Amended before this decision shipped: services were first placed in the
+right-hand column, and moved to the left one. The reasoning below is the
+amended version; the mechanism — one listing, one metadata key, no
+client-side layout state — never changed.)*
 
 [ADR 0054](0054-the-workspaces-columns-are-terminals-and-shells.md) made the
 workspace's two columns the two kinds of session the server records: harness
 terminals on the left, every other TTY session as a tab on the right. Services
-join the right column — the side that is already "everything that is not the
-harness you are talking to" — and are drawn from the same `GET /execs` listing
-the workspace already polls, keyed on the same `metadata.serviceId` decision 2
-sets. No second poll and no client-side layout state, which was ADR 0054's whole
-point.
+join the **left** column, after the terminals, and are drawn from the same
+`GET /execs` listing the workspace already polls, keyed on the same
+`metadata.serviceId` decision 2 sets. No second poll and no client-side layout
+state, which was ADR 0054's whole point.
+
+The left side is what the discobox is running on your behalf — the harness
+working on the code, and the code itself running — while the right side is what
+you opened by hand. Grouping them that way also keeps the split honest: only
+shells put a second box on screen, so a discobox with three services and no
+shell still draws its terminal at the full width.
+
+Within the column the two kinds are grouped rather than strictly aged:
+`[terminals, services]`. A service usually starts *before* the terminals do —
+boot launches both and a harness has files to install first — so strict age
+would put services above the primary's neighbours and push them along.
 
 Two things follow from decision 3. A service pane is read-only: it takes no keys
-and sends no resize, because there is nothing at the far end reading stdin.
-And the right column is no longer only TTY sessions, which is the one clause of
-ADR 0054 §2 this widens — deliberately, and only for sessions the sandbox itself
-records as services.
+and sends no resize, because there is nothing at the far end reading stdin. It
+also sets LNM on its emulator, because a pipe has no line discipline to have
+turned the program's line feeds into carriage-return line feeds, and a terminal
+reads a bare LF as "down one row, same column" — the staircase.
+
+And a column is no longer only TTY sessions, which is the one clause of ADR 0054
+§2 this widens — deliberately, and only for sessions the sandbox itself records
+as services.
 
 **Rejected: a services screen of its own**, like the harnesses screen. It draws
 a better list — status, description and lifecycle verbs in one place — and it
 puts the running service one screen away from the work it is running beside,
 which is the wrong side of the trade for the thing you glance at. The list it
 would have drawn is `disco box services ls`.
+
+**Rejected: the right-hand column** (the first form of this decision). It read
+as "everything that is not the harness you are talking to", which is true of a
+service and also true of nothing else about it: a service is the discobox
+running your own work, and it belongs beside the harness working on that work
+rather than among the shells you opened by hand. It also made every service
+split the window, so a discobox with services and no shell drew its terminal at
+half width for panes nobody was typing in.
 
 ## Consequences
 

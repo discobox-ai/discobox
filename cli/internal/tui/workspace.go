@@ -20,9 +20,9 @@ import (
 // every stream is closed at once, and every session keeps running.
 //
 // Which side a session is drawn on is the server's own answer rather than a
-// layout this window remembers: a harness terminal is a terminal and goes on
-// the left beside the primary, and everything else is a shell and goes on the
-// right. See terminalExec.
+// layout this window remembers: a harness terminal goes on the left beside the
+// primary and a declared service goes on the left after them, while everything
+// else is a shell and goes on the right. See terminalExec.
 //
 // The poll is a poll rather than a subscription because the control plane has
 // no exec event stream yet — exec state lives on the sandbox and is proxied
@@ -273,21 +273,18 @@ func (m *Model) workspaceExecs(msg workspaceExecsMsg) tea.Cmd {
 }
 
 // terminalExec reports whether a session belongs on the workspace's left: the
-// primary, or another of the discobox's harness terminals. Everything else is
-// a shell and goes on the right.
+// primary, another of the discobox's harness terminals, or one of its declared
+// services. Everything else is a shell and goes on the right.
 //
 // It is the server's own record that answers, not a layout this window keeps:
-// a terminal is created in harness mode and carries the harness it runs, so
-// reopening the workspace draws the same two columns anyone else's window
-// would.
+// a terminal is created in harness mode and carries the harness it runs, a
+// service carries the service it runs, so reopening the workspace draws the
+// same two columns anyone else's window would.
 func terminalExec(exec Exec) bool {
-	// A service is a right-hand tab whatever else its record says: it is a
-	// process the discobox runs for you, not a session of the harness you are
-	// talking to.
-	if exec.Service != "" {
-		return false
-	}
-	return exec.Primary || exec.Harness != ""
+	// A service is drawn on the left too, after the terminals: it is the
+	// discobox running your own work, which belongs beside the harness working
+	// on it rather than among the shells you opened by hand.
+	return exec.Primary || exec.Harness != "" || serviceExec(exec)
 }
 
 // serviceExec reports whether a session is one of the discobox's declared
@@ -449,7 +446,18 @@ func (m *Model) workspaceTermOpened(msg workspaceTermMsg) tea.Cmd {
 
 // execBefore orders tabs: by when their sessions were created, oldest first,
 // with the id as the tie-break so the order is stable whatever the listing's.
+//
+// Services are the exception, and sort after everything else in their column.
+// The left side is [terminals, services]: the terminals are what you are
+// working in, and a service that started before them — they usually do, since
+// boot launches both and a harness has files to install first — would
+// otherwise land above the primary's neighbours and push them along. Grouping
+// beats strict age here because the two kinds are used differently, and the
+// group a pane is in is what the digits count along.
 func execBefore(a, b Exec) bool {
+	if serviceExec(a) != serviceExec(b) {
+		return serviceExec(b)
+	}
 	if !a.CreatedAt.Equal(b.CreatedAt) {
 		return a.CreatedAt.Before(b.CreatedAt)
 	}

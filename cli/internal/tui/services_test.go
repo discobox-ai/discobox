@@ -2,6 +2,7 @@ package tui
 
 import (
 	"errors"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -20,19 +21,22 @@ func serviceExecRecord(id, service, name string) Exec {
 	}
 }
 
-// A running service is a tab on the right, drawn from the same listing every
-// other session comes from — even though it is not a TTY session, which is the
-// one place the tab strip widens past ADR 0054 §2.
-func TestARunningServiceIsATabOnTheRight(t *testing.T) {
+// A running service is a tab in the left column, after the terminals, drawn
+// from the same listing every other session comes from — even though it is not
+// a TTY session, which is the one place the tab strip widens past ADR 0054 §2.
+func TestARunningServiceIsATabAfterTheTerminals(t *testing.T) {
 	ds := newFakeSource(testSandboxes()...)
 	ds.execs = []Exec{serviceExecRecord("exec_svc1", "discobox-api", "Discobox API")}
 	d, m, _ := openWorkspace(t, ds, "enter")
-	d.wait("the service tab", func() bool { return m.shells.len() == 1 })
+	d.wait("the service tab", func() bool { return m.terminals.len() == 2 })
 
-	if m.terminals.len() != 1 {
-		t.Fatalf("terminals = %d, want just the primary", m.terminals.len())
+	if m.shells.len() != 0 {
+		t.Fatalf("shells = %d, want none: a service is not a shell", m.shells.len())
 	}
-	p := m.shells.panes[0]
+	if !m.terminals.panes[0].primary {
+		t.Fatal("the primary must stay the head of the left column")
+	}
+	p := m.terminals.panes[1]
 	if p.execID != "exec_svc1" {
 		t.Fatalf("tab = %q, want the service's exec", p.execID)
 	}
@@ -52,17 +56,67 @@ func TestARunningServiceIsATabOnTheRight(t *testing.T) {
 	}
 }
 
+// The left column is [terminals, services], and a service that started first —
+// which they usually do, since a harness has files to install before it
+// launches — still sorts after them.
+func TestServicesSortAfterTerminalsWhateverTheirAge(t *testing.T) {
+	ds := newFakeSource(testSandboxes()...)
+	early := serviceExecRecord("exec_svc1", "discobox-api", "Discobox API")
+	early.CreatedAt = time.Date(2026, 8, 7, 11, 0, 0, 0, time.UTC)
+	ds.execs = []Exec{
+		early,
+		{
+			ID: "exec_term1", Command: []string{"claude"}, Harness: "claude",
+			Tty: true, Live: true, CreatedAt: time.Date(2026, 8, 7, 12, 0, 0, 0, time.UTC),
+		},
+	}
+	d, m, _ := openWorkspace(t, ds, "enter")
+	d.wait("both sessions", func() bool { return m.terminals.len() == 3 })
+
+	var got []string
+	for _, p := range m.terminals.panes {
+		got = append(got, p.execID)
+	}
+	want := []string{ExecPrimary, "exec_term1", "exec_svc1"}
+	if !slices.Equal(got, want) {
+		t.Fatalf("left column = %v, want %v", got, want)
+	}
+	if m.shells.len() != 0 {
+		t.Fatalf("shells = %d, want none", m.shells.len())
+	}
+}
+
+// Services share the left column, so they never split the window: only shells
+// put a second box on screen.
+func TestServicesDoNotSplitTheWindow(t *testing.T) {
+	ds := newFakeSource(testSandboxes()...)
+	ds.execs = []Exec{serviceExecRecord("exec_svc1", "discobox-api", "Discobox API")}
+	d, m, _ := openWorkspace(t, ds, "enter")
+	d.wait("the service tab", func() bool { return m.terminals.len() == 2 })
+
+	if m.split() {
+		t.Fatal("a service must not split the window; it is a tab in the box the primary already has")
+	}
+	full, rows := m.paneCells(m.width)
+	if got := ds.execTerm("exec_svc1").size(); got != [2]int{} {
+		t.Errorf("resized a service to %v; a read-only pane sends no resize", got)
+	}
+	if got := ds.execTerm(ExecPrimary).size(); got != [2]int{full, rows} {
+		t.Errorf("primary is %v, want the whole window %dx%d", got, full, rows)
+	}
+}
+
 // Nothing reads a service's stdin, so nothing types at its pane.
 func TestAServicePaneIsReadOnly(t *testing.T) {
 	ds := newFakeSource(testSandboxes()...)
 	ds.execs = []Exec{serviceExecRecord("exec_svc1", "discobox-api", "Discobox API")}
 	d, m, _ := openWorkspace(t, ds, "enter")
-	d.wait("the service tab", func() bool { return m.shells.len() == 1 })
+	d.wait("the service tab", func() bool { return m.terminals.len() == 2 })
 
-	// Move onto the tab and type at it.
+	// Move onto the service and type at it.
 	d.key("ctrl+a")
 	d.key(paneRightKey)
-	d.wait("focus on the service", func() bool { return m.onShells })
+	d.wait("focus on the service", func() bool { return m.terminals.active == 1 })
 	d.key("h")
 	d.key("i")
 
