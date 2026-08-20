@@ -219,6 +219,38 @@ func TestLoadServerEndpointListOverride(t *testing.T) {
 	}
 }
 
+// "unix://,iroh://" is the shape an operator reaches for when they want the
+// endpoint the CLI always uses plus a remote one. The local scheme with no
+// path is that endpoint, so it counts as naming it and nothing is prepended.
+func TestLoadServerEndpointAcceptsTheBareLocalScheme(t *testing.T) {
+	clearConfigEnv(t)
+	local, err := endpoint.Parse(endpoint.DefaultEndpoint())
+	if err != nil {
+		t.Fatalf("Parse(DefaultEndpoint()) error = %v", err)
+	}
+	bare := local.Scheme + "://"
+	t.Setenv("DISCOBOX_SERVER_LISTEN", bare+",iroh://")
+
+	cfg, err := Load()
+	if err != nil {
+		t.Fatalf("Load() error = %v", err)
+	}
+
+	want := []string{bare, "iroh://"}
+	if !reflect.DeepEqual(cfg.Listen, want) {
+		t.Fatalf("Listen = %#v, want %#v", cfg.Listen, want)
+	}
+	// And it has to resolve to the same socket the default names, or the CLI
+	// reaches a server that is not there.
+	parsed, err := endpoint.Parse(cfg.Listen[0])
+	if err != nil {
+		t.Fatalf("Parse(%q) error = %v", cfg.Listen[0], err)
+	}
+	if parsed.Value != local.Value {
+		t.Fatalf("%q resolved to %q, want the default %q", bare, parsed.Value, local.Value)
+	}
+}
+
 func TestLoadServerEndpointAddsDefaultLocalIPC(t *testing.T) {
 	clearConfigEnv(t)
 	t.Setenv("DISCOBOX_SERVER_LISTEN", "http://127.0.0.1:19090")

@@ -195,6 +195,14 @@ The server binds local IPC — `unix://` or `npipe://` — and nothing else unle
 (and on Windows a firewall prompt) that is opted into, never implied; `PORT`
 only supplies the default port for an HTTP endpoint that was asked for.
 
+`DISCOBOX_SERVER_LISTEN` is a comma-separated list, and local IPC is added to
+whatever it names unless it names one itself, so a server is never left with
+no endpoint the CLI can reach. Each scheme's bare form means the address this
+machine derives rather than one the operator chooses: `unix://` and `npipe://`
+are the default socket and pipe, and `iroh://` is the identity in the server's
+key file. `unix://,iroh://` therefore reads as "where I always listen, plus
+iroh".
+
 Nothing in the system requires HTTP. Pool backends reach the control plane over
 whatever transport their guest can dial — see
 [providers](providers/DESIGN.md#control-plane-reachability) — and the CLI dials
@@ -206,8 +214,8 @@ transport this server actually answers on rather than assuming one exists.
 `task dev` opts into nothing. It binds the local socket every other server
 binds, plus `iroh://`, which every build carries (ADR 0067), so `discobox`
 reaches a development server with no `--server` and the dev loop runs exactly
-the transports users get. A
-tool that needs a URL asks for one in `DISCOBOX_SERVER_LISTEN` — from the
+the transports users get. A tool that needs a URL asks for one in
+`DISCOBOX_SERVER_LISTEN` — from the
 environment, not from `.env`, which the server loads with godotenv and which
 does not replace a variable already set.
 

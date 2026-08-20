@@ -56,13 +56,13 @@ func Parse(raw string) (Endpoint, error) {
 		return Endpoint{Raw: raw, Scheme: scheme, Value: strings.TrimRight(raw, "/")}, nil
 	case "unix":
 		if u.Path == "" {
-			return Endpoint{}, fmt.Errorf("unix endpoint %q must include a socket path", raw)
+			return localDefault(raw, scheme)
 		}
 		return Endpoint{Raw: raw, Scheme: scheme, Value: u.Path}, nil
 	case "npipe":
 		value := npipePath(u)
 		if value == "" {
-			return Endpoint{}, fmt.Errorf("npipe endpoint %q must include a pipe path", raw)
+			return localDefault(raw, scheme)
 		}
 		return Endpoint{Raw: raw, Scheme: scheme, Value: value}, nil
 	case "iroh":
@@ -85,6 +85,33 @@ func Parse(raw string) (Endpoint, error) {
 	default:
 		return Endpoint{}, fmt.Errorf("unsupported endpoint scheme %q in %q", u.Scheme, raw)
 	}
+}
+
+// localDefault resolves the empty form of a local IPC scheme — "unix://" or
+// "npipe://" — to the endpoint this machine uses when nobody names one. It is
+// the shorthand "iroh://" already has: the scheme names the transport, and the
+// address is derived rather than chosen, so writing it out is busywork that
+// invites a wrong path. It is what lets DISCOBOX_SERVER_LISTEN say
+// "unix://,iroh://" — where I always listen, plus iroh.
+//
+// A scheme this platform has no default for is an error rather than a silent
+// substitution: "unix://" on Windows is a configuration written for somewhere
+// else, and quietly binding a named pipe would hide that rather than say it.
+func localDefault(raw, scheme string) (Endpoint, error) {
+	parsed, err := Parse(DefaultEndpoint())
+	if err != nil {
+		return Endpoint{}, fmt.Errorf("resolve the default endpoint for %q: %w", raw, err)
+	}
+	if parsed.Scheme != scheme {
+		return Endpoint{}, fmt.Errorf(
+			"%s endpoint %q has no default on this platform; the local endpoint here is %s",
+			scheme, raw, DefaultEndpoint())
+	}
+	// The resolved endpoint is what Raw carries, not the shorthand that was
+	// typed: Raw is what a listener displays, and an operator reading
+	// "listening on unix://" learns nothing about where their server is. The
+	// iroh listener resolves its display for the same reason.
+	return parsed, nil
 }
 
 // AutoLaunchable reports whether a server on this endpoint is one the CLI may
