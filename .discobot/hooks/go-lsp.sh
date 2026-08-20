@@ -6,6 +6,7 @@
 # pattern: "**/*.go"
 # ignore:
 #   - "endpoint/iroh_supported.go"
+#   - "endpoint/iroh_stress_test.go"
 #   - "endpoint/iroh_transport_test.go"
 # language_id: go
 # min_severity: warning
