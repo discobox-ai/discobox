@@ -87,7 +87,7 @@ Nygard-style ADRs (see adr.github.io) combined with current-state design docs:
 | [0032](0032-every-sandbox-has-a-harness-config-and-shell-is-the-built-in.md) | Every sandbox has a harness config, and `shell` is the built-in one | Accepted (§2 `shell`'s image superseded by [0043](0043-shell-is-an-ordinary-harness-image.md); §1's fallback step by [0048](0048-a-sandbox-names-its-harness-or-the-project-does.md)) |
 | [0033](0033-user-resolution-is-one-layered-resolver-with-declared-gaps.md) | User resolution is one layered resolver, and every gap is declared | Accepted |
 | [0034](0034-sandbox-state-and-runtime-state-are-separate-fields.md) | Sandbox `state` and `runtime_state` are separate fields | Accepted |
-| [0035](0035-repair-is-one-rebuild-intent-plus-a-start-instruction.md) | Repair is one rebuild intent, plus a start instruction | Accepted |
+| [0035](0035-repair-is-one-rebuild-intent-plus-a-start-instruction.md) | Repair is one rebuild intent, plus a start instruction | Accepted (§1 amended by [0064](0064-repair-rebuilds-on-the-current-image.md)) |
 | [0036](0036-termpane-selection-is-a-mouse-only-cell-space-overlay.md) | Termpane selection is a mouse-only cell-space overlay | Accepted |
 | [0037](0037-drop-disco-diff-and-disco-status.md) | Drop `disco diff` and `disco status` | Accepted |
 | [0038](0038-terminal-identity-is-the-exec-id-terminals-revive-in-place.md) | Terminal identity is the exec id, and terminals revive in place | Accepted |
@@ -116,3 +116,4 @@ Nygard-style ADRs (see adr.github.io) combined with current-state design docs:
 | [0061](0061-the-client-facing-project-event-stream-is-removed.md) | The client-facing project event stream is removed | Accepted |
 | [0062](0062-macos-pools-run-vz-vms-with-an-independently-released-guest-image.md) | macOS pools run Virtualization.framework VMs, and the VM guest image is an independently released artifact | Accepted |
 | [0063](0063-a-pool-agent-keeps-its-identity-key-and-registers-once.md) | A pool agent keeps its identity key, and registers once | Accepted |
+| [0064](0064-repair-rebuilds-on-the-current-image.md) | Repair rebuilds on the current image | Accepted (amends [0035](0035-repair-is-one-rebuild-intent-plus-a-start-instruction.md) §1) |

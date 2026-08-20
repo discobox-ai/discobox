@@ -1,6 +1,8 @@
 # 0035 — Repair is one rebuild intent, plus a start instruction
 
 - **Status**: Accepted
+- **Amended by**: [0064](0064-repair-rebuilds-on-the-current-image.md) — §1's intent also
+  re-pins the sandbox to its harness config's current image
 - **Date**: 2026-08-12
 
 ## Context
