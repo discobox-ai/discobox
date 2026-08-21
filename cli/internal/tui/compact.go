@@ -61,11 +61,10 @@ func (m *Model) clearPrinted(cmd tea.Cmd) tea.Cmd {
 }
 
 // compactLayout sizes the opening window: the composer beside the mark, as wide
-// as what is left of the terminal.
+// as what is left of the terminal. Its height follows the text on its own, up
+// to promptMaxRows.
 func (m *Model) compactLayout() {
-	width := m.compactPromptWidth()
-	m.prompt.SetWidth(max(width-2, 10))
-	m.prompt.SetHeight(min(max(m.prompt.LineCount(), 1), 8))
+	m.prompt.SetWidth(max(m.compactPromptWidth()-2, 10))
 }
 
 // compactPromptWidth is what the composer gets: the box's inside, less the mark

@@ -206,6 +206,11 @@ func New(ctx context.Context, ds DataSource, options ...Option) *Model {
 	ta := textarea.New()
 	ta.ShowLineNumbers = false
 	ta.CharLimit = 0
+	// The field is as tall as what is in it, wrapped rows counted, and stops
+	// growing at promptMaxRows — past that it scrolls under the cursor.
+	ta.DynamicHeight = true
+	ta.MinHeight = 1
+	ta.MaxHeight = promptMaxRows
 	// Claude Code's composer: one chevron on the first line, continuation
 	// lines aligned under the text rather than under the chevron.
 	ta.SetPromptFunc(2, func(info textarea.PromptInfo) string {
@@ -1577,6 +1582,12 @@ const boxChrome = 2 + 2*boxPad
 // See layout, which is the only place it is used and where it is counted out.
 const windowChrome = 11
 
+// promptMaxRows is how far the composer grows before it scrolls instead. Three
+// rows is enough to see the sentence you are still writing, and little enough
+// that the list is still a list underneath it — a field that grew with the
+// text would take the window over for a prompt you are only halfway through.
+const promptMaxRows = 3
+
 func (m *Model) layout() {
 	if m.width <= 0 || m.height <= 0 {
 		return
@@ -1604,9 +1615,11 @@ func (m *Model) layout() {
 		}
 		return
 	}
-	// The composer grows with what is typed, one line at a time, the way
+	// The composer grows with what is typed, one row at a time, the way
 	// Claude Code's does — and the list gives up a row for each one it takes.
-	promptH := min(max(m.prompt.LineCount(), 1), 8)
+	// The width comes first: how tall the text is depends on where it wraps.
+	m.prompt.SetWidth(max(m.inner()-2, 10))
+	promptH := m.prompt.Height()
 	// What the window costs before a single sandbox is drawn: the box's two
 	// edges, the header and the blank under it, the list title and the blank
 	// below the rows, the composer's label, its own two rules, the mode line
@@ -1620,8 +1633,6 @@ func (m *Model) layout() {
 	// looks like — not a reason to shrink the frame.
 	m.list.width, m.list.height = m.bodyWidth(), room
 	m.list.clamp()
-	m.prompt.SetWidth(max(m.inner()-2, 10))
-	m.prompt.SetHeight(promptH)
 }
 
 // View draws the window. It records what it drew as well: a frame with anything

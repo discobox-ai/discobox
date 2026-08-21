@@ -424,15 +424,66 @@ func TestTheWindowFillsTheTerminal(t *testing.T) {
 		}
 	}
 
-	// And it still fits once the composer has grown into a paragraph, which is
-	// the row budget the list gives up a row at a time.
+	// And it still fits once the composer has grown to its full height, which
+	// is the row budget the list gives up a row at a time.
 	m := newTestModel(t, newFakeSource(testSandboxes()...))
 	send(t, m, tea.WindowSizeMsg{Width: 120, Height: 24})
 	for range 5 {
 		send(t, m, key("ctrl+j"))
 	}
 	if got := lipgloss.Height(m.View().Content); got != 24 {
-		t.Errorf("with a 6-line prompt the window drew %d rows:\n%s", got, frameText(m))
+		t.Errorf("with a grown prompt the window drew %d rows:\n%s", got, frameText(m))
+	}
+}
+
+// The composer is one row to start with and grows a row at a time as the text
+// needs one — wrapped rows counted, not just typed newlines — and stops at
+// promptMaxRows. Past that it scrolls, because a field that kept growing would
+// take the window over for a prompt you are only halfway through writing.
+func TestTheComposerGrowsToThreeRowsAndThenScrolls(t *testing.T) {
+	m := newTestModel(t, newFakeSource(testSandboxes()...))
+	send(t, m, sizeMsg(120, 24))
+
+	if got := m.prompt.Height(); got != 1 {
+		t.Fatalf("the empty composer is %d rows, want 1", got)
+	}
+	listRows := m.list.height
+
+	for row := 2; row <= promptMaxRows; row++ {
+		send(t, m, key("ctrl+j"))
+		if got := m.prompt.Height(); got != row {
+			t.Errorf("after %d newlines the composer is %d rows, want %d", row-1, got, row)
+		}
+		if got, want := m.list.height, listRows-(row-1); got != want {
+			t.Errorf("at %d rows the list has %d rows, want %d", row, got, want)
+		}
+	}
+
+	// Past the cap the text keeps going in and the field stays put.
+	for range 4 {
+		send(t, m, key("ctrl+j"))
+	}
+	send(t, m, typeString("tail")...)
+	if got := m.prompt.Height(); got != promptMaxRows {
+		t.Errorf("a seven-line prompt drew %d rows, want %d", got, promptMaxRows)
+	}
+	if got := lipgloss.Height(m.prompt.View()); got != promptMaxRows {
+		t.Errorf("the composer drew %d rows, want %d", got, promptMaxRows)
+	}
+	// Scrolled, not truncated: the cursor's line is the one on screen.
+	if view := ansi.Strip(m.prompt.View()); !strings.Contains(view, "tail") {
+		t.Errorf("the composer should scroll to the cursor:\n%s", view)
+	}
+	if got := m.list.height; got != listRows-(promptMaxRows-1) {
+		t.Errorf("the list gave up %d rows, want %d", listRows-got, promptMaxRows-1)
+	}
+
+	// A single line long enough to wrap grows it the same way.
+	m = newTestModel(t, newFakeSource(testSandboxes()...))
+	send(t, m, sizeMsg(40, 24))
+	send(t, m, typeString(strings.Repeat("word ", 24))...)
+	if got := m.prompt.Height(); got != promptMaxRows {
+		t.Errorf("a wrapped prompt is %d rows, want %d", got, promptMaxRows)
 	}
 }
 

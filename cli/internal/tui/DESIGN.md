@@ -524,6 +524,13 @@ list gives up rows for the composer as it grows and takes none at all when
 there is no room. A frame one row too tall scrolls the terminal, which is the
 one thing the renderer cannot redraw its way out of.
 
+**The composer grows to `promptMaxRows` and then scrolls.** The textarea's
+`DynamicHeight` sizes it from its contents — soft-wrapped rows counted, not just
+typed newlines — between one row and three, so `layout` sets its width first and
+reads the height back rather than computing one. Three rows is enough to see the
+sentence you are still writing; a field that kept growing would take the window
+over for a prompt you are only halfway through.
+
 **The mark sits at the head of what it marks.** `logo.column()` is the art plus
 a `logoGutter` on each side — one between it and the box, one between it and the
 list. In the full window `logo.view` draws it from the top and pads below: a
