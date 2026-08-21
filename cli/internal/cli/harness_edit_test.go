@@ -3,10 +3,10 @@ package cli
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"os"
-	"path/filepath"
 	"strings"
 	"testing"
 
@@ -43,18 +43,44 @@ func TestFindHarnessFilePrefersConfigured(t *testing.T) {
 
 // fakeEditor writes a shell script that appends to the file it is given and
 // points $EDITOR at it, standing in for an interactive editor.
-func fakeEditor(t *testing.T, script string) {
+// fakeEditorEnv makes the test binary act as $EDITOR instead of running tests.
+// Its value is written to the file being edited; empty leaves the file alone.
+const fakeEditorEnv = "DISCOBOX_TEST_FAKE_EDITOR"
+
+// TestMain lets the test binary stand in for the user's editor.
+//
+// The obvious stand-in is a shell script, but Windows cannot exec one, and the
+// CLI runs the editor directly rather than through a shell
+// (harness_edit.go's exec.CommandContext), so re-executing this binary is both
+// portable and a faithful reproduction of how a real editor is launched.
+func TestMain(m *testing.M) {
+	if want, editing := os.LookupEnv(fakeEditorEnv); editing {
+		if want != "" && len(os.Args) > 1 {
+			if err := os.WriteFile(os.Args[1], []byte(want), 0o600); err != nil {
+				fmt.Fprintln(os.Stderr, err)
+				os.Exit(1)
+			}
+		}
+		os.Exit(0)
+	}
+	os.Exit(m.Run())
+}
+
+// fakeEditor points $EDITOR at this test binary. write is the content the
+// "editor" leaves in the file; empty means it exits without touching it.
+func fakeEditor(t *testing.T, write string) {
 	t.Helper()
-	path := filepath.Join(t.TempDir(), "editor.sh")
-	if err := os.WriteFile(path, []byte("#!/bin/sh\n"+script+"\n"), 0o755); err != nil {
-		t.Fatalf("write fake editor: %v", err)
+	exe, err := os.Executable()
+	if err != nil {
+		t.Fatalf("locate test binary: %v", err)
 	}
 	t.Setenv("VISUAL", "")
-	t.Setenv("EDITOR", path)
+	t.Setenv("EDITOR", exe)
+	t.Setenv(fakeEditorEnv, write)
 }
 
 func TestEditHarnessFileUpdatesConfiguredBucket(t *testing.T) {
-	fakeEditor(t, `printf 'edited' > "$1"`)
+	fakeEditor(t, "edited")
 
 	var gotBody map[string]any
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -102,7 +128,7 @@ func TestEditHarnessFileUpdatesConfiguredBucket(t *testing.T) {
 }
 
 func TestEditHarnessFileNoChangeSkipsUpdate(t *testing.T) {
-	fakeEditor(t, `true`)
+	fakeEditor(t, "")
 
 	server := httptest.NewServer(http.HandlerFunc(func(_ http.ResponseWriter, r *http.Request) {
 		t.Fatalf("unexpected request %s %s; unchanged edits must not call the API", r.Method, r.URL.Path)

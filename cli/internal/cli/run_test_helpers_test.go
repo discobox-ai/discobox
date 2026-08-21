@@ -11,7 +11,14 @@ import (
 
 func newRunSourceTestRepo(t *testing.T) string {
 	t.Helper()
-	repo := t.TempDir()
+	// Canonicalized because callers compare it against a path that came back
+	// out of git: Windows hands t.TempDir() an 8.3 short name (RUNNER~1) where
+	// git reports the long one, and macOS hands out /var where git reports
+	// /private/var. Both are the same directory by two names.
+	repo, err := filepath.EvalSymlinks(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
 	git := runSourceTestGit(t, repo)
 	git("init", "-b", "feature-foo")
 	git("config", "user.email", "test@example.com")
