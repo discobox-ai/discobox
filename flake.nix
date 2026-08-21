@@ -1,23 +1,36 @@
 {
-  description = "Discobox local libkrun VM runtime";
+  description = "Discobox development environment and local libkrun VM runtime";
 
   inputs.nixpkgs.url = "github:NixOS/nixpkgs/nixos-unstable";
 
   outputs =
     { self, nixpkgs, ... }:
     let
-      systems = [ "x86_64-linux" ];
-      forAllSystems = nixpkgs.lib.genAttrs systems;
+      # The libkrun artifacts are Linux-only, so packages/apps/checks stay on
+      # one system. Development shells fan out further because check, test, and
+      # release now run out of this flake on every platform the project targets
+      # (ADR 0066 §3).
+      buildSystems = [ "x86_64-linux" ];
+      devSystems = [
+        "x86_64-linux"
+        "aarch64-linux"
+        "aarch64-darwin"
+      ];
+      forBuildSystems = nixpkgs.lib.genAttrs buildSystems;
+      forDevSystems = nixpkgs.lib.genAttrs devSystems;
+      overriddenLibkrun =
+        pkgs:
+        pkgs.libkrun.override {
+          withBlk = true;
+          withNet = true;
+        };
     in
     {
-      packages = forAllSystems (
+      packages = forBuildSystems (
         system:
         let
           pkgs = import nixpkgs { inherit system; };
-          libkrun = pkgs.libkrun.override {
-            withBlk = true;
-            withNet = true;
-          };
+          libkrun = overriddenLibkrun pkgs;
           discobox-krun = pkgs.rustPlatform.buildRustPackage {
             pname = "discobox-krun";
             version = "0.1.0";
@@ -83,7 +96,7 @@
         }
       );
 
-      apps = forAllSystems (
+      apps = forBuildSystems (
         system:
         let
           program = "${self.packages.${system}.discobox-krun}/bin/discobox-krun";
@@ -112,28 +125,91 @@
         }
       );
 
-      checks = forAllSystems (system: {
+      checks = forBuildSystems (system: {
         inherit (self.packages.${system}) discobox-krun kernel-builder root-image-builder;
       });
 
-      devShells = forAllSystems (
+      devShells = forDevSystems (
         system:
         let
           pkgs = import nixpkgs { inherit system; };
-          libkrun = pkgs.libkrun.override {
-            withBlk = true;
-            withNet = true;
-          };
+          inherit (pkgs.stdenv.hostPlatform) isLinux;
+          # mkShell injects Nix's clang, and the darwin build has to compile
+          # Objective-C against Virtualization.framework and sign with
+          # /usr/bin/codesign. On the one platform where Apple owns the SDK,
+          # defer to the system Xcode toolchain (ADR 0066 §3).
+          mkDevShell = if isLinux then pkgs.mkShell else pkgs.mkShellNoCC;
         in
         {
-          default = pkgs.mkShell {
+          # Everything `go tool task <target>` needs. `task`, `golangci-lint`,
+          # and `ogen` are deliberately absent: go.mod already pins them as tool
+          # dependencies, and two pins drift (ADR 0066 §3).
+          default = mkDevShell {
+            packages = [
+              pkgs.go
+              pkgs.git
+              pkgs.gh
+              pkgs.jq
+              pkgs.bats
+              pkgs.shellcheck
+              pkgs.nodejs
+              pkgs.pnpm
+              pkgs.docker-client
+              pkgs.docker-buildx
+            ]
+            ++ pkgs.lib.optionals isLinux [
+              # `guest:verify` reads the assembled root filesystem with
+              # dumpe2fs; the guest image itself is built by Docker.
+              pkgs.e2fsprogs
+            ];
+
+            # Nix supplies a bootstrap Go only. The toolchain that actually
+            # compiles is the one go.mod names, fetched on demand.
+            GOTOOLCHAIN = "auto";
+
+            # The Docker CLI searches fixed plugin directories, never PATH, so a
+            # Nix-provided `docker buildx` is invisible without this.
+            DOCKER_CLI_PLUGIN_EXTRA_DIRS = "${pkgs.docker-buildx}/libexec/docker/cli-plugins";
+
+            shellHook = ''
+              DISCOBOX_ROOT="$(git rev-parse --show-toplevel 2>/dev/null || pwd)"
+              export DISCOBOX_ROOT
+              export DISCOBOX_COMPLETION_DIR="$DISCOBOX_ROOT/build/completions"
+              export DISCOBOX_BASH_COMPLETION="$DISCOBOX_COMPLETION_DIR/discobox.bash"
+              export DISCOBOX_ZSH_COMPLETION="$DISCOBOX_COMPLETION_DIR/_discobox"
+              export DISCOBOX_FISH_COMPLETION="$DISCOBOX_COMPLETION_DIR/discobox.fish"
+              export DISCOBOX_BASH_COMPLETION_USER_DIR="''${XDG_DATA_HOME:-$HOME/.local/share}/bash-completion/completions"
+              # `task build` writes here, and the built CLI is what a developer
+              # runs against `task dev`.
+              export PATH="$DISCOBOX_ROOT/build:$PATH"
+
+              # Completions come out of the CLI itself, so they are refreshed
+              # whenever one has been built and skipped silently before the
+              # first build.
+              if [ -x "$DISCOBOX_ROOT/build/discobox" ]; then
+                mkdir -p "$DISCOBOX_COMPLETION_DIR" "$DISCOBOX_BASH_COMPLETION_USER_DIR"
+                "$DISCOBOX_ROOT/build/discobox" completion bash > "$DISCOBOX_BASH_COMPLETION"
+                "$DISCOBOX_ROOT/build/discobox" completion zsh > "$DISCOBOX_ZSH_COMPLETION"
+                "$DISCOBOX_ROOT/build/discobox" completion fish > "$DISCOBOX_FISH_COMPLETION"
+                cp "$DISCOBOX_BASH_COMPLETION" "$DISCOBOX_BASH_COMPLETION_USER_DIR/discobox"
+              fi
+            '';
+          };
+        }
+        # Working on the libkrun launcher, and nothing else, needs Rust and a
+        # libkrun built with block and network support. That override is not the
+        # derivation cache.nixos.org has, so it stays out of the default shell
+        # rather than making every CI job build libkrun from source (ADR 0066
+        # §3). `nix build .#discobox-krun` needs neither shell.
+        // nixpkgs.lib.optionalAttrs (builtins.elem system buildSystems) {
+          libkrun = pkgs.mkShell {
             packages = [
               pkgs.cargo
               pkgs.clippy
               pkgs.rustc
               pkgs.rustfmt
               pkgs.pkg-config
-              libkrun
+              (overriddenLibkrun pkgs)
               pkgs.passt
               pkgs.docker-client
               pkgs.docker-buildx
@@ -144,6 +220,6 @@
         }
       );
 
-      formatter = forAllSystems (system: nixpkgs.legacyPackages.${system}.nixfmt);
+      formatter = forDevSystems (system: nixpkgs.legacyPackages.${system}.nixfmt);
     };
 }

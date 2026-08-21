@@ -40,9 +40,11 @@ uses, `DeleteVM` is reserved for an authorized pool deletion.
 
 Codesigning is part of the build, not of packaging: creating a VM requires
 `com.apple.security.virtualization`, and that entitlement exists only on a
-signed binary. `task sign:server` re-signs after every build and is wired into
-both `build:server` and the watchnbuild dev loop. `go run` cannot start a server
-that runs pools.
+signed binary. `task sign` re-signs after every build and is wired into
+`build:server`, `build:cli`, `release:binary`, and the watchnbuild dev loop.
+`disco` needs the entitlement as much as `discobox-server` does: it runs the
+server in-process, so it is the process that creates the VM (ADR 0066 §5).
+`go run` cannot start a server that runs pools.
 
 ## Transport boundary
 
@@ -137,11 +139,17 @@ not (ADR 0062 §5).
 ## Release boundary
 
 The guest image is built and released on its own line
-(`.github/workflows/guest-image.yml`, tags `guest/v*`), not with the discobox
-release. `DefaultGuestImage` pins what a server build boots. Its inputs change
-when Debian, the kernel, or Docker changes rather than when Discobox does, so
-tying the two would make a guest fix require a product release and a product
-release imply a new guest.
+(`.github/workflows/vm-image.yml`, tags `vm/v*`), not with the discobox release.
+`DefaultGuestImage` pins what a server build boots. Its inputs change when
+Debian, the kernel, or Docker changes rather than when Discobox does, so tying
+the two would make a guest fix require a product release and a product release
+imply a new guest.
+
+It publishes as `discobox-vm`. The name carries no backend because the artifacts
+are not vz's to own — libkrun is expected to boot the same set once ADR 0062 §9
+lands — and it is not called a pool image because that already means the
+pool-agent container (`dockerworker.DefaultPoolImage`), which this provider
+exposes as `workerImage` beside `guestImage`.
 
 The compatibility surface between the two lines is narrow by construction — the
 VSOCK port map, the storage layout, and `discobox-vsock-guest`, which is built

@@ -20,13 +20,14 @@
   unmount of both disks while Docker is writing to them.
 - **Pool IDs become directory names.** Anything reaching `filepath.Join` with
   the state directory goes through `validatePoolID` first.
-- **Signing is not optional.** A change to how the server binary is built must
-  keep `sign:server` in the path, or macOS pools stop starting with an opaque
-  framework error.
+- **Signing is not optional.** A change to how either binary is built must keep
+  `task sign` in the path — for `disco` as much as for `discobox-server`, since
+  `disco` runs the server in-process — or macOS pools stop starting with an
+  opaque framework error.
 - **Do not replace the clock step with NTP, or make it conditional.** The guest
   is hours off precisely when the Mac has slept, which is the case an NTP
   daemon refuses to correct on its own. Every 401 in both directions traces
   back here.
 - **Guest image changes are a separate release.** Editing `image/` does not ship
-  with the server; it ships when a `guest/v*` tag is cut and `DefaultGuestImage`
-  is re-pinned.
+  with the server; it ships when a `vm/v*` tag is cut and `DefaultGuestImage` is
+  re-pinned to the new `discobox-vm` digest.

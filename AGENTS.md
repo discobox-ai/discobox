@@ -38,6 +38,9 @@ Do not create new branches or worktrees unless explicitly told to.
 
 ## Commands
 
+The toolchain comes from the Nix flake. Enter it with `nix develop`, or let
+direnv do it via `.envrc`; every command below assumes that shell.
+
 Use Taskfile targets through the Go tool-managed `task` binary:
 
 ```bash
@@ -54,6 +57,14 @@ go tool task check-hooks # validate hook definitions and hook-related code
 go tool task rerun-hooks # re-run failed or never-run hooks
 go tool task generate   # regenerate generated files
 go tool task build      # build server, CLI, and hooks CLI
+```
+
+What CI runs, and what to run before pushing something build-related:
+
+```bash
+go tool task ci:check   # check plus the windows/amd64 cross type-check
+go tool task ci:test    # test:all against label-only harness images
+go tool task verify     # fmt, go.mod, generated files, and Mermaid are current
 ```
 
 At the end of a code-changing task, run `go tool task check-hooks` to validate

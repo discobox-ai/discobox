@@ -17,6 +17,20 @@ vars:
   HOOKS_BINARY: build/discobox-hooks{{.EXE}}
   HOOKS_MAIN: ./cmd/discobox-hooks
   PACKAGES: ./...
+  # ghcr.io/<owner>, so a fork publishes into its own namespace instead of the
+  # upstream one. Actions knows the owner; elsewhere it comes from the origin
+  # remote, and a checkout whose origin is not GitHub leaves this empty rather
+  # than guessing. Override with REGISTRY=.
+  REGISTRY:
+    sh: |
+      owner="${GITHUB_REPOSITORY_OWNER:-}"
+      if [ -z "$owner" ]; then
+        owner="$(git remote get-url origin 2>/dev/null | sed -E 's#^(git@github.com:|https://github.com/)##; s#/.*$##')"
+      fi
+      if [ -n "$owner" ]; then printf 'ghcr.io/%s' "$owner"; fi
+  # Multi-architecture and multi-output builds both need the docker-container
+  # driver; the default docker driver supports neither.
+  BUILDX_BUILDER: discobox
 
 tasks:
   default:
@@ -40,20 +54,31 @@ tasks:
     cmds:
       - mkdir -p build
       - cd server && go build -o ../{{.BINARY}} {{.SERVER_MAIN}}
-      - task: sign:server
+      - task: sign
+        vars: { SIGN_BINARY: '{{.BINARY}}' }
 
-  sign:server:
-    desc: Codesign discobox-server with the Virtualization entitlement (macOS only)
+  sign:
+    desc: Codesign SIGN_BINARY with the Virtualization entitlement (macOS only)
     # Creating a Virtualization.framework VM requires the entitlement, and it
     # only exists on a signed binary, so every rebuild has to be re-signed. This
     # is why `go run` cannot start a macOS server that runs pools. Ad-hoc
     # signing is enough locally; distribution needs Developer ID and
     # notarization. Task skips the whole target off darwin.
+    #
+    # It takes a binary rather than naming one: `disco` runs the server
+    # in-process and is what a release actually ships, so it needs the
+    # entitlement as much as discobox-server does (ADR 0066 §5).
     platforms: [darwin]
     vars:
       ENTITLEMENTS: server/providers/vz/vz.entitlements
     cmds:
-      - codesign --force --sign - --entitlements {{.ENTITLEMENTS}} {{.BINARY}}
+      - |
+        set -eu
+        if [ -z "{{.SIGN_BINARY}}" ]; then
+          echo "sign: SIGN_BINARY is required" >&2
+          exit 1
+        fi
+        codesign --force --sign - --entitlements {{.ENTITLEMENTS}} "{{.SIGN_BINARY}}"
 
   build:cli:
     desc: Compile discobox CLI
@@ -68,6 +93,8 @@ tasks:
       - mkdir -p build
       - rm -f {{.CLI_BINARY}}
       - cd cli && go build -o ../{{.CLI_BINARY}} {{.CLI_MAIN}}
+      - task: sign
+        vars: { SIGN_BINARY: '{{.CLI_BINARY}}' }
 
   build:hooks:
     desc: Compile discobox-hooks CLI
@@ -77,6 +104,9 @@ tasks:
 
   build:cp-relay:
     desc: Cross-compile the guest control-plane relay embedded in the Windows server
+    # Several targets depend on this and the output is identical for all of
+    # them, so one run per invocation is enough.
+    run: once
     vars:
       RELAY_OUT: server/providers/wslc/relay/artifacts/discobox-cp-relay.linux-amd64.gz
     cmds:
@@ -356,6 +386,26 @@ tasks:
       - cd hooks && "$(go -C .. tool -n golangci-lint)" run
       - cd sandbox-agent && "$(go -C .. tool -n golangci-lint)" run
 
+  check:windows:
+    desc: Type-check the whole tree, tests included, for windows/amd64
+    # wslc drives WSL by shelling out, so nothing in the tree is cgo or
+    # build-tagged for Windows and the whole thing cross-compiles. `go vet`
+    # rather than `go build` because it type-checks the test tree too, which is
+    # where the Windows-only code paths are exercised (ADR 0066 §4).
+    env:
+      GOOS: windows
+      GOARCH: amd64
+      CGO_ENABLED: "0"
+    cmds:
+      - go vet {{.PACKAGES}}
+      - cd cli && go vet ./...
+      - cd termpane && go vet ./...
+      - cd server && go vet ./...
+      - cd pool-agent && go vet ./...
+      - cd gormdb && go vet ./...
+      - cd hooks && go vet ./...
+      - cd sandbox-agent && go vet ./...
+
   check-hooks:
     desc: Run hooks checks
     cmds:
@@ -386,10 +436,360 @@ tasks:
       - cd hooks && "$(go -C .. tool -n golangci-lint)" run --fix
       - cd sandbox-agent && "$(go -C .. tool -n golangci-lint)" run --fix
 
+  fmt:
+    desc: Format every tracked Go source
+    cmds:
+      - git ls-files -z '*.go' | xargs -0 gofmt -w
+
+  fmt:verify:
+    desc: Fail when a tracked Go source is not gofmt-clean
+    cmds:
+      - |
+        set -eu
+        unformatted="$(git ls-files -z '*.go' | xargs -0 gofmt -l)"
+        if [ -n "$unformatted" ]; then
+          echo "not gofmt-clean (run: go tool task fmt):" >&2
+          echo "$unformatted" >&2
+          exit 1
+        fi
+
+  tidy:
+    desc: Tidy every workspace module's go.mod/go.sum
+    cmds:
+      # The rules are involved enough (workspace vs GOWORK=off resolution) to
+      # live in one script the Discobot go.mod hook runs too.
+      - scripts/go-mod-tidy.sh
+
+  tidy:verify:
+    desc: Fail when a module's go.mod/go.sum is not tidy
+    cmds:
+      - task: verify:unchanged
+        vars: { VERIFY_WHAT: "go.mod/go.sum", VERIFY_TASK: tidy }
+
   generate:
     desc: Regenerate generated files
     cmds:
       - go generate {{.PACKAGES}}
+      # Nested modules generate their own API surfaces and are not reached by
+      # the root pattern.
+      - cd pool-agent && go generate ./...
+      - cd hooks && go generate ./...
+
+  generate:verify:
+    desc: Fail when a generated file is stale
+    # Dagger ran the generators as checks; this is what replaces that
+    # (ADR 0066 "Consequences").
+    cmds:
+      - task: verify:unchanged
+        vars: { VERIFY_WHAT: "generated files", VERIFY_TASK: generate }
+
+  verify:unchanged:
+    desc: Run VERIFY_TASK and fail if it changed anything tracked
+    internal: true
+    cmds:
+      # Compared against a snapshot rather than against a clean tree: CI always
+      # runs this on a fresh checkout, but a developer's tree is usually dirty
+      # for unrelated reasons and that must not read as staleness.
+      - |
+        set -eu
+        before="$(git status --porcelain; git --no-pager diff)"
+        go tool task {{.VERIFY_TASK}}
+        after="$(git status --porcelain; git --no-pager diff)"
+        if [ "$before" != "$after" ]; then
+          echo "{{.VERIFY_WHAT}} are stale: 'go tool task {{.VERIFY_TASK}}' changed the tree." >&2
+          echo "Run it and commit the result." >&2
+          git status --porcelain >&2
+          exit 1
+        fi
+
+  verify:
+    desc: Fail when formatting, module files, generated files, or diagrams are stale
+    cmds:
+      - task: fmt:verify
+      - task: tidy:verify
+      - task: generate:verify
+      - task: check:mermaid
+
+  buildx:builder:
+    desc: Create the docker-container buildx builder multi-arch and multi-output builds need
+    status:
+      - docker buildx inspect {{.BUILDX_BUILDER}} >/dev/null 2>&1
+    cmds:
+      - docker buildx create --name {{.BUILDX_BUILDER}} --driver docker-container >/dev/null
+
+  ci:check:
+    desc: "The static half of CI on Linux: every lint pass plus the windows/amd64 cross type-check"
+    cmds:
+      - task: check
+      - task: check:windows
+
+  ci:test:
+    desc: Run every module's tests the way CI does, against label-only harness images
+    deps:
+      - ci:harness-label-images
+    env:
+      # Seeding the built-in harness configs inspects each image and skips what
+      # it cannot find, and a sandbox cannot be created without one, so a runner
+      # that has never built the real images fails every sandbox test. These
+      # stand-ins carry the metadata label and nothing else (ADR 0066 §7).
+      DISCOBOX_HARNESS_CODEX_IMAGE: discobox-harness-codex:ci
+      DISCOBOX_HARNESS_CLAUDE_CODE_IMAGE: discobox-harness-claude-code:ci
+      DISCOBOX_HARNESS_SHELL_IMAGE: discobox-harness-shell:ci
+    cmds:
+      # A nested invocation rather than `task: test:all`: Task applies env to a
+      # task's own commands only, so a called task would not see the overrides.
+      - go tool task test:all
+
+  ci:darwin:
+    desc: "The macOS half of CI: static checks plus the native, signed release build"
+    platforms: [darwin]
+    cmds:
+      - task: check
+      - task: release:build
+
+  ci:harness-label-images:
+    desc: Build a label-only stand-in for each built-in harness image
+    cmds:
+      - task: ci:harness-label-image
+        vars: { HARNESS: codex }
+      - task: ci:harness-label-image
+        vars: { HARNESS: claude-code }
+      - task: ci:harness-label-image
+        vars: { HARNESS: shell }
+
+  ci:harness-label-image:
+    desc: Build one label-only harness stand-in (HARNESS=codex|claude-code|shell)
+    requires:
+      vars: [HARNESS]
+    vars:
+      HARNESS_DIR: '{{if eq .HARNESS "codex"}}codex-cli{{else}}{{.HARNESS}}{{end}}'
+    cmds:
+      - >-
+        docker build -f test/harness-label-stub/Dockerfile
+        --build-arg HARNESS_METADATA="$(jq -c . harness/{{.HARNESS_DIR}}/image.json)"
+        -t discobox-harness-{{.HARNESS}}:ci test/harness-label-stub
+
+  release:build:
+    desc: Build this platform's release binaries into build/release/bin
+    # Release binaries are built on the platform they target because darwin has
+    # to be: cgo, the macOS SDK, and codesigning are all native-only
+    # (ADR 0066 §4). Each platform's job contributes its own half.
+    cmds:
+      - rm -rf build/release/bin
+      - task: release:build:linux
+      - task: release:build:darwin
+
+  release:build:linux:
+    desc: Build the Linux and Windows release binaries
+    platforms: [linux]
+    cmds:
+      - task: release:binary
+        vars: { TARGET_OS: linux, TARGET_ARCH: amd64 }
+      - task: release:binary
+        vars: { TARGET_OS: linux, TARGET_ARCH: arm64 }
+      # Nix does not run on Windows and nothing in the tree is cgo or
+      # build-tagged for it, so the Windows binary is cross-compiled here. The
+      # Windows *tests* still run natively (ADR 0066 §4).
+      - task: release:binary
+        vars: { TARGET_OS: windows, TARGET_ARCH: amd64 }
+
+  release:build:darwin:
+    desc: Build and sign the macOS release binary
+    platforms: [darwin]
+    # darwin/amd64 is not shipped: ADR 0062 defers Intel Macs and
+    # assemble-guest-image refuses non-arm64, so an Intel binary would install
+    # and then fail at the first pool.
+    cmds:
+      - task: release:binary
+        vars: { TARGET_OS: darwin, TARGET_ARCH: arm64 }
+
+  release:binary:
+    desc: Build one release disco binary (TARGET_OS=, TARGET_ARCH=)
+    requires:
+      vars: [TARGET_OS, TARGET_ARCH]
+    deps:
+      # disco embeds the server, and the server embeds the guest relay.
+      - build:cp-relay
+    vars:
+      EXT: '{{if eq .TARGET_OS "windows"}}.exe{{end}}'
+      OUT: build/release/bin/discobox-{{.TARGET_OS}}-{{.TARGET_ARCH}}{{.EXT}}
+      # cgo only where the platform's hypervisor bindings need it: Code-Hex/vz
+      # on darwin. Everywhere else a static binary is the better artifact.
+      CGO: '{{if eq .TARGET_OS "darwin"}}1{{else}}0{{end}}'
+      # A release build autolaunches its own in-process server; a development
+      # build never does (cli/internal/cli/server_autolaunch_test.go).
+      LDFLAGS: -s -w -X github.com/discobox-ai/discobox/cli/internal/cli.serverAutoLaunch=true
+    cmds:
+      - mkdir -p build/release/bin
+      - >-
+        cd cli &&
+        GOOS={{.TARGET_OS}} GOARCH={{.TARGET_ARCH}} CGO_ENABLED={{.CGO}}
+        go build -trimpath -ldflags="{{.LDFLAGS}}" -o ../{{.OUT}} {{.CLI_MAIN}}
+      # After the link and after stripping: signing rewrites the binary, so
+      # nothing may touch it afterwards (ADR 0066 §5).
+      - task: sign
+        vars: { SIGN_BINARY: '{{.OUT}}' }
+
+  release:publish:
+    desc: Create the GitHub release for RELEASE_TAG and upload build/release/bin
+    # Consumes whatever populated build/release/bin, so the fan-out that fills
+    # it can be GitHub's matrix or one developer's machine.
+    cmds:
+      - |
+        set -eu
+        tag="{{.RELEASE_TAG}}"
+        if [ -z "$tag" ]; then
+          tag="${GITHUB_REF_NAME:-}"
+        fi
+        case "$tag" in
+          v*) ;;
+          *) echo "release:publish: set RELEASE_TAG=v<version> (or run from a v* tag)" >&2; exit 1 ;;
+        esac
+        if [ -z "$(ls -A build/release/bin 2>/dev/null)" ]; then
+          echo "release:publish: build/release/bin is empty; run release:build first" >&2
+          exit 1
+        fi
+        gh release view "$tag" >/dev/null 2>&1 ||
+          gh release create "$tag" --verify-tag --title "$tag" --generate-notes
+        gh release upload "$tag" build/release/bin/* --clobber
+
+  release:images:
+    desc: Build and push the multi-arch agent images for RELEASE_TAG
+    cmds:
+      - task: release:image
+        vars: { IMAGE: pool-agent }
+      - task: release:image
+        vars: { IMAGE: sandbox-agent }
+
+  release:image:
+    desc: Build and push one multi-arch agent image (IMAGE=pool-agent|sandbox-agent)
+    requires:
+      vars: [IMAGE]
+    vars:
+      PLATFORMS: linux/amd64,linux/arm64
+    cmds:
+      - |
+        set -eu
+        tag="{{.RELEASE_TAG}}"
+        if [ -z "$tag" ]; then
+          tag="${GITHUB_REF_NAME:-}"
+        fi
+        case "$tag" in
+          v*) ;;
+          *) echo "release:image: set RELEASE_TAG=v<version> (or run from a v* tag)" >&2; exit 1 ;;
+        esac
+        if [ -z "{{.REGISTRY}}" ]; then
+          echo "release:image: could not resolve a registry from the origin remote; pass REGISTRY=ghcr.io/<owner>" >&2
+          exit 1
+        fi
+        ref="{{.REGISTRY}}/discobox-{{.IMAGE}}:$tag"
+
+        # depot builds each architecture on a native machine, so there is no
+        # per-arch fan-out and no manifest list to assemble (ADR 0066 §6).
+        if command -v depot >/dev/null 2>&1; then
+          depot build --platform {{.PLATFORMS}} -f {{.IMAGE}}/Dockerfile -t "$ref" --push .
+        else
+          echo "depot not found; falling back to emulated docker buildx." >&2
+          echo "Both Dockerfiles run their Go stage FROM --platform=\$BUILDPLATFORM, so no Go" >&2
+          echo "compilation is emulated. Only the Debian runtime stages are: near-free for" >&2
+          echo "pool-agent, slow for sandbox-agent's apt and code-server install." >&2
+          # buildx needs both of these for a foreign architecture and says
+          # nothing useful when they are missing.
+          docker run --privileged --rm tonistiigi/binfmt --install arm64,amd64 >/dev/null
+          go tool task buildx:builder
+          docker buildx build --builder {{.BUILDX_BUILDER}} --platform {{.PLATFORMS}} \
+            -f {{.IMAGE}}/Dockerfile -t "$ref" --push .
+        fi
+
+  vm:build:
+    desc: Build the pool VM's boot artifacts into build/vm
+    # The VM image has its own release line (ADR 0062 §3); this is its build
+    # step, runnable locally so its verification is too.
+    deps:
+      - buildx:builder
+    cmds:
+      - rm -rf build/vm
+      - >-
+        docker buildx build --builder {{.BUILDX_BUILDER}}
+        --platform linux/arm64
+        --file server/providers/vz/image/Dockerfile
+        --output type=local,dest=build/vm
+        .
+
+  vm:verify:
+    desc: Verify the built VM artifacts will actually boot
+    # A guest that publishes a kernel the hypervisor cannot load, or a root
+    # filesystem that will not mount, fails silently: the VM boots to a blank
+    # console. Both are cheap to check here and impossible to diagnose from
+    # macOS.
+    cmds:
+      - |
+        set -eu
+        cd build/vm
+        ls -l
+        for artifact in vmlinux initrd.img root.ext4; do
+          test -s "$artifact" || { echo "missing or empty: $artifact" >&2; exit 1; }
+        done
+        # Virtualization.framework requires an uncompressed arm64 Image, which
+        # carries "ARMd" at offset 0x38.
+        magic=$(dd if=vmlinux bs=1 skip=56 count=4 status=none)
+        test "$magic" = "ARMd" || { echo "vmlinux is not an uncompressed arm64 kernel Image" >&2; exit 1; }
+        dumpe2fs -h root.ext4 | grep -q "Filesystem volume name:   discobox-root"
+        echo "VM artifacts verified"
+
+  vm:publish:
+    desc: Push the VM image for VM_TAG and report the digest to pin
+    deps:
+      - buildx:builder
+    cmds:
+      - |
+        set -eu
+        tag="{{.VM_TAG}}"
+        if [ -z "$tag" ]; then
+          # A git tag of vm/v1.2.3 carries a slash, which is not a legal Docker
+          # tag. The prefix scopes the VM image's release line in the git tag
+          # namespace; the image tag is the version alone.
+          case "${GITHUB_REF_NAME:-}" in
+            vm/v*) tag="${GITHUB_REF_NAME#vm/}" ;;
+          esac
+        fi
+        case "$tag" in
+          v*) ;;
+          *) echo "vm:publish: set VM_TAG=v<version> (or run from a vm/v* tag)" >&2; exit 1 ;;
+        esac
+        if [ -z "{{.REGISTRY}}" ]; then
+          echo "vm:publish: could not resolve a registry from the origin remote; pass REGISTRY=ghcr.io/<owner>" >&2
+          exit 1
+        fi
+        # discobox-vm, with no backend in the name: libkrun is expected to boot
+        # the same artifacts once ADR 0062 §9 lands, and "pool image" already
+        # means the pool-agent container (dockerworker.DefaultPoolImage).
+        ref="{{.REGISTRY}}/discobox-vm:$tag"
+
+        # Run after vm:build in the same session and every stage is a cache
+        # hit in the builder; only the push is new work.
+        docker buildx build --builder {{.BUILDX_BUILDER}} \
+          --platform linux/arm64 \
+          --file server/providers/vz/image/Dockerfile \
+          --tag "$ref" --push \
+          --metadata-file build/vm-push.json \
+          .
+        digest="$(jq -r '."containerimage.digest"' build/vm-push.json)"
+
+        # The tag is a convenience; the server pins the digest.
+        report() {
+          echo "### VM image published"
+          echo
+          echo 'Pin this in `server/providers/vz/provider.go` (`DefaultGuestImage`):'
+          echo
+          echo '```go'
+          echo "const DefaultGuestImage = \"{{.REGISTRY}}/discobox-vm@$digest\""
+          echo '```'
+        }
+        report
+        if [ -n "${GITHUB_STEP_SUMMARY:-}" ]; then
+          report >> "$GITHUB_STEP_SUMMARY"
+        fi
 
   clean:
     desc: Remove local build artifacts

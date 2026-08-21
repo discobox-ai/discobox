@@ -1,0 +1,83 @@
+# Every job body is one Taskfile target (ADR 0066 §1). What each target does
+# lives in Taskfile.yml and runs the same way in a terminal.
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches:
+      - main
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v6.0.2
+      - uses: ./.github/actions/task
+        with:
+          target: ci:check
+
+  test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v6.0.2
+      - uses: ./.github/actions/task
+        with:
+          target: ci:test
+
+  verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v6.0.2
+      - uses: ./.github/actions/task
+        with:
+          target: verify
+
+  # The release artifacts, built on every change rather than only at tag time.
+  # The Dagger release module rotted for months precisely because nothing but a
+  # tag exercised it (ADR 0066 Context).
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v6.0.2
+      - uses: ./.github/actions/task
+        with:
+          target: release:build
+
+  # An arm64 Mac: the vz provider is cgo against Virtualization.framework, and
+  # the entitlement it needs can only be applied by /usr/bin/codesign. Nothing
+  # on Linux compiles that code, let alone signs it (ADR 0066 §4).
+  darwin:
+    runs-on: macos-15
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v6.0.2
+      - uses: ./.github/actions/task
+        with:
+          target: ci:darwin
+
+  # Nix does not run on Windows, so this is the "do whatever works" lane
+  # (ADR 0066 §4). Compiling for Windows is covered by the cross type-check in
+  # ci:check; this job exists because the named-pipe transport, wslc's process
+  # handling, and ConPTY are code paths no other runner executes.
+  windows:
+    runs-on: windows-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v6.0.2
+      - uses: actions/setup-go@v7.0.0
+        with:
+          go-version-file: go.mod
+          cache-dependency-path: "**/go.sum"
+      - run: go tool task test:all

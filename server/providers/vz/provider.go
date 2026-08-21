@@ -56,13 +56,19 @@ const (
 	rootArtifact   = "root.ext4"
 )
 
-// DefaultGuestImage is the published guest image. It is released and versioned
-// on its own line, independently of the discobox release, because it is a
+// DefaultGuestImage is the published VM image. It is released and versioned on
+// its own line, independently of the discobox release, because it is a
 // distribution userland that boots dockerd and changes when the distribution
 // does rather than when Discobox does (ADR 0062 §3). A release pins this to a
 // digest; a tag here means whoever runs the server decides which build they
 // get.
-const DefaultGuestImage = "ghcr.io/discobox-ai/discobox-vz-guest:v1"
+//
+// Published as discobox-vm, with no backend in the name: vz is the only driver
+// that boots it today, but libkrun is expected to boot the same artifacts once
+// ADR 0062 §9 lands. It is deliberately not called a pool image — that already
+// means the pool-agent container (dockerworker.DefaultPoolImage), which every
+// VM provider exposes as workerImage alongside this one.
+const DefaultGuestImage = "ghcr.io/discobox-ai/discobox-vm:v1"
 
 // Config is the persisted vz provider configuration.
 type Config struct {

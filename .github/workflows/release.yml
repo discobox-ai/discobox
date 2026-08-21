@@ -1,0 +1,97 @@
+# A release is cut by pushing a v* tag. This workflow decides only where each
+# step runs and how artifacts move between jobs; every step is a Taskfile target
+# that also runs on a developer's machine (ADR 0066 §1).
+name: Release
+
+on:
+  push:
+    tags:
+      - "v*"
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: Existing v* tag to release
+        required: true
+
+permissions:
+  contents: read
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+env:
+  # workflow_dispatch runs off a branch, so GITHUB_REF_NAME is not the tag.
+  RELEASE_TAG: ${{ inputs.tag || github.ref_name }}
+
+jobs:
+  # Each platform builds what only it can build: darwin because cgo, the macOS
+  # SDK, and codesigning are native-only; Linux because it also cross-compiles
+  # the Windows binary (ADR 0066 §4).
+  binaries:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - runs-on: ubuntu-latest
+            artifact: linux
+          - runs-on: macos-15
+            artifact: darwin
+    runs-on: ${{ matrix.runs-on }}
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v6.0.2
+      - uses: ./.github/actions/task
+        with:
+          target: release:build
+      - uses: actions/upload-artifact@v7.0.1
+        with:
+          name: release-bin-${{ matrix.artifact }}
+          path: build/release/bin
+          if-no-files-found: error
+
+  images:
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    permissions:
+      contents: read
+      packages: write
+    env:
+      DEPOT_PROJECT_ID: ${{ vars.DEPOT_PROJECT_ID }}
+      DEPOT_TOKEN: ${{ secrets.DEPOT_TOKEN }}
+    steps:
+      - uses: actions/checkout@v6.0.2
+      # Without a Depot project the Taskfile falls back to emulated buildx,
+      # which is correct but slow for sandbox-agent's Debian stage
+      # (ADR 0066 §6).
+      - uses: depot/setup-action@v1.7.2
+        if: vars.DEPOT_PROJECT_ID != ''
+      - uses: docker/login-action@v3.6.0
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - uses: ./.github/actions/task
+        with:
+          target: release:images
+
+  publish:
+    needs: [binaries, images]
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    permissions:
+      contents: write
+    env:
+      GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+    steps:
+      - uses: actions/checkout@v6.0.2
+      # Both matrix legs land in one directory; release:publish uploads
+      # whatever populated it.
+      - uses: actions/download-artifact@v8.0.1
+        with:
+          pattern: release-bin-*
+          merge-multiple: true
+          path: build/release/bin
+      - uses: ./.github/actions/task
+        with:
+          target: release:publish

@@ -155,3 +155,45 @@ Root module package map:
 
 Submodule package docs belong in their owning module trees and are intentionally
 not listed here.
+
+## Build, Check, and Release
+
+Three layers, and the top one holds no logic (ADR 0066):
+
+```mermaid
+flowchart TD
+    workflows[".github/workflows/<br/>when, on which runner, how artifacts move"]
+    action[".github/actions/task<br/>checkout done, install Nix, restore caches, run one target"]
+    taskfile["Taskfile.yml<br/>every step of check, test, build, release"]
+    flake["flake.nix<br/>system tools and environment"]
+
+    workflows --> action --> taskfile --> flake
+```
+
+- `flake.nix` owns the toolchain. `nix develop` (or direnv via `.envrc`) is the
+  entry point; its `shellHook` exports the `DISCOBOX_*` environment and
+  regenerates CLI completions. `GOTOOLCHAIN=auto` means Nix supplies a bootstrap
+  Go and `go.mod` names the one that compiles. `devShells.libkrun` is the
+  separate shell for launcher work; the libkrun artifacts themselves are
+  `nix build .#discobox-krun`.
+- `Taskfile.yml` owns every step. `go tool task --list` is the index; `task`,
+  `golangci-lint`, and `ogen` are `go tool` dependencies pinned by `go.mod`, not
+  by Nix.
+- `.github/workflows/` decides only *when* a target runs and on which runner.
+  Every job body is `nix develop -c go tool task <target>`, carried by the
+  `.github/actions/task` composite action.
+
+Release binaries are built on the platform they target — darwin has to be, since
+`vz` is cgo against Virtualization.framework and its entitlement is applied by
+`codesign` at build time (see
+[`server/providers/vz/DESIGN.md`](server/providers/vz/DESIGN.md)). Windows is the
+exception in both directions: no Nix, so its tests run under `actions/setup-go`,
+and no cgo, so its binary is cross-compiled from the Linux job. Agent images are
+built once for both architectures by `depot build`, falling back to emulated
+`docker buildx`.
+
+The pool VM image — the kernel, initrd, and root filesystem a VM-backed pool
+boots — is a separate release line with its own `vm/v*` tags and its own
+workflow (ADR 0062 §3); the server pins its digest. It publishes as
+`discobox-vm` rather than under a backend name because only `vz` boots it today
+and libkrun is expected to boot the same artifacts (ADR 0062 §9).
