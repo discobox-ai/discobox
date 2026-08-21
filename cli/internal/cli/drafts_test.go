@@ -57,14 +57,11 @@ func TestPromptDraftsLiveUnderXDGStateHome(t *testing.T) {
 	}
 
 	path := filepath.Join(state, "discobox", "cli", "prompt-drafts.json")
-	info, err := os.Stat(path)
-	if err != nil {
-		t.Fatalf("stat %s: %v", path, err)
-	}
 	// A prompt is the user's own writing, so the file it sits in is theirs.
-	if perm := info.Mode().Perm(); perm != 0o600 {
-		t.Errorf("%s is %v, want 0600", path, perm)
-	}
+	// Asserted through the helper each platform defines, because Windows has no
+	// Unix mode to report: writeStateFile restricts the file by ACL there, and
+	// Stat still says -rw-rw-rw- whatever the ACL says.
+	assertPrivateToUser(t, path)
 }
 
 // A broken or missing file means the window opens empty, which is where it used

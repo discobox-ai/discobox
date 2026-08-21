@@ -213,7 +213,7 @@ func TestResolveRunSourceLocalSubdirectoryOutsideCurrentWorkingDirectoryKeepsSub
 	if err := os.MkdirAll(subdir, 0o755); err != nil {
 		t.Fatal(err)
 	}
-	t.Chdir(t.TempDir())
+	t.Chdir(testWorkspace(t))
 
 	source, err := resolveRunSource(context.Background(), subdir, runSourceOptions{IncludeDirty: IncludeDirtyAuto})
 	if err != nil {
@@ -226,7 +226,7 @@ func TestResolveRunSourceLocalSubdirectoryOutsideCurrentWorkingDirectoryKeepsSub
 
 func TestResolveRunSourceLocalRepoRootOutsideCurrentWorkingDirectoryUsesRepoRoot(t *testing.T) {
 	repo := newRunSourceTestRepo(t)
-	t.Chdir(t.TempDir())
+	t.Chdir(testWorkspace(t))
 
 	source, err := resolveRunSource(context.Background(), repo, runSourceOptions{IncludeDirty: IncludeDirtyAuto})
 	if err != nil {
@@ -321,7 +321,7 @@ func TestResolveRunSourceRemoteBranchPinsCommitAndKeepsBranchName(t *testing.T) 
 
 func newRunSourceTestRepo(t *testing.T) string {
 	t.Helper()
-	repo := t.TempDir()
+	repo := testWorkspace(t)
 	git := runSourceTestGit(t, repo)
 	git("init", "-b", "feature-foo")
 	git("config", "user.email", "test@example.com")
@@ -349,7 +349,7 @@ func runSourceTestGit(t *testing.T, dir string) func(...string) string {
 }
 
 func TestResolveRunSourceDirectoryWithoutRepositoryCarriesEverythingAsASnapshot(t *testing.T) {
-	dir := t.TempDir()
+	dir := testWorkspace(t)
 	if err := os.WriteFile(filepath.Join(dir, "a.txt"), []byte("a\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
@@ -411,7 +411,7 @@ func TestResolveRunSourceDirectoryWithoutRepositoryCarriesEverythingAsASnapshot(
 }
 
 func TestResolveRunSourceEmptyDirectoryWithoutRepositoryStartsFromTheEmptyCommit(t *testing.T) {
-	dir := t.TempDir()
+	dir := testWorkspace(t)
 
 	source, err := resolveRunSource(context.Background(), dir, runSourceOptions{IncludeDirty: IncludeDirtyAuto})
 	if err != nil {
@@ -431,7 +431,7 @@ func TestResolveRunSourceEmptyDirectoryWithoutRepositoryStartsFromTheEmptyCommit
 }
 
 func TestResolveRunSourceDirectoryWithoutRepositoryRejectsWhatItCannotMean(t *testing.T) {
-	dir := t.TempDir()
+	dir := testWorkspace(t)
 	if err := os.WriteFile(filepath.Join(dir, "a.txt"), []byte("a\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}

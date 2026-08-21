@@ -196,7 +196,7 @@ func TestBuildPromptSandboxBodySnapshotsEachIncludedSourceOnItsOwn(t *testing.T)
 // way the primary source would be, out of a throwaway repository the caller
 // closes.
 func TestBuildPromptSandboxBodyIncludesADirectoryWithNoRepository(t *testing.T) {
-	reference := filepath.Join(t.TempDir(), "foo")
+	reference := filepath.Join(testWorkspace(t), "foo")
 	if err := os.MkdirAll(reference, 0o755); err != nil {
 		t.Fatal(err)
 	}
@@ -239,7 +239,7 @@ func TestBuildPromptSandboxBodyIncludesADirectoryWithNoRepository(t *testing.T) 
 // asserting on, which t.TempDir's own generated name is not.
 func newNamedRunSourceTestRepo(t *testing.T, name string) string {
 	t.Helper()
-	repo := filepath.Join(t.TempDir(), name)
+	repo := filepath.Join(testWorkspace(t), name)
 	if err := os.MkdirAll(repo, 0o755); err != nil {
 		t.Fatal(err)
 	}
