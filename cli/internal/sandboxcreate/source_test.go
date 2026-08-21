@@ -485,26 +485,61 @@ func testLocalSources(source resolvedRunSource) *LocalSources {
 // inside the sandbox on the platform the test is running on.
 //
 // On a POSIX host the destination mirrors the host path, because a POSIX path
-// is already usable inside the sandbox. Windows paths are not -- the sandbox
-// runs Linux -- so there the source goes to the default container location and
-// the working directory keeps only its position within the repository. The
-// invariant both share, and what these tests are really about, is that the
+// is already usable inside the sandbox. A Windows path is not -- the sandbox
+// runs Linux -- so it is mirrored under the /mnt name WSL gives that same path.
+// The invariant both share, and what these tests are really about, is that the
 // working directory sits at the same relative position under the source root.
 func wantRunDestination(t *testing.T, repoRoot, workingDirectory string) resolvedRunSourceDestination {
 	t.Helper()
 	if runtime.GOOS != "windows" {
 		return resolvedRunSourceDestination{Directory: repoRoot, WorkingDirectory: workingDirectory}
 	}
-	want := resolvedRunSourceDestination{
-		Directory:        defaultRunSourceDir,
-		WorkingDirectory: defaultRunWorkingDir,
+	return resolvedRunSourceDestination{
+		Directory:        wantWSLPath(t, repoRoot),
+		WorkingDirectory: wantWSLPath(t, workingDirectory),
 	}
-	rel, err := filepath.Rel(repoRoot, workingDirectory)
-	if err != nil {
-		t.Fatalf("relative path of %s within %s: %v", workingDirectory, repoRoot, err)
+}
+
+// wantSandboxPath is the path a host directory has inside the sandbox on the
+// platform the test is running on.
+func wantSandboxPath(t *testing.T, hostPath string) string {
+	t.Helper()
+	if runtime.GOOS != "windows" {
+		return hostPath
 	}
-	if rel != "." {
-		want.WorkingDirectory = path.Join(defaultRunSourceDir, filepath.ToSlash(rel))
+	return wantWSLPath(t, hostPath)
+}
+
+// wantWSLPath spells a Windows path the way WSL mounts it, written out here
+// rather than taken from the code under test.
+func wantWSLPath(t *testing.T, hostPath string) string {
+	t.Helper()
+	volume := filepath.VolumeName(hostPath)
+	if len(volume) != 2 || volume[1] != ':' {
+		t.Fatalf("test path %s has no drive letter to mount", hostPath)
 	}
-	return want
+	return path.Clean("/mnt/" + strings.ToLower(volume[:1]) + filepath.ToSlash(hostPath[len(volume):]))
+}
+
+func TestWSLPathLowercasesTheDriveAndKeepsTheRestOfTheCase(t *testing.T) {
+	for _, tt := range []struct {
+		hostPath string
+		want     string
+		ok       bool
+	}{
+		{hostPath: `E:\src\disco2`, want: "/mnt/e/src/disco2", ok: true},
+		{hostPath: `C:\Users\darre`, want: "/mnt/c/Users/darre", ok: true},
+		{hostPath: "C:/Users/darre", want: "/mnt/c/Users/darre", ok: true},
+		{hostPath: `c:\`, want: "/mnt/c", ok: true},
+		// A path on a share, or already inside a distro, has no /mnt name.
+		{hostPath: `\\wsl$\Ubuntu\home\darre`},
+		{hostPath: `\\server\share\src`},
+		{hostPath: "/home/darre"},
+		{hostPath: "relative/path"},
+	} {
+		got, ok := wslPath(tt.hostPath)
+		if ok != tt.ok || got != tt.want {
+			t.Errorf("wslPath(%q) = %q, %t, want %q, %t", tt.hostPath, got, ok, tt.want, tt.ok)
+		}
+	}
 }

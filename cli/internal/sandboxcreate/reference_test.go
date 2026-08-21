@@ -29,9 +29,10 @@ func TestBuildPromptSandboxBodyPlacesAnIncludedDirectoryAtItsOwnPath(t *testing.
 	if !ok || len(references) != 1 {
 		t.Fatalf("source code references = %v, want the one included source", references)
 	}
-	source, ok := references[reference]
+	sandboxPath := wantSandboxPath(t, reference)
+	source, ok := references[sandboxPath]
 	if !ok {
-		t.Fatalf("references are keyed %v, want the source's own directory %s", references, reference)
+		t.Fatalf("references are keyed %v, want the source's own directory %s", references, sandboxPath)
 	}
 	if slug := source.Slug.Or(""); slug != "foo" {
 		t.Fatalf("slug = %q, want the directory's own name", slug)
@@ -40,7 +41,7 @@ func TestBuildPromptSandboxBodyPlacesAnIncludedDirectoryAtItsOwnPath(t *testing.
 		t.Fatalf("local directory = %q, want %s", source.LocalDirectory.Or(""), reference)
 	}
 	destination, _ := source.Destination.Get()
-	if destination.Directory.Or("") != reference {
+	if destination.Directory.Or("") != sandboxPath {
 		t.Fatalf("destination = %q, want the same path the source has here", destination.Directory.Or(""))
 	}
 	// Only the primary source decides where the harness starts.
@@ -143,7 +144,7 @@ func TestBuildPromptSandboxBodyIncludesTheRepositoryHoldingASubdirectory(t *test
 	defer local.Close()
 
 	references, _ := body.Config.SourceCodeReferences.Get()
-	source, ok := references[reference]
+	source, ok := references[wantSandboxPath(t, reference)]
 	if !ok {
 		t.Fatalf("references are keyed %v, want the repository root %s", references, reference)
 	}
@@ -172,7 +173,8 @@ func TestBuildPromptSandboxBodySnapshotsEachIncludedSourceOnItsOwn(t *testing.T)
 	defer local.Close()
 
 	references, _ := body.Config.SourceCodeReferences.Get()
-	workspace, _ := references[reference].Workspace.Get()
+	sandboxPath := wantSandboxPath(t, reference)
+	workspace, _ := references[sandboxPath].Workspace.Get()
 	if workspace.Mode.Or("") != "dirty" || workspace.SnapshotRef.Or("") == "" {
 		t.Fatalf("workspace = %v, want the included source's own uncommitted work carried", workspace)
 	}
@@ -184,9 +186,9 @@ func TestBuildPromptSandboxBodySnapshotsEachIncludedSourceOnItsOwn(t *testing.T)
 		t.Fatalf("primary workspace = %v, want a clean checkout", primaryWorkspace)
 	}
 
-	root, err := local.pushRoot(reference)
+	root, err := local.pushRoot(sandboxPath)
 	if err != nil || root != reference {
-		t.Fatalf("pushRoot(%s) = %q, %v, want the included repository", reference, root, err)
+		t.Fatalf("pushRoot(%s) = %q, %v, want the included repository", sandboxPath, root, err)
 	}
 }
 
@@ -211,11 +213,11 @@ func TestBuildPromptSandboxBodyIncludesADirectoryWithNoRepository(t *testing.T) 
 	}
 
 	references, _ := body.Config.SourceCodeReferences.Get()
-	source := references[reference]
+	source := references[wantSandboxPath(t, reference)]
 	if !source.NoLocalRepository.Or(false) || source.LocalDirectory.Or("") != reference {
 		t.Fatalf("source = %v, want %s recorded as a directory with no repository", source, reference)
 	}
-	root, err := local.pushRoot(reference)
+	root, err := local.pushRoot(wantSandboxPath(t, reference))
 	if err != nil {
 		t.Fatalf("pushRoot: %v", err)
 	}

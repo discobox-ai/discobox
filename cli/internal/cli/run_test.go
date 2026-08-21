@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"path"
 	"path/filepath"
 	"runtime"
 	"strings"
@@ -111,12 +112,9 @@ func TestRunCommandCreatesSandbox(t *testing.T) {
 	}
 	destination := source["destination"].(map[string]any)
 	// A POSIX host path doubles as a sandbox path, so the destination mirrors
-	// the repo root there. Windows paths do not -- the sandbox runs Linux -- so
-	// the source lands at the default container location instead.
-	wantDir := repo
-	if runtime.GOOS == "windows" {
-		wantDir = "/workspace/source"
-	}
+	// the repo root there. A Windows path does not -- the sandbox runs Linux --
+	// so it is mirrored under the /mnt name WSL gives that same path.
+	wantDir := wantSourceDirectory(t, repo)
 	if destination["directory"] != wantDir || destination["workingDirectory"] != wantDir {
 		t.Fatalf("destination = %#v, want %s", destination, wantDir)
 	}
@@ -163,12 +161,9 @@ func TestRunCommandDefaultsSourceToCurrentDirectory(t *testing.T) {
 	}
 	destination := source["destination"].(map[string]any)
 	// A POSIX host path doubles as a sandbox path, so the destination mirrors
-	// the repo root there. Windows paths do not -- the sandbox runs Linux -- so
-	// the source lands at the default container location instead.
-	wantDir := repo
-	if runtime.GOOS == "windows" {
-		wantDir = "/workspace/source"
-	}
+	// the repo root there. A Windows path does not -- the sandbox runs Linux --
+	// so it is mirrored under the /mnt name WSL gives that same path.
+	wantDir := wantSourceDirectory(t, repo)
 	if destination["directory"] != wantDir || destination["workingDirectory"] != wantDir {
 		t.Fatalf("destination = %#v, want %s", destination, wantDir)
 	}
@@ -334,4 +329,19 @@ func runTestSandboxJSON(sandboxID, phase string) string {
 		runtime += `,"runtimeState":"` + runtimeState + `"`
 	}
 	return `{"id":"` + sandboxID + `","projectId":"project-1","createdByUserId":"user-1","displayName":"run-test","config":{"name":"run-test","image":""},"runtime":{` + runtime + `},"createdAt":"2026-06-17T00:00:00Z","updatedAt":"2026-06-17T00:00:01Z"}`
+}
+
+// wantSourceDirectory is the sandbox directory a local repo root lands in on
+// the platform the test is running on: the host path itself on a POSIX host,
+// and the /mnt path WSL mounts it under on Windows.
+func wantSourceDirectory(t *testing.T, repoRoot string) string {
+	t.Helper()
+	if runtime.GOOS != "windows" {
+		return repoRoot
+	}
+	volume := filepath.VolumeName(repoRoot)
+	if len(volume) != 2 || volume[1] != ':' {
+		t.Fatalf("test repo %s has no drive letter to mount", repoRoot)
+	}
+	return path.Clean("/mnt/" + strings.ToLower(volume[:1]) + filepath.ToSlash(repoRoot[len(volume):]))
 }

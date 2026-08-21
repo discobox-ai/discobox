@@ -797,8 +797,10 @@ mechanism they use is the primary source's, not a second one:
 - A local source keeps its own absolute path inside the sandbox, exactly as the
   primary source does, so `-i ../foo` lands at what `readlink -f ../foo` prints
   and a path means the same thing on both sides of the boundary. That path is
-  also the reference's key in the request. A remote source has no host path to
-  keep and goes under `/workspace/<slug>`.
+  also the reference's key in the request. On a Windows client it is the path in
+  WSL's spelling — `E:\srcoo` is `/mnt/e/src/foo` — which is the same mirror
+  the primary source gets; see the sandbox creation design doc. A remote source
+  has no host path to keep and goes under `/workspace/<slug>`.
 - The slug is the directory's own name — `-i ../foo` is the source `foo` — and
   is what addresses its Git repository in a push. Two references that would take
   the same name are numbered here rather than left to the server, so the slug

@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"path"
 	"path/filepath"
 	"strings"
 
@@ -189,10 +190,17 @@ func setSourceCodeReferences(ctx context.Context, body *apimodel.CreateSandboxBo
 		}
 		add(reference)
 	}
-	primaryRoot := primary.Destination.Directory
+	// A declared source is looked for on this machine and placed in the
+	// sandbox, which are two different paths: the checkout beside the primary
+	// source is found on the host filesystem, and where a clone lands is named
+	// in the sandbox's. They read the same on a POSIX host, where the primary
+	// source keeps its own path, and differ on Windows, where it is mirrored
+	// under /mnt.
+	primaryRoot := primary.LocalDirectory
+	sandboxRoot := path.Dir(filepath.ToSlash(primary.Destination.Directory))
 	for _, name := range declaredSourceNames(declared) {
 		arg, report := resolveDeclaredSourceArg(ctx, primaryRoot, name, declared[name])
-		placement := referencePlacement{Name: name, Root: filepath.Dir(primaryRoot)}
+		placement := referencePlacement{Name: name, Root: sandboxRoot}
 		reference, err := resolveNamedReference(ctx, arg, placement, sourceOptions, used)
 		if err != nil {
 			return fmt.Errorf("declared source %q (%s): %w", name, declared[name], err)
@@ -245,14 +253,18 @@ func taken(references apiclientgen.SandboxCreateConfigSourceCodeReferences, prim
 // declares, or nothing when the caller opted out or the source is not one this
 // machine holds.
 //
+// The file is read out of the source's directory on this machine, not the one
+// it takes in the sandbox: the sandbox does not exist yet, and off a POSIX host
+// the two are not even the same path.
+//
 // A remote primary source declares nothing here: the file lives in a checkout,
 // and there is none — reading it would mean cloning the repository on this
 // machine first, which is the sandbox's job, not the client's.
 func declaredPromptSources(opts PromptOptions, primary resolvedRunSource) (map[string]string, error) {
-	if opts.SkipDeclaredSources || primary.Destination.Directory == "" || primary.URL != "" {
+	if opts.SkipDeclaredSources || primary.LocalDirectory == "" || primary.URL != "" {
 		return nil, nil
 	}
-	return readDeclaredSources(primary.Destination.Directory)
+	return readDeclaredSources(primary.LocalDirectory)
 }
 
 type promptSandboxCreator interface {

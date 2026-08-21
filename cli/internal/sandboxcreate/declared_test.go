@@ -29,7 +29,7 @@ func TestBuildPromptSandboxBodyPrefersACheckoutOfADeclaredSource(t *testing.T) {
 	defer local.Close()
 
 	references, _ := body.Config.SourceCodeReferences.Get()
-	source, ok := references[reference]
+	source, ok := references[wantSandboxPath(t, reference)]
 	if !ok {
 		t.Fatalf("references are keyed %v, want the local checkout %s", references, reference)
 	}
@@ -53,7 +53,7 @@ func TestBuildPromptSandboxBodyClonesADeclaredSourceToTheSamePath(t *testing.T) 
 	// A file:// URL is a remote as far as source resolution is concerned — it
 	// is cloned by the sandbox rather than taken from disk here — without a
 	// test needing the network.
-	remote := "file://" + newRunSourceTestRepoIn(t, t.TempDir(), "foo")
+	remote := "file://" + filepath.ToSlash(newRunSourceTestRepoIn(t, t.TempDir(), "foo"))
 	declareSources(t, primary, map[string]string{"foo": remote})
 
 	var reported []DeclaredSource
@@ -69,7 +69,7 @@ func TestBuildPromptSandboxBodyClonesADeclaredSourceToTheSamePath(t *testing.T) 
 
 	want := filepath.Join(workspace, "foo")
 	references, _ := body.Config.SourceCodeReferences.Get()
-	source, ok := references[want]
+	source, ok := references[wantSandboxPath(t, want)]
 	if !ok {
 		t.Fatalf("references are keyed %v, want the sibling path %s a checkout would have used", references, want)
 	}
@@ -155,7 +155,7 @@ func TestBuildPromptSandboxBodyLetsIncludeOverrideADeclaredSource(t *testing.T) 
 	if len(references) != 1 {
 		t.Fatalf("references = %v, want the one source, not it and its declaration", references)
 	}
-	if slug := references[reference].Slug.Or(""); slug != "foo" {
+	if slug := references[wantSandboxPath(t, reference)].Slug.Or(""); slug != "foo" {
 		t.Fatalf("slug = %q, want foo taken once", slug)
 	}
 }

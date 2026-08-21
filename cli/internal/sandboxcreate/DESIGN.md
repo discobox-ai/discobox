@@ -21,6 +21,21 @@ sandbox create requests.
   ([ADR 0025](../../../docs/adr/0025-the-sandbox-user-is-one-contract-resolved-inside-the-sandbox.md)
   §5) — root on most harness images. A stated identity is not a guess about the
   local machine, because there is no local answer to get wrong.
+- A local source keeps its own absolute path inside the sandbox, so a path means
+  the same thing on both sides of the boundary. On Windows it keeps that path in
+  the spelling WSL gives it: `E:\src\project` becomes `/mnt/e/src/project`, the
+  drive letter lowercased because that is how `/mnt` is spelled and the rest left
+  in the case it has on the host. A Windows path cannot be mirrored verbatim —
+  the sandbox runs Linux, and the daemon rejects `E:\src\project` as not
+  absolute — but it already has a POSIX name, so the mapping stays one-to-one
+  instead of collapsing every source onto one container directory. A path with no
+  drive letter has no `/mnt` name — a UNC share, or a path already inside a
+  distro — and falls back to `/workspace/source`, with the requested
+  subdirectory honored by its position within the repository.
+- A source's path on this machine and its path in the sandbox are therefore two
+  different things off a POSIX host, and the code that reads the client's disk —
+  `.discobox/sources.json`, the checkout beside the primary source — takes the
+  first, while destinations and reference keys take the second.
 
 - Whether a dirty workspace is snapshotted is the caller's policy
   (`PromptOptions.IncludeDirty`), and asking is the caller's UI

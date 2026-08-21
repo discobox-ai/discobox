@@ -32,6 +32,9 @@ const (
 	// referenceRunSourceRoot holds an extra source that has no host path of its
 	// own to keep, which is every remote one.
 	referenceRunSourceRoot = "/workspace"
+	// wslDriveRoot is where WSL mounts the Windows drives, and so where a
+	// Windows host path is mirrored to inside a sandbox.
+	wslDriveRoot = "/mnt"
 	// maxRunSourceSlugLen is the API's slug limit.
 	maxRunSourceSlugLen      = 63
 	runSnapshotCommitMessage = "discobox run workspace snapshot\n"
@@ -769,26 +772,52 @@ func localRunDestination(repoRoot, sourceDir string) resolvedRunSourceDestinatio
 	}
 }
 
-// windowsRunDestination places the source at the default container location
-// rather than mirroring the host path.
+// windowsRunDestination mirrors the host path the way a POSIX host does, in the
+// spelling WSL gives that same path: "E:\src\project" becomes
+// "/mnt/e/src/project".
 //
-// Mirroring only works because a POSIX host path is already a valid path inside
-// the sandbox. A Windows one is not: the sandbox runs Linux, and the daemon
-// rejects "E:\src\project" outright as not absolute, so the sandbox fails
-// before it receives its source. The subdirectory the user asked to run in is
-// still honored, by its position within the repository rather than by its
-// spelling on this machine.
+// A Windows path cannot be mirrored verbatim -- the sandbox runs Linux, and the
+// daemon rejects "E:\src\project" outright as not absolute -- but it does have a
+// POSIX name, the one WSL already mounts it under, so the mapping stays
+// one-to-one and reversible instead of collapsing every source onto one
+// container directory. The drive letter is lowercased because that is how WSL
+// spells /mnt, and the rest keeps the case it has on the host.
+//
+// A path with no drive letter -- a UNC share, or a path already inside a WSL
+// distro -- has no /mnt name, so it falls back to the default container
+// location, with the requested subdirectory honored by its position within the
+// repository rather than by its spelling on this machine.
 func windowsRunDestination(repoRoot, workingDirectory string) resolvedRunSourceDestination {
-	destination := resolvedRunSourceDestination{
-		Directory:        defaultRunSourceDir,
-		WorkingDirectory: defaultRunWorkingDir,
+	root, ok := wslPath(repoRoot)
+	if !ok {
+		root = defaultRunSourceDir
 	}
+	destination := resolvedRunSourceDestination{Directory: root, WorkingDirectory: root}
 	rel, err := filepath.Rel(repoRoot, workingDirectory)
 	if err != nil || rel == "." {
 		return destination
 	}
-	destination.WorkingDirectory = path.Join(defaultRunSourceDir, filepath.ToSlash(rel))
+	destination.WorkingDirectory = path.Join(root, filepath.ToSlash(rel))
 	return destination
+}
+
+// wslPath is the /mnt path WSL exposes a Windows drive path under, and reports
+// whether the path has one at all. It parses the path itself rather than asking
+// the filepath package, so it answers the same on every host.
+func wslPath(hostPath string) (string, bool) {
+	if len(hostPath) < 2 || hostPath[1] != ':' {
+		return "", false
+	}
+	drive := hostPath[0]
+	switch {
+	case drive >= 'a' && drive <= 'z':
+	case drive >= 'A' && drive <= 'Z':
+		drive += 'a' - 'A'
+	default:
+		return "", false
+	}
+	rest := strings.ReplaceAll(hostPath[2:], `\`, "/")
+	return path.Join(wslDriveRoot, string(drive), rest), true
 }
 
 func pathInsideDirectory(root, path string) bool {
