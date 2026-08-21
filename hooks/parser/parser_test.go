@@ -63,7 +63,13 @@ go test ./...
 	if hook.RunAs != hooks.RunAsRoot || hook.Phase != "review" {
 		t.Fatalf("aliases/fields not normalized: %#v", hook)
 	}
-	if !hook.HasShebang || !hook.Executable {
+	if !hook.HasShebang {
+		t.Fatalf("script validation flags not set: %#v", hook)
+	}
+	// Executable mirrors the mode bit, which Windows does not carry — which is
+	// why Validate only requires it off Windows. Asserting it here would be
+	// asserting the filesystem, not the parser.
+	if runtime.GOOS != "windows" && !hook.Executable {
 		t.Fatalf("script validation flags not set: %#v", hook)
 	}
 	if hook.Extensions["extra_field"] != "kept" {

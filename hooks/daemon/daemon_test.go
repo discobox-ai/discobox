@@ -13,6 +13,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 	"time"
@@ -28,7 +29,23 @@ import (
 	"github.com/discobox-ai/discobox/internal/shorttmp"
 )
 
+// requireExecutableHooks skips a test that needs a hook to actually run.
+//
+// The runner execs a hook file directly (see runner.Run), which is what lets a
+// hook be any executable rather than a shell script specifically. Windows has
+// no shebang handling, so a `#!/bin/sh` hook cannot start there at all and the
+// run these tests wait on never succeeds. The daemon itself, its socket API,
+// and everything up to the exec are covered on Windows by the tests around
+// these.
+func requireExecutableHooks(t *testing.T) {
+	t.Helper()
+	if runtime.GOOS == "windows" {
+		t.Skip("hook scripts are exec'd directly and Windows honors no shebang; the hook body here is /bin/sh")
+	}
+}
+
 func TestRunSocketAPI(t *testing.T) {
+	requireExecutableHooks(t)
 	repo := t.TempDir()
 	hooksDir := filepath.Join(repo, ".discobox", "hooks")
 	if err := os.MkdirAll(hooksDir, 0o755); err != nil {
@@ -255,6 +272,7 @@ func TestLSPFileChangesIncludeWorkspaceMetadata(t *testing.T) {
 }
 
 func TestSessionHooksRunOnlyWhenRequested(t *testing.T) {
+	requireExecutableHooks(t)
 	repo := t.TempDir()
 	hooksDir := filepath.Join(repo, ".discobox", "hooks")
 	if err := os.MkdirAll(hooksDir, 0o755); err != nil {
@@ -1258,6 +1276,7 @@ func hookStatusByID(ctx context.Context, t *testing.T, st *hookstore.Store, hook
 
 func testScriptHook(t *testing.T, repo, id string) hooks.Hook {
 	t.Helper()
+	requireExecutableHooks(t)
 	path := filepath.Join(repo, id+".sh")
 	if err := os.WriteFile(path, []byte("#!/bin/sh\nsleep 0.2\n"), 0o755); err != nil {
 		t.Fatalf("write hook script %s: %v", id, err)

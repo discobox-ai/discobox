@@ -387,9 +387,7 @@ func TestGitDiffColorArgHonorsEnvironment(t *testing.T) {
 func TestSnapshotApplyAndResetUseUnstagedWorkspaceChanges(t *testing.T) {
 	ctx := context.Background()
 	repo := t.TempDir()
-	runTestGit(t, repo, "init")
-	runTestGit(t, repo, "config", "user.email", "test@example.com")
-	runTestGit(t, repo, "config", "user.name", "Test User")
+	initTestRepo(t, repo)
 	if err := os.WriteFile(filepath.Join(repo, "tracked.txt"), []byte("base\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
@@ -463,9 +461,7 @@ func TestSnapshotApplyAndResetUseUnstagedWorkspaceChanges(t *testing.T) {
 func TestSnapshotRangeDiffSupportsSnapshotPairs(t *testing.T) {
 	ctx := context.Background()
 	repo := t.TempDir()
-	runTestGit(t, repo, "init")
-	runTestGit(t, repo, "config", "user.email", "test@example.com")
-	runTestGit(t, repo, "config", "user.name", "Test User")
+	initTestRepo(t, repo)
 	if err := os.WriteFile(filepath.Join(repo, "tracked.txt"), []byte("base\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
@@ -947,6 +943,20 @@ func testOutputCommand() (*cobra.Command, *bytes.Buffer) {
 	cmd := &cobra.Command{Use: "test"}
 	cmd.SetOut(out)
 	return cmd, out
+}
+
+// initTestRepo makes dir a git repository these tests can commit in.
+//
+// core.autocrlf is turned off explicitly. Git for Windows installs with it on
+// by default, and these tests write LF and read the same bytes back after a
+// checkout or an apply — with the conversion left on, git hands back CRLF and
+// the assertion fails on content the test never wrote.
+func initTestRepo(t *testing.T, dir string) {
+	t.Helper()
+	runTestGit(t, dir, "init")
+	runTestGit(t, dir, "config", "user.email", "test@example.com")
+	runTestGit(t, dir, "config", "user.name", "Test User")
+	runTestGit(t, dir, "config", "core.autocrlf", "false")
 }
 
 func runTestGit(t *testing.T, dir string, args ...string) string {
