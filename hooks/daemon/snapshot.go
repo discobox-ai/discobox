@@ -11,7 +11,6 @@ import (
 	"sort"
 	"strconv"
 	"strings"
-	"time"
 
 	"github.com/discobox-ai/discobox/hooks/models"
 	"github.com/discobox-ai/discobox/hooks/store"
@@ -123,7 +122,7 @@ func (r *runtimeState) captureWorkspaceSnapshot(ctx context.Context) (*store.Wor
 	for _, candidate := range eligible {
 		changedFiles = append(changedFiles, models.ChangedFile{Path: candidate.path, Kind: candidate.kind})
 	}
-	return r.recordWorkspaceSnapshotIfChanged(ctx, store.WorkspaceSnapshot{BaseCommit: baseCommit, TreeHash: tree, Patch: []byte(patch), PatchBytes: int64(len(patch)), ChangedFiles: changedFiles, OmittedFiles: omitted, MaxFileBytes: maxFileBytes, CreatedAt: time.Now().UTC()})
+	return r.recordWorkspaceSnapshotIfChanged(ctx, store.WorkspaceSnapshot{BaseCommit: baseCommit, TreeHash: tree, Patch: []byte(patch), PatchBytes: int64(len(patch)), ChangedFiles: changedFiles, OmittedFiles: omitted, MaxFileBytes: maxFileBytes})
 }
 
 func (r *runtimeState) recordWorkspaceSnapshotIfChanged(ctx context.Context, snapshot store.WorkspaceSnapshot) (*store.WorkspaceSnapshot, error) {

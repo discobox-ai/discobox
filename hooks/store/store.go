@@ -9,12 +9,13 @@ import (
 	"errors"
 	"fmt"
 	"io/fs"
-	"os"
 	"path/filepath"
 	"reflect"
 	"slices"
 	"sort"
 	"strings"
+	"sync"
+	"testing"
 	"time"
 
 	"github.com/bmatcuk/doublestar/v4"
@@ -198,6 +199,32 @@ type Store struct {
 	write *gorm.DB
 	read  *gorm.DB
 	pools *gormdb.Pools
+
+	stampMu   sync.Mutex
+	lastStamp time.Time
+}
+
+// stampNow is the creation time for a row whose caller did not supply one: the
+// clock, or a hair past the last row this store wrote if the clock has not
+// moved since.
+//
+// Every listing here orders by created_at and breaks ties on the id, which is
+// random by design (see package id) — so rows sharing an instant come back in
+// an arbitrary order, and ListEvents pages on that same (created_at, id) key,
+// where a tie can drop a row from a page outright. Writes arrive faster than
+// the clock ticks: a hook's output is appended a line at a time, and each line
+// carries an audit event beside it. Linux hides this behind a nanosecond
+// clock; Windows resolves time.Now() coarsely enough that a whole burst shares
+// one instant.
+func (s *Store) stampNow() time.Time {
+	s.stampMu.Lock()
+	defer s.stampMu.Unlock()
+	now := time.Now().UTC()
+	if !now.After(s.lastStamp) {
+		now = s.lastStamp.Add(time.Microsecond)
+	}
+	s.lastStamp = now
+	return now
 }
 
 // Options controls Open.
@@ -488,7 +515,9 @@ func (s *Store) MarkRunningWithChangeIDs(ctx context.Context, hookID string, fil
 	if hookID == "" {
 		return nil, fmt.Errorf("hook id is required")
 	}
-	now := time.Now().UTC()
+	// stampNow, not the clock: ListRuns orders by started_at and two runs of
+	// the same hook can be marked running inside one tick of it.
+	now := s.stampNow()
 	var out RunRow
 	err := s.write.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		if len(files) == 0 {
@@ -722,7 +751,7 @@ func (s *Store) StartDaemonSession(ctx context.Context, sessionID, repoRoot stri
 			if err := tx.Model(&models.DaemonSession{}).Where("id = ? AND ended_at IS NULL", row.ID).Updates(map[string]any{"ended_at": endedAt, "end_reason": "terminated"}).Error; err != nil {
 				return err
 			}
-			if err := recordEventTx(tx, Event{Type: "daemon.terminated", Message: "hook daemon terminated without graceful shutdown", Details: map[string]any{"daemon_session_id": row.ID, "session_id": row.SessionID, "repo_root": row.RepoRoot, "version": row.Version, "pid": row.PID, "started_at": row.StartedAt, "last_heartbeat": row.LastHeartbeat, "ended_at": endedAt, "end_reason": "terminated"}, CreatedAt: now}); err != nil {
+			if err := s.recordEventTx(tx, Event{Type: "daemon.terminated", Message: "hook daemon terminated without graceful shutdown", Details: map[string]any{"daemon_session_id": row.ID, "session_id": row.SessionID, "repo_root": row.RepoRoot, "version": row.Version, "pid": row.PID, "started_at": row.StartedAt, "last_heartbeat": row.LastHeartbeat, "ended_at": endedAt, "end_reason": "terminated"}}); err != nil {
 				return err
 			}
 		}
@@ -730,7 +759,7 @@ func (s *Store) StartDaemonSession(ctx context.Context, sessionID, repoRoot stri
 		if err := tx.Create(&row).Error; err != nil {
 			return err
 		}
-		if err := recordEventTx(tx, Event{Type: "daemon.started", Message: "hook daemon started", Details: map[string]any{"daemon_session_id": row.ID, "session_id": sessionID, "repo_root": repoRoot, "version": version, "pid": pid, "started_at": row.StartedAt}, CreatedAt: now}); err != nil {
+		if err := s.recordEventTx(tx, Event{Type: "daemon.started", Message: "hook daemon started", Details: map[string]any{"daemon_session_id": row.ID, "session_id": sessionID, "repo_root": repoRoot, "version": version, "pid": pid, "started_at": row.StartedAt}}); err != nil {
 			return err
 		}
 		converted := daemonSessionToRow(row)
@@ -768,7 +797,7 @@ func (s *Store) EndDaemonSession(ctx context.Context, id, reason string) error {
 		if err := tx.Model(&models.DaemonSession{}).Where("id = ?", id).Updates(updates).Error; err != nil {
 			return err
 		}
-		return recordEventTx(tx, Event{Type: "daemon.shutdown", Message: "hook daemon shut down", Details: map[string]any{"daemon_session_id": row.ID, "session_id": row.SessionID, "repo_root": row.RepoRoot, "version": row.Version, "pid": row.PID, "started_at": row.StartedAt, "last_heartbeat": now, "ended_at": now, "end_reason": reason}, CreatedAt: now})
+		return s.recordEventTx(tx, Event{Type: "daemon.shutdown", Message: "hook daemon shut down", Details: map[string]any{"daemon_session_id": row.ID, "session_id": row.SessionID, "repo_root": row.RepoRoot, "version": row.Version, "pid": row.PID, "started_at": row.StartedAt, "last_heartbeat": now, "ended_at": now, "end_reason": reason}})
 	})
 }
 
@@ -865,7 +894,7 @@ func (s *Store) ListObservedChanges(ctx context.Context, limit int) ([]ObservedF
 func (s *Store) RecordWorkspaceSnapshot(ctx context.Context, snapshot WorkspaceSnapshot) (*WorkspaceSnapshot, error) {
 	created := snapshot.CreatedAt
 	if created.IsZero() {
-		created = time.Now().UTC()
+		created = s.stampNow()
 	}
 	changed, err := marshalJSON(normalizeChangedFiles(snapshot.ChangedFiles))
 	if err != nil {
@@ -971,7 +1000,7 @@ func (s *Store) RecordEvent(ctx context.Context, event Event) (*Event, error) {
 	}
 	created := event.CreatedAt
 	if created.IsZero() {
-		created = time.Now().UTC()
+		created = s.stampNow()
 	}
 	details, err := marshalJSON(event.Details)
 	if err != nil {
@@ -1047,7 +1076,7 @@ func (s *Store) AppendHookLog(ctx context.Context, log models.HookLog) (*models.
 	}
 	created := log.CreatedAt
 	if created.IsZero() {
-		created = time.Now().UTC()
+		created = s.stampNow()
 	}
 	row := models.HookLog{HookID: log.HookID, RunID: log.RunID, Line: log.Line, CreatedAt: created}
 	if err := s.write.WithContext(ctx).Create(&row).Error; err != nil {
@@ -1065,14 +1094,14 @@ func (s *Store) AppendHookLogEvent(ctx context.Context, log models.HookLog) (*mo
 	}
 	created := log.CreatedAt
 	if created.IsZero() {
-		created = time.Now().UTC()
+		created = s.stampNow()
 	}
 	row := models.HookLog{HookID: log.HookID, RunID: log.RunID, Line: log.Line, CreatedAt: created}
 	if err := s.write.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		if err := tx.Create(&row).Error; err != nil {
 			return err
 		}
-		return recordEventTx(tx, Event{
+		return s.recordEventTx(tx, Event{
 			Type:      "hook.log",
 			HookID:    row.HookID,
 			RunID:     row.RunID,
@@ -1674,7 +1703,7 @@ func daemonSessionToRow(s models.DaemonSession) DaemonSessionRow {
 	return DaemonSessionRow{ID: s.ID, SessionID: s.SessionID, RepoRoot: s.RepoRoot, Version: s.Version, PID: s.PID, StartedAt: s.StartedAt, LastHeartbeat: s.LastHeartbeat, EndedAt: s.EndedAt, EndReason: s.EndReason}
 }
 
-func recordEventTx(tx *gorm.DB, event Event) error {
+func (s *Store) recordEventTx(tx *gorm.DB, event Event) error {
 	if event.Type == "" {
 		return fmt.Errorf("event type is required")
 	}
@@ -1684,7 +1713,7 @@ func recordEventTx(tx *gorm.DB, event Event) error {
 	}
 	created := event.CreatedAt
 	if created.IsZero() {
-		created = time.Now().UTC()
+		created = s.stampNow()
 	}
 	details, err := marshalJSON(event.Details)
 	if err != nil {
@@ -1744,8 +1773,14 @@ func eventDetailSet(details map[string]any, name string) bool {
 	return true
 }
 
+// panicEventValidationInTests turns an invalid event into a failure the test
+// that wrote it cannot miss, while leaving a running daemon to carry on.
+//
+// The test-binary check is testing.Testing() rather than a suffix on argv[0]:
+// the Windows binary is named `<pkg>.test.exe`, so matching ".test" silently
+// answered false there and every one of these panics stopped firing.
 func panicEventValidationInTests(err error) {
-	if err != nil && strings.HasSuffix(os.Args[0], ".test") {
+	if err != nil && testing.Testing() {
 		panic(err)
 	}
 }

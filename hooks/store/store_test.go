@@ -30,6 +30,9 @@ func TestWorkspaceSnapshotRoundTrip(t *testing.T) {
 	ctx := context.Background()
 	s := newTestStore(ctx, t)
 
+	// Neither snapshot is stamped here: recorded back to back they share an
+	// instant on any coarse clock, and the store's monotonic stamp (stampNow)
+	// is what keeps the second one the head of the chain.
 	first, err := s.RecordWorkspaceSnapshot(ctx, WorkspaceSnapshot{
 		BaseCommit:   "base",
 		TreeHash:     "tree-1",
@@ -966,6 +969,9 @@ func TestAppendAndListHookLogs(t *testing.T) {
 	ctx := context.Background()
 	s := newTestStore(ctx, t)
 
+	// No timestamps here on purpose: three appends in a row land inside one
+	// tick of a coarse clock, and the order they come back in is what the
+	// store's monotonic stamp exists to keep (see stampNow).
 	if _, err := s.AppendHookLog(ctx, models.HookLog{HookID: "lint", RunID: "run-7", Line: "first"}); err != nil {
 		t.Fatalf("append first log: %v", err)
 	}
