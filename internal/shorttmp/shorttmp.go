@@ -22,13 +22,21 @@ import (
 )
 
 // Dir returns a temporary directory rooted somewhere short, removed when the
-// test ends. Windows named pipes have no path limit, so there it is an ordinary
-// temporary directory.
+// test ends.
+//
+// Windows needs this too. Go binds AF_UNIX sockets there rather than named
+// pipes when a path is what it is given, and Windows enforces the same
+// sockaddr_un limit — while handing out a $TMPDIR under the user's profile that
+// spends sixty of those bytes before a test adds anything.
 func Dir(t *testing.T) string {
 	t.Helper()
-	root := ""
-	if runtime.GOOS != "windows" {
-		root = "/tmp"
+	root := "/tmp"
+	if runtime.GOOS == "windows" {
+		// The system drive's root is the short path every Windows box has.
+		root = os.Getenv("SystemDrive") + `\`
+		if root == `\` {
+			root = `C:\`
+		}
 	}
 	dir, err := os.MkdirTemp(root, "dbx")
 	if err != nil {
