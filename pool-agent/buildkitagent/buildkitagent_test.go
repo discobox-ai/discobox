@@ -3,6 +3,7 @@ package buildkitagent_test
 import (
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 
@@ -127,6 +128,13 @@ func TestPrepareForwardsProxyEnvironmentToBothUnits(t *testing.T) {
 }
 
 func TestThePoolRegistryIsNeverReachedThroughTheProxy(t *testing.T) {
+	// NO_PROXY and no_proxy are two variables in the guest this runs in, and
+	// both are conventionally set — which is why proxyEnvironment carries both
+	// spellings. Windows environment names are case-insensitive, so the second
+	// Setenv below overwrites the first and the premise cannot be staged there.
+	if runtime.GOOS == "windows" {
+		t.Skip("NO_PROXY and no_proxy are one variable on Windows; the pool agent runs in the Linux guest")
+	}
 	t.Setenv("HTTPS_PROXY", "http://127.0.0.1:17008")
 	t.Setenv("NO_PROXY", "127.0.0.1,localhost")
 	t.Setenv("no_proxy", "127.0.0.1,localhost")
