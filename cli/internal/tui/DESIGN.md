@@ -685,7 +685,17 @@ Tab is the one key that does go round, in the order the window is drawn, bottom
 to top: prompt → discoboxes → folder → prompt. Esc is the short way straight out
 to the prompt from either stop. With an empty list, leaving the
 prompt lands on the folder filter instead — that is exactly when it is the
-control you want, and refusing to move would leave no way to reach it.
+control you want, and refusing to move would leave no way to reach it. Down
+from there passes straight through the empty list to the prompt: there is
+nothing to move through, and the empty list's own line says to type a prompt.
+
+**A prompt with text in it keeps Up.** Up leaves the composer only while the
+composer is empty; with anything typed it is a cursor key in the text, and
+holding it walks to the top and stops there. Otherwise the last press of a key
+you were using to reread your own paragraph opens the whole window behind it —
+and in the opening screen `expand` is one way, so it cannot be taken back. Tab
+is the way out, being a key you press once and mean, and the strip under the
+composer and the opening frame's top line offer Up only while it works.
 
 Where the cursor lands entering the list is `listLanding`, and only decides the
 *first* time (`sandboxList.visited`): Up is a direction, so it lands on the row

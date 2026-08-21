@@ -699,6 +699,13 @@ func (m *Model) updatePrompt(msg tea.KeyPressMsg) tea.Cmd {
 			m.prompt.CursorStart()
 			return nil
 		}
+		// A prompt with something in it is one you are still writing, and
+		// holding Up to walk back through it should stop at the top rather
+		// than throw the window open behind what you typed. Tab is the way
+		// out; it is a key you press once and mean.
+		if m.prompt.Value() != "" {
+			return status("Tab for the discoboxes")
+		}
 		m.leavePrompt(landLast)
 		return nil
 
@@ -2052,7 +2059,13 @@ func (m *Model) hints() string {
 		}
 		return keys
 	default:
-		return "Tab or ↑ discoboxes · Shift-Tab options · Alt-E editor · Ctrl-Enter newline · Ctrl-D quit"
+		// ↑ is only a way out of an empty prompt; with text in it, it walks
+		// the text and Tab is the way to the list.
+		out := "Tab or ↑ discoboxes"
+		if m.prompt.Value() != "" {
+			out = "Tab discoboxes"
+		}
+		return out + " · Shift-Tab options · Alt-E editor · Ctrl-Enter newline · Ctrl-D quit"
 	}
 }
 
@@ -2071,13 +2084,14 @@ func (m *Model) helpText() string {
 		"    Ctrl-D         quit, when the prompt is empty",
 		"    ↑ ↓            move a line at a time, wrapped rows included.",
 		"                   From the row they cannot move off they go to the",
-		"                   start or the end of it. ↑ then leaves for the",
-		"                   discobox list — back to the one you left the cursor",
-		"                   on, or the last row, since that is the one nearest",
-		"                   the prompt. Opening the window out it lands at the",
-		"                   top instead: there were no rows on screen to be",
-		"                   near. ↓ stops there: the prompt is the bottom of",
-		"                   the window",
+		"                   start or the end of it. From an empty prompt ↑ then",
+		"                   leaves for the discobox list — back to the one you",
+		"                   left the cursor on, or the last row, since that is",
+		"                   the one nearest the prompt. Opening the window out",
+		"                   it lands at the top instead: there were no rows on",
+		"                   screen to be near. With anything typed ↑ stays in",
+		"                   the prompt and Tab is the way out. ↓ stops there",
+		"                   too: the prompt is the bottom of the window",
 		"    Alt-E or F2    write the prompt in $EDITOR",
 		"    Tab            round the window: the prompt, the discoboxes, the",
 		"                   folder they are filtered to, and back",

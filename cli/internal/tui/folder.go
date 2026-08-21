@@ -96,7 +96,12 @@ func (m *Model) updateFolder(msg tea.KeyPressMsg) tea.Cmd {
 		// window: up and down cross between panes, and opening the dropdown is
 		// what Enter is for.
 		if len(m.list.rows()) == 0 {
-			return status("no discoboxes in %s", m.folderLabel())
+			// An empty list is nothing to move through, so Down carries on to
+			// the prompt — which is where Down always ends up, and what the
+			// empty list itself says to do. Stopping here would make an empty
+			// folder a dead end in the one direction with somewhere to go.
+			m.backToPrompt()
+			return nil
 		}
 		m.focus = focusList
 		m.list.moveTo(0)

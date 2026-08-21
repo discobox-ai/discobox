@@ -628,6 +628,63 @@ func TestUpFromThePromptLandsOnTheLastRow(t *testing.T) {
 	}
 }
 
+// ↑ leaves the prompt only while the prompt is empty. With anything typed it
+// is a cursor key in the text you are writing: holding it to walk back up a
+// paragraph should stop at the top, not open the list up behind your words.
+// Tab is the way out, and it is a key you press once and mean.
+func TestUpStaysInThePromptWithTextInIt(t *testing.T) {
+	m := newTestModel(t, newFakeSource(testSandboxes()...))
+
+	send(t, m, typeString("one")...)
+	send(t, m, key("ctrl+j"))
+	send(t, m, typeString("two")...)
+	// Up walks the text: the second line to the first, then to its start.
+	for range 4 {
+		send(t, m, key("up"))
+		if m.focus != focusPrompt {
+			t.Fatalf("focus = %v, want the prompt: it has text in it", m.focus)
+		}
+	}
+	if got := m.prompt.Value(); got != "one\ntwo" {
+		t.Fatalf("prompt = %q, want the text untouched", got)
+	}
+	// Tab still leaves, and the text goes with it.
+	send(t, m, key("tab"))
+	if m.focus != focusList {
+		t.Fatalf("focus = %v, want the list: tab is the way out", m.focus)
+	}
+
+	// Emptied again, ↑ is a way out once more.
+	send(t, m, key("esc"))
+	send(t, m, key("down"), key("down")) // back to the end of the text
+	for range len("one\ntwo") {
+		send(t, m, key("backspace"))
+	}
+	if got := m.prompt.Value(); got != "" {
+		t.Fatalf("prompt = %q, want it emptied", got)
+	}
+	send(t, m, key("up"))
+	if m.focus != focusList {
+		t.Fatalf("focus = %v, want the list: an empty prompt still lets ↑ out", m.focus)
+	}
+}
+
+// ↓ ends at the prompt from wherever it is pressed. A folder with nothing in it
+// is nothing to move through, not a dead end: the empty list says to type a
+// prompt, so ↓ goes there rather than refusing.
+func TestDownReachesThePromptThroughAnEmptyList(t *testing.T) {
+	m := newTestModel(t, newFakeSource())
+	send(t, m, key("tab"))
+	if m.focus != focusFolder {
+		t.Fatalf("focus = %v, want the folder filter: there are no rows to land on", m.focus)
+	}
+
+	send(t, m, key("down"))
+	if m.focus != focusPrompt {
+		t.Fatalf("focus = %v, want the prompt", m.focus)
+	}
+}
+
 func TestTabFromThePromptLandsOnTheFirstRow(t *testing.T) {
 	m := newTestModel(t, newFakeSource(testSandboxes()...))
 	send(t, m, key("tab"))

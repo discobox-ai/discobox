@@ -63,6 +63,41 @@ func TestTheWindowOpensAsAPrompt(t *testing.T) {
 	}
 }
 
+// ↑ opens the window out only from an empty prompt. Having typed something,
+// holding ↑ to walk back through it would otherwise throw the whole window
+// open behind your own words, which is not what the key was pressed for.
+func TestUpDoesNotOpenTheWindowOutWithTextInThePrompt(t *testing.T) {
+	d, m := newCompactModel(t, newFakeSource(testSandboxes()...))
+
+	for _, msg := range typeString("a plan") {
+		d.dispatch(msg)
+	}
+	d.key("ctrl+j")
+	for _, msg := range typeString("and more") {
+		d.dispatch(msg)
+	}
+	d.settle()
+
+	for range 4 {
+		d.key("up")
+		if m.expanded {
+			t.Fatal("↑ should stay in a prompt that has text in it")
+		}
+	}
+	if got := m.prompt.Value(); got != "a plan\nand more" {
+		t.Fatalf("prompt = %q, want the text untouched", got)
+	}
+	// The frame offers the key that does work, and only that one.
+	if frame := frameText(m); !strings.Contains(frame, "Tab for the discoboxes you already have") {
+		t.Errorf("the opening window should offer Tab alone:\n%s", frame)
+	}
+
+	d.key("tab")
+	if !m.expanded {
+		t.Fatal("tab should still open the window out")
+	}
+}
+
 // Reaching past the prompt is the ask for everything behind it: the window
 // opens out to full screen with the sandboxes on it.
 func TestReachingPastThePromptOpensTheWindowOut(t *testing.T) {

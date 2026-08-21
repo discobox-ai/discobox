@@ -101,7 +101,13 @@ func (m *Model) viewCompact() string {
 	// Nothing on this frame suggests there is anything behind it, so it says
 	// so — in the very top line, which is the one place a centered word cannot
 	// be squeezed out by what is beside it, and which costs no row of its own.
-	return m.box("Tab or ↑ for the discoboxes you already have", rows)
+	// ↑ is only offered while the prompt is empty: once there is text in it,
+	// ↑ walks the text and Tab is the way out.
+	banner := "Tab or ↑ for the discoboxes you already have"
+	if m.prompt.Value() != "" {
+		banner = "Tab for the discoboxes you already have"
+	}
+	return m.box(banner, rows)
 }
 
 // centerVertical pads a block to height rows with the block in the middle, so
