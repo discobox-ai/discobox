@@ -129,6 +129,12 @@ type Model struct {
 	// leaderKey is the pane's prefix; empty takes the default. See Model.leader.
 	leaderKey string
 
+	// leaderArmed is the leader held open on one of the window's own screens,
+	// where there is no termpane to own the prefix. It is set by the leader
+	// and consumed by the very next key, so it can never outlive the sequence
+	// that opened it.
+	leaderArmed bool
+
 	// expanded is whether the window has opened out from the prompt it starts
 	// as into the full launcher. See compact.go.
 	expanded bool
@@ -382,7 +388,12 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.clearing, m.printed = false, false
 		return m, nil
 	}
-	return m, m.clearPrinted(m.update(msg))
+	cmd := m.clearPrinted(m.update(msg))
+	// Whatever just happened may have changed which pane is on screen, and a
+	// pane on screen is one being read. Doing it here rather than at each of
+	// the several places focus can move means no new way to move it can forget.
+	m.markSeen()
+	return m, cmd
 }
 
 func (m *Model) update(msg tea.Msg) tea.Cmd {
@@ -677,6 +688,27 @@ func (m *Model) updateKey(msg tea.KeyPressMsg) tea.Cmd {
 			m.dialog = nil
 		}
 		return cmd
+	}
+	// The leader is the window's own prefix outside a pane, where there is no
+	// termpane to own one. It exists so the way out is the same key sequence
+	// on every screen: the workspace already quits on leader-q, and a window
+	// that quits differently depending on which screen you are looking at is
+	// one you have to think about before leaving.
+	//
+	// Not in the prompt. Ctrl-A is the composer's own "start of line", and
+	// taking an editing key away to save a quit that Ctrl-C already does there
+	// is the wrong trade. Ctrl-C still quits on every one of these screens; it
+	// is simply no longer what the window advertises.
+	if m.leaderArmed {
+		m.leaderArmed = false
+		if keyName(msg) == paneQuitKey {
+			return m.closeWindow()
+		}
+		// A mistyped leader costs nothing: the key it preceded is handled as
+		// though the leader had never been pressed, the way it is in a pane.
+	} else if m.focus != focusPrompt && !m.inPanes() && keyName(msg) == m.leader() {
+		m.leaderArmed = true
+		return nil
 	}
 	if m.optionsOpen {
 		return m.updateOptions(msg)
@@ -1922,7 +1954,16 @@ func (m *Model) viewHeaderRight() string {
 	// The harnesses screen is advertised here rather than on the status line
 	// because it is reachable from every one of the window's own screens, and
 	// the status line says what the screen you are on can do.
-	return m.st.dimText.Render("F1 help  ·  F3 harnesses  ·  Ctrl-C quit")
+	//
+	// The quit is whichever one works where you are: leader-q everywhere the
+	// leader is armed, so it reads the same as the workspace's, and Ctrl-C in
+	// the prompt, where Ctrl-A belongs to the composer. Ctrl-C still quits on
+	// both; this is what the window offers, not all it accepts.
+	quit := m.leader() + " " + paneQuitKey + " quit"
+	if m.focus == focusPrompt {
+		quit = "Ctrl-C quit"
+	}
+	return m.st.dimText.Render("F1 help  ·  F3 harnesses  ·  " + quit)
 }
 
 // windowTitle is what the terminal running this window should call itself.
@@ -2365,6 +2406,11 @@ func (m *Model) helpText() string {
 		"",
 		"  Ctrl-C reaches the program in every pane, and quits the window",
 		"  only when no pane is up; from inside one, " + m.leader() + " " + paneQuitKey + " is the quit.",
+		"",
+		"  " + m.leader() + " " + paneQuitKey + " quits from the discoboxes and the harnesses too, so the",
+		"  way out is one sequence wherever you are. Not from the prompt,",
+		"  where " + m.leader() + " is the composer's own start-of-line; Ctrl-C is the",
+		"  quit there, and still works on every screen.",
 		"",
 		"───────────────────────────────────────────────────────────────",
 		"Back in the discobox list",
