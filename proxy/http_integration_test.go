@@ -165,6 +165,7 @@ func TestHTTPProxyMTLSIdentityHeaderRewriteAndAudit(t *testing.T) {
 	if err != nil {
 		t.Fatalf("open audit db: %v", err)
 	}
+	t.Cleanup(func() { _ = pools.Close() })
 	var exchange audit.HTTPExchange
 	if err := pools.Read.Where("client_id = ?", "sandbox-1").First(&exchange).Error; err != nil {
 		t.Fatalf("read audit exchange: %v", err)
@@ -285,6 +286,7 @@ func TestHTTPProxySecretSentinelSwapAndAudit(t *testing.T) {
 	if err != nil {
 		t.Fatalf("open audit db: %v", err)
 	}
+	t.Cleanup(func() { _ = pools.Close() })
 	var exchange audit.HTTPExchange
 	if err := pools.Read.Where("client_id = ?", "sandbox-1").First(&exchange).Error; err != nil {
 		t.Fatalf("read audit exchange: %v", err)
@@ -541,6 +543,7 @@ func TestHTTPProxyCapturesCachedResponseBody(t *testing.T) {
 	if err != nil {
 		t.Fatalf("open audit db: %v", err)
 	}
+	t.Cleanup(func() { _ = pools.Close() })
 	var exchange audit.HTTPExchange
 	if err := pools.Read.Where("client_id = ? AND cache_hit = ?", "sandbox-1", true).First(&exchange).Error; err != nil {
 		t.Fatalf("read cache-hit audit exchange: %v", err)
@@ -757,6 +760,7 @@ func TestLocalForwarderHTTPToWorkerProxy(t *testing.T) {
 	if err != nil {
 		t.Fatalf("open audit db: %v", err)
 	}
+	t.Cleanup(func() { _ = pools.Close() })
 	var exchange audit.HTTPExchange
 	if err := pools.Read.Where("client_id = ?", "sandbox-1").First(&exchange).Error; err != nil {
 		t.Fatalf("read audit exchange: %v", err)
@@ -798,6 +802,7 @@ func waitForHTTPExchange(t *testing.T, dsn, query string, args ...any) audit.HTT
 	if err != nil {
 		t.Fatalf("open audit db: %v", err)
 	}
+	t.Cleanup(func() { _ = pools.Close() })
 	defer func() {
 		if err := pools.Close(); err != nil {
 			t.Errorf("close audit db: %v", err)
@@ -1032,6 +1037,7 @@ func TestHTTPProxySecretSwapOverMITM(t *testing.T) {
 	if err != nil {
 		t.Fatalf("open audit db: %v", err)
 	}
+	t.Cleanup(func() { _ = pools.Close() })
 	var exchange audit.HTTPExchange
 	if err := pools.Read.Where("method = ?", http.MethodGet).Order("id DESC").First(&exchange).Error; err != nil {
 		t.Fatalf("read audit exchange for MITM'd request: %v", err)

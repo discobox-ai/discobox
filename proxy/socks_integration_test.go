@@ -129,6 +129,7 @@ func TestSOCKSProxyMTLSIdentityDeniedAudit(t *testing.T) {
 	if err != nil {
 		t.Fatalf("open audit db: %v", err)
 	}
+	t.Cleanup(func() { _ = pools.Close() })
 	var connect audit.SOCKSConnect
 	if err := pools.Read.Where("client_id = ?", "sandbox-1").First(&connect).Error; err != nil {
 		t.Fatalf("read socks audit: %v", err)

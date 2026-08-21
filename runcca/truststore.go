@@ -7,7 +7,7 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
-	"path/filepath"
+	"path"
 	"sort"
 	"strconv"
 	"strings"
@@ -92,11 +92,11 @@ func seedFromPrebuilt(storeDir, prebuiltDir string) error {
 		if name == TrustStoreBundle {
 			continue
 		}
-		target := filepath.Join(storeDir, name)
+		target := path.Join(storeDir, name)
 		if _, err := os.Lstat(target); err == nil {
 			continue // already present; never replace what is there
 		}
-		source := filepath.Join(prebuiltDir, name)
+		source := path.Join(prebuiltDir, name)
 		info, err := os.Lstat(source)
 		if err != nil {
 			continue // vanished mid-copy; not worth failing a boot over
@@ -155,7 +155,7 @@ func collectAnchors(dirs []string) ([]anchor, error) {
 			if !strings.HasSuffix(name, ".crt") {
 				continue // update-ca-certificates ignores anything else here too
 			}
-			path := filepath.Join(dir, name)
+			path := path.Join(dir, name)
 			body, err := os.ReadFile(path)
 			if err != nil {
 				continue
@@ -180,12 +180,12 @@ func collectAnchors(dirs []string) ([]anchor, error) {
 // addAnchorsToBundle appends the anchors the bundle does not already carry,
 // creating the bundle from the prebuilt one when the store has none.
 func addAnchorsToBundle(storeDir, prebuiltDir string, anchors []anchor) error {
-	bundlePath := filepath.Join(storeDir, TrustStoreBundle)
+	bundlePath := path.Join(storeDir, TrustStoreBundle)
 	body, err := os.ReadFile(bundlePath)
 	switch {
 	case err == nil:
 	case os.IsNotExist(err):
-		body, err = os.ReadFile(filepath.Join(prebuiltDir, TrustStoreBundle))
+		body, err = os.ReadFile(path.Join(prebuiltDir, TrustStoreBundle))
 		if err != nil && !os.IsNotExist(err) {
 			return fmt.Errorf("read prebuilt bundle: %w", err)
 		}
@@ -241,7 +241,7 @@ func certificateDERs(bundle []byte) map[string]bool {
 func linkAnchors(storeDir string, anchors []anchor) error {
 	for _, item := range anchors {
 		pemName := strings.TrimSuffix(item.name, ".crt") + ".pem"
-		if err := ensureSymlink(item.path, filepath.Join(storeDir, pemName)); err != nil {
+		if err := ensureSymlink(item.path, path.Join(storeDir, pemName)); err != nil {
 			return err
 		}
 		hash, err := subjectHash(item.path)
@@ -287,7 +287,7 @@ func subjectHash(path string) (string, error) {
 // displace the certificate already holding the name.
 func linkSubjectHash(storeDir, hash, pemName string) error {
 	for suffix := 0; suffix < 16; suffix++ {
-		link := filepath.Join(storeDir, hash+"."+strconv.Itoa(suffix))
+		link := path.Join(storeDir, hash+"."+strconv.Itoa(suffix))
 		existing, err := os.Readlink(link)
 		if err == nil {
 			if existing == pemName {

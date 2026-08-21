@@ -16,6 +16,16 @@
 //   - `docker run`   -> containerd shim -> `runc create --bundle <dir>`
 //   - `docker build` -> BuildKit executor -> `runc run --bundle <dir>`
 //
+// # Why path and not path/filepath
+//
+// Every path this package handles is a Linux path. The obvious ones are
+// container paths — OCI mount destinations, and the bundle location handed to
+// the clients that ignore the system store — which are slash-separated by the
+// runtime spec no matter what builds them. The rest are host paths, and the
+// host is a pool VM or a sandbox, which is Linux too. filepath would make all
+// of them separator-dependent for no gain: identical on the only platform this
+// runs on, and wrong on any machine that merely compiles the tests.
+//
 // # Why a seeded directory rather than a bind over the bundle file
 //
 // The obvious approach — bind the sandbox's CA bundle straight onto
@@ -52,7 +62,7 @@ import (
 	"fmt"
 	"io"
 	"os"
-	"path/filepath"
+	"path"
 	"sort"
 	"strings"
 
@@ -191,7 +201,7 @@ func anchorDirs() []string {
 // far worse than not injecting at all.
 func Adjust(bundleDir, containerID string, cfg Config) (bool, error) {
 	cfg = cfg.withDefaults()
-	path := filepath.Join(bundleDir, "config.json")
+	path := path.Join(bundleDir, "config.json")
 
 	raw, err := os.ReadFile(path)
 	if err != nil {
@@ -254,7 +264,7 @@ func Cleanup(containerID string, cfg Config) error {
 	if containerID == "" {
 		return nil
 	}
-	return os.RemoveAll(filepath.Join(cfg.StagingRoot, containerID))
+	return os.RemoveAll(path.Join(cfg.StagingRoot, containerID))
 }
 
 // addTrustMounts seeds each trust store and appends the resulting bind mounts.
@@ -273,7 +283,7 @@ func addTrustMounts(spec map[string]any, bundleDir, containerID string, cfg Conf
 	}
 
 	rootfs := specRootPath(spec, bundleDir)
-	staging := filepath.Join(cfg.StagingRoot, containerID)
+	staging := path.Join(cfg.StagingRoot, containerID)
 	existing := existingMountDests(spec)
 
 	var mounts []any
@@ -290,12 +300,12 @@ func addTrustMounts(spec map[string]any, bundleDir, containerID string, cfg Conf
 		if _, taken := existing[store.dir]; taken {
 			continue // the container brought its own; leave it alone
 		}
-		dst := filepath.Join(staging, store.dir)
-		if err := seedTrustStore(filepath.Join(rootfs, store.dir), dst, store, ca, cfg); err != nil {
+		dst := path.Join(staging, store.dir)
+		if err := seedTrustStore(path.Join(rootfs, store.dir), dst, store, ca, cfg); err != nil {
 			return changed, installed, err
 		}
 		if installed == "" {
-			installed = filepath.Join(store.dir, store.bundle)
+			installed = path.Join(store.dir, store.bundle)
 		}
 		mounts = append(mounts, map[string]any{
 			"destination": store.dir,
@@ -310,12 +320,12 @@ func addTrustMounts(spec map[string]any, bundleDir, containerID string, cfg Conf
 	}
 
 	for _, dir := range anchorDirs() {
-		dest := filepath.Join(dir, AnchorFileNameFor(ca))
+		dest := path.Join(dir, AnchorFileNameFor(ca))
 		if _, taken := existing[dest]; taken {
 			continue
 		}
-		src := filepath.Join(staging, "anchors", strings.ReplaceAll(strings.TrimPrefix(dir, "/"), "/", "_")+".crt")
-		if err := os.MkdirAll(filepath.Dir(src), 0o755); err != nil {
+		src := path.Join(staging, "anchors", strings.ReplaceAll(strings.TrimPrefix(dir, "/"), "/", "_")+".crt")
+		if err := os.MkdirAll(path.Dir(src), 0o755); err != nil {
 			return changed, installed, fmt.Errorf("stage anchor dir: %w", err)
 		}
 		//nolint:gosec // A trust anchor is public and must be readable by every user in the container.
@@ -373,16 +383,16 @@ func trustEnv(bundle string) map[string]string {
 func specRootPath(spec map[string]any, bundleDir string) string {
 	root, ok := spec["root"].(map[string]any)
 	if !ok {
-		return filepath.Join(bundleDir, "rootfs")
+		return path.Join(bundleDir, "rootfs")
 	}
-	path, ok := root["path"].(string)
-	if !ok || path == "" {
-		return filepath.Join(bundleDir, "rootfs")
+	rootPath, ok := root["path"].(string)
+	if !ok || rootPath == "" {
+		return path.Join(bundleDir, "rootfs")
 	}
-	if filepath.IsAbs(path) {
-		return path
+	if path.IsAbs(rootPath) {
+		return rootPath
 	}
-	return filepath.Join(bundleDir, path)
+	return path.Join(bundleDir, rootPath)
 }
 
 // seedTrustStore copies an image's trust store into staging and appends the
@@ -396,7 +406,7 @@ func seedTrustStore(src, dst string, store trustStore, ca []byte, cfg Config) er
 		return err
 	}
 
-	bundle := filepath.Join(dst, store.bundle)
+	bundle := path.Join(dst, store.bundle)
 	body, err := os.ReadFile(bundle)
 	switch {
 	case err == nil:
@@ -408,7 +418,7 @@ func seedTrustStore(src, dst string, store trustStore, ca []byte, cfg Config) er
 	case os.IsNotExist(err):
 		// No bundle in the image (distroless, scratch): fall back to the full
 		// staged bundle, which already contains the MITM CA.
-		staged, readErr := os.ReadFile(filepath.Join(cfg.CABundleDir, store.staged))
+		staged, readErr := os.ReadFile(path.Join(cfg.CABundleDir, store.staged))
 		if readErr != nil {
 			// Nothing staged either; the raw CA alone still establishes trust
 			// for the proxy, which is the only thing this exists to do.
@@ -440,8 +450,8 @@ func copyTree(src, dst string) error {
 		return fmt.Errorf("read trust store %s: %w", src, err)
 	}
 	for _, entry := range entries {
-		from := filepath.Join(src, entry.Name())
-		to := filepath.Join(dst, entry.Name())
+		from := path.Join(src, entry.Name())
+		to := path.Join(dst, entry.Name())
 		info, err := os.Lstat(from)
 		if err != nil {
 			continue // vanished mid-copy; not worth failing a container start
