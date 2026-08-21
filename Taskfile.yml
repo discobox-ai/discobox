@@ -547,21 +547,12 @@ tasks:
       - task: check:windows
 
   ci:test:
-    desc: Run every module's tests the way CI does, against label-only harness images
-    deps:
-      - ci:harness-label-images
-    env:
-      # Seeding the built-in harness configs inspects each image and skips what
-      # it cannot find, and a sandbox cannot be created without one, so a runner
-      # that has never built the real images fails every sandbox test. These
-      # stand-ins carry the metadata label and nothing else (ADR 0066 §7).
-      DISCOBOX_HARNESS_CODEX_IMAGE: discobox-harness-codex:ci
-      DISCOBOX_HARNESS_CLAUDE_CODE_IMAGE: discobox-harness-claude-code:ci
-      DISCOBOX_HARNESS_SHELL_IMAGE: discobox-harness-shell:ci
+    desc: Run every module's tests the way CI does
+    # No Docker and no harness images: the suite that needed them now seeds its
+    # harness config directly (ADR 0066 §7's stated end state), so this is
+    # test:all and runs identically on Linux, macOS, and Windows.
     cmds:
-      # A nested invocation rather than `task: test:all`: Task applies env to a
-      # task's own commands only, so a called task would not see the overrides.
-      - go tool task test:all
+      - task: test:all
 
   ci:darwin:
     desc: "The macOS half of CI: static checks plus the native, signed release build"
@@ -569,28 +560,6 @@ tasks:
     cmds:
       - task: check
       - task: release:build
-
-  ci:harness-label-images:
-    desc: Build a label-only stand-in for each built-in harness image
-    cmds:
-      - task: ci:harness-label-image
-        vars: { HARNESS: codex }
-      - task: ci:harness-label-image
-        vars: { HARNESS: claude-code }
-      - task: ci:harness-label-image
-        vars: { HARNESS: shell }
-
-  ci:harness-label-image:
-    desc: Build one label-only harness stand-in (HARNESS=codex|claude-code|shell)
-    requires:
-      vars: [HARNESS]
-    vars:
-      HARNESS_DIR: '{{if eq .HARNESS "codex"}}codex-cli{{else}}{{.HARNESS}}{{end}}'
-    cmds:
-      - >-
-        docker build -f test/harness-label-stub/Dockerfile
-        --build-arg HARNESS_METADATA="$(jq -c . harness/{{.HARNESS_DIR}}/image.json)"
-        -t discobox-harness-{{.HARNESS}}:ci test/harness-label-stub
 
   release:build:
     desc: Build this platform's release binaries into build/release/bin

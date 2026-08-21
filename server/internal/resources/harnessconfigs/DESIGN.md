@@ -44,8 +44,12 @@ still true of it, and true *by rule* rather than by slug:
   rebuild (`DISCOBOX_HARNESS_<SLUG>_IMAGE` → `.env` → server restart) reaches a
   running server. `NewService` reads that override from the environment itself
   rather than having it threaded down from config, so a test binary that seeds a
-  project honors it too — which is how CI runs against label-only stand-ins for
-  the real harness images (ADR 0066 §7). Seeding never changes `Configured`.
+  project honors it too. Seeding never changes `Configured`.
+- Seeding is **not** how a test gets a harness config. It reads metadata off an
+  image label, so it needs a daemon holding images a checkout may never have
+  built — and on Windows it cannot reach a Linux image at all. Tests that need a
+  selectable harness write the config to the store directly, which is what
+  ADR 0066 §7 named as the end state; CI builds no stand-in images.
 - Seeding is best-effort per harness: an uninspectable image is logged and
   skipped so it cannot block startup.
 

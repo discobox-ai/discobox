@@ -15,6 +15,7 @@ import (
 	"github.com/discobox-ai/discobox/server/internal/apperrors"
 	"github.com/discobox-ai/discobox/server/internal/database"
 	"github.com/discobox-ai/discobox/server/internal/events"
+	"github.com/discobox-ai/discobox/server/internal/harnessdefs"
 	"github.com/discobox-ai/discobox/server/internal/model"
 	"github.com/discobox-ai/discobox/server/internal/reconcile"
 	"github.com/discobox-ai/discobox/server/internal/resources/sandboxes"
@@ -472,6 +473,43 @@ func TestSandboxIntentIsReconciledByJobQueue(t *testing.T) {
 	}
 }
 
+// seedTestHarnessConfig gives the project the one harness these tests select by
+// name, written straight to the store.
+//
+// SeedBuiltIns cannot supply it here: it reads each harness's metadata off the
+// image's label, so it needs a Docker daemon holding images this checkout may
+// never have built, and on Windows it cannot reach a Linux image at all. What
+// these tests need from a harness config is that it exists, is configured, and
+// answers to "shell" — none of which is a statement about an image. ADR 0066 §7
+// names constructing the config directly as the end state this replaces the
+// label-only stand-in images with.
+func seedTestHarnessConfig(ctx context.Context, t *testing.T, appStore *store.Store, projectID string) {
+	t.Helper()
+	// Idempotent: on a machine that does have the images built, SeedBuiltIns got
+	// there first and this only has to guarantee the config is selectable.
+	if existing, err := appStore.GetHarnessConfigBySlug(ctx, projectID, harnessdefs.ShellSlug); err == nil && existing != nil {
+		if !existing.Configured {
+			existing.Configured = true
+			if err := appStore.UpdateHarnessConfig(ctx, existing); err != nil {
+				t.Fatalf("configure seeded harness config: %v", err)
+			}
+		}
+		return
+	}
+	config := &model.HarnessConfig{
+		ProjectID:  projectID,
+		Slug:       harnessdefs.ShellSlug,
+		Name:       "Shell",
+		BuiltIn:    true,
+		Configured: true,
+		Image:      "discobox-harness-shell:test",
+		RunCommand: []string{"sh"},
+	}
+	if err := appStore.CreateHarnessConfig(ctx, config); err != nil {
+		t.Fatalf("seed harness config: %v", err)
+	}
+}
+
 func newSandboxTestService(t *testing.T, notify func()) (*service.Service, *sandboxes.SandboxReconciler, *store.Store, string) {
 	t.Helper()
 
@@ -503,6 +541,7 @@ func newSandboxTestService(t *testing.T, notify func()) (*service.Service, *sand
 		t.Fatalf("initialize defaults: %v", err)
 	}
 	installDefaultSandboxProviderInstance(ctx, t, appStore, project.ID, "provider-test", "test")
+	seedTestHarnessConfig(ctx, t, appStore, project.ID)
 	if err := engine.Start(ctx); err != nil {
 		t.Fatalf("start reconcile engine: %v", err)
 	}
