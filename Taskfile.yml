@@ -684,10 +684,19 @@ tasks:
         fi
         ref="{{.REGISTRY}}/discobox-{{.IMAGE}}:$tag"
 
+        # dockerworker.DefaultPoolImage names :latest, so a release that pushes
+        # only the version tag leaves that default unresolvable. A prerelease
+        # does not move it: v1.2.3-rc1 is not what a fresh pool should boot.
+        tags="-t $ref"
+        case "$tag" in
+          *-*) echo "prerelease $tag; not moving :latest" >&2 ;;
+          *) tags="$tags -t {{.REGISTRY}}/discobox-{{.IMAGE}}:latest" ;;
+        esac
+
         # depot builds each architecture on a native machine, so there is no
         # per-arch fan-out and no manifest list to assemble (ADR 0066 §6).
         if command -v depot >/dev/null 2>&1; then
-          depot build --platform {{.PLATFORMS}} -f {{.IMAGE}}/Dockerfile -t "$ref" --push .
+          depot build --platform {{.PLATFORMS}} -f {{.IMAGE}}/Dockerfile $tags --push .
         else
           echo "depot not found; falling back to emulated docker buildx." >&2
           echo "Both Dockerfiles run their Go stage FROM --platform=\$BUILDPLATFORM, so no Go" >&2
@@ -698,7 +707,7 @@ tasks:
           docker run --privileged --rm tonistiigi/binfmt --install arm64,amd64 >/dev/null
           go tool task buildx:builder
           docker buildx build --builder {{.BUILDX_BUILDER}} --platform {{.PLATFORMS}} \
-            -f {{.IMAGE}}/Dockerfile -t "$ref" --push .
+            -f {{.IMAGE}}/Dockerfile $tags --push .
         fi
 
   vm:build:
