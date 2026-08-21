@@ -99,7 +99,6 @@ func Run(ctx context.Context) error {
 		DefaultSandboxImage:            cfg.DefaultSandboxImage,
 		DefaultSandboxImageDigest:      cfg.DefaultSandboxImageDigest,
 		HostID:                         cfg.HostID,
-		HarnessImages:                  cfg.HarnessImages,
 		DevelopmentImages:              cfg.DevelopmentImages,
 		ListenEndpoints:                cfg.Listen,
 	})

@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"log/slog"
 	"net/http"
+	"os"
 	"strings"
 
 	"github.com/discobox-ai/discobox/devimage"
@@ -27,7 +28,16 @@ type Service struct {
 }
 
 func NewService(store *store.Store) *Service {
-	return &Service{store: store, inspector: defaultImageInspector{}}
+	return &Service{
+		store:     store,
+		inspector: defaultImageInspector{},
+		// Read here rather than threaded down from config: seeding is what the
+		// override is for, and every process that seeds — the server, and a
+		// test binary that constructs a project — has to honor it. CI points
+		// these at label-only stand-ins for the real harness images
+		// (ADR 0066 §7).
+		harnessImages: harnessdefs.ImageOverridesFromEnv(os.Getenv),
+	}
 }
 
 // SetDevelopmentImages lets seeding resolve harness metadata from the
@@ -36,13 +46,6 @@ func NewService(store *store.Store) *Service {
 // at startup and the project has no harness to run.
 func (s *Service) SetDevelopmentImages(images []devimage.Image) {
 	s.inspector = newDevImageInspector(images, s.inspector)
-}
-
-// SetHarnessImages installs per-harness image overrides (built-in slug → image).
-// Dev builds use this so the seeded built-ins point at freshly tagged images.
-// Call SeedBuiltIns afterward to apply them.
-func (s *Service) SetHarnessImages(images map[string]string) {
-	s.harnessImages = images
 }
 
 func (s *Service) ListHarnessConfigs(ctx context.Context, projectID string) ([]model.HarnessConfig, error) {

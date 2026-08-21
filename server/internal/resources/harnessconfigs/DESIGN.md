@@ -42,7 +42,10 @@ still true of it, and true *by rule* rather than by slug:
 - Built-in configs **track** their image: `SeedBuiltIns` clobbers `Image` and
   re-snapshots the label whenever the resolved image changes, which is how a dev
   rebuild (`DISCOBOX_HARNESS_<SLUG>_IMAGE` → `.env` → server restart) reaches a
-  running server. Seeding never changes `Configured`.
+  running server. `NewService` reads that override from the environment itself
+  rather than having it threaded down from config, so a test binary that seeds a
+  project honors it too — which is how CI runs against label-only stand-ins for
+  the real harness images (ADR 0066 §7). Seeding never changes `Configured`.
 - Seeding is best-effort per harness: an uninspectable image is logged and
   skipped so it cannot block startup.
 

@@ -119,12 +119,6 @@ func New(store *store.Store, engine *reconcile.Engine, options Options, broker .
 	}
 }
 
-// SetHarnessImages installs per-harness image overrides (built-in slug → image),
-// used by dev builds to point the seeded built-ins at freshly tagged images.
-func (s *Service) SetHarnessImages(images map[string]string) {
-	s.harnessConfigs.SetHarnessImages(images)
-}
-
 func (s *Service) SetSandboxAuthManager(manager *sandboxauth.Manager) {
 	s.Service.SetSandboxAuthManager(manager)
 }

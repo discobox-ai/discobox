@@ -55,9 +55,6 @@ type AppOptions struct {
 	// HostID identifies the machine this server runs on; see config.Config.
 	HostID string
 
-	// HarnessImages overrides built-in harness definition images, keyed by
-	// definition ID (dev builds inject freshly tagged images this way).
-	HarnessImages map[string]string
 	// DevelopmentImages is the watcher-built image set synchronized to every
 	// Docker daemon used by a pool provider.
 	DevelopmentImages []devimage.Image
@@ -149,7 +146,6 @@ func NewApp(ctx context.Context, writeDB, readDB *gorm.DB, options ...AppOptions
 	}, broker)
 	appServices.SetDefaultSandboxImage(opts.DefaultSandboxImage, opts.DefaultSandboxImageDigest)
 	appServices.SetHostID(opts.HostID)
-	appServices.SetHarnessImages(opts.HarnessImages)
 	if opts.SecretSealer != nil {
 		appServices.SetSandboxAuthManager(sandboxauth.NewManager(appStore, opts.SecretSealer))
 	}

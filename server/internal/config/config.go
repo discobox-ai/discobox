@@ -18,7 +18,6 @@ import (
 	"github.com/discobox-ai/discobox/gormdb"
 	"github.com/discobox-ai/discobox/internal/hostid"
 	"github.com/discobox-ai/discobox/pool-agent/imagereap"
-	"github.com/discobox-ai/discobox/server/internal/harnessdefs"
 	"github.com/discobox-ai/discobox/server/internal/sandbox"
 )
 
@@ -65,10 +64,6 @@ type Config struct {
 	// simply means those sandboxes report no upgrade.
 	DefaultSandboxImageDigest string
 
-	// HarnessImages overrides built-in harness definition images, keyed by
-	// definition ID. Dev builds populate this from DISCOBOX_HARNESS_<ID>_IMAGE
-	// so freshly tagged harness images flow through on server restart.
-	HarnessImages map[string]string
 	// DevelopmentImages is the watcher-built image set to converge onto each
 	// Docker daemon before it hosts development pools.
 	DevelopmentImages []devimage.Image
@@ -105,7 +100,6 @@ func Load() (*Config, error) {
 	cfg.SandboxReconcileJobConcurrency = getEnvInt("SANDBOX_RECONCILE_JOB_CONCURRENCY", 4)
 	cfg.DefaultSandboxImage = getEnv("DISCOBOX_DEFAULT_SANDBOX_IMAGE", sandbox.DefaultSandboxImageName)
 	cfg.DefaultSandboxImageDigest = getEnv("DISCOBOX_DEFAULT_SANDBOX_IMAGE_DIGEST", "")
-	cfg.HarnessImages = harnessdefs.ImageOverridesFromEnv(os.Getenv)
 	developmentImageSync, err := getEnvBool(devimage.SyncEnv, false)
 	if err != nil {
 		return nil, err
