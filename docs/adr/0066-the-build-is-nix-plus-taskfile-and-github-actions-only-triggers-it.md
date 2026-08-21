@@ -1,6 +1,6 @@
 # 0066. The build is Nix plus the Taskfile, and GitHub Actions only triggers it
 
-Status: Proposed
+Status: Accepted
 
 Date: 2026-08-20
 
@@ -90,6 +90,13 @@ and Go fetches the exact version `go.mod` names. mise derived that version from
 `go.mod` by script; nixpkgs cannot, and pinning nixpkgs to a revision whose `go`
 happens to match go.mod is a coupling that silently goes stale. The cost is that
 a cold build needs the network to fetch a toolchain.
+
+The general shell holds no libkrun. `libkrun.override { withBlk; withNet; }` is
+not the derivation `cache.nixos.org` has, so keeping it in the default shell
+would make every CI job build libkrun from source for a toolchain none of them
+use. `devShells.libkrun` — x86_64-linux only — keeps Rust, the overridden
+libkrun, `passt`, `pkg-config`, and `qemu-utils` for launcher work, and
+`nix build .#discobox-krun` needs neither shell.
 
 On darwin the devShell is `mkShellNoCC`. `mkShell` injects Nix's clang, and the
 darwin build must compile Objective-C against Virtualization.framework and sign
