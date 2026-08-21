@@ -15,6 +15,13 @@ import (
 
 func start(t *testing.T, opts Options) *Process {
 	t.Helper()
+	// Every child below is a POSIX command — sh, cat, sleep, printf — and the
+	// TTY cases want a PTY this package deliberately does not open on Windows
+	// (see lineeditor_windows.go). procio starts processes inside the Linux
+	// sandbox, so a Windows host has neither half of the premise.
+	if runtime.GOOS == "windows" {
+		t.Skip("procio starts POSIX children on a PTY; the sandbox it runs in is Linux")
+	}
 	if opts.SysProcAttr == nil {
 		opts.SysProcAttr = newSessionAttr()
 	}
@@ -40,6 +47,9 @@ func start(t *testing.T, opts Options) *Process {
 // soon as the process exits — so pipes owned elsewhere are the only way this
 // holds.
 func TestFastCommandOutputSurvivesConcurrentWait(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("printf is a POSIX command; procio's children run in the Linux sandbox")
+	}
 	for i := range 50 {
 		p, err := Start(Options{Command: []string{"printf", "hi"}, Env: os.Environ()})
 		if err != nil {

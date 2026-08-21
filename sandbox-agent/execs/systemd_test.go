@@ -4,11 +4,17 @@ import (
 	"context"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 )
 
 func TestSystemdRunnerKeepsShimRootAndPassesUserToShim(t *testing.T) {
+	// The stand-in for systemd-run is a /bin/sh script, and systemd-run itself
+	// exists nowhere else: this runner drives the sandbox's own init.
+	if runtime.GOOS == "windows" {
+		t.Skip("systemd-run is stubbed with a /bin/sh script; the sandbox's init is systemd on Linux")
+	}
 	dir := t.TempDir()
 	argsPath := filepath.Join(dir, "args.txt")
 	systemdRun := filepath.Join(dir, "systemd-run")

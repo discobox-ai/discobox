@@ -2,6 +2,7 @@ package execs
 
 import (
 	"os/user"
+	"runtime"
 	"strings"
 	"testing"
 )
@@ -14,6 +15,12 @@ import (
 // carries no user at all — and without this its PATH keeps a literal %HOME%
 // and its harness has no home to install files into.
 func TestEnvDefaultsFindHomeWhenNobodyIsNamed(t *testing.T) {
+	// "This process's identity" is a uid resolved against /etc/passwd. Windows
+	// has neither — os.Getuid reports -1 there and no entry can match it — so
+	// the fallback cannot find a home on a host the sandbox never runs on.
+	if runtime.GOOS == "windows" {
+		t.Skip("the home fallback reads this process's uid out of /etc/passwd; the sandbox is Linux")
+	}
 	current, err := user.Current()
 	if err != nil || strings.TrimSpace(current.HomeDir) == "" {
 		t.Skip("this process has no resolvable home")

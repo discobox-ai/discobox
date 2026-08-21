@@ -10,12 +10,27 @@ import (
 	"github.com/discobox-ai/discobox/sandbox-agent/execs"
 )
 
-func TestRecordAndListEvents(t *testing.T) {
-	ctx := context.Background()
-	st, err := Open(ctx, filepath.Join(t.TempDir(), "harness.db"))
+// openStore opens a store under a temporary directory and closes it when the
+// test ends. The close is what makes the cleanup work: sqlite holds the file
+// open, and Windows refuses to remove a file another handle still has, so a
+// store left open fails t.TempDir's RemoveAll rather than the assertion.
+func openStore(t *testing.T, ctx context.Context, dsn string) *Store {
+	t.Helper()
+	st, err := Open(ctx, dsn)
 	if err != nil {
 		t.Fatalf("open store: %v", err)
 	}
+	t.Cleanup(func() {
+		if err := st.Close(); err != nil {
+			t.Errorf("close store: %v", err)
+		}
+	})
+	return st
+}
+
+func TestRecordAndListEvents(t *testing.T) {
+	ctx := context.Background()
+	st := openStore(t, ctx, filepath.Join(t.TempDir(), "harness.db"))
 	if err := st.RecordExecEvent(ctx, "ex_1", "exec.created", "created", map[string]any{"harnessId": "codex"}); err != nil {
 		t.Fatalf("record event: %v", err)
 	}
@@ -31,10 +46,7 @@ func TestRecordAndListEvents(t *testing.T) {
 func TestPrimaryTerminalLaunchedMarker(t *testing.T) {
 	ctx := context.Background()
 	dbPath := filepath.Join(t.TempDir(), "harness.db")
-	st, err := Open(ctx, dbPath)
-	if err != nil {
-		t.Fatalf("open store: %v", err)
-	}
+	st := openStore(t, ctx, dbPath)
 	launched, err := st.PrimaryTerminalLaunched(ctx)
 	if err != nil {
 		t.Fatalf("primary launched: %v", err)
@@ -51,10 +63,7 @@ func TestPrimaryTerminalLaunchedMarker(t *testing.T) {
 	}
 	// A freshly reopened store (simulating a sandbox restart) must observe the
 	// durable marker.
-	reopened, err := Open(ctx, dbPath)
-	if err != nil {
-		t.Fatalf("reopen store: %v", err)
-	}
+	reopened := openStore(t, ctx, dbPath)
 	launched, err = reopened.PrimaryTerminalLaunched(ctx)
 	if err != nil {
 		t.Fatalf("primary launched after reopen: %v", err)
@@ -66,11 +75,8 @@ func TestPrimaryTerminalLaunchedMarker(t *testing.T) {
 
 func TestRecordAndListHarnessHooks(t *testing.T) {
 	ctx := context.Background()
-	st, err := Open(ctx, filepath.Join(t.TempDir(), "harness.db"))
-	if err != nil {
-		t.Fatalf("open store: %v", err)
-	}
-	_, err = st.RecordHarnessHook(ctx, HarnessHookRecord{
+	st := openStore(t, ctx, filepath.Join(t.TempDir(), "harness.db"))
+	_, err := st.RecordHarnessHook(ctx, HarnessHookRecord{
 		TerminalID: "agt_1",
 		Provider:   "codex",
 		Event:      "PreToolUse",
@@ -93,10 +99,7 @@ func TestRecordAndListHarnessHooks(t *testing.T) {
 
 func TestExecRecordIsDurableAndImmutable(t *testing.T) {
 	ctx := context.Background()
-	st, err := Open(ctx, filepath.Join(t.TempDir(), "harness.db"))
-	if err != nil {
-		t.Fatalf("open store: %v", err)
-	}
+	st := openStore(t, ctx, filepath.Join(t.TempDir(), "harness.db"))
 	created := time.Now().UTC()
 	rec := execs.Exec{
 		ID:        "ex_1",
@@ -141,10 +144,7 @@ func TestExecRecordIsDurableAndImmutable(t *testing.T) {
 
 func TestObserveExecRecordsTransitions(t *testing.T) {
 	ctx := context.Background()
-	st, err := Open(ctx, filepath.Join(t.TempDir(), "harness.db"))
-	if err != nil {
-		t.Fatalf("open store: %v", err)
-	}
+	st := openStore(t, ctx, filepath.Join(t.TempDir(), "harness.db"))
 	createdAt := time.Now().UTC()
 	status := execs.Exec{ID: "ex_1", Status: execs.StatusRunning, CreatedAt: createdAt}
 	if err := st.ObserveExec(ctx, status); err != nil {
@@ -175,10 +175,7 @@ func TestObserveExecRecordsTransitions(t *testing.T) {
 
 func TestResourceSamplesRespectRetention(t *testing.T) {
 	ctx := context.Background()
-	st, err := Open(ctx, filepath.Join(t.TempDir(), "harness.db"))
-	if err != nil {
-		t.Fatalf("open store: %v", err)
-	}
+	st := openStore(t, ctx, filepath.Join(t.TempDir(), "harness.db"))
 	for i := range 3 {
 		_, err := st.RecordResourceSample(ctx, ResourceSample{
 			TerminalID: "agt_1",
@@ -204,10 +201,7 @@ func TestResourceSamplesRespectRetention(t *testing.T) {
 
 func TestExecLogChunksAreOrderedAndDeletable(t *testing.T) {
 	ctx := context.Background()
-	st, err := Open(ctx, filepath.Join(t.TempDir(), "harness.db"))
-	if err != nil {
-		t.Fatalf("open store: %v", err)
-	}
+	st := openStore(t, ctx, filepath.Join(t.TempDir(), "harness.db"))
 	base := time.Now().UTC()
 	for i := range 3 {
 		if err := st.AppendExecLogChunk(ctx, "exec_1", base.Add(time.Duration(i)*time.Minute), "zstd", []byte{byte(i)}, 10); err != nil {
@@ -251,10 +245,7 @@ func TestExecLogChunksAreOrderedAndDeletable(t *testing.T) {
 
 func TestExecLogChunksPruneBeyondRetention(t *testing.T) {
 	ctx := context.Background()
-	st, err := Open(ctx, filepath.Join(t.TempDir(), "harness.db"))
-	if err != nil {
-		t.Fatalf("open store: %v", err)
-	}
+	st := openStore(t, ctx, filepath.Join(t.TempDir(), "harness.db"))
 	now := time.Now().UTC()
 	if err := st.AppendExecLogChunk(ctx, "exec_1", now.Add(-defaultLogRetention-time.Hour), "zstd", []byte{1}, 1); err != nil {
 		t.Fatalf("append stale chunk: %v", err)

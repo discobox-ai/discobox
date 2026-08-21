@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 
@@ -14,8 +15,15 @@ import (
 // stubDocker installs a shell script in place of the docker CLI. It appends
 // every invocation to a log, and fails the first failTags `tag` calls with the
 // error the daemon returns when another build raced this one for the name.
+//
+// The stub is a /bin/sh script and the build it stands in for runs /bin/true,
+// so every test built on it is POSIX-only. That costs nothing: discobox-docker
+// is the docker shim inside the Linux sandbox and never ships for Windows.
 func stubDocker(t *testing.T, failTags int) string {
 	t.Helper()
+	if runtime.GOOS == "windows" {
+		t.Skip("the docker stub is a /bin/sh script; discobox-docker only runs in the Linux guest")
+	}
 	dir := t.TempDir()
 	log := filepath.Join(dir, "calls.log")
 	const daemonRace = `Error response from daemon: failed to create an image ` +

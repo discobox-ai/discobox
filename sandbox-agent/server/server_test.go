@@ -300,12 +300,27 @@ func TestTokenRouteIdentityMustMatch(t *testing.T) {
 	}
 }
 
-func TestAgentTerminalEventsAndResources(t *testing.T) {
-	publicKey, signToken := sandboxAgentTestSigner(t)
+// openAgentStore opens a store under a temporary directory and closes it when
+// the test ends. Closing is what lets the cleanup run: sqlite keeps the file
+// open, and Windows will not remove a file another handle still holds, so a
+// store left open fails t.TempDir's RemoveAll after the test itself passed.
+func openAgentStore(t *testing.T) *agentstore.Store {
+	t.Helper()
 	st, err := agentstore.Open(context.Background(), filepath.Join(t.TempDir(), "harness.db"))
 	if err != nil {
 		t.Fatalf("open store: %v", err)
 	}
+	t.Cleanup(func() {
+		if err := st.Close(); err != nil {
+			t.Errorf("close store: %v", err)
+		}
+	})
+	return st
+}
+
+func TestAgentTerminalEventsAndResources(t *testing.T) {
+	publicKey, signToken := sandboxAgentTestSigner(t)
+	st := openAgentStore(t)
 	runner := &sandboxAgentFakeRunner{}
 	cfg := testConfigWithRunner(publicKey, runner)
 	cfg.Store = st
@@ -369,10 +384,7 @@ func TestAgentTerminalEventsAndResources(t *testing.T) {
 
 func TestAgentTerminalResourceStreamReplaysHistory(t *testing.T) {
 	publicKey, signToken := sandboxAgentTestSigner(t)
-	st, err := agentstore.Open(context.Background(), filepath.Join(t.TempDir(), "harness.db"))
-	if err != nil {
-		t.Fatalf("open store: %v", err)
-	}
+	st := openAgentStore(t)
 	runner := &sandboxAgentFakeRunner{}
 	cfg := testConfigWithRunner(publicKey, runner)
 	cfg.Store = st

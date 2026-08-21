@@ -18,7 +18,6 @@ import (
 	"github.com/discobox-ai/discobox/execstream"
 	"github.com/discobox-ai/discobox/execstream/frame"
 	"github.com/discobox-ai/discobox/execstream/resume"
-	"github.com/discobox-ai/discobox/internal/shorttmp"
 	"github.com/discobox-ai/discobox/sandbox-agent/shimproxy"
 )
 
@@ -73,7 +72,7 @@ func dialResumableShim(ctx context.Context, socketPath string) (*resumableShimCo
 // HTTP upgrade, host.Stream, PTY, and process stdin/stdout rather than replacing
 // the application callback with a fake.
 func TestRunShimResumesTerminalInputAcrossPhysicalReconnect(t *testing.T) {
-	dir := shorttmp.Dir(t)
+	dir := shimDir(t)
 	ctx, cancel := context.WithTimeout(t.Context(), 15*time.Second)
 	defer cancel()
 
