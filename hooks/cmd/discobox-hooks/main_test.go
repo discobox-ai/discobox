@@ -12,6 +12,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"regexp"
+	"runtime"
 	"sort"
 	"strings"
 	"testing"
@@ -77,8 +78,22 @@ func TestCommandLayout(t *testing.T) {
 	}
 }
 
+// socketTempRoot returns a directory short enough to root a Unix socket under.
+//
+// A Unix socket path cannot exceed 108 bytes, and computeSessionPaths spends
+// about seventy of them on the session and repo-key components. os.TempDir() is
+// not reliably within the remaining budget: `nix develop` roots TMPDIR in the
+// workspace, and macOS uses /var/folders/<two levels of base64>. /tmp is short
+// by definition on both. Windows named pipes have no such limit.
+func socketTempRoot() string {
+	if runtime.GOOS == "windows" {
+		return ""
+	}
+	return "/tmp"
+}
+
 func TestChangesLimitZeroSendsExplicitLimit(t *testing.T) {
-	temp, err := os.MkdirTemp("", "h")
+	temp, err := os.MkdirTemp(socketTempRoot(), "h")
 	if err != nil {
 		t.Fatal(err)
 	}

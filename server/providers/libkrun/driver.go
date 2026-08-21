@@ -72,7 +72,7 @@ type Driver struct {
 // NewDriver validates host dependencies and creates a libkrun driver. It does
 // not start or stop existing VMs; InspectVM re-adopts them from runtime state.
 func NewDriver(cfg DriverConfig) (*Driver, error) {
-	if err := validateHostPlatform(); err != nil {
+	if err := validateHostPlatform(); err != nil { //nolint:staticcheck // SA4023: validateHostPlatform is a stub that always errors off linux/amd64; the check is meaningful on linux/amd64.
 		return nil, err
 	}
 	if cfg.VCPUs < 0 || cfg.MemoryMiB < 0 || cfg.DataDiskGiB < 0 || cfg.CacheDiskGiB < 0 {
@@ -489,6 +489,7 @@ func (d *Driver) signalLauncher(poolID string, signal syscall.Signal) error {
 	if !processMatches(identity) {
 		return nil
 	}
+	//nolint:staticcheck // SA4023: signalProcess is a stub that always errors off linux/amd64; the check is meaningful on linux/amd64.
 	if err := signalProcess(identity.PID, signal); err != nil && !errors.Is(err, syscall.ESRCH) {
 		return fmt.Errorf("signal discobox-krun for %s: %w", poolID, err)
 	}
