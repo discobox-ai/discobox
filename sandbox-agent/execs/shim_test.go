@@ -21,8 +21,29 @@ import (
 	"github.com/discobox-ai/discobox/sandbox-agent/shimproxy"
 )
 
+// socketDir returns a temporary directory short enough to hold a Unix socket.
+//
+// A socket path cannot exceed 108 bytes, and t.TempDir() spends the budget
+// twice over: it roots at $TMPDIR, which `nix develop` points inside the
+// workspace and macOS points at /var/folders/<two levels of base64>, and then
+// appends the test's own name. The longest names here already overflow it.
+// os.MkdirTemp under a short root leaves room for every one of them.
+func socketDir(t *testing.T) string {
+	t.Helper()
+	root := ""
+	if runtime.GOOS != "windows" {
+		root = "/tmp"
+	}
+	dir, err := os.MkdirTemp(root, "execs")
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = os.RemoveAll(dir) })
+	return dir
+}
+
 func TestRunShimSendsOutputBeforeExitFrame(t *testing.T) {
-	dir := t.TempDir()
+	dir := socketDir(t)
 	logs := newFakeLogSink()
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
@@ -127,7 +148,7 @@ done:
 }
 
 func TestRunShimUsesResizeFrameBeforeStart(t *testing.T) {
-	dir := t.TempDir()
+	dir := socketDir(t)
 	logs := newFakeLogSink()
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
@@ -255,7 +276,7 @@ func attachReadExit(ctx context.Context, t *testing.T, socketPath string, start 
 // A client that attaches after the process has already exited still receives the
 // exit frame (and code) rather than a bare disconnect, because the shim lingers.
 func TestRunShimLingersForLateAttach(t *testing.T) {
-	dir := t.TempDir()
+	dir := socketDir(t)
 	logs := newFakeLogSink()
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
@@ -292,7 +313,7 @@ func TestRunShimLingersForLateAttach(t *testing.T) {
 // stderr as frame.Stderr, so a client can route each the way a local command
 // does. A TTY exec has no such split — the PTY merges them before the shim.
 func TestRunShimSeparatesStderrFrames(t *testing.T) {
-	dir := t.TempDir()
+	dir := socketDir(t)
 	logs := newFakeLogSink()
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
@@ -379,7 +400,7 @@ func attachShimForTest(ctx context.Context, t *testing.T, socketPath string) *bu
 // in the log — lets a client tell this apart from a pipe exec that wrote
 // nothing to stderr, which is the point: clients do not special-case TTYs.
 func TestRunShimTTYReportsEverythingAsStdout(t *testing.T) {
-	dir := t.TempDir()
+	dir := socketDir(t)
 	logs := newFakeLogSink()
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
@@ -449,7 +470,7 @@ func TestRunShimTTYReportsEverythingAsStdout(t *testing.T) {
 // output lives in that window.
 func TestRunShimDoesNotLoseOutputRacingAttach(t *testing.T) {
 	for i := range 25 {
-		dir := t.TempDir()
+		dir := socketDir(t)
 		logs := newFakeLogSink()
 		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 		socketPath := filepath.Join(dir, "shim.sock")
@@ -500,7 +521,7 @@ func TestRunShimSuspendAndResume(t *testing.T) {
 	if runtime.GOOS != "linux" {
 		t.Skip("process state is read from /proc")
 	}
-	dir := t.TempDir()
+	dir := socketDir(t)
 	logs := newFakeLogSink()
 	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
 	defer cancel()
@@ -557,7 +578,7 @@ func TestRunShimStartupCommandGetsRealJobControl(t *testing.T) {
 	if _, err := exec.LookPath("bash"); err != nil {
 		t.Skip("bash not available")
 	}
-	dir := t.TempDir()
+	dir := socketDir(t)
 	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
 	defer cancel()
 	socketPath := filepath.Join(dir, "shim.sock")
@@ -614,7 +635,7 @@ func TestRunShimStartupCommandGetsRealJobControl(t *testing.T) {
 // count (not a stale snapshot), since sandbox-agent's status endpoint relies
 // on this to report active terminal/exec connections.
 func TestRunShimReportsAttacherCount(t *testing.T) {
-	dir := t.TempDir()
+	dir := socketDir(t)
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 

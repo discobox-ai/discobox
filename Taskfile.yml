@@ -369,13 +369,6 @@ tasks:
 
   test:all:
     desc: Run root and nested module tests
-    env:
-      # A Unix socket path cannot exceed 108 bytes, and several suites bind one
-      # under t.TempDir(), which is rooted at $TMPDIR. `nix develop` sets that
-      # to a build-style path inside the workspace, which spends most of the
-      # budget before the test name is even appended. Windows named pipes have
-      # no such limit and Go there reads TMP/TEMP, not TMPDIR.
-      TMPDIR: '{{if ne OS "windows"}}/tmp{{end}}'
     cmds:
       - go test {{.PACKAGES}}
       - cd cli && go test ./...

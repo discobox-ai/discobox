@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"runtime"
 	"slices"
 	"strings"
 	"testing"
@@ -561,6 +562,14 @@ func TestSpecRootPathHonoursTheSpec(t *testing.T) {
 // End to end: an image whose trust store lives at the spec's root.path must
 // have its own CAs preserved, not replaced by the staged fallback.
 func TestAdjustSeedsFromSpecRootPath(t *testing.T) {
+	// This one feeds root.path an absolute path that has to exist on disk, so
+	// on Windows it is necessarily a C:\ path — and specRootPath reads root.path
+	// as the Linux path the runtime spec says it is. The rest of the suite runs
+	// everywhere; this case cannot, because the value under test is the host's
+	// own absolute-path syntax.
+	if runtime.GOOS == "windows" {
+		t.Skip("root.path is a host path, and a Windows host path is not what specRootPath parses")
+	}
 	f := newFixture(t, []string{"debian.pem"}, nil, nil)
 	// Put the image's trust store somewhere other than bundleDir/rootfs.
 	imageRoot := filepath.Join(f.dir, "snapshot", "fs")

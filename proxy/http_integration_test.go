@@ -15,6 +15,7 @@ import (
 	"net/url"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strconv"
 	"strings"
 	"sync"
@@ -934,6 +935,14 @@ func dialProxyMTLS(ctx context.Context, t *testing.T, addr string, material Clie
 }
 
 func TestHTTPProxySecretSwapOverMITM(t *testing.T) {
+	// The assertion needs the request to reach the handler, which writes the
+	// audit row, even when goproxy's verifying MITM transport then rejects the
+	// self-signed test origin (see the comment on client.Do below). On Windows
+	// the MITM leg fails earlier than that, so no row is written and there is
+	// nothing to assert against. The proxy itself only ever runs on Linux.
+	if runtime.GOOS == "windows" {
+		t.Skip("goproxy's MITM leg fails before the handler runs on Windows")
+	}
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 

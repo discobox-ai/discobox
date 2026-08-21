@@ -72,7 +72,7 @@ func dialResumableShim(ctx context.Context, socketPath string) (*resumableShimCo
 // HTTP upgrade, host.Stream, PTY, and process stdin/stdout rather than replacing
 // the application callback with a fake.
 func TestRunShimResumesTerminalInputAcrossPhysicalReconnect(t *testing.T) {
-	dir := t.TempDir()
+	dir := socketDir(t)
 	ctx, cancel := context.WithTimeout(t.Context(), 15*time.Second)
 	defer cancel()
 
