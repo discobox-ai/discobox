@@ -421,6 +421,13 @@ func (f *fakeSource) setServices(services []Service) {
 	f.services = services
 }
 
+// verbs is every discobox lifecycle verb the window has run.
+func (f *fakeSource) verbs() []string {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return append([]string(nil), f.did...)
+}
+
 // acts is every service verb the window has run.
 func (f *fakeSource) acts() []string {
 	f.mu.Lock()

@@ -104,6 +104,9 @@ type pane struct {
 	// what makes the pane read-only: there is nothing at the far end reading
 	// stdin.
 	service string
+	// serviceName is the service's display name, kept beside its id so a verb
+	// run from this pane can report on it without going back to the listing.
+	serviceName string
 	// serviceRun identifies the run this pane was opened on, so the poll can
 	// tell a pane that is still looking at what the server reports from one
 	// whose service has since restarted, stopped or been fixed. See
@@ -180,6 +183,14 @@ type newTerminalMsg struct{}
 
 // openServicesMsg is the leader plus S: open the discobox's declared services.
 type openServicesMsg struct{}
+
+// paneServiceVerbs are the list's own lifecycle keys, re-read as the focused
+// service's rather than the discobox's. They are the list's keys and not new
+// ones so that stopping the thing in front of you is the key you already know.
+var paneServiceVerbs = map[string]ServiceVerb{
+	"t": ServiceStop,
+	"T": ServiceStart,
+}
 
 // zoomPaneMsg is the leader plus z: give the focused column the whole window,
 // or give the window back to the split.
@@ -546,6 +557,21 @@ func (m *Model) updatePaneMsg(tagged paneMsg) tea.Cmd {
 		return m.copyText(msg.Text)
 
 	case paneActionMsg:
+		// On a service, stop and start are the service's. The pane you are
+		// looking at is what a verb applies to — the same rule that makes
+		// these keys mean the discobox on screen rather than the row the list
+		// left its cursor on — and a service is the one kind of pane that has
+		// a lifecycle of its own to apply them to.
+		//
+		// Only those two are re-scoped. Upgrade, archive and the rest have no
+		// meaning for a service, so they keep meaning the discobox, and
+		// restart — which the list has no verb for — stays on the services
+		// menu rather than taking a key that means something else everywhere.
+		if p.service != "" {
+			if verb, ok := paneServiceVerbs[msg.key]; ok {
+				return m.runServiceVerb(verb, Service{ID: p.service, Name: p.serviceName})
+			}
+		}
 		// The list's dispatcher, on the one discobox this screen is showing:
 		// the same enabled checks, the same confirmations, the same reports.
 		return m.actOn(msg.key, []Sandbox{m.currentBox()})

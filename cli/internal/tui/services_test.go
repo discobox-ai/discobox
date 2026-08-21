@@ -255,6 +255,77 @@ func TestAnArrivingServiceLeavesTheWorkingPaneAlone(t *testing.T) {
 	}
 }
 
+// On a service, the list's own stop and start keys are the service's: the pane
+// you are looking at is what a verb applies to.
+func TestStopAndStartOnAServicePaneActOnTheService(t *testing.T) {
+	for _, tc := range []struct{ key, want string }{
+		{"t", "stop sbx_one otel"},
+		{"T", "start sbx_one otel"},
+	} {
+		t.Run(tc.key, func(t *testing.T) {
+			ds := newFakeSource(testSandboxes()...)
+			ds.services = []Service{runningService("otel", "OTEL", "exec_svc1")}
+			ds.execs = []Exec{serviceExecRecord("exec_svc1", "otel", "OTEL")}
+			d, m, _ := openWorkspace(t, ds, "enter")
+			d.wait("the service tab", func() bool { return m.terminals.len() == 2 })
+			focusService(d, m)
+
+			d.key("ctrl+a")
+			d.key(tc.key)
+			d.wait("the verb to run", func() bool { return len(ds.acts()) > 0 })
+
+			if got := ds.acts()[0]; got != tc.want {
+				t.Fatalf("ran %q, want %q", got, tc.want)
+			}
+			// And the discobox itself was left alone.
+			if len(ds.verbs()) != 0 {
+				t.Fatalf("also ran %v against the discobox", ds.verbs())
+			}
+		})
+	}
+}
+
+// Everywhere else those keys still mean the discobox, including on the pane
+// right next to the service.
+func TestStopOnATerminalPaneStillActsOnTheDiscobox(t *testing.T) {
+	ds := newFakeSource(testSandboxes()...)
+	ds.services = []Service{runningService("otel", "OTEL", "exec_svc1")}
+	ds.execs = []Exec{serviceExecRecord("exec_svc1", "otel", "OTEL")}
+	d, m, _ := openWorkspace(t, ds, "enter")
+	d.wait("the service tab", func() bool { return m.terminals.len() == 2 })
+
+	// The primary has the keys, as it does by default.
+	d.key("ctrl+a")
+	d.key("t")
+	d.wait("the verb to run", func() bool { return len(ds.verbs()) > 0 })
+
+	if got := ds.verbs()[0]; got != "stop sbx_one" {
+		t.Fatalf("ran %q, want %q", got, "stop sbx_one")
+	}
+	if len(ds.acts()) != 0 {
+		t.Fatalf("also ran %v against a service", ds.acts())
+	}
+}
+
+// A verb with no meaning for a service is not re-scoped: it still applies to
+// the discobox, which is the only thing it could apply to.
+func TestAnUnrelatedVerbOnAServicePaneActsOnTheDiscobox(t *testing.T) {
+	ds := newFakeSource(testSandboxes()...)
+	ds.services = []Service{runningService("otel", "OTEL", "exec_svc1")}
+	ds.execs = []Exec{serviceExecRecord("exec_svc1", "otel", "OTEL")}
+	d, m, _ := openWorkspace(t, ds, "enter")
+	d.wait("the service tab", func() bool { return m.terminals.len() == 2 })
+	focusService(d, m)
+
+	d.key("ctrl+a")
+	d.key("x")
+	d.wait("the verb to run", func() bool { return len(ds.verbs()) > 0 })
+
+	if got := ds.verbs()[0]; got != "archive sbx_one" {
+		t.Fatalf("ran %q, want %q", got, "archive sbx_one")
+	}
+}
+
 // A service stopped on purpose has no tab: its absence says the right thing,
 // and a pane to dismiss every time would be the window nagging.
 func TestAStoppedServiceHasNoTab(t *testing.T) {

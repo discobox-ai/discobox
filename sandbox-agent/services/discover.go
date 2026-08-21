@@ -1,6 +1,6 @@
 // Package services runs a repository's declared services: the scripts under
 // `.discobox/services` that the sandbox starts for you at boot and that
-// `disco box services` and the workspace act on afterwards.
+// `discobox admin services` and the workspace act on afterwards.
 //
 // A service is an exec (ADR 0068). This package owns the declaration — where
 // it is read from, what it may say, and what makes one invalid — and the

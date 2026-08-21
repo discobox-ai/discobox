@@ -427,12 +427,13 @@ func (m *Model) serviceTermOpened(msg serviceTermMsg) tea.Cmd {
 		stream: msg.term,
 		// A service is never typed at, so its pane is read-only whether it is
 		// drawing a live process or a card.
-		action:     InteractService,
-		sandbox:    m.paneBox,
-		execID:     paneID,
-		title:      msg.service.displayName() + msg.service.tabMark(),
-		service:    msg.service.ID,
-		serviceRun: msg.service.runKey(),
+		action:      InteractService,
+		sandbox:     m.paneBox,
+		execID:      paneID,
+		title:       msg.service.displayName() + msg.service.tabMark(),
+		service:     msg.service.ID,
+		serviceName: msg.service.displayName(),
+		serviceRun:  msg.service.runKey(),
 	}
 	if !msg.service.live() {
 		p.status = msg.service.paneStatus()

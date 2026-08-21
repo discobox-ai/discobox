@@ -15,7 +15,7 @@ import (
 
 // Services are the discobox's own long-running processes: the scripts its
 // repository declares under `.discobox/services`, started for you when the
-// sandbox boots (ADR 0068). They are addressed by their declared id rather
+// discobox boots (ADR 0068). They are addressed by their declared id rather
 // than by an exec id, because the declaration is what outlives any one run.
 
 func (a *App) newSandboxServiceCommand() *cobra.Command {
@@ -23,12 +23,12 @@ func (a *App) newSandboxServiceCommand() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:     "services",
 		Aliases: []string{"service"},
-		Short:   "Manage a sandbox's declared services",
+		Short:   "Manage a discobox's declared services",
 		Long: "Services are the scripts a repository declares under .discobox/services.\n" +
-			"The sandbox starts them when it boots; these commands inspect and control them afterwards.",
+			"The discobox starts them when it boots; these commands inspect and control them afterwards.",
 	}
-	cmd.PersistentFlags().StringVar(&sandboxID, "sandbox-id", "", "Sandbox ID")
-	_ = cmd.RegisterFlagCompletionFunc("sandbox-id", a.completeSandboxes)
+	cmd.PersistentFlags().StringVar(&sandboxID, "discobox-id", "", "Discobox ID")
+	_ = cmd.RegisterFlagCompletionFunc("discobox-id", a.completeSandboxes)
 	cmd.AddCommand(a.newSandboxServiceListCommand(&sandboxID))
 	cmd.AddCommand(a.newSandboxServiceLifecycleCommand(&sandboxID, "start", "Start declared services"))
 	cmd.AddCommand(a.newSandboxServiceLifecycleCommand(&sandboxID, "stop", "Stop running services"))
@@ -125,7 +125,7 @@ func (a *App) newSandboxServiceLogsCommand(sandboxID *string) *cobra.Command {
 
 func (a *App) sandboxServiceRequest(ctx context.Context, sandboxArg string) (string, string, *apiclientgen.Client, error) {
 	if strings.TrimSpace(sandboxArg) == "" {
-		return "", "", nil, fmt.Errorf("--sandbox-id is required")
+		return "", "", nil, fmt.Errorf("--discobox-id is required")
 	}
 	return a.sandboxRequest(ctx, sandboxArg)
 }

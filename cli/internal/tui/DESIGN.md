@@ -195,6 +195,17 @@ claims its column's active index when it lands, because it usually lands *last*
 otherwise leave the tab that got there first holding the keys. It sets the index
 only, so a shell explicitly asked for still keeps them.
 
+**On a service, `t` and `T` are the service's.** They are the list's own stop
+and start keys, re-read as the focused service's rather than the discobox's —
+the same rule that makes those keys mean the discobox *on screen* rather than
+the row the list left its cursor on, applied one level further in. A service is
+the only kind of pane with a lifecycle of its own to apply them to.
+
+Only those two move. Upgrade, archive and the rest have no meaning for a
+service and keep meaning the discobox, and restart — which the list has no verb
+for — stays on the services menu rather than taking a key that means something
+else on every other pane.
+
 Unlike the exec listing, the service listing **both opens and closes** panes: a
 service is a declaration and the listing is the whole truth about it, so each
 service has exactly one writer. A pane records the run it was opened on
@@ -215,7 +226,7 @@ therefore carries `pane.service` into the comparison, since a pane described
 by id and age alone would sort as though it were a terminal. Services are then
 ordered among themselves by `Exec.ServiceOrder`, their position in the
 repository's declaration order, so the strip reads the way `.discobox/services`
-does — and the way `disco box services ls` does — and holds still across a
+does — and the way `discobox admin services ls` does — and holds still across a
 restart.
 
 Two things follow from a service running on pipes rather than a PTY: the pane
