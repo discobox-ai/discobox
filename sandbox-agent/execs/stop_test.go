@@ -8,7 +8,7 @@ import (
 
 // Stop is not Delete. Delete tears the record down; Stop ends the run and keeps
 // it, which is what lets a long-lived exec — a service, a terminal — be started
-// again under the same identity (ADR 0038, ADR 0063 §6).
+// again under the same identity (ADR 0038, ADR 0068 §6).
 func TestStopEndsTheRunAndKeepsTheRecord(t *testing.T) {
 	units := &fakeUnitManager{}
 	manager, err := NewManagerWithConfig(ManagerConfig{

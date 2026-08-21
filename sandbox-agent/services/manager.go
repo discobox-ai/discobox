@@ -15,7 +15,7 @@ import (
 // Metadata keys tagging the exec that runs a service. The id is the join —
 // everything addressing a service resolves through it — and the name rides
 // along so a client reading only the exec listing can title a session without
-// a second request (ADR 0063 §7).
+// a second request (ADR 0068 §7).
 const (
 	MetadataServiceID   = "serviceId"
 	MetadataServiceName = "serviceName"
@@ -35,7 +35,7 @@ const (
 	StatusStarting Status = "starting"
 	StatusRunning  Status = "running"
 	// StatusExited is a service whose process ended by itself, successfully.
-	// Nothing restarts it (ADR 0063 §4).
+	// Nothing restarts it (ADR 0068 §4).
 	StatusExited Status = "exited"
 	// StatusFailed is a service whose process ended with a non-zero status, or
 	// that could not be started at all.
@@ -73,7 +73,7 @@ type ManagerConfig struct {
 //
 // It holds no service state of its own. Declarations are re-read from disk on
 // every listing, so a file added or edited while the sandbox is up is seen
-// immediately (ADR 0063 §5), and run state is the exec record — which means
+// immediately (ADR 0068 §5), and run state is the exec record — which means
 // two clients, or a client and the boot flow, cannot hold different ideas of
 // what is running.
 type Manager struct {
@@ -214,7 +214,7 @@ func (m *Manager) Logs(ctx context.Context, id string) ([]execs.LogEntry, error)
 //
 // The launches are sequenced but the services are not ordered: each is started
 // without waiting for the one before it to be ready, so a declaration order is
-// a listing order and never a dependency (ADR 0063 §1). A service that fails to
+// a listing order and never a dependency (ADR 0068 §1). A service that fails to
 // start is logged and the rest still come up — one broken script must not cost
 // you the others.
 func (m *Manager) EnsureStarted(ctx context.Context, logger *slog.Logger) error {
@@ -277,7 +277,7 @@ func (m *Manager) startLocked(ctx context.Context, def Definition) (execs.Exec, 
 		// It is recorded on the exec, so a restart resumes in the same place.
 		Workdir: m.root,
 		// Pipes, not a PTY: a service's output is read after the fact, and
-		// stdout and stderr are worth keeping apart (ADR 0063 §3).
+		// stdout and stderr are worth keeping apart (ADR 0068 §3).
 		TTY: false,
 		Metadata: map[string]string{
 			MetadataServiceID:   def.ID,

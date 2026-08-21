@@ -157,7 +157,7 @@ a full-screen window — and lets the error carry what went wrong to the status
 line.
 
 **Services are the left column's second group, and their panes are read-only**
-(`services.go`, ADR 0063 §7).
+(`services.go`, ADR 0068 §7).
 
 They are drawn from a **listing of their own**, polled beside the exec listing,
 and this is the one place the workspace needs a second seam. A service is an

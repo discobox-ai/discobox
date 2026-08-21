@@ -471,7 +471,7 @@ type Exec struct {
 
 	// Service is the id of the declared service this exec runs, empty for
 	// every session that is not one. A service is an exec the sandbox started
-	// from the repository's `.discobox/services` (ADR 0063), and it reaches the
+	// from the repository's `.discobox/services` (ADR 0068), and it reaches the
 	// workspace through this same listing rather than a poll of its own.
 	Service string
 	// ServiceName is the service's display name, which is what its tab is

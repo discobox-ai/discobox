@@ -15,7 +15,7 @@ import (
 
 // Services are the discobox's own long-running processes: the scripts its
 // repository declares under `.discobox/services`, started for you when the
-// sandbox boots (ADR 0063). They are addressed by their declared id rather
+// sandbox boots (ADR 0068). They are addressed by their declared id rather
 // than by an exec id, because the declaration is what outlives any one run.
 
 func (a *App) newSandboxServiceCommand() *cobra.Command {
@@ -113,7 +113,7 @@ func (a *App) newSandboxServiceLogsCommand(sandboxID *string) *cobra.Command {
 			if a.output == "json" {
 				return writeJSON(cmd.OutOrStdout(), body)
 			}
-			// A service runs on pipes rather than a PTY (ADR 0063 §3), so its
+			// A service runs on pipes rather than a PTY (ADR 0068 §3), so its
 			// two streams are still distinct here and are written to the two
 			// this command was given. There is no input to include: nothing
 			// types at a service.

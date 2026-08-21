@@ -169,7 +169,7 @@ func newTestManager(t *testing.T) (*Manager, *fakeUnits, string) {
 }
 
 // A service is an exec: a login shell running the declared script, on pipes,
-// tagged with the service it runs (ADR 0063 §2, §3).
+// tagged with the service it runs (ADR 0068 §2, §3).
 func TestStartCreatesAPipeExecTaggedWithItsService(t *testing.T) {
 	manager, units, root := newTestManager(t)
 	writeService(t, root, "10-discobox-api.sh", apiScript, 0o755)
@@ -380,7 +380,7 @@ func TestRestartStartsAStoppedService(t *testing.T) {
 }
 
 // Nothing restarts a service that ends on its own; its exit status is reported
-// and it is left alone (ADR 0063 §4).
+// and it is left alone (ADR 0068 §4).
 func TestAServiceThatExitsStaysExited(t *testing.T) {
 	for _, tc := range []struct {
 		name string
@@ -437,7 +437,7 @@ func TestGetUnknownServiceIsNotFound(t *testing.T) {
 }
 
 // Declarations are re-read on every listing, so a file added while the sandbox
-// is up appears without restarting anything (ADR 0063 §5) — and appears
+// is up appears without restarting anything (ADR 0068 §5) — and appears
 // stopped, because a file appearing must not start a program.
 func TestListSeesDeclarationsAddedWhileRunning(t *testing.T) {
 	manager, units, root := newTestManager(t)
