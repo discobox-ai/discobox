@@ -427,13 +427,14 @@ func (m *Model) serviceTermOpened(msg serviceTermMsg) tea.Cmd {
 		stream: msg.term,
 		// A service is never typed at, so its pane is read-only whether it is
 		// drawing a live process or a card.
-		action:      InteractService,
-		sandbox:     m.paneBox,
-		execID:      paneID,
-		title:       msg.service.displayName() + msg.service.tabMark(),
-		service:     msg.service.ID,
-		serviceName: msg.service.displayName(),
-		serviceRun:  msg.service.runKey(),
+		action:       InteractService,
+		sandbox:      m.paneBox,
+		execID:       paneID,
+		title:        msg.service.displayName() + msg.service.tabMark(),
+		service:      msg.service.ID,
+		serviceName:  msg.service.displayName(),
+		serviceOrder: msg.order,
+		serviceRun:   msg.service.runKey(),
 	}
 	if !msg.service.live() {
 		p.status = msg.service.paneStatus()
@@ -659,6 +660,17 @@ func (m *Model) workspaceTermOpened(msg workspaceTermMsg) tea.Cmd {
 func execBefore(a, b Exec) bool {
 	if serviceExec(a) != serviceExec(b) {
 		return serviceExec(b)
+	}
+	// Two services are ordered as the repository declares them, not by when
+	// their processes happened to start: that is what the numeric filename
+	// prefix is for, it is the order `discobox admin services ls` shows, and
+	// it holds still across a restart, which a start time does not.
+	// Two services are ordered as the repository declares them, not by when
+	// their processes happened to start: that is what the numeric filename
+	// prefix is for, it is the order `discobox admin services ls` shows, and
+	// it holds still across a restart, which a start time does not.
+	if serviceExec(a) && a.ServiceOrder != b.ServiceOrder {
+		return a.ServiceOrder < b.ServiceOrder
 	}
 	if !a.CreatedAt.Equal(b.CreatedAt) {
 		return a.CreatedAt.Before(b.CreatedAt)

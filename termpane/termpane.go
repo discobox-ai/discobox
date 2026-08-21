@@ -86,6 +86,11 @@ type Model struct {
 	// being the live screen. See Scroll.
 	scroll int
 
+	// outputSeq counts the batches of output drawn; see OutputSeq. It is
+	// written and read on the host's update goroutine, like scroll, so it
+	// needs none of the mutex below.
+	outputSeq uint64
+
 	// Selection state; see select.go. sel exists while attached, seized is
 	// the host's mouse override, and selShot/selAlt are what the selection
 	// read when it was made — the reference reconcileSelection clears against.
@@ -259,6 +264,14 @@ func (m *Model) SetSize(cols, rows int) {
 
 // Size is the pane's current size in cells.
 func (m *Model) Size() (cols, rows int) { return m.cols, m.rows }
+
+// OutputSeq counts the batches of output this pane has drawn. It says nothing
+// about how much arrived — only that the screen is not what it was — which is
+// what a host needs to tell a pane that has moved on from one that has not.
+//
+// A host that wants to know whether a pane it is not showing has something new
+// on it keeps the value it last saw and compares.
+func (m *Model) OutputSeq() uint64 { return m.outputSeq }
 
 // Attach starts drawing a stream, and returns the command that pumps it.
 //
@@ -471,6 +484,7 @@ func (m *Model) Update(msg tea.Msg) (*Model, tea.Cmd) {
 	case outputMsg:
 		if m.emu != nil {
 			_, _ = m.emu.Write(msg.data)
+			m.outputSeq++
 		}
 		// A selection whose text this output overwrote is cleared before it
 		// can highlight something nobody selected.

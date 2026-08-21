@@ -355,6 +355,70 @@ func TestTheHintsLineOnAServiceOffersItsVerbs(t *testing.T) {
 	}
 }
 
+// A service is the one pane you deliberately look away from, so its tab is
+// where it says something happened while you were not looking.
+func TestAServiceTabMarksOutputYouHaveNotSeen(t *testing.T) {
+	ds := newFakeSource(testSandboxes()...)
+	ds.services = []Service{runningService("otel", "OTEL", "exec_svc1")}
+	ds.execs = []Exec{serviceExecRecord("exec_svc1", "otel", "OTEL")}
+	d, m, _ := openWorkspace(t, ds, "enter")
+	d.wait("the service tab", func() bool { return m.terminals.len() == 2 })
+
+	// The primary has the screen, so the service is the one not being read.
+	ds.execTerm("exec_svc1").send("a request arrived\r\n")
+	d.wait("the mark", func() bool { return m.terminals.panes[1].unread })
+
+	if !strings.Contains(plainFrame(m), "•") {
+		t.Fatalf("the strip should mark the service:\n%s", plainFrame(m))
+	}
+
+	// Looking at it is what clears the mark.
+	focusService(d, m)
+	d.wait("the mark to clear", func() bool { return !m.terminals.panes[1].unread })
+	if strings.Contains(plainFrame(m), "•") {
+		t.Fatalf("the mark outlived being read:\n%s", plainFrame(m))
+	}
+}
+
+// Output that arrives while the service is on screen is output you are
+// reading, and is never marked.
+func TestOutputOnAVisibleServiceIsNotMarked(t *testing.T) {
+	ds := newFakeSource(testSandboxes()...)
+	ds.services = []Service{runningService("otel", "OTEL", "exec_svc1")}
+	ds.execs = []Exec{serviceExecRecord("exec_svc1", "otel", "OTEL")}
+	d, m, _ := openWorkspace(t, ds, "enter")
+	d.wait("the service tab", func() bool { return m.terminals.len() == 2 })
+	focusService(d, m)
+
+	ds.execTerm("exec_svc1").send("a request arrived\r\n")
+	d.wait("the output", func() bool { return strings.Contains(plainFrame(m), "a request arrived") })
+
+	if m.terminals.panes[1].unread {
+		t.Fatal("output on the pane being read was marked unread")
+	}
+}
+
+// Only services are marked. A shell running a build would wear the mark
+// permanently while saying nothing you did not already know.
+func TestAShellIsNotMarked(t *testing.T) {
+	ds := newFakeSource(testSandboxes()...)
+	d, m, _ := openWorkspace(t, ds, "enter")
+	d.key("ctrl+a")
+	d.key("s")
+	d.wait("the shell", func() bool { return m.shells.len() == 1 })
+	// Back to the primary, so the shell is the one not being read.
+	d.key("ctrl+a")
+	d.key(paneLeftKey)
+	d.wait("focus on the terminals", func() bool { return !m.onShells })
+
+	ds.execTerm("exec_shell1").send("building…\r\n")
+	d.settle()
+
+	if m.shells.panes[0].unread {
+		t.Fatal("a shell was marked unread")
+	}
+}
+
 // A service stopped on purpose has no tab: its absence says the right thing,
 // and a pane to dismiss every time would be the window nagging.
 func TestAStoppedServiceHasNoTab(t *testing.T) {
@@ -422,12 +486,14 @@ func TestADeletedDeclarationLosesItsTab(t *testing.T) {
 // repository declares them rather than by when their process started.
 func TestServicesSortAfterTerminalsInDeclarationOrder(t *testing.T) {
 	ds := newFakeSource(testSandboxes()...)
-	// Declared api first and otel second, started the other way round.
-	api := runningService("api", "API", "exec_api")
-	api.StartedAt = time.Date(2026, 8, 7, 13, 0, 0, 0, time.UTC)
+	// Declared otel first and api second — the other way round from both
+	// their start times and their ids, so neither can pass for declaration
+	// order by accident.
 	otel := runningService("otel", "OTEL", "exec_otel")
-	otel.StartedAt = time.Date(2026, 8, 7, 11, 0, 0, 0, time.UTC)
-	ds.services = []Service{api, otel}
+	otel.StartedAt = time.Date(2026, 8, 7, 13, 0, 0, 0, time.UTC)
+	api := runningService("api", "API", "exec_api")
+	api.StartedAt = time.Date(2026, 8, 7, 11, 0, 0, 0, time.UTC)
+	ds.services = []Service{otel, api}
 	ds.execs = []Exec{
 		serviceExecRecord("exec_api", "api", "API"),
 		serviceExecRecord("exec_otel", "otel", "OTEL"),
@@ -443,7 +509,7 @@ func TestServicesSortAfterTerminalsInDeclarationOrder(t *testing.T) {
 	for _, p := range m.terminals.panes {
 		got = append(got, p.execID)
 	}
-	want := []string{ExecPrimary, "exec_term1", servicePaneID("api"), servicePaneID("otel")}
+	want := []string{ExecPrimary, "exec_term1", servicePaneID("otel"), servicePaneID("api")}
 	if !slices.Equal(got, want) {
 		t.Fatalf("left column = %v, want %v", got, want)
 	}

@@ -75,7 +75,7 @@ func (c *column) insert(p *pane, exec Exec, focused bool) int {
 		// The pane's own service is carried into the comparison: the ordering
 		// groups services after everything else in the column, and a pane
 		// described without it would be sorted as though it were a terminal.
-		if execBefore(exec, Exec{ID: s.execID, CreatedAt: s.created, Service: s.service}) {
+		if execBefore(exec, Exec{ID: s.execID, CreatedAt: s.created, Service: s.service, ServiceOrder: s.serviceOrder}) {
 			at = i
 			break
 		}
@@ -125,6 +125,12 @@ func (c *column) label(i, base int) string {
 	name := fmt.Sprintf("%d %s", base+i, title)
 	if p.exited {
 		name += " ·done"
+	}
+	// A service that has printed something since you last looked at it says
+	// so here, because here is where you are looking when you are not looking
+	// at it.
+	if p.unread {
+		name += " •"
 	}
 	return name
 }

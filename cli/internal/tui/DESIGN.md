@@ -206,6 +206,15 @@ service and keep meaning the discobox, and restart — which the list has no ver
 for — stays on the services menu rather than taking a key that means something
 else on every other pane.
 
+**A service tab says when it has something you have not read** (`pane.unread`,
+`termpane.Model.OutputSeq`). A service is the one pane you deliberately look
+away from — that is what running it in the background means — so its tab is
+where it has to say that something happened. Only services are marked: a shell
+running a build would wear the mark permanently while telling you nothing you
+did not already know. A pane on screen is a pane being read, so its output is
+seen as it arrives, and `markSeen` runs after every message rather than at each
+of the several places focus can move, so no new way to move it can forget.
+
 Unlike the exec listing, the service listing **both opens and closes** panes: a
 service is a declaration and the listing is the whole truth about it, so each
 service has exactly one writer. A pane records the run it was opened on

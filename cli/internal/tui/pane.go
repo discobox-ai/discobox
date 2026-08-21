@@ -107,6 +107,19 @@ type pane struct {
 	// serviceName is the service's display name, kept beside its id so a verb
 	// run from this pane can report on it without going back to the listing.
 	serviceName string
+	// serviceOrder is where the service sits in the repository's declaration
+	// order, which is what orders the service tabs. It is kept on the pane
+	// because insert compares an arriving session against the ones already in
+	// the strip, and a pane described without it would sort as though it were
+	// declared first.
+	serviceOrder int
+	// unread marks a service whose output has moved on since it was last on
+	// screen. A service is the one pane you deliberately look away from — that
+	// is what running it in the background means — so its tab is where it has
+	// to say that something happened. seenOutput is the reading it was last
+	// seen at.
+	unread     bool
+	seenOutput uint64
 	// serviceRun identifies the run this pane was opened on, so the poll can
 	// tell a pane that is still looking at what the server reports from one
 	// whose service has since restarted, stopped or been fixed. See
@@ -653,7 +666,52 @@ func (m *Model) updatePaneMsg(tagged paneMsg) tea.Cmd {
 
 	term, cmd := p.term.Update(tagged.msg)
 	p.term = term
+	m.noteOutput(p)
 	return fromPane(p.id, cmd)
+}
+
+// noteOutput records whether a pane has drawn something its reader has not
+// seen. Only a service is marked: every other pane is one you are working in
+// or have deliberately left, and a shell running a build would wear the mark
+// permanently while telling you nothing you did not already know.
+//
+// A pane on screen is a pane being read, so its output counts as seen the
+// moment it arrives.
+func (m *Model) noteOutput(p *pane) {
+	if p.service == "" {
+		return
+	}
+	seq := p.term.OutputSeq()
+	if seq == p.seenOutput {
+		return
+	}
+	if m.isOnScreen(p) {
+		p.seenOutput, p.unread = seq, false
+		return
+	}
+	p.unread = true
+}
+
+// markSeen clears the mark on whatever is on screen, which is what looking at
+// a pane means. It runs after any message that could have changed which pane
+// that is, rather than at each of the several places one can.
+func (m *Model) markSeen() {
+	for _, p := range m.onScreen() {
+		if p == nil || p.service == "" {
+			continue
+		}
+		p.seenOutput, p.unread = p.term.OutputSeq(), false
+	}
+}
+
+// isOnScreen reports whether a pane is one of the ones currently drawn.
+func (m *Model) isOnScreen(p *pane) bool {
+	for _, on := range m.onScreen() {
+		if on == p {
+			return true
+		}
+	}
+	return false
 }
 
 // paneClosed handles a session or command ending on its own.
