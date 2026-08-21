@@ -12,7 +12,7 @@ import (
 // A repository declaring foo means the ../foo the caller already has: the
 // checkout is used, at its own path, exactly as -i ../foo would.
 func TestBuildPromptSandboxBodyPrefersACheckoutOfADeclaredSource(t *testing.T) {
-	workspace := t.TempDir()
+	workspace := testWorkspace(t)
 	primary := newRunSourceTestRepoIn(t, workspace, "app")
 	reference := newRunSourceTestRepoIn(t, workspace, "foo")
 	declareSources(t, primary, map[string]string{"foo": "https://github.com/acme/foo"})
@@ -48,7 +48,7 @@ func TestBuildPromptSandboxBodyPrefersACheckoutOfADeclaredSource(t *testing.T) {
 // at the path the checkout would have occupied, so ../foo means the same thing
 // inside the sandbox either way. That is the whole promise of declaring it.
 func TestBuildPromptSandboxBodyClonesADeclaredSourceToTheSamePath(t *testing.T) {
-	workspace := t.TempDir()
+	workspace := testWorkspace(t)
 	primary := newRunSourceTestRepoIn(t, workspace, "app")
 	// A file:// URL is a remote as far as source resolution is concerned — it
 	// is cloned by the sandbox rather than taken from disk here — without a
@@ -89,7 +89,7 @@ func TestBuildPromptSandboxBodyClonesADeclaredSourceToTheSamePath(t *testing.T) 
 // the disagreement is reported, since a directory that merely shares the name
 // looks identical from here.
 func TestBuildPromptSandboxBodyReportsACheckoutThatDisagreesWithTheDeclaredURL(t *testing.T) {
-	workspace := t.TempDir()
+	workspace := testWorkspace(t)
 	primary := newRunSourceTestRepoIn(t, workspace, "app")
 	reference := newRunSourceTestRepoIn(t, workspace, "foo")
 	runSourceTestGit(t, reference)("remote", "add", "origin", "https://github.com/darren/foo.git")
@@ -136,7 +136,7 @@ func TestDeclaredSourceOriginMatchesAcrossURLForms(t *testing.T) {
 // An explicit -i is the caller's own instruction and outranks the repository's
 // declaration of the same source, rather than colliding with it.
 func TestBuildPromptSandboxBodyLetsIncludeOverrideADeclaredSource(t *testing.T) {
-	workspace := t.TempDir()
+	workspace := testWorkspace(t)
 	primary := newRunSourceTestRepoIn(t, workspace, "app")
 	reference := newRunSourceTestRepoIn(t, workspace, "foo")
 	declareSources(t, primary, map[string]string{"foo": "https://github.com/acme/foo"})
@@ -163,7 +163,7 @@ func TestBuildPromptSandboxBodyLetsIncludeOverrideADeclaredSource(t *testing.T) 
 // Declared sources are what the repository asks for, so opting out has to be
 // possible for a caller who wants only what they named.
 func TestBuildPromptSandboxBodySkipsDeclaredSourcesWhenAsked(t *testing.T) {
-	workspace := t.TempDir()
+	workspace := testWorkspace(t)
 	primary := newRunSourceTestRepoIn(t, workspace, "app")
 	newRunSourceTestRepoIn(t, workspace, "foo")
 	declareSources(t, primary, map[string]string{"foo": "https://github.com/acme/foo"})
@@ -187,7 +187,7 @@ func TestBuildPromptSandboxBodySkipsDeclaredSourcesWhenAsked(t *testing.T) {
 // means that statement is unknown, and creating a sandbox missing the sources
 // it names is worse than not creating one.
 func TestBuildPromptSandboxBodyRefusesAMalformedDeclaration(t *testing.T) {
-	workspace := t.TempDir()
+	workspace := testWorkspace(t)
 	primary := newRunSourceTestRepoIn(t, workspace, "app")
 	if err := os.MkdirAll(filepath.Join(primary, ".discobox"), 0o755); err != nil {
 		t.Fatal(err)
@@ -216,7 +216,7 @@ func TestBuildPromptSandboxBodyRefusesAMalformedDeclaration(t *testing.T) {
 func TestBuildPromptSandboxBodyRefusesAPathInsteadOfAURL(t *testing.T) {
 	for _, value := range []string{"..", "../foo", "/srv/foo", "./foo"} {
 		t.Run(value, func(t *testing.T) {
-			workspace := t.TempDir()
+			workspace := testWorkspace(t)
 			primary := newRunSourceTestRepoIn(t, workspace, "app")
 			newRunSourceTestRepoIn(t, workspace, "foo")
 			declareSources(t, primary, map[string]string{"foo": value})
@@ -253,6 +253,19 @@ func declareSources(t *testing.T, root string, declared map[string]string) {
 
 // newRunSourceTestRepoIn is a repository at a named path inside a workspace, so
 // a test can put two of them side by side the way a caller's checkouts are.
+// testWorkspace is a temporary directory whose name matches what git reports
+// for it. Windows hands out an 8.3 short name (RUNNER~1) and macOS hands out
+// /var where git says /private/var, and these tests compare a path they built
+// against one that came back through source resolution.
+func testWorkspace(t *testing.T) string {
+	t.Helper()
+	dir, err := filepath.EvalSymlinks(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	return dir
+}
+
 func newRunSourceTestRepoIn(t *testing.T, workspace, name string) string {
 	t.Helper()
 	repo := filepath.Join(workspace, name)

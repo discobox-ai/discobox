@@ -6,6 +6,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/discobox-ai/discobox/internal/shorttmp"
 	"github.com/discobox-ai/discobox/sandbox-agent/config"
 	"github.com/discobox-ai/discobox/sandbox-agent/execs"
 )
@@ -74,7 +75,7 @@ func TestPrimaryExecIDConst(t *testing.T) {
 // sandbox start/resume lost every group the image declared (e.g. "docker")
 // while plain execs kept them.
 func TestPrimaryTerminalRunsWithTheExecDefaultUsersGroups(t *testing.T) {
-	dir := t.TempDir()
+	dir := shorttmp.Dir(t)
 	uid := int64(1000)
 	gid := int64(1000)
 	units := &fakeUnits{}

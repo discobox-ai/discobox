@@ -4,6 +4,7 @@ import (
 	"path/filepath"
 	"testing"
 
+	"github.com/discobox-ai/discobox/internal/shorttmp"
 	"github.com/discobox-ai/discobox/sandbox-agent/config"
 	"github.com/discobox-ai/discobox/sandbox-agent/execs"
 )
@@ -51,7 +52,7 @@ func TestExportedSecretEnvIsUnchangedWithoutDeclarations(t *testing.T) {
 // that marks a secret file-delivered gets it withheld without anything else
 // being configured.
 func TestServiceTakesFileSecretsFromTheHarness(t *testing.T) {
-	dir := t.TempDir()
+	dir := shorttmp.Dir(t)
 	manager, err := execs.NewManagerWithConfig(execs.ManagerConfig{
 		WorkingRoot: dir,
 		RuntimeDir:  filepath.Join(dir, "rt"),

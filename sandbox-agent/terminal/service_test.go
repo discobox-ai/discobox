@@ -7,6 +7,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/discobox-ai/discobox/internal/shorttmp"
 	"github.com/discobox-ai/discobox/sandbox-agent/config"
 	"github.com/discobox-ai/discobox/sandbox-agent/execs"
 )
@@ -15,7 +16,7 @@ import (
 // harness resolution falls back to the shell.
 func newHarnesslessService(t *testing.T) *Service {
 	t.Helper()
-	dir := t.TempDir()
+	dir := shorttmp.Dir(t)
 	execManager, err := execs.NewManagerWithConfig(execs.ManagerConfig{
 		WorkingRoot: dir,
 		RuntimeDir:  filepath.Join(dir, "rt"),
@@ -91,7 +92,7 @@ func (n *noopInstaller) RestoreSecretFiles(context.Context, config.Harness, map[
 
 func newTestService(t *testing.T, installer Installer) (*Service, *fakeUnits) {
 	t.Helper()
-	dir := t.TempDir()
+	dir := shorttmp.Dir(t)
 	units := &fakeUnits{}
 	env := map[string]string{"PATH": "/usr/bin"}
 	execManager, err := execs.NewManagerWithConfig(execs.ManagerConfig{

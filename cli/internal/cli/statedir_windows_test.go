@@ -34,17 +34,27 @@ func assertPrivateToUser(t *testing.T, path string) {
 	if err != nil {
 		t.Fatalf("owner of %s: %v", path, err)
 	}
-	if !owner.Equals(user.User.Sid) {
-		t.Fatalf("%s is owned by %s, want %s", path, owner, user.User.Sid)
-	}
-
 	allowed := map[string]bool{user.User.Sid.String(): true}
+	var admins *windows.SID
 	for _, wellKnown := range []windows.WELL_KNOWN_SID_TYPE{windows.WinLocalSystemSid, windows.WinBuiltinAdministratorsSid} {
 		sid, err := windows.CreateWellKnownSid(wellKnown)
 		if err != nil {
 			t.Fatalf("well-known SID %d: %v", wellKnown, err)
 		}
+		if wellKnown == windows.WinBuiltinAdministratorsSid {
+			admins = sid
+		}
 		allowed[sid.String()] = true
+	}
+
+	// An elevated process creates objects owned by the Administrators group
+	// rather than by the user, under the "default owner for objects created by
+	// members of the Administrators group" policy — which is how GitHub's
+	// Windows runners are set up. The DACL check below already treats that
+	// group as allowed, and for the same reason: on such an account it is not
+	// a wider audience than the user.
+	if !owner.Equals(user.User.Sid) && !owner.Equals(admins) {
+		t.Fatalf("%s is owned by %s, want %s or %s", path, owner, user.User.Sid, admins)
 	}
 
 	dacl, _, err := sd.DACL()

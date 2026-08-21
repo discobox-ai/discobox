@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"github.com/discobox-ai/discobox/hooks/api/model"
+	"github.com/discobox-ai/discobox/internal/shorttmp"
 )
 
 func writeTestJSON(t *testing.T, w http.ResponseWriter, v any) {
@@ -24,7 +25,7 @@ func writeTestJSON(t *testing.T, w http.ResponseWriter, v any) {
 }
 
 func TestUnixTransportAndRequestShapes(t *testing.T) {
-	sock := filepath.Join(t.TempDir(), "daemon.sock")
+	sock := filepath.Join(shorttmp.Dir(t), "daemon.sock")
 	ln, err := (&net.ListenConfig{}).Listen(context.Background(), "unix", sock)
 	if err != nil {
 		t.Fatal(err)
@@ -231,7 +232,7 @@ func TestUnixTransportAndRequestShapes(t *testing.T) {
 // TestFollowEventsReconnects covers a daemon restart: the stream drops after the
 // shutdown event and the client reconnects, resuming after the last event seen.
 func TestFollowEventsReconnects(t *testing.T) {
-	sock := filepath.Join(t.TempDir(), "daemon.sock")
+	sock := filepath.Join(shorttmp.Dir(t), "daemon.sock")
 	ln, err := (&net.ListenConfig{}).Listen(context.Background(), "unix", sock)
 	if err != nil {
 		t.Fatal(err)
@@ -290,7 +291,7 @@ func TestFollowEventsReconnects(t *testing.T) {
 // TestFollowEventsCallbackErrorIsTerminal ensures a callback failure ends the
 // follow instead of being retried as a stream failure.
 func TestFollowEventsCallbackErrorIsTerminal(t *testing.T) {
-	sock := filepath.Join(t.TempDir(), "daemon.sock")
+	sock := filepath.Join(shorttmp.Dir(t), "daemon.sock")
 	ln, err := (&net.ListenConfig{}).Listen(context.Background(), "unix", sock)
 	if err != nil {
 		t.Fatal(err)
@@ -349,7 +350,7 @@ func TestReadSSEEventsHandlesLargeDataLine(t *testing.T) {
 }
 
 func TestMissingSocketIsNotRunning(t *testing.T) {
-	c := New(filepath.Join(t.TempDir(), "missing.sock"))
+	c := New(filepath.Join(shorttmp.Dir(t), "missing.sock"))
 	err := c.Ping(context.Background())
 	if !errors.Is(err, ErrNotRunning) {
 		t.Fatalf("expected ErrNotRunning, got %v", err)
@@ -357,7 +358,7 @@ func TestMissingSocketIsNotRunning(t *testing.T) {
 }
 
 func TestShutdownSuccessIgnoresRemovedSocket(t *testing.T) {
-	sock := filepath.Join(t.TempDir(), "daemon.sock")
+	sock := filepath.Join(shorttmp.Dir(t), "daemon.sock")
 	ln, err := (&net.ListenConfig{}).Listen(context.Background(), "unix", sock)
 	if err != nil {
 		t.Fatal(err)

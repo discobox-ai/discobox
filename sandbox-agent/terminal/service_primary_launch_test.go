@@ -10,6 +10,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/discobox-ai/discobox/internal/shorttmp"
 	"github.com/discobox-ai/discobox/sandbox-agent/config"
 	"github.com/discobox-ai/discobox/sandbox-agent/execs"
 )
@@ -137,7 +138,7 @@ func (c *countingPrimaryState) MarkPrimaryTerminalLaunched(context.Context) erro
 
 func newLaunchTestService(t *testing.T, installer Installer, state PrimaryStateStore, prompt []string) *Service {
 	t.Helper()
-	dir := t.TempDir()
+	dir := shorttmp.Dir(t)
 	units := &shimUnits{}
 	t.Cleanup(units.Close)
 	env := map[string]string{"PATH": "/usr/bin"}

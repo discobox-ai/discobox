@@ -12,7 +12,6 @@ import (
 	"os/exec"
 	"path/filepath"
 	"regexp"
-	"runtime"
 	"sort"
 	"strings"
 	"testing"
@@ -24,6 +23,7 @@ import (
 	"github.com/discobox-ai/discobox/hooks/client"
 	"github.com/discobox-ai/discobox/hooks/models"
 	"github.com/discobox-ai/discobox/internal/gitutil"
+	"github.com/discobox-ai/discobox/internal/shorttmp"
 	"github.com/spf13/cobra"
 )
 
@@ -78,26 +78,10 @@ func TestCommandLayout(t *testing.T) {
 	}
 }
 
-// socketTempRoot returns a directory short enough to root a Unix socket under.
-//
-// A Unix socket path cannot exceed 108 bytes, and computeSessionPaths spends
-// about seventy of them on the session and repo-key components. os.TempDir() is
-// not reliably within the remaining budget: `nix develop` roots TMPDIR in the
-// workspace, and macOS uses /var/folders/<two levels of base64>. /tmp is short
-// by definition on both. Windows named pipes have no such limit.
-func socketTempRoot() string {
-	if runtime.GOOS == "windows" {
-		return ""
-	}
-	return "/tmp"
-}
-
 func TestChangesLimitZeroSendsExplicitLimit(t *testing.T) {
-	temp, err := os.MkdirTemp(socketTempRoot(), "h")
-	if err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(func() { _ = os.RemoveAll(temp) })
+	// computeSessionPaths spends about seventy of the socket path's 108 bytes
+	// on the session and repo-key components, so the root has to be short.
+	temp := shorttmp.Dir(t)
 	t.Setenv("XDG_STATE_HOME", filepath.Join(temp, "state"))
 	t.Setenv("XDG_RUNTIME_DIR", filepath.Join(temp, "run"))
 	repoRoot := filepath.Join(temp, "repo")

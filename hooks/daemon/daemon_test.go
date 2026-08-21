@@ -25,6 +25,7 @@ import (
 	"github.com/discobox-ai/discobox/hooks/parser"
 	hookstore "github.com/discobox-ai/discobox/hooks/store"
 	"github.com/discobox-ai/discobox/hooks/watcher"
+	"github.com/discobox-ai/discobox/internal/shorttmp"
 )
 
 func TestRunSocketAPI(t *testing.T) {
@@ -49,7 +50,7 @@ echo "changed=$DISCOBOX_CHANGED_FILES"
 	}
 
 	stateDir := t.TempDir()
-	socketPath := filepath.Join(os.TempDir(), fmt.Sprintf("discobox-hooks-test-%d.sock", time.Now().UnixNano()))
+	socketPath := filepath.Join(shorttmp.Dir(t), fmt.Sprintf("discobox-hooks-test-%d.sock", time.Now().UnixNano()))
 	defer os.Remove(socketPath)
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
@@ -272,7 +273,7 @@ echo session
 	}
 
 	stateDir := t.TempDir()
-	socketPath := filepath.Join(os.TempDir(), fmt.Sprintf("discobox-hooks-session-test-%d.sock", time.Now().UnixNano()))
+	socketPath := filepath.Join(shorttmp.Dir(t), fmt.Sprintf("discobox-hooks-session-test-%d.sock", time.Now().UnixNano()))
 	defer os.Remove(socketPath)
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
@@ -452,7 +453,7 @@ func TestDrainAvailableHonorsMaxParallelHooks(t *testing.T) {
 func TestRunReloadsHooksWhenConfigDirectoryAppears(t *testing.T) {
 	repo := t.TempDir()
 	stateDir := t.TempDir()
-	socketPath := filepath.Join(os.TempDir(), fmt.Sprintf("discobox-hooks-reload-test-%d.sock", time.Now().UnixNano()))
+	socketPath := filepath.Join(shorttmp.Dir(t), fmt.Sprintf("discobox-hooks-reload-test-%d.sock", time.Now().UnixNano()))
 	defer os.Remove(socketPath)
 
 	ctx, cancel := context.WithCancel(context.Background())
@@ -579,7 +580,7 @@ echo review
 		t.Fatal(err)
 	}
 
-	socketPath := filepath.Join(os.TempDir(), fmt.Sprintf("discobox-hooks-reconcile-test-%d.sock", time.Now().UnixNano()))
+	socketPath := filepath.Join(shorttmp.Dir(t), fmt.Sprintf("discobox-hooks-reconcile-test-%d.sock", time.Now().UnixNano()))
 	defer os.Remove(socketPath)
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
@@ -618,7 +619,7 @@ echo review
 }
 
 func TestPrepareSocketPathRejectsLiveSocket(t *testing.T) {
-	socketPath := filepath.Join(t.TempDir(), "daemon.sock")
+	socketPath := filepath.Join(shorttmp.Dir(t), "daemon.sock")
 	ln, err := (&net.ListenConfig{}).Listen(context.Background(), "unix", socketPath)
 	if err != nil {
 		t.Fatalf("listen unix socket: %v", err)
@@ -631,7 +632,7 @@ func TestPrepareSocketPathRejectsLiveSocket(t *testing.T) {
 }
 
 func TestPrepareSocketPathRemovesStaleSocket(t *testing.T) {
-	socketPath := filepath.Join(t.TempDir(), "daemon.sock")
+	socketPath := filepath.Join(shorttmp.Dir(t), "daemon.sock")
 	if err := os.WriteFile(socketPath, []byte("stale"), 0o644); err != nil {
 		t.Fatal(err)
 	}
@@ -1496,7 +1497,7 @@ func tryJSON(client *http.Client, method, url string, body any, out any) error {
 func TestIdleTimeoutShutsDownDaemon(t *testing.T) {
 	repo := t.TempDir()
 	stateDir := t.TempDir()
-	socketPath := filepath.Join(os.TempDir(), fmt.Sprintf("discobox-hooks-idle-%d.sock", time.Now().UnixNano()))
+	socketPath := filepath.Join(shorttmp.Dir(t), fmt.Sprintf("discobox-hooks-idle-%d.sock", time.Now().UnixNano()))
 	defer os.Remove(socketPath)
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
@@ -1529,7 +1530,7 @@ func TestIdleTimeoutShutsDownDaemon(t *testing.T) {
 func TestNegativeIdleTimeoutKeepsDaemonRunning(t *testing.T) {
 	repo := t.TempDir()
 	stateDir := t.TempDir()
-	socketPath := filepath.Join(os.TempDir(), fmt.Sprintf("discobox-hooks-noidle-%d.sock", time.Now().UnixNano()))
+	socketPath := filepath.Join(shorttmp.Dir(t), fmt.Sprintf("discobox-hooks-noidle-%d.sock", time.Now().UnixNano()))
 	defer os.Remove(socketPath)
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()

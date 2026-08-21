@@ -6,6 +6,7 @@ import (
 	"slices"
 	"testing"
 
+	"github.com/discobox-ai/discobox/internal/shorttmp"
 	"github.com/discobox-ai/discobox/sandbox-agent/config"
 	"github.com/discobox-ai/discobox/sandbox-agent/execs"
 )
@@ -14,7 +15,7 @@ import (
 // rather than to be worked in.
 func newConfigureService(t *testing.T) (*Service, *fakeUnits) {
 	t.Helper()
-	dir := t.TempDir()
+	dir := shorttmp.Dir(t)
 	units := &fakeUnits{}
 	env := map[string]string{"PATH": "/usr/bin"}
 	execManager, err := execs.NewManagerWithConfig(execs.ManagerConfig{

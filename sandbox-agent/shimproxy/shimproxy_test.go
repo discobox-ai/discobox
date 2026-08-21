@@ -6,33 +6,13 @@ import (
 	"net"
 	"net/http"
 	"net/http/httptest"
-	"os"
 	"path/filepath"
-	"runtime"
 	"strings"
 	"testing"
 	"time"
-)
 
-// socketDir returns a temporary directory short enough to hold a Unix socket.
-//
-// A socket path cannot exceed 108 bytes, and t.TempDir() spends that twice: it
-// roots at $TMPDIR — inside the workspace under `nix develop`, /var/folders/<...>
-// on macOS — and then appends the test's own name, which in this package runs
-// past fifty characters on its own.
-func socketDir(t *testing.T) string {
-	t.Helper()
-	root := ""
-	if runtime.GOOS != "windows" {
-		root = "/tmp"
-	}
-	dir, err := os.MkdirTemp(root, "shimproxy")
-	if err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(func() { _ = os.RemoveAll(dir) })
-	return dir
-}
+	"github.com/discobox-ai/discobox/internal/shorttmp"
+)
 
 type halfCloseProxyHarness struct {
 	client   *net.TCPConn
@@ -43,7 +23,7 @@ type halfCloseProxyHarness struct {
 
 func newHalfCloseProxyHarness(t *testing.T, shim func(*net.UnixConn, *bufio.Reader) error) halfCloseProxyHarness {
 	t.Helper()
-	socketPath := filepath.Join(socketDir(t), "shim.sock")
+	socketPath := filepath.Join(shorttmp.Dir(t), "shim.sock")
 	listener, err := net.ListenUnix("unix", &net.UnixAddr{Name: socketPath, Net: "unix"})
 	if err != nil {
 		t.Fatal(err)

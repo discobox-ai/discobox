@@ -9,6 +9,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/discobox-ai/discobox/internal/shorttmp"
 	"github.com/discobox-ai/discobox/sandbox-agent/store"
 )
 
@@ -16,7 +17,7 @@ func TestPublishRecordsHarnessHook(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 	recorder := &recordingRecorder{done: make(chan struct{})}
-	socketPath := filepath.Join(t.TempDir(), "hooks.sock")
+	socketPath := filepath.Join(shorttmp.Dir(t), "hooks.sock")
 	errCh := make(chan error, 1)
 	go func() {
 		errCh <- Serve(ctx, socketPath, recorder)

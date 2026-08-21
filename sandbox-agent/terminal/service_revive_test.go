@@ -11,6 +11,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/discobox-ai/discobox/internal/shorttmp"
 	"github.com/discobox-ai/discobox/sandbox-agent/config"
 	"github.com/discobox-ai/discobox/sandbox-agent/execs"
 )
@@ -71,7 +72,7 @@ type reviveFixture struct {
 
 func newReviveService(t *testing.T, harness config.Harness) reviveFixture {
 	t.Helper()
-	dir := t.TempDir()
+	dir := shorttmp.Dir(t)
 	units := &shimUnits{}
 	t.Cleanup(units.Close)
 	installer := &noopInstaller{}
