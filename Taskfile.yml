@@ -21,11 +21,21 @@ vars:
   # upstream one. Actions knows the owner; elsewhere it comes from the origin
   # remote, and a checkout whose origin is not GitHub leaves this empty rather
   # than guessing. Override with REGISTRY=.
+  #
+  # Task evaluates this for every invocation, `ci:test` included, so it uses
+  # nothing but shell word splitting: a Windows runner has git on PATH but no
+  # sed, and reaching for one would fail the whole run before a test starts.
   REGISTRY:
     sh: |
       owner="${GITHUB_REPOSITORY_OWNER:-}"
       if [ -z "$owner" ]; then
-        owner="$(git remote get-url origin 2>/dev/null | sed -E 's#^(git@github.com:|https://github.com/)##; s#/.*$##')"
+        url="$(git remote get-url origin 2>/dev/null)"
+        case "$url" in
+          git@github.com:*) path="${url#git@github.com:}" ;;
+          https://github.com/*) path="${url#https://github.com/}" ;;
+          *) path="" ;;
+        esac
+        owner="${path%%/*}"
       fi
       if [ -n "$owner" ]; then printf 'ghcr.io/%s' "$owner"; fi
   # Multi-architecture and multi-output builds both need the docker-container
