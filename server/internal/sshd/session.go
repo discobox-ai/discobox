@@ -14,12 +14,12 @@ import (
 
 	"golang.org/x/crypto/ssh"
 
-	sandboxgen "github.com/obot-platform/discobox/api/sandboxgen"
-	"github.com/obot-platform/discobox/execstream/frame"
-	poolagentauth "github.com/obot-platform/discobox/server/internal/auth/poolagent"
-	"github.com/obot-platform/discobox/server/internal/model"
-	"github.com/obot-platform/discobox/server/internal/sandboxagentclient"
-	"github.com/obot-platform/discobox/server/internal/transport"
+	sandboxgen "github.com/discobox-ai/discobox/api/sandboxgen"
+	"github.com/discobox-ai/discobox/execstream/frame"
+	poolagentauth "github.com/discobox-ai/discobox/server/internal/auth/poolagent"
+	"github.com/discobox-ai/discobox/server/internal/model"
+	"github.com/discobox-ai/discobox/server/internal/sandboxagentclient"
+	"github.com/discobox-ai/discobox/server/internal/transport"
 )
 
 // sftpServerPath is where Debian's openssh-sftp-server package (already

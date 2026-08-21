@@ -12,15 +12,15 @@ import (
 
 	"github.com/go-faster/jx"
 
-	serverapi "github.com/obot-platform/discobox/api/gen"
-	apimodel "github.com/obot-platform/discobox/api/model"
-	"github.com/obot-platform/discobox/pool-agent/poolauth"
-	"github.com/obot-platform/discobox/server/internal/apperrors"
-	"github.com/obot-platform/discobox/server/internal/auth"
-	poolagentauth "github.com/obot-platform/discobox/server/internal/auth/poolagent"
-	"github.com/obot-platform/discobox/server/internal/model"
-	services "github.com/obot-platform/discobox/server/internal/services"
-	"github.com/obot-platform/discobox/server/internal/store"
+	serverapi "github.com/discobox-ai/discobox/api/gen"
+	apimodel "github.com/discobox-ai/discobox/api/model"
+	"github.com/discobox-ai/discobox/pool-agent/poolauth"
+	"github.com/discobox-ai/discobox/server/internal/apperrors"
+	"github.com/discobox-ai/discobox/server/internal/auth"
+	poolagentauth "github.com/discobox-ai/discobox/server/internal/auth/poolagent"
+	"github.com/discobox-ai/discobox/server/internal/model"
+	services "github.com/discobox-ai/discobox/server/internal/services"
+	"github.com/discobox-ai/discobox/server/internal/store"
 )
 
 // SandboxStateReporter records agent-observed sandbox states through the

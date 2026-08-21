@@ -11,9 +11,9 @@ import (
 
 	"github.com/moby/moby/client"
 
-	sandbox "github.com/obot-platform/discobox/server/internal/sandbox"
-	"github.com/obot-platform/discobox/server/internal/transport"
-	"github.com/obot-platform/discobox/server/providers/dockerworker"
+	sandbox "github.com/discobox-ai/discobox/server/internal/sandbox"
+	"github.com/discobox-ai/discobox/server/internal/transport"
+	"github.com/discobox-ai/discobox/server/providers/dockerworker"
 )
 
 // localVMID is the static instance identity the local driver reports: every

@@ -56,7 +56,7 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/obot-platform/discobox/sandboxconfig"
+	"github.com/discobox-ai/discobox/sandboxconfig"
 )
 
 const (

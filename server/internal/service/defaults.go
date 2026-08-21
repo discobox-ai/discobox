@@ -10,10 +10,10 @@ import (
 
 	"gorm.io/gorm"
 
-	"github.com/obot-platform/discobox/id"
-	"github.com/obot-platform/discobox/server/internal/model"
-	"github.com/obot-platform/discobox/server/internal/store"
-	providerdocker "github.com/obot-platform/discobox/server/providers/docker"
+	"github.com/discobox-ai/discobox/id"
+	"github.com/discobox-ai/discobox/server/internal/model"
+	"github.com/discobox-ai/discobox/server/internal/store"
+	providerdocker "github.com/discobox-ai/discobox/server/providers/docker"
 )
 
 const defaultProviderInstalledStateKey = "defaults.default_sandbox_provider.installed"

@@ -20,7 +20,7 @@ import (
 	"sync/atomic"
 	"time"
 
-	"github.com/obot-platform/discobox/endpoint"
+	"github.com/discobox-ai/discobox/endpoint"
 )
 
 const readyMarker = "DISCOBOX_LATENCY_READY"

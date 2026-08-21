@@ -7,7 +7,7 @@ package main
 import (
 	"os"
 
-	"github.com/obot-platform/discobox/sandbox-agent/dockercache"
+	"github.com/discobox-ai/discobox/sandbox-agent/dockercache"
 )
 
 func main() {

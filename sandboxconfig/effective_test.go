@@ -4,7 +4,7 @@ import (
 	"reflect"
 	"testing"
 
-	"github.com/obot-platform/discobox/harness"
+	"github.com/discobox-ai/discobox/harness"
 )
 
 func TestEffective_SingleWriterFields(t *testing.T) {

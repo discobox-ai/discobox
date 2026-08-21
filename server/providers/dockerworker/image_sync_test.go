@@ -13,8 +13,8 @@ import (
 	"sync"
 	"testing"
 
+	"github.com/discobox-ai/discobox/devimage"
 	"github.com/moby/moby/client"
-	"github.com/obot-platform/discobox/devimage"
 )
 
 type fakeImageDaemon struct {

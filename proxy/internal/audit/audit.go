@@ -12,7 +12,7 @@ import (
 	"sync/atomic"
 	"time"
 
-	"github.com/obot-platform/discobox/gormdb"
+	"github.com/discobox-ai/discobox/gormdb"
 	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/codes"
@@ -20,7 +20,7 @@ import (
 	"gorm.io/gorm"
 )
 
-const tracerName = "github.com/obot-platform/discobox/proxy"
+const tracerName = "github.com/discobox-ai/discobox/proxy"
 
 // HTTPEvent is an asynchronous audit event for an HTTP exchange.
 type HTTPEvent struct {

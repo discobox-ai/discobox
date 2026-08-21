@@ -4,8 +4,8 @@ import (
 	"context"
 	"testing"
 
-	"github.com/obot-platform/discobox/server/internal/model"
-	"github.com/obot-platform/discobox/server/internal/store"
+	"github.com/discobox-ai/discobox/server/internal/model"
+	"github.com/discobox-ai/discobox/server/internal/store"
 )
 
 // createTestPool seeds the project, provider instance, and pool rows a sandbox

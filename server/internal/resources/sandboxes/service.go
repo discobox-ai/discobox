@@ -9,19 +9,19 @@ import (
 	"strings"
 	"time"
 
-	"github.com/obot-platform/discobox/server/internal/apperrors"
-	"github.com/obot-platform/discobox/server/internal/reconcile"
+	"github.com/discobox-ai/discobox/server/internal/apperrors"
+	"github.com/discobox-ai/discobox/server/internal/reconcile"
 
-	"github.com/obot-platform/discobox/id"
-	"github.com/obot-platform/discobox/server/internal/auth"
-	"github.com/obot-platform/discobox/server/internal/harnessdefs"
-	"github.com/obot-platform/discobox/server/internal/model"
-	services "github.com/obot-platform/discobox/server/internal/services"
+	"github.com/discobox-ai/discobox/id"
+	"github.com/discobox-ai/discobox/server/internal/auth"
+	"github.com/discobox-ai/discobox/server/internal/harnessdefs"
+	"github.com/discobox-ai/discobox/server/internal/model"
+	services "github.com/discobox-ai/discobox/server/internal/services"
 
-	sandboxauth "github.com/obot-platform/discobox/server/internal/auth/sandbox"
-	eventbroker "github.com/obot-platform/discobox/server/internal/events"
-	sandbox "github.com/obot-platform/discobox/server/internal/sandbox"
-	"github.com/obot-platform/discobox/server/internal/store"
+	sandboxauth "github.com/discobox-ai/discobox/server/internal/auth/sandbox"
+	eventbroker "github.com/discobox-ai/discobox/server/internal/events"
+	sandbox "github.com/discobox-ai/discobox/server/internal/sandbox"
+	"github.com/discobox-ai/discobox/server/internal/store"
 )
 
 // Service owns sandbox API behavior, orchestration, provider catalog state, and

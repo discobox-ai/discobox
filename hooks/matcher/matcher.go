@@ -13,8 +13,8 @@ import (
 	"time"
 
 	"github.com/bmatcuk/doublestar/v4"
-	hooks "github.com/obot-platform/discobox/hooks"
-	"github.com/obot-platform/discobox/hooks/watcher"
+	hooks "github.com/discobox-ai/discobox/hooks"
+	"github.com/discobox-ai/discobox/hooks/watcher"
 )
 
 // Options configures hook matching.

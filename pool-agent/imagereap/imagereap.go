@@ -30,7 +30,7 @@ import (
 	cerrdefs "github.com/containerd/errdefs"
 	"github.com/moby/moby/client"
 
-	"github.com/obot-platform/discobox/harness"
+	"github.com/discobox-ai/discobox/harness"
 )
 
 const (

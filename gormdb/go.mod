@@ -1,4 +1,4 @@
-module github.com/obot-platform/discobox/gormdb
+module github.com/discobox-ai/discobox/gormdb
 
 go 1.26.0
 

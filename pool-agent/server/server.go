@@ -15,8 +15,8 @@ import (
 
 	"github.com/go-chi/chi/v5"
 
-	workerapi "github.com/obot-platform/discobox/pool-agent/api/gen"
-	"github.com/obot-platform/discobox/pool-agent/sandboxruntime"
+	workerapi "github.com/discobox-ai/discobox/pool-agent/api/gen"
+	"github.com/discobox-ai/discobox/pool-agent/sandboxruntime"
 )
 
 type Registration struct {

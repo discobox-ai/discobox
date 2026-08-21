@@ -13,7 +13,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/obot-platform/discobox/proxy/internal/secrets"
+	"github.com/discobox-ai/discobox/proxy/internal/secrets"
 )
 
 // rotatingResolver hands out the next value on every resolve, so a retry that

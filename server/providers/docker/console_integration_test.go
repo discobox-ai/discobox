@@ -11,9 +11,9 @@ import (
 	"github.com/google/uuid"
 	"github.com/moby/moby/client"
 
-	"github.com/obot-platform/discobox/server/internal/model"
-	sandbox "github.com/obot-platform/discobox/server/internal/sandbox"
-	"github.com/obot-platform/discobox/server/providers/dockerworker"
+	"github.com/discobox-ai/discobox/server/internal/model"
+	sandbox "github.com/discobox-ai/discobox/server/internal/sandbox"
+	"github.com/discobox-ai/discobox/server/providers/dockerworker"
 )
 
 // TestDockerIntegrationPoolConsole covers the console end to end on a real

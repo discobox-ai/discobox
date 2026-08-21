@@ -7,9 +7,9 @@ import (
 	"path/filepath"
 	"testing"
 
-	workerclient "github.com/obot-platform/discobox/pool-agent/api/gen"
-	workerapimodel "github.com/obot-platform/discobox/pool-agent/api/model"
-	"github.com/obot-platform/discobox/sandboxconfig"
+	workerclient "github.com/discobox-ai/discobox/pool-agent/api/gen"
+	workerapimodel "github.com/discobox-ai/discobox/pool-agent/api/model"
+	"github.com/discobox-ai/discobox/sandboxconfig"
 )
 
 const deliveryTestSandboxID = "sandbox-1"

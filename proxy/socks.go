@@ -7,8 +7,8 @@ import (
 	"sync"
 	"time"
 
-	"github.com/obot-platform/discobox/proxy/internal/audit"
-	"github.com/obot-platform/discobox/proxy/internal/filter"
+	"github.com/discobox-ai/discobox/proxy/internal/audit"
+	"github.com/discobox-ai/discobox/proxy/internal/filter"
 	"github.com/things-go/go-socks5"
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/trace"

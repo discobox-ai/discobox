@@ -11,7 +11,7 @@ package execstream
 import (
 	"context"
 
-	"github.com/obot-platform/discobox/execstream/frame"
+	"github.com/discobox-ai/discobox/execstream/frame"
 )
 
 // Conn is one duplex framed connection. It is the seam that makes the transport

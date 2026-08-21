@@ -10,8 +10,8 @@ import (
 
 	"github.com/spf13/cobra"
 
-	apiclientgen "github.com/obot-platform/discobox/api/gen"
-	execclient "github.com/obot-platform/discobox/execstream/client"
+	apiclientgen "github.com/discobox-ai/discobox/api/gen"
+	execclient "github.com/discobox-ai/discobox/execstream/client"
 )
 
 func (a *App) newToolsSSHCommand(sandboxID *string) *cobra.Command {

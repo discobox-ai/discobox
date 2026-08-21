@@ -6,7 +6,7 @@ import (
 	"net/http/httptest"
 	"testing"
 
-	sandboxapi "github.com/obot-platform/discobox/api/sandboxgen"
+	sandboxapi "github.com/discobox-ai/discobox/api/sandboxgen"
 )
 
 // A SandboxExec has several optional fields (OptString). ogen's OptString

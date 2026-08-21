@@ -13,16 +13,16 @@ import (
 	"sync/atomic"
 	"time"
 
-	"github.com/obot-platform/discobox/id"
+	"github.com/discobox-ai/discobox/id"
 
-	"github.com/obot-platform/discobox/layout"
-	"github.com/obot-platform/discobox/pool-agent/buildkitagent"
-	"github.com/obot-platform/discobox/pool-agent/poolauth"
-	"github.com/obot-platform/discobox/pool-agent/proxyagent"
-	"github.com/obot-platform/discobox/pool-agent/sandboxruntime"
-	poolserver "github.com/obot-platform/discobox/pool-agent/server"
-	agentsystemd "github.com/obot-platform/discobox/pool-agent/systemd"
-	"github.com/obot-platform/discobox/pool-agent/wire"
+	"github.com/discobox-ai/discobox/layout"
+	"github.com/discobox-ai/discobox/pool-agent/buildkitagent"
+	"github.com/discobox-ai/discobox/pool-agent/poolauth"
+	"github.com/discobox-ai/discobox/pool-agent/proxyagent"
+	"github.com/discobox-ai/discobox/pool-agent/sandboxruntime"
+	poolserver "github.com/discobox-ai/discobox/pool-agent/server"
+	agentsystemd "github.com/discobox-ai/discobox/pool-agent/systemd"
+	"github.com/discobox-ai/discobox/pool-agent/wire"
 )
 
 // RunProxy runs the pool-scoped proxy server. It is the entrypoint for the

@@ -6,8 +6,8 @@ import (
 	"strings"
 	"time"
 
-	apiclientgen "github.com/obot-platform/discobox/api/gen"
-	apimodel "github.com/obot-platform/discobox/api/model"
+	apiclientgen "github.com/discobox-ai/discobox/api/gen"
+	apimodel "github.com/discobox-ai/discobox/api/model"
 )
 
 // Narrating the wait for a sandbox that is not ready yet (ADR 0060).

@@ -14,9 +14,9 @@ import (
 
 	"github.com/fsnotify/fsnotify"
 
-	"github.com/obot-platform/discobox/layout"
-	"github.com/obot-platform/discobox/pool-agent/wire"
-	"github.com/obot-platform/discobox/proxy"
+	"github.com/discobox-ai/discobox/layout"
+	"github.com/discobox-ai/discobox/pool-agent/wire"
+	"github.com/discobox-ai/discobox/proxy"
 )
 
 const (

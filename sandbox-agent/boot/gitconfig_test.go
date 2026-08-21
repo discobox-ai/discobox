@@ -7,7 +7,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/obot-platform/discobox/sandboxconfig"
+	"github.com/discobox-ai/discobox/sandboxconfig"
 )
 
 // selfIdentity is a home directory owned by whoever runs the test. seedGitConfig

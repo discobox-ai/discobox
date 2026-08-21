@@ -6,13 +6,13 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/discobox-ai/discobox/devimage"
+	"github.com/discobox-ai/discobox/harness"
+	services "github.com/discobox-ai/discobox/server/internal/services"
 	"github.com/google/go-containerregistry/pkg/authn"
 	"github.com/google/go-containerregistry/pkg/name"
 	"github.com/google/go-containerregistry/pkg/v1/remote"
 	dockerclient "github.com/moby/moby/client"
-	"github.com/obot-platform/discobox/devimage"
-	"github.com/obot-platform/discobox/harness"
-	services "github.com/obot-platform/discobox/server/internal/services"
 )
 
 type imageMetadata struct {

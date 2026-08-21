@@ -13,7 +13,7 @@ import (
 
 	"aidanwoods.dev/go-paseto"
 
-	"github.com/obot-platform/discobox/pool-agent/sandboxruntime"
+	"github.com/discobox-ai/discobox/pool-agent/sandboxruntime"
 )
 
 func TestSandboxAgentProxyRewritesToSandboxAgentAndForwardsDownstreamToken(t *testing.T) {

@@ -5,8 +5,8 @@ import (
 	"strings"
 	"testing"
 
-	serverapi "github.com/obot-platform/discobox/api/gen"
-	"github.com/obot-platform/discobox/server/internal/model"
+	serverapi "github.com/discobox-ai/discobox/api/gen"
+	"github.com/discobox-ai/discobox/server/internal/model"
 )
 
 func TestResolveHarnessConfigIDDefaultsToProjectDefault(t *testing.T) {

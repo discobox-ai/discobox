@@ -22,8 +22,8 @@ import (
 	"sync"
 	"time"
 
-	"github.com/obot-platform/discobox/execstream"
-	"github.com/obot-platform/discobox/execstream/frame"
+	"github.com/discobox-ai/discobox/execstream"
+	"github.com/discobox-ai/discobox/execstream/frame"
 )
 
 // Console is every interaction with the terminal and signals this session

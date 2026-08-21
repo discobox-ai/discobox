@@ -6,7 +6,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/obot-platform/discobox/termpane"
+	"github.com/discobox-ai/discobox/termpane"
 )
 
 // State is a sandbox's user-facing lifecycle state, narrowed to the five the

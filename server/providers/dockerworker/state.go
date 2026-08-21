@@ -4,7 +4,7 @@ import (
 	"encoding/json"
 	"strings"
 
-	sandbox "github.com/obot-platform/discobox/server/internal/sandbox"
+	sandbox "github.com/discobox-ai/discobox/server/internal/sandbox"
 )
 
 // RuntimeState is the engine-owned worker runtime state persisted on the

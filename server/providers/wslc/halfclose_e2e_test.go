@@ -12,7 +12,7 @@ import (
 
 	"github.com/moby/moby/client"
 
-	"github.com/obot-platform/discobox/server/providers/dockerworker"
+	"github.com/discobox-ai/discobox/server/providers/dockerworker"
 )
 
 // TestBridgeHalfCloseE2E verifies both half-close directions across the wslc

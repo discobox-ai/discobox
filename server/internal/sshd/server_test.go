@@ -14,9 +14,9 @@ import (
 	"github.com/go-chi/chi/v5"
 	"golang.org/x/crypto/ssh"
 
-	"github.com/obot-platform/discobox/server/internal/auth"
-	"github.com/obot-platform/discobox/server/internal/model"
-	"github.com/obot-platform/discobox/server/internal/services"
+	"github.com/discobox-ai/discobox/server/internal/auth"
+	"github.com/discobox-ai/discobox/server/internal/model"
+	"github.com/discobox-ai/discobox/server/internal/services"
 )
 
 // fakeSandboxService implements services.SandboxService with only

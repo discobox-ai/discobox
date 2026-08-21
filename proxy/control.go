@@ -10,7 +10,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/obot-platform/discobox/proxy/internal/audit"
+	"github.com/discobox-ai/discobox/proxy/internal/audit"
 	"gorm.io/gorm"
 )
 

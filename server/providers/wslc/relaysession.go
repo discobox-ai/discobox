@@ -9,11 +9,11 @@ import (
 	"strings"
 	"sync"
 
-	"github.com/obot-platform/discobox/layout"
-	"github.com/obot-platform/discobox/pool-agent/cpmux"
-	"github.com/obot-platform/discobox/server/providers/dockerworker"
-	"github.com/obot-platform/discobox/server/providers/wslc/internal/wslcsession"
-	"github.com/obot-platform/discobox/server/providers/wslc/relay"
+	"github.com/discobox-ai/discobox/layout"
+	"github.com/discobox-ai/discobox/pool-agent/cpmux"
+	"github.com/discobox-ai/discobox/server/providers/dockerworker"
+	"github.com/discobox-ai/discobox/server/providers/wslc/internal/wslcsession"
+	"github.com/discobox-ai/discobox/server/providers/wslc/relay"
 )
 
 // GuestSocketDir is the guest directory the relay creates its control-plane

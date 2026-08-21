@@ -5,8 +5,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/obot-platform/discobox/server/internal/model"
-	"github.com/obot-platform/discobox/server/internal/sandbox"
+	"github.com/discobox-ai/discobox/server/internal/model"
+	"github.com/discobox-ai/discobox/server/internal/sandbox"
 )
 
 func TestSourceNeedsPush(t *testing.T) {
@@ -23,7 +23,7 @@ func TestSourceNeedsPush(t *testing.T) {
 		return source
 	}
 	remoteSource := func() *model.GitSource {
-		url := "https://github.com/obot-platform/discobox.git"
+		url := "https://github.com/discobox-ai/discobox.git"
 		return &model.GitSource{Kind: "git", URL: &url}
 	}
 	binds := sandbox.ProviderDefinition{LocalSourceRoots: []string{"/src"}}

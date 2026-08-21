@@ -4,10 +4,10 @@ import (
 	"context"
 	"testing"
 
-	"github.com/obot-platform/discobox/server/internal/database"
-	"github.com/obot-platform/discobox/server/internal/model"
-	"github.com/obot-platform/discobox/server/internal/reconcile"
-	"github.com/obot-platform/discobox/server/internal/store"
+	"github.com/discobox-ai/discobox/server/internal/database"
+	"github.com/discobox-ai/discobox/server/internal/model"
+	"github.com/discobox-ai/discobox/server/internal/reconcile"
+	"github.com/discobox-ai/discobox/server/internal/store"
 )
 
 // The reconciler wakes on the create transaction's commit, so a sandbox must

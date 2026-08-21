@@ -11,7 +11,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/obot-platform/discobox/server/internal/model"
+	"github.com/discobox-ai/discobox/server/internal/model"
 )
 
 // oauthRefreshSkew is how far ahead of the access token's expiry a resolve will

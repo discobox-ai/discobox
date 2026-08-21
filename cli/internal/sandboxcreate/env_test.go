@@ -3,7 +3,7 @@ package sandboxcreate
 import (
 	"testing"
 
-	apimodel "github.com/obot-platform/discobox/api/model"
+	apimodel "github.com/discobox-ai/discobox/api/model"
 )
 
 func findSecretInput(t *testing.T, secrets []apimodel.SandboxSecretInput, env string) apimodel.SandboxSecretInput {

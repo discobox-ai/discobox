@@ -7,7 +7,7 @@ import (
 	"net/http/httptest"
 	"testing"
 
-	"github.com/obot-platform/discobox/server/internal/transport"
+	"github.com/discobox-ai/discobox/server/internal/transport"
 )
 
 func TestTargetURL(t *testing.T) {

@@ -6,13 +6,13 @@ import (
 	"sync/atomic"
 	"testing"
 
-	"github.com/obot-platform/discobox/server/internal/database"
-	"github.com/obot-platform/discobox/server/internal/harnessdefs"
-	"github.com/obot-platform/discobox/server/internal/model"
-	"github.com/obot-platform/discobox/server/internal/reconcile"
-	"github.com/obot-platform/discobox/server/internal/sandbox"
-	"github.com/obot-platform/discobox/server/internal/services"
-	"github.com/obot-platform/discobox/server/internal/store"
+	"github.com/discobox-ai/discobox/server/internal/database"
+	"github.com/discobox-ai/discobox/server/internal/harnessdefs"
+	"github.com/discobox-ai/discobox/server/internal/model"
+	"github.com/discobox-ai/discobox/server/internal/reconcile"
+	"github.com/discobox-ai/discobox/server/internal/sandbox"
+	"github.com/discobox-ai/discobox/server/internal/services"
+	"github.com/discobox-ai/discobox/server/internal/store"
 )
 
 // pinnedSandboxSeq names each fixture uniquely: sandbox names are unique within

@@ -24,14 +24,14 @@ import (
 	"github.com/moby/moby/api/types/network"
 	"github.com/moby/moby/client"
 
-	"github.com/obot-platform/discobox/layout"
-	poolagent "github.com/obot-platform/discobox/pool-agent"
-	"github.com/obot-platform/discobox/pool-agent/imagereap"
-	"github.com/obot-platform/discobox/pool-agent/proxyagent"
-	"github.com/obot-platform/discobox/pool-agent/wire"
-	"github.com/obot-platform/discobox/server/internal/model"
-	sandbox "github.com/obot-platform/discobox/server/internal/sandbox"
-	"github.com/obot-platform/discobox/server/internal/transport"
+	"github.com/discobox-ai/discobox/layout"
+	poolagent "github.com/discobox-ai/discobox/pool-agent"
+	"github.com/discobox-ai/discobox/pool-agent/imagereap"
+	"github.com/discobox-ai/discobox/pool-agent/proxyagent"
+	"github.com/discobox-ai/discobox/pool-agent/wire"
+	"github.com/discobox-ai/discobox/server/internal/model"
+	sandbox "github.com/discobox-ai/discobox/server/internal/sandbox"
+	"github.com/discobox-ai/discobox/server/internal/transport"
 )
 
 const (

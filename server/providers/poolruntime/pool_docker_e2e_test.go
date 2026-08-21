@@ -11,10 +11,10 @@ import (
 	"github.com/moby/moby/api/types/container"
 	"github.com/moby/moby/client"
 
-	"github.com/obot-platform/discobox/pool-agent/sandboxruntime"
-	"github.com/obot-platform/discobox/pool-agent/server"
-	"github.com/obot-platform/discobox/server/internal/model"
-	sandbox "github.com/obot-platform/discobox/server/internal/sandbox"
+	"github.com/discobox-ai/discobox/pool-agent/sandboxruntime"
+	"github.com/discobox-ai/discobox/pool-agent/server"
+	"github.com/discobox-ai/discobox/server/internal/model"
+	sandbox "github.com/discobox-ai/discobox/server/internal/sandbox"
 )
 
 const dockerIntegrationEnv = "DISCOBOX_DOCKER_INTEGRATION"

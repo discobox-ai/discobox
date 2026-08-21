@@ -13,9 +13,9 @@ import (
 	"strings"
 	"time"
 
-	"github.com/obot-platform/discobox/hooks/models"
-	"github.com/obot-platform/discobox/hooks/store"
-	"github.com/obot-platform/discobox/hooks/watcher"
+	"github.com/discobox-ai/discobox/hooks/models"
+	"github.com/discobox-ai/discobox/hooks/store"
+	"github.com/discobox-ai/discobox/hooks/watcher"
 )
 
 const defaultSnapshotMaxFileBytes int64 = 1 << 20

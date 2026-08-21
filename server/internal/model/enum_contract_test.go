@@ -11,8 +11,8 @@ import (
 	"strings"
 	"testing"
 
-	apigen "github.com/obot-platform/discobox/api/gen"
-	"github.com/obot-platform/discobox/server/internal/model"
+	apigen "github.com/discobox-ai/discobox/api/gen"
+	"github.com/discobox-ai/discobox/server/internal/model"
 )
 
 // TestModelEnumsMatchAPISchema pins every string-typed domain enum to the

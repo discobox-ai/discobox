@@ -1,6 +1,6 @@
 [Unit]
 Description=Discobox Render Socket-Activated Daemons' Proxy-Trust Environment
-Documentation=https://github.com/obot-platform/discobox
+Documentation=https://github.com/discobox-ai/discobox
 DefaultDependencies=no
 After=local-fs.target
 Before=docker.service nix-daemon.service sysinit.target

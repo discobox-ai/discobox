@@ -82,18 +82,18 @@ module so provider adapters can use server-internal control-plane contracts.
 
 ```mermaid
 flowchart TD
-    cli["github.com/obot-platform/discobox/cli"] --> root["github.com/obot-platform/discobox"]
-    server["github.com/obot-platform/discobox/server"] --> root
-    server --> providers["github.com/obot-platform/discobox/server/providers"]
-    server --> orchestration["github.com/obot-platform/discobox/orchestration"]
-    server --> hooks["github.com/obot-platform/discobox/hooks"]
-    server --> gormdb["github.com/obot-platform/discobox/gormdb"]
+    cli["github.com/discobox-ai/discobox/cli"] --> root["github.com/discobox-ai/discobox"]
+    server["github.com/discobox-ai/discobox/server"] --> root
+    server --> providers["github.com/discobox-ai/discobox/server/providers"]
+    server --> orchestration["github.com/discobox-ai/discobox/orchestration"]
+    server --> hooks["github.com/discobox-ai/discobox/hooks"]
+    server --> gormdb["github.com/discobox-ai/discobox/gormdb"]
     hooks --> root
     hooks --> gormdb
-    providers --> serverInternal["github.com/obot-platform/discobox/server/internal"]
-    providers --> poolAgent["github.com/obot-platform/discobox/pool-agent"]
+    providers --> serverInternal["github.com/discobox-ai/discobox/server/internal"]
+    providers --> poolAgent["github.com/discobox-ai/discobox/pool-agent"]
     poolAgent --> root
-    sandboxAgent["github.com/obot-platform/discobox/sandbox-agent"] --> root
+    sandboxAgent["github.com/discobox-ai/discobox/sandbox-agent"] --> root
 ```
 
 - Root module: public API definitions, control-plane OpenAPI documents,

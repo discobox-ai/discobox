@@ -8,7 +8,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/obot-platform/discobox/sandbox-agent/dockercache"
+	"github.com/discobox-ai/discobox/sandbox-agent/dockercache"
 )
 
 // stubDocker installs a shell script in place of the docker CLI. It appends

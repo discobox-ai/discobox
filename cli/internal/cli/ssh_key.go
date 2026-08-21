@@ -13,8 +13,8 @@ import (
 	"golang.org/x/crypto/ssh"
 	"golang.org/x/crypto/ssh/agent"
 
-	apiclientgen "github.com/obot-platform/discobox/api/gen"
-	apimodel "github.com/obot-platform/discobox/api/model"
+	apiclientgen "github.com/discobox-ai/discobox/api/gen"
+	apimodel "github.com/discobox-ai/discobox/api/model"
 )
 
 func (a *App) newSSHKeyCommand() *cobra.Command {

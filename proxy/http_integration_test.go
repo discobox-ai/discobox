@@ -21,10 +21,10 @@ import (
 	"testing"
 	"time"
 
-	"github.com/obot-platform/discobox/gormdb"
-	"github.com/obot-platform/discobox/proxy/bridge"
-	"github.com/obot-platform/discobox/proxy/internal/audit"
-	"github.com/obot-platform/discobox/proxy/internal/secrets"
+	"github.com/discobox-ai/discobox/gormdb"
+	"github.com/discobox-ai/discobox/proxy/bridge"
+	"github.com/discobox-ai/discobox/proxy/internal/audit"
+	"github.com/discobox-ai/discobox/proxy/internal/secrets"
 )
 
 type stubResolver struct {

@@ -13,7 +13,7 @@ import (
 
 	"aidanwoods.dev/go-paseto"
 
-	workerapi "github.com/obot-platform/discobox/pool-agent/api/gen"
+	workerapi "github.com/discobox-ai/discobox/pool-agent/api/gen"
 )
 
 const (

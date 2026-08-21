@@ -12,14 +12,14 @@ import (
 
 	"github.com/adrg/xdg"
 
-	"github.com/obot-platform/discobox/controlplane"
-	"github.com/obot-platform/discobox/devimage"
-	"github.com/obot-platform/discobox/endpoint"
-	"github.com/obot-platform/discobox/gormdb"
-	"github.com/obot-platform/discobox/internal/hostid"
-	"github.com/obot-platform/discobox/pool-agent/imagereap"
-	"github.com/obot-platform/discobox/server/internal/harnessdefs"
-	"github.com/obot-platform/discobox/server/internal/sandbox"
+	"github.com/discobox-ai/discobox/controlplane"
+	"github.com/discobox-ai/discobox/devimage"
+	"github.com/discobox-ai/discobox/endpoint"
+	"github.com/discobox-ai/discobox/gormdb"
+	"github.com/discobox-ai/discobox/internal/hostid"
+	"github.com/discobox-ai/discobox/pool-agent/imagereap"
+	"github.com/discobox-ai/discobox/server/internal/harnessdefs"
+	"github.com/discobox-ai/discobox/server/internal/sandbox"
 )
 
 const appName = "discobox"

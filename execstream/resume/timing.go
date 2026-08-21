@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/obot-platform/discobox/execstream/frame"
+	"github.com/discobox-ai/discobox/execstream/frame"
 )
 
 // TimingSource identifies which part of an attach produced a round-trip

@@ -12,7 +12,7 @@ import (
 	"github.com/coder/websocket"
 	"github.com/spf13/cobra"
 
-	"github.com/obot-platform/discobox/execstream/client"
+	"github.com/discobox-ai/discobox/execstream/client"
 )
 
 // newPoolConsoleCommand implements `discobox admin pool console`: a root shell on

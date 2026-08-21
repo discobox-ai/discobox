@@ -6,7 +6,7 @@ import (
 	"net/http"
 	"strings"
 
-	"github.com/obot-platform/discobox/server/internal/store"
+	"github.com/discobox-ai/discobox/server/internal/store"
 )
 
 // Authorizer authorizes an authenticated request. It returns ok=false when it

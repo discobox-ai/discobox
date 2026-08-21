@@ -9,11 +9,11 @@ import (
 
 	"golang.org/x/crypto/ssh"
 
-	"github.com/obot-platform/discobox/execstream/frame"
-	poolagentauth "github.com/obot-platform/discobox/server/internal/auth/poolagent"
-	"github.com/obot-platform/discobox/server/internal/model"
-	"github.com/obot-platform/discobox/server/internal/sandboxagentclient"
-	"github.com/obot-platform/discobox/server/internal/transport"
+	"github.com/discobox-ai/discobox/execstream/frame"
+	poolagentauth "github.com/discobox-ai/discobox/server/internal/auth/poolagent"
+	"github.com/discobox-ai/discobox/server/internal/model"
+	"github.com/discobox-ai/discobox/server/internal/sandboxagentclient"
+	"github.com/discobox-ai/discobox/server/internal/transport"
 )
 
 // directTCPIPMsg is RFC 4254 §7.2's direct-tcpip channel-open payload.

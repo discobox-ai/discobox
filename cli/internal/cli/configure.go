@@ -3,7 +3,7 @@ package cli
 import (
 	"github.com/spf13/cobra"
 
-	"github.com/obot-platform/discobox/cli/internal/tui"
+	"github.com/discobox-ai/discobox/cli/internal/tui"
 )
 
 // newConfigureCommand opens the launcher on its harnesses screen.

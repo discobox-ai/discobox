@@ -5,9 +5,9 @@ import (
 	"testing"
 	"time"
 
-	"github.com/obot-platform/discobox/harness"
-	"github.com/obot-platform/discobox/sandbox-agent/execs"
-	"github.com/obot-platform/discobox/sandbox-agent/store"
+	"github.com/discobox-ai/discobox/harness"
+	"github.com/discobox-ai/discobox/sandbox-agent/execs"
+	"github.com/discobox-ai/discobox/sandbox-agent/store"
 )
 
 // fakeHookLister returns a fixed set of hooks per terminal ID, and records

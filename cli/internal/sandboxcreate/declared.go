@@ -9,7 +9,7 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/obot-platform/discobox/internal/gitutil"
+	"github.com/discobox-ai/discobox/internal/gitutil"
 )
 
 // declaredSourcesFile is where a repository names the other repositories it is

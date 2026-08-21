@@ -1,8 +1,8 @@
 package sandboxes
 
 import (
-	contract "github.com/obot-platform/discobox/server/internal/sandbox"
-	"github.com/obot-platform/discobox/server/internal/transport"
+	contract "github.com/discobox-ai/discobox/server/internal/sandbox"
+	"github.com/discobox-ai/discobox/server/internal/transport"
 )
 
 type Provider = contract.Provider

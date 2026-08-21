@@ -3,7 +3,7 @@ package services
 import (
 	"testing"
 
-	"github.com/obot-platform/discobox/server/internal/model"
+	"github.com/discobox-ai/discobox/server/internal/model"
 )
 
 func TestSandboxToAPIIncludesRegisteredHarnessConfig(t *testing.T) {

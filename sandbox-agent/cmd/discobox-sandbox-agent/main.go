@@ -15,15 +15,15 @@ import (
 	"time"
 
 	"github.com/coreos/go-systemd/v22/activation"
-	"github.com/obot-platform/discobox/proxy/bridge"
-	"github.com/obot-platform/discobox/sandbox-agent/boot"
-	"github.com/obot-platform/discobox/sandbox-agent/config"
-	"github.com/obot-platform/discobox/sandbox-agent/execs"
-	harnesshooks "github.com/obot-platform/discobox/sandbox-agent/hooks"
-	"github.com/obot-platform/discobox/sandbox-agent/nestedbridge"
-	"github.com/obot-platform/discobox/sandbox-agent/proxyenv"
-	"github.com/obot-platform/discobox/sandbox-agent/server"
-	agentstore "github.com/obot-platform/discobox/sandbox-agent/store"
+	"github.com/discobox-ai/discobox/proxy/bridge"
+	"github.com/discobox-ai/discobox/sandbox-agent/boot"
+	"github.com/discobox-ai/discobox/sandbox-agent/config"
+	"github.com/discobox-ai/discobox/sandbox-agent/execs"
+	harnesshooks "github.com/discobox-ai/discobox/sandbox-agent/hooks"
+	"github.com/discobox-ai/discobox/sandbox-agent/nestedbridge"
+	"github.com/discobox-ai/discobox/sandbox-agent/proxyenv"
+	"github.com/discobox-ai/discobox/sandbox-agent/server"
+	agentstore "github.com/discobox-ai/discobox/sandbox-agent/store"
 )
 
 func main() {

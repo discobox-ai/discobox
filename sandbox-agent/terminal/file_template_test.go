@@ -9,8 +9,8 @@ import (
 	"slices"
 	"testing"
 
-	discoboxharness "github.com/obot-platform/discobox/harness"
-	"github.com/obot-platform/discobox/sandbox-agent/config"
+	discoboxharness "github.com/discobox-ai/discobox/harness"
+	"github.com/discobox-ai/discobox/sandbox-agent/config"
 )
 
 // claudeImageHarness reads the Claude harness's authoring-time image.json

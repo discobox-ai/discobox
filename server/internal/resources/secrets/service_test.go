@@ -4,13 +4,13 @@ import (
 	"context"
 	"testing"
 
-	serverapi "github.com/obot-platform/discobox/api/gen"
-	"github.com/obot-platform/discobox/server/internal/auth"
-	"github.com/obot-platform/discobox/server/internal/database"
-	"github.com/obot-platform/discobox/server/internal/model"
-	resourcesecrets "github.com/obot-platform/discobox/server/internal/resources/secrets"
-	services "github.com/obot-platform/discobox/server/internal/services"
-	"github.com/obot-platform/discobox/server/internal/store"
+	serverapi "github.com/discobox-ai/discobox/api/gen"
+	"github.com/discobox-ai/discobox/server/internal/auth"
+	"github.com/discobox-ai/discobox/server/internal/database"
+	"github.com/discobox-ai/discobox/server/internal/model"
+	resourcesecrets "github.com/discobox-ai/discobox/server/internal/resources/secrets"
+	services "github.com/discobox-ai/discobox/server/internal/services"
+	"github.com/discobox-ai/discobox/server/internal/store"
 )
 
 func TestCreateSecretRequestAllowsNoMatchingSecret(t *testing.T) {

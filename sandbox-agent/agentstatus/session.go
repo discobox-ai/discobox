@@ -5,11 +5,11 @@ import (
 	"strings"
 	"time"
 
-	"github.com/obot-platform/discobox/harness"
-	"github.com/obot-platform/discobox/harness/registry"
-	"github.com/obot-platform/discobox/sandbox-agent/execs"
-	"github.com/obot-platform/discobox/sandbox-agent/store"
-	"github.com/obot-platform/discobox/sandbox-agent/terminal"
+	"github.com/discobox-ai/discobox/harness"
+	"github.com/discobox-ai/discobox/harness/registry"
+	"github.com/discobox-ai/discobox/sandbox-agent/execs"
+	"github.com/discobox-ai/discobox/sandbox-agent/store"
+	"github.com/discobox-ai/discobox/sandbox-agent/terminal"
 )
 
 // HookLister is the subset of sandbox-agent's store needed to derive session

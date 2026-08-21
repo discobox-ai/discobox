@@ -1,12 +1,12 @@
 # Proxy Implementation Backlog
 
-Track proxy-component work here until the worker-agent/sandbox-agent integration
+Track proxy-component work here until the pool-agent/sandbox-agent integration
 phase starts.
 
 ## Worker Integration (done)
 
 - Worker proxy runs as the `discobox-proxy.service` systemd unit inside the
-  worker container (`discobox-worker-agent proxy`); `worker-agent/proxyagent`
+  worker container (`discobox-pool-agent proxy`); `pool-agent/proxyagent`
   prepares the CA bundle before systemd boots.
 - The sandbox-local forwarder lives in the dependency-light `proxy/bridge`
   package and runs as `discobox-proxy-bridge.service`

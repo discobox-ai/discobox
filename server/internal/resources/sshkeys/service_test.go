@@ -6,11 +6,11 @@ import (
 	"net/http"
 	"testing"
 
-	"github.com/obot-platform/discobox/server/internal/database"
-	"github.com/obot-platform/discobox/server/internal/model"
-	resourcesshkeys "github.com/obot-platform/discobox/server/internal/resources/sshkeys"
-	services "github.com/obot-platform/discobox/server/internal/services"
-	"github.com/obot-platform/discobox/server/internal/store"
+	"github.com/discobox-ai/discobox/server/internal/database"
+	"github.com/discobox-ai/discobox/server/internal/model"
+	resourcesshkeys "github.com/discobox-ai/discobox/server/internal/resources/sshkeys"
+	services "github.com/discobox-ai/discobox/server/internal/services"
+	"github.com/discobox-ai/discobox/server/internal/store"
 )
 
 const testPublicKey = "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIBboEyGDIiA0m5NEPRKXBTvzqSFCosRkVUUxfoM6RB6i user@laptop"

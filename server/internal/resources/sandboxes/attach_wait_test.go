@@ -8,12 +8,12 @@ import (
 	"testing"
 	"time"
 
-	"github.com/obot-platform/discobox/server/internal/database"
-	eventbroker "github.com/obot-platform/discobox/server/internal/events"
-	"github.com/obot-platform/discobox/server/internal/model"
-	"github.com/obot-platform/discobox/server/internal/sandbox"
-	"github.com/obot-platform/discobox/server/internal/store"
-	"github.com/obot-platform/discobox/server/internal/transport"
+	"github.com/discobox-ai/discobox/server/internal/database"
+	eventbroker "github.com/discobox-ai/discobox/server/internal/events"
+	"github.com/discobox-ai/discobox/server/internal/model"
+	"github.com/discobox-ai/discobox/server/internal/sandbox"
+	"github.com/discobox-ai/discobox/server/internal/store"
+	"github.com/discobox-ai/discobox/server/internal/transport"
 )
 
 // provisioningProvider answers acquires the way the pool-backed provider does

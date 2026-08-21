@@ -4,8 +4,8 @@ import (
 	"context"
 	"testing"
 
-	apiclientgen "github.com/obot-platform/discobox/api/gen"
-	apimodel "github.com/obot-platform/discobox/api/model"
+	apiclientgen "github.com/discobox-ai/discobox/api/gen"
+	apimodel "github.com/discobox-ai/discobox/api/model"
 )
 
 // A repository-local identity is the one the caller meant: setting a work

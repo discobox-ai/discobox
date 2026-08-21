@@ -18,11 +18,11 @@ import (
 	"path/filepath"
 	"strings"
 
-	apiclientgen "github.com/obot-platform/discobox/api/gen"
-	apimodel "github.com/obot-platform/discobox/api/model"
-	"github.com/obot-platform/discobox/internal/gitutil"
-	"github.com/obot-platform/discobox/internal/hostid"
-	"github.com/obot-platform/discobox/internal/originkey"
+	apiclientgen "github.com/discobox-ai/discobox/api/gen"
+	apimodel "github.com/discobox-ai/discobox/api/model"
+	"github.com/discobox-ai/discobox/internal/gitutil"
+	"github.com/discobox-ai/discobox/internal/hostid"
+	"github.com/discobox-ai/discobox/internal/originkey"
 )
 
 // Resolve returns the origin for a create or list request made from dir.

@@ -10,7 +10,7 @@ import (
 
 	"github.com/adrg/xdg"
 
-	"github.com/obot-platform/discobox/id"
+	"github.com/discobox-ai/discobox/id"
 )
 
 // useTempConfigHome points XDG config resolution at a temp directory. xdg

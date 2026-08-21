@@ -8,7 +8,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/obot-platform/discobox/endpoint"
+	"github.com/discobox-ai/discobox/endpoint"
 )
 
 // The key is the server's address, so a restart must answer on the same one.

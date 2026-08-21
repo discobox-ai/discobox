@@ -4,8 +4,8 @@ import (
 	"os"
 	"strings"
 
-	"github.com/obot-platform/discobox/sandbox-agent/runuser"
-	"github.com/obot-platform/discobox/sandboxuser"
+	"github.com/discobox-ai/discobox/sandbox-agent/runuser"
+	"github.com/discobox-ai/discobox/sandboxuser"
 )
 
 // fallbackShell is the last resort when nothing else resolves: every Unix has

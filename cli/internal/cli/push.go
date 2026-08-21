@@ -8,11 +8,11 @@ import (
 
 	"github.com/spf13/cobra"
 
-	apiclientgen "github.com/obot-platform/discobox/api/gen"
-	apimodel "github.com/obot-platform/discobox/api/model"
-	"github.com/obot-platform/discobox/cli/internal/sandboxpush"
-	"github.com/obot-platform/discobox/internal/gitutil"
-	"github.com/obot-platform/discobox/internal/hostid"
+	apiclientgen "github.com/discobox-ai/discobox/api/gen"
+	apimodel "github.com/discobox-ai/discobox/api/model"
+	"github.com/discobox-ai/discobox/cli/internal/sandboxpush"
+	"github.com/discobox-ai/discobox/internal/gitutil"
+	"github.com/discobox-ai/discobox/internal/hostid"
 )
 
 // newPushCommand implements `discobox push` (ADR 0058): sending local commits into

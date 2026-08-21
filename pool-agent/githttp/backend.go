@@ -12,7 +12,7 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/obot-platform/discobox/pool-agent/execidentity"
+	"github.com/discobox-ai/discobox/pool-agent/execidentity"
 )
 
 func ParseRepositoryPath(path string) (repositoryID, suffix string, ok bool) {

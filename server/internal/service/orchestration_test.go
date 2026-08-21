@@ -9,18 +9,18 @@ import (
 	"testing"
 	"time"
 
-	serverapi "github.com/obot-platform/discobox/api/gen"
-	"github.com/obot-platform/discobox/id"
-	"github.com/obot-platform/discobox/internal/originkey"
-	"github.com/obot-platform/discobox/server/internal/apperrors"
-	"github.com/obot-platform/discobox/server/internal/database"
-	"github.com/obot-platform/discobox/server/internal/events"
-	"github.com/obot-platform/discobox/server/internal/model"
-	"github.com/obot-platform/discobox/server/internal/reconcile"
-	"github.com/obot-platform/discobox/server/internal/resources/sandboxes"
-	"github.com/obot-platform/discobox/server/internal/service"
-	services "github.com/obot-platform/discobox/server/internal/services"
-	"github.com/obot-platform/discobox/server/internal/store"
+	serverapi "github.com/discobox-ai/discobox/api/gen"
+	"github.com/discobox-ai/discobox/id"
+	"github.com/discobox-ai/discobox/internal/originkey"
+	"github.com/discobox-ai/discobox/server/internal/apperrors"
+	"github.com/discobox-ai/discobox/server/internal/database"
+	"github.com/discobox-ai/discobox/server/internal/events"
+	"github.com/discobox-ai/discobox/server/internal/model"
+	"github.com/discobox-ai/discobox/server/internal/reconcile"
+	"github.com/discobox-ai/discobox/server/internal/resources/sandboxes"
+	"github.com/discobox-ai/discobox/server/internal/service"
+	services "github.com/discobox-ai/discobox/server/internal/services"
+	"github.com/discobox-ai/discobox/server/internal/store"
 	"gorm.io/gorm"
 )
 
@@ -198,7 +198,7 @@ func TestCreateSandboxDerivesSourceRootFromPrimarySource(t *testing.T) {
 	ctx := context.Background()
 	svc, _, _, projectID := newSandboxTestService(t, nil)
 
-	remoteURL, err := url.Parse("https://github.com/obot-platform/discobox.git")
+	remoteURL, err := url.Parse("https://github.com/discobox-ai/discobox.git")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -223,7 +223,7 @@ func TestCreateSandboxDerivesSourceRootFromPrimarySource(t *testing.T) {
 				URL:      serverapi.NewOptURI(*remoteURL),
 				Checkout: serverapi.NewOptGitSourceCheckout(serverapi.GitSourceCheckout{RefName: serverapi.NewOptString("main")}),
 			},
-			want: "https://github.com/obot-platform/discobox.git",
+			want: "https://github.com/discobox-ai/discobox.git",
 		},
 	} {
 		t.Run(tc.name, func(t *testing.T) {

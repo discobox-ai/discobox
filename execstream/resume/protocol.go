@@ -14,7 +14,7 @@ import (
 	"errors"
 	"fmt"
 
-	"github.com/obot-platform/discobox/execstream/frame"
+	"github.com/discobox-ai/discobox/execstream/frame"
 )
 
 const (

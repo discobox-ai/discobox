@@ -7,7 +7,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/obot-platform/discobox/devimage"
+	"github.com/discobox-ai/discobox/devimage"
 )
 
 // TestStampBuildModeImagesProducesBuildableManifest runs build-mode against the

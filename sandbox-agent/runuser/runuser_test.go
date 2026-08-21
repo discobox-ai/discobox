@@ -5,7 +5,7 @@ import (
 	"fmt"
 	"testing"
 
-	"github.com/obot-platform/discobox/sandboxuser"
+	"github.com/discobox-ai/discobox/sandboxuser"
 )
 
 // Completion, given a single layer. Precedence between layers is

@@ -10,7 +10,7 @@ import (
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials/insecure"
 
-	"github.com/obot-platform/discobox/pool-agent/buildkitagent"
+	"github.com/discobox-ai/discobox/pool-agent/buildkitagent"
 )
 
 // servingMediator starts a gRPC server whose one handler blocks until release

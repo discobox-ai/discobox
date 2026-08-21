@@ -20,7 +20,7 @@ import (
 	"time"
 
 	"github.com/bmatcuk/doublestar/v4"
-	"github.com/obot-platform/discobox/hooks/processhelper"
+	"github.com/discobox-ai/discobox/hooks/processhelper"
 )
 
 // Diagnostic is a normalized LSP diagnostic.

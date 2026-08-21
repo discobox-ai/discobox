@@ -5,9 +5,9 @@ import (
 	"fmt"
 	"strings"
 
-	apiclientgen "github.com/obot-platform/discobox/api/gen"
-	apimodel "github.com/obot-platform/discobox/api/model"
-	idpkg "github.com/obot-platform/discobox/id"
+	apiclientgen "github.com/discobox-ai/discobox/api/gen"
+	apimodel "github.com/discobox-ai/discobox/api/model"
+	idpkg "github.com/discobox-ai/discobox/id"
 )
 
 func shortResourceID(resourceType, resourceID string) string {

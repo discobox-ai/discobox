@@ -7,8 +7,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/obot-platform/discobox/pool-agent/wire"
-	"github.com/obot-platform/discobox/server/providers/vz/internal/vzvm"
+	"github.com/discobox-ai/discobox/pool-agent/wire"
+	"github.com/discobox-ai/discobox/server/providers/vz/internal/vzvm"
 )
 
 // The whole backend is expressed in the two transport URLs. VSOCK in both

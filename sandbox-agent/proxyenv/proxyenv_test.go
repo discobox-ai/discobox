@@ -8,8 +8,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/obot-platform/discobox/sandbox-agent/nestedbridge"
-	"github.com/obot-platform/discobox/sandboxconfig"
+	"github.com/discobox-ai/discobox/sandbox-agent/nestedbridge"
+	"github.com/discobox-ai/discobox/sandboxconfig"
 )
 
 func writeManifest(t *testing.T, env map[string]string, proxyEnvs []string) string {

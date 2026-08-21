@@ -7,7 +7,7 @@ import (
 	"os"
 	"path/filepath"
 
-	"github.com/obot-platform/discobox/endpoint"
+	"github.com/discobox-ai/discobox/endpoint"
 )
 
 // authorizedIDsFileName is the server-wide list of iroh endpoint IDs allowed to

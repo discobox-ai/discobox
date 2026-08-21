@@ -5,11 +5,11 @@ import (
 	"testing"
 	"time"
 
-	"github.com/obot-platform/discobox/server/internal/database"
-	"github.com/obot-platform/discobox/server/internal/model"
-	"github.com/obot-platform/discobox/server/internal/reconcile"
-	"github.com/obot-platform/discobox/server/internal/resources/pools"
-	"github.com/obot-platform/discobox/server/internal/store"
+	"github.com/discobox-ai/discobox/server/internal/database"
+	"github.com/discobox-ai/discobox/server/internal/model"
+	"github.com/discobox-ai/discobox/server/internal/reconcile"
+	"github.com/discobox-ai/discobox/server/internal/resources/pools"
+	"github.com/discobox-ai/discobox/server/internal/store"
 )
 
 func newProviderInstanceTestStore(ctx context.Context, t *testing.T) (*store.Store, *database.DB) {

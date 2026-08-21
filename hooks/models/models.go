@@ -4,8 +4,8 @@ package models
 import (
 	"time"
 
-	"github.com/obot-platform/discobox/hooks/watcher"
-	"github.com/obot-platform/discobox/id"
+	"github.com/discobox-ai/discobox/hooks/watcher"
+	"github.com/discobox-ai/discobox/id"
 	"gorm.io/gorm"
 )
 

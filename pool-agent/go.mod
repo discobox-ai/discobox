@@ -1,14 +1,15 @@
-module github.com/obot-platform/discobox/pool-agent
+module github.com/discobox-ai/discobox/pool-agent
 
 go 1.26.1
 
-replace github.com/obot-platform/discobox => ..
+replace github.com/discobox-ai/discobox => ..
 
-replace github.com/obot-platform/discobox/gormdb => ../gormdb
+replace github.com/discobox-ai/discobox/gormdb => ../gormdb
 
 require (
 	aidanwoods.dev/go-paseto v1.6.0
 	github.com/containerd/errdefs v1.0.0
+	github.com/discobox-ai/discobox v0.0.0-00010101000000-000000000000
 	github.com/fsnotify/fsnotify v1.10.1
 	github.com/go-chi/chi/v5 v5.3.0
 	github.com/go-faster/errors v0.7.1
@@ -18,7 +19,6 @@ require (
 	github.com/moby/buildkit v0.20.2
 	github.com/moby/moby/api v1.54.2
 	github.com/moby/moby/client v0.4.1
-	github.com/obot-platform/discobox v0.0.0-00010101000000-000000000000
 	github.com/ogen-go/ogen v1.20.3
 	go.opentelemetry.io/otel v1.43.0
 	go.opentelemetry.io/otel/metric v1.43.0
@@ -35,6 +35,7 @@ require (
 	github.com/containerd/errdefs/pkg v0.3.0 // indirect
 	github.com/containerd/log v0.1.0 // indirect
 	github.com/containerd/typeurl/v2 v2.2.3 // indirect
+	github.com/discobox-ai/discobox/gormdb v0.0.0 // indirect
 	github.com/distribution/reference v0.6.0 // indirect
 	github.com/dlclark/regexp2 v1.12.0 // indirect
 	github.com/docker/go-connections v0.7.0 // indirect
@@ -63,7 +64,6 @@ require (
 	github.com/mattn/go-isatty v0.0.21 // indirect
 	github.com/mdlayher/socket v0.6.0 // indirect
 	github.com/moby/docker-image-spec v1.3.1 // indirect
-	github.com/obot-platform/discobox/gormdb v0.0.0 // indirect
 	github.com/opencontainers/go-digest v1.0.0 // indirect
 	github.com/opencontainers/image-spec v1.1.1 // indirect
 	github.com/pkg/errors v0.9.1 // indirect

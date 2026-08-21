@@ -31,7 +31,7 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/obot-platform/discobox/pool-agent/cpmux"
+	"github.com/discobox-ai/discobox/pool-agent/cpmux"
 )
 
 func main() {

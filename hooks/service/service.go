@@ -7,10 +7,10 @@ import (
 	"strings"
 	"time"
 
-	hooks "github.com/obot-platform/discobox/hooks"
-	"github.com/obot-platform/discobox/hooks/api/model"
-	"github.com/obot-platform/discobox/hooks/models"
-	"github.com/obot-platform/discobox/hooks/store"
+	hooks "github.com/discobox-ai/discobox/hooks"
+	"github.com/discobox-ai/discobox/hooks/api/model"
+	"github.com/discobox-ai/discobox/hooks/models"
+	"github.com/discobox-ai/discobox/hooks/store"
 )
 
 // Service coordinates API-level hook operations over persistent state.

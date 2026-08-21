@@ -7,7 +7,7 @@ import (
 	"os/signal"
 	"syscall"
 
-	"github.com/obot-platform/discobox/server"
+	"github.com/discobox-ai/discobox/server"
 )
 
 func main() {

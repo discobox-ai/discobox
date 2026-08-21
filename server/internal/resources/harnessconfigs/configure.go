@@ -13,15 +13,15 @@ import (
 	"strings"
 	"time"
 
-	serverapi "github.com/obot-platform/discobox/api/gen"
-	"github.com/obot-platform/discobox/harness"
-	"github.com/obot-platform/discobox/id"
-	"github.com/obot-platform/discobox/server/internal/apperrors"
-	poolagentauth "github.com/obot-platform/discobox/server/internal/auth/poolagent"
-	"github.com/obot-platform/discobox/server/internal/model"
-	"github.com/obot-platform/discobox/server/internal/reconcile"
-	services "github.com/obot-platform/discobox/server/internal/services"
-	"github.com/obot-platform/discobox/server/internal/store"
+	serverapi "github.com/discobox-ai/discobox/api/gen"
+	"github.com/discobox-ai/discobox/harness"
+	"github.com/discobox-ai/discobox/id"
+	"github.com/discobox-ai/discobox/server/internal/apperrors"
+	poolagentauth "github.com/discobox-ai/discobox/server/internal/auth/poolagent"
+	"github.com/discobox-ai/discobox/server/internal/model"
+	"github.com/discobox-ai/discobox/server/internal/reconcile"
+	services "github.com/discobox-ai/discobox/server/internal/services"
+	"github.com/discobox-ai/discobox/server/internal/store"
 )
 
 // HarnessConfigResourceType is the reconcile engine resource type for harness

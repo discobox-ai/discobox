@@ -6,11 +6,11 @@ import (
 
 	"golang.org/x/crypto/ssh"
 
-	"github.com/obot-platform/discobox/server/internal/config"
-	"github.com/obot-platform/discobox/server/internal/service"
-	"github.com/obot-platform/discobox/server/internal/services"
-	"github.com/obot-platform/discobox/server/internal/sshd"
-	"github.com/obot-platform/discobox/server/internal/store"
+	"github.com/discobox-ai/discobox/server/internal/config"
+	"github.com/discobox-ai/discobox/server/internal/service"
+	"github.com/discobox-ai/discobox/server/internal/services"
+	"github.com/discobox-ai/discobox/server/internal/sshd"
+	"github.com/discobox-ai/discobox/server/internal/store"
 )
 
 // resolveSSHIngress loads the host key clients pin, producing what GET /ssh

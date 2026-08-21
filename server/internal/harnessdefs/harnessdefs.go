@@ -11,12 +11,12 @@ import (
 	"regexp"
 	"strings"
 
-	"github.com/obot-platform/discobox/harness"
-	"github.com/obot-platform/discobox/harness/registry"
+	"github.com/discobox-ai/discobox/harness"
+	"github.com/discobox-ai/discobox/harness/registry"
 )
 
 // Seed describes a built-in harness config the server seeds into a project. It
-// is owned by the harness package under github.com/obot-platform/discobox/harness
+// is owned by the harness package under github.com/discobox-ai/discobox/harness
 // and surfaced through the harness registry, so harness-specific defaults live
 // with the harness they describe.
 type Seed struct {

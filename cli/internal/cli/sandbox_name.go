@@ -1,7 +1,7 @@
 package cli
 
 import (
-	apimodel "github.com/obot-platform/discobox/api/model"
+	apimodel "github.com/discobox-ai/discobox/api/model"
 )
 
 // sandboxNameIsTitle reports whether the display name the server computed for a

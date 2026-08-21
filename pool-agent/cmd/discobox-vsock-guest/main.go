@@ -18,7 +18,7 @@ import (
 	"syscall"
 	"time"
 
-	guestvsock "github.com/obot-platform/discobox/pool-agent/vsock"
+	guestvsock "github.com/discobox-ai/discobox/pool-agent/vsock"
 )
 
 func main() {

@@ -9,7 +9,7 @@ import (
 
 	"gopkg.in/yaml.v3"
 
-	"github.com/obot-platform/discobox/api/internal/genyaml"
+	"github.com/discobox-ai/discobox/api/internal/genyaml"
 )
 
 const sandboxAgentMarker = "x-sandbox-agent"

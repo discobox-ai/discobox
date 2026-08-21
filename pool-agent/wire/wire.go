@@ -31,7 +31,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/obot-platform/discobox/pool-agent/vsock"
+	"github.com/discobox-ai/discobox/pool-agent/vsock"
 )
 
 // LogicalHTTPBaseURL is the base URL used when the transport is not addressed

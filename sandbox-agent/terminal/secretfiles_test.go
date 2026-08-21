@@ -10,7 +10,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/obot-platform/discobox/sandbox-agent/config"
+	"github.com/discobox-ai/discobox/sandbox-agent/config"
 )
 
 //nolint:gosec // A path, not a credential.

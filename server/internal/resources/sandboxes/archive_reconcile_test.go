@@ -5,9 +5,9 @@ import (
 	"testing"
 	"time"
 
-	"github.com/obot-platform/discobox/server/internal/model"
-	"github.com/obot-platform/discobox/server/internal/resources/sandboxes"
-	"github.com/obot-platform/discobox/server/internal/store"
+	"github.com/discobox-ai/discobox/server/internal/model"
+	"github.com/discobox-ai/discobox/server/internal/resources/sandboxes"
+	"github.com/discobox-ai/discobox/server/internal/store"
 )
 
 // archiveTestProvider records which existence call it received, so a test can

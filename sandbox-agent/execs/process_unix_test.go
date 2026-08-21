@@ -8,8 +8,8 @@ import (
 	"strconv"
 	"testing"
 
-	"github.com/obot-platform/discobox/sandbox-agent/runuser"
-	"github.com/obot-platform/discobox/sandboxuser"
+	"github.com/discobox-ai/discobox/sandbox-agent/runuser"
+	"github.com/discobox-ai/discobox/sandboxuser"
 )
 
 // A uid with no account cannot have its primary group resolved, and the old

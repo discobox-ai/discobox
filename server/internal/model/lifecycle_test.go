@@ -4,7 +4,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/obot-platform/discobox/server/internal/model"
+	"github.com/discobox-ai/discobox/server/internal/model"
 )
 
 // StateChangedAt anchors "how long has this been true", which timeouts derive

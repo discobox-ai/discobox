@@ -8,7 +8,7 @@ import (
 
 	"github.com/moby/moby/client"
 
-	"github.com/obot-platform/discobox/pool-agent/imagereap"
+	"github.com/discobox-ai/discobox/pool-agent/imagereap"
 )
 
 // ReclaimImages removes the Discobox images on cli that nothing uses and that

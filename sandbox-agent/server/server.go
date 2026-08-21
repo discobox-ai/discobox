@@ -14,19 +14,19 @@ import (
 	"github.com/go-chi/chi/v5"
 	"github.com/go-faster/jx"
 
-	sandboxapi "github.com/obot-platform/discobox/api/sandboxgen"
+	sandboxapi "github.com/discobox-ai/discobox/api/sandboxgen"
 
-	"github.com/obot-platform/discobox/sandbox-agent/config"
-	"github.com/obot-platform/discobox/sandbox-agent/execs"
-	harnesshooks "github.com/obot-platform/discobox/sandbox-agent/hooks"
-	"github.com/obot-platform/discobox/sandbox-agent/ports"
-	"github.com/obot-platform/discobox/sandbox-agent/resources"
-	"github.com/obot-platform/discobox/sandbox-agent/secretswatch"
-	"github.com/obot-platform/discobox/sandbox-agent/sourcesready"
-	agentstore "github.com/obot-platform/discobox/sandbox-agent/store"
-	"github.com/obot-platform/discobox/sandbox-agent/terminal"
-	"github.com/obot-platform/discobox/sandboxconfig"
-	"github.com/obot-platform/discobox/sandboxuser"
+	"github.com/discobox-ai/discobox/sandbox-agent/config"
+	"github.com/discobox-ai/discobox/sandbox-agent/execs"
+	harnesshooks "github.com/discobox-ai/discobox/sandbox-agent/hooks"
+	"github.com/discobox-ai/discobox/sandbox-agent/ports"
+	"github.com/discobox-ai/discobox/sandbox-agent/resources"
+	"github.com/discobox-ai/discobox/sandbox-agent/secretswatch"
+	"github.com/discobox-ai/discobox/sandbox-agent/sourcesready"
+	agentstore "github.com/discobox-ai/discobox/sandbox-agent/store"
+	"github.com/discobox-ai/discobox/sandbox-agent/terminal"
+	"github.com/discobox-ai/discobox/sandboxconfig"
+	"github.com/discobox-ai/discobox/sandboxuser"
 )
 
 type Identity struct {

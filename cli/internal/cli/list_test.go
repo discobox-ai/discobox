@@ -9,9 +9,9 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/obot-platform/discobox/cli/internal/sandboxcreate"
-	"github.com/obot-platform/discobox/internal/hostid"
-	"github.com/obot-platform/discobox/internal/originkey"
+	"github.com/discobox-ai/discobox/cli/internal/sandboxcreate"
+	"github.com/discobox-ai/discobox/internal/hostid"
+	"github.com/discobox-ai/discobox/internal/originkey"
 )
 
 func TestResolveOriginUsesRepoRootForSubdirectory(t *testing.T) {
@@ -42,7 +42,7 @@ func TestResolveOriginForRemoteSourceUsesWorkingDirectory(t *testing.T) {
 	repo := newRunSourceTestRepo(t)
 	t.Chdir(repo)
 
-	resolved, err := sandboxcreate.ResolveOrigin(context.Background(), "https://github.com/obot-platform/discobox.git@main")
+	resolved, err := sandboxcreate.ResolveOrigin(context.Background(), "https://github.com/discobox-ai/discobox.git@main")
 	if err != nil {
 		t.Fatalf("ResolveOrigin: %v", err)
 	}

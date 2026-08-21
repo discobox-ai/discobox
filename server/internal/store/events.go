@@ -3,7 +3,7 @@ package store
 import (
 	"context"
 
-	"github.com/obot-platform/discobox/server/internal/model"
+	"github.com/discobox-ai/discobox/server/internal/model"
 )
 
 // publishProjectEvent fans a committed resource event out to the in-process

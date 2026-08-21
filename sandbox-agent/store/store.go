@@ -7,9 +7,9 @@ import (
 	"strings"
 	"time"
 
-	"github.com/obot-platform/discobox/gormdb"
-	"github.com/obot-platform/discobox/id"
-	"github.com/obot-platform/discobox/sandbox-agent/execs"
+	"github.com/discobox-ai/discobox/gormdb"
+	"github.com/discobox-ai/discobox/id"
+	"github.com/discobox-ai/discobox/sandbox-agent/execs"
 	"gorm.io/gorm"
 	"gorm.io/gorm/clause"
 )

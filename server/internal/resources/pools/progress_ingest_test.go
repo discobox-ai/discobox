@@ -6,10 +6,10 @@ import (
 	"testing"
 	"time"
 
-	serverapi "github.com/obot-platform/discobox/api/gen"
-	"github.com/obot-platform/discobox/server/internal/auth"
-	services "github.com/obot-platform/discobox/server/internal/services"
-	"github.com/obot-platform/discobox/server/internal/store"
+	serverapi "github.com/discobox-ai/discobox/api/gen"
+	"github.com/discobox-ai/discobox/server/internal/auth"
+	services "github.com/discobox-ai/discobox/server/internal/services"
+	"github.com/discobox-ai/discobox/server/internal/store"
 )
 
 // capturingReporter records what the ingest handed on, which is the blob a

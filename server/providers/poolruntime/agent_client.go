@@ -10,13 +10,13 @@ import (
 	"strings"
 	"time"
 
-	"github.com/obot-platform/discobox/harness"
-	poolclient "github.com/obot-platform/discobox/pool-agent/api/gen"
-	poolapimodel "github.com/obot-platform/discobox/pool-agent/api/model"
-	poolagentauth "github.com/obot-platform/discobox/server/internal/auth/poolagent"
-	"github.com/obot-platform/discobox/server/internal/model"
-	sandbox "github.com/obot-platform/discobox/server/internal/sandbox"
-	"github.com/obot-platform/discobox/server/internal/transport"
+	"github.com/discobox-ai/discobox/harness"
+	poolclient "github.com/discobox-ai/discobox/pool-agent/api/gen"
+	poolapimodel "github.com/discobox-ai/discobox/pool-agent/api/model"
+	poolagentauth "github.com/discobox-ai/discobox/server/internal/auth/poolagent"
+	"github.com/discobox-ai/discobox/server/internal/model"
+	sandbox "github.com/discobox-ai/discobox/server/internal/sandbox"
+	"github.com/discobox-ai/discobox/server/internal/transport"
 )
 
 const defaultPoolBaseURL = "https://pool"

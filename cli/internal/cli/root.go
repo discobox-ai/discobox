@@ -13,11 +13,11 @@ import (
 
 	"github.com/spf13/cobra"
 
-	apiclientgen "github.com/obot-platform/discobox/api/gen"
-	"github.com/obot-platform/discobox/cli/internal/keys"
-	"github.com/obot-platform/discobox/controlplane"
-	"github.com/obot-platform/discobox/endpoint"
-	discoboxserver "github.com/obot-platform/discobox/server"
+	apiclientgen "github.com/discobox-ai/discobox/api/gen"
+	"github.com/discobox-ai/discobox/cli/internal/keys"
+	"github.com/discobox-ai/discobox/controlplane"
+	"github.com/discobox-ai/discobox/endpoint"
+	discoboxserver "github.com/discobox-ai/discobox/server"
 )
 
 const defaultProjectAlias = "default"

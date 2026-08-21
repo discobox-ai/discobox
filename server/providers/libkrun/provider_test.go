@@ -9,7 +9,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/obot-platform/discobox/endpoint"
+	"github.com/discobox-ai/discobox/endpoint"
 )
 
 func TestProviderIdentity(t *testing.T) {

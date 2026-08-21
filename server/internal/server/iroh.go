@@ -4,8 +4,8 @@ import (
 	"fmt"
 	"log"
 
-	"github.com/obot-platform/discobox/endpoint"
-	"github.com/obot-platform/discobox/server/internal/irohd"
+	"github.com/discobox-ai/discobox/endpoint"
+	"github.com/discobox-ai/discobox/server/internal/irohd"
 )
 
 // configureIroh installs the server's iroh identity and admission policy when

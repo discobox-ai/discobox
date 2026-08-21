@@ -20,8 +20,8 @@ import (
 	"time"
 
 	"github.com/creack/pty"
-	"github.com/obot-platform/discobox/execstream/frame"
-	"github.com/obot-platform/discobox/execstream/host"
+	"github.com/discobox-ai/discobox/execstream/frame"
+	"github.com/discobox-ai/discobox/execstream/host"
 )
 
 // Runtime owns the terminal side of one exec and delegates the stream to

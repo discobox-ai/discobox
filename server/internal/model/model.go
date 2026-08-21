@@ -14,9 +14,9 @@ import (
 
 	"gorm.io/gorm"
 
-	"github.com/obot-platform/discobox/harness"
-	"github.com/obot-platform/discobox/id"
-	"github.com/obot-platform/discobox/internal/originkey"
+	"github.com/discobox-ai/discobox/harness"
+	"github.com/discobox-ai/discobox/id"
+	"github.com/discobox-ai/discobox/internal/originkey"
 )
 
 const (

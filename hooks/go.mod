@@ -1,4 +1,4 @@
-module github.com/obot-platform/discobox/hooks
+module github.com/discobox-ai/discobox/hooks
 
 go 1.26.1
 
@@ -48,6 +48,8 @@ require (
 )
 
 require (
+	github.com/discobox-ai/discobox v0.0.0
+	github.com/discobox-ai/discobox/gormdb v0.0.0
 	github.com/dustin/go-humanize v1.0.1 // indirect
 	github.com/glebarez/go-sqlite v1.21.2 // indirect
 	github.com/google/uuid v1.6.0 // indirect
@@ -55,8 +57,6 @@ require (
 	github.com/jinzhu/inflection v1.0.0 // indirect
 	github.com/jinzhu/now v1.1.5 // indirect
 	github.com/mattn/go-isatty v0.0.21 // indirect
-	github.com/obot-platform/discobox v0.0.0
-	github.com/obot-platform/discobox/gormdb v0.0.0
 	github.com/remyoudompheng/bigfft v0.0.0-20230129092748-24d4a6f8daec // indirect
 	github.com/spf13/pflag v1.0.10 // indirect
 	golang.org/x/sys v0.47.0 // indirect
@@ -67,6 +67,6 @@ require (
 	modernc.org/sqlite v1.23.1 // indirect
 )
 
-replace github.com/obot-platform/discobox => ..
+replace github.com/discobox-ai/discobox => ..
 
-replace github.com/obot-platform/discobox/gormdb => ../gormdb
+replace github.com/discobox-ai/discobox/gormdb => ../gormdb

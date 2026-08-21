@@ -5,7 +5,7 @@ import (
 	"errors"
 	"testing"
 
-	"github.com/obot-platform/discobox/devimage"
+	"github.com/discobox-ai/discobox/devimage"
 )
 
 type recordingInspector struct {
@@ -64,7 +64,7 @@ func TestInspectFallsBackForImagesTheManifestDoesNotDescribe(t *testing.T) {
 		},
 	}}, fallback)
 
-	if _, err := inspector.Inspect(context.Background(), "ghcr.io/obot-platform/other:v1"); err != nil {
+	if _, err := inspector.Inspect(context.Background(), "ghcr.io/discobox-ai/other:v1"); err != nil {
 		t.Fatalf("Inspect() error = %v", err)
 	}
 	if fallback.calls != 1 {

@@ -6,7 +6,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/obot-platform/discobox/harness"
+	"github.com/discobox-ai/discobox/harness"
 )
 
 func TestDefinitionConfigure(t *testing.T) {

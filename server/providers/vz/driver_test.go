@@ -5,8 +5,8 @@ import (
 	"path/filepath"
 	"testing"
 
-	"github.com/obot-platform/discobox/server/providers/guestimage"
-	"github.com/obot-platform/discobox/server/providers/vz/internal/vzvm"
+	"github.com/discobox-ai/discobox/server/providers/guestimage"
+	"github.com/discobox-ai/discobox/server/providers/vz/internal/vzvm"
 )
 
 // Pool IDs become directory names under the state directory, so anything that

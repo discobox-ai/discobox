@@ -3,8 +3,8 @@ package sandboxes
 import (
 	"context"
 
-	"github.com/obot-platform/discobox/server/internal/model"
-	"github.com/obot-platform/discobox/server/internal/store"
+	"github.com/discobox-ai/discobox/server/internal/model"
+	"github.com/discobox-ai/discobox/server/internal/store"
 )
 
 // Power operations are instructions, not intent (ADR 0017 §9). Nothing in the

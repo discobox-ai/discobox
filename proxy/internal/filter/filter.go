@@ -4,7 +4,7 @@ import (
 	"net"
 	"slices"
 
-	"github.com/obot-platform/discobox/proxy/internal/rules"
+	"github.com/discobox-ai/discobox/proxy/internal/rules"
 )
 
 // Config controls destination filtering.

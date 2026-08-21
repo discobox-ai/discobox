@@ -9,7 +9,7 @@ import (
 	"os/exec"
 	"strings"
 
-	"github.com/obot-platform/discobox/harness"
+	"github.com/discobox-ai/discobox/harness"
 )
 
 const SystemHooksPath = "/.codex/hooks.json"

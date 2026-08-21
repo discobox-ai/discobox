@@ -7,7 +7,7 @@ import (
 	"path/filepath"
 	"testing"
 
-	"github.com/obot-platform/discobox/sandbox-agent/execs"
+	"github.com/discobox-ai/discobox/sandbox-agent/execs"
 )
 
 func TestCollectorCollectsProcAndCgroupData(t *testing.T) {

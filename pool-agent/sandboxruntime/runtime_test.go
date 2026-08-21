@@ -13,11 +13,11 @@ import (
 	"github.com/moby/moby/api/types/container"
 	"github.com/moby/moby/api/types/mount"
 
-	"github.com/obot-platform/discobox/layout"
-	workerclient "github.com/obot-platform/discobox/pool-agent/api/gen"
-	workerapimodel "github.com/obot-platform/discobox/pool-agent/api/model"
-	"github.com/obot-platform/discobox/sandboxconfig"
-	"github.com/obot-platform/discobox/sandboxuser"
+	"github.com/discobox-ai/discobox/layout"
+	workerclient "github.com/discobox-ai/discobox/pool-agent/api/gen"
+	workerapimodel "github.com/discobox-ai/discobox/pool-agent/api/model"
+	"github.com/discobox-ai/discobox/sandboxconfig"
+	"github.com/discobox-ai/discobox/sandboxuser"
 )
 
 // What the request gave is forwarded verbatim. What it did not give stays

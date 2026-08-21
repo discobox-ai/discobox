@@ -11,7 +11,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/obot-platform/discobox/pool-agent/sandboxruntime"
+	"github.com/discobox-ai/discobox/pool-agent/sandboxruntime"
 )
 
 const (

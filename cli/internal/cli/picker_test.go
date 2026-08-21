@@ -9,7 +9,7 @@ import (
 	tea "charm.land/bubbletea/v2"
 	"github.com/spf13/cobra"
 
-	apimodel "github.com/obot-platform/discobox/api/model"
+	apimodel "github.com/discobox-ai/discobox/api/model"
 )
 
 func TestPickOneWithoutChoices(t *testing.T) {

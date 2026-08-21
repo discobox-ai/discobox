@@ -12,8 +12,8 @@ import (
 
 	"github.com/moby/moby/client"
 
-	sandbox "github.com/obot-platform/discobox/server/internal/sandbox"
-	"github.com/obot-platform/discobox/server/providers/dockerworker"
+	sandbox "github.com/discobox-ai/discobox/server/internal/sandbox"
+	"github.com/discobox-ai/discobox/server/providers/dockerworker"
 )
 
 // TestDriverE2E boots a real wslc VM and exercises the VM lifecycle plus the

@@ -10,9 +10,9 @@ import (
 	"testing"
 	"time"
 
-	hooks "github.com/obot-platform/discobox/hooks"
-	"github.com/obot-platform/discobox/hooks/models"
-	"github.com/obot-platform/discobox/hooks/watcher"
+	hooks "github.com/discobox-ai/discobox/hooks"
+	"github.com/discobox-ai/discobox/hooks/models"
+	"github.com/discobox-ai/discobox/hooks/watcher"
 )
 
 func TestOpenMigratesExpectedTables(t *testing.T) {

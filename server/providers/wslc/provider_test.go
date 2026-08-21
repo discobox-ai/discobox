@@ -5,7 +5,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/obot-platform/discobox/layout"
+	"github.com/discobox-ai/discobox/layout"
 )
 
 // A pool must never fall back to wslc's own default storage, which is RAM-backed

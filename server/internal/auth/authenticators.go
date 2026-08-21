@@ -6,8 +6,8 @@ import (
 	"net/url"
 	"strings"
 
-	"github.com/obot-platform/discobox/pool-agent/poolauth"
-	"github.com/obot-platform/discobox/server/internal/store"
+	"github.com/discobox-ai/discobox/pool-agent/poolauth"
+	"github.com/discobox-ai/discobox/server/internal/store"
 )
 
 // Authenticator authenticates a request and returns the matched principal.

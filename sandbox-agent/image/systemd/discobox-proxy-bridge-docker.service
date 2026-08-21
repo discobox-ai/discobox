@@ -1,6 +1,6 @@
 [Unit]
 Description=Discobox Sandbox Proxy Bridge (nested Docker bridge-facing)
-Documentation=https://github.com/obot-platform/discobox
+Documentation=https://github.com/discobox-ai/discobox
 ConditionPathExists=/etc/discobox/proxy/bridge-docker.json
 
 [Service]

@@ -6,7 +6,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/obot-platform/discobox/harness"
+	"github.com/discobox-ai/discobox/harness"
 )
 
 // The reaper finds Discobox images by label, so a Dockerfile that stops

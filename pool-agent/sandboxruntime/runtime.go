@@ -23,26 +23,26 @@ import (
 	"time"
 
 	cerrdefs "github.com/containerd/errdefs"
+	"github.com/discobox-ai/discobox/harness"
+	"github.com/discobox-ai/discobox/id"
+	"github.com/discobox-ai/discobox/layout"
+	"github.com/discobox-ai/discobox/sandboxconfig"
+	"github.com/discobox-ai/discobox/sandboxuser"
 	"github.com/moby/moby/api/pkg/stdcopy"
 	"github.com/moby/moby/api/types/container"
 	"github.com/moby/moby/api/types/events"
 	"github.com/moby/moby/api/types/mount"
 	"github.com/moby/moby/api/types/network"
 	"github.com/moby/moby/client"
-	"github.com/obot-platform/discobox/harness"
-	"github.com/obot-platform/discobox/id"
-	"github.com/obot-platform/discobox/layout"
-	"github.com/obot-platform/discobox/sandboxconfig"
-	"github.com/obot-platform/discobox/sandboxuser"
 
-	"github.com/obot-platform/discobox/pool-agent/buildkitagent"
-	"github.com/obot-platform/discobox/pool-agent/execidentity"
-	"github.com/obot-platform/discobox/pool-agent/imagereap"
-	"github.com/obot-platform/discobox/pool-agent/internalhttp"
-	"github.com/obot-platform/discobox/pool-agent/proxyagent"
+	"github.com/discobox-ai/discobox/pool-agent/buildkitagent"
+	"github.com/discobox-ai/discobox/pool-agent/execidentity"
+	"github.com/discobox-ai/discobox/pool-agent/imagereap"
+	"github.com/discobox-ai/discobox/pool-agent/internalhttp"
+	"github.com/discobox-ai/discobox/pool-agent/proxyagent"
 
-	workerclient "github.com/obot-platform/discobox/pool-agent/api/gen"
-	workerapimodel "github.com/obot-platform/discobox/pool-agent/api/model"
+	workerclient "github.com/discobox-ai/discobox/pool-agent/api/gen"
+	workerapimodel "github.com/discobox-ai/discobox/pool-agent/api/model"
 )
 
 const (

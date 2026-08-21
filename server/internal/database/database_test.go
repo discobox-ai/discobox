@@ -9,9 +9,9 @@ import (
 
 	"gorm.io/gorm"
 
-	"github.com/obot-platform/discobox/gormdb"
-	"github.com/obot-platform/discobox/server/internal/database"
-	"github.com/obot-platform/discobox/server/internal/model"
+	"github.com/discobox-ai/discobox/gormdb"
+	"github.com/discobox-ai/discobox/server/internal/database"
+	"github.com/discobox-ai/discobox/server/internal/model"
 )
 
 func TestNewCreatesSQLiteDatabase(t *testing.T) {

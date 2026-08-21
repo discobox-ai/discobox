@@ -6,7 +6,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/obot-platform/discobox/server/internal/model"
+	"github.com/discobox-ai/discobox/server/internal/model"
 )
 
 // Deletes are real, not tombstones. Every table below carries a unique index, so

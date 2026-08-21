@@ -8,14 +8,14 @@ import (
 	"net/http"
 	"strings"
 
-	"github.com/obot-platform/discobox/devimage"
-	"github.com/obot-platform/discobox/harness"
-	"github.com/obot-platform/discobox/server/internal/apperrors"
-	"github.com/obot-platform/discobox/server/internal/harnessdefs"
+	"github.com/discobox-ai/discobox/devimage"
+	"github.com/discobox-ai/discobox/harness"
+	"github.com/discobox-ai/discobox/server/internal/apperrors"
+	"github.com/discobox-ai/discobox/server/internal/harnessdefs"
 
-	"github.com/obot-platform/discobox/server/internal/model"
-	services "github.com/obot-platform/discobox/server/internal/services"
-	"github.com/obot-platform/discobox/server/internal/store"
+	"github.com/discobox-ai/discobox/server/internal/model"
+	services "github.com/discobox-ai/discobox/server/internal/services"
+	"github.com/discobox-ai/discobox/server/internal/store"
 )
 
 type Service struct {

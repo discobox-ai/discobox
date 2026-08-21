@@ -10,7 +10,7 @@ package shell
 import (
 	"context"
 
-	"github.com/obot-platform/discobox/harness"
+	"github.com/discobox-ai/discobox/harness"
 )
 
 type Driver struct{}

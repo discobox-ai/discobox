@@ -1,9 +1,9 @@
 package server
 
 import (
+	"github.com/discobox-ai/discobox/server/internal/handlers"
+	services "github.com/discobox-ai/discobox/server/internal/services"
 	"github.com/go-chi/chi/v5"
-	"github.com/obot-platform/discobox/server/internal/handlers"
-	services "github.com/obot-platform/discobox/server/internal/services"
 )
 
 // NewOpenAPIRouter returns a chi router backed by generated OpenAPI server

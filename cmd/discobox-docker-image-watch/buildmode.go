@@ -11,7 +11,7 @@ import (
 	"runtime"
 	"strings"
 
-	"github.com/obot-platform/discobox/devimage"
+	"github.com/discobox-ai/discobox/devimage"
 )
 
 // BuildModeEnv forces development image build-mode on or off, overriding the

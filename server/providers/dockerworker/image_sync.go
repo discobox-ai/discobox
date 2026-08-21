@@ -14,8 +14,8 @@ import (
 	"time"
 
 	cerrdefs "github.com/containerd/errdefs"
+	"github.com/discobox-ai/discobox/devimage"
 	"github.com/moby/moby/client"
-	"github.com/obot-platform/discobox/devimage"
 	"golang.org/x/sync/singleflight"
 )
 

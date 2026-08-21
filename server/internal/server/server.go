@@ -15,13 +15,13 @@ import (
 	"github.com/joho/godotenv"
 	"go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp"
 
-	"github.com/obot-platform/discobox/endpoint"
-	"github.com/obot-platform/discobox/server/internal/config"
-	"github.com/obot-platform/discobox/server/internal/database"
-	"github.com/obot-platform/discobox/server/internal/secrets"
-	"github.com/obot-platform/discobox/server/internal/service"
-	"github.com/obot-platform/discobox/server/internal/sshd"
-	"github.com/obot-platform/discobox/server/internal/transport/carrierhub"
+	"github.com/discobox-ai/discobox/endpoint"
+	"github.com/discobox-ai/discobox/server/internal/config"
+	"github.com/discobox-ai/discobox/server/internal/database"
+	"github.com/discobox-ai/discobox/server/internal/secrets"
+	"github.com/discobox-ai/discobox/server/internal/service"
+	"github.com/discobox-ai/discobox/server/internal/sshd"
+	"github.com/discobox-ai/discobox/server/internal/transport/carrierhub"
 )
 
 // Run loads configuration, initializes storage and services, and starts the HTTP server.

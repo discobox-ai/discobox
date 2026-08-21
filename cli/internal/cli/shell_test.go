@@ -8,7 +8,7 @@ import (
 	"strings"
 	"testing"
 
-	apimodel "github.com/obot-platform/discobox/api/model"
+	apimodel "github.com/discobox-ai/discobox/api/model"
 )
 
 func testSandboxWithID(id string) apimodel.Sandbox {

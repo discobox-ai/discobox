@@ -14,9 +14,9 @@ import (
 	"strings"
 	"time"
 
-	"github.com/obot-platform/discobox/controlplane"
-	"github.com/obot-platform/discobox/pool-agent/poolauth"
-	"github.com/obot-platform/discobox/pool-agent/wire"
+	"github.com/discobox-ai/discobox/controlplane"
+	"github.com/discobox-ai/discobox/pool-agent/poolauth"
+	"github.com/discobox-ai/discobox/pool-agent/wire"
 )
 
 const (

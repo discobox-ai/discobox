@@ -3,8 +3,8 @@ package model
 import (
 	"time"
 
-	hooks "github.com/obot-platform/discobox/hooks"
-	"github.com/obot-platform/discobox/hooks/models"
+	hooks "github.com/discobox-ai/discobox/hooks"
+	"github.com/discobox-ai/discobox/hooks/models"
 )
 
 // PingResponse is returned by GET /ping.

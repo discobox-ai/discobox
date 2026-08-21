@@ -23,7 +23,7 @@ import (
 	"go.opentelemetry.io/otel/trace"
 )
 
-const tracerName = "github.com/obot-platform/discobox/proxy/bridge"
+const tracerName = "github.com/discobox-ai/discobox/proxy/bridge"
 
 // Forwarder forwards sandbox-local plaintext proxy traffic to the worker proxy
 // over mTLS. It is protocol agnostic, so HTTP and SOCKS traffic both flow

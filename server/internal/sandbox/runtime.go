@@ -5,9 +5,9 @@ import (
 	"io"
 	"time"
 
-	"github.com/obot-platform/discobox/harness"
-	"github.com/obot-platform/discobox/server/internal/model"
-	"github.com/obot-platform/discobox/server/internal/transport"
+	"github.com/discobox-ai/discobox/harness"
+	"github.com/discobox-ai/discobox/server/internal/model"
+	"github.com/discobox-ai/discobox/server/internal/transport"
 )
 
 // Provider abstracts sandbox runtime environments.

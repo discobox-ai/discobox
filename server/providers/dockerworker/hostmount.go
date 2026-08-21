@@ -5,7 +5,7 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/obot-platform/discobox/layout"
+	"github.com/discobox-ai/discobox/layout"
 )
 
 // HostMount describes an additional host path mounted into pool-agent

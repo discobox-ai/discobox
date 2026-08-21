@@ -4,8 +4,8 @@ import (
 	"path/filepath"
 	"testing"
 
-	"github.com/obot-platform/discobox/sandbox-agent/config"
-	"github.com/obot-platform/discobox/sandbox-agent/execs"
+	"github.com/discobox-ai/discobox/sandbox-agent/config"
+	"github.com/discobox-ai/discobox/sandbox-agent/execs"
 )
 
 func sentinels() map[string]string {

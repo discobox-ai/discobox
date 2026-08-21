@@ -7,14 +7,14 @@ import (
 	"net/http"
 	"testing"
 
-	apigen "github.com/obot-platform/discobox/api/gen"
-	"github.com/obot-platform/discobox/id"
-	"github.com/obot-platform/discobox/server/internal/auth"
-	"github.com/obot-platform/discobox/server/internal/database"
-	"github.com/obot-platform/discobox/server/internal/model"
-	"github.com/obot-platform/discobox/server/internal/resources/projects"
-	"github.com/obot-platform/discobox/server/internal/services"
-	"github.com/obot-platform/discobox/server/internal/store"
+	apigen "github.com/discobox-ai/discobox/api/gen"
+	"github.com/discobox-ai/discobox/id"
+	"github.com/discobox-ai/discobox/server/internal/auth"
+	"github.com/discobox-ai/discobox/server/internal/database"
+	"github.com/discobox-ai/discobox/server/internal/model"
+	"github.com/discobox-ai/discobox/server/internal/resources/projects"
+	"github.com/discobox-ai/discobox/server/internal/services"
+	"github.com/discobox-ai/discobox/server/internal/store"
 )
 
 const testUserID = "user-1"

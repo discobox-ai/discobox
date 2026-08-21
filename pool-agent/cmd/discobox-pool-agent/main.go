@@ -8,7 +8,7 @@ import (
 	"os/signal"
 	"syscall"
 
-	poolagent "github.com/obot-platform/discobox/pool-agent"
+	poolagent "github.com/discobox-ai/discobox/pool-agent"
 )
 
 func main() {

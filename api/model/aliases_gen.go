@@ -3,7 +3,7 @@
 // Package model exposes stable aliases for generated Server REST API schema types.
 package model
 
-import apigen "github.com/obot-platform/discobox/api/gen"
+import apigen "github.com/discobox-ai/discobox/api/gen"
 
 type AppliedSourceCommit = apigen.AppliedSourceCommit
 type ApproveSecretRequestBody = apigen.ApproveSecretRequestBody

@@ -9,9 +9,9 @@ import (
 
 	"github.com/charmbracelet/x/ansi"
 
-	"github.com/obot-platform/discobox/cli/internal/localpty"
-	"github.com/obot-platform/discobox/cli/internal/tui"
-	"github.com/obot-platform/discobox/endpoint"
+	"github.com/discobox-ai/discobox/cli/internal/localpty"
+	"github.com/discobox-ai/discobox/cli/internal/tui"
+	"github.com/discobox-ai/discobox/endpoint"
 )
 
 const paneE2EEnv = "DISCOBOX_PANE_E2E"

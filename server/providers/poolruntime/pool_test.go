@@ -11,14 +11,14 @@ import (
 	"testing"
 	"time"
 
-	poolagent "github.com/obot-platform/discobox/pool-agent"
-	sandboxruntime "github.com/obot-platform/discobox/pool-agent/sandboxruntime"
-	poolagentserver "github.com/obot-platform/discobox/pool-agent/server"
-	"github.com/obot-platform/discobox/server/internal/apperrors"
-	poolagentauth "github.com/obot-platform/discobox/server/internal/auth/poolagent"
-	"github.com/obot-platform/discobox/server/internal/model"
-	sandbox "github.com/obot-platform/discobox/server/internal/sandbox"
-	"github.com/obot-platform/discobox/server/internal/transport"
+	poolagent "github.com/discobox-ai/discobox/pool-agent"
+	sandboxruntime "github.com/discobox-ai/discobox/pool-agent/sandboxruntime"
+	poolagentserver "github.com/discobox-ai/discobox/pool-agent/server"
+	"github.com/discobox-ai/discobox/server/internal/apperrors"
+	poolagentauth "github.com/discobox-ai/discobox/server/internal/auth/poolagent"
+	"github.com/discobox-ai/discobox/server/internal/model"
+	sandbox "github.com/discobox-ai/discobox/server/internal/sandbox"
+	"github.com/discobox-ai/discobox/server/internal/transport"
 )
 
 // fakePoolManager implements sandbox.PoolManager over a single in-memory pool.
@@ -263,7 +263,7 @@ func TestPoolProviderCreateSurfacesSettledPoolFailure(t *testing.T) {
 		poolCapacityPollInterval = oldInterval
 	})
 
-	message := "No such image: discobox-systemd:latest"
+	message := "No such image: discobox-pool-agent:latest"
 	pool := activePool("pool-1")
 	pool.Ready = false
 	pool.Schedulable = false

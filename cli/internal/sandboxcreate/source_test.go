@@ -10,7 +10,7 @@ import (
 	"strings"
 	"testing"
 
-	apiclientgen "github.com/obot-platform/discobox/api/gen"
+	apiclientgen "github.com/discobox-ai/discobox/api/gen"
 )
 
 func TestResolveRunSourceCleanLocalBranch(t *testing.T) {

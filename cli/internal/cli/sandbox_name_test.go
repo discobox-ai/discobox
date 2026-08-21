@@ -3,7 +3,7 @@ package cli
 import (
 	"testing"
 
-	apimodel "github.com/obot-platform/discobox/api/model"
+	apimodel "github.com/discobox-ai/discobox/api/model"
 )
 
 // namedSandbox builds a sandbox configured as "generated-name" that the server

@@ -12,10 +12,10 @@ import (
 
 	"github.com/coder/websocket"
 
-	"github.com/obot-platform/discobox/execstream/frame"
-	"github.com/obot-platform/discobox/server/internal/apperrors"
-	sandbox "github.com/obot-platform/discobox/server/internal/sandbox"
-	services "github.com/obot-platform/discobox/server/internal/services"
+	"github.com/discobox-ai/discobox/execstream/frame"
+	"github.com/discobox-ai/discobox/server/internal/apperrors"
+	sandbox "github.com/discobox-ai/discobox/server/internal/sandbox"
+	services "github.com/discobox-ai/discobox/server/internal/services"
 )
 
 // stubPoolConsole is a console whose "TTY" is a pipe the test drives: what the

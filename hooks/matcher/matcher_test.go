@@ -9,8 +9,8 @@ import (
 	"runtime"
 	"testing"
 
-	hooks "github.com/obot-platform/discobox/hooks"
-	"github.com/obot-platform/discobox/hooks/watcher"
+	hooks "github.com/discobox-ai/discobox/hooks"
+	"github.com/discobox-ai/discobox/hooks/watcher"
 )
 
 func TestMatchAppliesGlobalHookPatternsAndSortsChanges(t *testing.T) {

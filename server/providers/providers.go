@@ -1,14 +1,14 @@
 package providers
 
 import (
-	sandbox "github.com/obot-platform/discobox/server/internal/sandbox"
-	"github.com/obot-platform/discobox/server/internal/transport/carrierhub"
-	"github.com/obot-platform/discobox/server/providers/digitalocean"
-	"github.com/obot-platform/discobox/server/providers/docker"
-	"github.com/obot-platform/discobox/server/providers/dockerworker"
-	"github.com/obot-platform/discobox/server/providers/execvm"
-	"github.com/obot-platform/discobox/server/providers/libkrun"
-	"github.com/obot-platform/discobox/server/providers/poolruntime"
+	sandbox "github.com/discobox-ai/discobox/server/internal/sandbox"
+	"github.com/discobox-ai/discobox/server/internal/transport/carrierhub"
+	"github.com/discobox-ai/discobox/server/providers/digitalocean"
+	"github.com/discobox-ai/discobox/server/providers/docker"
+	"github.com/discobox-ai/discobox/server/providers/dockerworker"
+	"github.com/discobox-ai/discobox/server/providers/execvm"
+	"github.com/discobox-ai/discobox/server/providers/libkrun"
+	"github.com/discobox-ai/discobox/server/providers/poolruntime"
 )
 
 type FactoryOptions struct {

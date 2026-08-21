@@ -7,8 +7,8 @@ package sandboxconfig
 import (
 	"strings"
 
-	"github.com/obot-platform/discobox/harness"
-	"github.com/obot-platform/discobox/sandboxuser"
+	"github.com/discobox-ai/discobox/harness"
+	"github.com/discobox-ai/discobox/sandboxuser"
 )
 
 // Document is the full, unmerged input to Effective. Runtime is assembled by

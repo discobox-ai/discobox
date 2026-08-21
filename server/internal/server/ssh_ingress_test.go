@@ -9,8 +9,8 @@ import (
 
 	"github.com/go-chi/chi/v5"
 
-	"github.com/obot-platform/discobox/server/internal/auth"
-	"github.com/obot-platform/discobox/server/internal/services"
+	"github.com/discobox-ai/discobox/server/internal/auth"
+	"github.com/discobox-ai/discobox/server/internal/services"
 )
 
 func newSSHIngressRouterForTest(ingress services.SSHIngress) *chi.Mux {

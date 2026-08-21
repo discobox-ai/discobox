@@ -10,8 +10,8 @@ import (
 	"github.com/moby/moby/api/types/container"
 	"github.com/moby/moby/client"
 
-	"github.com/obot-platform/discobox/devimage"
-	"github.com/obot-platform/discobox/server/providers/dockerworker"
+	"github.com/discobox-ai/discobox/devimage"
+	"github.com/discobox-ai/discobox/server/providers/dockerworker"
 )
 
 // TestDevelopmentImageBuildE2E proves the development image build-mode path end

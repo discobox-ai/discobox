@@ -4,7 +4,7 @@ import (
 	"context"
 	"net/http"
 
-	serverapi "github.com/obot-platform/discobox/api/gen"
+	serverapi "github.com/discobox-ai/discobox/api/gen"
 )
 
 // Sandbox exec (and harness-terminal) operations are served inside the sandbox and

@@ -4,7 +4,7 @@ import (
 	"context"
 	"testing"
 
-	"github.com/obot-platform/discobox/sandbox-agent/runuser"
+	"github.com/discobox-ai/discobox/sandbox-agent/runuser"
 )
 
 // writePasswd is now runuser's business: the passwd format is parsed in one

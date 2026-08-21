@@ -8,10 +8,10 @@ import (
 	"path/filepath"
 	"time"
 
+	"github.com/discobox-ai/discobox/layout"
 	"github.com/moby/moby/client"
-	"github.com/obot-platform/discobox/layout"
 
-	"github.com/obot-platform/discobox/pool-agent/proxyagent"
+	"github.com/discobox-ai/discobox/pool-agent/proxyagent"
 )
 
 // Archiving keeps a sandbox's durable tree and drops everything else (ADR 0022

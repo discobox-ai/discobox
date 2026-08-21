@@ -3,7 +3,7 @@ package dockerworker
 import (
 	"testing"
 
-	"github.com/obot-platform/discobox/devimage"
+	"github.com/discobox-ai/discobox/devimage"
 )
 
 func testImage(reference string, args map[string]string) devimage.Image {

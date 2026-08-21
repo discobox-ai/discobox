@@ -6,7 +6,7 @@ import (
 	"strings"
 	"time"
 
-	apimodel "github.com/obot-platform/discobox/api/model"
+	apimodel "github.com/discobox-ai/discobox/api/model"
 )
 
 // sandboxGitState is the sandbox's current git position, as its own agent last

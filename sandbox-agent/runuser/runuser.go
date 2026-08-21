@@ -27,7 +27,7 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/obot-platform/discobox/sandboxuser"
+	"github.com/discobox-ai/discobox/sandboxuser"
 )
 
 // The identity vocabulary is shared with everything outside the sandbox, so it

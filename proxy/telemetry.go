@@ -9,7 +9,7 @@ import (
 	"go.opentelemetry.io/otel/trace"
 )
 
-const tracerName = "github.com/obot-platform/discobox/proxy"
+const tracerName = "github.com/discobox-ai/discobox/proxy"
 
 func proxyTracer() trace.Tracer {
 	return otel.Tracer(tracerName)

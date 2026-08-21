@@ -11,15 +11,15 @@ import (
 	"strings"
 	"time"
 
+	sandboxapi "github.com/discobox-ai/discobox/api/sandboxgen"
+	"github.com/discobox-ai/discobox/sandbox-agent/agentstatus"
+	"github.com/discobox-ai/discobox/sandbox-agent/execs"
+	"github.com/discobox-ai/discobox/sandbox-agent/ports"
+	"github.com/discobox-ai/discobox/sandbox-agent/resources"
+	"github.com/discobox-ai/discobox/sandbox-agent/store"
+	"github.com/discobox-ai/discobox/sandbox-agent/terminal"
+	"github.com/discobox-ai/discobox/sandboxconfig"
 	"github.com/go-faster/jx"
-	sandboxapi "github.com/obot-platform/discobox/api/sandboxgen"
-	"github.com/obot-platform/discobox/sandbox-agent/agentstatus"
-	"github.com/obot-platform/discobox/sandbox-agent/execs"
-	"github.com/obot-platform/discobox/sandbox-agent/ports"
-	"github.com/obot-platform/discobox/sandbox-agent/resources"
-	"github.com/obot-platform/discobox/sandbox-agent/store"
-	"github.com/obot-platform/discobox/sandbox-agent/terminal"
-	"github.com/obot-platform/discobox/sandboxconfig"
 )
 
 type handler struct {

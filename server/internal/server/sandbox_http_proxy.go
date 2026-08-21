@@ -6,10 +6,10 @@ import (
 	"strconv"
 	"strings"
 
+	poolagentauth "github.com/discobox-ai/discobox/server/internal/auth/poolagent"
+	"github.com/discobox-ai/discobox/server/internal/sandboxagentclient"
+	services "github.com/discobox-ai/discobox/server/internal/services"
 	"github.com/go-chi/chi/v5"
-	poolagentauth "github.com/obot-platform/discobox/server/internal/auth/poolagent"
-	"github.com/obot-platform/discobox/server/internal/sandboxagentclient"
-	services "github.com/obot-platform/discobox/server/internal/services"
 )
 
 var sandboxHTTPProxyScopes = []string{poolagentauth.ScopeSandboxHTTP}

@@ -14,7 +14,7 @@ import (
 	"sort"
 	"strings"
 
-	hooks "github.com/obot-platform/discobox/hooks"
+	hooks "github.com/discobox-ai/discobox/hooks"
 	"gopkg.in/yaml.v3"
 )
 

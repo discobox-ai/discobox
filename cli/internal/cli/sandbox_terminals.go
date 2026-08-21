@@ -13,15 +13,15 @@ import (
 	"text/tabwriter"
 	"time"
 
-	"github.com/obot-platform/discobox/execstream/client"
+	"github.com/discobox-ai/discobox/execstream/client"
 
-	"github.com/obot-platform/discobox/execstream/frame"
+	"github.com/discobox-ai/discobox/execstream/frame"
 
 	"github.com/spf13/cobra"
 
-	apiclientgen "github.com/obot-platform/discobox/api/gen"
-	apimodel "github.com/obot-platform/discobox/api/model"
-	"github.com/obot-platform/discobox/cli/internal/keys"
+	apiclientgen "github.com/discobox-ai/discobox/api/gen"
+	apimodel "github.com/discobox-ai/discobox/api/model"
+	"github.com/discobox-ai/discobox/cli/internal/keys"
 )
 
 var errTerminalDetached = errors.New("detached")

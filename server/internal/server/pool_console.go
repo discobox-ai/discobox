@@ -10,9 +10,9 @@ import (
 	"github.com/coder/websocket"
 	"github.com/go-chi/chi/v5"
 
-	"github.com/obot-platform/discobox/execstream/frame"
-	sandbox "github.com/obot-platform/discobox/server/internal/sandbox"
-	services "github.com/obot-platform/discobox/server/internal/services"
+	"github.com/discobox-ai/discobox/execstream/frame"
+	sandbox "github.com/discobox-ai/discobox/server/internal/sandbox"
+	services "github.com/discobox-ai/discobox/server/internal/services"
 )
 
 // consoleExitWait bounds how long the handler waits for the console container's

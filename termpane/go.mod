@@ -1,4 +1,4 @@
-module github.com/obot-platform/discobox/termpane
+module github.com/discobox-ai/discobox/termpane
 
 go 1.26.0
 

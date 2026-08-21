@@ -9,9 +9,9 @@ import (
 
 	"github.com/moby/moby/client"
 
-	"github.com/obot-platform/discobox/devimage"
-	poolagent "github.com/obot-platform/discobox/pool-agent"
-	"github.com/obot-platform/discobox/pool-agent/imagereap"
+	"github.com/discobox-ai/discobox/devimage"
+	poolagent "github.com/discobox-ai/discobox/pool-agent"
+	"github.com/discobox-ai/discobox/pool-agent/imagereap"
 )
 
 // An unset override must leave the pool container's configuration byte-identical

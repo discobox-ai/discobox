@@ -11,7 +11,7 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/obot-platform/discobox/endpoint"
+	"github.com/discobox-ai/discobox/endpoint"
 )
 
 // irohIdentityFileName is this machine's iroh identity: the key whose public

@@ -5,8 +5,8 @@ import (
 	"fmt"
 	"os"
 
-	"github.com/obot-platform/discobox/cli/internal/localpty"
-	"github.com/obot-platform/discobox/cli/internal/tui"
+	"github.com/discobox-ai/discobox/cli/internal/localpty"
+	"github.com/discobox-ai/discobox/cli/internal/tui"
 )
 
 // The commands that act on a discobox from this machine — apply — are not

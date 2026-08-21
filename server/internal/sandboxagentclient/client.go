@@ -12,7 +12,7 @@ import (
 	"net/url"
 	"strings"
 
-	"github.com/obot-platform/discobox/server/internal/transport"
+	"github.com/discobox-ai/discobox/server/internal/transport"
 )
 
 // DefaultBaseURL is used when a lease carries no logical base URL.

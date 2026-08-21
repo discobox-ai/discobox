@@ -5,7 +5,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/obot-platform/discobox/server/providers/dockerworker"
+	"github.com/discobox-ai/discobox/server/providers/dockerworker"
 )
 
 func TestDefinitionIncludesWorkerConfig(t *testing.T) {
@@ -146,7 +146,7 @@ func TestProviderConfigFieldsAffectWorkerConfigRevision(t *testing.T) {
 		"agentPort":        func(cfg *Config) { cfg.AgentPort = 3902 },
 		"privileged":       func(cfg *Config) { cfg.Privileged = &falseValue },
 		"cgroupNsMode":     func(cfg *Config) { cfg.CgroupNSMode = "host" },
-		"command":          func(cfg *Config) { cfg.Command = []string{"/bin/discobox-worker-agent", "--debug"} },
+		"command":          func(cfg *Config) { cfg.Command = []string{"/bin/discobox-pool-agent", "--debug"} },
 		"bindDockerSocket": func(cfg *Config) { cfg.DockerSocket = "/run/user/1000/docker.sock" },
 		"hostMounts":       func(cfg *Config) { cfg.HostMounts = []HostMount{{Source: "/home", ReadOnly: true}} },
 	}

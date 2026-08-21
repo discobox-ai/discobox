@@ -10,8 +10,8 @@ import (
 	"strings"
 	"testing"
 
-	apimodel "github.com/obot-platform/discobox/api/model"
-	"github.com/obot-platform/discobox/cli/internal/sandboxcreate"
+	apimodel "github.com/discobox-ai/discobox/api/model"
+	"github.com/discobox-ai/discobox/cli/internal/sandboxcreate"
 )
 
 func TestParseRunOptions(t *testing.T) {
@@ -28,21 +28,21 @@ func TestParseRunOptions(t *testing.T) {
 }
 
 func TestParseRunOptionsKeepsSSHRepoWithoutRef(t *testing.T) {
-	opts, err := sandboxcreate.ParsePromptOptions(sandboxcreate.PromptOptions{Source: "git@github.com:obot-platform/discobox.git"}, []string{"fix"})
+	opts, err := sandboxcreate.ParsePromptOptions(sandboxcreate.PromptOptions{Source: "git@github.com:discobox-ai/discobox.git"}, []string{"fix"})
 	if err != nil {
 		t.Fatalf("parseRunOptions: %v", err)
 	}
-	if opts.Source != "git@github.com:obot-platform/discobox.git" || opts.Ref != "" {
+	if opts.Source != "git@github.com:discobox-ai/discobox.git" || opts.Ref != "" {
 		t.Fatalf("source/ref = %q/%q, want SSH repo with empty ref", opts.Source, opts.Ref)
 	}
 }
 
 func TestParseRunOptionsSplitsSSHRepoWithRef(t *testing.T) {
-	opts, err := sandboxcreate.ParsePromptOptions(sandboxcreate.PromptOptions{Source: "git@github.com:obot-platform/discobox.git@main"}, []string{"fix"})
+	opts, err := sandboxcreate.ParsePromptOptions(sandboxcreate.PromptOptions{Source: "git@github.com:discobox-ai/discobox.git@main"}, []string{"fix"})
 	if err != nil {
 		t.Fatalf("parseRunOptions: %v", err)
 	}
-	if opts.Source != "git@github.com:obot-platform/discobox.git" || opts.Ref != "main" {
+	if opts.Source != "git@github.com:discobox-ai/discobox.git" || opts.Ref != "main" {
 		t.Fatalf("source/ref = %q/%q, want SSH repo/main", opts.Source, opts.Ref)
 	}
 }

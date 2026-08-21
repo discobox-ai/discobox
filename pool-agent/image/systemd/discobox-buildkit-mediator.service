@@ -1,6 +1,6 @@
 [Unit]
 Description=Discobox Pool BuildKit Mediator
-Documentation=https://github.com/obot-platform/discobox
+Documentation=https://github.com/discobox-ai/discobox
 After=discobox-buildkitd.service
 Wants=discobox-buildkitd.service
 

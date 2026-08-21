@@ -6,7 +6,7 @@ import (
 	tea "charm.land/bubbletea/v2"
 	uv "github.com/charmbracelet/ultraviolet"
 
-	"github.com/obot-platform/discobox/termpane/selection"
+	"github.com/discobox-ai/discobox/termpane/selection"
 )
 
 // The chrome — the header with the sandbox id in it, the hints line, the

@@ -11,7 +11,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/obot-platform/discobox/endpoint"
+	"github.com/discobox-ai/discobox/endpoint"
 )
 
 func TestListenAllFailsWhenAnyEndpointCannotBind(t *testing.T) {

@@ -9,12 +9,12 @@ import (
 
 	"github.com/spf13/cobra"
 
-	apiclientgen "github.com/obot-platform/discobox/api/gen"
-	apimodel "github.com/obot-platform/discobox/api/model"
-	"github.com/obot-platform/discobox/cli/internal/keys"
-	"github.com/obot-platform/discobox/cli/internal/sandboxcreate"
-	"github.com/obot-platform/discobox/cli/internal/tui"
-	"github.com/obot-platform/discobox/internal/gitutil"
+	apiclientgen "github.com/discobox-ai/discobox/api/gen"
+	apimodel "github.com/discobox-ai/discobox/api/model"
+	"github.com/discobox-ai/discobox/cli/internal/keys"
+	"github.com/discobox-ai/discobox/cli/internal/sandboxcreate"
+	"github.com/discobox-ai/discobox/cli/internal/tui"
+	"github.com/discobox-ai/discobox/internal/gitutil"
 )
 
 // newTUICommand launches the interactive launcher: one full-screen window that

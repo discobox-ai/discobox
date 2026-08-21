@@ -9,7 +9,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/obot-platform/discobox/gormdb"
+	"github.com/discobox-ai/discobox/gormdb"
 	"gorm.io/gorm"
 )
 

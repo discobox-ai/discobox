@@ -2,7 +2,7 @@
 
 ## Project Structure
 
-- Root module `github.com/obot-platform/discobox`: stable contracts/API module.
+- Root module `github.com/discobox-ai/discobox`: stable contracts/API module.
 - `api`: server API definitions and tests, pending schema-first conversion.
 - `cli`: nested Go module for the `discobox` CLI.
 - `cli/cmd/discobox`: CLI entrypoint.

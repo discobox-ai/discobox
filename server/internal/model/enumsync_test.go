@@ -28,7 +28,7 @@ import (
 	"strings"
 	"testing"
 
-	rootopenapi "github.com/obot-platform/discobox/api/openapi"
+	rootopenapi "github.com/discobox-ai/discobox/api/openapi"
 	"gopkg.in/yaml.v3"
 )
 

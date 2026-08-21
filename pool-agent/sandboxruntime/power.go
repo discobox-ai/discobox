@@ -8,7 +8,7 @@ import (
 
 	"github.com/moby/moby/client"
 
-	workerapimodel "github.com/obot-platform/discobox/pool-agent/api/model"
+	workerapimodel "github.com/discobox-ai/discobox/pool-agent/api/model"
 )
 
 // Power operations are instructions (ADR 0017 §9). They act and return whether

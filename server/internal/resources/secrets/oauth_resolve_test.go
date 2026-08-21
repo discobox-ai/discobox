@@ -12,8 +12,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/obot-platform/discobox/server/internal/model"
-	"github.com/obot-platform/discobox/server/internal/store"
+	"github.com/discobox-ai/discobox/server/internal/model"
+	"github.com/discobox-ai/discobox/server/internal/store"
 )
 
 // oauthTokenServer stands in for the upstream token endpoint. It records how many

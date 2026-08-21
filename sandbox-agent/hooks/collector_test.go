@@ -9,7 +9,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/obot-platform/discobox/sandbox-agent/store"
+	"github.com/discobox-ai/discobox/sandbox-agent/store"
 )
 
 func TestPublishRecordsHarnessHook(t *testing.T) {

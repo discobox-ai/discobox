@@ -6,7 +6,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/obot-platform/discobox/internal/gitutil"
+	"github.com/discobox-ai/discobox/internal/gitutil"
 )
 
 // applyStatus is what happened to one source in an apply run. Every source

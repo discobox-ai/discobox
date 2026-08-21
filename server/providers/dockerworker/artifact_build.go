@@ -13,7 +13,7 @@ import (
 	bkclient "github.com/moby/buildkit/client"
 	"github.com/moby/moby/client"
 
-	"github.com/obot-platform/discobox/devimage"
+	"github.com/discobox-ai/discobox/devimage"
 )
 
 // BuildArtifacts builds an image on a pool's own Docker daemon and writes its

@@ -11,7 +11,7 @@ import (
 	"charm.land/lipgloss/v2"
 	"github.com/charmbracelet/x/ansi"
 
-	"github.com/obot-platform/discobox/termpane"
+	"github.com/discobox-ai/discobox/termpane"
 )
 
 // openWorkspace drives the window into the workspace on the first sandbox.

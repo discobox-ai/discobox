@@ -7,9 +7,9 @@ import (
 	"testing"
 	"time"
 
-	serverapi "github.com/obot-platform/discobox/api/gen"
-	"github.com/obot-platform/discobox/server/internal/model"
-	svcapi "github.com/obot-platform/discobox/server/internal/services"
+	serverapi "github.com/discobox-ai/discobox/api/gen"
+	"github.com/discobox-ai/discobox/server/internal/model"
+	svcapi "github.com/discobox-ai/discobox/server/internal/services"
 )
 
 func TestSecretHandlersDoNotReturnSecretValues(t *testing.T) {

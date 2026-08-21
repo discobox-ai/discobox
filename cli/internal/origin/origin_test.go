@@ -3,8 +3,8 @@ package origin
 import (
 	"testing"
 
-	"github.com/obot-platform/discobox/internal/hostid"
-	"github.com/obot-platform/discobox/internal/originkey"
+	"github.com/discobox-ai/discobox/internal/hostid"
+	"github.com/discobox-ai/discobox/internal/originkey"
 )
 
 func TestKeyMatchesSharedDerivation(t *testing.T) {

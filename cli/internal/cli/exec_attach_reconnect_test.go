@@ -13,8 +13,8 @@ import (
 
 	"github.com/coder/websocket"
 
-	"github.com/obot-platform/discobox/execstream/frame"
-	"github.com/obot-platform/discobox/execstream/host"
+	"github.com/discobox-ai/discobox/execstream/frame"
+	"github.com/discobox-ai/discobox/execstream/host"
 )
 
 // openExecAttachConn is what attachSandboxExec calls to get its connection. A

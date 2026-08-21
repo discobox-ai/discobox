@@ -5,7 +5,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/obot-platform/discobox/sandbox-agent/runuser"
+	"github.com/discobox-ai/discobox/sandbox-agent/runuser"
 )
 
 // An empty environment means the manifest named nobody, so boot provisions no

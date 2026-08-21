@@ -10,8 +10,8 @@ import (
 	"net/url"
 	"strings"
 
-	"github.com/obot-platform/discobox/pool-agent/internalhttp"
-	"github.com/obot-platform/discobox/pool-agent/poolauth"
+	"github.com/discobox-ai/discobox/pool-agent/internalhttp"
+	"github.com/discobox-ai/discobox/pool-agent/poolauth"
 )
 
 const (

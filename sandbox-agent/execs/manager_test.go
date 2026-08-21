@@ -9,10 +9,10 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/obot-platform/discobox/harness"
-	"github.com/obot-platform/discobox/sandbox-agent/nestedbridge"
-	"github.com/obot-platform/discobox/sandbox-agent/runuser"
-	"github.com/obot-platform/discobox/sandboxconfig"
+	"github.com/discobox-ai/discobox/harness"
+	"github.com/discobox-ai/discobox/sandbox-agent/nestedbridge"
+	"github.com/discobox-ai/discobox/sandbox-agent/runuser"
+	"github.com/discobox-ai/discobox/sandboxconfig"
 )
 
 func TestManagerMergesConfigEnvWithRequestOverrides(t *testing.T) {

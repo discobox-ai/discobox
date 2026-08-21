@@ -9,7 +9,7 @@ required `details` fields against `hooks/api.KnownEventTypes` before inserting
 
 ## Responsibilities
 
-- Open session databases through `github.com/obot-platform/discobox/gormdb`.
+- Open session databases through `github.com/discobox-ai/discobox/gormdb`.
 - Auto-migrate or otherwise initialize the hook schema.
 - Use public GORM persistence structs from `hooks/models` for migrations and
   database queries.

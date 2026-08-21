@@ -1,9 +1,9 @@
 package providers
 
 import (
-	sandbox "github.com/obot-platform/discobox/server/internal/sandbox"
-	"github.com/obot-platform/discobox/server/providers/poolruntime"
-	"github.com/obot-platform/discobox/server/providers/wslc"
+	sandbox "github.com/discobox-ai/discobox/server/internal/sandbox"
+	"github.com/discobox-ai/discobox/server/providers/poolruntime"
+	"github.com/discobox-ai/discobox/server/providers/wslc"
 )
 
 // registerPlatformProviderFactories registers the Windows-only wslc provider,

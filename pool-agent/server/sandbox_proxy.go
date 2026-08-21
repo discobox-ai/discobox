@@ -8,8 +8,8 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/discobox-ai/discobox/pool-agent/internalhttp"
 	"github.com/go-chi/chi/v5"
-	"github.com/obot-platform/discobox/pool-agent/internalhttp"
 )
 
 const sandboxAgentAuthorizationHeader = "X-Discobox-Sandbox-Agent-Authorization"

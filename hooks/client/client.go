@@ -14,8 +14,8 @@ import (
 	"strings"
 	"time"
 
-	hookapigen "github.com/obot-platform/discobox/hooks/api/gen"
-	"github.com/obot-platform/discobox/hooks/api/model"
+	hookapigen "github.com/discobox-ai/discobox/hooks/api/gen"
+	"github.com/discobox-ai/discobox/hooks/api/model"
 )
 
 const defaultTimeout = 10 * time.Second

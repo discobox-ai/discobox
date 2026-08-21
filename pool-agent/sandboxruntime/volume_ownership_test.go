@@ -9,8 +9,8 @@ import (
 	"syscall"
 	"testing"
 
-	workerapimodel "github.com/obot-platform/discobox/pool-agent/api/model"
-	"github.com/obot-platform/discobox/sandboxuser"
+	workerapimodel "github.com/discobox-ai/discobox/pool-agent/api/model"
+	"github.com/discobox-ai/discobox/sandboxuser"
 )
 
 // The sandbox's data root is its $HOME, and unarchiving is a create against a

@@ -4,7 +4,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/obot-platform/discobox/pool-agent/buildkitagent"
+	"github.com/discobox-ai/discobox/pool-agent/buildkitagent"
 )
 
 func TestTheBuildIdentityNeverReachesTheContainer(t *testing.T) {

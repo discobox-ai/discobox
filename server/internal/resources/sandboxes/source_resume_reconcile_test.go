@@ -5,8 +5,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/obot-platform/discobox/server/internal/model"
-	"github.com/obot-platform/discobox/server/internal/resources/sandboxes"
+	"github.com/discobox-ai/discobox/server/internal/model"
+	"github.com/discobox-ai/discobox/server/internal/resources/sandboxes"
 )
 
 // A push-delivered sandbox parks at `awaiting_source` and resumes from there

@@ -18,9 +18,9 @@ import (
 	"strings"
 	"time"
 
-	"github.com/obot-platform/discobox/layout"
-	"github.com/obot-platform/discobox/proxy"
-	"github.com/obot-platform/discobox/sandboxconfig"
+	"github.com/discobox-ai/discobox/layout"
+	"github.com/discobox-ai/discobox/proxy"
+	"github.com/discobox-ai/discobox/sandboxconfig"
 )
 
 const (

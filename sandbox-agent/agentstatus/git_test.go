@@ -8,8 +8,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/obot-platform/discobox/sandbox-agent/execs"
-	"github.com/obot-platform/discobox/sandboxconfig"
+	"github.com/discobox-ai/discobox/sandbox-agent/execs"
+	"github.com/discobox-ai/discobox/sandboxconfig"
 )
 
 func runGitCommand(t *testing.T, dir string, args ...string) {

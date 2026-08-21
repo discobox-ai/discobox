@@ -9,11 +9,11 @@ import (
 	"time"
 
 	"github.com/bmatcuk/doublestar/v4"
-	hooks "github.com/obot-platform/discobox/hooks"
-	"github.com/obot-platform/discobox/hooks/lspclient"
-	"github.com/obot-platform/discobox/hooks/runner"
-	"github.com/obot-platform/discobox/hooks/store"
-	"github.com/obot-platform/discobox/hooks/watcher"
+	hooks "github.com/discobox-ai/discobox/hooks"
+	"github.com/discobox-ai/discobox/hooks/lspclient"
+	"github.com/discobox-ai/discobox/hooks/runner"
+	"github.com/discobox-ai/discobox/hooks/store"
+	"github.com/discobox-ai/discobox/hooks/watcher"
 )
 
 type lspRuntime struct {

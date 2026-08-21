@@ -3,8 +3,8 @@ package sandbox
 import (
 	"context"
 
-	poolagentauth "github.com/obot-platform/discobox/server/internal/auth/poolagent"
-	"github.com/obot-platform/discobox/server/internal/model"
+	poolagentauth "github.com/discobox-ai/discobox/server/internal/auth/poolagent"
+	"github.com/discobox-ai/discobox/server/internal/model"
 )
 
 // PoolManager is the control-plane surface pool-backed providers need.

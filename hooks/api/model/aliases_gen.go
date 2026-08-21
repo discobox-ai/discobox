@@ -3,7 +3,7 @@
 // Package model exposes stable aliases for core hooks API schema types.
 package model
 
-import hookapigen "github.com/obot-platform/discobox/hooks/api/gen"
+import hookapigen "github.com/discobox-ai/discobox/hooks/api/gen"
 
 type Hook = hookapigen.Hook
 type HookEngine = hookapigen.HookEngine

@@ -8,7 +8,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/obot-platform/discobox/layout"
+	"github.com/discobox-ai/discobox/layout"
 )
 
 func TestEnsureSandboxMaterialStagesClientOnly(t *testing.T) {

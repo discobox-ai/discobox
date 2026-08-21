@@ -5,8 +5,8 @@ import (
 	"os"
 	"strings"
 
-	apiclientgen "github.com/obot-platform/discobox/api/gen"
-	apimodel "github.com/obot-platform/discobox/api/model"
+	apiclientgen "github.com/discobox-ai/discobox/api/gen"
+	apimodel "github.com/discobox-ai/discobox/api/model"
 )
 
 // secretNameHints are substrings that mark an --env variable name as sensitive,

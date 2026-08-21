@@ -9,8 +9,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/obot-platform/discobox/execstream/frame"
-	"github.com/obot-platform/discobox/execstream/resume"
+	"github.com/discobox-ai/discobox/execstream/frame"
+	"github.com/discobox-ai/discobox/execstream/resume"
 )
 
 // pipeConn is an execstream.Conn over an io pipe, which is all the transport

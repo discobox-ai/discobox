@@ -6,8 +6,8 @@ import (
 	"log/slog"
 	"time"
 
-	"github.com/obot-platform/discobox/server/internal/model"
-	"github.com/obot-platform/discobox/server/internal/store"
+	"github.com/discobox-ai/discobox/server/internal/model"
+	"github.com/discobox-ai/discobox/server/internal/store"
 )
 
 // ReportSandboxStates records what a pool agent observed about the sandboxes it

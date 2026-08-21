@@ -7,11 +7,11 @@ import (
 	"slices"
 	"testing"
 
-	poolagentauth "github.com/obot-platform/discobox/server/internal/auth/poolagent"
-	"github.com/obot-platform/discobox/server/internal/model"
-	"github.com/obot-platform/discobox/server/internal/service"
-	"github.com/obot-platform/discobox/server/internal/services"
-	"github.com/obot-platform/discobox/server/internal/transport"
+	poolagentauth "github.com/discobox-ai/discobox/server/internal/auth/poolagent"
+	"github.com/discobox-ai/discobox/server/internal/model"
+	"github.com/discobox-ai/discobox/server/internal/service"
+	"github.com/discobox-ai/discobox/server/internal/services"
+	"github.com/discobox-ai/discobox/server/internal/transport"
 )
 
 func TestSandboxTCPAttachRouteProxiesToSandboxAgent(t *testing.T) {

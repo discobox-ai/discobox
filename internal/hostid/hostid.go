@@ -19,7 +19,7 @@ import (
 
 	"github.com/adrg/xdg"
 
-	"github.com/obot-platform/discobox/id"
+	"github.com/discobox-ai/discobox/id"
 )
 
 const (

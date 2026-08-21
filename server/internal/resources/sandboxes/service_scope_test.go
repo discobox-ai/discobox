@@ -6,8 +6,8 @@ import (
 	"net/http"
 	"testing"
 
-	"github.com/obot-platform/discobox/server/internal/auth"
-	poolagentauth "github.com/obot-platform/discobox/server/internal/auth/poolagent"
+	"github.com/discobox-ai/discobox/server/internal/auth"
+	poolagentauth "github.com/discobox-ai/discobox/server/internal/auth/poolagent"
 )
 
 func TestAuthorizeRequestedScopesRequiresHeldScopes(t *testing.T) {

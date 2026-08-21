@@ -4,7 +4,7 @@ package server
 import (
 	"context"
 
-	internalserver "github.com/obot-platform/discobox/server/internal/server"
+	internalserver "github.com/discobox-ai/discobox/server/internal/server"
 )
 
 // Run loads configuration, initializes storage and services, and starts the

@@ -13,7 +13,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/obot-platform/discobox/hooks/api/model"
+	"github.com/discobox-ai/discobox/hooks/api/model"
 )
 
 func writeTestJSON(t *testing.T, w http.ResponseWriter, v any) {

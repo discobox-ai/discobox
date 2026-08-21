@@ -15,12 +15,12 @@ import (
 	"time"
 
 	"aidanwoods.dev/go-paseto"
-	sandboxapi "github.com/obot-platform/discobox/api/sandboxgen"
-	"github.com/obot-platform/discobox/sandbox-agent/config"
-	"github.com/obot-platform/discobox/sandbox-agent/execs"
-	"github.com/obot-platform/discobox/sandbox-agent/ports"
-	agentstore "github.com/obot-platform/discobox/sandbox-agent/store"
-	"github.com/obot-platform/discobox/sandbox-agent/terminal"
+	sandboxapi "github.com/discobox-ai/discobox/api/sandboxgen"
+	"github.com/discobox-ai/discobox/sandbox-agent/config"
+	"github.com/discobox-ai/discobox/sandbox-agent/execs"
+	"github.com/discobox-ai/discobox/sandbox-agent/ports"
+	agentstore "github.com/discobox-ai/discobox/sandbox-agent/store"
+	"github.com/discobox-ai/discobox/sandbox-agent/terminal"
 )
 
 func TestHealthDoesNotRequireAuth(t *testing.T) {

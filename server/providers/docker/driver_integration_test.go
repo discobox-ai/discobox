@@ -15,9 +15,9 @@ import (
 	"github.com/google/uuid"
 	"github.com/moby/moby/client"
 
-	poolagent "github.com/obot-platform/discobox/pool-agent"
-	"github.com/obot-platform/discobox/server/internal/model"
-	"github.com/obot-platform/discobox/server/providers/dockerworker"
+	poolagent "github.com/discobox-ai/discobox/pool-agent"
+	"github.com/discobox-ai/discobox/server/internal/model"
+	"github.com/discobox-ai/discobox/server/providers/dockerworker"
 )
 
 const dockerIntegrationEnv = "DISCOBOX_DOCKER_INTEGRATION"

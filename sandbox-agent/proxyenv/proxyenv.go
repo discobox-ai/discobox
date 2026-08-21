@@ -42,8 +42,8 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/obot-platform/discobox/sandbox-agent/nestedbridge"
-	"github.com/obot-platform/discobox/sandboxconfig"
+	"github.com/discobox-ai/discobox/sandbox-agent/nestedbridge"
+	"github.com/discobox-ai/discobox/sandboxconfig"
 )
 
 // DefaultSandboxJSON is pool-agent's read-only sandbox manifest.

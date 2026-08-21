@@ -12,13 +12,13 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/obot-platform/discobox/endpoint"
-	guestvsock "github.com/obot-platform/discobox/pool-agent/vsock"
-	"github.com/obot-platform/discobox/pool-agent/wire"
-	"github.com/obot-platform/discobox/server/internal/model"
-	sandbox "github.com/obot-platform/discobox/server/internal/sandbox"
-	"github.com/obot-platform/discobox/server/providers/dockerworker"
-	"github.com/obot-platform/discobox/server/providers/poolruntime"
+	"github.com/discobox-ai/discobox/endpoint"
+	guestvsock "github.com/discobox-ai/discobox/pool-agent/vsock"
+	"github.com/discobox-ai/discobox/pool-agent/wire"
+	"github.com/discobox-ai/discobox/server/internal/model"
+	sandbox "github.com/discobox-ai/discobox/server/internal/sandbox"
+	"github.com/discobox-ai/discobox/server/providers/dockerworker"
+	"github.com/discobox-ai/discobox/server/providers/poolruntime"
 )
 
 const (

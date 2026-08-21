@@ -12,8 +12,8 @@ import (
 	"testing"
 	"time"
 
-	workerapimodel "github.com/obot-platform/discobox/pool-agent/api/model"
-	"github.com/obot-platform/discobox/pool-agent/sandboxruntime"
+	workerapimodel "github.com/discobox-ai/discobox/pool-agent/api/model"
+	"github.com/discobox-ai/discobox/pool-agent/sandboxruntime"
 )
 
 // statusPollTestRuntime wraps MemorySandboxRuntime (which already implements

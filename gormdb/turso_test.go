@@ -5,7 +5,7 @@ import (
 	"path/filepath"
 	"testing"
 
-	"github.com/obot-platform/discobox/gormdb"
+	"github.com/discobox-ai/discobox/gormdb"
 )
 
 func TestOpenMemoryTursoUsesGORMSQLiteDialector(t *testing.T) {

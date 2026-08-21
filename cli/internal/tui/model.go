@@ -21,8 +21,8 @@ import (
 	tea "charm.land/bubbletea/v2"
 	"charm.land/lipgloss/v2"
 
-	"github.com/obot-platform/discobox/termpane"
-	"github.com/obot-platform/discobox/termpane/selection"
+	"github.com/discobox-ai/discobox/termpane"
+	"github.com/discobox-ai/discobox/termpane/selection"
 )
 
 type focusArea int

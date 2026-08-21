@@ -4,7 +4,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/obot-platform/discobox/server/internal/model"
+	"github.com/discobox-ai/discobox/server/internal/model"
 )
 
 // TestArmRegistrationTimeout pins both halves of the deadline the pool

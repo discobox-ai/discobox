@@ -10,8 +10,8 @@ import (
 	"time"
 
 	"github.com/creack/pty"
-	"github.com/obot-platform/discobox/execstream/frame"
-	"github.com/obot-platform/discobox/execstream/host"
+	"github.com/discobox-ai/discobox/execstream/frame"
+	"github.com/discobox-ai/discobox/execstream/host"
 )
 
 // screenPipe returns a pipe standing in for the PTY master: EnableScreen

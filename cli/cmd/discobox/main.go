@@ -5,7 +5,7 @@ import (
 	"fmt"
 	"os"
 
-	"github.com/obot-platform/discobox/cli/internal/cli"
+	"github.com/discobox-ai/discobox/cli/internal/cli"
 )
 
 func main() {

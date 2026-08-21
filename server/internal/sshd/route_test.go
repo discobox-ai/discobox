@@ -4,10 +4,10 @@ import (
 	"context"
 	"testing"
 
-	idpkg "github.com/obot-platform/discobox/id"
-	"github.com/obot-platform/discobox/server/internal/database"
-	"github.com/obot-platform/discobox/server/internal/model"
-	"github.com/obot-platform/discobox/server/internal/store"
+	idpkg "github.com/discobox-ai/discobox/id"
+	"github.com/discobox-ai/discobox/server/internal/database"
+	"github.com/discobox-ai/discobox/server/internal/model"
+	"github.com/discobox-ai/discobox/server/internal/store"
 )
 
 func TestResolveUsername(t *testing.T) {

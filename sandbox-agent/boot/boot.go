@@ -5,7 +5,7 @@ import (
 	"log/slog"
 	"os"
 
-	"github.com/obot-platform/discobox/sandboxconfig"
+	"github.com/discobox-ai/discobox/sandboxconfig"
 )
 
 // Init is the container entrypoint run as PID 1. It resolves the sandbox user,

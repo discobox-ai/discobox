@@ -7,7 +7,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/obot-platform/discobox/sandbox-agent/execs"
+	"github.com/discobox-ai/discobox/sandbox-agent/execs"
 )
 
 func TestRecordAndListEvents(t *testing.T) {

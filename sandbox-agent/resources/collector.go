@@ -10,9 +10,9 @@ import (
 	"strings"
 	"time"
 
-	"github.com/obot-platform/discobox/sandbox-agent/execs"
-	"github.com/obot-platform/discobox/sandbox-agent/store"
-	"github.com/obot-platform/discobox/sandbox-agent/terminal"
+	"github.com/discobox-ai/discobox/sandbox-agent/execs"
+	"github.com/discobox-ai/discobox/sandbox-agent/store"
+	"github.com/discobox-ai/discobox/sandbox-agent/terminal"
 )
 
 type Collector struct {

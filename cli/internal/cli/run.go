@@ -5,8 +5,8 @@ import (
 	"fmt"
 	"strings"
 
-	apimodel "github.com/obot-platform/discobox/api/model"
-	"github.com/obot-platform/discobox/cli/internal/sandboxcreate"
+	apimodel "github.com/discobox-ai/discobox/api/model"
+	"github.com/discobox-ai/discobox/cli/internal/sandboxcreate"
 	"github.com/spf13/cobra"
 )
 

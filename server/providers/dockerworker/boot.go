@@ -3,8 +3,8 @@ package dockerworker
 import (
 	"strings"
 
-	poolagent "github.com/obot-platform/discobox/pool-agent"
-	"github.com/obot-platform/discobox/pool-agent/imagereap"
+	poolagent "github.com/discobox-ai/discobox/pool-agent"
+	"github.com/discobox-ai/discobox/pool-agent/imagereap"
 )
 
 // BootEnv renders the pool-agent bootstrap contract as container environment

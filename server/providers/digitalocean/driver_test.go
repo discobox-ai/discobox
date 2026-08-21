@@ -9,8 +9,8 @@ import (
 	"strings"
 	"testing"
 
-	sandbox "github.com/obot-platform/discobox/server/internal/sandbox"
-	"github.com/obot-platform/discobox/server/providers/dockerworker"
+	sandbox "github.com/discobox-ai/discobox/server/internal/sandbox"
+	"github.com/discobox-ai/discobox/server/providers/dockerworker"
 )
 
 func encodeJSON(t *testing.T, w http.ResponseWriter, v any) {

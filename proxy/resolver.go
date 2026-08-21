@@ -1,6 +1,6 @@
 package proxy
 
-import "github.com/obot-platform/discobox/proxy/internal/secrets"
+import "github.com/discobox-ai/discobox/proxy/internal/secrets"
 
 // SecretResolver resolves a sentinel placeholder to its real credential value.
 // Worker-agent implements it (calling the control plane); the proxy stays

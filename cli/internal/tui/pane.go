@@ -9,8 +9,8 @@ import (
 	tea "charm.land/bubbletea/v2"
 	"charm.land/lipgloss/v2"
 
-	"github.com/obot-platform/discobox/cli/internal/keys"
-	"github.com/obot-platform/discobox/termpane"
+	"github.com/discobox-ai/discobox/cli/internal/keys"
+	"github.com/discobox-ai/discobox/termpane"
 )
 
 // A pane is a discobox's terminal drawn in the window rather than by handing

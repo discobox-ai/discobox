@@ -16,16 +16,16 @@ import (
 	"text/tabwriter"
 	"time"
 
-	"github.com/obot-platform/discobox/execstream"
-	"github.com/obot-platform/discobox/execstream/client"
-	"github.com/obot-platform/discobox/execstream/frame"
-	"github.com/obot-platform/discobox/execstream/resume"
+	"github.com/discobox-ai/discobox/execstream"
+	"github.com/discobox-ai/discobox/execstream/client"
+	"github.com/discobox-ai/discobox/execstream/frame"
+	"github.com/discobox-ai/discobox/execstream/resume"
 
 	"github.com/coder/websocket"
 	"github.com/spf13/cobra"
 
-	apiclientgen "github.com/obot-platform/discobox/api/gen"
-	apimodel "github.com/obot-platform/discobox/api/model"
+	apiclientgen "github.com/discobox-ai/discobox/api/gen"
+	apimodel "github.com/discobox-ai/discobox/api/model"
 )
 
 type sandboxExecCreateOptions struct {

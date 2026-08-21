@@ -6,8 +6,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/obot-platform/discobox/layout"
-	"github.com/obot-platform/discobox/pool-agent/buildkitagent"
+	"github.com/discobox-ai/discobox/layout"
+	"github.com/discobox-ai/discobox/pool-agent/buildkitagent"
 )
 
 func prepare(t *testing.T) string {

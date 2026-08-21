@@ -13,7 +13,7 @@ package agentstatus
 import (
 	"time"
 
-	"github.com/obot-platform/discobox/sandbox-agent/ports"
+	"github.com/discobox-ai/discobox/sandbox-agent/ports"
 )
 
 // GitSourceStatus is the observed git state of one mounted source.

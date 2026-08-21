@@ -8,7 +8,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/obot-platform/discobox/sandboxconfig"
+	"github.com/discobox-ai/discobox/sandboxconfig"
 )
 
 const mitmPEM = "-----BEGIN CERTIFICATE-----\nMITM\n-----END CERTIFICATE-----\n"

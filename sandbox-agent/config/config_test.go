@@ -6,7 +6,7 @@ import (
 	"path/filepath"
 	"testing"
 
-	"github.com/obot-platform/discobox/sandboxconfig"
+	"github.com/discobox-ai/discobox/sandboxconfig"
 )
 
 func TestLoadReadsIdentityFromFileOnly(t *testing.T) {

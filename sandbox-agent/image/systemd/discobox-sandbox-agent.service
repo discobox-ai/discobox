@@ -1,6 +1,6 @@
 [Unit]
 Description=Discobox Sandbox Agent
-Documentation=https://github.com/obot-platform/discobox
+Documentation=https://github.com/discobox-ai/discobox
 After=network-online.target docker.socket nix-daemon.socket
 Wants=network-online.target docker.socket nix-daemon.socket
 ConditionPathExists=/etc/discobox/sandbox.json

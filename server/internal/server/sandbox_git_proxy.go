@@ -9,11 +9,11 @@ import (
 	"net/url"
 	"strings"
 
+	poolagentauth "github.com/discobox-ai/discobox/server/internal/auth/poolagent"
+	"github.com/discobox-ai/discobox/server/internal/sandboxagentclient"
+	services "github.com/discobox-ai/discobox/server/internal/services"
+	"github.com/discobox-ai/discobox/server/internal/store"
 	"github.com/go-chi/chi/v5"
-	poolagentauth "github.com/obot-platform/discobox/server/internal/auth/poolagent"
-	"github.com/obot-platform/discobox/server/internal/sandboxagentclient"
-	services "github.com/obot-platform/discobox/server/internal/services"
-	"github.com/obot-platform/discobox/server/internal/store"
 )
 
 func registerSandboxGitRoutes(router chi.Router, service services.SandboxService) {

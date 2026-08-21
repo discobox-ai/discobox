@@ -20,10 +20,10 @@ import (
 	"sync"
 	"text/template"
 
-	"github.com/obot-platform/discobox/harness"
-	"github.com/obot-platform/discobox/harness/registry"
-	"github.com/obot-platform/discobox/sandbox-agent/config"
-	"github.com/obot-platform/discobox/sandbox-agent/execs"
+	"github.com/discobox-ai/discobox/harness"
+	"github.com/discobox-ai/discobox/harness/registry"
+	"github.com/discobox-ai/discobox/sandbox-agent/config"
+	"github.com/discobox-ai/discobox/sandbox-agent/execs"
 )
 
 // ErrNotFound is returned when a terminal (exec) is not found. It aliases the

@@ -1,4 +1,4 @@
-module github.com/obot-platform/discobox
+module github.com/discobox-ai/discobox
 
 go 1.26.1
 
@@ -8,10 +8,10 @@ require (
 	github.com/Microsoft/go-winio v0.6.2
 	github.com/adrg/xdg v0.5.3
 	github.com/coder/websocket v1.8.14
+	github.com/discobox-ai/discobox/gormdb v0.0.0
 	github.com/elazarl/goproxy v1.9.0
 	github.com/go-faster/errors v0.7.1
 	github.com/go-faster/jx v1.2.0
-	github.com/obot-platform/discobox/gormdb v0.0.0
 	github.com/ogen-go/ogen v1.20.3
 	github.com/things-go/go-socks5 v0.1.1
 	go.opentelemetry.io/otel v1.43.0
@@ -359,7 +359,7 @@ require (
 	turso.tech/database/tursogo v0.6.1 // indirect
 )
 
-replace github.com/obot-platform/discobox/gormdb => ./gormdb
+replace github.com/discobox-ai/discobox/gormdb => ./gormdb
 
 tool (
 	github.com/go-task/task/v3/cmd/task

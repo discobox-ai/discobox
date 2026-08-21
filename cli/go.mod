@@ -1,12 +1,12 @@
-module github.com/obot-platform/discobox/cli
+module github.com/discobox-ai/discobox/cli
 
 go 1.26.1
 
 require (
 	github.com/coder/websocket v1.8.14
 	github.com/go-faster/jx v1.2.0
-	github.com/obot-platform/discobox v0.0.0
-	github.com/obot-platform/discobox/server v0.0.0
+	github.com/discobox-ai/discobox v0.0.0
+	github.com/discobox-ai/discobox/server v0.0.0
 	github.com/spf13/cobra v1.10.2
 	github.com/spf13/pflag v1.0.10
 	golang.org/x/crypto v0.53.0
@@ -108,7 +108,7 @@ require (
 	github.com/moby/moby/api v1.54.2 // indirect
 	github.com/moby/moby/client v0.4.1 // indirect
 	github.com/muesli/cancelreader v0.2.2 // indirect
-	github.com/obot-platform/discobox/termpane v0.0.0
+	github.com/discobox-ai/discobox/termpane v0.0.0
 	github.com/ogen-go/ogen v1.20.3 // indirect
 	github.com/opencontainers/go-digest v1.0.0 // indirect
 	github.com/opencontainers/image-spec v1.1.1 // indirect
@@ -142,10 +142,10 @@ require (
 	gorm.io/gorm v1.31.1 // indirect
 )
 
-replace github.com/obot-platform/discobox => ..
+replace github.com/discobox-ai/discobox => ..
 
-replace github.com/obot-platform/discobox/server => ../server
+replace github.com/discobox-ai/discobox/server => ../server
 
-replace github.com/obot-platform/discobox/termpane => ../termpane
+replace github.com/discobox-ai/discobox/termpane => ../termpane
 
 replace github.com/charmbracelet/x/ansi => github.com/ibuildthecloud/x/ansi v0.11.9-0.20260813023456-57e8cef06953

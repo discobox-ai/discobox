@@ -1,8 +1,8 @@
-module github.com/obot-platform/discobox/sandbox-agent
+module github.com/discobox-ai/discobox/sandbox-agent
 
 go 1.26.1
 
-replace github.com/obot-platform/discobox => ..
+replace github.com/discobox-ai/discobox => ..
 
 require (
 	aidanwoods.dev/go-paseto v1.6.0
@@ -10,13 +10,13 @@ require (
 	github.com/coder/websocket v1.8.14
 	github.com/coreos/go-systemd/v22 v22.5.0
 	github.com/creack/pty v1.1.24
+	github.com/discobox-ai/discobox v0.0.0
+	github.com/discobox-ai/discobox/gormdb v0.0.0
 	github.com/distribution/reference v0.6.0
 	github.com/fsnotify/fsnotify v1.10.1
 	github.com/go-chi/chi/v5 v5.3.0
 	github.com/go-faster/jx v1.2.0
 	github.com/klauspost/compress v1.18.5
-	github.com/obot-platform/discobox v0.0.0
-	github.com/obot-platform/discobox/gormdb v0.0.0
 	golang.org/x/sys v0.47.0
 	gorm.io/gorm v1.31.1
 )
@@ -84,6 +84,6 @@ require (
 	turso.tech/database/tursogo v0.6.1 // indirect
 )
 
-replace github.com/obot-platform/discobox/gormdb => ../gormdb
+replace github.com/discobox-ai/discobox/gormdb => ../gormdb
 
 replace github.com/charmbracelet/x/ansi => github.com/ibuildthecloud/x/ansi v0.11.9-0.20260813023456-57e8cef06953

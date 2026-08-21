@@ -7,8 +7,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/obot-platform/discobox/harness"
-	"github.com/obot-platform/discobox/sandboxconfig"
+	"github.com/discobox-ai/discobox/harness"
+	"github.com/discobox-ai/discobox/sandboxconfig"
 )
 
 const (

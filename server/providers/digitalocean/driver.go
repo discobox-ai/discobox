@@ -14,10 +14,10 @@ import (
 	"strings"
 	"time"
 
-	sandbox "github.com/obot-platform/discobox/server/internal/sandbox"
-	"github.com/obot-platform/discobox/server/internal/transport"
-	"github.com/obot-platform/discobox/server/providers/dockerworker"
-	"github.com/obot-platform/discobox/server/providers/dockerworker/sshdocker"
+	sandbox "github.com/discobox-ai/discobox/server/internal/sandbox"
+	"github.com/discobox-ai/discobox/server/internal/transport"
+	"github.com/discobox-ai/discobox/server/providers/dockerworker"
+	"github.com/discobox-ai/discobox/server/providers/dockerworker/sshdocker"
 )
 
 // dockerInstallUserData brings up Docker on a fresh droplet. The worker-agent

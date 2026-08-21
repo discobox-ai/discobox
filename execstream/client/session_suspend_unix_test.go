@@ -10,7 +10,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/obot-platform/discobox/execstream/frame"
+	"github.com/discobox-ai/discobox/execstream/frame"
 )
 
 // Ctrl-Z has to do four things in one order: stop the remote job, hand the

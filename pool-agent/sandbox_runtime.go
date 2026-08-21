@@ -3,8 +3,8 @@ package poolagent
 import (
 	"net/http"
 
-	"github.com/obot-platform/discobox/pool-agent/sandboxruntime"
-	poolserver "github.com/obot-platform/discobox/pool-agent/server"
+	"github.com/discobox-ai/discobox/pool-agent/sandboxruntime"
+	poolserver "github.com/discobox-ai/discobox/pool-agent/server"
 )
 
 type SandboxRuntime = sandboxruntime.Runtime

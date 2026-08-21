@@ -4,7 +4,7 @@ import (
 	"context"
 	"log/slog"
 
-	"github.com/obot-platform/discobox/server/internal/model"
+	"github.com/discobox-ai/discobox/server/internal/model"
 )
 
 // fallbackHarnessConfig is the project's reserved `shell` config, which a

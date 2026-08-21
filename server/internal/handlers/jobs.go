@@ -3,9 +3,9 @@ package handlers
 import (
 	"context"
 
-	serverapi "github.com/obot-platform/discobox/api/gen"
-	apimodel "github.com/obot-platform/discobox/api/model"
-	services "github.com/obot-platform/discobox/server/internal/services"
+	serverapi "github.com/discobox-ai/discobox/api/gen"
+	apimodel "github.com/discobox-ai/discobox/api/model"
+	services "github.com/discobox-ai/discobox/server/internal/services"
 )
 
 func (h *Handler) ListJobs(ctx context.Context, params serverapi.ListJobsParams) (serverapi.ListJobsRes, error) {

@@ -5,7 +5,7 @@ import (
 
 	"github.com/go-chi/chi/v5"
 
-	rootopenapi "github.com/obot-platform/discobox/api/openapi"
+	rootopenapi "github.com/discobox-ai/discobox/api/openapi"
 )
 
 const scalarDocsHTML = `<!doctype html>

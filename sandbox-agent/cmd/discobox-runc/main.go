@@ -10,8 +10,8 @@ import (
 	"os"
 	"syscall"
 
-	"github.com/obot-platform/discobox/runcca"
-	"github.com/obot-platform/discobox/sandbox-agent/nestedbridge"
+	"github.com/discobox-ai/discobox/runcca"
+	"github.com/discobox-ai/discobox/sandbox-agent/nestedbridge"
 )
 
 func main() {

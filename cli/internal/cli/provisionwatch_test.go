@@ -4,8 +4,8 @@ import (
 	"testing"
 	"time"
 
-	apiclientgen "github.com/obot-platform/discobox/api/gen"
-	apimodel "github.com/obot-platform/discobox/api/model"
+	apiclientgen "github.com/discobox-ai/discobox/api/gen"
+	apimodel "github.com/discobox-ai/discobox/api/model"
 )
 
 // provisioning builds a sandbox whose runtime says what the test is about.
@@ -128,7 +128,7 @@ func TestProvisionStatusNamesTheSourcePush(t *testing.T) {
 // so a percentage would visibly go backwards.
 func TestPullLineReportsBothRatiosAndNoPercentage(t *testing.T) {
 	line := pullLine(apimodel.SandboxPullProgress{
-		Image:          "ghcr.io/obot-platform/discobox-harness-codex:latest",
+		Image:          "ghcr.io/discobox-ai/discobox-harness-codex:latest",
 		Current:        apiclientgen.NewOptInt64(150 * 1024 * 1024),
 		Total:          apiclientgen.NewOptInt64(400 * 1024 * 1024),
 		Layers:         apiclientgen.NewOptInt(9),

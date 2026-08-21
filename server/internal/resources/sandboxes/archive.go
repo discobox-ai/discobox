@@ -5,8 +5,8 @@ import (
 	"errors"
 	"time"
 
-	"github.com/obot-platform/discobox/server/internal/model"
-	"github.com/obot-platform/discobox/server/internal/reconcile"
+	"github.com/discobox-ai/discobox/server/internal/model"
+	"github.com/discobox-ai/discobox/server/internal/reconcile"
 )
 
 // DefaultArchiveRetention is how long an archived sandbox is kept when its

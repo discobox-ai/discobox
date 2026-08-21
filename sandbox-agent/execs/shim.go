@@ -14,9 +14,9 @@ import (
 	"sync"
 	"time"
 
-	"github.com/obot-platform/discobox/execstream/frame"
-	"github.com/obot-platform/discobox/sandbox-agent/procio"
-	"github.com/obot-platform/discobox/sandbox-agent/shimruntime"
+	"github.com/discobox-ai/discobox/execstream/frame"
+	"github.com/discobox-ai/discobox/sandbox-agent/procio"
+	"github.com/discobox-ai/discobox/sandbox-agent/shimruntime"
 )
 
 type ShimConfig struct {

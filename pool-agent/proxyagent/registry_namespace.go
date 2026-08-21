@@ -9,7 +9,7 @@ import (
 	"regexp"
 	"strings"
 
-	"github.com/obot-platform/discobox/layout"
+	"github.com/discobox-ai/discobox/layout"
 )
 
 // registryNamespaceBytes is how much randomness the namespace carries. The pool

@@ -18,11 +18,11 @@ import (
 	"text/tabwriter"
 	"time"
 
-	hooks "github.com/obot-platform/discobox/hooks"
-	hookapi "github.com/obot-platform/discobox/hooks/api"
-	"github.com/obot-platform/discobox/hooks/client"
-	"github.com/obot-platform/discobox/hooks/models"
-	"github.com/obot-platform/discobox/internal/gitutil"
+	hooks "github.com/discobox-ai/discobox/hooks"
+	hookapi "github.com/discobox-ai/discobox/hooks/api"
+	"github.com/discobox-ai/discobox/hooks/client"
+	"github.com/discobox-ai/discobox/hooks/models"
+	"github.com/discobox-ai/discobox/internal/gitutil"
 	"github.com/spf13/cobra"
 )
 
@@ -931,7 +931,7 @@ func hooksModuleRoot(t *testing.T) string {
 			if err != nil {
 				t.Fatalf("read go.mod: %v", err)
 			}
-			if strings.Contains(string(data), "module github.com/obot-platform/discobox/hooks") {
+			if strings.Contains(string(data), "module github.com/discobox-ai/discobox/hooks") {
 				return wd
 			}
 		}

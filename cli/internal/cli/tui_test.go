@@ -9,10 +9,10 @@ import (
 	"strings"
 	"testing"
 
-	apiclientgen "github.com/obot-platform/discobox/api/gen"
-	apimodel "github.com/obot-platform/discobox/api/model"
-	"github.com/obot-platform/discobox/cli/internal/sandboxcreate"
-	"github.com/obot-platform/discobox/cli/internal/tui"
+	apiclientgen "github.com/discobox-ai/discobox/api/gen"
+	apimodel "github.com/discobox-ai/discobox/api/model"
+	"github.com/discobox-ai/discobox/cli/internal/sandboxcreate"
+	"github.com/discobox-ai/discobox/cli/internal/tui"
 )
 
 // The launcher draws five states, so the server's fuller set has to land on one

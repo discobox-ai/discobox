@@ -9,9 +9,9 @@ import (
 	"testing"
 	"time"
 
-	"github.com/obot-platform/discobox/layout"
+	"github.com/discobox-ai/discobox/layout"
 
-	"github.com/obot-platform/discobox/proxy"
+	"github.com/discobox-ai/discobox/proxy"
 )
 
 func TestUpsertAndRemoveSentinels(t *testing.T) {

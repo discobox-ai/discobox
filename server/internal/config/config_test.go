@@ -6,10 +6,10 @@ import (
 	"testing"
 	"time"
 
-	"github.com/obot-platform/discobox/controlplane"
-	"github.com/obot-platform/discobox/devimage"
-	"github.com/obot-platform/discobox/endpoint"
-	"github.com/obot-platform/discobox/gormdb"
+	"github.com/discobox-ai/discobox/controlplane"
+	"github.com/discobox-ai/discobox/devimage"
+	"github.com/discobox-ai/discobox/endpoint"
+	"github.com/discobox-ai/discobox/gormdb"
 )
 
 const (

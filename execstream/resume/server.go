@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"sync"
 
-	"github.com/obot-platform/discobox/execstream/frame"
+	"github.com/discobox-ai/discobox/execstream/frame"
 )
 
 // Server retains the applied input position of every logical session for one

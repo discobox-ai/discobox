@@ -5,9 +5,9 @@ import (
 	"sync"
 	"time"
 
-	apiclientgen "github.com/obot-platform/discobox/api/gen"
-	"github.com/obot-platform/discobox/cli/internal/portforward"
-	"github.com/obot-platform/discobox/cli/internal/tui"
+	apiclientgen "github.com/discobox-ai/discobox/api/gen"
+	"github.com/discobox-ai/discobox/cli/internal/portforward"
+	"github.com/discobox-ai/discobox/cli/internal/tui"
 )
 
 // Forward starts the launcher's port forward: the same forwarder `discobox proxy`

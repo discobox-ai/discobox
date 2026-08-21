@@ -4,8 +4,8 @@ import (
 	"fmt"
 	"os"
 
-	"github.com/obot-platform/discobox/harness"
-	"github.com/obot-platform/discobox/sandbox-agent/execs"
+	"github.com/discobox-ai/discobox/harness"
+	"github.com/discobox-ai/discobox/sandbox-agent/execs"
 )
 
 // ensureConfigureDir creates harness.ConfigureDir for the sandbox user, so a

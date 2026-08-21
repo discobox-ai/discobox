@@ -6,11 +6,11 @@ import (
 	"path/filepath"
 	"testing"
 
-	hooks "github.com/obot-platform/discobox/hooks"
-	"github.com/obot-platform/discobox/hooks/api/model"
-	"github.com/obot-platform/discobox/hooks/models"
-	"github.com/obot-platform/discobox/hooks/store"
-	"github.com/obot-platform/discobox/hooks/watcher"
+	hooks "github.com/discobox-ai/discobox/hooks"
+	"github.com/discobox-ai/discobox/hooks/api/model"
+	"github.com/discobox-ai/discobox/hooks/models"
+	"github.com/discobox-ai/discobox/hooks/store"
+	"github.com/discobox-ai/discobox/hooks/watcher"
 )
 
 type testHookSet map[string]hooks.Hook

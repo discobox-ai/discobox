@@ -13,7 +13,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/obot-platform/discobox/sandbox-agent/store"
+	"github.com/discobox-ai/discobox/sandbox-agent/store"
 )
 
 const (

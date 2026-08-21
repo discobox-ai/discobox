@@ -1,6 +1,6 @@
 [Unit]
 Description=Discobox Pool BuildKit
-Documentation=https://github.com/obot-platform/discobox
+Documentation=https://github.com/discobox-ai/discobox
 After=network-online.target
 Wants=network-online.target
 

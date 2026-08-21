@@ -15,7 +15,7 @@ import (
 	"github.com/moby/moby/api/types/container"
 	"github.com/moby/moby/client"
 
-	"github.com/obot-platform/discobox/harness"
+	"github.com/discobox-ai/discobox/harness"
 )
 
 const dockerIntegrationEnv = "DISCOBOX_DOCKER_INTEGRATION"

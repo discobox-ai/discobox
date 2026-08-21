@@ -8,8 +8,8 @@ import (
 	"fmt"
 	"time"
 
-	poolagent "github.com/obot-platform/discobox/pool-agent"
-	"github.com/obot-platform/discobox/server/internal/model"
+	poolagent "github.com/discobox-ai/discobox/pool-agent"
+	"github.com/discobox-ai/discobox/server/internal/model"
 )
 
 const defaultPoolBootstrapTTL = 30 * time.Minute

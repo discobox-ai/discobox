@@ -7,8 +7,8 @@ import (
 	"strings"
 	"syscall"
 
-	"github.com/obot-platform/discobox/sandbox-agent/runuser"
-	"github.com/obot-platform/discobox/sandboxuser"
+	"github.com/discobox-ai/discobox/sandbox-agent/runuser"
+	"github.com/discobox-ai/discobox/sandboxuser"
 )
 
 func agentSysProcAttr(user *User) (*syscall.SysProcAttr, error) {

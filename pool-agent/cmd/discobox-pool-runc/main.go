@@ -22,8 +22,8 @@ import (
 	"strings"
 	"syscall"
 
-	"github.com/obot-platform/discobox/pool-agent/buildkitagent"
-	"github.com/obot-platform/discobox/runcca"
+	"github.com/discobox-ai/discobox/pool-agent/buildkitagent"
+	"github.com/discobox-ai/discobox/runcca"
 )
 
 // ociState is what runc feeds a hook on stdin.

@@ -3,9 +3,9 @@ package cli
 import (
 	"encoding/json"
 
-	apimodel "github.com/obot-platform/discobox/api/model"
-	"github.com/obot-platform/discobox/cli/internal/portforward"
-	"github.com/obot-platform/discobox/cli/internal/tui"
+	apimodel "github.com/discobox-ai/discobox/api/model"
+	"github.com/discobox-ai/discobox/cli/internal/portforward"
+	"github.com/discobox-ai/discobox/cli/internal/tui"
 )
 
 // sandboxPortTargets is what the sandbox's own processes are serving, as its

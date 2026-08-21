@@ -8,9 +8,9 @@ import (
 	"path/filepath"
 	"strings"
 
-	apiclientgen "github.com/obot-platform/discobox/api/gen"
-	apimodel "github.com/obot-platform/discobox/api/model"
-	"github.com/obot-platform/discobox/randomname"
+	apiclientgen "github.com/discobox-ai/discobox/api/gen"
+	apimodel "github.com/discobox-ai/discobox/api/model"
+	"github.com/discobox-ai/discobox/randomname"
 )
 
 // PromptOptions describes the client-side inputs used to create a sandbox for

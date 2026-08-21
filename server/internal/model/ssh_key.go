@@ -5,7 +5,7 @@ import (
 
 	"gorm.io/gorm"
 
-	"github.com/obot-platform/discobox/id"
+	"github.com/discobox-ai/discobox/id"
 )
 
 // SSHKey is a project-scoped public key that authorizes SSH connections to

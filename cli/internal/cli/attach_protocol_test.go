@@ -5,7 +5,7 @@ import (
 	"os/exec"
 	"testing"
 
-	"github.com/obot-platform/discobox/execstream/client"
+	"github.com/discobox-ai/discobox/execstream/client"
 )
 
 func TestAttachExitFrameReturnsExitCode(t *testing.T) {

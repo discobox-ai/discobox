@@ -4,7 +4,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/obot-platform/discobox/server/internal/reconcile"
+	"github.com/discobox-ai/discobox/server/internal/reconcile"
 )
 
 func TestJobFromMarkStatus(t *testing.T) {

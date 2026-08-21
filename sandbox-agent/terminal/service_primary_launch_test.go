@@ -10,8 +10,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/obot-platform/discobox/sandbox-agent/config"
-	"github.com/obot-platform/discobox/sandbox-agent/execs"
+	"github.com/discobox-ai/discobox/sandbox-agent/config"
+	"github.com/discobox-ai/discobox/sandbox-agent/execs"
 )
 
 // blockingInstaller holds a launch inside install until the test releases it,

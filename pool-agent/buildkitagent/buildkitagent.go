@@ -17,7 +17,7 @@ import (
 	"runtime"
 	"strings"
 
-	"github.com/obot-platform/discobox/layout"
+	"github.com/discobox-ai/discobox/layout"
 )
 
 const (

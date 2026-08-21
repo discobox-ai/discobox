@@ -8,7 +8,7 @@ import (
 	"strings"
 	"testing"
 
-	hooks "github.com/obot-platform/discobox/hooks"
+	hooks "github.com/discobox-ai/discobox/hooks"
 )
 
 func TestNormalizeID(t *testing.T) {

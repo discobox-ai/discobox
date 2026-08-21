@@ -9,8 +9,8 @@ import (
 
 	"github.com/coder/websocket"
 
-	sandboxapi "github.com/obot-platform/discobox/api/sandboxgen"
-	"github.com/obot-platform/discobox/execstream/frame"
+	sandboxapi "github.com/discobox-ai/discobox/api/sandboxgen"
+	"github.com/discobox-ai/discobox/execstream/frame"
 )
 
 // tcpDialTimeout bounds how long attachTCPTunnelHTTP waits to connect before

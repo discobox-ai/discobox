@@ -15,8 +15,8 @@ import (
 
 	"github.com/coder/websocket"
 
-	"github.com/obot-platform/discobox/cli/internal/portforward"
-	"github.com/obot-platform/discobox/execstream/frame"
+	"github.com/discobox-ai/discobox/cli/internal/portforward"
+	"github.com/discobox-ai/discobox/execstream/frame"
 )
 
 // tcpTunnelDialTimeout bounds the handshake only. Once the tunnel is up it

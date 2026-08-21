@@ -14,12 +14,12 @@ import (
 	"sync/atomic"
 	"time"
 
+	"github.com/discobox-ai/discobox/proxy/internal/audit"
+	"github.com/discobox-ai/discobox/proxy/internal/cache"
+	"github.com/discobox-ai/discobox/proxy/internal/filter"
+	"github.com/discobox-ai/discobox/proxy/internal/rules"
+	"github.com/discobox-ai/discobox/proxy/internal/secrets"
 	"github.com/elazarl/goproxy"
-	"github.com/obot-platform/discobox/proxy/internal/audit"
-	"github.com/obot-platform/discobox/proxy/internal/cache"
-	"github.com/obot-platform/discobox/proxy/internal/filter"
-	"github.com/obot-platform/discobox/proxy/internal/rules"
-	"github.com/obot-platform/discobox/proxy/internal/secrets"
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/trace"
 )

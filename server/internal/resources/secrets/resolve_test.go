@@ -6,11 +6,11 @@ import (
 	"errors"
 	"testing"
 
-	"github.com/obot-platform/discobox/server/internal/apperrors"
-	"github.com/obot-platform/discobox/server/internal/database"
-	"github.com/obot-platform/discobox/server/internal/model"
-	resourcesecrets "github.com/obot-platform/discobox/server/internal/resources/secrets"
-	"github.com/obot-platform/discobox/server/internal/store"
+	"github.com/discobox-ai/discobox/server/internal/apperrors"
+	"github.com/discobox-ai/discobox/server/internal/database"
+	"github.com/discobox-ai/discobox/server/internal/model"
+	resourcesecrets "github.com/discobox-ai/discobox/server/internal/resources/secrets"
+	"github.com/discobox-ai/discobox/server/internal/store"
 )
 
 func newResolveFixture(t *testing.T) (*resourcesecrets.Service, *store.Store) {

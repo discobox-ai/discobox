@@ -10,7 +10,7 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/obot-platform/discobox/harness"
+	"github.com/discobox-ai/discobox/harness"
 )
 
 const (

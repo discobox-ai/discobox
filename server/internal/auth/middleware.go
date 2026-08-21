@@ -5,7 +5,7 @@ import (
 	"net/http"
 	"strings"
 
-	"github.com/obot-platform/discobox/server/internal/store"
+	"github.com/discobox-ai/discobox/server/internal/store"
 )
 
 // Authentication authenticates requests by trying authenticators in order.

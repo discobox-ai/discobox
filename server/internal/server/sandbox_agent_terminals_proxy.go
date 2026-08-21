@@ -9,9 +9,9 @@ import (
 
 	"github.com/go-chi/chi/v5"
 
-	poolagentauth "github.com/obot-platform/discobox/server/internal/auth/poolagent"
-	"github.com/obot-platform/discobox/server/internal/sandboxagentclient"
-	services "github.com/obot-platform/discobox/server/internal/services"
+	poolagentauth "github.com/discobox-ai/discobox/server/internal/auth/poolagent"
+	"github.com/discobox-ai/discobox/server/internal/sandboxagentclient"
+	services "github.com/discobox-ai/discobox/server/internal/services"
 )
 
 func registerSandboxAgentTerminalRoutes(router chi.Router, service services.SandboxService) {

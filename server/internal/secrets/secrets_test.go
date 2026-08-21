@@ -5,7 +5,7 @@ import (
 	"context"
 	"testing"
 
-	"github.com/obot-platform/discobox/server/internal/secrets"
+	"github.com/discobox-ai/discobox/server/internal/secrets"
 )
 
 func TestAESGCMSealerRoundTripAndAssociatedData(t *testing.T) {

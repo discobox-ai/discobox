@@ -1,6 +1,6 @@
 package sandboxconfig
 
-import "github.com/obot-platform/discobox/harness"
+import "github.com/discobox-ai/discobox/harness"
 
 // APIVersion is the sandbox.json contract version.
 const APIVersion = "discobox.dev/sandbox/v1"

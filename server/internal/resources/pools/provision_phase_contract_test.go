@@ -4,7 +4,7 @@ import (
 	"sort"
 	"testing"
 
-	serverapi "github.com/obot-platform/discobox/api/gen"
+	serverapi "github.com/discobox-ai/discobox/api/gen"
 )
 
 // TestProvisionPhaseVocabulariesMatch pins the agent-facing provisioning phase

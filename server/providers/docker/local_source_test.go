@@ -4,7 +4,7 @@ import (
 	"slices"
 	"testing"
 
-	"github.com/obot-platform/discobox/server/providers/dockerworker"
+	"github.com/discobox-ai/discobox/server/providers/dockerworker"
 )
 
 func TestLocalSourceBindSupported(t *testing.T) {

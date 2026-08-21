@@ -1,4 +1,4 @@
-module github.com/obot-platform/discobox/server
+module github.com/discobox-ai/discobox/server
 
 go 1.26.1
 
@@ -8,6 +8,7 @@ require (
 	github.com/adrg/xdg v0.5.3
 	github.com/coder/websocket v1.8.14
 	github.com/containerd/errdefs v1.0.0
+	github.com/discobox-ai/discobox/pool-agent v0.0.0-00010101000000-000000000000
 	github.com/glebarez/sqlite v1.11.0
 	github.com/go-faster/jx v1.2.0
 	github.com/google/go-containerregistry v0.20.6
@@ -16,7 +17,6 @@ require (
 	github.com/moby/buildkit v0.20.2
 	github.com/moby/moby/api v1.54.2
 	github.com/moby/moby/client v0.4.1
-	github.com/obot-platform/discobox/pool-agent v0.0.0-00010101000000-000000000000
 	github.com/ogen-go/ogen v1.20.3
 	go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp v0.62.0
 	go.opentelemetry.io/otel v1.43.0
@@ -393,15 +393,15 @@ require (
 )
 
 require (
+	github.com/discobox-ai/discobox v0.0.0
+	github.com/discobox-ai/discobox/gormdb v0.0.0
 	github.com/go-chi/chi/v5 v5.3.0
 	github.com/jinzhu/inflection v1.0.0 // indirect
 	github.com/jinzhu/now v1.1.5 // indirect
-	github.com/obot-platform/discobox v0.0.0
-	github.com/obot-platform/discobox/gormdb v0.0.0
 	golang.org/x/text v0.38.0 // indirect
 )
 
-replace github.com/obot-platform/discobox/gormdb => ../gormdb
+replace github.com/discobox-ai/discobox/gormdb => ../gormdb
 
 tool (
 	github.com/go-task/task/v3/cmd/task
@@ -409,8 +409,8 @@ tool (
 	github.com/ogen-go/ogen/cmd/ogen
 )
 
-replace github.com/obot-platform/discobox => ..
+replace github.com/discobox-ai/discobox => ..
 
-replace github.com/obot-platform/discobox/pool-agent => ../pool-agent
+replace github.com/discobox-ai/discobox/pool-agent => ../pool-agent
 
 replace github.com/charmbracelet/x/ansi => github.com/ibuildthecloud/x/ansi v0.11.9-0.20260813023456-57e8cef06953

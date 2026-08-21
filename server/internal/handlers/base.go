@@ -5,10 +5,10 @@ import (
 	"errors"
 	"net/http"
 
+	serverapi "github.com/discobox-ai/discobox/api/gen"
+	apimodel "github.com/discobox-ai/discobox/api/model"
+	services "github.com/discobox-ai/discobox/server/internal/services"
 	"github.com/go-faster/jx"
-	serverapi "github.com/obot-platform/discobox/api/gen"
-	apimodel "github.com/obot-platform/discobox/api/model"
-	services "github.com/obot-platform/discobox/server/internal/services"
 	"github.com/ogen-go/ogen/ogenerrors"
 )
 

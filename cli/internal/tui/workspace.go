@@ -9,7 +9,7 @@ import (
 	tea "charm.land/bubbletea/v2"
 	"charm.land/lipgloss/v2"
 
-	"github.com/obot-platform/discobox/termpane"
+	"github.com/discobox-ai/discobox/termpane"
 )
 
 // The workspace screen is the discobox as the server has it, not as this

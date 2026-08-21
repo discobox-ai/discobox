@@ -11,9 +11,9 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/obot-platform/discobox/sandbox-agent/runuser"
-	"github.com/obot-platform/discobox/sandboxconfig"
-	"github.com/obot-platform/discobox/sandboxuser"
+	"github.com/discobox-ai/discobox/sandbox-agent/runuser"
+	"github.com/discobox-ai/discobox/sandboxconfig"
+	"github.com/discobox-ai/discobox/sandboxuser"
 )
 
 // identity is the resolved sandbox user, sourced from the DISCOBOX_USER_* env

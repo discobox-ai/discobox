@@ -8,10 +8,10 @@ import (
 	"strings"
 	"sync"
 
-	hooks "github.com/obot-platform/discobox/hooks"
-	"github.com/obot-platform/discobox/hooks/api/model"
-	"github.com/obot-platform/discobox/hooks/service"
-	"github.com/obot-platform/discobox/hooks/store"
+	hooks "github.com/discobox-ai/discobox/hooks"
+	"github.com/discobox-ai/discobox/hooks/api/model"
+	"github.com/discobox-ai/discobox/hooks/service"
+	"github.com/discobox-ai/discobox/hooks/store"
 )
 
 // Manager coordinates hook-domain operations that are shared by the daemon's

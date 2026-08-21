@@ -8,7 +8,7 @@ import (
 
 	"aidanwoods.dev/go-paseto"
 
-	poolagentserver "github.com/obot-platform/discobox/pool-agent/server"
+	poolagentserver "github.com/discobox-ai/discobox/pool-agent/server"
 )
 
 func newPoolAgentTestAuth(t *testing.T, projectID, poolID string) (string, string) {

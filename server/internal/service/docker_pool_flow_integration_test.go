@@ -16,12 +16,12 @@ import (
 	"github.com/moby/moby/api/types/container"
 	"github.com/moby/moby/client"
 
-	"github.com/obot-platform/discobox/server/internal/database"
-	"github.com/obot-platform/discobox/server/internal/events"
-	"github.com/obot-platform/discobox/server/internal/model"
-	"github.com/obot-platform/discobox/server/internal/service"
-	services "github.com/obot-platform/discobox/server/internal/services"
-	"github.com/obot-platform/discobox/server/internal/store"
+	"github.com/discobox-ai/discobox/server/internal/database"
+	"github.com/discobox-ai/discobox/server/internal/events"
+	"github.com/discobox-ai/discobox/server/internal/model"
+	"github.com/discobox-ai/discobox/server/internal/service"
+	services "github.com/discobox-ai/discobox/server/internal/services"
+	"github.com/discobox-ai/discobox/server/internal/store"
 )
 
 const dockerIntegrationEnv = "DISCOBOX_DOCKER_INTEGRATION"
@@ -158,7 +158,7 @@ func buildDockerPoolFlowImage(ctx context.Context, t *testing.T, dockerClient *c
 	// HEALTHCHECK matters here: without one, docker.Driver's inspectHealthy
 	// waits out its full noHealthWaitTimeout grace period (30s) hoping a
 	// health status will eventually appear, since it can't distinguish
-	// "never will" from "not yet". Real worker-agent/sandbox-agent images
+	// "never will" from "not yet". Real pool-agent/sandbox-agent images
 	// always define a HEALTHCHECK; mirror that so this test reflects
 	// realistic container readiness timing instead of always paying the
 	// worst-case wait.

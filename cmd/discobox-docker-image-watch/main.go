@@ -16,7 +16,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/obot-platform/discobox/devimage"
+	"github.com/discobox-ai/discobox/devimage"
 )
 
 const envFile = ".env"

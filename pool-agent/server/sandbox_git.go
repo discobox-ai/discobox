@@ -8,8 +8,8 @@ import (
 
 	"github.com/go-chi/chi/v5"
 
-	"github.com/obot-platform/discobox/pool-agent/githttp"
-	"github.com/obot-platform/discobox/pool-agent/sandboxruntime"
+	"github.com/discobox-ai/discobox/pool-agent/githttp"
+	"github.com/discobox-ai/discobox/pool-agent/sandboxruntime"
 )
 
 func registerSandboxGitRoutes(router chi.Router, service *sandboxService) {

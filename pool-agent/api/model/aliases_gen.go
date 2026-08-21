@@ -3,7 +3,7 @@
 // Package model exposes stable aliases for generated pool-agent API schema types.
 package model
 
-import poolagentapi "github.com/obot-platform/discobox/pool-agent/api/gen"
+import poolagentapi "github.com/discobox-ai/discobox/pool-agent/api/gen"
 
 type ErrorDetail = poolagentapi.ErrorDetail
 type ErrorModel = poolagentapi.ErrorModel

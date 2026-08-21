@@ -13,10 +13,10 @@ import (
 	"fmt"
 	"strings"
 
-	apiclientgen "github.com/obot-platform/discobox/api/gen"
-	apimodel "github.com/obot-platform/discobox/api/model"
-	"github.com/obot-platform/discobox/cli/internal/sandboxgit"
-	"github.com/obot-platform/discobox/internal/gitutil"
+	apiclientgen "github.com/discobox-ai/discobox/api/gen"
+	apimodel "github.com/discobox-ai/discobox/api/model"
+	"github.com/discobox-ai/discobox/cli/internal/sandboxgit"
+	"github.com/discobox-ai/discobox/internal/gitutil"
 )
 
 // ErrNotPushDelivered reports a source whose origin is not a pushed repository,

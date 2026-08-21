@@ -3,7 +3,7 @@ package boot
 import (
 	"testing"
 
-	"github.com/obot-platform/discobox/harness"
+	"github.com/discobox-ai/discobox/harness"
 )
 
 func TestVolumeDir(t *testing.T) {

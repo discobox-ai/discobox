@@ -17,14 +17,14 @@ import (
 	"testing"
 	"time"
 
-	hooks "github.com/obot-platform/discobox/hooks"
-	"github.com/obot-platform/discobox/hooks/api/model"
-	"github.com/obot-platform/discobox/hooks/lspclient"
-	"github.com/obot-platform/discobox/hooks/manager"
-	"github.com/obot-platform/discobox/hooks/models"
-	"github.com/obot-platform/discobox/hooks/parser"
-	hookstore "github.com/obot-platform/discobox/hooks/store"
-	"github.com/obot-platform/discobox/hooks/watcher"
+	hooks "github.com/discobox-ai/discobox/hooks"
+	"github.com/discobox-ai/discobox/hooks/api/model"
+	"github.com/discobox-ai/discobox/hooks/lspclient"
+	"github.com/discobox-ai/discobox/hooks/manager"
+	"github.com/discobox-ai/discobox/hooks/models"
+	"github.com/discobox-ai/discobox/hooks/parser"
+	hookstore "github.com/discobox-ai/discobox/hooks/store"
+	"github.com/discobox-ai/discobox/hooks/watcher"
 )
 
 func TestRunSocketAPI(t *testing.T) {

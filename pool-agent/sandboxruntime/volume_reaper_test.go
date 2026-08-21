@@ -7,7 +7,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/obot-platform/discobox/pool-agent/proxyagent"
+	"github.com/discobox-ai/discobox/pool-agent/proxyagent"
 )
 
 func quietLogger() *slog.Logger {

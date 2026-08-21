@@ -4,9 +4,9 @@ import (
 	"context"
 	"testing"
 
-	"github.com/obot-platform/discobox/server/internal/model"
-	"github.com/obot-platform/discobox/server/internal/resources/sandboxes"
-	"github.com/obot-platform/discobox/server/internal/store"
+	"github.com/discobox-ai/discobox/server/internal/model"
+	"github.com/discobox-ai/discobox/server/internal/resources/sandboxes"
+	"github.com/discobox-ai/discobox/server/internal/store"
 )
 
 // repairableSandbox creates a present, ready sandbox — the shape repair acts

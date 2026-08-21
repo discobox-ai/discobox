@@ -5,7 +5,7 @@ import (
 	"context"
 	"sync"
 
-	"github.com/obot-platform/discobox/server/internal/model"
+	"github.com/discobox-ai/discobox/server/internal/model"
 )
 
 // Broker fans out committed project events to active subscribers.

@@ -7,8 +7,8 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/discobox-ai/discobox/sandbox-agent/dockercache"
 	"github.com/distribution/reference"
-	"github.com/obot-platform/discobox/sandbox-agent/dockercache"
 )
 
 // withMaterial stages the forwarder config pool-agent writes for a sandbox

@@ -8,7 +8,7 @@ import (
 	"os/exec"
 	"time"
 
-	"github.com/obot-platform/discobox/harness"
+	"github.com/discobox-ai/discobox/harness"
 )
 
 const ManagedSettingsPath = "/etc/claude-code/managed-settings.json"

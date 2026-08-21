@@ -4,10 +4,10 @@ import (
 	"context"
 	"strings"
 
-	"github.com/obot-platform/discobox/harness"
-	claudecode "github.com/obot-platform/discobox/harness/claude-code"
-	codexcli "github.com/obot-platform/discobox/harness/codex-cli"
-	"github.com/obot-platform/discobox/harness/shell"
+	"github.com/discobox-ai/discobox/harness"
+	claudecode "github.com/discobox-ai/discobox/harness/claude-code"
+	codexcli "github.com/discobox-ai/discobox/harness/codex-cli"
+	"github.com/discobox-ai/discobox/harness/shell"
 )
 
 type Installer struct {

@@ -19,13 +19,13 @@ import (
 
 	"aidanwoods.dev/go-paseto"
 
-	"github.com/obot-platform/discobox/controlplane"
-	poolagent "github.com/obot-platform/discobox/pool-agent"
-	workerclient "github.com/obot-platform/discobox/pool-agent/api/gen"
-	workerapimodel "github.com/obot-platform/discobox/pool-agent/api/model"
-	"github.com/obot-platform/discobox/pool-agent/poolauth"
-	"github.com/obot-platform/discobox/pool-agent/sandboxruntime"
-	poolagentserver "github.com/obot-platform/discobox/pool-agent/server"
+	"github.com/discobox-ai/discobox/controlplane"
+	poolagent "github.com/discobox-ai/discobox/pool-agent"
+	workerclient "github.com/discobox-ai/discobox/pool-agent/api/gen"
+	workerapimodel "github.com/discobox-ai/discobox/pool-agent/api/model"
+	"github.com/discobox-ai/discobox/pool-agent/poolauth"
+	"github.com/discobox-ai/discobox/pool-agent/sandboxruntime"
+	poolagentserver "github.com/discobox-ai/discobox/pool-agent/server"
 )
 
 func TestRunRegistersPoolWithGeneratedPublicKey(t *testing.T) {

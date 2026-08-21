@@ -3,7 +3,7 @@ package service
 import (
 	"context"
 
-	"github.com/obot-platform/discobox/server/internal/resources/providers"
+	"github.com/discobox-ai/discobox/server/internal/resources/providers"
 )
 
 func (s *Service) EnsureExistingSandboxProviderInstances(ctx context.Context) error {

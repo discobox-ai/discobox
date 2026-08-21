@@ -12,7 +12,7 @@ import (
 	"net/url"
 	"strings"
 
-	apimodel "github.com/obot-platform/discobox/api/model"
+	apimodel "github.com/discobox-ai/discobox/api/model"
 )
 
 // SourcePushBranch is the branch a push-delivered source's commits land on when

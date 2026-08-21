@@ -8,10 +8,10 @@ import (
 	"strings"
 	"time"
 
-	sandboxauth "github.com/obot-platform/discobox/server/internal/auth/sandbox"
-	"github.com/obot-platform/discobox/server/internal/model"
-	"github.com/obot-platform/discobox/server/internal/reconcile"
-	"github.com/obot-platform/discobox/server/internal/store"
+	sandboxauth "github.com/discobox-ai/discobox/server/internal/auth/sandbox"
+	"github.com/discobox-ai/discobox/server/internal/model"
+	"github.com/discobox-ai/discobox/server/internal/reconcile"
+	"github.com/discobox-ai/discobox/server/internal/store"
 )
 
 // SandboxResourceType is the reconcile-engine resource type for sandboxes. The

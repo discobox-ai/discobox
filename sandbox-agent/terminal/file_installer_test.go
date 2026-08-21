@@ -3,7 +3,7 @@ package terminal
 import (
 	"testing"
 
-	"github.com/obot-platform/discobox/sandbox-agent/execs"
+	"github.com/discobox-ai/discobox/sandbox-agent/execs"
 )
 
 func int64ptr(v int64) *int64 { return &v }
