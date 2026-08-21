@@ -156,15 +156,26 @@ func TestValidateAcceptsTheDefaultConfiguration(t *testing.T) {
 // A local guest artifact directory is how a guest image built inside a pool VM
 // is booted, so it must be accepted alongside — and take precedence over — the
 // published image.
+// hostGuestDir spells the guest directory the way the machine running the test
+// does. Validate requires an absolute path, and a POSIX one is not absolute on
+// Windows — where vz never runs, but where the package still compiles and its
+// tests still execute.
+func hostGuestDir() string {
+	if runtime.GOOS == "windows" {
+		return `C:\opt\discobox\guest`
+	}
+	return "/opt/discobox/guest"
+}
+
 func TestValidateAcceptsLocalGuestArtifacts(t *testing.T) {
-	raw, err := json.Marshal(Config{GuestImageDir: "/opt/discobox/guest"})
+	raw, err := json.Marshal(Config{GuestImageDir: hostGuestDir()})
 	if err != nil {
 		t.Fatal(err)
 	}
 	if err := Validate(raw); err != nil {
 		t.Fatalf("Validate = %v", err)
 	}
-	resolver, err := guestResolver(Config{GuestImageDir: "/opt/discobox/guest"})
+	resolver, err := guestResolver(Config{GuestImageDir: hostGuestDir()})
 	if err != nil {
 		t.Fatalf("guestResolver: %v", err)
 	}

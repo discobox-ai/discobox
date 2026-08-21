@@ -91,12 +91,12 @@ func TestSourceNeedsPush(t *testing.T) {
 			why: "a root of / covers every path on this machine",
 		},
 		{
-			name: "a root is not a prefix match on the name", definition: sandbox.ProviderDefinition{LocalSourceRoots: []string{"/src-old"}},
+			name: "a root is not a prefix match on the name", definition: sandbox.ProviderDefinition{LocalSourceRoots: []string{hostPath("/src-old")}},
 			serverHost: serverHost, origin: sameHost, source: localSource(), want: true,
 			why: "/src-old does not contain /src/alpha, however alike the two spell",
 		},
 		{
-			name: "the root itself is covered", definition: sandbox.ProviderDefinition{LocalSourceRoots: []string{"/src/alpha"}},
+			name: "the root itself is covered", definition: sandbox.ProviderDefinition{LocalSourceRoots: []string{hostPath("/src/alpha")}},
 			serverHost: serverHost, origin: sameHost, source: localSource(), want: false,
 			why: "a directory mounted exactly is reachable at itself",
 		},

@@ -242,7 +242,10 @@ func localSourceRootsCover(roots []string, directory string) bool {
 		if !filepath.IsAbs(root) {
 			continue
 		}
-		if root == string(filepath.Separator) || directory == root ||
+		// A root is the whole filesystem when it is a volume's root: "/" on
+		// POSIX, where VolumeName is empty, and "C:\\" on Windows, where a bare
+		// separator is not a root at all.
+		if root == filepath.VolumeName(root)+string(filepath.Separator) || directory == root ||
 			strings.HasPrefix(directory, root+string(filepath.Separator)) {
 			return true
 		}

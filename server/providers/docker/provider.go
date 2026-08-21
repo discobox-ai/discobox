@@ -10,7 +10,7 @@ import (
 	"fmt"
 	"net"
 	"net/url"
-	"path/filepath"
+	"path"
 	"strconv"
 	"strings"
 
@@ -209,7 +209,7 @@ func resolveControlPlaneReach(listenEndpoints []string, daemonHost string) (cont
 			if localSourceBindSupported(daemonHost) {
 				return controlPlaneReach{
 					url:       "unix://" + parsed.Value,
-					socketDir: filepath.Dir(parsed.Value),
+					socketDir: path.Dir(parsed.Value),
 				}, nil
 			}
 		case "http":
