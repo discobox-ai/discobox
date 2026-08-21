@@ -6,6 +6,7 @@ import (
 	"os"
 	"os/user"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 
@@ -131,7 +132,8 @@ func TestManagerDefaultsExecFromSandboxConfig(t *testing.T) {
 		t.Fatalf("create exec: %v", err)
 	}
 
-	wantWorkdir := filepath.Join("/workspace", "project")
+	// A workdir is a guest path, so it stays slash-separated on every host.
+	const wantWorkdir = "/workspace/project"
 	if created.Workdir != wantWorkdir {
 		t.Fatalf("workdir = %q, want %q", created.Workdir, wantWorkdir)
 	}
@@ -150,7 +152,9 @@ func TestManagerDefaultsExecFromSandboxConfig(t *testing.T) {
 	if runner.starts[0].Env["NPM_CONFIG_PREFIX"] != "/home/darren/.npm-global" {
 		t.Fatalf("NPM_CONFIG_PREFIX = %q, want user prefix", runner.starts[0].Env["NPM_CONFIG_PREFIX"])
 	}
-	if got := runner.starts[0].Env["PATH"]; !strings.HasPrefix(got, "/home/darren/.npm-global/bin"+string(os.PathListSeparator)) {
+	// The guest image declares PATH as one colon-separated string, so the
+	// separator here is the guest's, not the host's os.PathListSeparator.
+	if got := runner.starts[0].Env["PATH"]; !strings.HasPrefix(got, "/home/darren/.npm-global/bin:") {
 		t.Fatalf("PATH = %q, want npm prefix bin first", got)
 	}
 	if strings.Contains(runner.starts[0].Env["PATH"], "/root/") {
@@ -159,6 +163,12 @@ func TestManagerDefaultsExecFromSandboxConfig(t *testing.T) {
 }
 
 func TestManagerPreservesExecNPMAndPathOverrides(t *testing.T) {
+	// The default user names no gid, so resolution completes it from the
+	// account database. That is /etc/passwd in the guest; on Windows the same
+	// lookup goes to the account SIDs, where "darren" with uid 1000 is nobody.
+	if runtime.GOOS == "windows" {
+		t.Skip("completing a gid reads the guest's passwd database; the sandbox is Linux")
+	}
 	runner := &fakeUnitManager{}
 	uid := int64(1000)
 	manager, err := NewManagerWithConfig(ManagerConfig{
@@ -290,7 +300,7 @@ func TestManagerResolvesRelativeWorkdirFromWorkingRoot(t *testing.T) {
 		t.Fatalf("create exec: %v", err)
 	}
 
-	want := filepath.Join("/workspace", "project")
+	const want = "/workspace/project"
 	if created.Workdir != want {
 		t.Fatalf("workdir = %q, want %q", created.Workdir, want)
 	}
@@ -929,6 +939,11 @@ func TestManagerExpandsTildeWorkdirAgainstUserHome(t *testing.T) {
 // and that identity's account has a home — so `~` is that home. It is the same
 // value the env's HOME carries, because both come from the one resolution.
 func TestManagerTildeWorkdirResolvesToTheRunningIdentitysHome(t *testing.T) {
+	// "This process's identity" is a uid looked up in /etc/passwd, and Windows
+	// reports no uid to look up — so there is no home for `~` to become.
+	if runtime.GOOS == "windows" {
+		t.Skip("the inherited identity's home comes from the guest's passwd database; the sandbox is Linux")
+	}
 	current, err := user.Current()
 	if err != nil || strings.TrimSpace(current.HomeDir) == "" {
 		t.Skip("this process has no resolvable home")

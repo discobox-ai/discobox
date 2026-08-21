@@ -6,7 +6,7 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
-	"path/filepath"
+	"path"
 	"strings"
 
 	"github.com/distribution/reference"
@@ -79,6 +79,10 @@ func readNamespace() string {
 
 // dockerfilePath is the Dockerfile this build reads: what -f names, else the
 // default inside the context directory.
+//
+// The join is "path", not "path/filepath": this shim stands in for docker
+// inside the Linux sandbox and hands the result back to a command line docker
+// reads, so the separator is a slash whatever host the tests run on.
 func dockerfilePath(args []string) string {
 	kind, idx := buildCommand(args)
 	if kind == notBuild {
@@ -86,14 +90,14 @@ func dockerfilePath(args []string) string {
 	}
 	rest := args[idx+1:]
 	for i, a := range rest {
-		if path, ok := strings.CutPrefix(a, "--file="); ok {
-			return path
+		if named, ok := strings.CutPrefix(a, "--file="); ok {
+			return named
 		}
 		if (a == "-f" || a == "--file") && i+1 < len(rest) {
 			return rest[i+1]
 		}
 	}
-	return filepath.Join(buildContextDir(rest), "Dockerfile")
+	return path.Join(buildContextDir(rest), "Dockerfile")
 }
 
 // buildContextDir is the build's context argument: the last bare word on the

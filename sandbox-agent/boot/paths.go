@@ -6,7 +6,7 @@
 package boot
 
 import (
-	"path/filepath"
+	"path"
 	"sort"
 	"strings"
 
@@ -46,14 +46,18 @@ func backingMount(kind harness.VolumeKind) string {
 
 // volumeDir is the directory on the backing primary volume that stores a
 // declared path's contents: /.discobox/{data|cache}/<target>.
+//
+// These are guest paths, so this file joins with "path" rather than
+// "path/filepath": the sandbox is Linux whatever host the tests run on, and
+// filepath would splice a backslash in on a Windows runner.
 func volumeDir(kind harness.VolumeKind, target string) string {
-	return filepath.Join(backingMount(kind), strings.TrimPrefix(filepath.Clean(target), "/"))
+	return path.Join(backingMount(kind), strings.TrimPrefix(path.Clean(target), "/"))
 }
 
 // overlayDirs returns the upperdir and workdir used when a declared path is
 // wired as an overlay (its target already ships content in the image).
 func overlayDirs(volDir string) (upper, work string) {
-	return filepath.Join(volDir, "upper"), filepath.Join(volDir, "work")
+	return path.Join(volDir, "upper"), path.Join(volDir, "work")
 }
 
 // useOverlay reports whether a declared path should be wired as an overlay
@@ -75,5 +79,5 @@ func sortVolumesByDepth(volumes []harness.ResolvedVolume) {
 }
 
 func pathDepth(p string) int {
-	return strings.Count(filepath.Clean(p), "/")
+	return strings.Count(path.Clean(p), "/")
 }

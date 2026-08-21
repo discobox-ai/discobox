@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"net/http"
 	"os"
+	"path"
 	"path/filepath"
 	"sort"
 	"strconv"
@@ -245,7 +246,10 @@ func NewManagerWithConfig(cfg ManagerConfig) (*Manager, error) {
 	}
 	runtimeDir = filepath.Clean(runtimeDir)
 	return &Manager{
-		workingRoot:    filepath.Clean(workingRoot),
+		// A workdir is a guest path, so it is cleaned and joined with "path"
+		// wherever one is handled below; filepath would call "/tmp" relative on
+		// a Windows runner and rebase it under the working root.
+		workingRoot:    path.Clean(workingRoot),
 		defaultWorkdir: strings.TrimSpace(cfg.DefaultWorkdir),
 		defaultUser:    cfg.DefaultUser.Clone(),
 		runtimeDir:     runtimeDir,
@@ -793,10 +797,10 @@ func (m *Manager) resolveWorkdir(requested, home string) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	if !filepath.IsAbs(requested) {
-		requested = filepath.Join(m.workingRoot, requested)
+	if !strings.HasPrefix(requested, "/") {
+		requested = path.Join(m.workingRoot, requested)
 	}
-	return filepath.Clean(requested), nil
+	return path.Clean(requested), nil
 }
 
 // expandHome expands a leading `~` or `~/` against home, leaving every other
@@ -804,17 +808,17 @@ func (m *Manager) resolveWorkdir(requested, home string) (string, error) {
 // silent fallback: the caller asked for the home directory specifically, and
 // quietly running somewhere else instead is the kind of difference that only
 // shows up later as files written to the wrong place.
-func expandHome(path, home string) (string, error) {
-	if path != "~" && !strings.HasPrefix(path, "~/") {
-		return path, nil
+func expandHome(workdir, home string) (string, error) {
+	if workdir != "~" && !strings.HasPrefix(workdir, "~/") {
+		return workdir, nil
 	}
 	if strings.TrimSpace(home) == "" {
 		return "", errors.New("cannot expand ~ in workdir: the exec user has no home directory")
 	}
-	if path == "~" {
+	if workdir == "~" {
 		return home, nil
 	}
-	return filepath.Join(home, strings.TrimPrefix(path, "~/")), nil
+	return path.Join(home, strings.TrimPrefix(workdir, "~/")), nil
 }
 
 // HomeDir resolves the run user's home directory: the explicit or passwd value
