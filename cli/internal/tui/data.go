@@ -158,6 +158,11 @@ type Session struct {
 	// and Branch is what is checked out in it.
 	Directory string
 	Branch    string
+
+	// Draft is the prompt that was left unsent in Directory when a window was
+	// last open on it, and is what the composer opens holding. See
+	// DataSource.SaveDraft.
+	Draft string
 }
 
 // HarnessState is what a harness is set to, and so whether a discobox can be
@@ -583,6 +588,14 @@ type DataSource interface {
 	// Session is read once at startup, and is what the header and the run
 	// options panel are drawn from.
 	Session(ctx context.Context) (Session, error)
+
+	// SaveDraft records the prompt as it stands against the folder it is being
+	// typed in, so that closing the window mid-sentence does not throw the
+	// sentence away: Session hands it back the next time a window opens on
+	// that folder. An empty prompt drops the draft — there is nothing left to
+	// come back to — and a folder is required, since a draft nothing can be
+	// keyed by is one nothing can return.
+	SaveDraft(ctx context.Context, folder, prompt string) error
 
 	// List is the project's sandboxes, newest-created first.
 	List(ctx context.Context) ([]Sandbox, error)

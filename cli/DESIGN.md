@@ -85,8 +85,9 @@ transport helpers where OpenAPI does not model the stream.
 ## CLI State Directory
 
 `cliStateDir()` (`internal/cli/statedir.go`) is `<state>` throughout this
-document: the picker's memory, this machine's iroh identity, the SSH identity,
-and the generated per-project `ssh_config` files. It is state the CLI derives,
+document: the picker's memory, the launcher's unsent prompts, this machine's
+iroh identity, the SSH identity, and the generated per-project `ssh_config`
+files. It is state the CLI derives,
 not configuration anyone edits, so it follows each platform's convention for
 that — `$XDG_STATE_HOME` or `~/.local/state` on Unix, `%LOCALAPPDATA%` on
 Windows, which is the local one rather than the roaming `%APPDATA%`: an SSH
@@ -109,6 +110,21 @@ This is not cosmetic: OpenSSH refuses to read a config, a `known_hosts` or a
 private key another principal can reach, and reports only "Bad owner or
 permissions". `assertPrivateToUser` in the tests checks the real thing on each
 platform — the mode on Unix, the owner and every ACE on Windows.
+
+The JSON memories under it — `recent-selections.json` and `prompt-drafts.json` —
+are written by `writeStateFile` (`internal/cli/statefile.go`) through a
+temporary file beside the target, so a crash mid-write cannot leave a reader
+parsing half a file for the rest of the install's life. Each is bounded to a
+number of entries and each is best-effort on every read and write: a missing,
+unwritable or corrupt file costs the convenience and never the command.
+
+- `prompt-drafts.json` (`internal/cli/drafts.go`) is the launcher's composer
+  contents per project directory: what `tui.Session.Draft` is loaded from and
+  what `DataSource.SaveDraft` writes. Keyed by the resolved
+  `origin.ProjectPath`, because a prompt written in one checkout must not come
+  back in another. An empty prompt deletes its entry rather than storing nothing
+  under it, and a prompt past the cap is cut on a rune boundary — a state file
+  is not where a pasted log belongs.
 
 Local server auto-launch is a release-only capability. Normal and development
 builds leave it disabled; release CLI binaries opt in at build time by setting

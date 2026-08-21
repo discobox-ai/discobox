@@ -7,7 +7,8 @@ a new sandbox, with the project's sandboxes a press of Tab away.
 
 Elm/Model-View-Update on Bubble Tea v2 (`charm.land/bubbletea/v2`, `bubbles/v2`,
 `lipgloss/v2`). One model, not a screen stack: the window is a prompt, a list,
-and one modal layer over both. All IO happens in `tea.Cmd`s, never in `Update`.
+and one modal layer over both. All IO happens in `tea.Cmd`s, never in `Update` —
+with one deliberate exception, the draft saved on the way out (`draft.go`).
 
 ```mermaid
 flowchart LR
@@ -523,6 +524,24 @@ title, blanks, composer and status cost before a single sandbox is drawn; the
 list gives up rows for the composer as it grows and takes none at all when
 there is no room. A frame one row too tall scrolls the terminal, which is the
 one thing the renderer cannot redraw its way out of.
+
+**An unsent prompt outlives the window** (`draft.go`). What is in the composer
+is written through `DataSource.SaveDraft`, keyed by the session's directory, and
+`Session.Draft` is what the next window in that folder opens holding. Closing a
+terminal is not a decision to throw away several lines you thought about.
+
+Written on the listing's own tick, and only when the field has moved since the
+store last had it, so an idle window writes nothing and a window killed outright
+loses seconds rather than the prompt. The keys that close the window
+(`closeWindow`) write it from `Update` instead — a command batched with
+`tea.Quit` races the runtime shutting down, and a prompt lost on the way out is
+the whole of what this exists to prevent. A failed write is reported and not
+retried until the prompt changes again: the alternative is a window repeating
+itself about the same broken disk every five seconds.
+
+Restoring is into an empty composer only. The session lands a moment after the
+window is up and the cursor is in the field from the first frame, so anything
+typed in that moment wins.
 
 **The composer grows to `promptMaxRows` and then scrolls.** The textarea's
 `DynamicHeight` sizes it from its contents — soft-wrapped rows counted, not just

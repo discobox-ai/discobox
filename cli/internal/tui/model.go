@@ -54,6 +54,11 @@ type Model struct {
 	opts   *optionSet
 	logo   logo
 
+	// draft is the prompt as the store last had it. The window writes only
+	// when the field has moved away from it, so an idle window writes nothing
+	// and a window closed mid-sentence has the sentence. See saveDraft.
+	draft string
+
 	// harnesses is the project's harnesses: the screen that manages them, and
 	// the listing the run options' harness choices are built from. It is read
 	// whether or not the screen is up. See harnesses.go.
@@ -386,6 +391,7 @@ func (m *Model) update(msg tea.Msg) tea.Cmd {
 		}
 		m.session = msg.session
 		m.list.session = msg.session
+		cmd := m.restoreDraft(msg.session.Draft)
 		// The window opens on the folder it was opened in, which is what
 		// `discobox ls` shows and what the header has always said. Everything
 		// else is one press away in the dropdown.
@@ -395,7 +401,7 @@ func (m *Model) update(msg tea.Msg) tea.Cmd {
 		// The two loads race, and either order has to end with the panel
 		// offering the harnesses that are actually there.
 		m.opts.setHarnesses(m.harnesses.all)
-		return nil
+		return cmd
 
 	case listLoadedMsg:
 		if msg.err != nil {
@@ -407,6 +413,13 @@ func (m *Model) update(msg tea.Msg) tea.Cmd {
 
 	case tickMsg:
 		cmds := []tea.Cmd{m.refresh(), m.tick()}
+		// The draft is written on the same clock the listing is read on, so a
+		// window killed outright — a closed terminal, a lost ssh session —
+		// loses at most the last few seconds of what was typed. The keys that
+		// close the window save it themselves; see closeWindow.
+		if cmd := m.saveDraft(); cmd != nil {
+			cmds = append(cmds, cmd)
+		}
 		// Harnesses change when somebody changes them, which is here — so they are
 		// re-read after every action rather than on a clock. The exception is
 		// the screen itself, where a listing going stale under the cursor is
@@ -611,8 +624,7 @@ func (m *Model) updateKey(msg tea.KeyPressMsg) tea.Cmd {
 	// sometimes closes the window it is running in is a key nobody can press
 	// with any confidence. See detachHint.
 	if keyName(msg) == "ctrl+c" && (m.focus != focusPane || m.dialog != nil) {
-		m.quit = true
-		return tea.Quit
+		return m.closeWindow()
 	}
 
 	if m.dialog != nil {
@@ -748,8 +760,7 @@ func (m *Model) updatePrompt(msg tea.KeyPressMsg) tea.Cmd {
 		// buffer it is the shell's other meaning, delete forward, which the
 		// textarea already implements — so it is passed through.
 		if strings.TrimSpace(m.prompt.Value()) == "" {
-			m.quit = true
-			return tea.Quit
+			return m.closeWindow()
 		}
 
 	case "esc":
@@ -2097,6 +2108,10 @@ func (m *Model) helpText() string {
 		"                   folder they are filtered to, and back",
 		"    Shift-Tab      run options",
 		"    " + HarnessesKeyName + "             the harnesses, and back",
+		"",
+		"  Whatever is in the prompt when the window closes is in it again the",
+		"  next time one opens in this folder. Running it, or emptying it by",
+		"  hand, is what throws it away.",
 		"",
 		"───────────────────────────────────────────────────────────────",
 		"In the discobox list",

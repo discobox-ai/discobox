@@ -71,7 +71,11 @@ type fakeSource struct {
 	forwardsOpen  int
 	forwardsClose int
 
+	// draftErr fails every draft write.
+	draftErr error
+
 	// Calls, in order.
+	drafts    []string // "folder prompt"
 	runs      []RunRequest
 	did       []string // "verb id"
 	renames   []string // "id name"
@@ -148,6 +152,13 @@ func testHarnesses() []Harness {
 }
 
 func (f *fakeSource) Session(context.Context) (Session, error) { return f.session, nil }
+
+// SaveDraft records what the window handed the store, in order, so a test can
+// see both what was saved and how often.
+func (f *fakeSource) SaveDraft(_ context.Context, folder, prompt string) error {
+	f.drafts = append(f.drafts, folder+" "+prompt)
+	return f.draftErr
+}
 
 func (f *fakeSource) List(context.Context) ([]Sandbox, error) {
 	f.mu.Lock()

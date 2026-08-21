@@ -558,8 +558,7 @@ func (m *Model) updatePaneMsg(tagged paneMsg) tea.Cmd {
 	case quitPaneMsg:
 		// The same exit Ctrl-C is outside a pane: the window goes, and every
 		// session keeps running without it.
-		m.quit = true
-		return tea.Quit
+		return m.closeWindow()
 
 	case termpane.DetachMsg:
 		if p == m.overlay {

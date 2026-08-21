@@ -10,9 +10,9 @@ import (
 )
 
 // The picker remembers the last thing it was pointed at so the next pick opens
-// on it. That is derived convenience state, not configuration, so it lives under
-// XDG_STATE_HOME and is always best-effort: a missing, unreadable, or corrupt
-// file just means the picker falls back to its normal ordering.
+// on it. It is best-effort like the rest of the CLI's state (see statedir.go):
+// a missing, unreadable, or corrupt file just means the picker falls back to
+// its normal ordering.
 
 // recentSelectionsFile is the state file, relative to the CLI's state directory.
 const recentSelectionsFile = "recent-selections.json"
@@ -64,32 +64,7 @@ func rememberSelection(key, id string) error {
 	}
 	selections[key] = recentSelection{ID: id, At: time.Now().UTC()}
 	trimRecentSelections(selections)
-
-	data, err := json.Marshal(selections)
-	if err != nil {
-		return err
-	}
-	if err := ensureStateDir(cliStateDir()); err != nil {
-		return err
-	}
-	// Write through a temporary file so a crash mid-write cannot leave the
-	// picker reading a truncated file for the rest of the install's life.
-	temp, err := os.CreateTemp(cliStateDir(), recentSelectionsFile+".*")
-	if err != nil {
-		return err
-	}
-	defer os.Remove(temp.Name())
-	if _, err := temp.Write(data); err != nil {
-		temp.Close()
-		return err
-	}
-	if err := temp.Close(); err != nil {
-		return err
-	}
-	if err := os.Chmod(temp.Name(), 0o600); err != nil {
-		return err
-	}
-	return os.Rename(temp.Name(), recentSelectionsPath())
+	return writeStateFile(recentSelectionsPath(), selections)
 }
 
 func trimRecentSelections(selections map[string]recentSelection) {

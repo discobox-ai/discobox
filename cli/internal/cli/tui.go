@@ -114,10 +114,24 @@ func (d *apiDataSource) Session(ctx context.Context) (tui.Session, error) {
 	if branch, ok := gitutil.CurrentBranch(ctx, origin.ProjectPath); ok {
 		session.Branch = branch
 	}
+	// Whatever was left unsent here last time. It is local state, not the
+	// project's: a draft belongs to the checkout it was written in and to the
+	// machine it was written on. See drafts.go.
+	session.Draft = promptDraftFor(session.Directory)
 	// The harnesses are not here: they are read on their own by Harnesses,
 	// which is what both the run options and the harnesses screen are drawn
 	// from. See tui_harnesses.go.
 	return session, nil
+}
+
+// SaveDraft keeps the composer's contents against the folder they were typed
+// in, for the next window that opens on it.
+//
+// The context is not used and is not wanted: this is a local file, and the
+// window's last call is the one it makes on the way out, when the context it
+// is holding may already be on its way down with the program.
+func (d *apiDataSource) SaveDraft(_ context.Context, folder, prompt string) error {
+	return savePromptDraft(folder, prompt)
 }
 
 // List is every sandbox in the project, newest-created first — the same
