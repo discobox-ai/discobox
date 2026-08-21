@@ -45,9 +45,10 @@ func sandboxPortTargets(sb apimodel.Sandbox) []portforward.Target {
 	return targets
 }
 
-// dialHostForPort picks the address the tunnel dials. A wildcard or loopback
-// bind is reached on loopback, which is the one address a process is sure to
-// answer on; anything else is dialed at the address it actually bound.
+// dialHostForPort picks the host the tunnel dials. A wildcard or loopback bind
+// is reached on loopback — as a name, so both loopback families are tried,
+// since a v6-only listener refuses 127.0.0.1 outright; anything else is dialed
+// at the address it actually bound.
 func dialHostForPort(addresses []string) string {
 	for _, address := range addresses {
 		switch address {

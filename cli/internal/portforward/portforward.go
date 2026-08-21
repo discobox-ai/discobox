@@ -24,8 +24,13 @@ import (
 const DefaultBindAddress = "127.0.0.1"
 
 // DefaultDialHost is the host a target is dialed at from inside the remote
-// when it names none.
-const DefaultDialHost = "127.0.0.1"
+// when it names none, and the host any loopback or wildcard bind is dialed at.
+//
+// It is a name, not an address, on purpose: a listener bound only to ::1 does
+// not answer on 127.0.0.1, and one bound only to 127.0.0.1 does not answer on
+// ::1. Dialing "localhost" hands the choice to the remote's dialer, which
+// tries both families and keeps whichever connects.
+const DefaultDialHost = "localhost"
 
 // Target is one remote port to expose locally.
 type Target struct {

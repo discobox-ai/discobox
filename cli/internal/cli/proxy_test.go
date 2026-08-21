@@ -31,8 +31,8 @@ func TestSandboxPortTargetsKeepsTheAddressToDial(t *testing.T) {
 		{Port: 0, Addresses: []string{"0.0.0.0"}, Protocol: "tcp"},
 	})
 	want := []portforward.Target{
-		{Host: "127.0.0.1", Port: 8080, Protocol: "http"},
-		{Host: "127.0.0.1", Port: 5432, Protocol: "tcp"},
+		{Host: "localhost", Port: 8080, Protocol: "http"},
+		{Host: "localhost", Port: 5432, Protocol: "tcp"},
 		{Host: "10.1.2.3", Port: 9000, Protocol: "unknown"},
 	}
 	if got := sandboxPortTargets(sandbox); !reflect.DeepEqual(got, want) {
@@ -63,17 +63,20 @@ func TestSandboxListeningPortsIsTheSameReport(t *testing.T) {
 	}
 }
 
+// A loopback or wildcard bind dials the name, so both loopback families are
+// tried: a listener bound only to ::1 refuses 127.0.0.1.
 func TestDialHostForPortPrefersLoopback(t *testing.T) {
 	for _, testCase := range []struct {
 		addresses []string
 		want      string
 	}{
-		{nil, "127.0.0.1"},
-		{[]string{"0.0.0.0"}, "127.0.0.1"},
-		{[]string{"::"}, "127.0.0.1"},
-		{[]string{"10.1.2.3", "127.0.0.1"}, "127.0.0.1"},
+		{nil, "localhost"},
+		{[]string{"0.0.0.0"}, "localhost"},
+		{[]string{"::"}, "localhost"},
+		{[]string{"::1"}, "localhost"},
+		{[]string{"10.1.2.3", "127.0.0.1"}, "localhost"},
 		{[]string{"10.1.2.3"}, "10.1.2.3"},
-		{[]string{""}, "127.0.0.1"},
+		{[]string{""}, "localhost"},
 	} {
 		if got := dialHostForPort(testCase.addresses); got != testCase.want {
 			t.Errorf("dialHostForPort(%v) = %q, want %q", testCase.addresses, got, testCase.want)
@@ -115,12 +118,12 @@ func TestProxyTargetsForwardsNamedPortsWhetherOrNotReported(t *testing.T) {
 	reported := []portforward.Target{{Host: "10.1.2.3", Port: 5432, Protocol: "tcp"}}
 	want := []portforward.Target{
 		{Host: "10.1.2.3", Port: 5432, Protocol: "tcp"},
-		{Host: "127.0.0.1", Port: 9999},
+		{Host: "localhost", Port: 9999},
 	}
 	if got := proxyTargets(reported, []int{5432, 9999}); !reflect.DeepEqual(got, want) {
 		t.Fatalf("proxyTargets = %#v, want %#v", got, want)
 	}
-	if got := proxyTargets(nil, []int{9999}); !reflect.DeepEqual(got, []portforward.Target{{Host: "127.0.0.1", Port: 9999}}) {
+	if got := proxyTargets(nil, []int{9999}); !reflect.DeepEqual(got, []portforward.Target{{Host: "localhost", Port: 9999}}) {
 		t.Fatalf("proxyTargets with no listing = %#v", got)
 	}
 }
