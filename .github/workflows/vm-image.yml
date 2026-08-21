@@ -45,7 +45,7 @@ jobs:
     # A native arm64 runner, not QEMU: the build installs an arm64 kernel,
     # generates an initrd, and runs mkfs.ext4 over the whole root filesystem.
     # Emulating that costs an hour to save nothing.
-    runs-on: ubuntu-24.04-arm
+    runs-on: depot-ubuntu-24.04-arm-4
     timeout-minutes: 90
     permissions:
       contents: read

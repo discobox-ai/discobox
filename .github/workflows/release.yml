@@ -33,9 +33,9 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          - runs-on: ubuntu-latest
+          - runs-on: depot-ubuntu-24.04-4
             artifact: linux
-          - runs-on: macos-15
+          - runs-on: depot-macos-15
             artifact: darwin
     runs-on: ${{ matrix.runs-on }}
     timeout-minutes: 45
@@ -51,11 +51,15 @@ jobs:
           if-no-files-found: error
 
   images:
-    runs-on: ubuntu-latest
+    runs-on: depot-ubuntu-24.04-4
     timeout-minutes: 90
     permissions:
       contents: read
       packages: write
+      # Depot authenticates by OIDC against the trust relationship on its
+      # project, which is what mints the token. No DEPOT_TOKEN secret is
+      # needed, and without this the CLI has nothing to present.
+      id-token: write
     env:
       DEPOT_PROJECT_ID: ${{ vars.DEPOT_PROJECT_ID }}
       DEPOT_TOKEN: ${{ secrets.DEPOT_TOKEN }}
@@ -77,7 +81,7 @@ jobs:
 
   publish:
     needs: [binaries, images]
-    runs-on: ubuntu-latest
+    runs-on: depot-ubuntu-24.04-4
     timeout-minutes: 30
     permissions:
       contents: write

@@ -2,6 +2,12 @@
 # lives in Taskfile.yml and runs the same way in a terminal.
 name: CI
 
+# Runners are Depot's. The sizes below match what the GitHub-hosted equivalents
+# gave us (4 CPU / 16 GB) rather than Depot's 2-CPU default; raise the suffix to
+# -8 or -16 to trade money for wall-clock. Depot runners also back the GitHub
+# Actions cache API with Depot Cache, so the actions/cache in .github/actions/task
+# is transparently ~10x faster here with no change to it.
+
 on:
   pull_request:
   push:
@@ -17,7 +23,7 @@ concurrency:
 
 jobs:
   check:
-    runs-on: ubuntu-latest
+    runs-on: depot-ubuntu-24.04-4
     timeout-minutes: 30
     steps:
       - uses: actions/checkout@v6.0.2
@@ -26,7 +32,7 @@ jobs:
           target: ci:check
 
   test:
-    runs-on: ubuntu-latest
+    runs-on: depot-ubuntu-24.04-4
     timeout-minutes: 30
     steps:
       - uses: actions/checkout@v6.0.2
@@ -35,7 +41,7 @@ jobs:
           target: ci:test
 
   verify:
-    runs-on: ubuntu-latest
+    runs-on: depot-ubuntu-24.04-4
     timeout-minutes: 30
     steps:
       - uses: actions/checkout@v6.0.2
@@ -47,7 +53,7 @@ jobs:
   # The Dagger release module rotted for months precisely because nothing but a
   # tag exercised it (ADR 0066 Context).
   build:
-    runs-on: ubuntu-latest
+    runs-on: depot-ubuntu-24.04-4
     timeout-minutes: 30
     steps:
       - uses: actions/checkout@v6.0.2
@@ -58,8 +64,10 @@ jobs:
   # An arm64 Mac: the vz provider is cgo against Virtualization.framework, and
   # the entitlement it needs can only be applied by /usr/bin/codesign. Nothing
   # on Linux compiles that code, let alone signs it (ADR 0066 §4).
+  #
+  # Depot's macOS runners are M2 with 8 CPUs, against GitHub's 3-core M1.
   darwin:
-    runs-on: macos-15
+    runs-on: depot-macos-15
     timeout-minutes: 45
     steps:
       - uses: actions/checkout@v6.0.2
@@ -72,7 +80,7 @@ jobs:
   # ci:check; this job exists because the named-pipe transport, wslc's process
   # handling, and ConPTY are code paths no other runner executes.
   windows:
-    runs-on: windows-latest
+    runs-on: depot-windows-2025-4
     timeout-minutes: 45
     steps:
       - uses: actions/checkout@v6.0.2

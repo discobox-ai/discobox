@@ -27,6 +27,10 @@ runs:
 
     # The devShell itself comes from cache.nixos.org. This is the Go build and
     # module cache, which is what actually dominates a check or test job.
+    #
+    # Deliberately actions/cache and not a vendor-specific one: Depot's runners
+    # back the GitHub Actions cache API with Depot Cache, so this is already the
+    # fast path there, and it still works on a GitHub-hosted runner.
     - name: Restore the Go caches
       uses: actions/cache@v6.1.0
       with:
