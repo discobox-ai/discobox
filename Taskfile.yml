@@ -31,6 +31,7 @@ vars:
   # Multi-architecture and multi-output builds both need the docker-container
   # driver; the default docker driver supports neither.
   BUILDX_BUILDER: discobox
+  LINT_BIN: golangci-lint{{.EXE}}
 
 tasks:
   default:
@@ -379,17 +380,32 @@ tasks:
       - cd hooks && go test ./...
       - cd sandbox-agent && go test ./...
 
+  build:lint-tool:
+    desc: Build the golangci-lint binary the per-module checks share
+    # `go tool -n` is a dry run: it prints where the binary is or would be
+    # without building it, so it only yields a usable path when the linked
+    # binary already sits in the build cache. A developer's machine has it from
+    # the last run; a fresh CI runner does not, and the printed
+    # $TMPDIR/go-build*/b001/exe path is one that nothing ever creates. Building
+    # it to a known location depends on no cache state at all.
+    run: once
+    cmds:
+      - mkdir -p build/tools
+      - go build -o build/tools/{{.LINT_BIN}} github.com/golangci/golangci-lint/v2/cmd/golangci-lint
+
   check:
     desc: Run static checks
+    deps:
+      - build:lint-tool
     cmds:
-      - go tool golangci-lint run
-      - cd cli && "$(go -C .. tool -n golangci-lint)" run
-      - cd termpane && "$(go -C .. tool -n golangci-lint)" run
-      - cd server && "$(go -C .. tool -n golangci-lint)" run
-      - cd pool-agent && "$(go -C .. tool -n golangci-lint)" run
-      - cd gormdb && "$(go -C .. tool -n golangci-lint)" run
-      - cd hooks && "$(go -C .. tool -n golangci-lint)" run
-      - cd sandbox-agent && "$(go -C .. tool -n golangci-lint)" run
+      - ./build/tools/{{.LINT_BIN}} run
+      - cd cli && ../build/tools/{{.LINT_BIN}} run
+      - cd termpane && ../build/tools/{{.LINT_BIN}} run
+      - cd server && ../build/tools/{{.LINT_BIN}} run
+      - cd pool-agent && ../build/tools/{{.LINT_BIN}} run
+      - cd gormdb && ../build/tools/{{.LINT_BIN}} run
+      - cd hooks && ../build/tools/{{.LINT_BIN}} run
+      - cd sandbox-agent && ../build/tools/{{.LINT_BIN}} run
 
   check:windows:
     desc: Type-check the whole tree, tests included, for windows/amd64
@@ -431,15 +447,17 @@ tasks:
 
   check:fix:
     desc: Run static checks and apply safe fixes
+    deps:
+      - build:lint-tool
     cmds:
-      - go tool golangci-lint run --fix
-      - cd cli && "$(go -C .. tool -n golangci-lint)" run --fix
-      - cd termpane && "$(go -C .. tool -n golangci-lint)" run --fix
-      - cd server && "$(go -C .. tool -n golangci-lint)" run --fix
-      - cd pool-agent && "$(go -C .. tool -n golangci-lint)" run --fix
-      - cd gormdb && "$(go -C .. tool -n golangci-lint)" run --fix
-      - cd hooks && "$(go -C .. tool -n golangci-lint)" run --fix
-      - cd sandbox-agent && "$(go -C .. tool -n golangci-lint)" run --fix
+      - ./build/tools/{{.LINT_BIN}} run --fix
+      - cd cli && ../build/tools/{{.LINT_BIN}} run --fix
+      - cd termpane && ../build/tools/{{.LINT_BIN}} run --fix
+      - cd server && ../build/tools/{{.LINT_BIN}} run --fix
+      - cd pool-agent && ../build/tools/{{.LINT_BIN}} run --fix
+      - cd gormdb && ../build/tools/{{.LINT_BIN}} run --fix
+      - cd hooks && ../build/tools/{{.LINT_BIN}} run --fix
+      - cd sandbox-agent && ../build/tools/{{.LINT_BIN}} run --fix
 
   fmt:
     desc: Format every tracked Go source

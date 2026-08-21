@@ -5,6 +5,7 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strconv"
 	"strings"
 	"testing"
@@ -19,6 +20,12 @@ func TestAcquireSingletonTakesFreeLock(t *testing.T) {
 	}
 	defer release()
 
+	// The lock is still held here, and Windows byte-range locks deny readers
+	// where POSIX advisory locks do not. What the read is checking — that the
+	// file records the holder's pid — is only observable off Windows.
+	if runtime.GOOS == "windows" {
+		t.Skip("a held byte-range lock is unreadable on Windows")
+	}
 	data, err := os.ReadFile(filepath.Join(dir, singletonLockName))
 	if err != nil {
 		t.Fatalf("read lock file: %v", err)

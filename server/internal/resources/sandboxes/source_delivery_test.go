@@ -1,6 +1,8 @@
 package sandboxes
 
 import (
+	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 	"time"
@@ -9,12 +11,27 @@ import (
 	"github.com/discobox-ai/discobox/server/internal/sandbox"
 )
 
+// hostPath spells a POSIX fixture path the way the machine running the test
+// does. sourceNeedsPush compares a source's directory against the provider's
+// local source roots with filepath containment, which is a question about the
+// host the server runs on — and on Windows "/src/alpha" is not even absolute,
+// so every containment answer flips.
+func hostPath(p string) string {
+	if runtime.GOOS != "windows" {
+		return p
+	}
+	if p == "/" {
+		return `C:\`
+	}
+	return `C:` + filepath.FromSlash(p)
+}
+
 func TestSourceNeedsPush(t *testing.T) {
 	const serverHost = "host_serveraaaaaaaa"
 	const clientHost = "host_clientbbbbbbbb"
 
 	localSource := func() *model.GitSource {
-		dir := "/src/alpha"
+		dir := hostPath("/src/alpha")
 		return &model.GitSource{Kind: "git", LocalDirectory: &dir}
 	}
 	directorySource := func() *model.GitSource {
@@ -26,13 +43,13 @@ func TestSourceNeedsPush(t *testing.T) {
 		url := "https://github.com/discobox-ai/discobox.git"
 		return &model.GitSource{Kind: "git", URL: &url}
 	}
-	binds := sandbox.ProviderDefinition{LocalSourceRoots: []string{"/src"}}
+	binds := sandbox.ProviderDefinition{LocalSourceRoots: []string{hostPath("/src")}}
 	remoteProvider := sandbox.ProviderDefinition{}
 	// A provider that reaches this filesystem, but not where the source lives.
-	elsewhere := sandbox.ProviderDefinition{LocalSourceRoots: []string{"/home", "/Users"}}
-	everything := sandbox.ProviderDefinition{LocalSourceRoots: []string{"/"}}
-	sameHost := &model.Origin{HostID: serverHost, ProjectPath: "/src/alpha"}
-	otherHost := &model.Origin{HostID: clientHost, ProjectPath: "/src/alpha"}
+	elsewhere := sandbox.ProviderDefinition{LocalSourceRoots: []string{hostPath("/home"), hostPath("/Users")}}
+	everything := sandbox.ProviderDefinition{LocalSourceRoots: []string{hostPath("/")}}
+	sameHost := &model.Origin{HostID: serverHost, ProjectPath: hostPath("/src/alpha")}
+	otherHost := &model.Origin{HostID: clientHost, ProjectPath: hostPath("/src/alpha")}
 
 	tests := []struct {
 		name       string
