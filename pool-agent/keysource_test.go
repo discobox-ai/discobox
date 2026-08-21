@@ -5,6 +5,7 @@ import (
 	"crypto/ed25519"
 	"os"
 	"path/filepath"
+	"runtime"
 	"testing"
 )
 
@@ -50,6 +51,13 @@ func TestFileKeySourceWritesThePrivateKeyUnreadableToOthers(t *testing.T) {
 	info, err := os.Stat(path)
 	if err != nil {
 		t.Fatal(err)
+	}
+	// Windows reports 0666 for a writable file and 0777 for a directory whatever
+	// their ACLs, so neither assertion below has a mode to read there. The pool
+	// agent only ever runs inside the Linux guest, so this is the platform the
+	// property is about.
+	if runtime.GOOS == "windows" {
+		t.Skip("no Unix mode on Windows; the pool agent runs in the Linux guest")
 	}
 	if perm := info.Mode().Perm(); perm != 0o600 {
 		t.Errorf("key mode = %o, want 600", perm)

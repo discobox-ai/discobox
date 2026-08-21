@@ -6,6 +6,10 @@
 // rather than in each sandbox so a pool's sandboxes share one build cache;
 // `docker run` stays in the sandbox, because a nested run's bind mounts name
 // sandbox paths that do not exist out here.
+// Every path here is a Linux path: the pool agent runs inside the pool's guest,
+// and these are its cache tree and the buildkitd configuration under it.
+// path rather than path/filepath keeps that true on any machine that merely
+// compiles the tests.
 package buildkitagent
 
 import (
@@ -13,7 +17,7 @@ import (
 	"fmt"
 	"log/slog"
 	"os"
-	"path/filepath"
+	"path"
 	"runtime"
 	"strings"
 
@@ -95,14 +99,14 @@ const (
 // the solver cache that makes this shared at all. It lives on the pool's
 // disposable build tree because it is regenerable and pool-scoped.
 func StateRoot(projectID, poolID string) string {
-	return filepath.Join(layout.PoolBuild(projectID, poolID), "buildkit")
+	return path.Join(layout.PoolBuild(projectID, poolID), "buildkit")
 }
 
 // RegistryRoot is the pool registry's blob storage. It holds build output, not
 // cache, but it is still regenerable from the sandboxes' sources, so it shares
 // the disposable tree rather than the durable one.
 func RegistryRoot(projectID, poolID string) string {
-	return filepath.Join(layout.PoolBuild(projectID, poolID), "registry")
+	return path.Join(layout.PoolBuild(projectID, poolID), "registry")
 }
 
 // legacyRoots are where StateRoot and RegistryRoot used to live: inside
@@ -114,7 +118,7 @@ func RegistryRoot(projectID, poolID string) string {
 // the exact thing the move was for.
 func legacyRoots(projectID, poolID string) []string {
 	cache := layout.PoolCache(projectID, poolID)
-	return []string{filepath.Join(cache, "buildkit"), filepath.Join(cache, "registry")}
+	return []string{path.Join(cache, "buildkit"), path.Join(cache, "registry")}
 }
 
 // purgeLegacyRoots removes the pre-ADR-0050 locations. A failure is logged by
@@ -168,12 +172,12 @@ func Prepare(projectID, poolID, mitmCASource string) error {
 	}
 	stateRoot := StateRoot(projectID, poolID)
 	registryRoot := RegistryRoot(projectID, poolID)
-	for _, dir := range []string{stateRoot, registryRoot, filepath.Dir(Socket)} {
+	for _, dir := range []string{stateRoot, registryRoot, path.Dir(Socket)} {
 		if err := os.MkdirAll(resolve(dir), 0o700); err != nil {
 			return fmt.Errorf("create %s: %w", dir, err)
 		}
 	}
-	if err := os.MkdirAll(resolve(filepath.Dir(ConfigFile)), 0o755); err != nil {
+	if err := os.MkdirAll(resolve(path.Dir(ConfigFile)), 0o755); err != nil {
 		return err
 	}
 	// Only buildkitd reads this, and it runs as root in the pool container.
@@ -236,7 +240,7 @@ func renderUnitEnvironment(stateRoot, projectID, poolID string) string {
 	fmt.Fprintf(&b, "DISCOBOX_BUILDKIT_ADDR=unix://%s\n", Socket)
 	fmt.Fprintf(&b, "DISCOBOX_BUILDKIT_MAX_PARALLELISM=%d\n", maxParallelism())
 	fmt.Fprintf(&b, "DISCOBOX_BUILDKIT_GC_KEEPSTORAGE=%s\n", gcKeepStorage)
-	fmt.Fprintf(&b, "DISCOBOX_BUILDKIT_RUNC=%s\n", filepath.Join(WrapperDir, "runc"))
+	fmt.Fprintf(&b, "DISCOBOX_BUILDKIT_RUNC=%s\n", path.Join(WrapperDir, "runc"))
 	// The runc wrapper inherits this environment, and needs the pool's identity
 	// to locate the client certificate of the sandbox that owns a build.
 	fmt.Fprintf(&b, "%s=%s\n", envProjectID, projectID)
