@@ -554,7 +554,7 @@ func uriToAbsPath(uri string) string {
 	if err != nil || parsed.Scheme != "file" {
 		return ""
 	}
-	return filepath.FromSlash(parsed.Path)
+	return uriPath(parsed)
 }
 
 func (c *Client) stderrLoop() {
@@ -692,13 +692,40 @@ func severityName(severity int) string {
 }
 
 // FileURI returns a file:// URI for path.
+//
+// The leading slash matters on Windows, where an absolute path begins with its
+// drive letter rather than a separator. Handed "C:/repo" as the path, url.URL
+// renders "file://C:/repo" — which parses back with "C:" as the authority and
+// the drive gone from the path. LSP wants "file:///C:/repo", so the drive gets
+// the slash that keeps it inside the path. A POSIX path already starts with
+// one and is untouched.
 func FileURI(path string) string {
 	abs, err := filepath.Abs(path)
 	if err != nil {
 		abs = path
 	}
-	u := url.URL{Scheme: "file", Path: filepath.ToSlash(abs)}
+	slashed := filepath.ToSlash(abs)
+	if !strings.HasPrefix(slashed, "/") {
+		slashed = "/" + slashed
+	}
+	u := url.URL{Scheme: "file", Path: slashed}
 	return u.String()
+}
+
+// uriPath is the filesystem path a parsed file:// URI names.
+//
+// It undoes what FileURI added: "/C:/repo" is a Windows path wearing the slash
+// that kept its drive letter out of the authority, and FromSlash alone would
+// turn it into a leading-separator path no drive can be found under. The test
+// is VolumeName rather than the shape of the string, so a POSIX path that
+// happens to look like "/a:b" is left alone — VolumeName only names a volume
+// on the platform that has them.
+func uriPath(parsed *url.URL) string {
+	path := parsed.Path
+	if strings.HasPrefix(path, "/") && filepath.VolumeName(path[1:]) != "" {
+		path = path[1:]
+	}
+	return filepath.FromSlash(path)
 }
 
 // PathFromURI converts a file:// URI to a repository-relative slash path.
@@ -707,7 +734,7 @@ func PathFromURI(repoRoot, uri string) string {
 	if err != nil || parsed.Scheme != "file" {
 		return uri
 	}
-	path := filepath.FromSlash(parsed.Path)
+	path := uriPath(parsed)
 	rel, err := filepath.Rel(repoRoot, path)
 	if err == nil && rel != "." && !strings.HasPrefix(rel, ".."+string(filepath.Separator)) && rel != ".." {
 		return filepath.ToSlash(rel)
