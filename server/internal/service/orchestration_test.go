@@ -382,6 +382,7 @@ func TestSandboxIntentIsReconciledByJobQueue(t *testing.T) {
 	projectID := project.ID
 	svc.RegisterSandboxProvider("test", noopSandboxProvider{})
 	installDefaultSandboxProviderInstance(ctx, t, appStore, projectID, "provider-test", "test")
+	seedTestHarnessConfig(ctx, t, appStore, projectID)
 	if err := svc.Start(ctx); err != nil {
 		t.Fatalf("start service: %v", err)
 	}
