@@ -538,7 +538,7 @@ func (a *App) writeSecretRequests(cmd *cobra.Command, requests []apimodel.Secret
 		return writeJSON(cmd.OutOrStdout(), map[string]any{"secretRequests": requests})
 	}
 	tw := tabwriter.NewWriter(cmd.OutOrStdout(), 0, 0, 2, ' ', 0)
-	fmt.Fprintln(tw, "ID\tTYPE\tHOST\tSTATUS\tSECRET\tSANDBOX\tREQUESTED BY\tUPDATED")
+	fmt.Fprintln(tw, "ID\tTYPE\tHOST\tSTATUS\tSECRET\tDISCOBOX\tREQUESTED BY\tUPDATED")
 	for _, request := range requests {
 		fmt.Fprintf(tw, "%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\n",
 			request.ID,
@@ -591,7 +591,7 @@ func (a *App) writeHarnesses(cmd *cobra.Command, harnesses []apimodel.HarnessCon
 
 // formatConfigured renders whether a harness has completed its configure flow.
 // Only a configured harness can be run, so this is the column that explains why
-// `disco run -H <slug>` is refused. A failed attempt shows its reason.
+// `discobox run -H <slug>` is refused. A failed attempt shows its reason.
 func formatConfigured(harness *apimodel.HarnessConfig) string {
 	if harness.Configured {
 		return "yes"

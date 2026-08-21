@@ -23,30 +23,30 @@ func (a *App) newRunCommand() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:     "run [flags] [PROMPT...]",
 		Aliases: []string{"r"},
-		Short:   "Launch prompt in new sandbox",
-		Long: `Launch a prompt in a new sandbox against the current directory.
+		Short:   "Launch prompt in new discobox",
+		Long: `Launch a prompt in a new discobox against the current directory.
 
 The arguments are the prompt. Use -- when the prompt needs to be separated from
 command flags explicitly.
 
-Every sandbox has one default terminal: the configured harness, or a shell when
-no harness is configured. By default run waits for the sandbox to start and
+Every discobox has one default terminal: the configured harness, or a shell when
+no harness is configured. By default run waits for the discobox to start and
 attaches to that terminal, streaming it to your terminal (press Ctrl-A d to
-detach; DISCOBOX_LEADER changes the Ctrl-A). Pass -d to create the sandbox and
+detach; DISCOBOX_LEADER changes the Ctrl-A). Pass -d to create the discobox and
 print it without attaching.
 
-Uncommitted changes in the source directory are carried into the sandbox as a
+Uncommitted changes in the source directory are carried into the discobox as a
 snapshot on top of the checked-out commit. By default run asks before doing that
 when there is a terminal to ask on; --include-dirty=true|false answers ahead of
 time.
 
 A source directory that is not in a Git repository works too: everything in it
-is carried into the sandbox as uncommitted changes on an empty first commit,
+is carried into the discobox as uncommitted changes on an empty first commit,
 and nothing is written to the directory itself.
 
--i brings extra sources into the same sandbox, repeat it for more than one. Each
+-i brings extra sources into the same discobox, repeat it for more than one. Each
 is resolved exactly like the source directory is, uncommitted changes included,
-and a local one keeps its own absolute path inside the sandbox, so ../foo shows
+and a local one keeps its own absolute path inside the discobox, so ../foo shows
 up at the path readlink -f ../foo prints.
 
 A repository can name the others it is worked on with, in .discobox/sources.json
@@ -57,14 +57,14 @@ at its root:
 Each is brought in the way -i would: the ../foo you already have checked out
 when there is one, and a clone of the URL when there is not. Either way it lands
 at the same path beside the source, so ../foo means the same thing inside the
-sandbox as it does here. --declared-sources=false leaves them out.`,
-		Example: `  disco run fix the failing tests
-  disco run --include-dirty=false fix the failing tests
-  disco run -i ../foo -i ../bar make them share one client
-  disco run -e GITHUB_TOKEN -e MODE=test fix the failing tests
-  disco run -s OPENAI_API_KEY=sk-... -s GITHUB_TOKEN=<sec_123> fix the failing tests
-  disco run -d fix the failing tests
-  disco run -- prompt starting with --flag-like text`,
+discobox as it does here. --declared-sources=false leaves them out.`,
+		Example: `  discobox run fix the failing tests
+  discobox run --include-dirty=false fix the failing tests
+  discobox run -i ../foo -i ../bar make them share one client
+  discobox run -e GITHUB_TOKEN -e MODE=test fix the failing tests
+  discobox run -s OPENAI_API_KEY=sk-... -s GITHUB_TOKEN=<sec_123> fix the failing tests
+  discobox run -d fix the failing tests
+  discobox run -- prompt starting with --flag-like text`,
 		Args: cobra.ArbitraryArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			opts.prompt.Source = a.source
@@ -119,11 +119,11 @@ sandbox as it does here. --declared-sources=false leaves them out.`,
 	}
 	cmd.Flags().StringArrayVarP(&opts.prompt.Env, "env", "e", nil, "Environment variable as KEY=VALUE or KEY from the local environment; repeat for multiple variables. A KEY whose name contains KEY, TOKEN, PASS, or SECRET is treated as a secret; use KEY!=VALUE to force it to be a plain environment variable")
 	cmd.Flags().StringArrayVarP(&opts.prompt.Secret, "secret", "s", nil, "Secret injected as a sentinel placeholder resolved by the proxy at runtime, as KEY=VALUE (inline value) or KEY=<SECRET_ID> (reference an existing secret); repeat for multiple secrets")
-	cmd.Flags().StringArrayVarP(&opts.prompt.Include, "include", "i", nil, "Additional source directory or Git repository to bring into the sandbox, optionally with @REF; repeat for more than one. A local directory keeps its own absolute path inside the sandbox and is named after itself, so -i ../foo is the source foo")
+	cmd.Flags().StringArrayVarP(&opts.prompt.Include, "include", "i", nil, "Additional source directory or Git repository to bring into the discobox, optionally with @REF; repeat for more than one. A local directory keeps its own absolute path inside the discobox and is named after itself, so -i ../foo is the source foo")
 	cmd.Flags().StringVarP(&opts.prompt.Harness, "harness", "H", "", "Harness config to run, by slug (e.g. codex), name, or ID; defaults to the project default")
-	cmd.Flags().BoolVarP(&opts.detach, "detach", "d", false, "Create the sandbox and print it without attaching to its terminal")
+	cmd.Flags().BoolVarP(&opts.detach, "detach", "d", false, "Create the discobox and print it without attaching to its terminal")
 	cmd.Flags().BoolVar(&opts.declaredSources, "declared-sources", true, "Bring in the sources the repository declares in .discobox/sources.json, using a local checkout beside the source directory when there is one")
-	cmd.Flags().Var(&opts.prompt.IncludeDirty, "include-dirty", "Carry uncommitted changes in the local source into the sandbox: true, false, or auto (ask when the workspace is dirty and this is a terminal)")
+	cmd.Flags().Var(&opts.prompt.IncludeDirty, "include-dirty", "Carry uncommitted changes in the local source into the discobox: true, false, or auto (ask when the workspace is dirty and this is a terminal)")
 	cmd.Flags().Lookup("include-dirty").NoOptDefVal = string(sandboxcreate.IncludeDirtyAlways)
 	return cmd
 }
@@ -149,7 +149,7 @@ func confirmIncludeDirty(cmd *cobra.Command) sandboxcreate.ConfirmIncludeDirtyFu
 			{
 				id:     "include",
 				title:  "Include uncommitted changes",
-				detail: "Start the sandbox from a snapshot of the working tree",
+				detail: "Start the discobox from a snapshot of the working tree",
 			},
 		}, pickerOptions{
 			empty:     "no choice to make",
@@ -221,7 +221,7 @@ func dirtyWorkspacePrompt(workspace sandboxcreate.DirtyWorkspace) string {
 // server-side can subsume that step.
 func (a *App) attachRunSandbox(cmd *cobra.Command, projectID string, sandbox *apimodel.Sandbox) error {
 	ctx := cmd.Context()
-	fmt.Fprintf(cmd.ErrOrStderr(), "Created sandbox %s, attaching when it is ready (%s to detach)...\n", sandbox.ID, a.detachHint())
+	fmt.Fprintf(cmd.ErrOrStderr(), "Created discobox %s, attaching when it is ready (%s to detach)...\n", sandbox.ID, a.detachHint())
 	// Attach the virtual primary id: the sandbox-agent resolves it to whichever
 	// exec is currently primary and relaunches a stopped one, so a primary that
 	// ended before the attach is resumed instead of failing on a dead session.

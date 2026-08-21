@@ -15,6 +15,6 @@
   the advertised address and the server's SSH host *public* key, neither of
   which is a credential; publishing the key is the point, the same as a
   `known_hosts` line — and, like docs/openapi, it must be fetchable
-  (`disco box ssh-config`) before any other credential exists. Do not widen
+  (`discobox admin ssh-config`) before any other credential exists. Do not widen
   this list further without the same "must work pre-auth and reveals nothing
   sensitive" justification.

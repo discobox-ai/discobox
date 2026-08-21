@@ -150,19 +150,19 @@ Agent-observed sandbox state is reported at
 `/api/pools/{poolId}/sandbox-states` under the same pool-principal rule; the
 sandbox IDs are runtime evidence, not user authorization input.
 
-## Delivering and Re-delivering Source (`disco push`)
+## Delivering and Re-delivering Source (`discobox push`)
 
 A push-delivered source's commits arrive over the `git-origins` proxy above:
-create's delivery push (ADR 0001) and every later `disco push` (ADR 0058) write
+create's delivery push (ADR 0001) and every later `discobox push` (ADR 0058) write
 the same bare repository, which the sandbox fetches from as `origin`. Only
 delivery at create involves the control plane's state machine — `awaiting_source`
 plus `CompleteSandboxSourcePush`. A re-push is transport and nothing else: no
 phase, no completion call, and no server-side validation of what was pushed. The
 server stays a byte proxy, as it is for the worktree route.
 
-## Applying Sandbox Commits to a Host (`disco apply`)
+## Applying Sandbox Commits to a Host (`discobox apply`)
 
-`disco apply` (ADR 0014) pulls a sandbox's committed source changes onto the
+`discobox apply` (ADR 0014) pulls a sandbox's committed source changes onto the
 host working tree they started from. It fetches over the same
 git-repositories proxy documented above, now used for read as well as write:
 `ScopeSandboxRead` already permitted fetch, so no new proxy surface was
@@ -205,7 +205,7 @@ transport this server actually answers on rather than assuming one exists.
 
 `task dev` opts into nothing. It binds the local socket every other server
 binds, plus `iroh://` on the platforms whose build carries the transport (ADR
-0053), so `disco` reaches a development server with no `--server` and the dev
+0053), so `discobox` reaches a development server with no `--server` and the dev
 loop runs the transport users actually get instead of the one nothing ships. A
 tool that needs a URL asks for one in `DISCOBOX_SERVER_LISTEN` — from the
 environment, not from `.env`, which the server loads with godotenv and which

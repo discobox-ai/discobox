@@ -14,7 +14,7 @@ import (
 // them: enable one — which runs the harness's own setup — disable it, make it
 // the project default, read what it is set to, and edit the files it carries.
 //
-// It is `disco configure`, folded into the window. That command is now this
+// It is `discobox configure`, folded into the window. That command is now this
 // screen opened directly (WithHarnesses), so there is one list of harnesses
 // with one set of keys rather than a second program with its own idea of both.
 //
@@ -30,7 +30,7 @@ import (
 const harnessesKey = "f3"
 
 // HarnessesKeyName is how that key is spelled to the user. It is exported
-// because `disco configure` opens the window on this screen and says so in its
+// because `discobox configure` opens the window on this screen and says so in its
 // help, and a key named in two places is a key that ends up spelled two ways.
 const HarnessesKeyName = "F3"
 
@@ -161,7 +161,7 @@ func (l *harnessList) view(st *styles) string {
 
 	body := make([]string, 0, l.height)
 	if len(l.all) == 0 {
-		body = append(body, st.dimText.Render(pad("  no harnesses in this project — register one with `disco box harnesses create`", l.width)))
+		body = append(body, st.dimText.Render(pad("  no harnesses in this project — register one with `discobox admin harnesses create`", l.width)))
 	}
 	for i := l.offset; i < len(l.all) && len(body) < l.height; i++ {
 		body = append(body, l.row(st, l.all[i], i))

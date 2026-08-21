@@ -59,7 +59,7 @@ func forwardTestServer(t *testing.T, sandboxPort int) *httptest.Server {
 	return server
 }
 
-// The launcher's forward is the same forwarder disco proxy runs: it follows
+// The launcher's forward is the same forwarder discobox proxy runs: it follows
 // what the sandbox announces, binds a local port for it, wakes the window, and
 // carries bytes.
 func TestLauncherForwardBindsAndCarriesBytes(t *testing.T) {

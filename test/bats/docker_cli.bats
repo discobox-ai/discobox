@@ -32,9 +32,9 @@ setup_file() {
 
   # `task dev` hot-reloads the server, not the CLI; building it touches no
   # shared state.
-  (cd cli && go build -o ../build/disco ./cmd/disco) || skip "cannot build the CLI"
+  (cd cli && go build -o ../build/discobox ./cmd/discobox) || skip "cannot build the CLI"
 
-  "$REPO_ROOT/build/disco" --output json box pool ls >/dev/null 2>&1 ||
+  "$REPO_ROOT/build/discobox" --output json admin pool ls >/dev/null 2>&1 ||
     skip "development server is not answering API requests"
 
   # Everything this suite creates carries this suffix, so anything a crash
@@ -54,7 +54,7 @@ teardown_file() {
     while read -r line; do
       [ "${line%% *}" = "$kind" ] || continue
       id="${line#* }"
-      cli box "$kind" delete "$id" >/dev/null 2>&1 </dev/null || true
+      cli admin "$kind" delete "$id" >/dev/null 2>&1 </dev/null || true
     done <"$DISCOBOX_BATS_STATE"
   done
 }
@@ -66,7 +66,7 @@ record() {
 }
 
 cli() {
-  "$REPO_ROOT/build/disco" --output json "$@"
+  "$REPO_ROOT/build/discobox" --output json "$@"
 }
 
 json_get() {
@@ -79,7 +79,7 @@ json_get() {
 wait_for_pool_ready() {
   local pool_id="$1" deadline=$((SECONDS + 90)) pool_json="" ready schedulable
   while [ "$SECONDS" -lt "$deadline" ]; do
-    if pool_json="$(cli box pool get "$pool_id" 2>/dev/null)"; then
+    if pool_json="$(cli admin pool get "$pool_id" 2>/dev/null)"; then
       ready="$(printf '%s' "$pool_json" | json_get ready)"
       schedulable="$(printf '%s' "$pool_json" | json_get schedulable)"
       if [ "$ready" = "True" ] && [ "$schedulable" = "True" ]; then
@@ -109,7 +109,7 @@ host_gateway() {
 }
 
 @test "provider create help exposes docker dynamic flags" {
-  run cli box provider create --help=docker
+  run cli admin provider create --help=docker
   [ "$status" -eq 0 ]
   [[ "$output" == *"Create a Docker provider instance"* ]]
   [[ "$output" == *"--control-plane-url"* ]]
@@ -132,7 +132,7 @@ print(json.dumps({
 PY
 )"
 
-  run cli box provider create --type docker --name "$DISCOBOX_BATS_RUN-provider" --config "$config"
+  run cli admin provider create --type docker --name "$DISCOBOX_BATS_RUN-provider" --config "$config"
   [ "$status" -eq 0 ]
   provider_json="$output"
   provider_id="$(printf '%s' "$provider_json" | json_get id)"
@@ -140,7 +140,7 @@ PY
   record provider "$provider_id"
   [ "$(printf '%s' "$provider_json" | json_get type)" = "docker" ]
 
-  run cli box pool create "$DISCOBOX_BATS_RUN-pool" --provider "$provider_id"
+  run cli admin pool create "$DISCOBOX_BATS_RUN-pool" --provider "$provider_id"
   [ "$status" -eq 0 ]
   pool_json="$output"
   pool_id="$(printf '%s' "$pool_json" | json_get id)"
@@ -149,7 +149,7 @@ PY
 
   wait_for_pool_ready "$pool_id"
 
-  run cli box sandbox create --name "$DISCOBOX_BATS_RUN-sandbox" --pool "$pool_id" --wait --wait-timeout 90s
+  run cli admin discobox create --name "$DISCOBOX_BATS_RUN-sandbox" --pool "$pool_id" --wait --wait-timeout 90s
   [ "$status" -eq 0 ]
   sandbox_json="$output"
   sandbox_id="$(printf '%s' "$sandbox_json" | json_get id)"

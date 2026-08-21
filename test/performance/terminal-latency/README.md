@@ -1,20 +1,20 @@
 # Terminal latency harness
 
 This diagnostic runs a deterministic byte request/response through a real
-development stack. It is centered on the interactive path shared by `disco run`
-and `disco box terminal ... attach`:
+development stack. It is centered on the interactive path shared by `discobox run`
+and `discobox admin terminal ... attach`:
 
 1. `transport-<profile>.json` drives the shared resumable exec connection
    directly. It records the input call, physical WebSocket write, host apply
    acknowledgement, and sequence-tagged PTY echo.
 2. `direct-<profile>.json` drives
-   `disco box terminal ... attach primary` through a real tmux PTY. It adds the
+   `discobox admin terminal ... attach primary` through a real tmux PTY. It adds the
    CLI's local terminal and raw-mode path.
 
-After `disco run` creates the sandbox and resolves its primary terminal, it
+After `discobox run` creates the sandbox and resolves its primary terminal, it
 calls the same `attachSandboxTerminal` implementation as the direct probe.
 Consequently the direct result measures the attached, interactive hot path of
-both commands. It intentionally excludes `disco run` source upload,
+both commands. It intentionally excludes `discobox run` source upload,
 provisioning, and initial sandbox startup.
 
 Each transport and direct path runs against three fresh sandboxes by default:
@@ -24,9 +24,9 @@ Each transport and direct path runs against three fresh sandboxes by default:
 - `screen`: 4,800-byte full-screen-style updates at 30 writes per second
   (about 141 KiB/s before probe replies and framing).
 
-`disco tui` is an optional, quiet-only mode. It measures the embedded terminal,
+`discobox tui` is an optional, quiet-only mode. It measures the embedded terminal,
 VT parsing, Bubble Tea update loop, and rendering path, but it is not part of
-the default run because it is not on the `disco run` or direct attach path.
+the default run because it is not on the `discobox run` or direct attach path.
 
 The image under `image/` is test-only. Its primary process enters raw mode and
 turns `DBXPING:00000001` into `DBXPONG:00000001`, so every input has an
@@ -78,7 +78,7 @@ DISCOBOX_TERMINAL_LATENCY_KEEP=1 go tool task perf:terminal
 ```
 
 `DISCOBOX_TERMINAL_LATENCY_SERVER`, `..._PROJECT`, `..._TIMEOUT`, and
-`..._OUTPUT_DIR` are also supported. Unset, the run uses the endpoint `disco`
+`..._OUTPUT_DIR` are also supported. Unset, the run uses the endpoint `discobox`
 dials on its own — the local socket `task dev` binds — so a server reached any
 other way is named there and nowhere else. `DISCOBOX_TOKEN` is passed through when
 set. The default loads can be changed with `..._SPINNER_HZ`,
@@ -98,7 +98,7 @@ set. The default loads can be changed with `..._SPINNER_HZ`,
   action acknowledgements, and probe replies ultimately share the downstream
   writer, so this comparison detects downstream head-of-line delay.
 - A large gap from direct to the optional TUI result implicates VT parsing, the
-  Bubble Tea loop, or rendering; that gap does not describe `disco run`.
+  Bubble Tea loop, or rendering; that gap does not describe `discobox run`.
 
 The tmux reports include host CPU/IO/memory pressure snapshots and the
 sandbox's cgroup CPU quota, pressure, and `cpu.stat` delta. Both report types

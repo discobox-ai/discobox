@@ -117,7 +117,7 @@ func (a *App) newSecretGrantCreateCommand() *cobra.Command {
 	}}
 	cmd.Flags().StringVar(&secretRef, "secret", "", "Secret ID to grant")
 	cmd.Flags().StringVar(&scope, "scope", "", "Grant scope: sandbox, harnessConfig, or project")
-	cmd.Flags().StringVar(&scopeKey, "scope-key", "", "Sandbox ID or harness config ID the scope resolves against (defaults to project ID for project scope)")
+	cmd.Flags().StringVar(&scopeKey, "scope-key", "", "Discobox ID or harness config ID the scope resolves against (defaults to project ID for project scope)")
 	cmd.Flags().StringVar(&host, "host", "", "Limit the grant to a host; defaults to the secret's host")
 	cmd.Flags().Int64Var(&ttl, "grant-ttl", 0, "Grant duration in seconds; 0 never expires")
 	return cmd

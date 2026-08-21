@@ -72,7 +72,7 @@ func Authorization(authorizers ...Authorizer) func(http.Handler) http.Handler {
 func IsPublicPath(path string) bool {
 	// /ssh (ADR 0024) serves the SSH endpoint discovery document — an address
 	// and the server's host *public* key, neither a credential — and it must
-	// be fetchable (disco box ssh-config) before any other credential exists,
+	// be fetchable (discobox admin ssh-config) before any other credential exists,
 	// the same rule that puts docs/openapi/health here.
 	// /ssh/connect carries an SSH connection over this transport (ADR 0024).
 	// It is exempt for the same reason the TCP listener needs no HTTP auth:

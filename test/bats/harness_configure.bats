@@ -45,8 +45,8 @@ PY
   export DISCOBOX_BATS_SOCKET="$DISCOBOX_BATS_TMP/server.sock"
 
   (cd server && go build -o ../build/discobox-server ./cmd/discobox-server)
-  rm -f build/disco
-  (cd cli && go build -o ../build/disco ./cmd/disco)
+  rm -f build/discobox
+  (cd cli && go build -o ../build/discobox ./cmd/discobox)
   (docker build -f pool-agent/Dockerfile -t discobox-pool-agent:local .)
   go tool task build:harness-stub-image
   build_keep_stub_image
@@ -98,7 +98,7 @@ print(" ".join(row[0] for row in con.execute("SELECT id FROM pools")))
   fi
   local pool_id
   for pool_id in $pool_ids; do
-    cli box pool delete "$pool_id" >/dev/null 2>&1 || true
+    cli admin pool delete "$pool_id" >/dev/null 2>&1 || true
   done
   for _ in {1..30}; do
     local pending=0
@@ -161,7 +161,7 @@ DOCKERFILE
 }
 
 cli() {
-  "$REPO_ROOT/build/disco" --server "$DISCOBOX_BATS_SERVER" --project default --output json "$@"
+  "$REPO_ROOT/build/discobox" --server "$DISCOBOX_BATS_SERVER" --project default --output json "$@"
 }
 
 json_get() {
@@ -263,8 +263,8 @@ ensure_pool() {
 # and would not match as a single string.
 configure_stub() {
   local harness="$1" raw status
-  raw="$("$REPO_ROOT/build/disco" --server "$DISCOBOX_BATS_SERVER" --project default \
-    box harness configure "$harness" </dev/null 2>&1)"
+  raw="$("$REPO_ROOT/build/discobox" --server "$DISCOBOX_BATS_SERVER" --project default \
+    admin harness configure "$harness" </dev/null 2>&1)"
   status=$?
   printf '===== configure %s =====\n%s\n' "$harness" "$raw" >>"$DISCOBOX_BATS_CONFIGURE_LOG"
   raw="${raw//$'\r'/}"
@@ -277,7 +277,7 @@ configure_stub() {
   pool_id="$(ensure_pool)"
   [ -n "$pool_id" ]
 
-  run cli box harness create --image discobox-harness-stub:local
+  run cli admin harness create --image discobox-harness-stub:local
   [ "$status" -eq 0 ]
   harness_json="$output"
   harness_id="$(printf '%s' "$harness_json" | json_get id)"
@@ -290,7 +290,7 @@ configure_stub() {
   [[ "$output" == *"stub configure: PREV_STUB_TOKEN is unset"* ]]
   [[ "$output" == *"stub configure: done"* ]]
 
-  run cli box harness get stub
+  run cli admin harness get stub
   [ "$status" -eq 0 ]
   [ "$(printf '%s' "$output" | json_get configured)" = "True" ]
 
@@ -335,7 +335,7 @@ configure_stub() {
   local pool_id harness_id before_id after_id before_grant after_grant
   pool_id="$(ensure_pool)"
 
-  run cli box harness create --image discobox-harness-stub-keep:local --slug stub-keep --name "Stub (keep)"
+  run cli admin harness create --image discobox-harness-stub-keep:local --slug stub-keep --name "Stub (keep)"
   [ "$status" -eq 0 ]
   harness_id="$(printf '%s' "$output" | json_get id)"
   [ -n "$harness_id" ]
@@ -354,7 +354,7 @@ configure_stub() {
   [ "$status" -eq 0 ]
   [[ "$output" == *"stub configure: PREV_STUB_TOKEN is set"* ]]
 
-  run cli box harness get stub-keep
+  run cli admin harness get stub-keep
   [ "$status" -eq 0 ]
   [ "$(printf '%s' "$output" | json_get configured)" = "True" ]
 
@@ -370,10 +370,10 @@ configure_stub() {
 
 @test "deconfigure removes exactly what configure created" {
   local harness_id
-  harness_id="$(cli box harness get stub | json_get id)"
+  harness_id="$(cli admin harness get stub | json_get id)"
   [ -n "$harness_id" ]
 
-  run cli box harness deconfigure stub
+  run cli admin harness deconfigure stub
   [ "$status" -eq 0 ]
   [ "$(printf '%s' "$output" | json_get configured)" = "False" ]
 

@@ -41,10 +41,10 @@ func (a *App) newSandboxTerminalsCommand() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:     "terminal",
 		Aliases: []string{"terminals"},
-		Short:   "Manage sandbox agent terminals",
+		Short:   "Manage discobox terminals",
 	}
-	cmd.PersistentFlags().StringVar(&sandboxID, "sandbox-id", "", "Sandbox ID")
-	_ = cmd.RegisterFlagCompletionFunc("sandbox-id", a.completeSandboxes)
+	cmd.PersistentFlags().StringVar(&sandboxID, "discobox-id", "", "Discobox ID")
+	_ = cmd.RegisterFlagCompletionFunc("discobox-id", a.completeSandboxes)
 	cmd.AddCommand(a.newSandboxTerminalListCommand(&sandboxID))
 	cmd.AddCommand(a.newSandboxTerminalCreateCommand(&sandboxID))
 	cmd.AddCommand(a.newSandboxTerminalAttachCommand(&sandboxID))
@@ -57,7 +57,7 @@ func (a *App) newSandboxTerminalListCommand(sandboxID *string) *cobra.Command {
 	cmd := &cobra.Command{
 		Use:     "ls",
 		Aliases: []string{"list"},
-		Short:   "List sandbox agent terminals",
+		Short:   "List discobox terminals",
 		Args:    cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			projectID, resolvedSandboxID, _, err := a.sandboxTerminalRequest(cmd.Context(), *sandboxID)
@@ -79,7 +79,7 @@ func (a *App) newSandboxTerminalCreateCommand(sandboxID *string) *cobra.Command 
 	var opts sandboxTerminalCreateOptions
 	cmd := &cobra.Command{
 		Use:   "create",
-		Short: "Create a sandbox agent terminal",
+		Short: "Create a discobox terminal",
 		Args:  cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			projectID, resolvedSandboxID, client, err := a.sandboxTerminalRequest(cmd.Context(), *sandboxID)
@@ -120,9 +120,9 @@ func (a *App) newSandboxTerminalCreateCommand(sandboxID *string) *cobra.Command 
 			return a.writeSandboxTerminal(cmd, &started)
 		},
 	}
-	cmd.Flags().StringVar(&opts.harnessID, "harness", "", "Harness ID to start; defaults to the sandbox configured harness")
+	cmd.Flags().StringVar(&opts.harnessID, "harness", "", "Harness ID to start; defaults to the discobox configured harness")
 	cmd.Flags().StringArrayVar(&opts.args, "arg", nil, "Additional command argument; repeat for multiple arguments")
-	cmd.Flags().StringVar(&opts.workdir, "workdir", "", "Working directory inside the sandbox")
+	cmd.Flags().StringVar(&opts.workdir, "workdir", "", "Working directory inside the discobox")
 	cmd.Flags().StringArrayVarP(&opts.env, "env", "e", nil, "Environment variable as KEY=VALUE or KEY from the local environment; repeat for multiple variables")
 	cmd.Flags().BoolVar(&opts.attach, "attach", false, "Attach after creating the terminal")
 	return cmd
@@ -131,10 +131,10 @@ func (a *App) newSandboxTerminalCreateCommand(sandboxID *string) *cobra.Command 
 func (a *App) newSandboxTerminalAttachCommand(sandboxID *string) *cobra.Command {
 	return &cobra.Command{
 		Use:   "attach TERMINAL_ID",
-		Short: "Attach to a sandbox agent terminal",
-		Long: `Attach to a sandbox agent terminal.
+		Short: "Attach to a discobox terminal",
+		Long: `Attach to a discobox terminal.
 
-Pass "primary" instead of a terminal ID to attach the sandbox's primary
+Pass "primary" instead of a terminal ID to attach the discobox's primary
 terminal, relaunching it with the harness's relaunch command when it has
 stopped. Attaching a terminal by ID never relaunches it: an ID names one
 session, and once that session has ended there is nothing to attach to.
@@ -161,7 +161,7 @@ func (a *App) newSandboxTerminalLogsCommand(sandboxID *string) *cobra.Command {
 	var includeInput bool
 	cmd := &cobra.Command{
 		Use:               "logs TERMINAL_ID",
-		Short:             "Print sandbox agent terminal output logs",
+		Short:             "Print discobox terminal output logs",
 		Args:              cobra.ExactArgs(1),
 		ValidArgsFunction: a.completeTerminals(sandboxID),
 		RunE: func(cmd *cobra.Command, args []string) error {
@@ -199,7 +199,7 @@ func (a *App) newSandboxTerminalDeleteCommand(sandboxID *string) *cobra.Command 
 	return &cobra.Command{
 		Use:               "delete TERMINAL_ID",
 		Aliases:           []string{"rm", "remove"},
-		Short:             "Delete a sandbox agent terminal",
+		Short:             "Delete a discobox terminal",
 		Args:              cobra.ExactArgs(1),
 		ValidArgsFunction: a.completeTerminals(sandboxID),
 		RunE: func(cmd *cobra.Command, args []string) error {
@@ -225,7 +225,7 @@ func (a *App) newSandboxTerminalDeleteCommand(sandboxID *string) *cobra.Command 
 
 func (a *App) sandboxTerminalRequest(ctx context.Context, sandboxArg string) (string, string, *apiclientgen.Client, error) {
 	if strings.TrimSpace(sandboxArg) == "" {
-		return "", "", nil, fmt.Errorf("--sandbox-id is required")
+		return "", "", nil, fmt.Errorf("--discobox-id is required")
 	}
 	return a.sandboxRequest(ctx, sandboxArg)
 }

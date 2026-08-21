@@ -16,9 +16,9 @@ import (
 
 func (a *App) newToolsSSHCommand(sandboxID *string) *cobra.Command {
 	cmd := &cobra.Command{
-		Use:   "ssh [SANDBOX_ID] [SSH_ARG...]",
-		Short: "Open an SSH session to a sandbox",
-		Long: `Open an SSH session to a sandbox, over the connection this CLI already has.
+		Use:   "ssh [DISCOBOX_ID] [SSH_ARG...]",
+		Short: "Open an SSH session to a discobox",
+		Long: `Open an SSH session to a discobox, over the connection this CLI already has.
 
 The server needs no SSH port for this: the session is carried over the same
 endpoint the API uses, through a loopback port that exists only while the
@@ -27,14 +27,14 @@ so nothing is written to your ssh_config. The key is the one exception — it is
 enrolled in the project, and reused rather than replaced on later runs.
 
 Every argument is passed to ssh untouched, including flags. A leading argument
-that names one of this directory's sandboxes selects it; anything else, and
+that names one of this directory's discoboxes selects it; anything else, and
 everything after it, belongs to ssh.`,
-		Example: `  disco tools ssh
-  disco tools ssh mybox
-  disco tools ssh -L 8080:localhost:3000
-  disco tools ssh mybox -- uname -a`,
+		Example: `  discobox tools ssh
+  discobox tools ssh mybox
+  discobox tools ssh -L 8080:localhost:3000
+  discobox tools ssh mybox -- uname -a`,
 		// Flag parsing is off entirely, not just SetInterspersed(false): ssh's
-		// own flags come first in the common case (`disco tools ssh -L ...`),
+		// own flags come first in the common case (`discobox tools ssh -L ...`),
 		// and cobra would reject them as unknown before ever reaching us.
 		DisableFlagParsing: true,
 		RunE: func(cmd *cobra.Command, args []string) error {
@@ -62,7 +62,7 @@ func (a *App) runToolsSSH(cmd *cobra.Command, sandboxArg string, args []string) 
 		// nothing behind. Backgrounding the whole command keeps the two
 		// lifetimes together and leaves one process to kill.
 		return fmt.Errorf("ssh -f cannot be used here: the connection is carried by this command, " +
-			"so ssh must not outlive it. Background the command instead: disco tools ssh -N ... &")
+			"so ssh must not outlive it. Background the command instead: discobox tools ssh -N ... &")
 	}
 
 	identityFile, err := a.resolveSSHIdentity(cmd, client, projectID, "")
@@ -113,12 +113,12 @@ func (a *App) runToolsSSH(cmd *cobra.Command, sandboxArg string, args []string) 
 // one flat list and cannot tell a sandbox reference from a tool argument.
 //
 // The difference from `shell` is that flag parsing is off here, so args[0] may
-// be an ssh flag — `disco tools ssh -L 8080:localhost:3000` is the ordinary
+// be an ssh flag — `discobox tools ssh -L 8080:localhost:3000` is the ordinary
 // case. A leading `-` is never a sandbox reference, and matchSandboxArg
 // (inside resolveShellTarget) rejects anything that does not name one of this
 // directory's sandboxes, so everything else reaches ssh untouched.
 //
-// --sandbox-id wins outright when given: it was said explicitly, and then no
+// --discobox-id wins outright when given: it was said explicitly, and then no
 // argument is consumed as a sandbox at all.
 func (a *App) resolveSSHTarget(cmd *cobra.Command, sandboxArg string, args []string) (projectID, sandboxID string, client *apiclientgen.Client, sshArgs []string, err error) {
 	if strings.TrimSpace(sandboxArg) != "" {

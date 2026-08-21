@@ -293,9 +293,9 @@ func (a *App) runHarnessConfigure(ctx context.Context, client *apiclientgen.Clie
 		return nil, fmt.Errorf("start configure: %w", err)
 	}
 
-	fmt.Fprintf(stderr, "Running configure sandbox %s, waiting for it to start...\n", id.RandomPart(sandbox.ID))
+	fmt.Fprintf(stderr, "Running configure discobox %s, waiting for it to start...\n", id.RandomPart(sandbox.ID))
 	if _, err := a.waitForSandboxCtx(ctx, client, projectID, sandbox.ID, 2*time.Minute); err != nil {
-		return nil, fmt.Errorf("configure sandbox failed to start: %w", err)
+		return nil, fmt.Errorf("configure discobox failed to start: %w", err)
 	}
 	// Seeding must land before the configure command runs. It does: in config mode
 	// the sandbox-agent holds the primary terminal until it is attached, so nothing
@@ -367,7 +367,7 @@ func (a *App) newHarnessRefreshImageCommand() *cobra.Command {
 		Long: "Re-inspect the harness's image and re-snapshot its run command, files, secrets,\n" +
 			"environment, volumes, and digest.\n\n" +
 			"Registration reads the image's label once, so a harness pointing at a rebuilt\n" +
-			"tag keeps describing an image that no longer exists under it — and its sandboxes\n" +
+			"tag keeps describing an image that no longer exists under it — and its discoboxes\n" +
 			"never report an available upgrade. Built-in harnesses refresh themselves on\n" +
 			"server start; harnesses registered from your own image need this. Configured\n" +
 			"harnesses stay configured.",
@@ -445,7 +445,7 @@ func (a *App) newHarnessSetDefaultCommand() *cobra.Command {
 func (a *App) newHarnessUnsetDefaultCommand() *cobra.Command {
 	return &cobra.Command{Use: "unset-default HARNESS_CONFIG_ID", Short: "Clear the project default harness config", Long: `Clear the project default harness config.
 
-Leaves the project with no default, so new sandboxes created without an explicit
+Leaves the project with no default, so new discoboxes created without an explicit
 harness run agent-less. HARNESS_CONFIG_ID must be the current default; this is
 also how you release the default before disabling that harness.`, Args: cobra.ExactArgs(1), ValidArgsFunction: a.completeHarnessConfigs, RunE: func(cmd *cobra.Command, args []string) error {
 		projectID, harnessID, client, err := a.harnessRequest(cmd.Context(), args[0])

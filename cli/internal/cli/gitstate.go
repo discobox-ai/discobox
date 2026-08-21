@@ -24,7 +24,7 @@ type sandboxGitState struct {
 	Commit string // head, full SHA
 	Clean  bool   // no uncommitted changes in the working tree
 
-	// Applied: the head commit is the last commit `disco apply` recorded for
+	// Applied: the head commit is the last commit `discobox apply` recorded for
 	// this source, so everything committed here has landed on a host. Only a
 	// clean tree can be applied — dirty content is by definition not.
 	Applied bool

@@ -348,11 +348,11 @@ func TestEventStringNamesTheMoveAndTheReason(t *testing.T) {
 		event Event
 		want  string
 	}{
-		{Event{Kind: Bound, Target: Target{Port: 8080, Protocol: "http"}, Local: 8080}, "listening on 8080 -> sandbox 8080 (http)"},
-		{Event{Kind: Bound, Target: Target{Port: 8080}, Local: 8081}, "listening on 8081 -> sandbox 8080 (8080 was taken)"},
-		{Event{Kind: Gone, Target: Target{Port: 8080}, Local: 8081}, "sandbox 8080 stopped listening; 8081 is held open"},
-		{Event{Kind: Accepted, Target: Target{Port: 8080}, Local: 8081, Peer: "127.0.0.1:5000"}, "8081 -> sandbox 8080: connection from 127.0.0.1:5000"},
-		{Event{Kind: DialFailed, Target: Target{Port: 8080}, Local: 8081, Err: fmt.Errorf("refused")}, "8081 -> sandbox 8080: refused"},
+		{Event{Kind: Bound, Target: Target{Port: 8080, Protocol: "http"}, Local: 8080}, "listening on 8080 -> discobox 8080 (http)"},
+		{Event{Kind: Bound, Target: Target{Port: 8080}, Local: 8081}, "listening on 8081 -> discobox 8080 (8080 was taken)"},
+		{Event{Kind: Gone, Target: Target{Port: 8080}, Local: 8081}, "discobox 8080 stopped listening; 8081 is held open"},
+		{Event{Kind: Accepted, Target: Target{Port: 8080}, Local: 8081, Peer: "127.0.0.1:5000"}, "8081 -> discobox 8080: connection from 127.0.0.1:5000"},
+		{Event{Kind: DialFailed, Target: Target{Port: 8080}, Local: 8081, Err: fmt.Errorf("refused")}, "8081 -> discobox 8080: refused"},
 	} {
 		if got := testCase.event.String(); got != testCase.want {
 			t.Errorf("String() = %q, want %q", got, testCase.want)

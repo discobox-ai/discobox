@@ -120,7 +120,7 @@ type Source struct {
 	// into, derived from the branch it was cloned at. Once the sandbox has
 	// fetched, the diff stat's base moves forward to the merge base with this
 	// ref, so commits the sandbox pulled rather than wrote stop counting as
-	// its changes — the same rule `disco diff` resolves with. The ref is
+	// its changes — the same rule `discobox diff` resolves with. The ref is
 	// verified in the repository rather than assumed, so naming one that does
 	// not exist (a push-delivered source has no remote at all) costs nothing.
 	UpstreamRef string `json:"upstreamRef,omitempty"`

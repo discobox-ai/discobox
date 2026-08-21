@@ -35,7 +35,7 @@ func TestParseCopyItems(t *testing.T) {
 // mistake worth reporting rather than a silently ignored flag.
 func TestProjectCreateRejectsCopyWithoutFrom(t *testing.T) {
 	cmd := NewRootCommand()
-	cmd.SetArgs([]string{"box", "project", "create", "Thing", "--copy", "pools"})
+	cmd.SetArgs([]string{"admin", "project", "create", "Thing", "--copy", "pools"})
 	cmd.SetOut(&strings.Builder{})
 	cmd.SetErr(&strings.Builder{})
 

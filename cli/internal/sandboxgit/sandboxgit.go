@@ -3,7 +3,7 @@
 // those requests, and the client-side refs that record what has been sent.
 //
 // It is shared by every direction that transport runs in — create's delivery
-// push (ADR 0001), `disco apply`'s fetch (ADR 0014), and `disco push`'s re-push
+// push (ADR 0001), `discobox apply`'s fetch (ADR 0014), and `discobox push`'s re-push
 // (ADR 0058) — so all three address a sandbox the same way.
 package sandboxgit
 
@@ -45,11 +45,11 @@ func repositoryURL(serverURL, projectID, sandboxID, kind string, source apimodel
 		// git only speaks URLs, so callers bridge a unix socket or named pipe
 		// endpoint to a loopback HTTP address before they get here. Reaching
 		// this means a caller passed the raw endpoint instead.
-		return "", fmt.Errorf("cannot reach the sandbox repository at server endpoint %q: an HTTP endpoint is required", serverURL)
+		return "", fmt.Errorf("cannot reach the discobox repository at server endpoint %q: an HTTP endpoint is required", serverURL)
 	}
 	slug := strings.TrimSpace(source.Slug.Or(""))
 	if slug == "" {
-		return "", fmt.Errorf("sandbox source has no slug to address its repository")
+		return "", fmt.Errorf("discobox source has no slug to address its repository")
 	}
 	return fmt.Sprintf("%s/projects/%s/sandboxes/%s/%s/%s.git",
 		base, url.PathEscape(projectID), url.PathEscape(sandboxID), kind, url.PathEscape(slug)), nil

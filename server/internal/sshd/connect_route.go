@@ -13,7 +13,7 @@ import (
 // listener feeds, so both front doors are one server with one authentication
 // path.
 //
-// This is what lets `disco tools ssh` work against a server that binds no SSH
+// This is what lets `discobox tools ssh` work against a server that binds no SSH
 // port. A machine-wide TCP listener is opted into (ADR 0024); reaching the
 // server the way the CLI already reaches it needs no new surface, because it
 // *is* the existing surface.

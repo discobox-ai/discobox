@@ -4,8 +4,8 @@
 
 - Root module `github.com/obot-platform/discobox`: stable contracts/API module.
 - `api`: server API definitions and tests, pending schema-first conversion.
-- `cli`: nested Go module for the `disco` CLI.
-- `cli/cmd/disco`: CLI entrypoint.
+- `cli`: nested Go module for the `discobox` CLI.
+- `cli/cmd/discobox`: CLI entrypoint.
 - `cli/internal/cli`: CLI command implementation.
 - `server`: nested Go module for the control plane implementation.
 - `server/cmd/discobox-server`: HTTP server entrypoint.

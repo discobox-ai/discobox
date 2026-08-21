@@ -147,14 +147,14 @@ type Sandbox struct {
 // the directory every command it runs inherits.
 //
 // It is read once at startup. The project is a property of the session the way
-// `disco -p` is a property of a shell, not something the window changes. What
+// `discobox -p` is a property of a shell, not something the window changes. What
 // the run options offer as a harness is not here — that is the harnesses, which
 // are read on their own and change while the window is up.
 type Session struct {
 	Project        string
 	DefaultProject string
 
-	// Directory is the project directory `disco run` would cut a sandbox from,
+	// Directory is the project directory `discobox run` would cut a sandbox from,
 	// and Branch is what is checked out in it.
 	Directory string
 	Branch    string
@@ -283,7 +283,7 @@ func (h Harness) displayName() string {
 	return h.ID
 }
 
-// flagName is what `disco run --harness` takes for this harness.
+// flagName is what `discobox run --harness` takes for this harness.
 func (h Harness) flagName() string {
 	if slug := strings.TrimSpace(h.Slug); slug != "" {
 		return slug
@@ -456,7 +456,7 @@ type Exec struct {
 // has stopped — so the workspace never has to know its concrete id.
 const ExecPrimary = "primary"
 
-// RunRequest is what Enter in the prompt asks for: `disco run`'s arguments, and
+// RunRequest is what Enter in the prompt asks for: `discobox run`'s arguments, and
 // nothing the command does not have.
 type RunRequest struct {
 	Prompt  string
@@ -577,7 +577,7 @@ type Forward interface {
 
 // DataSource is everything the window needs from the outside. It is implemented
 // once, in the cli package, over the same API client and code paths the
-// non-interactive commands use: the launcher runs `disco`'s commands rather
+// non-interactive commands use: the launcher runs `discobox`'s commands rather
 // than a second implementation of them.
 type DataSource interface {
 	// Session is read once at startup, and is what the header and the run

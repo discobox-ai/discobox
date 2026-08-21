@@ -42,27 +42,27 @@ func (a *App) newToolsVSCodeCommand(sandboxID *string) *cobra.Command {
 	var editor string
 	var reuseWindow bool
 	cmd := &cobra.Command{
-		Use:     "vscode [SANDBOX_ID] [-- EDITOR_ARG...]",
+		Use:     "vscode [DISCOBOX_ID] [-- EDITOR_ARG...]",
 		Aliases: []string{"code"},
-		Short:   "Open a sandbox in VS Code over Remote-SSH",
-		Long: `Open a sandbox in VS Code, editing it in place over Remote-SSH.
+		Short:   "Open a discobox in VS Code over Remote-SSH",
+		Long: `Open a discobox in VS Code, editing it in place over Remote-SSH.
 
 This refreshes the ssh_config this CLI manages for the project — the same one
-` + "`disco box ssh-config --write`" + ` writes — and then opens the sandbox's working
+` + "`discobox admin ssh-config --write`" + ` writes — and then opens the discobox's working
 tree in a new VS Code window pointed at it. The stanzas reach the server through
 this CLI rather than an address, so the server needs no SSH port and this
 command holds nothing open: once VS Code has the host, it connects on its own
 and reconnects on its own.
 
-Without --source the window opens on the sandbox's primary source.
+Without --source the window opens on the discobox's primary source.
 
 Arguments are passed to the editor untouched; only the flags before them are
 consumed here. Use -- when an editor argument would otherwise be read as one of
 them.`,
-		Example: `  disco tools vscode
-  disco tools vscode mybox
-  disco tools vscode -s docs
-  disco tools vscode --editor cursor`,
+		Example: `  discobox tools vscode
+  discobox tools vscode mybox
+  discobox tools vscode -s docs
+  discobox tools vscode --editor cursor`,
 		// Stop parsing at the first positional argument so a leading sandbox
 		// reference and anything meant for the editor reach us intact.
 		Args: cobra.ArbitraryArgs,
@@ -77,7 +77,7 @@ them.`,
 		},
 	}
 	cmd.Flags().SetInterspersed(false)
-	cmd.Flags().StringVarP(&source, "source", "s", "", "Source to open, named by its slug; defaults to the sandbox's primary source")
+	cmd.Flags().StringVarP(&source, "source", "s", "", "Source to open, named by its slug; defaults to the discobox's primary source")
 	cmd.Flags().StringVar(&editor, "editor", "", "Editor binary to run (default: $"+vscodeEditorEnv+", or the first of "+strings.Join(vscodeEditors, ", ")+" on PATH)")
 	cmd.Flags().BoolVar(&reuseWindow, "reuse-window", false, "Open in the current VS Code window instead of a new one")
 	return cmd
@@ -196,7 +196,7 @@ func (a *App) vscodeRemoteTarget(cmd *cobra.Command, client *apiclientgen.Client
 		// Every spelling of this sandbox was claimed by another one, so the
 		// config carries no stanza it could be reached by. See
 		// sshConfigHostPatterns.
-		return vscodeRemoteTarget{}, fmt.Errorf("sandbox %s has no unambiguous SSH host alias; rename it or the sandbox whose name spells its ID", sandboxID)
+		return vscodeRemoteTarget{}, fmt.Errorf("discobox %s has no unambiguous SSH host alias; rename it or the discobox whose name spells its ID", sandboxID)
 	}
 	folder, err := a.vscodeFolder(cmd.Context(), client, projectID, sandboxID, sourceSlug)
 	if err != nil {
@@ -208,7 +208,7 @@ func (a *App) vscodeRemoteTarget(cmd *cobra.Command, client *apiclientgen.Client
 // vscodeFolder is the directory in the sandbox the window opens on.
 //
 // An SSH session lands in the run user's home directory rather than the
-// sandbox's exec default, so unlike `disco tools git` this cannot leave the
+// sandbox's exec default, so unlike `discobox tools git` this cannot leave the
 // directory unsaid: without one, VS Code would open a window on the home
 // directory and the working tree would be somewhere else. Empty is still
 // possible — a sandbox may not have told us where its source landed — and then

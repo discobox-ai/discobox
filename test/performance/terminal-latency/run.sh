@@ -5,7 +5,7 @@ umask 077
 repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/../../.." && pwd)"
 cd "$repo_root"
 
-# Empty means "wherever this machine's disco talks to": `task dev` binds the
+# Empty means "wherever this machine's discobox talks to": `task dev` binds the
 # local socket and nothing else, and the path of that socket is the CLI's to
 # resolve, not this script's to recompute.
 server="${DISCOBOX_TERMINAL_LATENCY_SERVER:-}"
@@ -87,7 +87,7 @@ echo "Building the current CLI and deterministic latency harness image..."
 go tool task build:cli
 go tool task build:terminal-latency-image
 
-cli=("$repo_root/build/disco")
+cli=("$repo_root/build/discobox")
 if [ -n "$server" ]; then
 	cli+=(--server "$server")
 fi
@@ -97,10 +97,10 @@ if [ -n "${DISCOBOX_TOKEN:-}" ]; then
 fi
 
 # Reachability is checked through the CLI rather than curl: the server may be
-# listening on a unix socket, an iroh endpoint, or a URL, and disco is what
+# listening on a unix socket, an iroh endpoint, or a URL, and discobox is what
 # resolves all three. --no-start above keeps a missing server a failure instead
 # of launching one.
-if ! "${cli[@]}" box harness ls >/dev/null 2>&1; then
+if ! "${cli[@]}" admin harness ls >/dev/null 2>&1; then
 	echo "terminal latency: no development server at ${server:-the default endpoint}; start one with 'go tool task dev'" >&2
 	exit 1
 fi
@@ -113,7 +113,7 @@ wait_for_sandbox_deletion() {
 	local id="$1"
 	local attempt
 	for attempt in {1..60}; do
-		if ! "${cli[@]}" box sandbox get "$id" >/dev/null 2>&1; then
+		if ! "${cli[@]}" admin discobox get "$id" >/dev/null 2>&1; then
 			return 0
 		fi
 		sleep 0.5
@@ -133,19 +133,19 @@ cleanup() {
 	fi
 
 	if [ -n "$sandbox_id" ]; then
-		"${cli[@]}" box sandbox delete "$sandbox_id" >/dev/null 2>&1 || true
+		"${cli[@]}" admin discobox delete "$sandbox_id" >/dev/null 2>&1 || true
 		if ! wait_for_sandbox_deletion "$sandbox_id"; then
 			echo "terminal latency: sandbox $sandbox_id is still deleting; harness cleanup may need a retry" >&2
 		fi
 	fi
 	if [ -n "$harness_id" ]; then
-		configure_sandbox_id="$("${cli[@]}" box harness get "$harness_id" 2>/dev/null | jq -r '.configureSandboxId // empty' || true)"
+		configure_sandbox_id="$("${cli[@]}" admin harness get "$harness_id" 2>/dev/null | jq -r '.configureSandboxId // empty' || true)"
 		if [ -n "$configure_sandbox_id" ] && [ "$configure_sandbox_id" != "$sandbox_id" ]; then
-			"${cli[@]}" box sandbox delete "$configure_sandbox_id" >/dev/null 2>&1 || true
+			"${cli[@]}" admin discobox delete "$configure_sandbox_id" >/dev/null 2>&1 || true
 			wait_for_sandbox_deletion "$configure_sandbox_id" || true
 		fi
-		"${cli[@]}" box harness deconfigure "$harness_id" >/dev/null 2>&1 || true
-		"${cli[@]}" box harness delete "$harness_id" >/dev/null 2>&1 || true
+		"${cli[@]}" admin harness deconfigure "$harness_id" >/dev/null 2>&1 || true
+		"${cli[@]}" admin harness delete "$harness_id" >/dev/null 2>&1 || true
 	fi
 	exit "$status"
 }
@@ -163,7 +163,7 @@ delete_probe_sandbox() {
 		container_id=""
 		return 0
 	fi
-	"${cli[@]}" box sandbox delete "$id" >/dev/null
+	"${cli[@]}" admin discobox delete "$id" >/dev/null
 	if ! wait_for_sandbox_deletion "$id"; then
 		echo "terminal latency: sandbox $id did not finish deleting" >&2
 		return 1
@@ -179,7 +179,7 @@ create_probe_sandbox() {
 	local sandbox_json
 	sandbox_name="$harness_name-$mode-$profile"
 	local sandbox_args=(
-		box sandbox create
+		admin discobox create
 		--name "$sandbox_name"
 		--harness-config "$harness_id"
 		--cpu-vcpus "$cpu_vcpus"
@@ -232,13 +232,13 @@ profile_settings() {
 }
 
 echo "Registering disposable harness $harness_name..."
-harness_json="$("${cli[@]}" box harness create \
+harness_json="$("${cli[@]}" admin harness create \
 	--name "$harness_name" \
 	--slug "$harness_name" \
 	--image "$image")"
 harness_id="$(jq -er '.id' <<<"$harness_json")"
 
-timeout 3m "${cli[@]}" box harness configure "$harness_id" </dev/null >"$output_dir/configure.json"
+timeout 3m "${cli[@]}" admin harness configure "$harness_id" </dev/null >"$output_dir/configure.json"
 
 mode_enabled() {
 	case ",$modes," in
@@ -286,7 +286,7 @@ if mode_enabled direct; then
 			--project "$project"
 			--sandbox "$sandbox_id"
 			--sandbox-name "$sandbox_name"
-			--cli "$repo_root/build/disco"
+			--cli "$repo_root/build/discobox"
 			--mode direct
 			--samples "$samples"
 			--sequence-start "$((20000001 + profile_index * 100000))"
@@ -316,7 +316,7 @@ if mode_enabled tui; then
 		--project "$project"
 		--sandbox "$sandbox_id"
 		--sandbox-name "$sandbox_name"
-		--cli "$repo_root/build/disco"
+		--cli "$repo_root/build/discobox"
 		--mode tui
 		--samples "$samples"
 		--sequence-start 30000001

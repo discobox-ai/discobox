@@ -86,7 +86,7 @@ func (a *App) resolveProjectID(ctx context.Context, client *apiclientgen.Client,
 }
 
 func (a *App) resolveSandboxID(ctx context.Context, client *apiclientgen.Client, projectID, value string) (string, error) {
-	id, err := parseIDArg(value, "sandbox ID")
+	id, err := parseIDArg(value, "discobox ID")
 	if err != nil || !isResolvableShortID(id) {
 		return id, err
 	}
@@ -102,7 +102,7 @@ func (a *App) resolveSandboxID(ctx context.Context, client *apiclientgen.Client,
 	for _, sandbox := range body.GetSandboxes() {
 		ids = append(ids, sandbox.ID)
 	}
-	return resolveShortID(id, "sandbox ID", ids)
+	return resolveShortID(id, "discobox ID", ids)
 }
 
 func (a *App) resolveHarnessConfigID(ctx context.Context, client *apiclientgen.Client, projectID, value string) (string, error) {
@@ -120,7 +120,7 @@ func (a *App) resolveHarnessConfigID(ctx context.Context, client *apiclientgen.C
 	}
 	harnesses := body.GetHarnessConfigs()
 	// Prefer the stable slug (e.g. "codex"), then the display name, so the harness
-	// subcommands accept the same selectors as `box sandbox create --harness` and `prompt -a`.
+	// subcommands accept the same selectors as `admin discobox create --harness` and `prompt -a`.
 	for _, harness := range harnesses {
 		if harness.Slug == value {
 			return harness.ID, nil

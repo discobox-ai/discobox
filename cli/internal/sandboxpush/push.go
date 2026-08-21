@@ -1,4 +1,4 @@
-// Package sandboxpush implements ADR 0058's `disco push`: sending a local
+// Package sandboxpush implements ADR 0058's `discobox push`: sending a local
 // branch's commits into the origin repository a push-delivered source's sandbox
 // fetches from, so the sandbox can rebase onto work done since it was created.
 //
@@ -143,9 +143,9 @@ func CheckPushDelivered(source apimodel.GitSource) error {
 		return nil
 	}
 	if strings.TrimSpace(source.LocalDirectory.Or("")) == "" {
-		return fmt.Errorf("%w: the sandbox clones it from a remote, which it can fetch from directly", ErrNotPushDelivered)
+		return fmt.Errorf("%w: the discobox clones it from a remote, which it can fetch from directly", ErrNotPushDelivered)
 	}
-	return fmt.Errorf("%w: the sandbox reads your directory live, so `git fetch origin` inside it already sees new commits", ErrNotPushDelivered)
+	return fmt.Errorf("%w: the discobox reads your directory live, so `git fetch origin` inside it already sees new commits", ErrNotPushDelivered)
 }
 
 // pushRefs is the local revision to push and the origin branch it lands on.
@@ -189,7 +189,7 @@ func checkRelatedHistory(ctx context.Context, repoRoot string, source apimodel.G
 		return nil //nolint:nilerr // A base commit this repository does not have says nothing about relatedness.
 	}
 	if _, err := gitutil.Output(ctx, repoRoot, nil, nil, "merge-base", base, commit); err != nil {
-		return fmt.Errorf("%s shares no history with the commit the sandbox was created from (%s), so nothing in the sandbox could rebase onto it; pass --force to push it anyway",
+		return fmt.Errorf("%s shares no history with the commit the discobox was created from (%s), so nothing in the discobox could rebase onto it; pass --force to push it anyway",
 			commit[:min(len(commit), 12)], base[:min(len(base), 12)])
 	}
 	return nil
@@ -203,13 +203,13 @@ func pushError(err error, hasLease, forced bool) error {
 	message := err.Error()
 	switch {
 	case forced:
-		return fmt.Errorf("push to the sandbox's origin: %w", err)
+		return fmt.Errorf("push to the discobox's origin: %w", err)
 	case hasLease && strings.Contains(message, "stale info"):
-		return fmt.Errorf("the sandbox's origin has moved since your last push — another machine pushed to it, so rewinding it now would lose those commits; pass --force to push anyway: %w", err)
+		return fmt.Errorf("the discobox's origin has moved since your last push — another machine pushed to it, so rewinding it now would lose those commits; pass --force to push anyway: %w", err)
 	case strings.Contains(message, "non-fast-forward") || strings.Contains(message, "fetch first"):
-		return fmt.Errorf("the sandbox's origin holds commits this push would drop, and this machine has no record of putting them there; pass --force to push anyway: %w", err)
+		return fmt.Errorf("the discobox's origin holds commits this push would drop, and this machine has no record of putting them there; pass --force to push anyway: %w", err)
 	default:
-		return fmt.Errorf("push to the sandbox's origin: %w", err)
+		return fmt.Errorf("push to the discobox's origin: %w", err)
 	}
 }
 

@@ -151,7 +151,7 @@ func (s *Service) CreateSandbox(ctx context.Context, projectID string, input ser
 		return nil, fmt.Errorf("sandbox name is required")
 	}
 	// Names are unique within a project (idx_sandbox_project_name) because they
-	// are an addressable handle, not just a label: `disco box ssh-config` emits
+	// are an addressable handle, not just a label: `discobox admin ssh-config` emits
 	// one as an ssh_config Host alias, and ssh applies the first matching block,
 	// so a second sandbox answering to the same name would silently take the
 	// first one's connections.
@@ -210,7 +210,7 @@ func (s *Service) CreateSandbox(ctx context.Context, projectID string, input ser
 		// harnessMode "config" is exempt: that is the configure flow itself.
 		if !harnessConfig.Configured {
 			return nil, apperrors.NewStatusError(http.StatusConflict,
-				fmt.Sprintf("harness %q is not configured; run `disco box harness configure %s` first", harnessConfig.Slug, harnessConfig.Slug))
+				fmt.Sprintf("harness %q is not configured; run `discobox admin harness configure %s` first", harnessConfig.Slug, harnessConfig.Slug))
 		}
 		if strings.TrimSpace(harnessConfig.Image) != "" {
 			image = strings.TrimSpace(harnessConfig.Image)
@@ -341,7 +341,7 @@ func (s *Service) resolveHarnessConfigID(ctx context.Context, project *model.Pro
 		// The default was deleted. That is an absent default like any other.
 	}
 	return "", apperrors.NewStatusError(http.StatusConflict,
-		"no harness given and this project has no default; pass --harness, or set one with `disco box harness set-default <harness>`")
+		"no harness given and this project has no default; pass --harness, or set one with `discobox admin harness set-default <harness>`")
 }
 
 func (s *Service) GetSandbox(ctx context.Context, projectID, sandboxID string) (*model.Sandbox, error) {
@@ -875,7 +875,7 @@ func verifySourcePushCommits(pending []gitSourceEntry, reported map[string]strin
 	return nil
 }
 
-// CompleteSandboxApply records a successful `disco apply` (ADR 0014): the
+// CompleteSandboxApply records a successful `discobox apply` (ADR 0014): the
 // client cherry-picked a source's sandbox commits into a scratch worktree and
 // fast-forwarded them onto a host working tree, and reports the result here.
 // Called once per source, per apply run, only after the fast-forward has

@@ -45,7 +45,7 @@ func NewRootCommand() *cobra.Command {
 
 	app := &App{}
 	cmd := &cobra.Command{
-		Use:           "disco",
+		Use:           "discobox",
 		Short:         "Discobox command line client",
 		SilenceUsage:  true,
 		SilenceErrors: true,
@@ -53,7 +53,7 @@ func NewRootCommand() *cobra.Command {
 			app.errOut = cmd.ErrOrStderr()
 			return app.validate()
 		},
-		// Bare `disco` at a terminal opens the launcher: it is the one thing
+		// Bare `discobox` at a terminal opens the launcher: it is the one thing
 		// you can ask for without knowing a subcommand, and typing the name of
 		// a program is how you ask for it. Anywhere else — a pipe, a script,
 		// CI — it prints its help, because a full-screen window is not an
@@ -69,14 +69,14 @@ func NewRootCommand() *cobra.Command {
 			}
 			// No leader override here: validate already took the environment's,
 			// and --leader is the tui command's own. A flag would have to be a
-			// persistent one to be reachable from a bare `disco`, and every
+			// persistent one to be reachable from a bare `discobox`, and every
 			// subcommand would then carry a flag that means nothing to it.
 			return app.runTUI(cmd, "")
 		},
 	}
 	cmd.PersistentFlags().StringVar(&app.serverURL, "server", envOrDefault("DISCOBOX_SERVER", endpoint.DefaultEndpoint()), "Discobox API server endpoint")
 	cmd.PersistentFlags().StringVarP(&app.projectID, "project", "p", envOrDefault("DISCOBOX_PROJECT", defaultProjectAlias), "Project ID for this invocation; use default for the user's default project")
-	cmd.PersistentFlags().StringVarP(&app.source, "chdir", "C", ".", "Source directory or Git repository to act on, optionally with @REF; its Git repository root identifies the sandboxes ls lists and run creates")
+	cmd.PersistentFlags().StringVarP(&app.source, "chdir", "C", ".", "Source directory or Git repository to act on, optionally with @REF; its Git repository root identifies the discoboxes ls lists and run creates")
 	// Beta: the flag works but is undocumented until the source-selection UX is
 	// settled, so it stays out of help text and examples.
 	_ = cmd.PersistentFlags().MarkHidden("chdir")
@@ -98,7 +98,7 @@ func NewRootCommand() *cobra.Command {
 	cmd.AddCommand(app.newSecretCommand())
 	cmd.AddCommand(app.newTUICommand())
 	cmd.AddCommand(app.newCompletionCommand())
-	cmd.AddCommand(app.newBoxCommand())
+	cmd.AddCommand(app.newAdminCommand())
 	// Cobra's usage template always lists a subcommand literally named "help",
 	// even when hidden. Give the help command another name so it stays out of the
 	// command list; the --help flag still works on every command.
@@ -248,7 +248,7 @@ func (a *App) ensureLocalServer(ctx context.Context) error {
 // localServerEnv configures the server this CLI launches for itself. It listens
 // on the endpoint the CLI is about to dial and nothing else: an autolaunched
 // server is this user's, and opening a TCP port on their machine is not
-// something running `disco` should imply. An operator who needs HTTP names it
+// something running `discobox` should imply. An operator who needs HTTP names it
 // in DISCOBOX_SERVER_LISTEN and runs the server themselves.
 func localServerEnv(endpoint string) []string {
 	env := []string{
@@ -262,7 +262,7 @@ func localServerEnv(endpoint string) []string {
 		"DISCOBOX_CACHE_DIR",
 		"DISCOBOX_CONFIG_DIR",
 		"DISCOBOX_DATA_DIR",
-		"DISCOBOX_DEFAULT_SANDBOX_IMAGE",
+		"DISCOBOX_DEFAULT_DISCOBOX_IMAGE",
 		"DISCOBOX_ENCRYPTION_KEY",
 		"DISCOBOX_STATE_DIR",
 		"OTEL_METRICS_EXPORTER",

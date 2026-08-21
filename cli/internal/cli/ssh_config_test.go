@@ -138,7 +138,7 @@ func runSSHConfig(t *testing.T, fake *sshConfigFakeServer, extraArgs ...string) 
 	cmd.SetOut(&out)
 	cmd.SetErr(&errOut)
 	cmd.SetArgs(append([]string{
-		"--server", server.URL, "--project", "project-1", "box", "ssh-config",
+		"--server", server.URL, "--project", "project-1", "admin", "ssh-config",
 		"--identity-file", identity,
 	}, extraArgs...))
 	err = cmd.Execute()
@@ -190,7 +190,7 @@ func TestSSHConfigTunnelsThroughTheCLI(t *testing.T) {
 	if err != nil {
 		t.Fatalf("execute ssh-config: %v", err)
 	}
-	if !strings.Contains(out, " box ssh-proxy\n") {
+	if !strings.Contains(out, " admin ssh-proxy\n") {
 		t.Fatalf("output has no ProxyCommand naming the proxy subcommand:\n%s", out)
 	}
 	// An address in a stanza would be dialed instead of the proxy, and there is
@@ -230,7 +230,7 @@ func TestSSHProxyCommandLineQuotesItsWords(t *testing.T) {
 	if err != nil {
 		t.Fatalf("sshProxyCommandLine: %v", err)
 	}
-	if !strings.HasSuffix(line, " box ssh-proxy") {
+	if !strings.HasSuffix(line, " admin ssh-proxy") {
 		t.Fatalf("ProxyCommand does not end in the subcommand it names: %q", line)
 	}
 	if !strings.Contains(line, `'unix:///run/disco'\''s dir/api.sock'`) {
@@ -317,7 +317,7 @@ func TestSSHConfigDoesNotReEnrollAKnownKey(t *testing.T) {
 		cmd := NewRootCommand()
 		cmd.SetOut(new(strings.Builder))
 		cmd.SetErr(new(strings.Builder))
-		cmd.SetArgs([]string{"--server", server.URL, "--project", "project-1", "box", "ssh-config",
+		cmd.SetArgs([]string{"--server", server.URL, "--project", "project-1", "admin", "ssh-config",
 			"--identity-file", identity})
 		if err := cmd.Execute(); err != nil {
 			t.Fatalf("execute ssh-config: %v", err)

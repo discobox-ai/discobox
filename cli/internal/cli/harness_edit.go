@@ -64,7 +64,7 @@ func (a *App) newHarnessEditCommand() *cobra.Command {
 		Long: `Open one of a harness config's files in $VISUAL/$EDITOR and save the result back.
 
 PATH is the file's path as shown by "harnesses get" or the launcher's harnesses
-screen, which is what "disco configure" opens.
+screen, which is what "discobox configure" opens.
 Files written by the configure flow are edited in place of the configured set;
 image-declared files are edited in the declared set.`,
 		Args:              cobra.ExactArgs(2),
@@ -163,7 +163,7 @@ func (a *App) editHarnessFile(ctx context.Context, client *apiclientgen.Client, 
 // the result and whether it differs. The temp file keeps the target's
 // extension so editors pick the right syntax mode.
 func editInEditor(ctx context.Context, path, content string, stdin io.Reader, stdout, stderr io.Writer) (string, bool, error) {
-	tmp, err := os.CreateTemp("", "disco-edit-*"+filepath.Ext(path))
+	tmp, err := os.CreateTemp("", "discobox-edit-*"+filepath.Ext(path))
 	if err != nil {
 		return "", false, err
 	}

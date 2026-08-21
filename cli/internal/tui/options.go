@@ -4,7 +4,7 @@ import (
 	"strings"
 )
 
-// runOptions is every flag `disco run` takes, laid out as one editable list.
+// runOptions is every flag `discobox run` takes, laid out as one editable list.
 //
 // The panel is a picker, not a form: left and right change a value in place,
 // so the common case — swap the harness, turn dirty-carry off — never opens a
@@ -110,13 +110,13 @@ type optionSet struct {
 // Index into optionSet.opts. The command builder reads by name, so the order
 // here is only the order they are shown in.
 //
-// These are `disco run`'s flags and nothing else: --harness, --include-dirty,
+// These are `discobox run`'s flags and nothing else: --harness, --include-dirty,
 // --detach, -e and -s, plus -C, the source the sandbox is cut from. A launcher
 // that offers options the command does not have is a launcher you cannot
 // reproduce from a shell.
 //
 // The project is not among them. It is set once for the session, the way
-// `disco -p foo` sets it for a shell, so it belongs in the header rather than
+// `discobox -p foo` sets it for a shell, so it belongs in the header rather than
 // in a panel you would have to open to find out where a sandbox went.
 const (
 	optHarness = iota
@@ -271,7 +271,7 @@ func (o *optionSet) move(delta int) {
 	o.cursor = (o.cursor + delta + len(o.opts)) % len(o.opts)
 }
 
-// request is what Enter actually asks for: the options as `disco run`'s
+// request is what Enter actually asks for: the options as `discobox run`'s
 // arguments, with the prompt from the composer.
 func (o *optionSet) request(prompt string) RunRequest {
 	req := RunRequest{
@@ -283,7 +283,7 @@ func (o *optionSet) request(prompt string) RunRequest {
 	}
 	// With nothing typed the source is the folder the header is on. Naming the
 	// session's own directory would only repeat the CLI's default, so that one
-	// case stays empty and `disco run` resolves it the way it always does.
+	// case stays empty and `discobox run` resolves it the way it always does.
 	if req.Source == "" && o.sourceDir() != o.session.Directory {
 		req.Source = o.sourceDir()
 	}
@@ -361,12 +361,12 @@ func (o *optionSet) chips(st *styles) string {
 	return st.chipOn.Render("⏵⏵ ") + strings.Join(parts, st.chip.Render(" · "))
 }
 
-// command renders the `disco run` invocation the current options describe. It
+// command renders the `discobox run` invocation the current options describe. It
 // is the panel's own documentation: what is on screen is reproducible from a
 // shell, and if it is not, the panel is offering something the command cannot.
 func (o *optionSet) command(prompt string) string {
 	req := o.request(prompt)
-	args := []string{"disco"}
+	args := []string{"discobox"}
 	if p := o.session.Project; p != "" && p != o.session.DefaultProject {
 		args = append(args, "-p", p)
 	}

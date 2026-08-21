@@ -89,7 +89,7 @@ func TestSandboxExecAttachDoneDistinguishesGracefulExitFromLostRuntime(t *testin
 // A terminal cannot outlive its sandbox: when the exec read fails and the
 // sandbox is stopping or stopped, the attach ends instead of reconnecting
 // forever. The client never restarts the sandbox — autostart is a future
-// `disco attach` concern.
+// `discobox attach` concern.
 func TestSandboxExecAttachDoneEndsWhenSandboxStops(t *testing.T) {
 	const sandboxID = "sbx_9qk5n25t2hh2rv00"
 	for _, phase := range []string{"stopping", "stopped"} {

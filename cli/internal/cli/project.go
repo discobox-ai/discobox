@@ -74,7 +74,7 @@ func (a *App) newProjectCreateCommand() *cobra.Command {
 	var opts projectCreateOptions
 	cmd := &cobra.Command{Use: "create NAME", Short: "Create a project", Long: `Create a project.
 
-A project is the ownership boundary every sandbox, pool, provider instance,
+A project is the ownership boundary every discobox, pool, provider instance,
 harness config, and secret lives inside. Every new project is seeded with the
 built-in harnesses, unconfigured.
 
@@ -124,9 +124,9 @@ func (a *App) newProjectUpdateCommand() *cobra.Command {
 	var archiveRetention time.Duration
 	cmd := &cobra.Command{Use: "update PROJECT_ID", Short: "Update a project", Long: `Update a project.
 
---archive-retention sets how long this project's archived sandboxes are kept
-before they are purged. Deleting a sandbox archives it, so this is how long a
-deleted sandbox can still be restored with "disco box sandbox unarchive".
+--archive-retention sets how long this project's archived discoboxes are kept
+before they are purged. Deleting a discobox archives it, so this is how long a
+deleted discobox can still be restored with "discobox admin discobox unarchive".
 Zero restores the server default.`, Args: cobra.ExactArgs(1), ValidArgsFunction: a.completeProjects, RunE: func(cmd *cobra.Command, args []string) error {
 		client, err := a.apiClient()
 		if err != nil {
@@ -157,7 +157,7 @@ Zero restores the server default.`, Args: cobra.ExactArgs(1), ValidArgsFunction:
 		return a.writeProject(cmd, project)
 	}}
 	cmd.Flags().StringVar(&name, "name", "", "Project display name")
-	cmd.Flags().DurationVar(&archiveRetention, "archive-retention", 0, "How long archived sandboxes are kept before being purged (e.g. 48h); 0 restores the server default")
+	cmd.Flags().DurationVar(&archiveRetention, "archive-retention", 0, "How long archived discoboxes are kept before being purged (e.g. 48h); 0 restores the server default")
 	return cmd
 }
 
@@ -194,7 +194,7 @@ default moves the flag off whichever project holds it.`, Args: cobra.ExactArgs(1
 func (a *App) newProjectDeleteCommand() *cobra.Command {
 	return &cobra.Command{Use: "delete PROJECT_ID...", Short: "Delete projects", Long: `Delete projects.
 
-A project with sandboxes or pools is refused: those own runtime hosts and
+A project with discoboxes or pools is refused: those own runtime hosts and
 containers that have to be torn down through their own commands first. The
 default project is refused too; make another project the default first.`, Args: cobra.MinimumNArgs(1), ValidArgsFunction: a.completeProjects, RunE: func(cmd *cobra.Command, args []string) error {
 		client, err := a.apiClient()

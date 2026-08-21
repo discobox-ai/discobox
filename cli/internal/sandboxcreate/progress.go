@@ -10,7 +10,7 @@ package sandboxcreate
 // only thing that can narrate it is the client (ADR 0060).
 //
 // The words live here rather than in each frontend, even though rendering is
-// otherwise the frontend's job: `disco run` and the launcher perform the same
+// otherwise the frontend's job: `discobox run` and the launcher perform the same
 // steps, and two spellings of one stage is a difference users would read as a
 // difference in behavior. Where the line is drawn and when it is cleared is
 // still each frontend's own.
@@ -22,11 +22,11 @@ const (
 	// visible from outside: a clean tree passes through in milliseconds, and a
 	// dirty one spends its time in a snapshot the caller already agreed to.
 	StepPreparingSource Step = "preparing source"
-	StepCreating        Step = "creating the sandbox"
+	StepCreating        Step = "creating the discobox"
 	// StepAwaitingSource is the wait for the sandbox to park ready to receive a
 	// push. Provisioning has to get that far first, so this is the step that
 	// can take a while on a cold pool.
-	StepAwaitingSource Step = "waiting for the sandbox to accept its source"
+	StepAwaitingSource Step = "waiting for the discobox to accept its source"
 	StepPushingSource  Step = "pushing source"
 )
 

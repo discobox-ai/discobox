@@ -13,10 +13,10 @@ pool/sandbox/harness images on source changes, writes the resulting digest to
 ## Driving the dev server
 
 `task dev` binds the local socket and nothing else, which is the same endpoint
-`disco` dials with no `--server`. The CLI binary is at `./build/disco`:
+`discobox` dials with no `--server`. The CLI binary is at `./build/discobox`:
 
 ```bash
-./build/disco --project default box sandbox create \
+./build/discobox --project default admin discobox create \
   --name verify-x --harness claude-code --wait --wait-timeout 150s
 docker ps --format '{{.ID}}\t{{.Image}}\t{{.Names}}' | grep <sandbox-id>
 ```
@@ -33,7 +33,7 @@ ps aux | grep -E "watchnbuild|task dev"   # find the `go tool watchnbuild` PID
 pstree -p <wnb-pid>                       # its child discobox-server is the real one
 ```
 
-`--image <tag>` on `box sandbox create` does **not** reliably override the
+`--image <tag>` on `admin discobox create` does **not** reliably override the
 image when a default harness config auto-applies — the harness config's own
 registered image wins. Don't rely on it; rebuild the harness's `:local` tag
 instead (see below) and create a sandbox with the matching `--harness`.
@@ -60,7 +60,7 @@ docker build -f harness/claude-code/Dockerfile \
 Both build fast from cache when only a Go source file or image/systemd file
 changed (only the affected layers rebuild). Then create a sandbox with
 `--harness claude-code` — pool-agent resolves the harness's already-registered
-image, so a fresh `box sandbox create` picks up the freshly built `:local`
+image, so a fresh `admin discobox create` picks up the freshly built `:local`
 tag's content automatically as long as the harness config was registered
 against that base (it usually is, since `:local` is a stable tag name reused
 across builds).
@@ -114,21 +114,21 @@ npipe endpoint the CLI defaults to, so a live provider/pool is usually already
 there — check before assuming a cold start:
 
 ```bash
-go tool task build:cli                     # -> build/disco.exe (deps: build:cp-relay)
-./build/disco.exe box provider ls          # wslc provider
-./build/disco.exe box pool ls              # state=active ready=true means you can create
+go tool task build:cli                     # -> build/discobox.exe (deps: build:cp-relay)
+./build/discobox.exe admin provider ls          # wslc provider
+./build/discobox.exe admin pool ls              # state=active ready=true means you can create
 ```
 
 Drive it exactly as a user would, from a source directory:
 
 ```bash
 cd <some-git-repo>
-/e/src/disco2/build/disco.exe run -d --harness shell --include-dirty=false "probe"
-/e/src/disco2/build/disco.exe shell <name> sh -lc 'id; echo $HOME'
-/e/src/disco2/build/disco.exe box sandbox purge <id>     # `delete` only archives
+/e/src/disco2/build/discobox.exe run -d --harness shell --include-dirty=false "probe"
+/e/src/disco2/build/discobox.exe shell <name> sh -lc 'id; echo $HOME'
+/e/src/disco2/build/discobox.exe admin discobox purge <id>     # `delete` only archives
 ```
 
-`disco shell <SANDBOX> -- cmd` works. It did not before 2026-08-18 -- the `--`
+`discobox shell <SANDBOX> -- cmd` works. It did not before 2026-08-18 -- the `--`
 arrived as the command's argv[0] and the sandbox 500'd saying it is not an
 executable -- so a build older than that needs the `--` dropped.
 
@@ -138,17 +138,17 @@ that logs the body and answers 503. Nothing in the `run` path calls the API
 before the create POST, so no fake project or harness is needed:
 
 ```bash
-./build/disco.exe --server http://127.0.0.1:18719 --project p-verify   run -d --include-dirty=false "prompt"     # body lands in your capture log
+./build/discobox.exe --server http://127.0.0.1:18719 --project p-verify   run -d --include-dirty=false "prompt"     # body lands in your capture log
 ```
 
 For the same code path on Linux, cross-build (`cd cli && GOOS=linux GOARCH=amd64
-go build -o /tmp/disco ./cmd/disco`) and run it plus the capture listener inside
+go build -o /tmp/discobox ./cmd/discobox`) and run it plus the capture listener inside
 WSL, both on WSL's own loopback -- reaching a Windows-side listener from WSL2 is
 the fiddly part, and running both sides in the guest avoids it.
 
 ## Cleanup
 
 ```bash
-./build/disco --project default box sandbox delete <id> [<id>...]
+./build/discobox --project default admin discobox delete <id> [<id>...]
 docker rm -f <ad-hoc-test-containers>
 ```

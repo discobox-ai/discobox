@@ -16,9 +16,9 @@ func (a *App) newSSHConfigCommand() *cobra.Command {
 	var write bool
 	cmd := &cobra.Command{
 		Use:   "ssh-config",
-		Short: "Emit an SSH client config for this project's sandboxes",
-		Long: "Emit ssh_config(5) Host stanzas — one per sandbox in the current project — plus\n" +
-			"the server's known_hosts line, suitable for `disco box ssh-config >> ~/.ssh/config`\n" +
+		Short: "Emit an SSH client config for this project's discoboxes",
+		Long: "Emit ssh_config(5) Host stanzas — one per discobox in the current project — plus\n" +
+			"the server's known_hosts line, suitable for `discobox admin ssh-config >> ~/.ssh/config`\n" +
 			"or an ssh_config Include directive.\n\n" +
 			"With --write, the stanzas and the server's host key are written to files this\n" +
 			"command owns and rewrites, and ~/.ssh/config gains a single Include line pointing\n" +
@@ -96,7 +96,7 @@ type managedSSHConfigRequest struct {
 // host key is verified under, the key itself, and the Host pattern each sandbox
 // answers to.
 //
-// The aliases are what a caller handing a host to another program needs — `disco
+// The aliases are what a caller handing a host to another program needs — `discobox
 // tools vscode` builds a Remote-SSH target out of one — and they cannot be
 // guessed from outside, since a contested pattern is dropped from every stanza
 // that wanted it.

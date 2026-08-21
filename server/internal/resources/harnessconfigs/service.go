@@ -275,7 +275,7 @@ func builtInDeleteHint(config *model.HarnessConfig) string {
 	case len(config.ConfigCommand) == 0:
 		return ""
 	default:
-		return fmt.Sprintf("; run `disco box harness deconfigure %s` to turn it off", config.Slug)
+		return fmt.Sprintf("; run `discobox admin harness deconfigure %s` to turn it off", config.Slug)
 	}
 }
 

@@ -22,7 +22,7 @@ func runSSHConfigWrite(t *testing.T, fake *sshConfigFakeServer) (home, state, st
 	var out, errOut strings.Builder
 	cmd.SetOut(&out)
 	cmd.SetErr(&errOut)
-	cmd.SetArgs([]string{"--server", server.URL, "--project", "project-1", "box", "ssh-config", "--write"})
+	cmd.SetArgs([]string{"--server", server.URL, "--project", "project-1", "admin", "ssh-config", "--write"})
 	if err := cmd.Execute(); err != nil {
 		t.Fatalf("execute ssh-config --write: %v", err)
 	}
@@ -91,7 +91,7 @@ func TestSSHConfigWriteProducesAUsableConfig(t *testing.T) {
 
 	// The stanzas reach the server through a ProxyCommand, so what ssh runs
 	// has to be in the file it just wrote.
-	if !strings.Contains(config, " box ssh-proxy\n") {
+	if !strings.Contains(config, " admin ssh-proxy\n") {
 		t.Fatalf("managed config has no ProxyCommand:\n%s", config)
 	}
 
@@ -122,7 +122,7 @@ func TestSSHConfigWriteIsIdempotent(t *testing.T) {
 	cmd.SetOut(new(strings.Builder))
 	var errOut strings.Builder
 	cmd.SetErr(&errOut)
-	cmd.SetArgs([]string{"--server", server.URL, "--project", "project-1", "box", "ssh-config", "--write"})
+	cmd.SetArgs([]string{"--server", server.URL, "--project", "project-1", "admin", "ssh-config", "--write"})
 	if err := cmd.Execute(); err != nil {
 		t.Fatalf("second execute: %v", err)
 	}
@@ -159,7 +159,7 @@ func TestSSHConfigWritePreservesAndPrecedesExistingConfig(t *testing.T) {
 	cmd := NewRootCommand()
 	cmd.SetOut(new(strings.Builder))
 	cmd.SetErr(new(strings.Builder))
-	cmd.SetArgs([]string{"--server", server.URL, "--project", "project-1", "box", "ssh-config", "--write"})
+	cmd.SetArgs([]string{"--server", server.URL, "--project", "project-1", "admin", "ssh-config", "--write"})
 	if err := cmd.Execute(); err != nil {
 		t.Fatalf("execute ssh-config --write: %v", err)
 	}
@@ -213,7 +213,7 @@ func TestSSHConfigWriteEmptiesTheConfigWhenTheProjectDoes(t *testing.T) {
 		cmd := NewRootCommand()
 		cmd.SetOut(new(strings.Builder))
 		cmd.SetErr(new(strings.Builder))
-		cmd.SetArgs([]string{"--server", url, "--project", "project-1", "box", "ssh-config", "--write"})
+		cmd.SetArgs([]string{"--server", url, "--project", "project-1", "admin", "ssh-config", "--write"})
 		if err := cmd.Execute(); err != nil {
 			t.Fatalf("execute ssh-config --write: %v", err)
 		}
@@ -266,7 +266,7 @@ func TestSSHConfigWriteIsScopedPerProject(t *testing.T) {
 		cmd := NewRootCommand()
 		cmd.SetOut(new(strings.Builder))
 		cmd.SetErr(new(strings.Builder))
-		cmd.SetArgs([]string{"--server", url, "--project", "project-1", "box", "ssh-config", "--write"})
+		cmd.SetArgs([]string{"--server", url, "--project", "project-1", "admin", "ssh-config", "--write"})
 		if err := cmd.Execute(); err != nil {
 			t.Fatalf("execute ssh-config --write: %v", err)
 		}
@@ -323,7 +323,7 @@ func TestSSHConfigWriteDropsAnIncludeFromAnOldStateDirectory(t *testing.T) {
 	var out, errOut strings.Builder
 	cmd.SetOut(&out)
 	cmd.SetErr(&errOut)
-	cmd.SetArgs([]string{"--server", server.URL, "--project", "project-1", "box", "ssh-config", "--write"})
+	cmd.SetArgs([]string{"--server", server.URL, "--project", "project-1", "admin", "ssh-config", "--write"})
 	if err := cmd.Execute(); err != nil {
 		t.Fatalf("execute ssh-config --write: %v", err)
 	}
@@ -367,7 +367,7 @@ func TestSSHConfigWriteKeepsOtherProjectsIncludes(t *testing.T) {
 	cmd := NewRootCommand()
 	cmd.SetOut(&strings.Builder{})
 	cmd.SetErr(&strings.Builder{})
-	cmd.SetArgs([]string{"--server", server.URL, "--project", "project-1", "box", "ssh-config", "--write"})
+	cmd.SetArgs([]string{"--server", server.URL, "--project", "project-1", "admin", "ssh-config", "--write"})
 	if err := cmd.Execute(); err != nil {
 		t.Fatalf("execute ssh-config --write: %v", err)
 	}

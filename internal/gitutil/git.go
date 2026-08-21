@@ -19,7 +19,7 @@ type StatusChange struct {
 }
 
 // Tracer observes every git command this package runs, so a caller that wants
-// to show its work — `disco apply --debug` — can print the real commands
+// to show its work — `discobox apply --debug` — can print the real commands
 // instead of a paraphrase. Args are already redacted (see redactArg).
 type Tracer func(dir string, args []string)
 

@@ -400,7 +400,7 @@ func TestArchivedSandboxesAreHiddenUntilAskedFor(t *testing.T) {
 	}
 }
 
-// The window opens on the folder it is running in, which is what `disco ls`
+// The window opens on the folder it is running in, which is what `discobox ls`
 // shows, and the header's dropdown is how you reach the others.
 func TestTheFolderFilterOpensOnThisDirectory(t *testing.T) {
 	m := newTestModel(t, newFakeSource(testSandboxes()...))
@@ -562,7 +562,7 @@ func TestSwitchingFolderSwitchesWhereTheRunHappens(t *testing.T) {
 	m := newTestModel(t, ds)
 
 	// On the window's own directory, the run names no source at all: that is
-	// already what `disco run` would use, and passing it would only repeat it.
+	// already what `discobox run` would use, and passing it would only repeat it.
 	if req := m.opts.request(""); req.Source != "" {
 		t.Fatalf("source = %q, want the CLI's own default", req.Source)
 	}
@@ -800,7 +800,7 @@ func wedgedSandbox() Sandbox {
 }
 
 // R repairs the discobox under the cursor, so recovering a wedged one never
-// means leaving the window for `disco box sandbox repair`.
+// means leaving the window for `discobox admin sandbox repair`.
 func TestRepairRunsOnAWedgedBox(t *testing.T) {
 	ds := newFakeSource(wedgedSandbox())
 	m := newTestModel(t, ds)

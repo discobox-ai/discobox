@@ -34,8 +34,8 @@ const (
 	referenceRunSourceRoot = "/workspace"
 	// maxRunSourceSlugLen is the API's slug limit.
 	maxRunSourceSlugLen      = 63
-	runSnapshotCommitMessage = "disco run workspace snapshot\n"
-	runEmptyBaseMessage      = "disco run empty base\n"
+	runSnapshotCommitMessage = "discobox run workspace snapshot\n"
+	runEmptyBaseMessage      = "discobox run empty base\n"
 )
 
 // IncludeDirty decides whether uncommitted local work is carried into the
@@ -208,7 +208,7 @@ func resolveRunSource(ctx context.Context, sourceArg string, opts runSourceOptio
 //
 // A remote repository has no local project directory, so the origin falls back
 // to the working directory — the sandbox is still one you started from here,
-// and "disco ls" here should list it.
+// and "discobox ls" here should list it.
 func ResolveOrigin(ctx context.Context, sourceArg string) (apimodel.Origin, error) {
 	source, _, _ := splitRunSourceRef(sourceArg)
 	dir := strings.TrimSpace(source)
@@ -646,7 +646,7 @@ func resolveRunSourceReference(ctx context.Context, arg string, placement refere
 	directory, name := referenceDestination(resolved, placement)
 	if directory == "" {
 		resolved.close()
-		return resolvedReference{}, fmt.Errorf("cannot tell where to put source %s in the sandbox", arg)
+		return resolvedReference{}, fmt.Errorf("cannot tell where to put source %s in the discobox", arg)
 	}
 	slug := uniqueSlug(slugifySource(name), used)
 	resolved.Slug = slug

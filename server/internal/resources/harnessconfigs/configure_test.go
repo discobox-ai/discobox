@@ -682,7 +682,7 @@ func TestBuiltInDeleteHintOnlySuggestsWhatWouldWork(t *testing.T) {
 		{
 			name:   "on and configurable, so it can be turned off",
 			config: &model.HarnessConfig{Slug: "codex", Configured: true, ConfigCommand: configurable},
-			want:   "; run `disco box harness deconfigure codex` to turn it off",
+			want:   "; run `discobox admin harness deconfigure codex` to turn it off",
 		},
 		{
 			name:   "already off",

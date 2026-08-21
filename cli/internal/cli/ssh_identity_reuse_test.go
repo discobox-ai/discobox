@@ -43,7 +43,7 @@ func TestSSHConfigReusesAnAlreadyEnrolledUserKey(t *testing.T) {
 	var out, errOut strings.Builder
 	cmd.SetOut(&out)
 	cmd.SetErr(&errOut)
-	cmd.SetArgs([]string{"--server", server.URL, "--project", "project-1", "box", "ssh-config"})
+	cmd.SetArgs([]string{"--server", server.URL, "--project", "project-1", "admin", "ssh-config"})
 	if err := cmd.Execute(); err != nil {
 		t.Fatalf("execute ssh-config: %v", err)
 	}
@@ -79,7 +79,7 @@ func TestSSHConfigDoesNotAdoptAnUnenrolledUserKey(t *testing.T) {
 	var out strings.Builder
 	cmd.SetOut(&out)
 	cmd.SetErr(new(strings.Builder))
-	cmd.SetArgs([]string{"--server", server.URL, "--project", "project-1", "box", "ssh-config"})
+	cmd.SetArgs([]string{"--server", server.URL, "--project", "project-1", "admin", "ssh-config"})
 	if err := cmd.Execute(); err != nil {
 		t.Fatalf("execute ssh-config: %v", err)
 	}
@@ -116,7 +116,7 @@ func TestSSHConfigIgnoresAnEnrolledKeyWithNoPrivateHalf(t *testing.T) {
 	var out strings.Builder
 	cmd.SetOut(&out)
 	cmd.SetErr(new(strings.Builder))
-	cmd.SetArgs([]string{"--server", server.URL, "--project", "project-1", "box", "ssh-config"})
+	cmd.SetArgs([]string{"--server", server.URL, "--project", "project-1", "admin", "ssh-config"})
 	if err := cmd.Execute(); err != nil {
 		t.Fatalf("execute ssh-config: %v", err)
 	}
@@ -155,7 +155,7 @@ func TestSSHConfigPrefersTheManagedKeyOnceItExists(t *testing.T) {
 	var out strings.Builder
 	cmd.SetOut(&out)
 	cmd.SetErr(new(strings.Builder))
-	cmd.SetArgs([]string{"--server", server.URL, "--project", "project-1", "box", "ssh-config"})
+	cmd.SetArgs([]string{"--server", server.URL, "--project", "project-1", "admin", "ssh-config"})
 	if err := cmd.Execute(); err != nil {
 		t.Fatalf("execute ssh-config: %v", err)
 	}

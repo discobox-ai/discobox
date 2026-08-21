@@ -12,7 +12,7 @@ import (
 	"golang.org/x/crypto/ssh"
 )
 
-// sshIdentityFileName is the key `disco box ssh-config` generates and enrolls
+// sshIdentityFileName is the key `discobox admin ssh-config` generates and enrolls
 // so that connecting needs no separate key setup. It lives under the CLI's own
 // state directory rather than ~/.ssh: discobox generates, enrolls, and
 // replaces it, so it belongs with the CLI's other machine-local state instead
@@ -115,12 +115,12 @@ func publicKeyLineWithComment(key ssh.PublicKey, comment string) string {
 }
 
 // sshIdentityComment labels the key with where it came from, so it is
-// identifiable in `disco box ssh-key ls` on a project several machines enroll
+// identifiable in `discobox admin ssh-key ls` on a project several machines enroll
 // into.
 func sshIdentityComment() string {
 	host, err := os.Hostname()
 	if err != nil || strings.TrimSpace(host) == "" {
-		return "disco"
+		return "discobox"
 	}
-	return "disco@" + host
+	return "discobox@" + host
 }

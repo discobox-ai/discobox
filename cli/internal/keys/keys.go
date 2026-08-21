@@ -3,7 +3,7 @@
 //
 // There are two such terminals and they have to agree. The launcher draws a
 // sandbox's terminal in a pane, where the leader carries the window's own
-// commands; `disco attach` hands the real terminal over, where the leader
+// commands; `discobox attach` hands the real terminal over, where the leader
 // carries the way back out. A leader the window uses and the attach does not
 // would be two things to learn and two things to change, so neither package
 // owns it and this one does.

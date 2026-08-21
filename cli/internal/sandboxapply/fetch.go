@@ -1,4 +1,4 @@
-// Package sandboxapply implements ADR 0014's disco apply: pulling a
+// Package sandboxapply implements ADR 0014's discobox apply: pulling a
 // sandbox's committed source changes into the host repository they started
 // from.
 package sandboxapply
@@ -49,7 +49,7 @@ func FetchSource(ctx context.Context, repoRoot, serverURL, projectID, sandboxID,
 // endpoint, and everything that is not receive-pack is served under
 // ScopeSandboxRead, so upload-pack advertises every ref the sandbox has. Any
 // ref the sandbox creates is therefore fetchable with no new server capability
-// — which is what lets `disco apply` bring the sandbox's working state to
+// — which is what lets `discobox apply` bring the sandbox's working state to
 // this machine.
 func Fetch(ctx context.Context, repoRoot, serverURL, projectID, sandboxID, token string, source apimodel.GitSource, refspec string) error {
 	slug := source.Slug.Or("")
@@ -59,7 +59,7 @@ func Fetch(ctx context.Context, repoRoot, serverURL, projectID, sandboxID, token
 	}
 	args := sandboxgit.AuthArgs(token, []string{"fetch", repoURL, refspec})
 	if _, err := gitutil.Output(ctx, repoRoot, nil, nil, args...); err != nil {
-		return fmt.Errorf("fetch source %q from sandbox: %w", slug, err)
+		return fmt.Errorf("fetch source %q from discobox: %w", slug, err)
 	}
 	return nil
 }

@@ -41,13 +41,13 @@ type runUserIdentity struct {
 // creates that account exactly as it would for one a Linux client named.
 //
 // 1000 is the first non-system id on every distro the harness images build from,
-// and "disco" names the product rather than impersonating the Windows account,
+// and "discobox" names the product rather than impersonating the Windows account,
 // whose name would only be a coincidence in the sandbox. The home directory is
 // deliberately absent: boot resolves it from the account when the image already
-// has a "disco", and defaults to /home/disco when it does not, which is the same
+// has a "discobox", and defaults to /home/discobox when it does not, which is the same
 // "ask where you can, decide only where you must" rule the rest of this follows.
 var windowsRunUser = runUserIdentity{
-	Name:      "disco",
+	Name:      "discobox",
 	UID:       1000,
 	GID:       1000,
 	IDsUsable: true,

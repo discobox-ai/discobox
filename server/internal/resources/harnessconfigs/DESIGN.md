@@ -128,7 +128,7 @@ copy of the rule that could drift from it.
 
 A secret that no longer exists produces no `PREV_` variable at all: deleting it
 cascades its binding, and the seed walks bindings. The narrow case is a secret
-that still exists whose grant was explicitly revoked (`disco secret grant
+that still exists whose grant was explicitly revoked (`discobox secret grant
 revoke`); configure-created grants set no expiry, so they do not lapse on their
 own. Then the sentinel does not resolve, the configure command's verification
 fails, and a pending `SecretRequest` is raised like any other unresolved

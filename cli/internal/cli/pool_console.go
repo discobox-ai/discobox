@@ -15,7 +15,7 @@ import (
 	"github.com/obot-platform/discobox/execstream/client"
 )
 
-// newPoolConsoleCommand implements `disco box pool console`: a root shell on
+// newPoolConsoleCommand implements `discobox admin pool console`: a root shell on
 // the machine hosting a pool's runtime, for debugging the backend itself.
 //
 // The console is not a sandbox and not the pool agent. It is a privileged
@@ -42,8 +42,8 @@ trace started in it survives a detach. The shell exits when you type exit, and
 the next console starts a fresh one.
 
 Without POOL_ID the project's default pool is used.`,
-		Example: `  disco box pool console
-  disco box pool console pool_01hq`,
+		Example: `  discobox admin pool console
+  discobox admin pool console pool_01hq`,
 		Args:              cobra.MaximumNArgs(1),
 		ValidArgsFunction: a.completePools,
 		RunE: func(cmd *cobra.Command, args []string) error {

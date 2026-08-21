@@ -10,7 +10,7 @@ import (
 	"github.com/obot-platform/discobox/cli/internal/tui"
 )
 
-// Forward starts the launcher's port forward: the same forwarder `disco proxy`
+// Forward starts the launcher's port forward: the same forwarder `discobox proxy`
 // runs, over the same tunnel, with the command's printed status replaced by a
 // wake-up for the window that draws it.
 //

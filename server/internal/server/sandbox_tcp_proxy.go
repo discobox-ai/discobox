@@ -18,7 +18,7 @@ var sandboxTCPProxyScopes = []string{poolagentauth.ScopeTCPConnect}
 // control-plane edge, so a client that is not speaking SSH can open the same
 // direct-tcpip byte pipe `ssh -L` gets (ADR 0024 §3). The SSH ingress reaches
 // the tunnel in-process through the same lease chain; this is the route for
-// everything else, `disco proxy` first among them.
+// everything else, `discobox proxy` first among them.
 func registerSandboxTCPRoutes(router chi.Router, service services.SandboxService) {
 	router.Method(http.MethodGet, "/api/projects/{projectId}/sandboxes/{sandboxId}/tcp/attach", sandboxTCPProxyHandler(service))
 }

@@ -22,10 +22,10 @@ func (a *App) newSSHProxyCommand() *cobra.Command {
 		Short: "Carry one SSH connection to the server over the API endpoint",
 		Long: `Carry one SSH connection to the server over the API endpoint.
 
-This is the ProxyCommand ` + "`disco box ssh-config`" + ` writes. It reads SSH's wire
+This is the ProxyCommand ` + "`discobox admin ssh-config`" + ` writes. It reads SSH's wire
 protocol on stdin, writes it on stdout, and carries it to the server's SSH
 ingress over the same endpoint every other request uses — so ssh reaches a
-sandbox whether or not the server binds an SSH port of its own.`,
+discobox whether or not the server binds an SSH port of its own.`,
 		Hidden: true,
 		Args:   cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
@@ -65,7 +65,7 @@ func (rw readWriter) Write(p []byte) (int, error) { return rw.w.Write(p) }
 // sshProxyCommandLine is the `ProxyCommand` line an emitted stanza carries: this
 // executable, invoked with the endpoint this run was pointed at.
 //
-// The path is absolute rather than `disco`, because ssh runs the command
+// The path is absolute rather than `discobox`, because ssh runs the command
 // through /bin/sh with whatever environment its caller had — and the caller is
 // often a GUI editor whose PATH is not the shell's. --server is passed for the
 // same reason: DISCOBOX_SERVER may not be set where ssh runs, and the config
@@ -75,7 +75,7 @@ func sshProxyCommandLine(serverURL string) (string, error) {
 	if err != nil {
 		return "", fmt.Errorf("locate this executable for the ssh_config ProxyCommand: %w", err)
 	}
-	return shellQuote(executable) + " --server " + shellQuote(serverURL) + " box ssh-proxy", nil
+	return shellQuote(executable) + " --server " + shellQuote(serverURL) + " admin ssh-proxy", nil
 }
 
 // shellQuote wraps a word so the shell reads it as one argument, whatever it

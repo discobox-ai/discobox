@@ -42,26 +42,26 @@ func (e Event) String() string {
 	switch e.Kind {
 	case Bound:
 		if e.Local == e.Target.Port {
-			return fmt.Sprintf("listening on %d -> sandbox %s%s", e.Local, remote, protocolSuffix(e.Target))
+			return fmt.Sprintf("listening on %d -> discobox %s%s", e.Local, remote, protocolSuffix(e.Target))
 		}
-		return fmt.Sprintf("listening on %d -> sandbox %s%s (%s was taken)", e.Local, remote, protocolSuffix(e.Target), remote)
+		return fmt.Sprintf("listening on %d -> discobox %s%s (%s was taken)", e.Local, remote, protocolSuffix(e.Target), remote)
 	case BindFailed:
-		return fmt.Sprintf("sandbox %s could not be bound locally: %v", remote, e.Err)
+		return fmt.Sprintf("discobox %s could not be bound locally: %v", remote, e.Err)
 	case Gone:
-		return fmt.Sprintf("sandbox %s stopped listening; %d is held open", remote, e.Local)
+		return fmt.Sprintf("discobox %s stopped listening; %d is held open", remote, e.Local)
 	case Back:
-		return fmt.Sprintf("sandbox %s is listening again on %d", remote, e.Local)
+		return fmt.Sprintf("discobox %s is listening again on %d", remote, e.Local)
 	case Accepted:
-		return fmt.Sprintf("%d -> sandbox %s: connection from %s", e.Local, remote, e.Peer)
+		return fmt.Sprintf("%d -> discobox %s: connection from %s", e.Local, remote, e.Peer)
 	case DialFailed:
-		return fmt.Sprintf("%d -> sandbox %s: %v", e.Local, remote, e.Err)
+		return fmt.Sprintf("%d -> discobox %s: %v", e.Local, remote, e.Err)
 	case Closed:
 		if e.Err != nil {
-			return fmt.Sprintf("%d -> sandbox %s: connection from %s ended: %v", e.Local, remote, e.Peer, e.Err)
+			return fmt.Sprintf("%d -> discobox %s: connection from %s ended: %v", e.Local, remote, e.Peer, e.Err)
 		}
-		return fmt.Sprintf("%d -> sandbox %s: connection from %s ended", e.Local, remote, e.Peer)
+		return fmt.Sprintf("%d -> discobox %s: connection from %s ended", e.Local, remote, e.Peer)
 	default:
-		return fmt.Sprintf("%s sandbox %s", e.Kind, remote)
+		return fmt.Sprintf("%s discobox %s", e.Kind, remote)
 	}
 }
 

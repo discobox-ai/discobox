@@ -332,7 +332,7 @@ func buildCreateExecRequest(target execTarget, ptyRequested bool, cols, rows uin
 	// SSH starts a session in the user's home directory, and every tool built
 	// on it assumes that: `scp file host:` and sftp resolve relative paths
 	// there. The sandbox's own exec default is the primary source directory,
-	// which is right for `disco shell` but would silently write uploads into
+	// which is right for `discobox shell` but would silently write uploads into
 	// the sandbox's git working tree. `~` is resolved inside the sandbox,
 	// which is the only place that knows the run user's home.
 	req.Workdir = sandboxgen.NewOptString(sessionHomeWorkdir)

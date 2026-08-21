@@ -27,7 +27,7 @@ build:
   # provider cannot start a pool without it.
   command: >-
     EXE=$(go env GOEXE) &&
-    cd cli && go build -o ../build/disco$EXE ./cmd/disco &&
+    cd cli && go build -o ../build/discobox$EXE ./cmd/discobox &&
     cd ../server && go build -gcflags="all=-N -l" -o ../build/discobox-server$EXE ./cmd/discobox-server &&
     cd .. && go tool task sign:server build:hooks
   grace: 2s

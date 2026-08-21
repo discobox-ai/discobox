@@ -26,8 +26,8 @@ harness's own setup and comes back when it exits.
 
 It is the launcher's ` + tui.HarnessesKeyName + ` screen: Esc leaves it for the prompt every
 discobox starts from, and Ctrl-C quits.`,
-		Example: `  disco configure
-  disco config`,
+		Example: `  discobox configure
+  discobox config`,
 		Args: cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			// No --leader here: this command is about the harnesses, and the

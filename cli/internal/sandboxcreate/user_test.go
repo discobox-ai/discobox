@@ -113,8 +113,8 @@ func TestWindowsRunUserSetsSandboxCreateUserFields(t *testing.T) {
 	if !ok {
 		t.Fatal("sandbox user was not set")
 	}
-	if sandboxUser.Name.Value != "disco" || sandboxUser.UID.Value != 1000 || sandboxUser.Gid.Value != 1000 {
-		t.Fatalf("body user = name %q uid %d gid %d, want disco/1000/1000", sandboxUser.Name.Value, sandboxUser.UID.Value, sandboxUser.Gid.Value)
+	if sandboxUser.Name.Value != "discobox" || sandboxUser.UID.Value != 1000 || sandboxUser.Gid.Value != 1000 {
+		t.Fatalf("body user = name %q uid %d gid %d, want discobox/1000/1000", sandboxUser.Name.Value, sandboxUser.UID.Value, sandboxUser.Gid.Value)
 	}
 	if !sandboxUser.UID.Set || !sandboxUser.Gid.Set {
 		t.Fatalf("uid/gid options were not set: %#v", sandboxUser)

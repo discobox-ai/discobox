@@ -389,7 +389,7 @@ development images without a registry.
   stdout/stderr-pipe (plain exec) modes.
 - stdout and stderr are separate frames, never merged by the shim: `frame.Stdout`
   and `frame.Stderr` (and the matching `LogStream` values on the audit log), so a
-  client can route each the way a local command does — `disco shell cmd
+  client can route each the way a local command does — `discobox shell cmd
   2>/dev/null` drops only stderr. Merging is the client's to do and loses no
   information; merging in the shim is irreversible. A TTY exec has nothing to
   split, since the kernel merges both onto the PTY before the shim reads them, so
@@ -420,7 +420,7 @@ development images without a registry.
   This is exactly what a harness terminal's `Shell: true` + `StartupCommand` buys
   it (see above) — the harness is never the exec's session leader, so its
   process group is never orphaned in the first place. A command that *is* the
-  session leader (a plain exec, `disco shell -t sleep 30`) cannot be stopped by
+  session leader (a plain exec, `discobox shell -t sleep 30`) cannot be stopped by
   Ctrl-Z for the same orphan rule — `ssh host sleep 30` behaves identically —
   which is exactly why terminals stopped taking that path.
 - Exit status uses the shell convention for signal deaths: `128+signum`, so an

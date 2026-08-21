@@ -128,7 +128,7 @@ func truncateForLog(s string) string {
 	return s
 }
 
-// TestLocalCommandPaneE2E runs `disco list` on a pty of its own and reads
+// TestLocalCommandPaneE2E runs `discobox list` on a pty of its own and reads
 // what comes back, which is the whole of what a pane would draw.
 //
 // It is the same opt-in as the pane terminals above, and for the same reason:
@@ -155,7 +155,7 @@ func TestLocalCommandPaneE2E(t *testing.T) {
 	// command that is meant to run on it.
 	binary := strings.TrimSpace(os.Getenv("DISCOBOX_PANE_E2E_BINARY"))
 	if binary == "" {
-		t.Skip("set DISCOBOX_PANE_E2E_BINARY to a built disco")
+		t.Skip("set DISCOBOX_PANE_E2E_BINARY to a built discobox")
 	}
 	pty, err := localpty.Start(ctx, localpty.Command{
 		Path: binary,

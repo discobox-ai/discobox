@@ -4296,7 +4296,7 @@ func (s *Server) FindPath(method string, u *url.URL) (r Route, _ bool) {
 														switch method {
 														case "POST":
 															r.name = CompleteSandboxApplyOperation
-															r.summary = "Record a completed disco apply"
+															r.summary = "Record a completed discobox apply"
 															r.operationID = "complete-sandbox-apply"
 															r.operationGroup = ""
 															r.pathPattern = "/projects/{projectId}/sandboxes/{sandboxId}/complete-apply"

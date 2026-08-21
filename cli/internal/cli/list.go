@@ -12,7 +12,7 @@ import (
 
 // newListCommand lists the sandboxes started from the current project
 // directory, which is the Git repository root of -C (the working directory by
-// default). It is the project-scoped counterpart to `box sandbox ls`, which
+// default). It is the project-scoped counterpart to `admin discobox ls`, which
 // lists every sandbox in the project regardless of where it was started from.
 //
 // This filters on origin rather than source: a local repository path identifies
@@ -23,16 +23,16 @@ func (a *App) newListCommand() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:     "ls",
 		Aliases: []string{"ps"},
-		Short:   "List the sandboxes started from the current directory",
-		Long: `List the sandboxes started from the current project directory.
+		Short:   "List the discoboxes started from the current directory",
+		Long: `List the discoboxes started from the current project directory.
 
 The project directory is the Git repository root of the current directory, or
-the directory itself when it is not in a repository. Sandboxes started from
+the directory itself when it is not in a repository. Discoboxes started from
 another directory, or from another machine, are not listed; pass --all (or use
-"disco box sandbox ls") to list every sandbox in the project.`,
-		Example: `  disco ls
-  disco ls --all
-  disco ls -o json`,
+"discobox admin discobox ls") to list every discobox in the project.`,
+		Example: `  discobox ls
+  discobox ls --all
+  discobox ls -o json`,
 		Args: cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			projectID, err := a.projectIDValue()
@@ -50,14 +50,14 @@ another directory, or from another machine, are not listed; pass --all (or use
 			return a.writeSandboxes(cmd, sandboxes, all)
 		},
 	}
-	cmd.Flags().BoolVarP(&all, "all", "a", false, "List every sandbox in the project, regardless of the directory it was started from, and show a FOLDER column")
+	cmd.Flags().BoolVarP(&all, "all", "a", false, "List every discobox in the project, regardless of the directory it was started from, and show a FOLDER column")
 	a.addQuietFlag(cmd)
 	return cmd
 }
 
 // listProjectSandboxes lists the project's sandboxes, filtered to the ones
 // started from the current project directory unless all is set. It is the
-// listing behind `disco ls`, shared with the commands that ask the user to pick
+// listing behind `discobox ls`, shared with the commands that ask the user to pick
 // one of those sandboxes.
 func (a *App) listProjectSandboxes(ctx context.Context, client *apiclientgen.Client, projectID string, all bool) ([]apimodel.Sandbox, error) {
 	params := apiclientgen.ListSandboxesParams{ProjectId: projectID}

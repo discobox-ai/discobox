@@ -1246,7 +1246,7 @@ func TestTheBannerGivesUpItsEdgesBeforeItsMiddle(t *testing.T) {
 		}
 		// The folder path contains "disco2", so the brand is looked for where
 		// only the brand can be: at the head of the row.
-		if got := strings.HasPrefix(strings.TrimSpace(row), "disco"); got != tc.brand {
+		if got := strings.HasPrefix(strings.TrimSpace(row), "discobox"); got != tc.brand {
 			t.Fatalf("%s: brand shown = %v at %d columns: %q", tc.what, got, tc.width, row)
 		}
 		if got := strings.Contains(row, "/src/disco2"); got != tc.folder {

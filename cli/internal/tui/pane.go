@@ -35,7 +35,7 @@ const (
 	paneRightKey = "l"
 	// paneDetachAlt is the detach key behind the leader, for a pane whose
 	// application needs Ctrl-C more than the window does. It is the d screen,
-	// tmux, and a plain `disco attach` all detach on. The leader also carries
+	// tmux, and a plain `discobox attach` all detach on. The leader also carries
 	// the list's own keys, but none of them is d anymore — it was diff, until
 	// diff left the CLI.
 	paneDetachAlt = "d"
@@ -120,7 +120,7 @@ func (p *pane) name() string {
 func (m *Model) detachHint() string { return m.leader() + " " + paneDetachAlt }
 
 // leader is the pane's prefix key, as a Bubble Tea key name. It is the same key
-// a plain `disco attach` detaches behind; see [keys].
+// a plain `discobox attach` detaches behind; see [keys].
 func (m *Model) leader() string {
 	if m.leaderKey == "" {
 		return keys.DefaultLeader
@@ -1065,7 +1065,7 @@ func (m *Model) viewPaneWindow() string {
 //
 //   - the keys, first, because the hints line under the grid says the same
 //     thing and is never dropped;
-//   - then "disco", which names the program rather than the work — you know
+//   - then "discobox", which names the program rather than the work — you know
 //     which program you are in, you are looking at it;
 //   - then the folder, which every row of the list this workspace was opened
 //     from already shared, and which the list is one key away.

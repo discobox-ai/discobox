@@ -84,7 +84,7 @@ func BuildPromptSandboxBody(ctx context.Context, opts PromptOptions) (*apimodel.
 	}
 	name, err := randomname.Generate()
 	if err != nil {
-		return nil, nil, fmt.Errorf("generate sandbox name: %w", err)
+		return nil, nil, fmt.Errorf("generate discobox name: %w", err)
 	}
 	body := &apimodel.CreateSandboxBody{Config: apimodel.SandboxCreateConfig{Name: name}}
 	if len(opts.Prompt) > 0 {
@@ -272,7 +272,7 @@ const nameConflictAttempts = 5
 //
 // Only this path retries: the name here is generated (BuildPromptSandboxBody),
 // so replacing it costs the caller nothing. A name the user typed is theirs,
-// and `box sandbox create --name` reports the conflict instead.
+// and `admin discobox create --name` reports the conflict instead.
 func CreatePromptSandbox(ctx context.Context, client promptSandboxCreator, projectID string, opts PromptOptions, report Report) (*apimodel.Sandbox, *LocalSources, error) {
 	report.step(StepPreparingSource)
 	body, local, err := BuildPromptSandboxBody(ctx, opts)
@@ -296,7 +296,7 @@ func CreatePromptSandbox(ctx context.Context, client promptSandboxCreator, proje
 		name, err := randomname.Generate()
 		if err != nil {
 			local.Close()
-			return nil, nil, fmt.Errorf("generate sandbox name: %w", err)
+			return nil, nil, fmt.Errorf("generate discobox name: %w", err)
 		}
 		body.Config.Name = name
 	}

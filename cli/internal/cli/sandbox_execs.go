@@ -50,10 +50,10 @@ func (a *App) newSandboxExecCommand() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:     "exec",
 		Aliases: []string{"execs"},
-		Short:   "Manage sandbox exec commands",
+		Short:   "Manage discobox exec commands",
 	}
-	cmd.PersistentFlags().StringVar(&sandboxID, "sandbox-id", "", "Sandbox ID")
-	_ = cmd.RegisterFlagCompletionFunc("sandbox-id", a.completeSandboxes)
+	cmd.PersistentFlags().StringVar(&sandboxID, "discobox-id", "", "Discobox ID")
+	_ = cmd.RegisterFlagCompletionFunc("discobox-id", a.completeSandboxes)
 	cmd.AddCommand(a.newSandboxExecCreateCommand(&sandboxID))
 	cmd.AddCommand(a.newSandboxExecListCommand(&sandboxID))
 	cmd.AddCommand(a.newSandboxExecLogsCommand(&sandboxID))
@@ -64,7 +64,7 @@ func (a *App) newSandboxExecCreateCommand(sandboxID *string) *cobra.Command {
 	var opts sandboxExecCreateOptions
 	cmd := &cobra.Command{
 		Use:   "create [flags] [--] COMMAND [ARG...]",
-		Short: "Create a sandbox exec",
+		Short: "Create a discobox exec",
 		Args:  cobra.ArbitraryArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			if len(args) == 0 && !opts.shell {
@@ -95,12 +95,12 @@ func (a *App) newSandboxExecCreateCommand(sandboxID *string) *cobra.Command {
 			return a.returnSandboxExecStatus(cmd.Context(), projectID, resolvedSandboxID, exec.ID)
 		},
 	}
-	cmd.Flags().StringVar(&opts.workdir, "workdir", "", "Working directory inside the sandbox")
+	cmd.Flags().StringVar(&opts.workdir, "workdir", "", "Working directory inside the discobox")
 	cmd.Flags().StringArrayVarP(&opts.env, "env", "e", nil, "Environment variable as KEY=VALUE or KEY from the local environment; repeat for multiple variables")
-	cmd.Flags().StringVar(&opts.user, "user", "", "User name or UID[:GID] to run as inside the sandbox")
-	cmd.Flags().StringVar(&opts.uid, "uid", "", "User ID to run as inside the sandbox")
-	cmd.Flags().StringSliceVar(&opts.gid, "gid", nil, "Groups to run as inside the sandbox, each a name or a numeric GID. The first is the primary group and the rest are supplementary; omit to inherit the sandbox's own groups")
-	cmd.Flags().BoolVar(&opts.shell, "shell", false, "Run the sandbox user's login shell instead of a command; the sandbox resolves which shell that is")
+	cmd.Flags().StringVar(&opts.user, "user", "", "User name or UID[:GID] to run as inside the discobox")
+	cmd.Flags().StringVar(&opts.uid, "uid", "", "User ID to run as inside the discobox")
+	cmd.Flags().StringSliceVar(&opts.gid, "gid", nil, "Groups to run as inside the discobox, each a name or a numeric GID. The first is the primary group and the rest are supplementary; omit to inherit the discobox's own groups")
+	cmd.Flags().BoolVar(&opts.shell, "shell", false, "Run the discobox user's login shell instead of a command; the discobox resolves which shell that is")
 	cmd.Flags().BoolVarP(&opts.tty, "tty", "t", false, "Allocate a PTY")
 	cmd.Flags().BoolVarP(&opts.interactive, "interactive", "i", false, "Accepted for docker exec -it compatibility")
 	cmd.Flags().BoolVarP(&opts.detach, "detach", "d", false, "Start the exec and print its record without streaming logs")
@@ -111,7 +111,7 @@ func (a *App) newSandboxExecListCommand(sandboxID *string) *cobra.Command {
 	cmd := &cobra.Command{
 		Use:     "ls",
 		Aliases: []string{"list"},
-		Short:   "List sandbox execs",
+		Short:   "List discobox execs",
 		Args:    cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			projectID, resolvedSandboxID, _, err := a.sandboxExecRequest(cmd.Context(), *sandboxID)
@@ -133,7 +133,7 @@ func (a *App) newSandboxExecLogsCommand(sandboxID *string) *cobra.Command {
 	var includeInput bool
 	cmd := &cobra.Command{
 		Use:               "logs EXEC_ID",
-		Short:             "Print sandbox exec logs",
+		Short:             "Print discobox exec logs",
 		Args:              cobra.ExactArgs(1),
 		ValidArgsFunction: a.completeExecs(sandboxID),
 		RunE: func(cmd *cobra.Command, args []string) error {
@@ -169,7 +169,7 @@ func (a *App) newSandboxExecLogsCommand(sandboxID *string) *cobra.Command {
 
 func (a *App) sandboxExecRequest(ctx context.Context, sandboxArg string) (string, string, *apiclientgen.Client, error) {
 	if strings.TrimSpace(sandboxArg) == "" {
-		return "", "", nil, fmt.Errorf("--sandbox-id is required")
+		return "", "", nil, fmt.Errorf("--discobox-id is required")
 	}
 	return a.sandboxRequest(ctx, sandboxArg)
 }
@@ -426,7 +426,7 @@ func (a *App) attachSandboxExec(ctx context.Context, projectID, sandboxID, execI
 		Stdout:  stdout,
 		Stderr:  stderr,
 		Console: client.NewOSConsole(stdin),
-		Kind:    "sandbox exec",
+		Kind:    "discobox exec",
 		Action:  "attach exec",
 		RawMode: interactive && tty,
 		Resize:  tty,
@@ -627,7 +627,7 @@ func (a *App) sandboxExecAttachDone(ctx context.Context, projectID, sandboxID, e
 	if err != nil {
 		// The exec read failed. A stopped or stopping sandbox took the terminal with
 		// it, so end the attach instead of reconnecting forever; we never start the
-		// sandbox back up here (a future `disco attach` will own autostart). Any
+		// sandbox back up here (a future `discobox attach` will own autostart). Any
 		// other failure does not prove the terminal ended — a transient control-plane
 		// blip — so keep retrying the websocket.
 		if done, stopErr := a.sandboxStoppedAttachDone(ctx, projectID, sandboxID); done {
@@ -669,10 +669,10 @@ func (a *App) sandboxStoppedAttachDone(ctx context.Context, projectID, sandboxID
 	}
 	switch sandbox.Runtime.RuntimeState.Or("") {
 	case sandboxRuntimeStateStopped, sandboxRuntimeStateStopping:
-		return true, fmt.Errorf("sandbox %s is %s; detaching terminal", sandboxID, sandbox.Runtime.RuntimeState.Or(""))
+		return true, fmt.Errorf("discobox %s is %s; detaching terminal", sandboxID, sandbox.Runtime.RuntimeState.Or(""))
 	}
 	if sandbox.Runtime.State == sandboxStateFailed {
-		return true, fmt.Errorf("sandbox failed: %s", sandboxFailureReason(sandbox))
+		return true, fmt.Errorf("discobox failed: %s", sandboxFailureReason(sandbox))
 	}
 	return false, nil
 }
@@ -788,7 +788,7 @@ type sandboxExecUser struct {
 // it wrote once it exits, rather than streaming it.
 //
 // This is for the callers that have to read the output before they can act on
-// it — `disco apply`'s dirty-tree check — where
+// it — `discobox apply`'s dirty-tree check — where
 // an attach would hand them bytes they can only buffer themselves. An exit code
 // of -1 means the exec ended without recording one.
 func (a *App) sandboxCommandOutput(ctx context.Context, projectID, sandboxID, workdir string, command []string) (stdout, stderr string, exitCode int, err error) {

@@ -14,7 +14,7 @@ import (
 )
 
 func (a *App) newProviderCommand() *cobra.Command {
-	cmd := &cobra.Command{Use: "provider", Aliases: []string{"providers"}, Short: "Manage sandbox provider instances"}
+	cmd := &cobra.Command{Use: "provider", Aliases: []string{"providers"}, Short: "Manage discobox provider instances"}
 	cmd.AddCommand(a.newProviderCatalogCommand())
 	cmd.AddCommand(a.newProviderListCommand())
 	cmd.AddCommand(a.newProviderGetCommand())
@@ -105,9 +105,9 @@ Provider-specific flags are loaded from the server catalog only when this
 subcommand runs. Use --help=<provider> to show provider-specific options.
 
 Examples:
-  disco box provider create --help
-  disco box provider create --help=digitalocean
-  disco box provider create --type digitalocean --control-plane-url https://example.com --token-env DIGITALOCEAN_ACCESS_TOKEN`,
+  discobox admin provider create --help
+  discobox admin provider create --help=digitalocean
+  discobox admin provider create --type digitalocean --control-plane-url https://example.com --token-env DIGITALOCEAN_ACCESS_TOKEN`,
 		FParseErrWhitelist: cobra.FParseErrWhitelist{UnknownFlags: true},
 		DisableFlagParsing: true,
 		RunE:               a.runProviderCreate,
@@ -141,9 +141,9 @@ provider instance is loaded. Use --help=<provider> to show provider-specific
 options.
 
 Examples:
-  disco box provider update --help
-  disco box provider update --help=docker
-  disco box provider update my-provider --min-workers 1 --max-workers 2`,
+  discobox admin provider update --help
+  discobox admin provider update --help=docker
+  discobox admin provider update my-provider --min-workers 1 --max-workers 2`,
 		FParseErrWhitelist: cobra.FParseErrWhitelist{UnknownFlags: true},
 		DisableFlagParsing: true,
 		ValidArgsFunction:  a.completeProviders,

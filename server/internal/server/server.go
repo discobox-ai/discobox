@@ -110,7 +110,7 @@ func Run(ctx context.Context) error {
 	// SSH's only front door. The route is registered here rather than inside
 	// NewApp because sshd needs the services NewApp returns, and registering it
 	// on the same router keeps SSH reachable wherever the API is — which is
-	// what both `disco tools ssh` and a written ssh_config rely on.
+	// what both `discobox tools ssh` and a written ssh_config rely on.
 	sshServer, err := newSSHServer(cfg, sshHostKey, appServices, appStore)
 	if err != nil {
 		return err

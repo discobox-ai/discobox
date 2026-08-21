@@ -139,7 +139,7 @@ func (s *Service) ensureDefaultSandboxProviderInstalled(ctx context.Context, pro
 }
 
 // ensureDefaultPool seeds the project's default pool against the built-in
-// provider instance and points the project's DefaultPoolID at it, so `disco
+// provider instance and points the project's DefaultPoolID at it, so `discobox
 // run` works with zero configuration. It runs exactly once, in the same
 // transaction that installs the default provider — if the user later deletes
 // the pool (or the provider), it is not recreated.

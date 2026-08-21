@@ -1096,7 +1096,7 @@ func (s *Server) handleCompleteSandboxApplyRequest(args [2]string, argsEscaped b
 		mreq := middleware.Request{
 			Context:          ctx,
 			OperationName:    CompleteSandboxApplyOperation,
-			OperationSummary: "Record a completed disco apply",
+			OperationSummary: "Record a completed discobox apply",
 			OperationID:      "complete-sandbox-apply",
 			Body:             request,
 			RawBody:          rawBody,

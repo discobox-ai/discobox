@@ -24,34 +24,34 @@ func (a *App) newTUICommand() *cobra.Command {
 	var leaderFlag string
 	cmd := &cobra.Command{
 		Use:   "tui",
-		Short: "Launch the interactive sandbox launcher",
+		Short: "Launch the interactive discobox launcher",
 		Long: `Launch the interactive launcher.
 
-The window opens with the cursor in a prompt: type what the sandbox should do
+The window opens with the cursor in a prompt: type what the discobox should do
 and press Enter to run it in a new one, or press Enter on an empty prompt to
 create one with nothing given to the harness. Tab moves to the list of
-sandboxes you already have, where every action is a single letter — Enter
+discoboxes you already have, where every action is a single letter — Enter
 attaches, s opens a shell, y applies, x archives — and Shift-Tab opens
-"disco run"'s options.
+"discobox run"'s options.
 
-Attaching or opening a shell draws the sandbox's terminal in the window itself.
-Every key then goes to the sandbox, Ctrl-C included: it is the program's, so
+Attaching or opening a shell draws the discobox's terminal in the window itself.
+Every key then goes to the discobox, Ctrl-C included: it is the program's, so
 what you interrupt is what is running rather than the window around it. The
 window's own keys are behind the leader — leader q detaches, leader m hands the
 mouse over or takes it back — and the leader is Ctrl-A unless --leader or
 DISCOBOX_LEADER says otherwise, worth changing when it collides with something
-you run in your sandboxes. It is the same leader "disco attach" detaches behind.
+you run in your discoboxes. It is the same leader "discobox attach" detaches behind.
 
-F3 opens the harnesses — the same screen "disco configure" opens — where an
+F3 opens the harnesses — the same screen "discobox configure" opens — where an
 harness is enabled, disabled, made the project default, or has its files edited.
 What is enabled there is what the run options offer as the harness to run.
 
 The window takes the whole terminal while it is up, and puts back what was on
 screen when it exits. Press F1 for the keys, and Ctrl-C to quit once no
-sandbox terminal is up.`,
-		Example: `  disco tui
-  disco tui --leader b
-  DISCOBOX_LEADER=b disco tui`,
+discobox terminal is up.`,
+		Example: `  discobox tui
+  discobox tui --leader b
+  DISCOBOX_LEADER=b discobox tui`,
 		Args: cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			return a.runTUI(cmd, leaderFlag)
@@ -62,8 +62,8 @@ sandbox terminal is up.`,
 	return cmd
 }
 
-// runTUI starts the launcher. It is reached three ways — `disco tui`, `disco`
-// with nothing to do, and `disco configure`, which is the launcher opened on
+// runTUI starts the launcher. It is reached three ways — `discobox tui`, `discobox`
+// with nothing to do, and `discobox configure`, which is the launcher opened on
 // its harnesses screen — so it lives here rather than inside any one's RunE.
 //
 // leaderFlag is --leader, empty when it was not given: the environment's leader
@@ -121,7 +121,7 @@ func (d *apiDataSource) Session(ctx context.Context) (tui.Session, error) {
 }
 
 // List is every sandbox in the project, newest-created first — the same
-// order `disco ls` prints, for the same reason: creation is the one
+// order `discobox ls` prints, for the same reason: creation is the one
 // timestamp a user's action put there. The window
 // filters to the ones started here itself, on a key, so the listing is not
 // narrowed before it gets there.
@@ -269,7 +269,7 @@ func sourceDirectory(source string) string {
 }
 
 // Run creates the sandbox Enter asked for and delivers its source, which is
-// exactly what `disco run` does before it attaches — including saying which of
+// exactly what `discobox run` does before it attaches — including saying which of
 // those steps is underway, on the same words the command uses (ADR 0060).
 func (d *apiDataSource) Run(ctx context.Context, req tui.RunRequest, report func(string)) (tui.Sandbox, error) {
 	opts := sandboxcreate.PromptOptions{
@@ -329,7 +329,7 @@ func (d *apiDataSource) Run(ctx context.Context, req tui.RunRequest, report func
 }
 
 // WatchProvisioning says what a discobox that is not usable yet is being made
-// to do, on the same reading of the same record `disco run` narrates from.
+// to do, on the same reading of the same record `discobox run` narrates from.
 func (d *apiDataSource) WatchProvisioning(ctx context.Context, sandboxID string, report func(string)) {
 	d.app.watchProvisioning(ctx, d.projectID, sandboxID, report)
 }
@@ -403,7 +403,7 @@ func (d *apiDataSource) Do(ctx context.Context, verb tui.Verb, sandboxID string)
 }
 
 // Rename gives a sandbox a new name — the one piece of its config the window
-// edits, through the same PATCH `disco sandbox update --name` uses.
+// edits, through the same PATCH `discobox admin discobox update --name` uses.
 func (d *apiDataSource) Rename(ctx context.Context, sandboxID, name string) error {
 	body := &apimodel.UpdateSandboxBody{}
 	body.SetConfig(apiclientgen.NewOptSandboxUpdateConfig(apimodel.SandboxUpdateConfig{
@@ -417,10 +417,10 @@ func (d *apiDataSource) Rename(ctx context.Context, sandboxID, name string) erro
 	return err
 }
 
-// OpenEditor opens one sandbox in VS Code, by running `disco tools vscode`.
+// OpenEditor opens one sandbox in VS Code, by running `discobox tools vscode`.
 //
 // It runs the command rather than reimplementing it for the same reason an
-// overlay pane runs `disco apply`: what the window opens is the command, with
+// overlay pane runs `discobox apply`: what the window opens is the command, with
 // its own editor discovery and its own ssh_config handling, not a second
 // version of them.
 //

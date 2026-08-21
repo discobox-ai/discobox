@@ -1,4 +1,4 @@
-// Package tui is the `disco tui` launcher: one window that opens with the
+// Package tui is the `discobox tui` launcher: one window that opens with the
 // cursor already in a prompt for a new sandbox, and the sandboxes you already
 // have one press of Tab away.
 //
@@ -192,7 +192,7 @@ func WithLeader(key string) Option {
 }
 
 // WithHarnesses opens the window on the harnesses screen, which is what
-// `disco configure` is: the same window, opened on the screen that command is
+// `discobox configure` is: the same window, opened on the screen that command is
 // about. The window is opened out with it — the screen is the whole of it, and
 // the opening prompt has no room for one.
 func WithHarnesses() Option {
@@ -382,7 +382,7 @@ func (m *Model) update(msg tea.Msg) tea.Cmd {
 		m.session = msg.session
 		m.list.session = msg.session
 		// The window opens on the folder it was opened in, which is what
-		// `disco ls` shows and what the header has always said. Everything
+		// `discobox ls` shows and what the header has always said. Everything
 		// else is one press away in the dropdown.
 		m.list.folder = msg.session.Directory
 		m.opts = newOptions(msg.session)
@@ -1379,7 +1379,7 @@ func (m *Model) askForADefaultHarness(req RunRequest) (tea.Cmd, bool) {
 	}
 	candidates := m.defaultCandidates()
 	if len(candidates) == 0 {
-		return m.report(true, "this project has no harness to run; register one with `disco box harnesses create`"), true
+		return m.report(true, "this project has no harness to run; register one with `discobox admin harnesses create`"), true
 	}
 
 	items := make([]action, 0, len(candidates))
@@ -1491,7 +1491,7 @@ func (m *Model) dirtyChecked(msg dirtyCheckedMsg) tea.Cmd {
 	if !msg.dirty {
 		return m.create(msg.req)
 	}
-	// Excluding leads, the way it does in `disco run`: the default answer is
+	// Excluding leads, the way it does in `discobox run`: the default answer is
 	// the one that changes nothing about what the sandbox sees.
 	req := msg.req
 	m.dialog = confirmDialog("Uncommitted changes",
@@ -1815,7 +1815,7 @@ func (m *Model) viewHeaderLeft() string {
 // workspace's banner gives it up separately from the folder beside it when the
 // row runs out of room (viewPaneHeader).
 func (m *Model) viewHeaderBrand() string {
-	brand := m.st.headerLabel.Render("disco  ")
+	brand := m.st.headerLabel.Render("discobox  ")
 	if m.session.Project != "" && m.session.Project != m.session.DefaultProject {
 		brand += m.st.headerBar.Render(m.session.Project) + m.st.headerLabel.Render("  ")
 	}
@@ -2250,7 +2250,7 @@ func (m *Model) helpText() string {
 		"",
 		"  The path in the header is which folder's discoboxes are listed.",
 		"  The window opens on the one it is running in, which is what",
-		"  `disco ls` shows; every other folder anything was started from",
+		"  `discobox ls` shows; every other folder anything was started from",
 		"  is one press away, and so is showing all of them at once.",
 		"",
 		"    ↑              reach it, from the top of the discobox list",
@@ -2266,7 +2266,7 @@ func (m *Model) helpText() string {
 		"The harnesses (" + HarnessesKeyName + ")",
 		"",
 		"  The harnesses a discobox can be run on, and everything you do to",
-		"  them. It is `disco configure`: that command opens the window",
+		"  them. It is `discobox configure`: that command opens the window",
 		"  here.",
 		"",
 		"    ↑ ↓ / k j      move            g / G   first / last",
@@ -2307,7 +2307,7 @@ func (m *Model) helpText() string {
 		"",
 		"  The strip always shows what is set, so the panel never has to",
 		"  be open to know what Enter will do. The panel shows the",
-		"  `disco run` command it describes, live: what the window does",
+		"  `discobox run` command it describes, live: what the window does",
 		"  is reproducible from a shell.",
 		"",
 		"  Press Esc to close.",

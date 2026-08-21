@@ -182,8 +182,8 @@ func TestQuietListWritersPrintFullIDsOnly(t *testing.T) {
 
 func TestRootCommandHelp(t *testing.T) {
 	cmd := NewRootCommand()
-	if cmd.Name() != "disco" {
-		t.Fatalf("root command name = %q, want disco", cmd.Name())
+	if cmd.Name() != "discobox" {
+		t.Fatalf("root command name = %q, want discobox", cmd.Name())
 	}
 	var out bytes.Buffer
 	cmd.SetOut(&out)
@@ -195,27 +195,27 @@ func TestRootCommandHelp(t *testing.T) {
 	if !bytes.Contains(out.Bytes(), []byte("\n  run ")) {
 		t.Fatalf("help output = %q, want visible run command", out.String())
 	}
-	if !bytes.Contains(out.Bytes(), []byte("\n  box ")) {
-		t.Fatalf("help output = %q, want visible box command", out.String())
+	if !bytes.Contains(out.Bytes(), []byte("\n  admin ")) {
+		t.Fatalf("help output = %q, want visible admin command", out.String())
 	}
 	if !bytes.Contains(out.Bytes(), []byte("Manage advanced Discobox configuration")) {
-		t.Fatalf("help output = %q, want box command description", out.String())
+		t.Fatalf("help output = %q, want admin command description", out.String())
 	}
-	// shell is the exception among the box children: the friendly root `shell`
-	// runs a command in a sandbox, while `box exec` keeps the raw subcommands.
+	// shell is the exception among the admin children: the friendly root `shell`
+	// runs a command in a sandbox, while `admin exec` keeps the raw subcommands.
 	if command, _, err := cmd.Find([]string{"shell"}); err != nil || command.Name() != "shell" {
 		t.Fatalf("find root shell: command=%v err=%v", command, err)
 	}
-	for _, unavailableAtRoot := range []string{"sandbox", "terminal", "exec", "provider", "job", "harnesses", "hooks", "server"} {
+	for _, unavailableAtRoot := range []string{"discobox", "terminal", "exec", "provider", "job", "harnesses", "hooks", "server"} {
 		command, _, err := cmd.Find([]string{unavailableAtRoot})
 		if err == nil && command.Name() == unavailableAtRoot {
 			t.Fatalf("root command still exposes %q", unavailableAtRoot)
 		}
 	}
-	for _, child := range []string{"sandbox", "terminal", "exec", "provider", "job", "harnesses", "hooks", "server"} {
-		command, args, err := cmd.Find([]string{"box", child})
+	for _, child := range []string{"discobox", "terminal", "exec", "provider", "job", "harnesses", "hooks", "server"} {
+		command, args, err := cmd.Find([]string{"admin", child})
 		if err != nil || len(args) != 0 || command.Name() != child {
-			t.Fatalf("find box child %q: command=%v args=%v err=%v", child, command, args, err)
+			t.Fatalf("find admin child %q: command=%v args=%v err=%v", child, command, args, err)
 		}
 	}
 	if command, _, err := cmd.Find([]string{"debug"}); err == nil && command.Name() == "debug" {
@@ -251,7 +251,7 @@ func TestProjectIDDefaultsToDefaultAlias(t *testing.T) {
 
 func TestRootCommandRejectsInvalidOutputFormat(t *testing.T) {
 	cmd := NewRootCommand()
-	cmd.SetArgs([]string{"--output", "yaml", "box", "sandbox", "ls"})
+	cmd.SetArgs([]string{"--output", "yaml", "admin", "discobox", "ls"})
 
 	if err := cmd.Execute(); err == nil {
 		t.Fatal("execute error = nil, want invalid output error")
@@ -261,17 +261,17 @@ func TestRootCommandRejectsInvalidOutputFormat(t *testing.T) {
 func TestListSubcommandsUseLSWithListAlias(t *testing.T) {
 	root := NewRootCommand()
 	paths := [][]string{
-		{"box", "sandbox", "ls"},
-		{"box", "terminal", "ls"},
-		{"box", "exec", "ls"},
-		{"box", "pool", "ls"},
-		{"box", "provider", "ls"},
-		{"box", "job", "ls"},
+		{"admin", "discobox", "ls"},
+		{"admin", "terminal", "ls"},
+		{"admin", "exec", "ls"},
+		{"admin", "pool", "ls"},
+		{"admin", "provider", "ls"},
+		{"admin", "job", "ls"},
 		{"secret", "ls"},
 		{"secret", "grant", "ls"},
 		{"secret", "request", "ls"},
-		{"box", "harnesses", "ls"},
-		{"box", "harnesses", "secrets", "ls"},
+		{"admin", "harnesses", "ls"},
+		{"admin", "harnesses", "secrets", "ls"},
 	}
 
 	for _, path := range paths {
@@ -314,7 +314,7 @@ func TestSandboxListQuietCommandPrintsFullIDsOnly(t *testing.T) {
 	cmd := NewRootCommand()
 	var out bytes.Buffer
 	cmd.SetOut(&out)
-	cmd.SetArgs([]string{"--server", server.URL, "--project", "project-1", "box", "sandbox", "list", "-q"})
+	cmd.SetArgs([]string{"--server", server.URL, "--project", "project-1", "admin", "discobox", "list", "-q"})
 
 	if err := cmd.Execute(); err != nil {
 		t.Fatalf("execute sandbox list -q: %v", err)
@@ -324,7 +324,7 @@ func TestSandboxListQuietCommandPrintsFullIDsOnly(t *testing.T) {
 	}
 }
 
-func TestTerminalListUsesBoxCommand(t *testing.T) {
+func TestTerminalListUsesAdminCommand(t *testing.T) {
 	var requested bool
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		requested = true
@@ -339,7 +339,7 @@ func TestTerminalListUsesBoxCommand(t *testing.T) {
 	cmd := NewRootCommand()
 	var out bytes.Buffer
 	cmd.SetOut(&out)
-	cmd.SetArgs([]string{"--server", server.URL, "--project", "project-1", "box", "terminal", "--sandbox-id", "sandbox-1", "ls"})
+	cmd.SetArgs([]string{"--server", server.URL, "--project", "project-1", "admin", "terminal", "--discobox-id", "sandbox-1", "ls"})
 
 	if err := cmd.Execute(); err != nil {
 		t.Fatalf("execute terminal list: %v", err)
@@ -377,7 +377,7 @@ func TestTerminalCreateFallsBackWhenStartResponseIsTruncated(t *testing.T) {
 	cmd := NewRootCommand()
 	var out bytes.Buffer
 	cmd.SetOut(&out)
-	cmd.SetArgs([]string{"--server", server.URL, "--project", "project-1", "box", "terminal", "--sandbox-id", "sandbox-1", "create"})
+	cmd.SetArgs([]string{"--server", server.URL, "--project", "project-1", "admin", "terminal", "--discobox-id", "sandbox-1", "create"})
 
 	if err := cmd.Execute(); err != nil {
 		t.Fatalf("execute terminal create: %v", err)
@@ -410,7 +410,7 @@ func TestTerminalAttachPrimaryUsesVirtualExecID(t *testing.T) {
 	cmd := NewRootCommand()
 	cmd.SetOut(io.Discard)
 	cmd.SetErr(io.Discard)
-	cmd.SetArgs([]string{"--server", server.URL, "--project", "project-1", "box", "terminal", "--sandbox-id", "sandbox-1", "attach", "primary"})
+	cmd.SetArgs([]string{"--server", server.URL, "--project", "project-1", "admin", "terminal", "--discobox-id", "sandbox-1", "attach", "primary"})
 
 	err := cmd.Execute()
 	if err == nil {
@@ -424,7 +424,7 @@ func TestTerminalAttachPrimaryUsesVirtualExecID(t *testing.T) {
 	}
 }
 
-// `disco attach` is the root-command shortcut for `box terminal attach
+// `discobox attach` is the root-command shortcut for `admin terminal attach
 // primary --sandbox-id`: it must reach the same virtual primary exec, with no
 // other behavior in between.
 func TestAttachUsesVirtualPrimaryExecID(t *testing.T) {
@@ -472,7 +472,7 @@ func TestTerminalCreateTextPlainErrorIncludesBody(t *testing.T) {
 	var out bytes.Buffer
 	cmd.SetOut(&out)
 	cmd.SetErr(io.Discard)
-	cmd.SetArgs([]string{"--server", server.URL, "--project", "project-1", "box", "terminal", "--sandbox-id", "sandbox-1", "create"})
+	cmd.SetArgs([]string{"--server", server.URL, "--project", "project-1", "admin", "terminal", "--discobox-id", "sandbox-1", "create"})
 
 	err := cmd.Execute()
 	if err == nil {
@@ -511,7 +511,7 @@ func TestTerminalCreateEnvSupportsShortFlagAndShellLookup(t *testing.T) {
 	cmd := NewRootCommand()
 	var out bytes.Buffer
 	cmd.SetOut(&out)
-	cmd.SetArgs([]string{"--server", server.URL, "--project", "project-1", "box", "terminal", "--sandbox-id", "sandbox-1", "create", "-e", "EXPLICIT=value", "-e", "SHELL_ENV_VALUE"})
+	cmd.SetArgs([]string{"--server", server.URL, "--project", "project-1", "admin", "terminal", "--discobox-id", "sandbox-1", "create", "-e", "EXPLICIT=value", "-e", "SHELL_ENV_VALUE"})
 
 	if err := cmd.Execute(); err != nil {
 		t.Fatalf("execute terminal create: %v", err)
@@ -545,7 +545,7 @@ func TestHarnessSetDefaultCommand(t *testing.T) {
 	var out bytes.Buffer
 	cmd.SetOut(&out)
 	cmd.SetErr(io.Discard)
-	cmd.SetArgs([]string{"--server", server.URL, "--project", "project-1", "box", "harnesses", "set-default", harnessID})
+	cmd.SetArgs([]string{"--server", server.URL, "--project", "project-1", "admin", "harnesses", "set-default", harnessID})
 
 	if err := cmd.Execute(); err != nil {
 		t.Fatalf("execute set-default: %v", err)
@@ -651,7 +651,7 @@ func TestHarnessListShowsProjectDefault(t *testing.T) {
 	var out bytes.Buffer
 	cmd.SetOut(&out)
 	cmd.SetErr(io.Discard)
-	cmd.SetArgs([]string{"--server", server.URL, "--project", "project-1", "box", "harnesses", "ls"})
+	cmd.SetArgs([]string{"--server", server.URL, "--project", "project-1", "admin", "harnesses", "ls"})
 
 	if err := cmd.Execute(); err != nil {
 		t.Fatalf("execute harnesses list: %v", err)
@@ -752,7 +752,7 @@ func TestHarnessCreateSendsCreateOnlyFileFlag(t *testing.T) {
 	cmd.SetOut(&out)
 	cmd.SetErr(io.Discard)
 	cmd.SetArgs([]string{
-		"--server", server.URL, "--project", "project-1", "box", "harnesses", "create",
+		"--server", server.URL, "--project", "project-1", "admin", "harnesses", "create",
 		"--name", "Custom", "--image", "example.com/custom:latest",
 		"--file", `.claude/settings.json={"theme":"dark"}`,
 		"--create-only-file", ".claude/settings.json",
@@ -805,7 +805,7 @@ func TestHarnessCreateSendsFilesFlag(t *testing.T) {
 	cmd.SetOut(&out)
 	cmd.SetErr(io.Discard)
 	cmd.SetArgs([]string{
-		"--server", server.URL, "--project", "project-1", "box", "harnesses", "create",
+		"--server", server.URL, "--project", "project-1", "admin", "harnesses", "create",
 		"--name", "Custom", "--image", "example.com/custom:latest",
 		"--file", `.claude/settings.json={"theme":"dark"}`,
 	})
@@ -908,7 +908,7 @@ func TestJobsCommandListsProjectJobs(t *testing.T) {
 	cmd := NewRootCommand()
 	var out bytes.Buffer
 	cmd.SetOut(&out)
-	cmd.SetArgs([]string{"--server", server.URL, "--project", "project-1", "box", "jobs"})
+	cmd.SetArgs([]string{"--server", server.URL, "--project", "project-1", "admin", "jobs"})
 
 	if err := cmd.Execute(); err != nil {
 		t.Fatalf("execute jobs: %v", err)
@@ -938,7 +938,7 @@ func TestJobsParentQuietCommandPrintsFullIDsOnly(t *testing.T) {
 	cmd := NewRootCommand()
 	var out bytes.Buffer
 	cmd.SetOut(&out)
-	cmd.SetArgs([]string{"--server", server.URL, "--project", "project-1", "box", "jobs", "-q"})
+	cmd.SetArgs([]string{"--server", server.URL, "--project", "project-1", "admin", "jobs", "-q"})
 
 	if err := cmd.Execute(); err != nil {
 		t.Fatalf("execute jobs -q: %v", err)
@@ -1133,7 +1133,7 @@ func TestSandboxGetResolvesShortID(t *testing.T) {
 	cmd := NewRootCommand()
 	var out bytes.Buffer
 	cmd.SetOut(&out)
-	cmd.SetArgs([]string{"--server", server.URL, "--project", "project-1", "box", "sandbox", "get", "sbx_9qk5"})
+	cmd.SetArgs([]string{"--server", server.URL, "--project", "project-1", "admin", "discobox", "get", "sbx_9qk5"})
 
 	if err := cmd.Execute(); err != nil {
 		t.Fatalf("execute sandbox get: %v", err)
@@ -1188,13 +1188,13 @@ func TestSandboxDeleteContinuesAfterFailure(t *testing.T) {
 	var errOut bytes.Buffer
 	cmd.SetOut(&out)
 	cmd.SetErr(&errOut)
-	cmd.SetArgs([]string{"--server", server.URL, "--project", "project-1", "box", "sandbox", "delete", "sandbox-ok-1", "sandbox-fail", "sandbox-ok-2"})
+	cmd.SetArgs([]string{"--server", server.URL, "--project", "project-1", "admin", "discobox", "delete", "sandbox-ok-1", "sandbox-fail", "sandbox-ok-2"})
 
 	err := cmd.Execute()
 	if err == nil {
 		t.Fatal("execute sandbox delete error = nil, want aggregate delete failure")
 	}
-	if got, want := err.Error(), "failed to archive 1 sandbox"; got != want {
+	if got, want := err.Error(), "failed to archive 1 discobox"; got != want {
 		t.Fatalf("execute sandbox delete error = %q, want %q", got, want)
 	}
 	if got, want := strings.Join(deleted, ","), "sandbox-ok-1,sandbox-fail,sandbox-ok-2"; got != want {
@@ -1203,7 +1203,7 @@ func TestSandboxDeleteContinuesAfterFailure(t *testing.T) {
 	if got, want := out.String(), "sandbox-ok-1 archived\nsandbox-ok-2 archived\n"; got != want {
 		t.Fatalf("stdout = %q, want %q", got, want)
 	}
-	for _, want := range []string{`failed to archive sandbox "sandbox-fail"`, "sandbox is busy"} {
+	for _, want := range []string{`failed to archive discobox "sandbox-fail"`, "sandbox is busy"} {
 		if !strings.Contains(errOut.String(), want) {
 			t.Fatalf("stderr = %q, want %q", errOut.String(), want)
 		}
@@ -1223,7 +1223,7 @@ func TestJobGetCommandShowsError(t *testing.T) {
 	cmd := NewRootCommand()
 	var out bytes.Buffer
 	cmd.SetOut(&out)
-	cmd.SetArgs([]string{"--server", server.URL, "--project", "project-1", "box", "job", "get", "job-1"})
+	cmd.SetArgs([]string{"--server", server.URL, "--project", "project-1", "admin", "job", "get", "job-1"})
 
 	if err := cmd.Execute(); err != nil {
 		t.Fatalf("execute job get: %v", err)
@@ -1254,7 +1254,7 @@ func TestJobRunNowCommandForcesJob(t *testing.T) {
 	cmd := NewRootCommand()
 	var out bytes.Buffer
 	cmd.SetOut(&out)
-	cmd.SetArgs([]string{"--server", server.URL, "--project", "project-1", "box", "job", "run-now", "job-1"})
+	cmd.SetArgs([]string{"--server", server.URL, "--project", "project-1", "admin", "job", "run-now", "job-1"})
 
 	if err := cmd.Execute(); err != nil {
 		t.Fatalf("execute job run-now: %v", err)
@@ -1481,14 +1481,14 @@ func TestDebugTransportDoesNotAddExtraResponseBodyNewline(t *testing.T) {
 
 func TestRootCommandIncludesServerSubcommand(t *testing.T) {
 	cmd := NewRootCommand()
-	found, _, err := cmd.Find([]string{"box", "server"})
+	found, _, err := cmd.Find([]string{"admin", "server"})
 	if err != nil {
 		t.Fatalf("find server command: %v", err)
 	}
 	if found == nil || found.Name() != "server" {
 		t.Fatalf("server command = %v, want server", found)
 	}
-	found, _, err = cmd.Find([]string{"box", "server", "shutdown"})
+	found, _, err = cmd.Find([]string{"admin", "server", "shutdown"})
 	if err != nil {
 		t.Fatalf("find server shutdown command: %v", err)
 	}
@@ -1518,7 +1518,7 @@ func TestServerShutdownWaitCommandWaitsForServerToStop(t *testing.T) {
 	cmd := NewRootCommand()
 	var out bytes.Buffer
 	cmd.SetOut(&out)
-	cmd.SetArgs([]string{"--server", server.URL, "box", "server", "shutdown", "--wait"})
+	cmd.SetArgs([]string{"--server", server.URL, "admin", "server", "shutdown", "--wait"})
 
 	if err := cmd.Execute(); err != nil {
 		t.Fatalf("execute server shutdown --wait: %v", err)
@@ -1546,7 +1546,7 @@ func TestServerShutdownFallsBackToDefaultHTTPWhenSocketMissing(t *testing.T) {
 	cmd := NewRootCommand()
 	var out bytes.Buffer
 	cmd.SetOut(&out)
-	cmd.SetArgs([]string{"box", "server", "shutdown"})
+	cmd.SetArgs([]string{"admin", "server", "shutdown"})
 
 	if err := cmd.Execute(); err != nil {
 		t.Fatalf("execute server shutdown fallback: %v", err)
@@ -1592,7 +1592,7 @@ func testSandboxJSON(id, name, createdAt, updatedAt string) string {
 	return `{"id":"` + id + `","projectId":"project-1","createdByUserId":"user-1","displayName":"` + name + `","config":{"name":"` + name + `","image":""},"runtime":{"state":"ready","runtimeState":"running","desiredState":"present","displayState":"running","generation":1,"observedGeneration":1},"createdAt":"` + createdAt + `","updatedAt":"` + updatedAt + `"}`
 }
 
-// Bare `disco` opens the launcher at a terminal and prints its help anywhere
+// Bare `discobox` opens the launcher at a terminal and prints its help anywhere
 // else: a full-screen window is not an answer to a program that expected
 // output. Here the streams are buffers, which is the "anywhere else" case.
 func TestBareCommandPrintsHelpWithoutATerminal(t *testing.T) {

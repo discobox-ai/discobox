@@ -80,8 +80,8 @@ func readIrohIdentity(path string) (endpoint.IrohID, error) {
 // server endpoint needs one.
 //
 // It runs only for an iroh endpoint: generating a key and opening a UDP socket
-// is not something `disco ls` against a unix socket should do. The identity is
-// the one `disco box iroh-id` prints, so what an operator enrolled is what
+// is not something `discobox ls` against a unix socket should do. The identity is
+// the one `discobox admin iroh-id` prints, so what an operator enrolled is what
 // connects.
 func configureIrohForEndpoint(parsed endpoint.Endpoint) error {
 	if parsed.Scheme != "iroh" {

@@ -518,8 +518,8 @@ func writeProviderCreateStaticHelp(cmd *cobra.Command) {
 	fmt.Fprintln(cmd.OutOrStdout(), cmd.Long)
 	fmt.Fprintln(cmd.OutOrStdout())
 	fmt.Fprintln(cmd.OutOrStdout(), "Provider discovery:")
-	fmt.Fprintln(cmd.OutOrStdout(), "      disco box provider catalog          List available provider types")
-	fmt.Fprintln(cmd.OutOrStdout(), "      disco box provider create --help=PROVIDER")
+	fmt.Fprintln(cmd.OutOrStdout(), "      discobox admin provider catalog          List available provider types")
+	fmt.Fprintln(cmd.OutOrStdout(), "      discobox admin provider create --help=PROVIDER")
 	fmt.Fprintln(cmd.OutOrStdout(), "                                      Show provider-specific create flags")
 	fmt.Fprintln(cmd.OutOrStdout())
 	fmt.Fprintln(cmd.OutOrStdout(), "Common Flags:")
@@ -534,8 +534,8 @@ func writeProviderUpdateStaticHelp(cmd *cobra.Command) {
 	fmt.Fprintln(cmd.OutOrStdout(), cmd.Long)
 	fmt.Fprintln(cmd.OutOrStdout())
 	fmt.Fprintln(cmd.OutOrStdout(), "Provider discovery:")
-	fmt.Fprintln(cmd.OutOrStdout(), "      disco box provider catalog          List available provider types")
-	fmt.Fprintln(cmd.OutOrStdout(), "      disco box provider update --help=PROVIDER")
+	fmt.Fprintln(cmd.OutOrStdout(), "      discobox admin provider catalog          List available provider types")
+	fmt.Fprintln(cmd.OutOrStdout(), "      discobox admin provider update --help=PROVIDER")
 	fmt.Fprintln(cmd.OutOrStdout(), "                                      Show provider-specific update flags")
 	fmt.Fprintln(cmd.OutOrStdout())
 	fmt.Fprintln(cmd.OutOrStdout(), "Common Flags:")
@@ -551,7 +551,7 @@ func writeProviderCreateHelp(w io.Writer, provider apimodel.SandboxProviderCatal
 	if description, ok := provider.Description.Get(); ok && strings.TrimSpace(description) != "" {
 		fmt.Fprintf(w, "%s\n\n", description)
 	}
-	fmt.Fprintf(w, "Usage:\n  disco box provider create --type %s [provider flags]\n\n", provider.ID)
+	fmt.Fprintf(w, "Usage:\n  discobox admin provider create --type %s [provider flags]\n\n", provider.ID)
 	fmt.Fprintln(w, "Common Flags:")
 	fmt.Fprintln(w, "      --name string     Provider instance name")
 	fmt.Fprintf(w, "      --type string     Provider type (default %q)\n", provider.ID)
@@ -584,7 +584,7 @@ func writeProviderUpdateHelp(w io.Writer, provider apimodel.SandboxProviderCatal
 	if description, ok := provider.Description.Get(); ok && strings.TrimSpace(description) != "" {
 		fmt.Fprintf(w, "%s\n\n", description)
 	}
-	fmt.Fprintf(w, "Usage:\n  disco box provider update PROVIDER_ID [provider flags]\n\n")
+	fmt.Fprintf(w, "Usage:\n  discobox admin provider update PROVIDER_ID [provider flags]\n\n")
 	fmt.Fprintln(w, "Common Flags:")
 	fmt.Fprintln(w, "      --name string       Provider instance name")
 	fmt.Fprintln(w, "      --disabled          Disable or enable the provider instance")

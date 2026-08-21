@@ -18,7 +18,7 @@ import (
 func (a *App) newHooksCommand() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "hooks",
-		Short: "Inspect sandbox agent hook logs",
+		Short: "Inspect discobox hook logs",
 	}
 	cmd.AddCommand(a.newHooksLogsCommand())
 	return cmd
@@ -29,7 +29,7 @@ func (a *App) newHooksLogsCommand() *cobra.Command {
 	var limit int
 	cmd := &cobra.Command{
 		Use:   "logs",
-		Short: "Print sandbox agent hook payload logs",
+		Short: "Print discobox hook payload logs",
 		Args:  cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			projectID, resolvedSandboxID, err := a.resolveHookLogScope(cmd.Context(), sandboxID)
@@ -71,17 +71,17 @@ func (a *App) newHooksLogsCommand() *cobra.Command {
 			return writeHarnessHookLogs(cmd.OutOrStdout(), logs)
 		},
 	}
-	cmd.Flags().StringVar(&sandboxID, "sandbox-id", "", "Sandbox ID")
+	cmd.Flags().StringVar(&sandboxID, "discobox-id", "", "Discobox ID")
 	cmd.Flags().StringVar(&terminalID, "terminal-id", "", "Terminal ID or prefix")
 	cmd.Flags().IntVar(&limit, "limit", 100, "Maximum number of hook records to return")
-	_ = cmd.RegisterFlagCompletionFunc("sandbox-id", a.completeSandboxes)
+	_ = cmd.RegisterFlagCompletionFunc("discobox-id", a.completeSandboxes)
 	_ = cmd.RegisterFlagCompletionFunc("terminal-id", a.completeTerminals(&sandboxID))
 	return cmd
 }
 
 func (a *App) resolveHookLogScope(ctx context.Context, sandboxID string) (string, string, error) {
 	if strings.TrimSpace(sandboxID) == "" {
-		return "", "", fmt.Errorf("--sandbox-id is required")
+		return "", "", fmt.Errorf("--discobox-id is required")
 	}
 	projectID, resolvedSandboxID, _, err := a.sandboxRequest(ctx, sandboxID)
 	return projectID, resolvedSandboxID, err

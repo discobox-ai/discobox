@@ -55,7 +55,7 @@ func TestHarnessesScreenExpandsTheWindow(t *testing.T) {
 	}
 }
 
-// WithHarnesses is `disco configure`: the window opens on the screen, already
+// WithHarnesses is `discobox configure`: the window opens on the screen, already
 // out.
 func TestWithHarnessesOpensOnTheScreen(t *testing.T) {
 	m := New(t.Context(), newFakeSource(), WithHarnesses())

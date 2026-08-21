@@ -85,7 +85,7 @@ func TestSSHConnectWebSocketURL(t *testing.T) {
 }
 
 // TestToolsSSHDoesNotParseSSHFlags is the reason flag parsing is disabled on
-// this command: `disco tools ssh -L 8080:localhost:3000` puts ssh's own flags
+// this command: `discobox tools ssh -L 8080:localhost:3000` puts ssh's own flags
 // first, and cobra rejects unknown shorthand flags before RunE ever runs. The
 // command is pointed at a dead server so it fails later, on purpose — what is
 // asserted is that it got past argument parsing at all.

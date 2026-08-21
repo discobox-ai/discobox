@@ -8,7 +8,7 @@ import (
 	"github.com/charmbracelet/x/ansi"
 )
 
-// logo.chars is the disco mark, already styled: it was captured from a
+// logo.chars is the discobox mark, already styled: it was captured from a
 // terminal, so it carries its own colors and inverse-video runs.
 //
 //go:embed logo.chars

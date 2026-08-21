@@ -109,7 +109,7 @@ func DeliverSource(ctx context.Context, client sourceDeliveryClient, projectID s
 		}
 		slug := strings.TrimSpace(entry.source.Slug.Or(""))
 		if slug == "" {
-			return fmt.Errorf("sandbox source has no slug to address its repository")
+			return fmt.Errorf("discobox source has no slug to address its repository")
 		}
 		repoRoot, err := local.pushRoot(entry.key)
 		if err != nil {
@@ -122,7 +122,7 @@ func DeliverSource(ctx context.Context, client sourceDeliveryClient, projectID s
 		if err := pushSource(ctx, repoRoot, originURL, token, commit, branch, snapshotRef); err != nil {
 			return err
 		}
-		// The commit just delivered is the lease every later `disco push` of this
+		// The commit just delivered is the lease every later `discobox push` of this
 		// source leases against (ADR 0058 §6). A failure to record it must not
 		// fail the create: the source is delivered either way, and the only cost
 		// is that the next push has no lease to hold.
@@ -138,11 +138,11 @@ func DeliverSource(ctx context.Context, client sourceDeliveryClient, projectID s
 func pushRefs(source apimodel.GitSource) (commit, branch, snapshotRef string, err error) {
 	checkout, ok := source.Checkout.Get()
 	if !ok {
-		return "", "", "", fmt.Errorf("sandbox source does not name a commit to push")
+		return "", "", "", fmt.Errorf("discobox source does not name a commit to push")
 	}
 	commit = strings.TrimSpace(checkout.Commit.Or(""))
 	if commit == "" {
-		return "", "", "", fmt.Errorf("sandbox source does not name a commit to push")
+		return "", "", "", fmt.Errorf("discobox source does not name a commit to push")
 	}
 	if strings.TrimSpace(checkout.RefType.Or("")) == runSourceRefTypeBranch {
 		branch = strings.TrimSpace(checkout.RefName.Or(""))
@@ -171,9 +171,9 @@ func (s *LocalSources) pushRoot(key string) (string, error) {
 		}
 	}
 	if key == "" {
-		return "", fmt.Errorf("the sandbox expects a source push, but its source was not resolved from a local repository")
+		return "", fmt.Errorf("the discobox expects a source push, but its source was not resolved from a local repository")
 	}
-	return "", fmt.Errorf("the sandbox expects a push for source %s, but it was not resolved from a local repository", key)
+	return "", fmt.Errorf("the discobox expects a push for source %s, but it was not resolved from a local repository", key)
 }
 
 // awaitSourceRequested waits until the sandbox is parked waiting for its
@@ -193,10 +193,10 @@ func awaitSourceRequested(ctx context.Context, client sourceDeliveryClient, proj
 		case apiclientgen.SandboxRuntimeStateAwaitingSource:
 			return nil
 		case apiclientgen.SandboxRuntimeStateFailed:
-			return fmt.Errorf("sandbox failed before it could receive its source: %s", sandbox.Runtime.ErrorMessage.Or("unknown error"))
+			return fmt.Errorf("discobox failed before it could receive its source: %s", sandbox.Runtime.ErrorMessage.Or("unknown error"))
 		}
 		if time.Now().After(deadline) {
-			return fmt.Errorf("timed out after %s waiting for the sandbox to be ready for its source", awaitSourceTimeout)
+			return fmt.Errorf("timed out after %s waiting for the discobox to be ready for its source", awaitSourceTimeout)
 		}
 		select {
 		case <-ctx.Done():
@@ -222,7 +222,7 @@ func pushSource(ctx context.Context, repoRoot, repoURL, token, commit, branch, s
 	args := []string{"push", repoURL}
 	args = append(args, refspecs...)
 	if _, err := gitutil.Output(ctx, repoRoot, nil, nil, sandboxgit.AuthArgs(token, args)...); err != nil {
-		return fmt.Errorf("push source to sandbox: %w", err)
+		return fmt.Errorf("push source to discobox: %w", err)
 	}
 	return nil
 }

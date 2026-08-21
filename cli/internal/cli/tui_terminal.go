@@ -80,7 +80,7 @@ func (d *apiDataSource) OpenExec(ctx context.Context, sandboxID, execID string, 
 }
 
 // NewShell creates, attaches and starts a fresh interactive shell exec — what
-// `disco shell` with no command runs. Only the sandbox can say which shell its
+// `discobox shell` with no command runs. Only the sandbox can say which shell its
 // user has, so the request asks for one rather than naming it.
 func (d *apiDataSource) NewShell(ctx context.Context, sandboxID string, cols, rows int) (tui.Exec, tui.Terminal, error) {
 	return d.newSandboxSession(ctx, sandboxID, sandboxExecCreateOptions{

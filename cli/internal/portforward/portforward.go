@@ -6,7 +6,7 @@
 // that turns a Target into a net.Conn and a listing of targets whenever the
 // listing changes, and it owns the rest — picking a local port near the remote
 // one, accepting connections, splicing them, and reporting what it did. That
-// is what lets the same forwarder back `disco proxy` and the launcher's port
+// is what lets the same forwarder back `discobox proxy` and the launcher's port
 // list without either of them owning the mechanics.
 package portforward
 

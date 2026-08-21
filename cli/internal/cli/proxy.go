@@ -25,36 +25,36 @@ type proxyOptions struct {
 	ports    []int
 }
 
-// newProxyCommand implements `disco proxy`: hold a local port open for every
+// newProxyCommand implements `discobox proxy`: hold a local port open for every
 // port the sandbox is listening on, for as long as the command runs.
 func (a *App) newProxyCommand() *cobra.Command {
 	var opts proxyOptions
 	cmd := &cobra.Command{
-		Use:   "proxy [SANDBOX_ID]",
-		Short: "Forward a sandbox's listening ports to local ports",
-		Long: `Forward every port a sandbox is listening on to a local port.
+		Use:   "proxy [DISCOBOX_ID]",
+		Short: "Forward a discobox's listening ports to local ports",
+		Long: `Forward every port a discobox is listening on to a local port.
 
-Without SANDBOX_ID the sandbox is taken from the ones "disco ls" shows for the
+Without DISCOBOX_ID the discobox is taken from the ones "discobox ls" shows for the
 current project directory: the only one when there is one, otherwise you are
 asked to pick.
 
-The sandbox reports what its own processes are serving, and each port is bound
+The discobox reports what its own processes are serving, and each port is bound
 locally at the same number when it is free and at the nearest one above it when
-it is not — a sandbox serving 8080 is http://localhost:8081 when something else
+it is not — a discobox serving 8080 is http://localhost:8081 when something else
 already has 8080. Ports that appear while the command runs are bound as they
 appear, and the command prints every bind and every connection it forwards.
 
 --port narrows that to the ports you name, and forwards them whether or not the
-sandbox has reported them yet — the report is a poll behind, and a port you just
+discobox has reported them yet — the report is a poll behind, and a port you just
 started is one you want now.
 
 A local port stays bound once it has been given out, even if what was behind it
-in the sandbox restarts and drops off the listing for a moment, so a URL you
+in the discobox restarts and drops off the listing for a moment, so a URL you
 have open keeps working. Forwarding stops when the command does.`,
-		Example: `  disco proxy
-  disco proxy sbx_01hq
-  disco proxy --port 8080 --port 5432
-  disco proxy --address 0.0.0.0`,
+		Example: `  discobox proxy
+  discobox proxy sbx_01hq
+  discobox proxy --port 8080 --port 5432
+  discobox proxy --address 0.0.0.0`,
 		Args:              cobra.MaximumNArgs(1),
 		ValidArgsFunction: a.completeSandboxes,
 		RunE: func(cmd *cobra.Command, args []string) error {
@@ -70,8 +70,8 @@ have open keeps working. Forwarding stops when the command does.`,
 		},
 	}
 	cmd.Flags().StringVar(&opts.address, "address", portforward.DefaultBindAddress, "Local address to bind forwarded ports on")
-	cmd.Flags().DurationVar(&opts.interval, "interval", proxyPollInterval, "How often to ask the sandbox what it is listening on")
-	cmd.Flags().IntSliceVar(&opts.ports, "port", nil, "Sandbox port to forward whether or not it has been reported; repeatable, and forwards every reported port when unset")
+	cmd.Flags().DurationVar(&opts.interval, "interval", proxyPollInterval, "How often to ask the discobox what it is listening on")
+	cmd.Flags().IntSliceVar(&opts.ports, "port", nil, "Discobox port to forward whether or not it has been reported; repeatable, and forwards every reported port when unset")
 	return cmd
 }
 

@@ -11,8 +11,8 @@ import (
 	"github.com/go-faster/jx"
 )
 
-// Records one successful disco apply of a source's commits into a host working tree. Client-declared
-// provenance, like Origin, since the server cannot observe host-side Git state.
+// Records one successful discobox apply of a source's commits into a host working tree.
+// Client-declared provenance, like Origin, since the server cannot observe host-side Git state.
 // Ref: #/components/schemas/AppliedSourceCommit
 type AppliedSourceCommit struct {
 	// When this apply was recorded.
@@ -10629,8 +10629,8 @@ type SandboxRuntime struct {
 	ProvisionProgress     OptSandboxProvisionProgress `json:"provisionProgress"`
 	// When provisionProgress was observed.
 	ProvisionProgressAt OptDateTime `json:"provisionProgressAt"`
-	// History of successful disco apply runs that landed this sandbox's commits on a host, most recent
-	// last. Client-reported; append-only.
+	// History of successful discobox apply runs that landed this sandbox's commits on a host, most
+	// recent last. Client-reported; append-only.
 	AppliedCommits OptNilAppliedSourceCommitArray `json:"appliedCommits"`
 	// Requested existence. Power state is not requested: whether a sandbox is running is
 	// observed and reported by its runtime, never asked for by the control plane

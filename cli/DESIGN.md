@@ -1,6 +1,6 @@
 # CLI Design
 
-The CLI module owns the `disco` command implementation and talks to the
+The CLI module owns the `discobox` command implementation and talks to the
 control plane through generated root-module API clients plus a few handwritten
 transport helpers where OpenAPI does not model the stream.
 
@@ -8,13 +8,13 @@ transport helpers where OpenAPI does not model the stream.
 
 | Package/path | Ownership |
 | --- | --- |
-| `cmd/disco` | Binary entrypoint. |
+| `cmd/discobox` | Binary entrypoint. |
 | `internal/cli` | Cobra command tree, output formatting, local server auto-start, TUI API adapter, and the attach transports and policy layered on `execstream/client`. |
 | `internal/sandboxcreate` | UI-independent client-side sandbox request preparation and creation, including prompt options, source resolution, workspace snapshots, environment/secrets, local user identity, and source push delivery. |
 | `internal/sandboxgit` | The client's git transport to a sandbox: the worktree and origin repository URLs the control plane proxies, bearer-token auth on those requests, and the client-side ref names that record what has been sent. Shared by create, apply and push. |
-| `internal/sandboxpush` | `disco push`: re-delivering a push-delivered source's commits into the origin repository its sandbox fetches from, under a lease (ADR 0058). |
+| `internal/sandboxpush` | `discobox push`: re-delivering a push-delivered source's commits into the origin repository its sandbox fetches from, under a lease (ADR 0058). |
 | `internal/origin` | Resolves the client host and project directory a sandbox is created from. Host identity itself is shared, in the root module's `internal/hostid`. |
-| `internal/tui` | The `disco tui` launcher: Bubble Tea presentation and interaction state, expressed against its own `DataSource` interface. See [`internal/tui/DESIGN.md`](internal/tui/DESIGN.md). |
+| `internal/tui` | The `discobox tui` launcher: Bubble Tea presentation and interaction state, expressed against its own `DataSource` interface. See [`internal/tui/DESIGN.md`](internal/tui/DESIGN.md). |
 | `internal/portforward` | Frontend-independent dynamic port forwarding: local listeners kept in sync with a remote's announced ports, over a caller-supplied dialer. |
 | `internal/keys` | The leader: its default, its `DISCOBOX_LEADER` override, normalization, and the byte a raw stream matches it as. Owned here because the launcher's panes and a plain attach must reserve the same key. |
 
@@ -29,7 +29,7 @@ transport helpers where OpenAPI does not model the stream.
 - The launcher never reimplements a command, and never steps aside for one.
   `apply` is drawn in an overlay pane from either screen — the list and the
   workspace — and is the Cobra command itself, spawned as a child
-  `disco apply <id>` on a local pty sized to the pane (`tui_local.go`). The pty
+  `discobox apply <id>` on a local pty sized to the pane (`tui_local.go`). The pty
   is the child's *controlling* terminal, so anything reading its keys from
   `/dev/tty` reads them from the pane rather than from the real terminal, out
   from under the window drawing it. The child inherits this invocation's
@@ -42,12 +42,12 @@ transport helpers where OpenAPI does not model the stream.
   through a thread attribute `os/exec` cannot carry — so `localpty.Start` takes
   argv rather than an `*exec.Cmd`. See
   [ADR 0065](../docs/adr/0065-the-cli-owns-its-pty-seam-and-windows-gets-conpty.md).
-- What runs is therefore `disco apply` with its own flag defaults and terminal
+- What runs is therefore `discobox apply` with its own flag defaults and terminal
   detection, not a second implementation that drifts from it. A launcher that
   cannot be reproduced from a shell is the thing to avoid.
-- Bare `disco` runs the launcher when stdin and stdout are both terminals, and
+- Bare `discobox` runs the launcher when stdin and stdout are both terminals, and
   prints its help otherwise (`App.runTUI`, reached from the root command's
-  `RunE` and from `disco tui`). Typing a program's name is how you ask for it,
+  `RunE` and from `discobox tui`). Typing a program's name is how you ask for it,
   and the launcher is the one thing you can ask for without knowing a
   subcommand; a pipe, a script or CI expected output, and a full-screen window
   is not an answer to that. The root's `Args` is left at cobra's default, which
@@ -55,14 +55,14 @@ transport helpers where OpenAPI does not model the stream.
   handing it to the launcher. The leader there comes from the environment only:
   a flag would have to be persistent to be reachable, and every subcommand would
   carry one that means nothing to it.
-- `disco configure` is the same launcher opened on its harnesses screen
+- `discobox configure` is the same launcher opened on its harnesses screen
   (`tui.WithHarnesses()`), not a window of its own. See *Harness Configure
   Step*.
 - `DISCOBOX_LEADER` sets the prefix key, normalized by `keys.NormalizeLeader`:
   a bare letter is taken as Ctrl-that, since a leader that is not a chord would
   be a character you could never type, and only a letter is accepted because the
   leader has to survive being turned back into the byte a terminal sends.
-  `disco tui --leader` overrides it for the launcher; nothing else takes a flag.
+  `discobox tui --leader` overrides it for the launcher; nothing else takes a flag.
   It is one key for both the launcher's panes and a plain attach's detach chord.
 - Attach and shell are terminals rather than commands, and are drawn inside the
   window by the `termpane` module. `apiDataSource.Open` connects one:
@@ -70,7 +70,7 @@ transport helpers where OpenAPI does not model the stream.
   attach as the byte stream a pane draws. Attach targets the virtual primary
   exec id and needs no start — the agent resolves the sandbox's current primary
   terminal and relaunches it if it has stopped. A shell creates a new
-  interactive TTY exec, the same one `disco shell` with no command runs, carrying
+  interactive TTY exec, the same one `discobox shell` with no command runs, carrying
   `COLORTERM` and `NO_COLOR` from this terminal (`paneTerminalEnv`) so the
   sandbox knows how much color to use. `TERM` is deliberately not forwarded: the
   terminal on the client side of a pane is an emulator, not the user's, and the
@@ -116,10 +116,10 @@ builds leave it disabled; release CLI binaries opt in at build time by setting
 remains the runtime override for release binaries.
 
 Advanced configuration and low-level resource commands are grouped beneath the
-visible `disco box` command: `project`, `sandbox`, `terminal`, `exec`,
+visible `discobox admin` command: `project`, `sandbox`, `terminal`, `exec`,
 `provider`, `pool`, `job`, `harnesses`, and `hooks` are not root commands.
 
-`disco box project` is the only command group not scoped by the global
+`discobox admin project` is the only command group not scoped by the global
 `--project` flag: its arguments name the project being acted on, resolved by
 `resolveProjectID` from the same selectors `-p` accepts (the `default` alias, a
 full or short ID, or the display name). `set-default` moves the flag
@@ -128,8 +128,8 @@ unset. `create --from` copies an existing project's configuration
 ([ADR 0023](../docs/adr/0023-projects-are-created-by-copy-and-deleted-only-when-empty.md)),
 with `--copy` selecting what comes across and `--copy none` taking nothing.
 
-`disco shell` is the exception: the root command is the everyday one-shot "run
-this in my sandbox" verb, while `box exec create` stays the raw, fully
+`discobox shell` is the exception: the root command is the everyday one-shot "run
+this in my sandbox" verb, while `admin exec create` stays the raw, fully
 configurable form (workdir, env, user, detach, explicit `-i`/`-t`). Both drive
 the same exec create/attach/status sequence. The root form has no `-it`: stdin
 is always attached, and a PTY is requested only when stdin, stdout, and stderr
@@ -138,12 +138,12 @@ session writes stdout frames to stdout and stderr frames to stderr, with no
 special case for the PTY: a TTY exec merges at the PTY and simply never sends a
 stderr frame, which the client neither detects nor needs to.
 
-`disco shell [SANDBOX_ID] [CMD...]` (`internal/cli/shell.go`) takes the sandbox
-and the command as one positional list rather than a `--sandbox-id` flag, since
+`discobox shell [DISCOBOX_ID] [CMD...]` (`internal/cli/shell.go`) takes the sandbox
+and the command as one positional list rather than a `--discobox-id` flag, since
 which sandbox to run in is picked as often by ID as left to the picker. Cobra
-sees one flat `[]string` and cannot tell SANDBOX_ID from CMD apart, so
+sees one flat `[]string` and cannot tell DISCOBOX_ID from CMD apart, so
 `resolveShellTarget` decides: `args[0]` is tried against the sandboxes
-`disco ls` shows for the current project directory (`matchSandboxArg`) —
+`discobox ls` shows for the current project directory (`matchSandboxArg`) —
 
 - A full generated ID (`id.IsGenerated`) is trusted outright: a resource prefix
   plus 16 random characters cannot collide with a real command word by
@@ -152,40 +152,40 @@ sees one flat `[]string` and cannot tell SANDBOX_ID from CMD apart, so
   what the listing shows and what people type, and a partial one would compete
   with short-ID matching for the same argument.
 - A short ID is matched against that candidate list exactly like an explicit
-  SANDBOX_ID argument elsewhere. Zero matches is not an error — it just means
+  DISCOBOX_ID argument elsewhere. Zero matches is not an error — it just means
   `args[0]` was never a sandbox reference — but more than one is reported as
   ambiguous, since its shape said it was meant as an ID.
 
-A match consumes `args[0]` as SANDBOX_ID and leaves the rest as CMD. No
+A match consumes `args[0]` as DISCOBOX_ID and leaves the rest as CMD. No
 match — including no arguments at all — means every argument is CMD, and the
-sandbox falls back to the same picker `disco apply` uses when SANDBOX_ID is
+sandbox falls back to the same picker `discobox apply` uses when DISCOBOX_ID is
 omitted.
 
-`disco shell` with no command runs the sandbox user's login shell. The CLI
+`discobox shell` with no command runs the sandbox user's login shell. The CLI
 never names that shell: it sets `shell: true` on the exec create request and
 the sandbox resolves the run user's shell from its own passwd database,
 because the local `$SHELL` describes this machine and says nothing about the
-identity the exec runs as. `box exec create --shell` is the same request in
+identity the exec runs as. `admin exec create --shell` is the same request in
 raw form.
 
-`disco tools` groups the everyday development tools run *against* a sandbox —
+`discobox tools` groups the everyday development tools run *against* a sandbox —
 `git`, `ssh`, and `vscode` today. Which sandbox is the one thing every tool has
-in common, so `--sandbox-id` is a persistent flag on `tools` itself and every
+in common, so `--discobox-id` is a persistent flag on `tools` itself and every
 subcommand inherits it. Everything else belongs to the subcommand that means it,
 including where the tool runs: `git` runs inside the sandbox and takes
 `--source`/`-s`, while `ssh` and `vscode` run on this machine and connect to the
 sandbox. Each then drives the same exec create/attach/status sequence as
-`disco shell`. Flag parsing stops at the first positional argument
+`discobox shell`. Flag parsing stops at the first positional argument
 (`SetInterspersed(false)`), so everything from there on reaches the tool verbatim.
 
 The default path sends no workdir and fetches no sandbox record: an exec with no
 workdir already lands in the sandbox-agent's default exec directory, which is the
 primary source's. Only `git --source` has to `GetSandbox` to turn a slug into a
-directory. With a full `--sandbox-id` the whole command is create + attach +
-start + status, so a one-shot `disco t git status` costs no round trip it does
+directory. With a full `--discobox-id` the whole command is create + attach +
+start + status, so a one-shot `discobox t git status` costs no round trip it does
 not need.
 
-`disco tools ssh` needs no SSH port on the server. The session is carried over
+`discobox tools ssh` needs no SSH port on the server. The session is carried over
 the endpoint the CLI already uses: a loopback TCP port opened for the life of
 the command splices each connection to a `GET /ssh/connect` websocket, whose
 byte stream the server hands to the same sshd its TCP listener feeds.
@@ -201,7 +201,7 @@ just resolved. The enrolled key is the single persisted thing, and
 `resolveSSHIdentity` reuses an already-enrolled one rather than adding another.
 
 Flag parsing is **off** for `tools ssh` (`DisableFlagParsing`), not merely
-non-interspersed: `disco tools ssh -L 8080:localhost:3000` puts ssh's own flags
+non-interspersed: `discobox tools ssh -L 8080:localhost:3000` puts ssh's own flags
 first, and cobra would reject them as unknown before the command ever ran. The
 leading argument is taken as a sandbox only when it does not start with `-` and
 `matchSandboxArg` recognizes it; everything else reaches ssh.
@@ -218,11 +218,11 @@ under the backgrounded ssh — which is exactly what it did before the check
 existed, silently. Backgrounding the whole command keeps both lifetimes
 together and leaves one process to kill.
 
-`disco tools vscode` opens a sandbox in VS Code over Remote-SSH. Remote-SSH
+`discobox tools vscode` opens a sandbox in VS Code over Remote-SSH. Remote-SSH
 drives the system `ssh` binary and reads `ssh_config`, so the only way to hand
 it a host is to put the host where ssh finds it: the command refreshes the
 project's managed config (`buildManagedSSHConfig` + `writeManagedSSHConfig`, the
-same files `box ssh-config --write` owns) and then runs `code --remote
+same files `admin ssh-config --write` owns) and then runs `code --remote
 ssh-remote+<alias> <workdir>`.
 
 Nothing is held open afterwards, which is the point of ADR 0057: the written
@@ -269,7 +269,7 @@ as the table: the order is the CLI's answer, not a table-rendering detail.
 ## Sandbox Display Name
 
 The NAME a sandbox listing shows is `Sandbox.displayName`, computed by the
-server (`services.SandboxDisplayName`) and read verbatim here — `disco ls`, the
+server (`services.SandboxDisplayName`) and read verbatim here — `discobox ls`, the
 launcher, and any other client name a sandbox the same way because none of them
 derives it. Display only — name *resolution* (`matchSandboxArg`, `--name`
 updates) still works on the configured name, and the TUI disables rename on a
@@ -280,13 +280,13 @@ would change nothing on screen.
 ## Choosing a Sandbox Interactively
 
 Commands that act on "the sandbox I am working in" take a sandbox identifier —
-as `--sandbox-id` (`box exec`, `box terminal`), an optional positional
-`SANDBOX_ID` (`apply`, `attach`, `box get`), or a leading
+as `--discobox-id` (`admin exec`, `admin terminal`), an optional positional
+`DISCOBOX_ID` (`apply`, `attach`, `admin get`), or a leading
 positional argument shared with the command itself (`shell`, resolved by
 `resolveShellTarget` rather than `selectSandbox`) — and fall back to
 `selectSandbox` (`internal/cli/picker.go`) when it's omitted, never to a guess:
 
-- Candidates are exactly what `disco ls` shows — `listProjectSandboxes` filtered
+- Candidates are exactly what `discobox ls` shows — `listProjectSandboxes` filtered
   to the current project directory's origin — so the command and the listing can
   never disagree.
 - One candidate is used, none and several are errors, and several with a
@@ -342,7 +342,7 @@ session, `execstream/client`.
   rejected the attach with a definitive status (`404`, `409`) its own message is
   reported verbatim instead: it knows why, and the client's inference would only
   repeat or contradict it.
-- Nothing polls for readiness before attaching. `disco run` creates, delivers
+- Nothing polls for readiness before attaching. `discobox run` creates, delivers
   the source if it must be pushed, and attaches; the attach itself waits, at
   each tier for what only that tier can see — the control plane for the sandbox
   to be dispatched to a live pool and to be usable rather than mid-delivery, the
@@ -351,7 +351,7 @@ session, `execstream/client`.
   until `displayState: running`, then poll the exec list until a primary exists
   past `installing` — cost a request per second of provisioning for facts the
   server knew the instant they changed, and every client had to reimplement
-  them. `--wait` on `box sandbox create` is a different thing and stays: there
+  them. `--wait` on `admin discobox create` is a different thing and stays: there
   the wait *is* what was asked for.
 - The wait is narrated, and the narration never gates it. `attachSandboxTerminal`
   starts `watchProvisioning` before the dial and takes it down the moment the
@@ -383,7 +383,7 @@ session, `execstream/client`.
   sandbox is `stopping`, `stopped`, or `failed`, the attach ends rather than
   reconnecting forever — the stop is observable, so the client acts on it instead
   of looping against a runtime that is gone. No attach restarts the sandbox;
-  `disco attach` (`internal/cli/attach.go`) is deliberately a thin wrapper over
+  `discobox attach` (`internal/cli/attach.go`) is deliberately a thin wrapper over
   `attachSandboxTerminal` with the virtual primary id and nothing else — sandbox
   autostart is a possible future addition to it, and until then the client never
   starts a sandbox to keep an attach alive.
@@ -407,7 +407,7 @@ session, `execstream/client`.
   stdin instead of silently dropping accepted input. Resize is idempotent state,
   so only its latest value is retained and restored.
 - A plain exec attach (`attachSandboxExec`, `internal/cli/sandbox_execs.go`) —
-  `disco shell`, `box exec create`, `disco tools git`, everything that is not a
+  `discobox shell`, `admin exec create`, `discobox tools git`, everything that is not a
   harness terminal — follows the same PTY/no-PTY split as replay itself:
   `openExecAttachConn` picks the reconnecting transport, replay included, when
   `tty` is true, and the direct one otherwise. A TTY exec's screen can be
@@ -435,7 +435,7 @@ session, `execstream/client`.
 
 ## Port Forwarding (ADR 0049)
 
-`disco proxy` holds a local port open for every port a sandbox is listening on.
+`discobox proxy` holds a local port open for every port a sandbox is listening on.
 The mechanics are `internal/portforward`, which knows nothing about sandboxes:
 it is given a `Dialer` and a set of `Target`s, and owns picking local ports,
 accepting, splicing, and reporting. `internal/cli/proxy.go` supplies the two
@@ -481,14 +481,14 @@ launcher will supply the same two halves and draw them instead.
 
 ## Pool Host Console
 
-`disco box pool console [POOL_ID]` attaches this terminal to a root shell on
+`discobox admin pool console [POOL_ID]` attaches this terminal to a root shell on
 the machine hosting a pool's runtime — a WSL guest, a libkrun microVM, a
 droplet, the local Docker host — for debugging that backend
 ([ADR 0051](../docs/adr/0051-the-pool-console-attaches-through-the-driver.md)).
 
 It reuses the attach machinery rather than inventing a second one: the same
 `execstream/client.Session` with raw mode, resize tracking, and the leader-key
-detach chord that `disco attach` uses, over a websocket to the control plane's
+detach chord that `discobox attach` uses, over a websocket to the control plane's
 console route. What differs is that there is no exec to create or start first
 and no reconnecting transport — the console container is persistent, so a
 dropped connection is reopened by running the command again, and there is no
@@ -501,27 +501,27 @@ repainted.
 
 ## SSH Keys and Config (ADR 0024)
 
-`disco box ssh-key` and `disco box ssh-config` are the CLI-side counterpart
+`discobox admin ssh-key` and `discobox admin ssh-config` are the CLI-side counterpart
 to the SSH control-plane ingress (`server/internal/sshd/DESIGN.md`); they
-are advanced/low-level configuration in the same sense as `box provider` or
-`box pool`, so they live under `disco box` rather than at the root command
+are advanced/low-level configuration in the same sense as `admin provider` or
+`admin pool`, so they live under `discobox admin` rather than at the root command
 level or layering on the attach transports above.
 
-- `disco box ssh-key add` with an explicit file (or `-` for stdin) argument
+- `discobox admin ssh-key add` with an explicit file (or `-` for stdin) argument
   enrolls that key directly. With no argument it lists public keys from a
   running `SSH_AUTH_SOCK` agent (falling back to `~/.ssh/*.pub`) and reuses
   the shared picker (`internal/cli/picker.go`) for the "which key" choice
-  when there is more than one candidate — the same picker `disco shell`'s
+  when there is more than one candidate — the same picker `discobox shell`'s
   sandbox selection and `run --include-dirty`'s prompt use. This step is
   enrollment convenience only: listing an agent's public keys proves nothing
   about possession of the private half, and the actual authorization is the
   authenticated `CreateSSHKey` API call that follows, never agent presence
   itself (ADR 0024 §6).
-- `disco box ssh-config` emits one `ssh_config(5)` `Host` stanza per sandbox in
+- `discobox admin ssh-config` emits one `ssh_config(5)` `Host` stanza per sandbox in
   the current project plus a `known_hosts` line. The stanzas name **no address**
-  (ADR 0057): they carry a `ProxyCommand` that runs this executable as `disco
-  --server <endpoint> box ssh-proxy`, which splices its own stdio onto `GET
-  /ssh/connect` — the same door `disco tools ssh`'s bridge dials, with `ssh`
+  (ADR 0057): they carry a `ProxyCommand` that runs this executable as `discobox
+  --server <endpoint> admin ssh-proxy`, which splices its own stdio onto `GET
+  /ssh/connect` — the same door `discobox tools ssh`'s bridge dials, with `ssh`
   owning the process instead of a loopback port. There is no other way in: the
   server binds no SSH port. Everything built on `ssh` rather than on our client
   — Remote-SSH, `scp`, `git` — reaches a sandbox wherever this CLI reaches the
@@ -605,12 +605,12 @@ level or layering on the attach transports above.
 Keystrokes reach the remote job, never this process. Two mechanisms, chosen by
 whether the attach has a PTY — not by which command is running:
 
-- **Raw mode (any TTY attach: `run`, `box terminal attach`, `configure`,
-  `shell`/`box exec create` with a PTY).** `MakeRaw` turns off ISIG, so Ctrl-C,
+- **Raw mode (any TTY attach: `run`, `admin terminal attach`, `configure`,
+  `shell`/`admin exec create` with a PTY).** `MakeRaw` turns off ISIG, so Ctrl-C,
   Ctrl-Z, and Ctrl-\ are never signals here — they travel as the bytes 0x03,
   0x1a, 0x1c and the *remote* line discipline signals the remote foreground job.
   Nothing to forward, and the local CLI is never the target.
-- **No PTY (`disco shell` into a pipe or redirect).** The local terminal is still
+- **No PTY (`discobox shell` into a pipe or redirect).** The local terminal is still
   cooked, so those keys raise real signals here. `proxySignals` catches them and
   sends a Signal frame instead of acting on them.
 
@@ -637,7 +637,7 @@ suspend request maps to SIGSTOP there too.
 
 Every create carries an **origin**: this client's host identity plus the project
 directory, which is the Git repository root of `-C` (the working directory by
-default), or that directory itself outside a repository. `disco ls` filters on
+default), or that directory itself outside a repository. `discobox ls` filters on
 its key rather than on the source root, because a local path identifies a
 repository only on the machine holding it — it means nothing once the server is
 remote, and collides across hosts and users.
@@ -656,7 +656,7 @@ comes up clean and the edits are lost), and then reports the pushes complete. It
 pushes the commits the server recorded at create, by explicit refspec, rather
 than whatever the local branches now point at, and records each under
 `refs/discobox/origin/<sandbox>/<slug>/<branch>` as the lease a later
-`disco push` holds.
+`discobox push` holds.
 
 Delivery is decided per source, so the primary source and each `--include`
 reference (below) are pushed or bound independently. Every push-delivered source
@@ -679,14 +679,14 @@ URL, and the client-side ref names.
 `CreatePromptSandbox` and `DeliverSource` both take a `sandboxcreate.Report` and
 call it as they enter each step. These steps are this process's own work, so
 nothing else can say which one is underway; the words live in `sandboxcreate`
-so `disco run` and the launcher cannot describe the same stage differently,
+so `discobox run` and the launcher cannot describe the same stage differently,
 while where the line is drawn and when it is cleared stays each frontend's.
 
 See [ADR 0001](../docs/adr/0001-sandbox-origin-and-remote-source-push.md).
 
-## Re-delivering Source (`disco push`)
+## Re-delivering Source (`discobox push`)
 
-`disco push` (`internal/cli/push.go`, `internal/sandboxpush`) sends local commits
+`discobox push` (`internal/cli/push.go`, `internal/sandboxpush`) sends local commits
 into the origin repository a push-delivered source's sandbox fetches from, so
 work done here since create can be rebased onto there. It acts per source —
 every push-delivered source of the sandbox, or the one `--source` names — since
@@ -750,7 +750,7 @@ see the launcher's design doc.
 
 A dirty local workspace becomes a snapshot commit on top of the checked-out
 commit, kept under `refs/discobox/run/`, and reaches the sandbox as uncommitted
-changes on that same commit. `disco run --include-dirty` decides whether that
+changes on that same commit. `discobox run --include-dirty` decides whether that
 happens:
 
 - `auto` (default) asks, and only when the workspace is actually dirty. The
@@ -768,7 +768,7 @@ happens:
 
 ## Extra Sources
 
-`disco run -i DIR` brings more sources into the same sandbox, repeated for more
+`discobox run -i DIR` brings more sources into the same sandbox, repeated for more
 than one. They become the create request's `sourceCodeReferences`, and the
 mechanism they use is the primary source's, not a second one:
 
@@ -800,7 +800,7 @@ A repository can name the others it is worked on with, in
 {"foo": "https://github.com/acme/foo"}
 ```
 
-`disco run` and the launcher both bring them in, as source code references
+`discobox run` and the launcher both bring them in, as source code references
 resolved exactly like `--include`:
 
 - **A local checkout wins.** `foo` is looked for at the sibling of the primary
@@ -834,7 +834,7 @@ resolved exactly like `--include`:
   they named — or does not want a large clone on every run.
 
 `sandboxcreate` resolves them and reports through
-`PromptOptions.ReportDeclaredSource`; `disco run` prints one line per source on
+`PromptOptions.ReportDeclaredSource`; `discobox run` prints one line per source on
 stderr. The launcher passes no reporter — it owns its screen and has no status
 line for per-source progress — so it brings the same sources in silently. See
 [ADR 0056](../docs/adr/0056-a-repository-declares-the-sources-it-is-worked-on-with.md).
@@ -880,7 +880,7 @@ endpoint, is not a server only half the CLI can reach.
 
 ## Apply Output
 
-`disco apply` (`internal/cli/apply.go`) performs git operations on the user's
+`discobox apply` (`internal/cli/apply.go`) performs git operations on the user's
 own repository, so its output is an account of those operations rather than a
 verdict. Every source reports the local repository and branch it lands on, the
 sandbox repository and fetch ref it comes from, the base commit and *why* that
@@ -928,7 +928,7 @@ identifiers and JSON keys keep ADR 0014's `Host*` vocabulary.
 
 ## Harness Configure Step
 
-`disco box harnesses configure` (`internal/cli/harness.go`) drives a harness's
+`discobox admin harnesses configure` (`internal/cli/harness.go`) drives a harness's
 interactive configure flow. The server owns applying the result; the CLI only
 sequences the calls and hands the user the terminal in between:
 
@@ -947,7 +947,7 @@ sequences the calls and hands the user the terminal in between:
 can hand it the real terminal via `tea.Exec`: the launcher's harnesses screen
 does exactly that, through `apiDataSource.ConfigureHarness`.
 
-`disco configure` (aliases `config`, `conf`, `c`, `init`) is the launcher opened
+`discobox configure` (aliases `config`, `conf`, `c`, `init`) is the launcher opened
 on that screen — `tui.WithHarnesses()`, reachable in the window itself on `F3` —
 and nothing else. It is not a second menu over the same harnesses: managing them
 and running something on one are the same job from two ends, and one list with

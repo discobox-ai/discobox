@@ -56,7 +56,7 @@ func Attempt(ctx context.Context, repoRoot, base, tipRef string) (Result, error)
 	}
 	head = strings.TrimSpace(head)
 
-	scratch, err := os.MkdirTemp("", "disco-apply-*")
+	scratch, err := os.MkdirTemp("", "discobox-apply-*")
 	if err != nil {
 		return Result{}, fmt.Errorf("create scratch worktree directory: %w", err)
 	}

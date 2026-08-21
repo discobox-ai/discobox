@@ -75,7 +75,7 @@ dispatches `shell`/`exec`/`subsystem` (only one legal per channel) to
 only then POSTs `/start`. Every session channel requests `workdir: "~"`: SSH
 starts a session in the user's home directory and `scp`/`sftp` resolve
 relative paths against it, while the sandbox's own exec default is the primary
-source directory — right for `disco shell`, but it would land uploads inside
+source directory — right for `discobox shell`, but it would land uploads inside
 the sandbox's git working tree. The tilde is expanded in the sandbox
 (`sandbox-agent/execs`), the only place that knows the run user's home.
 That order is load-bearing and matches the CLI's:
@@ -141,8 +141,8 @@ There was a second — a TCP listener on `DISCOBOX_SSH_LISTEN` — and ADR 0057
 removed it. It bought nothing the route does not already provide, and cost an
 operator a port to configure, publish, and firewall before any of this worked.
 Now SSH is reachable wherever the API is, which is the property every client
-needs: `disco tools ssh` splices a loopback port onto this route, and a
-persisted `ssh_config` reaches it through a `ProxyCommand` that runs `disco box
+needs: `discobox tools ssh` splices a loopback port onto this route, and a
+persisted `ssh_config` reaches it through a `ProxyCommand` that runs `discobox admin
 ssh-proxy` — which is how every tool built on the `ssh` binary rather than on
 our client gets in: VS Code Remote-SSH, `scp`, `git`. See `cli/DESIGN.md`.
 
@@ -158,7 +158,7 @@ enable, because every server serves it.
 
 The endpoint and host key are served together by `GET /ssh` (an ordinary
 generated handler over `services.SSHIngress`, resolved in `internal/server`
-before the router is built), so `disco box ssh-config` hard-codes neither. The
+before the router is built), so `discobox admin ssh-config` hard-codes neither. The
 address it reports is the *advertised* one, never the bind address — see
 [`server/DESIGN.md`](../../DESIGN.md#listen-endpoints).
 

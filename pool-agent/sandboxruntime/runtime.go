@@ -2945,7 +2945,7 @@ func sourceBaseCommit(source workerapimodel.GitSource) string {
 
 // sourceUpstreamRef is the remote-tracking ref the source would fetch upstream
 // into, derived from the branch it was cloned at — the same derivation
-// `disco diff` uses. Only a clone at a branch names one; anything else falls
+// `discobox diff` uses. Only a clone at a branch names one; anything else falls
 // back to origin's default branch, which the sandbox-agent verifies in the
 // repository before using.
 func sourceUpstreamRef(source workerapimodel.GitSource) string {

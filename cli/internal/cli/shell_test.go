@@ -68,12 +68,12 @@ func TestMatchSandboxArgAmbiguousShortIDErrors(t *testing.T) {
 	if ok || id != "" {
 		t.Fatalf("id=%q ok=%v, want no match alongside the error", id, ok)
 	}
-	if !strings.Contains(err.Error(), "matches more than one sandbox") {
+	if !strings.Contains(err.Error(), "matches more than one discobox") {
 		t.Fatalf("error = %q, want an ambiguity message", err)
 	}
 }
 
-// A full generated ID is trusted by shape alone, so `disco shell` must not pay
+// A full generated ID is trusted by shape alone, so `discobox shell` must not pay
 // for a sandbox listing it does not need before creating the exec — the same
 // no-extra-round-trip path a fully-specified --sandbox-id takes elsewhere.
 func TestShellFullSandboxIDSkipsListingAndRunsCommand(t *testing.T) {
@@ -122,7 +122,7 @@ func TestShellFullSandboxIDSkipsListingAndRunsCommand(t *testing.T) {
 	}
 }
 
-// A short ID that matches exactly one of the sandboxes `disco ls` would show
+// A short ID that matches exactly one of the sandboxes `discobox ls` would show
 // resolves to that sandbox, and everything after it is the command.
 func TestShellShortIDMatchUsesListedSandbox(t *testing.T) {
 	const sandboxID = "sbx_h1ssjzhp60emtc2n"
@@ -173,7 +173,7 @@ func TestShellShortIDMatchUsesListedSandbox(t *testing.T) {
 	}
 }
 
-// When the first argument matches none of the sandboxes `disco ls` would show,
+// When the first argument matches none of the sandboxes `discobox ls` would show,
 // it is the start of the command instead, and the single listed sandbox is
 // picked automatically the same way an omitted SANDBOX_ID would be elsewhere.
 func TestShellUnmatchedFirstArgIsCommandAndPicksSoleSandbox(t *testing.T) {
@@ -221,7 +221,7 @@ func TestShellUnmatchedFirstArgIsCommandAndPicksSoleSandbox(t *testing.T) {
 }
 
 // No command at all runs the sandbox user's login shell, exactly like the old
-// root `disco exec` did with no arguments.
+// root `discobox exec` did with no arguments.
 func TestShellNoArgsRunsLoginShell(t *testing.T) {
 	const sandboxID = "sbx_h1ssjzhp60emtc2n"
 	var createBody map[string]any
@@ -294,12 +294,12 @@ func TestShellAmbiguousShortIDErrorsBeforeAnyExecCall(t *testing.T) {
 	if err == nil {
 		t.Fatal("execute shell error = nil")
 	}
-	if !strings.Contains(err.Error(), "matches more than one sandbox") {
+	if !strings.Contains(err.Error(), "matches more than one discobox") {
 		t.Fatalf("execute shell error = %q, want an ambiguity message", err)
 	}
 }
 
-// `disco shell SANDBOX -- CMD` is the documented separator form. shell stops
+// `discobox shell SANDBOX -- CMD` is the documented separator form. shell stops
 // parsing flags at the sandbox, so pflag hands the -- through untouched and
 // shell has to drop it itself; before it did, -- reached the sandbox as the
 // command's argv[0].

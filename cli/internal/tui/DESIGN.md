@@ -1,6 +1,6 @@
 # tui
 
-The `disco tui` launcher: one window that opens with the cursor in a prompt for
+The `discobox tui` launcher: one window that opens with the cursor in a prompt for
 a new sandbox, with the project's sandboxes a press of Tab away.
 
 ## Shape
@@ -140,7 +140,7 @@ already looking at is one you know the name of.
 **vscode is a fourth kind, and is bound on both screens** (`vscodeKey`,
 `openEditor`, `DataSource.OpenEditor`). It is neither a `Verb` — it changes
 nothing about the discobox — nor an `Interaction` — it takes no terminal: `v`
-runs `disco tools vscode`, which hands the sandbox to the editor and returns.
+runs `discobox tools vscode`, which hands the sandbox to the editor and returns.
 The editor is another program in another window, so the window carries on
 exactly where it was, and the workspace binds it too (`paneOptions`): the
 terminal on screen and the editor beside it are two views of one discobox, open
@@ -338,7 +338,7 @@ looks like.
 `http:8082->8080,3000->3000 · tcp:5433->5432`. Opening the workspace opens a port
 forward (`DataSource.Forward`, `startForward`) and detaching closes it, so the
 local ports live exactly as long as the screen that shows them; the mechanics
-are `internal/portforward`, the same forwarder `disco proxy` runs, over the same
+are `internal/portforward`, the same forwarder `discobox proxy` runs, over the same
 tunnel. A port that gets bound while the screen is up appears on it with no key
 pressed: the forward wakes the window (`Forward.Events`) and the header redraws
 from `Forward.Bindings`.
@@ -373,7 +373,7 @@ in the order each is worth least *here*:
 
 1. the keys, because the hints line under the grid says the same thing and is
    never dropped;
-2. then `disco` itself — it names the program rather than the work, and you can
+2. then `discobox` itself — it names the program rather than the work, and you can
    see which program you are in;
 3. then the folder, which every row of the list this workspace was opened from
    already shared, and which the list is one key away.
@@ -408,7 +408,7 @@ except the reserved ones — and which those are depends on what is in the pane
 **Ctrl-C is the application's, in every pane.** Nothing the window reserves
 stands between a program and its own interrupt, so `paneOptions` passes an empty
 detach key to `termpane.WithPrefix` and the ways out are `leader d` — the
-key screen, tmux and a plain `disco attach` all detach on, free again now that
+key screen, tmux and a plain `discobox attach` all detach on, free again now that
 diff has left the CLI — and `leader q`, which quits the whole window, the exit
 Ctrl-C is everywhere else. Both sit in the header's top right. An attach used to take
 Ctrl-C as "back out of this", which reads well right up until it is wrong:
@@ -428,7 +428,7 @@ leader is the key that *collides* — it has to be a chord nothing you run in a
 sandbox wants, and which that is depends on what you run. It cannot be Ctrl-C:
 that one is never the window's to take, and a leader that took it would take it
 from every program the window ever draws. Its default and its spelling live in
-`internal/keys` rather than here, because a plain `disco attach` detaches behind
+`internal/keys` rather than here, because a plain `discobox attach` detaches behind
 the same key: one leader for both terminals discobox shows you is one thing to
 learn and one thing to change.
 
@@ -534,7 +534,7 @@ reading as a caption on it. The art's own rows stay aligned to each other: it is
 a picture, so the block moves, not the lines within it.
 
 **The harnesses are the window's, not another program's** (`harnesses.go`).
-`disco configure` was a menu of its own over the same harnesses. It is this
+`discobox configure` was a menu of its own over the same harnesses. It is this
 screen now — `WithHarnesses()` opens the window straight onto it — because
 choosing a harness to run and setting one up are the same job from two ends, and
 two lists of harnesses with two sets of keys is one too many. `F3` opens it from
@@ -577,7 +577,7 @@ is opened rather than for every row of a listing.
 
 **One data seam.** Everything the window needs is on `DataSource` (`data.go`),
 implemented once in `cli.apiDataSource`. The interactive actions there build and
-execute the real Cobra commands, so the launcher runs `disco apply` and the
+execute the real Cobra commands, so the launcher runs `discobox apply` and the
 rest rather than a second implementation that drifts from them.
 
 **Color is a value, not a global.** `detectColor` reads the profile once and
@@ -594,7 +594,7 @@ later moves everything beside it.
 
 **The folder is a header control, not a column.** The path in the header is
 which folder's sandboxes are listed (`folder.go`). It opens on the directory the
-window is running in — what `disco ls` shows — with every folder something was
+window is running in — what `discobox ls` shows — with every folder something was
 started from one press away, plus `allFolders`. The choices come from the
 listing itself, so the only folders offered are ones with something in them
 (plus the current directory, always, since that is where a new sandbox would
@@ -606,7 +606,7 @@ same filter with all but one of its choices missing.
 The folder is also *where Enter creates*, not just what the list is filtered to:
 `optionSet.setFolder` points the run source at it, so the header is one control
 rather than two that look alike. `request()` leaves `Source` empty when the
-folder is the session's own directory, since that is already what `disco run`
+folder is the session's own directory, since that is already what `discobox run`
 resolves to, and the chip strip shows the source only when an override makes it
 differ from what the header says — a strip repeating the header is one you stop
 reading.
@@ -702,9 +702,9 @@ clean where it was cut. An applied row shows the host-side commit its apply
 produced rather than the sandbox head, since that is the SHA findable in the
 local repository. The column beside it spells the mark out
 (`dirty` / `ahead` / `applied` / `clean` / `-`), in the mark's color, so
-the code never has to be decoded — the same words `disco ls` prints. Until anything reports, the row falls
+the code never has to be decoded — the same words `discobox ls` prints. Until anything reports, the row falls
 back to the spawn position, starred when a snapshot of uncommitted work was
-carried in. `disco ls` prints the same column, plus the derivation spelled as
+carried in. `discobox ls` prints the same column, plus the derivation spelled as
 a word (`dirty` / `ahead` / `applied` / `clean`), from the same
 `cli.sandboxGitStatus` seam — one derivation, two spellings.
 
@@ -772,7 +772,7 @@ the newest one where the busy line goes.
 | `shimmer.go` | the opening glint over "discobox" in the placeholder |
 | `model.go` | the window: update, actions, run, layout, view, help |
 | `list.go` | the sandbox pane: filters, selection, visual range, row rendering |
-| `options.go` | `disco run`'s flags as a panel, the chip strip, the command preview |
+| `options.go` | `discobox run`'s flags as a panel, the chip strip, the command preview |
 | `dialog.go` | the one modal layer: message, confirm, action menu, input, help |
 | `theme.go` | the palette and every style, built against the detected profile |
 | `logo.go` | the mark, embedded from `logo.chars` as captured |

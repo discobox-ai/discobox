@@ -49,12 +49,12 @@ type options struct {
 
 func main() {
 	var opts options
-	flag.StringVar(&opts.server, "server", "", "Discobox server endpoint (default: the endpoint disco dials on its own)")
+	flag.StringVar(&opts.server, "server", "", "Discobox server endpoint (default: the endpoint discobox dials on its own)")
 	flag.StringVar(&opts.project, "project", "default", "Discobox project")
 	flag.StringVar(&opts.sandbox, "sandbox", "", "sandbox ID running the terminal-latency harness")
 	flag.StringVar(&opts.sandboxName, "sandbox-name", "", "sandbox name shown in the TUI")
 	flag.StringVar(&opts.token, "token", os.Getenv("DISCOBOX_TOKEN"), "optional Discobox bearer token")
-	flag.StringVar(&opts.cli, "cli", "build/disco", "path to the disco CLI")
+	flag.StringVar(&opts.cli, "cli", "build/discobox", "path to the discobox CLI")
 	flag.StringVar(&opts.mode, "mode", "direct", "client path to measure: direct or tui")
 	flag.IntVar(&opts.samples, "samples", 100, "number of request/response samples")
 	flag.IntVar(&opts.sequenceStart, "sequence-start", 1, "first eight-digit probe sequence")
@@ -147,7 +147,7 @@ func run(opts options) error {
 	}
 	switch opts.mode {
 	case "direct":
-		command = append(command, "box", "terminal", "--sandbox-id", opts.sandbox, "attach", "primary")
+		command = append(command, "admin", "terminal", "--discobox-id", opts.sandbox, "attach", "primary")
 	case "tui":
 		command = append(command, "tui")
 	}

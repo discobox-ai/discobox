@@ -37,7 +37,7 @@ flowchart LR
   said it did not have.
 - A sandbox name is unique within its project (`idx_sandbox_project_name`),
   like a pool's or a harness config's. It is an addressable handle, not a
-  label: `disco box ssh-config` emits it as an `ssh_config` `Host` alias, and
+  label: `discobox admin ssh-config` emits it as an `ssh_config` `Host` alias, and
   ssh applies the first matching block, so a second sandbox answering to the
   same name would silently take the first one's connections. `CreateSandbox`
   checks the name and returns 409 so the common case is a readable error; the
@@ -215,7 +215,7 @@ See [ADR 0017](../../../../docs/adr/0017-resource-state-is-desired-and-observed-
 ## Display name
 
 `Sandbox.displayName` is what a listing calls a sandbox, computed on the server
-(`services.SandboxDisplayName`) so `disco ls`, the launcher, and any other
+(`services.SandboxDisplayName`) so `discobox ls`, the launcher, and any other
 client agree: the window title the primary terminal last set, the configured
 name until one has, and the sandbox ID when it has no name either. The title is
 what the harness says the work is about, which tells two sandboxes apart better

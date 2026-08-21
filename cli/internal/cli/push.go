@@ -15,7 +15,7 @@ import (
 	"github.com/obot-platform/discobox/internal/hostid"
 )
 
-// newPushCommand implements `disco push` (ADR 0058): sending local commits into
+// newPushCommand implements `discobox push` (ADR 0058): sending local commits into
 // the origin repository a push-delivered sandbox fetches from, so work done here
 // since the sandbox was created can be rebased onto there.
 func (a *App) newPushCommand() *cobra.Command {
@@ -24,41 +24,41 @@ func (a *App) newPushCommand() *cobra.Command {
 	var branch string
 	var force bool
 	cmd := &cobra.Command{
-		Use:   "push [SANDBOX_ID] [flags]",
-		Short: "Push local commits into a sandbox's origin, to rebase onto there",
-		Long: `Send this machine's commits into the origin repository a sandbox fetches from,
+		Use:   "push [DISCOBOX_ID] [flags]",
+		Short: "Push local commits into a discobox's origin, to rebase onto there",
+		Long: `Send this machine's commits into the origin repository a discobox fetches from,
 per docs/adr/0058.
 
-Commits only ever move local -> the sandbox's origin. Nothing in the sandbox
+Commits only ever move local -> the discobox's origin. Nothing in the discobox
 moves: no branch of its own changes, nothing is rebased, nothing is checked out.
-Inside the sandbox the new commits show up as origin/<branch>, to be picked up
+Inside the discobox the new commits show up as origin/<branch>, to be picked up
 whenever the work there is ready for them:
 
     git fetch origin && git rebase origin/<branch>
 
-Without SANDBOX_ID the sandbox is taken from the ones "disco ls" shows for the
+Without DISCOBOX_ID the discobox is taken from the ones "discobox ls" shows for the
 current project directory: the only one when there is one, otherwise you are
 asked to pick.
 
 This applies to each source that was delivered by pushing it — one on a machine
 or a provider that cannot read its directory. Every push-delivered source of the
-sandbox is pushed; --source narrows to one, named by its slug. A source the
-sandbox reads live already shows new commits without any push, and one cloned
+discobox is pushed; --source narrows to one, named by its slug. A source the
+discobox reads live already shows new commits without any push, and one cloned
 from a remote URL fetches that remote itself; either way there is nothing to send
 and push says so.
 
 For each source, the branch it was created from is pushed by default. --branch pushes a
-different local branch instead, landing under its own name, which the sandbox
+different local branch instead, landing under its own name, which the discobox
 then sees as origin/<that branch> — useful for offering it a branch to rebase
 onto or cherry-pick from without touching the one it tracks.
 
 Uncommitted changes are never pushed; only commits. They are reported so it is
 clear what stayed behind.
 
-A push may rewind the sandbox's origin — that is what a local rebase or amend
+A push may rewind the discobox's origin — that is what a local rebase or amend
 means — but not silently: it is refused if the origin has moved since this
 machine last pushed, or if it holds commits this machine did not put there.
---force pushes anyway, and also pushes a history unrelated to what the sandbox
+--force pushes anyway, and also pushes a history unrelated to what the discobox
 holds.`,
 		Args:              cobra.MaximumNArgs(1),
 		ValidArgsFunction: a.completeSandboxes,
@@ -74,14 +74,14 @@ holds.`,
 			return a.runPush(cmd, sandboxArg, sourceSlug, overrides, branch, force)
 		},
 	}
-	cmd.Flags().StringVar(&sourceSlug, "source", "", "Push only the source with this slug, instead of every push-delivered source on the sandbox")
+	cmd.Flags().StringVar(&sourceSlug, "source", "", "Push only the source with this slug, instead of every push-delivered source on the discobox")
 	cmd.Flags().StringArrayVar(&dirOverrides, "dir", nil, "Local directory to push a source from, as slug=path; required for a source with no known local directory on this machine")
-	cmd.Flags().StringVar(&branch, "branch", "", "Local branch to push, landing under the same name in the sandbox's origin; defaults to the branch the source was created from")
+	cmd.Flags().StringVar(&branch, "branch", "", "Local branch to push, landing under the same name in the discobox's origin; defaults to the branch the source was created from")
 	cmd.Flags().BoolVar(&force, "force", false, "Push even if the origin has moved since this machine last pushed, or holds an unrelated history")
 	return cmd
 }
 
-// pushReport is one run of `disco push`, per source.
+// pushReport is one run of `discobox push`, per source.
 type pushReport struct {
 	SandboxID   string             `json:"sandboxId"`
 	SandboxName string             `json:"sandboxName,omitempty"`
@@ -129,7 +129,7 @@ func (a *App) runPush(cmd *cobra.Command, sandboxArg, onlySlug string, dirOverri
 	// An archived sandbox has no container for the git route to start, so the
 	// push would fail in the proxy with nothing useful to say.
 	if state := sandboxDisplayState(*sandbox); state == "archived" || state == "archiving" {
-		return fmt.Errorf("the sandbox is %s; unarchive it before pushing to its origin", state)
+		return fmt.Errorf("the discobox is %s; unarchive it before pushing to its origin", state)
 	}
 	host, err := hostid.Get()
 	if err != nil {
@@ -231,7 +231,7 @@ func printPushSource(cmd *cobra.Command, report pushSourceReport) {
 	case pushStatusPushed:
 		fmt.Fprintf(out, "  local     %s %s\n", report.HostPath, report.LocalRev)
 		fmt.Fprintf(out, "  origin    %s -> %s\n", shortCommit(report.Previous), shortCommit(report.Commit))
-		fmt.Fprintf(out, "  in the sandbox: git fetch origin && git rebase origin/%s\n", report.Branch)
+		fmt.Fprintf(out, "  in the discobox: git fetch origin && git rebase origin/%s\n", report.Branch)
 		if report.Forced {
 			fmt.Fprintf(out, "  forced\n")
 		}

@@ -11,7 +11,7 @@ import (
 // sandboxPortTargets is what the sandbox's own processes are serving, as its
 // agent last reported it (ADR 0046) — the same push that carries the git state
 // and the terminal titles, so a listing can show it for every row without
-// reaching into anything, and `disco proxy` can forward it without asking the
+// reaching into anything, and `discobox proxy` can forward it without asking the
 // sandbox anything else.
 //
 // The bind address is kept, because a forward has to name a host to dial:

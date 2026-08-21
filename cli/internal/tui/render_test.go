@@ -158,7 +158,7 @@ func TestOptionsPanelShowsTheCommandItDescribes(t *testing.T) {
 	send(t, m, key("right"), key("down"), key("right"), key("down"), key("right"))
 
 	command := m.opts.command(m.prompt.Value())
-	for _, want := range []string{"disco run", "--harness codex", "--include-dirty=true", "-d", "'fix the reaper'"} {
+	for _, want := range []string{"discobox run", "--harness codex", "--include-dirty=true", "-d", "'fix the reaper'"} {
 		if !strings.Contains(command, want) {
 			t.Errorf("command %q missing %q", command, want)
 		}

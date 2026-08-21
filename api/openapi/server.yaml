@@ -1004,7 +1004,7 @@ components:
             type: object
         AppliedSourceCommit:
             additionalProperties: false
-            description: Records one successful disco apply of a source's commits into a host working tree. Client-declared provenance, like Origin, since the server cannot observe host-side Git state.
+            description: Records one successful discobox apply of a source's commits into a host working tree. Client-declared provenance, like Origin, since the server cannot observe host-side Git state.
             properties:
                 appliedAt:
                     description: When this apply was recorded
@@ -1953,7 +1953,7 @@ components:
                     format: date-time
                     type: string
                 appliedCommits:
-                    description: History of successful disco apply runs that landed this sandbox's commits on a host, most recent last. Client-reported; append-only.
+                    description: History of successful discobox apply runs that landed this sandbox's commits on a host, most recent last. Client-reported; append-only.
                     items:
                         $ref: '#/components/schemas/AppliedSourceCommit'
                     nullable: true
@@ -5002,7 +5002,7 @@ paths:
                             schema:
                                 $ref: '#/components/schemas/ErrorModel'
                     description: Error
-            summary: Record a completed disco apply
+            summary: Record a completed discobox apply
             tags:
                 - Sandboxes
     /projects/{projectId}/sandboxes/{sandboxId}/complete-source-push:

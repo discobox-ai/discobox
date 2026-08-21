@@ -36,7 +36,7 @@ const (
 type baseOrigin string
 
 const (
-	// baseOriginLastApplied: a previous disco apply of this source recorded
+	// baseOriginLastApplied: a previous discobox apply of this source recorded
 	// this commit, so only what the sandbox added since then is applied.
 	baseOriginLastApplied baseOrigin = "last-applied"
 	// baseOriginMergeBase: no prior apply, so the base is the common ancestor
@@ -58,9 +58,9 @@ const (
 	hostDirFromSandboxOrigin hostDirOrigin = "sandbox-origin"
 )
 
-// applyReport is the full result of one `disco apply` invocation: what was
+// applyReport is the full result of one `discobox apply` invocation: what was
 // looked at, what was decided, and what changed. It is the JSON payload of
-// `disco apply -o json` and the model the text output renders from, so the two
+// `discobox apply -o json` and the model the text output renders from, so the two
 // can never describe different things.
 type applyReport struct {
 	SandboxID   string              `json:"sandboxId"`
@@ -72,7 +72,7 @@ type applySourceReport struct {
 	Slug   string      `json:"slug"`
 	Status applyStatus `json:"status"`
 
-	// Host side: this machine, the repository disco was run from. Printed as
+	// Host side: this machine, the repository discobox was run from. Printed as
 	// "local", which is what a user calls it.
 	HostPath string `json:"hostPath,omitempty"`
 	// HostPathOrigin is how that directory was chosen.
@@ -183,7 +183,7 @@ func (p applyPrinter) sandboxHeader(report applyReport, sourceCount int) {
 	if name != "" {
 		name = " (" + name + ")"
 	}
-	p.linef("sandbox %s%s: applying %d %s", report.SandboxID, name, sourceCount, pluralize("source", sourceCount))
+	p.linef("discobox %s%s: applying %d %s", report.SandboxID, name, sourceCount, pluralize("source", sourceCount))
 }
 
 // bareSourceHeader opens a source that failed before its repositories could
@@ -200,7 +200,7 @@ func (p applyPrinter) sourceHeader(report applySourceReport) {
 	p.step("local repo    %s%s", report.HostPath, formatBranchAt(report.HostBranch, report.HostBase))
 	p.step("chosen by     %s", formatHostDirOrigin(report))
 	if report.SandboxDir != "" {
-		p.step("sandbox repo  %s", report.SandboxDir)
+		p.step("discobox repo %s", report.SandboxDir)
 	}
 	p.step("fetch ref     %s", report.SandboxRef)
 }
@@ -263,9 +263,9 @@ func (p applyPrinter) summary(report applyReport) {
 func formatHostDirOrigin(report applySourceReport) string {
 	switch report.HostPathOrigin {
 	case hostDirFromOverride:
-		return fmt.Sprintf("--dir %s=%s (the sandbox's own origin was not consulted)", report.Slug, report.HostPath)
+		return fmt.Sprintf("--dir %s=%s (the discobox's own origin was not consulted)", report.Slug, report.HostPath)
 	case hostDirFromSandboxOrigin:
-		return "the sandbox's origin: it was created on this machine, from this directory"
+		return "the discobox's origin: it was created on this machine, from this directory"
 	}
 	return string(report.HostPathOrigin)
 }
@@ -291,7 +291,7 @@ func formatBaseOrigin(origin baseOrigin) string {
 	case baseOriginLastApplied:
 		return "last commit applied from this source"
 	case baseOriginMergeBase:
-		return "merge base of the sandbox tip and local HEAD"
+		return "merge base of the discobox tip and local HEAD"
 	}
 	return string(origin)
 }

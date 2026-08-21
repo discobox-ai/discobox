@@ -53,10 +53,10 @@ func TestAppliedOutputNamesBothSidesAndEveryCommit(t *testing.T) {
 	for _, want := range []string{
 		"==> source primary",
 		"local repo    /home/ada/src/disco2",
-		"sandbox repo  /work/disco2",
+		"discobox repo /work/disco2",
 		"branch main at 4f3a1c2b8d90",
 		"refs/discobox/apply/sbx_h1ssjzhp60emtc2n/primary",
-		"base 4f3a1c2b8d90 (merge base of the sandbox tip and local HEAD)",
+		"base 4f3a1c2b8d90 (merge base of the discobox tip and local HEAD)",
 		"9c1d2e3f4a5b  Fix parser panic on empty input  (Ada Lovelace, 2 hours ago)",
 		"9c1d2e3f4a5b -> 11aa22bb33cc  Fix parser panic on empty input",
 	} {
@@ -154,13 +154,13 @@ func TestDirtyNextStepsOfferBothCommitAndAllowDirty(t *testing.T) {
 	if len(steps) != 2 {
 		t.Fatalf("got %d next steps, want 2: %+v", len(steps), steps)
 	}
-	if want := "disco shell sbx_23x11jnw03w11nf2 -- git -C /work/disco2 commit -a -m MESSAGE"; steps[0].Commands[0] != want {
+	if want := "discobox shell sbx_23x11jnw03w11nf2 -- git -C /work/disco2 commit -a -m MESSAGE"; steps[0].Commands[0] != want {
 		t.Fatalf("commit command = %q, want %q", steps[0].Commands[0], want)
 	}
-	if want := "disco apply sbx_23x11jnw03w11nf2 --source primary"; steps[0].Commands[1] != want {
+	if want := "discobox apply sbx_23x11jnw03w11nf2 --source primary"; steps[0].Commands[1] != want {
 		t.Fatalf("re-run command = %q, want %q", steps[0].Commands[1], want)
 	}
-	if want := "disco apply sbx_23x11jnw03w11nf2 --source primary --allow-dirty"; steps[1].Commands[0] != want {
+	if want := "discobox apply sbx_23x11jnw03w11nf2 --source primary --allow-dirty"; steps[1].Commands[0] != want {
 		t.Fatalf("allow-dirty command = %q, want %q", steps[1].Commands[0], want)
 	}
 }
@@ -171,7 +171,7 @@ func TestDirtyNextStepsCarryDirOverride(t *testing.T) {
 	steps := dirtyNextSteps("sbx_1", "web", "/work/web", map[string]string{"web": "/home/ada/src/web"})
 	for _, step := range steps {
 		for _, command := range step.Commands {
-			if strings.HasPrefix(command, "disco apply") && !strings.Contains(command, "--dir web=/home/ada/src/web") {
+			if strings.HasPrefix(command, "discobox apply") && !strings.Contains(command, "--dir web=/home/ada/src/web") {
 				t.Fatalf("re-run dropped the --dir override: %q", command)
 			}
 		}
@@ -183,10 +183,10 @@ func TestNextStepsPrintDescriptionThenCommands(t *testing.T) {
 	applyPrinter{out: &buf, on: true}.nextSteps(dirtyNextSteps("sbx_1", "primary", "/work", nil))
 	out := buf.String()
 	for _, want := range []string{
-		"    commit them in the sandbox, then apply again:",
-		"      disco apply sbx_1 --source primary\n",
-		"    or apply only what is already committed, leaving them in the sandbox:",
-		"      disco apply sbx_1 --source primary --allow-dirty\n",
+		"    commit them in the discobox, then apply again:",
+		"      discobox apply sbx_1 --source primary\n",
+		"    or apply only what is already committed, leaving them in the discobox:",
+		"      discobox apply sbx_1 --source primary --allow-dirty\n",
 	} {
 		if !strings.Contains(out, want) {
 			t.Fatalf("output missing %q:\n%s", want, out)

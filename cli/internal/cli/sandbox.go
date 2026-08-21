@@ -55,9 +55,9 @@ type sandboxUpdateOptions struct {
 
 func (a *App) newSandboxCommand() *cobra.Command {
 	cmd := &cobra.Command{
-		Use:     "sandbox",
-		Aliases: []string{"sandboxes"},
-		Short:   "Manage sandboxes",
+		Use:     "discobox",
+		Aliases: []string{"discoboxes"},
+		Short:   "Manage discoboxes",
 	}
 	cmd.AddCommand(a.newSandboxListCommand())
 	cmd.AddCommand(a.newSandboxGetCommand())
@@ -78,7 +78,7 @@ func (a *App) newSandboxListCommand() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:     "ls",
 		Aliases: []string{"list"},
-		Short:   "List sandboxes",
+		Short:   "List discoboxes",
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			projectID, err := a.projectIDValue()
 			if err != nil {
@@ -105,8 +105,8 @@ func (a *App) newSandboxListCommand() *cobra.Command {
 
 func (a *App) newSandboxGetCommand() *cobra.Command {
 	return &cobra.Command{
-		Use:               "get SANDBOX_ID",
-		Short:             "Get a sandbox",
+		Use:               "get DISCOBOX_ID",
+		Short:             "Get a discobox",
 		Args:              cobra.ExactArgs(1),
 		ValidArgsFunction: a.completeSandboxes,
 		RunE: func(cmd *cobra.Command, args []string) error {
@@ -131,7 +131,7 @@ func (a *App) newSandboxCreateCommand() *cobra.Command {
 	var opts sandboxCreateOptions
 	cmd := &cobra.Command{
 		Use:   "create --name NAME",
-		Short: "Create a sandbox",
+		Short: "Create a discobox",
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			projectID, err := a.projectIDValue()
 			if err != nil {
@@ -186,8 +186,8 @@ func (a *App) newSandboxCreateCommand() *cobra.Command {
 func (a *App) newSandboxUpdateCommand() *cobra.Command {
 	var opts sandboxUpdateOptions
 	cmd := &cobra.Command{
-		Use:               "update SANDBOX_ID",
-		Short:             "Update a sandbox",
+		Use:               "update DISCOBOX_ID",
+		Short:             "Update a discobox",
 		Args:              cobra.ExactArgs(1),
 		ValidArgsFunction: a.completeSandboxes,
 		RunE: func(cmd *cobra.Command, args []string) error {
@@ -216,17 +216,17 @@ func (a *App) newSandboxUpdateCommand() *cobra.Command {
 
 func (a *App) newSandboxDeleteCommand() *cobra.Command {
 	return &cobra.Command{
-		Use:   "delete SANDBOX_ID...",
-		Short: "Archive a sandbox",
-		Long: `Archive sandboxes.
+		Use:   "delete DISCOBOX_ID...",
+		Short: "Archive a discobox",
+		Long: `Archive discoboxes.
 
-The container and its runtime resources are removed; the sandbox's workspace,
-config, and secrets are kept, so "sandbox unarchive" brings it back with its
-work intact. Archived sandboxes are purged automatically once the project's
+The container and its runtime resources are removed; the discobox's workspace,
+config, and secrets are kept, so "discobox unarchive" brings it back with its
+work intact. Archived discoboxes are purged automatically once the project's
 archive retention runs out (24h by default; see "project update
 --archive-retention").
 
-To destroy a sandbox and its data now, use "sandbox purge".`,
+To destroy a discobox and its data now, use "discobox purge".`,
 		Args:              cobra.MinimumNArgs(1),
 		ValidArgsFunction: a.completeSandboxes,
 		RunE: func(cmd *cobra.Command, args []string) error {
@@ -238,7 +238,7 @@ To destroy a sandbox and its data now, use "sandbox purge".`,
 			if err != nil {
 				return err
 			}
-			return runActionMany(cmd, args, "sandbox", "archived", func(arg string) (string, error) {
+			return runActionMany(cmd, args, "discobox", "archived", func(arg string) (string, error) {
 				sandboxID, err := a.resolveSandboxID(cmd.Context(), client, projectID, arg)
 				if err != nil {
 					return "", err
@@ -258,12 +258,12 @@ To destroy a sandbox and its data now, use "sandbox purge".`,
 
 func (a *App) newSandboxUnarchiveCommand() *cobra.Command {
 	return &cobra.Command{
-		Use:   "unarchive SANDBOX_ID...",
-		Short: "Restore an archived sandbox",
-		Long: `Restore archived sandboxes.
+		Use:   "unarchive DISCOBOX_ID...",
+		Short: "Restore an archived discobox",
+		Long: `Restore archived discoboxes.
 
 The container is recreated against the data that was kept and left stopped; it
-starts on first use, the same as any other stopped sandbox.`,
+starts on first use, the same as any other stopped discobox.`,
 		Args:              cobra.MinimumNArgs(1),
 		ValidArgsFunction: a.completeSandboxes,
 		RunE: func(cmd *cobra.Command, args []string) error {
@@ -275,7 +275,7 @@ starts on first use, the same as any other stopped sandbox.`,
 			if err != nil {
 				return err
 			}
-			return runActionMany(cmd, args, "sandbox", "unarchived", func(arg string) (string, error) {
+			return runActionMany(cmd, args, "discobox", "unarchived", func(arg string) (string, error) {
 				sandboxID, err := a.resolveSandboxID(cmd.Context(), client, projectID, arg)
 				if err != nil {
 					return "", err
@@ -295,16 +295,16 @@ starts on first use, the same as any other stopped sandbox.`,
 
 func (a *App) newSandboxPurgeCommand() *cobra.Command {
 	return &cobra.Command{
-		Use:   "purge SANDBOX_ID...",
-		Short: "Destroy a sandbox and its data",
-		Long: `Destroy sandboxes and their data.
+		Use:   "purge DISCOBOX_ID...",
+		Short: "Destroy a discobox and its data",
+		Long: `Destroy discoboxes and their data.
 
 This is not recoverable: the workspace, config, and secrets are removed from
 the pool host along with the container. Unlike the other lifecycle commands it
 waits for the pool agent to confirm the removal, so when it returns the data is
 actually gone.
 
-To keep the data, use "sandbox delete", which archives instead.`,
+To keep the data, use "discobox delete", which archives instead.`,
 		Args:              cobra.MinimumNArgs(1),
 		ValidArgsFunction: a.completeSandboxes,
 		RunE: func(cmd *cobra.Command, args []string) error {
@@ -316,7 +316,7 @@ To keep the data, use "sandbox delete", which archives instead.`,
 			if err != nil {
 				return err
 			}
-			return runActionMany(cmd, args, "sandbox", "purged", func(arg string) (string, error) {
+			return runActionMany(cmd, args, "discobox", "purged", func(arg string) (string, error) {
 				sandboxID, err := a.resolveSandboxID(cmd.Context(), client, projectID, arg)
 				if err != nil {
 					return "", err
@@ -337,8 +337,8 @@ To keep the data, use "sandbox delete", which archives instead.`,
 func (a *App) newSandboxStartCommand() *cobra.Command {
 	var force bool
 	cmd := &cobra.Command{
-		Use:               "start SANDBOX_ID",
-		Short:             "Start a sandbox",
+		Use:               "start DISCOBOX_ID",
+		Short:             "Start a discobox",
 		Args:              cobra.ExactArgs(1),
 		ValidArgsFunction: a.completeSandboxes,
 		RunE: func(cmd *cobra.Command, args []string) error {
@@ -368,8 +368,8 @@ func (a *App) newSandboxStartCommand() *cobra.Command {
 func (a *App) newSandboxStopCommand() *cobra.Command {
 	var force bool
 	cmd := &cobra.Command{
-		Use:               "stop SANDBOX_ID",
-		Short:             "Stop a sandbox",
+		Use:               "stop DISCOBOX_ID",
+		Short:             "Stop a discobox",
 		Args:              cobra.ExactArgs(1),
 		ValidArgsFunction: a.completeSandboxes,
 		RunE: func(cmd *cobra.Command, args []string) error {
@@ -399,8 +399,8 @@ func (a *App) newSandboxStopCommand() *cobra.Command {
 func (a *App) newSandboxRestartCommand() *cobra.Command {
 	var force bool
 	cmd := &cobra.Command{
-		Use:               "restart SANDBOX_ID",
-		Short:             "Restart a sandbox",
+		Use:               "restart DISCOBOX_ID",
+		Short:             "Restart a discobox",
 		Args:              cobra.ExactArgs(1),
 		ValidArgsFunction: a.completeSandboxes,
 		RunE: func(cmd *cobra.Command, args []string) error {
@@ -429,19 +429,19 @@ func (a *App) newSandboxRestartCommand() *cobra.Command {
 
 func (a *App) newSandboxRepairCommand() *cobra.Command {
 	return &cobra.Command{
-		Use:   "repair SANDBOX_ID",
-		Short: "Repair a sandbox by rebuilding it on the current image",
-		Long: `Repair a sandbox by rebuilding it in place.
+		Use:   "repair DISCOBOX_ID",
+		Short: "Repair a discobox by rebuilding it on the current image",
+		Long: `Repair a discobox by rebuilding it in place.
 
 The container and its disposable runtime state are torn down, the container is
-recreated against the workspace data that was kept, and the sandbox is started
+recreated against the workspace data that was kept, and the discobox is started
 - archive, unarchive, and start as one operation. Use this to recover a
-sandbox stuck in an error state; the workspace and its uncommitted changes
+discobox stuck in an error state; the workspace and its uncommitted changes
 survive.
 
 The rebuild always lands on the image its harness config resolves to now, so a
 repair is an upgrade as well: the teardown has already discarded everything a
-re-pin costs, and a stale image is itself a way for a sandbox to be wedged.`,
+re-pin costs, and a stale image is itself a way for a discobox to be wedged.`,
 		Args:              cobra.ExactArgs(1),
 		ValidArgsFunction: a.completeSandboxes,
 		RunE: func(cmd *cobra.Command, args []string) error {
@@ -464,10 +464,10 @@ re-pin costs, and a stale image is itself a way for a sandbox to be wedged.`,
 
 func (a *App) newSandboxUpgradeCommand() *cobra.Command {
 	return &cobra.Command{
-		Use:   "upgrade SANDBOX_ID",
-		Short: "Upgrade a sandbox to its harness config's current image",
-		Long: "Rebuild the sandbox on the image its harness config resolves to now.\n\n" +
-			"The sandbox keeps its ID, its workspace and sources, its caches, and its\n" +
+		Use:   "upgrade DISCOBOX_ID",
+		Short: "Upgrade a discobox to its harness config's current image",
+		Long: "Rebuild the discobox on the image its harness config resolves to now.\n\n" +
+			"The discobox keeps its ID, its workspace and sources, its caches, and its\n" +
 			"secrets. Anything written elsewhere in the container's filesystem — packages\n" +
 			"installed by hand, files outside the workspace — is lost, and the running\n" +
 			"harness process is stopped.",
@@ -505,10 +505,10 @@ func (a *App) sandboxRequest(ctx context.Context, sandboxArg string) (projectID 
 }
 
 func addCreateFlags(cmd *cobra.Command, opts *sandboxCreateOptions) {
-	cmd.Flags().StringVar(&opts.name, "name", "", "Sandbox name")
-	cmd.Flags().StringVar(&opts.description, "description", "", "Sandbox description")
-	cmd.Flags().StringVar(&opts.image, "image", "", "Sandbox base image")
-	cmd.Flags().StringVar(&opts.poolID, "pool", "", "Pool to schedule the sandbox into")
+	cmd.Flags().StringVar(&opts.name, "name", "", "Discobox name")
+	cmd.Flags().StringVar(&opts.description, "description", "", "Discobox description")
+	cmd.Flags().StringVar(&opts.image, "image", "", "Discobox base image")
+	cmd.Flags().StringVar(&opts.poolID, "pool", "", "Pool to schedule the discobox into")
 	cmd.Flags().StringVar(&opts.harnessConfigID, "harness-config", "", "Harness config ID")
 	cmd.Flags().StringVar(&opts.harnessName, "harness", "", "Harness config name to resolve at create time")
 	cmd.Flags().StringVar(&opts.model, "model", "", "Model the harness should use")
@@ -520,21 +520,21 @@ func addCreateFlags(cmd *cobra.Command, opts *sandboxCreateOptions) {
 	cmd.Flags().StringVar(&opts.sourceURL, "source-url", "", "Source repository or archive URL")
 	cmd.Flags().StringVar(&opts.sourceRef, "source-ref", "", "Source branch, tag, or commit")
 	cmd.Flags().StringVar(&opts.sourceRefType, "source-ref-type", "", "Source ref type, such as branch, tag, or commit")
-	cmd.Flags().StringVar(&opts.sourceDirectory, "source-directory", "", "Directory where the main source should be placed inside the sandbox")
-	cmd.Flags().StringVar(&opts.workingDirectory, "working-directory", "", "Working directory inside the sandbox")
+	cmd.Flags().StringVar(&opts.sourceDirectory, "source-directory", "", "Directory where the main source should be placed inside the discobox")
+	cmd.Flags().StringVar(&opts.workingDirectory, "working-directory", "", "Working directory inside the discobox")
 	cmd.Flags().StringVar(&opts.sourceCodeReferences, "source-code-references", "", "Additional source code references JSON or @path")
-	cmd.Flags().StringVar(&opts.userName, "user-name", "", "Username to use inside the sandbox")
-	cmd.Flags().Int64Var(&opts.userUID, "user-uid", 0, "UID to use inside the sandbox")
-	cmd.Flags().StringSliceVar(&opts.userGroups, "user-group", nil, "Groups for the sandbox user, each a name or a numeric GID. The first is the primary group and the rest are supplementary; omit to use the image's own groups")
-	cmd.Flags().StringVar(&opts.homeDirectory, "home-directory", "", "User home directory to use inside the sandbox")
-	cmd.Flags().StringVar(&opts.gitUserName, "git-user-name", "", "Value for git's user.name inside the sandbox. Unlike `disco run`, this command infers nothing from the local environment")
-	cmd.Flags().StringVar(&opts.gitUserEmail, "git-user-email", "", "Value for git's user.email inside the sandbox")
-	cmd.Flags().BoolVar(&opts.wait, "wait", false, "Wait for sandbox to reach running or fail")
+	cmd.Flags().StringVar(&opts.userName, "user-name", "", "Username to use inside the discobox")
+	cmd.Flags().Int64Var(&opts.userUID, "user-uid", 0, "UID to use inside the discobox")
+	cmd.Flags().StringSliceVar(&opts.userGroups, "user-group", nil, "Groups for the discobox user, each a name or a numeric GID. The first is the primary group and the rest are supplementary; omit to use the image's own groups")
+	cmd.Flags().StringVar(&opts.homeDirectory, "home-directory", "", "User home directory to use inside the discobox")
+	cmd.Flags().StringVar(&opts.gitUserName, "git-user-name", "", "Value for git's user.name inside the discobox. Unlike `discobox run`, this command infers nothing from the local environment")
+	cmd.Flags().StringVar(&opts.gitUserEmail, "git-user-email", "", "Value for git's user.email inside the discobox")
+	cmd.Flags().BoolVar(&opts.wait, "wait", false, "Wait for discobox to reach running or fail")
 	cmd.Flags().DurationVar(&opts.waitTimeout, "wait-timeout", 2*time.Minute, "Maximum time to wait")
 }
 
 func addUpdateFlags(cmd *cobra.Command, opts *sandboxUpdateOptions) {
-	cmd.Flags().StringVar(&opts.name, "name", "", "Sandbox name")
+	cmd.Flags().StringVar(&opts.name, "name", "", "Discobox name")
 }
 
 func createSandboxBody(opts sandboxCreateOptions) (*apimodel.CreateSandboxBody, error) {
@@ -585,7 +585,7 @@ func createSandboxBody(opts sandboxCreateOptions) (*apimodel.CreateSandboxBody, 
 }
 
 // sandboxGitFromCreateOptions builds the git authorship from explicit flags
-// only. This command is the flag-driven path, so unlike `disco run` it reads
+// only. This command is the flag-driven path, so unlike `discobox run` it reads
 // nothing from the local git config: what it creates is what was asked for.
 func sandboxGitFromCreateOptions(opts sandboxCreateOptions) (apimodel.SandboxGitIdentity, bool) {
 	git := apimodel.SandboxGitIdentity{}
@@ -698,7 +698,7 @@ func (a *App) waitForSandboxCtx(ctx context.Context, client *apiclientgen.Client
 		case "running":
 			return sandbox, nil
 		case "error":
-			return sandbox, fmt.Errorf("sandbox failed: %s", sandboxFailureReason(sandbox))
+			return sandbox, fmt.Errorf("discobox failed: %s", sandboxFailureReason(sandbox))
 		}
 		select {
 		case <-ctx.Done():

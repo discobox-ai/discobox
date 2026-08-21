@@ -10,15 +10,15 @@ vars:
   # startup, so this is derived from IROH_TAG rather than restating its
   # condition and drifting from it.
   DEV_LISTEN: '{{if .IROH_TAG}}iroh://{{end}}'
-  # Windows resolves an extensionless name through PATHEXT, so `disco` there
-  # finds `disco.exe` first. Without the suffix a build lands beside whatever
+  # Windows resolves an extensionless name through PATHEXT, so `discobox` there
+  # finds `discobox.exe` first. Without the suffix a build lands beside whatever
   # .exe was left by an earlier one, and the shell keeps running the stale
   # binary while the build reports success.
   EXE: '{{if eq OS "windows"}}.exe{{end}}'
   BINARY: build/discobox-server{{.EXE}}
   SERVER_MAIN: ./cmd/discobox-server
-  CLI_BINARY: build/disco{{.EXE}}
-  CLI_MAIN: ./cmd/disco
+  CLI_BINARY: build/discobox{{.EXE}}
+  CLI_MAIN: ./cmd/discobox
   HOOKS_BINARY: build/discobox-hooks{{.EXE}}
   HOOKS_MAIN: ./cmd/discobox-hooks
   PACKAGES: ./...
@@ -61,10 +61,10 @@ tasks:
       - codesign --force --sign - --entitlements {{.ENTITLEMENTS}} {{.BINARY}}
 
   build:cli:
-    desc: Compile disco CLI
+    desc: Compile discobox CLI
     deps:
-      # disco embeds the server, and with it the guest relay (root.go runs the
-      # server in-process for `disco box server`). Without this the CLI still
+      # discobox embeds the server, and with it the guest relay (root.go runs the
+      # server in-process for `discobox admin server`). Without this the CLI still
       # compiles -- the go:embed target is a directory a committed README
       # satisfies -- and then fails every wslc pool at runtime with an error
       # telling the user to run a build task.
@@ -226,7 +226,7 @@ tasks:
     env:
       # A development server listens where every other server does: the local
       # socket or named pipe, plus iroh where the build carries it. So
-      # `./build/disco` reaches it with no --server and no port to look up, and
+      # `./build/discobox` reaches it with no --server and no port to look up, and
       # the dev loop exercises the transport users actually get.
       #
       # No TCP endpoint. It is opt-in everywhere else because it is a
@@ -243,12 +243,12 @@ tasks:
       # A development build carries the iroh transport (ADR 0052 §4), so the
       # tagged code path is compiled on every reload. A build tag no pipeline
       # compiles is dead code that still occupies a file. It applies to the CLI
-      # too, which .wnb.yaml builds alongside the server, so a disco built here
+      # too, which .wnb.yaml builds alongside the server, so a discobox built here
       # can dial an iroh:// endpoint.
       #
       # DEV_LISTEN names iroh:// wherever this tag applies, so the server binds
       # an iroh endpoint and logs the ID to dial it with. Reaching it needs that
-      # ID in <data dir>/authorized_ids — `disco box iroh-id` prints the one to
+      # ID in <data dir>/authorized_ids — `discobox admin iroh-id` prints the one to
       # add.
       #
       # Opt out with DISCOBOX_DEV_IROH=0, which drops the listener with the tag.
@@ -260,7 +260,7 @@ tasks:
       - go tool watchnbuild
 
   dev:cli:
-    desc: Recompile the disco CLI with watchnbuild hot reload (see .wnb.cli.yaml)
+    desc: Recompile the discobox CLI with watchnbuild hot reload (see .wnb.cli.yaml)
     env:
       # The same iroh build tag dev:server uses, for the same reason: this task
       # is run alongside `task dev`, and a CLI that cannot dial iroh:// while

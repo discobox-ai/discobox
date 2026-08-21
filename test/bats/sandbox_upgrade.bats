@@ -53,8 +53,8 @@ PY
   export DISCOBOX_BATS_SOCKET="$DISCOBOX_BATS_TMP/server.sock"
 
   (cd server && go build -o ../build/discobox-server ./cmd/discobox-server)
-  rm -f build/disco
-  (cd cli && go build -o ../build/disco ./cmd/disco)
+  rm -f build/discobox
+  (cd cli && go build -o ../build/discobox ./cmd/discobox)
   (docker build -f pool-agent/Dockerfile -t discobox-pool-agent:local .)
   go tool task build:harness-stub-image
 
@@ -105,7 +105,7 @@ print(" ".join(row[0] for row in con.execute("SELECT id FROM pools")))
   fi
   local pool_id
   for pool_id in $pool_ids; do
-    cli box pool delete "$pool_id" >/dev/null 2>&1 || true
+    cli admin pool delete "$pool_id" >/dev/null 2>&1 || true
   done
   for _ in {1..30}; do
     local pending=0
@@ -135,7 +135,7 @@ print(" ".join(row[0] for row in con.execute("SELECT id FROM pools")))
 export UPGRADE_STUB_IMAGE="discobox-harness-upgrade-stub:local"
 
 cli() {
-  "$REPO_ROOT/build/disco" --server "$DISCOBOX_BATS_SERVER" --project default --output json "$@"
+  "$REPO_ROOT/build/discobox" --server "$DISCOBOX_BATS_SERVER" --project default --output json "$@"
 }
 
 json_get() {
@@ -235,8 +235,8 @@ ensure_pool() {
 # at all, not something this file is testing.
 configure_stub() {
   local harness="$1" raw status
-  raw="$("$REPO_ROOT/build/disco" --server "$DISCOBOX_BATS_SERVER" --project default \
-    box harness configure "$harness" </dev/null 2>&1)"
+  raw="$("$REPO_ROOT/build/discobox" --server "$DISCOBOX_BATS_SERVER" --project default \
+    admin harness configure "$harness" </dev/null 2>&1)"
   status=$?
   printf '===== configure %s =====\n%s\n' "$harness" "$raw" >>"$DISCOBOX_BATS_CONFIGURE_LOG"
   return "$status"
@@ -280,8 +280,8 @@ sandbox_container_image() {
 }
 
 sandbox_field() {
-  "$REPO_ROOT/build/disco" --server "$DISCOBOX_BATS_SERVER" --project default --output json \
-    box sandbox get "$1" | json_get "$2"
+  "$REPO_ROOT/build/discobox" --server "$DISCOBOX_BATS_SERVER" --project default --output json \
+    admin discobox get "$1" | json_get "$2"
 }
 
 wait_for_sandbox_state() {
@@ -294,8 +294,8 @@ wait_for_sandbox_state() {
     sleep 1
   done
   echo "sandbox did not reach $want: $sandbox_id" >&2
-  "$REPO_ROOT/build/disco" --server "$DISCOBOX_BATS_SERVER" --project default --output json \
-    box sandbox get "$sandbox_id" >&2 || true
+  "$REPO_ROOT/build/discobox" --server "$DISCOBOX_BATS_SERVER" --project default --output json \
+    admin discobox get "$sandbox_id" >&2 || true
   tail -100 "$DISCOBOX_BATS_SERVER_LOG" >&2 || true
   return 1
 }
@@ -310,8 +310,8 @@ wait_for_sandbox_running() {
     sleep 1
   done
   echo "sandbox did not return to running: $sandbox_id" >&2
-  "$REPO_ROOT/build/disco" --server "$DISCOBOX_BATS_SERVER" --project default --output json \
-    box sandbox get "$sandbox_id" >&2 || true
+  "$REPO_ROOT/build/discobox" --server "$DISCOBOX_BATS_SERVER" --project default --output json \
+    admin discobox get "$sandbox_id" >&2 || true
   tail -100 "$DISCOBOX_BATS_SERVER_LOG" >&2 || true
   return 1
 }
@@ -323,7 +323,7 @@ wait_for_sandbox_running() {
 
   build_upgrade_stub v1
 
-  run cli box harness create --image "$UPGRADE_STUB_IMAGE" --slug upgrade-stub --name "Upgrade Stub"
+  run cli admin harness create --image "$UPGRADE_STUB_IMAGE" --slug upgrade-stub --name "Upgrade Stub"
   [ "$status" -eq 0 ]
   harness_id="$(printf '%s' "$output" | json_get id)"
   [ -n "$harness_id" ]
@@ -333,7 +333,7 @@ wait_for_sandbox_running() {
   run configure_stub upgrade-stub
   [ "$status" -eq 0 ]
 
-  run cli box sandbox create --name "upgrade-e2e" --harness upgrade-stub --wait --wait-timeout 120s
+  run cli admin discobox create --name "upgrade-e2e" --harness upgrade-stub --wait --wait-timeout 120s
   [ "$status" -eq 0 ]
   sandbox_id="$(printf '%s' "$output" | json_get id)"
   [ -n "$sandbox_id" ]
@@ -349,7 +349,7 @@ wait_for_sandbox_running() {
 
   # Rebuild the SAME tag. Nothing about the reference changes; only the content.
   build_upgrade_stub v2
-  run cli box harness refresh-image upgrade-stub
+  run cli admin harness refresh-image upgrade-stub
   [ "$status" -eq 0 ]
   after_digest="$(printf '%s' "$output" | json_get imageDigest)"
   [ -n "$after_digest" ]
@@ -364,7 +364,7 @@ wait_for_sandbox_running() {
   # without being asked.
   [ "$(sandbox_container_image "$sandbox_id")" = "$before_image" ]
 
-  run cli box sandbox upgrade "$sandbox_id"
+  run cli admin discobox upgrade "$sandbox_id"
   [ "$status" -eq 0 ]
   wait_for_sandbox_running "$sandbox_id"
 
@@ -383,7 +383,7 @@ wait_for_sandbox_running() {
 
   # A second upgrade has nothing to do and is refused rather than performed:
   # recreating a container costs container-local state for no gain.
-  run cli box sandbox upgrade "$sandbox_id"
+  run cli admin discobox upgrade "$sandbox_id"
   [ "$status" -ne 0 ]
 }
 
@@ -398,7 +398,7 @@ wait_for_sandbox_running() {
 
   build_upgrade_stub power-v1
 
-  run cli box harness create --image "$UPGRADE_STUB_IMAGE" --slug power-stub --name "Power Stub"
+  run cli admin harness create --image "$UPGRADE_STUB_IMAGE" --slug power-stub --name "Power Stub"
   [ "$status" -eq 0 ]
   harness_id="$(printf '%s' "$output" | json_get id)"
   [ -n "$harness_id" ]
@@ -406,24 +406,24 @@ wait_for_sandbox_running() {
   run configure_stub power-stub
   [ "$status" -eq 0 ]
 
-  run cli box sandbox create --name "upgrade-power-e2e" --harness power-stub --wait --wait-timeout 120s
+  run cli admin discobox create --name "upgrade-power-e2e" --harness power-stub --wait --wait-timeout 120s
   [ "$status" -eq 0 ]
   sandbox_id="$(printf '%s' "$output" | json_get id)"
   [ -n "$sandbox_id" ]
   before_image="$(sandbox_container_image "$sandbox_id")"
   [ -n "$before_image" ]
 
-  run cli box sandbox stop "$sandbox_id"
+  run cli admin discobox stop "$sandbox_id"
   [ "$status" -eq 0 ]
   wait_for_sandbox_state "$sandbox_id" stopped
 
   build_upgrade_stub power-v2
-  run cli box harness refresh-image power-stub
+  run cli admin harness refresh-image power-stub
   [ "$status" -eq 0 ]
   after_digest="$(printf '%s' "$output" | json_get imageDigest)"
   [ -n "$after_digest" ]
 
-  run cli box sandbox upgrade "$sandbox_id"
+  run cli admin discobox upgrade "$sandbox_id"
   [ "$status" -eq 0 ]
 
   # The container is rebuilt on the new image without being started: an upgrade
@@ -439,7 +439,7 @@ wait_for_sandbox_running() {
   wait_for_sandbox_state "$sandbox_id" stopped
 
   # And a start after the upgrade is an ordinary start of the rebuilt container.
-  run cli box sandbox start "$sandbox_id"
+  run cli admin discobox start "$sandbox_id"
   [ "$status" -eq 0 ]
   wait_for_sandbox_running "$sandbox_id"
   [ "$(sandbox_container_image "$sandbox_id")" = "$after_image" ]

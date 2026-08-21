@@ -55,7 +55,7 @@ func TestToTUISandboxMarksSnapshotSources(t *testing.T) {
 	}))
 	source.SetWorkspace(apiclientgen.NewOptGitSourceWorkspace(apiclientgen.GitSourceWorkspace{
 		Mode:        apiclientgen.NewOptGitSourceWorkspaceMode("dirty"),
-		SnapshotRef: apiclientgen.NewOptString("refs/disco/snapshot"),
+		SnapshotRef: apiclientgen.NewOptString("refs/discobox/snapshot"),
 	}))
 	sandbox := apimodel.Sandbox{Runtime: apimodel.SandboxRuntime{State: "running", DesiredState: "present"}}
 	sandbox.Config.SetSource(apiclientgen.NewOptGitSource(source))
@@ -87,7 +87,7 @@ func TestSourceDirectoryDropsTheRef(t *testing.T) {
 }
 
 // Run is the launcher's Enter, and it has to go through the same creation path
-// `disco run` does rather than posting a body of its own.
+// `discobox run` does rather than posting a body of its own.
 func TestAPIDataSourceRunUsesSharedRunCreation(t *testing.T) {
 	repo := newRunSourceTestRepo(t)
 	git := runSourceTestGit(t, repo)
@@ -126,7 +126,7 @@ func TestAPIDataSourceRunUsesSharedRunCreation(t *testing.T) {
 		t.Fatalf("run: %v", err)
 	}
 	// The launcher's create says what it is doing on the way through, in the
-	// same words `disco run` uses, because both call the same creation path
+	// same words `discobox run` uses, because both call the same creation path
 	// (ADR 0060). A source the server can reach needs no push, so the delivery
 	// reports nothing here.
 	if want := []string{

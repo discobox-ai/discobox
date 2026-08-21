@@ -442,7 +442,7 @@ type GitSourceDestination struct {
 // SourceCodeReferences maps sandbox destination directories to Git sources.
 type SourceCodeReferences map[string]GitSource
 
-// AppliedSourceCommit records one successful `disco apply` of a source's
+// AppliedSourceCommit records one successful `discobox apply` of a source's
 // commits into a host working tree (ADR 0014). Client-declared provenance,
 // like Origin: the server cannot observe host-side Git state, so this is
 // reported after the fact, only once the client's fast-forward has actually
@@ -649,7 +649,7 @@ type Sandbox struct {
 	SourceRoot        *string               `gorm:"column:source_root;type:text;index" json:"sourceRoot,omitempty" doc:"Normalized repository identity of the primary source: local repository root path, or remote URL. Derived from Source; used to list the sandboxes belonging to a repository."`
 	Origin            *Origin               `gorm:"column:origin;type:text;serializer:json" json:"origin,omitempty" doc:"Client host and project directory the sandbox was created from. Immutable after create."`
 	SourceDeliveredAt *time.Time            `gorm:"column:source_delivered_at" json:"sourceDeliveredAt,omitempty" doc:"When the client reported its push complete for a push-delivered source. Empty while the sandbox is still awaiting it. The commit to check out is the source's Checkout.Commit, fixed at create." format:"date-time"`
-	AppliedCommits    []AppliedSourceCommit `gorm:"column:applied_commits;type:text;serializer:json" json:"appliedCommits,omitempty" doc:"History of successful disco apply runs that landed this sandbox's commits on a host (ADR 0014). Client-reported; append-only."`
+	AppliedCommits    []AppliedSourceCommit `gorm:"column:applied_commits;type:text;serializer:json" json:"appliedCommits,omitempty" doc:"History of successful discobox apply runs that landed this sandbox's commits on a host (ADR 0014). Client-reported; append-only."`
 	OriginKey         *string               `gorm:"column:origin_key;type:text;index" json:"-" doc:"Indexed identity of Origin. Derived from Origin; used to list the sandboxes created from one client project directory."`
 	ProviderState     json.RawMessage       `gorm:"column:provider_state;type:text" json:"providerState,omitempty" doc:"Non-secret provider state"`
 	// RepairGeneration marks one generation as a repair (ADR 0035): when it

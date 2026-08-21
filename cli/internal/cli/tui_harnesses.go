@@ -15,7 +15,7 @@ import (
 
 // The launcher's harnesses screen, on this side of the seam. What the window
 // calls a harness is the control plane's harness config, and everything here is
-// the same API and the same flows the `box harnesses` subcommands run, so what
+// the same API and the same flows the `admin harnesses` subcommands run, so what
 // the screen does is reproducible from a shell.
 
 // Harnesses is the project's harness configs, oldest first, which is the order
@@ -210,7 +210,7 @@ func (d *apiDataSource) DoHarness(ctx context.Context, verb tui.HarnessVerb, har
 
 // ConfigureHarness runs the harness's own interactive configure flow on the
 // real terminal the window has stepped aside from. The flow is the same one
-// `disco box harnesses configure` runs, streams and all.
+// `discobox admin harnesses configure` runs, streams and all.
 func (d *apiDataSource) ConfigureHarness(ctx context.Context, harnessID string, stdin io.Reader, stdout, stderr io.Writer) error {
 	_, err := d.app.runHarnessConfigure(ctx, d.client, d.projectID, harnessID, stdin, stdout, stderr)
 	return err

@@ -19,7 +19,7 @@ import (
 	"github.com/obot-platform/discobox/internal/hostid"
 )
 
-// newApplyCommand implements `disco apply` (ADR 0014): pulling a sandbox's
+// newApplyCommand implements `discobox apply` (ADR 0014): pulling a sandbox's
 // committed source changes into the local repository they started from, via
 // fetch + cherry-pick, never merge.
 func (a *App) newApplyCommand() *cobra.Command {
@@ -27,28 +27,28 @@ func (a *App) newApplyCommand() *cobra.Command {
 	var dirOverrides []string
 	var allowDirty bool
 	cmd := &cobra.Command{
-		Use:   "apply [SANDBOX_ID] [flags]",
-		Short: "Apply a sandbox's committed source changes onto a local working tree",
-		Long: `Fetch a sandbox's source commits and cherry-pick them onto the local working
+		Use:   "apply [DISCOBOX_ID] [flags]",
+		Short: "Apply a discobox's committed source changes onto a local working tree",
+		Long: `Fetch a discobox's source commits and cherry-pick them onto the local working
 tree they started from, per docs/adr/0014.
 
-"local" is this machine — the repository you ran disco from; "sandbox" is the
-copy of it the sandbox works in. Commits only ever move sandbox -> local.
+"local" is this machine — the repository you ran discobox from; "discobox" is the
+copy of it the discobox works in. Commits only ever move discobox -> local.
 
-Without SANDBOX_ID the sandbox is taken from the ones "disco ls" shows for the
+Without DISCOBOX_ID the discobox is taken from the ones "discobox ls" shows for the
 current project directory: the only one when there is one, otherwise you are
 asked to pick.
 
-Every source on the sandbox is applied by default (the primary source plus any
+Every source on the discobox is applied by default (the primary source plus any
 secondary ones); --source narrows to one, named by its slug.
 
-Each source is only applied into the local directory the sandbox knows it came
-from, on this machine. A source with no known local directory here (a sandbox
+Each source is only applied into the local directory the discobox knows it came
+from, on this machine. A source with no known local directory here (a discobox
 created on a different machine, or a remote-cloned source) needs an explicit
 --dir slug=path.
 
-Uncommitted changes in the sandbox are never applied: only what has been
-committed there. A source whose sandbox working tree is dirty is reported and
+Uncommitted changes in the discobox are never applied: only what has been
+committed there. A source whose discobox working tree is dirty is reported and
 skipped, so nothing lands from a half-finished state by accident.
 --allow-dirty applies that source's committed commits anyway and leaves the
 uncommitted ones where they are.
@@ -75,9 +75,9 @@ became. Use -o json for the same report as a machine-readable object, and
 			return a.runApply(cmd, sandboxArg, sourceSlug, overrides, allowDirty)
 		},
 	}
-	cmd.Flags().StringVar(&sourceSlug, "source", "", "Apply only the source with this slug, instead of every source on the sandbox")
+	cmd.Flags().StringVar(&sourceSlug, "source", "", "Apply only the source with this slug, instead of every source on the discobox")
 	cmd.Flags().StringArrayVar(&dirOverrides, "dir", nil, "Local directory to apply a source into, as slug=path; required for a source with no known local directory on this machine")
-	cmd.Flags().BoolVar(&allowDirty, "allow-dirty", false, "Apply a source's committed commits even when the sandbox has uncommitted changes; they stay in the sandbox either way")
+	cmd.Flags().BoolVar(&allowDirty, "allow-dirty", false, "Apply a source's committed commits even when the discobox has uncommitted changes; they stay in the discobox either way")
 	return cmd
 }
 
@@ -209,12 +209,12 @@ func selectSources(sandbox *apimodel.Sandbox, onlySlug string) ([]applySourceEnt
 			}
 		}
 		if len(filtered) == 0 {
-			return nil, fmt.Errorf("sandbox has no source with slug %q", onlySlug)
+			return nil, fmt.Errorf("discobox has no source with slug %q", onlySlug)
 		}
 		sources = filtered
 	}
 	if len(sources) == 0 {
-		return nil, fmt.Errorf("sandbox has no sources")
+		return nil, fmt.Errorf("discobox has no sources")
 	}
 	return sources, nil
 }
@@ -299,17 +299,17 @@ func (a *App) applyOneSource(ctx context.Context, printer applyPrinter, client *
 	printer.sourceHeader(report)
 
 	if report.SandboxDir != "" {
-		printer.step("checking the sandbox working tree (git status --porcelain in %s)", report.SandboxDir)
+		printer.step("checking the discobox working tree (git status --porcelain in %s)", report.SandboxDir)
 		dirty, status, err := a.sandboxSourceDirty(ctx, projectID, sandboxID, report.SandboxDir)
 		if err != nil {
-			return fail("check sandbox working tree: %v", err)
+			return fail("check discobox working tree: %v", err)
 		}
 		switch {
 		case dirty && !allowDirty:
 			report.Status = applyStatusBlocked
 			report.UncommittedChanges = statusLines(status)
 			report.NextSteps = dirtyNextSteps(sandboxID, entry.slug, report.SandboxDir, dirOverrides)
-			printer.step("BLOCKED: the sandbox has %d uncommitted %s; only committed work is applied",
+			printer.step("BLOCKED: the discobox has %d uncommitted %s; only committed work is applied",
 				len(report.UncommittedChanges), pluralize("change", len(report.UncommittedChanges)))
 			printer.detailLines(report.UncommittedChanges)
 			printer.nextSteps(report.NextSteps)
@@ -320,7 +320,7 @@ func (a *App) applyOneSource(ctx context.Context, printer applyPrinter, client *
 			// chose to leave it there rather than not knowing about it.
 			report.UncommittedChanges = statusLines(status)
 			report.DirtyIgnored = true
-			printer.step("--allow-dirty: applying anyway; %d uncommitted %s stay in the sandbox and are not applied",
+			printer.step("--allow-dirty: applying anyway; %d uncommitted %s stay in the discobox and are not applied",
 				len(report.UncommittedChanges), pluralize("change", len(report.UncommittedChanges)))
 			printer.detailLines(report.UncommittedChanges)
 		default:
@@ -328,13 +328,13 @@ func (a *App) applyOneSource(ctx context.Context, printer applyPrinter, client *
 		}
 	}
 
-	printer.step("fetching the sandbox's commits into %s", report.SandboxRef)
+	printer.step("fetching the discobox's commits into %s", report.SandboxRef)
 	tip, err := sandboxapply.FetchSource(ctx, repoRoot, gitServerURL, projectID, sandboxID, a.token, entry.source)
 	if err != nil {
 		return fail("%v", err)
 	}
 	report.SandboxTip = tip
-	printer.detail("sandbox tip %s", shortSHA(tip))
+	printer.detail("discobox tip %s", shortSHA(tip))
 
 	if last, ok := lastApplied(sandbox, entry.slug); ok {
 		report.Base, report.BaseOrigin = last.Commit, baseOriginLastApplied
@@ -347,14 +347,14 @@ func (a *App) applyOneSource(ctx context.Context, printer applyPrinter, client *
 			// repository this source came from — unrelated histories share no
 			// commit — which is worth saying outright, since --dir is how a
 			// caller points at the wrong one in the first place.
-			return fail("the sandbox's history has no commit in common with %s, so there is nothing to apply onto; is that the repository source %q came from? (%v)", repoRoot, entry.slug, err)
+			return fail("the discobox's history has no commit in common with %s, so there is nothing to apply onto; is that the repository source %q came from? (%v)", repoRoot, entry.slug, err)
 		}
 	}
 	printer.step("base %s (%s)", shortSHA(report.Base), formatBaseOrigin(report.BaseOrigin))
 
 	if report.Base == tip {
 		report.Status = applyStatusUpToDate
-		printer.step("UP TO DATE: the sandbox has no commits after %s, so local %s is unchanged", shortSHA(report.Base), applyTarget(report))
+		printer.step("UP TO DATE: the discobox has no commits after %s, so local %s is unchanged", shortSHA(report.Base), applyTarget(report))
 		return report
 	}
 
@@ -404,13 +404,13 @@ func (a *App) applyOneSource(ctx context.Context, printer applyPrinter, client *
 		// The commits really are on the branch; only the server-side record of
 		// them failed. Say both, so nobody reads this as "nothing happened"
 		// and re-runs expecting a clean slate.
-		return fail("commits landed in %s at %s, but recording the apply on the sandbox failed: %v", repoRoot, shortSHA(result.HostTip), err)
+		return fail("commits landed in %s at %s, but recording the apply on the discobox failed: %v", repoRoot, shortSHA(result.HostTip), err)
 	}
 
 	report.Status = applyStatusApplied
 	printer.step("APPLIED %d %s to local %s: %s -> %s", len(report.Commits), pluralize("commit", len(report.Commits)), applyTarget(report), shortSHA(report.HostBase), shortSHA(report.HostTip))
 	printer.appliedList(report.Commits)
-	printer.step("recorded on sandbox %s as applied to %s", sandboxID, repoRoot)
+	printer.step("recorded on discobox %s as applied to %s", sandboxID, repoRoot)
 	return report
 }
 
@@ -437,20 +437,20 @@ func commitSubject(commits []applyCommit, sha string) string {
 // leave the rest. Both re-runs are spelled out for this exact source, --dir
 // override included, so neither has to be reassembled by hand.
 func dirtyNextSteps(sandboxID, slug, sandboxDir string, dirOverrides map[string]string) []applyNextStep {
-	rerun := fmt.Sprintf("disco apply %s --source %s", sandboxID, slug)
+	rerun := fmt.Sprintf("discobox apply %s --source %s", sandboxID, slug)
 	if dir, ok := dirOverrides[slug]; ok {
 		rerun += fmt.Sprintf(" --dir %s=%s", slug, dir)
 	}
 	return []applyNextStep{
 		{
-			Description: "commit them in the sandbox, then apply again",
+			Description: "commit them in the discobox, then apply again",
 			Commands: []string{
-				fmt.Sprintf("disco shell %s -- git -C %s commit -a -m MESSAGE", sandboxID, sandboxDir),
+				fmt.Sprintf("discobox shell %s -- git -C %s commit -a -m MESSAGE", sandboxID, sandboxDir),
 				rerun,
 			},
 		},
 		{
-			Description: "or apply only what is already committed, leaving them in the sandbox",
+			Description: "or apply only what is already committed, leaving them in the discobox",
 			Commands:    []string{rerun + " --allow-dirty"},
 		},
 	}
@@ -487,10 +487,10 @@ func resolveApplyHostDir(sandbox *apimodel.Sandbox, hostID string, entry applySo
 
 	origin, hasOrigin := sandbox.Origin.Get()
 	if !hasOrigin {
-		return "", "", fmt.Errorf("the sandbox has no recorded origin, so nothing says which directory it came from; %s", needDir)
+		return "", "", fmt.Errorf("the discobox has no recorded origin, so nothing says which directory it came from; %s", needDir)
 	}
 	if origin.HostId != hostID {
-		return "", "", fmt.Errorf("the sandbox was created on a different machine (origin host %s%s, this machine is %s); %s",
+		return "", "", fmt.Errorf("the discobox was created on a different machine (origin host %s%s, this machine is %s); %s",
 			origin.HostId, formatOriginHostname(origin), hostID, needDir)
 	}
 

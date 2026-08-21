@@ -23,7 +23,7 @@ import (
 var errPickCanceled = errors.New("canceled")
 
 // selectSandbox resolves the sandbox a command acts on. A sandbox given on the
-// command line wins; otherwise the candidates are the sandboxes `disco ls`
+// command line wins; otherwise the candidates are the sandboxes `discobox ls`
 // shows for the current project directory, and the user picks one when there is
 // more than one.
 func (a *App) selectSandbox(cmd *cobra.Command, sandboxArg string) (projectID string, sandboxID string, client *apiclientgen.Client, err error) {
@@ -43,9 +43,9 @@ func (a *App) selectSandbox(cmd *cobra.Command, sandboxArg string) (projectID st
 	if err != nil {
 		return "", "", nil, err
 	}
-	sandboxID, err = pickOne(cmd, "Select a sandbox", sandboxPickerItems(sandboxes), pickerOptions{
-		empty:     "no sandboxes were started from this directory; start one with `disco run`, or name one with --sandbox-id",
-		ambiguous: "more than one sandbox was started from this directory; pass --sandbox-id",
+	sandboxID, err = pickOne(cmd, "Select a discobox", sandboxPickerItems(sandboxes), pickerOptions{
+		empty:     "no discoboxes were started from this directory; start one with `discobox run`, or name one with --discobox-id",
+		ambiguous: "more than one discobox was started from this directory; pass --discobox-id",
 		// The remembered pick is per project, because the candidate list is.
 		recentKey: "sandbox:" + projectID,
 	})

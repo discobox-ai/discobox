@@ -164,7 +164,7 @@ func (c *tcpTunnelConn) Read(p []byte) (int, error) {
 		case frame.Stdout:
 			c.pending = read.Payload
 		case frame.Error:
-			return 0, fmt.Errorf("sandbox tunnel: %s", strings.TrimSpace(string(read.Payload)))
+			return 0, fmt.Errorf("discobox tunnel: %s", strings.TrimSpace(string(read.Payload)))
 		default:
 			// A byte pipe has no exit status, no resize and no stderr; a frame
 			// that is none of the above is not for this conn.

@@ -26,7 +26,7 @@ type editorDoneMsg struct {
 // alternate screen, so the editor gets a screen of its own — and redraws when
 // it exits.
 func editPrompt(ctx context.Context, text string) tea.Cmd {
-	file, err := os.CreateTemp("", "disco-prompt-*.md")
+	file, err := os.CreateTemp("", "discobox-prompt-*.md")
 	if err != nil {
 		return failed("cannot write the prompt out: %v", err)
 	}

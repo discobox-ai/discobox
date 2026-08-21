@@ -22,7 +22,7 @@ import (
 // from the pane, rather than from the real terminal out from under the window.
 //
 // Running the command rather than reimplementing it is the point: what a pane
-// shows is `disco apply`, with its own flag defaults and rendering, and not a
+// shows is `discobox apply`, with its own flag defaults and rendering, and not a
 // second answer that drifts from the one a shell gives.
 
 // localCommand is a command running on a pty of its own, presented as a

@@ -162,7 +162,7 @@ func TestReconcileArchivedPastRetentionPurges(t *testing.T) {
 // Unarchiving rebuilds the container, so the sandbox must stop reading
 // `archived` as soon as that happens. Waiting for the pool agent's next
 // complete sync would report an archived sandbox that has a container for up to
-// a full sync interval — observed live as ~15s of `disco ls` showing `archived`
+// a full sync interval — observed live as ~15s of `discobox ls` showing `archived`
 // for a sandbox that had already come back.
 func TestReconcileUnarchiveLeavesTheSandboxStopped(t *testing.T) {
 	ctx := context.Background()

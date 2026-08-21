@@ -46,8 +46,8 @@ setup_file() {
   ssh-keygen -t ed25519 -N "" -f "$DISCOBOX_BATS_SSH_KEY" -C "bats@ssh-suite" >/dev/null
 
   (cd server && go build -o ../build/discobox-server ./cmd/discobox-server)
-  rm -f build/disco
-  (cd cli && go build -o ../build/disco ./cmd/disco)
+  rm -f build/discobox
+  (cd cli && go build -o ../build/discobox ./cmd/discobox)
   (docker build -f pool-agent/Dockerfile -t discobox-pool-agent:local .)
   (docker build -f sandbox-agent/Dockerfile --target sandbox-agent -t discobox-sandbox-agent:local .)
 
@@ -85,7 +85,7 @@ setup_file() {
   run cli ssh-key add "$DISCOBOX_BATS_SSH_KEY.pub"
   [ "$status" -eq 0 ]
 
-  run cli box sandbox create --name ssh-e2e --wait --wait-timeout 120s
+  run cli admin discobox create --name ssh-e2e --wait --wait-timeout 120s
   [ "$status" -eq 0 ]
   export DISCOBOX_BATS_SANDBOX_ID="$(printf '%s' "$output" | json_get id)"
   [ -n "$DISCOBOX_BATS_SANDBOX_ID" ]
@@ -93,7 +93,7 @@ setup_file() {
 
 teardown_file() {
   cd "$REPO_ROOT"
-  [ -n "${DISCOBOX_BATS_SANDBOX_ID:-}" ] && cli box sandbox delete "$DISCOBOX_BATS_SANDBOX_ID" >/dev/null 2>&1 || true
+  [ -n "${DISCOBOX_BATS_SANDBOX_ID:-}" ] && cli admin discobox delete "$DISCOBOX_BATS_SANDBOX_ID" >/dev/null 2>&1 || true
 
   local pool_ids=""
   if [ -f "$DISCOBOX_BATS_DB" ]; then
@@ -105,7 +105,7 @@ print(" ".join(row[0] for row in con.execute("SELECT id FROM pools")))
   fi
   local pool_id
   for pool_id in $pool_ids; do
-    cli box pool delete "$pool_id" >/dev/null 2>&1 || true
+    cli admin pool delete "$pool_id" >/dev/null 2>&1 || true
   done
   for _ in {1..30}; do
     local pending=0
@@ -138,7 +138,7 @@ PY
 }
 
 cli() {
-  "$REPO_ROOT/build/disco" --server "$DISCOBOX_BATS_SERVER" --project default --output json "$@"
+  "$REPO_ROOT/build/discobox" --server "$DISCOBOX_BATS_SERVER" --project default --output json "$@"
 }
 
 json_get() {
@@ -200,7 +200,7 @@ PY
 # this suite dials through: the server binds no SSH port, so reaching it means
 # running the CLI as a ProxyCommand (ADR 0057).
 ssh_proxy_command() {
-  printf '%s --server %s box ssh-proxy' "$REPO_ROOT/build/disco" "$DISCOBOX_BATS_SERVER"
+  printf '%s --server %s admin ssh-proxy' "$REPO_ROOT/build/discobox" "$DISCOBOX_BATS_SERVER"
 }
 
 # ssh_client runs an ssh/scp client against this suite's server, trusting its

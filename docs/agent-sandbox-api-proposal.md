@@ -660,7 +660,7 @@ convenience command.
 ### Resource operations
 
 ```bash
-disco sandbox create \
+discobox sandbox create \
   --from image:ubuntu:24.04 \
   --cpu 2 \
   --memory 4GiB \
@@ -668,40 +668,40 @@ disco sandbox create \
   --wait \
   -o json
 
-disco sandbox get SBX_ID -o json
-disco sandbox stop SBX_ID --wait
-disco sandbox start SBX_ID --wait
-disco sandbox delete SBX_ID --wait
+discobox sandbox get SBX_ID -o json
+discobox sandbox stop SBX_ID --wait
+discobox sandbox start SBX_ID --wait
+discobox sandbox delete SBX_ID --wait
 
-disco exec SBX_ID -- go test ./...
-disco exec SBX_ID --timeout 10m -- npm test
-disco exec SBX_ID --detach -- npm run dev
-disco exec logs SBX_ID EXEC_ID --follow
-disco exec signal SBX_ID EXEC_ID INT
+discobox exec SBX_ID -- go test ./...
+discobox exec SBX_ID --timeout 10m -- npm test
+discobox exec SBX_ID --detach -- npm run dev
+discobox exec logs SBX_ID EXEC_ID --follow
+discobox exec signal SBX_ID EXEC_ID INT
 
-disco file read SBX_ID /workspace/package.json
-disco file write SBX_ID /workspace/config.json --from ./config.json
-disco file upload SBX_ID ./src /workspace/src
-disco file download SBX_ID /workspace/results ./results
+discobox file read SBX_ID /workspace/package.json
+discobox file write SBX_ID /workspace/config.json --from ./config.json
+discobox file upload SBX_ID ./src /workspace/src
+discobox file download SBX_ID /workspace/results ./results
 
-disco endpoint create SBX_ID 3000 --private --expires 1h -o json
-disco endpoint revoke SBX_ID ENDPOINT_ID
+discobox endpoint create SBX_ID 3000 --private --expires 1h -o json
+discobox endpoint revoke SBX_ID ENDPOINT_ID
 
-disco snapshot create SBX_ID --filesystem --wait -o json
-disco snapshot get SNAPSHOT_ID -o json
+discobox snapshot create SBX_ID --filesystem --wait -o json
+discobox snapshot get SNAPSHOT_ID -o json
 ```
 
-The existing root `disco exec` may continue to select a sandbox implicitly for
+The existing root `discobox exec` may continue to select a sandbox implicitly for
 human use. Agent callers should pass an explicit sandbox ID or set
 `DISCO_SANDBOX_ID`; an explicit argument always wins.
 
 ### Task convenience
 
-Because the current `disco run` is harness/prompt-oriented, use a separate task
+Because the current `discobox run` is harness/prompt-oriented, use a separate task
 command for generic create-exec-cleanup composition:
 
 ```bash
-disco task run \
+discobox task run \
   --from image:node:24 \
   --upload .:/workspace \
   --workdir /workspace \
@@ -729,7 +729,7 @@ as stable as the HTTP API.
 - Provide `--no-input`; never prompt or open a picker in that mode.
 - Reserve stdout for the selected output format or attached process stdout.
   Send progress and diagnostics to stderr.
-- Preserve the remote exit code for a foreground `disco exec`.
+- Preserve the remote exit code for a foreground `discobox exec`.
 - Reserve exit code `125` for CLI or control-plane failure, leaving `126` and
   `127` with their conventional process-execution meanings.
 - Support `table`, `json`, `jsonl`, and `raw` output modes.
@@ -782,7 +782,7 @@ This proposal builds on several existing choices:
   proposed common API should strengthen rather than collapse those boundaries.
 - Sandbox execs are already durable resources with argv, cwd, environment,
   user, PTY state, timestamps, output logs, runtime events, and exit status.
-- The CLI already treats root `disco exec` as a local-command-like operation:
+- The CLI already treats root `discobox exec` as a local-command-like operation:
   it chooses a PTY only when all streams are terminals, preserves stdout and
   stderr behavior, forwards signals, and returns the remote exit status.
 - Provider `AcquireHTTPClient` already points toward delegated, scoped access to
@@ -904,9 +904,9 @@ agent.
     resume after its cursor falls outside retention?
 13. Should the CLI's default create/start/stop/delete behavior wait for
     convergence, or should waiting always be explicit?
-14. Can the existing `disco exec` syntax accept a positional sandbox ID without
+14. Can the existing `discobox exec` syntax accept a positional sandbox ID without
     making ordinary command argv ambiguous, or should the unambiguous machine
-    form live under `disco box exec`?
+    form live under `discobox admin exec`?
 15. Which capability differences are acceptable, and which must be normalized by
     the worker/sandbox agent so callers never branch on provider kind?
 
@@ -956,7 +956,7 @@ Revisit this proposal when Discobox needs one or more of the following:
 - reliable machine-driven file and artifact transfer;
 - sandbox snapshots or forked agent work;
 - short-lived authenticated port access;
-- a generic one-shot task runner distinct from harness-oriented `disco run`.
+- a generic one-shot task runner distinct from harness-oriented `discobox run`.
 
 At that point, verify the provider research, narrow the open questions into an
 explicit decision, and draft a Proposed ADR before implementation. Once code

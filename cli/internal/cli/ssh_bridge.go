@@ -76,7 +76,7 @@ func spliceSSHConnect(ctx context.Context, local io.ReadWriter, remote io.ReadWr
 // The port exists for the life of one command. Nothing about it is written
 // down, which is the point: connecting to a sandbox should not require the
 // server to hold a machine-wide SSH port open. A persisted ssh_config cannot
-// name a port that only exists while a command runs, so what `disco box
+// name a port that only exists while a command runs, so what `discobox admin
 // ssh-config` writes reaches the same sshd through a `ProxyCommand` instead;
 // see ssh_proxy.go.
 type sshBridge struct {

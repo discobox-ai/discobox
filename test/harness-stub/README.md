@@ -45,10 +45,10 @@ does not pass its own environment to the services it starts.
 
 ```bash
 go tool task build:harness-stub-image   # uses the dev sandbox-agent image from .env when present
-disco box harness create --image discobox-harness-stub:local
-disco box harness configure stub        # non-interactive; exits on its own
-disco box harness deconfigure stub      # removes the secret + file, marks unconfigured
-disco box harness delete stub
+discobox admin harness create --image discobox-harness-stub:local
+discobox admin harness configure stub        # non-interactive; exits on its own
+discobox admin harness deconfigure stub      # removes the secret + file, marks unconfigured
+discobox admin harness delete stub
 ```
 
 To exercise the failure path (commit must record `configureError` and leave the

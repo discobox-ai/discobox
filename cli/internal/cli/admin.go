@@ -2,9 +2,9 @@ package cli
 
 import "github.com/spf13/cobra"
 
-func (a *App) newBoxCommand() *cobra.Command {
+func (a *App) newAdminCommand() *cobra.Command {
 	cmd := &cobra.Command{
-		Use:   "box",
+		Use:   "admin",
 		Short: "Manage advanced Discobox configuration",
 	}
 	cmd.AddCommand(a.newProjectCommand())
