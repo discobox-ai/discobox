@@ -257,3 +257,93 @@ func expectSandbox(res any) (*apimodel.Sandbox, error) {
 	}
 	return nil, createResponseError(res)
 }
+
+// PendingSourcePush is one source a discobox is waiting to be given: the slug
+// that addresses its repository, and the key its local repository has to be
+// filed under for DeliverSource to find it.
+type PendingSourcePush struct {
+	// Key files this source's repository in a LocalSources: empty for the
+	// primary source, and the source code reference key for a reference.
+	Key string
+	// Slug names the source's repository in the discobox, and is what a --dir
+	// override addresses.
+	Slug string
+	// Source is what the discobox was created against: the commit it will check
+	// out, and the workspace snapshot it will restore on top of it.
+	Source apimodel.GitSource
+}
+
+// PendingSourcePushes are the sources a discobox expects this client to deliver
+// by pushing them, primary first. It is empty for a discobox that reads or
+// clones everything it needs, which is every discobox with nothing to wait for.
+//
+// A create delivers these itself, out of the repositories it just resolved.
+// This is for the other way in: a discobox parked in awaiting_source long after
+// that create — because the push failed, or the pool was wedged when it ran —
+// which can be delivered again from the repositories still on this machine.
+func PendingSourcePushes(sandbox *apimodel.Sandbox) []PendingSourcePush {
+	pending := pushDeliveredSources(sandbox)
+	if len(pending) == 0 {
+		return nil
+	}
+	out := make([]PendingSourcePush, 0, len(pending))
+	for _, entry := range pending {
+		out = append(out, PendingSourcePush{
+			Key:    entry.key,
+			Slug:   strings.TrimSpace(entry.source.Slug.Or("")),
+			Source: entry.source,
+		})
+	}
+	return out
+}
+
+// NewLocalSources files repositories that already exist on this machine as the
+// sources a delivery pushes out of, keyed as PendingSourcePush.Key gives them.
+//
+// Unlike the LocalSources a create builds, these own nothing: every repository
+// here was on this machine before the call and stays after it, so Close
+// releases nothing.
+func NewLocalSources(roots map[string]string) *LocalSources {
+	local := &LocalSources{}
+	keys := make([]string, 0, len(roots))
+	for key := range roots {
+		keys = append(keys, key)
+	}
+	sort.Strings(keys)
+	for _, key := range keys {
+		local.sources = append(local.sources, localSource{key: key, repoRoot: roots[key]})
+	}
+	return local
+}
+
+// CheckDeliverable reports whether source can still be delivered out of
+// repoRoot, so a delivery that cannot finish is refused before any of it is
+// pushed rather than halfway through.
+//
+// What a discobox checks out was fixed when it was created, so delivering it
+// later means finding those exact objects here: the commit, and for a discobox
+// created from a dirty working tree the snapshot commit holding those
+// uncommitted changes. Either can be gone — a branch deleted, a snapshot ref
+// pruned — and the source that was created from a directory with no repository
+// of its own is always gone, because the repository built over it existed only
+// for that run (ADR 0045).
+func CheckDeliverable(ctx context.Context, repoRoot string, source apimodel.GitSource) error {
+	slug := strings.TrimSpace(source.Slug.Or(""))
+	if source.NoLocalRepository.Or(false) {
+		return fmt.Errorf("source %q was created from a directory that is not a Git repository, so it was delivered out of a repository built for that run and deleted afterwards; nothing on this machine holds those commits now", slug)
+	}
+	commit, _, snapshotRef, err := pushRefs(source)
+	if err != nil {
+		return err
+	}
+	if _, err := gitutil.Output(ctx, repoRoot, nil, nil, "cat-file", "-e", commit+"^{commit}"); err != nil {
+		return fmt.Errorf("source %q is pinned to commit %s, which is not in %s anymore", slug, commit, repoRoot)
+	}
+	if snapshotRef == "" {
+		return nil
+	}
+	if _, err := gitutil.Output(ctx, repoRoot, nil, nil, "rev-parse", "--verify", "--quiet", snapshotRef+"^{commit}"); err != nil {
+		return fmt.Errorf("source %q carried uncommitted changes, and the snapshot holding them (%s) is gone from %s", slug, snapshotRef, repoRoot)
+	}
+	return nil
+}

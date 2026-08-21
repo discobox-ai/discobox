@@ -10,6 +10,7 @@ import (
 
 	apiclientgen "github.com/discobox-ai/discobox/api/gen"
 	apimodel "github.com/discobox-ai/discobox/api/model"
+	"github.com/discobox-ai/discobox/cli/internal/sandboxcreate"
 	"github.com/discobox-ai/discobox/cli/internal/sandboxpush"
 	"github.com/discobox-ai/discobox/internal/gitutil"
 	"github.com/discobox-ai/discobox/internal/hostid"
@@ -54,6 +55,14 @@ onto or cherry-pick from without touching the one it tracks.
 
 Uncommitted changes are never pushed; only commits. They are reported so it is
 clear what stayed behind.
+
+A discobox that is still waiting for its source -- one whose create failed after
+it had been provisioned -- is delivered rather than offered something to rebase
+onto: every source it waits for is pushed at the commit it was created from,
+with any uncommitted work that create captured, and reported complete, which
+starts it. That needs the repositories those sources came from to still hold
+those commits; --source, --branch, and --force describe a push to a running
+discobox and do not apply.
 
 A push may rewind the discobox's origin — that is what a local rebase or amend
 means — but not silently: it is refused if the origin has moved since this
@@ -106,6 +115,9 @@ const (
 	pushStatusUpToDate = "up-to-date"
 	pushStatusSkipped  = "skipped"
 	pushStatusError    = "error"
+	// pushStatusDelivered is the source a discobox was still waiting for,
+	// handed over rather than offered to rebase onto.
+	pushStatusDelivered = "delivered"
 )
 
 func (a *App) runPush(cmd *cobra.Command, sandboxArg, onlySlug string, dirOverrides map[string]string, branch string, force bool) error {
@@ -145,6 +157,15 @@ func (a *App) runPush(cmd *cobra.Command, sandboxArg, onlySlug string, dirOverri
 		ctx = gitutil.WithTracer(ctx, func(dir string, args []string) {
 			fmt.Fprintf(stderr, "+ git -C %s %s\n", dir, strings.Join(args, " "))
 		})
+	}
+
+	// A discobox parked waiting for its source is not asking to be rebased
+	// onto: it holds nothing yet, and what it needs is the source the create
+	// never managed to hand it. There, a push is that delivery.
+	if sandboxAwaitingSource(*sandbox) {
+		if pending := sandboxcreate.PendingSourcePushes(sandbox); len(pending) > 0 {
+			return a.deliverAwaitedSource(ctx, cmd, client, projectID, sandbox, pending, host, gitServerURL, dirOverrides, onlySlug, branch, force)
+		}
 	}
 
 	out := cmd.OutOrStdout()
@@ -224,6 +245,100 @@ func pushOneSource(ctx context.Context, projectID, sandboxID string, sandbox *ap
 	return report
 }
 
+// sandboxAwaitingSource reports whether the discobox is parked waiting to be
+// given a source it cannot fetch itself.
+func sandboxAwaitingSource(sandbox apimodel.Sandbox) bool {
+	return sandbox.Runtime.State == apiclientgen.SandboxRuntimeStateAwaitingSource
+}
+
+// deliverAwaitedSource gives a parked discobox the source it has been waiting
+// for and reports the delivery, which is what lets it start.
+//
+// This is the same delivery a create performs, run from the other end: the
+// commit each source was pinned to at create is pushed into the origin
+// repository that source fetches from, along with the snapshot of any
+// uncommitted work the create captured, and then the whole set is reported
+// complete. It exists because a create can fail after the discobox is already
+// provisioned -- a push that failed, a pool that was wedged while it ran -- and
+// what is left is a discobox that is entirely correct except that nobody ever
+// handed it its source.
+//
+// Every source it waits for is delivered: the discobox resumes on one report
+// covering all of them, so there is no such thing as delivering one and coming
+// back for the rest.
+func (a *App) deliverAwaitedSource(ctx context.Context, cmd *cobra.Command, client *apiclientgen.Client, projectID string, sandbox *apimodel.Sandbox, pending []sandboxcreate.PendingSourcePush, hostID, gitServerURL string, dirOverrides map[string]string, onlySlug, branch string, force bool) error {
+	switch {
+	case onlySlug != "":
+		return fmt.Errorf("the discobox is still waiting for its source, and it starts only once every source it waits for has been delivered, so --source cannot narrow this to one of them")
+	case branch != "":
+		return fmt.Errorf("the discobox is still waiting for its source, which it checks out at the commit it was created from, so there is no other branch to offer it; --branch applies once it is running")
+	case force:
+		return fmt.Errorf("the discobox is still waiting for its source, so its origin holds nothing to force past")
+	}
+	roots := make(map[string]string, len(pending))
+	report := pushReport{SandboxID: sandbox.ID, SandboxName: sandbox.Config.Name}
+	// Every source is resolved and checked before any of them is pushed: a
+	// delivery the server would refuse halfway through leaves the discobox
+	// parked with a partly written origin.
+	for _, entry := range pending {
+		hostDir, _, err := resolveApplyHostDir(sandbox, hostID, applySourceEntry{slug: entry.Slug, source: entry.Source}, dirOverrides)
+		if err != nil {
+			return err
+		}
+		repoRoot, err := gitutil.Root(ctx, hostDir)
+		if errors.Is(err, gitutil.ErrNotARepository) {
+			return fmt.Errorf("source %q came from %s, which is not a Git repository now, so the commit the discobox is waiting for is not there to send", entry.Slug, hostDir)
+		}
+		if err != nil {
+			return fmt.Errorf("read the Git repository at %s: %w", hostDir, err)
+		}
+		if err := sandboxcreate.CheckDeliverable(ctx, repoRoot, entry.Source); err != nil {
+			return err
+		}
+		roots[entry.Key] = repoRoot
+		commit, deliveredBranch := deliveredRefs(entry.Source)
+		report.Sources = append(report.Sources, pushSourceReport{
+			Slug:     entry.Slug,
+			Status:   pushStatusDelivered,
+			HostPath: repoRoot,
+			Branch:   deliveredBranch,
+			Commit:   commit,
+		})
+	}
+	// Delivering is this process's own work, so nothing but this process can
+	// say which part of it is underway (ADR 0060).
+	status := newStatusLine(cmd.ErrOrStderr())
+	defer status.clear()
+	step := func(step sandboxcreate.Step) { status.set(string(step)) }
+	err := sandboxcreate.DeliverSource(ctx, client, projectID, sandbox, sandboxcreate.NewLocalSources(roots), gitServerURL, a.token, step)
+	status.clear()
+	if err != nil {
+		return err
+	}
+	if a.output == "json" {
+		return writeJSON(cmd.OutOrStdout(), report)
+	}
+	for _, source := range report.Sources {
+		printPushSource(cmd, source)
+	}
+	return nil
+}
+
+// deliveredRefs are the commit a source is delivered at and the branch it lands
+// on, for the report. They are what the discobox was created against, not what
+// this machine has checked out now.
+func deliveredRefs(source apimodel.GitSource) (commit, branch string) {
+	checkout, ok := source.Checkout.Get()
+	if !ok {
+		return "", ""
+	}
+	commit = strings.TrimSpace(checkout.Commit.Or(""))
+	if strings.TrimSpace(checkout.RefType.Or("")) == "branch" {
+		branch = strings.TrimSpace(checkout.RefName.Or(""))
+	}
+	return commit, branch
+}
+
 func printPushSource(cmd *cobra.Command, report pushSourceReport) {
 	out := cmd.OutOrStdout()
 	fmt.Fprintf(out, "%s\n", report.Slug)
@@ -243,6 +358,9 @@ func printPushSource(cmd *cobra.Command, report pushSourceReport) {
 		if report.DirtyFiles > 0 {
 			fmt.Fprintf(out, "  %d uncommitted change(s) stayed here — only commits are pushed\n", report.DirtyFiles)
 		}
+	case pushStatusDelivered:
+		fmt.Fprintf(out, "  delivered %s from %s\n", shortCommit(report.Commit), report.HostPath)
+		fmt.Fprintf(out, "  the discobox has its source and is starting\n")
 	case pushStatusSkipped:
 		fmt.Fprintf(out, "  skipped: %s\n", report.Error)
 	default:

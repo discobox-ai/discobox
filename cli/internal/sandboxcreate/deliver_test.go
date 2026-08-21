@@ -186,3 +186,121 @@ func TestPushSourceDeliversADirectoryWithNoRepository(t *testing.T) {
 		t.Fatalf("delivered snapshot = %v, want the directory's files", restored)
 	}
 }
+
+// A delivery run long after the create needs both halves of every source it is
+// waiting for: the slug that addresses the repository in the discobox, and the
+// key the local repository has to be filed under to be found again.
+func TestPendingSourcePushesNamesEverySourceAndWhereItIsFiled(t *testing.T) {
+	reference := pushSourceFixture(t, func(s *apimodel.GitSource) { s.Slug = apiclientgen.NewOptString("foo") })
+	sandbox := &apimodel.Sandbox{Config: apimodel.SandboxConfig{
+		Source: apiclientgen.NewOptGitSource(pushSourceFixture(t, nil)),
+		SourceCodeReferences: apiclientgen.NewOptSandboxConfigSourceCodeReferences(apiclientgen.SandboxConfigSourceCodeReferences{
+			"/src/foo": reference,
+		}),
+	}}
+
+	pending := PendingSourcePushes(sandbox)
+	if len(pending) != 2 {
+		t.Fatalf("pending = %+v, want the primary source and the reference", pending)
+	}
+	if pending[0].Key != "" || pending[0].Slug != "primary" {
+		t.Fatalf("pending[0] = %+v, want the primary source under the empty key", pending[0])
+	}
+	if pending[1].Key != "/src/foo" || pending[1].Slug != "foo" {
+		t.Fatalf("pending[1] = %+v, want the reference under its own directory", pending[1])
+	}
+	if PendingSourcePushes(nil) != nil {
+		t.Fatal("a nil discobox waits for nothing")
+	}
+	clone := &apimodel.Sandbox{Config: apimodel.SandboxConfig{Source: apiclientgen.NewOptGitSource(
+		pushSourceFixture(t, func(s *apimodel.GitSource) {
+			s.Delivery = apiclientgen.NewOptGitSourceDelivery(apiclientgen.GitSourceDeliveryClone)
+		}))}}
+	if PendingSourcePushes(clone) != nil {
+		t.Fatal("a discobox that clones its source waits for no push")
+	}
+}
+
+// Repositories that were here before the delivery are here after it: closing
+// them must not delete a user's repository the way it deletes a throwaway one.
+func TestNewLocalSourcesFilesRepositoriesUnderTheirKeysAndOwnsNothing(t *testing.T) {
+	primary := newRunSourceTestRepo(t)
+	reference := newRunSourceTestRepo(t)
+
+	local := NewLocalSources(map[string]string{"": primary, "/src/foo": reference})
+	root, err := local.pushRoot("")
+	if err != nil || root != primary {
+		t.Fatalf("pushRoot(\"\") = %q, %v, want the primary repository %s", root, err, primary)
+	}
+	root, err = local.pushRoot("/src/foo")
+	if err != nil || root != reference {
+		t.Fatalf("pushRoot(\"/src/foo\") = %q, %v, want the reference repository %s", root, err, reference)
+	}
+	if _, err := local.pushRoot("/src/bar"); err == nil {
+		t.Fatal("a key nothing was filed under resolved to a repository")
+	}
+
+	local.Close()
+	for _, repo := range []string{primary, reference} {
+		if _, err := os.Stat(filepath.Join(repo, ".git")); err != nil {
+			t.Fatalf("stat %s/.git = %v, want the repository left as it was found", repo, err)
+		}
+	}
+}
+
+// What a discobox checks out was fixed when it was created, so a delivery run
+// later has to find those exact objects here. Each way they can be gone is
+// refused by name: a delivery that cannot finish must not push half of itself
+// first.
+func TestCheckDeliverableRefusesWhatThisMachineNoLongerHolds(t *testing.T) {
+	ctx := context.Background()
+	repo := newRunSourceTestRepo(t)
+	git := runSourceTestGit(t, repo)
+	head := strings.TrimSpace(git("rev-parse", "HEAD"))
+	atHead := func(s *apimodel.GitSource) {
+		s.Checkout = apiclientgen.NewOptGitSourceCheckout(apimodel.GitSourceCheckout{
+			Commit:  apiclientgen.NewOptString(head),
+			RefName: apiclientgen.NewOptString("main"),
+			RefType: apiclientgen.NewOptString("branch"),
+		})
+	}
+
+	if err := CheckDeliverable(ctx, repo, pushSourceFixture(t, atHead)); err != nil {
+		t.Fatalf("CheckDeliverable on a source still here: %v", err)
+	}
+
+	// testCommit is a well-formed SHA that names nothing.
+	err := CheckDeliverable(ctx, repo, pushSourceFixture(t, nil))
+	if err == nil || !strings.Contains(err.Error(), testCommit) {
+		t.Fatalf("error = %v, want it to name the commit that is gone", err)
+	}
+
+	dirty := func(ref string) func(*apimodel.GitSource) {
+		return func(s *apimodel.GitSource) {
+			atHead(s)
+			s.Workspace = apiclientgen.NewOptGitSourceWorkspace(apimodel.GitSourceWorkspace{
+				Mode:        apiclientgen.NewOptGitSourceWorkspaceMode(apiclientgen.GitSourceWorkspaceModeDirty),
+				SnapshotRef: apiclientgen.NewOptString(ref),
+				BaseCommit:  apiclientgen.NewOptString(head),
+			})
+		}
+	}
+	err = CheckDeliverable(ctx, repo, pushSourceFixture(t, dirty("refs/discobox/run/snap_gone")))
+	if err == nil || !strings.Contains(err.Error(), "refs/discobox/run/snap_gone") {
+		t.Fatalf("error = %v, want it to name the snapshot that is gone", err)
+	}
+	git("update-ref", "refs/discobox/run/snap_here", head)
+	if err := CheckDeliverable(ctx, repo, pushSourceFixture(t, dirty("refs/discobox/run/snap_here"))); err != nil {
+		t.Fatalf("CheckDeliverable with the snapshot still here: %v", err)
+	}
+
+	// The repository a directory with no repository of its own was delivered
+	// out of existed for that one run, so there is nothing to deliver twice.
+	err = CheckDeliverable(ctx, repo, pushSourceFixture(t, func(s *apimodel.GitSource) {
+		atHead(s)
+		s.NoLocalRepository = apiclientgen.NewOptBool(true)
+	}))
+	if err == nil || !strings.Contains(err.Error(), "not a Git repository") {
+		t.Fatalf("error = %v, want it to say the run's repository is gone", err)
+	}
+}

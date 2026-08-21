@@ -53,6 +53,13 @@ sandbox create requests.
   (`ReportDeclaredSource`); this package prints nothing. See the CLI design
   doc's "Declared Sources" and
   [ADR 0056](../../../docs/adr/0056-a-repository-declares-the-sources-it-is-worked-on-with.md).
+- Delivery is also reachable from outside a create: `PendingSourcePushes`,
+  `NewLocalSources`, and `CheckDeliverable` let `discobox push` hand a discobox
+  parked in `awaiting_source` the source its create never delivered, out of the
+  repositories still on the client. The push and the completion call are the
+  same `DeliverSource`; only where the repositories come from differs — a create
+  has just resolved them, a later delivery finds them again from each source's
+  recorded local directory. See the CLI design doc's "Re-delivering Source".
 - A source directory in no Git repository gets a throwaway repository built over
   it, and is delivered by push. Create returns every source's repository as
   `LocalSources`, which delivery pushes out of and the caller closes; see the

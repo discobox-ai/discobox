@@ -724,6 +724,34 @@ rewrites away routinely. Uncommitted changes are reported, never pushed.
 `--branch` pushes another local branch under its own name, which the sandbox sees
 as `origin/<that branch>`, leaving the branch it tracks alone.
 
+**A discobox still waiting for its source is delivered instead.** A create can
+fail after the discobox is already provisioned — the push itself failed, or the
+pool was wedged while it ran — and what is left is a discobox that is correct in
+every way except that nobody handed it its source. It sits in `awaiting_source`
+forever: the resume is `CompleteSandboxSourcePush`, which only the create path
+called, so a rebase-time push would send commits into its origin and leave it
+exactly as parked as it found it.
+
+So when the discobox is in `awaiting_source`, `discobox push` performs the
+create's own delivery instead of the rebase-time one: each source is pushed at
+the commit it was pinned to at create — not whatever the local branch points at
+now — along with the workspace snapshot the create captured, and the whole set
+is reported complete, which starts the discobox. `sandboxcreate.DeliverSource`
+does the work in both directions; what a later delivery has to rebuild is the
+`LocalSources` a create carried in memory, which `NewLocalSources` files from
+each source's recorded `localDirectory` (or a `--dir` override, as `apply` and a
+rebase-time push resolve it).
+
+Every source is resolved and checked before any of them is pushed
+(`CheckDeliverable`), because the discobox resumes on one report covering all of
+them: a delivery that cannot finish must not leave half of itself in an origin.
+Three things make one impossible, and each is refused by name — the commit is
+gone from the local repository, the workspace snapshot ref is gone, or the
+source was created from a directory with no repository of its own, whose
+throwaway repository was deleted when that run ended (ADR 0045) and took the
+only copy of those commits with it. `--source`, `--branch`, and `--force` all
+describe a rebase-time push and are refused here rather than ignored.
+
 See [ADR 0058](../docs/adr/0058-a-push-delivered-source-has-a-pool-side-origin.md).
 
 ## Saying What a Wait Is For
