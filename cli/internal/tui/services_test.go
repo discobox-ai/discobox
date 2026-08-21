@@ -326,6 +326,35 @@ func TestAnUnrelatedVerbOnAServicePaneActsOnTheDiscobox(t *testing.T) {
 	}
 }
 
+// The hints line under a focused service says what can be done to it, and does
+// not promise it keys: nothing at the far end reads them.
+func TestTheHintsLineOnAServiceOffersItsVerbs(t *testing.T) {
+	ds := newFakeSource(testSandboxes()...)
+	ds.services = []Service{runningService("otel", "OTEL", "exec_svc1")}
+	ds.execs = []Exec{serviceExecRecord("exec_svc1", "otel", "OTEL")}
+	d, m, _ := openWorkspace(t, ds, "enter")
+	d.wait("the service tab", func() bool { return m.terminals.len() == 2 })
+
+	// On the primary it is the discobox's line, unchanged.
+	if got := m.hints(); !strings.Contains(got, "every key goes to the box") {
+		t.Fatalf("terminal hints = %q, want the box's line", got)
+	}
+
+	focusService(d, m)
+	got := m.hints()
+	for _, want := range []string{"read-only", "t stop", "T start", "S services"} {
+		if !strings.Contains(got, want) {
+			t.Errorf("service hints = %q, want it to offer %q", got, want)
+		}
+	}
+	if strings.Contains(got, "every key goes to") {
+		t.Errorf("service hints = %q, but nothing reads a service's input", got)
+	}
+	if strings.Contains(got, "s shell") {
+		t.Errorf("service hints = %q, want the row spent on the service's own verbs", got)
+	}
+}
+
 // A service stopped on purpose has no tab: its absence says the right thing,
 // and a pane to dismiss every time would be the window nagging.
 func TestAStoppedServiceHasNoTab(t *testing.T) {

@@ -2071,13 +2071,27 @@ func (m *Model) hints() string {
 			what, out = string(p.action), "close"
 		}
 		hints := "every key goes to " + what + " · " + m.detachHint() + " " + out
+		if p.service != "" {
+			// A service reads no input, so the line does not open by promising
+			// it every key. What it offers instead is what can be done to the
+			// service from the pane you are looking at — the two verbs that
+			// mean this service here rather than the discobox.
+			hints = "read-only · " + m.detachHint() + " " + out +
+				" · " + m.leader() + " t stop · " + m.leader() + " T start" +
+				// The one place the services menu is advertised. It is where
+				// restart lives, and where the services with no tab are, and
+				// a pane onto one is where you would think to look.
+				" · " + m.leader() + " " + paneServicesKey + " services"
+		}
 		if m.overlay == nil {
 			// Only the shell is offered here. Another terminal is the advanced
 			// one of the two — a second harness session, next to a shell it
 			// sounds exactly like — and a hints line that names both spends its
 			// scarcest row teaching a distinction most people never need. It is
 			// in the help, under the key that opens it.
-			hints += " · " + m.leader() + " s shell"
+			if p.service == "" {
+				hints += " · " + m.leader() + " s shell"
+			}
 			if len(m.panes()) > 1 {
 				hints += " · " + m.leader() + " ←/→ pane"
 				hints += " · " + m.leader() + " 0-9 jump"
