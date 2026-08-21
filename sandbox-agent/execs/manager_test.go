@@ -882,12 +882,23 @@ func TestManagerExpandsTildeWorkdirAgainstUserHome(t *testing.T) {
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			runner := &fakeUnitManager{}
+			uid := int64(1000)
+			gid := int64(1000)
+			// UID and GID are given rather than left to resolution: without
+			// them the manager falls through to the host's passwd database and
+			// the test only passes on a machine that happens to have an account
+			// named darren. Every other test in this file names them too.
 			manager, err := NewManagerWithConfig(ManagerConfig{
 				WorkingRoot:    "/workspace",
 				DefaultWorkdir: "project",
-				DefaultUser:    &User{Name: "darren", HomeDirectory: "/home/darren"},
-				RuntimeDir:     t.TempDir(),
-				Units:          runner,
+				DefaultUser: &User{
+					Name:          "darren",
+					UID:           &uid,
+					GID:           &gid,
+					HomeDirectory: "/home/darren",
+				},
+				RuntimeDir: t.TempDir(),
+				Units:      runner,
 			})
 			if err != nil {
 				t.Fatalf("new manager: %v", err)
@@ -953,11 +964,19 @@ func TestManagerTildeWorkdirResolvesToTheRunningIdentitysHome(t *testing.T) {
 // root as before.
 func TestManagerLeavesNonTildeWorkdirsAlone(t *testing.T) {
 	runner := &fakeUnitManager{}
+	uid := int64(1000)
+	gid := int64(1000)
+	// Named for the same reason as the tilde test above.
 	manager, err := NewManagerWithConfig(ManagerConfig{
 		WorkingRoot: "/workspace",
-		DefaultUser: &User{Name: "darren", HomeDirectory: "/home/darren"},
-		RuntimeDir:  t.TempDir(),
-		Units:       runner,
+		DefaultUser: &User{
+			Name:          "darren",
+			UID:           &uid,
+			GID:           &gid,
+			HomeDirectory: "/home/darren",
+		},
+		RuntimeDir: t.TempDir(),
+		Units:      runner,
 	})
 	if err != nil {
 		t.Fatalf("new manager: %v", err)

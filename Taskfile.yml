@@ -114,7 +114,12 @@ tasks:
       # cross-compiled here and embedded in the server binary. Stripped and
       # gzipped it costs about 1 MB. The artifact is gitignored; without it the
       # server still builds and only the wslc provider refuses to start.
-      - cd pool-agent && GOOS=linux GOARCH=amd64 go build -trimpath -ldflags="-s -w" -o ../build/discobox-cp-relay ./cmd/discobox-cp-relay
+      # CGO_ENABLED=0 explicitly: cgo is on by default wherever a native
+      # toolchain exists, and cross-compiling to linux from a Mac with it on
+      # builds runtime/cgo's Linux C against the macOS SDK and fails. The relay
+      # runs in a guest with no libc guarantee, so static is what it wants
+      # anyway.
+      - cd pool-agent && CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -trimpath -ldflags="-s -w" -o ../build/discobox-cp-relay ./cmd/discobox-cp-relay
       # Compressed by a Go helper rather than gzip(1) and a shell redirect:
       # Windows ships no gzip, Git's is absent from a PowerShell or cmd PATH,
       # and a gzip whose stdout reaches a console refuses to write at all.
@@ -364,6 +369,13 @@ tasks:
 
   test:all:
     desc: Run root and nested module tests
+    env:
+      # A Unix socket path cannot exceed 108 bytes, and several suites bind one
+      # under t.TempDir(), which is rooted at $TMPDIR. `nix develop` sets that
+      # to a build-style path inside the workspace, which spends most of the
+      # budget before the test name is even appended. Windows named pipes have
+      # no such limit and Go there reads TMP/TEMP, not TMPDIR.
+      TMPDIR: '{{if ne OS "windows"}}/tmp{{end}}'
     cmds:
       - go test {{.PACKAGES}}
       - cd cli && go test ./...
