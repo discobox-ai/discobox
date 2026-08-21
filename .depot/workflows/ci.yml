@@ -1,0 +1,72 @@
+# Depot CI's half of CI, run in parallel with .github/workflows/ci.yml to
+# compare the two engines on identical work.
+#
+# Source: .github/workflows/ci.yml, with two jobs deliberately removed.
+#
+# Depot CI has no macOS or Windows sandboxes, so `darwin` and `windows` cannot
+# run here and are NOT copied. Leaving them in would be worse than losing them:
+# the labels would fall back to Ubuntu and both jobs would report success having
+# compiled no vz cgo, signed nothing, and exercised neither the named-pipe
+# transport nor ConPTY — the false green ADR 0066 §4 exists to prevent. Those
+# two stay on GitHub Actions, where Depot's managed runners do provide both.
+#
+# release.yml and vm-image.yml are not migrated at all: both systems run
+# migrated workflows, so every tag would publish twice.
+#
+# Changes made by `depot ci migrate`:
+# - Rewrote .github/ path references to .depot/
+
+# Every job body is one Taskfile target (ADR 0066 §1). What each target does
+# lives in Taskfile.yml and runs the same way in a terminal.
+name: CI
+# Runners are Depot's. The sizes below match what the GitHub-hosted equivalents
+# gave us (4 CPU / 16 GB) rather than Depot's 2-CPU default; raise the suffix to
+# -8 or -16 to trade money for wall-clock. Depot runners also back the GitHub
+# Actions cache API with Depot Cache, so the actions/cache in .depot/actions/task
+# is transparently ~10x faster here with no change to it.
+on:
+  pull_request:
+  push:
+    branches:
+      - main
+permissions:
+  contents: read
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+jobs:
+  check:
+    runs-on: depot-ubuntu-24.04-4
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v6.0.2
+      - uses: ./.depot/actions/task
+        with:
+          target: ci:check
+  test:
+    runs-on: depot-ubuntu-24.04-4
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v6.0.2
+      - uses: ./.depot/actions/task
+        with:
+          target: ci:test
+  verify:
+    runs-on: depot-ubuntu-24.04-4
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v6.0.2
+      - uses: ./.depot/actions/task
+        with:
+          target: verify
+  # The release artifacts, built on every change rather than only at tag time.
+  # The Dagger release module rotted for months precisely because nothing but a
+  # tag exercised it (ADR 0066 Context).
+  build:
+    runs-on: depot-ubuntu-24.04-4
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v6.0.2
+      - uses: ./.depot/actions/task
+        with:
+          target: release:build

@@ -1,0 +1,51 @@
+name: Task
+description: Run one Taskfile target in the repository's Nix devShell.
+
+# The whole GitHub Actions layer, in one place (ADR 0066 §2). A job that needs a
+# new check gets a Taskfile target and four lines of YAML; nothing about *what*
+# the check does lives in this directory.
+#
+# The one thing this cannot do that ADR 0066 §2 describes is check out the
+# repository: a local composite action is only resolvable once the repository is
+# already on disk, so every job runs actions/checkout first. A job that needs a
+# second target adds a plain `run: nix develop -c go tool task <target>` step —
+# Nix is already installed by then.
+
+inputs:
+  target:
+    description: The Taskfile target to run.
+    required: true
+
+runs:
+  using: composite
+  steps:
+    - name: Install Nix
+      uses: cachix/install-nix-action@v31.11.1
+      with:
+        extra_nix_config: |
+          experimental-features = nix-command flakes
+
+    # The devShell itself comes from cache.nixos.org. This is the Go build and
+    # module cache, which is what actually dominates a check or test job.
+    #
+    # Deliberately actions/cache and not a vendor-specific one: Depot's runners
+    # back the GitHub Actions cache API with Depot Cache, so this is already the
+    # fast path there, and it still works on a GitHub-hosted runner.
+    - name: Restore the Go caches
+      uses: actions/cache@v6.1.0
+      with:
+        path: |
+          ~/.cache/go-build
+          ~/Library/Caches/go-build
+          ~/go/pkg/mod
+        # Keyed by job, not by target: a target name carries a colon, and the
+        # jobs are already one-to-one with targets. Separate keys because a
+        # cross-compiling job's cache has nothing in common with a native one's.
+        key: go-${{ runner.os }}-${{ runner.arch }}-${{ github.job }}-${{ hashFiles('go.work.sum', '**/go.sum') }}
+        restore-keys: |
+          go-${{ runner.os }}-${{ runner.arch }}-${{ github.job }}-
+          go-${{ runner.os }}-${{ runner.arch }}-
+
+    - name: go tool task ${{ inputs.target }}
+      shell: bash
+      run: nix develop -c go tool task ${{ inputs.target }}
