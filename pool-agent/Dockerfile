@@ -10,13 +10,11 @@ COPY go.mod go.sum ./
 COPY api ./api
 COPY controlplane ./controlplane
 COPY harness ./harness
-COPY id ./id
 COPY layout ./layout
 COPY proxy ./proxy
 COPY runcca ./runcca
 COPY sandboxconfig ./sandboxconfig
 COPY sandboxuser ./sandboxuser
-COPY gormdb ./gormdb
 COPY pool-agent/go.mod pool-agent/go.sum ./pool-agent/
 COPY pool-agent/cmd ./pool-agent/cmd
 COPY pool-agent ./pool-agent

@@ -13,9 +13,7 @@ WORKDIR /src
 COPY go.mod go.sum ./
 COPY api ./api
 COPY execstream ./execstream
-COPY gormdb ./gormdb
 COPY harness ./harness
-COPY id ./id
 COPY proxy ./proxy
 COPY runcca ./runcca
 COPY sandboxconfig ./sandboxconfig

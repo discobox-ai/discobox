@@ -439,6 +439,39 @@ tasks:
 
 
 
+  check:dockerfiles:
+    desc: Every path a Dockerfile copies from the build context still exists
+    # A Dockerfile breaks from changes made nowhere near it: moving a directory
+    # out of this repository leaves `COPY gormdb ./gormdb` naming nothing, and
+    # nothing notices. The Discobot hook that builds images only fires when a
+    # Dockerfile itself changes, and CI never builds them, so the first thing to
+    # find out was a release tag.
+    #
+    # This is the cheap half of what an image build proves — that the context
+    # paths resolve — not a substitute for building.
+    cmds:
+      - |
+        set -eu
+        missing=""
+        for dockerfile in pool-agent/Dockerfile sandbox-agent/Dockerfile server/providers/vz/image/Dockerfile; do
+          # All but the last token of a COPY are sources; --from copies from an
+          # earlier stage rather than the context, so it is not ours to check.
+          # Collected rather than reported inside a pipeline: a `while` fed by
+          # one runs in a subshell, where a non-zero exit goes nowhere.
+          for src in $(awk '/^COPY / && !/--from=/ {
+                              for (i = 2; i < NF; i++) if ($i !~ /^--/) print $i
+                            }' "$dockerfile"); do
+            if [ ! -e "$src" ]; then
+              missing="$missing$dockerfile: COPY $src: no such path in the build context
+        "
+            fi
+          done
+        done
+        if [ -n "$missing" ]; then
+          printf '%s' "$missing" >&2
+          exit 1
+        fi
+
   check:mermaid:
     desc: Validate Mermaid diagrams in Markdown files
     cmds:
@@ -542,6 +575,7 @@ tasks:
     cmds:
       - task: check
       - task: check:windows
+      - task: check:dockerfiles
 
   ci:test:
     desc: Run every module's tests the way CI does
