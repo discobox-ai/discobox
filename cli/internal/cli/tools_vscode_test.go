@@ -98,7 +98,9 @@ func TestToolsVSCodeWritesTheConfigAndOpensTheWorkTree(t *testing.T) {
 		t.Fatalf("the config does not reach the server through the CLI:\n%s", config)
 	}
 
-	want := []string{"--remote", "ssh-remote+devbox", "--new-window", "/home/agent/repo"}
+	// A folder URI rather than --remote and a path: a path argument is what
+	// the Windows launcher rewrites into a window on the local WSL directory.
+	want := []string{"--new-window", "--folder-uri", "vscode-remote://ssh-remote+devbox/home/agent/repo"}
 	if got := editorArgs(t, record); !equalStrings(got, want) {
 		t.Fatalf("editor args = %v, want %v", got, want)
 	}
@@ -155,7 +157,7 @@ func TestToolsVSCodeOpensTheHostWhenNoWorkTreeIsKnown(t *testing.T) {
 	if _, _, _, err := runToolsVSCodeCmd(t, fake, "--discobox-id", "sbx_devbox00000001"); err != nil {
 		t.Fatalf("execute tools vscode: %v", err)
 	}
-	want := []string{"--remote", "ssh-remote+devbox", "--new-window"}
+	want := []string{"--new-window", "--remote", "ssh-remote+devbox"}
 	if got := editorArgs(t, record); !equalStrings(got, want) {
 		t.Fatalf("editor args = %v, want %v", got, want)
 	}

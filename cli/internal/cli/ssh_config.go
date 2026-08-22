@@ -50,19 +50,27 @@ func (a *App) newSSHConfigCommand() *cobra.Command {
 			if err != nil {
 				return err
 			}
+			// This machine's own ssh, whatever machine that is. `tools vscode`
+			// is the command that can want the other one, because it is the
+			// command that knows which program will be driving ssh.
+			target, err := localSSHTarget()
+			if err != nil {
+				return err
+			}
 			built, err := a.buildManagedSSHConfig(cmd, managedSSHConfigRequest{
 				client:            client,
 				projectID:         projectID,
 				resolvedProjectID: resolvedProjectID,
 				identityFile:      identityFile,
 				hostKey:           hostKey,
+				target:            target,
 				write:             write,
 			})
 			if err != nil {
 				return err
 			}
 			if write {
-				return writeManagedSSHConfig(cmd, resolvedProjectID, built.stanzas, built.hostKeyAlias, built.hostKey)
+				return writeManagedSSHConfig(cmd, target, resolvedProjectID, built.stanzas, built.hostKeyAlias, built.hostKey)
 			}
 			out := cmd.OutOrStdout()
 			fmt.Fprint(out, built.stanzas)
@@ -87,6 +95,9 @@ type managedSSHConfigRequest struct {
 	// resolveSSHIdentity choose and enroll one.
 	identityFile string
 	hostKey      string
+	// target is the ssh installation the config is written for: where its
+	// files go, how their paths are spelled, and what its ProxyCommand runs.
+	target sshTarget
 	// write decides whether the stanzas may name a known_hosts file, since only
 	// a written config owns one.
 	write bool
@@ -112,11 +123,17 @@ type managedSSHConfig struct {
 // prints or writes them, and `tools vscode` writes them and opens an editor on
 // one.
 func (a *App) buildManagedSSHConfig(cmd *cobra.Command, req managedSSHConfigRequest) (managedSSHConfig, error) {
-	proxyCommand, err := sshProxyCommandLine(a.serverURL)
+	proxyCommand, err := req.target.proxyCommandLine(a.serverURL)
 	if err != nil {
 		return managedSSHConfig{}, err
 	}
 	identityFile, err := a.resolveSSHIdentity(cmd, req.client, req.projectID, req.identityFile)
+	if err != nil {
+		return managedSSHConfig{}, err
+	}
+	// The key is generated and enrolled on this side whichever ssh reads the
+	// config; only where it has to be readable from changes.
+	identity, err := req.target.mirrorSSHIdentity(identityFile)
 	if err != nil {
 		return managedSSHConfig{}, err
 	}
@@ -130,14 +147,20 @@ func (a *App) buildManagedSSHConfig(cmd *cobra.Command, req managedSSHConfigRequ
 	}
 	sandboxes := sandboxesBody.GetSandboxes()
 
+	// Only the written config can name a known_hosts file.
+	knownHostsFile := ""
+	if req.write {
+		knownHostsFile = req.target.knownHostsPath(req.resolvedProjectID).client
+	}
 	render := sshConfigRender{
 		sandboxes:    sandboxes,
 		proxyCommand: proxyCommand,
 		hostKeyAlias: sshHostKeyAlias(req.resolvedProjectID),
-		identityFile: identityFile,
+		identityFile: identity.client,
 		// Only the written config can point at a known_hosts file, because
-		// only it owns one.
-		knownHostsFile: knownHostsFileFor(req.write, req.resolvedProjectID),
+		// only it owns one: printed output would be naming a file this run
+		// never wrote.
+		knownHostsFile: knownHostsFile,
 	}
 
 	// The first surviving pattern is the alias to hand out: they are emitted

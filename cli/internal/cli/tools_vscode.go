@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"net/url"
 	"os"
 	"os/exec"
 	"strings"
@@ -32,9 +33,9 @@ const vscodeEditorEnv = "DISCOBOX_VSCODE"
 // anywhere else and a conditional would be a second thing to get wrong. The
 // prompt is a warning to someone typing `code`, and this is not that: the
 // editor is being launched by a command that has already decided which binary
-// to run, on a machine where the Linux build is the one that can reach the
-// sandbox. Left alone, it reads from a stdin nobody is typing at and the
-// command hangs or aborts on the default No.
+// to run and, when that binary is the Windows one, has already written the
+// config the Windows side needs to connect. Left alone, the prompt reads from a
+// stdin nobody is typing at and the command hangs or aborts on the default No.
 const vscodeQuietWSLPrompt = "DONT_PROMPT_WSL_INSTALL=1"
 
 func (a *App) newToolsVSCodeCommand(sandboxID *string) *cobra.Command {
@@ -99,6 +100,17 @@ func (a *App) runToolsVSCode(cmd *cobra.Command, opts toolsVSCodeOptions) error 
 	if err != nil {
 		return err
 	}
+	// Which ssh the editor will drive follows from which editor it is: a
+	// Windows build launched from WSL connects with Windows OpenSSH, which
+	// reads a different config, on the other side of the boundary.
+	target, err := sshTargetForEditor(cmd.Context(), editor)
+	if err != nil {
+		return err
+	}
+	if target.acrossWSL() {
+		fmt.Fprintf(cmd.ErrOrStderr(),
+			"%s is a Windows program, so Windows OpenSSH is what connects: writing the config it reads, not this distribution's\n", editor)
+	}
 
 	var projectID, sandboxID string
 	var client *apiclientgen.Client
@@ -113,12 +125,12 @@ func (a *App) runToolsVSCode(cmd *cobra.Command, opts toolsVSCodeOptions) error 
 		return err
 	}
 
-	target, err := a.vscodeRemoteTarget(cmd, client, projectID, sandboxID, opts.source)
+	remote, err := a.vscodeRemoteTarget(cmd, target, client, projectID, sandboxID, opts.source)
 	if err != nil {
 		return err
 	}
 
-	full := []string{"--remote", "ssh-remote+" + target.host}
+	var full []string
 	if opts.reuseWindow {
 		full = append(full, "--reuse-window")
 	} else {
@@ -126,12 +138,20 @@ func (a *App) runToolsVSCode(cmd *cobra.Command, opts toolsVSCodeOptions) error 
 		// something else, and Remote-SSH would take it over.
 		full = append(full, "--new-window")
 	}
-	if target.folder != "" {
-		full = append(full, target.folder)
+	if remote.folder != "" {
+		// A URI rather than --remote and a path, because a path argument is
+		// the one thing the launcher rewrites. VS Code started from WSL is
+		// usually the Windows build, whose CLI reads a bare path as a path in
+		// *this* distribution: it translates it into a wsl+<distro> remote and
+		// opens the local directory instead of the discobox. A folder URI
+		// carries its own authority and is passed through untouched.
+		full = append(full, "--folder-uri", vscodeFolderURI(remote.host, remote.folder))
+	} else {
+		full = append(full, "--remote", "ssh-remote+"+remote.host)
 	}
 	full = append(full, editorArgs...)
 
-	fmt.Fprintf(cmd.ErrOrStderr(), "opening %s in %s\n", target.describe(), editor)
+	fmt.Fprintf(cmd.ErrOrStderr(), "opening %s in %s\n", remote.describe(), editor)
 	session := exec.CommandContext(cmd.Context(), editor, full...) //nolint:gosec // G204: this command's own arguments, plus the user's own editor arguments.
 	session.Env = append(os.Environ(), vscodeQuietWSLPrompt)
 	session.Stdin, session.Stdout, session.Stderr = cmd.InOrStdin(), cmd.OutOrStdout(), cmd.ErrOrStderr()
@@ -168,7 +188,7 @@ func (t vscodeRemoteTarget) describe() string {
 // whole project's stanzas rather than this sandbox's is what `ssh-config
 // --write` already means by that file — it is rewritten wholesale on every run
 // — and it leaves every other sandbox reachable too.
-func (a *App) vscodeRemoteTarget(cmd *cobra.Command, client *apiclientgen.Client, projectID, sandboxID, sourceSlug string) (vscodeRemoteTarget, error) {
+func (a *App) vscodeRemoteTarget(cmd *cobra.Command, target sshTarget, client *apiclientgen.Client, projectID, sandboxID, sourceSlug string) (vscodeRemoteTarget, error) {
 	resolvedProjectID, err := a.concreteProjectID(cmd, client, projectID)
 	if err != nil {
 		return vscodeRemoteTarget{}, err
@@ -182,12 +202,13 @@ func (a *App) vscodeRemoteTarget(cmd *cobra.Command, client *apiclientgen.Client
 		projectID:         projectID,
 		resolvedProjectID: resolvedProjectID,
 		hostKey:           hostKey,
+		target:            target,
 		write:             true,
 	})
 	if err != nil {
 		return vscodeRemoteTarget{}, err
 	}
-	if err := writeManagedSSHConfig(cmd, resolvedProjectID, built.stanzas, built.hostKeyAlias, built.hostKey); err != nil {
+	if err := writeManagedSSHConfig(cmd, target, resolvedProjectID, built.stanzas, built.hostKeyAlias, built.hostKey); err != nil {
 		return vscodeRemoteTarget{}, err
 	}
 
@@ -231,6 +252,15 @@ func (a *App) vscodeFolder(ctx context.Context, client *apiclientgen.Client, pro
 		return "", nil
 	}
 	return sourceWorkdir(sources[0].source), nil
+}
+
+// vscodeFolderURI is the folder as VS Code's own remote URI: the authority
+// names the Remote-SSH host, the path the directory in it. Built rather than
+// pasted together so a workdir with a space or a percent sign in it survives
+// being one.
+func vscodeFolderURI(host, folder string) string {
+	uri := url.URL{Scheme: "vscode-remote", Host: "ssh-remote+" + host, Path: folder}
+	return uri.String()
 }
 
 // resolveVSCodeEditor finds the editor binary to run: what was named, or the

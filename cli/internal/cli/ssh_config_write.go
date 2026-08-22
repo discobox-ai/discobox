@@ -13,41 +13,19 @@ import (
 	apimodel "github.com/discobox-ai/discobox/api/model"
 )
 
-// The written artifacts live beside the generated key, under the CLI's own
-// state directory, and ~/.ssh gains one line per project: an Include pointing
-// at that project's file. Keeping the generated files out of ~/.ssh means this
-// command never has to parse, merge into, or risk mangling a config the user
-// maintains by hand — it owns each project's files outright and rewrites them
-// wholesale.
+// The written artifacts live beside the generated key, under the state
+// directory of whichever ssh reads them, and that ssh's ~/.ssh/config gains one
+// line per project: an Include pointing at that project's file. Keeping the
+// generated files out of ~/.ssh means this command never has to parse, merge
+// into, or risk mangling a config the user maintains by hand — it owns each
+// project's files outright and rewrites them wholesale. Where they land, and
+// how they are spelled once they are there, is sshTarget's answer: on WSL the
+// ssh that reads them can be the Windows one.
 //
 // The files are per project rather than one merged config because a run only
 // ever knows about one project: writing a shared file would delete the stanzas
 // of every other project each time, and two projects can live on different
 // servers with different host keys and addresses.
-func managedSSHConfigPath(projectID string) string {
-	return filepath.Join(cliStateDir(), "ssh", projectID, "config")
-}
-
-func managedKnownHostsPath(projectID string) string {
-	return filepath.Join(cliStateDir(), "ssh", projectID, "known_hosts")
-}
-
-func userSSHConfigPath() (string, error) {
-	home, err := os.UserHomeDir()
-	if err != nil {
-		return "", err
-	}
-	return filepath.Join(home, ".ssh", "config"), nil
-}
-
-// knownHostsFileFor returns the UserKnownHostsFile the stanzas should carry.
-// Printed output gets none: it would name a file this run never wrote.
-func knownHostsFileFor(write bool, projectID string) string {
-	if !write {
-		return ""
-	}
-	return managedKnownHostsPath(projectID)
-}
 
 type sshConfigRender struct {
 	sandboxes []apimodel.Sandbox
@@ -86,7 +64,10 @@ func renderSSHConfig(in sshConfigRender) string {
 		// ProxyCommand and speaks its protocol over its stdio.
 		fmt.Fprintf(&out, "    ProxyCommand %s\n", in.proxyCommand)
 		fmt.Fprintf(&out, "    User %s\n", sandbox.ID)
-		fmt.Fprintf(&out, "    IdentityFile %s\n", in.identityFile)
+		// Quoted when it has to be: a Windows profile under a name with a
+		// space in it — "C:\Users\Ada Lovelace\…" — is an ordinary path, and
+		// unquoted ssh would read the first word of it as the whole filename.
+		fmt.Fprintf(&out, "    IdentityFile %s\n", sshConfigQuote(in.identityFile))
 		// Without IdentitiesOnly, ssh offers every agent key before this one
 		// and can exhaust MaxAuthTries before reaching it.
 		fmt.Fprintf(&out, "    IdentitiesOnly yes\n")
@@ -94,7 +75,7 @@ func renderSSHConfig(in sshConfigRender) string {
 		// line covers the whole project.
 		fmt.Fprintf(&out, "    HostKeyAlias %s\n", in.hostKeyAlias)
 		if in.knownHostsFile != "" {
-			fmt.Fprintf(&out, "    UserKnownHostsFile %s\n", in.knownHostsFile)
+			fmt.Fprintf(&out, "    UserKnownHostsFile %s\n", sshConfigQuote(in.knownHostsFile))
 		}
 		if i < len(in.sandboxes)-1 {
 			fmt.Fprintln(&out)
@@ -109,15 +90,16 @@ func managedConfigHeader(projectID string) string {
 		"# Includes it.\n\n"
 }
 
-// writeManagedSSHConfig writes the stanzas and the server's host key, then
-// ensures ~/.ssh/config includes them.
+// writeManagedSSHConfig writes the stanzas and the server's host key where the
+// target's ssh will look for them, then ensures that ssh's own config includes
+// them.
 //
 // stanzas is empty when the project has no sandboxes, and that writes an empty
 // config rather than skipping the write: these files mirror the server, so a
 // project whose last sandbox is gone must stop offering stanzas for it.
-func writeManagedSSHConfig(cmd *cobra.Command, projectID, stanzas, knownHostsHost, hostKey string) error {
-	configPath, knownHostsPath := managedSSHConfigPath(projectID), managedKnownHostsPath(projectID)
-	if err := ensureStateDir(filepath.Dir(configPath)); err != nil {
+func writeManagedSSHConfig(cmd *cobra.Command, target sshTarget, projectID, stanzas, knownHostsHost, hostKey string) error {
+	configPath, knownHostsPath := target.configPath(projectID), target.knownHostsPath(projectID)
+	if err := ensureStateDir(filepath.Dir(configPath.local)); err != nil {
 		return fmt.Errorf("create SSH config directory: %w", err)
 	}
 	// Pinning the host key here rather than in ~/.ssh/known_hosts keeps
@@ -129,33 +111,32 @@ func writeManagedSSHConfig(cmd *cobra.Command, projectID, stanzas, knownHostsHos
 	}
 	// 0600 like the config beside it: a known_hosts file is public
 	// information, but nothing other than this user needs to read it.
-	if err := os.WriteFile(knownHostsPath, []byte(knownHosts), 0o600); err != nil {
+	if err := os.WriteFile(knownHostsPath.local, []byte(knownHosts), 0o600); err != nil {
 		return fmt.Errorf("write known_hosts: %w", err)
 	}
-	if err := os.WriteFile(configPath, []byte(managedConfigHeader(projectID)+stanzas), 0o600); err != nil {
+	if err := os.WriteFile(configPath.local, []byte(managedConfigHeader(projectID)+stanzas), 0o600); err != nil {
 		return fmt.Errorf("write SSH config: %w", err)
 	}
 	// The files as well as the directory they are in: a run before this one may
 	// have left them readable by whoever the profile grants, and ssh refuses a
-	// config it does not like the look of rather than ignoring it.
-	for _, path := range []string{knownHostsPath, configPath} {
+	// config it does not like the look of rather than ignoring it. Across the
+	// WSL boundary this is a no-op — the process doing the writing is the Linux
+	// one — and the ACL those files need is the one they inherit from the
+	// Windows directory they were created in.
+	for _, path := range []string{knownHostsPath.local, configPath.local} {
 		if err := restrictToUser(path); err != nil {
 			return fmt.Errorf("restrict %s to this user: %w", filepath.Base(path), err)
 		}
 	}
 
-	userConfig, err := userSSHConfigPath()
-	if err != nil {
-		return err
-	}
-	added, dropped, err := ensureSSHConfigInclude(userConfig, configPath)
+	added, dropped, err := target.ensureUserConfigInclude(configPath)
 	if err != nil {
 		return err
 	}
 	stderr := cmd.ErrOrStderr()
-	fmt.Fprintf(stderr, "wrote %s\n", configPath)
+	fmt.Fprintf(stderr, "wrote %s\n", configPath.client)
 	if added {
-		fmt.Fprintf(stderr, "added an Include for it to %s\n", userConfig)
+		fmt.Fprintf(stderr, "added an Include for it to %s\n", target.userConfig.client)
 	}
 	for _, stale := range dropped {
 		fmt.Fprintf(stderr, "removed a stale Include of %s\n", stale)
@@ -163,9 +144,9 @@ func writeManagedSSHConfig(cmd *cobra.Command, projectID, stanzas, knownHostsHos
 	return nil
 }
 
-// ensureSSHConfigInclude adds an Include for managed to the user's ssh_config
-// and drops the ones this CLI wrote that no longer point anywhere it manages,
-// reporting what it did on each count. It is idempotent, so repeated --write
+// ensureUserConfigInclude adds an Include for managed to the target ssh's
+// config and drops the ones this CLI wrote that no longer point anywhere it
+// manages, reporting what it did on each count. It is idempotent, so repeated
 // runs leave one line rather than a growing pile.
 //
 // The line goes at the top because ssh_config takes the *first* value obtained
@@ -177,23 +158,23 @@ func writeManagedSSHConfig(cmd *cobra.Command, projectID, stanzas, knownHostsHos
 // left pointing into a directory this CLI has moved out of breaks every
 // connection through this config, including the ones the new line was written
 // to make work.
-func ensureSSHConfigInclude(userConfig, managed string) (bool, []string, error) {
-	include := "Include " + managed
+func (t sshTarget) ensureUserConfigInclude(managed sshPath) (bool, []string, error) {
+	userConfig := t.userConfig.local
 	existing, err := os.ReadFile(userConfig)
 	if err != nil && !os.IsNotExist(err) {
 		return false, nil, fmt.Errorf("read %s: %w", userConfig, err)
 	}
-	cleaned, dropped := dropStaleManagedIncludes(string(existing), managed)
-	if hasSSHConfigInclude(cleaned, managed) && len(dropped) == 0 {
+	cleaned, dropped := t.dropStaleManagedIncludes(string(existing), managed.client)
+	if t.hasInclude(cleaned, managed.client) && len(dropped) == 0 {
 		return false, nil, nil
 	}
 	if err := os.MkdirAll(filepath.Dir(userConfig), 0o700); err != nil {
 		return false, nil, fmt.Errorf("create SSH directory: %w", err)
 	}
-	added := !hasSSHConfigInclude(cleaned, managed)
+	added := !t.hasInclude(cleaned, managed.client)
 	body := cleaned
 	if added {
-		body = include + "\n"
+		body = "Include " + sshConfigQuote(managed.client) + "\n"
 		if len(cleaned) > 0 {
 			body += "\n" + cleaned
 		}
@@ -205,13 +186,16 @@ func ensureSSHConfigInclude(userConfig, managed string) (bool, []string, error) 
 		return false, nil, fmt.Errorf("write %s: %w", userConfig, err)
 	}
 	defer os.Remove(tmp.Name())
-	if err := tmp.Chmod(0o600); err != nil {
+	// Chmod is the whole story on Unix and none of it on Windows, where the
+	// file this replaces is one ssh reads and checks. Restricted before the
+	// rename, so what lands is already private. A file this process creates on
+	// a mounted Windows drive has neither: the mount does not carry a mode, and
+	// the ACL comes from the directory. Refusing over that would be refusing
+	// over the one thing the boundary cannot give us.
+	if err := tmp.Chmod(0o600); err != nil && !t.acrossWSL() {
 		_ = tmp.Close()
 		return false, nil, fmt.Errorf("write %s: %w", userConfig, err)
 	}
-	// Chmod is the whole story on Unix and none of it on Windows, where the
-	// file this replaces is one ssh reads and checks. Restricted before the
-	// rename, so what lands is already private.
 	if err := restrictToUser(tmp.Name()); err != nil {
 		_ = tmp.Close()
 		return false, nil, fmt.Errorf("write %s: %w", userConfig, err)
@@ -242,15 +226,14 @@ func ensureSSHConfigInclude(userConfig, managed string) (bool, []string, error) 
 // many there are: one per project is the design.
 //
 // The user's own Includes are untouched. Only this shape is ours to remove.
-func dropStaleManagedIncludes(config, managed string) (string, []string) {
-	state := filepath.Clean(cliStateDir())
+func (t sshTarget) dropStaleManagedIncludes(config, managed string) (string, []string) {
 	var kept []string
 	var dropped []string
 	for _, line := range strings.Split(config, "\n") {
-		if path, ok := sshConfigIncludePath(line); ok &&
-			isManagedSSHConfigPath(path) &&
-			!strings.EqualFold(path, filepath.Clean(managed)) &&
-			!withinDir(state, path) {
+		if path, ok := t.includePath(line); ok &&
+			t.isManagedConfigPath(path) &&
+			!t.samePathAs(path, managed) &&
+			!t.within(t.state.client, path) {
 			dropped = append(dropped, path)
 			continue
 		}
@@ -264,29 +247,30 @@ func dropStaleManagedIncludes(config, managed string) (string, []string) {
 	return collapseBlankRuns(strings.Join(kept, "\n")), dropped
 }
 
-// sshConfigIncludePath is the path an Include line names, if the line is one.
-func sshConfigIncludePath(line string) (string, bool) {
+// includePath is the path an Include line names, if the line is one.
+func (t sshTarget) includePath(line string) (string, bool) {
 	trimmed := strings.TrimSpace(line)
 	if trimmed == "" || strings.HasPrefix(trimmed, "#") {
 		return "", false
 	}
-	fields := strings.Fields(trimmed)
+	fields := sshConfigFields(trimmed)
 	// Exactly one path: an Include naming several files is not one of ours, and
 	// picking one of them out of it would be rewriting a line we did not write.
 	if len(fields) != 2 || !strings.EqualFold(fields[0], "include") {
 		return "", false
 	}
-	return filepath.Clean(strings.Trim(fields[1], `"`)), true
+	return t.clean(fields[1]), true
 }
 
-// isManagedSSHConfigPath reports whether path has the shape this CLI writes:
+// isManagedConfigPath reports whether path has the shape this CLI writes:
 // .../discobox/cli/ssh/<project>/config.
-func isManagedSSHConfigPath(path string) bool {
-	dir, file := filepath.Split(filepath.Clean(path))
-	if !strings.EqualFold(file, "config") {
+func (t sshTarget) isManagedConfigPath(p string) bool {
+	cleaned := t.clean(p)
+	slash := strings.LastIndex(cleaned, "/")
+	if slash < 0 || !strings.EqualFold(cleaned[slash+1:], "config") {
 		return false
 	}
-	parts := strings.Split(filepath.ToSlash(filepath.Clean(dir)), "/")
+	parts := strings.Split(cleaned[:slash], "/")
 	if len(parts) < 4 {
 		return false
 	}
@@ -294,15 +278,6 @@ func isManagedSSHConfigPath(path string) bool {
 	return strings.EqualFold(tail[0], "discobox") &&
 		strings.EqualFold(tail[1], "cli") &&
 		strings.EqualFold(tail[2], "ssh")
-}
-
-// withinDir reports whether path is dir or sits under it.
-func withinDir(dir, path string) bool {
-	rel, err := filepath.Rel(filepath.Clean(dir), filepath.Clean(path))
-	if err != nil {
-		return false
-	}
-	return rel != ".." && !strings.HasPrefix(rel, ".."+string(filepath.Separator))
 }
 
 // collapseBlankRuns leaves at most one blank line where there were several, so
@@ -324,27 +299,68 @@ func collapseBlankRuns(config string) string {
 	return strings.Join(out, "\n")
 }
 
-// hasSSHConfigInclude reports whether config already includes managed, matching
-// on the path rather than the whole line so an Include the user reformatted
-// (extra spacing, quotes) is still recognized and not duplicated.
-func hasSSHConfigInclude(config, managed string) bool {
+// hasInclude reports whether config already includes managed, matching on the
+// path rather than the whole line so an Include the user reformatted (extra
+// spacing, quotes) is still recognized and not duplicated.
+func (t sshTarget) hasInclude(config, managed string) bool {
 	scanner := bufio.NewScanner(strings.NewReader(config))
 	for scanner.Scan() {
 		line := strings.TrimSpace(scanner.Text())
 		if line == "" || strings.HasPrefix(line, "#") {
 			continue
 		}
-		fields := strings.Fields(line)
+		fields := sshConfigFields(line)
 		if len(fields) < 2 || !strings.EqualFold(fields[0], "include") {
 			continue
 		}
 		for _, field := range fields[1:] {
-			if strings.Trim(field, `"'`) == managed {
+			if t.samePathAs(field, managed) {
 				return true
 			}
 		}
 	}
 	return false
+}
+
+// sshConfigFields splits an ssh_config line the way OpenSSH reads the lines
+// this CLI writes: whitespace-separated, with double quotes holding a value
+// containing a space together. Plain strings.Fields would do everywhere but
+// Windows, where a profile under a user whose name has a space in it — "C:\
+// Users\Ada Lovelace\…" — is an ordinary path to have to name.
+func sshConfigFields(line string) []string {
+	var fields []string
+	var current strings.Builder
+	quoted, started := false, false
+	for _, r := range line {
+		switch {
+		case r == '"':
+			quoted = !quoted
+			started = true
+		case !quoted && (r == ' ' || r == '\t'):
+			if started {
+				fields = append(fields, current.String())
+				current.Reset()
+				started = false
+			}
+		default:
+			current.WriteRune(r)
+			started = true
+		}
+	}
+	if started {
+		fields = append(fields, current.String())
+	}
+	return fields
+}
+
+// sshConfigQuote wraps a path in the double quotes ssh_config needs when it
+// contains a space, and leaves it alone otherwise so the ordinary line stays
+// the one people have always seen.
+func sshConfigQuote(path string) string {
+	if !strings.ContainsAny(path, " \t") {
+		return path
+	}
+	return `"` + path + `"`
 }
 
 // concreteProjectID turns whatever -p was given into the project's real ID.

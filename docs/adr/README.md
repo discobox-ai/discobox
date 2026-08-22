@@ -126,3 +126,4 @@ Nygard-style ADRs (see adr.github.io) combined with current-state design docs:
 | [0071](0071-a-tool-session-is-an-exec-the-launcher-labeled.md) | A tool session is an exec the launcher labeled | Accepted |
 | [0072](0072-a-repository-ships-skills-that-only-exist-in-a-sandbox.md) | A repository ships skills that only exist inside a sandbox | Proposed |
 | [0073](0073-a-directory-with-no-repository-is-copied-only-when-asked.md) | A directory with no repository is copied only when asked | Accepted |
+| [0074](0074-a-wsl-cli-writes-the-ssh-config-windows-reads.md) | A CLI in WSL writes the ssh_config Windows reads | Accepted |

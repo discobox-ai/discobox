@@ -189,8 +189,8 @@ func TestHasSSHConfigInclude(t *testing.T) {
 		{name: "empty", config: "", want: false},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			if got := hasSSHConfigInclude(tc.config, managed); got != tc.want {
-				t.Fatalf("hasSSHConfigInclude(%q) = %v, want %v", tc.config, got, tc.want)
+			if got := (sshTarget{}).hasInclude(tc.config, managed); got != tc.want {
+				t.Fatalf("hasInclude(%q) = %v, want %v", tc.config, got, tc.want)
 			}
 		})
 	}

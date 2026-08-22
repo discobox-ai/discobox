@@ -226,9 +226,13 @@ func TestSSHProxyCommandLineQuotesItsWords(t *testing.T) {
 		// cannot hold the quote character this asserts on.
 		t.Skip("POSIX shell quoting")
 	}
-	line, err := sshProxyCommandLine("unix:///run/disco's dir/api.sock")
+	target, err := localSSHTarget()
 	if err != nil {
-		t.Fatalf("sshProxyCommandLine: %v", err)
+		t.Fatalf("localSSHTarget: %v", err)
+	}
+	line, err := target.proxyCommandLine("unix:///run/disco's dir/api.sock")
+	if err != nil {
+		t.Fatalf("proxyCommandLine: %v", err)
 	}
 	if !strings.HasSuffix(line, " admin ssh-proxy") {
 		t.Fatalf("ProxyCommand does not end in the subcommand it names: %q", line)

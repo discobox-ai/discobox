@@ -278,8 +278,17 @@ together and leaves one process to kill.
 drives the system `ssh` binary and reads `ssh_config`, so the only way to hand
 it a host is to put the host where ssh finds it: the command refreshes the
 project's managed config (`buildManagedSSHConfig` + `writeManagedSSHConfig`, the
-same files `admin ssh-config --write` owns) and then runs `code --remote
-ssh-remote+<alias> <workdir>`.
+same files `admin ssh-config --write` owns) and then runs `code --new-window
+--folder-uri vscode-remote://ssh-remote+<alias>/<workdir>`.
+
+A folder URI rather than `--remote` and a path, on every platform (ADR 0068 §4):
+a bare path argument is the one thing VS Code's launcher rewrites. Started from
+WSL it is normally the Windows build, whose CLI reads a path argument as a path
+in *this* distribution, adds a `--remote wsl+<distro>` of its own, and opens the
+local directory instead of the discobox. A URI carries its own authority and is
+passed through untouched. `--remote` survives for the one case a folder URI
+cannot express: a sandbox that never reported where its source landed, which
+opens on the host with no folder.
 
 Nothing is held open afterwards, which is the point of ADR 0057: the written
 stanzas reach the server through a `ProxyCommand`, so the editor reconnects on
@@ -300,12 +309,20 @@ failure nothing can fix after the fact. `--editor`, then `$DISCOBOX_VSCODE`,
 then the first of `code`, `code-insiders`, `codium`, `cursor`, `windsurf` on
 PATH — all the same CLI, so the only question is which is installed.
 
+Which editor it turns out to be then decides *which ssh* the config is written
+for (`sshTargetForEditor`). A Windows build launched from WSL connects with
+Windows OpenSSH, on the other side of the boundary from this process, and gets
+the Windows target described under [SSH Keys and Config](#ssh-keys-and-config-adr-0024).
+This is the only command that chooses a target, because it is the only one that
+knows which program will be driving ssh; `tools ssh` carries its own connection
+and never touches `ssh_config`.
+
 It runs with `DONT_PROMPT_WSL_INSTALL=1` (`vscodeQuietWSLPrompt`), always rather
 than only under WSL: the variable means nothing elsewhere, and a conditional is
 a second thing to get wrong. VS Code's launcher asks "install VS Code in Windows
 instead… Continue anyway? [y/N]" when it finds itself inside WSL. That warning
-is aimed at someone typing `code`; here the binary has already been chosen, and
-on a machine where the sandbox is reachable the Linux build is the right one.
+is aimed at someone typing `code`; here the binary has already been chosen and,
+when it is the Windows one, the config that side needs has already been written.
 Unset, the prompt reads from a stdin nobody is typing at and the command hangs
 or takes the default No.
 
@@ -590,7 +607,16 @@ level or layering on the attach transports above.
   `--server` value, both shell-quoted: ssh runs it through a shell, with
   whatever environment its caller had — and that caller is often a GUI editor
   whose PATH and environment are not the shell's. The quoting is `/bin/sh`'s
-  everywhere but Windows, where OpenSSH hands the line to `%COMSPEC%`.
+  everywhere but Windows, where OpenSSH hands the line to `%COMSPEC%` — and it
+  is the *target's* shell that decides, not `runtime.GOOS`, because a config
+  written from WSL for Windows is read by a shell this process does not have.
+- `sshTarget` (`internal/cli/ssh_target.go`) is the OpenSSH installation an
+  emitted config is written for: the state directory holding its files, the
+  `ssh_config` that gains the `Include`, how a path inside it is spelled, and
+  the `ProxyCommand` that reaches this CLI from it. Every managed path carries
+  both spellings — the one this process opens and the one the reading ssh uses
+  — because on WSL they are different files to look at and the same file in
+  fact. `admin ssh-config` always writes for this machine's own ssh.
 - The host key is verified under `HostKeyAlias`, one name per project
   (`<project id>.discobox.internal`), which is also the `known_hosts` host
   field. A stanza with no address gives ssh nothing to derive a name from. The
@@ -654,6 +680,28 @@ level or layering on the attach transports above.
   stay — the host key belongs to the server, not to any sandbox — so the next
   populated run needs no further edit to `~/.ssh/config` and no second trip to
   re-pin the same server.
+- **WSL** is the one place where the ssh that connects is not on the same side
+  of the machine as the CLI (ADR 0068). A Windows VS Code runs Windows
+  `ssh.exe`, which reads `%USERPROFILE%\.ssh\config`, opens files by their
+  drive path, and cannot execute a Linux binary. So `tools vscode` writes that
+  config instead of the distribution's: stanzas under
+  `%LOCALAPPDATA%\discobox\cli\ssh\<project>\`, an `Include` in the Windows
+  user's `~/.ssh/config`, a `ProxyCommand` of `wsl.exe -d <distro> -e
+  <linux discobox> --server … admin ssh-proxy`, and a copy of the enrolled
+  private key beside them, refreshed on every run. Windows is asked where its
+  own folders are (`cmd.exe /c echo %LOCALAPPDATA%`, `wslpath -u`) rather than
+  assumed — and `cmd.exe` itself is taken from PATH, or, in a distribution
+  configured not to inherit the Windows one, translated from the Windows path it
+  is always installed at. Whether the editor is a Windows program comes from `wslpath -w`
+  rather than a `/mnt` prefix — the mount root is configurable, and a path
+  inside the distribution answers as a `\\wsl.localhost` UNC share. What the
+  boundary costs is in `internal/cli/wsl.go`; the command says on stderr which
+  side it wrote for.
+- Values that can contain a space are quoted: `IdentityFile`,
+  `UserKnownHostsFile`, and the `Include` line (`sshConfigQuote`, and
+  `sshConfigFields` reading them back so a re-run recognizes its own line). A
+  Windows profile under a name with a space in it is ordinary, and unquoted ssh
+  reads the first word as the whole filename.
 - Only the written form carries `UserKnownHostsFile`, pointing at the
   known_hosts it just wrote. Pinning the host key there keeps
   `StrictHostKeyChecking` meaningful without editing the file that records the
