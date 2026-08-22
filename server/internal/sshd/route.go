@@ -5,9 +5,9 @@ import (
 	"errors"
 	"strings"
 
-	idpkg "github.com/discobox-ai/discobox/id"
 	"github.com/discobox-ai/discobox/server/internal/model"
 	"github.com/discobox-ai/discobox/server/internal/store"
+	idpkg "github.com/discobox-ai/x/id"
 )
 
 // errUsernameNotResolved is returned for any username that fails to resolve

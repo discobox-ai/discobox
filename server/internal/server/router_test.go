@@ -12,8 +12,6 @@ import (
 	"testing"
 
 	serverapi "github.com/discobox-ai/discobox/api/gen"
-	"github.com/discobox-ai/discobox/gormdb"
-	"github.com/discobox-ai/discobox/id"
 	"github.com/discobox-ai/discobox/server/internal/auth"
 	poolagentauth "github.com/discobox-ai/discobox/server/internal/auth/poolagent"
 	"github.com/discobox-ai/discobox/server/internal/database"
@@ -21,6 +19,8 @@ import (
 	"github.com/discobox-ai/discobox/server/internal/service"
 	services "github.com/discobox-ai/discobox/server/internal/services"
 	"github.com/discobox-ai/discobox/server/internal/transport"
+	"github.com/discobox-ai/x/gormdb"
+	"github.com/discobox-ai/x/id"
 	"github.com/go-chi/chi/v5"
 )
 

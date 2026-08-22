@@ -18,8 +18,8 @@ import (
 	"time"
 
 	"github.com/discobox-ai/discobox/execstream/frame"
-	"github.com/discobox-ai/discobox/internal/shorttmp"
 	"github.com/discobox-ai/discobox/sandbox-agent/shimproxy"
+	"github.com/discobox-ai/x/shorttmp"
 )
 
 // shimDir is a scratch directory short enough to hold the shim's socket, and

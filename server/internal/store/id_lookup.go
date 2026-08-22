@@ -6,7 +6,7 @@ import (
 
 	"gorm.io/gorm"
 
-	idpkg "github.com/discobox-ai/discobox/id"
+	idpkg "github.com/discobox-ai/x/id"
 )
 
 func firstByID[T any](db *gorm.DB, column, value string) (*T, error) {

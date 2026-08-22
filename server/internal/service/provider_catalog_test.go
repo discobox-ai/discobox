@@ -11,7 +11,6 @@ import (
 	"time"
 
 	serverapi "github.com/discobox-ai/discobox/api/gen"
-	"github.com/discobox-ai/discobox/id"
 	sandboxauth "github.com/discobox-ai/discobox/server/internal/auth/sandbox"
 	"github.com/discobox-ai/discobox/server/internal/database"
 	"github.com/discobox-ai/discobox/server/internal/model"
@@ -21,6 +20,7 @@ import (
 	"github.com/discobox-ai/discobox/server/internal/store"
 	"github.com/discobox-ai/discobox/server/internal/transport"
 	providerdocker "github.com/discobox-ai/discobox/server/providers/docker"
+	"github.com/discobox-ai/x/id"
 )
 
 // reconcileSandbox mirrors the reconcile engine's entry: load the LATEST

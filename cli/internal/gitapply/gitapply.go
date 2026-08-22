@@ -17,7 +17,7 @@ import (
 	"os"
 	"strings"
 
-	"github.com/discobox-ai/discobox/internal/gitutil"
+	"github.com/discobox-ai/x/gitutil"
 )
 
 // Result is the outcome of an Attempt.

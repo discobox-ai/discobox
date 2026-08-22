@@ -12,8 +12,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/discobox-ai/discobox/gormdb"
 	"github.com/discobox-ai/discobox/proxy/internal/audit"
+	"github.com/discobox-ai/x/gormdb"
 )
 
 func TestSOCKSProxyMTLSIdentityDeniedAudit(t *testing.T) {

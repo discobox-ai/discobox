@@ -15,8 +15,8 @@ import (
 	apimodel "github.com/discobox-ai/discobox/api/model"
 	"github.com/discobox-ai/discobox/cli/internal/gitapply"
 	"github.com/discobox-ai/discobox/cli/internal/sandboxapply"
-	"github.com/discobox-ai/discobox/internal/gitutil"
 	"github.com/discobox-ai/discobox/internal/hostid"
+	"github.com/discobox-ai/x/gitutil"
 )
 
 // newApplyCommand implements `discobox apply` (ADR 0014): pulling a sandbox's

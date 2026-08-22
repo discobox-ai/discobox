@@ -15,8 +15,8 @@ import (
 	"gorm.io/gorm"
 
 	"github.com/discobox-ai/discobox/harness"
-	"github.com/discobox-ai/discobox/id"
 	"github.com/discobox-ai/discobox/internal/originkey"
+	"github.com/discobox-ai/x/id"
 )
 
 const (

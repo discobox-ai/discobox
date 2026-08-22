@@ -15,12 +15,12 @@ import (
 	"time"
 
 	"github.com/discobox-ai/discobox/harness"
-	"github.com/discobox-ai/discobox/id"
 	"github.com/discobox-ai/discobox/sandbox-agent/nestedbridge"
 	"github.com/discobox-ai/discobox/sandbox-agent/runuser"
 	"github.com/discobox-ai/discobox/sandbox-agent/shimproxy"
 	"github.com/discobox-ai/discobox/sandboxconfig"
 	"github.com/discobox-ai/discobox/sandboxuser"
+	"github.com/discobox-ai/x/id"
 )
 
 type Status string

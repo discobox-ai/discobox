@@ -24,7 +24,6 @@
 - `cmd/discobox-docker-image-watch`: local Docker image rebuild watcher for pool-agent and sandbox-agent images.
 - `docs`: user/developer documentation.
 - `test`: integration and Bats tests.
-- `gormdb`: nested Go module for DB setup helpers.
 - `orchestration`: nested Go module for durable jobs and desired-state orchestration helpers.
 - `DESIGN.md` / `REVIEW.md`: package-local design and review notes. Read the closest files in the current package and its parents before making design-sensitive changes.
 
@@ -53,25 +52,17 @@ Common targets:
 go tool task test       # root module tests
 go tool task test:all   # root and nested module tests
 go tool task check      # static checks
-go tool task check-hooks # validate hook definitions and hook-related code
-go tool task rerun-hooks # re-run failed or never-run hooks
 go tool task generate   # regenerate generated files
-go tool task build      # build server, CLI, and hooks CLI
+go tool task build      # build the server and CLI
 ```
 
 What CI runs, and what to run before pushing something build-related:
 
 ```bash
 go tool task ci:check   # check plus the windows/amd64 cross type-check
-go tool task ci:test    # test:all against label-only harness images
+go tool task ci:test    # every module's tests, the way CI runs them
 go tool task verify     # fmt, go.mod, generated files, and Mermaid are current
 ```
-
-At the end of a code-changing task, run `go tool task check-hooks` to validate
-the code and hook definitions before handing work back. If you suspect the
-check-hooks output is stale (for example, a reported failure refers to code you
-have already fixed), run `go tool task rerun-hooks` to re-run failed hooks,
-then run `go tool task check-hooks` again.
 
 Prefer adding or updating `Taskfile.yml` targets instead of documenting ad hoc
 commands here.

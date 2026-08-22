@@ -10,10 +10,10 @@ import (
 
 	"gorm.io/gorm"
 
-	"github.com/discobox-ai/discobox/id"
 	"github.com/discobox-ai/discobox/server/internal/model"
 	"github.com/discobox-ai/discobox/server/internal/store"
 	providerdocker "github.com/discobox-ai/discobox/server/providers/docker"
+	"github.com/discobox-ai/x/id"
 )
 
 const defaultProviderInstalledStateKey = "defaults.default_sandbox_provider.installed"

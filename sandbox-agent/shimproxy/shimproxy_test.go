@@ -11,7 +11,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/discobox-ai/discobox/internal/shorttmp"
+	"github.com/discobox-ai/x/shorttmp"
 )
 
 type halfCloseProxyHarness struct {

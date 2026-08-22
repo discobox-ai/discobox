@@ -6,7 +6,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/discobox-ai/discobox/internal/gitutil"
+	"github.com/discobox-ai/x/gitutil"
 )
 
 // applyStatus is what happened to one source in an apply run. Every source

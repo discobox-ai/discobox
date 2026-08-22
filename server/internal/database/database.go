@@ -10,8 +10,8 @@ import (
 	"gorm.io/gorm"
 	"gorm.io/gorm/logger"
 
-	"github.com/discobox-ai/discobox/gormdb"
 	"github.com/discobox-ai/discobox/server/internal/model"
+	"github.com/discobox-ai/x/gormdb"
 )
 
 // DB wraps the application write/read GORM pools.

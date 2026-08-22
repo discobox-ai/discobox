@@ -24,10 +24,10 @@ import (
 
 	cerrdefs "github.com/containerd/errdefs"
 	"github.com/discobox-ai/discobox/harness"
-	"github.com/discobox-ai/discobox/id"
 	"github.com/discobox-ai/discobox/layout"
 	"github.com/discobox-ai/discobox/sandboxconfig"
 	"github.com/discobox-ai/discobox/sandboxuser"
+	"github.com/discobox-ai/x/id"
 	"github.com/moby/moby/api/pkg/stdcopy"
 	"github.com/moby/moby/api/types/container"
 	"github.com/moby/moby/api/types/events"

@@ -12,8 +12,8 @@ import (
 	apimodel "github.com/discobox-ai/discobox/api/model"
 	"github.com/discobox-ai/discobox/cli/internal/sandboxcreate"
 	"github.com/discobox-ai/discobox/cli/internal/sandboxpush"
-	"github.com/discobox-ai/discobox/internal/gitutil"
 	"github.com/discobox-ai/discobox/internal/hostid"
+	"github.com/discobox-ai/x/gitutil"
 )
 
 // newPushCommand implements `discobox push` (ADR 0058): sending local commits into

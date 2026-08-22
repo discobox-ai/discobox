@@ -6,7 +6,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/discobox-ai/discobox/internal/gitutil"
+	"github.com/discobox-ai/x/gitutil"
 )
 
 func appliedSourceFixture() applySourceReport {

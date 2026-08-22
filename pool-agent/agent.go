@@ -13,7 +13,7 @@ import (
 	"sync/atomic"
 	"time"
 
-	"github.com/discobox-ai/discobox/id"
+	"github.com/discobox-ai/x/id"
 
 	"github.com/discobox-ai/discobox/layout"
 	"github.com/discobox-ai/discobox/pool-agent/buildkitagent"

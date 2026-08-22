@@ -86,10 +86,7 @@ flowchart TD
     server["github.com/discobox-ai/discobox/server"] --> root
     server --> providers["github.com/discobox-ai/discobox/server/providers"]
     server --> orchestration["github.com/discobox-ai/discobox/orchestration"]
-    server --> hooks["github.com/discobox-ai/discobox/hooks"]
-    server --> gormdb["github.com/discobox-ai/discobox/gormdb"]
-    hooks --> root
-    hooks --> gormdb
+    server --> x["github.com/discobox-ai/x"]
     providers --> serverInternal["github.com/discobox-ai/discobox/server/internal"]
     providers --> poolAgent["github.com/discobox-ai/discobox/pool-agent"]
     poolAgent --> root
@@ -121,10 +118,10 @@ flowchart TD
 - Server module: control plane implementation, persistence models, sandbox
   provider Go interfaces, provider manager, and Docker/VM/cloud/pool-backed
   provider implementations.
-- Hooks module: standalone hook discovery, watch, execution, daemon, and status
-  primitives. It depends inward on stable contracts and shared infrastructure
-  helpers such as `gormdb`, but must not depend on server internals. See
-  [`hooks/DESIGN.md`](hooks/DESIGN.md).
+- Shared generic libraries live in [`discobox-ai/x`](https://github.com/discobox-ai/x)
+  — `gormdb`, `gitutil`, `id`, `shorttmp` — consumed at the latest commit on its
+  `main`. Nothing there knows about Discobox; a helper that would have to is not
+  generic and belongs in the module that needs it.
 - Pool-agent module: in-guest pool host process, pool-local runtime DTOs, and
   generated pool-local sandbox operations API server adapter; depends on root
   pool boot contracts and OpenAPI contracts.

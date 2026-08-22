@@ -9,7 +9,7 @@ import (
 
 	apimodel "github.com/discobox-ai/discobox/api/model"
 	"github.com/discobox-ai/discobox/cli/internal/sandboxgit"
-	"github.com/discobox-ai/discobox/internal/gitutil"
+	"github.com/discobox-ai/x/gitutil"
 )
 
 // FetchRef is the discobox-owned ref a source's sandbox commits land under

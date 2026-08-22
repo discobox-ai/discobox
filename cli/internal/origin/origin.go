@@ -20,9 +20,9 @@ import (
 
 	apiclientgen "github.com/discobox-ai/discobox/api/gen"
 	apimodel "github.com/discobox-ai/discobox/api/model"
-	"github.com/discobox-ai/discobox/internal/gitutil"
 	"github.com/discobox-ai/discobox/internal/hostid"
 	"github.com/discobox-ai/discobox/internal/originkey"
+	"github.com/discobox-ai/x/gitutil"
 )
 
 // Resolve returns the origin for a create or list request made from dir.

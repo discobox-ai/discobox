@@ -6,9 +6,9 @@ import (
 	"slices"
 	"testing"
 
-	"github.com/discobox-ai/discobox/internal/shorttmp"
 	"github.com/discobox-ai/discobox/sandbox-agent/config"
 	"github.com/discobox-ai/discobox/sandbox-agent/execs"
+	"github.com/discobox-ai/x/shorttmp"
 )
 
 // newConfigureService is the sandbox that exists to run a harness's setup once,

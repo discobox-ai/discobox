@@ -7,7 +7,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/discobox-ai/discobox/gormdb"
+	"github.com/discobox-ai/x/gormdb"
 )
 
 func TestRecorderDropsInsteadOfBlocking(t *testing.T) {

@@ -15,10 +15,10 @@ import (
 	"github.com/discobox-ai/discobox/controlplane"
 	"github.com/discobox-ai/discobox/devimage"
 	"github.com/discobox-ai/discobox/endpoint"
-	"github.com/discobox-ai/discobox/gormdb"
 	"github.com/discobox-ai/discobox/internal/hostid"
 	"github.com/discobox-ai/discobox/pool-agent/imagereap"
 	"github.com/discobox-ai/discobox/server/internal/sandbox"
+	"github.com/discobox-ai/x/gormdb"
 )
 
 const appName = "discobox"

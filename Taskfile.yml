@@ -14,8 +14,6 @@ vars:
   SERVER_MAIN: ./cmd/discobox-server
   CLI_BINARY: build/discobox{{.EXE}}
   CLI_MAIN: ./cmd/discobox
-  HOOKS_BINARY: build/discobox-hooks{{.EXE}}
-  HOOKS_MAIN: ./cmd/discobox-hooks
   PACKAGES: ./...
   # ghcr.io/<owner>, so a fork publishes into its own namespace instead of the
   # upstream one. Actions knows the owner; elsewhere it comes from the origin
@@ -57,7 +55,6 @@ tasks:
       - task: build:cp-relay
       - task: build:server
       - task: build:cli
-      - task: build:hooks
       - task: build:images
 
   build:server:
@@ -107,11 +104,6 @@ tasks:
       - task: sign
         vars: { SIGN_BINARY: '{{.CLI_BINARY}}' }
 
-  build:hooks:
-    desc: Compile discobox-hooks CLI
-    cmds:
-      - mkdir -p build
-      - cd hooks && go build -o ../{{.HOOKS_BINARY}} {{.HOOKS_MAIN}}
 
   build:cp-relay:
     desc: Cross-compile the guest control-plane relay embedded in the Windows server
@@ -386,8 +378,6 @@ tasks:
       - cd termpane && go test ./...
       - cd server && go test ./...
       - cd pool-agent && go test ./...
-      - cd gormdb && go test ./...
-      - cd hooks && go test ./...
       - cd sandbox-agent && go test ./...
 
   build:lint-tool:
@@ -413,8 +403,6 @@ tasks:
       - cd termpane && ../build/tools/{{.LINT_BIN}} run
       - cd server && ../build/tools/{{.LINT_BIN}} run
       - cd pool-agent && ../build/tools/{{.LINT_BIN}} run
-      - cd gormdb && ../build/tools/{{.LINT_BIN}} run
-      - cd hooks && ../build/tools/{{.LINT_BIN}} run
       - cd sandbox-agent && ../build/tools/{{.LINT_BIN}} run
 
   check:windows:
@@ -433,21 +421,9 @@ tasks:
       - cd termpane && go vet ./...
       - cd server && go vet ./...
       - cd pool-agent && go vet ./...
-      - cd gormdb && go vet ./...
-      - cd hooks && go vet ./...
       - cd sandbox-agent && go vet ./...
 
-  check-hooks:
-    desc: Run hooks checks
-    cmds:
-      - echo 'cd ./hooks; go run ./cmd/discobox-hooks check'
-      - cd ./hooks; go run ./cmd/discobox-hooks check
 
-  rerun-hooks:
-    desc: Re-run failed or never-run hooks
-    cmds:
-      - echo 'cd ./hooks; go run ./cmd/discobox-hooks run all'
-      - cd ./hooks; go run ./cmd/discobox-hooks run all
 
   check:mermaid:
     desc: Validate Mermaid diagrams in Markdown files
@@ -465,8 +441,6 @@ tasks:
       - cd termpane && ../build/tools/{{.LINT_BIN}} run --fix
       - cd server && ../build/tools/{{.LINT_BIN}} run --fix
       - cd pool-agent && ../build/tools/{{.LINT_BIN}} run --fix
-      - cd gormdb && ../build/tools/{{.LINT_BIN}} run --fix
-      - cd hooks && ../build/tools/{{.LINT_BIN}} run --fix
       - cd sandbox-agent && ../build/tools/{{.LINT_BIN}} run --fix
 
   fmt:
@@ -506,7 +480,6 @@ tasks:
       # Nested modules generate their own API surfaces and are not reached by
       # the root pattern.
       - cd pool-agent && go generate ./...
-      - cd hooks && go generate ./...
 
   generate:verify:
     desc: Fail when a generated file is stale

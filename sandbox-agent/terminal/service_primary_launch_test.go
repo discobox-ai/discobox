@@ -10,9 +10,9 @@ import (
 	"testing"
 	"time"
 
-	"github.com/discobox-ai/discobox/internal/shorttmp"
 	"github.com/discobox-ai/discobox/sandbox-agent/config"
 	"github.com/discobox-ai/discobox/sandbox-agent/execs"
+	"github.com/discobox-ai/x/shorttmp"
 )
 
 // blockingInstaller holds a launch inside install until the test releases it,

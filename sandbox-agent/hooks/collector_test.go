@@ -9,8 +9,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/discobox-ai/discobox/internal/shorttmp"
 	"github.com/discobox-ai/discobox/sandbox-agent/store"
+	"github.com/discobox-ai/x/shorttmp"
 )
 
 func TestPublishRecordsHarnessHook(t *testing.T) {

@@ -9,7 +9,7 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/discobox-ai/discobox/internal/gitutil"
+	"github.com/discobox-ai/x/gitutil"
 )
 
 // declaredSourcesFile is where a repository names the other repositories it is

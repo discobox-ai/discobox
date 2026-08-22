@@ -6,9 +6,9 @@ import (
 	"testing"
 	"time"
 
-	"github.com/discobox-ai/discobox/internal/shorttmp"
 	"github.com/discobox-ai/discobox/sandbox-agent/config"
 	"github.com/discobox-ai/discobox/sandbox-agent/execs"
+	"github.com/discobox-ai/x/shorttmp"
 )
 
 func primaryExec(id string, status execs.Status, created time.Time) execs.Exec {

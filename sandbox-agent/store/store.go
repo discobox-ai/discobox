@@ -7,9 +7,9 @@ import (
 	"strings"
 	"time"
 
-	"github.com/discobox-ai/discobox/gormdb"
-	"github.com/discobox-ai/discobox/id"
 	"github.com/discobox-ai/discobox/sandbox-agent/execs"
+	"github.com/discobox-ai/x/gormdb"
+	"github.com/discobox-ai/x/id"
 	"gorm.io/gorm"
 	"gorm.io/gorm/clause"
 )

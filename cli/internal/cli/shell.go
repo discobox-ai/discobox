@@ -8,7 +8,7 @@ import (
 
 	apiclientgen "github.com/discobox-ai/discobox/api/gen"
 	apimodel "github.com/discobox-ai/discobox/api/model"
-	idpkg "github.com/discobox-ai/discobox/id"
+	idpkg "github.com/discobox-ai/x/id"
 )
 
 // newShellCommand implements `discobox shell`: the everyday counterpart to the

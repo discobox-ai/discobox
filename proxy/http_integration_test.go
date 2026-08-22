@@ -22,10 +22,10 @@ import (
 	"testing"
 	"time"
 
-	"github.com/discobox-ai/discobox/gormdb"
 	"github.com/discobox-ai/discobox/proxy/bridge"
 	"github.com/discobox-ai/discobox/proxy/internal/audit"
 	"github.com/discobox-ai/discobox/proxy/internal/secrets"
+	"github.com/discobox-ai/x/gormdb"
 )
 
 type stubResolver struct {
