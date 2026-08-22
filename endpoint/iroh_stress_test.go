@@ -31,7 +31,7 @@ func irohEchoServer(t *testing.T, key ed25519.PrivateKey) (addrs []string, admit
 	t.Helper()
 
 	admitted = &atomic.Int64{}
-	server, err := NewIrohEndpoint(IrohConfig{
+	server := newIrohEndpointForTest(t, IrohConfig{
 		SecretKey: key,
 		Authorize: func(IrohID) bool {
 			// Authorize runs once per connection, which makes it the count of
@@ -39,11 +39,7 @@ func irohEchoServer(t *testing.T, key ed25519.PrivateKey) (addrs []string, admit
 			admitted.Add(1)
 			return true
 		},
-		DisableRelay: true,
 	})
-	if err != nil {
-		t.Fatalf("NewIrohEndpoint() error = %v", err)
-	}
 
 	listener, _, cleanup, err := server.Listen()
 	if err != nil {
@@ -130,8 +126,7 @@ func TestIrohRoundTripperRecoversWhenTheServerRestarts(t *testing.T) {
 		current = addrs
 	)
 	client := newIrohEndpointForTest(t, IrohConfig{
-		SecretKey:    newSecretKey(t),
-		DisableRelay: true,
+		SecretKey: newSecretKey(t),
 		Locate: func(IrohID) []string {
 			mu.Lock()
 			defer mu.Unlock()
@@ -202,9 +197,8 @@ func TestIrohConcurrentRequestsAndWebsockets(t *testing.T) {
 	t.Cleanup(stop)
 
 	client := newIrohEndpointForTest(t, IrohConfig{
-		SecretKey:    newSecretKey(t),
-		DisableRelay: true,
-		Locate:       func(IrohID) []string { return addrs },
+		SecretKey: newSecretKey(t),
+		Locate:    func(IrohID) []string { return addrs },
 	})
 	serverPub, _ := serverKey.Public().(ed25519.PublicKey)
 	serverID, err := IrohIDFromPublicKey(serverPub)
@@ -417,8 +411,7 @@ func TestIrohRedialConvergesOnOneConnection(t *testing.T) {
 		current = addrs
 	)
 	client := newIrohEndpointForTest(t, IrohConfig{
-		SecretKey:    newSecretKey(t),
-		DisableRelay: true,
+		SecretKey: newSecretKey(t),
 		Locate: func(IrohID) []string {
 			mu.Lock()
 			defer mu.Unlock()

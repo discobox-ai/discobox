@@ -5,6 +5,7 @@ import (
 	"encoding/hex"
 	"fmt"
 	"net"
+	"net/netip"
 	"net/url"
 	"strings"
 )
@@ -149,7 +150,28 @@ type IrohConfig struct {
 
 	// DisableRelay binds without relay servers, for callers that must not
 	// depend on anyone else's infrastructure.
+	//
+	// It is half the story on its own: the preset it selects drops the relays
+	// and keeps n0's DNS and pkarr address lookup, which is someone else's
+	// infrastructure by the same argument. Pair it with DisableDiscovery for an
+	// endpoint that reaches for nothing.
 	DisableRelay bool
+
+	// DisableDiscovery binds without address lookup, for an endpoint whose
+	// peers are all located some other way — Locate, or an address carried in
+	// the URL. Discovery is what an endpoint consults on its first dial when it
+	// has only an ID to go on, and it is a network round trip to n0.
+	DisableDiscovery bool
+
+	// BindAddrs are the local UDP addresses to bind, replacing the default
+	// wildcard sockets. Empty binds the default, which is what a process
+	// reachable from another machine wants.
+	//
+	// It exists for the endpoint that is only ever reached from this machine.
+	// A wildcard bind is what makes Windows Firewall raise its prompt, and a
+	// test binary is a fresh path under a temporary directory on every run, so
+	// no allowance a developer grants is ever asked about again.
+	BindAddrs []netip.AddrPort
 }
 
 // ConfigureIroh installs this process's iroh identity and admission policy. It

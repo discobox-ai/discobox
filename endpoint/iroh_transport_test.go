@@ -8,6 +8,7 @@ import (
 	"io"
 	"net"
 	"net/http"
+	"net/netip"
 	"os"
 	"strings"
 	"testing"
@@ -269,9 +270,8 @@ func TestIrohConnDeadlineInterruptsBlockedRead(t *testing.T) {
 func irohPair(t *testing.T, authorize func(IrohID) bool) (server, client *IrohEndpoint) {
 	t.Helper()
 	server = newIrohEndpointForTest(t, IrohConfig{
-		SecretKey:    newSecretKey(t),
-		Authorize:    authorize,
-		DisableRelay: true,
+		SecretKey: newSecretKey(t),
+		Authorize: authorize,
 	})
 	// Bind the server first so its socket addresses exist to hand the client.
 	addrs, err := server.DirectAddrs()
@@ -279,20 +279,36 @@ func irohPair(t *testing.T, authorize func(IrohID) bool) (server, client *IrohEn
 		t.Fatalf("DirectAddrs() error = %v", err)
 	}
 	client = newIrohEndpointForTest(t, IrohConfig{
-		SecretKey:    newSecretKey(t),
-		DisableRelay: true,
-		Locate:       func(IrohID) []string { return addrs },
+		SecretKey: newSecretKey(t),
+		Locate:    func(IrohID) []string { return addrs },
 	})
 	return server, client
 }
 
 func newIrohEndpointForTest(t *testing.T, cfg IrohConfig) *IrohEndpoint {
 	t.Helper()
+	cfg.DisableRelay = true
+	cfg.DisableDiscovery = true
+	cfg.BindAddrs = loopbackBind()
 	created, err := NewIrohEndpoint(cfg)
 	if err != nil {
 		t.Fatalf("NewIrohEndpoint() error = %v", err)
 	}
 	return created
+}
+
+// loopbackBind is what every endpoint in these tests binds. They pair two
+// endpoints on this one machine and reach each other through Locate, so a
+// wildcard socket buys them nothing — and costs a Windows Firewall prompt on
+// every run, because `go test` builds to a fresh temporary path each time and
+// an allowance is granted to a program path.
+//
+// The bind is half of it; newIrohEndpointForTest turns off relays and address
+// lookup for the other half. Between them the suite reaches for nothing outside
+// this host, which is the configuration iroh-go's own tests and its echo
+// example use for the same reason.
+func loopbackBind() []netip.AddrPort {
+	return []netip.AddrPort{netip.AddrPortFrom(netip.AddrFrom4([4]byte{127, 0, 0, 1}), 0)}
 }
 
 func irohClient(t *testing.T, from *IrohEndpoint, to IrohID) *http.Client {
