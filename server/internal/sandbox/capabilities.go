@@ -15,7 +15,13 @@ type ImageRef struct {
 	Digest string `json:"digest,omitempty"`
 }
 
-const DefaultSandboxImageName = "discobox-sandbox-agent:local"
+// DefaultSandboxImageName is the image a sandbox with no harness config runs.
+//
+// It names a local tag because a development build has no published image to
+// reach for: `task build:images` writes exactly this. A release overwrites it
+// at link time with the sandbox agent built for that release, which is why it
+// is a var. DISCOBOX_DEFAULT_SANDBOX_IMAGE overrides either.
+var DefaultSandboxImageName = "discobox-sandbox-agent:local"
 
 // ProviderConfigField describes one provider instance configuration field.
 type ProviderConfigField struct {

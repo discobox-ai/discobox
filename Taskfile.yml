@@ -600,6 +600,15 @@ tasks:
       # disco embeds the server, and the server embeds the guest relay.
       - build:cp-relay
     vars:
+      # The tag the agent images are pinned to, resolved the way release:image
+      # and release:publish resolve theirs.
+      PIN_TAG:
+        sh: |
+          tag="${RELEASE_TAG:-${GITHUB_REF_NAME:-}}"
+          case "$tag" in
+            v*) printf %s "$tag" ;;
+            *) printf %s "" ;;
+          esac
       EXT: '{{if eq .TARGET_OS "windows"}}.exe{{end}}'
       OUT: build/release/bin/discobox-{{.TARGET_OS}}-{{.TARGET_ARCH}}{{.EXT}}
       # cgo only where the platform's hypervisor bindings need it: Code-Hex/vz
@@ -607,7 +616,22 @@ tasks:
       CGO: '{{if eq .TARGET_OS "darwin"}}1{{else}}0{{end}}'
       # A release build autolaunches its own in-process server; a development
       # build never does (cli/internal/cli/server_autolaunch_test.go).
-      LDFLAGS: -s -w -X github.com/discobox-ai/discobox/cli/internal/cli.serverAutoLaunch=true
+      #
+      # The two agent images are pinned to this release's own tag. Their
+      # defaults are :latest and a local tag, which is right for a development
+      # build and wrong for a shipped one: a binary should pull the agents it
+      # was cut alongside, not whatever :latest has moved to since. The tag
+      # rather than a digest because release:images runs in a parallel job —
+      # there is no digest yet at link time — and a release tag never moves.
+      #
+      # Only when there is a tag to pin to. ci.yml builds the release artifacts
+      # on every push to prove they still build, with no tag in sight, and an
+      # empty PIN_TAG would bake "discobox-pool-agent:" — a reference no daemon
+      # can pull — into a binary that otherwise looks fine.
+      RELEASE_LDFLAGS: >-
+        {{if and .PIN_TAG .REGISTRY}}-X github.com/discobox-ai/discobox/server/providers/dockerworker.DefaultPoolImage={{.REGISTRY}}/discobox-pool-agent:{{.PIN_TAG}}
+        -X github.com/discobox-ai/discobox/server/internal/sandbox.DefaultSandboxImageName={{.REGISTRY}}/discobox-sandbox-agent:{{.PIN_TAG}}{{end}}
+      LDFLAGS: -s -w -X github.com/discobox-ai/discobox/cli/internal/cli.serverAutoLaunch=true {{.RELEASE_LDFLAGS}}
     cmds:
       - mkdir -p build/release/bin
       - >-

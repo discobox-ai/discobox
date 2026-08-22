@@ -10,10 +10,12 @@ import (
 // this image — the Taskfile builds discobox-pool-agent:local and the image
 // watcher tags discobox-pool-agent:dev-* — rather than a third spelling of it.
 //
-// `task release:images` publishes it, moving :latest on every release that is
-// not a prerelease, so this default resolves from the most recent one. Local
-// development overrides it through PoolImageEnv.
-const DefaultPoolImage = "ghcr.io/discobox-ai/discobox-pool-agent:latest"
+// A release overwrites this at link time with the image built for that release,
+// so a released binary pulls the pool agent it was cut alongside rather than
+// whatever :latest happens to be. It is a var, not a const, for exactly that
+// reason. A development build keeps :latest and local development overrides it
+// through PoolImageEnv.
+var DefaultPoolImage = "ghcr.io/discobox-ai/discobox-pool-agent:latest"
 
 // PoolImageEnv globally overrides the default pool-agent image, primarily for
 // local development against freshly built images.
