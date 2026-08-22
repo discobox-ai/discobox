@@ -1170,7 +1170,8 @@ func (m *Model) viewPaneWindow() string {
 		body = m.viewColumnBox(&m.terminals, false, 0, m.width, true)
 	}
 	rows = append(rows, strings.Split(body, "\n")...)
-	rows = append(rows, " "+pad+padANSI(m.statusLine(), max(inner-2*boxPad, 1))+pad+" ")
+	room := max(inner-2*boxPad, 1)
+	rows = append(rows, " "+pad+padANSI(m.statusLine(room), room)+pad+" ")
 	return strings.Join(rows, "\n")
 }
 
@@ -1228,7 +1229,7 @@ func (m *Model) viewPaneHeader(w int) string {
 	// Nothing left on the edges to give. What the middle can still drop is its
 	// own, against the room the barest row leaves it.
 	bare := concessions[len(concessions)-1]
-	return spreadCenter(bare[0], dropToFit(fields, centerRoom(bare[0], bare[1], w)), bare[1], w)
+	return spreadCenter(bare[0], dropToFit(fields, "  ", centerRoom(bare[0], bare[1], w)), bare[1], w)
 }
 
 // paneHeaderFields is the middle of the workspace's header, field by field:

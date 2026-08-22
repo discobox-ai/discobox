@@ -203,10 +203,15 @@ func (d *apiDataSource) List(ctx context.Context) ([]tui.Sandbox, error) {
 
 func toTUISandbox(sb apimodel.Sandbox) tui.Sandbox {
 	row := tui.Sandbox{
-		ID:          sb.ID,
-		Name:        sb.DisplayName,
-		NameIsTitle: sandboxNameIsTitle(sb),
-		State:       toTUIState(sandboxDisplayState(sb)),
+		ID:   sb.ID,
+		Name: sb.DisplayName,
+		// The name the box is configured with, beside the name the server
+		// says to show — which is the primary terminal's title once there is
+		// one, and the id when there is no name at all. Trimmed the way the
+		// server trims it before falling back, so blank and unset are the
+		// same answer on both ends.
+		ConfigName: strings.TrimSpace(sb.Config.Name),
+		State:      toTUIState(sandboxDisplayState(sb)),
 		// The presence of runtimeState is the signal, not its value: the API
 		// omits the field entirely until the pool agent has reported on this
 		// sandbox, and empty is not `stopped` (ADR 0034 §2). displayState folds

@@ -135,12 +135,36 @@ name typed first — so `e` opens the input dialog on the name the discobox
 and a blank line would make that a retype. Enter on the unchanged name is the
 same as Esc, since neither asked for anything. It takes exactly one discobox,
 because a name is a name and a selection cannot share one. A row named by its
-primary terminal's window title (`Sandbox.NameIsTitle`) refuses rename with the
+primary terminal's window title (`Sandbox.nameIsTitle`) refuses rename with the
 reason: the configured name is not the one on screen there, so accepting a new
 one would visibly change nothing. It is deliberately
 absent from `verbs`/`interactions`, which is what keeps it off the workspace
 screen: rename needs a name typed into a dialog, and a discobox you are
 already looking at is one you know the name of.
+
+**The status line's right end names the discobox under the cursor**
+(`statusIdentity`): its id, and the name it is configured with. Neither is on
+the row. The name a row shows is the server's display name, which is the
+primary terminal's window title as soon as the harness has set one — so the
+configured name, the one rename edits and every `discobox` command takes, is
+exactly what goes missing while a box is working; and the id was on no screen
+but the workspace banner, which meant attaching to read it. The row carries
+both names (`Sandbox.Name`, `Sandbox.ConfigName`), which is also what the
+rename guard now asks rather than a flag computed for it on the way in.
+
+The id leads and the name follows, in the banner's own colors — muted for the
+id, which is there to be looked up rather than read, plain text for the name —
+so the two screens name a discobox the same way. A box that was never named has
+no second half: the server names it by its id, which has already been said.
+
+It is drawn only while the list has focus, because only then is a cursor drawn
+on a row, and it is pinned there (`spreadPin`): a row too narrow for both gives
+up key hints rather than the one thing on the line that is written down nowhere
+else — F1 spells every key out. `statusLine` takes the room it has and drops
+whole offers from the tail to fit it (`dropToFit`), on the workspace's copy of
+the line as well: half a key hint is not one. A message is the exception — it
+is one thing with nothing to drop — and it displaces the keys, never the right
+end: what is true is not what was said.
 
 **vscode is a fourth kind, and is bound on both screens** (`vscodeKey`,
 `openEditor`, `DataSource.OpenEditor`). It is neither a `Verb` — it changes

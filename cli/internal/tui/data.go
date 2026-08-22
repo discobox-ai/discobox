@@ -114,10 +114,18 @@ type Sandbox struct {
 	// the create never produced anything to report.
 	HasRuntime bool
 
-	// NameIsTitle marks a Name taken from the primary terminal's window title
-	// rather than the sandbox's configured name. Rename edits the configured
-	// name — which such a row is not showing — so it is disabled there.
-	NameIsTitle bool
+	// ConfigName is the name the sandbox is configured with, which is not
+	// usually what Name shows: the server names a row by its primary
+	// terminal's window title as soon as there is one, because what the
+	// harness says the work is about tells two boxes apart better than two
+	// generated names do. It is empty when the box was never named, and the
+	// display name is then the id.
+	//
+	// It is carried because it is the handle the rest of the world knows the
+	// box by — what rename edits, what a `disco` command takes — and the row
+	// is not showing it. The status line says it under the cursor, and the
+	// rename guard reads it (nameIsTitle).
+	ConfigName string
 
 	Harness string
 
@@ -321,6 +329,17 @@ func (h Harness) flagName() string {
 }
 
 func (s Sandbox) hasDiff() bool { return s.Diff.Known && s.Diff.Files > 0 }
+
+// nameIsTitle reports whether the row's name came from the primary terminal's
+// window title rather than from the name the box is configured with. Rename
+// edits the configured name — which such a row is not showing — so it is
+// disabled there.
+//
+// A box with no configured name is named by its id, which rename does change
+// what is shown for, so only a differing name counts as a title.
+func (s Sandbox) nameIsTitle() bool {
+	return s.ConfigName != "" && s.Name != s.ConfigName
+}
 
 // attachable reports whether there is a container to attach to. It asks the
 // power axis, not the lifecycle one, because that is the question: the pool

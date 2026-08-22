@@ -803,7 +803,7 @@ func (m *Model) harnessHints() string {
 		}
 	}
 	parts = append(parts, "Esc back")
-	return strings.Join(parts, " · ")
+	return strings.Join(parts, hintSep)
 }
 
 // ---------------------------------------------------------------------------

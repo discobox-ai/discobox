@@ -221,3 +221,26 @@ func TestToTUISandboxCarriesTheRuntimeAxis(t *testing.T) {
 		t.Fatal("an unreported container should leave HasRuntime false")
 	}
 }
+
+// The row carries both names: the one the server says to show, which is the
+// primary terminal's title once the harness has set one, and the one the box is
+// configured with, which the launcher's status line says under the cursor.
+func TestToTUISandboxCarriesBothNames(t *testing.T) {
+	named := func(display, configured string) tui.Sandbox {
+		sb := apimodel.Sandbox{ID: "sbx_abc12345000000p3", DisplayName: display}
+		sb.Config.Name = configured
+		return toTUISandbox(sb)
+	}
+
+	titled := named("fix the reaper", "brave-otter")
+	if titled.Name != "fix the reaper" || titled.ConfigName != "brave-otter" {
+		t.Fatalf("row = %q / %q, want the title beside the configured name", titled.Name, titled.ConfigName)
+	}
+
+	// A name that is only whitespace is no name: the server trims before
+	// falling back to the ID, so the row has to trim before saying it has one.
+	unnamed := named("sbx_abc12345000000p3", "  ")
+	if unnamed.ConfigName != "" {
+		t.Fatalf("ConfigName = %q, want empty: a blank name is no name", unnamed.ConfigName)
+	}
+}

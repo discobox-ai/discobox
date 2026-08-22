@@ -185,6 +185,18 @@ func spread(left, right string, w int) string {
 	return left + strings.Repeat(" ", gap) + right
 }
 
+// spreadPin lays a left and a right fragment out on one row like spread, but
+// with the right pinned there: a row too narrow for both cuts the left back to
+// make room rather than dropping the right. For the caller whose right end
+// carries the fact and whose left carries a list of keys with a losable tail.
+func spreadPin(left, right string, w int) string {
+	room := w - lipgloss.Width(right)
+	if room < 1 {
+		return truncate(right, w)
+	}
+	return pad(left, room) + right
+}
+
 // centerRoom is how wide a middle fragment may be on a spreadCenter row: the
 // row less the fragments on either side, less a cell of air against each of
 // them so the middle never touches its neighbors.
@@ -196,16 +208,16 @@ func centerRoom(left, right string, w int) int {
 	return w - lipgloss.Width(left) - lipgloss.Width(right) - 2
 }
 
-// dropToFit joins fields into a row of at most room columns, dropping them
-// whole from the right until they fit rather than cutting one mid-word: a
+// dropToFit joins fields with sep into a row of at most room columns, dropping
+// them whole from the right until they fit rather than cutting one mid-word: a
 // narrow window should lose a field, not show half of one.
 //
 // The first field always survives. It is the one the rest qualify, so a row
 // that cannot hold it has nothing worth saying anyway, and the caller's own
 // truncation is what deals with that.
-func dropToFit(fields []string, room int) string {
+func dropToFit(fields []string, sep string, room int) string {
 	for len(fields) > 1 {
-		if out := strings.Join(fields, "  "); lipgloss.Width(out) <= room {
+		if out := strings.Join(fields, sep); lipgloss.Width(out) <= room {
 			return out
 		}
 		fields = fields[:len(fields)-1]

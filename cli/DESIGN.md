@@ -328,10 +328,14 @@ The NAME a sandbox listing shows is `Sandbox.displayName`, computed by the
 server (`services.SandboxDisplayName`) and read verbatim here — `discobox ls`, the
 launcher, and any other client name a sandbox the same way because none of them
 derives it. Display only — name *resolution* (`matchSandboxArg`, `--name`
-updates) still works on the configured name, and the TUI disables rename on a
-row whose display name is not the configured one (`sandboxNameIsTitle`,
-`internal/cli/sandbox_name.go`, feeding `Sandbox.NameIsTitle`) because a rename
-would change nothing on screen.
+updates) still works on the configured name.
+
+The launcher's row therefore carries both: `Sandbox.Name` is the display name
+and `Sandbox.ConfigName` the configured one (`toTUISandbox`, trimmed the way
+the server trims it before falling back to the id). Its status line says the
+configured name under the cursor, since that is the handle every other command
+takes, and rename is refused on a row where the two differ (`nameIsTitle`) —
+the name on screen is the terminal's, and a rename would change nothing there.
 
 ## Choosing a Sandbox Interactively
 

@@ -334,7 +334,7 @@ func TestRenameTakesExactlyOneBox(t *testing.T) {
 // not the one on screen, so accepting a new one would visibly change nothing.
 func TestRenameRefusedWhenNameIsTerminalTitle(t *testing.T) {
 	boxes := testSandboxes()
-	boxes[0].NameIsTitle = true
+	boxes[0].ConfigName = "brave-otter"
 	ds := newFakeSource(boxes...)
 	m := newTestModel(t, ds)
 	send(t, m, key("tab"), key("e"))

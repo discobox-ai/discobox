@@ -1124,7 +1124,7 @@ func (m *Model) actions(targets []Sandbox) []action {
 	// which is the one rename edits: accepting a rename there would change
 	// nothing on screen.
 	renameable, renameWhy := one, "takes exactly one box"
-	if one && targets[0].NameIsTitle {
+	if one && targets[0].nameIsTitle() {
 		renameable = false
 		renameWhy = "the name shown is the terminal's title, which the harness sets — a rename would not change it"
 	}
@@ -2068,23 +2068,75 @@ func (m *Model) viewLabel(width int) string {
 
 // viewStatus is the bottom line: the keys, or what just happened. A message
 // displaces the keys until the next one is pressed.
+//
+// The right end is what is true rather than what was said — which discobox the
+// cursor is on, and how many are selected — so a message displacing the keys
+// leaves it standing. It is pinned there (`spreadPin`): the keys are a list
+// with a tail worth losing and F1 spells all of them out anyway, while the
+// identity is the one thing on the row that is written down nowhere else.
 func (m *Model) viewStatus() string {
-	left := "  " + m.statusLine()
-	right := ""
-	if n := m.list.selectionCount(); n > 0 {
-		right = m.st.statusWA.Render(plural(n, "selected", "selected")) + "  "
+	var fields []string
+	if id := m.statusIdentity(); id != "" {
+		fields = append(fields, id)
 	}
-	return spread(left, right, m.inner())
+	if n := m.list.selectionCount(); n > 0 {
+		fields = append(fields, m.st.statusWA.Render(plural(n, "selected", "selected")))
+	}
+	right := ""
+	if len(fields) > 0 {
+		right = strings.Join(fields, "   ") + "  "
+	}
+	left := "  " + m.statusLine(max(m.inner()-lipgloss.Width(right)-2, 1))
+	return spreadPin(left, right, m.inner())
 }
 
-// statusLine is what the bottom line of any screen says: the keys, or what just
-// happened over them.
+// statusIdentity is the discobox under the cursor, named the two ways the row
+// itself cannot name it: its id, and the name it is configured with.
+//
+// Neither is on the row. The name a row shows is the display name, which is
+// the primary terminal's window title as soon as the harness has set one — so
+// the configured name, the one rename edits and every other `discobox` command
+// takes, is exactly the thing that goes missing while a box is working. The id
+// is nowhere on this screen at all; the workspace banner carries it, and
+// getting to it meant attaching.
+//
+// The id leads and the name follows it, the same order and the same colors as
+// the workspace banner (`paneHeaderFields`): muted for the id, which is there
+// to be looked up rather than read, and the plain text for the name. A box
+// that was never named has no second half — the server names it by its id, so
+// the id has already said it.
+//
+// Only while the list has focus, because only then is there a cursor drawn on
+// a row: naming a discobox nothing on screen is pointing at would be an answer
+// to a question nobody asked.
+func (m *Model) statusIdentity() string {
+	if m.harnessesOpen || m.focus != focusList {
+		return ""
+	}
+	box := m.list.current()
+	if box == nil {
+		return ""
+	}
+	out := m.st.dimText.Render(box.ID)
+	if box.ConfigName != "" {
+		out += "  " + m.st.name.Render(box.ConfigName)
+	}
+	return out
+}
+
+// statusLine is what the bottom line of any screen says, in the room it has:
+// the keys, or what just happened over them.
 //
 // Every screen draws it, the workspace included. A command that failed there —
 // an apply that could not start, a key that could not do what it was pressed
 // for — has nowhere else to say so, and a report the screen it was made on
 // cannot show is a key that looks like it did nothing at all.
-func (m *Model) statusLine() string {
+//
+// The keys give up whole offers to fit, from the tail, where the least of them
+// is (`dropToFit`): half a key hint is not one. A message is returned whole —
+// it is one thing and there is nothing of it to drop — and the caller's own
+// truncation is what deals with one too long for the row.
+func (m *Model) statusLine(room int) string {
 	switch {
 	case m.statusE:
 		return m.st.statusER.Render("✗ " + m.status)
@@ -2093,8 +2145,12 @@ func (m *Model) statusLine() string {
 	case m.busy != "":
 		return m.st.statusWA.Render(m.busy)
 	}
-	return m.st.dimText.Render(m.hints())
+	return m.st.dimText.Render(dropToFit(strings.Split(m.hints(), hintSep), hintSep, room))
 }
+
+// hintSep is what a key hint is separated from the next by, and so what the
+// status line splits them back apart on to drop one.
+const hintSep = " · "
 
 func (m *Model) hints() string {
 	if m.harnessesOpen {
@@ -2198,7 +2254,7 @@ func (m *Model) hints() string {
 			parts = append(parts, "A show archived")
 		}
 		parts = append(parts, "↑ or Tab folder", "Esc prompt")
-		keys := strings.Join(parts, " · ")
+		keys := strings.Join(parts, hintSep)
 		if m.list.nameFull > m.list.nameWidth {
 			// Only worth saying on a row that has more name than column.
 			keys = "←→ read the rest of the name · " + keys

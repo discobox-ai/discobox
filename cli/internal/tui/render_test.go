@@ -223,6 +223,65 @@ func rowFor(t *testing.T, m *Model, name string) string {
 	return ""
 }
 
+// statusRow is the window's bottom line as plain text: the keys, and pinned at
+// its right end whatever is true of where the cursor is.
+func statusRow(m *Model) string {
+	lines := frame(m)
+	return ansi.Strip(lines[len(lines)-2])
+}
+
+// The status line names the discobox under the cursor the two ways its row
+// cannot: the id, which is on no row at all, and the configured name, which a
+// row showing a terminal title is not showing.
+func TestStatusNamesTheBoxUnderTheCursor(t *testing.T) {
+	boxes := testSandboxes()
+	boxes[0].ConfigName = "brave-otter"
+	m := newTestModel(t, newFakeSource(boxes...))
+	send(t, m, key("tab"))
+
+	status := statusRow(m)
+	if !strings.Contains(status, boxes[0].ID) || !strings.Contains(status, "brave-otter") {
+		t.Fatalf("status = %q, want the id and the configured name of the row under the cursor", status)
+	}
+
+	send(t, m, key("down"))
+	status = statusRow(m)
+	if !strings.Contains(status, boxes[1].ID) || strings.Contains(status, boxes[0].ID) {
+		t.Fatalf("status = %q, want it to follow the cursor to %q", status, boxes[1].ID)
+	}
+	// A box with no configured name is named by its id, which has already been
+	// said.
+	if strings.Contains(status, "brave-otter") {
+		t.Fatalf("status = %q, want no name from the row above it", status)
+	}
+
+	// Back in the prompt there is no cursor drawn on any row, so there is
+	// nothing for the line to be naming.
+	send(t, m, key("esc"))
+	if status := statusRow(m); strings.Contains(status, boxes[1].ID) {
+		t.Fatalf("status = %q, want no discobox named with the prompt focused", status)
+	}
+}
+
+// The id is pinned: a window too narrow for both gives up key hints, from the
+// tail and whole, rather than the one thing on the row that is written down
+// nowhere else.
+func TestStatusKeepsTheIDOverTheKeys(t *testing.T) {
+	m := newTestModel(t, newFakeSource(testSandboxes()...))
+	send(t, m, key("tab"), sizeMsg(90, 40))
+
+	status := statusRow(m)
+	if !strings.Contains(status, "sbx_one") {
+		t.Fatalf("status = %q, want the id kept on a narrow window", status)
+	}
+	if !strings.Contains(status, "a attach") {
+		t.Fatalf("status = %q, want the keys cut from the tail, not the head", status)
+	}
+	if strings.Contains(status, "…") {
+		t.Fatalf("status = %q, want whole hints dropped rather than one cut in half", status)
+	}
+}
+
 // Selection and the cursor are a background across the whole row, not a column
 // of bullets — so the paint has to survive every styled span the row carries.
 //
