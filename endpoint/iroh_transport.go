@@ -58,6 +58,27 @@ func (e *IrohEndpoint) ID() (IrohID, error) {
 	return IrohIDFromPublicKey(pub)
 }
 
+// irohPreset turns the two switches on IrohConfig into the preset that carries
+// them, plus the relay override the preset alone cannot express.
+//
+// iroh bundles relays and address lookup into presets rather than offering a
+// flag for each: N0 has both, N0DisableRelay drops the relays, and Minimal has
+// neither. Three presets do not cover four combinations, so the one that asks
+// for relays without discovery starts from Minimal and puts the relays back —
+// rather than quietly ignoring one of the two switches it was handed.
+func irohPreset(cfg IrohConfig) (iroh.Preset, iroh.RelayMode) {
+	switch {
+	case cfg.DisableDiscovery && cfg.DisableRelay:
+		return iroh.PresetMinimal, iroh.RelayFromPreset
+	case cfg.DisableDiscovery:
+		return iroh.PresetMinimal, iroh.RelayDefault
+	case cfg.DisableRelay:
+		return iroh.PresetN0NoRelay, iroh.RelayFromPreset
+	default:
+		return iroh.PresetN0, iroh.RelayFromPreset
+	}
+}
+
 // bind opens the UDP socket on first use and returns the same endpoint after.
 //
 // Binding is local work — sockets and keys, no peer — so it takes no context
@@ -68,10 +89,7 @@ func (e *IrohEndpoint) bind() (*iroh.Endpoint, error) {
 	if e.endpoint != nil {
 		return e.endpoint, nil
 	}
-	preset := iroh.PresetN0
-	if e.cfg.DisableRelay {
-		preset = iroh.PresetN0NoRelay
-	}
+	preset, relay := irohPreset(e.cfg)
 	// iroh takes the 32-byte seed, which is the first half of a Go ed25519
 	// private key; the second half is the public key it derives anyway.
 	var secret iroh.SecretKey
@@ -79,8 +97,10 @@ func (e *IrohEndpoint) bind() (*iroh.Endpoint, error) {
 
 	bound, err := iroh.Bind(context.Background(), iroh.Options{
 		Preset:    preset,
+		RelayMode: relay,
 		SecretKey: &secret,
 		ALPNs:     [][]byte{[]byte(irohALPN)},
+		BindAddrs: e.cfg.BindAddrs,
 	})
 	if err != nil {
 		return nil, fmt.Errorf("bind iroh endpoint: %w", err)
