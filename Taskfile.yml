@@ -629,6 +629,7 @@ tasks:
       # empty PIN_TAG would bake "discobox-pool-agent:" — a reference no daemon
       # can pull — into a binary that otherwise looks fine.
       RELEASE_LDFLAGS: >-
+        {{if .PIN_TAG}}-X github.com/discobox-ai/discobox/cli/internal/cli.version={{.PIN_TAG}}{{end}}
         {{if and .PIN_TAG .REGISTRY}}-X github.com/discobox-ai/discobox/server/providers/dockerworker.DefaultPoolImage={{.REGISTRY}}/discobox-pool-agent:{{.PIN_TAG}}
         -X github.com/discobox-ai/discobox/server/internal/sandbox.DefaultSandboxImageName={{.REGISTRY}}/discobox-sandbox-agent:{{.PIN_TAG}}{{end}}
       LDFLAGS: -s -w -X github.com/discobox-ai/discobox/cli/internal/cli.serverAutoLaunch=true {{.RELEASE_LDFLAGS}}
@@ -756,10 +757,10 @@ tasks:
           end
 
           test do
-            # Not a version assertion: the CLI reports no version yet. This at
-            # least proves the binary runs on the platform it was installed for,
-            # which is what a cross-compiled release most plausibly gets wrong.
-            assert_match "discobox", shell_output("#{bin}/discobox --help")
+            # Proves both that the binary runs on the platform it was installed
+            # for — what a cross-compiled release most plausibly gets wrong —
+            # and that it is the version this formula claims.
+            assert_match version.to_s, shell_output("#{bin}/discobox --version")
           end
         end
         FORMULA
