@@ -651,8 +651,17 @@ tasks:
           echo "release:publish: build/release/bin is empty; run release:build first" >&2
           exit 1
         fi
+        # A prerelease is marked as one. Without this gh publishes v1.2.3-rc1 as
+        # the latest stable release, which is what every `latest` link and the
+        # repository's own header then point at. The test is the one
+        # release:image already uses to decide whether to move :latest, so the
+        # release object and the image tags cannot disagree about what a tag is.
+        prerelease=""
+        case "$tag" in
+          *-*) prerelease="--prerelease" ;;
+        esac
         gh release view "$tag" >/dev/null 2>&1 ||
-          gh release create "$tag" --verify-tag --title "$tag" --generate-notes
+          gh release create "$tag" --verify-tag --title "$tag" --generate-notes $prerelease
         gh release upload "$tag" build/release/bin/* --clobber
 
   release:images:
