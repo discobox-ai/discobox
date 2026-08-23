@@ -666,7 +666,21 @@ tasks:
         {{if .PIN_TAG}}-X github.com/discobox-ai/discobox/cli/internal/cli.version={{.PIN_TAG}}{{end}}
         {{if and .PIN_TAG .REGISTRY}}-X github.com/discobox-ai/discobox/server/providers/dockerworker.DefaultPoolImage={{.REGISTRY}}/discobox-pool-agent:{{.PIN_TAG}}
         -X github.com/discobox-ai/discobox/server/internal/sandbox.DefaultSandboxImageName={{.REGISTRY}}/discobox-sandbox-agent:{{.PIN_TAG}}{{end}}
-      LDFLAGS: -s -w -X github.com/discobox-ai/discobox/cli/internal/cli.serverAutoLaunch=true {{.RELEASE_LDFLAGS}}
+      # The ELF interpreter, named rather than inherited.
+      #
+      # iroh-go reaches its embedded cdylib through purego, which imports dlopen
+      # with //go:cgo_import_dynamic — so the linker emits a dynamic executable
+      # whatever CGO_ENABLED says, and bakes in the loader path of the machine
+      # that built it. Inside `nix develop` that is a /nix/store path present on
+      # no user's system, and the binary cannot start anywhere else.
+      #
+      # A release binary's loader is a property of the target, not of the build
+      # host. Safe to name because nothing here needs a versioned glibc symbol:
+      # dlopen, dlsym, malloc, abort and pthread_* resolve against any libc.
+      # It does mean glibc — a musl system has no loader at this path, and one
+      # that dlopens cannot be static instead (ADR 0067 §2's embedded cdylib).
+      INTERP: '{{if eq .TARGET_OS "linux"}}{{if eq .TARGET_ARCH "amd64"}}/lib64/ld-linux-x86-64.so.2{{else}}/lib/ld-linux-aarch64.so.1{{end}}{{end}}'
+      LDFLAGS: -s -w {{if .INTERP}}-I {{.INTERP}}{{end}} -X github.com/discobox-ai/discobox/cli/internal/cli.serverAutoLaunch=true {{.RELEASE_LDFLAGS}}
     cmds:
       - mkdir -p build/release/bin
       - >-
