@@ -601,6 +601,7 @@ tasks:
       - rm -rf build/release/bin
       - task: release:build:linux
       - task: release:build:darwin
+      - task: release:verify
 
   release:build:linux:
     desc: Build the Linux and Windows release binaries
@@ -691,6 +692,50 @@ tasks:
       # nothing may touch it afterwards (ADR 0066 §5).
       - task: sign
         vars: { SIGN_BINARY: '{{.OUT}}' }
+
+  release:verify:
+    desc: Check that the release binaries in build/release/bin are runnable anywhere
+    # A release went green publishing Linux binaries that could not start on any
+    # machine but the builder: their ELF interpreter was a /nix/store path.
+    # Everything downstream looked healthy — build, checksums, upload — because
+    # nothing inspected one.
+    #
+    # Executing a binary is not enough to catch that, and this is the trap the
+    # first version of this check fell into: on the machine that built it the
+    # /nix/store loader does exist, so it runs perfectly and proves nothing.
+    # The interpreter is therefore checked for every Linux binary, whether or
+    # not this host can execute it, and execution is an extra assertion on top
+    # for the one it can.
+    cmds:
+      - |
+        set -eu
+        [ -d build/release/bin ] || { echo "release:verify: nothing built" >&2; exit 1; }
+        host="$(go env GOOS)-$(go env GOARCH)"
+        found=0
+        for binary in build/release/bin/*; do
+          [ -e "$binary" ] || continue
+          name=$(basename "$binary")
+          found=$((found + 1))
+
+          case "$name" in
+            *-linux-*)
+              interp=$(readelf -p .interp "$binary" 2>/dev/null | sed -n 's/.*\[ *0\] *//p' | tr -d ' ')
+              case "$interp" in
+                ""|/lib/*|/lib64/*) ;;
+                *) echo "$name: interpreter $interp exists only where this was built" >&2; exit 1 ;;
+              esac
+              echo "$name: interpreter ${interp:-none (static)}"
+              ;;
+          esac
+
+          case "$name" in
+            *-"$host"|*-"$host".exe)
+              got=$("$binary" --version) || { echo "$name: cannot execute" >&2; exit 1; }
+              echo "$name: $got"
+              ;;
+          esac
+        done
+        [ "$found" -gt 0 ] || { echo "release:verify: no binaries found" >&2; exit 1; }
 
   release:publish:
     desc: Create the GitHub release for RELEASE_TAG and upload build/release/bin
