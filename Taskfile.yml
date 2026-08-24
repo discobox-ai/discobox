@@ -743,7 +743,7 @@ tasks:
       # empty PIN_TAG would bake "discobox-pool-agent:" — a reference no daemon
       # can pull — into a binary that otherwise looks fine.
       RELEASE_LDFLAGS: >-
-        {{if .PIN_TAG}}-X github.com/discobox-ai/discobox/cli/internal/cli.version={{.PIN_TAG}}{{end}}
+        {{if .PIN_TAG}}-X github.com/discobox-ai/discobox/version.Version={{.PIN_TAG}}{{end}}
         {{if and .PIN_TAG .REGISTRY}}-X github.com/discobox-ai/discobox/server/providers/dockerworker.DefaultPoolImage={{.REGISTRY}}/discobox-pool-agent:{{.PIN_TAG}}
         -X github.com/discobox-ai/discobox/server/internal/sandbox.DefaultSandboxImageName={{.REGISTRY}}/discobox-sandbox-agent:{{.PIN_TAG}}
         -X github.com/discobox-ai/discobox/harness.ImageRegistry={{.REGISTRY}}
@@ -776,6 +776,17 @@ tasks:
 
   release:verify:
     desc: Check that the release binaries in build/release/bin are runnable anywhere
+    vars:
+      # The tag the binaries should report, resolved the way release:binary
+      # resolves the one it links in. Empty for an untagged CI build, which
+      # has no version to assert.
+      PIN_TAG:
+        sh: |
+          tag="{{.TAG}}"
+          case "$tag" in
+            v*) printf %s "$tag" ;;
+            *) printf %s "" ;;
+          esac
     # A release went green publishing Linux binaries that could not start on any
     # machine but the builder: their ELF interpreter was a /nix/store path.
     # Everything downstream looked healthy — build, checksums, upload — because
@@ -813,6 +824,16 @@ tasks:
             *-"$host"|*-"$host".exe)
               got=$("$binary" --version) || { echo "$name: cannot execute" >&2; exit 1; }
               echo "$name: $got"
+              # And that it is the version this release claims. The linker
+              # accepts -X for a symbol that does not exist without a word of
+              # complaint, so a moved or renamed version variable would leave
+              # every binary reporting a commit hash and nothing would notice.
+              if [ -n "{{.PIN_TAG}}" ]; then
+                case "$got" in
+                  *"{{.PIN_TAG}}"*) ;;
+                  *) echo "$name: reports '$got', not {{.PIN_TAG}}: the version ldflag is not reaching the binary" >&2; exit 1 ;;
+                esac
+              fi
               ;;
           esac
         done

@@ -18,6 +18,7 @@ import (
 	"github.com/discobox-ai/discobox/controlplane"
 	"github.com/discobox-ai/discobox/endpoint"
 	discoboxserver "github.com/discobox-ai/discobox/server"
+	"github.com/discobox-ai/discobox/version"
 )
 
 const defaultProjectAlias = "default"
@@ -47,7 +48,7 @@ func NewRootCommand() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:           "discobox",
 		Short:         "Discobox command line client",
-		Version:       versionString(),
+		Version:       version.String(),
 		SilenceUsage:  true,
 		SilenceErrors: true,
 		PersistentPreRunE: func(cmd *cobra.Command, _ []string) error {
