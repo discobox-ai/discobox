@@ -2,9 +2,11 @@ package auth
 
 import (
 	"errors"
+	"fmt"
 	"net/http"
 	"net/url"
 	"strings"
+	"time"
 
 	"github.com/discobox-ai/discobox/pool-agent/poolauth"
 	"github.com/discobox-ai/discobox/server/internal/store"
@@ -45,7 +47,22 @@ func (a PoolAuthenticator) Authenticate(r *http.Request) (Principal, bool, error
 	}
 	claims, err := poolauth.VerifyToken(pool.PublicKey, token)
 	if err != nil {
-		return Principal{}, false, errors.New("invalid pool agent assertion")
+		// Two unrelated faults arrive here and used to read identically, which
+		// left the only visible symptom — a bare 401 the pool agent exits on —
+		// pointing at nothing.
+		//
+		// A signature that does not verify means the control plane holds a
+		// different key than the agent signs with: a restored database, or a
+		// pool row recreated under an agent that kept its stored key.
+		//
+		// A token outside its validity window means the two machines disagree
+		// about the time. On a Mac that slept, that is the guest's clock hours
+		// behind the host's, minting assertions the control plane reads as long
+		// expired (ADR 0062). Naming the control plane's own clock is what makes
+		// the gap legible from the agent's log, which is the side that reports
+		// the failure.
+		return Principal{}, false, fmt.Errorf("invalid pool agent assertion: %w (control plane clock %s)",
+			err, time.Now().UTC().Format(time.RFC3339))
 	}
 	if claims.PoolID != pool.ID || claims.PoolID != routePoolID || claims.ProjectID != pool.ProjectID {
 		return Principal{}, false, errors.New("pool agent assertion identity does not match route")
