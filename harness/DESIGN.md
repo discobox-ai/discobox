@@ -49,6 +49,13 @@ sandbox terminals.
   `InstallHooks` and identifies its included image through `Definition()`. The
   public definition catalog is an image shortcut; runtime metadata comes from
   the registered image label and the copy inside that image.
+- A `Definition` names its image through `harness.ImageRef`, never as a
+  literal. One `ImageRegistry`/`ImageTag` pair backs all three, unset and
+  `local` by default and overwritten at link time by a release
+  (`Taskfile.yml`'s `release:binary`), so the built-in harnesses a binary seeds
+  are the images that shipped with it. One pair rather than a reference per
+  harness: a release publishes them together, and three independent references
+  could disagree about which release a sandbox is running.
 - A `Definition` sets `Configure` to enable an ephemeral sandbox the CLI
   runs interactively after registering a `HarnessConfig`. The configure process
   writes files and collected secret values to `ConfigureOutputPath`; definitions

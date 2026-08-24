@@ -21,7 +21,7 @@ func (Driver) Definition() harness.Definition {
 	return harness.Definition{
 		ID: harness.ShellSlug, Name: "Shell",
 		Description: "An interactive login shell, with no coding harness on top.",
-		Image:       "discobox-harness-shell:local",
+		Image:       harness.ImageRef("discobox-harness-shell"),
 	}
 }
 

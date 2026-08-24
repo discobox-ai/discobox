@@ -489,7 +489,18 @@ tasks:
       - |
         set -eu
         missing=""
-        for dockerfile in pool-agent/Dockerfile sandbox-agent/Dockerfile server/providers/vz/image/Dockerfile; do
+        # dockerfile:context. A COPY source is relative to the build context,
+        # not to the Dockerfile, and the harness images are the ones built from
+        # somewhere other than the repository root.
+        for entry in \
+          pool-agent/Dockerfile:. \
+          sandbox-agent/Dockerfile:. \
+          server/providers/vz/image/Dockerfile:. \
+          harness/claude-code/Dockerfile:harness/claude-code \
+          harness/codex-cli/Dockerfile:harness/codex-cli \
+          harness/shell/Dockerfile:harness/shell; do
+          dockerfile="${entry%:*}"
+          context="${entry##*:}"
           # All but the last token of a COPY are sources; --from copies from an
           # earlier stage rather than the context, so it is not ours to check.
           # Collected rather than reported inside a pipeline: a `while` fed by
@@ -497,8 +508,8 @@ tasks:
           for src in $(awk '/^COPY / && !/--from=/ {
                               for (i = 2; i < NF; i++) if ($i !~ /^--/) print $i
                             }' "$dockerfile"); do
-            if [ ! -e "$src" ]; then
-              missing="$missing$dockerfile: COPY $src: no such path in the build context
+            if [ ! -e "$context/$src" ]; then
+              missing="$missing$dockerfile: COPY $src: no such path in build context $context
         "
             fi
           done
@@ -688,12 +699,16 @@ tasks:
       # A release build autolaunches its own in-process server; a development
       # build never does (cli/internal/cli/server_autolaunch_test.go).
       #
-      # The two agent images are pinned to this release's own tag. Their
-      # defaults are :latest and a local tag, which is right for a development
-      # build and wrong for a shipped one: a binary should pull the agents it
-      # was cut alongside, not whatever :latest has moved to since. The tag
-      # rather than a digest because release:images runs in a parallel job —
-      # there is no digest yet at link time — and a release tag never moves.
+      # Every image this release publishes is pinned to the release's own tag:
+      # the two agent images, and the registry and tag the three built-in
+      # harness images resolve through. Their defaults are :latest and local
+      # tags, which is right for a development build and wrong for a shipped
+      # one: a binary should run the images it was cut alongside, not whatever
+      # :latest has moved to since — and a local tag resolves to nothing at all
+      # on a user's machine, which is how a release shipped seeding three
+      # harnesses whose images Docker Hub had never heard of. The tag rather
+      # than a digest because release:images runs in a parallel job — there is
+      # no digest yet at link time — and a release tag never moves.
       #
       # Only when there is a tag to pin to. ci.yml builds the release artifacts
       # on every push to prove they still build, with no tag in sight, and an
@@ -702,7 +717,9 @@ tasks:
       RELEASE_LDFLAGS: >-
         {{if .PIN_TAG}}-X github.com/discobox-ai/discobox/cli/internal/cli.version={{.PIN_TAG}}{{end}}
         {{if and .PIN_TAG .REGISTRY}}-X github.com/discobox-ai/discobox/server/providers/dockerworker.DefaultPoolImage={{.REGISTRY}}/discobox-pool-agent:{{.PIN_TAG}}
-        -X github.com/discobox-ai/discobox/server/internal/sandbox.DefaultSandboxImageName={{.REGISTRY}}/discobox-sandbox-agent:{{.PIN_TAG}}{{end}}
+        -X github.com/discobox-ai/discobox/server/internal/sandbox.DefaultSandboxImageName={{.REGISTRY}}/discobox-sandbox-agent:{{.PIN_TAG}}
+        -X github.com/discobox-ai/discobox/harness.ImageRegistry={{.REGISTRY}}
+        -X github.com/discobox-ai/discobox/harness.ImageTag={{.PIN_TAG}}{{end}}
       # The ELF interpreter, named rather than inherited.
       #
       # iroh-go reaches its embedded cdylib through purego, which imports dlopen
@@ -852,19 +869,60 @@ tasks:
       - scripts/brew-formula.sh "{{.TAG}}" "{{.RELEASE_REPO}}" "{{.BREW_OUT}}"
 
   release:images:
-    desc: Build and push the multi-arch agent images for RELEASE_TAG
+    desc: Build and push the multi-arch agent and harness images for RELEASE_TAG
     cmds:
       - task: release:image
         vars: { IMAGE: pool-agent }
       - task: release:image
         vars: { IMAGE: sandbox-agent }
+      # Strictly after sandbox-agent, and not alongside it: every harness image
+      # is built FROM the sandbox agent image this release just pushed, and the
+      # build cannot pull a tag that is not in the registry yet.
+      #
+      # Harness images ship with the release for the same reason the two agent
+      # images do. The built-in harness configs a server seeds name these, and
+      # their development default is a local tag that resolves to nothing on a
+      # user's machine — a released binary that did not publish them seeds three
+      # harnesses it cannot run.
+      - task: release:harness-image
+        vars: { HARNESS: claude-code }
+      - task: release:harness-image
+        vars: { HARNESS: codex }
+      - task: release:harness-image
+        vars: { HARNESS: shell }
+
+  release:harness-image:
+    desc: Build and push one multi-arch harness image (HARNESS=claude-code|codex|shell)
+    requires:
+      vars: [HARNESS]
+    vars:
+      HARNESS_DIR: '{{if eq .HARNESS "codex"}}codex-cli{{else}}{{.HARNESS}}{{end}}'
+    preconditions:
+      - sh: test -f harness/{{.HARNESS_DIR}}/Dockerfile
+        msg: "unknown harness: {{.HARNESS}}"
+    cmds:
+      - task: release:image
+        vars:
+          IMAGE: harness-{{.HARNESS}}
+          DOCKERFILE: harness/{{.HARNESS_DIR}}/Dockerfile
+          CONTEXT: harness/{{.HARNESS_DIR}}
+          # The same two build arguments build:harness-image passes, with the
+          # base image pointing at this release rather than the local tag.
+          BUILD_ARGS: >-
+            --build-arg SANDBOX_AGENT_IMAGE={{.REGISTRY}}/discobox-sandbox-agent:{{.TAG}}
+            --build-arg HARNESS_METADATA="$(jq -c . harness/{{.HARNESS_DIR}}/image.json)"
 
   release:image:
-    desc: Build and push one multi-arch agent image (IMAGE=pool-agent|sandbox-agent)
+    desc: Build and push one multi-arch image (IMAGE names it; DOCKERFILE/CONTEXT/BUILD_ARGS override the defaults)
     requires:
       vars: [IMAGE]
     vars:
       PLATFORMS: linux/amd64,linux/arm64
+      # The two agent images sit at <name>/Dockerfile and build from the
+      # repository root. A harness image overrides all three.
+      DOCKERFILE: '{{.DOCKERFILE | default (printf "%s/Dockerfile" .IMAGE)}}'
+      CONTEXT: '{{.CONTEXT | default "."}}'
+      BUILD_ARGS: '{{.BUILD_ARGS | default ""}}'
     cmds:
       - |
         set -eu
@@ -892,7 +950,7 @@ tasks:
         # depot builds each architecture on a native machine, so there is no
         # per-arch fan-out and no manifest list to assemble (ADR 0066 §6).
         if command -v depot >/dev/null 2>&1; then
-          depot build --platform {{.PLATFORMS}} -f {{.IMAGE}}/Dockerfile $tags --push .
+          depot build --platform {{.PLATFORMS}} -f {{.DOCKERFILE}} {{.BUILD_ARGS}} $tags --push {{.CONTEXT}}
         else
           echo "depot not found; falling back to emulated docker buildx." >&2
           echo "Both Dockerfiles run their Go stage FROM --platform=\$BUILDPLATFORM, so no Go" >&2
@@ -903,7 +961,7 @@ tasks:
           docker run --privileged --rm tonistiigi/binfmt --install arm64,amd64 >/dev/null
           go tool task buildx:builder
           docker buildx build --builder {{.BUILDX_BUILDER}} --platform {{.PLATFORMS}} \
-            -f {{.IMAGE}}/Dockerfile $tags --push .
+            -f {{.DOCKERFILE}} {{.BUILD_ARGS}} $tags --push {{.CONTEXT}}
         fi
 
   vm:build:
