@@ -522,9 +522,12 @@ func (m *Model) configureHarness(harness Harness) tea.Cmd {
 func (m *Model) configureHarnessThen(harness Harness, andDefault *Harness, resume *RunRequest) tea.Cmd {
 	name := harness.displayName()
 	m.busy = "configuring " + name + "…"
-	exec := &harnessExec{run: func(stdin io.Reader, stdout, stderr io.Writer) error {
-		return m.ds.ConfigureHarness(m.ctx, harness.ID, stdin, stdout, stderr)
-	}}
+	exec := &harnessExec{
+		title: "Configuring " + name,
+		run: func(stdin io.Reader, stdout, stderr io.Writer) error {
+			return m.ds.ConfigureHarness(m.ctx, harness.ID, stdin, stdout, stderr)
+		},
+	}
 	return m.exec(exec, func(err error) tea.Msg {
 		if err != nil {
 			return harnessDoneMsg{err: fmt.Errorf("configure %s: %w", name, err)}
@@ -538,11 +541,14 @@ func (m *Model) configureHarnessThen(harness Harness, andDefault *Harness, resum
 func (m *Model) editHarnessFile(harness Harness, path string) tea.Cmd {
 	m.busy = "editing " + path + "…"
 	var changed bool
-	exec := &harnessExec{run: func(stdin io.Reader, stdout, stderr io.Writer) error {
-		var err error
-		changed, err = m.ds.EditHarnessFile(m.ctx, harness.ID, path, stdin, stdout, stderr)
-		return err
-	}}
+	exec := &harnessExec{
+		title: "Editing " + path,
+		run: func(stdin io.Reader, stdout, stderr io.Writer) error {
+			var err error
+			changed, err = m.ds.EditHarnessFile(m.ctx, harness.ID, path, stdin, stdout, stderr)
+			return err
+		},
+	}
 	return m.exec(exec, func(err error) tea.Msg {
 		switch {
 		case err != nil:
@@ -805,7 +811,10 @@ func (m *Model) harnessHints() string {
 // returns, so both run on the screen the window was started from and the window
 // comes back over the top of them.
 type harnessExec struct {
-	run func(stdin io.Reader, stdout, stderr io.Writer) error
+	// title names what is taking the terminal, printed at the top of the
+	// screen this clears.
+	title string
+	run   func(stdin io.Reader, stdout, stderr io.Writer) error
 
 	stdin  io.Reader
 	stdout io.Writer
@@ -816,4 +825,31 @@ func (c *harnessExec) SetStdin(r io.Reader)  { c.stdin = r }
 func (c *harnessExec) SetStdout(w io.Writer) { c.stdout = w }
 func (c *harnessExec) SetStderr(w io.Writer) { c.stderr = w }
 
-func (c *harnessExec) Run() error { return c.run(c.stdin, c.stdout, c.stderr) }
+// Run gives the flow a screen of its own.
+//
+// tea.Exec puts the window back on the primary screen and steps aside, and the
+// primary screen still holds whatever was on it before the window opened — the
+// shell prompt, the command line, whatever the CLI printed on its way here. The
+// flow then prints its first line into the middle of all that, which reads as
+// two screens drawn over each other. Clearing first is what makes the handover
+// look like one.
+func (c *harnessExec) Run() error {
+	clearScreen(c.stdout, c.title)
+	return c.run(c.stdin, c.stdout, c.stderr)
+}
+
+// clearScreen wipes the terminal, its scrollback, and homes the cursor, then
+// names what is about to use it.
+//
+// The scrollback goes too (\x1b[3J). Without it the cleared rows are still
+// there to scroll back into, and what a user finds above a fresh flow is the
+// window that was supposed to have stepped aside.
+func clearScreen(out io.Writer, title string) {
+	if out == nil {
+		return
+	}
+	fmt.Fprint(out, "\x1b[H\x1b[2J\x1b[3J")
+	if title != "" {
+		fmt.Fprintf(out, "%s\r\n\r\n", title)
+	}
+}
