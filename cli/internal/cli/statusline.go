@@ -3,6 +3,7 @@ package cli
 import (
 	"fmt"
 	"io"
+	"strings"
 	"sync"
 )
 
@@ -37,12 +38,16 @@ func newStatusLine(out io.Writer) *statusLine {
 
 // set replaces what the line says.
 func (l *statusLine) set(text string) {
-	if l == nil || text == "" {
+	if l == nil {
 		return
 	}
 	l.mu.Lock()
 	defer l.mu.Unlock()
 	if l.done {
+		return
+	}
+	text = oneLine(text, terminalWidth(l.out))
+	if text == "" {
 		return
 	}
 	if !l.tty {
@@ -53,6 +58,37 @@ func (l *statusLine) set(text string) {
 	// tail of a longer one behind it.
 	fmt.Fprintf(l.out, "\r\x1b[K%s", text)
 	l.shown = true
+}
+
+// oneLine makes text that occupies exactly one terminal row.
+//
+// What arrives here is not always one line. A failure reported by a pool host
+// is quoted verbatim, and those carry embedded newlines; a pull that names an
+// image, a size and a layer count is simply long. Either one breaks a line that
+// is rewritten in place, and in the same way: \r\x1b[K erases the row the
+// cursor is on, so every row the text spilled onto is left on the screen for
+// good — under whatever the caller drew next, which is the point at which the
+// caller believed it had a clean stream.
+//
+// Folding whitespace rather than cutting at the first newline, because the
+// interesting half of "connect to guest port 3002:\n  <detail>" is the half
+// after the break.
+func oneLine(text string, width int) string {
+	text = strings.Join(strings.Fields(text), " ")
+	if width <= 0 {
+		return text
+	}
+	// One column short of the width: writing the last cell of a row leaves the
+	// cursor there or on the next row depending on the terminal, and a status
+	// line cannot afford to be unsure which row it is on.
+	limit := width - 1
+	if limit < 8 {
+		limit = 8
+	}
+	if runes := []rune(text); len(runes) > limit {
+		return string(runes[:limit-1]) + "…"
+	}
+	return text
 }
 
 // clear takes the line back down and stops the status line from drawing again.
