@@ -13,6 +13,10 @@ rootfs=${1:?usage: assemble-guest-image ROOTFS OUTPUT_DIR}
 out=${2:?usage: assemble-guest-image ROOTFS OUTPUT_DIR}
 arch=${TARGETARCH:-arm64}
 slack_mib=${ROOT_SLACK_MIB:-192}
+# What the guest calls itself. One name for every pool VM: they are separate
+# machines that never share a network namespace, and a name an operator
+# recognises beats one that is unique to a VM they already know they are on.
+hostname=discobox
 
 mkdir -p "$out"
 
@@ -77,6 +81,28 @@ cp "$initrd" "$out/initrd.img"
 # provides.
 rm -f "$rootfs/etc/resolv.conf"
 ln -s /run/systemd/resolve/resolv.conf "$rootfs/etc/resolv.conf"
+
+# Two more files a container runtime supplies and a VM does not.
+#
+# /etc/hostname ships in the Debian base image saying "debuerreotype", the tool
+# Debian builds its official images with. No container ever sees it — the
+# runtime bind-mounts its own over the top — but nothing masks it here, so the
+# guest came up calling itself that, which is what an operator on the pool
+# console reads and what every log line from inside carries.
+#
+# /etc/hosts is the same arrangement in reverse: the runtime provides one, so
+# the image carries none at all, and a VM booting this tree would have no entry
+# for localhost or for its own name.
+echo "$hostname" > "$rootfs/etc/hostname"
+cat > "$rootfs/etc/hosts" <<HOSTS
+127.0.0.1	localhost
+127.0.1.1	$hostname
+::1	localhost ip6-localhost ip6-loopback
+fe00::	ip6-localnet
+ff00::	ip6-mcastprefix
+ff02::1	ip6-allnodes
+ff02::2	ip6-allrouters
+HOSTS
 
 # Size the root filesystem to its contents rather than to a fixed ceiling. It is
 # read-only and never grows, and every byte of slack is a byte pulled over the

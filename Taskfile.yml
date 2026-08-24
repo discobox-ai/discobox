@@ -1067,7 +1067,12 @@ tasks:
         magic=$(dd if=vmlinux bs=1 skip=56 count=4 status=none)
         test "$magic" = "ARMd" || { echo "vmlinux is not an uncompressed arm64 kernel Image" >&2; exit 1; }
         dumpe2fs -h root.ext4 | grep -q "Filesystem volume name:   discobox-root"
-        echo "VM artifacts verified"
+        # The guest's own name. The Debian base image ships /etc/hostname
+        # saying "debuerreotype" and a container never sees it, so this is only
+        # ever wrong in the artifact that boots — the one place nothing looks.
+        hostname=$(debugfs -R "cat /etc/hostname" root.ext4 2>/dev/null | tr -d '\0\r\n ')
+        test "$hostname" = "discobox" || { echo "root.ext4 boots as '$hostname', not discobox" >&2; exit 1; }
+        echo "VM artifacts verified (hostname $hostname)"
 
   vm:publish:
     desc: Push the VM image for VM_TAG and report the digest to pin
