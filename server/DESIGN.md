@@ -232,6 +232,25 @@ is and there is no second endpoint to configure, publish, or firewall (ADR
 address to discover and no way to turn SSH off. See
 [`internal/sshd/DESIGN.md`](internal/sshd/DESIGN.md).
 
+## Startup and Readiness
+
+Listeners bind before initialization, not after it. Opening the database,
+migrating it, building the services and seeding the built-in harness configs are
+all slow at least once, and while they ran nothing was listening — so a client
+saw a refused connection and could not tell a server that was still coming up
+from one that had died on startup.
+
+`startupHandler` occupies the listeners from the moment they bind. Every request
+is answered `503` with a `health.Status` naming the step in progress, and each
+step is logged, so a foreground run and a polling client say the same thing.
+When initialization finishes, the real router is swapped in behind the same
+handler: nothing rebinds and no connection is dropped. `/healthz` then reports
+`ready` with the server's version and uptime, which is what tells a caller that
+just launched a server that it reached the binary it started.
+
+`health` in the root module owns the payload, because the CLI that polls it is
+in another module.
+
 ## Single Server Per Data Directory
 
 One server runs against a data directory at a time, enforced by an exclusive

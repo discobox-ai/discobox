@@ -131,6 +131,20 @@ builds leave it disabled; release CLI binaries opt in at build time by setting
 `cli.serverAutoLaunch` to `true` with the Go linker's `-X` flag. `--no-start`
 remains the runtime override for release binaries.
 
+The launched process is this binary re-invoked, and the argv comes from
+`App.serverLaunchArgs`, which reads the path off the command tree rather than
+naming it. A path spelled by hand is a reference nothing checks: the server
+command moved under `admin`, the literal `[]string{"server"}` did not, and every
+release launched a child that exited instantly with `unknown command`.
+
+Waiting on it is two-stage, against `health.Status` from `/healthz`. A server
+that never answers has died and is given `StartTimeout`; one that answers
+`starting` is working and is given `ReadyTimeout`, with each new phase printed
+so the wait says what it is waiting for. The child's output goes to a log file
+beside the socket, and its tail is what a failed wait reports — the alternative,
+discarding it, is what made a server dying on startup indistinguishable from one
+that was merely slow.
+
 Advanced configuration and low-level resource commands are grouped beneath the
 visible `discobox admin` command: `project`, `sandbox`, `terminal`, `exec`,
 `provider`, `pool`, `job`, `harnesses`, and `hooks` are not root commands.

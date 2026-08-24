@@ -4,18 +4,22 @@ import (
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
+	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"net/http"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"strings"
 	"time"
+
+	"github.com/discobox-ai/discobox/health"
 )
 
 const (
-	defaultProbePath     = "/healthz"
+	defaultProbePath     = health.Path
 	defaultProbeInterval = 100 * time.Millisecond
 )
 
@@ -23,13 +27,20 @@ const (
 type LaunchOptions struct {
 	Endpoint      string
 	LockPath      string
+	LogPath       string
 	Command       string
 	Args          []string
 	Env           []string
 	ProbePath     string
 	ProbeTimeout  time.Duration
 	StartTimeout  time.Duration
+	ReadyTimeout  time.Duration
 	ProbeInterval time.Duration
+
+	// OnProgress is called with each status a starting server reports, so a
+	// caller can show what it is waiting for. Called only when the status
+	// changes, and never once the server is ready.
+	OnProgress func(health.Status)
 }
 
 // EnsureRunning starts the configured command when the local endpoint is not
@@ -39,8 +50,12 @@ func EnsureRunning(ctx context.Context, opts LaunchOptions) error {
 	if opts.Endpoint == "" {
 		opts.Endpoint = DefaultEndpoint()
 	}
-	if err := probeEndpoint(ctx, opts); err == nil {
+	// A server that is already up needs nothing, and one that is still starting
+	// needs waiting on rather than a second process started alongside it.
+	if status, err := probeEndpoint(ctx, opts); err == nil && !status.Starting() {
 		return nil
+	} else if err == nil {
+		return waitReady(ctx, opts, time.Now().Add(opts.readyTimeout()))
 	} else if !isProbeConnectionError(err) {
 		return err
 	}
@@ -49,20 +64,30 @@ func EnsureRunning(ctx context.Context, opts LaunchOptions) error {
 		return err
 	}
 	defer unlock()
-	if err := probeEndpoint(ctx, opts); err == nil {
+	if status, err := probeEndpoint(ctx, opts); err == nil && !status.Starting() {
 		return nil
+	} else if err == nil {
+		return waitReady(ctx, opts, time.Now().Add(opts.readyTimeout()))
 	} else if !isProbeConnectionError(err) {
 		return err
 	}
 	if err := startDetached(ctx, opts); err != nil {
 		return err
 	}
+	// Two deadlines, because two different things go wrong. A process that
+	// never answers at all has died — misconfigured, or asked to run a command
+	// it does not have — and there is no point waiting minutes for it. One that
+	// answers "starting" is working, and cutting it off at ten seconds is how a
+	// first run against an empty database looked like a failure.
 	deadline := time.Now().Add(opts.startTimeout())
 	var lastErr error
 	for time.Now().Before(deadline) {
-		err := probeEndpoint(ctx, opts)
+		status, err := probeEndpoint(ctx, opts)
 		if err == nil {
-			return nil
+			if !status.Starting() {
+				return nil
+			}
+			return waitReady(ctx, opts, time.Now().Add(opts.readyTimeout()))
 		}
 		lastErr = err
 		select {
@@ -71,29 +96,76 @@ func EnsureRunning(ctx context.Context, opts LaunchOptions) error {
 		case <-time.After(opts.probeInterval()):
 		}
 	}
-	return fmt.Errorf("local server did not become ready at %s: %w", opts.Endpoint, lastErr)
+	return fmt.Errorf("local server at %s never answered: %w%s", opts.Endpoint, lastErr, opts.logTail())
 }
 
-func probeEndpoint(ctx context.Context, opts LaunchOptions) error {
+// waitReady polls a server that has answered "starting" until it is ready.
+func waitReady(ctx context.Context, opts LaunchOptions, deadline time.Time) error {
+	var last health.Status
+	for time.Now().Before(deadline) {
+		status, err := probeEndpoint(ctx, opts)
+		switch {
+		case err == nil && !status.Starting():
+			return nil
+		case err == nil:
+			// On the step changing, not on every poll: uptime moves with each
+			// answer, so comparing whole statuses reports the same step over
+			// and over.
+			if status.Status != last.Status || status.Phase != last.Phase {
+				opts.progress(status)
+				last = status
+			}
+		case !isProbeConnectionError(err):
+			return err
+		}
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		case <-time.After(opts.probeInterval()):
+		}
+	}
+	phase := last.Phase
+	if phase == "" {
+		phase = "unknown"
+	}
+	return fmt.Errorf("local server at %s did not finish starting (last step: %s)%s", opts.Endpoint, phase, opts.logTail())
+}
+
+// probeEndpoint asks the endpoint how it is. A reachable server answers with a
+// status; anything else is an error, and only a connection error means "not
+// running" (see isProbeConnectionError).
+func probeEndpoint(ctx context.Context, opts LaunchOptions) (health.Status, error) {
 	baseURL, client, err := HTTPClient(opts.Endpoint, nil)
 	if err != nil {
-		return err
+		return health.Status{}, err
 	}
 	probeCtx, cancel := context.WithTimeout(ctx, opts.probeTimeout())
 	defer cancel()
 	req, err := http.NewRequestWithContext(probeCtx, http.MethodGet, baseURL+opts.probePath(), nil)
 	if err != nil {
-		return err
+		return health.Status{}, err
 	}
 	resp, err := client.Do(req)
 	if err != nil {
-		return err
+		return health.Status{}, err
 	}
 	defer resp.Body.Close()
-	if resp.StatusCode < 200 || resp.StatusCode >= 500 {
-		return fmt.Errorf("local server probe returned %s", resp.Status)
+	var status health.Status
+	// A body is not required: an older server, or one behind a proxy that
+	// answers the probe itself, still counts as up.
+	if err := json.NewDecoder(io.LimitReader(resp.Body, 64<<10)).Decode(&status); err != nil {
+		status = health.Status{}
 	}
-	return nil
+	switch {
+	case resp.StatusCode == http.StatusServiceUnavailable && status.Starting():
+		return status, nil
+	case resp.StatusCode < 200 || resp.StatusCode >= 500:
+		return health.Status{}, fmt.Errorf("local server probe returned %s", resp.Status)
+	}
+	if status.Status == "" {
+		status.Status = health.StatusReady
+	}
+	return status, nil
 }
 
 func startDetached(ctx context.Context, opts LaunchOptions) error {
@@ -107,8 +179,18 @@ func startDetached(ctx context.Context, opts LaunchOptions) error {
 	}
 	//nolint:gosec // The command is supplied by trusted CLI configuration for local server startup.
 	cmd := exec.CommandContext(ctx, opts.Command, opts.Args...)
-	cmd.Stdout = nil
-	cmd.Stderr = nil
+	// The child's output went nowhere, so a server that died on startup died
+	// silently and the only symptom was a caller waiting out its timeout on a
+	// socket nothing had bound. It goes to a file instead, truncated per
+	// launch so it always describes the current one, and its tail is what a
+	// failed wait reports.
+	logFile, err := os.OpenFile(opts.logPath(), os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0o600)
+	if err != nil {
+		return fmt.Errorf("open server log: %w", err)
+	}
+	defer logFile.Close()
+	cmd.Stdout = logFile
+	cmd.Stderr = logFile
 	cmd.Stdin = nil
 	cmd.Env = append(os.Environ(), opts.Env...)
 	setDetachedProcess(cmd)
@@ -168,6 +250,40 @@ func (o LaunchOptions) lockPath() string {
 	}
 }
 
+// logPath is where a launched server's output is kept: beside the socket it
+// binds, so it is found the same way the socket is.
+func (o LaunchOptions) logPath() string {
+	if o.LogPath != "" {
+		return o.LogPath
+	}
+	endpoint, err := Parse(o.Endpoint)
+	if err == nil && endpoint.Scheme == "unix" {
+		return endpoint.Value + ".log"
+	}
+	return filepath.Join(os.TempDir(), "discobox-server.log")
+}
+
+// logTail is the end of the launched server's output, for an error to carry.
+// Empty when there is nothing to show, so it can be appended unconditionally.
+func (o LaunchOptions) logTail() string {
+	data, err := os.ReadFile(o.logPath())
+	if err != nil || len(data) == 0 {
+		return ""
+	}
+	const limit = 4 << 10
+	if len(data) > limit {
+		data = data[len(data)-limit:]
+	}
+	return fmt.Sprintf("\n%s said:\n%s", o.Command, strings.TrimRight(string(data), "\n"))
+}
+
+// progress reports a starting server's status, when a caller asked to see it.
+func (o LaunchOptions) progress(status health.Status) {
+	if o.OnProgress != nil {
+		o.OnProgress(status)
+	}
+}
+
 func (o LaunchOptions) probePath() string {
 	if o.ProbePath != "" {
 		return o.ProbePath
@@ -182,11 +298,23 @@ func (o LaunchOptions) probeTimeout() time.Duration {
 	return 500 * time.Millisecond
 }
 
+// startTimeout bounds how long to wait for a launched server to answer at all.
+// Short, because a process that has not answered by now is not coming.
 func (o LaunchOptions) startTimeout() time.Duration {
 	if o.StartTimeout > 0 {
 		return o.StartTimeout
 	}
 	return 10 * time.Second
+}
+
+// readyTimeout bounds how long to wait for a server that is answering
+// "starting" to finish. Generous, because it is doing real work — migrating a
+// database, reaching a registry — and reporting what it is doing while it does.
+func (o LaunchOptions) readyTimeout() time.Duration {
+	if o.ReadyTimeout > 0 {
+		return o.ReadyTimeout
+	}
+	return 5 * time.Minute
 }
 
 func (o LaunchOptions) probeInterval() time.Duration {

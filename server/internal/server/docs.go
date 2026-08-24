@@ -6,6 +6,7 @@ import (
 	"github.com/go-chi/chi/v5"
 
 	rootopenapi "github.com/discobox-ai/discobox/api/openapi"
+	"github.com/discobox-ai/discobox/health"
 )
 
 const scalarDocsHTML = `<!doctype html>
@@ -35,10 +36,15 @@ func RegisterDocsRoutes(router chi.Router) {
 	router.Get("/docs/", serveScalarDocs)
 }
 
-// RegisterHealthRoutes serves lightweight process readiness checks.
+// RegisterHealthRoutes serves process readiness.
+//
+// It reports rather than merely answering: a caller waiting on a server it
+// launched wants to know which server it reached and how long it has been up,
+// and a bare 204 tells it neither. The starting half of the same contract is
+// served by startupHandler before this router exists.
 func RegisterHealthRoutes(router chi.Router) {
-	router.Get("/healthz", func(w http.ResponseWriter, _ *http.Request) {
-		w.WriteHeader(http.StatusNoContent)
+	router.Get(health.Path, func(w http.ResponseWriter, _ *http.Request) {
+		writeHealthStatus(w, http.StatusOK, readyStatus())
 	})
 }
 

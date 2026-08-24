@@ -55,6 +55,60 @@ func Run(ctx context.Context) error {
 		}
 	}()
 
+	// Guest-initiated control-plane connections are served by the same handler
+	// as every other request; only the way the connection arrived differs.
+	controlPlaneStreams := carrierhub.New()
+	defer func() { _ = controlPlaneStreams.Close() }()
+
+	// Bind before initializing, and answer while initializing.
+	//
+	// Everything below this point is slow at least once: opening the database,
+	// migrating it, building the services, reaching a registry to seed the
+	// built-in harness configs. All of it used to happen before anything was
+	// listening, so a client had a refused connection to look at and no way to
+	// tell a server still coming up from one that died on startup — two very
+	// different problems that looked identical, and the reason a CLI could sit
+	// out its whole start timeout with nothing to report.
+	if err := configureIroh(cfg.DataDir, cfg.Listen); err != nil {
+		return err
+	}
+	listeners, err := listenAll(ctx, cfg.Listen)
+	if err != nil {
+		return fmt.Errorf("listen: %w", err)
+	}
+	defer cleanupListeners(listeners)
+	// The hub has no address to log: every connection on it was opened by a
+	// pool guest through its own transport.
+	listeners = append(listeners, serverListener{Listener: controlPlaneStreams, display: "pool control-plane streams"})
+
+	startup := newStartupHandler("opening the database")
+	activity := newActivityTracker()
+	httpServer := &http.Server{
+		Handler:           startup,
+		ReadHeaderTimeout: 10 * time.Second,
+		// No ReadTimeout/WriteTimeout: those set absolute per-request conn
+		// deadlines that survive protocol upgrades (exec attach websockets
+		// proxied to workers) and cut long-lived streams (project events, log
+		// follows) off mid-flight. Liveness comes from ReadHeaderTimeout,
+		// IdleTimeout, and websocket keepalive pings on attach tunnels.
+		IdleTimeout: 120 * time.Second,
+	}
+	// Gracefully shut down on context cancellation (e.g. SIGINT/SIGTERM) so the
+	// listeners are released promptly instead of dying with the process. Armed
+	// before the slow work below, so an interrupt during startup is honored.
+	// ctx is already canceled by the time this fires, so the drain deadline is
+	// derived from a fresh context; using ctx would abort the shutdown at once.
+	go func() { //nolint:gosec // G118: intentional detached context for post-cancellation drain.
+		<-ctx.Done()
+		shutdownCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+		defer cancel()
+		if err := httpServer.Shutdown(shutdownCtx); err != nil {
+			log.Printf("graceful shutdown: %v", err)
+		}
+	}()
+	serveErr := make(chan error, 1)
+	go func() { serveErr <- serveAll(httpServer, listeners) }()
+
 	db, err := database.New(database.Config{
 		Driver:  cfg.DatabaseDriver,
 		DSN:     cfg.DatabaseDSN,
@@ -64,6 +118,7 @@ func Run(ctx context.Context) error {
 		return fmt.Errorf("open database: %w", err)
 	}
 	defer db.Close()
+	startup.setPhase("migrating the database")
 	if err := db.Migrate(ctx); err != nil {
 		return fmt.Errorf("migrate database: %w", err)
 	}
@@ -76,11 +131,6 @@ func Run(ctx context.Context) error {
 		}
 	}
 
-	// Guest-initiated control-plane connections are served by the same handler
-	// as every other request; only the way the connection arrived differs.
-	controlPlaneStreams := carrierhub.New()
-	defer func() { _ = controlPlaneStreams.Close() }()
-
 	// Resolved before the app is built: GET /ssh is an ordinary generated
 	// handler reading services.Services, so the discovery document has to
 	// exist by the time the router does.
@@ -89,6 +139,7 @@ func Run(ctx context.Context) error {
 		return err
 	}
 
+	startup.setPhase("starting services")
 	router, appServices, appStore, shutdownApp, err := NewApp(ctx, db.Write, db.Read, AppOptions{
 		SSHIngress:                     sshIngress,
 		ControlPlaneStreams:            controlPlaneStreams,
@@ -116,44 +167,6 @@ func Run(ctx context.Context) error {
 	}
 	sshd.RegisterConnectRoute(router, sshServer)
 
-	if err := configureIroh(cfg.DataDir, cfg.Listen); err != nil {
-		return err
-	}
-	listeners, err := listenAll(ctx, cfg.Listen)
-	if err != nil {
-		return fmt.Errorf("listen: %w", err)
-	}
-	defer cleanupListeners(listeners)
-	// The hub has no address to log: every connection on it was opened by a
-	// pool guest through its own transport.
-	listeners = append(listeners, serverListener{Listener: controlPlaneStreams, display: "pool control-plane streams"})
-	for _, listener := range listeners {
-		log.Printf("listening on %s", listener.display)
-		// An iroh endpoint is also printed as a ticket. The URL is the form to
-		// read — its endpoint ID is what goes in a peer's authorized_ids — and
-		// the ticket is the form to paste, with no query string for a shell or
-		// a chat client to mangle. Both dial the same server.
-		if ticket, err := irohTicket(listener.display); err == nil {
-			log.Printf("or dial it with the ticket %s", ticket)
-		}
-		log.Printf("openapi spec available at %s/openapi.yaml", listener.display)
-		log.Printf("api docs available at %s/docs", listener.display)
-	}
-	handler := otelhttp.NewHandler(router, "discobox-server")
-	activity := newActivityTracker()
-	if cfg.AutoShutdownTimeout > 0 {
-		handler = activity.Wrap(handler)
-	}
-	httpServer := &http.Server{
-		Handler:           handler,
-		ReadHeaderTimeout: 10 * time.Second,
-		// No ReadTimeout/WriteTimeout: those set absolute per-request conn
-		// deadlines that survive protocol upgrades (exec attach websockets
-		// proxied to workers) and cut long-lived streams (project events, log
-		// follows) off mid-flight. Liveness comes from ReadHeaderTimeout,
-		// IdleTimeout, and websocket keepalive pings on attach tunnels.
-		IdleTimeout: 120 * time.Second,
-	}
 	router.Post("/shutdown", func(w http.ResponseWriter, _ *http.Request) {
 		w.WriteHeader(http.StatusAccepted)
 		go func() {
@@ -168,18 +181,6 @@ func Run(ctx context.Context) error {
 	if cfg.AutoShutdownTimeout > 0 {
 		go activity.ShutdownWhenIdle(ctx, httpServer, cfg.AutoShutdownTimeout)
 	}
-	// Gracefully shut down on context cancellation (e.g. SIGINT/SIGTERM) so the
-	// listeners are released promptly instead of dying with the process.
-	// ctx is already canceled by the time this fires, so the drain deadline is
-	// derived from a fresh context; using ctx would abort the shutdown at once.
-	go func() { //nolint:gosec // G118: intentional detached context for post-cancellation drain.
-		<-ctx.Done()
-		shutdownCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
-		defer cancel()
-		if err := httpServer.Shutdown(shutdownCtx); err != nil {
-			log.Printf("graceful shutdown: %v", err)
-		}
-	}()
 	// Runs however serve returns, not only on cancellation, so a listener error
 	// tears the backends down too. The HTTP server has already stopped
 	// accepting by then, so nothing new arrives mid-teardown.
@@ -190,7 +191,28 @@ func Run(ctx context.Context) error {
 			log.Printf("shut down services: %v", err)
 		}
 	}()
-	return serveAll(httpServer, listeners)
+
+	handler := otelhttp.NewHandler(router, "discobox-server")
+	if cfg.AutoShutdownTimeout > 0 {
+		handler = activity.Wrap(handler)
+	}
+	// From here the endpoints serve the API instead of a startup status. The
+	// listeners have been accepting since before the database was opened, so
+	// nothing rebinds and no client is dropped.
+	startup.setReady(handler)
+	for _, listener := range listeners {
+		log.Printf("listening on %s", listener.display)
+		// An iroh endpoint is also printed as a ticket. The URL is the form to
+		// read — its endpoint ID is what goes in a peer's authorized_ids — and
+		// the ticket is the form to paste, with no query string for a shell or
+		// a chat client to mangle. Both dial the same server.
+		if ticket, err := irohTicket(listener.display); err == nil {
+			log.Printf("or dial it with the ticket %s", ticket)
+		}
+		log.Printf("openapi spec available at %s/openapi.yaml", listener.display)
+		log.Printf("api docs available at %s/docs", listener.display)
+	}
+	return <-serveErr
 }
 
 type serverListener struct {
