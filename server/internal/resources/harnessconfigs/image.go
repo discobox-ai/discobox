@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"runtime"
 	"strings"
 
 	"github.com/discobox-ai/discobox/devimage"
@@ -11,6 +12,7 @@ import (
 	services "github.com/discobox-ai/discobox/server/internal/services"
 	"github.com/google/go-containerregistry/pkg/authn"
 	"github.com/google/go-containerregistry/pkg/name"
+	v1 "github.com/google/go-containerregistry/pkg/v1"
 	"github.com/google/go-containerregistry/pkg/v1/remote"
 	dockerclient "github.com/moby/moby/client"
 )
@@ -37,7 +39,11 @@ func (defaultImageInspector) Inspect(ctx context.Context, imageRef string) (imag
 	if err != nil {
 		return imageMetadata{}, fmt.Errorf("parse harness image %q: %w", imageRef, err)
 	}
-	image, err := remote.Image(ref, remote.WithContext(ctx), remote.WithAuthFromKeychain(authn.DefaultKeychain))
+	image, err := remote.Image(ref,
+		remote.WithContext(ctx),
+		remote.WithAuthFromKeychain(authn.DefaultKeychain),
+		remote.WithPlatform(poolPlatform()),
+	)
 	if err != nil {
 		return imageMetadata{}, fmt.Errorf("inspect harness image %q: %w", imageRef, err)
 	}
@@ -53,6 +59,25 @@ func (defaultImageInspector) Inspect(ctx context.Context, imageRef string) (imag
 		return imageMetadata{}, fmt.Errorf("resolve harness image digest %q: %w", imageRef, err)
 	}
 	return parseImageMetadata(digest.String(), config.Config.Labels)
+}
+
+// poolPlatform is the platform a harness image is inspected for.
+//
+// A multi-arch image has no single config digest — it has one per architecture
+// — so asking for the image without saying which one is asking the wrong
+// question. go-containerregistry answers linux/amd64 when nothing says
+// otherwise, which is how an Apple Silicon Mac came to pin the amd64 digest of
+// a harness image its arm64 pool would never hold: the sandbox refused to
+// launch, reporting that the tag "now resolves to" a digest that had never
+// been anything else.
+//
+// The control plane's own architecture, and linux regardless of the control
+// plane's OS: the pool is a Linux machine, and on every provider that runs one
+// on this host — vz, wslc, libkrun, docker — it is this machine's architecture.
+// A cloud pool of a different architecture is not answered by this, and cannot
+// be by any single digest recorded once per harness config.
+func poolPlatform() v1.Platform {
+	return v1.Platform{OS: "linux", Architecture: runtime.GOARCH}
 }
 
 // inspectLocalImage inspects imageRef via the local Docker daemon. found is true
