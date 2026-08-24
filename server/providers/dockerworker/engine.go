@@ -445,6 +445,11 @@ func (e *Engine) createPoolContainer(ctx context.Context, cli *client.Client, po
 	if mint == nil {
 		return nil, fmt.Errorf("worker bootstrap minter is required")
 	}
+	// Before minting: a first pull is the longest step here, and a bootstrap
+	// token minted ahead of it spends its lifetime waiting on the registry.
+	if err := e.ensureImage(ctx, cli); err != nil {
+		return nil, err
+	}
 	bootstrap, err := mint(ctx)
 	if err != nil {
 		return nil, err

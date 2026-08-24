@@ -88,6 +88,18 @@ the engine":
 The engine owns Docker readiness waiting after `EnsureVM` (ping with a
 deadline), so drivers never implement boot polling.
 
+## Pool Image Acquisition
+
+Docker does not fetch on container create: an image the daemon does not hold is
+a plain "No such image" error. The engine therefore inspects the configured pool
+image and pulls it if it is absent, before creating the pool-agent container or
+the console (`Engine.ensureImage`). This is the same rule the pool agent applies
+one level down to the sandbox image, and it is what makes a released binary work
+on a machine that has never built anything.
+
+Inspect-then-pull rather than pull-always, because the development path below
+places images that exist on no registry.
+
 ## Development Image Convergence
 
 The development image watcher publishes a versioned manifest of
