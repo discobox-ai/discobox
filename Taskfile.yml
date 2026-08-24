@@ -50,7 +50,13 @@ vars:
         repo="${repo%.git}"
       fi
       printf %s "$repo"
-  # Whether the tag being released is a stable release: exactly vMAJOR.MINOR.PATCH.
+  # The tag being acted on, in order: `task <target> -- v1.2.3`, RELEASE_TAG=,
+  # then the tag a workflow is running for. Resolved once so a tag typed on the
+  # command line reaches STABLE_RELEASE below as well as the task using it —
+  # they disagreeing is how `task brew:publish -- v1.2.3` would quietly decide
+  # v1.2.3 was a prerelease.
+  TAG: '{{if .CLI_ARGS}}{{.CLI_ARGS}}{{else if .RELEASE_TAG}}{{.RELEASE_TAG}}{{else}}{{.GITHUB_REF_NAME | default ""}}{{end}}'
+  # Whether that tag is a stable release: exactly vMAJOR.MINOR.PATCH.
   # A prerelease (v1.2.3-rc1), a partial tag (v1.2), or anything else is not.
   #
   # Computed once because three things treat the two differently — whether
@@ -60,7 +66,7 @@ vars:
   # runner, which has neither sed nor grep.
   STABLE_RELEASE:
     sh: |
-      tag="${RELEASE_TAG:-${GITHUB_REF_NAME:-}}"
+      tag="{{.TAG}}"
       case "$tag" in
         v*.*.*)
           rest="${tag#v}"
@@ -669,7 +675,7 @@ tasks:
       # and release:publish resolve theirs.
       PIN_TAG:
         sh: |
-          tag="${RELEASE_TAG:-${GITHUB_REF_NAME:-}}"
+          tag="{{.TAG}}"
           case "$tag" in
             v*) printf %s "$tag" ;;
             *) printf %s "" ;;
@@ -783,7 +789,7 @@ tasks:
     cmds:
       - |
         set -eu
-        tag="${RELEASE_TAG:-${GITHUB_REF_NAME:-}}"
+        tag="{{.TAG}}"
         if [ -z "{{.STABLE_RELEASE}}" ]; then
           echo "$tag is not a stable release; the tap still points at the last one" >&2
           exit 0
@@ -814,10 +820,7 @@ tasks:
     cmds:
       - |
         set -eu
-        tag="{{.RELEASE_TAG}}"
-        if [ -z "$tag" ]; then
-          tag="${GITHUB_REF_NAME:-}"
-        fi
+        tag="{{.TAG}}"
         case "$tag" in
           v*) ;;
           *) echo "release:publish: set RELEASE_TAG=v<version> (or run from a v* tag)" >&2; exit 1 ;;
@@ -854,10 +857,7 @@ tasks:
     cmds:
       - |
         set -eu
-        tag="{{.RELEASE_TAG}}"
-        if [ -z "$tag" ]; then
-          tag="${GITHUB_REF_NAME:-}"
-        fi
+        tag="{{.TAG}}"
         case "$tag" in
           v*) ;;
           *) echo "brew:formula: set RELEASE_TAG=v<version> (or run from a v* tag)" >&2; exit 1 ;;
@@ -946,10 +946,7 @@ tasks:
     cmds:
       - |
         set -eu
-        tag="{{.RELEASE_TAG}}"
-        if [ -z "$tag" ]; then
-          tag="${GITHUB_REF_NAME:-}"
-        fi
+        tag="{{.TAG}}"
         case "$tag" in
           v*) ;;
           *) echo "release:image: set RELEASE_TAG=v<version> (or run from a v* tag)" >&2; exit 1 ;;
