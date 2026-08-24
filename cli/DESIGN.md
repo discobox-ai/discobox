@@ -170,6 +170,11 @@ Advanced configuration and low-level resource commands are grouped beneath the
 visible `discobox admin` command: `project`, `sandbox`, `terminal`, `exec`,
 `provider`, `pool`, `job`, `harnesses`, and `hooks` are not root commands.
 
+The global `--project`/`-p` flag is hidden from help alongside `--chdir`: it
+still works everywhere, and the launcher and scripts still pass it, but a
+project is advanced configuration and belongs with the rest of it under
+`discobox admin`.
+
 `discobox admin project` is the only command group not scoped by the global
 `--project` flag: its arguments name the project being acted on, resolved by
 `resolveProjectID` from the same selectors `-p` accepts (the `default` alias, a

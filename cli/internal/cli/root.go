@@ -98,6 +98,11 @@ func newRootCommand() (*cobra.Command, *App) {
 	}
 	cmd.PersistentFlags().StringVar(&app.serverURL, "server", envOrDefault("DISCOBOX_SERVER", endpoint.DefaultEndpoint()), "Discobox API server endpoint")
 	cmd.PersistentFlags().StringVarP(&app.projectID, "project", "p", envOrDefault("DISCOBOX_PROJECT", defaultProjectAlias), "Project ID for this invocation; use default for the user's default project")
+	// Advanced: everything a project is for lives under `discobox admin`, and a
+	// user with one project — which is everyone until they make a second —
+	// gains nothing from a flag on every command's help. It keeps working for
+	// the scripts and the launcher that pass it; it just stops being offered.
+	_ = cmd.PersistentFlags().MarkHidden("project")
 	cmd.PersistentFlags().StringVarP(&app.source, "chdir", "C", ".", "Source directory or Git repository to act on, optionally with @REF; its Git repository root identifies the discoboxes ls lists and run creates")
 	// Beta: the flag works but is undocumented until the source-selection UX is
 	// settled, so it stays out of help text and examples.
