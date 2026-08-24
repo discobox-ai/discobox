@@ -87,8 +87,6 @@ jobs:
       contents: write
     env:
       GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-      # The tap is a separate repository; GITHUB_TOKEN is scoped to this one.
-      HOMEBREW_TAP_TOKEN: ${{ secrets.HOMEBREW_TAP_TOKEN }}
     steps:
       - uses: actions/checkout@v6.0.2
       # Both matrix legs land in one directory; release:publish uploads
@@ -102,11 +100,3 @@ jobs:
         with:
           target: release:publish
 
-      # The formula is generated from the assets the release just uploaded, so
-      # this can only run after them. brew:publish decides whether the tag
-      # deserves it — a prerelease leaves the tap on the last stable version.
-      #
-      # Plain steps rather than the composite action: it installs Nix, which a
-      # job can only do once, and by here it already has.
-      - run: nix develop -c go tool task brew:formula
-      - run: nix develop -c go tool task brew:publish
