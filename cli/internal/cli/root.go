@@ -17,6 +17,7 @@ import (
 	"github.com/discobox-ai/discobox/cli/internal/keys"
 	"github.com/discobox-ai/discobox/controlplane"
 	"github.com/discobox-ai/discobox/endpoint"
+	"github.com/discobox-ai/discobox/health"
 	discoboxserver "github.com/discobox-ai/discobox/server"
 	"github.com/discobox-ai/discobox/version"
 )
@@ -255,12 +256,46 @@ func (a *App) ensureLocalServer(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
-	return endpoint.EnsureRunning(ctx, endpoint.LaunchOptions{
-		Endpoint: a.serverURL,
-		Command:  command,
-		Args:     args,
-		Env:      localServerEnv(a.serverURL),
+	started, err := endpoint.EnsureRunning(ctx, endpoint.LaunchOptions{
+		Endpoint:   a.serverURL,
+		Command:    command,
+		Args:       args,
+		Env:        localServerEnv(a.serverURL),
+		OnProgress: a.reportServerStartup,
 	})
+	if err != nil {
+		return err
+	}
+	if started {
+		// A server started this way outlives the command that wanted it, which
+		// is the point and also something the user did not ask for. Say that it
+		// happened and how to undo it. A caller that found one already up says
+		// nothing.
+		a.notify("started the discobox server in the background (stop it with: discobox admin server shutdown)")
+	}
+	return nil
+}
+
+// reportServerStartup says what the server this CLI just launched is doing.
+//
+// Starting one can take a while on a first run — a database to migrate, a
+// registry to reach for the built-in harness images — and the whole of that
+// used to be silent, so the only two outcomes a user saw were a prompt that
+// came back late and a timeout that explained nothing.
+func (a *App) reportServerStartup(status health.Status) {
+	phase := status.Phase
+	if phase == "" {
+		phase = "starting"
+	}
+	a.notify("starting discobox server: " + phase)
+}
+
+// notify writes one line about something done on the user's behalf.
+func (a *App) notify(text string) {
+	if a.quiet || a.errOut == nil {
+		return
+	}
+	fmt.Fprintln(a.errOut, text)
 }
 
 // localServerEnv configures the server this CLI launches for itself. It listens

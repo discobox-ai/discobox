@@ -29,7 +29,7 @@ func TestEnsureRunningReportsWhyTheServerDied(t *testing.T) {
 		ProbeTimeout:  100 * time.Millisecond,
 	}
 
-	err := EnsureRunning(context.Background(), opts)
+	_, err := EnsureRunning(context.Background(), opts)
 	if err == nil {
 		t.Fatal("expected an error")
 	}
@@ -81,8 +81,13 @@ func TestEnsureRunningWaitsOutAStartingServer(t *testing.T) {
 		ReadyTimeout:  10 * time.Second,
 		OnProgress:    func(s health.Status) { phases = append(phases, s.Phase) },
 	}
-	if err := EnsureRunning(context.Background(), opts); err != nil {
+	started, err := EnsureRunning(context.Background(), opts)
+	if err != nil {
 		t.Fatal(err)
+	}
+	// It waited on the server that was already there rather than starting one.
+	if started {
+		t.Fatal("EnsureRunning reported starting a server that was already running")
 	}
 	if len(phases) != 1 || phases[0] != "migrating the database" {
 		t.Fatalf("phases = %v, want the starting phase reported exactly once", phases)
@@ -113,8 +118,12 @@ func TestEnsureRunningAcceptsAServerWithNoStatusBody(t *testing.T) {
 		Args:         []string{"-c", "exit 7"}, // must never run
 		ProbeTimeout: time.Second,
 	}
-	if err := EnsureRunning(context.Background(), opts); err != nil {
+	started, err := EnsureRunning(context.Background(), opts)
+	if err != nil {
 		t.Fatal(err)
+	}
+	if started {
+		t.Fatal("EnsureRunning reported starting a server that was already running")
 	}
 }
 

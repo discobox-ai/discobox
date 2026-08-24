@@ -75,7 +75,7 @@ func TestEnsureRunningUsesExistingUnixServer(t *testing.T) {
 		_ = server.Serve(listener)
 	}()
 
-	if err := EnsureRunning(context.Background(), LaunchOptions{
+	if _, err := EnsureRunning(context.Background(), LaunchOptions{
 		Endpoint:     endpoint,
 		Command:      "",
 		ProbeTimeout: time.Second,

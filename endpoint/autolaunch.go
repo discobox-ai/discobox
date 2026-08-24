@@ -46,33 +46,38 @@ type LaunchOptions struct {
 // EnsureRunning starts the configured command when the local endpoint is not
 // accepting requests. It serializes startup with a filesystem lock so concurrent
 // CLIs do not spawn duplicate local servers.
-func EnsureRunning(ctx context.Context, opts LaunchOptions) error {
+//
+// It reports whether this call is what started the server. A caller that
+// launched one has left a process running on the user's machine that outlives
+// it, which is worth saying out loud; one that found a server already up has
+// nothing to report.
+func EnsureRunning(ctx context.Context, opts LaunchOptions) (bool, error) {
 	if opts.Endpoint == "" {
 		opts.Endpoint = DefaultEndpoint()
 	}
 	// A server that is already up needs nothing, and one that is still starting
 	// needs waiting on rather than a second process started alongside it.
 	if status, err := probeEndpoint(ctx, opts); err == nil && !status.Starting() {
-		return nil
+		return false, nil
 	} else if err == nil {
-		return waitReady(ctx, opts, time.Now().Add(opts.readyTimeout()))
+		return false, waitReady(ctx, opts, time.Now().Add(opts.readyTimeout()))
 	} else if !isProbeConnectionError(err) {
-		return err
+		return false, err
 	}
 	unlock, err := acquireLaunchLock(opts.lockPath())
 	if err != nil {
-		return err
+		return false, err
 	}
 	defer unlock()
 	if status, err := probeEndpoint(ctx, opts); err == nil && !status.Starting() {
-		return nil
+		return false, nil
 	} else if err == nil {
-		return waitReady(ctx, opts, time.Now().Add(opts.readyTimeout()))
+		return false, waitReady(ctx, opts, time.Now().Add(opts.readyTimeout()))
 	} else if !isProbeConnectionError(err) {
-		return err
+		return false, err
 	}
 	if err := startDetached(ctx, opts); err != nil {
-		return err
+		return false, err
 	}
 	// Two deadlines, because two different things go wrong. A process that
 	// never answers at all has died — misconfigured, or asked to run a command
@@ -85,18 +90,18 @@ func EnsureRunning(ctx context.Context, opts LaunchOptions) error {
 		status, err := probeEndpoint(ctx, opts)
 		if err == nil {
 			if !status.Starting() {
-				return nil
+				return true, nil
 			}
-			return waitReady(ctx, opts, time.Now().Add(opts.readyTimeout()))
+			return true, waitReady(ctx, opts, time.Now().Add(opts.readyTimeout()))
 		}
 		lastErr = err
 		select {
 		case <-ctx.Done():
-			return ctx.Err()
+			return true, ctx.Err()
 		case <-time.After(opts.probeInterval()):
 		}
 	}
-	return fmt.Errorf("local server at %s never answered: %w%s", opts.Endpoint, lastErr, opts.logTail())
+	return true, fmt.Errorf("local server at %s never answered: %w%s", opts.Endpoint, lastErr, opts.logTail())
 }
 
 // waitReady polls a server that has answered "starting" until it is ready.
