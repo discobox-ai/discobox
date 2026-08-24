@@ -55,7 +55,35 @@ vars:
   # command line reaches STABLE_RELEASE below as well as the task using it —
   # they disagreeing is how `task brew:publish -- v1.2.3` would quietly decide
   # v1.2.3 was a prerelease.
-  TAG: '{{if .CLI_ARGS}}{{.CLI_ARGS}}{{else if .RELEASE_TAG}}{{.RELEASE_TAG}}{{else}}{{.GITHUB_REF_NAME | default ""}}{{end}}'
+  # The release tag: `-- v1.2.3` on the command line, else RELEASE_TAG, else the
+  # tag the workflow is running from.
+  #
+  # The last argument that is not a flag, so `-- --prerelease v1.2.3` still
+  # names v1.2.3 (see ALLOW_PRERELEASE).
+  TAG:
+    sh: |
+      args="{{.CLI_ARGS}}"
+      tag=""
+      for word in $args; do
+        case "$word" in
+          -*) ;;
+          *) tag="$word" ;;
+        esac
+      done
+      if [ -z "$tag" ]; then tag="${RELEASE_TAG:-}"; fi
+      if [ -z "$tag" ]; then tag="${GITHUB_REF_NAME:-}"; fi
+      printf %s "$tag"
+  # Publishing a prerelease to the tap, said out loud: `task brew:publish --
+  # --prerelease v1.2.3-alpha.4`. Nothing automatic sets it, which is the point
+  # — an alpha reaches the tap only because somebody typed the flag.
+  ALLOW_PRERELEASE:
+    sh: |
+      args="{{.CLI_ARGS}}"
+      for word in $args; do
+        case "$word" in
+          --prerelease) printf yes ;;
+        esac
+      done
   # Whether that tag is a stable release: exactly vMAJOR.MINOR.PATCH.
   # A prerelease (v1.2.3-rc1), a partial tag (v1.2), or anything else is not.
   #
@@ -791,45 +819,65 @@ tasks:
         [ "$found" -gt 0 ] || { echo "release:verify: no binaries found" >&2; exit 1; }
 
   brew:publish:
-    desc: Push the Homebrew formula for a stable RELEASE_TAG to the tap
-    # Only a stable release. A user who types `brew install discobox` is asking
-    # for the version they should be running, and an alpha published under the
-    # same formula name would silently become that — the tap has one channel,
-    # not two.
+    desc: Push the Homebrew formula for a tag to the tap (task brew:publish -- [--prerelease] TAG)
+    # Nothing automatic runs this. The tap updates itself from this repository's
+    # public releases (see its update-formula workflow), which is why no token
+    # for it is stored here; this is the button for publishing a tag the tap's
+    # own rule will not pick up, and for not waiting out its interval.
     #
-    # The tap is a different repository, so the release job's own GITHUB_TOKEN
-    # cannot write to it. HOMEBREW_TAP_TOKEN carries that permission and nothing
-    # else; without it a stable release fails here rather than leaving the
-    # formula quietly a version behind.
+    # Writing uses the operator's own GitHub credentials through gh, so running
+    # it requires being someone who may already write to the tap.
     vars:
       TAP_REPO: '{{.TAP_REPO | default "discobox-ai/homebrew-tap"}}'
+      FORMULA: '{{.BREW_OUT | default "build/discobox.rb"}}'
     cmds:
+      # Before generating: refusing after downloading a release's assets wastes
+      # the download and reads like a failure rather than a decision.
       - |
         set -eu
         tag="{{.TAG}}"
-        if [ -z "{{.STABLE_RELEASE}}" ]; then
-          echo "$tag is not a stable release; the tap still points at the last one" >&2
-          exit 0
-        fi
-        if [ -z "${HOMEBREW_TAP_TOKEN:-}" ]; then
-          echo "brew:publish: HOMEBREW_TAP_TOKEN is required to push to {{.TAP_REPO}}" >&2
+        case "$tag" in
+          v*) ;;
+          *) echo "brew:publish: expected a v* tag, got '$tag'" >&2; exit 1 ;;
+        esac
+        # The tap has one channel, and `brew install discobox` should give the
+        # version people are meant to run — so a prerelease reaching it is a
+        # decision somebody makes out loud, not a default.
+        if [ -z "{{.STABLE_RELEASE}}" ] && [ -z "{{.ALLOW_PRERELEASE}}" ]; then
+          echo "brew:publish: $tag is a prerelease and the tap serves one channel." >&2
+          echo "Publish it anyway with: task brew:publish -- --prerelease $tag" >&2
           exit 1
         fi
+      - task: brew:formula
+        vars: { BREW_OUT: '{{.FORMULA}}' }
+      - |
+        set -eu
+        tag="{{.TAG}}"
         work="$(mktemp -d)"
         trap 'rm -rf "$work"' EXIT
-        git clone --depth 1 "https://x-access-token:${HOMEBREW_TAP_TOKEN}@github.com/{{.TAP_REPO}}.git" "$work/tap"
+        # gh holds the credential; git is told to ask it rather than whatever
+        # helper the operator's global config names. Through the environment
+        # rather than -c, because the helper value contains spaces and every git
+        # command below needs it.
+        export GIT_CONFIG_COUNT=2
+        export GIT_CONFIG_KEY_0=credential.helper GIT_CONFIG_VALUE_0=
+        export GIT_CONFIG_KEY_1=credential.helper GIT_CONFIG_VALUE_1='!gh auth git-credential'
+        git clone --depth 1 "https://github.com/{{.TAP_REPO}}.git" "$work/tap"
         mkdir -p "$work/tap/Formula"
-        cp "{{.BREW_OUT | default "build/discobox.rb"}}" "$work/tap/Formula/discobox.rb"
-        if git -C "$work/tap" diff --quiet -- Formula/discobox.rb; then
+        cp "{{.FORMULA}}" "$work/tap/Formula/discobox.rb"
+        # Staged before comparing: git does not track empty directories, so on a
+        # tap that has never carried a formula this is an untracked file, and an
+        # unstaged diff of one is empty — which once reported a push that never
+        # happened.
+        git -C "$work/tap" add Formula/discobox.rb
+        if git -C "$work/tap" diff --cached --quiet; then
           echo "the tap already serves $tag"
           exit 0
         fi
-        git -C "$work/tap" add Formula/discobox.rb
         git -C "$work/tap" -c user.name="discobox release" -c user.email="noreply@discobox.ai" \
-          commit -q -m "discobox $tag" -m "Generated by \`task brew:formula\` from the assets $tag uploaded."
+          commit -q -m "discobox $tag" -m "Generated by \`task brew:publish\` from the assets $tag uploaded."
         git -C "$work/tap" push -q origin HEAD:main
         echo "the tap now serves $tag"
-
   release:publish:
     desc: Create the GitHub release for RELEASE_TAG and upload build/release/bin
     # Consumes whatever populated build/release/bin, so the fan-out that fills
