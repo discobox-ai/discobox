@@ -905,3 +905,18 @@ func TestRepairPointsAnArchivedBoxAtUnarchive(t *testing.T) {
 	}
 	t.Fatal("repair should stay on the menu with its reason")
 }
+
+// The repaint is the window's own key, not a pane's: it redraws from whatever
+// screen it is pressed on, and costs that screen nothing.
+func TestRepaintWorksOffThePanes(t *testing.T) {
+	m := newTestModel(t, newFakeSource(testSandboxes()...))
+	send(t, m, typeString("fix the reaper")...)
+
+	_, cmd := m.Update(key("ctrl+l"))
+	if !repaints(cmd) {
+		t.Fatal("ctrl+l in the prompt should redraw the window")
+	}
+	if got := m.prompt.Value(); got != "fix the reaper" {
+		t.Fatalf("prompt = %q, want the repaint to leave it alone", got)
+	}
+}

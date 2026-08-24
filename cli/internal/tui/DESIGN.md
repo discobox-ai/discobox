@@ -525,6 +525,19 @@ second key of a leader pair matches with or without Ctrl held. Typing the
 leader itself takes it twice in full: its bare letter is `a` under the default
 Ctrl-A, and that is attach.
 
+**Ctrl-L repaints, and is not consumed doing it** (`repaintKey`, the
+`tea.KeyPressMsg` case in `update`). The redraw is `tea.ClearScreen`: Bubble
+Tea throws away its picture of the screen and writes every cell again, which is
+what clears clutter written over the window by something that was not the
+window. It cannot clear what a *pane* is showing — that is drawn from the
+emulator's grid and would be drawn from it again identically — so the key is
+batched with the normal dispatch rather than returned instead of it, and in a
+pane goes on to the far end (`termpane` reserves nothing for Ctrl-L). One press,
+two repaints: the window's own, and the application's. It is handled in `update`
+rather than in `updateKey` because it routes to nobody; every other screen —
+a dialog, the options panel, the harnesses — gets the redraw for the same
+reason, without any of them having to know the key exists.
+
 **The leader is configurable, and it is not this package's.** `--leader`/
 `DISCOBOX_LEADER` (`internal/keys.NormalizeLeader`, `WithLeader`) because the
 leader is the key that *collides* — it has to be a chord nothing you run in a

@@ -244,6 +244,15 @@ func TestKeysReachTheFarEnd(t *testing.T) {
 	if got := stream.sent(t, "\x03"); !strings.Contains(got, "\x03") {
 		t.Fatalf("sent %q, want ETX for ctrl+c", got)
 	}
+
+	// Ctrl-L is the far end's like any other. A host that repaints on it
+	// repaints its own frame; what the pane is showing is the emulator's grid,
+	// which redrawing cannot change — only the application can, and only if the
+	// key reaches it.
+	m.Update(tea.KeyPressMsg{Code: 'l', Mod: tea.ModCtrl})
+	if got := stream.sent(t, "\x0c"); !strings.Contains(got, "\x0c") {
+		t.Fatalf("sent %q, want FF for ctrl+l", got)
+	}
 }
 
 // Paste goes through the emulator so the application's own bracketed-paste mode

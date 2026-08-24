@@ -600,11 +600,24 @@ func (m *Model) update(msg tea.Msg) tea.Cmd {
 		return m.advanceShimmer(msg)
 
 	case tea.KeyPressMsg:
+		// Ctrl-L repaints, and is not consumed doing it. The redraw here is
+		// the window's own — Bubble Tea throws its picture of the screen away
+		// and draws every cell again, which is what clears clutter written
+		// over the window by something that was not the window. It cannot
+		// clear what a pane is showing, because that is drawn from the
+		// emulator's grid and would be drawn from it again identically; only
+		// the program on the far end can redraw that, so the key goes on to
+		// whatever is focused as well. In a pane the two repaints are one
+		// press: the window's, and the box's.
+		var repaint tea.Cmd
+		if keyName(msg) == repaintKey {
+			repaint = tea.ClearScreen
+		}
 		cmd := m.updateKey(msg)
 		// The composer's height is a function of its contents, so geometry is
 		// recomputed after every key rather than only on a resize.
 		m.layout()
-		return cmd
+		return tea.Batch(repaint, cmd)
 	}
 
 	// Anything the window itself does not handle goes to whatever is focused.
@@ -618,6 +631,12 @@ func (m *Model) update(msg tea.Msg) tea.Cmd {
 	m.prompt, cmd = m.prompt.Update(msg)
 	return cmd
 }
+
+// repaintKey redraws the window. It is Ctrl-L because that is the repaint on
+// every terminal there has been — readline's, vi's, screen's, tmux's — and a
+// window drawn over by something outside it is exactly the moment a person
+// reaches for it without thinking.
+const repaintKey = "ctrl+l"
 
 // report sets the status line. It is the one path a handler uses to say what
 // happened, so a message can never outlive the key that produced it.
@@ -2200,6 +2219,10 @@ func (m *Model) helpText() string {
 	return strings.Join([]string{
 		"The window opens in the prompt, because starting something new is",
 		"what you are usually here for. Everything else is one key away.",
+		"",
+		"    Ctrl-L         repaint, on any screen. In a pane the key reaches",
+		"                   the program in it as well, so the window and what",
+		"                   the box is drawing come back together",
 		"",
 		"───────────────────────────────────────────────────────────────",
 		"In the prompt",

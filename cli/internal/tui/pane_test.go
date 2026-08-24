@@ -1717,3 +1717,20 @@ func TestAPaneWithNoVerdictIsSimplyFinished(t *testing.T) {
 		t.Fatalf("status = %q failed = %v, want it simply finished", m.overlay.status, m.overlay.failed)
 	}
 }
+
+// Ctrl-L repaints, and is not consumed doing it. The window redraws itself,
+// which is what clears clutter written over it from outside; the key goes on to
+// the program in the pane as well, because what the pane is showing is drawn
+// from the emulator's grid and only the far end can redraw that.
+func TestRepaintRedrawsTheWindowAndReachesTheBox(t *testing.T) {
+	ds := newFakeSource(testSandboxes()...)
+	_, m, term := openWorkspace(t, ds, "enter")
+
+	_, cmd := m.Update(key("ctrl+l"))
+	if !repaints(cmd) {
+		t.Fatal("ctrl+l in a pane should redraw the window")
+	}
+	if got := term.typed("\x0c"); !strings.Contains(got, "\x0c") {
+		t.Fatalf("typed %q, want ctrl+l to reach the box too", got)
+	}
+}

@@ -719,6 +719,30 @@ func runQuickly(cmd tea.Cmd) (tea.Msg, bool) {
 	}
 }
 
+// repaints reports whether a command carries Bubble Tea's whole-screen redraw.
+//
+// The message is unexported, so it is matched against the one tea.ClearScreen
+// itself produces rather than by name; both are empty structs, and comparing
+// them is the only handle a test has on it.
+func repaints(cmd tea.Cmd) bool {
+	if cmd == nil {
+		return false
+	}
+	msg, ok := runQuickly(cmd)
+	if !ok || msg == nil {
+		return false
+	}
+	if batch, ok := msg.(tea.BatchMsg); ok {
+		for _, sub := range batch {
+			if repaints(sub) {
+				return true
+			}
+		}
+		return false
+	}
+	return msg == tea.ClearScreen()
+}
+
 // key builds the key press a terminal would send for a keystroke, in the two
 // shapes the launcher has to cope with: a printable character carries its text,
 // and everything else is a code.
@@ -756,6 +780,8 @@ func key(spec string) tea.KeyPressMsg {
 		return tea.KeyPressMsg{Code: tea.KeyRight, Mod: tea.ModCtrl}
 	case "ctrl+b":
 		return tea.KeyPressMsg{Code: 'b', Mod: tea.ModCtrl}
+	case "ctrl+l":
+		return tea.KeyPressMsg{Code: 'l', Mod: tea.ModCtrl}
 	case "ctrl+a":
 		return tea.KeyPressMsg{Code: 'a', Mod: tea.ModCtrl}
 	case "ctrl+d":
