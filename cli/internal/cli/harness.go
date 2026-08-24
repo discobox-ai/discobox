@@ -293,9 +293,22 @@ func (a *App) runHarnessConfigure(ctx context.Context, client *apiclientgen.Clie
 		return nil, fmt.Errorf("start configure: %w", err)
 	}
 
-	fmt.Fprintf(stderr, "Running configure discobox %s, waiting for it to start...\n", id.RandomPart(sandbox.ID))
-	if _, err := a.waitForSandboxCtx(ctx, client, projectID, sandbox.ID, 2*time.Minute); err != nil {
-		return nil, fmt.Errorf("configure discobox failed to start: %w", err)
+	// The same narration an attach gets (ADR 0060). It is the same wait, behind
+	// the same image pull, and on a first run that pull is the longest thing
+	// the user will sit through — "waiting for it to start" says nothing for
+	// the minutes it can take.
+	name := "configure discobox " + id.RandomPart(sandbox.ID)
+	status := newStatusLine(stderr)
+	status.set(name + ": starting")
+	watching, stopWatching := context.WithCancel(ctx)
+	go a.watchProvisioning(watching, projectID, sandbox.ID, func(line string) {
+		status.set(name + ": " + line)
+	})
+	_, waitErr := a.waitForSandboxCtx(ctx, client, projectID, sandbox.ID, 2*time.Minute)
+	stopWatching()
+	status.clear()
+	if waitErr != nil {
+		return nil, fmt.Errorf("configure discobox failed to start: %w", waitErr)
 	}
 	// Seeding must land before the configure command runs. It does: in config mode
 	// the sandbox-agent holds the primary terminal until it is attached, so nothing
