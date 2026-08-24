@@ -148,7 +148,44 @@ func (p *Provider) syncKnownPools(ctx context.Context, manager sandbox.PoolManag
 	if err != nil {
 		return err
 	}
-	return client.SyncKnownPools(ctx, provider.ProjectID, known)
+	return syncWithRetry(ctx, func(ctx context.Context) error {
+		return client.SyncKnownPools(ctx, provider.ProjectID, known)
+	})
+}
+
+// poolSyncRetryBackoff is how long to keep trying a pool-sync, and how long to
+// wait between attempts.
+//
+// EnsurePool returns once the pool-agent's container is running, which on the
+// transports that cannot be health-probed — VSOCK, and the Unix socket the
+// local VM backends use — is a few seconds before the agent inside it has
+// bound its listener. The first pool-sync therefore lands on a port nothing is
+// accepting on yet and is refused, which is not a fault: it is this call
+// arriving before the thing it calls. Without a retry every pool start logged a
+// connection error that meant nothing, and the reap it exists to trigger did
+// not happen until some later reconcile.
+var poolSyncRetryBackoff = []time.Duration{
+	500 * time.Millisecond,
+	time.Second,
+	2 * time.Second,
+	4 * time.Second,
+	8 * time.Second,
+}
+
+func syncWithRetry(ctx context.Context, attempt func(context.Context) error) error {
+	err := attempt(ctx)
+	for _, wait := range poolSyncRetryBackoff {
+		if err == nil {
+			return nil
+		}
+		select {
+		case <-ctx.Done():
+			return err
+		case <-time.After(wait):
+		}
+		err = attempt(ctx)
+	}
+	return err
 }
 
 func (p *Provider) RepairPool(ctx context.Context, manager sandbox.PoolManager, project *model.Project, provider *model.SandboxProviderInstance, pool *model.Pool, reason string) error {
