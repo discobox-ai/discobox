@@ -39,9 +39,21 @@ type App struct {
 	// validate resolves it from the environment, so it is empty until then —
 	// read it through leader() rather than directly.
 	leaderKey string
+
+	// serverCmd is the command that runs the server, kept so the autolaunch
+	// can ask the command tree where it lives instead of naming it. See
+	// serverLaunchArgs.
+	serverCmd *cobra.Command
 }
 
 func NewRootCommand() *cobra.Command {
+	cmd, _ := newRootCommand()
+	return cmd
+}
+
+// newRootCommand is NewRootCommand with the App it wired, so a test can ask the
+// app about the tree it is part of.
+func newRootCommand() (*cobra.Command, *App) {
 	cobra.EnableCommandSorting = false
 
 	app := &App{}
@@ -105,7 +117,7 @@ func NewRootCommand() *cobra.Command {
 	// even when hidden. Give the help command another name so it stays out of the
 	// command list; the --help flag still works on every command.
 	cmd.SetHelpCommand(&cobra.Command{Use: "no-help", Hidden: true})
-	return cmd
+	return cmd, app
 }
 
 func (a *App) addQuietFlag(cmd *cobra.Command) {
@@ -239,10 +251,14 @@ func (a *App) ensureLocalServer(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
+	args, err := a.serverLaunchArgs()
+	if err != nil {
+		return err
+	}
 	return endpoint.EnsureRunning(ctx, endpoint.LaunchOptions{
 		Endpoint: a.serverURL,
 		Command:  command,
-		Args:     []string{"server"},
+		Args:     args,
 		Env:      localServerEnv(a.serverURL),
 	})
 }
@@ -287,7 +303,31 @@ func (a *App) newServerCommand() *cobra.Command {
 		},
 	}
 	cmd.AddCommand(a.newServerShutdownCommand())
+	a.serverCmd = cmd
 	return cmd
+}
+
+// serverLaunchArgs is the argv this binary re-invokes itself with to run its
+// own server, read off the command tree rather than written out.
+//
+// It used to be the literal []string{"server"}. The command moved under
+// `admin`, the literal did not, and the autolaunched process exited instantly
+// with `unknown command "server"` — invisibly, because its output goes nowhere
+// — leaving every CLI invocation to wait out the start timeout and report that
+// the server never became ready. A path spelled by hand is a reference the
+// compiler cannot check; this one moves when the command does.
+func (a *App) serverLaunchArgs() ([]string, error) {
+	if a.serverCmd == nil {
+		return nil, fmt.Errorf("server command is not wired into the command tree")
+	}
+	var path []string
+	for cmd := a.serverCmd; cmd != nil && cmd.HasParent(); cmd = cmd.Parent() {
+		path = append([]string{cmd.Name()}, path...)
+	}
+	if len(path) == 0 {
+		return nil, fmt.Errorf("server command has no path in the command tree")
+	}
+	return path, nil
 }
 
 func (a *App) newServerShutdownCommand() *cobra.Command {
