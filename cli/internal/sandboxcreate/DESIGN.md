@@ -75,6 +75,14 @@ sandbox create requests.
   ([ADR 0060](../../../docs/adr/0060-provisioning-progress-is-a-recorded-phase-the-client-polls.md)).
   The words are `Step` constants here so the two frontends cannot describe one
   stage differently; where the line is drawn and when it is cleared is theirs.
+- Not every line is a step this client takes. `ProvisionStatus` renders what the
+  pool agent recorded on the discobox — a phase, and for a pull its byte and
+  layer counts — and `awaitSourceRequested` reports it through the same `Report`
+  as it waits, out of the reads that wait is making anyway. It lives here rather
+  than in a frontend for the same reason the `Step` constants do, and because
+  the other narrated wait — `internal/cli`'s attach watch — renders from it too.
+  A discobox with nothing left to provision renders nothing, which leaves the
+  caller's own step standing rather than blanking it.
 - The sandbox name is generated here (`randomname`), and sandbox names are
   unique within a project, so `CreatePromptSandbox` retries a 409 with a fresh
   name a bounded number of times. Only a generated name is replaced this way: a

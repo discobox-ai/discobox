@@ -1,4 +1,4 @@
-package cli
+package sandboxcreate
 
 import (
 	"testing"
@@ -31,7 +31,7 @@ func TestProvisionStatusPrefersTheRecordedPhase(t *testing.T) {
 	for _, tc := range []struct {
 		name  string
 		phase apiclientgen.SandboxProvisionPhase
-		want  string
+		want  Step
 	}{
 		{"pull", apiclientgen.SandboxProvisionPhasePullingImage, "pulling the discobox image"},
 		{"volumes", apiclientgen.SandboxProvisionPhasePreparingVolumes, "preparing the discobox's storage"},
@@ -41,7 +41,7 @@ func TestProvisionStatusPrefersTheRecordedPhase(t *testing.T) {
 		{"agent", apiclientgen.SandboxProvisionPhaseWaitingForAgent, "waiting for the discobox to come up"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			if got := provisionStatus(provisioning(recentProgress(tc.phase))); got != tc.want {
+			if got := ProvisionStatus(provisioning(recentProgress(tc.phase))); got != tc.want {
 				t.Fatalf("status = %q, want %q", got, tc.want)
 			}
 		})
@@ -52,7 +52,7 @@ func TestProvisionStatusPrefersTheRecordedPhase(t *testing.T) {
 // it is doing, and beats saying nothing. A CLI is routinely older than the
 // control plane it talks to.
 func TestProvisionStatusReportsAnUnknownPhase(t *testing.T) {
-	got := provisionStatus(provisioning(recentProgress("warming_the_cache")))
+	got := ProvisionStatus(provisioning(recentProgress("warming_the_cache")))
 	if got != "warming the cache" {
 		t.Fatalf("status = %q, want the unknown phase spelled out", got)
 	}
@@ -63,9 +63,9 @@ func TestProvisionStatusReportsAnUnknownPhase(t *testing.T) {
 // insisting on work that finished long ago.
 func TestProvisionStatusIgnoresAStalePhase(t *testing.T) {
 	runtime := recentProgress(apiclientgen.SandboxProvisionPhasePullingImage)
-	runtime.ProvisionProgressAt = apiclientgen.NewOptDateTime(time.Now().Add(-2 * provisionProgressFresh))
+	runtime.ProvisionProgressAt = apiclientgen.NewOptDateTime(time.Now().Add(-2 * ProvisionProgressFresh))
 
-	got := provisionStatus(provisioning(runtime))
+	got := ProvisionStatus(provisioning(runtime))
 	if got != "waiting for a pool to take it" {
 		t.Fatalf("status = %q, want the state-based answer once the phase has aged out", got)
 	}
@@ -81,7 +81,7 @@ func TestProvisionStatusSaysNothingAboutAUsableSandbox(t *testing.T) {
 	runtime.RuntimeState = apiclientgen.NewOptSandboxRuntimeRuntimeState(apiclientgen.SandboxRuntimeRuntimeStateRunning)
 	runtime.Generation, runtime.ObservedGeneration = 3, 3
 
-	if got := provisionStatus(provisioning(runtime)); got != "" {
+	if got := ProvisionStatus(provisioning(runtime)); got != "" {
 		t.Fatalf("status = %q, want nothing for a sandbox that is already up", got)
 	}
 }
@@ -96,7 +96,7 @@ func TestProvisionStatusWaitsOnAnUnconvergedSandbox(t *testing.T) {
 		Generation:         4,
 		ObservedGeneration: 3,
 	}
-	if got := provisionStatus(provisioning(runtime)); got != "preparing the discobox" {
+	if got := ProvisionStatus(provisioning(runtime)); got != "preparing the discobox" {
 		t.Fatalf("status = %q, want the sandbox still treated as provisioning", got)
 	}
 }
@@ -108,7 +108,7 @@ func TestProvisionStatusReportsAFailureWithItsReason(t *testing.T) {
 		State:        apiclientgen.SandboxRuntimeStateFailed,
 		ErrorMessage: apiclientgen.NewOptString("pull image: not found"),
 	}
-	if got := provisionStatus(provisioning(runtime)); got != "the discobox failed: pull image: not found" {
+	if got := ProvisionStatus(provisioning(runtime)); got != "the discobox failed: pull image: not found" {
 		t.Fatalf("status = %q, want the recorded reason", got)
 	}
 }
@@ -118,7 +118,7 @@ func TestProvisionStatusReportsAFailureWithItsReason(t *testing.T) {
 // phase a user can act on.
 func TestProvisionStatusNamesTheSourcePush(t *testing.T) {
 	runtime := apimodel.SandboxRuntime{State: apiclientgen.SandboxRuntimeStateAwaitingSource}
-	if got := provisionStatus(provisioning(runtime)); got != "waiting for its source to be pushed" {
+	if got := ProvisionStatus(provisioning(runtime)); got != "waiting for its source to be pushed" {
 		t.Fatalf("status = %q, want the push named", got)
 	}
 }
@@ -127,13 +127,13 @@ func TestProvisionStatusNamesTheSourcePush(t *testing.T) {
 // the pair of counts they are. Both totals grow while the manifest is walked,
 // so a percentage would visibly go backwards.
 func TestPullLineReportsBothRatiosAndNoPercentage(t *testing.T) {
-	line := pullLine(apimodel.SandboxPullProgress{
+	line := string(pullLine(apimodel.SandboxPullProgress{
 		Image:          "ghcr.io/discobox-ai/discobox-harness-codex:latest",
 		Current:        apiclientgen.NewOptInt64(150 * 1024 * 1024),
 		Total:          apiclientgen.NewOptInt64(400 * 1024 * 1024),
 		Layers:         apiclientgen.NewOptInt(9),
 		LayersComplete: apiclientgen.NewOptInt(4),
-	})
+	}))
 	want := "pulling discobox-harness-codex:latest — 150.0 MiB of 400.0 MiB, 4/9 layers"
 	if line != want {
 		t.Fatalf("pull line = %q, want %q", line, want)
@@ -143,10 +143,10 @@ func TestPullLineReportsBothRatiosAndNoPercentage(t *testing.T) {
 // A pull that has not been told any layer sizes yet reports what it has rather
 // than a ratio against zero.
 func TestPullLineHandlesAnUnsizedPull(t *testing.T) {
-	line := pullLine(apimodel.SandboxPullProgress{
+	line := string(pullLine(apimodel.SandboxPullProgress{
 		Image:   "discobox-shell:latest",
 		Current: apiclientgen.NewOptInt64(2048),
-	})
+	}))
 	if line != "pulling discobox-shell:latest — 2.0 KiB" {
 		t.Fatalf("pull line = %q", line)
 	}

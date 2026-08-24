@@ -778,26 +778,36 @@ mechanisms fill that in, and they cover disjoint halves of the wait
 **Client-side steps** are reported by `sandboxcreate` as it takes them, above.
 
 **Provisioning** is the pool agent's work, recorded on the discobox as
-`runtime.provisionProgress` and read back by `watchProvisioning`. It polls,
-deliberately: each read is the current truth, so a missed update is not a lost
-one and there is no gap to recover from. This is not the readiness poll ADR 0039
-removed — that one gated the attach and cost a round trip per second for an
-answer the server volunteered; this one runs beside an attach that is already
-correct, ends when the attach connects, and its worst failure is a late line.
+`runtime.provisionProgress`. It is read by polling, deliberately: each read is
+the current truth, so a missed update is not a lost one and there is no gap to
+recover from. This is not the readiness poll ADR 0039 removed — that one gated
+the attach and cost a round trip per second for an answer the server
+volunteered; this one runs beside a wait that is already correct, ends when that
+wait does, and its worst failure is a late line.
 
-`provisionStatus` turns one discobox into one line, most specific answer first:
-a settled failure or a parked source push is an answer, a recorded phase beats
-any inference from state, and a phase that has not been restated within
-`provisionProgressFresh` is describing the past rather than the present — the
-record is the last report and is never cleared. A discobox with nothing left to
-provision reports **nothing**, so the caller keeps its own line: what remains
+`sandboxcreate.ProvisionStatus` turns one discobox into one line, most specific
+answer first: a settled failure or a parked source push is an answer, a recorded
+phase beats any inference from state, and a phase that has not been restated
+within `ProvisionProgressFresh` is describing the past rather than the present —
+the record is the last report and is never cleared. A discobox with nothing left
+to provision reports **nothing**, so the caller keeps its own line: what remains
 then is the harness install and the terminal launch, which no channel reports
 upward. A phase this build does not know is spelled out rather than dropped,
 because a CLI is routinely older than the control plane it talks to.
 
-The first read waits one interval. An attach onto a running discobox connects
-inside it and asks the server nothing at all, so narration costs a request only
-when there is a wait worth narrating.
+Two waits narrate from it, and the difference between them is only where the
+reads come from.
+
+- **The attach** has `watchProvisioning`, a loop that exists to read. Its first
+  read waits one interval, so an attach onto a running discobox connects inside
+  it and asks the server nothing at all: narration costs a request only when
+  there is a wait worth narrating.
+- **The wait for a discobox to park ready for its source** narrates out of the
+  reads it is already making. `awaitSourceRequested` polls the discobox anyway,
+  and everything it is waiting for — the image pull above all, since the
+  container is created before the discobox parks — is on the record it already
+  has. Its phases replace `StepAwaitingSource` on the line as they are recorded,
+  which is why the longest step in a create is no longer the quietest one.
 
 `statusLine` is where it lands for the commands: one rewritable line on a
 terminal, appended lines off one, and cleared before the stream is handed to

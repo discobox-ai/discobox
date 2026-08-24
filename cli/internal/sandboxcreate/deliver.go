@@ -23,6 +23,11 @@ type sourceDeliveryClient interface {
 const (
 	// awaitSourcePollInterval paces the wait for the sandbox to be provisioned
 	// far enough to receive a push.
+	//
+	// It is also how often the phase this wait narrates is re-read. A pull
+	// publishes twice a second, so a second's granularity is at most one report
+	// behind — which is a byte counter that moves once a second rather than
+	// twice, and half the requests over a wait that can run for minutes.
 	awaitSourcePollInterval = time.Second
 	// awaitSourceTimeout bounds that wait. It is shorter than the server's own
 	// patience for the push itself: this only covers provisioning, and a client
@@ -94,7 +99,7 @@ func DeliverSource(ctx context.Context, client sourceDeliveryClient, projectID s
 	// The origin repositories only exist once the sandbox is provisioned, so
 	// there is nothing to push into until it parks.
 	report.step(StepAwaitingSource)
-	if err := awaitSourceRequested(ctx, client, projectID, sandbox.ID); err != nil {
+	if err := awaitSourceRequested(ctx, client, projectID, sandbox.ID, report); err != nil {
 		return err
 	}
 	// One step for the push as a whole rather than one per repository: a
@@ -178,8 +183,20 @@ func (s *LocalSources) pushRoot(key string) (string, error) {
 
 // awaitSourceRequested waits until the sandbox is parked waiting for its
 // source. Pushing earlier would race the repository into existence.
-func awaitSourceRequested(ctx context.Context, client sourceDeliveryClient, projectID, sandboxID string) error {
+//
+// The wait narrates itself out of the reads it is already making. What it is
+// waiting for is the provisioning that has to finish before the sandbox can
+// park — the image pull above all — and the pool agent records that on the
+// sandbox as it happens (ADR 0060). Every poll already holds the whole record,
+// so saying what the wait is for costs nothing but reading a field that arrived
+// anyway; without it, the longest wait in a create is the one that says the
+// least about itself.
+func awaitSourceRequested(ctx context.Context, client sourceDeliveryClient, projectID, sandboxID string, report Report) error {
 	deadline := time.Now().Add(awaitSourceTimeout)
+	// last is what the caller's line says, which starting out is the step
+	// reported just above. Comparing against that rather than against nothing is
+	// what makes a report mean the line changed.
+	last := StepAwaitingSource
 	for {
 		res, err := client.GetSandbox(ctx, apiclientgen.GetSandboxParams{ProjectId: projectID, SandboxId: sandboxID})
 		if err != nil {
@@ -194,6 +211,13 @@ func awaitSourceRequested(ctx context.Context, client sourceDeliveryClient, proj
 			return nil
 		case apiclientgen.SandboxRuntimeStateFailed:
 			return fmt.Errorf("discobox failed before it could receive its source: %s", sandbox.Runtime.ErrorMessage.Or("unknown error"))
+		}
+		// A sandbox with nothing left to provision reports no phase, which
+		// leaves the previous line standing rather than blanking it: the wait is
+		// still on, and the client's own step is the truest thing left to say.
+		if phase := ProvisionStatus(sandbox); phase != "" && phase != last {
+			last = phase
+			report.step(phase)
 		}
 		if time.Now().After(deadline) {
 			return fmt.Errorf("timed out after %s waiting for the discobox to be ready for its source", awaitSourceTimeout)
