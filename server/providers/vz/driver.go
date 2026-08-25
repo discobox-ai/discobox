@@ -152,8 +152,9 @@ func (d *Driver) EnsureVM(ctx context.Context, poolID string, _ dockerworker.VMS
 	// Reported unconditionally rather than only when it turns out to be a miss:
 	// whether the image is cached is known only by asking, and a phase that
 	// lasts milliseconds on a warm machine costs a status line one frame.
-	d.progress.Report(ctx, poolID, sandbox.PoolPhaseFetchingVMImage)
+	releaseFetch := d.progress.Hold(ctx, poolID, sandbox.PoolPhaseFetchingVMImage)
 	bundle, err := d.guest.Resolve(ctx)
+	releaseFetch()
 	if err != nil {
 		return nil, err
 	}

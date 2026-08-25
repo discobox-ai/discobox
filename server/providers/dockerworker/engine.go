@@ -256,13 +256,15 @@ func (e *Engine) EnsurePool(ctx context.Context, _ *model.Project, provider *mod
 	// the machine includes fetching the disk image the first time, which on a
 	// cold Mac is minutes; a driver that can say more about that says it from
 	// inside EnsureVM.
-	e.cfg.ProgressReporter.Report(ctx, pool.ID, sandbox.PoolPhaseStartingVM)
+	releaseVM := e.cfg.ProgressReporter.Hold(ctx, pool.ID, sandbox.PoolPhaseStartingVM)
 	vmInfo, err := e.driver.EnsureVM(ctx, pool.ID, e.vmSpec(provider, pool))
+	releaseVM()
 	if err != nil {
 		return err
 	}
-	e.cfg.ProgressReporter.Report(ctx, pool.ID, sandbox.PoolPhaseWaitingForDocker)
+	releaseDocker := e.cfg.ProgressReporter.Hold(ctx, pool.ID, sandbox.PoolPhaseWaitingForDocker)
 	lease, err := e.acquireDockerReady(ctx, pool.ID)
+	releaseDocker()
 	if err != nil {
 		return err
 	}
@@ -290,13 +292,15 @@ func (e *Engine) RepairPool(ctx context.Context, _ *model.Project, provider *mod
 			return err
 		}
 	}
-	e.cfg.ProgressReporter.Report(ctx, pool.ID, sandbox.PoolPhaseStartingVM)
+	releaseVM := e.cfg.ProgressReporter.Hold(ctx, pool.ID, sandbox.PoolPhaseStartingVM)
 	vmInfo, err = e.driver.EnsureVM(ctx, pool.ID, e.vmSpec(provider, pool))
+	releaseVM()
 	if err != nil {
 		return err
 	}
-	e.cfg.ProgressReporter.Report(ctx, pool.ID, sandbox.PoolPhaseWaitingForDocker)
+	releaseDocker := e.cfg.ProgressReporter.Hold(ctx, pool.ID, sandbox.PoolPhaseWaitingForDocker)
 	lease, err := e.acquireDockerReady(ctx, pool.ID)
+	releaseDocker()
 	if err != nil {
 		return err
 	}
@@ -464,7 +468,8 @@ func (e *Engine) createPoolContainer(ctx context.Context, cli *client.Client, po
 	if err := e.ensureImage(ctx, cli, pool.ID); err != nil {
 		return nil, err
 	}
-	e.cfg.ProgressReporter.Report(ctx, pool.ID, sandbox.PoolPhaseStartingPoolAgent)
+	releaseStart := e.cfg.ProgressReporter.Hold(ctx, pool.ID, sandbox.PoolPhaseStartingPoolAgent)
+	defer releaseStart()
 	bootstrap, err := mint(ctx)
 	if err != nil {
 		return nil, err
@@ -558,7 +563,9 @@ func (e *Engine) createPoolContainer(ctx context.Context, cli *client.Client, po
 	if _, err := cli.ContainerStart(ctx, created.ID, client.ContainerStartOptions{}); err != nil {
 		return nil, err
 	}
-	e.cfg.ProgressReporter.Report(ctx, pool.ID, sandbox.PoolPhaseWaitingForPoolAgent)
+	releaseStart()
+	releaseAgent := e.cfg.ProgressReporter.Hold(ctx, pool.ID, sandbox.PoolPhaseWaitingForPoolAgent)
+	defer releaseAgent()
 	return e.waitContainerReady(ctx, cli, created.ID, waitForHealth)
 }
 

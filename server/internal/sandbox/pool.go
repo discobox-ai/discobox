@@ -3,6 +3,8 @@ package sandbox
 import (
 	"context"
 	"log/slog"
+	"sync"
+	"time"
 
 	poolagentauth "github.com/discobox-ai/discobox/server/internal/auth/poolagent"
 	"github.com/discobox-ai/discobox/server/internal/model"
@@ -113,6 +115,56 @@ func PoolProgressReporterFor(manager PoolManager) PoolProgressReporter {
 // plane behind them.
 func (r PoolProgressReporter) Report(ctx context.Context, poolID string, phase PoolProvisionPhase) {
 	r.ReportProgress(ctx, poolID, PoolProvisionProgress{Phase: phase})
+}
+
+// poolPhaseHeartbeat is how often a phase in flight is restated. Comfortably
+// inside the window a reader treats a report as describing the present. A var
+// so a test can hold a phase without spending seconds doing it.
+var poolPhaseHeartbeat = 5 * time.Second
+
+// Hold reports a phase and keeps restating it until the returned func is
+// called.
+//
+// A phase entered once and then held for minutes is, to anyone reading the
+// record, indistinguishable from a phase entered and abandoned — the record
+// carries a timestamp and nothing else, so a reader has to judge from its age
+// whether the work is still happening. Restating it is that judgement, made by
+// the side that actually knows.
+//
+// Two things depended on it and neither worked without it. A client narrating
+// the wait blanks a phase that has gone stale, so "starting the VM" reverted to
+// "waiting for a pool to take it" thirty seconds in — for the whole of a VM
+// boot. And placement keeps waiting only while the pool is visibly working, so
+// a stamp that never moved read as a pool that had stopped, and the sandbox
+// failed with "no sandbox capacity" while its VM was booting normally.
+//
+// The image phases do not need this: a pull restates itself as it moves.
+func (r PoolProgressReporter) Hold(ctx context.Context, poolID string, phase PoolProvisionPhase) func() {
+	r.Report(ctx, poolID, phase)
+	if r == nil || poolID == "" || phase == "" {
+		return func() {}
+	}
+	done := make(chan struct{})
+	var once sync.Once
+	// Read before the goroutine starts, so the interval it uses is settled at
+	// the moment of the call and the goroutine never reads a package variable
+	// a test may be restoring.
+	interval := poolPhaseHeartbeat
+	go func() {
+		ticker := time.NewTicker(interval)
+		defer ticker.Stop()
+		for {
+			select {
+			case <-done:
+				return
+			case <-ctx.Done():
+				return
+			case <-ticker.C:
+				r.Report(ctx, poolID, phase)
+			}
+		}
+	}()
+	return func() { once.Do(func() { close(done) }) }
 }
 
 // ReportProgress is Report with the detail a phase can carry.
