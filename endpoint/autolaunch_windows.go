@@ -40,7 +40,7 @@ func acquireLaunchLock(path string) (func(), error) {
 }
 
 // setDetachedProcess cuts the launched server loose from the console that
-// started it.
+// started it, and gives it one of its own with no window.
 //
 // This was empty, which was invisible for as long as the autolaunch was
 // launching a command that did not exist. A child sharing its parent's console
@@ -48,11 +48,22 @@ func acquireLaunchLock(path string) (func(), error) {
 // closing the window sends it CTRL_CLOSE_EVENT. A server started in the
 // background so it can outlive the command that wanted it must be in neither.
 //
-// DETACHED_PROCESS rather than a new console, so no window appears. Its stdio
-// is already redirected to the launch log, so it has nothing a console is for.
+// CREATE_NO_WINDOW rather than DETACHED_PROCESS. Both cut the server off from
+// the caller's console and differ only in what it has instead: DETACHED_PROCESS
+// leaves it with no console at all, CREATE_NO_WINDOW gives it one of its own
+// whose window does not exist. That difference is invisible in the server and
+// visible in everything it starts, because Windows gives a process that has no
+// console a fresh one, window and all, for every console program it runs — and
+// the server runs them without meaning to. Resolving a registry credential
+// runs whichever docker-credential-*.exe the user's Docker config names, so a
+// first start, which inspects one image per built-in harness, put a console
+// window on screen for each of them. A child inherits the console it was
+// started from, so a windowless one makes all of those windowless too. The
+// server's own stdio goes to the launch log either way: the console is for its
+// children, not for it.
 func setDetachedProcess(cmd *exec.Cmd) {
 	cmd.SysProcAttr = &syscall.SysProcAttr{
-		CreationFlags: windows.DETACHED_PROCESS | windows.CREATE_NEW_PROCESS_GROUP,
+		CreationFlags: windows.CREATE_NO_WINDOW | windows.CREATE_NEW_PROCESS_GROUP,
 	}
 }
 
