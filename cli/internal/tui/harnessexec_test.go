@@ -2,6 +2,7 @@ package tui
 
 import (
 	"bytes"
+	"context"
 	"io"
 	"strings"
 	"testing"
@@ -15,7 +16,7 @@ func TestHarnessExecClearsTheScreenBeforeTheFlowWrites(t *testing.T) {
 	var sawBefore string
 	exec := &harnessExec{
 		title: "Configuring Claude Code",
-		run: func(_ io.Reader, stdout, _ io.Writer) error {
+		run: func(_ context.Context, _ io.Reader, stdout, _ io.Writer) error {
 			sawBefore = out.String()
 			_, err := io.WriteString(stdout, "first line of the flow")
 			return err

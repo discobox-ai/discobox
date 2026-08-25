@@ -1,9 +1,13 @@
 package tui
 
 import (
+	"context"
 	"fmt"
 	"io"
+	"os"
+	"os/signal"
 	"strings"
+	"syscall"
 	"time"
 
 	tea "charm.land/bubbletea/v2"
@@ -524,8 +528,9 @@ func (m *Model) configureHarnessThen(harness Harness, andDefault *Harness, resum
 	m.busy = "configuring " + name + "…"
 	exec := &harnessExec{
 		title: "Configuring " + name,
-		run: func(stdin io.Reader, stdout, stderr io.Writer) error {
-			return m.ds.ConfigureHarness(m.ctx, harness.ID, stdin, stdout, stderr)
+		ctx:   m.ctx,
+		run: func(ctx context.Context, stdin io.Reader, stdout, stderr io.Writer) error {
+			return m.ds.ConfigureHarness(ctx, harness.ID, stdin, stdout, stderr)
 		},
 	}
 	return m.exec(exec, func(err error) tea.Msg {
@@ -543,9 +548,10 @@ func (m *Model) editHarnessFile(harness Harness, path string) tea.Cmd {
 	var changed bool
 	exec := &harnessExec{
 		title: "Editing " + path,
-		run: func(stdin io.Reader, stdout, stderr io.Writer) error {
+		ctx:   m.ctx,
+		run: func(ctx context.Context, stdin io.Reader, stdout, stderr io.Writer) error {
 			var err error
-			changed, err = m.ds.EditHarnessFile(m.ctx, harness.ID, path, stdin, stdout, stderr)
+			changed, err = m.ds.EditHarnessFile(ctx, harness.ID, path, stdin, stdout, stderr)
 			return err
 		},
 	}
@@ -814,7 +820,9 @@ type harnessExec struct {
 	// title names what is taking the terminal, printed at the top of the
 	// screen this clears.
 	title string
-	run   func(stdin io.Reader, stdout, stderr io.Writer) error
+	// ctx is the window's, and the parent of the one the flow is given.
+	ctx context.Context
+	run func(ctx context.Context, stdin io.Reader, stdout, stderr io.Writer) error
 
 	stdin  io.Reader
 	stdout io.Writer
@@ -835,7 +843,23 @@ func (c *harnessExec) SetStderr(w io.Writer) { c.stderr = w }
 // look like one.
 func (c *harnessExec) Run() error {
 	clearScreen(c.stdout, c.title)
-	return c.run(c.stdin, c.stdout, c.stderr)
+	// And ^C has to work while it does.
+	//
+	// Bubble Tea keeps its SIGINT handler installed while it steps aside —
+	// ReleaseTerminal only sets ignoreSignals, so the signal is still delivered
+	// to it and then dropped. A registered handler is also what turns off Go's
+	// default terminate-on-interrupt. So nothing was listening: ^C during a
+	// flow that can wait minutes on an image pull did nothing at all.
+	//
+	// Notifying here puts a second listener on the same signal, which Go
+	// delivers to both, and this one cancels the flow.
+	ctx := c.ctx
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	ctx, stop := signal.NotifyContext(ctx, os.Interrupt, syscall.SIGTERM)
+	defer stop()
+	return c.run(ctx, c.stdin, c.stdout, c.stderr)
 }
 
 // clearScreen wipes the terminal, its scrollback, and homes the cursor, then
