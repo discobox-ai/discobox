@@ -244,36 +244,50 @@ from one that had died on startup.
 is answered `503` with a `health.Status` naming the step in progress, and each
 step is logged, so a foreground run and a polling client say the same thing.
 When initialization finishes, the real router is swapped in behind the same
-handler: nothing rebinds and no connection is dropped. `/healthz` then reports
-`ready` with the server's version and uptime, which is what tells a caller that
-just launched a server that it reached the binary it started.
+handler: nothing rebinds and no connection is dropped.
+
+Handing over and becoming ready are **separate events**, because two callers ask
+`/healthz` two different questions (ADR 0069 — see also `health.StatusWarming`):
+
+| State | API | `/healthz` | Meaning |
+| --- | --- | --- | --- |
+| `starting` | refused, `503` on every route | `503` | no router yet: the database is being opened or migrated, or the services built |
+| `warming` | every route serves | `503` | the API is complete; work a deployment should wait for is still running |
+| `ready` | every route serves | `200` | nothing outstanding |
+
+Only `starting` refuses routes, and only because there is nothing to answer
+with. `warming` is a report, not a gate: a deployment holds its rollout on the
+`503`, and every client that reaches this replica meanwhile is served normally.
+
+`startupHandler` stays the authority on the answer after handover — the router's
+health route reads `startupHandler.status`, so the two cannot disagree about
+whether this replica is ready. A router built without one (a test, an embedded
+use) has no warm-up to wait on and reports `ready`.
 
 `health` in the root module owns the payload, because the CLI that polls it is
-in another module.
+in another module. `Serving()` is what a client waits for; `Ready()` is what a
+readiness probe asks and the only status served `200`.
 
-## Preloading Images at Startup
+## Staging a Pool's Images
 
-Startup pulls the images a sandbox will want — the sandbox agent and every
-harness config's image — onto every pool that already exists, and does not
-report the server ready until it has finished.
+The images a sandbox will want are pulled onto a pool when that pool becomes
+active, so the first sandbox on it does not wait for them (ADR 0069).
 
-It is a trade, and the trade is the point. Without it the first sandbox on a
-cold machine waits for a VM to boot and for two gigabytes of harness image to
-arrive, at whatever moment the user happened to ask for one; with it that wait
-happens once, at a moment the server can narrate, and every later command is
-fast. `/healthz` reports the phase and which image of how many is in flight, so
-a CLI that launched the server prints it.
+It is its own reconciled resource — `poolImages`, keyed by pool ID — claimed and
+leased like anything else the engine runs. The pool's own reconcile marks it
+dirty on the way out and a level-triggered scan is the backstop. It creates
+nothing: the host is already up by the time this pulls onto it.
 
-Two things keep it from being a trap. It is bounded: readiness waits on it, so a
-pool whose VM will never boot must not make the server permanently unreachable —
-the commands for diagnosing that pool are served by the server. And it never
-fails startup: a pool that cannot come up, or an image that no longer exists,
-costs exactly this optimisation, and the sandbox that needs the image pulls it
-then, as it always did. `DISCOBOX_PRELOAD_IMAGES=0` turns it off.
+Its result is a **condition**, not a state. `Pool.ImagesStaged` and
+`Pool.ImageStage` are display data, and a pool whose images are not staged is
+active, healthy and schedulable — a sandbox that wants an image its host does not
+have pulls it then, exactly as it always did. Staging is a head start, so the
+failure mode of staging is that it did not happen. Failures are recorded on the
+condition and retried on this resource's own cadence, never returned as a
+reconcile error: the engine's failure backoff is for resources that must
+converge.
 
-The pull is the engine's work, not the pool agent's, for the same reason the
-pool image is: the engine owns what is on a pool daemon and can reach that
-daemon before there is an agent on it.
+Server startup has nothing to do with any of it.
 
 ## Single Server Per Data Directory
 

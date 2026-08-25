@@ -192,13 +192,6 @@ func Run(ctx context.Context) error {
 		}
 	}()
 
-	// Before readiness, deliberately: the point of preloading is that the wait
-	// happens here, once, where the server can say what it is doing — rather
-	// than in front of whoever runs the first command that needs an image.
-	if cfg.PreloadImages {
-		preloadImages(ctx, appServices, startup)
-	}
-
 	handler := otelhttp.NewHandler(router, "discobox-server")
 	if cfg.AutoShutdownTimeout > 0 {
 		handler = activity.Wrap(handler)

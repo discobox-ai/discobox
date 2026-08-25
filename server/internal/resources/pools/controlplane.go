@@ -35,6 +35,18 @@ func NewControlPlane(appStore *store.Store, engine *reconcile.Engine) *ControlPl
 	return &ControlPlane{store: appStore, engine: engine}
 }
 
+// SetDefaultSandboxImage records the image a sandbox with no harness config
+// runs, as this server resolved it. Staging needs the resolved value, not the
+// compiled-in default it usually equals — those differ exactly when somebody
+// pointed this server at other images, which is when staging the compiled-in
+// one would be most wrong.
+//
+// Package-level because the reconciler that reads it is constructed before the
+// server has resolved it, and there is one answer per process.
+func (s *ControlPlane) SetDefaultSandboxImage(image string) {
+	setDefaultSandboxImage(image)
+}
+
 func (s *ControlPlane) SetAgentAuthManager(manager *poolagentauth.Manager) {
 	s.agentAuth = manager
 }
@@ -46,7 +58,12 @@ func (s *ControlPlane) RegisterJobs(providerManager *sandbox.ProviderManager) er
 		return errors.New("reconcile engine is required")
 	}
 	s.providerManager = providerManager
-	return s.engine.Register(PoolResourceType, NewPoolReconciler(s.store, providerManager, s))
+	if err := s.engine.Register(PoolResourceType, NewPoolReconciler(s.store, providerManager, s)); err != nil {
+		return err
+	}
+	// Its own resource, so it is claimed and leased like anything else and can
+	// fail and retry without a pool's health depending on it.
+	return s.engine.Register(PoolImagesResourceType, NewPoolImagesReconciler(s.store, providerManager))
 }
 
 func (s *ControlPlane) GetPool(ctx context.Context, projectID, poolID string) (*model.Pool, error) {

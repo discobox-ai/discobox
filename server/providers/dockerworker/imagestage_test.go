@@ -43,19 +43,23 @@ func preloadEngine(t *testing.T, daemon *fakePullDaemon) (*Engine, *httptest.Ser
 	return engine, server
 }
 
-// The images a sandbox will want are pulled before anybody asks for one.
-func TestPreloadImagesPullsEveryImage(t *testing.T) {
+// The images a sandbox will want are pulled onto a pool that is already up.
+func TestStageImagesPullsEveryImage(t *testing.T) {
 	daemon := &fakePullDaemon{present: map[string]struct{}{}}
 	engine, server := preloadEngine(t, daemon)
 	defer server.Close()
 
 	images := []string{"ghcr.io/x/sandbox-agent:v1", "ghcr.io/x/harness-shell:v1"}
 	var lines []string
-	err := engine.PreloadImages(context.Background(), &model.Pool{ID: "pool_1"}, images,
-		func(image string, _, total int) {
-			lines = append(lines, image)
-			if total != len(images) {
-				t.Errorf("total = %d, want %d", total, len(images))
+	var sawBytes bool
+	err := engine.StageImages(context.Background(), &model.Pool{ID: "pool_1"}, images,
+		func(progress sandbox.PreloadProgress) {
+			lines = append(lines, progress.Image)
+			if progress.Total != len(images) {
+				t.Errorf("total = %d, want %d", progress.Total, len(images))
+			}
+			if progress.Pull != nil && progress.Pull.Total > 0 {
+				sawBytes = true
 			}
 		})
 	if err != nil {
@@ -69,18 +73,23 @@ func TestPreloadImagesPullsEveryImage(t *testing.T) {
 	if len(lines) == 0 || lines[len(lines)-1] != "" {
 		t.Fatalf("reports = %v, want a closing report", lines)
 	}
+	// And the bytes reach the caller while they move: the image counts alone
+	// sit unchanged for the whole of a multi-gigabyte pull.
+	if !sawBytes {
+		t.Fatal("no report carried the pull's byte counts")
+	}
 }
 
 // One image that cannot be pulled must not cost the others. Preloading is an
 // optimisation for a wait that would otherwise happen later; abandoning it
 // halfway leaves the rest of that wait in place for no reason.
-func TestPreloadImagesKeepsGoingPastAFailure(t *testing.T) {
+func TestStageImagesKeepsGoingPastAFailure(t *testing.T) {
 	daemon := &fakePullDaemon{present: map[string]struct{}{}, failing: true}
 	engine, server := preloadEngine(t, daemon)
 	defer server.Close()
 
 	images := []string{"ghcr.io/x/a:v1", "ghcr.io/x/b:v1", "ghcr.io/x/c:v1"}
-	err := engine.PreloadImages(context.Background(), &model.Pool{ID: "pool_1"}, images, nil)
+	err := engine.StageImages(context.Background(), &model.Pool{ID: "pool_1"}, images, nil)
 	if err == nil {
 		t.Fatal("expected the failures to be reported")
 	}
@@ -94,13 +103,13 @@ func TestPreloadImagesKeepsGoingPastAFailure(t *testing.T) {
 
 // An image already on the daemon is not pulled again, which is what makes the
 // second server start fast.
-func TestPreloadImagesSkipsWhatIsAlreadyThere(t *testing.T) {
+func TestStageImagesSkipsWhatIsAlreadyThere(t *testing.T) {
 	const present = "ghcr.io/x/sandbox-agent:v1"
 	daemon := &fakePullDaemon{present: map[string]struct{}{present: {}}}
 	engine, server := preloadEngine(t, daemon)
 	defer server.Close()
 
-	if err := engine.PreloadImages(context.Background(), &model.Pool{ID: "pool_1"}, []string{present}, nil); err != nil {
+	if err := engine.StageImages(context.Background(), &model.Pool{ID: "pool_1"}, []string{present}, nil); err != nil {
 		t.Fatal(err)
 	}
 	if pulled := daemon.pulled(); len(pulled) != 0 {

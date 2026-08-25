@@ -203,9 +203,10 @@ type PoolRuntime interface {
 	ReconcilePool(ctx context.Context, manager PoolManager, project *model.Project, provider *model.SandboxProviderInstance, pool *model.Pool) error
 	RepairPool(ctx context.Context, manager PoolManager, project *model.Project, provider *model.SandboxProviderInstance, pool *model.Pool, reason string) error
 	RemovePool(ctx context.Context, manager PoolManager, project *model.Project, provider *model.SandboxProviderInstance, pool *model.Pool) error
-	// PreloadImages brings the pool up and pulls the images a sandbox will
-	// want, so the first sandbox does not wait for either.
-	PreloadImages(ctx context.Context, manager PoolManager, project *model.Project, provider *model.SandboxProviderInstance, pool *model.Pool, images []string, report func(image string, done, total int)) error
+	// StageImages pulls the images a sandbox will want onto a pool that is
+	// already up, so the first sandbox on it does not wait for them. It creates
+	// nothing, and a pool whose images are not staged is still a healthy pool.
+	StageImages(ctx context.Context, pool *model.Pool, images []string, report func(PreloadProgress)) error
 	// OpenConsole attaches to the pool host's administrative console: a root
 	// shell in the host's own namespaces, for operators debugging the backend
 	// itself. It deliberately does not go through the pool agent, because the

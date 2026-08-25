@@ -202,12 +202,12 @@ func (p *testRuntimeProvider) RemovePool(context.Context, *model.Project, *model
 	return nil
 }
 
-func (p *testRuntimeProvider) PreloadImages(_ context.Context, _ *model.Pool, images []string, report func(string, int, int)) error {
+func (p *testRuntimeProvider) StageImages(_ context.Context, _ *model.Pool, images []string, report func(sandbox.PreloadProgress)) error {
 	p.mu.Lock()
 	p.preloaded = append(p.preloaded, images...)
 	p.mu.Unlock()
 	if report != nil {
-		report("", len(images), len(images))
+		report(sandbox.PreloadProgress{Done: len(images), Total: len(images)})
 	}
 	return nil
 }

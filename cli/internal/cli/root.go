@@ -260,13 +260,21 @@ func (a *App) ensureLocalServer(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
+	// One line for the whole start, rewritten in place and taken back down
+	// before the command that wanted the server writes anything of its own.
+	// Every phase used to append a line, so a first run left five of them
+	// scrolled above output that had nothing to do with them.
+	progress := a.serverStartupLine()
 	started, err := endpoint.EnsureRunning(ctx, endpoint.LaunchOptions{
-		Endpoint:   a.serverURL,
-		Command:    command,
-		Args:       args,
-		Env:        localServerEnv(a.serverURL),
-		OnProgress: a.reportServerStartup,
+		Endpoint: a.serverURL,
+		Command:  command,
+		Args:     args,
+		Env:      localServerEnv(a.serverURL),
+		OnProgress: func(status health.Status) {
+			progress.set(serverStartupText(status))
+		},
 	})
+	progress.clear()
 	if err != nil {
 		return err
 	}
@@ -281,18 +289,35 @@ func (a *App) ensureLocalServer(ctx context.Context) error {
 	return nil
 }
 
-// reportServerStartup says what the server this CLI just launched is doing.
+// serverStartupLine is where a launch narrates, or nothing when there is
+// nowhere to narrate to. --quiet asked for identifiers and nothing else, and a
+// status line is the "nothing else".
+//
+// A nil line is the no-op: every statusLine method takes one, so the launch
+// path has no reporting to switch on.
+func (a *App) serverStartupLine() *statusLine {
+	if a.quiet || a.errOut == nil {
+		return nil
+	}
+	return newStatusLine(a.errOut)
+}
+
+// serverStartupText says what the server this CLI just launched is doing.
 //
 // Starting one can take a while on a first run — a database to migrate, a
 // registry to reach for the built-in harness images — and the whole of that
 // used to be silent, so the only two outcomes a user saw were a prompt that
 // came back late and a timeout that explained nothing.
-func (a *App) reportServerStartup(status health.Status) {
-	phase := status.Phase
-	if phase == "" {
-		phase = "starting"
+//
+// The separator is the window's, and so is the shape: the phase is a detail of
+// the one thing being narrated rather than a second thing alongside it. A
+// server that reports no phase says only what it is, because "starting discobox
+// server · starting" is the same word twice.
+func serverStartupText(status health.Status) string {
+	if phase := strings.TrimSpace(status.Phase); phase != "" {
+		return "starting discobox server · " + phase
 	}
-	a.notify("starting discobox server: " + phase)
+	return "starting discobox server"
 }
 
 // notify writes one line about something done on the user's behalf.

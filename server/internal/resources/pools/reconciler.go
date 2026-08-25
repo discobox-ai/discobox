@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"log/slog"
 	"strings"
 	"time"
 
@@ -209,7 +210,25 @@ func (r *PoolReconciler) reconcileActive(ctx context.Context, pool *model.Pool, 
 	if err := r.update(ctx, current, generation); err != nil {
 		return reconcile.Result{}, err
 	}
+	// A host that has just become usable is a host worth staging images onto.
+	// Marking rather than doing: staging is its own resource, so it is claimed
+	// and leased separately and its failures are its own. Best effort — the
+	// level-triggered scan picks up anything a lost mark drops, and a pool's
+	// convergence does not depend on this.
+	if current.State == model.PoolStateActive {
+		if err := r.markImagesDirty(ctx, current.ID); err != nil {
+			slog.WarnContext(ctx, "could not schedule image staging", "pool", current.ID, "error", err)
+		}
+	}
 	return armRegistrationTimeout(current), nil
+}
+
+// markImagesDirty asks the engine to stage this pool's images.
+func (r *PoolReconciler) markImagesDirty(ctx context.Context, poolID string) error {
+	if r.pools == nil || r.pools.engine == nil {
+		return nil
+	}
+	return r.pools.engine.MarkDirty(ctx, PoolImagesResourceType, poolID)
 }
 
 // armRegistrationTimeout is the deadline half of registrationExpired: a pool

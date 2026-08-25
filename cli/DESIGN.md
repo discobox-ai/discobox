@@ -147,8 +147,10 @@ release launched a child that exited instantly with `unknown command`.
 
 Waiting on it is two-stage, against `health.Status` from `/healthz`. A server
 that never answers has died and is given `StartTimeout`; one that answers
-`starting` is working and is given `ReadyTimeout`, with each new phase printed
-so the wait says what it is waiting for. The child's output goes to a log file
+`starting` is working and is given `ReadyTimeout`, with each new phase drawn on
+one status line — rewritten in place and taken back down before the command that
+wanted the server writes anything — so the wait says what it is waiting for
+without leaving a phase per line scrolled above unrelated output. The child's output goes to a log file
 (`endpoint.ServerLogPath`), and the last launch's tail is what a failed wait
 reports — the alternative, discarding it, is what made a server dying on startup
 indistinguishable from one that was merely slow.

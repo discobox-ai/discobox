@@ -120,3 +120,4 @@ Nygard-style ADRs (see adr.github.io) combined with current-state design docs:
 | [0065](0065-the-cli-owns-its-pty-seam-and-windows-gets-conpty.md) | The CLI owns its pty seam, and Windows gets ConPTY | Accepted |
 | [0066](0066-the-build-is-nix-plus-taskfile-and-github-actions-only-triggers-it.md) | The build is Nix plus the Taskfile, and GitHub Actions only triggers it | Proposed |
 | [0067](0067-iroh-ships-in-every-build.md) | iroh ships in every build | Accepted (supersedes [0053](0053-iroh-is-development-only-until-it-builds-everywhere.md)) |
+| [0069](0069-staging-pool-images-is-a-condition.md) | Staging a pool's images is a condition, not a state | Proposed |

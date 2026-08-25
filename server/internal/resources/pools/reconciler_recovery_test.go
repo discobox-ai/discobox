@@ -290,7 +290,7 @@ func (stubPoolProvider) RemovePool(context.Context, sandbox.PoolManager, *model.
 	return nil
 }
 
-func (stubPoolProvider) PreloadImages(context.Context, sandbox.PoolManager, *model.Project, *model.SandboxProviderInstance, *model.Pool, []string, func(string, int, int)) error {
+func (stubPoolProvider) StageImages(context.Context, *model.Pool, []string, func(sandbox.PreloadProgress)) error {
 	return nil
 }
 

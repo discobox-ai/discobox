@@ -29,12 +29,14 @@ import (
 // exists on no registry, so a pull would fail on the very images that are
 // already correctly in place.
 func (e *Engine) ensureImage(ctx context.Context, cli *client.Client, poolID string) error {
-	return e.ensureImageRef(ctx, cli, poolID, e.cfg.Image, sandbox.PoolPhasePullingPoolImage)
+	return e.ensureImageRef(ctx, cli, poolID, e.cfg.Image, sandbox.PoolPhasePullingPoolImage, nil)
 }
 
 // ensureImageRef is ensureImage for any image on this pool's daemon, reporting
 // under the phase the caller is in.
-func (e *Engine) ensureImageRef(ctx context.Context, cli *client.Client, poolID, image string, phase sandbox.PoolProvisionPhase) error {
+// onPull, when set, is called with the running totals as they move, for a
+// caller that is narrating this pull rather than merely recording it.
+func (e *Engine) ensureImageRef(ctx context.Context, cli *client.Client, poolID, image string, phase sandbox.PoolProvisionPhase, onPull func(sandbox.PoolPullProgress)) error {
 	if _, err := cli.ImageInspect(ctx, image); err == nil {
 		return nil
 	} else if !cerrdefs.IsNotFound(err) {
@@ -53,7 +55,7 @@ func (e *Engine) ensureImageRef(ctx context.Context, cli *client.Client, poolID,
 	// runs the pull either way and this is the one phase of bringing a pool up
 	// that can say how far in it is. A sandbox waiting for a pool to take it
 	// spends most of its wait right here on a cold host.
-	if err := e.consumePoolImagePull(ctx, pull, poolID, image, phase); err != nil {
+	if err := e.consumePoolImagePull(ctx, pull, poolID, image, phase, onPull); err != nil {
 		return fmt.Errorf("pull image %q: %w", image, err)
 	}
 	logger.Info("pulled image", "image", image, "pool", poolID, "duration", time.Since(started))
@@ -71,7 +73,7 @@ const poolPullReportInterval = 500 * time.Millisecond
 // Draining is mandatory — it is what advances the pull — so the reporting is
 // free; what it must not do is report every message, of which there are
 // thousands.
-func (e *Engine) consumePoolImagePull(ctx context.Context, pull client.ImagePullResponse, poolID, image string, phase sandbox.PoolProvisionPhase) error {
+func (e *Engine) consumePoolImagePull(ctx context.Context, pull client.ImagePullResponse, poolID, image string, phase sandbox.PoolProvisionPhase, onPull func(sandbox.PoolPullProgress)) error {
 	layers := map[string]struct {
 		current int64
 		total   int64
@@ -92,6 +94,9 @@ func (e *Engine) consumePoolImagePull(ctx context.Context, pull client.ImagePull
 			Phase: phase,
 			Pull:  &progress,
 		})
+		if onPull != nil {
+			onPull(progress)
+		}
 	}
 	// Once before the first byte, so the phase is on the row even for a pull
 	// that turns out to be entirely cached.

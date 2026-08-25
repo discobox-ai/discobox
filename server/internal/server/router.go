@@ -157,7 +157,6 @@ func NewApp(ctx context.Context, writeDB, readDB *gorm.DB, options ...AppOptions
 		return nil, services.Services{}, nil, nil, err
 	}
 	svc := services.Services{
-		Preload:        appServices,
 		SSH:            opts.SSHIngress,
 		Projects:       appServices,
 		HarnessConfigs: appServices,

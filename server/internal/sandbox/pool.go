@@ -92,6 +92,24 @@ type PoolPullProgress struct {
 	Done           bool   `json:"done,omitempty"`
 }
 
+// PreloadProgress is how far a pool's preload has got: which image, how many
+// of how many, and — while one is actually downloading — how much of it has
+// arrived.
+//
+// The counts alone were what a startup line first reported, and they are the
+// half that moves least: "2 of 4" sits unchanged for the minutes it takes two
+// gigabytes to arrive, which is the whole of the wait this exists to describe.
+type PreloadProgress struct {
+	// Image is the reference being worked on, empty on the closing report.
+	Image string
+	// Done and Total count images, not bytes.
+	Done  int
+	Total int
+	// Pull is set while bytes are moving, and nil for an image that was
+	// already present.
+	Pull *PoolPullProgress
+}
+
 // PoolProgressReporter is how a driver reports its progress without holding the
 // pool manager itself. Engines take one of these; a nil reporter is a driver
 // that says nothing, which every code path must tolerate because half of them

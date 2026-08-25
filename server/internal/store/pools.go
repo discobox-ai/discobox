@@ -306,6 +306,25 @@ func (s *Store) RecordPoolProvisionProgress(ctx context.Context, poolID string, 
 		}).Error
 }
 
+// RecordPoolImageStage stores what image staging is doing on a pool.
+//
+// A narrow update of three columns rather than a Save: this is written as often
+// as twice a second while an image pulls, against a row the pool's own
+// reconcile also writes, and everything else on it belongs to that reconcile.
+func (s *Store) RecordPoolImageStage(ctx context.Context, poolID string, stage json.RawMessage, staged bool, observedAt time.Time) error {
+	write, err := s.getWrite(ctx)
+	if err != nil {
+		return err
+	}
+	return write.WithContext(ctx).Model(&model.Pool{}).
+		Where("id = ?", poolID).
+		Updates(map[string]any{
+			"image_stage":     stage,
+			"images_staged":   staged,
+			"image_staged_at": observedAt.UTC(),
+		}).Error
+}
+
 // SchedulablePoolForSandbox gates placement: the sandbox's pool must be
 // ready, schedulable, unrevoked, and not offline. Ready and Schedulable are
 // the agent's own word; the offline check covers their blind spot — an agent

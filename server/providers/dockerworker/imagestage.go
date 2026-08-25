@@ -12,7 +12,7 @@ import (
 	sandbox "github.com/discobox-ai/discobox/server/internal/sandbox"
 )
 
-// PreloadImages makes every image in images present on the pool's daemon.
+// StageImages makes every image in images present on the pool's daemon.
 //
 // The images a sandbox runs are normally pulled by the pool agent at the moment
 // a sandbox wants one, which is the moment a user is watching. Pulling them
@@ -25,7 +25,7 @@ import (
 // that no longer exists in the registry should not stop the other four from
 // being ready, and none of this is required for the server to work — it is an
 // optimisation for the wait that would otherwise happen later.
-func (e *Engine) PreloadImages(ctx context.Context, pool *model.Pool, images []string, report func(image string, done, total int)) error {
+func (e *Engine) StageImages(ctx context.Context, pool *model.Pool, images []string, report func(sandbox.PreloadProgress)) error {
 	if pool == nil || len(images) == 0 {
 		return nil
 	}
@@ -42,10 +42,15 @@ func (e *Engine) PreloadImages(ctx context.Context, pool *model.Pool, images []s
 			continue
 		}
 		if report != nil {
-			report(image, i, len(images))
+			report(sandbox.PreloadProgress{Image: image, Done: i, Total: len(images)})
 		}
 		started := time.Now()
-		if err := e.ensureImageRef(ctx, lease.Client, pool.ID, image, sandbox.PoolPhasePreloadingImages); err != nil {
+		onPull := func(pull sandbox.PoolPullProgress) {
+			if report != nil {
+				report(sandbox.PreloadProgress{Image: image, Done: i, Total: len(images), Pull: &pull})
+			}
+		}
+		if err := e.ensureImageRef(ctx, lease.Client, pool.ID, image, sandbox.PoolPhasePreloadingImages, onPull); err != nil {
 			// A canceled preload is the server shutting down, not an image
 			// problem, and reporting every remaining image as broken would bury
 			// that.
@@ -59,7 +64,7 @@ func (e *Engine) PreloadImages(ctx context.Context, pool *model.Pool, images []s
 		slog.InfoContext(ctx, "preloaded image", "pool", pool.ID, "image", image, "duration", time.Since(started))
 	}
 	if report != nil {
-		report("", len(images), len(images))
+		report(sandbox.PreloadProgress{Done: len(images), Total: len(images)})
 	}
 	return errors.Join(failures...)
 }

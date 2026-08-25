@@ -523,6 +523,17 @@ type Pool struct {
 	AvailableMemoryBytes  int64           `gorm:"column:available_memory_bytes;not null;default:0" json:"availableMemoryBytes" doc:"Agent-reported available memory capacity in bytes"`
 	AvailableStorageBytes int64           `gorm:"column:available_storage_bytes;not null;default:0" json:"availableStorageBytes" doc:"Agent-reported available storage capacity in bytes"`
 	Conditions            json.RawMessage `gorm:"column:conditions;type:text" json:"conditions,omitempty" doc:"Opaque agent-reported condition details for display"`
+	// ImagesStaged reports whether the images a sandbox on this project might
+	// run are present on this host.
+	//
+	// It is a condition and never a health state. A pool whose images are not
+	// staged is active, healthy and schedulable: staging is a head start, and a
+	// sandbox that wants an image the host does not have pulls it then, exactly
+	// as it did before any of this existed. Gating scheduling on it would make
+	// a registry a dependency of placement.
+	ImagesStaged  bool            `gorm:"column:images_staged;not null;default:false" json:"imagesStaged" doc:"Whether the images a sandbox might run are staged on this host. A condition, not a health state: an unstaged pool is still active and schedulable"`
+	ImageStage    json.RawMessage `gorm:"column:image_stage;type:text" json:"imageStage,omitempty" doc:"What image staging is doing on this host, for a client waiting on a first run"`
+	ImageStagedAt *time.Time      `gorm:"column:image_staged_at" json:"imageStagedAt,omitempty" doc:"When ImageStage was last written" format:"date-time"`
 	// ProvisionProgress is what the provider driver is doing to bring this host
 	// up, for a client whose sandbox is waiting for a pool to take it. Unlike
 	// Conditions it is not agent-reported: the phases it names — fetching a VM
@@ -545,6 +556,36 @@ type Pool struct {
 }
 
 func (Pool) TableName() string { return "pools" }
+
+// PoolImageStage is what image staging is doing on one pool.
+//
+// It is display data: a client that launched the server and is waiting out a
+// first run reads it to say what the wait is for. Nothing schedules on it.
+type PoolImageStage struct {
+	State PoolImageState `json:"state"`
+	// Image is the reference being pulled, empty between images.
+	Image string `json:"image,omitempty"`
+	// Done and Total count images; Current and Size count bytes of the image
+	// named above. Both totals grow while a manifest is walked, so neither is
+	// progress toward a fixed target and neither may be drawn as a bar.
+	Done           int   `json:"done"`
+	Total          int   `json:"total"`
+	Current        int64 `json:"current,omitempty"`
+	Size           int64 `json:"size,omitempty"`
+	Layers         int   `json:"layers,omitempty"`
+	LayersComplete int   `json:"layersComplete,omitempty"`
+	// Error is why the last attempt failed. Staging retries on its own.
+	Error string `json:"error,omitempty"`
+}
+
+// PoolImageState is how far image staging has got on a pool.
+type PoolImageState string
+
+const (
+	PoolImageStateStaging PoolImageState = "staging"
+	PoolImageStateReady   PoolImageState = "ready"
+	PoolImageStateFailed  PoolImageState = "failed"
+)
 
 func (p *Pool) EventProjectID() string    { return p.ProjectID }
 func (p *Pool) EventResourceType() string { return "pool" }

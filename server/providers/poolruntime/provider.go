@@ -71,9 +71,9 @@ type RuntimeProvider interface {
 	// identity and pool-local state.
 	RepairPool(ctx context.Context, project *model.Project, provider *model.SandboxProviderInstance, pool *model.Pool, mint poolagent.MintBootstrap, reason string) error
 	RemovePool(ctx context.Context, project *model.Project, provider *model.SandboxProviderInstance, pool *model.Pool) error
-	// PreloadImages makes the images a sandbox will want present on the pool's
-	// daemon before anybody asks for one.
-	PreloadImages(ctx context.Context, pool *model.Pool, images []string, report func(image string, done, total int)) error
+	// StageImages makes the images a sandbox will want present on the pool's
+	// daemon. The pool is already up; this creates nothing.
+	StageImages(ctx context.Context, pool *model.Pool, images []string, report func(sandbox.PreloadProgress)) error
 	// AcquirePoolAgentClient returns an HTTP client lease that reaches the pool
 	// agent API for the pool.
 	AcquirePoolAgentClient(ctx context.Context, pool *model.Pool) (*transport.HTTPClientLease, error)
@@ -219,21 +219,16 @@ func (p *Provider) RemovePool(ctx context.Context, _ sandbox.PoolManager, projec
 	return p.runtimeProvider.RemovePool(ctx, project, provider, pool)
 }
 
-// PreloadImages brings the pool up if it is not already, then pulls the images
-// onto it.
+// StageImages pulls the images a sandbox will want onto a pool that is already
+// up. It creates nothing: no VM, no container, no pool.
 //
-// Bringing it up first is the point rather than a precondition: there is no
-// daemon to pull onto until the host exists, and the whole reason to do this at
-// startup is that both halves — the VM boot and the pull — are what a user
-// would otherwise wait through at the moment they asked for a sandbox.
-func (p *Provider) PreloadImages(ctx context.Context, manager sandbox.PoolManager, project *model.Project, provider *model.SandboxProviderInstance, pool *model.Pool, images []string, report func(image string, done, total int)) error {
-	if manager == nil {
-		return fmt.Errorf("pool manager is required")
-	}
-	if err := p.runtimeProvider.EnsurePool(ctx, project, provider, pool, mintPoolBootstrap(manager, project, pool)); err != nil {
-		return err
-	}
-	return p.runtimeProvider.PreloadImages(ctx, pool, images, report)
+// Bringing the pool up is not this call's business, and used to be. Staging ran
+// from server startup, where nothing had ensured anything, so it ensured the
+// pool itself — which meant starting every pool the database had ever held, at
+// every server start, to pull images onto them. Staging is now driven by the
+// pool's own reconcile, which has just converged the host this pulls onto.
+func (p *Provider) StageImages(ctx context.Context, pool *model.Pool, images []string, report func(sandbox.PreloadProgress)) error {
+	return p.runtimeProvider.StageImages(ctx, pool, images, report)
 }
 
 // The registration timeout is armed by the pool reconciler, which owns the

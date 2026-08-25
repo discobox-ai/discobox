@@ -52,12 +52,6 @@ type Service struct {
 	harnessConfigs   *harnessconfigs.Service
 }
 
-// PreloadImages pulls the images a sandbox will want onto every known pool.
-// It is the app's one caller of the pool control plane outside a reconcile.
-func (s *Service) PreloadImages(ctx context.Context, report func(line string)) error {
-	return s.poolControlPlane.PreloadImages(ctx, report)
-}
-
 type Options struct {
 	SandboxReconcileJobConcurrency int
 	DevelopmentImageSync           *dockerworker.DevelopmentImageSynchronizer
@@ -131,6 +125,11 @@ func (s *Service) SetSandboxAuthManager(manager *sandboxauth.Manager) {
 
 func (s *Service) SetDefaultSandboxImage(image, digest string) {
 	s.Service.SetDefaultSandboxImage(image, digest)
+	// The preloader needs the same answer. It used to read the package
+	// default instead, which is only the effective image when nothing
+	// overrode it — so a server told to run a different sandbox image
+	// prestaged the one it was not going to use.
+	s.poolControlPlane.SetDefaultSandboxImage(image)
 }
 
 func (s *Service) SetHostID(hostID string) {
