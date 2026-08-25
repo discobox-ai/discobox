@@ -29,10 +29,10 @@ const (
 	// behind — which is a byte counter that moves once a second rather than
 	// twice, and half the requests over a wait that can run for minutes.
 	awaitSourcePollInterval = time.Second
-	// awaitSourceTimeout bounds that wait. It is shorter than the server's own
-	// patience for the push itself: this only covers provisioning, and a client
-	// that gives up leaves the sandbox to the server's timeout.
-	awaitSourceTimeout = 10 * time.Minute
+	// awaitSourceStall bounds that wait by silence rather than by total elapsed
+	// time; see StallClock for why. A client that gives up leaves the sandbox
+	// to the server's own timeout.
+	awaitSourceStall = 5 * time.Minute
 )
 
 // pushDeliveredSource is one source of a sandbox the server expects this client
@@ -192,7 +192,7 @@ func (s *LocalSources) pushRoot(key string) (string, error) {
 // anyway; without it, the longest wait in a create is the one that says the
 // least about itself.
 func awaitSourceRequested(ctx context.Context, client sourceDeliveryClient, projectID, sandboxID string, report Report) error {
-	deadline := time.Now().Add(awaitSourceTimeout)
+	stall := NewStallClock(awaitSourceStall)
 	// last is what the caller's line says, which starting out is the step
 	// reported just above. Comparing against that rather than against nothing is
 	// what makes a report mean the line changed.
@@ -218,9 +218,11 @@ func awaitSourceRequested(ctx context.Context, client sourceDeliveryClient, proj
 		if phase := ProvisionStatus(sandbox); phase != "" && phase != last {
 			last = phase
 			report.step(phase)
+			// Something happened, so the clock starts again.
+			stall.Progressed()
 		}
-		if time.Now().After(deadline) {
-			return fmt.Errorf("timed out after %s waiting for the discobox to be ready for its source", awaitSourceTimeout)
+		if stall.Expired() {
+			return fmt.Errorf("gave up after %s with no further progress toward the discobox being ready for its source (last: %s)", awaitSourceStall, last)
 		}
 		select {
 		case <-ctx.Done():

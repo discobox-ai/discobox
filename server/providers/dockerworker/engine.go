@@ -130,6 +130,11 @@ type Config struct {
 	// DockerReadyTimeout bounds how long EnsureWorker waits for a freshly
 	// launched VM's Docker daemon to become reachable.
 	DockerReadyTimeout time.Duration
+	// ProgressReporter records what bringing this pool host up is doing right
+	// now, for a client whose sandbox is waiting for a pool to take it. Nil is
+	// a driver that says nothing.
+	ProgressReporter sandbox.PoolProgressReporter `json:"-"`
+
 	// DevelopmentImageSync converges watcher-built images onto each destination
 	// Docker daemon before the pool-agent container is reconciled.
 	DevelopmentImageSync *DevelopmentImageSynchronizer `json:"-"`
@@ -246,10 +251,17 @@ func configRevision(cfg Config) string {
 }
 
 func (e *Engine) EnsurePool(ctx context.Context, _ *model.Project, provider *model.SandboxProviderInstance, pool *model.Pool, mint poolagent.MintBootstrap) error {
+	// The phases of bringing a host up, in the order they happen, for a client
+	// whose sandbox is waiting for a pool to take it. On a VM backend starting
+	// the machine includes fetching the disk image the first time, which on a
+	// cold Mac is minutes; a driver that can say more about that says it from
+	// inside EnsureVM.
+	e.cfg.ProgressReporter.Report(ctx, pool.ID, sandbox.PoolPhaseStartingVM)
 	vmInfo, err := e.driver.EnsureVM(ctx, pool.ID, e.vmSpec(provider, pool))
 	if err != nil {
 		return err
 	}
+	e.cfg.ProgressReporter.Report(ctx, pool.ID, sandbox.PoolPhaseWaitingForDocker)
 	lease, err := e.acquireDockerReady(ctx, pool.ID)
 	if err != nil {
 		return err
@@ -278,10 +290,12 @@ func (e *Engine) RepairPool(ctx context.Context, _ *model.Project, provider *mod
 			return err
 		}
 	}
+	e.cfg.ProgressReporter.Report(ctx, pool.ID, sandbox.PoolPhaseStartingVM)
 	vmInfo, err = e.driver.EnsureVM(ctx, pool.ID, e.vmSpec(provider, pool))
 	if err != nil {
 		return err
 	}
+	e.cfg.ProgressReporter.Report(ctx, pool.ID, sandbox.PoolPhaseWaitingForDocker)
 	lease, err := e.acquireDockerReady(ctx, pool.ID)
 	if err != nil {
 		return err
@@ -447,9 +461,10 @@ func (e *Engine) createPoolContainer(ctx context.Context, cli *client.Client, po
 	}
 	// Before minting: a first pull is the longest step here, and a bootstrap
 	// token minted ahead of it spends its lifetime waiting on the registry.
-	if err := e.ensureImage(ctx, cli); err != nil {
+	if err := e.ensureImage(ctx, cli, pool.ID); err != nil {
 		return nil, err
 	}
+	e.cfg.ProgressReporter.Report(ctx, pool.ID, sandbox.PoolPhaseStartingPoolAgent)
 	bootstrap, err := mint(ctx)
 	if err != nil {
 		return nil, err
@@ -543,6 +558,7 @@ func (e *Engine) createPoolContainer(ctx context.Context, cli *client.Client, po
 	if _, err := cli.ContainerStart(ctx, created.ID, client.ContainerStartOptions{}); err != nil {
 		return nil, err
 	}
+	e.cfg.ProgressReporter.Report(ctx, pool.ID, sandbox.PoolPhaseWaitingForPoolAgent)
 	return e.waitContainerReady(ctx, cli, created.ID, waitForHealth)
 }
 

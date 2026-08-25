@@ -6,7 +6,6 @@ import (
 	"io"
 	"os"
 	"strings"
-	"time"
 
 	"github.com/spf13/cobra"
 
@@ -300,12 +299,9 @@ func (a *App) runHarnessConfigure(ctx context.Context, client *apiclientgen.Clie
 	name := "configure discobox " + id.RandomPart(sandbox.ID)
 	status := newStatusLine(stderr)
 	status.set(name + ": starting")
-	watching, stopWatching := context.WithCancel(ctx)
-	go a.watchProvisioning(watching, projectID, sandbox.ID, func(line string) {
+	waitErr := a.waitForProvisionedSandbox(ctx, client, projectID, sandbox.ID, func(line string) {
 		status.set(name + ": " + line)
 	})
-	_, waitErr := a.waitForSandboxCtx(ctx, client, projectID, sandbox.ID, 2*time.Minute)
-	stopWatching()
 	status.clear()
 	if waitErr != nil {
 		return nil, fmt.Errorf("configure discobox failed to start: %w", waitErr)

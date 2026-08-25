@@ -5328,6 +5328,52 @@ func (o OptPool) Or(d Pool) Pool {
 	return d
 }
 
+// NewOptPoolProvisionProgress returns new OptPoolProvisionProgress with value set to v.
+func NewOptPoolProvisionProgress(v PoolProvisionProgress) OptPoolProvisionProgress {
+	return OptPoolProvisionProgress{
+		Value: v,
+		Set:   true,
+	}
+}
+
+// OptPoolProvisionProgress is optional PoolProvisionProgress.
+type OptPoolProvisionProgress struct {
+	Value PoolProvisionProgress
+	Set   bool
+}
+
+// IsSet returns true if OptPoolProvisionProgress was set.
+func (o OptPoolProvisionProgress) IsSet() bool { return o.Set }
+
+// Reset unsets value.
+func (o *OptPoolProvisionProgress) Reset() {
+	var v PoolProvisionProgress
+	o.Value = v
+	o.Set = false
+}
+
+// SetTo sets value to v.
+func (o *OptPoolProvisionProgress) SetTo(v PoolProvisionProgress) {
+	o.Set = true
+	o.Value = v
+}
+
+// Get returns value and boolean that denotes whether value was set.
+func (o OptPoolProvisionProgress) Get() (v PoolProvisionProgress, ok bool) {
+	if !o.Set {
+		return v, false
+	}
+	return o.Value, true
+}
+
+// Or returns value if set, or given parameter if does not.
+func (o OptPoolProvisionProgress) Or(d PoolProvisionProgress) PoolProvisionProgress {
+	if v, ok := o.Get(); ok {
+		return v
+	}
+	return d
+}
+
 // NewOptPoolSandboxPullProgress returns new OptPoolSandboxPullProgress with value set to v.
 func NewOptPoolSandboxPullProgress(v PoolSandboxPullProgress) OptPoolSandboxPullProgress {
 	return OptPoolSandboxPullProgress{
@@ -6468,7 +6514,10 @@ type Pool struct {
 	// Whether the pool accepts new sandboxes.
 	Schedulable bool `json:"schedulable"`
 	// Whether the pool should be used only as fallback capacity.
-	Degraded bool `json:"degraded"`
+	Degraded          bool                     `json:"degraded"`
+	ProvisionProgress OptPoolProvisionProgress `json:"provisionProgress"`
+	// When provisionProgress was observed.
+	ProvisionProgressAt OptDateTime `json:"provisionProgressAt"`
 	// Agent-reported available CPU capacity in vCPUs.
 	AvailableCpuVcpus float64 `json:"availableCpuVcpus"`
 	// Agent-reported available memory capacity in bytes.
@@ -6566,6 +6615,16 @@ func (s *Pool) GetSchedulable() bool {
 // GetDegraded returns the value of Degraded.
 func (s *Pool) GetDegraded() bool {
 	return s.Degraded
+}
+
+// GetProvisionProgress returns the value of ProvisionProgress.
+func (s *Pool) GetProvisionProgress() OptPoolProvisionProgress {
+	return s.ProvisionProgress
+}
+
+// GetProvisionProgressAt returns the value of ProvisionProgressAt.
+func (s *Pool) GetProvisionProgressAt() OptDateTime {
+	return s.ProvisionProgressAt
 }
 
 // GetAvailableCpuVcpus returns the value of AvailableCpuVcpus.
@@ -6713,6 +6772,16 @@ func (s *Pool) SetDegraded(val bool) {
 	s.Degraded = val
 }
 
+// SetProvisionProgress sets the value of ProvisionProgress.
+func (s *Pool) SetProvisionProgress(val OptPoolProvisionProgress) {
+	s.ProvisionProgress = val
+}
+
+// SetProvisionProgressAt sets the value of ProvisionProgressAt.
+func (s *Pool) SetProvisionProgressAt(val OptDateTime) {
+	s.ProvisionProgressAt = val
+}
+
 // SetAvailableCpuVcpus sets the value of AvailableCpuVcpus.
 func (s *Pool) SetAvailableCpuVcpus(val float64) {
 	s.AvailableCpuVcpus = val
@@ -6839,6 +6908,116 @@ func (s *PoolDesiredState) UnmarshalText(data []byte) error {
 	default:
 		return errors.Errorf("invalid value: %q", data)
 	}
+}
+
+// What a pool host is being made to do right now, named for a client whose sandbox is
+// waiting for a pool to take it and wants to know what it is waiting for (ADR 0060).
+// It is the pool-shaped twin of SandboxProvisionPhase: an observation, never a state,
+// and history the moment the phase ends.
+// The work is the driver's, so the phases are the driver's: a VM backend fetches a
+// disk image and boots a machine before any of it can run containers, and those are
+// the minutes a first pool start is actually spent in. The two image phases carry
+// pull byte counts; the rest are named work with no denominator to report.
+// Ref: #/components/schemas/PoolProvisionPhase
+type PoolProvisionPhase string
+
+const (
+	PoolProvisionPhaseFetchingVMImage     PoolProvisionPhase = "fetching_vm_image"
+	PoolProvisionPhaseStartingVM          PoolProvisionPhase = "starting_vm"
+	PoolProvisionPhaseWaitingForDocker    PoolProvisionPhase = "waiting_for_docker"
+	PoolProvisionPhasePullingPoolImage    PoolProvisionPhase = "pulling_pool_image"
+	PoolProvisionPhaseStartingPoolAgent   PoolProvisionPhase = "starting_pool_agent"
+	PoolProvisionPhaseWaitingForPoolAgent PoolProvisionPhase = "waiting_for_pool_agent"
+)
+
+// AllValues returns all PoolProvisionPhase values.
+func (PoolProvisionPhase) AllValues() []PoolProvisionPhase {
+	return []PoolProvisionPhase{
+		PoolProvisionPhaseFetchingVMImage,
+		PoolProvisionPhaseStartingVM,
+		PoolProvisionPhaseWaitingForDocker,
+		PoolProvisionPhasePullingPoolImage,
+		PoolProvisionPhaseStartingPoolAgent,
+		PoolProvisionPhaseWaitingForPoolAgent,
+	}
+}
+
+// MarshalText implements encoding.TextMarshaler.
+func (s PoolProvisionPhase) MarshalText() ([]byte, error) {
+	switch s {
+	case PoolProvisionPhaseFetchingVMImage:
+		return []byte(s), nil
+	case PoolProvisionPhaseStartingVM:
+		return []byte(s), nil
+	case PoolProvisionPhaseWaitingForDocker:
+		return []byte(s), nil
+	case PoolProvisionPhasePullingPoolImage:
+		return []byte(s), nil
+	case PoolProvisionPhaseStartingPoolAgent:
+		return []byte(s), nil
+	case PoolProvisionPhaseWaitingForPoolAgent:
+		return []byte(s), nil
+	default:
+		return nil, errors.Errorf("invalid value: %q", s)
+	}
+}
+
+// UnmarshalText implements encoding.TextUnmarshaler.
+func (s *PoolProvisionPhase) UnmarshalText(data []byte) error {
+	switch PoolProvisionPhase(data) {
+	case PoolProvisionPhaseFetchingVMImage:
+		*s = PoolProvisionPhaseFetchingVMImage
+		return nil
+	case PoolProvisionPhaseStartingVM:
+		*s = PoolProvisionPhaseStartingVM
+		return nil
+	case PoolProvisionPhaseWaitingForDocker:
+		*s = PoolProvisionPhaseWaitingForDocker
+		return nil
+	case PoolProvisionPhasePullingPoolImage:
+		*s = PoolProvisionPhasePullingPoolImage
+		return nil
+	case PoolProvisionPhaseStartingPoolAgent:
+		*s = PoolProvisionPhaseStartingPoolAgent
+		return nil
+	case PoolProvisionPhaseWaitingForPoolAgent:
+		*s = PoolProvisionPhaseWaitingForPoolAgent
+		return nil
+	default:
+		return errors.Errorf("invalid value: %q", data)
+	}
+}
+
+// Work underway on a pool host that has no state transition to announce it, reported
+// by the provider driver doing it. A client waiting for a pool to take its sandbox
+// reads this to say what it is waiting for.
+// pull is the same shape a sandbox reports, and deliberately the same schema: an image
+// pull is an image pull, a client renders both on one line the same way, and two
+// shapes for it would be two renderers that drift.
+// Ref: #/components/schemas/PoolProvisionProgress
+type PoolProvisionProgress struct {
+	Phase PoolProvisionPhase     `json:"phase"`
+	Pull  OptSandboxPullProgress `json:"pull"`
+}
+
+// GetPhase returns the value of Phase.
+func (s *PoolProvisionProgress) GetPhase() PoolProvisionPhase {
+	return s.Phase
+}
+
+// GetPull returns the value of Pull.
+func (s *PoolProvisionProgress) GetPull() OptSandboxPullProgress {
+	return s.Pull
+}
+
+// SetPhase sets the value of Phase.
+func (s *PoolProvisionProgress) SetPhase(val PoolProvisionPhase) {
+	s.Phase = val
+}
+
+// SetPull sets the value of Pull.
+func (s *PoolProvisionProgress) SetPull(val OptSandboxPullProgress) {
+	s.Pull = val
 }
 
 // Progress on one sandbox that is being provisioned. It is deliberately not a

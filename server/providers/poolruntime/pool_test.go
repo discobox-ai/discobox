@@ -8,6 +8,7 @@ import (
 	"net/http/httptest"
 	"reflect"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -32,6 +33,9 @@ type fakePoolManager struct {
 	scheduledPoolID         string
 	scheduledRepairs        []string
 	scheduleUnblocks        bool
+
+	mu       sync.Mutex
+	progress []poolProgressReport
 }
 
 func (m *fakePoolManager) GetPool(context.Context, string, string) (*model.Pool, error) {
@@ -103,6 +107,20 @@ func (m *fakePoolManager) SchedulePoolReconciliation(_ context.Context, _, poolI
 		}
 	}
 	return nil
+}
+
+func (m *fakePoolManager) ReportPoolProvisionProgress(_ context.Context, poolID string, progress sandbox.PoolProvisionProgress) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.progress = append(m.progress, poolProgressReport{poolID: poolID, progress: progress})
+	return nil
+}
+
+// poolProgressReport is one call to ReportPoolProvisionProgress, kept so a test
+// can assert on what a driver said it was doing.
+type poolProgressReport struct {
+	poolID   string
+	progress sandbox.PoolProvisionProgress
 }
 
 func (m *fakePoolManager) SchedulePoolRepair(_ context.Context, poolID, _ string) error {

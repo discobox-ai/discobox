@@ -2,6 +2,7 @@ package store
 
 import (
 	"context"
+	"encoding/json"
 	"time"
 
 	"gorm.io/gorm"
@@ -279,6 +280,30 @@ func (s *Store) UpdatePoolStatus(ctx context.Context, poolID string, ready, sche
 		return nil, err
 	}
 	return &pool, nil
+}
+
+// RecordPoolProvisionProgress stores what a provider driver is doing to bring a
+// pool host up.
+//
+// A narrow two-column update rather than a Save of the row: this is written as
+// often as twice a second while an image pulls, against a row the reconcile
+// driving that work is holding, and every other column on it belongs to
+// somebody else.
+//
+// No project event is published for it either. The client that wants this is
+// already reading the pool once a second, and an event per report would put a
+// byte counter on a stream every subscriber pays for.
+func (s *Store) RecordPoolProvisionProgress(ctx context.Context, poolID string, progress json.RawMessage, observedAt time.Time) error {
+	write, err := s.getWrite(ctx)
+	if err != nil {
+		return err
+	}
+	return write.WithContext(ctx).Model(&model.Pool{}).
+		Where("id = ?", poolID).
+		Updates(map[string]any{
+			"provision_progress":    progress,
+			"provision_progress_at": observedAt.UTC(),
+		}).Error
 }
 
 // SchedulablePoolForSandbox gates placement: the sandbox's pool must be

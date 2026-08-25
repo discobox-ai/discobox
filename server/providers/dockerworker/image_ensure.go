@@ -8,6 +8,8 @@ import (
 
 	cerrdefs "github.com/containerd/errdefs"
 	"github.com/moby/moby/client"
+
+	sandbox "github.com/discobox-ai/discobox/server/internal/sandbox"
 )
 
 // ensureImage makes the pool-agent image present on cli's daemon, pulling it if
@@ -26,7 +28,7 @@ import (
 // Inspect first rather than pulling unconditionally: a development image tag
 // exists on no registry, so a pull would fail on the very images that are
 // already correctly in place.
-func (e *Engine) ensureImage(ctx context.Context, cli *client.Client) error {
+func (e *Engine) ensureImage(ctx context.Context, cli *client.Client, poolID string) error {
 	image := e.cfg.Image
 	if _, err := cli.ImageInspect(ctx, image); err == nil {
 		return nil
@@ -42,11 +44,84 @@ func (e *Engine) ensureImage(ctx context.Context, cli *client.Client) error {
 		return fmt.Errorf("pull pool image %q: %w", image, err)
 	}
 	defer pull.Close()
-	// Wait drains the daemon's progress stream, and draining is what actually
-	// runs the pull.
-	if err := pull.Wait(ctx); err != nil {
+	// The stream is read rather than waited on, because draining it is what
+	// runs the pull either way and this is the one phase of bringing a pool up
+	// that can say how far in it is. A sandbox waiting for a pool to take it
+	// spends most of its wait right here on a cold host.
+	if err := e.consumePoolImagePull(ctx, pull, poolID, image); err != nil {
 		return fmt.Errorf("pull pool image %q: %w", image, err)
 	}
 	logger.Info("pulled pool image", "image", image, "duration", time.Since(started))
+	return nil
+}
+
+// poolPullReportInterval is how often a pull in flight is written to the pool
+// row. Twice a second is what the sandbox-side pull reports at, and it is the
+// rate a byte counter has to move at to read as movement rather than as a
+// series of jumps.
+const poolPullReportInterval = 500 * time.Millisecond
+
+// consumePoolImagePull drains a pull's progress stream, reporting as it goes.
+//
+// Draining is mandatory — it is what advances the pull — so the reporting is
+// free; what it must not do is report every message, of which there are
+// thousands.
+func (e *Engine) consumePoolImagePull(ctx context.Context, pull client.ImagePullResponse, poolID, image string) error {
+	layers := map[string]struct {
+		current int64
+		total   int64
+		done    bool
+	}{}
+	var lastReport time.Time
+	report := func(done bool) {
+		progress := sandbox.PoolPullProgress{Image: image, Done: done}
+		for _, layer := range layers {
+			progress.Current += layer.current
+			progress.Total += layer.total
+			progress.Layers++
+			if layer.done {
+				progress.LayersComplete++
+			}
+		}
+		e.cfg.ProgressReporter.ReportProgress(ctx, poolID, sandbox.PoolProvisionProgress{
+			Phase: sandbox.PoolPhasePullingPoolImage,
+			Pull:  &progress,
+		})
+	}
+	// Once before the first byte, so the phase is on the row even for a pull
+	// that turns out to be entirely cached.
+	report(false)
+	for message, err := range pull.JSONMessages(ctx) {
+		if err != nil {
+			return err
+		}
+		if message.Error != nil {
+			return message.Error
+		}
+		if message.ID != "" {
+			layer := layers[message.ID]
+			// "Pull complete" and "Already exists" both end a layer, and a
+			// layer that was already present reports no bytes at all — which is
+			// why layers complete is counted rather than derived from bytes.
+			switch message.Status {
+			case "Pull complete", "Already exists":
+				layer.done = true
+			}
+			if message.Progress != nil {
+				if message.Progress.Current > 0 {
+					layer.current = message.Progress.Current
+				}
+				if message.Progress.Total > 0 {
+					layer.total = message.Progress.Total
+				}
+			}
+			layers[message.ID] = layer
+		}
+		if time.Since(lastReport) >= poolPullReportInterval {
+			lastReport = time.Now()
+			report(false)
+		}
+	}
+	report(true)
 	return nil
 }

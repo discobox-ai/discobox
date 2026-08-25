@@ -150,6 +150,7 @@ func newFromInstance(_ context.Context, instance *model.SandboxProviderInstance,
 	if err != nil {
 		return nil, err
 	}
+	progress := sandbox.PoolProgressReporterFor(poolManager)
 	driver, err := NewDriver(DriverConfig{
 		Guest:               guest,
 		StateDir:            effectiveStateDir(cfg.StateDir),
@@ -158,11 +159,12 @@ func newFromInstance(_ context.Context, instance *model.SandboxProviderInstance,
 		DataDiskGiB:         cfg.DataDiskGiB,
 		CacheDiskGiB:        cfg.CacheDiskGiB,
 		ControlPlaneStreams: streams,
+		ProgressReporter:    progress,
 	})
 	if err != nil {
 		return nil, err
 	}
-	engine, err := dockerworker.New(engineConfig(cfg, imageSync), driver)
+	engine, err := dockerworker.New(engineConfig(cfg, imageSync, progress), driver)
 	if err != nil {
 		_ = driver.Close()
 		return nil, err
@@ -173,7 +175,7 @@ func newFromInstance(_ context.Context, instance *model.SandboxProviderInstance,
 // engineConfig renders the pool engine configuration for one provider instance.
 // It is separate from newFromInstance so the transport invariants can be
 // asserted without a VM or a pool manager.
-func engineConfig(cfg Config, imageSync *dockerworker.DevelopmentImageSynchronizer) dockerworker.Config {
+func engineConfig(cfg Config, imageSync *dockerworker.DevelopmentImageSynchronizer, progress sandbox.PoolProgressReporter) dockerworker.Config {
 	return dockerworker.Config{
 		// Both directions are VSOCK, as for libkrun: the agent dials host CID 2
 		// for the control plane and listens on its own port for inbound
@@ -183,6 +185,7 @@ func engineConfig(cfg Config, imageSync *dockerworker.DevelopmentImageSynchroniz
 		Image:                dockerworker.EffectivePoolImage(cfg.WorkerImage),
 		Labels:               map[string]string{labelProviderType: ProviderType},
 		DevelopmentImageSync: imageSync,
+		ProgressReporter:     progress,
 	}
 }
 

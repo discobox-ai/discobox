@@ -8,6 +8,8 @@ import (
 	"strings"
 	"sync"
 	"testing"
+
+	sandbox "github.com/discobox-ai/discobox/server/internal/sandbox"
 )
 
 // fakePullDaemon answers image inspect and image create, recording what was
@@ -48,7 +50,11 @@ func (d *fakePullDaemon) serveHTTP(w http.ResponseWriter, request *http.Request)
 			_, _ = w.Write([]byte(`{"errorDetail":{"message":"unauthorized"},"error":"unauthorized"}` + "\n"))
 			return
 		}
-		_, _ = w.Write([]byte(`{"status":"Pull complete"}` + "\n"))
+		// Two layers, one downloading and one already present, which is the
+		// shape a byte counter has to add up correctly.
+		_, _ = w.Write([]byte(`{"id":"layer1","status":"Downloading","progressDetail":{"current":50,"total":100}}` + "\n"))
+		_, _ = w.Write([]byte(`{"id":"layer2","status":"Already exists"}` + "\n"))
+		_, _ = w.Write([]byte(`{"id":"layer1","status":"Pull complete","progressDetail":{"current":100,"total":100}}` + "\n"))
 	default:
 		http.Error(w, request.Method+" "+path, http.StatusNotFound)
 	}
@@ -73,7 +79,7 @@ func TestEnsureImagePullsWhenAbsent(t *testing.T) {
 	defer cli.Close()
 
 	engine := &Engine{cfg: Config{Image: testPoolImage}}
-	if err := engine.ensureImage(context.Background(), cli); err != nil {
+	if err := engine.ensureImage(context.Background(), cli, "pool_test"); err != nil {
 		t.Fatal(err)
 	}
 	if pulls := daemon.pulled(); len(pulls) != 1 || pulls[0] != testPoolImage {
@@ -96,7 +102,7 @@ func TestEnsureImageDoesNotPullWhenPresent(t *testing.T) {
 	defer cli.Close()
 
 	engine := &Engine{cfg: Config{Image: image}}
-	if err := engine.ensureImage(context.Background(), cli); err != nil {
+	if err := engine.ensureImage(context.Background(), cli, "pool_test"); err != nil {
 		t.Fatal(err)
 	}
 	if pulls := daemon.pulled(); len(pulls) != 0 {
@@ -117,11 +123,89 @@ func TestEnsureImageReportsPullFailure(t *testing.T) {
 	defer cli.Close()
 
 	engine := &Engine{cfg: Config{Image: testPoolImage}}
-	err = engine.ensureImage(context.Background(), cli)
+	err = engine.ensureImage(context.Background(), cli, "pool_test")
 	if err == nil {
 		t.Fatal("expected an error")
 	}
 	if !strings.Contains(err.Error(), testPoolImage) {
 		t.Fatalf("error %q does not name the image", err)
+	}
+}
+
+// The pull is the one phase of bringing a pool up that can say how far in it
+// is, and it is where a sandbox waiting for a pool spends most of its wait on a
+// cold host.
+func TestEnsureImageReportsPullProgress(t *testing.T) {
+	daemon := &fakePullDaemon{present: map[string]struct{}{}}
+	server := httptest.NewServer(http.HandlerFunc(daemon.serveHTTP))
+	defer server.Close()
+	cli, err := testDockerClient(server.URL)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer cli.Close()
+
+	var reports []sandbox.PoolProvisionProgress
+	engine := &Engine{cfg: Config{
+		Image: testPoolImage,
+		ProgressReporter: func(_ context.Context, poolID string, progress sandbox.PoolProvisionProgress) {
+			if poolID != "pool_test" {
+				t.Errorf("reported against pool %q", poolID)
+			}
+			reports = append(reports, progress)
+		},
+	}}
+	if err := engine.ensureImage(context.Background(), cli, "pool_test"); err != nil {
+		t.Fatal(err)
+	}
+
+	if len(reports) == 0 {
+		t.Fatal("a pull reported nothing")
+	}
+	for _, report := range reports {
+		if report.Phase != sandbox.PoolPhasePullingPoolImage {
+			t.Fatalf("phase = %q, want %q", report.Phase, sandbox.PoolPhasePullingPoolImage)
+		}
+	}
+	final := reports[len(reports)-1]
+	if final.Pull == nil || !final.Pull.Done {
+		t.Fatalf("the last report does not close the pull: %+v", final.Pull)
+	}
+	if final.Pull.Image != testPoolImage {
+		t.Fatalf("pull image = %q, want %q", final.Pull.Image, testPoolImage)
+	}
+	// Both layers counted, including the one that was already present and
+	// therefore reported no bytes at all.
+	if final.Pull.Layers != 2 || final.Pull.LayersComplete != 2 {
+		t.Fatalf("layers = %d/%d, want 2/2", final.Pull.LayersComplete, final.Pull.Layers)
+	}
+	if final.Pull.Current != 100 || final.Pull.Total != 100 {
+		t.Fatalf("bytes = %d/%d, want 100/100", final.Pull.Current, final.Pull.Total)
+	}
+}
+
+// A pool image already on the host says nothing: there is no pull to describe,
+// and a phase on the row would outlive the work it names.
+func TestEnsureImageReportsNothingWhenTheImageIsPresent(t *testing.T) {
+	const image = "discobox-pool-agent:dev-test"
+	daemon := &fakePullDaemon{present: map[string]struct{}{image: {}}}
+	server := httptest.NewServer(http.HandlerFunc(daemon.serveHTTP))
+	defer server.Close()
+	cli, err := testDockerClient(server.URL)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer cli.Close()
+
+	reported := false
+	engine := &Engine{cfg: Config{
+		Image:            image,
+		ProgressReporter: func(context.Context, string, sandbox.PoolProvisionProgress) { reported = true },
+	}}
+	if err := engine.ensureImage(context.Background(), cli, "pool_test"); err != nil {
+		t.Fatal(err)
+	}
+	if reported {
+		t.Fatal("reported a pull that never happened")
 	}
 }

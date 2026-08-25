@@ -1285,6 +1285,12 @@ components:
                 degraded:
                     description: Whether the pool should be used only as fallback capacity
                     type: boolean
+                provisionProgress:
+                    $ref: '#/components/schemas/PoolProvisionProgress'
+                provisionProgressAt:
+                    description: When provisionProgress was observed
+                    format: date-time
+                    type: string
                 availableCpuVcpus:
                     description: Agent-reported available CPU capacity in vCPUs
                     format: double
@@ -2887,6 +2893,43 @@ components:
             properties:
                 phase:
                     $ref: '#/components/schemas/SandboxProvisionPhase'
+                pull:
+                    $ref: '#/components/schemas/SandboxPullProgress'
+            required:
+                - phase
+            type: object
+        PoolProvisionPhase:
+            description: |-
+                What a pool host is being made to do right now, named for a client whose sandbox is
+                waiting for a pool to take it and wants to know what it is waiting for (ADR 0060).
+                It is the pool-shaped twin of SandboxProvisionPhase: an observation, never a state,
+                and history the moment the phase ends.
+
+                The work is the driver's, so the phases are the driver's: a VM backend fetches a
+                disk image and boots a machine before any of it can run containers, and those are
+                the minutes a first pool start is actually spent in. The two image phases carry
+                pull byte counts; the rest are named work with no denominator to report.
+            enum:
+                - fetching_vm_image
+                - starting_vm
+                - waiting_for_docker
+                - pulling_pool_image
+                - starting_pool_agent
+                - waiting_for_pool_agent
+            type: string
+        PoolProvisionProgress:
+            additionalProperties: false
+            description: |-
+                Work underway on a pool host that has no state transition to announce it, reported
+                by the provider driver doing it. A client waiting for a pool to take its sandbox
+                reads this to say what it is waiting for.
+
+                pull is the same shape a sandbox reports, and deliberately the same schema: an image
+                pull is an image pull, a client renders both on one line the same way, and two
+                shapes for it would be two renderers that drift.
+            properties:
+                phase:
+                    $ref: '#/components/schemas/PoolProvisionPhase'
                 pull:
                     $ref: '#/components/schemas/SandboxPullProgress'
             required:

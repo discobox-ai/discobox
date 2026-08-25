@@ -88,6 +88,31 @@ the engine":
 The engine owns Docker readiness waiting after `EnsureVM` (ping with a
 deadline), so drivers never implement boot polling.
 
+## Reporting What Bringing a Pool Up Is Doing
+
+A sandbox that no pool has taken yet can say only that it is waiting, and on a
+cold machine that is the longest part of a create: a VM disk image is fetched
+and extracted, a machine boots, Docker comes up inside it, and the pool-agent
+image is pulled — none of which the sandbox knows anything about.
+
+So the driver doing the work records it. `sandbox.PoolProgressReporter` is a
+nil-safe sink on the engine's config and on the vz driver's; every provider
+builds one from its pool manager. Reports land on the pool row's
+`provisionProgress`, and a client reading a pending sandbox asks its pool what
+it is doing instead.
+
+The engine reports the phases every backend shares — starting the VM, waiting
+for Docker, pulling the pool image, starting and waiting for the agent — around
+the calls that perform them. A driver refines that from inside: `vz` reports
+fetching the VM image, which the engine can only see as part of starting a VM.
+
+Two rules make it cheap enough to write from a hot path. Reports are a narrow
+two-column update and publish no project event, because the reader is polling
+anyway; and an image pull, the one phase with a denominator, is throttled to the
+rate a byte counter has to move to read as movement. Nothing waits on any of it,
+and a report that fails to store is dropped rather than failing the reconcile
+that produced it.
+
 ## Pool Image Acquisition
 
 Docker does not fetch on container create: an image the daemon does not hold is

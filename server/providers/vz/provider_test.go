@@ -16,7 +16,7 @@ import (
 // firewall prompt, so a change that turns either into an IP endpoint is a
 // behavior change, not a refactor.
 func TestEngineConfigUsesVSOCKInBothDirections(t *testing.T) {
-	cfg := engineConfig(Config{}, nil)
+	cfg := engineConfig(Config{}, nil, nil)
 
 	controlPlane, err := wire.Parse(cfg.ControlPlaneURL)
 	if err != nil {
@@ -44,11 +44,11 @@ func TestEngineConfigUsesVSOCKInBothDirections(t *testing.T) {
 // A pool image is required on every backend; leaving it unset would start a
 // container from whatever the daemon happened to have.
 func TestEngineConfigResolvesAPoolImage(t *testing.T) {
-	if image := engineConfig(Config{}, nil).Image; strings.TrimSpace(image) == "" {
+	if image := engineConfig(Config{}, nil, nil).Image; strings.TrimSpace(image) == "" {
 		t.Fatal("engine config resolved no pool image")
 	}
 	const configured = "example.com/pool:custom"
-	if image := engineConfig(Config{WorkerImage: configured}, nil).Image; image != configured {
+	if image := engineConfig(Config{WorkerImage: configured}, nil, nil).Image; image != configured {
 		t.Fatalf("pool image = %q, want the configured value", image)
 	}
 }

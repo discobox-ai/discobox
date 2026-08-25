@@ -128,6 +128,7 @@ func newFromInstance(_ context.Context, instance *model.SandboxProviderInstance,
 		Image:                dockerworker.EffectivePoolImage(cfg.WorkerImage),
 		Labels:               map[string]string{labelProviderType: ProviderType},
 		DevelopmentImageSync: imageSync,
+		ProgressReporter:     sandbox.PoolProgressReporterFor(poolManager),
 	}, driver)
 	if err != nil {
 		_ = driver.Close()

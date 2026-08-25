@@ -85,7 +85,7 @@ func TestGuestStateRootRelocatesOnlyTheDaemonView(t *testing.T) {
 // with a bare EOF while agent-initiated traffic keeps working, so the pool
 // still reports itself ready and the breakage looks like a network fault.
 func TestEngineConfigPublishesTheAgentPortTheRelayDials(t *testing.T) {
-	cfg := engineConfig(Config{}, nil)
+	cfg := engineConfig(Config{}, nil, nil)
 	if !cfg.PublicAgentPort {
 		t.Fatal("engine config does not publish the agent port at a fixed number; the relay would dial a closed port")
 	}
@@ -98,7 +98,7 @@ func TestEngineConfigPublishesTheAgentPortTheRelayDials(t *testing.T) {
 // disagree about where the agent is.
 func TestEngineConfigAndDriverAgreeOnTheAgentPort(t *testing.T) {
 	const port = 4310
-	engine := engineConfig(Config{AgentPort: port}, nil)
+	engine := engineConfig(Config{AgentPort: port}, nil, nil)
 	driver := driverConfig(Config{AgentPort: port}, nil)
 	if engine.AgentPort != port || driver.AgentPort != port {
 		t.Fatalf("agent port: engine %d, driver %d, want %d on both", engine.AgentPort, driver.AgentPort, port)
@@ -108,7 +108,7 @@ func TestEngineConfigAndDriverAgreeOnTheAgentPort(t *testing.T) {
 // The control plane must stay off TCP: a host listener is what triggers the
 // Windows firewall prompt this provider exists to avoid.
 func TestEngineConfigKeepsTheControlPlaneOffTCP(t *testing.T) {
-	cfg := engineConfig(Config{}, nil)
+	cfg := engineConfig(Config{}, nil, nil)
 	if !strings.HasPrefix(cfg.ControlPlaneURL, "unix://") {
 		t.Fatalf("control plane URL = %q, want a unix socket so no host TCP port is opened", cfg.ControlPlaneURL)
 	}

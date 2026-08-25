@@ -65,7 +65,10 @@ func ProvisionStatus(sandbox *apimodel.Sandbox) Step {
 	// No phase to report. Either nothing hosts the sandbox yet, or the phase
 	// has aged out, and in both cases the coarse answer is the honest one.
 	if runtime.State == apiclientgen.SandboxRuntimeStatePending {
-		return "waiting for a pool to take it"
+		// The truthful answer, and a thin one: the interesting half is what the
+		// pool is busy doing instead, which lives on the pool. A caller holding
+		// one refines this with PoolProvisionStatus.
+		return StepWaitingForPool
 	}
 	if runtime.RuntimeState.Or("") == apiclientgen.SandboxRuntimeRuntimeStateStarting {
 		return "starting the discobox"
@@ -171,4 +174,62 @@ func humanBytes(bytes int64) string {
 		exponent++
 	}
 	return fmt.Sprintf("%.1f %ciB", value, "KMGT"[exponent])
+}
+
+// StepWaitingForPool is what a sandbox says while no pool has taken it yet.
+//
+// A named constant because it is the one status a caller acts on rather than
+// merely prints: it is the cue to go and ask the pool what it is doing, and
+// comparing against a string literal in two packages is how those two drift.
+const StepWaitingForPool Step = "waiting for a pool to take it"
+
+// PoolProvisionStatus is one line saying what a pool host is being brought
+// through, or "" when its driver has nothing current to report.
+//
+// This is the other half of StepWaitingForPool. A sandbox waiting for a pool
+// says only that it is waiting; the pool is where the minutes are actually
+// going — fetching a VM disk image, booting the machine, pulling the pool-agent
+// image — and the driver doing that work records it as it happens.
+func PoolProvisionStatus(pool *apimodel.Pool) Step {
+	if pool == nil {
+		return ""
+	}
+	progress, ok := pool.ProvisionProgress.Get()
+	if !ok {
+		return ""
+	}
+	// The same freshness rule the sandbox's own phase gets, for the same
+	// reason: the record is the last report and is never cleared, so a pool
+	// that came up yesterday still carries the phase it finished in.
+	if observed, ok := pool.ProvisionProgressAt.Get(); ok {
+		if time.Since(observed) > ProvisionProgressFresh {
+			return ""
+		}
+	}
+	if pull, ok := progress.Pull.Get(); ok {
+		switch progress.Phase {
+		case apiclientgen.PoolProvisionPhaseFetchingVMImage, apiclientgen.PoolProvisionPhasePullingPoolImage:
+			return pullLine(pull)
+		}
+	}
+	switch progress.Phase {
+	case apiclientgen.PoolProvisionPhaseFetchingVMImage:
+		return "fetching the VM image"
+	case apiclientgen.PoolProvisionPhaseStartingVM:
+		return "starting the VM"
+	case apiclientgen.PoolProvisionPhaseWaitingForDocker:
+		return "waiting for Docker in the VM"
+	case apiclientgen.PoolProvisionPhasePullingPoolImage:
+		return "pulling the pool agent image"
+	case apiclientgen.PoolProvisionPhaseStartingPoolAgent:
+		return "starting the pool agent"
+	case apiclientgen.PoolProvisionPhaseWaitingForPoolAgent:
+		return "waiting for the pool agent to come up"
+	}
+	// A phase this build does not know is still worth reporting: the server is
+	// newer than this CLI, and its own word for what it is doing beats a blank.
+	if phase := strings.TrimSpace(string(progress.Phase)); phase != "" {
+		return Step(strings.ReplaceAll(phase, "_", " "))
+	}
+	return ""
 }

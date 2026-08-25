@@ -2,6 +2,7 @@ package pools
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"log"
 	"log/slog"
@@ -119,6 +120,20 @@ func (s *ControlPlane) SchedulePoolReconciliation(ctx context.Context, projectID
 // reconciler's own business and belongs in the Result it returns, where the
 // engine can arm it on the row it already holds; routing it back through a mark
 // is how a reconcile ends up marking itself (reconcile.ErrSelfMark).
+
+// ReportPoolProvisionProgress records what a driver is doing to bring a pool
+// host up, for a client waiting on it.
+//
+// Display only, so a report that cannot be stored is dropped rather than
+// failing the reconcile that produced it: the work is going fine, and the only
+// casualty is a status line that stays on its previous phase.
+func (s *ControlPlane) ReportPoolProvisionProgress(ctx context.Context, poolID string, progress sandbox.PoolProvisionProgress) error {
+	encoded, err := json.Marshal(progress)
+	if err != nil {
+		return err
+	}
+	return s.store.RecordPoolProvisionProgress(ctx, poolID, encoded, time.Now().UTC())
+}
 
 // SchedulePoolRepair re-drives a failed pool as NEW INTENT: it bumps the
 // generation and marks the pool dirty in one transaction.

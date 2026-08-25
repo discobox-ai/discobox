@@ -60,6 +60,11 @@ type DriverConfig struct {
 	// ControlPlaneStreams receives connections the guests open. When nil the VM
 	// still runs, but its agent can never register.
 	ControlPlaneStreams StreamSink
+	// ProgressReporter says what bringing a VM up is doing. The engine reports
+	// the coarse phases around this driver; what only this driver knows is that
+	// the first pool on a machine downloads and extracts a multi-hundred-megabyte
+	// disk image before there is a VM to start at all.
+	ProgressReporter sandbox.PoolProgressReporter
 }
 
 // Driver owns one Virtualization.framework VM per pool.
@@ -76,6 +81,7 @@ type Driver struct {
 	dataDiskGiB  int64
 	cacheDiskGiB int64
 	streams      StreamSink
+	progress     sandbox.PoolProgressReporter
 
 	mu  sync.Mutex
 	vms map[string]*guestVM
@@ -114,6 +120,7 @@ func NewDriver(cfg DriverConfig) (*Driver, error) {
 		dataDiskGiB:  effectiveInt64(cfg.DataDiskGiB, defaultDataDiskGiB),
 		cacheDiskGiB: effectiveInt64(cfg.CacheDiskGiB, defaultCacheDiskGiB),
 		streams:      cfg.ControlPlaneStreams,
+		progress:     cfg.ProgressReporter,
 		vms:          map[string]*guestVM{},
 	}, nil
 }
@@ -141,6 +148,11 @@ func (d *Driver) EnsureVM(ctx context.Context, poolID string, _ dockerworker.VMS
 
 	// Resolved outside the lock: the first pool on a machine pulls the guest
 	// image, and no other pool should block on that.
+	//
+	// Reported unconditionally rather than only when it turns out to be a miss:
+	// whether the image is cached is known only by asking, and a phase that
+	// lasts milliseconds on a warm machine costs a status line one frame.
+	d.progress.Report(ctx, poolID, sandbox.PoolPhaseFetchingVMImage)
 	bundle, err := d.guest.Resolve(ctx)
 	if err != nil {
 		return nil, err

@@ -83,6 +83,7 @@ func newFromInstance(ctx context.Context, instance *model.SandboxProviderInstanc
 		return nil, err
 	}
 	engineCfg.DevelopmentImageSync = imageSync
+	engineCfg.ProgressReporter = sandbox.PoolProgressReporterFor(poolManager)
 	engine, err := dockerworker.New(engineCfg, driver)
 	if err != nil {
 		_ = driver.Close()

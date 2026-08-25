@@ -104,7 +104,7 @@ func newFromInstance(_ context.Context, instance *model.SandboxProviderInstance,
 	if err != nil {
 		return nil, err
 	}
-	engine, err := dockerworker.New(engineConfig(cfg, imageSync), driver)
+	engine, err := dockerworker.New(engineConfig(cfg, imageSync, sandbox.PoolProgressReporterFor(poolManager)), driver)
 	if err != nil {
 		_ = driver.Close()
 		return nil, err
@@ -115,7 +115,7 @@ func newFromInstance(_ context.Context, instance *model.SandboxProviderInstance,
 // engineConfig renders the pool engine configuration for one provider instance.
 // It is separate from newFromInstance so the invariants below can be asserted
 // without a VM, a Docker daemon, or a pool manager.
-func engineConfig(cfg Config, imageSync *dockerworker.DevelopmentImageSynchronizer) dockerworker.Config {
+func engineConfig(cfg Config, imageSync *dockerworker.DevelopmentImageSynchronizer, progress sandbox.PoolProgressReporter) dockerworker.Config {
 	return dockerworker.Config{
 		// The agent reaches the control plane over a Unix socket the guest relay
 		// serves, so no host TCP listener — and therefore no Windows firewall
@@ -140,6 +140,7 @@ func engineConfig(cfg Config, imageSync *dockerworker.DevelopmentImageSynchroniz
 		PublicAgentPort:      true,
 		Labels:               map[string]string{labelProviderType: ProviderType},
 		DevelopmentImageSync: imageSync,
+		ProgressReporter:     progress,
 	}
 }
 

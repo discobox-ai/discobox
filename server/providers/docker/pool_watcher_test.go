@@ -11,6 +11,7 @@ import (
 
 	poolagentauth "github.com/discobox-ai/discobox/server/internal/auth/poolagent"
 	"github.com/discobox-ai/discobox/server/internal/model"
+	sandbox "github.com/discobox-ai/discobox/server/internal/sandbox"
 	"github.com/discobox-ai/discobox/server/providers/dockerworker"
 )
 
@@ -272,6 +273,10 @@ func (m *recordingPoolManager) CreateSandboxAgentToken(context.Context, poolagen
 func (m *recordingPoolManager) SchedulePoolReconciliation(_ context.Context, projectID, poolID string) error {
 	m.reconcileProjectID = projectID
 	m.reconcilePoolID = poolID
+	return nil
+}
+
+func (m *recordingPoolManager) ReportPoolProvisionProgress(context.Context, string, sandbox.PoolProvisionProgress) error {
 	return nil
 }
 

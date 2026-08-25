@@ -117,7 +117,7 @@ func (e *Engine) ensureConsoleContainer(ctx context.Context, cli *client.Client,
 func (e *Engine) createConsoleContainer(ctx context.Context, cli *client.Client, provider *model.SandboxProviderInstance, pool *model.Pool, name string) (string, error) {
 	// The console runs the pool-agent image too, and an operator can open one
 	// on a daemon that has never hosted a pool container.
-	if err := e.ensureImage(ctx, cli); err != nil {
+	if err := e.ensureImage(ctx, cli, pool.ID); err != nil {
 		return "", err
 	}
 	created, err := cli.ContainerCreate(ctx, client.ContainerCreateOptions{
