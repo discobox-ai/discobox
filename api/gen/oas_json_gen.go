@@ -10743,6 +10743,8 @@ func (s *PoolProvisionPhase) Decode(d *jx.Decoder) error {
 		*s = PoolProvisionPhaseStartingPoolAgent
 	case PoolProvisionPhaseWaitingForPoolAgent:
 		*s = PoolProvisionPhaseWaitingForPoolAgent
+	case PoolProvisionPhasePreloadingImages:
+		*s = PoolProvisionPhasePreloadingImages
 	default:
 		*s = PoolProvisionPhase(v)
 	}

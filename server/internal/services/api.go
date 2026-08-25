@@ -233,8 +233,18 @@ type SSHIngress struct {
 	HostKey string
 }
 
+// ImagePreloader pulls the images a sandbox will want onto every known pool,
+// before anybody asks for one. It is not part of the HTTP API: the only caller
+// is server startup, which will not report itself ready until this returns.
+type ImagePreloader interface {
+	PreloadImages(ctx context.Context, report func(line string)) error
+}
+
 // Services groups the dependencies needed by the API operations.
 type Services struct {
+	// Preload is run once at startup, before the server reports ready.
+	Preload ImagePreloader
+
 	// SSH is served by GET /ssh so a client can pin the host key before it
 	// holds any other credential.
 	SSH SSHIngress

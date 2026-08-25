@@ -2916,6 +2916,7 @@ components:
                 - pulling_pool_image
                 - starting_pool_agent
                 - waiting_for_pool_agent
+                - preloading_images
             type: string
         PoolProvisionProgress:
             additionalProperties: false

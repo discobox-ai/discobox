@@ -6928,6 +6928,7 @@ const (
 	PoolProvisionPhasePullingPoolImage    PoolProvisionPhase = "pulling_pool_image"
 	PoolProvisionPhaseStartingPoolAgent   PoolProvisionPhase = "starting_pool_agent"
 	PoolProvisionPhaseWaitingForPoolAgent PoolProvisionPhase = "waiting_for_pool_agent"
+	PoolProvisionPhasePreloadingImages    PoolProvisionPhase = "preloading_images"
 )
 
 // AllValues returns all PoolProvisionPhase values.
@@ -6939,6 +6940,7 @@ func (PoolProvisionPhase) AllValues() []PoolProvisionPhase {
 		PoolProvisionPhasePullingPoolImage,
 		PoolProvisionPhaseStartingPoolAgent,
 		PoolProvisionPhaseWaitingForPoolAgent,
+		PoolProvisionPhasePreloadingImages,
 	}
 }
 
@@ -6956,6 +6958,8 @@ func (s PoolProvisionPhase) MarshalText() ([]byte, error) {
 	case PoolProvisionPhaseStartingPoolAgent:
 		return []byte(s), nil
 	case PoolProvisionPhaseWaitingForPoolAgent:
+		return []byte(s), nil
+	case PoolProvisionPhasePreloadingImages:
 		return []byte(s), nil
 	default:
 		return nil, errors.Errorf("invalid value: %q", s)
@@ -6982,6 +6986,9 @@ func (s *PoolProvisionPhase) UnmarshalText(data []byte) error {
 		return nil
 	case PoolProvisionPhaseWaitingForPoolAgent:
 		*s = PoolProvisionPhaseWaitingForPoolAgent
+		return nil
+	case PoolProvisionPhasePreloadingImages:
+		*s = PoolProvisionPhasePreloadingImages
 		return nil
 	default:
 		return errors.Errorf("invalid value: %q", data)

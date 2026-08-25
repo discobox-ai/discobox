@@ -63,6 +63,9 @@ const (
 	PoolPhasePullingPoolImage    PoolProvisionPhase = "pulling_pool_image"
 	PoolPhaseStartingPoolAgent   PoolProvisionPhase = "starting_pool_agent"
 	PoolPhaseWaitingForPoolAgent PoolProvisionPhase = "waiting_for_pool_agent"
+	// PoolPhasePreloadingImages is the startup pull of the images a sandbox
+	// will want, done before anybody asks for one.
+	PoolPhasePreloadingImages PoolProvisionPhase = "preloading_images"
 )
 
 // PoolProvisionProgress is one report about a pool host being brought up.

@@ -251,6 +251,30 @@ just launched a server that it reached the binary it started.
 `health` in the root module owns the payload, because the CLI that polls it is
 in another module.
 
+## Preloading Images at Startup
+
+Startup pulls the images a sandbox will want — the sandbox agent and every
+harness config's image — onto every pool that already exists, and does not
+report the server ready until it has finished.
+
+It is a trade, and the trade is the point. Without it the first sandbox on a
+cold machine waits for a VM to boot and for two gigabytes of harness image to
+arrive, at whatever moment the user happened to ask for one; with it that wait
+happens once, at a moment the server can narrate, and every later command is
+fast. `/healthz` reports the phase and which image of how many is in flight, so
+a CLI that launched the server prints it.
+
+Two things keep it from being a trap. It is bounded: readiness waits on it, so a
+pool whose VM will never boot must not make the server permanently unreachable —
+the commands for diagnosing that pool are served by the server. And it never
+fails startup: a pool that cannot come up, or an image that no longer exists,
+costs exactly this optimisation, and the sandbox that needs the image pulls it
+then, as it always did. `DISCOBOX_PRELOAD_IMAGES=0` turns it off.
+
+The pull is the engine's work, not the pool agent's, for the same reason the
+pool image is: the engine owns what is on a pool daemon and can reach that
+daemon before there is an agent on it.
+
 ## Single Server Per Data Directory
 
 One server runs against a data directory at a time, enforced by an exclusive

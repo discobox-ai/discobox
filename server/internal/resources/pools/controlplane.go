@@ -26,6 +26,9 @@ type ControlPlane struct {
 	store     *store.Store
 	engine    *reconcile.Engine
 	agentAuth *poolagentauth.Manager
+	// providerManager resolves a pool's provider outside a reconcile, which
+	// startup preloading needs and nothing else here does.
+	providerManager *sandbox.ProviderManager
 }
 
 func NewControlPlane(appStore *store.Store, engine *reconcile.Engine) *ControlPlane {
@@ -42,6 +45,7 @@ func (s *ControlPlane) RegisterJobs(providerManager *sandbox.ProviderManager) er
 	if s.engine == nil {
 		return errors.New("reconcile engine is required")
 	}
+	s.providerManager = providerManager
 	return s.engine.Register(PoolResourceType, NewPoolReconciler(s.store, providerManager, s))
 }
 

@@ -52,6 +52,12 @@ type Service struct {
 	harnessConfigs   *harnessconfigs.Service
 }
 
+// PreloadImages pulls the images a sandbox will want onto every known pool.
+// It is the app's one caller of the pool control plane outside a reconcile.
+func (s *Service) PreloadImages(ctx context.Context, report func(line string)) error {
+	return s.poolControlPlane.PreloadImages(ctx, report)
+}
+
 type Options struct {
 	SandboxReconcileJobConcurrency int
 	DevelopmentImageSync           *dockerworker.DevelopmentImageSynchronizer

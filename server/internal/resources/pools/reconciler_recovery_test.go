@@ -290,6 +290,10 @@ func (stubPoolProvider) RemovePool(context.Context, sandbox.PoolManager, *model.
 	return nil
 }
 
+func (stubPoolProvider) PreloadImages(context.Context, sandbox.PoolManager, *model.Project, *model.SandboxProviderInstance, *model.Pool, []string, func(string, int, int)) error {
+	return nil
+}
+
 func (stubPoolProvider) OpenConsole(context.Context, *model.SandboxProviderInstance, *model.Pool, sandbox.ConsoleOptions) (sandbox.PTY, error) {
 	return nil, errors.New("no console in unit tests")
 }

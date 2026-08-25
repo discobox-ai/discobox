@@ -23,12 +23,19 @@ import (
 
 const appName = "discobox"
 
+// PreloadImagesEnv turns startup image preloading off. On by default: the wait
+// it removes is longer and worse-placed than the one it adds.
+const PreloadImagesEnv = "DISCOBOX_PRELOAD_IMAGES"
+
 // Config holds all configuration for discobox-server.
 type Config struct {
 	// Server settings.
 	Port                int
 	Listen              []string
 	AutoShutdownTimeout time.Duration
+	// PreloadImages pulls every image a sandbox might want onto every pool at
+	// startup, and withholds readiness until it is done.
+	PreloadImages bool
 
 	// XDG-backed application directories.
 	DataDir   string
@@ -80,6 +87,11 @@ func Load() (*Config, error) {
 	cfg.Port = getEnvInt("PORT", controlplane.DefaultPort)
 	cfg.Listen = listenEndpoints()
 	cfg.AutoShutdownTimeout = getEnvDuration("DISCOBOX_SERVER_IDLE_TIMEOUT", 0)
+	preload, err := getEnvBool(PreloadImagesEnv, true)
+	if err != nil {
+		return nil, err
+	}
+	cfg.PreloadImages = preload
 
 	cfg.DataDir = getEnv("DISCOBOX_DATA_DIR", filepath.Join(xdg.DataHome, appName))
 	cfg.ConfigDir = getEnv("DISCOBOX_CONFIG_DIR", filepath.Join(xdg.ConfigHome, appName))

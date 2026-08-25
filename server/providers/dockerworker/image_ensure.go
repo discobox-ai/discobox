@@ -29,7 +29,12 @@ import (
 // exists on no registry, so a pull would fail on the very images that are
 // already correctly in place.
 func (e *Engine) ensureImage(ctx context.Context, cli *client.Client, poolID string) error {
-	image := e.cfg.Image
+	return e.ensureImageRef(ctx, cli, poolID, e.cfg.Image, sandbox.PoolPhasePullingPoolImage)
+}
+
+// ensureImageRef is ensureImage for any image on this pool's daemon, reporting
+// under the phase the caller is in.
+func (e *Engine) ensureImageRef(ctx context.Context, cli *client.Client, poolID, image string, phase sandbox.PoolProvisionPhase) error {
 	if _, err := cli.ImageInspect(ctx, image); err == nil {
 		return nil
 	} else if !cerrdefs.IsNotFound(err) {
@@ -37,21 +42,21 @@ func (e *Engine) ensureImage(ctx context.Context, cli *client.Client, poolID str
 	}
 
 	logger := slog.Default()
-	logger.Info("pulling pool image", "image", image)
+	logger.Info("pulling image", "image", image, "pool", poolID)
 	started := time.Now()
 	pull, err := cli.ImagePull(ctx, image, client.ImagePullOptions{})
 	if err != nil {
-		return fmt.Errorf("pull pool image %q: %w", image, err)
+		return fmt.Errorf("pull image %q: %w", image, err)
 	}
 	defer pull.Close()
 	// The stream is read rather than waited on, because draining it is what
 	// runs the pull either way and this is the one phase of bringing a pool up
 	// that can say how far in it is. A sandbox waiting for a pool to take it
 	// spends most of its wait right here on a cold host.
-	if err := e.consumePoolImagePull(ctx, pull, poolID, image); err != nil {
-		return fmt.Errorf("pull pool image %q: %w", image, err)
+	if err := e.consumePoolImagePull(ctx, pull, poolID, image, phase); err != nil {
+		return fmt.Errorf("pull image %q: %w", image, err)
 	}
-	logger.Info("pulled pool image", "image", image, "duration", time.Since(started))
+	logger.Info("pulled image", "image", image, "pool", poolID, "duration", time.Since(started))
 	return nil
 }
 
@@ -66,7 +71,7 @@ const poolPullReportInterval = 500 * time.Millisecond
 // Draining is mandatory — it is what advances the pull — so the reporting is
 // free; what it must not do is report every message, of which there are
 // thousands.
-func (e *Engine) consumePoolImagePull(ctx context.Context, pull client.ImagePullResponse, poolID, image string) error {
+func (e *Engine) consumePoolImagePull(ctx context.Context, pull client.ImagePullResponse, poolID, image string, phase sandbox.PoolProvisionPhase) error {
 	layers := map[string]struct {
 		current int64
 		total   int64
@@ -84,7 +89,7 @@ func (e *Engine) consumePoolImagePull(ctx context.Context, pull client.ImagePull
 			}
 		}
 		e.cfg.ProgressReporter.ReportProgress(ctx, poolID, sandbox.PoolProvisionProgress{
-			Phase: sandbox.PoolPhasePullingPoolImage,
+			Phase: phase,
 			Pull:  &progress,
 		})
 	}

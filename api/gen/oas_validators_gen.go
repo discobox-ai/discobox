@@ -1994,6 +1994,8 @@ func (s PoolProvisionPhase) Validate() error {
 		return nil
 	case "waiting_for_pool_agent":
 		return nil
+	case "preloading_images":
+		return nil
 	default:
 		return errors.Errorf("invalid value: %v", s)
 	}

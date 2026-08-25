@@ -179,6 +179,9 @@ type testRuntimeProvider struct {
 	acquireErrs  []error
 	acquireCalls int
 	consoleCalls int
+
+	mu        sync.Mutex
+	preloaded []string
 }
 
 func (p *testRuntimeProvider) Close() error { return nil }
@@ -196,6 +199,16 @@ func (p *testRuntimeProvider) RepairPool(context.Context, *model.Project, *model
 }
 
 func (p *testRuntimeProvider) RemovePool(context.Context, *model.Project, *model.SandboxProviderInstance, *model.Pool) error {
+	return nil
+}
+
+func (p *testRuntimeProvider) PreloadImages(_ context.Context, _ *model.Pool, images []string, report func(string, int, int)) error {
+	p.mu.Lock()
+	p.preloaded = append(p.preloaded, images...)
+	p.mu.Unlock()
+	if report != nil {
+		report("", len(images), len(images))
+	}
 	return nil
 }
 

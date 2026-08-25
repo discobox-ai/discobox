@@ -24,6 +24,9 @@ type fakePullDaemon struct {
 func (d *fakePullDaemon) serveHTTP(w http.ResponseWriter, request *http.Request) {
 	path := stripDockerAPIVersion(request.URL.Path)
 	switch {
+	case request.Method == http.MethodGet && path == "/_ping":
+		w.Header().Set("Api-Version", "1.51")
+		w.WriteHeader(http.StatusOK)
 	case request.Method == http.MethodGet && strings.HasPrefix(path, "/images/") && strings.HasSuffix(path, "/json"):
 		reference, _ := url.PathUnescape(strings.TrimSuffix(strings.TrimPrefix(path, "/images/"), "/json"))
 		d.mu.Lock()
