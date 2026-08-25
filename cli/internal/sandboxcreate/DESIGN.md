@@ -41,6 +41,12 @@ sandbox create requests.
   (`PromptOptions.IncludeDirty`), and asking is the caller's UI
   (`ConfirmIncludeDirty`); this package decides only when the question applies.
   See the CLI design doc's "Uncommitted Work at Create".
+- A source directory in no repository asks the same question about the whole
+  directory (`ConfirmCopyDirectory`), answered by the same `IncludeDirty`
+  policy, and this package measures what would be copied for the frontend to
+  show while it asks (`MeasureDirectory`, polled through `DirectoryWalk.Total`).
+  Both frontends count the same thing the same way; only where the number is
+  drawn is theirs.
 - `PromptOptions.Include` names extra sources, resolved exactly as the primary
   source is and filed as the request's `sourceCodeReferences` under the sandbox
   directory each lands in. This package settles their slugs and destinations;
@@ -61,7 +67,8 @@ sandbox create requests.
   has just resolved them, a later delivery finds them again from each source's
   recorded local directory. See the CLI design doc's "Re-delivering Source".
 - A source directory in no Git repository gets a throwaway repository built over
-  it, and is delivered by push. Create returns every source's repository as
+  it — after the user has been asked whether to copy it at all — and is
+  delivered by push. Create returns every source's repository as
   `LocalSources`, which delivery pushes out of and the caller closes; see the
   CLI design doc's "A Directory That Is Not a Repository" and
   [ADR 0045](../../../docs/adr/0045-a-directory-with-no-repository-is-delivered-by-push.md).

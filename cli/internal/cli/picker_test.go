@@ -10,6 +10,7 @@ import (
 	"github.com/spf13/cobra"
 
 	apimodel "github.com/discobox-ai/discobox/api/model"
+	"github.com/discobox-ai/discobox/cli/internal/sandboxcreate"
 )
 
 func TestPickOneWithoutChoices(t *testing.T) {
@@ -213,5 +214,61 @@ func TestPickerIgnoresAnUnknownLastSelection(t *testing.T) {
 	m := newPickerModel("Select a sandbox", items, "sbx_gone")
 	if m.matches[0].item.id != "sbx_2" {
 		t.Fatalf("top match = %q, want the most recently updated sbx_2", m.matches[0].item.id)
+	}
+}
+
+// A live prompt is polled until it says the number in it is final, so a
+// question about a directory still being measured comes up straight away and
+// fills its size in as the walk finds it.
+func TestPickerLivePromptFollowsItsSubjectUntilItIsFinal(t *testing.T) {
+	counted := 0
+	live := func() (string, bool) {
+		counted++
+		if counted < 2 {
+			return "calculating… 1.0 MiB so far", false
+		}
+		return "2.0 MiB", true
+	}
+	m := newPickerModel("calculating… 0 B so far", []pickerItem{{id: "no"}, {id: "yes"}}, "")
+	m.live = live
+
+	if cmd := m.Init(); cmd == nil {
+		t.Fatal("a live prompt should schedule its first read")
+	}
+	if _, cmd := m.Update(pickerLiveMsg{}); cmd == nil {
+		t.Fatal("a prompt that is still counting should schedule another read")
+	}
+	if m.prompt != "calculating… 1.0 MiB so far" {
+		t.Fatalf("prompt = %q, want the running count", m.prompt)
+	}
+	if _, cmd := m.Update(pickerLiveMsg{}); cmd != nil {
+		t.Fatal("a final prompt should stop polling")
+	}
+	if m.prompt != "2.0 MiB" {
+		t.Fatalf("prompt = %q, want the final count", m.prompt)
+	}
+}
+
+// A static prompt polls nothing at all.
+func TestPickerWithoutALivePromptSchedulesNothing(t *testing.T) {
+	m := newPickerModel("Select a discobox", []pickerItem{{id: "sbx_1"}, {id: "sbx_2"}}, "")
+	if cmd := m.Init(); cmd != nil {
+		t.Fatal("a static prompt should schedule nothing")
+	}
+}
+
+// The question about a directory in no repository leads with what it would
+// cost, and says so as a running count until the walk behind it is done.
+func TestDirectoryCopyPromptSaysWhatItWouldCopy(t *testing.T) {
+	counting := directoryCopyPrompt("/home/ada", sandboxcreate.DirectoryTotal{Bytes: 5 << 20, Files: 3})
+	if !strings.Contains(counting, "/home/ada") || !strings.Contains(counting, "not a Git repository") {
+		t.Fatalf("prompt = %q, want the directory named", counting)
+	}
+	if !strings.Contains(counting, "calculating… 5.0 MiB in 3 files so far") {
+		t.Fatalf("prompt = %q, want a count that is still climbing", counting)
+	}
+	done := directoryCopyPrompt("/home/ada", sandboxcreate.DirectoryTotal{Bytes: 1 << 20, Files: 1, Done: true})
+	if strings.Contains(done, "calculating") || !strings.Contains(done, "1.0 MiB in 1 file") {
+		t.Fatalf("prompt = %q, want the final count stated as one", done)
 	}
 }

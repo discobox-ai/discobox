@@ -43,6 +43,11 @@ type PromptOptions struct {
 	// ConfirmIncludeDirty answers the "auto" question for the frontend. Leave it
 	// nil when the frontend cannot ask.
 	ConfirmIncludeDirty ConfirmIncludeDirtyFunc
+	// ConfirmCopyDirectory answers the same "auto" question for a source
+	// directory that is in no Git repository, where what is being decided is
+	// whether the whole directory is copied in. Leave it nil when the frontend
+	// cannot ask.
+	ConfirmCopyDirectory ConfirmCopyDirectoryFunc
 }
 
 // ParsePromptOptions adds positional prompt arguments and normalizes the source.
@@ -115,6 +120,7 @@ func BuildPromptSandboxBody(ctx context.Context, opts PromptOptions) (*apimodel.
 	sourceOptions := runSourceOptions{
 		IncludeDirty: opts.IncludeDirty,
 		Confirm:      opts.ConfirmIncludeDirty,
+		ConfirmCopy:  opts.ConfirmCopyDirectory,
 	}
 	source, err := resolveRunSource(ctx, sourceArg, sourceOptions)
 	if err != nil {

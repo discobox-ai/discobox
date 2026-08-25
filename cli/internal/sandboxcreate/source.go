@@ -89,11 +89,30 @@ type DirtyWorkspace struct {
 // included rather than silently dropped.
 type ConfirmIncludeDirtyFunc func(context.Context, DirtyWorkspace) (bool, error)
 
-// runSourceOptions carries the caller's dirty-workspace policy into source
-// resolution.
+// DirectoryCopy describes a source directory that is in no Git repository, so a
+// frontend can ask whether to copy it into the sandbox. Everything in such a
+// directory is uncommitted work, so the whole of it is what the answer decides
+// about.
+type DirectoryCopy struct {
+	Dir string
+	// Size is counting what copying would carry, and keeps counting while the
+	// question is on screen: a frontend polls it until it reports Done rather
+	// than making the user wait for a number before being asked anything. It
+	// stops when the confirmation returns.
+	Size *DirectoryWalk
+}
+
+// ConfirmCopyDirectoryFunc asks the user whether to copy a directory in no Git
+// repository into the sandbox. A nil func means nobody can be asked, and the
+// directory is copied rather than a sandbox coming up with nothing in it.
+type ConfirmCopyDirectoryFunc func(context.Context, DirectoryCopy) (bool, error)
+
+// runSourceOptions carries the caller's policy for what local content reaches
+// the sandbox into source resolution.
 type runSourceOptions struct {
 	IncludeDirty IncludeDirty
 	Confirm      ConfirmIncludeDirtyFunc
+	ConfirmCopy  ConfirmCopyDirectoryFunc
 }
 
 type resolvedRunSource struct {
@@ -377,21 +396,24 @@ func snapshotWorkspace(ctx context.Context, repoRoot string, tree gitutil.Worksp
 // untouched — no .git appears in it, and the repository is deleted once the
 // source has been delivered.
 //
-// Nobody is asked about this. The dirty-workspace question offers the last
-// commit as its alternative, and there is none here: excluding the content
-// would start the sandbox on an empty directory.
+// The user is asked first, because the answer is not obvious the way it is for
+// a repository: a directory in no repository is as likely to be a home
+// directory somebody ran `discobox run` in as it is to be a project, and the
+// whole of it is what would be carried. Declining is not a cancel — the sandbox
+// is created on the empty base commit, with none of the directory in it.
 func resolveDirectoryRunSource(ctx context.Context, dir, ref string, explicitRef bool, opts runSourceOptions) (resolvedRunSource, error) {
 	if explicitRef {
 		return resolvedRunSource{}, fmt.Errorf("%s is not a Git repository, so it has no ref %q to check out", dir, ref)
 	}
-	if opts.IncludeDirty == IncludeDirtyNever {
-		return resolvedRunSource{}, fmt.Errorf("--include-dirty=false leaves nothing to run: %s is not a Git repository, so everything in it is uncommitted", dir)
+	copyContent, err := copyDirectoryContent(ctx, dir, opts)
+	if err != nil {
+		return resolvedRunSource{}, err
 	}
 	repoRoot, cleanup, err := gitutil.InitOverWorkTree(ctx, dir)
 	if err != nil {
 		return resolvedRunSource{}, err
 	}
-	resolved, err := directoryRunSource(ctx, dir, repoRoot)
+	resolved, err := directoryRunSource(ctx, dir, repoRoot, copyContent)
 	if err != nil {
 		cleanup()
 		return resolvedRunSource{}, err
@@ -400,9 +422,44 @@ func resolveDirectoryRunSource(ctx context.Context, dir, ref string, explicitRef
 	return resolved, nil
 }
 
+// copyDirectoryContent decides whether the content of a directory in no Git
+// repository is carried into the sandbox.
+//
+// --include-dirty answers it outright, because the directory's content is
+// uncommitted work — all of it — and that flag is what says whether uncommitted
+// work travels. Otherwise it is the frontend's question, asked against a
+// measurement of the directory that is still running while it is on screen. It
+// is asked before the repository is built over the directory: indexing a home
+// directory takes long enough that doing it first would answer the question by
+// making it too late.
+//
+// With nobody to ask, the content is copied: that is what a source directory
+// has always meant, and a sandbox that silently came up empty is the worse
+// surprise. An empty directory is not worth asking about — copying nothing and
+// copying its nothing are the same sandbox.
+func copyDirectoryContent(ctx context.Context, dir string, opts runSourceOptions) (bool, error) {
+	if opts.IncludeDirty == IncludeDirtyNever {
+		return false, nil
+	}
+	if opts.IncludeDirty != IncludeDirtyAuto || opts.ConfirmCopy == nil {
+		return true, nil
+	}
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		return false, fmt.Errorf("read source directory %s: %w", dir, err)
+	}
+	if len(entries) == 0 {
+		return true, nil
+	}
+	ctx, cancel := context.WithCancel(ctx)
+	defer cancel()
+	return opts.ConfirmCopy(ctx, DirectoryCopy{Dir: dir, Size: MeasureDirectory(ctx, dir)})
+}
+
 // directoryRunSource fills in the source that repoRoot, a fresh repository over
-// dir, describes.
-func directoryRunSource(ctx context.Context, dir, repoRoot string) (resolvedRunSource, error) {
+// dir, describes. With copyContent false the directory's own files stay here
+// and the source is the empty base commit alone.
+func directoryRunSource(ctx context.Context, dir, repoRoot string, copyContent bool) (resolvedRunSource, error) {
 	emptyTree, err := gitutil.EmptyTree(ctx, repoRoot)
 	if err != nil {
 		return resolvedRunSource{}, err
@@ -433,6 +490,12 @@ func directoryRunSource(ctx context.Context, dir, repoRoot string) (resolvedRunS
 		},
 		Workspace:   resolvedRunSourceWorkspace{Mode: runWorkspaceModeClean},
 		Destination: localRunDestination(dir, dir),
+	}
+	if !copyContent {
+		// The directory stays here. The sandbox gets its path and the empty
+		// commit, so work started in it lands where the directory would have
+		// been rather than somewhere else.
+		return resolved, nil
 	}
 	workspaceTree, cleanup, err := gitutil.CurrentWorkspaceTree(ctx, repoRoot)
 	if err != nil {

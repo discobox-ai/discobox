@@ -430,7 +430,7 @@ func TestResolveRunSourceEmptyDirectoryWithoutRepositoryStartsFromTheEmptyCommit
 	}
 }
 
-func TestResolveRunSourceDirectoryWithoutRepositoryRejectsWhatItCannotMean(t *testing.T) {
+func TestResolveRunSourceDirectoryWithoutRepositoryRejectsARefItCannotHave(t *testing.T) {
 	dir := testWorkspace(t)
 	if err := os.WriteFile(filepath.Join(dir, "a.txt"), []byte("a\n"), 0o644); err != nil {
 		t.Fatal(err)
@@ -440,13 +440,118 @@ func TestResolveRunSourceDirectoryWithoutRepositoryRejectsWhatItCannotMean(t *te
 	if _, err := resolveRunSource(context.Background(), dir+"@main", runSourceOptions{IncludeDirty: IncludeDirtyAuto}); err == nil {
 		t.Fatal("an explicit ref against a directory with no repository was accepted")
 	}
-	// Excluding the uncommitted work would leave an empty sandbox, which is
-	// never what the flag is asking for.
-	if _, err := resolveRunSource(context.Background(), dir, runSourceOptions{IncludeDirty: IncludeDirtyNever}); err == nil {
-		t.Fatal("--include-dirty=false against a directory with no repository was accepted")
-	}
 	if _, err := os.Stat(filepath.Join(dir, ".git")); !os.IsNotExist(err) {
 		t.Fatalf("stat %s/.git = %v, want a rejected source to leave nothing behind", dir, err)
+	}
+}
+
+// Declining the copy is an answer, not a cancel: the sandbox is created, on the
+// empty base commit, and the directory stays here.
+func TestResolveRunSourceDirectoryWithoutRepositoryNotCopiedStartsEmpty(t *testing.T) {
+	dir := testWorkspace(t)
+	if err := os.WriteFile(filepath.Join(dir, "a.txt"), []byte("a\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	asked := 0
+	decline := func(_ context.Context, directory DirectoryCopy) (bool, error) {
+		asked++
+		if directory.Dir != dir {
+			t.Fatalf("asked about %q, want the source directory %s", directory.Dir, dir)
+		}
+		if directory.Size == nil {
+			t.Fatal("asked with nothing measuring the directory")
+		}
+		return false, nil
+	}
+
+	source, err := resolveRunSource(context.Background(), dir, runSourceOptions{IncludeDirty: IncludeDirtyAuto, ConfirmCopy: decline})
+	if err != nil {
+		t.Fatalf("resolveRunSource: %v", err)
+	}
+	defer testLocalSources(source).Close()
+	if asked != 1 {
+		t.Fatalf("asked %d times, want exactly one question", asked)
+	}
+	if source.LocalDirectory != dir || !source.NoLocalRepository {
+		t.Fatalf("source identity = %#v, want %s recorded as a directory with no repository", source, dir)
+	}
+	if source.Workspace.Mode != runWorkspaceModeClean || source.Workspace.SnapshotRef != "" {
+		t.Fatalf("workspace = %#v, want a clean checkout with no snapshot", source.Workspace)
+	}
+	git := runSourceTestGit(t, source.RepoRoot)
+	if files := strings.TrimSpace(git("ls-tree", "-r", "--name-only", source.Checkout.Commit)); files != "" {
+		t.Fatalf("base commit contains %q, want an empty tree", files)
+	}
+	if _, err := os.Stat(filepath.Join(dir, ".git")); !os.IsNotExist(err) {
+		t.Fatalf("stat %s/.git = %v, want the user's directory left alone", dir, err)
+	}
+	if _, err := os.Stat(filepath.Join(dir, "a.txt")); err != nil {
+		t.Fatalf("the directory did not survive being left out: %v", err)
+	}
+}
+
+// --include-dirty=false is the same answer given ahead of time, and answering
+// it that way asks nobody anything.
+func TestResolveRunSourceDirectoryWithoutRepositoryIncludeDirtyNeverStartsEmpty(t *testing.T) {
+	dir := testWorkspace(t)
+	if err := os.WriteFile(filepath.Join(dir, "a.txt"), []byte("a\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	confirm := func(context.Context, DirectoryCopy) (bool, error) {
+		t.Fatal("--include-dirty=false asked a question it had already answered")
+		return false, nil
+	}
+
+	source, err := resolveRunSource(context.Background(), dir, runSourceOptions{IncludeDirty: IncludeDirtyNever, ConfirmCopy: confirm})
+	if err != nil {
+		t.Fatalf("resolveRunSource: %v", err)
+	}
+	defer testLocalSources(source).Close()
+	if source.Workspace.Mode != runWorkspaceModeClean || source.Workspace.SnapshotRef != "" {
+		t.Fatalf("workspace = %#v, want a clean checkout with no snapshot", source.Workspace)
+	}
+}
+
+// Accepting is the behavior the directory source has always had, and the
+// question is not asked at all when there is no answer to it: nobody to ask,
+// an answer already given, or nothing in the directory to copy.
+func TestResolveRunSourceDirectoryWithoutRepositoryCopiesWhenItIsMeantTo(t *testing.T) {
+	newDir := func(t *testing.T) string {
+		t.Helper()
+		dir := testWorkspace(t)
+		if err := os.WriteFile(filepath.Join(dir, "a.txt"), []byte("a\n"), 0o644); err != nil {
+			t.Fatal(err)
+		}
+		return dir
+	}
+	refuse := func(context.Context, DirectoryCopy) (bool, error) {
+		t.Helper()
+		t.Error("a question was asked that had already been answered")
+		return false, nil
+	}
+	accept := func(context.Context, DirectoryCopy) (bool, error) { return true, nil }
+
+	for _, tc := range []struct {
+		name     string
+		dir      func(*testing.T) string
+		opts     runSourceOptions
+		snapshot bool
+	}{
+		{name: "answered yes", dir: newDir, opts: runSourceOptions{IncludeDirty: IncludeDirtyAuto, ConfirmCopy: accept}, snapshot: true},
+		{name: "include-dirty=true", dir: newDir, opts: runSourceOptions{IncludeDirty: IncludeDirtyAlways, ConfirmCopy: refuse}, snapshot: true},
+		{name: "nobody to ask", dir: newDir, opts: runSourceOptions{IncludeDirty: IncludeDirtyAuto}, snapshot: true},
+		{name: "empty directory", dir: testWorkspace, opts: runSourceOptions{IncludeDirty: IncludeDirtyAuto, ConfirmCopy: refuse}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			source, err := resolveRunSource(context.Background(), tc.dir(t), tc.opts)
+			if err != nil {
+				t.Fatalf("resolveRunSource: %v", err)
+			}
+			defer testLocalSources(source).Close()
+			if snapshot := source.Workspace.Mode == runWorkspaceModeDirty; snapshot != tc.snapshot {
+				t.Fatalf("workspace = %#v, want snapshot = %v", source.Workspace, tc.snapshot)
+			}
+		})
 	}
 }
 

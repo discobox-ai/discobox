@@ -863,6 +863,10 @@ happens:
   `false` before it calls the shared create at all.
 - `true` is rejected for a remote URL or an explicit `@REF`, because a snapshot
   only ever sits on top of HEAD of a local working tree.
+- The same flag settles the same question for a source directory in no
+  repository, where the uncommitted work is the whole directory; that question
+  is `sandboxcreate.ConfirmCopyDirectoryFunc`. See "A Directory That Is Not a
+  Repository".
 
 ## Extra Sources
 
@@ -956,13 +960,27 @@ workspace, and the sandbox comes up with the files as uncommitted changes.
   user's directory — never the temporary repository, which is one create's
   implementation detail. That flag is what makes the server choose `push`: there
   is nothing at that path to clone however reachable it is.
-- Nothing is asked. The dirty-workspace question offers the last commit as its
-  alternative and there is none, so `--include-dirty=false` and an explicit
-  `@REF` are both rejected rather than reinterpreted.
-- An empty directory is not an error: it snapshots nothing and the sandbox
-  starts on the empty commit, which is the point of running in one.
+- The user is asked first, through `sandboxcreate.ConfirmCopyDirectoryFunc`, and
+  not copying leads: `discobox run` in a home directory must not carry the home
+  directory. Declining is an answer, not a cancel — the discobox is created on
+  the empty base commit, at the directory's own path, with none of its content.
+  `--include-dirty` answers ahead of time, `false` meaning the same empty start.
+- The question is asked before `gitutil.InitOverWorkTree`, because indexing the
+  directory is the cost it exists to avoid. It carries a running size —
+  `sandboxcreate.MeasureDirectory` walks the directory in the background and the
+  frontend polls it, saying "calculating…" until the walk is done. The walk is a
+  filesystem estimate: sizes on disk, symlinks counted as links, unreadable
+  subtrees skipped, and no `.gitignore` applied. It never reads low, which is
+  what the question needs.
+- An explicit `@REF` is still rejected: there is no history to name.
+- An empty directory is not asked about and not an error: it snapshots nothing
+  and the sandbox starts on the empty commit, which is the point of running in
+  one — and is also what declining produces.
+- With no terminal there is nobody to ask and the directory is copied, the same
+  way a dirty workspace is.
 
-See [ADR 0045](../docs/adr/0045-a-directory-with-no-repository-is-delivered-by-push.md).
+See [ADR 0045](../docs/adr/0045-a-directory-with-no-repository-is-delivered-by-push.md)
+and [ADR 0073](../docs/adr/0073-a-directory-with-no-repository-is-copied-only-when-asked.md).
 
 ## Git Transport to the Server
 

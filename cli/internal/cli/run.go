@@ -42,7 +42,11 @@ time.
 
 A source directory that is not in a Git repository works too: everything in it
 is carried into the discobox as uncommitted changes on an empty first commit,
-and nothing is written to the directory itself.
+and nothing is written to the directory itself. Because that is the whole
+directory, run asks first — with the size it would copy, counted while the
+question is on screen — and not copying is the default answer: the discobox is
+still created, on the empty first commit, with none of the directory in it.
+--include-dirty=true|false answers this one ahead of time too.
 
 -i brings extra sources into the same discobox, repeat it for more than one. Each
 is resolved exactly like the source directory is, uncommitted changes included,
@@ -69,6 +73,7 @@ discobox as it does here. --declared-sources=false leaves them out.`,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			opts.prompt.Source = a.source
 			opts.prompt.ConfirmIncludeDirty = confirmIncludeDirty(cmd)
+			opts.prompt.ConfirmCopyDirectory = confirmCopyDirectory(cmd)
 			opts.prompt.SkipDeclaredSources = !opts.declaredSources
 			opts.prompt.ReportDeclaredSource = reportDeclaredSource(cmd)
 			parsedOpts, err := sandboxcreate.ParsePromptOptions(opts.prompt, args)
@@ -123,7 +128,7 @@ discobox as it does here. --declared-sources=false leaves them out.`,
 	cmd.Flags().StringVarP(&opts.prompt.Harness, "harness", "H", "", "Harness config to run, by slug (e.g. codex), name, or ID; defaults to the project default")
 	cmd.Flags().BoolVarP(&opts.detach, "detach", "d", false, "Create the discobox and print it without attaching to its terminal")
 	cmd.Flags().BoolVar(&opts.declaredSources, "declared-sources", true, "Bring in the sources the repository declares in .discobox/sources.json, using a local checkout beside the source directory when there is one")
-	cmd.Flags().Var(&opts.prompt.IncludeDirty, "include-dirty", "Carry uncommitted changes in the local source into the discobox: true, false, or auto (ask when the workspace is dirty and this is a terminal)")
+	cmd.Flags().Var(&opts.prompt.IncludeDirty, "include-dirty", "Carry uncommitted changes in the local source into the discobox: true, false, or auto (ask when the workspace is dirty and this is a terminal). A source directory in no Git repository is uncommitted in its entirety, so this decides whether the directory itself is copied in")
 	cmd.Flags().Lookup("include-dirty").NoOptDefVal = string(sandboxcreate.IncludeDirtyAlways)
 	return cmd
 }
@@ -160,6 +165,61 @@ func confirmIncludeDirty(cmd *cobra.Command) sandboxcreate.ConfirmIncludeDirtyFu
 		}
 		return choice == "include", nil
 	}
+}
+
+// confirmCopyDirectory asks whether a source directory that is in no Git
+// repository is copied into the sandbox. Everything in such a directory is
+// uncommitted work, so the question is the whole directory — which is why it is
+// asked at all, and why not copying leads: `discobox run` in a home directory
+// should not carry the home directory.
+//
+// The size is counted behind the question rather than before it, so the prompt
+// comes up immediately and fills its number in as the walk finds it.
+//
+// Without a terminal there is nobody to ask and the directory is copied, which
+// is what a source directory has always meant here; the alternative is a
+// discobox that silently came up with nothing in it.
+func confirmCopyDirectory(cmd *cobra.Command) sandboxcreate.ConfirmCopyDirectoryFunc {
+	return func(_ context.Context, directory sandboxcreate.DirectoryCopy) (bool, error) {
+		if !isTerminalStream(cmd.InOrStdin()) || !isTerminalStream(cmd.ErrOrStderr()) {
+			return true, nil
+		}
+		live := func() (string, bool) {
+			total := directory.Size.Total()
+			return directoryCopyPrompt(directory.Dir, total), total.Done
+		}
+		prompt, _ := live()
+		choice, err := pickOne(cmd, prompt, []pickerItem{
+			{
+				id:     "exclude",
+				title:  "Do not copy the directory",
+				detail: "Start the discobox empty, on the first commit alone",
+			},
+			{
+				id:     "copy",
+				title:  "Copy the directory in",
+				detail: "Everything in it arrives as uncommitted changes",
+			},
+		}, pickerOptions{
+			empty:     "no choice to make",
+			ambiguous: "pass --include-dirty=true or --include-dirty=false",
+			live:      live,
+		})
+		if err != nil {
+			return false, err
+		}
+		return choice == "copy", nil
+	}
+}
+
+// directoryCopyPrompt says what copying this directory would carry, and keeps
+// saying it while the walk behind the question is still counting.
+func directoryCopyPrompt(dir string, total sandboxcreate.DirectoryTotal) string {
+	counted := fmt.Sprintf("%s in %d %s", humanBytes(total.Bytes), total.Files, pluralize("file", int(total.Files)))
+	if !total.Done {
+		counted = "calculating… " + counted + " so far"
+	}
+	return fmt.Sprintf("%s is not a Git repository, so copying it into the discobox means all of it (%s)", dir, counted)
 }
 
 // reportDeclaredSource says where each source the repository declared came

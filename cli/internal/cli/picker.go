@@ -87,6 +87,12 @@ type pickerOptions struct {
 	ambiguous string
 	// recentKey namespaces the remembered last pick. Empty disables the memory.
 	recentKey string
+	// live rewrites the prompt line while the picker is up, for a question
+	// whose subject is still being worked out behind it — the size of a
+	// directory being measured while it is asked about. It returns the line and
+	// whether that is the last of it; the picker polls until it says so. Nil is
+	// a prompt that never changes.
+	live func() (string, bool)
 }
 
 // pickOne returns the single item's ID when there is exactly one, and otherwise
@@ -103,6 +109,7 @@ func pickOne(cmd *cobra.Command, prompt string, items []pickerItem, opts pickerO
 		return "", errors.New(opts.ambiguous)
 	}
 	model := newPickerModel(prompt, items, lastSelection(opts.recentKey))
+	model.live = opts.live
 	final, err := tea.NewProgram(model,
 		tea.WithContext(cmd.Context()),
 		tea.WithInput(cmd.InOrStdin()),
@@ -162,7 +169,17 @@ type pickerModel struct {
 	// selected and after a cancel.
 	chosen int
 	done   bool
+	// live is pickerOptions.live, polled on pickerLiveInterval until it reports
+	// the prompt is final.
+	live func() (string, bool)
 }
+
+// pickerLiveInterval is how often a live prompt is re-read. It is a number
+// climbing on screen, so it wants to be seen moving and not much more.
+const pickerLiveInterval = 150 * time.Millisecond
+
+// pickerLiveMsg is the poll of a live prompt coming due.
+type pickerLiveMsg struct{}
 
 func newPickerModel(prompt string, items []pickerItem, recentID string) *pickerModel {
 	m := &pickerModel{prompt: prompt, items: items, recentID: recentID, chosen: -1}
@@ -170,26 +187,46 @@ func newPickerModel(prompt string, items []pickerItem, recentID string) *pickerM
 	return m
 }
 
-func (m *pickerModel) Init() tea.Cmd { return nil }
+func (m *pickerModel) Init() tea.Cmd { return m.pollLive() }
 
 func (m *pickerModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
-	key, ok := msg.(tea.KeyPressMsg)
-	if !ok {
-		return m, nil
+	switch msg := msg.(type) {
+	case pickerLiveMsg:
+		prompt, final := m.live()
+		m.prompt = prompt
+		if final {
+			return m, nil
+		}
+		return m, m.pollLive()
+	case tea.KeyPressMsg:
+		return m, m.updateKey(msg)
 	}
+	return m, nil
+}
+
+// pollLive schedules the next read of a live prompt, and is nothing at all for
+// a static one.
+func (m *pickerModel) pollLive() tea.Cmd {
+	if m.live == nil {
+		return nil
+	}
+	return tea.Tick(pickerLiveInterval, func(time.Time) tea.Msg { return pickerLiveMsg{} })
+}
+
+func (m *pickerModel) updateKey(key tea.KeyPressMsg) tea.Cmd {
 	switch key.String() {
 	case "ctrl+c":
 		m.done = true
-		return m, tea.Quit
+		return tea.Quit
 	case "esc":
 		// Backing out of a query first keeps a typo from canceling the command.
 		if m.query != "" {
 			m.query = ""
 			m.refilter()
-			return m, nil
+			return nil
 		}
 		m.done = true
-		return m, tea.Quit
+		return tea.Quit
 	case "up", "ctrl+p":
 		if m.cursor > 0 {
 			m.cursor--
@@ -210,11 +247,11 @@ func (m *pickerModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.refilter()
 	case "enter":
 		if len(m.matches) == 0 {
-			return m, nil
+			return nil
 		}
 		m.chosen = m.matches[m.cursor].index
 		m.done = true
-		return m, tea.Quit
+		return tea.Quit
 	default:
 		// Anything printable extends the query; modifiers are reserved for the
 		// bindings above.
@@ -224,7 +261,7 @@ func (m *pickerModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 	}
 	m.scrollToCursor()
-	return m, nil
+	return nil
 }
 
 // refilter recomputes the visible matches for the current query, keeping the
