@@ -126,10 +126,18 @@ unwritable or corrupt file costs the convenience and never the command.
   under it, and a prompt past the cap is cut on a rune boundary — a state file
   is not where a pasted log belongs.
 
-Local server auto-launch is a release-only capability. Normal and development
-builds leave it disabled; release CLI binaries opt in at build time by setting
-`cli.serverAutoLaunch` to `true` with the Go linker's `-X` flag. `--no-start`
-remains the runtime override for release binaries.
+Local server auto-launch is a release capability. Normal and development builds
+leave it disabled; release CLI binaries opt in at build time by setting
+`cli.serverAutoLaunch` to `true` with the Go linker's `-X` flag.
+
+`DISCOBOX_SERVER_AUTOLAUNCH` overrides that default in either direction, so the
+behaviour can be exercised from a development build without cutting a release
+one — otherwise the only way to test a change to it is to link a binary the way
+a release links it. The development default stays off, because a developer runs
+the server themselves under `task dev` and a second, quietly forked one would
+race it for the same socket. `--no-start` is the last word either way: it is the
+per-invocation override, and nothing about the build or the environment outranks
+somebody typing it.
 
 The launched process is this binary re-invoked, and the argv comes from
 `App.serverLaunchArgs`, which reads the path off the command tree rather than

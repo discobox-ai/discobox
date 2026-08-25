@@ -174,8 +174,12 @@ func (a *App) httpClient() (string, *http.Client, error) {
 	return a.httpClientWithAutoStart(shouldAutoLaunchServer(a.noStart))
 }
 
+// shouldAutoLaunchServer reports whether this invocation may start a server for
+// itself. --no-start is the last word: it is the per-invocation override, and
+// nothing about how the binary was built or what the environment says outranks
+// somebody typing it.
 func shouldAutoLaunchServer(noStart bool) bool {
-	return serverAutoLaunch == "true" && !noStart
+	return autoLaunchConfigured() && !noStart
 }
 
 func (a *App) httpClientWithAutoStart(autoStart bool) (string, *http.Client, error) {
