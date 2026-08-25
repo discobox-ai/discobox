@@ -1,6 +1,7 @@
 package sandboxcreate
 
 import (
+	"context"
 	"fmt"
 	"strings"
 	"time"
@@ -232,4 +233,46 @@ func PoolProvisionStatus(pool *apimodel.Pool) Step {
 		return Step(strings.ReplaceAll(phase, "_", " "))
 	}
 	return ""
+}
+
+// PoolReader is the one call a status needs beyond the sandbox itself.
+type PoolReader interface {
+	GetPool(context.Context, apiclientgen.GetPoolParams) (apiclientgen.GetPoolRes, error)
+}
+
+// Status is what a client waiting on a discobox should say it is waiting for.
+//
+// ProvisionStatus answers from the sandbox alone, and for the longest stretch
+// of a cold start its answer is StepWaitingForPool — true, and nearly useless,
+// because those minutes are going into work only the pool records. So when that
+// is the answer, the pool is asked what it is doing instead.
+//
+// Every caller narrating a wait goes through this rather than through
+// ProvisionStatus. Refining at the call site is what left the launcher and the
+// create path still saying "waiting for a pool to take it" after the wait that
+// prompted this had been taught better: one of three call sites had it.
+func Status(ctx context.Context, pools PoolReader, projectID string, sandbox *apimodel.Sandbox) Step {
+	step := ProvisionStatus(sandbox)
+	if step != StepWaitingForPool || pools == nil || sandbox == nil {
+		return step
+	}
+	poolID := sandbox.PoolId.Or("")
+	if poolID == "" {
+		return step
+	}
+	res, err := pools.GetPool(ctx, apiclientgen.GetPoolParams{ProjectId: projectID, PoolId: poolID})
+	if err != nil {
+		// An unreadable pool says nothing rather than something wrong: the read
+		// can fail for reasons with no bearing on provisioning, and the wait
+		// itself is entitled to report those.
+		return step
+	}
+	pool, ok := res.(*apimodel.Pool)
+	if !ok {
+		return step
+	}
+	if poolStep := PoolProvisionStatus(pool); poolStep != "" {
+		return poolStep
+	}
+	return step
 }

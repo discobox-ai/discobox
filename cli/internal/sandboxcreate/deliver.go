@@ -17,6 +17,9 @@ import (
 // wait on, and the call that reports the push complete.
 type sourceDeliveryClient interface {
 	GetSandbox(context.Context, apiclientgen.GetSandboxParams) (apiclientgen.GetSandboxRes, error)
+	// GetPool is what Status needs to say more than "waiting for a pool to
+	// take it" for the stretch of the wait that is exactly that.
+	GetPool(context.Context, apiclientgen.GetPoolParams) (apiclientgen.GetPoolRes, error)
 	CompleteSandboxSourcePush(context.Context, *apimodel.CompleteSandboxSourcePushBody, apiclientgen.CompleteSandboxSourcePushParams) (apiclientgen.CompleteSandboxSourcePushRes, error)
 }
 
@@ -215,7 +218,7 @@ func awaitSourceRequested(ctx context.Context, client sourceDeliveryClient, proj
 		// A sandbox with nothing left to provision reports no phase, which
 		// leaves the previous line standing rather than blanking it: the wait is
 		// still on, and the client's own step is the truest thing left to say.
-		if phase := ProvisionStatus(sandbox); phase != "" && phase != last {
+		if phase := Status(ctx, client, projectID, sandbox); phase != "" && phase != last {
 			last = phase
 			report.step(phase)
 			// Something happened, so the clock starts again.

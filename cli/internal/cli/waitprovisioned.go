@@ -41,7 +41,7 @@ func (a *App) waitForProvisionedSandbox(ctx context.Context, client *apiclientge
 		case "error":
 			return fmt.Errorf("discobox failed: %s", sandboxFailureReason(sandbox))
 		}
-		if line := string(a.provisionStatus(ctx, client, projectID, sandbox)); line != "" && line != last {
+		if line := string(sandboxcreate.Status(ctx, client, projectID, sandbox)); line != "" && line != last {
 			last = line
 			if report != nil {
 				report(line)
@@ -71,40 +71,4 @@ func (a *App) readSandbox(ctx context.Context, client *apiclientgen.Client, proj
 		return nil, err
 	}
 	return expectResponse[apimodel.Sandbox](res)
-}
-
-// provisionStatus is what the wait says it is waiting for.
-//
-// A sandbox that no pool has taken yet knows only that it is waiting, and that
-// is the least useful thing to say for the longest part of a cold start: the
-// pool is off fetching a VM image and pulling the pool-agent image, and the
-// driver doing it records that as it goes. So when the sandbox says it is
-// waiting for a pool, the pool is asked what it is doing instead.
-//
-// One extra read per poll, and only while the sandbox is pending. A pool that
-// has nothing current to report leaves the sandbox's own answer standing.
-func (a *App) provisionStatus(ctx context.Context, client *apiclientgen.Client, projectID string, sandbox *apimodel.Sandbox) sandboxcreate.Step {
-	step := sandboxcreate.ProvisionStatus(sandbox)
-	if step != sandboxcreate.StepWaitingForPool {
-		return step
-	}
-	poolID := sandbox.PoolId.Or("")
-	if poolID == "" {
-		return step
-	}
-	res, err := client.GetPool(ctx, apiclientgen.GetPoolParams{ProjectId: projectID, PoolId: poolID})
-	if err != nil {
-		// An unreadable pool says nothing rather than something wrong: the read
-		// can fail for reasons that have no bearing on provisioning, and the
-		// wait itself is entitled to report those.
-		return step
-	}
-	pool, err := expectResponse[apimodel.Pool](res)
-	if err != nil {
-		return step
-	}
-	if poolStep := sandboxcreate.PoolProvisionStatus(pool); poolStep != "" {
-		return poolStep
-	}
-	return step
 }

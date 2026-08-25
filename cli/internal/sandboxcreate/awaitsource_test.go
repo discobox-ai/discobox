@@ -2,6 +2,7 @@ package sandboxcreate
 
 import (
 	"context"
+	"errors"
 	"testing"
 	"time"
 
@@ -15,17 +16,29 @@ import (
 type awaitClient struct {
 	runtimes []apimodel.SandboxRuntime
 	reads    int
+	// pool is what the pool read answers, for the stretch of the wait where the
+	// sandbox has nothing to say but the pool does.
+	pool *apimodel.Pool
 }
 
 func (c *awaitClient) GetSandbox(context.Context, apiclientgen.GetSandboxParams) (apiclientgen.GetSandboxRes, error) {
 	runtime := c.runtimes[min(c.reads, len(c.runtimes)-1)]
 	c.reads++
-	return &apimodel.Sandbox{ID: "sbx_1", Runtime: runtime}, nil
+	return &apimodel.Sandbox{ID: "sbx_1", PoolId: apiclientgen.NewOptString("pool_1"), Runtime: runtime}, nil
+}
+
+func (c *awaitClient) GetPool(context.Context, apiclientgen.GetPoolParams) (apiclientgen.GetPoolRes, error) {
+	if c.pool == nil {
+		return nil, errNoPool
+	}
+	return c.pool, nil
 }
 
 func (c *awaitClient) CompleteSandboxSourcePush(context.Context, *apimodel.CompleteSandboxSourcePushBody, apiclientgen.CompleteSandboxSourcePushParams) (apiclientgen.CompleteSandboxSourcePushRes, error) {
 	panic("the wait does not push")
 }
+
+var errNoPool = errors.New("no pool")
 
 // pulling is a sandbox mid-pull, reporting as of now.
 func pulling(current, total int64) apimodel.SandboxRuntime {
@@ -108,5 +121,34 @@ func TestAwaitSourceRequestedToleratesNoReport(t *testing.T) {
 	}
 	if elapsed := time.Since(start); elapsed < awaitSourcePollInterval {
 		t.Fatalf("returned after %s, want a wait that paced itself", elapsed)
+	}
+}
+
+// The wait that a sandbox cannot narrate is the one the pool can: while no pool
+// has taken it, what the pool's driver is doing is the whole of the answer.
+func TestAwaitSourceRequestedNarratesThePoolWhileNoPoolHasTakenIt(t *testing.T) {
+	pending := apimodel.SandboxRuntime{State: apiclientgen.SandboxRuntimeStatePending}
+	stamp := time.Now().UTC()
+	client := &awaitClient{
+		runtimes: []apimodel.SandboxRuntime{pending, pending, {State: apiclientgen.SandboxRuntimeStateAwaitingSource}},
+		pool: &apimodel.Pool{
+			ProvisionProgress: apiclientgen.NewOptPoolProvisionProgress(apimodel.PoolProvisionProgress{
+				Phase: apiclientgen.PoolProvisionPhaseFetchingVMImage,
+			}),
+			ProvisionProgressAt: apiclientgen.NewOptDateTime(stamp),
+		},
+	}
+	var steps []Step
+	report := Report(func(step Step) { steps = append(steps, step) })
+	if err := awaitSourceRequested(t.Context(), client, "proj_1", "sbx_1", report); err != nil {
+		t.Fatal(err)
+	}
+	for _, step := range steps {
+		if step == StepWaitingForPool {
+			t.Fatalf("reported %q when the pool had something to say", step)
+		}
+	}
+	if len(steps) == 0 || steps[0] != "fetching the VM image" {
+		t.Fatalf("steps = %v, want the pool's own phase first", steps)
 	}
 }

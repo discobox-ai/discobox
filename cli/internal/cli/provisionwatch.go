@@ -4,6 +4,8 @@ import (
 	"context"
 	"time"
 
+	apiclientgen "github.com/discobox-ai/discobox/api/gen"
+	apimodel "github.com/discobox-ai/discobox/api/model"
 	"github.com/discobox-ai/discobox/cli/internal/sandboxcreate"
 )
 
@@ -42,6 +44,13 @@ func (a *App) watchProvisioning(ctx context.Context, projectID, sandboxID string
 	if report == nil {
 		return
 	}
+	// One client for the whole watch. Both reads below go through it, and
+	// building one per poll would put an autolaunch probe on a loop that runs
+	// twice a second.
+	client, err := a.apiClient()
+	if err != nil {
+		return
+	}
 	last := ""
 	for {
 		// The wait is measured before it is described, so an attach onto a
@@ -54,15 +63,21 @@ func (a *App) watchProvisioning(ctx context.Context, projectID, sandboxID string
 			return
 		case <-time.After(provisionPollInterval):
 		}
-		if sandbox, ok := a.sandboxSnapshot(ctx, projectID, sandboxID); ok {
+		res, err := client.GetSandbox(ctx, apiclientgen.GetSandboxParams{ProjectId: projectID, SandboxId: sandboxID})
+		if err != nil {
 			// An unreadable sandbox says nothing rather than saying something
 			// wrong. The read can fail for reasons that have no bearing on
 			// provisioning — a momentarily unavailable server above all — and
 			// the attach is the thing entitled to report those.
-			if line := string(sandboxcreate.ProvisionStatus(sandbox)); line != "" && line != last {
-				last = line
-				report(line)
-			}
+			continue
+		}
+		sandbox, err := expectResponse[apimodel.Sandbox](res)
+		if err != nil {
+			continue
+		}
+		if line := string(sandboxcreate.Status(ctx, client, projectID, sandbox)); line != "" && line != last {
+			last = line
+			report(line)
 		}
 	}
 }
