@@ -39,10 +39,15 @@ type fakePoolManager struct {
 }
 
 func (m *fakePoolManager) GetPool(context.Context, string, string) (*model.Pool, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
 	if m.pool == nil {
 		return nil, apperrors.ErrNotFound
 	}
-	return m.pool, nil
+	// A copy, because a caller reading fields off it races the test goroutine
+	// that is standing in for a driver reporting progress.
+	snapshot := *m.pool
+	return &snapshot, nil
 }
 
 func (m *fakePoolManager) ListPoolsForProviderInstance(context.Context, string, string) ([]model.Pool, error) {
@@ -60,10 +65,13 @@ func (m *fakePoolManager) ListPools(context.Context, string) ([]model.Pool, erro
 }
 
 func (m *fakePoolManager) SchedulablePoolForSandbox(context.Context, *model.Sandbox) (*model.Pool, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
 	if m.pool == nil || !m.schedulable {
 		return nil, apperrors.ErrNotFound
 	}
-	return m.pool, nil
+	snapshot := *m.pool
+	return &snapshot, nil
 }
 
 func (m *fakePoolManager) GetProject(context.Context, string) (*model.Project, error) {
@@ -418,4 +426,74 @@ func poolRuntimeState(t *testing.T, runtimeSandbox *sandbox.Sandbox) []byte {
 		t.Fatalf("marshal pool runtime state: %v", err)
 	}
 	return state
+}
+
+// A cold vz pool fetches a VM image, boots a machine, waits for Docker and
+// pulls the pool-agent image — minutes of work that used to fail against one
+// fixed 30s budget with "no sandbox capacity" while all of it was going fine.
+// A pool that keeps saying what it is doing keeps being waited on.
+func TestSchedulablePoolKeepsWaitingWhileTheDriverReportsProgress(t *testing.T) {
+	oldTimeout, oldInterval, oldStall := poolCapacityWaitTimeout, poolCapacityPollInterval, poolProvisionStallTimeout
+	poolCapacityWaitTimeout = 30 * time.Millisecond
+	poolCapacityPollInterval = 5 * time.Millisecond
+	poolProvisionStallTimeout = 60 * time.Millisecond
+	t.Cleanup(func() {
+		poolCapacityWaitTimeout, poolCapacityPollInterval, poolProvisionStallTimeout = oldTimeout, oldInterval, oldStall
+	})
+
+	pool := activePool("pool-1")
+	pool.Ready = false
+	pool.Schedulable = false
+	manager := &fakePoolManager{pool: pool, schedulable: false}
+	provider := New(newTestRuntimeProvider(t, "project-1", "pool-1"), sandbox.ProviderDefinition{Name: "test"}, manager)
+
+	// The driver keeps stamping progress, the way an image pull does, and
+	// becomes schedulable well past the plain capacity budget.
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		for range 20 {
+			time.Sleep(5 * time.Millisecond)
+			stamp := time.Now().UTC()
+			manager.mu.Lock()
+			manager.pool.ProvisionProgressAt = &stamp
+			manager.mu.Unlock()
+		}
+		manager.mu.Lock()
+		manager.pool.Ready, manager.pool.Schedulable = true, true
+		manager.schedulable = true
+		manager.mu.Unlock()
+	}()
+	defer func() { <-done }()
+
+	sb := &model.Sandbox{ProjectID: "project-1", PoolID: "pool-1"}
+	if _, err := provider.schedulablePool(context.Background(), sb); err != nil {
+		t.Fatalf("gave up on a pool that was reporting progress throughout: %v", err)
+	}
+}
+
+// And a pool that goes quiet still fails, or the wait would never end.
+func TestSchedulablePoolGivesUpOnASilentPool(t *testing.T) {
+	oldTimeout, oldInterval, oldStall := poolCapacityWaitTimeout, poolCapacityPollInterval, poolProvisionStallTimeout
+	poolCapacityWaitTimeout = 20 * time.Millisecond
+	poolCapacityPollInterval = 5 * time.Millisecond
+	poolProvisionStallTimeout = 30 * time.Millisecond
+	t.Cleanup(func() {
+		poolCapacityWaitTimeout, poolCapacityPollInterval, poolProvisionStallTimeout = oldTimeout, oldInterval, oldStall
+	})
+
+	pool := activePool("pool-1")
+	pool.Ready = false
+	pool.Schedulable = false
+	// Stamped once and never again: something started, then stopped.
+	stamp := time.Now().UTC()
+	pool.ProvisionProgressAt = &stamp
+	manager := &fakePoolManager{pool: pool, schedulable: false}
+	provider := New(newTestRuntimeProvider(t, "project-1", "pool-1"), sandbox.ProviderDefinition{Name: "test"}, manager)
+
+	sb := &model.Sandbox{ProjectID: "project-1", PoolID: "pool-1"}
+	_, err := provider.schedulablePool(context.Background(), sb)
+	if !errors.Is(err, sandbox.ErrNoSandboxCapacity) {
+		t.Fatalf("schedulablePool error = %v, want ErrNoSandboxCapacity", err)
+	}
 }

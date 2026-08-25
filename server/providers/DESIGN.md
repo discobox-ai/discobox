@@ -106,6 +106,15 @@ for Docker, pulling the pool image, starting and waiting for the agent — aroun
 the calls that perform them. A driver refines that from inside: `vz` reports
 fetching the VM image, which the engine can only see as part of starting a VM.
 
+The record has a second reader. Placement waits for the sandbox's pool to become
+schedulable, and that wait used to spend one fixed 30s budget whether the pool
+was on its way up or stuck — so a cold VM pool, which fetches a disk image,
+boots, waits for Docker and pulls the pool-agent image, failed with "no sandbox
+capacity" every time while all of it was working. The wait now extends whenever
+the pool's progress stamp moves, and only silence spends it. A pool that has
+actually failed is still caught immediately, by its settled failure rather than
+by a clock.
+
 Two rules make it cheap enough to write from a hot path. Reports are a narrow
 two-column update and publish no project event, because the reader is polling
 anyway; and an image pull, the one phase with a denominator, is throttled to the

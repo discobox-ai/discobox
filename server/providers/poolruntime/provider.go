@@ -27,11 +27,28 @@ import (
 const (
 	defaultPoolCapacityWaitTimeout  = 30 * time.Second
 	defaultPoolCapacityPollInterval = time.Second
+	// defaultPoolProvisionStallTimeout is how long a pool that is visibly being
+	// built gets before this gives up on it.
+	//
+	// It is a silence budget and not a total one. The wait's own comment always
+	// said it was worth its deadline "while the runtime is still on its way up",
+	// but it had no way to tell that from a pool that was stuck, so it spent one
+	// fixed 30s budget on both — and a cold vz pool, which fetches a VM image,
+	// boots a machine, waits for Docker and pulls the pool-agent image, failed
+	// with "no sandbox capacity" every time while all of that was working.
+	//
+	// The driver now stamps what it is doing as it does it, so being on the way
+	// up is a thing this can observe. Generous, because the phases are stamped
+	// at transitions and a VM boot is legitimately quiet between two of them;
+	// safe to be generous, because a pool that has actually failed is caught by
+	// settledFailure rather than by this clock.
+	defaultPoolProvisionStallTimeout = 2 * time.Minute
 )
 
 var (
-	poolCapacityWaitTimeout  = defaultPoolCapacityWaitTimeout
-	poolCapacityPollInterval = defaultPoolCapacityPollInterval
+	poolCapacityWaitTimeout   = defaultPoolCapacityWaitTimeout
+	poolCapacityPollInterval  = defaultPoolCapacityPollInterval
+	poolProvisionStallTimeout = defaultPoolProvisionStallTimeout
 )
 
 // PoolManager is the control-plane surface a pool provider needs.
@@ -254,6 +271,20 @@ func (p *Provider) createOnPool(ctx context.Context, ref sandbox.SandboxRef, sta
 	return client.Create(ctx, ref, state, opts)
 }
 
+// poolProgressAt is when the pool's driver last said what it was doing, and
+// whether it has said anything at all.
+//
+// An unreadable pool reports nothing rather than something wrong: the read can
+// fail for reasons that have no bearing on provisioning, and this only decides
+// whether to keep waiting.
+func (p *Provider) poolProgressAt(ctx context.Context, sb *model.Sandbox) (time.Time, bool) {
+	pool, err := p.manager.GetPool(ctx, sb.ProjectID, sb.PoolID)
+	if err != nil || pool == nil || pool.ProvisionProgressAt == nil {
+		return time.Time{}, false
+	}
+	return *pool.ProvisionProgressAt, true
+}
+
 // schedulablePool waits for the sandbox's pool to accept placement. It gives
 // up early when the pool has settled into failure: a scheduling wait is only
 // worth its deadline while the runtime is still on its way up, and a settled
@@ -275,6 +306,7 @@ func (p *Provider) schedulablePool(ctx context.Context, sb *model.Sandbox) (*mod
 		return nil, err
 	}
 	deadline := time.Now().Add(poolCapacityWaitTimeout)
+	var lastProgressAt time.Time
 	for {
 		pool, err := p.manager.SchedulablePoolForSandbox(ctx, sb)
 		if err == nil {
@@ -285,6 +317,14 @@ func (p *Provider) schedulablePool(ctx context.Context, sb *model.Sandbox) (*mod
 		}
 		if err := p.settledFailure(ctx, sb); err != nil {
 			return nil, err
+		}
+		// A pool that is visibly still being built is not a pool to give up on.
+		// The driver stamps its progress as it works, so a stamp that moved is
+		// the pool saying it is alive; a pool that says nothing keeps the plain
+		// budget it has always had.
+		if at, ok := p.poolProgressAt(ctx, sb); ok && at.After(lastProgressAt) {
+			lastProgressAt = at
+			deadline = time.Now().Add(poolProvisionStallTimeout)
 		}
 		if poolCapacityWaitTimeout <= 0 || !time.Now().Before(deadline) {
 			return nil, sandbox.ErrNoSandboxCapacity
