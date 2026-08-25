@@ -130,6 +130,14 @@ needs belongs in a container on that daemon, never here. That scope rule is what
 keeps the image small enough to ship on first boot and stable enough to version
 on its own line.
 
+The same rule applies to hardware, and the build enforces it: `vzvm.Configure`
+attaches six virtio devices and nothing else can ever appear, so the Dockerfile
+deletes the driver classes Debian's kernel package ships for the rest of the
+world and the initrd is built from a list rather than `MODULES=most`. `/boot` is
+deleted once the kernel and initrd are lifted out as artifacts of their own.
+Sizing follows from the same premise: the root is read-only, so it is built with
+no journal, no reserved blocks, and only the inodes its own files need.
+
 Its image assets duplicate libkrun's rather than sharing them. That is
 deliberate: libkrun's guest is slated for rework, and coupling to it first would
 make that rework harder. The *pipeline* — `guestimage` and

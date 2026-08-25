@@ -28,6 +28,12 @@
   is hours off precisely when the Mac has slept, which is the case an NTP
   daemon refuses to correct on its own. Every 401 in both directions traces
   back here.
+- **A new guest device is three edits, not one.** The image ships drivers for
+  the six virtio devices `vzvm.Configure` attaches and deletes the rest, so
+  attaching a device the guest has never had also means keeping its module class
+  in `image/Dockerfile` and, if the root depends on it, adding it to
+  `/etc/initramfs-tools/modules`. A missing module is a guest that boots to no
+  device or does not boot at all.
 - **Guest image changes are a separate release.** Editing `image/` does not ship
   with the server; it ships when a `vm/v*` tag is cut and `DefaultGuestImage` is
   re-pinned to the new `discobox-vm` digest.

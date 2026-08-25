@@ -34,6 +34,15 @@ ARG TARGETARCH=arm64
 
 ENV container=discobox-vz
 
+# Documentation is dead weight in an artifact whose size is a distribution
+# cost, and dpkg is the only thing that ever puts it here.
+RUN printf '%s\n' \
+        'path-exclude /usr/share/doc/*' \
+        'path-exclude /usr/share/info/*' \
+        'path-exclude /usr/share/locale/*' \
+        'path-exclude /usr/share/man/*' \
+        > /etc/dpkg/dpkg.cfg.d/01-discobox-nodoc
+
 # linux-image-<arch> is the only reason this image is not tiny, and it is what
 # removes a kernel build from the project: Virtualization.framework needs no
 # patched kernel, unlike libkrun (ADR 0062 §8).
@@ -54,11 +63,58 @@ RUN apt-get update \
     && apt-get clean \
     && rm -rf /var/lib/apt/lists/*
 
+# Debian's kernel package carries a module for every device Debian supports.
+# This guest's entire hardware surface is the six virtio devices
+# `vzvm.Configure` attaches — block, net, vsock, console, entropy, balloon — so
+# whole driver classes here describe hardware that cannot appear. depmod after,
+# or modules.dep keeps naming files that are gone.
+#
+# kernel/net and kernel/fs stay whole: overlayfs, bridge, veth and netfilter are
+# Docker's, not the hardware's.
+RUN set -eux; \
+    modules=$(ls -d /usr/lib/modules/*); \
+    for class in \
+        drivers/ata drivers/atm drivers/bcma drivers/bluetooth drivers/firewire \
+        drivers/gnss drivers/gpu drivers/hid drivers/hwmon drivers/i2c \
+        drivers/iio drivers/infiniband drivers/input drivers/isdn drivers/leds \
+        drivers/media drivers/memstick drivers/mmc drivers/mtd \
+        drivers/net/ethernet drivers/net/wireless drivers/nvme drivers/parport \
+        drivers/pcmcia drivers/platform drivers/scsi drivers/ssb drivers/staging \
+        drivers/thunderbolt drivers/usb drivers/w1 sound; \
+    do \
+        rm -rf "$modules/kernel/$class"; \
+    done; \
+    depmod -a "$(basename "$modules")"
+
+# udev's hardware database is a PCI, USB and OUI vendor table for naming devices
+# that are not on this machine.
+RUN rm -rf /usr/lib/udev/hwdb.bin /usr/lib/udev/hwdb.d
+
+# Debian's containerd package ships the CLI and both v1 shims. Docker drives
+# containerd over its socket and starts the v2 shim; nothing here runs the rest.
+RUN rm -f \
+        /usr/bin/containerd-shim \
+        /usr/bin/containerd-shim-runc-v1 \
+        /usr/bin/containerd-stress \
+        /usr/bin/ctr
+
 # The root filesystem is mounted read-only and every virtio driver the guest
 # needs is a module, so the initrd is what brings /dev/vda up. Build it
 # explicitly rather than trusting the kernel package's postinst to have run to
 # completion inside a container.
+#
+# The initrd's whole job is to mount an ext4 root on a virtio-blk disk, so it is
+# built from a list rather than from MODULES=most, which packs every block and
+# network driver Debian ships. Names that are built into the kernel on an
+# architecture are ignored there, so listing them costs nothing and covers the
+# case where a flavour builds them as modules.
 RUN set -eux; \
+    printf '%s\n' ext4 virtio_blk virtio_console virtio_mmio virtio_pci \
+        > /etc/initramfs-tools/modules; \
+    sed -i 's/^MODULES=.*/MODULES=list/; s/^COMPRESS=.*/COMPRESS=zstd/' \
+        /etc/initramfs-tools/initramfs.conf; \
+    grep -q '^MODULES=list$' /etc/initramfs-tools/initramfs.conf; \
+    grep -q '^COMPRESS=zstd$' /etc/initramfs-tools/initramfs.conf; \
     if ls /boot/initrd.img-* >/dev/null 2>&1; then \
         update-initramfs -u -k all; \
     else \
@@ -113,7 +169,7 @@ RUN mkdir -p \
 
 FROM debian:13-slim AS assemble
 ARG TARGETARCH=arm64
-ARG ROOT_SLACK_MIB=192
+ARG ROOT_SLACK_MIB=32
 
 RUN apt-get update \
     && apt-get install -y --no-install-recommends e2fsprogs gzip lz4 xz-utils zstd \

@@ -12,7 +12,7 @@ set -eu
 rootfs=${1:?usage: assemble-guest-image ROOTFS OUTPUT_DIR}
 out=${2:?usage: assemble-guest-image ROOTFS OUTPUT_DIR}
 arch=${TARGETARCH:-arm64}
-slack_mib=${ROOT_SLACK_MIB:-192}
+slack_mib=${ROOT_SLACK_MIB:-32}
 # What the guest calls itself. One name for every pool VM: they are separate
 # machines that never share a network namespace, and a name an operator
 # recognises beats one that is unique to a VM they already know they are on.
@@ -75,6 +75,11 @@ esac
 
 cp "$initrd" "$out/initrd.img"
 
+# The kernel and the initrd are artifacts of their own from here on; the guest
+# never reads /boot, because Virtualization.framework loads both from the host.
+# Leaving them in the tree ships each one twice.
+rm -rf "$rootfs"/boot/*
+
 # BuildKit supplies /etc/resolv.conf as a bind mount during RUN steps, so the
 # exported tree carries the builder's resolver. The guest resolves through
 # systemd-resolved against the DHCP server Virtualization.framework's NAT
@@ -108,11 +113,22 @@ HOSTS
 # read-only and never grows, and every byte of slack is a byte pulled over the
 # network on a machine's first pool start and written to disk on extraction.
 used_mib=$(du -sm "$rootfs" | cut -f1)
-root_mib=$(( used_mib * 115 / 100 + slack_mib ))
+root_mib=$(( used_mib * 105 / 100 + slack_mib ))
 truncate -s "${root_mib}M" "$out/root.ext4"
-# No journal: the root filesystem is attached read-only, so a journal is dead
-# weight in an artifact whose size is a distribution cost.
-mkfs.ext4 -F -q -L discobox-root -O ^has_journal -d "$rootfs" "$out/root.ext4"
+# Every option here is set because the default is wrong for a read-only image
+# whose size is a distribution cost:
+#
+#   ^has_journal  nothing writes to this filesystem, so a journal is dead weight
+#   -m 0          the 5% ext4 reserves for root keeps a *full* filesystem
+#                 recoverable, which this one cannot become
+#   -b 4096       mke2fs picks the block size from the image size, and an image
+#                 under 512 MiB gets 1 KiB blocks — four times the metadata and
+#                 four times the I/O for a filesystem every pool on the host
+#                 reads from
+#   -i 16384      the matching default packs one inode per 4 KiB, which is
+#                 ~90k unused inodes and about 18 MiB of inode tables here
+mkfs.ext4 -F -q -m 0 -b 4096 -i 16384 -L discobox-root -O ^has_journal \
+    -d "$rootfs" "$out/root.ext4"
 
 echo "guest artifacts:"
 ls -l "$out"
