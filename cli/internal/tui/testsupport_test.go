@@ -21,7 +21,13 @@ type fakeSource struct {
 
 	session   Session
 	sandboxes []Sandbox
-	dirty     bool
+	workspace SourceWorkspace
+
+	// measured records the directories the window asked to be measured, and
+	// total is what the walk it gets back reports.
+	measured []string
+	total    DirectoryTotal
+	stopped  int
 
 	harnesses    []Harness
 	harnessErr   error
@@ -234,7 +240,42 @@ func (f *fakeSource) WatchProvisioning(_ context.Context, sandboxID string, repo
 	}
 }
 
-func (f *fakeSource) Dirty(context.Context, string) (bool, error) { return f.dirty, nil }
+func (f *fakeSource) Workspace(context.Context, string) (SourceWorkspace, error) {
+	return f.workspace, nil
+}
+
+func (f *fakeSource) MeasureDirectory(_ context.Context, dir string) (func() DirectoryTotal, func()) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.measured = append(f.measured, dir)
+	return func() DirectoryTotal {
+			f.mu.Lock()
+			defer f.mu.Unlock()
+			return f.total
+		}, func() {
+			f.mu.Lock()
+			defer f.mu.Unlock()
+			f.stopped++
+		}
+}
+
+func (f *fakeSource) measuredDirs() []string {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return append([]string(nil), f.measured...)
+}
+
+func (f *fakeSource) setTotal(total DirectoryTotal) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.total = total
+}
+
+func (f *fakeSource) stoppedCount() int {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return f.stopped
+}
 
 func (f *fakeSource) Do(_ context.Context, verb Verb, id string) error {
 	f.mu.Lock()

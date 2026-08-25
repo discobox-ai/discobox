@@ -590,6 +590,29 @@ type RunRequest struct {
 	Source string
 }
 
+// SourceWorkspace is what a create would carry into a discobox from the source
+// directory it is cut from.
+type SourceWorkspace struct {
+	// Directory is the source directory itself, which is what the question
+	// about it names.
+	Directory string
+	// Repository is false when the directory is in no Git repository at all.
+	// There is then no committed history to start from, so what is being asked
+	// is whether the whole directory is copied in.
+	Repository bool
+	// Carries is whether there is anything to carry: uncommitted work in a
+	// repository, or any content at all in a directory that is in none.
+	Carries bool
+}
+
+// DirectoryTotal is how much of a directory copying it into a discobox would
+// carry, as counted so far. Done is set once the count is final.
+type DirectoryTotal struct {
+	Bytes int64
+	Files int64
+	Done  bool
+}
+
 // Verb is a lifecycle action that runs against the API and returns: no terminal
 // is taken, so the window stays up and reports the outcome on its status line.
 type Verb string
@@ -734,9 +757,15 @@ type DataSource interface {
 	// window that starts one against a running discobox draws no line at all.
 	WatchProvisioning(ctx context.Context, sandboxID string, report func(string))
 
-	// Dirty reports whether the source directory has uncommitted work, so the
-	// window can settle --include-dirty=auto before it creates anything.
-	Dirty(ctx context.Context, source string) (bool, error)
+	// Workspace reports what a create would carry in from the source directory,
+	// so the window can settle --include-dirty=auto before it creates anything.
+	Workspace(ctx context.Context, source string) (SourceWorkspace, error)
+
+	// MeasureDirectory starts counting what copying dir into a discobox would
+	// carry. total reports the running count and is polled while the question
+	// about it is on screen; stop ends a walk whose question has been answered,
+	// and is safe to call on one that already finished.
+	MeasureDirectory(ctx context.Context, dir string) (total func() DirectoryTotal, stop func())
 
 	// Do runs a lifecycle verb against one sandbox.
 	Do(ctx context.Context, verb Verb, sandboxID string) error

@@ -215,6 +215,14 @@ type Model struct {
 	initTitle   string
 	initLine    string
 	initUpdates <-chan string
+
+	// copySize is the measurement behind the "copy this directory?" question:
+	// the running total, the walk's stop, and the dialog the number is being
+	// written into, which is what says the answer has not been given yet.
+	copySize   func() DirectoryTotal
+	copyStop   func()
+	copyDialog *dialog
+	copyDir    string
 }
 
 // Option configures the window at construction.
@@ -350,13 +358,17 @@ type statusMsg struct {
 	err  bool
 }
 
-// dirtyCheckedMsg answers --include-dirty=auto: whether there is uncommitted
-// work in the source, and so whether there is anything to ask about.
-type dirtyCheckedMsg struct {
-	req   RunRequest
-	dirty bool
-	err   error
+// workspaceCheckedMsg answers --include-dirty=auto: what the source directory
+// would carry into the discobox, and so what there is to ask about.
+type workspaceCheckedMsg struct {
+	req       RunRequest
+	workspace SourceWorkspace
+	err       error
 }
+
+// directorySizeMsg is the copy question's measurement coming due for another
+// read.
+type directorySizeMsg struct{}
 
 // createdMsg reports the sandbox Enter asked for, or why there is none.
 type createdMsg struct {
@@ -487,8 +499,11 @@ func (m *Model) update(msg tea.Msg) tea.Cmd {
 		}
 		return nil
 
-	case dirtyCheckedMsg:
-		return m.dirtyChecked(msg)
+	case workspaceCheckedMsg:
+		return m.workspaceChecked(msg)
+
+	case directorySizeMsg:
+		return m.directorySized()
 
 	case createMsg:
 		return m.create(msg.req)
@@ -1497,8 +1512,8 @@ func (m *Model) startRun(req RunRequest) tea.Cmd {
 	// when the working tree has something in it.
 	m.busy = "checking the working tree…"
 	return func() tea.Msg {
-		dirty, err := m.ds.Dirty(m.ctx, req.Source)
-		return dirtyCheckedMsg{req: req, dirty: dirty, err: err}
+		workspace, err := m.ds.Workspace(m.ctx, req.Source)
+		return workspaceCheckedMsg{req: req, workspace: workspace, err: err}
 	}
 }
 
@@ -1630,33 +1645,102 @@ func (m *Model) harnessNamed(name string) (Harness, bool) {
 	return Harness{}, false
 }
 
-func (m *Model) dirtyChecked(msg dirtyCheckedMsg) tea.Cmd {
+func (m *Model) workspaceChecked(msg workspaceCheckedMsg) tea.Cmd {
 	m.busy = ""
 	if msg.err != nil {
 		return m.report(true, "cannot read the working tree: %v", msg.err)
 	}
-	if !msg.dirty {
+	if !msg.workspace.Carries {
 		return m.create(msg.req)
 	}
+	if !msg.workspace.Repository {
+		return m.askToCopyDirectory(msg.req, msg.workspace.Directory)
+	}
 	// Excluding leads, the way it does in `discobox run`: the default answer is
-	// the one that changes nothing about what the sandbox sees.
-	req := msg.req
-	m.dialog = confirmDialog("Uncommitted changes",
-		m.session.Directory+" has uncommitted changes. Carry them into the discobox as a snapshot on top of the checked-out commit?",
-		func(string) tea.Cmd {
-			req.IncludeDirty = "true"
-			return func() tea.Msg { return createMsg{req: req} }
-		})
-	// Enter means no here: carrying the working tree in is the answer that
-	// changes what the sandbox sees, so it has to be asked for.
-	m.dialog.defaultNo = true
-	// Answering no is answering, not canceling, so the sandbox is still
-	// created — from the last commit.
-	m.dialog.onCancel = func() tea.Cmd {
-		req.IncludeDirty = "false"
+	// the one that changes nothing about what the sandbox sees. The repository
+	// named is the one the run is cut from, which is not the window's own
+	// directory when the source option names another.
+	m.dialog = m.includeDirtyDialog("Uncommitted changes",
+		msg.workspace.Directory+" has uncommitted changes. Carry them into the discobox as a snapshot on top of the checked-out commit?",
+		msg.req)
+	return nil
+}
+
+// askToCopyDirectory is the same question for a source directory that is in no
+// Git repository: there is no commit to fall back to, so what it decides is
+// whether the directory itself is copied in. Answering no still creates the
+// discobox — on the empty first commit, with none of the directory in it.
+//
+// The size is counted while the question is up rather than before it: a home
+// directory takes long enough to walk that waiting for the number would be the
+// thing the question exists to avoid.
+func (m *Model) askToCopyDirectory(req RunRequest, dir string) tea.Cmd {
+	total, stop := m.ds.MeasureDirectory(m.ctx, dir)
+	m.copySize, m.copyStop, m.copyDir = total, stop, dir
+	m.dialog = m.includeDirtyDialog("Copy this directory?", copyDirectoryBody(dir, total()), req)
+	m.copyDialog = m.dialog
+	return m.pollDirectorySize()
+}
+
+// includeDirtyDialog is the two-answer question about what local content
+// reaches the discobox. Both answers are answers — the discobox is created
+// either way — so no is heard on cancel as well as on "n", and Enter means no:
+// carrying content in is what has to be asked for.
+func (m *Model) includeDirtyDialog(title, body string, req RunRequest) *dialog {
+	answer := func(includeDirty string) tea.Cmd {
+		req := req
+		req.IncludeDirty = includeDirty
 		return func() tea.Msg { return createMsg{req: req} }
 	}
-	return nil
+	d := confirmDialog(title, body, func(string) tea.Cmd { return answer("true") })
+	d.defaultNo = true
+	d.onCancel = func() tea.Cmd { return answer("false") }
+	return d
+}
+
+// directorySized writes the walk's latest total into the question it belongs
+// to. A dialog that is no longer up has been answered, and the walk behind it
+// is stopped rather than left reading the disk for nobody.
+func (m *Model) directorySized() tea.Cmd {
+	if m.copyDialog == nil || m.dialog != m.copyDialog {
+		m.endDirectorySize()
+		return nil
+	}
+	total := m.copySize()
+	m.copyDialog.body = copyDirectoryBody(m.copyDir, total)
+	if total.Done {
+		m.endDirectorySize()
+		return nil
+	}
+	return m.pollDirectorySize()
+}
+
+func (m *Model) pollDirectorySize() tea.Cmd {
+	return tea.Tick(directorySizeInterval, func(time.Time) tea.Msg { return directorySizeMsg{} })
+}
+
+// endDirectorySize stops the walk and forgets it. It is safe on a question that
+// was never asked, and on one whose walk already finished.
+func (m *Model) endDirectorySize() {
+	if m.copyStop != nil {
+		m.copyStop()
+	}
+	m.copySize, m.copyStop, m.copyDialog, m.copyDir = nil, nil, nil, ""
+}
+
+// directorySizeInterval is how often the copy question re-reads its walk: often
+// enough that the number is visibly climbing, and no more than that.
+const directorySizeInterval = 200 * time.Millisecond
+
+// copyDirectoryBody is the copy question, with as much of the size as has been
+// counted so far.
+func copyDirectoryBody(dir string, total DirectoryTotal) string {
+	counted := fmt.Sprintf("%s in %s", humanBytes(total.Bytes), plural(int(total.Files), "file", "files"))
+	if !total.Done {
+		counted = "calculating… " + counted + " so far"
+	}
+	return dir + " is not a Git repository, so copying it into the discobox means all of it (" + counted +
+		"). Copy it? Answering no creates the discobox anyway, empty."
 }
 
 // createMsg carries a settled request back to the live model.

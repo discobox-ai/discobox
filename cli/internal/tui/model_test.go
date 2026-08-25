@@ -93,11 +93,16 @@ func TestDirtyWorkspaceIsAskedAboutAndBothAnswersCreate(t *testing.T) {
 		{"enter", "false"},
 	} {
 		ds := newFakeSource()
-		ds.dirty = true
+		ds.workspace = SourceWorkspace{Directory: "/home/ada/src/web", Repository: true, Carries: true}
 		m := newTestModel(t, ds)
 		send(t, m, key("enter"))
 		if m.dialog == nil {
 			t.Fatalf("%s: a dirty working tree should be asked about", tc.answer)
+		}
+		// The repository asked about is the one the run is cut from, which the
+		// source option can point somewhere other than this window's directory.
+		if !strings.Contains(m.dialog.body, "/home/ada/src/web") {
+			t.Fatalf("%s: dialog body = %q, want the repository named", tc.answer, m.dialog.body)
 		}
 		send(t, m, key(tc.answer))
 		if len(ds.runs) != 1 {
@@ -106,6 +111,97 @@ func TestDirtyWorkspaceIsAskedAboutAndBothAnswersCreate(t *testing.T) {
 		if ds.runs[0].IncludeDirty != tc.want {
 			t.Fatalf("%s: includeDirty = %q, want %q", tc.answer, ds.runs[0].IncludeDirty, tc.want)
 		}
+	}
+}
+
+// A source directory in no Git repository is the same question with more at
+// stake — the whole directory is what would be carried — so it is asked before
+// anything is copied, and "no" still creates the discobox.
+func TestDirectoryWithNoRepositoryIsAskedAboutBeforeItIsCopied(t *testing.T) {
+	for _, tc := range []struct {
+		answer string
+		want   string
+	}{
+		{"y", "true"},
+		{"n", "false"},
+		// Enter is no: copying a home directory into a discobox is not
+		// something to do by pressing Enter twice.
+		{"enter", "false"},
+	} {
+		ds := newFakeSource()
+		ds.workspace = SourceWorkspace{Directory: "/home/ada/notes", Carries: true}
+		m := newTestModel(t, ds)
+		send(t, m, key("enter"))
+		if m.dialog == nil {
+			t.Fatalf("%s: a directory with no repository should be asked about", tc.answer)
+		}
+		if !strings.Contains(m.dialog.body, "/home/ada/notes") || !strings.Contains(m.dialog.body, "not a Git repository") {
+			t.Fatalf("%s: dialog body = %q, want the directory named", tc.answer, m.dialog.body)
+		}
+		if got := ds.measuredDirs(); len(got) != 1 || got[0] != "/home/ada/notes" {
+			t.Fatalf("%s: measured %v, want the directory being asked about", tc.answer, got)
+		}
+		send(t, m, key(tc.answer))
+		if len(ds.runs) != 1 {
+			t.Fatalf("%s: runs = %d, want 1", tc.answer, len(ds.runs))
+		}
+		if ds.runs[0].IncludeDirty != tc.want {
+			t.Fatalf("%s: includeDirty = %q, want %q", tc.answer, ds.runs[0].IncludeDirty, tc.want)
+		}
+		// The answer is in; nothing should still be reading the disk for it.
+		send(t, m, directorySizeMsg{})
+		if ds.stoppedCount() != 1 {
+			t.Fatalf("%s: the walk was stopped %d times, want once", tc.answer, ds.stoppedCount())
+		}
+	}
+}
+
+// The size arrives while the question is up: it is asked immediately, with a
+// number that climbs, and only the final one is stated as fact.
+func TestTheDirectoryQuestionCountsWhileItIsUp(t *testing.T) {
+	ds := newFakeSource()
+	ds.workspace = SourceWorkspace{Directory: "/home/ada/notes", Carries: true}
+	m := newTestModel(t, ds)
+	send(t, m, key("enter"))
+	if !strings.Contains(m.dialog.body, "calculating") {
+		t.Fatalf("dialog body = %q, want a count that has not finished", m.dialog.body)
+	}
+
+	ds.setTotal(DirectoryTotal{Bytes: 5 << 20, Files: 3})
+	send(t, m, directorySizeMsg{})
+	if !strings.Contains(m.dialog.body, "calculating") || !strings.Contains(m.dialog.body, "5.0 MiB in 3 files") {
+		t.Fatalf("dialog body = %q, want the running total so far", m.dialog.body)
+	}
+	if ds.stoppedCount() != 0 {
+		t.Fatal("the walk was stopped while the question was still up")
+	}
+
+	ds.setTotal(DirectoryTotal{Bytes: 7 << 20, Files: 4, Done: true})
+	send(t, m, directorySizeMsg{})
+	if strings.Contains(m.dialog.body, "calculating") || !strings.Contains(m.dialog.body, "7.0 MiB in 4 files") {
+		t.Fatalf("dialog body = %q, want the final total stated as one", m.dialog.body)
+	}
+	if ds.stoppedCount() != 1 {
+		t.Fatalf("the walk was stopped %d times once it had finished, want once", ds.stoppedCount())
+	}
+}
+
+// An empty directory carries nothing, so both answers make the same discobox
+// and there is nothing to ask.
+func TestAnEmptyDirectoryWithNoRepositoryIsNotAskedAbout(t *testing.T) {
+	ds := newFakeSource()
+	ds.workspace = SourceWorkspace{Directory: "/home/ada/empty"}
+	m := newTestModel(t, ds)
+	send(t, m, key("enter"))
+
+	if m.dialog != nil {
+		t.Fatal("an empty directory should not be asked about")
+	}
+	if len(ds.runs) != 1 {
+		t.Fatalf("runs = %d, want 1", len(ds.runs))
+	}
+	if got := ds.measuredDirs(); len(got) != 0 {
+		t.Fatalf("measured %v, want nothing walked for a question nobody asked", got)
 	}
 }
 

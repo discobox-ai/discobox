@@ -152,7 +152,7 @@ func TestThePromptComesOffTheScreenBeforeTheWindowTakesIt(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			ds := newFakeSource(testSandboxes()...)
 			// Enter on a dirty working tree asks about it, in a modal.
-			ds.dirty = true
+			ds.workspace = SourceWorkspace{Directory: "/home/ada/src/web", Repository: true, Carries: true}
 			d, m := newCompactModel(t, ds)
 			if view := m.View(); view.AltScreen || view.Content == "" {
 				t.Fatal("the window should open inline, with the prompt printed on it")

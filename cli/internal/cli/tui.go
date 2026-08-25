@@ -4,6 +4,8 @@ import (
 	"context"
 	"fmt"
 	"io"
+	"os"
+	"path/filepath"
 	"strings"
 	"time"
 
@@ -294,21 +296,38 @@ func shortCommit(commit string) string {
 
 // Dirty reports whether the source directory has uncommitted work, which is the
 // question --include-dirty=auto exists to ask.
-func (d *apiDataSource) Dirty(ctx context.Context, source string) (bool, error) {
+func (d *apiDataSource) Workspace(ctx context.Context, source string) (tui.SourceWorkspace, error) {
 	if strings.TrimSpace(source) == "" {
 		source = d.app.source
 	}
-	// Outside a repository there is no uncommitted work to carry, and so no
-	// question to ask about it.
-	root, inRepo := gitRoot(ctx, sourceDirectory(source))
+	dir, err := filepath.Abs(sourceDirectory(source))
+	if err != nil {
+		return tui.SourceWorkspace{}, err
+	}
+	// Outside a repository there is no commit to fall back to, so what the
+	// directory carries is the whole of it — and an empty one carries nothing,
+	// which is the same discobox either answer would have produced.
+	root, inRepo := gitRoot(ctx, dir)
 	if !inRepo {
-		return false, nil
+		entries, err := os.ReadDir(dir)
+		if err != nil {
+			return tui.SourceWorkspace{}, err
+		}
+		return tui.SourceWorkspace{Directory: dir, Carries: len(entries) > 0}, nil
 	}
 	changes, err := gitutil.StatusChanges(ctx, root)
 	if err != nil {
-		return false, err
+		return tui.SourceWorkspace{}, err
 	}
-	return len(changes) > 0, nil
+	return tui.SourceWorkspace{Directory: root, Repository: true, Carries: len(changes) > 0}, nil
+}
+
+// MeasureDirectory is the shared create path's directory walk, in the shape the
+// window polls it in. The two frontends count the same thing the same way; only
+// where the number is drawn differs.
+func (d *apiDataSource) MeasureDirectory(ctx context.Context, dir string) (func() tui.DirectoryTotal, func()) {
+	walk := sandboxcreate.MeasureDirectory(ctx, dir)
+	return func() tui.DirectoryTotal { return tui.DirectoryTotal(walk.Total()) }, walk.Stop
 }
 
 // gitRoot is gitutil.Root asked as a question rather than for an error: not
