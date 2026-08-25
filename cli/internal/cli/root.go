@@ -269,9 +269,10 @@ func (a *App) ensureLocalServer(ctx context.Context) error {
 	if started {
 		// A server started this way outlives the command that wanted it, which
 		// is the point and also something the user did not ask for. Say that it
-		// happened and how to undo it. A caller that found one already up says
-		// nothing.
-		a.notify("started the discobox server in the background (stop it with: discobox admin server shutdown)")
+		// happened, where its output went — it has no terminal, so the file is
+		// the only place it exists — and how to undo it. A caller that found one
+		// already up says nothing.
+		a.notify("started the discobox server in the background (logs: discobox admin server logs; stop it with: discobox admin server shutdown)")
 	}
 	return nil
 }
@@ -338,6 +339,7 @@ func (a *App) newServerCommand() *cobra.Command {
 		},
 	}
 	cmd.AddCommand(a.newServerShutdownCommand())
+	cmd.AddCommand(a.newServerLogsCommand())
 	a.serverCmd = cmd
 	return cmd
 }

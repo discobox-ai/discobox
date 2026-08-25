@@ -141,9 +141,20 @@ Waiting on it is two-stage, against `health.Status` from `/healthz`. A server
 that never answers has died and is given `StartTimeout`; one that answers
 `starting` is working and is given `ReadyTimeout`, with each new phase printed
 so the wait says what it is waiting for. The child's output goes to a log file
-beside the socket, and its tail is what a failed wait reports — the alternative,
-discarding it, is what made a server dying on startup indistinguishable from one
-that was merely slow.
+(`endpoint.ServerLogPath`), and the last launch's tail is what a failed wait
+reports — the alternative, discarding it, is what made a server dying on startup
+indistinguishable from one that was merely slow.
+
+That log is the launched server's only account of itself: it has no terminal,
+and nothing else records what it did. So it lives with the server's state rather
+than beside the socket, which sits in a runtime directory the system clears; it
+is appended to across launches behind a banner line, so the run that failed
+survives the restart that followed it; and it rotates once at a size cap so
+appending forever cannot fill a disk. Both ways of starting the process write
+there — the systemd user unit gets `StandardOutput=append:` onto the same file,
+so where a server's output lives does not depend on whether this machine had
+`systemd-run`. `discobox admin server logs` reads it back, with `--follow`,
+`--tail`, `--previous`, and `--path`.
 
 Advanced configuration and low-level resource commands are grouped beneath the
 visible `discobox admin` command: `project`, `sandbox`, `terminal`, `exec`,

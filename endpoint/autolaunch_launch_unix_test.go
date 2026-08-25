@@ -6,6 +6,8 @@ import (
 	"context"
 	"encoding/json"
 	"net/http"
+	"os"
+	"path/filepath"
 	"strings"
 	"sync/atomic"
 	"testing"
@@ -22,6 +24,7 @@ func TestEnsureRunningReportsWhyTheServerDied(t *testing.T) {
 	socket := testSocketPath(t)
 	opts := LaunchOptions{
 		Endpoint:      "unix://" + socket,
+		LogPath:       filepath.Join(t.TempDir(), "server.log"),
 		Command:       "/bin/sh",
 		Args:          []string{"-c", `echo 'unknown command "server" for "discobox"' >&2; exit 1`},
 		StartTimeout:  500 * time.Millisecond,
@@ -38,6 +41,54 @@ func TestEnsureRunningReportsWhyTheServerDied(t *testing.T) {
 	}
 	if !strings.Contains(err.Error(), `unknown command "server"`) {
 		t.Fatalf("error %q does not carry what the server said", err)
+	}
+	if !strings.Contains(err.Error(), opts.LogPath) {
+		t.Fatalf("error %q does not say where the rest of the log is", err)
+	}
+}
+
+// The log outlives the launch that wrote it: a server that died and was
+// restarted by the next command would otherwise take its own explanation with
+// it. Each launch is still reported on its own, from its banner down.
+func TestEnsureRunningKeepsEarlierLaunchesInTheLog(t *testing.T) {
+	logPath := filepath.Join(t.TempDir(), "server.log")
+	launch := func(message string) {
+		opts := LaunchOptions{
+			Endpoint:      "unix://" + testSocketPath(t),
+			LogPath:       logPath,
+			Command:       "/bin/sh",
+			Args:          []string{"-c", "echo " + message + " >&2; exit 1"},
+			StartTimeout:  500 * time.Millisecond,
+			ProbeInterval: 20 * time.Millisecond,
+			ProbeTimeout:  100 * time.Millisecond,
+		}
+		_, err := EnsureRunning(context.Background(), opts)
+		if err == nil {
+			t.Fatal("expected an error")
+		}
+		if !strings.Contains(err.Error(), message) {
+			t.Fatalf("error %q does not carry this launch's output", err)
+		}
+		// The launch before this one is not what failed now, so it is not what
+		// the error reports.
+		if message == "second-launch" && strings.Contains(err.Error(), "first-launch") {
+			t.Fatalf("error %q carries an earlier launch's output", err)
+		}
+	}
+	launch("first-launch")
+	launch("second-launch")
+
+	data, err := os.ReadFile(logPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, want := range []string{"first-launch", "second-launch"} {
+		if !strings.Contains(string(data), want) {
+			t.Fatalf("log %q lost %q", data, want)
+		}
+	}
+	if got := strings.Count(string(data), serverLogBanner); got != 2 {
+		t.Fatalf("log has %d launch banners, want 2", got)
 	}
 }
 
@@ -74,6 +125,7 @@ func TestEnsureRunningWaitsOutAStartingServer(t *testing.T) {
 	var phases []string
 	opts := LaunchOptions{
 		Endpoint:      endpointURL,
+		LogPath:       filepath.Join(t.TempDir(), "server.log"),
 		Command:       "/bin/sh",
 		Args:          []string{"-c", "exit 7"}, // must never run
 		ProbeInterval: 10 * time.Millisecond,
@@ -114,6 +166,7 @@ func TestEnsureRunningAcceptsAServerWithNoStatusBody(t *testing.T) {
 
 	opts := LaunchOptions{
 		Endpoint:     endpointURL,
+		LogPath:      filepath.Join(t.TempDir(), "server.log"),
 		Command:      "/bin/sh",
 		Args:         []string{"-c", "exit 7"}, // must never run
 		ProbeTimeout: time.Second,

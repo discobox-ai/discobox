@@ -59,11 +59,17 @@ func systemdUserManagerAvailable(ctx context.Context) bool {
 }
 
 func systemdRunArgs(opts LaunchOptions) []string {
+	// The unit appends to the same file the directly-executed child writes, so
+	// where a server's output lives does not depend on which of the two ways
+	// this machine happened to start it. journald has the same lines, but only
+	// for as long as it keeps them and only for someone who knows the unit name.
 	args := []string{
 		"--user",
 		"--collect",
 		"--unit=" + userServiceUnitName(opts),
 		"--property=Description=Discobox local API server",
+		"--property=StandardOutput=append:" + opts.logPath(),
+		"--property=StandardError=append:" + opts.logPath(),
 	}
 	for _, entry := range opts.Env {
 		args = append(args, "--setenv="+entry)

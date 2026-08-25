@@ -177,6 +177,16 @@ func startDetached(ctx context.Context, opts LaunchOptions) error {
 	if opts.Command == "" {
 		return fmt.Errorf("server command is required")
 	}
+	// The child's output went nowhere, so a server that died on startup died
+	// silently and the only symptom was a caller waiting out its timeout on a
+	// socket nothing had bound. It goes to a file instead — opened here, before
+	// either way of starting the process, because the systemd unit is told to
+	// append to the same file and needs the directory to exist.
+	logFile, err := openServerLog(opts.logPath(), opts.Command, opts.Args)
+	if err != nil {
+		return err
+	}
+	defer logFile.Close()
 	if started, err := startUserService(ctx, opts); err != nil {
 		return err
 	} else if started {
@@ -184,16 +194,6 @@ func startDetached(ctx context.Context, opts LaunchOptions) error {
 	}
 	//nolint:gosec // The command is supplied by trusted CLI configuration for local server startup.
 	cmd := exec.CommandContext(ctx, opts.Command, opts.Args...)
-	// The child's output went nowhere, so a server that died on startup died
-	// silently and the only symptom was a caller waiting out its timeout on a
-	// socket nothing had bound. It goes to a file instead, truncated per
-	// launch so it always describes the current one, and its tail is what a
-	// failed wait reports.
-	logFile, err := os.OpenFile(opts.logPath(), os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0o600)
-	if err != nil {
-		return fmt.Errorf("open server log: %w", err)
-	}
-	defer logFile.Close()
 	cmd.Stdout = logFile
 	cmd.Stderr = logFile
 	cmd.Stdin = nil
@@ -255,31 +255,23 @@ func (o LaunchOptions) lockPath() string {
 	}
 }
 
-// logPath is where a launched server's output is kept: beside the socket it
-// binds, so it is found the same way the socket is.
+// logPath is where a launched server's output is kept. See ServerLogPath.
 func (o LaunchOptions) logPath() string {
 	if o.LogPath != "" {
 		return o.LogPath
 	}
-	endpoint, err := Parse(o.Endpoint)
-	if err == nil && endpoint.Scheme == "unix" {
-		return endpoint.Value + ".log"
-	}
-	return filepath.Join(os.TempDir(), "discobox-server.log")
+	return ServerLogPath()
 }
 
-// logTail is the end of the launched server's output, for an error to carry.
-// Empty when there is nothing to show, so it can be appended unconditionally.
+// logTail is the last launch's output, for an error to carry, along with where
+// the rest of it is. Empty when there is nothing to show, so it can be appended
+// unconditionally.
 func (o LaunchOptions) logTail() string {
-	data, err := os.ReadFile(o.logPath())
-	if err != nil || len(data) == 0 {
+	tail := lastServerLogLaunch(o.logPath())
+	if tail == "" {
 		return ""
 	}
-	const limit = 4 << 10
-	if len(data) > limit {
-		data = data[len(data)-limit:]
-	}
-	return fmt.Sprintf("\n%s said:\n%s", o.Command, strings.TrimRight(string(data), "\n"))
+	return fmt.Sprintf("\n%s said (full log: %s):\n%s", o.Command, o.logPath(), tail)
 }
 
 // progress reports a starting server's status, when a caller asked to see it.
