@@ -58,7 +58,10 @@ func CreateControlToken(privateKey ed25519.PrivateKey, claims ControlTokenClaims
 	now := time.Now().UTC()
 	token := paseto.NewToken()
 	token.SetAudience(ControlAudience)
-	token.SetIssuedAt(now)
+	// Both backdated by the same allowance: a verifier checks IssuedAt as well
+	// as NotBefore, so skew tolerance on one and not the other tolerates
+	// nothing. See poolauth.CreateTokenWithTTL.
+	token.SetIssuedAt(now.Add(-controlClockSkew))
 	token.SetNotBefore(now.Add(-controlClockSkew))
 	token.SetExpiration(now.Add(controlTokenTTL))
 	token.SetString("project_id", claims.ProjectID)

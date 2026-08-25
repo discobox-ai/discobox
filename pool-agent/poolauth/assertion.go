@@ -67,7 +67,15 @@ func CreateTokenWithTTL(privateKey ed25519.PrivateKey, claims Claims, ttl time.D
 	now := time.Now().UTC()
 	token := paseto.NewToken()
 	token.SetAudience(Audience)
-	token.SetIssuedAt(now)
+	// Both backdated by the same allowance, because both are "not in the
+	// future" claims and a verifier checks both. Backdating only NotBefore is
+	// not an allowance at all: a guest whose clock is a second ahead of the
+	// control plane's mints a token whose IssuedAt is in the verifier's future,
+	// and the verifier rejects it with "the ValidAt time is before this token
+	// was issued" — which is exactly what a pool VM does, because it steps its
+	// clock off the host RTC every 30s and spends the interval drifting either
+	// side of it. That 401 killed the pool agent on startup.
+	token.SetIssuedAt(now.Add(-ClockSkew))
 	token.SetNotBefore(now.Add(-ClockSkew))
 	token.SetExpiration(now.Add(ttl))
 	token.SetJti(jti)

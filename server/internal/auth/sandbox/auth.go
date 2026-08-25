@@ -19,6 +19,15 @@ import (
 
 const TokenTTL = 12 * time.Hour
 
+// clockSkew is how far apart the minting and verifying clocks may be.
+//
+// It was one second, which is not an allowance: these tokens are minted by the
+// control plane and verified inside a pool VM, whose clock is stepped off the
+// host RTC every 30s and drifts either side of it in between. A minute is the
+// same allowance the proxy's control tokens carry, and the expiry still bounds
+// the far end.
+const clockSkew = time.Minute
+
 type TokenClaims struct {
 	ProjectID string
 	SandboxID string
@@ -140,8 +149,11 @@ func CreateToken(privateKey ed25519.PrivateKey, claims TokenClaims, ttl time.Dur
 	}
 	now := time.Now()
 	token := paseto.NewToken()
-	token.SetIssuedAt(now)
-	token.SetNotBefore(now.Add(-time.Second))
+	// Both backdated by the same allowance: a verifier checks IssuedAt as well
+	// as NotBefore, so skew tolerance on one and not the other tolerates
+	// nothing. See poolauth.CreateTokenWithTTL.
+	token.SetIssuedAt(now.Add(-clockSkew))
+	token.SetNotBefore(now.Add(-clockSkew))
 	token.SetExpiration(now.Add(ttl))
 	token.SetJti(encode(nonce))
 	token.SetString("project_id", claims.ProjectID)

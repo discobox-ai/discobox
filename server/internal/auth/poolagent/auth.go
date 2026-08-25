@@ -199,7 +199,10 @@ func CreateTokenForAudience(privateKey ed25519.PrivateKey, audience string, clai
 	now := time.Now()
 	token := paseto.NewToken()
 	token.SetAudience(audience)
-	token.SetIssuedAt(now)
+	// Both backdated by the same allowance: a verifier checks IssuedAt as well
+	// as NotBefore, so skew tolerance on one and not the other tolerates
+	// nothing. See poolauth.CreateTokenWithTTL.
+	token.SetIssuedAt(now.Add(-clockSkew))
 	token.SetNotBefore(now.Add(-clockSkew))
 	token.SetExpiration(now.Add(ttl))
 	token.SetJti(encode(nonce))
