@@ -462,3 +462,49 @@ func TestUpdateProjectRenames(t *testing.T) {
 		t.Fatalf("rename to same name: %v", err)
 	}
 }
+
+// The welcome is shown once per project, so the project is what remembers
+// having shown it — not the machine the launcher happened to run on.
+func TestUpdateProjectRecordsTheWelcome(t *testing.T) {
+	svc, _, ctx := newService(t)
+	project, err := svc.CreateProject(ctx, services.CreateProjectBody{Name: "Fresh"})
+	if err != nil {
+		t.Fatalf("create project: %v", err)
+	}
+	if project.Welcomed {
+		t.Fatal("a new project has already been welcomed")
+	}
+
+	updated, err := svc.UpdateProject(ctx, project.ID, services.UpdateProjectBody{
+		Welcomed: apigen.NewOptBool(true),
+	})
+	if err != nil {
+		t.Fatalf("update project: %v", err)
+	}
+	if !updated.Welcomed {
+		t.Fatal("the welcome was not recorded")
+	}
+
+	// An update about something else leaves it where it was: a rename must not
+	// hand someone the welcome screen again.
+	renamed, err := svc.UpdateProject(ctx, project.ID, services.UpdateProjectBody{
+		Name: apigen.NewOptString("Renamed"),
+	})
+	if err != nil {
+		t.Fatalf("update project: %v", err)
+	}
+	if !renamed.Welcomed {
+		t.Fatal("renaming a project un-welcomed it")
+	}
+
+	// Clearing it is how someone asks to see the introduction again.
+	cleared, err := svc.UpdateProject(ctx, project.ID, services.UpdateProjectBody{
+		Welcomed: apigen.NewOptBool(false),
+	})
+	if err != nil {
+		t.Fatalf("update project: %v", err)
+	}
+	if cleared.Welcomed {
+		t.Fatal("the welcome could not be cleared")
+	}
+}

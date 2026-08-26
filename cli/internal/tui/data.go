@@ -597,6 +597,11 @@ type DataSource interface {
 	// keyed by is one nothing can return.
 	SaveDraft(ctx context.Context, folder, prompt string) error
 
+	// MarkWelcomed records that the project has shown its introduction, so no
+	// window on it opens on the welcome again. It is the project that
+	// remembers, not this machine: see welcome.go.
+	MarkWelcomed(ctx context.Context) error
+
 	// List is the project's sandboxes, newest-created first.
 	List(ctx context.Context) ([]Sandbox, error)
 

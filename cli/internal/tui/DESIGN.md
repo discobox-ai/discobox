@@ -19,6 +19,8 @@ flowchart LR
     M --> O["optionSet (Shift-Tab)"]
     M --> A["harnessList (F3)"]
     M --> D["dialog (menu, confirm, input, help, wait)"]
+    M --> W["welcome (once per project)"]
+    W -->|Enter| MW["DataSource.MarkWelcomed"]
     P -->|Enter| Run["DataSource.Run → attach"]
     L -->|u t T x U P| Verb["DataSource.Do"]
     L -->|e| Rename["dialog → DataSource.Rename"]
@@ -529,6 +531,17 @@ dialog's body rather than only onto the busy line. Enter does not dismiss it:
 there is nothing to answer, and closing it would drop the user onto a pane that
 has not attached. `provisioningDoneMsg` takes it down; Esc gives up the view of
 the discobox, not the discobox.
+
+**The introduction is shown once, and the project is what remembers**
+(`welcome.go`, `WithWelcome`, `DataSource.MarkWelcomed`). Every other screen
+assumes you know what a discobox is; this one says so, and then never again. The
+flag lives on the project (`model.Project.Welcomed`) rather than beside the
+CLI's local state, so it does not re-welcome the same person on a second machine
+or skip the second person on a shared project. Whether to show it is settled
+before `tui.Run` rather than when the session load returns: the first run is the
+slowest load there is, and a welcome that arrived late would arrive over a
+prompt already being typed into. It takes every key — only Enter does anything —
+so a press aimed at the introduction cannot reach a screen the user has not seen.
 
 **The window fits the terminal.** `windowChrome` is what the box, header, list
 title, blanks, composer and status cost before a single sandbox is drawn; the

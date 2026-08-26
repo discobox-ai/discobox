@@ -186,6 +186,10 @@ type Model struct {
 	// out.
 	statusGen int
 
+	// welcoming is whether the introduction has the window. It is shown once
+	// per project and dismissed with Enter; see welcome.go.
+	welcoming bool
+
 	// One-time server setup, reported under the window rather than waited on
 	// before it opens. See initializing.go.
 	initTitle   string
@@ -644,6 +648,11 @@ func (m *Model) updateKey(msg tea.KeyPressMsg) tea.Cmd {
 		return m.closeWindow()
 	}
 
+	// The introduction stands in front of everything, including whatever screen
+	// the window was opened on, so it takes the keys first. See welcome.go.
+	if m.welcoming {
+		return m.updateWelcome(msg)
+	}
 	if m.dialog != nil {
 		cmd, closed := m.dialog.update(msg)
 		if closed {
@@ -1698,6 +1707,12 @@ func (m *Model) view() tea.View {
 		return tea.NewView("Loading…")
 	}
 
+	// The introduction is the window until it is dismissed, ahead of the screen
+	// it was opened on and ahead of any modal. See welcome.go.
+	if m.welcoming {
+		return m.altView(m.center(m.viewWelcome()))
+	}
+
 	// A modal is drawn in place of the window rather than over it, and closing
 	// it puts the window back. It carries its own border, so it needs none of
 	// the frame below.
@@ -1838,7 +1853,7 @@ func (m *Model) center(content string) string {
 // stand in place of the window rather than inside it, and both can be up before
 // the window has opened out.
 func (m *Model) takesScreen() bool {
-	return m.expanded || m.inPanes() || m.dialog != nil || m.optionsOpen
+	return m.expanded || m.inPanes() || m.dialog != nil || m.optionsOpen || m.welcoming
 }
 
 func (m *Model) altView(content string) tea.View {

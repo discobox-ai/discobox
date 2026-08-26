@@ -107,9 +107,9 @@ func (s *Service) CreateProject(ctx context.Context, input services.CreateProjec
 	return s.GetProject(ctx, project.ID)
 }
 
-// UpdateProject edits a project's own settings — its name and how long its
-// archived sandboxes are kept. Membership and ownership are not editable here;
-// they are their own resource.
+// UpdateProject edits a project's own settings — its name, how long its
+// archived sandboxes are kept, and whether it has shown its introduction.
+// Membership and ownership are not editable here; they are their own resource.
 func (s *Service) UpdateProject(ctx context.Context, projectID string, input services.UpdateProjectBody) (*model.Project, error) {
 	project, err := s.store.GetProject(ctx, projectID)
 	if err != nil {
@@ -134,6 +134,12 @@ func (s *Service) UpdateProject(ctx context.Context, projectID string, input ser
 		// Zero is meaningful rather than absent: it restores the server default,
 		// which the project then tracks as it changes (ADR 0022 §4).
 		project.ArchiveRetentionSeconds = retention
+	}
+	if welcomed, ok := input.Welcomed.Get(); ok {
+		// Settable both ways. Setting it is the launcher saying it has done the
+		// welcoming; clearing it is how someone asks to be shown it again,
+		// which is worth having for a screen that otherwise appears once.
+		project.Welcomed = welcomed
 	}
 	if err := s.store.UpsertProject(ctx, project); err != nil {
 		return nil, err

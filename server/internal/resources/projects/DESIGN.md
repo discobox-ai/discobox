@@ -19,6 +19,10 @@ flag the `default` alias resolves.
   sandboxes or pools; those own runtime that has to drain through its own
   reconcilers. Once empty, `store.DeleteProject` removes the project's own
   configuration rows.
+- `Project.Welcomed` records that the launcher has shown its introduction. It is
+  a project row rather than client-side state so the welcome does not repeat on
+  a second machine, and is settable both ways through `UpdateProject` — clearing
+  it is how someone asks to be shown it again.
 - The default project itself is still created by `internal/service`'s
   `InitializeDefaults`, which is startup policy: it also owns the one-time
   provider/pool installation gated on `server_state`.

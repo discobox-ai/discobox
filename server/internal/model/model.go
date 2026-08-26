@@ -193,9 +193,14 @@ type Project struct {
 	// kept before they are purged (ADR 0022 §4). Zero means the server default:
 	// a project that has never chosen gets the default as it changes, rather
 	// than being frozen to whatever it was at create time.
-	ArchiveRetentionSeconds int64     `gorm:"column:archive_retention_seconds;not null;default:0" json:"archiveRetentionSeconds,omitempty" doc:"How long archived sandboxes are kept before being purged, in seconds. Zero means the server default."`
-	CreatedAt               time.Time `gorm:"autoCreateTime" json:"createdAt" doc:"Creation timestamp" format:"date-time"`
-	UpdatedAt               time.Time `gorm:"autoUpdateTime" json:"updatedAt" doc:"Last update timestamp" format:"date-time"`
+	ArchiveRetentionSeconds int64 `gorm:"column:archive_retention_seconds;not null;default:0" json:"archiveRetentionSeconds,omitempty" doc:"How long archived sandboxes are kept before being purged, in seconds. Zero means the server default."`
+	// Welcomed records that this project has shown its introduction, so the
+	// launcher shows it once and never again. It is here rather than in client
+	// state because a person meets Discobox once, not once per machine they
+	// reach the same project from.
+	Welcomed  bool      `gorm:"column:welcomed;not null;default:false" json:"welcomed" doc:"Whether this project has already shown its introduction"`
+	CreatedAt time.Time `gorm:"autoCreateTime" json:"createdAt" doc:"Creation timestamp" format:"date-time"`
+	UpdatedAt time.Time `gorm:"autoUpdateTime" json:"updatedAt" doc:"Last update timestamp" format:"date-time"`
 
 	Owner                    *User                     `gorm:"-" json:"owner,omitempty" doc:"Project owner"`
 	Pools                    []Pool                    `gorm:"foreignKey:ProjectID" json:"pools,omitempty" doc:"Project pools"`

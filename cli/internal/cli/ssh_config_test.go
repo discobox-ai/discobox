@@ -44,7 +44,7 @@ func (f *sshConfigFakeServer) start(t *testing.T) *httptest.Server {
 			// the resolved ID, and this proves it resolves rather than reusing
 			// whatever -p happened to say.
 			_, _ = w.Write([]byte(`{"id":"` + resolvedTestProjectID + `","name":"P","ownerUserId":"user-1",
-				"default":true,"createdAt":"2026-01-01T00:00:00Z","updatedAt":"2026-01-01T00:00:00Z"}`))
+				"default":true,"welcomed":true,"createdAt":"2026-01-01T00:00:00Z","updatedAt":"2026-01-01T00:00:00Z"}`))
 		case r.URL.Path == "/ssh":
 			_, _ = w.Write([]byte(f.ingress))
 		case r.URL.Path == "/projects/project-1/ssh-keys" && r.Method == http.MethodGet:

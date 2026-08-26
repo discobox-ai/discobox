@@ -11887,9 +11887,13 @@ func (s *Project) encodeFields(e *jx.Encoder) {
 		e.FieldStart("updatedAt")
 		json.EncodeDateTime(e, s.UpdatedAt)
 	}
+	{
+		e.FieldStart("welcomed")
+		e.Bool(s.Welcomed)
+	}
 }
 
-var jsonFieldsNameOfProject = [16]string{
+var jsonFieldsNameOfProject = [17]string{
 	0:  "$schema",
 	1:  "harnessConfigs",
 	2:  "createdAt",
@@ -11906,6 +11910,7 @@ var jsonFieldsNameOfProject = [16]string{
 	13: "sandboxProviderInstances",
 	14: "sandboxes",
 	15: "updatedAt",
+	16: "welcomed",
 }
 
 // Decode decodes Project from json.
@@ -11913,7 +11918,7 @@ func (s *Project) Decode(d *jx.Decoder) error {
 	if s == nil {
 		return errors.New("invalid: unable to decode Project to nil")
 	}
-	var requiredBitSet [2]uint8
+	var requiredBitSet [3]uint8
 
 	if err := d.ObjBytes(func(d *jx.Decoder, k []byte) error {
 		switch string(k) {
@@ -12089,6 +12094,18 @@ func (s *Project) Decode(d *jx.Decoder) error {
 			}(); err != nil {
 				return errors.Wrap(err, "decode field \"updatedAt\"")
 			}
+		case "welcomed":
+			requiredBitSet[2] |= 1 << 0
+			if err := func() error {
+				v, err := d.Bool()
+				s.Welcomed = bool(v)
+				if err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"welcomed\"")
+			}
 		default:
 			return errors.Errorf("unexpected field %q", k)
 		}
@@ -12098,9 +12115,10 @@ func (s *Project) Decode(d *jx.Decoder) error {
 	}
 	// Validate required fields.
 	var failures []validate.FieldError
-	for i, mask := range [2]uint8{
+	for i, mask := range [3]uint8{
 		0b10001100,
 		0b10001010,
+		0b00000001,
 	} {
 		if result := (requiredBitSet[i] & mask) ^ mask; result != 0 {
 			// Mask only required fields and check equality to mask using XOR.
@@ -22323,12 +22341,19 @@ func (s *UpdateProjectBody) encodeFields(e *jx.Encoder) {
 			s.ArchiveRetentionSeconds.Encode(e)
 		}
 	}
+	{
+		if s.Welcomed.Set {
+			e.FieldStart("welcomed")
+			s.Welcomed.Encode(e)
+		}
+	}
 }
 
-var jsonFieldsNameOfUpdateProjectBody = [3]string{
+var jsonFieldsNameOfUpdateProjectBody = [4]string{
 	0: "$schema",
 	1: "name",
 	2: "archiveRetentionSeconds",
+	3: "welcomed",
 }
 
 // Decode decodes UpdateProjectBody from json.
@@ -22368,6 +22393,16 @@ func (s *UpdateProjectBody) Decode(d *jx.Decoder) error {
 				return nil
 			}(); err != nil {
 				return errors.Wrap(err, "decode field \"archiveRetentionSeconds\"")
+			}
+		case "welcomed":
+			if err := func() error {
+				s.Welcomed.Reset()
+				if err := s.Welcomed.Decode(d); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"welcomed\"")
 			}
 		default:
 			return errors.Errorf("unexpected field %q", k)

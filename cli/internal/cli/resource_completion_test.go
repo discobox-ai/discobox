@@ -11,7 +11,7 @@ import (
 
 func TestProjectFlagCompletionListsDefaultAndProjects(t *testing.T) {
 	server := completionServer(t, map[string]string{
-		"/projects": `{"projects":[{"id":"project-1","ownerUserId":"user-1","name":"Project One","default":true,"createdAt":"2026-01-01T00:00:00Z","updatedAt":"2026-01-01T00:00:00Z"}]}`,
+		"/projects": `{"projects":[{"id":"project-1","ownerUserId":"user-1","name":"Project One","default":true,"welcomed":true,"createdAt":"2026-01-01T00:00:00Z","updatedAt":"2026-01-01T00:00:00Z"}]}`,
 	})
 	cmd := NewRootCommand()
 	setFlag(t, cmd, "server", server.URL)

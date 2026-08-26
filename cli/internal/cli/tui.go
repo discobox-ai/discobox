@@ -91,10 +91,33 @@ func (a *App) runTUI(cmd *cobra.Command, leaderFlag string, options ...tui.Optio
 	}
 	ds := &apiDataSource{app: a, client: client, projectID: projectID}
 	options = append([]tui.Option{tui.WithLeader(leaderKey)}, options...)
+	// Whether to introduce Discobox is settled before the window opens rather
+	// than when the session load comes back: a welcome that arrives a moment
+	// later would arrive over a prompt the user is already typing into, and the
+	// first run — the one this is for — is the slowest load there is.
+	welcomed, err := a.projectWelcomed(cmd.Context(), client, projectID)
+	if err != nil {
+		return err
+	}
+	if !welcomed {
+		options = append(options, tui.WithWelcome())
+	}
 	if a.startedServer {
 		options = append(options, tui.WithInitialization("Server initialization", a.stagingUpdates(cmd.Context())))
 	}
 	return tui.Run(cmd.Context(), ds, options...)
+}
+
+// projectWelcomed reports whether this project has already shown its
+// introduction. A project the server cannot describe is an error worth stopping
+// on: everything the window does needs the project, and a launcher that opened
+// anyway would fail again on its first request.
+func (a *App) projectWelcomed(ctx context.Context, client *apiclientgen.Client, projectID string) (bool, error) {
+	project, err := a.getProject(ctx, client, projectID)
+	if err != nil {
+		return false, err
+	}
+	return project.Welcomed, nil
 }
 
 // apiDataSource is the launcher's one seam onto the rest of the CLI. Everything
@@ -131,6 +154,19 @@ func (d *apiDataSource) Session(ctx context.Context) (tui.Session, error) {
 	// which is what both the run options and the harnesses screen are drawn
 	// from. See tui_harnesses.go.
 	return session, nil
+}
+
+// MarkWelcomed records on the project that its introduction has been shown. It
+// is a project setting like any other, so it goes through the same update the
+// `discobox project` commands use rather than an endpoint of its own.
+func (d *apiDataSource) MarkWelcomed(ctx context.Context) error {
+	body := &apimodel.UpdateProjectBody{Welcomed: apiclientgen.NewOptBool(true)}
+	res, err := d.client.UpdateProject(ctx, body, apiclientgen.UpdateProjectParams{ProjectId: d.projectID})
+	if err != nil {
+		return err
+	}
+	_, err = expectResponse[apimodel.Project](res)
+	return err
 }
 
 // SaveDraft keeps the composer's contents against the folder they were typed

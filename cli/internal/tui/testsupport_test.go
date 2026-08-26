@@ -33,6 +33,11 @@ type fakeSource struct {
 	runErr    error
 	createdID string
 
+	// welcomed counts the times the window said the introduction had been
+	// shown, and welcomeErr fails the write.
+	welcomed   int
+	welcomeErr error
+
 	// runSteps is what Run reports as it goes, and provisionLines what the
 	// provisioning watch reports; watched records which discoboxes the window
 	// asked about.
@@ -152,6 +157,13 @@ func testHarnesses() []Harness {
 }
 
 func (f *fakeSource) Session(context.Context) (Session, error) { return f.session, nil }
+
+func (f *fakeSource) MarkWelcomed(context.Context) error {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.welcomed++
+	return f.welcomeErr
+}
 
 // SaveDraft records what the window handed the store, in order, so a test can
 // see both what was saved and how often.

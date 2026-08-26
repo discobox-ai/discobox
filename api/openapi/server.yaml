@@ -1511,6 +1511,9 @@ components:
                     format: int64
                     minimum: 0
                     type: integer
+                welcomed:
+                    description: Whether this project has already shown its introduction. The launcher sets it once, the first time it welcomes someone to the project; clearing it shows the welcome again.
+                    type: boolean
             type: object
         Project:
             additionalProperties: false
@@ -1585,11 +1588,15 @@ components:
                     description: Last update timestamp
                     format: date-time
                     type: string
+                welcomed:
+                    description: Whether this project has already shown its introduction
+                    type: boolean
             required:
                 - id
                 - ownerUserId
                 - name
                 - default
+                - welcomed
                 - createdAt
                 - updatedAt
             type: object

@@ -7665,6 +7665,8 @@ type Project struct {
 	Sandboxes OptNilSandboxArray `json:"sandboxes"`
 	// Last update timestamp.
 	UpdatedAt time.Time `json:"updatedAt"`
+	// Whether this project has already shown its introduction.
+	Welcomed bool `json:"welcomed"`
 }
 
 // GetSchema returns the value of Schema.
@@ -7747,6 +7749,11 @@ func (s *Project) GetUpdatedAt() time.Time {
 	return s.UpdatedAt
 }
 
+// GetWelcomed returns the value of Welcomed.
+func (s *Project) GetWelcomed() bool {
+	return s.Welcomed
+}
+
 // SetSchema sets the value of Schema.
 func (s *Project) SetSchema(val OptURI) {
 	s.Schema = val
@@ -7825,6 +7832,11 @@ func (s *Project) SetSandboxes(val OptNilSandboxArray) {
 // SetUpdatedAt sets the value of UpdatedAt.
 func (s *Project) SetUpdatedAt(val time.Time) {
 	s.UpdatedAt = val
+}
+
+// SetWelcomed sets the value of Welcomed.
+func (s *Project) SetWelcomed(val bool) {
+	s.Welcomed = val
 }
 
 func (*Project) createProjectRes()             {}
@@ -12870,6 +12882,9 @@ type UpdateProjectBody struct {
 	// How long this project's archived sandboxes are kept before they are purged, in seconds. Zero
 	// restores the server default, which the project then follows as it changes.
 	ArchiveRetentionSeconds OptInt64 `json:"archiveRetentionSeconds"`
+	// Whether this project has already shown its introduction. The launcher sets it once, the first time
+	// it welcomes someone to the project; clearing it shows the welcome again.
+	Welcomed OptBool `json:"welcomed"`
 }
 
 // GetSchema returns the value of Schema.
@@ -12887,6 +12902,11 @@ func (s *UpdateProjectBody) GetArchiveRetentionSeconds() OptInt64 {
 	return s.ArchiveRetentionSeconds
 }
 
+// GetWelcomed returns the value of Welcomed.
+func (s *UpdateProjectBody) GetWelcomed() OptBool {
+	return s.Welcomed
+}
+
 // SetSchema sets the value of Schema.
 func (s *UpdateProjectBody) SetSchema(val OptURI) {
 	s.Schema = val
@@ -12900,6 +12920,11 @@ func (s *UpdateProjectBody) SetName(val OptString) {
 // SetArchiveRetentionSeconds sets the value of ArchiveRetentionSeconds.
 func (s *UpdateProjectBody) SetArchiveRetentionSeconds(val OptInt64) {
 	s.ArchiveRetentionSeconds = val
+}
+
+// SetWelcomed sets the value of Welcomed.
+func (s *UpdateProjectBody) SetWelcomed(val OptBool) {
+	s.Welcomed = val
 }
 
 // Ref: #/components/schemas/UpdateSandboxBody
