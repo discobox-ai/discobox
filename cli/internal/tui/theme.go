@@ -79,8 +79,10 @@ type styles struct {
 	frame    lipgloss.Style
 	statusOK lipgloss.Style
 	statusWA lipgloss.Style
-	statusER lipgloss.Style
-	info     lipgloss.Style
+	// initializing is the line under the window while the server sets itself up.
+	initializing lipgloss.Style
+	statusER     lipgloss.Style
+	info         lipgloss.Style
 
 	stateRun  lipgloss.Style
 	stateBusy lipgloss.Style
@@ -131,6 +133,9 @@ func newStyles(color bool) *styles {
 	s.frame = paint(colMark)
 	s.statusOK = paint(colOK)
 	s.statusWA = paint(colWarn)
+	// The same amber the status line uses, because it is the same kind of
+	// statement: something is happening that you are not waiting on.
+	s.initializing = paint(colWarn)
 	s.statusER = paint(colErr)
 	s.info = paint(colInfo)
 

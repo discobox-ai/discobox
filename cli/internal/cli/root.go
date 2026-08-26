@@ -45,6 +45,13 @@ type App struct {
 	// can ask the command tree where it lives instead of naming it. See
 	// serverLaunchArgs.
 	serverCmd *cobra.Command
+
+	// startedServer records that this invocation launched the server, which is
+	// what makes it the one responsible for showing first-run setup.
+	startedServer bool
+	// stagingShownByUI is set by a front end that reports that setup itself, so
+	// the launch path does not block on it.
+	stagingShownByUI bool
 }
 
 func NewRootCommand() *cobra.Command {
@@ -285,6 +292,14 @@ func (a *App) ensureLocalServer(ctx context.Context) error {
 		// the only place it exists — and how to undo it. A caller that found one
 		// already up says nothing.
 		a.notify("started the discobox server in the background (logs: discobox admin server logs; stop it with: discobox admin server shutdown)")
+		a.startedServer = true
+		// Unless a front end is going to show it. The window reports this under
+		// its own frame while the user gets on with the application, which beats
+		// a line they can only watch — so it says so, and this leaves the
+		// waiting to it.
+		if a.stagingShownByUI {
+			return nil
+		}
 		// And wait out the first run here, once, rather than letting it happen
 		// inside whichever operation first needs an image (ADR 0069). Only the
 		// caller that started the server does this: it is the one that knows

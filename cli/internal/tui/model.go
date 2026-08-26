@@ -185,6 +185,12 @@ type Model struct {
 	// statusGen counts messages, so a timer can tell whether it is the last one
 	// out.
 	statusGen int
+
+	// One-time server setup, reported under the window rather than waited on
+	// before it opens. See initializing.go.
+	initTitle   string
+	initLine    string
+	initUpdates <-chan string
 }
 
 // Option configures the window at construction.
@@ -271,7 +277,7 @@ func New(ctx context.Context, ds DataSource, options ...Option) *Model {
 // harnesses are read here rather than when their screen is opened because the
 // run options offer them as the harness to run.
 func (m *Model) Init() tea.Cmd {
-	return tea.Batch(textarea.Blink, m.loadSession(), m.refresh(), m.loadHarnesses(), m.tick(), m.startShimmer())
+	return tea.Batch(textarea.Blink, m.loadSession(), m.refresh(), m.loadHarnesses(), m.tick(), m.startShimmer(), m.awaitInitialization())
 }
 
 // ---------------------------------------------------------------------------
@@ -377,6 +383,9 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 func (m *Model) update(msg tea.Msg) tea.Cmd {
 	switch msg := msg.(type) {
+	case initializationMsg:
+		return m.applyInitialization(msg)
+
 	case tea.WindowSizeMsg:
 		m.width, m.height = msg.Width, msg.Height
 		m.ready = true
@@ -1716,6 +1725,12 @@ func (m *Model) view() tea.View {
 		rows = append(rows, strings.Split(body, "\n")...)
 		rows = append(rows, strings.Split(m.viewPrompt(), "\n")...)
 		content = m.box("", rows)
+	}
+
+	// Under the border, outside the application: one-time setup the user did not
+	// ask for and cannot act on, which the window itself does not wait for.
+	if line := m.viewInitialization(); line != "" {
+		content += "\n" + line
 	}
 
 	view := tea.NewView(content)

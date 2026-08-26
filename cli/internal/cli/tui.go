@@ -80,12 +80,21 @@ func (a *App) runTUI(cmd *cobra.Command, leaderFlag string, options ...tui.Optio
 	if err != nil {
 		return err
 	}
+	// The window reports first-run setup itself, under its own frame, so the
+	// launch below must not sit on it: several minutes of a status line before
+	// anything appears is the thing this replaces. Nothing the window does
+	// needs those images — only running a discobox does.
+	a.stagingShownByUI = true
 	client, err := a.apiClient()
 	if err != nil {
 		return err
 	}
 	ds := &apiDataSource{app: a, client: client, projectID: projectID}
-	return tui.Run(cmd.Context(), ds, append([]tui.Option{tui.WithLeader(leaderKey)}, options...)...)
+	options = append([]tui.Option{tui.WithLeader(leaderKey)}, options...)
+	if a.startedServer {
+		options = append(options, tui.WithInitialization("Server initialization", a.stagingUpdates(cmd.Context())))
+	}
+	return tui.Run(cmd.Context(), ds, options...)
 }
 
 // apiDataSource is the launcher's one seam onto the rest of the CLI. Everything

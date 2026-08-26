@@ -138,22 +138,31 @@ func stagingLine(pools []apimodel.Pool) string {
 	return ""
 }
 
+// setupMessage is what a host still being built says about itself.
+//
+// "resource pool" rather than the bare "Initializing" it briefly was: on its
+// own that names no subject at all, and the reader is entitled to know what is
+// being initialized. It is also not the pool's own name, which is what this
+// used to lead with — "Default" identifies something the reader has never been
+// introduced to, where "resource pool" at least describes one.
+const setupMessage = "Initializing resource pool"
+
 // setupLine describes a host that is still being built.
 func setupLine(pool *apimodel.Pool) string {
 	progress, ok := pool.ProvisionProgress.Get()
 	if !ok {
-		return "Initializing"
+		return setupMessage
 	}
 	// Freshness matters as much here as anywhere: the record is never cleared,
 	// so a host that finished yesterday still carries the phase it finished in.
 	if observed, ok := pool.ProvisionProgressAt.Get(); ok {
 		if time.Since(observed) > sandboxcreate.ProvisionProgressFresh {
-			return "Initializing"
+			return setupMessage
 		}
 	}
 	pull, ok := progress.Pull.Get()
 	if !ok {
-		return "Initializing"
+		return setupMessage
 	}
 	// Named by what it is for, not by what it is called. The references here
 	// are "discobox-vm" and "discobox-pool-agent", which put the internals back
@@ -244,4 +253,28 @@ func humanBytes(bytes int64) string {
 		exp++
 	}
 	return fmt.Sprintf("%.1f %ciB", value, "KMGT"[exp])
+}
+
+// stagingUpdates runs the wait in the background and publishes what it would
+// have printed, for a front end that shows it rather than blocking on it.
+//
+// The channel is closed when staging finishes, which is how the front end
+// learns to take its line down — the same signal as the status line clearing,
+// carried differently.
+//
+// Buffered by one and dropping when full: this feeds a display, and a reader
+// that is briefly busy should cost the caller a skipped frame rather than
+// stalling the wait behind it.
+func (a *App) stagingUpdates(ctx context.Context) <-chan string {
+	updates := make(chan string, 1)
+	go func() {
+		defer close(updates)
+		a.waitForStagedPools(ctx, func(line string) {
+			select {
+			case updates <- line:
+			default:
+			}
+		})
+	}()
+	return updates
 }

@@ -62,8 +62,8 @@ func TestStagingLineFallsBackToThePoolsOwnPhase(t *testing.T) {
 	line := stagingLine([]apimodel.Pool{pool})
 	// A phase with nothing downloading is setup, and which kind of setup
 	// explains nothing to somebody who has never heard of any of it.
-	if line != "Initializing" {
-		t.Fatalf("stagingLine() = %q, want Initializing", line)
+	if line != setupMessage {
+		t.Fatalf("stagingLine() = %q, want %q", line, setupMessage)
 	}
 }
 
@@ -94,8 +94,11 @@ func TestStagingLineReportsASetupDownload(t *testing.T) {
 	}
 }
 
-// The word nobody outside this codebase knows must not appear.
-func TestStagingLineNeverSaysPool(t *testing.T) {
+// The pool's own name is an identifier the reader has never been introduced to,
+// and the image references are internal spellings of the same thing. Neither
+// belongs on this line. "resource pool" does: it describes what is being set up
+// rather than naming which one.
+func TestStagingLineNeverNamesThePool(t *testing.T) {
 	cases := []apimodel.Pool{
 		stagedPool("Default", false, nil),
 		stagedPool("Default", false, &apimodel.PoolImageStage{
@@ -110,7 +113,7 @@ func TestStagingLineNeverSaysPool(t *testing.T) {
 	}
 	for _, pool := range cases {
 		line := stagingLine([]apimodel.Pool{pool})
-		for _, forbidden := range []string{"pool", "Pool", "Default"} {
+		for _, forbidden := range []string{"Default", "pool-agent", "discobox-vm"} {
 			if strings.Contains(line, forbidden) {
 				t.Fatalf("stagingLine() = %q, leaks %q", line, forbidden)
 			}
@@ -122,8 +125,8 @@ func TestStagingLineNeverSaysPool(t *testing.T) {
 // than naming the pool and leaving the user to guess why.
 func TestStagingLineBeforeAnyReportAtAll(t *testing.T) {
 	line := stagingLine([]apimodel.Pool{stagedPool("Default", false, nil)})
-	if line != "Initializing" {
-		t.Fatalf("stagingLine() = %q, want Initializing", line)
+	if line != setupMessage {
+		t.Fatalf("stagingLine() = %q, want %q", line, setupMessage)
 	}
 }
 
