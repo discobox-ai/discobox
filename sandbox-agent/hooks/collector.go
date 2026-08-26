@@ -19,6 +19,8 @@ import (
 const (
 	TerminalIDEnv = "DISCOBOX_TERMINAL_ID"
 	SocketEnv     = "DISCOBOX_HOOK_SOCKET"
+	socketDirMode = 0o711
+	socketMode    = 0o666
 )
 
 type Recorder interface {
@@ -36,7 +38,7 @@ func SocketPath(runtimeDir string) string {
 	if strings.TrimSpace(runtimeDir) == "" {
 		runtimeDir = "/run/discobox/harness-terminals"
 	}
-	return filepath.Join(filepath.Clean(runtimeDir), "hooks.sock")
+	return filepath.Join(filepath.Dir(filepath.Clean(runtimeDir)), "harness-hooks", "hooks.sock")
 }
 
 func Serve(ctx context.Context, socketPath string, recorder Recorder) error {
@@ -47,13 +49,20 @@ func Serve(ctx context.Context, socketPath string, recorder Recorder) error {
 	if strings.TrimSpace(socketPath) == "" {
 		return errors.New("hook socket path is required")
 	}
-	if err := os.MkdirAll(filepath.Dir(socketPath), 0o755); err != nil {
+	if err := os.MkdirAll(filepath.Dir(socketPath), socketDirMode); err != nil {
+		return err
+	}
+	if err := os.Chmod(filepath.Dir(socketPath), socketDirMode); err != nil {
 		return err
 	}
 	_ = os.Remove(socketPath)
 	listener, err := (&net.ListenConfig{}).Listen(ctx, "unix", socketPath)
 	if err != nil {
 		return fmt.Errorf("listen hook socket: %w", err)
+	}
+	if err := os.Chmod(socketPath, socketMode); err != nil {
+		listener.Close()
+		return fmt.Errorf("set hook socket permissions: %w", err)
 	}
 	defer listener.Close()
 	defer os.Remove(socketPath)

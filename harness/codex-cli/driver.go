@@ -12,14 +12,6 @@ import (
 	"github.com/discobox-ai/discobox/harness"
 )
 
-const SystemHooksPath = "/.codex/hooks.json"
-
-var Events = []string{
-	"SessionStart", "PreToolUse", "PermissionRequest", "PostToolUse",
-	"UserPromptSubmit", "PreCompact", "PostCompact", "SubagentStart",
-	"SubagentStop", "Stop",
-}
-
 type Driver struct{}
 
 func (Driver) ID() string { return "codex-cli" }
@@ -28,24 +20,6 @@ func (Driver) Definition() harness.Definition {
 	return harness.Definition{
 		ID: "codex", Name: "Codex", Description: "OpenAI Codex coding harness.",
 		Image: harness.ImageRef("discobox-harness-codex"), Configure: &harness.Configure{},
-	}
-}
-
-func (Driver) InstallHooks(_ context.Context, req harness.HookInstallRequest) error {
-	path := harness.ManagedPath(req.ManagedRoot, SystemHooksPath)
-	return harness.MergeJSONFile(path, func(config map[string]any) {
-		hooks := harness.SetJSONMap(config, "hooks")
-		for _, event := range Events {
-			harness.UpsertEventCommandHook(hooks, event, "*", commandHook(harness.PublisherCommand(req), event))
-		}
-	})
-}
-
-func commandHook(publisher, event string) map[string]any {
-	return map[string]any{
-		"type":    "command",
-		"command": fmt.Sprintf("%s --provider codex-cli --event %s", publisher, event),
-		"timeout": 10,
 	}
 }
 

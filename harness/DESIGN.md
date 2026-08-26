@@ -81,8 +81,16 @@ Prefer managed or system-owned configuration layers so hook capture is not
 subject to repo trust prompts or user/project override:
 
 - Claude Code: `/etc/claude-code/managed-settings.json` on Linux/WSL.
-- Codex CLI: `/.codex/hooks.json` as a system hook layer. System hooks are
-  treated as managed and trusted by policy.
+  The image bakes this file beside the Claude Code binary, making the hook
+  definition an image-owned compatibility unit; the Go driver does not
+  construct or merge Claude Code's hook format.
+- Codex CLI: `/etc/codex/hooks.json`, baked into the harness image beside its
+  `/etc/codex/config.toml` system layer. The hook definition and Codex binary
+  are one image-versioned compatibility unit; the Go driver does not construct
+  or merge Codex's hook format. Every configured lifecycle event invokes the
+  generic publisher with its provider and event name while its stdin payload is
+  stored unchanged. System hooks are treated as managed and trusted by policy.
+  Codex's hook definition is likewise an image-owned compatibility unit.
 
 Drivers must be idempotent and preserve unrelated settings where the harness uses
 a single shared JSON object.

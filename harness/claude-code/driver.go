@@ -11,19 +11,6 @@ import (
 	"github.com/discobox-ai/discobox/harness"
 )
 
-const ManagedSettingsPath = "/etc/claude-code/managed-settings.json"
-
-var Events = []string{
-	"SessionStart", "Setup", "InstructionsLoaded", "UserPromptSubmit",
-	"UserPromptExpansion", "MessageDisplay", "PreToolUse", "PermissionRequest",
-	"PostToolUse", "PostToolUseFailure", "PostToolBatch", "PermissionDenied",
-	"Notification", "SubagentStart", "SubagentStop", "TaskCreated",
-	"TaskCompleted", "Stop", "StopFailure", "TeammateIdle", "ConfigChange",
-	"CwdChanged", "FileChanged", "WorktreeCreate", "WorktreeRemove",
-	"PreCompact", "PostCompact", "SessionEnd", "Elicitation",
-	"ElicitationResult",
-}
-
 type Driver struct{}
 
 func (Driver) ID() string { return "claude-code" }
@@ -35,37 +22,12 @@ func (Driver) Definition() harness.Definition {
 	}
 }
 
-func (Driver) InstallHooks(_ context.Context, req harness.HookInstallRequest) error {
-	path := harness.ManagedPath(req.ManagedRoot, ManagedSettingsPath)
-	publisher := harness.PublisherCommand(req)
-	return harness.MergeJSONFile(path, func(settings map[string]any) {
-		hooks := harness.SetJSONMap(settings, "hooks")
-		for _, event := range Events {
-			harness.UpsertEventCommandHook(hooks, event, "*", commandHook(publisher, event))
-		}
-	})
-}
-
-func commandHook(publisher, event string) map[string]any {
-	return map[string]any{
-		"type":    "command",
-		"command": publisher,
-		"args":    []any{"--provider", "claude-code", "--event", event},
-		"timeout": 10,
-	}
-}
-
-func CommandFor(event string) string {
-	return fmt.Sprintf("discobox-hook-publish --provider claude-code --event %s", event)
-}
-
 // stateByEvent maps a claude-code hook event to the session state it defines.
 // Events absent from this map are informational only: they update
 // lastEvent/lastEventAt but do not change the derived state, deferring the
 // decision to the next state-defining event found scanning backward.
 var stateByEvent = map[string]string{
 	"PermissionRequest": harness.SessionStateNeedsInput,
-	"Notification":      harness.SessionStateNeedsInput,
 	"Elicitation":       harness.SessionStateNeedsInput,
 
 	"Stop":         harness.SessionStateIdle,
@@ -96,11 +58,32 @@ func (Driver) DeriveSessionState(hooks []harness.HookRecord) (state, lastEvent s
 	last := hooks[len(hooks)-1]
 	lastEvent, lastEventAt = last.Event, last.CreatedAt
 	for i := len(hooks) - 1; i >= 0; i-- {
+		if hooks[i].Event == "Notification" {
+			if notificationNeedsInput(hooks[i].Payload) {
+				return harness.SessionStateNeedsInput, lastEvent, lastEventAt
+			}
+			continue
+		}
 		if mapped, ok := stateByEvent[hooks[i].Event]; ok {
 			return mapped, lastEvent, lastEventAt
 		}
 	}
 	return "", lastEvent, lastEventAt
+}
+
+func notificationNeedsInput(payload json.RawMessage) bool {
+	var notification struct {
+		Type string `json:"notification_type"`
+	}
+	if json.Unmarshal(payload, &notification) != nil {
+		return false
+	}
+	switch notification.Type {
+	case "permission_prompt", "elicitation_dialog", "elicitation_url_dialog", "agent_needs_input":
+		return true
+	default:
+		return false
+	}
 }
 
 // conversationState carries a claude session ID between Prompt calls.

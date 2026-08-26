@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"net"
+	"os"
 	"path/filepath"
 	"testing"
 	"time"
@@ -23,6 +24,8 @@ func TestPublishRecordsHarnessHook(t *testing.T) {
 		errCh <- Serve(ctx, socketPath, recorder)
 	}()
 	waitForSocket(t, socketPath)
+	assertPermissions(t, filepath.Dir(socketPath), socketDirMode)
+	assertPermissions(t, socketPath, socketMode)
 
 	err := Publish(context.Background(), socketPath, Message{
 		TerminalID: "agt_1",
@@ -44,6 +47,24 @@ func TestPublishRecordsHarnessHook(t *testing.T) {
 	cancel()
 	if err := <-errCh; err != nil && !errors.Is(err, context.Canceled) {
 		t.Fatalf("serve: %v", err)
+	}
+}
+
+func TestSocketPathUsesDedicatedPublisherDirectory(t *testing.T) {
+	want := "/run/discobox/harness-hooks/hooks.sock"
+	if got := SocketPath("/run/discobox/agent-terminals"); got != want {
+		t.Fatalf("SocketPath() = %q, want %q", got, want)
+	}
+}
+
+func assertPermissions(t *testing.T, path string, want os.FileMode) {
+	t.Helper()
+	info, err := os.Stat(path)
+	if err != nil {
+		t.Fatalf("stat %s: %v", path, err)
+	}
+	if got := info.Mode().Perm(); got != want {
+		t.Fatalf("mode(%s) = %o, want %o", path, got, want)
 	}
 }
 

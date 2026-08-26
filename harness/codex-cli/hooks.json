@@ -1,0 +1,16 @@
+{
+  "description": "Publish Codex lifecycle events to the Discobox sandbox agent.",
+  "hooks": {
+    "SessionStart": [{ "hooks": [{ "type": "command", "command": "discobox-hook-publish --provider codex-cli --event SessionStart", "timeout": 3 }] }],
+    "SessionEnd": [{ "hooks": [{ "type": "command", "command": "discobox-hook-publish --provider codex-cli --event SessionEnd", "timeout": 3 }] }],
+    "PreToolUse": [{ "hooks": [{ "type": "command", "command": "discobox-hook-publish --provider codex-cli --event PreToolUse", "timeout": 3 }] }],
+    "PermissionRequest": [{ "hooks": [{ "type": "command", "command": "discobox-hook-publish --provider codex-cli --event PermissionRequest", "timeout": 3 }] }],
+    "PostToolUse": [{ "hooks": [{ "type": "command", "command": "discobox-hook-publish --provider codex-cli --event PostToolUse", "timeout": 3 }] }],
+    "UserPromptSubmit": [{ "hooks": [{ "type": "command", "command": "discobox-hook-publish --provider codex-cli --event UserPromptSubmit", "timeout": 3 }] }],
+    "PreCompact": [{ "hooks": [{ "type": "command", "command": "discobox-hook-publish --provider codex-cli --event PreCompact", "timeout": 3 }] }],
+    "PostCompact": [{ "hooks": [{ "type": "command", "command": "discobox-hook-publish --provider codex-cli --event PostCompact", "timeout": 3 }] }],
+    "SubagentStart": [{ "hooks": [{ "type": "command", "command": "discobox-hook-publish --provider codex-cli --event SubagentStart", "timeout": 3 }] }],
+    "SubagentStop": [{ "hooks": [{ "type": "command", "command": "discobox-hook-publish --provider codex-cli --event SubagentStop", "timeout": 3 }] }],
+    "Stop": [{ "hooks": [{ "type": "command", "command": "discobox-hook-publish --provider codex-cli --event Stop", "timeout": 3 }] }]
+  }
+}

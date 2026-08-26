@@ -7,11 +7,7 @@
 // agent base, its own image.json, its own registry entry.
 package shell
 
-import (
-	"context"
-
-	"github.com/discobox-ai/discobox/harness"
-)
+import "github.com/discobox-ai/discobox/harness"
 
 type Driver struct{}
 
@@ -24,9 +20,3 @@ func (Driver) Definition() harness.Definition {
 		Image:       harness.ImageRef("discobox-harness-shell"),
 	}
 }
-
-// InstallHooks does nothing: hooks capture a coding harness's lifecycle events,
-// and a shell has none. It is not an unimplemented stub — a shell session
-// genuinely has nothing to report, and the installer runs every driver against
-// every sandbox.
-func (Driver) InstallHooks(context.Context, harness.HookInstallRequest) error { return nil }

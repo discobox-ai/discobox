@@ -1,6 +1,7 @@
 package claudecode
 
 import (
+	"encoding/json"
 	"os"
 	"strings"
 	"testing"
@@ -160,6 +161,47 @@ func TestDefinitionConfigure(t *testing.T) {
 	}
 }
 
+func TestManagedSettingsPublishesEverySupportedEvent(t *testing.T) {
+	data, err := os.ReadFile("managed-settings.json")
+	if err != nil {
+		t.Fatal(err)
+	}
+	var settings struct {
+		Hooks map[string][]struct {
+			Hooks []struct {
+				Type    string `json:"type"`
+				Command string `json:"command"`
+				Timeout int    `json:"timeout"`
+			} `json:"hooks"`
+		} `json:"hooks"`
+	}
+	if err := json.Unmarshal(data, &settings); err != nil {
+		t.Fatalf("parse managed settings: %v", err)
+	}
+	wantEvents := []string{
+		"SessionStart", "Setup", "InstructionsLoaded", "UserPromptSubmit", "UserPromptExpansion",
+		"MessageDisplay", "PreToolUse", "PermissionRequest", "PostToolUse", "PostToolUseFailure",
+		"PostToolBatch", "PermissionDenied", "Notification", "SubagentStart", "SubagentStop",
+		"TaskCreated", "TaskCompleted", "Stop", "StopFailure", "TeammateIdle", "ConfigChange",
+		"CwdChanged", "DirectoryAdded", "FileChanged", "WorktreeCreate", "WorktreeRemove",
+		"PreCompact", "PostCompact", "SessionEnd", "Elicitation", "ElicitationResult",
+	}
+	if len(settings.Hooks) != len(wantEvents) {
+		t.Fatalf("events = %d, want %d", len(settings.Hooks), len(wantEvents))
+	}
+	for _, event := range wantEvents {
+		groups := settings.Hooks[event]
+		if len(groups) != 1 || len(groups[0].Hooks) != 1 {
+			t.Fatalf("event %s = %#v, want one command hook", event, groups)
+		}
+		hook := groups[0].Hooks[0]
+		wantCommand := "discobox-hook-publish --provider claude-code --event " + event
+		if hook.Type != "command" || hook.Command != wantCommand || hook.Timeout <= 0 {
+			t.Fatalf("event %s hook = %#v, want command %q with timeout", event, hook, wantCommand)
+		}
+	}
+}
+
 // hooksFromEvents builds ascending-by-time HookRecords from event names, one
 // second apart, matching the order store.ListHarnessHooks already returns.
 func hooksFromEvents(events ...string) []harness.HookRecord {
@@ -215,7 +257,7 @@ func TestDeriveSessionState(t *testing.T) {
 		},
 		{
 			name:          "informational event after needs_input does not overwrite it",
-			events:        []string{"SessionStart", "PostToolUse", "Notification", "PermissionDenied"},
+			events:        []string{"SessionStart", "PostToolUse", "PermissionRequest", "PermissionDenied"},
 			wantState:     harness.SessionStateNeedsInput,
 			wantLastEvent: "PermissionDenied",
 		},
@@ -238,6 +280,31 @@ func TestDeriveSessionState(t *testing.T) {
 			}
 			if len(hooks) > 0 && !gotLastEventAt.Equal(hooks[len(hooks)-1].CreatedAt) {
 				t.Errorf("lastEventAt = %v, want %v", gotLastEventAt, hooks[len(hooks)-1].CreatedAt)
+			}
+		})
+	}
+}
+
+func TestDeriveSessionStateNotificationTypes(t *testing.T) {
+	tests := []struct {
+		name             string
+		notificationType string
+		want             string
+	}{
+		{name: "permission prompt", notificationType: "permission_prompt", want: harness.SessionStateNeedsInput},
+		{name: "elicitation dialog", notificationType: "elicitation_dialog", want: harness.SessionStateNeedsInput},
+		{name: "agent needs input", notificationType: "agent_needs_input", want: harness.SessionStateNeedsInput},
+		{name: "authentication succeeded", notificationType: "auth_success", want: harness.SessionStateIdle},
+		{name: "idle reminder", notificationType: "idle_prompt", want: harness.SessionStateIdle},
+		{name: "unknown notification", notificationType: "future_type", want: harness.SessionStateIdle},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			hooks := hooksFromEvents("SessionStart", "Stop", "Notification")
+			hooks[2].Payload = json.RawMessage(`{"notification_type":"` + tt.notificationType + `"}`)
+			state, lastEvent, _ := Driver{}.DeriveSessionState(hooks)
+			if state != tt.want || lastEvent != "Notification" {
+				t.Fatalf("state, event = %q, %q; want %q, Notification", state, lastEvent, tt.want)
 			}
 		})
 	}

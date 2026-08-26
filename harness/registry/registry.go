@@ -1,7 +1,6 @@
 package registry
 
 import (
-	"context"
 	"strings"
 
 	"github.com/discobox-ai/discobox/harness"
@@ -9,12 +8,6 @@ import (
 	codexcli "github.com/discobox-ai/discobox/harness/codex-cli"
 	"github.com/discobox-ai/discobox/harness/shell"
 )
-
-type Installer struct {
-	Drivers          []harness.Driver
-	PublisherCommand string
-	ManagedRoot      string
-}
 
 func DefaultDrivers() []harness.Driver {
 	return []harness.Driver{
@@ -36,28 +29,6 @@ func Definitions() []harness.Definition {
 		out = append(out, driver.Definition())
 	}
 	return out
-}
-
-func NewInstaller() Installer {
-	return Installer{Drivers: DefaultDrivers()}
-}
-
-func (i Installer) InstallHooks(ctx context.Context, req harness.HookInstallRequest) error {
-	if req.PublisherCommand == "" {
-		req.PublisherCommand = i.PublisherCommand
-	}
-	if req.ManagedRoot == "" {
-		req.ManagedRoot = i.ManagedRoot
-	}
-	for _, driver := range i.Drivers {
-		if driver == nil {
-			continue
-		}
-		if err := driver.InstallHooks(ctx, req); err != nil {
-			return err
-		}
-	}
-	return nil
 }
 
 // DriverForHarness selects the hook driver from the harness type baked into the

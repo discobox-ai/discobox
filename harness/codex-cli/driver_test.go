@@ -142,6 +142,47 @@ func TestDefinitionConfigure(t *testing.T) {
 	}
 }
 
+func TestImageOwnedHooksPublishEveryCodexLifecycleEvent(t *testing.T) {
+	raw, err := os.ReadFile("hooks.json")
+	if err != nil {
+		t.Fatal(err)
+	}
+	var config struct {
+		Hooks map[string][]struct {
+			Hooks []struct {
+				Type    string `json:"type"`
+				Command string `json:"command"`
+				Timeout int    `json:"timeout"`
+			} `json:"hooks"`
+		} `json:"hooks"`
+	}
+	if err := json.Unmarshal(raw, &config); err != nil {
+		t.Fatal(err)
+	}
+	wantEvents := []string{
+		"SessionStart", "SessionEnd", "PreToolUse", "PermissionRequest",
+		"PostToolUse", "UserPromptSubmit", "PreCompact", "PostCompact",
+		"SubagentStart", "SubagentStop", "Stop",
+	}
+	if len(config.Hooks) != len(wantEvents) {
+		t.Fatalf("events = %d, want %d: %#v", len(config.Hooks), len(wantEvents), config.Hooks)
+	}
+	for _, event := range wantEvents {
+		groups := config.Hooks[event]
+		if len(groups) != 1 || len(groups[0].Hooks) != 1 {
+			t.Fatalf("event %s does not have exactly one publisher: %#v", event, groups)
+		}
+		hook := groups[0].Hooks[0]
+		wantCommand := "discobox-hook-publish --provider codex-cli --event " + event
+		if hook.Type != "command" || hook.Command != wantCommand {
+			t.Errorf("event %s hook = %#v", event, hook)
+		}
+		if hook.Timeout <= 0 || hook.Timeout > 3 {
+			t.Errorf("event %s timeout = %d, want 1..3 seconds", event, hook.Timeout)
+		}
+	}
+}
+
 // TestImageDeclaresFileDeliveredAuth pins the half of the contract the image
 // owns: codex authenticates from a file, so neither credential may be exported
 // as an environment variable, and each is an alternative to the other.

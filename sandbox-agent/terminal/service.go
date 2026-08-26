@@ -20,8 +20,6 @@ import (
 	"sync"
 	"text/template"
 
-	"github.com/discobox-ai/discobox/harness"
-	"github.com/discobox-ai/discobox/harness/registry"
 	"github.com/discobox-ai/discobox/sandbox-agent/config"
 	"github.com/discobox-ai/discobox/sandbox-agent/execs"
 )
@@ -175,7 +173,6 @@ func NewService(cfg ServiceConfig) (*Service, error) {
 	}
 	if s.installer == nil {
 		s.installer = CompositeInstaller{Installers: []Installer{
-			HookInstaller{},
 			FileInstaller{
 				// The run user as the exec layer resolved it, not the manifest
 				// fields it was resolved from: a sandbox whose manifest names
@@ -796,42 +793,6 @@ func (i CompositeInstaller) RestoreSecretFiles(ctx context.Context, harness conf
 		restored = append(restored, paths...)
 	}
 	return restored, nil
-}
-
-type HookInstaller struct {
-	ManagedRoot      string
-	PublisherCommand string
-}
-
-func (i HookInstaller) EnsureInstalled(ctx context.Context, h config.Harness, workdir string, env map[string]string) error {
-	installer := registry.Installer{
-		Drivers:          registry.DriverForHarness(harnessFromConfig(h)),
-		ManagedRoot:      i.ManagedRoot,
-		PublisherCommand: i.PublisherCommand,
-	}
-	return installer.InstallHooks(ctx, harness.HookInstallRequest{
-		Harness:          harnessFromConfig(h),
-		Workdir:          workdir,
-		Env:              env,
-		ManagedRoot:      i.ManagedRoot,
-		PublisherCommand: i.PublisherCommand,
-	})
-}
-
-func harnessFromConfig(h config.Harness) harness.Harness {
-	return harness.Harness{
-		ID:      h.ID,
-		TypeID:  h.TypeID,
-		Name:    h.Name,
-		Command: append([]string{}, h.Command...),
-	}
-}
-
-// RestoreSecretFiles is a no-op: hooks carry no credential. Installing them is
-// idempotent, but nothing outside this process rewrites them, so there is
-// nothing to reconcile between launches.
-func (i HookInstaller) RestoreSecretFiles(context.Context, config.Harness, map[string]string) ([]string, error) {
-	return nil, nil
 }
 
 // FileInstaller writes a harness's configured files into its home directory.
