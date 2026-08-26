@@ -113,17 +113,33 @@ func (e *Engine) consumePoolImagePull(ctx context.Context, pull client.ImagePull
 			// "Pull complete" and "Already exists" both end a layer, and a
 			// layer that was already present reports no bytes at all — which is
 			// why layers complete is counted rather than derived from bytes.
+			// Only the download phase's byte counts are accumulated.
+			//
+			// Docker reuses progressDetail for extraction, restarting current
+			// from zero against the uncompressed size — so taking every report
+			// at face value made the running total fall as layers finished
+			// downloading, and a byte counter that goes backwards is worse than
+			// no byte counter. A finished layer is pinned at its own total, and
+			// its bytes stop moving.
 			switch message.Status {
 			case "Pull complete", "Already exists":
 				layer.done = true
-			}
-			if message.Progress != nil {
-				if message.Progress.Current > 0 {
-					layer.current = message.Progress.Current
+				layer.current = layer.total
+			case "Downloading":
+				if message.Progress != nil {
+					if message.Progress.Total > 0 {
+						layer.total = message.Progress.Total
+					}
+					// Never down: a retried layer restarts its count, and the
+					// pull as a whole has not un-downloaded anything.
+					if message.Progress.Current > layer.current {
+						layer.current = message.Progress.Current
+					}
 				}
-				if message.Progress.Total > 0 {
-					layer.total = message.Progress.Total
-				}
+			case "Download complete", "Verifying Checksum", "Extracting":
+				// The bytes are in. What follows is local work with a
+				// denominator of its own, which this line does not report.
+				layer.current = layer.total
 			}
 			layers[message.ID] = layer
 		}

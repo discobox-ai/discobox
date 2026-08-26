@@ -1285,6 +1285,15 @@ components:
                 degraded:
                     description: Whether the pool should be used only as fallback capacity
                     type: boolean
+                imagesStaged:
+                    description: Whether the images a sandbox might run are staged on this host. A condition, not a health state — an unstaged pool is still active and schedulable.
+                    type: boolean
+                imageStage:
+                    $ref: '#/components/schemas/PoolImageStage'
+                imageStagedAt:
+                    description: When imageStage was last written
+                    format: date-time
+                    type: string
                 provisionProgress:
                     $ref: '#/components/schemas/PoolProvisionProgress'
                 provisionProgressAt:
@@ -2897,6 +2906,55 @@ components:
                     $ref: '#/components/schemas/SandboxPullProgress'
             required:
                 - phase
+            type: object
+        PoolImageState:
+            description: |-
+                How far staging a pool's images has got. It is a condition and never a health
+                state: a pool whose images are not staged is active, healthy and schedulable,
+                because a sandbox that wants an image the host does not have pulls it then.
+            enum:
+                - staging
+                - ready
+                - failed
+            type: string
+        PoolImageStage:
+            additionalProperties: false
+            description: |-
+                What image staging is doing on one pool, for a client that launched the server and
+                is waiting out a first run. Nothing schedules on it.
+            properties:
+                state:
+                    $ref: '#/components/schemas/PoolImageState'
+                image:
+                    description: The reference being pulled, absent between images
+                    type: string
+                done:
+                    description: Images finished
+                    type: integer
+                total:
+                    description: Images in the set
+                    type: integer
+                current:
+                    description: Bytes downloaded of the image named above
+                    format: int64
+                    type: integer
+                size:
+                    description: Total bytes of the layers whose size has been reported. Grows while the manifest is walked, so current/size is a ratio at a moment and never a bar.
+                    format: int64
+                    type: integer
+                layers:
+                    description: Layers heard about so far
+                    type: integer
+                layersComplete:
+                    description: Layers fully pulled, including those already present
+                    type: integer
+                error:
+                    description: Why the last attempt failed. Staging retries on its own.
+                    type: string
+            required:
+                - state
+                - done
+                - total
             type: object
         PoolProvisionPhase:
             description: |-

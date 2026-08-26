@@ -116,3 +116,47 @@ func TestStageImagesSkipsWhatIsAlreadyThere(t *testing.T) {
 		t.Fatalf("pulled %v, want nothing", pulled)
 	}
 }
+
+// A byte counter that goes backwards is worse than none.
+//
+// Docker reuses progressDetail for extraction, restarting current from zero
+// against the uncompressed size, so taking every report at face value made the
+// running total fall as layers finished downloading — 223 MiB, then 206, then
+// 4.8.
+func TestPullBytesNeverGoBackwards(t *testing.T) {
+	daemon := &fakePullDaemon{present: map[string]struct{}{}, script: []string{
+		`{"id":"l1","status":"Downloading","progressDetail":{"current":50,"total":100}}`,
+		`{"id":"l1","status":"Downloading","progressDetail":{"current":100,"total":100}}`,
+		// Extraction restarts the counter against a different denominator.
+		`{"id":"l1","status":"Extracting","progressDetail":{"current":1,"total":300}}`,
+		`{"id":"l1","status":"Pull complete"}`,
+	}}
+	server := httptest.NewServer(http.HandlerFunc(daemon.serveHTTP))
+	defer server.Close()
+	cli, err := testDockerClient(server.URL)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer cli.Close()
+
+	var seen []int64
+	engine, srv := preloadEngine(t, daemon)
+	_ = srv
+	engine.cfg.ProgressReporter = func(_ context.Context, _ string, progress sandbox.PoolProvisionProgress) {
+		if progress.Pull != nil {
+			seen = append(seen, progress.Pull.Current)
+		}
+	}
+	if err := engine.ensureImageRef(context.Background(), cli, "pool_1", "ghcr.io/x/a:v1",
+		sandbox.PoolPhasePreloadingImages, nil); err != nil {
+		t.Fatal(err)
+	}
+	for i := 1; i < len(seen); i++ {
+		if seen[i] < seen[i-1] {
+			t.Fatalf("byte counts went backwards: %v", seen)
+		}
+	}
+	if len(seen) == 0 || seen[len(seen)-1] != 100 {
+		t.Fatalf("final count = %v, want the layer's own total", seen)
+	}
+}

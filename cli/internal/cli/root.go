@@ -285,6 +285,15 @@ func (a *App) ensureLocalServer(ctx context.Context) error {
 		// the only place it exists — and how to undo it. A caller that found one
 		// already up says nothing.
 		a.notify("started the discobox server in the background (logs: discobox admin server logs; stop it with: discobox admin server shutdown)")
+		// And wait out the first run here, once, rather than letting it happen
+		// inside whichever operation first needs an image (ADR 0069). Only the
+		// caller that started the server does this: it is the one that knows
+		// this is a first run, because it is the one that caused it.
+		// A fresh line: clearing one is final, so the launch's line cannot be
+		// reused for the wait that follows it.
+		staging := a.serverStartupLine()
+		a.waitForStagedPools(ctx, func(line string) { staging.set(line) })
+		staging.clear()
 	}
 	return nil
 }

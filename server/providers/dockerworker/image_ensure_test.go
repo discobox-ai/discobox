@@ -19,6 +19,8 @@ type fakePullDaemon struct {
 	present map[string]struct{}
 	pulls   []string
 	failing bool
+	// script, when set, is the exact progress stream to replay.
+	script []string
 }
 
 func (d *fakePullDaemon) serveHTTP(w http.ResponseWriter, request *http.Request) {
@@ -51,6 +53,12 @@ func (d *fakePullDaemon) serveHTTP(w http.ResponseWriter, request *http.Request)
 		if d.failing {
 			// A pull reports failure inside the stream, not in the status code.
 			_, _ = w.Write([]byte(`{"errorDetail":{"message":"unauthorized"},"error":"unauthorized"}` + "\n"))
+			return
+		}
+		if len(d.script) > 0 {
+			for _, line := range d.script {
+				_, _ = w.Write([]byte(line + "\n"))
+			}
 			return
 		}
 		// Two layers, one downloading and one already present, which is the
