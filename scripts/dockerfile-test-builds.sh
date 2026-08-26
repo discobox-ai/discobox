@@ -75,11 +75,17 @@ build_dockerfile() {
       # The harnesses that did not change are cache hits.
       run_task "$dockerfile" build:harness-images
       ;;
-    test/harness-stub/Dockerfile)
-      run_task "$dockerfile" build:harness-stub-image
-      ;;
-    test/performance/terminal-latency/image/Dockerfile)
-      run_task "$dockerfile" build:terminal-latency-image
+    test/harness-stub/Dockerfile|test/performance/terminal-latency/image/Dockerfile)
+      # Not their build targets. Those resolve a sandbox agent image from .env,
+      # because their job is to produce an image a running server can use — and
+      # in a tree where the development image watcher is stamping .env, that
+      # names a tag whose image is not built yet, which a test build then tries
+      # to pull. A test build only has to answer whether the Dockerfile still
+      # builds, so it takes the Dockerfile's own default base and never pulls.
+      echo "[dockerfile-test-builds] building $dockerfile with context $(dirname "$dockerfile")"
+      DOCKER_BUILDKIT=1 docker build --pull=false \
+        --tag "discobot-dockerfile-test:$(tag_part "$dockerfile")" \
+        --file "$dockerfile" "$(dirname "$dockerfile")"
       ;;
     server/providers/vz/image/Dockerfile)
       # arm64-only (ADR 0052 defers Intel Macs), and it installs a kernel,
