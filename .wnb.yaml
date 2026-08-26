@@ -29,7 +29,7 @@ build:
     EXE=$(go env GOEXE) &&
     cd cli && go build -o ../build/discobox$EXE ./cmd/discobox &&
     cd ../server && go build -gcflags="all=-N -l" -o ../build/discobox-server$EXE ./cmd/discobox-server &&
-    cd .. && go tool task build:hooks &&
+    cd .. &&
     go tool task sign SIGN_BINARY=build/discobox-server$EXE &&
     go tool task sign SIGN_BINARY=build/discobox$EXE
   grace: 2s
