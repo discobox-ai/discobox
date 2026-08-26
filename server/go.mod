@@ -9,7 +9,7 @@ require (
 	github.com/coder/websocket v1.8.14
 	github.com/containerd/errdefs v1.0.0
 	github.com/discobox-ai/discobox/pool-agent v0.0.0-00010101000000-000000000000
-	github.com/discobox-ai/x v0.0.0-20260821223655-c8f7674a2726
+	github.com/discobox-ai/x v0.0.0-20260826224013-0a7af8e05045
 	github.com/glebarez/sqlite v1.11.0
 	github.com/go-faster/jx v1.2.0
 	github.com/google/go-containerregistry v0.20.6
@@ -304,7 +304,7 @@ require (
 	github.com/raeperd/recvcheck v0.2.0 // indirect
 	github.com/remyoudompheng/bigfft v0.0.0-20230129092748-24d4a6f8daec // indirect
 	github.com/rivo/uniseg v0.4.7 // indirect
-	github.com/rogpeppe/go-internal v1.14.1 // indirect
+	github.com/rogpeppe/go-internal v1.16.0 // indirect
 	github.com/ryancurrah/gomodguard v1.4.1 // indirect
 	github.com/ryancurrah/gomodguard/v2 v2.1.3 // indirect
 	github.com/ryanrolds/sqlclosecheck v0.6.0 // indirect

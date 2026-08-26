@@ -233,10 +233,11 @@ half width for panes nobody was typing in.
 
 - `disco box services ls/start/stop/restart/logs` and the workspace's service
   tabs are two views of one thing; neither has state the other cannot see.
-- The `#---` front-matter format now has two readers in two modules, so it moves
-  to the root module as `frontmatter` and `hooks/parser` is rewritten onto it.
-  The format was always a `.discobox/` convention rather than a hooks-internal
-  detail; this is where that becomes true in the code.
+- The `#---` front-matter format now has two readers in two repositories, so it
+  moves to `discobox-ai/x` as `frontmatter`, which both consume. The format was
+  always a `.discobox/` convention rather than a hooks-internal detail; this is
+  where that becomes true in the code. Rewriting `discobox-ai/hooks` onto it is
+  that repository's own change.
 - A sandbox with no `.discobox/services` directory has no services and does no
   extra work at boot — one failed `ReadDir`.
 - Services are not part of a sandbox's manifest, so nothing about pool-agent,

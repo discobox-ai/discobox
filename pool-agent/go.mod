@@ -8,7 +8,7 @@ require (
 	aidanwoods.dev/go-paseto v1.6.0
 	github.com/containerd/errdefs v1.0.0
 	github.com/discobox-ai/discobox v0.0.0-00010101000000-000000000000
-	github.com/discobox-ai/x v0.0.0-20260821223655-c8f7674a2726
+	github.com/discobox-ai/x v0.0.0-20260826224013-0a7af8e05045
 	github.com/fsnotify/fsnotify v1.10.1
 	github.com/go-chi/chi/v5 v5.3.0
 	github.com/go-faster/errors v0.7.1

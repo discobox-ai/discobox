@@ -18,7 +18,7 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/discobox-ai/discobox/frontmatter"
+	"github.com/discobox-ai/x/frontmatter"
 )
 
 // DirName is where services are declared, relative to the sandbox's primary

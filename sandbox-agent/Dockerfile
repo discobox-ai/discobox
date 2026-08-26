@@ -15,7 +15,6 @@ WORKDIR /src
 COPY go.mod go.sum ./
 COPY api ./api
 COPY execstream ./execstream
-COPY frontmatter ./frontmatter
 COPY harness ./harness
 COPY proxy ./proxy
 COPY runcca ./runcca
