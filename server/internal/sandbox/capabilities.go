@@ -4,9 +4,19 @@ package sandbox
 //
 // Name is what to pull; Digest is which image that must turn out to be. The
 // pair travels to the pool host, which resolves images and enforces the pin
-// (ADR 0016 §1, §6). Digest is a config digest — the same value a local Docker
-// daemon reports as an image ID, and what HarnessConfig.ImageDigest records —
-// not a manifest digest, which never-pushed local builds do not have.
+// (ADR 0016 §1, §6).
+//
+// Digest is the registry digest the image was pulled under — an index digest
+// for a multi-platform image — which both Docker image stores report in
+// RepoDigests. For a locally built image, which was never pushed and has no
+// RepoDigests, it is the image ID.
+//
+// It used to be documented as a config digest, "the same value a local Docker
+// daemon reports as an image ID". That was true of the classic image store and
+// false of the containerd one, which reports the index digest and is the
+// default in current Docker — so the recorded pin was a value the daemon would
+// never produce, and every sandbox on a published multi-arch image refused to
+// launch against an image that was sitting right there.
 //
 // An empty Digest means unpinned: sandboxes on the default image, and sandboxes
 // created before pinning existed. Those run whatever Name resolves to.

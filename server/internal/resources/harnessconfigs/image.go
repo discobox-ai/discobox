@@ -39,26 +39,62 @@ func (defaultImageInspector) Inspect(ctx context.Context, imageRef string) (imag
 	if err != nil {
 		return imageMetadata{}, fmt.Errorf("parse harness image %q: %w", imageRef, err)
 	}
-	image, err := remote.Image(ref,
+	remoteOptions := []remote.Option{
 		remote.WithContext(ctx),
 		remote.WithAuthFromKeychain(authn.DefaultKeychain),
 		remote.WithPlatform(poolPlatform()),
-	)
+	}
+	// One GET, because it answers both questions: the descriptor carries the
+	// digest the registry serves this tag under, and resolves to the image for
+	// the platform asked for.
+	//
+	// Not remote.Head, which asks for exactly the digest and nothing else:
+	// ghcr.io answers HEAD without a Content-Length header, which
+	// go-containerregistry rejects — so every harness image "was unavailable",
+	// none were seeded, and a project came up with no harnesses at all.
+	descriptor, err := remote.Get(ref, remoteOptions...)
 	if err != nil {
 		return imageMetadata{}, fmt.Errorf("inspect harness image %q: %w", imageRef, err)
+	}
+	image, err := descriptor.Image()
+	if err != nil {
+		return imageMetadata{}, fmt.Errorf("resolve harness image %q: %w", imageRef, err)
 	}
 	config, err := image.ConfigFile()
 	if err != nil {
 		return imageMetadata{}, fmt.Errorf("read harness image config %q: %w", imageRef, err)
 	}
-	// Use the config digest so the recorded digest matches the local daemon's
-	// image ID for the same image; the manifest digest is only defined once an
-	// image is pushed, which local :local builds never are.
-	digest, err := image.ConfigName()
-	if err != nil {
-		return imageMetadata{}, fmt.Errorf("resolve harness image digest %q: %w", imageRef, err)
+	// The digest a daemon will report for this reference, which is the digest
+	// the registry serves the tag under — an index digest for a multi-platform
+	// image.
+	//
+	// It used to be the config digest, on the premise that a local Docker
+	// daemon reports that as an image ID. That was true of the classic image
+	// store and is false of the containerd one, which reports the index digest
+	// and is the default in current Docker. So the server recorded a value the
+	// daemon would never produce, and every sandbox on a published multi-arch
+	// image refused to launch: "pinned to sha256:6a5066…, now resolves to
+	// sha256:4a5726…" — the config digest and the index digest of one image
+	// that had not changed at all.
+	//
+	// Both store types put this value in RepoDigests, which is what the pool
+	// compares against, so one recorded digest now works on either.
+	return parseImageMetadata(descriptor.Digest.String(), config.Config.Labels)
+}
+
+// localImageDigest is the digest to pin a locally-inspected image to.
+//
+// A pulled image carries the registry digest in RepoDigests, and that is what
+// every daemon can be asked about later, whichever image store it uses. A
+// locally built one has none — nothing pushed it — so its image ID is all there
+// is, and it is also all the pool will have to compare against.
+func localImageDigest(inspected dockerclient.ImageInspectResult) string {
+	for _, repoDigest := range inspected.RepoDigests {
+		if _, digest, ok := strings.Cut(repoDigest, "@"); ok && digest != "" {
+			return digest
+		}
 	}
-	return parseImageMetadata(digest.String(), config.Config.Labels)
+	return inspected.ID
 }
 
 // poolPlatform is the platform a harness image is inspected for.
@@ -98,7 +134,7 @@ func inspectLocalImage(ctx context.Context, imageRef string) (imageMetadata, boo
 	if inspected.Config != nil {
 		labels = inspected.Config.Labels
 	}
-	metadata, err := parseImageMetadata(inspected.ID, labels)
+	metadata, err := parseImageMetadata(localImageDigest(inspected), labels)
 	return metadata, true, err
 }
 

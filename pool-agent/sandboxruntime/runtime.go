@@ -474,7 +474,7 @@ func (r *DockerSandboxRuntime) resolveSandboxImage(ctx context.Context, sandboxI
 	if err != nil {
 		return "", fmt.Errorf("inspect image %q: %w", imageName, err)
 	}
-	if !imageMatchesPin(inspected.ID, pinnedDigest) {
+	if !imageMatchesPinDigests(inspected.ID, inspected.RepoDigests, pinnedDigest) {
 		return "", fmt.Errorf(
 			"sandbox is pinned to image %s but %q now resolves to %s, and the pinned image is not available on this pool; upgrade the sandbox to move it to the current image",
 			pinnedDigest, imageName, inspected.ID)
@@ -490,8 +490,37 @@ func (r *DockerSandboxRuntime) resolveSandboxImage(ctx context.Context, sandboxI
 // launch the wrong image, and replacing a container built from one — so the two
 // can never disagree about what "the pinned image" means.
 func imageMatchesPin(imageID, pinnedDigest string) bool {
+	return imageMatchesPinDigests(imageID, nil, pinnedDigest)
+}
+
+// imageMatchesPinDigests is imageMatchesPin given everything the daemon knows
+// an image by: its ID, and the registry digests it was pulled under.
+//
+// Both are needed because "the image ID" is not one thing. The classic image
+// store reports the config digest; the containerd store, which is the default
+// in current Docker, reports the index digest. A pin recorded as one and
+// compared against the other never matches, and every sandbox on a published
+// multi-arch image refused to launch with "the pinned image is not available on
+// this pool" — for an image sitting on the daemon, correctly pulled.
+//
+// RepoDigests is what settles it: both stores put the registry digest there, so
+// a pin recorded from the registry matches on either. The ID is still consulted
+// for locally built images, which were never pushed and so have no RepoDigests
+// at all.
+func imageMatchesPinDigests(imageID string, repoDigests []string, pinnedDigest string) bool {
 	pinned := strings.TrimSpace(pinnedDigest)
-	return pinned == "" || strings.TrimSpace(imageID) == pinned
+	if pinned == "" {
+		return true
+	}
+	if strings.TrimSpace(imageID) == pinned {
+		return true
+	}
+	for _, repoDigest := range repoDigests {
+		if _, digest, ok := strings.Cut(repoDigest, "@"); ok && strings.TrimSpace(digest) == pinned {
+			return true
+		}
+	}
+	return false
 }
 
 // containerSpecDrifted reports whether the existing container was built from a
