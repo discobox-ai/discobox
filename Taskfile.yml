@@ -530,6 +530,13 @@ tasks:
     cmds:
       - go tool discobox-hooks run all
 
+  check:dockerfile-builds:
+    desc: Test-build every Dockerfile (or just the ones passed as CLI arguments)
+    # The build rules are not here: each image's own build target owns them, and
+    # this dispatches to those. See scripts/dockerfile-test-builds.sh.
+    cmds:
+      - scripts/dockerfile-test-builds.sh {{.CLI_ARGS}}
+
   check:dockerfiles:
     desc: Every path a Dockerfile copies from the build context still exists
     # A Dockerfile breaks from changes made nowhere near it: moving a directory
