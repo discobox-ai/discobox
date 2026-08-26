@@ -68,7 +68,7 @@ const (
 // ADR 0062 §9 lands. It is deliberately not called a pool image — that already
 // means the pool-agent container (dockerworker.DefaultPoolImage), which every
 // VM provider exposes as workerImage alongside this one.
-const DefaultGuestImage = "ghcr.io/discobox-ai/discobox-vm@sha256:827bbce7e0d573ce69e7d0d3b9aa912144fa8b25e413d2ebb0975e0faf94a0f0"
+const DefaultGuestImage = "ghcr.io/discobox-ai/discobox-vm@sha256:a384499ea85ab5704a1e7ac1266509c1e4590d896d962d13ad77cba0db2479c8"
 
 // Config is the persisted vz provider configuration.
 type Config struct {
