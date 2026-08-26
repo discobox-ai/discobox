@@ -33,7 +33,7 @@ runtime operations.
 | `ports` | The sandbox's listening TCP ports: a standing watcher that reads `/proc/net/tcp{,6}` for sockets in `TCP_LISTEN` owned by the run user's uid, and probes each newly seen socket once to classify it `http`/`https`/`tcp` (ADR 0046). The only status component that is a cached snapshot rather than computed per request, because classifying a port means connecting to a user's process. |
 | `resources` | Opaque cgroup/procfs/systemd-style resource snapshot collection for exec runtimes. |
 | `store` | Sandbox-local SQLite/GORM audit log, observed terminal state snapshots, retained resource blobs, and compressed exec/terminal transcript chunks (see ADR 0028). |
-| `Dockerfile` | Debian-based base sandbox runtime image with Docker, development tools, Chromium, socket-activated desktop access, code-server, and Nix tooling. Harness image builds live in their owning `harness/<type>` folders. |
+| `Dockerfile` | The base sandbox runtime image: development tools, Chromium, socket-activated desktop access, and Nix tooling, layered on the shared [`base-image`](../base-image/Dockerfile) that supplies Debian, Docker, and the trimmed systemd unit set (ADR 0068). Its installs are one layer per tool group, ordered stablest first, so adding a package does not re-pull every language runtime. Harness image builds live in their owning `harness/<type>` folders. |
 
 ## Boundary Rules
 

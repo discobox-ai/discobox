@@ -22,6 +22,10 @@ import (
 const envFile = ".env"
 const developmentImageManifestFile = ".tmp/discobox-dev-images.json"
 
+// baseSpecName is the shared Debian/Docker/systemd image both agent images
+// build FROM via the BASE_IMAGE build arg.
+const baseSpecName = "base"
+
 // sandboxAgentSpecName is the spec whose built image every harness layers on
 // top of via the SANDBOX_AGENT_IMAGE build arg.
 const sandboxAgentSpecName = "sandbox-agent"
@@ -41,10 +45,18 @@ type imageSpec struct {
 	// Docker daemon, so there is no docker CLI invocation to derive them from.
 	contextDir string
 	dockerfile string
-	// sandboxBase marks specs that build FROM the sandbox-agent image. Their
-	// SANDBOX_AGENT_IMAGE build arg is rewritten to the sandbox-agent dev tag so
-	// they pin the exact hashed base rather than the mutable :local tag.
-	sandboxBase bool
+	// parent names the spec whose built image this one builds FROM, and
+	// parentArg the build argument that carries it. The parent's build-arg value
+	// is rewritten to the parent's hashed dev tag so a child pins the exact base
+	// it was built on rather than the mutable :local tag. The chain is
+	// base -> pool-agent/sandbox-agent -> harness.
+	parent    string
+	parentArg string
+	// intermediate marks an image nothing ever runs: it exists only as the base
+	// its children build FROM, and its layers ship inside them. Copy-mode has no
+	// reason to copy it to a destination daemon, but build-mode still has to
+	// build it there before anything that depends on it.
+	intermediate bool
 }
 
 type harnessImage struct {
@@ -165,24 +177,36 @@ func missingImageSpecs(ctx context.Context, repoRoot string, specs []imageSpec) 
 // missingFrom is the decision behind missingImageSpecs, over the set of image
 // references the daemon reports.
 func missingFrom(specs []imageSpec, present map[string]struct{}) []imageSpec {
-	missing := make([]imageSpec, 0, len(specs))
+	missing := map[string]bool{}
 	for _, spec := range specs {
 		if _, ok := present[spec.baseImage]; !ok {
-			missing = append(missing, spec)
+			missing[spec.name] = true
 		}
 	}
-	// A rebuilt sandbox-agent is a new base, so every image layered on it has to
-	// be rebuilt too — otherwise the manifest would publish harness images built
-	// on a base that no longer exists.
-	if !containsSpec(missing, sandboxAgentSpecName) {
-		return missing
+	// A rebuilt image is a new base, so everything layered on it has to be
+	// rebuilt too — otherwise the manifest would publish an image built on a
+	// base that no longer exists. Swept to a fixed point rather than once,
+	// because the chain is three deep: a missing base takes both agents with it,
+	// and the sandbox agent takes every harness.
+	for {
+		grew := false
+		for _, spec := range specs {
+			if spec.parent != "" && missing[spec.parent] && !missing[spec.name] {
+				missing[spec.name] = true
+				grew = true
+			}
+		}
+		if !grew {
+			break
+		}
 	}
+	out := make([]imageSpec, 0, len(missing))
 	for _, spec := range specs {
-		if spec.sandboxBase && !containsSpec(missing, spec.name) {
-			missing = append(missing, spec)
+		if missing[spec.name] {
+			out = append(out, spec)
 		}
 	}
-	return missing
+	return out
 }
 
 func containsSpec(specs []imageSpec, name string) bool {
@@ -221,6 +245,13 @@ func findRepoRoot() (string, error) {
 }
 
 func dockerImageSpecs(ctx context.Context, repoRoot string) ([]imageSpec, error) {
+	// The shared base both agent images build FROM. Its inputs are folded into
+	// theirs below, so a base edit rebuilds them and changes their content tags
+	// rather than leaving them on a base that no longer exists.
+	baseSeen := map[string]struct{}{}
+	if err := addTree(filepath.Join(repoRoot, "base-image"), baseSeen); err != nil {
+		return nil, err
+	}
 	workerRoot := filepath.Join(repoRoot, "pool-agent")
 	workerFiles, err := goModuleFiles(ctx, workerRoot, repoRoot, "./cmd/discobox-pool-agent")
 	if err != nil {
@@ -240,6 +271,9 @@ func dockerImageSpecs(ctx context.Context, repoRoot string) ([]imageSpec, error)
 		"../id/id.go",
 	} {
 		addFile(workerRoot, rel, workerSeen)
+	}
+	for file := range baseSeen {
+		workerSeen[file] = struct{}{}
 	}
 	sandboxRoot := filepath.Join(repoRoot, "sandbox-agent")
 	sandboxSeen := map[string]struct{}{}
@@ -272,6 +306,9 @@ func dockerImageSpecs(ctx context.Context, repoRoot string) ([]imageSpec, error)
 		addFile(repoRoot, rel, sandboxSeen)
 	}
 	addFile(repoRoot, ".dockerignore", sandboxSeen)
+	for file := range baseSeen {
+		sandboxSeen[file] = struct{}{}
+	}
 	commonSandboxSeen := copyFiles(sandboxSeen)
 	for _, harnessImage := range harnessImages {
 		for _, name := range []string{"Dockerfile", "configure.sh", "image.json"} {
@@ -280,16 +317,31 @@ func dockerImageSpecs(ctx context.Context, repoRoot string) ([]imageSpec, error)
 	}
 	specs := []imageSpec{
 		{
+			name:         baseSpecName,
+			baseImage:    "discobox-base:local",
+			devPrefix:    "discobox-base:dev-",
+			buildDir:     repoRoot,
+			buildArgs:    []string{"build", "-f", "base-image/Dockerfile", "-t", "discobox-base:local", "base-image"},
+			contextDir:   filepath.Join(repoRoot, "base-image"),
+			dockerfile:   "Dockerfile",
+			intermediate: true,
+			files:        sortedFiles(baseSeen),
+		},
+		{
 			name:         "pool-agent",
 			baseImage:    "discobox-pool-agent:local",
 			devPrefix:    "discobox-pool-agent:dev-",
 			envImageKey:  "DISCOBOX_DOCKER_POOL_IMAGE",
 			envDigestKey: "DISCOBOX_DOCKER_POOL_IMAGE_DIGEST",
 			buildDir:     repoRoot,
-			buildArgs:    []string{"build", "-f", "pool-agent/Dockerfile", "-t", "discobox-pool-agent:local", "."},
-			contextDir:   repoRoot,
-			dockerfile:   "pool-agent/Dockerfile",
-			files:        sortedFiles(workerSeen),
+			buildArgs: []string{"build", "-f", "pool-agent/Dockerfile",
+				"--build-arg", "BASE_IMAGE=discobox-base:local",
+				"-t", "discobox-pool-agent:local", "."},
+			contextDir: repoRoot,
+			dockerfile: "pool-agent/Dockerfile",
+			parent:     baseSpecName,
+			parentArg:  "BASE_IMAGE",
+			files:      sortedFiles(workerSeen),
 		},
 		{
 			name:         "sandbox-agent",
@@ -298,10 +350,14 @@ func dockerImageSpecs(ctx context.Context, repoRoot string) ([]imageSpec, error)
 			envImageKey:  "DISCOBOX_DEFAULT_SANDBOX_IMAGE",
 			envDigestKey: "DISCOBOX_DEFAULT_SANDBOX_IMAGE_DIGEST",
 			buildDir:     repoRoot,
-			buildArgs:    []string{"build", "-f", "sandbox-agent/Dockerfile", "-t", "discobox-sandbox-agent:local", "."},
-			contextDir:   repoRoot,
-			dockerfile:   "sandbox-agent/Dockerfile",
-			files:        sortedFiles(commonSandboxSeen),
+			buildArgs: []string{"build", "-f", "sandbox-agent/Dockerfile",
+				"--build-arg", "BASE_IMAGE=discobox-base:local",
+				"-t", "discobox-sandbox-agent:local", "."},
+			contextDir: repoRoot,
+			dockerfile: "sandbox-agent/Dockerfile",
+			parent:     baseSpecName,
+			parentArg:  "BASE_IMAGE",
+			files:      sortedFiles(commonSandboxSeen),
 		},
 	}
 	for _, harnessImage := range harnessImages {
@@ -324,7 +380,8 @@ func dockerImageSpecs(ctx context.Context, repoRoot string) ([]imageSpec, error)
 				"--build-arg", "SANDBOX_AGENT_IMAGE=discobox-sandbox-agent:local",
 				"--build-arg", "HARNESS_METADATA=", "-t", "discobox-harness-" + harnessImage.name + ":local", harnessDir},
 			metadataFile: filepath.Join(repoRoot, harnessDir, "image.json"),
-			sandboxBase:  true,
+			parent:       sandboxAgentSpecName,
+			parentArg:    "SANDBOX_AGENT_IMAGE",
 			// The harness build context is the harness directory itself, so its
 			// Dockerfile is at the context root.
 			contextDir: filepath.Join(repoRoot, harnessDir),
@@ -496,28 +553,31 @@ func buildChangedImages(ctx context.Context, repoRoot string, allSpecs, changedS
 	if changedSpecs == nil {
 		changedSpecs = allSpecs
 	}
-	// Harnesses build FROM the sandbox-agent image, so build sandbox-agent first
-	// and thread its content-hashed dev tag into their SANDBOX_AGENT_IMAGE build
-	// arg. A harness can change on its own while sandbox-agent is unchanged; in
-	// that case resolve the current sandbox-agent dev tag from its :local image.
-	ordered := sandboxAgentFirst(changedSpecs)
+	// An image is built after whatever it builds FROM, and is handed that
+	// parent's content-hashed dev tag rather than the mutable :local one. A child
+	// can change on its own while its parent is unchanged; in that case the
+	// parent's current dev tag is resolved from its built :local image.
+	ordered := parentsFirst(changedSpecs)
 	values := map[string]string{}
-	sandboxImage := ""
+	built := map[string]string{}
 	for _, spec := range ordered {
-		if spec.sandboxBase && sandboxImage == "" {
-			resolved, err := resolveSandboxAgentImage(ctx, repoRoot, allSpecs)
-			if err != nil {
-				return err
+		parentImage := ""
+		if spec.parent != "" {
+			resolved, ok := built[spec.parent]
+			if !ok {
+				var err error
+				resolved, err = resolveParentImage(ctx, repoRoot, allSpecs, spec.parent)
+				if err != nil {
+					return err
+				}
 			}
-			sandboxImage = resolved
+			parentImage = resolved
 		}
-		image, imageID, err := buildImage(ctx, spec, sandboxImage)
+		image, imageID, err := buildImage(ctx, spec, parentImage)
 		if err != nil {
 			return err
 		}
-		if spec.name == sandboxAgentSpecName {
-			sandboxImage = image
-		}
+		built[spec.name] = image
 		if spec.envImageKey != "" {
 			values[spec.envImageKey] = image
 		}
@@ -541,7 +601,10 @@ func buildChangedImages(ctx context.Context, repoRoot string, allSpecs, changedS
 func developmentImageManifest(ctx context.Context, repoRoot string, specs []imageSpec) (devimage.Manifest, error) {
 	images := make([]devimage.Image, 0, len(specs))
 	for _, spec := range specs {
-		if spec.envImageKey == "" {
+		// Nothing runs an intermediate and its layers already ship inside its
+		// children, so copying it to a destination daemon would move hundreds of
+		// megabytes nobody reads.
+		if spec.intermediate {
 			continue
 		}
 		imageID, err := commandOutput(ctx, repoRoot, "docker", "image", "inspect", "-f", "{{.Id}}", spec.baseImage)
@@ -557,29 +620,48 @@ func developmentImageManifest(ctx context.Context, repoRoot string, specs []imag
 	return devimage.NewManifest(images)
 }
 
-// sandboxAgentFirst returns specs ordered so sandbox-agent is built before any
-// harness that layers on top of it.
-func sandboxAgentFirst(specs []imageSpec) []imageSpec {
+// parentsFirst returns specs ordered so an image is built after the image it
+// builds FROM. A spec whose parent is not in this set is ready immediately —
+// that is the pass that rebuilds one harness while its base is unchanged.
+func parentsFirst(specs []imageSpec) []imageSpec {
 	ordered := make([]imageSpec, 0, len(specs))
-	for _, spec := range specs {
-		if spec.name == sandboxAgentSpecName {
+	placed := make(map[string]bool, len(specs))
+	// The graph is a shallow tree (base -> agents -> harnesses), so sweeping
+	// until nothing new can be placed is enough and needs no cycle bookkeeping.
+	for len(ordered) < len(specs) {
+		progressed := false
+		for _, spec := range specs {
+			if placed[spec.name] {
+				continue
+			}
+			if spec.parent != "" && containsSpec(specs, spec.parent) && !placed[spec.parent] {
+				continue
+			}
 			ordered = append(ordered, spec)
+			placed[spec.name] = true
+			progressed = true
 		}
-	}
-	for _, spec := range specs {
-		if spec.name != sandboxAgentSpecName {
-			ordered = append(ordered, spec)
+		if progressed {
+			continue
+		}
+		// Only reachable from a cycle in the parent links, which would otherwise
+		// spin here forever. Nothing orders the remainder, so keep spec order.
+		for _, spec := range specs {
+			if !placed[spec.name] {
+				ordered = append(ordered, spec)
+				placed[spec.name] = true
+			}
 		}
 	}
 	return ordered
 }
 
-// resolveSandboxAgentImage returns the current sandbox-agent dev tag by
-// inspecting its built :local image, for passes that rebuild a harness without
-// rebuilding sandbox-agent.
-func resolveSandboxAgentImage(ctx context.Context, repoRoot string, specs []imageSpec) (string, error) {
+// resolveParentImage returns the named spec's current dev tag by inspecting its
+// built :local image, for passes that rebuild a child without rebuilding what it
+// is built FROM.
+func resolveParentImage(ctx context.Context, repoRoot string, specs []imageSpec, name string) (string, error) {
 	for _, spec := range specs {
-		if spec.name != sandboxAgentSpecName {
+		if spec.name != name {
 			continue
 		}
 		imageID, err := commandOutput(ctx, repoRoot, "docker", "image", "inspect", "-f", "{{.Id}}", spec.baseImage)
@@ -588,28 +670,42 @@ func resolveSandboxAgentImage(ctx context.Context, repoRoot string, specs []imag
 		}
 		return devImageTag(spec.devPrefix, strings.TrimSpace(imageID)), nil
 	}
-	return "", fmt.Errorf("no %s spec configured", sandboxAgentSpecName)
+	return "", fmt.Errorf("no %s spec configured", name)
 }
 
-func buildImage(ctx context.Context, spec imageSpec, sandboxImage string) (string, string, error) {
+// renderBuildArgs fills in the placeholders a spec's docker argv carries: the
+// harness metadata read from image.json, and the reference of the image this one
+// builds FROM. Both fail quietly if they are missed — an unfilled
+// HARNESS_METADATA ships an empty label the server skips at seeding, and an
+// unfilled parent argument builds on the mutable :local tag instead of the exact
+// base the caller resolved — so this is separated from the docker invocation to
+// be assertable on its own.
+func renderBuildArgs(spec imageSpec, parentImage string) ([]string, error) {
 	buildArgs := append([]string{}, spec.buildArgs...)
-	if spec.metadataFile != "" {
-		metadata, err := harnessMetadata(spec.metadataFile)
-		if err != nil {
-			return "", "", err
-		}
+	replace := func(prefix, value string) {
 		for i, arg := range buildArgs {
-			if strings.HasPrefix(arg, "HARNESS_METADATA=") {
-				buildArgs[i] = "HARNESS_METADATA=" + metadata
+			if strings.HasPrefix(arg, prefix) {
+				buildArgs[i] = prefix + value
 			}
 		}
 	}
-	if spec.sandboxBase && sandboxImage != "" {
-		for i, arg := range buildArgs {
-			if strings.HasPrefix(arg, "SANDBOX_AGENT_IMAGE=") {
-				buildArgs[i] = "SANDBOX_AGENT_IMAGE=" + sandboxImage
-			}
+	if spec.metadataFile != "" {
+		metadata, err := harnessMetadata(spec.metadataFile)
+		if err != nil {
+			return nil, err
 		}
+		replace("HARNESS_METADATA=", metadata)
+	}
+	if spec.parentArg != "" && parentImage != "" {
+		replace(spec.parentArg+"=", parentImage)
+	}
+	return buildArgs, nil
+}
+
+func buildImage(ctx context.Context, spec imageSpec, parentImage string) (string, string, error) {
+	buildArgs, err := renderBuildArgs(spec, parentImage)
+	if err != nil {
+		return "", "", err
 	}
 	if err := runCommand(ctx, spec.buildDir, "docker", buildArgs...); err != nil {
 		return "", "", err
@@ -619,10 +715,9 @@ func buildImage(ctx context.Context, spec imageSpec, sandboxImage string) (strin
 		return "", "", err
 	}
 	imageID = strings.TrimSpace(imageID)
-	if spec.envImageKey == "" {
-		log.Printf("built %s as %s (%s)", spec.name, spec.baseImage, imageID)
-		return spec.baseImage, imageID, nil
-	}
+	// Every image gets the hashed dev tag, including one nothing runs: it is what
+	// a child's FROM pins, so a base that is rebuilt in place cannot be silently
+	// swapped under an image already built on it.
 	image := devImageTag(spec.devPrefix, imageID)
 	if err := runCommand(ctx, spec.buildDir, "docker", "tag", spec.baseImage, image); err != nil {
 		return "", "", err

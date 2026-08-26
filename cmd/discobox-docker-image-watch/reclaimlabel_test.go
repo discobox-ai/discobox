@@ -14,32 +14,36 @@ import (
 // silently makes every image immortal. Neither shows up as a failure anywhere
 // else, since not reclaiming an image looks exactly like an image still in use.
 //
-// Only the two roots are checked: harness images are built FROM the sandbox
-// agent and inherit the label through the image config, which is the same
-// mechanism that carries it across a pull.
-func TestImageRootsDeclareTheReclaimLabel(t *testing.T) {
+// Only the one root is checked: every other Discobox image is built FROM the
+// shared base, directly or through the sandbox agent, and inherits the label
+// through the image config — the same mechanism that carries it across a pull.
+func TestImageRootDeclaresTheReclaimLabel(t *testing.T) {
 	_, repoRoot := loadDockerImageSpecs(t)
 	want := "LABEL " + harness.ReclaimLabel + "=" + harness.ReclaimLabelValue
 
-	for _, dockerfile := range []string{"pool-agent/Dockerfile", "sandbox-agent/Dockerfile"} {
-		data, err := os.ReadFile(filepath.Join(repoRoot, dockerfile))
-		if err != nil {
-			t.Fatal(err)
-		}
-		if !strings.Contains(string(data), want) {
-			t.Fatalf("%s does not declare %q", dockerfile, want)
-		}
+	data, err := os.ReadFile(filepath.Join(repoRoot, "base-image", "Dockerfile"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(data), want) {
+		t.Fatalf("base-image/Dockerfile does not declare %q", want)
 	}
 }
 
-// Harness images must not carry their own copy: a duplicate would keep working
+// No image below the root may carry its own copy: a duplicate would keep working
 // while the inherited one was removed, hiding the break in the base image that
 // every other Discobox image depends on.
-func TestHarnessImagesInheritTheReclaimLabel(t *testing.T) {
+func TestImagesBelowTheRootInheritTheReclaimLabel(t *testing.T) {
 	_, repoRoot := loadDockerImageSpecs(t)
 
+	dockerfiles := []string{
+		filepath.Join("pool-agent", "Dockerfile"),
+		filepath.Join("sandbox-agent", "Dockerfile"),
+	}
 	for _, harnessImage := range harnessImages {
-		dockerfile := filepath.Join("harness", harnessImage.dir, "Dockerfile")
+		dockerfiles = append(dockerfiles, filepath.Join("harness", harnessImage.dir, "Dockerfile"))
+	}
+	for _, dockerfile := range dockerfiles {
 		data, err := os.ReadFile(filepath.Join(repoRoot, dockerfile))
 		if err != nil {
 			t.Fatal(err)

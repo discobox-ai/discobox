@@ -3,6 +3,8 @@
 ## Project Structure
 
 - Root module `github.com/discobox-ai/discobox`: stable contracts/API module.
+- `base-image`: the shared Debian/Docker/systemd image every other Discobox
+  container image is built FROM.
 - `api`: server API definitions and tests, pending schema-first conversion.
 - `cli`: nested Go module for the `discobox` CLI.
 - `cli/cmd/discobox`: CLI entrypoint.

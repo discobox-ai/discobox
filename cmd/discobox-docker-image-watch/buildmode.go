@@ -54,9 +54,9 @@ func stampBuildModeImages(repoRoot string, specs []imageSpec) error {
 	images := make([]devimage.Image, 0, len(specs))
 	values := map[string]string{}
 	for _, spec := range specs {
-		if spec.envImageKey == "" {
-			continue
-		}
+		// Intermediates are described too, unlike in copy-mode: the destination
+		// daemon builds every image itself, so it needs the base before it can
+		// build anything layered on it. It just has no .env key to publish.
 		if spec.contextDir == "" || spec.dockerfile == "" {
 			return fmt.Errorf("development image %s has no build context configured", spec.name)
 		}
@@ -72,7 +72,9 @@ func stampBuildModeImages(repoRoot string, specs []imageSpec) error {
 				Args:       args,
 			},
 		})
-		values[spec.envImageKey] = tags[spec.name]
+		if spec.envImageKey != "" {
+			values[spec.envImageKey] = tags[spec.name]
+		}
 		log.Printf("stamped %s as %s (built on demand by the server)", spec.name, tags[spec.name])
 	}
 
@@ -89,9 +91,9 @@ func stampBuildModeImages(repoRoot string, specs []imageSpec) error {
 	return updateEnv(filepath.Join(repoRoot, envFile), values)
 }
 
-// buildModeArgs renders a spec's build arguments, resolving the harness
-// dependency on the sandbox base image to that image's stamped reference so the
-// server can order the builds.
+// buildModeArgs renders a spec's build arguments, resolving a dependency on the
+// image it builds FROM to that image's stamped reference so the server can order
+// the builds.
 func buildModeArgs(spec imageSpec, tags map[string]string) (map[string]string, error) {
 	args := map[string]string{}
 	if spec.metadataFile != "" {
@@ -101,12 +103,12 @@ func buildModeArgs(spec imageSpec, tags map[string]string) (map[string]string, e
 		}
 		args["HARNESS_METADATA"] = metadata
 	}
-	if spec.sandboxBase {
-		sandboxTag, ok := tags[sandboxAgentSpecName]
+	if spec.parentArg != "" {
+		parentTag, ok := tags[spec.parent]
 		if !ok {
-			return nil, fmt.Errorf("no %s image stamped for %s", sandboxAgentSpecName, spec.name)
+			return nil, fmt.Errorf("no %s image stamped for %s", spec.parent, spec.name)
 		}
-		args["SANDBOX_AGENT_IMAGE"] = sandboxTag
+		args[spec.parentArg] = parentTag
 	}
 	if len(args) == 0 {
 		return nil, nil
@@ -141,8 +143,8 @@ func contentImageTag(spec imageSpec) (string, error) {
 			return "", closeErr
 		}
 	}
-	// Harness images embed their sandbox base's reference, but that is resolved
-	// after tagging; the base's own inputs are already part of every harness
-	// spec's file set, so a base change still changes the harness tag.
+	// A child embeds its parent's reference, but that is resolved after tagging;
+	// the parent's own inputs are already part of every child spec's file set, so
+	// a parent change still changes the child's tag.
 	return spec.devPrefix + hex.EncodeToString(digest.Sum(nil))[:12], nil
 }

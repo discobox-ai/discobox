@@ -231,18 +231,25 @@ tasks:
         ls -l "$dest"
         echo "staged guest artifacts in $dest; recreate a vz pool to boot them"
 
+  build:base-image:
+    desc: Build the shared Debian/Docker/systemd base both agent images build FROM
+    cmds:
+      - docker build -f base-image/Dockerfile -t discobox-base:local base-image
+
   build:pool-agent-image:
     desc: Build the systemd Docker pool image
+    deps: [build:base-image]
     cmds:
       - docker build -f pool-agent/Dockerfile -t discobox-pool-agent:local .
 
   build:sandbox-agent-image:
     desc: Build the Debian sandbox agent image
+    deps: [build:base-image]
     cmds:
       - docker build -f sandbox-agent/Dockerfile -t discobox-sandbox-agent:local .
 
   build:images:
-    desc: Build pool, sandbox base, and all included harness images
+    desc: Build the shared base, pool, sandbox base, and all included harness images
     cmds:
       - task: build:pool-agent-image
       - task: build:harness-images
@@ -541,6 +548,7 @@ tasks:
         # not to the Dockerfile, and the harness images are the ones built from
         # somewhere other than the repository root.
         for entry in \
+          base-image/Dockerfile:base-image \
           pool-agent/Dockerfile:. \
           sandbox-agent/Dockerfile:. \
           server/providers/vz/image/Dockerfile:. \
@@ -960,10 +968,21 @@ tasks:
   release:images:
     desc: Build and push the multi-arch agent and harness images for RELEASE_TAG
     cmds:
+      # Strictly first, and not alongside them: both agent images are built FROM
+      # this one, and the build cannot pull a tag that is not in the registry
+      # yet. It is pushed even though nothing ever runs it, because its children
+      # must resolve the same reference at build time for their layers to be the
+      # same blobs at pull time.
       - task: release:image
-        vars: { IMAGE: pool-agent }
+        vars: { IMAGE: base, DOCKERFILE: base-image/Dockerfile, CONTEXT: base-image }
       - task: release:image
-        vars: { IMAGE: sandbox-agent }
+        vars:
+          IMAGE: pool-agent
+          BUILD_ARGS: --build-arg BASE_IMAGE={{.REGISTRY}}/discobox-base:{{.TAG}}
+      - task: release:image
+        vars:
+          IMAGE: sandbox-agent
+          BUILD_ARGS: --build-arg BASE_IMAGE={{.REGISTRY}}/discobox-base:{{.TAG}}
       # Strictly after sandbox-agent, and not alongside it: every harness image
       # is built FROM the sandbox agent image this release just pushed, and the
       # build cannot pull a tag that is not in the registry yet.
@@ -1044,7 +1063,7 @@ tasks:
           echo "depot not found; falling back to emulated docker buildx." >&2
           echo "Both Dockerfiles run their Go stage FROM --platform=\$BUILDPLATFORM, so no Go" >&2
           echo "compilation is emulated. Only the Debian runtime stages are: near-free for" >&2
-          echo "pool-agent, slow for sandbox-agent's apt and code-server install." >&2
+          echo "pool-agent, slow for sandbox-agent's apt, Nix, and language runtime installs." >&2
           # buildx needs both of these for a foreign architecture and says
           # nothing useful when they are missing.
           docker run --privileged --rm tonistiigi/binfmt --install arm64,amd64 >/dev/null

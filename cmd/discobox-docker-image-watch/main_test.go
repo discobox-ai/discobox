@@ -27,14 +27,22 @@ func loadDockerImageSpecs(t *testing.T) ([]imageSpec, string) {
 
 func TestDockerImageSpecsBuildAllDevImagesAndUpdateEnv(t *testing.T) {
 	specs, _ := loadDockerImageSpecs(t)
-	if len(specs) != 5 {
-		t.Fatalf("image specs = %d, want worker, sandbox, and three harnesses", len(specs))
+	if len(specs) != 6 {
+		t.Fatalf("image specs = %d, want base, worker, sandbox, and three harnesses", len(specs))
 	}
 
 	gotNames := make([]string, 0, len(specs))
 	gotEnvKeys := map[string]bool{}
 	for _, spec := range specs {
 		gotNames = append(gotNames, spec.name)
+		// The shared base is the one image nothing runs, so it is also the one
+		// image with no reference for the server to resolve.
+		if spec.intermediate {
+			if spec.envImageKey != "" {
+				t.Fatalf("%s is an intermediate but publishes %s", spec.name, spec.envImageKey)
+			}
+			continue
+		}
 		if spec.envImageKey == "" {
 			t.Fatalf("%s does not update an image reference in .env", spec.name)
 		}
@@ -43,7 +51,7 @@ func TestDockerImageSpecsBuildAllDevImagesAndUpdateEnv(t *testing.T) {
 			gotEnvKeys[spec.envDigestKey] = true
 		}
 	}
-	wantNames := []string{"pool-agent", "sandbox-agent", "harness-codex", "harness-claude-code", "harness-shell"}
+	wantNames := []string{baseSpecName, "pool-agent", "sandbox-agent", "harness-codex", "harness-claude-code", "harness-shell"}
 	if !reflect.DeepEqual(gotNames, wantNames) {
 		t.Fatalf("image build order = %#v, want %#v", gotNames, wantNames)
 	}
@@ -126,46 +134,87 @@ func TestUpdateEnvUpdatesAllImageReferencesWithoutDroppingUserValues(t *testing.
 	}
 }
 
-func TestHarnessSpecsThreadSandboxAgentBase(t *testing.T) {
+// Every image built FROM another must both declare that parent and carry the
+// build argument buildImage rewrites, or it silently builds on the mutable
+// :local tag instead of the exact base it was meant to pin.
+func TestSpecsThreadTheImageTheyBuildFrom(t *testing.T) {
+	wantParents := map[string]string{
+		baseSpecName:          "",
+		"pool-agent":          baseSpecName,
+		"sandbox-agent":       baseSpecName,
+		"harness-codex":       sandboxAgentSpecName,
+		"harness-claude-code": sandboxAgentSpecName,
+		"harness-shell":       sandboxAgentSpecName,
+	}
+	wantArgs := map[string]string{
+		"pool-agent":          "BASE_IMAGE",
+		"sandbox-agent":       "BASE_IMAGE",
+		"harness-codex":       "SANDBOX_AGENT_IMAGE",
+		"harness-claude-code": "SANDBOX_AGENT_IMAGE",
+		"harness-shell":       "SANDBOX_AGENT_IMAGE",
+	}
 	specs, _ := loadDockerImageSpecs(t)
 	for _, spec := range specs {
-		switch spec.name {
-		case "sandbox-agent":
-			if spec.name != sandboxAgentSpecName {
-				t.Fatalf("sandbox-agent spec name = %q, want %q", spec.name, sandboxAgentSpecName)
+		want, ok := wantParents[spec.name]
+		if !ok {
+			t.Fatalf("unexpected image spec %q", spec.name)
+		}
+		if spec.parent != want {
+			t.Errorf("%s parent = %q, want %q", spec.name, spec.parent, want)
+		}
+		wantArg := wantArgs[spec.name]
+		if spec.parentArg != wantArg {
+			t.Errorf("%s parentArg = %q, want %q", spec.name, spec.parentArg, wantArg)
+		}
+		if wantArg == "" {
+			continue
+		}
+		hasArg := false
+		for _, arg := range spec.buildArgs {
+			if strings.HasPrefix(arg, wantArg+"=") {
+				hasArg = true
 			}
-			if spec.sandboxBase {
-				t.Fatalf("%s should not mark itself as a sandbox-base consumer", spec.name)
-			}
-		case "harness-codex", "harness-claude-code", "harness-shell":
-			if !spec.sandboxBase {
-				t.Fatalf("%s does not thread the sandbox-agent base image", spec.name)
-			}
-			hasArg := false
-			for _, arg := range spec.buildArgs {
-				if strings.HasPrefix(arg, "SANDBOX_AGENT_IMAGE=") {
-					hasArg = true
-				}
-			}
-			if !hasArg {
-				t.Fatalf("%s has no SANDBOX_AGENT_IMAGE build arg to rewrite", spec.name)
-			}
+		}
+		if !hasArg {
+			t.Errorf("%s has no %s build arg to rewrite: %#v", spec.name, wantArg, spec.buildArgs)
 		}
 	}
 }
 
-func TestSandboxAgentFirstOrdersBaseBeforeHarnesses(t *testing.T) {
+func TestParentsFirstOrdersEveryBaseBeforeWhatBuildsOnIt(t *testing.T) {
 	in := []imageSpec{
-		{name: "harness-codex", sandboxBase: true},
-		{name: "sandbox-agent"},
-		{name: "harness-claude-code", sandboxBase: true},
+		{name: "harness-codex", parent: sandboxAgentSpecName},
+		{name: "sandbox-agent", parent: baseSpecName},
+		{name: "harness-claude-code", parent: sandboxAgentSpecName},
+		{name: baseSpecName},
+		{name: "pool-agent", parent: baseSpecName},
 	}
-	got := sandboxAgentFirst(in)
-	if got[0].name != sandboxAgentSpecName {
-		t.Fatalf("sandbox-agent not built first: %#v", got)
-	}
+	got := parentsFirst(in)
 	if len(got) != len(in) {
 		t.Fatalf("ordering dropped specs: got %d want %d", len(got), len(in))
+	}
+	at := map[string]int{}
+	for i, spec := range got {
+		at[spec.name] = i
+	}
+	for _, spec := range in {
+		if spec.parent == "" {
+			continue
+		}
+		if at[spec.parent] > at[spec.name] {
+			t.Errorf("%s built before its base %s: %v", spec.name, spec.parent, specNames(got))
+		}
+	}
+}
+
+// A pass that rebuilds only a child must not stall waiting for a parent that is
+// not in the set: that is the common case, one harness edited on an unchanged
+// base.
+func TestParentsFirstPlacesSpecsWhoseParentIsNotInTheSet(t *testing.T) {
+	in := []imageSpec{{name: "harness-codex", parent: sandboxAgentSpecName}}
+	got := parentsFirst(in)
+	if len(got) != 1 || got[0].name != "harness-codex" {
+		t.Fatalf("parentsFirst = %v, want [harness-codex]", specNames(got))
 	}
 }
 
@@ -218,4 +267,51 @@ func harnessDir(name string) string {
 		return "codex-cli"
 	}
 	return name
+}
+
+// The placeholder in a spec's argv must actually be replaced with the resolved
+// parent reference. Missing it is silent: the build succeeds against the
+// mutable :local tag, and the image is pinned to a base that can be replaced
+// underneath it.
+func TestRenderBuildArgsPinsTheResolvedParentReference(t *testing.T) {
+	spec := imageSpec{
+		name:      "sandbox-agent",
+		parent:    baseSpecName,
+		parentArg: "BASE_IMAGE",
+		buildArgs: []string{"build", "-f", "sandbox-agent/Dockerfile",
+			"--build-arg", "BASE_IMAGE=discobox-base:local",
+			"-t", "discobox-sandbox-agent:local", "."},
+	}
+	got, err := renderBuildArgs(spec, "discobox-base:dev-0123456789ab")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !contains(got, "BASE_IMAGE=discobox-base:dev-0123456789ab") {
+		t.Fatalf("parent reference not pinned: %#v", got)
+	}
+	if contains(got, "BASE_IMAGE=discobox-base:local") {
+		t.Fatalf("mutable base tag survived: %#v", got)
+	}
+	if contains(spec.buildArgs, "BASE_IMAGE=discobox-base:dev-0123456789ab") {
+		t.Fatal("renderBuildArgs mutated the spec's own argv")
+	}
+}
+
+// A pass that rebuilds a child while its parent is unchanged resolves the parent
+// separately; when there is nothing to resolve the spec's own default must stand
+// rather than being blanked.
+func TestRenderBuildArgsLeavesTheDefaultWhenThereIsNoParentToPin(t *testing.T) {
+	spec := imageSpec{
+		name:      "harness-shell",
+		parent:    sandboxAgentSpecName,
+		parentArg: "SANDBOX_AGENT_IMAGE",
+		buildArgs: []string{"build", "--build-arg", "SANDBOX_AGENT_IMAGE=discobox-sandbox-agent:local"},
+	}
+	got, err := renderBuildArgs(spec, "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !contains(got, "SANDBOX_AGENT_IMAGE=discobox-sandbox-agent:local") {
+		t.Fatalf("default base tag was clobbered: %#v", got)
+	}
 }

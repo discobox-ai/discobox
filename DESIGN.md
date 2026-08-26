@@ -125,9 +125,9 @@ flowchart TD
 - Pool-agent module: in-guest pool host process, pool-local runtime DTOs, and
   generated pool-local sandbox operations API server adapter; depends on root
   pool boot contracts and OpenAPI contracts.
-- Root module: local Docker development image watcher for pool-agent and
-  sandbox-agent images, plus the versioned development-image manifest contract
-  shared with the server.
+- Root module: local Docker development image watcher for the shared base,
+  pool-agent, and sandbox-agent images, plus the versioned development-image
+  manifest contract shared with the server.
 - Sandbox-agent module: in-sandbox agent REST API runtime environment and harness
   implementation; depends on root contracts and generated API types.
 
@@ -188,6 +188,26 @@ exception in both directions: no Nix, so its tests run under `actions/setup-go`,
 and no cgo, so its binary is cross-compiled from the Linux job. Agent images are
 built once for both architectures by `depot build`, falling back to emulated
 `docker buildx`.
+
+Container images form one chain, so that a pool host pulling all of them pulls
+the shared surface once (ADR 0068):
+
+```mermaid
+flowchart TD
+    base["base-image/<br/>discobox-base<br/>Debian, Docker, systemd unit mask"]
+    pool["pool-agent/<br/>discobox-pool-agent"]
+    sandbox["sandbox-agent/<br/>discobox-sandbox-agent"]
+    harness["harness/&lt;type&gt;/<br/>discobox-harness-*"]
+
+    base -->|BASE_IMAGE| pool
+    base -->|BASE_IMAGE| sandbox
+    sandbox -->|SANDBOX_AGENT_IMAGE| harness
+```
+
+`discobox-base` is released like the rest even though nothing runs it: its
+children must resolve one already-built reference for their layers to be the
+same blobs. `release:images` builds them in that order, and the development
+image watcher orders its own builds from the same parent links.
 
 The pool VM image — the kernel, initrd, and root filesystem a VM-backed pool
 boots — is a separate release line with its own `vm/v*` tags and its own

@@ -76,9 +76,21 @@ build_dockerfile() {
   build_args=(--pull=false --tag "$tag" --file "$dockerfile")
 
   case "$dockerfile" in
+    pool-agent/Dockerfile|*/pool-agent/Dockerfile|sandbox-agent/Dockerfile|*/sandbox-agent/Dockerfile)
+      # Both agent images are built FROM the shared base (base-image/Dockerfile),
+      # so it has to exist on the daemon before either one can be test-built.
+      if ! docker image inspect discobox-base:local >/dev/null 2>&1; then
+        echo "[dockerfile-test-builds] building the shared base for $dockerfile"
+        DOCKER_BUILDKIT=1 docker build --pull=false --tag discobox-base:local --file base-image/Dockerfile base-image
+      fi
+      build_args+=(--build-arg "BASE_IMAGE=discobox-base:local")
+      ;;
     harness/*/Dockerfile)
       if ! docker image inspect discobox-sandbox-agent:local >/dev/null 2>&1; then
         echo "[dockerfile-test-builds] building sandbox-agent base for $dockerfile"
+        if ! docker image inspect discobox-base:local >/dev/null 2>&1; then
+          DOCKER_BUILDKIT=1 docker build --pull=false --tag discobox-base:local --file base-image/Dockerfile base-image
+        fi
         DOCKER_BUILDKIT=1 docker build --pull=false --tag discobox-sandbox-agent:local --file sandbox-agent/Dockerfile .
       fi
       if ! command -v jq >/dev/null 2>&1; then
