@@ -328,6 +328,8 @@ require (
 
 require (
 	aidanwoods.dev/go-result v0.3.1 // indirect
+	github.com/bmatcuk/doublestar/v4 v4.10.0 // indirect
+	github.com/discobox-ai/hooks v0.0.0-20260822001513-a52589bd05d5 // indirect
 	github.com/discobox-ai/iroh-go/libs/darwin_amd64 v0.2.0 // indirect
 	github.com/discobox-ai/iroh-go/libs/darwin_arm64 v0.2.0 // indirect
 	github.com/discobox-ai/iroh-go/libs/linux_amd64 v0.2.0 // indirect
@@ -368,6 +370,7 @@ require (
 )
 
 tool (
+	github.com/discobox-ai/hooks/cmd/discobox-hooks
 	github.com/go-task/task/v3/cmd/task
 	github.com/golangci/golangci-lint/v2/cmd/golangci-lint
 	github.com/ibuildthecloud/watchnbuild

@@ -154,6 +154,8 @@ github.com/bkielbasa/cyclop v1.2.3 h1:faIVMIGDIANuGPWH031CZJTi2ymOQBULs9H21HSMa5
 github.com/bkielbasa/cyclop v1.2.3/go.mod h1:kHTwA9Q0uZqOADdupvcFJQtp/ksSnytRMe8ztxG8Fuo=
 github.com/blizzy78/varnamelen v0.8.0 h1:oqSblyuQvFsW1hbBHh1zfwrKe3kcSj0rnXkKzsQ089M=
 github.com/blizzy78/varnamelen v0.8.0/go.mod h1:V9TzQZ4fLJ1DSrjVDfl89H7aMnTvKkApdHeyESmyR7k=
+github.com/bmatcuk/doublestar/v4 v4.10.0 h1:zU9WiOla1YA122oLM6i4EXvGW62DvKZVxIe6TYWexEs=
+github.com/bmatcuk/doublestar/v4 v4.10.0/go.mod h1:xBQ8jztBU6kakFMg+8WGxn0c6z1fTSPVIjEY1Wr7jzc=
 github.com/bombsimon/wsl/v4 v4.7.0 h1:1Ilm9JBPRczjyUs6hvOPKvd7VL1Q++PL8M0SXBDf+jQ=
 github.com/bombsimon/wsl/v4 v4.7.0/go.mod h1:uV/+6BkffuzSAVYD+yGyld1AChO7/EuLrCF/8xTiapg=
 github.com/bombsimon/wsl/v5 v5.8.0 h1:JTkyfs4yl8SPejrCF2GdABXE+mO1WvM7iUYzRWlsxDs=
@@ -215,6 +217,8 @@ github.com/davecgh/go-spew v1.1.2-0.20180830191138-d8f796af33cc h1:U9qPSI2PIWSS1
 github.com/davecgh/go-spew v1.1.2-0.20180830191138-d8f796af33cc/go.mod h1:J7Y8YcW2NihsgmVo/mv3lAwl/skON4iLHjSsI+c5H38=
 github.com/denis-tingaikin/go-header v0.5.0 h1:SRdnP5ZKvcO9KKRP1KJrhFR3RrlGuD+42t4429eC9k8=
 github.com/denis-tingaikin/go-header v0.5.0/go.mod h1:mMenU5bWrok6Wl2UsZjy+1okegmwQ3UgWl4V1D8gjlY=
+github.com/discobox-ai/hooks v0.0.0-20260822001513-a52589bd05d5 h1:9Li1WB8oxuh7NmNeWGIMvRvj2BqPVdHsRYrVaX25+o8=
+github.com/discobox-ai/hooks v0.0.0-20260822001513-a52589bd05d5/go.mod h1:X8ulQx+GI0GOdP3LHr03H08hU2w9TXiAojZMYFklJT0=
 github.com/discobox-ai/iroh-go v0.2.0 h1:0YgJbq8KHbyRuD7NI1hB+sUwSbU4IlNb4IQt3Q87gBE=
 github.com/discobox-ai/iroh-go v0.2.0/go.mod h1:S9pt0b8xFpHPTd1j31nxLJ3Kz7N14Off+yGItjDfsgE=
 github.com/discobox-ai/iroh-go/libs/darwin_amd64 v0.2.0 h1:hkyNKnE6diL2OajgXDZ+vt42ZA4WbZ9aMoZq5EW8kso=
