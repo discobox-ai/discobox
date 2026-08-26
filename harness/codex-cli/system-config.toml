@@ -8,3 +8,10 @@
 # `permissions.defaultMode: bypassPermissions` baseline.
 approval_policy = "never"
 sandbox_mode = "danger-full-access"
+
+# Discobox uses the primary terminal's OSC title as the sandbox display name.
+# Codex 0.150+ gives a new thread a provisional title from its first prompt,
+# then asynchronously replaces it with a generated title. Activity keeps the
+# terminal title visibly current while Codex is working.
+[tui]
+terminal_title = ["activity", "thread-title"]

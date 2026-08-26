@@ -104,7 +104,11 @@ sandbox would only guard a machine that exists to be written to. It is the
 *system* layer and not the harness's `.codex/config.toml` file precisely because
 that file is the user's: the configure flow captures whatever the user left in
 it, and a baseline living there would be replaced by that capture on the first
-reconfigure.
+reconfigure. The same layer selects Codex's `activity` and `thread-title`
+terminal-title items. Codex 0.150 gives an unnamed thread a provisional title
+from its first prompt, replaces it asynchronously with a generated title, and
+preserves manual `/rename` values. Codex emits that thread title as OSC 0; the
+sandbox agent observes it and Discobox uses it as the sandbox display name.
 
 ## Configure flows
 

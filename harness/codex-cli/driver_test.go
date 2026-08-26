@@ -183,6 +183,16 @@ func TestImageOwnedHooksPublishEveryCodexLifecycleEvent(t *testing.T) {
 	}
 }
 
+func TestSystemConfigPublishesCodexThreadTitle(t *testing.T) {
+	raw, err := os.ReadFile("system-config.toml")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(raw), `terminal_title = ["activity", "thread-title"]`) {
+		t.Fatalf("system config does not publish activity and thread title: %s", raw)
+	}
+}
+
 // TestImageDeclaresFileDeliveredAuth pins the half of the contract the image
 // owns: codex authenticates from a file, so neither credential may be exported
 // as an environment variable, and each is an alternative to the other.
