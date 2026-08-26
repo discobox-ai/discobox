@@ -275,17 +275,23 @@ func (s Service) paneStatus() string {
 // a service, but this text is not the service's and should not depend on it.
 func (s Service) card(logs []byte) []byte {
 	var b strings.Builder
-	b.WriteString(s.displayName() + "\r\n")
-	b.WriteString(strings.Repeat("─", len([]rune(s.displayName()))) + "\r\n\r\n")
+	b.WriteString(s.displayName())
+	b.WriteString("\r\n")
+	b.WriteString(strings.Repeat("─", len([]rune(s.displayName()))))
+	b.WriteString("\r\n\r\n")
 	switch {
 	case !s.runnable():
 		b.WriteString("cannot run\r\n\r\n")
-		b.WriteString(wrapCard(s.Problem) + "\r\n\r\n")
-		b.WriteString(".discobox/services/" + s.FileName + "\r\n")
+		b.WriteString(wrapCard(s.Problem))
+		b.WriteString("\r\n\r\n")
+		b.WriteString(".discobox/services/")
+		b.WriteString(s.FileName)
+		b.WriteString("\r\n")
 	case s.Status == "failed":
 		b.WriteString("failed\r\n\r\n")
 		if detail := strings.TrimSpace(s.Error); detail != "" {
-			b.WriteString(wrapCard(detail) + "\r\n\r\n")
+			b.WriteString(wrapCard(detail))
+			b.WriteString("\r\n\r\n")
 		} else if s.ExitCode != nil {
 			fmt.Fprintf(&b, "exit code %d\r\n\r\n", *s.ExitCode)
 		}
@@ -295,10 +301,12 @@ func (s Service) card(logs []byte) []byte {
 			fmt.Fprintf(&b, "exit code %d\r\n\r\n", *s.ExitCode)
 		}
 	default:
-		b.WriteString(s.Status + "\r\n\r\n")
+		b.WriteString(s.Status)
+		b.WriteString("\r\n\r\n")
 	}
 	if description := strings.TrimSpace(s.Description); description != "" {
-		b.WriteString(wrapCard(description) + "\r\n\r\n")
+		b.WriteString(wrapCard(description))
+		b.WriteString("\r\n\r\n")
 	}
 	if len(logs) > 0 {
 		b.WriteString("── last output ──\r\n\r\n")

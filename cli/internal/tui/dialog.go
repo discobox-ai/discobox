@@ -302,9 +302,12 @@ func (d *dialog) view(st *styles, width, height int) string {
 			yes += " (Enter)"
 		}
 		b.WriteString(st.key.Render("y"))
-		b.WriteString(" " + yes + "   ")
+		b.WriteString(" ")
+		b.WriteString(yes)
+		b.WriteString("   ")
 		b.WriteString(st.key.Render("n"))
-		b.WriteString(" " + no)
+		b.WriteString(" ")
+		b.WriteString(no)
 	case dlgStatus:
 		b.WriteString("\n")
 		b.WriteString(st.dimText.Render("Esc stops watching"))

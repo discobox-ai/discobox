@@ -181,7 +181,7 @@ func TestIrohRoundTripperRecoversWhenTheServerRestarts(t *testing.T) {
 
 	// And it keeps working, rather than recovering once and then flapping.
 	for i := 0; i < 5; i++ {
-		if err := post(ctx, httpClient, []byte(fmt.Sprintf("settled %d", i))); err != nil {
+		if err := post(ctx, httpClient, fmt.Appendf(nil, "settled %d", i)); err != nil {
 			t.Fatalf("request %d after recovery: %v", i, err)
 		}
 	}
@@ -230,7 +230,7 @@ func TestIrohConcurrentRequestsAndWebsockets(t *testing.T) {
 			for i := 0; i < requestsPerWorks; i++ {
 				// Sizes that span a single packet up to several flow control
 				// windows, so framing and chunking are both exercised.
-				body := bytes.Repeat([]byte(fmt.Sprintf("w%02d-r%02d.", w, i)), 1+(w*i*97)%4096)
+				body := bytes.Repeat(fmt.Appendf(nil, "w%02d-r%02d.", w, i), 1+(w*i*97)%4096)
 				if err := post(ctx, httpClient, body); err != nil {
 					errs <- fmt.Errorf("worker %d request %d: %w", w, i, err)
 					return
@@ -253,7 +253,7 @@ func TestIrohConcurrentRequestsAndWebsockets(t *testing.T) {
 			}
 			defer func() { _ = ws.Close(websocket.StatusNormalClosure, "done") }()
 			for i := 0; i < messagesPerSock; i++ {
-				want := []byte(fmt.Sprintf("socket %d message %d", s, i))
+				want := fmt.Appendf(nil, "socket %d message %d", s, i)
 				if err := ws.Write(ctx, websocket.MessageBinary, want); err != nil {
 					errs <- fmt.Errorf("socket %d write %d: %w", s, i, err)
 					return
@@ -455,7 +455,7 @@ func TestIrohRedialConvergesOnOneConnection(t *testing.T) {
 			// is that they share the connection they end up on.
 			var lastErr error
 			for attempt := 0; attempt < 5; attempt++ {
-				if lastErr = post(ctx, httpClient, []byte(fmt.Sprintf("request %d", i))); lastErr == nil {
+				if lastErr = post(ctx, httpClient, fmt.Appendf(nil, "request %d", i)); lastErr == nil {
 					return
 				}
 				time.Sleep(200 * time.Millisecond)

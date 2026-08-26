@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"sync"
 	"testing"
@@ -151,6 +152,15 @@ func readExecRecord(path string) execs.Exec {
 
 func newTestManager(t *testing.T) (*Manager, *fakeUnits, string) {
 	t.Helper()
+	// These drive the exec runtime, which resolves workdirs as guest paths —
+	// slash-separated, absolute when they start with "/" — because the sandbox
+	// it runs in is always Linux. A Windows temp directory is neither, so the
+	// runtime treats C:\... as relative and joins it onto the working root.
+	// The same goes for the executable bit these services are gated on, which
+	// Windows has no way to withhold.
+	if runtime.GOOS == "windows" {
+		t.Skip("the exec runtime resolves guest paths and executable bits; a Windows host has neither")
+	}
 	root := t.TempDir()
 	units := newFakeUnits(t)
 	execManager, err := execs.NewManagerWithConfig(execs.ManagerConfig{
