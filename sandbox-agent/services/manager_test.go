@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"github.com/discobox-ai/discobox/sandbox-agent/execs"
+	"github.com/discobox-ai/x/shorttmp"
 )
 
 // fakeUnits stands in for systemd, and for the shim systemd would start.
@@ -154,7 +155,7 @@ func newTestManager(t *testing.T) (*Manager, *fakeUnits, string) {
 	units := newFakeUnits(t)
 	execManager, err := execs.NewManagerWithConfig(execs.ManagerConfig{
 		WorkingRoot: root,
-		RuntimeDir:  filepath.Join(t.TempDir(), "rt"),
+		RuntimeDir:  filepath.Join(shorttmp.Dir(t), "rt"),
 		Env:         map[string]string{"PATH": "/usr/bin", "SHELL": "/bin/sh"},
 		Units:       units,
 	})
@@ -225,7 +226,7 @@ func TestAServiceRunsInItsDeclaringRepositoryRoot(t *testing.T) {
 		WorkingRoot: root,
 		// A sandbox whose execs start somewhere else entirely.
 		DefaultWorkdir: t.TempDir(),
-		RuntimeDir:     filepath.Join(t.TempDir(), "rt"),
+		RuntimeDir:     filepath.Join(shorttmp.Dir(t), "rt"),
 		Env:            map[string]string{"PATH": "/usr/bin", "SHELL": "/bin/sh"},
 		Units:          units,
 	})

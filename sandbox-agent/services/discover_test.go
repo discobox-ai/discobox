@@ -3,6 +3,7 @@ package services
 import (
 	"os"
 	"path/filepath"
+	"runtime"
 	"testing"
 )
 
@@ -102,13 +103,21 @@ func TestDiscoverReportsUnrunnableDeclarations(t *testing.T) {
 	if len(defs) != 3 {
 		t.Fatalf("discovered %d services, want 3", len(defs))
 	}
-	for _, def := range defs {
+	// Windows has no executable bit to withhold, so the first fixture is a
+	// runnable script there and only the other two are declarations to reject.
+	unrunnable := defs
+	if runtime.GOOS == "windows" {
+		unrunnable = defs[1:]
+	}
+	for _, def := range unrunnable {
 		if def.Runnable() {
 			t.Errorf("%s: expected a problem, got none", def.ID)
 		}
 	}
-	if got := defs[0].Problem; got != "script is not executable" {
-		t.Errorf("problem = %q, want %q", got, "script is not executable")
+	if runtime.GOOS != "windows" {
+		if got := defs[0].Problem; got != "script is not executable" {
+			t.Errorf("problem = %q, want %q", got, "script is not executable")
+		}
 	}
 	if got := defs[1].Problem; got != "script must start with a shebang line" {
 		t.Errorf("problem = %q, want %q", got, "script must start with a shebang line")

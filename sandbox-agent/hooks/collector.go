@@ -9,6 +9,7 @@ import (
 	"io"
 	"net"
 	"os"
+	"path"
 	"path/filepath"
 	"strings"
 	"time"
@@ -38,7 +39,10 @@ func SocketPath(runtimeDir string) string {
 	if strings.TrimSpace(runtimeDir) == "" {
 		runtimeDir = "/run/discobox/harness-terminals"
 	}
-	return filepath.Join(filepath.Dir(filepath.Clean(runtimeDir)), "harness-hooks", "hooks.sock")
+	// path, not filepath: this names a location inside the sandbox, which is
+	// always Linux, and the sandbox-agent is built for the host that runs the
+	// tests as well as the guest that runs the binary.
+	return path.Join(path.Dir(path.Clean(runtimeDir)), "harness-hooks", "hooks.sock")
 }
 
 func Serve(ctx context.Context, socketPath string, recorder Recorder) error {

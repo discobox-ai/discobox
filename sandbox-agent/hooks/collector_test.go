@@ -7,6 +7,7 @@ import (
 	"net"
 	"os"
 	"path/filepath"
+	"runtime"
 	"testing"
 	"time"
 
@@ -59,6 +60,12 @@ func TestSocketPathUsesDedicatedPublisherDirectory(t *testing.T) {
 
 func assertPermissions(t *testing.T, path string, want os.FileMode) {
 	t.Helper()
+	// Windows reports 0777 for everything it hands out, so there is no mode
+	// here to check. The socket these guard is only ever bound in the sandbox,
+	// which is Linux; the rest of this test still exercises the protocol.
+	if runtime.GOOS == "windows" {
+		return
+	}
 	info, err := os.Stat(path)
 	if err != nil {
 		t.Fatalf("stat %s: %v", path, err)
