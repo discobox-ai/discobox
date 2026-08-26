@@ -7,8 +7,8 @@
 
 set -euo pipefail
 
-USER_HOME="${HOME:-/home/discobot}"
-WORKSPACE="${DISCOBOT_WORKSPACE:-/home/discobot/workspace}"
+USER_HOME="${HOME:?HOME must be set}"
+WORKSPACE="${DISCOBOX_WORKSPACE:-$(pwd)}"
 PROFILE="$USER_HOME/.nix-profile"
 BASHRC="$USER_HOME/.bashrc"
 
@@ -25,12 +25,12 @@ ensure_bashrc_exists() {
 ensure_bashrc_block() {
   ensure_bashrc_exists
 
-  local begin="# >>> discobot nix-direnv setup >>>"
-  local end="# <<< discobot nix-direnv setup <<<"
+  local begin="# >>> discobox nix-direnv setup >>>"
+  local end="# <<< discobox nix-direnv setup <<<"
   local block
   block=$(cat <<'EOF'
-# >>> discobot nix-direnv setup >>>
-# Keep Nix and direnv available in Discobot shells.
+# >>> discobox nix-direnv setup >>>
+# Keep Nix and direnv available in Discobox shells.
 if [ -e "$HOME/.nix-profile/etc/profile.d/nix.sh" ]; then
   . "$HOME/.nix-profile/etc/profile.d/nix.sh"
 elif [ -d "$HOME/.nix-profile/bin" ]; then
@@ -40,7 +40,7 @@ fi
 if command -v direnv >/dev/null 2>&1; then
   eval "$(direnv hook bash)"
 fi
-# <<< discobot nix-direnv setup <<<
+# <<< discobox nix-direnv setup <<<
 EOF
 )
 

@@ -12,9 +12,11 @@
 
 set -euo pipefail
 
-workspace="${DISCOBOT_WORKSPACE:-$(pwd)}"
+workspace="${DISCOBOX_WORKSPACE:-$(pwd)}"
 
-# DISCOBOT_CHANGED_FILES is a space-separated list, so the split is deliberate;
-# an empty value yields no arguments, which builds every tracked Dockerfile.
-# shellcheck disable=SC2086
-DISCOBOX_ROOT="$workspace" exec "$workspace/scripts/dockerfile-test-builds.sh" ${DISCOBOT_CHANGED_FILES:-}
+# DISCOBOX_CHANGED_FILES is newline-separated (the hook runner joins the paths
+# with "\n"), so splitting on newlines alone keeps paths containing spaces
+# intact. An empty value yields no arguments, which builds every tracked Dockerfile.
+mapfile -t changed < <(printf '%s' "${DISCOBOX_CHANGED_FILES:-}")
+
+DISCOBOX_ROOT="$workspace" exec "$workspace/scripts/dockerfile-test-builds.sh" "${changed[@]}"
