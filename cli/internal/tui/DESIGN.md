@@ -18,7 +18,7 @@ flowchart LR
     M --> L["sandboxList"]
     M --> O["optionSet (Shift-Tab)"]
     M --> A["harnessList (F3)"]
-    M --> D["dialog (menu, confirm, input, help)"]
+    M --> D["dialog (menu, confirm, input, help, wait)"]
     P -->|Enter| Run["DataSource.Run → attach"]
     L -->|u t T x U P| Verb["DataSource.Do"]
     L -->|e| Rename["dialog → DataSource.Rename"]
@@ -518,6 +518,17 @@ the size of the question. Body lines are truncated to the inner width as well as
 wrapped to it: a line the wrapper cannot break comes back wider than the box,
 lipgloss wraps it again, and the extra row makes the frame taller than the
 terminal.
+
+**A dialog with no answer is how a wait is drawn** (`dlgStatus`,
+`statusDialog`). Submitting a prompt used to leave the launcher on screen with a
+line under it while a pool came up and gigabytes arrived — the window looked
+idle beside a list you could still act on, and the next thing that happened was
+a terminal appearing without warning. The window goes to the discobox being made
+instead, and the provisioning narration (`narration.go`) reports into the
+dialog's body rather than only onto the busy line. Enter does not dismiss it:
+there is nothing to answer, and closing it would drop the user onto a pane that
+has not attached. `provisioningDoneMsg` takes it down; Esc gives up the view of
+the discobox, not the discobox.
 
 **The window fits the terminal.** `windowChrome` is what the box, header, list
 title, blanks, composer and status cost before a single sandbox is drawn; the

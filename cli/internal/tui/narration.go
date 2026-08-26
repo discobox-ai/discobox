@@ -89,6 +89,11 @@ func (m *Model) narrated(msg narrationMsg) tea.Cmd {
 		return nil
 	}
 	m.busy = msg.text + "…"
+	// The waiting dialog is the same report, larger: while one is up it is the
+	// only thing on screen, so it says what the busy line would have.
+	if m.dialog != nil && m.dialog.kind == dlgStatus {
+		m.dialog.body = msg.text
+	}
 	return m.nextNarration(msg.source)
 }
 
@@ -118,7 +123,14 @@ func (m *Model) watchProvisioning(sandboxID string) tea.Cmd {
 	watch := func() tea.Msg {
 		defer feed.close()
 		m.ds.WatchProvisioning(ctx, sandboxID, feed.report)
-		return nil
+		// The watch returns when the discobox has nothing left to report,
+		// which is the same moment the attach it runs beside can finish. That
+		// is the signal the waiting dialog takes itself down on.
+		return provisioningDoneMsg{sandboxID: sandboxID}
 	}
 	return tea.Batch(watch, next)
 }
+
+// provisioningDoneMsg says a discobox has nothing left to report, so anything
+// showing that report can stop.
+type provisioningDoneMsg struct{ sandboxID string }

@@ -16,6 +16,9 @@ const (
 	dlgActions
 	dlgInput
 	dlgText
+	// dlgStatus is a dialog nobody answers: it reports what is happening and
+	// takes itself down when that finishes. See statusDialog.
+	dlgStatus
 )
 
 // dialog is the single modal layer. Everything that is not the list or the
@@ -83,6 +86,16 @@ func inputDialog(title, body, placeholder, value string, act func(string) tea.Cm
 	return &dialog{kind: dlgInput, title: title, body: body, input: ti, action: act}
 }
 
+// statusDialog reports an operation the user started and now waits on.
+//
+// It has no answer to give, so it has no buttons and Enter does not dismiss it:
+// the thing it describes is what ends it. Escape still cancels, because a wait
+// nobody can leave is a trap — and canceling a wait for a discobox that is
+// coming up anyway costs the view of it, not the discobox.
+func statusDialog(title, body string) *dialog {
+	return &dialog{kind: dlgStatus, title: title, body: body}
+}
+
 func textDialog(title, body string) *dialog {
 	return &dialog{kind: dlgText, title: title, body: body}
 }
@@ -121,6 +134,10 @@ func (d *dialog) update(msg tea.KeyPressMsg) (tea.Cmd, bool) {
 	}
 
 	switch d.kind {
+	case dlgStatus:
+		// Nothing to answer. Keys fall through to the window underneath rather
+		// than being swallowed by a dialog that has no use for them.
+		return nil, false
 	case dlgMessage, dlgText:
 		switch keyName(msg) {
 		case "enter", " ", "q":
@@ -288,6 +305,9 @@ func (d *dialog) view(st *styles, width, height int) string {
 		b.WriteString(" " + yes + "   ")
 		b.WriteString(st.key.Render("n"))
 		b.WriteString(" " + no)
+	case dlgStatus:
+		b.WriteString("\n")
+		b.WriteString(st.dimText.Render("Esc stops watching"))
 	case dlgMessage, dlgText:
 		b.WriteString("\n")
 		b.WriteString(st.dimText.Render("Esc closes"))

@@ -467,6 +467,14 @@ func (m *Model) update(msg tea.Msg) tea.Cmd {
 	case createdMsg:
 		return m.created(msg)
 
+	case provisioningDoneMsg:
+		// The attach can finish, so the report on it goes and what is
+		// underneath — the pane it was covering — comes forward.
+		if m.dialog != nil && m.dialog.kind == dlgStatus {
+			m.dialog = nil
+		}
+		return nil
+
 	case runVerbMsg:
 		return m.runVerb(msg.verb, msg.ids)
 
@@ -1575,6 +1583,11 @@ func (m *Model) created(msg createdMsg) tea.Cmd {
 	if msg.req.Detach {
 		return tea.Batch(m.refresh(), m.report(false, "created %s", msg.sandbox.ID))
 	}
+	// The window goes to the discobox being made, rather than sitting on a
+	// list with a busy line under it. Everything the wait is spent on — a pool
+	// coming up, an image arriving, a container starting — reports here until
+	// the attach can take over, and this takes itself down when it does.
+	m.dialog = statusDialog("Starting "+sandboxLabel(msg.sandbox), "creating the discobox")
 	return tea.Batch(m.refresh(), m.openFromList(InteractAttach, msg.sandbox))
 }
 
@@ -2367,4 +2380,14 @@ func (m *Model) helpText() string {
 		"",
 		"  Press Esc to close.",
 	}, "\n")
+}
+
+// sandboxLabel is what to call a discobox on screen: its name when it has one,
+// its id when it does not — a freshly created one may be reported before the
+// name it was given comes back.
+func sandboxLabel(sandbox Sandbox) string {
+	if name := strings.TrimSpace(sandbox.Name); name != "" {
+		return name
+	}
+	return sandbox.ID
 }
