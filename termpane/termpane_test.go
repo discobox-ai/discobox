@@ -527,6 +527,37 @@ func TestCursorFollowsTheApplication(t *testing.T) {
 	}
 }
 
+// Scrolling history into the top of the pane shifts the live screen down. The
+// hardware cursor belongs to that screen, so it follows the same translation
+// until it leaves the visible grid.
+func TestCursorFollowsScrollback(t *testing.T) {
+	m, stream, cmd := attach(t, 40, 5)
+
+	stream.send("one\r\ntwo\r\nthree\r\nfour\r\nfive\r\nsix\r\nseven\r\neight\r\nnine\r\nten\x1b[2;4H")
+	pump(t, m, cmd, "ten")
+	if m.ScrollbackLen() == 0 {
+		t.Fatal("test output did not produce scrollback")
+	}
+	live := m.Cursor(10, 4)
+	if live == nil {
+		t.Fatal("live cursor should be placed")
+	}
+
+	m.Scroll(2)
+	cursor := m.Cursor(10, 4)
+	if cursor == nil {
+		t.Fatal("cursor shifted within the view should still be placed")
+	}
+	if cursor.X != live.X || cursor.Y != live.Y+2 {
+		t.Fatalf("cursor at %d,%d, want %d,%d — the live position shifted down two rows", cursor.X, cursor.Y, live.X, live.Y+2)
+	}
+
+	m.Scroll(m.rows)
+	if m.Cursor(10, 4) != nil {
+		t.Fatal("cursor shifted below the view should not be placed")
+	}
+}
+
 // The alternate screen is how a full-screen application is told from a shell
 // prompt, which is worth knowing when deciding what chrome to draw around it.
 func TestAltScreenIsReported(t *testing.T) {

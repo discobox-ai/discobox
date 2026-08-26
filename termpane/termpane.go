@@ -798,8 +798,10 @@ func fitCells(s string, width int) string {
 }
 
 // Cursor is where the hardware cursor belongs, given the screen position the
-// pane's first row was drawn at. It is nil when there is nothing to place one
-// on, and when the application has hidden it.
+// pane's first row was drawn at. Scrolling history into the top of the view
+// moves the live screen, and therefore its cursor, down by the same amount. It
+// is nil when there is nothing to place one on, when the application has hidden
+// it, or when scrolling has moved it below the pane.
 func (m *Model) Cursor(originX, originY int) *tea.Cursor {
 	if m.emu == nil || !m.attached {
 		return nil
@@ -811,10 +813,11 @@ func (m *Model) Cursor(originX, originY int) *tea.Cursor {
 		return nil
 	}
 	pos := m.emu.CursorPosition()
-	if pos.X < 0 || pos.Y < 0 || pos.X >= m.cols || pos.Y >= m.rows {
+	viewY := pos.Y + m.scroll
+	if pos.X < 0 || pos.Y < 0 || pos.X >= m.cols || viewY >= m.rows {
 		return nil
 	}
-	cursor := tea.NewCursor(originX+pos.X, originY+pos.Y)
+	cursor := tea.NewCursor(originX+pos.X, originY+viewY)
 	cursor.Shape, cursor.Blink, cursor.Color = shape, blink, col
 	return cursor
 }
