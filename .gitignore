@@ -4,10 +4,10 @@ build/
 .env
 .env.*
 !.env.example
-.discobot/cache/
-.discobot/config/
-.discobot/data/
-.discobot/state/
+.discobox/cache/
+.discobox/config/
+.discobox/data/
+.discobox/state/
 .claude/worktrees/
 
 # IntelliJ project settings. Local to each developer's checkout: the module

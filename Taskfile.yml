@@ -518,7 +518,7 @@ tasks:
 
   # The hooks tool lives in discobox-ai/hooks and is consumed here as a Go
   # tool, so there is nothing to build first and nothing pinned by hand: the
-  # module graph pins it. It reads .discobot/hooks, which stays in this
+  # module graph pins it. It reads .discobox/hooks, which stays in this
   # repository — the hooks are this repository's, the runner is not.
   check-hooks:
     desc: Run hooks checks

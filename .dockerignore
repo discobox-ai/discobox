@@ -1,8 +1,8 @@
 .git
-.discobot/cache
-.discobot/config
-.discobot/data
-.discobot/state
+.discobox/cache
+.discobox/config
+.discobox/data
+.discobox/state
 .env
 .env.*
 *.pem
