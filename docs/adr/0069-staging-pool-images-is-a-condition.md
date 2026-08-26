@@ -1,6 +1,6 @@
 # 0069. Staging a pool's images is a condition, not a state
 
-Status: Proposed
+Status: Accepted
 
 ## Context
 

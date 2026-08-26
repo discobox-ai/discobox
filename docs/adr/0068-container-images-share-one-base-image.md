@@ -1,6 +1,6 @@
 # 0068. Container images share one base image
 
-Status: Proposed
+Status: Accepted
 
 ## Context
 
