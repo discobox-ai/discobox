@@ -63,7 +63,7 @@ func tuiExec(exec apimodel.SandboxExec) tui.Exec {
 	}
 	// A service names itself in exec metadata, which is what lets the
 	// workspace draw its tab from this one listing rather than a poll of its
-	// own (ADR 0068 §7).
+	// own (ADR 0070 §7).
 	metadata := map[string]string(exec.Metadata.Value)
 	return tui.Exec{
 		ID:          exec.ID,

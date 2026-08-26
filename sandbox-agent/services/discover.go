@@ -2,7 +2,7 @@
 // `.discobox/services` that the sandbox starts for you at boot and that
 // `discobox admin services` and the workspace act on afterwards.
 //
-// A service is an exec (ADR 0068). This package owns the declaration — where
+// A service is an exec (ADR 0070). This package owns the declaration — where
 // it is read from, what it may say, and what makes one invalid — and the
 // mapping from a declaration to the exec running it; every runtime mechanic
 // (units, shims, logs, transcripts, status) belongs to execs.Manager.

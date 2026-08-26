@@ -104,7 +104,7 @@ func sandboxAgentTerminalProxyScopes(r *http.Request) []string {
 		}
 		return nil
 	}
-	// A service is an exec (ADR 0068), so the exec scopes are what gate it:
+	// A service is an exec (ADR 0070), so the exec scopes are what gate it:
 	// reading one reads an exec record and its transcript, and starting,
 	// stopping or restarting one is creating or ending an exec.
 	if strings.Contains(r.URL.Path, "/services") {

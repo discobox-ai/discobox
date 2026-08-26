@@ -32,7 +32,7 @@ func registerSandboxProxyRoutes(router chi.Router, service *sandboxService) {
 	router.Method(http.MethodGet, "/api/project/{projectId}/pool/{poolId}/sandboxes/{sandboxId}/execs/{execId}/resources/history", service.autoStart(service.sandboxAgentProxyHandler()))
 	router.Method(http.MethodGet, "/api/project/{projectId}/pool/{poolId}/sandboxes/{sandboxId}/execs/{execId}/resources/stream", service.autoStart(service.sandboxAgentProxyHandler()))
 
-	// A service is an exec (ADR 0068), reached the same way and gated by the
+	// A service is an exec (ADR 0070), reached the same way and gated by the
 	// same scopes. It needs its own registrations because this router names
 	// every sandbox-agent path it forwards rather than forwarding a prefix.
 	router.Method(http.MethodGet, "/api/project/{projectId}/pool/{poolId}/sandboxes/{sandboxId}/services", service.autoStart(service.sandboxAgentProxyHandler()))

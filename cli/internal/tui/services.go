@@ -11,7 +11,7 @@ import (
 	tea "charm.land/bubbletea/v2"
 )
 
-// The workspace's view of the discobox's declared services (ADR 0068).
+// The workspace's view of the discobox's declared services (ADR 0070).
 //
 // A running service is already on screen — it arrives in the exec listing like
 // any other session and is drawn as a tab on the right — so what this adds is

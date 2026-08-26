@@ -179,7 +179,7 @@ func newRouterAndManager(cfg Config) (agentRuntime, error) {
 	// Services are declared in the primary source's working tree, which is the
 	// directory an exec that names no workdir starts in. Asking the exec
 	// manager rather than reading the config keeps the two from disagreeing
-	// about where that is (ADR 0068 §1).
+	// about where that is (ADR 0070 §1).
 	serviceManager, err := newServiceManager(execManager)
 	if err != nil {
 		// A sandbox whose default workdir does not resolve is broken for every
@@ -375,7 +375,7 @@ func Serve(ctx context.Context, logger *slog.Logger, cfg Config) error {
 		}()
 	}
 	// The repository's declared services come up alongside the primary
-	// terminal (ADR 0068 §5). Like the primary launch this runs from a
+	// terminal (ADR 0070 §5). Like the primary launch this runs from a
 	// goroutine started before the server serves, so a slow service script
 	// cannot hold up the agent answering — and a config-mode sandbox starts
 	// none, since it exists to run one setup command and end, not to be worked

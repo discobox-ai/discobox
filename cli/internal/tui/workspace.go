@@ -596,7 +596,7 @@ func (m *Model) workspaceTermOpened(msg workspaceTermMsg) tea.Cmd {
 
 	m.nextPaneID++
 	// A service runs on pipes, so its pane draws and is navigated but is never
-	// typed at: there is no stdin at the far end to reach (ADR 0068 §7).
+	// typed at: there is no stdin at the far end to reach (ADR 0070 §7).
 	service := serviceExec(msg.exec)
 	// The primary is attached under the virtual id, which carries no session
 	// record to name it by: until its harness titles its own terminal it is
