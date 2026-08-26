@@ -52,6 +52,8 @@ Common targets:
 go tool task test       # root module tests
 go tool task test:all   # root and nested module tests
 go tool task check      # static checks
+go tool task check-hooks # wait for background hook work and report what failed
+go tool task rerun-hooks # re-run failed or never-run hooks
 go tool task generate   # regenerate generated files
 go tool task build      # build the server and CLI
 ```
@@ -63,6 +65,15 @@ go tool task ci:check   # check plus the windows/amd64 cross type-check
 go tool task ci:test    # every module's tests, the way CI runs them
 go tool task verify     # fmt, go.mod, generated files, and Mermaid are current
 ```
+
+At the end of a code-changing task, run `go tool task check-hooks` before
+handing work back. The hooks in `.discobot/hooks` run in the background as
+files change — formatting, tidy, codegen, lint, tests — and this is what
+reports whether any of them failed. If its output looks stale, meaning a
+reported failure names code you have already fixed, run
+`go tool task rerun-hooks` and check again. The hooks are this repository's;
+what runs them is the `discobox-hooks` tool from `discobox-ai/hooks`,
+declared in the root `go.mod`.
 
 Prefer adding or updating `Taskfile.yml` targets instead of documenting ad hoc
 commands here.
