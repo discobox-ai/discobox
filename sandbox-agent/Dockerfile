@@ -47,6 +47,31 @@ RUN --mount=type=cache,target=/go/pkg/mod,sharing=locked \
     && mv "$(go env GOPATH)/bin/${TARGETOS}_${TARGETARCH}/difftui" /out/difftui \
         || mv "$(go env GOPATH)/bin/difftui" /out/difftui
 
+# fresh (getfresh.dev), the terminal editor the launcher's tools picker opens.
+# Its own layer for the same reason difftui has one, and pinned to a release
+# tag rather than following latest: an unpinned version makes the build
+# unreproducible and leaves this layer cached on whatever it first saw. Bump it
+# to pull a newer release.
+#
+# The upstream install script is not used. It resolves the release itself,
+# installs under $HOME and writes desktop files — none of which survives being
+# copied into an image, and all of which is a network fetch this build would
+# not be able to pin. The release's own statically linked musl tarball is the
+# thing that does: one binary, no runtime, the same on every base.
+ARG FRESH_VERSION=v0.4.10
+RUN set -eux \
+    && case "$TARGETARCH" in \
+        amd64) fresh_target=x86_64-unknown-linux-musl ;; \
+        arm64) fresh_target=aarch64-unknown-linux-musl ;; \
+        *) echo "no fresh build for ${TARGETARCH}" >&2; exit 1 ;; \
+    esac \
+    && archive="fresh-editor-${fresh_target}.tar.gz" \
+    && curl -fsSL -o /tmp/fresh.tar.gz \
+        "https://github.com/sinelaw/fresh/releases/download/${FRESH_VERSION}/${archive}" \
+    && tar -xzf /tmp/fresh.tar.gz -C /tmp \
+    && mv "/tmp/fresh-editor-${fresh_target}/fresh" /out/fresh \
+    && rm -rf /tmp/fresh.tar.gz "/tmp/fresh-editor-${fresh_target}"
+
 # Debian, Docker, and the trimmed systemd unit set come from the shared base
 # image, which the pool image is also built FROM so a pool host that pulls both
 # pulls those layers once. See base-image/Dockerfile.
@@ -234,12 +259,14 @@ COPY --from=sandbox-agent-builder /out/discobox-ca-anchor /usr/local/bin/discobo
 # exec'd straight through. See the sandbox-agent/dockercache package.
 COPY --from=sandbox-agent-builder /out/discobox-docker /usr/local/bin/docker
 COPY --from=sandbox-agent-builder /out/difftui /usr/local/bin/difftui
+COPY --from=sandbox-agent-builder /out/fresh /usr/local/bin/fresh
 
 RUN chmod 0755 /usr/local/bin/discobox-sandbox-agent \
     && chmod 0755 /opt/discobox/bin/runc \
     && chmod 0755 /usr/local/bin/discobox-ca-anchor \
     && chmod 0755 /usr/local/bin/docker \
     && chmod 0755 /usr/local/bin/difftui \
+    && chmod 0755 /usr/local/bin/fresh \
     && chmod 0755 /usr/local/bin/discobox-vnc-websockify \
     && ln -sf /usr/local/bin/discobox-sandbox-agent /usr/local/bin/discobox-hook-publish \
     && mkdir -p /etc/discobox /run/discobox/agent-terminals /var/lib/docker /var/lib/discobox /workspace \
