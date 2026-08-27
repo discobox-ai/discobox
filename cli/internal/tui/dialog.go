@@ -40,6 +40,14 @@ type dialog struct {
 	// costly answer is yes. Only dlgConfirm reads it.
 	defaultNo bool
 
+	// altKey is a second thing a menu row can be asked for, on a key of its
+	// own beside the one that runs it: the tools picker's "edit this tool's
+	// files". Empty means the menu has only the one action per row. alt is
+	// handed the highlighted row's key, since that is what identifies a row to
+	// whoever built the menu.
+	altKey string
+	alt    func(key string) tea.Cmd
+
 	// action receives the result: the chosen action's key, the entered text,
 	// or "yes" for a confirmed question. It is not called on cancel.
 	action func(result string) tea.Cmd
@@ -172,6 +180,14 @@ func (d *dialog) update(msg tea.KeyPressMsg) (tea.Cmd, bool) {
 		return nil, false
 
 	case dlgActions:
+		// The second action comes before the row keys, because a menu that
+		// offers one has reserved that key from every row of itself.
+		if d.altKey != "" && keyName(msg) == d.altKey && d.alt != nil {
+			if d.cursor < 0 || d.cursor >= len(d.items) {
+				return nil, false
+			}
+			return d.alt(d.items[d.cursor].key), true
+		}
 		switch keyName(msg) {
 		case "up", "k":
 			d.cursor = d.nextEnabled(max(d.cursor-1, 0), -1)

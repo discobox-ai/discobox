@@ -32,6 +32,14 @@ func TestFrames(t *testing.T) {
 		{"harness-config", func(m *Model) { send(t, m, key("f3"), key("v")) }},
 		{"harness-files", func(m *Model) { send(t, m, key("f3"), key("f")) }},
 		{"help", func(m *Model) { send(t, m, key("f1")) }},
+		// The tools picker is reached from the workspace, which needs the
+		// driver; the dialog itself is the frame worth looking at, so it is
+		// opened on the discobox the workspace would have been showing.
+		{"tools", func(m *Model) {
+			send(t, m, key("tab"))
+			m.paneBox = Sandbox{ID: "sbx_one"}
+			m.openTools()
+		}},
 		{"folder", func(m *Model) { send(t, m, key("tab"), key("up")) }},
 		{"folder-open", func(m *Model) { send(t, m, key("tab"), key("up"), key("enter")) }},
 		// The mark is dropped without color, so seeing it at all means building

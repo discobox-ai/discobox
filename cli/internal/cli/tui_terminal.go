@@ -71,6 +71,7 @@ func tuiExec(exec apimodel.SandboxExec) tui.Exec {
 		Harness:     exec.HarnessId.Value,
 		Primary:     exec.Primary.Value,
 		Service:     metadata[sandboxServiceIDMetadata],
+		Tool:        metadata[execToolMetadataKey],
 		ServiceName: metadata[sandboxServiceNameMetadata],
 		Tty:         exec.Tty,
 		Live:        live,
@@ -85,6 +86,14 @@ const (
 	sandboxServiceIDMetadata   = "serviceId"
 	sandboxServiceNameMetadata = "serviceName"
 )
+
+// execToolMetadataKey is the exec metadata key a tool session carries, and its
+// value is the tool's id. It is the only thing that tells a tool session from
+// a shell in the listing, so every window that draws a workspace has to read
+// the same key — which is why it is spelled once, here, at the wire. Unlike the
+// service keys it is this client's own: the sandbox knows nothing about tools.
+// See ADR 0071.
+const execToolMetadataKey = "tool"
 
 // Services is the sandbox's declared services, running or not — what the
 // workspace's services menu is drawn from.
@@ -187,15 +196,41 @@ func (d *apiDataSource) NewTerminal(ctx context.Context, sandboxID string, cols,
 	}, cols, rows)
 }
 
-// newSandboxSession is what both of them are: create the exec, attach to it,
+// NewTool creates, attaches and starts a tool session: command, run in the
+// sandbox's default working directory — which is its primary source — and
+// labeled with the tool it is.
+//
+// No workdir is sent for the same reason `disco tools git` sends none: an exec
+// with no workdir already lands in the sandbox's primary source directory, and
+// naming it here would be this machine guessing at a path only the sandbox
+// knows.
+func (d *apiDataSource) NewTool(ctx context.Context, sandboxID string, spec tui.ToolSpec, cols, rows int) (tui.Exec, tui.Terminal, error) {
+	// Before the session, not alongside it: the tool reads its configuration
+	// when it starts, so a file that lands a moment later is a file this run
+	// never saw. See tui_tools.go.
+	if err := d.installToolFiles(ctx, sandboxID, spec.Files); err != nil {
+		return tui.Exec{}, nil, err
+	}
+	return d.newSandboxSession(ctx, sandboxID, sandboxExecCreateOptions{
+		interactive: true, tty: true, env: paneTerminalEnv(),
+		metadata: map[string]string{execToolMetadataKey: spec.ID},
+	}, cols, rows, spec.Command...)
+}
+
+// EndExec ends one exec session in the sandbox, killing what is running in it.
+func (d *apiDataSource) EndExec(ctx context.Context, sandboxID, execID string) error {
+	return d.app.deleteSandboxExec(ctx, d.projectID, sandboxID, execID)
+}
+
+// newSandboxSession is what all of them are: create the exec, attach to it,
 // and only then start it.
 //
 // A created exec is not a running one. It is started once the attach is up and
 // its size is known, which is the order attachSandboxExec uses: started first,
 // its opening output would go out before anything was listening, and it would
 // draw itself at whatever size the sandbox guessed.
-func (d *apiDataSource) newSandboxSession(ctx context.Context, sandboxID string, opts sandboxExecCreateOptions, cols, rows int) (tui.Exec, tui.Terminal, error) {
-	body, err := createSandboxExecBody(opts, nil)
+func (d *apiDataSource) newSandboxSession(ctx context.Context, sandboxID string, opts sandboxExecCreateOptions, cols, rows int, command ...string) (tui.Exec, tui.Terminal, error) {
+	body, err := createSandboxExecBody(opts, command)
 	if err != nil {
 		return tui.Exec{}, nil, err
 	}

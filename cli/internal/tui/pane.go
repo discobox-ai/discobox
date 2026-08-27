@@ -126,6 +126,12 @@ type pane struct {
 	// Service.runKey.
 	serviceRun string
 
+	// tool is the tool this pane is running, and empty for every pane that is
+	// not one. A tool pane is not in the strip and wears no number: it is a
+	// window over the workspace, put away rather than moved between. See
+	// tools.go.
+	tool string
+
 	// exited is set when what was running in the pane finished and the pane
 	// was kept anyway, so its last screen can be read.
 	exited bool
@@ -266,7 +272,7 @@ func (m *Model) paneByID(id int) *pane {
 	if m.overlay != nil && m.overlay.id == id {
 		return m.overlay
 	}
-	for _, p := range append(append([]*pane{}, m.terminals.panes...), m.shells.panes...) {
+	for _, p := range m.allPanes() {
 		if p.id == id {
 			return p
 		}
@@ -274,14 +280,40 @@ func (m *Model) paneByID(id int) *pane {
 	return nil
 }
 
+// allPanes is every pane this window is drawing or holding attached: the strip
+// the workspace is, and the tools beside it, showing or put away. It is what
+// anything addressing a pane by identity walks — never what counts positions,
+// which is panes().
+func (m *Model) allPanes() []*pane {
+	out := append([]*pane{}, m.terminals.panes...)
+	out = append(out, m.shells.panes...)
+	return append(out, m.tools.panes...)
+}
+
 // inPanes reports whether the window is showing terminals rather than the list.
-func (m *Model) inPanes() bool { return m.terminals.len() > 0 || m.overlay != nil }
+func (m *Model) inPanes() bool {
+	return m.terminals.len() > 0 || m.overlay != nil || m.toolOpen
+}
+
+// screenPane is the pane with the whole window, or nil when the workspace
+// itself is on screen: the command running over it, or the tool showing over
+// it. The two differ in what leaving them means — a command is over when it is
+// over, a tool is put away — and in nothing else the screen has to know.
+func (m *Model) screenPane() *pane {
+	if m.overlay != nil {
+		return m.overlay
+	}
+	return m.showingTool()
+}
+
+// hasScreen reports whether a pane is the one with the whole window.
+func (m *Model) hasScreen(p *pane) bool { return p != nil && p == m.screenPane() }
 
 // focusedPane is the pane every key goes to: the overlay while one is up, since
 // it has the screen, and otherwise the terminal or the visible shell tab.
 func (m *Model) focusedPane() *pane {
-	if m.overlay != nil {
-		return m.overlay
+	if p := m.screenPane(); p != nil {
+		return p
 	}
 	return m.column().visible()
 }
@@ -379,7 +411,7 @@ func (m *Model) paneOpened(msg paneOpenedMsg) tea.Cmd {
 	m.nextPaneID++
 	p := &pane{
 		id:      m.nextPaneID,
-		term:    termpane.New(m.paneOptions(true, false)...),
+		term:    termpane.New(m.paneOptions(paneOverlay, false)...),
 		stream:  msg.term,
 		action:  msg.action,
 		sandbox: msg.sandbox,
@@ -394,18 +426,32 @@ func (m *Model) paneOpened(msg paneOpenedMsg) tea.Cmd {
 	)
 }
 
+// paneKind is what a pane is, as far as the keys it keeps are concerned.
+type paneKind int
+
+const (
+	// paneWorkspace is a terminal or a shell in the strip.
+	paneWorkspace paneKind = iota
+	// paneOverlay is a command of this CLI's own, running to completion over
+	// whatever it was started from.
+	paneOverlay
+	// paneTool is a tool session with the window; see tools.go.
+	paneTool
+)
+
 // paneOptions are the keys a pane keeps for the window rather than passing on.
 //
 // A workspace terminal carries the whole key map, because every one of them is
 // about the discobox on screen and the screen is where you are. The overlay
 // carries only its way out and the mouse: it is one command running to
 // completion, and a key that opened something else over it would be a key that
-// lost it.
-// paneOptions is the key map a pane is built with. overlay is a command taking
-// the screen, which carries only the window's own keys; readOnly is a pane onto
-// something with no input side, which draws and is navigated but never typed
-// at.
-func (m *Model) paneOptions(overlay, readOnly bool) []termpane.Option {
+// lost it. A tool carries those plus its own two — the picker, so one tool can
+// be swapped for another without going back first, and the one that ends it,
+// which nothing else on the screen can do.
+//
+// readOnly is the other axis: a pane onto something with no input side — a
+// service — is drawn and navigated but never typed at, whichever kind it is.
+func (m *Model) paneOptions(kind paneKind, readOnly bool) []termpane.Option {
 	opts := []termpane.Option{
 		// No bare detach key: nothing the window reserves stands between a
 		// program and its own interrupt. The way out is behind the leader, and
@@ -418,8 +464,14 @@ func (m *Model) paneOptions(overlay, readOnly bool) []termpane.Option {
 	if readOnly {
 		opts = append(opts, termpane.WithReadOnly())
 	}
-	if overlay {
+	switch kind {
+	case paneOverlay:
 		return opts
+	case paneTool:
+		return append(opts,
+			termpane.WithPrefixBinding(toolsKey, openToolsMsg{}),
+			termpane.WithPrefixBinding(toolCloseKey, closeToolMsg{}),
+		)
 	}
 	opts = append(opts,
 		// Moving between the terminal and the tabs is something you do in
@@ -440,15 +492,14 @@ func (m *Model) paneOptions(overlay, readOnly bool) []termpane.Option {
 	for n := 0; n <= 9; n++ {
 		opts = append(opts, termpane.WithPrefixBinding(strconv.Itoa(n), jumpPaneMsg{n: n}))
 	}
+	// The tools picker, which is where vscode now lives: it used to be bound
+	// here on its own key, and a second way to open one of three tools is one
+	// key to remember for no more reach. See tools.go.
+	opts = append(opts, termpane.WithPrefixBinding(toolsKey, openToolsMsg{}))
 	// Every command the list offers, on the key it has there. One key map for
 	// the two screens is the point: the workspace is a discobox with the
 	// cursor on it, and what you can do to it does not change with where you
 	// are looking at it from.
-	//
-	// vscode is in neither table — it is a request that returns, not a verb
-	// against the API nor an interaction that owns a terminal — so it is bound
-	// on its own. See Model.openEditor.
-	opts = append(opts, termpane.WithPrefixBinding(vscodeKey, paneActionMsg{key: vscodeKey}))
 	for key := range interactions {
 		opts = append(opts, termpane.WithPrefixBinding(key, paneActionMsg{key: key}))
 	}
@@ -590,7 +641,7 @@ func (m *Model) updatePaneMsg(tagged paneMsg) tea.Cmd {
 		return m.actOn(msg.key, []Sandbox{m.currentBox()})
 
 	case movePaneMsg:
-		if p == m.overlay {
+		if m.hasScreen(p) {
 			return nil
 		}
 		// A run of these is one chord: the pane it fired in is left armed while
@@ -607,13 +658,13 @@ func (m *Model) updatePaneMsg(tagged paneMsg) tea.Cmd {
 		return cmd
 
 	case jumpPaneMsg:
-		if p == m.overlay {
+		if m.hasScreen(p) {
 			return nil
 		}
 		return m.jumpPane(msg.n)
 
 	case newTerminalMsg:
-		if p == m.overlay {
+		if m.hasScreen(p) {
 			return nil
 		}
 		return m.newTerminal()
@@ -625,7 +676,7 @@ func (m *Model) updatePaneMsg(tagged paneMsg) tea.Cmd {
 		return m.openServices()
 
 	case zoomPaneMsg:
-		if p == m.overlay || m.shells.len() == 0 {
+		if m.hasScreen(p) || m.shells.len() == 0 {
 			// Nothing beside it to maximize over: the box already has the
 			// window, and saying so beats a key that looks broken.
 			return status("nothing to maximize — the box has the window")
@@ -638,7 +689,19 @@ func (m *Model) updatePaneMsg(tagged paneMsg) tea.Cmd {
 		// session keeps running without it.
 		return m.closeWindow()
 
+	case openToolsMsg:
+		return m.openTools()
+
+	case closeToolMsg:
+		return m.closeTool()
+
 	case termpane.DetachMsg:
+		if p.tool != "" && m.hasScreen(p) {
+			// A tool is put away rather than closed: its session keeps running
+			// and its stream stays attached, so choosing it again shows where
+			// it has got to. Ending it is the other key. See tools.go.
+			return m.minimizeTool()
+		}
 		if p == m.overlay {
 			// The overlay is this CLI's own command, so leaving it closes it.
 			m.closeOverlay()
@@ -739,6 +802,11 @@ func (m *Model) paneClosed(p *pane, msg termpane.ClosedMsg) tea.Cmd {
 		p.status, p.failed = exitVerdict(p.stream)
 		return m.refresh()
 
+	case p.tool != "":
+		// A tool whose session died has nothing left to reopen, so it leaves
+		// the strip rather than being held as a screen nobody asked for.
+		return tea.Batch(m.dropTool(p, false), m.refresh(), m.report(true, "%s: %v", action, msg.Err))
+
 	case p == m.overlay:
 		m.closeOverlay()
 		m.layout()
@@ -794,28 +862,34 @@ func (m *Model) readFinished(p *pane, key tea.KeyPressMsg) tea.Cmd {
 	case "end", "G":
 		p.term.Scroll(-p.term.ScrollbackLen())
 	case "left", "h":
-		if p != m.overlay {
+		if !m.hasScreen(p) {
 			return m.movePane(-1)
 		}
 	case "right", "l":
-		if p != m.overlay {
+		if !m.hasScreen(p) {
 			return m.movePane(1)
 		}
 	case "q", "esc", "enter", paneInterruptKey:
-		m.dismissPane(p)
+		return m.dismissPane(p)
 	}
 	return nil
 }
 
 // dismissPane takes a finished pane off the screen: the overlay back to the
 // workspace, a shell tab out of the strip.
-func (m *Model) dismissPane(p *pane) {
-	if p == m.overlay {
+func (m *Model) dismissPane(p *pane) tea.Cmd {
+	switch {
+	case p.tool != "":
+		// Its session is already over, so there is nothing to end: this is the
+		// screen being put down, not the tool being closed.
+		return m.dropTool(p, false)
+	case p == m.overlay:
 		m.closeOverlay()
 		m.layout()
-		return
+	default:
+		m.closeTab(p)
 	}
-	m.closeTab(p)
+	return nil
 }
 
 // routeMouse sends a mouse event to the pane it belongs to: the one a
@@ -843,7 +917,12 @@ func (m *Model) routeMouse(msg tea.MouseMsg) tea.Cmd {
 		// then continues into the chrome's selection either way, so border
 		// text stays drag-selectable.
 		if click, ok := msg.(tea.MouseClickMsg); ok && click.Button == tea.MouseLeft {
-			m.focusChromeAt(click.X, click.Y)
+			// A tool window's buttons are the one control that answers a press
+			// outright: the gesture asked for the window to go, not for the
+			// text under it to be selected.
+			if cmd, taken := m.focusChromeAt(click.X, click.Y); taken {
+				return cmd
+			}
 		}
 		return m.chromeMouse(msg)
 	}
@@ -899,8 +978,8 @@ func (m *Model) paneAt(x, y int) (*pane, int, int) {
 // but the position the mouse names belongs to whatever is drawn there.
 func (m *Model) onScreen() []*pane {
 	switch {
-	case m.overlay != nil:
-		return []*pane{m.overlay}
+	case m.screenPane() != nil:
+		return []*pane{m.screenPane()}
 	case m.split():
 		return []*pane{m.terminals.visible(), m.shells.visible()}
 	case m.maximized && m.onShells:
@@ -912,7 +991,7 @@ func (m *Model) onScreen() []*pane {
 
 // focusPane moves focus to a pane the mouse chose.
 func (m *Model) focusPane(p *pane) {
-	if p == m.overlay {
+	if m.hasScreen(p) || p.tool != "" {
 		return
 	}
 	col, i := m.paneColumn(p)
@@ -940,26 +1019,44 @@ type zoomSpan struct {
 	start, end int
 }
 
-// focusChromeAt applies a press on the chrome to what the cell means: the
-// maximize button is that box taking the window or giving it back, a tab label
-// is that tab, and any other cell of a pane's box is that pane.
-func (m *Model) focusChromeAt(x, y int) {
+// focusChromeAt applies a press on the chrome to what the cell means: a tool
+// window's [-] and [x] are that window put away or ended, the maximize button
+// is that box taking the window or giving it back, a tab label is that tab, and
+// any other cell of a pane's box is that pane.
+//
+// It reports what the press asked for — ending a session is a request to the
+// server rather than a change to the screen — and whether it owns the gesture.
+// Only the tool window's buttons do: everything else on the chrome moves focus
+// and lets the press go on into the chrome's own selection, so border text
+// stays drag-selectable.
+func (m *Model) focusChromeAt(x, y int) (tea.Cmd, bool) {
+	if m.showingTool() != nil {
+		button, ok := m.buttonAt(x, y)
+		if !ok {
+			return nil, false
+		}
+		if button == buttonClose {
+			return m.closeTool(), true
+		}
+		return m.minimizeTool(), true
+	}
 	if m.overlay != nil {
 		// One box with nothing beside it; a border press chooses nothing.
-		return
+		return nil, false
 	}
 	if shells, ok := m.zoomAt(x, y); ok {
 		m.toggleMaximized(shells)
-		return
+		return nil, false
 	}
 	if shells, i, ok := m.tabAt(x, y); ok {
 		m.onShells = shells
 		m.column().active = i
-		return
+		return nil, false
 	}
 	if p := m.paneBoxAt(x, y); p != nil {
 		m.focusPane(p)
 	}
+	return nil, false
 }
 
 // zoomAt is the box whose maximize control is under a screen position. The
@@ -1092,7 +1189,10 @@ func (m *Model) columns(tabs int) (term, shells int) {
 // whole window whatever the workspace under it is doing; everything else takes
 // its side's column.
 func (m *Model) paneWidthOf(p *pane) int {
-	if p == m.overlay {
+	if p == m.overlay || p.tool != "" {
+		// A tool has the window whenever it is showing, and is drawn at that
+		// width even while it is put away: it keeps emulating off-screen, and
+		// showing it again must show a screen drawn at the size it is shown at.
 		return max(m.width, 4)
 	}
 	term, shells := m.columns(m.shells.len())
@@ -1119,7 +1219,7 @@ func (m *Model) shellLeft() int {
 // The cursor and every mouse event are placed against this, so it is worked
 // out once rather than counted twice.
 func (m *Model) paneOrigin(p *pane) (x, y int) {
-	if p != nil && p != m.overlay && m.shells.index(p) >= 0 {
+	if p != nil && m.shells.index(p) >= 0 {
 		// A shell tab: its box starts where the terminals' box ends, or at the
 		// window's edge when it is the maximized one.
 		return m.shellLeft() + 1 + boxPad, 2
@@ -1140,7 +1240,7 @@ func (m *Model) viewPaneWindow() string {
 	// The drawing pass owns where the border's controls landed: they are only
 	// there when they were drawn this frame, and a span left over from a box
 	// that is no longer on screen is a click target pointing at nothing.
-	m.tabSpans, m.zoomSpans = m.tabSpans[:0], m.zoomSpans[:0]
+	m.tabSpans, m.zoomSpans, m.buttonSpans = m.tabSpans[:0], m.zoomSpans[:0], m.buttonSpans[:0]
 
 	headerW := max(inner-2*boxPad, 1)
 	rows := []string{
@@ -1154,6 +1254,8 @@ func (m *Model) viewPaneWindow() string {
 	switch {
 	case m.overlay != nil:
 		body = m.viewOverlayBox(m.width)
+	case m.showingTool() != nil:
+		body = m.viewToolBox(m.showingTool(), m.width)
 	case m.split():
 		// The terminals on the left, the shells on the right; the right half
 		// takes any cell the division left over so the row comes out exactly
@@ -1330,6 +1432,17 @@ func (m *Model) viewOverlayBox(width int) string {
 	return m.viewPaneBox(m.overlay, titledEdge(m.st, edge, m.overlay.name(), "", inner), edge, width)
 }
 
+// viewToolBox draws the tool that has the screen. It is one pane with the
+// window to itself like the overlay, and unlike the overlay it wears the two
+// buttons that say what can be done to a window that outlives being looked at:
+// put it away, or end it. See toolControls.
+func (m *Model) viewToolBox(p *pane, width int) string {
+	edge := m.st.frame
+	inner := max(width-2, 1)
+	control := m.toolControls(edge, width)
+	return m.viewPaneBox(p, titledEdge(m.st, edge, p.name(), control, inner), edge, width)
+}
+
 // viewPaneBox draws one pane's grid inside a box whose top border has already
 // been built — a strip of tabs, or a title — with a cell of air between the
 // border and the terminal's own output.
@@ -1362,7 +1475,7 @@ func (m *Model) viewPaneBox(p *pane, top string, edge lipgloss.Style, width int)
 // the keys reach the same toggle at any width.
 func (m *Model) zoomControl(edge lipgloss.Style, shells bool, left, width int) string {
 	const zoomMinWidth = 12
-	if m.overlay != nil || m.shells.len() == 0 || width < zoomMinWidth {
+	if m.screenPane() != nil || m.shells.len() == 0 || width < zoomMinWidth {
 		return ""
 	}
 	glyph := "+"

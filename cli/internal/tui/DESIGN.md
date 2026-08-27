@@ -29,6 +29,7 @@ flowchart LR
     WS -->|leader S| SvcMenu["services menu → DoService"]
     L -->|y| Overlay["overlay pane → DataSource.Open"]
     L -->|v| Editor["DataSource.OpenEditor"]
+    WS -->|leader o| T["tools picker → NewTool / EndExec / OpenEditor"]
     A -->|d s| AVerb["DataSource.DoHarness"]
     A -->|e f| AExec["tea.Exec → ConfigureHarness / EditHarnessFile"]
 ```
@@ -166,15 +167,16 @@ the line as well: half a key hint is not one. A message is the exception — it
 is one thing with nothing to drop — and it displaces the keys, never the right
 end: what is true is not what was said.
 
-**vscode is a fourth kind, and is bound on both screens** (`vscodeKey`,
+**vscode is a fourth kind** (`vscodeKey`,
 `openEditor`, `DataSource.OpenEditor`). It is neither a `Verb` — it changes
 nothing about the discobox — nor an `Interaction` — it takes no terminal: `v`
 runs `discobox tools vscode`, which hands the sandbox to the editor and returns.
 The editor is another program in another window, so the window carries on
-exactly where it was, and the workspace binds it too (`paneOptions`): the
-terminal on screen and the editor beside it are two views of one discobox, open
-at once. Because it is in neither `verbs` nor `interactions`, both the pane's
-key map and `actOn` name it explicitly, the way `renameKey` is named. The
+exactly where it was: the terminal on screen and the editor beside it are two
+views of one discobox, open at once. Because it is in neither `verbs` nor
+`interactions`, both the list's key map and `actOn` name it explicitly, the way
+`renameKey` is named. On the workspace it is not a key of its own — it is a row
+in the tools picker, below. The
 command writes an `ssh_config` and prints what it wrote, so `apiDataSource`
 gives it `io.Discard` for both streams — a stray line of stderr would draw over
 a full-screen window — and lets the error carry what went wrong to the status
@@ -336,6 +338,68 @@ answers to. The visible tab is lit and never clipped, and an overgrown strip
 shows a window around it with an ellipsis at the clipped end. Hidden tabs keep
 emulating off-screen at their drawn size, so flipping to one shows where it is
 now.
+
+**The tools are a third kind of pane, and the only one that outlives being
+looked at** (`tools.go`, ADR-0071). `Model.tools` is a third `column` and
+`toolOpen` says whether it has the window; `screenPane` is the one pane with
+the whole screen, the apply overlay or the showing tool, and every place that
+asked `overlay != nil` asks it instead.
+
+- The catalog is this package's (`tools`): `diff` runs `difftui`, `fresh` runs
+  the `fresh` editor — both carried by the sandbox image, so everyone looking
+  at one discobox is looking at the same versions — and `vscode` has no command
+  at all and is run rather than opened. The picker is on the leader's `o`,
+  because `t` is stop and `x` is archive in the key map the two screens share.
+- A tool session is a plain TTY exec labeled `metadata.tool` = the tool's id,
+  created with no workdir so it lands in the discobox's primary source
+  directory. `Exec.Tool` carries it back off the listing; `toolExec` is asked
+  before `terminalExec`, because a tool is neither a terminal nor a shell and
+  never joins the strip.
+- The two buttons are not the same button (`toolControls`). `[-]` puts the
+  window away and leaves the session running with its stream attached, so
+  choosing the tool again shows where it has got to — the leader's own way out
+  of a screen does the same. `[x]` calls `DataSource.EndExec`, which is the one
+  place this window ends a session rather than closing its view of one, and is
+  on the shifted `X` for that reason.
+- The sessions live in the discobox, so the poll picks up every labeled one it
+  finds and puts it away rather than showing it: attaching to a discobox should
+  show you the discobox. That is what makes a diff survive quitting the
+  launcher, and it needs no client-side state at all.
+- A tool can carry a **config** (`ToolFile`, `tui_tools.go`). The copy lives on
+  this machine under `os.UserConfigDir()/discobox/tools/<tool>/<name>`, created
+  from the tool's `Default` the first time anything reads it, and `e` in the
+  picker opens it in `$EDITOR` — the real path, in place, so a dotfile manager
+  can have it too. `NewTool` puts it into the discobox before the session
+  starts, through one exec that writes only where nothing is there already
+  (`installToolFileScript`). It is a default, not a sync: an edit changes what
+  the *next* discobox gets. `Name` and `Home` may differ — fresh's config is
+  `config.jsonc` locally and `config.json` in the box, because the tool dictates
+  where it reads from while the local extension is what makes editors color it
+  — and the delivered copy carries a vim modeline for the copy whose name is not
+  ours. See ADR 0071.
+- Not every carried file is configuration. fresh takes two: its config, and a
+  seed for the live-diff plugin's *state* (`orchestrator/state/live_diff.json`),
+  which is how a plugin that is off by default arrives on. The mechanism does
+  not care — a path under the run user's home and some bytes — which is what
+  makes it able to answer "have it set up the way I like it" rather than only
+  "have it configured".
+- A file's `Home` may contain `{workspace}`, resolved in the discobox to its
+  working directory, encoded as fresh encodes a project state directory. That is
+  how fresh's *trust* decision is recorded — it gates language servers and
+  environment activation per folder, and a discobox is a new folder every time,
+  so without it every box opens Restricted forever.
+- A tool's `command` is what it takes to open the discobox, not just the binary
+  name: `fresh .` rather than `fresh`, because fresh opens a directory — file
+  tree, workspace, the lot — only when handed exactly one, and comes up on an
+  empty buffer otherwise.
+
+**The hints row is one row and drops rather than wraps** (`fitHints`).
+`paneRows` budgets exactly one status line, so a second one would have to come
+out of the panes — and a hints line that grew by a fragment would resize every
+attached terminal, then resize it back when it shrank. So the parts arrive
+most-worth-keeping first and the tail goes instead, the way the banner gives up
+its edges (`paneHeaderFields`, `dropToFit`). What survives at any width is the
+way out.
 
 **Either column can take the whole window** (`maximized`, `toggleMaximized`).
 Each box wears a `[+]`/`[-]` button at the right end of its top border
@@ -978,6 +1042,7 @@ the newest one where the busy line goes.
 | `column.go` | one side of the workspace: a strip of panes, one visible |
 | `workspace.go` | the workspace screen: open, poll/reconcile, tabs, detach, the port forward |
 | `services.go` | the discobox's declared services: the menu behind the leader, and the three verbs |
+| `tools.go` | the tools: the catalog, the picker, the tool window and its `[-]`/`[x]` |
 | `narration.go` | what a slow operation is doing, on the busy line |
 
 ## Looking at it without a terminal

@@ -809,8 +809,9 @@ func (m *Model) harnessHints() string {
 // ---------------------------------------------------------------------------
 // exec
 
-// harnessExec hands the terminal to one of the two harness actions that need a
-// real one: the harness's own setup, and $EDITOR on one of its files.
+// harnessExec hands the terminal to an action that needs a real one: the
+// harness's own setup, $EDITOR on one of its files, and $EDITOR on a tool's
+// config (tools.go).
 //
 // Bubble Tea releases the terminal — the alternate screen, raw mode, its own
 // input reader — for as long as the action runs and takes it back when it

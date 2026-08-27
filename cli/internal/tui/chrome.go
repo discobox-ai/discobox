@@ -171,7 +171,7 @@ func (m *Model) chromeRow(line, start, end int) string {
 // selection on screen at a time, or two highlights race to answer the next
 // copy chord.
 func (m *Model) clearPaneSelections(except *pane) {
-	for _, p := range append([]*pane{m.overlay}, m.panes()...) {
+	for _, p := range append([]*pane{m.overlay}, m.allPanes()...) {
 		if p != nil && p != except {
 			p.term.ClearSelection()
 		}

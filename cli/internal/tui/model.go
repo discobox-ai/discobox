@@ -86,6 +86,16 @@ type Model struct {
 	// ports standing in for what the discobox is serving, which the header
 	// draws as arrows. See workspace.go.
 	forward Forward
+	// The tools open on this discobox: a strip of panes like the two columns,
+	// except that only one is ever drawn and it is drawn over everything.
+	// toolOpen is whether that column has the window; put away, its panes stay
+	// attached and their sessions keep running. See tools.go.
+	tools    column
+	toolOpen bool
+	// toolOpening is the tools with an attach in flight, keyed by tool id, so
+	// the poll and the picker cannot open two panes onto one session.
+	toolOpening map[string]bool
+
 	// overlay is the command that has the screen over the workspace while it
 	// runs.
 	overlay *pane
@@ -125,6 +135,10 @@ type Model struct {
 	// boxes are drawn (zoomControl) so a click on [+] can mean that box.
 	// Absolute screen columns.
 	zoomSpans []zoomSpan
+
+	// buttonSpans is where the showing tool window's [-] and [x] sit, recorded
+	// as its border is drawn (toolControls). Absolute screen columns.
+	buttonSpans []buttonSpan
 
 	// leaderKey is the pane's prefix; empty takes the default. See Model.leader.
 	leaderKey string
@@ -516,6 +530,21 @@ func (m *Model) update(msg tea.Msg) tea.Cmd {
 
 	case workspaceTermMsg:
 		return m.workspaceTermOpened(msg)
+
+	case toolTermMsg:
+		return m.toolOpened(msg)
+
+	case runToolMsg:
+		return m.runTool(msg.id)
+
+	case toolFilesMsg:
+		return m.openToolFiles(msg.id)
+
+	case toolFileMsg:
+		return m.editToolFile(msg.file)
+
+	case toolFileDoneMsg:
+		return m.toolFileEdited(msg)
 
 	case workspaceTickMsg:
 		if msg.gen != m.wsGen {
@@ -1724,7 +1753,7 @@ func (m *Model) layout() {
 	// is sized for the box it is drawn in, the hidden tabs included — flipping
 	// to one must show a screen drawn at the size it is shown at.
 	if m.inPanes() {
-		for _, p := range m.panes() {
+		for _, p := range m.allPanes() {
 			p.term.SetSize(m.paneCells(m.paneWidthOf(p)))
 		}
 		if m.overlay != nil {
@@ -1968,7 +1997,13 @@ func (m *Model) viewHeaderBrand() string {
 // the one that is, is the way out.
 func (m *Model) viewHeaderRight() string {
 	if p := m.focusedPane(); p != nil {
-		return m.st.dimText.Render(m.detachHint() + " detach  ·  " + m.leader() + " " + paneQuitKey + " quit")
+		out := "detach"
+		if p.tool != "" {
+			// The leader's way out of a screen is the same key; what it does
+			// here is put this window away, not leave the workspace.
+			out = "put away"
+		}
+		return m.st.dimText.Render(m.detachHint() + " " + out + "  ·  " + m.leader() + " " + paneQuitKey + " quit")
 	}
 	// The harnesses screen is advertised here rather than on the status line
 	// because it is reachable from every one of the window's own screens, and
@@ -2174,10 +2209,13 @@ func (m *Model) hints() string {
 			if p.term.ScrollbackLen() > 0 {
 				hints = done + " · ↑↓ pgup/pgdn scroll · q closes"
 			}
-			if p != m.overlay {
-				hints += " · ←/→ pane"
+			if !m.hasScreen(p) {
+				hints += hintSep + "←/→ pane"
 			}
 			return hints
+		}
+		if p.tool != "" {
+			return strings.Join(m.toolHints(p), hintSep)
 		}
 		// A workspace terminal is the discobox's own and you detach from the
 		// whole workspace; the command over them is this CLI's, and you close
@@ -2199,28 +2237,40 @@ func (m *Model) hints() string {
 				// a pane onto one is where you would think to look.
 				" · " + m.leader() + " " + paneServicesKey + " services"
 		}
-		if m.overlay == nil {
+		if m.screenPane() == nil {
+			// Restoring outranks everything below it, because it is the way out
+			// of a state the screen is in right now — the same thing that keeps
+			// detach at the front — while maximizing is only something on
+			// offer. So the one key changes place depending on which of the two
+			// it currently is.
+			//
+			// Either way it is only there with two columns to choose between:
+			// more terminals are more tabs in the one box.
+			zoom := ""
+			if m.shells.len() > 0 {
+				zoom = hintSep + m.leader() + " " + paneZoomKey + " maximize"
+				if m.maximized {
+					hints += hintSep + m.leader() + " " + paneZoomKey + " restore"
+					zoom = ""
+				}
+			}
 			// Only the shell is offered here. Another terminal is the advanced
 			// one of the two — a second harness session, next to a shell it
 			// sounds exactly like — and a hints line that names both spends its
 			// scarcest row teaching a distinction most people never need. It is
 			// in the help, under the key that opens it.
 			if p.service == "" {
-				hints += " · " + m.leader() + " s shell"
+				hints += hintSep + m.leader() + " s shell"
 			}
+			// The tools sit here for the same reason the services menu sits on
+			// a service's line: this is the only place they are advertised, and
+			// a picker nothing points at is a picker nobody opens.
+			hints += hintSep + m.leader() + " " + toolsKey + " tools"
 			if len(m.panes()) > 1 {
-				hints += " · " + m.leader() + " ←/→ pane"
-				hints += " · " + m.leader() + " 0-9 jump"
+				hints += hintSep + m.leader() + " ←/→ pane"
+				hints += hintSep + m.leader() + " 0-9 jump"
 			}
-			// Only with two columns on screen is there anything to maximize
-			// over: more terminals are more tabs in the one box.
-			if m.shells.len() > 0 {
-				zoom := " maximize"
-				if m.maximized {
-					zoom = " restore"
-				}
-				hints += " · " + m.leader() + " " + paneZoomKey + zoom
-			}
+			hints += zoom
 		}
 		// The seize toggle only matters while something in the box has the
 		// mouse; the rest of the time selection simply works.
@@ -2430,11 +2480,58 @@ func (m *Model) helpText() string {
 		"    " + m.leader() + " " + paneServicesKey + "       this repository's services — including the ones",
 		"                   that are not running, which no tab can show —",
 		"                   and start / stop / restart for any of them",
-		"    " + m.leader() + " " + vscodeKey + "       open it in VS Code, in a window of its own",
+		"    " + m.leader() + " " + toolsKey + "       the tools, as a picker",
 		"    " + m.leader() + " y       apply back to this directory",
 		"    " + m.leader() + " x / U   archive / unarchive",
 		"    " + m.leader() + " u       upgrade      " + m.leader() + " t / T   stop / start",
 		"    " + m.leader() + " R       repair",
+		"",
+		"───────────────────────────────────────────────────────────────",
+		"The tools (" + m.leader() + " " + toolsKey + ")",
+		"",
+		"  The programs you reach for beside the agent. They are not",
+		"  harnesses and they are not shells, so they are neither a",
+		"  terminal nor a tab: each one is a window over the workspace,",
+		"  which carries on underneath.",
+		"",
+		"    d              diff — what has changed, in difftui",
+		"    f              fresh — the fresh editor, in the box",
+		"    " + vscodeKey + "              vscode — the box in VS Code, in a window of",
+		"                   its own",
+		"    " + toolFileKey + "              the highlighted tool's config, in $EDITOR",
+		"",
+		"  diff and fresh run inside the discobox, in its primary source",
+		"  directory, on the copies its image carries — so everyone",
+		"  looking at the same discobox is looking at the same versions,",
+		"  and there is nothing to install here. vscode is the other way",
+		"  round: it edits the box in place over Remote-SSH, so the editor",
+		"  is another program in another window and this one carries on.",
+		"",
+		"  A tool window wears two buttons at the right of its top border,",
+		"  and they do different things:",
+		"",
+		"    [-]            put it away. The session keeps running and the",
+		"                   stream stays attached, so choosing the tool",
+		"                   again shows where it has got to — not where it",
+		"                   was when you left. " + m.detachHint() + " does the same.",
+		"    [x]            close it, which ends the session. " + m.leader() + " " + toolCloseKey + " is",
+		"                   the key, shifted because it is the one of the",
+		"                   two that destroys something",
+		"",
+		"  The sessions live in the discobox, not in this window, so they",
+		"  survive it: quit the launcher with a diff open and the next",
+		"  attach picks it back up, put away, ready to be shown again.",
+		"",
+		"  A tool can carry a config, which is kept on this machine and",
+		"  copied into a discobox the first time that tool runs in one",
+		"  that has none — fresh does, and " + toolFileKey + " in the picker opens it",
+		"  in $EDITOR. It is a default rather than a sync: the copy in a",
+		"  discobox belongs to the discobox, and nothing here overwrites",
+		"  one that is already there. So an edit changes what the next",
+		"  discobox gets, not what an open one is using.",
+		"",
+		"───────────────────────────────────────────────────────────────",
+		"Back on the workspace",
 		"",
 		"  apply runs in the screen itself, over the workspace, for as",
 		"  long as it takes and for as long as its report is up — and the",

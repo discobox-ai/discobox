@@ -63,6 +63,17 @@ type fakeSource struct {
 	// next one NewTerminal does.
 	newShellID    int
 	newTerminalID int
+	// newToolErr fails the tool create, endExecErr the kill that closing a
+	// tool window does, and newToolID names the next exec NewTool creates.
+	newToolErr error
+	endExecErr error
+	newToolID  int
+	// toolFiles is the local copy of each tool file, keyed "tool/name", and
+	// stands in for the config directory on this machine. editToolFile is what
+	// $EDITOR would have written; nil leaves the file as it was.
+	toolFiles    map[string]string
+	editToolFile func(file ToolFile) string
+	editToolErr  error
 	// terminalHarness is the harness the sandbox runs, which is what a
 	// terminal it creates is reported with — and what puts it in the
 	// workspace's left column.
@@ -100,6 +111,10 @@ type fakeSource struct {
 	terminals []*fakeTerminal
 	// execTerminals is the terminal serving each exec attach, by exec id.
 	execTerminals map[string]*fakeTerminal
+	toolRuns      []string // "tool argv"
+	installed     []string // "tool/name → home" per file put into a discobox
+	editedTools   []string // "tool/name" handed to $EDITOR
+	ended         []string // exec ids ended by EndExec
 	didHarness    []string // "verb id"
 	configured    []string // harness id
 	editedFiles   []string // "id path"
@@ -249,6 +264,20 @@ func (f *fakeSource) openedEditors() []string {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	return append([]string(nil), f.editors...)
+}
+
+// toolRunsSeen is the tool sessions asked for, and endedExecs the sessions
+// ended, read under the lock for the same reason.
+func (f *fakeSource) toolRunsSeen() []string {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return append([]string(nil), f.toolRuns...)
+}
+
+func (f *fakeSource) endedExecs() []string {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return append([]string(nil), f.ended...)
 }
 
 func (f *fakeSource) OpenEditor(_ context.Context, id string) error {
@@ -451,6 +480,96 @@ func (f *fakeSource) DoService(_ context.Context, verb ServiceVerb, sandboxID, s
 		return f.serviceErr
 	}
 	f.serviceActs = append(f.serviceActs, fmt.Sprintf("%s %s %s", verb, sandboxID, serviceID))
+	return nil
+}
+
+func (f *fakeSource) NewTool(_ context.Context, id string, spec ToolSpec, cols, rows int) (Exec, Terminal, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.toolRuns = append(f.toolRuns, spec.ID+" "+strings.Join(spec.Command, " "))
+	if f.newToolErr != nil {
+		return Exec{}, nil, f.newToolErr
+	}
+	// The files go in before the session, the way the real adapter does it.
+	for _, file := range spec.Files {
+		f.installed = append(f.installed, toolFileKeyOf(file)+" → "+file.Home)
+	}
+	f.newToolID++
+	exec := Exec{
+		ID:        fmt.Sprintf("exec_tool%d", f.newToolID),
+		Command:   append([]string{}, spec.Command...),
+		Tool:      spec.ID,
+		Tty:       true,
+		Live:      true,
+		CreatedAt: time.Date(2026, 8, 7, 14, 0, f.newToolID, 0, time.UTC),
+	}
+	// The listing reports it from now on, the way the server would.
+	f.execs = append(f.execs, exec)
+	f.execOpens = append(f.execOpens, fmt.Sprintf("%s %s %dx%d", id, exec.ID, cols, rows))
+	return exec, f.newExecTerminal(exec.ID), nil
+}
+
+// toolFileKeyOf names a tool file the way the fake's own map does.
+func toolFileKeyOf(file ToolFile) string { return file.Tool + "/" + file.Name }
+
+func (f *fakeSource) ToolFilePath(file ToolFile) string {
+	return "/config/discobox/tools/" + toolFileKeyOf(file)
+}
+
+func (f *fakeSource) EditToolFile(_ context.Context, file ToolFile, _ io.Reader, _, _ io.Writer) (bool, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.editedTools = append(f.editedTools, toolFileKeyOf(file))
+	if f.editToolErr != nil {
+		return false, f.editToolErr
+	}
+	if f.toolFiles == nil {
+		f.toolFiles = map[string]string{}
+	}
+	key := toolFileKeyOf(file)
+	before, seeded := f.toolFiles[key]
+	if !seeded {
+		// Created from the tool's default the first time, the way the real one
+		// does — which is what makes the first edit open on something.
+		before = file.Default
+		f.toolFiles[key] = before
+	}
+	if f.editToolFile == nil {
+		return false, nil
+	}
+	after := f.editToolFile(file)
+	f.toolFiles[key] = after
+	return after != before, nil
+}
+
+// installedFiles and editedToolFiles read those under the lock, for a test
+// driving the model on its own goroutines.
+func (f *fakeSource) installedFiles() []string {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return append([]string(nil), f.installed...)
+}
+
+func (f *fakeSource) editedToolFiles() []string {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return append([]string(nil), f.editedTools...)
+}
+
+func (f *fakeSource) EndExec(_ context.Context, _, execID string) error {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.ended = append(f.ended, execID)
+	if f.endExecErr != nil {
+		return f.endExecErr
+	}
+	// The listing stops reporting it, the way the server would.
+	for i, exec := range f.execs {
+		if exec.ID == execID {
+			f.execs = append(f.execs[:i], f.execs[i+1:]...)
+			break
+		}
+	}
 	return nil
 }
 

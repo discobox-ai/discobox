@@ -270,7 +270,20 @@ func (m *Model) workspaceExecs(msg workspaceExecsMsg) tea.Cmd {
 			if !exec.Live || !exec.Tty || exec.Primary || exec.ID == "" || serviceExec(exec) {
 				continue
 			}
-			if m.paneByExec(exec.ID) != nil || m.connecting[exec.ID] {
+			if m.paneByExec(exec.ID) != nil {
+				continue
+			}
+			if toolExec(exec) {
+				// A tool is not a tab. It is picked up so that a diff left
+				// running by a window that has since exited is the same diff
+				// when you ask for it again — put away until you do, because
+				// attaching to a discobox should show you the discobox.
+				if !m.toolOpening[exec.Tool] && m.toolPane(exec.Tool) == nil {
+					cmds = append(cmds, m.openToolExec(msg.gen, exec))
+				}
+				continue
+			}
+			if m.connecting[exec.ID] {
 				continue
 			}
 			open = append(open, exec)
@@ -423,7 +436,7 @@ func (m *Model) serviceTermOpened(msg serviceTermMsg) tea.Cmd {
 	m.nextPaneID++
 	p := &pane{
 		id:     m.nextPaneID,
-		term:   termpane.New(m.paneOptions(false, true)...),
+		term:   termpane.New(m.paneOptions(paneWorkspace, true)...),
 		stream: msg.term,
 		// A service is never typed at, so its pane is read-only whether it is
 		// drawing a live process or a card.
@@ -469,7 +482,9 @@ func (m *Model) serviceTermOpened(msg serviceTermMsg) tea.Cmd {
 
 // terminalExec reports whether a session belongs on the workspace's left: the
 // primary, another of the discobox's harness terminals, or one of its declared
-// services. Everything else is a shell and goes on the right.
+// services. Everything else is a shell and goes on the right — everything, that
+// is, that is on the strip at all: a tool session is neither, and is taken out
+// before this is asked. See toolExec.
 //
 // It is the server's own record that answers, not a layout this window keeps:
 // a terminal is created in harness mode and carries the harness it runs, a
@@ -607,7 +622,7 @@ func (m *Model) workspaceTermOpened(msg workspaceTermMsg) tea.Cmd {
 	}
 	p := &pane{
 		id:      m.nextPaneID,
-		term:    termpane.New(m.paneOptions(false, service)...),
+		term:    termpane.New(m.paneOptions(paneWorkspace, service)...),
 		stream:  msg.term,
 		action:  action,
 		sandbox: m.paneBox,
@@ -684,7 +699,10 @@ func (m *Model) paneByExec(execID string) *pane {
 	if p := m.terminals.byExec(execID); p != nil {
 		return p
 	}
-	return m.shells.byExec(execID)
+	if p := m.shells.byExec(execID); p != nil {
+		return p
+	}
+	return m.tools.byExec(execID)
 }
 
 // closeTab takes one pane off the screen: its stream is closed and it leaves
@@ -727,6 +745,12 @@ func (m *Model) closeWorkspace() {
 	}
 	m.terminals.closeAll()
 	m.shells.closeAll()
+	// The tools go with the screen they were opened over, and like every other
+	// session they keep running: this closes the window onto them, and the next
+	// attach picks them back up off the listing.
+	m.tools.closeAll()
+	m.toolOpen = false
+	m.toolOpening = nil
 	m.onShells = false
 	m.maximized = false
 	m.leavePanes()

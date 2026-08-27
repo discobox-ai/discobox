@@ -483,6 +483,14 @@ type Exec struct {
 	// shell goes on the right. See terminalExec.
 	Harness string
 
+	// Tool is the tool this session is running — "diff", "fresh" — and empty
+	// for every session that is not one. A tool session is neither a terminal
+	// nor a shell: it is a window of its own, and the id is what reopens the
+	// right one after a minimize or a restart. It is a label the launcher put
+	// on the exec when it created it (ADR 0071); the sandbox knows nothing
+	// about tools.
+	Tool string
+
 	// Primary marks the sandbox's primary harness terminal, which is the first
 	// of the workspace's left column and the session the screen is a view
 	// onto.
@@ -512,6 +520,50 @@ type Exec struct {
 	// CreatedAt orders the tabs, oldest first, so they hold their places as
 	// the listing changes around them.
 	CreatedAt time.Time
+}
+
+// ToolFile is one file a tool carries into a discobox: a copy kept on this
+// machine, put in place the first time that tool runs in a discobox that has
+// none of its own.
+//
+// It is a default rather than a sync, and deliberately one-way and create-only.
+// The discobox's copy belongs to the discobox — a config edited inside a box,
+// by you or by the agent working in it, is not something a later launch should
+// quietly overwrite — so editing the local copy changes what the *next*
+// discobox gets, not what any box already carrying one has.
+type ToolFile struct {
+	// Tool is the tool that carries it, and Name is what the picker calls it.
+	// Together they name the copy on this machine; where that is, is the
+	// adapter's answer. See DataSource.ToolFilePath.
+	Tool string
+	Name string
+
+	// Home is where it goes in the discobox, relative to the run user's home
+	// directory — ".config/fresh/config.json". Relative because only the
+	// discobox knows what its run user's home actually is.
+	//
+	// It may contain "{workspace}", which stands for the tool's working
+	// directory encoded the way a per-project state directory names itself.
+	// That is for the state a tool keys on the project rather than on the user
+	// — fresh's trust decision — and it is resolved in the discobox, since the
+	// working directory is another thing only the discobox knows. See
+	// installToolFileScript.
+	Home string
+
+	// Default is what the local copy is created with the first time anything
+	// asks for it, so the first edit opens on a starting point rather than on
+	// an empty buffer and a documentation search.
+	Default string
+}
+
+// ToolSpec is everything running a tool takes: what to run in the discobox, and
+// the files to have in place before it starts. The picker's own columns — the
+// key it answers to, the label it wears — stay in this package; this is the
+// part the outside needs.
+type ToolSpec struct {
+	ID      string
+	Command []string
+	Files   []ToolFile
 }
 
 // ExecPrimary is the virtual exec id of the sandbox's primary terminal. The
@@ -776,4 +828,33 @@ type DataSource interface {
 	// doing afterwards arrives through the exec listing like everything else,
 	// so there is nothing here for the window to remember.
 	DoService(ctx context.Context, verb ServiceVerb, sandboxID, serviceID string) error
+
+	// NewTool does the same for a tool session: the spec's command, run in the
+	// sandbox's primary source directory, labeled with the tool it is so that
+	// this window — and the next one to attach — can tell it from a shell.
+	// Which tools there are and what they run is this package's answer; see
+	// tools.go.
+	//
+	// The spec's files are put in place first, and only where the discobox has
+	// none of its own. A tool whose files could not be delivered does not
+	// start: an editor that silently comes up unconfigured is worse than one
+	// that says why it did not.
+	NewTool(ctx context.Context, sandboxID string, spec ToolSpec, cols, rows int) (Exec, Terminal, error)
+
+	// EndExec ends one exec session in the sandbox, killing what is running in
+	// it. It is what closing a tool window does, and the one place this window
+	// ends a session rather than closing its own view of one.
+	EndExec(ctx context.Context, sandboxID, execID string) error
+
+	// ToolFilePath is where a tool file's copy lives on this machine, whether
+	// or not it exists yet. The picker shows it, so the file is findable and
+	// editable from outside this window too. Empty when there is no path to be
+	// had — no home directory to resolve it against.
+	ToolFilePath(file ToolFile) string
+
+	// EditToolFile opens that copy in the user's editor, creating it from the
+	// file's Default when there is none yet, and reports whether what came back
+	// differs. The window is suspended for it, the way editing a harness file
+	// suspends it.
+	EditToolFile(ctx context.Context, file ToolFile, stdin io.Reader, stdout, stderr io.Writer) (bool, error)
 }

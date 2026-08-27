@@ -43,6 +43,11 @@ type sandboxExecCreateOptions struct {
 	// workspace opens beside the primary. There is no flag for it — which
 	// harness a sandbox runs is its own answer, so there is nothing to pass.
 	terminal bool
+	// metadata labels the exec for whoever lists it later. The sandbox stores
+	// it and hands it back unread; it is how the launcher tells a tool session
+	// from a shell (ADR 0071). There is no flag for it either: a label nothing
+	// agrees on the meaning of is a label nothing can act on.
+	metadata map[string]string
 }
 
 func (a *App) newSandboxExecCommand() *cobra.Command {
@@ -208,6 +213,10 @@ func createSandboxExecBody(opts sandboxExecCreateOptions, command []string) (*ap
 	}
 	if user != nil {
 		body.SetUser(apiclientgen.NewOptSandboxUser(*user))
+	}
+	if len(opts.metadata) > 0 {
+		body.SetMetadata(apiclientgen.NewOptCreateSandboxExecRequestMetadata(
+			apiclientgen.CreateSandboxExecRequestMetadata(opts.metadata)))
 	}
 	body.SetTty(apiclientgen.NewOptBool(opts.tty))
 	if opts.tty {
@@ -884,6 +893,11 @@ func (a *App) getSandboxExec(ctx context.Context, projectID, sandboxID, execID s
 	}
 	exec := response.model()
 	return &exec, nil
+}
+
+// deleteSandboxExec ends one exec session, killing what is running in it.
+func (a *App) deleteSandboxExec(ctx context.Context, projectID, sandboxID, execID string) error {
+	return a.execJSON(ctx, http.MethodDelete, projectID, sandboxID, "/"+url.PathEscape(execID), nil, nil)
 }
 
 func (a *App) listSandboxExecs(ctx context.Context, projectID, sandboxID string) ([]apimodel.SandboxExec, error) {

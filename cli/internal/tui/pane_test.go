@@ -3,6 +3,7 @@ package tui
 import (
 	"errors"
 	"fmt"
+	"io"
 	"strings"
 	"testing"
 	"time"
@@ -23,6 +24,16 @@ func openWorkspace(t *testing.T, ds *fakeSource, act string) (*driver, *Model, *
 	m.expanded = true
 	// A test copy must not clobber the developer's actual clipboard.
 	m.copyOS = func(string) error { return nil }
+	// The runtime is what releases the terminal around an action; there is none
+	// here, so the action is simply run and its result handed back.
+	m.exec = func(c tea.ExecCommand, done tea.ExecCallback) tea.Cmd {
+		return func() tea.Msg {
+			c.SetStdin(strings.NewReader(""))
+			c.SetStdout(io.Discard)
+			c.SetStderr(io.Discard)
+			return done(c.Run())
+		}
+	}
 	d := newDriver(t, m)
 	d.start()
 	d.wait("the listing", func() bool { return len(m.list.rows()) > 0 })
@@ -1637,11 +1648,13 @@ func TestTheLeaderDetachesFromAnyPane(t *testing.T) {
 // ctrl+a v opens the workspace's own discobox in VS Code. Nothing on screen
 // moves: the editor is another window, and the terminals stay attached — which
 // is the whole point of binding it here rather than only in the list.
-func TestPrefixVOpensTheWorkspaceBoxInVSCode(t *testing.T) {
+func TestTheToolsPickerOpensTheWorkspaceBoxInVSCode(t *testing.T) {
 	ds := newFakeSource(testSandboxes()...)
 	d, m, term := openWorkspace(t, ds, "enter")
 
 	d.key("ctrl+a")
+	d.key("o")
+	d.wait("the picker", func() bool { return m.dialog != nil })
 	d.key("v")
 	d.wait("the editor", func() bool { return len(ds.openedEditors()) == 1 })
 
@@ -1652,7 +1665,7 @@ func TestPrefixVOpensTheWorkspaceBoxInVSCode(t *testing.T) {
 		t.Fatal("opening an editor should leave the workspace up")
 	}
 	// The leader consumed the key; the sandbox never saw it.
-	if got := term.typed("v"); strings.Contains(got, "v") {
+	if got := term.typed("o"); strings.Contains(got, "o") {
 		t.Fatalf("typed %q, want the leader to take the key", got)
 	}
 }
