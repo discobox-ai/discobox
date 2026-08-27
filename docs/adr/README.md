@@ -123,3 +123,4 @@ Nygard-style ADRs (see adr.github.io) combined with current-state design docs:
 | [0068](0068-container-images-share-one-base-image.md) | Container images share one base image | Accepted |
 | [0069](0069-staging-pool-images-is-a-condition.md) | Staging a pool's images is a condition, not a state | Accepted |
 | [0070](0070-services-are-declared-execs-the-sandbox-starts-for-you.md) | Services are declared execs the sandbox starts for you | Accepted |
+| [0071](0071-a-tool-session-is-an-exec-the-launcher-labeled.md) | A tool session is an exec the launcher labeled | Accepted |
