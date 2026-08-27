@@ -7,6 +7,7 @@ import (
 
 	"github.com/discobox-ai/discobox/sandbox-agent/config"
 	"github.com/discobox-ai/discobox/sandbox-agent/execs"
+	"github.com/discobox-ai/x/shorttmp"
 )
 
 // newSkillsTestService builds a service whose default workdir is a repository
@@ -14,7 +15,7 @@ import (
 // the whole of what the skills install depends on.
 func newSkillsTestService(t *testing.T, source, home string, state PrimaryStateStore) *Service {
 	t.Helper()
-	dir := t.TempDir()
+	dir := shorttmp.Dir(t)
 	units := &shimUnits{}
 	t.Cleanup(units.Close)
 	env := map[string]string{"PATH": "/usr/bin"}
