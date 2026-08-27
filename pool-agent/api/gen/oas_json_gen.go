@@ -299,6 +299,12 @@ func (s *GitSource) encodeFields(e *jx.Encoder) {
 		}
 	}
 	{
+		if s.DataKey.Set {
+			e.FieldStart("dataKey")
+			s.DataKey.Encode(e)
+		}
+	}
+	{
 		if s.Destination.Set {
 			e.FieldStart("destination")
 			s.Destination.Encode(e)
@@ -334,15 +340,16 @@ func (s *GitSource) encodeFields(e *jx.Encoder) {
 	}
 }
 
-var jsonFieldsNameOfGitSource = [8]string{
+var jsonFieldsNameOfGitSource = [9]string{
 	0: "checkout",
 	1: "delivery",
-	2: "destination",
-	3: "kind",
-	4: "localDirectory",
-	5: "slug",
-	6: "url",
-	7: "workspace",
+	2: "dataKey",
+	3: "destination",
+	4: "kind",
+	5: "localDirectory",
+	6: "slug",
+	7: "url",
+	8: "workspace",
 }
 
 // Decode decodes GitSource from json.
@@ -350,7 +357,7 @@ func (s *GitSource) Decode(d *jx.Decoder) error {
 	if s == nil {
 		return errors.New("invalid: unable to decode GitSource to nil")
 	}
-	var requiredBitSet [1]uint8
+	var requiredBitSet [2]uint8
 
 	if err := d.ObjBytes(func(d *jx.Decoder, k []byte) error {
 		switch string(k) {
@@ -374,6 +381,16 @@ func (s *GitSource) Decode(d *jx.Decoder) error {
 			}(); err != nil {
 				return errors.Wrap(err, "decode field \"delivery\"")
 			}
+		case "dataKey":
+			if err := func() error {
+				s.DataKey.Reset()
+				if err := s.DataKey.Decode(d); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"dataKey\"")
+			}
 		case "destination":
 			if err := func() error {
 				s.Destination.Reset()
@@ -385,7 +402,7 @@ func (s *GitSource) Decode(d *jx.Decoder) error {
 				return errors.Wrap(err, "decode field \"destination\"")
 			}
 		case "kind":
-			requiredBitSet[0] |= 1 << 3
+			requiredBitSet[0] |= 1 << 4
 			if err := func() error {
 				if err := s.Kind.Decode(d); err != nil {
 					return err
@@ -443,8 +460,9 @@ func (s *GitSource) Decode(d *jx.Decoder) error {
 	}
 	// Validate required fields.
 	var failures []validate.FieldError
-	for i, mask := range [1]uint8{
-		0b00001000,
+	for i, mask := range [2]uint8{
+		0b00010000,
+		0b00000000,
 	} {
 		if result := (requiredBitSet[i] & mask) ^ mask; result != 0 {
 			// Mask only required fields and check equality to mask using XOR.

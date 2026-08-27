@@ -9,11 +9,24 @@ import (
 	"strings"
 	"time"
 
+	"github.com/discobox-ai/discobox/internal/originkey"
 	"github.com/discobox-ai/discobox/server/internal/apperrors"
 	"github.com/discobox-ai/discobox/server/internal/model"
 	"github.com/discobox-ai/discobox/server/internal/reconcile"
 	"github.com/discobox-ai/discobox/server/internal/sandbox"
 )
+
+// sourceDataKey identifies the durable pool-local data shared by every sandbox
+// using one source. Local paths and remote URLs are already normalized by
+// GitSource.Root; the client host identity disambiguates identical paths on
+// different machines. An incomplete identity opts the source out rather than
+// risking a collision.
+func sourceDataKey(hostID string, source *model.GitSource) string {
+	if source == nil {
+		return ""
+	}
+	return originkey.Of(hostID, source.Root())
+}
 
 // resolveSourceDelivery records how each of a sandbox's sources reaches it, so
 // every later stage reads a stated intent instead of re-deriving it. The

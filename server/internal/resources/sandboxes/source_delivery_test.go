@@ -7,6 +7,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/discobox-ai/discobox/internal/originkey"
 	"github.com/discobox-ai/discobox/server/internal/model"
 	"github.com/discobox-ai/discobox/server/internal/sandbox"
 )
@@ -24,6 +25,38 @@ func hostPath(p string) string {
 		return `C:\`
 	}
 	return `C:` + filepath.FromSlash(p)
+}
+
+func TestSourceDataKeyUsesHostAndNormalizedSourceRoot(t *testing.T) {
+	directory := "/foo/bar/baz"
+	source := &model.GitSource{Kind: "git", LocalDirectory: &directory}
+	if got, want := sourceDataKey("host_abc", source), originkey.Of("host_abc", directory); got != want {
+		t.Fatalf("sourceDataKey = %q, want %q", got, want)
+	}
+	if sourceDataKey("host_abc", source) == sourceDataKey("host_other", source) {
+		t.Fatal("the same path on different client hosts shares source data")
+	}
+	if got := sourceDataKey("", source); got != "" {
+		t.Fatalf("sourceDataKey without host = %q, want empty", got)
+	}
+	if got := sourceDataKey("host_abc", nil); got != "" {
+		t.Fatalf("sourceDataKey without source = %q, want empty", got)
+	}
+}
+
+func TestSourceDataFingerprintIsStableAndChangesTheRuntimeSpec(t *testing.T) {
+	refsA := map[string]string{"z": strings.Repeat("a", 64), "a": strings.Repeat("b", 64)}
+	refsB := map[string]string{"a": strings.Repeat("b", 64), "z": strings.Repeat("a", 64)}
+	first := sourceDataFingerprint("base", strings.Repeat("c", 64), refsA)
+	if second := sourceDataFingerprint("base", strings.Repeat("c", 64), refsB); first != second {
+		t.Fatalf("map iteration changed fingerprint: %q != %q", first, second)
+	}
+	if first == "base" || first == sourceDataFingerprint("base", strings.Repeat("d", 64), refsA) {
+		t.Fatal("source data identity did not change the runtime fingerprint")
+	}
+	if got := sourceDataFingerprint("base", "", nil); got != "base" {
+		t.Fatalf("fingerprint without source data = %q, want base unchanged", got)
+	}
 }
 
 func TestSourceNeedsPush(t *testing.T) {

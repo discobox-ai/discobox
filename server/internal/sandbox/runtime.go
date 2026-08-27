@@ -134,28 +134,34 @@ type CreateOptions struct {
 	// sandbox's static config.
 	SecretEnv map[string]string
 
-	Name                  string
-	Description           *string
-	HarnessConfigID       *string
-	HarnessMode           string
-	Model                 *string
-	ModelServiceTier      *string
-	ModelReasoningLevel   *string
-	Prompt                []string
-	Source                *model.GitSource
-	SourceCodeReferences  model.SourceCodeReferences
-	UserName              *string
-	UserUID               *int
-	UserGID               *int
-	UserGroupName         *string
-	UserAdditionalGroups  []string
-	HomeDirectory         *string
-	GitUserName           *string
-	GitUserEmail          *string
-	ResolvedHarnessConfig *ResolvedHarnessConfig
-	AgentServerURL        string
-	OAuthRedirectBase     string
-	PoolID                string
+	Name                 string
+	Description          *string
+	HarnessConfigID      *string
+	HarnessMode          string
+	Model                *string
+	ModelServiceTier     *string
+	ModelReasoningLevel  *string
+	Prompt               []string
+	Source               *model.GitSource
+	SourceCodeReferences model.SourceCodeReferences
+	// SourceDataKey and SourceCodeReferenceDataKeys identify the durable,
+	// pool-local data directory shared by sandboxes that use the same source.
+	// The provider forwards these opaque keys; it does not derive source
+	// identity itself.
+	SourceDataKey               string
+	SourceCodeReferenceDataKeys map[string]string
+	UserName                    *string
+	UserUID                     *int
+	UserGID                     *int
+	UserGroupName               *string
+	UserAdditionalGroups        []string
+	HomeDirectory               *string
+	GitUserName                 *string
+	GitUserEmail                *string
+	ResolvedHarnessConfig       *ResolvedHarnessConfig
+	AgentServerURL              string
+	OAuthRedirectBase           string
+	PoolID                      string
 }
 
 // UpdateOptions carries the mutable subset of CreateOptions that can be applied

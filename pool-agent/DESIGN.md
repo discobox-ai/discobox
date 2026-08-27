@@ -20,7 +20,7 @@ from the future in-sandbox `sandbox-agent` API.
 | `.` | Root `poolagent` Go package: boot contract, registration flow, status reporting, the standing sandbox-agent status poller (`statuspoll.go`, ADR 0030), and high-level command orchestration. |
 | `server` | Pool-local HTTP server, health/metadata endpoints, and generated sandbox API route/auth adapter. |
 | `vsock` | Guest AF_VSOCK listener and host-CID HTTP transport primitives. |
-| `sandboxruntime` | Local sandbox runtime implementations used by the pool host server. Provisions the five primary volumes (`/.discobox/{data,cache,config,sources,secrets}`) and mounts them into every sandbox; `cache` is the pool-local directory shared across the pool's sandboxes. Also binds each source's origin, read-only, onto `/.discobox/origins/<slug>`: the real host directory for a clone-delivered local source (ADR 0026), and a pool-side bare repository the client pushes into for a push-delivered one (ADR 0058). In-sandbox path wiring for the primary volumes is delegated to the sandbox-agent init flow (ADR 0007). |
+| `sandboxruntime` | Local sandbox runtime implementations used by the pool host server. Provisions the five primary volumes (`/.discobox/{data,cache,config,sources,secrets}`) and mounts them into every sandbox; `cache` is the pool-local directory shared across the pool's sandboxes. It also mounts each source's opaque, durable pool-local data at `/.discobox/data-per-source/<slug>` and binds each source's origin, read-only, at `/.discobox/origins/<slug>`. In-sandbox path wiring for the primary volumes is delegated to the sandbox-agent init flow (ADR 0007); the two per-source mounts already land at their final runtime-owned paths. |
 | `proxyagent` | Worker-scoped proxy wiring: certificate bundle preparation, the `proxy` subcommand entrypoint, and per-sandbox client material staging. |
 | `buildkitagent` | The pool-shared BuildKit builder, its output registry, the mediator that binds a build to the sandbox that asked for it, and the per-build egress forwarder. See [Pool-Shared Builds](#pool-shared-builds). |
 | `cmd/discobox-pool-runc` | The pool's runc wrapper, installed as `runc` ahead of BuildKit's own. Injects MITM trust and the per-build egress hooks into each build step's OCI spec. |
@@ -294,6 +294,16 @@ flowchart LR
   `/var/lib/discobox/cache/projects/{project}/pools/{pool}/cache`.
   The sandbox-agent wires everything else from the image's declarative volume
   list and the manifest source list. See ADR 0007.
+- Source-scoped durable data is a separate pool-owned lifecycle boundary:
+  `/var/lib/discobox/projects/{project}/pools/{pool}/data-per-source/{source-key}`.
+  The control plane resolves the opaque source key; pool-agent validates it,
+  provisions only the mountpoint, and binds it read-write at
+  `/.discobox/data-per-source/<slug>`. The slug is sandbox-local addressing,
+  while the key is backing identity, so separate sandboxes can use the same
+  source under different local layouts without losing sharing. Contents are
+  opaque to both runtime agents. A sandbox archive or delete cannot remove this
+  sibling of `sandboxes/`; deleting the pool removes it with the pool's durable
+  tree.
 - Every source with a `LocalDirectory` gets an origin bound, read-only, directly
   onto `/.discobox/origins/<slug>` — the same `<slug>` as the corresponding
   `/.discobox/sources/<slug>`. `ensureOriginRemote` points the repository's

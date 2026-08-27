@@ -969,6 +969,61 @@ func TestOriginMountsCoverEveryReachableOrigin(t *testing.T) {
 	}
 }
 
+func TestSourceDataMountsUseStableKeysAndSandboxSlugs(t *testing.T) {
+	primaryKey := strings.Repeat("a", 64)
+	refKey := strings.Repeat("b", 64)
+	req := &workerapimodel.PoolSandboxCreateRequest{
+		SandboxId: "sandbox-1",
+		Config: workerapimodel.SandboxConfig{
+			Source: workerclient.NewOptGitSource(workerapimodel.GitSource{
+				Kind: workerclient.GitSourceKindGit, DataKey: workerclient.NewOptString(primaryKey),
+			}),
+			SourceCodeReferences: workerclient.NewOptSandboxConfigSourceCodeReferences(workerclient.SandboxConfigSourceCodeReferences{
+				"/workspace/lib": {
+					Kind: workerclient.GitSourceKindGit,
+					Slug: workerclient.NewOptString("library"), DataKey: workerclient.NewOptString(refKey),
+				},
+				"without-data": {Kind: workerclient.GitSourceKindGit},
+			}),
+		},
+	}
+	mounts := sourceDataMounts(
+		sandboxSources(req),
+		func(key string) string { return "/pool/data-per-source/" + key },
+		func(host string) string { return "/daemon" + host },
+	)
+
+	if len(mounts) != 2 {
+		t.Fatalf("source data mounts = %#v, want primary and library", mounts)
+	}
+	byTarget := map[string]mount.Mount{}
+	for _, m := range mounts {
+		byTarget[m.Target] = m
+	}
+	for target, key := range map[string]string{
+		sandboxSourceDataMount + "/primary": primaryKey,
+		sandboxSourceDataMount + "/library": refKey,
+	} {
+		got, ok := byTarget[target]
+		if !ok || got.Type != mount.TypeBind || got.ReadOnly || got.Source != "/daemon/pool/data-per-source/"+key {
+			t.Errorf("mount %q = %#v", target, got)
+		}
+	}
+}
+
+func TestValidSourceDataKey(t *testing.T) {
+	for _, key := range []string{strings.Repeat("a", 64), strings.Repeat("09", 32)} {
+		if !validSourceDataKey(key) {
+			t.Errorf("validSourceDataKey(%q) = false", key)
+		}
+	}
+	for _, key := range []string{"", strings.Repeat("a", 63), strings.Repeat("A", 64), strings.Repeat("g", 64), "../" + strings.Repeat("a", 61)} {
+		if validSourceDataKey(key) {
+			t.Errorf("validSourceDataKey(%q) = true", key)
+		}
+	}
+}
+
 // pushDeliveredSource is a push-delivered source checked out at a branch, or at a
 // bare commit when the branch is empty.
 //

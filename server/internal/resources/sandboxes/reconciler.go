@@ -2,6 +2,8 @@ package sandboxes
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -494,6 +496,18 @@ func (r *SandboxReconciler) createOptionsFromSandbox(ctx context.Context, sb *mo
 	}
 	opts.Source = sb.Source
 	opts.SourceCodeReferences = sb.SourceCodeReferences
+	if sb.Origin != nil {
+		opts.SourceDataKey = sourceDataKey(sb.Origin.HostID, sb.Source)
+		if len(sb.SourceCodeReferences) > 0 {
+			opts.SourceCodeReferenceDataKeys = make(map[string]string, len(sb.SourceCodeReferences))
+			for name, source := range sb.SourceCodeReferences {
+				if key := sourceDataKey(sb.Origin.HostID, &source); key != "" {
+					opts.SourceCodeReferenceDataKeys[name] = key
+				}
+			}
+		}
+	}
+	opts.SpecFingerprint = sourceDataFingerprint(opts.SpecFingerprint, opts.SourceDataKey, opts.SourceCodeReferenceDataKeys)
 	opts.UserName = sb.UserName
 	opts.UserUID = sb.UserUID
 	opts.UserGID = sb.UserGID
@@ -528,6 +542,26 @@ func (r *SandboxReconciler) createOptionsFromSandbox(ctx context.Context, sb *mo
 		}
 	}
 	return opts, nil
+}
+
+// sourceDataFingerprint makes the source-scoped mounts part of the runtime
+// spec. Sandboxes created before source data existed therefore rebuild once
+// instead of retaining a container that can never see the new mounts.
+func sourceDataFingerprint(base, primary string, refs map[string]string) string {
+	if primary == "" && len(refs) == 0 {
+		return base
+	}
+	payload, err := json.Marshal(struct {
+		Version int               `json:"version"`
+		Base    string            `json:"base"`
+		Primary string            `json:"primary,omitempty"`
+		Refs    map[string]string `json:"refs,omitempty"`
+	}{Version: 1, Base: base, Primary: primary, Refs: refs})
+	if err != nil {
+		return "unfingerprintable-source-data"
+	}
+	sum := sha256.Sum256(payload)
+	return hex.EncodeToString(sum[:])
 }
 
 func setProviderState(sb *model.Sandbox, runtimeSandbox *Sandbox) {

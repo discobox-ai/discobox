@@ -63,7 +63,7 @@ func PoolIdentityKey(projectID, poolID string) string {
 	return path.Join(PoolIdentity(projectID, poolID), "agent.key")
 }
 
-// --- durable sandbox state -------------------------------------------------
+// --- durable pool and sandbox state ----------------------------------------
 
 // ProjectData is the root of one project's durable state. It is the shallowest
 // path the pool-sync reaper needs, and it is already project-scoped so a reaper
@@ -87,6 +87,20 @@ func PoolData(projectID, poolID string) string {
 // reaper scans only here, which is what stops it touching another pool's data.
 func PoolSandboxes(projectID, poolID string) string {
 	return path.Join(PoolData(projectID, poolID), "sandboxes")
+}
+
+// PoolSourceData is the parent of durable data shared by sandboxes in one pool
+// according to source identity. Unlike PoolSandboxes, deleting one sandbox
+// must not remove anything below this tree.
+func PoolSourceData(projectID, poolID string) string {
+	return path.Join(PoolData(projectID, poolID), "data-per-source")
+}
+
+// SourceData is one source's durable pool-local data directory. sourceKey is
+// an opaque key resolved before the pool boundary; layout does not interpret
+// source identity.
+func SourceData(projectID, poolID, sourceKey string) string {
+	return path.Join(PoolSourceData(projectID, poolID), sourceKey)
 }
 
 // Sandbox is one sandbox's tree.

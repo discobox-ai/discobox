@@ -57,13 +57,17 @@ const (
 	// costs well under a millisecond now that it no longer lists containers.
 	sandboxAgentPollInterval = 25 * time.Millisecond
 
-	// The pool host provisions four host-backed roots and mounts them at these
+	// The pool host provisions host-backed roots and mounts them at these
 	// fixed container paths. The sandbox-agent (running as PID 1) wires
 	// everything else from these primary volumes; see ADR 0007.
 	sandboxDataMount    = "/.discobox/data"
 	sandboxCacheMount   = "/.discobox/cache"
 	sandboxConfigMount  = "/.discobox/config"
 	sandboxSourcesMount = "/.discobox/sources"
+	// Source data is not a primary volume mounted whole. Each source with a
+	// resolved data key gets its pool-shared backing directory bound beneath
+	// this root by its sandbox-local slug.
+	sandboxSourceDataMount = "/.discobox/data-per-source"
 
 	// sandboxSecretsMount is bound outside /run: systemd (PID 1 inside the
 	// sandbox) mounts a fresh tmpfs over /run early in boot, which would
@@ -852,6 +856,14 @@ func (r *DockerSandboxRuntime) prepareSandboxVolumes(ctx context.Context, sandbo
 		if err := r.ensureOriginRemote(ctx, sourcePoolPath, source.git, source.slug, user); err != nil {
 			return nil, nil, fmt.Errorf("set source origin remote %q: %w", source.slug, err)
 		}
+		if dataKey := optString(source.git.DataKey); dataKey != "" {
+			if !validSourceDataKey(dataKey) {
+				return nil, nil, fmt.Errorf("source %q has invalid data key", source.slug)
+			}
+			if err := prepareOwnedMountpoint(r.sourceDataPath(dataKey), chownID(user.UID), chownID(user.GID)); err != nil {
+				return nil, nil, fmt.Errorf("prepare source data %q: %w", source.slug, err)
+			}
+		}
 		// The primary source is always first when present (sandboxSources).
 		if i == 0 && hasPrimary {
 			layer, err := readProjectLayer(sourcePoolPath)
@@ -875,7 +887,40 @@ func (r *DockerSandboxRuntime) prepareSandboxVolumes(ctx context.Context, sandbo
 	mounts = append(mounts, originMounts(sources, func(slug string) string {
 		return r.sandboxOriginPath(sandboxID, slug)
 	}, r.daemonPath)...)
+	mounts = append(mounts, sourceDataMounts(sources, r.sourceDataPath, r.daemonPath)...)
 	return mounts, project, nil
+}
+
+// sourceDataMounts binds each source's durable pool-local data by its stable
+// key onto the source's sandbox-local slug. The contents are opaque to the
+// pool and sandbox agents; consumers such as harnesses own everything below
+// the mount.
+func sourceDataMounts(sources []sandboxSource, sourcePath func(string) string, daemonPath func(string) string) []mount.Mount {
+	var mounts []mount.Mount
+	for _, source := range sources {
+		dataKey := optString(source.git.DataKey)
+		if dataKey == "" || !validSourceDataKey(dataKey) {
+			continue
+		}
+		mounts = append(mounts, mount.Mount{
+			Type:   mount.TypeBind,
+			Source: daemonPath(sourcePath(dataKey)),
+			Target: path.Join(sandboxSourceDataMount, source.slug),
+		})
+	}
+	return mounts
+}
+
+func validSourceDataKey(key string) bool {
+	if len(key) != 64 {
+		return false
+	}
+	for _, char := range key {
+		if (char < '0' || char > '9') && (char < 'a' || char > 'f') {
+			return false
+		}
+	}
+	return true
 }
 
 // originMounts builds one read-only bind per source that has an origin the
@@ -2270,6 +2315,10 @@ func (r *DockerSandboxRuntime) projectFilters() client.Filters {
 
 func (r *DockerSandboxRuntime) sandboxDataRootPath(sandboxID string) string {
 	return resolve(layout.SandboxData(r.projectID, r.poolID, sandboxID))
+}
+
+func (r *DockerSandboxRuntime) sourceDataPath(sourceKey string) string {
+	return resolve(layout.SourceData(r.projectID, r.poolID, sourceKey))
 }
 
 func (r *DockerSandboxRuntime) sandboxConfigRoot(sandboxID string) string {

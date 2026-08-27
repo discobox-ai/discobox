@@ -175,7 +175,9 @@ type GitSource struct {
 	Checkout OptGitSourceCheckout `json:"checkout"`
 	// How the source reaches the sandbox. clone fetches from url or localDirectory; push initializes an
 	// empty repository for the client to push into. Defaults to clone.
-	Delivery       OptGitSourceDelivery    `json:"delivery"`
+	Delivery OptGitSourceDelivery `json:"delivery"`
+	// Opaque stable key for durable pool-local data shared by sandboxes using this source.
+	DataKey        OptString               `json:"dataKey"`
 	Destination    OptGitSourceDestination `json:"destination"`
 	Kind           GitSourceKind           `json:"kind"`
 	LocalDirectory OptString               `json:"localDirectory"`
@@ -193,6 +195,11 @@ func (s *GitSource) GetCheckout() OptGitSourceCheckout {
 // GetDelivery returns the value of Delivery.
 func (s *GitSource) GetDelivery() OptGitSourceDelivery {
 	return s.Delivery
+}
+
+// GetDataKey returns the value of DataKey.
+func (s *GitSource) GetDataKey() OptString {
+	return s.DataKey
 }
 
 // GetDestination returns the value of Destination.
@@ -233,6 +240,11 @@ func (s *GitSource) SetCheckout(val OptGitSourceCheckout) {
 // SetDelivery sets the value of Delivery.
 func (s *GitSource) SetDelivery(val OptGitSourceDelivery) {
 	s.Delivery = val
+}
+
+// SetDataKey sets the value of DataKey.
+func (s *GitSource) SetDataKey(val OptString) {
+	s.DataKey = val
 }
 
 // SetDestination sets the value of Destination.

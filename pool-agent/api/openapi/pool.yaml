@@ -79,6 +79,10 @@ components:
                     - clone
                     - push
                     type: string
+                dataKey:
+                    description: Opaque stable key for durable pool-local data shared by sandboxes using this source.
+                    pattern: ^[a-f0-9]{64}$
+                    type: string
                 destination:
                     "$ref": "#/components/schemas/GitSourceDestination"
                 kind:

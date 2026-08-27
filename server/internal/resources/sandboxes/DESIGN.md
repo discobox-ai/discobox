@@ -228,6 +228,16 @@ beside it.
 
 ## Source delivery
 
+Each materialized source also receives an opaque source-data key before the
+provider boundary. It is the existing origin-key derivation applied to the
+client host ID and that source's normalized `GitSource.Root()`: for the primary
+repository `/foo/bar/baz`, it is the same identity as the sandbox's origin key;
+source-code references get independent identities from their own roots. An
+incomplete host/source identity opts out rather than sharing under an ambiguous
+key. The pool runtime uses the key only to select durable pool-local storage and
+exposes that storage inside a sandbox by source slug; no control-plane or
+runtime component interprets its contents.
+
 A sandbox's source reaches it one of two ways, stated on `GitSource.Delivery`
 and decided by the server. Delivery is never inferred from which source fields
 are set: a source with nothing to clone from is a malformed request and fails.

@@ -13,6 +13,8 @@ func TestPathsMatchTheEstablishedLayout(t *testing.T) {
 	for name, tc := range map[string]struct{ got, want string }{
 		"pool data":         {PoolData("prj", "pool"), "/var/lib/discobox/projects/prj/pools/pool"},
 		"pool sandboxes":    {PoolSandboxes("prj", "pool"), "/var/lib/discobox/projects/prj/pools/pool/sandboxes"},
+		"pool source data":  {PoolSourceData("prj", "pool"), "/var/lib/discobox/projects/prj/pools/pool/data-per-source"},
+		"source data":       {SourceData("prj", "pool", "source-key"), "/var/lib/discobox/projects/prj/pools/pool/data-per-source/source-key"},
 		"sandbox data":      {SandboxData("prj", "pool", "sb"), "/var/lib/discobox/projects/prj/pools/pool/sandboxes/sb/data"},
 		"sandbox config":    {SandboxConfig("prj", "pool", "sb"), "/var/lib/discobox/projects/prj/pools/pool/sandboxes/sb/config"},
 		"sandbox secrets":   {SandboxSecrets("prj", "pool", "sb"), "/var/lib/discobox/projects/prj/pools/pool/sandboxes/sb/secrets"},
@@ -37,6 +39,7 @@ func TestPoolStateIsAlwaysScopedToItsPool(t *testing.T) {
 	perPool := map[string]func(projectID, poolID string) string{
 		"PoolData":                PoolData,
 		"PoolSandboxes":           PoolSandboxes,
+		"PoolSourceData":          PoolSourceData,
 		"PoolCache":               PoolCache,
 		"PoolBuild":               PoolBuild,
 		"ProxyPool":               ProxyPool,
@@ -61,6 +64,17 @@ func TestPoolStateIsAlwaysScopedToItsPool(t *testing.T) {
 		if !strings.Contains(samePool, "pool-1") || !strings.Contains(samePool, "prj-a") {
 			t.Errorf("%s = %q, want it to name both its project and pool", name, samePool)
 		}
+	}
+}
+
+func TestSourceDataIsOutsideEverySandboxTree(t *testing.T) {
+	sourceData := SourceData("prj", "pool", "source-key")
+	sandbox := Sandbox("prj", "pool", "sbx")
+	if sourceData == sandbox || strings.HasPrefix(sourceData, sandbox+"/") {
+		t.Fatalf("source data %q is inside sandbox tree %q and would be deleted with it", sourceData, sandbox)
+	}
+	if filepath.Dir(PoolSourceData("prj", "pool")) != PoolData("prj", "pool") {
+		t.Fatalf("source data root is not owned by the pool durable tree: %q", PoolSourceData("prj", "pool"))
 	}
 }
 

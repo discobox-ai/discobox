@@ -412,13 +412,13 @@ func poolCreateRequestFromOptions(sandboxID string, opts sandbox.CreateOptions) 
 		config.Prompt = opts.Prompt
 	}
 	if opts.Source != nil {
-		workerSource, err := poolGitSource(*opts.Source)
+		workerSource, err := poolGitSource(*opts.Source, opts.SourceDataKey)
 		if err == nil {
 			config.Source = poolclient.NewOptGitSource(workerSource)
 		}
 	}
 	if opts.SourceCodeReferences != nil {
-		config.SourceCodeReferences = poolclient.NewOptSandboxConfigSourceCodeReferences(poolSourceCodeReferences(opts.SourceCodeReferences))
+		config.SourceCodeReferences = poolclient.NewOptSandboxConfigSourceCodeReferences(poolSourceCodeReferences(opts.SourceCodeReferences, opts.SourceCodeReferenceDataKeys))
 	}
 	user := poolapimodel.SandboxUser{}
 	user.SetName(poolOptStringPtr(opts.UserName))
@@ -452,10 +452,10 @@ func poolOptStringPtr(value *string) poolclient.OptString {
 	return poolclient.NewOptString(*value)
 }
 
-func poolSourceCodeReferences(in model.SourceCodeReferences) poolclient.SandboxConfigSourceCodeReferences {
+func poolSourceCodeReferences(in model.SourceCodeReferences, dataKeys map[string]string) poolclient.SandboxConfigSourceCodeReferences {
 	out := make(poolclient.SandboxConfigSourceCodeReferences, len(in))
 	for key, ref := range in {
-		workerRef, err := poolGitSource(ref)
+		workerRef, err := poolGitSource(ref, dataKeys[key])
 		if err != nil {
 			continue
 		}
@@ -464,8 +464,11 @@ func poolSourceCodeReferences(in model.SourceCodeReferences) poolclient.SandboxC
 	return out
 }
 
-func poolGitSource(in model.GitSource) (poolapimodel.GitSource, error) {
+func poolGitSource(in model.GitSource, dataKey string) (poolapimodel.GitSource, error) {
 	out := poolapimodel.GitSource{Kind: poolclient.GitSourceKind(in.Kind)}
+	if dataKey != "" {
+		out.DataKey = poolclient.NewOptString(dataKey)
+	}
 	if out.Kind == "" {
 		out.Kind = poolclient.GitSourceKindGit
 	}
