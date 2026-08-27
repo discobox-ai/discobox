@@ -138,6 +138,9 @@ func TestDirectoryWithNoRepositoryIsAskedAboutBeforeItIsCopied(t *testing.T) {
 		if !strings.Contains(m.dialog.body, "/home/ada/notes") || !strings.Contains(m.dialog.body, "not a Git repository") {
 			t.Fatalf("%s: dialog body = %q, want the directory named", tc.answer, m.dialog.body)
 		}
+		if m.dialog.emphasis == "" {
+			t.Fatalf("%s: the question should lead with what copying would cost", tc.answer)
+		}
 		if got := ds.measuredDirs(); len(got) != 1 || got[0] != "/home/ada/notes" {
 			t.Fatalf("%s: measured %v, want the directory being asked about", tc.answer, got)
 		}
@@ -163,14 +166,14 @@ func TestTheDirectoryQuestionCountsWhileItIsUp(t *testing.T) {
 	ds.workspace = SourceWorkspace{Directory: "/home/ada/notes", Carries: true}
 	m := newTestModel(t, ds)
 	send(t, m, key("enter"))
-	if !strings.Contains(m.dialog.body, "calculating") {
-		t.Fatalf("dialog body = %q, want a count that has not finished", m.dialog.body)
+	if m.dialog.emphasis != "calculating…" {
+		t.Fatalf("emphasis = %q, want the walk to say it has nothing counted yet", m.dialog.emphasis)
 	}
 
 	ds.setTotal(DirectoryTotal{Bytes: 5 << 20, Files: 3})
 	send(t, m, directorySizeMsg{})
-	if !strings.Contains(m.dialog.body, "calculating") || !strings.Contains(m.dialog.body, "5.0 MiB in 3 files") {
-		t.Fatalf("dialog body = %q, want the running total so far", m.dialog.body)
+	if m.dialog.emphasis != "5.0 MiB in 3 files, still counting…" {
+		t.Fatalf("emphasis = %q, want the running total", m.dialog.emphasis)
 	}
 	if ds.stoppedCount() != 0 {
 		t.Fatal("the walk was stopped while the question was still up")
@@ -178,8 +181,8 @@ func TestTheDirectoryQuestionCountsWhileItIsUp(t *testing.T) {
 
 	ds.setTotal(DirectoryTotal{Bytes: 7 << 20, Files: 4, Done: true})
 	send(t, m, directorySizeMsg{})
-	if strings.Contains(m.dialog.body, "calculating") || !strings.Contains(m.dialog.body, "7.0 MiB in 4 files") {
-		t.Fatalf("dialog body = %q, want the final total stated as one", m.dialog.body)
+	if m.dialog.emphasis != "7.0 MiB in 4 files" {
+		t.Fatalf("emphasis = %q, want the final total stated as one", m.dialog.emphasis)
 	}
 	if ds.stoppedCount() != 1 {
 		t.Fatalf("the walk was stopped %d times once it had finished, want once", ds.stoppedCount())

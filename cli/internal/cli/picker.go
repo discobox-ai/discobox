@@ -361,6 +361,9 @@ var (
 	pickerQueryStyle  = lipgloss.NewStyle().Foreground(lipgloss.Color("6"))
 	pickerMatchStyle  = lipgloss.NewStyle().Foreground(lipgloss.Color("11")).Bold(true)
 	pickerRecentStyle = lipgloss.NewStyle().Foreground(lipgloss.Color("6"))
+	// pickerNoteStyle draws whatever a prompt puts under its first line: the
+	// thing the question turns on, set apart from the sentence explaining it.
+	pickerNoteStyle = lipgloss.NewStyle().Foreground(lipgloss.Color("11")).Bold(true)
 )
 
 func (m *pickerModel) View() tea.View {
@@ -370,7 +373,11 @@ func (m *pickerModel) View() tea.View {
 		return tea.NewView("")
 	}
 	var b strings.Builder
-	fmt.Fprintf(&b, "%s\n", pickerTitleStyle.Render(m.prompt))
+	prompt, note, hasNote := strings.Cut(m.prompt, "\n")
+	fmt.Fprintf(&b, "%s\n", pickerTitleStyle.Render(prompt))
+	if hasNote {
+		fmt.Fprintf(&b, "%s\n", pickerNoteStyle.Render(note))
+	}
 	fmt.Fprintf(&b, "%s%s\n\n", pickerQueryStyle.Render("search: "), m.query+"▏")
 	if len(m.matches) == 0 {
 		fmt.Fprintf(&b, "%s\n", pickerDetailStyle.Render("  no matches"))

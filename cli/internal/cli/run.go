@@ -212,14 +212,25 @@ func confirmCopyDirectory(cmd *cobra.Command) sandboxcreate.ConfirmCopyDirectory
 	}
 }
 
-// directoryCopyPrompt says what copying this directory would carry, and keeps
-// saying it while the walk behind the question is still counting.
+// directoryCopyPrompt says what copying this directory would carry. The size
+// gets a line of its own, because it is the whole of what the answer turns on.
 func directoryCopyPrompt(dir string, total sandboxcreate.DirectoryTotal) string {
+	return fmt.Sprintf("%s is not a Git repository, so copying it into the discobox means all of it:\n%s",
+		dir, directoryCopySize(total))
+}
+
+// directoryCopySize is that line, with as much of the count as the walk behind
+// the question has reached. Nothing counted yet says so rather than reporting a
+// zero that is about to be wrong.
+func directoryCopySize(total sandboxcreate.DirectoryTotal) string {
+	if total.Files == 0 && !total.Done {
+		return "calculating…"
+	}
 	counted := fmt.Sprintf("%s in %d %s", humanBytes(total.Bytes), total.Files, pluralize("file", int(total.Files)))
 	if !total.Done {
-		counted = "calculating… " + counted + " so far"
+		counted += ", still counting…"
 	}
-	return fmt.Sprintf("%s is not a Git repository, so copying it into the discobox means all of it (%s)", dir, counted)
+	return counted
 }
 
 // reportDeclaredSource says where each source the repository declared came

@@ -36,6 +36,12 @@ type dialog struct {
 	input  textinput.Model
 	err    bool
 
+	// emphasis is the one line a question turns on — the size of a directory
+	// being measured behind it — drawn under the body in the window's accent
+	// rather than buried in the sentence explaining it. It is rewritten while
+	// the dialog is up, so it is its own field rather than part of body.
+	emphasis string
+
 	// defaultNo makes Enter mean no rather than yes, for a question whose
 	// costly answer is yes. Only dlgConfirm reads it.
 	defaultNo bool
@@ -305,6 +311,12 @@ func (d *dialog) view(st *styles, width, height int) string {
 		} else {
 			b.WriteString(strings.Join(lines, "\n"))
 		}
+		b.WriteString("\n")
+	}
+
+	if d.emphasis != "" {
+		b.WriteString("\n")
+		b.WriteString(st.dialogTitle.Render(truncate(d.emphasis, inner)))
 		b.WriteString("\n")
 	}
 

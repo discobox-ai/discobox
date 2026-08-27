@@ -249,6 +249,20 @@ func TestPickerLivePromptFollowsItsSubjectUntilItIsFinal(t *testing.T) {
 	}
 }
 
+// What a prompt puts under its first line is drawn apart from it, so a question
+// whose answer turns on a number shows the number rather than burying it in the
+// sentence.
+func TestPickerDrawsAPromptsNoteUnderIt(t *testing.T) {
+	m := newPickerModel("this directory is not a Git repository:\n4.8 GiB in 141201 files", []pickerItem{{id: "no"}, {id: "yes"}}, "")
+	lines := strings.Split(m.View().Content, "\n")
+	if len(lines) < 2 || !strings.Contains(lines[0], "not a Git repository") {
+		t.Fatalf("first line = %q, want the question", lines[0])
+	}
+	if !strings.Contains(lines[1], "4.8 GiB in 141201 files") {
+		t.Fatalf("second line = %q, want the note on a line of its own", lines[1])
+	}
+}
+
 // A static prompt polls nothing at all.
 func TestPickerWithoutALivePromptSchedulesNothing(t *testing.T) {
 	m := newPickerModel("Select a discobox", []pickerItem{{id: "sbx_1"}, {id: "sbx_2"}}, "")
@@ -260,15 +274,24 @@ func TestPickerWithoutALivePromptSchedulesNothing(t *testing.T) {
 // The question about a directory in no repository leads with what it would
 // cost, and says so as a running count until the walk behind it is done.
 func TestDirectoryCopyPromptSaysWhatItWouldCopy(t *testing.T) {
-	counting := directoryCopyPrompt("/home/ada", sandboxcreate.DirectoryTotal{Bytes: 5 << 20, Files: 3})
-	if !strings.Contains(counting, "/home/ada") || !strings.Contains(counting, "not a Git repository") {
-		t.Fatalf("prompt = %q, want the directory named", counting)
+	counting := strings.Split(directoryCopyPrompt("/home/ada", sandboxcreate.DirectoryTotal{Bytes: 5 << 20, Files: 3}), "\n")
+	if len(counting) != 2 {
+		t.Fatalf("prompt = %q, want the size on a line of its own", counting)
 	}
-	if !strings.Contains(counting, "calculating… 5.0 MiB in 3 files so far") {
-		t.Fatalf("prompt = %q, want a count that is still climbing", counting)
+	if !strings.Contains(counting[0], "/home/ada") || !strings.Contains(counting[0], "not a Git repository") {
+		t.Fatalf("prompt = %q, want the directory named", counting[0])
+	}
+	if counting[1] != "5.0 MiB in 3 files, still counting…" {
+		t.Fatalf("size line = %q, want a count that is still climbing", counting[1])
 	}
 	done := directoryCopyPrompt("/home/ada", sandboxcreate.DirectoryTotal{Bytes: 1 << 20, Files: 1, Done: true})
-	if strings.Contains(done, "calculating") || !strings.Contains(done, "1.0 MiB in 1 file") {
-		t.Fatalf("prompt = %q, want the final count stated as one", done)
+	if got := strings.Split(done, "\n")[1]; got != "1.0 MiB in 1 file" {
+		t.Fatalf("size line = %q, want the final count stated as one", got)
+	}
+	// Before the walk has reached anything, a zero would be a number that is
+	// about to be wrong.
+	started := directoryCopyPrompt("/home/ada", sandboxcreate.DirectoryTotal{})
+	if got := strings.Split(started, "\n")[1]; got != "calculating…" {
+		t.Fatalf("size line = %q, want the walk to say it has nothing yet", got)
 	}
 }

@@ -1677,7 +1677,8 @@ func (m *Model) workspaceChecked(msg workspaceCheckedMsg) tea.Cmd {
 func (m *Model) askToCopyDirectory(req RunRequest, dir string) tea.Cmd {
 	total, stop := m.ds.MeasureDirectory(m.ctx, dir)
 	m.copySize, m.copyStop, m.copyDir = total, stop, dir
-	m.dialog = m.includeDirtyDialog("Copy this directory?", copyDirectoryBody(dir, total()), req)
+	m.dialog = m.includeDirtyDialog("Copy this directory?", copyDirectoryBody(dir), req)
+	m.dialog.emphasis = directoryCopySize(total())
 	m.copyDialog = m.dialog
 	return m.pollDirectorySize()
 }
@@ -1707,7 +1708,7 @@ func (m *Model) directorySized() tea.Cmd {
 		return nil
 	}
 	total := m.copySize()
-	m.copyDialog.body = copyDirectoryBody(m.copyDir, total)
+	m.copyDialog.emphasis = directoryCopySize(total)
 	if total.Done {
 		m.endDirectorySize()
 		return nil
@@ -1732,15 +1733,26 @@ func (m *Model) endDirectorySize() {
 // enough that the number is visibly climbing, and no more than that.
 const directorySizeInterval = 200 * time.Millisecond
 
-// copyDirectoryBody is the copy question, with as much of the size as has been
-// counted so far.
-func copyDirectoryBody(dir string, total DirectoryTotal) string {
+// copyDirectoryBody is the copy question. What it would cost is not in here:
+// it is the dialog's emphasis, on a line of its own under this one, because it
+// is the whole of what the answer turns on and it is still arriving.
+func copyDirectoryBody(dir string) string {
+	return dir + " is not a Git repository, so copying it into the discobox means copying all of it. " +
+		"Answering no creates the discobox anyway, empty."
+}
+
+// directoryCopySize is that line, with as much of the count as the walk behind
+// the question has reached. Nothing counted yet says so rather than reporting a
+// zero that is about to be wrong.
+func directoryCopySize(total DirectoryTotal) string {
+	if total.Files == 0 && !total.Done {
+		return "calculating…"
+	}
 	counted := fmt.Sprintf("%s in %s", humanBytes(total.Bytes), plural(int(total.Files), "file", "files"))
 	if !total.Done {
-		counted = "calculating… " + counted + " so far"
+		counted += ", still counting…"
 	}
-	return dir + " is not a Git repository, so copying it into the discobox means all of it (" + counted +
-		"). Copy it? Answering no creates the discobox anyway, empty."
+	return counted
 }
 
 // createMsg carries a settled request back to the live model.
