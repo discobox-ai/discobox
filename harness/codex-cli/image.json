@@ -26,10 +26,10 @@
     "name": "Codex",
     "description": "OpenAI Codex coding harness.",
     "runCommand": [
-      "codex"
+      "/usr/local/libexec/discobox/launch-codex"
     ],
     "relaunchCommand": [
-      "codex",
+      "/usr/local/libexec/discobox/launch-codex",
       "resume",
       "--last"
     ],

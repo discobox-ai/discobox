@@ -26,10 +26,10 @@
     "name": "Claude Code",
     "description": "Anthropic Claude Code coding harness.",
     "runCommand": [
-      "claude"
+      "/usr/local/libexec/discobox/launch-claude-code"
     ],
     "relaunchCommand": [
-      "claude",
+      "/usr/local/libexec/discobox/launch-claude-code",
       "--continue"
     ],
     "files": [

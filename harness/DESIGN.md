@@ -95,6 +95,29 @@ subject to repo trust prompts or user/project override:
 Drivers must be idempotent and preserve unrelated settings where the harness uses
 a single shared JSON object.
 
+## Source-scoped memory
+
+The runtime exposes opaque durable data for the primary source at
+`/.discobox/data-per-source/primary`; only harness images interpret anything
+beneath it. Both included coding harnesses launch through small image-owned
+wrappers and keep their memory in separate namespaces:
+
+- Claude Code passes its supported `autoMemoryDirectory` launch setting as
+  `.../harnesses/claude-code/memories`. Supplying it at launch keeps this
+  storage invariant out of `.claude/settings.json`, which the configure flow
+  deliberately replaces with the user's captured settings.
+- Codex enables its `memories` feature in the system config and links only
+  `$CODEX_HOME/memories` to `.../harnesses/codex/memories`. Its auth, user
+  config, sessions, and SQLite databases remain in the sandbox's ordinary
+  per-sandbox home; sharing `CODEX_HOME` would cross credential and session
+  ownership boundaries. A pre-existing real memories directory is preserved
+  and reported rather than overwritten.
+
+When the primary source-data mount is absent — configure sandboxes and
+source-less sandboxes — each wrapper launches the CLI unchanged. Pool-agent and
+sandbox-agent know only the generic source-data mount and never a harness memory
+format.
+
 The same preference decides where a harness image's *policy* baseline goes when
 the CLI has a system layer for it. The codex image bakes
 `/etc/codex/config.toml` (`codex-cli/system-config.toml`) with

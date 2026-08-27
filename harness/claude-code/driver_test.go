@@ -10,6 +10,44 @@ import (
 	"github.com/discobox-ai/discobox/harness"
 )
 
+func TestImageLaunchesClaudeWithSourceScopedMemory(t *testing.T) {
+	raw, err := os.ReadFile("image.json")
+	if err != nil {
+		t.Fatal(err)
+	}
+	var image struct {
+		Harness struct {
+			RunCommand      []string `json:"runCommand"`
+			RelaunchCommand []string `json:"relaunchCommand"`
+		} `json:"harness"`
+	}
+	if err := json.Unmarshal(raw, &image); err != nil {
+		t.Fatal(err)
+	}
+	const launcher = "/usr/local/libexec/discobox/launch-claude-code"
+	if len(image.Harness.RunCommand) != 1 || image.Harness.RunCommand[0] != launcher {
+		t.Fatalf("run command = %v, want source-memory launcher", image.Harness.RunCommand)
+	}
+	if len(image.Harness.RelaunchCommand) == 0 || image.Harness.RelaunchCommand[0] != launcher {
+		t.Fatalf("relaunch command = %v, want source-memory launcher", image.Harness.RelaunchCommand)
+	}
+	scriptBytes, err := os.ReadFile("launch.sh")
+	if err != nil {
+		t.Fatal(err)
+	}
+	script := string(scriptBytes)
+	for _, required := range []string{
+		"/.discobox/data-per-source/primary",
+		"harnesses/claude-code/memories",
+		"autoMemoryDirectory",
+		`exec claude "$@"`,
+	} {
+		if !strings.Contains(script, required) {
+			t.Errorf("launch script is missing %q", required)
+		}
+	}
+}
+
 func TestDefinitionConfigure(t *testing.T) {
 	def := Driver{}.Definition()
 	if def.Configure == nil {

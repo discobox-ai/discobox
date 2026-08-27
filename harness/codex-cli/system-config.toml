@@ -15,3 +15,9 @@ sandbox_mode = "danger-full-access"
 # terminal title visibly current while Codex is working.
 [tui]
 terminal_title = ["activity", "thread-title"]
+
+# Consolidate useful facts from completed sessions into CODEX_HOME/memories.
+# The harness launcher links that directory to the primary source's durable
+# data without sharing auth, configuration, sessions, or SQLite state.
+[features]
+memories = true

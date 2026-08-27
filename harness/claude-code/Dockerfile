@@ -14,3 +14,4 @@ RUN npm install -g @anthropic-ai/claude-code \
 
 COPY --chmod=0644 managed-settings.json /etc/claude-code/managed-settings.json
 COPY --chmod=0755 configure.sh /usr/local/libexec/discobox/configure-claude-code
+COPY --chmod=0755 launch.sh /usr/local/libexec/discobox/launch-claude-code

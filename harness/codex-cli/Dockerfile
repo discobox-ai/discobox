@@ -21,3 +21,4 @@ COPY --chmod=0644 system-config.toml /etc/codex/config.toml
 COPY --chmod=0644 hooks.json /etc/codex/hooks.json
 
 COPY --chmod=0755 configure.sh /usr/local/libexec/discobox/configure-codex
+COPY --chmod=0755 launch.sh /usr/local/libexec/discobox/launch-codex
