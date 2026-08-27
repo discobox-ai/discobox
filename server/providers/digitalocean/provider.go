@@ -32,6 +32,8 @@ const (
 
 // Config is the persisted provider instance configuration.
 type Config struct {
+	poolruntime.PoolPolicy
+
 	Token            string                 `json:"token,omitempty"`
 	TokenEnv         string                 `json:"tokenEnv,omitempty"`
 	ControlPlaneURL  string                 `json:"controlPlaneUrl,omitempty"`
@@ -120,11 +122,12 @@ func driverConfigFrom(cfg Config) DriverConfig {
 // interfaces so the control plane reaches it at the droplet's public address.
 func engineConfig(cfg Config) dockerworker.Config {
 	return dockerworker.Config{
-		ControlPlaneURL: cfg.ControlPlaneURL,
-		Image:           dockerworker.EffectivePoolImage(cfg.WorkerImage),
-		AgentPort:       effectiveAgentPort(cfg.AgentPort),
-		PublicAgentPort: true,
-		Labels:          map[string]string{labelProviderType: ProviderType},
+		ControlPlaneURL:     cfg.ControlPlaneURL,
+		Image:               dockerworker.EffectivePoolImage(cfg.WorkerImage),
+		AgentPort:           effectiveAgentPort(cfg.AgentPort),
+		PublicAgentPort:     true,
+		Labels:              map[string]string{labelProviderType: ProviderType},
+		ProxyAuditRetention: cfg.ProxyAuditRetention.Value(),
 	}
 }
 
@@ -157,7 +160,7 @@ func Definition() sandbox.ProviderDefinition {
 		Name:        "DigitalOcean",
 		Icon:        "digitalocean",
 		Description: "Runs one Docker-enabled Droplet per sandbox worker.",
-		ConfigFields: []sandbox.ProviderConfigField{
+		ConfigFields: append([]sandbox.ProviderConfigField{
 			{Key: "token", Label: "API Token", Type: "password", CredentialProvider: "digitalocean", CredentialAuthType: "token"},
 			{Key: "tokenEnv", Label: "API Token Environment Variable", Type: "string", Placeholder: "DIGITALOCEAN_ACCESS_TOKEN", Description: "Environment variable containing the API token; use instead of token for local CLI workflows."},
 			{Key: "controlPlaneUrl", Label: "Control Plane URL", Type: "string", Required: true, Placeholder: "https://discobot.example.com"},
@@ -175,6 +178,6 @@ func Definition() sandbox.ProviderDefinition {
 			{Key: "ipv6", Label: "IPv6", Type: "boolean", Advanced: true},
 			{Key: "monitoring", Label: "Monitoring", Type: "boolean", Advanced: true},
 			{Key: "agentPort", Label: "Harness Port", Type: "number", Placeholder: strconv.Itoa(defaultAgentPort), Advanced: true},
-		},
+		}, poolruntime.PoolPolicyConfigFields()...),
 	}
 }

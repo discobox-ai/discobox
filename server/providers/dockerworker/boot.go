@@ -5,6 +5,7 @@ import (
 
 	poolagent "github.com/discobox-ai/discobox/pool-agent"
 	"github.com/discobox-ai/discobox/pool-agent/imagereap"
+	"github.com/discobox-ai/discobox/pool-agent/proxyagent"
 )
 
 // BootEnv renders the pool-agent bootstrap contract as container environment
@@ -44,6 +45,9 @@ func (e *Engine) poolContainerEnv(bootstrap poolagent.Bootstrap) map[string]stri
 	env := BootEnv(bootstrap)
 	if e.cfg.ImageRetention > 0 {
 		env[imagereap.RetentionEnv] = e.cfg.ImageRetention.String()
+	}
+	if e.cfg.ProxyAuditRetention > 0 {
+		env[proxyagent.EnvAuditRetention] = e.cfg.ProxyAuditRetention.String()
 	}
 	return env
 }

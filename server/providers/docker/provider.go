@@ -38,6 +38,8 @@ func DefaultAgentPort() int { return defaultAgentPort }
 
 // Config is the persisted provider instance configuration.
 type Config struct {
+	poolruntime.PoolPolicy
+
 	ControlPlaneURL string                   `json:"controlPlaneUrl,omitempty"`
 	Host            string                   `json:"host,omitempty"`
 	Image           string                   `json:"image,omitempty"`
@@ -153,16 +155,17 @@ func localSourceBindSupported(daemonHost string) bool {
 // instance does not name it.
 func engineConfig(cfg Config, listenEndpoints []string, daemonHost string) (dockerworker.Config, error) {
 	engineCfg := dockerworker.Config{
-		ControlPlaneURL: strings.TrimSpace(cfg.ControlPlaneURL),
-		Image:           dockerworker.EffectivePoolImage(cfg.Image),
-		Network:         cfg.Network,
-		AgentPort:       effectiveAgentPort(cfg.AgentPort),
-		Privileged:      cfg.Privileged,
-		CgroupNSMode:    cfg.CgroupNSMode,
-		Command:         cfg.Command.Values(),
-		DockerSocket:    cfg.DockerSocket,
-		HostMounts:      cfg.HostMounts,
-		Labels:          map[string]string{labelProviderType: ProviderType},
+		ControlPlaneURL:     strings.TrimSpace(cfg.ControlPlaneURL),
+		Image:               dockerworker.EffectivePoolImage(cfg.Image),
+		Network:             cfg.Network,
+		AgentPort:           effectiveAgentPort(cfg.AgentPort),
+		Privileged:          cfg.Privileged,
+		CgroupNSMode:        cfg.CgroupNSMode,
+		Command:             cfg.Command.Values(),
+		DockerSocket:        cfg.DockerSocket,
+		HostMounts:          cfg.HostMounts,
+		Labels:              map[string]string{labelProviderType: ProviderType},
+		ProxyAuditRetention: cfg.ProxyAuditRetention.Value(),
 	}
 	if engineCfg.ControlPlaneURL == "" {
 		reach, err := resolveControlPlaneReach(listenEndpoints, daemonHost)
@@ -273,7 +276,7 @@ func Definition() sandbox.ProviderDefinition {
 		Name:        "Docker",
 		Icon:        "docker",
 		Description: "Runs VM-style workers as Docker containers with systemd as PID 1.",
-		ConfigFields: []sandbox.ProviderConfigField{
+		ConfigFields: append([]sandbox.ProviderConfigField{
 			{Key: "controlPlaneUrl", Label: "Control Plane URL", Type: "string", Placeholder: controlplane.DefaultURL(dockerHostGateway, controlplane.DefaultPort), Advanced: true},
 			{Key: "host", Label: "Docker Host", Type: "string", Advanced: true},
 			{Key: "image", Label: "Image", Type: "string", Placeholder: dockerworker.DefaultPoolImage},
@@ -283,6 +286,6 @@ func Definition() sandbox.ProviderDefinition {
 			{Key: "command", Label: "Command", Type: "string", Advanced: true},
 			{Key: "bindDockerSocket", Label: "Bind Docker Socket", Type: "string", Placeholder: dockerSocketPath, Advanced: true},
 			{Key: "agentPort", Label: "Harness Port", Type: "number", Placeholder: strconv.Itoa(defaultAgentPort), Advanced: true},
-		},
+		}, poolruntime.PoolPolicyConfigFields()...),
 	}
 }

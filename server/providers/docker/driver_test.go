@@ -4,8 +4,10 @@ import (
 	"reflect"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/discobox-ai/discobox/server/providers/dockerworker"
+	"github.com/discobox-ai/discobox/server/providers/poolruntime"
 )
 
 func TestDefinitionIncludesWorkerConfig(t *testing.T) {
@@ -149,6 +151,10 @@ func TestProviderConfigFieldsAffectWorkerConfigRevision(t *testing.T) {
 		"command":          func(cfg *Config) { cfg.Command = []string{"/bin/discobox-pool-agent", "--debug"} },
 		"bindDockerSocket": func(cfg *Config) { cfg.DockerSocket = "/run/user/1000/docker.sock" },
 		"hostMounts":       func(cfg *Config) { cfg.HostMounts = []HostMount{{Source: "/home", ReadOnly: true}} },
+		// Changing the retention window has to recreate the pool container: the
+		// proxy unit reads it from that container's environment at start, so a
+		// pool left running would keep sweeping on the old window.
+		"proxyAuditRetention": func(cfg *Config) { cfg.ProxyAuditRetention = poolruntime.Duration(96 * time.Hour) },
 	}
 
 	for _, field := range configJSONFields(t, reflect.TypeOf(Config{})) {

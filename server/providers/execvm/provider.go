@@ -22,6 +22,8 @@ const (
 
 // Config is the persisted provider instance configuration.
 type Config struct {
+	poolruntime.PoolPolicy
+
 	Command          poolruntime.StringList `json:"command,omitempty"`
 	ControlPlaneURL  string                 `json:"controlPlaneUrl,omitempty"`
 	WorkerImage      string                 `json:"workerImage,omitempty"`
@@ -86,11 +88,12 @@ func engineConfig(cfg Config) dockerworker.Config {
 		publicAgentPort = *cfg.PublicAgentPort
 	}
 	return dockerworker.Config{
-		ControlPlaneURL: cfg.ControlPlaneURL,
-		Image:           dockerworker.EffectivePoolImage(cfg.WorkerImage),
-		AgentPort:       effectiveAgentPort(cfg.AgentPort),
-		PublicAgentPort: publicAgentPort,
-		Labels:          map[string]string{labelProviderType: ProviderType},
+		ControlPlaneURL:     cfg.ControlPlaneURL,
+		Image:               dockerworker.EffectivePoolImage(cfg.WorkerImage),
+		AgentPort:           effectiveAgentPort(cfg.AgentPort),
+		PublicAgentPort:     publicAgentPort,
+		Labels:              map[string]string{labelProviderType: ProviderType},
+		ProxyAuditRetention: cfg.ProxyAuditRetention.Value(),
 	}
 }
 
@@ -117,7 +120,7 @@ func Definition() sandbox.ProviderDefinition {
 		Name:        "Exec",
 		Icon:        "terminal",
 		Description: "Delegates worker VM lifecycle to an external command, such as a shell script.",
-		ConfigFields: []sandbox.ProviderConfigField{
+		ConfigFields: append([]sandbox.ProviderConfigField{
 			{Key: "command", Label: "Command", Type: "string", Required: true, Description: "Executable (plus fixed arguments) invoked as `<command> <op> <worker-id>`."},
 			{Key: "controlPlaneUrl", Label: "Control Plane URL", Type: "string", Required: true, Placeholder: "https://discobot.example.com"},
 			{Key: "workerImage", Label: "Worker Image", Type: "string", Placeholder: dockerworker.DefaultPoolImage, Description: "Worker-agent container image launched in the VM's Docker daemon.", Advanced: true},
@@ -126,6 +129,6 @@ func Definition() sandbox.ProviderDefinition {
 			{Key: "sshPrivateKey", Label: "SSH Private Key", Type: "password", Description: "PEM private key used when docker-endpoint returns ssh:// URLs.", Advanced: true},
 			{Key: "sshPrivateKeyEnv", Label: "SSH Private Key Environment Variable", Type: "string", Advanced: true},
 			{Key: "agentPort", Label: "Harness Port", Type: "number", Placeholder: strconv.Itoa(defaultAgentPort), Advanced: true},
-		},
+		}, poolruntime.PoolPolicyConfigFields()...),
 	}
 }

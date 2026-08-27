@@ -44,6 +44,8 @@ const (
 
 // Config is the persisted libkrun provider configuration.
 type Config struct {
+	poolruntime.PoolPolicy
+
 	RootImage          string `json:"rootImage,omitempty"`
 	KernelImage        string `json:"kernelImage,omitempty"`
 	StateDir           string `json:"stateDir,omitempty"`
@@ -129,6 +131,7 @@ func newFromInstance(_ context.Context, instance *model.SandboxProviderInstance,
 		Labels:               map[string]string{labelProviderType: ProviderType},
 		DevelopmentImageSync: imageSync,
 		ProgressReporter:     sandbox.PoolProgressReporterFor(poolManager),
+		ProxyAuditRetention:  cfg.ProxyAuditRetention.Value(),
 	}, driver)
 	if err != nil {
 		_ = driver.Close()
@@ -181,7 +184,7 @@ func Definition() sandbox.ProviderDefinition {
 		Name:        "libkrun",
 		Icon:        "server",
 		Description: "Runs one Linux KVM-backed libkrun microVM per pool with VSOCK control traffic and outbound-only user-mode networking.",
-		ConfigFields: []sandbox.ProviderConfigField{
+		ConfigFields: append([]sandbox.ProviderConfigField{
 			{Key: "rootImage", Label: "Root QCOW2 Image", Type: "string", Required: true, Description: "Absolute path to the immutable root image built by the libkrun image builder."},
 			{Key: "kernelImage", Label: "Linux Kernel Image", Type: "string", Required: true, Description: "Absolute path to the Docker-built Discobox libkrun kernel."},
 			{Key: "workerImage", Label: "Worker Image", Type: "string", Placeholder: dockerworker.DefaultPoolImage, Description: "Pool-agent container image launched inside each VM.", Advanced: true},
@@ -194,7 +197,7 @@ func Definition() sandbox.ProviderDefinition {
 			{Key: "controlPlaneSocket", Label: "Control Plane Unix Socket", Type: "string", Placeholder: endpoint.DefaultEndpoint(), Advanced: true},
 			{Key: "launcherPath", Label: "discobox-krun Path", Type: "string", Placeholder: "discobox-krun", Advanced: true},
 			{Key: "mkfsPath", Label: "mkfs.ext4 Path", Type: "string", Placeholder: "mkfs.ext4", Advanced: true},
-		},
+		}, poolruntime.PoolPolicyConfigFields()...),
 	}
 }
 

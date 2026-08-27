@@ -143,6 +143,12 @@ type Config struct {
 	// default, which is deliberate: an unset override must serialize away here
 	// so it does not change configRevision and recreate every existing pool.
 	ImageRetention time.Duration `json:"imageRetention,omitempty"`
+	// ProxyAuditRetention overrides how long the pool proxy keeps an audit row
+	// and the recorded body or upgraded stream it names. Zero leaves the pool
+	// proxy on its own default, and must serialize away here for the same
+	// reason ImageRetention does: materializing a default would change
+	// configRevision and recreate every existing pool.
+	ProxyAuditRetention time.Duration `json:"proxyAuditRetention,omitempty"`
 }
 
 // Engine runs pool-agent containers over Driver-provided Docker access. It

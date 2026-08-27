@@ -40,6 +40,8 @@ const (
 
 // Config is the persisted wslc provider configuration.
 type Config struct {
+	poolruntime.PoolPolicy
+
 	// ControlPlaneURL is the URL the in-guest pool-agent registers with. It
 	// defaults to the Unix socket the guest relay serves, so the Windows server
 	// never listens on TCP. Left configurable for tests.
@@ -141,6 +143,7 @@ func engineConfig(cfg Config, imageSync *dockerworker.DevelopmentImageSynchroniz
 		Labels:               map[string]string{labelProviderType: ProviderType},
 		DevelopmentImageSync: imageSync,
 		ProgressReporter:     progress,
+		ProxyAuditRetention:  cfg.ProxyAuditRetention.Value(),
 	}
 }
 
@@ -209,13 +212,13 @@ func Definition() sandbox.ProviderDefinition {
 		Name:        "wslc",
 		Icon:        "server",
 		Description: "Runs one WSL Containers (wslc) VM per pool on Windows, with its own dockerd. Only /var/lib/docker persists; no host TCP port is opened.",
-		ConfigFields: []sandbox.ProviderConfigField{
+		ConfigFields: append([]sandbox.ProviderConfigField{
 			{Key: "workerImage", Label: "Worker Image", Type: "string", Placeholder: dockerworker.DefaultPoolImage, Description: "Pool-agent container image launched inside each VM.", Advanced: true},
 			{Key: "cpuCount", Label: "VM vCPUs", Type: "number", Placeholder: strconv.Itoa(defaultCPUCount)},
 			{Key: "memoryMiB", Label: "VM Memory (MiB)", Type: "number", Placeholder: strconv.Itoa(defaultMemoryMiB)},
 			{Key: "maxStorageMiB", Label: "Max /var/lib/docker (MiB)", Type: "number", Placeholder: strconv.FormatInt(defaultMaxStgMiB, 10)},
 			{Key: "storageDir", Label: "VM Storage Directory", Type: "string", Placeholder: effectiveStorageDir(""), Description: "Root directory holding each pool's persistent /var/lib/docker VHD.", Advanced: true},
 			{Key: "agentPort", Label: "Harness Port", Type: "number", Placeholder: strconv.Itoa(defaultAgentPort), Advanced: true},
-		},
+		}, poolruntime.PoolPolicyConfigFields()...),
 	}
 }

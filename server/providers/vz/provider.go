@@ -72,6 +72,8 @@ const DefaultGuestImage = "ghcr.io/discobox-ai/discobox-vm@sha256:a384499ea85ab5
 
 // Config is the persisted vz provider configuration.
 type Config struct {
+	poolruntime.PoolPolicy
+
 	// GuestImage overrides the published guest image.
 	GuestImage string `json:"guestImage,omitempty"`
 	// GuestImageDir boots artifacts already on disk instead of pulling any. It
@@ -186,6 +188,7 @@ func engineConfig(cfg Config, imageSync *dockerworker.DevelopmentImageSynchroniz
 		Labels:               map[string]string{labelProviderType: ProviderType},
 		DevelopmentImageSync: imageSync,
 		ProgressReporter:     progress,
+		ProxyAuditRetention:  cfg.ProxyAuditRetention.Value(),
 	}
 }
 
@@ -281,7 +284,7 @@ func Definition() sandbox.ProviderDefinition {
 		Name:        "Apple Virtualization",
 		Icon:        "server",
 		Description: "Runs one Virtualization.framework VM per pool on macOS, with VSOCK control traffic and no Docker daemon on the host.",
-		ConfigFields: []sandbox.ProviderConfigField{
+		ConfigFields: append([]sandbox.ProviderConfigField{
 			{Key: "guestImage", Label: "Guest Image", Type: "string", Placeholder: DefaultGuestImage, Description: "Published guest image carrying the kernel, initrd, and root filesystem.", Advanced: true},
 			{Key: "guestImageDir", Label: "Guest Artifact Directory", Type: "string", Description: "Boot these artifacts instead of the published image, and fail if they are missing.", Advanced: true},
 			{Key: "guestImageLocalDir", Label: "Local Guest Build", Type: "string", Placeholder: effectiveGuestLocalDir(""), Description: "Where a local guest image build lands; used automatically when complete.", Advanced: true},
@@ -292,6 +295,6 @@ func Definition() sandbox.ProviderDefinition {
 			{Key: "cacheDiskGiB", Label: "Cache Disk (GiB)", Type: "number", Placeholder: strconv.FormatInt(defaultCacheDiskGiB, 10)},
 			{Key: "stateDir", Label: "Pool Disk Directory", Type: "string", Placeholder: effectiveStateDir(""), Advanced: true},
 			{Key: "guestImageCacheDir", Label: "Guest Image Cache", Type: "string", Placeholder: effectiveGuestCacheDir(""), Advanced: true},
-		},
+		}, poolruntime.PoolPolicyConfigFields()...),
 	}
 }

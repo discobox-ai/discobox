@@ -42,6 +42,16 @@ const (
 	envProjectID = "DISCOBOX_PROJECT_ID"
 	envPoolID    = "DISCOBOX_POOL_ID"
 
+	// EnvAuditRetention overrides how long the pool proxy keeps an audit row and
+	// the recorded request/response body or upgraded stream it names. It is set
+	// on the pool container by the server, from the backing provider instance's
+	// configuration, and read here when the proxy unit starts.
+	//
+	// The response cache is not covered by it. That cache is keyed by content
+	// digest and bounded by a byte ceiling, so a window of time says nothing
+	// about what belongs in it.
+	EnvAuditRetention = "DISCOBOX_PROXY_AUDIT_RETENTION"
+
 	// ListenAddress is where the pool proxy accepts mTLS connections. It binds
 	// all interfaces so sandbox containers can reach it through the Docker host
 	// gateway.
@@ -218,6 +228,28 @@ func PrepareBundle(projectID, poolID string) (*proxy.CertificateBundle, error) {
 	return prepared.Bundle, nil
 }
 
+// ConfiguredAuditRetention resolves the audit retention window from
+// EnvAuditRetention, returning zero when it is unset so the proxy's own default
+// applies.
+//
+// An unparsable or non-positive value is an error rather than a silent
+// fallback. The two ways to get this wrong are discarding an audit trail
+// someone still needs and never reclaiming anything, and both should be loud.
+func ConfiguredAuditRetention() (time.Duration, error) {
+	value := strings.TrimSpace(os.Getenv(EnvAuditRetention))
+	if value == "" {
+		return 0, nil
+	}
+	retention, err := time.ParseDuration(value)
+	if err != nil {
+		return 0, fmt.Errorf("%s: %w", EnvAuditRetention, err)
+	}
+	if retention <= 0 {
+		return 0, fmt.Errorf("%s must be greater than 0, got %s", EnvAuditRetention, value)
+	}
+	return retention, nil
+}
+
 // RunProxy prepares certificates and runs the pool proxy server until ctx is
 // canceled. It is the entrypoint for the proxy systemd unit.
 func RunProxy(ctx context.Context, logger *slog.Logger) error {
@@ -258,6 +290,16 @@ func RunProxy(ctx context.Context, logger *slog.Logger) error {
 	cfg.Cache.Dir = resolve(layout.ProxyCache(projectID, poolID))
 	cfg.Recording.StreamDir = resolve(layout.ProxyStreams(projectID, poolID))
 	cfg.Recording.BodyDir = resolve(layout.ProxyBodies(projectID, poolID))
+	// Nothing else bounds the audit trail: a sandbox's rows and recordings
+	// deliberately outlive the sandbox, so age is the only thing that can
+	// reclaim them.
+	retention, err := ConfiguredAuditRetention()
+	if err != nil {
+		return err
+	}
+	if retention > 0 {
+		cfg.Recording.Retention = retention
+	}
 
 	// The resolver fetches real secret values from the control plane using the
 	// scoped token the pool-agent process writes for this pool.

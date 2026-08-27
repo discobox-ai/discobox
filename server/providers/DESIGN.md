@@ -376,6 +376,30 @@ container by the engine, uniformly on every backend. VM drivers only need
 their platform's Docker bring-up; they never carry bootstrap secrets in VM
 user data.
 
+## Pool Policy
+
+`poolruntime.PoolPolicy` is the configuration every provider instance carries
+whatever backend it runs pools on. Each provider's own `Config` embeds it
+anonymously, so its fields flatten into that provider's JSON and appear in that
+provider's catalog through `PoolPolicyConfigFields`. One declaration, and no
+backend that can quietly be missing a setting the catalog claims it accepts.
+
+The split is what the setting describes. Anything about what a pool does with
+its own disk belongs here; anything about the machine a pool happens to run on
+— image, region, socket, disk sizes — stays in the provider's own `Config`.
+
+Values reach the pool the way bootstrap identity does, as pool-container
+environment rendered by the engine (`poolContainerEnv`). An unset policy field
+must serialize away entirely: `Config` is hashed into `configRevision`, so
+materializing a default would recreate every pool already running at upgrade
+for a policy nobody asked for. `ImageRetention` and `ProxyAuditRetention` both
+follow that rule.
+
+`ProxyAuditRetention` governs how long the pool proxy keeps an audit row and
+the recorded body or upgraded stream it names (`proxy/DESIGN.md`, Retention).
+It does not govern the proxy's response cache, which is content-addressed and
+bounded by bytes rather than time.
+
 ## Guest Image Artifacts
 
 `server/providers/guestimage` resolves the boot artifacts a VM driver needs —
