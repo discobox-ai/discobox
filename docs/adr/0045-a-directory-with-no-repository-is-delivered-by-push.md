@@ -1,6 +1,8 @@
 # 0045 — A directory with no repository is delivered by push
 
-- **Status**: Accepted
+- **Status**: Accepted (§2's "Nobody is asked about this" superseded by
+  [0073](0073-a-directory-with-no-repository-is-copied-only-when-asked.md);
+  everything else stands)
 - **Date**: 2026-08-08
 
 ## Context

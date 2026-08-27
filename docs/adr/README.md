@@ -97,7 +97,7 @@ Nygard-style ADRs (see adr.github.io) combined with current-state design docs:
 | [0042](0042-git-authorship-identity-is-a-first-class-sandbox-property.md) | Git authorship identity is a first-class sandbox property | Proposed |
 | [0043](0043-shell-is-an-ordinary-harness-image.md) | `shell` is an ordinary harness image | Accepted |
 | [0044](0044-builds-run-on-a-pool-shared-buildkit.md) | Builds run on a pool-shared BuildKit, bound to a sandbox by a mediator | Accepted |
-| [0045](0045-a-directory-with-no-repository-is-delivered-by-push.md) | A directory with no repository is delivered by push | Accepted |
+| [0045](0045-a-directory-with-no-repository-is-delivered-by-push.md) | A directory with no repository is delivered by push | Accepted (§2's "nobody is asked" superseded by [0073](0073-a-directory-with-no-repository-is-copied-only-when-asked.md)) |
 | [0046](0046-listening-ports-are-polled-and-probed-in-the-background.md) | Listening ports are discovered by a standing poller and probed for HTTP | Accepted |
 | [0047](0047-local-base-images-resolve-through-a-per-sandbox-registry-namespace.md) | Local base images resolve through a per-sandbox registry namespace | Accepted |
 | [0048](0048-a-sandbox-names-its-harness-or-the-project-does.md) | A sandbox names its harness, or the project does | Accepted (supersedes [0032](0032-every-sandbox-has-a-harness-config-and-shell-is-the-built-in.md) §1's fallback step) |
@@ -125,3 +125,4 @@ Nygard-style ADRs (see adr.github.io) combined with current-state design docs:
 | [0070](0070-services-are-declared-execs-the-sandbox-starts-for-you.md) | Services are declared execs the sandbox starts for you | Accepted |
 | [0071](0071-a-tool-session-is-an-exec-the-launcher-labeled.md) | A tool session is an exec the launcher labeled | Accepted |
 | [0072](0072-a-repository-ships-skills-that-only-exist-in-a-sandbox.md) | A repository ships skills that only exist inside a sandbox | Proposed |
+| [0073](0073-a-directory-with-no-repository-is-copied-only-when-asked.md) | A directory with no repository is copied only when asked | Accepted |
