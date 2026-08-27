@@ -13,6 +13,10 @@ func press(x, y int) tea.MouseClickMsg {
 	return tea.MouseClickMsg{X: x, Y: y, Button: tea.MouseLeft}
 }
 
+func rightPress(x, y int) tea.MouseClickMsg {
+	return tea.MouseClickMsg{X: x, Y: y, Button: tea.MouseRight}
+}
+
 func drag(x, y int) tea.MouseMotionMsg {
 	return tea.MouseMotionMsg{X: x, Y: y, Button: tea.MouseLeft}
 }
@@ -278,6 +282,50 @@ func selectHello(t *testing.T, m *Model) {
 	m.HandleMouse(release(4, 0))
 	if !m.HasSelection() {
 		t.Fatal("no selection to copy")
+	}
+}
+
+func TestRightClickCopiesTheSelection(t *testing.T) {
+	m, stream, cmd := attach(t, 40, 5)
+	stream.send("hello world")
+	pump(t, m, cmd, "hello world")
+
+	selectHello(t, m)
+	if got := copied(t, m.HandleMouse(rightPress(2, 0))); got != "hello" {
+		t.Fatalf("copied %q, want %q", got, "hello")
+	}
+	if m.HasSelection() {
+		t.Fatal("copying should clear the selection")
+	}
+}
+
+func TestRightClickWithoutASelectionDoesNothing(t *testing.T) {
+	m, stream, cmd := attach(t, 40, 5)
+	stream.send("hello world")
+	pump(t, m, cmd, "hello world")
+
+	if cmd := m.HandleMouse(rightPress(2, 0)); cmd != nil {
+		t.Fatal("a right click with nothing selected should not copy")
+	}
+	// And it starts no gesture: the release that follows copies nothing.
+	if cmd := m.HandleMouse(tea.MouseReleaseMsg{X: 2, Y: 0, Button: tea.MouseRight}); cmd != nil {
+		t.Fatal("the right button should not drive selection")
+	}
+	if m.HasSelection() {
+		t.Fatal("the right button selected something")
+	}
+}
+
+func TestRightClickForwardsWhenTheApplicationHasTheMouse(t *testing.T) {
+	m, stream, cmd := attach(t, 40, 5)
+	stream.send("\x1b[?1000hREADY")
+	pump(t, m, cmd, "READY")
+
+	if cmd := m.HandleMouse(rightPress(2, 0)); cmd != nil {
+		t.Fatal("copied while the application owned the mouse")
+	}
+	if got := stream.sent(t, "\x1b[M"); !strings.Contains(got, "\x1b[M") {
+		t.Fatalf("the right click was not forwarded: %q", got)
 	}
 }
 

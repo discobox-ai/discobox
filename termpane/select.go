@@ -82,7 +82,9 @@ func (m *Model) copyChord(msg tea.KeyPressMsg) (tea.Cmd, bool) {
 // press-drag-release, double-click for a word, triple-click for a line, Alt
 // for a rectangular block — and a gesture that selected something returns a
 // command carrying [CopyMsg]. Dragging past the top or bottom edge scrolls
-// the view and keeps selecting.
+// the view and keeps selecting. The right button copies a showing selection
+// and clears it, the way Windows terminals do; with nothing selected it does
+// nothing.
 //
 // The wheel goes to whoever can actually scroll. An application that has the
 // mouse is forwarded the event and scrolls itself. One that never asked but
@@ -102,8 +104,13 @@ func (m *Model) HandleMouse(msg tea.MouseMsg) tea.Cmd {
 	}
 	switch ev := msg.(type) {
 	case tea.MouseClickMsg:
-		if ev.Button != tea.MouseLeft ||
-			ev.X < 0 || ev.X >= m.cols || ev.Y < 0 || ev.Y >= m.rows {
+		if ev.X < 0 || ev.X >= m.cols || ev.Y < 0 || ev.Y >= m.rows {
+			return nil
+		}
+		if ev.Button == tea.MouseRight {
+			return m.rightClickCopy()
+		}
+		if ev.Button != tea.MouseLeft {
 			return nil
 		}
 		m.sel.MouseDown(m.absLine(ev.Y), ev.X, ev.Mod&tea.ModAlt != 0)
@@ -126,6 +133,25 @@ func (m *Model) HandleMouse(msg tea.MouseMsg) tea.Cmd {
 		m.wheel(ev)
 	}
 	return nil
+}
+
+// rightClickCopy is the Windows-terminal gesture: a right click over a
+// showing selection copies it and drops the highlight, the same as the copy
+// chords and for the same reason — the selection on screen is what makes the
+// click mean copy rather than nothing. With nothing selected the click is
+// inert, since the other half of that gesture is paste, and a pane has no
+// clipboard to paste from; a host that wants one handles the button itself
+// and feeds the pane a [tea.PasteMsg].
+func (m *Model) rightClickCopy() tea.Cmd {
+	if !m.HasSelection() {
+		return nil
+	}
+	text := m.SelectionText()
+	m.clearSelection()
+	if text == "" {
+		return nil
+	}
+	return func() tea.Msg { return CopyMsg{Text: text} }
 }
 
 // defaultWheelLines is how far one wheel tick moves, xterm's and tmux's

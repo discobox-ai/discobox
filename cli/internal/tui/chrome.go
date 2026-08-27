@@ -60,6 +60,9 @@ func (m *Model) parseChrome(frame string) {
 func (m *Model) chromeMouse(msg tea.MouseMsg) tea.Cmd {
 	switch ev := msg.(type) {
 	case tea.MouseClickMsg:
+		if ev.Button == tea.MouseRight {
+			return m.chromeRightClick()
+		}
 		if ev.Button != tea.MouseLeft {
 			return nil
 		}
@@ -86,6 +89,21 @@ func (m *Model) chromeMouse(msg tea.MouseMsg) tea.Cmd {
 		}
 	}
 	return nil
+}
+
+// chromeRightClick copies a showing chrome selection and clears it, the way
+// the panes handle the right button over their own; see termpane's
+// rightClickCopy.
+func (m *Model) chromeRightClick() tea.Cmd {
+	if !m.chromeSel.Active() {
+		return nil
+	}
+	text := m.chromeSel.Text()
+	m.chromeSel.Clear()
+	if text == "" {
+		return nil
+	}
+	return m.copyText(text)
 }
 
 // chromeChord catches the copy chords while a chrome selection is showing,

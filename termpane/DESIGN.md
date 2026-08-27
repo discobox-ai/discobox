@@ -164,7 +164,8 @@ be answerable from the chrome. The wheel goes to whoever can actually scroll: an
 application with the mouse is forwarded the event; one without it on the
 alternate screen is sent arrow keys — xterm's alternate-scroll bargain, and
 the only scrolling a pager understands, there being no scrollback there to
-offer — and everything else scrolls the pane's own scrollback. A host with a
+offer — and everything else scrolls the pane's own scrollback. The right
+button copies a showing selection, below. A host with a
 different wheel policy keeps those events instead of delegating them.
 
 **Selection is a cell-space overlay, mouse only** (ADR 0036). The gesture
@@ -189,7 +190,12 @@ interrupt, or the detach, that the key otherwise is. Classic terminals cannot
 distinguish the enhanced chords from plain ctrl+c and deliver the form that is
 caught anyway; macOS cmd+c never reaches a terminal application at all, which
 is why copy happens on release — the clipboard is written before the habit
-keystroke, whose no-op nobody notices.
+keystroke, whose no-op nobody notices. The right button is that rule with a
+mouse in hand (`rightClickCopy`): over a showing selection it copies and
+clears, which is what Windows terminals do and what a hand already on the
+mouse reaches for. With nothing selected it is inert — the other half of that
+gesture is paste, and a pane has no clipboard to paste from, so a host that
+wants it handles the button itself.
 Extraction joins soft-wrapped rows without a newline, detected for now by the
 full-width heuristic behind `Grid.Wrapped` until the upstream wrap flag lands.
 A selection whose coordinates stop meaning what they meant is cleared, never

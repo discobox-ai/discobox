@@ -727,6 +727,40 @@ func TestDragSelectsAndCopiesFromThePane(t *testing.T) {
 	}
 }
 
+// Right-clicking a showing selection copies it and drops the highlight, the
+// way Windows terminals do; with nothing selected the button does nothing.
+func TestRightClickCopiesThePaneSelection(t *testing.T) {
+	ds := newFakeSource(testSandboxes()...)
+	d, m, term := openWorkspace(t, ds, "enter")
+	copies := make(chan string, 4)
+	m.copyOS = func(text string) error { copies <- text; return nil }
+
+	term.send("hello world")
+	d.wait("output", func() bool { return strings.Contains(frameText(m), "hello world") })
+
+	originX, originY := m.paneOrigin(m.focusedPane())
+	d.dispatch(tea.MouseClickMsg{X: originX + 2, Y: originY, Button: tea.MouseRight})
+	d.settle()
+	if len(copies) != 0 {
+		t.Fatal("a right click with nothing selected copied")
+	}
+
+	d.dispatch(tea.MouseClickMsg{X: originX, Y: originY, Button: tea.MouseLeft})
+	d.dispatch(tea.MouseMotionMsg{X: originX + 4, Y: originY, Button: tea.MouseLeft})
+	d.dispatch(tea.MouseReleaseMsg{X: originX + 4, Y: originY, Button: tea.MouseLeft})
+	d.wait("the drag's own copy", func() bool { return len(copies) > 0 })
+	<-copies
+
+	d.dispatch(tea.MouseClickMsg{X: originX + 2, Y: originY, Button: tea.MouseRight})
+	d.wait("the right click's copy", func() bool { return len(copies) > 0 })
+	if got := <-copies; got != "hello" {
+		t.Fatalf("copied %q, want %q", got, "hello")
+	}
+	if m.focusedPane().term.HasSelection() {
+		t.Fatal("copying should clear the selection")
+	}
+}
+
 // Clicking a pane focuses it: with a mouse in hand, pointing at the thing is
 // how you say which one you mean.
 func TestClickFocusesThePaneUnderIt(t *testing.T) {

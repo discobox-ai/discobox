@@ -262,3 +262,29 @@ func TestCopyChordOverAChromeSelection(t *testing.T) {
 		t.Fatalf("the chord reached the sandbox: %q", got)
 	}
 }
+
+// The chrome answers the right button the way the panes do: a showing
+// selection is copied and cleared.
+func TestRightClickOverAChromeSelection(t *testing.T) {
+	ds := newFakeSource(testSandboxes()...)
+	d, m, _ := openWorkspace(t, ds, "enter")
+	copies := make(chan string, 4)
+	m.copyOS = func(text string) error { copies <- text; return nil }
+
+	col := headerCol(t, m, "sbx_one") + 2
+	for range 2 {
+		d.dispatch(tea.MouseClickMsg{X: col, Y: 0, Button: tea.MouseLeft})
+		d.dispatch(tea.MouseReleaseMsg{X: col, Y: 0, Button: tea.MouseLeft})
+	}
+	d.wait("the double click's own copy", func() bool { return len(copies) > 0 })
+	<-copies
+
+	d.dispatch(tea.MouseClickMsg{X: col, Y: 0, Button: tea.MouseRight})
+	d.wait("the right click's copy", func() bool { return len(copies) > 0 })
+	if got := <-copies; got != "sbx_one" {
+		t.Fatalf("copied %q, want the id", got)
+	}
+	if m.chromeSel.Active() {
+		t.Fatal("copying should clear the chrome selection")
+	}
+}
