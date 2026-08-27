@@ -1,7 +1,7 @@
 package layout
 
 import (
-	"path/filepath"
+	"path"
 	"reflect"
 	"strings"
 	"testing"
@@ -73,7 +73,7 @@ func TestSourceDataIsOutsideEverySandboxTree(t *testing.T) {
 	if sourceData == sandbox || strings.HasPrefix(sourceData, sandbox+"/") {
 		t.Fatalf("source data %q is inside sandbox tree %q and would be deleted with it", sourceData, sandbox)
 	}
-	if filepath.Dir(PoolSourceData("prj", "pool")) != PoolData("prj", "pool") {
+	if path.Dir(PoolSourceData("prj", "pool")) != PoolData("prj", "pool") {
 		t.Fatalf("source data root is not owned by the pool durable tree: %q", PoolSourceData("prj", "pool"))
 	}
 }
@@ -193,7 +193,7 @@ func TestPoolBuildIsNotInsideTheSandboxVisibleCache(t *testing.T) {
 	if build == cache || strings.HasPrefix(build, cache+"/") {
 		t.Fatalf("PoolBuild %q is inside the sandbox-visible PoolCache %q", build, cache)
 	}
-	if filepath.Dir(build) != filepath.Dir(cache) {
+	if path.Dir(build) != path.Dir(cache) {
 		t.Errorf("PoolBuild %q and PoolCache %q are not siblings", build, cache)
 	}
 }
