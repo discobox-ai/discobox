@@ -4,6 +4,7 @@ import (
 	"context"
 	"os"
 	"path/filepath"
+	"runtime"
 	"testing"
 	"time"
 )
@@ -38,6 +39,11 @@ func TestMeasureDirectoryCountsTheFilesThatWouldBeCopied(t *testing.T) {
 // An unreadable subtree is skipped rather than failing the walk: a total short
 // by one directory still answers whether the rest is worth copying.
 func TestMeasureDirectorySkipsWhatItCannotRead(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		// Chmod on Windows moves the read-only attribute and nothing else, so
+		// the directory this wants closed stays readable and gets counted.
+		t.Skip("directory permissions")
+	}
 	if os.Geteuid() == 0 {
 		t.Skip("root reads every directory, so there is nothing to skip")
 	}
