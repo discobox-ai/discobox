@@ -659,6 +659,14 @@ func parentsFirst(specs []imageSpec) []imageSpec {
 // resolveParentImage returns the named spec's current dev tag by inspecting its
 // built :local image, for passes that rebuild a child without rebuilding what it
 // is built FROM.
+//
+// The tag is applied, not just derived. Only buildImage creates a dev tag, and
+// only for a build this watcher ran; anything else that rebuilds the base in
+// place — task build:base-image, build:images, the Dockerfile hook — moves
+// :local to an image ID no dev tag names. A derived-but-absent tag is not a
+// local miss docker reports: it is a repository on Docker Hub, and the child's
+// FROM goes off to pull it. Tagging is exact rather than approximate, since the
+// ID came from :local itself, and is idempotent for the tag that already exists.
 func resolveParentImage(ctx context.Context, repoRoot string, specs []imageSpec, name string) (string, error) {
 	for _, spec := range specs {
 		if spec.name != name {
@@ -668,7 +676,11 @@ func resolveParentImage(ctx context.Context, repoRoot string, specs []imageSpec,
 		if err != nil {
 			return "", fmt.Errorf("resolve %s base image: %w", spec.name, err)
 		}
-		return devImageTag(spec.devPrefix, strings.TrimSpace(imageID)), nil
+		image := devImageTag(spec.devPrefix, strings.TrimSpace(imageID))
+		if err := runCommand(ctx, repoRoot, "docker", "tag", spec.baseImage, image); err != nil {
+			return "", fmt.Errorf("tag %s as %s: %w", spec.baseImage, image, err)
+		}
+		return image, nil
 	}
 	return "", fmt.Errorf("no %s spec configured", name)
 }

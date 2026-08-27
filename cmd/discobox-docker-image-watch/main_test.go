@@ -5,6 +5,7 @@ import (
 	"os"
 	"path/filepath"
 	"reflect"
+	"runtime"
 	"strings"
 	"testing"
 
@@ -314,4 +315,51 @@ func TestRenderBuildArgsLeavesTheDefaultWhenThereIsNoParentToPin(t *testing.T) {
 	if !contains(got, "SANDBOX_AGENT_IMAGE=discobox-sandbox-agent:local") {
 		t.Fatalf("default base tag was clobbered: %#v", got)
 	}
+}
+
+// The dev tag a child's FROM pins has to exist locally, not merely be derivable:
+// docker reads a tag it cannot find as a Docker Hub repository and goes off to
+// pull it, so a base rebuilt by anything other than this watcher — task
+// build:base-image, the Dockerfile hook — fails the child's build with a
+// registry error rather than a missing-image one.
+func TestResolveParentImageTagsTheBaseItResolves(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("shell script on PATH")
+	}
+	calls := filepath.Join(t.TempDir(), "calls")
+	repoRoot := fakeDockerPath(t, "sha256:c2afa1b19563247d43a4b02802287dc907cd62e04039f0652488f45a7d07b9c9", calls)
+	specs := []imageSpec{{name: "base", baseImage: "discobox-base:local", devPrefix: "discobox-base:dev-"}}
+
+	got, err := resolveParentImage(t.Context(), repoRoot, specs, "base")
+	if err != nil {
+		t.Fatalf("resolve parent image: %v", err)
+	}
+	if want := "discobox-base:dev-c2afa1b19563"; got != want {
+		t.Fatalf("resolved = %q, want %q", got, want)
+	}
+	if want := "tag discobox-base:local discobox-base:dev-c2afa1b19563"; !strings.Contains(readFile(t, calls), want) {
+		t.Fatalf("docker calls = %q, want the resolved tag applied", readFile(t, calls))
+	}
+}
+
+// fakeDockerPath puts a docker on PATH that answers `image inspect` with imageID
+// and records every invocation in calls, and returns a directory to run in.
+func fakeDockerPath(t *testing.T, imageID, calls string) string {
+	t.Helper()
+	dir := t.TempDir()
+	script := "#!/bin/sh\necho \"$@\" >> " + calls + "\ncase \"$1 $2\" in\n'image inspect') echo " + imageID + " ;;\nesac\n"
+	if err := os.WriteFile(filepath.Join(dir, "docker"), []byte(script), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("PATH", dir+string(os.PathListSeparator)+os.Getenv("PATH"))
+	return dir
+}
+
+func readFile(t *testing.T, path string) string {
+	t.Helper()
+	out, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return string(out)
 }
