@@ -150,17 +150,23 @@ func readExecRecord(path string) execs.Exec {
 	return record
 }
 
-func newTestManager(t *testing.T) (*Manager, *fakeUnits, string) {
+// requireGuestPaths skips a test that hands the exec runtime a host path.
+//
+// The runtime resolves a workdir as a guest path — slash-separated, absolute
+// when it starts with "/" — because the sandbox it runs in is always Linux. A
+// Windows temp directory is neither, so C:\... reads as relative and is joined
+// onto the working root. The executable bit a service is gated on is the same
+// kind of premise: Windows has no way to withhold one.
+func requireGuestPaths(t *testing.T) {
 	t.Helper()
-	// These drive the exec runtime, which resolves workdirs as guest paths —
-	// slash-separated, absolute when they start with "/" — because the sandbox
-	// it runs in is always Linux. A Windows temp directory is neither, so the
-	// runtime treats C:\... as relative and joins it onto the working root.
-	// The same goes for the executable bit these services are gated on, which
-	// Windows has no way to withhold.
 	if runtime.GOOS == "windows" {
 		t.Skip("the exec runtime resolves guest paths and executable bits; a Windows host has neither")
 	}
+}
+
+func newTestManager(t *testing.T) (*Manager, *fakeUnits, string) {
+	t.Helper()
+	requireGuestPaths(t)
 	root := t.TempDir()
 	units := newFakeUnits(t)
 	execManager, err := execs.NewManagerWithConfig(execs.ManagerConfig{
@@ -230,6 +236,7 @@ func TestStartCreatesAPipeExecTaggedWithItsService(t *testing.T) {
 // The workdir is named on the request rather than left to the exec default, so
 // a service still runs where its declaration lives when the two differ.
 func TestAServiceRunsInItsDeclaringRepositoryRoot(t *testing.T) {
+	requireGuestPaths(t)
 	root := t.TempDir()
 	units := newFakeUnits(t)
 	execManager, err := execs.NewManagerWithConfig(execs.ManagerConfig{
