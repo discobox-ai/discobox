@@ -275,11 +275,16 @@ func TestImageLaunchesCodexWithSourceScopedMemory(t *testing.T) {
 		"/.discobox/data-per-source/primary",
 		"harnesses/codex/memories",
 		`${CODEX_HOME:-$HOME/.codex}`,
+		`mountpoint -q "$LOCAL_MEMORIES"`,
+		`mount --bind "$SHARED_MEMORIES" "$LOCAL_MEMORIES"`,
 		`exec codex "$@"`,
 	} {
 		if !strings.Contains(script, required) {
 			t.Errorf("launch script is missing %q", required)
 		}
+	}
+	if strings.Contains(script, `ln -s`) {
+		t.Fatal("launch script uses a symlink for a memory root Codex requires to be a real directory")
 	}
 	config, err := os.ReadFile("system-config.toml")
 	if err != nil {
@@ -287,5 +292,14 @@ func TestImageLaunchesCodexWithSourceScopedMemory(t *testing.T) {
 	}
 	if !strings.Contains(string(config), "memories = true") {
 		t.Fatal("system config does not enable Codex memory consolidation")
+	}
+	for _, setting := range []string{
+		"generate_memories = true",
+		"use_memories = true",
+		"min_rate_limit_remaining_percent = 0",
+	} {
+		if !strings.Contains(string(config), setting) {
+			t.Errorf("system config does not set %q", setting)
+		}
 	}
 }

@@ -106,8 +106,14 @@ wrappers and keep their memory in separate namespaces:
   `.../harnesses/claude-code/memories`. Supplying it at launch keeps this
   storage invariant out of `.claude/settings.json`, which the configure flow
   deliberately replaces with the user's captured settings.
-- Codex enables its `memories` feature in the system config and links only
-  `$CODEX_HOME/memories` to `.../harnesses/codex/memories`. Its auth, user
+- Codex enables its `memories` feature in the system config and bind-mounts
+  `.../harnesses/codex/memories` onto `$CODEX_HOME/memories`. Codex rejects a
+  symlinked memory root, so the launcher creates a real target directory and
+  uses the sandbox user's passwordless mount grant. The same system layer
+  enables both generation and use for new chats and sets the generation rate-
+  limit threshold to zero; a sandbox is short-lived enough that silently
+  skipping its only background consolidation window would otherwise defeat
+  source-scoped persistence. Its auth, user
   config, sessions, and SQLite databases remain in the sandbox's ordinary
   per-sandbox home; sharing `CODEX_HOME` would cross credential and session
   ownership boundaries. A pre-existing real memories directory is preserved

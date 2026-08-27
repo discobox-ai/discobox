@@ -21,3 +21,8 @@ terminal_title = ["activity", "thread-title"]
 # data without sharing auth, configuration, sessions, or SQLite state.
 [features]
 memories = true
+
+[memories]
+generate_memories = true
+use_memories = true
+min_rate_limit_remaining_percent = 0
