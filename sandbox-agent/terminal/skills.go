@@ -44,13 +44,6 @@ var skillDirectories = []string{
 // run after the source-delivery wait, which is the same reason — before the
 // source is in place there is nothing to read.
 func (s *Service) installProjectSkills() error {
-	// HOME as the exec that will read these files resolves it, which is what
-	// completes the run user's home when no layer named one.
-	env := execs.EnvWithRuntimeDefaults(execs.MergeEnv(s.env, nil), s.defaultUser)
-	home, err := resolveHomeDir(s.homeDirectory, s.defaultUser, env)
-	if err != nil {
-		return fmt.Errorf("install %s: %w", ProjectSkillsDir, err)
-	}
 	// The repository root, asked of the exec manager rather than derived here:
 	// it is the same answer `services` discovers its declarations under, and a
 	// second derivation of "which directory is the sandbox working on" drifts
@@ -59,19 +52,43 @@ func (s *Service) installProjectSkills() error {
 	if err != nil {
 		return fmt.Errorf("install %s: %w", ProjectSkillsDir, err)
 	}
-	return installSkills(filepath.Join(source, ProjectSkillsDir), home, s.defaultUser)
+	// What the repository declares is read before the home it would be copied
+	// into is resolved, because almost every repository declares nothing.
+	// Resolving home is how the copy finds its destination, not part of
+	// deciding there is no copy to make — and it can fail. Asking first would
+	// fail the primary launch of every sandbox whose run user has no home
+	// resolvable, over a directory that repository does not have.
+	declared := filepath.Join(source, ProjectSkillsDir)
+	entries, err := declaredSkills(declared)
+	if err != nil || len(entries) == 0 {
+		return err
+	}
+	// HOME as the exec that will read these files resolves it, which is what
+	// completes the run user's home when no layer named one.
+	env := execs.EnvWithRuntimeDefaults(execs.MergeEnv(s.env, nil), s.defaultUser)
+	home, err := resolveHomeDir(s.homeDirectory, s.defaultUser, env)
+	if err != nil {
+		return fmt.Errorf("install %s: %w", ProjectSkillsDir, err)
+	}
+	return installSkills(declared, entries, home, s.defaultUser)
 }
 
-// installSkills copies the tree at from into every skill directory under home.
-// A repository that declares no skills is the common case and does nothing.
-func installSkills(from, home string, user *execs.User) error {
+// declaredSkills is what a repository declares under ProjectSkillsDir, and
+// nothing at all when it declares none — no directory, or an empty one.
+func declaredSkills(from string) ([]fs.DirEntry, error) {
 	entries, err := os.ReadDir(from)
 	if err != nil {
 		if errors.Is(err, fs.ErrNotExist) {
-			return nil
+			return nil, nil
 		}
-		return fmt.Errorf("read %s: %w", from, err)
+		return nil, fmt.Errorf("read %s: %w", from, err)
 	}
+	return entries, nil
+}
+
+// installSkills copies the tree at from, whose entries the caller has already
+// read, into every skill directory under home.
+func installSkills(from string, entries []fs.DirEntry, home string, user *execs.User) error {
 	if len(entries) == 0 {
 		return nil
 	}

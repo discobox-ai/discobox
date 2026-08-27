@@ -3,6 +3,7 @@ package terminal
 import (
 	"os"
 	"path/filepath"
+	"runtime"
 	"testing"
 
 	"github.com/discobox-ai/discobox/sandbox-agent/config"
@@ -75,7 +76,7 @@ func TestInstallSkillsCopiesTheTreeIntoEverySkillDirectory(t *testing.T) {
 	writeSkill(t, source, filepath.Join("review", "bin", "run.sh"), "#!/bin/sh\n", 0o755)
 	writeSkill(t, source, "loose.md", "loose\n", 0o644)
 
-	if err := installSkills(filepath.Join(source, ProjectSkillsDir), home, nil); err != nil {
+	if err := installDeclaredSkills(source, home); err != nil {
 		t.Fatalf("install skills: %v", err)
 	}
 
@@ -90,6 +91,10 @@ func TestInstallSkillsCopiesTheTreeIntoEverySkillDirectory(t *testing.T) {
 		info, err := os.Stat(filepath.Join(root, "review", "bin", "run.sh"))
 		if err != nil {
 			t.Fatalf("%s: stat run.sh: %v", dir, err)
+		}
+		if runtime.GOOS == "windows" {
+			// Windows carries no executable bit to carry over.
+			continue
 		}
 		if info.Mode()&0o111 == 0 {
 			t.Fatalf("%s: run.sh mode = %v, want the executable bit carried over", dir, info.Mode())
@@ -114,7 +119,7 @@ func TestInstallSkillsOverwritesByNameAndLeavesTheRestAlone(t *testing.T) {
 	}
 	writeSkill(t, source, "review.md", "repository\n", 0o644)
 
-	if err := installSkills(filepath.Join(source, ProjectSkillsDir), home, nil); err != nil {
+	if err := installDeclaredSkills(source, home); err != nil {
 		t.Fatalf("install skills: %v", err)
 	}
 
@@ -136,7 +141,7 @@ func TestInstallSkillsSkipsSymlinks(t *testing.T) {
 		t.Fatalf("symlink: %v", err)
 	}
 
-	if err := installSkills(filepath.Join(source, ProjectSkillsDir), home, nil); err != nil {
+	if err := installDeclaredSkills(source, home); err != nil {
 		t.Fatalf("install skills: %v", err)
 	}
 
@@ -149,19 +154,31 @@ func TestInstallSkillsSkipsSymlinks(t *testing.T) {
 	}
 }
 
+// installDeclaredSkills is the pair installProjectSkills runs: read what the
+// repository declares, then copy it. Home is not resolved when there is nothing
+// to copy, which is what keeps a launch working without one.
+func installDeclaredSkills(source, home string) error {
+	declared := filepath.Join(source, ProjectSkillsDir)
+	entries, err := declaredSkills(declared)
+	if err != nil {
+		return err
+	}
+	return installSkills(declared, entries, home, nil)
+}
+
 // Almost every repository declares no skills at all, and the ones that create
 // the directory and leave it empty must not have a skills directory made for
 // them in home either.
 func TestInstallSkillsIsANoOpWithoutSkills(t *testing.T) {
 	source, home := t.TempDir(), t.TempDir()
 
-	if err := installSkills(filepath.Join(source, ProjectSkillsDir), home, nil); err != nil {
+	if err := installDeclaredSkills(source, home); err != nil {
 		t.Fatalf("install skills with no directory: %v", err)
 	}
 	if err := os.MkdirAll(filepath.Join(source, ProjectSkillsDir), 0o755); err != nil {
 		t.Fatalf("mkdir: %v", err)
 	}
-	if err := installSkills(filepath.Join(source, ProjectSkillsDir), home, nil); err != nil {
+	if err := installDeclaredSkills(source, home); err != nil {
 		t.Fatalf("install skills with an empty directory: %v", err)
 	}
 
@@ -176,6 +193,13 @@ func TestInstallSkillsIsANoOpWithoutSkills(t *testing.T) {
 // the primary source, which only the primary terminal's launch is sequenced
 // behind (source delivery), and the copies belong to the harness afterwards.
 func TestPrimaryLaunchInstallsProjectSkillsOnce(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		// The exec manager resolves the workdir it starts execs in as a guest
+		// path — Linux, whatever the host is — so it reads a C:\ source as a
+		// relative one and joins it onto the working root. Only the install
+		// itself is under test here, and it is reached through that resolution.
+		t.Skip("guest path resolution")
+	}
 	source, home := t.TempDir(), t.TempDir()
 	writeSkill(t, source, filepath.Join("review", "SKILL.md"), "# review\n", 0o644)
 	state := &countingPrimaryState{}
