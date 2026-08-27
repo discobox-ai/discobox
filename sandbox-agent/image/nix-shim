@@ -1,0 +1,33 @@
+#!/bin/sh
+# PATH shim for the nix client binaries, installed under /usr/local/bin (ADR 0075).
+#
+# The store is seeded lazily by discobox-nix-seed.service, which
+# nix-daemon.service requires and socket activation triggers. But the daemon is
+# not the only thing that lives in the store -- `nix`, `nix-shell` and `devenv`
+# do too, so before the first seed there is no client binary to run and nothing
+# ever reaches the daemon socket to start the chain. This is that trigger.
+#
+# It disarms itself. PATH is
+# `~/.nix-profile/bin:/nix/var/nix/profiles/default/bin:...:/usr/local/bin`, so
+# the shim is only reachable while the store entries are empty; once seeded,
+# the real binary is found first and this is never consulted again.
+set -eu
+
+cmd=${0##*/}
+real=/nix/var/nix/profiles/default/bin/$cmd
+
+if [ ! -x "$real" ]; then
+    if [ "$(id -u)" = 0 ]; then
+        systemctl start discobox-nix-seed.service
+    else
+        sudo -n systemctl start discobox-nix-seed.service
+    fi
+fi
+
+if [ ! -x "$real" ]; then
+    echo "$cmd: nix store seeding did not produce $real" >&2
+    echo "see: systemctl status discobox-nix-seed.service" >&2
+    exit 127
+fi
+
+exec "$real" "$@"

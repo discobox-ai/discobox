@@ -1,0 +1,80 @@
+#!/bin/bash
+# Seeds /nix from the pristine store the image ships aside, on first use.
+#
+# The image installs nix and then moves the whole store to $SEED, leaving /nix
+# empty for the pool-shared cache volume to bind over (ADR 0075). This script
+# is what puts a store back at /nix. It runs as a oneshot unit that
+# nix-daemon.service requires, and nix-daemon is socket-activated, so a sandbox
+# that never touches nix never copies a byte.
+#
+# Two scopes, two guards:
+#
+#   store + db  -> /nix, the pool-shared cache. Copied once per pool, under a
+#                  flock on the cache filesystem so the second sandbox to ask
+#                  blocks, then finds the stamp and exits.
+#   profiles +  -> per-sandbox data volumes mounted inside /nix. A sandbox
+#   gcroots        joining an already-seeded cache still has no default
+#                  profile of its own, so this half is guarded separately.
+#
+# Both stamps are written last, so a copy killed midway is never mistaken for a
+# finished one: the next run takes the lock, finds no stamp, and redoes it.
+set -euo pipefail
+
+SEED=/usr/local/lib/discobox/nix
+LOCK=/nix/.discobox-seed.lock
+CACHE_STAMP=/nix/.discobox-seeded
+# Outside /nix on purpose: /var/lib/discobox is a per-sandbox data volume, and
+# nothing that scans a nix directory can mistake it for a profile or a gcroot.
+SANDBOX_STAMP=/var/lib/discobox/nix-seeded
+
+log() { echo "discobox-nix-seed: $*"; }
+
+if [ ! -d "$SEED" ]; then
+    log "no seed store at $SEED; nothing to do"
+    exit 0
+fi
+
+# Merge-copy that tolerates directories the boot flow or systemd already made
+# at the destination -- /nix/var/nix/daemon-socket exists before this runs,
+# because nix-daemon.socket is what activated us.
+copy_tree() {
+    local src=$1 dst=$2
+    shift 2
+    mkdir -p "$dst"
+    tar -C "$src" -cf - "$@" . | tar -C "$dst" -xf -
+}
+
+seed_store() {
+    if [ -e "$CACHE_STAMP" ]; then
+        return 0
+    fi
+    log "seeding the nix store from $SEED (first use in this pool)"
+    # profiles and gcroots are separate per-sandbox mounts inside this tree;
+    # seed_sandbox owns them, so the shared copy must not write through them.
+    copy_tree "$SEED" /nix \
+        --exclude=./var/nix/profiles \
+        --exclude=./var/nix/gcroots
+    : > "$CACHE_STAMP"
+    log "store seeded"
+}
+
+seed_sandbox() {
+    if [ -e "$SANDBOX_STAMP" ]; then
+        return 0
+    fi
+    local name
+    for name in profiles gcroots; do
+        if [ -d "$SEED/var/nix/$name" ]; then
+            copy_tree "$SEED/var/nix/$name" "/nix/var/nix/$name"
+        fi
+    done
+    mkdir -p "$(dirname "$SANDBOX_STAMP")"
+    : > "$SANDBOX_STAMP"
+    log "per-sandbox nix profiles seeded"
+}
+
+mkdir -p /nix
+exec 9>"$LOCK"
+flock 9
+seed_store
+seed_sandbox

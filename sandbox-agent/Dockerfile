@@ -161,7 +161,15 @@ RUN set -eux; \
     sed -i 's|^Documentation=man:nix-daemon https://nixos.org/manual$|Documentation=https://nixos.org/manual|' /etc/systemd/system/nix-daemon.service; \
     systemctl enable nix-daemon.socket; \
     nix profile install nixpkgs#devenv nixpkgs#bashInteractive; \
-    devenv --version
+    devenv --version; \
+    # ADR 0075: the store ships aside as a seed and /nix is left empty, so the
+    # pool-shared cache volume can bind over it without hiding image content.
+    # discobox-nix-seed.service copies it back on first use. The mv must stay
+    # in this layer -- moving it in a later one copies the whole store up into
+    # that layer and doubles the image instead of renaming a directory.
+    install -d -m 0755 /usr/local/lib/discobox; \
+    mv /nix /usr/local/lib/discobox/nix; \
+    mkdir -m 0755 /nix
 
 RUN rustup --version >/dev/null 2>&1 \
     || curl --proto "=https" --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y --default-toolchain none
@@ -234,6 +242,9 @@ COPY sandbox-agent/image/systemd/docker.service.d/runc-ca.conf /etc/systemd/syst
 COPY sandbox-agent/image/systemd/docker.service.d/proxy.conf /etc/systemd/system/docker.service.d/proxy.conf
 COPY sandbox-agent/image/systemd/docker.service.d/proxy-bridge.conf /etc/systemd/system/docker.service.d/proxy-bridge.conf
 COPY sandbox-agent/image/systemd/nix-daemon.service.d/proxy.conf /etc/systemd/system/nix-daemon.service.d/proxy.conf
+COPY sandbox-agent/image/systemd/nix-daemon.service.d/seed.conf /etc/systemd/system/nix-daemon.service.d/seed.conf
+COPY sandbox-agent/image/systemd/nix-daemon.socket.d/seed.conf /etc/systemd/system/nix-daemon.socket.d/seed.conf
+COPY sandbox-agent/image/systemd/discobox-nix-seed.service /etc/systemd/system/discobox-nix-seed.service
 COPY sandbox-agent/image/systemd/discobox-proxy-bridge-docker.service /etc/systemd/system/discobox-proxy-bridge-docker.service
 COPY sandbox-agent/image/daemon.json /etc/docker/daemon.json
 COPY sandbox-agent/image/systemd/journald-console.conf /etc/systemd/journald.conf.d/discobox-console.conf
@@ -248,6 +259,11 @@ COPY sandbox-agent/image/systemd/xvfb.service /etc/systemd/system/xvfb.service
 COPY sandbox-agent/image/systemd/openbox@.service /etc/systemd/system/openbox@.service
 COPY sandbox-agent/image/xorg-dummy.conf /etc/X11/xorg-dummy.conf
 COPY sandbox-agent/image/discobox-vnc-websockify /usr/local/bin/discobox-vnc-websockify
+COPY --chmod=0755 sandbox-agent/image/nix-seed /usr/local/libexec/discobox/nix-seed
+# Installs as `nix`, `devenv` and friends on /usr/local/bin, which PATH reaches
+# only while the store's own bin directories are still empty. Starts the seed
+# unit, then execs the real binary. See ADR 0075.
+COPY --chmod=0755 sandbox-agent/image/nix-shim /usr/local/lib/discobox/nix-shim
 COPY --from=sandbox-agent-builder /out/discobox-sandbox-agent /usr/local/bin/discobox-sandbox-agent
 # Installs as `runc` on a directory prepended to containerd's and dockerd's
 # PATH, so every container either one starts has the MITM CA bundles and proxy
@@ -269,6 +285,9 @@ RUN chmod 0755 /usr/local/bin/discobox-sandbox-agent \
     && chmod 0755 /usr/local/bin/fresh \
     && chmod 0755 /usr/local/bin/discobox-vnc-websockify \
     && ln -sf /usr/local/bin/discobox-sandbox-agent /usr/local/bin/discobox-hook-publish \
+    && for c in nix nix-build nix-env nix-shell nix-store devenv; do \
+        ln -sf /usr/local/lib/discobox/nix-shim "/usr/local/bin/$c"; \
+       done \
     && mkdir -p /etc/discobox /run/discobox/agent-terminals /var/lib/docker /var/lib/discobox /workspace \
     && systemctl enable \
         discobox-sandbox-agent.service \

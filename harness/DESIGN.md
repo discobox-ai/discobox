@@ -40,6 +40,14 @@ sandbox terminals.
   is where the image layer lands. It is safe to declare always because nothing
   runs until something connects — `xvfb.service` is `static`, pulled up on
   demand by `x11-display.socket` — so an unused `DISPLAY` starts no X server.
+- Every `image.json` declares the three `/nix` volumes: `/nix` on `cache`, with
+  `/nix/var/nix/profiles` and `/nix/var/nix/gcroots` carved back onto `data`.
+  The store is pool-shared, so a closure one sandbox realizes is free for the
+  next; the per-user profile state is not, because both are keyed by username
+  and every sandbox in a pool runs the same user. The base image ships its own
+  store aside and leaves `/nix` empty precisely so this cache bind hides
+  nothing — a cache path is always a plain bind. See ADR 0075 and
+  [`sandbox-agent/DESIGN.md`](../sandbox-agent/DESIGN.md).
 - `harnessMode: config` selects the image-owned interactive config command;
   normal or omitted mode selects the image-owned run/relaunch commands.
 
