@@ -9091,19 +9091,27 @@ func (s *SandboxAgentGitSourceStatus) SetObservedAt(val time.Time) {
 
 // Ref: #/components/schemas/SandboxAgentListeningPort
 type SandboxAgentListeningPort struct {
-	// TCP port the sandbox user's own processes are listening on.
+	// TCP port the sandbox serves - one its own processes were seen listening on, one a service declares,
+	//  or both.
 	Port int64 `json:"port"`
 	// Every local address bound to this port - a wildcard address for a wildcard bind, 127.0.0.1 for a
 	// loopback-only one. A port is reachable from inside the sandbox's network namespace either way, so
-	// this describes the bind rather than reachability.
+	// this describes the bind rather than reachability. Absent for a declared port nothing observable is
+	// listening on.
 	Addresses []string `json:"addresses"`
+	// True when a service under .discobox/services declares this port (ADR 0076),
+	// which puts it on the record whether or not anything observable is listening
+	// on it. Discovery only sees sockets the sandbox user owns, so a port
+	// published by a nested container or bound by a socket-activated unit - root's
+	// socket either way - is reported only because it was declared.
+	Declared OptBool `json:"declared"`
 	// What the port turned out to speak, established by probing it once when it
 	// appeared. tcp means reached and not HTTP (a database, an SSH daemon, an
 	// HTTP/2-only server); unknown means not classified yet or unreachable when
 	// probed, and is retried.
 	Protocol SandboxAgentListeningPortProtocol `json:"protocol"`
-	// When this port was first observed listening. Survives a restart of whatever is behind it, as long
-	// as the port itself never went away in between.
+	// When this port was first listed - first observed listening, or first declared. Survives a restart
+	// of whatever is behind it, as long as the port itself never went away in between.
 	FirstSeenAt time.Time `json:"firstSeenAt"`
 }
 
@@ -9115,6 +9123,11 @@ func (s *SandboxAgentListeningPort) GetPort() int64 {
 // GetAddresses returns the value of Addresses.
 func (s *SandboxAgentListeningPort) GetAddresses() []string {
 	return s.Addresses
+}
+
+// GetDeclared returns the value of Declared.
+func (s *SandboxAgentListeningPort) GetDeclared() OptBool {
+	return s.Declared
 }
 
 // GetProtocol returns the value of Protocol.
@@ -9135,6 +9148,11 @@ func (s *SandboxAgentListeningPort) SetPort(val int64) {
 // SetAddresses sets the value of Addresses.
 func (s *SandboxAgentListeningPort) SetAddresses(val []string) {
 	s.Addresses = val
+}
+
+// SetDeclared sets the value of Declared.
+func (s *SandboxAgentListeningPort) SetDeclared(val OptBool) {
+	s.Declared = val
 }
 
 // SetProtocol sets the value of Protocol.
@@ -9468,9 +9486,10 @@ type SandboxAgentStatusResponse struct {
 	// Terminal sessions only, live and ended alike - every terminal a record still exists for, typically
 	// just the primary. One-shot execs are not sessions and never appear.
 	Sessions []SandboxAgentSessionStatus `json:"sessions"`
-	// TCP ports the sandbox user's own processes are listening on. Unlike sources and sessions this is a
-	// snapshot from a standing watcher rather than computed per request, since classifying a port means
-	// connecting to it (ADR 0046); it can be up to one watcher interval stale.
+	// TCP ports the sandbox serves - those its own processes were seen listening on, plus those its
+	// services declare (ADR 0076). Unlike sources and sessions this is a snapshot from a standing
+	// watcher rather than computed per request, since classifying a port means connecting to it (ADR
+	// 0046); it can be up to one watcher interval stale.
 	Ports      []SandboxAgentListeningPort `json:"ports"`
 	ObservedAt time.Time                   `json:"observedAt"`
 }
@@ -11663,6 +11682,11 @@ type SandboxService struct {
 	// The declaring file's own name. It orders the listing, which is what the numeric prefix stripped
 	// from the ID is for.
 	FileName OptString `json:"fileName"`
+	// TCP ports the declaration says this service serves, in the order it names them. A declared port is
+	// reported and forwarded whether or not anything observable is listening on it (ADR 0076) - it
+	// exists for the ports discovery cannot find, published by a nested container or bound by a
+	// socket-activated unit, since discovery only sees sockets the sandbox user owns.
+	Ports []int64 `json:"ports"`
 	// Why this declaration cannot run - a missing shebang, a missing executable bit, a duplicate ID. A
 	// service with a problem is listed rather than dropped, because one that silently fails to appear is
 	// indistinguishable from one nobody declared.
@@ -11708,6 +11732,11 @@ func (s *SandboxService) GetPath() OptString {
 // GetFileName returns the value of FileName.
 func (s *SandboxService) GetFileName() OptString {
 	return s.FileName
+}
+
+// GetPorts returns the value of Ports.
+func (s *SandboxService) GetPorts() []int64 {
+	return s.Ports
 }
 
 // GetProblem returns the value of Problem.
@@ -11773,6 +11802,11 @@ func (s *SandboxService) SetPath(val OptString) {
 // SetFileName sets the value of FileName.
 func (s *SandboxService) SetFileName(val OptString) {
 	s.FileName = val
+}
+
+// SetPorts sets the value of Ports.
+func (s *SandboxService) SetPorts(val []int64) {
+	s.Ports = val
 }
 
 // SetProblem sets the value of Problem.

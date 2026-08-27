@@ -195,16 +195,24 @@ components:
             additionalProperties: false
             properties:
                 addresses:
-                    description: Every local address bound to this port - a wildcard address for a wildcard bind, 127.0.0.1 for a loopback-only one. A port is reachable from inside the sandbox's network namespace either way, so this describes the bind rather than reachability.
+                    description: Every local address bound to this port - a wildcard address for a wildcard bind, 127.0.0.1 for a loopback-only one. A port is reachable from inside the sandbox's network namespace either way, so this describes the bind rather than reachability. Absent for a declared port nothing observable is listening on.
                     items:
                         type: string
                     type: array
+                declared:
+                    description: |
+                        True when a service under .discobox/services declares this port (ADR 0076),
+                        which puts it on the record whether or not anything observable is listening
+                        on it. Discovery only sees sockets the sandbox user owns, so a port
+                        published by a nested container or bound by a socket-activated unit - root's
+                        socket either way - is reported only because it was declared.
+                    type: boolean
                 firstSeenAt:
-                    description: When this port was first observed listening. Survives a restart of whatever is behind it, as long as the port itself never went away in between.
+                    description: When this port was first listed - first observed listening, or first declared. Survives a restart of whatever is behind it, as long as the port itself never went away in between.
                     format: date-time
                     type: string
                 port:
-                    description: TCP port the sandbox user's own processes are listening on.
+                    description: TCP port the sandbox serves - one its own processes were seen listening on, one a service declares, or both.
                     format: int64
                     type: integer
                 protocol:
@@ -280,7 +288,7 @@ components:
                     format: date-time
                     type: string
                 ports:
-                    description: TCP ports the sandbox user's own processes are listening on. Unlike sources and sessions this is a snapshot from a standing watcher rather than computed per request, since classifying a port means connecting to it (ADR 0046); it can be up to one watcher interval stale.
+                    description: TCP ports the sandbox serves - those its own processes were seen listening on, plus those its services declare (ADR 0076). Unlike sources and sessions this is a snapshot from a standing watcher rather than computed per request, since classifying a port means connecting to it (ADR 0046); it can be up to one watcher interval stale.
                     items:
                         $ref: '#/components/schemas/SandboxAgentListeningPort'
                     type: array
@@ -502,6 +510,12 @@ components:
                     description: Sandbox-local process ID when known.
                     format: int64
                     type: integer
+                ports:
+                    description: TCP ports the declaration says this service serves, in the order it names them. A declared port is reported and forwarded whether or not anything observable is listening on it (ADR 0076) - it exists for the ports discovery cannot find, published by a nested container or bound by a socket-activated unit, since discovery only sees sockets the sandbox user owns.
+                    items:
+                        format: int64
+                        type: integer
+                    type: array
                 problem:
                     description: Why this declaration cannot run - a missing shebang, a missing executable bit, a duplicate ID. A service with a problem is listed rather than dropped, because one that silently fails to appear is indistinguishable from one nobody declared.
                     type: string

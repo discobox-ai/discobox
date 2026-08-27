@@ -25,7 +25,11 @@ func (a *App) newSandboxServiceCommand() *cobra.Command {
 		Aliases: []string{"service"},
 		Short:   "Manage a discobox's declared services",
 		Long: "Services are the scripts a repository declares under .discobox/services.\n" +
-			"The discobox starts them when it boots; these commands inspect and control them afterwards.",
+			"The discobox starts them when it boots; these commands inspect and control them afterwards.\n\n" +
+			"A declaration may name the ports it serves (ports: 8080, 5432). Those are forwarded\n" +
+			"whether or not the discobox sees anything listening on them, which is what covers a port\n" +
+			"it cannot discover on its own: one published by a nested container, or bound by a\n" +
+			"socket-activated unit, is root's socket rather than your user's.",
 	}
 	cmd.PersistentFlags().StringVar(&sandboxID, "discobox-id", "", "Discobox ID")
 	_ = cmd.RegisterFlagCompletionFunc("discobox-id", a.completeSandboxes)
@@ -184,7 +188,7 @@ func (a *App) writeSandboxServices(cmd *cobra.Command, services []apimodel.Sandb
 		return writeJSON(cmd.OutOrStdout(), map[string]any{"services": services})
 	}
 	tw := tabwriter.NewWriter(cmd.OutOrStdout(), 0, 0, 2, ' ', 0)
-	fmt.Fprintln(tw, "ID\tSTATUS\tPID\tEXIT\tNAME\tDESCRIPTION")
+	fmt.Fprintln(tw, "ID\tSTATUS\tPID\tEXIT\tPORTS\tNAME\tDESCRIPTION")
 	for _, service := range services {
 		pid := ""
 		if value, ok := service.Pid.Get(); ok {
@@ -194,16 +198,30 @@ func (a *App) writeSandboxServices(cmd *cobra.Command, services []apimodel.Sandb
 		if value, ok := service.ExitCode.Get(); ok {
 			exitCode = fmt.Sprint(value)
 		}
-		fmt.Fprintf(tw, "%s\t%s\t%s\t%s\t%s\t%s\n",
+		fmt.Fprintf(tw, "%s\t%s\t%s\t%s\t%s\t%s\t%s\n",
 			service.ID,
 			service.Status,
 			pid,
 			exitCode,
+			sandboxServicePorts(service),
 			service.Name,
 			truncateTableValue(sandboxServiceDetail(service), 60),
 		)
 	}
 	return tw.Flush()
+}
+
+// sandboxServicePorts is the ports column: what the declaration says this
+// service serves, which is also what is forwarded for it whether or not the
+// sandbox can see anything listening there (ADR 0076). It is the one place
+// that answers "why is that port on the list" — and, for a service whose port
+// is not being forwarded, "did the file I edited actually say so".
+func sandboxServicePorts(service apimodel.SandboxService) string {
+	text := make([]string, 0, len(service.Ports))
+	for _, port := range service.Ports {
+		text = append(text, fmt.Sprint(port))
+	}
+	return strings.Join(text, ",")
 }
 
 // sandboxServiceDetail is the last column: normally what the service is for,

@@ -118,6 +118,34 @@ func (m *Manager) List() ([]Service, error) {
 	return out, nil
 }
 
+// DeclaredPorts is every port the repository's declarations name, deduplicated
+// and in declaration order. It is what the listening-port watcher folds into
+// its snapshot so a declared port is reported whatever procfs shows (ADR 0076),
+// and it reads the declarations rather than the exec records deliberately: a
+// port is declared by a file, not by a run, and the script that published it
+// has usually exited by the time the port matters.
+//
+// A declaration that cannot run still contributes its ports. The file says the
+// port exists; a missing executable bit says nothing about that either way.
+func (m *Manager) DeclaredPorts() ([]int, error) {
+	defs, err := Discover(m.root)
+	if err != nil {
+		return nil, err
+	}
+	var out []int
+	seen := map[int]struct{}{}
+	for _, def := range defs {
+		for _, port := range def.Ports {
+			if _, duplicate := seen[port]; duplicate {
+				continue
+			}
+			seen[port] = struct{}{}
+			out = append(out, port)
+		}
+	}
+	return out, nil
+}
+
 // Get is one declared service by id.
 func (m *Manager) Get(id string) (Service, error) {
 	def, err := m.definition(id)

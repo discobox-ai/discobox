@@ -126,6 +126,9 @@ func sandboxService(in services.Service) sandboxapi.SandboxService {
 	if in.FileName != "" {
 		out.FileName = sandboxapi.NewOptString(in.FileName)
 	}
+	for _, port := range in.Ports {
+		out.Ports = append(out.Ports, int64(port))
+	}
 	if in.Problem != "" {
 		out.Problem = sandboxapi.NewOptString(in.Problem)
 	}

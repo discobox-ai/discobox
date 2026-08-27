@@ -1834,6 +1834,12 @@ func (s *SandboxAgentListeningPort) encodeFields(e *jx.Encoder) {
 		}
 	}
 	{
+		if s.Declared.Set {
+			e.FieldStart("declared")
+			s.Declared.Encode(e)
+		}
+	}
+	{
 		e.FieldStart("firstSeenAt")
 		json.EncodeDateTime(e, s.FirstSeenAt)
 	}
@@ -1847,11 +1853,12 @@ func (s *SandboxAgentListeningPort) encodeFields(e *jx.Encoder) {
 	}
 }
 
-var jsonFieldsNameOfSandboxAgentListeningPort = [4]string{
+var jsonFieldsNameOfSandboxAgentListeningPort = [5]string{
 	0: "addresses",
-	1: "firstSeenAt",
-	2: "port",
-	3: "protocol",
+	1: "declared",
+	2: "firstSeenAt",
+	3: "port",
+	4: "protocol",
 }
 
 // Decode decodes SandboxAgentListeningPort from json.
@@ -1882,8 +1889,18 @@ func (s *SandboxAgentListeningPort) Decode(d *jx.Decoder) error {
 			}(); err != nil {
 				return errors.Wrap(err, "decode field \"addresses\"")
 			}
+		case "declared":
+			if err := func() error {
+				s.Declared.Reset()
+				if err := s.Declared.Decode(d); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"declared\"")
+			}
 		case "firstSeenAt":
-			requiredBitSet[0] |= 1 << 1
+			requiredBitSet[0] |= 1 << 2
 			if err := func() error {
 				v, err := json.DecodeDateTime(d)
 				s.FirstSeenAt = v
@@ -1895,7 +1912,7 @@ func (s *SandboxAgentListeningPort) Decode(d *jx.Decoder) error {
 				return errors.Wrap(err, "decode field \"firstSeenAt\"")
 			}
 		case "port":
-			requiredBitSet[0] |= 1 << 2
+			requiredBitSet[0] |= 1 << 3
 			if err := func() error {
 				v, err := d.Int64()
 				s.Port = int64(v)
@@ -1907,7 +1924,7 @@ func (s *SandboxAgentListeningPort) Decode(d *jx.Decoder) error {
 				return errors.Wrap(err, "decode field \"port\"")
 			}
 		case "protocol":
-			requiredBitSet[0] |= 1 << 3
+			requiredBitSet[0] |= 1 << 4
 			if err := func() error {
 				if err := s.Protocol.Decode(d); err != nil {
 					return err
@@ -1926,7 +1943,7 @@ func (s *SandboxAgentListeningPort) Decode(d *jx.Decoder) error {
 	// Validate required fields.
 	var failures []validate.FieldError
 	for i, mask := range [1]uint8{
-		0b00001110,
+		0b00011100,
 	} {
 		if result := (requiredBitSet[i] & mask) ^ mask; result != 0 {
 			// Mask only required fields and check equality to mask using XOR.
@@ -3829,6 +3846,16 @@ func (s *SandboxService) encodeFields(e *jx.Encoder) {
 		}
 	}
 	{
+		if s.Ports != nil {
+			e.FieldStart("ports")
+			e.ArrStart()
+			for _, elem := range s.Ports {
+				e.Int64(elem)
+			}
+			e.ArrEnd()
+		}
+	}
+	{
 		if s.Problem.Set {
 			e.FieldStart("problem")
 			s.Problem.Encode(e)
@@ -3846,7 +3873,7 @@ func (s *SandboxService) encodeFields(e *jx.Encoder) {
 	}
 }
 
-var jsonFieldsNameOfSandboxService = [13]string{
+var jsonFieldsNameOfSandboxService = [14]string{
 	0:  "description",
 	1:  "error",
 	2:  "execId",
@@ -3857,9 +3884,10 @@ var jsonFieldsNameOfSandboxService = [13]string{
 	7:  "name",
 	8:  "path",
 	9:  "pid",
-	10: "problem",
-	11: "startedAt",
-	12: "status",
+	10: "ports",
+	11: "problem",
+	12: "startedAt",
+	13: "status",
 }
 
 // Decode decodes SandboxService from json.
@@ -3975,6 +4003,25 @@ func (s *SandboxService) Decode(d *jx.Decoder) error {
 			}(); err != nil {
 				return errors.Wrap(err, "decode field \"pid\"")
 			}
+		case "ports":
+			if err := func() error {
+				s.Ports = make([]int64, 0)
+				if err := d.Arr(func(d *jx.Decoder) error {
+					var elem int64
+					v, err := d.Int64()
+					elem = int64(v)
+					if err != nil {
+						return err
+					}
+					s.Ports = append(s.Ports, elem)
+					return nil
+				}); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"ports\"")
+			}
 		case "problem":
 			if err := func() error {
 				s.Problem.Reset()
@@ -3996,7 +4043,7 @@ func (s *SandboxService) Decode(d *jx.Decoder) error {
 				return errors.Wrap(err, "decode field \"startedAt\"")
 			}
 		case "status":
-			requiredBitSet[1] |= 1 << 4
+			requiredBitSet[1] |= 1 << 5
 			if err := func() error {
 				if err := s.Status.Decode(d); err != nil {
 					return err
@@ -4016,7 +4063,7 @@ func (s *SandboxService) Decode(d *jx.Decoder) error {
 	var failures []validate.FieldError
 	for i, mask := range [2]uint8{
 		0b11000000,
-		0b00010000,
+		0b00100000,
 	} {
 		if result := (requiredBitSet[i] & mask) ^ mask; result != 0 {
 			// Mask only required fields and check equality to mask using XOR.

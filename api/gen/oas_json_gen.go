@@ -15000,6 +15000,12 @@ func (s *SandboxAgentListeningPort) encodeFields(e *jx.Encoder) {
 		}
 	}
 	{
+		if s.Declared.Set {
+			e.FieldStart("declared")
+			s.Declared.Encode(e)
+		}
+	}
+	{
 		e.FieldStart("protocol")
 		s.Protocol.Encode(e)
 	}
@@ -15009,11 +15015,12 @@ func (s *SandboxAgentListeningPort) encodeFields(e *jx.Encoder) {
 	}
 }
 
-var jsonFieldsNameOfSandboxAgentListeningPort = [4]string{
+var jsonFieldsNameOfSandboxAgentListeningPort = [5]string{
 	0: "port",
 	1: "addresses",
-	2: "protocol",
-	3: "firstSeenAt",
+	2: "declared",
+	3: "protocol",
+	4: "firstSeenAt",
 }
 
 // Decode decodes SandboxAgentListeningPort from json.
@@ -15056,8 +15063,18 @@ func (s *SandboxAgentListeningPort) Decode(d *jx.Decoder) error {
 			}(); err != nil {
 				return errors.Wrap(err, "decode field \"addresses\"")
 			}
+		case "declared":
+			if err := func() error {
+				s.Declared.Reset()
+				if err := s.Declared.Decode(d); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"declared\"")
+			}
 		case "protocol":
-			requiredBitSet[0] |= 1 << 2
+			requiredBitSet[0] |= 1 << 3
 			if err := func() error {
 				if err := s.Protocol.Decode(d); err != nil {
 					return err
@@ -15067,7 +15084,7 @@ func (s *SandboxAgentListeningPort) Decode(d *jx.Decoder) error {
 				return errors.Wrap(err, "decode field \"protocol\"")
 			}
 		case "firstSeenAt":
-			requiredBitSet[0] |= 1 << 3
+			requiredBitSet[0] |= 1 << 4
 			if err := func() error {
 				v, err := json.DecodeDateTime(d)
 				s.FirstSeenAt = v
@@ -15088,7 +15105,7 @@ func (s *SandboxAgentListeningPort) Decode(d *jx.Decoder) error {
 	// Validate required fields.
 	var failures []validate.FieldError
 	for i, mask := range [1]uint8{
-		0b00001101,
+		0b00011001,
 	} {
 		if result := (requiredBitSet[i] & mask) ^ mask; result != 0 {
 			// Mask only required fields and check equality to mask using XOR.
@@ -20060,6 +20077,16 @@ func (s *SandboxService) encodeFields(e *jx.Encoder) {
 		}
 	}
 	{
+		if s.Ports != nil {
+			e.FieldStart("ports")
+			e.ArrStart()
+			for _, elem := range s.Ports {
+				e.Int64(elem)
+			}
+			e.ArrEnd()
+		}
+	}
+	{
 		if s.Problem.Set {
 			e.FieldStart("problem")
 			s.Problem.Encode(e)
@@ -20107,20 +20134,21 @@ func (s *SandboxService) encodeFields(e *jx.Encoder) {
 	}
 }
 
-var jsonFieldsNameOfSandboxService = [13]string{
+var jsonFieldsNameOfSandboxService = [14]string{
 	0:  "id",
 	1:  "name",
 	2:  "description",
 	3:  "path",
 	4:  "fileName",
-	5:  "problem",
-	6:  "status",
-	7:  "execId",
-	8:  "pid",
-	9:  "exitCode",
-	10: "startedAt",
-	11: "exitedAt",
-	12: "error",
+	5:  "ports",
+	6:  "problem",
+	7:  "status",
+	8:  "execId",
+	9:  "pid",
+	10: "exitCode",
+	11: "startedAt",
+	12: "exitedAt",
+	13: "error",
 }
 
 // Decode decodes SandboxService from json.
@@ -20186,6 +20214,25 @@ func (s *SandboxService) Decode(d *jx.Decoder) error {
 			}(); err != nil {
 				return errors.Wrap(err, "decode field \"fileName\"")
 			}
+		case "ports":
+			if err := func() error {
+				s.Ports = make([]int64, 0)
+				if err := d.Arr(func(d *jx.Decoder) error {
+					var elem int64
+					v, err := d.Int64()
+					elem = int64(v)
+					if err != nil {
+						return err
+					}
+					s.Ports = append(s.Ports, elem)
+					return nil
+				}); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"ports\"")
+			}
 		case "problem":
 			if err := func() error {
 				s.Problem.Reset()
@@ -20197,7 +20244,7 @@ func (s *SandboxService) Decode(d *jx.Decoder) error {
 				return errors.Wrap(err, "decode field \"problem\"")
 			}
 		case "status":
-			requiredBitSet[0] |= 1 << 6
+			requiredBitSet[0] |= 1 << 7
 			if err := func() error {
 				if err := s.Status.Decode(d); err != nil {
 					return err
@@ -20276,7 +20323,7 @@ func (s *SandboxService) Decode(d *jx.Decoder) error {
 	// Validate required fields.
 	var failures []validate.FieldError
 	for i, mask := range [2]uint8{
-		0b01000011,
+		0b10000011,
 		0b00000000,
 	} {
 		if result := (requiredBitSet[i] & mask) ^ mask; result != 0 {

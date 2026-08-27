@@ -8,16 +8,20 @@ import (
 	"github.com/discobox-ai/discobox/cli/internal/tui"
 )
 
-// sandboxPortTargets is what the sandbox's own processes are serving, as its
-// agent last reported it (ADR 0046) — the same push that carries the git state
-// and the terminal titles, so a listing can show it for every row without
-// reaching into anything, and `discobox proxy` can forward it without asking the
-// sandbox anything else.
+// sandboxPortTargets is what the sandbox is serving, as its agent last reported
+// it — the ports its own processes were seen listening on (ADR 0046) and the
+// ones its services declare (ADR 0076). It rides the same push that carries the
+// git state and the terminal titles, so a listing can show it for every row
+// without reaching into anything, and `discobox proxy` can forward it without
+// asking the sandbox anything else.
 //
 // The bind address is kept, because a forward has to name a host to dial:
 // the tunnel dials from inside the sandbox's network namespace, and a process
 // bound to one specific non-loopback address is no more on 127.0.0.1 there
-// than it is here. A listing that only shows the number drops it again.
+// than it is here. A listing that only shows the number drops it again. A
+// declared port reports no address — nothing visible is bound on it to report —
+// and so is dialed at the default host, which is the right answer for one
+// published by a nested container or a socket-activated unit.
 func sandboxPortTargets(sb apimodel.Sandbox) []portforward.Target {
 	agentStatus, ok := sb.Runtime.AgentStatus.Get()
 	if !ok {

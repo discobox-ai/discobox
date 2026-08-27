@@ -167,3 +167,60 @@ func TestDiscoverSkipsDirectoriesAndDotfiles(t *testing.T) {
 		t.Fatalf("defs = %+v, want just api", defs)
 	}
 }
+
+func TestDiscoverReadsDeclaredPorts(t *testing.T) {
+	root := t.TempDir()
+	// Every spelling of the field means the same thing, because a file is
+	// written by a person rather than by the schema.
+	writeService(t, root, "10-list.sh", "#!/bin/bash\n#---\n# ports: [8080, 5432]\n#---\nexec up\n", 0o755)
+	writeService(t, root, "20-scalar.sh", "#!/bin/bash\n#---\n# ports: 9000, 9001 9002\n#---\nexec up\n", 0o755)
+	writeService(t, root, "30-singular.sh", "#!/bin/bash\n#---\n# port: 3000\n#---\nexec up\n", 0o755)
+	writeService(t, root, "40-none.sh", apiScript, 0o755)
+
+	defs, err := Discover(root)
+	if err != nil {
+		t.Fatalf("discover: %v", err)
+	}
+	want := [][]int{{8080, 5432}, {9000, 9001, 9002}, {3000}, nil}
+	for i, def := range defs {
+		if !equalInts(def.Ports, want[i]) {
+			t.Errorf("%s ports = %v, want %v", def.FileName, def.Ports, want[i])
+		}
+		if !def.Runnable() {
+			t.Errorf("%s problem = %q, want none", def.FileName, def.Problem)
+		}
+	}
+}
+
+func TestDiscoverRejectsAPortThatIsNotOne(t *testing.T) {
+	root := t.TempDir()
+	writeService(t, root, "10-bad.sh", "#!/bin/bash\n#---\n# ports: 8080, http\n#---\nexec up\n", 0o755)
+	writeService(t, root, "20-range.sh", "#!/bin/bash\n#---\n# ports: 70000\n#---\nexec up\n", 0o755)
+
+	defs, err := Discover(root)
+	if err != nil {
+		t.Fatalf("discover: %v", err)
+	}
+	for _, def := range defs {
+		// A declaration whose ports cannot be read is listed with the reason,
+		// not run without them: the author meant something by that value.
+		if def.Runnable() {
+			t.Errorf("%s is runnable, want a reported problem", def.FileName)
+		}
+		if len(def.Ports) != 0 {
+			t.Errorf("%s ports = %v, want none kept from a rejected list", def.FileName, def.Ports)
+		}
+	}
+}
+
+func equalInts(got, want []int) bool {
+	if len(got) != len(want) {
+		return false
+	}
+	for i := range got {
+		if got[i] != want[i] {
+			return false
+		}
+	}
+	return true
+}

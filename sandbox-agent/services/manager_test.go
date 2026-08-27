@@ -533,3 +533,44 @@ func TestLogsForAServiceThatNeverRan(t *testing.T) {
 		t.Fatalf("entries = %v, want none", entries)
 	}
 }
+
+// The watcher asks for declared ports on every tick, so what it gets back must
+// be the files as they are now, deduplicated across declarations, and must not
+// depend on anything having run.
+func TestDeclaredPortsReadsEveryDeclarationWhateverItsState(t *testing.T) {
+	manager, _, root := newTestManager(t)
+	writeService(t, root, "10-stack.sh", "#!/bin/bash\n#---\n# ports: 8080, 5432\n#---\nexec up\n", 0o755)
+	// Not executable, so it cannot run — which says nothing about whether the
+	// port it names exists.
+	writeService(t, root, "20-broken.sh", "#!/bin/bash\n#---\n# ports: 9000\n#---\nexec up\n", 0o644)
+	// The same port twice is one port.
+	writeService(t, root, "30-again.sh", "#!/bin/bash\n#---\n# port: 8080\n#---\nexec up\n", 0o755)
+
+	ports, err := manager.DeclaredPorts()
+	if err != nil {
+		t.Fatalf("declared ports: %v", err)
+	}
+	if !equalInts(ports, []int{8080, 5432, 9000}) {
+		t.Fatalf("declared ports = %v, want [8080 5432 9000]", ports)
+	}
+
+	writeService(t, root, "40-added.sh", "#!/bin/bash\n#---\n# ports: 3000\n#---\nexec up\n", 0o755)
+	ports, err = manager.DeclaredPorts()
+	if err != nil {
+		t.Fatalf("declared ports after an edit: %v", err)
+	}
+	if !equalInts(ports, []int{8080, 5432, 9000, 3000}) {
+		t.Fatalf("declared ports = %v after a declaration was added, want it seen", ports)
+	}
+}
+
+func TestDeclaredPortsWithNoDeclarations(t *testing.T) {
+	manager, _, _ := newTestManager(t)
+	ports, err := manager.DeclaredPorts()
+	if err != nil {
+		t.Fatalf("declared ports: %v", err)
+	}
+	if len(ports) != 0 {
+		t.Fatalf("declared ports = %v, want none", ports)
+	}
+}

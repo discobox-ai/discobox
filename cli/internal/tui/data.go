@@ -82,10 +82,11 @@ type GitState struct {
 	AppliedCommit string
 }
 
-// Port is one TCP port a sandbox's own processes are listening on, and what it
-// turned out to speak. The address it is bound on is not carried: a forward
-// dials from inside the sandbox, where every reported port answers, so the
-// number and the protocol are the whole of what is actionable.
+// Port is one TCP port a sandbox serves — observed listening, or declared by a
+// service (ADR 0076) — and what it turned out to speak. The address it is bound
+// on is not carried: a forward dials from inside the sandbox, where every
+// reported port answers, so the number and the protocol are the whole of what
+// is actionable.
 type Port struct {
 	Number   int
 	Protocol string // http, https, tcp, or unknown while a probe has not answered

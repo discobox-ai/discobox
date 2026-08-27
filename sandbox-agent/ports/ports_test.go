@@ -2,6 +2,7 @@ package ports
 
 import (
 	"context"
+	"errors"
 	"net/netip"
 	"os"
 	"path/filepath"
@@ -52,10 +53,20 @@ type recordingProbe struct {
 	mu      sync.Mutex
 	answers map[int]Protocol
 	calls   map[int]int
+	targets map[int]netip.AddrPort
 }
 
 func newRecordingProbe(answers map[int]Protocol) *recordingProbe {
-	return &recordingProbe{answers: answers, calls: map[int]int{}}
+	if answers == nil {
+		answers = map[int]Protocol{}
+	}
+	return &recordingProbe{answers: answers, calls: map[int]int{}, targets: map[int]netip.AddrPort{}}
+}
+
+func (p *recordingProbe) lastTarget(port int) netip.AddrPort {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	return p.targets[port]
 }
 
 func (p *recordingProbe) probe(_ context.Context, target netip.AddrPort) Protocol {
@@ -63,6 +74,7 @@ func (p *recordingProbe) probe(_ context.Context, target netip.AddrPort) Protoco
 	defer p.mu.Unlock()
 	port := int(target.Port())
 	p.calls[port]++
+	p.targets[port] = target
 	if answer, ok := p.answers[port]; ok {
 		return answer
 	}
@@ -266,5 +278,164 @@ func TestWatcherSnapshotIsNilSafe(t *testing.T) {
 	var watcher *Watcher
 	if got := watcher.Snapshot(); got != nil {
 		t.Fatalf("Snapshot on a nil watcher = %+v, want nil", got)
+	}
+}
+
+// A declared port is reported whatever the scan found, which is the whole
+// point: the socket belongs to root, so the uid filter never sees it (ADR 0076).
+func TestWatcherReportsADeclaredPortNothingIsListeningOn(t *testing.T) {
+	fixture := newProcFixture(t)
+	fixture.write()
+	probe := newRecordingProbe(map[int]Protocol{8080: ProtocolHTTP})
+	watcher := New(Config{
+		UID:      1000,
+		ProcRoot: fixture.root,
+		Probe:    probe.probe,
+		Declared: func() ([]int, error) { return []int{8080}, nil },
+	})
+
+	watcher.tick(context.Background())
+
+	got := snapshotByPort(t, watcher, 8080)
+	if !got.Declared {
+		t.Errorf("declared = false, want true")
+	}
+	if len(got.Addresses) != 0 {
+		t.Errorf("addresses = %v, want none: nothing visible is bound there", got.Addresses)
+	}
+	// Probing works where discovery does not — connecting does not care which
+	// uid owns the far end — so the port still classifies.
+	if got.Protocol != ProtocolHTTP {
+		t.Errorf("protocol = %q, want http", got.Protocol)
+	}
+	if target := probe.lastTarget(8080); target.Addr().String() != "127.0.0.1" {
+		t.Errorf("probed %v, want loopback: a declared port has no observed bind to aim at", target)
+	}
+}
+
+// The declared set is read every tick, so a service file written while the
+// sandbox is up takes effect without a restart (ADR 0070 §5).
+func TestWatcherFollowsTheDeclaredSetAsItChanges(t *testing.T) {
+	fixture := newProcFixture(t)
+	fixture.write()
+	var declared []int
+	watcher := New(Config{
+		UID:      1000,
+		ProcRoot: fixture.root,
+		Probe:    newRecordingProbe(nil).probe,
+		Declared: func() ([]int, error) { return declared, nil },
+	})
+
+	watcher.tick(context.Background())
+	if len(watcher.Snapshot()) != 0 {
+		t.Fatalf("snapshot = %+v, want empty", watcher.Snapshot())
+	}
+
+	declared = []int{5432}
+	watcher.tick(context.Background())
+	snapshotByPort(t, watcher, 5432)
+
+	declared = nil
+	watcher.tick(context.Background())
+	if len(watcher.Snapshot()) != 0 {
+		t.Fatalf("snapshot = %+v after the declaration went away, want empty", watcher.Snapshot())
+	}
+}
+
+// A declared port that is also listening is an ordinary observed port that
+// happens to be declared: it keeps its binds and its socket-keyed probe cache.
+func TestWatcherKeepsTheObservationOfADeclaredPortThatIsAlsoListening(t *testing.T) {
+	fixture := newProcFixture(t)
+	fixture.write(row(0, "0100007F", "1F90", 1000, 41001))
+	probe := newRecordingProbe(map[int]Protocol{8080: ProtocolHTTP})
+	watcher := New(Config{
+		UID:      1000,
+		ProcRoot: fixture.root,
+		Probe:    probe.probe,
+		Declared: func() ([]int, error) { return []int{8080}, nil },
+	})
+
+	watcher.tick(context.Background())
+	got := snapshotByPort(t, watcher, 8080)
+	if !got.Declared {
+		t.Errorf("declared = false, want true")
+	}
+	if len(got.Addresses) != 1 || got.Addresses[0] != "127.0.0.1" {
+		t.Errorf("addresses = %v, want the observed bind", got.Addresses)
+	}
+
+	// Same socket, still declared: the cache is the socket's, so no second probe.
+	watcher.tick(context.Background())
+	if calls := probe.callCount(8080); calls != 1 {
+		t.Errorf("probe called %d times for an unchanged socket, want 1", calls)
+	}
+}
+
+// The declaration is the identity a declared port's classification is cached
+// against, since it has no socket to key on — re-probing it every tick is the
+// standing scan ADR 0046 refused.
+func TestWatcherProbesADeclaredPortOnceItAnswers(t *testing.T) {
+	fixture := newProcFixture(t)
+	fixture.write()
+	probe := newRecordingProbe(map[int]Protocol{8080: ProtocolUnknown})
+	watcher := New(Config{
+		UID:      1000,
+		ProcRoot: fixture.root,
+		Probe:    probe.probe,
+		Declared: func() ([]int, error) { return []int{8080}, nil },
+	})
+
+	// Nothing is up yet: unknown, and retried, the way an unreachable observed
+	// port is.
+	watcher.tick(context.Background())
+	watcher.tick(context.Background())
+	if calls := probe.callCount(8080); calls != 2 {
+		t.Fatalf("probe called %d times while the port was unreachable, want 2", calls)
+	}
+
+	probe.setAnswer(8080, ProtocolHTTP)
+	watcher.tick(context.Background())
+	if got := snapshotByPort(t, watcher, 8080); got.Protocol != ProtocolHTTP {
+		t.Fatalf("protocol = %q once the service answered, want http", got.Protocol)
+	}
+	watcher.tick(context.Background())
+	if calls := probe.callCount(8080); calls != 3 {
+		t.Errorf("probe called %d times, want 3: an established answer is not asked for again", calls)
+	}
+}
+
+// Declaring the agent's own port does not make it a service.
+func TestWatcherExcludesADeclaredPortItMustNotReport(t *testing.T) {
+	fixture := newProcFixture(t)
+	fixture.write()
+	watcher := New(Config{
+		UID:          1000,
+		ProcRoot:     fixture.root,
+		ExcludePorts: []int{8558},
+		Probe:        newRecordingProbe(nil).probe,
+		Declared:     func() ([]int, error) { return []int{8558, 70000, 0}, nil },
+	})
+
+	watcher.tick(context.Background())
+	if snapshot := watcher.Snapshot(); len(snapshot) != 0 {
+		t.Fatalf("snapshot = %+v, want empty", snapshot)
+	}
+}
+
+// A declared set that cannot be read is this tick's gap, not a fault: the scan
+// still reports what it found.
+func TestWatcherSurvivesADeclaredSetItCannotRead(t *testing.T) {
+	fixture := newProcFixture(t)
+	fixture.write(row(0, "0100007F", "1435", 1000, 41001))
+	watcher := New(Config{
+		UID:      1000,
+		ProcRoot: fixture.root,
+		Probe:    newRecordingProbe(nil).probe,
+		Declared: func() ([]int, error) { return nil, errors.New("read .discobox/services: permission denied") },
+	})
+
+	watcher.tick(context.Background())
+	if got := snapshotByPort(t, watcher, 5173); got.Declared {
+		t.Errorf("declared = true, want false")
 	}
 }

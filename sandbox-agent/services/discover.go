@@ -16,7 +16,9 @@ import (
 	"path/filepath"
 	"runtime"
 	"sort"
+	"strconv"
 	"strings"
+	"unicode"
 
 	"github.com/discobox-ai/x/frontmatter"
 )
@@ -47,6 +49,16 @@ type Definition struct {
 	// orders the listing: the `NN-` prefix stripped from the ID is a statement
 	// about where the file sits in the directory.
 	FileName string
+	// Ports are the TCP ports this service serves, in the order the file names
+	// them, empty when it names none.
+	//
+	// A declared port is reported and forwarded whether or not anything is
+	// observably listening on it (ADR 0076). It exists for the ports the
+	// sandbox cannot discover on its own: discovery only sees sockets the
+	// sandbox user owns, so a port published by a nested container or bound by
+	// a socket-activated unit — root's socket either way — is invisible to it
+	// however plainly the service is responsible for it.
+	Ports []int
 	// Problem is why this declaration cannot run, empty when it can.
 	Problem string
 }
@@ -124,9 +136,46 @@ func parseFile(path, filename string) Definition {
 		def.Name = name
 	}
 	def.Description = fields.String("description")
+	ports, err := parsePorts(fields)
+	if err != nil {
+		def.Problem = "front matter: " + err.Error()
+		return def
+	}
+	def.Ports = ports
 	def.Problem = validate(path, data)
 	return def
 }
+
+// parsePorts reads the `ports` field, which a declaration may write as a YAML
+// list, as one comma- or space-separated scalar, or as a single number —
+// `ports: 8080`, `ports: 8080, 5432` and `ports: [8080, 5432]` all say the same
+// thing. `port` is accepted as the singular spelling of the same field, because
+// a file declaring one port will be written that way whatever the docs say.
+//
+// A value that is not a TCP port number is an error rather than a skipped
+// entry: the author meant something specific by it, and a service that runs
+// without the port it declared is the invisible failure this package's listing
+// already refuses elsewhere.
+func parsePorts(fields frontmatter.Fields) ([]int, error) {
+	var out []int
+	seen := map[int]struct{}{}
+	for _, field := range fields.Strings("ports", "port") {
+		for _, text := range strings.FieldsFunc(field, isPortSeparator) {
+			port, err := strconv.Atoi(text)
+			if err != nil || port < 1 || port > 65535 {
+				return nil, fmt.Errorf("ports: %q is not a TCP port number", text)
+			}
+			if _, duplicate := seen[port]; duplicate {
+				continue
+			}
+			seen[port] = struct{}{}
+			out = append(out, port)
+		}
+	}
+	return out, nil
+}
+
+func isPortSeparator(r rune) bool { return r == ',' || unicode.IsSpace(r) }
 
 // validate holds a service script to the same two rules a hook script is held
 // to, and for the same reason: the file is run by path, so the kernel needs a

@@ -550,6 +550,13 @@ launcher will supply the same two halves and draw them instead.
   linked to `http://localhost:8082`. It binds loopback only, with no `--address`
   to widen it: a window has no business opening a sandbox's ports to the network
   on the strength of having been attached to.
+- The listing is what the sandbox says it serves, not only what it was seen
+  listening on: a service may declare a port the sandbox cannot discover — one
+  a nested container published or a socket-activated unit bound, root's socket
+  either way ([ADR 0076](../docs/adr/0076-a-service-may-declare-a-port-discovery-cannot-see.md))
+  — and it arrives in the same array, with no addresses and a `declared` mark.
+  Nothing here treats it specially: a port with no reported address is dialed at
+  the default host, which is the answer for a published or activated one.
 - The listing is polled rather than streamed. There is no project event stream
   to subscribe to — the one that existed promised a resumable list-then-watch it
   could not deliver and was removed (ADR 0061) — and the ports themselves reach

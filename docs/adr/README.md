@@ -128,3 +128,4 @@ Nygard-style ADRs (see adr.github.io) combined with current-state design docs:
 | [0073](0073-a-directory-with-no-repository-is-copied-only-when-asked.md) | A directory with no repository is copied only when asked | Accepted |
 | [0074](0074-a-wsl-cli-writes-the-ssh-config-windows-reads.md) | A CLI in WSL writes the ssh_config Windows reads | Accepted |
 | [0075](0075-the-nix-store-is-a-pool-shared-cache-seeded-on-first-use.md) | The nix store is a pool-shared cache, seeded from the image on first use | Accepted |
+| [0076](0076-a-service-may-declare-a-port-discovery-cannot-see.md) | A service may declare a port discovery cannot see | Accepted (amends [0070](0070-services-are-declared-execs-the-sandbox-starts-for-you.md) §1) |

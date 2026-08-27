@@ -9,6 +9,13 @@
 // the answer is cached for its lifetime. That is why this is a standing watcher
 // with a snapshot rather than a computation the status handler runs — everything
 // else in that response is computed fresh per request.
+//
+// The snapshot has a second input, and so is what the sandbox serves rather
+// than only what it was seen listening on: a service declaration may name ports
+// the uid filter cannot see, because the socket belongs to root — published by
+// a nested container, or bound by a socket-activated unit — however plainly the
+// sandbox's own work is behind it (ADR 0076). Those are folded in here, probed
+// like any other, and marked Declared.
 package ports
 
 import (
@@ -44,11 +51,24 @@ type Port struct {
 	// sandbox's network namespace in every case — which is where a forward
 	// would dial from (ADR 0024's tcp/attach) — so this describes the bind, not
 	// the reachability.
+	//
+	// Empty means the scan saw nothing bound here, which is every port carried
+	// by its declaration alone.
 	Addresses []string `json:"addresses,omitempty"`
 	Protocol  Protocol `json:"protocol"`
-	// FirstSeenAt is when this port was first observed listening, and it
-	// survives a restart of whatever is behind it as long as the port itself
-	// never went away between two scans.
+	// Declared marks a port a service declaration names (ADR 0076). Such a
+	// port is on the record because the repository says it exists, so it is
+	// reported whether or not the scan can see anything listening on it — one
+	// published by a nested container or bound by a socket-activated unit is
+	// root's socket, which the uid filter excludes by construction.
+	//
+	// It is independent of whether the port was also observed: Addresses is
+	// what says that, and a declared port with none is one nothing visible is
+	// listening on.
+	Declared bool `json:"declared,omitempty"`
+	// FirstSeenAt is when this port was first listed — first observed
+	// listening, or first declared. It survives a restart of whatever is
+	// behind it as long as the port itself never went away between two scans.
 	FirstSeenAt time.Time `json:"firstSeenAt"`
 }
 
@@ -67,6 +87,18 @@ type Config struct {
 	ProcRoot string
 	// Interval defaults to DefaultInterval.
 	Interval time.Duration
+	// Declared reports the ports a service declaration names, which are listed
+	// whatever the scan finds (ADR 0076). Nil — a sandbox with no service layer
+	// to ask — means none.
+	//
+	// It is a function called on every tick rather than a set fixed at
+	// construction because declarations are re-read from disk on every listing
+	// (ADR 0070 §5): a service file added or edited while the sandbox is up
+	// takes effect immediately, and the port it declares has to behave the same
+	// way. Asking through a seam is also what keeps a procfs watcher from
+	// knowing what a repository is, the way Probe keeps it from knowing what
+	// HTTP is.
+	Declared func() ([]int, error)
 	// Probe defaults to probing the target for real. Tests replace it.
 	Probe  func(context.Context, netip.AddrPort) Protocol
 	Logger *slog.Logger
@@ -80,6 +112,7 @@ type Watcher struct {
 	exclude  map[int]struct{}
 	procRoot string
 	interval time.Duration
+	declared func() ([]int, error)
 	probe    func(context.Context, netip.AddrPort) Protocol
 	logger   *slog.Logger
 
@@ -98,7 +131,17 @@ type portState struct {
 	protocol    Protocol
 	addresses   []string
 	target      netip.AddrPort
+	declared    bool
 }
+
+// declaredInodeKey stands in for the socket inodes of a port that has none to
+// name: a declared port nothing visible is listening on. It keys the probe
+// cache to the declaration rather than to a socket, so the classification of
+// such a port is established once and not re-established while it stays
+// declared — re-probing it on a schedule is the standing scan of a user's own
+// services ADR 0046 rejected. No real key can collide with it: those are
+// comma-separated digits.
+const declaredInodeKey = "declared"
 
 func New(cfg Config) *Watcher {
 	if cfg.ProcRoot == "" {
@@ -122,6 +165,7 @@ func New(cfg Config) *Watcher {
 		exclude:  exclude,
 		procRoot: cfg.ProcRoot,
 		interval: cfg.Interval,
+		declared: cfg.Declared,
 		probe:    cfg.Probe,
 		logger:   cfg.Logger,
 		state:    map[int]*portState{},
@@ -164,7 +208,7 @@ func (w *Watcher) tick(ctx context.Context) {
 		w.logger.Debug("sandbox agent listening port scan failed", "error", err)
 		return
 	}
-	pending := w.observe(listeners, time.Now().UTC())
+	pending := w.observe(listeners, w.declaredPorts(), time.Now().UTC())
 	// The snapshot is published before the probes run so a port shows up in the
 	// tick it appeared in, carrying "unknown" until its probe answers, rather
 	// than being withheld for as long as a slow server takes to reply.
@@ -176,10 +220,33 @@ func (w *Watcher) tick(ctx context.Context) {
 	w.publish()
 }
 
-// observe folds a scan into the remembered state and returns the ports whose
-// protocol has to be established: newly appeared ones, ones whose socket was
-// replaced, and ones whose last probe could not reach them.
-func (w *Watcher) observe(listeners []listener, now time.Time) []int {
+// declaredPorts is the declared set for this tick. A read that fails is this
+// tick's gap the same way a failed procfs scan is: the ports it would have
+// named drop off the snapshot until a later tick reads them, which a client
+// that already forwarded one rides out — a binding outlives the port going
+// away (ADR 0049).
+func (w *Watcher) declaredPorts() []int {
+	if w.declared == nil {
+		return nil
+	}
+	declared, err := w.declared()
+	if err != nil {
+		w.logger.Debug("sandbox agent declared port read failed", "error", err)
+		return nil
+	}
+	return declared
+}
+
+// observe folds a scan and the declared set into the remembered state and
+// returns the ports whose protocol has to be established: newly appeared ones,
+// ones whose socket was replaced, and ones whose last probe could not reach
+// them.
+//
+// The two inputs land in one state map rather than two. A declared port that is
+// also observed is an ordinary observed port that happens to be declared — it
+// has real binds and a real socket identity to key its probe cache on, and only
+// a port nothing visible is listening on is carried by its declaration alone.
+func (w *Watcher) observe(listeners []listener, declared []int, now time.Time) []int {
 	grouped := map[int][]listener{}
 	for _, entry := range listeners {
 		if _, skip := w.exclude[entry.Port]; skip {
@@ -187,19 +254,27 @@ func (w *Watcher) observe(listeners []listener, now time.Time) []int {
 		}
 		grouped[entry.Port] = append(grouped[entry.Port], entry)
 	}
+	declaredSet := make(map[int]struct{}, len(declared))
+	for _, port := range declared {
+		if port < 1 || port > 65535 {
+			continue
+		}
+		// The exclusion is what it is for observed ports: the agent's own
+		// listener is not a service, and declaring it would not make it one.
+		if _, skip := w.exclude[port]; skip {
+			continue
+		}
+		declaredSet[port] = struct{}{}
+	}
 
 	w.mu.Lock()
 	defer w.mu.Unlock()
-	next := make(map[int]*portState, len(grouped))
+	next := make(map[int]*portState, len(grouped)+len(declaredSet))
 	var pending []int
-	for port, entries := range grouped {
-		state := &portState{
-			firstSeenAt: now,
-			inodeKey:    inodeKey(entries),
-			protocol:    ProtocolUnknown,
-			addresses:   addressStrings(entries),
-			target:      netip.AddrPortFrom(probeAddr(entries), uint16(port)),
-		}
+	// fold carries forward what the previous tick knew about this port and
+	// queues a probe when the protocol is not already established for the
+	// socket — or the declaration — now behind it.
+	fold := func(port int, state *portState) {
 		if previous, ok := w.state[port]; ok {
 			state.firstSeenAt = previous.firstSeenAt
 			if previous.inodeKey == state.inodeKey {
@@ -211,10 +286,40 @@ func (w *Watcher) observe(listeners []listener, now time.Time) []int {
 		}
 		next[port] = state
 	}
+	for port, entries := range grouped {
+		_, isDeclared := declaredSet[port]
+		fold(port, &portState{
+			firstSeenAt: now,
+			inodeKey:    inodeKey(entries),
+			protocol:    ProtocolUnknown,
+			addresses:   addressStrings(entries),
+			target:      netip.AddrPortFrom(probeAddr(entries), uint16(port)),
+			declared:    isDeclared,
+		})
+	}
+	for port := range declaredSet {
+		if _, observed := next[port]; observed {
+			continue
+		}
+		fold(port, &portState{
+			firstSeenAt: now,
+			inodeKey:    declaredInodeKey,
+			protocol:    ProtocolUnknown,
+			target:      netip.AddrPortFrom(declaredProbeAddr, uint16(port)),
+			declared:    true,
+		})
+	}
 	w.state = next
 	sort.Ints(pending)
 	return pending
 }
+
+// declaredProbeAddr is where a port with no observed bind is probed. There is
+// nothing to derive a target from, so it is loopback — the address a port
+// published by a nested container or bound by a socket-activated unit answers
+// on in practice. A service bound only to ::1 classifies as unknown and is
+// forwarded anyway: the forward dials by name and tries both families.
+var declaredProbeAddr = netip.AddrFrom4([4]byte{127, 0, 0, 1})
 
 func (w *Watcher) runProbes(ctx context.Context, pending []int) {
 	targets := make(map[int]probeTarget, len(pending))
@@ -270,6 +375,7 @@ func (w *Watcher) publish() {
 			Port:        port,
 			Addresses:   state.addresses,
 			Protocol:    state.protocol,
+			Declared:    state.declared,
 			FirstSeenAt: state.firstSeenAt,
 		})
 	}

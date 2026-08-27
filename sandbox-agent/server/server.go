@@ -190,7 +190,7 @@ func newRouterAndManager(cfg Config) (agentRuntime, error) {
 		slog.Default().Warn("sandbox agent services disabled", "error", err)
 		serviceManager = nil
 	}
-	portsWatch, err := newPortsWatcher(cfg, execManager)
+	portsWatch, err := newPortsWatcher(cfg, execManager, serviceManager)
 	if err != nil {
 		// Telemetry must not be what keeps a sandbox from booting. A sandbox
 		// whose run identity does not resolve is broken for execs too, and it
@@ -272,16 +272,23 @@ func newServiceManager(execManager *execs.Manager) (*services.Manager, error) {
 }
 
 // newPortsWatcher wires the listening-port watcher to the identity the sandbox
-// actually runs processes as. That identity is asked of the exec manager rather
-// than rebuilt from the manifest (see REVIEW.md), and a manifest that names
-// nobody means an exec inherits this process's own identity (ADR 0025 §5), so
-// that is the uid whose sockets count.
+// actually runs processes as, and to the declarations that name ports it cannot
+// discover. That identity is asked of the exec manager rather than rebuilt from
+// the manifest (see REVIEW.md), and a manifest that names nobody means an exec
+// inherits this process's own identity (ADR 0025 §5), so that is the uid whose
+// sockets count.
 //
 // The agent's own listener is excluded by port. The uid filter already excludes
 // it in the normal case, where the agent is root and the sandbox user is not,
 // but a sandbox whose run user *is* root would otherwise report the control
 // port as one of its own services.
-func newPortsWatcher(cfg Config, execManager *execs.Manager) (*ports.Watcher, error) {
+//
+// The declared set is read through the service manager on every tick, so a
+// declaration added while the sandbox is up is honored without a restart
+// (ADR 0076). A sandbox whose services are unavailable — the workdir above did
+// not resolve — declares nothing, which is the same answer as a repository with
+// no declarations.
+func newPortsWatcher(cfg Config, execManager *execs.Manager, serviceManager *services.Manager) (*ports.Watcher, error) {
 	user, err := execManager.ResolveUser(execs.CreateRequest{})
 	if err != nil {
 		return nil, err
@@ -290,10 +297,14 @@ func newPortsWatcher(cfg Config, execManager *execs.Manager) (*ports.Watcher, er
 	if user != nil && user.UID != nil {
 		uid = *user.UID
 	}
-	return ports.New(ports.Config{
+	watcher := ports.Config{
 		UID:          uid,
 		ExcludePorts: listenPorts(cfg.ListenAddress),
-	}), nil
+	}
+	if serviceManager != nil {
+		watcher.Declared = serviceManager.DeclaredPorts
+	}
+	return ports.New(watcher), nil
 }
 
 // listenPorts is the agent's own listen port, or nothing when the address does

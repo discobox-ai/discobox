@@ -11,7 +11,8 @@ export PORT="${PORT:-8080}"
 # local socket, which nothing outside this container can reach. It reads this
 # from the environment (Taskfile `dev:server`), which is why exporting it here
 # works. Once the server is listening on a TCP port the sandbox finds and
-# forwards it on its own (ADR 0046), which is why a service declares no port.
+# forwards it on its own (ADR 0046) — it is this user's own socket — which is
+# why this service declares no `ports:` the way the OTEL one has to.
 export DISCOBOX_SERVER_LISTEN="${DISCOBOX_SERVER_LISTEN:-http://127.0.0.1:$PORT}"
 export DISCOBOX_DATA_DIR="${DISCOBOX_DATA_DIR:-$PWD/.tmp/discobox/data}"
 export DISCOBOX_CONFIG_DIR="${DISCOBOX_CONFIG_DIR:-$PWD/.tmp/discobox/config}"

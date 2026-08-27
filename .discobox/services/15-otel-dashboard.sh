@@ -2,7 +2,14 @@
 #---
 # name: OTEL Metrics Dashboard
 # description: Runs the Aspire Dashboard OTLP receiver and metrics UI on port 18888
+# ports: 18888
 #---
+
+# The dashboard's ports are published by dockerd, as root, so the sandbox's port
+# watcher never sees one however plainly this service is what put it there
+# (ADR 0076) — hence the declaration above. Only the UI port is declared: the
+# OTLP receivers below are pushed to from inside the sandbox, and forwarding
+# them to a laptop is not something anyone has wanted.
 
 set -euo pipefail
 
