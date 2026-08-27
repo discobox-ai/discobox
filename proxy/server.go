@@ -208,6 +208,7 @@ func (s *Server) ListenAndServe() error {
 	if err != nil {
 		return err
 	}
+	s.startRetentionSweeper()
 	s.listener = tls.NewListener(tcp, &tls.Config{
 		Certificates: []tls.Certificate{s.certs.ServerCert},
 		ClientCAs:    s.certs.ClientCAPool,
@@ -227,6 +228,53 @@ func (s *Server) ListenAndServe() error {
 		s.wg.Add(1)
 		go s.serveConn(conn)
 	}
+}
+
+// startRetentionSweeper runs the audit retention pass on an interval derived
+// from the configured window, beginning with one immediate pass so a proxy that
+// was down longer than the window reclaims on start rather than an interval
+// later.
+//
+// It is driven from the configuration rather than by the pool agent so that the
+// bound travels with the recorder: anything that records is swept, and there is
+// no deployment in which the two can be wired apart.
+func (s *Server) startRetentionSweeper() {
+	retention := s.cfg.Recording.Retention
+	if !s.cfg.Recording.Enabled || retention <= 0 {
+		return
+	}
+	s.wg.Add(1)
+	go func() {
+		defer s.wg.Done()
+		ticker := time.NewTicker(SweepInterval(retention))
+		defer ticker.Stop()
+		for {
+			s.sweepAudit(retention)
+			select {
+			case <-s.closed:
+				return
+			case <-s.ctx.Done():
+				return
+			case <-ticker.C:
+			}
+		}
+	}()
+}
+
+// sweepAudit runs one retention pass and reports it on a span. The proxy has no
+// logger of its own, and this is where the rest of its background work — cache
+// stores, audit writes — already reports.
+func (s *Server) sweepAudit(retention time.Duration) {
+	ctx, span := proxyTracer().Start(contextOrBackground(s.ctx), "proxy.audit.retention.sweep")
+	defer span.End()
+	result, err := s.audit.Sweep(ctx, time.Now().UTC().Add(-retention))
+	span.SetAttributes(
+		attribute.Int64("proxy.audit.retention.http_rows", result.HTTPRows),
+		attribute.Int64("proxy.audit.retention.socks_rows", result.SOCKSRows),
+		attribute.Int64("proxy.audit.retention.files", result.Files),
+		attribute.Int64("proxy.audit.retention.bytes", result.Bytes),
+	)
+	recordSpanError(span, err)
 }
 
 // Close stops the proxy and flushes queued audit events.

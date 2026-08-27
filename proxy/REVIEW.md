@@ -6,6 +6,11 @@
 - The proxied request path must never synchronously wait on SQLite audit writes.
   New audit data must go through the bounded async recorder or an equivalent
   non-blocking spool.
+- Audit rows and their spool files must stay reclaimable together. A new spool
+  kind must be swept by `Recorder.Sweep`, and anything that holds one open past
+  the retention window must be tracked open so the sweep skips it.
+- Do not reclaim audit data on sandbox deletion. The trail deliberately outlives
+  the sandbox; retention is the only thing that removes it.
 - Preserve mTLS as the pool host proxy client identity boundary. Do not accept
   client identity from sandbox-supplied headers.
 - Policy and audit behavior must remain client-scoped. Destination rules,

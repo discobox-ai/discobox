@@ -88,6 +88,12 @@ type RecordingConfig struct {
 	StreamDir       string
 	StreamQueueSize int
 	BodyDir         string
+	// Retention is how long an audit row and the spool files it names are kept.
+	// Zero keeps them forever, which is what an embedder that manages the
+	// database itself wants; every Discobox pool sets a window, because nothing
+	// else bounds these trees. Sandbox deletion deliberately does not: the
+	// audit trail of a sandbox that has been deleted is the case it exists for.
+	Retention time.Duration
 }
 
 // AllowlistConfig controls destination filtering.
@@ -123,6 +129,36 @@ type HeaderCondition struct {
 	Equals string
 }
 
+const (
+	// DefaultRetention is how long audit rows, recorded bodies, and upgraded
+	// stream captures are kept. Two days spans a weekend day plus the working
+	// day either side of it, which is the window in which someone actually goes
+	// looking at what a sandbox sent.
+	DefaultRetention = 48 * time.Hour
+
+	// minSweepInterval and maxSweepInterval bound how often a retention pass
+	// runs, whatever the window is set to.
+	minSweepInterval = time.Minute
+	maxSweepInterval = time.Hour
+)
+
+// SweepInterval is how often to run a retention pass for a given window.
+//
+// It is derived rather than configured for the same reason imagereap derives
+// its own: the two are useless apart. Half the window bounds how far past the
+// retention a row can survive at 1.5x, and the clamps stop a very short window
+// becoming a busy loop or a very long one leaving the first pass days away.
+func SweepInterval(retention time.Duration) time.Duration {
+	interval := retention / 2
+	if interval < minSweepInterval {
+		return minSweepInterval
+	}
+	if interval > maxSweepInterval {
+		return maxSweepInterval
+	}
+	return interval
+}
+
 // DefaultConfig returns conservative worker proxy defaults.
 func DefaultConfig() Config {
 	return Config{
@@ -141,6 +177,7 @@ func DefaultConfig() Config {
 			StreamDir:       "./proxy-streams",
 			StreamQueueSize: 1024,
 			BodyDir:         "./proxy-bodies",
+			Retention:       DefaultRetention,
 		},
 	}
 }
@@ -165,6 +202,9 @@ func (c Config) Validate() error {
 		}
 		if c.Recording.StreamQueueSize < 0 {
 			return errors.New("recording stream queue size cannot be negative")
+		}
+		if c.Recording.Retention < 0 {
+			return errors.New("recording retention cannot be negative")
 		}
 	}
 	if strings.TrimSpace(c.Control.ListenAddress) != "" {

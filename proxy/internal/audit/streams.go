@@ -46,6 +46,10 @@ type StreamSession struct {
 	closeOnce sync.Once
 	stateMu   sync.RWMutex
 	closed    bool
+	// onClose releases the recorder's hold on this spool file. It runs after
+	// the last frame is flushed, so the retention sweep cannot reclaim the
+	// file while anything is still being written to it.
+	onClose func()
 
 	droppedChunks atomic.Uint64
 	droppedBytes  atomic.Uint64
@@ -133,6 +137,9 @@ func (s *StreamSession) Close() error {
 		close(s.events)
 	})
 	<-s.done
+	if s.onClose != nil {
+		s.onClose()
+	}
 	return nil
 }
 

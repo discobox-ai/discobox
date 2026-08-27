@@ -73,6 +73,42 @@ stores only relative spool paths, byte counts, format names, metadata, redacted
 headers, cache state, policy decisions, and authenticated client identity. Large
 response assets remain in the disk cache, not SQLite.
 
+## Retention
+
+Audit rows, recorded bodies, and upgraded-stream captures are kept for
+`Recording.Retention` and then reclaimed. Zero opts out, for an embedder that
+manages the database itself; every Discobox pool sets a window, because nothing
+else bounds these trees.
+
+Deleting a sandbox deliberately does **not** reclaim its audit trail. What a
+sandbox sent is the question the trail exists to answer, and it is most often
+asked after that sandbox is gone, so age is the only thing that reclaims here.
+
+One pass deletes rows by their creation timestamp and spool files by their
+modification time, against the one cutoff. Pairing them that way is exact
+rather than approximate: a spool file is written across the life of the
+exchange it belongs to and that exchange's row is written when it ends, so a
+file last modified before the cutoff can only belong to a row that is also
+before it. Sweeping files on their own terms — rather than only the ones a
+deleted row names — is what reaches the set no row can: spools whose event was
+dropped because the audit queue was full, which is the recorder's designed
+behavior under burst, and spools left by a crash mid-write. Rows go first, so a
+failure part-way leaves unreachable files that the next pass reclaims rather
+than rows pointing at files that are gone.
+
+A spool still being written is the one file that reasoning does not cover: an
+upgraded stream can sit open and idle past the cutoff, and it has no row until
+it closes. The recorder tracks those open and the sweep skips them.
+
+`SweepInterval` derives the pass cadence from the window rather than taking a
+second setting: half the window, clamped to [1m, 1h], which bounds how far past
+its retention a row survives at 1.5x. The first pass runs at startup, so a proxy
+that was down longer than its window reclaims on the way up.
+
+The response cache is not swept. See [Response Cache](#response-cache): its
+entries are keyed by content digest and bounded by a byte ceiling, so age says
+nothing about what belongs in it.
+
 HTTP 101 upgrades are supported as generic upgraded streams. The proxy preserves
 the upgraded tunnel, spools raw bidirectional payload frames to disk, and audits
 protocol type, spool file metadata, drop counters, and client-to-server and

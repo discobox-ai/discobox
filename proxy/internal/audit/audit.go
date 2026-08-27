@@ -156,6 +156,10 @@ type Recorder struct {
 	streamWg        sync.WaitGroup
 	dropped         atomic.Uint64
 	closed          atomic.Bool
+	// openSpool names the spool files currently being written, so the
+	// retention sweep does not reclaim one out from under a live stream.
+	spoolMu   sync.Mutex
+	openSpool map[string]struct{}
 	// pools owns the database handle db borrows. Close releases it: without
 	// that the connection outlives the recorder, which on Linux merely leaks
 	// and on Windows makes the database file undeletable for the life of the
@@ -192,7 +196,12 @@ func (r *Recorder) BeginUpgradeStream(clientID, upgradeType string) (*StreamReco
 	if r == nil || !r.enabled || r.streamDir == "" {
 		return nil, nil, nil
 	}
-	return BeginUpgradeStream(r.streamDir, clientID, upgradeType, r.streamQueueSize, &r.streamWg)
+	record, session, err := BeginUpgradeStream(r.streamDir, clientID, upgradeType, r.streamQueueSize, &r.streamWg)
+	if err != nil || record == nil {
+		return record, session, err
+	}
+	session.onClose = r.trackSpool(record.File)
+	return record, session, nil
 }
 
 // BeginBody starts a raw HTTP body spool file.
@@ -200,7 +209,12 @@ func (r *Recorder) BeginBody(clientID, kind string) (*BodyRecord, *BodySpool, er
 	if r == nil || !r.enabled || r.bodyDir == "" {
 		return nil, nil, nil
 	}
-	return BeginBody(r.bodyDir, clientID, kind)
+	record, spool, err := BeginBody(r.bodyDir, clientID, kind)
+	if err != nil || record == nil {
+		return record, spool, err
+	}
+	spool.onClose = r.trackSpool(record.File)
+	return record, spool, nil
 }
 
 // Open creates the audit store and starts its background writer.

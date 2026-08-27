@@ -30,6 +30,9 @@ type BodySpool struct {
 	bytes     int64
 	closeErr  error
 	writeErr  error
+	// onClose releases the recorder's hold on this spool file; see
+	// StreamSession.onClose.
+	onClose func()
 }
 
 // BeginBody creates a raw body spool file.
@@ -84,6 +87,9 @@ func (s *BodySpool) Close() error {
 		defer s.mu.Unlock()
 		s.closeErr = s.file.Close()
 	})
+	if s.onClose != nil {
+		s.onClose()
+	}
 	return s.closeErr
 }
 
