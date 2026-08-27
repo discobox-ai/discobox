@@ -136,8 +136,12 @@ func resolveDeclaredSourceArg(ctx context.Context, primaryRoot, name, url string
 
 // gitOriginURL is the checkout's origin remote, or empty when it has none —
 // which a directory in no repository, or one that was never cloned, does not.
+//
+// The configured value, not `remote get-url`: get-url applies the caller's
+// url.*.insteadOf rewrites, and this is reported back to the person who wrote
+// the remote down. They should read what they wrote.
 func gitOriginURL(ctx context.Context, dir string) string {
-	out, err := gitutil.Output(ctx, dir, nil, nil, "remote", "get-url", "origin")
+	out, err := gitutil.Output(ctx, dir, nil, nil, "config", "--get", "remote.origin.url")
 	if err != nil {
 		return ""
 	}
