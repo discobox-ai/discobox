@@ -6,6 +6,7 @@ import (
 	"charm.land/bubbles/v2/textinput"
 	tea "charm.land/bubbletea/v2"
 	"charm.land/lipgloss/v2"
+	"github.com/charmbracelet/x/ansi"
 )
 
 type dialogKind int
@@ -53,6 +54,26 @@ type dialog struct {
 	// whoever built the menu.
 	altKey string
 	alt    func(key string) tea.Cmd
+
+	// The "/" search over a body too long to read down. query is what has been
+	// typed, match is which of the lines holding it the body is on, and typing
+	// says the line at the foot is still being typed into.
+	//
+	// matches and seek belong to the draw: only it knows how the body wrapped
+	// at this width, so it is the draw that counts the matches and scrolls to
+	// one, and a key press only says which one it wants.
+	query   string
+	match   int
+	matches int
+	typing  bool
+	seek    bool
+	// resume is where the body sat when the search line opened, to go back to
+	// if the search is abandoned.
+	resume int
+	// overflow is whether the last draw had more body than window. A dialog
+	// that fits does not offer a search: there is nothing in it to look for
+	// that is not already on screen.
+	overflow bool
 
 	// action receives the result: the chosen action's key, the entered text,
 	// or "yes" for a confirmed question. It is not called on cancel.
@@ -144,6 +165,12 @@ func (d *dialog) nextEnabled(from, delta int) int {
 // update handles a key press, returning a command and whether to close.
 func (d *dialog) update(msg tea.KeyPressMsg) (tea.Cmd, bool) {
 	if keyName(msg) == "esc" {
+		// While the search line is open Esc belongs to it: the way out of a
+		// search you did not mean to start is not the way out of the help.
+		if d.typing {
+			d.endSearch()
+			return nil, false
+		}
 		return d.cancel(), true
 	}
 
@@ -153,17 +180,7 @@ func (d *dialog) update(msg tea.KeyPressMsg) (tea.Cmd, bool) {
 		// than being swallowed by a dialog that has no use for them.
 		return nil, false
 	case dlgMessage, dlgText:
-		switch keyName(msg) {
-		case "enter", " ", "q":
-			return nil, true
-		case "up", "k":
-			if d.offset > 0 {
-				d.offset--
-			}
-		case "down", "j":
-			d.offset++
-		}
-		return nil, false
+		return d.updateText(msg)
 
 	case dlgConfirm:
 		switch strings.ToLower(keyName(msg)) {
@@ -229,6 +246,98 @@ func (d *dialog) update(msg tea.KeyPressMsg) (tea.Cmd, bool) {
 	return nil, false
 }
 
+// updateText handles a key on a scrolling body: the search line while one is
+// open, and otherwise the keys that walk the body and the matches in it.
+func (d *dialog) updateText(msg tea.KeyPressMsg) (tea.Cmd, bool) {
+	if d.typing {
+		switch keyName(msg) {
+		case "enter":
+			// The search survives the line: the matches are what was being
+			// looked for, and n and N walk them with the foot given back to
+			// what the keys are.
+			d.typing = false
+		case "backspace":
+			query := []rune(d.query)
+			if len(query) == 0 {
+				// Deleting past the start of a search is not having asked.
+				d.endSearch()
+				return nil, false
+			}
+			d.setQuery(string(query[:len(query)-1]))
+		case "up":
+			d.scroll(-1)
+		case "down":
+			d.scroll(1)
+		default:
+			// Everything a terminal reports as text goes into the query,
+			// space included; a modified key is a command, not a letter.
+			if msg.Text != "" && msg.Mod&^tea.ModShift == 0 {
+				d.setQuery(d.query + msg.Text)
+			}
+		}
+		return nil, false
+	}
+
+	switch keyName(msg) {
+	case "/":
+		d.resume, d.typing = d.offset, true
+		d.setQuery("")
+	case "n":
+		if d.query != "" {
+			d.match, d.seek = d.match+1, true
+		}
+	case "N":
+		if d.query != "" {
+			d.match, d.seek = d.match-1, true
+		}
+	case "enter", " ", "q":
+		return nil, true
+	case "up", "k":
+		d.scroll(-1)
+	case "down", "j":
+		d.scroll(1)
+	}
+	return nil, false
+}
+
+// setQuery is a change to what is being looked for. The body goes to the first
+// match rather than the next one after where it is scrolled to: a search of the
+// help is "where is this written", which is answered from the top.
+func (d *dialog) setQuery(query string) {
+	d.query, d.match, d.seek = query, 0, true
+}
+
+// endSearch abandons a search: the line goes, the matches go with it, and the
+// body returns to where it was when the line opened — a search that found
+// nothing you wanted should not also have lost your place.
+func (d *dialog) endSearch() {
+	d.typing, d.query, d.match, d.matches, d.seek = false, "", 0, 0, false
+	d.offset = d.resume
+}
+
+// scroll moves the body. Only the draw knows how many rows the body wrapped to
+// at this width, so it is the draw that stops it at the end.
+func (d *dialog) scroll(delta int) {
+	d.offset = max(d.offset+delta, 0)
+}
+
+// find is which of the wrapped body lines hold the search text, matched against
+// the text alone: the harness card carries color, and a query should not have
+// to be typed around the escapes in it.
+func (d *dialog) find(lines []string) []int {
+	if d.query == "" {
+		return nil
+	}
+	needle := strings.ToLower(d.query)
+	var found []int
+	for i, line := range lines {
+		if strings.Contains(strings.ToLower(ansi.Strip(line)), needle) {
+			found = append(found, i)
+		}
+	}
+	return found
+}
+
 // How much of the window a dialog takes.
 //
 // A dialog is the only thing on screen while it is up, so the old fixed 90
@@ -290,24 +399,33 @@ func (d *dialog) view(st *styles, width, height int) string {
 	// and the blank under it, and the three rows the scroll hint and footer
 	// need under it.
 	maxBody := max(dialogHeight(height)-dialogChromeHeight-2-3, 3)
+	scrolling := d.kind == dlgText || d.kind == dlgMessage
 	if d.body != "" {
-		lines := wrap(d.body, inner)
+		// A scrolling body keeps a column for the chevron, the way every list
+		// in this window points at the row you are on. It is there whether or
+		// not a search is open, so opening one shifts nothing: a body that
+		// re-wrapped under the search line would move the very text the search
+		// had just found.
+		//
+		// Not on a box too narrow to have an inside — below the floor on inner,
+		// lipgloss is already re-wrapping the body to the width it really has,
+		// and an indent survives that wrap and takes the row past the window.
+		chevron := scrolling && boxWidth-dialogChromeWidth >= inner
+		room := inner
+		if chevron {
+			room -= lipgloss.Width(dialogMarkOff)
+		}
+		lines := wrap(d.body, room)
 		// Wrapping is not enough on its own: a line the wrapper could not break
 		// — the help text's key columns are one long run of spaces and words —
 		// comes back wider than the box, and lipgloss wraps it again into a row
 		// the height was not budgeted for. One row over is a frame one row
 		// taller than the terminal.
 		for i, line := range lines {
-			lines[i] = truncate(line, inner)
+			lines[i] = truncate(line, room)
 		}
-		if d.kind == dlgText || d.kind == dlgMessage {
-			d.offset = min(max(d.offset, 0), max(len(lines)-maxBody, 0))
-			end := min(d.offset+maxBody, len(lines))
-			b.WriteString(strings.Join(lines[d.offset:end], "\n"))
-			if len(lines) > maxBody {
-				b.WriteString("\n")
-				b.WriteString(st.dimText.Render("  … ↑/↓ to scroll"))
-			}
+		if scrolling {
+			b.WriteString(d.viewBody(st, lines, inner, maxBody, chevron))
 		} else {
 			b.WriteString(strings.Join(lines, "\n"))
 		}
@@ -341,7 +459,7 @@ func (d *dialog) view(st *styles, width, height int) string {
 		b.WriteString(st.dimText.Render("Esc stops watching"))
 	case dlgMessage, dlgText:
 		b.WriteString("\n")
-		b.WriteString(st.dimText.Render("Esc closes"))
+		b.WriteString(truncate(d.viewSearch(st, inner), inner))
 	case dlgActions:
 		b.WriteString("\n")
 		// The label column fits the longest label rather than a fixed width:
@@ -382,4 +500,103 @@ func (d *dialog) view(st *styles, width, height int) string {
 	}
 
 	return st.dialog.Width(boxWidth).Render(b.String())
+}
+
+// dialogMark is the chevron column down the left of a scrolling body: the match
+// the search is on, and nothing on every other row.
+const (
+	dialogMarkOn  = "❯ "
+	dialogMarkOff = "  "
+)
+
+// viewBody draws the scrolling half of a text dialog: the rows in view, the
+// matches under the search painted, and the hint that says there is more.
+//
+// The matches are counted here rather than at the key that asked for them
+// because the body is wrapped to the window: which line a word falls on, and so
+// how many lines hold it, is only known once there is a width to wrap to.
+func (d *dialog) viewBody(st *styles, lines []string, inner, maxBody int, chevron bool) string {
+	found := d.find(lines)
+	d.matches = len(found)
+	if len(found) > 0 {
+		// n and N walk the index off either end, and a resize changes what it
+		// counts against, so it is wrapped back into range here.
+		d.match = ((d.match % len(found)) + len(found)) % len(found)
+		if d.seek {
+			// A third of the way down rather than at the top, so a match
+			// arrives with the lines above it that say which section it is in.
+			d.offset = max(found[d.match]-maxBody/3, 0)
+		}
+	}
+	d.seek = false
+	d.offset = min(max(d.offset, 0), max(len(lines)-maxBody, 0))
+	end := min(d.offset+maxBody, len(lines))
+
+	current := -1
+	if len(found) > 0 {
+		current = found[d.match]
+	}
+	marked := make(map[int]bool, len(found))
+	for _, i := range found {
+		marked[i] = true
+	}
+
+	on, off := "", ""
+	if chevron {
+		on, off = st.key.Render(dialogMarkOn), dialogMarkOff
+	}
+
+	var b strings.Builder
+	for i := d.offset; i < end; i++ {
+		if i > d.offset {
+			b.WriteString("\n")
+		}
+		// The two bands are the list's own: a row the search is pointing at,
+		// and a row it merely found, told apart the way the row under the
+		// cursor is told apart from the rows a command would act on.
+		switch {
+		case i == current:
+			b.WriteString(highlight(st, padANSI(on+lines[i], inner), colBothBG))
+		case marked[i]:
+			b.WriteString(highlight(st, padANSI(off+lines[i], inner), colSelectedBG))
+		default:
+			b.WriteString(off + lines[i])
+		}
+	}
+	d.overflow = len(lines) > maxBody
+	if d.overflow {
+		b.WriteString("\n")
+		b.WriteString(st.dimText.Render("  … ↑/↓ to scroll"))
+	}
+	return b.String()
+}
+
+// viewSearch is the row under a scrolling body: the search line while one is
+// being typed, and otherwise what the keys there are.
+func (d *dialog) viewSearch(st *styles, inner int) string {
+	if d.typing {
+		// The tally rides on the right of the line rather than waiting for
+		// Enter, so a query that matches nothing says so while there are still
+		// letters to take back.
+		return spread(st.key.Render("/")+d.query+st.key.Render("▏"), st.dimText.Render(d.tally()), inner)
+	}
+	if d.query != "" {
+		// The query stays on the line with the search put away, because the
+		// rows below it are painted and n and N are live: a footer that forgot
+		// what was searched for would leave both unexplained.
+		return st.key.Render("/") + d.query +
+			st.dimText.Render("  "+d.tally()+" · n / N next, previous · / search · Esc closes")
+	}
+	if d.overflow {
+		return st.dimText.Render("/ search · Esc closes")
+	}
+	return st.dimText.Render("Esc closes")
+}
+
+// tally is which match the body is on, of how many.
+func (d *dialog) tally() string {
+	if d.matches == 0 {
+		return "no matches"
+	}
+	return itoa(d.match+1) + "/" + itoa(d.matches)
 }

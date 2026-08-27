@@ -32,6 +32,10 @@ func TestFrames(t *testing.T) {
 		{"harness-config", func(m *Model) { send(t, m, key("f3"), key("v")) }},
 		{"harness-files", func(m *Model) { send(t, m, key("f3"), key("f")) }},
 		{"help", func(m *Model) { send(t, m, key("f1")) }},
+		{"help-search", func(m *Model) {
+			send(t, m, key("f1"), key("/"))
+			send(t, m, typeString("shell")...)
+		}},
 		// The tools picker is reached from the workspace, which needs the
 		// driver; the dialog itself is the frame worth looking at, so it is
 		// opened on the discobox the workspace would have been showing.

@@ -129,3 +129,169 @@ func TestALongBodyUsesTheHeightItIsGiven(t *testing.T) {
 		t.Fatalf("body rows: %d in a 20-row window, %d in a 60-row one — want the taller window to show more", short, tall)
 	}
 }
+
+// searchable is a scrolling text dialog with a body long enough to have
+// something in it that is not already on screen.
+func searchable() *dialog {
+	var lines []string
+	for i := range 60 {
+		lines = append(lines, "line "+itoa(i))
+	}
+	lines[17] = "the leader detaches"
+	lines[42] = "the leader quits"
+	return textDialog("Title", strings.Join(lines, "\n"))
+}
+
+// draw renders the dialog, which is what counts the matches: the body is
+// wrapped to the window, so how many lines hold a word is only known here.
+func draw(d *dialog) string { return d.view(newStyles(false), 100, 24) }
+
+// / searches the body, and the tally says what it found while it is still
+// being typed.
+func TestSlashSearchesAScrollingBody(t *testing.T) {
+	d := searchable()
+	draw(d)
+	send := func(spec string) { d.update(key(spec)) }
+
+	send("/")
+	if !d.typing {
+		t.Fatal("/ did not open the search line")
+	}
+	for _, r := range "leader" {
+		send(string(r))
+	}
+	if got := draw(d); !strings.Contains(got, "/leader") {
+		t.Fatalf("the search line is not on the frame:\n%s", got)
+	}
+	if d.query != "leader" || d.matches != 2 {
+		t.Fatalf("query %q with %d matches, want \"leader\" with 2", d.query, d.matches)
+	}
+	if !strings.Contains(draw(d), "the leader detaches") {
+		t.Fatal("the body did not scroll to the first match")
+	}
+}
+
+// Enter puts the line away and keeps the search: n and N walk the matches, and
+// the footer still says what was searched for.
+func TestNAndNWalkTheMatches(t *testing.T) {
+	d := searchable()
+	draw(d)
+	for _, spec := range []string{"/", "l", "e", "a", "d", "e", "r", "enter"} {
+		d.update(key(spec))
+	}
+	if d.typing {
+		t.Fatal("Enter left the search line open")
+	}
+	d.update(key("n"))
+	if got := draw(d); !strings.Contains(got, "the leader quits") || !strings.Contains(got, "/leader") {
+		t.Fatalf("n did not go to the second match:\n%s", got)
+	}
+	if d.match != 1 {
+		t.Fatalf("match = %d, want the second", d.match)
+	}
+	// Past the end is the first again: two matches are a ring, not a list with
+	// a wall at each end.
+	d.update(key("n"))
+	draw(d)
+	if d.match != 0 {
+		t.Fatalf("match = %d after walking past the end, want the first", d.match)
+	}
+	d.update(key("N"))
+	draw(d)
+	if d.match != 1 {
+		t.Fatalf("match = %d after N from the first, want the last", d.match)
+	}
+}
+
+// Esc belongs to the search line while one is open: it abandons the search and
+// puts the body back where it was, rather than closing the dialog.
+func TestEscAbandonsTheSearchAndKeepsYourPlace(t *testing.T) {
+	d := searchable()
+	draw(d)
+	for range 10 {
+		d.update(key("down"))
+	}
+	draw(d)
+	was := d.offset
+
+	for _, spec := range []string{"/", "l", "e", "a", "d", "e", "r"} {
+		d.update(key(spec))
+	}
+	draw(d)
+	if d.offset == was {
+		t.Fatal("the search did not move the body")
+	}
+	if _, closed := d.update(key("esc")); closed {
+		t.Fatal("Esc closed the dialog instead of the search line")
+	}
+	draw(d)
+	if d.query != "" || d.matches != 0 {
+		t.Fatalf("the search survived Esc: %q with %d matches", d.query, d.matches)
+	}
+	if d.offset != was {
+		t.Fatalf("offset = %d after abandoning the search, want %d", d.offset, was)
+	}
+	// With no search open, Esc is the way out again.
+	if _, closed := d.update(key("esc")); !closed {
+		t.Fatal("Esc did not close the dialog")
+	}
+}
+
+// Backspacing past the start of the query is the same as never having asked.
+func TestBackspacingOutOfTheSearchEndsIt(t *testing.T) {
+	d := searchable()
+	draw(d)
+	for _, spec := range []string{"/", "l", "backspace", "backspace"} {
+		d.update(key(spec))
+	}
+	if d.typing || d.query != "" {
+		t.Fatalf("typing = %v, query = %q, want the search gone", d.typing, d.query)
+	}
+}
+
+// A body that fits its window does not offer a search: everything in it is
+// already on screen.
+func TestAShortBodyDoesNotOfferASearch(t *testing.T) {
+	st := newStyles(false)
+	short := textDialog("Title", "one line").view(st, 100, 24)
+	if strings.Contains(short, "/ search") {
+		t.Fatalf("a body that fits offered a search:\n%s", short)
+	}
+	if !strings.Contains(draw(searchable()), "/ search") {
+		t.Fatal("a body that scrolls did not offer a search")
+	}
+}
+
+// The matches are painted, and a painted row is still a row of the box: the
+// background is drawn across the width the frame budgeted for it.
+func TestASearchedDialogStaysInsideItsBox(t *testing.T) {
+	st := newStyles(true)
+	for _, window := range []int{120, 100, 80, 60, 40, 20} {
+		d := searchable()
+		d.view(st, window, 24)
+		for _, spec := range []string{"/", "l", "e", "a", "d", "e", "r"} {
+			d.update(key(spec))
+		}
+		for _, line := range strings.Split(d.view(st, window, 24), "\n") {
+			if got := lipgloss.Width(line); got > dialogWidth(window) {
+				t.Fatalf("at %d columns a searched row is %d wide, want at most %d",
+					window, got, dialogWidth(window))
+			}
+		}
+	}
+}
+
+// The help is what the search is for: from the window, F1 and / find a key
+// without reading down the whole of it.
+func TestTheHelpIsSearchable(t *testing.T) {
+	m := newTestModel(t, newFakeSource(testSandboxes()...))
+	send(t, m, sizeMsg(100, 30), key("f1"), key("/"))
+	send(t, m, typeString("vscode")...)
+	got := plainFrame(m)
+	if !strings.Contains(got, "/vscode") {
+		t.Fatalf("the search line is not on the frame:\n%s", got)
+	}
+	if !strings.Contains(got, "vscode takes neither") {
+		t.Fatalf("the help did not scroll to the match:\n%s", got)
+	}
+}

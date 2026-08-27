@@ -744,6 +744,28 @@ slowest load there is, and a welcome that arrived late would arrive over a
 prompt already being typed into. It takes every key — only Enter does anything —
 so a press aimed at the introduction cannot reach a screen the user has not seen.
 
+**A scrolling body is searched with `/`** (`updateText`, `viewBody`). The help
+is pages long and the config card is most of a screen, so the way to a line in
+either is to say what is on it: `/` opens a line at the foot of the box, the
+body goes to the first match as the query is typed, Enter puts the line away
+and keeps the matches, `n` and `N` walk them, and Esc — the search line's, while
+one is open — abandons it and puts the body back where it was.
+
+Matching and counting happen in the *draw*, not at the key. The body is wrapped
+to the window, so which line a word falls on, and how many lines hold it, is
+only known once there is a width to wrap to; a key press moves an index and asks
+for a seek, and the draw wraps the index back into range and scrolls a third of
+a screen above the match so it arrives with the section heading over it. Matches
+are found against `ansi.Strip`ped text, because the config card carries color
+and a query should not have to be typed around the escapes in it.
+
+A match wears the list's own bands — `colSelectedBG` for a row the search found,
+`colBothBG` for the row it is pointing at, painted by `highlight` — over the
+list's own chevron column, which a scrolling body keeps whether or not a search
+is open: a body that re-wrapped under the search line would move the very text
+the search had just found, and where there is no color the chevron is the whole
+of the answer. A body that fits its window offers no search at all.
+
 **The window fits the terminal.** `windowChrome` is what the box, header, list
 title, blanks, composer and status cost before a single sandbox is drawn; the
 list gives up rows for the composer as it grows and takes none at all when
@@ -1034,7 +1056,7 @@ the newest one where the busy line goes.
 | `model.go` | the window: update, actions, run, layout, view, help |
 | `list.go` | the sandbox pane: filters, selection, visual range, row rendering |
 | `options.go` | `discobox run`'s flags as a panel, the chip strip, the command preview |
-| `dialog.go` | the one modal layer: message, confirm, action menu, input, help |
+| `dialog.go` | the one modal layer: message, confirm, action menu, input, help, and the `/` search over a scrolling body |
 | `theme.go` | the palette and every style, built against the detected profile |
 | `logo.go` | the mark, embedded from `logo.chars` as captured |
 | `editor.go` | Alt-E: the prompt in `$EDITOR` |
