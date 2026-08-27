@@ -111,9 +111,12 @@ type Service struct {
 	hookSocketPath string
 	installer      Installer
 	primaryState   PrimaryStateStore
-	harnessMode    string
-	bootPrompt     []string
-	awaitSources   func(context.Context) error
+	// homeDirectory is the manifest's explicit home, when it carries one. The
+	// run user's own home stands in for it everywhere else (resolveHomeDir).
+	homeDirectory string
+	harnessMode   string
+	bootPrompt    []string
+	awaitSources  func(context.Context) error
 
 	// installing tracks exec IDs whose hook and file setup is still running.
 	// The record exists (execs status "starting") before its process launches, so
@@ -157,19 +160,20 @@ func NewService(cfg ServiceConfig) (*Service, error) {
 	}
 
 	s := &Service{
-		execs:        cfg.Execs,
-		harness:      cloneHarness(cfg.Harness),
-		env:          cloneMap(cfg.Env),
-		secretEnv:    cfg.SecretEnv,
-		fileSecrets:  append([]string(nil), cfg.Harness.FileSecrets...),
-		defaultUser:  defaultUser,
-		installer:    cfg.Installer,
-		primaryState: cfg.PrimaryState,
-		harnessMode:  strings.TrimSpace(cfg.HarnessMode),
-		bootPrompt:   append([]string(nil), cfg.Prompt...),
-		awaitSources: cfg.AwaitSources,
-		installing:   map[string]struct{}{},
-		launches:     map[string]*terminalLaunch{},
+		execs:         cfg.Execs,
+		harness:       cloneHarness(cfg.Harness),
+		env:           cloneMap(cfg.Env),
+		secretEnv:     cfg.SecretEnv,
+		fileSecrets:   append([]string(nil), cfg.Harness.FileSecrets...),
+		defaultUser:   defaultUser,
+		installer:     cfg.Installer,
+		primaryState:  cfg.PrimaryState,
+		homeDirectory: strings.TrimSpace(cfg.ExecDefaults.HomeDirectory),
+		harnessMode:   strings.TrimSpace(cfg.HarnessMode),
+		bootPrompt:    append([]string(nil), cfg.Prompt...),
+		awaitSources:  cfg.AwaitSources,
+		installing:    map[string]struct{}{},
+		launches:      map[string]*terminalLaunch{},
 	}
 	if s.installer == nil {
 		s.installer = CompositeInstaller{Installers: []Installer{
@@ -673,6 +677,15 @@ func (s *Service) launchPrimary(ctx context.Context, prompt []string) (execs.Exe
 			return execs.Exec{}, err
 		}
 	}
+	if !launched {
+		// The repository's own skills, installed on the sandbox's first launch
+		// and never again (see skills.go). It sits here rather than in the
+		// installer that runs before every terminal because the copies belong
+		// to the harness once they land.
+		if err := s.installProjectSkills(); err != nil {
+			return execs.Exec{}, err
+		}
+	}
 	request := primaryCreateRequest(harness, harnessID, prompt, launched)
 	if s.harnessMode == configHarnessMode {
 		// The image-owned config command is exact: never append the normal prompt
@@ -822,9 +835,9 @@ func (i FileInstaller) EnsureInstalled(_ context.Context, harness config.Harness
 	if len(harness.Files) == 0 {
 		return nil
 	}
-	home, err := i.resolveHome(env)
+	home, err := resolveHomeDir(i.HomeDirectory, i.User, env)
 	if err != nil {
-		return fmt.Errorf("harness %q %w", harness.ID, err)
+		return fmt.Errorf("harness %q has files to install but %w", harness.ID, err)
 	}
 	home = filepath.Clean(home)
 	for _, file := range harness.Files {
@@ -902,10 +915,11 @@ func (i FileInstaller) gid() *int64 {
 	return i.User.GID
 }
 
-// resolveHome resolves the home directory to install harness files into,
-// exactly as the exec layer resolves HOME for the process that will read them:
-// an explicit home, then the run user execs.HomeDir yields against the harness
-// env, then this process's own $HOME.
+// resolveHomeDir resolves the home directory to install a sandbox's own files
+// into — a harness's files, a repository's skills — exactly as the exec layer
+// resolves HOME for the process that will read them: an explicit home, then the
+// run user execs.HomeDir yields against the harness env, then this process's
+// own $HOME.
 //
 // It asks the exec layer rather than resolving again from the manifest. The
 // manifest is one of three layers — the image's own identity is another — and
@@ -913,17 +927,17 @@ func (i FileInstaller) gid() *int64 {
 // every sandbox the server creates for itself. A configure sandbox is created
 // with no user at all, and installing a harness's files into it died on a home
 // the exec running two lines later had no trouble finding (ADR 0025 §5).
-func (i FileInstaller) resolveHome(env map[string]string) (string, error) {
-	if home := strings.TrimSpace(i.HomeDirectory); home != "" {
+func resolveHomeDir(explicit string, user *execs.User, env map[string]string) (string, error) {
+	if home := strings.TrimSpace(explicit); home != "" {
 		return home, nil
 	}
-	if home := execs.HomeDir(i.User, env); home != "" {
+	if home := execs.HomeDir(user, env); home != "" {
 		return home, nil
 	}
 	if home := strings.TrimSpace(os.Getenv("HOME")); home != "" {
 		return home, nil
 	}
-	return "", fmt.Errorf("has files to install but no home directory could be resolved for the run user")
+	return "", errors.New("no home directory could be resolved for the run user")
 }
 
 func homeRelativePath(home, requested string) (string, error) {

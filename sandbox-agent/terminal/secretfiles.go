@@ -115,9 +115,9 @@ func (i FileInstaller) RestoreSecretFiles(_ context.Context, harness config.Harn
 	if len(sentinels) == 0 {
 		return nil, nil
 	}
-	home, err := i.resolveHome(env)
+	home, err := resolveHomeDir(i.HomeDirectory, i.User, env)
 	if err != nil {
-		return nil, fmt.Errorf("harness %q %w", harness.ID, err)
+		return nil, fmt.Errorf("harness %q has files to restore but %w", harness.ID, err)
 	}
 	home = filepath.Clean(home)
 
