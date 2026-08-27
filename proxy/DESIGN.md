@@ -220,6 +220,20 @@ through different registry mirrors or paths hits once. A partial response is
 never stored: a `206` body is a fragment, and storing it under a key that claims
 to be the whole object would serve truncated content to the next reader.
 
+The cache is bounded by an LRU byte ceiling rather than by time, which only
+holds while every file on disk is described by the index. Three kinds of file
+outlive a crash and are not: a `.tmp-*` entry whose writer is gone, an entry
+whose `.meta` sidecar was never written, and a sidecar whose entry was never
+renamed into place. The middle one is the dangerous one — the index is keyed by
+the cache key that only the sidecar holds, and the entry's filename is a hash of
+that key, so such an entry can never be found, counted against the ceiling, or
+evicted. `Commit` therefore writes the sidecar *before* renaming the entry into
+place, which turns that leak into a stray sidecar of a few dozen bytes, and
+`loadIndex` reclaims all three at startup — the one moment nothing is in flight,
+so an incomplete entry is known to be abandoned rather than pending. Startup
+also evicts down to the ceiling, so a ceiling lowered between runs is honored
+without waiting for a store that may never come.
+
 ## Runtime Policy
 
 Header rewrite rules are deterministic. Exact host matches win before wildcard

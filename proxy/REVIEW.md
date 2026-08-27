@@ -11,6 +11,9 @@
   the retention window must be tracked open so the sweep skips it.
 - Do not reclaim audit data on sandbox deletion. The trail deliberately outlives
   the sandbox; retention is the only thing that removes it.
+- Do not sweep the response cache by age. Its entries are content-addressed and
+  bounded by the LRU byte ceiling; anything that puts a file in the cache
+  directory must be describable by the index, or it leaks past that ceiling.
 - Preserve mTLS as the pool host proxy client identity boundary. Do not accept
   client identity from sandbox-supplied headers.
 - Policy and audit behavior must remain client-scoped. Destination rules,

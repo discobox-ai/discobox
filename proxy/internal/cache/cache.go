@@ -24,6 +24,15 @@ var (
 	ErrMiss     = errors.New("cache miss")
 )
 
+const (
+	// metaSuffix names the sidecar holding an entry's cache key. The key cannot
+	// be recovered from the entry's filename, which is a hash of it, so the
+	// sidecar is the only thing that makes an entry addressable.
+	metaSuffix = ".meta"
+	// tempMarker appears in the name of every in-progress entry.
+	tempMarker = ".tmp-"
+)
+
 // Config controls disk response caching.
 type Config struct {
 	Enabled      bool
@@ -153,7 +162,7 @@ func (c *Cache) BeginStreamingPut(key string, resp *http.Response) (*StreamingPu
 		return nil, err
 	}
 	hash := cacheKey(key)
-	file, err := os.CreateTemp(c.dir, hash+".tmp-*")
+	file, err := os.CreateTemp(c.dir, hash+tempMarker+"*")
 	if err != nil {
 		return nil, err
 	}
@@ -167,7 +176,7 @@ func (c *Cache) BeginStreamingPut(key string, resp *http.Response) (*StreamingPu
 		key:        key,
 		path:       filepath.Join(c.dir, hash),
 		tempPath:   file.Name(),
-		metaPath:   filepath.Join(c.dir, hash+".meta"),
+		metaPath:   filepath.Join(c.dir, hash+metaSuffix),
 		file:       file,
 		storedSize: int64(len(headerData) + 1),
 		digest:     sha256.New(),
@@ -209,10 +218,17 @@ func (s *StreamingPut) Commit() error {
 	if err := s.file.Close(); err != nil {
 		return err
 	}
-	if err := os.Rename(s.tempPath, s.path); err != nil {
+	// The sidecar is written before the entry is published, not after. It holds
+	// the only copy of the cache key and the index is rebuilt from it, so an
+	// entry renamed into place without one can never be looked up, counted
+	// against the size ceiling, or evicted: a crash in that window used to leak
+	// the whole body permanently. In this order the same crash leaks a sidecar
+	// of a few dozen bytes, which loadIndex reclaims on the next start.
+	if err := os.WriteFile(s.metaPath, []byte(s.key), 0o600); err != nil {
 		return err
 	}
-	if err := os.WriteFile(s.metaPath, []byte(s.key), 0o600); err != nil {
+	if err := os.Rename(s.tempPath, s.path); err != nil {
+		_ = os.Remove(s.metaPath)
 		return err
 	}
 	s.cache.recordStore(s.key, s.storedSize)
@@ -283,39 +299,94 @@ func (c *Cache) recordStore(key string, size int64) {
 	c.index.add(key, size)
 	c.stats.Stores++
 	c.stats.CurrentSize += size
+	c.evictToLimit()
+}
+
+// evictToLimit drops least-recently-used entries until the cache is back under
+// its ceiling. The caller holds c.mu.
+func (c *Cache) evictToLimit() {
 	for c.stats.CurrentSize > c.maxSize {
 		evictKey, evictSize := c.index.evict()
 		if evictKey == "" {
-			break
+			return
 		}
-		_ = os.Remove(filepath.Join(c.dir, cacheKey(evictKey)))
-		_ = os.Remove(filepath.Join(c.dir, cacheKey(evictKey)+".meta"))
+		c.removeEntryFiles(cacheKey(evictKey))
 		c.stats.CurrentSize -= evictSize
 		c.stats.Evictions++
 	}
 }
 
+// removeEntryFiles deletes an entry and its sidecar, named by the hashed key.
+func (c *Cache) removeEntryFiles(hash string) {
+	_ = os.Remove(filepath.Join(c.dir, hash))
+	_ = os.Remove(filepath.Join(c.dir, hash+metaSuffix))
+}
+
+// loadIndex rebuilds the in-memory index from disk and reclaims everything on
+// disk the index cannot describe.
+//
+// Three kinds of file outlive a crash or a kill, and none of them is reachable
+// afterwards: a `.tmp-*` entry whose writer is gone, an entry whose sidecar was
+// never written, and a sidecar whose entry was never renamed into place. An
+// unreachable entry is worse than wasted space — the index is keyed by the
+// cache key that only the sidecar holds, so such an entry can never be found,
+// counted against the size ceiling, or evicted, and the LRU bound silently
+// stops describing the directory.
+//
+// Startup is where these can be judged safely. This process has nothing in
+// flight, so an incomplete entry now is abandoned rather than pending.
 func (c *Cache) loadIndex() error {
 	entries, err := os.ReadDir(c.dir)
 	if err != nil {
 		return err
 	}
+	sizes := map[string]int64{}
+	sidecars := map[string]struct{}{}
+	var abandoned []string
 	for _, entry := range entries {
-		if entry.IsDir() || strings.HasSuffix(entry.Name(), ".meta") || strings.Contains(entry.Name(), ".tmp-") {
+		if entry.IsDir() {
 			continue
 		}
-		info, err := entry.Info()
-		if err != nil {
-			continue
+		name := entry.Name()
+		switch {
+		case strings.Contains(name, tempMarker):
+			abandoned = append(abandoned, name)
+		case strings.HasSuffix(name, metaSuffix):
+			sidecars[strings.TrimSuffix(name, metaSuffix)] = struct{}{}
+		default:
+			info, err := entry.Info()
+			if err != nil {
+				continue
+			}
+			sizes[name] = info.Size()
 		}
-		meta, err := os.ReadFile(filepath.Join(c.dir, entry.Name()+".meta"))
-		if err != nil {
-			continue
-		}
-		key := string(meta)
-		c.index.add(key, info.Size())
-		c.stats.CurrentSize += info.Size()
 	}
+	for name := range sizes {
+		if _, ok := sidecars[name]; !ok {
+			abandoned = append(abandoned, name)
+			delete(sizes, name)
+		}
+	}
+	for name := range sidecars {
+		if _, ok := sizes[name]; !ok {
+			abandoned = append(abandoned, name+metaSuffix)
+		}
+	}
+	for _, name := range abandoned {
+		_ = os.Remove(filepath.Join(c.dir, name))
+	}
+	for name, size := range sizes {
+		meta, err := os.ReadFile(filepath.Join(c.dir, name+metaSuffix))
+		if err != nil {
+			continue
+		}
+		c.index.add(string(meta), size)
+		c.stats.CurrentSize += size
+	}
+	// A ceiling that was lowered, or a directory that grew while nothing was
+	// evicting it, is brought back into bounds now rather than at the next
+	// store, which may never come.
+	c.evictToLimit()
 	return nil
 }
 
