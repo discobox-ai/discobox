@@ -25,14 +25,25 @@ const (
 )
 
 // Usage is what a sandbox is costing while it runs: cpu and memory as shares of
-// their quota, and the disk as bytes.
+// the host it runs on, and the disk as bytes.
 //
-// Nothing reports this yet. Known is false until something does, and the row
-// draws dots rather than three zeroes, which would read as "idle" instead of
-// "not measured". The column is here because the shape of the row is the thing
-// being designed, and a column added later moves everything beside it.
+// It comes from the pool agent's resource report (ADR 0071), which differences
+// every sandbox in a pool over one tick — so these shares are comparable
+// between rows in a way rates each sandbox computed for itself would not be.
+//
+// The two Known flags are separate because the two figures are measured on
+// different schedules. CPU and memory arrive together every report; the disk is
+// a walk of the sandbox's trees on the agent's own adaptive interval, so a
+// sandbox can be measured for one and not yet the other. Neither is ever drawn
+// as a zero when it is merely unmeasured, because a zero reads as "idle" and
+// "0 B" as "holds nothing".
 type Usage struct {
+	// Known covers CPUPercent and MemoryPercent: false until the agent has two
+	// samples to difference, which is the first report after it starts.
 	Known bool
+	// DiskKnown covers DiskBytes and DiskPercent, and lags Known on a sandbox
+	// created since the last sweep.
+	DiskKnown bool
 
 	CPUPercent    int
 	MemoryPercent int

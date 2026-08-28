@@ -12353,6 +12353,12 @@ func (s *PoolMemoryUsage) encodeFields(e *jx.Encoder) {
 			s.AvailableBytes.Encode(e)
 		}
 	}
+	{
+		if s.CapacityBytes.Set {
+			e.FieldStart("capacityBytes")
+			s.CapacityBytes.Encode(e)
+		}
+	}
 	for k, elem := range s.AdditionalProps {
 		e.FieldStart(k)
 
@@ -12362,11 +12368,12 @@ func (s *PoolMemoryUsage) encodeFields(e *jx.Encoder) {
 	}
 }
 
-var jsonFieldsNameOfPoolMemoryUsage = [4]string{
+var jsonFieldsNameOfPoolMemoryUsage = [5]string{
 	0: "currentBytes",
 	1: "peakBytes",
 	2: "limitBytes",
 	3: "availableBytes",
+	4: "capacityBytes",
 }
 
 // Decode decodes PoolMemoryUsage from json.
@@ -12420,6 +12427,16 @@ func (s *PoolMemoryUsage) Decode(d *jx.Decoder) error {
 				return nil
 			}(); err != nil {
 				return errors.Wrap(err, "decode field \"availableBytes\"")
+			}
+		case "capacityBytes":
+			if err := func() error {
+				s.CapacityBytes.Reset()
+				if err := s.CapacityBytes.Decode(d); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"capacityBytes\"")
 			}
 		default:
 			var elem jx.Raw

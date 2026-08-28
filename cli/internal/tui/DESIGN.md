@@ -1210,10 +1210,22 @@ art), and every style is the identity. `highlight` writes the row background
 escape by hand and re-asserts it after both spellings of the reset, because a
 style cannot paint across content that carries its own colors.
 
-**Placeholders for data that is coming.** `Usage` is on the row and drawn as
-dots until something reports it (`Usage.Known`). Nothing does yet; the column is
-there because the shape of the row is what is being designed, and a column added
-later moves everything beside it.
+**The usage column is a share of the host, and dots where it is not measured.**
+`Usage` carries what the pool agent reported (ADR 0071), divided by the host
+capacity its own pool reports — the pool's envelope is usually zero, meaning
+"sized by the host", and a share of zero is not a share. The listing already
+carries each discobox's pool, so the column costs no extra request.
+
+It has two `Known` flags because it is two measurements on two schedules. CPU
+and memory arrive together on every report; disk is a walk of the discobox's
+trees on the agent's own adaptive interval, so a discobox created since the last
+sweep has one and not the other. Each half draws a dot rather than a zero when
+it is unmeasured: `0%` reads as idle and `0 B` as holding nothing, and both are
+claims about the discobox where a dot is a claim about what we know.
+
+Rates are comparable down the column because one agent differenced every
+discobox in its pool over the same tick. Rates each discobox computed for itself
+would not be.
 
 **The folder is a header control, not a column.** The path in the header is
 which folder's sandboxes are listed (`folder.go`). It opens on the directory the

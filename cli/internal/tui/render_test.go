@@ -99,10 +99,33 @@ func TestUsageWithoutMeasurementsShowsDots(t *testing.T) {
 	}
 }
 
+// Disk is walked on a slower schedule than the counters, so a discobox created
+// since the last sweep has cpu and no disk. The cell that is not measured is a
+// dot, not "0 B", which would say it holds nothing.
+func TestUsageDrawsADotForTheHalfItHasNotMeasured(t *testing.T) {
+	sandboxes := testSandboxes()
+	sandboxes[0].Usage = Usage{Known: true, CPUPercent: 61, MemoryPercent: 44}
+	m := newTestModel(t, newFakeSource(sandboxes...))
+	send(t, m, key("tab"))
+
+	row := rowFor(t, m, "fix flaky pool reaper tests")
+	for _, want := range []string{"61%", "44%"} {
+		if !strings.Contains(row, want) {
+			t.Errorf("row %q missing %q", row, want)
+		}
+	}
+	if strings.Contains(row, "0 B") {
+		t.Errorf("row %q drew an unwalked disk as zero", row)
+	}
+}
+
 // Once something does report usage, the same column carries it.
 func TestUsageIsDrawnWhenItIsKnown(t *testing.T) {
 	sandboxes := testSandboxes()
-	sandboxes[0].Usage = Usage{Known: true, CPUPercent: 61, MemoryPercent: 44, DiskBytes: 2_483_027_968, DiskPercent: 12}
+	sandboxes[0].Usage = Usage{
+		Known: true, CPUPercent: 61, MemoryPercent: 44,
+		DiskKnown: true, DiskBytes: 2_483_027_968, DiskPercent: 12,
+	}
 	m := newTestModel(t, newFakeSource(sandboxes...))
 	send(t, m, key("tab"))
 

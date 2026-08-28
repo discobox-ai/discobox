@@ -203,6 +203,70 @@ func (d *apiDataSource) List(ctx context.Context) ([]tui.Sandbox, error) {
 	return out, nil
 }
 
+// toTUIUsage is what the row's usage column draws: the sandbox's share of the
+// host it runs on, from the pool agent's resource report (ADR 0071).
+//
+// The denominators come from the sandbox's own pool, which the listing already
+// carries, so drawing the column costs no extra request. They are the host's
+// capacity rather than the pool's envelope because the envelope is usually
+// zero, meaning "sized by the host" — a share of zero is not a share.
+//
+// Everything here is absent-or-measured, never defaulted. A share needs both a
+// measured figure and a denominator to divide it by, and when either is missing
+// the row draws a dot: a zero share would say the sandbox is idle, which is a
+// claim about it rather than about what we know.
+func toTUIUsage(sb apimodel.Sandbox) tui.Usage {
+	consumption, ok := sandboxResourceConsumption(sb)
+	if !ok {
+		return tui.Usage{}
+	}
+	var usage tui.Usage
+	pool, hasPool := sb.Pool.Get()
+	var report apimodel.PoolResourceReport
+	if hasPool {
+		report, hasPool = poolResourceReport(&pool)
+	}
+
+	// CPU and memory arrive together, so one flag covers both — but only when
+	// the rate itself was measured. The first report after an agent starts
+	// carries counters and no rate at all.
+	if cpu, ok := consumption.CPU.Get(); ok && hasPool {
+		if vcpus, ok := cpu.Vcpus.Get(); ok {
+			if capacity := report.CPU.CapacityVcpus.Or(0); capacity > 0 {
+				usage.CPUPercent = percentOf(vcpus, capacity)
+				usage.Known = true
+			}
+		}
+	}
+	if memory, ok := consumption.Memory.Get(); ok && usage.Known {
+		if capacity := report.Memory.CapacityBytes.Or(0); capacity > 0 {
+			usage.MemoryPercent = percentOf(float64(memory.CurrentBytes), float64(capacity))
+		}
+	}
+	// Disk is walked on the agent's own slower schedule, so it is known
+	// separately and lags the counters on a newly created sandbox.
+	if storage, ok := consumption.Storage.Get(); ok {
+		usage.DiskBytes = storage.TotalBytes
+		usage.DiskKnown = true
+		if hasPool {
+			if total := report.Storage.Filesystem.TotalBytes; total > 0 {
+				usage.DiskPercent = percentOf(float64(storage.TotalBytes), float64(total))
+			}
+		}
+	}
+	return usage
+}
+
+// percentOf rounds a share to whole percent and clamps it to 0..100. A rate
+// sampled a moment apart from its denominator can exceed it slightly, and a
+// row reading "103%" is a measurement artifact rather than a finding.
+func percentOf(value, of float64) int {
+	if of <= 0 {
+		return 0
+	}
+	return min(max(int(value/of*100+0.5), 0), 100)
+}
+
 func toTUISandbox(sb apimodel.Sandbox) tui.Sandbox {
 	row := tui.Sandbox{
 		ID:   sb.ID,
@@ -235,6 +299,7 @@ func toTUISandbox(sb apimodel.Sandbox) tui.Sandbox {
 	if upgrade, ok := sb.Runtime.Upgrade.Get(); ok {
 		row.Upgrade = upgrade.Available
 	}
+	row.Usage = toTUIUsage(sb)
 	if source, ok := sb.Config.Source.Get(); ok {
 		// What the run options offer to cut a new discobox from, spelled the
 		// way `-C` takes it. A remote source is the URL the discobox clones; a

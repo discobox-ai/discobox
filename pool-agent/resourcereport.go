@@ -99,6 +99,9 @@ type PoolMemoryUsage struct {
 	// AvailableBytes is what the host still has free, which is what the pool
 	// is actually bounded by when the cgroup carries no limit.
 	AvailableBytes int64 `json:"availableBytes,omitempty"`
+	// CapacityBytes is how much memory the host has, so a figure has something
+	// to be read against — the counterpart of PoolCPUUsage.CapacityVCPUs.
+	CapacityBytes int64 `json:"capacityBytes,omitempty"`
 }
 
 // SandboxResourceUsage is one sandbox's consumption, as this agent computed it
@@ -311,7 +314,7 @@ func walkedSandboxStorage(walk *PoolStorageWalk) []SandboxStorage {
 
 func (r *poolResourceReporter) poolUsage(now time.Time) (PoolCPUUsage, PoolMemoryUsage) {
 	cpu := PoolCPUUsage{CapacityVCPUs: availableCPUVCPUs()}
-	memory := PoolMemoryUsage{AvailableBytes: availableMemoryBytes()}
+	memory := PoolMemoryUsage{AvailableBytes: availableMemoryBytes(), CapacityBytes: totalMemoryBytes()}
 	usage, ok := readCgroupUsage(poolCgroupRoot)
 	if !ok {
 		return cpu, memory

@@ -99,11 +99,17 @@ func trimLeft(s string, n int) string {
 	return s
 }
 
-// usage is what the sandbox is costing: its share of the cpu, the memory and
-// the disk it was given. A sandbox that is not up, or one nothing has measured
-// yet, has none, and says so rather than showing three zeroes.
+// usage is what the sandbox is costing: its share of the cpu and memory of the
+// host it runs on, and the disk it holds. A sandbox that is not up, or one
+// nothing has measured yet, has none, and says so rather than showing three
+// zeroes — a zero share reads as idle, which is a claim, where a dot is not.
+//
+// The disk has its own dot for the same reason. It is walked on a slower
+// schedule than the counters, so a sandbox created since the last sweep is
+// measured for cpu and not yet for disk, and "0 B" there would say it holds
+// nothing.
 func usage(st *styles, s Sandbox) string {
-	if !s.up() || !s.Usage.Known {
+	if !s.up() || (!s.Usage.Known && !s.Usage.DiskKnown) {
 		return st.dimText.Render(pad("·    ·    ·", usageWidth))
 	}
 	// The color is the share in every case; only the disk shows something
@@ -119,9 +125,18 @@ func usage(st *styles, s Sandbox) string {
 			return st.dimText.Render(text)
 		}
 	}
-	return padANSI(cell(s.Usage.CPUPercent, fmt.Sprintf("%d%%", s.Usage.CPUPercent), 4)+" "+
-		cell(s.Usage.MemoryPercent, fmt.Sprintf("%d%%", s.Usage.MemoryPercent), 4)+" "+
-		cell(s.Usage.DiskPercent, humanBytes(s.Usage.DiskBytes), 8), usageWidth)
+	cpu, memory := "·", "·"
+	if s.Usage.Known {
+		cpu = fmt.Sprintf("%d%%", s.Usage.CPUPercent)
+		memory = fmt.Sprintf("%d%%", s.Usage.MemoryPercent)
+	}
+	disk := "·"
+	if s.Usage.DiskKnown {
+		disk = humanBytes(s.Usage.DiskBytes)
+	}
+	return padANSI(cell(s.Usage.CPUPercent, cpu, 4)+" "+
+		cell(s.Usage.MemoryPercent, memory, 4)+" "+
+		cell(s.Usage.DiskPercent, disk, 8), usageWidth)
 }
 
 const usageWidth = 18

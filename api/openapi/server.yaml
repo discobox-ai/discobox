@@ -577,6 +577,10 @@ components:
                     description: What the host still has free, which is what the pool is actually bounded by when the cgroup carries no limit.
                     format: int64
                     type: integer
+                capacityBytes:
+                    description: How much memory the host has, so a figure has something to be read against. The counterpart of cpu.capacityVcpus.
+                    format: int64
+                    type: integer
             required:
                 - currentBytes
             type: object

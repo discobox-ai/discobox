@@ -7993,7 +7993,10 @@ type PoolMemoryUsage struct {
 	LimitBytes OptInt64 `json:"limitBytes"`
 	// What the host still has free, which is what the pool is actually bounded by when the cgroup
 	// carries no limit.
-	AvailableBytes  OptInt64 `json:"availableBytes"`
+	AvailableBytes OptInt64 `json:"availableBytes"`
+	// How much memory the host has, so a figure has something to be read against. The counterpart of cpu.
+	// capacityVcpus.
+	CapacityBytes   OptInt64 `json:"capacityBytes"`
 	AdditionalProps PoolMemoryUsageAdditional
 }
 
@@ -8015,6 +8018,11 @@ func (s *PoolMemoryUsage) GetLimitBytes() OptInt64 {
 // GetAvailableBytes returns the value of AvailableBytes.
 func (s *PoolMemoryUsage) GetAvailableBytes() OptInt64 {
 	return s.AvailableBytes
+}
+
+// GetCapacityBytes returns the value of CapacityBytes.
+func (s *PoolMemoryUsage) GetCapacityBytes() OptInt64 {
+	return s.CapacityBytes
 }
 
 // GetAdditionalProps returns the value of AdditionalProps.
@@ -8040,6 +8048,11 @@ func (s *PoolMemoryUsage) SetLimitBytes(val OptInt64) {
 // SetAvailableBytes sets the value of AvailableBytes.
 func (s *PoolMemoryUsage) SetAvailableBytes(val OptInt64) {
 	s.AvailableBytes = val
+}
+
+// SetCapacityBytes sets the value of CapacityBytes.
+func (s *PoolMemoryUsage) SetCapacityBytes(val OptInt64) {
+	s.CapacityBytes = val
 }
 
 // SetAdditionalProps sets the value of AdditionalProps.

@@ -378,14 +378,25 @@ func poolFreeStorageBytes(path string) int64 {
 	return usage.FreeBytes
 }
 
+// totalMemoryBytes is how much memory the host has, which is what a usage
+// figure is read against. It is the denominator to availableMemoryBytes's
+// remainder.
+func totalMemoryBytes() int64 {
+	return meminfoBytes("MemTotal:")
+}
+
 func availableMemoryBytes() int64 {
+	return meminfoBytes("MemAvailable:")
+}
+
+func meminfoBytes(key string) int64 {
 	data, err := os.ReadFile("/proc/meminfo")
 	if err != nil {
 		return 0
 	}
 	for _, line := range strings.Split(string(data), "\n") {
 		fields := strings.Fields(line)
-		if len(fields) >= 2 && fields[0] == "MemAvailable:" {
+		if len(fields) >= 2 && fields[0] == key {
 			kib, err := strconv.ParseInt(fields[1], 10, 64)
 			if err != nil {
 				return 0
