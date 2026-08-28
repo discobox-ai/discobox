@@ -11,6 +11,9 @@ import (
 	"strings"
 
 	"github.com/coder/websocket"
+	"github.com/spf13/cobra"
+
+	apiclientgen "github.com/discobox-ai/discobox/api/gen"
 )
 
 // sshConnectDialer opens one byte stream to the server's sshd over the
@@ -161,9 +164,28 @@ func sshConnectWebSocketURL(baseURL string) (string, error) {
 // sshBridgeArgs are the ssh(1) arguments that point at the bridge: everything
 // about where and as whom to connect, so nothing has to be written to disk.
 func sshBridgeArgs(port int, sandboxID, identityFile, knownHostsFile string) []string {
-	return []string{
+	return append([]string{
 		"-p", strconv.Itoa(port),
 		"-l", sandboxID,
+	}, sshBridgeOptions(identityFile, knownHostsFile)...)
+}
+
+// scpBridgeArgs are the same for scp(1), which spells the port -P and names no
+// user of its own: `discobox cp` puts the sandbox in each remote path instead,
+// so one command can name more than one discobox.
+func scpBridgeArgs(port int, identityFile, knownHostsFile string) []string {
+	return append([]string{
+		"-P", strconv.Itoa(port),
+	}, sshBridgeOptions(identityFile, knownHostsFile)...)
+}
+
+// sshBridgeOptions are what every OpenSSH client pointed at the bridge needs
+// beyond the address: which key to offer, which host key to accept, and that
+// the user's own ssh_config has nothing to say about a port this process
+// invented. Where the two clients differ — the port flag, and how the sandbox
+// is named — stays with the caller.
+func sshBridgeOptions(identityFile, knownHostsFile string) []string {
+	return []string{
 		"-i", identityFile,
 		// Without IdentitiesOnly, ssh offers every agent key before this one
 		// and can exhaust MaxAuthTries before reaching it.
@@ -183,3 +205,50 @@ func sshBridgeArgs(port int, sandboxID, identityFile, knownHostsFile string) []s
 // sshBridgeHost is the host argument, which must follow every option and
 // precede any remote command (`ssh [options] host [command]`).
 const sshBridgeHost = "127.0.0.1"
+
+// sshBridgeSession is a live bridge plus the two files an OpenSSH client needs
+// to authenticate over it: the enrolled private key, and a known_hosts pinning
+// this server's host key against the port this run happens to have.
+//
+// The three exist together or not at all — a bridge with no pinned host key is
+// a connection nothing can verify — so they are opened together and closed
+// together, by `tools ssh` and by `cp` alike.
+type sshBridgeSession struct {
+	bridge     *sshBridge
+	identity   string
+	knownHosts string
+	cleanup    func()
+}
+
+// port is the loopback port the client is pointed at.
+func (s *sshBridgeSession) port() int { return s.bridge.port() }
+
+func (s *sshBridgeSession) close() {
+	_ = s.bridge.Close()
+	s.cleanup()
+}
+
+// startSSHBridgeSession resolves the identity and host key, opens the bridge,
+// and pins the key to it. The identity is enrolled in the project if it is not
+// already, which is why this takes a client and a project rather than deriving
+// them.
+func (a *App) startSSHBridgeSession(cmd *cobra.Command, client *apiclientgen.Client, projectID string) (*sshBridgeSession, error) {
+	identityFile, err := a.resolveSSHIdentity(cmd, client, projectID, "")
+	if err != nil {
+		return nil, err
+	}
+	hostKey, err := a.sshHostKey(cmd, client)
+	if err != nil {
+		return nil, err
+	}
+	bridge, err := a.startSSHBridge(cmd.Context())
+	if err != nil {
+		return nil, err
+	}
+	knownHosts, cleanup, err := writeTemporaryKnownHosts(bridge.port(), hostKey)
+	if err != nil {
+		_ = bridge.Close()
+		return nil, err
+	}
+	return &sshBridgeSession{bridge: bridge, identity: identityFile, knownHosts: knownHosts, cleanup: cleanup}, nil
+}

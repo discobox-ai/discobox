@@ -65,42 +65,33 @@ func (a *App) runToolsSSH(cmd *cobra.Command, sandboxArg string, args []string) 
 			"so ssh must not outlive it. Background the command instead: discobox tools ssh -N ... &")
 	}
 
-	identityFile, err := a.resolveSSHIdentity(cmd, client, projectID, "")
+	bridge, err := a.startSSHBridgeSession(cmd, client, projectID)
 	if err != nil {
 		return err
 	}
-	hostKey, err := a.sshHostKey(cmd, client)
-	if err != nil {
-		return err
-	}
+	defer bridge.close()
 
-	bridge, err := a.startSSHBridge(cmd.Context())
-	if err != nil {
-		return err
-	}
-	defer bridge.Close()
-
-	knownHosts, cleanup, err := writeTemporaryKnownHosts(bridge.port(), hostKey)
-	if err != nil {
-		return err
-	}
-	defer cleanup()
-
-	sshPath, err := exec.LookPath("ssh")
-	if err != nil {
-		return fmt.Errorf("ssh is not installed: %w", err)
-	}
-	full := append(sshBridgeArgs(bridge.port(), sandboxID, identityFile, knownHosts), userOptions...)
+	full := append(sshBridgeArgs(bridge.port(), sandboxID, bridge.identity, bridge.knownHosts), userOptions...)
 	full = append(full, sshBridgeHost)
 	full = append(full, remoteCommand...)
-	session := exec.CommandContext(cmd.Context(), sshPath, full...) //nolint:gosec // G204: this command's own arguments, plus the user's own ssh arguments.
+	return runOverSSHBridge(cmd, "ssh", full)
+}
+
+// runOverSSHBridge runs an OpenSSH client attached to this terminal and reports
+// its exit status as this command's own.
+func runOverSSHBridge(cmd *cobra.Command, binary string, args []string) error {
+	path, err := exec.LookPath(binary)
+	if err != nil {
+		return fmt.Errorf("%s is not installed: %w", binary, err)
+	}
+	session := exec.CommandContext(cmd.Context(), path, args...) //nolint:gosec // G204: this command's own arguments, plus the user's own client arguments.
 	session.Stdin, session.Stdout, session.Stderr = cmd.InOrStdin(), cmd.OutOrStdout(), cmd.ErrOrStderr()
 	if err := session.Run(); err != nil {
 		var exitErr *exec.ExitError
 		if errors.As(err, &exitErr) {
 			// The session's own status, reported the way an attached process's
 			// is: ExitCode() turns this into a silent exit with that code,
-			// rather than printing a wrapper's message over ssh's.
+			// rather than printing a wrapper's message over the client's.
 			return execclient.ExitError{Code: exitErr.ExitCode()}
 		}
 		return err
