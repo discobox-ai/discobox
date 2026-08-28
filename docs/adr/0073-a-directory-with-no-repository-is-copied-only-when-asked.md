@@ -1,6 +1,8 @@
 # 0073 — A directory with no repository is copied only when asked
 
-- **Status**: Accepted
+- **Status**: Accepted (§2, and the outcome §3 gives ahead of time, superseded by
+  [0077](0077-declining-a-directory-copy-creates-a-discobox-with-no-source.md);
+  everything else stands)
 - **Date**: 2026-08-24
 - **Supersedes**: [0045](0045-a-directory-with-no-repository-is-delivered-by-push.md) §2's
   "Nobody is asked about this"; the rest of 0045 stands unchanged.

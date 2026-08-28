@@ -145,6 +145,12 @@ func BuildPromptSandboxBody(ctx context.Context, opts PromptOptions) (*apimodel.
 		if source, err = resolveRunSource(ctx, sourceArg, sourceOptions); err != nil {
 			return nil, nil, err
 		}
+	}
+	// Resolution answers "no source" too: declining to copy a directory that is
+	// in no repository leaves nothing to check out, and asking for that by
+	// answering the question is the same request as asking for it by flag
+	// (ADR 0077 §1).
+	if source.resolved() {
 		local.add("", source)
 		apiSource, err := source.apiGitSource()
 		if err != nil {
@@ -209,6 +215,11 @@ func setSourceCodeReferences(ctx context.Context, body *apimodel.CreateSandboxBo
 		if err != nil {
 			return err
 		}
+		// The copy of a directory in no repository was declined, so this source
+		// is left out rather than brought in empty (ADR 0077 §4).
+		if !reference.Resolved.resolved() {
+			continue
+		}
 		if taken(references, primary, reference.Key) {
 			reference.Resolved.close()
 			return fmt.Errorf("--include %s resolves to %s, which is already included", arg, reference.Key)
@@ -232,6 +243,9 @@ func setSourceCodeReferences(ctx context.Context, body *apimodel.CreateSandboxBo
 		reference, err := resolveNamedReference(ctx, arg, placement, sourceOptions, used)
 		if err != nil {
 			return fmt.Errorf("declared source %q (%s): %w", name, declared[name], err)
+		}
+		if !reference.Resolved.resolved() {
+			continue
 		}
 		if taken(references, primary, reference.Key) {
 			// Already brought in by --include, or the sandbox's own source. The
@@ -258,6 +272,10 @@ func resolveNamedReference(ctx context.Context, arg string, placement referenceP
 	reference, err := resolveRunSourceReference(ctx, arg, placement, opts, used)
 	if err != nil {
 		return resolvedReference{}, err
+	}
+	if !reference.Resolved.resolved() {
+		// Left out rather than resolved: there is no source to build a shape of.
+		return resolvedReference{}, nil
 	}
 	apiSource, err := reference.Resolved.apiGitSource()
 	if err != nil {

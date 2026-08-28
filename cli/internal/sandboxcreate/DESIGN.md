@@ -47,6 +47,11 @@ sandbox create requests.
   show while it asks (`MeasureDirectory`, polled through `DirectoryWalk.Total`).
   Both frontends count the same thing the same way; only where the number is
   drawn is theirs.
+- Resolution can answer "no source": declining that question returns the zero
+  `resolvedRunSource` (`resolved()` reports it), and the request is built with no
+  `config.source` exactly as `NoSource` builds it. A reference that answers the
+  same way is dropped instead. An empty directory is a different case — it is not
+  asked about and keeps its source at its own path.
 - `PromptOptions.NoSource` builds a request with no `config.source` at all —
   the shape the harness configure sandbox already had, reached deliberately.
   `Source` is then only what the origin and the Git authorship are read from, so

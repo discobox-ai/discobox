@@ -184,6 +184,12 @@ func (s *LocalSources) Close() {
 	}
 }
 
+// resolved reports whether resolution produced a source at all. The zero value
+// is the answer for a directory in no repository whose copy was declined:
+// nothing of it travels, so there is nothing to check out, and the sandbox is
+// built with no source the way --no-source asks for outright (ADR 0077 §1).
+func (s resolvedRunSource) resolved() bool { return s.Kind != "" }
+
 // close releases the throwaway repository a resolved source built, for the
 // paths that fail before it is handed to a LocalSources.
 func (s resolvedRunSource) close() {
@@ -399,8 +405,14 @@ func snapshotWorkspace(ctx context.Context, repoRoot string, tree gitutil.Worksp
 // The user is asked first, because the answer is not obvious the way it is for
 // a repository: a directory in no repository is as likely to be a home
 // directory somebody ran `discobox run` in as it is to be a project, and the
-// whole of it is what would be carried. Declining is not a cancel — the sandbox
-// is created on the empty base commit, with none of the directory in it.
+// whole of it is what would be carried.
+//
+// Declining is not a cancel: it resolves to no source at all, the request
+// --no-source builds outright (ADR 0077 §1). It is not a repository of nothing
+// at the directory's path either — that put an empty checkout over whatever
+// lives at that path in the sandbox, which is $HOME in the case the question
+// exists to catch. Nothing is built over the directory to reach that answer,
+// so declining costs nothing at all.
 func resolveDirectoryRunSource(ctx context.Context, dir, ref string, explicitRef bool, opts runSourceOptions) (resolvedRunSource, error) {
 	if explicitRef {
 		return resolvedRunSource{}, fmt.Errorf("%s is not a Git repository, so it has no ref %q to check out", dir, ref)
@@ -409,11 +421,14 @@ func resolveDirectoryRunSource(ctx context.Context, dir, ref string, explicitRef
 	if err != nil {
 		return resolvedRunSource{}, err
 	}
+	if !copyContent {
+		return resolvedRunSource{}, nil
+	}
 	repoRoot, cleanup, err := gitutil.InitOverWorkTree(ctx, dir)
 	if err != nil {
 		return resolvedRunSource{}, err
 	}
-	resolved, err := directoryRunSource(ctx, dir, repoRoot, copyContent)
+	resolved, err := directoryRunSource(ctx, dir, repoRoot)
 	if err != nil {
 		cleanup()
 		return resolvedRunSource{}, err
@@ -435,8 +450,10 @@ func resolveDirectoryRunSource(ctx context.Context, dir, ref string, explicitRef
 //
 // With nobody to ask, the content is copied: that is what a source directory
 // has always meant, and a sandbox that silently came up empty is the worse
-// surprise. An empty directory is not worth asking about — copying nothing and
-// copying its nothing are the same sandbox.
+// surprise. An empty directory is not worth asking about either, and answers
+// yes: there is nothing in it to carry, and the sandbox that results is a
+// workspace at that directory's own path — which is what standing in an empty
+// directory and running asks for (ADR 0077 §3).
 func copyDirectoryContent(ctx context.Context, dir string, opts runSourceOptions) (bool, error) {
 	if opts.IncludeDirty == IncludeDirtyNever {
 		return false, nil
@@ -457,9 +474,9 @@ func copyDirectoryContent(ctx context.Context, dir string, opts runSourceOptions
 }
 
 // directoryRunSource fills in the source that repoRoot, a fresh repository over
-// dir, describes. With copyContent false the directory's own files stay here
-// and the source is the empty base commit alone.
-func directoryRunSource(ctx context.Context, dir, repoRoot string, copyContent bool) (resolvedRunSource, error) {
+// dir, describes: the directory's content snapshotted onto an empty base commit,
+// and the empty base commit alone when the directory holds nothing.
+func directoryRunSource(ctx context.Context, dir, repoRoot string) (resolvedRunSource, error) {
 	emptyTree, err := gitutil.EmptyTree(ctx, repoRoot)
 	if err != nil {
 		return resolvedRunSource{}, err
@@ -490,12 +507,6 @@ func directoryRunSource(ctx context.Context, dir, repoRoot string, copyContent b
 		},
 		Workspace:   resolvedRunSourceWorkspace{Mode: runWorkspaceModeClean},
 		Destination: localRunDestination(dir, dir),
-	}
-	if !copyContent {
-		// The directory stays here. The sandbox gets its path and the empty
-		// commit, so work started in it lands where the directory would have
-		// been rather than somewhere else.
-		return resolved, nil
 	}
 	workspaceTree, cleanup, err := gitutil.CurrentWorkspaceTree(ctx, repoRoot)
 	if err != nil {
@@ -708,6 +719,12 @@ func resolveRunSourceReference(ctx context.Context, arg string, placement refere
 	resolved, err := resolveRunSource(ctx, arg, opts)
 	if err != nil {
 		return resolvedReference{}, err
+	}
+	if !resolved.resolved() {
+		// A directory in no repository whose copy was declined. The primary
+		// source's answer to that is a sandbox with no source; a reference's is
+		// this source being left out of it (ADR 0077 §4).
+		return resolvedReference{}, nil
 	}
 	directory, name := referenceDestination(resolved, placement)
 	if directory == "" {

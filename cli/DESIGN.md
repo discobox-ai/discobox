@@ -1071,9 +1071,13 @@ workspace, and the sandbox comes up with the files as uncommitted changes.
   is nothing at that path to clone however reachable it is.
 - The user is asked first, through `sandboxcreate.ConfirmCopyDirectoryFunc`, and
   not copying leads: `discobox run` in a home directory must not carry the home
-  directory. Declining is an answer, not a cancel — the discobox is created on
-  the empty base commit, at the directory's own path, with none of its content.
-  `--include-dirty` answers ahead of time, `false` meaning the same empty start.
+  directory. Declining is an answer, not a cancel — it resolves to no source at
+  all, the request "No Source At All" below describes, and nothing is built over
+  the directory to reach it. `--include-dirty` answers ahead of time, `false`
+  meaning the same. What declining does *not* produce is a checkout of nothing at
+  the directory's own path: that put an empty, push-delivered repository over
+  whatever lives at that path inside the discobox, which is `$HOME` in the case
+  the question exists to catch.
 - The question is asked before `gitutil.InitOverWorkTree`, because indexing the
   directory is the cost it exists to avoid. It carries a running size —
   `sandboxcreate.MeasureDirectory` walks the directory in the background and the
@@ -1083,13 +1087,16 @@ workspace, and the sandbox comes up with the files as uncommitted changes.
   what the question needs.
 - An explicit `@REF` is still rejected: there is no history to name.
 - An empty directory is not asked about and not an error: it snapshots nothing
-  and the sandbox starts on the empty commit, which is the point of running in
-  one — and is also what declining produces.
+  and the sandbox starts on the empty commit at the directory's own path, which
+  is the point of running in one — a project that does not exist yet, with
+  somewhere for `discobox push` to carry the work back to. Nothing was declined
+  there, so unlike a declined directory it keeps its source.
 - With no terminal there is nobody to ask and the directory is copied, the same
   way a dirty workspace is.
 
-See [ADR 0045](../docs/adr/0045-a-directory-with-no-repository-is-delivered-by-push.md)
-and [ADR 0073](../docs/adr/0073-a-directory-with-no-repository-is-copied-only-when-asked.md).
+See [ADR 0045](../docs/adr/0045-a-directory-with-no-repository-is-delivered-by-push.md),
+[ADR 0073](../docs/adr/0073-a-directory-with-no-repository-is-copied-only-when-asked.md)
+and [ADR 0077](../docs/adr/0077-declining-a-directory-copy-creates-a-discobox-with-no-source.md).
 
 ## No Source At All
 
@@ -1098,6 +1105,11 @@ nothing materialized in it — the shape the harness configure sandbox already
 had, reached deliberately. It is not "a source that resolved to nothing": no
 `config.source` is sent at all, and the create request carries no local source
 for delivery to push.
+
+The flag is one of two ways in. The other is answering "do not copy" to a
+directory in no repository (above): resolution itself answers "no source", and
+everything below applies to it identically. An `--include` that answers the same
+way is left out of the discobox rather than brought in empty.
 
 `-C` still applies and still means what it always did. What it names is the
 *origin* — the host and project directory the create came from — and the Git

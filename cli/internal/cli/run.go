@@ -49,7 +49,7 @@ is carried into the discobox as uncommitted changes on an empty first commit,
 and nothing is written to the directory itself. Because that is the whole
 directory, run asks first — with the size it would copy, counted while the
 question is on screen — and not copying is the default answer: the discobox is
-still created, on the empty first commit, with none of the directory in it.
+still created, with nothing checked out in it, exactly as --no-source does.
 --include-dirty=true|false answers this one ahead of time too.
 
 --no-source creates a discobox with nothing checked out in it, for work that
@@ -185,7 +185,8 @@ func confirmIncludeDirty(cmd *cobra.Command) sandboxcreate.ConfirmIncludeDirtyFu
 // repository is copied into the sandbox. Everything in such a directory is
 // uncommitted work, so the question is the whole directory — which is why it is
 // asked at all, and why not copying leads: `discobox run` in a home directory
-// should not carry the home directory.
+// should not carry the home directory. Declining creates the discobox with
+// nothing checked out in it, the way --no-source does (ADR 0077 §1).
 //
 // The size is counted behind the question rather than before it, so the prompt
 // comes up immediately and fills its number in as the walk finds it.
@@ -207,7 +208,7 @@ func confirmCopyDirectory(cmd *cobra.Command) sandboxcreate.ConfirmCopyDirectory
 			{
 				id:     "exclude",
 				title:  "Do not copy the directory",
-				detail: "Start the discobox empty, on the first commit alone",
+				detail: "Create the discobox with nothing checked out in it",
 			},
 			{
 				id:     "copy",

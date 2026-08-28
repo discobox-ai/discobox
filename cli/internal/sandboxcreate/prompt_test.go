@@ -3,6 +3,8 @@ package sandboxcreate
 import (
 	"context"
 	"net/http"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 
@@ -133,6 +135,69 @@ func TestNoSourceStillTakesIncludes(t *testing.T) {
 	references, ok := body.Config.SourceCodeReferences.Get()
 	if !ok || len(references) != 1 {
 		t.Fatalf("references = %+v, want the one -i named", references)
+	}
+}
+
+// Declining the copy of a directory in no repository is the same request
+// --no-source builds, reached by answering the question: no source is sent, and
+// the discobox is still filed under the directory the run came from (ADR 0077
+// §1).
+func TestDeclinedDirectoryCopyCreatesWithNoSource(t *testing.T) {
+	dir := testWorkspace(t)
+	if err := os.WriteFile(filepath.Join(dir, "a.txt"), []byte("a\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	decline := func(context.Context, DirectoryCopy) (bool, error) { return false, nil }
+
+	body, local, err := BuildPromptSandboxBody(context.Background(), PromptOptions{
+		Source:               dir,
+		IncludeDirty:         IncludeDirtyAuto,
+		ConfirmCopyDirectory: decline,
+	})
+	if err != nil {
+		t.Fatalf("build: %v", err)
+	}
+	defer local.Close()
+
+	if _, ok := body.Config.Source.Get(); ok {
+		t.Fatal("the directory was declined, so there is no source to send")
+	}
+	if len(local.sources) != 0 {
+		t.Fatalf("local sources = %+v, want nothing to deliver", local.sources)
+	}
+	origin, ok := body.Origin.Get()
+	if !ok || origin.ProjectPath != dir {
+		t.Fatalf("origin = %+v, want the directory the create came from (%s)", origin, dir)
+	}
+}
+
+// An extra source answers the same question for itself, and declining leaves it
+// out of the discobox rather than bringing it in empty (ADR 0077 §4).
+func TestDeclinedIncludeIsLeftOut(t *testing.T) {
+	repo := newRunSourceTestRepo(t)
+	dir := testWorkspace(t)
+	if err := os.WriteFile(filepath.Join(dir, "a.txt"), []byte("a\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	decline := func(context.Context, DirectoryCopy) (bool, error) { return false, nil }
+
+	body, local, err := BuildPromptSandboxBody(context.Background(), PromptOptions{
+		Source:               repo,
+		Include:              []string{dir},
+		IncludeDirty:         IncludeDirtyAuto,
+		ConfirmCopyDirectory: decline,
+		ConfirmIncludeDirty:  func(context.Context, DirtyWorkspace) (bool, error) { return false, nil },
+	})
+	if err != nil {
+		t.Fatalf("build: %v", err)
+	}
+	defer local.Close()
+
+	if _, ok := body.Config.Source.Get(); !ok {
+		t.Fatal("the primary source is a repository and must still be sent")
+	}
+	if references, ok := body.Config.SourceCodeReferences.Get(); ok {
+		t.Fatalf("references = %+v, want the declined include left out", references)
 	}
 }
 

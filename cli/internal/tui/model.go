@@ -1709,7 +1709,8 @@ func (m *Model) workspaceChecked(msg workspaceCheckedMsg) tea.Cmd {
 // askToCopyDirectory is the same question for a source directory that is in no
 // Git repository: there is no commit to fall back to, so what it decides is
 // whether the directory itself is copied in. Answering no still creates the
-// discobox — on the empty first commit, with none of the directory in it.
+// discobox — with nothing checked out in it, the way --no-source does
+// (ADR 0077 §1).
 //
 // The size is counted while the question is up rather than before it: a home
 // directory takes long enough to walk that waiting for the number would be the
@@ -1778,7 +1779,7 @@ const directorySizeInterval = 200 * time.Millisecond
 // is the whole of what the answer turns on and it is still arriving.
 func copyDirectoryBody(dir string) string {
 	return dir + " is not a Git repository, so copying it into the discobox means copying all of it. " +
-		"Answering no creates the discobox anyway, empty."
+		"Answering no creates the discobox anyway, with nothing checked out in it."
 }
 
 // directoryCopySize is that line, with as much of the count as the walk behind

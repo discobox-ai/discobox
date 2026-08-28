@@ -445,9 +445,10 @@ func TestResolveRunSourceDirectoryWithoutRepositoryRejectsARefItCannotHave(t *te
 	}
 }
 
-// Declining the copy is an answer, not a cancel: the sandbox is created, on the
-// empty base commit, and the directory stays here.
-func TestResolveRunSourceDirectoryWithoutRepositoryNotCopiedStartsEmpty(t *testing.T) {
+// Declining the copy is an answer, not a cancel: it resolves to no source at
+// all — not a repository of nothing at the directory's path — and the directory
+// stays here untouched (ADR 0077 §1).
+func TestResolveRunSourceDirectoryWithoutRepositoryNotCopiedResolvesToNoSource(t *testing.T) {
 	dir := testWorkspace(t)
 	if err := os.WriteFile(filepath.Join(dir, "a.txt"), []byte("a\n"), 0o644); err != nil {
 		t.Fatal(err)
@@ -472,15 +473,13 @@ func TestResolveRunSourceDirectoryWithoutRepositoryNotCopiedStartsEmpty(t *testi
 	if asked != 1 {
 		t.Fatalf("asked %d times, want exactly one question", asked)
 	}
-	if source.LocalDirectory != dir || !source.NoLocalRepository {
-		t.Fatalf("source identity = %#v, want %s recorded as a directory with no repository", source, dir)
+	if source.resolved() {
+		t.Fatalf("source = %#v, want no source at all", source)
 	}
-	if source.Workspace.Mode != runWorkspaceModeClean || source.Workspace.SnapshotRef != "" {
-		t.Fatalf("workspace = %#v, want a clean checkout with no snapshot", source.Workspace)
-	}
-	git := runSourceTestGit(t, source.RepoRoot)
-	if files := strings.TrimSpace(git("ls-tree", "-r", "--name-only", source.Checkout.Commit)); files != "" {
-		t.Fatalf("base commit contains %q, want an empty tree", files)
+	// Declining costs nothing: the repository the copy would have been indexed
+	// into is never built, which is the whole reason the question comes first.
+	if source.RepoRoot != "" || source.cleanup != nil {
+		t.Fatalf("source = %#v, want nothing built over the directory", source)
 	}
 	if _, err := os.Stat(filepath.Join(dir, ".git")); !os.IsNotExist(err) {
 		t.Fatalf("stat %s/.git = %v, want the user's directory left alone", dir, err)
@@ -492,7 +491,7 @@ func TestResolveRunSourceDirectoryWithoutRepositoryNotCopiedStartsEmpty(t *testi
 
 // --include-dirty=false is the same answer given ahead of time, and answering
 // it that way asks nobody anything.
-func TestResolveRunSourceDirectoryWithoutRepositoryIncludeDirtyNeverStartsEmpty(t *testing.T) {
+func TestResolveRunSourceDirectoryWithoutRepositoryIncludeDirtyNeverResolvesToNoSource(t *testing.T) {
 	dir := testWorkspace(t)
 	if err := os.WriteFile(filepath.Join(dir, "a.txt"), []byte("a\n"), 0o644); err != nil {
 		t.Fatal(err)
@@ -507,8 +506,8 @@ func TestResolveRunSourceDirectoryWithoutRepositoryIncludeDirtyNeverStartsEmpty(
 		t.Fatalf("resolveRunSource: %v", err)
 	}
 	defer testLocalSources(source).Close()
-	if source.Workspace.Mode != runWorkspaceModeClean || source.Workspace.SnapshotRef != "" {
-		t.Fatalf("workspace = %#v, want a clean checkout with no snapshot", source.Workspace)
+	if source.resolved() {
+		t.Fatalf("source = %#v, want no source at all", source)
 	}
 }
 
