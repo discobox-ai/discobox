@@ -126,7 +126,11 @@ func (b *booter) wireSources(sources []sandboxconfig.Source, id identity) error 
 		src := filepath.Join(sourcesMountPath, s.Slug)
 		if _, err := os.Stat(src); err != nil {
 			if os.IsNotExist(err) {
-				// The worker parked an empty push-delivered source; nothing to bind yet.
+				// Nothing to bind. The worker prepares a push-delivered
+				// source's directory before the container exists even though it
+				// parks empty until the push lands, precisely so this is not
+				// the parked case: the resume that fills it does not rebuild
+				// the container, so a bind skipped here is never made at all.
 				continue
 			}
 			return err

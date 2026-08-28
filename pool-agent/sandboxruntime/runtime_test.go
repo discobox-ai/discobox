@@ -1211,6 +1211,82 @@ func TestMaterializeGitSourceWaitsForThePushThenClonesTheOrigin(t *testing.T) {
 	}
 }
 
+// A parked source's directory is bound into the running sandbox before the push
+// that fills it lands, so the sandbox can write in it while it waits — a source
+// whose target is the sandbox's own home collects the harness credential files
+// sandbox-agent restores at startup. A plain clone refuses a directory with
+// anything in it, and refuses it on every later create too, because nothing is
+// marked materialized: the sandbox never starts again. So the push is
+// materialized into the directory as it stands, keeping what is already there
+// and writing the delivered source over it where the two collide.
+func TestMaterializeGitSourceClonesIntoATargetTheSandboxWroteIn(t *testing.T) {
+	requirePOSIXHost(t)
+	ctx := context.Background()
+	source := pushDeliveredSource("main")
+	runtime := &DockerSandboxRuntime{}
+	origin := filepath.Join(t.TempDir(), "primary.git")
+	if err := runtime.initGitOrigin(ctx, origin, currentUser()); err != nil {
+		t.Fatalf("init git origin: %v", err)
+	}
+	target := filepath.Join(t.TempDir(), "target")
+
+	if err := runtime.materializeGitSource(ctx, source, target, origin, currentUser()); err != nil {
+		t.Fatalf("materialize before the push: %v", err)
+	}
+	// What the sandbox wrote at the source's target while it parked: a file of
+	// its own, and one the delivered source turns out to name too.
+	if err := os.MkdirAll(filepath.Join(target, ".claude"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(target, ".claude", "credentials.json"), []byte("sentinel\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(target, "README.md"), []byte("written while parked\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	pushed := pushCommitToOrigin(t, origin, "main")
+	if err := runtime.materializeGitSource(ctx, source, target, origin, currentUser()); err != nil {
+		t.Fatalf("materialize after the push: %v", err)
+	}
+	if head := gitOutput(t, target, "rev-parse", "HEAD"); head != pushed {
+		t.Fatalf("HEAD = %q, want the pushed commit %q", head, pushed)
+	}
+	if branch := gitOutput(t, target, "branch", "--show-current"); branch != "main" {
+		t.Fatalf("branch = %q, want main", branch)
+	}
+	// The delivered source wins the collision, and the rest of what the sandbox
+	// wrote is still there as the untracked content it is.
+	readme, err := os.ReadFile(filepath.Join(target, "README.md"))
+	if err != nil {
+		t.Fatalf("pushed file is not in the working tree: %v", err)
+	}
+	if string(readme) != "pushed\n" {
+		t.Fatalf("README.md = %q, want the pushed content", readme)
+	}
+	credentials, err := os.ReadFile(filepath.Join(target, ".claude", "credentials.json"))
+	if err != nil {
+		t.Fatalf("the file the sandbox wrote while it parked is gone: %v", err)
+	}
+	if string(credentials) != "sentinel\n" {
+		t.Fatalf("credentials.json = %q, want what the sandbox wrote", credentials)
+	}
+	if got, want := gitOutput(t, target, "rev-parse", "refs/remotes/origin/main"), pushed; got != want {
+		t.Fatalf("origin/main = %q, want %q", got, want)
+	}
+	// The scratch repository the adoption clones into is gone, rather than left
+	// beside the source where the sandbox would see it.
+	entries, err := os.ReadDir(filepath.Dir(target))
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, entry := range entries {
+		if entry.Name() != filepath.Base(target) {
+			t.Fatalf("materializing left %q beside the source", entry.Name())
+		}
+	}
+}
+
 // Delivery is stated, not inferred. A clone-delivered source with nothing to
 // clone from is a malformed request and must fail, rather than silently
 // producing a sandbox with an empty workspace that waits for a push no client

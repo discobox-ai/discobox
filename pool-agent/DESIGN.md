@@ -366,6 +366,18 @@ flowchart LR
   the sandbox owns the workspace, so re-materializing would discard uncommitted
   work and move the branch off commits made inside the sandbox. The origin
   remote is not covered by that rule; see `ensureOriginRemote` above.
+- A parked source's target is not guaranteed to be empty when its push finally
+  lands, so `cloneGitSource` does not assume git's "clone into an empty
+  directory". The directory exists and is bound onto the source's in-sandbox
+  target from the moment the container boots — it has to be, since the resume
+  does not rebuild the container — so whatever the sandbox writes there while it
+  waits is in the way of the clone. A source whose target is the sandbox's home,
+  `discobox run` in a directory that is in no repository, collects the harness
+  credential files sandbox-agent restores at startup. A non-empty target is
+  therefore cloned beside and adopts the repository: the files already there
+  stay, as the untracked content they are, and the checkout is written over them
+  where the delivered source names the same path. Failing instead is permanent —
+  nothing is marked materialized, so every later start retries the same clone.
 - Forward the sandbox user; never complete it. The pool host cannot resolve a
   sandbox's account or group — both live in the image, and `boot` may still have
   to create them — so it publishes exactly what `config.user` gave and leaves the

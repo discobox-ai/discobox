@@ -2676,25 +2676,7 @@ func (r *DockerSandboxRuntime) materializeGitSource(ctx context.Context, source 
 			return err
 		}
 	}
-	if err := os.MkdirAll(filepath.Dir(target), 0o755); err != nil {
-		return err
-	}
-	args := []string{"clone"}
-	if checkout, ok := source.Checkout.Get(); ok {
-		if refName := strings.TrimSpace(optString(checkout.RefName)); refName != "" {
-			args = append(args, "--branch", refName)
-		}
-	}
-	args = append(args, fetchURL, target)
-	// A push-delivered source clones from a pool-owned repository that the
-	// sandbox user already owns, so it needs no safe.directory override — which
-	// this identity could not read anyway, since runGitWithSafeDirectories
-	// writes that config as this process. Only an arbitrary host directory does.
-	var safeDirectories []string
-	if !gitSourceAwaitsPush(source) {
-		safeDirectories = gitSafeDirectories(fetchURL, r.hostMountPrefix)
-	}
-	if err := runGitWithSafeDirectories(ctx, "", chownID(identity.UID), chownID(identity.GID), safeDirectories, args...); err != nil {
+	if err := r.cloneGitSource(ctx, source, target, fetchURL, identity); err != nil {
 		return err
 	}
 	if err := checkoutGitSource(ctx, target, source, chownID(identity.UID), chownID(identity.GID)); err != nil {
@@ -2704,6 +2686,100 @@ func (r *DockerSandboxRuntime) materializeGitSource(ctx context.Context, source 
 		return err
 	}
 	return markGitSourceMaterialized(target, chownID(user.UID), chownID(user.GID))
+}
+
+// cloneGitSource clones fetchURL into target, which git requires to be empty or
+// absent — and which a push-delivered source's target is not guaranteed to be.
+//
+// A parked source's directory exists and is bound into the sandbox long before
+// the push that fills it lands: prepareSandboxVolumes creates it, and boot binds
+// it onto the source's in-sandbox target, because the container is not rebuilt
+// when the source finally arrives (ADR 0055) and a bind that was not made at
+// boot would never be made at all. So anything the sandbox writes at that target
+// while it parks lands in this directory. That is not hypothetical: a source
+// whose target is the sandbox's own home — `discobox run` in a directory that is
+// in no Git repository, answered "do not copy" — collects the harness credential
+// files sandbox-agent restores at startup, which is not held by the
+// source-delivery gate the way a harness launch is.
+//
+// A plain clone fails on such a directory, and it fails permanently: the
+// materialized marker is only written once materialization completes, so every
+// later create — every start of that sandbox, forever — retries the same clone
+// and fails the same way.
+//
+// So a non-empty target is materialized by cloning beside it and adopting the
+// repository: the target keeps the files that are already in it, as the
+// untracked content they are, and the checkout is written over them wherever the
+// delivered source names the same path.
+func (r *DockerSandboxRuntime) cloneGitSource(ctx context.Context, source workerapimodel.GitSource, target, fetchURL string, identity sandboxuser.User) error {
+	if err := os.MkdirAll(filepath.Dir(target), 0o755); err != nil {
+		return err
+	}
+	uid, gid := chownID(identity.UID), chownID(identity.GID)
+	args := []string{"clone"}
+	if checkout, ok := source.Checkout.Get(); ok {
+		if refName := strings.TrimSpace(optString(checkout.RefName)); refName != "" {
+			args = append(args, "--branch", refName)
+		}
+	}
+	// A push-delivered source clones from a pool-owned repository that the
+	// sandbox user already owns, so it needs no safe.directory override — which
+	// this identity could not read anyway, since runGitWithSafeDirectories
+	// writes that config as this process. Only an arbitrary host directory does.
+	var safeDirectories []string
+	if !gitSourceAwaitsPush(source) {
+		safeDirectories = gitSafeDirectories(fetchURL, r.hostMountPrefix)
+	}
+	empty, err := directoryEmpty(target)
+	if err != nil {
+		return err
+	}
+	if empty {
+		args = append(args, fetchURL, target)
+		return runGitWithSafeDirectories(ctx, "", uid, gid, safeDirectories, args...)
+	}
+	// Beside the target rather than inside it: this directory is bound into the
+	// running sandbox, and a scratch repository under it would be visible at the
+	// source's target while the clone runs. The sources root it shares with the
+	// target is the same filesystem, so the adoption below is a rename.
+	scratch := filepath.Join(filepath.Dir(target), "."+filepath.Base(target)+".materializing")
+	if err := os.RemoveAll(scratch); err != nil {
+		return err
+	}
+	defer os.RemoveAll(scratch)
+	// git clones as identity, which cannot create a directory in the
+	// root-owned sources root, so the scratch directory is made for it.
+	if err := prepareOwnedTree(ctx, scratch, uid, gid); err != nil {
+		return err
+	}
+	// --no-checkout because the working tree this clone is for is the target's,
+	// which the reset below writes: checking the same tree out twice is the only
+	// difference, and the scratch copy would then have to be deleted file by
+	// file rather than as an empty repository.
+	args = append(args, "--no-checkout", fetchURL, scratch)
+	if err := runGitWithSafeDirectories(ctx, "", uid, gid, safeDirectories, args...); err != nil {
+		return err
+	}
+	if err := os.Rename(filepath.Join(scratch, ".git"), filepath.Join(target, ".git")); err != nil {
+		return err
+	}
+	// reset --hard rather than checkout: the target holds files the clone knows
+	// nothing about, and checkout refuses to write over an untracked file where
+	// the delivered source is what the sandbox asked for.
+	return runGit(ctx, target, uid, gid, "reset", "--hard", "HEAD")
+}
+
+// directoryEmpty reports whether path holds nothing. A path that is not there
+// is empty: git clone creates it.
+func directoryEmpty(path string) (bool, error) {
+	entries, err := os.ReadDir(path)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return true, nil
+		}
+		return false, err
+	}
+	return len(entries) == 0, nil
 }
 
 // ensureOriginRemote points a source's "origin" remote at the path the sandbox
