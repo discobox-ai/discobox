@@ -551,6 +551,23 @@ shows `8082->8080` and drops the rest, which is why the label is the numbers
 rather than a word like "open" that would only mean something where the link
 works.
 
+**The panes' own links are pointed at the local end too** (`forwardedURL`,
+`termpane.WithLinkRewrite`). A server prints the address it bound —
+`listening on http://0.0.0.0:8080` — inside the sandbox, where that is true; on
+this side of the forward the port is whatever was free and the bind address is
+not one a browser can open. So every pane is built with a rewriter: a URL naming
+a loopback or wildcard host on a port the forward has bound becomes
+`http://localhost:<local>`, keeping path and query, and anything else is handed
+back as it came. The name and not the address, for the same reason the header
+uses it: under WSL2 the Windows side reaches the listener by `localhost`, and a
+literal 127.0.0.1 sent to a browser there is that machine's own loopback.
+
+The pane's half of it — retargeting the links an application emits, and linking
+plain text only where the rewriter moves it — is `termpane`'s; see its design
+doc. What is disco's is the answer: only bound ports move, which is the rule the
+arrows follow, and everything else is returned unchanged so the terminal drawing
+the window keeps doing its own URL detection on it.
+
 The window never drives the forward. It has no address to dial with — a `Port`
 drops the bind address, above — and nothing to decide: the set follows what the
 sandbox announces, which is what the header is already drawn from. So the seam

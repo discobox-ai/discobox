@@ -460,6 +460,9 @@ func (m *Model) paneOptions(kind paneKind, readOnly bool) []termpane.Option {
 		termpane.WithPrefixBinding(paneMouseKey, toggleMouseMsg{}),
 		termpane.WithPrefixBinding(paneDetachAlt, termpane.DetachMsg{}),
 		termpane.WithPrefixBinding(paneQuitKey, quitPaneMsg{}),
+		// A URL printed in here was printed on the other side of the forward,
+		// where the port it names is the sandbox's own. See forwardedURL.
+		termpane.WithLinkRewrite(m.forwardedURL),
 	}
 	if readOnly {
 		opts = append(opts, termpane.WithReadOnly())
