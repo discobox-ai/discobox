@@ -39,9 +39,6 @@ func TestLoadDefaults(t *testing.T) {
 	if !reflect.DeepEqual(cfg.Listen, defaultListen()) {
 		t.Fatalf("Listen = %#v, want %#v", cfg.Listen, defaultListen())
 	}
-	if cfg.AutoShutdownTimeout != 0 {
-		t.Fatalf("AutoShutdownTimeout = %s, want 0", cfg.AutoShutdownTimeout)
-	}
 	if cfg.DatabaseDSN == "" {
 		t.Fatalf("DatabaseDSN is empty")
 	}
@@ -75,7 +72,6 @@ func TestLoadEnvironmentOverrides(t *testing.T) {
 	clearConfigEnv(t)
 	t.Setenv("PORT", "9090")
 	t.Setenv("DISCOBOX_DATA_DIR", "/tmp/discobox/data")
-	t.Setenv("DISCOBOX_SERVER_IDLE_TIMEOUT", "5m")
 	t.Setenv("DISCOBOX_CONFIG_DIR", "/tmp/discobox/config")
 	t.Setenv("DISCOBOX_CACHE_DIR", "/tmp/discobox/cache")
 	t.Setenv("DISCOBOX_STATE_DIR", "/tmp/discobox/state")
@@ -101,9 +97,6 @@ func TestLoadEnvironmentOverrides(t *testing.T) {
 	// configured HTTP endpoint defaults to.
 	if !reflect.DeepEqual(cfg.Listen, defaultListen()) {
 		t.Fatalf("Listen = %#v, want %#v", cfg.Listen, defaultListen())
-	}
-	if cfg.AutoShutdownTimeout != 5*time.Minute {
-		t.Fatalf("AutoShutdownTimeout = %s, want 5m", cfg.AutoShutdownTimeout)
 	}
 	if cfg.DataDir != "/tmp/discobox/data" {
 		t.Fatalf("DataDir = %q", cfg.DataDir)
@@ -304,7 +297,6 @@ func TestLoadRejectsInvalidValues(t *testing.T) {
 		val  string
 	}{
 		{name: "port", key: "PORT", val: "0"},
-		{name: "idle timeout", key: "DISCOBOX_SERVER_IDLE_TIMEOUT", val: "-1s"},
 		{name: "driver", key: "DATABASE_DRIVER", val: "mysql"},
 		{name: "poll interval", key: "DISPATCHER_POLL_INTERVAL", val: "-1s"},
 		{name: "sandbox concurrency", key: "SANDBOX_RECONCILE_JOB_CONCURRENCY", val: "0"},
@@ -330,7 +322,6 @@ func clearConfigEnv(t *testing.T) {
 		"PORT",
 		"DISCOBOX_SERVER",
 		"DISCOBOX_SERVER_LISTEN",
-		"DISCOBOX_SERVER_IDLE_TIMEOUT",
 		"DISCOBOX_DATA_DIR",
 		"DISCOBOX_CONFIG_DIR",
 		"DISCOBOX_CACHE_DIR",

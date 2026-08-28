@@ -15,7 +15,6 @@ func TestSystemdRunArgsStartsUserUnitWithEnvironment(t *testing.T) {
 		Args:     []string{"server"},
 		Env: []string{
 			"DISCOBOX_SERVER=unix:///tmp/discobox/server.sock",
-			"DISCOBOX_SERVER_IDLE_TIMEOUT=5m",
 		},
 	}
 
@@ -26,7 +25,6 @@ func TestSystemdRunArgsStartsUserUnitWithEnvironment(t *testing.T) {
 		"--unit=discobox-server-30ad8514897f671d",
 		"--property=Description=Discobox local API server",
 		"--setenv=DISCOBOX_SERVER=unix:///tmp/discobox/server.sock",
-		"--setenv=DISCOBOX_SERVER_IDLE_TIMEOUT=5m",
 		// The unit writes where a directly executed child writes, so reading a
 		// server's output does not depend on how this machine started it.
 		"--property=StandardOutput=append:/tmp/discobox-state/server.log",

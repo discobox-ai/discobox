@@ -367,7 +367,6 @@ func localServerEnv(endpoint string) []string {
 	env := []string{
 		"DISCOBOX_SERVER_LISTEN=" + endpoint,
 		"DISCOBOX_SERVER=" + endpoint,
-		"DISCOBOX_SERVER_IDLE_TIMEOUT=5m",
 	}
 	for _, key := range []string{
 		"DATABASE_DSN",

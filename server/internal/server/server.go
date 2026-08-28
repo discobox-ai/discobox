@@ -7,8 +7,6 @@ import (
 	"log"
 	"net"
 	"net/http"
-	"sync"
-	"sync/atomic"
 	"syscall"
 	"time"
 
@@ -82,7 +80,6 @@ func Run(ctx context.Context) error {
 	listeners = append(listeners, serverListener{Listener: controlPlaneStreams, display: "pool control-plane streams"})
 
 	startup := newStartupHandler("opening the database")
-	activity := newActivityTracker()
 	httpServer := &http.Server{
 		Handler:           startup,
 		ReadHeaderTimeout: 10 * time.Second,
@@ -178,9 +175,6 @@ func Run(ctx context.Context) error {
 			}
 		}()
 	})
-	if cfg.AutoShutdownTimeout > 0 {
-		go activity.ShutdownWhenIdle(ctx, httpServer, cfg.AutoShutdownTimeout)
-	}
 	// Runs however serve returns, not only on cancellation, so a listener error
 	// tears the backends down too. The HTTP server has already stopped
 	// accepting by then, so nothing new arrives mid-teardown.
@@ -193,9 +187,6 @@ func Run(ctx context.Context) error {
 	}()
 
 	handler := otelhttp.NewHandler(router, "discobox-server")
-	if cfg.AutoShutdownTimeout > 0 {
-		handler = activity.Wrap(handler)
-	}
 	// From here the endpoints serve the API instead of a startup status. The
 	// listeners have been accepting since before the database was opened, so
 	// nothing rebinds and no client is dropped.
@@ -331,63 +322,4 @@ func serveAll(server *http.Server, listeners []serverListener) error {
 		return fmt.Errorf("server failed: %w", serveErr)
 	}
 	return nil
-}
-
-type activityTracker struct {
-	active       int64
-	lastNano     int64
-	shutdownOnce sync.Once
-}
-
-func newActivityTracker() *activityTracker {
-	t := &activityTracker{}
-	t.mark(time.Now())
-	return t
-}
-
-func (t *activityTracker) Wrap(next http.Handler) http.Handler {
-	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		t.mark(time.Now())
-		atomic.AddInt64(&t.active, 1)
-		defer func() {
-			t.mark(time.Now())
-			atomic.AddInt64(&t.active, -1)
-		}()
-		next.ServeHTTP(w, r)
-	})
-}
-
-func (t *activityTracker) ShutdownWhenIdle(ctx context.Context, server *http.Server, timeout time.Duration) {
-	interval := min(timeout/4, time.Second)
-	if interval <= 0 {
-		interval = time.Nanosecond
-	}
-	ticker := time.NewTicker(interval)
-	defer ticker.Stop()
-	for {
-		select {
-		case <-ctx.Done():
-			return
-		case <-ticker.C:
-			if atomic.LoadInt64(&t.active) > 0 {
-				continue
-			}
-			last := time.Unix(0, atomic.LoadInt64(&t.lastNano))
-			if time.Since(last) < timeout {
-				continue
-			}
-			t.shutdownOnce.Do(func() {
-				shutdownCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
-				defer cancel()
-				if err := server.Shutdown(shutdownCtx); err != nil {
-					log.Printf("idle shutdown: %v", err)
-				}
-			})
-			return
-		}
-	}
-}
-
-func (t *activityTracker) mark(now time.Time) {
-	atomic.StoreInt64(&t.lastNano, now.UnixNano())
 }
