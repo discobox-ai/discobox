@@ -366,12 +366,24 @@ func (l *sandboxList) view(st *styles, focused bool) string {
 		scope += "   " + plural(n, "archived", "archived") + ", A shows them"
 	}
 	blank := strings.Repeat(" ", max(l.width, 0))
-	out := []string{renderTitle(titleStyle, scope, right, l.width)}
 
-	// The column labels cost a row, which comes out of the body rather than
-	// out of the window: the list occupies the height it was given whatever it
-	// chooses to put there.
+	// The machine goes above the band, not below the rows: it is the frame the
+	// list is read inside — how much room there is — and a frame belongs before
+	// the thing it frames.
+	//
+	// It and the column labels each cost a row, and both come out of the body
+	// rather than out of the window: the list occupies the height it was given
+	// whatever it chooses to put there.
 	rowBudget := l.height
+	var out []string
+	if l.height > 1 {
+		if machine := l.machine(st); machine != "" {
+			out = append(out, machine)
+			rowBudget--
+		}
+	}
+	out = append(out, renderTitle(titleStyle, scope, right, l.width))
+
 	// Only where a row survives being labeled. A window this short is one
 	// where the list is being squeezed out entirely, and spending its last
 	// line on the names of columns that have nothing under them would push the
@@ -393,11 +405,9 @@ func (l *sandboxList) view(st *styles, focused bool) string {
 	for len(body) < rowBudget {
 		body = append(body, blank)
 	}
-	// The machine goes in the blank that already sat after the last row, so it
-	// costs nothing: with nothing to report the line is blank exactly as it was,
-	// and the air between the list and the composer is kept. The title bar needs
-	// none above the rows — it is a band of color, and that is edge enough.
-	return lipgloss.JoinVertical(lipgloss.Left, append(append(out, body...), l.footer(st))...)
+	// One blank after the last row, so a list long enough to reach the composer
+	// still has air between them.
+	return lipgloss.JoinVertical(lipgloss.Left, append(append(out, body...), blank)...)
 }
 
 // row draws one sandbox. Widths are budgeted left to right and the columns
@@ -749,17 +759,20 @@ func (l *sandboxList) nameSpace(glyph bool) int {
 	return max(l.width-l.headOffset(glyph)-lipgloss.Width(cols.text), 4)
 }
 
-// footer is what the machine has and how much of it Discobox is using.
+// machine is what this machine has and how much of it Discobox is using.
 //
-// A row of its own under the list, rather than squeezed onto the title band
-// beside the count: the band was carrying two unrelated facts and reading as
-// neither. It is left-aligned and says what each figure is, because it cannot
-// line up under the columns it belongs to — the totals are used-of-capacity
-// pairs and the cells above them hold one number each.
-func (l *sandboxList) footer(st *styles) string {
+// A row of its own above the band, rather than squeezed onto it beside the
+// count: the band was carrying two unrelated facts and reading as neither, and
+// the count belongs to the list, which is filtered to a folder, where the
+// machine does not.
+//
+// It is left-aligned and says what each figure is, because it cannot line up
+// under the columns it belongs to — the figures are used-of-capacity pairs and
+// the cells below them hold one number each.
+func (l *sandboxList) machine(st *styles) string {
 	machine := machineText(st, l.resources, max(l.width-12, 0))
 	if machine == "" {
-		return strings.Repeat(" ", max(l.width, 0))
+		return ""
 	}
 	return padANSI("  "+st.dimText.Render("machine")+"  "+machine, l.width)
 }

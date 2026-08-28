@@ -629,11 +629,12 @@ func TestTheStripOnlyNamesWhatWasChosen(t *testing.T) {
 	}
 }
 
-// A row under the list says what Discobox has on this machine and what it is
+// A row above the list says what Discobox has on this machine and what it is
 // using, because the person reading it has one machine's worth of capacity and
 // has never heard of a pool. It is a row of its own rather than a third fact
-// crowded onto the title band beside the count.
-func TestFooterSaysWhatTheMachineHasAndIsUsing(t *testing.T) {
+// crowded onto the title band beside the count, and it goes above the band
+// because it is the frame the list is read inside.
+func TestMachineRowSaysWhatItHasAndIsUsing(t *testing.T) {
 	ds := newFakeSource(testSandboxes()...)
 	ds.setResources(Resources{
 		Known:    true,
@@ -644,10 +645,10 @@ func TestFooterSaysWhatTheMachineHasAndIsUsing(t *testing.T) {
 	m := newTestModel(t, ds)
 	send(t, m, key("tab"))
 
-	footer := machineRow(t, m)
+	machine := machineRow(t, m)
 	for _, want := range []string{"cpu 4.2/24", "mem 9.0/32 GiB", "32 GiB free"} {
-		if !strings.Contains(footer, want) {
-			t.Errorf("footer %q missing %q", footer, want)
+		if !strings.Contains(machine, want) {
+			t.Errorf("machine row %q missing %q", machine, want)
 		}
 	}
 	// The count belongs to the list, which is filtered to a folder; the machine
@@ -661,8 +662,8 @@ func TestFooterSaysWhatTheMachineHasAndIsUsing(t *testing.T) {
 	}
 	// A pool is how the system is built, not something to say to somebody who
 	// has one and does not know it.
-	if strings.Contains(strings.ToLower(footer), "pool") {
-		t.Errorf("footer %q says pool", footer)
+	if strings.Contains(strings.ToLower(machine), "pool") {
+		t.Errorf("machine row %q says pool", machine)
 	}
 }
 
@@ -716,7 +717,7 @@ func bandFor(t *testing.T, m *Model) string {
 	return ""
 }
 
-// machineRow is the line under the list carrying what the machine has.
+// machineRow is the line above the list carrying what the machine has.
 func machineRow(t *testing.T, m *Model) string {
 	t.Helper()
 	for _, line := range frame(m) {
@@ -730,7 +731,7 @@ func machineRow(t *testing.T, m *Model) string {
 
 // An unmeasured machine is not an idle one, so nothing is drawn until there is
 // something to draw.
-func TestFooterSaysNothingUntilTheMachineIsMeasured(t *testing.T) {
+func TestMachineRowSaysNothingUntilItIsMeasured(t *testing.T) {
 	m := newTestModel(t, newFakeSource(testSandboxes()...))
 	send(t, m, key("tab"))
 
@@ -743,7 +744,7 @@ func TestFooterSaysNothingUntilTheMachineIsMeasured(t *testing.T) {
 
 // A narrow window keeps the figure that matters most and drops the rest, rather
 // than truncating one into a wrong number or taking the box count down with it.
-func TestFooterDropsMachineFiguresItCannotFit(t *testing.T) {
+func TestMachineRowDropsFiguresItCannotFit(t *testing.T) {
 	ds := newFakeSource(testSandboxes()...)
 	ds.setResources(Resources{
 		Known:    true,
@@ -754,12 +755,41 @@ func TestFooterDropsMachineFiguresItCannotFit(t *testing.T) {
 	m := newTestModel(t, ds)
 	send(t, m, tea.WindowSizeMsg{Width: 80, Height: 24}, key("tab"))
 
-	footer := machineRow(t, m)
-	if !strings.Contains(footer, "cpu 4.2/24") {
-		t.Errorf("footer %q dropped the cpu figure first", footer)
+	machine := machineRow(t, m)
+	if !strings.Contains(machine, "cpu 4.2/24") {
+		t.Errorf("machine row %q dropped the cpu figure first", machine)
 	}
 	// Dropped whole, never cut: "mem 9.0/3" would be a wrong number.
-	if strings.Contains(footer, "mem 9") && !strings.Contains(footer, "mem 9.0/32 GiB") {
-		t.Errorf("footer %q carries a truncated figure", footer)
+	if strings.Contains(machine, "mem 9") && !strings.Contains(machine, "mem 9.0/32 GiB") {
+		t.Errorf("machine row %q carries a truncated figure", machine)
+	}
+}
+
+// The machine frames the list, so it is read before the rows rather than found
+// after them.
+func TestMachineRowSitsAboveTheBand(t *testing.T) {
+	ds := newFakeSource(testSandboxes()...)
+	ds.setResources(Resources{
+		Known: true, CPUVCPUs: 4.2, CPUCapacity: 24,
+		MemoryBytes: 9_663_676_416, MemoryCapacity: 34_359_738_368,
+	})
+	m := newTestModel(t, ds)
+	send(t, m, key("tab"))
+
+	lines := frame(m)
+	machineAt, bandAt := -1, -1
+	for i, line := range lines {
+		if strings.Contains(line, "machine") && machineAt < 0 {
+			machineAt = i
+		}
+		if strings.Contains(line, "Discoboxes") && bandAt < 0 {
+			bandAt = i
+		}
+	}
+	if machineAt < 0 || bandAt < 0 {
+		t.Fatalf("machine at %d, band at %d in\n%s", machineAt, bandAt, frameText(m))
+	}
+	if machineAt > bandAt {
+		t.Errorf("the machine row is below the band:\n%s", frameText(m))
 	}
 }

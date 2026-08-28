@@ -1220,8 +1220,9 @@ discobox wants to know.
 It is a row rather than a third fact on the title band. The band was carrying
 the scope, the count and the machine at once and reading as none of them; the
 count belongs to the list, which is filtered to a folder, and the machine does
-not. The row costs no height: it goes in the blank that already sat between the
-list and the composer, and with nothing to report it is that blank again.
+not. It sits *above* the band, because it is the frame the list is read inside —
+how much room there is — and a frame belongs before the thing it frames. With
+nothing to report there is no row at all.
 
 Used covers everything Discobox runs, the discoboxes and the machinery beside
 them both — the shared builder above all, which on a machine mid-build is most
