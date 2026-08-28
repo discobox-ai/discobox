@@ -63,7 +63,6 @@ type ExecDefaults struct {
 // Harness is the sandbox's one effective, fully-resolved harness.
 type Harness struct {
 	ID              string        `json:"id"`
-	TypeID          string        `json:"-"`
 	Name            string        `json:"name"`
 	Command         []string      `json:"command"`
 	RelaunchCommand []string      `json:"relaunchCommand,omitempty"`
@@ -167,7 +166,6 @@ func configFromEffective(effective sandboxconfig.Config) Config {
 	if strings.TrimSpace(effective.Harness.ID) != "" {
 		cfg.Harness = Harness{
 			ID:              effective.Harness.ID,
-			TypeID:          effective.Harness.ID,
 			Name:            effective.Harness.Name,
 			Command:         cloneCommand(harnessCommand),
 			RelaunchCommand: cloneCommand(effective.Harness.RelaunchCommand),

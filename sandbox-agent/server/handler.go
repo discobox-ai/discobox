@@ -33,7 +33,6 @@ type handler struct {
 	resourceInterval  time.Duration
 	resourceRetention int
 	sources           []sandboxconfig.Source
-	harnessTypeID     string
 	execUser          *execs.User
 	ports             *ports.Watcher
 }
@@ -466,11 +465,7 @@ func (h *handler) GetSandboxAgentStatus(ctx context.Context, _ sandboxapi.GetSan
 	if h.terminals != nil {
 		terminals = h.terminals.List()
 	}
-	var hooks agentstatus.HookLister
-	if h.store != nil {
-		hooks = h.store
-	}
-	sessions := agentstatus.ComputeSessionStatus(ctx, terminals, h.harnessTypeID, hooks)
+	sessions := agentstatus.ComputeSessionStatus(terminals)
 	listening := h.ports.Snapshot()
 
 	response := sandboxapi.SandboxAgentStatusResponse{
@@ -544,7 +539,6 @@ func sandboxAgentSessionStatus(in agentstatus.SessionStatus) sandboxapi.SandboxA
 	out := sandboxapi.SandboxAgentSessionStatus{
 		TerminalId:    in.TerminalID,
 		Primary:       in.Primary,
-		State:         sandboxapi.SandboxAgentSessionStatusState(in.State),
 		AttacherCount: int64(in.AttacherCount),
 		ExecStatus:    in.ExecStatus,
 	}
@@ -556,12 +550,6 @@ func sandboxAgentSessionStatus(in agentstatus.SessionStatus) sandboxapi.SandboxA
 	}
 	if in.LastAccessedAt != nil {
 		out.LastAccessedAt = sandboxapi.NewOptDateTime(*in.LastAccessedAt)
-	}
-	if in.LastEvent != "" {
-		out.LastEvent = sandboxapi.NewOptString(in.LastEvent)
-	}
-	if in.LastEventAt != nil {
-		out.LastEventAt = sandboxapi.NewOptDateTime(*in.LastEventAt)
 	}
 	if in.StartedAt != nil {
 		out.StartedAt = sandboxapi.NewOptDateTime(*in.StartedAt)

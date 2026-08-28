@@ -605,22 +605,6 @@ components:
                     description: Last time a client acted on this session - attached, typed, or is attached right now. Absent when no client ever has.
                     format: date-time
                     type: string
-                state:
-                    description: Derived harness session state.
-                    enum:
-                        - running
-                        - idle
-                        - needs_input
-                        - exited
-                        - failed
-                        - unknown
-                    type: string
-                lastEvent:
-                    description: Most recent harness lifecycle hook event name, when known.
-                    type: string
-                lastEventAt:
-                    format: date-time
-                    type: string
                 startedAt:
                     format: date-time
                     type: string
@@ -634,7 +618,6 @@ components:
             required:
                 - terminalId
                 - primary
-                - state
                 - attacherCount
                 - execStatus
             type: object

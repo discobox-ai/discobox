@@ -214,7 +214,6 @@ func newRouterAndManager(cfg Config) (agentRuntime, error) {
 		resourceInterval:  cfg.Resources.SampleInterval,
 		resourceRetention: cfg.Resources.RetentionCount,
 		sources:           cfg.Sources,
-		harnessTypeID:     cfg.Harness.TypeID,
 		execUser:          execManager.DefaultUser(),
 		ports:             portsWatch,
 	}

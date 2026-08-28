@@ -1,6 +1,6 @@
 // Package agentstatus computes the sandbox-agent-reported status a pool
-// agent polls periodically: per-source git status, per-terminal harness
-// session state, and active attach connection counts (see ADR 0030). It is
+// agent polls periodically: per-source git status, per-terminal session
+// records, and active attach connection counts (see ADR 0030). It is
 // computed fresh on every call, never cached or pushed on its own initiative
 // — sandbox-agent only ever answers inbound authenticated requests.
 //
@@ -42,7 +42,7 @@ type GitSourceStatus struct {
 	DiffDeleted int    `json:"diffDeleted"`
 }
 
-// SessionStatus is the observed state of one harness terminal.
+// SessionStatus is the observed record of one harness terminal.
 type SessionStatus struct {
 	TerminalID string `json:"terminalId"`
 	HarnessID  string `json:"harnessId,omitempty"`
@@ -58,12 +58,12 @@ type SessionStatus struct {
 	// attached, typed, or is attached right now — as the shim reports it.
 	// Absent when no client ever has.
 	LastAccessedAt *time.Time `json:"lastAccessedAt,omitempty"`
-	State          string     `json:"state"`
-	LastEvent      string     `json:"lastEvent,omitempty"`
-	LastEventAt    *time.Time `json:"lastEventAt,omitempty"`
 	StartedAt      *time.Time `json:"startedAt,omitempty"`
 	AttacherCount  int        `json:"attacherCount"`
-	ExecStatus     string     `json:"execStatus"`
+	// ExecStatus is the underlying exec process's status, verbatim. It is the
+	// only liveness this payload carries: what the harness inside the session
+	// is doing is not reported (see ComputeSessionStatus).
+	ExecStatus string `json:"execStatus"`
 }
 
 // Response is the full status payload sandbox-agent's status endpoint

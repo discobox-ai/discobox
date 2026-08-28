@@ -66,10 +66,9 @@ sandbox terminals.
 
 ## Driver Model
 
-- `harness.Driver` wires one harness provider's hook integration via
-  `InstallHooks` and identifies its included image through `Definition()`. The
-  public definition catalog is an image shortcut; runtime metadata comes from
-  the registered image label and the copy inside that image.
+- `harness.Driver` identifies one built-in harness's included image through
+  `Definition()`. The public definition catalog is an image shortcut; runtime
+  metadata comes from the registered image label.
 - A `Definition` names its image through `harness.ImageRef`, never as a
   literal. One `ImageRegistry`/`ImageTag` pair backs all three, unset and
   `local` by default and overwritten at link time by a release
@@ -92,9 +91,10 @@ sandbox terminals.
     Dockerfile installs nothing (the base image already ships the shell) and it
     declares no `runCommand`, no secrets, and no configure flow. It is otherwise
     an ordinary harness in every mechanism that touches it (ADR 0043).
-- `registry` selects the driver from the image harness type ID, can install all
-  drivers for hook/bootstrap workflows, and exposes
-  `Definitions()` for the control plane to surface built-in harness configs.
+- `registry` is the list of harnesses a release ships, exposed as
+  `Definitions()` for the control plane to seed built-in harness configs. It is
+  a manifest, not a dispatch table: nothing looks a driver up by harness type at
+  runtime.
 
 ## Managed Layers
 

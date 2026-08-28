@@ -6,7 +6,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"os/exec"
-	"time"
 
 	"github.com/discobox-ai/discobox/harness"
 )
@@ -19,70 +18,6 @@ func (Driver) Definition() harness.Definition {
 	return harness.Definition{
 		ID: "claude-code", Name: "Claude Code", Description: "Anthropic Claude Code coding harness.",
 		Image: harness.ImageRef("discobox-harness-claude-code"), Configure: &harness.Configure{},
-	}
-}
-
-// stateByEvent maps a claude-code hook event to the session state it defines.
-// Events absent from this map are informational only: they update
-// lastEvent/lastEventAt but do not change the derived state, deferring the
-// decision to the next state-defining event found scanning backward.
-var stateByEvent = map[string]string{
-	"PermissionRequest": harness.SessionStateNeedsInput,
-	"Elicitation":       harness.SessionStateNeedsInput,
-
-	"Stop":         harness.SessionStateIdle,
-	"StopFailure":  harness.SessionStateIdle,
-	"SessionEnd":   harness.SessionStateIdle,
-	"TeammateIdle": harness.SessionStateIdle,
-
-	"SessionStart":       harness.SessionStateRunning,
-	"UserPromptSubmit":   harness.SessionStateRunning,
-	"PreToolUse":         harness.SessionStateRunning,
-	"PostToolUse":        harness.SessionStateRunning,
-	"PostToolUseFailure": harness.SessionStateRunning,
-	"PostToolBatch":      harness.SessionStateRunning,
-	"SubagentStart":      harness.SessionStateRunning,
-	"TaskCreated":        harness.SessionStateRunning,
-}
-
-// DeriveSessionState implements harness.SessionStateDeriver. hooks must be
-// ascending by CreatedAt (as harness hook queries already return them); it
-// scans backward from the most recent event and returns the first
-// state-defining event's mapped state, so the most recent state-defining
-// event always wins over an older one, regardless of what informational
-// events fired in between.
-func (Driver) DeriveSessionState(hooks []harness.HookRecord) (state, lastEvent string, lastEventAt time.Time) {
-	if len(hooks) == 0 {
-		return "", "", time.Time{}
-	}
-	last := hooks[len(hooks)-1]
-	lastEvent, lastEventAt = last.Event, last.CreatedAt
-	for i := len(hooks) - 1; i >= 0; i-- {
-		if hooks[i].Event == "Notification" {
-			if notificationNeedsInput(hooks[i].Payload) {
-				return harness.SessionStateNeedsInput, lastEvent, lastEventAt
-			}
-			continue
-		}
-		if mapped, ok := stateByEvent[hooks[i].Event]; ok {
-			return mapped, lastEvent, lastEventAt
-		}
-	}
-	return "", lastEvent, lastEventAt
-}
-
-func notificationNeedsInput(payload json.RawMessage) bool {
-	var notification struct {
-		Type string `json:"notification_type"`
-	}
-	if json.Unmarshal(payload, &notification) != nil {
-		return false
-	}
-	switch notification.Type {
-	case "permission_prompt", "elicitation_dialog", "elicitation_url_dialog", "agent_needs_input":
-		return true
-	default:
-		return false
 	}
 }
 

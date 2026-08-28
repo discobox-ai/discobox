@@ -15716,22 +15716,6 @@ func (s *SandboxAgentSessionStatus) encodeFields(e *jx.Encoder) {
 		}
 	}
 	{
-		e.FieldStart("state")
-		s.State.Encode(e)
-	}
-	{
-		if s.LastEvent.Set {
-			e.FieldStart("lastEvent")
-			s.LastEvent.Encode(e)
-		}
-	}
-	{
-		if s.LastEventAt.Set {
-			e.FieldStart("lastEventAt")
-			s.LastEventAt.Encode(e, json.EncodeDateTime)
-		}
-	}
-	{
 		if s.StartedAt.Set {
 			e.FieldStart("startedAt")
 			s.StartedAt.Encode(e, json.EncodeDateTime)
@@ -15747,18 +15731,15 @@ func (s *SandboxAgentSessionStatus) encodeFields(e *jx.Encoder) {
 	}
 }
 
-var jsonFieldsNameOfSandboxAgentSessionStatus = [11]string{
-	0:  "terminalId",
-	1:  "harnessId",
-	2:  "primary",
-	3:  "title",
-	4:  "lastAccessedAt",
-	5:  "state",
-	6:  "lastEvent",
-	7:  "lastEventAt",
-	8:  "startedAt",
-	9:  "attacherCount",
-	10: "execStatus",
+var jsonFieldsNameOfSandboxAgentSessionStatus = [8]string{
+	0: "terminalId",
+	1: "harnessId",
+	2: "primary",
+	3: "title",
+	4: "lastAccessedAt",
+	5: "startedAt",
+	6: "attacherCount",
+	7: "execStatus",
 }
 
 // Decode decodes SandboxAgentSessionStatus from json.
@@ -15766,7 +15747,7 @@ func (s *SandboxAgentSessionStatus) Decode(d *jx.Decoder) error {
 	if s == nil {
 		return errors.New("invalid: unable to decode SandboxAgentSessionStatus to nil")
 	}
-	var requiredBitSet [2]uint8
+	var requiredBitSet [1]uint8
 
 	if err := d.ObjBytes(func(d *jx.Decoder, k []byte) error {
 		switch string(k) {
@@ -15824,36 +15805,6 @@ func (s *SandboxAgentSessionStatus) Decode(d *jx.Decoder) error {
 			}(); err != nil {
 				return errors.Wrap(err, "decode field \"lastAccessedAt\"")
 			}
-		case "state":
-			requiredBitSet[0] |= 1 << 5
-			if err := func() error {
-				if err := s.State.Decode(d); err != nil {
-					return err
-				}
-				return nil
-			}(); err != nil {
-				return errors.Wrap(err, "decode field \"state\"")
-			}
-		case "lastEvent":
-			if err := func() error {
-				s.LastEvent.Reset()
-				if err := s.LastEvent.Decode(d); err != nil {
-					return err
-				}
-				return nil
-			}(); err != nil {
-				return errors.Wrap(err, "decode field \"lastEvent\"")
-			}
-		case "lastEventAt":
-			if err := func() error {
-				s.LastEventAt.Reset()
-				if err := s.LastEventAt.Decode(d, json.DecodeDateTime); err != nil {
-					return err
-				}
-				return nil
-			}(); err != nil {
-				return errors.Wrap(err, "decode field \"lastEventAt\"")
-			}
 		case "startedAt":
 			if err := func() error {
 				s.StartedAt.Reset()
@@ -15865,7 +15816,7 @@ func (s *SandboxAgentSessionStatus) Decode(d *jx.Decoder) error {
 				return errors.Wrap(err, "decode field \"startedAt\"")
 			}
 		case "attacherCount":
-			requiredBitSet[1] |= 1 << 1
+			requiredBitSet[0] |= 1 << 6
 			if err := func() error {
 				v, err := d.Int64()
 				s.AttacherCount = int64(v)
@@ -15877,7 +15828,7 @@ func (s *SandboxAgentSessionStatus) Decode(d *jx.Decoder) error {
 				return errors.Wrap(err, "decode field \"attacherCount\"")
 			}
 		case "execStatus":
-			requiredBitSet[1] |= 1 << 2
+			requiredBitSet[0] |= 1 << 7
 			if err := func() error {
 				v, err := d.Str()
 				s.ExecStatus = string(v)
@@ -15897,9 +15848,8 @@ func (s *SandboxAgentSessionStatus) Decode(d *jx.Decoder) error {
 	}
 	// Validate required fields.
 	var failures []validate.FieldError
-	for i, mask := range [2]uint8{
-		0b00100101,
-		0b00000110,
+	for i, mask := range [1]uint8{
+		0b11000101,
 	} {
 		if result := (requiredBitSet[i] & mask) ^ mask; result != 0 {
 			// Mask only required fields and check equality to mask using XOR.
@@ -15941,54 +15891,6 @@ func (s *SandboxAgentSessionStatus) MarshalJSON() ([]byte, error) {
 
 // UnmarshalJSON implements stdjson.Unmarshaler.
 func (s *SandboxAgentSessionStatus) UnmarshalJSON(data []byte) error {
-	d := jx.DecodeBytes(data)
-	return s.Decode(d)
-}
-
-// Encode encodes SandboxAgentSessionStatusState as json.
-func (s SandboxAgentSessionStatusState) Encode(e *jx.Encoder) {
-	e.Str(string(s))
-}
-
-// Decode decodes SandboxAgentSessionStatusState from json.
-func (s *SandboxAgentSessionStatusState) Decode(d *jx.Decoder) error {
-	if s == nil {
-		return errors.New("invalid: unable to decode SandboxAgentSessionStatusState to nil")
-	}
-	v, err := d.StrBytes()
-	if err != nil {
-		return err
-	}
-	// Try to use constant string.
-	switch SandboxAgentSessionStatusState(v) {
-	case SandboxAgentSessionStatusStateRunning:
-		*s = SandboxAgentSessionStatusStateRunning
-	case SandboxAgentSessionStatusStateIdle:
-		*s = SandboxAgentSessionStatusStateIdle
-	case SandboxAgentSessionStatusStateNeedsInput:
-		*s = SandboxAgentSessionStatusStateNeedsInput
-	case SandboxAgentSessionStatusStateExited:
-		*s = SandboxAgentSessionStatusStateExited
-	case SandboxAgentSessionStatusStateFailed:
-		*s = SandboxAgentSessionStatusStateFailed
-	case SandboxAgentSessionStatusStateUnknown:
-		*s = SandboxAgentSessionStatusStateUnknown
-	default:
-		*s = SandboxAgentSessionStatusState(v)
-	}
-
-	return nil
-}
-
-// MarshalJSON implements stdjson.Marshaler.
-func (s SandboxAgentSessionStatusState) MarshalJSON() ([]byte, error) {
-	e := jx.Encoder{}
-	s.Encode(&e)
-	return e.Bytes(), nil
-}
-
-// UnmarshalJSON implements stdjson.Unmarshaler.
-func (s *SandboxAgentSessionStatusState) UnmarshalJSON(data []byte) error {
 	d := jx.DecodeBytes(data)
 	return s.Decode(d)
 }

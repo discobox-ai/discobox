@@ -1,8 +1,6 @@
 package registry
 
 import (
-	"strings"
-
 	"github.com/discobox-ai/discobox/harness"
 	claudecode "github.com/discobox-ai/discobox/harness/claude-code"
 	codexcli "github.com/discobox-ai/discobox/harness/codex-cli"
@@ -29,16 +27,4 @@ func Definitions() []harness.Definition {
 		out = append(out, driver.Definition())
 	}
 	return out
-}
-
-// DriverForHarness selects the hook driver from the harness type baked into the
-// image. Falls back to all drivers for old or externally supplied harnesses.
-func DriverForHarness(h harness.Harness) []harness.Driver {
-	typeID := strings.TrimSpace(h.TypeID)
-	for _, driver := range DefaultDrivers() {
-		if typeID != "" && typeID == driver.Definition().ID {
-			return []harness.Driver{driver}
-		}
-	}
-	return DefaultDrivers()
 }

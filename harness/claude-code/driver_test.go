@@ -5,7 +5,6 @@ import (
 	"os"
 	"strings"
 	"testing"
-	"time"
 
 	"github.com/discobox-ai/discobox/harness"
 )
@@ -237,113 +236,5 @@ func TestManagedSettingsPublishesEverySupportedEvent(t *testing.T) {
 		if hook.Type != "command" || hook.Command != wantCommand || hook.Timeout <= 0 {
 			t.Fatalf("event %s hook = %#v, want command %q with timeout", event, hook, wantCommand)
 		}
-	}
-}
-
-// hooksFromEvents builds ascending-by-time HookRecords from event names, one
-// second apart, matching the order store.ListHarnessHooks already returns.
-func hooksFromEvents(events ...string) []harness.HookRecord {
-	base := time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)
-	hooks := make([]harness.HookRecord, len(events))
-	for i, event := range events {
-		hooks[i] = harness.HookRecord{Event: event, CreatedAt: base.Add(time.Duration(i) * time.Second)}
-	}
-	return hooks
-}
-
-func TestDeriveSessionState(t *testing.T) {
-	tests := []struct {
-		name          string
-		events        []string
-		wantState     string
-		wantLastEvent string
-	}{
-		{
-			name:      "no hooks yet",
-			events:    nil,
-			wantState: "",
-		},
-		{
-			name:          "session start is running",
-			events:        []string{"SessionStart"},
-			wantState:     harness.SessionStateRunning,
-			wantLastEvent: "SessionStart",
-		},
-		{
-			name:          "tool use keeps running",
-			events:        []string{"SessionStart", "UserPromptSubmit", "PreToolUse"},
-			wantState:     harness.SessionStateRunning,
-			wantLastEvent: "PreToolUse",
-		},
-		{
-			name:          "stop is idle",
-			events:        []string{"SessionStart", "UserPromptSubmit", "Stop"},
-			wantState:     harness.SessionStateIdle,
-			wantLastEvent: "Stop",
-		},
-		{
-			name:          "notification after stop is needs_input",
-			events:        []string{"SessionStart", "Stop", "PermissionRequest"},
-			wantState:     harness.SessionStateNeedsInput,
-			wantLastEvent: "PermissionRequest",
-		},
-		{
-			name:          "informational event after stop does not overwrite idle",
-			events:        []string{"SessionStart", "UserPromptSubmit", "Stop", "ConfigChange"},
-			wantState:     harness.SessionStateIdle,
-			wantLastEvent: "ConfigChange",
-		},
-		{
-			name:          "informational event after needs_input does not overwrite it",
-			events:        []string{"SessionStart", "PostToolUse", "PermissionRequest", "PermissionDenied"},
-			wantState:     harness.SessionStateNeedsInput,
-			wantLastEvent: "PermissionDenied",
-		},
-		{
-			name:          "session end is idle",
-			events:        []string{"SessionStart", "UserPromptSubmit", "Stop", "SessionEnd"},
-			wantState:     harness.SessionStateIdle,
-			wantLastEvent: "SessionEnd",
-		},
-	}
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			hooks := hooksFromEvents(tt.events...)
-			gotState, gotLastEvent, gotLastEventAt := Driver{}.DeriveSessionState(hooks)
-			if gotState != tt.wantState {
-				t.Errorf("state = %q, want %q", gotState, tt.wantState)
-			}
-			if gotLastEvent != tt.wantLastEvent {
-				t.Errorf("lastEvent = %q, want %q", gotLastEvent, tt.wantLastEvent)
-			}
-			if len(hooks) > 0 && !gotLastEventAt.Equal(hooks[len(hooks)-1].CreatedAt) {
-				t.Errorf("lastEventAt = %v, want %v", gotLastEventAt, hooks[len(hooks)-1].CreatedAt)
-			}
-		})
-	}
-}
-
-func TestDeriveSessionStateNotificationTypes(t *testing.T) {
-	tests := []struct {
-		name             string
-		notificationType string
-		want             string
-	}{
-		{name: "permission prompt", notificationType: "permission_prompt", want: harness.SessionStateNeedsInput},
-		{name: "elicitation dialog", notificationType: "elicitation_dialog", want: harness.SessionStateNeedsInput},
-		{name: "agent needs input", notificationType: "agent_needs_input", want: harness.SessionStateNeedsInput},
-		{name: "authentication succeeded", notificationType: "auth_success", want: harness.SessionStateIdle},
-		{name: "idle reminder", notificationType: "idle_prompt", want: harness.SessionStateIdle},
-		{name: "unknown notification", notificationType: "future_type", want: harness.SessionStateIdle},
-	}
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			hooks := hooksFromEvents("SessionStart", "Stop", "Notification")
-			hooks[2].Payload = json.RawMessage(`{"notification_type":"` + tt.notificationType + `"}`)
-			state, lastEvent, _ := Driver{}.DeriveSessionState(hooks)
-			if state != tt.want || lastEvent != "Notification" {
-				t.Fatalf("state, event = %q, %q; want %q, Notification", state, lastEvent, tt.want)
-			}
-		})
 	}
 }

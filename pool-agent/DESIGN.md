@@ -181,7 +181,7 @@ certificates stay outside them, keyed by globally unique sandbox ID.
 
 A standing poller (`startSandboxAgentStatusPoller`, `statuspoll.go`) checks
 every currently-running hosted sandbox's sandbox-agent status endpoint (git
-status, harness session state, active connections) on a 15s interval and
+status, terminal sessions, active connections) on a 15s interval and
 pushes a batch of what it collected to the control plane
 (`/api/pools/{pool_id}/sandbox-agent-status`). One unreachable or erroring
 sandbox is skipped, never blocking or failing the rest of the tick, and a poll

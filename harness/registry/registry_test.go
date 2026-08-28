@@ -4,8 +4,6 @@ import (
 	"testing"
 
 	"github.com/discobox-ai/discobox/harness"
-	claudecode "github.com/discobox-ai/discobox/harness/claude-code"
-	codexcli "github.com/discobox-ai/discobox/harness/codex-cli"
 )
 
 func TestDefinitionsCoverKnownHarnesses(t *testing.T) {
@@ -35,33 +33,5 @@ func TestDefinitionsCoverKnownHarnesses(t *testing.T) {
 	}
 	if shell.Configure != nil {
 		t.Fatalf("shell definition = %#v, want no configure flow: it collects no credentials", shell)
-	}
-}
-
-func TestDriverForHarnessSelectsByImageType(t *testing.T) {
-	cases := []struct {
-		harness harness.Harness
-		want    string
-	}{
-		{harness: harness.Harness{TypeID: "claude-code"}, want: claudecode.Driver{}.ID()},
-		{harness: harness.Harness{TypeID: "codex"}, want: codexcli.Driver{}.ID()},
-	}
-	for _, tc := range cases {
-		got := DriverForHarness(tc.harness)
-		if len(got) != 1 || got[0].ID() != tc.want {
-			t.Fatalf("DriverForHarness(%#v) = %#v, want %s", tc.harness, got, tc.want)
-		}
-	}
-}
-
-func TestDriverForHarnessFallsBackForUnknownType(t *testing.T) {
-	for _, harness := range []harness.Harness{
-		{},
-		{TypeID: "unknown"},
-		{ID: "claude-code"},
-	} {
-		if got := DriverForHarness(harness); len(got) != len(DefaultDrivers()) {
-			t.Fatalf("DriverForHarness(%#v) = %#v, want all default drivers", harness, got)
-		}
 	}
 }

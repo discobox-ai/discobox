@@ -3,20 +3,7 @@ package harness
 
 import (
 	"context"
-	"encoding/json"
 	"strings"
-	"time"
-)
-
-// Session state values returned by SessionStateDeriver and by the generic,
-// process-liveness-based fallback a caller uses when a harness has none.
-const (
-	SessionStateRunning    = "running"
-	SessionStateIdle       = "idle"
-	SessionStateNeedsInput = "needs_input"
-	SessionStateExited     = "exited"
-	SessionStateFailed     = "failed"
-	SessionStateUnknown    = "unknown"
 )
 
 const (
@@ -91,13 +78,6 @@ const (
 	ConfigureUserUID  = 10000
 	ConfigureUserGID  = 10000
 )
-
-type Harness struct {
-	ID      string
-	TypeID  string
-	Name    string
-	Command []string
-}
 
 // Image describes the immutable harness behavior baked into one sandbox
 // image. It is the harness sub-object of the ImageMetadata payload projected
@@ -202,29 +182,6 @@ type Driver interface {
 // The returned state must be passed to the next call to continue the conversation.
 type Converser interface {
 	Prompt(ctx context.Context, prompt string, state []byte) (result string, newState []byte, err error)
-}
-
-// HookRecord is one recorded harness lifecycle hook event, in the shape a
-// caller (sandbox-agent) records them. It is a harness-package-local mirror
-// so this package does not need to import the caller's store types.
-type HookRecord struct {
-	Event     string
-	Payload   json.RawMessage
-	CreatedAt time.Time
-}
-
-// SessionStateDeriver is implemented by harnesses that can compute a live
-// session state (SessionStateRunning, SessionStateIdle, etc.) from their own
-// recorded lifecycle hook events. It is optional, sibling to Converser:
-// harnesses without one leave session-state derivation to the caller's
-// generic, process-liveness-based fallback.
-type SessionStateDeriver interface {
-	// DeriveSessionState inspects hooks (ascending by CreatedAt; may be empty)
-	// and returns the current session state, the most recent hook event name,
-	// and when it occurred. An empty state means the deriver has no opinion
-	// yet (e.g. no hooks recorded), and the caller should fall back to its
-	// generic mapping instead.
-	DeriveSessionState(hooks []HookRecord) (state, lastEvent string, lastEventAt time.Time)
 }
 
 func SetEnv(env map[string]string, key, value string) {

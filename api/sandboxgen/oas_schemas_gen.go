@@ -1249,14 +1249,9 @@ type SandboxAgentSessionStatus struct {
 	// Last time a client acted on this session - attached, typed, or is attached right now. Absent when
 	// no client ever has.
 	LastAccessedAt OptDateTime `json:"lastAccessedAt"`
-	// Most recent harness lifecycle hook event name, when known.
-	LastEvent   OptString   `json:"lastEvent"`
-	LastEventAt OptDateTime `json:"lastEventAt"`
-	Primary     bool        `json:"primary"`
-	StartedAt   OptDateTime `json:"startedAt"`
-	// Derived harness session state.
-	State      SandboxAgentSessionStatusState `json:"state"`
-	TerminalId string                         `json:"terminalId"`
+	Primary        bool        `json:"primary"`
+	StartedAt      OptDateTime `json:"startedAt"`
+	TerminalId     string      `json:"terminalId"`
 	// Window title the program in the session last set (OSC 0/2), read from its terminal emulator.
 	// Absent when the session never titled itself - the sandbox's name and prompt are already on the
 	// record, so nothing is backfilled here.
@@ -1283,16 +1278,6 @@ func (s *SandboxAgentSessionStatus) GetLastAccessedAt() OptDateTime {
 	return s.LastAccessedAt
 }
 
-// GetLastEvent returns the value of LastEvent.
-func (s *SandboxAgentSessionStatus) GetLastEvent() OptString {
-	return s.LastEvent
-}
-
-// GetLastEventAt returns the value of LastEventAt.
-func (s *SandboxAgentSessionStatus) GetLastEventAt() OptDateTime {
-	return s.LastEventAt
-}
-
 // GetPrimary returns the value of Primary.
 func (s *SandboxAgentSessionStatus) GetPrimary() bool {
 	return s.Primary
@@ -1301,11 +1286,6 @@ func (s *SandboxAgentSessionStatus) GetPrimary() bool {
 // GetStartedAt returns the value of StartedAt.
 func (s *SandboxAgentSessionStatus) GetStartedAt() OptDateTime {
 	return s.StartedAt
-}
-
-// GetState returns the value of State.
-func (s *SandboxAgentSessionStatus) GetState() SandboxAgentSessionStatusState {
-	return s.State
 }
 
 // GetTerminalId returns the value of TerminalId.
@@ -1338,16 +1318,6 @@ func (s *SandboxAgentSessionStatus) SetLastAccessedAt(val OptDateTime) {
 	s.LastAccessedAt = val
 }
 
-// SetLastEvent sets the value of LastEvent.
-func (s *SandboxAgentSessionStatus) SetLastEvent(val OptString) {
-	s.LastEvent = val
-}
-
-// SetLastEventAt sets the value of LastEventAt.
-func (s *SandboxAgentSessionStatus) SetLastEventAt(val OptDateTime) {
-	s.LastEventAt = val
-}
-
 // SetPrimary sets the value of Primary.
 func (s *SandboxAgentSessionStatus) SetPrimary(val bool) {
 	s.Primary = val
@@ -1358,11 +1328,6 @@ func (s *SandboxAgentSessionStatus) SetStartedAt(val OptDateTime) {
 	s.StartedAt = val
 }
 
-// SetState sets the value of State.
-func (s *SandboxAgentSessionStatus) SetState(val SandboxAgentSessionStatusState) {
-	s.State = val
-}
-
 // SetTerminalId sets the value of TerminalId.
 func (s *SandboxAgentSessionStatus) SetTerminalId(val string) {
 	s.TerminalId = val
@@ -1371,76 +1336,6 @@ func (s *SandboxAgentSessionStatus) SetTerminalId(val string) {
 // SetTitle sets the value of Title.
 func (s *SandboxAgentSessionStatus) SetTitle(val OptString) {
 	s.Title = val
-}
-
-// Derived harness session state.
-type SandboxAgentSessionStatusState string
-
-const (
-	SandboxAgentSessionStatusStateRunning    SandboxAgentSessionStatusState = "running"
-	SandboxAgentSessionStatusStateIdle       SandboxAgentSessionStatusState = "idle"
-	SandboxAgentSessionStatusStateNeedsInput SandboxAgentSessionStatusState = "needs_input"
-	SandboxAgentSessionStatusStateExited     SandboxAgentSessionStatusState = "exited"
-	SandboxAgentSessionStatusStateFailed     SandboxAgentSessionStatusState = "failed"
-	SandboxAgentSessionStatusStateUnknown    SandboxAgentSessionStatusState = "unknown"
-)
-
-// AllValues returns all SandboxAgentSessionStatusState values.
-func (SandboxAgentSessionStatusState) AllValues() []SandboxAgentSessionStatusState {
-	return []SandboxAgentSessionStatusState{
-		SandboxAgentSessionStatusStateRunning,
-		SandboxAgentSessionStatusStateIdle,
-		SandboxAgentSessionStatusStateNeedsInput,
-		SandboxAgentSessionStatusStateExited,
-		SandboxAgentSessionStatusStateFailed,
-		SandboxAgentSessionStatusStateUnknown,
-	}
-}
-
-// MarshalText implements encoding.TextMarshaler.
-func (s SandboxAgentSessionStatusState) MarshalText() ([]byte, error) {
-	switch s {
-	case SandboxAgentSessionStatusStateRunning:
-		return []byte(s), nil
-	case SandboxAgentSessionStatusStateIdle:
-		return []byte(s), nil
-	case SandboxAgentSessionStatusStateNeedsInput:
-		return []byte(s), nil
-	case SandboxAgentSessionStatusStateExited:
-		return []byte(s), nil
-	case SandboxAgentSessionStatusStateFailed:
-		return []byte(s), nil
-	case SandboxAgentSessionStatusStateUnknown:
-		return []byte(s), nil
-	default:
-		return nil, errors.Errorf("invalid value: %q", s)
-	}
-}
-
-// UnmarshalText implements encoding.TextUnmarshaler.
-func (s *SandboxAgentSessionStatusState) UnmarshalText(data []byte) error {
-	switch SandboxAgentSessionStatusState(data) {
-	case SandboxAgentSessionStatusStateRunning:
-		*s = SandboxAgentSessionStatusStateRunning
-		return nil
-	case SandboxAgentSessionStatusStateIdle:
-		*s = SandboxAgentSessionStatusStateIdle
-		return nil
-	case SandboxAgentSessionStatusStateNeedsInput:
-		*s = SandboxAgentSessionStatusStateNeedsInput
-		return nil
-	case SandboxAgentSessionStatusStateExited:
-		*s = SandboxAgentSessionStatusStateExited
-		return nil
-	case SandboxAgentSessionStatusStateFailed:
-		*s = SandboxAgentSessionStatusStateFailed
-		return nil
-	case SandboxAgentSessionStatusStateUnknown:
-		*s = SandboxAgentSessionStatusStateUnknown
-		return nil
-	default:
-		return errors.Errorf("invalid value: %q", data)
-	}
 }
 
 // Ref: #/components/schemas/SandboxAgentStatusResponse
