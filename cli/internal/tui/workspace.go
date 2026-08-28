@@ -20,9 +20,9 @@ import (
 // every stream is closed at once, and every session keeps running.
 //
 // Which side a session is drawn on is the server's own answer rather than a
-// layout this window remembers: a harness terminal goes on the left beside the
-// primary and a declared service goes on the left after them, while everything
-// else is a shell and goes on the right. See terminalExec.
+// layout this window remembers: a declared service goes at the head of the
+// left column and a harness terminal on the left beside the primary, while
+// everything else is a shell and goes on the right. See terminalExec.
 //
 // The poll is a poll rather than a subscription because the control plane has
 // no exec event stream yet — exec state lives on the sandbox and is proxied
@@ -491,7 +491,7 @@ func (m *Model) serviceTermOpened(msg serviceTermMsg) tea.Cmd {
 // service carries the service it runs, so reopening the workspace draws the
 // same two columns anyone else's window would.
 func terminalExec(exec Exec) bool {
-	// A service is drawn on the left too, after the terminals: it is the
+	// A service is drawn on the left too, ahead of the terminals: it is the
 	// discobox running your own work, which belongs beside the harness working
 	// on it rather than among the shells you opened by hand.
 	return exec.Primary || exec.Harness != "" || serviceExec(exec)
@@ -665,25 +665,23 @@ func (m *Model) workspaceTermOpened(msg workspaceTermMsg) tea.Cmd {
 // execBefore orders tabs: by when their sessions were created, oldest first,
 // with the id as the tie-break so the order is stable whatever the listing's.
 //
-// Services are the exception, and sort after everything else in their column.
-// The left side is [terminals, services]: the terminals are what you are
-// working in, and a service that started before them — they usually do, since
-// boot launches both and a harness has files to install first — would
-// otherwise land above the primary's neighbors and push them along. Grouping
-// beats strict age here because the two kinds are used differently, and the
-// group a pane is in is what the digits count along.
+// Services are the exception, and sort ahead of everything else in their
+// column. The left side is [services, terminals]: the services are the
+// discobox's own standing furniture — the same ones in the same order every
+// time the workspace opens — while the terminals are what you add to it, so
+// putting them first is what lets a terminal keep the number it had. Grouping
+// beats strict age here because the two kinds are used differently and are
+// numbered differently: the digits count along the terminals and shells, and
+// the leader's S chord counts along the services. See column.tabKey.
 func execBefore(a, b Exec) bool {
 	if serviceExec(a) != serviceExec(b) {
-		return serviceExec(b)
+		return serviceExec(a)
 	}
 	// Two services are ordered as the repository declares them, not by when
 	// their processes happened to start: that is what the numeric filename
 	// prefix is for, it is the order `discobox admin services ls` shows, and
-	// it holds still across a restart, which a start time does not.
-	// Two services are ordered as the repository declares them, not by when
-	// their processes happened to start: that is what the numeric filename
-	// prefix is for, it is the order `discobox admin services ls` shows, and
-	// it holds still across a restart, which a start time does not.
+	// it holds still across a restart, which a start time does not. It is also
+	// what S1 and S2 mean, so it had better not move under them.
 	if serviceExec(a) && a.ServiceOrder != b.ServiceOrder {
 		return a.ServiceOrder < b.ServiceOrder
 	}
@@ -756,12 +754,44 @@ func (m *Model) closeWorkspace() {
 	m.leavePanes()
 }
 
-// panes is the whole screen as one strip, left to right: the terminals, the
-// primary first, then the shells. It is what the leader's movement and its
-// digits count along, so a pane wears the same number wherever the focus
-// happens to be.
+// panes is the whole screen as one strip, left to right: the services, the
+// terminals with the primary at their head, then the shells. It is what the
+// leader's movement walks along, so ← and → cross the screen in the order the
+// tabs are drawn in.
+//
+// The digits count along a shorter strip — see numbered.
 func (m *Model) panes() []*pane {
 	return append(append([]*pane{}, m.terminals.panes...), m.shells.panes...)
+}
+
+// numbered is the strip the leader's digits count along: every pane on the
+// screen except the services, left to right, so a pane wears the same number
+// wherever the focus happens to be.
+//
+// The services are counted separately because they are not yours to arrange:
+// they start and stop as the discobox runs them, and a numbering they shared
+// would move a shell out from under the digit you were reaching for. See
+// services and column.tabKey.
+func (m *Model) numbered() []*pane {
+	out := make([]*pane, 0, m.terminals.len()+m.shells.len())
+	for _, p := range m.panes() {
+		if p.service == "" {
+			out = append(out, p)
+		}
+	}
+	return out
+}
+
+// services is the strip the leader's S chord counts along, from one: every
+// service pane on the screen, in the order its repository declares them.
+func (m *Model) services() []*pane {
+	out := make([]*pane, 0, m.terminals.len())
+	for _, p := range m.panes() {
+		if p.service != "" {
+			out = append(out, p)
+		}
+	}
+	return out
 }
 
 // paneOrdinal is where the focused pane sits in that strip, or -1 when nothing
@@ -800,14 +830,31 @@ func (m *Model) movePane(delta int) tea.Cmd {
 }
 
 // jumpPane focuses a pane by the number its label wears: 0 is the primary
-// terminal, all the way on the left, and the rest are counted across the
-// screen from it. A number with no pane under it is answered rather than
-// swallowed — a jump that lands nowhere should say so.
+// terminal, the first tab that is not a service, and the rest are counted
+// across the screen from it. A number with no pane under it is answered rather
+// than swallowed — a jump that lands nowhere should say so.
 func (m *Model) jumpPane(n int) tea.Cmd {
-	if n >= m.terminals.len()+m.shells.len() {
+	numbered := m.numbered()
+	if n < 0 || n >= len(numbered) {
 		return status("no pane %d", n)
 	}
-	m.focusOrdinal(n)
+	m.focusPane(numbered[n])
+	return nil
+}
+
+// jumpService focuses a service by the number its label wears, from one: the
+// leader's S chord, so S1 is the first service the repository declares.
+//
+// It is a chord rather than more digits because the digits are spoken for and
+// because a service is a different kind of thing to jump to — read-only, and
+// running whether you look at it or not. A number with no service under it is
+// answered the same way a pane number with nothing under it is.
+func (m *Model) jumpService(n int) tea.Cmd {
+	services := m.services()
+	if n < 1 || n > len(services) {
+		return status("no service %s%d", paneServicesKey, n)
+	}
+	m.focusPane(services[n-1])
 	return nil
 }
 
@@ -837,14 +884,24 @@ func execTitle(exec Exec) string {
 	return exec.ID
 }
 
-// tabBase is where a column's numbering starts: the terminals from 0, the
-// primary among them, and the shells straight after them. One press of the
-// leader and a digit therefore means one pane on the whole screen.
+// tabBase is where a column's digits start: the terminals from 0, the primary
+// among them, and the shells straight after them. One press of the leader and
+// a digit therefore means one pane on the whole screen.
+//
+// The services sit in the left column but not in its digits, so they do not
+// count toward where the shells begin — that is what keeps a shell's number
+// still while the discobox starts and stops services around it.
 func (m *Model) tabBase(shells bool) int {
-	if shells {
-		return m.terminals.len()
+	if !shells {
+		return 0
 	}
-	return 0
+	base := 0
+	for _, p := range m.terminals.panes {
+		if p.service == "" {
+			base++
+		}
+	}
+	return base
 }
 
 // tabbedEdge is a column's top border with its tab strip laid into it — a

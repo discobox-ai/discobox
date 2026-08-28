@@ -26,7 +26,7 @@ flowchart LR
     L -->|e| Rename["dialog → DataSource.Rename"]
     L -->|Enter s| WS["workspace → Execs / OpenExec / NewShell / NewTerminal"]
     WS -->|poll| Svc["services → Services / ServiceLogs"]
-    WS -->|leader S| SvcMenu["services menu → DoService"]
+    WS -->|leader S0| SvcMenu["services menu → DoService"]
     L -->|y| Overlay["overlay pane → DataSource.Open"]
     L -->|v| Editor["DataSource.OpenEditor"]
     WS -->|leader o| T["tools picker → NewTool / EndExec / OpenEditor"]
@@ -182,7 +182,7 @@ gives it `io.Discard` for both streams — a stray line of stderr would draw ove
 a full-screen window — and lets the error carry what went wrong to the status
 line.
 
-**Services are the left column's second group, and their panes are read-only**
+**Services are the left column's first group, and their panes are read-only**
 (`services.go`, ADR 0070 §7).
 
 They are drawn from a **listing of their own**, polled beside the exec listing,
@@ -249,20 +249,21 @@ what the server reports from one whose service has since restarted — which
 keeps the same exec id (ADR 0038) and moves only its start time — stopped, or
 been fixed.
 
-The left side is `[terminals, services]`: what the discobox is running on your
-behalf, the harness working on the code and the code itself running, while the
-right side is what you opened by hand. Only shells split the window, so a
-discobox with three services and no shell still draws its terminal at the full
-width. Within the column the two kinds are *grouped* rather than strictly aged
-(`execBefore`): a service usually starts before the terminals do — boot
-launches both and a harness has files to install first — so strict age would
-put services above the primary's neighbors and push them along. `column.insert`
-therefore carries `pane.service` into the comparison, since a pane described
-by id and age alone would sort as though it were a terminal. Services are then
-ordered among themselves by `Exec.ServiceOrder`, their position in the
-repository's declaration order, so the strip reads the way `.discobox/services`
-does — and the way `discobox admin services ls` does — and holds still across a
-restart.
+The left side is `[services, terminals]`: what the discobox is running on your
+behalf, the code itself running and the harness working on it, while the right
+side is what you opened by hand. Only shells split the window, so a discobox
+with three services and no shell still draws its terminal at the full width.
+Within the column the two kinds are *grouped* rather than strictly aged
+(`execBefore`), and the services come first: they are the discobox's own
+standing furniture — the same ones in the same order every time the workspace
+opens — while the terminals are what you add to it, so a group that never
+moves goes above the group that does. `column.insert` carries `pane.service`
+into the comparison, since a pane described by id and age alone would sort as
+though it were a terminal. Services are then ordered among themselves by
+`Exec.ServiceOrder`, their position in the repository's declaration order, so
+the strip reads the way `.discobox/services` does — and the way `discobox admin
+services ls` does — and holds still across a restart, which is also what `S1`
+and `S2` have to mean.
 
 Two things follow from a service running on pipes rather than a PTY: the pane
 sends nothing and translates bare line feeds (`termpane.WithReadOnly` — there
@@ -272,7 +273,7 @@ clause of ADR 0054 §2 this widens, and only for sessions the sandbox itself
 records as services.
 
 The running services are therefore already on screen, which is what decides
-what a key has to reach: the ones that are *not*. `leader S` opens the menu of
+what a key has to reach: the ones that are *not*. `leader S0` opens the menu of
 everything declared, read from the server each time rather than cached — a
 service stopped from another window, or one whose file was added a minute ago,
 is exactly what it is being opened to find out about. Choosing one offers
@@ -304,14 +305,31 @@ primary. With no shells the terminals take the full width, and another
 terminal is a tab in the box the primary already has rather than a third
 column.
 
-**The primary is pane 0, always, and always the leftmost tab.** It is attached
-under the virtual id, which carries no creation time, so it sorts to the head
-of its column whatever order the attaches land in — and it is the one pane
-whose ending ends the workspace (`pane.primary`). The numbering runs across
-the screen from it, terminals then shells, which is what the leader's digits
-and its arrows count along (`panes`, `paneOrdinal`, `focusOrdinal`). A column
-draws its strip once there is more than one pane on the whole screen: the
-numbers appear exactly when they mean something.
+**The primary is pane 0, always, and always the leftmost terminal tab.** It is
+attached under the virtual id, which carries no creation time, so it sorts to
+the head of the terminals whatever order the attaches land in — and it is the
+one pane whose ending ends the workspace (`pane.primary`). It is no longer the
+head of its *column*, which the services take, so `Model.primary` finds it by
+its flag and `a` focuses it by pointer.
+
+**There are two countings, because there are two kinds of pane** (`column.tabKey`).
+A terminal or a shell wears a bare digit, counted across the screen from the
+primary — terminals then shells, `tabBase` being where each column's digits
+start — and that is what the leader's digits jump along (`numbered`,
+`jumpPane`). A service wears `S1`, `S2`, counted within the left column from
+one, and answers to the leader's `S` chord (`services`, `jumpService`).
+
+One shared set of numbers is what this replaces. A service starts and stops on
+the discobox's schedule rather than yours, so one appearing renumbered every
+shell to its right: the digit you were reaching for moved while you were
+reaching for it. Split, a shell's number depends only on the terminals, which
+you create yourself.
+
+The arrows are the exception and still walk the whole strip in drawn order,
+services included (`panes`, `paneOrdinal`, `focusOrdinal`): `←`/`→` is a
+position on screen, not a name. A column draws its strip once there is more
+than one pane on the whole screen: the labels appear exactly when they mean
+something.
 
 While the screen is up, a generation-guarded tick loop polls `DataSource.Execs`
 (~2s) and opens a tab for every live TTY session it does not already show,
@@ -427,10 +445,11 @@ map for the two screens, with the same enabled checks and the same
 confirmations. `currentBox` re-reads it from the listing at dispatch time, since
 the workspace was opened on a snapshot and a diffstat that has since arrived
 changes what is offered. The leader plus `h`/`l` or the arrows moves along the
-strip the screen is — the terminals, then the shells — stopping at the ends
-rather than wrapping, and the leader plus a digit jumps straight to the pane
-wearing that number, tmux-style: 0 the primary, and the rest counted across the
-screen from it.
+strip the screen is — the services, the terminals, then the shells — stopping
+at the ends rather than wrapping, and the leader plus a digit jumps straight to
+the pane wearing that number, tmux-style: 0 the primary, and the rest counted
+across the screen from it. The leader plus `S` and a digit is the services' own
+version of the same jump.
 
 Two of the list's keys mean something else here, because from the workspace
 they are openers rather than places: `a` focuses the primary, and `s` opens

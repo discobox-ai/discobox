@@ -1,15 +1,17 @@
 package tui
 
-import "fmt"
+import (
+	"fmt"
+	"strconv"
+)
 
 // A column is one side of the workspace: a strip of panes with one visible at
 // a time, ordered by when their sessions were created.
 //
-// Both sides are the same thing — the discobox's terminals and services on the
+// Both sides are the same thing — the discobox's services and terminals on the
 // left, its shells on the right — so the strip, its labels and its arithmetic
 // are written once. What differs is what goes in them (see terminalExec) and
-// that the left column's first pane is the primary, whose ending ends the
-// workspace.
+// that the left column holds the primary, whose ending ends the workspace.
 type column struct {
 	panes []*pane
 	// active is the pane being drawn, and the one taking the keys while this
@@ -27,15 +29,6 @@ func (c *column) visible() *pane {
 		return nil
 	}
 	return c.panes[min(max(c.active, 0), len(c.panes)-1)]
-}
-
-// first is the pane at the head of the strip — the primary, in the terminals —
-// or nil when there is none.
-func (c *column) first() *pane {
-	if len(c.panes) == 0 {
-		return nil
-	}
-	return c.panes[0]
 }
 
 // byExec finds the pane drawing the given session, held panes included.
@@ -73,7 +66,7 @@ func (c *column) insert(p *pane, exec Exec, focused bool) int {
 	at := len(c.panes)
 	for i, s := range c.panes {
 		// The pane's own service is carried into the comparison: the ordering
-		// groups services after everything else in the column, and a pane
+		// groups services ahead of everything else in the column, and a pane
 		// described without it would be sorted as though it were a terminal.
 		if execBefore(exec, Exec{ID: s.execID, CreatedAt: s.created, Service: s.service, ServiceOrder: s.serviceOrder}) {
 			at = i
@@ -115,14 +108,11 @@ func (c *column) closeAll() {
 	c.panes, c.active = nil, 0
 }
 
-// label is one pane's tab: the number it answers to behind the leader, what it
-// is running, and whether it is over. base is where this column's numbering
-// starts — the terminals from 0, the shells after them — so one press of the
-// leader and a digit means one pane on the whole screen.
+// label is one pane's tab: the key it answers to behind the leader, what it is
+// running, and whether it is over. See tabKey for base.
 func (c *column) label(i, base int) string {
 	p := c.panes[i]
-	title := p.name()
-	name := fmt.Sprintf("%d %s", base+i, title)
+	name := fmt.Sprintf("%s %s", c.tabKey(i, base), p.name())
 	if p.exited {
 		name += " ·done"
 	}
@@ -133,4 +123,31 @@ func (c *column) label(i, base int) string {
 		name += " •"
 	}
 	return name
+}
+
+// tabKey is the key one pane answers to behind the leader, and the badge its
+// tab wears so the two are never in doubt.
+//
+// There are two countings, because there are two kinds of pane and only one
+// set of digits. A terminal or a shell wears a bare digit, counted across the
+// whole screen — base is where this column's digits start, the terminals from
+// 0 and the shells straight after them, so one press of the leader and a digit
+// means one pane on the whole screen. A service wears S1, S2 and answers to
+// the leader's S chord instead, counted within its own column from one.
+//
+// Keeping the services out of the digits is the point of the split: they come
+// and go on the discobox's schedule rather than yours, and a service starting
+// or stopping must not renumber the shell you were about to jump to.
+func (c *column) tabKey(i, base int) string {
+	service := c.panes[i].service != ""
+	n := 0
+	for _, s := range c.panes[:i] {
+		if (s.service != "") == service {
+			n++
+		}
+	}
+	if service {
+		return fmt.Sprintf("%s%d", paneServicesKey, n+1)
+	}
+	return strconv.Itoa(base + n)
 }

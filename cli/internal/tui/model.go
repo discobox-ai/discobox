@@ -1335,7 +1335,12 @@ func (m *Model) actOn(key string, targets []Sandbox) tea.Cmd {
 			// the workspace is a view onto. From the list it is the screen to
 			// open.
 			if m.inPanes() {
-				m.focusOrdinal(0)
+				// By pointer rather than by number: the primary is 0 in the
+				// digits, but the services sit ahead of it in the strip and a
+				// jump by position would land on one of those.
+				if primary := m.primary(); primary != nil {
+					m.focusPane(primary)
+				}
 				return nil
 			}
 			return m.openFromList(action, box)
@@ -2372,7 +2377,7 @@ func (m *Model) hints() string {
 				// The one place the services menu is advertised. It is where
 				// restart lives, and where the services with no tab are, and
 				// a pane onto one is where you would think to look.
-				" · " + m.leader() + " " + paneServicesKey + " services"
+				" · " + m.leader() + " " + paneServicesKey + paneServicesMenuKey + " services"
 		}
 		if m.screenPane() == nil {
 			// Restoring outranks everything below it, because it is the way out
@@ -2405,7 +2410,16 @@ func (m *Model) hints() string {
 			hints += hintSep + m.leader() + " " + toolsKey + " tools"
 			if len(m.panes()) > 1 {
 				hints += hintSep + m.leader() + " ←/→ pane"
-				hints += hintSep + m.leader() + " 0-9 jump"
+				if len(m.numbered()) > 1 {
+					hints += hintSep + m.leader() + " 0-9 jump"
+				}
+				// The services' own alphabet is only worth a row when there
+				// are services to jump to; when there are none the chord is
+				// still how the menu opens, which the service pane's own line
+				// already says.
+				if len(m.services()) > 0 {
+					hints += hintSep + m.leader() + " " + paneServicesKey + "1-9 service"
+				}
 			}
 			hints += zoom
 		}
@@ -2602,11 +2616,17 @@ func (m *Model) helpText() string {
 		"  On a service, " + m.leader() + " t and " + m.leader() + " T stop and start that",
 		"  service rather than the discobox — the pane you are looking at",
 		"  is what a verb applies to. Every other key still means the",
-		"  discobox, and restart is on " + m.leader() + " " + paneServicesKey + " with the rest.",
+		"  discobox, and restart is on " + m.leader() + " " + paneServicesKey + paneServicesMenuKey + " with the rest.",
 		"",
-		"  Every pane wears the number it answers to, counted across the",
-		"  screen from the primary, which is always 0 and always the",
-		"  leftmost tab of the left box.",
+		"  Every pane wears the key it answers to. A terminal or a shell",
+		"  wears a number, counted across the screen from the primary,",
+		"  which is always 0 and always the leftmost terminal tab.",
+		"",
+		"  A service wears S1, S2 instead, in the order the repository",
+		"  declares them, and its tabs come first in the left box. The two",
+		"  countings are separate on purpose: a service starts and stops",
+		"  as the discobox runs it, and a shared numbering would move a",
+		"  shell out from under the digit you were reaching for.",
 		"",
 		"  Every command in the list is here too, on the key it has there,",
 		"  behind the leader, acting on the discobox on screen:",
@@ -2617,7 +2637,8 @@ func (m *Model) helpText() string {
 		"                   " + paneTerminalKey + " because that is what screen and tmux create a",
 		"                   window on; t is stop, which the list has it on",
 		"    " + m.leader() + " s       a new shell, in a new tab",
-		"    " + m.leader() + " " + paneServicesKey + "       this repository's services — including the ones",
+		"    " + m.leader() + " " + paneServicesKey + "1-9    jump to a service by its number",
+		"    " + m.leader() + " " + paneServicesKey + paneServicesMenuKey + "      this repository's services — including the ones",
 		"                   that are not running, which no tab can show —",
 		"                   and start / stop / restart for any of them",
 		"    " + m.leader() + " " + toolsKey + "       the tools, as a picker",
@@ -2694,12 +2715,13 @@ func (m *Model) helpText() string {
 		"                   own dismisses it",
 		"    " + m.leader() + " " + paneQuitKey + "       quit the window entirely, every session",
 		"                   left running — the exit Ctrl-C is everywhere else",
-		"    " + m.leader() + " ← / " + m.leader() + " →  move along the screen, terminals then shells,",
-		"                   or h and l. Hold Ctrl and they keep going:",
-		"                   " + m.leader() + " ^→ ^→ walks across without pressing the",
-		"                   leader again",
-		"    " + m.leader() + " 0-9     jump straight there: 0 is the primary,",
-		"                   and the rest wear their number in the strip",
+		"    " + m.leader() + " ← / " + m.leader() + " →  move along the screen — services, terminals,",
+		"                   then shells — or h and l. Hold Ctrl and they keep",
+		"                   going: " + m.leader() + " ^→ ^→ walks across without pressing",
+		"                   the leader again",
+		"    " + m.leader() + " 0-9     jump straight there: 0 is the primary, and the",
+		"                   rest wear their number in the strip. The services",
+		"                   are not in this count; they are on " + m.leader() + " " + paneServicesKey + "1-9",
 		"    " + m.leader() + " " + paneZoomKey + "       give the focused column the whole window and",
 		"                   hide the other, or give the window back — the",
 		"                   same toggle as the [+] / [-] button each box",

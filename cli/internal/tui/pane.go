@@ -58,17 +58,29 @@ const (
 	// The one exception is a pane whose command has finished, where there is
 	// nothing left to interrupt and it means done like the rest of them.
 	paneInterruptKey = keys.Interrupt
-	// paneServicesKey opens the discobox's services: everything its repository
-	// declares under `.discobox/services`, and the three verbs.
+	// paneServicesKey leads everything to do with the discobox's services. It
+	// is a chord rather than a key: S then a digit jumps to the service
+	// wearing that number, S1 being the first one the repository declares, and
+	// S0 opens the menu — everything declared under `.discobox/services`,
+	// including what is not running, and the three verbs.
 	//
-	// It is a menu rather than three more bindings because the running
-	// services are already on screen as tabs, and what a key has to reach is
-	// the ones that are not — which means naming a service, not acting on the
-	// pane in front of you. S rather than s, which is a shell; the workspace
-	// carries the list's key map whole, and none of the verbs on it (t, T)
-	// could be reused here without meaning the discobox on one pane and a
-	// service on another.
+	// The services have a numbering of their own because the digits are the
+	// terminals' and the shells', and because a service comes and goes on the
+	// discobox's schedule rather than yours: sharing one set of numbers would
+	// mean a service starting renumbers the shell you were reaching for. The
+	// menu is on the chord's zero for the same reason a service tab cannot
+	// replace it — the services with no tab are exactly the ones a key has to
+	// reach, and naming one is not something the pane in front of you can do.
+	//
+	// S rather than s, which is a shell; the workspace carries the list's key
+	// map whole, and none of the verbs on it (t, T) could be reused here
+	// without meaning the discobox on one pane and a service on another.
 	paneServicesKey = "S"
+	// paneServicesMenuKey is the digit that opens the services menu behind the
+	// S chord. Zero because the services themselves count from one, so the
+	// menu is the one number left over — and because it is where a hand
+	// already reaching for S1 can find it.
+	paneServicesMenuKey = "0"
 )
 
 // pane is one terminal in the window.
@@ -200,8 +212,13 @@ type jumpPaneMsg struct{ n int }
 // opened beside the primary and focused.
 type newTerminalMsg struct{}
 
-// openServicesMsg is the leader plus S: open the discobox's declared services.
+// openServicesMsg is the leader plus S0: open the discobox's declared services.
 type openServicesMsg struct{}
+
+// jumpServiceMsg is the leader plus S and a digit: focus the service pane
+// wearing that number, counted from one in the order the repository declares
+// them.
+type jumpServiceMsg struct{ n int }
 
 // paneServiceVerbs are the list's own lifecycle keys, re-read as the focused
 // service's rather than the discobox's. They are the list's keys and not new
@@ -340,12 +357,15 @@ func (m *Model) paneColumn(p *pane) (*column, int) {
 }
 
 // primary is the discobox's primary terminal, or nil before it has arrived. It
-// is the head of the terminals column: every other session is created later,
-// and the primary is attached under a virtual id with no creation time at all,
-// so it sorts first whatever order the attaches land in.
+// is the head of the terminals in the left column — every other session is
+// created later, and the primary is attached under a virtual id with no
+// creation time at all, so it sorts first whatever order the attaches land in
+// — but not the head of the column, which the services take. See execBefore.
 func (m *Model) primary() *pane {
-	if p := m.terminals.first(); p != nil && p.primary {
-		return p
+	for _, p := range m.terminals.panes {
+		if p.primary {
+			return p
+		}
 	}
 	return nil
 }
@@ -488,7 +508,6 @@ func (m *Model) paneOptions(kind paneKind, readOnly bool) []termpane.Option {
 		termpane.WithRepeatingPrefixBinding("right", movePaneMsg{delta: 1}),
 		termpane.WithPrefixBinding(paneZoomKey, zoomPaneMsg{}),
 		termpane.WithPrefixBinding(paneTerminalKey, newTerminalMsg{}),
-		termpane.WithPrefixBinding(paneServicesKey, openServicesMsg{}),
 	)
 	// The digits jump straight to a pane by the number its label wears, the
 	// way tmux selects windows: 0 is the terminal, 1 through 9 the tabs.
@@ -499,6 +518,14 @@ func (m *Model) paneOptions(kind paneKind, readOnly bool) []termpane.Option {
 	// here on its own key, and a second way to open one of three tools is one
 	// key to remember for no more reach. See tools.go.
 	opts = append(opts, termpane.WithPrefixBinding(toolsKey, openToolsMsg{}))
+	// The services have the same alphabet one keystroke further in: S1 through
+	// S9 are their own tabs, and S0 is the menu that reaches the ones with no
+	// tab at all. See paneServicesKey.
+	services := map[string]tea.Msg{paneServicesMenuKey: openServicesMsg{}}
+	for n := 1; n <= 9; n++ {
+		services[strconv.Itoa(n)] = jumpServiceMsg{n: n}
+	}
+	opts = append(opts, termpane.WithPrefixChord(paneServicesKey, services))
 	// Every command the list offers, on the key it has there. One key map for
 	// the two screens is the point: the workspace is a discobox with the
 	// cursor on it, and what you can do to it does not change with where you
@@ -665,6 +692,12 @@ func (m *Model) updatePaneMsg(tagged paneMsg) tea.Cmd {
 			return nil
 		}
 		return m.jumpPane(msg.n)
+
+	case jumpServiceMsg:
+		if p == m.overlay {
+			return nil
+		}
+		return m.jumpService(msg.n)
 
 	case newTerminalMsg:
 		if m.hasScreen(p) {
