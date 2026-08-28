@@ -48,8 +48,16 @@ setup_file() {
   (cd server && go build -o ../build/discobox-server ./cmd/discobox-server)
   rm -f build/discobox
   (cd cli && go build -o ../build/discobox ./cmd/discobox)
-  (docker build -f pool-agent/Dockerfile -t discobox-pool-agent:local .)
-  (docker build -f sandbox-agent/Dockerfile --target sandbox-agent -t discobox-sandbox-agent:local .)
+  # Through the Taskfile rather than docker directly: both agent images are now
+  # built FROM a shared base image, and these targets are what know to build it
+  # first.
+  go tool task build:pool-agent-image
+  go tool task build:sandbox-agent-image
+  # A discobox cannot be created without a harness, and a harness is not
+  # selectable until its configure flow has run, so this suite needs the shared
+  # stub the other end-to-end files use. Nothing here tests harnesses; it is the
+  # price of having a real sandbox to reach over SSH.
+  (DISCOBOX_DEFAULT_SANDBOX_IMAGE=discobox-sandbox-agent:local go tool task build:harness-stub-image)
 
   PORT="$DISCOBOX_BATS_PORT" \
   DISCOBOX_SERVER_LISTEN="unix://$DISCOBOX_BATS_SOCKET,http://127.0.0.1:$DISCOBOX_BATS_PORT" \
@@ -82,10 +90,15 @@ setup_file() {
   [ -n "$pool_id" ] || skip "no pool was seeded"
   wait_for_pool_ready "$pool_id" || skip "pool did not become ready"
 
-  run cli ssh-key add "$DISCOBOX_BATS_SSH_KEY.pub"
+  run cli admin ssh-key add "$DISCOBOX_BATS_SSH_KEY.pub"
   [ "$status" -eq 0 ]
 
-  run cli admin discobox create --name ssh-e2e --wait --wait-timeout 120s
+  run cli admin harness create --image discobox-harness-stub:local --slug ssh-stub --name "SSH Stub"
+  [ "$status" -eq 0 ]
+  run cli admin harness configure ssh-stub </dev/null
+  [ "$status" -eq 0 ]
+
+  run cli admin discobox create --name ssh-e2e --harness ssh-stub --wait --wait-timeout 120s
   [ "$status" -eq 0 ]
   export DISCOBOX_BATS_SANDBOX_ID="$(printf '%s' "$output" | json_get id)"
   [ -n "$DISCOBOX_BATS_SANDBOX_ID" ]
