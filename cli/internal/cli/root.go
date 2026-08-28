@@ -116,6 +116,7 @@ func newRootCommand() (*cobra.Command, *App) {
 	cmd.AddCommand(app.newRunCommand())
 	cmd.AddCommand(app.newListCommand())
 	cmd.AddCommand(app.newShellCommand())
+	cmd.AddCommand(app.newCPCommand())
 	cmd.AddCommand(app.newAttachCommand())
 	cmd.AddCommand(app.newProxyCommand())
 	cmd.AddCommand(app.newApplyCommand())

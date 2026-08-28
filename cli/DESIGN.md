@@ -251,10 +251,14 @@ and these are not HTTP bytes.
 Everything the session needs is passed on the command line, so nothing is
 written down: address and port from the bridge, `-l` from the sandbox ID, `-i`
 from the managed key, and `UserKnownHostsFile` from a temp file holding the
-host key this run fetched. `-F none` keeps the user's own `ssh_config` out of
-it, since a `Host *` block there could otherwise override the identity or user
-just resolved. The enrolled key is the single persisted thing, and
-`resolveSSHIdentity` reuses an already-enrolled one rather than adding another.
+host key this run fetched. `sshBridgeSession` opens those three together —
+key, host key, bridge — because a bridge with no pinned host key is a
+connection nothing can verify; `discobox cp` uses the same one, differing only
+in how the client spells the port and names the sandbox. `-F none` keeps the
+user's own `ssh_config` out of it, since a `Host *` block there could otherwise
+override the identity or user just resolved. The enrolled key is the single
+persisted thing, and `resolveSSHIdentity` reuses an already-enrolled one rather
+than adding another.
 
 Flag parsing is **off** for `tools ssh` (`DisableFlagParsing`), not merely
 non-interspersed: `discobox tools ssh -L 8080:localhost:3000` puts ssh's own flags
@@ -273,6 +277,56 @@ bridge lives in this process, so honouring it would tear the connection down
 under the backgrounded ssh — which is exactly what it did before the check
 existed, silently. Backgrounding the whole command keeps both lifetimes
 together and leaves one process to kill.
+
+`discobox cp` is `scp`, pointed at the same bridge (`internal/cli/cp.go`). It is
+a root command rather than a `tools` subcommand because it is an everyday verb
+with no `--discobox-id` to inherit: which sandbox is named inside each path.
+
+Nothing in the CLI copies bytes. The sshd already answers the `sftp` subsystem
+by running the sandbox's `sftp-server` as an exec
+(`server/internal/sshd/DESIGN.md`), which is what a modern `scp` speaks, so
+recursion, permissions and directory creation are scp's and the sandbox's
+business. A `cp` built on the exec primitive instead — a `tar` pipe, the way
+`docker cp` and `kubectl cp` work — would have reimplemented all of that against
+a sandbox image that may or may not have `tar`, to reach the same place.
+
+What the command owns is the two things scp cannot work out: the bridge's port,
+key and pinned host key, and what a `DISCOBOX:PATH` operand means. The reference
+before the colon is resolved by `shell`'s rule (`matchSandboxArg`), not
+`--discobox-id`'s: it is typed alongside a path, so a name has to work there.
+`selectSandbox` is deliberately not used for it — given a non-empty argument it
+resolves IDs only and hands a name straight back, which here would become an SSH
+username no sandbox answers to.
+
+`splitSCPArgs` finds the operands — scp's option table is needed for that, so
+`-o ProxyJump=x` is not read as a path — and `resolveCPOperands` rewrites each
+one to `<sandbox id>@127.0.0.1:<path>`. The sandbox travels in the operand
+rather than in a `-l`, so one command can name two different discoboxes; when it
+does, `-3` is added. Current OpenSSH already routes an sftp-mode copy through
+the local host and `-3` changes nothing there — it is pinned because the direct
+path is one `-R`, one older client, or one `ssh_config` default away, and it
+cannot work here: the source would dial `127.0.0.1:22` inside its own sandbox.
+
+`splitCPPath` is scp's own `colon()` rule with one deliberate difference: a
+leading colon is a discobox reference, not part of a filename. scp has no use
+for the form and `:PATH` is the natural spelling for "the discobox I am already
+working in". The rule has to match scp's in every other respect, because scp
+applies it again to what this command emits — which is why a local relative
+operand containing a colon (`sub/dir:name`) is emitted as `./sub/dir:name`, and
+why a Windows drive letter is a path only on Windows.
+
+Relative remote paths land in the sandbox user's home, not in a source working
+tree: every SSH session channel asks for `workdir: "~"`
+(`server/internal/sshd/DESIGN.md`), which is what makes `discobox cp x mybox:`
+mean what it means everywhere else.
+
+Flag parsing is off here for the reason it is off for `tools ssh`, and it costs
+the same thing: with `DisableFlagParsing` cobra parses *no* flags for the
+invocation, the root's persistent ones included, wherever they appear. So
+`discobox --server X cp …` does not reach a different server — `DISCOBOX_SERVER`
+and `DISCOBOX_PROJECT` are how a copy is pointed elsewhere, which is what the
+help says. It is not only a parsing accident: `-p` and `-o` are both a global
+shorthand and an scp option, and after `cp` they have to be scp's.
 
 `discobox tools vscode` opens a sandbox in VS Code over Remote-SSH. Remote-SSH
 drives the system `ssh` binary and reads `ssh_config`, so the only way to hand

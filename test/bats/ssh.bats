@@ -154,6 +154,14 @@ cli() {
   "$REPO_ROOT/build/discobox" --server "$DISCOBOX_BATS_SERVER" --project default --output json "$@"
 }
 
+# cli_cp is `discobox cp` against this suite's server. It cannot go through cli:
+# cp passes every argument to scp, so the endpoint has to arrive in the
+# environment rather than as --server.
+cli_cp() {
+  DISCOBOX_SERVER="$DISCOBOX_BATS_SERVER" DISCOBOX_PROJECT=default \
+    "$REPO_ROOT/build/discobox" cp "$@"
+}
+
 json_get() {
   python3 -c '
 import json, sys
@@ -257,6 +265,49 @@ ssh_client() {
   run ssh_client scp "$DISCOBOX_BATS_SANDBOX_ID@127.0.0.1:$remote" "$dst"
   [ "$status" -eq 0 ]
   diff "$src" "$dst"
+}
+
+# `discobox cp` is the same transfer without the ssh_config: the CLI opens a
+# loopback bridge onto GET /ssh/connect for the life of the command, enrolls its
+# own key, and rewrites DISCOBOX:PATH into what scp takes.
+@test "discobox cp round-trips a file over the CLI's own bridge" {
+  local src="$DISCOBOX_BATS_TMP/cp-upload.txt" remote="/tmp/bats-cp-upload.txt" dst="$DISCOBOX_BATS_TMP/cp-download.txt"
+  echo "discobox cp round trip $$" >"$src"
+
+  run cli_cp "$src" "$DISCOBOX_BATS_SANDBOX_ID:$remote"
+  [ "$status" -eq 0 ]
+
+  run ssh_client ssh "$DISCOBOX_BATS_SANDBOX_ID@127.0.0.1" "cat $remote"
+  [ "$status" -eq 0 ]
+  [ "$output" = "$(cat "$src")" ]
+
+  run cli_cp "$DISCOBOX_BATS_SANDBOX_ID:$remote" "$dst"
+  [ "$status" -eq 0 ]
+  diff "$src" "$dst"
+}
+
+# -r is scp's own flag, reaching it untouched, and a relative remote path
+# resolves against the discobox user's home rather than a source working tree.
+@test "discobox cp copies a directory to a relative remote path" {
+  local dir="$DISCOBOX_BATS_TMP/cp-tree"
+  mkdir -p "$dir/nested"
+  echo one >"$dir/one.txt"
+  echo two >"$dir/nested/two.txt"
+
+  run cli_cp -r "$dir" "$DISCOBOX_BATS_SANDBOX_ID:cp-tree"
+  [ "$status" -eq 0 ]
+
+  run ssh_client ssh "$DISCOBOX_BATS_SANDBOX_ID@127.0.0.1" 'cat ~/cp-tree/nested/two.txt'
+  [ "$status" -eq 0 ]
+  [ "$output" = "two" ]
+}
+
+# Nothing to copy to or from a discobox means the command was misread, not that
+# scp should be handed a local-to-local copy.
+@test "discobox cp refuses a copy that names no discobox" {
+  run cli_cp "$DISCOBOX_BATS_TMP/cp-upload.txt" "$DISCOBOX_BATS_TMP/cp-elsewhere.txt"
+  [ "$status" -ne 0 ]
+  [[ "$output" == *"no discobox was named"* ]]
 }
 
 @test "an unenrolled key is refused" {
