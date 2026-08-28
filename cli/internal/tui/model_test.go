@@ -703,7 +703,7 @@ func TestTheSourceChipOnlyShowsWhenItDiffers(t *testing.T) {
 
 	// An override is the one case worth a chip: the window is listing one
 	// folder and about to create in another.
-	m.opts.opts[optSource].value = "/src/elsewhere@main"
+	m.opts.chooseSource("/src/elsewhere@main")
 	if chips := m.opts.chips(m.st); !strings.Contains(chips, "/src/elsewhere@main") {
 		t.Errorf("an override should be on the strip: %q", chips)
 	}

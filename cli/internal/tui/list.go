@@ -120,6 +120,28 @@ func (l *sandboxList) folders() []string {
 	return out
 }
 
+// sources are what the run options can cut a new discobox from: every source
+// the project's discoboxes were cut from, newest sandbox first.
+//
+// It is the folder list's counterpart and not the same list. A folder is where
+// a create was run from, which a remote-sourced discobox shares with every
+// other one started in that directory; a source is what was actually
+// materialized, which is a repository URL as often as a path. A discobox
+// created with no source at all contributes nothing, because "no source" is an
+// answer the row already offers on its own.
+func (l *sandboxList) sources() []Source {
+	seen := map[string]bool{}
+	out := []Source{}
+	for _, s := range l.all {
+		if s.Source == "" || seen[s.Source] {
+			continue
+		}
+		seen[s.Source] = true
+		out = append(out, Source{Value: s.Source, Remote: s.SourceRemote})
+	}
+	return out
+}
+
 // archivedCount is what the title bar offers when they are hidden: a number
 // worth pressing a key for, or nothing to say.
 func (l *sandboxList) archivedCount() int {

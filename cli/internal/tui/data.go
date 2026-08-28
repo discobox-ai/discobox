@@ -134,6 +134,18 @@ type Sandbox struct {
 	// column on the row — it is what the header's dropdown filters on, so every
 	// row on screen already shares it.
 	Folder string
+
+	// Source is what the discobox was cut from, spelled the way `-C` takes it:
+	// the client directory holding the repository, or the repository URL when
+	// there was no local one. Empty for a discobox created with no source at
+	// all. It is what the run options offer as sources to cut a new one from.
+	Source string
+	// SourceRemote marks a Source that is a repository URL rather than a
+	// directory on a client. A remote source has no folder of its own, so a
+	// discobox cut from one is filed under the directory the window is running
+	// in — which is what decides where the list follows the source to.
+	SourceRemote bool
+
 	Branch string
 	Commit string // the commit it was spawned from, short
 	Dirty  bool   // spawned from a snapshot on top of that commit
@@ -589,6 +601,11 @@ type RunRequest struct {
 
 	// Source is `-C DIR@REF`, the directory and ref the sandbox is cut from.
 	Source string
+
+	// NoSource is `--no-source`: create the discobox with nothing checked out
+	// in it. Source is empty with it — there is no directory to cut from — and
+	// the discobox is still filed under the one the window is running in.
+	NoSource bool
 }
 
 // SourceWorkspace is what a create would carry into a discobox from the source

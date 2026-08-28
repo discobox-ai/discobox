@@ -73,3 +73,109 @@ func TestTheChipStripIsEmptyUntilSomethingIsChosen(t *testing.T) {
 		t.Fatalf("chips = %q, want the marker back once there is something to say", chips)
 	}
 }
+
+// The Source row offers what the project has been cut from, off the listing,
+// with the folder the header is on leading and "no source" last. It is a
+// selector rather than a text field so the common case — the two or three
+// places you work in — never opens one.
+func TestTheSourceRowOffersTheProjectsSources(t *testing.T) {
+	m := newTestModel(t, newFakeSource(testSandboxes()...))
+
+	source := m.opts.opts[optSource]
+	if source.choices[0] != m.opts.sourceLabel() {
+		t.Fatalf("leading choice = %q, want the folder the header is on (%q)", source.choices[0], m.opts.sourceLabel())
+	}
+	if source.changed() {
+		t.Fatal("the leading choice is what run would do anyway, so nothing is changed")
+	}
+	for _, want := range []string{"/src/obot", "https://github.com/acme/foo"} {
+		if !hasSourceValue(source, want) {
+			t.Fatalf("values = %v, want %q from the listing", source.values, want)
+		}
+	}
+	if last := source.values[len(source.values)-1]; last != sourceNone {
+		t.Fatalf("last value = %q, want no source", last)
+	}
+}
+
+// "No source" is a create with nothing checked out in it, which is one flag
+// rather than a source that happens to be empty.
+func TestNoSourceAsksForTheFlagAndNoDirectory(t *testing.T) {
+	m := newTestModel(t, newFakeSource(testSandboxes()...))
+	m.opts.chooseSource(sourceNone)
+
+	req := m.opts.request("do a thing")
+	if !req.NoSource {
+		t.Fatal("request should ask for --no-source")
+	}
+	if req.Source != "" {
+		t.Fatalf("source = %q, want nothing to cut from", req.Source)
+	}
+	if cmd := m.opts.command("do a thing"); !strings.Contains(cmd, "run --no-source") || strings.Contains(cmd, "-C") {
+		t.Fatalf("command = %q, want --no-source and no -C", cmd)
+	}
+	if chips := m.opts.chips(newStyles(false)); !strings.Contains(chips, noSourceChoice) {
+		t.Fatalf("chips = %q, want the strip to say there is no source", chips)
+	}
+}
+
+// A source the listing has never seen is typed in, and keeps its place on the
+// row until something else is chosen — a refresh of the listing underneath an
+// open panel must not drop the one entry the listing could not know about.
+func TestATypedSourceSurvivesARefresh(t *testing.T) {
+	m := newTestModel(t, newFakeSource(testSandboxes()...))
+
+	m.opts.chooseSource("/src/elsewhere@main")
+	m.opts.setSources(m.list.sources())
+
+	if got := m.opts.request("").Source; got != "/src/elsewhere@main" {
+		t.Fatalf("source = %q, want the one that was typed", got)
+	}
+	if got := m.opts.typedSource(); got != "/src/elsewhere@main" {
+		t.Fatalf("the input field should reopen holding %q, got %q", "/src/elsewhere@main", got)
+	}
+}
+
+// The header and the Source row are one control in both directions. Choosing a
+// local source moves the list to the folder that source's discoboxes are filed
+// under; a remote one and "no source" have no folder of their own, so the list
+// goes to the directory the window is running in — which is where a discobox
+// from either is filed.
+func TestChoosingASourceMovesTheList(t *testing.T) {
+	m := newTestModel(t, newFakeSource(testSandboxes()...))
+
+	m.opts.chooseSource("/src/obot")
+	m.followSource()
+	if m.list.folder != "/src/obot" {
+		t.Fatalf("folder = %q, want the list to follow the source", m.list.folder)
+	}
+	// Followed there, the source is the folder again and emits no -C: the
+	// header already says where the next discobox is cut from.
+	if req := m.opts.request(""); req.Source != "/src/obot" {
+		t.Fatalf("source = %q, want the folder the list moved to", req.Source)
+	}
+
+	m.opts.chooseSource("https://github.com/acme/foo")
+	m.followSource()
+	if m.list.folder != m.session.Directory {
+		t.Fatalf("folder = %q, want %q: a remote source has no folder of its own", m.list.folder, m.session.Directory)
+	}
+	if req := m.opts.request(""); req.Source != "https://github.com/acme/foo" {
+		t.Fatalf("source = %q, want the remote repository", req.Source)
+	}
+
+	m.opts.chooseSource(sourceNone)
+	m.followSource()
+	if m.list.folder != m.session.Directory {
+		t.Fatalf("folder = %q, want %q: a sourceless discobox is filed where the window runs", m.list.folder, m.session.Directory)
+	}
+}
+
+func hasSourceValue(o *option, want string) bool {
+	for _, value := range o.values {
+		if value == want {
+			return true
+		}
+	}
+	return false
+}

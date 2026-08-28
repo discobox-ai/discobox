@@ -2,19 +2,21 @@ package tui
 
 import (
 	"strings"
+
+	tea "charm.land/bubbletea/v2"
 )
 
 // runOptions is every flag `discobox run` takes, laid out as one editable list.
 //
 // The panel is a picker, not a form: left and right change a value in place,
-// so the common case — swap the harness, turn dirty-carry off — never opens a
-// text field. Only the free text options (env, secrets, source) do.
+// so the common case — swap the harness, turn dirty-carry off, cut from the
+// repository next door — never opens a text field. Only the repeated flags
+// (env, secrets) and a source the listing has never seen do.
 type optKind int
 
 const (
 	optChoice optKind = iota
 	optToggle
-	optText
 	optMulti // repeated flag: -e, -s
 )
 
@@ -22,14 +24,19 @@ type option struct {
 	label   string
 	kind    optKind
 	choices []string
-	idx     int
-	value   string
-	items   []string
-	hint    string
-
-	// placeholder is what a text option shows while it is unset: the value the
-	// CLI would use anyway, so the panel never reads as "nothing here".
-	placeholder string
+	// values are what the choices stand for, when what a choice is called is
+	// not what the command takes. Nil leaves every choice its own value, which
+	// is every row but the source.
+	values []string
+	// unchanged is the value this row counts as the CLI's own default, for a
+	// row whose choices are not in a fixed order with the default leading.
+	// Empty leaves the default at index zero, which is every row but the
+	// source — whose default is wherever the header has moved to.
+	unchanged string
+	idx       int
+	value     string
+	items     []string
+	hint      string
 }
 
 // changed reports whether the option differs from the CLI's own default, which
@@ -37,15 +44,28 @@ type option struct {
 func (o *option) changed() bool {
 	switch o.kind {
 	case optChoice:
+		if o.unchanged != "" {
+			return o.selected() != o.unchanged
+		}
 		return o.idx != 0
 	case optToggle:
 		return o.value == "on"
-	case optText:
-		return strings.TrimSpace(o.value) != ""
 	case optMulti:
 		return len(o.items) > 0
 	}
 	return false
+}
+
+// selected is the value the current choice stands for: the choice itself
+// unless the row carries values of its own.
+func (o *option) selected() string {
+	if o.idx < 0 || o.idx >= len(o.choices) {
+		return ""
+	}
+	if o.values != nil {
+		return o.values[o.idx]
+	}
+	return o.choices[o.idx]
 }
 
 func (o *option) display() string {
@@ -60,11 +80,6 @@ func (o *option) display() string {
 			return "yes"
 		}
 		return "no"
-	case optText:
-		if strings.TrimSpace(o.value) == "" {
-			return o.placeholder
-		}
-		return o.value
 	case optMulti:
 		if len(o.items) == 0 {
 			return "(none)"
@@ -105,7 +120,44 @@ type optionSet struct {
 	// session's own directory, which is also what "all folders" falls back to:
 	// there is no single folder to create in then.
 	folder string
+
+	// known are the sources the project's discoboxes were cut from, newest
+	// first, as the listing reports them. They are what the Source row offers
+	// besides the folder itself: the places this project is worked in are
+	// exactly the ones already holding something.
+	known []Source
+	// source is what the Source row is set to: a directory, a repository URL,
+	// sourceNone, or empty for the folder the header is on. It is kept here
+	// rather than read back off the row's cursor, because the row is rebuilt
+	// whenever the folder or the listing moves under it.
+	source string
 }
+
+// Source is one place the project's discoboxes have been cut from, as the
+// Source row offers it.
+type Source struct {
+	// Value is what `-C` takes: the client directory, or the repository URL.
+	Value string
+	// Remote marks a repository URL rather than a directory on a client.
+	Remote bool
+}
+
+// sourceNone is what the Source row carries for a discobox with nothing
+// checked out in it. It is a sentinel rather than the empty string because
+// empty already means "the folder the header is on", and the two are different
+// answers; the NUL keeps it from ever colliding with a path or a URL.
+const sourceNone = "\x00no-source"
+
+// noSourceChoice is how sourceNone reads, in the panel and on the chip strip
+// both. It is the flag's own words rather than "(none)", which reads as a value
+// that has not been filled in yet rather than as the answer it is.
+const noSourceChoice = "no source"
+
+// enterSourceChoice is the dropdown's last row: the one entry that is not a
+// source but a way to name one the listing has never seen. It is only in the
+// dropdown, never in the left-right cycle, because cycling onto it would mean
+// stopping on a value that is not one.
+const enterSourceChoice = "enter a directory, URL, or DIR@REF…"
 
 // Index into optionSet.opts. The command builder reads by name, so the order
 // here is only the order they are shown in.
@@ -142,7 +194,7 @@ func newOptions(session Session) *optionSet {
 	// rather than offering "none (shell)" as if it were the default: a panel
 	// that names the wrong harness for a moment is worse than one that names
 	// none.
-	return &optionSet{session: session, opts: []*option{
+	set := &optionSet{session: session, opts: []*option{
 		optHarness: {
 			label: "Harness", kind: optChoice,
 			hint: harnessesHint,
@@ -165,12 +217,17 @@ func newOptions(session Session) *optionSet {
 			hint: "-s · KEY=VALUE, or KEY=<sec_id> to reference an existing secret",
 		},
 		optSource: {
-			label: "Source", kind: optText,
-			placeholder: session.sourceLabel(),
-			hint:        "-C · the directory and ref the discobox is cut from, as DIR@REF",
+			label: "Source", kind: optChoice,
+			hint: sourceHint,
 		},
 	}}
+	set.rebuildSources()
+	return set
 }
+
+// sourceHint is what the Source row says: what it sets, and the one thing about
+// it that left and right cannot do.
+const sourceHint = "-C · where the discobox is cut from · Enter opens the whole list, and a path of your own"
 
 // harnessesHint is what the harness row says while nothing has been chosen on
 // it.
@@ -227,14 +284,218 @@ func (o *optionSet) setHarnesses(harnesses []Harness) {
 	}
 }
 
-// setFolder points the run source at the folder the header has moved to. An
-// explicit source is cleared with it: the header is where the folder is chosen,
-// and leaving a stale override behind would mean the window says one thing and
+// setFolder points the run source at the folder the header has moved to. The
+// header is where the folder is chosen, so a source chosen earlier gives way to
+// it: leaving a stale override behind would mean the window says one thing and
 // creates in another.
 func (o *optionSet) setFolder(folder string) {
 	o.folder = folder
-	o.opts[optSource].value = ""
-	o.opts[optSource].placeholder = o.sourceLabel()
+	o.source = o.sourceDir()
+	o.rebuildSources()
+}
+
+// setSources takes the sources the project's discoboxes were cut from, off the
+// same listing the folder dropdown is built from. What was chosen survives a
+// refresh, including a path typed by hand that no discobox has been cut from
+// yet.
+func (o *optionSet) setSources(known []Source) {
+	o.known = known
+	o.rebuildSources()
+}
+
+// rebuildSources lays the Source row out: the directory this window is running
+// in, then every other source the project has been cut from, then "no source".
+//
+// The order is fixed and does not follow what is chosen. Leading with the
+// folder the header is on would reorder the row every time the list followed a
+// source to its folder, and left-right would then only ever reach the first two
+// entries. Which one counts as unchanged is carried by the row instead, so the
+// panel can say "this is not where the header is" without the order saying it.
+func (o *optionSet) rebuildSources() {
+	opt := o.opts[optSource]
+	var choices, values []string
+	add := func(value string) {
+		// "No source" is appended once at the end, where it belongs; it is
+		// also what o.source holds when it is chosen, so it has to be kept
+		// out of the sources themselves.
+		if strings.TrimSpace(value) == "" || value == sourceNone {
+			return
+		}
+		for _, seen := range values {
+			if seen == value {
+				return
+			}
+		}
+		choices = append(choices, o.sourceChoiceLabel(value))
+		values = append(values, value)
+	}
+	add(o.session.Directory)
+	for _, source := range o.known {
+		add(source.Value)
+	}
+	// The folder the header is on, and a source named by hand, are both things
+	// the listing cannot be relied on to hold: a folder whose discoboxes were
+	// all cut from somewhere else is still a folder you can cut from, and a
+	// path typed into the field has to survive the next refresh of the listing.
+	add(o.sourceDir())
+	add(o.source)
+	choices = append(choices, noSourceChoice)
+	values = append(values, sourceNone)
+
+	opt.choices, opt.values, opt.unchanged = choices, values, o.sourceDir()
+	opt.idx = 0
+	for i, value := range values {
+		if value == o.source {
+			opt.idx = i
+			return
+		}
+	}
+}
+
+// sourceChoiceLabel is how one source reads on the row. The directory this
+// window is running in wears its branch, the way the header spells it; nothing
+// else has a branch that means anything here.
+func (o *optionSet) sourceChoiceLabel(value string) string {
+	if value == o.session.Directory {
+		return o.session.sourceLabel()
+	}
+	return value
+}
+
+// cycleSource moves the Source row and records what it landed on, since the row
+// is rebuilt from that rather than from where its cursor happens to sit.
+func (o *optionSet) cycleSource(delta int) {
+	opt := o.opts[optSource]
+	opt.cycle(delta)
+	o.chooseSource(opt.selected())
+}
+
+// chooseSource sets the row to a source, from the cycle, from the dropdown, or
+// from the input field. Nothing entered is the folder the header is on, which
+// is what the field was offering as its placeholder.
+func (o *optionSet) chooseSource(value string) {
+	if strings.TrimSpace(value) == "" {
+		value = o.sourceDir()
+	}
+	o.source = value
+	o.rebuildSources()
+}
+
+// sourceFolder is where a discobox cut from the chosen source is filed, and so
+// which folder the list follows the source to. A local directory is its own
+// folder. A remote URL and "no source" have none, so a discobox from either is
+// filed under the directory this window is running in.
+func (o *optionSet) sourceFolder() string {
+	switch value := o.opts[optSource].selected(); {
+	case value == sourceNone, o.remoteSource(value):
+		return o.session.Directory
+	default:
+		return sourceDirectory(value)
+	}
+}
+
+// remoteSource reports whether a value is a repository URL rather than a
+// directory. The listing says so per source rather than this package parsing
+// the string, because what counts as a remote is the creation path's to decide
+// and not the window's.
+func (o *optionSet) remoteSource(value string) bool {
+	for _, source := range o.known {
+		if source.Value == value {
+			return source.Remote
+		}
+	}
+	return false
+}
+
+// followSource moves the panel's folder to where the chosen source files its
+// discoboxes, and returns it for the list and the header to follow. This is the
+// source moving the header rather than the header moving the source, so the
+// source itself is left exactly as it was chosen.
+func (o *optionSet) followSource() string {
+	folder := o.sourceFolder()
+	o.folder = folder
+	o.rebuildSources()
+	return folder
+}
+
+// typedSource is what the input field opens holding: a source named by hand
+// rather than one the listing offered, so re-opening the field to fix a typo
+// does not start from nothing. A choice made off the list leaves it empty and
+// the field shows the folder as its placeholder.
+func (o *optionSet) typedSource() string {
+	if o.source == sourceNone || o.source == o.sourceDir() {
+		return ""
+	}
+	for _, source := range o.known {
+		if source.Value == o.source {
+			return ""
+		}
+	}
+	return o.source
+}
+
+// sourceChosenMsg carries the dropdown's answer back to the live model, for the
+// same reason folderChosenMsg does: the dialog closed over the model by value.
+// enter is the row that is not an answer but a request for the input field.
+type sourceChosenMsg struct {
+	source string
+	enter  bool
+}
+
+// sourceDialog is the Source row opened out: every source the project has been
+// cut from, "no source", and the way to name one the listing has never seen.
+func (o *optionSet) sourceDialog() *dialog {
+	opt := o.opts[optSource]
+	items := make([]action, 0, len(opt.choices)+1)
+	for i, choice := range opt.choices {
+		items = append(items, action{
+			// The key is the row's index, so the first nine choices can be
+			// picked by number as well as by moving to them.
+			key:     itoa(i + 1),
+			label:   choice,
+			detail:  o.sourceDetail(opt.values[i]),
+			enabled: true,
+		})
+	}
+	items = append(items, action{key: "e", label: enterSourceChoice, enabled: true})
+	menu := actionsDialog("Cut the discobox from", "", items, func(key string) tea.Cmd {
+		if key == "e" {
+			return func() tea.Msg { return sourceChosenMsg{enter: true} }
+		}
+		for i, value := range opt.values {
+			if itoa(i+1) == key {
+				return func() tea.Msg { return sourceChosenMsg{source: value} }
+			}
+		}
+		return nil
+	})
+	menu.cursor = opt.idx
+	menu.footer = "Enter cuts the next discobox from that · Esc cancels"
+	return menu
+}
+
+// sourceDetail is what each choice is worth knowing beyond its own name.
+func (o *optionSet) sourceDetail(value string) string {
+	switch {
+	case value == sourceNone:
+		return "nothing checked out — an empty discobox"
+	case value == o.sourceDir():
+		return "the folder this window is showing"
+	case o.remoteSource(value):
+		return "cloned by the discobox itself"
+	default:
+		return ""
+	}
+}
+
+// sourceDirectory is the directory half of a `DIR@REF` value: the ref says
+// which commit to cut from, and the folder a discobox is filed under is the
+// directory either way.
+func sourceDirectory(value string) string {
+	if i := strings.LastIndex(value, "@"); i > 0 {
+		return value[:i]
+	}
+	return value
 }
 
 // sourceDir is the directory Enter creates in: the folder the header is on, or
@@ -279,13 +540,15 @@ func (o *optionSet) request(prompt string) RunRequest {
 		Detach: o.opts[optDetach].changed(),
 		Env:    append([]string(nil), o.opts[optEnv].items...),
 		Secret: append([]string(nil), o.opts[optSecret].items...),
-		Source: strings.TrimSpace(o.opts[optSource].value),
 	}
-	// With nothing typed the source is the folder the header is on. Naming the
-	// session's own directory would only repeat the CLI's default, so that one
-	// case stays empty and `discobox run` resolves it the way it always does.
-	if req.Source == "" && o.sourceDir() != o.session.Directory {
-		req.Source = o.sourceDir()
+	// The folder the header is on is what the source row leads with, and naming
+	// the session's own directory would only repeat the CLI's default — so that
+	// one case emits no -C and `discobox run` resolves it the way it always does.
+	switch source := o.opts[optSource].selected(); {
+	case source == sourceNone:
+		req.NoSource = true
+	case source != o.session.Directory:
+		req.Source = source
 	}
 	if h := o.opts[optHarness]; h.changed() {
 		req.Harness = h.choices[h.idx]
@@ -347,9 +610,10 @@ func (o *optionSet) chips(st *styles) string {
 
 	// The source is only worth a chip when it is not where the window says it
 	// is. The header already names the folder the window is working in, and a
-	// strip that repeats it teaches you to stop reading the strip.
-	if source := o.opts[optSource].display(); source != o.sourceLabel() {
-		add(source)
+	// strip that repeats it teaches you to stop reading the strip — which is
+	// exactly what the row's leading choice is.
+	if source := o.opts[optSource]; source.changed() {
+		add(source.display())
 	}
 
 	// Nothing chosen, nothing to say. The marker introduces the answers given,
@@ -374,6 +638,9 @@ func (o *optionSet) command(prompt string) string {
 		args = append(args, "-C", shellQuote(req.Source))
 	}
 	args = append(args, "run")
+	if req.NoSource {
+		args = append(args, "--no-source")
+	}
 	if req.Harness != "" {
 		args = append(args, "--harness", req.Harness)
 	}
@@ -405,7 +672,7 @@ func (o *optionSet) view(st *styles, width int, prompt string) string {
 	var b strings.Builder
 	b.WriteString(st.dialogTitle.Render("Run Options"))
 	b.WriteString("\n")
-	b.WriteString(st.dimText.Render(truncate("← → change  ·  Enter edits text  ·  Esc back to the prompt", inner)))
+	b.WriteString(st.dimText.Render(truncate("← → change  ·  Enter opens the row  ·  Esc back to the prompt", inner)))
 	b.WriteString("\n\n")
 
 	labelW := 21

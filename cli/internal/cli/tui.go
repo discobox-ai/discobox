@@ -236,6 +236,15 @@ func toTUISandbox(sb apimodel.Sandbox) tui.Sandbox {
 		row.Upgrade = upgrade.Available
 	}
 	if source, ok := sb.Config.Source.Get(); ok {
+		// What the run options offer to cut a new discobox from, spelled the
+		// way `-C` takes it. A remote source is the URL the discobox clones; a
+		// local one is the client directory it was cut from, which is a path on
+		// the machine that created it.
+		if url, ok := source.URL.Get(); ok {
+			row.Source, row.SourceRemote = url.String(), true
+		} else {
+			row.Source = strings.TrimSpace(source.LocalDirectory.Or(""))
+		}
 		if checkout, ok := source.Checkout.Get(); ok {
 			row.Branch = strings.TrimSpace(checkout.RefName.Or(""))
 			row.Commit = shortCommit(strings.TrimSpace(checkout.Commit.Or("")))
@@ -356,11 +365,15 @@ func sourceDirectory(source string) string {
 // those steps is underway, on the same words the command uses (ADR 0060).
 func (d *apiDataSource) Run(ctx context.Context, req tui.RunRequest, report func(string)) (tui.Sandbox, error) {
 	opts := sandboxcreate.PromptOptions{
-		Source:  strings.TrimSpace(req.Source),
-		Harness: strings.TrimSpace(req.Harness),
-		Env:     req.Env,
-		Secret:  req.Secret,
+		Source:   strings.TrimSpace(req.Source),
+		NoSource: req.NoSource,
+		Harness:  strings.TrimSpace(req.Harness),
+		Env:      req.Env,
+		Secret:   req.Secret,
 	}
+	// With no source there is no directory to cut from, and -C says only where
+	// the create came from — which for the window is where it is running, the
+	// same as an unset source.
 	if opts.Source == "" {
 		opts.Source = d.app.source
 	}

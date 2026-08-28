@@ -884,6 +884,35 @@ resolves to, and the chip strip shows the source only when an override makes it
 differ from what the header says — a strip repeating the header is one you stop
 reading.
 
+**The Source row is a selector, and it moves the header back** (`options.go`).
+It offers what the project has actually been cut from — `sandboxList.sources()`,
+off the same listing the folder dropdown is built from — plus `no source`, and
+takes the same two affordances the header does: left and right cycle in place,
+Enter opens the whole list, whose last row is the one entry that is not a source
+but the input field for a path, URL or `DIR@REF` the listing has never seen.
+
+Sources and folders are not the same list. A folder is where a create was *run*,
+which every discobox started in a directory shares; a source is what was
+*materialized*, which is a repository URL as often as a path. So the row carries
+`Source`/`SourceRemote` on the sandbox rather than reusing `Folder`, and the
+listing says which of the two a value is rather than this package parsing it —
+what counts as a remote belongs to the creation path.
+
+The link runs both ways: the header moves the source (`setFolder`), and choosing
+a source moves the header to the folder that source's discoboxes are filed under
+(`followSource`, `Model.followSource`). For a local directory that is the
+directory; a remote URL and `no source` have no folder of their own, so a
+discobox from either is filed under — and the list follows to — the directory the
+window is running in, which is exactly where `ResolveOrigin` puts it.
+
+Because the header follows the row, the row's order cannot follow the header.
+Leading with the current folder would reorder the choices every time the list
+moved, and left-right would then only ever reach the first two of them. The order
+is fixed (the session's directory, the listing's sources, `no source`) and which
+entry counts as unchanged is carried by `option.unchanged` instead — so the panel
+can stay silent about a source the header already names without the ordering
+being what says it.
+
 The harness is on the strip by the same rule, and used not to be: it was lit
 whether or not it was chosen, on the reasoning that it is what the sandbox will
 *be* rather than a setting. That named the project default as though someone had

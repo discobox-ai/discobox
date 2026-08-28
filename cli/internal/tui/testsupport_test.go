@@ -1011,23 +1011,28 @@ func testSandboxes() []Sandbox {
 	return []Sandbox{
 		{
 			ID: "sbx_one", Name: "fix flaky pool reaper tests", State: StateRunning, HasRuntime: true,
-			Harness: "claude", Folder: "/src/disco2", Branch: "main", Commit: "a3f9c21", Dirty: true,
+			Harness: "claude", Folder: "/src/disco2", Source: "/src/disco2",
+			Branch: "main", Commit: "a3f9c21", Dirty: true,
 			Created: now.Add(-2 * time.Minute), Diff: DiffStat{Known: true, Added: 142, Deleted: 38, Files: 7},
 		},
 		{
 			ID: "sbx_two", Name: "exec/terminal consolidation", State: StateRunning, HasRuntime: true,
-			Harness: "claude", Folder: "/src/disco2", Branch: "main", Commit: "a3f9c21",
+			Harness: "claude", Folder: "/src/disco2", Source: "/src/disco2",
+			Branch: "main", Commit: "a3f9c21",
 			Created: now.Add(-18 * time.Minute), Upgrade: true,
 			Diff: DiffStat{Known: true, Added: 903, Deleted: 511, Files: 24},
 		},
 		{
 			ID: "sbx_three", Name: "openapi: sandbox upgrade field", State: StateStopped, HasRuntime: true,
-			Harness: "codex", Folder: "/src/obot", Branch: "main", Commit: "1c713f6",
+			Harness: "codex", Folder: "/src/obot", Source: "/src/obot",
+			Branch: "main", Commit: "1c713f6",
 			Created: now.Add(-time.Hour), Diff: DiffStat{Known: true},
 		},
 		{
 			ID: "sbx_four", Name: "bats harness-configure endpoints", State: StateArchived,
-			Harness: "codex", Folder: "/src/disco2", Branch: "main", Commit: "41a9507",
+			Harness: "codex", Folder: "/src/disco2",
+			Source: "https://github.com/acme/foo", SourceRemote: true,
+			Branch: "main", Commit: "41a9507",
 			Created: now.Add(-48 * time.Hour), Diff: DiffStat{Known: true, Added: 240, Deleted: 96, Files: 11},
 		},
 	}

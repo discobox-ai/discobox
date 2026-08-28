@@ -458,6 +458,10 @@ func (m *Model) update(msg tea.Msg) tea.Cmd {
 			return m.report(true, "cannot list discoboxes: %v", msg.err)
 		}
 		m.list.setAll(msg.sandboxes)
+		// What the project has been cut from is read off the same listing the
+		// folder dropdown is, for the same reason: the sources worth offering
+		// are exactly the ones something is already sitting in.
+		m.opts.setSources(m.list.sources())
 		m.layout()
 		return nil
 
@@ -536,6 +540,15 @@ func (m *Model) update(msg tea.Msg) tea.Cmd {
 
 	case folderChosenMsg:
 		return m.selectFolder(msg.folder)
+
+	case sourceChosenMsg:
+		if msg.enter {
+			m.dialog = inputDialog("Source", sourceHint, m.opts.sourceLabel(), m.opts.typedSource(),
+				func(v string) tea.Cmd { return func() tea.Msg { return sourceChosenMsg{source: strings.TrimSpace(v)} } })
+			return nil
+		}
+		m.opts.chooseSource(msg.source)
+		return m.followSource()
 
 	case paneOpenedMsg:
 		return m.paneOpened(msg)
@@ -1082,6 +1095,20 @@ const (
 	landLast
 )
 
+// followSource points the list at the folder the chosen source files its
+// discoboxes under, so what is listed is what the next Enter will join. The
+// header and the Source row are one control in both directions: the header
+// moves the source (selectFolder), and the source moves the header here.
+func (m *Model) followSource() tea.Cmd {
+	folder := m.opts.followSource()
+	if folder != m.list.folder {
+		m.list.folder = folder
+		m.list.resetCursor()
+		m.layout()
+	}
+	return status("cutting from %s", m.opts.opts[optSource].display())
+}
+
 // updateOptions handles the run options panel.
 func (m *Model) updateOptions(msg tea.KeyPressMsg) tea.Cmd {
 	opt := m.opts.current()
@@ -1094,16 +1121,27 @@ func (m *Model) updateOptions(msg tea.KeyPressMsg) tea.Cmd {
 	case "down", "j":
 		m.opts.move(1)
 	case "left", "h":
+		if m.opts.cursor == optSource {
+			m.opts.cycleSource(-1)
+			return m.followSource()
+		}
 		opt.cycle(-1)
 	case "right", "l", " ":
+		if m.opts.cursor == optSource {
+			m.opts.cycleSource(1)
+			return m.followSource()
+		}
 		opt.cycle(1)
 	case "enter":
+		if m.opts.cursor == optSource {
+			// The whole list, the way the header's folder filter opens its
+			// own: left and right are for the two or three you switch between,
+			// and everything else — including a path the listing has never
+			// seen — is behind Enter.
+			m.dialog = m.opts.sourceDialog()
+			return nil
+		}
 		switch opt.kind {
-		case optText:
-			m.dialog = inputDialog(opt.label, opt.hint, opt.placeholder, opt.value, func(v string) tea.Cmd {
-				opt.value = v
-				return nil
-			})
 		case optMulti:
 			m.dialog = inputDialog("Add "+opt.label, opt.hint, "KEY=VALUE", "", func(v string) tea.Cmd {
 				if v != "" {
@@ -1505,7 +1543,9 @@ func (m *Model) run() tea.Cmd {
 // have already been answered, and asking again against a listing that has not
 // caught up yet would ask the same one twice.
 func (m *Model) startRun(req RunRequest) tea.Cmd {
-	if req.IncludeDirty != "" {
+	// A discobox with no source has no working tree to carry anything out of,
+	// so there is nothing the question could be about.
+	if req.IncludeDirty != "" || req.NoSource {
 		return m.create(req)
 	}
 	// --include-dirty=auto means ask, and there is only something to ask about
