@@ -56,6 +56,7 @@ func (s *Service) prepareSandboxSecrets(ctx context.Context, projectID string, s
 			SecretID:  secretID,
 			EnvName:   env,
 			Sentinel:  sentinel,
+			Format:    format,
 		})
 	}
 	return assignments, nil
@@ -111,7 +112,8 @@ func (s *Service) applyHarnessConfigSecrets(ctx context.Context, projectID strin
 			}
 			return nil, err
 		}
-		sentinel, err := mintSentinel(s.secretFormat(ctx, secret))
+		format := secretFormat(ctx, s.store, secret)
+		sentinel, err := mintSentinel(format)
 		if err != nil {
 			return nil, err
 		}
@@ -121,6 +123,7 @@ func (s *Service) applyHarnessConfigSecrets(ctx context.Context, projectID strin
 			SecretID:  secret.ID,
 			EnvName:   b.EnvName,
 			Sentinel:  sentinel,
+			Format:    format,
 		})
 	}
 	return assignments, nil
@@ -165,7 +168,8 @@ func (s *Service) applyPreviousConfigureSecrets(ctx context.Context, projectID s
 			}
 			return nil, err
 		}
-		sentinel, err := mintSentinel(s.secretFormat(ctx, secret))
+		format := secretFormat(ctx, s.store, secret)
+		sentinel, err := mintSentinel(format)
 		if err != nil {
 			return nil, err
 		}
@@ -176,6 +180,7 @@ func (s *Service) applyPreviousConfigureSecrets(ctx context.Context, projectID s
 			SecretID:  secret.ID,
 			EnvName:   env,
 			Sentinel:  sentinel,
+			Format:    format,
 		})
 	}
 	return assignments, nil
@@ -231,7 +236,7 @@ func (s *Service) resolveSecretForInput(ctx context.Context, projectID string, i
 		if err != nil {
 			return "", "", mapAPIError(err, "secret not found")
 		}
-		return secret.ID, s.secretFormat(ctx, secret), nil
+		return secret.ID, secretFormat(ctx, s.store, secret), nil
 	case strings.TrimSpace(value) != "":
 		secret, err := s.createAnonymousSecret(ctx, projectID, value, strings.TrimSpace(input.Host.Or("")))
 		if err != nil {
@@ -246,12 +251,12 @@ func (s *Service) resolveSecretForInput(ctx context.Context, projectID string, i
 // secretFormat returns the secret's stored format, falling back to inferring one
 // from the decrypted bearer value so referenced secrets without a format still
 // mint a convincing sentinel.
-func (s *Service) secretFormat(ctx context.Context, secret *model.Secret) string {
+func secretFormat(ctx context.Context, st *store.Store, secret *model.Secret) string {
 	if strings.TrimSpace(secret.Format) != "" {
 		return secret.Format
 	}
 	if secret.Type == model.SecretTypeBearer {
-		if val, err := s.store.OpenSecretValue(ctx, secret); err == nil && val != nil {
+		if val, err := st.OpenSecretValue(ctx, secret); err == nil && val != nil {
 			if token := strings.TrimSpace(val.Token); token != "" {
 				format, _ := secretformat.Describe(token)
 				return format
@@ -340,7 +345,8 @@ func (s *Service) AssignSandboxHarnessSecrets(ctx context.Context, projectID, sa
 			}
 			return nil, err
 		}
-		sentinel, err := mintSentinel(s.secretFormat(ctx, secret))
+		format := secretFormat(ctx, s.store, secret)
+		sentinel, err := mintSentinel(format)
 		if err != nil {
 			return nil, err
 		}
@@ -350,6 +356,7 @@ func (s *Service) AssignSandboxHarnessSecrets(ctx context.Context, projectID, sa
 			SecretID:  secret.ID,
 			EnvName:   binding.EnvName,
 			Sentinel:  sentinel,
+			Format:    format,
 		}); err != nil {
 			return nil, err
 		}
@@ -412,4 +419,142 @@ func mintSentinel(format string) (string, error) {
 		}
 	}
 	return tmpl.Generate()
+}
+
+// RebindHarnessConfigSecrets brings every live sandbox running a harness config
+// back in line with that config's current secret bindings.
+//
+// An assignment is minted once at sandbox create and then outlives whatever
+// produced it. When the bound secret is replaced — a re-login, or a disable
+// followed by a re-enable — the binding moves and the assignment does not, so
+// the sandbox keeps a sentinel pointing at a secret that no longer exists and
+// the harness sees an unexplained 401. Rebinding is what closes that gap; it is
+// called wherever a binding changes and again when a sandbox starts, so a
+// sandbox that was down for the change is repaired before it runs.
+func (s *Service) RebindHarnessConfigSecrets(ctx context.Context, projectID, harnessConfigID string) error {
+	sandboxIDs, err := s.store.ListSandboxIDsForHarnessConfig(ctx, projectID, harnessConfigID)
+	if err != nil {
+		return err
+	}
+	for _, sandboxID := range sandboxIDs {
+		if err := s.RebindSandboxSecrets(ctx, projectID, sandboxID); err != nil {
+			return fmt.Errorf("rebind sandbox %s: %w", sandboxID, err)
+		}
+	}
+	return nil
+}
+
+// RebindSandboxSecrets reconciles one sandbox's assignments against its harness
+// config's bindings.
+//
+// The sentinel is kept wherever it can be: it is a per-sandbox opaque string
+// whose only meaning is the row it maps through, so repointing that row hands
+// the sandbox the new credential with nothing to re-deliver and no restart. It
+// is only re-minted when the replacement secret's format differs, because the
+// sentinel byte-mimics the credential it stands in for.
+//
+// Re-minting is the disruptive case: the string in the harness's credential
+// file is dead the moment it is replaced, and the harness cannot re-read it
+// while running. That is why an assignment records the format it was minted
+// from — so this can tell the two apart without the old secret row, which a
+// delete may already have taken away.
+func (s *Service) RebindSandboxSecrets(ctx context.Context, projectID, sandboxID string) error {
+	sandboxModel, err := s.store.GetSandbox(ctx, projectID, sandboxID)
+	if err != nil {
+		return mapAPIError(err, "sandbox not found")
+	}
+	if sandboxModel.HarnessConfigID == nil || strings.TrimSpace(*sandboxModel.HarnessConfigID) == "" {
+		return nil
+	}
+	bindings, err := s.store.ListHarnessConfigSecretBindings(ctx, projectID, strings.TrimSpace(*sandboxModel.HarnessConfigID))
+	if err != nil {
+		return err
+	}
+	if len(bindings) == 0 {
+		return nil
+	}
+	changed, err := rebindSandboxSecretRows(ctx, s.store, projectID, sandboxModel)
+	if err != nil {
+		return err
+	}
+	if !changed {
+		return nil
+	}
+	// A sandbox that is not running has nothing to push to: its assignments are
+	// read fresh when the reconciler builds its create options, so the rows
+	// above are the whole repair.
+	if sandboxModel.RuntimeState != model.SandboxRuntimeStateRunning {
+		return nil
+	}
+	// Push even when every sentinel was kept: the proxy caches a resolved value
+	// per sentinel, and applying a sentinel set rebuilds the swapper, which
+	// drops that cache. Without it the sandbox keeps being handed the replaced
+	// secret's value until something 401s on it — and that 401 is exactly what
+	// logs the harness out.
+	return s.pushSandboxSentinels(ctx, sandboxModel)
+}
+
+// rebindSandboxSecretRows repoints a sandbox's assignments at the secrets its
+// harness config's bindings now name, reporting whether anything moved.
+//
+// It takes the store rather than the service so the reconciler can run it as a
+// sandbox comes up: a fan-out at binding-change time reaches only the sandboxes
+// that exist and are reachable right then, and anything it missed has to be
+// repaired before the sandbox runs again.
+func rebindSandboxSecretRows(ctx context.Context, st *store.Store, projectID string, sandboxModel *model.Sandbox) (bool, error) {
+	if sandboxModel.HarnessConfigID == nil || strings.TrimSpace(*sandboxModel.HarnessConfigID) == "" {
+		return false, nil
+	}
+	bindings, err := st.ListHarnessConfigSecretBindings(ctx, projectID, strings.TrimSpace(*sandboxModel.HarnessConfigID))
+	if err != nil {
+		return false, err
+	}
+	if len(bindings) == 0 {
+		return false, nil
+	}
+	assignments, err := st.ListSandboxSecrets(ctx, projectID, sandboxModel.ID)
+	if err != nil {
+		return false, err
+	}
+	byEnv := make(map[string]*model.SandboxSecret, len(assignments))
+	for i := range assignments {
+		byEnv[assignments[i].EnvName] = &assignments[i]
+	}
+
+	changed := false
+	for _, binding := range bindings {
+		assignment := byEnv[binding.EnvName]
+		if assignment == nil || assignment.SecretID == binding.SecretID {
+			// No assignment for this env means the sandbox was never given the
+			// secret; minting one here would hand a running sandbox a credential
+			// its harness cannot pick up. Creation stays at sandbox create.
+			continue
+		}
+		secret, err := st.GetSecret(ctx, projectID, binding.SecretID)
+		if err != nil {
+			if errors.Is(err, store.ErrNotFound) {
+				continue // binding points at a deleted secret; nothing to rebind to
+			}
+			return false, err
+		}
+		format := secretFormat(ctx, st, secret)
+		assignment.SecretID = secret.ID
+		// An assignment minted before formats were recorded keeps its sentinel:
+		// what it was minted from is unknown, and guessing wrong costs a live
+		// harness session, while keeping a sentinel costs at worst a placeholder
+		// that no longer mimics the credential's shape.
+		if assignment.Format != "" && assignment.Format != format {
+			sentinel, err := mintSentinel(format)
+			if err != nil {
+				return false, err
+			}
+			assignment.Sentinel = sentinel
+		}
+		assignment.Format = format
+		if err := st.UpdateSandboxSecret(ctx, assignment); err != nil {
+			return false, err
+		}
+		changed = true
+	}
+	return changed, nil
 }

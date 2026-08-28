@@ -1037,12 +1037,16 @@ type SandboxSecretResolution struct {
 // proxy swaps it for the real value resolved from the referenced secret. The
 // sentinel is non-secret but is not exposed through the API.
 type SandboxSecret struct {
-	ID        string    `gorm:"primaryKey;type:text" json:"id" doc:"Stable assignment ID"`
-	ProjectID string    `gorm:"column:project_id;not null;type:text;index" json:"projectId" doc:"Project ID"`
-	SandboxID string    `gorm:"column:sandbox_id;not null;type:text;index;uniqueIndex:idx_sandbox_secret_env,priority:1" json:"sandboxId" doc:"Sandbox ID"`
-	SecretID  string    `gorm:"column:secret_id;not null;type:text;index" json:"secretId" doc:"Assigned secret ID"`
-	EnvName   string    `gorm:"column:env_name;not null;type:text;uniqueIndex:idx_sandbox_secret_env,priority:2" json:"envName" doc:"Environment variable name injected into the sandbox"`
-	Sentinel  string    `gorm:"column:sentinel;not null;type:text;uniqueIndex" json:"-"`
+	ID        string `gorm:"primaryKey;type:text" json:"id" doc:"Stable assignment ID"`
+	ProjectID string `gorm:"column:project_id;not null;type:text;index" json:"projectId" doc:"Project ID"`
+	SandboxID string `gorm:"column:sandbox_id;not null;type:text;index;uniqueIndex:idx_sandbox_secret_env,priority:1" json:"sandboxId" doc:"Sandbox ID"`
+	SecretID  string `gorm:"column:secret_id;not null;type:text;index" json:"secretId" doc:"Assigned secret ID"`
+	EnvName   string `gorm:"column:env_name;not null;type:text;uniqueIndex:idx_sandbox_secret_env,priority:2" json:"envName" doc:"Environment variable name injected into the sandbox"`
+	Sentinel  string `gorm:"column:sentinel;not null;type:text;uniqueIndex" json:"-"`
+	// Format is the template the sentinel was minted from. A rebind compares it
+	// against the replacement secret's format to decide whether the sentinel can
+	// be kept, which it must be able to do after the old secret row is gone.
+	Format    string    `gorm:"column:format;type:text" json:"-"`
 	CreatedAt time.Time `gorm:"autoCreateTime" json:"createdAt" doc:"Creation timestamp" format:"date-time"`
 }
 

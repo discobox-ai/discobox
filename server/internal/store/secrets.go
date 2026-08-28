@@ -156,12 +156,15 @@ func (s *Store) DeleteSecret(ctx context.Context, projectID, secretID string) er
 		if err := tx.Model(sec).Update("encrypted_value", nil).Error; err != nil {
 			return nil, err
 		}
-		// Drop harness-config bindings and standing grants that reference this secret
-		// so nothing dangles.
+		// Drop harness-config bindings, standing grants, and sandbox sentinel
+		// assignments that reference this secret so nothing dangles.
 		if err := s.deleteHarnessConfigSecretBindingsBySecret(tx, secretID); err != nil {
 			return nil, err
 		}
 		if err := s.deleteSecretGrantsBySecret(tx, secretID); err != nil {
+			return nil, err
+		}
+		if err := s.deleteSandboxSecretsBySecret(tx, secretID); err != nil {
 			return nil, err
 		}
 		if err := tx.Delete(sec).Error; err != nil {

@@ -342,6 +342,14 @@ func (s *Service) SetHarnessConfigSecretBinding(ctx context.Context, projectID, 
 	if err := s.store.UpsertHarnessConfigSecretBinding(ctx, binding); err != nil {
 		return nil, err
 	}
+	// Sandboxes already running this config hold a sentinel bound to whatever
+	// the env named before. Rebinding here is what keeps the assignment and the
+	// binding from drifting apart the moment they can.
+	if s.sandboxes != nil {
+		if err := s.sandboxes.RebindHarnessConfigSecrets(ctx, projectID, config.ID); err != nil {
+			return nil, err
+		}
+	}
 	return binding, nil
 }
 

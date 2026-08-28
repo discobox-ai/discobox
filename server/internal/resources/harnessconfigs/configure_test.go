@@ -707,6 +707,12 @@ func TestBuiltInDeleteHintOnlySuggestsWhatWouldWork(t *testing.T) {
 // CreateSandbox is exercised; the rest satisfies the interface.
 type stubSandboxRuntime struct {
 	created services.CreateSandboxBody
+	rebound []string
+}
+
+func (s *stubSandboxRuntime) RebindHarnessConfigSecrets(_ context.Context, _, harnessConfigID string) error {
+	s.rebound = append(s.rebound, harnessConfigID)
+	return nil
 }
 
 func (s *stubSandboxRuntime) CreateSandbox(_ context.Context, projectID string, input services.CreateSandboxBody) (*model.Sandbox, error) {

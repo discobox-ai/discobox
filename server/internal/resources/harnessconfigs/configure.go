@@ -77,6 +77,10 @@ type SandboxRuntime interface {
 	CreateSandbox(ctx context.Context, projectID string, input services.CreateSandboxBody) (*model.Sandbox, error)
 	DeleteSandbox(ctx context.Context, projectID, sandboxID string) error
 	AcquireSandboxHTTPClient(ctx context.Context, projectID, sandboxID string, scopes []string) (*services.HTTPClientLease, *model.Sandbox, error)
+	// RebindHarnessConfigSecrets repoints existing sandboxes at the secrets this
+	// config's bindings now name. Configure is one of the two places a binding's
+	// secret changes, and the only one that can replace it outright.
+	RebindHarnessConfigSecrets(ctx context.Context, projectID, harnessConfigID string) error
 }
 
 // Dirtier schedules reconciliation.
@@ -489,6 +493,16 @@ func (s *Service) applyConfigureOutput(ctx context.Context, config *model.Harnes
 	}
 	config.ConfiguredFiles = out.Files
 	config.ConfiguredSecretIDs = createdSecretIDs
+	// Existing sandboxes still point at the previous generation of secrets. The
+	// update-in-place branch above keeps their IDs stable and needs no rebind,
+	// but a disable clears ConfiguredSecretIDs, so the next configure lands in
+	// the mint-a-new-secret branch and every sandbox created before it is left
+	// naming a secret this run just deleted.
+	if s.sandboxes != nil {
+		if err := s.sandboxes.RebindHarnessConfigSecrets(ctx, config.ProjectID, config.ID); err != nil {
+			return fmt.Errorf("rebind sandboxes after configure: %w", err)
+		}
+	}
 	return nil
 }
 

@@ -367,6 +367,16 @@ func (r *SandboxReconciler) createSandbox(ctx context.Context, sb *model.Sandbox
 
 func (r *SandboxReconciler) ensureSandboxCreated(ctx context.Context, sb *model.Sandbox, provider Provider, secretState []byte, start bool) ([]byte, error) {
 	ref := sandboxRefFromSandbox(sb)
+	// Repair the sandbox's secret bindings on the way up. The fan-out when a
+	// binding changes reaches the sandboxes that exist and are reachable at that
+	// moment; this catches what it missed — a sandbox archived across the change,
+	// a fan-out that stopped on an earlier sandbox's error — before the create
+	// options below read the assignments. It only covers a sandbox being
+	// reconciled: one whose generations already agree is never handed here, so
+	// drift on an idle sandbox waits for its next start.
+	if _, err := rebindSandboxSecretRows(ctx, r.store, sb.ProjectID, sb); err != nil {
+		return secretState, fmt.Errorf("rebind sandbox secrets: %w", err)
+	}
 	createOpts, err := r.createOptionsFromSandbox(ctx, sb)
 	if err != nil {
 		return secretState, err
