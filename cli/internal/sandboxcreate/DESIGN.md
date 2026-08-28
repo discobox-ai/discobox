@@ -47,6 +47,13 @@ sandbox create requests.
   show while it asks (`MeasureDirectory`, polled through `DirectoryWalk.Total`).
   Both frontends count the same thing the same way; only where the number is
   drawn is theirs.
+- `PromptOptions.NoSource` builds a request with no `config.source` at all —
+  the shape the harness configure sandbox already had, reached deliberately.
+  `Source` is then only what the origin and the Git authorship are read from, so
+  a sourceless sandbox is still one you started here and listed here. A ref is
+  refused rather than dropped, since there is nothing to check it out of; extra
+  sources are unaffected, and declared ones fall away with the checkout that
+  would have declared them. See the CLI design doc's "No Source At All".
 - `PromptOptions.Include` names extra sources, resolved exactly as the primary
   source is and filed as the request's `sourceCodeReferences` under the sandbox
   directory each lands in. This package settles their slugs and destinations;

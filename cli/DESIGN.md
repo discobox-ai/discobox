@@ -1037,6 +1037,28 @@ workspace, and the sandbox comes up with the files as uncommitted changes.
 See [ADR 0045](../docs/adr/0045-a-directory-with-no-repository-is-delivered-by-push.md)
 and [ADR 0073](../docs/adr/0073-a-directory-with-no-repository-is-copied-only-when-asked.md).
 
+## No Source At All
+
+`discobox run --no-source` (`PromptOptions.NoSource`) creates a discobox with
+nothing materialized in it — the shape the harness configure sandbox already
+had, reached deliberately. It is not "a source that resolved to nothing": no
+`config.source` is sent at all, and the create request carries no local source
+for delivery to push.
+
+`-C` still applies and still means what it always did. What it names is the
+*origin* — the host and project directory the create came from — and the Git
+authorship the discobox commits under, both read from the client's disk. So a
+sourceless discobox is filed under the directory you ran in and listed there like
+any other; only what would have been checked out is left out. `-i` is unaffected:
+`--no-source -i ../foo` is a discobox holding `foo` and nothing else.
+
+A ref is refused rather than dropped: `@REF` names a commit to check out and
+there is nothing to check it out of. Declared sources fall away on their own,
+since the file that declares them lives in a checkout there is none of.
+
+In the launcher this is the Source row's last entry rather than a flag of its
+own; see the launcher design doc.
+
 ## Git Transport to the Server
 
 `git` is a subprocess that only understands URLs, so it cannot use the CLI's

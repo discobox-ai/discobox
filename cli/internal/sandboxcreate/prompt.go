@@ -20,6 +20,10 @@ import (
 type PromptOptions struct {
 	Source string
 	Ref    string
+	// NoSource creates the sandbox with nothing materialized in it. Source is
+	// then only where the request came from — the origin the sandbox is filed
+	// under and the Git identity it commits as — and nothing is cut from it.
+	NoSource bool
 	// Include names extra sources brought into the sandbox alongside Source,
 	// each a directory, or a repository URL, in the same form Source takes. They
 	// become the sandbox's source code references.
@@ -57,7 +61,15 @@ func ParsePromptOptions(opts PromptOptions, args []string) (PromptOptions, error
 }
 
 func normalizePromptOptions(opts PromptOptions) (PromptOptions, error) {
-	if strings.TrimSpace(opts.Source) == "" {
+	if opts.NoSource {
+		// A ref names a commit to check out, and there is nothing to check it
+		// out of. Saying both is a contradiction rather than a preference, so
+		// it is refused instead of one half being dropped silently.
+		_, _, hasRef := splitRunSourceRef(opts.Source)
+		if hasRef || opts.Ref != "" {
+			return PromptOptions{}, errors.New("--no-source takes no ref: there is no source to check one out of")
+		}
+	} else if strings.TrimSpace(opts.Source) == "" {
 		return PromptOptions{}, errors.New("source directory or Git repository is required")
 	}
 	if opts.Ref == "" {
@@ -122,18 +134,25 @@ func BuildPromptSandboxBody(ctx context.Context, opts PromptOptions) (*apimodel.
 		Confirm:      opts.ConfirmIncludeDirty,
 		ConfirmCopy:  opts.ConfirmCopyDirectory,
 	}
-	source, err := resolveRunSource(ctx, sourceArg, sourceOptions)
-	if err != nil {
-		return nil, nil, err
-	}
 	local := &LocalSources{}
-	local.add("", source)
-	apiSource, err := source.apiGitSource()
-	if err != nil {
-		local.Close()
-		return nil, nil, err
+	// A sandbox with no source has no primary source to resolve, and the zero
+	// value stands for it throughout: nothing local to deliver, nothing to
+	// place references beside, and no repository to read declared sources out
+	// of. What Source still says is where the request came from, which is the
+	// origin and the Git authorship below.
+	var source resolvedRunSource
+	if !opts.NoSource {
+		if source, err = resolveRunSource(ctx, sourceArg, sourceOptions); err != nil {
+			return nil, nil, err
+		}
+		local.add("", source)
+		apiSource, err := source.apiGitSource()
+		if err != nil {
+			local.Close()
+			return nil, nil, err
+		}
+		body.Config.SetSource(apiclientgen.NewOptGitSource(*apiSource))
 	}
-	body.Config.SetSource(apiclientgen.NewOptGitSource(*apiSource))
 	if err := setSourceCodeReferences(ctx, body, local, opts, source, sourceOptions); err != nil {
 		local.Close()
 		return nil, nil, err
@@ -203,7 +222,10 @@ func setSourceCodeReferences(ctx context.Context, body *apimodel.CreateSandboxBo
 	// source keeps its own path, and differ on Windows, where it is mirrored
 	// under /mnt.
 	primaryRoot := primary.LocalDirectory
-	sandboxRoot := path.Dir(filepath.ToSlash(primary.Destination.Directory))
+	sandboxRoot := ""
+	if primary.Destination.Directory != "" {
+		sandboxRoot = path.Dir(filepath.ToSlash(primary.Destination.Directory))
+	}
 	for _, name := range declaredSourceNames(declared) {
 		arg, report := resolveDeclaredSourceArg(ctx, primaryRoot, name, declared[name])
 		placement := referencePlacement{Name: name, Root: sandboxRoot}

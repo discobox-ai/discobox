@@ -86,3 +86,62 @@ func TestCreatePromptSandboxDoesNotRetryOtherFailures(t *testing.T) {
 		t.Fatalf("made %d attempts, want 1: a non-conflict failure must not be retried", len(creator.names))
 	}
 }
+
+// A discobox with no source materializes nothing, but is still one you started
+// from here: the origin and the Git authorship come off the directory the
+// command ran in, which is all Source still says.
+func TestNoSourceCreatesWithNothingToMaterialize(t *testing.T) {
+	repo := newRunSourceTestRepo(t)
+
+	body, local, err := BuildPromptSandboxBody(context.Background(), PromptOptions{Source: repo, NoSource: true})
+	if err != nil {
+		t.Fatalf("build: %v", err)
+	}
+	defer local.Close()
+
+	if _, ok := body.Config.Source.Get(); ok {
+		t.Fatal("a sandbox with no source must send none")
+	}
+	if _, ok := body.Config.SourceCodeReferences.Get(); ok {
+		t.Fatal("nothing was included, so there is nothing to reference")
+	}
+	origin, ok := body.Origin.Get()
+	if !ok || origin.ProjectPath != repo {
+		t.Fatalf("origin = %+v, want the directory the create came from (%s)", origin, repo)
+	}
+	if len(local.sources) != 0 {
+		t.Fatalf("local sources = %+v, want nothing to deliver", local.sources)
+	}
+}
+
+// --no-source still brings in what -i names: a discobox holding the extra
+// sources and nothing else.
+func TestNoSourceStillTakesIncludes(t *testing.T) {
+	repo := newRunSourceTestRepo(t)
+	other := newRunSourceTestRepo(t)
+
+	body, local, err := BuildPromptSandboxBody(context.Background(),
+		PromptOptions{Source: repo, NoSource: true, Include: []string{other}, IncludeDirty: IncludeDirtyNever})
+	if err != nil {
+		t.Fatalf("build: %v", err)
+	}
+	defer local.Close()
+
+	if _, ok := body.Config.Source.Get(); ok {
+		t.Fatal("a sandbox with no source must send none")
+	}
+	references, ok := body.Config.SourceCodeReferences.Get()
+	if !ok || len(references) != 1 {
+		t.Fatalf("references = %+v, want the one -i named", references)
+	}
+}
+
+// A ref names a commit to check out, and --no-source has nothing to check one
+// out of. Saying both is a contradiction rather than a preference.
+func TestNoSourceRefusesARef(t *testing.T) {
+	_, _, err := BuildPromptSandboxBody(context.Background(),
+		PromptOptions{Source: newRunSourceTestRepo(t), Ref: "main", NoSource: true})
+	if err == nil || !strings.Contains(err.Error(), "no ref") {
+		t.Fatalf("err = %v, want a refusal naming the ref", err)
+	}
+}

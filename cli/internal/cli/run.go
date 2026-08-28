@@ -13,6 +13,10 @@ import (
 type runCommandOptions struct {
 	prompt sandboxcreate.PromptOptions
 	detach bool
+	// noSource creates the discobox with nothing materialized in it. -C still
+	// says where the create came from, so the discobox is filed under this
+	// directory and listed here; it just is not cut from it.
+	noSource bool
 	// declaredSources is the flag's positive form: the option it settles is
 	// "skip them", because bringing them in is what declaring them asks for.
 	declaredSources bool
@@ -48,6 +52,13 @@ question is on screen — and not copying is the default answer: the discobox is
 still created, on the empty first commit, with none of the directory in it.
 --include-dirty=true|false answers this one ahead of time too.
 
+--no-source creates a discobox with nothing checked out in it, for work that
+starts from an empty machine rather than from a repository. The directory you
+run in is still what the discobox is filed under, so it is listed here like any
+other, and the Git authorship it commits under is still read from here; only the
+source is left out. -i still brings sources in, so --no-source -i ../foo is a
+discobox holding foo and nothing else.
+
 -i brings extra sources into the same discobox, repeat it for more than one. Each
 is resolved exactly like the source directory is, uncommitted changes included,
 and a local one keeps its own absolute path inside the discobox, so ../foo shows
@@ -65,6 +76,7 @@ discobox as it does here. --declared-sources=false leaves them out.`,
 		Example: `  discobox run fix the failing tests
   discobox run --include-dirty=false fix the failing tests
   discobox run -i ../foo -i ../bar make them share one client
+  discobox run --no-source draft a proposal for the new pricing page
   discobox run -e GITHUB_TOKEN -e MODE=test fix the failing tests
   discobox run -s OPENAI_API_KEY=sk-... -s GITHUB_TOKEN=<sec_123> fix the failing tests
   discobox run -d fix the failing tests
@@ -72,6 +84,7 @@ discobox as it does here. --declared-sources=false leaves them out.`,
 		Args: cobra.ArbitraryArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			opts.prompt.Source = a.source
+			opts.prompt.NoSource = opts.noSource
 			opts.prompt.ConfirmIncludeDirty = confirmIncludeDirty(cmd)
 			opts.prompt.ConfirmCopyDirectory = confirmCopyDirectory(cmd)
 			opts.prompt.SkipDeclaredSources = !opts.declaredSources
@@ -127,6 +140,7 @@ discobox as it does here. --declared-sources=false leaves them out.`,
 	cmd.Flags().StringArrayVarP(&opts.prompt.Include, "include", "i", nil, "Additional source directory or Git repository to bring into the discobox, optionally with @REF; repeat for more than one. A local directory keeps its own absolute path inside the discobox and is named after itself, so -i ../foo is the source foo")
 	cmd.Flags().StringVarP(&opts.prompt.Harness, "harness", "H", "", "Harness config to run, by slug (e.g. codex), name, or ID; defaults to the project default")
 	cmd.Flags().BoolVarP(&opts.detach, "detach", "d", false, "Create the discobox and print it without attaching to its terminal")
+	cmd.Flags().BoolVar(&opts.noSource, "no-source", false, "Create the discobox with nothing checked out in it; the directory you run in still decides where it is filed and what Git authorship it commits under")
 	cmd.Flags().BoolVar(&opts.declaredSources, "declared-sources", true, "Bring in the sources the repository declares in .discobox/sources.json, using a local checkout beside the source directory when there is one")
 	cmd.Flags().Var(&opts.prompt.IncludeDirty, "include-dirty", "Carry uncommitted changes in the local source into the discobox: true, false, or auto (ask when the workspace is dirty and this is a terminal). A source directory in no Git repository is uncommitted in its entirety, so this decides whether the directory itself is copied in")
 	cmd.Flags().Lookup("include-dirty").NoOptDefVal = string(sandboxcreate.IncludeDirtyAlways)
