@@ -633,6 +633,40 @@ launcher will supply the same two halves and draw them instead.
   the control plane on the sandbox-agent's own cadence (ADR 0046), which is what
   bounds freshness either way.
 
+## Resource Views
+
+`discobox admin pool resources [POOL_ID]` and `discobox admin discobox resources
+DISCOBOX_ID` read the accounting the pool agent reports (ADR 0071). Both are
+plain reads of `pool.resources` and `discobox.runtime.resources` — the CLI
+computes no rates of its own, because the figures are only comparable when one
+agent differenced them over one tick.
+
+The pool view exists for its **totals**, not its rows. Per-discobox CPU is
+additive and comparable within a pool, so the table sums it and subtracts it
+from the pool's own load: what is left is overhead, and naming it (the pool
+agent, BuildKit, the registry, the proxy) is what turns "the pool is busy and
+every discobox is idle" from a mystery into a build in flight.
+
+Three display rules follow from the contract rather than from taste:
+
+- **Absent is not zero.** A discobox with no rate prints `-`, never `0.00`.
+  "Not measured yet" and "idle" are different claims, and the first report after
+  an agent restart has counters but no rate.
+- **Memory is two columns.** CHARGED is the cgroup's; RESIDENT is the processes'
+  summed, which double-counts shared pages. Neither substitutes for the other,
+  so neither is dropped.
+- **Cache appears once, at the pool.** It is one shared tree, so a per-discobox
+  cache column would sum to N times the truth.
+
+Processes are ranked by rate, which is the pool agent's ranking, not a
+re-sort here. `--processes` folds the per-discobox process tables into the pool
+view for the case where the ranking alone does not name the culprit.
+
+Generated API types are held **by pointer** when they go into a `map[string]any`
+for `--output json`. Their optional fields encode through their own
+`MarshalJSON`, and a value inside an `any` is not addressable, so `encoding/json`
+would reflect over the optionals instead and fail on every unset one.
+
 ## Pool Host Console
 
 `discobox admin pool console [POOL_ID]` attaches this terminal to a root shell on
