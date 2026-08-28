@@ -481,3 +481,57 @@ func TestPoolResourceReportRequestMatchesTheGeneratedContract(t *testing.T) {
 		t.Errorf("sandbox storage = %+v (present=%v)", storage, ok)
 	}
 }
+
+// A stopped sandbox is not an unmeasured one. It is never polled, so it has no
+// sample at all, and it contributes a known zero — conflating that with "no
+// rate yet" meant a pool with one stopped sandbox never reported a total.
+func TestTotalUsageCountsAStoppedSandboxAsZero(t *testing.T) {
+	rate := 2.5
+	running := SandboxResourceUsage{SandboxID: "sbx_a", CPU: &SandboxCPUUsage{VCPUs: &rate}}
+	stopped := SandboxResourceUsage{SandboxID: "sbx_b"}
+	services := 0.5
+	report := PoolReport{
+		CPU:    PoolCPUUsage{VCPUs: &services, CapacityVCPUs: 8},
+		Memory: PoolMemoryUsage{CurrentBytes: 1 << 30, CapacityBytes: 16 << 30},
+	}
+
+	total := totalUsage(report, []SandboxResourceUsage{running, stopped})
+
+	if total.VCPUs == nil {
+		t.Fatal("a stopped sandbox suppressed the total")
+	}
+	if math.Abs(*total.VCPUs-3.0) > 1e-9 {
+		t.Errorf("total = %v, want 3.0 (0.5 services + 2.5 running + 0 stopped)", *total.VCPUs)
+	}
+	if total.SandboxCount != 2 {
+		t.Errorf("sandboxCount = %d, want 2", total.SandboxCount)
+	}
+}
+
+// A sandbox that was sampled once and not yet twice genuinely has not been
+// measured, and no total covering it is complete.
+func TestTotalUsageIsAbsentWhileASandboxIsStillUnmeasured(t *testing.T) {
+	services := 0.5
+	unmeasured := SandboxResourceUsage{SandboxID: "sbx_a", CPU: &SandboxCPUUsage{UsageUsec: 1}}
+	report := PoolReport{CPU: PoolCPUUsage{VCPUs: &services, CapacityVCPUs: 8}}
+
+	if total := totalUsage(report, []SandboxResourceUsage{unmeasured}); total.VCPUs != nil {
+		t.Errorf("total = %v, want absent while a sandbox is unmeasured", *total.VCPUs)
+	}
+}
+
+// The services' own rate is part of the sum, so a pool that has not measured
+// itself has no total either.
+func TestTotalUsageIsAbsentWithoutAServicesRate(t *testing.T) {
+	rate := 2.5
+	report := PoolReport{CPU: PoolCPUUsage{CapacityVCPUs: 8}}
+
+	total := totalUsage(report, []SandboxResourceUsage{{SandboxID: "sbx_a", CPU: &SandboxCPUUsage{VCPUs: &rate}}})
+	if total.VCPUs != nil {
+		t.Errorf("total = %v, want absent without a services rate", *total.VCPUs)
+	}
+	// Capacity is not a measurement and is always carried.
+	if total.CapacityVCPUs != 8 {
+		t.Errorf("capacity = %v, want 8", total.CapacityVCPUs)
+	}
+}

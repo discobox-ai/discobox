@@ -5858,6 +5858,52 @@ func (o OptPoolStorageWalk) Or(d PoolStorageWalk) PoolStorageWalk {
 	return d
 }
 
+// NewOptPoolTotalUsage returns new OptPoolTotalUsage with value set to v.
+func NewOptPoolTotalUsage(v PoolTotalUsage) OptPoolTotalUsage {
+	return OptPoolTotalUsage{
+		Value: v,
+		Set:   true,
+	}
+}
+
+// OptPoolTotalUsage is optional PoolTotalUsage.
+type OptPoolTotalUsage struct {
+	Value PoolTotalUsage
+	Set   bool
+}
+
+// IsSet returns true if OptPoolTotalUsage was set.
+func (o OptPoolTotalUsage) IsSet() bool { return o.Set }
+
+// Reset unsets value.
+func (o *OptPoolTotalUsage) Reset() {
+	var v PoolTotalUsage
+	o.Value = v
+	o.Set = false
+}
+
+// SetTo sets value to v.
+func (o *OptPoolTotalUsage) SetTo(v PoolTotalUsage) {
+	o.Set = true
+	o.Value = v
+}
+
+// Get returns value and boolean that denotes whether value was set.
+func (o OptPoolTotalUsage) Get() (v PoolTotalUsage, ok bool) {
+	if !o.Set {
+		return v, false
+	}
+	return o.Value, true
+}
+
+// Or returns value if set, or given parameter if does not.
+func (o OptPoolTotalUsage) Or(d PoolTotalUsage) PoolTotalUsage {
+	if v, ok := o.Get(); ok {
+		return v
+	}
+	return d
+}
+
 // NewOptSandboxAgentResourceUsage returns new OptSandboxAgentResourceUsage with value set to v.
 func NewOptSandboxAgentResourceUsage(v SandboxAgentResourceUsage) OptSandboxAgentResourceUsage {
 	return OptSandboxAgentResourceUsage{
@@ -8195,10 +8241,13 @@ func (s *PoolProvisionProgress) SetPull(val OptSandboxPullProgress) {
 // the sum of the per-sandbox figures.
 // Ref: #/components/schemas/PoolResourceReport
 type PoolResourceReport struct {
-	ReportedAt      time.Time        `json:"reportedAt"`
-	CPU             PoolCPUUsage     `json:"cpu"`
-	Memory          PoolMemoryUsage  `json:"memory"`
-	Storage         PoolStorageUsage `json:"storage"`
+	ReportedAt time.Time        `json:"reportedAt"`
+	CPU        PoolCPUUsage     `json:"cpu"`
+	Memory     PoolMemoryUsage  `json:"memory"`
+	Storage    PoolStorageUsage `json:"storage"`
+	// What Discobox as a whole is using here, services and sandboxes together, against what is dedicated
+	// to it.
+	Total           OptPoolTotalUsage `json:"total"`
 	AdditionalProps PoolResourceReportAdditional
 }
 
@@ -8220,6 +8269,11 @@ func (s *PoolResourceReport) GetMemory() PoolMemoryUsage {
 // GetStorage returns the value of Storage.
 func (s *PoolResourceReport) GetStorage() PoolStorageUsage {
 	return s.Storage
+}
+
+// GetTotal returns the value of Total.
+func (s *PoolResourceReport) GetTotal() OptPoolTotalUsage {
+	return s.Total
 }
 
 // GetAdditionalProps returns the value of AdditionalProps.
@@ -8245,6 +8299,11 @@ func (s *PoolResourceReport) SetMemory(val PoolMemoryUsage) {
 // SetStorage sets the value of Storage.
 func (s *PoolResourceReport) SetStorage(val PoolStorageUsage) {
 	s.Storage = val
+}
+
+// SetTotal sets the value of Total.
+func (s *PoolResourceReport) SetTotal(val OptPoolTotalUsage) {
+	s.Total = val
 }
 
 // SetAdditionalProps sets the value of AdditionalProps.
@@ -8812,6 +8871,103 @@ func (s *PoolStorageWalk) SetAdditionalProps(val PoolStorageWalkAdditional) {
 type PoolStorageWalkAdditional map[string]jx.Raw
 
 func (s *PoolStorageWalkAdditional) init() PoolStorageWalkAdditional {
+	m := *s
+	if m == nil {
+		m = map[string]jx.Raw{}
+		*s = m
+	}
+	return m
+}
+
+// What Discobox as a whole is using on this host, and what it has to use:
+// the pool's own services plus every sandbox on it, against the host's
+// capacity.
+// It is computed by the agent from one tick's samples rather than left to a
+// consumer to add up, because the operands live on different rows - the
+// services on the pool, each sandbox on its own - and a reader joining them
+// can catch one refreshed and another not. Here they are always the same
+// instant.
+// Ref: #/components/schemas/PoolTotalUsage
+type PoolTotalUsage struct {
+	// CPU burned per second of wall clock across everything Discobox runs here, in whole-CPU units.
+	// Absent until there are two samples to difference.
+	CpuVcpus OptFloat64 `json:"cpuVcpus"`
+	// The host's own CPU count, which is what the agent can measure. Where an operator set a smaller
+	// envelope on the pool, that envelope is what is really dedicated and a reader holding the pool
+	// record prefers it; an envelope of zero means "sized by the host".
+	CapacityVcpus float64 `json:"capacityVcpus"`
+	// Memory charged across everything Discobox runs here.
+	MemoryBytes int64 `json:"memoryBytes"`
+	// The host's own memory, read the same way as capacityVcpus.
+	CapacityBytes int64 `json:"capacityBytes"`
+	// How many sandboxes the figures above cover.
+	SandboxCount    int64 `json:"sandboxCount"`
+	AdditionalProps PoolTotalUsageAdditional
+}
+
+// GetCpuVcpus returns the value of CpuVcpus.
+func (s *PoolTotalUsage) GetCpuVcpus() OptFloat64 {
+	return s.CpuVcpus
+}
+
+// GetCapacityVcpus returns the value of CapacityVcpus.
+func (s *PoolTotalUsage) GetCapacityVcpus() float64 {
+	return s.CapacityVcpus
+}
+
+// GetMemoryBytes returns the value of MemoryBytes.
+func (s *PoolTotalUsage) GetMemoryBytes() int64 {
+	return s.MemoryBytes
+}
+
+// GetCapacityBytes returns the value of CapacityBytes.
+func (s *PoolTotalUsage) GetCapacityBytes() int64 {
+	return s.CapacityBytes
+}
+
+// GetSandboxCount returns the value of SandboxCount.
+func (s *PoolTotalUsage) GetSandboxCount() int64 {
+	return s.SandboxCount
+}
+
+// GetAdditionalProps returns the value of AdditionalProps.
+func (s *PoolTotalUsage) GetAdditionalProps() PoolTotalUsageAdditional {
+	return s.AdditionalProps
+}
+
+// SetCpuVcpus sets the value of CpuVcpus.
+func (s *PoolTotalUsage) SetCpuVcpus(val OptFloat64) {
+	s.CpuVcpus = val
+}
+
+// SetCapacityVcpus sets the value of CapacityVcpus.
+func (s *PoolTotalUsage) SetCapacityVcpus(val float64) {
+	s.CapacityVcpus = val
+}
+
+// SetMemoryBytes sets the value of MemoryBytes.
+func (s *PoolTotalUsage) SetMemoryBytes(val int64) {
+	s.MemoryBytes = val
+}
+
+// SetCapacityBytes sets the value of CapacityBytes.
+func (s *PoolTotalUsage) SetCapacityBytes(val int64) {
+	s.CapacityBytes = val
+}
+
+// SetSandboxCount sets the value of SandboxCount.
+func (s *PoolTotalUsage) SetSandboxCount(val int64) {
+	s.SandboxCount = val
+}
+
+// SetAdditionalProps sets the value of AdditionalProps.
+func (s *PoolTotalUsage) SetAdditionalProps(val PoolTotalUsageAdditional) {
+	s.AdditionalProps = val
+}
+
+type PoolTotalUsageAdditional map[string]jx.Raw
+
+func (s *PoolTotalUsageAdditional) init() PoolTotalUsageAdditional {
 	m := *s
 	if m == nil {
 		m = map[string]jx.Raw{}

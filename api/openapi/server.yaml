@@ -514,11 +514,53 @@ components:
                     $ref: '#/components/schemas/PoolMemoryUsage'
                 storage:
                     $ref: '#/components/schemas/PoolStorageUsage'
+                total:
+                    $ref: '#/components/schemas/PoolTotalUsage'
+                    description: What Discobox as a whole is using here, services and sandboxes together, against what is dedicated to it.
             required:
                 - reportedAt
                 - cpu
                 - memory
                 - storage
+            type: object
+        PoolTotalUsage:
+            additionalProperties: true
+            description: |
+                What Discobox as a whole is using on this host, and what it has to use:
+                the pool's own services plus every sandbox on it, against the host's
+                capacity.
+
+                It is computed by the agent from one tick's samples rather than left to a
+                consumer to add up, because the operands live on different rows - the
+                services on the pool, each sandbox on its own - and a reader joining them
+                can catch one refreshed and another not. Here they are always the same
+                instant.
+            properties:
+                cpuVcpus:
+                    description: CPU burned per second of wall clock across everything Discobox runs here, in whole-CPU units. Absent until there are two samples to difference.
+                    format: double
+                    type: number
+                capacityVcpus:
+                    description: The host's own CPU count, which is what the agent can measure. Where an operator set a smaller envelope on the pool, that envelope is what is really dedicated and a reader holding the pool record prefers it; an envelope of zero means "sized by the host".
+                    format: double
+                    type: number
+                memoryBytes:
+                    description: Memory charged across everything Discobox runs here.
+                    format: int64
+                    type: integer
+                capacityBytes:
+                    description: The host's own memory, read the same way as capacityVcpus.
+                    format: int64
+                    type: integer
+                sandboxCount:
+                    description: How many sandboxes the figures above cover.
+                    format: int64
+                    type: integer
+            required:
+                - capacityVcpus
+                - memoryBytes
+                - capacityBytes
+                - sandboxCount
             type: object
         PoolCPUUsage:
             additionalProperties: true

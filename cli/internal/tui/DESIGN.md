@@ -1210,6 +1210,34 @@ art), and every style is the identity. `highlight` writes the row background
 escape by hand and re-asserts it after both spellings of the reset, because a
 style cannot paint across content that carries its own colors.
 
+**The list band says what the machine has, and never says "pool".** A pool is
+how the system is built — one machine's worth of capacity that discoboxes are
+scheduled into — and the person reading this window has exactly one and has
+never heard of it (`machineText`). What the band says is what Discobox has here
+and how much of it is in use, which is what somebody about to start another
+discobox actually wants to know.
+
+Used covers everything Discobox runs, the discoboxes and the machinery beside
+them both — the shared builder above all, which on a machine mid-build is most
+of it. Which half is busy is what `discobox admin pool resources` answers; the
+question here is only whether there is room.
+
+It sits on the band rather than in the window header because the header is
+already full at any ordinary width — where you are on the left, the keys on the
+right — and a readout that vanished on a narrower terminal is one nobody can
+rely on. The band has room down to 80 columns, and it puts the figures directly
+above the usage column in the same units, which is where the eye compares them.
+
+The count stays beside it rather than being replaced by it: the count belongs to
+this list, which is filtered to a folder, and the machine does not. On a window
+too narrow for everything the figures drop from the right — disk, then memory —
+and the count survives. A figure is dropped whole rather than truncated, because
+`mem 9.0/3` is a wrong number where an absent one is merely absent.
+
+Disk is what is left rather than what is taken. The filesystem usually holds
+more than Discobox, so what Discobox has taken says nothing about whether the
+next discobox will fit.
+
 **The usage column is a share of the host, and dots where it is not measured.**
 `Usage` carries what the pool agent reported (ADR 0071), divided by the host
 capacity its own pool reports — the pool's envelope is usually zero, meaning

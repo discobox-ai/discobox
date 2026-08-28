@@ -622,3 +622,84 @@ func TestTheStripOnlyNamesWhatWasChosen(t *testing.T) {
 		}
 	}
 }
+
+// The band says what Discobox has on this machine and what it is using,
+// because the person reading it has one machine's worth of capacity and has
+// never heard of a pool.
+func TestListBandSaysWhatTheMachineHasAndIsUsing(t *testing.T) {
+	ds := newFakeSource(testSandboxes()...)
+	ds.setResources(Resources{
+		Known:    true,
+		CPUVCPUs: 4.2, CPUCapacity: 24,
+		MemoryBytes: 9_663_676_416, MemoryCapacity: 34_359_738_368,
+		DiskKnown: true, DiskFreeBytes: 34_896_609_280,
+	})
+	m := newTestModel(t, ds)
+	send(t, m, key("tab"))
+
+	band := bandFor(t, m)
+	for _, want := range []string{"cpu 4.2/24", "mem 9.0/32 GiB", "32 GiB free"} {
+		if !strings.Contains(band, want) {
+			t.Errorf("band %q missing %q", band, want)
+		}
+	}
+	// The list is filtered to a folder and the machine is not, so the count
+	// stays beside it rather than being replaced by it.
+	if !strings.Contains(band, "boxes") {
+		t.Errorf("band %q lost the box count", band)
+	}
+	// A pool is how the system is built, not something to say to somebody who
+	// has one and does not know it.
+	if strings.Contains(strings.ToLower(band), "pool") {
+		t.Errorf("band %q says pool", band)
+	}
+}
+
+// bandFor is the list's title band, which carries the machine readout.
+func bandFor(t *testing.T, m *Model) string {
+	t.Helper()
+	for _, line := range frame(m) {
+		if strings.Contains(line, "Discoboxes") {
+			return line
+		}
+	}
+	t.Fatalf("no list band in\n%s", frameText(m))
+	return ""
+}
+
+// An unmeasured machine is not an idle one, so nothing is drawn until there is
+// something to draw.
+func TestListBandSaysNothingUntilTheMachineIsMeasured(t *testing.T) {
+	m := newTestModel(t, newFakeSource(testSandboxes()...))
+	send(t, m, key("tab"))
+
+	if band := bandFor(t, m); strings.Contains(band, "cpu ") {
+		t.Errorf("band %q drew a machine nothing has measured", band)
+	}
+}
+
+// A narrow window keeps the figure that matters most and drops the rest, rather
+// than truncating one into a wrong number or taking the box count down with it.
+func TestListBandDropsMachineFiguresBeforeTheCount(t *testing.T) {
+	ds := newFakeSource(testSandboxes()...)
+	ds.setResources(Resources{
+		Known:    true,
+		CPUVCPUs: 4.2, CPUCapacity: 24,
+		MemoryBytes: 9_663_676_416, MemoryCapacity: 34_359_738_368,
+		DiskKnown: true, DiskFreeBytes: 34_896_609_280,
+	})
+	m := newTestModel(t, ds)
+	send(t, m, tea.WindowSizeMsg{Width: 80, Height: 24}, key("tab"))
+
+	band := bandFor(t, m)
+	if !strings.Contains(band, "cpu 4.2/24") {
+		t.Errorf("band %q dropped the cpu figure first", band)
+	}
+	if !strings.Contains(band, "boxes") {
+		t.Errorf("band %q dropped the box count to fit the machine", band)
+	}
+	// Dropped whole, never cut: "mem 9.0/3" would be a wrong number.
+	if strings.Contains(band, "mem 9.0/3 ") || strings.Contains(band, "mem 9") && !strings.Contains(band, "mem 9.0/32 GiB") {
+		t.Errorf("band %q carries a truncated figure", band)
+	}
+}

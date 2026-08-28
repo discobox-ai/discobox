@@ -71,6 +71,30 @@ type PoolReport struct {
 	CPU        PoolCPUUsage    `json:"cpu"`
 	Memory     PoolMemoryUsage `json:"memory"`
 	Storage    PoolStorage     `json:"storage"`
+	// Total is everything Discobox runs on this host — these services plus
+	// every sandbox — against what is dedicated to it. It is added here rather
+	// than left to a reader because the operands land on different rows, and a
+	// reader joining them can catch one refreshed and another not; computed
+	// here they are always the same instant.
+	Total PoolTotalUsage `json:"total"`
+}
+
+// PoolTotalUsage is what Discobox as a whole costs on this host, and what it
+// has to spend.
+//
+// Capacity is the host's, which is what this agent can measure. Where an
+// operator set a smaller envelope on the pool it is that envelope that is
+// really dedicated, and a consumer holding the pool record prefers it — an
+// envelope of zero means "sized by the host" (model.PoolManifest), so the
+// substitution belongs where both numbers are known, not here.
+type PoolTotalUsage struct {
+	// VCPUs is nil when any part of the sum was not measured, rather than a
+	// partial total presented as a whole one.
+	VCPUs         *float64 `json:"cpuVcpus,omitempty"`
+	CapacityVCPUs float64  `json:"capacityVcpus"`
+	MemoryBytes   int64    `json:"memoryBytes"`
+	CapacityBytes int64    `json:"capacityBytes"`
+	SandboxCount  int64    `json:"sandboxCount"`
 }
 
 // PoolCPUUsage is the pool services' cumulative CPU counter and the rate
@@ -277,6 +301,7 @@ func (r *poolResourceReporter) report(ctx context.Context) {
 	}
 	request.Report.CPU, request.Report.Memory = r.poolUsage(now)
 	request.Sandboxes = r.sandboxUsage(sandboxIDs, walkedSandboxStorage(storage.Walk))
+	request.Report.Total = totalUsage(request.Report, request.Sandboxes)
 
 	if err := r.client.ReportPoolResources(ctx, request); err != nil {
 		r.logger.Warn("push pool resource report", "poolId", r.bootstrap.PoolID, "error", err)
@@ -300,6 +325,54 @@ func (r *poolResourceReporter) hostedSandboxIDs(ctx context.Context) ([]string, 
 	}
 	sort.Strings(ids)
 	return ids, nil
+}
+
+// totalUsage adds the two disjoint halves — the pool's own services and every
+// sandbox on it — into what Discobox costs on this host.
+//
+// The CPU total is absent unless every part of it was measured, because a sum
+// that silently dropped an unmeasured sandbox would read as a smaller load
+// rather than as an incomplete one — the same mistake as reporting an
+// unmeasured sandbox as idle.
+//
+// "Unmeasured" is narrower than "has no rate". A sandbox with no sample at all
+// was not polled, and only running sandboxes are polled, so it is stopped and
+// contributes a known zero. A sandbox that was sampled and still has no rate is
+// the one that has not been measured yet: the agent has one counter for it and
+// needs two. Conflating them meant a pool with a single stopped sandbox never
+// reported a total at all.
+func totalUsage(report PoolReport, sandboxes []SandboxResourceUsage) PoolTotalUsage {
+	total := PoolTotalUsage{
+		CapacityVCPUs: report.CPU.CapacityVCPUs,
+		CapacityBytes: report.Memory.CapacityBytes,
+		MemoryBytes:   report.Memory.CurrentBytes,
+		SandboxCount:  int64(len(sandboxes)),
+	}
+	measured := report.CPU.VCPUs != nil
+	sum := 0.0
+	if measured {
+		sum = *report.CPU.VCPUs
+	}
+	for _, sandbox := range sandboxes {
+		if sandbox.Memory != nil {
+			total.MemoryBytes += sandbox.Memory.CurrentBytes
+		}
+		if sandbox.CPU == nil {
+			// Never sampled, so not running: a known zero.
+			continue
+		}
+		if sandbox.CPU.VCPUs == nil {
+			// Sampled once and not yet twice, so no total covering it can be
+			// complete.
+			measured = false
+			continue
+		}
+		sum += *sandbox.CPU.VCPUs
+	}
+	if measured {
+		total.VCPUs = &sum
+	}
+	return total
 }
 
 // walkedSandboxStorage is the last sweep's per-sandbox results, or nothing when

@@ -68,6 +68,7 @@ type PoolSandboxPullProgress = apigen.PoolSandboxPullProgress
 type PoolSandboxState = apigen.PoolSandboxState
 type PoolStorageUsage = apigen.PoolStorageUsage
 type PoolStorageWalk = apigen.PoolStorageWalk
+type PoolTotalUsage = apigen.PoolTotalUsage
 type ProcessConsumption = apigen.ProcessConsumption
 type Project = apigen.Project
 type ProjectMember = apigen.ProjectMember

@@ -2,6 +2,7 @@ package tui
 
 import (
 	"fmt"
+	"strconv"
 	"strings"
 	"time"
 
@@ -141,6 +142,16 @@ func usage(st *styles, s Sandbox) string {
 
 const usageWidth = 18
 
+// trimFloat writes a CPU count the way a person would say it: whole where it is
+// whole, one decimal where it is not, so "24" and "4.2" sit beside each other
+// without a trailing ".0" on the one that does not need it.
+func trimFloat(v float64) string {
+	if v == float64(int64(v)) {
+		return strconv.FormatInt(int64(v), 10)
+	}
+	return strconv.FormatFloat(v, 'f', 1, 64)
+}
+
 // humanBytes writes a byte count the way df -h does, in binary units, with one
 // decimal place below 10 so "1.2 GiB" and "15 GiB" both fit the same column.
 func humanBytes(n int64) string {
@@ -158,6 +169,30 @@ func humanBytes(n int64) string {
 		return fmt.Sprintf("%.1f %s", value, suffix)
 	}
 	return fmt.Sprintf("%.0f %s", value, suffix)
+}
+
+// humanBytesPair writes a used-of-total pair sharing one unit — "9.0/32 GiB"
+// rather than "9.0 GiB/32 GiB". Both halves are scaled by the total, so the
+// smaller number is read against the larger without the unit being said twice
+// in a band that has no room to say anything twice.
+func humanBytesPair(used, total int64) string {
+	const unit = 1024
+	if total < unit {
+		return fmt.Sprintf("%d/%d B", used, total)
+	}
+	div, exp := float64(1), 0
+	for float64(total)/div >= unit && exp < 4 {
+		div *= unit
+		exp++
+	}
+	suffix := [...]string{"B", "KiB", "MiB", "GiB", "TiB"}[exp]
+	// The used half keeps a decimal wherever it is small enough to need one,
+	// which is exactly when the difference between 0.4 and 4 matters most.
+	format := "%.0f"
+	if float64(used)/div < 10 {
+		format = "%.1f"
+	}
+	return fmt.Sprintf(format+"/%.0f %s", float64(used)/div, float64(total)/div, suffix)
 }
 
 // since is how long ago something was, in one unit and two characters where it
@@ -339,3 +374,61 @@ func wrap(s string, width int) []string {
 }
 
 func itoa(n int) string { return fmt.Sprintf("%d", n) }
+
+// machineText says how much of the machine Discobox has and how much of it is
+// in use — never how much a pool has. A pool is how the system is built: one
+// machine's worth of capacity that discoboxes are scheduled into. The person
+// reading this window has exactly one and has never heard of it, and what they
+// want to know before starting another discobox is how much room is left.
+//
+// Used covers everything Discobox runs, the discoboxes and the machinery beside
+// them both — the shared builder above all, which on a machine mid-build is
+// most of it. Which half is busy is what `discobox admin pool resources`
+// answers; the question here is only whether there is room.
+//
+// It gives up rather than truncating. A half-drawn figure is worse than none:
+// "cpu 4.2/2" is a wrong number, where an absent readout is merely an absent
+// one. Parts drop from the right until what is left fits, so a narrow window
+// keeps the cpu and loses the disk.
+func machineText(st *styles, r Resources, avail int) string {
+	if !r.Known || avail <= 0 {
+		return ""
+	}
+	// Colored on the same thresholds as the row's usage column, so a full
+	// machine reads the same wherever it is drawn.
+	figure := func(text string, share float64) string {
+		switch {
+		case share >= 0.9:
+			return st.statusER.Render(text)
+		case share >= 0.75:
+			return st.statusWA.Render(text)
+		default:
+			return st.dimText.Render(text)
+		}
+	}
+	var parts []string
+	if r.CPUCapacity > 0 {
+		parts = append(parts, figure(
+			fmt.Sprintf("cpu %s/%s", trimFloat(r.CPUVCPUs), trimFloat(r.CPUCapacity)),
+			r.CPUVCPUs/r.CPUCapacity))
+	}
+	if r.MemoryCapacity > 0 {
+		parts = append(parts, figure(
+			"mem "+humanBytesPair(r.MemoryBytes, r.MemoryCapacity),
+			float64(r.MemoryBytes)/float64(r.MemoryCapacity)))
+	}
+	// Disk is what is left rather than what is taken: the filesystem holds more
+	// than Discobox, so what Discobox has taken says nothing about whether the
+	// next discobox will fit.
+	if r.DiskKnown {
+		parts = append(parts, st.dimText.Render(humanBytes(r.DiskFreeBytes)+" free"))
+	}
+	for len(parts) > 0 {
+		text := strings.Join(parts, st.dimText.Render(" · "))
+		if lipgloss.Width(text) <= avail {
+			return text
+		}
+		parts = parts[:len(parts)-1]
+	}
+	return ""
+}

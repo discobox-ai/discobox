@@ -49,10 +49,14 @@ type Model struct {
 	width, height int
 	ready         bool
 
-	list   *sandboxList
-	prompt textarea.Model
-	opts   *optionSet
-	logo   logo
+	list *sandboxList
+	// resources is what Discobox has on this machine and what it is using,
+	// refreshed on the listing's beat and drawn in the header. Zero until the
+	// first report arrives, which draws nothing rather than zeroes.
+	resources Resources
+	prompt    textarea.Model
+	opts      *optionSet
+	logo      logo
 
 	// draft is the prompt as the store last had it. The window writes only
 	// when the field has moved away from it, so an idle window writes nothing
@@ -350,7 +354,7 @@ func New(ctx context.Context, ds DataSource, options ...Option) *Model {
 // harnesses are read here rather than when their screen is opened because the
 // run options offer them as the harness to run.
 func (m *Model) Init() tea.Cmd {
-	return tea.Batch(textarea.Blink, m.loadSession(), m.refresh(), m.loadCredentialRequests(), m.loadHarnesses(), m.tick(), m.startShimmer(), m.awaitInitialization())
+	return tea.Batch(textarea.Blink, m.loadSession(), m.refresh(), m.loadResources(), m.loadCredentialRequests(), m.loadHarnesses(), m.tick(), m.startShimmer(), m.awaitInitialization())
 }
 
 // ---------------------------------------------------------------------------
@@ -379,6 +383,21 @@ func (m *Model) refresh() tea.Cmd {
 	}
 }
 
+// loadResources rides the same beat as refresh but is its own command, so a
+// machine readout that fails or is slow costs the listing nothing.
+func (m *Model) loadResources() tea.Cmd {
+	return func() tea.Msg {
+		resources, err := m.ds.Resources(m.ctx)
+		if err != nil {
+			// Silent by design. This is ambient, and a machine that cannot be
+			// measured should draw nothing rather than push an error at
+			// somebody who did not ask a question.
+			return resourcesLoadedMsg{}
+		}
+		return resourcesLoadedMsg{resources: resources}
+	}
+}
+
 // ---------------------------------------------------------------------------
 // messages
 
@@ -390,6 +409,10 @@ type sessionLoadedMsg struct {
 type listLoadedMsg struct {
 	sandboxes []Sandbox
 	err       error
+}
+
+type resourcesLoadedMsg struct {
+	resources Resources
 }
 
 type tickMsg struct{}
@@ -494,6 +517,11 @@ func (m *Model) update(msg tea.Msg) tea.Cmd {
 		m.opts.setHarnesses(m.harnesses.all)
 		return cmd
 
+	case resourcesLoadedMsg:
+		m.resources = msg.resources
+		m.list.resources = msg.resources
+		return nil
+
 	case listLoadedMsg:
 		if msg.err != nil {
 			return m.report(true, "cannot list discoboxes: %v", msg.err)
@@ -542,7 +570,7 @@ func (m *Model) update(msg tea.Msg) tea.Cmd {
 		return m.credentialAnswered(msg)
 
 	case tickMsg:
-		cmds := []tea.Cmd{m.refresh(), m.loadCredentialRequests(), m.tick()}
+		cmds := []tea.Cmd{m.refresh(), m.loadResources(), m.loadCredentialRequests(), m.tick()}
 		// The draft is written on the same clock the listing is read on, so a
 		// window killed outright — a closed terminal, a lost ssh session —
 		// loses at most the last few seconds of what was typed. The keys that

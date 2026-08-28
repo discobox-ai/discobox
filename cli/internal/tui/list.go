@@ -16,11 +16,15 @@ import (
 // columns drop off the right end as the terminal narrows — the name and the
 // glyph are what the eye actually picks a sandbox by, and neither ever goes.
 type sandboxList struct {
-	session  Session
-	all      []Sandbox
-	cursor   int
-	offset   int
-	selected map[string]bool
+	session Session
+	// resources is what the machine has and what Discobox is using of it,
+	// drawn on the title band. It is the machine's, not this list's: the list
+	// is filtered to a folder and the machine is not.
+	resources Resources
+	all       []Sandbox
+	cursor    int
+	offset    int
+	selected  map[string]bool
 
 	// folder is the origin the list is filtered to, chosen in the header.
 	// Empty is every folder, which is the one choice that is not a path.
@@ -359,6 +363,24 @@ func (l *sandboxList) view(st *styles, focused bool) string {
 	scope := "Discoboxes"
 	if n := l.archivedCount(); n > 0 && !l.showArchived {
 		scope += "   " + plural(n, "archived", "archived") + ", A shows them"
+	}
+	// What the machine has and what Discobox is using of it, ahead of the count
+	// and separated from it: the count belongs to this list, which is filtered
+	// to a folder, and the machine does not.
+	//
+	// It sits on this band rather than in the window header because the header
+	// is already full at any ordinary width — where you are on the left, the
+	// keys on the right — and a readout that vanished on a narrower terminal
+	// would be one nobody could rely on. Here it is also directly above the
+	// usage column, in the same units, which is where the eye compares them.
+	//
+	// What is left after the scope, the count and the gap between them is what
+	// it has to fit in; machineText drops its own parts from the right until it
+	// does, and gives up rather than being truncated into a wrong number.
+	const machineGap = "     "
+	room := l.width - lipgloss.Width(scope) - lipgloss.Width(right) - lipgloss.Width(machineGap) - 4
+	if machine := machineText(st, l.resources, room); machine != "" {
+		right = machine + machineGap + right
 	}
 	blank := strings.Repeat(" ", max(l.width, 0))
 	out := []string{renderTitle(titleStyle, scope, right, l.width)}

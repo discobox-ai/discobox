@@ -203,6 +203,62 @@ func (d *apiDataSource) List(ctx context.Context) ([]tui.Sandbox, error) {
 	return out, nil
 }
 
+// Resources is what Discobox has on this machine and what it is using of it.
+//
+// It reads the pools rather than the discoboxes, because it is true with none:
+// somebody deciding whether to start their first one still wants to know what
+// room there is. The agent already added the two halves — its own services and
+// every discobox — at one tick, so nothing is summed across rows here.
+//
+// Capacity is what is dedicated to Discobox. The agent can only measure the
+// host, so the envelope an operator set on the pool is preferred here, where
+// both numbers are known; an envelope of zero means "sized by the host".
+func (d *apiDataSource) Resources(ctx context.Context) (tui.Resources, error) {
+	res, err := d.client.ListPools(ctx, apiclientgen.ListPoolsParams{ProjectId: d.projectID})
+	if err != nil {
+		return tui.Resources{}, err
+	}
+	body, err := expectResponse[apimodel.ListPoolsBody](res)
+	if err != nil {
+		return tui.Resources{}, err
+	}
+	var out tui.Resources
+	for _, pool := range body.GetPools() {
+		report, ok := poolResourceReport(&pool)
+		if !ok {
+			continue
+		}
+		total, ok := report.Total.Get()
+		if !ok {
+			continue
+		}
+		// Summed across pools, because what somebody wants to know is what
+		// Discobox has in total. A project with one pool — which is every
+		// project today — sums one.
+		out.CPUCapacity += dedicated(pool.CpuVcpus, total.CapacityVcpus)
+		out.MemoryCapacity += int64(dedicated(float64(pool.MemoryBytes), float64(total.CapacityBytes)))
+		out.MemoryBytes += total.MemoryBytes
+		if vcpus, ok := total.CpuVcpus.Get(); ok {
+			out.CPUVCPUs += vcpus
+			out.Known = true
+		}
+		if free := report.Storage.Filesystem.FreeBytes; free > 0 {
+			out.DiskFreeBytes += free
+			out.DiskKnown = true
+		}
+	}
+	return out, nil
+}
+
+// dedicated prefers the envelope an operator set over the host's own capacity.
+// Zero is not a smaller envelope, it is the absence of one (model.PoolManifest).
+func dedicated(envelope, capacity float64) float64 {
+	if envelope > 0 {
+		return envelope
+	}
+	return capacity
+}
+
 // toTUIUsage is what the row's usage column draws: the sandbox's share of the
 // host it runs on, from the pool agent's resource report (ADR 0071).
 //

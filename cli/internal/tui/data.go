@@ -51,6 +51,36 @@ type Usage struct {
 	DiskPercent   int
 }
 
+// Resources is what Discobox has on this machine and what it is using of it.
+//
+// It is deliberately not called a pool. A pool is how the system is built —
+// one machine's worth of capacity that discoboxes are scheduled into — and the
+// person reading this window has one and has never heard of it. What they want
+// to know is how much room they have left before starting another discobox.
+//
+// Used covers everything Discobox runs: the discoboxes themselves and the
+// machinery beside them, the shared builder above all, which on a machine
+// mid-build is most of it. Splitting those out is what the CLI's
+// `discobox admin pool resources` is for; here they are one number, because
+// the answer to "can I start another one" does not care which half is busy.
+type Resources struct {
+	// Known is false until the agent has two samples to difference, which is
+	// the first report after it starts. The window draws nothing rather than
+	// zeroes: an unmeasured machine is not an idle one.
+	Known bool
+
+	CPUVCPUs       float64
+	CPUCapacity    float64
+	MemoryBytes    int64
+	MemoryCapacity int64
+	// DiskFreeBytes is what is left on the filesystem Discobox stores into.
+	// It is free rather than used because the whole filesystem usually holds
+	// more than Discobox, so what Discobox has taken says nothing about
+	// whether the next discobox will fit.
+	DiskFreeBytes int64
+	DiskKnown     bool
+}
+
 // DiffStat is what a sandbox has changed: committed and uncommitted tracked
 // changes both, as `git diff --shortstat` counts them, against the spawn
 // commit — forwarded to the merge base with upstream once the sandbox has
@@ -949,6 +979,12 @@ type DataSource interface {
 
 	// List is the project's sandboxes, newest-created first.
 	List(ctx context.Context) ([]Sandbox, error)
+
+	// Resources is what Discobox has on this machine and what it is using of
+	// it, polled on the same beat as List. It is separate from List because it
+	// is true with no discoboxes at all — which is exactly when someone is
+	// deciding whether to start one.
+	Resources(ctx context.Context) (Resources, error)
 
 	// Run creates a sandbox and delivers its source, which is what Enter does.
 	// It reports each step it passes through — the steps are this client's own

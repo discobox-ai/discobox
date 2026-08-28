@@ -17,7 +17,8 @@ import (
 // for, so a test can assert on the command a key press turned into rather than
 // on the frame it drew.
 type fakeSource struct {
-	mu sync.Mutex
+	resources Resources
+	mu        sync.Mutex
 
 	session   Session
 	sandboxes []Sandbox
@@ -236,6 +237,18 @@ func (f *fakeSource) List(context.Context) ([]Sandbox, error) {
 		return nil, f.listErr
 	}
 	return append([]Sandbox(nil), f.sandboxes...), nil
+}
+
+func (f *fakeSource) Resources(context.Context) (Resources, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return f.resources, nil
+}
+
+func (f *fakeSource) setResources(r Resources) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.resources = r
 }
 
 func (f *fakeSource) Run(_ context.Context, req RunRequest, report func(string)) (Sandbox, error) {
