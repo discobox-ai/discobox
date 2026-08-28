@@ -1,10 +1,7 @@
 // Package harness defines coding-harness contracts and built-in drivers.
 package harness
 
-import (
-	"context"
-	"strings"
-)
+import "strings"
 
 const (
 	TerminalIDEnv = "DISCOBOX_TERMINAL_ID"
@@ -174,14 +171,6 @@ type Driver interface {
 	ID() string
 	// Definition returns the harness's built-in harness-config template.
 	Definition() Definition
-}
-
-// Converser is implemented by drivers that support automated multi-turn conversations.
-// Prompt sends a user message and returns the final assistant response.
-// state is an opaque blob from the previous call; nil starts a new conversation.
-// The returned state must be passed to the next call to continue the conversation.
-type Converser interface {
-	Prompt(ctx context.Context, prompt string, state []byte) (result string, newState []byte, err error)
 }
 
 func SetEnv(env map[string]string, key, value string) {

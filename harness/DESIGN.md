@@ -67,8 +67,10 @@ sandbox terminals.
 ## Driver Model
 
 - `harness.Driver` identifies one built-in harness's included image through
-  `Definition()`. The public definition catalog is an image shortcut; runtime
-  metadata comes from the registered image label.
+  `Definition()`, and nothing else. The public definition catalog is an image
+  shortcut; runtime metadata comes from the registered image label. A driver
+  holds no behavior a harness image cannot declare for itself — that is what
+  keeps a third-party harness a pure image-registration story.
 - A `Definition` names its image through `harness.ImageRef`, never as a
   literal. One `ImageRegistry`/`ImageTag` pair backs all three, unset and
   `local` by default and overwritten at link time by a release
