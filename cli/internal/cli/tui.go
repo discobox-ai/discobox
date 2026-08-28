@@ -294,9 +294,15 @@ func toTUIUsage(sb apimodel.Sandbox) tui.Usage {
 			}
 		}
 	}
+	// Resident rather than the cgroup's charge, and rather than virtual size.
+	// Virtual is address space reserved, not memory held, so it tells one
+	// discobox's weight from another's not at all; the charge includes
+	// reclaimable page cache, which is the right thing to read against the
+	// machine's capacity and the wrong thing to read against another discobox.
 	if memory, ok := consumption.Memory.Get(); ok && usage.Known {
+		usage.MemoryBytes = memory.ResidentBytes
 		if capacity := report.Memory.CapacityBytes.Or(0); capacity > 0 {
-			usage.MemoryPercent = percentOf(float64(memory.CurrentBytes), float64(capacity))
+			usage.MemoryPercent = percentOf(float64(memory.ResidentBytes), float64(capacity))
 		}
 	}
 	// Disk is walked on the agent's own slower schedule, so it is known

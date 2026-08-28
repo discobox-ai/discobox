@@ -42,11 +42,15 @@ const poolCapacity = `{"reportedAt":"2026-08-27T12:00:00Z",` +
 	`"memory":{"currentBytes":1,"capacityBytes":34359738368},` +
 	`"storage":{"root":"/var/lib/discobox","filesystem":{"totalBytes":536870912000,"usedBytes":1,"freeBytes":1}}}`
 
-func TestTUIUsageIsAShareOfTheHost(t *testing.T) {
-	// 6 of 24 vCPU is 25%; 3.2GiB of 32GiB is 10%.
+func TestTUIUsageIsCPUShareAndMemoryAmount(t *testing.T) {
+	// 6 of 24 vCPU is 25%. Memory is the resident 3.2GiB itself, which is 10%
+	// of the host's 32GiB — the share colors the cell, the amount is drawn.
+	// The charge and the virtual size are deliberately different numbers here,
+	// so picking the wrong one shows up.
 	consumption := `{"sandboxId":"sandbox-1","observedAt":"2026-08-27T12:00:00Z","source":"cgroup",` +
 		`"cpu":{"usageUsec":1,"userUsec":1,"systemUsec":0,"vcpus":6.0},` +
-		`"memory":{"currentBytes":3435973836,"virtualBytes":1,"residentBytes":1},"processCount":4,` +
+		`"memory":{"currentBytes":9999999999,"virtualBytes":88888888888,"residentBytes":3435973836},` +
+		`"processCount":4,` +
 		`"storage":{"sandboxId":"sandbox-1","dataBytes":1,"configBytes":0,"sourcesBytes":0,` +
 		`"secretsBytes":0,"originsBytes":0,"totalBytes":53687091200}}`
 
@@ -58,8 +62,12 @@ func TestTUIUsageIsAShareOfTheHost(t *testing.T) {
 	if got.CPUPercent != 25 {
 		t.Errorf("cpu = %d%%, want 25%% (6 of 24 vCPU)", got.CPUPercent)
 	}
+	// Resident, not the cgroup charge and not the virtual size.
+	if got.MemoryBytes != 3435973836 {
+		t.Errorf("memory = %d bytes, want the resident 3435973836", got.MemoryBytes)
+	}
 	if got.MemoryPercent != 10 {
-		t.Errorf("memory = %d%%, want 10%% (3.2 of 32 GiB)", got.MemoryPercent)
+		t.Errorf("memory share = %d%%, want 10%% of the host (colors the cell)", got.MemoryPercent)
 	}
 	if got.DiskBytes != 53687091200 || got.DiskPercent != 10 {
 		t.Errorf("disk = %d bytes / %d%%, want 50GiB / 10%%", got.DiskBytes, got.DiskPercent)
@@ -71,14 +79,14 @@ func TestTUIUsageIsAShareOfTheHost(t *testing.T) {
 func TestTUIUsageIsUnknownWithoutARate(t *testing.T) {
 	consumption := `{"sandboxId":"sandbox-1","observedAt":"2026-08-27T12:00:00Z","source":"cgroup",` +
 		`"cpu":{"usageUsec":8204113000,"userUsec":1,"systemUsec":0},` +
-		`"memory":{"currentBytes":3435973836,"virtualBytes":1,"residentBytes":1},"processCount":4}`
+		`"memory":{"currentBytes":1,"virtualBytes":1,"residentBytes":3435973836},"processCount":4}`
 
 	got := toTUIUsage(sandboxWithResources(t, consumption, poolCapacity))
 
 	if got.Known {
 		t.Errorf("a sandbox with counters but no rate was drawn as measured: %+v", got)
 	}
-	if got.CPUPercent != 0 || got.MemoryPercent != 0 {
+	if got.CPUPercent != 0 || got.MemoryBytes != 0 {
 		t.Errorf("unmeasured usage carried figures: %+v", got)
 	}
 }
@@ -88,7 +96,7 @@ func TestTUIUsageIsUnknownWithoutARate(t *testing.T) {
 func TestTUIUsageKnowsCPUBeforeDisk(t *testing.T) {
 	consumption := `{"sandboxId":"sandbox-1","observedAt":"2026-08-27T12:00:00Z","source":"cgroup",` +
 		`"cpu":{"usageUsec":1,"userUsec":1,"systemUsec":0,"vcpus":6.0},` +
-		`"memory":{"currentBytes":3435973836,"virtualBytes":1,"residentBytes":1},"processCount":4}`
+		`"memory":{"currentBytes":1,"virtualBytes":1,"residentBytes":3435973836},"processCount":4}`
 
 	got := toTUIUsage(sandboxWithResources(t, consumption, poolCapacity))
 

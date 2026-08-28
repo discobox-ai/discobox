@@ -116,9 +116,9 @@ func TestReachingPastThePromptOpensTheWindowOut(t *testing.T) {
 			if got := lipgloss.Height(m.View().Content); got != m.height {
 				t.Fatalf("the full window is %d rows in a %d-row terminal", got, m.height)
 			}
-			// The name may be ellipsized at this width — the git columns get
-			// their cells before the name gets its tail.
-			if !strings.Contains(frameText(m), "fix flaky pool reaper") {
+			// The name may be ellipsized at this width — the git and usage
+			// columns get their cells before the name gets its tail.
+			if !strings.Contains(frameText(m), "fix flaky pool") {
 				t.Errorf("the sandboxes should be on it:\n%s", frameText(m))
 			}
 			// It lands at the top whichever key opened it out. Up means "the

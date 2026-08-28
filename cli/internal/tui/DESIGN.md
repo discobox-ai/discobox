@@ -1210,50 +1210,70 @@ art), and every style is the identity. `highlight` writes the row background
 escape by hand and re-asserts it after both spellings of the reset, because a
 style cannot paint across content that carries its own colors.
 
-**The list band says what the machine has, and never says "pool".** A pool is
+**The machine gets a row of its own, and is never called a pool.** A pool is
 how the system is built — one machine's worth of capacity that discoboxes are
 scheduled into — and the person reading this window has exactly one and has
-never heard of it (`machineText`). What the band says is what Discobox has here
-and how much of it is in use, which is what somebody about to start another
-discobox actually wants to know.
+never heard of it (`machineText`). The row under the list says what Discobox has
+here and how much of it is in use, which is what somebody about to start another
+discobox wants to know.
+
+It is a row rather than a third fact on the title band. The band was carrying
+the scope, the count and the machine at once and reading as none of them; the
+count belongs to the list, which is filtered to a folder, and the machine does
+not. The row costs no height: it goes in the blank that already sat between the
+list and the composer, and with nothing to report it is that blank again.
 
 Used covers everything Discobox runs, the discoboxes and the machinery beside
 them both — the shared builder above all, which on a machine mid-build is most
 of it. Which half is busy is what `discobox admin pool resources` answers; the
-question here is only whether there is room.
+question here is only whether there is room. Disk is what is left rather than
+what is taken, since the filesystem holds more than Discobox.
 
-It sits on the band rather than in the window header because the header is
-already full at any ordinary width — where you are on the left, the keys on the
-right — and a readout that vanished on a narrower terminal is one nobody can
-rely on. The band has room down to 80 columns, and it puts the figures directly
-above the usage column in the same units, which is where the eye compares them.
+The figures drop from the right when the window is too narrow for all three, and
+a figure is dropped whole rather than truncated: `mem 9.0/3` is a wrong number
+where an absent one is merely absent.
 
-The count stays beside it rather than being replaced by it: the count belongs to
-this list, which is filtered to a folder, and the machine does not. On a window
-too narrow for everything the figures drop from the right — disk, then memory —
-and the count survives. A figure is dropped whole rather than truncated, because
-`mem 9.0/3` is a wrong number where an absent one is merely absent.
+**The usage columns are labeled, by the same arithmetic that lays them out.**
+`cpu mem disk` sit over their own cells (`sandboxList.header`), because "1.2 GiB"
+beside "94%" does not say which is memory and which is disk. Only those three
+are labeled — the name, the state and the git position are read without help,
+and a header over every column would spend a line spelling out what the rows
+already make plain.
 
-Disk is what is left rather than what is taken. The filesystem usually holds
-more than Discobox, so what Discobox has taken says nothing about whether the
-next discobox will fit.
+The labels and the rows share `tailColumns`, which is a type rather than a
+closure for exactly that reason: a header budgeted separately drifts out of line
+the moment a column drops on a narrowing window, and a label over the wrong
+column is worse than no label. The header is skipped on a window too short for a
+row to survive being labeled.
 
-**The usage column is a share of the host, and dots where it is not measured.**
-`Usage` carries what the pool agent reported (ADR 0071), divided by the host
-capacity its own pool reports — the pool's envelope is usually zero, meaning
-"sized by the host", and a share of zero is not a share. The listing already
-carries each discobox's pool, so the column costs no extra request.
+**The usage columns are amounts, and only the cpu is a share.** `Usage` carries
+what the pool agent reported (ADR 0071). What a row is read for is what this
+discobox costs beside the one under it, and a percentage of the whole machine
+answers a question about the machine instead — so memory is the bytes it holds
+and disk the bytes it has taken. The share is still what colors them, so a
+discobox filling the box is noticed without the number having to be read.
+
+Memory is **resident** size, the sum of what `top` calls RES. Virtual is address
+space reserved rather than memory held — a process that maps a large file
+inflates it without consuming anything — so it tells one discobox's weight from
+another's not at all. It is also not the cgroup's charge, which the machine row
+uses: the charge includes reclaimable page cache and is the right number to read
+against the machine's capacity, where this is the right number to read against
+another discobox. The two do not sum to each other and are not meant to.
+
+The cpu share's denominator is the host capacity its own pool reports, since the
+pool's envelope is usually zero meaning "sized by the host", and a share of zero
+is not a share. The listing already carries each discobox's pool, so the column
+costs no extra request.
 
 It has two `Known` flags because it is two measurements on two schedules. CPU
-and memory arrive together on every report; disk is a walk of the discobox's
-trees on the agent's own adaptive interval, so a discobox created since the last
-sweep has one and not the other. Each half draws a dot rather than a zero when
-it is unmeasured: `0%` reads as idle and `0 B` as holding nothing, and both are
-claims about the discobox where a dot is a claim about what we know.
-
-Rates are comparable down the column because one agent differenced every
-discobox in its pool over the same tick. Rates each discobox computed for itself
-would not be.
+and memory arrive together on every report; disk is a walk on the agent's own
+adaptive interval, so a discobox created since the last sweep has one and not
+the other. Each cell draws a dot rather than a zero where it is unmeasured:
+`0 B` reads as holding nothing, which is a claim about the discobox where a dot
+is a claim about what we know. Measured and unmeasured share one layout, so a
+dot sits in the cell its figure would have — two layouts is how the dots came to
+sit under the wrong columns when the cells were resized.
 
 **The folder is a header control, not a column.** The path in the header is
 which folder's sandboxes are listed (`folder.go`). It opens on the directory the

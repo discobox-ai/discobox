@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"charm.land/lipgloss/v2"
+	"github.com/charmbracelet/x/ansi"
 )
 
 // sandboxList is the upper pane: every sandbox in the project, newest-created
@@ -364,41 +365,39 @@ func (l *sandboxList) view(st *styles, focused bool) string {
 	if n := l.archivedCount(); n > 0 && !l.showArchived {
 		scope += "   " + plural(n, "archived", "archived") + ", A shows them"
 	}
-	// What the machine has and what Discobox is using of it, ahead of the count
-	// and separated from it: the count belongs to this list, which is filtered
-	// to a folder, and the machine does not.
-	//
-	// It sits on this band rather than in the window header because the header
-	// is already full at any ordinary width — where you are on the left, the
-	// keys on the right — and a readout that vanished on a narrower terminal
-	// would be one nobody could rely on. Here it is also directly above the
-	// usage column, in the same units, which is where the eye compares them.
-	//
-	// What is left after the scope, the count and the gap between them is what
-	// it has to fit in; machineText drops its own parts from the right until it
-	// does, and gives up rather than being truncated into a wrong number.
-	const machineGap = "     "
-	room := l.width - lipgloss.Width(scope) - lipgloss.Width(right) - lipgloss.Width(machineGap) - 4
-	if machine := machineText(st, l.resources, room); machine != "" {
-		right = machine + machineGap + right
-	}
 	blank := strings.Repeat(" ", max(l.width, 0))
 	out := []string{renderTitle(titleStyle, scope, right, l.width)}
 
-	body := make([]string, 0, l.height)
+	// The column labels cost a row, which comes out of the body rather than
+	// out of the window: the list occupies the height it was given whatever it
+	// chooses to put there.
+	rowBudget := l.height
+	// Only where a row survives being labeled. A window this short is one
+	// where the list is being squeezed out entirely, and spending its last
+	// line on the names of columns that have nothing under them would push the
+	// window past the terminal.
+	if l.height > 1 {
+		if header := l.header(st, st.color); header != "" {
+			out = append(out, header)
+			rowBudget--
+		}
+	}
+
+	body := make([]string, 0, max(rowBudget, 0))
 	if len(rows) == 0 {
 		body = append(body, st.dimText.Render(pad("  no discoboxes here yet — type a prompt below", l.width)))
 	}
-	for i := l.offset; i < len(rows) && len(body) < l.height; i++ {
+	for i := l.offset; i < len(rows) && len(body) < rowBudget; i++ {
 		body = append(body, l.row(st, rows[i], i, focused))
 	}
-	for len(body) < l.height {
+	for len(body) < rowBudget {
 		body = append(body, blank)
 	}
-	// One blank after the last row, so a list long enough to reach the composer
-	// still has air between them. The title bar needs none above the rows: it
-	// is a band of color, and that is edge enough on its own.
-	return lipgloss.JoinVertical(lipgloss.Left, append(append(out, body...), blank)...)
+	// The machine goes in the blank that already sat after the last row, so it
+	// costs nothing: with nothing to report the line is blank exactly as it was,
+	// and the air between the list and the composer is kept. The title bar needs
+	// none above the rows — it is a band of color, and that is edge enough.
+	return lipgloss.JoinVertical(lipgloss.Left, append(append(out, body...), l.footer(st))...)
 }
 
 // row draws one sandbox. Widths are budgeted left to right and the columns
@@ -436,13 +435,8 @@ func (l *sandboxList) row(st *styles, s Sandbox, i int, focused bool) string {
 	// Where it came from is not among them; see the origin comment below.
 	glyph := st.color
 
-	tail := ""
-	addCol := func(text string, w int) {
-		if l.width-lipgloss.Width(tail)-w < 20 {
-			return
-		}
-		tail += padANSI(text, w)
-	}
+	cols := &tailColumns{width: l.width}
+	addCol := cols.add
 
 	if !glyph {
 		addCol("  "+pad(string(s.State), 8), 10)
@@ -479,6 +473,7 @@ func (l *sandboxList) row(st *styles, s Sandbox, i int, focused bool) string {
 	addCol(st.dimText.Render(pad(createdText(s, l.now()), 7)), 8)
 	addCol(usage(st, s), usageWidth+1)
 	addCol(padANSI(diffText(st, s), 11), 11)
+	tail := cols.text
 
 	// The cursor is a chevron, and selection is a background — difftui's
 	// file list, which is a picker like this one rather than a diff.
@@ -683,4 +678,88 @@ func protocolLabel(protocol string) string {
 		return "?"
 	}
 	return protocol
+}
+
+// tailColumns budgets the fixed-width columns to the right of the name, left to
+// right, dropping the ones that no longer leave the name room to be read.
+//
+// It is a type rather than a closure inside row so that the header labeling
+// those columns is budgeted by exactly the same arithmetic. A header computed
+// separately drifts out of line with its rows the moment a column drops on a
+// narrowing window, and a label over the wrong column is worse than none.
+type tailColumns struct {
+	width int
+	text  string
+}
+
+func (t *tailColumns) add(text string, w int) {
+	if t.width-lipgloss.Width(t.text)-w < 20 {
+		return
+	}
+	t.text += padANSI(text, w)
+}
+
+// header labels the columns whose numbers do not say what they are. The name,
+// the state and the git position are read without help; "1.2 GiB" beside "94%"
+// is not, and the units alone do not say which is memory and which is disk.
+//
+// Only the usage columns are labeled. A header over every column would spell
+// out what the rows already make plain, and cost a line to do it.
+func (l *sandboxList) header(st *styles, glyph bool) string {
+	cols := &tailColumns{width: l.width}
+	if !glyph {
+		cols.add("", 10)
+	}
+	cols.add("", 9)
+	cols.add("", 2)
+	cols.add("", 15)
+	cols.add("", 8)
+	cols.add("", 8)
+	cols.add(usageHeader(st), usageWidth+1)
+	cols.add("", 11)
+	if strings.TrimSpace(ansi.Strip(cols.text)) == "" {
+		// Every labeled column dropped off this window, so there is nothing
+		// to label and the line is not worth spending.
+		return ""
+	}
+	return padANSI(strings.Repeat(" ", l.headOffset(glyph))+padANSI("", l.nameSpace(glyph))+cols.text, l.width)
+}
+
+// headOffset and nameSpace are what row puts in front of the tail: the cursor
+// marker and, with color, the state dot, then the name filling the slack.
+func (l *sandboxList) headOffset(glyph bool) int {
+	if glyph {
+		return 4
+	}
+	return 2
+}
+
+func (l *sandboxList) nameSpace(glyph bool) int {
+	cols := &tailColumns{width: l.width}
+	if !glyph {
+		cols.add("", 10)
+	}
+	cols.add("", 9)
+	cols.add("", 2)
+	cols.add("", 15)
+	cols.add("", 8)
+	cols.add("", 8)
+	cols.add("", usageWidth+1)
+	cols.add("", 11)
+	return max(l.width-l.headOffset(glyph)-lipgloss.Width(cols.text), 4)
+}
+
+// footer is what the machine has and how much of it Discobox is using.
+//
+// A row of its own under the list, rather than squeezed onto the title band
+// beside the count: the band was carrying two unrelated facts and reading as
+// neither. It is left-aligned and says what each figure is, because it cannot
+// line up under the columns it belongs to — the totals are used-of-capacity
+// pairs and the cells above them hold one number each.
+func (l *sandboxList) footer(st *styles) string {
+	machine := machineText(st, l.resources, max(l.width-12, 0))
+	if machine == "" {
+		return strings.Repeat(" ", max(l.width, 0))
+	}
+	return padANSI("  "+st.dimText.Render("machine")+"  "+machine, l.width)
 }

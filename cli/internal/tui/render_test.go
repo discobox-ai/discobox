@@ -68,7 +68,9 @@ func TestRowCarriesTheColumns(t *testing.T) {
 	m := newTestModel(t, newFakeSource(testSandboxes()...))
 	send(t, m, key("tab"))
 
-	row := rowFor(t, m, "fix flaky pool reaper tests")
+	// A prefix, not the whole name: the name is the column that gives way to
+	// the others, so at this width it is ellipsized.
+	row := rowFor(t, m, "fix flaky pool")
 	for _, want := range []string{"claude", "main@a3f9c21*", "dirty", "2m ago", "+142", "−38"} {
 		if !strings.Contains(row, want) {
 			t.Errorf("row %q missing %q", row, want)
@@ -90,9 +92,10 @@ func TestUsageWithoutMeasurementsShowsDots(t *testing.T) {
 	m := newTestModel(t, newFakeSource(testSandboxes()...))
 	send(t, m, key("tab"))
 
-	row := rowFor(t, m, "fix flaky pool reaper tests")
-	if !strings.Contains(row, "·    ·    ·") {
-		t.Errorf("row %q should show dots where the usage will go", row)
+	row := rowFor(t, m, "fix flaky pool")
+	// One dot per cell, each in the cell its figure would have taken.
+	if strings.Count(ansi.Strip(row), "·") != 3 {
+		t.Errorf("row %q should show a dot in each usage cell", row)
 	}
 	if strings.Contains(row, "0%") {
 		t.Errorf("row %q should not show a measurement nobody took", row)
@@ -104,18 +107,19 @@ func TestUsageWithoutMeasurementsShowsDots(t *testing.T) {
 // dot, not "0 B", which would say it holds nothing.
 func TestUsageDrawsADotForTheHalfItHasNotMeasured(t *testing.T) {
 	sandboxes := testSandboxes()
-	sandboxes[0].Usage = Usage{Known: true, CPUPercent: 61, MemoryPercent: 44}
+	sandboxes[0].Usage = Usage{Known: true, CPUPercent: 61, MemoryBytes: 1_288_490_188, MemoryPercent: 4}
 	m := newTestModel(t, newFakeSource(sandboxes...))
 	send(t, m, key("tab"))
 
-	row := rowFor(t, m, "fix flaky pool reaper tests")
-	for _, want := range []string{"61%", "44%"} {
+	row := rowFor(t, m, "fix flaky pool")
+	for _, want := range []string{"61%", "1.2 GiB"} {
 		if !strings.Contains(row, want) {
 			t.Errorf("row %q missing %q", row, want)
 		}
 	}
-	if strings.Contains(row, "0 B") {
-		t.Errorf("row %q drew an unwalked disk as zero", row)
+	// The disk cell alone is the dot; the memory beside it is measured.
+	if !strings.Contains(row, "·") {
+		t.Errorf("row %q drew an unwalked disk as a figure", row)
 	}
 }
 
@@ -123,14 +127,16 @@ func TestUsageDrawsADotForTheHalfItHasNotMeasured(t *testing.T) {
 func TestUsageIsDrawnWhenItIsKnown(t *testing.T) {
 	sandboxes := testSandboxes()
 	sandboxes[0].Usage = Usage{
-		Known: true, CPUPercent: 61, MemoryPercent: 44,
+		Known: true, CPUPercent: 61, MemoryBytes: 1_288_490_188, MemoryPercent: 4,
 		DiskKnown: true, DiskBytes: 2_483_027_968, DiskPercent: 12,
 	}
 	m := newTestModel(t, newFakeSource(sandboxes...))
 	send(t, m, key("tab"))
 
-	row := rowFor(t, m, "fix flaky pool reaper tests")
-	for _, want := range []string{"61%", "44%", "2.3 GiB"} {
+	row := rowFor(t, m, "fix flaky pool")
+	// Memory is the amount held, not a share of the machine: what a row is
+	// read for is what this discobox costs beside the one under it.
+	for _, want := range []string{"61%", "1.2 GiB", "2.3 GiB"} {
 		if !strings.Contains(row, want) {
 			t.Errorf("row %q missing %q", row, want)
 		}
@@ -623,10 +629,11 @@ func TestTheStripOnlyNamesWhatWasChosen(t *testing.T) {
 	}
 }
 
-// The band says what Discobox has on this machine and what it is using,
-// because the person reading it has one machine's worth of capacity and has
-// never heard of a pool.
-func TestListBandSaysWhatTheMachineHasAndIsUsing(t *testing.T) {
+// A row under the list says what Discobox has on this machine and what it is
+// using, because the person reading it has one machine's worth of capacity and
+// has never heard of a pool. It is a row of its own rather than a third fact
+// crowded onto the title band beside the count.
+func TestFooterSaysWhatTheMachineHasAndIsUsing(t *testing.T) {
 	ds := newFakeSource(testSandboxes()...)
 	ds.setResources(Resources{
 		Known:    true,
@@ -637,25 +644,67 @@ func TestListBandSaysWhatTheMachineHasAndIsUsing(t *testing.T) {
 	m := newTestModel(t, ds)
 	send(t, m, key("tab"))
 
-	band := bandFor(t, m)
+	footer := machineRow(t, m)
 	for _, want := range []string{"cpu 4.2/24", "mem 9.0/32 GiB", "32 GiB free"} {
-		if !strings.Contains(band, want) {
-			t.Errorf("band %q missing %q", band, want)
+		if !strings.Contains(footer, want) {
+			t.Errorf("footer %q missing %q", footer, want)
 		}
 	}
-	// The list is filtered to a folder and the machine is not, so the count
-	// stays beside it rather than being replaced by it.
+	// The count belongs to the list, which is filtered to a folder; the machine
+	// does not, so the two are not on the same line.
+	band := bandFor(t, m)
 	if !strings.Contains(band, "boxes") {
 		t.Errorf("band %q lost the box count", band)
 	}
+	if strings.Contains(band, "cpu ") {
+		t.Errorf("band %q is carrying the machine as well as the count", band)
+	}
 	// A pool is how the system is built, not something to say to somebody who
 	// has one and does not know it.
-	if strings.Contains(strings.ToLower(band), "pool") {
-		t.Errorf("band %q says pool", band)
+	if strings.Contains(strings.ToLower(footer), "pool") {
+		t.Errorf("footer %q says pool", footer)
 	}
 }
 
-// bandFor is the list's title band, which carries the machine readout.
+// The columns whose numbers do not say what they are get labeled, and the
+// labels sit over their own cells.
+func TestColumnsAreLabeled(t *testing.T) {
+	m := newTestModel(t, newFakeSource(testSandboxes()...))
+	send(t, m, key("tab"))
+
+	var header string
+	for _, line := range frame(m) {
+		if strings.Contains(line, "cpu") && strings.Contains(line, "mem") {
+			header = line
+		}
+	}
+	if header == "" {
+		t.Fatalf("no column header in\n%s", frameText(m))
+	}
+	if !strings.Contains(header, "disk") {
+		t.Errorf("header %q missing the disk label", header)
+	}
+	// Over its own cell: the label's column is where the row's figure is.
+	// Measured in display columns, not bytes — the dot and the cursor chevron
+	// are both multi-byte, so byte offsets say the columns disagree when they
+	// line up perfectly.
+	row := rowFor(t, m, "fix flaky pool")
+	if got, want := displayCol(row, "·"), displayCol(header, "cpu"); got != want {
+		t.Errorf("the cpu cell starts at column %d and its label at %d:\n%s\n%s", got, want, header, row)
+	}
+}
+
+// displayCol is where sub starts in line, counted in terminal cells.
+func displayCol(line, sub string) int {
+	plain := ansi.Strip(line)
+	i := strings.Index(plain, sub)
+	if i < 0 {
+		return -1
+	}
+	return ansi.StringWidth(plain[:i])
+}
+
+// bandFor is the list's title band, which carries the count.
 func bandFor(t *testing.T, m *Model) string {
 	t.Helper()
 	for _, line := range frame(m) {
@@ -667,20 +716,34 @@ func bandFor(t *testing.T, m *Model) string {
 	return ""
 }
 
+// machineRow is the line under the list carrying what the machine has.
+func machineRow(t *testing.T, m *Model) string {
+	t.Helper()
+	for _, line := range frame(m) {
+		if strings.Contains(line, "machine") {
+			return line
+		}
+	}
+	t.Fatalf("no machine row in\n%s", frameText(m))
+	return ""
+}
+
 // An unmeasured machine is not an idle one, so nothing is drawn until there is
 // something to draw.
-func TestListBandSaysNothingUntilTheMachineIsMeasured(t *testing.T) {
+func TestFooterSaysNothingUntilTheMachineIsMeasured(t *testing.T) {
 	m := newTestModel(t, newFakeSource(testSandboxes()...))
 	send(t, m, key("tab"))
 
-	if band := bandFor(t, m); strings.Contains(band, "cpu ") {
-		t.Errorf("band %q drew a machine nothing has measured", band)
+	for _, line := range frame(m) {
+		if strings.Contains(line, "machine") {
+			t.Errorf("line %q drew a machine nothing has measured", line)
+		}
 	}
 }
 
 // A narrow window keeps the figure that matters most and drops the rest, rather
 // than truncating one into a wrong number or taking the box count down with it.
-func TestListBandDropsMachineFiguresBeforeTheCount(t *testing.T) {
+func TestFooterDropsMachineFiguresItCannotFit(t *testing.T) {
 	ds := newFakeSource(testSandboxes()...)
 	ds.setResources(Resources{
 		Known:    true,
@@ -691,15 +754,12 @@ func TestListBandDropsMachineFiguresBeforeTheCount(t *testing.T) {
 	m := newTestModel(t, ds)
 	send(t, m, tea.WindowSizeMsg{Width: 80, Height: 24}, key("tab"))
 
-	band := bandFor(t, m)
-	if !strings.Contains(band, "cpu 4.2/24") {
-		t.Errorf("band %q dropped the cpu figure first", band)
-	}
-	if !strings.Contains(band, "boxes") {
-		t.Errorf("band %q dropped the box count to fit the machine", band)
+	footer := machineRow(t, m)
+	if !strings.Contains(footer, "cpu 4.2/24") {
+		t.Errorf("footer %q dropped the cpu figure first", footer)
 	}
 	// Dropped whole, never cut: "mem 9.0/3" would be a wrong number.
-	if strings.Contains(band, "mem 9.0/3 ") || strings.Contains(band, "mem 9") && !strings.Contains(band, "mem 9.0/32 GiB") {
-		t.Errorf("band %q carries a truncated figure", band)
+	if strings.Contains(footer, "mem 9") && !strings.Contains(footer, "mem 9.0/32 GiB") {
+		t.Errorf("footer %q carries a truncated figure", footer)
 	}
 }

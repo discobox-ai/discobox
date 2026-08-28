@@ -49,7 +49,8 @@ func TestWelcomeIsDismissedByEnterAndRecorded(t *testing.T) {
 	if fake.welcomed != 1 {
 		t.Fatalf("the welcome was recorded %d times, want once", fake.welcomed)
 	}
-	if view := m.View(); !strings.Contains(view.Content, "fix flaky pool reaper tests") {
+	// A prefix, since the row ellipsizes the name at this width.
+	if view := m.View(); !strings.Contains(view.Content, "fix flaky pool") {
 		t.Fatalf("the launcher was not revealed:\n%s", view.Content)
 	}
 }

@@ -47,7 +47,8 @@ func TestARowWithAWaitingRequestIsMarked(t *testing.T) {
 
 	var marked string
 	for _, line := range frame(m) {
-		if strings.Contains(line, testSandboxes()[0].Name) {
+		// A prefix of the name: the row ellipsizes it at this width.
+		if strings.Contains(line, "fix flaky pool") {
 			marked = line
 		}
 	}

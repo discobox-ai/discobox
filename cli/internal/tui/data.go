@@ -45,7 +45,25 @@ type Usage struct {
 	// created since the last sweep.
 	DiskKnown bool
 
-	CPUPercent    int
+	CPUPercent int
+	// MemoryBytes is resident size — what this discobox's processes are
+	// holding in RAM, the sum of what top calls RES.
+	//
+	// It is bytes rather than a share because a share of the whole machine
+	// answers a question about the machine, and the question about a row is
+	// what that discobox is costing. And it is resident rather than virtual
+	// because virtual is address space reserved rather than memory held: a
+	// process that maps a large file inflates it without consuming anything,
+	// which makes it useless for telling one discobox's weight from another's.
+	//
+	// It is also not the cgroup's charge, which the band's machine total uses.
+	// The charge includes reclaimable page cache and is the right number to
+	// read against the machine's capacity; this is the right number to read
+	// against another discobox. The two do not sum to each other and are not
+	// meant to.
+	MemoryBytes int64
+	// MemoryPercent and DiskPercent drive the color and are never drawn. A
+	// share is how a figure gets noticed; the figure itself is what is read.
 	MemoryPercent int
 	DiskBytes     int64
 	DiskPercent   int
