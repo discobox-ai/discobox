@@ -22,3 +22,7 @@ COPY --chmod=0644 hooks.json /etc/codex/hooks.json
 
 COPY --chmod=0755 configure.sh /usr/local/libexec/discobox/configure-codex
 COPY --chmod=0755 launch.sh /usr/local/libexec/discobox/launch-codex
+
+# The one-shot prompting interface in-sandbox tools ask for a model through
+# (ADR 0079). On PATH, not in libexec: its callers resolve it by name.
+COPY --chmod=0755 prompt.sh /usr/local/bin/discobox-prompt

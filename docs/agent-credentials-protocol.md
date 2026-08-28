@@ -188,6 +188,14 @@ structured output everywhere, and a structured body on stdin for `request`.
 Results go to stdout and failures to stderr, always — which is what lets `run`
 hand its child the real stdout untouched.
 
+**The reference client judges before it runs.** Before executing a wrapped
+command, `discobox-credential` asks a local model whether the command is the use
+it was approved for, and refuses to start it otherwise
+([ADR 0079](adr/0079-a-local-judge-gates-every-wrapped-credential-use.md)). That
+is a property of this client, not of the protocol: an implementation serving the
+protocol neither knows nor depends on whether its caller does this, and a
+different client may do something else.
+
 `list`, a bare `get`, and the flag form of `request` exist for scripting.
 `get` is the weaker path on purpose: it hands the value to a caller that may
 log or persist it, which the wrapper structurally cannot.

@@ -20,6 +20,14 @@
 //
 // --json means "talk to me in JSON" for whichever direction the command has:
 // structured output everywhere, and a structured body on stdin for "request".
+//
+// # The judge
+//
+// "run" does not execute a command until a model has agreed the command is the
+// use a human approved it for (ADR 0079). The model is reached through
+// discobox-prompt, which the harness image provides, and every failure of that
+// gate — no wrapper, no answer, an unreadable answer, or a refusal — stops the
+// command. See judge.go for what the gate is and is not.
 package agentcred
 
 import (
@@ -100,6 +108,10 @@ func usage(w io.Writer) {
       COMMAND's own status. Prefer this: the command it runs is the command it
       declares, and the value never leaves that one child process.
 
+      COMMAND is judged against the use it was approved for before it runs, by
+      a model reached through %[5]s. A command broader than the
+      approved use is refused with code "denied" and never started.
+
   %[1]s request [--json] [flags]
       Ask a human for a credential. Returns a request id immediately unless
       you wait for an answer.
@@ -137,8 +149,10 @@ func usage(w io.Writer) {
 The value you receive is opaque and short-lived. Do not log it, write it to a
 file, or reuse it after it expires — ask for it again instead.
 
-Configured by %[2]s (default %[3]s) and %[4]s.
-`, Name, agentcreds.URLEnv, agentcreds.DefaultBaseURL, agentcreds.TokenEnv)
+Configured by %[2]s (default %[3]s) and %[4]s. The judge runs
+%[5]s, which every harness image provides; %[6]s names a
+different one.
+`, Name, agentcreds.URLEnv, agentcreds.DefaultBaseURL, agentcreds.TokenEnv, DefaultPromptCommand, PromptCommandEnv)
 }
 
 // usageError reports a mistake in how the command was invoked, which is

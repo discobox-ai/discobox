@@ -83,7 +83,7 @@ Nygard-style ADRs (see adr.github.io) combined with current-state design docs:
 | [0028](0028-exec-log-transcripts-persist-as-compressed-sqlite-rows.md) | Exec/terminal transcripts persist as compressed sqlite rows, not tmpfs jsonl files | Accepted |
 | [0029](0029-sandboxes-have-no-per-sandbox-resource-requests.md) | Sandboxes have no per-sandbox resource requests | Accepted |
 | [0030](0030-pool-agent-polls-and-pushes-sandbox-agent-status.md) | Pool-agent polls sandbox-agent status and pushes it to the control plane | Accepted |
-| [0031](0031-agent-credentials-are-a-portable-protocol-with-ephemeral-sentinels.md) | Agent credentials are a portable list/request/get protocol with pool-agent-minted ephemeral sentinels | Accepted |
+| [0031](0031-agent-credentials-are-a-portable-protocol-with-ephemeral-sentinels.md) | Agent credentials are a portable list/request/get protocol with pool-agent-minted ephemeral sentinels | Accepted (§6's "never in the sandbox" superseded by [0079](0079-a-local-judge-gates-every-wrapped-credential-use.md)) |
 | [0032](0032-every-sandbox-has-a-harness-config-and-shell-is-the-built-in.md) | Every sandbox has a harness config, and `shell` is the built-in one | Accepted (§2 `shell`'s image superseded by [0043](0043-shell-is-an-ordinary-harness-image.md); §1's fallback step by [0048](0048-a-sandbox-names-its-harness-or-the-project-does.md)) |
 | [0033](0033-user-resolution-is-one-layered-resolver-with-declared-gaps.md) | User resolution is one layered resolver, and every gap is declared | Accepted |
 | [0034](0034-sandbox-state-and-runtime-state-are-separate-fields.md) | Sandbox `state` and `runtime_state` are separate fields | Accepted |
@@ -131,3 +131,4 @@ Nygard-style ADRs (see adr.github.io) combined with current-state design docs:
 | [0076](0076-a-service-may-declare-a-port-discovery-cannot-see.md) | A service may declare a port discovery cannot see | Accepted (amends [0070](0070-services-are-declared-execs-the-sandbox-starts-for-you.md) §1) |
 | [0077](0077-declining-a-directory-copy-creates-a-discobox-with-no-source.md) | Declining a directory copy creates a discobox with no source | Accepted (supersedes [0073](0073-a-directory-with-no-repository-is-copied-only-when-asked.md) §2) |
 | [0078](0078-the-wsl-proxycommand-is-quoted-for-sh.md) | The WSL bridge, corrected: quoting, the key's ACL, and both sides written | Accepted (amends [0074](0074-a-wsl-cli-writes-the-ssh-config-windows-reads.md) §2, §3) |
+| [0079](0079-a-local-judge-gates-every-wrapped-credential-use.md) | A local judge gates every wrapped credential use | Accepted (supersedes [0031](0031-agent-credentials-are-a-portable-protocol-with-ephemeral-sentinels.md) §6's placement; §5 defers the trusted-side half) |

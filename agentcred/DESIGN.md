@@ -57,6 +57,47 @@ Rules the shape depends on:
   the call completed, but the answer was no, and a shell-driven agent reads a
   zero as approval.
 
+## The judge
+
+`run` does not execute a command until a model has agreed the command is the use
+a human approved it for ([ADR 0079](../docs/adr/0079-a-local-judge-gates-every-wrapped-credential-use.md)).
+
+The model is reached through `discobox-prompt`, which the **harness image**
+provides — `claude -p` for claude-code, `codex exec` for codex-cli — and which
+the CLI calls as:
+
+```
+discobox-prompt --model judge --system <instructions> --prompt <use + argv> --output-schema {allow, reason}
+```
+
+`--model judge` names a role. The CLI never learns a model id; mapping the role
+onto a small, fast model is the wrapper's job, because the wrapper is the half
+that knows what its image installed.
+
+Two properties do the work:
+
+- **Judge first, take second.** The approved use comes from `list`, the verdict
+  comes before `get`, and only then is a value issued. A refusal therefore mints
+  no ephemeral sentinel and leaves no activation behind. A use `list` does not
+  carry is refused without asking anyone: there is no approved sentence to hold
+  the command up to.
+- **Every non-yes is a no.** No wrapper installed, a non-zero exit, an
+  unreadable answer, or `allow: false` all stop the command with code `denied`.
+  There is no flag to skip the judge — an escape hatch would be used by exactly
+  the situation the gate exists for.
+
+**It is a guardrail, not a boundary.** It runs in the sandbox, so an agent that
+does not want to be judged calls `get`, or the endpoint directly. Nothing here
+is an authorization decision and no trusted-side check is relaxed for it: the
+pool agent still refuses a sentinel outside its window or against another host,
+and the control plane still checks the grant. What the judge catches is the
+honest failure — drift from the granted task, a command broader than it needed,
+or an agent steered by something it read.
+
+`get` stays unjudged. It hands the value to a caller that may then do anything,
+so a judge there would gate the taking rather than the using; `run` is the form
+where the declaration and the act are the same thing.
+
 ## What it must never do
 
 The value is opaque and short-lived. It goes into one child process's

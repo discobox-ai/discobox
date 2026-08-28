@@ -206,7 +206,18 @@ func runWrapped(ctx context.Context, args []string) int {
 	if len(command) == 0 {
 		return usageError(out, "no command given; use `%s run --use USE_ID -- COMMAND ...`", Name)
 	}
-	result, err := newClient().Get(ctx, agentcreds.UseBody{UseID: useID, Command: command})
+	client := newClient()
+	credential, use, err := approvedUse(ctx, client, useID)
+	if err != nil {
+		return out.report(err)
+	}
+	// Judged before the value is taken (ADR 0079 §1), so a refusal mints no
+	// ephemeral sentinel and leaves no activation behind for a command that
+	// never ran.
+	if err := judgeCommand(ctx, credential, use, command); err != nil {
+		return out.report(err)
+	}
+	result, err := client.Get(ctx, agentcreds.UseBody{UseID: useID, Command: command})
 	if err != nil {
 		return out.report(err)
 	}
@@ -227,6 +238,31 @@ func runWrapped(ctx context.Context, args []string) int {
 		return out.report(err)
 	}
 	return exitOK
+}
+
+// approvedUse finds the credential and the approved use behind a use ID, which
+// is what the judge compares the command against.
+//
+// A use the service does not list cannot be judged — there is no approved
+// sentence to hold the command up to — so it is refused here rather than
+// carried to `get`, which would only deny it one hop later.
+func approvedUse(ctx context.Context, client *agentcreds.Client, useID string) (agentcreds.Credential, agentcreds.Use, error) {
+	useID = strings.TrimSpace(useID)
+	if useID == "" {
+		return agentcreds.Credential{}, agentcreds.Use{}, fmt.Errorf("%w: --use is required", agentcreds.ErrInvalid)
+	}
+	credentials, err := client.List(ctx)
+	if err != nil {
+		return agentcreds.Credential{}, agentcreds.Use{}, err
+	}
+	for _, credential := range credentials {
+		for _, use := range credential.Uses {
+			if use.UseID == useID {
+				return credential, use, nil
+			}
+		}
+	}
+	return agentcreds.Credential{}, agentcreds.Use{}, fmt.Errorf("%w: no live approved use %s", agentcreds.ErrDenied, useID)
 }
 
 func withoutEnv(environ []string, name string) []string {

@@ -179,7 +179,8 @@ func TestDenialIsReportedAsAStableCode(t *testing.T) {
 // run's contract: the argv it declares is the argv it executes, and the child's
 // exit status is the wrapper's.
 func TestRunDeclaresTheCommandItExecutesAndPassesTheExitCode(t *testing.T) {
-	svc := &fakeService{}
+	stubJudge(t, allowScript)
+	svc := &fakeService{credentials: judgeCredentials()}
 	serve(t, svc)
 
 	_, _, code := capture(t, "", func() int {
@@ -200,7 +201,8 @@ func TestRunDeclaresTheCommandItExecutesAndPassesTheExitCode(t *testing.T) {
 }
 
 func TestRunInjectsTheValueOnlyIntoTheChild(t *testing.T) {
-	serve(t, &fakeService{})
+	stubJudge(t, allowScript)
+	serve(t, &fakeService{credentials: judgeCredentials()})
 	t.Setenv("GITHUB_TOKEN", "stale-value-that-must-not-win")
 
 	stdout, _, code := capture(t, "", func() int {

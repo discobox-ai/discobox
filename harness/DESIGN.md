@@ -48,6 +48,19 @@ sandbox terminals.
   store aside and leaves `/nix` empty precisely so this cache bind hides
   nothing — a cache path is always a plain bind. See ADR 0075 and
   [`sandbox-agent/DESIGN.md`](../sandbox-agent/DESIGN.md).
+- Every harness image provides **`/usr/local/bin/discobox-prompt`**, a one-shot
+  prompting interface in-sandbox tools ask for a model through
+  ([ADR 0079](../docs/adr/0079-a-local-judge-gates-every-wrapped-credential-use.md)):
+  `discobox-prompt --model ROLE --system TEXT --prompt TEXT --output-schema JSON`,
+  answering on stdout and exiting 0 only when the model answered. `--model`
+  names a *role* (`judge` today), never a model id — the caller does not know
+  what the image installed, so mapping the role is the wrapper's job, and it is
+  version-coupled to a CLI the image pins the way the hook and launch wrappers
+  are. It goes on PATH rather than in `libexec` because its callers resolve it
+  by name. Its first consumer is the credential CLI's judge, which will not run
+  a wrapped command until a model agrees the command is the approved use; a
+  harness with no wrapper (`shell`) refuses those commands rather than running
+  them unjudged.
 - `harnessMode: config` selects the image-owned interactive config command;
   normal or omitted mode selects the image-owned run/relaunch commands.
 
