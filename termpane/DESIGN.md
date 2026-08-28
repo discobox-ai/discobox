@@ -281,6 +281,16 @@ binding moves focus to another pane has to carry the sequence there, or the
 run stops on its own first step; setting it armed opens the run form, since
 the carry is the only thing it is for.
 
+**A binding can be a lead rather than a command.** `WithPrefixChord` reserves a
+key behind the prefix that emits nothing itself and waits for a second key,
+which selects from a table of its own. It is for a family of commands that
+wants a namespace the first level has already spent — a second set of digits,
+say. A lead cannot also fire on its own: `prefix lead` waits, however long it
+waits, because the alternative is a timer deciding what a keystroke meant. A
+second key nothing claims is treated the way an unqualified prefix is, with the
+prefix, the lead and the key all delivered to the application, so a mistyped
+chord costs nothing.
+
 **Scrollback can be looked at.** `Scroll` moves the view back through what has
 scrolled off, `View` draws those rows in place of the screen's, and any new
 output pins it back to the live screen — a pane scrolled away from what is

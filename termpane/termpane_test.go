@@ -737,6 +737,56 @@ func TestPrefixBindingsEmitTheirMessage(t *testing.T) {
 	}
 }
 
+// A chord is a lead that waits: it emits nothing itself, and the key after it
+// selects from a table of its own.
+func TestAPrefixChordTakesTwoKeys(t *testing.T) {
+	type picked struct{ n int }
+	open := func(t *testing.T) (*Model, *fakeStream) {
+		m, stream, _ := attach(t, 40, 5, WithPrefix("ctrl+a", "ctrl+c"),
+			WithPrefixChord("S", map[string]tea.Msg{"1": picked{1}, "2": picked{2}}))
+		return m, stream
+	}
+
+	m, stream := open(t)
+	m.Update(tea.KeyPressMsg{Code: 'a', Mod: tea.ModCtrl})
+	if _, cmd := m.Update(key("S")); cmd != nil {
+		t.Fatalf("the lead emitted %T; it is not a command of its own", cmd())
+	}
+	_, cmd := m.Update(key("2"))
+	if cmd == nil {
+		t.Fatal("the second key should emit its message")
+	}
+	if got, ok := cmd().(picked); !ok || got.n != 2 {
+		t.Fatalf("got %#v, want the second binding", cmd())
+	}
+	if got := stream.sent(t, ""); got != "" {
+		t.Fatalf("a chord should reach nothing: %q", got)
+	}
+
+	// A second key nothing claims is three keystrokes like any others, the way
+	// an unqualified prefix is two.
+	m, stream = open(t)
+	m.Update(tea.KeyPressMsg{Code: 'a', Mod: tea.ModCtrl})
+	m.Update(key("S"))
+	if _, cmd := m.Update(key("k")); cmd != nil {
+		t.Fatalf("an unclaimed second key emitted %T", cmd())
+	}
+	if got := stream.sent(t, "\x01Sk"); got != "\x01Sk" {
+		t.Fatalf("sent %q, want the prefix, the lead and the key", got)
+	}
+
+	// The lead is one keystroke deep: a chord that fired does not leave the
+	// next key qualified.
+	m, stream = open(t)
+	m.Update(tea.KeyPressMsg{Code: 'a', Mod: tea.ModCtrl})
+	m.Update(key("S"))
+	m.Update(key("1"))
+	m.Update(key("2"))
+	if got := stream.sent(t, "2"); got != "2" {
+		t.Fatalf("sent %q, want the key after the chord to be the application's", got)
+	}
+}
+
 // Holding Ctrl through the pair is what everyone does, so a key typed after the
 // prefix matches either way. It applies only after the prefix: the bare letter
 // on its own is one the application should get.

@@ -81,6 +81,9 @@ type Model struct {
 	// application's, rather than consulting the whole binding table the way a
 	// freshly pressed prefix does.
 	prefixRepeat bool
+	// chordLead is the lead key of an open chord, held between it and the key
+	// it qualifies, and "" when no chord is open. See WithPrefixChord.
+	chordLead string
 
 	// scroll is how many lines back through the scrollback the view is, zero
 	// being the live screen. See Scroll.
@@ -137,6 +140,10 @@ type prefixBinding struct {
 	// repeat keeps the prefix open after this binding fires, as long as the key
 	// that fired it was held with Ctrl. See WithRepeatingPrefixBinding.
 	repeat bool
+	// chord, when set, makes this key a lead rather than a command: it emits
+	// nothing itself and the key after it is looked up here. See
+	// WithPrefixChord.
+	chord map[string]tea.Msg
 }
 
 // Option configures a pane at construction.
@@ -217,6 +224,28 @@ func WithPrefixBinding(key string, msg tea.Msg) Option {
 // second command.
 func WithRepeatingPrefixBinding(key string, msg tea.Msg) Option {
 	return bindPrefix(key, prefixBinding{msg: msg, repeat: true})
+}
+
+// WithPrefixChord reserves a key behind the prefix as a lead rather than a
+// command: it emits nothing of its own, and the key pressed after it selects
+// from bindings.
+//
+// It is for a family of commands that wants a namespace of its own — a second
+// set of digits, say, when the first set is already spoken for. Two keystrokes
+// after the prefix is the cost, and the lead is what buys the whole family its
+// own alphabet.
+//
+// A lead is not a command, so the key that leads a chord cannot also fire on
+// its own: prefix then lead waits, however long it waits. A second key that
+// nothing under the lead claims is treated the way an unqualified prefix is —
+// the prefix, the lead and the key are all delivered to the application — so a
+// mistyped chord costs nothing.
+func WithPrefixChord(lead string, bindings map[string]tea.Msg) Option {
+	chord := make(map[string]tea.Msg, len(bindings))
+	for key, msg := range bindings {
+		chord[key] = msg
+	}
+	return bindPrefix(lead, prefixBinding{chord: chord})
 }
 
 func bindPrefix(key string, binding prefixBinding) Option {
@@ -551,6 +580,23 @@ func (m *Model) handleKey(msg tea.KeyPressMsg) tea.Cmd {
 	}
 	name := msg.String()
 
+	if lead := m.chordLead; lead != "" {
+		// The lead consumed the prefix, so what arrives now is the second half
+		// of one command. It is matched the same way the first half was, held
+		// Ctrl and all.
+		m.chordLead = ""
+		for key, bound := range m.opts.bindings[lead].chord {
+			if afterPrefix(name, key) {
+				return func() tea.Msg { return bound }
+			}
+		}
+		// A chord that selected nothing was three keystrokes like any others.
+		m.SendKey(prefixKey(m.opts.prefix))
+		m.SendKey(prefixKey(lead))
+		m.SendKey(msg)
+		return nil
+	}
+
 	if m.prefixArmed {
 		inRun := m.prefixRepeat
 		m.prefixArmed, m.prefixRepeat = false, false
@@ -587,6 +633,12 @@ func (m *Model) handleKey(msg tea.KeyPressMsg) tea.Cmd {
 		for key, bound := range m.opts.bindings {
 			if !afterPrefix(name, key) {
 				continue
+			}
+			if bound.chord != nil {
+				// A lead is not a command: it emits nothing and waits for the
+				// key that says which one.
+				m.chordLead = key
+				return nil
 			}
 			// A repeating binding leaves the prefix armed while Ctrl is still
 			// down, so a run of them is one chord rather than one per step.
@@ -687,7 +739,9 @@ func (m *Model) PrefixArmed() bool { return m.prefixArmed }
 // else goes to the application — because carrying a mid-run sequence to the
 // pane focus moved to is what the setter exists for, and a run must mean the
 // same thing on the pane it lands on as on the one it left.
-func (m *Model) SetPrefixArmed(armed bool) { m.prefixArmed, m.prefixRepeat = armed, armed }
+func (m *Model) SetPrefixArmed(armed bool) {
+	m.prefixArmed, m.prefixRepeat, m.chordLead = armed, armed, ""
+}
 
 // SendKey forwards one key press to the terminal, encoded the way the
 // application on the other end has asked for it — cursor-key mode, keypad mode
@@ -880,7 +934,7 @@ func (m *Model) detach() error {
 		m.stream = nil
 	}
 	m.attached = false
-	m.prefixArmed, m.prefixRepeat = false, false
+	m.prefixArmed, m.prefixRepeat, m.chordLead = false, false, ""
 	m.forwardDone, m.forwardOut = nil, nil
 	m.sel, m.selShot = nil, ""
 	return err
