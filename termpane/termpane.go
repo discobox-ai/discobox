@@ -125,6 +125,8 @@ type options struct {
 	bindings   map[string]prefixBinding
 	highlight  func(uv.Style) uv.Style
 	wheelLines int
+	// linkRewrite is where a link in the pane points; see WithLinkRewrite.
+	linkRewrite func(string) string
 	// wordChars is nil for the selection package's default; see WithWordChars.
 	wordChars *string
 }
@@ -740,7 +742,11 @@ func (m *Model) View() []string {
 				row = highlighted
 			}
 		}
-		out[i] = fitCells(row, m.cols)
+		// Before the fit: a scrollback row can be wider than the pane, and a
+		// URL the truncation cuts in half would otherwise be read as whatever
+		// half survived. Truncation keeps the sequences and drops only cells,
+		// so the link opened around it survives the cut.
+		out[i] = fitCells(rewriteLinks(row, m.opts.linkRewrite), m.cols)
 	}
 	return out
 }

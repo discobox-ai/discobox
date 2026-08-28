@@ -168,6 +168,34 @@ offer — and everything else scrolls the pane's own scrollback. The right
 button copies a showing selection, below. A host with a
 different wheel policy keeps those events instead of delegating them.
 
+**Where a link points is the host's, and the text is never touched**
+(`WithLinkRewrite`, `links.go`). A pane whose terminal is somewhere else draws
+addresses that are true where they were printed and false where they are read:
+a server inside a sandbox prints `http://localhost:8080`, and here that port is
+whatever a forward bound, if anything. The host supplies a function from URL to
+URL; returning the URL it was given means "already right", which is the answer
+for everything it does not recognize.
+
+It governs two things. Every OSC 8 target an application emits passes through
+it, so a link the application made itself lands where it meant. And plain text
+that looks like a URL is linked when — and only when — the function moves it:
+the terminal drawing the pane does its own URL detection, so linking everything
+would take a working link away to hand back a copy of it, while a URL whose port
+is a lie is the one case that detection cannot get right. The text on the screen
+is the application's and stays exactly as printed; only the click is redirected.
+
+It runs on the rendered row, in `View`, before the fit. Cells are the wrong
+place: they hold half a URL for as long as the far end takes to print the rest,
+and a line that scrolls off mid-write is in the scrollback before anything could
+look at it — a rendered row has been assembled from the grid and says what it is
+going to say. Rows come from `ansi.DecodeSequence`, so a style change inside a
+URL is a token in the middle of it rather than a break, and the sequences added
+occupy no cells. Before the fit because a scrollback row can be wider than the
+pane, and a URL the truncation cut in half would otherwise be read as whatever
+half survived; truncation keeps escape sequences, so the link opened around it
+survives the cut. Detection is scheme-led and stops at the row: a URL wrapped
+across the right edge is not one.
+
 **Selection is a cell-space overlay, mouse only** (ADR 0036). The gesture
 machine and extraction live in the `selection` subpackage against a small
 `Grid` interface. A double-click's idea of a word is vte-shaped: letters,
