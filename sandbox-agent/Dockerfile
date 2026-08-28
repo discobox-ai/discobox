@@ -232,6 +232,7 @@ RUN set -eux \
     && test -s /opt/discobox/ca-certificates/ca-certificates.crt
 
 COPY sandbox-agent/image/profile.d/sandbox-dev-tools.sh /etc/profile.d/sandbox-dev-tools.sh
+COPY sandbox-agent/image/profile.d/sandbox-direnv.sh /etc/profile.d/sandbox-direnv.sh
 COPY sandbox-agent/image/systemd/discobox-sandbox-agent.service /etc/systemd/system/discobox-sandbox-agent.service
 COPY sandbox-agent/image/systemd/discobox-proxy-bridge.service /etc/systemd/system/discobox-proxy-bridge.service
 COPY sandbox-agent/image/systemd/discobox-buildkit-bridge.service /etc/systemd/system/discobox-buildkit-bridge.service
@@ -288,6 +289,11 @@ RUN chmod 0755 /usr/local/bin/discobox-sandbox-agent \
     && for c in nix nix-build nix-env nix-shell nix-store devenv; do \
         ln -sf /usr/local/lib/discobox/nix-shim "/usr/local/bin/$c"; \
        done \
+    # /etc/profile covers the login shells the sandbox launches, but not the
+    # interactive shell a person starts by typing `bash` inside one. That shell
+    # inherits the environment direnv already exported and would otherwise never
+    # reload it on a `cd`, so hook it from the system-wide interactive rc too.
+    && printf '\n# Discobox: direnv in the interactive shells /etc/profile does not reach.\nif [ -r /etc/profile.d/sandbox-direnv.sh ]; then\n  . /etc/profile.d/sandbox-direnv.sh\nfi\n' >> /etc/bash.bashrc \
     && mkdir -p /etc/discobox /run/discobox/agent-terminals /var/lib/docker /var/lib/discobox /workspace \
     && systemctl enable \
         discobox-sandbox-agent.service \

@@ -81,6 +81,12 @@ func (b *booter) provision(logger *slog.Logger, id identity) error {
 		if err := b.seedGitConfig(id, effective.Git); err != nil {
 			return fmt.Errorf("seed git config: %w", err)
 		}
+		// After seedHome for the same reason, and before wireSources only
+		// because it reads the manifest's targets rather than the trees: it
+		// writes into home, which the recursive chown has already passed over.
+		if err := b.seedDirenvConfig(id, effective.Sources); err != nil {
+			return fmt.Errorf("seed direnv config: %w", err)
+		}
 		if err := b.wireSources(effective.Sources, id); err != nil {
 			return err
 		}

@@ -14,7 +14,7 @@ runtime operations.
 | Package/path | Ownership |
 | --- | --- |
 | `cmd/discobox-sandbox-agent` | Binary entrypoint, config loading, signal handling, and server startup. Also dispatches the `init` PID-1 subcommand. |
-| `boot` | The PID-1 `init` flow: resolves the sandbox user (replacing the retired `entrypoint.sh`), wires image-declared data/cache volumes and manifest sources from the primary volumes, binds the config volume onto `/etc/discobox`, seeds the user's `~/.gitconfig`, writes desktop drop-ins, then execs the container's real init (systemd). See ADR 0007. |
+| `boot` | The PID-1 `init` flow: resolves the sandbox user (replacing the retired `entrypoint.sh`), wires image-declared data/cache volumes and manifest sources from the primary volumes, binds the config volume onto `/etc/discobox`, seeds the user's `~/.gitconfig` and `~/.config/direnv/direnv.toml`, writes desktop drop-ins, then execs the container's real init (systemd). See ADR 0007. |
 | `config` | Local boot/config file parsing, environment overrides, defaults, and validation. Owns `image.json` parsing, including the `volumes` declaration and `%HOME%`/`%UID%`/`%GID%` token resolution. |
 | `server` | HTTP router, generated OpenAPI handler adapter, PASETO auth middleware, and identity/scope validation. Also hand-registers the exec attach/start routes and, for ADR 0024's SSH ingress, `GET .../tcp/attach` (`tcp_attach.go`): dials `host:port` from inside this process — sharing the sandbox's network namespace, unlike the pool-agent's container-IP-only `/http/{port}` — and bridges the raw TCP bytes to `execstream/frame` `Input`/`Stdout`/`CloseInput` frames over a websocket, gated by the `tcp:connect` scope. In config mode it also provisions `harness.ConfigureDir` (`configuredir.go`) before anything can be seeded into it: the configure command runs as the sandbox user, and this 0700 subdirectory is the only part of root-owned `/run/discobox` that user may write — the rest holds the resolved secrets file, the proxy CA bundles and trust env, and the control-plane and buildkit sockets. Like `boot.WireSecrets`, it runs from this process rather than the PID-1 flow, because systemd mounts its own tmpfs over `/run` after boot execs into it. |
 | `runuser` | The sandbox's run identity: merges the image/manifest/request layers ([`sandboxuser`](../sandboxuser/DESIGN.md)) and completes them against the image's own passwd/group database. The **only** package that reads those files for resolution, so faking them fakes them for every consumer including the `setuid` path. Used by `boot`, `execs`, and `terminal` so none of them derives identity separately. See [runuser/DESIGN.md](runuser/DESIGN.md). |
@@ -395,6 +395,22 @@ development images without a registry.
   therefore does not propagate into existing sandboxes; see
   [ADR 0042](../docs/adr/0042-git-authorship-identity-is-a-first-class-sandbox-property.md)
   for the condition for revisiting that.
+- A source tree's `.envrc` loads without anyone typing `direnv allow`, in two
+  halves. The hook is static, so it ships in the image:
+  `/etc/profile.d/sandbox-direnv.sh` installs `direnv hook bash` in an
+  interactive shell and runs `direnv export bash` once in a shell with no
+  prompt — a service is `bash -lc <script>`, which never reaches
+  `PROMPT_COMMAND` and would otherwise see none of its repository's
+  environment — and `/etc/bash.bashrc` sources the same file for the
+  interactive shells `/etc/profile` does not reach. The trust is per-sandbox, so
+  `boot.seedDirenvConfig` writes it: `<home>/.config/direnv/direnv.toml`
+  whitelisting every manifest source target, after `seedHome` for the reason
+  `seedGitConfig` is. It has to be the whitelist rather than an `allow`, because
+  an `allow` is a hash of the `.envrc`'s path *and* contents — unwritable before
+  the checkout exists and revoked by the first edit to the file — while a prefix
+  is a property of the directory and also covers an `.envrc` below the root.
+  Written only when absent: direnv reads exactly one config, so a prefix
+  somebody adds by hand has nowhere else to live.
 - Run identity is owned by [`runuser`](runuser/DESIGN.md): one call resolves who
   a process runs as, so nothing re-derives it. `execs.User` is that package's
   type. `execs.Manager.ResolveUser` is the entry point for execs and terminals —
