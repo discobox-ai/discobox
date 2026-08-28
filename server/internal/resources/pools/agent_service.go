@@ -13,7 +13,6 @@ import (
 	"github.com/go-faster/jx"
 
 	serverapi "github.com/discobox-ai/discobox/api/gen"
-	apimodel "github.com/discobox-ai/discobox/api/model"
 	"github.com/discobox-ai/discobox/pool-agent/poolauth"
 	"github.com/discobox-ai/discobox/server/internal/apperrors"
 	"github.com/discobox-ai/discobox/server/internal/auth"
@@ -203,7 +202,16 @@ func reportedLastAccess(status map[string]jx.Raw, observedAt time.Time) *time.Ti
 	if !ok {
 		return nil
 	}
-	var sessions []apimodel.SandboxAgentSessionStatus
+	// A local struct, not the generated schema type: the payload is relayed
+	// verbatim from whatever sandbox-agent version the sandbox runs, and the
+	// generated type rejects any field it does not declare
+	// (additionalProperties: false). Reading only the two fields this needs
+	// keeps an agent on either side of a schema change from zeroing a
+	// sandbox's last-active time.
+	var sessions []struct {
+		AttacherCount  int        `json:"attacherCount"`
+		LastAccessedAt *time.Time `json:"lastAccessedAt"`
+	}
 	if err := json.Unmarshal(raw, &sessions); err != nil {
 		return nil
 	}
@@ -212,8 +220,8 @@ func reportedLastAccess(status map[string]jx.Raw, observedAt time.Time) *time.Ti
 		if session.AttacherCount > 0 && observedAt.After(latest) {
 			latest = observedAt
 		}
-		if at, ok := session.LastAccessedAt.Get(); ok && at.After(latest) {
-			latest = at
+		if at := session.LastAccessedAt; at != nil && at.After(latest) {
+			latest = *at
 		}
 	}
 	if latest.IsZero() {

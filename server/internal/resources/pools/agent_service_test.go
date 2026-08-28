@@ -251,8 +251,13 @@ func TestReportedLastAccess(t *testing.T) {
 	if got := reportedLastAccess(sessions(`[{"terminalId":"t1","primary":true,"state":"running","attacherCount":0,"execStatus":"running"}]`), observed); got != nil {
 		t.Fatalf("never accessed: %v, want nil", got)
 	}
+	// The first entry carries "state"/"lastEvent", the fields an older
+	// sandbox-agent reported and this server no longer declares. Rows like it
+	// are already stored, and relayed payloads come from whatever agent
+	// version a sandbox runs, so an unknown field must not void the whole
+	// report.
 	got := reportedLastAccess(sessions(
-		`[{"terminalId":"t1","primary":true,"state":"running","attacherCount":0,"execStatus":"running","lastAccessedAt":"`+older.Format(time.RFC3339)+`"},`+
+		`[{"terminalId":"t1","primary":true,"state":"running","lastEvent":"Stop","attacherCount":0,"execStatus":"running","lastAccessedAt":"`+older.Format(time.RFC3339)+`"},`+
 			`{"terminalId":"t2","primary":false,"state":"running","attacherCount":0,"execStatus":"running","lastAccessedAt":"`+access.Format(time.RFC3339)+`"}]`), observed)
 	if got == nil || !got.Equal(access) {
 		t.Fatalf("max of session access = %v, want %v", got, access)

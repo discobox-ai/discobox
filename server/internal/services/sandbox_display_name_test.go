@@ -27,8 +27,17 @@ func TestSandboxDisplayName(t *testing.T) {
 			want: "generated-name",
 		},
 		{
+			// Written by an older sandbox-agent, which reported a derived
+			// harness "state" this server no longer knows. Rows like this are
+			// already in every live database and a stopped sandbox's row is
+			// never rewritten, so an unknown field must not cost the title.
+			name:     "primary titled itself (agent-status row from an older agent)",
+			sessions: `[{"terminalId":"exc_1","primary":true,"title":"fix the reaper","state":"running","lastEvent":"Stop","attacherCount":0,"execStatus":"running"}]`,
+			want:     "fix the reaper",
+		},
+		{
 			name:     "primary titled itself",
-			sessions: `[{"terminalId":"exc_1","primary":true,"title":"fix the reaper","state":"running","attacherCount":0,"execStatus":"running"}]`,
+			sessions: `[{"terminalId":"exc_1","primary":true,"title":"fix the reaper","attacherCount":0,"execStatus":"running"}]`,
 			want:     "fix the reaper",
 		},
 		{

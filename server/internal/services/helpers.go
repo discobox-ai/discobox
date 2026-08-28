@@ -460,8 +460,19 @@ func sandboxPrimaryTerminalTitle(sandbox *model.Sandbox) string {
 	if len(sandbox.AgentStatus) == 0 {
 		return ""
 	}
+	// Decoded through a local struct rather than the generated schema type:
+	// the column is whatever sandbox-agent last wrote, and rows written by an
+	// older or newer agent carry fields this server does not know. The
+	// generated type forbids those (additionalProperties: false), so decoding
+	// through it would fail the whole payload over a field nothing here reads
+	// — and a stopped sandbox's row is never rewritten, so that loss would be
+	// permanent. Only the three fields below are the contract.
 	var status struct {
-		Sessions []apimodel.SandboxAgentSessionStatus `json:"sessions"`
+		Sessions []struct {
+			Primary   bool      `json:"primary"`
+			Title     string    `json:"title"`
+			StartedAt time.Time `json:"startedAt"`
+		} `json:"sessions"`
 	}
 	if err := json.Unmarshal(sandbox.AgentStatus, &status); err != nil {
 		return ""
@@ -471,13 +482,12 @@ func sandboxPrimaryTerminalTitle(sandbox *model.Sandbox) string {
 		if !session.Primary {
 			continue
 		}
-		sessionTitle := strings.TrimSpace(session.Title.Or(""))
+		sessionTitle := strings.TrimSpace(session.Title)
 		if sessionTitle == "" {
 			continue
 		}
-		sessionStartedAt := session.StartedAt.Or(time.Time{})
-		if title == "" || sessionStartedAt.After(startedAt) {
-			title, startedAt = sessionTitle, sessionStartedAt
+		if title == "" || session.StartedAt.After(startedAt) {
+			title, startedAt = sessionTitle, session.StartedAt
 		}
 	}
 	return title
