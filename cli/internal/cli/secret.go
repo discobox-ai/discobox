@@ -406,7 +406,8 @@ func (a *App) newSecretRequestCreateCommand() *cobra.Command {
 }
 
 func (a *App) newSecretRequestApproveCommand() *cobra.Command {
-	var secretID, scope string
+	var secretID, scope, host string
+	var uses []string
 	var ttl int64
 	cmd := &cobra.Command{Use: "approve REQUEST_ID --secret-id SECRET_ID", Short: "Approve a secret request", Args: cobra.ExactArgs(1), RunE: func(cmd *cobra.Command, args []string) error {
 		client, err := a.apiClient()
@@ -436,6 +437,19 @@ func (a *App) newSecretRequestApproveCommand() *cobra.Command {
 			}
 			body.SetScope(apiclientgen.NewOptApproveSecretRequestBodyScope(typedScope))
 		}
+		if trimmed := strings.TrimSpace(host); trimmed != "" {
+			body.SetHost(apiclientgen.NewOptString(trimmed))
+		}
+		// Uses are only ever narrowed here. Omitting --use approves what the
+		// agent asked for as written, which is the common case: the approver read
+		// the request and said yes to it.
+		if len(uses) > 0 {
+			approved := make([]apimodel.SecretUse, 0, len(uses))
+			for _, use := range uses {
+				approved = append(approved, apimodel.SecretUse{Description: use})
+			}
+			body.SetUses(apiclientgen.NewOptNilSecretUseArray(approved))
+		}
 		res, err := client.ApproveSecretRequest(cmd.Context(), body, apiclientgen.ApproveSecretRequestParams{ProjectId: projectID, RequestId: requestID})
 		if err != nil {
 			return err
@@ -448,6 +462,8 @@ func (a *App) newSecretRequestApproveCommand() *cobra.Command {
 	}}
 	cmd.Flags().StringVar(&secretID, "secret-id", "", "Secret ID to grant")
 	cmd.Flags().StringVar(&scope, "scope", "", "Grant scope: sandbox, harnessConfig, or project (defaults to sandbox for sandbox requests, else project)")
+	cmd.Flags().StringVar(&host, "host", "", "Host the grant is limited to (defaults to the host the request named)")
+	cmd.Flags().StringArrayVar(&uses, "use", nil, "Replace an agent's declared uses with these (repeatable); omit to approve them as asked")
 	cmd.Flags().Int64Var(&ttl, "grant-ttl", 0, "Grant duration in seconds")
 	return cmd
 }

@@ -8,6 +8,7 @@ import (
 	apimodel "github.com/discobox-ai/discobox/api/model"
 	"github.com/discobox-ai/discobox/server/internal/model"
 	sandbox "github.com/discobox-ai/discobox/server/internal/sandbox"
+	"github.com/discobox-ai/discobox/server/internal/store"
 	"github.com/discobox-ai/discobox/server/internal/transport"
 )
 
@@ -16,6 +17,7 @@ type CreateHarnessConfigBody = apimodel.CreateHarnessConfigBody
 type SetHarnessConfigSecretBindingBody = apimodel.SetHarnessConfigSecretBindingBody
 type CreateSecretBody = apimodel.CreateSecretBody
 type CreateSecretRequestBody = apimodel.CreateSecretRequestBody
+type CreateSandboxCredentialRequestBody = apimodel.CreateSandboxCredentialRequestBody
 type CreateSecretGrantBody = apimodel.CreateSecretGrantBody
 type CreateSSHKeyBody = apimodel.CreateSSHKeyBody
 type UpdateHarnessConfigBody = apimodel.UpdateHarnessConfigBody
@@ -212,6 +214,13 @@ type SecretService interface {
 	RevokeSecretGrant(ctx context.Context, projectID, grantID string) error
 
 	ResolveSandboxSecret(ctx context.Context, poolID, sandboxID, sentinel, host string) (*model.SandboxSecretResolution, error)
+
+	// The agent credentials broker (ADR 0031). Every call is made by a pool
+	// agent on behalf of one of its own sandboxes, so each takes the calling
+	// pool's ID and verifies the sandbox belongs to it.
+	ListSandboxCredentials(ctx context.Context, poolID, sandboxID string) ([]store.AgentCredential, error)
+	CreateSandboxCredentialRequest(ctx context.Context, poolID string, input CreateSandboxCredentialRequestBody) (*model.SecretRequest, error)
+	GetSandboxCredentialRequest(ctx context.Context, poolID, sandboxID, requestID string) (*model.SecretRequest, *model.SecretGrant, error)
 }
 
 // SSHKeyService manages project-scoped SSH keys that authorize SSH access to

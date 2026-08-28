@@ -1985,6 +1985,131 @@ components:
                 - sentinel
                 - host
             type: object
+        SandboxCredential:
+            additionalProperties: false
+            description: One agent-requested credential a sandbox may use, with the live grant's approved uses. Sentinel and format are for the pool agent alone; they never reach the sandbox.
+            properties:
+                envVar:
+                    description: Environment variable the value is delivered in
+                    type: string
+                expiresAt:
+                    description: When the grant behind the uses lapses; empty never expires
+                    format: date-time
+                    type: string
+                format:
+                    description: Generative format template the pool agent mints an ephemeral sentinel from, so the ephemeral value byte-mimics a real key
+                    type: string
+                grantId:
+                    description: Grant authorizing the uses
+                    type: string
+                host:
+                    description: Host the credential may be sent to
+                    type: string
+                name:
+                    description: Credential name
+                    type: string
+                secretId:
+                    description: Secret backing the credential
+                    type: string
+                sentinel:
+                    description: Stable sentinel bound to the sandbox. The pool agent translates its own ephemeral sentinels back to this one before resolving; it is never injected into the sandbox.
+                    type: string
+                uses:
+                    description: Approved uses
+                    items:
+                        $ref: '#/components/schemas/SecretUse'
+                    nullable: true
+                    type: array
+            required:
+                - name
+                - envVar
+                - host
+                - secretId
+                - grantId
+                - sentinel
+            type: object
+        ListSandboxCredentialsResponse:
+            additionalProperties: false
+            properties:
+                $schema:
+                    description: A URL to the JSON Schema for this object.
+                    example: https://example.com/schemas/ListSandboxCredentialsResponse.json
+                    format: uri
+                    readOnly: true
+                    type: string
+                credentials:
+                    items:
+                        $ref: '#/components/schemas/SandboxCredential'
+                    type: array
+            required:
+                - credentials
+            type: object
+        CreateSandboxCredentialRequestBody:
+            additionalProperties: false
+            description: An agent's ask, relayed by the pool agent on behalf of one of its sandboxes.
+            properties:
+                $schema:
+                    description: A URL to the JSON Schema for this object.
+                    example: https://example.com/schemas/CreateSandboxCredentialRequestBody.json
+                    format: uri
+                    readOnly: true
+                    type: string
+                envVar:
+                    description: Environment variable the credential is wanted in
+                    type: string
+                host:
+                    description: Destination host the credential will be sent to. Required, because approving this request may not mint a host-unscoped grant.
+                    type: string
+                justification:
+                    description: Why the agent says it needs the credential
+                    type: string
+                name:
+                    description: Credential name the agent asked for
+                    type: string
+                sandboxId:
+                    description: Sandbox the agent is running in
+                    type: string
+                uses:
+                    description: Uses the agent asks for
+                    items:
+                        $ref: '#/components/schemas/SecretUse'
+                    type: array
+            required:
+                - sandboxId
+                - name
+                - envVar
+                - host
+                - uses
+            type: object
+        SandboxCredentialRequestStatus:
+            additionalProperties: false
+            properties:
+                $schema:
+                    description: A URL to the JSON Schema for this object.
+                    example: https://example.com/schemas/SandboxCredentialRequestStatus.json
+                    format: uri
+                    readOnly: true
+                    type: string
+                requestId:
+                    description: Request ID to poll
+                    type: string
+                status:
+                    description: Request status
+                    enum:
+                        - pending
+                        - granted
+                        - denied
+                    type: string
+                uses:
+                    description: Approved uses; present once granted, and authoritative over the requested ones
+                    items:
+                        $ref: '#/components/schemas/SecretUse'
+                    nullable: true
+                    type: array
+            required:
+                - requestId
+                - status
+            type: object
         ResolveSandboxSecretResponse:
             additionalProperties: false
             description: Result of resolving a sentinel. The value is present only when status is approved.
@@ -2406,6 +2531,9 @@ components:
                     description: Grant duration in seconds; overrides the secret's default
                     format: int64
                     type: integer
+                host:
+                    description: Host the minted grant is limited to. Defaults to the host the request named. Approving a protocol-originated request with no host at all is rejected; a wildcard grant stays an explicit administrative act.
+                    type: string
                 scope:
                     description: How widely the minted grant applies. Defaults to sandbox for sandbox-originated requests, otherwise project.
                     enum:
@@ -2416,6 +2544,12 @@ components:
                 secretId:
                     description: Secret ID selected by the approver
                     type: string
+                uses:
+                    description: Approved uses for a protocol-originated request, replacing the ones the agent asked for. Omit to approve the requested uses as written. Use IDs are always minted here and any supplied ones are ignored.
+                    items:
+                        $ref: '#/components/schemas/SecretUse'
+                    nullable: true
+                    type: array
             required:
                 - secretId
             type: object
@@ -2598,6 +2732,19 @@ components:
                 - createdAt
                 - updatedAt
             type: object
+        SecretUse:
+            additionalProperties: false
+            description: One approved way a credential may be used. The ID is minted at approval, so a requesting agent cannot name the use it will later present.
+            properties:
+                description:
+                    description: What the credential may be used for
+                    type: string
+                useId:
+                    description: Stable use ID, minted at approval
+                    type: string
+            required:
+                - description
+            type: object
         SecretGrant:
             additionalProperties: false
             properties:
@@ -2607,6 +2754,12 @@ components:
                     format: uri
                     readOnly: true
                     type: string
+                uses:
+                    description: Approved uses, confirmed or edited at approval time. Present on grants minted through the agent credentials flow.
+                    items:
+                        $ref: '#/components/schemas/SecretUse'
+                    nullable: true
+                    type: array
                 createdAt:
                     description: Creation timestamp
                     format: date-time
@@ -2687,6 +2840,9 @@ components:
                     description: Creation timestamp
                     format: date-time
                     type: string
+                envName:
+                    description: Environment variable the credential is wanted in, for protocol-originated requests
+                    type: string
                 grantId:
                     description: Grant that satisfied this request; set when approved
                     type: string
@@ -2696,6 +2852,18 @@ components:
                 id:
                     description: Stable request ID
                     type: string
+                justification:
+                    description: Why the agent says it needs the credential
+                    type: string
+                name:
+                    description: Credential name the agent asked for, for protocol-originated requests
+                    type: string
+                uses:
+                    description: Uses the agent asked for. Their presence is what marks a request as protocol-originated rather than one the proxy minted on hitting an unresolvable sentinel.
+                    items:
+                        $ref: '#/components/schemas/SecretUse'
+                    nullable: true
+                    type: array
                 projectId:
                     description: Project ID
                     type: string
@@ -3687,6 +3855,132 @@ paths:
                                 $ref: '#/components/schemas/ErrorModel'
                     description: Error
             summary: Mint short-lived, status-read-only sandbox-agent tokens for sandboxes this pool hosts
+            tags:
+                - Pools
+    /api/pools/{poolId}/sandbox-credentials:
+        get:
+            operationId: list-sandbox-credentials
+            parameters:
+                - description: Pool ID
+                  in: path
+                  name: poolId
+                  required: true
+                  schema:
+                    description: Pool ID
+                    type: string
+                - description: Sandbox whose agent-requested credentials to list
+                  in: query
+                  name: sandboxId
+                  required: true
+                  schema:
+                    description: Sandbox whose agent-requested credentials to list
+                    type: string
+                - description: Bearer pool assertion with the credential:broker scope
+                  in: header
+                  name: Authorization
+                  schema:
+                    description: Bearer pool assertion with the credential:broker scope
+                    type: string
+            responses:
+                200:
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/ListSandboxCredentialsResponse'
+                    description: OK
+                default:
+                    content:
+                        application/problem+json:
+                            schema:
+                                $ref: '#/components/schemas/ErrorModel'
+                    description: Error
+            summary: List a sandbox's granted agent credentials
+            tags:
+                - Pools
+    /api/pools/{poolId}/sandbox-credential-requests:
+        post:
+            operationId: create-sandbox-credential-request
+            parameters:
+                - description: Pool ID
+                  in: path
+                  name: poolId
+                  required: true
+                  schema:
+                    description: Pool ID
+                    type: string
+                - description: Bearer pool assertion with the credential:broker scope
+                  in: header
+                  name: Authorization
+                  schema:
+                    description: Bearer pool assertion with the credential:broker scope
+                    type: string
+            requestBody:
+                content:
+                    application/json:
+                        schema:
+                            $ref: '#/components/schemas/CreateSandboxCredentialRequestBody'
+                required: true
+            responses:
+                200:
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/SandboxCredentialRequestStatus'
+                    description: OK
+                default:
+                    content:
+                        application/problem+json:
+                            schema:
+                                $ref: '#/components/schemas/ErrorModel'
+                    description: Error
+            summary: Record an agent's credential request
+            tags:
+                - Pools
+    /api/pools/{poolId}/sandbox-credential-requests/{requestId}:
+        get:
+            operationId: get-sandbox-credential-request
+            parameters:
+                - description: Pool ID
+                  in: path
+                  name: poolId
+                  required: true
+                  schema:
+                    description: Pool ID
+                    type: string
+                - description: Secret request ID
+                  in: path
+                  name: requestId
+                  required: true
+                  schema:
+                    description: Secret request ID
+                    type: string
+                - description: Sandbox the request was made from
+                  in: query
+                  name: sandboxId
+                  required: true
+                  schema:
+                    description: Sandbox the request was made from
+                    type: string
+                - description: Bearer pool assertion with the credential:broker scope
+                  in: header
+                  name: Authorization
+                  schema:
+                    description: Bearer pool assertion with the credential:broker scope
+                    type: string
+            responses:
+                200:
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/SandboxCredentialRequestStatus'
+                    description: OK
+                default:
+                    content:
+                        application/problem+json:
+                            schema:
+                                $ref: '#/components/schemas/ErrorModel'
+                    description: Error
+            summary: Poll an agent credential request
             tags:
                 - Pools
     /api/pools/{poolId}/resolve-sandbox-secret:

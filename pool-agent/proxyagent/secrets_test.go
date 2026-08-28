@@ -43,9 +43,9 @@ func TestUpsertAndRemoveSentinels(t *testing.T) {
 		t.Fatal("sb-2 should remain")
 	}
 
-	clients := secretClientsFromDoc(doc)
+	clients := secretClients(doc.Clients)
 	if len(clients) != 1 || clients[0].ClientID != "sb-2" {
-		t.Fatalf("secretClientsFromDoc = %#v", clients)
+		t.Fatalf("secretClients = %#v", clients)
 	}
 }
 
@@ -65,7 +65,7 @@ func TestResolverApproved(t *testing.T) {
 	if err := WriteResolveContext(testProjectID, testPoolID, srv.URL, "tok-123"); err != nil {
 		t.Fatalf("write context: %v", err)
 	}
-	resolver := newSecretResolver(testProjectID, testPoolID)
+	resolver := newSecretResolver(testProjectID, testPoolID, newActivations())
 	res, err := resolver.Resolve(context.Background(), proxy.SecretResolveRequest{ClientID: "sb-1", Sentinel: "SENT", Host: "api.example.com"})
 	if err != nil {
 		t.Fatalf("resolve: %v", err)
@@ -92,7 +92,7 @@ func TestResolverPendingIsDenied(t *testing.T) {
 	defer srv.Close()
 	_ = WriteResolveContext(testProjectID, testPoolID, srv.URL, "tok")
 
-	resolver := newSecretResolver(testProjectID, testPoolID)
+	resolver := newSecretResolver(testProjectID, testPoolID, newActivations())
 	_, err := resolver.Resolve(context.Background(), proxy.SecretResolveRequest{ClientID: "sb-1", Sentinel: "SENT", Host: "h"})
 	if !errors.Is(err, proxy.ErrSecretResolveDenied) {
 		t.Fatalf("err = %v, want ErrSecretResolveDenied", err)
@@ -101,7 +101,7 @@ func TestResolverPendingIsDenied(t *testing.T) {
 
 func TestResolverNoContextIsDenied(t *testing.T) {
 	withTestRoot(t)
-	resolver := newSecretResolver(testProjectID, testPoolID)
+	resolver := newSecretResolver(testProjectID, testPoolID, newActivations())
 	_, err := resolver.Resolve(context.Background(), proxy.SecretResolveRequest{ClientID: "sb-1", Sentinel: "SENT", Host: "h"})
 	if !errors.Is(err, proxy.ErrSecretResolveDenied) {
 		t.Fatalf("err = %v, want ErrSecretResolveDenied when no context file", err)

@@ -1,6 +1,6 @@
 # 0031 — Agent credentials are a portable list/request/get protocol with pool-agent-minted ephemeral sentinels
 
-- **Status**: Proposed
+- **Status**: Accepted
 - **Date**: 2026-08-11
 
 ## Context
@@ -179,9 +179,24 @@ insufficient.
 - A new protocol spec document (list/request/get, `/v1`) lands with the
   implementation; it is the contract for the CLI and for non-discobox
   implementations.
-- The CLI ships in the sandbox image alongside `discobox-sandbox-agent`
-  (argv[0] dispatch, like `discobox-hook-publish`), configured with the
-  sandbox-agent's localhost URL.
+- The CLI ships in the sandbox image as its own module and its own binary
+  (`agentcred`, `cmd/discobox-credential`), depending only on the protocol
+  package and configured with the sandbox-agent's localhost URL.
+
+  *Amended during implementation, before anything shipped.* This originally
+  said argv[0] dispatch off `discobox-sandbox-agent`, like
+  `discobox-hook-publish`. That contradicts §1: a client whose whole point is
+  that it is portable should not be welded to the runtime that happens to serve
+  it, and the eventual move to another repository would have to untangle it
+  first. Its only dependency is `agentcreds`, which is stdlib-only, so lifting
+  it out is a directory copy.
+- The CLI's interface is shaped for its primary consumer, which is an LLM
+  agent, and the operations do not all get the same shape: `run` takes argv
+  because the declared command *is* the argv executed, while `request` takes a
+  JSON body on stdin because it is nested and carries free text through a shell
+  that reads quotes as syntax. `--json` means "talk to me in JSON" in whichever
+  direction a command has, and failures carry a stable code so an agent
+  branches on a token rather than on wording.
 - sandbox-agent gains the three protocol routes; pool-agent gains their
   relayed implementations, the activation store, ephemeral-sentinel minting,
   and the activation check in its resolver.

@@ -96,11 +96,19 @@ type ApproveSecretRequestBody struct {
 	Schema OptURI `json:"$schema"`
 	// Grant duration in seconds; overrides the secret's default.
 	GrantTTLSeconds OptInt64 `json:"grantTTLSeconds"`
+	// Host the minted grant is limited to. Defaults to the host the request named. Approving a
+	// protocol-originated request with no host at all is rejected; a wildcard grant stays an explicit
+	// administrative act.
+	Host OptString `json:"host"`
 	// How widely the minted grant applies. Defaults to sandbox for sandbox-originated requests,
 	// otherwise project.
 	Scope OptApproveSecretRequestBodyScope `json:"scope"`
 	// Secret ID selected by the approver.
 	SecretId string `json:"secretId"`
+	// Approved uses for a protocol-originated request, replacing the ones the agent asked for. Omit to
+	// approve the requested uses as written. Use IDs are always minted here and any supplied ones are
+	// ignored.
+	Uses OptNilSecretUseArray `json:"uses"`
 }
 
 // GetSchema returns the value of Schema.
@@ -113,6 +121,11 @@ func (s *ApproveSecretRequestBody) GetGrantTTLSeconds() OptInt64 {
 	return s.GrantTTLSeconds
 }
 
+// GetHost returns the value of Host.
+func (s *ApproveSecretRequestBody) GetHost() OptString {
+	return s.Host
+}
+
 // GetScope returns the value of Scope.
 func (s *ApproveSecretRequestBody) GetScope() OptApproveSecretRequestBodyScope {
 	return s.Scope
@@ -121,6 +134,11 @@ func (s *ApproveSecretRequestBody) GetScope() OptApproveSecretRequestBodyScope {
 // GetSecretId returns the value of SecretId.
 func (s *ApproveSecretRequestBody) GetSecretId() string {
 	return s.SecretId
+}
+
+// GetUses returns the value of Uses.
+func (s *ApproveSecretRequestBody) GetUses() OptNilSecretUseArray {
+	return s.Uses
 }
 
 // SetSchema sets the value of Schema.
@@ -133,6 +151,11 @@ func (s *ApproveSecretRequestBody) SetGrantTTLSeconds(val OptInt64) {
 	s.GrantTTLSeconds = val
 }
 
+// SetHost sets the value of Host.
+func (s *ApproveSecretRequestBody) SetHost(val OptString) {
+	s.Host = val
+}
+
 // SetScope sets the value of Scope.
 func (s *ApproveSecretRequestBody) SetScope(val OptApproveSecretRequestBodyScope) {
 	s.Scope = val
@@ -141,6 +164,11 @@ func (s *ApproveSecretRequestBody) SetScope(val OptApproveSecretRequestBodyScope
 // SetSecretId sets the value of SecretId.
 func (s *ApproveSecretRequestBody) SetSecretId(val string) {
 	s.SecretId = val
+}
+
+// SetUses sets the value of Uses.
+func (s *ApproveSecretRequestBody) SetUses(val OptNilSecretUseArray) {
+	s.Uses = val
 }
 
 // How widely the minted grant applies. Defaults to sandbox for sandbox-originated requests,
@@ -754,6 +782,96 @@ func (s *CreateSandboxBody) SetOrigin(val OptOrigin) {
 // SetPoolId sets the value of PoolId.
 func (s *CreateSandboxBody) SetPoolId(val OptString) {
 	s.PoolId = val
+}
+
+// An agent's ask, relayed by the pool agent on behalf of one of its sandboxes.
+// Ref: #/components/schemas/CreateSandboxCredentialRequestBody
+type CreateSandboxCredentialRequestBody struct {
+	// A URL to the JSON Schema for this object.
+	Schema OptURI `json:"$schema"`
+	// Environment variable the credential is wanted in.
+	EnvVar string `json:"envVar"`
+	// Destination host the credential will be sent to. Required, because approving this request may not
+	// mint a host-unscoped grant.
+	Host string `json:"host"`
+	// Why the agent says it needs the credential.
+	Justification OptString `json:"justification"`
+	// Credential name the agent asked for.
+	Name string `json:"name"`
+	// Sandbox the agent is running in.
+	SandboxId string `json:"sandboxId"`
+	// Uses the agent asks for.
+	Uses []SecretUse `json:"uses"`
+}
+
+// GetSchema returns the value of Schema.
+func (s *CreateSandboxCredentialRequestBody) GetSchema() OptURI {
+	return s.Schema
+}
+
+// GetEnvVar returns the value of EnvVar.
+func (s *CreateSandboxCredentialRequestBody) GetEnvVar() string {
+	return s.EnvVar
+}
+
+// GetHost returns the value of Host.
+func (s *CreateSandboxCredentialRequestBody) GetHost() string {
+	return s.Host
+}
+
+// GetJustification returns the value of Justification.
+func (s *CreateSandboxCredentialRequestBody) GetJustification() OptString {
+	return s.Justification
+}
+
+// GetName returns the value of Name.
+func (s *CreateSandboxCredentialRequestBody) GetName() string {
+	return s.Name
+}
+
+// GetSandboxId returns the value of SandboxId.
+func (s *CreateSandboxCredentialRequestBody) GetSandboxId() string {
+	return s.SandboxId
+}
+
+// GetUses returns the value of Uses.
+func (s *CreateSandboxCredentialRequestBody) GetUses() []SecretUse {
+	return s.Uses
+}
+
+// SetSchema sets the value of Schema.
+func (s *CreateSandboxCredentialRequestBody) SetSchema(val OptURI) {
+	s.Schema = val
+}
+
+// SetEnvVar sets the value of EnvVar.
+func (s *CreateSandboxCredentialRequestBody) SetEnvVar(val string) {
+	s.EnvVar = val
+}
+
+// SetHost sets the value of Host.
+func (s *CreateSandboxCredentialRequestBody) SetHost(val string) {
+	s.Host = val
+}
+
+// SetJustification sets the value of Justification.
+func (s *CreateSandboxCredentialRequestBody) SetJustification(val OptString) {
+	s.Justification = val
+}
+
+// SetName sets the value of Name.
+func (s *CreateSandboxCredentialRequestBody) SetName(val string) {
+	s.Name = val
+}
+
+// SetSandboxId sets the value of SandboxId.
+func (s *CreateSandboxCredentialRequestBody) SetSandboxId(val string) {
+	s.SandboxId = val
+}
+
+// SetUses sets the value of Uses.
+func (s *CreateSandboxCredentialRequestBody) SetUses(val []SecretUse) {
+	s.Uses = val
 }
 
 // Create an exec. Provide command for a plain exec, shell to run the run user's login shell, or
@@ -1572,6 +1690,7 @@ func (*ErrorModelStatusCode) createHarnessConfigRes()              {}
 func (*ErrorModelStatusCode) createPoolRes()                       {}
 func (*ErrorModelStatusCode) createProjectRes()                    {}
 func (*ErrorModelStatusCode) createSSHKeyRes()                     {}
+func (*ErrorModelStatusCode) createSandboxCredentialRequestRes()   {}
 func (*ErrorModelStatusCode) createSandboxProviderInstanceRes()    {}
 func (*ErrorModelStatusCode) createSandboxRes()                    {}
 func (*ErrorModelStatusCode) createSecretGrantRes()                {}
@@ -1593,6 +1712,7 @@ func (*ErrorModelStatusCode) getJobRes()                           {}
 func (*ErrorModelStatusCode) getPoolRes()                          {}
 func (*ErrorModelStatusCode) getProjectRes()                       {}
 func (*ErrorModelStatusCode) getSSHIngressRes()                    {}
+func (*ErrorModelStatusCode) getSandboxCredentialRequestRes()      {}
 func (*ErrorModelStatusCode) getSandboxProviderInstanceRes()       {}
 func (*ErrorModelStatusCode) getSandboxRes()                       {}
 func (*ErrorModelStatusCode) getSecretRequestRes()                 {}
@@ -1603,6 +1723,7 @@ func (*ErrorModelStatusCode) listJobsRes()                         {}
 func (*ErrorModelStatusCode) listPoolsRes()                        {}
 func (*ErrorModelStatusCode) listProjectsRes()                     {}
 func (*ErrorModelStatusCode) listSSHKeysRes()                      {}
+func (*ErrorModelStatusCode) listSandboxCredentialsRes()           {}
 func (*ErrorModelStatusCode) listSandboxProviderCatalogRes()       {}
 func (*ErrorModelStatusCode) listSandboxProviderInstancesRes()     {}
 func (*ErrorModelStatusCode) listSandboxesRes()                    {}
@@ -3231,6 +3352,35 @@ func (s *ListSSHKeysBody) SetSshKeys(val []SSHKey) {
 }
 
 func (*ListSSHKeysBody) listSSHKeysRes() {}
+
+// Ref: #/components/schemas/ListSandboxCredentialsResponse
+type ListSandboxCredentialsResponse struct {
+	// A URL to the JSON Schema for this object.
+	Schema      OptURI              `json:"$schema"`
+	Credentials []SandboxCredential `json:"credentials"`
+}
+
+// GetSchema returns the value of Schema.
+func (s *ListSandboxCredentialsResponse) GetSchema() OptURI {
+	return s.Schema
+}
+
+// GetCredentials returns the value of Credentials.
+func (s *ListSandboxCredentialsResponse) GetCredentials() []SandboxCredential {
+	return s.Credentials
+}
+
+// SetSchema sets the value of Schema.
+func (s *ListSandboxCredentialsResponse) SetSchema(val OptURI) {
+	s.Schema = val
+}
+
+// SetCredentials sets the value of Credentials.
+func (s *ListSandboxCredentialsResponse) SetCredentials(val []SandboxCredential) {
+	s.Credentials = val
+}
+
+func (*ListSandboxCredentialsResponse) listSandboxCredentialsRes() {}
 
 // Ref: #/components/schemas/ListSandboxProviderCatalogBody
 type ListSandboxProviderCatalogBody struct {
@@ -5173,6 +5323,69 @@ func (o OptNilSandboxRuntimeAgentStatus) Get() (v SandboxRuntimeAgentStatus, ok 
 
 // Or returns value if set, or given parameter if does not.
 func (o OptNilSandboxRuntimeAgentStatus) Or(d SandboxRuntimeAgentStatus) SandboxRuntimeAgentStatus {
+	if v, ok := o.Get(); ok {
+		return v
+	}
+	return d
+}
+
+// NewOptNilSecretUseArray returns new OptNilSecretUseArray with value set to v.
+func NewOptNilSecretUseArray(v []SecretUse) OptNilSecretUseArray {
+	return OptNilSecretUseArray{
+		Value: v,
+		Set:   true,
+	}
+}
+
+// OptNilSecretUseArray is optional nullable []SecretUse.
+type OptNilSecretUseArray struct {
+	Value []SecretUse
+	Set   bool
+	Null  bool
+}
+
+// IsSet returns true if OptNilSecretUseArray was set.
+func (o OptNilSecretUseArray) IsSet() bool { return o.Set }
+
+// Reset unsets value.
+func (o *OptNilSecretUseArray) Reset() {
+	var v []SecretUse
+	o.Value = v
+	o.Set = false
+	o.Null = false
+}
+
+// SetTo sets value to v.
+func (o *OptNilSecretUseArray) SetTo(v []SecretUse) {
+	o.Set = true
+	o.Null = false
+	o.Value = v
+}
+
+// IsNull returns true if value is Null.
+func (o OptNilSecretUseArray) IsNull() bool { return o.Null }
+
+// SetToNull sets value to null.
+func (o *OptNilSecretUseArray) SetToNull() {
+	o.Set = true
+	o.Null = true
+	var v []SecretUse
+	o.Value = v
+}
+
+// Get returns value and boolean that denotes whether value was set.
+func (o OptNilSecretUseArray) Get() (v []SecretUse, ok bool) {
+	if o.Null {
+		return v, false
+	}
+	if !o.Set {
+		return v, false
+	}
+	return o.Value, true
+}
+
+// Or returns value if set, or given parameter if does not.
+func (o OptNilSecretUseArray) Or(d []SecretUse) []SecretUse {
 	if v, ok := o.Get(); ok {
 		return v
 	}
@@ -10081,6 +10294,226 @@ func (s *SandboxCreateConfigSourceCodeReferences) init() SandboxCreateConfigSour
 	return m
 }
 
+// One agent-requested credential a sandbox may use, with the live grant's approved uses. Sentinel
+// and format are for the pool agent alone; they never reach the sandbox.
+// Ref: #/components/schemas/SandboxCredential
+type SandboxCredential struct {
+	// Environment variable the value is delivered in.
+	EnvVar string `json:"envVar"`
+	// When the grant behind the uses lapses; empty never expires.
+	ExpiresAt OptDateTime `json:"expiresAt"`
+	// Generative format template the pool agent mints an ephemeral sentinel from, so the ephemeral value
+	// byte-mimics a real key.
+	Format OptString `json:"format"`
+	// Grant authorizing the uses.
+	GrantId string `json:"grantId"`
+	// Host the credential may be sent to.
+	Host string `json:"host"`
+	// Credential name.
+	Name string `json:"name"`
+	// Secret backing the credential.
+	SecretId string `json:"secretId"`
+	// Stable sentinel bound to the sandbox. The pool agent translates its own ephemeral sentinels back
+	// to this one before resolving; it is never injected into the sandbox.
+	Sentinel string `json:"sentinel"`
+	// Approved uses.
+	Uses OptNilSecretUseArray `json:"uses"`
+}
+
+// GetEnvVar returns the value of EnvVar.
+func (s *SandboxCredential) GetEnvVar() string {
+	return s.EnvVar
+}
+
+// GetExpiresAt returns the value of ExpiresAt.
+func (s *SandboxCredential) GetExpiresAt() OptDateTime {
+	return s.ExpiresAt
+}
+
+// GetFormat returns the value of Format.
+func (s *SandboxCredential) GetFormat() OptString {
+	return s.Format
+}
+
+// GetGrantId returns the value of GrantId.
+func (s *SandboxCredential) GetGrantId() string {
+	return s.GrantId
+}
+
+// GetHost returns the value of Host.
+func (s *SandboxCredential) GetHost() string {
+	return s.Host
+}
+
+// GetName returns the value of Name.
+func (s *SandboxCredential) GetName() string {
+	return s.Name
+}
+
+// GetSecretId returns the value of SecretId.
+func (s *SandboxCredential) GetSecretId() string {
+	return s.SecretId
+}
+
+// GetSentinel returns the value of Sentinel.
+func (s *SandboxCredential) GetSentinel() string {
+	return s.Sentinel
+}
+
+// GetUses returns the value of Uses.
+func (s *SandboxCredential) GetUses() OptNilSecretUseArray {
+	return s.Uses
+}
+
+// SetEnvVar sets the value of EnvVar.
+func (s *SandboxCredential) SetEnvVar(val string) {
+	s.EnvVar = val
+}
+
+// SetExpiresAt sets the value of ExpiresAt.
+func (s *SandboxCredential) SetExpiresAt(val OptDateTime) {
+	s.ExpiresAt = val
+}
+
+// SetFormat sets the value of Format.
+func (s *SandboxCredential) SetFormat(val OptString) {
+	s.Format = val
+}
+
+// SetGrantId sets the value of GrantId.
+func (s *SandboxCredential) SetGrantId(val string) {
+	s.GrantId = val
+}
+
+// SetHost sets the value of Host.
+func (s *SandboxCredential) SetHost(val string) {
+	s.Host = val
+}
+
+// SetName sets the value of Name.
+func (s *SandboxCredential) SetName(val string) {
+	s.Name = val
+}
+
+// SetSecretId sets the value of SecretId.
+func (s *SandboxCredential) SetSecretId(val string) {
+	s.SecretId = val
+}
+
+// SetSentinel sets the value of Sentinel.
+func (s *SandboxCredential) SetSentinel(val string) {
+	s.Sentinel = val
+}
+
+// SetUses sets the value of Uses.
+func (s *SandboxCredential) SetUses(val OptNilSecretUseArray) {
+	s.Uses = val
+}
+
+// Ref: #/components/schemas/SandboxCredentialRequestStatus
+type SandboxCredentialRequestStatus struct {
+	// A URL to the JSON Schema for this object.
+	Schema OptURI `json:"$schema"`
+	// Request ID to poll.
+	RequestId string `json:"requestId"`
+	// Request status.
+	Status SandboxCredentialRequestStatusStatus `json:"status"`
+	// Approved uses; present once granted, and authoritative over the requested ones.
+	Uses OptNilSecretUseArray `json:"uses"`
+}
+
+// GetSchema returns the value of Schema.
+func (s *SandboxCredentialRequestStatus) GetSchema() OptURI {
+	return s.Schema
+}
+
+// GetRequestId returns the value of RequestId.
+func (s *SandboxCredentialRequestStatus) GetRequestId() string {
+	return s.RequestId
+}
+
+// GetStatus returns the value of Status.
+func (s *SandboxCredentialRequestStatus) GetStatus() SandboxCredentialRequestStatusStatus {
+	return s.Status
+}
+
+// GetUses returns the value of Uses.
+func (s *SandboxCredentialRequestStatus) GetUses() OptNilSecretUseArray {
+	return s.Uses
+}
+
+// SetSchema sets the value of Schema.
+func (s *SandboxCredentialRequestStatus) SetSchema(val OptURI) {
+	s.Schema = val
+}
+
+// SetRequestId sets the value of RequestId.
+func (s *SandboxCredentialRequestStatus) SetRequestId(val string) {
+	s.RequestId = val
+}
+
+// SetStatus sets the value of Status.
+func (s *SandboxCredentialRequestStatus) SetStatus(val SandboxCredentialRequestStatusStatus) {
+	s.Status = val
+}
+
+// SetUses sets the value of Uses.
+func (s *SandboxCredentialRequestStatus) SetUses(val OptNilSecretUseArray) {
+	s.Uses = val
+}
+
+func (*SandboxCredentialRequestStatus) createSandboxCredentialRequestRes() {}
+func (*SandboxCredentialRequestStatus) getSandboxCredentialRequestRes()    {}
+
+// Request status.
+type SandboxCredentialRequestStatusStatus string
+
+const (
+	SandboxCredentialRequestStatusStatusPending SandboxCredentialRequestStatusStatus = "pending"
+	SandboxCredentialRequestStatusStatusGranted SandboxCredentialRequestStatusStatus = "granted"
+	SandboxCredentialRequestStatusStatusDenied  SandboxCredentialRequestStatusStatus = "denied"
+)
+
+// AllValues returns all SandboxCredentialRequestStatusStatus values.
+func (SandboxCredentialRequestStatusStatus) AllValues() []SandboxCredentialRequestStatusStatus {
+	return []SandboxCredentialRequestStatusStatus{
+		SandboxCredentialRequestStatusStatusPending,
+		SandboxCredentialRequestStatusStatusGranted,
+		SandboxCredentialRequestStatusStatusDenied,
+	}
+}
+
+// MarshalText implements encoding.TextMarshaler.
+func (s SandboxCredentialRequestStatusStatus) MarshalText() ([]byte, error) {
+	switch s {
+	case SandboxCredentialRequestStatusStatusPending:
+		return []byte(s), nil
+	case SandboxCredentialRequestStatusStatusGranted:
+		return []byte(s), nil
+	case SandboxCredentialRequestStatusStatusDenied:
+		return []byte(s), nil
+	default:
+		return nil, errors.Errorf("invalid value: %q", s)
+	}
+}
+
+// UnmarshalText implements encoding.TextUnmarshaler.
+func (s *SandboxCredentialRequestStatusStatus) UnmarshalText(data []byte) error {
+	switch SandboxCredentialRequestStatusStatus(data) {
+	case SandboxCredentialRequestStatusStatusPending:
+		*s = SandboxCredentialRequestStatusStatusPending
+		return nil
+	case SandboxCredentialRequestStatusStatusGranted:
+		*s = SandboxCredentialRequestStatusStatusGranted
+		return nil
+	case SandboxCredentialRequestStatusStatusDenied:
+		*s = SandboxCredentialRequestStatusStatusDenied
+		return nil
+	default:
+		return errors.Errorf("invalid value: %q", data)
+	}
+}
+
 // Ref: #/components/schemas/SandboxExec
 type SandboxExec struct {
 	// Sandbox exec runtime ID.
@@ -12297,6 +12730,9 @@ func (*Secret) updateSecretRes() {}
 type SecretGrant struct {
 	// A URL to the JSON Schema for this object.
 	Schema OptURI `json:"$schema"`
+	// Approved uses, confirmed or edited at approval time. Present on grants minted through the agent
+	// credentials flow.
+	Uses OptNilSecretUseArray `json:"uses"`
 	// Creation timestamp.
 	CreatedAt time.Time `json:"createdAt"`
 	// Expiry time; empty never expires.
@@ -12324,6 +12760,11 @@ type SecretGrant struct {
 // GetSchema returns the value of Schema.
 func (s *SecretGrant) GetSchema() OptURI {
 	return s.Schema
+}
+
+// GetUses returns the value of Uses.
+func (s *SecretGrant) GetUses() OptNilSecretUseArray {
+	return s.Uses
 }
 
 // GetCreatedAt returns the value of CreatedAt.
@@ -12384,6 +12825,11 @@ func (s *SecretGrant) GetUpdatedAt() time.Time {
 // SetSchema sets the value of Schema.
 func (s *SecretGrant) SetSchema(val OptURI) {
 	s.Schema = val
+}
+
+// SetUses sets the value of Uses.
+func (s *SecretGrant) SetUses(val OptNilSecretUseArray) {
+	s.Uses = val
 }
 
 // SetCreatedAt sets the value of CreatedAt.
@@ -12498,12 +12944,21 @@ type SecretRequest struct {
 	Schema OptURI `json:"$schema"`
 	// Creation timestamp.
 	CreatedAt time.Time `json:"createdAt"`
+	// Environment variable the credential is wanted in, for protocol-originated requests.
+	EnvName OptString `json:"envName"`
 	// Grant that satisfied this request; set when approved.
 	GrantId OptString `json:"grantId"`
 	// Host hint provided at request time.
 	Host OptString `json:"host"`
 	// Stable request ID.
 	ID string `json:"id"`
+	// Why the agent says it needs the credential.
+	Justification OptString `json:"justification"`
+	// Credential name the agent asked for, for protocol-originated requests.
+	Name OptString `json:"name"`
+	// Uses the agent asked for. Their presence is what marks a request as protocol-originated rather
+	// than one the proxy minted on hitting an unresolvable sentinel.
+	Uses OptNilSecretUseArray `json:"uses"`
 	// Project ID.
 	ProjectId string `json:"projectId"`
 	// Principal ID of the requestor.
@@ -12530,6 +12985,11 @@ func (s *SecretRequest) GetCreatedAt() time.Time {
 	return s.CreatedAt
 }
 
+// GetEnvName returns the value of EnvName.
+func (s *SecretRequest) GetEnvName() OptString {
+	return s.EnvName
+}
+
 // GetGrantId returns the value of GrantId.
 func (s *SecretRequest) GetGrantId() OptString {
 	return s.GrantId
@@ -12543,6 +13003,21 @@ func (s *SecretRequest) GetHost() OptString {
 // GetID returns the value of ID.
 func (s *SecretRequest) GetID() string {
 	return s.ID
+}
+
+// GetJustification returns the value of Justification.
+func (s *SecretRequest) GetJustification() OptString {
+	return s.Justification
+}
+
+// GetName returns the value of Name.
+func (s *SecretRequest) GetName() OptString {
+	return s.Name
+}
+
+// GetUses returns the value of Uses.
+func (s *SecretRequest) GetUses() OptNilSecretUseArray {
+	return s.Uses
 }
 
 // GetProjectId returns the value of ProjectId.
@@ -12590,6 +13065,11 @@ func (s *SecretRequest) SetCreatedAt(val time.Time) {
 	s.CreatedAt = val
 }
 
+// SetEnvName sets the value of EnvName.
+func (s *SecretRequest) SetEnvName(val OptString) {
+	s.EnvName = val
+}
+
 // SetGrantId sets the value of GrantId.
 func (s *SecretRequest) SetGrantId(val OptString) {
 	s.GrantId = val
@@ -12603,6 +13083,21 @@ func (s *SecretRequest) SetHost(val OptString) {
 // SetID sets the value of ID.
 func (s *SecretRequest) SetID(val string) {
 	s.ID = val
+}
+
+// SetJustification sets the value of Justification.
+func (s *SecretRequest) SetJustification(val OptString) {
+	s.Justification = val
+}
+
+// SetName sets the value of Name.
+func (s *SecretRequest) SetName(val OptString) {
+	s.Name = val
+}
+
+// SetUses sets the value of Uses.
+func (s *SecretRequest) SetUses(val OptNilSecretUseArray) {
+	s.Uses = val
 }
 
 // SetProjectId sets the value of ProjectId.
@@ -12803,6 +13298,36 @@ func (s *SecretType) UnmarshalText(data []byte) error {
 	default:
 		return errors.Errorf("invalid value: %q", data)
 	}
+}
+
+// One approved way a credential may be used. The ID is minted at approval, so a requesting agent
+// cannot name the use it will later present.
+// Ref: #/components/schemas/SecretUse
+type SecretUse struct {
+	// What the credential may be used for.
+	Description string `json:"description"`
+	// Stable use ID, minted at approval.
+	UseId OptString `json:"useId"`
+}
+
+// GetDescription returns the value of Description.
+func (s *SecretUse) GetDescription() string {
+	return s.Description
+}
+
+// GetUseId returns the value of UseId.
+func (s *SecretUse) GetUseId() OptString {
+	return s.UseId
+}
+
+// SetDescription sets the value of Description.
+func (s *SecretUse) SetDescription(val string) {
+	s.Description = val
+}
+
+// SetUseId sets the value of UseId.
+func (s *SecretUse) SetUseId(val OptString) {
+	s.UseId = val
 }
 
 // Type-specific secret value. Fields populated depend on the secret type.

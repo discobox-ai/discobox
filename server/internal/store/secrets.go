@@ -245,6 +245,34 @@ func (s *Store) FindPendingSecretRequest(ctx context.Context, projectID, secretI
 	return &req, nil
 }
 
+// FindPendingAgentCredentialRequest returns the open protocol-originated
+// request for a sandbox's environment variable and destination host, or
+// ErrNotFound.
+//
+// It keys on (sandbox, env, host) rather than on the secret the way the
+// reactive path does, because a protocol request names no secret: choosing one
+// is part of the approval. An agent that retries its ask therefore reuses its
+// open request instead of adding another line to the approval inbox.
+func (s *Store) FindPendingAgentCredentialRequest(ctx context.Context, projectID, sandboxID, envName, host string) (*model.SecretRequest, error) {
+	read, err := s.getRead(ctx)
+	if err != nil {
+		return nil, err
+	}
+	var out []model.SecretRequest
+	err = read.Where("project_id = ? AND sandbox_id = ? AND env_name = ? AND host = ? AND status = ?",
+		projectID, sandboxID, envName, host, model.SecretRequestStatusPending).
+		Order("created_at DESC").Find(&out).Error
+	if err != nil {
+		return nil, err
+	}
+	for i := range out {
+		if out[i].FromProtocol() {
+			return &out[i], nil
+		}
+	}
+	return nil, ErrNotFound
+}
+
 func (s *Store) GetSecretRequest(ctx context.Context, projectID, requestID string) (*model.SecretRequest, error) {
 	read, err := s.getRead(ctx)
 	if err != nil {

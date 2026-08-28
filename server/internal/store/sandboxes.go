@@ -198,6 +198,21 @@ func (s *Store) CreateSandbox(ctx context.Context, sandbox *model.Sandbox) error
 	return err
 }
 
+// GetSandboxByID looks a sandbox up by its globally unique ID alone, for
+// callers that have not been told which project it belongs to.
+//
+// A pool agent is the case that needs it: it hosts sandboxes from one project
+// but speaks in sandbox IDs, so the project is something the control plane
+// derives rather than something the agent asserts. Every such caller must still
+// check that the sandbox it got back is one it is allowed to speak for.
+func (s *Store) GetSandboxByID(ctx context.Context, sandboxID string) (*model.Sandbox, error) {
+	read, err := s.getRead(ctx)
+	if err != nil {
+		return nil, err
+	}
+	return firstByID[model.Sandbox](read, "id", sandboxID)
+}
+
 func (s *Store) GetSandbox(ctx context.Context, projectID, sandboxID string, options ...SandboxGetOption) (*model.Sandbox, error) {
 	var opts sandboxGetOptions
 	for _, option := range options {

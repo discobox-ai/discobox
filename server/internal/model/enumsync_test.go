@@ -74,6 +74,12 @@ var yamlOwnedEnums = map[string]string{
 	"HarnessVolume.volume":               "value set is owned by harness.VolumeKind in the root module, not a server/internal/model enum tag",
 	"SandboxUpgrade.reason":              "derived at read time by services.SandboxUpgrade from the pin and the harness config; nothing on the model stores it",
 	"CreateProjectBody.copy[]":           "names the resource kinds a project copy takes; a request-shaping vocabulary with no persisted field behind it",
+	// Deliberately not SecretRequest.status. The protocol answers "may I use
+	// this?", which is not the same question as "was this request approved?": a
+	// grant revoked after approval leaves the request approved and the answer
+	// no. secrets.AgentCredentialRequestStatus is the one place that maps
+	// between them (ADR 0031).
+	"SandboxCredentialRequestStatus.status": "the agent credentials protocol's vocabulary, owned by agentcreds in the root module and mapped from the request status plus grant liveness",
 }
 
 func TestModelEnumTagsMatchOpenAPI(t *testing.T) {

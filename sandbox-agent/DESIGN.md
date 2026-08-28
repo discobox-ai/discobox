@@ -30,6 +30,7 @@ runtime operations.
 | `nestedbridge` | Discovers the nested Docker daemon's bridge address and publishes it under `/run` for the bridge-facing proxy forwarder and the runc wrapper. Also enumerates this sandbox's own directly-connected IPv4 networks (`LocalSubnets`), the resolution target for `sandboxconfig.LocalSubnetsToken`. |
 | `proxyenv` | Renders `sandbox.json`'s proxy-trust env (`Env`/`ProxyEnvs`) as a systemd `EnvironmentFile`, for `docker.service` and `nix-daemon.service` — both started by socket activation, not spawned by sandbox-agent, so they inherit no container env and cannot be reached by any per-container injection. Both do their own fetching (image pulls; substitutions and builds the `nix` client hands off), so their egress is the sandbox's egress. Resolves `sandboxconfig.LocalSubnetsToken` against `nestedbridge.LocalSubnets()`, the same substitution `runcca.proxyEnv` applies for nested containers. Run at boot by `discobox-render-proxy-env.service`, ordered before both daemons, writing to `/run/discobox/proxy/proxy.env` (not `/etc/discobox`, which is pool-agent's read-only mount). |
 | `dockercache` | The sandbox's `docker` CLI wrapper (`cmd/discobox-docker`): installed as `docker` ahead of the real CLI on PATH, it points `docker build` at the pool-shared BuildKit builder so a build in one sandbox is reused by the others (ADR 0044). It provisions a buildx `remote` instance against the pool mediator, rewrites the build to push its result to the pool registry, then pulls the result back and applies the user's tags — `--load` would reship the whole image on every build, cached or not. Only `docker build` is rewritten; `docker buildx` and everything else is exec'd straight through, so a user who reaches for buildx directly gets buildx. |
+| `credentials` | The in-sandbox *server* half of the agent credentials protocol (ADR 0031): a loopback endpoint on the protocol's well-known address that relays list/request/get to the pool over the sandbox's own mTLS client certificate. It holds no credential and makes no authorization decision — it puts a URL in front of the sandbox and carries each call one hop out, where the certificate is the identity. The client half is the separate [`agentcred`](../agentcred/DESIGN.md) module, so the CLI stays liftable into another repository. |
 | `agentstatus` | Computes the status a pool agent polls (ADR 0030): per-source git status and a diff stat against the manifest's base commit via bounded `git status`/`git diff --shortstat` shelling, and per terminal session (every terminal still on record, never one-shot execs) the harness session state (plus the OSC title each session's program last set, read from its shim's emulator) via the root module's `harness.SessionStateDeriver` capability (full state machine for claude-code; generic exec-liveness fallback otherwise). Computed fresh on every call, never cached. Listening ports travel in the same payload but come from `ports` instead. |
 | `ports` | The TCP ports the sandbox serves: a standing watcher that reads `/proc/net/tcp{,6}` for sockets in `TCP_LISTEN` owned by the run user's uid, and probes each newly seen socket once to classify it `http`/`https`/`tcp` (ADR 0046). It has a second input — the ports `services` declarations name, folded into the same snapshot and marked `declared`, for the sockets the uid filter cannot see because root holds them ([ADR 0076](../docs/adr/0076-a-service-may-declare-a-port-discovery-cannot-see.md)). The only status component that is a cached snapshot rather than computed per request, because classifying a port means connecting to a user's process. |
 | `resources` | Opaque cgroup/procfs/systemd-style resource snapshot collection for exec runtimes. |
@@ -118,6 +119,24 @@ runtime operations.
   lifecycle events, latest observed runtime state, and retained opaque resource
   samples, but REST runtime state should be derived from runtime/systemd/shim
   observations instead of an in-memory cache.
+- The agent credentials endpoint is loopback-only and carries no token, for the
+  same reason the hook socket has none: everything inside the sandbox is equally
+  untrusted, so a secret shared between in-sandbox processes authenticates
+  nothing. Authority comes from the mTLS client certificate one hop out, which
+  no in-sandbox process can forge without already having root here — at which
+  point it has the listener too. A sandbox with no staged proxy material simply
+  does not bring the endpoint up; that is not a startup failure.
+- A value taken through the credential CLI is never written to disk or exported
+  into a shell. `discobox-credential run --use ID -- cmd` injects it into that
+  one child process's environment, replacing rather than joining any same-named
+  variable, so a stale export cannot shadow the fresh value.
+- The CLI is a real binary, not an `argv[0]` alias of `discobox-sandbox-agent`
+  the way `discobox-hook-publish` is. It is the client of a portable protocol
+  and is meant to leave for its own repository, so it must not be welded to the
+  runtime that serves it: it depends only on the stdlib-only `agentcreds`
+  package. `execs.EnvWithRuntimeDefaults` advertises the endpoint through
+  `agentcreds.URLEnv` so a harness can find it without the address being
+  compiled into anything but a default.
 - The status endpoint (`GET .../status`, `status:read` scope) is answered
   fresh on every request from the authenticated caller — pool-agent's standing
   poll loop, per ADR 0030 — with one exception, `ports`. Sandbox-agent never

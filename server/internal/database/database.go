@@ -67,6 +67,12 @@ func (db *DB) Migrate(ctx context.Context) error {
 	if err := prepareSandboxStateSplit(write); err != nil {
 		return err
 	}
+	// And again pre-AutoMigrate: AutoMigrate creates a missing index but never
+	// alters one that already exists under the same name, so an index whose
+	// column set changed has to be dropped first and recreated by it.
+	if err := dropNarrowSandboxSecretEnvIndex(write); err != nil {
+		return err
+	}
 	if err := write.AutoMigrate(model.AllModels()...); err != nil {
 		return err
 	}
@@ -170,7 +176,35 @@ const (
 
 	legacyPoolBootForeignKey  = "fk_pools_bootstrap_tokens"
 	poolBootCascadeForeignKey = "fk_pool_bootstrap_tokens_pool"
+
+	//nolint:gosec // An index name, not a credential.
+	sandboxSecretEnvIndex = "idx_sandbox_secret_env"
 )
+
+// dropNarrowSandboxSecretEnvIndex removes the pre-ADR-0031 two-column
+// (sandbox_id, env_name) uniqueness index on sandbox_secrets so AutoMigrate can
+// recreate it over the three columns it now covers. Agent-requested bindings
+// are a separate channel that is never injected into the sandbox, so a sandbox
+// may hold one injected and one agent-requested binding for the same
+// environment variable; under the narrow index the second one fails to insert.
+//
+// "The column is absent" is the exact test for "this database predates the
+// change", because the column and the widened index arrive together — and it
+// needs no dialect-specific index introspection. The check is cheap and
+// idempotent, so it stays as a permanent step rather than a one-shot.
+func dropNarrowSandboxSecretEnvIndex(db *gorm.DB) error {
+	migrator := db.Migrator()
+	if !migrator.HasTable(&model.SandboxSecret{}) {
+		return nil
+	}
+	if migrator.HasColumn(&model.SandboxSecret{}, "agent_requested") {
+		return nil
+	}
+	if !migrator.HasIndex(&model.SandboxSecret{}, sandboxSecretEnvIndex) {
+		return nil
+	}
+	return migrator.DropIndex(&model.SandboxSecret{}, sandboxSecretEnvIndex)
+}
 
 // migrateLibkrunProviderType preserves provider and pool identities while
 // replacing the pre-release local-vm backend name with its implementation name.

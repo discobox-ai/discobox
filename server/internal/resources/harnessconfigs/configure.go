@@ -558,7 +558,7 @@ func (s *Service) previousSecretIDsByEnv(ctx context.Context, config *model.Harn
 // each stands for, so a command that passed one straight through (X=$PREV_X) is
 // understood as keeping that secret rather than storing a placeholder as one.
 func (s *Service) previousSentinels(ctx context.Context, projectID, sandboxID string) (map[string]string, error) {
-	assignments, err := s.store.ListSandboxSecrets(ctx, projectID, sandboxID)
+	assignments, err := s.store.ListInjectedSandboxSecrets(ctx, projectID, sandboxID)
 	if err != nil {
 		return nil, err
 	}

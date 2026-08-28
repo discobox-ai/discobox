@@ -117,21 +117,31 @@ func writeJSONAtomic(path string, value any) error {
 type secretResolver struct {
 	contextPath string
 	client      *http.Client
+	// activations translates an ephemeral sentinel back to the stable one the
+	// control plane knows. Nil disables the agent credentials path entirely,
+	// which is what a resolver built without a broker gets.
+	activations *activations
 }
 
-func newSecretResolver(projectID, poolID string) *secretResolver {
-	// Same URL, same transport resolution as the agent itself; the proxy unit
-	// inherits it from the unit environment file.
+func newSecretResolver(projectID, poolID string, live *activations) *secretResolver {
+	return &secretResolver{
+		contextPath: layout.ProxyResolveContextFile(projectID, poolID),
+		client:      controlPlaneHTTPClient(),
+		activations: live,
+	}
+}
+
+// controlPlaneHTTPClient builds the client the proxy unit uses to reach the
+// control plane: same URL and same transport resolution as the agent itself,
+// which the unit inherits from the unit environment file.
+func controlPlaneHTTPClient() *http.Client {
 	client := &http.Client{Timeout: resolveHTTPTimeout}
 	if url := strings.TrimSpace(os.Getenv(envControlPlaneURL)); url != "" {
 		if _, resolved, err := wire.HTTPClient(url, resolveHTTPTimeout); err == nil {
 			client = resolved
 		}
 	}
-	return &secretResolver{
-		contextPath: layout.ProxyResolveContextFile(projectID, poolID),
-		client:      client,
-	}
+	return client
 }
 
 type resolveRequestBody struct {
@@ -147,13 +157,29 @@ type resolveResponseBody struct {
 }
 
 func (r *secretResolver) Resolve(ctx context.Context, req proxy.SecretResolveRequest) (proxy.SecretResolveResult, error) {
-	rc, err := r.readContext()
+	rc, err := readResolveContext(r.contextPath)
 	if err != nil || rc.Token == "" || rc.ControlPlaneURL == "" || rc.PoolID == "" {
 		// No usable credential yet: fail closed so the sentinel is left in place.
 		return proxy.SecretResolveResult{}, proxy.ErrSecretResolveDenied
 	}
+	// An ephemeral sentinel is checked and translated here, before the control
+	// plane is asked anything. The control plane never learns that ephemeral
+	// sentinels exist: it is handed the stable one and answers the same question
+	// it always did (ADR 0031 §3).
+	sentinel := req.Sentinel
+	var activationExpiry time.Time
+	if record, ok := r.activation(req); ok {
+		sentinel = record.Stable
+		activationExpiry = record.ExpiresAt
+	} else if r.isEphemeralCandidate(req) {
+		// The proxy matched a string this process handed out, but the activation
+		// behind it is gone or was never for this destination. Fail closed:
+		// translating it anyway would make the use window and the host scope
+		// advisory.
+		return proxy.SecretResolveResult{}, proxy.ErrSecretResolveDenied
+	}
 	url := fmt.Sprintf("%s/api/pools/%s/resolve-sandbox-secret", rc.ControlPlaneURL, rc.PoolID)
-	payload, err := json.Marshal(resolveRequestBody{SandboxID: req.ClientID, Sentinel: req.Sentinel, Host: req.Host})
+	payload, err := json.Marshal(resolveRequestBody{SandboxID: req.ClientID, Sentinel: sentinel, Host: req.Host})
 	if err != nil {
 		return proxy.SecretResolveResult{}, err
 	}
@@ -189,11 +215,56 @@ func (r *secretResolver) Resolve(ctx context.Context, req proxy.SecretResolveReq
 	if out.ExpiresAt != nil {
 		result.ExpiresAt = *out.ExpiresAt
 	}
+	// Cap the proxy's positive cache at the activation window as well as the
+	// grant. The grant is the longer of the two by construction, and a value
+	// cached to grant expiry would keep serving an ephemeral sentinel long after
+	// the one command it was minted for finished.
+	if !activationExpiry.IsZero() && (result.ExpiresAt.IsZero() || activationExpiry.Before(result.ExpiresAt)) {
+		result.ExpiresAt = activationExpiry
+	}
 	return result, nil
 }
 
-func (r *secretResolver) readContext() (resolveContext, error) {
-	data, err := os.ReadFile(resolve(r.contextPath))
+// activation returns the live activation for a resolve request, if the sentinel
+// is one this process minted and the destination matches the host the use was
+// approved for.
+//
+// The host check is repeated here rather than left to the control plane's grant
+// match because it is the cheaper and earlier of the two, and because it is the
+// check that ties this specific activation to this specific destination: the
+// grant only knows the credential may go to that host at all.
+func (r *secretResolver) activation(req proxy.SecretResolveRequest) (activation, bool) {
+	if r.activations == nil {
+		return activation{}, false
+	}
+	record, ok := r.activations.lookup(req.Sentinel)
+	if !ok {
+		return activation{}, false
+	}
+	if record.SandboxID != req.ClientID {
+		return activation{}, false
+	}
+	if record.Host != "" && !strings.EqualFold(record.Host, req.Host) {
+		return activation{}, false
+	}
+	return record, true
+}
+
+// isEphemeralCandidate reports whether a sentinel looks like one this process
+// minted for some sandbox, even though no live activation covers this request.
+// It separates "expired or wrong host" from "an ordinary injected sentinel",
+// so the former is refused rather than forwarded to the control plane as if it
+// were a stable binding.
+func (r *secretResolver) isEphemeralCandidate(req proxy.SecretResolveRequest) bool {
+	if r.activations == nil {
+		return false
+	}
+	_, minted := r.activations.lookupAny(req.Sentinel)
+	return minted
+}
+
+func readResolveContext(path string) (resolveContext, error) {
+	data, err := os.ReadFile(resolve(path))
 	if err != nil {
 		return resolveContext{}, err
 	}
@@ -204,12 +275,69 @@ func (r *secretResolver) readContext() (resolveContext, error) {
 	return rc, nil
 }
 
-// watchSecretsFile watches SecretsFile and applies sentinel sets to the running
-// proxy. It uses fsnotify so a sentinel push takes effect immediately (rather
-// than after a poll interval), with a slow ticker backstop in case an event is
-// missed. base carries the startup config whose runtime policy fields are
-// replaced on each apply.
-func watchSecretsFile(ctx context.Context, server *proxy.Server, base proxy.Config, path string, onError func(error)) {
+// sentinelPublisher owns what the running proxy watches for. Two sources feed
+// it and neither can be applied alone, because ApplyConfig replaces the whole
+// per-client set:
+//
+//   - SecretsFile, the sandbox's stable sentinels, written by the pool-agent
+//     process as sandboxes come and go.
+//   - live activations, the ephemeral sentinels this process mints per use.
+//
+// Holding both here is what lets an activation take effect the instant it is
+// minted: publishing is a function call rather than a file the proxy has to
+// notice.
+type sentinelPublisher struct {
+	server  *proxy.Server
+	base    proxy.Config
+	live    *activations
+	onError func(error)
+
+	mu   sync.Mutex
+	file map[string][]string
+}
+
+func newSentinelPublisher(server *proxy.Server, base proxy.Config, live *activations, onError func(error)) *sentinelPublisher {
+	p := &sentinelPublisher{server: server, base: base, live: live, onError: onError, file: map[string][]string{}}
+	live.setChangeHandler(p.publish)
+	return p
+}
+
+// setFileSentinels records the stable sentinel set and republishes.
+func (p *sentinelPublisher) setFileSentinels(clients map[string][]string) {
+	p.mu.Lock()
+	p.file = clients
+	p.mu.Unlock()
+	p.publish()
+}
+
+// publish applies the union of both sources to the running proxy.
+func (p *sentinelPublisher) publish() {
+	p.mu.Lock()
+	merged := make(map[string][]string, len(p.file))
+	for clientID, sentinels := range p.file {
+		merged[clientID] = append([]string(nil), sentinels...)
+	}
+	p.mu.Unlock()
+	for clientID, sentinels := range p.live.sentinelsByClient() {
+		merged[clientID] = append(merged[clientID], sentinels...)
+	}
+
+	cfg := p.base
+	// Keep the swap tuning (TTLs, refresh interval, query scanning) from the
+	// startup config; only the sentinel client set changes per apply.
+	cfg.Secrets = p.base.Secrets
+	cfg.Secrets.Clients = secretClients(merged)
+	if err := p.server.ApplyConfig(cfg); err != nil && p.onError != nil {
+		p.onError(err)
+	}
+}
+
+// watchSecretsFile watches SecretsFile and feeds its sentinel sets to the
+// publisher. It uses fsnotify so a sentinel push takes effect immediately
+// (rather than after a poll interval), with a slow ticker backstop in case an
+// event is missed.
+func watchSecretsFile(ctx context.Context, publisher *sentinelPublisher, path string) {
+	onError := publisher.onError
 	var lastMod time.Time
 	apply := func() {
 		info, err := os.Stat(resolve(path))
@@ -229,17 +357,7 @@ func watchSecretsFile(ctx context.Context, server *proxy.Server, base proxy.Conf
 			}
 			return
 		}
-		cfg := base
-		// Keep the swap tuning (TTLs, refresh interval, query scanning) from the
-		// startup config; only the sentinel client set changes per apply.
-		cfg.Secrets = base.Secrets
-		cfg.Secrets.Clients = secretClientsFromDoc(doc)
-		if err := server.ApplyConfig(cfg); err != nil {
-			if onError != nil {
-				onError(err)
-			}
-			return
-		}
+		publisher.setFileSentinels(doc.Clients)
 		lastMod = info.ModTime()
 	}
 	apply()
@@ -300,9 +418,9 @@ func pollSecretsFile(ctx context.Context, apply func()) {
 	}
 }
 
-func secretClientsFromDoc(doc secretsDoc) []proxy.SecretClient {
-	clients := make([]proxy.SecretClient, 0, len(doc.Clients))
-	for clientID, sentinels := range doc.Clients {
+func secretClients(byClient map[string][]string) []proxy.SecretClient {
+	clients := make([]proxy.SecretClient, 0, len(byClient))
+	for clientID, sentinels := range byClient {
 		if len(sentinels) == 0 {
 			continue
 		}

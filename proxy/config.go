@@ -43,12 +43,23 @@ type Config struct {
 // resolved on demand through an injected resolver; this config carries only the
 // non-secret sentinel strings and swap tuning.
 type SecretsConfig struct {
-	ScanQuery              bool
+	ScanQuery bool
+	// PositiveTTLSeconds is the ceiling on how long a resolved value is held,
+	// regardless of what the resolver says. A resolver may return an earlier
+	// expiry and always wins; this bounds the case where it returns none at all
+	// — a grant that never expires — so a resolved credential is never cached
+	// indefinitely by a process that is not the one authorizing it.
 	PositiveTTLSeconds     int64
 	NegativeTTLSeconds     int64
 	RefreshIntervalSeconds int64
 	Clients                []SecretClient
 }
+
+// DefaultSecretPositiveTTLSeconds bounds the positive resolution cache when no
+// operator value is set. Five minutes is long enough that a busy sandbox is not
+// re-resolving on every request, and short enough that a revocation the
+// resolver would report takes effect on a human timescale.
+const DefaultSecretPositiveTTLSeconds = 300
 
 // SecretClient binds a client (sandbox) ID to the sentinel strings whose values
 // the proxy swaps in that client's requests.
@@ -178,6 +189,9 @@ func DefaultConfig() Config {
 			StreamQueueSize: 1024,
 			BodyDir:         "./proxy-bodies",
 			Retention:       DefaultRetention,
+		},
+		Secrets: SecretsConfig{
+			PositiveTTLSeconds: DefaultSecretPositiveTTLSeconds,
 		},
 	}
 }

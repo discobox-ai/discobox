@@ -644,3 +644,88 @@ func reshapeSandboxesToPreSplitSchema(t *testing.T, db *database.DB) {
 		t.Fatalf("reshape sandboxes to the pre-split schema: %v", err)
 	}
 }
+
+// legacySandboxSecret is the pre-ADR-0031 shape of the table: no
+// agent_requested column, and a uniqueness index over (sandbox_id, env_name)
+// alone. Migrating it is the upgrade path a real deployment takes, which a
+// fresh database never exercises.
+type legacySandboxSecret struct {
+	ID        string    `gorm:"primaryKey;type:text"`
+	ProjectID string    `gorm:"column:project_id;not null;type:text;index"`
+	SandboxID string    `gorm:"column:sandbox_id;not null;type:text;index;uniqueIndex:idx_sandbox_secret_env,priority:1"`
+	SecretID  string    `gorm:"column:secret_id;not null;type:text;index"`
+	EnvName   string    `gorm:"column:env_name;not null;type:text;uniqueIndex:idx_sandbox_secret_env,priority:2"`
+	Sentinel  string    `gorm:"column:sentinel;not null;type:text;uniqueIndex"`
+	CreatedAt time.Time `gorm:"autoCreateTime"`
+}
+
+func (legacySandboxSecret) TableName() string { return "sandbox_secrets" }
+
+// TestMigrateWidensSandboxSecretEnvIndex upgrades a database carrying the old
+// narrow index and checks that a sandbox can then hold both an injected and an
+// agent-requested binding for one environment variable.
+//
+// AutoMigrate creates a missing index but never alters one that already exists
+// under the same name, so without the explicit drop the old index survives the
+// upgrade and the second binding fails to insert — on a real deployment only,
+// which is exactly the case a fresh-database test cannot see.
+func TestMigrateWidensSandboxSecretEnvIndex(t *testing.T) {
+	ctx := context.Background()
+	db, err := database.New(database.Config{
+		Driver: gormdb.DriverSQLite,
+		DSN:    "sqlite3://" + filepath.Join(t.TempDir(), "discobox.db"),
+	})
+	if err != nil {
+		t.Fatalf("open database: %v", err)
+	}
+	t.Cleanup(func() {
+		if err := db.Close(); err != nil {
+			t.Fatalf("close database: %v", err)
+		}
+	})
+
+	// Stand up the old schema, with a row in it, before upgrading.
+	if err := db.Write.WithContext(ctx).AutoMigrate(&legacySandboxSecret{}); err != nil {
+		t.Fatalf("create legacy schema: %v", err)
+	}
+	if err := db.Write.WithContext(ctx).Create(&legacySandboxSecret{
+		ID: "sbsec_old", ProjectID: "project-1", SandboxID: "sbx-1",
+		SecretID: "sec-1", EnvName: "GITHUB_TOKEN", Sentinel: "STABLE-INJECTED",
+	}).Error; err != nil {
+		t.Fatalf("seed legacy row: %v", err)
+	}
+	if !db.Write.Migrator().HasIndex(&legacySandboxSecret{}, "idx_sandbox_secret_env") {
+		t.Fatal("legacy schema did not create the narrow index; the test proves nothing")
+	}
+
+	if err := db.Migrate(ctx); err != nil {
+		t.Fatalf("migrate: %v", err)
+	}
+
+	// The pre-existing binding must survive the upgrade.
+	var existing model.SandboxSecret
+	if err := db.Write.WithContext(ctx).First(&existing, "id = ?", "sbsec_old").Error; err != nil {
+		t.Fatalf("legacy row did not survive migration: %v", err)
+	}
+	if existing.AgentRequested {
+		t.Fatal("an existing binding was upgraded into an agent-requested one")
+	}
+
+	// The same environment variable, on the other channel, must now fit.
+	if err := db.Write.WithContext(ctx).Create(&model.SandboxSecret{
+		ID: "sbsec_agent", ProjectID: "project-1", SandboxID: "sbx-1",
+		SecretID: "sec-2", EnvName: "GITHUB_TOKEN", Sentinel: "STABLE-AGENT",
+		AgentRequested: true,
+	}).Error; err != nil {
+		t.Fatalf("agent-requested binding rejected after migration: %v", err)
+	}
+
+	// The index must still do its job on the channel it governs.
+	err = db.Write.WithContext(ctx).Create(&model.SandboxSecret{
+		ID: "sbsec_dup", ProjectID: "project-1", SandboxID: "sbx-1",
+		SecretID: "sec-3", EnvName: "GITHUB_TOKEN", Sentinel: "STABLE-DUP",
+	}).Error
+	if err == nil {
+		t.Fatal("a second injected binding for the same env var was accepted; the index no longer constrains anything")
+	}
+}

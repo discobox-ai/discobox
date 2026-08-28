@@ -95,34 +95,61 @@ func bearerToken(authorization string) string {
 	return ""
 }
 
-var poolRuntimeActions = map[string]struct{}{
-	"sandbox-states":              {},
-	"status":                      {},
-	"resolve-sandbox-secret":      {},
-	"sandbox-agent-status-tokens": {},
-	"sandbox-agent-status":        {},
+// poolRuntimeActions allowlists the actions a pool agent may reach under
+// /api/pools/{poolId}/. It is an allowlist rather than a pattern on purpose:
+// a route that is not named here is not authenticated as a pool route at all,
+// so a new or misspelled one fails closed instead of inheriting pool access.
+//
+// The cost of that is a step every new pool route must remember, and forgetting
+// it is invisible to any test that calls a service directly — the route simply
+// answers 403 to the real agent. Add the action here in the same change that
+// adds the route.
+//
+// The value reports whether the action addresses a specific resource, i.e.
+// whether one trailing path segment (its ID) belongs to the route.
+var poolRuntimeActions = map[string]bool{
+	"sandbox-states":              false,
+	"status":                      false,
+	"resolve-sandbox-secret":      false,
+	"sandbox-agent-status-tokens": false,
+	"sandbox-agent-status":        false,
+	// The agent credentials broker (ADR 0031).
+	"sandbox-credentials":         false,
+	"sandbox-credential-requests": true, // .../{requestId} polls one request
 }
 
 func isPoolRuntimePath(path string) bool {
-	if !strings.HasPrefix(path, "/api/pools/") {
-		return false
-	}
-	segments := strings.Split(strings.Trim(path, "/"), "/")
-	if len(segments) != 4 {
-		return false
-	}
-	_, ok := poolRuntimeActions[segments[3]]
+	_, ok := poolRuntimeAction(path)
 	return ok
 }
 
-func poolIDFromRuntimePath(path string) (string, error) {
+// poolRuntimeAction returns the allowlisted action a pool runtime path names.
+func poolRuntimeAction(path string) (string, bool) {
+	if !strings.HasPrefix(path, "/api/pools/") {
+		return "", false
+	}
 	segments := strings.Split(strings.Trim(path, "/"), "/")
-	if len(segments) != 4 || segments[0] != "api" || segments[1] != "pools" {
+	if len(segments) < 4 || len(segments) > 5 {
+		return "", false
+	}
+	allowsResourceID, ok := poolRuntimeActions[segments[3]]
+	if !ok {
+		return "", false
+	}
+	// A trailing segment is only ever a resource ID, and only for the actions
+	// that take one. Accepting it everywhere would let an unlisted subroute of a
+	// listed action inherit pool access.
+	if len(segments) == 5 && !allowsResourceID {
+		return "", false
+	}
+	return segments[3], true
+}
+
+func poolIDFromRuntimePath(path string) (string, error) {
+	if _, ok := poolRuntimeAction(path); !ok {
 		return "", errors.New("pool runtime path is invalid")
 	}
-	if _, ok := poolRuntimeActions[segments[3]]; !ok {
-		return "", errors.New("pool runtime path is invalid")
-	}
+	segments := strings.Split(strings.Trim(path, "/"), "/")
 	poolID, err := url.PathUnescape(segments[2])
 	if err != nil {
 		return "", err

@@ -170,7 +170,9 @@ Key properties:
   pre-swap URL so the real value never lands in an audit row.
 - **Caching.** Resolved values are cached per `(clientID, sentinel, host)` until
   the grant expiry (capped by `PositiveTTLSeconds`); denials are cached briefly
-  (`NegativeTTLSeconds`); transient resolver errors are not cached.
+  (`NegativeTTLSeconds`); transient resolver errors are not cached. A resolver
+  may shorten that bound by returning an earlier `ExpiresAt` — which is how an
+  ephemeral sentinel's use window is honored, since its grant outlives it.
 - **A rejected credential is retried once, with a different one.** A swapped
   request that comes back `401` is not the sandbox's error — it holds a
   sentinel, and everything behind it belongs to the control plane — so the proxy
@@ -181,6 +183,11 @@ Key properties:
   neither differs from what was rejected there is nothing new to send, and the
   401 is passed through. Only header swaps with a body small enough to hold are
   retryable; see [ADR 0059](../docs/adr/0059-a-rejected-swapped-credential-is-retried-once.md).
+- **Ephemeral sentinels are just sentinels here.** Pool-agent mints short-lived
+  sentinels per agent-credential use and registers them in the same per-client
+  set, so this package needs no concept of them: it matches a string and asks
+  the resolver, and the resolver decides what the string means. See
+  [ADR 0031](../docs/adr/0031-agent-credentials-are-a-portable-protocol-with-ephemeral-sentinels.md).
 
 Audit redaction covers every header whose value was swapped, in addition to
 rewrite-rule headers and credential-like header names.

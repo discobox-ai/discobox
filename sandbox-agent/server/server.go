@@ -17,6 +17,7 @@ import (
 	sandboxapi "github.com/discobox-ai/discobox/api/sandboxgen"
 
 	"github.com/discobox-ai/discobox/sandbox-agent/config"
+	"github.com/discobox-ai/discobox/sandbox-agent/credentials"
 	"github.com/discobox-ai/discobox/sandbox-agent/execs"
 	harnesshooks "github.com/discobox-ai/discobox/sandbox-agent/hooks"
 	"github.com/discobox-ai/discobox/sandbox-agent/ports"
@@ -60,6 +61,10 @@ type Config struct {
 	// Serve wires this to a live secretswatch.Watcher; callers that build a
 	// router directly (e.g. tests) may leave it nil.
 	SecretEnv func() map[string]string
+	// CredentialsBridgePath overrides where the agent credentials relay reads
+	// the pool-staged mTLS material and endpoint. Empty uses the documented
+	// mount path.
+	CredentialsBridgePath string
 }
 
 func ConfigFromHarnessConfig(cfg config.Config) Config {
@@ -415,6 +420,7 @@ func Serve(ctx context.Context, logger *slog.Logger, cfg Config) error {
 			logger.Debug("sandbox agent hook collector stopped", "error", err)
 		}
 	}()
+	go serveCredentials(ctx, logger, cfg.CredentialsBridgePath)
 	httpServer := &http.Server{
 		Addr:              built.listenAddr,
 		Handler:           built.router,
@@ -443,6 +449,24 @@ func Serve(ctx context.Context, logger *slog.Logger, cfg Config) error {
 			return nil
 		}
 		return err
+	}
+}
+
+// serveCredentials runs the in-sandbox agent credentials endpoint (ADR 0031).
+//
+// A sandbox with no staged proxy material has no identity to relay with, so the
+// endpoint simply does not come up. That is not a startup failure: the sandbox
+// works exactly as it did before the protocol existed, and the CLI reports a
+// refused connection, which says more than an endpoint that answers "denied" to
+// everything.
+func serveCredentials(ctx context.Context, logger *slog.Logger, bridgePath string) {
+	relay, err := credentials.New(bridgePath)
+	if err != nil {
+		logger.Info("sandbox credentials endpoint not started", "reason", err)
+		return
+	}
+	if err := credentials.Serve(ctx, logger, relay, ""); err != nil && !errors.Is(err, context.Canceled) {
+		logger.Warn("sandbox credentials endpoint stopped", "error", err)
 	}
 }
 

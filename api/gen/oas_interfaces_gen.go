@@ -53,6 +53,10 @@ type CreateSSHKeyRes interface {
 	createSSHKeyRes()
 }
 
+type CreateSandboxCredentialRequestRes interface {
+	createSandboxCredentialRequestRes()
+}
+
 type CreateSandboxExecRes interface {
 	createSandboxExecRes()
 }
@@ -149,6 +153,10 @@ type GetSandboxAgentStatusRes interface {
 	getSandboxAgentStatusRes()
 }
 
+type GetSandboxCredentialRequestRes interface {
+	getSandboxCredentialRequestRes()
+}
+
 type GetSandboxExecRes interface {
 	getSandboxExecRes()
 }
@@ -203,6 +211,10 @@ type ListProjectsRes interface {
 
 type ListSSHKeysRes interface {
 	listSSHKeysRes()
+}
+
+type ListSandboxCredentialsRes interface {
+	listSandboxCredentialsRes()
 }
 
 type ListSandboxExecEventsRes interface {

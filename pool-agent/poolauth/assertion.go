@@ -21,6 +21,15 @@ const (
 	// ScopeSecretResolve authorizes sentinel secret resolution. It is carried by
 	// the long-lived token the pool mints for the isolated proxy unit.
 	ScopeSecretResolve = "secret:resolve"
+
+	// ScopeCredentialBroker authorizes the agent credentials broker routes: list
+	// a sandbox's granted credentials, record its requests, poll them
+	// (ADR 0031). It rides the same token as ScopeSecretResolve — the proxy unit
+	// holds both because it is the process that owns the sentinel registry — but
+	// stays a distinct scope, because resolving is what the proxy does with
+	// traffic it already has and brokering is what it does on a sandbox's behalf.
+	//nolint:gosec // A scope name, not a credential.
+	ScopeCredentialBroker = "credential:broker"
 )
 
 type Claims struct {

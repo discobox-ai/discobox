@@ -301,20 +301,30 @@ func RunProxy(ctx context.Context, logger *slog.Logger) error {
 		cfg.Recording.Retention = retention
 	}
 
+	// Agent-credential activations live in this process, alongside the sentinel
+	// registry and the resolver they act on (ADR 0031 §3). The resolver
+	// translates an ephemeral sentinel to its stable one; the sandbox-facing
+	// credentials endpoint mints them.
+	live := newActivations()
+
 	// The resolver fetches real secret values from the control plane using the
 	// scoped token the pool-agent process writes for this pool.
-	resolver := newSecretResolver(projectID, poolID)
+	resolver := newSecretResolver(projectID, poolID, live)
 	server, err := proxy.NewServer(ctx, cfg, bundle, resolver)
 	if err != nil {
 		return fmt.Errorf("create proxy server: %w", err)
 	}
-	go watchSecretsFile(ctx, server, cfg, resolve(layout.ProxySecretsFile(projectID, poolID)), func(err error) {
+	sentinels := newSentinelPublisher(server, cfg, live, func(err error) {
 		logger.Warn("apply proxy sentinel config", "error", err)
 	})
-	errCh := make(chan error, 1)
+	go watchSecretsFile(ctx, sentinels, resolve(layout.ProxySecretsFile(projectID, poolID)))
+	errCh := make(chan error, 2)
 	go func() {
 		logger.Info("pool proxy serving", "addr", ListenAddress)
 		errCh <- server.ListenAndServe()
+	}()
+	go func() {
+		errCh <- serveCredentials(ctx, logger, bundle, projectID, poolID, live)
 	}()
 	select {
 	case <-ctx.Done():
@@ -341,9 +351,14 @@ type SandboxMaterial struct {
 
 // bridgeConfig is the on-disk config read by the sandbox proxy-bridge service.
 // Paths are expressed as seen inside the sandbox container.
+//
+// It also carries the pool's agent credentials endpoint, because that endpoint
+// authenticates with the same client keypair named here: one file, one set of
+// material, both things the sandbox reaches the pool with (ADR 0031 §2).
 type bridgeConfig struct {
 	ListenAddress  string `json:"listenAddress"`
 	PoolProxyURL   string `json:"workerProxyUrl"`
+	CredentialsURL string `json:"credentialsUrl,omitempty"`
 	MTLSCAPath     string `json:"mtlsCaPath"`
 	ClientCertPath string `json:"clientCertPath"`
 	ClientKeyPath  string `json:"clientKeyPath"`
@@ -532,6 +547,7 @@ func EnsureSandboxMaterial(projectID, poolID, sandboxID string) (*SandboxMateria
 	bridge := bridgeConfig{
 		ListenAddress:  SandboxForwarderListen,
 		PoolProxyURL:   PoolProxyURL,
+		CredentialsURL: CredentialsURL,
 		MTLSCAPath:     filepath.Join(SandboxProxyMount, "mtls-ca.crt"),
 		ClientCertPath: filepath.Join(SandboxProxyMount, "client.crt"),
 		ClientKeyPath:  filepath.Join(SandboxProxyMount, "client.key"),

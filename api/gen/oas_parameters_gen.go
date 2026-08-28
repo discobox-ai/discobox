@@ -1521,6 +1521,72 @@ func decodeCreateSandboxParams(args [1]string, argsEscaped bool, r *http.Request
 	return params, nil
 }
 
+// CreateSandboxCredentialRequestParams is parameters of create-sandbox-credential-request operation.
+type CreateSandboxCredentialRequestParams struct {
+	// Pool ID.
+	PoolId string
+}
+
+func unpackCreateSandboxCredentialRequestParams(packed middleware.Parameters) (params CreateSandboxCredentialRequestParams) {
+	{
+		key := middleware.ParameterKey{
+			Name: "poolId",
+			In:   "path",
+		}
+		params.PoolId = packed[key].(string)
+	}
+	return params
+}
+
+func decodeCreateSandboxCredentialRequestParams(args [1]string, argsEscaped bool, r *http.Request) (params CreateSandboxCredentialRequestParams, _ error) {
+	// Decode path: poolId.
+	if err := func() error {
+		param := args[0]
+		if argsEscaped {
+			unescaped, err := url.PathUnescape(args[0])
+			if err != nil {
+				return errors.Wrap(err, "unescape path")
+			}
+			param = unescaped
+		}
+		if len(param) > 0 {
+			d := uri.NewPathDecoder(uri.PathDecoderConfig{
+				Param:   "poolId",
+				Value:   param,
+				Style:   uri.PathStyleSimple,
+				Explode: false,
+			})
+
+			if err := func() error {
+				val, err := d.DecodeValue()
+				if err != nil {
+					return err
+				}
+
+				c, err := conv.ToString(val)
+				if err != nil {
+					return err
+				}
+
+				params.PoolId = c
+				return nil
+			}(); err != nil {
+				return err
+			}
+		} else {
+			return validate.ErrFieldRequired
+		}
+		return nil
+	}(); err != nil {
+		return params, &ogenerrors.DecodeParamError{
+			Name: "poolId",
+			In:   "path",
+			Err:  err,
+		}
+	}
+	return params, nil
+}
+
 // CreateSandboxExecParams is parameters of create-sandbox-exec operation.
 type CreateSandboxExecParams struct {
 	// Project that owns the sandbox.
@@ -4155,6 +4221,172 @@ func decodeGetSandboxAgentStatusParams(args [2]string, argsEscaped bool, r *http
 	return params, nil
 }
 
+// GetSandboxCredentialRequestParams is parameters of get-sandbox-credential-request operation.
+type GetSandboxCredentialRequestParams struct {
+	// Pool ID.
+	PoolId string
+	// Secret request ID.
+	RequestId string
+	// Sandbox the request was made from.
+	SandboxId string
+}
+
+func unpackGetSandboxCredentialRequestParams(packed middleware.Parameters) (params GetSandboxCredentialRequestParams) {
+	{
+		key := middleware.ParameterKey{
+			Name: "poolId",
+			In:   "path",
+		}
+		params.PoolId = packed[key].(string)
+	}
+	{
+		key := middleware.ParameterKey{
+			Name: "requestId",
+			In:   "path",
+		}
+		params.RequestId = packed[key].(string)
+	}
+	{
+		key := middleware.ParameterKey{
+			Name: "sandboxId",
+			In:   "query",
+		}
+		params.SandboxId = packed[key].(string)
+	}
+	return params
+}
+
+func decodeGetSandboxCredentialRequestParams(args [2]string, argsEscaped bool, r *http.Request) (params GetSandboxCredentialRequestParams, _ error) {
+	q := uri.NewQueryDecoder(r.URL.Query())
+	// Decode path: poolId.
+	if err := func() error {
+		param := args[0]
+		if argsEscaped {
+			unescaped, err := url.PathUnescape(args[0])
+			if err != nil {
+				return errors.Wrap(err, "unescape path")
+			}
+			param = unescaped
+		}
+		if len(param) > 0 {
+			d := uri.NewPathDecoder(uri.PathDecoderConfig{
+				Param:   "poolId",
+				Value:   param,
+				Style:   uri.PathStyleSimple,
+				Explode: false,
+			})
+
+			if err := func() error {
+				val, err := d.DecodeValue()
+				if err != nil {
+					return err
+				}
+
+				c, err := conv.ToString(val)
+				if err != nil {
+					return err
+				}
+
+				params.PoolId = c
+				return nil
+			}(); err != nil {
+				return err
+			}
+		} else {
+			return validate.ErrFieldRequired
+		}
+		return nil
+	}(); err != nil {
+		return params, &ogenerrors.DecodeParamError{
+			Name: "poolId",
+			In:   "path",
+			Err:  err,
+		}
+	}
+	// Decode path: requestId.
+	if err := func() error {
+		param := args[1]
+		if argsEscaped {
+			unescaped, err := url.PathUnescape(args[1])
+			if err != nil {
+				return errors.Wrap(err, "unescape path")
+			}
+			param = unescaped
+		}
+		if len(param) > 0 {
+			d := uri.NewPathDecoder(uri.PathDecoderConfig{
+				Param:   "requestId",
+				Value:   param,
+				Style:   uri.PathStyleSimple,
+				Explode: false,
+			})
+
+			if err := func() error {
+				val, err := d.DecodeValue()
+				if err != nil {
+					return err
+				}
+
+				c, err := conv.ToString(val)
+				if err != nil {
+					return err
+				}
+
+				params.RequestId = c
+				return nil
+			}(); err != nil {
+				return err
+			}
+		} else {
+			return validate.ErrFieldRequired
+		}
+		return nil
+	}(); err != nil {
+		return params, &ogenerrors.DecodeParamError{
+			Name: "requestId",
+			In:   "path",
+			Err:  err,
+		}
+	}
+	// Decode query: sandboxId.
+	if err := func() error {
+		cfg := uri.QueryParameterDecodingConfig{
+			Name:    "sandboxId",
+			Style:   uri.QueryStyleForm,
+			Explode: true,
+		}
+
+		if err := q.HasParam(cfg); err == nil {
+			if err := q.DecodeParam(cfg, func(d uri.Decoder) error {
+				val, err := d.DecodeValue()
+				if err != nil {
+					return err
+				}
+
+				c, err := conv.ToString(val)
+				if err != nil {
+					return err
+				}
+
+				params.SandboxId = c
+				return nil
+			}); err != nil {
+				return err
+			}
+		} else {
+			return err
+		}
+		return nil
+	}(); err != nil {
+		return params, &ogenerrors.DecodeParamError{
+			Name: "sandboxId",
+			In:   "query",
+			Err:  err,
+		}
+	}
+	return params, nil
+}
+
 // GetSandboxExecParams is parameters of get-sandbox-exec operation.
 type GetSandboxExecParams struct {
 	// Project that owns the sandbox.
@@ -5700,6 +5932,118 @@ func decodeListSSHKeysParams(args [1]string, argsEscaped bool, r *http.Request) 
 		return params, &ogenerrors.DecodeParamError{
 			Name: "projectId",
 			In:   "path",
+			Err:  err,
+		}
+	}
+	return params, nil
+}
+
+// ListSandboxCredentialsParams is parameters of list-sandbox-credentials operation.
+type ListSandboxCredentialsParams struct {
+	// Pool ID.
+	PoolId string
+	// Sandbox whose agent-requested credentials to list.
+	SandboxId string
+}
+
+func unpackListSandboxCredentialsParams(packed middleware.Parameters) (params ListSandboxCredentialsParams) {
+	{
+		key := middleware.ParameterKey{
+			Name: "poolId",
+			In:   "path",
+		}
+		params.PoolId = packed[key].(string)
+	}
+	{
+		key := middleware.ParameterKey{
+			Name: "sandboxId",
+			In:   "query",
+		}
+		params.SandboxId = packed[key].(string)
+	}
+	return params
+}
+
+func decodeListSandboxCredentialsParams(args [1]string, argsEscaped bool, r *http.Request) (params ListSandboxCredentialsParams, _ error) {
+	q := uri.NewQueryDecoder(r.URL.Query())
+	// Decode path: poolId.
+	if err := func() error {
+		param := args[0]
+		if argsEscaped {
+			unescaped, err := url.PathUnescape(args[0])
+			if err != nil {
+				return errors.Wrap(err, "unescape path")
+			}
+			param = unescaped
+		}
+		if len(param) > 0 {
+			d := uri.NewPathDecoder(uri.PathDecoderConfig{
+				Param:   "poolId",
+				Value:   param,
+				Style:   uri.PathStyleSimple,
+				Explode: false,
+			})
+
+			if err := func() error {
+				val, err := d.DecodeValue()
+				if err != nil {
+					return err
+				}
+
+				c, err := conv.ToString(val)
+				if err != nil {
+					return err
+				}
+
+				params.PoolId = c
+				return nil
+			}(); err != nil {
+				return err
+			}
+		} else {
+			return validate.ErrFieldRequired
+		}
+		return nil
+	}(); err != nil {
+		return params, &ogenerrors.DecodeParamError{
+			Name: "poolId",
+			In:   "path",
+			Err:  err,
+		}
+	}
+	// Decode query: sandboxId.
+	if err := func() error {
+		cfg := uri.QueryParameterDecodingConfig{
+			Name:    "sandboxId",
+			Style:   uri.QueryStyleForm,
+			Explode: true,
+		}
+
+		if err := q.HasParam(cfg); err == nil {
+			if err := q.DecodeParam(cfg, func(d uri.Decoder) error {
+				val, err := d.DecodeValue()
+				if err != nil {
+					return err
+				}
+
+				c, err := conv.ToString(val)
+				if err != nil {
+					return err
+				}
+
+				params.SandboxId = c
+				return nil
+			}); err != nil {
+				return err
+			}
+		} else {
+			return err
+		}
+		return nil
+	}(); err != nil {
+		return params, &ogenerrors.DecodeParamError{
+			Name: "sandboxId",
+			In:   "query",
 			Err:  err,
 		}
 	}

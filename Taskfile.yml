@@ -14,6 +14,8 @@ vars:
   SERVER_MAIN: ./cmd/discobox-server
   CLI_BINARY: build/discobox{{.EXE}}
   CLI_MAIN: ./cmd/discobox
+  CREDENTIAL_BINARY: build/discobox-credential{{.EXE}}
+  CREDENTIAL_MAIN: ./cmd/discobox-credential
   PACKAGES: ./...
   # ghcr.io/<owner>, so a fork publishes into its own namespace instead of the
   # upstream one. Actions knows the owner; elsewhere it comes from the origin
@@ -133,6 +135,7 @@ tasks:
       - task: build:cp-relay
       - task: build:server
       - task: build:cli
+      - task: build:credential
       - task: build:images
 
   build:server:
@@ -182,6 +185,12 @@ tasks:
       - task: sign
         vars: { SIGN_BINARY: '{{.CLI_BINARY}}' }
 
+
+  build:credential:
+    desc: Compile the discobox-credential CLI
+    cmds:
+      - mkdir -p build
+      - cd agentcred && go build -o ../{{.CREDENTIAL_BINARY}} {{.CREDENTIAL_MAIN}}
 
   build:cp-relay:
     desc: Cross-compile the guest control-plane relay embedded in the Windows server
@@ -472,6 +481,7 @@ tasks:
       - cd server && go test ./...
       - cd pool-agent && go test ./...
       - cd sandbox-agent && go test ./...
+      - cd agentcred && go test ./...
 
   build:lint-tool:
     desc: Build the golangci-lint binary the per-module checks share
@@ -497,6 +507,7 @@ tasks:
       - cd server && ../build/tools/{{.LINT_BIN}} run
       - cd pool-agent && ../build/tools/{{.LINT_BIN}} run
       - cd sandbox-agent && ../build/tools/{{.LINT_BIN}} run
+      - cd agentcred && ../build/tools/{{.LINT_BIN}} run
 
   check:windows:
     desc: Type-check the whole tree, tests included, for windows/amd64
@@ -607,6 +618,7 @@ tasks:
       - cd server && ../build/tools/{{.LINT_BIN}} run --fix
       - cd pool-agent && ../build/tools/{{.LINT_BIN}} run --fix
       - cd sandbox-agent && ../build/tools/{{.LINT_BIN}} run --fix
+      - cd agentcred && ../build/tools/{{.LINT_BIN}} run --fix
 
   fmt:
     desc: Format every tracked Go source

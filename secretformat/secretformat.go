@@ -129,6 +129,27 @@ func (t *Template) Validate(value string) bool {
 	return t.re != nil && t.re.MatchString(value)
 }
 
+// DefaultSentinelFormat is the shape used when a secret has no format of its
+// own. It is opaque on purpose: a sentinel that mimics nothing is still a valid
+// sentinel, since detection is exact-set matching rather than parsing.
+const DefaultSentinelFormat = "{alnum:48}"
+
+// MintSentinel generates one sentinel placeholder from a secret's format,
+// falling back to DefaultSentinelFormat when the format is empty or
+// unparseable. Every sentinel in the system — the stable one bound to a sandbox
+// env var, and the ephemeral one a pool agent mints per use — comes from here,
+// so the two can never be shaped by different rules.
+func MintSentinel(format string) (string, error) {
+	tmpl, err := Parse(strings.TrimSpace(format))
+	if err != nil {
+		tmpl, err = Parse(DefaultSentinelFormat)
+		if err != nil {
+			return "", err
+		}
+	}
+	return tmpl.Generate()
+}
+
 func compileRegex(parts []part) (*regexp.Regexp, error) {
 	var b strings.Builder
 	b.WriteString("^")

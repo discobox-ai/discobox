@@ -119,6 +119,12 @@ type Handler interface {
 	//
 	// POST /projects/{projectId}/sandboxes
 	CreateSandbox(ctx context.Context, req *CreateSandboxBody, params CreateSandboxParams) (CreateSandboxRes, error)
+	// CreateSandboxCredentialRequest implements create-sandbox-credential-request operation.
+	//
+	// Record an agent's credential request.
+	//
+	// POST /api/pools/{poolId}/sandbox-credential-requests
+	CreateSandboxCredentialRequest(ctx context.Context, req *CreateSandboxCredentialRequestBody, params CreateSandboxCredentialRequestParams) (CreateSandboxCredentialRequestRes, error)
 	// CreateSandboxExec implements create-sandbox-exec operation.
 	//
 	// Create an exec runtime in a sandbox.
@@ -268,6 +274,12 @@ type Handler interface {
 	//
 	// GET /api/projects/{projectId}/sandboxes/{sandboxId}/status
 	GetSandboxAgentStatus(ctx context.Context, params GetSandboxAgentStatusParams) (GetSandboxAgentStatusRes, error)
+	// GetSandboxCredentialRequest implements get-sandbox-credential-request operation.
+	//
+	// Poll an agent credential request.
+	//
+	// GET /api/pools/{poolId}/sandbox-credential-requests/{requestId}
+	GetSandboxCredentialRequest(ctx context.Context, params GetSandboxCredentialRequestParams) (GetSandboxCredentialRequestRes, error)
 	// GetSandboxExec implements get-sandbox-exec operation.
 	//
 	// Get an exec runtime in a sandbox.
@@ -346,6 +358,12 @@ type Handler interface {
 	//
 	// GET /projects/{projectId}/ssh-keys
 	ListSSHKeys(ctx context.Context, params ListSSHKeysParams) (ListSSHKeysRes, error)
+	// ListSandboxCredentials implements list-sandbox-credentials operation.
+	//
+	// List a sandbox's granted agent credentials.
+	//
+	// GET /api/pools/{poolId}/sandbox-credentials
+	ListSandboxCredentials(ctx context.Context, params ListSandboxCredentialsParams) (ListSandboxCredentialsRes, error)
 	// ListSandboxExecEvents implements list-sandbox-exec-events operation.
 	//
 	// List recent audit events for a sandbox exec.

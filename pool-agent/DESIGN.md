@@ -21,7 +21,7 @@ from the future in-sandbox `sandbox-agent` API.
 | `server` | Pool-local HTTP server, health/metadata endpoints, and generated sandbox API route/auth adapter. |
 | `vsock` | Guest AF_VSOCK listener and host-CID HTTP transport primitives. |
 | `sandboxruntime` | Local sandbox runtime implementations used by the pool host server. Provisions the five primary volumes (`/.discobox/{data,cache,config,sources,secrets}`) and mounts them into every sandbox; `cache` is the pool-local directory shared across the pool's sandboxes. It also mounts each source's opaque, durable pool-local data at `/.discobox/data-per-source/<slug>` and binds each source's origin, read-only, at `/.discobox/origins/<slug>`. In-sandbox path wiring for the primary volumes is delegated to the sandbox-agent init flow (ADR 0007); the two per-source mounts already land at their final runtime-owned paths. |
-| `proxyagent` | Worker-scoped proxy wiring: certificate bundle preparation, the `proxy` subcommand entrypoint, and per-sandbox client material staging. |
+| `proxyagent` | Worker-scoped proxy wiring: certificate bundle preparation, the `proxy` subcommand entrypoint, per-sandbox client material staging, the sentinel resolver, and the sandbox-facing agent credentials endpoint with its ephemeral-sentinel activation registry (ADR 0031). |
 | `buildkitagent` | The pool-shared BuildKit builder, its output registry, the mediator that binds a build to the sandbox that asked for it, and the per-build egress forwarder. See [Pool-Shared Builds](#pool-shared-builds). |
 | `cmd/discobox-pool-runc` | The pool's runc wrapper, installed as `runc` ahead of BuildKit's own. Injects MITM trust and the per-build egress hooks into each build step's OCI spec. |
 | `systemd` | Linux/systemd namespace startup and child reaping helpers, with non-Linux stubs. |
@@ -430,8 +430,54 @@ flowchart LR
 - The in-sandbox forwarder is the dependency-light `proxy/bridge` package, run by
   the `sandbox-agent proxy-bridge` subcommand as `discobox-proxy-bridge.service`.
   It forwards local plaintext proxy traffic to the pool host proxy over mTLS.
-- Sentinel secret swapping is not yet wired: the proxy runs with a nil resolver,
-  so it records and forwards traffic but does not substitute secrets.
+- The proxy unit resolves sentinels through `proxyagent.secretResolver`, which
+  calls the control plane with the scoped token the agent process writes to this
+  pool's resolve-context file.
+
+## Agent Credentials
+
+The proxy unit also serves the agent credentials protocol to its sandboxes on
+`0.0.0.0:17081`, presenting the same server certificate as the proxy and
+verifying the same per-sandbox client certificates. The client certificate is
+the identity — its common name is the sandbox ID — so a sandbox holds no
+control-plane credential and names no sandbox but itself. See
+[ADR 0031](../docs/adr/0031-agent-credentials-are-a-portable-protocol-with-ephemeral-sentinels.md)
+and [`docs/agent-credentials-protocol.md`](../docs/agent-credentials-protocol.md).
+
+```mermaid
+flowchart LR
+    cli["discobox-credential"] -->|"loopback :17010"| relay["sandbox-agent relay"]
+    relay -->|"mTLS client cert = sandbox ID"| broker["proxy unit :17081"]
+    broker -->|"scoped pool token"| cp["control plane"]
+    broker -->|"mint + register"| live["activations"]
+    live --> swap["resolver: ephemeral → stable"]
+    swap --> cp
+```
+
+It lives in the proxy unit rather than the agent process because minting an
+ephemeral sentinel, registering it in the proxy's match set, and translating it
+back at swap time are one act. Splitting them across processes would put a file
+and a race between the moment a sandbox is handed a sentinel and the moment the
+proxy would recognize it.
+
+- `list` and `request` are relayed to the control plane unchanged; `get` mints.
+- **Activations** (`activations.go`) are in-memory and pool-local: ephemeral
+  sentinel → `{stable sentinel, useId, host, declared command, expiry}`. They are
+  disposable by design — a restart costs a dead sentinel and one fresh `get`,
+  which fails closed. `activationTTL` is the *use* clock; the grant's expiry on
+  the control plane is the *consent* clock, and a value dies at whichever comes
+  first.
+- **The resolver checks activations first.** A sentinel it minted is refused
+  unless the activation is live, belongs to the calling sandbox, and the
+  destination matches the host its use was approved for; only then is it
+  translated to the stable sentinel and resolved normally. The control plane
+  never learns ephemeral sentinels exist.
+- **`sentinelPublisher` owns the proxy's match set**, merging the stable
+  sentinels from SecretsFile with live ephemeral ones. Both sources have to be
+  applied together because `ApplyConfig` replaces the whole per-client set.
+- The token in the resolve-context file carries `secret:resolve` and
+  `credential:broker`. They stay separate scopes so splitting these roles across
+  processes later is a change of who holds which token, not of what one means.
 
 ## Pool-Shared Builds
 

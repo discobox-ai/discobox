@@ -18,7 +18,9 @@ func (s *Store) CreateSandboxSecret(ctx context.Context, assignment *model.Sandb
 	return write.Create(assignment).Error
 }
 
-// ListSandboxSecrets returns the secret assignments for a sandbox.
+// ListSandboxSecrets returns every secret assignment for a sandbox, including
+// agent-requested bindings. Callers that are about to hand sentinels to the
+// sandbox or its proxy want ListInjectedSandboxSecrets instead.
 func (s *Store) ListSandboxSecrets(ctx context.Context, projectID, sandboxID string) ([]model.SandboxSecret, error) {
 	read, err := s.getRead(ctx)
 	if err != nil {
@@ -28,6 +30,101 @@ func (s *Store) ListSandboxSecrets(ctx context.Context, projectID, sandboxID str
 	err = read.Where("project_id = ? AND sandbox_id = ?", projectID, sandboxID).
 		Order("env_name ASC").Find(&out).Error
 	return out, err
+}
+
+// ListInjectedSandboxSecrets returns only the assignments whose sentinel is
+// provisioned into the sandbox and registered with the proxy.
+//
+// Agent-requested bindings are excluded here rather than at each call site: a
+// binding created by approving an agent credential request must never reach the
+// sandbox environment, secrets.json, or the proxy's sentinel set, and a filter
+// every caller has to remember is a filter someone eventually forgets
+// (ADR 0031 §4).
+func (s *Store) ListInjectedSandboxSecrets(ctx context.Context, projectID, sandboxID string) ([]model.SandboxSecret, error) {
+	read, err := s.getRead(ctx)
+	if err != nil {
+		return nil, err
+	}
+	var out []model.SandboxSecret
+	err = read.Where("project_id = ? AND sandbox_id = ? AND agent_requested = ?", projectID, sandboxID, false).
+		Order("env_name ASC").Find(&out).Error
+	return out, err
+}
+
+// ListLiveAgentCredentials returns a sandbox's agent-requested bindings joined
+// with the grants that authorize them, dropping any whose grant has lapsed. It
+// is what the agent credentials protocol's list operation reports.
+func (s *Store) ListLiveAgentCredentials(ctx context.Context, projectID, sandboxID string) ([]AgentCredential, error) {
+	read, err := s.getRead(ctx)
+	if err != nil {
+		return nil, err
+	}
+	var assignments []model.SandboxSecret
+	if err := read.Where("project_id = ? AND sandbox_id = ? AND agent_requested = ?", projectID, sandboxID, true).
+		Order("env_name ASC").Find(&assignments).Error; err != nil {
+		return nil, err
+	}
+	if len(assignments) == 0 {
+		return nil, nil
+	}
+	out := make([]AgentCredential, 0, len(assignments))
+	for i := range assignments {
+		assignment := assignments[i]
+		// The grant is matched at the sandbox scope only. This flow never
+		// produces a broader one, and a wider standing grant that happens to
+		// cover the same secret is not an approval of these uses.
+		grant, err := s.FindLiveAgentGrant(ctx, projectID, assignment.SecretID, sandboxID)
+		if err != nil {
+			if errors.Is(err, ErrNotFound) {
+				continue // the approval behind this binding has lapsed
+			}
+			return nil, err
+		}
+		secret, err := s.GetSecret(ctx, projectID, assignment.SecretID)
+		if err != nil {
+			if errors.Is(err, ErrNotFound) {
+				continue // secret deleted out from under the binding
+			}
+			return nil, err
+		}
+		out = append(out, AgentCredential{
+			Assignment: assignment,
+			Grant:      *grant,
+			Name:       secret.Name,
+			Format:     secret.Format,
+		})
+	}
+	return out, nil
+}
+
+// AgentCredential is one agent-requested binding and the live grant authorizing
+// it. Sentinel and Format never leave the trusted side: the pool agent needs
+// them to mint an ephemeral sentinel that byte-mimics the real key and to
+// translate it back, and the sandbox sees neither.
+type AgentCredential struct {
+	Assignment model.SandboxSecret
+	Grant      model.SecretGrant
+	Name       string
+	Format     string
+}
+
+// FindAgentSandboxSecret returns a sandbox's agent-requested binding for one
+// environment variable, or ErrNotFound.
+func (s *Store) FindAgentSandboxSecret(ctx context.Context, projectID, sandboxID, envName string) (*model.SandboxSecret, error) {
+	read, err := s.getRead(ctx)
+	if err != nil {
+		return nil, err
+	}
+	var out model.SandboxSecret
+	err = read.Where("project_id = ? AND sandbox_id = ? AND env_name = ? AND agent_requested = ?",
+		projectID, sandboxID, envName, true).First(&out).Error
+	if errors.Is(err, gorm.ErrRecordNotFound) {
+		return nil, ErrNotFound
+	}
+	if err != nil {
+		return nil, err
+	}
+	return &out, nil
 }
 
 // GetSandboxSecretBySentinel returns the assignment for a sandbox and sentinel.

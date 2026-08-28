@@ -492,7 +492,7 @@ func (r *SandboxReconciler) createOptionsFromSandbox(ctx context.Context, sb *mo
 		// a sandbox launched without its assignments never gets them (the
 		// fingerprint excludes assignments, so a later reconcile sees no
 		// drift), while a returned error just retries the reconcile.
-		assignments, err := r.store.ListSandboxSecrets(ctx, sb.ProjectID, sb.ID)
+		assignments, err := r.store.ListInjectedSandboxSecrets(ctx, sb.ProjectID, sb.ID)
 		if err != nil {
 			return CreateOptions{}, fmt.Errorf("list sandbox secret assignments: %w", err)
 		}

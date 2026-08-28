@@ -138,6 +138,12 @@ type Invoker interface {
 	//
 	// POST /projects/{projectId}/sandboxes
 	CreateSandbox(ctx context.Context, request *CreateSandboxBody, params CreateSandboxParams) (CreateSandboxRes, error)
+	// CreateSandboxCredentialRequest invokes create-sandbox-credential-request operation.
+	//
+	// Record an agent's credential request.
+	//
+	// POST /api/pools/{poolId}/sandbox-credential-requests
+	CreateSandboxCredentialRequest(ctx context.Context, request *CreateSandboxCredentialRequestBody, params CreateSandboxCredentialRequestParams) (CreateSandboxCredentialRequestRes, error)
 	// CreateSandboxExec invokes create-sandbox-exec operation.
 	//
 	// Create an exec runtime in a sandbox.
@@ -287,6 +293,12 @@ type Invoker interface {
 	//
 	// GET /api/projects/{projectId}/sandboxes/{sandboxId}/status
 	GetSandboxAgentStatus(ctx context.Context, params GetSandboxAgentStatusParams) (GetSandboxAgentStatusRes, error)
+	// GetSandboxCredentialRequest invokes get-sandbox-credential-request operation.
+	//
+	// Poll an agent credential request.
+	//
+	// GET /api/pools/{poolId}/sandbox-credential-requests/{requestId}
+	GetSandboxCredentialRequest(ctx context.Context, params GetSandboxCredentialRequestParams) (GetSandboxCredentialRequestRes, error)
 	// GetSandboxExec invokes get-sandbox-exec operation.
 	//
 	// Get an exec runtime in a sandbox.
@@ -365,6 +377,12 @@ type Invoker interface {
 	//
 	// GET /projects/{projectId}/ssh-keys
 	ListSSHKeys(ctx context.Context, params ListSSHKeysParams) (ListSSHKeysRes, error)
+	// ListSandboxCredentials invokes list-sandbox-credentials operation.
+	//
+	// List a sandbox's granted agent credentials.
+	//
+	// GET /api/pools/{poolId}/sandbox-credentials
+	ListSandboxCredentials(ctx context.Context, params ListSandboxCredentialsParams) (ListSandboxCredentialsRes, error)
 	// ListSandboxExecEvents invokes list-sandbox-exec-events operation.
 	//
 	// List recent audit events for a sandbox exec.
@@ -2247,6 +2265,102 @@ func (c *Client) sendCreateSandbox(ctx context.Context, request *CreateSandboxBo
 
 	stage = "DecodeResponse"
 	result, err := decodeCreateSandboxResponse(resp)
+	if err != nil {
+		return res, errors.Wrap(err, "decode response")
+	}
+
+	return result, nil
+}
+
+// CreateSandboxCredentialRequest invokes create-sandbox-credential-request operation.
+//
+// Record an agent's credential request.
+//
+// POST /api/pools/{poolId}/sandbox-credential-requests
+func (c *Client) CreateSandboxCredentialRequest(ctx context.Context, request *CreateSandboxCredentialRequestBody, params CreateSandboxCredentialRequestParams) (CreateSandboxCredentialRequestRes, error) {
+	res, err := c.sendCreateSandboxCredentialRequest(ctx, request, params)
+	return res, err
+}
+
+func (c *Client) sendCreateSandboxCredentialRequest(ctx context.Context, request *CreateSandboxCredentialRequestBody, params CreateSandboxCredentialRequestParams) (res CreateSandboxCredentialRequestRes, err error) {
+	otelAttrs := []attribute.KeyValue{
+		otelogen.OperationID("create-sandbox-credential-request"),
+		semconv.HTTPRequestMethodKey.String("POST"),
+		semconv.URLTemplateKey.String("/api/pools/{poolId}/sandbox-credential-requests"),
+	}
+	otelAttrs = append(otelAttrs, c.cfg.Attributes...)
+
+	// Run stopwatch.
+	startTime := time.Now()
+	defer func() {
+		// Use floating point division here for higher precision (instead of Millisecond method).
+		elapsedDuration := time.Since(startTime)
+		c.duration.Record(ctx, float64(elapsedDuration)/float64(time.Millisecond), metric.WithAttributes(otelAttrs...))
+	}()
+
+	// Increment request counter.
+	c.requests.Add(ctx, 1, metric.WithAttributes(otelAttrs...))
+
+	// Start a span for this request.
+	ctx, span := c.cfg.Tracer.Start(ctx, CreateSandboxCredentialRequestOperation,
+		trace.WithAttributes(otelAttrs...),
+		clientSpanKind,
+	)
+	// Track stage for error reporting.
+	var stage string
+	defer func() {
+		if err != nil {
+			span.RecordError(err)
+			span.SetStatus(codes.Error, stage)
+			c.errors.Add(ctx, 1, metric.WithAttributes(otelAttrs...))
+		}
+		span.End()
+	}()
+
+	stage = "BuildURL"
+	u := uri.Clone(c.requestURL(ctx))
+	var pathParts [3]string
+	pathParts[0] = "/api/pools/"
+	{
+		// Encode "poolId" parameter.
+		e := uri.NewPathEncoder(uri.PathEncoderConfig{
+			Param:   "poolId",
+			Style:   uri.PathStyleSimple,
+			Explode: false,
+		})
+		if err := func() error {
+			return e.EncodeValue(conv.StringToString(params.PoolId))
+		}(); err != nil {
+			return res, errors.Wrap(err, "encode path")
+		}
+		encoded, err := e.Result()
+		if err != nil {
+			return res, errors.Wrap(err, "encode path")
+		}
+		pathParts[1] = encoded
+	}
+	pathParts[2] = "/sandbox-credential-requests"
+	uri.AddPathParts(u, pathParts[:]...)
+
+	stage = "EncodeRequest"
+	r, err := ht.NewRequest(ctx, "POST", u)
+	if err != nil {
+		return res, errors.Wrap(err, "create request")
+	}
+	if err := encodeCreateSandboxCredentialRequestRequest(request, r); err != nil {
+		return res, errors.Wrap(err, "encode request")
+	}
+
+	stage = "SendRequest"
+	resp, err := c.cfg.Client.Do(r)
+	if err != nil {
+		return res, errors.Wrap(err, "do request")
+	}
+	body := resp.Body
+	defer body.Close()
+
+	stage = "DecodeResponse"
+	result, err := decodeCreateSandboxCredentialRequestResponse(resp)
 	if err != nil {
 		return res, errors.Wrap(err, "decode response")
 	}
@@ -4834,6 +4948,135 @@ func (c *Client) sendGetSandboxAgentStatus(ctx context.Context, params GetSandbo
 	return result, nil
 }
 
+// GetSandboxCredentialRequest invokes get-sandbox-credential-request operation.
+//
+// Poll an agent credential request.
+//
+// GET /api/pools/{poolId}/sandbox-credential-requests/{requestId}
+func (c *Client) GetSandboxCredentialRequest(ctx context.Context, params GetSandboxCredentialRequestParams) (GetSandboxCredentialRequestRes, error) {
+	res, err := c.sendGetSandboxCredentialRequest(ctx, params)
+	return res, err
+}
+
+func (c *Client) sendGetSandboxCredentialRequest(ctx context.Context, params GetSandboxCredentialRequestParams) (res GetSandboxCredentialRequestRes, err error) {
+	otelAttrs := []attribute.KeyValue{
+		otelogen.OperationID("get-sandbox-credential-request"),
+		semconv.HTTPRequestMethodKey.String("GET"),
+		semconv.URLTemplateKey.String("/api/pools/{poolId}/sandbox-credential-requests/{requestId}"),
+	}
+	otelAttrs = append(otelAttrs, c.cfg.Attributes...)
+
+	// Run stopwatch.
+	startTime := time.Now()
+	defer func() {
+		// Use floating point division here for higher precision (instead of Millisecond method).
+		elapsedDuration := time.Since(startTime)
+		c.duration.Record(ctx, float64(elapsedDuration)/float64(time.Millisecond), metric.WithAttributes(otelAttrs...))
+	}()
+
+	// Increment request counter.
+	c.requests.Add(ctx, 1, metric.WithAttributes(otelAttrs...))
+
+	// Start a span for this request.
+	ctx, span := c.cfg.Tracer.Start(ctx, GetSandboxCredentialRequestOperation,
+		trace.WithAttributes(otelAttrs...),
+		clientSpanKind,
+	)
+	// Track stage for error reporting.
+	var stage string
+	defer func() {
+		if err != nil {
+			span.RecordError(err)
+			span.SetStatus(codes.Error, stage)
+			c.errors.Add(ctx, 1, metric.WithAttributes(otelAttrs...))
+		}
+		span.End()
+	}()
+
+	stage = "BuildURL"
+	u := uri.Clone(c.requestURL(ctx))
+	var pathParts [4]string
+	pathParts[0] = "/api/pools/"
+	{
+		// Encode "poolId" parameter.
+		e := uri.NewPathEncoder(uri.PathEncoderConfig{
+			Param:   "poolId",
+			Style:   uri.PathStyleSimple,
+			Explode: false,
+		})
+		if err := func() error {
+			return e.EncodeValue(conv.StringToString(params.PoolId))
+		}(); err != nil {
+			return res, errors.Wrap(err, "encode path")
+		}
+		encoded, err := e.Result()
+		if err != nil {
+			return res, errors.Wrap(err, "encode path")
+		}
+		pathParts[1] = encoded
+	}
+	pathParts[2] = "/sandbox-credential-requests/"
+	{
+		// Encode "requestId" parameter.
+		e := uri.NewPathEncoder(uri.PathEncoderConfig{
+			Param:   "requestId",
+			Style:   uri.PathStyleSimple,
+			Explode: false,
+		})
+		if err := func() error {
+			return e.EncodeValue(conv.StringToString(params.RequestId))
+		}(); err != nil {
+			return res, errors.Wrap(err, "encode path")
+		}
+		encoded, err := e.Result()
+		if err != nil {
+			return res, errors.Wrap(err, "encode path")
+		}
+		pathParts[3] = encoded
+	}
+	uri.AddPathParts(u, pathParts[:]...)
+
+	stage = "EncodeQueryParams"
+	q := uri.NewQueryEncoder()
+	{
+		// Encode "sandboxId" parameter.
+		cfg := uri.QueryParameterEncodingConfig{
+			Name:    "sandboxId",
+			Style:   uri.QueryStyleForm,
+			Explode: true,
+		}
+
+		if err := q.EncodeParam(cfg, func(e uri.Encoder) error {
+			return e.EncodeValue(conv.StringToString(params.SandboxId))
+		}); err != nil {
+			return res, errors.Wrap(err, "encode query")
+		}
+	}
+	u.RawQuery = q.Values().Encode()
+
+	stage = "EncodeRequest"
+	r, err := ht.NewRequest(ctx, "GET", u)
+	if err != nil {
+		return res, errors.Wrap(err, "create request")
+	}
+
+	stage = "SendRequest"
+	resp, err := c.cfg.Client.Do(r)
+	if err != nil {
+		return res, errors.Wrap(err, "do request")
+	}
+	body := resp.Body
+	defer body.Close()
+
+	stage = "DecodeResponse"
+	result, err := decodeGetSandboxCredentialRequestResponse(resp)
+	if err != nil {
+		return res, errors.Wrap(err, "decode response")
+	}
+
+	return result, nil
+}
+
 // GetSandboxExec invokes get-sandbox-exec operation.
 //
 // Get an exec runtime in a sandbox.
@@ -6259,6 +6502,117 @@ func (c *Client) sendListSSHKeys(ctx context.Context, params ListSSHKeysParams) 
 
 	stage = "DecodeResponse"
 	result, err := decodeListSSHKeysResponse(resp)
+	if err != nil {
+		return res, errors.Wrap(err, "decode response")
+	}
+
+	return result, nil
+}
+
+// ListSandboxCredentials invokes list-sandbox-credentials operation.
+//
+// List a sandbox's granted agent credentials.
+//
+// GET /api/pools/{poolId}/sandbox-credentials
+func (c *Client) ListSandboxCredentials(ctx context.Context, params ListSandboxCredentialsParams) (ListSandboxCredentialsRes, error) {
+	res, err := c.sendListSandboxCredentials(ctx, params)
+	return res, err
+}
+
+func (c *Client) sendListSandboxCredentials(ctx context.Context, params ListSandboxCredentialsParams) (res ListSandboxCredentialsRes, err error) {
+	otelAttrs := []attribute.KeyValue{
+		otelogen.OperationID("list-sandbox-credentials"),
+		semconv.HTTPRequestMethodKey.String("GET"),
+		semconv.URLTemplateKey.String("/api/pools/{poolId}/sandbox-credentials"),
+	}
+	otelAttrs = append(otelAttrs, c.cfg.Attributes...)
+
+	// Run stopwatch.
+	startTime := time.Now()
+	defer func() {
+		// Use floating point division here for higher precision (instead of Millisecond method).
+		elapsedDuration := time.Since(startTime)
+		c.duration.Record(ctx, float64(elapsedDuration)/float64(time.Millisecond), metric.WithAttributes(otelAttrs...))
+	}()
+
+	// Increment request counter.
+	c.requests.Add(ctx, 1, metric.WithAttributes(otelAttrs...))
+
+	// Start a span for this request.
+	ctx, span := c.cfg.Tracer.Start(ctx, ListSandboxCredentialsOperation,
+		trace.WithAttributes(otelAttrs...),
+		clientSpanKind,
+	)
+	// Track stage for error reporting.
+	var stage string
+	defer func() {
+		if err != nil {
+			span.RecordError(err)
+			span.SetStatus(codes.Error, stage)
+			c.errors.Add(ctx, 1, metric.WithAttributes(otelAttrs...))
+		}
+		span.End()
+	}()
+
+	stage = "BuildURL"
+	u := uri.Clone(c.requestURL(ctx))
+	var pathParts [3]string
+	pathParts[0] = "/api/pools/"
+	{
+		// Encode "poolId" parameter.
+		e := uri.NewPathEncoder(uri.PathEncoderConfig{
+			Param:   "poolId",
+			Style:   uri.PathStyleSimple,
+			Explode: false,
+		})
+		if err := func() error {
+			return e.EncodeValue(conv.StringToString(params.PoolId))
+		}(); err != nil {
+			return res, errors.Wrap(err, "encode path")
+		}
+		encoded, err := e.Result()
+		if err != nil {
+			return res, errors.Wrap(err, "encode path")
+		}
+		pathParts[1] = encoded
+	}
+	pathParts[2] = "/sandbox-credentials"
+	uri.AddPathParts(u, pathParts[:]...)
+
+	stage = "EncodeQueryParams"
+	q := uri.NewQueryEncoder()
+	{
+		// Encode "sandboxId" parameter.
+		cfg := uri.QueryParameterEncodingConfig{
+			Name:    "sandboxId",
+			Style:   uri.QueryStyleForm,
+			Explode: true,
+		}
+
+		if err := q.EncodeParam(cfg, func(e uri.Encoder) error {
+			return e.EncodeValue(conv.StringToString(params.SandboxId))
+		}); err != nil {
+			return res, errors.Wrap(err, "encode query")
+		}
+	}
+	u.RawQuery = q.Values().Encode()
+
+	stage = "EncodeRequest"
+	r, err := ht.NewRequest(ctx, "GET", u)
+	if err != nil {
+		return res, errors.Wrap(err, "create request")
+	}
+
+	stage = "SendRequest"
+	resp, err := c.cfg.Client.Do(r)
+	if err != nil {
+		return res, errors.Wrap(err, "do request")
+	}
+	body := resp.Body
+	defer body.Close()
+
+	stage = "DecodeResponse"
+	result, err := decodeListSandboxCredentialsResponse(resp)
 	if err != nil {
 		return res, errors.Wrap(err, "decode response")
 	}

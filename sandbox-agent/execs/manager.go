@@ -14,6 +14,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/discobox-ai/discobox/agentcreds"
 	"github.com/discobox-ai/discobox/harness"
 	"github.com/discobox-ai/discobox/sandbox-agent/nestedbridge"
 	"github.com/discobox-ai/discobox/sandbox-agent/runuser"
@@ -334,6 +335,13 @@ func EnvWithRuntimeDefaults(env map[string]string, user *User) map[string]string
 	}
 	if _, ok := env["TERM"]; !ok {
 		env["TERM"] = defaultTerm
+	}
+	// Point the credential CLI at the sandbox's loopback endpoint. It is
+	// advertised unconditionally: the value is a well-known default rather than
+	// a capability, and a sandbox with no proxy material simply refuses the
+	// connection, which is a clearer failure than an unset variable.
+	if _, ok := env[agentcreds.URLEnv]; !ok {
+		env[agentcreds.URLEnv] = agentcreds.DefaultBaseURL
 	}
 	if user != nil {
 		if name := strings.TrimSpace(user.Name); name != "" {

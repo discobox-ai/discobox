@@ -467,6 +467,17 @@ func (a *App) writeSecretGrant(cmd *cobra.Command, grant *apimodel.SecretGrant) 
 	fmt.Fprintf(tw, "SCOPE\t%s\n", grant.Scope)
 	fmt.Fprintf(tw, "SCOPE KEY\t%s\n", grant.ScopeKey)
 	fmt.Fprintf(tw, "HOST\t%s\n", grant.Host.Or("(any)"))
+	// A grant with uses came from an agent's request, and the uses are what an
+	// operator needs to see to decide whether it should still exist.
+	if uses, ok := grant.Uses.Get(); ok {
+		for i, use := range uses {
+			label := "USES"
+			if i > 0 {
+				label = ""
+			}
+			fmt.Fprintf(tw, "%s\t%s (%s)\n", label, use.Description, use.UseId.Or(""))
+		}
+	}
 	fmt.Fprintf(tw, "EXPIRES\t%s\n", formatGrantExpiry(grant))
 	fmt.Fprintf(tw, "CREATED\t%s\n", formatTime(grant.CreatedAt))
 	return tw.Flush()
@@ -516,6 +527,26 @@ func (a *App) writeSecretRequest(cmd *cobra.Command, request *apimodel.SecretReq
 	fmt.Fprintf(tw, "TYPE\t%s\n", request.Type)
 	fmt.Fprintf(tw, "HOST\t%s\n", request.Host.Or(""))
 	fmt.Fprintf(tw, "STATUS\t%s\n", request.Status)
+	// What an agent asked for and why is the whole basis for approving it, so it
+	// belongs in the detail view rather than only in the JSON.
+	if name, ok := request.Name.Get(); ok && name != "" {
+		fmt.Fprintf(tw, "CREDENTIAL\t%s\n", name)
+	}
+	if envName, ok := request.EnvName.Get(); ok && envName != "" {
+		fmt.Fprintf(tw, "ENV VAR\t%s\n", envName)
+	}
+	if justification, ok := request.Justification.Get(); ok && justification != "" {
+		fmt.Fprintf(tw, "WHY\t%s\n", justification)
+	}
+	if uses, ok := request.Uses.Get(); ok {
+		for i, use := range uses {
+			label := "USES"
+			if i > 0 {
+				label = ""
+			}
+			fmt.Fprintf(tw, "%s\t%s\n", label, use.Description)
+		}
+	}
 	if secretID, ok := request.SecretId.Get(); ok && secretID != "" {
 		fmt.Fprintf(tw, "SECRET\t%s\n", secretID)
 	}

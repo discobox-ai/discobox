@@ -949,25 +949,54 @@ type SecretValue struct {
 	SubscriptionType string   `json:"subscriptionType,omitempty"`
 }
 
+// SecretUse is one way a credential may be used: a human-readable sentence an
+// agent asked for and an approver confirmed or edited. UseID is empty on the
+// requested uses of a SecretRequest and set on the approved uses of a
+// SecretGrant — IDs are minted by the approval, so an agent cannot name the use
+// it will later present (ADR 0031 §5).
+type SecretUse struct {
+	UseID       string `json:"useId,omitempty" doc:"Stable use ID, minted at approval"`
+	Description string `json:"description" doc:"What the credential may be used for"`
+}
+
 // SecretRequest records a runtime ask for a secret that has no covering grant.
 // It is the approval-inbox item: a human resolves it by minting a SecretGrant
 // (which approves it) or denying it. Authorization state — who approved, expiry —
 // lives on the grant, not here.
+//
+// Two species share this row, and the approve path treats them differently
+// rather than pretending they are one shape (ADR 0031 §5):
+//
+//   - Reactive: the proxy hit an unresolvable sentinel and auto-minted a bare
+//     request. It carries no Name, EnvName, Justification, or Uses.
+//   - Protocol-originated: an agent asked through the agent credentials
+//     protocol, saying what it needs, why, and what for. Approving one must
+//     produce a host-scoped grant carrying approved uses.
 type SecretRequest struct {
-	ID          string    `gorm:"primaryKey;type:text" json:"id" doc:"Stable request ID"`
-	ProjectID   string    `gorm:"column:project_id;not null;type:text;index" json:"projectId" doc:"Project ID"`
-	RequestedBy string    `gorm:"column:requested_by;not null;type:text" json:"requestedBy" doc:"Principal ID of the requestor"`
-	SandboxID   string    `gorm:"column:sandbox_id;not null;type:text;default:'';index" json:"sandboxId,omitempty" doc:"Sandbox that owns the sentinel, for sandbox-originated requests"`
-	Type        string    `gorm:"column:type;not null;type:text" json:"type" doc:"Secret type requested" enum:"git,ssh,bearer,oauth"`
-	Host        string    `gorm:"column:host;not null;type:text;default:''" json:"host,omitempty" doc:"Host hint provided at request time"`
-	SecretID    string    `gorm:"column:secret_id;not null;type:text;default:''" json:"secretId,omitempty" doc:"Matched secret ID; set when approved"`
-	Status      string    `gorm:"column:status;not null;type:text;default:'pending'" json:"status" doc:"Request status" enum:"pending,approved,denied"`
-	GrantID     string    `gorm:"column:grant_id;not null;type:text;default:''" json:"grantId,omitempty" doc:"Grant that satisfied this request; set when approved"`
-	CreatedAt   time.Time `json:"createdAt" doc:"Creation timestamp" format:"date-time"`
-	UpdatedAt   time.Time `json:"updatedAt" doc:"Last update timestamp" format:"date-time"`
+	ID            string      `gorm:"primaryKey;type:text" json:"id" doc:"Stable request ID"`
+	ProjectID     string      `gorm:"column:project_id;not null;type:text;index" json:"projectId" doc:"Project ID"`
+	RequestedBy   string      `gorm:"column:requested_by;not null;type:text" json:"requestedBy" doc:"Principal ID of the requestor"`
+	SandboxID     string      `gorm:"column:sandbox_id;not null;type:text;default:'';index" json:"sandboxId,omitempty" doc:"Sandbox that owns the sentinel, for sandbox-originated requests"`
+	Type          string      `gorm:"column:type;not null;type:text" json:"type" doc:"Secret type requested" enum:"git,ssh,bearer,oauth"`
+	Host          string      `gorm:"column:host;not null;type:text;default:''" json:"host,omitempty" doc:"Host hint provided at request time"`
+	Name          string      `gorm:"column:name;not null;type:text;default:''" json:"name,omitempty" doc:"Credential name the agent asked for, for protocol-originated requests"`
+	EnvName       string      `gorm:"column:env_name;not null;type:text;default:''" json:"envName,omitempty" doc:"Environment variable the credential is wanted in, for protocol-originated requests"`
+	Justification string      `gorm:"column:justification;not null;type:text;default:''" json:"justification,omitempty" doc:"Why the agent says it needs the credential"`
+	Uses          []SecretUse `gorm:"column:uses;type:text;serializer:json" json:"uses,omitempty" doc:"Uses the agent asked for; approval mints their IDs onto the grant"`
+	SecretID      string      `gorm:"column:secret_id;not null;type:text;default:''" json:"secretId,omitempty" doc:"Matched secret ID; set when approved"`
+	Status        string      `gorm:"column:status;not null;type:text;default:'pending'" json:"status" doc:"Request status" enum:"pending,approved,denied"`
+	GrantID       string      `gorm:"column:grant_id;not null;type:text;default:''" json:"grantId,omitempty" doc:"Grant that satisfied this request; set when approved"`
+	CreatedAt     time.Time   `json:"createdAt" doc:"Creation timestamp" format:"date-time"`
+	UpdatedAt     time.Time   `json:"updatedAt" doc:"Last update timestamp" format:"date-time"`
 
 	Project *Project `gorm:"foreignKey:ProjectID" json:"-"`
 }
+
+// FromProtocol reports whether the request came through the agent credentials
+// protocol rather than the proxy's reactive sentinel path. Declared uses are
+// what separates them: only an agent that asked can say what it wants the
+// credential for.
+func (r *SecretRequest) FromProtocol() bool { return len(r.Uses) > 0 }
 
 func (SecretRequest) TableName() string { return "secret_requests" }
 
@@ -1001,10 +1030,25 @@ type SecretGrant struct {
 	GrantedBy string     `gorm:"column:granted_by;not null;type:text;default:''" json:"grantedBy,omitempty" doc:"Principal ID that created the grant"`
 	GrantedAt time.Time  `gorm:"column:granted_at;autoCreateTime" json:"grantedAt" doc:"Creation timestamp" format:"date-time"`
 	ExpiresAt *time.Time `gorm:"column:expires_at" json:"expiresAt,omitempty" doc:"Expiry time; empty never expires" format:"date-time"`
-	CreatedAt time.Time  `json:"createdAt" doc:"Creation timestamp" format:"date-time"`
-	UpdatedAt time.Time  `json:"updatedAt" doc:"Last update timestamp" format:"date-time"`
+	// Uses are the approved ways this credential may be used, each with an ID an
+	// agent presents to take a value for one command. A grant with no uses is a
+	// plain standing authorization; one with uses is what the agent credentials
+	// protocol reports and activates against (ADR 0031 §5).
+	Uses      []SecretUse `gorm:"column:uses;type:text;serializer:json" json:"uses,omitempty" doc:"Approved uses, confirmed or edited at approval time"`
+	CreatedAt time.Time   `json:"createdAt" doc:"Creation timestamp" format:"date-time"`
+	UpdatedAt time.Time   `json:"updatedAt" doc:"Last update timestamp" format:"date-time"`
 
 	Project *Project `gorm:"foreignKey:ProjectID" json:"-"`
+}
+
+// FindUse returns the approved use with the given ID.
+func (g *SecretGrant) FindUse(useID string) (SecretUse, bool) {
+	for _, use := range g.Uses {
+		if use.UseID == useID && useID != "" {
+			return use, true
+		}
+	}
+	return SecretUse{}, false
 }
 
 func (SecretGrant) TableName() string { return "secret_grants" }
@@ -1046,8 +1090,22 @@ type SandboxSecret struct {
 	// Format is the template the sentinel was minted from. A rebind compares it
 	// against the replacement secret's format to decide whether the sentinel can
 	// be kept, which it must be able to do after the old secret row is gone.
-	Format    string    `gorm:"column:format;type:text" json:"-"`
-	CreatedAt time.Time `gorm:"autoCreateTime" json:"createdAt" doc:"Creation timestamp" format:"date-time"`
+	Format string `gorm:"column:format;type:text" json:"-"`
+	// AgentRequested marks a binding created by approving an agent credentials
+	// protocol request. Its sentinel is never written into the sandbox
+	// environment or secrets.json and is never registered with the proxy: the
+	// only thing that ever reaches the sandbox is an ephemeral sentinel the pool
+	// agent mints for one use and translates back to this one at swap time
+	// (ADR 0031 §4). An always-present sentinel is always worth stealing; this
+	// one is inert by default.
+	//
+	// It is part of the env-name uniqueness domain rather than exempt from it:
+	// the index exists to stop two bindings fighting over one injected
+	// environment variable, and an agent-requested binding is a different
+	// channel, so a sandbox can hold both a harness-injected GITHUB_TOKEN and an
+	// agent-requested one without either displacing the other.
+	AgentRequested bool      `gorm:"column:agent_requested;not null;default:false;uniqueIndex:idx_sandbox_secret_env,priority:3" json:"agentRequested,omitempty" doc:"Binding created by an agent credential request; never injected into the sandbox"`
+	CreatedAt      time.Time `gorm:"autoCreateTime" json:"createdAt" doc:"Creation timestamp" format:"date-time"`
 }
 
 func (SandboxSecret) TableName() string { return "sandbox_secrets" }

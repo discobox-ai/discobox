@@ -10,6 +10,7 @@ import (
 	serverapi "github.com/discobox-ai/discobox/api/gen"
 	"github.com/discobox-ai/discobox/server/internal/model"
 	svcapi "github.com/discobox-ai/discobox/server/internal/services"
+	"github.com/discobox-ai/discobox/server/internal/store"
 )
 
 func TestSecretHandlersDoNotReturnSecretValues(t *testing.T) {
@@ -116,6 +117,18 @@ func (fakeSecretService) RevokeSecretGrant(context.Context, string, string) erro
 
 func (fakeSecretService) ResolveSandboxSecret(context.Context, string, string, string, string) (*model.SandboxSecretResolution, error) {
 	return &model.SandboxSecretResolution{Status: model.SecretRequestStatusPending}, nil
+}
+
+func (fakeSecretService) ListSandboxCredentials(context.Context, string, string) ([]store.AgentCredential, error) {
+	return nil, nil
+}
+
+func (fakeSecretService) CreateSandboxCredentialRequest(context.Context, string, svcapi.CreateSandboxCredentialRequestBody) (*model.SecretRequest, error) {
+	return &model.SecretRequest{ID: "sreq-1", Status: model.SecretRequestStatusPending}, nil
+}
+
+func (fakeSecretService) GetSandboxCredentialRequest(context.Context, string, string, string) (*model.SecretRequest, *model.SecretGrant, error) {
+	return &model.SecretRequest{ID: "sreq-1", Status: model.SecretRequestStatusPending}, nil, nil
 }
 
 func fakeSecret() model.Secret {

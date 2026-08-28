@@ -166,6 +166,15 @@ func (UnimplementedHandler) CreateSandbox(ctx context.Context, req *CreateSandbo
 	return r, ht.ErrNotImplemented
 }
 
+// CreateSandboxCredentialRequest implements create-sandbox-credential-request operation.
+//
+// Record an agent's credential request.
+//
+// POST /api/pools/{poolId}/sandbox-credential-requests
+func (UnimplementedHandler) CreateSandboxCredentialRequest(ctx context.Context, req *CreateSandboxCredentialRequestBody, params CreateSandboxCredentialRequestParams) (r CreateSandboxCredentialRequestRes, _ error) {
+	return r, ht.ErrNotImplemented
+}
+
 // CreateSandboxExec implements create-sandbox-exec operation.
 //
 // Create an exec runtime in a sandbox.
@@ -387,6 +396,15 @@ func (UnimplementedHandler) GetSandboxAgentStatus(ctx context.Context, params Ge
 	return r, ht.ErrNotImplemented
 }
 
+// GetSandboxCredentialRequest implements get-sandbox-credential-request operation.
+//
+// Poll an agent credential request.
+//
+// GET /api/pools/{poolId}/sandbox-credential-requests/{requestId}
+func (UnimplementedHandler) GetSandboxCredentialRequest(ctx context.Context, params GetSandboxCredentialRequestParams) (r GetSandboxCredentialRequestRes, _ error) {
+	return r, ht.ErrNotImplemented
+}
+
 // GetSandboxExec implements get-sandbox-exec operation.
 //
 // Get an exec runtime in a sandbox.
@@ -501,6 +519,15 @@ func (UnimplementedHandler) ListProjects(ctx context.Context) (r ListProjectsRes
 //
 // GET /projects/{projectId}/ssh-keys
 func (UnimplementedHandler) ListSSHKeys(ctx context.Context, params ListSSHKeysParams) (r ListSSHKeysRes, _ error) {
+	return r, ht.ErrNotImplemented
+}
+
+// ListSandboxCredentials implements list-sandbox-credentials operation.
+//
+// List a sandbox's granted agent credentials.
+//
+// GET /api/pools/{poolId}/sandbox-credentials
+func (UnimplementedHandler) ListSandboxCredentials(ctx context.Context, params ListSandboxCredentialsParams) (r ListSandboxCredentialsRes, _ error) {
 	return r, ht.ErrNotImplemented
 }
 

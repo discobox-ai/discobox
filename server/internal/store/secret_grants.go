@@ -135,6 +135,37 @@ func (s *Store) FindLiveGrant(ctx context.Context, projectID, secretID, host str
 	return best, nil
 }
 
+// FindLiveAgentGrant returns the unexpired sandbox-scoped grant that authorizes
+// an agent-requested binding, or ErrNotFound.
+//
+// It is not FindLiveGrant with an empty host: that call reads an empty host as
+// "the destination is unknown", which only a wildcard grant satisfies, and a
+// grant minted through the agent credentials flow always carries a concrete
+// host (ADR 0031 §5). Here the host is an answer rather than a question — the
+// caller is asking what this sandbox may use, and the grant's own host is part
+// of the reply.
+func (s *Store) FindLiveAgentGrant(ctx context.Context, projectID, secretID, sandboxID string) (*model.SecretGrant, error) {
+	read, err := s.getRead(ctx)
+	if err != nil {
+		return nil, err
+	}
+	var candidates []model.SecretGrant
+	err = read.
+		Where("project_id = ? AND secret_id = ? AND scope = ? AND scope_key = ? AND (expires_at IS NULL OR expires_at > ?)",
+			projectID, secretID, model.SecretGrantScopeSandbox, sandboxID, time.Now().UTC()).
+		Order("granted_at DESC").
+		Find(&candidates).Error
+	if err != nil {
+		return nil, err
+	}
+	for i := range candidates {
+		if len(candidates[i].Uses) > 0 {
+			return &candidates[i], nil
+		}
+	}
+	return nil, ErrNotFound
+}
+
 // isMoreSpecificGrant reports whether candidate beats current: a narrower scope
 // wins, then an exact host beats a wildcard host.
 func isMoreSpecificGrant(candidate, current *model.SecretGrant, scopeRank map[string]int, host string) bool {

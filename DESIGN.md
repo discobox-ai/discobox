@@ -91,6 +91,7 @@ flowchart TD
     providers --> poolAgent["github.com/discobox-ai/discobox/pool-agent"]
     poolAgent --> root
     sandboxAgent["github.com/discobox-ai/discobox/sandbox-agent"] --> root
+    agentCred["github.com/discobox-ai/discobox/agentcred"] --> root
 ```
 
 - Root module: public API definitions, control-plane OpenAPI documents,
@@ -130,6 +131,11 @@ flowchart TD
   manifest contract shared with the server.
 - Sandbox-agent module: in-sandbox agent REST API runtime environment and harness
   implementation; depends on root contracts and generated API types.
+- Agent-credential CLI module: `discobox-credential`, the in-sandbox client of
+  the agent credentials protocol. It is its own module and its own binary — not
+  an `argv[0]` alias of the sandbox agent — because it is meant to be liftable
+  into another repository, and it depends on nothing but the stdlib-only
+  `agentcreds` package. See [`agentcred/DESIGN.md`](agentcred/DESIGN.md).
 
 Worker-agent and sandbox-agent implementations cannot depend on packages under
 Go `internal/` outside their module. Provider implementations are part of the
@@ -144,9 +150,11 @@ Root module package map:
 | [`api/sandboxgen`](api/sandboxgen) | Generated client/server API scaffold from generated `api/openapi/sandbox.yaml`, the sandbox-agent subset of the server contract. |
 | [`api/model`](api/model) | Generated stable aliases for server REST API schema types. |
 | [`devimage`](devimage) | Versioned watcher/server contract for content-addressed development Docker image sets and their opt-in environment keys. |
+| [`agentcreds`](agentcreds) | The agent credentials protocol: the portable list/request/get contract, its client, an `http.Handler` over a `Service` interface, and the stable error codes and client configuration both halves share. It knows nothing about Discobox, which is what lets one in-sandbox CLI work against sandbox-agent and against any other implementation. See [`docs/agent-credentials-protocol.md`](docs/agent-credentials-protocol.md) and [ADR 0031](docs/adr/0031-agent-credentials-are-a-portable-protocol-with-ephemeral-sentinels.md). |
 | [`endpoint`](endpoint) | How a client reaches the control plane and how the control plane listens, resolved from a URL scheme. Shared because the CLI and the server must agree on what an endpoint means, and because `git`, websockets, and the generated client all reach the server through the one client it builds. The pool-agent hop is resolved separately by [`pool-agent/wire`](pool-agent/wire). |
 | [`harness`](harness) | Harness hook registration drivers for sandbox terminals. |
 | [`id`](id) | Shared identifier helpers. |
+| [`secretformat`](secretformat) | The shape of credential values: a generative template that mints a sentinel byte-identical to a real provider key, and inference of a template from a real value. Shared because both ends mint sentinels — the control plane the stable one bound to a sandbox, the pool agent the ephemeral one per use — and a sentinel shaped by different rules at each end would be distinguishable from the real thing. |
 | [`internal/hostid`](internal/hostid) | This machine's generated, persisted Discobox identity. Shared because a CLI and a control plane on one machine must resolve the same value: that agreement is how the server knows a request came from its own filesystem. |
 | [`internal/originkey`](internal/originkey) | Derives the key identifying a sandbox origin. Shared so client and server cannot drift on it. |
 

@@ -12,10 +12,10 @@ import (
 	"golang.org/x/sync/singleflight"
 
 	apigen "github.com/discobox-ai/discobox/api/gen"
+	"github.com/discobox-ai/discobox/secretformat"
 	"github.com/discobox-ai/discobox/server/internal/apperrors"
 	"github.com/discobox-ai/discobox/server/internal/auth"
 	"github.com/discobox-ai/discobox/server/internal/model"
-	"github.com/discobox-ai/discobox/server/internal/secretformat"
 	"github.com/discobox-ai/discobox/server/internal/services"
 	"github.com/discobox-ai/discobox/server/internal/store"
 )
@@ -243,6 +243,37 @@ func (s *Service) ApproveSecretRequest(ctx context.Context, projectID, requestID
 			scope = model.SecretGrantScopeProject
 		}
 	}
+	host := strings.TrimSpace(input.Host.Or(req.Host))
+
+	// A protocol-originated request is a different species from one the proxy
+	// minted on hitting an unresolvable sentinel, and the two are handled apart
+	// rather than merged (ADR 0031 §5). Approving one carries obligations a
+	// reactive approval does not have: it must be scoped to a concrete host and
+	// to the asking sandbox, it mints approved uses, and it binds a stable
+	// sentinel the agent never sees.
+	var approvedUses []model.SecretUse
+	if req.FromProtocol() {
+		if host == "" {
+			return nil, apperrors.NewStatusError(http.StatusBadRequest,
+				"approving an agent credential request requires a host; a wildcard grant must be created explicitly with `discobox secret grant create`")
+		}
+		if scope != model.SecretGrantScopeSandbox {
+			return nil, apperrors.NewStatusError(http.StatusBadRequest,
+				"an agent credential request can only be approved at sandbox scope")
+		}
+		requested := req.Uses
+		if edited, ok := input.Uses.Get(); ok && len(edited) > 0 {
+			requested = convertAPIUses(edited)
+		}
+		approvedUses, err = mintUseIDs(requested)
+		if err != nil {
+			return nil, err
+		}
+		if len(approvedUses) == 0 {
+			return nil, apperrors.NewStatusError(http.StatusBadRequest, "approving an agent credential request requires at least one use")
+		}
+	}
+
 	scopeKey, err := s.grantScopeKey(ctx, projectID, req.SandboxID, scope)
 	if err != nil {
 		return nil, err
@@ -252,9 +283,19 @@ func (s *Service) ApproveSecretRequest(ctx context.Context, projectID, requestID
 	if v, ok := input.GrantTTLSeconds.Get(); ok && v > 0 {
 		ttl = v
 	}
-	grant, err := s.mintGrant(ctx, projectID, secret.ID, scope, scopeKey, req.Host, ttl)
+	grant, err := s.mintGrant(ctx, projectID, secret.ID, scope, scopeKey, host, ttl, approvedUses)
 	if err != nil {
 		return nil, err
+	}
+
+	if req.FromProtocol() {
+		if err := s.bindAgentCredential(ctx, req, secret); err != nil {
+			// Leave no live authorization behind for a binding that never
+			// happened: without the binding nothing can be activated, so the
+			// grant would be an approval nobody can act on and nobody can see.
+			_ = s.store.DeleteSecretGrant(ctx, projectID, grant.ID)
+			return nil, err
+		}
 	}
 
 	req.SecretID = secret.ID
@@ -409,7 +450,7 @@ func (s *Service) CreateSecretGrant(ctx context.Context, projectID string, input
 	if v, ok := input.GrantTTLSeconds.Get(); ok {
 		ttl = v
 	}
-	return s.mintGrant(ctx, projectID, secret.ID, scope, scopeKey, host, ttl)
+	return s.mintGrant(ctx, projectID, secret.ID, scope, scopeKey, host, ttl, nil)
 }
 
 // RevokeSecretGrant deletes a standing grant.
@@ -447,7 +488,10 @@ func (s *Service) grantScopeKey(ctx context.Context, projectID, sandboxID, scope
 	}
 }
 
-func (s *Service) mintGrant(ctx context.Context, projectID, secretID, scope, scopeKey, host string, ttlSeconds int64) (*model.SecretGrant, error) {
+// mintGrant creates the standing authorization. uses is non-empty only for a
+// grant minted by approving an agent credentials protocol request; a plain
+// grant authorizes the credential without enumerating what it is for.
+func (s *Service) mintGrant(ctx context.Context, projectID, secretID, scope, scopeKey, host string, ttlSeconds int64, uses []model.SecretUse) (*model.SecretGrant, error) {
 	principal, _ := auth.PrincipalFromContext(ctx)
 	grantedBy := principal.UserID
 	if grantedBy == "" {
@@ -460,6 +504,7 @@ func (s *Service) mintGrant(ctx context.Context, projectID, secretID, scope, sco
 		ScopeKey:  scopeKey,
 		Host:      host,
 		GrantedBy: grantedBy,
+		Uses:      uses,
 	}
 	if ttlSeconds > 0 {
 		exp := time.Now().UTC().Add(time.Duration(ttlSeconds) * time.Second)

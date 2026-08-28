@@ -441,6 +441,7 @@ See ADR 0017 §§9–10.
 | `internal/resources/workers` | Worker API service behavior, provider-facing worker manager, worker and pool reconcilers, and worker runtime reconciliation. |
 | `internal/resources/pools` | Pool resource API behavior and observed pool status derived from worker rows. |
 | `internal/resources/providers` | Provider-instance API service behavior (backend identity only) and startup reconciliation. |
+| `internal/resources/secrets` | Secret CRUD, the request/grant approval lifecycle, sentinel resolution for the proxy, and the agent credentials broker (ADR 0031). |
 | `internal/database` | Database config, connection setup, and migrations. |
 | `internal/store` | Persistence methods, resource transactions, project events, and durable job records. |
 | `internal/events` | In-process project event broker for committed resource events. It has no client-facing transport: the events are lossy wake-ups for waits inside this process (ADR 0061). |
@@ -483,6 +484,7 @@ See ADR 0017 §§9–10.
 | `internal/resources/providers` | [`internal/resources/providers/DESIGN.md`](internal/resources/providers/DESIGN.md) |
 | `internal/resources/projects` | [`internal/resources/projects/DESIGN.md`](internal/resources/projects/DESIGN.md) |
 | `internal/resources/sandboxes` | [`internal/resources/sandboxes/DESIGN.md`](internal/resources/sandboxes/DESIGN.md) |
+| `internal/resources/secrets` | [`internal/resources/secrets/DESIGN.md`](internal/resources/secrets/DESIGN.md) |
 | `internal/resources/workers` | [`internal/resources/workers/DESIGN.md`](internal/resources/workers/DESIGN.md) |
 | `internal/auth/sandbox` | [`internal/auth/sandbox/DESIGN.md`](internal/auth/sandbox/DESIGN.md) |
 | `internal/service` | [`internal/service/DESIGN.md`](internal/service/DESIGN.md) |

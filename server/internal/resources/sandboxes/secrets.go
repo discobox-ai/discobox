@@ -11,15 +11,13 @@ import (
 	"strings"
 
 	"github.com/discobox-ai/discobox/harness"
+	"github.com/discobox-ai/discobox/secretformat"
 	"github.com/discobox-ai/discobox/server/internal/apperrors"
 	"github.com/discobox-ai/discobox/server/internal/model"
-	"github.com/discobox-ai/discobox/server/internal/secretformat"
 	services "github.com/discobox-ai/discobox/server/internal/services"
 	"github.com/discobox-ai/discobox/server/internal/store"
 	"github.com/discobox-ai/x/id"
 )
-
-const defaultSentinelFormat = "{alnum:48}"
 
 // prepareSandboxSecrets resolves each secret input to a project secret (creating
 // an anonymous secret for inline values), mints a sentinel placeholder from the
@@ -46,7 +44,7 @@ func (s *Service) prepareSandboxSecrets(ctx context.Context, projectID string, s
 		if err != nil {
 			return nil, err
 		}
-		sentinel, err := mintSentinel(format)
+		sentinel, err := secretformat.MintSentinel(format)
 		if err != nil {
 			return nil, err
 		}
@@ -113,7 +111,7 @@ func (s *Service) applyHarnessConfigSecrets(ctx context.Context, projectID strin
 			return nil, err
 		}
 		format := secretFormat(ctx, s.store, secret)
-		sentinel, err := mintSentinel(format)
+		sentinel, err := secretformat.MintSentinel(format)
 		if err != nil {
 			return nil, err
 		}
@@ -169,7 +167,7 @@ func (s *Service) applyPreviousConfigureSecrets(ctx context.Context, projectID s
 			return nil, err
 		}
 		format := secretFormat(ctx, s.store, secret)
-		sentinel, err := mintSentinel(format)
+		sentinel, err := secretformat.MintSentinel(format)
 		if err != nil {
 			return nil, err
 		}
@@ -263,7 +261,7 @@ func secretFormat(ctx context.Context, st *store.Store, secret *model.Secret) st
 			}
 		}
 	}
-	return defaultSentinelFormat
+	return secretformat.DefaultSentinelFormat
 }
 
 func (s *Service) createAnonymousSecret(ctx context.Context, projectID, value, host string) (*model.Secret, error) {
@@ -322,7 +320,7 @@ func (s *Service) AssignSandboxHarnessSecrets(ctx context.Context, projectID, sa
 	if err != nil {
 		return nil, err
 	}
-	existing, err := s.store.ListSandboxSecrets(ctx, projectID, sandboxID)
+	existing, err := s.store.ListInjectedSandboxSecrets(ctx, projectID, sandboxID)
 	if err != nil {
 		return nil, err
 	}
@@ -346,7 +344,7 @@ func (s *Service) AssignSandboxHarnessSecrets(ctx context.Context, projectID, sa
 			return nil, err
 		}
 		format := secretFormat(ctx, s.store, secret)
-		sentinel, err := mintSentinel(format)
+		sentinel, err := secretformat.MintSentinel(format)
 		if err != nil {
 			return nil, err
 		}
@@ -390,7 +388,7 @@ func (s *Service) pushSandboxSentinels(ctx context.Context, sandboxModel *model.
 	if s.sandboxProviders == nil {
 		return fmt.Errorf("sandbox provider manager is required")
 	}
-	assignments, err := s.store.ListSandboxSecrets(ctx, sandboxModel.ProjectID, sandboxModel.ID)
+	assignments, err := s.store.ListInjectedSandboxSecrets(ctx, sandboxModel.ProjectID, sandboxModel.ID)
 	if err != nil {
 		return err
 	}
@@ -408,17 +406,6 @@ func (s *Service) pushSandboxSentinels(ctx context.Context, sandboxModel *model.
 		return err
 	}
 	return nil
-}
-
-func mintSentinel(format string) (string, error) {
-	tmpl, err := secretformat.Parse(strings.TrimSpace(format))
-	if err != nil {
-		tmpl, err = secretformat.Parse(defaultSentinelFormat)
-		if err != nil {
-			return "", err
-		}
-	}
-	return tmpl.Generate()
 }
 
 // RebindHarnessConfigSecrets brings every live sandbox running a harness config
@@ -544,7 +531,7 @@ func rebindSandboxSecretRows(ctx context.Context, st *store.Store, projectID str
 		// harness session, while keeping a sentinel costs at worst a placeholder
 		// that no longer mimics the credential's shape.
 		if assignment.Format != "" && assignment.Format != format {
-			sentinel, err := mintSentinel(format)
+			sentinel, err := secretformat.MintSentinel(format)
 			if err != nil {
 				return false, err
 			}

@@ -12,6 +12,7 @@ ARG TARGETOS TARGETARCH
 
 WORKDIR /src
 COPY go.mod go.sum ./
+COPY agentcreds ./agentcreds
 COPY api ./api
 COPY controlplane ./controlplane
 COPY harness ./harness
@@ -20,6 +21,7 @@ COPY proxy ./proxy
 COPY runcca ./runcca
 COPY sandboxconfig ./sandboxconfig
 COPY sandboxuser ./sandboxuser
+COPY secretformat ./secretformat
 COPY pool-agent/go.mod pool-agent/go.sum ./pool-agent/
 COPY pool-agent/cmd ./pool-agent/cmd
 COPY pool-agent ./pool-agent
