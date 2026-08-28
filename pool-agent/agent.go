@@ -163,7 +163,7 @@ func startStatusReporter(ctx context.Context, logger *slog.Logger, bootstrap Boo
 			// Stat this project's own data tree. Its parent belongs to the pool
 			// container's root filesystem and would report the wrong backing
 			// filesystem.
-			AvailableStorageBytes: availableStorageBytes(layout.ProjectData(bootstrap.ProjectID)),
+			AvailableStorageBytes: poolFreeStorageBytes(layout.ProjectData(bootstrap.ProjectID)),
 			Conditions:            conditions,
 		})
 	}
@@ -320,7 +320,13 @@ func Serve(ctx context.Context, logger *slog.Logger, bootstrap Bootstrap, regist
 		// SandboxAgentStatusClient; test doubles that only implement
 		// SandboxStateClient simply skip starting the poller.
 		if statusClient, ok := reporter.(SandboxAgentStatusClient); ok {
-			startSandboxAgentStatusPoller(ctx, logger, bootstrap, registration, runtime, statusClient)
+			poller := startSandboxAgentStatusPoller(ctx, logger, bootstrap, registration, runtime, statusClient)
+			// The resource reporter reads the counters that poll already
+			// collected rather than polling every sandbox a second time, so it
+			// only runs where the poller does (ADR 0071 §2).
+			if resourceClient, ok := reporter.(PoolResourceClient); ok && poller != nil {
+				startPoolResourceReporter(ctx, logger, bootstrap, registration, runtime, poller, resourceClient)
+			}
 		}
 	}
 	go runtime.WatchProxyMaterial(ctx, logger)
@@ -358,6 +364,18 @@ func serverRegistration(registration *Registration) *poolserver.Registration {
 
 func availableCPUVCPUs() float64 {
 	return float64(runtime.NumCPU())
+}
+
+// poolFreeStorageBytes is what the scheduler places against: the space an
+// unprivileged writer can still use on the filesystem behind a path. What the
+// pool actually holds, broken down by sandbox, rides the resource report
+// instead (ADR 0071) — this one number is a scheduling input, not accounting.
+func poolFreeStorageBytes(path string) int64 {
+	usage, ok := filesystemUsage(path)
+	if !ok {
+		return 0
+	}
+	return usage.FreeBytes
 }
 
 func availableMemoryBytes() int64 {

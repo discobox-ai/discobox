@@ -14,6 +14,7 @@ import (
 	"strings"
 	"time"
 
+	apimodel "github.com/discobox-ai/discobox/api/model"
 	"github.com/discobox-ai/discobox/controlplane"
 	"github.com/discobox-ai/discobox/pool-agent/poolauth"
 	"github.com/discobox-ai/discobox/pool-agent/wire"
@@ -239,11 +240,23 @@ type MintSandboxAgentStatusTokensResponse struct {
 }
 
 // SandboxAgentStatusEntry is one sandbox's polled status, relayed to the
-// control plane opaquely (pool-agent never parses Status).
+// control plane opaquely: Status is forwarded as received, never re-serialized
+// from a parsed structure, so a field this agent does not model still reaches
+// the control plane. (encoding/json compacts it in transit; nothing else
+// changes.)
+//
+// Resources is the one thing read out of that payload rather than merely
+// forwarded, and it is deliberately not part of it. The relay is unaffected;
+// the counters are copied aside so the resource reporter can difference them
+// across its tick, and they travel to the control plane in that agent-authored
+// report instead (ADR 0071 §2).
 type SandboxAgentStatusEntry struct {
 	SandboxID  string          `json:"sandboxId"`
 	Status     json.RawMessage `json:"status"`
 	ObservedAt time.Time       `json:"observedAt"`
+
+	// Resources never leaves this process on this channel.
+	Resources *apimodel.SandboxAgentResourceUsage `json:"-"`
 }
 
 // SandboxAgentStatusReportRequest pushes this tick's successfully polled

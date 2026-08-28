@@ -67,6 +67,7 @@ var yamlOwnedEnums = map[string]string{
 	"SandboxConfig.harnessMode":          "model.Sandbox.HarnessMode is untagged text; run/config is a contract-level restriction",
 	"SandboxCreateConfig.harnessMode":    "model.Sandbox.HarnessMode is untagged text; run/config is a contract-level restriction",
 	"SandboxExec.status":                 "exec lifecycle is owned by the sandbox-agent",
+	"SandboxAgentResourceUsage.source":   "the sandbox-agent's own reporting vocabulary: where it read its totals from (its cgroup, or a procfs rollup when that was unreadable). Relayed telemetry, never stored on a model field",
 	"SandboxService.status":              "service state is derived by the sandbox-agent from the exec running a repository-declared service (ADR 0070); the server stores nothing about services",
 	"SandboxAgentListeningPort.protocol": "what a listening port speaks is established by sandbox-agent probing it (ADR 0046); the server stores AgentStatus as opaque JSON",
 	"SandboxExecLogEntry.stream":         "exec log streams are owned by the sandbox-agent",

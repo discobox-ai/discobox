@@ -536,6 +536,16 @@ type Pool struct {
 	// before there is an agent to report anything.
 	ProvisionProgress   json.RawMessage `gorm:"column:provision_progress;type:text" json:"provisionProgress,omitempty" doc:"Latest provisioning progress reported by the provider driver, such as a VM image fetch or an image pull in flight (ADR 0060)"`
 	ProvisionProgressAt *time.Time      `gorm:"column:provision_progress_at" json:"provisionProgressAt,omitempty" doc:"When ProvisionProgress was observed" format:"date-time"`
+	// Resources is what this pool is consuming, reported by its agent every
+	// resource-report interval (ADR 0071). It is the pool's own totals plus its
+	// disk, and it is telemetry rather than a scheduling input: what placement
+	// reads is the Available* fields above.
+	//
+	// Overhead — the load that is not any sandbox — is `cpu.vcpus` here minus
+	// the sum of the sandboxes' own, and is derived by whoever reads it rather
+	// than stored, so it can never disagree with its operands.
+	Resources           json.RawMessage `gorm:"column:resources;type:text" json:"resources,omitempty" doc:"Latest pool-wide CPU, memory and disk consumption reported by the pool agent (ADR 0071). Telemetry, not a scheduling input."`
+	ResourcesReportedAt *time.Time      `gorm:"column:resources_reported_at" json:"resourcesReportedAt,omitempty" doc:"When Resources was reported" format:"date-time"`
 	RuntimeState        json.RawMessage `gorm:"column:runtime_state;type:text" json:"-" doc:"Internal provider runtime state; may contain boot material and must not be serialized"`
 	ResourceLifecycle   `gorm:"embedded"`
 	RegisteredAt        *time.Time `gorm:"column:registered_at" json:"registeredAt,omitempty" doc:"Registration timestamp" format:"date-time"`
@@ -729,6 +739,16 @@ type Sandbox struct {
 	// record keeps only the last report rather than a series.
 	ProvisionProgress   json.RawMessage `gorm:"column:provision_progress;type:text" json:"provisionProgress,omitempty" doc:"Latest provisioning progress reported by the hosting pool-agent, such as an image pull in flight (ADR 0039)"`
 	ProvisionProgressAt *time.Time      `gorm:"column:provision_progress_at" json:"provisionProgressAt,omitempty" doc:"When ProvisionProgress was observed" format:"date-time"`
+	// Resources is this sandbox's CPU, memory and disk consumption, computed by
+	// the hosting pool agent and pushed on its own channel (ADR 0071) — a third
+	// observation channel alongside AgentStatus above and RuntimeState.
+	//
+	// The rates in it are comparable with every other sandbox in the same pool
+	// and only with those: one agent polls all of its own sandboxes on one tick
+	// and differences them over that same window, while another pool's agent
+	// ticks on its own schedule.
+	Resources           json.RawMessage `gorm:"column:resources;type:text" json:"resources,omitempty" doc:"Latest CPU, memory and disk consumption for this sandbox, computed by the hosting pool agent (ADR 0071)"`
+	ResourcesObservedAt *time.Time      `gorm:"column:resources_observed_at" json:"resourcesObservedAt,omitempty" doc:"When Resources was observed" format:"date-time"`
 	CreatedAt           time.Time       `gorm:"autoCreateTime" json:"createdAt" doc:"Creation timestamp" format:"date-time"`
 	UpdatedAt           time.Time       `gorm:"autoUpdateTime" json:"updatedAt" doc:"Last update timestamp" format:"date-time"`
 

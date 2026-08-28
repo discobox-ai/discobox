@@ -581,6 +581,52 @@ func (o OptDateTime) Or(d time.Time) time.Time {
 	return d
 }
 
+// NewOptFloat64 returns new OptFloat64 with value set to v.
+func NewOptFloat64(v float64) OptFloat64 {
+	return OptFloat64{
+		Value: v,
+		Set:   true,
+	}
+}
+
+// OptFloat64 is optional float64.
+type OptFloat64 struct {
+	Value float64
+	Set   bool
+}
+
+// IsSet returns true if OptFloat64 was set.
+func (o OptFloat64) IsSet() bool { return o.Set }
+
+// Reset unsets value.
+func (o *OptFloat64) Reset() {
+	var v float64
+	o.Value = v
+	o.Set = false
+}
+
+// SetTo sets value to v.
+func (o *OptFloat64) SetTo(v float64) {
+	o.Set = true
+	o.Value = v
+}
+
+// Get returns value and boolean that denotes whether value was set.
+func (o OptFloat64) Get() (v float64, ok bool) {
+	if !o.Set {
+		return v, false
+	}
+	return o.Value, true
+}
+
+// Or returns value if set, or given parameter if does not.
+func (o OptFloat64) Or(d float64) float64 {
+	if v, ok := o.Get(); ok {
+		return v
+	}
+	return d
+}
+
 // NewOptInt returns new OptInt with value set to v.
 func NewOptInt(v int) OptInt {
 	return OptInt{
@@ -667,6 +713,52 @@ func (o OptInt64) Get() (v int64, ok bool) {
 
 // Or returns value if set, or given parameter if does not.
 func (o OptInt64) Or(d int64) int64 {
+	if v, ok := o.Get(); ok {
+		return v
+	}
+	return d
+}
+
+// NewOptSandboxAgentResourceUsage returns new OptSandboxAgentResourceUsage with value set to v.
+func NewOptSandboxAgentResourceUsage(v SandboxAgentResourceUsage) OptSandboxAgentResourceUsage {
+	return OptSandboxAgentResourceUsage{
+		Value: v,
+		Set:   true,
+	}
+}
+
+// OptSandboxAgentResourceUsage is optional SandboxAgentResourceUsage.
+type OptSandboxAgentResourceUsage struct {
+	Value SandboxAgentResourceUsage
+	Set   bool
+}
+
+// IsSet returns true if OptSandboxAgentResourceUsage was set.
+func (o OptSandboxAgentResourceUsage) IsSet() bool { return o.Set }
+
+// Reset unsets value.
+func (o *OptSandboxAgentResourceUsage) Reset() {
+	var v SandboxAgentResourceUsage
+	o.Value = v
+	o.Set = false
+}
+
+// SetTo sets value to v.
+func (o *OptSandboxAgentResourceUsage) SetTo(v SandboxAgentResourceUsage) {
+	o.Set = true
+	o.Value = v
+}
+
+// Get returns value and boolean that denotes whether value was set.
+func (o OptSandboxAgentResourceUsage) Get() (v SandboxAgentResourceUsage, ok bool) {
+	if !o.Set {
+		return v, false
+	}
+	return o.Value, true
+}
+
+// Or returns value if set, or given parameter if does not.
+func (o OptSandboxAgentResourceUsage) Or(d SandboxAgentResourceUsage) SandboxAgentResourceUsage {
 	if v, ok := o.Get(); ok {
 		return v
 	}
@@ -922,6 +1014,64 @@ func (s *ResourceSnapshot) SetSource(val string) {
 // SetTerminalId sets the value of TerminalId.
 func (s *ResourceSnapshot) SetTerminalId(val string) {
 	s.TerminalId = val
+}
+
+// Cumulative CPU time charged to the sandbox. Never a rate: what "busy" means
+// is the difference between two samples over the time between them, and the
+// component holding two samples is the pool agent, which polls every sandbox
+// in the pool on one tick and so measures them all over the same window
+// (ADR 0071).
+// Ref: #/components/schemas/SandboxAgentCPUUsage
+type SandboxAgentCPUUsage struct {
+	// The cgroup's own CPU quota in whole-CPU units, absent when unlimited. Sandbox containers are
+	// created with no CPU limit today, so this is normally absent.
+	LimitVcpus OptFloat64 `json:"limitVcpus"`
+	// CPU microseconds spent in kernel mode.
+	SystemUsec int64 `json:"systemUsec"`
+	// Total CPU microseconds charged to the sandbox's cgroup since it was created.
+	UsageUsec int64 `json:"usageUsec"`
+	// CPU microseconds spent in user mode.
+	UserUsec int64 `json:"userUsec"`
+}
+
+// GetLimitVcpus returns the value of LimitVcpus.
+func (s *SandboxAgentCPUUsage) GetLimitVcpus() OptFloat64 {
+	return s.LimitVcpus
+}
+
+// GetSystemUsec returns the value of SystemUsec.
+func (s *SandboxAgentCPUUsage) GetSystemUsec() int64 {
+	return s.SystemUsec
+}
+
+// GetUsageUsec returns the value of UsageUsec.
+func (s *SandboxAgentCPUUsage) GetUsageUsec() int64 {
+	return s.UsageUsec
+}
+
+// GetUserUsec returns the value of UserUsec.
+func (s *SandboxAgentCPUUsage) GetUserUsec() int64 {
+	return s.UserUsec
+}
+
+// SetLimitVcpus sets the value of LimitVcpus.
+func (s *SandboxAgentCPUUsage) SetLimitVcpus(val OptFloat64) {
+	s.LimitVcpus = val
+}
+
+// SetSystemUsec sets the value of SystemUsec.
+func (s *SandboxAgentCPUUsage) SetSystemUsec(val int64) {
+	s.SystemUsec = val
+}
+
+// SetUsageUsec sets the value of UsageUsec.
+func (s *SandboxAgentCPUUsage) SetUsageUsec(val int64) {
+	s.UsageUsec = val
+}
+
+// SetUserUsec sets the value of UserUsec.
+func (s *SandboxAgentCPUUsage) SetUserUsec(val int64) {
+	s.UserUsec = val
 }
 
 // Ref: #/components/schemas/SandboxAgentGitSourceStatus
@@ -1239,6 +1389,317 @@ func (s *SandboxAgentListeningPortProtocol) UnmarshalText(data []byte) error {
 	}
 }
 
+// Two different true answers about the same sandbox (ADR 0071). currentBytes is
+// what the host charges it - anonymous memory, page cache and kernel memory
+// together. virtualBytes and residentBytes are what its own processes hold,
+// summed, and so double-count every shared page: summed resident routinely
+// exceeds currentBytes, which is expected rather than a defect.
+// Ref: #/components/schemas/SandboxAgentMemoryUsage
+type SandboxAgentMemoryUsage struct {
+	// Anonymous memory charged to the cgroup.
+	AnonBytes OptInt64 `json:"anonBytes"`
+	// Memory the sandbox's cgroup is charged for, including page cache and kernel memory. Falls back to
+	// summed resident size when the cgroup is unreadable.
+	CurrentBytes int64 `json:"currentBytes"`
+	// Page cache charged to the cgroup. Reclaimable under pressure, unlike anonymous memory.
+	FileBytes OptInt64 `json:"fileBytes"`
+	// The cgroup's memory ceiling, absent when unlimited. Sandbox containers are created with no memory
+	// limit today, so this is normally absent.
+	LimitBytes OptInt64 `json:"limitBytes"`
+	// High-water mark of currentBytes over the cgroup's life.
+	PeakBytes OptInt64 `json:"peakBytes"`
+	// Sum of every process's VmRSS. Double-counts pages shared between processes.
+	ResidentBytes int64 `json:"residentBytes"`
+	// Sum of every process's VmSize. Address space reserved, not memory held; a process that maps a
+	// large file inflates this without consuming anything.
+	VirtualBytes int64 `json:"virtualBytes"`
+}
+
+// GetAnonBytes returns the value of AnonBytes.
+func (s *SandboxAgentMemoryUsage) GetAnonBytes() OptInt64 {
+	return s.AnonBytes
+}
+
+// GetCurrentBytes returns the value of CurrentBytes.
+func (s *SandboxAgentMemoryUsage) GetCurrentBytes() int64 {
+	return s.CurrentBytes
+}
+
+// GetFileBytes returns the value of FileBytes.
+func (s *SandboxAgentMemoryUsage) GetFileBytes() OptInt64 {
+	return s.FileBytes
+}
+
+// GetLimitBytes returns the value of LimitBytes.
+func (s *SandboxAgentMemoryUsage) GetLimitBytes() OptInt64 {
+	return s.LimitBytes
+}
+
+// GetPeakBytes returns the value of PeakBytes.
+func (s *SandboxAgentMemoryUsage) GetPeakBytes() OptInt64 {
+	return s.PeakBytes
+}
+
+// GetResidentBytes returns the value of ResidentBytes.
+func (s *SandboxAgentMemoryUsage) GetResidentBytes() int64 {
+	return s.ResidentBytes
+}
+
+// GetVirtualBytes returns the value of VirtualBytes.
+func (s *SandboxAgentMemoryUsage) GetVirtualBytes() int64 {
+	return s.VirtualBytes
+}
+
+// SetAnonBytes sets the value of AnonBytes.
+func (s *SandboxAgentMemoryUsage) SetAnonBytes(val OptInt64) {
+	s.AnonBytes = val
+}
+
+// SetCurrentBytes sets the value of CurrentBytes.
+func (s *SandboxAgentMemoryUsage) SetCurrentBytes(val int64) {
+	s.CurrentBytes = val
+}
+
+// SetFileBytes sets the value of FileBytes.
+func (s *SandboxAgentMemoryUsage) SetFileBytes(val OptInt64) {
+	s.FileBytes = val
+}
+
+// SetLimitBytes sets the value of LimitBytes.
+func (s *SandboxAgentMemoryUsage) SetLimitBytes(val OptInt64) {
+	s.LimitBytes = val
+}
+
+// SetPeakBytes sets the value of PeakBytes.
+func (s *SandboxAgentMemoryUsage) SetPeakBytes(val OptInt64) {
+	s.PeakBytes = val
+}
+
+// SetResidentBytes sets the value of ResidentBytes.
+func (s *SandboxAgentMemoryUsage) SetResidentBytes(val int64) {
+	s.ResidentBytes = val
+}
+
+// SetVirtualBytes sets the value of VirtualBytes.
+func (s *SandboxAgentMemoryUsage) SetVirtualBytes(val int64) {
+	s.VirtualBytes = val
+}
+
+// One candidate process, with cumulative counters for the same reason the
+// sandbox totals carry them. This is a candidate list, not an answer: it is the
+// union of the busiest by cumulative CPU and the largest by resident size, and
+// whoever differences two samples ranks them by rate and keeps far fewer.
+// Ref: #/components/schemas/SandboxAgentProcessUsage
+type SandboxAgentProcessUsage struct {
+	// Full argv, space-joined. Empty for a kernel thread.
+	Cmdline OptString `json:"cmdline"`
+	// The process's own executable name, as the kernel reports it.
+	Command string `json:"command"`
+	// Cumulative CPU microseconds (user plus system) this process has used.
+	CpuUsec int64 `json:"cpuUsec"`
+	// Sandbox-local process ID.
+	Pid int64 `json:"pid"`
+	// This process's VmRSS.
+	ResidentBytes int64 `json:"residentBytes"`
+	// Process start time in kernel ticks since boot. Part of this process's identity rather than
+	// decoration - PIDs are reused, and differencing a recycled PID against its predecessor's counter
+	// would produce a nonsense spike.
+	StartTicks int64 `json:"startTicks"`
+	// This process's VmSize.
+	VirtualBytes int64 `json:"virtualBytes"`
+}
+
+// GetCmdline returns the value of Cmdline.
+func (s *SandboxAgentProcessUsage) GetCmdline() OptString {
+	return s.Cmdline
+}
+
+// GetCommand returns the value of Command.
+func (s *SandboxAgentProcessUsage) GetCommand() string {
+	return s.Command
+}
+
+// GetCpuUsec returns the value of CpuUsec.
+func (s *SandboxAgentProcessUsage) GetCpuUsec() int64 {
+	return s.CpuUsec
+}
+
+// GetPid returns the value of Pid.
+func (s *SandboxAgentProcessUsage) GetPid() int64 {
+	return s.Pid
+}
+
+// GetResidentBytes returns the value of ResidentBytes.
+func (s *SandboxAgentProcessUsage) GetResidentBytes() int64 {
+	return s.ResidentBytes
+}
+
+// GetStartTicks returns the value of StartTicks.
+func (s *SandboxAgentProcessUsage) GetStartTicks() int64 {
+	return s.StartTicks
+}
+
+// GetVirtualBytes returns the value of VirtualBytes.
+func (s *SandboxAgentProcessUsage) GetVirtualBytes() int64 {
+	return s.VirtualBytes
+}
+
+// SetCmdline sets the value of Cmdline.
+func (s *SandboxAgentProcessUsage) SetCmdline(val OptString) {
+	s.Cmdline = val
+}
+
+// SetCommand sets the value of Command.
+func (s *SandboxAgentProcessUsage) SetCommand(val string) {
+	s.Command = val
+}
+
+// SetCpuUsec sets the value of CpuUsec.
+func (s *SandboxAgentProcessUsage) SetCpuUsec(val int64) {
+	s.CpuUsec = val
+}
+
+// SetPid sets the value of Pid.
+func (s *SandboxAgentProcessUsage) SetPid(val int64) {
+	s.Pid = val
+}
+
+// SetResidentBytes sets the value of ResidentBytes.
+func (s *SandboxAgentProcessUsage) SetResidentBytes(val int64) {
+	s.ResidentBytes = val
+}
+
+// SetStartTicks sets the value of StartTicks.
+func (s *SandboxAgentProcessUsage) SetStartTicks(val int64) {
+	s.StartTicks = val
+}
+
+// SetVirtualBytes sets the value of VirtualBytes.
+func (s *SandboxAgentProcessUsage) SetVirtualBytes(val int64) {
+	s.VirtualBytes = val
+}
+
+// The sandbox's own resource consumption at one moment, as cumulative counters (ADR 0071).
+// Ref: #/components/schemas/SandboxAgentResourceUsage
+type SandboxAgentResourceUsage struct {
+	CPU    SandboxAgentCPUUsage    `json:"cpu"`
+	Memory SandboxAgentMemoryUsage `json:"memory"`
+	// When this sample was taken. Rates are computed against this, never against the reporting tick's
+	// wall clock, so poll skew inside a tick cannot distort one.
+	ObservedAt time.Time `json:"observedAt"`
+	// How many processes were running in the sandbox, counted over all of them rather than over the
+	// candidates below.
+	ProcessCount int64 `json:"processCount"`
+	// Candidate processes - the union of the busiest by cumulative CPU and the largest by resident size.
+	Processes []SandboxAgentProcessUsage `json:"processes"`
+	// Where the totals came from. cgroup is authoritative; proc means the sandbox's own cgroup was
+	// unreadable and a per-process rollup stood in, which sees no page cache and no kernel memory.
+	Source SandboxAgentResourceUsageSource `json:"source"`
+}
+
+// GetCPU returns the value of CPU.
+func (s *SandboxAgentResourceUsage) GetCPU() SandboxAgentCPUUsage {
+	return s.CPU
+}
+
+// GetMemory returns the value of Memory.
+func (s *SandboxAgentResourceUsage) GetMemory() SandboxAgentMemoryUsage {
+	return s.Memory
+}
+
+// GetObservedAt returns the value of ObservedAt.
+func (s *SandboxAgentResourceUsage) GetObservedAt() time.Time {
+	return s.ObservedAt
+}
+
+// GetProcessCount returns the value of ProcessCount.
+func (s *SandboxAgentResourceUsage) GetProcessCount() int64 {
+	return s.ProcessCount
+}
+
+// GetProcesses returns the value of Processes.
+func (s *SandboxAgentResourceUsage) GetProcesses() []SandboxAgentProcessUsage {
+	return s.Processes
+}
+
+// GetSource returns the value of Source.
+func (s *SandboxAgentResourceUsage) GetSource() SandboxAgentResourceUsageSource {
+	return s.Source
+}
+
+// SetCPU sets the value of CPU.
+func (s *SandboxAgentResourceUsage) SetCPU(val SandboxAgentCPUUsage) {
+	s.CPU = val
+}
+
+// SetMemory sets the value of Memory.
+func (s *SandboxAgentResourceUsage) SetMemory(val SandboxAgentMemoryUsage) {
+	s.Memory = val
+}
+
+// SetObservedAt sets the value of ObservedAt.
+func (s *SandboxAgentResourceUsage) SetObservedAt(val time.Time) {
+	s.ObservedAt = val
+}
+
+// SetProcessCount sets the value of ProcessCount.
+func (s *SandboxAgentResourceUsage) SetProcessCount(val int64) {
+	s.ProcessCount = val
+}
+
+// SetProcesses sets the value of Processes.
+func (s *SandboxAgentResourceUsage) SetProcesses(val []SandboxAgentProcessUsage) {
+	s.Processes = val
+}
+
+// SetSource sets the value of Source.
+func (s *SandboxAgentResourceUsage) SetSource(val SandboxAgentResourceUsageSource) {
+	s.Source = val
+}
+
+// Where the totals came from. cgroup is authoritative; proc means the sandbox's own cgroup was
+// unreadable and a per-process rollup stood in, which sees no page cache and no kernel memory.
+type SandboxAgentResourceUsageSource string
+
+const (
+	SandboxAgentResourceUsageSourceCgroup SandboxAgentResourceUsageSource = "cgroup"
+	SandboxAgentResourceUsageSourceProc   SandboxAgentResourceUsageSource = "proc"
+)
+
+// AllValues returns all SandboxAgentResourceUsageSource values.
+func (SandboxAgentResourceUsageSource) AllValues() []SandboxAgentResourceUsageSource {
+	return []SandboxAgentResourceUsageSource{
+		SandboxAgentResourceUsageSourceCgroup,
+		SandboxAgentResourceUsageSourceProc,
+	}
+}
+
+// MarshalText implements encoding.TextMarshaler.
+func (s SandboxAgentResourceUsageSource) MarshalText() ([]byte, error) {
+	switch s {
+	case SandboxAgentResourceUsageSourceCgroup:
+		return []byte(s), nil
+	case SandboxAgentResourceUsageSourceProc:
+		return []byte(s), nil
+	default:
+		return nil, errors.Errorf("invalid value: %q", s)
+	}
+}
+
+// UnmarshalText implements encoding.TextUnmarshaler.
+func (s *SandboxAgentResourceUsageSource) UnmarshalText(data []byte) error {
+	switch SandboxAgentResourceUsageSource(data) {
+	case SandboxAgentResourceUsageSourceCgroup:
+		*s = SandboxAgentResourceUsageSourceCgroup
+		return nil
+	case SandboxAgentResourceUsageSourceProc:
+		*s = SandboxAgentResourceUsageSourceProc
+		return nil
+	default:
+		return errors.Errorf("invalid value: %q", data)
+	}
+}
+
 // Ref: #/components/schemas/SandboxAgentSessionStatus
 type SandboxAgentSessionStatus struct {
 	// Number of clients currently attached to this terminal.
@@ -1346,6 +1807,9 @@ type SandboxAgentStatusResponse struct {
 	// watcher rather than computed per request, since classifying a port means connecting to it (ADR
 	// 0046); it can be up to one watcher interval stale.
 	Ports []SandboxAgentListeningPort `json:"ports"`
+	// This sandbox's CPU and memory consumption as cumulative counters (ADR 0071). Absent on a platform
+	// where neither the cgroup nor procfs could be read.
+	Resources OptSandboxAgentResourceUsage `json:"resources"`
 	// Terminal sessions only, live and ended alike - every terminal a record still exists for, typically
 	// just the primary. One-shot execs are not sessions and never appear.
 	Sessions []SandboxAgentSessionStatus   `json:"sessions"`
@@ -1360,6 +1824,11 @@ func (s *SandboxAgentStatusResponse) GetObservedAt() time.Time {
 // GetPorts returns the value of Ports.
 func (s *SandboxAgentStatusResponse) GetPorts() []SandboxAgentListeningPort {
 	return s.Ports
+}
+
+// GetResources returns the value of Resources.
+func (s *SandboxAgentStatusResponse) GetResources() OptSandboxAgentResourceUsage {
+	return s.Resources
 }
 
 // GetSessions returns the value of Sessions.
@@ -1380,6 +1849,11 @@ func (s *SandboxAgentStatusResponse) SetObservedAt(val time.Time) {
 // SetPorts sets the value of Ports.
 func (s *SandboxAgentStatusResponse) SetPorts(val []SandboxAgentListeningPort) {
 	s.Ports = val
+}
+
+// SetResources sets the value of Resources.
+func (s *SandboxAgentStatusResponse) SetResources(val OptSandboxAgentResourceUsage) {
+	s.Resources = val
 }
 
 // SetSessions sets the value of Sessions.

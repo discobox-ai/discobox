@@ -293,6 +293,10 @@ type RepairSandboxRes interface {
 	repairSandboxRes()
 }
 
+type ReportPoolResourcesRes interface {
+	reportPoolResourcesRes()
+}
+
 type ReportPoolSandboxStatesRes interface {
 	reportPoolSandboxStatesRes()
 }

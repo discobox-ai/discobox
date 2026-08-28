@@ -721,6 +721,15 @@ func (UnimplementedHandler) RepairSandbox(ctx context.Context, params RepairSand
 	return r, ht.ErrNotImplemented
 }
 
+// ReportPoolResources implements report-pool-resources operation.
+//
+// Report what this pool and each sandbox on it are consuming.
+//
+// POST /api/pools/{poolId}/resources
+func (UnimplementedHandler) ReportPoolResources(ctx context.Context, req *ReportPoolResourcesBody, params ReportPoolResourcesParams) (r ReportPoolResourcesRes, _ error) {
+	return r, ht.ErrNotImplemented
+}
+
 // ReportPoolSandboxStates implements report-pool-sandbox-states operation.
 //
 // Report observed sandbox states from the pool agent.

@@ -783,6 +783,10 @@ func (s *routerTestServices) MintSandboxAgentStatusTokens(context.Context, strin
 	return &services.MintSandboxAgentStatusTokensResponseBody{}, nil
 }
 
+func (s *routerTestServices) ReportPoolResources(context.Context, string, services.ReportPoolResourcesBody) error {
+	return nil
+}
+
 func (s *routerTestServices) ReportSandboxAgentStatus(context.Context, string, services.ReportSandboxAgentStatusBody) error {
 	return nil
 }

@@ -139,6 +139,36 @@ components:
                 - source
                 - data
             type: object
+        SandboxAgentCPUUsage:
+            additionalProperties: false
+            description: |
+                Cumulative CPU time charged to the sandbox. Never a rate: what "busy" means
+                is the difference between two samples over the time between them, and the
+                component holding two samples is the pool agent, which polls every sandbox
+                in the pool on one tick and so measures them all over the same window
+                (ADR 0071).
+            properties:
+                limitVcpus:
+                    description: The cgroup's own CPU quota in whole-CPU units, absent when unlimited. Sandbox containers are created with no CPU limit today, so this is normally absent.
+                    format: double
+                    type: number
+                systemUsec:
+                    description: CPU microseconds spent in kernel mode.
+                    format: int64
+                    type: integer
+                usageUsec:
+                    description: Total CPU microseconds charged to the sandbox's cgroup since it was created.
+                    format: int64
+                    type: integer
+                userUsec:
+                    description: CPU microseconds spent in user mode.
+                    format: int64
+                    type: integer
+            required:
+                - usageUsec
+                - userUsec
+                - systemUsec
+            type: object
         SandboxAgentGitSourceStatus:
             additionalProperties: false
             properties:
@@ -232,6 +262,124 @@ components:
                 - protocol
                 - firstSeenAt
             type: object
+        SandboxAgentMemoryUsage:
+            additionalProperties: false
+            description: |
+                Two different true answers about the same sandbox (ADR 0071). currentBytes is
+                what the host charges it - anonymous memory, page cache and kernel memory
+                together. virtualBytes and residentBytes are what its own processes hold,
+                summed, and so double-count every shared page: summed resident routinely
+                exceeds currentBytes, which is expected rather than a defect.
+            properties:
+                anonBytes:
+                    description: Anonymous memory charged to the cgroup.
+                    format: int64
+                    type: integer
+                currentBytes:
+                    description: Memory the sandbox's cgroup is charged for, including page cache and kernel memory. Falls back to summed resident size when the cgroup is unreadable.
+                    format: int64
+                    type: integer
+                fileBytes:
+                    description: Page cache charged to the cgroup. Reclaimable under pressure, unlike anonymous memory.
+                    format: int64
+                    type: integer
+                limitBytes:
+                    description: The cgroup's memory ceiling, absent when unlimited. Sandbox containers are created with no memory limit today, so this is normally absent.
+                    format: int64
+                    type: integer
+                peakBytes:
+                    description: High-water mark of currentBytes over the cgroup's life.
+                    format: int64
+                    type: integer
+                residentBytes:
+                    description: Sum of every process's VmRSS. Double-counts pages shared between processes.
+                    format: int64
+                    type: integer
+                virtualBytes:
+                    description: Sum of every process's VmSize. Address space reserved, not memory held; a process that maps a large file inflates this without consuming anything.
+                    format: int64
+                    type: integer
+            required:
+                - currentBytes
+                - virtualBytes
+                - residentBytes
+            type: object
+        SandboxAgentProcessUsage:
+            additionalProperties: false
+            description: |
+                One candidate process, with cumulative counters for the same reason the
+                sandbox totals carry them. This is a candidate list, not an answer: it is the
+                union of the busiest by cumulative CPU and the largest by resident size, and
+                whoever differences two samples ranks them by rate and keeps far fewer.
+            properties:
+                cmdline:
+                    description: Full argv, space-joined. Empty for a kernel thread.
+                    type: string
+                command:
+                    description: The process's own executable name, as the kernel reports it.
+                    type: string
+                cpuUsec:
+                    description: Cumulative CPU microseconds (user plus system) this process has used.
+                    format: int64
+                    type: integer
+                pid:
+                    description: Sandbox-local process ID.
+                    format: int64
+                    type: integer
+                residentBytes:
+                    description: This process's VmRSS.
+                    format: int64
+                    type: integer
+                startTicks:
+                    description: Process start time in kernel ticks since boot. Part of this process's identity rather than decoration - PIDs are reused, and differencing a recycled PID against its predecessor's counter would produce a nonsense spike.
+                    format: int64
+                    type: integer
+                virtualBytes:
+                    description: This process's VmSize.
+                    format: int64
+                    type: integer
+            required:
+                - pid
+                - command
+                - startTicks
+                - cpuUsec
+                - virtualBytes
+                - residentBytes
+            type: object
+        SandboxAgentResourceUsage:
+            additionalProperties: false
+            description: The sandbox's own resource consumption at one moment, as cumulative counters (ADR 0071).
+            properties:
+                cpu:
+                    $ref: '#/components/schemas/SandboxAgentCPUUsage'
+                memory:
+                    $ref: '#/components/schemas/SandboxAgentMemoryUsage'
+                observedAt:
+                    description: When this sample was taken. Rates are computed against this, never against the reporting tick's wall clock, so poll skew inside a tick cannot distort one.
+                    format: date-time
+                    type: string
+                processCount:
+                    description: How many processes were running in the sandbox, counted over all of them rather than over the candidates below.
+                    format: int64
+                    type: integer
+                processes:
+                    description: Candidate processes - the union of the busiest by cumulative CPU and the largest by resident size.
+                    items:
+                        $ref: '#/components/schemas/SandboxAgentProcessUsage'
+                    type: array
+                source:
+                    description: Where the totals came from. cgroup is authoritative; proc means the sandbox's own cgroup was unreadable and a per-process rollup stood in, which sees no page cache and no kernel memory.
+                    enum:
+                        - cgroup
+                        - proc
+                    type: string
+            required:
+                - observedAt
+                - source
+                - cpu
+                - memory
+                - processCount
+            type: object
         SandboxAgentSessionStatus:
             additionalProperties: false
             properties:
@@ -275,6 +423,9 @@ components:
                     items:
                         $ref: '#/components/schemas/SandboxAgentListeningPort'
                     type: array
+                resources:
+                    $ref: '#/components/schemas/SandboxAgentResourceUsage'
+                    description: This sandbox's CPU and memory consumption as cumulative counters (ADR 0071). Absent on a platform where neither the cgroup nor procfs could be read.
                 sessions:
                     description: Terminal sessions only, live and ended alike - every terminal a record still exists for, typically just the primary. One-shot execs are not sessions and never appear.
                     items:

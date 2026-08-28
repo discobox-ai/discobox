@@ -497,6 +497,12 @@ type Handler interface {
 	//
 	// POST /projects/{projectId}/sandboxes/{sandboxId}/repair
 	RepairSandbox(ctx context.Context, params RepairSandboxParams) (RepairSandboxRes, error)
+	// ReportPoolResources implements report-pool-resources operation.
+	//
+	// Report what this pool and each sandbox on it are consuming.
+	//
+	// POST /api/pools/{poolId}/resources
+	ReportPoolResources(ctx context.Context, req *ReportPoolResourcesBody, params ReportPoolResourcesParams) (ReportPoolResourcesRes, error)
 	// ReportPoolSandboxStates implements report-pool-sandbox-states operation.
 	//
 	// Report observed sandbox states from the pool agent.

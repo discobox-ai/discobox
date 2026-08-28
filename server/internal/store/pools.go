@@ -297,6 +297,34 @@ func (s *Store) RecordPoolProvisionProgress(ctx context.Context, poolID string, 
 		}).Error
 }
 
+// RecordPoolResources stores what a pool reported it is consuming (ADR 0071).
+//
+// A narrow two-column update rather than a Save, for the same reason as the
+// progress writers above: this is telemetry arriving on its own schedule
+// against a row the pool's reconcile also writes, and every other column on it
+// belongs to somebody else. It publishes no project event either — a routine
+// report on every pool every thirty seconds is not something an event stream
+// should fan out.
+func (s *Store) RecordPoolResources(ctx context.Context, poolID string, resources json.RawMessage, reportedAt time.Time) error {
+	write, err := s.getWrite(ctx)
+	if err != nil {
+		return err
+	}
+	result := write.WithContext(ctx).Model(&model.Pool{}).
+		Where("id = ?", poolID).
+		Updates(map[string]any{
+			"resources":             resources,
+			"resources_reported_at": reportedAt.UTC(),
+		})
+	if result.Error != nil {
+		return result.Error
+	}
+	if result.RowsAffected == 0 {
+		return ErrNotFound
+	}
+	return nil
+}
+
 // RecordPoolImageStage stores what image staging is doing on a pool.
 //
 // A narrow update of three columns rather than a Save: this is written as often

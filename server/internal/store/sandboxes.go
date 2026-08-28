@@ -285,6 +285,12 @@ var observedSandboxColumns = []string{
 	// percentage over a newer one.
 	"provision_progress",
 	"provision_progress_at",
+	// Resource accounting is observed on its own channel by the same agent and
+	// written only by its report path (ADR 0071), so it belongs to the same
+	// rule: a slow load-modify-save elsewhere must not replay a stale CPU rate
+	// over a newer one.
+	"resources",
+	"resources_observed_at",
 }
 
 func (s *Store) UpdateSandbox(ctx context.Context, sandbox *model.Sandbox, options ...SandboxGetOption) error {
@@ -352,6 +358,41 @@ func (s *Store) UpdateSandboxAgentStatus(ctx context.Context, projectID, sandbox
 	result := write.WithContext(ctx).Model(&model.Sandbox{}).
 		Where("project_id = ? AND id = ?", projectID, sandboxID).
 		UpdateColumns(columns)
+	if result.Error != nil {
+		return result.Error
+	}
+	if result.RowsAffected == 0 {
+		return ErrNotFound
+	}
+	return nil
+}
+
+// UpdateSandboxResources writes only the two resource columns, pushed
+// periodically by the hosting pool agent (ADR 0071).
+//
+// Like UpdateSandboxAgentStatus above it deliberately bypasses
+// UpdateSandbox/WithGeneration: this is telemetry, not part of the
+// desired/observed generation contract, so gating it on generation would make
+// a routine report fail against unrelated concurrent reconciliation, and a
+// whole-row Save from a stale struct would risk clobbering a column that
+// reconciliation is writing at the same moment.
+//
+// It deliberately does not touch last_active_at. Resource consumption is not
+// evidence that a person touched the sandbox — a build or a runaway test loop
+// burns CPU with nobody watching — and letting it move that column would keep
+// an abandoned sandbox looking active for as long as something was spinning
+// inside it.
+func (s *Store) UpdateSandboxResources(ctx context.Context, projectID, sandboxID string, resources json.RawMessage, observedAt time.Time) error {
+	write, err := s.getWrite(ctx)
+	if err != nil {
+		return err
+	}
+	result := write.WithContext(ctx).Model(&model.Sandbox{}).
+		Where("project_id = ? AND id = ?", projectID, sandboxID).
+		UpdateColumns(map[string]any{
+			"resources":             resources,
+			"resources_observed_at": observedAt.UTC(),
+		})
 	if result.Error != nil {
 		return result.Error
 	}

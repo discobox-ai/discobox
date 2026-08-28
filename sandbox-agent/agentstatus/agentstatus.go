@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"github.com/discobox-ai/discobox/sandbox-agent/ports"
+	"github.com/discobox-ai/discobox/sandbox-agent/resources"
 )
 
 // GitSourceStatus is the observed git state of one mounted source.
@@ -74,6 +75,12 @@ type Response struct {
 	// Ports are the TCP ports the sandbox user's own processes are listening
 	// on, each classified by what it speaks, so a client can offer a forward
 	// onto one without being told its number.
-	Ports      []ports.Port `json:"ports"`
-	ObservedAt time.Time    `json:"observedAt"`
+	Ports []ports.Port `json:"ports"`
+	// Resources is this sandbox's own CPU and memory consumption, as
+	// cumulative counters rather than rates (ADR 0071). Turning them into
+	// "how busy" is the pool agent's job: it polls every sandbox in the pool
+	// on one tick, so it can difference them all over the same window and the
+	// resulting ranking compares like with like.
+	Resources  *resources.Usage `json:"resources,omitempty"`
+	ObservedAt time.Time        `json:"observedAt"`
 }

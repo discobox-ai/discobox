@@ -2,6 +2,6 @@
 
 package poolagent
 
-func availableStorageBytes(string) int64 {
-	return 0
+func filesystemUsage(string) (FilesystemUsage, bool) {
+	return FilesystemUsage{}, false
 }

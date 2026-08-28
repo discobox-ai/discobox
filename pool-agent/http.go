@@ -20,6 +20,7 @@ const (
 	defaultStatesPath                   = "/api/pools/{poolId}/sandbox-states"
 	defaultSandboxAgentStatusTokensPath = "/api/pools/{poolId}/sandbox-agent-status-tokens" //nolint:gosec // Route path, not a credential value.
 	defaultSandboxAgentStatusPath       = "/api/pools/{poolId}/sandbox-agent-status"
+	defaultPoolResourcesPath            = "/api/pools/{poolId}/resources"
 )
 
 // HTTPClient registers pools through the control plane HTTP API.
@@ -31,6 +32,7 @@ type HTTPClient struct {
 	statesPath                   string
 	sandboxAgentStatusTokensPath string
 	sandboxAgentStatusPath       string
+	poolResourcesPath            string
 }
 
 type HTTPClientOption func(*HTTPClient)
@@ -47,6 +49,7 @@ func NewHTTPClient(baseURL string, opts ...HTTPClientOption) *HTTPClient {
 		statesPath:                   defaultStatesPath,
 		sandboxAgentStatusTokensPath: defaultSandboxAgentStatusTokensPath,
 		sandboxAgentStatusPath:       defaultSandboxAgentStatusPath,
+		poolResourcesPath:            defaultPoolResourcesPath,
 	}
 	for _, opt := range opts {
 		if opt != nil {
@@ -282,6 +285,48 @@ func (c *HTTPClient) ReportSandboxAgentStatus(ctx context.Context, req SandboxAg
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
 		data, _ := io.ReadAll(io.LimitReader(resp.Body, 4096))
 		return fmt.Errorf("report sandbox-agent status failed: status %d: %s", resp.StatusCode, strings.TrimSpace(string(data)))
+	}
+	return nil
+}
+
+// ReportPoolResources pushes this report's pool-wide and per-sandbox resource
+// accounting to the control plane.
+func (c *HTTPClient) ReportPoolResources(ctx context.Context, req PoolResourceReportRequest) error {
+	baseURL := strings.TrimRight(firstNonEmpty(req.ControlPlaneURL, c.baseURL), "/")
+	if baseURL == "" {
+		return fmt.Errorf("control plane URL is required")
+	}
+	poolID := strings.TrimSpace(req.PoolID)
+	if poolID == "" {
+		return fmt.Errorf("pool ID is required")
+	}
+	projectID := strings.TrimSpace(req.ProjectID)
+	if projectID == "" {
+		return fmt.Errorf("project ID is required")
+	}
+	token, err := poolauth.CreateToken(req.PrivateKey, poolauth.Claims{ProjectID: projectID, PoolID: poolID})
+	if err != nil {
+		return fmt.Errorf("create pool assertion: %w", err)
+	}
+	body, err := json.Marshal(req)
+	if err != nil {
+		return err
+	}
+	path := strings.ReplaceAll(c.poolResourcesPath, "{poolId}", url.PathEscape(poolID))
+	httpReq, err := http.NewRequestWithContext(ctx, http.MethodPost, baseURL+path, bytes.NewReader(body))
+	if err != nil {
+		return err
+	}
+	httpReq.Header.Set("Content-Type", "application/json")
+	httpReq.Header.Set("Authorization", "Bearer "+token)
+	resp, err := c.client.Do(httpReq)
+	if err != nil {
+		return err
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		data, _ := io.ReadAll(io.LimitReader(resp.Body, 4096))
+		return fmt.Errorf("report pool resources failed: status %d: %s", resp.StatusCode, strings.TrimSpace(string(data)))
 	}
 	return nil
 }

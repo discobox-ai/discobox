@@ -211,6 +211,7 @@ func newRouterAndManager(cfg Config) (agentRuntime, error) {
 		services:          serviceManager,
 		store:             localStore,
 		resourceCollector: cfg.ResourceCollector,
+		resourceSampler:   resources.NewSampler(),
 		resourceInterval:  cfg.Resources.SampleInterval,
 		resourceRetention: cfg.Resources.RetentionCount,
 		sources:           cfg.Sources,

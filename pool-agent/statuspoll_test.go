@@ -1,8 +1,10 @@
 package poolagent
 
 import (
+	"bytes"
 	"context"
 	"crypto/ed25519"
+	"encoding/json"
 	"fmt"
 	"log/slog"
 	"net/http"
@@ -12,6 +14,7 @@ import (
 	"testing"
 	"time"
 
+	apimodel "github.com/discobox-ai/discobox/api/model"
 	workerapimodel "github.com/discobox-ai/discobox/pool-agent/api/model"
 	"github.com/discobox-ai/discobox/pool-agent/sandboxruntime"
 )
@@ -211,5 +214,74 @@ func TestSandboxAgentStatusPollerRefreshesExpiringToken(t *testing.T) {
 	client.mu.Unlock()
 	if mints != 1 {
 		t.Fatalf("mint calls = %d, want 1 (near-expiry token should be refreshed)", mints)
+	}
+}
+
+// The counters this agent differences are decoded out of a payload it otherwise
+// relays untouched. This pins the one direction that is not covered by the
+// relay itself: sandbox-agent's own status JSON must decode into the counters
+// the resource reporter reads, and the relayed bytes must survive unchanged.
+func TestPollDecodedStatusCarriesResourceCountersAndRelaysVerbatim(t *testing.T) {
+	payload := []byte(`{
+		"sources": [],
+		"sessions": [],
+		"ports": [],
+		"observedAt": "2026-08-27T12:00:00Z",
+		"resources": {
+			"observedAt": "2026-08-27T11:59:59Z",
+			"source": "cgroup",
+			"cpu": {"usageUsec": 8204113000, "userUsec": 6000000000, "systemUsec": 2204113000},
+			"memory": {"currentBytes": 6442450944, "virtualBytes": 12884901888, "residentBytes": 5368709120},
+			"processCount": 42,
+			"processes": [
+				{"pid": 100, "command": "node", "cmdline": "node vitest",
+				 "startTicks": 5512, "cpuUsec": 3400000, "virtualBytes": 8589934592, "residentBytes": 4294967296}
+			]
+		}
+	}`)
+
+	var decoded struct {
+		ObservedAt time.Time                           `json:"observedAt"`
+		Resources  *apimodel.SandboxAgentResourceUsage `json:"resources"`
+	}
+	if err := json.Unmarshal(payload, &decoded); err != nil {
+		t.Fatalf("decode sandbox-agent status: %v", err)
+	}
+	if decoded.Resources == nil {
+		t.Fatal("resources did not decode")
+	}
+	if decoded.Resources.CPU.UsageUsec != 8_204_113_000 {
+		t.Errorf("usageUsec = %d", decoded.Resources.CPU.UsageUsec)
+	}
+	if decoded.Resources.Memory.VirtualBytes != 12_884_901_888 || decoded.Resources.Memory.ResidentBytes != 5_368_709_120 {
+		t.Errorf("memory = %+v", decoded.Resources.Memory)
+	}
+	if len(decoded.Resources.Processes) != 1 || decoded.Resources.Processes[0].StartTicks != 5512 {
+		t.Errorf("processes = %+v", decoded.Resources.Processes)
+	}
+
+	// The entry the poller builds relays the payload byte for byte; only
+	// observedAt and resources are read out of it.
+	entry := SandboxAgentStatusEntry{
+		SandboxID:  "sbx_a",
+		Status:     payload,
+		ObservedAt: decoded.ObservedAt,
+		Resources:  decoded.Resources,
+	}
+	relayed, err := json.Marshal(entry)
+	if err != nil {
+		t.Fatalf("marshal entry: %v", err)
+	}
+	// Compacted, because encoding/json compacts a json.RawMessage on the way
+	// out — but never re-serialized from a parsed structure, so no field the
+	// pool agent does not know about can be dropped or reordered.
+	if !bytes.Contains(relayed, []byte(`"processCount":42`)) {
+		t.Error("the relayed status lost a field the pool agent does not model")
+	}
+	if !bytes.Contains(relayed, []byte(`"cmdline":"node vitest"`)) {
+		t.Error("the relayed status lost nested content")
+	}
+	if bytes.Contains(relayed, []byte(`"Resources"`)) {
+		t.Error("the decoded counters leaked onto the status channel; they belong to the resource report")
 	}
 }

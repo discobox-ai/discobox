@@ -113,6 +113,9 @@ var poolRuntimeActions = map[string]bool{
 	"resolve-sandbox-secret":      false,
 	"sandbox-agent-status-tokens": false,
 	"sandbox-agent-status":        false,
+	// The pool's resource report (ADR 0071). It addresses the pool itself, so
+	// it takes no trailing ID.
+	"resources": false,
 	// The agent credentials broker (ADR 0031).
 	"sandbox-credentials":         false,
 	"sandbox-credential-requests": true, // .../{requestId} polls one request

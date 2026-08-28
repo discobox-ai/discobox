@@ -4,10 +4,13 @@ package poolagent
 
 import "syscall"
 
-func availableStorageBytes(path string) int64 {
+func filesystemUsage(path string) (FilesystemUsage, bool) {
 	var stat syscall.Statfs_t
 	if err := syscall.Statfs(path, &stat); err != nil {
-		return 0
+		return FilesystemUsage{}, false
 	}
-	return int64(stat.Bavail) * int64(stat.Bsize)
+	if stat.Bsize <= 0 {
+		return FilesystemUsage{}, false
+	}
+	return filesystemUsageFromBlocks(uint64(stat.Bsize), uint64(stat.Blocks), uint64(stat.Bfree), uint64(stat.Bavail)), true
 }

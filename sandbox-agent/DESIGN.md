@@ -39,6 +39,30 @@ runtime operations.
 | `image/nix-seed` | Puts a nix store back at `/nix`, on first use (ADR 0075). The image installs nix and then moves the whole store to `/usr/local/lib/discobox/nix`, leaving `/nix` empty so the pool-shared cache volume can bind over it without hiding image content — `image.json` declares `/nix` as `cache`, and a cache path is always a plain bind, so a populated `/nix` would simply vanish behind the volume. Run as a oneshot unit that `nix-daemon.service` requires; nix-daemon is socket-activated, so a sandbox that never touches nix never copies a byte. Socket activation needs a `nix-daemon.socket.d` drop-in to survive that empty `/nix`: both vendored units guard on `ConditionPathIsReadWrite=/nix/var/nix/daemon-socket`, so with the store moved aside the socket is skipped at boot and never created — the client's symptom is `cannot connect to socket at '/nix/var/nix/daemon-socket/socket'`, not a failed unit. The drop-in resets the condition; systemd creates the socket's parent directories itself, so binding on an empty `/nix` costs a mkdir and nothing more. Two scopes with separate guards: store and `db` are copied once per pool under a `flock` on the cache filesystem, while `profiles` and `gcroots` are per-sandbox data volumes mounted inside `/nix` and seeded per sandbox — they are keyed by username, and every sandbox in a pool runs the same user, so sharing them would let one sandbox's `nix profile install` rewrite another's default profile. Both stamps are written last, so an interrupted copy is redone rather than trusted. In-sandbox `nix-collect-garbage` is unsupported: `temproots` are named by pid and each sandbox has its own PID namespace, and per-sandbox gcroots hide each other's live roots. |
 | `image/nix-shim` | Installed as `nix`, `nix-shell`, `nix-build`, `nix-env`, `nix-store` and `devenv` on `/usr/local/bin`, it starts `discobox-nix-seed.service` and then execs the real binary. Socket activation alone cannot trigger the seed: the client binaries live in the store too, so before the first seed there is nothing to run and nothing ever reaches the daemon socket. It disarms itself — PATH puts the store's own bin directories ahead of `/usr/local/bin`, so the shim is reachable only while those are empty. Same injection point `dockercache` uses, for the same reason. |
 
+## Resource Reporting
+
+The status endpoint reports this sandbox's own CPU and memory as **cumulative
+counters, never rates** (ADR 0071). `resources/usage.go` reads cgroup v2 at
+`/sys/fs/cgroup` — a private cgroup namespace makes that this container's own
+cgroup presented as the root — and falls back to a per-process rollup over
+`/proc` when it cannot, recording which in `source`.
+
+Turning counters into "how busy" belongs to the pool agent, which polls every
+sandbox in its pool on one tick and can therefore difference all of them over
+the same window. Computing a rate here would give each sandbox its own slightly
+different window and make the pool's ranking incomparable. It also keeps this
+endpoint genuinely computed-fresh, with no sampling state of its own.
+
+Memory is reported twice because both numbers are true and neither substitutes
+for the other: `currentBytes` is what the host charges the cgroup (including
+page cache and kernel memory), while `virtualBytes`/`residentBytes` are what the
+processes think they hold and double-count every shared page. Summed resident
+routinely exceeds `currentBytes`.
+
+Processes are offered as a **candidate list** — the union of the top by
+cumulative CPU and the top by RSS — each carrying `startTicks` alongside its
+PID, because PIDs are reused and the pool agent differences per process.
+
 ## Boundary Rules
 
 - Implement the generated in-sandbox terminal and exec API subset from `api/sandboxgen`;

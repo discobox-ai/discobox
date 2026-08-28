@@ -188,6 +188,95 @@ func (s *Service) ReportSandboxAgentStatus(ctx context.Context, poolID string, i
 	return nil
 }
 
+// ReportPoolResources records what a pool and its sandboxes are consuming
+// (ADR 0071).
+//
+// The pool-wide half — the pool's own totals and its disk — lands on the pool
+// row. Each sandbox's half lands on that sandbox's row, so a client looking at
+// one sandbox does not have to fetch its pool to find out what it is using.
+//
+// Entries naming a sandbox this pool does not host are skipped rather than
+// failing the whole report, for the same reason the status batch skips them: a
+// pool cannot write onto a sandbox it does not own, but one stale entry must
+// not discard every other sandbox's accounting for this tick.
+func (s *Service) ReportPoolResources(ctx context.Context, poolID string, input services.ReportPoolResourcesBody) error {
+	poolID = strings.TrimSpace(poolID)
+	if poolID == "" {
+		return apperrors.NewStatusError(http.StatusBadRequest, "poolId is required")
+	}
+	principal, ok := auth.PrincipalFromContext(ctx)
+	if !ok || principal.Type != auth.PrincipalTypePool || principal.PoolID != poolID {
+		return apperrors.NewStatusError(http.StatusForbidden, "pool agent is not authorized to report pool resources")
+	}
+	pool, err := s.store.GetPoolByID(ctx, poolID)
+	if err != nil {
+		return mapAPIError(err, "pool not found")
+	}
+	reportedAt := input.Report.ReportedAt
+	if reportedAt.IsZero() {
+		reportedAt = time.Now().UTC()
+	}
+
+	// The pool's own record carries the report without the per-sandbox array,
+	// which is on the sandboxes themselves. Storing it in both places would
+	// duplicate the largest part of the payload and leave two copies to
+	// disagree the moment one write succeeded and the other did not.
+	poolResources := encodePoolResourceReport(reportedAt, input)
+	if err := s.store.RecordPoolResources(ctx, poolID, poolResources, reportedAt); err != nil {
+		return mapAPIError(err, "pool not found")
+	}
+
+	for _, entry := range input.Sandboxes {
+		sandboxID := strings.TrimSpace(entry.SandboxId)
+		if sandboxID == "" {
+			continue
+		}
+		sandboxModel, err := s.store.GetSandbox(ctx, pool.ProjectID, sandboxID)
+		if err != nil || strings.TrimSpace(sandboxModel.PoolID) != poolID {
+			continue
+		}
+		// Encoded through the generated encoder rather than encoding/json:
+		// an ogen optional field writes nothing at all when it is unset, which
+		// encoding/json rejects as truncated output. The entry is stored as the
+		// contract defines it, so a reader decodes it with the same schema the
+		// agent sent.
+		var encoder jx.Encoder
+		entry.Encode(&encoder)
+		resources := json.RawMessage(encoder.Bytes())
+		// A sandbox that reported no counters still reported its disk, and its
+		// entry has no observation time of its own; the report's own time is
+		// what makes it possible to tell fresh accounting from stale.
+		observedAt := entry.ObservedAt.Or(reportedAt)
+		if observedAt.IsZero() {
+			observedAt = reportedAt
+		}
+		if err := s.store.UpdateSandboxResources(ctx, pool.ProjectID, sandboxID, resources, observedAt); err != nil && !errors.Is(err, store.ErrNotFound) {
+			return err
+		}
+	}
+	return nil
+}
+
+// encodePoolResourceReport is the pool's half of a resource report as it is
+// stored: the report object exactly as the agent sent it. Per-sandbox figures
+// are not in it — each rides its own sandbox row, so the figure lives in one
+// place and two copies cannot disagree.
+//
+// Nothing is copied field by field. The agent sends this half as one object and
+// it is stored as one object, so the stored shape cannot drift from the
+// reported one as either evolves.
+//
+// Encoded through the generated encoder rather than encoding/json: an ogen
+// optional field writes nothing at all when unset, which encoding/json rejects
+// as truncated output.
+func encodePoolResourceReport(reportedAt time.Time, input services.ReportPoolResourcesBody) json.RawMessage {
+	report := input.Report
+	report.ReportedAt = reportedAt
+	var encoder jx.Encoder
+	report.Encode(&encoder)
+	return json.RawMessage(encoder.Bytes())
+}
+
 // reportedLastAccess is the newest client access the status payload carries:
 // the max of the sessions' lastAccessedAt, taken as observedAt when any
 // session has a client attached at observation. This is what makes the

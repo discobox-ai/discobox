@@ -259,6 +259,12 @@ func SandboxToAPI(sandbox *model.Sandbox, fallback *model.HarnessConfig) (server
 	if sandbox.AgentStatusObservedAt != nil {
 		runtime["agentStatusObservedAt"] = *sandbox.AgentStatusObservedAt
 	}
+	if len(sandbox.Resources) > 0 {
+		runtime["resources"] = sandbox.Resources
+	}
+	if sandbox.ResourcesObservedAt != nil {
+		runtime["resourcesObservedAt"] = *sandbox.ResourcesObservedAt
+	}
 	if len(sandbox.ProvisionProgress) > 0 {
 		runtime["provisionProgress"] = sandbox.ProvisionProgress
 	}

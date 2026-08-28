@@ -30,6 +30,7 @@ type handler struct {
 	services          *services.Manager
 	store             terminalStore
 	resourceCollector resources.Collector
+	resourceSampler   resources.Sampler
 	resourceInterval  time.Duration
 	resourceRetention int
 	sources           []sandboxconfig.Source
@@ -473,6 +474,7 @@ func (h *handler) GetSandboxAgentStatus(ctx context.Context, _ sandboxapi.GetSan
 		Sources:    make([]sandboxapi.SandboxAgentGitSourceStatus, 0, len(sources)),
 		Sessions:   make([]sandboxapi.SandboxAgentSessionStatus, 0, len(sessions)),
 		Ports:      make([]sandboxapi.SandboxAgentListeningPort, 0, len(listening)),
+		Resources:  sandboxAgentResourceUsage(h.resourceSampler.Sample()),
 	}
 	for _, source := range sources {
 		response.Sources = append(response.Sources, sandboxAgentGitSourceStatus(source))
@@ -493,6 +495,65 @@ func sandboxAgentListeningPort(in ports.Port) sandboxapi.SandboxAgentListeningPo
 		Protocol:    sandboxapi.SandboxAgentListeningPortProtocol(in.Protocol),
 		FirstSeenAt: in.FirstSeenAt,
 	}
+}
+
+// sandboxAgentResourceUsage carries the sample onto the wire as it was read.
+// Nothing is derived here: every CPU figure is a cumulative counter, and the
+// rate is the pool agent's to compute across its tick (ADR 0071 §§1-2).
+//
+// A sample that found no processes at all means neither procfs nor the cgroup
+// could be read, which is a platform without this accounting rather than an
+// idle sandbox; it reports nothing instead of a convincing set of zeroes.
+func sandboxAgentResourceUsage(in resources.Usage) sandboxapi.OptSandboxAgentResourceUsage {
+	if in.ProcessCount == 0 {
+		return sandboxapi.OptSandboxAgentResourceUsage{}
+	}
+	out := sandboxapi.SandboxAgentResourceUsage{
+		ObservedAt:   in.ObservedAt,
+		Source:       sandboxapi.SandboxAgentResourceUsageSource(in.Source),
+		ProcessCount: int64(in.ProcessCount),
+		CPU: sandboxapi.SandboxAgentCPUUsage{
+			UsageUsec:  in.CPU.UsageUsec,
+			UserUsec:   in.CPU.UserUsec,
+			SystemUsec: in.CPU.SystemUsec,
+		},
+		Memory: sandboxapi.SandboxAgentMemoryUsage{
+			CurrentBytes:  in.Memory.CurrentBytes,
+			VirtualBytes:  in.Memory.VirtualBytes,
+			ResidentBytes: in.Memory.ResidentBytes,
+		},
+		Processes: make([]sandboxapi.SandboxAgentProcessUsage, 0, len(in.Processes)),
+	}
+	if in.CPU.LimitVCPUs > 0 {
+		out.CPU.LimitVcpus = sandboxapi.NewOptFloat64(in.CPU.LimitVCPUs)
+	}
+	if in.Memory.PeakBytes > 0 {
+		out.Memory.PeakBytes = sandboxapi.NewOptInt64(in.Memory.PeakBytes)
+	}
+	if in.Memory.AnonBytes > 0 {
+		out.Memory.AnonBytes = sandboxapi.NewOptInt64(in.Memory.AnonBytes)
+	}
+	if in.Memory.FileBytes > 0 {
+		out.Memory.FileBytes = sandboxapi.NewOptInt64(in.Memory.FileBytes)
+	}
+	if in.Memory.LimitBytes > 0 {
+		out.Memory.LimitBytes = sandboxapi.NewOptInt64(in.Memory.LimitBytes)
+	}
+	for _, proc := range in.Processes {
+		entry := sandboxapi.SandboxAgentProcessUsage{
+			Pid:           int64(proc.PID),
+			Command:       proc.Command,
+			StartTicks:    int64(proc.StartTicks),
+			CpuUsec:       proc.CPUUsec,
+			VirtualBytes:  proc.VirtualBytes,
+			ResidentBytes: proc.ResidentBytes,
+		}
+		if proc.Cmdline != "" {
+			entry.Cmdline = sandboxapi.NewOptString(proc.Cmdline)
+		}
+		out.Processes = append(out.Processes, entry)
+	}
+	return sandboxapi.NewOptSandboxAgentResourceUsage(out)
 }
 
 func sandboxAgentGitSourceStatus(in agentstatus.GitSourceStatus) sandboxapi.SandboxAgentGitSourceStatus {

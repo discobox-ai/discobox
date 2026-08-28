@@ -419,6 +419,43 @@ per-boot sequence, so a delayed delta cannot overwrite a newer complete sync.
 
 See ADR 0017 §§9–10.
 
+## Resource Accounting
+
+Pool agents report what their pool and each sandbox on it consume, on their own
+channel (`/api/pools/{poolId}/resources`, ADR 0071). It is a third observation
+channel alongside sandbox states and sandbox-agent status, and like both it is
+telemetry: no generation, no desired state, no project event — a routine report
+on every pool every thirty seconds is not something an event stream should fan
+out to every subscriber.
+
+The report splits across two rows rather than being stored whole. The pool's own
+totals and its disk land on `pools.resources`; each sandbox's entry lands on that
+sandbox's `sandboxes.resources`, so a client reading one sandbox does not have to
+fetch its pool to find out what it is using. Storing the per-sandbox array in
+both places would duplicate the bulk of the payload and leave two copies free to
+disagree the moment one write succeeded and the other did not.
+
+`resources` and `resources_observed_at` are in `observedSandboxColumns` for the
+same reason the state columns are: they are written only by the report path, and
+a slow load-modify-save elsewhere must not replay a stale CPU rate over a newer
+one.
+
+Rates in the report are comparable within one pool and only within one pool: one
+agent differences all of its own sandboxes over one tick, while another pool's
+agent ticks on its own schedule.
+
+`pools.resources` measures the pool's own *services* — the agent, BuildKit, the
+registry, the proxy — from the pool container's cgroup. It does not include the
+sandboxes, which run under a nested runtime with their own cgroups, so a pool's
+load is the services plus the per-sandbox figures rather than the services being
+a remainder of some larger total (ADR 0071 §6).
+
+Both blobs are stored as open objects and validated only where they are read.
+They are written by whatever agent version a pool happens to be running, and a
+strictly-typed column made one stale row fail every pool listing with a 500 —
+over telemetry nothing schedules on. A reader decodes into the documented shape
+and treats a decode failure as "not reported", which the next report heals.
+
 ## Package Map
 
 | Package/path | Ownership |

@@ -47,6 +47,85 @@ pressure details. It sets `ready`, `schedulable`, and `degraded` booleans for
 control-plane scheduling. Richer pressure/condition details can be sent as an
 opaque JSON blob for display.
 
+## Resource Accounting
+
+The agent answers "what is using this pool" on its own channel
+(`/api/pools/{poolId}/resources`, every 30s), because the question needs three
+things only this component holds together: the pool's own totals, every
+sandbox's counters, and the disk under all of them (ADR 0071).
+
+**Counters travel, rates are computed here.** Sandbox-agent reports
+`cpu.stat`'s cumulative `usage_usec` and never a rate. This agent polls every
+sandbox in the pool on one tick, so it differences all of them over the same
+window and the resulting vCPU-equivalents are comparable between sandboxes and
+additive across them — a column that sorts into "who is eating the pool" and
+sums to pool load. Rates each sandbox computed for itself would each cover a
+slightly different window, and a ranking built from those is not comparing like
+with like.
+
+The window is taken from each sample's own `observedAt`, never the tick's wall
+clock, so poll skew inside a tick cannot distort a rate. A missing previous
+sample reports *no* rate rather than zero: "not measured yet" and "idle" are
+different claims.
+
+**The status relay stays opaque.** Two fields are read out of the polled
+payload — `observedAt` and `resources` — and the payload itself is still
+forwarded as received, never re-serialized from a parsed structure, so a field
+this agent does not model still reaches the control plane. The computed figures
+travel in this agent's own report, never merged into the sandbox-agent's.
+
+**Both loops share one poll.** The resource reporter reads the counters the
+status poller already collected (`sandboxAgentStatusPoller.ResourceSamples`)
+rather than polling each sandbox a second time for the same two numbers.
+
+**Attribution reaches processes.** Each sandbox offers a candidate list — the
+union of the busiest by cumulative CPU and the largest by RSS — and this agent
+differences them per `(pid, startTicks)` and keeps the top few by *rate*. The
+start time is in the key because PIDs are reused; without it a recycled PID
+differences into a spike that never happened. Ranking by the cumulative counter
+would put a day-old language server above a test run that has just started
+eating the box.
+
+**Disk is two measurements on two schedules.** `statfs` on `/var/lib/discobox`
+is one syscall and rides every report — it is the figure that answers "is this
+pool about to fill up". Per-tree attribution is one pass over every inode the
+pool owns and runs on `storageScanner`'s own adaptive schedule; the report
+carries the last completed sweep with its `observedAt`, `durationMillis`,
+`intervalSeconds` and `nextScanAt`. Sizes are allocated blocks, not apparent
+size, so they are comparable with the filesystem's own used figure.
+
+The sweep interval is a **duty cycle**: after a sweep costing `d`, the next is
+due in `clamp(d / 0.02, 1min, 1h)`, so the agent spends about 2% of wall-clock
+time walking whatever the pool's size. That needs no per-pool tuning and, more
+importantly, it is what keeps the loop correct — a fixed schedule on a pool
+whose trees take longer to walk than the interval either overlaps sweeps or
+falls permanently behind. When the cap binds the budget is being blown anyway,
+and the agent says so in a warning.
+
+Sweeps are staggered by a hash of the pool ID, because one Docker daemon hosts
+every local pool (ADR 0003) and a host reboot would otherwise start them all in
+lockstep. A hash rather than a random jitter keeps each pool's schedule
+reproducible. A canceled sweep is discarded rather than reported partially:
+half a walk reports every unvisited tree as empty.
+
+Cache gets exactly one figure, at the pool. It is one shared tree keyed by the
+target path a harness declared rather than by which sandbox wrote it (ADR 0007,
+ADR 0050), so a per-sandbox cache size has no on-disk answer — and repeating the
+shared total per sandbox would leave the column summing to N times the truth.
+
+**Stopped sandboxes still count.** Unlike the status poll, the report covers
+every hosted sandbox rather than only the running ones: a stopped sandbox uses
+no CPU but still holds its disk.
+
+**Pool services are measured, not derived.** The pool container's own cgroup
+covers this agent, buildkitd, the registry, the proxy and the mediator — and
+*not* the sandboxes, which run under a nested container runtime whose cgroups
+are not children of it. So the pool's load is `services + Σ sandbox vcpus`, two
+disjoint measurements added. Deriving services by subtracting the sandboxes from
+a supposed pool total was the original design and produced a negative on a live
+pool, because the "total" was smaller than the sandboxes it was meant to contain
+(ADR 0071 §6).
+
 ## Sandbox State Channel
 
 The agent is the only component that can see whether a sandbox is running, so it

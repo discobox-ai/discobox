@@ -496,6 +496,526 @@ components:
             required:
                 - hooks
             type: object
+        PoolResourceReport:
+            additionalProperties: true
+            description: |
+                What a pool's own services are consuming, as of its last resource report
+                (ADR 0071): the pool agent, buildkitd, the registry and the proxy, from the
+                pool container's cgroup. The sandboxes are not in it - they run under a
+                nested runtime with its own cgroups - so the pool's total load is this plus
+                the sum of the per-sandbox figures.
+            properties:
+                reportedAt:
+                    format: date-time
+                    type: string
+                cpu:
+                    $ref: '#/components/schemas/PoolCPUUsage'
+                memory:
+                    $ref: '#/components/schemas/PoolMemoryUsage'
+                storage:
+                    $ref: '#/components/schemas/PoolStorageUsage'
+            required:
+                - reportedAt
+                - cpu
+                - memory
+                - storage
+            type: object
+        PoolCPUUsage:
+            additionalProperties: true
+            description: |
+                What the pool's own services cost: the pool agent, the shared BuildKit
+                builder, the pool registry and the proxy, measured from the pool container's
+                own cgroup.
+
+                This deliberately excludes the sandboxes. They run under a nested container
+                runtime whose cgroups are not children of the pool container's, so the pool
+                total is `vcpus` here PLUS the sum of the per-sandbox `vcpus` - an addition
+                of two disjoint measurements, never a subtraction (ADR 0071 §6).
+            properties:
+                usageUsec:
+                    description: Total CPU microseconds charged to the pool container's cgroup.
+                    format: int64
+                    type: integer
+                userUsec:
+                    format: int64
+                    type: integer
+                systemUsec:
+                    format: int64
+                    type: integer
+                vcpus:
+                    description: CPU burned per second of wall clock, in whole-CPU units - 1.0 is one core saturated. Absent when there was no previous sample to difference, which is the first report after the agent started. Absent is deliberately not zero, because "not measured yet" and "idle" are different claims.
+                    format: double
+                    type: number
+                windowSeconds:
+                    description: How far apart the two samples behind vcpus were. A missed report widens this rather than invalidating the rate.
+                    format: double
+                    type: number
+                capacityVcpus:
+                    description: How many CPUs the host has, so a rate has something to be read against.
+                    format: double
+                    type: number
+            required:
+                - usageUsec
+                - userUsec
+                - systemUsec
+            type: object
+        PoolMemoryUsage:
+            additionalProperties: true
+            description: What the pool's own services hold, from the pool container's own cgroup. Excludes the sandboxes, which are charged to their own cgroups outside this subtree.
+            properties:
+                currentBytes:
+                    format: int64
+                    type: integer
+                peakBytes:
+                    format: int64
+                    type: integer
+                limitBytes:
+                    description: The cgroup's memory ceiling, absent when unlimited.
+                    format: int64
+                    type: integer
+                availableBytes:
+                    description: What the host still has free, which is what the pool is actually bounded by when the cgroup carries no limit.
+                    format: int64
+                    type: integer
+            required:
+                - currentBytes
+            type: object
+        PoolFilesystemUsage:
+            additionalProperties: true
+            description: |
+                The filesystem behind /var/lib/discobox, as statfs describes it. This measures
+                the whole backing filesystem, which on most hosts holds more than Discobox:
+                usedBytes is the filesystem's, not this pool's, and what Discobox holds is the
+                walked totals elsewhere in the report. usedBytes plus freeBytes is less than
+                totalBytes on a filesystem with reserved blocks, which are neither.
+            properties:
+                totalBytes:
+                    format: int64
+                    type: integer
+                usedBytes:
+                    format: int64
+                    type: integer
+                freeBytes:
+                    description: What an unprivileged writer can still use.
+                    format: int64
+                    type: integer
+            required:
+                - totalBytes
+                - usedBytes
+                - freeBytes
+            type: object
+        SandboxStorageUsage:
+            additionalProperties: true
+            description: |
+                One sandbox's durable footprint, by the tree that holds it, walked fresh.
+                There is deliberately no cache figure: cache is one pool-shared tree keyed by
+                the target path a harness declared rather than by which sandbox wrote it
+                (ADR 0007, ADR 0050), so a per-sandbox cache size has no on-disk answer and
+                is reported once at the pool instead (ADR 0071 §5).
+            properties:
+                sandboxId:
+                    type: string
+                dataBytes:
+                    format: int64
+                    type: integer
+                configBytes:
+                    format: int64
+                    type: integer
+                sourcesBytes:
+                    format: int64
+                    type: integer
+                secretsBytes:
+                    format: int64
+                    type: integer
+                originsBytes:
+                    format: int64
+                    type: integer
+                totalBytes:
+                    description: The five trees above, summed. Counted as allocated blocks rather than apparent size, so it is comparable with the filesystem's own used figure.
+                    format: int64
+                    type: integer
+            required:
+                - sandboxId
+                - dataBytes
+                - configBytes
+                - sourcesBytes
+                - secretsBytes
+                - originsBytes
+                - totalBytes
+            type: object
+        PoolStorageWalk:
+            additionalProperties: true
+            description: |
+                One completed sweep of the pool's trees, with when it happened and when the
+                next is due. The sweep costs one pass over every inode the pool owns, so it
+                runs on its own adaptive schedule rather than on the reporting tick: the
+                agent spends a fixed fraction of wall-clock time walking, which makes an
+                expensive pool walked rarely and a cheap one often with nothing to tune per
+                pool (ADR 0071 §7).
+
+                These figures are therefore older than the rest of the report, and
+                deliberately so. observedAt says how old, and nextScanAt says how old they
+                are allowed to get.
+            properties:
+                observedAt:
+                    description: When this sweep finished. The walked figures describe the pool as of this moment, not as of the report that carries them.
+                    format: date-time
+                    type: string
+                durationMillis:
+                    description: What this sweep cost. It is also the input to the next interval, so a reader can see why a pool is being walked as often as it is.
+                    format: int64
+                    type: integer
+                intervalSeconds:
+                    description: How long the agent will wait before the next sweep, derived from durationMillis and the agent's walking duty cycle.
+                    format: double
+                    type: number
+                nextScanAt:
+                    description: When the next sweep is due. A figure still unchanged well past this is a sweep that failed or an agent that stopped.
+                    format: date-time
+                    type: string
+                cacheBytes:
+                    description: The pool's shared cache tree, counted once for the pool because that is exactly what it is - it is bind-mounted whole into every sandbox.
+                    format: int64
+                    type: integer
+                buildBytes:
+                    description: buildkitd's store and the pool registry's blobs, which no sandbox can reach and which no per-sandbox figure accounts for (ADR 0050).
+                    format: int64
+                    type: integer
+            required:
+                - observedAt
+                - durationMillis
+                - intervalSeconds
+                - nextScanAt
+                - cacheBytes
+                - buildBytes
+            type: object
+        PoolStorageUsage:
+            additionalProperties: true
+            description: |
+                What this pool holds on disk, at two deliberately different freshnesses.
+                filesystem is one statfs - taken on every report, and the figure that answers
+                whether the disk is about to fill. walk is the per-tree attribution, which
+                costs a pass over every inode and so runs on its own schedule. Reporting them
+                as one would make the cheap number as stale as the expensive one, or the
+                expensive one as frequent as the cheap one.
+            properties:
+                root:
+                    description: The container path every tree below is rooted at.
+                    type: string
+                filesystem:
+                    $ref: '#/components/schemas/PoolFilesystemUsage'
+                walk:
+                    $ref: '#/components/schemas/PoolStorageWalk'
+                    description: The last completed sweep. Absent until the first one finishes, which is not the same as a pool holding nothing - a pool whose first sweep is still running has no attribution yet, and zeroes would claim it is empty.
+            required:
+                - root
+                - filesystem
+            type: object
+        SandboxCPUConsumption:
+            additionalProperties: true
+            description: Both the cumulative counter and the rate - the counter so a consumer can difference across any two reports it kept, the rate so it does not have to.
+            properties:
+                usageUsec:
+                    format: int64
+                    type: integer
+                userUsec:
+                    format: int64
+                    type: integer
+                systemUsec:
+                    format: int64
+                    type: integer
+                vcpus:
+                    description: CPU burned per second of wall clock, in whole-CPU units. Additive across sandboxes and comparable between them, because every sandbox in the pool was differenced over the same tick by the one agent that polls all of them. Absent means not measured yet, never idle.
+                    format: double
+                    type: number
+                windowSeconds:
+                    format: double
+                    type: number
+                limitVcpus:
+                    description: The sandbox cgroup's own CPU quota, absent when unlimited. Sandbox containers are created with no CPU limit today, so this is normally absent and a sandbox really can starve its pool.
+                    format: double
+                    type: number
+            required:
+                - usageUsec
+                - userUsec
+                - systemUsec
+            type: object
+        SandboxMemoryConsumption:
+            additionalProperties: true
+            description: |
+                Two different true answers about the same sandbox (ADR 0071 §4). currentBytes
+                is what the host charges it, including page cache and kernel memory.
+                virtualBytes and residentBytes are what its own processes hold, summed, and so
+                double-count every shared page: summed resident routinely exceeds
+                currentBytes, which is expected rather than a defect.
+            properties:
+                currentBytes:
+                    format: int64
+                    type: integer
+                peakBytes:
+                    format: int64
+                    type: integer
+                anonBytes:
+                    format: int64
+                    type: integer
+                fileBytes:
+                    description: Page cache charged to the sandbox. Reclaimable under pressure, unlike anonymous memory.
+                    format: int64
+                    type: integer
+                limitBytes:
+                    format: int64
+                    type: integer
+                virtualBytes:
+                    format: int64
+                    type: integer
+                residentBytes:
+                    format: int64
+                    type: integer
+            required:
+                - currentBytes
+                - virtualBytes
+                - residentBytes
+            type: object
+        ProcessConsumption:
+            additionalProperties: true
+            description: |
+                One process inside a sandbox, ranked by what it is using now rather than by
+                what it has used since it started. Ranking by the cumulative counter would put
+                a language server that has been up for a day above a test run that started two
+                minutes ago, which is not what anyone means by "what is using all the CPU".
+            properties:
+                pid:
+                    format: int64
+                    type: integer
+                command:
+                    type: string
+                cmdline:
+                    type: string
+                cpuUsec:
+                    description: Cumulative CPU microseconds this process has used since it started.
+                    format: int64
+                    type: integer
+                vcpus:
+                    description: This process's own rate. Absent when it was not present in the previous sample, which includes every process in the first report and any process that has just started.
+                    format: double
+                    type: number
+                virtualBytes:
+                    format: int64
+                    type: integer
+                residentBytes:
+                    format: int64
+                    type: integer
+            required:
+                - pid
+                - command
+                - cpuUsec
+                - virtualBytes
+                - residentBytes
+            type: object
+        SandboxResourceConsumption:
+            additionalProperties: true
+            description: One sandbox's consumption, as the pool agent computed it from the counters that sandbox reported.
+            properties:
+                sandboxId:
+                    type: string
+                observedAt:
+                    description: When the sandbox took the sample behind these figures. Rates are computed against this rather than the reporting tick, so poll skew cannot distort one. Zero when the sandbox reported no counters at all, in which case only storage below is meaningful.
+                    format: date-time
+                    type: string
+                source:
+                    description: What the sandbox said its totals came from. cgroup is authoritative; proc means it could not read its own cgroup and a per-process rollup stood in, which sees no page cache.
+                    type: string
+                cpu:
+                    $ref: '#/components/schemas/SandboxCPUConsumption'
+                memory:
+                    $ref: '#/components/schemas/SandboxMemoryConsumption'
+                processCount:
+                    format: int64
+                    type: integer
+                processes:
+                    description: The busiest by rate and the largest by resident size, deduplicated.
+                    items:
+                        $ref: '#/components/schemas/ProcessConsumption'
+                    type: array
+                storage:
+                    $ref: '#/components/schemas/SandboxStorageUsage'
+                    description: This sandbox's disk footprint, present whenever its tree was walked. A stopped sandbox uses no CPU but still holds its disk, so it is reported with storage alone rather than dropped.
+            required:
+                - sandboxId
+            type: object
+        ReportPoolResourcesBody:
+            additionalProperties: false
+            description: |
+                One resource report: what this pool is using, and what each sandbox on it is
+                using, in one delivery (ADR 0071). Every rate was computed by the pool agent
+                from cumulative counters over one tick, which is what makes the per-sandbox
+                figures rankable - all of them were measured over the same window.
+            properties:
+                $schema:
+                    description: A URL to the JSON Schema for this object.
+                    format: uri
+                    readOnly: true
+                    type: string
+                report:
+                    $ref: '#/components/schemas/PoolResourceReport'
+                    description: The pool-wide half, stored verbatim on the pool. It is a field of this request rather than a set of fields copied out of it, so the stored shape and the reported shape cannot drift apart.
+                sandboxes:
+                    description: Every sandbox this pool hosts, running or not.
+                    items:
+                        $ref: '#/components/schemas/SandboxResourceConsumption'
+                    type: array
+            required:
+                - report
+                - sandboxes
+            type: object
+        SandboxAgentCPUUsage:
+            additionalProperties: false
+            description: |
+                Cumulative CPU time charged to the sandbox. Never a rate: what "busy" means
+                is the difference between two samples over the time between them, and the
+                component holding two samples is the pool agent, which polls every sandbox
+                in the pool on one tick and so measures them all over the same window
+                (ADR 0071).
+            properties:
+                usageUsec:
+                    description: Total CPU microseconds charged to the sandbox's cgroup since it was created.
+                    format: int64
+                    type: integer
+                userUsec:
+                    description: CPU microseconds spent in user mode.
+                    format: int64
+                    type: integer
+                systemUsec:
+                    description: CPU microseconds spent in kernel mode.
+                    format: int64
+                    type: integer
+                limitVcpus:
+                    description: The cgroup's own CPU quota in whole-CPU units, absent when unlimited. Sandbox containers are created with no CPU limit today, so this is normally absent.
+                    format: double
+                    type: number
+            required:
+                - usageUsec
+                - userUsec
+                - systemUsec
+            type: object
+        SandboxAgentMemoryUsage:
+            additionalProperties: false
+            description: |
+                Two different true answers about the same sandbox (ADR 0071). currentBytes is
+                what the host charges it - anonymous memory, page cache and kernel memory
+                together. virtualBytes and residentBytes are what its own processes hold,
+                summed, and so double-count every shared page: summed resident routinely
+                exceeds currentBytes, which is expected rather than a defect.
+            properties:
+                currentBytes:
+                    description: Memory the sandbox's cgroup is charged for, including page cache and kernel memory. Falls back to summed resident size when the cgroup is unreadable.
+                    format: int64
+                    type: integer
+                peakBytes:
+                    description: High-water mark of currentBytes over the cgroup's life.
+                    format: int64
+                    type: integer
+                anonBytes:
+                    description: Anonymous memory charged to the cgroup.
+                    format: int64
+                    type: integer
+                fileBytes:
+                    description: Page cache charged to the cgroup. Reclaimable under pressure, unlike anonymous memory.
+                    format: int64
+                    type: integer
+                limitBytes:
+                    description: The cgroup's memory ceiling, absent when unlimited. Sandbox containers are created with no memory limit today, so this is normally absent.
+                    format: int64
+                    type: integer
+                virtualBytes:
+                    description: Sum of every process's VmSize. Address space reserved, not memory held; a process that maps a large file inflates this without consuming anything.
+                    format: int64
+                    type: integer
+                residentBytes:
+                    description: Sum of every process's VmRSS. Double-counts pages shared between processes.
+                    format: int64
+                    type: integer
+            required:
+                - currentBytes
+                - virtualBytes
+                - residentBytes
+            type: object
+        SandboxAgentProcessUsage:
+            additionalProperties: false
+            description: |
+                One candidate process, with cumulative counters for the same reason the
+                sandbox totals carry them. This is a candidate list, not an answer: it is the
+                union of the busiest by cumulative CPU and the largest by resident size, and
+                whoever differences two samples ranks them by rate and keeps far fewer.
+            properties:
+                pid:
+                    description: Sandbox-local process ID.
+                    format: int64
+                    type: integer
+                command:
+                    description: The process's own executable name, as the kernel reports it.
+                    type: string
+                cmdline:
+                    description: Full argv, space-joined. Empty for a kernel thread.
+                    type: string
+                startTicks:
+                    description: Process start time in kernel ticks since boot. Part of this process's identity rather than decoration - PIDs are reused, and differencing a recycled PID against its predecessor's counter would produce a nonsense spike.
+                    format: int64
+                    type: integer
+                cpuUsec:
+                    description: Cumulative CPU microseconds (user plus system) this process has used.
+                    format: int64
+                    type: integer
+                virtualBytes:
+                    description: This process's VmSize.
+                    format: int64
+                    type: integer
+                residentBytes:
+                    description: This process's VmRSS.
+                    format: int64
+                    type: integer
+            required:
+                - pid
+                - command
+                - startTicks
+                - cpuUsec
+                - virtualBytes
+                - residentBytes
+            type: object
+        SandboxAgentResourceUsage:
+            additionalProperties: false
+            description: The sandbox's own resource consumption at one moment, as cumulative counters (ADR 0071).
+            properties:
+                observedAt:
+                    description: When this sample was taken. Rates are computed against this, never against the reporting tick's wall clock, so poll skew inside a tick cannot distort one.
+                    format: date-time
+                    type: string
+                source:
+                    description: Where the totals came from. cgroup is authoritative; proc means the sandbox's own cgroup was unreadable and a per-process rollup stood in, which sees no page cache and no kernel memory.
+                    enum:
+                        - cgroup
+                        - proc
+                    type: string
+                cpu:
+                    $ref: '#/components/schemas/SandboxAgentCPUUsage'
+                memory:
+                    $ref: '#/components/schemas/SandboxAgentMemoryUsage'
+                processCount:
+                    description: How many processes were running in the sandbox, counted over all of them rather than over the candidates below.
+                    format: int64
+                    type: integer
+                processes:
+                    description: Candidate processes - the union of the busiest by cumulative CPU and the largest by resident size.
+                    items:
+                        $ref: '#/components/schemas/SandboxAgentProcessUsage'
+                    type: array
+            required:
+                - observedAt
+                - source
+                - cpu
+                - memory
+                - processCount
+            type: object
         SandboxAgentListeningPort:
             additionalProperties: false
             properties:
@@ -638,6 +1158,9 @@ components:
                     items:
                         $ref: '#/components/schemas/SandboxAgentListeningPort'
                     type: array
+                resources:
+                    $ref: '#/components/schemas/SandboxAgentResourceUsage'
+                    description: This sandbox's CPU and memory consumption as cumulative counters (ADR 0071). Absent on a platform where neither the cgroup nor procfs could be read.
                 observedAt:
                     format: date-time
                     type: string
@@ -1384,6 +1907,25 @@ components:
                     type: integer
                 conditions:
                     description: Opaque agent-reported condition details for display
+                resources:
+                    additionalProperties: true
+                    description: |
+                        What this pool is consuming as of its last resource report (see
+                        PoolResourceReport for the shape). Telemetry, not a scheduling input -
+                        placement reads the available* fields above.
+
+                        Carried as an open object on purpose. It is written by whatever agent
+                        version a pool happens to be running, so a server that validated it
+                        strictly would fail every read of the pool during a rolling upgrade,
+                        for a field nothing schedules on. A reader decodes it into
+                        PoolResourceReport and treats a decode failure as "not reported yet",
+                        which the next report heals.
+                    nullable: true
+                    type: object
+                resourcesReportedAt:
+                    description: When resources was reported
+                    format: date-time
+                    type: string
                 desiredState:
                     description: Requested existence, the same vocabulary every orchestrated resource uses (ADR 0017 §2)
                     enum:
@@ -2161,6 +2703,22 @@ components:
                     type: object
                 agentStatusObservedAt:
                     description: When agentStatus was observed by sandbox-agent
+                    format: date-time
+                    type: string
+                resources:
+                    additionalProperties: true
+                    description: |
+                        What this sandbox is consuming, computed by the hosting pool agent (see
+                        SandboxResourceConsumption for the shape). Its cpu.vcpus is comparable
+                        with the other sandboxes in the same pool, which were differenced over
+                        the same tick, and only with those.
+
+                        An open object for the same reason as Pool.resources: agent-written
+                        telemetry must not be able to fail the read of the resource carrying it.
+                    nullable: true
+                    type: object
+                resourcesObservedAt:
+                    description: When resources was observed
                     format: date-time
                     type: string
                 provisionProgress:
@@ -3807,6 +4365,41 @@ paths:
                                 $ref: '#/components/schemas/ErrorModel'
                     description: Error
             summary: Report observed sandbox states from the pool agent
+            tags:
+                - Pools
+    /api/pools/{poolId}/resources:
+        post:
+            operationId: report-pool-resources
+            parameters:
+                - description: Pool ID
+                  in: path
+                  name: poolId
+                  required: true
+                  schema:
+                    description: Pool ID
+                    type: string
+                - description: Bearer pool agent assertion signed with the registered pool agent private key
+                  in: header
+                  name: Authorization
+                  schema:
+                    description: Bearer pool agent assertion signed with the registered pool agent private key
+                    type: string
+            requestBody:
+                content:
+                    application/json:
+                        schema:
+                            $ref: '#/components/schemas/ReportPoolResourcesBody'
+                required: true
+            responses:
+                204:
+                    description: Resource report accepted (entries for sandboxes this pool does not host are silently skipped)
+                default:
+                    content:
+                        application/problem+json:
+                            schema:
+                                $ref: '#/components/schemas/ErrorModel'
+                    description: Error
+            summary: Report what this pool and each sandbox on it are consuming
             tags:
                 - Pools
     /api/pools/{poolId}/sandbox-agent-status:

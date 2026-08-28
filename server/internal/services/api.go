@@ -47,6 +47,7 @@ type ReportPoolSandboxStatesBody = apimodel.ReportPoolSandboxStatesBody
 type MintSandboxAgentStatusTokensBody = apimodel.MintSandboxAgentStatusTokensBody
 type MintSandboxAgentStatusTokensResponseBody = apimodel.MintSandboxAgentStatusTokensResponseBody
 type SandboxAgentStatusToken = apimodel.SandboxAgentStatusToken
+type ReportPoolResourcesBody = apimodel.ReportPoolResourcesBody
 type ReportSandboxAgentStatusBody = apimodel.ReportSandboxAgentStatusBody
 type OptBool = serverapi.OptBool
 type OptString = serverapi.OptString
@@ -186,6 +187,7 @@ type PoolService interface {
 	ReportPoolSandboxStates(ctx context.Context, poolID string, input ReportPoolSandboxStatesBody) error
 	MintSandboxAgentStatusTokens(ctx context.Context, poolID string, input MintSandboxAgentStatusTokensBody) (*MintSandboxAgentStatusTokensResponseBody, error)
 	ReportSandboxAgentStatus(ctx context.Context, poolID string, input ReportSandboxAgentStatusBody) error
+	ReportPoolResources(ctx context.Context, poolID string, input ReportPoolResourcesBody) error
 }
 
 // JobService provides project-scoped durable job visibility.

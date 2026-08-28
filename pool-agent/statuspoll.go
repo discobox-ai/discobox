@@ -11,6 +11,7 @@ import (
 	"sync"
 	"time"
 
+	apimodel "github.com/discobox-ai/discobox/api/model"
 	"github.com/discobox-ai/discobox/pool-agent/sandboxruntime"
 )
 
@@ -32,9 +33,12 @@ const (
 // results to the control plane (ADR 0030). It never affects sandbox
 // lifecycle: a poll or push failure is logged and skipped for this tick,
 // never treated as a signal to stop or recreate a sandbox.
-func startSandboxAgentStatusPoller(ctx context.Context, logger *slog.Logger, bootstrap Bootstrap, registration *Registration, runtime sandboxruntime.Runtime, client SandboxAgentStatusClient) {
+//
+// It returns the poller so the resource reporter can read the counters it
+// collects, or nil when there is nothing to poll.
+func startSandboxAgentStatusPoller(ctx context.Context, logger *slog.Logger, bootstrap Bootstrap, registration *Registration, runtime sandboxruntime.Runtime, client SandboxAgentStatusClient) *sandboxAgentStatusPoller {
 	if runtime == nil || client == nil || registration == nil {
-		return
+		return nil
 	}
 	if logger == nil {
 		logger = slog.Default()
@@ -46,6 +50,7 @@ func startSandboxAgentStatusPoller(ctx context.Context, logger *slog.Logger, boo
 		runtime:      runtime,
 		client:       client,
 		tokens:       map[string]cachedSandboxAgentToken{},
+		samples:      map[string]sandboxResourceSample{},
 	}
 	go func() {
 		ticker := time.NewTicker(sandboxAgentStatusPollInterval)
@@ -59,6 +64,7 @@ func startSandboxAgentStatusPoller(ctx context.Context, logger *slog.Logger, boo
 			}
 		}
 	}()
+	return poller
 }
 
 type cachedSandboxAgentToken struct {
@@ -75,6 +81,22 @@ type sandboxAgentStatusPoller struct {
 
 	mu     sync.Mutex
 	tokens map[string]cachedSandboxAgentToken
+	// samples is the newest resource counters seen for each sandbox, handed to
+	// the resource reporter so the two loops share one poll of each sandbox
+	// rather than each making its own (ADR 0071 §2).
+	samples map[string]sandboxResourceSample
+}
+
+// ResourceSamples is the newest counters this poller has seen, by sandbox ID.
+// The map is a copy, so the caller can hold it across ticks.
+func (p *sandboxAgentStatusPoller) ResourceSamples() map[string]sandboxResourceSample {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	out := make(map[string]sandboxResourceSample, len(p.samples))
+	for id, sample := range p.samples {
+		out[id] = sample
+	}
+	return out
 }
 
 // tick polls every currently-running hosted sandbox independently, so one
@@ -116,6 +138,11 @@ func (p *sandboxAgentStatusPoller) tick(ctx context.Context) {
 			mu.Lock()
 			entries = append(entries, entry)
 			mu.Unlock()
+			if entry.Resources != nil {
+				p.mu.Lock()
+				p.samples[sandboxID] = sandboxResourceSample{Usage: *entry.Resources}
+				p.mu.Unlock()
+			}
 		}(sandboxID, token)
 	}
 	wg.Wait()
@@ -160,8 +187,14 @@ func (p *sandboxAgentStatusPoller) pollOne(ctx context.Context, sandboxID, token
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
 		return SandboxAgentStatusEntry{}, fmt.Errorf("status %d: %s", resp.StatusCode, strings.TrimSpace(string(data)))
 	}
+	// Two fields are read out of the payload; the payload itself is still
+	// relayed as received below, never re-serialized from a parsed structure:
+	// a field this agent does not model still reaches the control plane.
+	// observedAt orders the report, and resources
+	// carries the cumulative counters the resource reporter differences.
 	var decoded struct {
-		ObservedAt time.Time `json:"observedAt"`
+		ObservedAt time.Time                           `json:"observedAt"`
+		Resources  *apimodel.SandboxAgentResourceUsage `json:"resources"`
 	}
 	if err := json.Unmarshal(data, &decoded); err != nil {
 		return SandboxAgentStatusEntry{}, err
@@ -170,7 +203,18 @@ func (p *sandboxAgentStatusPoller) pollOne(ctx context.Context, sandboxID, token
 	if observedAt.IsZero() {
 		observedAt = time.Now().UTC()
 	}
-	return SandboxAgentStatusEntry{SandboxID: sandboxID, Status: json.RawMessage(data), ObservedAt: observedAt}, nil
+	// A sandbox-agent old enough to send no resources, or new enough to run on
+	// a platform where neither its cgroup nor procfs could be read, reports
+	// none: the rest of its status is unaffected.
+	if decoded.Resources != nil && decoded.Resources.ObservedAt.IsZero() {
+		decoded.Resources.ObservedAt = observedAt
+	}
+	return SandboxAgentStatusEntry{
+		SandboxID:  sandboxID,
+		Status:     json.RawMessage(data),
+		ObservedAt: observedAt,
+		Resources:  decoded.Resources,
+	}, nil
 }
 
 // ensureTokens mints tokens for any sandboxID missing from the cache or
