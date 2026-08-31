@@ -44,7 +44,7 @@ func TestSecretRequestHandlersDoNotReturnSecretValues(t *testing.T) {
 	assertResponseDoesNotContain(t, getRes, "value")
 
 	createRes, err := h.CreateSecretRequest(context.Background(), &serverapi.CreateSecretRequestBody{
-		Type: serverapi.CreateSecretRequestBodyTypeBearer,
+		Type: serverapi.CreateSecretRequestBodyTypeToken,
 	}, serverapi.CreateSecretRequestParams{ProjectId: "project-1"})
 	if err != nil {
 		t.Fatalf("create secret request: %v", err)
@@ -134,15 +134,15 @@ func (fakeSecretService) GetSandboxCredentialRequest(context.Context, string, st
 func fakeSecret() model.Secret {
 	now := time.Date(2026, 6, 17, 0, 0, 0, 0, time.UTC)
 	return model.Secret{
-		ID:              "secret-1",
-		ProjectID:       "project-1",
-		Name:            "github",
-		Type:            model.SecretTypeBearer,
-		Host:            "github.com",
-		DefaultGrantTTL: 3600,
-		EncryptedValue:  []byte(`{"token":"encrypted-token"}`),
-		CreatedAt:       now,
-		UpdatedAt:       now,
+		ID:             "secret-1",
+		ProjectID:      "project-1",
+		Name:           "github",
+		Type:           model.SecretTypeToken,
+		Host:           "github.com",
+		MaxGrantTTL:    3600,
+		EncryptedValue: []byte(`{"token":"encrypted-token"}`),
+		CreatedAt:      now,
+		UpdatedAt:      now,
 	}
 }
 
@@ -152,7 +152,7 @@ func fakeSecretRequest() model.SecretRequest {
 		ID:          "request-1",
 		ProjectID:   "project-1",
 		RequestedBy: "user-1",
-		Type:        model.SecretTypeBearer,
+		Type:        model.SecretTypeToken,
 		Host:        "github.com",
 		SecretID:    "secret-1",
 		Status:      model.SecretRequestStatusApproved,

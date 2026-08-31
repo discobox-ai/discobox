@@ -1125,8 +1125,8 @@ func (s *CreateSandboxProviderInstanceBody) SetType(val string) {
 type CreateSecretBody struct {
 	// A URL to the JSON Schema for this object.
 	Schema OptURI `json:"$schema"`
-	// Default grant duration in seconds.
-	DefaultGrantTTLSeconds OptInt64 `json:"defaultGrantTTLSeconds"`
+	// Longest a grant on this secret may live, in seconds; 0 allows grants that never expire.
+	MaxGrantTTLSeconds OptInt64 `json:"maxGrantTTLSeconds"`
 	// Optional host used to match requests (e.g. github.com).
 	Host OptString `json:"host"`
 	// Secret name.
@@ -1141,9 +1141,9 @@ func (s *CreateSecretBody) GetSchema() OptURI {
 	return s.Schema
 }
 
-// GetDefaultGrantTTLSeconds returns the value of DefaultGrantTTLSeconds.
-func (s *CreateSecretBody) GetDefaultGrantTTLSeconds() OptInt64 {
-	return s.DefaultGrantTTLSeconds
+// GetMaxGrantTTLSeconds returns the value of MaxGrantTTLSeconds.
+func (s *CreateSecretBody) GetMaxGrantTTLSeconds() OptInt64 {
+	return s.MaxGrantTTLSeconds
 }
 
 // GetHost returns the value of Host.
@@ -1171,9 +1171,9 @@ func (s *CreateSecretBody) SetSchema(val OptURI) {
 	s.Schema = val
 }
 
-// SetDefaultGrantTTLSeconds sets the value of DefaultGrantTTLSeconds.
-func (s *CreateSecretBody) SetDefaultGrantTTLSeconds(val OptInt64) {
-	s.DefaultGrantTTLSeconds = val
+// SetMaxGrantTTLSeconds sets the value of MaxGrantTTLSeconds.
+func (s *CreateSecretBody) SetMaxGrantTTLSeconds(val OptInt64) {
+	s.MaxGrantTTLSeconds = val
 }
 
 // SetHost sets the value of Host.
@@ -1200,18 +1200,14 @@ func (s *CreateSecretBody) SetValue(val SecretValue) {
 type CreateSecretBodyType string
 
 const (
-	CreateSecretBodyTypeGit    CreateSecretBodyType = "git"
-	CreateSecretBodyTypeSSH    CreateSecretBodyType = "ssh"
-	CreateSecretBodyTypeBearer CreateSecretBodyType = "bearer"
-	CreateSecretBodyTypeOAuth  CreateSecretBodyType = "oauth"
+	CreateSecretBodyTypeToken CreateSecretBodyType = "token"
+	CreateSecretBodyTypeOAuth CreateSecretBodyType = "oauth"
 )
 
 // AllValues returns all CreateSecretBodyType values.
 func (CreateSecretBodyType) AllValues() []CreateSecretBodyType {
 	return []CreateSecretBodyType{
-		CreateSecretBodyTypeGit,
-		CreateSecretBodyTypeSSH,
-		CreateSecretBodyTypeBearer,
+		CreateSecretBodyTypeToken,
 		CreateSecretBodyTypeOAuth,
 	}
 }
@@ -1219,11 +1215,7 @@ func (CreateSecretBodyType) AllValues() []CreateSecretBodyType {
 // MarshalText implements encoding.TextMarshaler.
 func (s CreateSecretBodyType) MarshalText() ([]byte, error) {
 	switch s {
-	case CreateSecretBodyTypeGit:
-		return []byte(s), nil
-	case CreateSecretBodyTypeSSH:
-		return []byte(s), nil
-	case CreateSecretBodyTypeBearer:
+	case CreateSecretBodyTypeToken:
 		return []byte(s), nil
 	case CreateSecretBodyTypeOAuth:
 		return []byte(s), nil
@@ -1235,14 +1227,8 @@ func (s CreateSecretBodyType) MarshalText() ([]byte, error) {
 // UnmarshalText implements encoding.TextUnmarshaler.
 func (s *CreateSecretBodyType) UnmarshalText(data []byte) error {
 	switch CreateSecretBodyType(data) {
-	case CreateSecretBodyTypeGit:
-		*s = CreateSecretBodyTypeGit
-		return nil
-	case CreateSecretBodyTypeSSH:
-		*s = CreateSecretBodyTypeSSH
-		return nil
-	case CreateSecretBodyTypeBearer:
-		*s = CreateSecretBodyTypeBearer
+	case CreateSecretBodyTypeToken:
+		*s = CreateSecretBodyTypeToken
 		return nil
 	case CreateSecretBodyTypeOAuth:
 		*s = CreateSecretBodyTypeOAuth
@@ -1267,6 +1253,14 @@ type CreateSecretGrantBody struct {
 	ScopeKey OptString `json:"scopeKey"`
 	// Secret ID to grant.
 	SecretId string `json:"secretId"`
+	// Environment variable an agent receives the credential in, for a grant carrying uses. Required with
+	// uses, and meaningless without them -- the credential is never injected, so this names the variable
+	// only for the process the CLI wraps.
+	EnvVar OptString `json:"envVar"`
+	// Approved uses, making this a credential only the agent credentials CLI can take, one use at a time.
+	//  Sandbox scope only, a concrete host required, and use IDs are minted here -- a supplied one is
+	// ignored.
+	Uses OptNilSecretUseArray `json:"uses"`
 }
 
 // GetSchema returns the value of Schema.
@@ -1299,6 +1293,16 @@ func (s *CreateSecretGrantBody) GetSecretId() string {
 	return s.SecretId
 }
 
+// GetEnvVar returns the value of EnvVar.
+func (s *CreateSecretGrantBody) GetEnvVar() OptString {
+	return s.EnvVar
+}
+
+// GetUses returns the value of Uses.
+func (s *CreateSecretGrantBody) GetUses() OptNilSecretUseArray {
+	return s.Uses
+}
+
 // SetSchema sets the value of Schema.
 func (s *CreateSecretGrantBody) SetSchema(val OptURI) {
 	s.Schema = val
@@ -1327,6 +1331,16 @@ func (s *CreateSecretGrantBody) SetScopeKey(val OptString) {
 // SetSecretId sets the value of SecretId.
 func (s *CreateSecretGrantBody) SetSecretId(val string) {
 	s.SecretId = val
+}
+
+// SetEnvVar sets the value of EnvVar.
+func (s *CreateSecretGrantBody) SetEnvVar(val OptString) {
+	s.EnvVar = val
+}
+
+// SetUses sets the value of Uses.
+func (s *CreateSecretGrantBody) SetUses(val OptNilSecretUseArray) {
+	s.Uses = val
 }
 
 // How widely the grant applies.
@@ -1422,18 +1436,14 @@ func (s *CreateSecretRequestBody) SetType(val CreateSecretRequestBodyType) {
 type CreateSecretRequestBodyType string
 
 const (
-	CreateSecretRequestBodyTypeGit    CreateSecretRequestBodyType = "git"
-	CreateSecretRequestBodyTypeSSH    CreateSecretRequestBodyType = "ssh"
-	CreateSecretRequestBodyTypeBearer CreateSecretRequestBodyType = "bearer"
-	CreateSecretRequestBodyTypeOAuth  CreateSecretRequestBodyType = "oauth"
+	CreateSecretRequestBodyTypeToken CreateSecretRequestBodyType = "token"
+	CreateSecretRequestBodyTypeOAuth CreateSecretRequestBodyType = "oauth"
 )
 
 // AllValues returns all CreateSecretRequestBodyType values.
 func (CreateSecretRequestBodyType) AllValues() []CreateSecretRequestBodyType {
 	return []CreateSecretRequestBodyType{
-		CreateSecretRequestBodyTypeGit,
-		CreateSecretRequestBodyTypeSSH,
-		CreateSecretRequestBodyTypeBearer,
+		CreateSecretRequestBodyTypeToken,
 		CreateSecretRequestBodyTypeOAuth,
 	}
 }
@@ -1441,11 +1451,7 @@ func (CreateSecretRequestBodyType) AllValues() []CreateSecretRequestBodyType {
 // MarshalText implements encoding.TextMarshaler.
 func (s CreateSecretRequestBodyType) MarshalText() ([]byte, error) {
 	switch s {
-	case CreateSecretRequestBodyTypeGit:
-		return []byte(s), nil
-	case CreateSecretRequestBodyTypeSSH:
-		return []byte(s), nil
-	case CreateSecretRequestBodyTypeBearer:
+	case CreateSecretRequestBodyTypeToken:
 		return []byte(s), nil
 	case CreateSecretRequestBodyTypeOAuth:
 		return []byte(s), nil
@@ -1457,14 +1463,8 @@ func (s CreateSecretRequestBodyType) MarshalText() ([]byte, error) {
 // UnmarshalText implements encoding.TextUnmarshaler.
 func (s *CreateSecretRequestBodyType) UnmarshalText(data []byte) error {
 	switch CreateSecretRequestBodyType(data) {
-	case CreateSecretRequestBodyTypeGit:
-		*s = CreateSecretRequestBodyTypeGit
-		return nil
-	case CreateSecretRequestBodyTypeSSH:
-		*s = CreateSecretRequestBodyTypeSSH
-		return nil
-	case CreateSecretRequestBodyTypeBearer:
-		*s = CreateSecretRequestBodyTypeBearer
+	case CreateSecretRequestBodyTypeToken:
+		*s = CreateSecretRequestBodyTypeToken
 		return nil
 	case CreateSecretRequestBodyTypeOAuth:
 		*s = CreateSecretRequestBodyTypeOAuth
@@ -6507,6 +6507,52 @@ func (o OptSandboxUser) Get() (v SandboxUser, ok bool) {
 
 // Or returns value if set, or given parameter if does not.
 func (o OptSandboxUser) Or(d SandboxUser) SandboxUser {
+	if v, ok := o.Get(); ok {
+		return v
+	}
+	return d
+}
+
+// NewOptSecretOAuth returns new OptSecretOAuth with value set to v.
+func NewOptSecretOAuth(v SecretOAuth) OptSecretOAuth {
+	return OptSecretOAuth{
+		Value: v,
+		Set:   true,
+	}
+}
+
+// OptSecretOAuth is optional SecretOAuth.
+type OptSecretOAuth struct {
+	Value SecretOAuth
+	Set   bool
+}
+
+// IsSet returns true if OptSecretOAuth was set.
+func (o OptSecretOAuth) IsSet() bool { return o.Set }
+
+// Reset unsets value.
+func (o *OptSecretOAuth) Reset() {
+	var v SecretOAuth
+	o.Value = v
+	o.Set = false
+}
+
+// SetTo sets value to v.
+func (o *OptSecretOAuth) SetTo(v SecretOAuth) {
+	o.Set = true
+	o.Value = v
+}
+
+// Get returns value and boolean that denotes whether value was set.
+func (o OptSecretOAuth) Get() (v SecretOAuth, ok bool) {
+	if !o.Set {
+		return v, false
+	}
+	return o.Value, true
+}
+
+// Or returns value if set, or given parameter if does not.
+func (o OptSecretOAuth) Or(d SecretOAuth) SecretOAuth {
 	if v, ok := o.Get(); ok {
 		return v
 	}
@@ -12594,14 +12640,15 @@ type Secret struct {
 	Anonymous OptBool `json:"anonymous"`
 	// Creation timestamp.
 	CreatedAt time.Time `json:"createdAt"`
-	// Default grant duration in seconds.
-	DefaultGrantTTLSeconds int64 `json:"defaultGrantTTLSeconds"`
+	// Longest a grant on this secret may live, in seconds; 0 allows grants that never expire.
+	MaxGrantTTLSeconds int64 `json:"maxGrantTTLSeconds"`
 	// Generative format template describing the credential shape; used to mint sentinel placeholders.
 	Format OptString `json:"format"`
 	// Optional host used to match requests (e.g. github.com).
 	Host OptString `json:"host"`
 	// Stable secret ID.
-	ID string `json:"id"`
+	ID    string         `json:"id"`
+	OAuth OptSecretOAuth `json:"oauth"`
 	// Secret name.
 	Name string `json:"name"`
 	// Project ID.
@@ -12627,9 +12674,9 @@ func (s *Secret) GetCreatedAt() time.Time {
 	return s.CreatedAt
 }
 
-// GetDefaultGrantTTLSeconds returns the value of DefaultGrantTTLSeconds.
-func (s *Secret) GetDefaultGrantTTLSeconds() int64 {
-	return s.DefaultGrantTTLSeconds
+// GetMaxGrantTTLSeconds returns the value of MaxGrantTTLSeconds.
+func (s *Secret) GetMaxGrantTTLSeconds() int64 {
+	return s.MaxGrantTTLSeconds
 }
 
 // GetFormat returns the value of Format.
@@ -12645,6 +12692,11 @@ func (s *Secret) GetHost() OptString {
 // GetID returns the value of ID.
 func (s *Secret) GetID() string {
 	return s.ID
+}
+
+// GetOAuth returns the value of OAuth.
+func (s *Secret) GetOAuth() OptSecretOAuth {
+	return s.OAuth
 }
 
 // GetName returns the value of Name.
@@ -12682,9 +12734,9 @@ func (s *Secret) SetCreatedAt(val time.Time) {
 	s.CreatedAt = val
 }
 
-// SetDefaultGrantTTLSeconds sets the value of DefaultGrantTTLSeconds.
-func (s *Secret) SetDefaultGrantTTLSeconds(val int64) {
-	s.DefaultGrantTTLSeconds = val
+// SetMaxGrantTTLSeconds sets the value of MaxGrantTTLSeconds.
+func (s *Secret) SetMaxGrantTTLSeconds(val int64) {
+	s.MaxGrantTTLSeconds = val
 }
 
 // SetFormat sets the value of Format.
@@ -12700,6 +12752,11 @@ func (s *Secret) SetHost(val OptString) {
 // SetID sets the value of ID.
 func (s *Secret) SetID(val string) {
 	s.ID = val
+}
+
+// SetOAuth sets the value of OAuth.
+func (s *Secret) SetOAuth(val OptSecretOAuth) {
+	s.OAuth = val
 }
 
 // SetName sets the value of Name.
@@ -12730,6 +12787,8 @@ func (*Secret) updateSecretRes() {}
 type SecretGrant struct {
 	// A URL to the JSON Schema for this object.
 	Schema OptURI `json:"$schema"`
+	// Environment variable an agent receives the credential in; set on a grant that carries uses.
+	EnvName OptString `json:"envName"`
 	// Approved uses, confirmed or edited at approval time. Present on grants minted through the agent
 	// credentials flow.
 	Uses OptNilSecretUseArray `json:"uses"`
@@ -12760,6 +12819,11 @@ type SecretGrant struct {
 // GetSchema returns the value of Schema.
 func (s *SecretGrant) GetSchema() OptURI {
 	return s.Schema
+}
+
+// GetEnvName returns the value of EnvName.
+func (s *SecretGrant) GetEnvName() OptString {
+	return s.EnvName
 }
 
 // GetUses returns the value of Uses.
@@ -12825,6 +12889,11 @@ func (s *SecretGrant) GetUpdatedAt() time.Time {
 // SetSchema sets the value of Schema.
 func (s *SecretGrant) SetSchema(val OptURI) {
 	s.Schema = val
+}
+
+// SetEnvName sets the value of EnvName.
+func (s *SecretGrant) SetEnvName(val OptString) {
+	s.EnvName = val
 }
 
 // SetUses sets the value of Uses.
@@ -12936,6 +13005,83 @@ func (s *SecretGrantScope) UnmarshalText(data []byte) error {
 	default:
 		return errors.Errorf("invalid value: %q", data)
 	}
+}
+
+// What an OAuth credential is, without being it. Never the access token and never the refresh token.
+// Ref: #/components/schemas/SecretOAuth
+type SecretOAuth struct {
+	// When the current access token goes stale, unix milliseconds; absent when unknown.
+	AccessTokenExpiresAt OptInt64 `json:"accessTokenExpiresAt"`
+	// OAuth client the grant belongs to.
+	ClientId OptString `json:"clientId"`
+	// Whether the credential carries what it needs to renew itself.
+	Refreshable OptBool `json:"refreshable"`
+	// What the grant may do, as captured at login.
+	Scopes OptNilStringArray `json:"scopes"`
+	// The plan or account kind the grant belongs to.
+	SubscriptionType OptString `json:"subscriptionType"`
+	// Where the access token is renewed.
+	TokenUrl OptString `json:"tokenUrl"`
+}
+
+// GetAccessTokenExpiresAt returns the value of AccessTokenExpiresAt.
+func (s *SecretOAuth) GetAccessTokenExpiresAt() OptInt64 {
+	return s.AccessTokenExpiresAt
+}
+
+// GetClientId returns the value of ClientId.
+func (s *SecretOAuth) GetClientId() OptString {
+	return s.ClientId
+}
+
+// GetRefreshable returns the value of Refreshable.
+func (s *SecretOAuth) GetRefreshable() OptBool {
+	return s.Refreshable
+}
+
+// GetScopes returns the value of Scopes.
+func (s *SecretOAuth) GetScopes() OptNilStringArray {
+	return s.Scopes
+}
+
+// GetSubscriptionType returns the value of SubscriptionType.
+func (s *SecretOAuth) GetSubscriptionType() OptString {
+	return s.SubscriptionType
+}
+
+// GetTokenUrl returns the value of TokenUrl.
+func (s *SecretOAuth) GetTokenUrl() OptString {
+	return s.TokenUrl
+}
+
+// SetAccessTokenExpiresAt sets the value of AccessTokenExpiresAt.
+func (s *SecretOAuth) SetAccessTokenExpiresAt(val OptInt64) {
+	s.AccessTokenExpiresAt = val
+}
+
+// SetClientId sets the value of ClientId.
+func (s *SecretOAuth) SetClientId(val OptString) {
+	s.ClientId = val
+}
+
+// SetRefreshable sets the value of Refreshable.
+func (s *SecretOAuth) SetRefreshable(val OptBool) {
+	s.Refreshable = val
+}
+
+// SetScopes sets the value of Scopes.
+func (s *SecretOAuth) SetScopes(val OptNilStringArray) {
+	s.Scopes = val
+}
+
+// SetSubscriptionType sets the value of SubscriptionType.
+func (s *SecretOAuth) SetSubscriptionType(val OptString) {
+	s.SubscriptionType = val
+}
+
+// SetTokenUrl sets the value of TokenUrl.
+func (s *SecretOAuth) SetTokenUrl(val OptString) {
+	s.TokenUrl = val
 }
 
 // Ref: #/components/schemas/SecretRequest
@@ -13192,18 +13338,14 @@ func (s *SecretRequestStatus) UnmarshalText(data []byte) error {
 type SecretRequestType string
 
 const (
-	SecretRequestTypeGit    SecretRequestType = "git"
-	SecretRequestTypeSSH    SecretRequestType = "ssh"
-	SecretRequestTypeBearer SecretRequestType = "bearer"
-	SecretRequestTypeOAuth  SecretRequestType = "oauth"
+	SecretRequestTypeToken SecretRequestType = "token"
+	SecretRequestTypeOAuth SecretRequestType = "oauth"
 )
 
 // AllValues returns all SecretRequestType values.
 func (SecretRequestType) AllValues() []SecretRequestType {
 	return []SecretRequestType{
-		SecretRequestTypeGit,
-		SecretRequestTypeSSH,
-		SecretRequestTypeBearer,
+		SecretRequestTypeToken,
 		SecretRequestTypeOAuth,
 	}
 }
@@ -13211,11 +13353,7 @@ func (SecretRequestType) AllValues() []SecretRequestType {
 // MarshalText implements encoding.TextMarshaler.
 func (s SecretRequestType) MarshalText() ([]byte, error) {
 	switch s {
-	case SecretRequestTypeGit:
-		return []byte(s), nil
-	case SecretRequestTypeSSH:
-		return []byte(s), nil
-	case SecretRequestTypeBearer:
+	case SecretRequestTypeToken:
 		return []byte(s), nil
 	case SecretRequestTypeOAuth:
 		return []byte(s), nil
@@ -13227,14 +13365,8 @@ func (s SecretRequestType) MarshalText() ([]byte, error) {
 // UnmarshalText implements encoding.TextUnmarshaler.
 func (s *SecretRequestType) UnmarshalText(data []byte) error {
 	switch SecretRequestType(data) {
-	case SecretRequestTypeGit:
-		*s = SecretRequestTypeGit
-		return nil
-	case SecretRequestTypeSSH:
-		*s = SecretRequestTypeSSH
-		return nil
-	case SecretRequestTypeBearer:
-		*s = SecretRequestTypeBearer
+	case SecretRequestTypeToken:
+		*s = SecretRequestTypeToken
 		return nil
 	case SecretRequestTypeOAuth:
 		*s = SecretRequestTypeOAuth
@@ -13248,18 +13380,14 @@ func (s *SecretRequestType) UnmarshalText(data []byte) error {
 type SecretType string
 
 const (
-	SecretTypeGit    SecretType = "git"
-	SecretTypeSSH    SecretType = "ssh"
-	SecretTypeBearer SecretType = "bearer"
-	SecretTypeOAuth  SecretType = "oauth"
+	SecretTypeToken SecretType = "token"
+	SecretTypeOAuth SecretType = "oauth"
 )
 
 // AllValues returns all SecretType values.
 func (SecretType) AllValues() []SecretType {
 	return []SecretType{
-		SecretTypeGit,
-		SecretTypeSSH,
-		SecretTypeBearer,
+		SecretTypeToken,
 		SecretTypeOAuth,
 	}
 }
@@ -13267,11 +13395,7 @@ func (SecretType) AllValues() []SecretType {
 // MarshalText implements encoding.TextMarshaler.
 func (s SecretType) MarshalText() ([]byte, error) {
 	switch s {
-	case SecretTypeGit:
-		return []byte(s), nil
-	case SecretTypeSSH:
-		return []byte(s), nil
-	case SecretTypeBearer:
+	case SecretTypeToken:
 		return []byte(s), nil
 	case SecretTypeOAuth:
 		return []byte(s), nil
@@ -13283,14 +13407,8 @@ func (s SecretType) MarshalText() ([]byte, error) {
 // UnmarshalText implements encoding.TextUnmarshaler.
 func (s *SecretType) UnmarshalText(data []byte) error {
 	switch SecretType(data) {
-	case SecretTypeGit:
-		*s = SecretTypeGit
-		return nil
-	case SecretTypeSSH:
-		*s = SecretTypeSSH
-		return nil
-	case SecretTypeBearer:
-		*s = SecretTypeBearer
+	case SecretTypeToken:
+		*s = SecretTypeToken
 		return nil
 	case SecretTypeOAuth:
 		*s = SecretTypeOAuth
@@ -13330,34 +13448,51 @@ func (s *SecretUse) SetUseId(val OptString) {
 	s.UseId = val
 }
 
-// Type-specific secret value. Fields populated depend on the secret type.
+// A credential value. One opaque string, plus what an OAuth credential needs to be refreshed.
+// Write-only -- no response ever carries it.
 // Ref: #/components/schemas/SecretValue
 type SecretValue struct {
-	// SSH key passphrase (type=ssh).
-	Passphrase OptString `json:"passphrase"`
-	// Git credential password (type=git).
-	Password OptString `json:"password"`
-	// SSH private key PEM (type=ssh).
-	PrivateKey OptString `json:"privateKey"`
-	// Bearer token (type=bearer).
+	// When the access token goes stale, unix milliseconds. 0 or absent means unknown, and the credential
+	// is then refreshed only when an upstream rejects it.
+	AccessTokenExpiresAt OptInt64 `json:"accessTokenExpiresAt"`
+	// OAuth client the grant belongs to (type=oauth).
+	ClientId OptString `json:"clientId"`
+	// OAuth refresh token, spent server-side to renew the access token (type=oauth). Never returned.
+	RefreshToken OptString `json:"refreshToken"`
+	// What the grant may do, as the authorization server returned it. Recorded rather than assumed -- a
+	// client may gate features on it.
+	Scopes OptNilStringArray `json:"scopes"`
+	// The plan or account kind the grant belongs to, when the authorization server names one.
+	SubscriptionType OptString `json:"subscriptionType"`
+	// The credential itself (type=token), or an OAuth access token.
 	Token OptString `json:"token"`
-	// Git credential username (type=git).
-	Username OptString `json:"username"`
+	// Where the refresh token is exchanged for a new access token (type=oauth).
+	TokenUrl OptString `json:"tokenUrl"`
 }
 
-// GetPassphrase returns the value of Passphrase.
-func (s *SecretValue) GetPassphrase() OptString {
-	return s.Passphrase
+// GetAccessTokenExpiresAt returns the value of AccessTokenExpiresAt.
+func (s *SecretValue) GetAccessTokenExpiresAt() OptInt64 {
+	return s.AccessTokenExpiresAt
 }
 
-// GetPassword returns the value of Password.
-func (s *SecretValue) GetPassword() OptString {
-	return s.Password
+// GetClientId returns the value of ClientId.
+func (s *SecretValue) GetClientId() OptString {
+	return s.ClientId
 }
 
-// GetPrivateKey returns the value of PrivateKey.
-func (s *SecretValue) GetPrivateKey() OptString {
-	return s.PrivateKey
+// GetRefreshToken returns the value of RefreshToken.
+func (s *SecretValue) GetRefreshToken() OptString {
+	return s.RefreshToken
+}
+
+// GetScopes returns the value of Scopes.
+func (s *SecretValue) GetScopes() OptNilStringArray {
+	return s.Scopes
+}
+
+// GetSubscriptionType returns the value of SubscriptionType.
+func (s *SecretValue) GetSubscriptionType() OptString {
+	return s.SubscriptionType
 }
 
 // GetToken returns the value of Token.
@@ -13365,24 +13500,34 @@ func (s *SecretValue) GetToken() OptString {
 	return s.Token
 }
 
-// GetUsername returns the value of Username.
-func (s *SecretValue) GetUsername() OptString {
-	return s.Username
+// GetTokenUrl returns the value of TokenUrl.
+func (s *SecretValue) GetTokenUrl() OptString {
+	return s.TokenUrl
 }
 
-// SetPassphrase sets the value of Passphrase.
-func (s *SecretValue) SetPassphrase(val OptString) {
-	s.Passphrase = val
+// SetAccessTokenExpiresAt sets the value of AccessTokenExpiresAt.
+func (s *SecretValue) SetAccessTokenExpiresAt(val OptInt64) {
+	s.AccessTokenExpiresAt = val
 }
 
-// SetPassword sets the value of Password.
-func (s *SecretValue) SetPassword(val OptString) {
-	s.Password = val
+// SetClientId sets the value of ClientId.
+func (s *SecretValue) SetClientId(val OptString) {
+	s.ClientId = val
 }
 
-// SetPrivateKey sets the value of PrivateKey.
-func (s *SecretValue) SetPrivateKey(val OptString) {
-	s.PrivateKey = val
+// SetRefreshToken sets the value of RefreshToken.
+func (s *SecretValue) SetRefreshToken(val OptString) {
+	s.RefreshToken = val
+}
+
+// SetScopes sets the value of Scopes.
+func (s *SecretValue) SetScopes(val OptNilStringArray) {
+	s.Scopes = val
+}
+
+// SetSubscriptionType sets the value of SubscriptionType.
+func (s *SecretValue) SetSubscriptionType(val OptString) {
+	s.SubscriptionType = val
 }
 
 // SetToken sets the value of Token.
@@ -13390,9 +13535,9 @@ func (s *SecretValue) SetToken(val OptString) {
 	s.Token = val
 }
 
-// SetUsername sets the value of Username.
-func (s *SecretValue) SetUsername(val OptString) {
-	s.Username = val
+// SetTokenUrl sets the value of TokenUrl.
+func (s *SecretValue) SetTokenUrl(val OptString) {
+	s.TokenUrl = val
 }
 
 // Ref: #/components/schemas/SetHarnessConfigSecretBindingBody
@@ -13847,8 +13992,8 @@ func (s *UpdateSandboxProviderInstanceBody) SetName(val OptString) {
 type UpdateSecretBody struct {
 	// A URL to the JSON Schema for this object.
 	Schema OptURI `json:"$schema"`
-	// Default grant duration in seconds.
-	DefaultGrantTTLSeconds OptInt64 `json:"defaultGrantTTLSeconds"`
+	// Longest a grant on this secret may live, in seconds; 0 allows grants that never expire.
+	MaxGrantTTLSeconds OptInt64 `json:"maxGrantTTLSeconds"`
 	// Optional host used to match requests (e.g. github.com).
 	Host OptString `json:"host"`
 	// Secret name.
@@ -13861,9 +14006,9 @@ func (s *UpdateSecretBody) GetSchema() OptURI {
 	return s.Schema
 }
 
-// GetDefaultGrantTTLSeconds returns the value of DefaultGrantTTLSeconds.
-func (s *UpdateSecretBody) GetDefaultGrantTTLSeconds() OptInt64 {
-	return s.DefaultGrantTTLSeconds
+// GetMaxGrantTTLSeconds returns the value of MaxGrantTTLSeconds.
+func (s *UpdateSecretBody) GetMaxGrantTTLSeconds() OptInt64 {
+	return s.MaxGrantTTLSeconds
 }
 
 // GetHost returns the value of Host.
@@ -13886,9 +14031,9 @@ func (s *UpdateSecretBody) SetSchema(val OptURI) {
 	s.Schema = val
 }
 
-// SetDefaultGrantTTLSeconds sets the value of DefaultGrantTTLSeconds.
-func (s *UpdateSecretBody) SetDefaultGrantTTLSeconds(val OptInt64) {
-	s.DefaultGrantTTLSeconds = val
+// SetMaxGrantTTLSeconds sets the value of MaxGrantTTLSeconds.
+func (s *UpdateSecretBody) SetMaxGrantTTLSeconds(val OptInt64) {
+	s.MaxGrantTTLSeconds = val
 }
 
 // SetHost sets the value of Host.

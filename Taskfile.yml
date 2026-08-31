@@ -14,8 +14,8 @@ vars:
   SERVER_MAIN: ./cmd/discobox-server
   CLI_BINARY: build/discobox{{.EXE}}
   CLI_MAIN: ./cmd/discobox
-  CREDENTIAL_BINARY: build/discobox-credential{{.EXE}}
-  CREDENTIAL_MAIN: ./cmd/discobox-credential
+  ACCESS_BINARY: build/discobox-access{{.EXE}}
+  ACCESS_MAIN: ./cmd/discobox-access
   PACKAGES: ./...
   # ghcr.io/<owner>, so a fork publishes into its own namespace instead of the
   # upstream one. Actions knows the owner; elsewhere it comes from the origin
@@ -135,7 +135,7 @@ tasks:
       - task: build:cp-relay
       - task: build:server
       - task: build:cli
-      - task: build:credential
+      - task: build:access
       - task: build:images
 
   build:server:
@@ -186,11 +186,11 @@ tasks:
         vars: { SIGN_BINARY: '{{.CLI_BINARY}}' }
 
 
-  build:credential:
-    desc: Compile the discobox-credential CLI
+  build:access:
+    desc: Compile the discobox-access CLI
     cmds:
       - mkdir -p build
-      - cd agentcred && go build -o ../{{.CREDENTIAL_BINARY}} {{.CREDENTIAL_MAIN}}
+      - cd access && go build -o ../{{.ACCESS_BINARY}} {{.ACCESS_MAIN}}
 
   build:cp-relay:
     desc: Cross-compile the guest control-plane relay embedded in the Windows server
@@ -481,7 +481,7 @@ tasks:
       - cd server && go test ./...
       - cd pool-agent && go test ./...
       - cd sandbox-agent && go test ./...
-      - cd agentcred && go test ./...
+      - cd access && go test ./...
 
   build:lint-tool:
     desc: Build the golangci-lint binary the per-module checks share
@@ -507,7 +507,7 @@ tasks:
       - cd server && ../build/tools/{{.LINT_BIN}} run
       - cd pool-agent && ../build/tools/{{.LINT_BIN}} run
       - cd sandbox-agent && ../build/tools/{{.LINT_BIN}} run
-      - cd agentcred && ../build/tools/{{.LINT_BIN}} run
+      - cd access && ../build/tools/{{.LINT_BIN}} run
 
   check:windows:
     desc: Type-check the whole tree, tests included, for windows/amd64
@@ -618,7 +618,7 @@ tasks:
       - cd server && ../build/tools/{{.LINT_BIN}} run --fix
       - cd pool-agent && ../build/tools/{{.LINT_BIN}} run --fix
       - cd sandbox-agent && ../build/tools/{{.LINT_BIN}} run --fix
-      - cd agentcred && ../build/tools/{{.LINT_BIN}} run --fix
+      - cd access && ../build/tools/{{.LINT_BIN}} run --fix
 
   fmt:
     desc: Format every tracked Go source

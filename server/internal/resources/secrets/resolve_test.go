@@ -70,8 +70,8 @@ func createSandboxWithHarness(t *testing.T, st *store.Store, sandboxID, poolID, 
 func mustSecret(t *testing.T, st *store.Store, name, token string) *model.Secret {
 	t.Helper()
 	sec := &model.Secret{
-		ProjectID: "project-1", Name: name, Type: model.SecretTypeBearer,
-		DefaultGrantTTL: 3600, EncryptedValue: mustTokenValue(t, token),
+		ProjectID: "project-1", Name: name, Type: model.SecretTypeToken,
+		MaxGrantTTL: 3600, EncryptedValue: mustTokenValue(t, token),
 	}
 	if err := st.CreateSecret(context.Background(), sec); err != nil {
 		t.Fatalf("create secret: %v", err)

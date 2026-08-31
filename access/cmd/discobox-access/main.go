@@ -1,4 +1,4 @@
-// Command discobox-credential is the in-sandbox client for the agent
+// Command discobox-access is the in-sandbox client for the agent
 // credentials protocol: it asks a human for a credential the agent was not
 // provisioned with, and runs one command with it.
 //
@@ -9,9 +9,9 @@ package main
 import (
 	"os"
 
-	"github.com/discobox-ai/discobox/agentcred"
+	"github.com/discobox-ai/discobox/access"
 )
 
 func main() {
-	os.Exit(agentcred.Run(os.Args[1:]))
+	os.Exit(access.Run(os.Args[1:]))
 }

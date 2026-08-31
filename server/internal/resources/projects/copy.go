@@ -323,16 +323,16 @@ func (s *Service) copySecret(ctx context.Context, sourceProjectID, projectID, so
 		uniqueKey = secretID
 	}
 	secret := &model.Secret{
-		ID:              secretID,
-		ProjectID:       projectID,
-		Name:            sourceSecret.Name,
-		Type:            sourceSecret.Type,
-		Host:            sourceSecret.Host,
-		UniqueKey:       uniqueKey,
-		Anonymous:       sourceSecret.Anonymous,
-		Format:          sourceSecret.Format,
-		DefaultGrantTTL: sourceSecret.DefaultGrantTTL,
-		EncryptedValue:  plaintext,
+		ID:             secretID,
+		ProjectID:      projectID,
+		Name:           sourceSecret.Name,
+		Type:           sourceSecret.Type,
+		Host:           sourceSecret.Host,
+		UniqueKey:      uniqueKey,
+		Anonymous:      sourceSecret.Anonymous,
+		Format:         sourceSecret.Format,
+		MaxGrantTTL:    sourceSecret.MaxGrantTTL,
+		EncryptedValue: plaintext,
 	}
 	if err := s.store.CreateSecret(ctx, secret); err != nil {
 		return "", err

@@ -25,6 +25,17 @@ func padANSI(s string, w int) string {
 	return ansi.Truncate(s, w, "…")
 }
 
+// fillRows grows a block to rows lines, adding empty ones at the bottom. It is
+// how a screen whose content is shorter than the window keeps its full height
+// without spreading the gap through the middle of what it draws.
+func fillRows(block string, rows int) string {
+	lines := strings.Split(block, "\n")
+	for len(lines) < rows {
+		lines = append(lines, "")
+	}
+	return strings.Join(lines, "\n")
+}
+
 // hyperlink makes text clickable, by the OSC 8 escape terminals have agreed on
 // for it. The sequences occupy no cells, so everything that measures or
 // truncates this row goes on measuring the text.

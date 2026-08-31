@@ -46,7 +46,7 @@ func codexConfig(t *testing.T, st *store.Store) *model.HarnessConfig {
 
 func bearerSecret(t *testing.T, st *store.Store, name, host string) *model.Secret {
 	t.Helper()
-	sec := &model.Secret{ProjectID: "project-1", Name: name, Type: model.SecretTypeBearer, Host: host, EncryptedValue: []byte(`{"token":"sk-abc"}`)}
+	sec := &model.Secret{ProjectID: "project-1", Name: name, Type: model.SecretTypeToken, Host: host, EncryptedValue: []byte(`{"token":"sk-abc"}`)}
 	if err := st.CreateSecret(context.Background(), sec); err != nil {
 		t.Fatalf("create secret: %v", err)
 	}

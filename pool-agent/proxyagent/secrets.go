@@ -14,6 +14,7 @@ import (
 
 	"github.com/fsnotify/fsnotify"
 
+	"github.com/discobox-ai/discobox/hostscope"
 	"github.com/discobox-ai/discobox/layout"
 	"github.com/discobox-ai/discobox/pool-agent/wire"
 	"github.com/discobox-ai/discobox/proxy"
@@ -244,7 +245,10 @@ func (r *secretResolver) activation(req proxy.SecretResolveRequest) (activation,
 	if record.SandboxID != req.ClientID {
 		return activation{}, false
 	}
-	if record.Host != "" && !strings.EqualFold(record.Host, req.Host) {
+	// The same reading the control plane uses: a use approved for github.com
+	// covers api.github.com, and one approved for api.github.com covers
+	// nothing above it.
+	if !hostscope.Covers(record.Host, req.Host) {
 		return activation{}, false
 	}
 	return record, true

@@ -444,7 +444,14 @@ func (s *Service) applyConfigureOutput(ctx context.Context, config *model.Harnes
 			// and deleted with it), so it must not occupy the shared
 			// (project,type,host) uniqueness slot: two harnesses may each hold,
 			// say, a hostless bearer token.
-			UniqueKey:      secretID,
+			UniqueKey: secretID,
+			// No ceiling on the grants that stand on it, said rather than left
+			// to a default. The grant below never expires, because a harness
+			// that stops working an hour after it was configured is a harness
+			// nobody configured; a limit here would describe a lifetime this
+			// credential's own grant does not have, and would refuse the next
+			// one somebody writes for it.
+			MaxGrantTTL:    0,
 			EncryptedValue: []byte(secret.Value),
 		}
 		if err := s.store.CreateSecret(ctx, created); err != nil {

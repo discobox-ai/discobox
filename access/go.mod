@@ -1,4 +1,4 @@
-module github.com/discobox-ai/discobox/agentcred
+module github.com/discobox-ai/discobox/access
 
 go 1.26.1
 

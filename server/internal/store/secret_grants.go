@@ -2,10 +2,12 @@ package store
 
 import (
 	"context"
+	"sort"
 	"time"
 
 	"gorm.io/gorm"
 
+	"github.com/discobox-ai/discobox/hostscope"
 	"github.com/discobox-ai/discobox/server/internal/model"
 )
 
@@ -97,10 +99,15 @@ func (s *Store) FindLiveGrant(ctx context.Context, projectID, secretID, host str
 		return nil, err
 	}
 	now := time.Now().UTC()
+	// The host is matched in Go rather than in SQL: a grant covers its own
+	// host and everything beneath it (hostscope.Covers), which is a relation
+	// SQL equality cannot express and which must read identically here, in the
+	// pool agent's activation check, and in the guard on what a grant may point
+	// a secret at.
 	var candidates []model.SecretGrant
 	err = read.
-		Where("project_id = ? AND secret_id = ? AND (host = '' OR host = ?) AND (expires_at IS NULL OR expires_at > ?)",
-			projectID, secretID, host, now).
+		Where("project_id = ? AND secret_id = ? AND (expires_at IS NULL OR expires_at > ?)",
+			projectID, secretID, now).
 		Find(&candidates).Error
 	if err != nil {
 		return nil, err
@@ -125,6 +132,9 @@ func (s *Store) FindLiveGrant(ctx context.Context, projectID, secretID, host str
 		if _, ok := allowed[GrantScope{Scope: c.Scope, ScopeKey: c.ScopeKey}]; !ok {
 			continue
 		}
+		if !hostscope.Covers(c.Host, host) {
+			continue
+		}
 		if best == nil || isMoreSpecificGrant(c, best, scopeRank, host) {
 			best = c
 		}
@@ -135,35 +145,51 @@ func (s *Store) FindLiveGrant(ctx context.Context, projectID, secretID, host str
 	return best, nil
 }
 
-// FindLiveAgentGrant returns the unexpired sandbox-scoped grant that authorizes
-// an agent-requested binding, or ErrNotFound.
+// ListLiveAgentGrants returns the live grants that carry uses and cover one of
+// the given scopes, narrowest first.
 //
-// It is not FindLiveGrant with an empty host: that call reads an empty host as
-// "the destination is unknown", which only a wildcard grant satisfies, and a
-// grant minted through the agent credentials flow always carries a concrete
-// host (ADR 0031 §5). Here the host is an answer rather than a question — the
-// caller is asking what this sandbox may use, and the grant's own host is part
-// of the reply.
-func (s *Store) FindLiveAgentGrant(ctx context.Context, projectID, secretID, sandboxID string) (*model.SecretGrant, error) {
+// It is not FindLiveGrant: that call answers "may this credential go to this
+// host", matching a destination the proxy observed. This one answers "what may
+// this discobox's agent ask for", where the host is part of the reply rather
+// than the question, and only a grant with declared uses is an answer — a
+// standing grant that happens to cover the same secret is not an approval of
+// any use (ADR 0031 §5).
+func (s *Store) ListLiveAgentGrants(ctx context.Context, projectID string, scopes []GrantScope) ([]model.SecretGrant, error) {
 	read, err := s.getRead(ctx)
 	if err != nil {
 		return nil, err
 	}
+	allowed := make(map[GrantScope]int, len(scopes))
+	for rank, sc := range scopes {
+		if sc.ScopeKey != "" {
+			allowed[sc] = rank
+		}
+	}
 	var candidates []model.SecretGrant
 	err = read.
-		Where("project_id = ? AND secret_id = ? AND scope = ? AND scope_key = ? AND (expires_at IS NULL OR expires_at > ?)",
-			projectID, secretID, model.SecretGrantScopeSandbox, sandboxID, time.Now().UTC()).
+		Where("project_id = ? AND (expires_at IS NULL OR expires_at > ?)", projectID, time.Now().UTC()).
 		Order("granted_at DESC").
 		Find(&candidates).Error
 	if err != nil {
 		return nil, err
 	}
+	var out []model.SecretGrant
 	for i := range candidates {
-		if len(candidates[i].Uses) > 0 {
-			return &candidates[i], nil
+		if len(candidates[i].Uses) == 0 {
+			continue
 		}
+		if _, ok := allowed[GrantScope{Scope: candidates[i].Scope, ScopeKey: candidates[i].ScopeKey}]; !ok {
+			continue
+		}
+		out = append(out, candidates[i])
 	}
-	return nil, ErrNotFound
+	// Narrowest first, so the grant somebody wrote about this one discobox
+	// claims its environment variable ahead of one written about the project.
+	sort.SliceStable(out, func(i, j int) bool {
+		return allowed[GrantScope{Scope: out[i].Scope, ScopeKey: out[i].ScopeKey}] <
+			allowed[GrantScope{Scope: out[j].Scope, ScopeKey: out[j].ScopeKey}]
+	})
+	return out, nil
 }
 
 // isMoreSpecificGrant reports whether candidate beats current: a narrower scope
@@ -172,7 +198,7 @@ func isMoreSpecificGrant(candidate, current *model.SecretGrant, scopeRank map[st
 	if scopeRank[candidate.Scope] != scopeRank[current.Scope] {
 		return scopeRank[candidate.Scope] < scopeRank[current.Scope]
 	}
-	candidateExactHost := candidate.Host == host && host != ""
-	currentExactHost := current.Host == host && host != ""
-	return candidateExactHost && !currentExactHost
+	// Between two grants that both cover the destination, the narrower one
+	// wins: the host itself, then a parent of it, then the wildcard.
+	return hostscope.Specificity(candidate.Host, host) < hostscope.Specificity(current.Host, host)
 }

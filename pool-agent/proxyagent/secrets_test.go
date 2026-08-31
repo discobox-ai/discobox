@@ -107,3 +107,39 @@ func TestResolverNoContextIsDenied(t *testing.T) {
 		t.Fatalf("err = %v, want ErrSecretResolveDenied when no context file", err)
 	}
 }
+
+// The activation's host is a scope, not a string: a use approved for the site
+// covers the hosts beneath it, and covers nothing above it. It has to read the
+// same way here as it does on the control plane — a sentinel the pool agent
+// forwards and the control plane then refuses is a credential that fails
+// halfway, with the reason on the other side of the wire.
+func TestActivationHostCoversSubdomainsAndNothingAbove(t *testing.T) {
+	withTestRoot(t)
+	live := newActivations()
+	resolver := newSecretResolver(testProjectID, testPoolID, live)
+
+	record, err := live.mint("sb-1", "STABLE", "use-1", "github.com", "ghp_{base62:36}", nil)
+	if err != nil {
+		t.Fatalf("mint: %v", err)
+	}
+	if _, ok := resolver.activation(proxy.SecretResolveRequest{
+		ClientID: "sb-1", Sentinel: record.Sentinel, Host: "api.github.com",
+	}); !ok {
+		t.Fatal("a use approved for the site does not cover its API")
+	}
+
+	narrow, err := live.mint("sb-1", "STABLE", "use-2", "api.github.com", "ghp_{base62:36}", nil)
+	if err != nil {
+		t.Fatalf("mint: %v", err)
+	}
+	if _, ok := resolver.activation(proxy.SecretResolveRequest{
+		ClientID: "sb-1", Sentinel: narrow.Sentinel, Host: "github.com",
+	}); ok {
+		t.Fatal("a use approved for the API covers the whole site")
+	}
+	if _, ok := resolver.activation(proxy.SecretResolveRequest{
+		ClientID: "sb-1", Sentinel: narrow.Sentinel, Host: "uploads.github.com",
+	}); ok {
+		t.Fatal("a use approved for one host covers a sibling")
+	}
+}

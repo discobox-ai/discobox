@@ -110,6 +110,7 @@ type SandboxUpgrade = apigen.SandboxUpgrade
 type SandboxUser = apigen.SandboxUser
 type Secret = apigen.Secret
 type SecretGrant = apigen.SecretGrant
+type SecretOAuth = apigen.SecretOAuth
 type SecretRequest = apigen.SecretRequest
 type SecretUse = apigen.SecretUse
 type SecretValue = apigen.SecretValue

@@ -115,7 +115,7 @@ func TestUnsetDefaultHarnessConfigRequiresDefault(t *testing.T) {
 func TestSetHarnessConfigSecretBindingValidates(t *testing.T) {
 	ctx := context.Background()
 	svc, st, configID := newBindingService(t)
-	sec := &model.Secret{ProjectID: "project-1", Name: "openai", Type: model.SecretTypeBearer, EncryptedValue: []byte(`{"token":"t"}`)}
+	sec := &model.Secret{ProjectID: "project-1", Name: "openai", Type: model.SecretTypeToken, EncryptedValue: []byte(`{"token":"t"}`)}
 	if err := st.CreateSecret(ctx, sec); err != nil {
 		t.Fatalf("create secret: %v", err)
 	}

@@ -14,7 +14,7 @@ WORKDIR /src
 
 COPY go.mod go.sum ./
 COPY agentcreds ./agentcreds
-COPY agentcred ./agentcred
+COPY access ./access
 COPY api ./api
 COPY execstream ./execstream
 COPY harness ./harness
@@ -30,7 +30,7 @@ RUN --mount=type=cache,target=/go/pkg/mod,sharing=locked \
     && CGO_ENABLED=0 GOOS=$TARGETOS GOARCH=$TARGETARCH go -C sandbox-agent build -trimpath -ldflags="-s -w" -o /out/discobox-runc ./cmd/discobox-runc \
     && CGO_ENABLED=0 GOOS=$TARGETOS GOARCH=$TARGETARCH go -C sandbox-agent build -trimpath -ldflags="-s -w" -o /out/discobox-ca-anchor ./cmd/discobox-ca-anchor \
     && CGO_ENABLED=0 GOOS=$TARGETOS GOARCH=$TARGETARCH go -C sandbox-agent build -trimpath -ldflags="-s -w" -o /out/discobox-docker ./cmd/discobox-docker \
-    && CGO_ENABLED=0 GOOS=$TARGETOS GOARCH=$TARGETARCH go -C agentcred build -trimpath -ldflags="-s -w" -o /out/discobox-credential ./cmd/discobox-credential
+    && CGO_ENABLED=0 GOOS=$TARGETOS GOARCH=$TARGETARCH go -C access build -trimpath -ldflags="-s -w" -o /out/discobox-access ./cmd/discobox-access
 
 # Built in its own layer so bumping the difftui version does not invalidate the
 # sandbox-agent binaries above.
@@ -277,7 +277,7 @@ COPY --from=sandbox-agent-builder /out/discobox-ca-anchor /usr/local/bin/discobo
 # Its own binary, not an argv[0] alias of the agent: the credential CLI is a
 # client of a portable protocol and is meant to be liftable into another
 # repository, so it must not be welded to this image's runtime (ADR 0031).
-COPY --from=sandbox-agent-builder /out/discobox-credential /usr/local/bin/discobox-credential
+COPY --from=sandbox-agent-builder /out/discobox-access /usr/local/bin/discobox-access
 # Installs as `docker`, ahead of the real CLI at /usr/bin/docker on PATH, to
 # give `docker build` the pool-shared BuildKit cache. Non-build commands are
 # exec'd straight through. See the sandbox-agent/dockercache package.

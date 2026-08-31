@@ -3,9 +3,14 @@ package store
 import (
 	"context"
 	"errors"
+	"fmt"
+	"net/http"
+	"strings"
 
 	"gorm.io/gorm"
 
+	"github.com/discobox-ai/discobox/secretformat"
+	"github.com/discobox-ai/discobox/server/internal/apperrors"
 	"github.com/discobox-ai/discobox/server/internal/model"
 )
 
@@ -51,50 +56,118 @@ func (s *Store) ListInjectedSandboxSecrets(ctx context.Context, projectID, sandb
 	return out, err
 }
 
-// ListLiveAgentCredentials returns a sandbox's agent-requested bindings joined
-// with the grants that authorize them, dropping any whose grant has lapsed. It
-// is what the agent credentials protocol's list operation reports.
-func (s *Store) ListLiveAgentCredentials(ctx context.Context, projectID, sandboxID string) ([]AgentCredential, error) {
-	read, err := s.getRead(ctx)
+// ListLiveAgentCredentials is what a discobox's agent may ask for: every live
+// grant that carries uses and covers this discobox, with the binding each one
+// resolves through.
+//
+// It starts from the grants rather than from the bindings, which is what lets a
+// grant be wider than one discobox. A grant on a harness config or a project
+// has no binding when it is written — the discoboxes it covers may not exist
+// yet — so the binding is minted here, the first time that discobox's agent
+// asks. Minting is a write on a read path, and it is the cheaper of the two
+// honest options: the other is a reconciler chasing every discobox against
+// every grant, including ones nobody has created.
+func (s *Store) ListLiveAgentCredentials(ctx context.Context, projectID, sandboxID string, scopes []GrantScope) ([]AgentCredential, error) {
+	grants, err := s.ListLiveAgentGrants(ctx, projectID, scopes)
 	if err != nil {
 		return nil, err
 	}
-	var assignments []model.SandboxSecret
-	if err := read.Where("project_id = ? AND sandbox_id = ? AND agent_requested = ?", projectID, sandboxID, true).
-		Order("env_name ASC").Find(&assignments).Error; err != nil {
-		return nil, err
-	}
-	if len(assignments) == 0 {
-		return nil, nil
-	}
-	out := make([]AgentCredential, 0, len(assignments))
-	for i := range assignments {
-		assignment := assignments[i]
-		// The grant is matched at the sandbox scope only. This flow never
-		// produces a broader one, and a wider standing grant that happens to
-		// cover the same secret is not an approval of these uses.
-		grant, err := s.FindLiveAgentGrant(ctx, projectID, assignment.SecretID, sandboxID)
+	out := make([]AgentCredential, 0, len(grants))
+	claimed := map[string]string{} // env var -> secret that took it
+	for i := range grants {
+		grant := grants[i]
+		envName := strings.TrimSpace(grant.EnvName)
+		if envName == "" {
+			// A grant from before the variable was recorded on it. Its binding
+			// carries the name, so it is found by secret rather than by
+			// variable.
+			binding, err := s.findAgentBindingBySecret(ctx, projectID, sandboxID, grant.SecretID)
+			if err != nil || binding == nil {
+				continue
+			}
+			envName = binding.EnvName
+		}
+		// Narrowest first, so a grant written about this discobox keeps its
+		// variable and a wider one naming the same variable is passed over
+		// rather than silently swapping the credential underneath it.
+		if took, taken := claimed[envName]; taken && took != grant.SecretID {
+			continue
+		}
+		secret, err := s.GetSecret(ctx, projectID, grant.SecretID)
 		if err != nil {
 			if errors.Is(err, ErrNotFound) {
-				continue // the approval behind this binding has lapsed
+				continue // the secret went out from under the grant
 			}
 			return nil, err
 		}
-		secret, err := s.GetSecret(ctx, projectID, assignment.SecretID)
+		binding, err := s.EnsureAgentBinding(ctx, projectID, sandboxID, envName, secret)
 		if err != nil {
-			if errors.Is(err, ErrNotFound) {
-				continue // secret deleted out from under the binding
-			}
 			return nil, err
 		}
+		claimed[envName] = grant.SecretID
 		out = append(out, AgentCredential{
-			Assignment: assignment,
-			Grant:      *grant,
+			Assignment: *binding,
+			Grant:      grant,
 			Name:       secret.Name,
 			Format:     secret.Format,
 		})
 	}
 	return out, nil
+}
+
+// EnsureAgentBinding is the discobox's stable sentinel for one credential,
+// minted if this is the first time its agent has asked. The row is never
+// injected into the sandbox (ADR 0031 §4); it exists so the pool agent's
+// ephemeral sentinels have something to translate back to.
+func (s *Store) EnsureAgentBinding(ctx context.Context, projectID, sandboxID, envName string, secret *model.Secret) (*model.SandboxSecret, error) {
+	existing, err := s.FindAgentSandboxSecret(ctx, projectID, sandboxID, envName)
+	if err != nil && !errors.Is(err, ErrNotFound) {
+		return nil, err
+	}
+	if existing != nil && existing.SecretID == secret.ID {
+		return existing, nil
+	}
+	if existing != nil {
+		// One variable, one credential. Rebinding it would leave a live
+		// activation resolving to a different secret.
+		return nil, apperrors.NewStatusError(http.StatusConflict,
+			fmt.Sprintf("discobox already has an agent credential in %s from another secret", envName))
+	}
+	sentinel, err := secretformat.MintSentinel(secret.Format)
+	if err != nil {
+		return nil, err
+	}
+	binding := &model.SandboxSecret{
+		ProjectID:      projectID,
+		SandboxID:      sandboxID,
+		SecretID:       secret.ID,
+		EnvName:        envName,
+		Sentinel:       sentinel,
+		AgentRequested: true,
+	}
+	if err := s.CreateSandboxSecret(ctx, binding); err != nil {
+		return nil, err
+	}
+	return binding, nil
+}
+
+// findAgentBindingBySecret is the binding for one secret on one discobox,
+// whatever variable it was bound to.
+func (s *Store) findAgentBindingBySecret(ctx context.Context, projectID, sandboxID, secretID string) (*model.SandboxSecret, error) {
+	read, err := s.getRead(ctx)
+	if err != nil {
+		return nil, err
+	}
+	var out model.SandboxSecret
+	err = read.Where("project_id = ? AND sandbox_id = ? AND secret_id = ? AND agent_requested = ?",
+		projectID, sandboxID, secretID, true).First(&out).Error
+	if errors.Is(err, gorm.ErrRecordNotFound) {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, err
+	}
+	return &out, nil
 }
 
 // AgentCredential is one agent-requested binding and the live grant authorizing

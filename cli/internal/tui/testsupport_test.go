@@ -35,6 +35,30 @@ type fakeSource struct {
 	secrets      []HarnessSecret
 	editChanged  bool
 
+	// The credential inbox: what is waiting, what can answer it, and what the
+	// window did about it.
+	requests        []CredentialRequest
+	projectSecrets  []Secret
+	requestsErr     error
+	secretsErr      error
+	approvals       []Approval
+	denials         []string
+	createdSecrets  []NewSecret
+	approveErr      error
+	createSecretErr error
+	unbound         []string
+	bound           []string
+	unbindErr       error
+	limited         []string
+	limitErr        error
+	projectGrants   []Grant
+	grantsErr       error
+	revoked         []string
+	createdGrants   []NewGrant
+	createGrantErr  error
+	deleted         []string
+	deleteErr       error
+
 	listErr   error
 	runErr    error
 	createdID string
@@ -1036,4 +1060,153 @@ func testSandboxes() []Sandbox {
 			Created: now.Add(-48 * time.Hour), Diff: DiffStat{Known: true, Added: 240, Deleted: 96, Files: 11},
 		},
 	}
+}
+
+func (f *fakeSource) CredentialRequests(context.Context) ([]CredentialRequest, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return append([]CredentialRequest(nil), f.requests...), f.requestsErr
+}
+
+func (f *fakeSource) Secrets(context.Context) ([]Secret, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return append([]Secret(nil), f.projectSecrets...), f.secretsErr
+}
+
+func (f *fakeSource) CreateSecret(_ context.Context, secret NewSecret) (Secret, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	if f.createSecretErr != nil {
+		return Secret{}, f.createSecretErr
+	}
+	f.createdSecrets = append(f.createdSecrets, secret)
+	created := Secret{ID: "sec_new", Name: secret.Name, Type: secret.Type, Host: secret.Host}
+	f.projectSecrets = append(f.projectSecrets, created)
+	return created, nil
+}
+
+func (f *fakeSource) ApproveCredentialRequest(_ context.Context, approval Approval) error {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	if f.approveErr != nil {
+		return f.approveErr
+	}
+	f.approvals = append(f.approvals, approval)
+	f.dropRequestLocked(approval.RequestID)
+	return nil
+}
+
+func (f *fakeSource) DenyCredentialRequest(_ context.Context, requestID string) error {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.denials = append(f.denials, requestID)
+	f.dropRequestLocked(requestID)
+	return nil
+}
+
+// dropRequestLocked takes an answered request out of the inbox, so a poll after
+// one is answered reports what the server would.
+func (f *fakeSource) dropRequestLocked(requestID string) {
+	kept := f.requests[:0]
+	for _, req := range f.requests {
+		if req.ID != requestID {
+			kept = append(kept, req)
+		}
+	}
+	f.requests = kept
+}
+
+func (f *fakeSource) SetSecretHost(_ context.Context, secretID, host string) error {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	if f.unbindErr != nil {
+		return f.unbindErr
+	}
+	f.bound = append(f.bound, secretID+"="+host)
+	if host == "" {
+		f.unbound = append(f.unbound, secretID)
+	}
+	for i := range f.projectSecrets {
+		if f.projectSecrets[i].ID == secretID {
+			f.projectSecrets[i].Host = host
+		}
+	}
+	return nil
+}
+
+func (f *fakeSource) SetSecretMaxGrantTTL(_ context.Context, secretID string, seconds int64) error {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	if f.limitErr != nil {
+		return f.limitErr
+	}
+	f.limited = append(f.limited, fmt.Sprintf("%s=%d", secretID, seconds))
+	for i := range f.projectSecrets {
+		if f.projectSecrets[i].ID == secretID {
+			f.projectSecrets[i].MaxTTL = time.Duration(seconds) * time.Second
+		}
+	}
+	return nil
+}
+
+func (f *fakeSource) Grants(_ context.Context, secretID string) ([]Grant, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	if f.grantsErr != nil {
+		return nil, f.grantsErr
+	}
+	var out []Grant
+	for _, g := range f.projectGrants {
+		if secretID == "" || g.SecretID == secretID {
+			out = append(out, g)
+		}
+	}
+	return out, nil
+}
+
+func (f *fakeSource) CreateGrant(_ context.Context, grant NewGrant) (Grant, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	if f.createGrantErr != nil {
+		return Grant{}, f.createGrantErr
+	}
+	f.createdGrants = append(f.createdGrants, grant)
+	made := Grant{
+		ID: "grant_new", SecretID: grant.SecretID, Scope: grant.Scope,
+		ScopeKey: grant.ScopeKey, Host: grant.Host,
+	}
+	f.projectGrants = append(f.projectGrants, made)
+	return made, nil
+}
+
+func (f *fakeSource) RevokeGrant(_ context.Context, grantID string) error {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.revoked = append(f.revoked, grantID)
+	kept := f.projectGrants[:0]
+	for _, g := range f.projectGrants {
+		if g.ID != grantID {
+			kept = append(kept, g)
+		}
+	}
+	f.projectGrants = kept
+	return nil
+}
+
+func (f *fakeSource) DeleteSecret(_ context.Context, secretID string) error {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	if f.deleteErr != nil {
+		return f.deleteErr
+	}
+	f.deleted = append(f.deleted, secretID)
+	kept := f.projectSecrets[:0]
+	for _, s := range f.projectSecrets {
+		if s.ID != secretID {
+			kept = append(kept, s)
+		}
+	}
+	f.projectSecrets = kept
+	return nil
 }

@@ -858,10 +858,12 @@ const (
 )
 
 const (
-	SecretTypeGit    = "git"
-	SecretTypeSSH    = "ssh"
-	SecretTypeBearer = "bearer"
-	// SecretTypeOAuth is a bearer credential that rotates: the current access
+	// SecretTypeToken is one opaque string. Not "bearer": the proxy swaps the
+	// value into whatever header the sandbox put it in — x-api-key,
+	// PRIVATE-TOKEN, Authorization — so naming it after one HTTP scheme names a
+	// requirement that does not exist.
+	SecretTypeToken = "token"
+	// SecretTypeOAuth is a token that rotates: the current access
 	// token lives in SecretValue.Token (so the proxy swap is identical to a
 	// bearer), while the refresh token, token endpoint, client ID, and access
 	// token expiry ride alongside it and never leave the control plane. The
@@ -882,18 +884,43 @@ const (
 
 // Secret is a project-scoped encrypted credential that can be requested by sandboxes.
 type Secret struct {
-	ID              string    `gorm:"primaryKey;type:text" json:"id" doc:"Stable secret ID"`
-	ProjectID       string    `gorm:"column:project_id;not null;type:text;index;uniqueIndex:idx_secret_project_type_host,priority:1" json:"projectId" doc:"Project ID"`
-	Name            string    `gorm:"column:name;not null;type:text" json:"name" doc:"Secret name"`
-	Type            string    `gorm:"column:type;not null;type:text;uniqueIndex:idx_secret_project_type_host,priority:2" json:"type" doc:"Secret type" enum:"git,ssh,bearer,oauth"`
-	Host            string    `gorm:"column:host;not null;type:text;default:'';uniqueIndex:idx_secret_project_type_host,priority:3" json:"host,omitempty" doc:"Optional host used to match requests"`
-	UniqueKey       string    `gorm:"column:unique_key;not null;type:text;default:'';uniqueIndex:idx_secret_project_type_host,priority:4" json:"-"`
-	Anonymous       bool      `gorm:"column:anonymous;not null;default:false;index" json:"anonymous,omitempty" doc:"Sandbox-managed secret created from an inline value; referenced only by ID"`
-	Format          string    `gorm:"column:format;not null;type:text;default:''" json:"format,omitempty" doc:"Generative format template describing the credential shape; used to mint sentinel placeholders"`
-	DefaultGrantTTL int64     `gorm:"column:default_grant_ttl_seconds;not null;default:3600" json:"defaultGrantTTLSeconds" doc:"Default grant duration in seconds"`
-	EncryptedValue  []byte    `gorm:"column:encrypted_value" json:"-"`
-	CreatedAt       time.Time `json:"createdAt" doc:"Creation timestamp" format:"date-time"`
-	UpdatedAt       time.Time `json:"updatedAt" doc:"Last update timestamp" format:"date-time"`
+	ID        string `gorm:"primaryKey;type:text" json:"id" doc:"Stable secret ID"`
+	ProjectID string `gorm:"column:project_id;not null;type:text;index;uniqueIndex:idx_secret_project_type_host,priority:1" json:"projectId" doc:"Project ID"`
+	// Name is part of the uniqueness domain. Without it a project could hold
+	// only one secret per (type, host) — and since nothing infers a host any
+	// more, that collapsed to one unbound token per project: a GitHub token and
+	// an OpenAI key could not both exist. What the domain is really for is
+	// keeping MatchSecret's answer unambiguous, and MatchSecret already refuses
+	// an ambiguous match at the moment it matters, with a sentence rather than
+	// a constraint violation.
+	Name      string `gorm:"column:name;not null;type:text;uniqueIndex:idx_secret_project_type_host,priority:2" json:"name" doc:"Secret name"`
+	Type      string `gorm:"column:type;not null;type:text;uniqueIndex:idx_secret_project_type_host,priority:3" json:"type" doc:"Secret type" enum:"token,oauth"`
+	Host      string `gorm:"column:host;not null;type:text;default:'';uniqueIndex:idx_secret_project_type_host,priority:4" json:"host,omitempty" doc:"Optional host used to match requests"`
+	UniqueKey string `gorm:"column:unique_key;not null;type:text;default:'';uniqueIndex:idx_secret_project_type_host,priority:5" json:"-"`
+	Anonymous bool   `gorm:"column:anonymous;not null;default:false;index" json:"anonymous,omitempty" doc:"Sandbox-managed secret created from an inline value; referenced only by ID"`
+	Format    string `gorm:"column:format;not null;type:text;default:''" json:"format,omitempty" doc:"Generative format template describing the credential shape; used to mint sentinel placeholders"`
+	// OAuth is what an oauth credential is, without being it: where it renews,
+	// which client it belongs to, what it may do, and when the access token
+	// goes stale. Never the access token, never the refresh token.
+	//
+	// It is not a column. The fields live inside the encrypted value, because
+	// they were captured with it; this is filled in on read, so a caller can
+	// see what a credential is good for without the credential.
+	OAuth *SecretOAuth `gorm:"-" json:"oauth,omitempty" doc:"What an OAuth credential is; never the tokens themselves"`
+	// MaxGrantTTL is the longest a grant on this credential may live, and the
+	// lifetime a grant takes when nobody names one. It is a ceiling rather
+	// than a suggestion: a longer grant, or a grant that never expires, is
+	// refused while it stands. Zero lifts it — grants on the secret may then
+	// live forever, which is what an unlimited credential says out loud.
+	//
+	// It carries no column default, unlike the rest of the not-null scalars
+	// here: GORM omits a zero-valued field from an INSERT when the column has
+	// one, so a default would quietly turn "no limit" into an hour. The
+	// service owns the default a creator who names none receives.
+	MaxGrantTTL    int64     `gorm:"column:max_grant_ttl_seconds;not null" json:"maxGrantTTLSeconds" doc:"Longest a grant on this secret may live, in seconds; 0 allows grants that never expire"`
+	EncryptedValue []byte    `gorm:"column:encrypted_value" json:"-"`
+	CreatedAt      time.Time `json:"createdAt" doc:"Creation timestamp" format:"date-time"`
+	UpdatedAt      time.Time `json:"updatedAt" doc:"Last update timestamp" format:"date-time"`
 
 	Project *Project `gorm:"foreignKey:ProjectID" json:"-"`
 }
@@ -915,20 +942,27 @@ func (s *Secret) BeforeCreate(_ *gorm.DB) error {
 	return nil
 }
 
+// SecretOAuth is the non-secret half of an OAuth credential: what it is, what
+// it may do, and when it goes stale. It says nothing that could be used as the
+// credential.
+type SecretOAuth struct {
+	TokenURL             string   `json:"tokenUrl,omitempty" doc:"Where the access token is renewed"`
+	ClientID             string   `json:"clientId,omitempty" doc:"OAuth client the grant belongs to"`
+	Scopes               []string `json:"scopes,omitempty" doc:"What the grant may do, as captured at login"`
+	SubscriptionType     string   `json:"subscriptionType,omitempty" doc:"The plan or account kind the grant belongs to"`
+	AccessTokenExpiresAt int64    `json:"accessTokenExpiresAt,omitempty" doc:"When the access token goes stale, unix milliseconds"`
+	Refreshable          bool     `json:"refreshable,omitempty" doc:"Whether it carries what it needs to renew itself"`
+}
+
 // SecretValue holds the type-specific plaintext credential fields.
 // Only fields relevant to the secret type will be populated.
 type SecretValue struct {
-	// git
-	Username string `json:"username,omitempty"`
-	Password string `json:"password,omitempty"`
-	// ssh
-	PrivateKey string `json:"privateKey,omitempty"`
-	Passphrase string `json:"passphrase,omitempty"`
-	// bearer
+	// Token is the credential: one opaque string, whatever header it ends up
+	// in.
 	Token string `json:"token,omitempty"`
-	// oauth. Token above holds the current access token so the proxy swap is
-	// identical to a bearer; these fields are used only server-side to refresh it
-	// and are never emitted to the pool (the resolve handler sends Token alone).
+	// oauth. Token above holds the current access token, so the proxy swap is
+	// identical either way; these are used only server-side to refresh it and
+	// are never emitted to the pool (the resolve handler sends Token alone).
 	RefreshToken         string `json:"refreshToken,omitempty"`
 	TokenURL             string `json:"tokenUrl,omitempty"`
 	ClientID             string `json:"clientId,omitempty"`
@@ -977,7 +1011,7 @@ type SecretRequest struct {
 	ProjectID     string      `gorm:"column:project_id;not null;type:text;index" json:"projectId" doc:"Project ID"`
 	RequestedBy   string      `gorm:"column:requested_by;not null;type:text" json:"requestedBy" doc:"Principal ID of the requestor"`
 	SandboxID     string      `gorm:"column:sandbox_id;not null;type:text;default:'';index" json:"sandboxId,omitempty" doc:"Sandbox that owns the sentinel, for sandbox-originated requests"`
-	Type          string      `gorm:"column:type;not null;type:text" json:"type" doc:"Secret type requested" enum:"git,ssh,bearer,oauth"`
+	Type          string      `gorm:"column:type;not null;type:text" json:"type" doc:"Secret type requested" enum:"token,oauth"`
 	Host          string      `gorm:"column:host;not null;type:text;default:''" json:"host,omitempty" doc:"Host hint provided at request time"`
 	Name          string      `gorm:"column:name;not null;type:text;default:''" json:"name,omitempty" doc:"Credential name the agent asked for, for protocol-originated requests"`
 	EnvName       string      `gorm:"column:env_name;not null;type:text;default:''" json:"envName,omitempty" doc:"Environment variable the credential is wanted in, for protocol-originated requests"`
@@ -1034,9 +1068,15 @@ type SecretGrant struct {
 	// agent presents to take a value for one command. A grant with no uses is a
 	// plain standing authorization; one with uses is what the agent credentials
 	// protocol reports and activates against (ADR 0031 §5).
-	Uses      []SecretUse `gorm:"column:uses;type:text;serializer:json" json:"uses,omitempty" doc:"Approved uses, confirmed or edited at approval time"`
-	CreatedAt time.Time   `json:"createdAt" doc:"Creation timestamp" format:"date-time"`
-	UpdatedAt time.Time   `json:"updatedAt" doc:"Last update timestamp" format:"date-time"`
+	Uses []SecretUse `gorm:"column:uses;type:text;serializer:json" json:"uses,omitempty" doc:"Approved uses, confirmed or edited at approval time"`
+	// EnvName is the variable an agent receives the credential in, on a grant
+	// that carries uses. It lives here rather than only on the binding because
+	// a grant wider than one sandbox has no binding yet: the binding is minted
+	// for each discobox the first time its agent asks what it may use, and this
+	// is what names it.
+	EnvName   string    `gorm:"column:env_name;not null;type:text;default:''" json:"envName,omitempty" doc:"Environment variable an agent receives the credential in; set on a grant with uses"`
+	CreatedAt time.Time `json:"createdAt" doc:"Creation timestamp" format:"date-time"`
+	UpdatedAt time.Time `json:"updatedAt" doc:"Last update timestamp" format:"date-time"`
 
 	Project *Project `gorm:"foreignKey:ProjectID" json:"-"`
 }

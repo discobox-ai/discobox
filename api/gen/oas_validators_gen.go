@@ -727,6 +727,17 @@ func (s *CreateSecretBody) Validate() error {
 			Error: err,
 		})
 	}
+	if err := func() error {
+		if err := s.Value.Validate(); err != nil {
+			return err
+		}
+		return nil
+	}(); err != nil {
+		failures = append(failures, validate.FieldError{
+			Name:  "value",
+			Error: err,
+		})
+	}
 	if len(failures) > 0 {
 		return &validate.Error{Fields: failures}
 	}
@@ -735,11 +746,7 @@ func (s *CreateSecretBody) Validate() error {
 
 func (s CreateSecretBodyType) Validate() error {
 	switch s {
-	case "git":
-		return nil
-	case "ssh":
-		return nil
-	case "bearer":
+	case "token":
 		return nil
 	case "oauth":
 		return nil
@@ -762,6 +769,24 @@ func (s *CreateSecretGrantBody) Validate() error {
 	}(); err != nil {
 		failures = append(failures, validate.FieldError{
 			Name:  "scope",
+			Error: err,
+		})
+	}
+	if err := func() error {
+		if value, ok := s.Uses.Get(); ok {
+			if err := func() error {
+				if value == nil {
+					return errors.New("nil is invalid value")
+				}
+				return nil
+			}(); err != nil {
+				return err
+			}
+		}
+		return nil
+	}(); err != nil {
+		failures = append(failures, validate.FieldError{
+			Name:  "uses",
 			Error: err,
 		})
 	}
@@ -809,11 +834,7 @@ func (s *CreateSecretRequestBody) Validate() error {
 
 func (s CreateSecretRequestBodyType) Validate() error {
 	switch s {
-	case "git":
-		return nil
-	case "ssh":
-		return nil
-	case "bearer":
+	case "token":
 		return nil
 	case "oauth":
 		return nil
@@ -3906,6 +3927,24 @@ func (s *Secret) Validate() error {
 
 	var failures []validate.FieldError
 	if err := func() error {
+		if value, ok := s.OAuth.Get(); ok {
+			if err := func() error {
+				if err := value.Validate(); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return err
+			}
+		}
+		return nil
+	}(); err != nil {
+		failures = append(failures, validate.FieldError{
+			Name:  "oauth",
+			Error: err,
+		})
+	}
+	if err := func() error {
 		if err := s.Type.Validate(); err != nil {
 			return err
 		}
@@ -3976,6 +4015,36 @@ func (s SecretGrantScope) Validate() error {
 	}
 }
 
+func (s *SecretOAuth) Validate() error {
+	if s == nil {
+		return validate.ErrNilPointer
+	}
+
+	var failures []validate.FieldError
+	if err := func() error {
+		if value, ok := s.Scopes.Get(); ok {
+			if err := func() error {
+				if value == nil {
+					return errors.New("nil is invalid value")
+				}
+				return nil
+			}(); err != nil {
+				return err
+			}
+		}
+		return nil
+	}(); err != nil {
+		failures = append(failures, validate.FieldError{
+			Name:  "scopes",
+			Error: err,
+		})
+	}
+	if len(failures) > 0 {
+		return &validate.Error{Fields: failures}
+	}
+	return nil
+}
+
 func (s *SecretRequest) Validate() error {
 	if s == nil {
 		return validate.ErrNilPointer
@@ -4043,11 +4112,7 @@ func (s SecretRequestStatus) Validate() error {
 
 func (s SecretRequestType) Validate() error {
 	switch s {
-	case "git":
-		return nil
-	case "ssh":
-		return nil
-	case "bearer":
+	case "token":
 		return nil
 	case "oauth":
 		return nil
@@ -4058,17 +4123,43 @@ func (s SecretRequestType) Validate() error {
 
 func (s SecretType) Validate() error {
 	switch s {
-	case "git":
-		return nil
-	case "ssh":
-		return nil
-	case "bearer":
+	case "token":
 		return nil
 	case "oauth":
 		return nil
 	default:
 		return errors.Errorf("invalid value: %v", s)
 	}
+}
+
+func (s *SecretValue) Validate() error {
+	if s == nil {
+		return validate.ErrNilPointer
+	}
+
+	var failures []validate.FieldError
+	if err := func() error {
+		if value, ok := s.Scopes.Get(); ok {
+			if err := func() error {
+				if value == nil {
+					return errors.New("nil is invalid value")
+				}
+				return nil
+			}(); err != nil {
+				return err
+			}
+		}
+		return nil
+	}(); err != nil {
+		failures = append(failures, validate.FieldError{
+			Name:  "scopes",
+			Error: err,
+		})
+	}
+	if len(failures) > 0 {
+		return &validate.Error{Fields: failures}
+	}
+	return nil
 }
 
 func (s *UpdateHarnessConfigBody) Validate() error {
@@ -4407,6 +4498,24 @@ func (s *UpdateSecretBody) Validate() error {
 	}(); err != nil {
 		failures = append(failures, validate.FieldError{
 			Name:  "name",
+			Error: err,
+		})
+	}
+	if err := func() error {
+		if value, ok := s.Value.Get(); ok {
+			if err := func() error {
+				if err := value.Validate(); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return err
+			}
+		}
+		return nil
+	}(); err != nil {
+		failures = append(failures, validate.FieldError{
+			Name:  "value",
 			Error: err,
 		})
 	}

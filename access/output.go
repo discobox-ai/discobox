@@ -1,4 +1,4 @@
-package agentcred
+package access
 
 import (
 	"encoding/json"

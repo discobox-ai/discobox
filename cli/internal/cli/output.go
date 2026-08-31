@@ -385,7 +385,29 @@ func (a *App) writeSecret(cmd *cobra.Command, secret *apimodel.Secret) error {
 	fmt.Fprintf(tw, "NAME\t%s\n", secret.Name)
 	fmt.Fprintf(tw, "TYPE\t%s\n", secret.Type)
 	fmt.Fprintf(tw, "HOST\t%s\n", secret.Host.Or(""))
-	fmt.Fprintf(tw, "GRANT TTL\t%s\n", formatSeconds(secret.DefaultGrantTTLSeconds))
+	fmt.Fprintf(tw, "MAX GRANT TTL\t%s\n", formatGrantLimit(secret.MaxGrantTTLSeconds))
+	// What an OAuth credential is, which is the half of it that can be shown:
+	// where it renews, what it may do, and when the access token goes stale.
+	if oauth, ok := secret.OAuth.Get(); ok {
+		if url := strings.TrimSpace(oauth.TokenUrl.Or("")); url != "" {
+			fmt.Fprintf(tw, "RENEWS AT\t%s\n", url)
+		}
+		if client := strings.TrimSpace(oauth.ClientId.Or("")); client != "" {
+			fmt.Fprintf(tw, "CLIENT\t%s\n", client)
+		}
+		if scopes, ok := oauth.Scopes.Get(); ok && len(scopes) > 0 {
+			fmt.Fprintf(tw, "SCOPES\t%s\n", strings.Join(scopes, " "))
+		}
+		if plan := strings.TrimSpace(oauth.SubscriptionType.Or("")); plan != "" {
+			fmt.Fprintf(tw, "PLAN\t%s\n", plan)
+		}
+		if expires := oauth.AccessTokenExpiresAt.Or(0); expires > 0 {
+			fmt.Fprintf(tw, "TOKEN EXPIRES\t%s\n", formatTime(time.UnixMilli(expires).UTC()))
+		}
+		// Whether it can renew itself at all: an OAuth credential that cannot
+		// is one that will expire and stay expired.
+		fmt.Fprintf(tw, "REFRESHABLE\t%t\n", oauth.Refreshable.Or(false))
+	}
 	fmt.Fprintf(tw, "CREATED\t%s\n", formatTime(secret.CreatedAt))
 	fmt.Fprintf(tw, "UPDATED\t%s\n", formatTime(secret.UpdatedAt))
 	return tw.Flush()
@@ -400,14 +422,14 @@ func (a *App) writeSecrets(cmd *cobra.Command, secrets []apimodel.Secret) error 
 		return writeJSON(cmd.OutOrStdout(), map[string]any{"secrets": secrets})
 	}
 	tw := tabwriter.NewWriter(cmd.OutOrStdout(), 0, 0, 2, ' ', 0)
-	fmt.Fprintln(tw, "ID\tNAME\tTYPE\tHOST\tGRANT TTL\tUPDATED")
+	fmt.Fprintln(tw, "ID\tNAME\tTYPE\tHOST\tMAX GRANT TTL\tUPDATED")
 	for _, secret := range secrets {
 		fmt.Fprintf(tw, "%s\t%s\t%s\t%s\t%s\t%s\n",
 			secret.ID,
 			secret.Name,
 			secret.Type,
 			secret.Host.Or(""),
-			formatSeconds(secret.DefaultGrantTTLSeconds),
+			formatGrantLimit(secret.MaxGrantTTLSeconds),
 			formatTime(secret.UpdatedAt),
 		)
 	}
@@ -837,6 +859,16 @@ func formatBytes(value int64) string {
 		exp++
 	}
 	return fmt.Sprintf("%.1f%ciB", float64(value)/float64(div), "KMGTPE"[exp])
+}
+
+// formatGrantLimit says a secret's ceiling on grant lifetimes. Zero is not
+// absence here — it is the meaningful answer "no limit", so it is spelled out
+// rather than left blank the way an unset duration is.
+func formatGrantLimit(seconds int64) string {
+	if seconds <= 0 {
+		return "forever"
+	}
+	return formatSeconds(seconds)
 }
 
 func formatSeconds(value int64) string {

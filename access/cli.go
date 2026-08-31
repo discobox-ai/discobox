@@ -1,4 +1,4 @@
-// Package agentcred implements the in-sandbox credential CLI: a thin client of
+// Package access implements the in-sandbox credential CLI: a thin client of
 // the agent credentials protocol.
 //
 // Its only dependency is the protocol package, so it can be lifted into another
@@ -28,7 +28,7 @@
 // discobox-prompt, which the harness image provides, and every failure of that
 // gate — no wrapper, no answer, an unreadable answer, or a refusal — stops the
 // command. See judge.go for what the gate is and is not.
-package agentcred
+package access
 
 import (
 	"context"
@@ -44,7 +44,7 @@ import (
 )
 
 // Name is how the CLI refers to itself in help and diagnostics.
-const Name = "discobox-credential"
+const Name = "discobox-access"
 
 // Exit statuses. A wrapped command's own status passes through "run"
 // unchanged, exactly as env(1) and timeout(1) do, so these are what the CLI

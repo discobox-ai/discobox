@@ -446,7 +446,7 @@ and [`docs/agent-credentials-protocol.md`](../docs/agent-credentials-protocol.md
 
 ```mermaid
 flowchart LR
-    cli["discobox-credential"] -->|"loopback :17010"| relay["sandbox-agent relay"]
+    cli["discobox-access"] -->|"loopback :17010"| relay["sandbox-agent relay"]
     relay -->|"mTLS client cert = sandbox ID"| broker["proxy unit :17081"]
     broker -->|"scoped pool token"| cp["control plane"]
     broker -->|"mint + register"| live["activations"]

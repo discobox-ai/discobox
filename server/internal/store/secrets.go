@@ -11,6 +11,7 @@ import (
 
 	"gorm.io/gorm"
 
+	"github.com/discobox-ai/discobox/hostscope"
 	"github.com/discobox-ai/discobox/server/internal/apperrors"
 	"github.com/discobox-ai/discobox/server/internal/model"
 	"github.com/discobox-ai/discobox/server/internal/secrets"
@@ -183,29 +184,38 @@ func (s *Store) MatchSecret(ctx context.Context, projectID, secretType, host str
 	if err != nil {
 		return nil, err
 	}
-	var candidates []model.Secret
+	// The host is filtered in Go, for the reason FindLiveGrant is: a binding
+	// covers the hosts beneath it (hostscope.Covers), which SQL equality cannot
+	// express — and a secret bound to github.com is a candidate for a request
+	// about api.github.com, or the reactive path would open a request for a
+	// credential the project already holds.
+	var rows []model.Secret
 	err = read.
-		Where("project_id = ? AND anonymous = ? AND type = ? AND (host = ? OR host = '')", projectID, false, secretType, host).
-		Order("CASE WHEN host = '' THEN 1 ELSE 0 END ASC").
-		Find(&candidates).Error
+		Where("project_id = ? AND anonymous = ? AND type = ?", projectID, false, secretType).
+		Find(&rows).Error
 	if err != nil {
 		return nil, err
+	}
+	var candidates []model.Secret
+	for _, row := range rows {
+		if hostscope.Covers(row.Host, host) {
+			candidates = append(candidates, row)
+		}
 	}
 	if len(candidates) == 0 {
 		return nil, apperrors.NewStatusError(http.StatusNotFound, "no matching secret found for the requested type and host")
 	}
-	// Prefer exact host matches over wildcard matches.
-	var exact, wildcard []model.Secret
-	for _, c := range candidates {
-		if c.Host == host && host != "" {
-			exact = append(exact, c)
-		} else {
-			wildcard = append(wildcard, c)
-		}
+	// The narrowest binding that answers wins: the host itself, then a host
+	// above it, then a secret bound to nothing.
+	best := hostscope.Specificity(candidates[0].Host, host)
+	for _, c := range candidates[1:] {
+		best = min(best, hostscope.Specificity(c.Host, host))
 	}
-	pool := exact
-	if len(pool) == 0 {
-		pool = wildcard
+	var pool []model.Secret
+	for _, c := range candidates {
+		if hostscope.Specificity(c.Host, host) == best {
+			pool = append(pool, c)
+		}
 	}
 	if len(pool) > 1 {
 		return nil, apperrors.NewStatusError(http.StatusConflict, "ambiguous secret match: multiple secrets of the same type and host exist")

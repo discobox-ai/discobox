@@ -6,27 +6,34 @@ import (
 	"strings"
 )
 
-// Provider describes a known credential provider: how its keys are shaped and a
-// default host binding hint.
+// Provider describes a known credential provider: how its keys are shaped.
+//
+// It carries no host. Which host a credential belongs to is a binding somebody
+// sets on the secret, not a fact to be guessed from four leading characters: a
+// guess that is wrong is a secret bound where it does not belong, and a guess
+// that is too narrow is the credential that plainly answers a request being the
+// one an approver cannot pick.
 type Provider struct {
 	Name   string
 	Prefix string // literal prefix used to recognize a value
 	Format string // generative template
-	Host   string // default host hint; empty means no default binding
 }
 
 // providers is the seed table, ordered longest-prefix-first so specific
 // prefixes win over generic ones (e.g. sk-ant- before sk-).
+//
+// It holds only the shapes structural inference cannot reconstruct. A sentinel
+// has to survive whatever the harness does with it before the proxy ever sees
+// it, and an SDK that checks for `sk-ant-` or `github_pat_` rejects a lookalike
+// that kept only `sk-` or `github_`. Where Infer already lands on the same
+// template — a plain `sk-` or `ghp_` key — there is nothing here to add, and a
+// row that says what the value says is a row to keep up to date for nothing.
 var providers = []Provider{
-	{Name: "anthropic", Prefix: "sk-ant-", Format: "sk-ant-{alnum:5}-{base64url:95}", Host: "api.anthropic.com"},
-	{Name: "openai-project", Prefix: "sk-proj-", Format: "sk-proj-{base64url:48}", Host: "api.openai.com"},
-	{Name: "openai", Prefix: "sk-", Format: "sk-{base64url:48}", Host: "api.openai.com"},
-	{Name: "github-pat", Prefix: "github_pat_", Format: "github_pat_{base62:82}", Host: "api.github.com"},
-	{Name: "github-token", Prefix: "ghp_", Format: "ghp_{base62:36}", Host: "api.github.com"},
-	{Name: "github-oauth", Prefix: "gho_", Format: "gho_{base62:36}", Host: "api.github.com"},
-	{Name: "slack-bot", Prefix: "xoxb-", Format: "xoxb-{digits:13}-{digits:13}-{base62:24}", Host: "slack.com"},
-	{Name: "google-api", Prefix: "AIza", Format: "AIza{base64url:35}", Host: "www.googleapis.com"},
-	{Name: "aws-access-key", Prefix: "AKIA", Format: "AKIA{base32:16}", Host: ""},
+	{Name: "anthropic", Prefix: "sk-ant-", Format: "sk-ant-{alnum:5}-{base64url:95}"},
+	{Name: "openai-project", Prefix: "sk-proj-", Format: "sk-proj-{base64url:48}"},
+	{Name: "github-pat", Prefix: "github_pat_", Format: "github_pat_{base62:82}"},
+	{Name: "slack-bot", Prefix: "xoxb-", Format: "xoxb-{digits:13}-{digits:13}-{base62:24}"},
+	{Name: "aws-access-key", Prefix: "AKIA", Format: "AKIA{base32:16}"},
 }
 
 // MatchProvider returns the seed provider whose prefix matches value, if any.
@@ -39,14 +46,13 @@ func MatchProvider(value string) (Provider, bool) {
 	return Provider{}, false
 }
 
-// Describe returns a format template and default host hint for a credential
-// value, preferring the seed provider table and falling back to structural
-// inference. The returned host may be empty.
-func Describe(value string) (format string, host string) {
+// Describe returns a format template for a credential value: the seed
+// provider's when one recognizes it, and structural inference otherwise.
+func Describe(value string) string {
 	if p, ok := MatchProvider(value); ok {
-		return p.Format, p.Host
+		return p.Format
 	}
-	return Infer(value).String(), ""
+	return Infer(value).String()
 }
 
 var (
@@ -89,20 +95,26 @@ func inferSegment(seg string) []part {
 	return []part{randomPart(seg)}
 }
 
-// prefixLike reports whether a leading word is safe to keep as a literal: short
-// and predominantly alphabetic, so it carries a scheme marker rather than
-// credential entropy.
+// prefixLike reports whether a leading word is safe to keep as a literal: a
+// short, wholly alphabetic scheme marker.
+//
+// Wholly alphabetic, not mostly: the separator this word ends at is only
+// probably the provider's. A value whose random tail happens to contain an
+// early "-" or "_" offers a longer word, and any of it kept as a literal is
+// credential bytes written into a format that is then stored on the secret —
+// which is the one thing this inference must never do. A marker with a digit
+// in it is indistinguishable from entropy that starts with letters, so it is
+// treated as entropy.
 func prefixLike(word string) bool {
 	if len(word) == 0 || len(word) > 10 {
 		return false
 	}
-	alpha := 0
 	for _, r := range word {
-		if (r >= 'a' && r <= 'z') || (r >= 'A' && r <= 'Z') {
-			alpha++
+		if (r < 'a' || r > 'z') && (r < 'A' || r > 'Z') {
+			return false
 		}
 	}
-	return alpha*2 > len(word)
+	return true
 }
 
 func randomPart(seg string) part {

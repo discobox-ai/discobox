@@ -22,7 +22,7 @@ func TestDeleteSandboxGCsSecretsAndAnonymous(t *testing.T) {
 
 	anon := &model.Secret{
 		ID: "anon-1", ProjectID: "project-1", Name: "sandbox-secret-anon-1",
-		Type: model.SecretTypeBearer, Anonymous: true, UniqueKey: "anon-1",
+		Type: model.SecretTypeToken, Anonymous: true, UniqueKey: "anon-1",
 		EncryptedValue: []byte(`{"token":"x"}`),
 	}
 	if err := s.CreateSecret(ctx, anon); err != nil {
@@ -30,7 +30,7 @@ func TestDeleteSandboxGCsSecretsAndAnonymous(t *testing.T) {
 	}
 	referenced := &model.Secret{
 		ID: "ref-1", ProjectID: "project-1", Name: "shared",
-		Type: model.SecretTypeBearer, EncryptedValue: []byte(`{"token":"y"}`),
+		Type: model.SecretTypeToken, EncryptedValue: []byte(`{"token":"y"}`),
 	}
 	if err := s.CreateSecret(ctx, referenced); err != nil {
 		t.Fatalf("create referenced secret: %v", err)

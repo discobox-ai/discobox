@@ -59,10 +59,34 @@ type Model struct {
 	// and a window closed mid-sentence has the sentence. See saveDraft.
 	draft string
 
+	// requests is the project's pending credential requests, indexed by the
+	// discobox they were asked from. Read on the same poll as the listing —
+	// there is no client-facing event stream (ADR 0061) and an approval is
+	// answered on human time — and it is what both the row's mark and the
+	// workspace's banner are drawn from. See credentials.go.
+	requests map[string][]CredentialRequest
+
+	// allRequests is every pending request, the ones no discobox owns
+	// included. The secrets screen counts and answers from it; the map above
+	// only exists to mark rows.
+	allRequests []CredentialRequest
+
 	// harnesses is the project's harnesses: the screen that manages them, and
 	// the listing the run options' harness choices are built from. It is read
 	// whether or not the screen is up. See harnesses.go.
 	harnesses *harnessList
+
+	// secrets is the project's credentials and the grants standing on them:
+	// the screen that manages them, and the operator's side of the credential
+	// inbox. See secrets.go.
+	secrets *secretList
+
+	// requestRows is the credential requests waiting on a person, drawn under
+	// the secrets on that screen: what the project holds, and what is waiting
+	// on it. onRequests is which of the two tables has the keys. See
+	// requests.go.
+	requestRows *requestList
+	onRequests  bool
 
 	// The workspace screen: the discobox's terminals on the left, the primary
 	// among them, and its shells as tabs on the right, both following the
@@ -136,6 +160,11 @@ type Model struct {
 	// Absolute screen columns.
 	zoomSpans []zoomSpan
 
+	// credentials is where the workspace's credential banner sits, recorded as
+	// it is drawn so a press can be matched against the frame on screen. See
+	// credentials.go.
+	credentials credentialSpan
+
 	// buttonSpans is where the showing tool window's [-] and [x] sit, recorded
 	// as its border is drawn (toolControls). Absolute screen columns.
 	buttonSpans []buttonSpan
@@ -167,6 +196,10 @@ type Model struct {
 
 	focus       focusArea
 	optionsOpen bool
+	// secretsOpen is whether the secrets screen has the window, on the same
+	// terms the harnesses screen has it.
+	secretsOpen bool
+
 	// harnessesOpen is whether the harnesses screen has the window. Like the
 	// options panel it stands in place of the launcher rather than inside it, and
 	// every key belongs to it while it is up.
@@ -278,19 +311,21 @@ func New(ctx context.Context, ds DataSource, options ...Option) *Model {
 
 	session := Session{DefaultProject: "default"}
 	m := &Model{
-		ctx:        ctx,
-		ds:         ds,
-		st:         st,
-		list:       newSandboxList(session),
-		harnesses:  newHarnessList(),
-		prompt:     ta,
-		logo:       newLogo(color),
-		focus:      focusPrompt,
-		session:    session,
-		exec:       tea.Exec,
-		copyOS:     func(text string) error { return osClipboard(ctx, text) },
-		chromeGrid: &frameGrid{},
-		noise:      newNoise(),
+		ctx:         ctx,
+		ds:          ds,
+		st:          st,
+		list:        newSandboxList(session),
+		harnesses:   newHarnessList(),
+		secrets:     newSecretList(),
+		requestRows: newRequestList(),
+		prompt:      ta,
+		logo:        newLogo(color),
+		focus:       focusPrompt,
+		session:     session,
+		exec:        tea.Exec,
+		copyOS:      func(text string) error { return osClipboard(ctx, text) },
+		chromeGrid:  &frameGrid{},
+		noise:       newNoise(),
 	}
 	m.chromeSel = selection.New(m.chromeGrid)
 	// The label above the field already says what an empty prompt does, and the
@@ -309,7 +344,7 @@ func New(ctx context.Context, ds DataSource, options ...Option) *Model {
 // harnesses are read here rather than when their screen is opened because the
 // run options offer them as the harness to run.
 func (m *Model) Init() tea.Cmd {
-	return tea.Batch(textarea.Blink, m.loadSession(), m.refresh(), m.loadHarnesses(), m.tick(), m.startShimmer(), m.awaitInitialization())
+	return tea.Batch(textarea.Blink, m.loadSession(), m.refresh(), m.loadCredentialRequests(), m.loadHarnesses(), m.tick(), m.startShimmer(), m.awaitInitialization())
 }
 
 // ---------------------------------------------------------------------------
@@ -458,6 +493,9 @@ func (m *Model) update(msg tea.Msg) tea.Cmd {
 			return m.report(true, "cannot list discoboxes: %v", msg.err)
 		}
 		m.list.setAll(msg.sandboxes)
+		// The rows are replaced wholesale, so the marks are stamped back onto
+		// them: the two reads land independently and either can be the later.
+		m.list.setPending(m.requests)
 		// What the project has been cut from is read off the same listing the
 		// folder dropdown is, for the same reason: the sources worth offering
 		// are exactly the ones something is already sitting in.
@@ -465,8 +503,40 @@ func (m *Model) update(msg tea.Msg) tea.Cmd {
 		m.layout()
 		return nil
 
+	case secretsLoadedListMsg:
+		return m.secretsLoaded(msg)
+
+	case secretActionMsg:
+		return m.secretActed(msg)
+
+	case credentialsLoadedMsg:
+		if msg.err != nil {
+			// Reported quietly: the inbox is polled, and a window that shouts
+			// every five seconds about a server it cannot reach is a window
+			// you stop reading.
+			return nil
+		}
+		m.setCredentialRequests(msg.requests)
+		return nil
+
+	case secretsLoadedMsg:
+		if msg.err != nil {
+			m.dialog = errorDialog("Credential request", fmt.Sprintf("Cannot read the project's secrets: %v\n\nThe request is still waiting.", msg.err))
+			return nil
+		}
+		req, ok := m.credentialRequestByID(msg.requestID)
+		if !ok {
+			// Answered elsewhere while the secrets were being read.
+			m.dialog = nil
+			return m.report(false, "that request is no longer waiting")
+		}
+		return m.askAboutCredential(req, msg.secrets)
+
+	case credentialAnsweredMsg:
+		return m.credentialAnswered(msg)
+
 	case tickMsg:
-		cmds := []tea.Cmd{m.refresh(), m.tick()}
+		cmds := []tea.Cmd{m.refresh(), m.loadCredentialRequests(), m.tick()}
 		// The draft is written on the same clock the listing is read on, so a
 		// window killed outright — a closed terminal, a lost ssh session —
 		// loses at most the last few seconds of what was typed. The keys that
@@ -759,8 +829,15 @@ func (m *Model) updateKey(msg tea.KeyPressMsg) tea.Cmd {
 		return m.updateWelcome(msg)
 	}
 	if m.dialog != nil {
+		// The dialog that was answered is the one taken down. An action may
+		// have put the next question up on its way out — a new secret asks for
+		// a name, then a host, then the value, and an approval reports what it
+		// is doing while it does it — and nilling the field afterwards would
+		// wipe it, leaving a chain that answers its first question and then
+		// silently goes back to the list.
+		answered := m.dialog
 		cmd, closed := m.dialog.update(msg)
-		if closed {
+		if closed && m.dialog == answered {
 			m.dialog = nil
 		}
 		return cmd
@@ -810,6 +887,18 @@ func (m *Model) updateKey(msg tea.KeyPressMsg) tea.Cmd {
 	}
 	if m.harnessesOpen {
 		return m.updateHarnesses(msg)
+	}
+	// The secrets screen, on the next function key along and on the same terms:
+	// a toggle, and not from a pane, where every key belongs to the sandbox.
+	if keyName(msg) == secretsKey && !m.inPanes() {
+		if m.secretsOpen {
+			m.closeSecrets()
+			return nil
+		}
+		return m.openSecrets()
+	}
+	if m.secretsOpen {
+		return m.updateSecrets(msg)
 	}
 
 	switch m.focus {
@@ -947,6 +1036,15 @@ func (m *Model) promptEnd() {
 // is in difftui's file lists, because there is no text to type.
 func (m *Model) updateList(msg tea.KeyPressMsg) tea.Cmd {
 	switch keyName(msg) {
+	case credentialsKey:
+		// The marked row, answered from where you saw the mark. The request
+		// belongs to one discobox, so this takes the row under the cursor and
+		// never the selection: approving a credential for several boxes at
+		// once is not a thing anyone means to do.
+		if s := m.list.current(); s != nil {
+			return m.openCredentialDialog(s.ID)
+		}
+		return nil
 	case "down", "j":
 		// Visual mode holds you in the list: falling out of the bottom of a
 		// range you are still drawing would throw the range away.
@@ -1886,6 +1984,23 @@ func (m *Model) layout() {
 	// list sized on the frame after that would open with no rows in it.
 	m.harnesses.width, m.harnesses.height = m.bodyWidth(), max(m.height-harnessesChrome, 0)
 	m.harnesses.clamp()
+	// The lower table takes what its rows need, up to a third of the screen:
+	// what is waiting is usually a line or two, and a fixed split would spend
+	// half the screen on "nothing is waiting".
+	secretsRoom := max(m.height-secretsChrome, 0)
+	waiting := min(len(m.requestRows.all), max(secretsRoom/3, 1))
+	if waiting == 0 {
+		waiting = 1 // the empty state is a row too
+	}
+	m.requestRows.width, m.requestRows.height = m.bodyWidth(), waiting
+	m.requestRows.clamp()
+	// The secrets take only the rows they have, up to what is left. Sized to
+	// the room instead, a short list would pad itself to the foot of the window
+	// and push the requests down with it — two tables read together, with a
+	// screen of nothing in between.
+	secretsLeft := max(secretsRoom-waiting-requestsChrome, 1)
+	m.secrets.width, m.secrets.height = m.bodyWidth(), min(max(len(m.secrets.all), 1), secretsLeft)
+	m.secrets.clamp()
 	if !m.expanded && !m.inPanes() {
 		m.compactLayout()
 		return
@@ -1988,6 +2103,8 @@ func (m *Model) view() tea.View {
 		// with the same header: it is another list of things you act on, not a
 		// panel over the launcher.
 		content = m.viewHarnesses()
+	case m.secretsOpen:
+		content = m.viewSecrets()
 	default:
 		rows := []string{m.viewHeader(m.inner()), ""}
 		rows = append(rows, strings.Split(body, "\n")...)
@@ -2159,7 +2276,7 @@ func (m *Model) viewHeaderRight() string {
 	if m.focus == focusPrompt {
 		quit = "Ctrl-C quit"
 	}
-	return m.st.dimText.Render("F1 help  ·  F3 harnesses  ·  " + quit)
+	return m.st.dimText.Render("F1 help  ·  F3 harnesses  ·  " + SecretsKeyName + " secrets  ·  " + quit)
 }
 
 // windowTitle is what the terminal running this window should call itself.
@@ -2332,6 +2449,9 @@ const hintSep = " · "
 func (m *Model) hints() string {
 	if m.harnessesOpen {
 		return m.harnessHints()
+	}
+	if m.secretsOpen {
+		return m.secretHints()
 	}
 	switch m.focus {
 	case focusPane:
@@ -2507,6 +2627,16 @@ func (m *Model) helpText() string {
 		"                   folder they are filtered to, and back",
 		"    Shift-Tab      run options",
 		"    " + HarnessesKeyName + "             the harnesses, and back",
+		"    " + SecretsKeyName + "             the project's secrets: what stands on each, what is",
+		"                   waiting on you, and the credential a request is",
+		"                   answered with, in two tables: the secrets, and what",
+		"                   is waiting on you. Tab crosses between them, and ↓",
+		"                   off the bottom of one reaches the other",
+		"                   On a secret: n new, " + grantCreateKey + " grant it before anything asks,",
+		"                   e its binding, d delete, Enter what stands on it —",
+		"                   where Enter reads a grant and " + grantRevokeKey + " withdraws one, and",
+		"                   the first row grants the secret",
+		"                   On a request: Enter answers it",
 		"",
 		"  Whatever is in the prompt when the window closes is in it again the",
 		"  next time one opens in this folder. Running it, or emptying it by",
@@ -2539,6 +2669,8 @@ func (m *Model) helpText() string {
 		"  Half of what those carry is their color, so without it the",
 		"  glyph gives way to the state spelled out in a column.",
 		"      ↑ an upgrade is available, to the current harness image",
+		"      ! an agent in that discobox is waiting on a credential —",
+		"        " + credentialsKey + " asks what it wants and answers it",
 		"",
 		"  main@a3f9c21 is the discobox's branch and commit, as its own",
 		"  agent last reported them — until it reports, the commit it was",
@@ -2566,6 +2698,7 @@ func (m *Model) helpText() string {
 		"    u      upgrade to the current image",
 		"    R      repair — rebuild a broken discobox in place, on the",
 		"           current image, keeping its workspace and its changes",
+		"    " + credentialsKey + "      answer the credential request waiting on it",
 		"    e      rename          t  stop",
 		"    T      start           x  archive",
 		"    U      unarchive       P  purge",

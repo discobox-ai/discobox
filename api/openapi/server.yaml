@@ -2562,8 +2562,8 @@ components:
                     format: uri
                     readOnly: true
                     type: string
-                defaultGrantTTLSeconds:
-                    description: Default grant duration in seconds
+                maxGrantTTLSeconds:
+                    description: Longest a grant on this secret may live, in seconds; 0 allows grants that never expire
                     format: int64
                     type: integer
                 host:
@@ -2576,9 +2576,7 @@ components:
                 type:
                     description: Secret type
                     enum:
-                        - git
-                        - ssh
-                        - bearer
+                        - token
                         - oauth
                     type: string
                 value:
@@ -2617,6 +2615,15 @@ components:
                 secretId:
                     description: Secret ID to grant
                     type: string
+                envVar:
+                    description: Environment variable an agent receives the credential in, for a grant carrying uses. Required with uses, and meaningless without them -- the credential is never injected, so this names the variable only for the process the CLI wraps.
+                    type: string
+                uses:
+                    description: Approved uses, making this a credential only the agent credentials CLI can take, one use at a time. Sandbox scope only, a concrete host required, and use IDs are minted here -- a supplied one is ignored.
+                    items:
+                        $ref: '#/components/schemas/SecretUse'
+                    nullable: true
+                    type: array
             required:
                 - secretId
                 - scope
@@ -2636,9 +2643,7 @@ components:
                 type:
                     description: Secret type being requested
                     enum:
-                        - git
-                        - ssh
-                        - bearer
+                        - token
                         - oauth
                     type: string
             required:
@@ -2692,8 +2697,8 @@ components:
                     description: Creation timestamp
                     format: date-time
                     type: string
-                defaultGrantTTLSeconds:
-                    description: Default grant duration in seconds
+                maxGrantTTLSeconds:
+                    description: Longest a grant on this secret may live, in seconds; 0 allows grants that never expire
                     format: int64
                     type: integer
                 format:
@@ -2705,6 +2710,8 @@ components:
                 id:
                     description: Stable secret ID
                     type: string
+                oauth:
+                    "$ref": '#/components/schemas/SecretOAuth'
                 name:
                     description: Secret name
                     type: string
@@ -2714,9 +2721,7 @@ components:
                 type:
                     description: Secret type
                     enum:
-                        - git
-                        - ssh
-                        - bearer
+                        - token
                         - oauth
                     type: string
                 updatedAt:
@@ -2728,7 +2733,7 @@ components:
                 - projectId
                 - name
                 - type
-                - defaultGrantTTLSeconds
+                - maxGrantTTLSeconds
                 - createdAt
                 - updatedAt
             type: object
@@ -2753,6 +2758,9 @@ components:
                     example: https://example.com/schemas/SecretGrant.json
                     format: uri
                     readOnly: true
+                    type: string
+                envName:
+                    description: Environment variable an agent receives the credential in; set on a grant that carries uses.
                     type: string
                 uses:
                     description: Approved uses, confirmed or edited at approval time. Present on grants minted through the agent credentials flow.
@@ -2886,9 +2894,7 @@ components:
                 type:
                     description: Secret type requested
                     enum:
-                        - git
-                        - ssh
-                        - bearer
+                        - token
                         - oauth
                     type: string
                 updatedAt:
@@ -2906,22 +2912,59 @@ components:
             type: object
         SecretValue:
             additionalProperties: false
-            description: Type-specific secret value. Fields populated depend on the secret type.
+            description: A credential value. One opaque string, plus what an OAuth credential needs to be refreshed. Write-only -- no response ever carries it.
             properties:
-                passphrase:
-                    description: SSH key passphrase (type=ssh)
+                accessTokenExpiresAt:
+                    description: When the access token goes stale, unix milliseconds. 0 or absent means unknown, and the credential is then refreshed only when an upstream rejects it.
+                    format: int64
+                    type: integer
+                clientId:
+                    description: OAuth client the grant belongs to (type=oauth)
                     type: string
-                password:
-                    description: Git credential password (type=git)
+                refreshToken:
+                    description: OAuth refresh token, spent server-side to renew the access token (type=oauth). Never returned.
                     type: string
-                privateKey:
-                    description: SSH private key PEM (type=ssh)
+                scopes:
+                    description: What the grant may do, as the authorization server returned it. Recorded rather than assumed -- a client may gate features on it.
+                    items:
+                        type: string
+                    nullable: true
+                    type: array
+                subscriptionType:
+                    description: The plan or account kind the grant belongs to, when the authorization server names one
                     type: string
                 token:
-                    description: Bearer token (type=bearer)
+                    description: The credential itself (type=token), or an OAuth access token
                     type: string
-                username:
-                    description: Git credential username (type=git)
+                tokenUrl:
+                    description: Where the refresh token is exchanged for a new access token (type=oauth)
+                    type: string
+            type: object
+        SecretOAuth:
+            additionalProperties: false
+            description: What an OAuth credential is, without being it. Never the access token and never the refresh token.
+            properties:
+                accessTokenExpiresAt:
+                    description: When the current access token goes stale, unix milliseconds; absent when unknown
+                    format: int64
+                    type: integer
+                clientId:
+                    description: OAuth client the grant belongs to
+                    type: string
+                refreshable:
+                    description: Whether the credential carries what it needs to renew itself
+                    type: boolean
+                scopes:
+                    description: What the grant may do, as captured at login
+                    items:
+                        type: string
+                    nullable: true
+                    type: array
+                subscriptionType:
+                    description: The plan or account kind the grant belongs to
+                    type: string
+                tokenUrl:
+                    description: Where the access token is renewed
                     type: string
             type: object
         UpdateSecretBody:
@@ -2933,8 +2976,8 @@ components:
                     format: uri
                     readOnly: true
                     type: string
-                defaultGrantTTLSeconds:
-                    description: Default grant duration in seconds
+                maxGrantTTLSeconds:
+                    description: Longest a grant on this secret may live, in seconds; 0 allows grants that never expire
                     format: int64
                     type: integer
                 host:

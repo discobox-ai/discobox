@@ -94,7 +94,10 @@ type styles struct {
 	// initializing is the line under the window while the server sets itself up.
 	initializing lipgloss.Style
 	statusER     lipgloss.Style
-	info         lipgloss.Style
+	// attention is a whole-width bar, not a colored word: the workspace's
+	// credential banner, which has to survive being looked past.
+	attention lipgloss.Style
+	info      lipgloss.Style
 
 	stateRun  lipgloss.Style
 	stateBusy lipgloss.Style
@@ -149,6 +152,7 @@ func newStyles(color bool) *styles {
 	// statement: something is happening that you are not waiting on.
 	s.initializing = paint(colWarn)
 	s.statusER = paint(colErr)
+	s.attention = paint(colErr).Reverse(true).Bold(true)
 	s.info = paint(colInfo)
 
 	s.stateRun = paint(colOK)

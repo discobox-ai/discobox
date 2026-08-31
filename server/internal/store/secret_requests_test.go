@@ -14,7 +14,7 @@ func TestListSecretRequestsStatusFilter(t *testing.T) {
 	for _, st := range []string{model.SecretRequestStatusPending, model.SecretRequestStatusPending, model.SecretRequestStatusApproved} {
 		if err := s.CreateSecretRequest(ctx, &model.SecretRequest{
 			ProjectID: "project-1", RequestedBy: "sandbox:sb-1", SandboxID: "sb-1",
-			Type: model.SecretTypeBearer, Host: "api.example.com", Status: st,
+			Type: model.SecretTypeToken, Host: "api.example.com", Status: st,
 		}); err != nil {
 			t.Fatalf("create request: %v", err)
 		}

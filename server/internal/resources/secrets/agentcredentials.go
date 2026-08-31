@@ -33,7 +33,22 @@ func (s *Service) ListSandboxCredentials(ctx context.Context, poolID, sandboxID 
 	if err != nil {
 		return nil, err
 	}
-	return s.store.ListLiveAgentCredentials(ctx, sandbox.ProjectID, sandbox.ID)
+	// The same scopes a resolve is matched against: what this discobox is, what
+	// harness it runs, and the project it belongs to.
+	return s.store.ListLiveAgentCredentials(ctx, sandbox.ProjectID, sandbox.ID, agentGrantScopes(sandbox))
+}
+
+// agentGrantScopes is what a discobox's agent may be granted through: itself,
+// the harness config it runs, and its project.
+func agentGrantScopes(sandbox *model.Sandbox) []store.GrantScope {
+	scopes := []store.GrantScope{{Scope: model.SecretGrantScopeSandbox, ScopeKey: sandbox.ID}}
+	if sandbox.HarnessConfigID != nil && strings.TrimSpace(*sandbox.HarnessConfigID) != "" {
+		scopes = append(scopes, store.GrantScope{
+			Scope:    model.SecretGrantScopeHarnessConfig,
+			ScopeKey: strings.TrimSpace(*sandbox.HarnessConfigID),
+		})
+	}
+	return append(scopes, store.GrantScope{Scope: model.SecretGrantScopeProject, ScopeKey: sandbox.ProjectID})
 }
 
 // CreateSandboxCredentialRequest records an agent's ask as a pending
@@ -61,7 +76,7 @@ func (s *Service) CreateSandboxCredentialRequest(ctx context.Context, poolID str
 	// a grant, and a grant minted by this flow may not be host-unscoped
 	// (ADR 0031 §5). Refusing at the ask is better than discovering it at the
 	// approval, where a human has already decided to say yes.
-	host := strings.TrimSpace(input.Host)
+	host := normalizeHost(input.Host)
 	if host == "" {
 		return nil, apperrors.NewStatusError(http.StatusBadRequest, "credential request requires a destination host")
 	}
@@ -83,10 +98,10 @@ func (s *Service) CreateSandboxCredentialRequest(ctx context.Context, poolID str
 		ProjectID:   sandbox.ProjectID,
 		RequestedBy: requestedBy,
 		SandboxID:   sandbox.ID,
-		// Only bearer credentials survive the swap: ResolveSandboxSecret emits
-		// Value.Token alone, so a git or ssh secret has nothing the proxy could
-		// substitute. Extending the resolver is separate work (ADR 0031).
-		Type:          model.SecretTypeBearer,
+		// Every secret is a token now, and a token is what the swap carries:
+		// ResolveSandboxSecret emits Value.Token, so nothing a request can name
+		// is a credential the proxy could not substitute.
+		Type:          model.SecretTypeToken,
 		Host:          host,
 		Name:          name,
 		EnvName:       envName,
@@ -144,7 +159,14 @@ func (s *Service) GetSandboxCredentialRequest(ctx context.Context, poolID, sandb
 // A repeat approval for the same environment variable reuses the binding, so a
 // sentinel an earlier activation was minted from stays resolvable.
 func (s *Service) bindAgentCredential(ctx context.Context, req *model.SecretRequest, secret *model.Secret) error {
-	existing, err := s.store.FindAgentSandboxSecret(ctx, req.ProjectID, req.SandboxID, req.EnvName)
+	return s.bindAgentSecret(ctx, req.ProjectID, req.SandboxID, req.EnvName, secret)
+}
+
+// bindAgentSecret is the binding itself, without a request in front of it: the
+// same shape whether an agent asked for the credential or somebody granted it
+// ahead of time.
+func (s *Service) bindAgentSecret(ctx context.Context, projectID, sandboxID, envName string, secret *model.Secret) error {
+	existing, err := s.store.FindAgentSandboxSecret(ctx, projectID, sandboxID, envName)
 	if err != nil && !errors.Is(err, store.ErrNotFound) {
 		return err
 	}
@@ -157,17 +179,17 @@ func (s *Service) bindAgentCredential(ctx context.Context, req *model.SecretRequ
 		// which credential an agent's next command carries is exactly the
 		// surprise this flow exists to prevent.
 		return apperrors.NewStatusError(http.StatusConflict,
-			fmt.Sprintf("sandbox already has an agent credential bound to %s from a different secret; revoke that grant first", req.EnvName))
+			fmt.Sprintf("sandbox already has an agent credential bound to %s from a different secret; revoke that grant first", envName))
 	}
 	sentinel, err := secretformat.MintSentinel(secret.Format)
 	if err != nil {
 		return err
 	}
 	return s.store.CreateSandboxSecret(ctx, &model.SandboxSecret{
-		ProjectID:      req.ProjectID,
-		SandboxID:      req.SandboxID,
+		ProjectID:      projectID,
+		SandboxID:      sandboxID,
 		SecretID:       secret.ID,
-		EnvName:        req.EnvName,
+		EnvName:        envName,
 		Sentinel:       sentinel,
 		AgentRequested: true,
 	})

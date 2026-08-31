@@ -83,6 +83,15 @@ func (l *sandboxList) setAll(all []Sandbox) {
 }
 
 // rows is what is actually displayed, after the two filters.
+// setPending stamps each row with how many credential requests are waiting on
+// it. The count lives on the row rather than being looked up while drawing, so
+// the draw stays a pure function of what the list holds.
+func (l *sandboxList) setPending(byBox map[string][]CredentialRequest) {
+	for i := range l.all {
+		l.all[i].PendingRequests = len(byBox[l.all[i].ID])
+	}
+}
+
 func (l *sandboxList) rows() []Sandbox {
 	out := make([]Sandbox, 0, len(l.all))
 	for _, s := range l.all {
@@ -421,8 +430,18 @@ func (l *sandboxList) row(st *styles, s Sandbox, i int, focused bool) string {
 	if s.Upgrade {
 		up = st.statusWA.Render("↑")
 	}
+	// A credential request waiting on this discobox. It sits beside the
+	// upgrade arrow because it is the same kind of fact — something about this
+	// row wants a person — and it is drawn in the error color rather than the
+	// warning one: an upgrade can wait, an agent asking for a credential is
+	// blocked until it is answered.
+	req := " "
+	if s.PendingRequests > 0 {
+		req = st.statusER.Render("!")
+	}
 	addCol("  "+st.dimText.Render(pad(s.Harness, 7)), 9)
 	addCol(up, 2)
+	addCol(req, 2)
 
 	// Where the work sits in git — the reported position once the sandbox's
 	// agent has spoken, the spawn commit until then. Where it came from is not

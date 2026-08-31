@@ -53,12 +53,12 @@ func TestPreviousConfigurationCarriesNoSecretValues(t *testing.T) {
 	ctx := context.Background()
 	st := newTestStore(t)
 
-	mine := &model.Secret{ProjectID: "project-1", Name: "configured", Type: model.SecretTypeBearer, Host: "api.example.com", EncryptedValue: []byte(`{"token":"s3cr3t"}`)}
+	mine := &model.Secret{ProjectID: "project-1", Name: "configured", Type: model.SecretTypeToken, Host: "api.example.com", EncryptedValue: []byte(`{"token":"s3cr3t"}`)}
 	if err := st.CreateSecret(ctx, mine); err != nil {
 		t.Fatalf("create configured secret: %v", err)
 	}
 	// A secret the user bound by hand is not the configure flow's to replay.
-	theirs := &model.Secret{ProjectID: "project-1", Name: "hand-bound", Type: model.SecretTypeBearer, Host: "other.example.com", EncryptedValue: []byte(`{"token":"theirs"}`)}
+	theirs := &model.Secret{ProjectID: "project-1", Name: "hand-bound", Type: model.SecretTypeToken, Host: "other.example.com", EncryptedValue: []byte(`{"token":"theirs"}`)}
 	if err := st.CreateSecret(ctx, theirs); err != nil {
 		t.Fatalf("create hand-bound secret: %v", err)
 	}
@@ -101,8 +101,10 @@ func TestPreviousConfigurationCarriesNoSecretValues(t *testing.T) {
 		t.Fatalf("marshal seed: %v", err)
 	}
 	// The strongest form of this check: no secret material anywhere in the bytes
-	// that get written into the sandbox.
-	for _, leaked := range []string{"s3cr3t", "theirs", "token"} {
+	// that get written into the sandbox. The value's field name rather than the
+	// bare word, since "token" is also a secret *type* and says nothing about
+	// what the credential is.
+	for _, leaked := range []string{"s3cr3t", "theirs", `"token":`} {
 		if bytes.Contains(seed, []byte(leaked)) {
 			t.Fatalf("seed leaks secret material %q: %s", leaked, seed)
 		}
@@ -116,7 +118,7 @@ func TestApplyConfigureOutputKeepsPreviousSecret(t *testing.T) {
 	ctx := context.Background()
 	st := newTestStore(t)
 
-	previous := &model.Secret{ProjectID: "project-1", Name: "old-token", Type: model.SecretTypeBearer, UniqueKey: "old", EncryptedValue: []byte(`{"token":"old"}`)}
+	previous := &model.Secret{ProjectID: "project-1", Name: "old-token", Type: model.SecretTypeToken, UniqueKey: "old", EncryptedValue: []byte(`{"token":"old"}`)}
 	if err := st.CreateSecret(ctx, previous); err != nil {
 		t.Fatalf("create previous secret: %v", err)
 	}
@@ -177,7 +179,7 @@ func TestApplyConfigureOutputTreatsSentinelPassthroughAsReuse(t *testing.T) {
 	ctx := context.Background()
 	st := newTestStore(t)
 
-	previous := &model.Secret{ProjectID: "project-1", Name: "old-token", Type: model.SecretTypeBearer, UniqueKey: "old", EncryptedValue: []byte(`{"token":"old"}`)}
+	previous := &model.Secret{ProjectID: "project-1", Name: "old-token", Type: model.SecretTypeToken, UniqueKey: "old", EncryptedValue: []byte(`{"token":"old"}`)}
 	if err := st.CreateSecret(ctx, previous); err != nil {
 		t.Fatalf("create previous secret: %v", err)
 	}
@@ -230,11 +232,11 @@ func TestDeconfigureRemovesOnlyConfigureCreatedAssets(t *testing.T) {
 	st := newTestStore(t)
 
 	// A secret the configure flow created, and one the user owns independently.
-	configured := &model.Secret{ProjectID: "project-1", Name: "from-configure", Type: model.SecretTypeBearer, Host: "configure.example.com", EncryptedValue: []byte(`{"token":"t"}`)}
+	configured := &model.Secret{ProjectID: "project-1", Name: "from-configure", Type: model.SecretTypeToken, Host: "configure.example.com", EncryptedValue: []byte(`{"token":"t"}`)}
 	if err := st.CreateSecret(ctx, configured); err != nil {
 		t.Fatalf("create configured secret: %v", err)
 	}
-	unrelated := &model.Secret{ProjectID: "project-1", Name: "user-owned", Type: model.SecretTypeBearer, Host: "user.example.com", EncryptedValue: []byte(`{"token":"t"}`)}
+	unrelated := &model.Secret{ProjectID: "project-1", Name: "user-owned", Type: model.SecretTypeToken, Host: "user.example.com", EncryptedValue: []byte(`{"token":"t"}`)}
 	if err := st.CreateSecret(ctx, unrelated); err != nil {
 		t.Fatalf("create unrelated secret: %v", err)
 	}
@@ -456,7 +458,7 @@ func TestApplyConfigureOutputReplacesPreviousGeneration(t *testing.T) {
 	ctx := context.Background()
 	st := newTestStore(t)
 
-	previous := &model.Secret{ProjectID: "project-1", Name: "old-token", Type: model.SecretTypeBearer, UniqueKey: "old", EncryptedValue: []byte(`{"token":"old"}`)}
+	previous := &model.Secret{ProjectID: "project-1", Name: "old-token", Type: model.SecretTypeToken, UniqueKey: "old", EncryptedValue: []byte(`{"token":"old"}`)}
 	if err := st.CreateSecret(ctx, previous); err != nil {
 		t.Fatalf("create previous secret: %v", err)
 	}
@@ -506,7 +508,7 @@ func TestApplyConfigureOutputUpdatesBoundSecretInPlace(t *testing.T) {
 	ctx := context.Background()
 	st := newTestStore(t)
 
-	previous := &model.Secret{ProjectID: "project-1", Name: "old-token", Type: model.SecretTypeBearer, Host: "old.example.com", UniqueKey: "old", EncryptedValue: []byte(`{"token":"old"}`)}
+	previous := &model.Secret{ProjectID: "project-1", Name: "old-token", Type: model.SecretTypeToken, Host: "old.example.com", UniqueKey: "old", EncryptedValue: []byte(`{"token":"old"}`)}
 	if err := st.CreateSecret(ctx, previous); err != nil {
 		t.Fatalf("create previous secret: %v", err)
 	}
@@ -771,5 +773,53 @@ func TestConfigureSandboxRunsAsNonRootUser(t *testing.T) {
 	// create it under (ADR 0025 §4).
 	if name, _ := user.Name.Get(); name != harness.ConfigureUserName {
 		t.Fatalf("configure sandbox user name = %q, want %q", name, harness.ConfigureUserName)
+	}
+}
+
+// A configure-created credential is the harness's own: its grant never expires,
+// so nothing may cap the grants that stand on it. The limit is stated at
+// creation rather than left to a default, which under a ceiling would describe
+// a lifetime this credential's grant does not have.
+func TestConfigureCreatedSecretsHaveNoGrantLimit(t *testing.T) {
+	ctx := context.Background()
+	st := newTestStore(t)
+
+	config := &model.HarnessConfig{
+		ProjectID: "project-1", Slug: "claude-code", Name: "Claude Code",
+		Image: "img:1", RunCommand: []string{"claude"},
+	}
+	if err := st.CreateHarnessConfig(ctx, config); err != nil {
+		t.Fatalf("create config: %v", err)
+	}
+
+	svc := &Service{store: st, inspector: &stubInspector{}}
+	out := &configureOutput{Secrets: []configureSecret{{
+		EnvName: "ANTHROPIC_API_KEY", Name: "Anthropic API key", Type: "token", Value: json.RawMessage(`{"token":"sk-ant-x"}`),
+	}}}
+	if err := svc.applyConfigureOutput(ctx, config, "sandbox-1", out); err != nil {
+		t.Fatalf("apply: %v", err)
+	}
+	if len(config.ConfiguredSecretIDs) != 1 {
+		t.Fatalf("configured secrets = %v, want the one the flow created", config.ConfiguredSecretIDs)
+	}
+
+	secret, err := st.GetSecret(ctx, "project-1", config.ConfiguredSecretIDs[0])
+	if err != nil {
+		t.Fatalf("read the configured secret: %v", err)
+	}
+	if secret.MaxGrantTTL != 0 {
+		t.Fatalf("grant limit = %d, want none: the harness's own grant never expires", secret.MaxGrantTTL)
+	}
+
+	// And the grant it stands on says the same thing from the other side.
+	grants, err := st.ListSecretGrants(ctx, "project-1", secret.ID)
+	if err != nil {
+		t.Fatalf("list grants: %v", err)
+	}
+	if len(grants) != 1 {
+		t.Fatalf("grants = %d, want the one the configure flow minted", len(grants))
+	}
+	if grants[0].ExpiresAt != nil {
+		t.Fatalf("expires at = %v, want a grant that outlives the configure run", grants[0].ExpiresAt)
 	}
 }

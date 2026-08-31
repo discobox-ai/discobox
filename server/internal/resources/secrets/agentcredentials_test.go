@@ -275,7 +275,7 @@ func createBearerSecret(ctx context.Context, t *testing.T, svc *resourcesecrets.
 	t.Helper()
 	secret, err := svc.CreateSecret(ctx, "project-1", services.CreateSecretBody{
 		Name:  "github",
-		Type:  serverapi.CreateSecretBodyTypeBearer,
+		Type:  serverapi.CreateSecretBodyTypeToken,
 		Value: serverapi.SecretValue{Token: serverapi.NewOptString("ghp_realrealrealrealrealrealrealreal12")},
 	})
 	if err != nil {
@@ -321,4 +321,43 @@ func newAgentCredentialService(t *testing.T) (*resourcesecrets.Service, *store.S
 	}
 	st := store.New(db.Write, db.Read)
 	return resourcesecrets.NewService(st), st
+}
+
+// A host is matched against what the proxy observed, which it reports
+// lowercased and without a port. A grant stored any other way is one nothing
+// can ever match, and the symptom — a credential that behaves as though it were
+// revoked — says nothing about the typo that caused it.
+func TestApprovedHostIsNormalizedToWhatTheProxyReports(t *testing.T) {
+	for _, tc := range []struct{ name, approved string }{
+		{"mixed case", "API.GitHub.com"},
+		{"padded", "  api.github.com  "},
+		{"with a port", "api.github.com:443"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			ctx := testPrincipalContext()
+			svc, st := newAgentCredentialService(t)
+			secret := createBearerSecret(ctx, t, svc)
+			req := createAgentRequest(ctx, t, svc)
+
+			approved, err := svc.ApproveSecretRequest(ctx, "project-1", req.ID, services.ApproveSecretRequestBody{
+				SecretId: secret.ID,
+				Host:     serverapi.NewOptString(tc.approved),
+			})
+			if err != nil {
+				t.Fatalf("approve: %v", err)
+			}
+			grant, err := st.GetSecretGrant(ctx, "project-1", approved.GrantID)
+			if err != nil {
+				t.Fatalf("get grant: %v", err)
+			}
+			if grant.Host != "api.github.com" {
+				t.Fatalf("grant host = %q, want the host as the proxy reports it", grant.Host)
+			}
+			// The point of normalizing: the grant this mints actually resolves.
+			if _, err := st.FindLiveGrant(ctx, "project-1", secret.ID, "api.github.com",
+				[]store.GrantScope{{Scope: model.SecretGrantScopeSandbox, ScopeKey: testSandboxID}}); err != nil {
+				t.Fatalf("the minted grant does not match the observed host: %v", err)
+			}
+		})
+	}
 }

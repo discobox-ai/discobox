@@ -526,6 +526,11 @@ func (m *Model) paneOptions(kind paneKind, readOnly bool) []termpane.Option {
 		services[strconv.Itoa(n)] = jumpServiceMsg{n: n}
 	}
 	opts = append(opts, termpane.WithPrefixChord(paneServicesKey, services))
+	// The credential request the header is telling you about. It is bound here
+	// rather than only on the list because the workspace is where the banner
+	// says there is one, and an affordance that names a key the pane swallows
+	// is not one.
+	opts = append(opts, termpane.WithPrefixBinding(credentialsKey, openCredentialsMsg{}))
 	// Every command the list offers, on the key it has there. One key map for
 	// the two screens is the point: the workspace is a discobox with the
 	// cursor on it, and what you can do to it does not change with where you
@@ -727,6 +732,9 @@ func (m *Model) updatePaneMsg(tagged paneMsg) tea.Cmd {
 
 	case openToolsMsg:
 		return m.openTools()
+
+	case openCredentialsMsg:
+		return m.openCredentialDialog(m.paneBox.ID)
 
 	case closeToolMsg:
 		return m.closeTool()
@@ -1066,6 +1074,14 @@ type zoomSpan struct {
 // and lets the press go on into the chrome's own selection, so border text
 // stays drag-selectable.
 func (m *Model) focusChromeAt(x, y int) (tea.Cmd, bool) {
+	// The banner is a button spanning the window, and it is tested first: it
+	// is drawn over nothing else, and it is the one thing on this screen that
+	// is asking to be pressed. It owns the gesture rather than falling through
+	// to the chrome's selection — a bar you click to answer a question must
+	// not also start a drag-select of its own text.
+	if m.credentialBannerAt(x, y) {
+		return m.openCredentialDialog(m.paneBox.ID), true
+	}
 	if m.showingTool() != nil {
 		button, ok := m.buttonAt(x, y)
 		if !ok {
@@ -1099,7 +1115,7 @@ func (m *Model) focusChromeAt(x, y int) (tea.Cmd, bool) {
 // spans were recorded when the boxes were drawn, and only a box actually on
 // screen records one.
 func (m *Model) zoomAt(x, y int) (shells, ok bool) {
-	if y != 1 {
+	if y != 1+m.credentialBannerRows() {
 		return false, false
 	}
 	for _, s := range m.zoomSpans {
@@ -1129,7 +1145,7 @@ func (m *Model) toggleMaximized(shells bool) {
 // is in. The strips are the boxes' top border row, and the spans were recorded
 // when they were drawn.
 func (m *Model) tabAt(x, y int) (shells bool, index int, ok bool) {
-	if y != 1 {
+	if y != 1+m.credentialBannerRows() {
 		return false, -1, false
 	}
 	for _, s := range m.tabSpans {
@@ -1145,7 +1161,8 @@ func (m *Model) tabAt(x, y int) (shells bool, index int, ok bool) {
 // below, split down the middle when there are tabs beside the terminal and
 // belonging to the one box on screen when there are not.
 func (m *Model) paneBoxAt(x, y int) *pane {
-	if y < 1 || y > m.paneRows()+2 {
+	top := 1 + m.credentialBannerRows()
+	if y < top || y > m.paneRows()+2+m.credentialBannerRows() {
 		return nil
 	}
 	if m.split() && x >= m.width/2 {
@@ -1189,7 +1206,11 @@ func wheelLines(wheel tea.MouseWheelMsg) int {
 
 // paneRows is the height every pane gets: the banner, the border's own two
 // edges, and the status line at the bottom.
-func (m *Model) paneRows() int { return m.height - 4 }
+// paneRows is the body rows the workspace has for its boxes: the window less
+// the header, the status line, and the box's own two edges — less the
+// credential banner when there is one, which is a row taken from the panes
+// rather than added to the frame.
+func (m *Model) paneRows() int { return m.height - 4 - m.credentialBannerRows() }
 
 // paneCells is the terminal size a pane of the given box width implies: the
 // box, less its border and a cell of air inside it on each side.
@@ -1255,12 +1276,18 @@ func (m *Model) shellLeft() int {
 // The cursor and every mouse event are placed against this, so it is worked
 // out once rather than counted twice.
 func (m *Model) paneOrigin(p *pane) (x, y int) {
+	// The credential banner sits between the header and the boxes, so the
+	// grids start a row lower while it is up. This is the one place that
+	// answers where a pane's first cell is: the hardware cursor is placed
+	// through it and every mouse event is translated through it, so an offset
+	// applied anywhere else would move one and not the other.
+	top := 2 + m.credentialBannerRows()
 	if p != nil && m.shells.index(p) >= 0 {
 		// A shell tab: its box starts where the terminals' box ends, or at the
 		// window's edge when it is the maximized one.
-		return m.shellLeft() + 1 + boxPad, 2
+		return m.shellLeft() + 1 + boxPad, top
 	}
-	return 1 + boxPad, 2
+	return 1 + boxPad, top
 }
 
 // viewPaneWindow draws the whole screen for the open workspace: the captions
@@ -1277,10 +1304,19 @@ func (m *Model) viewPaneWindow() string {
 	// there when they were drawn this frame, and a span left over from a box
 	// that is no longer on screen is a click target pointing at nothing.
 	m.tabSpans, m.zoomSpans, m.buttonSpans = m.tabSpans[:0], m.zoomSpans[:0], m.buttonSpans[:0]
+	m.credentials = credentialSpan{}
 
 	headerW := max(inner-2*boxPad, 1)
 	rows := []string{
 		" " + pad + m.viewPaneHeader(headerW) + pad + " ",
+	}
+	// A credential request on this discobox gets a band of its own under the
+	// header, not a hint at the foot: the agent in front of you is blocked on
+	// a person, and the one thing this screen has to do is say so and say
+	// which key answers it. It is a row the workspace only has while there is
+	// one, so nothing is spent on it the rest of the time.
+	if banner := m.viewCredentialBanner(headerW); banner != "" {
+		rows = append(rows, " "+pad+banner+pad+" ")
 	}
 
 	// The overlay has the screen while it is up. What is under it is not drawn

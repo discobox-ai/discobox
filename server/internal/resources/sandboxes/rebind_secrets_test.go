@@ -74,10 +74,15 @@ func TestRebindKeepsSentinelWhenFormatMatches(t *testing.T) {
 	before := onlyAssignment(t, st)
 
 	replacement := &model.Secret{
-		ProjectID: "project-1", Name: "openai-2", Type: model.SecretTypeBearer,
+		ProjectID: "project-1", Name: "openai-2", Type: model.SecretTypeToken,
 		// Distinct UniqueKey: a replacement coexists with the secret it
 		// supersedes, which the (project,type,host) slot alone would forbid.
-		UniqueKey: "replacement-1", EncryptedValue: []byte(`{"token":"sk-xyz"}`),
+		// The same shape as the secret it replaces, which is what the rule is
+		// about. Formats are inferred from the value now rather than flattened
+		// to one template per provider prefix, so a stand-in has to look like
+		// what it stands in for: "abc" and "cab" are the same charset and
+		// length, "xyz" is not.
+		UniqueKey: "replacement-1", EncryptedValue: []byte(`{"token":"sk-cab"}`),
 	}
 	if err := st.CreateSecret(ctx, replacement); err != nil {
 		t.Fatalf("create secret: %v", err)
@@ -115,7 +120,7 @@ func TestRebindReMintsWhenFormatDiffers(t *testing.T) {
 	before := onlyAssignment(t, st)
 
 	replacement := &model.Secret{
-		ProjectID: "project-1", Name: "openai-3", Type: model.SecretTypeBearer,
+		ProjectID: "project-1", Name: "openai-3", Type: model.SecretTypeToken,
 		UniqueKey:      "replacement-2",
 		EncryptedValue: []byte(`{"token":"github_pat_11ABCDEFG0123456789abcdefghij"}`),
 	}
@@ -191,7 +196,7 @@ func TestRebindRowsRepairsDriftWithoutService(t *testing.T) {
 	before := onlyAssignment(t, st)
 
 	replacement := &model.Secret{
-		ProjectID: "project-1", Name: "openai-4", Type: model.SecretTypeBearer,
+		ProjectID: "project-1", Name: "openai-4", Type: model.SecretTypeToken,
 		UniqueKey: "replacement-3", EncryptedValue: []byte(`{"token":"sk-abc"}`),
 	}
 	if err := st.CreateSecret(ctx, replacement); err != nil {

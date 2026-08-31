@@ -247,17 +247,16 @@ func (s *Service) resolveSecretForInput(ctx context.Context, projectID string, i
 }
 
 // secretFormat returns the secret's stored format, falling back to inferring one
-// from the decrypted bearer value so referenced secrets without a format still
+// from the decrypted token so referenced secrets without a format still
 // mint a convincing sentinel.
 func secretFormat(ctx context.Context, st *store.Store, secret *model.Secret) string {
 	if strings.TrimSpace(secret.Format) != "" {
 		return secret.Format
 	}
-	if secret.Type == model.SecretTypeBearer {
+	if secret.Type == model.SecretTypeToken {
 		if val, err := st.OpenSecretValue(ctx, secret); err == nil && val != nil {
 			if token := strings.TrimSpace(val.Token); token != "" {
-				format, _ := secretformat.Describe(token)
-				return format
+				return secretformat.Describe(token)
 			}
 		}
 	}
@@ -269,26 +268,23 @@ func (s *Service) createAnonymousSecret(ctx context.Context, projectID, value, h
 	if err != nil {
 		return nil, err
 	}
-	format, hostHint := secretformat.Describe(value)
-	if host == "" {
-		host = hostHint
-	}
+	format := secretformat.Describe(value)
 	//nolint:gosec // Secret values are intentionally marshaled before store encryption.
 	valueBytes, err := json.Marshal(model.SecretValue{Token: value})
 	if err != nil {
 		return nil, apperrors.NewStatusError(http.StatusBadRequest, "invalid secret value")
 	}
 	secret := &model.Secret{
-		ID:              secretID,
-		ProjectID:       projectID,
-		Name:            "sandbox-secret-" + secretID,
-		Type:            model.SecretTypeBearer,
-		Host:            host,
-		UniqueKey:       secretID, // keeps anonymous rows out of the (project,type,host) uniqueness domain
-		Anonymous:       true,
-		Format:          format,
-		DefaultGrantTTL: defaultAnonymousGrantTTLSeconds,
-		EncryptedValue:  valueBytes,
+		ID:             secretID,
+		ProjectID:      projectID,
+		Name:           "sandbox-secret-" + secretID,
+		Type:           model.SecretTypeToken,
+		Host:           host,
+		UniqueKey:      secretID, // keeps anonymous rows out of the (project,type,host) uniqueness domain
+		Anonymous:      true,
+		Format:         format,
+		MaxGrantTTL:    defaultAnonymousGrantTTLSeconds,
+		EncryptedValue: valueBytes,
 	}
 	if err := s.store.CreateSecret(ctx, secret); err != nil {
 		return nil, err

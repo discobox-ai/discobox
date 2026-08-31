@@ -102,6 +102,12 @@ type Sandbox struct {
 	Name  string
 	State State
 
+	// PendingRequests is how many credential requests on this discobox are
+	// waiting on a person. It is not read from the server with the row: the
+	// model annotates it from the project's request listing, so one poll
+	// answers the list and the workspace both.
+	PendingRequests int
+
 	// HasRuntime is the power axis, carried beside State because State
 	// collapses it. The server keeps existence and power as two fields
 	// (ADR 0034 §§1–2), and its displayState re-merges them error-first: a
@@ -739,6 +745,141 @@ type Forward interface {
 // once, in the cli package, over the same API client and code paths the
 // non-interactive commands use: the launcher runs `discobox`'s commands rather
 // than a second implementation of them.
+
+// CredentialRequest is one ask for a credential, waiting on a person. An agent
+// makes them through the in-sandbox CLI (ADR 0031); the proxy makes bare ones
+// when it meets a sentinel it cannot resolve. What separates them here is
+// Uses: only an agent that asked can say what it wants the credential for, and
+// only those requests carry a name, an env var, and a justification.
+type CredentialRequest struct {
+	ID        string
+	SandboxID string
+	// Name is the credential the agent asked for ("github"), which is not a
+	// secret ID: choosing which secret answers it is the approval.
+	Name          string
+	EnvVar        string
+	Host          string
+	Type          string
+	Justification string
+	Uses          []string
+	Created       time.Time
+}
+
+// FromAgent reports whether a person is being asked a question with reasons
+// attached, rather than being told the proxy hit an unresolvable sentinel.
+func (r CredentialRequest) FromAgent() bool { return len(r.Uses) > 0 }
+
+// Secret is a project secret as the window needs it: enough to choose between
+// them and to manage them, and never a value.
+type Secret struct {
+	ID   string
+	Name string
+	Type string
+	// Host the secret is bound to, empty when nobody bound it. A bound secret
+	// may only be granted for that host and the hosts beneath it, so the
+	// approval picker offers the ones that cover the request first.
+	Host string
+	// MaxTTL is the longest a grant on it may live, and the lifetime a grant
+	// takes when nobody names one. Zero is no limit: grants on this credential
+	// may then live forever.
+	MaxTTL time.Duration
+	// Grants is how many live grants stand on it, filled in by the screen from
+	// the project's grant listing rather than read per row.
+	Grants  int
+	Created time.Time
+	Updated time.Time
+
+	// OAuth is what an oauth credential is, without being it. Nil for a token,
+	// and never the tokens themselves.
+	OAuth *SecretOAuth
+}
+
+// SecretOAuth is the half of an OAuth credential that can be shown: where it
+// renews, whose grant it is, what it may do, and when the access token goes
+// stale.
+type SecretOAuth struct {
+	TokenURL             string
+	ClientID             string
+	Scopes               []string
+	SubscriptionType     string
+	AccessTokenExpiresAt time.Time
+	Refreshable          bool
+}
+
+// GrantUse is one approved way to use a credential, as the window shows it.
+type GrantUse struct {
+	ID          string
+	Description string
+}
+
+// NewGrant is a standing authorization somebody is creating by hand: a
+// pre-approval, minted without a request to answer.
+type NewGrant struct {
+	SecretID string
+	Scope    string
+	ScopeKey string
+	Host     string
+	// TTLSeconds is how long it lives. Zero asks for a grant that never
+	// expires, which a secret carrying a limit refuses.
+	TTLSeconds int64
+	// EnvVar and Uses make it the agent credentials shape: a credential
+	// nothing in the discobox can read, which the in-sandbox CLI takes one use
+	// at a time. Empty leaves the ordinary standing grant, which authorizes
+	// the sentinel the discobox already holds.
+	EnvVar string
+	Uses   []string
+}
+
+// Grant is a standing authorization on a secret: who may use it, where it may
+// be sent, and until when.
+type Grant struct {
+	ID       string
+	SecretID string
+	Scope    string
+	ScopeKey string
+	Host     string
+	// Uses are the approved uses an agent credential grant carries, empty on a
+	// plain standing grant. The ID travels with the description because it is
+	// what an agent presents to `discobox-access run --use`, and reviewing a
+	// grant is where somebody reads it.
+	Uses      []GrantUse
+	GrantedBy string
+	Granted   time.Time
+	// Expires is when the authorization lapses; zero never does.
+	Expires time.Time
+}
+
+// NewSecret is a credential typed into the window: from the approval dialog,
+// where the project has nothing that answers a request yet, or from the secrets
+// screen.
+//
+// An OAuth credential is more than one field, and all of them are needed: the
+// access token is what travels, and the rest is what the control plane spends
+// to renew it when it goes stale.
+type NewSecret struct {
+	Name  string
+	Type  string
+	Host  string
+	Value string
+
+	// What an oauth credential needs to renew itself.
+	RefreshToken string
+	TokenURL     string
+	ClientID     string
+	Scopes       []string
+}
+
+// Approval is what a person decided about a request: which secret answers it,
+// and how long the grant it mints lives. Everything else — scope, the approved
+// uses, the host — follows the request, which is what the approver read.
+type Approval struct {
+	RequestID string
+	SecretID  string
+	// TTLSeconds is how long the grant lives; zero takes the secret's limit,
+	// which is also the lifetime nobody has to choose.
+	TTLSeconds int64
+}
+
 type DataSource interface {
 	// Session is read once at startup, and is what the header and the run
 	// options panel are drawn from.
@@ -904,4 +1045,53 @@ type DataSource interface {
 	// differs. The window is suspended for it, the way editing a harness file
 	// suspends it.
 	EditToolFile(ctx context.Context, file ToolFile, stdin io.Reader, stdout, stderr io.Writer) (bool, error)
+	// CredentialRequests is every credential request in the project still
+	// waiting on a person, newest first. It is polled with the listing rather
+	// than streamed: the client-facing event stream is gone (ADR 0061), and a
+	// request is answered on human time anyway.
+	CredentialRequests(ctx context.Context) ([]CredentialRequest, error)
+
+	// Secrets is the project's secrets, for choosing which one answers a
+	// request. It never carries a value.
+	Secrets(ctx context.Context) ([]Secret, error)
+
+	// CreateSecret stores a credential typed into the approval dialog and
+	// returns it, so the approval that follows has a secret to name.
+	CreateSecret(ctx context.Context, secret NewSecret) (Secret, error)
+
+	// SetSecretHost binds a secret to a host, or releases it with an empty one.
+	// The binding is what says a credential may only be sent to that host and
+	// the hosts beneath it, so widening it is the deliberate act the approval
+	// dialog asks about before it approves against a neighboring host.
+	SetSecretHost(ctx context.Context, secretID, host string) error
+
+	// SetSecretMaxGrantTTL sets the longest a grant on the secret may live, in
+	// seconds; zero lifts the limit. It is the other half of what a secret
+	// says about itself: the binding limits where a credential may go, this
+	// limits how long consent to it may last.
+	SetSecretMaxGrantTTL(ctx context.Context, secretID string, seconds int64) error
+
+	// Grants lists the standing grants on one secret, or on every secret in the
+	// project when secretID is empty.
+	Grants(ctx context.Context, secretID string) ([]Grant, error)
+
+	// CreateGrant mints a standing grant without a request behind it: the
+	// pre-approval an operator makes because they already know the answer.
+	CreateGrant(ctx context.Context, grant NewGrant) (Grant, error)
+
+	// RevokeGrant withdraws one grant. The credential stops resolving at once —
+	// the request that produced it stays approved, because it is history.
+	RevokeGrant(ctx context.Context, grantID string) error
+
+	// DeleteSecret removes a secret and everything standing on it.
+	DeleteSecret(ctx context.Context, secretID string) error
+
+	// ApproveCredentialRequest answers a request yes, minting the grant that
+	// authorizes it. The server decides the scope and the approved uses from
+	// the request itself.
+	ApproveCredentialRequest(ctx context.Context, approval Approval) error
+
+	// DenyCredentialRequest answers a request no. It is a complete answer, not
+	// a dismissal: the asking agent is waiting on one.
+	DenyCredentialRequest(ctx context.Context, requestID string) error
 }

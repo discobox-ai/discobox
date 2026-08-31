@@ -5,7 +5,7 @@ credential it was not provisioned with, and then **use** it. Three operations:
 `list`, `request`, `get`.
 
 The protocol knows nothing about Discobox. It is the contract between the
-in-sandbox CLI (`discobox-credential`) and whatever serves it, so the same CLI
+in-sandbox CLI (`discobox-access`) and whatever serves it, so the same CLI
 works against Discobox's sandbox-agent and against any other implementation.
 
 Decision record:
@@ -151,7 +151,7 @@ credential again after it passes calls `get` again rather than holding the value
 
 ## The client shape that fits it best
 
-The reference client is `discobox-credential`. Its primary consumer is an LLM
+The reference client is `discobox-access`. Its primary consumer is an LLM
 agent, and the operations do not all have the same shape, so they deliberately
 do not get the same interface.
 
@@ -160,7 +160,7 @@ command it declares — encoding it as JSON would put a translation step between
 the two, and cost the child's exit status:
 
 ```
-discobox-credential run --use <useId> -- gh pr create --fill
+discobox-access run --use <useId> -- gh pr create --fill
 ```
 
 The returned value is injected into that child process's environment only —
@@ -171,7 +171,7 @@ joining any same-named variable, so a stale export cannot shadow it.
 shell that reads quotes and apostrophes as syntax:
 
 ```
-discobox-credential request --json <<'EOF'
+discobox-access request --json <<'EOF'
 {
   "name": "github",
   "envVar": "GITHUB_TOKEN",
@@ -189,7 +189,7 @@ Results go to stdout and failures to stderr, always — which is what lets `run`
 hand its child the real stdout untouched.
 
 **The reference client judges before it runs.** Before executing a wrapped
-command, `discobox-credential` asks a local model whether the command is the use
+command, `discobox-access` asks a local model whether the command is the use
 it was approved for, and refuses to start it otherwise
 ([ADR 0079](adr/0079-a-local-judge-gates-every-wrapped-credential-use.md)). That
 is a property of this client, not of the protocol: an implementation serving the

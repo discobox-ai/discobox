@@ -13,12 +13,16 @@ import (
 )
 
 type secretValueOptions struct {
-	valueJSON  string
-	username   string
-	password   string
-	privateKey string
-	passphrase string
-	token      string
+	valueJSON string
+	token     string
+	// What an oauth credential needs to renew itself, and the non-secret
+	// metadata captured with it.
+	refreshToken     string
+	tokenURL         string
+	clientID         string
+	scopes           []string
+	expiresAt        int64
+	subscriptionType string
 }
 
 func (a *App) newSecretCommand() *cobra.Command {
@@ -76,7 +80,8 @@ func (a *App) newSecretGrantListCommand() *cobra.Command {
 }
 
 func (a *App) newSecretGrantCreateCommand() *cobra.Command {
-	var secretRef, scope, scopeKey, host string
+	var secretRef, scope, scopeKey, host, envVar string
+	var uses []string
 	var ttl int64
 	cmd := &cobra.Command{Use: "create --secret SECRET_ID --scope SCOPE", Short: "Create a standing grant (pre-approval)", RunE: func(cmd *cobra.Command, _ []string) error {
 		client, err := a.apiClient()
@@ -105,6 +110,19 @@ func (a *App) newSecretGrantCreateCommand() *cobra.Command {
 		if cmd.Flags().Changed("grant-ttl") {
 			body.SetGrantTTLSeconds(apiclientgen.NewOptInt64(ttl))
 		}
+		// Uses make it the agent credentials shape: nothing in the sandbox can
+		// read the credential, and the in-sandbox CLI takes it one use at a
+		// time.
+		if len(uses) > 0 {
+			declared := make([]apimodel.SecretUse, 0, len(uses))
+			for _, use := range uses {
+				declared = append(declared, apimodel.SecretUse{Description: use})
+			}
+			body.SetUses(apiclientgen.NewOptNilSecretUseArray(declared))
+		}
+		if strings.TrimSpace(envVar) != "" {
+			body.SetEnvVar(apiclientgen.NewOptString(strings.TrimSpace(envVar)))
+		}
 		res, err := client.CreateSecretGrant(cmd.Context(), body, apiclientgen.CreateSecretGrantParams{ProjectId: projectID})
 		if err != nil {
 			return err
@@ -119,7 +137,9 @@ func (a *App) newSecretGrantCreateCommand() *cobra.Command {
 	cmd.Flags().StringVar(&scope, "scope", "", "Grant scope: sandbox, harnessConfig, or project")
 	cmd.Flags().StringVar(&scopeKey, "scope-key", "", "Discobox ID or harness config ID the scope resolves against (defaults to project ID for project scope)")
 	cmd.Flags().StringVar(&host, "host", "", "Limit the grant to a host; defaults to the secret's host")
-	cmd.Flags().Int64Var(&ttl, "grant-ttl", 0, "Grant duration in seconds; 0 never expires")
+	cmd.Flags().Int64Var(&ttl, "grant-ttl", 0, "Grant duration in seconds; 0 never expires, which the secret's --max-grant-ttl may forbid (default: the secret's limit)")
+	cmd.Flags().StringArrayVar(&uses, "use", nil, "What the credential may be used for (repeatable). With uses the credential is never injected into the discobox: only `discobox-access` can take it, one use at a time. Sandbox scope and a host are required")
+	cmd.Flags().StringVar(&envVar, "env-var", "", "Environment variable an agent receives the credential in; required with --use")
 	return cmd
 }
 
@@ -237,9 +257,9 @@ func (a *App) newSecretCreateCommand() *cobra.Command {
 		return a.writeSecret(cmd, secret)
 	}}
 	cmd.Flags().StringVar(&name, "name", "", "Secret name")
-	cmd.Flags().StringVar(&secretType, "type", "", "Secret type: git, ssh, or bearer")
+	cmd.Flags().StringVar(&secretType, "type", "", "Secret type: token or oauth (default token)")
 	cmd.Flags().StringVar(&host, "host", "", "Optional host hint, such as github.com")
-	cmd.Flags().Int64Var(&ttl, "grant-ttl", 0, "Default grant duration in seconds")
+	cmd.Flags().Int64Var(&ttl, "max-grant-ttl", 0, "Longest a grant on this secret may live, in seconds; 0 allows grants that never expire (default 3600)")
 	addSecretValueFlags(cmd.Flags(), &value)
 	return cmd
 }
@@ -277,7 +297,7 @@ func (a *App) newSecretUpdateCommand() *cobra.Command {
 	}}
 	cmd.Flags().StringVar(&name, "name", "", "Secret name")
 	cmd.Flags().StringVar(&host, "host", "", "Optional host hint, such as github.com")
-	cmd.Flags().Int64Var(&ttl, "grant-ttl", 0, "Default grant duration in seconds")
+	cmd.Flags().Int64Var(&ttl, "max-grant-ttl", 0, "Longest a grant on this secret may live, in seconds; 0 allows grants that never expire (default 3600)")
 	addSecretValueFlags(cmd.Flags(), &value)
 	return cmd
 }
@@ -400,7 +420,7 @@ func (a *App) newSecretRequestCreateCommand() *cobra.Command {
 		}
 		return a.writeSecretRequest(cmd, request)
 	}}
-	cmd.Flags().StringVar(&secretType, "type", "", "Requested secret type: git, ssh, or bearer")
+	cmd.Flags().StringVar(&secretType, "type", "", "Requested secret type: token or oauth (default token)")
 	cmd.Flags().StringVar(&host, "host", "", "Optional host hint, such as github.com")
 	return cmd
 }
@@ -427,7 +447,7 @@ func (a *App) newSecretRequestApproveCommand() *cobra.Command {
 			return err
 		}
 		body := &apimodel.ApproveSecretRequestBody{SecretId: selectedSecretID}
-		if ttl > 0 {
+		if cmd.Flags().Changed("grant-ttl") {
 			body.SetGrantTTLSeconds(apiclientgen.NewOptInt64(ttl))
 		}
 		if strings.TrimSpace(scope) != "" {
@@ -464,7 +484,7 @@ func (a *App) newSecretRequestApproveCommand() *cobra.Command {
 	cmd.Flags().StringVar(&scope, "scope", "", "Grant scope: sandbox, harnessConfig, or project (defaults to sandbox for sandbox requests, else project)")
 	cmd.Flags().StringVar(&host, "host", "", "Host the grant is limited to (defaults to the host the request named)")
 	cmd.Flags().StringArrayVar(&uses, "use", nil, "Replace an agent's declared uses with these (repeatable); omit to approve them as asked")
-	cmd.Flags().Int64Var(&ttl, "grant-ttl", 0, "Grant duration in seconds")
+	cmd.Flags().Int64Var(&ttl, "grant-ttl", 0, "Grant duration in seconds; 0 never expires, which the secret's --max-grant-ttl may forbid (default: the secret's limit)")
 	return cmd
 }
 
@@ -509,11 +529,13 @@ func (a *App) newSecretRequestDenyCommand() *cobra.Command {
 
 func addSecretValueFlags(flags *pflag.FlagSet, opts *secretValueOptions) {
 	flags.StringVar(&opts.valueJSON, "value-json", "", "Secret value JSON or @path")
-	flags.StringVar(&opts.username, "username", "", "Git credential username")
-	flags.StringVar(&opts.password, "password", "", "Git credential password")
-	flags.StringVar(&opts.privateKey, "private-key", "", "SSH private key PEM")
-	flags.StringVar(&opts.passphrase, "passphrase", "", "SSH key passphrase")
-	flags.StringVar(&opts.token, "token", "", "Bearer token")
+	flags.StringVar(&opts.token, "token", "", "The credential itself, or an OAuth access token")
+	flags.StringVar(&opts.refreshToken, "refresh-token", "", "OAuth refresh token, spent server-side to renew the access token")
+	flags.StringVar(&opts.tokenURL, "token-url", "", "Where the refresh token is exchanged for a new access token")
+	flags.StringVar(&opts.clientID, "client-id", "", "OAuth client the grant belongs to")
+	flags.StringArrayVar(&opts.scopes, "scope", nil, "What the grant may do, as the authorization server returned it (repeatable)")
+	flags.Int64Var(&opts.expiresAt, "access-token-expires-at", 0, "When the access token goes stale, unix milliseconds")
+	flags.StringVar(&opts.subscriptionType, "subscription-type", "", "The plan or account kind the grant belongs to")
 }
 
 func createSecretBody(flags *pflag.FlagSet, name, secretType, host string, ttl int64, valueOpts secretValueOptions) (*apimodel.CreateSecretBody, error) {
@@ -537,8 +559,8 @@ func createSecretBody(flags *pflag.FlagSet, name, secretType, host string, ttl i
 	if strings.TrimSpace(host) != "" {
 		body.SetHost(apiclientgen.NewOptString(strings.TrimSpace(host)))
 	}
-	if ttl > 0 {
-		body.SetDefaultGrantTTLSeconds(apiclientgen.NewOptInt64(ttl))
+	if flags.Changed("max-grant-ttl") {
+		body.SetMaxGrantTTLSeconds(apiclientgen.NewOptInt64(ttl))
 	}
 	return body, nil
 }
@@ -551,8 +573,8 @@ func updateSecretBody(flags *pflag.FlagSet, name, host string, ttl int64, valueO
 	if flags.Changed("host") {
 		body.SetHost(apiclientgen.NewOptString(strings.TrimSpace(host)))
 	}
-	if flags.Changed("grant-ttl") && ttl > 0 {
-		body.SetDefaultGrantTTLSeconds(apiclientgen.NewOptInt64(ttl))
+	if flags.Changed("max-grant-ttl") {
+		body.SetMaxGrantTTLSeconds(apiclientgen.NewOptInt64(ttl))
 	}
 	if secretValueFlagsChanged(flags) {
 		value, err := secretValueFromOptions(flags, valueOpts)
@@ -592,20 +614,26 @@ func secretValueFromOptions(flags *pflag.FlagSet, opts secretValueOptions) (apim
 		return value, nil
 	}
 	value := apimodel.SecretValue{}
-	if flags.Changed("username") {
-		value.SetUsername(apiclientgen.NewOptString(opts.username))
-	}
-	if flags.Changed("password") {
-		value.SetPassword(apiclientgen.NewOptString(opts.password))
-	}
-	if flags.Changed("private-key") {
-		value.SetPrivateKey(apiclientgen.NewOptString(opts.privateKey))
-	}
-	if flags.Changed("passphrase") {
-		value.SetPassphrase(apiclientgen.NewOptString(opts.passphrase))
-	}
 	if flags.Changed("token") {
 		value.SetToken(apiclientgen.NewOptString(opts.token))
+	}
+	if flags.Changed("refresh-token") {
+		value.SetRefreshToken(apiclientgen.NewOptString(opts.refreshToken))
+	}
+	if flags.Changed("token-url") {
+		value.SetTokenUrl(apiclientgen.NewOptString(opts.tokenURL))
+	}
+	if flags.Changed("client-id") {
+		value.SetClientId(apiclientgen.NewOptString(opts.clientID))
+	}
+	if flags.Changed("scope") {
+		value.SetScopes(apiclientgen.NewOptNilStringArray(opts.scopes))
+	}
+	if flags.Changed("access-token-expires-at") {
+		value.SetAccessTokenExpiresAt(apiclientgen.NewOptInt64(opts.expiresAt))
+	}
+	if flags.Changed("subscription-type") {
+		value.SetSubscriptionType(apiclientgen.NewOptString(opts.subscriptionType))
 	}
 	return value, nil
 }
@@ -615,7 +643,7 @@ func secretValueFlagsChanged(flags *pflag.FlagSet) bool {
 }
 
 func secretValueFlagsWithoutJSONChanged(flags *pflag.FlagSet) bool {
-	for _, name := range []string{"username", "password", "private-key", "passphrase", "token"} {
+	for _, name := range []string{"token", "refresh-token", "token-url", "client-id", "scope", "access-token-expires-at", "subscription-type"} {
 		if flags.Changed(name) {
 			return true
 		}
@@ -625,26 +653,22 @@ func secretValueFlagsWithoutJSONChanged(flags *pflag.FlagSet) bool {
 
 func createSecretBodyType(value string) (apiclientgen.CreateSecretBodyType, error) {
 	switch strings.ToLower(strings.TrimSpace(value)) {
-	case "git":
-		return apiclientgen.CreateSecretBodyTypeGit, nil
-	case "ssh":
-		return apiclientgen.CreateSecretBodyTypeSSH, nil
-	case "bearer":
-		return apiclientgen.CreateSecretBodyTypeBearer, nil
+	case "", "token":
+		return apiclientgen.CreateSecretBodyTypeToken, nil
+	case "oauth":
+		return apiclientgen.CreateSecretBodyTypeOAuth, nil
 	default:
-		return "", fmt.Errorf("secret type must be git, ssh, or bearer")
+		return "", fmt.Errorf("secret type must be token or oauth")
 	}
 }
 
 func createSecretRequestBodyType(value string) (apiclientgen.CreateSecretRequestBodyType, error) {
 	switch strings.ToLower(strings.TrimSpace(value)) {
-	case "git":
-		return apiclientgen.CreateSecretRequestBodyTypeGit, nil
-	case "ssh":
-		return apiclientgen.CreateSecretRequestBodyTypeSSH, nil
-	case "bearer":
-		return apiclientgen.CreateSecretRequestBodyTypeBearer, nil
+	case "", "token":
+		return apiclientgen.CreateSecretRequestBodyTypeToken, nil
+	case "oauth":
+		return apiclientgen.CreateSecretRequestBodyTypeOAuth, nil
 	default:
-		return "", fmt.Errorf("secret request type must be git, ssh, or bearer")
+		return "", fmt.Errorf("secret type must be token or oauth")
 	}
 }

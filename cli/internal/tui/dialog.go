@@ -560,7 +560,8 @@ func (d *dialog) viewBody(st *styles, lines []string, inner, maxBody int, chevro
 		case marked[i]:
 			b.WriteString(highlight(st, padANSI(off+lines[i], inner), colSelectedBG))
 		default:
-			b.WriteString(off + lines[i])
+			b.WriteString(off)
+			b.WriteString(lines[i])
 		}
 	}
 	d.overflow = len(lines) > maxBody

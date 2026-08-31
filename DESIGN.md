@@ -91,7 +91,7 @@ flowchart TD
     providers --> poolAgent["github.com/discobox-ai/discobox/pool-agent"]
     poolAgent --> root
     sandboxAgent["github.com/discobox-ai/discobox/sandbox-agent"] --> root
-    agentCred["github.com/discobox-ai/discobox/agentcred"] --> root
+    agentCred["github.com/discobox-ai/discobox/access"] --> root
 ```
 
 - Root module: public API definitions, control-plane OpenAPI documents,
@@ -131,11 +131,11 @@ flowchart TD
   manifest contract shared with the server.
 - Sandbox-agent module: in-sandbox agent REST API runtime environment and harness
   implementation; depends on root contracts and generated API types.
-- Agent-credential CLI module: `discobox-credential`, the in-sandbox client of
+- Agent-credential CLI module: `discobox-access`, the in-sandbox client of
   the agent credentials protocol. It is its own module and its own binary — not
   an `argv[0]` alias of the sandbox agent — because it is meant to be liftable
   into another repository, and it depends on nothing but the stdlib-only
-  `agentcreds` package. See [`agentcred/DESIGN.md`](agentcred/DESIGN.md).
+  `agentcreds` package. See [`access/DESIGN.md`](access/DESIGN.md).
 
 Worker-agent and sandbox-agent implementations cannot depend on packages under
 Go `internal/` outside their module. Provider implementations are part of the
@@ -154,6 +154,7 @@ Root module package map:
 | [`endpoint`](endpoint) | How a client reaches the control plane and how the control plane listens, resolved from a URL scheme. Shared because the CLI and the server must agree on what an endpoint means, and because `git`, websockets, and the generated client all reach the server through the one client it builds. The pool-agent hop is resolved separately by [`pool-agent/wire`](pool-agent/wire). |
 | [`harness`](harness) | Harness hook registration drivers for sandbox terminals. |
 | [`id`](id) | Shared identifier helpers. |
+| [`hostscope`](hostscope) | What a credential's host scope covers: a scope covers itself and everything beneath it, never its parent. Shared because three places compare a scope against the destination the proxy observed — the control plane's grant lookup, the pool agent's activation check, and the guard on what a grant may point a secret at — and a rule that differs in one of them is either a credential that stops working for no visible reason or one that travels somewhere nobody approved. |
 | [`secretformat`](secretformat) | The shape of credential values: a generative template that mints a sentinel byte-identical to a real provider key, and inference of a template from a real value. Shared because both ends mint sentinels — the control plane the stable one bound to a sandbox, the pool agent the ephemeral one per use — and a sentinel shaped by different rules at each end would be distinguishable from the real thing. |
 | [`internal/hostid`](internal/hostid) | This machine's generated, persisted Discobox identity. Shared because a CLI and a control plane on one machine must resolve the same value: that agreement is how the server knows a request came from its own filesystem. |
 | [`internal/originkey`](internal/originkey) | Derives the key identifying a sandbox origin. Shared so client and server cannot drift on it. |

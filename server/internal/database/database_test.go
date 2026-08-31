@@ -729,3 +729,313 @@ func TestMigrateWidensSandboxSecretEnvIndex(t *testing.T) {
 		t.Fatal("a second injected binding for the same env var was accepted; the index no longer constrains anything")
 	}
 }
+
+// TestMigrateNormalizesSecretHosts repairs rows written before the secrets
+// service normalized hosts. A grant whose host is not what the proxy reports is
+// an approval nothing can match, so leaving old rows alone would leave the bug
+// in place for exactly the deployments that hit it.
+func TestMigrateNormalizesSecretHosts(t *testing.T) {
+	ctx := context.Background()
+	db, err := database.New(database.Config{
+		Driver: gormdb.DriverSQLite,
+		DSN:    "sqlite3://" + filepath.Join(t.TempDir(), "discobox.db"),
+	})
+	if err != nil {
+		t.Fatalf("open database: %v", err)
+	}
+	t.Cleanup(func() {
+		if err := db.Close(); err != nil {
+			t.Fatalf("close database: %v", err)
+		}
+	})
+	if err := db.Migrate(ctx); err != nil {
+		t.Fatalf("initial migrate: %v", err)
+	}
+
+	if err := db.Write.WithContext(ctx).Create(&model.Project{ID: "project-1", OwnerUserID: "user-1", Name: "Project"}).Error; err != nil {
+		t.Fatalf("create project: %v", err)
+	}
+
+	// Written the way the pre-normalization service would have.
+	if err := db.Write.WithContext(ctx).Exec(
+		"INSERT INTO secret_grants (id, project_id, secret_id, scope, scope_key, host, granted_by, granted_at, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+		"grant_shouty", "project-1", "sec-1", model.SecretGrantScopeSandbox, "sbx-1", "API.GitHub.com", "user-1",
+		time.Now().UTC(), time.Now().UTC(), time.Now().UTC()).Error; err != nil {
+		t.Fatalf("seed grant: %v", err)
+	}
+
+	if err := db.Migrate(ctx); err != nil {
+		t.Fatalf("migrate: %v", err)
+	}
+
+	var host string
+	if err := db.Write.WithContext(ctx).Raw("SELECT host FROM secret_grants WHERE id = ?", "grant_shouty").Scan(&host).Error; err != nil {
+		t.Fatalf("read grant: %v", err)
+	}
+	if host != "api.github.com" {
+		t.Fatalf("host = %q, want it lowercased to what the proxy reports", host)
+	}
+}
+
+// TestMigrateSecretTypesRenamesAndPrunes upgrades a database written against
+// the four-type vocabulary. "bearer" becomes "token", and git and ssh secrets
+// go with everything standing on them: they never resolved into a sandbox —
+// cleartext leaves only through ResolveSandboxSecret, which emits the token —
+// and a row left behind would fail the API's own enum on the way out, taking
+// the whole secret listing with it.
+func TestMigrateSecretTypesRenamesAndPrunes(t *testing.T) {
+	ctx := context.Background()
+	db, err := database.New(database.Config{
+		Driver: gormdb.DriverSQLite,
+		DSN:    "sqlite3://" + filepath.Join(t.TempDir(), "discobox.db"),
+	})
+	if err != nil {
+		t.Fatalf("open database: %v", err)
+	}
+	t.Cleanup(func() {
+		if err := db.Close(); err != nil {
+			t.Fatalf("close database: %v", err)
+		}
+	})
+	if err := db.Migrate(ctx); err != nil {
+		t.Fatalf("initial migrate: %v", err)
+	}
+	if err := db.Write.WithContext(ctx).Create(&model.Project{ID: "project-1", OwnerUserID: "user-1", Name: "Project"}).Error; err != nil {
+		t.Fatalf("create project: %v", err)
+	}
+
+	now := time.Now().UTC()
+	for _, row := range []struct{ id, kind string }{
+		{"sec_bearer", "bearer"},
+		{"sec_git", "git"},
+		{"sec_ssh", "ssh"},
+		{"sec_oauth", "oauth"},
+	} {
+		if err := db.Write.WithContext(ctx).Exec(
+			"INSERT INTO secrets (id, project_id, name, type, max_grant_ttl_seconds, encrypted_value, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+			row.id, "project-1", row.id, row.kind, 3600, []byte(`{"token":"x"}`), now, now).Error; err != nil {
+			t.Fatalf("seed %s: %v", row.id, err)
+		}
+	}
+	// A grant standing on one of the unusable secrets, which has to go with it.
+	if err := db.Write.WithContext(ctx).Exec(
+		"INSERT INTO secret_grants (id, project_id, secret_id, scope, scope_key, host, granted_by, granted_at, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+		"grant_git", "project-1", "sec_git", model.SecretGrantScopeProject, "project-1", "github.com", "user-1", now, now, now).Error; err != nil {
+		t.Fatalf("seed grant: %v", err)
+	}
+
+	if err := db.Migrate(ctx); err != nil {
+		t.Fatalf("migrate: %v", err)
+	}
+
+	var types []string
+	if err := db.Write.WithContext(ctx).Raw("SELECT type FROM secrets ORDER BY id").Scan(&types).Error; err != nil {
+		t.Fatalf("read secrets: %v", err)
+	}
+	if len(types) != 2 || types[0] != "token" || types[1] != "oauth" {
+		t.Fatalf("types = %v, want the bearer row renamed and git/ssh gone", types)
+	}
+	var grants int64
+	if err := db.Write.WithContext(ctx).Raw("SELECT count(*) FROM secret_grants").Scan(&grants).Error; err != nil {
+		t.Fatalf("count grants: %v", err)
+	}
+	if grants != 0 {
+		t.Fatalf("grants = %d, want the one standing on a deleted secret gone", grants)
+	}
+}
+
+// legacySecret is the pre-name shape of the uniqueness index: one secret per
+// project, type and host. Widening it is the upgrade a real deployment takes.
+type legacySecret struct {
+	ID              string `gorm:"primaryKey;type:text"`
+	ProjectID       string `gorm:"column:project_id;not null;type:text;index;uniqueIndex:idx_secret_project_type_host,priority:1"`
+	Name            string `gorm:"column:name;not null;type:text"`
+	Type            string `gorm:"column:type;not null;type:text;uniqueIndex:idx_secret_project_type_host,priority:2"`
+	Host            string `gorm:"column:host;not null;type:text;default:'';uniqueIndex:idx_secret_project_type_host,priority:3"`
+	UniqueKey       string `gorm:"column:unique_key;not null;type:text;default:'';uniqueIndex:idx_secret_project_type_host,priority:4"`
+	Anonymous       bool   `gorm:"column:anonymous;not null;default:false;index"`
+	Format          string `gorm:"column:format;not null;type:text;default:''"`
+	DefaultGrantTTL int64  `gorm:"column:default_grant_ttl_seconds;not null;default:3600"`
+	EncryptedValue  []byte `gorm:"column:encrypted_value"`
+	CreatedAt       time.Time
+	UpdatedAt       time.Time
+}
+
+func (legacySecret) TableName() string { return "secrets" }
+
+func TestMigrateWidensSecretUniquenessIndex(t *testing.T) {
+	ctx := context.Background()
+	db, err := database.New(database.Config{
+		Driver: gormdb.DriverSQLite,
+		DSN:    "sqlite3://" + filepath.Join(t.TempDir(), "discobox.db"),
+	})
+	if err != nil {
+		t.Fatalf("open database: %v", err)
+	}
+	t.Cleanup(func() {
+		if err := db.Close(); err != nil {
+			t.Fatalf("close database: %v", err)
+		}
+	})
+
+	// The project too: the rebuild the index drop implies runs with foreign
+	// keys on, and a secret pointing at a project that does not exist fails it.
+	if err := db.Write.WithContext(ctx).AutoMigrate(&model.Project{}, &legacySecret{}); err != nil {
+		t.Fatalf("create legacy schema: %v", err)
+	}
+	if err := db.Write.WithContext(ctx).Create(&model.Project{ID: "project-1", OwnerUserID: "user-1", Name: "Project"}).Error; err != nil {
+		t.Fatalf("create project: %v", err)
+	}
+	if err := db.Write.WithContext(ctx).Create(&legacySecret{
+		ID: "sec_old", ProjectID: "project-1", Name: "gh", Type: "token", EncryptedValue: []byte(`{"token":"a"}`),
+	}).Error; err != nil {
+		t.Fatalf("seed: %v", err)
+	}
+	// The state the old index forbade, which is now ordinary: a second unbound
+	// token under another name.
+	second := &legacySecret{ID: "sec_two", ProjectID: "project-1", Name: "openai", Type: "token", EncryptedValue: []byte(`{"token":"b"}`)}
+	if err := db.Write.WithContext(ctx).Create(second).Error; err == nil {
+		t.Fatal("the legacy schema accepted two unbound tokens; the test proves nothing")
+	}
+
+	if err := db.Migrate(ctx); err != nil {
+		t.Fatalf("migrate: %v", err)
+	}
+
+	if err := db.Write.WithContext(ctx).Create(&model.Secret{
+		ID: "sec_two", ProjectID: "project-1", Name: "openai", Type: "token", EncryptedValue: []byte(`{"token":"b"}`),
+	}).Error; err != nil {
+		t.Fatalf("a second unbound token was still refused after the upgrade: %v", err)
+	}
+	// And the index still does its job on the domain it governs.
+	if err := db.Write.WithContext(ctx).Create(&model.Secret{
+		ID: "sec_dup", ProjectID: "project-1", Name: "openai", Type: "token", EncryptedValue: []byte(`{"token":"c"}`),
+	}).Error; err == nil {
+		t.Fatal("the same name was accepted twice; the index no longer constrains anything")
+	}
+}
+
+// A configured grant lifetime survives the rename that gave it teeth. The
+// hazard the migration exists for is silent: AutoMigrate cannot tell a rename
+// from an addition, so without it every secret would come back at the default
+// with its real limit stranded in the old column.
+func TestMigrateCarriesGrantTTLIntoTheLimitColumn(t *testing.T) {
+	ctx := context.Background()
+	db, err := database.New(database.Config{
+		Driver: gormdb.DriverSQLite,
+		DSN:    "sqlite3://" + filepath.Join(t.TempDir(), "discobox.db"),
+	})
+	if err != nil {
+		t.Fatalf("open database: %v", err)
+	}
+	t.Cleanup(func() {
+		if err := db.Close(); err != nil {
+			t.Fatalf("close database: %v", err)
+		}
+	})
+
+	if err := db.Write.WithContext(ctx).AutoMigrate(&model.Project{}, &legacySecret{}); err != nil {
+		t.Fatalf("create legacy schema: %v", err)
+	}
+	if err := db.Write.WithContext(ctx).Create(&model.Project{ID: "project-1", OwnerUserID: "user-1", Name: "Project"}).Error; err != nil {
+		t.Fatalf("create project: %v", err)
+	}
+	if err := db.Write.WithContext(ctx).Create(&legacySecret{
+		ID: "sec_day", ProjectID: "project-1", Name: "gh", Type: "token",
+		DefaultGrantTTL: 86400, EncryptedValue: []byte(`{"token":"a"}`),
+	}).Error; err != nil {
+		t.Fatalf("seed: %v", err)
+	}
+
+	if err := db.Migrate(ctx); err != nil {
+		t.Fatalf("migrate: %v", err)
+	}
+
+	var secret model.Secret
+	if err := db.Write.WithContext(ctx).First(&secret, "id = ?", "sec_day").Error; err != nil {
+		t.Fatalf("read secret: %v", err)
+	}
+	if secret.MaxGrantTTL != 86400 {
+		t.Fatalf("limit = %d, want the 86400 the database already carried", secret.MaxGrantTTL)
+	}
+	if db.Write.Migrator().HasColumn(&model.Secret{}, "default_grant_ttl_seconds") {
+		t.Fatal("the old column is still there; the value was copied rather than renamed")
+	}
+
+	// Idempotent: a second run finds nothing to rename and leaves the value be.
+	if err := db.Migrate(ctx); err != nil {
+		t.Fatalf("migrate twice: %v", err)
+	}
+	if err := db.Write.WithContext(ctx).First(&secret, "id = ?", "sec_day").Error; err != nil {
+		t.Fatalf("read secret again: %v", err)
+	}
+	if secret.MaxGrantTTL != 86400 {
+		t.Fatalf("limit after a second migrate = %d, want 86400", secret.MaxGrantTTL)
+	}
+}
+
+// A harness's own credential comes out of the migration with no ceiling. Its
+// grant never expires, so a limit on it would describe a lifetime that grant
+// does not have — and the hour these rows carry was the old column default,
+// never a number anybody chose.
+func TestMigrateLiftsTheLimitOnConfiguredHarnessSecrets(t *testing.T) {
+	ctx := context.Background()
+	db, err := database.New(database.Config{
+		Driver: gormdb.DriverSQLite,
+		DSN:    "sqlite3://" + filepath.Join(t.TempDir(), "discobox.db"),
+	})
+	if err != nil {
+		t.Fatalf("open database: %v", err)
+	}
+	t.Cleanup(func() {
+		if err := db.Close(); err != nil {
+			t.Fatalf("close database: %v", err)
+		}
+	})
+	if err := db.Migrate(ctx); err != nil {
+		t.Fatalf("initial migrate: %v", err)
+	}
+	if err := db.Write.WithContext(ctx).Create(&model.Project{ID: "project-1", OwnerUserID: "user-1", Name: "Project"}).Error; err != nil {
+		t.Fatalf("create project: %v", err)
+	}
+
+	// Three secrets in the same project: the one a configure flow made, one a
+	// person made and bound to the same harness, and one somebody deliberately
+	// gave a limit to after it was configured.
+	configured := &model.Secret{ID: "sec_configured", ProjectID: "project-1", Name: "claude", Type: model.SecretTypeToken, UniqueKey: "sec_configured", MaxGrantTTL: 3600, EncryptedValue: []byte(`{"token":"a"}`)}
+	byHand := &model.Secret{ID: "sec_byhand", ProjectID: "project-1", Name: "mine", Type: model.SecretTypeToken, MaxGrantTTL: 3600, EncryptedValue: []byte(`{"token":"b"}`)}
+	chosen := &model.Secret{ID: "sec_chosen", ProjectID: "project-1", Name: "chosen", Type: model.SecretTypeToken, UniqueKey: "sec_chosen", MaxGrantTTL: 900, EncryptedValue: []byte(`{"token":"c"}`)}
+	for _, secret := range []*model.Secret{configured, byHand, chosen} {
+		if err := db.Write.WithContext(ctx).Create(secret).Error; err != nil {
+			t.Fatalf("seed %s: %v", secret.ID, err)
+		}
+	}
+	if err := db.Write.WithContext(ctx).Create(&model.HarnessConfig{
+		ProjectID: "project-1", Slug: "claude-code", Name: "Claude Code", Image: "img:1",
+		Configured: true, ConfiguredSecretIDs: []string{configured.ID, chosen.ID},
+	}).Error; err != nil {
+		t.Fatalf("seed harness config: %v", err)
+	}
+
+	if err := db.Migrate(ctx); err != nil {
+		t.Fatalf("migrate: %v", err)
+	}
+
+	limits := map[string]int64{}
+	var secrets []model.Secret
+	if err := db.Write.WithContext(ctx).Find(&secrets).Error; err != nil {
+		t.Fatalf("read secrets: %v", err)
+	}
+	for _, secret := range secrets {
+		limits[secret.ID] = secret.MaxGrantTTL
+	}
+	if limits["sec_configured"] != 0 {
+		t.Fatalf("configured secret limit = %d, want none", limits["sec_configured"])
+	}
+	if limits["sec_byhand"] != 3600 {
+		t.Fatalf("hand-made secret limit = %d, want the 3600 it had: nothing configured it", limits["sec_byhand"])
+	}
+	if limits["sec_chosen"] != 900 {
+		t.Fatalf("deliberately limited secret = %d, want the 900 somebody set", limits["sec_chosen"])
+	}
+}

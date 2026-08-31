@@ -2558,9 +2558,9 @@ func (s *CreateSecretBody) encodeFields(e *jx.Encoder) {
 		}
 	}
 	{
-		if s.DefaultGrantTTLSeconds.Set {
-			e.FieldStart("defaultGrantTTLSeconds")
-			s.DefaultGrantTTLSeconds.Encode(e)
+		if s.MaxGrantTTLSeconds.Set {
+			e.FieldStart("maxGrantTTLSeconds")
+			s.MaxGrantTTLSeconds.Encode(e)
 		}
 	}
 	{
@@ -2585,7 +2585,7 @@ func (s *CreateSecretBody) encodeFields(e *jx.Encoder) {
 
 var jsonFieldsNameOfCreateSecretBody = [6]string{
 	0: "$schema",
-	1: "defaultGrantTTLSeconds",
+	1: "maxGrantTTLSeconds",
 	2: "host",
 	3: "name",
 	4: "type",
@@ -2611,15 +2611,15 @@ func (s *CreateSecretBody) Decode(d *jx.Decoder) error {
 			}(); err != nil {
 				return errors.Wrap(err, "decode field \"$schema\"")
 			}
-		case "defaultGrantTTLSeconds":
+		case "maxGrantTTLSeconds":
 			if err := func() error {
-				s.DefaultGrantTTLSeconds.Reset()
-				if err := s.DefaultGrantTTLSeconds.Decode(d); err != nil {
+				s.MaxGrantTTLSeconds.Reset()
+				if err := s.MaxGrantTTLSeconds.Decode(d); err != nil {
 					return err
 				}
 				return nil
 			}(); err != nil {
-				return errors.Wrap(err, "decode field \"defaultGrantTTLSeconds\"")
+				return errors.Wrap(err, "decode field \"maxGrantTTLSeconds\"")
 			}
 		case "host":
 			if err := func() error {
@@ -2735,12 +2735,8 @@ func (s *CreateSecretBodyType) Decode(d *jx.Decoder) error {
 	}
 	// Try to use constant string.
 	switch CreateSecretBodyType(v) {
-	case CreateSecretBodyTypeGit:
-		*s = CreateSecretBodyTypeGit
-	case CreateSecretBodyTypeSSH:
-		*s = CreateSecretBodyTypeSSH
-	case CreateSecretBodyTypeBearer:
-		*s = CreateSecretBodyTypeBearer
+	case CreateSecretBodyTypeToken:
+		*s = CreateSecretBodyTypeToken
 	case CreateSecretBodyTypeOAuth:
 		*s = CreateSecretBodyTypeOAuth
 	default:
@@ -2804,15 +2800,29 @@ func (s *CreateSecretGrantBody) encodeFields(e *jx.Encoder) {
 		e.FieldStart("secretId")
 		e.Str(s.SecretId)
 	}
+	{
+		if s.EnvVar.Set {
+			e.FieldStart("envVar")
+			s.EnvVar.Encode(e)
+		}
+	}
+	{
+		if s.Uses.Set {
+			e.FieldStart("uses")
+			s.Uses.Encode(e)
+		}
+	}
 }
 
-var jsonFieldsNameOfCreateSecretGrantBody = [6]string{
+var jsonFieldsNameOfCreateSecretGrantBody = [8]string{
 	0: "$schema",
 	1: "grantTTLSeconds",
 	2: "host",
 	3: "scope",
 	4: "scopeKey",
 	5: "secretId",
+	6: "envVar",
+	7: "uses",
 }
 
 // Decode decodes CreateSecretGrantBody from json.
@@ -2885,6 +2895,26 @@ func (s *CreateSecretGrantBody) Decode(d *jx.Decoder) error {
 				return nil
 			}(); err != nil {
 				return errors.Wrap(err, "decode field \"secretId\"")
+			}
+		case "envVar":
+			if err := func() error {
+				s.EnvVar.Reset()
+				if err := s.EnvVar.Decode(d); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"envVar\"")
+			}
+		case "uses":
+			if err := func() error {
+				s.Uses.Reset()
+				if err := s.Uses.Decode(d); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"uses\"")
 			}
 		default:
 			return errors.Errorf("unexpected field %q", k)
@@ -3128,12 +3158,8 @@ func (s *CreateSecretRequestBodyType) Decode(d *jx.Decoder) error {
 	}
 	// Try to use constant string.
 	switch CreateSecretRequestBodyType(v) {
-	case CreateSecretRequestBodyTypeGit:
-		*s = CreateSecretRequestBodyTypeGit
-	case CreateSecretRequestBodyTypeSSH:
-		*s = CreateSecretRequestBodyTypeSSH
-	case CreateSecretRequestBodyTypeBearer:
-		*s = CreateSecretRequestBodyTypeBearer
+	case CreateSecretRequestBodyTypeToken:
+		*s = CreateSecretRequestBodyTypeToken
 	case CreateSecretRequestBodyTypeOAuth:
 		*s = CreateSecretRequestBodyTypeOAuth
 	default:
@@ -10241,6 +10267,39 @@ func (s OptSandboxUser) MarshalJSON() ([]byte, error) {
 
 // UnmarshalJSON implements stdjson.Unmarshaler.
 func (s *OptSandboxUser) UnmarshalJSON(data []byte) error {
+	d := jx.DecodeBytes(data)
+	return s.Decode(d)
+}
+
+// Encode encodes SecretOAuth as json.
+func (o OptSecretOAuth) Encode(e *jx.Encoder) {
+	if !o.Set {
+		return
+	}
+	o.Value.Encode(e)
+}
+
+// Decode decodes SecretOAuth from json.
+func (o *OptSecretOAuth) Decode(d *jx.Decoder) error {
+	if o == nil {
+		return errors.New("invalid: unable to decode OptSecretOAuth to nil")
+	}
+	o.Set = true
+	if err := o.Value.Decode(d); err != nil {
+		return err
+	}
+	return nil
+}
+
+// MarshalJSON implements stdjson.Marshaler.
+func (s OptSecretOAuth) MarshalJSON() ([]byte, error) {
+	e := jx.Encoder{}
+	s.Encode(&e)
+	return e.Bytes(), nil
+}
+
+// UnmarshalJSON implements stdjson.Unmarshaler.
+func (s *OptSecretOAuth) UnmarshalJSON(data []byte) error {
 	d := jx.DecodeBytes(data)
 	return s.Decode(d)
 }
@@ -21837,8 +21896,8 @@ func (s *Secret) encodeFields(e *jx.Encoder) {
 		json.EncodeDateTime(e, s.CreatedAt)
 	}
 	{
-		e.FieldStart("defaultGrantTTLSeconds")
-		e.Int64(s.DefaultGrantTTLSeconds)
+		e.FieldStart("maxGrantTTLSeconds")
+		e.Int64(s.MaxGrantTTLSeconds)
 	}
 	{
 		if s.Format.Set {
@@ -21855,6 +21914,12 @@ func (s *Secret) encodeFields(e *jx.Encoder) {
 	{
 		e.FieldStart("id")
 		e.Str(s.ID)
+	}
+	{
+		if s.OAuth.Set {
+			e.FieldStart("oauth")
+			s.OAuth.Encode(e)
+		}
 	}
 	{
 		e.FieldStart("name")
@@ -21874,18 +21939,19 @@ func (s *Secret) encodeFields(e *jx.Encoder) {
 	}
 }
 
-var jsonFieldsNameOfSecret = [11]string{
+var jsonFieldsNameOfSecret = [12]string{
 	0:  "$schema",
 	1:  "anonymous",
 	2:  "createdAt",
-	3:  "defaultGrantTTLSeconds",
+	3:  "maxGrantTTLSeconds",
 	4:  "format",
 	5:  "host",
 	6:  "id",
-	7:  "name",
-	8:  "projectId",
-	9:  "type",
-	10: "updatedAt",
+	7:  "oauth",
+	8:  "name",
+	9:  "projectId",
+	10: "type",
+	11: "updatedAt",
 }
 
 // Decode decodes Secret from json.
@@ -21929,17 +21995,17 @@ func (s *Secret) Decode(d *jx.Decoder) error {
 			}(); err != nil {
 				return errors.Wrap(err, "decode field \"createdAt\"")
 			}
-		case "defaultGrantTTLSeconds":
+		case "maxGrantTTLSeconds":
 			requiredBitSet[0] |= 1 << 3
 			if err := func() error {
 				v, err := d.Int64()
-				s.DefaultGrantTTLSeconds = int64(v)
+				s.MaxGrantTTLSeconds = int64(v)
 				if err != nil {
 					return err
 				}
 				return nil
 			}(); err != nil {
-				return errors.Wrap(err, "decode field \"defaultGrantTTLSeconds\"")
+				return errors.Wrap(err, "decode field \"maxGrantTTLSeconds\"")
 			}
 		case "format":
 			if err := func() error {
@@ -21973,8 +22039,18 @@ func (s *Secret) Decode(d *jx.Decoder) error {
 			}(); err != nil {
 				return errors.Wrap(err, "decode field \"id\"")
 			}
+		case "oauth":
+			if err := func() error {
+				s.OAuth.Reset()
+				if err := s.OAuth.Decode(d); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"oauth\"")
+			}
 		case "name":
-			requiredBitSet[0] |= 1 << 7
+			requiredBitSet[1] |= 1 << 0
 			if err := func() error {
 				v, err := d.Str()
 				s.Name = string(v)
@@ -21986,7 +22062,7 @@ func (s *Secret) Decode(d *jx.Decoder) error {
 				return errors.Wrap(err, "decode field \"name\"")
 			}
 		case "projectId":
-			requiredBitSet[1] |= 1 << 0
+			requiredBitSet[1] |= 1 << 1
 			if err := func() error {
 				v, err := d.Str()
 				s.ProjectId = string(v)
@@ -21998,7 +22074,7 @@ func (s *Secret) Decode(d *jx.Decoder) error {
 				return errors.Wrap(err, "decode field \"projectId\"")
 			}
 		case "type":
-			requiredBitSet[1] |= 1 << 1
+			requiredBitSet[1] |= 1 << 2
 			if err := func() error {
 				if err := s.Type.Decode(d); err != nil {
 					return err
@@ -22008,7 +22084,7 @@ func (s *Secret) Decode(d *jx.Decoder) error {
 				return errors.Wrap(err, "decode field \"type\"")
 			}
 		case "updatedAt":
-			requiredBitSet[1] |= 1 << 2
+			requiredBitSet[1] |= 1 << 3
 			if err := func() error {
 				v, err := json.DecodeDateTime(d)
 				s.UpdatedAt = v
@@ -22029,8 +22105,8 @@ func (s *Secret) Decode(d *jx.Decoder) error {
 	// Validate required fields.
 	var failures []validate.FieldError
 	for i, mask := range [2]uint8{
-		0b11001100,
-		0b00000111,
+		0b01001100,
+		0b00001111,
 	} {
 		if result := (requiredBitSet[i] & mask) ^ mask; result != 0 {
 			// Mask only required fields and check equality to mask using XOR.
@@ -22092,6 +22168,12 @@ func (s *SecretGrant) encodeFields(e *jx.Encoder) {
 		}
 	}
 	{
+		if s.EnvName.Set {
+			e.FieldStart("envName")
+			s.EnvName.Encode(e)
+		}
+	}
+	{
 		if s.Uses.Set {
 			e.FieldStart("uses")
 			s.Uses.Encode(e)
@@ -22149,20 +22231,21 @@ func (s *SecretGrant) encodeFields(e *jx.Encoder) {
 	}
 }
 
-var jsonFieldsNameOfSecretGrant = [13]string{
+var jsonFieldsNameOfSecretGrant = [14]string{
 	0:  "$schema",
-	1:  "uses",
-	2:  "createdAt",
-	3:  "expiresAt",
-	4:  "grantedAt",
-	5:  "grantedBy",
-	6:  "host",
-	7:  "id",
-	8:  "projectId",
-	9:  "scope",
-	10: "scopeKey",
-	11: "secretId",
-	12: "updatedAt",
+	1:  "envName",
+	2:  "uses",
+	3:  "createdAt",
+	4:  "expiresAt",
+	5:  "grantedAt",
+	6:  "grantedBy",
+	7:  "host",
+	8:  "id",
+	9:  "projectId",
+	10: "scope",
+	11: "scopeKey",
+	12: "secretId",
+	13: "updatedAt",
 }
 
 // Decode decodes SecretGrant from json.
@@ -22184,6 +22267,16 @@ func (s *SecretGrant) Decode(d *jx.Decoder) error {
 			}(); err != nil {
 				return errors.Wrap(err, "decode field \"$schema\"")
 			}
+		case "envName":
+			if err := func() error {
+				s.EnvName.Reset()
+				if err := s.EnvName.Decode(d); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"envName\"")
+			}
 		case "uses":
 			if err := func() error {
 				s.Uses.Reset()
@@ -22195,7 +22288,7 @@ func (s *SecretGrant) Decode(d *jx.Decoder) error {
 				return errors.Wrap(err, "decode field \"uses\"")
 			}
 		case "createdAt":
-			requiredBitSet[0] |= 1 << 2
+			requiredBitSet[0] |= 1 << 3
 			if err := func() error {
 				v, err := json.DecodeDateTime(d)
 				s.CreatedAt = v
@@ -22217,7 +22310,7 @@ func (s *SecretGrant) Decode(d *jx.Decoder) error {
 				return errors.Wrap(err, "decode field \"expiresAt\"")
 			}
 		case "grantedAt":
-			requiredBitSet[0] |= 1 << 4
+			requiredBitSet[0] |= 1 << 5
 			if err := func() error {
 				v, err := json.DecodeDateTime(d)
 				s.GrantedAt = v
@@ -22249,7 +22342,7 @@ func (s *SecretGrant) Decode(d *jx.Decoder) error {
 				return errors.Wrap(err, "decode field \"host\"")
 			}
 		case "id":
-			requiredBitSet[0] |= 1 << 7
+			requiredBitSet[1] |= 1 << 0
 			if err := func() error {
 				v, err := d.Str()
 				s.ID = string(v)
@@ -22261,7 +22354,7 @@ func (s *SecretGrant) Decode(d *jx.Decoder) error {
 				return errors.Wrap(err, "decode field \"id\"")
 			}
 		case "projectId":
-			requiredBitSet[1] |= 1 << 0
+			requiredBitSet[1] |= 1 << 1
 			if err := func() error {
 				v, err := d.Str()
 				s.ProjectId = string(v)
@@ -22273,7 +22366,7 @@ func (s *SecretGrant) Decode(d *jx.Decoder) error {
 				return errors.Wrap(err, "decode field \"projectId\"")
 			}
 		case "scope":
-			requiredBitSet[1] |= 1 << 1
+			requiredBitSet[1] |= 1 << 2
 			if err := func() error {
 				if err := s.Scope.Decode(d); err != nil {
 					return err
@@ -22283,7 +22376,7 @@ func (s *SecretGrant) Decode(d *jx.Decoder) error {
 				return errors.Wrap(err, "decode field \"scope\"")
 			}
 		case "scopeKey":
-			requiredBitSet[1] |= 1 << 2
+			requiredBitSet[1] |= 1 << 3
 			if err := func() error {
 				v, err := d.Str()
 				s.ScopeKey = string(v)
@@ -22295,7 +22388,7 @@ func (s *SecretGrant) Decode(d *jx.Decoder) error {
 				return errors.Wrap(err, "decode field \"scopeKey\"")
 			}
 		case "secretId":
-			requiredBitSet[1] |= 1 << 3
+			requiredBitSet[1] |= 1 << 4
 			if err := func() error {
 				v, err := d.Str()
 				s.SecretId = string(v)
@@ -22307,7 +22400,7 @@ func (s *SecretGrant) Decode(d *jx.Decoder) error {
 				return errors.Wrap(err, "decode field \"secretId\"")
 			}
 		case "updatedAt":
-			requiredBitSet[1] |= 1 << 4
+			requiredBitSet[1] |= 1 << 5
 			if err := func() error {
 				v, err := json.DecodeDateTime(d)
 				s.UpdatedAt = v
@@ -22328,8 +22421,8 @@ func (s *SecretGrant) Decode(d *jx.Decoder) error {
 	// Validate required fields.
 	var failures []validate.FieldError
 	for i, mask := range [2]uint8{
-		0b10010100,
-		0b00011111,
+		0b00101000,
+		0b00111111,
 	} {
 		if result := (requiredBitSet[i] & mask) ^ mask; result != 0 {
 			// Mask only required fields and check equality to mask using XOR.
@@ -22413,6 +22506,154 @@ func (s SecretGrantScope) MarshalJSON() ([]byte, error) {
 
 // UnmarshalJSON implements stdjson.Unmarshaler.
 func (s *SecretGrantScope) UnmarshalJSON(data []byte) error {
+	d := jx.DecodeBytes(data)
+	return s.Decode(d)
+}
+
+// Encode implements json.Marshaler.
+func (s *SecretOAuth) Encode(e *jx.Encoder) {
+	e.ObjStart()
+	s.encodeFields(e)
+	e.ObjEnd()
+}
+
+// encodeFields encodes fields.
+func (s *SecretOAuth) encodeFields(e *jx.Encoder) {
+	{
+		if s.AccessTokenExpiresAt.Set {
+			e.FieldStart("accessTokenExpiresAt")
+			s.AccessTokenExpiresAt.Encode(e)
+		}
+	}
+	{
+		if s.ClientId.Set {
+			e.FieldStart("clientId")
+			s.ClientId.Encode(e)
+		}
+	}
+	{
+		if s.Refreshable.Set {
+			e.FieldStart("refreshable")
+			s.Refreshable.Encode(e)
+		}
+	}
+	{
+		if s.Scopes.Set {
+			e.FieldStart("scopes")
+			s.Scopes.Encode(e)
+		}
+	}
+	{
+		if s.SubscriptionType.Set {
+			e.FieldStart("subscriptionType")
+			s.SubscriptionType.Encode(e)
+		}
+	}
+	{
+		if s.TokenUrl.Set {
+			e.FieldStart("tokenUrl")
+			s.TokenUrl.Encode(e)
+		}
+	}
+}
+
+var jsonFieldsNameOfSecretOAuth = [6]string{
+	0: "accessTokenExpiresAt",
+	1: "clientId",
+	2: "refreshable",
+	3: "scopes",
+	4: "subscriptionType",
+	5: "tokenUrl",
+}
+
+// Decode decodes SecretOAuth from json.
+func (s *SecretOAuth) Decode(d *jx.Decoder) error {
+	if s == nil {
+		return errors.New("invalid: unable to decode SecretOAuth to nil")
+	}
+
+	if err := d.ObjBytes(func(d *jx.Decoder, k []byte) error {
+		switch string(k) {
+		case "accessTokenExpiresAt":
+			if err := func() error {
+				s.AccessTokenExpiresAt.Reset()
+				if err := s.AccessTokenExpiresAt.Decode(d); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"accessTokenExpiresAt\"")
+			}
+		case "clientId":
+			if err := func() error {
+				s.ClientId.Reset()
+				if err := s.ClientId.Decode(d); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"clientId\"")
+			}
+		case "refreshable":
+			if err := func() error {
+				s.Refreshable.Reset()
+				if err := s.Refreshable.Decode(d); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"refreshable\"")
+			}
+		case "scopes":
+			if err := func() error {
+				s.Scopes.Reset()
+				if err := s.Scopes.Decode(d); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"scopes\"")
+			}
+		case "subscriptionType":
+			if err := func() error {
+				s.SubscriptionType.Reset()
+				if err := s.SubscriptionType.Decode(d); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"subscriptionType\"")
+			}
+		case "tokenUrl":
+			if err := func() error {
+				s.TokenUrl.Reset()
+				if err := s.TokenUrl.Decode(d); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"tokenUrl\"")
+			}
+		default:
+			return errors.Errorf("unexpected field %q", k)
+		}
+		return nil
+	}); err != nil {
+		return errors.Wrap(err, "decode SecretOAuth")
+	}
+
+	return nil
+}
+
+// MarshalJSON implements stdjson.Marshaler.
+func (s *SecretOAuth) MarshalJSON() ([]byte, error) {
+	e := jx.Encoder{}
+	s.Encode(&e)
+	return e.Bytes(), nil
+}
+
+// UnmarshalJSON implements stdjson.Unmarshaler.
+func (s *SecretOAuth) UnmarshalJSON(data []byte) error {
 	d := jx.DecodeBytes(data)
 	return s.Decode(d)
 }
@@ -22823,12 +23064,8 @@ func (s *SecretRequestType) Decode(d *jx.Decoder) error {
 	}
 	// Try to use constant string.
 	switch SecretRequestType(v) {
-	case SecretRequestTypeGit:
-		*s = SecretRequestTypeGit
-	case SecretRequestTypeSSH:
-		*s = SecretRequestTypeSSH
-	case SecretRequestTypeBearer:
-		*s = SecretRequestTypeBearer
+	case SecretRequestTypeToken:
+		*s = SecretRequestTypeToken
 	case SecretRequestTypeOAuth:
 		*s = SecretRequestTypeOAuth
 	default:
@@ -22867,12 +23104,8 @@ func (s *SecretType) Decode(d *jx.Decoder) error {
 	}
 	// Try to use constant string.
 	switch SecretType(v) {
-	case SecretTypeGit:
-		*s = SecretTypeGit
-	case SecretTypeSSH:
-		*s = SecretTypeSSH
-	case SecretTypeBearer:
-		*s = SecretTypeBearer
+	case SecretTypeToken:
+		*s = SecretTypeToken
 	case SecretTypeOAuth:
 		*s = SecretTypeOAuth
 	default:
@@ -23018,21 +23251,33 @@ func (s *SecretValue) Encode(e *jx.Encoder) {
 // encodeFields encodes fields.
 func (s *SecretValue) encodeFields(e *jx.Encoder) {
 	{
-		if s.Passphrase.Set {
-			e.FieldStart("passphrase")
-			s.Passphrase.Encode(e)
+		if s.AccessTokenExpiresAt.Set {
+			e.FieldStart("accessTokenExpiresAt")
+			s.AccessTokenExpiresAt.Encode(e)
 		}
 	}
 	{
-		if s.Password.Set {
-			e.FieldStart("password")
-			s.Password.Encode(e)
+		if s.ClientId.Set {
+			e.FieldStart("clientId")
+			s.ClientId.Encode(e)
 		}
 	}
 	{
-		if s.PrivateKey.Set {
-			e.FieldStart("privateKey")
-			s.PrivateKey.Encode(e)
+		if s.RefreshToken.Set {
+			e.FieldStart("refreshToken")
+			s.RefreshToken.Encode(e)
+		}
+	}
+	{
+		if s.Scopes.Set {
+			e.FieldStart("scopes")
+			s.Scopes.Encode(e)
+		}
+	}
+	{
+		if s.SubscriptionType.Set {
+			e.FieldStart("subscriptionType")
+			s.SubscriptionType.Encode(e)
 		}
 	}
 	{
@@ -23042,19 +23287,21 @@ func (s *SecretValue) encodeFields(e *jx.Encoder) {
 		}
 	}
 	{
-		if s.Username.Set {
-			e.FieldStart("username")
-			s.Username.Encode(e)
+		if s.TokenUrl.Set {
+			e.FieldStart("tokenUrl")
+			s.TokenUrl.Encode(e)
 		}
 	}
 }
 
-var jsonFieldsNameOfSecretValue = [5]string{
-	0: "passphrase",
-	1: "password",
-	2: "privateKey",
-	3: "token",
-	4: "username",
+var jsonFieldsNameOfSecretValue = [7]string{
+	0: "accessTokenExpiresAt",
+	1: "clientId",
+	2: "refreshToken",
+	3: "scopes",
+	4: "subscriptionType",
+	5: "token",
+	6: "tokenUrl",
 }
 
 // Decode decodes SecretValue from json.
@@ -23065,35 +23312,55 @@ func (s *SecretValue) Decode(d *jx.Decoder) error {
 
 	if err := d.ObjBytes(func(d *jx.Decoder, k []byte) error {
 		switch string(k) {
-		case "passphrase":
+		case "accessTokenExpiresAt":
 			if err := func() error {
-				s.Passphrase.Reset()
-				if err := s.Passphrase.Decode(d); err != nil {
+				s.AccessTokenExpiresAt.Reset()
+				if err := s.AccessTokenExpiresAt.Decode(d); err != nil {
 					return err
 				}
 				return nil
 			}(); err != nil {
-				return errors.Wrap(err, "decode field \"passphrase\"")
+				return errors.Wrap(err, "decode field \"accessTokenExpiresAt\"")
 			}
-		case "password":
+		case "clientId":
 			if err := func() error {
-				s.Password.Reset()
-				if err := s.Password.Decode(d); err != nil {
+				s.ClientId.Reset()
+				if err := s.ClientId.Decode(d); err != nil {
 					return err
 				}
 				return nil
 			}(); err != nil {
-				return errors.Wrap(err, "decode field \"password\"")
+				return errors.Wrap(err, "decode field \"clientId\"")
 			}
-		case "privateKey":
+		case "refreshToken":
 			if err := func() error {
-				s.PrivateKey.Reset()
-				if err := s.PrivateKey.Decode(d); err != nil {
+				s.RefreshToken.Reset()
+				if err := s.RefreshToken.Decode(d); err != nil {
 					return err
 				}
 				return nil
 			}(); err != nil {
-				return errors.Wrap(err, "decode field \"privateKey\"")
+				return errors.Wrap(err, "decode field \"refreshToken\"")
+			}
+		case "scopes":
+			if err := func() error {
+				s.Scopes.Reset()
+				if err := s.Scopes.Decode(d); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"scopes\"")
+			}
+		case "subscriptionType":
+			if err := func() error {
+				s.SubscriptionType.Reset()
+				if err := s.SubscriptionType.Decode(d); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"subscriptionType\"")
 			}
 		case "token":
 			if err := func() error {
@@ -23105,15 +23372,15 @@ func (s *SecretValue) Decode(d *jx.Decoder) error {
 			}(); err != nil {
 				return errors.Wrap(err, "decode field \"token\"")
 			}
-		case "username":
+		case "tokenUrl":
 			if err := func() error {
-				s.Username.Reset()
-				if err := s.Username.Decode(d); err != nil {
+				s.TokenUrl.Reset()
+				if err := s.TokenUrl.Decode(d); err != nil {
 					return err
 				}
 				return nil
 			}(); err != nil {
-				return errors.Wrap(err, "decode field \"username\"")
+				return errors.Wrap(err, "decode field \"tokenUrl\"")
 			}
 		default:
 			return errors.Errorf("unexpected field %q", k)
@@ -24198,9 +24465,9 @@ func (s *UpdateSecretBody) encodeFields(e *jx.Encoder) {
 		}
 	}
 	{
-		if s.DefaultGrantTTLSeconds.Set {
-			e.FieldStart("defaultGrantTTLSeconds")
-			s.DefaultGrantTTLSeconds.Encode(e)
+		if s.MaxGrantTTLSeconds.Set {
+			e.FieldStart("maxGrantTTLSeconds")
+			s.MaxGrantTTLSeconds.Encode(e)
 		}
 	}
 	{
@@ -24225,7 +24492,7 @@ func (s *UpdateSecretBody) encodeFields(e *jx.Encoder) {
 
 var jsonFieldsNameOfUpdateSecretBody = [5]string{
 	0: "$schema",
-	1: "defaultGrantTTLSeconds",
+	1: "maxGrantTTLSeconds",
 	2: "host",
 	3: "name",
 	4: "value",
@@ -24249,15 +24516,15 @@ func (s *UpdateSecretBody) Decode(d *jx.Decoder) error {
 			}(); err != nil {
 				return errors.Wrap(err, "decode field \"$schema\"")
 			}
-		case "defaultGrantTTLSeconds":
+		case "maxGrantTTLSeconds":
 			if err := func() error {
-				s.DefaultGrantTTLSeconds.Reset()
-				if err := s.DefaultGrantTTLSeconds.Decode(d); err != nil {
+				s.MaxGrantTTLSeconds.Reset()
+				if err := s.MaxGrantTTLSeconds.Decode(d); err != nil {
 					return err
 				}
 				return nil
 			}(); err != nil {
-				return errors.Wrap(err, "decode field \"defaultGrantTTLSeconds\"")
+				return errors.Wrap(err, "decode field \"maxGrantTTLSeconds\"")
 			}
 		case "host":
 			if err := func() error {

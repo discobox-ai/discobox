@@ -27,12 +27,165 @@ flowchart LR
     L -->|Enter s| WS["workspace → Execs / OpenExec / NewShell / NewTerminal"]
     WS -->|poll| Svc["services → Services / ServiceLogs"]
     WS -->|leader S0| SvcMenu["services menu → DoService"]
+    L -->|C| Cred["credential dialog → Secrets / CreateSecret / Approve / Deny"]
+    M --> S["secretList (F4)"]
+    S -->|n e d enter| SVerb["Secrets / Grants / CreateSecret / SetSecretHost / RevokeGrant / DeleteSecret"]
+    S -->|C| Cred
+    WS -->|leader C| Cred
     L -->|y| Overlay["overlay pane → DataSource.Open"]
     L -->|v| Editor["DataSource.OpenEditor"]
     WS -->|leader o| T["tools picker → NewTool / EndExec / OpenEditor"]
     A -->|d s| AVerb["DataSource.DoHarness"]
     A -->|e f| AExec["tea.Exec → ConfigureHarness / EditHarnessFile"]
 ```
+
+
+## The secrets screen
+
+`F4`, beside the harnesses screen and built the same way: a list on a function
+key, one letter per action, and every action the same API call the `discobox
+secret` commands make. A window that could approve something the CLI could not
+would be a second policy. See `secrets.go`.
+
+**Two tables, read downwards.** The secrets on top, what is waiting on a person
+underneath. They belong on one screen because they are one question: which of
+these credentials answers this request. Off the bottom of the secrets is the
+requests table and off the top of that is the secrets again, the way the
+discobox list and the prompt hand focus to each other; Tab crosses either way,
+and Esc — not Tab — leaves. The lower table takes only the rows it needs, up to
+a third of the screen, so "nothing is waiting" costs one line rather than half
+the window, and the secrets take only the rows they have, so the two tables sit
+together with two blank rows between them. What is left over falls below them
+both rather than between: the window keeps its full height without putting a
+screen of nothing between two tables that are read as one. A request row says what is being asked for, where it may go, who is
+waiting (an agent, the proxy on a discobox's behalf, or a person) and for how
+long; Enter answers that one, while `C` answers the oldest from anywhere.
+
+A secret row is what tells one credential from another: its name, the host it is
+bound to — spelled `any host` rather than left blank, because blank reads as
+"not loaded" and this is a fact about the secret — how many grants stand on it,
+and when it last changed. Its kind and its grant limit are not there. They are
+facts about a credential rather than ways to pick one out of a list, and a row
+carrying every field is a row nobody reads; Enter opens the secret, and they are
+in it. Grants are read for the whole project in one call and counted per row,
+rather than a call per row.
+
+`Enter` **opens the secret**: what it is, then what may use it. For a token
+that is its kind, its binding and the ceiling on its grants — spelled `forever`
+when nothing limits them, since zero is the answer "no limit" and `never`, how a
+zero duration reads everywhere else, would say the opposite; for an OAuth
+credential it is also where it renews, whose client it is, what the grant may
+do, when the access token goes stale, and — said plainly, because it is the one
+thing that makes an OAuth credential useless — whether it can renew itself at
+all. None of it is the credential: not the access token, not the refresh token.
+The rows under it are the grants, and the first one **makes one**, so a
+credential with nothing standing on it is somewhere to decide who may use it
+rather than a dead end naming another command. `n` stores a new credential:
+the name, the kind — a token, or an OAuth credential that renews itself — the
+host, and then the values, which are masked. An OAuth credential is several
+questions rather than one, because it is several fields and all of them are
+needed: the access token travels, and the refresh token, the token URL and the
+client are what the control plane spends to renew it. Without the refresh
+material nothing is stored, because the server would refuse an `oauth` secret
+that cannot renew; `e` edits
+the binding, opening on what the secret already has; `d` deletes, saying how
+many live grants go with it and defaulting to No. `C` answers the oldest
+request waiting anywhere in the project — including one no discobox owns, which
+the list's row mark cannot carry and which would otherwise have no home.
+
+**Reading a grant is not the same key as ending one.** In the grants list
+`Enter` reads — scope, where it may go, when it lapses, and for a grant minted
+by approving an agent's request, every approved use with the ID an agent
+presents to `discobox-access run --use`. `x` withdraws, behind a confirm.
+Revoking on `Enter` put ending a credential one keystroke from looking at one,
+on the key that means "open this" everywhere else in the window.
+
+**A question answered "no" leaves you where it was asked.** Declining a revoke
+returns to the grants, leaving a grant you were reading returns to the grants,
+and declining a rebind returns to the credential picker. A dialog that closes
+onto the screen behind it, having done nothing and said nothing, is how a
+deliberate "not that one" reads as the window ignoring the keypress.
+
+**The window says "harness", the wire says `harnessConfig`.** The resource is a
+harness config and the API's scope value is `harnessConfig`; a person calls it
+the harness, and one `scopeLabel` turns the first into the second everywhere it
+is drawn. A window that used both would be teaching two names for one thing.
+
+**A grant on a discobox is asked how it may be used.** An injected credential
+is an environment variable, and everything in the box shares the environment;
+one with declared uses is not in the box at all — `discobox-access` takes it
+one use at a time, for one command, and the value dies minutes later. So the
+flow asks, and the narrow answer collects the variable the wrapped command
+receives it in and the sentence it is granted for. That sentence is what the
+agent names to take a value, and what `run`'s judge holds the command up
+against. Project and harness-config grants never see the question: the binding
+it needs is per discobox.
+
+**`p` grants a secret before anything asks for it** — the pre-approval an
+operator makes because they already know the answer. Scope first, since it
+decides whether there is a key to ask for next: a project grant needs none, and
+a discobox or harness is picked out of what the window already holds
+rather than typed as an ID that has to be right. Then the host, opening on the
+secret's own binding, and the lifetime, opening on the secret's limit. That
+question says the limit rather than leaving the server to refuse what is over
+it: a capped credential cannot be granted forever, and learning that from a
+rejection teaches the rule one rejection at a time.
+
+**`e` edits what a secret says about itself** — the two statements of the same
+kind: which hosts it may reach, and how long a grant on it may live. Neither
+touches the value, which nothing in the window can read.
+
+Every action re-reads the listing rather than patching what is on screen: a
+screen that guesses at the new state is a screen that drifts from the server.
+
+## The credential inbox
+
+An agent inside a discobox can ask a person for a credential it was not
+provisioned with ([ADR 0031](../../../docs/adr/0031-agent-credentials-are-a-portable-protocol-with-ephemeral-sentinels.md)),
+and until somebody answers, it is blocked. The window's job is to make that
+visible without letting it take the screen. See `credentials.go`.
+
+**It is polled, not pushed.** The requests are read on the same 5s tick as the
+listing; there is no client-facing event stream to subscribe to
+([ADR 0061](../../../docs/adr/0061-the-client-facing-project-event-stream-is-removed.md)),
+and an approval is answered on human time anyway. One read serves both the row
+and the workspace: `setCredentialRequests` indexes by discobox and stamps the
+count onto the rows, so the draw stays a pure function of what the list holds.
+
+**The list marks, and never interrupts.** A row with a request waiting wears a
+`!` beside the upgrade arrow, in the error color rather than the warning one —
+an upgrade can wait, an agent cannot. Nothing raises a dialog on its own: a
+request can arrive at any moment, and a window that takes the screen mid
+sentence teaches you to answer without reading. `C` on the row opens the
+question; the key is capitalized because approving a credential is not a
+keystroke to hit by accident, and `g` was already the top of every list here.
+
+**The workspace says it loudly.** Looking at one discobox is the one place the
+window knows you are already attending to it, so the request gets a reversed
+band of its own under the header — not a hint at the foot — naming what is
+being asked for and the leader key that answers it. The band exists only while
+something is waiting.
+
+**The band is a button.** It records its span as it is drawn, the way the tabs
+and the maximize controls record theirs, and a press anywhere on it opens the
+question — the whole band, not the words on it, since a bar that size that only
+answered on its text would be a bar that mostly does nothing. It owns the
+gesture rather than falling through to the chrome's selection: a bar you click
+to answer a question must not also start a drag-select of its own text.
+
+Because it takes a row from the panes rather than adding one to the frame,
+every hit test below it is offset by `credentialBannerRows` and the panes are
+re-laid out when it appears or goes. A banner that pushed the boxes down
+without moving their targets would land every click one row off.
+
+**The dialog decides nothing.** It shows what was asked — the credential, the
+env var, the host, the justification, and the uses the agent declared — and
+collects one answer: a project secret, a credential typed in on the spot
+(masked, stored, and approved with), or a denial. Everything else follows the
+request on the server, which is what keeps this and `discobox secret request
+approve` the same act. Secrets bound to another host are listed but not
+offered: leaving them out would read as the project not having them, and
+choosing one would only mint a grant the server refuses.
 
 ## Decisions
 

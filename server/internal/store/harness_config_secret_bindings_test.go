@@ -15,11 +15,11 @@ func TestHarnessConfigSecretBindingUpsertListDelete(t *testing.T) {
 	if err := s.CreateHarnessConfig(ctx, config); err != nil {
 		t.Fatalf("create harness config: %v", err)
 	}
-	sec := &model.Secret{ProjectID: "project-1", Name: "key", Type: model.SecretTypeBearer, Host: "a.example.com", EncryptedValue: []byte(`{"token":"t"}`)}
+	sec := &model.Secret{ProjectID: "project-1", Name: "key", Type: model.SecretTypeToken, Host: "a.example.com", EncryptedValue: []byte(`{"token":"t"}`)}
 	if err := s.CreateSecret(ctx, sec); err != nil {
 		t.Fatalf("create secret: %v", err)
 	}
-	other := &model.Secret{ProjectID: "project-1", Name: "key2", Type: model.SecretTypeBearer, Host: "b.example.com", EncryptedValue: []byte(`{"token":"t2"}`)}
+	other := &model.Secret{ProjectID: "project-1", Name: "key2", Type: model.SecretTypeToken, Host: "b.example.com", EncryptedValue: []byte(`{"token":"t2"}`)}
 	if err := s.CreateSecret(ctx, other); err != nil {
 		t.Fatalf("create other secret: %v", err)
 	}
@@ -65,7 +65,7 @@ func TestDeletingSecretRemovesHarnessConfigBindings(t *testing.T) {
 	if err := s.CreateHarnessConfig(ctx, config); err != nil {
 		t.Fatalf("create harness config: %v", err)
 	}
-	sec := &model.Secret{ProjectID: "project-1", Name: "key", Type: model.SecretTypeBearer, EncryptedValue: []byte(`{"token":"t"}`)}
+	sec := &model.Secret{ProjectID: "project-1", Name: "key", Type: model.SecretTypeToken, EncryptedValue: []byte(`{"token":"t"}`)}
 	if err := s.CreateSecret(ctx, sec); err != nil {
 		t.Fatalf("create secret: %v", err)
 	}
@@ -91,7 +91,7 @@ func TestDeletingSecretRemovesGrants(t *testing.T) {
 	ctx := context.Background()
 	s, _ := newTestStoreWithDB(t, nil)
 
-	sec := &model.Secret{ProjectID: "project-1", Name: "key", Type: model.SecretTypeBearer, EncryptedValue: []byte(`{"token":"t"}`)}
+	sec := &model.Secret{ProjectID: "project-1", Name: "key", Type: model.SecretTypeToken, EncryptedValue: []byte(`{"token":"t"}`)}
 	if err := s.CreateSecret(ctx, sec); err != nil {
 		t.Fatalf("create secret: %v", err)
 	}
@@ -121,7 +121,7 @@ func TestDeletingHarnessConfigRemovesBindings(t *testing.T) {
 	if err := s.CreateHarnessConfig(ctx, config); err != nil {
 		t.Fatalf("create harness config: %v", err)
 	}
-	sec := &model.Secret{ProjectID: "project-1", Name: "key", Type: model.SecretTypeBearer, EncryptedValue: []byte(`{"token":"t"}`)}
+	sec := &model.Secret{ProjectID: "project-1", Name: "key", Type: model.SecretTypeToken, EncryptedValue: []byte(`{"token":"t"}`)}
 	if err := s.CreateSecret(ctx, sec); err != nil {
 		t.Fatalf("create secret: %v", err)
 	}

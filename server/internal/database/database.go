@@ -5,6 +5,7 @@ import (
 	"context"
 	"fmt"
 	"log"
+	"slices"
 	"strings"
 
 	"gorm.io/gorm"
@@ -73,7 +74,27 @@ func (db *DB) Migrate(ctx context.Context) error {
 	if err := dropNarrowSandboxSecretEnvIndex(write); err != nil {
 		return err
 	}
+	// Pre-AutoMigrate as well, and for the sharpest reason of the four: this is
+	// a rename, and AutoMigrate cannot tell one from an addition. Left to it,
+	// it would add max_grant_ttl_seconds at its default and leave every
+	// configured limit behind in the old column — every secret silently reset
+	// to an hour, with the evidence still in the table.
+	if err := renameSecretGrantTTLColumn(write); err != nil {
+		return err
+	}
 	if err := write.AutoMigrate(model.AllModels()...); err != nil {
+		return err
+	}
+	if err := widenSecretUniquenessIndex(write); err != nil {
+		return err
+	}
+	if err := migrateSecretTypes(write); err != nil {
+		return err
+	}
+	if err := normalizeSecretHosts(write); err != nil {
+		return err
+	}
+	if err := liftConfiguredSecretGrantLimits(write); err != nil {
 		return err
 	}
 	if err := migrateLibkrunProviderType(write); err != nil {
@@ -179,6 +200,8 @@ const (
 
 	//nolint:gosec // An index name, not a credential.
 	sandboxSecretEnvIndex = "idx_sandbox_secret_env"
+	//nolint:gosec // An index name, not a credential.
+	secretUniquenessIndex = "idx_secret_project_type_host"
 )
 
 // dropNarrowSandboxSecretEnvIndex removes the pre-ADR-0031 two-column
@@ -205,6 +228,174 @@ func dropNarrowSandboxSecretEnvIndex(db *gorm.DB) error {
 	}
 	return migrator.DropIndex(&model.SandboxSecret{}, sandboxSecretEnvIndex)
 }
+
+// renameSecretGrantTTLColumn carries a secret's grant lifetime from
+// default_grant_ttl_seconds to max_grant_ttl_seconds, which is the same number
+// under a name that says what it does.
+//
+// It was a default: the lifetime a grant took when its minter named none, and
+// nothing stopped that minter from asking for longer, or for a grant that never
+// expired. It is now the ceiling as well, so the value a database already
+// carries keeps its meaning and gains teeth. Renaming rather than adding is
+// what makes that true of existing rows.
+func renameSecretGrantTTLColumn(db *gorm.DB) error {
+	migrator := db.Migrator()
+	if !migrator.HasTable(&model.Secret{}) {
+		return nil
+	}
+	if !migrator.HasColumn(&model.Secret{}, "default_grant_ttl_seconds") {
+		return nil
+	}
+	if migrator.HasColumn(&model.Secret{}, "max_grant_ttl_seconds") {
+		// Both columns present: an interrupted run already added the new one,
+		// so the old is stale and AutoMigrate owns the rest.
+		return nil
+	}
+	return db.Exec(`ALTER TABLE "secrets" RENAME COLUMN "default_grant_ttl_seconds" TO "max_grant_ttl_seconds"`).Error
+}
+
+// widenSecretUniquenessIndex drops the secret uniqueness index when it predates
+// the name being part of it, so AutoMigrate recreates it over the columns it
+// now covers.
+//
+// The old domain was (project, type, host, unique_key), which allowed a project
+// one secret per type and host. Nothing infers a host any more, so that became
+// one unbound token per project — a GitHub token and an OpenAI key could not
+// coexist, and the collision surfaced as a constraint violation rather than an
+// answer. The index is read rather than guessed at: it is the columns, not a
+// version, that say whether this database has the old shape.
+func widenSecretUniquenessIndex(db *gorm.DB) error {
+	migrator := db.Migrator()
+	if !migrator.HasTable(&model.Secret{}) || !migrator.HasIndex(&model.Secret{}, secretUniquenessIndex) {
+		return nil
+	}
+	indexes, err := migrator.GetIndexes(&model.Secret{})
+	if err != nil {
+		return err
+	}
+	for _, index := range indexes {
+		if index.Name() != secretUniquenessIndex {
+			continue
+		}
+		if slices.Contains(index.Columns(), "name") {
+			return nil
+		}
+		return migrator.DropIndex(&model.Secret{}, secretUniquenessIndex)
+	}
+	return nil
+}
+
+// migrateSecretTypes brings stored secrets onto the two types that exist:
+// token and oauth.
+//
+// "bearer" is renamed — the proxy swaps a value into whatever header the
+// sandbox put it in, so naming the type after one HTTP scheme named a
+// requirement that was never enforced. "git" and "ssh" are deleted, with the
+// grants, requests, and sandbox bindings that stand on them: cleartext leaves
+// the control plane only through ResolveSandboxSecret, which emits the token
+// alone, so a git or ssh secret never resolved into a sandbox and nothing that
+// worked is being taken away.
+//
+// It runs before AutoMigrate for a reason the enum makes sharp: the API
+// validates it on the way out as well as in, so a single "git" row left behind
+// would fail to serialize and take the whole secret listing with it.
+func migrateSecretTypes(db *gorm.DB) error {
+	if !db.Migrator().HasTable("secrets") {
+		return nil
+	}
+	if err := db.Exec("UPDATE secrets SET type = 'token' WHERE type = 'bearer'").Error; err != nil {
+		return err
+	}
+	if db.Migrator().HasTable("secret_requests") {
+		if err := db.Exec("UPDATE secret_requests SET type = 'token' WHERE type = 'bearer'").Error; err != nil {
+			return err
+		}
+		if err := db.Exec("DELETE FROM secret_requests WHERE type IN ('git','ssh')").Error; err != nil {
+			return err
+		}
+	}
+	// Everything standing on an unusable secret goes with it, deepest first:
+	// a grant or a binding whose secret is gone is a row that can only produce
+	// a lookup failure.
+	for _, table := range []string{"sandbox_secrets", "harness_config_secret_bindings", "secret_grants"} {
+		if !db.Migrator().HasTable(table) {
+			continue
+		}
+		if err := db.Exec("DELETE FROM " + table + " WHERE secret_id IN (SELECT id FROM secrets WHERE type IN ('git','ssh'))").Error; err != nil {
+			return err
+		}
+	}
+	return db.Exec("DELETE FROM secrets WHERE type IN ('git','ssh')").Error
+}
+
+// normalizeSecretHosts lowercases the destination hosts already stored on
+// secrets, requests, and grants.
+//
+// A grant is matched against the host the proxy observed, which it reports
+// lowercased, by SQL equality. So a row written with any other casing is an
+// approval nothing can ever use, and the symptom is a credential that behaves
+// as if it were revoked. New writes are normalized by the secrets service; this
+// repairs the rows written before it was.
+//
+// It is a permanent, idempotent step rather than a one-shot: the WHERE clause
+// matches nothing once the data is clean, and it costs one indexless scan of
+// three small tables at startup.
+func normalizeSecretHosts(db *gorm.DB) error {
+	for _, table := range []string{"secrets", "secret_requests", "secret_grants"} {
+		if !db.Migrator().HasTable(table) {
+			continue
+		}
+		if err := db.Exec("UPDATE " + table + " SET host = lower(host) WHERE host <> lower(host)").Error; err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// liftConfiguredSecretGrantLimits takes the ceiling off the credentials a
+// harness configure flow created.
+//
+// Those secrets are the harness's own: the flow binds one, grants it at harness
+// scope with no expiry, and deletes it when the harness is deconfigured. The
+// grant never lapses, because a harness that stops working an hour after it was
+// configured is a harness nobody configured. The limit these rows carry was
+// never chosen — it was the column default, back when the number was only a
+// default — and under a ceiling it would describe a lifetime the credential's
+// own grant does not have and refuse the next grant somebody writes for it.
+//
+// Only rows still carrying that old default are touched, and only those the
+// configure flow created. A secret a person created and then bound to a harness
+// keeps whatever limit that person set; so does a configured secret whose limit
+// somebody has since changed.
+func liftConfiguredSecretGrantLimits(db *gorm.DB) error {
+	migrator := db.Migrator()
+	if !migrator.HasTable(&model.HarnessConfig{}) || !migrator.HasTable(&model.Secret{}) {
+		return nil
+	}
+	var configs []model.HarnessConfig
+	if err := db.Select("id", "configured_secret_ids").Find(&configs).Error; err != nil {
+		return err
+	}
+	var ids []string
+	for _, config := range configs {
+		for _, secretID := range config.ConfiguredSecretIDs {
+			if secretID = strings.TrimSpace(secretID); secretID != "" {
+				ids = append(ids, secretID)
+			}
+		}
+	}
+	if len(ids) == 0 {
+		return nil
+	}
+	return db.Model(&model.Secret{}).
+		Where("id IN ? AND max_grant_ttl_seconds = ?", ids, defaultGrantTTLSecondsBeforeItWasACeiling).
+		Update("max_grant_ttl_seconds", 0).Error
+}
+
+// defaultGrantTTLSecondsBeforeItWasACeiling is the hour every secret carried
+// when the column was a default nobody set. It is the evidence that a row's
+// limit was never chosen, and it is only ever read as that.
+const defaultGrantTTLSecondsBeforeItWasACeiling = 3600
 
 // migrateLibkrunProviderType preserves provider and pool identities while
 // replacing the pre-release local-vm backend name with its implementation name.

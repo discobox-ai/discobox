@@ -16,6 +16,7 @@ COPY agentcreds ./agentcreds
 COPY api ./api
 COPY controlplane ./controlplane
 COPY harness ./harness
+COPY hostscope ./hostscope
 COPY layout ./layout
 COPY proxy ./proxy
 COPY runcca ./runcca

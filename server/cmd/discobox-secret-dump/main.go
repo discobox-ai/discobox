@@ -147,27 +147,10 @@ func findSecret(ctx context.Context, read *gorm.DB, idOrPrefix string) (*model.S
 
 // printValue writes only the fields relevant to the secret's type. Each value
 // is printed on its own line, unquoted, so it can be piped or copied verbatim.
-func printValue(secretType string, v *model.SecretValue) {
-	emit := func(label, val string) {
-		if val != "" {
-			fmt.Printf("%s: %s\n", label, val)
-		}
-	}
-	switch secretType {
-	case model.SecretTypeGit:
-		emit("username", v.Username)
-		emit("password", v.Password)
-	case model.SecretTypeSSH:
-		emit("privateKey", v.PrivateKey)
-		emit("passphrase", v.Passphrase)
-	case model.SecretTypeBearer:
-		emit("token", v.Token)
-	default:
-		// Unknown type: dump whatever is populated.
-		emit("username", v.Username)
-		emit("password", v.Password)
-		emit("privateKey", v.PrivateKey)
-		emit("passphrase", v.Passphrase)
-		emit("token", v.Token)
+func printValue(_ string, v *model.SecretValue) {
+	// One opaque string, whatever the type: an OAuth secret's refresh material
+	// is server-side only and is not what this tool is for.
+	if v.Token != "" {
+		fmt.Printf("token: %s\n", v.Token)
 	}
 }

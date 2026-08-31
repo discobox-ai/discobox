@@ -21,14 +21,14 @@ func TestDeletedSecretFreesItsUniqueSlot(t *testing.T) {
 
 	// A user-created secret leaves UniqueKey empty, so its uniqueness domain is
 	// (project, type, host) — the case a tombstone would block.
-	first := &model.Secret{ProjectID: "project-1", Name: "key", Type: model.SecretTypeBearer, Host: "a.example.com", EncryptedValue: []byte(`{"token":"t"}`)}
+	first := &model.Secret{ProjectID: "project-1", Name: "key", Type: model.SecretTypeToken, Host: "a.example.com", EncryptedValue: []byte(`{"token":"t"}`)}
 	if err := s.CreateSecret(ctx, first); err != nil {
 		t.Fatalf("create secret: %v", err)
 	}
 	if err := s.DeleteSecret(ctx, "project-1", first.ID); err != nil {
 		t.Fatalf("delete secret: %v", err)
 	}
-	second := &model.Secret{ProjectID: "project-1", Name: "key", Type: model.SecretTypeBearer, Host: "a.example.com", EncryptedValue: []byte(`{"token":"t2"}`)}
+	second := &model.Secret{ProjectID: "project-1", Name: "key", Type: model.SecretTypeToken, Host: "a.example.com", EncryptedValue: []byte(`{"token":"t2"}`)}
 	if err := s.CreateSecret(ctx, second); err != nil {
 		t.Fatalf("recreate secret after delete: %v", err)
 	}
@@ -77,7 +77,7 @@ func TestDeletedHarnessConfigBindingFreesItsEnvName(t *testing.T) {
 	if err := s.CreateHarnessConfig(ctx, config); err != nil {
 		t.Fatalf("create harness config: %v", err)
 	}
-	sec := &model.Secret{ProjectID: "project-1", Name: "key", Type: model.SecretTypeBearer, Host: "a.example.com", EncryptedValue: []byte(`{"token":"t"}`)}
+	sec := &model.Secret{ProjectID: "project-1", Name: "key", Type: model.SecretTypeToken, Host: "a.example.com", EncryptedValue: []byte(`{"token":"t"}`)}
 	if err := s.CreateSecret(ctx, sec); err != nil {
 		t.Fatalf("create secret: %v", err)
 	}
@@ -100,7 +100,7 @@ func TestDeletedHarnessConfigBindingFreesItsEnvName(t *testing.T) {
 		t.Fatalf("expected the binding to be gone, got %d", len(bindings))
 	}
 
-	replacement := &model.Secret{ProjectID: "project-1", Name: "key", Type: model.SecretTypeBearer, Host: "a.example.com", EncryptedValue: []byte(`{"token":"t2"}`)}
+	replacement := &model.Secret{ProjectID: "project-1", Name: "key", Type: model.SecretTypeToken, Host: "a.example.com", EncryptedValue: []byte(`{"token":"t2"}`)}
 	if err := s.CreateSecret(ctx, replacement); err != nil {
 		t.Fatalf("create replacement secret: %v", err)
 	}

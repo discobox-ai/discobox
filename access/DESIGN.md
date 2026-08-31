@@ -1,6 +1,6 @@
 # Agent Credential CLI Design
 
-`discobox-credential` is the in-sandbox client of the agent credentials
+`discobox-access` is the in-sandbox client of the agent credentials
 protocol. It asks a human for a credential the agent was not provisioned with,
 and runs one command with it.
 

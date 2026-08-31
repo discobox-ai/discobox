@@ -54,7 +54,7 @@ func mustOAuthSecret(t *testing.T, st *store.Store, name string, val model.Secre
 	}
 	sec := &model.Secret{
 		ProjectID: "project-1", Name: name, Type: model.SecretTypeOAuth,
-		DefaultGrantTTL: 3600, EncryptedValue: b,
+		MaxGrantTTL: 3600, EncryptedValue: b,
 	}
 	if err := st.CreateSecret(context.Background(), sec); err != nil {
 		t.Fatalf("create oauth secret: %v", err)
