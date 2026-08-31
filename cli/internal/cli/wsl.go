@@ -80,35 +80,114 @@ func windowsCommand(ctx context.Context, name, windowsPath string) (string, erro
 	return wslLinuxPath(ctx, windowsPath)
 }
 
-// wslWindowsFolder asks Windows for one of its own folder variables and returns
-// it in both spellings.
+// windowsEnv asks Windows for one of its own environment variables.
 //
-// It is asked through cmd.exe rather than read from this process's environment:
-// the Windows environment is not inherited into a WSL shell, and %LOCALAPPDATA%
-// and %USERPROFILE% are the two things a config written for the Windows side
-// has to get right. The stderr cmd.exe writes when it dislikes the working
-// directory — this process's, which is not a drive path — is captured and
-// dropped: it warns, then answers anyway.
-func wslWindowsFolder(ctx context.Context, name string) (sshPath, error) {
+// It is asked through cmd.exe rather than read from this process's environment,
+// because the Windows environment is not inherited into a WSL shell — and
+// %LOCALAPPDATA%, %USERPROFILE% and %USERNAME% are what a config written for
+// the Windows side has to get right. The stderr cmd.exe writes when it dislikes
+// the working directory — this process's, which is not a drive path — is
+// captured and dropped: it warns, then answers anyway.
+func windowsEnv(ctx context.Context, name string) (string, error) {
 	ctx, cancel := context.WithTimeout(ctx, wslProbeTimeout)
 	defer cancel()
 	interpreter, err := windowsCommand(ctx, "cmd.exe", `C:\Windows\System32\cmd.exe`)
 	if err != nil {
-		return sshPath{}, err
+		return "", err
 	}
 	//nolint:gosec // G204: name is one of this file's own constants, not input.
 	out, err := exec.CommandContext(ctx, interpreter, "/c", "echo %"+name+"%").Output()
 	if err != nil {
-		return sshPath{}, fmt.Errorf("ask Windows for %%%s%%: %w", name, err)
+		return "", fmt.Errorf("ask Windows for %%%s%%: %w", name, err)
 	}
 	value := strings.TrimSpace(string(out))
 	// cmd.exe echoes an unset variable back as its own name in percent signs.
 	if value == "" || strings.Contains(value, "%") {
-		return sshPath{}, fmt.Errorf("no %%%s%% in the Windows environment", name)
+		return "", fmt.Errorf("no %%%s%% in the Windows environment", name)
+	}
+	return value, nil
+}
+
+// wslWindowsFolder is a Windows folder variable in both spellings.
+func wslWindowsFolder(ctx context.Context, name string) (sshPath, error) {
+	value, err := windowsEnv(ctx, name)
+	if err != nil {
+		return sshPath{}, err
 	}
 	local, err := wslLinuxPath(ctx, value)
 	if err != nil {
 		return sshPath{}, err
 	}
 	return sshPath{local: local, client: value}, nil
+}
+
+// restrictWindowsKey narrows a mirrored private key to this user alone, and
+// checks that it worked.
+//
+// This is restrictToUser's job from the other side of the boundary: a mode bit
+// written from here means nothing to Windows, and ssh.exe refuses to read a
+// private key any other principal can. Neither default is safe to inherit —
+// WSL puts an explicit S-1-5-32 ACE on everything it creates on a drive mount,
+// and a Windows profile hands its own groups read access downward — so both are
+// removed and the user is granted the file outright. Full control rather than
+// read: this CLI rewrites the key on every run.
+//
+// The result is read back rather than assumed. icacls reports success for a
+// grant that leaves another principal's ACE in place, which is exactly the
+// failure this exists to prevent, and a key ssh will not read is worth an error
+// here rather than "Permissions for … are too open" from a program the user did
+// not run themselves.
+func restrictWindowsKey(ctx context.Context, windowsPath string) error {
+	ctx, cancel := context.WithTimeout(ctx, wslProbeTimeout)
+	defer cancel()
+	icacls, err := windowsCommand(ctx, "icacls.exe", `C:\Windows\System32\icacls.exe`)
+	if err != nil {
+		return err
+	}
+	user, err := windowsEnv(ctx, "USERNAME")
+	if err != nil {
+		return err
+	}
+	//nolint:gosec // G204: a path this command wrote and a name Windows gave it.
+	set := exec.CommandContext(ctx, icacls, windowsPath,
+		"/inheritance:r", "/remove:g", builtinDomainSID, "/grant:r", user+":F")
+	if out, err := set.CombinedOutput(); err != nil {
+		return fmt.Errorf("restrict %s to %s: %w: %s", windowsPath, user, err, strings.TrimSpace(string(out)))
+	}
+	//nolint:gosec // G204: as above.
+	out, err := exec.CommandContext(ctx, icacls, windowsPath).Output()
+	if err != nil {
+		return fmt.Errorf("read the ACL of %s: %w", windowsPath, err)
+	}
+	if others := aclPrincipalsBesides(string(out), windowsPath, user); len(others) > 0 {
+		return fmt.Errorf("%s is readable by %s, and ssh will not read a private key that anyone else can; "+
+			"grant it to %s alone", windowsPath, strings.Join(others, ", "), user)
+	}
+	return nil
+}
+
+// builtinDomainSID is the ACE WSL adds to every file it creates on a mounted
+// Windows drive. It is named by SID rather than by name because the name it
+// resolves to is neither stable nor localized the same way everywhere; icacls
+// prints it as BUILTIN\BUILTIN.
+const builtinDomainSID = "*S-1-5-32"
+
+// aclPrincipalsBesides lists the principals in icacls output that are not the
+// one expected. Each ACE is `PRINCIPAL:(rights)`, the first sharing a line with
+// the path; a principal is `DOMAIN\name`, and it is the name that identifies
+// the user.
+func aclPrincipalsBesides(listing, windowsPath, user string) []string {
+	var others []string
+	for _, line := range strings.Split(listing, "\n") {
+		entry := strings.TrimSpace(strings.TrimPrefix(strings.TrimSpace(line), windowsPath))
+		rights := strings.Index(entry, ":(")
+		if rights < 0 {
+			continue
+		}
+		principal := entry[:rights]
+		if name := principal[strings.LastIndex(principal, `\`)+1:]; !strings.EqualFold(name, user) {
+			others = append(others, principal)
+		}
+	}
+	return others
 }

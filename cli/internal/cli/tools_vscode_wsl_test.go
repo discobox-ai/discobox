@@ -22,6 +22,10 @@ func fakeWSLMachine(t *testing.T, opts ...wslMachineOption) (root, record string
 	if runtime.GOOS == "windows" {
 		t.Skip("the fakes are shell scripts")
 	}
+	machine := wslMachine{windowsPathOnPATH: true}
+	for _, opt := range opts {
+		opt(&machine)
+	}
 	base := t.TempDir()
 	root = filepath.Join(base, "mnt", "c")
 	tools := filepath.Join(base, "tools")
@@ -56,28 +60,17 @@ case "$1" in
 esac
 `, "__ROOT__", root))
 
-	// cmd.exe answers for the Windows environment, in CRLF as the real one
-	// does, from a profile whose name has a space in it as real ones do. It
-	// goes where Windows keeps it, and is linked onto PATH unless a test says
-	// this is a distribution that does not inherit the Windows PATH.
 	system32 := filepath.Join(root, "Windows", "System32")
 	if err := os.MkdirAll(system32, 0o700); err != nil {
 		t.Fatal(err)
 	}
-	writeFakeTool(t, filepath.Join(system32, "cmd.exe"), `#!/bin/sh
-case "$*" in
-*USERPROFILE*) printf 'C:\Users\Ada Lovelace\r\n' ;;
-*LOCALAPPDATA*) printf 'C:\Users\Ada Lovelace\AppData\Local\r\n' ;;
-*) exit 1 ;;
-esac
-`)
-
-	machine := wslMachine{windowsPathOnPATH: true}
-	for _, opt := range opts {
-		opt(&machine)
-	}
+	fakeWindowsTools(t, system32, machine.leakyKeyACL)
+	// The Windows programs are on PATH because WSL appends the Windows PATH,
+	// unless a test says this is a distribution configured not to.
 	if machine.windowsPathOnPATH {
-		linkFakeTool(t, filepath.Join(system32, "cmd.exe"), filepath.Join(tools, "cmd.exe"))
+		for _, tool := range []string{"cmd.exe", "icacls.exe"} {
+			linkFakeTool(t, filepath.Join(system32, tool), filepath.Join(tools, tool))
+		}
 	}
 
 	t.Setenv(wslDistroEnv, "Ubuntu")
@@ -92,11 +85,16 @@ type wslMachine struct {
 	// distribution's. A distribution with appendWindowsPath=false has none of
 	// it, and the Windows programs are still installed.
 	windowsPathOnPATH bool
+	// leakyKeyACL makes icacls report a key another principal can still read,
+	// which is the state ssh refuses to use one in.
+	leakyKeyACL bool
 }
 
 type wslMachineOption func(*wslMachine)
 
 func withoutWindowsPATH(m *wslMachine) { m.windowsPathOnPATH = false }
+
+func withLeakyKeyACL(m *wslMachine) { m.leakyKeyACL = true }
 
 func linkFakeTool(t *testing.T, from, to string) {
 	t.Helper()
@@ -104,6 +102,44 @@ func linkFakeTool(t *testing.T, from, to string) {
 		t.Fatalf("link %s: %v", to, err)
 	}
 }
+
+// fakeWindowsTools writes the Windows programs the bridge shells out to: cmd.exe
+// for the environment WSL does not inherit, and icacls for the ACL a mirrored
+// key needs. The fake icacls records what it was asked to set and answers for
+// what the file has, so a test can have it report a key another principal can
+// still read -- the state ssh refuses to use one in.
+func fakeWindowsTools(t *testing.T, dir string, leakyKeyACL bool) {
+	t.Helper()
+	writeFakeTool(t, filepath.Join(dir, "cmd.exe"), `#!/bin/sh
+case "$*" in
+*USERPROFILE*) printf 'C:\Users\Ada Lovelace\r\n' ;;
+*LOCALAPPDATA*) printf 'C:\Users\Ada Lovelace\AppData\Local\r\n' ;;
+*USERNAME*) printf 'Ada\r\n' ;;
+*) exit 1 ;;
+esac
+`)
+	leak := ""
+	if leakyKeyACL {
+		leak = `\n                     BUILTIN\\Users:(RX)`
+	}
+	writeFakeTool(t, filepath.Join(dir, "icacls.exe"), `#!/bin/sh
+path=$1
+shift
+if [ $# -gt 0 ]; then
+	printf '%s %s\n' "$path" "$*" >> '`+aclLog(dir)+`'
+	echo "Successfully processed 1 files; Failed processing 0 files"
+	exit 0
+fi
+printf '%s BEENIE\\Ada:(F)`+leak+`\n' "$path"
+`)
+}
+
+// aclLog is where the fake icacls records the ACLs it was asked to set.
+func aclLog(dir string) string { return filepath.Join(dir, "icacls-log") }
+
+// windowsToolsDir is where fakeWSLMachine keeps them, for a test that wants to
+// read what icacls was asked to do.
+func windowsToolsDir(root string) string { return filepath.Join(root, "Windows", "System32") }
 
 func writeFakeTool(t *testing.T, path, script string) {
 	t.Helper()
@@ -116,7 +152,7 @@ func writeFakeTool(t *testing.T, path, script string) {
 // editor is a Windows program, so the ssh that connects for it is Windows
 // ssh.exe — which reads a config under the Windows profile, opens files by
 // their drive path, and cannot execute this CLI without re-entering the
-// distribution. See ADR 0068.
+// distribution. See ADR 0074.
 func TestToolsVSCodeOnWSLWritesTheConfigWindowsReads(t *testing.T) {
 	root, record := fakeWSLMachine(t)
 	home, _, stderr, err := runToolsVSCodeCmd(t, vscodeFakeServer(), "--discobox-id", "sbx_devbox00000001")
@@ -128,9 +164,10 @@ func TestToolsVSCodeOnWSLWritesTheConfigWindowsReads(t *testing.T) {
 	config := readFile(t, filepath.Join(windowsState, resolvedTestProjectID, "config"))
 	for _, want := range []string{
 		// Windows ssh.exe cannot run a Linux binary: the ProxyCommand
-		// re-enters the distribution and runs it there.
-		`    ProxyCommand wsl.exe -d "Ubuntu" -e "`,
-		` admin ssh-proxy` + "\n",
+		// re-enters the distribution and runs it there, quoted for the shell
+		// that parses each word rather than for %COMSPEC% (ADR 0078 §1).
+		`    ProxyCommand wsl.exe -d Ubuntu -e sh -c "exec '`,
+		` admin ssh-proxy"` + "\n",
 		// Every file the config names is named the way Windows spells it, and
 		// quoted because the profile has a space in it.
 		`    IdentityFile "C:\Users\Ada Lovelace\AppData\Local\discobox\cli\ssh\id_ed25519"` + "\n",
@@ -142,9 +179,15 @@ func TestToolsVSCodeOnWSLWritesTheConfigWindowsReads(t *testing.T) {
 		}
 	}
 
-	// The key is on the Windows side too, because ssh.exe opens it itself.
+	// The key is on the Windows side too, because ssh.exe opens it itself --
+	// and narrowed to this user, because ssh refuses to read a private key
+	// anybody else can (ADR 0078 §2).
 	if _, err := os.Stat(filepath.Join(windowsState, "id_ed25519")); err != nil {
 		t.Fatalf("the identity was not mirrored for Windows: %v", err)
+	}
+	acl := readFile(t, aclLog(windowsToolsDir(root)))
+	if !strings.Contains(acl, `/inheritance:r /remove:g *S-1-5-32 /grant:r Ada:F`) {
+		t.Fatalf("the mirrored key's ACL was not narrowed:\n%s", acl)
 	}
 
 	// The Include goes in the Windows user's ssh_config, quoted, and nothing
@@ -208,5 +251,21 @@ func TestToolsVSCodeOnWSLWithoutTheWindowsPATH(t *testing.T) {
 		"discobox", "cli", "ssh", resolvedTestProjectID, "config")
 	if _, err := os.Stat(windowsConfig); err != nil {
 		t.Fatalf("the Windows config was not written: %v", err)
+	}
+}
+
+// A key ssh will not read is worth failing over here, where the reason is
+// known, rather than leaving Remote-SSH to say "Permissions for … are too open"
+// about a file the user never created.
+func TestToolsVSCodeOnWSLRefusesALeakyKey(t *testing.T) {
+	fakeWSLMachine(t, withLeakyKeyACL)
+	_, _, _, err := runToolsVSCodeCmd(t, vscodeFakeServer(), "--discobox-id", "sbx_devbox00000001")
+	if err == nil {
+		t.Fatal("expected tools vscode to refuse a key another principal can read")
+	}
+	for _, want := range []string{"BUILTIN\\Users", "private key"} {
+		if !strings.Contains(err.Error(), want) {
+			t.Fatalf("error should name what can read the key and why it matters, got: %v", err)
+		}
 	}
 }

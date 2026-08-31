@@ -133,7 +133,7 @@ func (a *App) buildManagedSSHConfig(cmd *cobra.Command, req managedSSHConfigRequ
 	}
 	// The key is generated and enrolled on this side whichever ssh reads the
 	// config; only where it has to be readable from changes.
-	identity, err := req.target.mirrorSSHIdentity(identityFile)
+	identity, err := req.target.mirrorSSHIdentity(cmd.Context(), identityFile)
 	if err != nil {
 		return managedSSHConfig{}, err
 	}

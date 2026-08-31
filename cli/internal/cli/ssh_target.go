@@ -33,7 +33,7 @@ func samePath(p string) sshPath { return sshPath{local: p, client: p} }
 // them matters is decided by the program that will drive ssh: VS Code launched
 // from WSL is usually the Windows build, and a Windows VS Code runs Windows
 // ssh.exe, which reads the Windows user's ssh_config, cannot open a path in the
-// distribution's filesystem, and cannot execute a Linux binary. See ADR 0068.
+// distribution's filesystem, and cannot execute a Linux binary. See ADR 0074.
 type sshTarget struct {
 	// windows reports that the reading client is Windows OpenSSH. It decides
 	// how paths are spelled and how the ProxyCommand is quoted, and it is true
@@ -150,19 +150,36 @@ func (t sshTarget) knownHostsPath(projectID string) sshPath {
 //
 // For Windows the same invocation is wrapped in `wsl.exe`: ssh.exe cannot
 // execute a Linux binary, so the command re-enters the distribution this CLI is
-// installed in and runs it there. `-e` rather than a shell, so nothing inside
-// re-splits what cmd.exe has already parsed, and the stdio ssh hands it stays
-// the pipe pair the protocol needs.
+// installed in and runs it there.
+//
+// The quoting is the whole difficulty, and it is not %COMSPEC%'s. cmd.exe hands
+// the line on with its quotes intact, and `wsl.exe` does not strip them from
+// the words it consumes: quoting each word the way a native Windows
+// ProxyCommand is quoted gets the Linux side an execvp of a program whose name
+// begins with a double quote. It fails, wsl.exe reports that failure in UTF-16
+// on stdout, and ssh — which expects an identification string there — rejects
+// the connection with "banner line contains invalid characters" (ADR 0078 §1).
+//
+// So the words are quoted for the shell that actually parses them. The command
+// goes to `sh -c` as a single double-quoted argument, which cmd.exe and
+// wsl.exe pass across whole, and inside it the path and the endpoint carry
+// POSIX single quotes, which sh strips. Nothing in that argument is a double
+// quote, so there is no nesting to get wrong. `exec` because the shell has
+// nothing left to do afterwards, and the stdio ssh hands it has to reach the
+// splice unbroken.
 func (t sshTarget) proxyCommandLine(serverURL string) (string, error) {
 	executable, err := os.Executable()
 	if err != nil {
 		return "", fmt.Errorf("locate this executable for the ssh_config ProxyCommand: %w", err)
 	}
-	invocation := shellQuote(executable, t.windows) + " --server " + shellQuote(serverURL, t.windows) + " admin ssh-proxy"
 	if !t.acrossWSL() {
-		return invocation, nil
+		return shellQuote(executable, t.windows) + " --server " + shellQuote(serverURL, t.windows) + " admin ssh-proxy", nil
 	}
-	return "wsl.exe -d " + shellQuote(t.wslDistro, true) + " -e " + invocation, nil
+	script := "exec " + shellQuote(executable, false) + " --server " + shellQuote(serverURL, false) + " admin ssh-proxy"
+	// The distribution name is bare for the same reason: it is a word wsl.exe
+	// reads itself, and a quoted one would name a distribution that does not
+	// exist.
+	return "wsl.exe -d " + t.wslDistro + " -e sh -c " + shellQuote(script, true), nil
 }
 
 // mirrorSSHIdentity returns the key path the stanzas should name, copying the
@@ -173,11 +190,16 @@ func (t sshTarget) proxyCommandLine(serverURL string) (string, error) {
 // it, and the \\wsl.localhost share it could name instead fails the owner and
 // permission check it makes before reading a private key. So on a WSL machine
 // the key exists on both sides, and the copy is rewritten on every run so a
-// rotated or re-enrolled key never leaves a stale one behind. The copy inherits
-// the ACL of the Windows state directory it lands in — the user, SYSTEM and
-// Administrators — which is what ssh.exe requires and what a mode bit written
-// from this side would not give it. See ADR 0068.
-func (t sshTarget) mirrorSSHIdentity(source string) (sshPath, error) {
+// rotated or re-enrolled key never leaves a stale one behind.
+//
+// What the copy cannot do is inherit an acceptable ACL. ssh refuses a private
+// key any principal but its owner can reach, and both ways of putting the file
+// there fail that: a file written from this side carries an explicit ACE for
+// `S-1-5-32` that WSL puts on everything it creates on a drive mount, and one
+// created on the Windows side inherits whatever the profile grants — a group
+// with read access is enough to be refused. So the ACL is set, not inherited,
+// which from here means icacls. See ADR 0078 §2.
+func (t sshTarget) mirrorSSHIdentity(ctx context.Context, source string) (sshPath, error) {
 	if !t.acrossWSL() {
 		return samePath(source), nil
 	}
@@ -197,6 +219,13 @@ func (t sshTarget) mirrorSSHIdentity(source string) (sshPath, error) {
 		}
 		if err := os.WriteFile(mirrored.local+suffix, data, 0o600); err != nil {
 			return sshPath{}, fmt.Errorf("copy SSH identity for Windows: %w", err)
+		}
+		if suffix == "" {
+			// Only the private half. The public one is public, and ssh reads
+			// it without an opinion about who else can.
+			if err := restrictWindowsKey(ctx, mirrored.client); err != nil {
+				return sshPath{}, err
+			}
 		}
 	}
 	return mirrored, nil

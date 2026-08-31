@@ -335,7 +335,7 @@ project's managed config (`buildManagedSSHConfig` + `writeManagedSSHConfig`, the
 same files `admin ssh-config --write` owns) and then runs `code --new-window
 --folder-uri vscode-remote://ssh-remote+<alias>/<workdir>`.
 
-A folder URI rather than `--remote` and a path, on every platform (ADR 0068 §4):
+A folder URI rather than `--remote` and a path, on every platform (ADR 0074 §4):
 a bare path argument is the one thing VS Code's launcher rewrites. Started from
 WSL it is normally the Windows build, whose CLI reads a path argument as a path
 in *this* distribution, adds a `--remote wsl+<distro>` of its own, and opens the
@@ -742,14 +742,14 @@ level or layering on the attach transports above.
   populated run needs no further edit to `~/.ssh/config` and no second trip to
   re-pin the same server.
 - **WSL** is the one place where the ssh that connects is not on the same side
-  of the machine as the CLI (ADR 0068). A Windows VS Code runs Windows
+  of the machine as the CLI (ADR 0074). A Windows VS Code runs Windows
   `ssh.exe`, which reads `%USERPROFILE%\.ssh\config`, opens files by their
   drive path, and cannot execute a Linux binary. So `tools vscode` writes that
   config instead of the distribution's: stanzas under
   `%LOCALAPPDATA%\discobox\cli\ssh\<project>\`, an `Include` in the Windows
-  user's `~/.ssh/config`, a `ProxyCommand` of `wsl.exe -d <distro> -e
-  <linux discobox> --server … admin ssh-proxy`, and a copy of the enrolled
-  private key beside them, refreshed on every run. Windows is asked where its
+  user's `~/.ssh/config`, a `ProxyCommand` of `wsl.exe -d <distro> -e sh -c
+  "exec '<linux discobox>' --server '…' admin ssh-proxy"`, and a copy of the
+  enrolled private key beside them, refreshed on every run. Windows is asked where its
   own folders are (`cmd.exe /c echo %LOCALAPPDATA%`, `wslpath -u`) rather than
   assumed — and `cmd.exe` itself is taken from PATH, or, in a distribution
   configured not to inherit the Windows one, translated from the Windows path it
@@ -758,6 +758,21 @@ level or layering on the attach transports above.
   inside the distribution answers as a `\\wsl.localhost` UNC share. What the
   boundary costs is in `internal/cli/wsl.go`; the command says on stderr which
   side it wrote for.
+- Two things about that boundary are counter-intuitive enough that the first
+  implementation got both wrong, and neither failure names itself. Both are
+  ADR 0078. **Quoting**: `wsl.exe` does not strip the double
+  quotes `cmd.exe` leaves in place, so a word it reads itself carries none, and
+  the command goes to `sh -c` as one double-quoted argument with POSIX quoting
+  inside. Quoting each word the Windows way got the Linux side an `execvp` of a
+  program named `"…"`, and ssh a UTF-16 error message where the banner belonged
+  — which it reports as "banner line contains invalid characters".
+  **The key's ACL**: set with `icacls` and read back, never inherited. A file
+  written from WSL onto a drive mount carries an explicit `S-1-5-32` ACE, one
+  created from Windows inherits whatever the profile grants below it, and
+  `os.WriteFile` over an existing file keeps the old DACL. ssh refuses a private
+  key that any of those leave reachable by another principal, so the run fails
+  here rather than leaving Remote-SSH to complain about a file the user never
+  created.
 - Values that can contain a space are quoted: `IdentityFile`,
   `UserKnownHostsFile`, and the `Include` line (`sshConfigQuote`, and
   `sshConfigFields` reading them back so a re-run recognizes its own line). A

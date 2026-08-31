@@ -7,6 +7,16 @@ import (
 	"testing"
 )
 
+// wslTestWindowsTools puts the Windows programs the bridge shells out to on
+// PATH: mirroring a key now sets its ACL, and that is icacls' job.
+func wslTestWindowsTools(t *testing.T) string {
+	t.Helper()
+	dir := t.TempDir()
+	fakeWindowsTools(t, dir, false)
+	t.Setenv("PATH", dir+string(os.PathListSeparator)+os.Getenv("PATH"))
+	return dir
+}
+
 // wslTestTarget is what windowsSSHTarget would have resolved on a machine whose
 // Windows drive is mounted at root: the state directory and the user's
 // ssh_config in both spellings, and the distribution the ProxyCommand re-enters.
@@ -44,21 +54,29 @@ func TestSSHTargetSpellsPathsForBothSides(t *testing.T) {
 
 // The ProxyCommand is the one line that has to run on the far side: Windows
 // ssh.exe cannot execute a Linux binary, so it re-enters the distribution.
+//
+// How it is quoted is the whole of ADR 0078 §1. wsl.exe does not strip the
+// quotes cmd.exe leaves in place, so a word it reads itself must not carry any
+// -- quoting them got the Linux side an execvp of a program whose name began
+// with a double quote, and ssh a UTF-16 error message where the banner should
+// have been.
 func TestSSHTargetProxyCommandReEntersWSL(t *testing.T) {
 	target := wslTestTarget(t.TempDir())
 	line, err := target.proxyCommandLine("http://127.0.0.1:8080")
 	if err != nil {
 		t.Fatalf("proxyCommandLine: %v", err)
 	}
-	if !strings.HasPrefix(line, `wsl.exe -d "Ubuntu" -e "`) {
-		t.Fatalf("ProxyCommand does not re-enter the distribution: %q", line)
+	if !strings.HasPrefix(line, "wsl.exe -d Ubuntu -e sh -c \"exec '") {
+		t.Fatalf("ProxyCommand does not re-enter the distribution unquoted: %q", line)
 	}
-	// Double quotes, not the shell's single ones: %COMSPEC% is what runs it.
-	if !strings.Contains(line, `--server "http://127.0.0.1:8080" admin ssh-proxy`) {
-		t.Fatalf("ProxyCommand is not quoted for cmd.exe: %q", line)
+	// The endpoint is quoted for the shell that parses it, which is sh.
+	if !strings.Contains(line, `--server 'http://127.0.0.1:8080' admin ssh-proxy`) {
+		t.Fatalf("ProxyCommand does not quote the endpoint for sh: %q", line)
 	}
-	if strings.Contains(line, "'") {
-		t.Fatalf("ProxyCommand carries POSIX quoting Windows will not strip: %q", line)
+	// Exactly one double-quoted argument, so cmd.exe and wsl.exe have nothing
+	// to disagree about and no nesting to get wrong.
+	if got := strings.Count(line, `"`); got != 2 {
+		t.Fatalf("ProxyCommand carries %d double quotes, want the 2 around the sh script: %q", got, line)
 	}
 }
 
@@ -66,6 +84,7 @@ func TestSSHTargetProxyCommandReEntersWSL(t *testing.T) {
 // the file itself, and it is refreshed on every run so a rotated key cannot
 // leave a stale one behind.
 func TestSSHTargetMirrorsTheIdentityAcrossTheBoundary(t *testing.T) {
+	tools := wslTestWindowsTools(t)
 	target := wslTestTarget(t.TempDir())
 	source := filepath.Join(t.TempDir(), "id_ed25519")
 	if err := os.WriteFile(source, []byte("PRIVATE"), 0o600); err != nil {
@@ -75,7 +94,7 @@ func TestSSHTargetMirrorsTheIdentityAcrossTheBoundary(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	mirrored, err := target.mirrorSSHIdentity(source)
+	mirrored, err := target.mirrorSSHIdentity(t.Context(), source)
 	if err != nil {
 		t.Fatalf("mirrorSSHIdentity: %v", err)
 	}
@@ -89,11 +108,23 @@ func TestSSHTargetMirrorsTheIdentityAcrossTheBoundary(t *testing.T) {
 		t.Fatalf("mirrored public key = %q", got)
 	}
 
+	// The copy is no use to ssh unless it is the user's alone: the ACL it
+	// would otherwise have is one ssh refuses to read a private key under.
+	acl := readFile(t, aclLog(tools))
+	for _, want := range []string{mirrored.client, "/inheritance:r", "/remove:g *S-1-5-32", "/grant:r Ada:F"} {
+		if !strings.Contains(acl, want) {
+			t.Fatalf("the key's ACL was not set with %q:\n%s", want, acl)
+		}
+	}
+	if strings.Contains(acl, ".pub") {
+		t.Fatalf("the public half was restricted too, which it need not be:\n%s", acl)
+	}
+
 	// A rotated key replaces the copy rather than being ignored.
 	if err := os.WriteFile(source, []byte("ROTATED"), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := target.mirrorSSHIdentity(source); err != nil {
+	if _, err := target.mirrorSSHIdentity(t.Context(), source); err != nil {
 		t.Fatalf("mirrorSSHIdentity again: %v", err)
 	}
 	if got := readFile(t, mirrored.local); got != "ROTATED" {
@@ -104,12 +135,13 @@ func TestSSHTargetMirrorsTheIdentityAcrossTheBoundary(t *testing.T) {
 // A key the user enrolled by hand has no .pub beside it more often than not,
 // and ssh derives the public half from the private one anyway.
 func TestSSHTargetMirrorsAKeyWithNoPublicHalf(t *testing.T) {
+	wslTestWindowsTools(t)
 	target := wslTestTarget(t.TempDir())
 	source := filepath.Join(t.TempDir(), "id_rsa")
 	if err := os.WriteFile(source, []byte("PRIVATE"), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	mirrored, err := target.mirrorSSHIdentity(source)
+	mirrored, err := target.mirrorSSHIdentity(t.Context(), source)
 	if err != nil {
 		t.Fatalf("mirrorSSHIdentity: %v", err)
 	}
@@ -125,7 +157,7 @@ func TestSSHTargetLeavesTheIdentityAloneLocally(t *testing.T) {
 	if err != nil {
 		t.Fatalf("localSSHTarget: %v", err)
 	}
-	mirrored, err := target.mirrorSSHIdentity("/home/u/.local/state/discobox/cli/ssh/id_ed25519")
+	mirrored, err := target.mirrorSSHIdentity(t.Context(), "/home/u/.local/state/discobox/cli/ssh/id_ed25519")
 	if err != nil {
 		t.Fatalf("mirrorSSHIdentity: %v", err)
 	}
