@@ -744,20 +744,30 @@ level or layering on the attach transports above.
 - **WSL** is the one place where the ssh that connects is not on the same side
   of the machine as the CLI (ADR 0074). A Windows VS Code runs Windows
   `ssh.exe`, which reads `%USERPROFILE%\.ssh\config`, opens files by their
-  drive path, and cannot execute a Linux binary. So `tools vscode` writes that
-  config instead of the distribution's: stanzas under
+  drive path, and cannot execute a Linux binary. Such a machine has *two* ssh
+  installations, so `machineSSHTargets` answers with both and every command that
+  writes writes both — `admin ssh-config --write` as much as `tools vscode`,
+  since which side a tool drives is not something either command can know
+  (ADR 0078 §3). The stanzas are built once and rendered per target: what
+  differs is how a path is spelled and what the `ProxyCommand` runs, not which
+  sandboxes exist or which key authenticates. Printed output stays this side
+  only — it is for pasting in by hand. The Windows side's own files are stanzas
+  under
   `%LOCALAPPDATA%\discobox\cli\ssh\<project>\`, an `Include` in the Windows
   user's `~/.ssh/config`, a `ProxyCommand` of `wsl.exe -d <distro> -e sh -c
   "exec '<linux discobox>' --server '…' admin ssh-proxy"`, and a copy of the
-  enrolled private key beside them, refreshed on every run. Windows is asked where its
+  enrolled private key beside them, refreshed on every run. Resolving that side
+  needs interop, so failing to is a warning — this side's config is still
+  written and still correct — except for `tools vscode` launching a Windows
+  editor, where it is the whole point and therefore an error. Windows is asked where its
   own folders are (`cmd.exe /c echo %LOCALAPPDATA%`, `wslpath -u`) rather than
   assumed — and `cmd.exe` itself is taken from PATH, or, in a distribution
   configured not to inherit the Windows one, translated from the Windows path it
   is always installed at. Whether the editor is a Windows program comes from `wslpath -w`
   rather than a `/mnt` prefix — the mount root is configurable, and a path
   inside the distribution answers as a `\\wsl.localhost` UNC share. What the
-  boundary costs is in `internal/cli/wsl.go`; the command says on stderr which
-  side it wrote for.
+  boundary costs is in `internal/cli/wsl.go`; each write names the file it
+  wrote, so which side is which is visible without knowing the layout.
 - Two things about that boundary are counter-intuitive enough that the first
   implementation got both wrong, and neither failure names itself. Both are
   ADR 0078. **Quoting**: `wsl.exe` does not strip the double

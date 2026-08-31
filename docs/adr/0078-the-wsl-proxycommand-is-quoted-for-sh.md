@@ -1,8 +1,9 @@
-# 0078. The WSL `ProxyCommand` is quoted for sh, and the mirrored key's ACL is set
+# 0078. The WSL bridge, corrected: quoting, the key's ACL, and both sides written
 
 Status: Accepted
 
-Amends [0074](0074-a-wsl-cli-writes-the-ssh-config-windows-reads.md) §2 and §3.
+Amends [0074](0074-a-wsl-cli-writes-the-ssh-config-windows-reads.md) §2, §3, and
+its consequence that only `tools vscode` writes the Windows side.
 
 ## Context
 
@@ -88,10 +89,41 @@ Creating the file from the Windows side instead, so it would inherit a clean
 ACL, was rejected: measured on the machine that motivated this, the inherited
 ACL is the worse of the two.
 
+### 3. Both of a machine's ssh installations are written, by both commands
+
+0074 gave the choice of target to `tools vscode`, on the grounds that it is the
+command that knows which program will drive ssh, and left `admin ssh-config
+--write` writing this side only. That was the wrong cut. A WSL2 machine has two
+ssh installations and the programs that drive them are spread across both — a
+Windows VS Code or JetBrains Gateway on one side, `git`, `scp` and `rsync` on
+the other — so a machine configured on one side only works until you reach for
+the other tool. It also made `tools vscode` the *only* way to produce the
+Windows config, which is a strange thing for a command that opens an editor to
+be responsible for, and it showed: the first time that config needed
+regenerating during development, the way to do it was to launch VS Code.
+
+So `machineSSHTargets` answers with every ssh installation on the machine, and
+both commands write all of them. The stanzas are built once and rendered per
+target: what differs between them is how a path is spelled and what the
+`ProxyCommand` runs, not which sandboxes exist or which key authenticates.
+
+Printed output — `admin ssh-config` with no `--write` — stays this side only.
+It exists to be pasted into a config by hand, and the hand doing that is here.
+
+The Windows side needs interop to resolve at all, so its failure is a warning
+rather than an error: `--write` has still written a usable config for this
+side, and says what it could not do. `tools vscode` launching a Windows editor
+is the one case where it is fatal, because there is then nothing for the editor
+to connect through.
+
 ## Consequences
 
 - The private key exists on the Windows side with an ACL this CLI sets rather
   than one it inherits, and the run fails loudly if that cannot be achieved.
+- `admin ssh-config --write` on WSL now writes, and rewrites, files under the
+  Windows profile. That is a wider blast radius for a command that used to
+  touch only this side, and the reason it is acceptable is that every file it
+  writes there is one this CLI owns and rewrites wholesale anyway.
 - The `ProxyCommand` now names `sh`, so the distribution must have one at
   `/bin/sh`. Every distribution WSL ships does.
 - Two lessons for anything else that crosses this boundary: `wsl.exe` does not

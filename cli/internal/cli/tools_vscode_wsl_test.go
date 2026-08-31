@@ -190,21 +190,17 @@ func TestToolsVSCodeOnWSLWritesTheConfigWindowsReads(t *testing.T) {
 		t.Fatalf("the mirrored key's ACL was not narrowed:\n%s", acl)
 	}
 
-	// The Include goes in the Windows user's ssh_config, quoted, and nothing
-	// is written into the distribution's own ~/.ssh at all.
+	// The Include goes in the Windows user's ssh_config, quoted.
 	userConfig := readFile(t, filepath.Join(root, "Users", "Ada Lovelace", ".ssh", "config"))
 	if want := `Include "C:\Users\Ada Lovelace\AppData\Local\discobox\cli\ssh\` + resolvedTestProjectID + `\config"` + "\n"; userConfig != want {
 		t.Fatalf("Windows ssh_config = %q, want %q", userConfig, want)
 	}
-	if _, err := os.Stat(filepath.Join(home, ".ssh", "config")); !os.IsNotExist(err) {
-		t.Fatalf("the WSL ~/.ssh/config was written for an editor that cannot read it: %v", err)
+	// And this distribution's own ssh is configured too: the machine has two,
+	// and the other one is what `git` and `scp` here will use.
+	if got := readFile(t, filepath.Join(home, ".ssh", "config")); !strings.Contains(got, "discobox/cli/ssh/"+resolvedTestProjectID) {
+		t.Fatalf("the distribution's own ssh_config was not written: %q", got)
 	}
-
-	// Which side the config was written for is not something to leave the user
-	// to work out from a path.
-	if !strings.Contains(stderr, "Windows OpenSSH") {
-		t.Fatalf("stderr does not say which ssh the config was written for: %q", stderr)
-	}
+	_ = stderr
 
 	// A folder URI, never a bare path: a path argument is what the Windows
 	// launcher rewrites into a window on the local WSL directory.
@@ -214,9 +210,11 @@ func TestToolsVSCodeOnWSLWritesTheConfigWindowsReads(t *testing.T) {
 	}
 }
 
-// A Linux editor on a WSL machine is still a Linux editor: it drives this
-// distribution's ssh, and nothing crosses the boundary.
-func TestToolsVSCodeOnWSLKeepsALinuxEditorLocal(t *testing.T) {
+// A WSL machine has two ssh installations and both get the stanzas, whichever
+// editor is being launched. A Linux editor drives this distribution's ssh, and
+// the Windows config is written anyway, because the next thing to reach for a
+// discobox may be a Windows program.
+func TestToolsVSCodeOnWSLWritesBothSidesForALinuxEditor(t *testing.T) {
 	root, _ := fakeWSLMachine(t)
 	record := fakeVSCode(t)
 
@@ -231,8 +229,15 @@ func TestToolsVSCodeOnWSLKeepsALinuxEditorLocal(t *testing.T) {
 	if got := readFile(t, filepath.Join(home, ".ssh", "config")); !strings.Contains(got, configPath) {
 		t.Fatalf("the local ssh_config does not include the managed one: %q", got)
 	}
-	if _, err := os.Stat(filepath.Join(root, "Users")); !os.IsNotExist(err) {
-		t.Fatal("a Linux editor caused a write into the Windows profile")
+	windowsConfig := filepath.Join(root, "Users", "Ada Lovelace", "AppData", "Local",
+		"discobox", "cli", "ssh", resolvedTestProjectID, "config")
+	if _, err := os.Stat(windowsConfig); err != nil {
+		t.Fatalf("the Windows config was not written for a Linux editor: %v", err)
+	}
+	// The editor here is a Linux build, so its own stanza names this
+	// executable directly rather than re-entering the distribution.
+	if got := readFile(t, configPath); strings.Contains(got, "wsl.exe") {
+		t.Fatalf("the distribution's own config re-enters WSL to reach itself:\n%s", got)
 	}
 	if args := editorArgs(t, record); !contains(args, "--folder-uri") {
 		t.Fatalf("editor args = %v, want a folder URI", args)
@@ -267,5 +272,68 @@ func TestToolsVSCodeOnWSLRefusesALeakyKey(t *testing.T) {
 		if !strings.Contains(err.Error(), want) {
 			t.Fatalf("error should name what can read the key and why it matters, got: %v", err)
 		}
+	}
+}
+
+// `admin ssh-config --write` on a WSL machine configures both of its ssh
+// installations. Which one a given tool drives is not something this command
+// can know -- Remote-SSH and JetBrains Gateway are Windows programs, `git` and
+// `scp` here are not -- and it was `tools vscode` being the only way to get the
+// Windows one that made this worth fixing.
+func TestSSHConfigWriteOnWSLWritesBothSides(t *testing.T) {
+	root, _ := fakeWSLMachine(t)
+	home, state := t.TempDir(), t.TempDir()
+	setHome(t, home)
+	t.Setenv("XDG_STATE_HOME", state)
+
+	server := writeFakeServer().start(t)
+	cmd := NewRootCommand()
+	var out, errOut strings.Builder
+	cmd.SetOut(&out)
+	cmd.SetErr(&errOut)
+	cmd.SetArgs([]string{"--server", server.URL, "--project", "project-1", "admin", "ssh-config", "--write"})
+	if err := cmd.Execute(); err != nil {
+		t.Fatalf("execute ssh-config --write: %v", err)
+	}
+
+	local, _ := managedPaths(state)
+	if got := readFile(t, local); strings.Contains(got, "wsl.exe") {
+		t.Fatalf("this distribution's config re-enters WSL to reach itself:\n%s", got)
+	}
+	windows := readFile(t, filepath.Join(root, "Users", "Ada Lovelace", "AppData", "Local",
+		"discobox", "cli", "ssh", resolvedTestProjectID, "config"))
+	if !strings.Contains(windows, `ProxyCommand wsl.exe -d Ubuntu -e sh -c "exec '`) {
+		t.Fatalf("the Windows config does not re-enter the distribution:\n%s", windows)
+	}
+	// Each side's Include lands in its own ssh_config.
+	if got := readFile(t, filepath.Join(home, ".ssh", "config")); !strings.Contains(got, local) {
+		t.Fatalf("this distribution's ssh_config has no Include: %q", got)
+	}
+	if got := readFile(t, filepath.Join(root, "Users", "Ada Lovelace", ".ssh", "config")); !strings.Contains(got, `C:\Users\Ada Lovelace\AppData\Local`) {
+		t.Fatalf("the Windows ssh_config has no Include: %q", got)
+	}
+}
+
+// Printed output is for pasting into a config by hand, and the hand doing that
+// is on this side: one config, not two.
+func TestSSHConfigPrintOnWSLIsThisSideOnly(t *testing.T) {
+	fakeWSLMachine(t)
+	setHome(t, t.TempDir())
+	t.Setenv("XDG_STATE_HOME", t.TempDir())
+
+	server := writeFakeServer().start(t)
+	cmd := NewRootCommand()
+	var out, errOut strings.Builder
+	cmd.SetOut(&out)
+	cmd.SetErr(&errOut)
+	cmd.SetArgs([]string{"--server", server.URL, "--project", "project-1", "admin", "ssh-config"})
+	if err := cmd.Execute(); err != nil {
+		t.Fatalf("execute ssh-config: %v", err)
+	}
+	if strings.Contains(out.String(), "wsl.exe") {
+		t.Fatalf("printed a config for the other side:\n%s", out.String())
+	}
+	if strings.Count(out.String(), "ProxyCommand") != 1 {
+		t.Fatalf("printed more than one machine's stanzas:\n%s", out.String())
 	}
 }

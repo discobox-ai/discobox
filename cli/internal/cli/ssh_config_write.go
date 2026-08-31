@@ -97,7 +97,8 @@ func managedConfigHeader(projectID string) string {
 // stanzas is empty when the project has no sandboxes, and that writes an empty
 // config rather than skipping the write: these files mirror the server, so a
 // project whose last sandbox is gone must stop offering stanzas for it.
-func writeManagedSSHConfig(cmd *cobra.Command, target sshTarget, projectID, stanzas, knownHostsHost, hostKey string) error {
+func writeManagedSSHConfig(cmd *cobra.Command, built managedSSHConfig, projectID string) error {
+	target := built.target
 	configPath, knownHostsPath := target.configPath(projectID), target.knownHostsPath(projectID)
 	if err := ensureStateDir(filepath.Dir(configPath.local)); err != nil {
 		return fmt.Errorf("create SSH config directory: %w", err)
@@ -106,15 +107,15 @@ func writeManagedSSHConfig(cmd *cobra.Command, target sshTarget, projectID, stan
 	// StrictHostKeyChecking meaningful without editing a file that records the
 	// user's trust in every other host they use.
 	knownHosts := ""
-	if hostKey != "" {
-		knownHosts = knownHostsHost + " " + hostKey + "\n"
+	if built.hostKey != "" {
+		knownHosts = built.hostKeyAlias + " " + built.hostKey + "\n"
 	}
 	// 0600 like the config beside it: a known_hosts file is public
 	// information, but nothing other than this user needs to read it.
 	if err := os.WriteFile(knownHostsPath.local, []byte(knownHosts), 0o600); err != nil {
 		return fmt.Errorf("write known_hosts: %w", err)
 	}
-	if err := os.WriteFile(configPath.local, []byte(managedConfigHeader(projectID)+stanzas), 0o600); err != nil {
+	if err := os.WriteFile(configPath.local, []byte(managedConfigHeader(projectID)+built.stanzas), 0o600); err != nil {
 		return fmt.Errorf("write SSH config: %w", err)
 	}
 	// The files as well as the directory they are in: a run before this one may

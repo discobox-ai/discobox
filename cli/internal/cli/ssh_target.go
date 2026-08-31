@@ -93,20 +93,35 @@ func windowsSSHTarget(ctx context.Context) (sshTarget, error) {
 	return target, nil
 }
 
-// sshTargetForEditor picks the ssh installation the editor being launched will
-// drive: this machine's, unless a WSL process is about to launch a Windows
-// build, whose Remote-SSH runs on the other side of the boundary.
-func sshTargetForEditor(ctx context.Context, editor string) (sshTarget, error) {
-	if !isWSL() || !isWindowsExecutable(ctx, editor) {
-		return localSSHTarget()
-	}
-	target, err := windowsSSHTarget(ctx)
+// machineSSHTargets is every OpenSSH installation on this machine, which is
+// what a written config has to reach: this one always, and on WSL the Windows
+// one as well.
+//
+// Both, rather than whichever one a particular command happens to need. A WSL2
+// machine really does have two, the programs that drive ssh are spread across
+// both — a Windows VS Code or JetBrains Gateway on one side, `git` and `scp` on
+// the other — and a config that exists on only one side is a machine that works
+// until you reach for the other tool. Writing both also means no command is the
+// only way to produce one of them, which is what `tools vscode` had become.
+//
+// The Windows side needs interop to resolve at all, so its failure is returned
+// rather than raised: `admin ssh-config --write` has still written a usable
+// config for this side and says what it could not do, while `tools vscode`
+// launching a Windows editor cannot proceed and turns it into an error.
+func machineSSHTargets(ctx context.Context) (targets []sshTarget, windowsErr error) {
+	local, err := localSSHTarget()
 	if err != nil {
-		return sshTarget{}, fmt.Errorf("%s is a Windows program, so it connects with Windows OpenSSH: %w; "+
-			"name a Linux build with --editor or $%s to use this machine's own ssh_config instead",
-			editor, err, vscodeEditorEnv)
+		return nil, err
 	}
-	return target, nil
+	targets = []sshTarget{local}
+	if !isWSL() {
+		return targets, nil
+	}
+	windows, err := windowsSSHTarget(ctx)
+	if err != nil {
+		return targets, err
+	}
+	return append(targets, windows), nil
 }
 
 // acrossWSL reports that this target's files are written through the WSL

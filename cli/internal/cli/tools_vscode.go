@@ -100,16 +100,18 @@ func (a *App) runToolsVSCode(cmd *cobra.Command, opts toolsVSCodeOptions) error 
 	if err != nil {
 		return err
 	}
-	// Which ssh the editor will drive follows from which editor it is: a
-	// Windows build launched from WSL connects with Windows OpenSSH, which
-	// reads a different config, on the other side of the boundary.
-	target, err := sshTargetForEditor(cmd.Context(), editor)
-	if err != nil {
-		return err
-	}
-	if target.acrossWSL() {
-		fmt.Fprintf(cmd.ErrOrStderr(),
-			"%s is a Windows program, so Windows OpenSSH is what connects: writing the config it reads, not this distribution's\n", editor)
+	// Every ssh on this machine gets the refreshed stanzas, but which one the
+	// editor will drive decides whether a missing one is fatal: a Windows
+	// build launched from WSL connects with Windows OpenSSH, and without that
+	// config there is nothing for it to connect to.
+	targets, windowsErr := machineSSHTargets(cmd.Context())
+	if windowsErr != nil {
+		if isWindowsExecutable(cmd.Context(), editor) {
+			return fmt.Errorf("%s is a Windows program, so it connects with Windows OpenSSH: %w; "+
+				"name a Linux build with --editor or $%s to use this machine's own ssh_config instead",
+				editor, windowsErr, vscodeEditorEnv)
+		}
+		fmt.Fprintf(cmd.ErrOrStderr(), "not writing the Windows ssh_config: %v\n", windowsErr)
 	}
 
 	var projectID, sandboxID string
@@ -125,7 +127,7 @@ func (a *App) runToolsVSCode(cmd *cobra.Command, opts toolsVSCodeOptions) error 
 		return err
 	}
 
-	remote, err := a.vscodeRemoteTarget(cmd, target, client, projectID, sandboxID, opts.source)
+	remote, err := a.vscodeRemoteTarget(cmd, targets, client, projectID, sandboxID, opts.source)
 	if err != nil {
 		return err
 	}
@@ -188,7 +190,7 @@ func (t vscodeRemoteTarget) describe() string {
 // whole project's stanzas rather than this sandbox's is what `ssh-config
 // --write` already means by that file — it is rewritten wholesale on every run
 // — and it leaves every other sandbox reachable too.
-func (a *App) vscodeRemoteTarget(cmd *cobra.Command, target sshTarget, client *apiclientgen.Client, projectID, sandboxID, sourceSlug string) (vscodeRemoteTarget, error) {
+func (a *App) vscodeRemoteTarget(cmd *cobra.Command, targets []sshTarget, client *apiclientgen.Client, projectID, sandboxID, sourceSlug string) (vscodeRemoteTarget, error) {
 	resolvedProjectID, err := a.concreteProjectID(cmd, client, projectID)
 	if err != nil {
 		return vscodeRemoteTarget{}, err
@@ -202,17 +204,18 @@ func (a *App) vscodeRemoteTarget(cmd *cobra.Command, target sshTarget, client *a
 		projectID:         projectID,
 		resolvedProjectID: resolvedProjectID,
 		hostKey:           hostKey,
-		target:            target,
 		write:             true,
-	})
+	}, targets)
 	if err != nil {
 		return vscodeRemoteTarget{}, err
 	}
-	if err := writeManagedSSHConfig(cmd, target, resolvedProjectID, built.stanzas, built.hostKeyAlias, built.hostKey); err != nil {
-		return vscodeRemoteTarget{}, err
+	for _, config := range built {
+		if err := writeManagedSSHConfig(cmd, config, resolvedProjectID); err != nil {
+			return vscodeRemoteTarget{}, err
+		}
 	}
 
-	host, ok := built.aliases[sandboxID]
+	host, ok := built[0].aliases[sandboxID]
 	if !ok {
 		// Every spelling of this sandbox was claimed by another one, so the
 		// config carries no stanza it could be reached by. See

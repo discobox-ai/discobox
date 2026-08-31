@@ -23,6 +23,9 @@ func (a *App) newSSHConfigCommand() *cobra.Command {
 			"With --write, the stanzas and the server's host key are written to files this\n" +
 			"command owns and rewrites, and ~/.ssh/config gains a single Include line pointing\n" +
 			"at them. Nothing else in ~/.ssh is edited.\n\n" +
+			"On WSL that happens twice, once for each of the machine's two ssh installations:\n" +
+			"this distribution's, and the Windows one that a Windows VS Code or JetBrains\n" +
+			"Gateway drives. Without --write, the printed stanzas are this side's.\n\n" +
 			"The stanzas name no address. They carry a ProxyCommand that reaches the server's\n" +
 			"SSH ingress over the same endpoint every other request uses, which is the only way\n" +
 			"in: the server binds no SSH port of its own. So ssh — and anything built on it,\n" +
@@ -50,12 +53,17 @@ func (a *App) newSSHConfigCommand() *cobra.Command {
 			if err != nil {
 				return err
 			}
-			// This machine's own ssh, whatever machine that is. `tools vscode`
-			// is the command that can want the other one, because it is the
-			// command that knows which program will be driving ssh.
-			target, err := localSSHTarget()
-			if err != nil {
-				return err
+			// Every ssh on this machine, which on WSL is two. A config that
+			// cannot be written for the Windows side is worth saying so about
+			// and no reason to withhold this side's.
+			targets, windowsErr := machineSSHTargets(cmd.Context())
+			if windowsErr != nil {
+				fmt.Fprintf(cmd.ErrOrStderr(), "not writing the Windows ssh_config: %v\n", windowsErr)
+			}
+			if !write {
+				// Printed output is for pasting into a config by hand, and the
+				// hand doing it is on this side.
+				targets = targets[:1]
 			}
 			built, err := a.buildManagedSSHConfig(cmd, managedSSHConfigRequest{
 				client:            client,
@@ -63,18 +71,22 @@ func (a *App) newSSHConfigCommand() *cobra.Command {
 				resolvedProjectID: resolvedProjectID,
 				identityFile:      identityFile,
 				hostKey:           hostKey,
-				target:            target,
 				write:             write,
-			})
+			}, targets)
 			if err != nil {
 				return err
 			}
 			if write {
-				return writeManagedSSHConfig(cmd, target, resolvedProjectID, built.stanzas, built.hostKeyAlias, built.hostKey)
+				for _, config := range built {
+					if err := writeManagedSSHConfig(cmd, config, resolvedProjectID); err != nil {
+						return err
+					}
+				}
+				return nil
 			}
 			out := cmd.OutOrStdout()
-			fmt.Fprint(out, built.stanzas)
-			fmt.Fprintf(out, "\n# add to your known_hosts:\n# %s %s\n", built.hostKeyAlias, built.hostKey)
+			fmt.Fprint(out, built[0].stanzas)
+			fmt.Fprintf(out, "\n# add to your known_hosts:\n# %s %s\n", built[0].hostKeyAlias, built[0].hostKey)
 			return nil
 		},
 	}
@@ -95,9 +107,6 @@ type managedSSHConfigRequest struct {
 	// resolveSSHIdentity choose and enroll one.
 	identityFile string
 	hostKey      string
-	// target is the ssh installation the config is written for: where its
-	// files go, how their paths are spelled, and what its ProxyCommand runs.
-	target sshTarget
 	// write decides whether the stanzas may name a known_hosts file, since only
 	// a written config owns one.
 	write bool
@@ -112,6 +121,9 @@ type managedSSHConfigRequest struct {
 // guessed from outside, since a contested pattern is dropped from every stanza
 // that wanted it.
 type managedSSHConfig struct {
+	// target is the ssh installation this rendering is for: where its files
+	// go, how their paths are spelled, and what its ProxyCommand runs.
+	target       sshTarget
 	stanzas      string
 	hostKeyAlias string
 	hostKey      string
@@ -119,53 +131,32 @@ type managedSSHConfig struct {
 }
 
 // buildManagedSSHConfig resolves the key, lists the project's sandboxes, and
-// renders the stanzas. It does not decide what to do with them: `ssh-config`
-// prints or writes them, and `tools vscode` writes them and opens an editor on
-// one.
-func (a *App) buildManagedSSHConfig(cmd *cobra.Command, req managedSSHConfigRequest) (managedSSHConfig, error) {
-	proxyCommand, err := req.target.proxyCommandLine(a.serverURL)
-	if err != nil {
-		return managedSSHConfig{}, err
-	}
+// renders the stanzas once per target. It does not decide what to do with them:
+// `ssh-config` prints or writes them, and `tools vscode` writes them and opens
+// an editor on one.
+//
+// The project is listed and the identity resolved once for all of them: what
+// differs between one ssh installation and the next is how the stanzas spell
+// what they name, not which sandboxes exist or which key authenticates.
+func (a *App) buildManagedSSHConfig(cmd *cobra.Command, req managedSSHConfigRequest, targets []sshTarget) ([]managedSSHConfig, error) {
 	identityFile, err := a.resolveSSHIdentity(cmd, req.client, req.projectID, req.identityFile)
 	if err != nil {
-		return managedSSHConfig{}, err
-	}
-	// The key is generated and enrolled on this side whichever ssh reads the
-	// config; only where it has to be readable from changes.
-	identity, err := req.target.mirrorSSHIdentity(cmd.Context(), identityFile)
-	if err != nil {
-		return managedSSHConfig{}, err
+		return nil, err
 	}
 	sandboxesRes, err := req.client.ListSandboxes(cmd.Context(), apiclientgen.ListSandboxesParams{ProjectId: req.projectID})
 	if err != nil {
-		return managedSSHConfig{}, err
+		return nil, err
 	}
 	sandboxesBody, err := expectResponse[apimodel.ListSandboxesBody](sandboxesRes)
 	if err != nil {
-		return managedSSHConfig{}, err
+		return nil, err
 	}
 	sandboxes := sandboxesBody.GetSandboxes()
 
-	// Only the written config can name a known_hosts file.
-	knownHostsFile := ""
-	if req.write {
-		knownHostsFile = req.target.knownHostsPath(req.resolvedProjectID).client
-	}
-	render := sshConfigRender{
-		sandboxes:    sandboxes,
-		proxyCommand: proxyCommand,
-		hostKeyAlias: sshHostKeyAlias(req.resolvedProjectID),
-		identityFile: identity.client,
-		// Only the written config can point at a known_hosts file, because
-		// only it owns one: printed output would be naming a file this run
-		// never wrote.
-		knownHostsFile: knownHostsFile,
-	}
-
 	// The first surviving pattern is the alias to hand out: they are emitted
 	// friendliest-first, so this is the sandbox's name where the name is
-	// unambiguous and its ID where it is not.
+	// unambiguous and its ID where it is not. It is the same alias whichever
+	// ssh reads the stanza.
 	patterns := sshConfigHostPatterns(sandboxes)
 	aliases := make(map[string]string, len(sandboxes))
 	for i, sandbox := range sandboxes {
@@ -173,12 +164,41 @@ func (a *App) buildManagedSSHConfig(cmd *cobra.Command, req managedSSHConfigRequ
 			aliases[sandbox.ID] = patterns[i][0]
 		}
 	}
-	return managedSSHConfig{
-		stanzas:      renderSSHConfig(render),
-		hostKeyAlias: render.hostKeyAlias,
-		hostKey:      req.hostKey,
-		aliases:      aliases,
-	}, nil
+
+	built := make([]managedSSHConfig, 0, len(targets))
+	for _, target := range targets {
+		proxyCommand, err := target.proxyCommandLine(a.serverURL)
+		if err != nil {
+			return nil, err
+		}
+		// The key is generated and enrolled on this side whichever ssh reads
+		// the config; only where it has to be readable from changes.
+		identity, err := target.mirrorSSHIdentity(cmd.Context(), identityFile)
+		if err != nil {
+			return nil, err
+		}
+		// Only the written config can name a known_hosts file, because only it
+		// owns one: printed output would be naming a file this run never wrote.
+		knownHostsFile := ""
+		if req.write {
+			knownHostsFile = target.knownHostsPath(req.resolvedProjectID).client
+		}
+		render := sshConfigRender{
+			sandboxes:      sandboxes,
+			proxyCommand:   proxyCommand,
+			hostKeyAlias:   sshHostKeyAlias(req.resolvedProjectID),
+			identityFile:   identity.client,
+			knownHostsFile: knownHostsFile,
+		}
+		built = append(built, managedSSHConfig{
+			target:       target,
+			stanzas:      renderSSHConfig(render),
+			hostKeyAlias: render.hostKeyAlias,
+			hostKey:      req.hostKey,
+			aliases:      aliases,
+		})
+	}
+	return built, nil
 }
 
 // sshHostKey is the server's host public key, which every emitted stanza pins
