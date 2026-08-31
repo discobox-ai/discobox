@@ -128,3 +128,54 @@ func TestSandboxTCPDialerReportsTheHandshakeError(t *testing.T) {
 		t.Fatalf("error = %v, want the server's reason", err)
 	}
 }
+
+// The mirror of the half-close above: the far end finishes sending and this
+// conn reports EOF, the way any net.Conn does, while remaining writable. A
+// tunnel that closed outright instead would look to a caller like a connection
+// dropped mid-request (ADR 0024 §4).
+func TestSandboxTCPDialerReportsTheFarEndsHalfClose(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		conn, err := websocket.Accept(w, r, nil)
+		if err != nil {
+			return
+		}
+		defer conn.Close(websocket.StatusNormalClosure, "done")
+		stream := websocket.NetConn(r.Context(), conn, websocket.MessageBinary)
+		if err := frame.Write(stream, frame.Stdout, []byte("answered")); err != nil {
+			return
+		}
+		if err := frame.Write(stream, frame.CloseOutput, nil); err != nil {
+			return
+		}
+		// Still reading: a half-closed far end can receive.
+		for {
+			if _, err := frame.Read(stream); err != nil {
+				return
+			}
+		}
+	}))
+	t.Cleanup(server.Close)
+
+	app := &App{serverURL: server.URL, noStart: true}
+	dialer, err := app.sandboxTCPDialer("proj-1", "sbx-1")
+	if err != nil {
+		t.Fatalf("sandbox tcp dialer: %v", err)
+	}
+	conn, err := dialer.DialPort(t.Context(), portforward.Target{Host: "127.0.0.1", Port: 8080})
+	if err != nil {
+		t.Fatalf("dial port: %v", err)
+	}
+	defer conn.Close()
+
+	got, err := io.ReadAll(conn)
+	if err != nil {
+		t.Fatalf("read to EOF: %v", err)
+	}
+	if string(got) != "answered" {
+		t.Fatalf("read %q, want %q", got, "answered")
+	}
+	// EOF on the read half says nothing about the write half.
+	if _, err := io.WriteString(conn, "still writing"); err != nil {
+		t.Fatalf("write after the far end's half-close: %v", err)
+	}
+}

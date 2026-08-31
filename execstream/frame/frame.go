@@ -41,6 +41,13 @@ const (
 	SessionOK byte = 10
 	Action    byte = 11
 	Ack       byte = 12
+	// CloseOutput is CloseInput's mirror: the far end of a byte tunnel is done
+	// sending and is still able to receive. A TCP tunnel needs both halves —
+	// the side that closes first is whichever end of the forwarded connection
+	// finishes first, and closing the whole tunnel for it cuts off data still
+	// traveling the other way. An exec has no use for it: a process that
+	// closes its output is a process that has exited, which Exit already says.
+	CloseOutput byte = 13
 )
 
 const maxPayload = 16 * 1024 * 1024

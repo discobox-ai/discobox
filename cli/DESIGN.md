@@ -578,8 +578,11 @@ launcher will supply the same two halves and draw them instead.
 - The transport is the control plane's `/api/projects/{p}/sandboxes/{s}/tcp/attach`
   websocket, which is ADR 0024 §3's tunnel exposed at the HTTP edge. Each
   forwarded connection is one websocket, and `tcpTunnelConn` presents its
-  `Input`/`Stdout`/`CloseInput` frames as a `net.Conn`, so everything above it
-  is a plain TCP proxy and a half-close survives the trip (ADR 0024 §4).
+  `Input`/`Stdout`/`CloseInput`/`CloseOutput` frames as a `net.Conn`, so
+  everything above it is a plain TCP proxy and a half-close survives the trip
+  in both directions (ADR 0024 §4): `CloseWrite` sends `CloseInput`, and an
+  incoming `CloseOutput` is this conn's `io.EOF` — which says nothing about
+  whether it can still be written to.
 - A port is bound at its own number when that is free and at the nearest one
   above it when it is not, so a sandbox's 8080 is `localhost:8081` when
   something local already has 8080. A privileged port gets one try at its own

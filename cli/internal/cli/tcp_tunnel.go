@@ -163,6 +163,11 @@ func (c *tcpTunnelConn) Read(p []byte) (int, error) {
 		switch read.Type {
 		case frame.Stdout:
 			c.pending = read.Payload
+		case frame.CloseOutput:
+			// The far end is done sending. That is this conn's EOF, and it
+			// says nothing about whether it can still receive: a caller with
+			// more to write goes on writing.
+			return 0, io.EOF
 		case frame.Error:
 			return 0, fmt.Errorf("discobox tunnel: %s", strings.TrimSpace(string(read.Payload)))
 		default:

@@ -161,3 +161,61 @@ func readFrameWithTimeout(t *testing.T, conn net.Conn) (frame.Frame, error) {
 	_ = conn.SetReadDeadline(time.Time{})
 	return f, err
 }
+
+// A target that closes its side of a forwarded connection has not closed the
+// tunnel: the client may still be sending, and used to be cut off when this
+// closed the websocket outright (ADR 0024 §4).
+func TestPumpTCPToFramesHalfClosesOnTargetEOF(t *testing.T) {
+	target, agentSide := net.Pipe()
+	clientSide, wsSide := net.Pipe()
+
+	go pumpTCPToFrames(agentSide, wsSide)
+
+	// The target answers and hangs up its own side.
+	go func() {
+		_, _ = target.Write([]byte("answered"))
+		_ = target.Close()
+	}()
+
+	// The client sees the data, then the half-close, and the tunnel lives on.
+	if got := readFrameOfType(t, clientSide, frame.Stdout); string(got) != "answered" {
+		t.Fatalf("Stdout = %q, want %q", got, "answered")
+	}
+	if got := readFrameOfType(t, clientSide, frame.CloseOutput); len(got) != 0 {
+		t.Fatalf("CloseOutput carried %q, want nothing", got)
+	}
+}
+
+// readFrameOfType reads until a frame of the wanted type arrives, failing
+// rather than blocking if it never does.
+func readFrameOfType(t *testing.T, conn net.Conn, want byte) []byte {
+	t.Helper()
+	type result struct {
+		payload []byte
+		err     error
+	}
+	done := make(chan result, 1)
+	go func() {
+		for {
+			read, err := frame.Read(conn)
+			if err != nil {
+				done <- result{nil, err}
+				return
+			}
+			if read.Type == want {
+				done <- result{read.Payload, nil}
+				return
+			}
+		}
+	}()
+	select {
+	case res := <-done:
+		if res.err != nil {
+			t.Fatalf("waiting for frame type %d: %v", want, res.err)
+		}
+		return res.payload
+	case <-time.After(10 * time.Second):
+		t.Fatalf("frame type %d never arrived", want)
+		return nil
+	}
+}

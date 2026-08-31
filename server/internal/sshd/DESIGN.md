@@ -123,12 +123,25 @@ converts a signal death to the shell convention (128+signum), so
 `tcpip.go`'s `handleDirectTCPIPChannel` unmarshals the RFC 4254 §7.2
 payload, authorizes with `tcp:connect`, and dials the sandbox-agent's new
 `/tcp/attach` endpoint via the same `dialFrameWebSocket` helper session
-channels use — reusing `execstream/frame`'s `Input`/`Stdout`/`CloseInput`
-rather than raw bytes is specifically what lets a half-close cross this
-tunnel (a websocket has none of its own; TCP does, and `rsync`-shaped
-protocols depend on it). A dial failure on the sandbox-agent side rejects
-the channel before accepting, matching what a real `sshd` does for a
-refused `-L` target. See `sandbox-agent/DESIGN.md` for the sandbox-side
+channels use — reusing `execstream/frame`'s
+`Input`/`Stdout`/`CloseInput`/`CloseOutput` rather than raw bytes is
+specifically what lets a half-close cross this tunnel (a websocket has none of
+its own; TCP does, and `rsync`-shaped protocols depend on it). A dial failure
+on the sandbox-agent side rejects the channel before accepting, matching what a
+real `sshd` does for a refused `-L` target.
+
+`pumpDirectTCPIP` ends each direction on its own, because a forwarded
+connection's two halves do. `CloseInput` carries the client's EOF to the
+target; `CloseOutput` carries the target's back and becomes `CloseWrite` on the
+SSH channel, leaving the other half open. Only the attach connection ending
+closes the channel — once it is gone nothing can be delivered either way, and
+closing is also what unblocks the reader. `Error` frames are logged rather than
+dropped: a tunnel that failed inside the sandbox must not look like one that
+simply ended. Both were wrong until a Remote-SSH session that would not load
+sent us measuring the live path; `tcpip_concurrency_test.go` now covers what a
+forwarded connection is actually asked to do — sixteen channels at once, four
+megabytes through one, and a remote half-close — none of which had any coverage
+before. See `sandbox-agent/DESIGN.md` for the sandbox-side
 dial and pump, and `pool-agent/DESIGN.md` for the proxy route.
 
 ## One front door

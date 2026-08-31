@@ -2,6 +2,8 @@ package server
 
 import (
 	"context"
+	"errors"
+	"io"
 	"net"
 	"net/http"
 	"strconv"
@@ -61,11 +63,16 @@ func (h *handler) attachTCPTunnelHTTP(w http.ResponseWriter, r *http.Request) {
 	pumpTCPToFrames(conn, wsNetConn)
 }
 
-// pumpTCPToFrames blocks until either side is done. The websocket side is
-// read in one goroutine (Input/CloseInput -> the TCP conn) while this
-// goroutine reads the TCP conn and writes Stdout frames; a TCP conn read EOF
-// ends the tunnel outright, since a TCP pipe has no exit code to report and
-// therefore no Exit frame to send.
+// pumpTCPToFrames blocks until both sides are done. The websocket side is read
+// in one goroutine (Input/CloseInput -> the TCP conn) while this goroutine
+// reads the TCP conn and writes Stdout frames.
+//
+// Each direction ends on its own. A TCP conn read EOF means the target is done
+// sending and says so with CloseOutput, the mirror of the CloseInput the client
+// sends when it is done sending; the tunnel closes when the *websocket* side
+// ends, because until then the client may still be sending data the target can
+// still receive. Ending the whole tunnel on the target's EOF — which is what
+// this did — cuts off exactly that.
 func pumpTCPToFrames(tcpConn net.Conn, wsConn net.Conn) {
 	done := make(chan struct{})
 	go func() {
@@ -101,9 +108,18 @@ func pumpTCPToFrames(tcpConn net.Conn, wsConn net.Conn) {
 			}
 		}
 		if err != nil {
+			if errors.Is(err, io.EOF) {
+				// Half-close, not a close: the client is told the target is
+				// finished, and goes on sending until it is finished too.
+				_ = frame.Write(wsConn, frame.CloseOutput, nil)
+			} else {
+				// A read that failed is not a read that ended. Saying so
+				// beats a silent close the client can only guess at.
+				_ = frame.Write(wsConn, frame.Error, []byte(err.Error()))
+			}
 			break
 		}
 	}
-	_ = wsConn.Close()
 	<-done
+	_ = wsConn.Close()
 }

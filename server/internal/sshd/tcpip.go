@@ -4,8 +4,10 @@ import (
 	"context"
 	"errors"
 	"io"
+	"log/slog"
 	"net/url"
 	"strconv"
+	"strings"
 
 	"golang.org/x/crypto/ssh"
 
@@ -61,7 +63,7 @@ func (s *Server) handleDirectTCPIPChannel(ctx context.Context, newChannel ssh.Ne
 	}
 	go ssh.DiscardRequests(requests)
 
-	go pumpDirectTCPIP(channel, conn, lease)
+	go pumpDirectTCPIP(channel, conn, lease, s.logger)
 }
 
 // dialTCPTunnel opens the attach websocket for a direct-tcpip channel against
@@ -81,10 +83,16 @@ func dialTCPTunnel(ctx context.Context, lease *transport.HTTPClientLease, sandbo
 }
 
 // pumpDirectTCPIP bridges the SSH channel and the tunnel's attach connection
-// until either side closes, then releases lease. A TCP pipe has no exit code,
-// so unlike the session-channel pump there is no Exit frame to wait for —
-// either side ending the byte stream ends the tunnel.
-func pumpDirectTCPIP(channel ssh.Channel, conn *frameConn, lease *transport.HTTPClientLease) {
+// until both sides are done, then releases lease. A TCP pipe has no exit code,
+// so unlike the session-channel pump there is no Exit frame to wait for.
+//
+// Each direction ends on its own, because a forwarded connection's two halves
+// do. The client saying it is done sending becomes CloseInput; the target
+// saying so arrives as CloseOutput and becomes the SSH channel's EOF, leaving
+// the other half open (ADR 0024 §4). Only the attach connection ending closes
+// the channel, and it has to: once it is gone nothing can be delivered either
+// way, and closing is also what unblocks the reader below.
+func pumpDirectTCPIP(channel ssh.Channel, conn *frameConn, lease *transport.HTTPClientLease, logger *slog.Logger) {
 	defer lease.Release()
 	defer conn.Close()
 	defer channel.Close()
@@ -107,15 +115,26 @@ func pumpDirectTCPIP(channel ssh.Channel, conn *frameConn, lease *transport.HTTP
 		}
 	}()
 
+readLoop:
 	for {
 		f, err := conn.ReadFrame()
 		if err != nil {
-			return
+			break readLoop
 		}
-		if f.Type == frame.Stdout {
+		switch f.Type {
+		case frame.Stdout:
 			if _, err := channel.Write(f.Payload); err != nil {
-				return
+				break readLoop
 			}
+		case frame.CloseOutput:
+			// The target is done sending and may still be receiving: EOF on
+			// this half of the channel, and the other half stays open.
+			_ = channel.CloseWrite()
+		case frame.Error:
+			// Not the client's to see — an SSH channel carries no error for a
+			// forwarded connection — but a tunnel that failed inside the
+			// sandbox must not look like one that simply ended.
+			logger.Warn("ssh direct-tcpip tunnel failed", "error", strings.TrimSpace(string(f.Payload)))
 		}
 	}
 }
