@@ -13,6 +13,9 @@ import (
 //
 // They are held as 256-color indices rather than as lipgloss colors because
 // highlight() has to write the background escape itself; see the comment there.
+// Every index here is 16 or above, where the 256-color cube is fixed. Indices
+// below that are whatever the user's theme has redefined them to, so nothing
+// that has to be a particular color can be named with one — see colMark.
 const (
 	colSalmon = "216" // the diffstat's minus side
 	colGreen  = "120"
@@ -30,7 +33,16 @@ const (
 	// The mark's own purple, which is what the box round the window is drawn
 	// in: the window is framed in the color it is branded in rather than in a
 	// third accent.
-	colMark = "13"
+	//
+	// It is a hex rather than an index because it has to be that specific
+	// color. This was "13" — bright magenta — which lives in the range every
+	// terminal theme redefines, so the frame came out Solarized's violet or
+	// Gruvbox's purple beside a mark that is drawn in this exact value, and the
+	// two never matched. lipgloss downsamples the hex to whatever the terminal
+	// can show, which lands on the nearest real color rather than an arbitrary
+	// one. Keep it in step with the lit side of the mark in
+	// scripts/logo-cells.mjs.
+	colMark = "#f45cff"
 	colWarn = "214"
 	colErr  = "196"
 	colOK   = "83"
@@ -104,11 +116,11 @@ type styles struct {
 func newStyles(color bool) *styles {
 	// Without color every style is the identity, so nothing has to check the
 	// profile before rendering: what a plain terminal gets is the text.
-	paint := func(index string) lipgloss.Style {
+	paint := func(spec string) lipgloss.Style {
 		if !color {
 			return lipgloss.NewStyle()
 		}
-		return lipgloss.NewStyle().Foreground(lipgloss.Color(index))
+		return lipgloss.NewStyle().Foreground(lipgloss.Color(spec))
 	}
 
 	s := &styles{color: color}
