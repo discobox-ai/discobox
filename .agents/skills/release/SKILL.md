@@ -1,7 +1,9 @@
 ---
 name: release
-description: Cut a discobox release — get main green, tag it, let the release workflow build it, and publish the Homebrew formula. Use when the user wants to tag, release, ship a version, or push a formula to the tap.
-allowed-tools: Bash, Read, Glob, Grep, AskUserQuestion
+description: Cut a discobox release — infer the next version, get main green, tag it, watch the release workflow, and publish the Homebrew formula. Use when the user wants to tag, release, ship a version, or push a formula to the tap.
+allowed-tools: Bash, Read, Glob, Grep, Edit, Write, AskUserQuestion
+metadata:
+  argument-hint: "[version-or-tag]"
 ---
 
 # Release
@@ -13,6 +15,45 @@ tag.
 The gate is a green CI run **on the exact commit being tagged**. A tag is
 public the moment it is pushed, and the release built from it cannot be
 un-published cleanly — so the order is: green, then tag. Never the reverse.
+
+## Running this
+
+Invoking the skill is authorization for the happy path end to end: fetching,
+pushing `main`, waiting on CI, fixing a CI failure whose remedy is clear,
+creating and pushing the tag, and watching the release workflow. Report
+progress in short updates; do not stop for routine confirmation.
+
+Stop and ask when:
+
+- CI fails in a way whose fix is ambiguous, broad, or risky;
+- `gh` auth or repository permissions block the flow;
+- the tag or its GitHub release already exists in a conflicting state;
+- the remedy would rewrite published history — a pushed tag included;
+- the version to cut is genuinely unclear after the rules below.
+
+The one thing never done without asking: **pushing the tag is the point of no
+return.** If the user did not name a version, say which one you inferred and
+why before you push it.
+
+## Which version
+
+If the user named one, use it, normalized to a leading `v`.
+
+Otherwise infer it from the tags this repository already has:
+
+```bash
+git fetch upstream --tags
+git tag -l 'v*' --sort=-v:refname | head -5
+```
+
+The scheme here is `v0.1.0-alpha.N` — **dotted**, unlike the `-alpha4` other
+repositories use. Ignore the `vm/vN` tags entirely: those version the VM guest
+image, not the CLI.
+
+- An alpha at the head → the next alpha: `v0.1.0-alpha.18` → `v0.1.0-alpha.19`.
+- A stable `vX.Y.Z` at the head → start the next cycle deliberately. Which
+  number comes next is a product decision, not an arithmetic one; ask.
+- Nothing to go on → ask rather than invent a base.
 
 ## Remotes
 
@@ -111,17 +152,28 @@ real launch failure that only Windows exposed.
 ## 3. Tag the commit CI verified
 
 Check what CI actually ran against. Local `main` may have moved on while the
-run was going:
+run was going, and the commit being tagged must be one that is on upstream
+`main`:
 
 ```bash
 git fetch upstream
+git rev-parse HEAD upstream/main         # the release commit is on main
 git log --oneline upstream/main..HEAD    # anything here has NOT been through CI
 ```
+
+Then read what is going out, against the last tag in the same family:
+
+```bash
+git log --oneline v0.1.0-alpha.18..HEAD
+```
+
+Say how many commits that is and what is notable in them before tagging. It is
+the last moment anyone can notice that a release is carrying something it
+should not.
 
 Tag the green commit explicitly — do not assume `HEAD`:
 
 ```bash
-git tag -l 'v0.1.0-alpha.*' --sort=-v:refname | head -1   # the current alpha
 git tag -a v0.1.0-alpha.N -m "v0.1.0-alpha.N" <green-commit>
 git push upstream v0.1.0-alpha.N
 ```
@@ -138,10 +190,23 @@ creates the GitHub release and uploads `build/release/bin`.
 
 ```bash
 gh run list --repo discobox-ai/discobox --workflow release.yml --limit 1
+gh run watch <run-id> --repo discobox-ai/discobox --exit-status
 ```
 
-Wait for it to complete. The next step downloads the assets it uploads, so
-running early just fails.
+Wait for it to complete rather than polling; `binaries` has a darwin leg, so
+this is another 20-plus-minute wait. The next step downloads the assets it
+uploads, so running early just fails.
+
+Do not write the release notes by hand. `release:publish` creates the release
+with `--generate-notes`, and marks it `--prerelease` for anything that is not
+exactly `vMAJOR.MINOR.PATCH` — the same test `release:image` uses to decide
+whether `:latest` moves, so the release object and the image tags cannot
+disagree about what a tag is. Confirm the result rather than reproducing it:
+
+```bash
+gh release view v0.1.0-alpha.N --repo discobox-ai/discobox \
+  --json isPrerelease,assets -q '"prerelease=\(.isPrerelease) assets=\(.assets|length)"'
+```
 
 Every step is a Taskfile target that also runs locally (ADR 0066 §1):
 `release:build`, `release:images`, `release:publish`.
