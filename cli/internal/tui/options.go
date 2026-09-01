@@ -568,21 +568,35 @@ func (o *optionSet) request(prompt string) RunRequest {
 // anything. Env and secrets are counts, and a count of none is not worth a
 // word.
 func (o *optionSet) chips(st *styles) string {
+	return o.renderChips(st, true)
+}
+
+// mutedChips is the same resolved run summary after focus has left the
+// composer. Every glyph uses the muted style so the line recedes as one unit.
+func (o *optionSet) mutedChips(st *styles) string {
+	return o.renderChips(st, false)
+}
+
+func (o *optionSet) renderChips(st *styles, focused bool) string {
 	parts := []string{}
 	add := func(text string) {
-		parts = append(parts, st.chipOn.Render(text))
+		style := st.chipOn
+		if !focused {
+			style = st.chip
+		}
+		parts = append(parts, style.Render(text))
 	}
 
-	// Only when it is not the harness that would have run anyway. The strip
-	// named the default like a choice that had been made, which is both a line
-	// you stop reading and a claim the window is not entitled to make: an
-	// unset harness emits no `--harness` at all, and what an unset one resolves
-	// to is the server's to decide at create — from the project default as it
-	// is then, not as this listing last saw it.
-	if harness := o.opts[optHarness]; harness.changed() {
-		if harness.display() != "" {
-			add(harness.display())
+	// The harness is always visible because it is the most consequential part
+	// of what Enter will run. The resolved project default stays muted; an
+	// explicit override uses gold like the other changed options.
+	harness := o.opts[optHarness]
+	if harness.display() != "" {
+		style := st.chip
+		if focused && harness.changed() {
+			style = st.chipOn
 		}
+		parts = append(parts, style.Render(harness.display()))
 	}
 
 	// Only the answers that were given. Auto is what the option already does,
@@ -622,7 +636,11 @@ func (o *optionSet) chips(st *styles) string {
 	if len(parts) == 0 {
 		return ""
 	}
-	return st.chipOn.Render("⏵⏵ ") + strings.Join(parts, st.chip.Render(" · "))
+	marker, separator := st.chip, st.chip
+	if focused && harness.changed() {
+		marker = st.chipOn
+	}
+	return marker.Render("⏵⏵ ") + strings.Join(parts, separator.Render(" · "))
 }
 
 // command renders the `discobox run` invocation the current options describe. It

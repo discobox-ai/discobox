@@ -5,16 +5,13 @@ import (
 	"testing"
 )
 
-// The chip strip names the answers that were given, and an unset harness is not
-// one of them. It used to name the project default as though it had been
-// chosen, which is a claim the window is not entitled to make: an unset harness
-// emits no --harness at all, and what it resolves to is settled at create.
-func TestTheChipStripIsSilentAboutAnUnsetHarness(t *testing.T) {
+// The chip strip always names the resolved harness.
+func TestTheChipStripAlwaysNamesTheResolvedHarness(t *testing.T) {
 	m := newTestModel(t, newFakeSource())
 	st := newStyles(false)
 
-	if chips := m.opts.chips(st); strings.Contains(chips, "claude") {
-		t.Fatalf("chips = %q, want nothing about a harness nobody chose", chips)
+	if chips := m.opts.chips(st); !strings.Contains(chips, "claude") {
+		t.Fatalf("chips = %q, want the resolved default harness", chips)
 	}
 
 	// Choosing one is exactly when it earns its place on the strip.
@@ -22,6 +19,52 @@ func TestTheChipStripIsSilentAboutAnUnsetHarness(t *testing.T) {
 	chosen := m.opts.opts[optHarness].display()
 	if chips := m.opts.chips(st); !strings.Contains(chips, chosen) {
 		t.Fatalf("chips = %q, want the harness that was chosen (%q)", chips, chosen)
+	}
+}
+
+func TestShiftTabCyclesTheHarnessWithoutOpeningOptions(t *testing.T) {
+	m := newTestModel(t, newFakeSource())
+	before := m.opts.opts[optHarness].display()
+
+	send(t, m, key("shift+tab"))
+
+	if m.optionsOpen {
+		t.Fatal("shift+tab should not open the run options")
+	}
+	if after := m.opts.opts[optHarness].display(); after == before {
+		t.Fatalf("harness = %q, want a choice after %q", after, before)
+	}
+}
+
+func TestHarnessChipAndMarkerAreMutedForDefaultAndGoldForOverride(t *testing.T) {
+	m := newTestModel(t, newFakeSource())
+	st := newStyles(true)
+	harness := m.opts.opts[optHarness]
+
+	if chips := m.opts.chips(st); !strings.Contains(chips, st.chip.Render(harness.display())) ||
+		!strings.Contains(chips, st.chip.Render("⏵⏵ ")) {
+		t.Fatalf("default chips = %q, want a muted marker and %q", chips, harness.display())
+	}
+	harness.cycle(1)
+	if chips := m.opts.chips(st); !strings.Contains(chips, st.chipOn.Render(harness.display())) ||
+		!strings.Contains(chips, st.chipOn.Render("⏵⏵ ")) {
+		t.Fatalf("override chips = %q, want a gold marker and %q", chips, harness.display())
+	}
+}
+
+func TestHarnessChipStripIsEntirelyMutedWithoutPromptFocus(t *testing.T) {
+	m := newTestModel(t, newFakeSource())
+	st := newStyles(true)
+	m.opts.opts[optDetach].value = "on"
+
+	chips := m.opts.mutedChips(st)
+	for _, want := range []string{"⏵⏵ ", "claude", " · ", "detached"} {
+		if !strings.Contains(chips, st.chip.Render(want)) {
+			t.Fatalf("muted chips = %q, want muted %q", chips, want)
+		}
+	}
+	if strings.Contains(chips, st.chipOn.Render("⏵⏵ ")) || strings.Contains(chips, st.chipOn.Render("claude")) {
+		t.Fatalf("muted chips retain an active color: %q", chips)
 	}
 }
 
@@ -53,19 +96,19 @@ func TestWithNoProjectDefaultNoHarnessIsClaimed(t *testing.T) {
 	if m.opts.request("").Harness != "" {
 		t.Fatal("an unset harness must emit no --harness")
 	}
-	if chips := m.opts.chips(newStyles(false)); strings.Contains(chips, unsetHarness) {
-		t.Fatalf("chips = %q, want nothing for an unset harness", chips)
+	if chips := m.opts.chips(newStyles(false)); !strings.Contains(chips, unsetHarness) {
+		t.Fatalf("chips = %q, want the unresolved harness state", chips)
 	}
 }
 
-// With nothing chosen the strip has nothing to introduce, so it is not there at
-// all. The marker on its own is one more thing on screen that never changes.
-func TestTheChipStripIsEmptyUntilSomethingIsChosen(t *testing.T) {
+// The strip exists even before an override because the resolved harness is
+// always useful context for the prompt.
+func TestTheChipStripStartsWithTheHarness(t *testing.T) {
 	m := newTestModel(t, newFakeSource())
 	st := newStyles(false)
 
-	if chips := m.opts.chips(st); chips != "" {
-		t.Fatalf("chips = %q, want an empty line when everything is default", chips)
+	if chips := m.opts.chips(st); !strings.Contains(chips, "⏵⏵") || !strings.Contains(chips, "claude") {
+		t.Fatalf("chips = %q, want the default harness", chips)
 	}
 
 	m.opts.opts[optDetach].value = "on"

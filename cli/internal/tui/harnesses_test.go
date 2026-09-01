@@ -277,9 +277,9 @@ func TestHarnessChoicesFollowTheListing(t *testing.T) {
 // reached, and the row's own hint says so.
 func TestEnterOnTheHarnessRowChangesTheChoice(t *testing.T) {
 	m := newTestModel(t, newFakeSource())
-	send(t, m, key("shift+tab"))
+	send(t, m, key("ctrl+o"))
 	if !m.optionsOpen {
-		t.Fatal("Shift-Tab should open the run options")
+		t.Fatal("Ctrl-O should open the run options")
 	}
 	before := m.opts.opts[optHarness].display()
 

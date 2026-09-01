@@ -962,8 +962,8 @@ func (m *Model) promptEdited(msg editorDoneMsg) {
 }
 
 // updatePrompt handles the default mode. Every key is text, except the ones
-// that leave: Up walks out of the top of the field, Enter launches, and Tab
-// opens the options.
+// that leave or act on the composer: Up walks out of the top of the field,
+// Enter launches, Tab moves to the list, and Shift-Tab cycles the harness.
 func (m *Model) updatePrompt(msg tea.KeyPressMsg) tea.Cmd {
 	switch keyName(msg) {
 	case "up":
@@ -1002,11 +1002,15 @@ func (m *Model) updatePrompt(msg tea.KeyPressMsg) tea.Cmd {
 
 	case "tab":
 		// Tab is the one key that moves between the halves of the window, in
-		// both directions. The options are a layer over it, on Shift-Tab.
+		// both directions.
 		m.leavePrompt(landFirst)
 		return nil
 
-	case "shift+tab", "ctrl+o":
+	case "shift+tab":
+		m.opts.opts[optHarness].cycle(1)
+		return nil
+
+	case "ctrl+o":
 		m.optionsOpen = true
 		return nil
 
@@ -2367,7 +2371,11 @@ func (m *Model) viewComposer(width int) string {
 	// the border and they read as the box broken in half rather than as a
 	// separator inside it.
 	rule := "  " + ruleStyle.Render(strings.Repeat("─", max(width-4, 1)))
-	mode := padANSI("  "+m.opts.chips(m.st), width)
+	chips := m.opts.chips(m.st)
+	if m.focus != focusPrompt {
+		chips = m.opts.mutedChips(m.st)
+	}
+	mode := padANSI("  "+chips, width)
 	return lipgloss.JoinVertical(lipgloss.Left,
 		m.viewLabel(width), padANSI(rule, width), m.prompt.View(), padANSI(rule, width), mode)
 }
@@ -2615,7 +2623,7 @@ func (m *Model) hints() string {
 		if m.prompt.Value() != "" {
 			out = "Tab discoboxes"
 		}
-		return out + " · Shift-Tab options · Alt-E editor · Ctrl-Enter newline · Ctrl-D quit"
+		return out + " · Shift-Tab harness · Ctrl-O options · Alt-E editor · Ctrl-Enter newline · Ctrl-D quit"
 	}
 }
 
@@ -2652,7 +2660,8 @@ func (m *Model) helpText() string {
 		"    Alt-E or F2    write the prompt in $EDITOR",
 		"    Tab            round the window: the prompt, the discoboxes, the",
 		"                   folder they are filtered to, and back",
-		"    Shift-Tab      run options",
+		"    Shift-Tab      switch the harness",
+		"    Ctrl-O         run options",
 		"    " + HarnessesKeyName + "             the harnesses, and back",
 		"    " + SecretsKeyName + "             the project's secrets: what stands on each, what is",
 		"                   waiting on you, and the credential a request is",
@@ -2974,7 +2983,7 @@ func (m *Model) helpText() string {
 		"  without ever being set up — and the default leads the list.",
 		"",
 		"───────────────────────────────────────────────────────────────",
-		"Run options (Shift-Tab)",
+		"Run options (Ctrl-O)",
 		"",
 		"    ↑ ↓            move            ← →   change the value",
 		"    Enter          edit a text option, or add an env / secret",

@@ -164,7 +164,7 @@ func TestHintsOfferOnlyWhatApplies(t *testing.T) {
 func TestOptionsPanelShowsTheCommandItDescribes(t *testing.T) {
 	m := newTestModel(t, newFakeSource())
 	send(t, m, typeString("fix the reaper")...)
-	send(t, m, key("shift+tab"))
+	send(t, m, key("ctrl+o"))
 
 	// Harness -> codex, uncommitted changes -> include, detach on.
 	send(t, m, key("right"), key("down"), key("right"), key("down"), key("right"))

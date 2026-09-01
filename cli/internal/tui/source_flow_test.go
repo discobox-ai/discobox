@@ -5,15 +5,15 @@ import (
 	"testing"
 )
 
-// Shift-Tab opens the options, the Source row cycles in place, and Enter opens
+// Ctrl-O opens the options, the Source row cycles in place, and Enter opens
 // the whole list — the same two affordances the header's folder filter has,
 // because they are the same control.
 func TestTheSourceRowCyclesAndOpensItsList(t *testing.T) {
 	m := newTestModel(t, newFakeSource(testSandboxes()...))
 
-	send(t, m, key("shift+tab"))
+	send(t, m, key("ctrl+o"))
 	if !m.optionsOpen {
-		t.Fatal("shift+tab should open the run options")
+		t.Fatal("ctrl+o should open the run options")
 	}
 	for m.opts.cursor != optSource {
 		send(t, m, key("down"))
@@ -65,7 +65,7 @@ func dialogLabels(d *dialog) []string {
 func TestTheSourceDropdownTakesAPathOfYourOwn(t *testing.T) {
 	m := newTestModel(t, newFakeSource(testSandboxes()...))
 
-	send(t, m, key("shift+tab"))
+	send(t, m, key("ctrl+o"))
 	for m.opts.cursor != optSource {
 		send(t, m, key("down"))
 	}
