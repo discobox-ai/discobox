@@ -3,14 +3,22 @@ package cli
 import (
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 )
 
 // wslTestWindowsTools puts the Windows programs the bridge shells out to on
 // PATH: mirroring a key now sets its ACL, and that is icacls' job.
+//
+// Like fakeWSLMachine, it is a set of shell scripts, and the bridge it stands
+// up only ever runs from inside a distribution: there is no WSL half on a
+// native Windows host, which cannot execute the fakes either.
 func wslTestWindowsTools(t *testing.T) string {
 	t.Helper()
+	if runtime.GOOS == "windows" {
+		t.Skip("the fakes are shell scripts, and the bridge runs from the Linux side")
+	}
 	dir := t.TempDir()
 	fakeWindowsTools(t, dir, false)
 	t.Setenv("PATH", dir+string(os.PathListSeparator)+os.Getenv("PATH"))
