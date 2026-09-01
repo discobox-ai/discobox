@@ -115,6 +115,9 @@ func (db *DB) Migrate(ctx context.Context) error {
 	if err := dropSandboxResourceRequestColumns(write); err != nil {
 		return err
 	}
+	if err := dropProjectEvents(write); err != nil {
+		return err
+	}
 	return migrateSandboxStateSplit(write)
 }
 
@@ -498,6 +501,23 @@ func dropSandboxResourceRequestColumns(db *gorm.DB) error {
 		}
 	}
 	return nil
+}
+
+// dropProjectEvents removes the retired project_events table (ADR 0081).
+//
+// AutoMigrate never drops a table, so a database created before the model was
+// retired keeps the rows and their six indexes, and goes on paying for neither.
+// The history is discarded rather than migrated anywhere: nothing has read it
+// since ADR 0061 removed the stream, and no reader was ever built for it.
+//
+// A plain drop needs no foreign-key dance. project_events references projects,
+// but nothing references project_events, so there is no row elsewhere whose
+// constraint the drop could break.
+func dropProjectEvents(db *gorm.DB) error {
+	if !db.Migrator().HasTable("project_events") {
+		return nil
+	}
+	return db.Migrator().DropTable("project_events")
 }
 
 // dropRetiredColumn removes a column that is no longer part of a model.

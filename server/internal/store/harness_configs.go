@@ -22,13 +22,11 @@ func (s *Store) ListHarnessConfigs(ctx context.Context, projectID string) ([]mod
 }
 
 func (s *Store) CreateHarnessConfig(ctx context.Context, config *model.HarnessConfig) error {
-	_, err := withResourceEvent(ctx, s, model.EventActionCreated, func(tx *gorm.DB) (*model.HarnessConfig, error) {
-		if err := tx.Create(config).Error; err != nil {
-			return nil, err
-		}
-		return config, nil
-	})
-	return err
+	write, err := s.getWrite(ctx)
+	if err != nil {
+		return err
+	}
+	return write.Create(config).Error
 }
 
 func (s *Store) GetHarnessConfig(ctx context.Context, projectID, configID string) (*model.HarnessConfig, error) {
@@ -74,41 +72,35 @@ func (s *Store) GetHarnessConfigBySlug(ctx context.Context, projectID, slug stri
 }
 
 func (s *Store) UpdateHarnessConfig(ctx context.Context, config *model.HarnessConfig) error {
-	_, err := withResourceEvent(ctx, s, model.EventActionUpdated, func(tx *gorm.DB) (*model.HarnessConfig, error) {
-		if err := tx.Save(config).Error; err != nil {
-			return nil, err
-		}
-		return config, nil
-	})
-	return err
+	write, err := s.getWrite(ctx)
+	if err != nil {
+		return err
+	}
+	return write.Save(config).Error
 }
 
 func (s *Store) DeleteHarnessConfig(ctx context.Context, projectID, configID string) error {
-	_, err := withResourceEvent(ctx, s, model.EventActionDeleted, func(tx *gorm.DB) (*model.HarnessConfig, error) {
+	return s.Transaction(ctx, func(_ *Store, tx *gorm.DB) error {
 		config, err := firstByID[model.HarnessConfig](tx.Where("project_id = ?", projectID), "id", configID)
 		if err != nil {
-			return nil, err
+			return err
 		}
 		if err := tx.Model(&model.Project{}).
 			Where("id = ? AND default_harness_config_id = ?", projectID, configID).
 			Update("default_harness_config_id", "").Error; err != nil {
-			return nil, err
+			return err
 		}
 		if err := s.deleteHarnessConfigSecretBindingsByHarnessConfig(tx, configID); err != nil {
-			return nil, err
+			return err
 		}
 		// A live sandbox still using the config blocks deletion with a clear error.
 		var liveRefs int64
 		if err := tx.Model(&model.Sandbox{}).Where("harness_config_id = ?", configID).Count(&liveRefs).Error; err != nil {
-			return nil, err
+			return err
 		}
 		if liveRefs > 0 {
-			return nil, ErrInUse
+			return ErrInUse
 		}
-		if err := tx.Delete(config).Error; err != nil {
-			return nil, err
-		}
-		return config, nil
+		return tx.Delete(config).Error
 	})
-	return err
 }

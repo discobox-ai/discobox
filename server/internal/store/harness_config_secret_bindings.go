@@ -2,7 +2,6 @@ package store
 
 import (
 	"context"
-	"errors"
 
 	"gorm.io/gorm"
 	"gorm.io/gorm/clause"
@@ -13,21 +12,19 @@ import (
 // UpsertHarnessConfigSecretBinding creates or replaces the binding for a harness
 // config's environment variable.
 func (s *Store) UpsertHarnessConfigSecretBinding(ctx context.Context, binding *model.HarnessConfigSecretBinding) error {
-	_, err := withResourceEvent(ctx, s, model.EventActionUpdated, func(tx *gorm.DB) (*model.HarnessConfigSecretBinding, error) {
-		if binding.ID == "" {
-			if err := binding.BeforeCreate(nil); err != nil {
-				return nil, err
-			}
+	write, err := s.getWrite(ctx)
+	if err != nil {
+		return err
+	}
+	if binding.ID == "" {
+		if err := binding.BeforeCreate(nil); err != nil {
+			return err
 		}
-		if err := tx.Clauses(clause.OnConflict{
-			Columns:   []clause.Column{{Name: "harness_config_id"}, {Name: "env_name"}},
-			DoUpdates: clause.AssignmentColumns([]string{"secret_id", "updated_at"}),
-		}).Create(binding).Error; err != nil {
-			return nil, err
-		}
-		return binding, nil
-	})
-	return err
+	}
+	return write.Clauses(clause.OnConflict{
+		Columns:   []clause.Column{{Name: "harness_config_id"}, {Name: "env_name"}},
+		DoUpdates: clause.AssignmentColumns([]string{"secret_id", "updated_at"}),
+	}).Create(binding).Error
 }
 
 // ListHarnessConfigSecretBindings returns a harness config's secret bindings.
@@ -45,21 +42,19 @@ func (s *Store) ListHarnessConfigSecretBindings(ctx context.Context, projectID, 
 // DeleteHarnessConfigSecretBinding removes the binding for a harness config's
 // environment variable.
 func (s *Store) DeleteHarnessConfigSecretBinding(ctx context.Context, projectID, harnessConfigID, envName string) error {
-	_, err := withResourceEvent(ctx, s, model.EventActionDeleted, func(tx *gorm.DB) (*model.HarnessConfigSecretBinding, error) {
-		var binding model.HarnessConfigSecretBinding
-		if err := tx.Where("project_id = ? AND harness_config_id = ? AND env_name = ?", projectID, harnessConfigID, envName).
-			First(&binding).Error; err != nil {
-			if errors.Is(err, gorm.ErrRecordNotFound) {
-				return nil, ErrNotFound
-			}
-			return nil, err
-		}
-		if err := tx.Delete(&binding).Error; err != nil {
-			return nil, err
-		}
-		return &binding, nil
-	})
-	return err
+	write, err := s.getWrite(ctx)
+	if err != nil {
+		return err
+	}
+	result := write.Where("project_id = ? AND harness_config_id = ? AND env_name = ?", projectID, harnessConfigID, envName).
+		Delete(&model.HarnessConfigSecretBinding{})
+	if result.Error != nil {
+		return result.Error
+	}
+	if result.RowsAffected == 0 {
+		return ErrNotFound
+	}
+	return nil
 }
 
 // deleteHarnessConfigSecretBindingsBySecret removes every binding that references a

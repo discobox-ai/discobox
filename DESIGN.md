@@ -6,8 +6,8 @@ The server stores desired resource intent and reconciles actual sandbox runtime
 state through sandbox providers. Providers own runtime-specific mechanics and
 report or expose observed runtime state back to the server.
 
-Accepted intent changes are persisted with project events and durable reconcile
-jobs in one transaction. Reconcile jobs target one resource generation and are
+Accepted intent changes are persisted with their durable reconcile jobs in one
+transaction. Reconcile jobs target one resource generation and are
 canceled when superseded by newer intent.
 
 ## High-Level System Design

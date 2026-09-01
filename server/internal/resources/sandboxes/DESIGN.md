@@ -53,8 +53,8 @@ flowchart LR
 
 `start`, `stop`, and `restart` are instructions forwarded to the pool agent
 (`power.go`). They write no lifecycle state and bump no generation, and their
-responses carry no state — a caller learns the outcome from the project event
-the agent's report produces. `DesiredState` answers existence only: `present`,
+responses carry no state — a caller learns the outcome by re-reading the sandbox
+once the agent's report has landed. `DesiredState` answers existence only: `present`,
 `archived`, or `deleted`. Start, stop, and restart are refused with 409 on an
 archived sandbox — it has no container to power.
 
@@ -69,17 +69,20 @@ It waits for a sandbox that is still being provisioned instead of refusing it,
 which is what lets a client create a sandbox and attach to it in the next call
 rather than polling for readiness (ADR 0039 tier 1).
 
-- The wait is event-driven. It subscribes to the project's event fanout before
-  its first attempt, so the transition that opens the gate cannot land in the
-  window between a failed acquire and the subscription. Only events about this
-  sandbox or the pool hosting it count. A slow re-check runs underneath as a
-  backstop, because the broker drops events into a subscriber that is not
-  reading and a dropped wake-up would otherwise cost the whole budget; it does
-  not count as progress.
+- The wait polls, because what it waits on is a row (ADR 0081). Every pass
+  re-reads authoritative state and asks again, so the transition that opens the
+  gate has no window to land in unseen.
+- Its stall budget is restarted by `provisioningMark`: the gate (the sandbox's
+  lifecycle state and convergence, its runtime state, the pool's state and
+  readiness) plus the counters that tick while a long provision proceeds (the
+  sandbox's pull progress, the pool's own provisioning and image staging). It is
+  deliberately not the rows' `updated_at` — the pool's status heartbeat and the
+  complete sync's restamp move that on a timer, and a budget they refreshed
+  could never expire.
 - Three refusals are "not yet": no runtime state naming a pool, a pool that is
   not taking traffic, and a sandbox that is reachable but not usable yet. Every
   other refusal is an answer and is returned immediately, as is any refusal for
-  a sandbox that is failed, archived, or on its way out — no event will clear
+  a sandbox that is failed, archived, or on its way out — no write will clear
   those.
 - Reachable is not usable, and the gap is push-delivered source. Such a sandbox
   has a container — and so a runtime state naming its pool — from the moment it

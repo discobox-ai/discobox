@@ -10,7 +10,6 @@ import (
 	"github.com/discobox-ai/discobox/endpoint"
 	poolagentauth "github.com/discobox-ai/discobox/server/internal/auth/poolagent"
 	sandboxauth "github.com/discobox-ai/discobox/server/internal/auth/sandbox"
-	eventbroker "github.com/discobox-ai/discobox/server/internal/events"
 	"github.com/discobox-ai/discobox/server/internal/reconcile"
 	"github.com/discobox-ai/discobox/server/internal/resources/harnessconfigs"
 	resourcejobs "github.com/discobox-ai/discobox/server/internal/resources/jobs"
@@ -69,11 +68,7 @@ type Options struct {
 	ListenEndpoints []string
 }
 
-func New(store *store.Store, engine *reconcile.Engine, options Options, broker ...*eventbroker.Broker) *Service {
-	var b *eventbroker.Broker
-	if len(broker) > 0 {
-		b = broker[0]
-	}
+func New(store *store.Store, engine *reconcile.Engine, options Options) *Service {
 	if len(options.ListenEndpoints) == 0 {
 		options.ListenEndpoints = []string{endpoint.DefaultEndpoint()}
 	}
@@ -85,9 +80,6 @@ func New(store *store.Store, engine *reconcile.Engine, options Options, broker .
 		ListenEndpoints:      options.ListenEndpoints,
 	})
 	sandboxService := sandboxes.NewService(store, manager, DefaultUserID, engine, poolControlPlane)
-	// The same fanout the event stream is served from, so an attach can wait on
-	// a sandbox becoming reachable instead of polling for it (ADR 0039).
-	sandboxService.SetEventBroker(b)
 	providerService := providers.NewService(store, sandboxService, poolControlPlane)
 	poolService := pools.NewService(store, manager, poolControlPlane)
 	poolService.SetSandboxStateReporter(sandboxService)

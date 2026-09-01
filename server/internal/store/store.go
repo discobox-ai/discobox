@@ -8,7 +8,6 @@ import (
 	"gorm.io/gorm"
 
 	"github.com/discobox-ai/discobox/server/internal/apperrors"
-	"github.com/discobox-ai/discobox/server/internal/model"
 	"github.com/discobox-ai/discobox/server/internal/secrets"
 )
 
@@ -27,22 +26,10 @@ type Store struct {
 	txWrite *gorm.DB
 	txRead  *gorm.DB
 
-	publisher         EventPublisher
-	afterCommitEvents *[]model.ProjectEvent
-	sealer            secrets.Sealer
-}
-
-type EventPublisher interface {
-	PublishProjectEvent(ctx context.Context, event model.ProjectEvent)
+	sealer secrets.Sealer
 }
 
 type Option func(*Store)
-
-func WithPublisher(publisher EventPublisher) Option {
-	return func(s *Store) {
-		s.publisher = publisher
-	}
-}
 
 func WithSealer(sealer secrets.Sealer) Option {
 	return func(s *Store) {
@@ -99,18 +86,16 @@ func (s *Store) resolve(_ context.Context) (*gorm.DB, *gorm.DB, error) {
 	return s.write, read, nil
 }
 
-func (s *Store) withTx(write, read *gorm.DB, events *[]model.ProjectEvent) *Store {
+func (s *Store) withTx(write, read *gorm.DB) *Store {
 	if read == nil {
 		read = write
 	}
 	return &Store{
-		write:             s.write,
-		read:              s.read,
-		txWrite:           write,
-		txRead:            read,
-		publisher:         s.publisher,
-		afterCommitEvents: events,
-		sealer:            s.sealer,
+		write:   s.write,
+		read:    s.read,
+		txWrite: write,
+		txRead:  read,
+		sealer:  s.sealer,
 	}
 }
 

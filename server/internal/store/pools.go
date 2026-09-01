@@ -40,13 +40,11 @@ func (s *Store) ListPoolsForProviderInstance(ctx context.Context, projectID, pro
 }
 
 func (s *Store) CreatePool(ctx context.Context, pool *model.Pool) error {
-	_, err := withResourceEvent(ctx, s, model.EventActionCreated, func(tx *gorm.DB) (*model.Pool, error) {
-		if err := tx.Create(pool).Error; err != nil {
-			return nil, err
-		}
-		return pool, nil
-	})
-	return err
+	write, err := s.getWrite(ctx)
+	if err != nil {
+		return err
+	}
+	return write.Create(pool).Error
 }
 
 func (s *Store) GetPool(ctx context.Context, projectID, poolID string) (*model.Pool, error) {
@@ -70,13 +68,11 @@ func (s *Store) GetPoolByName(ctx context.Context, projectID, name string) (*mod
 }
 
 func (s *Store) UpdatePool(ctx context.Context, pool *model.Pool) error {
-	_, err := withResourceEvent(ctx, s, model.EventActionUpdated, func(tx *gorm.DB) (*model.Pool, error) {
-		if err := tx.Save(pool).Error; err != nil {
-			return nil, err
-		}
-		return pool, nil
-	})
-	return err
+	write, err := s.getWrite(ctx)
+	if err != nil {
+		return err
+	}
+	return write.Save(pool).Error
 }
 
 func (s *Store) DeletePool(ctx context.Context, projectID, poolID string) error {
@@ -88,13 +84,7 @@ func (s *Store) DeletePool(ctx context.Context, projectID, poolID string) error 
 	if err != nil {
 		return err
 	}
-	_, err = withResourceEvent(ctx, s, model.EventActionDeleted, func(tx *gorm.DB) (*model.Pool, error) {
-		if err := tx.Delete(pool).Error; err != nil {
-			return nil, err
-		}
-		return pool, nil
-	})
-	return err
+	return write.Delete(pool).Error
 }
 
 func (s *Store) CountSandboxesForPool(ctx context.Context, projectID, poolID string) (int64, error) {
@@ -149,20 +139,21 @@ func (s *Store) GetPoolByID(ctx context.Context, poolID string, options ...PoolG
 // UpdatePoolWithGeneration persists the pool only when its generation still
 // matches, so reconciler writes lose cleanly to newer intent.
 func (s *Store) UpdatePoolWithGeneration(ctx context.Context, pool *model.Pool, generation int64) error {
-	_, err := withResourceEvent(ctx, s, model.EventActionUpdated, func(tx *gorm.DB) (*model.Pool, error) {
-		result := tx.Model(&model.Pool{}).
-			Where("id = ? AND generation = ?", pool.ID, generation).
-			Select("*").
-			Updates(pool)
-		if result.Error != nil {
-			return nil, result.Error
-		}
-		if result.RowsAffected == 0 {
-			return nil, ErrGenerationConflict
-		}
-		return pool, nil
-	})
-	return err
+	write, err := s.getWrite(ctx)
+	if err != nil {
+		return err
+	}
+	result := write.Model(&model.Pool{}).
+		Where("id = ? AND generation = ?", pool.ID, generation).
+		Select("*").
+		Updates(pool)
+	if result.Error != nil {
+		return result.Error
+	}
+	if result.RowsAffected == 0 {
+		return ErrGenerationConflict
+	}
+	return nil
 }
 
 // ListPoolsNeedingReconcile returns ids of pools whose generations disagree. It
@@ -290,9 +281,9 @@ func (s *Store) UpdatePoolStatus(ctx context.Context, poolID string, ready, sche
 // driving that work is holding, and every other column on it belongs to
 // somebody else.
 //
-// No project event is published for it either. The client that wants this is
-// already reading the pool once a second, and an event per report would put a
-// byte counter on a stream every subscriber pays for.
+// Its readers poll: the client for its status line, and an attach waiting on a
+// sandbox hosted here, which reads the advancing timestamp as proof that a slow
+// host is still coming up rather than stalled (ADR 0081).
 func (s *Store) RecordPoolProvisionProgress(ctx context.Context, poolID string, progress json.RawMessage, observedAt time.Time) error {
 	write, err := s.getWrite(ctx)
 	if err != nil {

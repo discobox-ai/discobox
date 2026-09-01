@@ -17,7 +17,6 @@ import (
 	"github.com/moby/moby/client"
 
 	"github.com/discobox-ai/discobox/server/internal/database"
-	"github.com/discobox-ai/discobox/server/internal/events"
 	"github.com/discobox-ai/discobox/server/internal/model"
 	"github.com/discobox-ai/discobox/server/internal/service"
 	services "github.com/discobox-ai/discobox/server/internal/services"
@@ -62,10 +61,9 @@ func TestDockerProviderPoolCreateFlowE2E(t *testing.T) {
 		t.Fatalf("migrate db: %v", err)
 	}
 
-	broker := events.NewBroker()
-	appStore := store.New(db.Write, db.Read, store.WithPublisher(broker))
+	appStore := store.New(db.Write, db.Read)
 	engine := newTestReconcileEngine(t, db.Write)
-	svc := service.New(appStore, engine, service.Options{}, broker)
+	svc := service.New(appStore, engine, service.Options{})
 	project, err := svc.InitializeDefaults(ctx, service.DefaultUserID)
 	if err != nil {
 		t.Fatalf("initialize defaults: %v", err)

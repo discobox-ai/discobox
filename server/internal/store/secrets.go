@@ -68,13 +68,11 @@ func (s *Store) CreateSecret(ctx context.Context, secret *model.Secret) error {
 	if err != nil {
 		return err
 	}
-	_, err = withResourceEvent(ctx, s, model.EventActionCreated, func(tx *gorm.DB) (*model.Secret, error) {
-		if err := tx.Create(sealed).Error; err != nil {
-			return nil, err
-		}
-		return sealed, nil
-	})
+	write, err := s.getWrite(ctx)
 	if err != nil {
+		return err
+	}
+	if err := write.Create(sealed).Error; err != nil {
 		return err
 	}
 	*secret = *sealed
@@ -104,13 +102,11 @@ func (s *Store) UpdateSecret(ctx context.Context, secret *model.Secret) error {
 	if err != nil {
 		return err
 	}
-	_, err = withResourceEvent(ctx, s, model.EventActionUpdated, func(tx *gorm.DB) (*model.Secret, error) {
-		if err := tx.Save(sealed).Error; err != nil {
-			return nil, err
-		}
-		return sealed, nil
-	})
+	write, err := s.getWrite(ctx)
 	if err != nil {
+		return err
+	}
+	if err := write.Save(sealed).Error; err != nil {
 		return err
 	}
 	*secret = *sealed
@@ -127,53 +123,47 @@ func (s *Store) UpdateSecretValueIfUnchanged(ctx context.Context, secret *model.
 	if err != nil {
 		return err
 	}
-	_, err = withResourceEvent(ctx, s, model.EventActionUpdated, func(tx *gorm.DB) (*model.Secret, error) {
-		result := tx.Model(&model.Secret{}).
-			Where("project_id = ? AND id = ? AND updated_at = ?", sealed.ProjectID, sealed.ID, prevUpdatedAt).
-			Update("encrypted_value", sealed.EncryptedValue)
-		if result.Error != nil {
-			return nil, result.Error
-		}
-		if result.RowsAffected == 0 {
-			return nil, ErrGenerationConflict
-		}
-		return sealed, nil
-	})
+	write, err := s.getWrite(ctx)
 	if err != nil {
 		return err
+	}
+	result := write.Model(&model.Secret{}).
+		Where("project_id = ? AND id = ? AND updated_at = ?", sealed.ProjectID, sealed.ID, prevUpdatedAt).
+		Update("encrypted_value", sealed.EncryptedValue)
+	if result.Error != nil {
+		return result.Error
+	}
+	if result.RowsAffected == 0 {
+		return ErrGenerationConflict
 	}
 	*secret = *sealed
 	return nil
 }
 
 func (s *Store) DeleteSecret(ctx context.Context, projectID, secretID string) error {
-	_, err := withResourceEvent(ctx, s, model.EventActionDeleted, func(tx *gorm.DB) (*model.Secret, error) {
+	return s.Transaction(ctx, func(_ *Store, tx *gorm.DB) error {
 		sec, err := firstByID[model.Secret](tx.Where("project_id = ?", projectID), "id", secretID)
 		if err != nil {
-			return nil, err
+			return err
 		}
 		// Nullify the encrypted value before soft-deleting so ciphertext is not
 		// retained in the database even as a soft-deleted row.
 		if err := tx.Model(sec).Update("encrypted_value", nil).Error; err != nil {
-			return nil, err
+			return err
 		}
 		// Drop harness-config bindings, standing grants, and sandbox sentinel
 		// assignments that reference this secret so nothing dangles.
 		if err := s.deleteHarnessConfigSecretBindingsBySecret(tx, secretID); err != nil {
-			return nil, err
+			return err
 		}
 		if err := s.deleteSecretGrantsBySecret(tx, secretID); err != nil {
-			return nil, err
+			return err
 		}
 		if err := s.deleteSandboxSecretsBySecret(tx, secretID); err != nil {
-			return nil, err
+			return err
 		}
-		if err := tx.Delete(sec).Error; err != nil {
-			return nil, err
-		}
-		return sec, nil
+		return tx.Delete(sec).Error
 	})
-	return err
 }
 
 // MatchSecret finds the most specific secret for a project+type+host combination.
@@ -224,13 +214,11 @@ func (s *Store) MatchSecret(ctx context.Context, projectID, secretType, host str
 }
 
 func (s *Store) CreateSecretRequest(ctx context.Context, req *model.SecretRequest) error {
-	_, err := withResourceEvent(ctx, s, model.EventActionCreated, func(tx *gorm.DB) (*model.SecretRequest, error) {
-		if err := tx.Create(req).Error; err != nil {
-			return nil, err
-		}
-		return req, nil
-	})
-	return err
+	write, err := s.getWrite(ctx)
+	if err != nil {
+		return err
+	}
+	return write.Create(req).Error
 }
 
 // FindPendingSecretRequest returns the most recent pending secret request for a
@@ -311,18 +299,19 @@ func (s *Store) ListSecretRequests(ctx context.Context, projectID, status string
 // pending status. It returns ErrGenerationConflict if the request is no longer
 // pending (concurrent approve or deny beat this caller).
 func (s *Store) UpdateSecretRequestIfPending(ctx context.Context, req *model.SecretRequest) error {
-	_, err := withResourceEvent(ctx, s, model.EventActionUpdated, func(tx *gorm.DB) (*model.SecretRequest, error) {
-		result := tx.Model(&model.SecretRequest{}).
-			Where("project_id = ? AND id = ? AND status = ?", req.ProjectID, req.ID, model.SecretRequestStatusPending).
-			Select("*").
-			Updates(req)
-		if result.Error != nil {
-			return nil, result.Error
-		}
-		if result.RowsAffected == 0 {
-			return nil, ErrGenerationConflict
-		}
-		return req, nil
-	})
-	return err
+	write, err := s.getWrite(ctx)
+	if err != nil {
+		return err
+	}
+	result := write.Model(&model.SecretRequest{}).
+		Where("project_id = ? AND id = ? AND status = ?", req.ProjectID, req.ID, model.SecretRequestStatusPending).
+		Select("*").
+		Updates(req)
+	if result.Error != nil {
+		return result.Error
+	}
+	if result.RowsAffected == 0 {
+		return ErrGenerationConflict
+	}
+	return nil
 }

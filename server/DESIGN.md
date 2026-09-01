@@ -1,7 +1,7 @@
 # Server Module Design
 
 The server module is the Discobox control plane implementation. It owns HTTP
-composition, single-database persistence, project events, API-facing business logic,
+composition, single-database persistence, API-facing business logic,
 and durable reconciliation submission. Stable contracts and generated API types
 come from the root module. Provider contracts and implementations live in this
 module so providers can depend on server-owned persistence and manager contracts.
@@ -18,7 +18,6 @@ flowchart LR
     api --> service[internal/service]
     service --> resources["internal/resources/{resource}"]
     service --> store
-    service --> events[internal/events]
     service --> jobs[internal/resources/jobs]
     jobs --> orchestration[orchestration module]
     orchestration --> resources
@@ -29,7 +28,7 @@ flowchart LR
 Keep the server as the control plane:
 
 - Persist desired state before external runtime side effects.
-- Publish project events and submit durable reconcile jobs in the same intent
+- Persist resource state and submit durable reconcile jobs in the same intent
   transaction.
 - Run generation-scoped reconciliation; cancel stale jobs when newer intent
   supersedes them.
@@ -398,13 +397,10 @@ control plane records it as observed state: no desired state, no generation, no
 operation. A generation versions the spec, and nothing the runtime saw changes
 what was asked for.
 
-Recording is not the end of it: a report that actually changes a sandbox's state
-or error also publishes a project event, so clients watching the stream see a
-sandbox start rather than only learning about it by asking again. Unchanged
-reports publish nothing, since the complete sync repeats every sandbox on its
-interval. Provisioning progress arrives on the same channel in its own array and
-lands on `runtime.provisionProgress`, published the same way; it marks nothing
-dirty, because work in flight is not drift (ADR 0039).
+Provisioning progress arrives on the same channel in its own array and lands on
+`runtime.provisionProgress`. It marks nothing dirty, because work in flight is
+not drift, and an attach waiting on the sandbox reads it as the sign that a long
+provision is still moving (ADR 0039, ADR 0081).
 
 The stored blob is the client-facing shape, not the agent-facing one: the two
 are separate schemas because they are separate contracts, and the client-facing
@@ -443,8 +439,7 @@ See ADR 0017 §§9–10.
 | `internal/resources/providers` | Provider-instance API service behavior (backend identity only) and startup reconciliation. |
 | `internal/resources/secrets` | Secret CRUD, the request/grant approval lifecycle, sentinel resolution for the proxy, and the agent credentials broker (ADR 0031). |
 | `internal/database` | Database config, connection setup, and migrations. |
-| `internal/store` | Persistence methods, resource transactions, project events, and durable job records. |
-| `internal/events` | In-process project event broker for committed resource events. It has no client-facing transport: the events are lossy wake-ups for waits inside this process (ADR 0061). |
+| `internal/store` | Persistence methods, resource transactions, and durable job records. |
 | `internal/auth/sandbox` | Sandbox access issuer keys and worker/sandbox auth token helpers. |
 | `internal/secrets` | Encryption/sealing interfaces and implementations used by server persistence. |
 | `internal/config` | Server configuration loading. |

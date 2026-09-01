@@ -19,25 +19,21 @@ type GrantScope struct {
 }
 
 func (s *Store) CreateSecretGrant(ctx context.Context, grant *model.SecretGrant) error {
-	_, err := withResourceEvent(ctx, s, model.EventActionCreated, func(tx *gorm.DB) (*model.SecretGrant, error) {
-		if err := tx.Create(grant).Error; err != nil {
-			return nil, err
-		}
-		return grant, nil
-	})
-	return err
+	write, err := s.getWrite(ctx)
+	if err != nil {
+		return err
+	}
+	return write.Create(grant).Error
 }
 
 // UpdateSecretGrant saves changes to an existing grant in place, keeping its ID
 // so anything that references the grant stays valid.
 func (s *Store) UpdateSecretGrant(ctx context.Context, grant *model.SecretGrant) error {
-	_, err := withResourceEvent(ctx, s, model.EventActionUpdated, func(tx *gorm.DB) (*model.SecretGrant, error) {
-		if err := tx.Save(grant).Error; err != nil {
-			return nil, err
-		}
-		return grant, nil
-	})
-	return err
+	write, err := s.getWrite(ctx)
+	if err != nil {
+		return err
+	}
+	return write.Save(grant).Error
 }
 
 func (s *Store) GetSecretGrant(ctx context.Context, projectID, grantID string) (*model.SecretGrant, error) {
@@ -70,19 +66,16 @@ func (s *Store) deleteSecretGrantsBySecret(tx *gorm.DB, secretID string) error {
 	return tx.Where("secret_id = ?", secretID).Delete(&model.SecretGrant{}).Error
 }
 
-// DeleteSecretGrant revokes a grant.
+// DeleteSecretGrant revokes a grant. The lookup and the delete share a
+// transaction because grantID may be an ID prefix (firstByID).
 func (s *Store) DeleteSecretGrant(ctx context.Context, projectID, grantID string) error {
-	_, err := withResourceEvent(ctx, s, model.EventActionDeleted, func(tx *gorm.DB) (*model.SecretGrant, error) {
+	return s.Transaction(ctx, func(_ *Store, tx *gorm.DB) error {
 		grant, err := firstByID[model.SecretGrant](tx.Where("project_id = ?", projectID), "id", grantID)
 		if err != nil {
-			return nil, err
+			return err
 		}
-		if err := tx.Delete(grant).Error; err != nil {
-			return nil, err
-		}
-		return grant, nil
+		return tx.Delete(grant).Error
 	})
-	return err
 }
 
 // FindLiveGrant returns the most specific unexpired grant for a secret whose

@@ -14,7 +14,6 @@ flowchart LR
     authn[internal/auth] --> store
     store --> db[(GORM write/read handles)]
     store --> model[root model]
-    store --> events[internal/events publisher]
 ```
 
 - Accept database handles directly during construction.
@@ -24,26 +23,24 @@ flowchart LR
 
 ## Transaction Rules
 
-Intent changes must use store transactions when resource state, project events,
-and durable job records belong to one accepted command.
+Intent changes must use store transactions when resource state and durable job
+records belong to one accepted command.
 
 ```mermaid
 sequenceDiagram
     participant Service
     participant Store
     participant DB
-    participant Broker
 
     Service->>Store: WithTx / transaction helper
     Store->>DB: write resource state
-    Store->>DB: write project event
     Store->>DB: write durable job
     DB-->>Store: commit
-    Store->>Broker: publish after commit
 ```
 
-Publish live events only after the database commit succeeds. During a transaction,
-queue after-commit events instead of publishing immediately.
+A mutation that is a single statement does not need a transaction. Nothing is
+published on commit: a waiting caller re-reads the rows rather than being told
+(ADR 0081).
 
 ## Field Ownership on Whole-Row Writes
 

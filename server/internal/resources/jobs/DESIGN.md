@@ -26,8 +26,7 @@ flowchart LR
 - `ForceJob` pulls a scheduled or backed-off mark forward (`MarkDirty`), making
   it claimable immediately.
 - Terminal history is not served here: a reconcile's outcome lives on the
-  resource itself (`Phase`, `LastOperationStatus`, `ErrorMessage`) and in
-  project events.
+  resource itself (`Phase`, `LastOperationStatus`, `ErrorMessage`).
 - Lifecycle **intent** does not live here either: each resource package owns
   its intent writes (generation bump + operation + `MarkDirtyTx`, one
   transaction) — sandboxes in `resources/sandboxes/intents.go`, pools in

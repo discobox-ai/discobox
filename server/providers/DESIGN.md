@@ -116,11 +116,13 @@ actually failed is still caught immediately, by its settled failure rather than
 by a clock.
 
 Two rules make it cheap enough to write from a hot path. Reports are a narrow
-two-column update and publish no project event, because the reader is polling
-anyway; and an image pull, the one phase with a denominator, is throttled to the
-rate a byte counter has to move to read as movement. Nothing waits on any of it,
-and a report that fails to store is dropped rather than failing the reconcile
-that produced it.
+two-column update, so they never race the reconcile writing the rest of the row;
+and an image pull, the one phase with a denominator, is throttled to the rate a
+byte counter has to move to read as movement. A report that fails to store is
+dropped rather than failing the reconcile that produced it. Readers poll: the
+client for its status line, and an attach waiting on a sandbox hosted here, which
+reads the advancing timestamp as proof that a slow provision is still moving
+(ADR 0081).
 
 ## Pool Image Acquisition
 

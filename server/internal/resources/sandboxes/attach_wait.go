@@ -34,18 +34,20 @@ var ErrSandboxProvisioning = errors.New("sandbox is still being provisioned")
 // sandboxReachableStallTimeout bounds tier 1 of the attach wait (ADR 0039).
 //
 // It is a stall budget rather than a cap on how long the wait may take: every
-// event about this sandbox or the pool hosting it restarts it, so a multi-
+// write to this sandbox or to the pool hosting it restarts it, so a multi-
 // gigabyte image pull that keeps reporting progress waits as long as the pull
 // takes, and a sandbox that has gone silent gives up in two minutes. The tiers
 // below take budgets that fit inside this one, so the innermost stage to stall
 // is the one that reports.
 const sandboxReachableStallTimeout = 2 * time.Minute
 
-// sandboxReachableRecheckInterval is how long the wait will sit on a silent
-// subscription before re-asking anyway. It is slow enough not to be the
-// mechanism — the events are — and fast enough that a dropped one costs seconds
-// rather than the whole stall budget.
-const sandboxReachableRecheckInterval = 15 * time.Second
+// sandboxReachablePollInterval is how long the wait sleeps between attempts.
+//
+// The wait is a poll because the thing it is waiting on is a row (ADR 0081).
+// This is the whole of the latency it adds once the gate opens, and it is set
+// against work that takes seconds at best: a container being created, an image
+// being pulled, a source tree being materialized.
+const sandboxReachablePollInterval = 500 * time.Millisecond
 
 // AwaitSandboxHTTPClient is AcquireSandboxHTTPClient for a caller that means
 // "I want to use this sandbox now": it waits for the sandbox to become
@@ -58,21 +60,11 @@ const sandboxReachableRecheckInterval = 15 * time.Second
 // sandbox agent are doing is not observable from here, and is waited on by the
 // tiers that can see it.
 //
-// The wait is event-driven. Writes publish a project event after commit, and
-// the subscription is taken before the first attempt, so the transition that
-// opens the gate cannot land in the window between a failed acquire and the
-// subscription.
+// Every pass re-reads authoritative state and asks again, so there is no window
+// in which the transition that opens the gate can be missed.
 func (s *Service) AwaitSandboxHTTPClient(ctx context.Context, projectID, sandboxID string, scopes []string) (*services.HTTPClientLease, *model.Sandbox, error) {
-	var projectEvents <-chan model.ProjectEvent
-	if s.broker != nil {
-		subscription, cancel := context.WithCancel(ctx)
-		defer cancel()
-		events, unsubscribe := s.broker.Subscribe(subscription, projectID)
-		defer unsubscribe()
-		projectEvents = events
-	}
-
 	stallDeadline := time.Now().Add(sandboxReachableStallTimeout)
+	var observed provisioningMark
 	for {
 		lease, sandboxModel, err := s.AcquireSandboxHTTPClient(ctx, projectID, sandboxID, scopes)
 		if err == nil && !sandboxProvisioningPending(sandboxModel) {
@@ -91,9 +83,6 @@ func (s *Service) AwaitSandboxHTTPClient(ctx context.Context, projectID, sandbox
 				Cause:   ErrSandboxProvisioning,
 			}
 		}
-		if projectEvents == nil {
-			return nil, sandboxModel, err
-		}
 		// Acquire reports a provider-side refusal without the row it read, and
 		// the row carries half of the question of whether waiting can help.
 		if sandboxModel == nil {
@@ -102,19 +91,88 @@ func (s *Service) AwaitSandboxHTTPClient(ctx context.Context, projectID, sandbox
 		if !sandboxCanBecomeReachable(err, sandboxModel) {
 			return nil, sandboxModel, err
 		}
-		progressed, waitErr := awaitSandboxProgress(ctx, projectEvents, sandboxID, sandboxModel.PoolID, stallDeadline)
-		if waitErr != nil {
-			if ctxErr := ctx.Err(); ctxErr != nil {
-				return nil, sandboxModel, ctxErr
-			}
+		// The first pass always counts as progress, which only re-arms a budget
+		// armed a moment ago.
+		if mark := s.provisioningMark(ctx, sandboxModel); mark != observed {
+			observed = mark
+			stallDeadline = time.Now().Add(sandboxReachableStallTimeout)
+		}
+		if !time.Now().Before(stallDeadline) {
 			// The last refusal names what never became true, which is more use
 			// than "timed out" on its own.
 			return nil, sandboxModel, err
 		}
-		if progressed {
-			stallDeadline = time.Now().Add(sandboxReachableStallTimeout)
+		select {
+		case <-ctx.Done():
+			return nil, sandboxModel, ctx.Err()
+		case <-time.After(sandboxReachablePollInterval):
 		}
 	}
+}
+
+// provisioningMark is what the wait watches for change: the gate it is waiting
+// on, plus the counters that tick while the work behind that gate proceeds.
+//
+// Both resources are in it. A sandbox waiting on a pool that is still coming up
+// does not change at all, and `ErrSandboxPoolNotReachable` is a refusal only the
+// pool row can clear. Unrelated project traffic is in neither, so a busy project
+// cannot hold a stalled sandbox open.
+type provisioningMark struct {
+	sandboxState      string
+	sandboxGeneration int64
+	sandboxObserved   int64
+	sandboxRuntime    string
+	sandboxProgressAt int64
+	poolState         string
+	poolReady         bool
+	poolProgressAt    int64
+	poolStagedAt      int64
+}
+
+// provisioningMark reads the mark for one sandbox and the pool hosting it.
+//
+// Named fields rather than the rows' `updated_at`, and the difference is the
+// stall budget. Both rows are rewritten on a timer by things that are liveness
+// rather than progress — the pool agent's status heartbeat every 30 seconds,
+// and the complete state sync restamping every sandbox it hosts every 60 — and
+// either would refresh a two-minute budget forever, so a sandbox that was never
+// coming up would wait until its caller gave up instead. It is the same trap
+// ResourceLifecycle.SetState guards against, for the same reason.
+//
+// What is here is the gate (the sandbox's lifecycle state and convergence, its
+// runtime state, the pool's state and readiness) and the progress counters that
+// justify waiting through a long provision (the sandbox's pull progress, and the
+// pool's own provisioning and image staging). A new signal that means "this is
+// still moving" belongs here too.
+func (s *Service) provisioningMark(ctx context.Context, sb *model.Sandbox) provisioningMark {
+	mark := provisioningMark{
+		sandboxState:      sb.State,
+		sandboxGeneration: sb.Generation,
+		sandboxObserved:   sb.ObservedGeneration,
+		sandboxRuntime:    sb.RuntimeState,
+		sandboxProgressAt: markTime(sb.ProvisionProgressAt),
+	}
+	if sb.PoolID == "" {
+		return mark
+	}
+	// A pool that cannot be read is not progress. The acquire is what decides
+	// whether that is fatal; here it only means the mark did not move.
+	pool, err := s.store.GetPool(ctx, sb.ProjectID, sb.PoolID)
+	if err != nil {
+		return mark
+	}
+	mark.poolState = pool.State
+	mark.poolReady = pool.Ready
+	mark.poolProgressAt = markTime(pool.ProvisionProgressAt)
+	mark.poolStagedAt = markTime(pool.ImageStagedAt)
+	return mark
+}
+
+func markTime(at *time.Time) int64 {
+	if at == nil {
+		return 0
+	}
+	return at.UnixNano()
 }
 
 // sandboxProvisioningPending reports whether the sandbox is reachable but not
@@ -144,7 +202,7 @@ func sandboxProvisioningPending(sb *model.Sandbox) bool {
 // answer, and waiting on one would replace a precise error with a deadline.
 //
 // The row answers the other half. The same refusals are what a sandbox on its
-// way out produces, and no event will ever clear them for one: an archived
+// way out produces, and no write will ever clear them for one: an archived
 // sandbox has no container by intent (ADR 0022 §5), a deleting one is going
 // away, and a settled failure needs new intent rather than another wait
 // (ADR 0017 §4).
@@ -163,55 +221,3 @@ func sandboxCanBecomeReachable(err error, sb *model.Sandbox) bool {
 	}
 	return true
 }
-
-// awaitSandboxProgress blocks until something that could change the answer has
-// happened, and reports whether that was progress on this sandbox: an event
-// about it, or about the pool that has to be up for it to be reachable.
-// Unrelated project traffic neither wakes the wait nor refreshes its budget, so
-// a busy project cannot hold a stalled sandbox open.
-//
-// It also returns on its own after sandboxReachableRecheckInterval, without
-// calling that progress. That is a backstop rather than a poll: the broker
-// drops an event into a subscriber that is not reading — the acquire this loop
-// runs between waits is exactly such a moment — and a dropped wake-up would
-// otherwise cost the whole stall budget for a sandbox that is already up.
-func awaitSandboxProgress(ctx context.Context, projectEvents <-chan model.ProjectEvent, sandboxID, poolID string, stallDeadline time.Time) (bool, error) {
-	stall := time.NewTimer(time.Until(stallDeadline))
-	defer stall.Stop()
-	recheck := time.NewTimer(sandboxReachableRecheckInterval)
-	defer recheck.Stop()
-	for {
-		select {
-		case <-ctx.Done():
-			return false, ctx.Err()
-		case <-stall.C:
-			return false, errors.New("timed out waiting for the sandbox to become reachable")
-		case <-recheck.C:
-			return false, nil
-		case event, ok := <-projectEvents:
-			if !ok {
-				return false, errors.New("project event stream closed")
-			}
-			if eventConcernsSandbox(event, sandboxID, poolID) {
-				return true, nil
-			}
-		}
-	}
-}
-
-func eventConcernsSandbox(event model.ProjectEvent, sandboxID, poolID string) bool {
-	switch event.ResourceType {
-	case sandboxEventResourceType:
-		return event.ResourceID == sandboxID
-	case poolEventResourceType:
-		return poolID != "" && event.ResourceID == poolID
-	}
-	return false
-}
-
-// The event resource types this wait filters on, taken from the resources
-// themselves so the filter cannot drift from what the store publishes.
-var (
-	sandboxEventResourceType = (&model.Sandbox{}).EventResourceType()
-	poolEventResourceType    = (&model.Pool{}).EventResourceType()
-)

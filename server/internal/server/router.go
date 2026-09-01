@@ -12,7 +12,6 @@ import (
 	"github.com/discobox-ai/discobox/server/internal/auth"
 	poolagentauth "github.com/discobox-ai/discobox/server/internal/auth/poolagent"
 	sandboxauth "github.com/discobox-ai/discobox/server/internal/auth/sandbox"
-	"github.com/discobox-ai/discobox/server/internal/events"
 	"github.com/discobox-ai/discobox/server/internal/handlers"
 	"github.com/discobox-ai/discobox/server/internal/reconcile"
 	sandbox "github.com/discobox-ai/discobox/server/internal/sandbox"
@@ -117,8 +116,7 @@ func NewApp(ctx context.Context, writeDB, readDB *gorm.DB, options ...AppOptions
 	if opts.UserID == "" {
 		opts.UserID = service.DefaultUserID
 	}
-	broker := events.NewBroker()
-	appStore := store.New(writeDB, readDB, store.WithPublisher(broker), store.WithSealer(opts.SecretSealer))
+	appStore := store.New(writeDB, readDB, store.WithSealer(opts.SecretSealer))
 	reconcileEngine, err := reconcile.New(writeDB, reconcile.Options{
 		// This deployment is single-process; the engine also supports
 		// lease-based multi-node claiming — flip this when scaling out.
@@ -143,7 +141,7 @@ func NewApp(ctx context.Context, writeDB, readDB *gorm.DB, options ...AppOptions
 		DevelopmentImages:              opts.DevelopmentImages,
 		ControlPlaneStreams:            controlPlaneStreams,
 		ListenEndpoints:                opts.ListenEndpoints,
-	}, broker)
+	})
 	appServices.SetDefaultSandboxImage(opts.DefaultSandboxImage, opts.DefaultSandboxImageDigest)
 	appServices.SetHostID(opts.HostID)
 	if opts.SecretSealer != nil {

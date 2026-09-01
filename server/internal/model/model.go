@@ -314,12 +314,6 @@ type HarnessConfig struct {
 
 func (HarnessConfig) TableName() string { return "harness_configs" }
 
-func (a *HarnessConfig) EventProjectID() string { return a.ProjectID }
-
-func (a *HarnessConfig) EventResourceType() string { return "harnessConfig" }
-
-func (a *HarnessConfig) EventResourceID() string { return a.ID }
-
 func (a *HarnessConfig) BeforeCreate(_ *gorm.DB) error {
 	if a.ID == "" {
 		var err error
@@ -346,10 +340,6 @@ type HarnessConfigSecretBinding struct {
 }
 
 func (HarnessConfigSecretBinding) TableName() string { return "harness_config_secret_bindings" }
-
-func (b *HarnessConfigSecretBinding) EventProjectID() string    { return b.ProjectID }
-func (b *HarnessConfigSecretBinding) EventResourceType() string { return "harnessConfigSecretBinding" }
-func (b *HarnessConfigSecretBinding) EventResourceID() string   { return b.ID }
 
 func (b *HarnessConfigSecretBinding) BeforeCreate(_ *gorm.DB) error {
 	if b.ID == "" {
@@ -592,10 +582,6 @@ const (
 	PoolImageStateFailed  PoolImageState = "failed"
 )
 
-func (p *Pool) EventProjectID() string    { return p.ProjectID }
-func (p *Pool) EventResourceType() string { return "pool" }
-func (p *Pool) EventResourceID() string   { return p.ID }
-
 func (p *Pool) BeforeCreate(_ *gorm.DB) error {
 	if p.ID == "" {
 		var err error
@@ -754,12 +740,6 @@ type Sandbox struct {
 
 func (Sandbox) TableName() string { return "sandboxes" }
 
-func (s *Sandbox) EventProjectID() string { return s.ProjectID }
-
-func (s *Sandbox) EventResourceType() string { return "sandbox" }
-
-func (s *Sandbox) EventResourceID() string { return s.ID }
-
 // SetRuntimeState records an observation of what the container is doing,
 // stamping RuntimeStateChangedAt only on an actual change.
 //
@@ -848,16 +828,6 @@ func (t *PoolBootstrapToken) BeforeCreate(_ *gorm.DB) error {
 }
 
 const (
-	EventTypeResourceChanged = "resource.changed"
-	EventTypeResourceListed  = "resource.listed"
-
-	EventActionCreated = "created"
-	EventActionUpdated = "updated"
-	EventActionDeleted = "deleted"
-	EventActionListed  = "listed"
-)
-
-const (
 	// SecretTypeToken is one opaque string. Not "bearer": the proxy swaps the
 	// value into whatever header the sandbox put it in — x-api-key,
 	// PRIVATE-TOKEN, Authorization — so naming it after one HTTP scheme names a
@@ -926,10 +896,6 @@ type Secret struct {
 }
 
 func (Secret) TableName() string { return "secrets" }
-
-func (s *Secret) EventProjectID() string    { return s.ProjectID }
-func (s *Secret) EventResourceType() string { return "secret" }
-func (s *Secret) EventResourceID() string   { return s.ID }
 
 func (s *Secret) BeforeCreate(_ *gorm.DB) error {
 	if s.ID == "" {
@@ -1034,10 +1000,6 @@ func (r *SecretRequest) FromProtocol() bool { return len(r.Uses) > 0 }
 
 func (SecretRequest) TableName() string { return "secret_requests" }
 
-func (r *SecretRequest) EventProjectID() string    { return r.ProjectID }
-func (r *SecretRequest) EventResourceType() string { return "secretRequest" }
-func (r *SecretRequest) EventResourceID() string   { return r.ID }
-
 func (r *SecretRequest) BeforeCreate(_ *gorm.DB) error {
 	if r.ID == "" {
 		var err error
@@ -1092,10 +1054,6 @@ func (g *SecretGrant) FindUse(useID string) (SecretUse, bool) {
 }
 
 func (SecretGrant) TableName() string { return "secret_grants" }
-
-func (g *SecretGrant) EventProjectID() string    { return g.ProjectID }
-func (g *SecretGrant) EventResourceType() string { return "secretGrant" }
-func (g *SecretGrant) EventResourceID() string   { return g.ID }
 
 func (g *SecretGrant) BeforeCreate(_ *gorm.DB) error {
 	if g.ID == "" {
@@ -1161,34 +1119,6 @@ func (s *SandboxSecret) BeforeCreate(_ *gorm.DB) error {
 	return nil
 }
 
-// ProjectEvent is a persisted project-scoped resource change event.
-type ProjectEvent struct {
-	ID           string          `gorm:"primaryKey;type:text" json:"id" doc:"Event record ID"`
-	Seq          int64           `gorm:"column:seq;autoIncrement;uniqueIndex" json:"seq" doc:"Global event sequence" minimum:"0"`
-	ProjectID    string          `gorm:"column:project_id;not null;type:text;index:idx_project_event_seq,priority:1" json:"projectId" doc:"Project ID"`
-	Type         string          `gorm:"not null;type:text;index" json:"type" doc:"Event type"`
-	ResourceType string          `gorm:"column:resource_type;not null;type:text;index" json:"resourceType" doc:"Changed resource type"`
-	ResourceID   string          `gorm:"column:resource_id;not null;type:text;index" json:"resourceId" doc:"Changed resource ID"`
-	Action       string          `gorm:"not null;type:text;index" json:"action" doc:"Change action" enum:"created,updated,deleted,listed"`
-	Data         json.RawMessage `gorm:"type:text;not null" json:"data" doc:"Event payload"`
-	CreatedAt    time.Time       `gorm:"autoCreateTime;index:idx_project_event_seq,priority:2" json:"createdAt" doc:"Creation timestamp" format:"date-time"`
-
-	Project *Project `gorm:"foreignKey:ProjectID" json:"-"`
-}
-
-func (ProjectEvent) TableName() string { return "project_events" }
-
-func (e *ProjectEvent) BeforeCreate(_ *gorm.DB) error {
-	if e.ID == "" {
-		var err error
-		e.ID, err = id.New(id.PrefixEvent)
-		if err != nil {
-			return err
-		}
-	}
-	return nil
-}
-
 // AllModels returns all persisted model types.
 func AllModels() []any {
 	return []any{
@@ -1203,7 +1133,6 @@ func AllModels() []any {
 		&SandboxProviderInstance{},
 		&Pool{},
 		&PoolBootstrapToken{},
-		&ProjectEvent{},
 		&Secret{},
 		&SecretRequest{},
 		&SecretGrant{},

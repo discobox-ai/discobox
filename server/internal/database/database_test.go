@@ -56,13 +56,69 @@ func TestMigrateMigratesSingleSchema(t *testing.T) {
 		t.Fatalf("migrate database: %v", err)
 	}
 
-	for _, table := range []string{"users", "projects", "sandboxes", "sandbox_provider_instances", "pools", "project_events"} {
+	for _, table := range []string{"users", "projects", "sandboxes", "sandbox_provider_instances", "pools"} {
 		if !db.Write.Migrator().HasTable(table) {
 			t.Fatalf("schema missing table %s", table)
 		}
 	}
-	if db.Write.Migrator().HasTable("organizations") {
-		t.Fatalf("schema unexpectedly has organizations table")
+	for _, table := range []string{"organizations", "project_events"} {
+		if db.Write.Migrator().HasTable(table) {
+			t.Fatalf("schema unexpectedly has %s table", table)
+		}
+	}
+}
+
+// A database from before ADR 0081 has a project_events table, with rows and a
+// foreign key onto projects. Migrating drops it; the projects it referenced
+// survive, because the reference only ever ran one way.
+func TestMigrateDropsProjectEvents(t *testing.T) {
+	ctx := context.Background()
+	db, err := database.New(database.Config{
+		Driver: gormdb.DriverSQLite,
+		DSN:    "sqlite3://" + filepath.Join(t.TempDir(), "discobox.db"),
+	})
+	if err != nil {
+		t.Fatalf("open database: %v", err)
+	}
+	t.Cleanup(func() {
+		if err := db.Close(); err != nil {
+			t.Fatalf("close database: %v", err)
+		}
+	})
+	if err := db.Migrate(ctx); err != nil {
+		t.Fatalf("initial migrate: %v", err)
+	}
+
+	project := &model.Project{ID: "project-1", OwnerUserID: "user-1", Name: "Project"}
+	if err := db.Write.Create(project).Error; err != nil {
+		t.Fatalf("create project: %v", err)
+	}
+	for _, stmt := range []string{
+		"CREATE TABLE project_events (id text, seq integer PRIMARY KEY AUTOINCREMENT, project_id text NOT NULL, " +
+			"type text NOT NULL, resource_type text NOT NULL, resource_id text NOT NULL, action text NOT NULL, " +
+			"data text NOT NULL, created_at datetime, CONSTRAINT fk_project_events_project " +
+			"FOREIGN KEY (project_id) REFERENCES projects(id))",
+		"CREATE INDEX idx_project_event_seq ON project_events(project_id, created_at)",
+		"INSERT INTO project_events (id, project_id, type, resource_type, resource_id, action, data, created_at) " +
+			"VALUES ('evt_1', 'project-1', 'resource.changed', 'sandbox', 'sandbox-1', 'created', '{}', '2026-01-01 00:00:00')",
+	} {
+		if err := db.Write.Exec(stmt).Error; err != nil {
+			t.Fatalf("recreate legacy project_events %q: %v", stmt, err)
+		}
+	}
+
+	if err := db.Migrate(ctx); err != nil {
+		t.Fatalf("upgrade migrate: %v", err)
+	}
+	if db.Write.Migrator().HasTable("project_events") {
+		t.Fatal("project_events still exists after migration")
+	}
+	if err := db.Write.First(&model.Project{}, "id = ?", project.ID).Error; err != nil {
+		t.Fatalf("project lost with its events: %v", err)
+	}
+	// Migrating again must be a no-op rather than an error on the missing table.
+	if err := db.Migrate(ctx); err != nil {
+		t.Fatalf("re-migrate: %v", err)
 	}
 }
 

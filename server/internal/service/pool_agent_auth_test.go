@@ -16,7 +16,6 @@ import (
 	"github.com/discobox-ai/discobox/pool-agent/poolauth"
 	"github.com/discobox-ai/discobox/server/internal/auth"
 	"github.com/discobox-ai/discobox/server/internal/database"
-	"github.com/discobox-ai/discobox/server/internal/events"
 	"github.com/discobox-ai/discobox/server/internal/model"
 	"github.com/discobox-ai/discobox/server/internal/service"
 	services "github.com/discobox-ai/discobox/server/internal/services"
@@ -108,10 +107,9 @@ func newPoolAgentTestService(t *testing.T) (*service.Service, *store.Store, *dat
 	if err := db.Migrate(ctx); err != nil {
 		t.Fatalf("migrate db: %v", err)
 	}
-	broker := events.NewBroker()
-	appStore := store.New(db.Write, db.Read, store.WithPublisher(broker))
+	appStore := store.New(db.Write, db.Read)
 	// Registration marks the pool dirty, so these tests need a real engine.
-	svc := service.New(appStore, newTestReconcileEngine(t, db.Write), service.Options{}, broker)
+	svc := service.New(appStore, newTestReconcileEngine(t, db.Write), service.Options{})
 	project, err := svc.InitializeDefaults(ctx, service.DefaultUserID)
 	if err != nil {
 		t.Fatalf("init defaults: %v", err)

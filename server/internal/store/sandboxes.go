@@ -185,17 +185,15 @@ func (s *Store) ListSandboxes(ctx context.Context, projectID, sourceRoot, origin
 }
 
 func (s *Store) CreateSandbox(ctx context.Context, sandbox *model.Sandbox) error {
-	_, err := withResourceEvent(ctx, s, model.EventActionCreated, func(tx *gorm.DB) (*model.Sandbox, error) {
-		persisted, err := s.sealSandboxForWrite(ctx, sandbox)
-		if err != nil {
-			return nil, err
-		}
-		if err := tx.Create(persisted).Error; err != nil {
-			return nil, err
-		}
-		return sandbox, nil
-	})
-	return err
+	write, err := s.getWrite(ctx)
+	if err != nil {
+		return err
+	}
+	persisted, err := s.sealSandboxForWrite(ctx, sandbox)
+	if err != nil {
+		return err
+	}
+	return write.Create(persisted).Error
 }
 
 // GetSandboxByID looks a sandbox up by its globally unique ID alone, for
@@ -297,32 +295,30 @@ func (s *Store) UpdateSandbox(ctx context.Context, sandbox *model.Sandbox, optio
 		}
 	}
 
-	_, err := withResourceEvent(ctx, s, model.EventActionUpdated, func(tx *gorm.DB) (*model.Sandbox, error) {
-		persisted, err := s.sealSandboxForWrite(ctx, sandbox)
-		if err != nil {
-			return nil, err
-		}
-		if opts.generation == nil {
-			if err := tx.Omit(observedSandboxColumns...).Save(persisted).Error; err != nil {
-				return nil, err
-			}
-			return sandbox, nil
-		}
+	write, err := s.getWrite(ctx)
+	if err != nil {
+		return err
+	}
+	persisted, err := s.sealSandboxForWrite(ctx, sandbox)
+	if err != nil {
+		return err
+	}
+	if opts.generation == nil {
+		return write.Omit(observedSandboxColumns...).Save(persisted).Error
+	}
 
-		result := tx.Model(&model.Sandbox{}).
-			Where("project_id = ? AND id = ? AND generation = ?", sandbox.ProjectID, sandbox.ID, *opts.generation).
-			Select("*").
-			Omit(observedSandboxColumns...).
-			Updates(persisted)
-		if result.Error != nil {
-			return nil, result.Error
-		}
-		if result.RowsAffected == 0 {
-			return nil, ErrGenerationConflict
-		}
-		return sandbox, nil
-	})
-	return err
+	result := write.Model(&model.Sandbox{}).
+		Where("project_id = ? AND id = ? AND generation = ?", sandbox.ProjectID, sandbox.ID, *opts.generation).
+		Select("*").
+		Omit(observedSandboxColumns...).
+		Updates(persisted)
+	if result.Error != nil {
+		return result.Error
+	}
+	if result.RowsAffected == 0 {
+		return ErrGenerationConflict
+	}
+	return nil
 }
 
 // UpdateSandboxAgentStatus writes only the two agent-status columns, pushed
@@ -332,9 +328,9 @@ func (s *Store) UpdateSandbox(ctx context.Context, sandbox *model.Sandbox, optio
 // a benign polling write spuriously fail against unrelated concurrent
 // desired-state reconciliation, and a whole-row Save from a stale in-memory
 // struct would risk clobbering a column written concurrently by that same
-// reconciliation. It also does not publish a project event: unlike a
-// lifecycle change, a routine status refresh on every running sandbox every
-// poll interval is not something the UI event stream needs to fan out.
+// reconciliation. UpdateColumns rather than Updates, so it does not stamp
+// updated_at either: this is a heartbeat on every running sandbox every poll
+// interval, and nothing about it is a change to the resource.
 // lastActiveAt, when non-nil, is the newest client access the report carried
 // (an attach, a keystroke, or a client attached at observation); it only ever
 // moves last_active_at forward, so a late or re-delivered report cannot walk
@@ -373,7 +369,7 @@ func (s *Store) DeleteSandbox(ctx context.Context, projectID, sandboxID string, 
 		}
 	}
 
-	_, err := withResourceEvent(ctx, s, model.EventActionDeleted, func(tx *gorm.DB) (*model.Sandbox, error) {
+	return s.Transaction(ctx, func(_ *Store, tx *gorm.DB) error {
 		query := tx.Where("project_id = ?", projectID)
 		if opts.generation != nil {
 			query = query.Where("generation = ?", *opts.generation)
@@ -381,19 +377,15 @@ func (s *Store) DeleteSandbox(ctx context.Context, projectID, sandboxID string, 
 		sandbox, err := firstByID[model.Sandbox](query, "id", sandboxID)
 		if err != nil {
 			if opts.generation != nil && errors.Is(err, ErrNotFound) {
-				return nil, ErrGenerationConflict
+				return ErrGenerationConflict
 			}
-			return nil, err
+			return err
 		}
 		if err := deleteSandboxSecretsTx(tx, projectID, sandboxID); err != nil {
-			return nil, err
+			return err
 		}
-		if err := tx.Delete(sandbox).Error; err != nil {
-			return nil, err
-		}
-		return sandbox, nil
+		return tx.Delete(sandbox).Error
 	})
-	return err
 }
 
 // deleteSandboxSecretsTx removes a sandbox's secret assignments and the anonymous

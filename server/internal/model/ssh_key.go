@@ -28,10 +28,6 @@ type SSHKey struct {
 
 func (SSHKey) TableName() string { return "ssh_keys" }
 
-func (k *SSHKey) EventProjectID() string    { return k.ProjectID }
-func (k *SSHKey) EventResourceType() string { return "sshKey" }
-func (k *SSHKey) EventResourceID() string   { return k.ID }
-
 func (k *SSHKey) BeforeCreate(_ *gorm.DB) error {
 	if k.ID == "" {
 		var err error

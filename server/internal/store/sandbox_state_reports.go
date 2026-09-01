@@ -126,25 +126,6 @@ func (s *Store) ApplySandboxStateReports(ctx context.Context, batch SandboxState
 				Updates(sandbox).Error; err != nil {
 				return err
 			}
-			// A runtime state that actually moved is a change to the resource,
-			// so it is published like any other. Without this the one
-			// transition clients care about most — a sandbox becoming usable —
-			// reached the database and nothing else: no event on the stream,
-			// and (by design, see observationNeedsReconcile) no reconcile
-			// either, so a client waiting to attach had nothing to wait on
-			// (ADR 0039).
-			//
-			// Only real changes are published. The complete sync re-reports
-			// every sandbox on this pool on its interval, and an event per
-			// sandbox per sync would be a heartbeat wearing a resource event's
-			// clothes.
-			if previous != sandbox.RuntimeState {
-				event, err := createProjectEvent(ctx, tx, model.EventActionUpdated, sandbox)
-				if err != nil {
-					return err
-				}
-				txStore.publishProjectEvent(ctx, event)
-			}
 			if missing || previous != sandbox.RuntimeState {
 				changed = append(changed, SandboxObservation{Sandbox: *sandbox, RuntimeMissing: missing})
 			}
@@ -188,7 +169,7 @@ type SandboxProgressReport struct {
 	Progress  json.RawMessage
 }
 
-// ApplySandboxProgressReports records provisioning progress and publishes it.
+// ApplySandboxProgressReports records provisioning progress.
 //
 // It is deliberately not part of ApplySandboxStateReports: progress carries no
 // observed state, takes no part in the complete-sync rule that a sandbox
@@ -197,7 +178,9 @@ type SandboxProgressReport struct {
 // the reconciler to repair.
 //
 // Progress is already throttled by the reporting agent, so every accepted
-// report is published: that stream is the point (ADR 0039).
+// report is written. An attach waiting on the sandbox reads the advancing
+// timestamp as proof that a long pull is still moving, which is what lets it
+// wait longer than its stall budget (ADR 0039, ADR 0081).
 func (s *Store) ApplySandboxProgressReports(ctx context.Context, poolID string, reportedAt time.Time, reports []SandboxProgressReport) error {
 	if len(reports) == 0 {
 		return nil
@@ -230,11 +213,6 @@ func (s *Store) ApplySandboxProgressReports(ctx context.Context, poolID string, 
 				Updates(sandbox).Error; err != nil {
 				return err
 			}
-			event, err := createProjectEvent(ctx, tx, model.EventActionUpdated, sandbox)
-			if err != nil {
-				return err
-			}
-			txStore.publishProjectEvent(ctx, event)
 		}
 		return nil
 	})

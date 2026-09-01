@@ -14,11 +14,9 @@ flowchart LR
     service --> sandboxes[internal/resources/sandboxes.Service]
     service --> pools[internal/resources/pools.Service]
     service --> providers[internal/resources/providers.Service]
-    service --> events[internal/resources/events.Service]
     service --> jobsvc[internal/resources/jobs.Service]
     service --> store[internal/store]
     service --> jobs[internal/resources/jobs.Manager]
-    service --> events[internal/events]
 ```
 
 The root service should:
@@ -73,8 +71,8 @@ resource service because they are application policy, not dispatcher behavior.
 
 ## Intent Transactions
 
-Accepted API intent must be committed atomically with the project event and the
-durable reconcile job that observes it.
+Accepted API intent must be committed atomically with the durable reconcile job
+that observes it.
 
 ```mermaid
 sequenceDiagram

@@ -19,7 +19,6 @@ import (
 	"github.com/discobox-ai/x/id"
 
 	sandboxauth "github.com/discobox-ai/discobox/server/internal/auth/sandbox"
-	eventbroker "github.com/discobox-ai/discobox/server/internal/events"
 	sandbox "github.com/discobox-ai/discobox/server/internal/sandbox"
 	"github.com/discobox-ai/discobox/server/internal/store"
 )
@@ -32,7 +31,6 @@ type Service struct {
 	sandboxProviders   *sandbox.ProviderManager
 	providerStore      any
 	sandboxAuth        *sandboxauth.Manager
-	broker             *eventbroker.Broker
 	defaultUserID      string
 	defaultImage       string
 	defaultImageDigest string
@@ -64,15 +62,6 @@ func (s *Service) RegisterJobs(opts ...reconcile.RegisterOption) error {
 
 func (s *Service) SetSandboxAuthManager(manager *sandboxauth.Manager) {
 	s.sandboxAuth = manager
-}
-
-// SetEventBroker installs the in-process project event fanout. It is what makes
-// AwaitSandboxHTTPClient a wait rather than a poll: the transitions it waits on
-// are published on commit, so the wait wakes on them instead of asking
-// (ADR 0039 tier 1). Without a broker the wait degrades to the fail-fast
-// acquire it wraps.
-func (s *Service) SetEventBroker(broker *eventbroker.Broker) {
-	s.broker = broker
 }
 
 // SetDefaultSandboxImage records the image a sandbox with no harness config
@@ -513,9 +502,9 @@ func (s *Service) PurgeSandbox(ctx context.Context, projectID, sandboxID string)
 //
 // They write no state. The returned sandbox is therefore a snapshot from
 // *before* the instruction takes effect, and deliberately so: the state that
-// results arrives on the pool agent's reporting channel, which will publish it
-// as a project event a moment later. A caller that needs to know the outcome
-// watches for that rather than believing this response (ADR 0017 §§9–10).
+// results arrives on the pool agent's reporting channel a moment later. A
+// caller that needs to know the outcome re-reads the sandbox rather than
+// believing this response (ADR 0017 §§9–10).
 func (s *Service) StartSandbox(ctx context.Context, projectID, sandboxID string, _ services.StartSandboxBody) (*model.Sandbox, error) {
 	return s.instructSandbox(ctx, projectID, sandboxID, sandboxStart)
 }

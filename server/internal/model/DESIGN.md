@@ -10,7 +10,7 @@ internal conversions. Public REST API schema types live under the root
 | Entity | Description |
 | --- | --- |
 | `User` | Authenticated person. Owns projects and creates sandboxes. |
-| `Project` | Group for sandboxes, provider configuration, harness configuration, pools, and project events. |
+| `Project` | Group for sandboxes, provider configuration, harness configuration, and pools. |
 | `ServerState` | Generic key/value state for server preferences and one-time initialization flags. |
 | `Sandbox` | Main managed runtime/session resource. Belongs to a project, selects an image-backed `HarnessConfig`, and persists `harnessMode`. |
 | `HarnessConfig` | Project-scoped harness runtime configuration selected by sandboxes. |
@@ -19,7 +19,6 @@ internal conversions. Public REST API schema types live under the root
 | `Pool` | User-visible sharing boundary sandboxes are scheduled into, and its own runtime host (ADR-0006). Binds immutably to one provider instance; carries the resource envelope, shared-cache flag, the full runtime lifecycle (desired state/phase/generation), agent identity and public key, `ready`/`schedulable`/`degraded` scheduling flags, reported capacity, and heartbeat. Sandboxes in one pool share a cache, an envelope, and a kernel/host. |
 | `PoolBootstrapToken` | Short-lived, one-time token used by a starting pool agent to register its public key. |
 | `SandboxAccessIssuerKey` | Design-level name for the current `ProjectUserKey`: per-project, per-user issuer key used by the control plane to sign sandbox access tokens. |
-| `ProjectEvent` | Append-only project-scoped resource event for list/watch sync. |
 
 ## Persistence Scope
 
@@ -47,10 +46,12 @@ silently makes the deleted thing unrecreatable — deleting a secret would burn 
 slug, deleting a user their email address. Recreating any of them fails with a
 constraint error rather than doing the obvious thing.
 
-Deletion is recorded in the project event stream (`withResourceEvent`), so the
-audit trail does not depend on keeping the row. Nothing in the system offers
-undelete, and reviving a row is not a feature to add by leaving tombstones
-lying around: it is a restore path that should be explicit if it is ever wanted.
+Nothing records the deletion either: the append-only event table that once did
+had no reader and was dropped (ADR 0081). An audit trail is a feature with its
+own requirements — what is worth keeping, and for how long — and belongs to
+whoever asks for one. Nothing in the system offers undelete, and reviving a row
+is not a feature to add by leaving tombstones lying around: it is a restore path
+that should be explicit if it is ever wanted.
 
 See ADR 0010.
 

@@ -260,7 +260,7 @@ func (r *SandboxReconciler) ensure(ctx context.Context, sandbox *model.Sandbox, 
 	// The container exists and matches the spec, which is the whole of what this
 	// reconciler converges. `ready` says exactly that and nothing about power —
 	// whether the container is running is the pool agent's to report, and it
-	// already has: the create it just performed publishes what it observed
+	// already has: the create it just performed reported what it observed
 	// before returning (ADR 0034 §4), so an unarchive that rebuilt a stopped
 	// container reads `stopped` by the time this lands, without waiting for a
 	// complete sync.

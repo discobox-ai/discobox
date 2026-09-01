@@ -9,7 +9,6 @@ import (
 	"time"
 
 	"github.com/discobox-ai/discobox/server/internal/database"
-	eventbroker "github.com/discobox-ai/discobox/server/internal/events"
 	"github.com/discobox-ai/discobox/server/internal/model"
 	"github.com/discobox-ai/discobox/server/internal/sandbox"
 	"github.com/discobox-ai/discobox/server/internal/store"
@@ -32,8 +31,7 @@ func (p *provisioningProvider) AcquireHTTPClient(context.Context, sandbox.Sandbo
 }
 
 // attachWaitFixture is a sandbox on a ready pool whose provider is still
-// provisioning it, with the broker the wait subscribes to wired to the store
-// that publishes.
+// provisioning it.
 func attachWaitFixture(t *testing.T) (*Service, *provisioningProvider) {
 	t.Helper()
 	ctx := context.Background()
@@ -45,8 +43,7 @@ func attachWaitFixture(t *testing.T) (*Service, *provisioningProvider) {
 	if err := db.Migrate(ctx); err != nil {
 		t.Fatalf("migrate db: %v", err)
 	}
-	broker := eventbroker.NewBroker()
-	appStore := store.New(db.Write, db.Read, store.WithPublisher(broker))
+	appStore := store.New(db.Write, db.Read)
 	if err := db.Write.WithContext(ctx).Create(&model.Project{ID: "project-1", OwnerUserID: "user-1", Name: "Project"}).Error; err != nil {
 		t.Fatalf("create project: %v", err)
 	}
@@ -76,7 +73,6 @@ func attachWaitFixture(t *testing.T) (*Service, *provisioningProvider) {
 	manager.SetDefault("test")
 
 	service := NewService(appStore, manager, "user-1", nil)
-	service.SetEventBroker(broker)
 	return service, provider
 }
 
@@ -108,8 +104,7 @@ func TestAwaitSandboxHTTPClientWaitsForProvisioning(t *testing.T) {
 	case <-time.After(100 * time.Millisecond):
 	}
 
-	// Provisioning finishes, and the write that records it publishes the event
-	// the wait is subscribed to.
+	// Provisioning finishes, and the next pass sees it.
 	provider.ready.Store(true)
 	sb, err := service.store.GetSandbox(ctx, "project-1", "sb-1")
 	if err != nil {
@@ -129,7 +124,7 @@ func TestAwaitSandboxHTTPClientWaitsForProvisioning(t *testing.T) {
 			t.Fatal("await returned no lease")
 		}
 	case <-time.After(5 * time.Second):
-		t.Fatal("await did not wake on the sandbox event")
+		t.Fatal("await did not wake once the sandbox was reachable")
 	}
 }
 
@@ -197,22 +192,130 @@ func TestAwaitSandboxHTTPClientWaitsForSourceDelivery(t *testing.T) {
 	}
 }
 
-// An event about something else in the project is not progress on this
-// sandbox, so it neither wakes the wait nor refreshes its budget.
-func TestUnrelatedEventsDoNotEndTheWait(t *testing.T) {
-	if eventConcernsSandbox(model.ProjectEvent{ResourceType: "sandbox", ResourceID: "sb-2"}, "sb-1", "pool-1") {
-		t.Fatal("another sandbox's event concerns this wait")
+// The stall budget only holds a wait open while something is actually moving,
+// so the mark has to tell progress from liveness. Both rows it reads are
+// rewritten on a timer by things that are neither — the pool agent's status
+// heartbeat, and the complete state sync restamping every sandbox it hosts —
+// and a mark that moved for those could never expire.
+func TestProvisioningMarkIgnoresLiveness(t *testing.T) {
+	service, _ := attachWaitFixture(t)
+	ctx := context.Background()
+
+	mark := func() provisioningMark {
+		t.Helper()
+		sb, err := service.store.GetSandbox(ctx, "project-1", "sb-1")
+		if err != nil {
+			t.Fatalf("get sandbox: %v", err)
+		}
+		return service.provisioningMark(ctx, sb)
 	}
-	if eventConcernsSandbox(model.ProjectEvent{ResourceType: "secret", ResourceID: "sec-1"}, "sb-1", "pool-1") {
-		t.Fatal("a secret event concerns this wait")
+	base := mark()
+
+	// The pool agent's status heartbeat: a whole-row save every 30 seconds,
+	// reporting the same capacity and the same readiness as last time.
+	if _, err := service.store.UpdatePoolStatus(ctx, "pool-1", true, true, false, 4, 1<<30, 1<<30, nil); err != nil {
+		t.Fatalf("pool status: %v", err)
 	}
-	if !eventConcernsSandbox(model.ProjectEvent{ResourceType: "sandbox", ResourceID: "sb-1"}, "sb-1", "pool-1") {
-		t.Fatal("this sandbox's own event does not concern the wait")
+	if got := mark(); got != base {
+		t.Fatalf("a pool heartbeat moved the mark:\n got %+v\nwant %+v", got, base)
 	}
-	// The pool has to be up for the sandbox to be reachable, so its events are
-	// the other half of what this wait is watching.
-	if !eventConcernsSandbox(model.ProjectEvent{ResourceType: "pool", ResourceID: "pool-1"}, "sb-1", "pool-1") {
-		t.Fatal("the hosting pool's event does not concern the wait")
+
+	// The complete sync re-reports every sandbox on the pool on its interval,
+	// restamping the report watermark whether or not the state moved.
+	for seq := int64(1); seq <= 2; seq++ {
+		if _, err := service.store.ApplySandboxStateReports(ctx, store.SandboxStateReportBatch{
+			PoolID: "pool-1", BootID: "boot-1", Sequence: seq, ReportedAt: time.Now().UTC(), Complete: true,
+			Reports: []store.SandboxStateReport{{SandboxID: "sb-1", State: model.SandboxRuntimeStateStopped}},
+		}); err != nil {
+			t.Fatalf("state report: %v", err)
+		}
+	}
+	stopped := mark()
+	if stopped == base {
+		t.Fatal("the runtime state moving did not move the mark")
+	}
+	// The second identical report is the restamp, and must not count.
+	if _, err := service.store.ApplySandboxStateReports(ctx, store.SandboxStateReportBatch{
+		PoolID: "pool-1", BootID: "boot-1", Sequence: 3, ReportedAt: time.Now().UTC(), Complete: true,
+		Reports: []store.SandboxStateReport{{SandboxID: "sb-1", State: model.SandboxRuntimeStateStopped}},
+	}); err != nil {
+		t.Fatalf("state report: %v", err)
+	}
+	if got := mark(); got != stopped {
+		t.Fatalf("a repeated state report moved the mark:\n got %+v\nwant %+v", got, stopped)
+	}
+}
+
+// What the mark does have to see is progress, wherever it happens: an image
+// pulling into the sandbox, and the pool host itself coming up. The pool half
+// matters most while a sandbox is waiting on a pool that is not ready, because
+// then the sandbox row does not change at all.
+func TestProvisioningMarkSeesProgress(t *testing.T) {
+	service, _ := attachWaitFixture(t)
+	ctx := context.Background()
+
+	mark := func() provisioningMark {
+		t.Helper()
+		sb, err := service.store.GetSandbox(ctx, "project-1", "sb-1")
+		if err != nil {
+			t.Fatalf("get sandbox: %v", err)
+		}
+		return service.provisioningMark(ctx, sb)
+	}
+
+	previous := mark()
+	for _, step := range []struct {
+		name string
+		do   func() error
+	}{
+		{"sandbox pull progress", func() error {
+			return service.store.ApplySandboxProgressReports(ctx, "pool-1", time.Now().UTC(),
+				[]store.SandboxProgressReport{{SandboxID: "sb-1", Progress: []byte(`{"phase":"pull"}`)}})
+		}},
+		{"pool provisioning progress", func() error {
+			return service.store.RecordPoolProvisionProgress(ctx, "pool-1", []byte(`{"phase":"boot"}`), time.Now().UTC())
+		}},
+		{"pool image staging", func() error {
+			return service.store.RecordPoolImageStage(ctx, "pool-1", []byte(`{"phase":"pull"}`), true, time.Now().UTC())
+		}},
+	} {
+		if err := step.do(); err != nil {
+			t.Fatalf("%s: %v", step.name, err)
+		}
+		got := mark()
+		if got == previous {
+			t.Fatalf("%s did not move the mark: %+v", step.name, got)
+		}
+		previous = got
+	}
+}
+
+// Another sandbox in the project is not this wait's business: the mark is built
+// from this sandbox's own row and the pool hosting it, so a busy project cannot
+// hold a stalled sandbox open.
+func TestProvisioningMarkIgnoresOtherSandboxes(t *testing.T) {
+	service, _ := attachWaitFixture(t)
+	ctx := context.Background()
+
+	sb, err := service.store.GetSandbox(ctx, "project-1", "sb-1")
+	if err != nil {
+		t.Fatalf("get sandbox: %v", err)
+	}
+	base := service.provisioningMark(ctx, sb)
+
+	other := &model.Sandbox{
+		ID: "sb-2", ProjectID: "project-1", PoolID: "pool-1", CreatedByUserID: "user-1", Name: "sb-2",
+		ResourceLifecycle: model.ResourceLifecycle{DesiredState: model.DesiredStatePresent, State: model.SandboxStatePending},
+	}
+	if err := service.store.CreateSandbox(ctx, other); err != nil {
+		t.Fatalf("create sandbox: %v", err)
+	}
+	other.SetState(model.SandboxStateReady)
+	if err := service.store.UpdateSandbox(ctx, other); err != nil {
+		t.Fatalf("update sandbox: %v", err)
+	}
+	if got := service.provisioningMark(ctx, sb); got != base {
+		t.Fatalf("another sandbox moved the mark:\n got %+v\nwant %+v", got, base)
 	}
 }
 

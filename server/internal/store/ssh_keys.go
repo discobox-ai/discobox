@@ -9,17 +9,11 @@ import (
 )
 
 func (s *Store) CreateSSHKey(ctx context.Context, key *model.SSHKey) error {
-	created, err := withResourceEvent(ctx, s, model.EventActionCreated, func(tx *gorm.DB) (*model.SSHKey, error) {
-		if err := tx.Create(key).Error; err != nil {
-			return nil, err
-		}
-		return key, nil
-	})
+	write, err := s.getWrite(ctx)
 	if err != nil {
 		return err
 	}
-	*key = *created
-	return nil
+	return write.Create(key).Error
 }
 
 func (s *Store) GetSSHKey(ctx context.Context, projectID, keyID string) (*model.SSHKey, error) {
@@ -41,16 +35,15 @@ func (s *Store) ListSSHKeys(ctx context.Context, projectID string) ([]model.SSHK
 	return out, err
 }
 
+// DeleteSSHKey removes an enrolled key. The lookup and the delete share a
+// transaction because keyID may be an ID prefix (firstByID), so the row the
+// delete removes has to be the row the lookup resolved.
 func (s *Store) DeleteSSHKey(ctx context.Context, projectID, keyID string) error {
-	_, err := withResourceEvent(ctx, s, model.EventActionDeleted, func(tx *gorm.DB) (*model.SSHKey, error) {
+	return s.Transaction(ctx, func(_ *Store, tx *gorm.DB) error {
 		key, err := firstByID[model.SSHKey](tx.Where("project_id = ?", projectID), "id", keyID)
 		if err != nil {
-			return nil, err
+			return err
 		}
-		if err := tx.Delete(key).Error; err != nil {
-			return nil, err
-		}
-		return key, nil
+		return tx.Delete(key).Error
 	})
-	return err
 }

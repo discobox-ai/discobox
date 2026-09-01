@@ -237,8 +237,7 @@ key supplied in bootstrap metadata. Tokens are audience-bound to `pool-agent`,
 carry `project_id`, `pool_id`, optional `sandbox_id`, and scopes, and generated
 API operations must authorize against those scopes. Sandbox operation handlers
 under this route own only local runtime work; control-plane persistence, user
-authorization, project events, and desired-state orchestration remain outside
-this module.
+authorization, and desired-state orchestration remain outside this module.
 
 `.../sandboxes/{sandbox_id}/tcp/attach` (scope `tcp:connect`) is the pool-agent
 side of ADR 0024's SSH `direct-tcpip` tunnel: it reuses the generic

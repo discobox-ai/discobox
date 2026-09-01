@@ -54,16 +54,32 @@ help, wait, retry — and changes only what it waits on:
 
 - Between attempts it sleeps `sandboxReachablePollInterval` (500ms) instead of
   selecting on a subscription.
-- Progress, which restarts the stall budget, is a change in the `updated_at` of
-  the sandbox row and of the pool hosting it, rather than the arrival of an
-  event naming either.
+- Progress, which restarts the stall budget, is a change in `provisioningMark` —
+  read from the sandbox row and the pool hosting it — rather than the arrival of
+  an event naming either.
+
+The mark is a named set of fields, not the rows' `updated_at`, and the
+difference is the stall budget. Both rows are rewritten on a timer by things
+that are liveness rather than progress: the pool agent's status heartbeat every
+30 seconds, and the complete state sync restamping the report watermark on every
+sandbox it hosts every 60. Either would refresh a two-minute budget forever, and
+a sandbox that was never coming up would wait until its caller gave up instead
+of failing with the refusal that explains why. It is the trap
+`ResourceLifecycle.SetState` already guards against for `StateChangedAt`, and it
+is why the events could be dropped in favour of a timestamp only if the
+timestamp meant progress — which `updated_at` does not.
+
+What the mark holds is the gate plus the counters that justify waiting through a
+long provision: the sandbox's lifecycle state, generation, observed generation
+and runtime state; the pool's state and readiness; and the sandbox's pull
+progress alongside the pool's own provisioning and image-staging timestamps.
 
 Polling is not a downgrade here; on three counts it is the better signal:
 
 - **It sees progress the events never carried.** `RecordPoolProvisionProgress`
   and `RecordPoolImageStage` deliberately publish no event, so today a pool host
   pulling a multi-gigabyte image stalls the wait at two minutes while visibly
-  making progress. Both write the pool row, so both now count.
+  making progress. Both are in the mark, so both now count.
 - **It ignores progress that was not progress.** An unconditional progress
   report refreshed the stall budget whether or not anything changed. `updated_at`
   moves when a write actually happened.
@@ -100,6 +116,14 @@ stream itself.
 every other cost: the insert per mutation, the six index updates, the plumbing,
 and a table nothing reads. Adding a reaper to maintain data with no reader is
 work spent to keep a thing that should not exist.
+
+**Take the mark from `updated_at` on both rows.** Drift-proof by construction:
+every writer moves it, including narrow column updates, so a new progress signal
+needs no change here. Rejected because it cannot tell progress from liveness,
+for the reasons above — the heartbeat and the restamp would hold a stalled wait
+open indefinitely. Being unable to miss a signal is worth less than being able
+to refuse one. The named set is pinned by tests that assert a heartbeat does not
+move the mark and that each real progress writer does.
 
 **Poll only the sandbox row, not the pool.** One less read per iteration. But
 the pool is half of what the wait is watching — `ErrSandboxPoolNotReachable` is
