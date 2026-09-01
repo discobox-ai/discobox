@@ -14,4 +14,9 @@ Global review expectations:
   used where pool-agent HTTP API calls or pool-local runtime contracts are
   the package responsibility.
 - Prefer short-lived tokens and explicit key ownership for auth flows.
+- A test server that counts what reaches it must ignore the sandbox-agent's
+  port probe (`User-Agent: discobox-sandbox-agent (port probe)`). Every port
+  that starts listening is asked `HEAD /` once, and this repository is worked
+  on inside a sandbox, so an unguarded counter is a flake that only fires
+  there. See `sandbox-agent/ports/probe.go`.
 - Update package-local design docs when changing architecture or data model.

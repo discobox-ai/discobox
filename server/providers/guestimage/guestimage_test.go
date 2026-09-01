@@ -28,6 +28,13 @@ func pushGuestImage(t *testing.T, contents map[string][]byte) (string, *atomic.I
 	var requests atomic.Int64
 	handler := registry.New(registry.Logger(golog.New(io.Discard, "", 0)))
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		// The sandbox-agent asks every port that starts listening on the
+		// machine for its identity once, and this repository is worked on
+		// inside a sandbox; that probe is not a registry request. See the
+		// repository REVIEW.md.
+		if r.Header.Get("User-Agent") == "discobox-sandbox-agent (port probe)" {
+			return
+		}
 		requests.Add(1)
 		handler.ServeHTTP(w, r)
 	}))

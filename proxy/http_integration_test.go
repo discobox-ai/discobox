@@ -46,11 +46,11 @@ func TestHTTPProxyMTLSIdentityHeaderRewriteAndAudit(t *testing.T) {
 
 	var sawAuthorization string
 	var sawInjectedSecret string
-	origin := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	origin := newOrigin(func(w http.ResponseWriter, r *http.Request) {
 		sawAuthorization = r.Header.Get("Authorization")
 		sawInjectedSecret = r.Header.Get("X-Injected-Secret")
 		_, _ = io.WriteString(w, "ok")
-	}))
+	})
 	defer origin.Close()
 
 	originURL, err := url.Parse(origin.URL)
@@ -200,10 +200,10 @@ func TestHTTPProxySecretSentinelSwapAndAudit(t *testing.T) {
 	const realValue = "sk-ant-oat01-REALSECRETVALUE1234567890abcdefgh"
 
 	var sawAuthorization string
-	origin := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	origin := newOrigin(func(w http.ResponseWriter, r *http.Request) {
 		sawAuthorization = r.Header.Get("Authorization")
 		_, _ = io.WriteString(w, "ok")
-	}))
+	})
 	defer origin.Close()
 
 	originURL, err := url.Parse(origin.URL)
@@ -312,10 +312,10 @@ func TestHTTPProxySecretSentinelDeniedForOtherHost(t *testing.T) {
 	const realValue = "sk-ant-oat01-REALSECRETVALUE1234567890abcdefgh"
 
 	var sawAuthorization string
-	origin := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	origin := newOrigin(func(w http.ResponseWriter, r *http.Request) {
 		sawAuthorization = r.Header.Get("Authorization")
 		_, _ = io.WriteString(w, "ok")
-	}))
+	})
 	defer origin.Close()
 
 	dir := t.TempDir()
@@ -368,7 +368,7 @@ func TestHTTPProxyCapturesFullBodies(t *testing.T) {
 
 	const requestBody = "request body with full payload"
 	const responseBody = "response body with full payload"
-	origin := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	origin := newOrigin(func(w http.ResponseWriter, r *http.Request) {
 		got, err := io.ReadAll(r.Body)
 		if err != nil {
 			http.Error(w, err.Error(), http.StatusInternalServerError)
@@ -379,7 +379,7 @@ func TestHTTPProxyCapturesFullBodies(t *testing.T) {
 			return
 		}
 		_, _ = io.WriteString(w, responseBody)
-	}))
+	})
 	defer origin.Close()
 
 	dir := t.TempDir()
@@ -469,10 +469,10 @@ func TestHTTPProxyCapturesCachedResponseBody(t *testing.T) {
 
 	const responseBody = "cached response body"
 	var originHits int
-	origin := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+	origin := newOrigin(func(w http.ResponseWriter, _ *http.Request) {
 		originHits++
 		_, _ = io.WriteString(w, responseBody)
-	}))
+	})
 	defer origin.Close()
 
 	dir := t.TempDir()
@@ -560,7 +560,7 @@ func TestHTTPProxyUpgradeAudit(t *testing.T) {
 	defer cancel()
 
 	originErrCh := make(chan error, 1)
-	origin := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	origin := newOrigin(func(w http.ResponseWriter, r *http.Request) {
 		if r.Header.Get("Upgrade") != "websocket" {
 			http.Error(w, "missing upgrade", http.StatusBadRequest)
 			return
@@ -585,7 +585,7 @@ func TestHTTPProxyUpgradeAudit(t *testing.T) {
 		originErrCh <- nil
 		_, _ = rw.WriteString("pong")
 		_ = rw.Flush()
-	}))
+	})
 	defer origin.Close()
 	originURL, err := url.Parse(origin.URL)
 	if err != nil {
@@ -681,9 +681,9 @@ func TestLocalForwarderHTTPToWorkerProxy(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	origin := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+	origin := newOrigin(func(w http.ResponseWriter, _ *http.Request) {
 		_, _ = io.WriteString(w, "ok")
-	}))
+	})
 	defer origin.Close()
 
 	dir := t.TempDir()
@@ -769,6 +769,25 @@ func TestLocalForwarderHTTPToWorkerProxy(t *testing.T) {
 	if exchange.Status != http.StatusOK {
 		t.Fatalf("audit status = %d", exchange.Status)
 	}
+}
+
+// portProbeUserAgent is how the sandbox-agent's port probe names itself
+// (`sandbox-agent/ports/probe.go`).
+const portProbeUserAgent = "discobox-sandbox-agent (port probe)"
+
+// newOrigin is an upstream for a test to point the proxy at. It answers the
+// sandbox-agent's port probe itself rather than passing it to the handler:
+// every port that starts listening on the machine is asked `HEAD /` once, and
+// this repository is worked on inside a sandbox, so a test that counts or
+// records what reached its upstream would otherwise be counting a request the
+// proxy never sent.
+func newOrigin(handler http.HandlerFunc) *httptest.Server {
+	return httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Header.Get("User-Agent") == portProbeUserAgent {
+			return
+		}
+		handler(w, r)
+	}))
 }
 
 func waitForAddr(t *testing.T, server *Server) net.Addr {

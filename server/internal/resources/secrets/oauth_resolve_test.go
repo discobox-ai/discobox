@@ -28,6 +28,13 @@ func newOAuthTokenServer(t *testing.T, access, refresh string, expiresIn int64) 
 	t.Helper()
 	ts := &oauthTokenServer{}
 	ts.server = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		// The sandbox-agent asks every port that starts listening on the
+		// machine for its identity once, and this repository is worked on
+		// inside a sandbox; that probe is not a token request. See the
+		// repository REVIEW.md.
+		if r.Header.Get("User-Agent") == "discobox-sandbox-agent (port probe)" {
+			return
+		}
 		ts.calls.Add(1)
 		body, _ := io.ReadAll(r.Body)
 		var parsed map[string]string
@@ -239,7 +246,14 @@ func TestResolveOAuthDerivesExpiryFromJWTWhenEndpointOmitsExpiresIn(t *testing.T
 	exp := time.Now().UTC().Add(8 * time.Hour).Truncate(time.Second)
 	rotatedAccess := testJWT(t, exp)
 	callCount := &atomic.Int32{}
-	tokenSrv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+	tokenSrv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		// The sandbox-agent asks every port that starts listening on the
+		// machine for its identity once, and this repository is worked on
+		// inside a sandbox; that probe is not a token request. See the
+		// repository REVIEW.md.
+		if r.Header.Get("User-Agent") == "discobox-sandbox-agent (port probe)" {
+			return
+		}
 		callCount.Add(1)
 		w.Header().Set("Content-Type", "application/json")
 		// No expires_in.

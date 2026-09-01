@@ -4,7 +4,6 @@ import (
 	"context"
 	"io"
 	"net/http"
-	"net/http/httptest"
 	"net/url"
 	"path/filepath"
 	"strings"
@@ -103,7 +102,7 @@ func TestHTTPProxyRetriesRejectedSwappedCredential(t *testing.T) {
 	var attempts atomic.Int32
 	var sawBodies []string
 	var mu sync.Mutex
-	origin := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	origin := newOrigin(func(w http.ResponseWriter, r *http.Request) {
 		attempts.Add(1)
 		received, _ := io.ReadAll(r.Body)
 		mu.Lock()
@@ -115,7 +114,7 @@ func TestHTTPProxyRetriesRejectedSwappedCredential(t *testing.T) {
 			return
 		}
 		_, _ = io.WriteString(w, "ok")
-	}))
+	})
 	defer origin.Close()
 
 	resolver := &rotatingResolver{values: []string{stale, rotated}}
@@ -158,10 +157,10 @@ func TestHTTPProxyDoesNotRetryWhenTheCredentialIsUnchanged(t *testing.T) {
 	const value = "sk-ant-oat01-STABLEVALUE000000000000000000000"
 
 	var attempts atomic.Int32
-	origin := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+	origin := newOrigin(func(w http.ResponseWriter, _ *http.Request) {
 		attempts.Add(1)
 		w.WriteHeader(http.StatusUnauthorized)
-	}))
+	})
 	defer origin.Close()
 
 	resolver := &rotatingResolver{values: []string{value}}
@@ -197,10 +196,10 @@ func TestHTTPProxyDoesNotRetryUnswappedRequests(t *testing.T) {
 	const sentinel = "sk-ant-oat01-SENTINELVALUE00000000000000000000"
 
 	var attempts atomic.Int32
-	origin := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+	origin := newOrigin(func(w http.ResponseWriter, _ *http.Request) {
 		attempts.Add(1)
 		w.WriteHeader(http.StatusUnauthorized)
-	}))
+	})
 	defer origin.Close()
 
 	client := startSecretProxy(ctx, t, sentinel, &rotatingResolver{values: []string{"unused"}})
@@ -260,14 +259,14 @@ func TestHTTPProxyRetriesWithTheDisplacedCredential(t *testing.T) {
 	const notYetHonoured = "sk-ant-oat01-TOOFRESHVALUE0000000000000000000"
 
 	var attempts atomic.Int32
-	origin := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	origin := newOrigin(func(w http.ResponseWriter, r *http.Request) {
 		attempts.Add(1)
 		if r.Header.Get("Authorization") != "Bearer "+accepted {
 			w.WriteHeader(http.StatusUnauthorized)
 			return
 		}
 		_, _ = io.WriteString(w, "ok")
-	}))
+	})
 	defer origin.Close()
 
 	resolver := &settableResolver{value: accepted}
