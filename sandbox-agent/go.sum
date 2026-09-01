@@ -31,8 +31,8 @@ github.com/creack/pty v1.1.24/go.mod h1:08sCNb52WyoAwi2QDyzUCTgcvVFhUzewun7wtTfv
 github.com/davecgh/go-spew v1.1.0/go.mod h1:J7Y8YcW2NihsgmVo/mv3lAwl/skON4iLHjSsI+c5H38=
 github.com/davecgh/go-spew v1.1.2-0.20180830191138-d8f796af33cc h1:U9qPSI2PIWSS1VwoXQT9A3Wy9MM3WgvqSxFWenqJduM=
 github.com/davecgh/go-spew v1.1.2-0.20180830191138-d8f796af33cc/go.mod h1:J7Y8YcW2NihsgmVo/mv3lAwl/skON4iLHjSsI+c5H38=
-github.com/discobox-ai/x v0.0.0-20260826224013-0a7af8e05045 h1:CEzFRjcH3cJR1YQU60/1iUIYDtQEfp0j94WNAQsrS+Q=
-github.com/discobox-ai/x v0.0.0-20260826224013-0a7af8e05045/go.mod h1:xVXrXaXHA5GgK7xA4pHkd/mC3OqNW2IjJcAXzpQg1Gw=
+github.com/discobox-ai/x v0.0.0-20260828205057-2567df0ccf27 h1:5YxUixwIYTJhHszbiH8x8jZImryn8Z3t6waapi7/2mk=
+github.com/discobox-ai/x v0.0.0-20260828205057-2567df0ccf27/go.mod h1:ozoGHzU8woLHyDsmXikg5H1raf07miXC7vg51QtkQew=
 github.com/distribution/reference v0.6.0 h1:0IXCQ5g4/QMHHkarYzh5l+u8T3t73zM5QvfrDyIgxBk=
 github.com/distribution/reference v0.6.0/go.mod h1:BbU0aIcezP1/5jX/8MP0YiH4SdvB5Y4f/wlDRiLyi3E=
 github.com/dlclark/regexp2 v1.12.0 h1:0j4c5qQmnC6XOWNjP3PIXURXN2gWx76rd3KvgdPkCz8=

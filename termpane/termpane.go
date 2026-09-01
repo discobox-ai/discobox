@@ -39,7 +39,7 @@ import (
 	"github.com/charmbracelet/x/ansi"
 	"github.com/charmbracelet/x/vt"
 
-	"github.com/discobox-ai/discobox/termpane/selection"
+	"github.com/discobox-ai/x/selection"
 )
 
 // Stream is a terminal to draw: its output to read, its input to write, and a

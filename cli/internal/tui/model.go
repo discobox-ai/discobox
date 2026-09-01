@@ -22,7 +22,7 @@ import (
 	"charm.land/lipgloss/v2"
 
 	"github.com/discobox-ai/discobox/termpane"
-	"github.com/discobox-ai/discobox/termpane/selection"
+	"github.com/discobox-ai/x/selection"
 )
 
 type focusArea int

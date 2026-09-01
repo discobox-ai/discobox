@@ -22,6 +22,8 @@ github.com/clipperhouse/displaywidth v0.11.0 h1:lBc6kY44VFw+TDx4I8opi/EtL9m20WSE
 github.com/clipperhouse/displaywidth v0.11.0/go.mod h1:bkrFNkf81G8HyVqmKGxsPufD3JhNl3dSqnGhOoSD/o0=
 github.com/clipperhouse/uax29/v2 v2.7.0 h1:+gs4oBZ2gPfVrKPthwbMzWZDaAFPGYK72F0NJv2v7Vk=
 github.com/clipperhouse/uax29/v2 v2.7.0/go.mod h1:EFJ2TJMRUaplDxHKj1qAEhCtQPW2tJSwu5BF98AuoVM=
+github.com/discobox-ai/x v0.0.0-20260828205057-2567df0ccf27 h1:5YxUixwIYTJhHszbiH8x8jZImryn8Z3t6waapi7/2mk=
+github.com/discobox-ai/x v0.0.0-20260828205057-2567df0ccf27/go.mod h1:ozoGHzU8woLHyDsmXikg5H1raf07miXC7vg51QtkQew=
 github.com/ibuildthecloud/x/ansi v0.11.9-0.20260813023456-57e8cef06953 h1:/GOkh3d/IfqS02PmOrYsBenQsEJEh+b4hIozkYwb/wc=
 github.com/ibuildthecloud/x/ansi v0.11.9-0.20260813023456-57e8cef06953/go.mod h1:DG/hpOnaI2QJ/KMMqLL2h0KVhluuJLazf8973P+Vy5w=
 github.com/lucasb-eyer/go-colorful v1.4.1 h1:1EO+WB73+EH8EVbzlrG3KLAfEypQWVHIBqlTf+2hNss=

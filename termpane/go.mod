@@ -7,6 +7,7 @@ require (
 	github.com/charmbracelet/ultraviolet v0.0.0-20260703014108-f5a850f9c2b7
 	github.com/charmbracelet/x/ansi v0.11.7
 	github.com/charmbracelet/x/vt v0.0.0-20260713092006-0d683c34c74b
+	github.com/discobox-ai/x v0.0.0-20260828205057-2567df0ccf27
 )
 
 require (

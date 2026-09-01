@@ -197,9 +197,11 @@ survives the cut. Detection is scheme-led and stops at the row: a URL wrapped
 across the right edge is not one.
 
 **Selection is a cell-space overlay, mouse only** (ADR 0036). The gesture
-machine and extraction live in the `selection` subpackage against a small
-`Grid` interface. A double-click's idea of a word is vte-shaped: letters,
-digits, the underscore, and a configurable set of gluing punctuation
+machine and extraction are not here at all: they live in
+[`discobox-ai/x/selection`](https://github.com/discobox-ai/x/tree/main/selection),
+against a small `Grid` interface, because nothing in them is about terminals.
+A double-click's idea of a word is vte-shaped: letters, digits, the
+underscore, and a configurable set of gluing punctuation
 (`WithWordChars`), whose default — xfce4-terminal's effective set less the
 comma — brings out a path, URL, or `--flag` in one click while the shell's
 own operators still split; `select.go` adapts the emulator to it as one absolute line

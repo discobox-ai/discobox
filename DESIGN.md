@@ -120,9 +120,10 @@ flowchart TD
   provider Go interfaces, provider manager, and Docker/VM/cloud/pool-backed
   provider implementations.
 - Shared generic libraries live in [`discobox-ai/x`](https://github.com/discobox-ai/x)
-  — `gormdb`, `gitutil`, `id`, `shorttmp` — consumed at the latest commit on its
-  `main`. Nothing there knows about Discobox; a helper that would have to is not
-  generic and belongs in the module that needs it.
+  — `frontmatter`, `gormdb`, `gitutil`, `id`, `selection`, `shorttmp` — consumed
+  at the latest commit on its `main`. Nothing there knows about Discobox; a
+  helper that would have to is not generic and belongs in the module that needs
+  it.
 - Pool-agent module: in-guest pool host process, pool-local runtime DTOs, and
   generated pool-local sandbox operations API server adapter; depends on root
   pool boot contracts and OpenAPI contracts.

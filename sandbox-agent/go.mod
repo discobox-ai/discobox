@@ -11,7 +11,7 @@ require (
 	github.com/coreos/go-systemd/v22 v22.5.0
 	github.com/creack/pty v1.1.24
 	github.com/discobox-ai/discobox v0.0.0
-	github.com/discobox-ai/x v0.0.0-20260826224013-0a7af8e05045
+	github.com/discobox-ai/x v0.0.0-20260828205057-2567df0ccf27
 	github.com/distribution/reference v0.6.0
 	github.com/fsnotify/fsnotify v1.10.1
 	github.com/go-chi/chi/v5 v5.3.0
