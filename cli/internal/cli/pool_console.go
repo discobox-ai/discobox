@@ -68,6 +68,7 @@ Without POOL_ID the project's default pool is used.`,
 				return err
 			}
 			fmt.Fprintf(cmd.ErrOrStderr(), "Opening an admin console on pool %s's host (%s to detach)\n", poolID, a.detachHint())
+			fmt.Fprintln(cmd.ErrOrStderr(), "If the screen stays blank, press Enter to redraw the prompt.")
 			return a.attachPoolConsole(cmd.Context(), projectID, poolID, cmd.InOrStdin(), cmd.OutOrStdout(), cmd.ErrOrStderr())
 		},
 	}
