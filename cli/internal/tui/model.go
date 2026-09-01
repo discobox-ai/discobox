@@ -726,6 +726,9 @@ func (m *Model) update(msg tea.Msg) tea.Cmd {
 	case shimmerTickMsg:
 		return m.advanceShimmer(msg)
 
+	case tea.PasteMsg:
+		return m.updatePaste(msg)
+
 	case tea.KeyPressMsg:
 		// Ctrl-L repaints, and is not consumed doing it. The redraw here is
 		// the window's own — Bubble Tea throws its picture of the screen away
@@ -752,6 +755,30 @@ func (m *Model) update(msg tea.Msg) tea.Cmd {
 	// as the pane library's own messages, which nothing here can name, and
 	// holding any of them back stops the pane dead.
 	if m.inPanes() {
+		return m.updatePane(msg)
+	}
+	var cmd tea.Cmd
+	m.prompt, cmd = m.prompt.Update(msg)
+	return cmd
+}
+
+// updatePaste routes pasted text the way updateKey routes a key press.
+//
+// A terminal reports a bracketed paste as a message of its own, not as the keys
+// it would have taken to type it, so it reaches nothing that only handles key
+// presses. It goes where typing would go: to the modal in front of everything
+// else, then to the pane that owns every key while one is focused, and
+// otherwise to the composer. On a screen drawn in place of the composer —
+// the introduction, the secrets and harnesses lists, the options — there is
+// nothing on screen a paste could land in, and text pushed into a composer
+// nobody can see is worse than a paste that does nothing.
+func (m *Model) updatePaste(msg tea.PasteMsg) tea.Cmd {
+	switch {
+	case m.dialog != nil:
+		return m.dialog.paste(msg)
+	case m.welcoming, m.optionsOpen, m.harnessesOpen, m.secretsOpen:
+		return nil
+	case m.inPanes():
 		return m.updatePane(msg)
 	}
 	var cmd tea.Cmd

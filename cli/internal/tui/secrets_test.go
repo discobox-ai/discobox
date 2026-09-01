@@ -5,6 +5,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	tea "charm.land/bubbletea/v2"
 )
 
 // The secrets screen is the operator's side of the credential inbox: what the
@@ -306,6 +308,45 @@ func TestTheNewSecretChainAsksEveryQuestion(t *testing.T) {
 	got := ds.createdSecrets[0]
 	if got.Name != "npm" || got.Host != "registry.npmjs.org" || got.Value != "npm_value" {
 		t.Fatalf("created = %#v", got)
+	}
+}
+
+// The value question says "paste the token", and a paste is the only way anyone
+// answers it: nobody types a credential. A terminal reports a bracketed paste
+// as a message of its own rather than as the keys it would have taken to type,
+// so a window that only handled key presses dropped it on the floor — the
+// dialog sat there taking nothing, and the pasted token went into the composer
+// behind it, which is not even on screen.
+func TestATokenIsPastedIntoTheSecretItAnswers(t *testing.T) {
+	m, ds := secretsFixture(t)
+
+	send(t, m, key("n"))
+	send(t, m, typeString("npm")...)
+	send(t, m, key("enter"))
+	send(t, m, key("enter")) // a token, the first row
+	send(t, m, tea.PasteMsg{Content: "registry.npmjs.org"})
+	send(t, m, key("enter"))
+	if m.dialog == nil || !strings.Contains(m.dialog.body, "Paste the token") {
+		t.Fatalf("dialog = %s, want the value question", describe(m.dialog))
+	}
+
+	// Long, because a credential is as long as whoever issued it made it: a
+	// character limit on the field would store the front of this and fail
+	// later as a wrong password.
+	token := "npm_" + strings.Repeat("s3cr3t", 60)
+	send(t, m, tea.PasteMsg{Content: token})
+	send(t, m, key("enter"))
+
+	if len(ds.createdSecrets) != 1 {
+		t.Fatalf("created = %#v, want the secret the pasted answers describe", ds.createdSecrets)
+	}
+	got := ds.createdSecrets[0]
+	if got.Host != "registry.npmjs.org" || got.Value != token {
+		t.Fatalf("created = {Host: %q, Value: %q (%d chars)}, want the pasted host and the whole pasted token (%d chars)",
+			got.Host, got.Value, len(got.Value), len(token))
+	}
+	if v := m.prompt.Value(); v != "" {
+		t.Fatalf("the composer behind the dialog took the paste: %q", v)
 	}
 }
 

@@ -115,7 +115,10 @@ func inputDialog(title, body, placeholder, value string, act func(string) tea.Cm
 	ti.Placeholder = placeholder
 	ti.SetValue(value)
 	ti.Focus()
-	ti.CharLimit = 200
+	// No character limit. The longest thing typed into one of these is a
+	// credential, and a credential is as long as whoever issued it made it —
+	// a limit here would take a pasted token and silently store the front of
+	// it, which fails later as a wrong password rather than here as a refusal.
 	ti.SetWidth(44)
 	ti.Prompt = "› "
 	return &dialog{kind: dlgInput, title: title, body: body, input: ti, action: act}
@@ -244,6 +247,27 @@ func (d *dialog) update(msg tea.KeyPressMsg) (tea.Cmd, bool) {
 		return cmd, false
 	}
 	return nil, false
+}
+
+// paste takes bracketed pasted text.
+//
+// A terminal reports a paste as one message of its own rather than as the keys
+// it would have taken to type, so a dialog that only heard key presses heard
+// nothing at all from a paste — and the dialogs that ask for a credential are
+// exactly the ones nobody types into.
+func (d *dialog) paste(msg tea.PasteMsg) tea.Cmd {
+	switch d.kind {
+	case dlgInput:
+		var cmd tea.Cmd
+		d.input, cmd = d.input.Update(msg)
+		return cmd
+	case dlgMessage, dlgText:
+		// Only the search line takes text; the body itself is not editable.
+		if d.typing {
+			d.setQuery(d.query + msg.Content)
+		}
+	}
+	return nil
 }
 
 // updateText handles a key on a scrolling body: the search line while one is

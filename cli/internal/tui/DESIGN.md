@@ -922,6 +922,16 @@ there is nothing to answer, and closing it would drop the user onto a pane that
 has not attached. `provisioningDoneMsg` takes it down; Esc gives up the view of
 the discobox, not the discobox.
 
+**A paste is routed like a keystroke** (`updatePaste`, `dialog.paste`). A
+terminal reports a bracketed paste as one message of its own rather than as the
+keys it would have taken to type, so it reaches nothing that only handles
+`tea.KeyPressMsg` — which is how "Paste the token" was a question that could not
+be pasted into, with the token landing in the composer behind the dialog. It
+follows the same layering typing does: the modal first, then the focused pane,
+then the composer, and nothing at all on a screen drawn in place of the composer.
+Input dialogs carry no character limit, because a credential is as long as
+whoever issued it made it and a truncated one fails later as a wrong password.
+
 **The introduction is shown once, and the project is what remembers**
 (`welcome.go`, `WithWelcome`, `DataSource.MarkWelcomed`). Every other screen
 assumes you know what a discobox is; this one says so, and then never again. The
