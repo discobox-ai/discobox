@@ -6,6 +6,7 @@ import (
 	"context"
 	"crypto/tls"
 	"crypto/x509"
+	"encoding/base64"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -1082,5 +1083,120 @@ func TestHTTPProxySecretSwapOverMITM(t *testing.T) {
 	}
 	if strings.Contains(exchange.RequestHeaders, sentinel) || strings.Contains(exchange.RequestHeaders, realValue) {
 		t.Fatalf("audit leaked secret material: %s", exchange.RequestHeaders)
+	}
+}
+
+// Git sends a credential as `Authorization: Basic base64(user:password)`, so a
+// sentinel traveling that way is invisible to a literal scan. The upstream
+// must receive the real credential inside the re-encoded blob, and the audit
+// must hold neither the real value nor its encoding.
+func TestHTTPProxySecretSentinelSwapInBasicAuth(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	const sentinel = "ghp_SENTINELVALUE0000000000000000000000"
+	const realValue = "ghp_REALSECRETVALUE1234567890abcdefghij"
+	basic := func(password string) string {
+		return "Basic " + base64.StdEncoding.EncodeToString([]byte("x-access-token:"+password))
+	}
+
+	var sawAuthorization string
+	origin := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		sawAuthorization = r.Header.Get("Authorization")
+		_, _ = io.WriteString(w, "ok")
+	}))
+	defer origin.Close()
+
+	originURL, err := url.Parse(origin.URL)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	dir := t.TempDir()
+	prepared, err := PrepareCertificates(PrepareOptions{
+		Dir:         filepath.Join(dir, "certs"),
+		ProxyURL:    "https://127.0.0.1:0",
+		ServerHosts: []string{"127.0.0.1", "localhost"},
+		ClientIDs:   []string{"sandbox-1"},
+	})
+	if err != nil {
+		t.Fatalf("PrepareCertificates() error = %v", err)
+	}
+
+	dbPath := filepath.Join(dir, "audit.db")
+	server, err := NewServer(ctx, Config{
+		ListenAddress: "127.0.0.1:0",
+		CertDir:       prepared.Bundle.Dir,
+		DatabaseDSN:   dbPath,
+		Recording:     RecordingConfig{Enabled: true, QueueSize: 16},
+		Secrets: SecretsConfig{
+			Clients: []SecretClient{{ClientID: "sandbox-1", Sentinels: []string{sentinel}}},
+		},
+	}, prepared.Bundle, stubResolver{value: realValue, host: originURL.Hostname()})
+	if err != nil {
+		t.Fatalf("NewServer() error = %v", err)
+	}
+	errCh := make(chan error, 1)
+	go func() { errCh <- server.ListenAndServe() }()
+	var closeOnce sync.Once
+	closeServer := func() {
+		closeOnce.Do(func() {
+			if err := server.Close(); err != nil {
+				t.Fatalf("Close() error = %v", err)
+			}
+			select {
+			case err := <-errCh:
+				if err != nil {
+					t.Fatalf("ListenAndServe() error = %v", err)
+				}
+			case <-time.After(5 * time.Second):
+				t.Fatal("timed out waiting for proxy shutdown")
+			}
+		})
+	}
+	t.Cleanup(closeServer)
+	addr := waitForAddr(t, server)
+
+	client := mtlsHTTPClient(t, addr.String(), prepared.Clients["sandbox-1"])
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, origin.URL, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	req.Header.Set("Authorization", basic(sentinel))
+	resp, err := client.Do(req)
+	if err != nil {
+		t.Fatalf("client.Do() error = %v", err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("status = %d", resp.StatusCode)
+	}
+	if sawAuthorization != basic(realValue) {
+		t.Fatalf("upstream Authorization = %q, want %q", sawAuthorization, basic(realValue))
+	}
+
+	closeServer()
+
+	pools, err := gormdb.Open(gormdb.Config{DSN: dbPath})
+	if err != nil {
+		t.Fatalf("open audit db: %v", err)
+	}
+	t.Cleanup(func() { _ = pools.Close() })
+	var exchange audit.HTTPExchange
+	if err := pools.Read.Where("client_id = ?", "sandbox-1").First(&exchange).Error; err != nil {
+		t.Fatalf("read audit exchange: %v", err)
+	}
+	if strings.Contains(exchange.RequestHeaders, realValue) {
+		t.Fatalf("audit leaked real secret value: %s", exchange.RequestHeaders)
+	}
+	if strings.Contains(exchange.RequestHeaders, basic(realValue)) {
+		t.Fatalf("audit leaked encoded secret value: %s", exchange.RequestHeaders)
+	}
+	var headers map[string][]string
+	if err := json.Unmarshal([]byte(exchange.RequestHeaders), &headers); err != nil {
+		t.Fatalf("unmarshal request headers: %v", err)
+	}
+	if values := headers["Authorization"]; len(values) != 1 || values[0] != "[REDACTED]" {
+		t.Fatalf("Authorization audit values = %#v, want [REDACTED]", values)
 	}
 }

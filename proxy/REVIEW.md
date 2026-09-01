@@ -45,6 +45,20 @@
   strings; do not add prefix/format heuristics that could misclassify real
   tokens. Sentinels are non-secret; the real value comes only from the injected
   `secrets.Resolver`.
+- Base64 is a transport encoding, not an exception to that: a token is decoded,
+  matched against the same sentinel set, and rewritten only when a sentinel
+  resolved. Re-encode with the encoding the token arrived in — a value that
+  comes back re-padded or in the other alphabet is a corrupted request. Never
+  rewrite a token on anything weaker than a sentinel match.
+- `tokenEncoding` must keep the property that the encoding it picks re-encodes
+  the token it was given to itself, so passing a token through cannot reshape
+  it. Its ambiguous case (a multiple of 4, no `=`, no character 62/63) is a
+  documented default, not an inference; changing which way it defaults changes
+  what `Authorization: Basic` receives.
+- Any new place a value is scanned must go through `swapSentinels`, so the
+  literal and base64 forms stay one behavior. `Apply` and `ApplyPrevious` share
+  it deliberately; a second hand-written scan loop is how one of them silently
+  stops covering an encoding.
 - The resolver is a stable construction dependency, not reloadable config. It
   must be preserved across `ApplyConfig`; only the sentinel set and swap tuning
   come from `Config.Secrets`.

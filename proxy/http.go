@@ -454,6 +454,7 @@ func (h *httpProxy) swapSecrets(req *http.Request, meta *requestMeta, client cli
 		attribute.Bool("proxy.secret_swap.swapped", true),
 		attribute.Int("proxy.secret_swap.headers", len(result.Headers)),
 		attribute.Int("proxy.secret_swap.query_params", len(result.QueryParams)),
+		attribute.Bool("proxy.secret_swap.encoded", result.Encoded),
 	)
 }
 

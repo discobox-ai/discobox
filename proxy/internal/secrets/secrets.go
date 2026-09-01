@@ -159,6 +159,9 @@ type Result struct {
 	QueryParams []string
 	// Errors holds non-fatal resolution error strings (transient failures).
 	Errors []string
+	// Encoded reports that at least one substitution happened inside a
+	// base64-encoded token rather than in a value's own text.
+	Encoded bool
 }
 
 // Swapped reports whether any value in the request was substituted.
@@ -214,17 +217,53 @@ func (s *Swapper) Apply(ctx context.Context, req *http.Request, clientID string)
 }
 
 func (s *Swapper) swapValue(ctx context.Context, clientID, host, value string, sentinels []string, res *Result) (string, bool) {
+	out := swapSentinels(value, sentinels, func(sentinel string) (string, bool) {
+		return s.resolve(ctx, clientID, sentinel, host, res)
+	})
+	if out.encoded {
+		res.Encoded = true
+	}
+	return out.value, out.swapped
+}
+
+// lookupFunc returns the value to substitute for a sentinel, and whether there
+// is one to substitute. It is what separates a swap from a retry with the
+// displaced value: the scanning is identical, only the lookup differs.
+type lookupFunc func(sentinel string) (string, bool)
+
+// swapOutcome is the result of scanning one value.
+type swapOutcome struct {
+	value   string
+	swapped bool
+	// encoded reports that at least one substitution happened inside a
+	// base64-encoded token rather than in the value's own text.
+	encoded bool
+}
+
+// swapSentinels substitutes every sentinel in value, both where it appears
+// literally and where it is hidden inside a base64-encoded token (see
+// encoded.go). Encoded tokens are handled first so a substituted real value is
+// never itself decoded and rescanned.
+func swapSentinels(value string, sentinels []string, lookup lookupFunc) swapOutcome {
+	out, encoded := swapEncoded(value, sentinels, lookup)
+	out, literal := replaceSentinels(out, sentinels, lookup)
+	return swapOutcome{value: out, swapped: encoded || literal, encoded: encoded}
+}
+
+// replaceSentinels substitutes every resolvable sentinel appearing literally in
+// value.
+func replaceSentinels(value string, sentinels []string, lookup lookupFunc) (string, bool) {
 	out := value
 	swapped := false
 	for _, sentinel := range sentinels {
 		if !strings.Contains(out, sentinel) {
 			continue
 		}
-		value, ok := s.resolve(ctx, clientID, sentinel, host, res)
+		resolved, ok := lookup(sentinel)
 		if !ok {
 			continue
 		}
-		out = strings.ReplaceAll(out, sentinel, value)
+		out = strings.ReplaceAll(out, sentinel, resolved)
 		swapped = true
 	}
 	return out, swapped
@@ -374,21 +413,11 @@ func (s *Swapper) ApplyPrevious(req *http.Request, clientID string) Result {
 	var res Result
 	for name, values := range req.Header {
 		for i, value := range values {
-			out := value
-			swapped := false
-			for _, sentinel := range sentinels {
-				if !strings.Contains(out, sentinel) {
-					continue
-				}
-				prev, ok := s.previousFor(clientID, sentinel, host, now)
-				if !ok {
-					continue
-				}
-				out = strings.ReplaceAll(out, sentinel, prev)
-				swapped = true
-			}
-			if swapped {
-				req.Header[name][i] = out
+			out := swapSentinels(value, sentinels, func(sentinel string) (string, bool) {
+				return s.previousFor(clientID, sentinel, host, now)
+			})
+			if out.swapped {
+				req.Header[name][i] = out.value
 				res.Headers = append(res.Headers, http.CanonicalHeaderKey(name))
 			}
 		}

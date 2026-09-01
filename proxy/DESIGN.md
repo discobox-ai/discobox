@@ -168,6 +168,26 @@ Key properties:
   this phase because the request-body audit spool would capture the swapped
   value. When a value is swapped into a query parameter, the audit records the
   pre-swap URL so the real value never lands in an audit row.
+- **A sentinel is also matched through base64.** Git's HTTP transport sends a
+  credential as `Authorization: Basic base64(user:password)`, so a sentinel
+  traveling that way is invisible to a literal scan and the upstream is handed
+  the placeholder. Every value is therefore scanned twice: as itself, and
+  through each base64 token in it — decoded, scanned as text, and re-encoded in
+  the alphabet and padding it arrived in, but only when a sentinel was found
+  *and* resolved. Because the substitution is over the decoded text, the
+  username half, the password half, both halves, and a token that is nothing
+  but an encoded sentinel are all the same case, and the proxy learns no
+  structure inside the decoded bytes. Decoding is strict and a token that does
+  not decode, or holds no sentinel, is passed through byte-for-byte.
+- **The token's encoding is read off it where it is observable, defaulted where
+  it is not.** The alphabet is visible only in a token that uses character 62/63
+  (`+` `/` vs `-` `_`), and the padding only in one that carries `=` or has a
+  length that cannot be padded. A token with neither tell is ambiguous, and
+  resolves to standard-with-padding — what `Authorization: Basic` is defined to
+  carry, and what the Git case lands in. Either way the chosen encoding
+  re-encodes the original token to itself, so a token passed through is never
+  reshaped; the default is only visible on a token that was rewritten, when the
+  real credential needs padding or a 62/63 character the sentinel did not.
 - **Caching.** Resolved values are cached per `(clientID, sentinel, host)` until
   the grant expiry (capped by `PositiveTTLSeconds`); denials are cached briefly
   (`NegativeTTLSeconds`); transient resolver errors are not cached. A resolver
