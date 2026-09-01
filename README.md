@@ -3,10 +3,11 @@
 **Give your agent its own disco.**
 A whole computer it can do anything to — and no way to reach your keys.
 
-Discobox runs coding agents in disposable, network-isolated boxes where the
-agent has a complete computer — root, package installs, whatever it wants — and
-none of your credentials. Everything inside the box is unconstrained.
-Everything that crosses the boundary goes through one door you control.
+Discobox runs coding agents in disposable, network-isolated boxes on your own
+machine, where the agent has a complete computer — root, package installs,
+whatever it wants — and none of your credentials. Everything inside the box is
+unconstrained. Everything that crosses the boundary goes through one door you
+control.
 
 > **Status: in development.** The isolation, the network boundary, and the
 > credential broker run today. The policy layer that evaluates data flow is
@@ -19,7 +20,8 @@ Everything that crosses the boundary goes through one door you control.
 
 A **discobox** is one disposable machine with your source already in it,
 running the agent of your choice. It launches in seconds, you reach it over
-ssh, git, and HTTP as if it were local, and the work comes back as commits.
+ssh, git, and HTTP as if you were working inside it, and the work comes back as
+commits.
 
 **Claude Code** and **Codex** ship built in, with more to come. A harness is
 just a container image carrying a label, so any terminal-based coding agent you
@@ -40,8 +42,11 @@ discobox ls              # boxes started from this directory
 discobox apply           # cherry-pick the box's commits onto your working tree
 ```
 
-Nothing was installed on your laptop, nothing ran on your laptop, and no
-credential of yours entered the box.
+Typing `discobox` on its own opens the launcher instead: the same three steps —
+start a box, work in it, apply what it committed — in one window.
+
+The box runs on your machine and reaches nothing on it. Nothing was installed
+outside the box, nothing ran outside it, and no credential of yours entered it.
 
 ---
 
@@ -101,8 +106,8 @@ outbound traffic rather than a declared command. Designed, not implemented.
 
 ## What it's like to use
 
-The reason you work on your laptop is that everything is already there. A
-remote box gives that up. Most of Discobox is spent giving it back.
+The reason you work in your own checkout is that everything is already there.
+A sealed box gives that up. Most of Discobox is spent giving it back.
 
 - **Reachability** — `ssh $DISCOBOX_ID` works after
   `discobox admin ssh-config --write`. git, HTTP, and ssh are proxied through
@@ -132,6 +137,7 @@ Three primitives, and no fourth.
 ## Commands
 
 ```
+discobox            Open the launcher
 discobox run        Launch a prompt in a new discobox
 discobox ls         List discoboxes started from this directory
 discobox shell      Run a command in a box, or open its login shell
@@ -140,10 +146,11 @@ discobox apply      Cherry-pick a box's commits onto your working tree
 discobox push       Push local commits into a box's origin, to rebase there
 discobox proxy      Forward a box's listening ports to local ports
 discobox cp         Copy files in and out
+discobox tools      Run git, ssh, or VS Code against a box
 discobox secret     Manage secrets, grants, and approval requests
-discobox configure  Configure a harness
+discobox configure  Enable, disable, and set the default harness
 discobox tui        Launch the interactive discobox launcher
-discobox server     Run the API server
+discobox admin      Pools, projects, harness images, and the API server
 ```
 
 `discobox --help` for the rest.
@@ -167,6 +174,10 @@ Pre-1.0 and under active development. Interfaces change.
 | Trusted-side verification of credential use ([ADR 0031](docs/adr/0031-agent-credentials-are-a-portable-protocol-with-ephemeral-sentinels.md)) | Designed |
 | Policy compiled from English to a deterministic engine | Designed |
 | Response-side inspection and data-flow policy | Designed |
+| Remote pools — boxes hosted somewhere other than this machine | Designed |
+
+Every box runs on your own machine today. Pools are the seam where that stops
+being true, and hosting them elsewhere is planned, not built.
 
 Platforms: macOS, Linux, Windows.
 
