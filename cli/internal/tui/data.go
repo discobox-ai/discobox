@@ -857,16 +857,54 @@ type Grant struct {
 // access token is what travels, and the rest is what the control plane spends
 // to renew it when it goes stale.
 type NewSecret struct {
-	Name  string
-	Type  string
-	Host  string
-	Value string
+	Name string
+	Type string
+	Host string
+
+	// MaxTTLSeconds is the ceiling on grant lifetimes the credential is stored
+	// with. It is set here rather than left to a second call because it is a
+	// fact about the credential — how long consent to it may last — and a
+	// secret that exists for even a moment without one is a secret whose
+	// grants are limited by whatever the server's default happens to be.
+	//
+	// Zero is not absence: it is the answer "no limit", and grants on the
+	// credential may then live forever.
+	MaxTTLSeconds int64
+
+	Value SecretValue
+}
+
+// SecretValue is a credential's material: one opaque token, or the several
+// fields an oauth credential renews itself with.
+//
+// It travels as one thing because the server stores one value per secret and
+// replaces it whole. Sending half of an oauth credential — a new refresh token
+// without the access token beside it — would drop the rest, which is why
+// changing any part of one means storing all of it again.
+type SecretValue struct {
+	Token string
 
 	// What an oauth credential needs to renew itself.
 	RefreshToken string
 	TokenURL     string
 	ClientID     string
 	Scopes       []string
+}
+
+// SecretUpdate is what an edit says about a secret. Every field is a pointer
+// because absence has to be spelled differently from the values themselves:
+// an empty host releases a binding and a zero limit allows grants that never
+// expire, so neither can stand for "unchanged".
+//
+// The type is not among them. A token and an oauth credential are stored and
+// renewed differently, and the server has no answer for a secret that changes
+// from one to the other — that is a new credential, and deleting the old one is
+// somebody's decision rather than a side effect of an edit.
+type SecretUpdate struct {
+	Name          *string
+	Host          *string
+	MaxTTLSeconds *int64
+	Value         *SecretValue
 }
 
 // Approval is what a person decided about a request: which secret answers it,
@@ -1059,17 +1097,14 @@ type DataSource interface {
 	// returns it, so the approval that follows has a secret to name.
 	CreateSecret(ctx context.Context, secret NewSecret) (Secret, error)
 
-	// SetSecretHost binds a secret to a host, or releases it with an empty one.
-	// The binding is what says a credential may only be sent to that host and
-	// the hosts beneath it, so widening it is the deliberate act the approval
-	// dialog asks about before it approves against a neighboring host.
-	SetSecretHost(ctx context.Context, secretID, host string) error
-
-	// SetSecretMaxGrantTTL sets the longest a grant on the secret may live, in
-	// seconds; zero lifts the limit. It is the other half of what a secret
-	// says about itself: the binding limits where a credential may go, this
-	// limits how long consent to it may last.
-	SetSecretMaxGrantTTL(ctx context.Context, secretID string, seconds int64) error
+	// UpdateSecret changes what a secret says about itself: its name, the host
+	// it may be sent to, how long consent to it may last, and the credential
+	// itself. Everything left nil is left alone.
+	//
+	// It is one call because it is one endpoint and, from the window, one form:
+	// a card whose rows were saved by a call each would half-apply when the
+	// second one failed, and would report two things where a person did one.
+	UpdateSecret(ctx context.Context, secretID string, update SecretUpdate) error
 
 	// Grants lists the standing grants on one secret, or on every secret in the
 	// project when secretID is empty.

@@ -18,7 +18,7 @@ flowchart LR
     M --> L["sandboxList"]
     M --> O["optionSet (Shift-Tab)"]
     M --> A["harnessList (F3)"]
-    M --> D["dialog (menu, confirm, input, help, wait)"]
+    M --> D["dialog (menu, confirm, input, form, help, wait)"]
     M --> W["welcome (once per project)"]
     W -->|Enter| MW["DataSource.MarkWelcomed"]
     P -->|Enter| Run["DataSource.Run → attach"]
@@ -27,9 +27,9 @@ flowchart LR
     L -->|Enter s| WS["workspace → Execs / OpenExec / NewShell / NewTerminal"]
     WS -->|poll| Svc["services → Services / ServiceLogs"]
     WS -->|leader S0| SvcMenu["services menu → DoService"]
-    L -->|C| Cred["credential dialog → Secrets / CreateSecret / Approve / Deny"]
+    L -->|C| Cred["credential dialog → Secrets / CreateSecret / UpdateSecret / Approve / Deny"]
     M --> S["secretList (F4)"]
-    S -->|n e d enter| SVerb["Secrets / Grants / CreateSecret / SetSecretHost / RevokeGrant / DeleteSecret"]
+    S -->|n e d enter p| SVerb["Secrets / Grants / CreateSecret / UpdateSecret / CreateGrant / RevokeGrant / DeleteSecret"]
     S -->|C| Cred
     WS -->|leader C| Cred
     L -->|y| Overlay["overlay pane → DataSource.Open"]
@@ -80,18 +80,88 @@ thing that makes an OAuth credential useless — whether it can renew itself at
 all. None of it is the credential: not the access token, not the refresh token.
 The rows under it are the grants, and the first one **makes one**, so a
 credential with nothing standing on it is somewhere to decide who may use it
-rather than a dead end naming another command. `n` stores a new credential:
-the name, the kind — a token, or an OAuth credential that renews itself — the
-host, and then the values, which are masked. An OAuth credential is several
-questions rather than one, because it is several fields and all of them are
-needed: the access token travels, and the refresh token, the token URL and the
-client are what the control plane spends to renew it. Without the refresh
-material nothing is stored, because the server would refuse an `oauth` secret
-that cannot renew; `e` edits
-the binding, opening on what the secret already has; `d` deletes, saying how
+rather than a dead end naming another command. `n` stores a new credential and
+`e` edits one, both on the same form (`secretForm`); `d` deletes, saying how
 many live grants go with it and defaulting to No. `C` answers the oldest
 request waiting anywhere in the project — including one no discobox owns, which
 the list's row mark cannot carry and which would otherwise have no home.
+
+**A decision is one card, not a run of questions** (`form.go`, `dlgForm`). A
+pre-approval was seven dialogs and a new secret up to eight, and a sequence of
+modals is the wrong shape for a decision whose parts are read against each
+other: nothing could be revised without abandoning the run, the answers already
+given were off screen by the third question, and the shape of what was being
+granted was only visible once it had been granted. A form asks everything at
+once, in the same label/value column a card is read as — the thing being built
+looks like the thing it will be when it is read back.
+
+Rows that a given answer makes irrelevant are **dimmed and stepped over, not
+taken away**. Choosing "an OAuth credential" must not produce four fields nobody
+knew were coming, and a card that reflowed under the cursor would be a card that
+moved the row being answered. An unanswerable row says which it is: not yet
+applicable (`only for an OAuth credential`), or not editable at all
+(`unchanged — type to replace it`). One `hint` line under the form carries the
+sentence for the row — or the picker option — under the cursor, which is what a
+card each used to be spent on saying.
+
+That line keeps **`hintRows` rows whether or not it has anything to say**. A
+dialog is drawn from its content and a sentence wraps to as many rows as it
+needs, so an explanation that ran to three rows on one row of the form and one
+on the next made the window taller and shorter as the cursor moved down it —
+every row under the cursor shifting while somebody is reading them, on a card
+whose whole point is that it holds still. A sentence longer than the allowance
+is folded onto its last row and cut with an ellipsis.
+
+**Create and edit are the same form** (`secretForm`). Editing opens on what the
+credential is and takes everything the server will change: the name, the
+binding, the grant limit, and the value. A value cannot be read *back* — nothing
+here can — but it can be replaced, and a card that would not take one made
+rotating a token a matter of deleting the secret and storing it again, taking
+every grant standing on it along with it. The value rows say
+`unchanged — type to replace it`, and leaving them empty is the ordinary answer.
+
+The **kind** is the one row an existing credential locks: a token and an oauth
+credential are stored and renewed differently, and the server has no answer for
+a secret that changes from one to the other — that is a new credential, and
+deleting the old one is somebody's decision rather than a side effect of an
+edit.
+
+**A value is replaced whole** (`replacementValue`). The server stores one value
+per secret and overwrites it, so half an oauth credential is not a smaller
+change — it is the rest of it dropped. Touching any part of one means supplying
+all of it, and since the two tokens are exactly the part nobody can copy off the
+card, this is refused on the form rather than sent: `replacing an oauth
+credential means its access token too`. The renewal fields are prefilled from
+the stored credential, because those *are* readable, so rotating tokens does not
+mean retyping the endpoint.
+
+**One form, one call** (`DataSource.UpdateSecret`, `SecretUpdate`). `SetSecretHost`
+and `SetSecretMaxGrantTTL` were two wrappers over one endpoint, and a card whose
+rows were saved by a call each would half-apply when the second failed and
+report two things where a person did one. Every field of `SecretUpdate` is a
+pointer, because absence has to be spelled differently from the values: an empty
+host releases a binding and a zero limit allows grants that never expire, so
+neither can stand for "unchanged".
+
+**A lifetime is asked as the answers people give** (`ttlRows`, `ttlSeconds`):
+1 hour, 1 day, 1 week, forever, and a seconds field behind `custom…`. Seconds
+alone was a field nobody could answer without arithmetic, and `604800` is not a
+week to anyone reading it back. On a secret the row is labelled **grant limit**,
+not "grants last": the value is a ceiling, and "grants last 1 day" states it as
+the lifetime every grant on the credential gets, which is the opposite of what
+it does. Reading the credential says it the same way. A new credential is stored with **no limit** unless one is
+chosen: a limit is a decision about how long consent may last, and a default one
+is a decision nobody made — it expires grants mid-task, far from this form, and
+teaches people to grant again rather than to pick a limit. The limit travels
+*with* the credential (`NewSecret.MaxTTLSeconds`) rather than being set by a
+second call, because a secret that exists for even a moment without one is a
+secret limited by whatever the server's default happens to be, and zero is sent
+explicitly since leaving it out would mean exactly that.
+
+**A form that is not answered stays up, holding what was typed.** A missing
+required row or a lifetime that is not a number puts the reason on the hint line
+and the cursor on the row; closing the card and reporting onto the screen behind
+it would throw away everything already entered.
 
 **Reading a grant is not the same key as ending one.** In the grants list
 `Enter` reads — scope, where it may go, when it lapses, and for a grant minted
@@ -111,15 +181,18 @@ harness config and the API's scope value is `harnessConfig`; a person calls it
 the harness, and one `scopeLabel` turns the first into the second everywhere it
 is drawn. A window that used both would be teaching two names for one thing.
 
-**A grant on a discobox is asked how it may be used.** An injected credential
-is an environment variable, and everything in the box shares the environment;
-one with declared uses is not in the box at all — `discobox-access` takes it
-one use at a time, for one command, and the value dies minutes later. So the
-flow asks, and the narrow answer collects the variable the wrapped command
-receives it in and the sentence it is granted for. That sentence is what the
-agent names to take a value, and what `run`'s judge holds the command up
-against. Project and harness-config grants never see the question: the binding
-it needs is per discobox.
+**A grant is asked how it may be used.** An injected credential is an
+environment variable, and everything in the box shares the environment; one with
+declared uses is not in the box at all — `discobox-access` takes it one use at a
+time, for one command, and the value dies minutes later. So the form asks, and
+the narrow answer brings out the variable the wrapped command receives it in and
+the sentence it is granted for. It opens on the ordinary kind: a pre-approval is
+usually a credential somebody wants the box simply to have, and the narrow kind
+is mostly what an agent's own request mints. That sentence is what the agent names to take a
+value, and what `run`'s judge holds the command up against. It is asked at every
+scope: the binding it needs is per discobox, but the grant is minted when that
+discobox's agent first asks, so a project grant can carry uses without knowing
+which boxes it will cover.
 
 **`p` grants a secret before anything asks for it** — the pre-approval an
 operator makes because they already know the answer. Scope first, since it
@@ -911,6 +984,26 @@ wrapped to it: a line the wrapper cannot break comes back wider than the box,
 lipgloss wraps it again, and the extra row makes the frame taller than the
 terminal.
 
+**A card of facts is a column, not a paragraph** (`section`, `field`, `line`,
+`answerLabel`). What a credential is, what a grant covers, what an agent is
+asking for: these are sets of facts an approval turns on, and a fact that has to
+be found inside a sentence is a fact that gets skipped by somebody answering
+their fourth request of the morning. A dialog carries named sections of aligned
+label/value rows instead of prose, with the label column measured across the
+whole card so the values stand in one column down it. The question itself is an
+`answerLabel` — a rule in the window's accent, drawn against the thing that
+answers it — and the caveats go in the wrapping `footer`. Bodies and sections
+render to the same list of lines, so a card scrolls and is searched exactly as a
+paragraph does.
+
+**A menu row's key is not its identity** (`action.key`, `action.press`). Most of
+what this window offers to choose between is identified by something nobody can
+type — a secret's ID, a grant's ID, a scope's wire name — and a menu that
+printed those in the column where keystrokes go was offering keys that do not
+exist while wrecking the alignment of every row beside them. `press` is the
+accelerator and the only one of the two ever drawn; a menu whose rows have none
+has no key column at all.
+
 **A dialog with no answer is how a wait is drawn** (`dlgStatus`,
 `statusDialog`). Submitting a prompt used to leave the launcher on screen with a
 line under it while a pool came up and gigabytes arrived — the window looked
@@ -1284,7 +1377,8 @@ the newest one where the busy line goes.
 | `model.go` | the window: update, actions, run, layout, view, help |
 | `list.go` | the sandbox pane: filters, selection, visual range, row rendering |
 | `options.go` | `discobox run`'s flags as a panel, the chip strip, the command preview |
-| `dialog.go` | the one modal layer: message, confirm, action menu, input, help, and the `/` search over a scrolling body |
+| `dialog.go` | the one modal layer: message, confirm, action menu, input, form, help, the labelled-section card, and the `/` search over a scrolling body |
+| `form.go` | the form dialog: rows typed into or chosen between, the ones an answer makes irrelevant dimmed and stepped over |
 | `theme.go` | the palette and every style, built against the detected profile |
 | `logo.go` | the mark, embedded from `logo.chars` as captured |
 | `editor.go` | Alt-E: the prompt in `$EDITOR` |

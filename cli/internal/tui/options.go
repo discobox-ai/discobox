@@ -448,16 +448,18 @@ func (o *optionSet) sourceDialog() *dialog {
 	opt := o.opts[optSource]
 	items := make([]action, 0, len(opt.choices)+1)
 	for i, choice := range opt.choices {
+		n := itoa(i + 1)
 		items = append(items, action{
 			// The key is the row's index, so the first nine choices can be
 			// picked by number as well as by moving to them.
-			key:     itoa(i + 1),
+			key:     n,
+			press:   n,
 			label:   choice,
 			detail:  o.sourceDetail(opt.values[i]),
 			enabled: true,
 		})
 	}
-	items = append(items, action{key: "e", label: enterSourceChoice, enabled: true})
+	items = append(items, action{key: "e", press: "e", label: enterSourceChoice, enabled: true})
 	menu := actionsDialog("Cut the discobox from", "", items, func(key string) tea.Cmd {
 		if key == "e" {
 			return func() tea.Msg { return sourceChosenMsg{enter: true} }

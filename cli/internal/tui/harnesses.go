@@ -427,15 +427,15 @@ func harnessActions(h Harness) []action {
 	// so neither is offered rather than offered and rejected.
 	nothingToSetUp := "it needs no setup — there is nothing to run"
 	return []action{
-		{key: "e", label: enable, detail: detail, enabled: h.Configurable,
+		{key: "e", press: "e", label: enable, detail: detail, enabled: h.Configurable,
 			why: nothingToSetUp},
-		{key: "d", label: "disable", detail: "delete its secrets and configuration",
+		{key: "d", press: "d", label: "disable", detail: "delete its secrets and configuration",
 			enabled: h.Configurable && h.State == HarnessEnabled,
 			why:     disableWhy(h, nothingToSetUp)},
-		{key: "s", label: "default", detail: "run it when a discobox says no harness", enabled: h.State == HarnessEnabled && !h.Default,
+		{key: "s", press: "s", label: "default", detail: "run it when a discobox says no harness", enabled: h.State == HarnessEnabled && !h.Default,
 			why: defaultWhy},
-		{key: "v", label: "config", detail: "everything the harness is set to", enabled: true},
-		{key: "f", label: "files", detail: "edit one of its files in $EDITOR", enabled: len(h.Files) > 0,
+		{key: "v", press: "v", label: "config", detail: "everything the harness is set to", enabled: true},
+		{key: "f", press: "f", label: "files", detail: "edit one of its files in $EDITOR", enabled: len(h.Files) > 0,
 			why: "it carries no files"},
 	}
 }
@@ -596,10 +596,12 @@ func (m *Model) harnessDone(msg harnessDoneMsg) tea.Cmd {
 func (m *Model) harnessFilesDialog(harness Harness) *dialog {
 	items := make([]action, 0, len(harness.Files))
 	for i, file := range harness.Files {
+		n := itoa(i + 1)
 		items = append(items, action{
 			// The key is the row's index, so the first nine files can be picked
 			// by number as well as by moving to them.
-			key:     itoa(i + 1),
+			key:     n,
+			press:   n,
 			label:   file.Path,
 			detail:  harnessFileDetail(file),
 			enabled: true,

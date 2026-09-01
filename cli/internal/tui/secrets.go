@@ -6,6 +6,7 @@ import (
 	"strings"
 	"time"
 
+	"charm.land/bubbles/v2/textinput"
 	tea "charm.land/bubbletea/v2"
 	"charm.land/lipgloss/v2"
 )
@@ -336,11 +337,11 @@ func (m *Model) updateSecrets(msg tea.KeyPressMsg) tea.Cmd {
 	case "end", "G":
 		m.secrets.moveTo(len(m.secrets.all) - 1)
 	case "n":
-		return m.askForSecretName()
+		return m.newSecretForm()
 	case "enter", "v":
 		return m.showGrants()
 	case "e":
-		return m.askWhatToEdit()
+		return m.editSecretForm()
 	case "d":
 		return m.confirmDeleteSecret()
 	case grantCreateKey:
@@ -383,179 +384,143 @@ func (m *Model) updateRequestTable(msg tea.KeyPressMsg) tea.Cmd {
 // than waiting for an agent to ask and answering then.
 const grantCreateKey = "p"
 
-// askForGrantScope starts a pre-approval. Scope first, because it decides
-// whether there is a key to ask for next: a project grant needs none, and the
-// other two are a discobox or a harness to pick out of what the window
-// already holds.
+// askForGrantScope opens the pre-approval as one form.
+//
+// It was seven dialogs in a row, and a run of modals is the wrong shape for a
+// decision whose parts are read against each other: a scope of "one harness"
+// and a use of "open a pull request" mean something together, and answering
+// them a card at a time hides each behind the next. Everything is on one card,
+// and the rows a given answer makes irrelevant are taken away rather than asked
+// (ADR 0031 §4: a credential taken through discobox-access is never injected,
+// so it alone has a variable and a use).
 func (m *Model) askForGrantScope() tea.Cmd {
 	secret := m.secrets.current()
 	if secret == nil {
 		return nil
 	}
-	grant := NewGrant{SecretID: secret.ID, Host: secret.Host, TTLSeconds: int64(secret.MaxTTL / time.Second)}
-	items := []action{
-		{key: "project", label: "Every discobox in this project", detail: "the widest of the three", enabled: true},
-		{key: "harnessConfig", label: "One harness", detail: "every discobox running it", enabled: len(m.harnesses.all) > 0,
-			why: "this project has no harnesses"},
-		{key: "sandbox", label: "One discobox", detail: "the narrowest, and what approving a request mints", enabled: len(m.list.all) > 0,
-			why: "this project has no discoboxes"},
+	scopes := []choice{{key: grantScopeProject, label: "every discobox in this project",
+		hint: "the widest of the three: anything the project runs may use the credential"}}
+	if len(m.harnesses.all) > 0 {
+		scopes = append(scopes, choice{key: "harnessConfig", label: "one harness",
+			hint: "every discobox running that harness may use the credential"})
 	}
-	d := actionsDialog("Grant "+secret.Name, "A standing grant authorizes this credential before anything asks for it.\n\nWho may use it?", items,
-		func(scope string) tea.Cmd {
-			grant.Scope = scope
-			if scope == grantScopeProject {
-				return m.askHowItMayBeUsed(grant, "every discobox in this project")
-			}
-			return m.askForGrantScopeKey(grant)
-		})
-	d.footer = "the narrower the scope, the less a leaked sentinel is worth"
+	if len(m.list.all) > 0 {
+		scopes = append(scopes, choice{key: "sandbox", label: "one discobox",
+			hint: "the narrowest, and what approving a request mints"})
+	}
+
+	harnesses := make([]choice, 0, len(m.harnesses.all))
+	for _, h := range m.harnesses.all {
+		harnesses = append(harnesses, choice{key: h.ID, label: h.Name, hint: h.ID})
+	}
+	boxes := make([]choice, 0, len(m.list.all))
+	for _, box := range m.list.all {
+		boxes = append(boxes, choice{key: box.ID, label: box.Name, hint: box.ID})
+	}
+
+	const who, how, where = "who may use it", "how it may be used", "where, and for how long"
+	rows := []formRow{
+		withSection(who, pickRow("scope", "scope", scopes...)),
+		unless(withSection(who, pickRow("harness", "harness", harnesses...)),
+			func(f *form) bool { return f.chosen("scope") == "harnessConfig" },
+			"only when the grant is scoped to one harness"),
+		unless(withSection(who, pickRow("sandbox", "discobox", boxes...)),
+			func(f *form) bool { return f.chosen("scope") == "sandbox" },
+			"only when the grant is scoped to one discobox"),
+
+		// The ordinary kind first, and so the one the form opens on: a
+		// pre-approval is usually a credential somebody wants the box simply to
+		// have. The narrow kind is what an agent's own request mints, and
+		// choosing it here brings out the two rows it needs.
+		withSection(how, pickRow("taken", "taken",
+			choice{key: "any", label: "anything in the discobox",
+				hint: "an environment variable, so everything in the box can read it"},
+			choice{key: "access", label: "only through discobox-access",
+				hint: "never injected: the CLI takes it one declared use at a time, and the value dies minutes later"})),
+	}
+
+	deliveredAs := textRow("envVar", "delivered as", "e.g. GH_TOKEN", "")
+	deliveredAs.section = how
+	deliveredAs.hint = "the variable `discobox-access run` puts it in, for the one command it wraps"
+	deliveredAs.required = "a credential taken by the CLI needs a variable to arrive in"
+	deliveredAs.when, deliveredAs.why = takenThroughAccess, injectedNote
+
+	use := textRow("use", "approved use", "e.g. Open a pull request against the current repo", "")
+	use.section = how
+	use.hint = "`discobox-access run` asks a model whether the command it is about to run is this sentence"
+	use.required = "a use is the sentence the credential is granted for"
+	use.when, use.why = takenThroughAccess, injectedNote
+
+	host := textRow("host", "may be sent to", "e.g. github.com", secret.Host)
+	host.section = where
+	host.hint = "the host covers itself and everything beneath it, and may not reach outside the secret's own binding"
+
+	ttl := ttlRows("ttl", "lifetime", where, "never expires", int64(secret.MaxTTL/time.Second))
+	hint := "it never expires: a credential nobody has to think about again, and one nothing takes away"
+	if secret.MaxTTL > 0 {
+		hint = "this credential allows at most " + grantLimit(secret.MaxTTL) + ", so it cannot be granted forever"
+	}
+	ttl[0].hint, ttl[1].hint = hint, hint
+
+	rows = append(rows, deliveredAs, use, host)
+	rows = append(rows, ttl...)
+
+	secretID := secret.ID
+	d := formDialog("Grant "+secret.Name, newForm(rows...), func(f *form) tea.Cmd {
+		seconds, ok := ttlSeconds(f, "ttl")
+		if !ok {
+			f.err = "a lifetime is a number of seconds"
+			return nil
+		}
+		grant := NewGrant{
+			SecretID:   secretID,
+			Scope:      f.chosen("scope"),
+			Host:       f.value("host"),
+			TTLSeconds: seconds,
+		}
+		switch grant.Scope {
+		case "harnessConfig":
+			grant.ScopeKey = f.chosen("harness")
+		case "sandbox":
+			grant.ScopeKey = f.chosen("sandbox")
+		}
+		if f.chosen("taken") == "access" {
+			grant.EnvVar, grant.Uses = f.value("envVar"), []string{f.value("use")}
+		}
+		return m.mintGrant(grant)
+	})
+	d.sections = []section{{lines: []line{
+		{text: "a standing grant authorizes this credential before anything asks for it", tone: toneDim},
+	}}}
+	d.footer = "↑↓ moves · ←→ chooses · enter grants · esc leaves the secret alone"
 	m.dialog = d
 	return nil
+}
+
+// takenThroughAccess is the answer the variable and the use hang off: a
+// credential the discobox is simply provisioned with has neither.
+func takenThroughAccess(f *form) bool { return f.chosen("taken") == "access" }
+
+// injectedNote is what those two rows say while that is the answer.
+const injectedNote = "only for a credential taken through discobox-access"
+
+// withSection and withWhen keep the picker rows above readable as a list.
+func withSection(label string, row formRow) formRow {
+	row.section = label
+	return row
+}
+
+// unless is a row that only applies under a condition, with what it says on the
+// card when it does not.
+func unless(row formRow, when func(f *form) bool, why string) formRow {
+	row.when, row.why = when, why
+	return row
 }
 
 // grantScopeProject is the server's word for the widest scope, spelled here
 // because the window speaks the API's vocabulary rather than importing the
 // server's.
 const grantScopeProject = "project"
-
-// askForGrantScopeKey picks what the scope resolves against, out of what the
-// window is already holding: no typing an ID that has to be right.
-func (m *Model) askForGrantScopeKey(grant NewGrant) tea.Cmd {
-	var items []action
-	var title, body string
-	if grant.Scope == "sandbox" {
-		title, body = "Which discobox?", "Only this discobox may use the credential."
-		for _, box := range m.list.all {
-			items = append(items, action{key: box.ID, label: box.Name, detail: box.ID, enabled: true})
-		}
-	} else {
-		title, body = "Which harness?", "Every discobox running it may use the credential."
-		for _, h := range m.harnesses.all {
-			items = append(items, action{key: h.ID, label: h.Name, detail: h.ID, enabled: true})
-		}
-	}
-	m.dialog = actionsDialog(title, body, items, func(key string) tea.Cmd {
-		grant.ScopeKey = key
-		label := key
-		for _, item := range items {
-			if item.key == key {
-				label = item.label
-			}
-		}
-		return m.askHowItMayBeUsed(grant, label)
-	})
-	return nil
-}
-
-// askHowItMayBeUsed is the question that decides what kind of credential this
-// is. Anything in the discobox can read an injected one — it is an environment
-// variable, and everything in the box shares the environment. A credential
-// with declared uses is never injected: the in-sandbox CLI takes it one use at
-// a time, for one command, and the value dies minutes later (ADR 0031 §4).
-//
-// It is asked at every scope. The binding a credential resolves through is per
-// discobox, but it is minted when that discobox's agent first asks, so a grant
-// on a harness or a project can carry uses without knowing which boxes
-// it will cover.
-func (m *Model) askHowItMayBeUsed(grant NewGrant, who string) tea.Cmd {
-	items := []action{
-		{key: "access", label: "Only through discobox-access", enabled: true,
-			detail: "never injected; taken one declared use at a time"},
-		{key: "any", label: "Anything in the discobox", enabled: true,
-			detail: "the credential the discobox is already provisioned with"},
-	}
-	d := actionsDialog("How may it be used?",
-		"A credential in the discobox's environment is readable by everything in it. One with declared uses is not there at all.",
-		items, func(kind string) tea.Cmd {
-			if kind != "access" {
-				return m.askForGrantHost(grant, who)
-			}
-			return m.askForGrantEnvVar(grant, who)
-		})
-	d.footer = "the narrower kind is the one an agent asks for"
-	m.dialog = d
-	return nil
-}
-
-// askForGrantEnvVar names the variable the wrapped command receives it in.
-func (m *Model) askForGrantEnvVar(grant NewGrant, who string) tea.Cmd {
-	body := "Which environment variable does the agent receive it in?\n\n" +
-		"Only the command `discobox-access run` wraps ever sees it, and only for that one command."
-	m.dialog = inputDialog("Delivered as", body, "GH_TOKEN", "", func(envVar string) tea.Cmd {
-		grant.EnvVar = strings.TrimSpace(envVar)
-		if grant.EnvVar == "" {
-			return m.report(true, "a credential taken by the CLI needs a variable to arrive in; nothing was granted")
-		}
-		return m.askForGrantUse(grant, who)
-	})
-	return nil
-}
-
-// askForGrantUse is the sentence the credential is granted for. The agent
-// presents its ID to take a value, and the in-sandbox judge holds the command
-// it is about to run up against these words (ADR 0078).
-func (m *Model) askForGrantUse(grant NewGrant, who string) tea.Cmd {
-	body := "What may it be used for?\n\n" +
-		"The agent names this use to take a value, and `discobox-access run` asks a model whether the command it is about to run is this sentence. Write it the way you would tell a person."
-	m.dialog = inputDialog("Approved use", body, "Open a pull request against the current repo", "", func(use string) tea.Cmd {
-		use = strings.TrimSpace(use)
-		if use == "" {
-			return m.report(true, "a use is the sentence the credential is granted for; nothing was granted")
-		}
-		grant.Uses = []string{use}
-		return m.askForGrantHost(grant, who)
-	})
-	return nil
-}
-
-// askForGrantHost asks where the credential may travel under this grant. It
-// opens on the secret's own binding, which is both the common answer and the
-// widest one the server will accept.
-func (m *Model) askForGrantHost(grant NewGrant, who string) tea.Cmd {
-	body := fmt.Sprintf("Where may it be sent, for %s?\n\n"+
-		"The host covers itself and everything beneath it. A grant may not reach outside the secret's own binding.", who)
-	m.dialog = inputDialog("Grant host", body, "github.com", grant.Host, func(host string) tea.Cmd {
-		grant.Host = strings.TrimSpace(host)
-		return m.askForGrantTTL(grant)
-	})
-	return nil
-}
-
-// askForGrantTTL asks how long it lives. Seconds, prefilled from the secret's
-// limit, which is also the lifetime nobody has to choose.
-//
-// The limit is said in the question rather than left for the server to refuse:
-// a capped secret cannot be granted forever, and finding that out after typing
-// 0 teaches the rule one rejection at a time.
-func (m *Model) askForGrantTTL(grant NewGrant) tea.Cmd {
-	limit := m.secretLimit(grant.SecretID)
-	body := "How long does it live, in seconds?\n\n0 never expires, which is a credential nobody has to think about again — and one nothing takes away."
-	if limit > 0 {
-		body = fmt.Sprintf("How long does it live, in seconds?\n\nThis credential allows at most %s, so it cannot be granted forever.",
-			grantLimit(limit))
-	}
-	m.dialog = inputDialog("Grant lifetime", body, "3600", itoa(int(grant.TTLSeconds)), func(value string) tea.Cmd {
-		seconds, err := strconv.ParseInt(strings.TrimSpace(value), 10, 64)
-		if err != nil || seconds < 0 {
-			return m.report(true, "a lifetime is a number of seconds; nothing was granted")
-		}
-		grant.TTLSeconds = seconds
-		return m.mintGrant(grant)
-	})
-	return nil
-}
-
-// secretLimit is the ceiling of the secret a grant stands on, or zero when it
-// has none — read from the rows the screen already holds rather than asked for
-// again.
-func (m *Model) secretLimit(secretID string) time.Duration {
-	for _, s := range m.secrets.all {
-		if s.ID == secretID {
-			return s.MaxTTL
-		}
-	}
-	return 0
-}
 
 func (m *Model) mintGrant(grant NewGrant) tea.Cmd {
 	m.dialog = statusDialog("Secrets", "granting…")
@@ -600,6 +565,7 @@ func (m *Model) showGrants() tea.Cmd {
 	items := make([]action, 0, len(grants)+1)
 	items = append(items, action{
 		key:     grantCreateItem,
+		press:   grantCreateKey,
 		label:   "Grant this secret…",
 		detail:  "authorize it before anything asks",
 		enabled: true,
@@ -607,34 +573,39 @@ func (m *Model) showGrants() tea.Cmd {
 	for _, g := range grants {
 		items = append(items, action{
 			key:     g.ID,
-			label:   grantLabel(g),
+			label:   grantHost(g),
 			detail:  grantDetail(g, m.secrets.now()),
 			enabled: true,
 		})
 	}
-	// Enter reads, x withdraws. The other way round put revoking a credential
-	// one keystroke from looking at one, on the key that means "open this"
-	// everywhere else in the window.
 	// What the credential is, before what may use it. For an OAuth credential
 	// that is most of what there is to know about it — where it renews, what
 	// the grant may do, and when the access token goes stale — and none of it
 	// is the credential.
-	body := describeSecret(*secret, m.secrets.now())
-	if len(grants) == 0 {
-		body += "\n\nNothing stands on this secret yet, so nothing may use it."
-	} else {
-		body += "\n\nEnter reads a grant and what it was approved for. " + grantRevokeKey +
-			" withdraws it: the credential stops resolving at once, and the request that produced it stays approved, because it is history."
+	answer := "nothing stands on it yet"
+	if len(grants) > 0 {
+		answer = plural(len(grants), "grant stands on it", "grants stand on it")
 	}
-	d := actionsDialog(secret.Name, body, items, func(result string) tea.Cmd {
+	// Enter reads, x withdraws. The other way round put revoking a credential
+	// one keystroke from looking at one, on the key that means "open this"
+	// everywhere else in the window.
+	d := actionsDialog(secret.Name, "", items, func(result string) tea.Cmd {
 		if result == grantCreateItem {
 			return m.askForGrantScope()
 		}
 		return m.reviewGrant(secret.Name, result)
 	})
+	d.titleRight = secretAge(*secret, m.secrets.now())
+	d.sections = describeSecret(*secret, m.secrets.now())
+	d.answerLabel = answer
 	d.footer = "enter reads · " + grantRevokeKey + " revokes · esc leaves them alone"
 	d.altKey = grantRevokeKey
-	d.alt = func(grantID string) tea.Cmd { return m.confirmRevokeGrant(secret.Name, grantID) }
+	d.alt = func(grantID string) tea.Cmd {
+		if grantID == grantCreateItem {
+			return nil
+		}
+		return m.confirmRevokeGrant(secret.Name, grantID)
+	}
 	m.dialog = d
 	return nil
 }
@@ -643,45 +614,46 @@ func (m *Model) showGrants() tea.Cmd {
 // value is never among them; for an OAuth credential the renewal material is
 // not either, and what is left — where it renews, whose grant it is, what it
 // may do, when it goes stale — is the part somebody managing it needs.
-func describeSecret(secret Secret, now time.Time) string {
-	var b strings.Builder
+func describeSecret(secret Secret, now time.Time) []section {
 	where := secret.Host
+	tone := toneAccent
 	if where == "" {
-		where = "any host a grant allows"
+		where, tone = "any host a grant allows", toneDim
 	} else {
 		where += " and the hosts beneath it"
 	}
-	fmt.Fprintf(&b, "  %s · may be sent to %s\n", secret.Type, where)
+	limit := "none — grants on it may live forever"
 	if secret.MaxTTL > 0 {
-		fmt.Fprintf(&b, "  grants on it last %s, and no longer", shortDuration(secret.MaxTTL))
-	} else {
-		b.WriteString("  grants on it may live forever: nothing limits them")
+		limit = "at most " + shortDuration(secret.MaxTTL)
 	}
+	credential := section{label: "the credential", fields: []field{
+		{label: "kind", value: secret.Type},
+		{label: "may be sent to", value: where, tone: tone},
+		{label: "grant limit", value: limit},
+	}}
 	if secret.OAuth == nil {
-		return b.String()
+		return []section{credential}
 	}
-	b.WriteString("\n")
-	if secret.OAuth.TokenURL != "" {
-		fmt.Fprintf(&b, "\n  renews at    %s", secret.OAuth.TokenURL)
+
+	oauth := section{label: "oauth"}
+	add := func(label, value string) {
+		if value != "" {
+			oauth.fields = append(oauth.fields, field{label: label, value: value})
+		}
 	}
-	if secret.OAuth.ClientID != "" {
-		fmt.Fprintf(&b, "\n  client       %s", secret.OAuth.ClientID)
-	}
-	if len(secret.OAuth.Scopes) > 0 {
-		fmt.Fprintf(&b, "\n  may do       %s", strings.Join(secret.OAuth.Scopes, " "))
-	}
-	if secret.OAuth.SubscriptionType != "" {
-		fmt.Fprintf(&b, "\n  plan         %s", secret.OAuth.SubscriptionType)
-	}
+	add("renews at", secret.OAuth.TokenURL)
+	add("client", secret.OAuth.ClientID)
+	add("may do", strings.Join(secret.OAuth.Scopes, " "))
+	add("plan", secret.OAuth.SubscriptionType)
 	if !secret.OAuth.AccessTokenExpiresAt.IsZero() {
-		fmt.Fprintf(&b, "\n  token stale  %s", accessTokenExpiry(secret.OAuth.AccessTokenExpiresAt, now))
+		oauth.fields = append(oauth.fields, field{label: "token stale", value: accessTokenExpiry(secret.OAuth.AccessTokenExpiresAt, now)})
 	}
 	if !secret.OAuth.Refreshable {
 		// The one thing worth saying loudly about an oauth credential: it
 		// cannot renew, so it will expire and stay expired.
-		b.WriteString("\n  cannot renew itself: no refresh token or nowhere to spend it")
+		oauth.lines = append(oauth.lines, line{text: "⚠ cannot renew itself: no refresh token or nowhere to spend it", tone: toneAlert})
 	}
-	return b.String()
+	return []section{credential, oauth}
 }
 
 // accessTokenExpiry says when the access token goes stale, and whether it
@@ -724,36 +696,45 @@ func (m *Model) reviewGrant(secretName, grantID string) tea.Cmd {
 	if grant == nil {
 		return m.report(true, "that grant is no longer there")
 	}
-	var b strings.Builder
-	fmt.Fprintf(&b, "%s\n\n", grant.ID)
-	fmt.Fprintf(&b, "  secret     %s\n", secretName)
-	fmt.Fprintf(&b, "  scope      %s", scopeLabel(grant.Scope))
-	if grant.ScopeKey != "" {
-		fmt.Fprintf(&b, "  %s", grant.ScopeKey)
-	}
 	where := grant.Host
+	tone := toneAccent
 	if where == "" {
-		where = "any host"
+		where, tone = "any host", toneDim
+	} else {
+		where += " and the hosts beneath it"
 	}
-	fmt.Fprintf(&b, "\n  may go to  %s", where)
-	if grant.Host != "" {
-		b.WriteString(" and the hosts beneath it")
+	scope := scopeLabel(grant.Scope)
+	if grant.ScopeKey != "" {
+		scope += " " + grant.ScopeKey
 	}
+	covers := section{label: "the grant", fields: []field{
+		{label: "secret", value: secretName, tone: toneAccent},
+		{label: "usable by", value: scope},
+		{label: "may go to", value: where, tone: tone},
+	}}
 	if grant.GrantedBy != "" {
-		fmt.Fprintf(&b, "\n  granted by %s", grant.GrantedBy)
+		covers.fields = append(covers.fields, field{label: "granted by", value: grant.GrantedBy})
 	}
-	fmt.Fprintf(&b, "\n  expires    %s\n", grantExpiry(*grant, m.secrets.now()))
-	switch {
-	case len(grant.Uses) == 0:
-		b.WriteString("\nNo declared uses: a standing grant authorizes the credential without enumerating what it is for.")
-	default:
-		b.WriteString("\nApproved for:\n")
-		for _, use := range grant.Uses {
-			fmt.Fprintf(&b, "\n  %s\n    %s\n", use.Description, use.ID)
-		}
-		b.WriteString("\nAn agent takes a value under one of those IDs: `discobox-access run --use <id> -- <command>`.")
+	covers.fields = append(covers.fields, field{label: "expires", value: grantLifeLeft(*grant, m.secrets.now())})
+
+	uses := section{label: "approved uses"}
+	if len(grant.Uses) == 0 {
+		uses.lines = []line{{text: "none — a standing grant authorizes the credential without enumerating what it is for", tone: toneDim}}
 	}
-	d := textDialog("Grant", b.String())
+	for _, use := range grant.Uses {
+		uses.fields = append(uses.fields,
+			field{label: use.ID, value: use.Description})
+	}
+	if len(grant.Uses) > 0 {
+		uses.lines = append(uses.lines, line{
+			text: "an agent takes a value under one of those IDs: discobox-access run --use <id> -- <command>",
+			tone: toneDim,
+		})
+	}
+
+	d := textDialog("Grant", "")
+	d.titleRight = grant.ID
+	d.sections = []section{covers, uses}
 	// Back to the grants you were reading, not to the list behind them. The
 	// common next move after reading one is reading the next, or withdrawing
 	// this one, and both are in the list this came from.
@@ -764,8 +745,27 @@ func (m *Model) reviewGrant(secretName, grantID string) tea.Cmd {
 
 // confirmRevokeGrant asks before withdrawing, and says what stops working.
 func (m *Model) confirmRevokeGrant(secretName, grantID string) tea.Cmd {
-	body := fmt.Sprintf("Withdraw this grant on %s?\n\nThe credential stops resolving at once, wherever it is being used. The request that produced it stays approved, because it is history.", secretName)
-	d := confirmDialog("Revoke grant", body, func(string) tea.Cmd { return m.revokeGrant(grantID) })
+	var grant Grant
+	for _, g := range m.secrets.grants {
+		if g.ID == grantID {
+			grant = g
+		}
+	}
+	d := confirmDialog("Revoke grant", "", func(string) tea.Cmd { return m.revokeGrant(grantID) })
+	d.titleRight = grantID
+	d.sections = []section{{
+		label: "what goes",
+		fields: []field{
+			{label: "secret", value: secretName, tone: toneAccent},
+			{label: "usable by", value: strings.TrimSpace(scopeLabel(grant.Scope) + " " + grant.ScopeKey)},
+			{label: "may go to", value: grantHost(grant)},
+		},
+		lines: []line{
+			{text: "the credential stops resolving at once, wherever it is being used", tone: toneAlert},
+			{text: "the request that produced it stays approved, because it is history", tone: toneDim},
+		},
+	}}
+	d.answerLabel = "withdraw this grant?"
 	d.defaultNo = true
 	// No goes back to the grants, the way leaving a grant you were reading
 	// does: a question answered "not that one" should leave you where the
@@ -775,23 +775,42 @@ func (m *Model) confirmRevokeGrant(secretName, grantID string) tea.Cmd {
 	return nil
 }
 
-func grantLabel(g Grant) string {
-	where := g.Host
-	if where == "" {
-		where = "any host"
+// grantHost is where a grant may send the credential, which is what its row is
+// named by: the host is the fact two grants on one secret differ by most often,
+// and the one an operator is looking for when they open the list.
+func grantHost(g Grant) string {
+	if g.Host == "" {
+		return "any host"
 	}
-	return where + "  ·  " + scopeLabel(g.Scope)
+	return g.Host
 }
 
+// grantDetail is the rest of the row: who may use it, how much it may do, and
+// how long it has left.
 func grantDetail(g Grant, now time.Time) string {
-	parts := []string{}
+	who := scopeLabel(g.Scope)
 	if g.ScopeKey != "" {
-		parts = append(parts, g.ScopeKey)
+		who += " " + g.ScopeKey
 	}
+	parts := []string{who}
 	if len(g.Uses) > 0 {
 		parts = append(parts, plural(len(g.Uses), "approved use", "approved uses"))
 	}
 	return strings.Join(append(parts, grantExpiry(g, now)), " · ")
+}
+
+// grantLifeLeft is how long a grant has, for a field already labeled with what
+// it is: "expires  expires in 47m" is the row's phrasing put under the row's
+// own heading.
+func grantLifeLeft(g Grant, now time.Time) string {
+	switch {
+	case g.Expires.IsZero():
+		return "never"
+	case g.Expires.Before(now):
+		return "expired"
+	default:
+		return "in " + shortDuration(g.Expires.Sub(now).Round(time.Minute))
+	}
 }
 
 func grantExpiry(g Grant, now time.Time) string {
@@ -813,121 +832,243 @@ func (m *Model) revokeGrant(grantID string) tea.Cmd {
 	}
 }
 
-// askForSecretName starts a new secret: a name, then the host it belongs to,
-// then the value. Three questions rather than one form, because that is the
-// window's one modal shape — and because the value is the one that must be
-// masked, so it comes last and alone.
-func (m *Model) askForSecretName() tea.Cmd {
-	m.dialog = inputDialog("New secret", "What is it called?", "github", "", func(name string) tea.Cmd {
-		name = strings.TrimSpace(name)
-		if name == "" {
-			return m.report(true, "a secret needs a name")
-		}
-		return m.askForSecretKind(NewSecret{Name: name})
-	})
-	return nil
-}
+// A lifetime is asked as the answers people actually give, with a way out to
+// any other: an hour, a day, a week, forever, or a number of seconds behind
+// "custom". Seconds alone was a field nobody could answer without arithmetic,
+// and 604800 is not a week to anyone reading it back.
+//
+// The presets are the picker's keys, so reading one back is parsing what was
+// chosen rather than remembering which index meant what.
+const (
+	ttlHour   = "3600"
+	ttlDay    = "86400"
+	ttlWeek   = "604800"
+	ttlNever  = "0"
+	ttlCustom = "custom"
+)
 
-// askForSecretKind splits the two credentials the system has. A token is one
-// opaque string. An OAuth credential is that plus what the control plane spends
-// to renew it — and the difference is not cosmetic: an access token stored as a
-// token expires and stays expired, while an oauth secret is refreshed
-// server-side as it ages out (ADR 0011).
-func (m *Model) askForSecretKind(secret NewSecret) tea.Cmd {
-	items := []action{
-		{key: "token", label: "A token", detail: "one opaque string, however it is presented", enabled: true},
-		{key: "oauth", label: "An OAuth credential", detail: "renews itself: an access token, a refresh token, and where to spend it", enabled: true},
+// ttlDefault is what a new credential limits its grants to when nobody says
+// otherwise: nothing. A limit is a decision about how long consent may last,
+// and a default one is a decision nobody made — it expires grants mid-task, in
+// a place far from this form, and teaches people to grant again rather than to
+// pick a limit. The row is right here, on the card, for whoever wants one.
+const ttlDefault = ttlNever
+
+// ttlRows is a lifetime as two rows: the presets, and the seconds behind
+// custom. The second only applies while the first is on custom, so the number
+// is there to be edited when it is wanted and out of the way when it is not.
+func ttlRows(key, label, section, forever string, seconds int64) []formRow {
+	pick := pickRow(key, label,
+		choice{key: ttlHour, label: "1 hour"},
+		choice{key: ttlDay, label: "1 day"},
+		choice{key: ttlWeek, label: "1 week"},
+		choice{key: ttlNever, label: forever},
+		choice{key: ttlCustom, label: "custom…"},
+	)
+	pick.section = section
+	pick.at = len(pick.choices) - 1
+	for i, c := range pick.choices {
+		if c.key == itoa(int(seconds)) {
+			pick.at = i
+		}
 	}
-	m.dialog = actionsDialog("New secret", "What kind of credential is it?", items, func(kind string) tea.Cmd {
-		secret.Type = kind
-		return m.askForSecretBinding(secret)
-	})
-	return nil
+	// The seconds row reads as a continuation of the picker above it rather
+	// than as a second field with the same name.
+	custom := textRow(key+"Custom", "…in seconds", "e.g. 3600", itoa(int(seconds)))
+	custom.section = section
+	custom.why = "the presets above cover it"
+	custom.when = func(f *form) bool { return f.chosen(key) == ttlCustom }
+	return []formRow{pick, custom}
 }
 
-func (m *Model) askForSecretBinding(secret NewSecret) tea.Cmd {
-	body := "Which host may it be sent to?\n\n" +
-		"It covers that host and everything beneath it: github.com answers for\n" +
-		"api.github.com too. Leave it empty and the grants decide alone."
-	m.dialog = inputDialog("New secret", body, "github.com (optional)", "", func(host string) tea.Cmd {
-		secret.Host = strings.TrimSpace(host)
-		return m.askForSecretValue(secret)
-	})
-	return nil
-}
-
-func (m *Model) askForSecretValue(secret NewSecret) tea.Cmd {
-	what := "Paste the token. It is stored encrypted and never shown again."
-	if secret.Type == "oauth" {
-		what = "Paste the access token — the one that travels, and the one that expires.\n\nIt is stored encrypted and never shown again."
+// ttlSeconds reads a lifetime back off the two rows, refusing what is not a
+// number of seconds rather than quietly meaning something else.
+func ttlSeconds(f *form, key string) (int64, bool) {
+	chosen := f.chosen(key)
+	if chosen != ttlCustom {
+		seconds, err := strconv.ParseInt(chosen, 10, 64)
+		return seconds, err == nil
 	}
-	d := inputDialog("New secret", what, "token", "", func(value string) tea.Cmd {
-		value = strings.TrimSpace(value)
-		if value == "" {
-			return m.report(true, "no token entered; nothing was stored")
+	seconds, err := strconv.ParseInt(f.value(key+"Custom"), 10, 64)
+	return seconds, err == nil && seconds >= 0
+}
+
+// secretForm is a credential on one card: the same rows for storing a new one
+// and for editing what an existing one says about itself.
+//
+// Everything an OAuth credential needs is on the card from the start, dim and
+// stepped over until the kind calls for it, so choosing "an OAuth credential"
+// reveals nothing that was not already visible as something it would want. The
+// difference is not cosmetic: an access token stored as a token expires and
+// stays expired, while an oauth secret is refreshed server-side as it ages out
+// (ADR 0011), and the four rows that make that possible are the reason.
+//
+// On an existing secret the rows that cannot change are the same rows again,
+// locked: what the credential is, said in the place the form would have asked
+// for it. Only the binding and the grant limit are editable, because they are
+// the only two the server takes — and the value is not among them, since
+// nothing here can read one back.
+func secretForm(existing *Secret) *form {
+	const what, value = "the credential", "what it is"
+	editing := existing != nil
+	oauth := func(f *form) bool { return f.chosen("kind") == "oauth" }
+	token := func(f *form) bool { return f.chosen("kind") == "token" }
+
+	name := textRow("name", "name", "e.g. github", "")
+	name.section = what
+	name.hint = "how you pick it out when a request asks for a credential"
+	name.required = "a secret needs a name"
+
+	// The kind is the one thing an existing credential cannot be told. A token
+	// and an oauth credential are stored and renewed differently, and the
+	// server has no answer for a secret that changes from one to the other:
+	// that is a new credential, and deleting the old one is somebody's decision
+	// rather than a side effect of an edit.
+
+	kind := pickRow("kind", "kind",
+		choice{key: "token", label: "a token", hint: "one opaque string, however it is presented"},
+		choice{key: "oauth", label: "an OAuth credential", hint: "renews itself: an access token, a refresh token, and where to spend it"})
+	kind.section = what
+
+	host := textRow("host", "may be sent to", "any host a grant allows", "")
+	host.section = what
+	host.hint = "it covers that host and everything beneath it: github.com answers for api.github.com too · empty leaves the grants to decide alone"
+
+	seconds := int64(0)
+	if editing {
+		seconds = int64(existing.MaxTTL / time.Second)
+	} else if v, err := strconv.ParseInt(ttlDefault, 10, 64); err == nil {
+		seconds = v
+	}
+	// "grant limit" rather than "grants last": the value is a ceiling, and a
+	// row reading "grants last ‹ 1 day ›" states it as the lifetime every grant
+	// gets, which is the opposite of what it does.
+	limit := ttlRows("ttl", "grant limit", what, "no limit", seconds)
+	limit[0].hint = "the longest a grant on this credential may live: a longer one is refused, and nothing else about it changes"
+	limit[1].hint = limit[0].hint
+
+	plain := textRow("token", "token", "the value itself", "")
+	plain.section = value
+	plain.masked = true
+	plain.hint = "stored encrypted, and never shown again"
+	plain.required = "a secret is the value: nothing was stored"
+	plain.when = token
+	plain.why = "only for a token"
+
+	access := textRow("access", "access token", "the value itself", "")
+	access.section = value
+	access.masked = true
+	access.hint = "the one that travels, and the one that expires · stored encrypted, and never shown again"
+	access.required = "an oauth credential needs an access token"
+	access.when = oauth
+	access.why = "only for an OAuth credential"
+
+	refresh := textRow("refresh", "refresh token", "spent to renew the access token", "")
+	refresh.section = value
+	refresh.masked = true
+	refresh.hint = "only the control plane ever spends it: it is never delivered to a discobox, and never leaves in a response"
+	refresh.required = "an oauth credential needs a refresh token"
+	refresh.when = oauth
+	refresh.why = "only for an OAuth credential"
+
+	tokenURL := textRow("tokenURL", "renews at", "e.g. https://console.anthropic.com/v1/oauth/token", "")
+	tokenURL.section = value
+	tokenURL.hint = "where the refresh token is exchanged for a new access token"
+	tokenURL.required = "an oauth credential needs somewhere to renew"
+	tokenURL.when = oauth
+	tokenURL.why = "only for an OAuth credential"
+
+	client := textRow("client", "client", "client id (optional)", "")
+	client.section = value
+	client.hint = "which OAuth client the grant belongs to · leave it empty if the token endpoint does not ask"
+	client.when = oauth
+	client.why = "only for an OAuth credential"
+
+	scopes := textRow("scopes", "may do", "e.g. user:profile user:inference", "")
+	scopes.section = value
+	scopes.hint = "space separated, as the authorization server returned them — a client may gate features on these, so record them rather than guess"
+	scopes.when = oauth
+	scopes.why = "only for an OAuth credential"
+
+	if editing {
+		// A stored credential opens on what it is. Only the kind is locked; a
+		// value cannot be read back, but it can be replaced, and a card that
+		// showed the rows for it greyed out was telling people to delete a
+		// credential and store it again to rotate a token.
+		name.input = valued(name.input, existing.Name)
+		kind.locked = true
+		if existing.Type == "oauth" {
+			kind.at = 1
 		}
-		secret.Value = value
-		if secret.Type == "oauth" {
-			return m.askForRefreshToken(secret)
+		host.input = valued(host.input, existing.Host)
+		if existing.OAuth != nil {
+			tokenURL.input = valued(tokenURL.input, existing.OAuth.TokenURL)
+			client.input = valued(client.input, existing.OAuth.ClientID)
+			scopes.input = valued(scopes.input, strings.Join(existing.OAuth.Scopes, " "))
 		}
-		return m.storeSecret(secret)
+		// The value is replaced whole or left alone: the server stores one
+		// value per secret, so a new refresh token without the access token
+		// beside it would drop the rest. Nothing is required, because leaving
+		// every one of these empty is the ordinary answer — the credential
+		// stays as it is.
+		plain.required, access.required, refresh.required, tokenURL.required = "", "", "", ""
+		plain.input.Placeholder = keepStored
+		access.input.Placeholder = keepStored
+		refresh.input.Placeholder = keepStored
+		plain.hint = "typing here replaces the credential · leave it empty and the stored one stays"
+		access.hint = "replacing an oauth credential means both tokens and where it renews: the stored ones cannot be read back"
+		refresh.hint = access.hint
+		tokenURL.hint = access.hint
+	}
+	rows := append([]formRow{name, kind, host}, limit...)
+	return newForm(append(rows, plain, access, refresh, tokenURL, client, scopes)...)
+}
+
+// keepStored is what an untouched value row says on an existing credential: a
+// value nobody can read back, and one nothing has to be typed to keep.
+const keepStored = "unchanged — type to replace it"
+
+// valued is a row's input opened on what it already holds.
+func valued(ti textinput.Model, value string) textinput.Model {
+	ti.SetValue(value)
+	return ti
+}
+
+// newSecretForm stores a credential the project does not have yet.
+func (m *Model) newSecretForm() tea.Cmd {
+	d := formDialog("New secret", secretForm(nil), func(f *form) tea.Cmd {
+		seconds, ok := ttlSeconds(f, "ttl")
+		if !ok {
+			f.err = "a limit is a number of seconds"
+			return nil
+		}
+		return m.storeSecret(NewSecret{
+			Name:          f.value("name"),
+			Type:          f.chosen("kind"),
+			Host:          f.value("host"),
+			MaxTTLSeconds: seconds,
+			Value:         formSecretValue(f),
+		})
 	})
-	d.input.EchoMode = 1 // textinput.EchoPassword: a credential is not drawn back.
+	d.footer = "↑↓ moves · ←→ chooses · enter stores it · esc cancels"
 	m.dialog = d
 	return nil
 }
 
-// askForRefreshToken and the two questions after it are what make an OAuth
-// credential one: the token the control plane spends, where to spend it, and
-// who it is spent as. Without them there is nothing to renew with, and the
-// server refuses the secret rather than storing a promise it cannot keep.
-func (m *Model) askForRefreshToken(secret NewSecret) tea.Cmd {
-	d := inputDialog("New secret",
-		"Paste the refresh token.\n\nOnly the control plane ever spends it: it is never delivered to a discobox, and never leaves in a response.",
-		"refresh token", "", func(value string) tea.Cmd {
-			secret.RefreshToken = strings.TrimSpace(value)
-			if secret.RefreshToken == "" {
-				return m.report(true, "an oauth credential needs a refresh token; nothing was stored")
-			}
-			return m.askForTokenURL(secret)
-		})
-	d.input.EchoMode = 1
-	m.dialog = d
-	return nil
-}
-
-func (m *Model) askForTokenURL(secret NewSecret) tea.Cmd {
-	m.dialog = inputDialog("New secret", "Where is the refresh token exchanged for a new access token?",
-		"https://console.anthropic.com/v1/oauth/token", "", func(value string) tea.Cmd {
-			secret.TokenURL = strings.TrimSpace(value)
-			if secret.TokenURL == "" {
-				return m.report(true, "an oauth credential needs somewhere to renew; nothing was stored")
-			}
-			return m.askForClientID(secret)
-		})
-	return nil
-}
-
-// askForClientID and the scopes after it are optional: a token endpoint may not
-// ask who is calling, and scopes are what a client gates its own features on
-// rather than anything this system enforces.
-func (m *Model) askForClientID(secret NewSecret) tea.Cmd {
-	m.dialog = inputDialog("New secret", "Which OAuth client does the grant belong to?\n\nEnter alone if the token endpoint does not ask.",
-		"client id (optional)", "", func(value string) tea.Cmd {
-			secret.ClientID = strings.TrimSpace(value)
-			return m.askForScopes(secret)
-		})
-	return nil
-}
-
-func (m *Model) askForScopes(secret NewSecret) tea.Cmd {
-	body := "What may the grant do?\n\n" +
-		"Space separated, as the authorization server returned them. A client may gate features on these — Claude Code refuses Remote Control without user:profile — so record them rather than guess. Enter alone to record none."
-	m.dialog = inputDialog("New secret", body, "user:profile user:inference", "", func(value string) tea.Cmd {
-		secret.Scopes = strings.Fields(value)
-		return m.storeSecret(secret)
-	})
-	return nil
+// formSecretValue is the credential's material as the card holds it. An oauth
+// credential is the several fields the control plane renews with; a token is
+// the one field that travels.
+func formSecretValue(f *form) SecretValue {
+	if f.chosen("kind") != "oauth" {
+		return SecretValue{Token: f.value("token")}
+	}
+	return SecretValue{
+		Token:        f.value("access"),
+		RefreshToken: f.value("refresh"),
+		TokenURL:     f.value("tokenURL"),
+		ClientID:     f.value("client"),
+		Scopes:       strings.Fields(f.value("scopes")),
+	}
 }
 
 func (m *Model) storeSecret(secret NewSecret) tea.Cmd {
@@ -938,87 +1079,126 @@ func (m *Model) storeSecret(secret NewSecret) tea.Cmd {
 	}
 }
 
-// askWhatToEdit offers the two things a secret says about itself. They are the
-// same shape of statement — the binding limits where the credential may go, the
-// limit limits how long consent to it may last — and both are answered without
-// touching the value, which nothing here can read.
-func (m *Model) askWhatToEdit() tea.Cmd {
+// editSecretForm is the same card over a credential that already exists.
+//
+// Everything but the kind may be told: the name, the binding, the limit, and
+// the credential itself. A value cannot be read back — nothing here can — but
+// it can be replaced, and a card that would not take one made rotating a token
+// a matter of deleting the secret and storing it again, taking every grant that
+// stood on it along with it.
+//
+// Lowering the limit binds what is granted next, not what already stands: a
+// live grant is somebody's decision, and it is revoked rather than quietly
+// shortened.
+func (m *Model) editSecretForm() tea.Cmd {
 	secret := m.secrets.current()
 	if secret == nil {
 		return nil
 	}
-	where := secret.Host
-	if where == "" {
-		where = "any host a grant allows"
-	}
-	items := []action{
-		{key: "host", label: "Which hosts it may reach", detail: where, enabled: true},
-		{key: "ttl", label: "How long a grant on it may live", detail: grantLimit(secret.MaxTTL), enabled: true},
-	}
-	m.dialog = actionsDialog("Edit "+secret.Name, "What about it changes?", items, func(what string) tea.Cmd {
-		if what == "ttl" {
-			return m.askForSecretMaxTTL()
+	was, id := *secret, secret.ID
+	d := formDialog("Edit "+secret.Name, secretForm(secret), func(f *form) tea.Cmd {
+		seconds, ok := ttlSeconds(f, "ttl")
+		if !ok {
+			f.err = "a limit is a number of seconds"
+			return nil
 		}
-		return m.askForSecretHost()
+		update := SecretUpdate{}
+		if name := f.value("name"); name != was.Name {
+			update.Name = &name
+		}
+		if host := f.value("host"); host != was.Host {
+			update.Host = &host
+		}
+		if time.Duration(seconds)*time.Second != was.MaxTTL {
+			update.MaxTTLSeconds = &seconds
+		}
+		value, why := replacementValue(f, was)
+		if why != "" {
+			f.err = why
+			return nil
+		}
+		update.Value = value
+		return m.saveSecret(id, was, update)
 	})
+	d.sections = []section{{lines: []line{
+		{text: "the kind is the one thing it cannot be told: a token and an oauth credential renew differently, so that is a new credential rather than an edit", tone: toneDim},
+	}}}
+	d.footer = "↑↓ moves · enter saves · esc leaves it alone"
+	m.dialog = d
 	return nil
 }
 
-// askForSecretMaxTTL edits the ceiling on grant lifetimes. Lowering it binds
-// what is granted next, not what already stands: a live grant is somebody's
-// decision, and it is revoked rather than quietly shortened.
-func (m *Model) askForSecretMaxTTL() tea.Cmd {
-	secret := m.secrets.current()
-	if secret == nil {
-		return nil
+// replacementValue is the credential the card is replacing the stored one with,
+// nil when it is replacing nothing, and the reason when it cannot.
+//
+// The server stores one value per secret and replaces it whole, so half an
+// oauth credential is not a smaller change — it is the rest of it dropped.
+// Touching any part of one therefore means typing all of it, and the two tokens
+// are the part nobody can copy off the card, which is exactly what makes this
+// worth refusing rather than sending.
+func replacementValue(f *form, was Secret) (*SecretValue, string) {
+	value := formSecretValue(f)
+	if was.Type != "oauth" {
+		if value.Token == "" {
+			return nil, ""
+		}
+		return &value, ""
 	}
-	body := fmt.Sprintf("How long may a grant on %s live, in seconds?\n\n"+
-		"It is a ceiling, not a suggestion: a longer grant is refused. 0 lifts it,\n"+
-		"and grants on it may then never expire.", secret.Name)
-	id, name := secret.ID, secret.Name
-	m.dialog = inputDialog("Grant limit", body, "3600", itoa(int(secret.MaxTTL/time.Second)), func(value string) tea.Cmd {
-		seconds, err := strconv.ParseInt(strings.TrimSpace(value), 10, 64)
-		if err != nil || seconds < 0 {
-			return m.report(true, "a limit is a number of seconds; nothing changed")
-		}
-		m.dialog = statusDialog("Secrets", "limiting "+name+"…")
-		return func() tea.Msg {
-			err := m.ds.SetSecretMaxGrantTTL(m.ctx, id, seconds)
-			did := "grants on " + name + " now last at most " + grantLimit(time.Duration(seconds)*time.Second)
-			if seconds <= 0 {
-				did = "grants on " + name + " may now live forever"
-			}
-			return secretActionMsg{did: did, err: err}
-		}
-	})
-	return nil
+	stored := SecretOAuth{}
+	if was.OAuth != nil {
+		stored = *was.OAuth
+	}
+	renewalChanged := value.TokenURL != stored.TokenURL ||
+		value.ClientID != stored.ClientID ||
+		strings.Join(value.Scopes, " ") != strings.Join(stored.Scopes, " ")
+	if value.Token == "" && value.RefreshToken == "" && !renewalChanged {
+		return nil, ""
+	}
+	switch {
+	case value.Token == "":
+		return nil, "replacing an oauth credential means its access token too: the stored one cannot be read back"
+	case value.RefreshToken == "":
+		return nil, "replacing an oauth credential means its refresh token too: the stored one cannot be read back"
+	case value.TokenURL == "":
+		return nil, "an oauth credential needs somewhere to renew"
+	}
+	return &value, ""
 }
 
-// askForSecretHost edits the binding of the secret under the cursor. Widening
-// it is the act worth being deliberate about, so the question says what the
-// field means rather than only naming it.
-func (m *Model) askForSecretHost() tea.Cmd {
-	secret := m.secrets.current()
-	if secret == nil {
-		return nil
+// saveSecret writes the edit back and says what it did, naming each part that
+// changed. Nothing changed is not an error and not a write: it closes and says
+// so, rather than reporting a save that saved nothing.
+func (m *Model) saveSecret(id string, was Secret, update SecretUpdate) tea.Cmd {
+	var did []string
+	if update.Name != nil {
+		did = append(did, "renamed "+was.Name+" to "+*update.Name)
 	}
-	body := fmt.Sprintf("Which host may %s be sent to?\n\n"+
-		"It covers that host and everything beneath it. Empty releases the\n"+
-		"binding, and the grants decide alone.", secret.Name)
-	id, name := secret.ID, secret.Name
-	m.dialog = inputDialog("Binding", body, "github.com", secret.Host, func(host string) tea.Cmd {
-		host = strings.TrimSpace(host)
-		m.dialog = statusDialog("Secrets", "binding "+name+"…")
-		return func() tea.Msg {
-			err := m.ds.SetSecretHost(m.ctx, id, host)
-			did := "bound " + name + " to " + host
-			if host == "" {
-				did = "released " + name + "'s binding"
-			}
-			return secretActionMsg{did: did, err: err}
+	if update.Host != nil {
+		switch *update.Host {
+		case "":
+			did = append(did, "released "+was.Name+"'s binding")
+		default:
+			did = append(did, "bound "+was.Name+" to "+*update.Host)
 		}
-	})
-	return nil
+	}
+	if update.MaxTTLSeconds != nil {
+		limit := grantLimit(time.Duration(*update.MaxTTLSeconds) * time.Second)
+		did = append(did, "grants on "+was.Name+" now last "+limit)
+	}
+	if update.Value != nil {
+		did = append(did, "replaced "+was.Name+"'s value")
+	}
+	if len(did) == 0 {
+		m.dialog = nil
+		return m.report(false, "%s is unchanged", was.Name)
+	}
+	m.dialog = statusDialog("Secrets", "saving "+was.Name+"…")
+	return func() tea.Msg {
+		if err := m.ds.UpdateSecret(m.ctx, id, update); err != nil {
+			return secretActionMsg{err: err}
+		}
+		return secretActionMsg{did: strings.Join(did, ", ")}
+	}
 }
 
 func (m *Model) confirmDeleteSecret() tea.Cmd {
@@ -1026,19 +1206,27 @@ func (m *Model) confirmDeleteSecret() tea.Cmd {
 	if secret == nil {
 		return nil
 	}
-	body := fmt.Sprintf("Delete %s?\n\nEverything standing on it goes too", secret.Name)
-	if secret.Grants > 0 {
-		body += fmt.Sprintf(" — %s", plural(secret.Grants, "live grant", "live grants"))
-	}
-	body += ". A discobox holding a sentinel for it keeps a placeholder that now resolves to nothing."
 	id, name := secret.ID, secret.Name
-	d := confirmDialog("Delete secret", body, func(string) tea.Cmd {
+	goes := section{label: "what goes", fields: []field{
+		{label: "secret", value: name, tone: toneAccent},
+		{label: "live grants", value: itoa(secret.Grants) + ", all withdrawn"},
+	}}
+	if secret.Host != "" {
+		goes.fields = append(goes.fields, field{label: "bound to", value: secret.Host})
+	}
+	goes.lines = []line{{
+		text: "a discobox holding a sentinel for it keeps a placeholder that now resolves to nothing",
+		tone: toneAlert,
+	}}
+	d := confirmDialog("Delete secret", "", func(string) tea.Cmd {
 		m.dialog = statusDialog("Secrets", "deleting "+name+"…")
 		return func() tea.Msg {
 			err := m.ds.DeleteSecret(m.ctx, id)
 			return secretActionMsg{did: "deleted " + name, err: err}
 		}
 	})
+	d.sections = []section{goes}
+	d.answerLabel = "delete " + name + "?"
 	// The costly answer is yes.
 	d.defaultNo = true
 	m.dialog = d

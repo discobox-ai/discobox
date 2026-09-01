@@ -51,6 +51,8 @@ type fakeSource struct {
 	unbindErr       error
 	limited         []string
 	limitErr        error
+	updated         []SecretUpdate
+	revalued        []string
 	projectGrants   []Grant
 	grantsErr       error
 	revoked         []string
@@ -996,6 +998,18 @@ func typeString(s string) []tea.Msg {
 func sizeMsg(w, h int) tea.WindowSizeMsg { return tea.WindowSizeMsg{Width: w, Height: h} }
 
 // frame is the rendered window as plain lines, trailing blanks trimmed.
+// dialogText is the dialog as it is drawn, with the color taken off.
+//
+// The tests assert on what a person reads rather than on the field it was built
+// from: a card's facts live in its sections as often as in its body, and a test
+// against d.body would pass on a dialog that draws nothing.
+func dialogText(m *Model) string {
+	if m.dialog == nil {
+		return ""
+	}
+	return ansi.Strip(m.dialog.view(m.st, 100, 40))
+}
+
 func frame(m *Model) []string {
 	lines := strings.Split(m.View().Content, "\n")
 	for i, line := range lines {
@@ -1117,34 +1131,43 @@ func (f *fakeSource) dropRequestLocked(requestID string) {
 	f.requests = kept
 }
 
-func (f *fakeSource) SetSecretHost(_ context.Context, secretID, host string) error {
+// UpdateSecret records each part of an edit the way the server would apply it,
+// so a test can assert on what the window asked for rather than on how many
+// calls it took to ask.
+func (f *fakeSource) UpdateSecret(_ context.Context, secretID string, update SecretUpdate) error {
 	f.mu.Lock()
 	defer f.mu.Unlock()
-	if f.unbindErr != nil {
+	if update.Host != nil && f.unbindErr != nil {
 		return f.unbindErr
 	}
-	f.bound = append(f.bound, secretID+"="+host)
-	if host == "" {
-		f.unbound = append(f.unbound, secretID)
-	}
-	for i := range f.projectSecrets {
-		if f.projectSecrets[i].ID == secretID {
-			f.projectSecrets[i].Host = host
-		}
-	}
-	return nil
-}
-
-func (f *fakeSource) SetSecretMaxGrantTTL(_ context.Context, secretID string, seconds int64) error {
-	f.mu.Lock()
-	defer f.mu.Unlock()
-	if f.limitErr != nil {
+	if update.MaxTTLSeconds != nil && f.limitErr != nil {
 		return f.limitErr
 	}
-	f.limited = append(f.limited, fmt.Sprintf("%s=%d", secretID, seconds))
+	f.updated = append(f.updated, update)
+	if update.Host != nil {
+		f.bound = append(f.bound, secretID+"="+*update.Host)
+		if *update.Host == "" {
+			f.unbound = append(f.unbound, secretID)
+		}
+	}
+	if update.MaxTTLSeconds != nil {
+		f.limited = append(f.limited, fmt.Sprintf("%s=%d", secretID, *update.MaxTTLSeconds))
+	}
+	if update.Value != nil {
+		f.revalued = append(f.revalued, secretID)
+	}
 	for i := range f.projectSecrets {
-		if f.projectSecrets[i].ID == secretID {
-			f.projectSecrets[i].MaxTTL = time.Duration(seconds) * time.Second
+		if f.projectSecrets[i].ID != secretID {
+			continue
+		}
+		if update.Name != nil {
+			f.projectSecrets[i].Name = *update.Name
+		}
+		if update.Host != nil {
+			f.projectSecrets[i].Host = *update.Host
+		}
+		if update.MaxTTLSeconds != nil {
+			f.projectSecrets[i].MaxTTL = time.Duration(*update.MaxTTLSeconds) * time.Second
 		}
 	}
 	return nil

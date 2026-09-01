@@ -17,6 +17,10 @@ const (
 	dlgActions
 	dlgInput
 	dlgText
+	// dlgForm is the whole of a decision on one card: rows that are typed into
+	// or chosen between, with the ones a given answer makes irrelevant taken
+	// away. See form.
+	dlgForm
 	// dlgStatus is a dialog nobody answers: it reports what is happening and
 	// takes itself down when that finishes. See statusDialog.
 	dlgStatus
@@ -32,10 +36,37 @@ type dialog struct {
 	// footer is the line under a menu, which says what choosing one of its
 	// rows does. Empty takes the action menu's wording.
 	footer string
-	cursor int
-	offset int
-	input  textinput.Model
-	err    bool
+
+	// titleRight is what rides on the right of the title row: the ID or the
+	// age of the thing being read. It is on the title rather than in the
+	// fields because it identifies the card rather than saying something about
+	// its subject — and because a column of fields is for what has to be
+	// compared, which an opaque ID never is.
+	titleRight string
+
+	// sections are the body with its structure kept: named blocks of aligned
+	// label/value fields, drawn as a column rather than dissolved into
+	// sentences. A dialog whose subject is a set of facts — what a credential
+	// is, what a grant covers, what an agent is asking for — carries these
+	// instead of body, and the two are drawn one after the other where a
+	// dialog has both.
+	sections []section
+
+	// form is the rows of a dlgForm, and submit what to do with them once they
+	// are answered. The form is handed over whole rather than as a map of
+	// values: what it holds is typed by the rows themselves.
+	form   *form
+	submit func(f *form) tea.Cmd
+
+	// answerLabel is the question, drawn as a rule immediately above whatever
+	// answers it: the menu rows, the input line, or the y/n pair. It is the one
+	// sentence a dialog must be read for, so it sits against the thing that
+	// answers it rather than at the end of a paragraph above.
+	answerLabel string
+	cursor      int
+	offset      int
+	input       textinput.Model
+	err         bool
 
 	// emphasis is the one line a question turns on — the size of a directory
 	// being measured behind it — drawn under the body in the window's accent
@@ -86,14 +117,75 @@ type dialog struct {
 	onCancel func() tea.Cmd
 }
 
-// action is one row of the action menu, and also the definition of the letter
-// that runs it directly from the list.
+// action is one row of the action menu.
+//
+// key identifies the row and is what the menu's callback receives; press is the
+// key that runs it without moving to it, and is the only one of the two ever
+// drawn. They are separate because most of what this window offers to choose
+// between is identified by something nobody can type — a secret's ID, a grant's
+// ID, a scope's wire name — and a menu that printed those in the column where
+// keystrokes go was offering keys that do not exist while wrecking the
+// alignment of every row beside them.
 type action struct {
 	key     string
+	press   string
 	label   string
 	detail  string
 	enabled bool
 	why     string // why it is not available, when it is not
+}
+
+// tone is how a value is painted. A caller says what a line means and the
+// theme decides what that looks like, so the dialogs do not each reach into
+// the palette for themselves.
+type tone int
+
+const (
+	tonePlain tone = iota
+	toneDim
+	toneAccent
+	toneAlert
+	toneOK
+)
+
+func (t tone) style(st *styles) lipgloss.Style {
+	switch t {
+	case toneDim:
+		return st.dimText
+	case toneAccent:
+		return st.dialogTitle
+	case toneAlert:
+		return st.statusER
+	case toneOK:
+		return st.statusOK
+	default:
+		return st.name
+	}
+}
+
+// field is one label/value row. An empty label continues the row above it,
+// which is how a field with several values — the uses on a request — stays one
+// column rather than becoming a list beside a heading.
+type field struct {
+	label string
+	value string
+	tone  tone
+}
+
+// line is a row of a section that is not a label/value pair: a bullet under a
+// heading, or a sentence that has to be read rather than scanned.
+type line struct {
+	text   string
+	tone   tone
+	bullet bool
+}
+
+// section is one named block of a dialog body: a rule carrying its name, the
+// fields under it, and the lines under those.
+type section struct {
+	label  string
+	fields []field
+	lines  []line
 }
 
 func errorDialog(title, body string) *dialog {
@@ -130,6 +222,13 @@ func inputDialog(title, body, placeholder, value string, act func(string) tea.Cm
 // the thing it describes is what ends it. Escape still cancels, because a wait
 // nobody can leave is a trap — and canceling a wait for a discobox that is
 // coming up anyway costs the view of it, not the discobox.
+// formDialog asks everything at once. Enter answers the whole card, so a form
+// is for a decision with one outcome — a grant made, a secret stored — rather
+// than for a menu of things that each do something different.
+func formDialog(title string, f *form, submit func(f *form) tea.Cmd) *dialog {
+	return &dialog{kind: dlgForm, title: title, form: f, submit: submit}
+}
+
 func statusDialog(title, body string) *dialog {
 	return &dialog{kind: dlgStatus, title: title, body: body}
 }
@@ -228,12 +327,33 @@ func (d *dialog) update(msg tea.KeyPressMsg) (tea.Cmd, bool) {
 			return nil, true
 		default:
 			for _, it := range d.items {
-				if it.key == keyName(msg) && it.enabled && d.action != nil {
+				if it.press != "" && it.press == keyName(msg) && it.enabled && d.action != nil {
 					return d.action(it.key), true
 				}
 			}
 		}
 		return nil, false
+
+	case dlgForm:
+		if keyName(msg) == "enter" {
+			// A form that is not answered stays up with the reason on it: the
+			// alternative is a dialog that closes and reports a refusal onto
+			// the screen behind it, having thrown away everything typed.
+			if why := d.form.submit(); why != "" {
+				return nil, false
+			}
+			if d.submit == nil {
+				return nil, true
+			}
+			cmd := d.submit(d.form)
+			// A submit that refused — a lifetime that is not a number — says so
+			// on the form, and the form stays up holding everything typed.
+			if d.form.err != "" {
+				return nil, false
+			}
+			return cmd, true
+		}
+		return d.form.update(msg), false
 
 	case dlgInput:
 		if keyName(msg) == "enter" {
@@ -257,6 +377,8 @@ func (d *dialog) update(msg tea.KeyPressMsg) (tea.Cmd, bool) {
 // exactly the ones nobody types into.
 func (d *dialog) paste(msg tea.PasteMsg) tea.Cmd {
 	switch d.kind {
+	case dlgForm:
+		return d.form.paste(msg)
 	case dlgInput:
 		var cmd tea.Cmd
 		d.input, cmd = d.input.Update(msg)
@@ -416,7 +538,11 @@ func (d *dialog) view(st *styles, width, height int) string {
 	if d.err {
 		titleStyle = st.statusER.Bold(true)
 	}
-	b.WriteString(titleStyle.Render(truncate(d.title, inner)))
+	title := titleStyle.Render(truncate(d.title, inner))
+	if d.titleRight != "" {
+		title = spread(title, st.dimText.Render(d.titleRight), inner)
+	}
+	b.WriteString(title)
 	b.WriteString("\n\n")
 
 	// What the body may take: the box's allowance, less its chrome, the title
@@ -424,30 +550,21 @@ func (d *dialog) view(st *styles, width, height int) string {
 	// need under it.
 	maxBody := max(dialogHeight(height)-dialogChromeHeight-2-3, 3)
 	scrolling := d.kind == dlgText || d.kind == dlgMessage
-	if d.body != "" {
-		// A scrolling body keeps a column for the chevron, the way every list
-		// in this window points at the row you are on. It is there whether or
-		// not a search is open, so opening one shifts nothing: a body that
-		// re-wrapped under the search line would move the very text the search
-		// had just found.
-		//
-		// Not on a box too narrow to have an inside — below the floor on inner,
-		// lipgloss is already re-wrapping the body to the width it really has,
-		// and an indent survives that wrap and takes the row past the window.
-		chevron := scrolling && boxWidth-dialogChromeWidth >= inner
-		room := inner
-		if chevron {
-			room -= lipgloss.Width(dialogMarkOff)
-		}
-		lines := wrap(d.body, room)
-		// Wrapping is not enough on its own: a line the wrapper could not break
-		// — the help text's key columns are one long run of spaces and words —
-		// comes back wider than the box, and lipgloss wraps it again into a row
-		// the height was not budgeted for. One row over is a frame one row
-		// taller than the terminal.
-		for i, line := range lines {
-			lines[i] = truncate(line, room)
-		}
+	// A scrolling body keeps a column for the chevron, the way every list
+	// in this window points at the row you are on. It is there whether or
+	// not a search is open, so opening one shifts nothing: a body that
+	// re-wrapped under the search line would move the very text the search
+	// had just found.
+	//
+	// Not on a box too narrow to have an inside — below the floor on inner,
+	// lipgloss is already re-wrapping the body to the width it really has,
+	// and an indent survives that wrap and takes the row past the window.
+	chevron := scrolling && boxWidth-dialogChromeWidth >= inner
+	room := inner
+	if chevron {
+		room -= lipgloss.Width(dialogMarkOff)
+	}
+	if lines := d.bodyLines(st, room); len(lines) > 0 {
 		if scrolling {
 			b.WriteString(d.viewBody(st, lines, inner, maxBody, chevron))
 		} else {
@@ -462,9 +579,41 @@ func (d *dialog) view(st *styles, width, height int) string {
 		b.WriteString("\n")
 	}
 
+	// The question, on a rule against the thing that answers it. The blank row
+	// above it is the one the title already left when there is no body between
+	// them, rather than a second one under it.
+	answer := func() {
+		if !strings.HasSuffix(b.String(), "\n\n") {
+			b.WriteString("\n")
+		}
+		if d.answerLabel != "" {
+			b.WriteString(answerRule(st, d.answerLabel, inner))
+			b.WriteString("\n")
+		}
+	}
+	// The footer is what the keys here do, and often the caveat the question
+	// carries. It wraps rather than being cut: a sentence that says what a
+	// credential may be used for is not one to lose the end of.
+	footer := func(fallback string) {
+		text := d.footer
+		if text == "" {
+			text = fallback
+		}
+		if text == "" {
+			return
+		}
+		b.WriteString("\n")
+		for i, wrapped := range wrap(text, inner) {
+			if i > 0 {
+				b.WriteString("\n")
+			}
+			b.WriteString(st.dimText.Render(truncate(wrapped, inner)))
+		}
+	}
+
 	switch d.kind {
 	case dlgConfirm:
-		b.WriteString("\n")
+		answer()
 		yes, no := "yes", "no"
 		if d.defaultNo {
 			no += " (Enter)"
@@ -478,6 +627,10 @@ func (d *dialog) view(st *styles, width, height int) string {
 		b.WriteString(st.key.Render("n"))
 		b.WriteString(" ")
 		b.WriteString(no)
+		if d.footer != "" {
+			b.WriteString("\n")
+			footer("")
+		}
 	case dlgStatus:
 		b.WriteString("\n")
 		b.WriteString(st.dimText.Render("Esc stops watching"))
@@ -485,45 +638,184 @@ func (d *dialog) view(st *styles, width, height int) string {
 		b.WriteString("\n")
 		b.WriteString(truncate(d.viewSearch(st, inner), inner))
 	case dlgActions:
+		answer()
+		b.WriteString(d.viewItems(st, inner))
+		footer("Enter runs the highlighted action · Esc cancels")
+	case dlgForm:
+		answer()
+		b.WriteString(d.form.view(st, inner))
+		// The hint keeps its rows whether or not it has anything to say, so
+		// moving down the form does not resize the card under the cursor.
 		b.WriteString("\n")
-		// The label column fits the longest label rather than a fixed width:
-		// action names are a word, but the folder dropdown's are paths, and a
-		// path cut off at fourteen cells is not a path you can choose between.
-		labelW := 14
-		for _, it := range d.items {
-			labelW = max(labelW, lipgloss.Width(it.label))
-		}
-		labelW = min(labelW, max(inner-24, 14))
-		for i, it := range d.items {
-			bar, label := " ", st.dimText
-			if i == d.cursor && it.enabled {
-				bar, label = st.key.Render("❯"), st.cursorName
-			}
-			key, detail := st.key.Render(it.key), it.detail
-			if !it.enabled {
-				key = st.dimText.Render(it.key)
-				if it.why != "" {
-					detail = it.why
-				}
-			}
-			row := bar + " " + key + "  " + label.Render(pad(it.label, labelW)) + " " +
-				st.dimText.Render(truncate(detail, max(inner-labelW-6, 8)))
-			b.WriteString(padANSI(row, inner))
-			b.WriteString("\n")
-		}
-		footer := d.footer
-		if footer == "" {
-			footer = "Enter runs the highlighted action · Esc cancels"
-		}
-		b.WriteString(st.dimText.Render(truncate(footer, inner)))
+		b.WriteString(d.form.hint(st, inner))
+		b.WriteString("\n")
+		footer("↑↓ moves · ←→ chooses · enter accepts · esc cancels")
+
 	case dlgInput:
-		b.WriteString("\n")
+		answer()
 		b.WriteString(d.input.View())
-		b.WriteString("\n\n")
-		b.WriteString(st.dimText.Render("Enter accepts · Esc cancels"))
+		b.WriteString("\n")
+		footer("Enter accepts · Esc cancels")
 	}
 
 	return st.dialog.Width(boxWidth).Render(b.String())
+}
+
+// bodyLines is everything between the title and the answer, wrapped to the
+// width it will be drawn at: the prose body, and under it the sections.
+//
+// It is one list of lines rather than two blocks because a text dialog scrolls
+// and searches its body, and a card built out of sections has to scroll and be
+// searched the same way a paragraph does.
+func (d *dialog) bodyLines(st *styles, room int) []string {
+	var lines []string
+	if d.body != "" {
+		lines = wrap(d.body, room)
+		// Wrapping is not enough on its own: a line the wrapper could not break
+		// — the help text's key columns are one long run of spaces and words —
+		// comes back wider than the box, and lipgloss wraps it again into a row
+		// the height was not budgeted for. One row over is a frame one row
+		// taller than the terminal.
+		for i, text := range lines {
+			lines[i] = truncate(text, room)
+		}
+	}
+	if len(d.sections) == 0 {
+		return lines
+	}
+	if len(lines) > 0 {
+		lines = append(lines, "")
+	}
+	return append(lines, d.sectionLines(st, room)...)
+}
+
+// sectionLines draws the structured body: a rule carrying each section's name,
+// the fields under it in one column, and the lines under those.
+//
+// The label column is measured across every section rather than per section, so
+// the values stand in one column down the whole card. Reading a card is
+// comparing what it says against what you expected it to say, and a column that
+// moves under each heading is a column that has to be found again each time.
+func (d *dialog) sectionLines(st *styles, room int) []string {
+	labelW := 0
+	for _, sec := range d.sections {
+		for _, f := range sec.fields {
+			labelW = max(labelW, lipgloss.Width(f.label))
+		}
+	}
+	// A label column past a third of the card leaves nothing to hold the
+	// values, so it is cut and the labels are truncated into it instead.
+	labelW = min(labelW, max(room/3, 8))
+	valueW := max(room-labelW-2, 8)
+	blank := strings.Repeat(" ", labelW+2)
+
+	var out []string
+	for _, sec := range d.sections {
+		if len(out) > 0 {
+			out = append(out, "")
+		}
+		if sec.label != "" {
+			out = append(out, sectionRule(st, sec.label, room))
+		}
+		for _, f := range sec.fields {
+			label := padANSI(st.dimText.Render(truncate(f.label, labelW)), labelW) + "  "
+			for i, text := range wrap(f.value, valueW) {
+				if i > 0 {
+					label = blank
+				}
+				out = append(out, label+f.tone.style(st).Render(truncate(text, valueW)))
+			}
+		}
+		if len(sec.fields) > 0 && len(sec.lines) > 0 {
+			// A sentence under a table is not another row of it.
+			out = append(out, "")
+		}
+		for _, l := range sec.lines {
+			// A bullet hangs its wrapped rows under the text rather than under
+			// the mark, so a list of uses reads as a list however long each
+			// one runs.
+			lead, hang := "", ""
+			if l.bullet {
+				lead, hang = "· ", "  "
+			}
+			for i, text := range wrap(l.text, max(room-2, 8)) {
+				if i > 0 {
+					lead = hang
+				}
+				out = append(out, l.tone.style(st).Render(truncate(lead+text, room)))
+			}
+		}
+	}
+	return out
+}
+
+// sectionRule is a section's name on a rule that runs to the edge of the card.
+func sectionRule(st *styles, label string, room int) string {
+	head := "── " + label + " "
+	if w := lipgloss.Width(head); w < room {
+		return st.dimText.Render(head + strings.Repeat("─", room-w))
+	}
+	return st.dimText.Render(truncate(head, room))
+}
+
+// answerRule is the section rule for the question itself: the same rule, with
+// the label in the window's accent, because it is the line the dialog is up to
+// be read for.
+func answerRule(st *styles, label string, room int) string {
+	head := "── "
+	tail := " "
+	if w := lipgloss.Width(head + label + tail); w < room {
+		tail += strings.Repeat("─", room-w)
+	}
+	return st.dimText.Render(head) + st.dialogTitle.Render(truncate(label, max(room-4, 4))) + st.dimText.Render(tail)
+}
+
+// viewItems draws the menu rows: the key that runs each one, the label, and
+// what choosing it means.
+//
+// The key column is as wide as the widest key and no wider, and a menu whose
+// rows have no keys — one choosing between secrets, or grants, or discoboxes —
+// has no column at all rather than a ragged one full of IDs.
+func (d *dialog) viewItems(st *styles, inner int) string {
+	pressW := 0
+	for _, it := range d.items {
+		pressW = max(pressW, lipgloss.Width(it.press))
+	}
+	keyCol := 0
+	if pressW > 0 {
+		keyCol = pressW + 2
+	}
+	// The label column fits the longest label rather than a fixed width:
+	// action names are a word, but the folder dropdown's are paths, and a
+	// path cut off at fourteen cells is not a path you can choose between.
+	labelW := 14
+	for _, it := range d.items {
+		labelW = max(labelW, lipgloss.Width(it.label))
+	}
+	labelW = min(labelW, max(inner-keyCol-24, 14))
+
+	var b strings.Builder
+	for i, it := range d.items {
+		bar, label := " ", st.dimText
+		if i == d.cursor && it.enabled {
+			bar, label = st.key.Render("❯"), st.cursorName
+		}
+		key, detail := "", it.detail
+		if pressW > 0 {
+			key = padANSI(st.key.Render(it.press), pressW) + "  "
+			if !it.enabled {
+				key = padANSI(st.dimText.Render(it.press), pressW) + "  "
+			}
+		}
+		if !it.enabled && it.why != "" {
+			detail = it.why
+		}
+		row := bar + " " + key + label.Render(pad(it.label, labelW)) + "  " +
+			st.dimText.Render(truncate(detail, max(inner-keyCol-labelW-4, 8)))
+		b.WriteString(padANSI(row, inner))
+		b.WriteString("\n")
+	}
+	return b.String()
 }
 
 // dialogMark is the chevron column down the left of a scrolling body: the match

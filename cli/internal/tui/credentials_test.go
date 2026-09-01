@@ -91,7 +91,7 @@ func TestTheRowKeyAsksWhatWasRequested(t *testing.T) {
 	if m.dialog == nil {
 		t.Fatal("the key on a marked row opened nothing")
 	}
-	body := m.dialog.body
+	body := dialogText(m)
 	for _, want := range []string{"github", "GH_TOKEN", "api.github.com", "open a PR", "Open a pull request"} {
 		if !strings.Contains(body, want) {
 			t.Fatalf("dialog body = %q, want it to carry %q", body, want)
@@ -179,8 +179,8 @@ func TestChoosingANeighbouringHostAsksAboutTheBinding(t *testing.T) {
 		t.Fatal("choosing a secret bound elsewhere did not ask about the binding")
 	}
 	for _, want := range []string{"api.github.com", "github.com", "gh"} {
-		if !strings.Contains(m.dialog.body, want) {
-			t.Fatalf("question = %q, want it to name %q", m.dialog.body, want)
+		if !strings.Contains(dialogText(m), want) {
+			t.Fatalf("question = %q, want it to name %q", dialogText(m), want)
 		}
 	}
 	if !m.dialog.defaultNo {
@@ -192,11 +192,11 @@ func TestChoosingANeighbouringHostAsksAboutTheBinding(t *testing.T) {
 
 	// The site covers both, so that is what it offers to bind to rather than
 	// releasing the binding altogether.
-	if !strings.Contains(m.dialog.body, "Bind gh to github.com instead") {
-		t.Fatalf("question = %q, want it to offer the binding that covers both", m.dialog.body)
+	if !strings.Contains(dialogText(m), "bind gh to github.com instead") {
+		t.Fatalf("question = %q, want it to offer the binding that covers both", dialogText(m))
 	}
-	if !strings.Contains(m.dialog.body, "No leaves the request waiting") {
-		t.Fatalf("question = %q, want it to say what No does", m.dialog.body)
+	if !strings.Contains(dialogText(m), "no leaves the request waiting") {
+		t.Fatalf("question = %q, want it to say what No does", dialogText(m))
 	}
 
 	drain(t, m, m.dialog.action("yes"), 0)
@@ -283,7 +283,7 @@ func TestANewCredentialIsStoredThenApproved(t *testing.T) {
 		t.Fatalf("created = %#v, want the typed credential stored once", ds.createdSecrets)
 	}
 	created := ds.createdSecrets[0]
-	if created.Value != "ghp_typedbyahuman" {
+	if created.Value.Token != "ghp_typedbyahuman" {
 		t.Fatalf("stored value = %q", created.Value)
 	}
 	// It is stored against what was asked for, so the secret it becomes is one
@@ -389,8 +389,8 @@ func TestClickingTheBannerOpensTheQuestion(t *testing.T) {
 	d.dispatch(tea.MouseReleaseMsg{X: x, Y: span.row, Button: tea.MouseLeft})
 	// The secrets are read first, so the status dialog gives way to the question.
 	d.wait("the question", func() bool { return m.dialog != nil && m.dialog.kind == dlgActions })
-	if !strings.Contains(m.dialog.body, "api.github.com") {
-		t.Fatalf("dialog = %q, want the request the banner was about", m.dialog.body)
+	if !strings.Contains(dialogText(m), "api.github.com") {
+		t.Fatalf("dialog = %q, want the request the banner was about", dialogText(m))
 	}
 	// The press belongs to the banner: it must not also have started a
 	// selection drag across the chrome.
@@ -452,13 +452,13 @@ func TestAFailedApprovalIsShownAndSaysWhatToDo(t *testing.T) {
 	if !m.dialog.err {
 		t.Fatal("the dialog is not drawn as a failure")
 	}
-	if !strings.Contains(m.dialog.body, "clear the secret's host") {
-		t.Fatalf("body = %q, want the server's own remedy kept intact", m.dialog.body)
+	if !strings.Contains(dialogText(m), "clear the secret's host") {
+		t.Fatalf("body = %q, want the server's own remedy kept intact", dialogText(m))
 	}
 	// And it says which request is still waiting, since the list behind it no
 	// longer has the answer on screen.
-	if !strings.Contains(m.dialog.body, "github") || !strings.Contains(m.dialog.body, "still waiting") {
-		t.Fatalf("body = %q, want the request it was about", m.dialog.body)
+	if !strings.Contains(dialogText(m), "github") || !strings.Contains(dialogText(m), "still waiting") {
+		t.Fatalf("body = %q, want the request it was about", dialogText(m))
 	}
 	if len(m.requests["sbx_one"]) != 1 {
 		t.Fatal("the request stopped waiting after a failed approval")
@@ -488,8 +488,8 @@ func TestDecliningToRebindReturnsToTheQuestion(t *testing.T) {
 	if m.dialog == nil || m.dialog.kind != dlgActions {
 		t.Fatalf("dialog = %#v, want the picker back", m.dialog)
 	}
-	if !strings.Contains(m.dialog.body, "github.com") {
-		t.Fatalf("body = %q, want the request still in front of you", m.dialog.body)
+	if !strings.Contains(dialogText(m), "github.com") {
+		t.Fatalf("body = %q, want the request still in front of you", dialogText(m))
 	}
 	if len(ds.bound) != 0 || len(ds.approvals) != 0 {
 		t.Fatal("declining changed something")

@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"sort"
 	"strings"
+	"time"
 
 	"github.com/discobox-ai/discobox/hostscope"
 
@@ -148,11 +149,11 @@ func (m *Model) askAboutCredential(req CredentialRequest, secrets []Secret) tea.
 		})
 	}
 	items = append(items,
-		action{key: "new", label: "Enter a new credential…", detail: "store it as a project secret and approve with it", enabled: true},
-		action{key: "deny", label: "Deny", detail: "answer no; the agent is waiting on one", enabled: true},
+		action{key: "new", press: "n", label: "New credential…", detail: "store it as a project secret and approve with it", enabled: true},
+		action{key: "deny", press: "d", label: "Deny", detail: "answer no; the agent is waiting on one", enabled: true},
 	)
 
-	d := actionsDialog("Credential request", credentialAsk(req), items, func(result string) tea.Cmd {
+	d := actionsDialog("Credential request", "", items, func(result string) tea.Cmd {
 		switch {
 		case result == "deny":
 			return m.denyCredential(req)
@@ -163,37 +164,58 @@ func (m *Model) askAboutCredential(req CredentialRequest, secrets []Secret) tea.
 		}
 		return nil
 	})
+	d.sections = credentialAsk(req, m.secrets.now())
+	d.answerLabel = "which secret answers this?"
 	d.footer = "enter approves with the highlighted secret · esc leaves it waiting"
 	m.dialog = d
 	return nil
 }
 
-// credentialAsk is the request as a person needs to read it: who is asking,
-// for what, where it may go, and what they said they would do with it.
-func credentialAsk(req CredentialRequest) string {
-	var b strings.Builder
-	if req.FromAgent() {
-		fmt.Fprintf(&b, "The agent in this discobox is asking for %s.\n\n", credentialName(req))
-	} else {
-		fmt.Fprintf(&b, "This discobox used a credential it has no grant for.\n\n")
+// credentialAsk is the request as a person needs to read it: who is asking, for
+// what, where it may go, and what they said they would do with it.
+//
+// It is a column of facts rather than a paragraph containing them. Every field
+// here is one an approval turns on — the host it may be sent to most of all —
+// and a fact that has to be found inside a sentence is a fact that gets skipped
+// by somebody answering their fourth request of the morning.
+func credentialAsk(req CredentialRequest, now time.Time) []section {
+	asked := "the agent in this discobox"
+	if !req.FromAgent() {
+		// Not a question an agent composed: the proxy met a sentinel nothing
+		// resolves, and the ask is what it saw rather than what anyone means
+		// to do.
+		asked = "the proxy — this discobox used a credential it has no grant for"
+	}
+	if age := since(req.Created, now); age != "" {
+		asked = age + " ago by " + asked
+	}
+	fields := []field{{label: "credential", value: credentialName(req), tone: toneAccent}}
+	if req.Type != "" {
+		fields = append(fields, field{label: "kind", value: req.Type})
 	}
 	if req.EnvVar != "" {
-		fmt.Fprintf(&b, "  delivered as  %s\n", req.EnvVar)
+		fields = append(fields, field{label: "delivered as", value: req.EnvVar})
 	}
 	if req.Host != "" {
-		fmt.Fprintf(&b, "  may be sent to  %s\n", req.Host)
+		fields = append(fields, field{label: "may be sent to", value: req.Host, tone: toneAccent})
+	}
+	fields = append(fields, field{label: "asked", value: asked, tone: toneDim})
+	sections := []section{{label: "asked for", fields: fields}}
+
+	if len(req.Uses) == 0 && req.Justification == "" {
+		return sections
+	}
+	what := section{label: "what for"}
+	for _, use := range req.Uses {
+		what.lines = append(what.lines, line{text: use, bullet: true})
 	}
 	if req.Justification != "" {
-		fmt.Fprintf(&b, "\n%s\n", req.Justification)
-	}
-	if len(req.Uses) > 0 {
-		b.WriteString("\nApproved for:\n")
-		for _, use := range req.Uses {
-			fmt.Fprintf(&b, "  · %s\n", use)
+		if len(what.lines) > 0 {
+			what.lines = append(what.lines, line{})
 		}
+		what.lines = append(what.lines, line{text: req.Justification, tone: toneDim})
 	}
-	b.WriteString("\nWhich secret answers this?")
-	return b.String()
+	return append(sections, what)
 }
 
 func credentialName(req CredentialRequest) string {
@@ -256,25 +278,23 @@ func secretDetail(secret Secret, host string) string {
 // writes it anywhere, and the dialog holding it is replaced the moment it is
 // answered.
 func (m *Model) askForNewCredential(req CredentialRequest) tea.Cmd {
-	title := "New credential for " + credentialName(req)
-	body := "Paste the token. It is stored as a project secret" + newSecretHostSuffix(req) + ",\nand this request is approved with it."
-	d := inputDialog(title, body, "token", "", func(value string) tea.Cmd {
+	fields := []field{{label: "stored as", value: credentialName(req), tone: toneAccent}}
+	if req.Host != "" {
+		fields = append(fields, field{label: "bound to", value: req.Host, tone: toneAccent})
+	}
+	d := inputDialog("New credential", "", "token", "", func(value string) tea.Cmd {
 		value = strings.TrimSpace(value)
 		if value == "" {
 			return m.report(true, "no token entered; the request is still waiting")
 		}
 		return m.createAndApprove(req, value)
 	})
+	d.sections = []section{{label: "the new project secret", fields: fields}}
+	d.answerLabel = "paste the token"
+	d.footer = "it is stored encrypted and this request approved with it · Enter accepts · Esc cancels"
 	d.input.EchoMode = 1 // textinput.EchoPassword: a credential is not drawn back.
 	m.dialog = d
 	return nil
-}
-
-func newSecretHostSuffix(req CredentialRequest) string {
-	if req.Host == "" {
-		return ""
-	}
-	return " for " + req.Host
 }
 
 func (m *Model) createAndApprove(req CredentialRequest, value string) tea.Cmd {
@@ -284,7 +304,7 @@ func (m *Model) createAndApprove(req CredentialRequest, value string) tea.Cmd {
 			Name:  credentialName(req),
 			Type:  req.Type,
 			Host:  req.Host,
-			Value: value,
+			Value: SecretValue{Token: value},
 		})
 		if err != nil {
 			return credentialAnsweredMsg{request: req, approved: true, err: err}
@@ -319,24 +339,24 @@ func (m *Model) chooseSecret(req CredentialRequest, secrets []Secret, secretID s
 	// the site covers what is beneath it. Otherwise the only way through is to
 	// release the binding entirely.
 	widened := commonParent(chosen.Host, req.Host)
-	var body string
-	switch {
-	case widened != "":
-		body = fmt.Sprintf(
-			"%s is bound to %s, and this asks for %s.\n\n"+
-				"A credential may only be sent to its own host and the hosts beneath it. Bind %s to %s instead, so it covers both?\n\n"+
-				"No leaves the request waiting and nothing is changed.",
-			chosen.Name, chosen.Host, req.Host, chosen.Name, widened)
-	default:
-		body = fmt.Sprintf(
-			"%s is bound to %s, and this asks for %s, which is not beneath it.\n\n"+
-				"Release the binding, so %s may be sent anywhere a grant says?\n\n"+
-				"No leaves the request waiting and nothing is changed.",
-			chosen.Name, chosen.Host, req.Host, chosen.Name)
+	question := fmt.Sprintf("release %s's binding, so it may be sent anywhere a grant says?", chosen.Name)
+	if widened != "" {
+		question = fmt.Sprintf("bind %s to %s instead, so it covers both?", chosen.Name, widened)
 	}
-	d := confirmDialog("Bound to another host", body, func(string) tea.Cmd {
+	d := confirmDialog("Bound to another host", "", func(string) tea.Cmd {
 		return m.rebindAndApprove(req, chosen, widened)
 	})
+	d.sections = []section{{
+		label: "the conflict",
+		fields: []field{
+			{label: "secret", value: chosen.Name},
+			{label: "bound to", value: chosen.Host, tone: toneAccent},
+			{label: "asked for", value: req.Host, tone: toneAccent},
+		},
+		lines: []line{{text: "a credential may only be sent to its own host and the hosts beneath it", tone: toneDim}},
+	}}
+	d.answerLabel = question
+	d.footer = "no leaves the request waiting, and nothing is changed"
 	// The costly answer is yes: it widens where a credential may be sent.
 	d.defaultNo = true
 	// Saying no goes back to the question rather than nowhere. A dialog that
@@ -364,7 +384,7 @@ func (m *Model) rebindAndApprove(req CredentialRequest, secret Secret, host stri
 	}
 	m.dialog = statusDialog("Credential request", what)
 	return func() tea.Msg {
-		if err := m.ds.SetSecretHost(m.ctx, secret.ID, host); err != nil {
+		if err := m.ds.UpdateSecret(m.ctx, secret.ID, SecretUpdate{Host: &host}); err != nil {
 			return credentialAnsweredMsg{request: req, approved: true, err: err}
 		}
 		err := m.ds.ApproveCredentialRequest(m.ctx, Approval{RequestID: req.ID, SecretID: secret.ID})
@@ -402,7 +422,9 @@ func (m *Model) credentialAnswered(msg credentialAnsweredMsg) tea.Cmd {
 		if !msg.approved {
 			verb = "Could not deny"
 		}
-		m.dialog = errorDialog(verb, credentialErrorBody(msg.request, msg.err))
+		d := errorDialog(verb, fmt.Sprintf("%v", msg.err))
+		d.sections = []section{credentialErrorSection(msg.request)}
+		m.dialog = d
 		return m.loadCredentialRequests()
 	}
 	m.dialog = nil
@@ -469,15 +491,13 @@ func (m *Model) viewCredentialBanner(width int) string {
 	return m.st.attention.Render(padANSI(label, width))
 }
 
-// credentialErrorBody says what failed, for which request, and leaves the
-// server's own wording intact: it is the half that says what to do next.
-func credentialErrorBody(req CredentialRequest, err error) string {
-	var b strings.Builder
-	fmt.Fprintf(&b, "%v\n\n", err)
-	fmt.Fprintf(&b, "The request is still waiting: %s", credentialName(req))
+// credentialErrorSection says which request is still waiting, under the
+// server's own wording of the refusal: that wording is the half that says what
+// to do next, so it is left whole as the dialog's body and this stands under it.
+func credentialErrorSection(req CredentialRequest) section {
+	fields := []field{{label: "credential", value: credentialName(req), tone: toneAccent}}
 	if req.Host != "" {
-		fmt.Fprintf(&b, " for %s", req.Host)
+		fields = append(fields, field{label: "for", value: req.Host, tone: toneAccent})
 	}
-	b.WriteString(".")
-	return b.String()
+	return section{label: "still waiting", fields: fields}
 }

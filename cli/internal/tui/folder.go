@@ -131,10 +131,12 @@ func (m *Model) folderDialog() *dialog {
 	choices := m.folderChoices()
 	items := make([]action, 0, len(choices))
 	for i, choice := range choices {
+		n := itoa(i + 1)
 		items = append(items, action{
 			// The key is the row's index, so the first nine choices can be
 			// picked by number as well as by moving to them.
-			key:     itoa(i + 1),
+			key:     n,
+			press:   n,
 			label:   choice,
 			detail:  m.folderDetail(choice),
 			enabled: true,

@@ -1340,29 +1340,29 @@ func (m *Model) actions(targets []Sandbox) []action {
 		renameWhy = "the name shown is the terminal's title, which the harness sets — a rename would not change it"
 	}
 	return []action{
-		{key: "a", label: "attach", detail: "join the harness terminal", enabled: attachable,
+		{key: "a", press: "a", label: "attach", detail: "join the harness terminal", enabled: attachable,
 			why: attachWhy(one, targets)},
-		{key: "s", label: "shell", detail: "open a shell in the box", enabled: attachable,
+		{key: "s", press: "s", label: "shell", detail: "open a shell in the box", enabled: attachable,
 			why: attachWhy(one, targets)},
-		{key: "y", label: "apply", detail: "bring the changes back to " + m.session.Directory, enabled: applyable,
+		{key: "y", press: "y", label: "apply", detail: "bring the changes back to " + m.session.Directory, enabled: applyable,
 			why: applyWhy},
-		{key: vscodeKey, label: "vscode", detail: "open the box in VS Code, in a window of its own", enabled: attachable,
+		{key: vscodeKey, press: vscodeKey, label: "vscode", detail: "open the box in VS Code, in a window of its own", enabled: attachable,
 			why: attachWhy(one, targets)},
-		{key: renameKey, label: "rename", detail: "type a new name for the box", enabled: renameable,
+		{key: renameKey, press: renameKey, label: "rename", detail: "type a new name for the box", enabled: renameable,
 			why: renameWhy},
-		{key: "u", label: "upgrade", detail: "re-pin to the current harness image", enabled: anyUpgrade,
+		{key: "u", press: "u", label: "upgrade", detail: "re-pin to the current harness image", enabled: anyUpgrade,
 			why: "already on the current image"},
-		{key: repairKey, label: "repair", detail: "rebuild a broken box on the current image, keeping its work", enabled: anyRepair,
+		{key: repairKey, press: repairKey, label: "repair", detail: "rebuild a broken box on the current image, keeping its work", enabled: anyRepair,
 			why: repairWhy},
-		{key: "t", label: "stop", detail: "power the box off, keeping its disk", enabled: anyRunning,
+		{key: "t", press: "t", label: "stop", detail: "power the box off, keeping its disk", enabled: anyRunning,
 			why: "not running"},
-		{key: "T", label: "start", detail: "power a stopped box back on", enabled: anyStopped,
+		{key: "T", press: "T", label: "start", detail: "power a stopped box back on", enabled: anyStopped,
 			why: "already on, or archived"},
-		{key: "x", label: "archive", detail: "put it away, disk and all, reversibly", enabled: !allArchived,
+		{key: "x", press: "x", label: "archive", detail: "put it away, disk and all, reversibly", enabled: !allArchived,
 			why: "already archived"},
-		{key: "U", label: "unarchive", detail: "bring an archived box back", enabled: anyArchived,
+		{key: "U", press: "U", label: "unarchive", detail: "bring an archived box back", enabled: anyArchived,
 			why: "not archived"},
-		{key: "P", label: "purge", detail: "destroy it and its data, for good", enabled: allArchived,
+		{key: "P", press: "P", label: "purge", detail: "destroy it and its data, for good", enabled: allArchived,
 			why: "archive it first — purge only takes archived boxes"},
 	}
 }
@@ -1724,8 +1724,9 @@ func (m *Model) askForADefaultHarness(req RunRequest) (tea.Cmd, bool) {
 		if harness.State != HarnessEnabled {
 			detail = "set it up, then make it the default"
 		}
+		n := itoa(i + 1)
 		items = append(items, action{
-			key: itoa(i + 1), label: harness.displayName(), detail: detail, enabled: true,
+			key: n, press: n, label: harness.displayName(), detail: detail, enabled: true,
 		})
 	}
 	chosen := candidates

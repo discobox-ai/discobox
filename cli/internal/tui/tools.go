@@ -278,7 +278,7 @@ func (m *Model) openTools() tea.Cmd {
 			}
 		}
 		items = append(items, action{
-			key: t.key, label: t.label, detail: detail,
+			key: t.key, press: t.key, label: t.label, detail: detail,
 			enabled: box.attachable(),
 			why:     attachWhy(true, []Sandbox{box}),
 		})
@@ -327,11 +327,13 @@ func (m *Model) openToolFiles(id string) tea.Cmd {
 	}
 	items := make([]action, 0, len(t.files))
 	for i, file := range t.files {
+		n := itoa(i + 1)
 		items = append(items, action{
 			// The key is the row's index, so the first nine files can be
 			// picked by number as well as by moving to them — the way the
 			// harnesses screen numbers its own.
-			key:     itoa(i + 1),
+			key:     n,
+			press:   n,
 			label:   file.Name,
 			detail:  m.toolFileDetail(file),
 			enabled: true,

@@ -115,21 +115,10 @@ func (d *apiDataSource) CreateSecret(ctx context.Context, secret tui.NewSecret) 
 	if host := strings.TrimSpace(secret.Host); host != "" {
 		body.SetHost(apiclientgen.NewOptString(host))
 	}
-	body.Value = apimodel.SecretValue{Token: apiclientgen.NewOptString(secret.Value)}
-	// What makes it an oauth credential rather than a token: the material the
-	// control plane spends to renew the access token.
-	if secret.RefreshToken != "" {
-		body.Value.SetRefreshToken(apiclientgen.NewOptString(secret.RefreshToken))
-	}
-	if secret.TokenURL != "" {
-		body.Value.SetTokenUrl(apiclientgen.NewOptString(secret.TokenURL))
-	}
-	if secret.ClientID != "" {
-		body.Value.SetClientId(apiclientgen.NewOptString(secret.ClientID))
-	}
-	if len(secret.Scopes) > 0 {
-		body.Value.SetScopes(apiclientgen.NewOptNilStringArray(secret.Scopes))
-	}
+	// Always sent, zero included: zero is the answer "grants on this may live
+	// forever", and leaving it out would take the server's default instead.
+	body.SetMaxGrantTTLSeconds(apiclientgen.NewOptInt64(secret.MaxTTLSeconds))
+	body.Value = secretValueBody(secret.Value)
 
 	res, err := d.client.CreateSecret(ctx, body, apiclientgen.CreateSecretParams{ProjectId: d.projectID})
 	if err != nil {
@@ -148,29 +137,44 @@ func (d *apiDataSource) CreateSecret(ctx context.Context, secret tui.NewSecret) 
 	}, nil
 }
 
-// SetSecretHost binds a secret to a host, or releases it with an empty one.
-func (d *apiDataSource) SetSecretHost(ctx context.Context, secretID, host string) error {
-	body := &apimodel.UpdateSecretBody{}
-	// Set, even when empty: an unset field changes nothing, so releasing a
-	// binding has to be said rather than left out.
-	body.SetHost(apiclientgen.NewOptString(strings.TrimSpace(host)))
-	res, err := d.client.UpdateSecret(ctx, body, apiclientgen.UpdateSecretParams{
-		ProjectId: d.projectID,
-		SecretId:  secretID,
-	})
-	if err != nil {
-		return err
+// secretValueBody is a credential's material on the wire. The optional halves
+// are sent only when they are there: an empty refresh token on a token secret
+// is not a field the server has any use for.
+func secretValueBody(value tui.SecretValue) apimodel.SecretValue {
+	body := apimodel.SecretValue{Token: apiclientgen.NewOptString(value.Token)}
+	if value.RefreshToken != "" {
+		body.SetRefreshToken(apiclientgen.NewOptString(value.RefreshToken))
 	}
-	_, err = expectResponse[apimodel.Secret](res)
-	return err
+	if value.TokenURL != "" {
+		body.SetTokenUrl(apiclientgen.NewOptString(value.TokenURL))
+	}
+	if value.ClientID != "" {
+		body.SetClientId(apiclientgen.NewOptString(value.ClientID))
+	}
+	if len(value.Scopes) > 0 {
+		body.SetScopes(apiclientgen.NewOptNilStringArray(value.Scopes))
+	}
+	return body
 }
 
-// SetSecretMaxGrantTTL sets the longest a grant on the secret may live; zero
-// lifts the limit.
-func (d *apiDataSource) SetSecretMaxGrantTTL(ctx context.Context, secretID string, seconds int64) error {
+// UpdateSecret changes what a secret says about itself, in one call. Every
+// field the update names is set even when it is empty or zero — an unset field
+// changes nothing, so releasing a binding and lifting a limit both have to be
+// said rather than left out — and every field it does not name is left out.
+func (d *apiDataSource) UpdateSecret(ctx context.Context, secretID string, update tui.SecretUpdate) error {
 	body := &apimodel.UpdateSecretBody{}
-	// Set, even at zero: zero is "no limit" rather than "unchanged".
-	body.SetMaxGrantTTLSeconds(apiclientgen.NewOptInt64(seconds))
+	if update.Name != nil {
+		body.SetName(apiclientgen.NewOptString(strings.TrimSpace(*update.Name)))
+	}
+	if update.Host != nil {
+		body.SetHost(apiclientgen.NewOptString(strings.TrimSpace(*update.Host)))
+	}
+	if update.MaxTTLSeconds != nil {
+		body.SetMaxGrantTTLSeconds(apiclientgen.NewOptInt64(*update.MaxTTLSeconds))
+	}
+	if update.Value != nil {
+		body.SetValue(apiclientgen.NewOptSecretValue(secretValueBody(*update.Value)))
+	}
 	res, err := d.client.UpdateSecret(ctx, body, apiclientgen.UpdateSecretParams{
 		ProjectId: d.projectID,
 		SecretId:  secretID,

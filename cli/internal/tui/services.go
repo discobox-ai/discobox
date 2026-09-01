@@ -123,11 +123,13 @@ func (m *Model) showServices(msg servicesMsg) tea.Cmd {
 	}
 	items := make([]action, 0, len(msg.services))
 	for i, service := range msg.services {
+		n := itoa(i + 1)
 		items = append(items, action{
 			// The key is the row's number, so the first nine are reachable by
 			// digit as well as by moving to them — the same arrangement the
 			// harness file picker uses.
-			key:     itoa(i + 1),
+			key:     n,
+			press:   n,
 			label:   service.displayName(),
 			detail:  service.detail(),
 			enabled: service.runnable(),
@@ -155,9 +157,9 @@ func (m *Model) showServices(msg servicesMsg) tea.Cmd {
 // a service that has since moved on.
 func (m *Model) showServiceMenu(service Service) tea.Cmd {
 	items := []action{
-		{key: "s", label: "start", detail: "run it, or leave it running", enabled: true},
-		{key: "t", label: "stop", detail: "end its run and keep what it printed", enabled: true},
-		{key: "R", label: "restart", detail: "stop it if it is running, then start it", enabled: true},
+		{key: "s", press: "s", label: "start", detail: "run it, or leave it running", enabled: true},
+		{key: "t", press: "t", label: "stop", detail: "end its run and keep what it printed", enabled: true},
+		{key: "R", press: "R", label: "restart", detail: "stop it if it is running, then start it", enabled: true},
 	}
 	m.dialog = actionsDialog(service.displayName(), service.detail(), items, func(key string) tea.Cmd {
 		verb := ServiceRestart
