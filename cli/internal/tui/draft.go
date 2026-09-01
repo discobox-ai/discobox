@@ -29,6 +29,9 @@ func (m *Model) restoreDraft(draft string) tea.Cmd {
 	}
 	m.prompt.SetValue(draft)
 	m.promptEnd()
+	// The draft is where this window starts, not something it did, so Ctrl-_
+	// has nothing behind it to reach for.
+	m.edits.reset()
 	// There are words in the field, so the glint over the placeholder has
 	// nothing left to play on.
 	m.stopShimmer()

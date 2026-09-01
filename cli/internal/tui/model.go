@@ -59,6 +59,10 @@ type Model struct {
 	// and a window closed mid-sentence has the sentence. See saveDraft.
 	draft string
 
+	// edits is the composer's kill ring and undo history — the readline state
+	// the textarea does not keep for itself. See readline.go.
+	edits promptEditor
+
 	// requests is the project's pending credential requests, indexed by the
 	// discobox they were asked from. Read on the same poll as the listing —
 	// there is no client-facing event stream (ADR 0061) and an approval is
@@ -282,6 +286,8 @@ func New(ctx context.Context, ds DataSource, options ...Option) *Model {
 	ta := textarea.New()
 	ta.ShowLineNumbers = false
 	ta.CharLimit = 0
+	// Emacs mode, the whole of it. See readline.go.
+	ta.KeyMap = promptKeyMap()
 	// The field is as tall as what is in it, wrapped rows counted, and stops
 	// growing at promptMaxRows — past that it scrolls under the cursor.
 	ta.DynamicHeight = true
@@ -781,8 +787,14 @@ func (m *Model) updatePaste(msg tea.PasteMsg) tea.Cmd {
 	case m.inPanes():
 		return m.updatePane(msg)
 	}
+	before := m.promptState()
 	var cmd tea.Cmd
 	m.prompt, cmd = m.prompt.Update(msg)
+	// A paste into the composer is one change, and usually a large one, so
+	// Ctrl-_ takes the whole of it back. See readline.go.
+	if m.prompt.Value() != before.value {
+		m.pushUndo(before, false)
+	}
 	return cmd
 }
 
@@ -955,6 +967,10 @@ func (m *Model) promptEdited(msg editorDoneMsg) {
 		m.status, m.statusE = fmt.Sprintf("cannot read the prompt back: %v", err), true
 		return
 	}
+	// The editor's whole round trip is one Ctrl-_: an editor left empty is how
+	// you throw a prompt away, and throwing one away by accident should be
+	// takeable back.
+	m.pushUndo(m.promptState(), false)
 	m.prompt.SetValue(strings.TrimRight(string(edited), "\n"))
 	m.promptEnd()
 	m.layout()
@@ -1039,9 +1055,7 @@ func (m *Model) updatePrompt(msg tea.KeyPressMsg) tea.Cmd {
 		return nil
 	}
 
-	var cmd tea.Cmd
-	m.prompt, cmd = m.prompt.Update(msg)
-	return cmd
+	return m.promptKey(msg)
 }
 
 // onFirstPromptRow and onLastPromptRow ask about displayed rows, not lines: a
@@ -1958,6 +1972,7 @@ func (m *Model) created(msg createdMsg) tea.Cmd {
 	// The prompt has been spent. Clearing it is what makes the window usable
 	// twice in a row without reaching for a delete key.
 	m.prompt.SetValue("")
+	m.edits.reset()
 	m.layout()
 	if msg.req.Detach {
 		return tea.Batch(m.refresh(), m.report(false, "created %s", msg.sandbox.ID))
@@ -2659,6 +2674,25 @@ func (m *Model) helpText() string {
 		"                   the prompt and Tab is the way out. ↓ stops there",
 		"                   too: the prompt is the bottom of the window",
 		"    Alt-E or F2    write the prompt in $EDITOR",
+		"",
+		"  The field is a readline, in emacs mode, the way a shell prompt is:",
+		"",
+		"    Ctrl-A / Ctrl-E    start / end of the line",
+		"    Ctrl-B / Ctrl-F    back / forward a character (← → too)",
+		"    Ctrl-← / Ctrl-→    back / forward a word (Alt-B and Alt-F too)",
+		"    Ctrl-P / Ctrl-N    up / down a line",
+		"    Alt-< / Alt->      start / end of the whole prompt",
+		"    Ctrl-W             kill the word behind the cursor",
+		"    Alt-D              kill the word ahead of it",
+		"    Ctrl-K / Ctrl-U    kill to the end / start of the line",
+		"    Ctrl-Y             yank the last kill back. A run of kills is one",
+		"                       yank: take a line apart a word at a time and",
+		"                       Ctrl-Y puts the whole of it back",
+		"    Ctrl-_             undo, a change at a time. A run of typing is",
+		"                       one change",
+		"    Ctrl-T / Alt-T     transpose characters / words",
+		"    Alt-U / Alt-L / Alt-C   upper / lower / capitalize the word ahead",
+		"",
 		"    Tab            round the window: the prompt, the discoboxes, the",
 		"                   folder they are filtered to, and back",
 		"    Shift-Tab      switch the harness",

@@ -1120,6 +1120,33 @@ reads the height back rather than computing one. Three rows is enough to see the
 sentence you are still writing; a field that kept growing would take the window
 over for a prompt you are only halfway through.
 
+**The composer is a readline** (`readline.go`). The field answers GNU readline's
+emacs mode, because anyone who has typed at a shell prompt has those motions in
+their fingers and a field that answers Ctrl-A but not Ctrl-Y invites the muscle
+memory and then drops half of it. The textarea brings most of it; `promptKey`
+brings the rest, and is where every key that is not the window's own ends up:
+
+- `promptKeyMap` adds Ctrl-← and Ctrl-→ to the emacs word keys. Readline binds
+  no such key itself, but it is what terminals send and what the distributed
+  inputrc files bind. Bubbles' single-line input already had them, which is why
+  they worked in a dialog and not here.
+- The kill ring, on `Model.edits`. The textarea's kills discard the text;
+  `remember` keeps it for Ctrl-Y, and a run of kills accumulates into one entry
+  so a line taken apart a word at a time comes back in one yank. What was killed
+  is read back out of the buffer by `removed` rather than reimplementing each
+  kill: the textarea deletes one span and nothing else, so the span is what lies
+  between the ends the two values still share.
+- Undo, on Ctrl-_, as a stack of `promptState` — value and cursor. A run of
+  self-inserting keys is coalesced into one entry; a paste, which reaches the
+  composer through `updatePaste` rather than as keys, is one of its own. `promptEditor.reset` drops
+  the history where the buffer was not edited but replaced: a run, or the draft
+  the window opened with.
+- Alt-T, transpose words, which the textarea has no operation for.
+
+Deliberately absent: yank-pop, which needs a ring deeper than one entry; the
+history keys, since the composer has no history to walk — the draft is the one
+thing it remembers and it comes back on its own; and vi mode.
+
 **The mark sits at the head of what it marks.** `logo.column()` is the art plus
 a `logoGutter` on each side — one between it and the box, one between it and the
 list. In the full window `logo.view` draws it from the top and pads below: a
@@ -1413,6 +1440,7 @@ the newest one where the busy line goes.
 | `theme.go` | the palette and every style, built against the detected profile |
 | `logo.go` | the mark, embedded from `logo.chars` as captured |
 | `editor.go` | Alt-E: the prompt in `$EDITOR` |
+| `readline.go` | the composer's emacs mode: the word keys, the kill ring, undo, transpose words |
 | `pane.go` | one terminal pane: its keys, messages, chrome and cursor |
 | `column.go` | one side of the workspace: a strip of panes, one visible |
 | `workspace.go` | the workspace screen: open, poll/reconcile, tabs, detach, the port forward |

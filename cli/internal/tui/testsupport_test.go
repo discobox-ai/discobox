@@ -931,57 +931,57 @@ func repaints(cmd tea.Cmd) bool {
 
 // key builds the key press a terminal would send for a keystroke, in the two
 // shapes the launcher has to cope with: a printable character carries its text,
-// and everything else is a code.
+// and everything else is a code. Modifiers are read off the front, so any
+// combination the key lists spell — "ctrl+left", "alt+backspace", "ctrl+_" —
+// can be written here the way it is written there.
 func key(spec string) tea.KeyPressMsg {
-	switch spec {
-	case "up":
-		return tea.KeyPressMsg{Code: tea.KeyUp}
-	case "down":
-		return tea.KeyPressMsg{Code: tea.KeyDown}
-	case "left":
-		return tea.KeyPressMsg{Code: tea.KeyLeft}
-	case "right":
-		return tea.KeyPressMsg{Code: tea.KeyRight}
-	case "enter":
-		return tea.KeyPressMsg{Code: tea.KeyEnter}
-	case "tab":
-		return tea.KeyPressMsg{Code: tea.KeyTab}
-	case "shift+tab":
-		return tea.KeyPressMsg{Code: tea.KeyTab, Mod: tea.ModShift}
-	case "esc":
-		return tea.KeyPressMsg{Code: tea.KeyEscape}
-	case "backspace":
-		return tea.KeyPressMsg{Code: tea.KeyBackspace}
-	case "shift+backspace":
-		return tea.KeyPressMsg{Code: tea.KeyBackspace, Mod: tea.ModShift}
-	case " ":
-		return tea.KeyPressMsg{Code: tea.KeySpace, Text: " "}
-	case "ctrl+j":
-		return tea.KeyPressMsg{Code: 'j', Mod: tea.ModCtrl}
-	case "ctrl+c":
-		return tea.KeyPressMsg{Code: 'c', Mod: tea.ModCtrl}
-	case "ctrl+left":
-		return tea.KeyPressMsg{Code: tea.KeyLeft, Mod: tea.ModCtrl}
-	case "ctrl+right":
-		return tea.KeyPressMsg{Code: tea.KeyRight, Mod: tea.ModCtrl}
-	case "ctrl+b":
-		return tea.KeyPressMsg{Code: 'b', Mod: tea.ModCtrl}
-	case "ctrl+l":
-		return tea.KeyPressMsg{Code: 'l', Mod: tea.ModCtrl}
-	case "ctrl+a":
-		return tea.KeyPressMsg{Code: 'a', Mod: tea.ModCtrl}
-	case "ctrl+d":
-		return tea.KeyPressMsg{Code: 'd', Mod: tea.ModCtrl}
-	case "f1":
-		return tea.KeyPressMsg{Code: tea.KeyF1}
-	case "f3":
-		return tea.KeyPressMsg{Code: tea.KeyF3}
+	modifiers := map[string]tea.KeyMod{"ctrl": tea.ModCtrl, "alt": tea.ModAlt, "shift": tea.ModShift}
+	var mod tea.KeyMod
+	for {
+		head, rest, found := strings.Cut(spec, "+")
+		if !found || rest == "" {
+			break
+		}
+		next, ok := modifiers[head]
+		if !ok {
+			break
+		}
+		mod |= next
+		spec = rest
+	}
+
+	named := map[string]rune{
+		"up":        tea.KeyUp,
+		"down":      tea.KeyDown,
+		"left":      tea.KeyLeft,
+		"right":     tea.KeyRight,
+		"enter":     tea.KeyEnter,
+		"tab":       tea.KeyTab,
+		"esc":       tea.KeyEscape,
+		"backspace": tea.KeyBackspace,
+		"delete":    tea.KeyDelete,
+		"home":      tea.KeyHome,
+		"end":       tea.KeyEnd,
+		"f1":        tea.KeyF1,
+		"f2":        tea.KeyF2,
+		"f3":        tea.KeyF3,
+	}
+	if code, ok := named[spec]; ok {
+		return tea.KeyPressMsg{Code: code, Mod: mod}
+	}
+	if spec == " " {
+		return tea.KeyPressMsg{Code: tea.KeySpace, Text: " ", Mod: mod}
 	}
 	runes := []rune(spec)
 	if len(runes) == 1 && runes[0] >= 'A' && runes[0] <= 'Z' {
 		// A capital letter is a shifted one on the wire, which is the shape
 		// keyName exists to see through.
-		return tea.KeyPressMsg{Code: runes[0] + 32, ShiftedCode: runes[0], Text: spec, Mod: tea.ModShift}
+		return tea.KeyPressMsg{Code: runes[0] + 32, ShiftedCode: runes[0], Text: spec, Mod: mod | tea.ModShift}
+	}
+	if mod != 0 {
+		// A modified key carries no text of its own: the terminal sends the
+		// keystroke, and the name is what the launcher matches on.
+		return tea.KeyPressMsg{Code: runes[0], Mod: mod}
 	}
 	return tea.KeyPressMsg{Code: runes[0], Text: spec}
 }
