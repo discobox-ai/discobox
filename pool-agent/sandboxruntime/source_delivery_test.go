@@ -197,3 +197,75 @@ func writeTestSandboxDocument(t *testing.T, configDir string, project *sandboxco
 		t.Fatal(err)
 	}
 }
+
+// A sandbox created before the control plane sent the slug holds its secondary
+// sources under the slugified reference key. Everything addresses a source by
+// slug, so those directories are moved to it — with the work committed in them
+// intact, which is the whole reason not to simply materialize afresh.
+func TestSourcesMaterializedUnderTheirKeyAreAdoptedByTheirSlug(t *testing.T) {
+	runtime := deliveryTestRuntime(t)
+	req := deliveryTestRequest()
+	req.Config.SourceCodeReferences = workerclient.NewOptSandboxConfigSourceCodeReferences(
+		workerclient.SandboxConfigSourceCodeReferences{
+			"/home/user/src/hooks": {
+				Kind:           workerclient.GitSourceKindGit,
+				Slug:           workerclient.NewOptString("hooks"),
+				LocalDirectory: workerclient.NewOptString("/home/user/src/hooks"),
+			},
+		})
+
+	markMaterialized(t, runtime, "home-user-src-hooks")
+	work := filepath.Join(runtime.sandboxSourcePath(deliveryTestSandboxID, "home-user-src-hooks"), "committed.txt")
+	if err := os.WriteFile(work, []byte("work"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := runtime.adoptSourcePaths(context.Background(), deliveryTestSandboxID, sandboxSources(req)); err != nil {
+		t.Fatal(err)
+	}
+
+	adopted := runtime.sandboxSourcePath(deliveryTestSandboxID, "hooks")
+	if _, err := os.Stat(filepath.Join(adopted, "committed.txt")); err != nil {
+		t.Fatalf("the adopted source lost its contents: %v", err)
+	}
+	if !gitSourceMaterialized(adopted) {
+		t.Fatal("the adopted source is not materialized, so it would be cloned over")
+	}
+	if _, err := os.Stat(runtime.sandboxSourcePath(deliveryTestSandboxID, "home-user-src-hooks")); !os.IsNotExist(err) {
+		t.Fatalf("the old directory is still there: %v", err)
+	}
+	// The primary's slug is its seed, so it has nothing to adopt and took
+	// nothing from the source that did.
+	if _, err := os.Stat(runtime.sandboxSourcePath(deliveryTestSandboxID, "primary")); !os.IsNotExist(err) {
+		t.Fatalf("the primary source directory was created: %v", err)
+	}
+}
+
+// A sandbox that already holds the slug's own directory is left alone: the
+// materialized source is the one the slug names, and adopting over it would
+// swap live work for whatever the old name still holds.
+func TestAdoptionLeavesASourceThatAlreadyHasItsSlugAlone(t *testing.T) {
+	runtime := deliveryTestRuntime(t)
+	req := deliveryTestRequest()
+	req.Config.SourceCodeReferences = workerclient.NewOptSandboxConfigSourceCodeReferences(
+		workerclient.SandboxConfigSourceCodeReferences{
+			"/home/user/src/hooks": {
+				Kind: workerclient.GitSourceKindGit,
+				Slug: workerclient.NewOptString("hooks"),
+			},
+		})
+	markMaterialized(t, runtime, "home-user-src-hooks")
+	markMaterialized(t, runtime, "hooks")
+	current := filepath.Join(runtime.sandboxSourcePath(deliveryTestSandboxID, "hooks"), "current.txt")
+	if err := os.WriteFile(current, []byte("current"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := runtime.adoptSourcePaths(context.Background(), deliveryTestSandboxID, sandboxSources(req)); err != nil {
+		t.Fatal(err)
+	}
+
+	if _, err := os.Stat(current); err != nil {
+		t.Fatalf("the source the slug already named was replaced: %v", err)
+	}
+}

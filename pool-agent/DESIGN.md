@@ -294,6 +294,14 @@ flowchart LR
   `/var/lib/discobox/cache/projects/{project}/pools/{pool}/cache`.
   The sandbox-agent wires everything else from the image's declarative volume
   list and the manifest source list. See ADR 0007.
+- A source's slug is assigned by the control plane and sent on the create
+  request, because it is shared addressing: the directory the source is
+  materialized in (`sources/<slug>`), its origin (`origins/<slug>.git`), its
+  per-source data mount, and the `git-repositories`/`git-origins` routes a
+  client fetches and pushes through all name it. The pool derives one from the
+  source's key only when none is sent, and `adoptSourcePaths` renames a source
+  materialized under such a derived name once the real slug arrives, so a
+  sandbox provisioned before the slug was sent keeps the work committed in it.
 - Source-scoped durable data is a separate pool-owned lifecycle boundary:
   `/var/lib/discobox/projects/{project}/pools/{pool}/data-per-source/{source-key}`.
   The control plane resolves the opaque source key; pool-agent validates it,

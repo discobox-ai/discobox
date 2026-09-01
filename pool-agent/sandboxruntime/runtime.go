@@ -102,8 +102,13 @@ const (
 )
 
 var (
-	ErrNotFound      = errors.New("sandbox not found")
-	ErrAlreadyExists = errors.New("sandbox already exists")
+	ErrNotFound = errors.New("sandbox not found")
+	// ErrRepositoryNotFound is the sandbox being there and the repository asked
+	// of it not being. Separate from ErrNotFound because the two send a client
+	// somewhere completely different: one means the sandbox is gone, the other
+	// that this slug names no source on it.
+	ErrRepositoryNotFound = errors.New("sandbox git repository not found")
+	ErrAlreadyExists      = errors.New("sandbox already exists")
 )
 
 // Sandbox is the pool-local runtime view of a sandbox instance.
@@ -273,6 +278,13 @@ func (r *DockerSandboxRuntime) CreateSandbox(ctx context.Context, req *workerapi
 	lock := r.sandboxLock(sandboxID)
 	lock.Lock()
 	defer lock.Unlock()
+	// Before anything reads a source path: a sandbox from before the slug was
+	// sent holds its sources under their old names, and every check below --
+	// what is materialized, what is mounted, what the git route serves --
+	// asks by slug.
+	if err := r.adoptSourcePaths(ctx, sandboxID, sandboxSources(req)); err != nil {
+		return nil, err
+	}
 	// A container this create replaces takes its power state with it: an upgrade
 	// restarts a running sandbox into the new image and leaves a stopped one
 	// stopped (ADR 0021 §3).
@@ -1775,6 +1787,46 @@ func (r *DockerSandboxRuntime) watchProxyMaterialEvents(ctx context.Context, log
 	}
 }
 
+// adoptSourcePaths moves a source that was materialized under its seed-derived
+// name to the slug the control plane assigned it.
+//
+// It exists because the pool was not told the slug at all until this change:
+// every sandbox created before it holds its non-primary sources under the
+// slugified reference key, which is the wrong directory for every path that
+// addresses a source by slug -- the git route a client fetches from, the
+// materialized marker, the mounts. Renaming is what makes those sandboxes whole
+// again; materializing afresh would clone over the top of them and strand the
+// work already committed there.
+//
+// Nothing to adopt is the overwhelmingly common case and costs one stat per
+// source. A rename is only ever made into a name that is free, so a sandbox
+// already holding both is left exactly as it is.
+func (r *DockerSandboxRuntime) adoptSourcePaths(ctx context.Context, sandboxID string, sources []sandboxSource) error {
+	for _, source := range sources {
+		if source.keySlug == "" {
+			continue
+		}
+		for _, pair := range [][2]string{
+			{r.sandboxSourcePath(sandboxID, source.keySlug), r.sandboxSourcePath(sandboxID, source.slug)},
+			{r.sandboxOriginPath(sandboxID, source.keySlug), r.sandboxOriginPath(sandboxID, source.slug)},
+		} {
+			from, to := pair[0], pair[1]
+			if _, err := os.Stat(from); err != nil {
+				continue
+			}
+			if _, err := os.Stat(to); err == nil {
+				continue
+			}
+			if err := os.Rename(from, to); err != nil {
+				return fmt.Errorf("adopt source %q from %s: %w", source.slug, filepath.Base(from), err)
+			}
+			slog.InfoContext(ctx, "adopted a sandbox source materialized under its old name",
+				"sandboxId", sandboxID, "slug", source.slug, "from", from, "to", to)
+		}
+	}
+	return nil
+}
+
 func (r *DockerSandboxRuntime) GitRepositoryPath(ctx context.Context, sandboxID, repositoryID string) (GitRepositoryLocation, error) {
 	sb, err := r.GetSandbox(ctx, sandboxID)
 	if err != nil {
@@ -1783,7 +1835,7 @@ func (r *DockerSandboxRuntime) GitRepositoryPath(ctx context.Context, sandboxID,
 	repoPath := r.sandboxSourcePath(sandboxID, repositoryID)
 	if _, err := os.Stat(filepath.Join(repoPath, ".git")); err != nil {
 		if os.IsNotExist(err) {
-			return GitRepositoryLocation{}, ErrNotFound
+			return GitRepositoryLocation{}, fmt.Errorf("%w: %s", ErrRepositoryNotFound, repositoryID)
 		}
 		return GitRepositoryLocation{}, err
 	}
@@ -1806,7 +1858,7 @@ func (r *DockerSandboxRuntime) GitOriginPath(ctx context.Context, sandboxID, slu
 	repoPath := r.sandboxOriginPath(sandboxID, slug)
 	if _, err := os.Stat(filepath.Join(repoPath, "HEAD")); err != nil {
 		if os.IsNotExist(err) {
-			return GitRepositoryLocation{}, ErrNotFound
+			return GitRepositoryLocation{}, fmt.Errorf("%w: %s", ErrRepositoryNotFound, slug)
 		}
 		return GitRepositoryLocation{}, err
 	}
@@ -2209,7 +2261,7 @@ func (r *MemorySandboxRuntime) GitRepositoryPath(_ context.Context, sandboxID, r
 	}
 	repositories := r.gitRepositories[sandboxID]
 	if repositories == nil || repositories[repositoryID] == "" {
-		return GitRepositoryLocation{}, ErrNotFound
+		return GitRepositoryLocation{}, fmt.Errorf("%w: %s", ErrRepositoryNotFound, repositoryID)
 	}
 	return GitRepositoryLocation{Path: repositories[repositoryID], UID: -1, GID: -1}, nil
 }
@@ -2222,7 +2274,7 @@ func (r *MemorySandboxRuntime) GitOriginPath(_ context.Context, sandboxID, slug 
 	}
 	origins := r.gitOrigins[sandboxID]
 	if origins == nil || origins[slug] == "" {
-		return GitRepositoryLocation{}, ErrNotFound
+		return GitRepositoryLocation{}, fmt.Errorf("%w: %s", ErrRepositoryNotFound, slug)
 	}
 	return GitRepositoryLocation{Path: origins[slug], UID: -1, GID: -1}, nil
 }
@@ -2462,6 +2514,12 @@ type sandboxSource struct {
 	slug   string
 	target string
 	git    workerapimodel.GitSource
+	// keySlug is the slug this source would have had from its seed alone. A
+	// sandbox created before the control plane sent the slug at all was
+	// materialized under this name, and adoptSourcePaths renames those
+	// directories to the real slug rather than leaving the work behind them
+	// unreachable. Empty when it is the slug already.
+	keySlug string
 }
 
 func sandboxSources(req *workerapimodel.PoolSandboxCreateRequest) []sandboxSource {
@@ -2502,7 +2560,11 @@ func sandboxSourceFor(seed string, source workerapimodel.GitSource, defaultTarge
 	if target == "" {
 		target = path.Join("/workspace", slug)
 	}
-	return sandboxSource{slug: slug, target: target, git: source}
+	keySlug := slugifySource(seed)
+	if keySlug == slug {
+		keySlug = ""
+	}
+	return sandboxSource{slug: slug, target: target, git: source, keySlug: keySlug}
 }
 
 func sourceSlug(source workerapimodel.GitSource, seed string, used map[string]struct{}) string {

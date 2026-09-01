@@ -469,6 +469,14 @@ func poolGitSource(in model.GitSource, dataKey string) (poolapimodel.GitSource, 
 	if dataKey != "" {
 		out.DataKey = poolclient.NewOptString(dataKey)
 	}
+	// The slug is how every other component addresses this source -- the git
+	// route a client fetches from, the directory the pool materializes it in --
+	// so the pool has to be told the one the control plane assigned. Left out,
+	// it derives its own from the reference key and the two disagree for any
+	// source whose slug is not its key.
+	if in.Slug != nil && *in.Slug != "" {
+		out.Slug = poolclient.NewOptString(*in.Slug)
+	}
 	if out.Kind == "" {
 		out.Kind = poolclient.GitSourceKindGit
 	}

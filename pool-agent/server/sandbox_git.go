@@ -85,7 +85,7 @@ func statusCodeForGitError(err error) int {
 	if errors.As(err, &statusErr) {
 		return statusErr.StatusCode()
 	}
-	if errors.Is(err, sandboxruntime.ErrNotFound) {
+	if errors.Is(err, sandboxruntime.ErrNotFound) || errors.Is(err, sandboxruntime.ErrRepositoryNotFound) {
 		return http.StatusNotFound
 	}
 	if errors.Is(err, context.Canceled) {
