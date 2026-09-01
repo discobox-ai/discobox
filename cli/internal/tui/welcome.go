@@ -28,14 +28,19 @@ func WithWelcome() Option {
 
 // welcomeTitle and welcomeBody are the whole of it. It is short on purpose:
 // this is a screen between someone and the thing they came to do, so it earns
-// its place by being read, not by being complete.
+// its place by being read, not by being complete. What it has to get across is
+// the shape of the loop — out of the source directory, into a sandbox, back as
+// a commit — so it is three numbered steps rather than three paragraphs about
+// them.
 const welcomeTitle = "Welcome to Discobox"
 
-const welcomeBody = `Discobox runs coding agents somewhere other than your machine.
+const welcomeBody = `Discobox runs coding agents in isolated sandboxes on this machine.
 
-Every task gets a discobox of its own: a container holding a copy of the folder you launched from, with an agent already working in it. Several run at once without treading on each other, and none of them touches your own checkout — you read what a discobox did, and apply it when you want it.
+1. Run it from a source directory; the source is copied in.
+2. Work with the agent until the change is committed.
+3. Apply that commit back to your source.
 
-Type what you want done and press Enter to start one. Tab moves to the discoboxes you already have, and F1 lists every key.`
+Enter starts one, Tab moves to the ones you have, F1 lists every key.`
 
 // welcomeFooter is the one instruction, and the only key the screen takes.
 const welcomeFooter = "Press Enter to continue"
@@ -92,14 +97,16 @@ func (m *Model) viewWelcome() string {
 	}
 	rows = append(rows, m.st.dialogTitle.Render(truncate(welcomeTitle, inner)), "")
 
-	// Paragraphs wrap independently and keep the blank line between them; a
-	// single wrap over the whole text would fold them into one block.
-	for i, paragraph := range strings.Split(welcomeBody, "\n\n") {
-		if i > 0 {
+	// Every line wraps on its own, so the numbered steps stay one to a row and
+	// the blank lines between blocks survive. Wrapping the whole text at once
+	// would run the steps together into a single block of prose.
+	for _, line := range strings.Split(welcomeBody, "\n") {
+		if line == "" {
 			rows = append(rows, "")
+			continue
 		}
-		for _, line := range wrap(paragraph, inner) {
-			rows = append(rows, truncate(line, inner))
+		for _, wrapped := range wrap(line, inner) {
+			rows = append(rows, truncate(wrapped, inner))
 		}
 	}
 	rows = append(rows, "", m.st.key.Render(welcomeFooter))
