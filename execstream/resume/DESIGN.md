@@ -70,6 +70,20 @@ Defaults are a two-second heartbeat interval, a two-second heartbeat timeout,
 and a 250 ms slow threshold. They are defaults, not a UI policy. A consumer
 should retain the actual `RoundTrip` and may apply a different threshold.
 
+## Delivery Positions
+
+`Positions` implements `execstream.Delivery`: the last action position accepted
+from the caller, and the last one the host acknowledged applying. A caller that
+records the accepted position of one action can later ask whether the host has
+caught up to it without retaining the action.
+
+It is a state query, not a time series — unlike `TimingActionAcknowledgement`,
+it costs nothing when nobody asks and stays meaningful with timing disabled. It
+answers "did this reach the process?", which is the only thing that separates a
+remote ignoring input from a stream swallowing it. `execstream/client` uses it
+for exactly that: the local escape from an attach whose remote has stopped
+answering.
+
 ## Action Observer
 
 `WithObserver` attaches a profiling hook to the context a `Conn` is created

@@ -39,3 +39,19 @@ type Conn interface {
 type Prober interface {
 	Probe(context.Context) error
 }
+
+// Delivery is an optional client-transport capability reporting how much of
+// what the client has written the host has confirmed applying. Only a
+// positioned, resumable stream can answer: the positions are its actions and
+// their acknowledgements.
+//
+// It is the only honest evidence a client has that its input reached the
+// process. An ordinary write returning says the bytes left this machine, not
+// that anything on the far side applied them — which is exactly the difference
+// between a remote that ignored a Ctrl-C and a stream that swallowed it.
+type Delivery interface {
+	// Positions reports the last client action position accepted locally and
+	// the last one the host acknowledged applying. Both are monotonic, so
+	// acknowledged >= accepted means nothing is outstanding.
+	Positions() (accepted, acknowledged uint64)
+}

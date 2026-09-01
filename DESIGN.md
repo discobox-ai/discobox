@@ -103,7 +103,11 @@ flowchart TD
   `execstream/client` attaches a caller's stdio to a remote process.
   `execstream.Prober` is the optional physical-transport timing capability;
   `resume` combines its heartbeat RTT with positioned-action acknowledgement
-  RTT and emits transport-neutral timing events for frontends. See
+  RTT and emits transport-neutral timing events for frontends.
+  `execstream.Delivery` is the optional capability reporting how far the host
+  has caught up with what the client wrote, which only a positioned stream can
+  answer; `execstream/client` uses it to tell an interrupt the remote applied
+  from one a stalled stream swallowed. See
   [`execstream/resume/DESIGN.md`](execstream/resume/DESIGN.md) for the consumer
   contract and status interpretation. The platform halves stay with their
   platform — the PTY and

@@ -734,3 +734,64 @@ func TestContextCancellationInterruptsInitialHandshake(t *testing.T) {
 		t.Fatal("context cancellation did not interrupt initial handshake")
 	}
 }
+
+// Positions is the evidence a client needs to tell an interrupt the host
+// applied from one that never arrived: it moves only when the host says it
+// applied the action, not when the write returned.
+func TestClientReportsDeliveryPositions(t *testing.T) {
+	clientConn, serverConn := newConnPair(t)
+	go acceptSession(t, serverConn, 0)
+	client, err := New(t.Context(), clientConn, Options{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = client.Close() })
+
+	if accepted, acknowledged := client.Positions(); accepted != 0 || acknowledged != 0 {
+		t.Fatalf("positions = %d/%d before any action, want 0/0", accepted, acknowledged)
+	}
+
+	read := make(chan action, 1)
+	go func() {
+		next, err := serverConn.ReadFrame()
+		if err != nil {
+			t.Errorf("read action: %v", err)
+			return
+		}
+		got, err := decodeAction(next.Payload)
+		if err != nil {
+			t.Errorf("decode action: %v", err)
+			return
+		}
+		read <- got
+	}()
+	if err := client.WriteFrame(frame.Input, []byte{0x03}); err != nil {
+		t.Fatal(err)
+	}
+	sent := <-read
+	if accepted, acknowledged := client.Positions(); accepted != sent.position || acknowledged != 0 {
+		t.Fatalf("positions = %d/%d after writing action %d, want %d/0", accepted, acknowledged, sent.position, sent.position)
+	}
+
+	output := make(chan frame.Frame, 1)
+	go func() {
+		next, err := client.ReadFrame()
+		if err == nil {
+			output <- next
+		}
+	}()
+	if err := serverConn.WriteFrame(frame.Ack, encodePosition(sent.position)); err != nil {
+		t.Fatal(err)
+	}
+	if err := serverConn.WriteFrame(frame.Stdout, []byte("done")); err != nil {
+		t.Fatal(err)
+	}
+	select {
+	case <-output:
+	case <-time.After(time.Second):
+		t.Fatal("timed out waiting for output past the acknowledgement")
+	}
+	if accepted, acknowledged := client.Positions(); acknowledged != accepted {
+		t.Fatalf("positions = %d/%d after acknowledgement, want them equal", accepted, acknowledged)
+	}
+}

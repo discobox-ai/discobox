@@ -87,6 +87,8 @@ type Conn struct {
 	backoff         func(int) time.Duration
 }
 
+var _ execstream.Delivery = (*Conn)(nil)
+
 func New(ctx context.Context, initial execstream.Conn, opts Options) (*Conn, error) {
 	if initial == nil {
 		return nil, errors.New("initial exec stream connection is required")
@@ -322,6 +324,16 @@ func (c *Conn) writeState(typ byte, payload []byte) error {
 	}
 	// Resize and Ready are retained state and will be restored after reconnect.
 	return nil
+}
+
+// Positions implements execstream.Delivery: the last action position accepted
+// from the caller and the last one the host acknowledged applying. A caller
+// that recorded the accepted position of one action can tell whether the host
+// has applied it without holding on to the action itself.
+func (c *Conn) Positions() (accepted, acknowledged uint64) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	return c.nextPosition, c.lastAck
 }
 
 func (c *Conn) Close() error {
