@@ -445,7 +445,7 @@ flowchart LR
 ## Agent Credentials
 
 The proxy unit also serves the agent credentials protocol to its sandboxes on
-`0.0.0.0:17081`, presenting the same server certificate as the proxy and
+`0.0.0.0:17083`, presenting the same server certificate as the proxy and
 verifying the same per-sandbox client certificates. The client certificate is
 the identity — its common name is the sandbox ID — so a sandbox holds no
 control-plane credential and names no sandbox but itself. See
@@ -455,7 +455,7 @@ and [`docs/agent-credentials-protocol.md`](../docs/agent-credentials-protocol.md
 ```mermaid
 flowchart LR
     cli["discobox-access"] -->|"loopback :17010"| relay["sandbox-agent relay"]
-    relay -->|"mTLS client cert = sandbox ID"| broker["proxy unit :17081"]
+    relay -->|"mTLS client cert = sandbox ID"| broker["proxy unit :17083"]
     broker -->|"scoped pool token"| cp["control plane"]
     broker -->|"mint + register"| live["activations"]
     live --> swap["resolver: ephemeral → stable"]

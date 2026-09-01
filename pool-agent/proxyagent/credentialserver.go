@@ -19,13 +19,19 @@ const (
 	// protocol to its sandboxes. It binds all interfaces for the same reason the
 	// proxy does: sandboxes reach the pool over the per-pool internal network,
 	// resolving ServerName through Docker's embedded DNS.
-	CredentialsListenAddress = "0.0.0.0:17081"
+	//
+	// It must not collide with any other pool-container listener: this endpoint
+	// shares a process with the proxy, so a bind failure here takes the pool's
+	// egress path down with it. 17081 belongs to the BuildKit mediator
+	// (buildkitagent.MediatorListen), which is a separate systemd unit in the
+	// same network namespace. TestPoolListenAddressesAreDistinct guards it.
+	CredentialsListenAddress = "0.0.0.0:17083"
 
 	// CredentialsURL is the address a sandbox's relay dials. It presents the
 	// same server certificate as the proxy and verifies the same per-sandbox
 	// client certificates, so the sandbox needs no new material and no new
 	// trust: its identity here is exactly its identity for egress.
-	CredentialsURL = "https://" + ServerName + ":17081"
+	CredentialsURL = "https://" + ServerName + ":17083"
 
 	// activationSweepInterval bounds how long an expired activation lingers in
 	// the proxy's match set. Expiry is enforced at resolve time regardless; this
