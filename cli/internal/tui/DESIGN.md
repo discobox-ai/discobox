@@ -231,13 +231,32 @@ an upgrade can wait, an agent cannot. Nothing raises a dialog on its own: a
 request can arrive at any moment, and a window that takes the screen mid
 sentence teaches you to answer without reading. `C` on the row opens the
 question; the key is capitalized because approving a credential is not a
-keystroke to hit by accident, and `g` was already the top of every list here.
+keystroke to hit by accident, and `g` is already the top of every list here.
 
-**The workspace says it loudly.** Looking at one discobox is the one place the
-window knows you are already attending to it, so the request gets a reversed
-band of its own under the header — not a hint at the foot — naming what is
-being asked for and the leader key that answers it. The band exists only while
-something is waiting.
+**The workspace says it loudly, at both ends.** Looking at one discobox is the
+one place the window knows you are already attending to it, so the request gets
+a band of its own under the header *and* one above the keys, naming what is
+being asked for and the leader key that answers it. Two, because the screen
+between them is a full terminal: whichever end of it you are reading, the
+question is in reach. The bands exist only while something is waiting, and so
+does the hit test, which is re-recorded by every draw.
+
+The band is **painted, and the text keeps its own colors over it**
+(`colAlertBG`, `attentionMark`/`attentionText`/`attentionHint`): a dark red
+field, an amber `⚠`, the subject in bold, and the key in dim grey on the right.
+It was drawn in reversed red, which puts the terminal's own background on a red
+field — a slab at a glance, and a struggle to read at a sentence. The key is
+pinned to the right and the subject is what gives way when the window narrows: a
+bar that says a credential is waiting but not how to answer it has said the less
+useful half.
+
+**The leader answers on `g`, not on the list's letter** (`credentialsLeaderKey`).
+This is the one place the workspace does not carry the list's key: the leader's
+`c` opens another terminal, and a shift away from it sat the dialog that hands
+out a credential — two commands one modifier apart, one of them consequential
+and reached for in a hurry, on a screen whose banner is asking you to hurry.
+There is no list in the workspace for `g` to be the top of, so it is free, and
+it is the letter of the thing it does.
 
 **The band is a button.** It records its span as it is drawn, the way the tabs
 and the maximize controls record theirs, and a press anywhere on it opens the
@@ -246,10 +265,22 @@ answered on its text would be a bar that mostly does nothing. It owns the
 gesture rather than falling through to the chrome's selection: a bar you click
 to answer a question must not also start a drag-select of its own text.
 
-Because it takes a row from the panes rather than adding one to the frame,
-every hit test below it is offset by `credentialBannerRows` and the panes are
-re-laid out when it appears or goes. A banner that pushed the boxes down
-without moving their targets would land every click one row off.
+Because the bands take their rows from the panes rather than adding them to the
+frame, the panes are re-laid out when they appear or go — and the geometry is
+**two counts, not one**:
+
+- `credentialBannerTop` (0 or 1) is how far everything below the header moved.
+  The hardware cursor (`paneOrigin`, and `paneCursor` through it) and every
+  mouse hit test measure down from the header, and only what is *above* the
+  boxes moves them.
+- `credentialBannerCost` (0 or 2) is how much shorter the boxes are, which is
+  what `paneRows` spends.
+
+They were one number while there was one band. A single number answering both
+"how far down did the boxes move" and "how much shorter are they" is exactly
+the shape that puts a terminal's cursor a row away from the cell it is drawn
+in, for the rest of the session — so they are separate functions, and the one
+that means position is named for the top.
 
 **The dialog decides nothing.** It shows what was asked — the credential, the
 env var, the host, the justification, and the uses the agent declared — and

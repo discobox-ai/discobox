@@ -530,7 +530,7 @@ func (m *Model) paneOptions(kind paneKind, readOnly bool) []termpane.Option {
 	// rather than only on the list because the workspace is where the banner
 	// says there is one, and an affordance that names a key the pane swallows
 	// is not one.
-	opts = append(opts, termpane.WithPrefixBinding(credentialsKey, openCredentialsMsg{}))
+	opts = append(opts, termpane.WithPrefixBinding(credentialsLeaderKey, openCredentialsMsg{}))
 	// Every command the list offers, on the key it has there. One key map for
 	// the two screens is the point: the workspace is a discobox with the
 	// cursor on it, and what you can do to it does not change with where you
@@ -1115,7 +1115,7 @@ func (m *Model) focusChromeAt(x, y int) (tea.Cmd, bool) {
 // spans were recorded when the boxes were drawn, and only a box actually on
 // screen records one.
 func (m *Model) zoomAt(x, y int) (shells, ok bool) {
-	if y != 1+m.credentialBannerRows() {
+	if y != 1+m.credentialBannerTop() {
 		return false, false
 	}
 	for _, s := range m.zoomSpans {
@@ -1145,7 +1145,7 @@ func (m *Model) toggleMaximized(shells bool) {
 // is in. The strips are the boxes' top border row, and the spans were recorded
 // when they were drawn.
 func (m *Model) tabAt(x, y int) (shells bool, index int, ok bool) {
-	if y != 1+m.credentialBannerRows() {
+	if y != 1+m.credentialBannerTop() {
 		return false, -1, false
 	}
 	for _, s := range m.tabSpans {
@@ -1161,8 +1161,8 @@ func (m *Model) tabAt(x, y int) (shells bool, index int, ok bool) {
 // below, split down the middle when there are tabs beside the terminal and
 // belonging to the one box on screen when there are not.
 func (m *Model) paneBoxAt(x, y int) *pane {
-	top := 1 + m.credentialBannerRows()
-	if y < top || y > m.paneRows()+2+m.credentialBannerRows() {
+	top := 1 + m.credentialBannerTop()
+	if y < top || y > m.paneRows()+2+m.credentialBannerTop() {
 		return nil
 	}
 	if m.split() && x >= m.width/2 {
@@ -1207,10 +1207,10 @@ func wheelLines(wheel tea.MouseWheelMsg) int {
 // paneRows is the height every pane gets: the banner, the border's own two
 // edges, and the status line at the bottom.
 // paneRows is the body rows the workspace has for its boxes: the window less
-// the header, the status line, and the box's own two edges — less the
-// credential banner when there is one, which is a row taken from the panes
-// rather than added to the frame.
-func (m *Model) paneRows() int { return m.height - 4 - m.credentialBannerRows() }
+// the header, the status line, and the box's own two edges — less what the
+// credential band costs when there is one, which is two rows taken from the
+// panes rather than added to the frame.
+func (m *Model) paneRows() int { return m.height - 4 - m.credentialBannerCost() }
 
 // paneCells is the terminal size a pane of the given box width implies: the
 // box, less its border and a cell of air inside it on each side.
@@ -1270,18 +1270,20 @@ func (m *Model) shellLeft() int {
 }
 
 // paneOrigin is where a pane's grid was drawn: past its border's left edge
-// and the cell of air inside it, and down past the banner and the border's
+// and the cell of air inside it, and down past the top band and the border's
 // top edge.
 //
 // The cursor and every mouse event are placed against this, so it is worked
 // out once rather than counted twice.
 func (m *Model) paneOrigin(p *pane) (x, y int) {
-	// The credential banner sits between the header and the boxes, so the
-	// grids start a row lower while it is up. This is the one place that
-	// answers where a pane's first cell is: the hardware cursor is placed
-	// through it and every mouse event is translated through it, so an offset
-	// applied anywhere else would move one and not the other.
-	top := 2 + m.credentialBannerRows()
+	// The credential band's top row sits between the header and the boxes, so
+	// the grids start a row lower while it is up — one row, not two: the band
+	// below the boxes takes a row from their height and nothing from where
+	// they begin. This is the one place that answers where a pane's first cell
+	// is: the hardware cursor is placed through it and every mouse event is
+	// translated through it, so an offset applied anywhere else would move one
+	// and not the other.
+	top := 2 + m.credentialBannerTop()
 	if p != nil && m.shells.index(p) >= 0 {
 		// A shell tab: its box starts where the terminals' box ends, or at the
 		// window's edge when it is the maximized one.
@@ -1311,11 +1313,13 @@ func (m *Model) viewPaneWindow() string {
 		" " + pad + m.viewPaneHeader(headerW) + pad + " ",
 	}
 	// A credential request on this discobox gets a band of its own under the
-	// header, not a hint at the foot: the agent in front of you is blocked on
-	// a person, and the one thing this screen has to do is say so and say
-	// which key answers it. It is a row the workspace only has while there is
-	// one, so nothing is spent on it the rest of the time.
-	if banner := m.viewCredentialBanner(headerW); banner != "" {
+	// header *and* one above the keys. The agent in front of you is blocked on
+	// a person, and the one thing this screen has to do is say so — on a screen
+	// that is mostly terminal, whichever end of it you are reading. Both are
+	// rows the workspace only has while a request is waiting, so nothing is
+	// spent on either the rest of the time.
+	banner := m.viewCredentialBanner(headerW)
+	if banner != "" {
 		rows = append(rows, " "+pad+banner+pad+" ")
 	}
 
@@ -1344,6 +1348,20 @@ func (m *Model) viewPaneWindow() string {
 		body = m.viewColumnBox(&m.terminals, false, 0, m.width, true)
 	}
 	rows = append(rows, strings.Split(body, "\n")...)
+	if banner != "" {
+		rows = append(rows, " "+pad+banner+pad+" ")
+		// The whole band is the target, not the words in it: a bar this size
+		// that only answered on its text would be a bar that mostly does
+		// nothing. Both rows are recorded here, as they are drawn, rather than
+		// where they ought to be — the index into these rows *is* the screen
+		// row, so a band that moved would take its hit test with it.
+		m.credentials = credentialSpan{
+			rows:  []int{1, len(rows) - 1},
+			start: 0,
+			end:   max(m.width-1, 0),
+			live:  true,
+		}
+	}
 	room := max(inner-2*boxPad, 1)
 	rows = append(rows, " "+pad+padANSI(m.statusLine(room), room)+pad+" ")
 	return strings.Join(rows, "\n")

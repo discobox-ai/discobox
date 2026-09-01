@@ -545,6 +545,56 @@ func TestPaneCursorLandsOnTheGrid(t *testing.T) {
 	}
 }
 
+// The same check with the credential band up. It is two rows of chrome that
+// appear mid-session — one above the boxes and one below — and the boxes lose
+// two rows of height while starting one row lower. A band that took its rows
+// from the wrong end, or an offset that counted both rows as though both were
+// above the grid, puts the cursor a line off the cell the sandbox believes it
+// is on for the rest of the session.
+func TestPaneCursorLandsOnTheGridUnderTheCredentialBand(t *testing.T) {
+	ds := newFakeSource(testSandboxes()...)
+	d, m, term := openWorkspace(t, ds, "enter")
+
+	term.send("abc")
+	d.wait("output", func() bool { return strings.Contains(frameText(m), "abc") })
+
+	ds.mu.Lock()
+	ds.requests = []CredentialRequest{waitingRequest()}
+	ds.mu.Unlock()
+	d.dispatch(tickMsg{})
+	d.wait("the band", func() bool { return m.credentialBannerTop() == 1 })
+	d.wait("the text again", func() bool { return strings.Contains(frameText(m), "abc") })
+
+	cursor := m.paneCursor()
+	if cursor == nil {
+		t.Fatal("an attached pane should place the cursor")
+	}
+	originX, originY := m.paneOrigin(m.focusedPane())
+	if cursor.X != originX+3 || cursor.Y != originY {
+		t.Fatalf("cursor at %d,%d, want %d,%d", cursor.X, cursor.Y, originX+3, originY)
+	}
+	// And it is where the frame actually put the text, which is the check that
+	// survives the chrome changing.
+	lines := strings.Split(rawFrame(m), "\n")
+	if len(lines) != m.height {
+		t.Fatalf("frame = %d rows, want the window's %d", len(lines), m.height)
+	}
+	cells := []rune(ansi.Strip(lines[cursor.Y]))
+	if got := string(cells[originX : originX+3]); got != "abc" {
+		t.Fatalf("the grid row reads %q where the cursor is pointing at cell %d", got, cursor.X)
+	}
+	// The band is on the rows either side of the boxes, and the cursor is on
+	// neither of them.
+	for _, row := range m.credentials.rows {
+		if row == cursor.Y {
+			t.Fatalf("the cursor is on row %d, which is the band", row)
+		}
+		if !strings.Contains(ansi.Strip(lines[row]), "credential request") {
+			t.Fatalf("row %d does not carry the band: %q", row, ansi.Strip(lines[row]))
+		}
+	}
+}
+
 // The window's own frame is drawn by hand rather than by a bordered style,
 // because such a style re-wraps full-width lines — and a re-wrapped terminal
 // grid shifts every row below the wrap, putting the cursor on the wrong line

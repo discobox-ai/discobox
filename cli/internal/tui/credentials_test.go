@@ -323,8 +323,13 @@ func TestTheWorkspaceSaysARequestIsWaitingAndWhichKeyAnswersIt(t *testing.T) {
 	if !strings.Contains(banner, "github") {
 		t.Fatalf("banner = %q, want it to name what is being asked for", banner)
 	}
-	if !strings.Contains(banner, credentialsKey) {
+	// The key it names is the leader's, which is not the list's letter: see
+	// credentialsLeaderKey.
+	if !strings.Contains(banner, m.leader()+" "+credentialsLeaderKey) {
 		t.Fatalf("banner = %q, want it to name the key that answers", banner)
+	}
+	if !strings.Contains(banner, "click") {
+		t.Fatalf("banner = %q, want it to say it can be clicked", banner)
 	}
 
 	// And nothing at all for a discobox with none: the row is only there while
@@ -332,6 +337,35 @@ func TestTheWorkspaceSaysARequestIsWaitingAndWhichKeyAnswersIt(t *testing.T) {
 	m.paneBox = Sandbox{ID: "sbx_two"}
 	if banner := m.viewCredentialBanner(80); banner != "" {
 		t.Fatalf("banner = %q on a discobox with no request", banner)
+	}
+	// The hit test goes with it. A span left behind by a bar that is no longer
+	// drawn is a row of the header that silently answers for a request nobody
+	// is waiting on.
+	if m.credentials.live {
+		t.Fatal("the banner's hit test outlived the banner")
+	}
+}
+
+// The key that answers is not one keystroke from the key that opens a terminal.
+// The leader's c is another terminal, and a shift away from it sat the dialog
+// that hands out a credential — two commands one modifier apart, one of them
+// consequential and reached for in a hurry.
+func TestTheLeaderAnswersOnItsOwnKey(t *testing.T) {
+	if credentialsLeaderKey == paneTerminalKey || strings.EqualFold(credentialsLeaderKey, paneTerminalKey) {
+		t.Fatalf("the credential key (%q) is a shift away from the terminal key (%q)",
+			credentialsLeaderKey, paneTerminalKey)
+	}
+	ds := newFakeSource(testSandboxes()...)
+	ds.requests = []CredentialRequest{waitingRequest()}
+	ds.projectSecrets = []Secret{{ID: "sec_gh", Name: "GitHub token", Type: "bearer", Host: "api.github.com"}}
+	d, m, _ := openWorkspace(t, ds, "enter")
+	d.wait("the banner", func() bool { return m.credentialBannerTop() == 1 })
+
+	d.key("ctrl+a")
+	d.key(credentialsLeaderKey)
+	d.wait("the question", func() bool { return m.dialog != nil && m.dialog.kind == dlgActions })
+	if !strings.Contains(dialogText(m), "api.github.com") {
+		t.Fatalf("dialog = %q, want the request the banner is about", dialogText(m))
 	}
 }
 
@@ -374,19 +408,30 @@ func TestClickingTheBannerOpensTheQuestion(t *testing.T) {
 	ds.requests = []CredentialRequest{waitingRequest()}
 	ds.projectSecrets = []Secret{{ID: "sec_gh", Name: "GitHub token", Type: "bearer", Host: "api.github.com"}}
 	d, m, _ := openWorkspace(t, ds, "enter")
-	d.wait("the banner", func() bool { return m.credentialBannerRows() == 1 })
+	d.wait("the banner", func() bool { return m.credentialBannerTop() == 1 })
 
-	// The span is recorded by the draw, so there has to have been one.
+	// The span is recorded by the draw, so there has to have been one, and it
+	// covers both bands.
 	d.wait("the banner drawn", func() bool { return m.credentials.live })
 	span := m.credentials
-	if span.row != 1 {
-		t.Fatalf("banner row = %d, want it under the header", span.row)
+	if len(span.rows) != 2 || span.rows[0] != 1 {
+		t.Fatalf("banner rows = %v, want one under the header and one above the keys", span.rows)
+	}
+	if span.rows[1] != len(frame(m))-2 {
+		t.Fatalf("the lower band is on row %d of a %d-row frame, want it just above the status line",
+			span.rows[1], len(frame(m)))
 	}
 
-	// Far from the words, still on the band.
+	// Far from the words, still on the band — and the lower one answers as the
+	// upper one does.
 	x := span.end - 2
-	d.dispatch(tea.MouseClickMsg{X: x, Y: span.row, Button: tea.MouseLeft})
-	d.dispatch(tea.MouseReleaseMsg{X: x, Y: span.row, Button: tea.MouseLeft})
+	for _, row := range span.rows {
+		if !m.credentialBannerAt(x, row) {
+			t.Fatalf("row %d does not answer as the band", row)
+		}
+	}
+	d.dispatch(tea.MouseClickMsg{X: x, Y: span.rows[1], Button: tea.MouseLeft})
+	d.dispatch(tea.MouseReleaseMsg{X: x, Y: span.rows[1], Button: tea.MouseLeft})
 	// The secrets are read first, so the status dialog gives way to the question.
 	d.wait("the question", func() bool { return m.dialog != nil && m.dialog.kind == dlgActions })
 	if !strings.Contains(dialogText(m), "api.github.com") {
@@ -399,10 +444,15 @@ func TestClickingTheBannerOpensTheQuestion(t *testing.T) {
 	}
 }
 
-// The banner takes a row from the panes rather than adding one to the frame,
-// so everything the mouse aims at below it moves down with it. This is the
-// regression that would otherwise show up as clicks landing one row off.
-func TestTheBannerMovesTheChromeItPushesDown(t *testing.T) {
+// The band takes its rows from the panes rather than adding them to the frame,
+// so everything the mouse aims at moves with it and the window stays the size
+// the terminal is. This is the regression that would otherwise show up as
+// clicks — and the hardware cursor — landing a row off.
+//
+// The two counts are not the same number: the boxes lose two rows, one at each
+// end, and start one row lower. Answering both questions with one number is
+// what puts a terminal's cursor somewhere other than the cell it is drawn in.
+func TestTheBandMovesTheChromeItPushesDown(t *testing.T) {
 	ds := newFakeSource(testSandboxes()...)
 	d, m, _ := openWorkspace(t, ds, "enter")
 	d.key("ctrl+a")
@@ -413,15 +463,29 @@ func TestTheBannerMovesTheChromeItPushesDown(t *testing.T) {
 	if _, _, ok := m.tabAt(m.width/2+4, tabRowBefore); !ok {
 		t.Fatal("no tab where the strip is drawn with no banner")
 	}
+	_, originBefore := m.paneOrigin(m.terminals.visible())
+	if got := len(frame(m)); got != m.height {
+		t.Fatalf("frame = %d rows with no band, want the window's %d", got, m.height)
+	}
 
 	ds.mu.Lock()
 	ds.requests = []CredentialRequest{waitingRequest()}
 	ds.mu.Unlock()
 	d.dispatch(tickMsg{})
-	d.wait("the banner", func() bool { return m.credentialBannerRows() == 1 })
+	d.wait("the banner", func() bool { return m.credentialBannerTop() == 1 })
 
-	if m.paneRows() != rowsBefore-1 {
-		t.Fatalf("paneRows = %d, want one fewer than %d: the banner is a row taken from the panes", m.paneRows(), rowsBefore)
+	// The frame is still exactly the window: two rows of band, two rows off
+	// the panes.
+	if got := len(frame(m)); got != m.height {
+		t.Fatalf("frame = %d rows with the band up, want the window's %d", got, m.height)
+	}
+	if m.paneRows() != rowsBefore-2 {
+		t.Fatalf("paneRows = %d, want two fewer than %d: a row of band at each end", m.paneRows(), rowsBefore)
+	}
+	// The grid — and so the cursor drawn in it — moves down by the top band
+	// alone. The band below it takes height, not position.
+	if _, origin := m.paneOrigin(m.terminals.visible()); origin != originBefore+1 {
+		t.Fatalf("pane origin = %d, want one below %d: only the top band moves the grid", origin, originBefore)
 	}
 	if _, _, ok := m.tabAt(m.width/2+4, tabRowBefore); ok {
 		t.Fatal("the tab strip still answers on the row the banner now occupies")

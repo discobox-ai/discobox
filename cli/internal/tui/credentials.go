@@ -2,6 +2,7 @@ package tui
 
 import (
 	"fmt"
+	"slices"
 	"sort"
 	"strings"
 	"time"
@@ -24,12 +25,22 @@ import (
 // ask and the server does the rest, so the window and `discobox secret request
 // approve` mint the same grant from the same checks.
 
-// credentialsKey opens the request waiting on a discobox: on its row in the
-// list, and behind the leader in the workspace, which is the same key map the
-// two screens already share. C rather than g — g is the top of a list
-// everywhere in this window — and capitalized because answering for a
+// credentialsKey opens the request waiting on a discobox, on its row in the
+// list and on the secrets screen. C rather than g, because g is the top of a
+// list on both of those screens, and capitalized because answering for a
 // credential is not a keystroke to hit by accident.
 const credentialsKey = "C"
+
+// credentialsLeaderKey is the same thing behind the leader in the workspace,
+// where the banner names it.
+//
+// It is the one place the workspace does not carry the list's key on the list's
+// letter. The leader's c opens another terminal, and a shift away from it sat a
+// dialog that grants a credential — two commands one modifier apart, one of
+// them consequential and reached for in a hurry, on a screen whose banner is
+// asking you to hurry. There is no list here for g to be the top of, so g is
+// free, and it is the letter of the thing it does.
+const credentialsLeaderKey = "g"
 
 // openCredentialsMsg is the leader plus that key inside a pane: the workspace's
 // way to reach the request it is already telling you about.
@@ -79,13 +90,13 @@ func (m *Model) setCredentialRequests(requests []CredentialRequest) {
 		}
 		byBox[req.SandboxID] = append(byBox[req.SandboxID], req)
 	}
-	had := m.credentialBannerRows()
+	had := m.credentialBannerCost()
 	m.requests = byBox
 	m.list.setPending(byBox)
 	m.requestRows.setAll(requests)
 	// The banner takes a row from the panes rather than adding one to the
 	// frame, so a request arriving — or being answered — resizes them.
-	if m.credentialBannerRows() != had {
+	if m.credentialBannerCost() != had {
 		m.layout()
 	}
 }
@@ -439,56 +450,83 @@ func (m *Model) credentialAnswered(msg credentialAnsweredMsg) tea.Cmd {
 // and the maximize controls record theirs — so a press can be matched against
 // what is actually on the frame rather than against where it ought to be.
 type credentialSpan struct {
-	row        int
+	// rows is every row the band was drawn on. There are two: one under the
+	// header and one above the status line, so the same question is in reach
+	// wherever the eye is on a screen that is mostly terminal.
+	rows       []int
 	start, end int
 	live       bool
 }
 
-// credentialBannerRows is how many rows the workspace is spending on the
-// banner: one while a request is waiting on the discobox it is showing, none
-// otherwise.
+// credentialBannerTop is how many rows stand between the header and the boxes
+// while a request is waiting on the discobox the workspace is showing: the top
+// band, or nothing.
 //
-// Every measurement of the workspace goes through it. The panes are sized from
-// the rows left over, and the chrome's hit tests are offset by it, so a banner
-// that appears does not push the boxes out from under the mouse.
-func (m *Model) credentialBannerRows() int {
+// Everything that asks where something on screen *is* goes through this one —
+// the hardware cursor, every mouse hit test — because they all measure down
+// from the header, and only what is above the boxes moves them.
+func (m *Model) credentialBannerTop() int {
 	if !m.inPanes() || len(m.requests[m.paneBox.ID]) == 0 {
 		return 0
 	}
 	return 1
 }
 
-// credentialBannerAt reports whether a press landed on the banner.
+// credentialBannerCost is how many rows the panes give up for the band: the one
+// above them and the one below.
+//
+// It is a separate answer from credentialBannerTop on purpose. The two were one
+// number while there was one band, and a single number meaning both "how far
+// down did the boxes move" and "how much shorter are they" is exactly the shape
+// that puts a terminal's cursor a row away from the cell it is drawn in.
+func (m *Model) credentialBannerCost() int { return 2 * m.credentialBannerTop() }
+
+// credentialBannerAt reports whether a press landed on either band.
 func (m *Model) credentialBannerAt(x, y int) bool {
 	s := m.credentials
-	return s.live && y == s.row && x >= s.start && x <= s.end
+	if !s.live || x < s.start || x > s.end {
+		return false
+	}
+	return slices.Contains(s.rows, y)
 }
 
 // viewCredentialBanner is the workspace's line about a request waiting on the
 // discobox it is showing. Empty when there is none.
 //
-// It is drawn in the error color and reversed, so it reads as a bar rather than
-// a sentence among sentences: the row above it is the header you stop seeing
-// after a minute, and this is the thing that must not be stopped seeing.
+// It is a band across the window rather than a sentence among sentences: the
+// row above it is the header you stop seeing after a minute, and this is the
+// thing that must not be stopped seeing. The band is painted and the text keeps
+// its own colors over it — the mark that catches the eye, the subject, and the
+// key that answers — because the whole bar drawn in reverse video was a red
+// slab at a glance and a struggle to read at a sentence.
 func (m *Model) viewCredentialBanner(width int) string {
 	pending := m.pendingFor(m.paneBox.ID)
 	if len(pending) == 0 {
+		// The span goes with the bar. A hit test left behind by a banner that
+		// has been answered is a row of the header that silently answers for a
+		// request nobody is waiting on.
+		m.credentials = credentialSpan{}
 		return ""
 	}
-	req := pending[0]
-	what := credentialName(req)
-	if req.Host != "" {
-		what += " for " + req.Host
+	st := m.st
+	subject := credentialName(pending[0])
+	if host := pending[0].Host; host != "" {
+		subject += " for " + host
 	}
-	label := fmt.Sprintf(" ⚠  the agent is waiting on %s — %s %s or click here to answer ", what, m.leader(), credentialsKey)
+	what := "credential request"
 	if len(pending) > 1 {
-		label = fmt.Sprintf(" ⚠  %d credential requests waiting — %s %s or click here to answer ",
-			len(pending), m.leader(), credentialsKey)
+		what, subject = plural(len(pending), "credential request", "credential requests"), "oldest: "+subject
 	}
-	// The whole band is the target, not the words in it: a bar this size that
-	// only answered on its text would be a bar that mostly does nothing.
-	m.credentials = credentialSpan{row: 1, start: 0, end: max(m.width-1, 0), live: true}
-	return m.st.attention.Render(padANSI(label, width))
+	left := st.attentionMark.Render(" ⚠  ") + st.attentionText.Render(what) +
+		st.attentionHint.Render("  ·  ") + st.attentionText.Render(subject)
+	// The two cells of band in front of the key are part of the right, so the
+	// gap survives a subject long enough to be cut back against it.
+	right := st.attentionHint.Render("  ") + st.attentionText.Render(m.leader()+" "+credentialsLeaderKey) +
+		st.attentionHint.Render("  or click to answer ")
+	// The key is pinned: on a narrow window the subject is what gives way,
+	// because a bar that says a credential is waiting and not how to answer it
+	// is a bar that has said the less useful half.
+	return highlight(st, padANSI(spreadPin(left, right, width), width), colAlertBG)
 }
 
 // credentialErrorSection says which request is still waiting, under the

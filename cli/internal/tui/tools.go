@@ -668,7 +668,7 @@ type buttonSpan struct {
 // were recorded when the border was drawn, so only a button actually on screen
 // has one.
 func (m *Model) buttonAt(x, y int) (buttonAction, bool) {
-	if y != 1+m.credentialBannerRows() {
+	if y != 1+m.credentialBannerTop() {
 		return 0, false
 	}
 	for _, s := range m.buttonSpans {
