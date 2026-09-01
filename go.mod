@@ -378,4 +378,4 @@ tool (
 	golang.org/x/tools/gopls
 )
 
-replace github.com/charmbracelet/x/ansi => github.com/ibuildthecloud/x/ansi v0.11.9-0.20260813023456-57e8cef06953
+replace github.com/charmbracelet/x/ansi => github.com/discobox-ai/charm-x/ansi v0.11.9-0.20260813023456-57e8cef06953

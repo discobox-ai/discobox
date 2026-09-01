@@ -30,4 +30,6 @@ require (
 	golang.org/x/sys v0.47.0 // indirect
 )
 
-replace github.com/charmbracelet/x/ansi => github.com/ibuildthecloud/x/ansi v0.11.9-0.20260813023456-57e8cef06953
+replace github.com/charmbracelet/x/ansi => github.com/discobox-ai/charm-x/ansi v0.11.9-0.20260813023456-57e8cef06953
+
+replace github.com/charmbracelet/x/vt => github.com/discobox-ai/charm-x/vt v0.0.0-20260827051753-424bd566a6bf

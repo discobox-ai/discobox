@@ -259,6 +259,8 @@ github.com/davecgh/go-spew v1.1.2-0.20180830191138-d8f796af33cc h1:U9qPSI2PIWSS1
 github.com/davecgh/go-spew v1.1.2-0.20180830191138-d8f796af33cc/go.mod h1:J7Y8YcW2NihsgmVo/mv3lAwl/skON4iLHjSsI+c5H38=
 github.com/denis-tingaikin/go-header v0.5.0 h1:SRdnP5ZKvcO9KKRP1KJrhFR3RrlGuD+42t4429eC9k8=
 github.com/denis-tingaikin/go-header v0.5.0/go.mod h1:mMenU5bWrok6Wl2UsZjy+1okegmwQ3UgWl4V1D8gjlY=
+github.com/discobox-ai/charm-x/ansi v0.11.9-0.20260813023456-57e8cef06953 h1:2QDmFSCtLohuzmqiaYuDU6R44S6UvCcftwo+Cf6Rhto=
+github.com/discobox-ai/charm-x/ansi v0.11.9-0.20260813023456-57e8cef06953/go.mod h1:DG/hpOnaI2QJ/KMMqLL2h0KVhluuJLazf8973P+Vy5w=
 github.com/discobox-ai/iroh-go v0.2.0 h1:0YgJbq8KHbyRuD7NI1hB+sUwSbU4IlNb4IQt3Q87gBE=
 github.com/discobox-ai/iroh-go v0.2.0/go.mod h1:S9pt0b8xFpHPTd1j31nxLJ3Kz7N14Off+yGItjDfsgE=
 github.com/discobox-ai/iroh-go/libs/darwin_amd64 v0.2.0 h1:hkyNKnE6diL2OajgXDZ+vt42ZA4WbZ9aMoZq5EW8kso=
@@ -484,8 +486,6 @@ github.com/hashicorp/yamux v0.1.2 h1:XtB8kyFOyHXYVFnwT5C3+Bdo8gArse7j2AQ0DA0Uey8
 github.com/hashicorp/yamux v0.1.2/go.mod h1:C+zze2n6e/7wshOZep2A70/aQU6QBRWJO/G6FT1wIns=
 github.com/hexops/gotextdiff v1.0.3 h1:gitA9+qJrrTCsiCl7+kh75nPqQt1cx4ZkudSTLoUqJM=
 github.com/hexops/gotextdiff v1.0.3/go.mod h1:pSWU5MAI3yDq+fZBTazCSJysOMbxWL1BSow5/V2vxeg=
-github.com/ibuildthecloud/x/ansi v0.11.9-0.20260813023456-57e8cef06953 h1:/GOkh3d/IfqS02PmOrYsBenQsEJEh+b4hIozkYwb/wc=
-github.com/ibuildthecloud/x/ansi v0.11.9-0.20260813023456-57e8cef06953/go.mod h1:DG/hpOnaI2QJ/KMMqLL2h0KVhluuJLazf8973P+Vy5w=
 github.com/in-toto/in-toto-golang v0.5.0 h1:hb8bgwr0M2hGdDsLjkJ3ZqJ8JFLL/tgYdAxF/XEFBbY=
 github.com/in-toto/in-toto-golang v0.5.0/go.mod h1:/Rq0IZHLV7Ku5gielPT4wPHJfH1GdHMCq8+WPxw8/BE=
 github.com/inconshreveable/mousetrap v1.1.0 h1:wN+x4NVGpMsO7ErUn/mUI3vEoE6Jt13X2s0bqwp9tc8=

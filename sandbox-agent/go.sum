@@ -14,8 +14,6 @@ github.com/charmbracelet/x/term v0.2.2 h1:xVRT/S2ZcKdhhOuSP4t5cLi5o+JxklsoEObBSg
 github.com/charmbracelet/x/term v0.2.2/go.mod h1:kF8CY5RddLWrsgVwpw4kAa6TESp6EB5y3uxGLeCqzAI=
 github.com/charmbracelet/x/termios v0.1.1 h1:o3Q2bT8eqzGnGPOYheoYS8eEleT5ZVNYNy8JawjaNZY=
 github.com/charmbracelet/x/termios v0.1.1/go.mod h1:rB7fnv1TgOPOyyKRJ9o+AsTU/vK5WHJ2ivHeut/Pcwo=
-github.com/charmbracelet/x/vt v0.0.0-20260713092006-0d683c34c74b h1:QxlENMN90qpOZU1PMCPl7i1KgHdG80peq8dC0uMF1rU=
-github.com/charmbracelet/x/vt v0.0.0-20260713092006-0d683c34c74b/go.mod h1:u1LOIABor9JqY54oZdktK3TCRrgzP6tzHrDYx1nd3wY=
 github.com/charmbracelet/x/windows v0.2.2 h1:IofanmuvaxnKHuV04sC0eBy/smG6kIKrWG2/jYn2GuM=
 github.com/charmbracelet/x/windows v0.2.2/go.mod h1:/8XtdKZzedat74NQFn0NGlGL4soHB0YQZrETF96h75k=
 github.com/clipperhouse/displaywidth v0.11.0 h1:lBc6kY44VFw+TDx4I8opi/EtL9m20WSEFgwIwO+UVM8=
@@ -31,6 +29,10 @@ github.com/creack/pty v1.1.24/go.mod h1:08sCNb52WyoAwi2QDyzUCTgcvVFhUzewun7wtTfv
 github.com/davecgh/go-spew v1.1.0/go.mod h1:J7Y8YcW2NihsgmVo/mv3lAwl/skON4iLHjSsI+c5H38=
 github.com/davecgh/go-spew v1.1.2-0.20180830191138-d8f796af33cc h1:U9qPSI2PIWSS1VwoXQT9A3Wy9MM3WgvqSxFWenqJduM=
 github.com/davecgh/go-spew v1.1.2-0.20180830191138-d8f796af33cc/go.mod h1:J7Y8YcW2NihsgmVo/mv3lAwl/skON4iLHjSsI+c5H38=
+github.com/discobox-ai/charm-x/ansi v0.11.9-0.20260813023456-57e8cef06953 h1:2QDmFSCtLohuzmqiaYuDU6R44S6UvCcftwo+Cf6Rhto=
+github.com/discobox-ai/charm-x/ansi v0.11.9-0.20260813023456-57e8cef06953/go.mod h1:DG/hpOnaI2QJ/KMMqLL2h0KVhluuJLazf8973P+Vy5w=
+github.com/discobox-ai/charm-x/vt v0.0.0-20260827051753-424bd566a6bf h1:EJ3uHAM+tP21y8cgy6zQDy8DDPSSJaiUxErreXU35yo=
+github.com/discobox-ai/charm-x/vt v0.0.0-20260827051753-424bd566a6bf/go.mod h1:u1LOIABor9JqY54oZdktK3TCRrgzP6tzHrDYx1nd3wY=
 github.com/discobox-ai/x v0.0.0-20260828205057-2567df0ccf27 h1:5YxUixwIYTJhHszbiH8x8jZImryn8Z3t6waapi7/2mk=
 github.com/discobox-ai/x v0.0.0-20260828205057-2567df0ccf27/go.mod h1:ozoGHzU8woLHyDsmXikg5H1raf07miXC7vg51QtkQew=
 github.com/distribution/reference v0.6.0 h1:0IXCQ5g4/QMHHkarYzh5l+u8T3t73zM5QvfrDyIgxBk=
@@ -71,8 +73,6 @@ github.com/google/pprof v0.0.0-20260115054156-294ebfa9ad83 h1:z2ogiKUYzX5Is6zr/v
 github.com/google/pprof v0.0.0-20260115054156-294ebfa9ad83/go.mod h1:MxpfABSjhmINe3F1It9d+8exIHFvUqtLIRCdOGNXqiI=
 github.com/google/uuid v1.6.0 h1:NIvaJDMOsjHA8n1jAhLSgzrAzy1Hgr+hNrb57e+94F0=
 github.com/google/uuid v1.6.0/go.mod h1:TIyPZe4MgqvfeYDBFedMoGGpEw/LqOeaOT+nhxU+yHo=
-github.com/ibuildthecloud/x/ansi v0.11.9-0.20260813023456-57e8cef06953 h1:/GOkh3d/IfqS02PmOrYsBenQsEJEh+b4hIozkYwb/wc=
-github.com/ibuildthecloud/x/ansi v0.11.9-0.20260813023456-57e8cef06953/go.mod h1:DG/hpOnaI2QJ/KMMqLL2h0KVhluuJLazf8973P+Vy5w=
 github.com/jackc/pgpassfile v1.0.0 h1:/6Hmqy13Ss2zCq62VdNG8tM1wchn8zjSGOBJ6icpsIM=
 github.com/jackc/pgpassfile v1.0.0/go.mod h1:CEx0iS5ambNFdcRtxPj5JhEz+xB6uRky5eyVu/W2HEg=
 github.com/jackc/pgservicefile v0.0.0-20240606120523-5a60cdf6a761 h1:iCEnooe7UlwOQYpKFhBabPMi4aNAfoODPEFNiAnClxo=

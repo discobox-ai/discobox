@@ -217,6 +217,8 @@ github.com/davecgh/go-spew v1.1.2-0.20180830191138-d8f796af33cc h1:U9qPSI2PIWSS1
 github.com/davecgh/go-spew v1.1.2-0.20180830191138-d8f796af33cc/go.mod h1:J7Y8YcW2NihsgmVo/mv3lAwl/skON4iLHjSsI+c5H38=
 github.com/denis-tingaikin/go-header v0.5.0 h1:SRdnP5ZKvcO9KKRP1KJrhFR3RrlGuD+42t4429eC9k8=
 github.com/denis-tingaikin/go-header v0.5.0/go.mod h1:mMenU5bWrok6Wl2UsZjy+1okegmwQ3UgWl4V1D8gjlY=
+github.com/discobox-ai/charm-x/ansi v0.11.9-0.20260813023456-57e8cef06953 h1:2QDmFSCtLohuzmqiaYuDU6R44S6UvCcftwo+Cf6Rhto=
+github.com/discobox-ai/charm-x/ansi v0.11.9-0.20260813023456-57e8cef06953/go.mod h1:DG/hpOnaI2QJ/KMMqLL2h0KVhluuJLazf8973P+Vy5w=
 github.com/discobox-ai/hooks v0.0.0-20260826230751-770e019b99ad h1:A64QzOp4z9ZhhyK7dkmwGwSW0oDpIUN4XaD/+6OkH+Q=
 github.com/discobox-ai/hooks v0.0.0-20260826230751-770e019b99ad/go.mod h1:7d0f2wr0FrIVLVhzyapt1P2oiYkGxxG4iOl9Mbrwwyo=
 github.com/discobox-ai/iroh-go v0.2.0 h1:0YgJbq8KHbyRuD7NI1hB+sUwSbU4IlNb4IQt3Q87gBE=
@@ -424,8 +426,6 @@ github.com/hexops/gotextdiff v1.0.3 h1:gitA9+qJrrTCsiCl7+kh75nPqQt1cx4ZkudSTLoUq
 github.com/hexops/gotextdiff v1.0.3/go.mod h1:pSWU5MAI3yDq+fZBTazCSJysOMbxWL1BSow5/V2vxeg=
 github.com/ibuildthecloud/watchnbuild v0.1.1-0.20260819054443-e7f48d7c428a h1:Eph1BpGTiOTPQ2JDSLZugHegxg5apsGEEe2/PzmDHUU=
 github.com/ibuildthecloud/watchnbuild v0.1.1-0.20260819054443-e7f48d7c428a/go.mod h1:DrYaEpS7q6nx9sCKvf2rd0VN30tS/YijsE8Tmg5RdUQ=
-github.com/ibuildthecloud/x/ansi v0.11.9-0.20260813023456-57e8cef06953 h1:/GOkh3d/IfqS02PmOrYsBenQsEJEh+b4hIozkYwb/wc=
-github.com/ibuildthecloud/x/ansi v0.11.9-0.20260813023456-57e8cef06953/go.mod h1:DG/hpOnaI2QJ/KMMqLL2h0KVhluuJLazf8973P+Vy5w=
 github.com/inconshreveable/mousetrap v1.1.0 h1:wN+x4NVGpMsO7ErUn/mUI3vEoE6Jt13X2s0bqwp9tc8=
 github.com/inconshreveable/mousetrap v1.1.0/go.mod h1:vpF70FUmC8bwa3OWnCshd2FqLfsEA9PFc4w1p2J65bw=
 github.com/jackc/pgpassfile v1.0.0 h1:/6Hmqy13Ss2zCq62VdNG8tM1wchn8zjSGOBJ6icpsIM=
