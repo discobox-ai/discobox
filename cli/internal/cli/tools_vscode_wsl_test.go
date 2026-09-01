@@ -74,7 +74,7 @@ esac
 	}
 
 	t.Setenv(wslDistroEnv, "Ubuntu")
-	t.Setenv("PATH", strings.Join([]string{tools, editorDir, os.Getenv("PATH")}, string(os.PathListSeparator)))
+	t.Setenv("PATH", strings.Join(append([]string{tools, editorDir}, withoutTheRealWindowsPATH()...), string(os.PathListSeparator)))
 	t.Setenv(vscodeEditorEnv, "")
 	return root, record
 }
@@ -93,6 +93,25 @@ type wslMachine struct {
 type wslMachineOption func(*wslMachine)
 
 func withoutWindowsPATH(m *wslMachine) { m.windowsPathOnPATH = false }
+
+// withoutTheRealWindowsPATH is this process's PATH with the Windows half
+// dropped, which is what a fake machine inherits.
+//
+// These tests run on a real WSL machine as often as on a Linux CI runner, and
+// there the inherited PATH holds the actual C:\Windows\System32 through its
+// mount. A distribution configured with appendWindowsPath=false has none of it,
+// so leaving it in means the fake machine finds the host's own cmd.exe and asks
+// the developer's Windows for an environment the test has already answered for.
+func withoutTheRealWindowsPATH() []string {
+	var kept []string
+	for _, dir := range filepath.SplitList(os.Getenv("PATH")) {
+		if strings.HasPrefix(dir, "/mnt/") {
+			continue
+		}
+		kept = append(kept, dir)
+	}
+	return kept
+}
 
 func withLeakyKeyACL(m *wslMachine) { m.leakyKeyACL = true }
 

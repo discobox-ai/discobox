@@ -63,6 +63,18 @@ func TestMain(m *testing.M) {
 		}
 		os.Exit(0)
 	}
+	// A developer's machine is as often a WSL distribution as a plain Linux
+	// one, and there every command that writes an ssh_config takes the WSL
+	// bridge: it shells out to the real cmd.exe and writes into the real
+	// Windows profile, which is neither what those tests mean nor something a
+	// test may touch. The fake machine in tools_vscode_wsl_test.go sets these
+	// back for the tests that are about the bridge.
+	for _, name := range []string{"WSL_DISTRO_NAME", "WSL_INTEROP"} {
+		if err := os.Unsetenv(name); err != nil {
+			fmt.Fprintln(os.Stderr, err)
+			os.Exit(1)
+		}
+	}
 	os.Exit(m.Run())
 }
 
