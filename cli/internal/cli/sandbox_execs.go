@@ -442,6 +442,7 @@ func (a *App) attachSandboxExec(ctx context.Context, projectID, sandboxID, execI
 		CopyInput: func(ctx context.Context, s *client.Session) error {
 			return copySandboxExecInput(ctx, s, interactive)
 		},
+		InterruptNotice: interruptNotice(stderr, interactive && tty, "the discobox"),
 	}
 	if tty {
 		// SignalReady pairs with the replay this dial asked for: the remote must
@@ -467,7 +468,13 @@ func (a *App) attachSandboxExec(ctx context.Context, projectID, sandboxID, execI
 	if _, err := a.startSandboxExec(ctx, projectID, sandboxID, execID); err != nil {
 		return err
 	}
-	return session.Run(ctx)
+	if err := session.Run(ctx); err != nil {
+		if errors.Is(err, client.ErrInterrupted) {
+			return interruptedExit()
+		}
+		return err
+	}
+	return nil
 }
 
 // openExecAttachConn opens the attach connection for a plain exec: the

@@ -531,6 +531,19 @@ session, `execstream/client`.
   mean the same thing either way. It replaced Docker's Ctrl-P Ctrl-Q, which took
   a key programs want (Ctrl-P is history-back everywhere) and matched nothing
   the launcher did.
+- The other way out is repeated Ctrl-C, and it is the session's, not this
+  module's: `execstream/client` owns the escape because the evidence it needs
+  is the stream's own (`execstream.Delivery` acknowledgements), and because a
+  stalled attach must be escapable from the signal path too, where no input
+  copier runs. Interrupts count only while the remote demonstrably has not
+  applied them and only at human cadence, so hammering Ctrl-C at a healthy
+  remote still reaches the remote; the second unanswered one prints
+  `interruptNotice` and the third ends the attach with `client.ErrInterrupted`,
+  which every attach call site turns into a silent exit 130 (`interruptedExit`),
+  the status a shell reports for an interrupted command. The message is this
+  module's because it names the thing that went quiet and ends its lines the way
+  the attach's terminal mode requires. Contrast the detach chord: that one is a
+  configurable key with no protocol meaning, so the session never learns it.
 - Resumable actions (input, signals, and close-input) carry monotonically
   increasing positions. The client retains a bounded window until the shim
   acknowledges applying them; reconnect resends the unacknowledged suffix and

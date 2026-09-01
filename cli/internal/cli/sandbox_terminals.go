@@ -377,7 +377,8 @@ func (a *App) attachSandboxTerminal(ctx context.Context, projectID, sandboxID, t
 		CopyInput: func(ctx context.Context, s *client.Session) error {
 			return copyTerminalInput(ctx, s, chord)
 		},
-		ErrorFrame: printAttachErrorFrame(stderr),
+		InterruptNotice: interruptNotice(stderr, true, "the discobox"),
+		ErrorFrame:      printAttachErrorFrame(stderr),
 		OtherErr: func(err error) (bool, error) {
 			if client.IsDone(err) {
 				return true, nil
@@ -394,6 +395,9 @@ func (a *App) attachSandboxTerminal(ctx context.Context, projectID, sandboxID, t
 	err = session.Run(ctx)
 	if errors.Is(err, errTerminalDetached) {
 		return nil
+	}
+	if errors.Is(err, client.ErrInterrupted) {
+		return interruptedExit()
 	}
 	return err
 }

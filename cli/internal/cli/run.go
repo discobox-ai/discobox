@@ -36,8 +36,10 @@ command flags explicitly.
 Every discobox has one default terminal: the configured harness, or a shell when
 no harness is configured. By default run waits for the discobox to start and
 attaches to that terminal, streaming it to your terminal (press Ctrl-A d to
-detach; DISCOBOX_LEADER changes the Ctrl-A). Pass -d to create the discobox and
-print it without attaching.
+detach; DISCOBOX_LEADER changes the Ctrl-A). If an interrupt stops getting
+through — the discobox or the server has gone quiet — Ctrl-C again says so, and
+one more quits, leaving the terminal running like a detach. Pass -d to create
+the discobox and print it without attaching.
 
 Uncommitted changes in the source directory are carried into the discobox as a
 snapshot on top of the checked-out commit. By default run asks before doing that

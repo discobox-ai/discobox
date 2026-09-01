@@ -27,7 +27,11 @@ relaunch command when it has stopped.
 Stdin is always attached, and a PTY is allocated the same way the discobox's
 default terminal already runs one. The leader key then d — Ctrl-A d by default,
 and Ctrl-A Ctrl-D works too — detaches without ending the session. Set
-DISCOBOX_LEADER to change the Ctrl-A when it collides with what you run.`,
+DISCOBOX_LEADER to change the Ctrl-A when it collides with what you run.
+
+If an interrupt stops getting through — the discobox or the server has gone
+quiet — Ctrl-C again says so, and one more quits. The terminal keeps running,
+exactly as a detach leaves it.`,
 		Example: `  discobox attach
   discobox attach sbx_01hq`,
 		Args:              cobra.MaximumNArgs(1),

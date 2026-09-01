@@ -105,6 +105,7 @@ func (a *App) attachPoolConsole(ctx context.Context, projectID, poolID string, s
 		CopyInput: func(ctx context.Context, s *client.Session) error {
 			return copyTerminalInput(ctx, s, chord)
 		},
+		InterruptNotice: interruptNotice(stderr, true, "the pool host"),
 		OtherErr: func(err error) (bool, error) {
 			if client.IsDone(err) {
 				return true, nil
@@ -118,6 +119,9 @@ func (a *App) attachPoolConsole(ctx context.Context, projectID, poolID string, s
 	err = session.Run(ctx)
 	if errors.Is(err, errTerminalDetached) {
 		return nil
+	}
+	if errors.Is(err, client.ErrInterrupted) {
+		return interruptedExit()
 	}
 	return err
 }

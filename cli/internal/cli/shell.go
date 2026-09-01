@@ -40,7 +40,9 @@ discobox's shell, not this machine's.
 
 Stdin is always attached, and a PTY is allocated only when this terminal is one,
 so piping and redirecting behave like a local command. Signals are forwarded to
-the remote process, and shell exits with its exit code.`,
+the remote process, and shell exits with its exit code. If an interrupt stops
+getting through — the discobox or the server has gone quiet — Ctrl-C again says
+so, and one more quits shell and leaves the command where it is.`,
 		Example: `  discobox shell
   discobox shell go test ./...
   discobox shell sbx_01hq bash

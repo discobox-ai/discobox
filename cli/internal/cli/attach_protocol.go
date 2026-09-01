@@ -31,3 +31,27 @@ func printAttachErrorFrame(stderr io.Writer) func([]byte) error {
 		return nil
 	}
 }
+
+// interruptNotice tells the caller that the Ctrl-C they just pressed never
+// reached the remote, and that another one quits.
+//
+// It is the only thing this client says while an attach is stalled: the stream
+// itself stays silent on purpose (a slow discobox is not a broken one), so the
+// notice appears exactly when the caller has already concluded something is
+// wrong and is trying to get out. raw ends the lines the way a raw terminal
+// needs them, since the session is still holding the terminal when this runs.
+func interruptNotice(stderr io.Writer, raw bool, what string) func() {
+	eol := "\n"
+	if raw {
+		eol = "\r\n"
+	}
+	return func() {
+		_, _ = fmt.Fprintf(stderr, "%sNot responding: your interrupt has not reached %s.%sPress Ctrl-C again to quit.%s", eol, what, eol, eol)
+	}
+}
+
+// interruptedExit ends a command whose attach was escaped locally. The notice
+// already said what happened, so all that is left to carry is the status a
+// shell reports for a command its user interrupted; ExitCode makes it a silent
+// exit rather than a printed error.
+func interruptedExit() error { return client.ExitError{Code: 130} }
