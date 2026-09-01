@@ -601,13 +601,12 @@ func portsText(st *styles, s Sandbox, forwarded map[int]int) string {
 }
 
 // portEntry is one port in its group: the number on its own, or `local->remote`
-// when the workspace's forward has given it a local port.
+// when the workspace's forward has had to move the port.
 //
-// Both numbers are drawn even when they are the same. `1234->1234` says the
-// port is reachable here, which a bare `1234` — the shape every unforwarded
-// port already has — cannot; the arrow is the mark of "this one is open", and a
-// mark that disappears exactly when the forward got what it asked for would be
-// the wrong way round.
+// The arrow is there to answer "which number do I type here", so it is drawn
+// only when the answer differs from the port the sandbox is serving. A forward
+// that got the port it asked for has nothing to correct, and `1234->1234` costs
+// header width to say the same number twice.
 //
 // A web port is also a link to the local end of it, so the port a sandbox is
 // serving is one click away rather than a URL to assemble by hand. Only the
@@ -620,7 +619,10 @@ func portEntry(port Port, forwarded map[int]int) string {
 	if !ok {
 		return itoa(port.Number)
 	}
-	text := itoa(local) + "->" + itoa(port.Number)
+	text := itoa(local)
+	if local != port.Number {
+		text += "->" + itoa(port.Number)
+	}
 	scheme, web := portScheme(port.Protocol)
 	if !web {
 		return text

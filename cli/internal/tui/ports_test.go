@@ -84,8 +84,9 @@ func TestPortsTextGroupsByProtocol(t *testing.T) {
 	}
 }
 
-// A forwarded port shows both numbers, so the header says what to type here as
-// well as what the sandbox is serving there.
+// A forwarded port that had to move shows both numbers, so the header says what
+// to type here as well as what the sandbox is serving there. One that kept its
+// number says it once: there is nothing to correct.
 func TestPortsTextShowsTheLocalPortForForwardedPorts(t *testing.T) {
 	st := newStyles(false)
 	ports := []Port{
@@ -96,7 +97,7 @@ func TestPortsTextShowsTheLocalPortForForwardedPorts(t *testing.T) {
 	// 8080 was taken locally and 3000 was not; 5432 is forwarded too, and says
 	// so the same way even though nothing can link to it.
 	forwarded := map[int]int{8080: 8082, 3000: 3000, 5432: 5433}
-	want := "http:3000->3000,8082->8080 · tcp:5433->5432"
+	want := "http:3000,8082->8080 · tcp:5433->5432"
 	if got := ansi.Strip(portsText(st, Sandbox{Ports: ports}, forwarded)); got != want {
 		t.Fatalf("portsText = %q, want %q", got, want)
 	}
@@ -141,5 +142,15 @@ func TestPortsTextLinksForwardedWebPorts(t *testing.T) {
 	// The escape sequences take no cells, so the row still measures as its text.
 	if got, want := lipgloss.Width(rendered), lipgloss.Width(ansi.Strip(rendered)); got != want {
 		t.Fatalf("width with links = %d, want %d — the sequences must not occupy cells", got, want)
+	}
+}
+
+// A port the forward kept the number of is still forwarded, so it still links —
+// what it drops is the arrow, not the local end.
+func TestPortsTextLinksAForwardThatKeptItsNumber(t *testing.T) {
+	st := newStyles(false)
+	rendered := portsText(st, Sandbox{Ports: []Port{{Number: 5173, Protocol: "http"}}}, map[int]int{5173: 5173})
+	if want := hyperlink("http://localhost:5173", "5173"); !strings.Contains(rendered, want) {
+		t.Fatalf("portsText = %q, want it to contain %q", rendered, want)
 	}
 }
