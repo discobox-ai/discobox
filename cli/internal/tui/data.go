@@ -477,7 +477,7 @@ func (s Sandbox) changes() string {
 	case s.Git.Applied:
 		return "applied"
 	case s.ahead():
-		return "ahead"
+		return "ready"
 	case s.Git.Known:
 		return "clean"
 	default:

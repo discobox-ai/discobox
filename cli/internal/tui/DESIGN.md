@@ -1358,16 +1358,16 @@ with the listing per ADR 0030) it is the position the working tree is on today
 rather than the commit the sandbox was cut from. The mark on it is the state
 of the work, most losable first: `*` in warning while the tree holds
 uncommitted content, `⇡` in the default text for work committed ahead of every
-host, which no apply has landed, `✓` in green when the head commit is the last one applied — the state
+host, which no apply has landed and an apply would take, `✓` in green when the head commit is the last one applied — the state
 where nothing in the sandbox would be lost — and unmarked dim when it sits
 clean where it was cut. An applied row shows the host-side commit its apply
 produced rather than the sandbox head, since that is the SHA findable in the
 local repository. The column beside it spells the mark out
-(`dirty` / `ahead` / `applied` / `clean` / `-`), in the mark's color, so
+(`dirty` / `ready` / `applied` / `clean` / `-`), in the mark's color, so
 the code never has to be decoded — the same words `discobox ls` prints. Until anything reports, the row falls
 back to the spawn position, starred when a snapshot of uncommitted work was
 carried in. `discobox ls` prints the same column, plus the derivation spelled as
-a word (`dirty` / `ahead` / `applied` / `clean`), from the same
+a word (`dirty` / `ready` / `applied` / `clean`), from the same
 `cli.sandboxGitStatus` seam — one derivation, two spellings.
 
 **Diffstats arrive with the listing.** The sandbox-agent measures

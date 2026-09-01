@@ -66,9 +66,9 @@ func TestSandboxGitStatusChanges(t *testing.T) {
 			want:    "clean",
 		},
 		{
-			name:    "ahead: committed but never applied",
+			name:    "ready: committed but never applied",
 			sandbox: gitStateSandbox(t, spawnSHA, sprintfSources("true", headSHA), nil),
-			want:    "ahead",
+			want:    "ready",
 		},
 		{
 			name:    "clean on the applied commit",
@@ -84,11 +84,11 @@ func TestSandboxGitStatusChanges(t *testing.T) {
 		},
 		{
 			// Commits after the last apply are unapplied work again.
-			name: "ahead again past the applied commit",
+			name: "ready again past the applied commit",
 			sandbox: gitStateSandbox(t, spawnSHA, sprintfSources("true", otherSHA), []apimodel.AppliedSourceCommit{{
 				Slug: "code", Commit: headSHA, AppliedAt: time.Date(2026, 8, 12, 0, 0, 0, 0, time.UTC),
 			}}),
-			want: "ahead",
+			want: "ready",
 		},
 		{
 			// An apply recorded for a different source says nothing about this
@@ -97,7 +97,7 @@ func TestSandboxGitStatusChanges(t *testing.T) {
 			sandbox: gitStateSandbox(t, spawnSHA, sprintfSources("true", headSHA), []apimodel.AppliedSourceCommit{{
 				Slug: "docs", Commit: headSHA, AppliedAt: time.Date(2026, 8, 12, 0, 0, 0, 0, time.UTC),
 			}}),
-			want: "ahead",
+			want: "ready",
 		},
 	}
 	for _, tc := range cases {
