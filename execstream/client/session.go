@@ -10,6 +10,7 @@
 package client
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
@@ -20,6 +21,7 @@ import (
 	"os"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/discobox-ai/discobox/execstream"
@@ -31,9 +33,11 @@ import (
 // no resize tracking, no signal forwarding.
 type Console interface {
 	// MakeRaw puts the terminal into raw mode and returns a func restoring the
-	// mode it was in. When there is no terminal it returns a no-op restore and
-	// no error, so callers need not special-case it.
-	MakeRaw() (restore func(), err error)
+	// mode it was in, and whether there was a terminal to put into raw mode at
+	// all. When there is none it returns a no-op restore, raw false, and no
+	// error, so callers need not special-case it. raw is what tells a session
+	// whether an 0x03 byte arriving on stdin is a keystroke or ordinary data.
+	MakeRaw() (restore func(), raw bool, err error)
 	// Size reports the terminal size, or ok=false when there is no terminal.
 	Size() (cols, rows int, ok bool)
 	// Suspend stops this process and returns once it is resumed.
@@ -78,6 +82,13 @@ type Options struct {
 	// OtherErr inspects a non-output error before it ends the session,
 	// reporting whether it was handled.
 	OtherErr func(error) (bool, error)
+	// InterruptNotice is called on the interrupt that arms the local escape:
+	// the remote has not answered the ones before it, and one more ends the
+	// session with ErrInterrupted. It runs on the goroutine that carried the
+	// interrupt, with the terminal still in whatever mode the session put it
+	// in, so a caller writing a line ends it the way that mode requires. Nil
+	// leaves the escape silent, not disabled.
+	InterruptNotice func()
 }
 
 // Session is one attached stream.
@@ -87,7 +98,15 @@ type Session struct {
 	// It is retained so a suspend can hand the terminal back and take it again
 	// without disturbing the final restore.
 	rawRestore func()
-	writeMu    sync.Mutex
+	// raw reports whether the caller's terminal really is in raw mode, which is
+	// what makes an 0x03 byte on the way to the remote a Ctrl-C keystroke.
+	raw     bool
+	writeMu sync.Mutex
+	// lastFrame is when the last frame arrived from the remote, in Unix
+	// nanoseconds, and is the only sign of life a transport without delivery
+	// acknowledgement offers.
+	lastFrame  atomic.Int64
+	interrupts interruptRun
 }
 
 func New(opts Options) *Session { return &Session{opts: opts} }
@@ -96,10 +115,28 @@ func New(opts Options) *Session { return &Session{opts: opts} }
 func (s *Session) Stdin() io.Reader { return s.opts.Stdin }
 
 // WriteFrame sends one frame to the remote.
+//
+// Interrupts are accounted for before the write rather than after it, so a
+// stream stalled badly enough to block the write is still escapable: the
+// goroutine that carries the interrupt returns ErrInterrupted instead of
+// queueing behind the one already stuck.
 func (s *Session) WriteFrame(typ byte, payload []byte) error {
+	counted := false
+	if s.isInterrupt(typ, payload) {
+		var err error
+		if counted, err = s.noteInterrupt(); err != nil {
+			return err
+		}
+	}
 	s.writeMu.Lock()
 	defer s.writeMu.Unlock()
-	return s.opts.Conn.WriteFrame(typ, payload)
+	err := s.opts.Conn.WriteFrame(typ, payload)
+	if counted {
+		// Under writeMu, and so before any other frame this session sends, the
+		// transport's accepted position is this interrupt's own.
+		s.recordInterruptPosition()
+	}
+	return err
 }
 
 // CloseInput tells the remote no more input is coming, without detaching.
@@ -121,10 +158,11 @@ func (s *Session) Run(ctx context.Context) error {
 	defer cancel()
 
 	if s.opts.RawMode && s.opts.Console != nil {
-		restore, err := s.opts.Console.MakeRaw()
+		restore, raw, err := s.opts.Console.MakeRaw()
 		if err != nil {
 			return err
 		}
+		s.raw = raw
 		s.rawRestore = restore
 		defer restore()
 	}
@@ -198,6 +236,7 @@ func (s *Session) copyOutput() error {
 		if err != nil {
 			return err
 		}
+		s.lastFrame.Store(time.Now().UnixNano())
 		switch next.Type {
 		case frame.Stdout:
 			if _, err := s.opts.Stdout.Write(next.Payload); err != nil {
@@ -282,6 +321,132 @@ func (s *Session) proxySignals(ctx context.Context) error {
 	}
 }
 
+// Interrupt escape. A stalled stream swallows Ctrl-C: in raw mode it is a byte
+// for the remote line discipline, and cooked-mode SIGINT is forwarded as a
+// frame rather than acted on here, so a caller whose remote has stopped
+// answering has nothing left that ends the attach. Repeating the interrupt is
+// what everyone tries, so that is what the escape reads.
+const (
+	// interruptByte is Ctrl-C as a raw terminal delivers it, VINTR's default
+	// everywhere. A remote that has remapped its own VINTR is not this side's
+	// business: what matters is the key the caller pressed.
+	interruptByte = 0x03
+	// interruptSignalName is the wire name a proxied SIGINT travels under.
+	interruptSignalName = "INT"
+	// interruptEscapeAt is how many unanswered interrupts end the session
+	// locally. The one before it arms the escape and notifies, so the caller
+	// learns the escape exists at the moment it becomes useful.
+	interruptEscapeAt = 3
+)
+
+// interruptStall is how long the interrupt before it must have gone unanswered
+// for another to count. A burst typed faster than any answer could arrive is
+// one impatient caller, not a stalled stream — a round trip to a sandbox is
+// tens or hundreds of milliseconds, and double-tapping Ctrl-C is ordinary.
+// A var only so tests need not spend seconds proving it.
+var interruptStall = time.Second
+
+// ErrInterrupted reports that the caller escaped a session whose remote stopped
+// answering: interrupts that demonstrably never reached the remote process end
+// the attach locally instead of vanishing into the stream.
+var ErrInterrupted = errors.New("interrupted: the remote stopped responding")
+
+// interruptRun is the current run of interrupts the remote has not answered.
+type interruptRun struct {
+	mu    sync.Mutex
+	count int
+	// sentAt is when the last counted interrupt was handed to the transport.
+	sentAt time.Time
+	// position is that interrupt's action position, or zero when the transport
+	// does not carry acknowledgements.
+	position uint64
+}
+
+// isInterrupt reports whether this frame carries the caller pressing Ctrl-C.
+//
+// A raw-mode keystroke counts only where the transport acknowledges delivery.
+// Ctrl-C typed into a raw terminal is opaque data addressed to the remote line
+// discipline, and a full-screen program is entitled to swallow it in silence;
+// without proof that it was never applied, counting it would end healthy
+// sessions. A proxied signal is different: it was addressed to this process,
+// and this process chose to forward it instead.
+func (s *Session) isInterrupt(typ byte, payload []byte) bool {
+	switch typ {
+	case frame.Signal:
+		return string(payload) == interruptSignalName
+	case frame.Input:
+		_, acknowledges := s.opts.Conn.(execstream.Delivery)
+		return s.raw && acknowledges && bytes.IndexByte(payload, interruptByte) >= 0
+	default:
+		return false
+	}
+}
+
+// noteInterrupt accounts for one interrupt on its way to the remote. It reports
+// whether the interrupt advanced the run — and so whether its delivery position
+// is worth recording — and returns ErrInterrupted once the escape fires.
+func (s *Session) noteInterrupt() (bool, error) {
+	now := time.Now()
+	run := &s.interrupts
+	run.mu.Lock()
+	defer run.mu.Unlock()
+	if run.count > 0 {
+		switch {
+		case s.interruptAnswered(run):
+			// The remote is alive and applying input, so nothing before this
+			// interrupt is evidence of anything: start the run over.
+			run.count = 0
+		case now.Sub(run.sentAt) < interruptStall:
+			// Too soon to call the one before it unanswered. It still reaches
+			// the remote; it just does not count toward the escape.
+			return false, nil
+		}
+	}
+	run.count++
+	run.sentAt = now
+	run.position = 0
+	if run.count >= interruptEscapeAt {
+		return false, ErrInterrupted
+	}
+	if run.count == interruptEscapeAt-1 && s.opts.InterruptNotice != nil {
+		s.opts.InterruptNotice()
+	}
+	return true, nil
+}
+
+// interruptAnswered reports whether the remote answered the last counted
+// interrupt. It runs under run.mu.
+//
+// Acknowledgement is the only positive proof and is preferred wherever the
+// transport carries it: the host acknowledges an action after applying it, so
+// an unacknowledged interrupt is one the process demonstrably never saw.
+// Without acknowledgements the only evidence is a frame arriving after the
+// interrupt was sent, which cannot tell a remote that ignored the interrupt
+// from one that never received it — enough for a forwarded signal, whose local
+// meaning was to end this process anyway, and not enough for a keystroke,
+// which isInterrupt therefore never counts on such a transport.
+func (s *Session) interruptAnswered(run *interruptRun) bool {
+	if delivery, ok := s.opts.Conn.(execstream.Delivery); ok && run.position > 0 {
+		_, acknowledged := delivery.Positions()
+		return acknowledged >= run.position
+	}
+	return s.lastFrame.Load() > run.sentAt.UnixNano()
+}
+
+// recordInterruptPosition retains the transport position the interrupt just
+// written was accepted at, which is what a later interrupt compares the host's
+// acknowledgements against.
+func (s *Session) recordInterruptPosition() {
+	delivery, ok := s.opts.Conn.(execstream.Delivery)
+	if !ok {
+		return
+	}
+	accepted, _ := delivery.Positions()
+	s.interrupts.mu.Lock()
+	defer s.interrupts.mu.Unlock()
+	s.interrupts.position = accepted
+}
+
 // suspend gives Ctrl-Z its local meaning across the connection: the remote job
 // stops, this process stops, and fg resumes both. Forwarding alone would leave
 // the caller attached to a stopped job with no way to resume it; stopping alone
@@ -302,7 +467,7 @@ func (s *Session) suspend() error {
 	if s.rawRestore != nil {
 		// Discard the new restore: s.rawRestore must stay the pre-attach mode so
 		// Run's deferred restore leaves the terminal as the caller handed it over.
-		if _, err := s.opts.Console.MakeRaw(); err != nil {
+		if _, _, err := s.opts.Console.MakeRaw(); err != nil {
 			return err
 		}
 	}

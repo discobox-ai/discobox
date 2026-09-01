@@ -32,16 +32,16 @@ func (c *OSConsole) isTerminal() bool {
 
 // MakeRaw puts the terminal in raw mode so Ctrl-C and Ctrl-Z reach the remote
 // as bytes rather than becoming signals here.
-func (c *OSConsole) MakeRaw() (func(), error) {
+func (c *OSConsole) MakeRaw() (func(), bool, error) {
 	if !c.isTerminal() {
-		return func() {}, nil
+		return func() {}, false, nil
 	}
 	fd := int(c.stdin.Fd())
 	state, err := term.MakeRaw(fd)
 	if err != nil {
-		return nil, err
+		return nil, false, err
 	}
-	return func() { _ = term.Restore(fd, state) }, nil
+	return func() { _ = term.Restore(fd, state) }, true, nil
 }
 
 func (c *OSConsole) Size() (cols, rows int, ok bool) {

@@ -64,9 +64,9 @@ func (c *fakeConsole) Events() []string {
 	return append([]string(nil), c.events...)
 }
 
-func (c *fakeConsole) MakeRaw() (func(), error) {
+func (c *fakeConsole) MakeRaw() (func(), bool, error) {
 	c.record("makeraw")
-	return func() { c.record("restore") }, nil
+	return func() { c.record("restore") }, true, nil
 }
 
 func (c *fakeConsole) Size() (int, int, bool) {
