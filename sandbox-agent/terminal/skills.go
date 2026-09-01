@@ -25,6 +25,17 @@ import (
 // almost every repository.
 const ProjectSkillsDir = ".discobox/skills"
 
+// BuiltinSkillsDir is where the image installs the skills discobox itself
+// ships: the ones for what is in every sandbox whatever it was made from, so
+// they cannot come from the repository being worked on (ADR 0080).
+//
+// `discobox-access` is the first of them. An agent that meets a 401 and has
+// never been told the credential protocol exists reaches for what it was
+// trained on — it writes a token into a config file, or stops and asks the
+// user to paste one into the chat, which is the one thing the protocol exists
+// to avoid.
+const BuiltinSkillsDir = "/usr/local/share/discobox/skills"
+
 // skillDirectories are the home-relative directories coding harnesses read
 // skills from. Every one of them gets the same copy: the repository declaring
 // the skills does not know which harness the sandbox runs, and a directory the
@@ -34,8 +45,8 @@ var skillDirectories = []string{
 	filepath.Join(".agents", "skills"),
 }
 
-// installProjectSkills copies the primary source's declared skills into the run
-// user's skill directories.
+// installSkills copies the image's skills and the primary source's declared
+// skills into the run user's skill directories.
 //
 // It runs on the primary terminal's first launch only, and from there rather
 // than from the installer that runs before every terminal: the copies are the
@@ -43,7 +54,10 @@ var skillDirectories = []string{
 // must not find them restored underneath it on the next launch. It also has to
 // run after the source-delivery wait, which is the same reason — before the
 // source is in place there is nothing to read.
-func (s *Service) installProjectSkills() error {
+//
+// The image's go first and the repository's second, so a repository declaring a
+// skill of the same name wins: it is the more specific declaration.
+func (s *Service) installSkills() error {
 	// The repository root, asked of the exec manager rather than derived here:
 	// it is the same answer `services` discovers its declarations under, and a
 	// second derivation of "which directory is the sandbox working on" drifts
@@ -52,16 +66,28 @@ func (s *Service) installProjectSkills() error {
 	if err != nil {
 		return fmt.Errorf("install %s: %w", ProjectSkillsDir, err)
 	}
-	// What the repository declares is read before the home it would be copied
-	// into is resolved, because almost every repository declares nothing.
-	// Resolving home is how the copy finds its destination, not part of
-	// deciding there is no copy to make — and it can fail. Asking first would
-	// fail the primary launch of every sandbox whose run user has no home
-	// resolvable, over a directory that repository does not have.
-	declared := filepath.Join(source, ProjectSkillsDir)
-	entries, err := declaredSkills(declared)
-	if err != nil || len(entries) == 0 {
+	// An image built before ADR 0080 has no built-in skills, which is an older
+	// image rather than a misconfiguration: failing its primary launch would
+	// take away the sandbox to protect the documentation. A directory that is
+	// there and cannot be read still fails, since at that point something is
+	// wrong with the image rather than absent from it.
+	builtin, err := declaredSkills(BuiltinSkillsDir)
+	if err != nil {
 		return err
+	}
+	// What each side declares is read before the home they would be copied into
+	// is resolved, because almost every repository declares nothing. Resolving
+	// home is how the copy finds its destination, not part of deciding there is
+	// no copy to make — and it can fail. Asking first would fail the primary
+	// launch of every sandbox whose run user has no home resolvable, over
+	// directories that are empty.
+	declared := filepath.Join(source, ProjectSkillsDir)
+	project, err := declaredSkills(declared)
+	if err != nil {
+		return err
+	}
+	if len(builtin) == 0 && len(project) == 0 {
+		return nil
 	}
 	// HOME as the exec that will read these files resolves it, which is what
 	// completes the run user's home when no layer named one.
@@ -70,7 +96,10 @@ func (s *Service) installProjectSkills() error {
 	if err != nil {
 		return fmt.Errorf("install %s: %w", ProjectSkillsDir, err)
 	}
-	return installSkills(declared, entries, home, s.defaultUser)
+	if err := copySkills(BuiltinSkillsDir, builtin, home, s.defaultUser); err != nil {
+		return err
+	}
+	return copySkills(declared, project, home, s.defaultUser)
 }
 
 // declaredSkills is what a repository declares under ProjectSkillsDir, and
@@ -86,9 +115,9 @@ func declaredSkills(from string) ([]fs.DirEntry, error) {
 	return entries, nil
 }
 
-// installSkills copies the tree at from, whose entries the caller has already
+// copySkills copies the tree at from, whose entries the caller has already
 // read, into every skill directory under home.
-func installSkills(from string, entries []fs.DirEntry, home string, user *execs.User) error {
+func copySkills(from string, entries []fs.DirEntry, home string, user *execs.User) error {
 	if len(entries) == 0 {
 		return nil
 	}
@@ -98,17 +127,17 @@ func installSkills(from string, entries []fs.DirEntry, home string, user *execs.
 	}
 	for _, dir := range skillDirectories {
 		if err := copySkillTree(from, filepath.Join(home, dir), uid, gid); err != nil {
-			return fmt.Errorf("install %s into %s: %w", ProjectSkillsDir, dir, err)
+			return fmt.Errorf("install %s into %s: %w", from, dir, err)
 		}
 	}
 	return nil
 }
 
 // copySkillTree copies from onto to, overwriting a file of the same name and
-// leaving everything else in the destination alone. The repository wins over an
-// image-installed skill of the same name — it is the more specific declaration
-// — but it does not own the directory, which the harness and the image also
-// write into.
+// leaving everything else in the destination alone. The repository is copied
+// after the image, so it wins on a name they share — it is the more specific
+// declaration — but neither owns the directory, which the harness config's
+// files and the harness itself also write into.
 func copySkillTree(from, to string, uid, gid *int64) error {
 	return filepath.WalkDir(from, func(path string, entry fs.DirEntry, err error) error {
 		if err != nil {

@@ -98,6 +98,20 @@ or an agent steered by something it read.
 so a judge there would gate the taking rather than the using; `run` is the form
 where the declaration and the act are the same thing.
 
+## The skill
+
+`skills/discobox-access/SKILL.md` is what tells an agent this CLI exists. The
+image installs it to `/usr/local/share/discobox/skills`, and the sandbox agent
+copies it into the harness's skill directories on a sandbox's first launch
+([ADR 0080](../docs/adr/0080-the-image-ships-the-skills-for-what-it-installs.md)).
+
+It lives here, in the module whose interface it documents, for one reason: it
+goes stale the moment a flag changes, and the only reliable defence is that it
+sits where somebody changing that flag is already looking. **Change it in the
+same commit that changes the interface.** It also travels — the instructions for
+driving the CLI are part of what would leave with this module, while the
+Dockerfile line and the install path, which are discobox's, stay behind.
+
 ## What it must never do
 
 The value is opaque and short-lived. It goes into one child process's

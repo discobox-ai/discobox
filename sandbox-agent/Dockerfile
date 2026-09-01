@@ -278,6 +278,12 @@ COPY --from=sandbox-agent-builder /out/discobox-ca-anchor /usr/local/bin/discobo
 # client of a portable protocol and is meant to be liftable into another
 # repository, so it must not be welded to this image's runtime (ADR 0031).
 COPY --from=sandbox-agent-builder /out/discobox-access /usr/local/bin/discobox-access
+# And the skill that tells an agent the CLI is there. The image ships the
+# skills for what the image installs, and the sandbox agent copies them into
+# the harness's skill directories on the first primary launch, beside whatever
+# the repository declares (ADR 0080). It lives in the module whose flags it
+# documents, so changing them puts somebody in front of it.
+COPY access/skills /usr/local/share/discobox/skills
 # Installs as `docker`, ahead of the real CLI at /usr/bin/docker on PATH, to
 # give `docker build` the pool-shared BuildKit cache. Non-build commands are
 # exec'd straight through. See the sandbox-agent/dockercache package.

@@ -154,16 +154,21 @@ func TestInstallSkillsSkipsSymlinks(t *testing.T) {
 	}
 }
 
-// installDeclaredSkills is the pair installProjectSkills runs: read what the
-// repository declares, then copy it. Home is not resolved when there is nothing
-// to copy, which is what keeps a launch working without one.
+// installDeclaredSkills is the pair installSkills runs over each tree: read
+// what is declared, then copy it. Home is not resolved when there is nothing to
+// copy, which is what keeps a launch working without one.
 func installDeclaredSkills(source, home string) error {
-	declared := filepath.Join(source, ProjectSkillsDir)
-	entries, err := declaredSkills(declared)
+	return installTree(filepath.Join(source, ProjectSkillsDir), home)
+}
+
+// installTree is the same pair over any of the trees the install reads: the
+// image's built-in skills, or a repository's declared ones.
+func installTree(from, home string) error {
+	entries, err := declaredSkills(from)
 	if err != nil {
 		return err
 	}
-	return installSkills(declared, entries, home, nil)
+	return copySkills(from, entries, home, nil)
 }
 
 // Almost every repository declares no skills at all, and the ones that create
@@ -224,5 +229,80 @@ func TestPrimaryLaunchInstallsProjectSkillsOnce(t *testing.T) {
 	}
 	if _, err := os.Stat(installed); !os.IsNotExist(err) {
 		t.Fatalf("stat %s = %v, want no reinstall on a later launch", installed, err)
+	}
+}
+
+// The skills for what the image installs reach every sandbox, whatever it was
+// made from. A repository does not declare `discobox-access`; it is in the
+// sandbox regardless, and an agent that has never been told the credential
+// protocol exists writes a token into a config file instead of asking for one.
+func TestBuiltinSkillsAreInstalledForEverySandbox(t *testing.T) {
+	image, home := t.TempDir(), t.TempDir()
+	writeTreeFile(t, image, filepath.Join("discobox-access", "SKILL.md"), "ask a human\n", 0o644)
+
+	if err := installTree(image, home); err != nil {
+		t.Fatalf("install builtin skills: %v", err)
+	}
+	for _, dir := range skillDirectories {
+		got := readFile(t, filepath.Join(home, dir, "discobox-access", "SKILL.md"))
+		if got != "ask a human\n" {
+			t.Fatalf("%s/discobox-access/SKILL.md = %q", dir, got)
+		}
+	}
+}
+
+// An image built before the built-in skills existed has no such directory.
+// That is an older image rather than a misconfiguration, and failing the
+// primary launch over it would take away the sandbox to protect the
+// documentation.
+func TestAnImageWithNoBuiltinSkillsInstallsNothing(t *testing.T) {
+	home := t.TempDir()
+
+	if err := installTree(filepath.Join(t.TempDir(), "absent"), home); err != nil {
+		t.Fatalf("install with no builtin directory: %v", err)
+	}
+	for _, dir := range skillDirectories {
+		if _, err := os.Stat(filepath.Join(home, dir)); !os.IsNotExist(err) {
+			t.Fatalf("stat %s = %v, want no directory created", dir, err)
+		}
+	}
+}
+
+// The repository is copied second, so a repository that declares a skill by the
+// same name replaces the image's: it is the more specific declaration. What it
+// does not name is left alone, since neither owns the directory.
+func TestARepositorySkillWinsOverTheImages(t *testing.T) {
+	image, source, home := t.TempDir(), t.TempDir(), t.TempDir()
+	writeTreeFile(t, image, filepath.Join("discobox-access", "SKILL.md"), "the image's\n", 0o644)
+	writeTreeFile(t, image, filepath.Join("other", "SKILL.md"), "untouched\n", 0o644)
+	writeSkill(t, source, filepath.Join("discobox-access", "SKILL.md"), "the repository's\n", 0o644)
+
+	if err := installTree(image, home); err != nil {
+		t.Fatalf("install builtin skills: %v", err)
+	}
+	if err := installDeclaredSkills(source, home); err != nil {
+		t.Fatalf("install declared skills: %v", err)
+	}
+	for _, dir := range skillDirectories {
+		root := filepath.Join(home, dir)
+		if got := readFile(t, filepath.Join(root, "discobox-access", "SKILL.md")); got != "the repository's\n" {
+			t.Fatalf("%s: discobox-access = %q, want the repository's", dir, got)
+		}
+		if got := readFile(t, filepath.Join(root, "other", "SKILL.md")); got != "untouched\n" {
+			t.Fatalf("%s: other = %q, want the image's left alone", dir, got)
+		}
+	}
+}
+
+// writeTreeFile writes one file under a skills tree that is not a repository's
+// — the image's, in these tests.
+func writeTreeFile(t *testing.T, root, rel, content string, mode os.FileMode) {
+	t.Helper()
+	path := filepath.Join(root, rel)
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		t.Fatalf("mkdir %s: %v", filepath.Dir(path), err)
+	}
+	if err := os.WriteFile(path, []byte(content), mode); err != nil {
+		t.Fatalf("write %s: %v", path, err)
 	}
 }

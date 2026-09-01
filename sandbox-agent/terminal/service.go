@@ -678,11 +678,11 @@ func (s *Service) launchPrimary(ctx context.Context, prompt []string) (execs.Exe
 		}
 	}
 	if !launched {
-		// The repository's own skills, installed on the sandbox's first launch
-		// and never again (see skills.go). It sits here rather than in the
-		// installer that runs before every terminal because the copies belong
-		// to the harness once they land.
-		if err := s.installProjectSkills(); err != nil {
+		// The image's skills and the repository's own, installed on the
+		// sandbox's first launch and never again (see skills.go). It sits here
+		// rather than in the installer that runs before every terminal because
+		// the copies belong to the harness once they land.
+		if err := s.installSkills(); err != nil {
 			return execs.Exec{}, err
 		}
 	}
