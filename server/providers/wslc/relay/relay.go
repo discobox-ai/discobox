@@ -28,6 +28,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"runtime"
 )
 
 // The whole directory is embedded rather than the artifact alone: go:embed
@@ -38,12 +39,21 @@ import (
 //go:embed artifacts
 var artifacts embed.FS
 
-// artifactName is the compressed relay produced by `task build:cp-relay`.
-const artifactName = "artifacts/discobox-cp-relay.linux-amd64.gz"
+// artifactName is the compressed relay produced by `task build:cp-relay` for
+// this binary's architecture.
+//
+// WSL2 does not emulate, so a guest runs the architecture its Windows host
+// does and the relay a server needs is the one matching the server itself.
+// One source tree builds both Windows binaries, so the choice cannot be a
+// constant: build:cp-relay produces a relay per architecture and each binary
+// reads its own.
+func artifactName() string {
+	return "artifacts/discobox-cp-relay.linux-" + runtime.GOARCH + ".gz"
+}
 
 // relayGzip returns the embedded artifact, or nil when it was never built.
 func relayGzip() []byte {
-	data, err := artifacts.ReadFile(artifactName)
+	data, err := artifacts.ReadFile(artifactName())
 	if err != nil {
 		return nil
 	}
