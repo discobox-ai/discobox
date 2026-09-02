@@ -48,6 +48,19 @@ type Driver interface {
 	// AcquirePoolAgentClient returns an HTTP client lease that reaches the
 	// pool-agent API inside the worker container.
 	AcquirePoolAgentClient(ctx context.Context, poolID string) (*transport.HTTPClientLease, error)
+
+	// PoolLogs opens what the backend itself recorded about the pool's host:
+	// the VM's serial console for a driver that boots one, the Docker daemon's
+	// journal for a driver that hands containers to a machine directly. Every
+	// backend keeps a different record, so the stream names its own source.
+	//
+	// It is a driver method rather than an engine one because it must answer
+	// on a host with no working Docker daemon — the host whose log an operator
+	// reads is usually the host that never got one up.
+	//
+	// A driver whose backend keeps no readable record returns an error
+	// wrapping sandbox.ErrPoolLogsUnsupported, with the reason as its message.
+	PoolLogs(ctx context.Context, poolID string, opts sandbox.PoolLogOptions) (*sandbox.PoolLogStream, error)
 }
 
 // VMSpec is the driver-neutral VM launch request for one worker.

@@ -218,6 +218,35 @@ type PoolRuntime interface {
 	// itself. It deliberately does not go through the pool agent, because the
 	// agent is one of the things a broken host stops running.
 	OpenConsole(ctx context.Context, provider *model.SandboxProviderInstance, pool *model.Pool, opts ConsoleOptions) (PTY, error)
+	// OpenLogs reads what the backend itself recorded about the pool's host: a
+	// VM's serial console, the Docker daemon's journal. Like OpenConsole it
+	// goes through the driver rather than the pool agent, for the same reason —
+	// the host whose log is worth reading is usually the host whose agent never
+	// came up — and it is the one of the two that answers on a host with no
+	// shell to attach to at all.
+	OpenLogs(ctx context.Context, provider *model.SandboxProviderInstance, pool *model.Pool, opts PoolLogOptions) (*PoolLogStream, error)
+}
+
+// PoolLogOptions configures one read of a pool host's backend log.
+type PoolLogOptions struct {
+	// Tail bounds the read to the last N lines. Zero takes whatever the
+	// backend gives by default, which for a whole VM console is the whole log.
+	Tail int
+	// Follow keeps the stream open, appending as the host writes, until the
+	// caller closes it or its context ends.
+	Follow bool
+}
+
+// PoolLogStream is one open read of a pool host's backend log.
+//
+// Source names what was opened — "guest serial console", "docker daemon
+// journal (systemd)" — because there is no uniform pool host log: each backend
+// keeps a different record in a different place, and an operator reading the
+// bytes has to know which record they got. It is descriptive text for a human,
+// not an identifier to switch on.
+type PoolLogStream struct {
+	Source string
+	io.ReadCloser
 }
 
 // ConsoleOptions configures one attach to a pool host console.

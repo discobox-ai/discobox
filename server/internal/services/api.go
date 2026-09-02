@@ -181,6 +181,9 @@ type PoolService interface {
 	// privileged root shell on the machine running the pool's runtime, for
 	// debugging the backend itself.
 	OpenPoolConsole(ctx context.Context, projectID, poolID string, opts sandbox.ConsoleOptions) (sandbox.PTY, error)
+	// OpenPoolLogs reads whatever the pool's backend recorded about the machine
+	// running its runtime: a VM's serial console, a Docker daemon's journal.
+	OpenPoolLogs(ctx context.Context, projectID, poolID string, opts sandbox.PoolLogOptions) (*sandbox.PoolLogStream, error)
 
 	RegisterPool(ctx context.Context, input RegisterPoolBody) (*RegisterPoolResponseBody, error)
 	UpdatePoolStatus(ctx context.Context, poolID string, input UpdatePoolStatusBody) (*model.Pool, error)

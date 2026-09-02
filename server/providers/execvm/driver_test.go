@@ -3,6 +3,7 @@ package execvm
 import (
 	"context"
 	"errors"
+	"io"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -176,5 +177,49 @@ func TestValidateRequiresCommandAndControlPlaneURL(t *testing.T) {
 	}
 	if err := Validate([]byte(`{"command":"/usr/local/bin/my-vm-driver","controlPlaneUrl":"https://control.example"}`)); err != nil {
 		t.Fatalf("validate err = %v, want valid config", err)
+	}
+}
+
+// The logs operation is streamed rather than collected: the script's output
+// reaches the operator as it is written, with the requested tail and follow in
+// its environment, and its stderr merged in so a backend that has no log can
+// explain that.
+func TestPoolLogsStreamsTheScriptOutput(t *testing.T) {
+	driver := newScriptDriver(t, `
+case "$op" in
+logs)
+	echo "pool=$worker tail=$DISCOBOX_LOG_TAIL follow=$DISCOBOX_LOG_FOLLOW"
+	echo "no serial console on this backend" >&2
+	exit 1
+	;;
+*)
+	exit 1
+	;;
+esac
+`)
+	stream, err := driver.PoolLogs(context.Background(), "worker-1", sandbox.PoolLogOptions{Tail: 25, Follow: true})
+	if err != nil {
+		t.Fatalf("pool logs: %v", err)
+	}
+	defer stream.Close()
+	out, err := io.ReadAll(stream)
+	if err != nil {
+		t.Fatalf("read logs: %v", err)
+	}
+	if !strings.Contains(string(out), "pool=worker-1 tail=25 follow=true") {
+		t.Fatalf("logs output = %q", out)
+	}
+	if !strings.Contains(string(out), "no serial console on this backend") {
+		t.Fatalf("logs output = %q, want the script's stderr merged in", out)
+	}
+	if !strings.Contains(stream.Source, opLogs) {
+		t.Fatalf("source = %q", stream.Source)
+	}
+}
+
+func TestPoolLogsRequiresAPoolID(t *testing.T) {
+	driver := newScriptDriver(t, "exit 1\n")
+	if _, err := driver.PoolLogs(context.Background(), "  ", sandbox.PoolLogOptions{}); err == nil {
+		t.Fatal("pool logs accepted an empty pool ID")
 	}
 }

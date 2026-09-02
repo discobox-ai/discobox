@@ -236,6 +236,25 @@ func (d *Driver) AcquirePoolAgentClient(ctx context.Context, poolID string) (*tr
 	return transport.NewHTTPClientLeaseWithBaseURL(http.DefaultClient, baseURL, nil), nil
 }
 
+// PoolLogs reads the droplet's Docker daemon journal over SSH.
+//
+// DigitalOcean exposes no serial console log through its API, and cloud-init
+// installs the daemon as an ordinary systemd unit, so the journal is both the
+// available record and the useful one: a droplet that boots but never registers
+// a pool has almost always failed at "install and enable Docker".
+func (d *Driver) PoolLogs(ctx context.Context, poolID string, opts sandbox.PoolLogOptions) (*sandbox.PoolLogStream, error) {
+	droplet, err := d.findPoolDroplet(ctx, poolID)
+	if err != nil {
+		return nil, err
+	}
+	host := publicIPv4(droplet.Networks)
+	if host == "" {
+		return nil, fmt.Errorf("droplet for pool %s has no public IPv4 address yet", poolID)
+	}
+	return d.ssh.StreamCommand(ctx, sshdocker.Target{Host: host}, dockerworker.JournalCommand(opts),
+		"docker daemon journal (systemd) on droplet "+host)
+}
+
 func (d *Driver) findPoolDroplet(ctx context.Context, poolID string) (*droplet, error) {
 	if strings.TrimSpace(poolID) == "" {
 		return nil, sandbox.ErrNotFound

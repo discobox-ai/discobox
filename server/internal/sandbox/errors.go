@@ -33,6 +33,12 @@ var (
 	// ErrProjectCacheUnsupported indicates the provider does not support project
 	// cache clearing.
 	ErrProjectCacheUnsupported = errors.New("project cache clearing not supported by provider")
+
+	// ErrPoolLogsUnsupported indicates the backend hosting a pool keeps no log
+	// of its own that the driver can read. It is a runtime condition, not a
+	// missing implementation: the same driver answers on one host and declines
+	// on another, so the wrapping error carries the reason.
+	ErrPoolLogsUnsupported = errors.New("pool host logs are not available from this backend")
 )
 
 // PoolFailure reports that a pool has no capacity because its runtime FAILED,

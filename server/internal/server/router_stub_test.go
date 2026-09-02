@@ -34,6 +34,8 @@ type routerTestServices struct {
 	sandboxScopes  []string
 	console        *stubPoolConsole
 	consoleErr     error
+	poolLog        *stubPoolLog
+	poolLogErr     error
 }
 
 func newRouterTestServices() *routerTestServices {
@@ -741,6 +743,23 @@ func (s *routerTestServices) OpenPoolConsole(_ context.Context, projectID, poolI
 	s.console.poolID = poolID
 	s.console.openOpts = opts
 	return s.console, nil
+}
+
+// OpenPoolLogs hands out the stub log stream the test installed, so the logs
+// route can be exercised without a provider or a pool host.
+func (s *routerTestServices) OpenPoolLogs(_ context.Context, projectID, poolID string, opts sandbox.PoolLogOptions) (*sandbox.PoolLogStream, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.poolLogErr != nil {
+		return nil, s.poolLogErr
+	}
+	if s.poolLog == nil {
+		return nil, apperrors.NewStatusError(http.StatusNotFound, "pool not found")
+	}
+	s.poolLog.projectID = projectID
+	s.poolLog.poolID = poolID
+	s.poolLog.openOpts = opts
+	return &sandbox.PoolLogStream{Source: s.poolLog.source, ReadCloser: s.poolLog}, nil
 }
 
 func (s *routerTestServices) SetDefaultPool(ctx context.Context, projectID, poolID string) (*model.Project, error) {

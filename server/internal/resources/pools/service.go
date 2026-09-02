@@ -228,3 +228,40 @@ func (s *Service) OpenPoolConsole(ctx context.Context, projectID, poolID string,
 	}
 	return console, nil
 }
+
+// OpenPoolLogs reads what the pool's backend recorded about its host.
+//
+// It resolves the pool's provider the same way OpenPoolConsole does, and gates
+// on nothing for the same reason: a host log is read when the pool is broken.
+// What it adds is a status for the backends that keep no such record — that is
+// a settled answer about this provider, not a failure to reach the host, and an
+// operator should be told which of the two they got.
+func (s *Service) OpenPoolLogs(ctx context.Context, projectID, poolID string, opts sandbox.PoolLogOptions) (*sandbox.PoolLogStream, error) {
+	pool, err := s.store.GetPool(ctx, projectID, poolID)
+	if err != nil {
+		return nil, mapAPIError(err, "pool not found")
+	}
+	provider, err := s.store.GetSandboxProviderInstance(ctx, projectID, pool.ProviderInstanceID)
+	if err != nil {
+		return nil, mapAPIError(err, "pool provider instance not found")
+	}
+	if s.providers == nil {
+		return nil, apperrors.NewStatusError(http.StatusServiceUnavailable, "sandbox provider manager is not configured")
+	}
+	instance, err := s.providers.ResolveInstance(ctx, provider)
+	if err != nil {
+		return nil, err
+	}
+	runtime, ok := instance.(sandbox.PoolRuntime)
+	if !ok {
+		return nil, apperrors.NewStatusError(http.StatusNotImplemented, fmt.Sprintf("provider %q hosts no pool runtime to read host logs from", provider.Type))
+	}
+	stream, err := runtime.OpenLogs(ctx, provider, pool, opts)
+	if err != nil {
+		if errors.Is(err, sandbox.ErrPoolLogsUnsupported) {
+			return nil, apperrors.NewStatusError(http.StatusNotImplemented, err.Error())
+		}
+		return nil, err
+	}
+	return stream, nil
+}

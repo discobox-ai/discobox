@@ -298,6 +298,10 @@ func (stubPoolProvider) OpenConsole(context.Context, *model.SandboxProviderInsta
 	return nil, errors.New("no console in unit tests")
 }
 
+func (stubPoolProvider) OpenLogs(context.Context, *model.SandboxProviderInstance, *model.Pool, sandbox.PoolLogOptions) (*sandbox.PoolLogStream, error) {
+	return nil, errors.New("no host log in unit tests")
+}
+
 func (stubPoolProvider) Initialize(context.Context, *model.SandboxProviderInstance) error { return nil }
 func (stubPoolProvider) Close() error                                                     { return nil }
 func (stubPoolProvider) Definition() sandbox.ProviderDefinition {

@@ -81,6 +81,11 @@ type RuntimeProvider interface {
 	// the host runtime directly, not through the pool agent, so it answers on a
 	// host whose agent is exactly what refuses to come up.
 	OpenConsole(ctx context.Context, provider *model.SandboxProviderInstance, pool *model.Pool, opts sandbox.ConsoleOptions) (sandbox.PTY, error)
+	// OpenLogs reads what the backend recorded about the pool's host. It is the
+	// console's companion for a host that cannot be attached to at all: the
+	// console needs the host's Docker daemon, and this is what says why there
+	// isn't one.
+	OpenLogs(ctx context.Context, provider *model.SandboxProviderInstance, pool *model.Pool, opts sandbox.PoolLogOptions) (*sandbox.PoolLogStream, error)
 }
 
 // Provider is a sandbox provider backed by pool hosts.
@@ -246,6 +251,16 @@ func (p *Provider) OpenConsole(ctx context.Context, provider *model.SandboxProvi
 		return nil, fmt.Errorf("pool is required")
 	}
 	return p.runtimeProvider.OpenConsole(ctx, provider, pool, opts)
+}
+
+// OpenLogs reads the pool host's backend log. Like OpenConsole it consults no
+// pool state and waits for no capacity: the pool whose host log is worth
+// reading is the one that never became ready.
+func (p *Provider) OpenLogs(ctx context.Context, provider *model.SandboxProviderInstance, pool *model.Pool, opts sandbox.PoolLogOptions) (*sandbox.PoolLogStream, error) {
+	if pool == nil {
+		return nil, fmt.Errorf("pool is required")
+	}
+	return p.runtimeProvider.OpenLogs(ctx, provider, pool, opts)
 }
 
 func (p *Provider) Create(ctx context.Context, ref sandbox.SandboxRef, state []byte, opts sandbox.CreateOptions) (*sandbox.Sandbox, []byte, error) {

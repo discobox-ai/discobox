@@ -113,6 +113,29 @@ reads the reason instead of watching a websocket close, and it passes the
 terminal size on the open (`?rows=&cols=`) so the first prompt is drawn at the
 caller's size.
 
+### Pool Host Logs
+
+`/api/projects/{projectId}/pools/{poolId}/logs` is hand-wired for the same
+reason as the console and shares its authorization story, but it is a plain
+streaming `GET`: the bytes travel one way, so there is no framing and no
+websocket. `?tail=` bounds it and `?follow=true` keeps it open, and each write
+is flushed so a followed log arrives live rather than when the buffer fills.
+
+Two things are the handler's own:
+
+- The body is the host's log and nothing else. What was opened —
+  a guest serial console, a Docker daemon journal — is named on
+  `X-Discobox-Pool-Log-Source`, because there is no uniform pool host log
+  (`server/providers/DESIGN.md#pool-host-logs`) and the bytes alone do not say
+  which record they are. Errors after the first byte end the response rather
+  than appending an explanation into the log.
+- The client disconnecting closes the stream. That is what stops the driver —
+  a `journalctl` on the pool host, an SSH connection to a droplet — and a read
+  of an idle followed log blocks until the next line, which may never come, so
+  the handler cannot wait to notice on its next write.
+
+### Proxy Scopes and Authorization
+
 Proxy handlers must request the narrow worker-agent token scopes needed for the
 flow. The git proxy requests `sandbox:read` and `sandbox:write` because Git HTTP
 uses method and service-specific read/write behavior. The sandbox HTTP port

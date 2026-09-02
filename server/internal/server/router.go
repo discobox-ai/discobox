@@ -90,6 +90,7 @@ func NewRouter(svc services.Services) (*chi.Mux, error) {
 	registerSandboxAgentTerminalRoutes(router, svc.Sandboxes)
 	registerSandboxTCPRoutes(router, svc.Sandboxes)
 	registerPoolConsoleRoutes(router, svc.Pools)
+	registerPoolLogsRoutes(router, svc.Pools)
 	generated, err := handlers.NewServer(svc)
 	if err != nil {
 		return nil, err
@@ -182,6 +183,7 @@ func NewApp(ctx context.Context, writeDB, readDB *gorm.DB, options ...AppOptions
 	registerSandboxAgentTerminalRoutes(router, appServices)
 	registerSandboxTCPRoutes(router, appServices)
 	registerPoolConsoleRoutes(router, appServices)
+	registerPoolLogsRoutes(router, appServices)
 	generated, err := handlers.NewServer(svc)
 	if err != nil {
 		return nil, services.Services{}, nil, nil, err

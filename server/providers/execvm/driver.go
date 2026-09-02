@@ -23,8 +23,17 @@
 //	                 unix:///path, tcp://host:port, or ssh://[user@]host[:port]
 //	                 (ssh endpoints use the provider's configured private key).
 //	harness-endpoint   One line: http(s)://host:port of the worker-agent API.
+//	logs             Whatever the backend records about the VM's host: its
+//	                 serial console, its daemon journal. stdout and stderr are
+//	                 streamed to the operator as they are written, with
+//	                 DISCOBOX_LOG_TAIL set to the requested line count (0 for
+//	                 all) and DISCOBOX_LOG_FOLLOW set to true when the command
+//	                 should keep streaming instead of ending. A backend with no
+//	                 log to give should explain that on stderr and exit
+//	                 non-zero; the explanation is what the operator reads.
 //
-// A non-zero exit is an error and stderr is included in the failure message.
+// A non-zero exit is an error and stderr is included in the failure message,
+// except for logs, whose output has already been streamed.
 // The engine owns Docker readiness waiting, so ensure-vm may return before
 // the VM's Docker daemon is up.
 package execvm
@@ -38,6 +47,7 @@ import (
 	"net/http"
 	"os"
 	"os/exec"
+	"strconv"
 	"strings"
 
 	sandbox "github.com/discobox-ai/discobox/server/internal/sandbox"
@@ -53,6 +63,7 @@ const (
 	opDeleteVM       = "delete-vm"
 	opDockerEndpoint = "docker-endpoint"
 	opAgentEndpoint  = "harness-endpoint"
+	opLogs           = "logs"
 
 	// notFoundExitCode is the documented inspect-vm exit code for "no VM".
 	notFoundExitCode = 3
@@ -170,14 +181,27 @@ func (d *Driver) AcquirePoolAgentClient(ctx context.Context, poolID string) (*tr
 	return transport.NewHTTPClientLeaseWithBaseURL(http.DefaultClient, endpoint, nil), nil
 }
 
+// PoolLogs streams the backend's own log command.
+//
+// It is the one operation whose output is not collected and parsed: a log is
+// unbounded and, when followed, never ends, so the command's stdout is the
+// stream the operator reads rather than a value this driver interprets.
+func (d *Driver) PoolLogs(ctx context.Context, poolID string, opts sandbox.PoolLogOptions) (*sandbox.PoolLogStream, error) {
+	if strings.TrimSpace(poolID) == "" {
+		return nil, errors.New("pool ID is required")
+	}
+	cmd := d.newCommand(ctx, opLogs, poolID,
+		"DISCOBOX_LOG_TAIL="+strconv.Itoa(opts.Tail),
+		"DISCOBOX_LOG_FOLLOW="+strconv.FormatBool(opts.Follow),
+	)
+	return dockerworker.StreamCommand(cmd, "exec driver "+d.command[0]+" "+opLogs)
+}
+
 func (d *Driver) run(ctx context.Context, op, poolID string, extraEnv ...string) ([]byte, error) {
 	if strings.TrimSpace(poolID) == "" {
 		return nil, errors.New("worker ID is required")
 	}
-	args := append(append([]string(nil), d.command[1:]...), op, poolID)
-	cmd := exec.CommandContext(ctx, d.command[0], args...) //nolint:gosec // Running an operator-configured command is this driver's purpose; it comes from provider config, not request input.
-	cmd.Env = append(os.Environ(), "DISCOBOX_POOL_ID="+poolID)
-	cmd.Env = append(cmd.Env, extraEnv...)
+	cmd := d.newCommand(ctx, op, poolID, extraEnv...)
 	var stdout, stderr bytes.Buffer
 	cmd.Stdout = newLimitedWriter(&stdout)
 	cmd.Stderr = newLimitedWriter(&stderr)
@@ -194,6 +218,15 @@ func (d *Driver) run(ctx context.Context, op, poolID string, extraEnv ...string)
 		message = err.Error()
 	}
 	return nil, fmt.Errorf("exec driver %s %s failed: %s", d.command[0], op, message)
+}
+
+// command builds one invocation of the configured backend command.
+func (d *Driver) newCommand(ctx context.Context, op, poolID string, extraEnv ...string) *exec.Cmd {
+	args := append(append([]string(nil), d.command[1:]...), op, poolID)
+	cmd := exec.CommandContext(ctx, d.command[0], args...) //nolint:gosec // Running an operator-configured command is this driver's purpose; it comes from provider config, not request input.
+	cmd.Env = append(os.Environ(), "DISCOBOX_POOL_ID="+poolID)
+	cmd.Env = append(cmd.Env, extraEnv...)
+	return cmd
 }
 
 func parseVMInfo(op string, out []byte) (*dockerworker.VMInfo, error) {

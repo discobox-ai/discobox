@@ -36,6 +36,11 @@ const (
 
 	gracefulStopTimeout = 30 * time.Second
 	forcedStopTimeout   = 15 * time.Second
+
+	// consoleLogName is where the guest's serial console is appended, in the
+	// pool's state directory. It survives the VM, which is the point: the boot
+	// worth reading is the one that did not finish.
+	consoleLogName = "console.log"
 )
 
 var validPoolID = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9_.-]{0,127}$`)
@@ -189,7 +194,7 @@ func (d *Driver) EnsureVM(ctx context.Context, poolID string, _ dockerworker.VMS
 		RootImagePath:  bundle.Path(rootArtifact),
 		DataImagePath:  dataDisk,
 		CacheImagePath: cacheDisk,
-		ConsoleLogPath: filepath.Join(stateDir, "console.log"),
+		ConsoleLogPath: filepath.Join(stateDir, consoleLogName),
 	})
 	if err != nil {
 		return nil, fmt.Errorf("start vz VM for pool %s: %w", poolID, err)
@@ -303,6 +308,27 @@ func (d *Driver) AcquirePoolAgentClient(_ context.Context, poolID string) (*tran
 	}
 	client := &http.Client{Transport: httpTransport}
 	return transport.NewHTTPClientLeaseWithBaseURL(client, "http://pool.local", httpTransport.CloseIdleConnections), nil
+}
+
+// PoolLogs reads the guest's serial console, which the VM appends to a file in
+// the pool's state directory across every boot.
+//
+// It is deliberately a file rather than the live console device: the log an
+// operator needs is the one from the boot that failed, and a guest that panics
+// before its Docker daemon starts leaves nothing else behind at all.
+func (d *Driver) PoolLogs(ctx context.Context, poolID string, opts sandbox.PoolLogOptions) (*sandbox.PoolLogStream, error) {
+	if err := validatePoolID(poolID); err != nil {
+		return nil, err
+	}
+	path := filepath.Join(d.poolStateDir(poolID), consoleLogName)
+	stream, err := dockerworker.TailFile(ctx, path, opts)
+	if err != nil {
+		if errors.Is(err, os.ErrNotExist) {
+			return nil, fmt.Errorf("pool %s has no vz console log yet: its VM has not been started on this host", poolID)
+		}
+		return nil, err
+	}
+	return &sandbox.PoolLogStream{Source: "vz guest serial console", ReadCloser: stream}, nil
 }
 
 // ensureDisks creates the pool's durable and disposable disks if they are

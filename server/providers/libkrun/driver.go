@@ -33,6 +33,10 @@ const (
 	gracefulStopTimeout  = 10 * time.Second
 	forcedStopTimeout    = 5 * time.Second
 	maxUnixSocketPath    = 103
+
+	// consoleLogName is where the launcher appends the guest's serial console,
+	// in the pool's runtime directory.
+	consoleLogName = "console.log"
 )
 
 var validPoolID = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9_.-]{0,127}$`)
@@ -296,6 +300,27 @@ func (d *Driver) AcquirePoolAgentClient(_ context.Context, poolID string) (*tran
 	return transport.NewHTTPClientLeaseWithBaseURL(client, "http://pool.local", httpTransport.CloseIdleConnections), nil
 }
 
+// PoolLogs reads the guest's serial console, which the launcher appends to a
+// file in the pool's runtime directory.
+//
+// The console is what a microVM has instead of a place to log in: a guest that
+// never brings its Docker daemon up has no socket to reach and no agent to ask,
+// and the kernel messages here are the only account of why.
+func (d *Driver) PoolLogs(ctx context.Context, poolID string, opts sandbox.PoolLogOptions) (*sandbox.PoolLogStream, error) {
+	if err := validatePoolID(poolID); err != nil {
+		return nil, err
+	}
+	path := filepath.Join(d.poolRuntimeDir(poolID), consoleLogName)
+	stream, err := dockerworker.TailFile(ctx, path, opts)
+	if err != nil {
+		if errors.Is(err, os.ErrNotExist) {
+			return nil, fmt.Errorf("pool %s has no libkrun console log yet: its VM has not been started on this host", poolID)
+		}
+		return nil, err
+	}
+	return &sandbox.PoolLogStream{Source: "libkrun guest serial console", ReadCloser: stream}, nil
+}
+
 func (d *Driver) inspectVM(poolID string) (*dockerworker.VMInfo, error) {
 	stateExists := regularFileExists(filepath.Join(d.poolStateDir(poolID), "data.raw"))
 	identity, identityErr := readProcessIdentity(filepath.Join(d.poolRuntimeDir(poolID), "launcher.json"))
@@ -343,7 +368,7 @@ func (d *Driver) launcherManifest(poolID, dataDisk, cacheDisk string) launcherCo
 		DataDisk:    dataDisk,
 		CacheDisk:   cacheDisk,
 		PasstSocket: filepath.Join(runtimeDir, "passt.sock"),
-		ConsoleLog:  filepath.Join(runtimeDir, "console.log"),
+		ConsoleLog:  filepath.Join(runtimeDir, consoleLogName),
 		VCPUs:       d.vcpus,
 		MemoryMiB:   d.memoryMiB,
 		MACAddress:  macAddress(poolID),

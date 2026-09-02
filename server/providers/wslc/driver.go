@@ -277,6 +277,35 @@ func (d *Driver) AcquirePoolAgentClient(_ context.Context, poolID string) (*tran
 	return transport.NewHTTPClientLeaseWithBaseURL(client, "http://pool.local", httpTransport.CloseIdleConnections), nil
 }
 
+// PoolLogs reads the guest's own account of itself, by running a log command
+// inside it.
+//
+// A wslc VM has no serial console the host can capture — the WSL Containers
+// platform owns the guest's boot — so the log is read from inside, over the
+// same session that starts every other guest process. That means it answers
+// only for a VM that came up far enough to run a shell; a VM that never got
+// that far is a session failure, reported as such by EnsureVM. Whether the
+// guest keeps a journal at all is not known here, so the command falls back to
+// the kernel ring buffer, which it always has.
+func (d *Driver) PoolLogs(_ context.Context, poolID string, opts sandbox.PoolLogOptions) (*sandbox.PoolLogStream, error) {
+	session, err := d.session(poolID)
+	if err != nil {
+		return nil, err
+	}
+	// stderr is folded into stdout because a guest process exposes only the two
+	// standard handles here, and the reason a journal is missing is written to
+	// stderr.
+	command := strings.Join(dockerworker.JournalCommand(opts), " ") + " 2>&1 || dmesg 2>&1"
+	conn, err := session.StartProcess("/bin/sh", []string{"/bin/sh", "-c", command})
+	if err != nil {
+		return nil, err
+	}
+	return &sandbox.PoolLogStream{
+		Source:     "wslc guest journal (docker), or its kernel ring buffer",
+		ReadCloser: conn,
+	}, nil
+}
+
 func (d *Driver) session(poolID string) (*wslcsession.Session, error) {
 	if err := validatePoolID(poolID); err != nil {
 		return nil, err

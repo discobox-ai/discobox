@@ -179,6 +179,7 @@ type testRuntimeProvider struct {
 	acquireErrs  []error
 	acquireCalls int
 	consoleCalls int
+	logCalls     int
 
 	mu        sync.Mutex
 	preloaded []string
@@ -215,6 +216,11 @@ func (p *testRuntimeProvider) StageImages(_ context.Context, _ *model.Pool, imag
 func (p *testRuntimeProvider) OpenConsole(context.Context, *model.SandboxProviderInstance, *model.Pool, sandbox.ConsoleOptions) (sandbox.PTY, error) {
 	p.consoleCalls++
 	return nil, errors.New("no console in unit tests")
+}
+
+func (p *testRuntimeProvider) OpenLogs(context.Context, *model.SandboxProviderInstance, *model.Pool, sandbox.PoolLogOptions) (*sandbox.PoolLogStream, error) {
+	p.logCalls++
+	return nil, errors.New("no host log in unit tests")
 }
 
 func (p *testRuntimeProvider) AcquirePoolAgentClient(context.Context, *model.Pool) (*transport.HTTPClientLease, error) {

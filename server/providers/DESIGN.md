@@ -84,6 +84,8 @@ the engine":
   container's published loopback port locally, `http://<public-ip>:<agent
   port>` for cloud VMs, or VSOCK terminated at a private Unix socket for local
   libkrun VMs.
+- `PoolLogs`: the backend's own record of the host — see
+  [Pool Host Logs](#pool-host-logs).
 
 The engine owns Docker readiness waiting after `EnsureVM` (ping with a
 deadline), so drivers never implement boot polling.
@@ -274,6 +276,44 @@ The host filesystem is bound at the daemon's default (private) propagation.
 the daemon refuses it unless `/` is already shared or slave, which it is not on
 a stock host or a WSL distro. The console shares the host PID namespace, so
 `nsenter -t 1 -a` reaches the host's live mount table anyway.
+
+## Pool Host Logs
+
+`sandbox.PoolRuntime.OpenLogs` is the console's companion for a host that
+cannot be attached to at all. The console needs the host's Docker daemon; this
+is what says why there isn't one. It is served at the control-plane edge (see
+[server](../DESIGN.md#pool-host-logs)) and reaches the driver through
+`RuntimeProvider.OpenLogs`, which the engine passes straight to
+`Driver.PoolLogs` — the engine owns Docker, and the log worth reading here is
+the one from underneath it.
+
+There is no uniform pool host log, so the driver names what it opened and the
+stream carries that description to the operator:
+
+| Driver | Log | How |
+| --- | --- | --- |
+| `vz`, `libkrun` | guest serial console | the file the VM appends across every boot, in the pool's state (vz) or runtime (libkrun) directory |
+| `docker` | Docker daemon journal | `journalctl` on the control plane's own machine |
+| `digitalocean` | droplet's Docker daemon journal | `journalctl` over the SSH connection the driver already uses for Docker (`sshdocker.Dialer.StreamCommand`) |
+| `wslc` | guest journal, else its kernel ring buffer | a guest process over the session, since the platform owns the guest's boot and the host captures no console |
+| `execvm` | whatever the command prints | a `logs` operation, streamed rather than collected |
+
+Three properties are load-bearing:
+
+- **The VM drivers read a file, not a live device.** The boot an operator needs
+  is usually the one that ended, and a guest that panics before Docker starts
+  leaves nothing else behind. Tailing (`dockerworker.TailFile`) scans backwards
+  from the end, so a console log spanning weeks costs one read of its tail.
+- **The docker driver declines rather than substituting.** Its "VM" is a
+  machine, and a daemon reached over `tcp://` or `ssh://` keeps its journal on
+  that machine, not this one. It checks the daemon is local and that
+  `journalctl` exists, and otherwise returns `sandbox.ErrPoolLogsUnsupported`
+  with the reason — an empty stream would read as a host with nothing to say.
+  A daemon on this machine that keeps no journal answers with journalctl's own
+  explanation, because stderr is part of the stream.
+- **A non-zero exit ends the stream, it does not replace it.** The tools being
+  run explain themselves on stderr, which is merged in, so what they said has
+  already reached the operator by the time they fail.
 
 ## Pool Runtime Drift
 
