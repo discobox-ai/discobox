@@ -687,6 +687,28 @@ console's shell is started by the server before the session's own resize
 tracking has said anything, and a first prompt drawn at 80x24 would then be
 repainted.
 
+## Pool Host Logs
+
+`discobox admin pool logs [POOL_ID]` prints what that pool's backend recorded
+about its host — a guest's serial console, a Docker daemon's journal, whatever a
+scripted backend prints — with `--tail` and `--follow`. It is the console's
+companion for a host with no shell to attach to: the console needs the host's
+Docker daemon, and this is what says why there isn't one.
+
+It shares none of the attach machinery, because there is nothing to attach to:
+it is a plain streaming `GET` copied to stdout. Two details make it usable as a
+tool rather than only as a screenful:
+
+- The log goes to stdout and everything the CLI has to say goes to stderr, so
+  `discobox admin pool logs > console.txt` captures the host's log and nothing
+  else. What the backend actually opened is named on that stderr line, since
+  there is no uniform pool host log
+  (`server/providers/DESIGN.md#pool-host-logs`) and the bytes do not say which
+  record they are.
+- `--tail` defaults to 200 rather than to everything. A guest console log spans
+  every boot the pool has ever had, and the operator running this almost always
+  means the most recent one; `--tail 0` asks for the whole thing.
+
 ## SSH Keys and Config (ADR 0024)
 
 `discobox admin ssh-key` and `discobox admin ssh-config` are the CLI-side counterpart
