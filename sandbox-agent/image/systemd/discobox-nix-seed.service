@@ -1,6 +1,7 @@
 [Unit]
 Description=Seed /nix from the image's pristine store on first use
 Documentation=https://github.com/discobox-ai/discobox/blob/main/docs/adr/0075-the-nix-store-is-a-pool-shared-cache-seeded-on-first-use.md
+Documentation=https://github.com/discobox-ai/discobox/blob/main/docs/adr/0085-the-nix-seed-stamp-names-the-store-that-seeded-it.md
 # Never enabled. nix-daemon.service requires this unit and nix-daemon is
 # socket-activated, so a sandbox that never runs nix never starts it. The PATH
 # shims under /usr/local/bin start it directly, for the window before there is
@@ -9,7 +10,11 @@ ConditionPathExists=/usr/local/lib/discobox/nix
 
 [Service]
 Type=oneshot
-RemainAfterExit=yes
+# Deliberately not RemainAfterExit: a run that is already up to date is two
+# small file reads under a flock (ADR 0085), and staying active would make
+# every later `systemctl start` from a shim an instant no-op -- including the
+# one asking to recover a store the last run left half-matching its profiles.
+# Concurrent starts still collapse; systemd joins the caller to the running job.
 ExecStart=/usr/local/libexec/discobox/nix-seed
 # A cold pool copies the whole store across a filesystem boundary, which is
 # gigabytes and well past systemd's default start timeout.

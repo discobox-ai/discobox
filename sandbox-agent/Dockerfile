@@ -165,12 +165,29 @@ RUN set -eux; \
     systemctl enable nix-daemon.socket; \
     nix profile install nixpkgs#devenv nixpkgs#bashInteractive; \
     devenv --version; \
+    # ADR 0085: the stamp that guards the seed names the store it was cut
+    # from, and a pool cache that already holds another build's store merges
+    # this one in instead of overwriting the database that pool has been
+    # writing to. Both need facts only the build knows, recorded beside the
+    # seed rather than inside it: the store's identity -- a hash of its own
+    # content hashes, so an identical rebuild re-seeds nobody -- the /nix path
+    # of the nix-store binary this store delivers, and a dump of the database
+    # rows that say which paths it registered.
+    install -d -m 0755 /usr/local/lib/discobox; \
+    { \
+        echo "SEED_ID=$(LC_ALL=C ls -1 /nix/store | sha256sum | cut -d' ' -f1)"; \
+        # The profile's store path plus the name, not `readlink -f` of the
+        # binary: nix is one multi-call executable that dispatches on
+        # argv[0], so resolving the link lands on `bin/nix` and loses the
+        # nix-store personality along with `--load-db`.
+        echo "SEED_NIX_STORE=$(readlink -f /nix/var/nix/profiles/default)/bin/nix-store"; \
+    } > /usr/local/lib/discobox/nix-seed.env; \
+    nix-store --dump-db > /usr/local/lib/discobox/nix-db.dump; \
     # ADR 0075: the store ships aside as a seed and /nix is left empty, so the
     # pool-shared cache volume can bind over it without hiding image content.
     # discobox-nix-seed.service copies it back on first use. The mv must stay
     # in this layer -- moving it in a later one copies the whole store up into
     # that layer and doubles the image instead of renaming a directory.
-    install -d -m 0755 /usr/local/lib/discobox; \
     mv /nix /usr/local/lib/discobox/nix; \
     mkdir -m 0755 /nix
 

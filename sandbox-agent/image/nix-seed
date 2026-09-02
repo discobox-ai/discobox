@@ -7,25 +7,40 @@
 # nix-daemon.service requires, and nix-daemon is socket-activated, so a sandbox
 # that never touches nix never copies a byte.
 #
-# Two scopes, two guards:
+# Two scopes, two stamps:
 #
-#   store + db  -> /nix, the pool-shared cache. Copied once per pool, under a
-#                  flock on the cache filesystem so the second sandbox to ask
-#                  blocks, then finds the stamp and exits.
+#   store + db  -> /nix, the pool-shared cache. Copied under a flock on the
+#                  cache filesystem, so the second sandbox to ask blocks and
+#                  then finds nothing to do.
 #   profiles +  -> per-sandbox data volumes mounted inside /nix. A sandbox
 #   gcroots        joining an already-seeded cache still has no default
 #                  profile of its own, so this half is guarded separately.
 #
-# Both stamps are written last, so a copy killed midway is never mistaken for a
-# finished one: the next run takes the lock, finds no stamp, and redoes it.
+# Each stamp lists the seed stores merged into its scope, one id per line, and
+# an id is appended only after that copy finishes (ADR 0085). Two consequences,
+# both load-bearing:
+#
+#   - a copy killed midway is never mistaken for a finished one -- the next run
+#     takes the lock, does not find its id, and redoes it;
+#   - a pool cache seeded by an older image build is re-seeded rather than
+#     trusted, so a rebuilt image cannot leave a sandbox pointing at store
+#     paths that only exist in the image it was built from.
 set -euo pipefail
 
 SEED=/usr/local/lib/discobox/nix
+# Written beside the seed at image build time: SEED_ID, the identity of the
+# store below, and SEED_NIX_STORE, the /nix path of the nix-store binary that
+# store delivers.
+SEED_ENV=/usr/local/lib/discobox/nix-seed.env
+# `nix-store --dump-db` of the seed's database, taken at build time from the
+# store the image is about to move aside.
+SEED_DB_DUMP=/usr/local/lib/discobox/nix-db.dump
 LOCK=/nix/.discobox-seed.lock
 CACHE_STAMP=/nix/.discobox-seeded
 # Outside /nix on purpose: /var/lib/discobox is a per-sandbox data volume, and
 # nothing that scans a nix directory can mistake it for a profile or a gcroot.
 SANDBOX_STAMP=/var/lib/discobox/nix-seeded
+CACHE_DB=/nix/var/nix/db/db.sqlite
 
 log() { echo "discobox-nix-seed: $*"; }
 
@@ -34,6 +49,13 @@ if [ ! -d "$SEED" ]; then
     exit 0
 fi
 
+if [ ! -r "$SEED_ENV" ]; then
+    log "seed store at $SEED has no $SEED_ENV; image is incomplete" >&2
+    exit 1
+fi
+# shellcheck source=/dev/null
+. "$SEED_ENV"
+
 # Merge-copy that tolerates directories the boot flow or systemd already made
 # at the destination -- /nix/var/nix/daemon-socket exists before this runs,
 # because nix-daemon.socket is what activated us.
@@ -41,35 +63,70 @@ copy_tree() {
     local src=$1 dst=$2
     shift 2
     mkdir -p "$dst"
-    tar -C "$src" -cf - "$@" . | tar -C "$dst" -xf -
+    tar -C "$src" -cf - "$@" | tar -C "$dst" -xf -
+}
+
+stamped() {
+    local stamp=$1
+    [ -e "$stamp" ] && grep -Fxq "$SEED_ID" "$stamp"
+}
+
+stamp() {
+    local stamp=$1
+    mkdir -p "$(dirname "$stamp")"
+    printf '%s\n' "$SEED_ID" >> "$stamp"
+}
+
+# Registers the seed's store paths in the cache's database. Only the warm path
+# needs this: a cold cache takes the seed's db.sqlite whole, while a populated
+# one owns rows for everything the pool has built or substituted since, which a
+# file copy would throw away and swap out from under other sandboxes' daemons.
+register_paths() {
+    if [ ! -r "$SEED_DB_DUMP" ]; then
+        log "no database dump at $SEED_DB_DUMP; image is incomplete" >&2
+        return 1
+    fi
+    if [ ! -x "$SEED_NIX_STORE" ]; then
+        log "$SEED_NIX_STORE is missing from the store just copied" >&2
+        return 1
+    fi
+    # The daemon is not up yet -- this unit is what nix-daemon.service waits
+    # for -- and NIX_REMOTE=daemon is in the image environment systemd inherits.
+    env -u NIX_REMOTE "$SEED_NIX_STORE" --load-db < "$SEED_DB_DUMP"
 }
 
 seed_store() {
-    if [ -e "$CACHE_STAMP" ]; then
+    if stamped "$CACHE_STAMP"; then
         return 0
     fi
-    log "seeding the nix store from $SEED (first use in this pool)"
-    # profiles and gcroots are separate per-sandbox mounts inside this tree;
-    # seed_sandbox owns them, so the shared copy must not write through them.
-    copy_tree "$SEED" /nix \
-        --exclude=./var/nix/profiles \
-        --exclude=./var/nix/gcroots
-    : > "$CACHE_STAMP"
+    if [ -e "$CACHE_DB" ]; then
+        # profiles and gcroots are separate per-sandbox mounts inside this
+        # tree, and var/nix/db is the pool's own state. Only the store merges.
+        log "merging seed store $SEED_ID into the pool cache"
+        copy_tree "$SEED" /nix ./store
+        register_paths
+    else
+        log "seeding the nix store from $SEED (first use in this pool)"
+        copy_tree "$SEED" /nix \
+            --exclude=./var/nix/profiles \
+            --exclude=./var/nix/gcroots \
+            .
+    fi
+    stamp "$CACHE_STAMP"
     log "store seeded"
 }
 
 seed_sandbox() {
-    if [ -e "$SANDBOX_STAMP" ]; then
+    if stamped "$SANDBOX_STAMP"; then
         return 0
     fi
     local name
     for name in profiles gcroots; do
         if [ -d "$SEED/var/nix/$name" ]; then
-            copy_tree "$SEED/var/nix/$name" "/nix/var/nix/$name"
+            copy_tree "$SEED/var/nix/$name" "/nix/var/nix/$name" .
         fi
     done
-    mkdir -p "$(dirname "$SANDBOX_STAMP")"
-    : > "$SANDBOX_STAMP"
+    stamp "$SANDBOX_STAMP"
     log "per-sandbox nix profiles seeded"
 }
 
