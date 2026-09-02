@@ -1,6 +1,7 @@
 # 0021 — Upgrade is a desired-state re-pin, and replacing a container preserves its power state
 
 - **Status**: Accepted
+- **§2 superseded by**: [0082](0082-a-stopped-sandbox-tracks-its-harness-image.md) — a stopped sandbox is re-pinned when its harness image moves. §§1, 3-5 stand.
 - **Date**: 2026-08-06
 - **Supersedes**: [ADR 0016](0016-sandbox-image-upgrades-are-explicit-and-in-place.md)
   §§4–5. §§1–3 and §§6–8 stand.
