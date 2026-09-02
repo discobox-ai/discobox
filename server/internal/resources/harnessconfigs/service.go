@@ -117,7 +117,7 @@ func (s *Service) CreateHarnessConfig(ctx context.Context, projectID string, inp
 	// No check that a run command came back, either: an image that declares
 	// none runs the sandbox user's login shell, which the sandbox resolves for
 	// itself (ADR 0043). The label validator already rejects a blank one.
-	runCommand, relaunchCommand, configCommand, files, secrets, env, volumes, additionalGroups := harnessMetadataFields(inspected.ImageMetadata)
+	runCommand, relaunchCommand, configCommand, configReminder, files, secrets, env, volumes, additionalGroups := harnessMetadataFields(inspected.ImageMetadata)
 
 	config := &model.HarnessConfig{
 		ProjectID:        projectID,
@@ -128,6 +128,7 @@ func (s *Service) CreateHarnessConfig(ctx context.Context, projectID string, inp
 		RunCommand:       runCommand,
 		RelaunchCommand:  relaunchCommand,
 		ConfigCommand:    configCommand,
+		ConfigReminder:   configReminder,
 		Files:            files,
 		Secrets:          secrets,
 		Env:              env,
@@ -209,10 +210,11 @@ func (s *Service) RefreshHarnessConfigImage(ctx context.Context, projectID, conf
 	if err != nil {
 		return nil, apperrors.NewStatusError(http.StatusBadRequest, err.Error())
 	}
-	runCommand, relaunchCommand, configCommand, files, secrets, env, volumes, additionalGroups := harnessMetadataFields(metadata.ImageMetadata)
+	runCommand, relaunchCommand, configCommand, configReminder, files, secrets, env, volumes, additionalGroups := harnessMetadataFields(metadata.ImageMetadata)
 	previousDigest := config.ImageDigest
 	config.ImageDigest = metadata.Digest
 	config.RunCommand, config.RelaunchCommand, config.ConfigCommand = runCommand, relaunchCommand, configCommand
+	config.ConfigReminder = configReminder
 	config.Files, config.Secrets, config.Env, config.Volumes = files, secrets, env, volumes
 	config.AdditionalGroups = additionalGroups
 	if err := s.store.UpdateHarnessConfig(ctx, config); err != nil {
@@ -408,7 +410,7 @@ func (s *Service) SeedBuiltIns(ctx context.Context, projectID string) error {
 				ProjectID: projectID, Slug: seed.Slug, Name: seed.Name,
 				BuiltIn: true, Image: image, ImageDigest: metadata.Digest,
 			}
-			config.RunCommand, config.RelaunchCommand, config.ConfigCommand, config.Files, config.Secrets, config.Env, config.Volumes, config.AdditionalGroups = harnessMetadataFields(metadata.ImageMetadata)
+			config.RunCommand, config.RelaunchCommand, config.ConfigCommand, config.ConfigReminder, config.Files, config.Secrets, config.Env, config.Volumes, config.AdditionalGroups = harnessMetadataFields(metadata.ImageMetadata)
 			// Born configured when there is nothing to collect. `shell` is the
 			// harness that lands here, but by declaring no secrets rather than
 			// by being itself: a fresh project has to be usable before anyone
@@ -425,7 +427,7 @@ func (s *Service) SeedBuiltIns(ctx context.Context, projectID string) error {
 		previousDigest := existing.ImageDigest
 		existing.Image = image
 		existing.ImageDigest = metadata.Digest
-		existing.RunCommand, existing.RelaunchCommand, existing.ConfigCommand, existing.Files, existing.Secrets, existing.Env, existing.Volumes, existing.AdditionalGroups = harnessMetadataFields(metadata.ImageMetadata)
+		existing.RunCommand, existing.RelaunchCommand, existing.ConfigCommand, existing.ConfigReminder, existing.Files, existing.Secrets, existing.Env, existing.Volumes, existing.AdditionalGroups = harnessMetadataFields(metadata.ImageMetadata)
 		if err := s.store.UpdateHarnessConfig(ctx, existing); err != nil {
 			return err
 		}
@@ -445,15 +447,16 @@ func (s *Service) seeds() []harnessdefs.Seed {
 
 // harnessMetadataFields snapshots the mutable config fields declared by a
 // harness image's label metadata.
-func harnessMetadataFields(metadata harness.ImageMetadata) (runCommand, relaunchCommand, configCommand []string, files []model.HarnessConfigFile, secrets []model.HarnessConfigSecret, env map[string]string, volumes []harness.Volume, additionalGroups []string) {
+func harnessMetadataFields(metadata harness.ImageMetadata) (runCommand, relaunchCommand, configCommand []string, configReminder string, files []model.HarnessConfigFile, secrets []model.HarnessConfigSecret, env map[string]string, volumes []harness.Volume, additionalGroups []string) {
 	image := metadata.Harness
 	if image == nil {
-		return nil, nil, nil, nil, nil, nil, nil, nil
+		return nil, nil, nil, "", nil, nil, nil, nil, nil
 	}
 	runCommand = append([]string{}, image.RunCommand...)
 	relaunchCommand = append([]string{}, image.RelaunchCommand...)
 	if image.Config != nil {
 		configCommand = append([]string{}, image.Config.Command...)
+		configReminder = strings.TrimSpace(image.Config.Reminder)
 	}
 	files = make([]model.HarnessConfigFile, 0, len(image.Files))
 	for _, file := range image.Files {
@@ -477,7 +480,7 @@ func harnessMetadataFields(metadata harness.ImageMetadata) (runCommand, relaunch
 	}
 	volumes = append([]harness.Volume{}, metadata.Volumes...)
 	additionalGroups = append([]string{}, metadata.AdditionalGroups...)
-	return runCommand, relaunchCommand, configCommand, files, secrets, env, volumes, additionalGroups
+	return runCommand, relaunchCommand, configCommand, configReminder, files, secrets, env, volumes, additionalGroups
 }
 
 func apiError(err error, notFoundMessage string) error {

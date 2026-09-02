@@ -305,6 +305,9 @@ type Harness struct {
 	// credentials to collect — and neither enabling nor disabling applies to
 	// one, since the server refuses both.
 	Configurable bool
+	// ConfigReminder is harness-authored guidance shown outside its configure
+	// terminal, so the terminal itself cannot be mistaken for a normal session.
+	ConfigReminder string
 	// Error is why the configure flow did not finish, when it did not.
 	Error string
 
@@ -1070,10 +1073,9 @@ type DataSource interface {
 	// DoHarness runs a lifecycle verb against one harness.
 	DoHarness(ctx context.Context, verb HarnessVerb, harnessID string) error
 
-	// ConfigureHarness runs the harness's own interactive setup with the real
-	// terminal's streams. The window is suspended for the duration: the flow
-	// asks questions and the harness draws its own screen to ask them on.
-	ConfigureHarness(ctx context.Context, harnessID string, stdin io.Reader, stdout, stderr io.Writer) error
+	// OpenHarnessConfigure starts the harness's interactive setup on a terminal
+	// the window draws in a dedicated configuration pane.
+	OpenHarnessConfigure(ctx context.Context, harnessID string, cols, rows int) (Terminal, error)
 
 	// EditHarnessFile opens one of the harness's files in the user's editor and
 	// saves what it wrote back, reporting whether anything changed. The window

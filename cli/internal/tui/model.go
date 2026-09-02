@@ -657,6 +657,9 @@ func (m *Model) update(msg tea.Msg) tea.Cmd {
 	case paneOpenedMsg:
 		return m.paneOpened(msg)
 
+	case configurePaneOpenedMsg:
+		return m.configurePaneOpened(msg)
+
 	case workspaceExecsMsg:
 		return m.workspaceExecs(msg)
 

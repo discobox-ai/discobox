@@ -316,6 +316,7 @@ func TestSeedBuiltInsClobbersImageAndKeepsConfigured(t *testing.T) {
 	inspector := &stubInspector{byImage: map[string]imageMetadata{
 		newImage: {Digest: "sha256:new", ImageMetadata: harness.ImageMetadata{Harness: &harness.Image{
 			ID: "codex", Name: "Codex", RunCommand: []string{"codex", "--new"},
+			Config: &harness.ImageMode{Command: []string{"configure"}, Reminder: "Log in, then exit."},
 		}}},
 	}}
 	svc := &Service{store: st, inspector: inspector, harnessImages: map[string]string{"codex": newImage}}
@@ -332,6 +333,9 @@ func TestSeedBuiltInsClobbersImageAndKeepsConfigured(t *testing.T) {
 	}
 	if len(got.RunCommand) != 2 || got.RunCommand[1] != "--new" {
 		t.Fatalf("runCommand = %v, want re-snapshotted from the new label", got.RunCommand)
+	}
+	if got.ConfigReminder != "Log in, then exit." {
+		t.Fatalf("config reminder = %q, want re-snapshotted image guidance", got.ConfigReminder)
 	}
 	// Re-imaging must not silently unconfigure a working harness.
 	if !got.Configured || len(got.ConfiguredFiles) != 1 {

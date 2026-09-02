@@ -18,6 +18,9 @@ func TestImageLaunchesClaudeWithSourceScopedMemory(t *testing.T) {
 		Harness struct {
 			RunCommand      []string `json:"runCommand"`
 			RelaunchCommand []string `json:"relaunchCommand"`
+			Config          struct {
+				Reminder string `json:"reminder"`
+			} `json:"config"`
 		} `json:"harness"`
 	}
 	if err := json.Unmarshal(raw, &image); err != nil {
@@ -29,6 +32,11 @@ func TestImageLaunchesClaudeWithSourceScopedMemory(t *testing.T) {
 	}
 	if len(image.Harness.RelaunchCommand) == 0 || image.Harness.RelaunchCommand[0] != launcher {
 		t.Fatalf("relaunch command = %v, want source-memory launcher", image.Harness.RelaunchCommand)
+	}
+	for _, command := range []string{"/login", "/model", "/config", "/exit"} {
+		if !strings.Contains(image.Harness.Config.Reminder, command) {
+			t.Fatalf("configure reminder %q is missing %s", image.Harness.Config.Reminder, command)
+		}
 	}
 	scriptBytes, err := os.ReadFile("launch.sh")
 	if err != nil {

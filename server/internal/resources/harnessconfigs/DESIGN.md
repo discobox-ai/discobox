@@ -33,8 +33,8 @@ still true of it, and true *by rule* rather than by slug:
 
 - The image's `io.discobox.harness.v1` label is authoritative. `image.go` inspects
   it **once** per image (local Docker daemon first, registry fallback) and
-  snapshots the digest, run/relaunch argv, files, and secret declarations onto the
-  config. Nothing re-reads the label afterward.
+  snapshots the digest, run/relaunch/configure argv, configure reminder, files,
+  and secret declarations onto the config. Nothing re-reads the label afterward.
 - `runCommand` is **optional**, and omitting it means "run the login shell"
   (ADR 0043 §2) — so neither registration nor refresh requires one. A *blank*
   command is still rejected: declaring nothing and declaring an empty string are

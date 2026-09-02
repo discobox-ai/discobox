@@ -2183,6 +2183,8 @@ type HarnessConfig struct {
 	BuiltIn bool `json:"builtIn"`
 	// Argv declared by the registered image for its interactive configuration command, when it has one.
 	ConfigCommand OptNilStringArray `json:"configCommand"`
+	// Reminder shown outside the interactive configuration terminal, declared by the registered image.
+	ConfigReminder OptString `json:"configReminder"`
 	// Why the last configure attempt failed. Cleared when a configure starts or succeeds.
 	ConfigureError OptString `json:"configureError"`
 	// Sandbox running the configure flow, while one is in flight.
@@ -2244,6 +2246,11 @@ func (s *HarnessConfig) GetBuiltIn() bool {
 // GetConfigCommand returns the value of ConfigCommand.
 func (s *HarnessConfig) GetConfigCommand() OptNilStringArray {
 	return s.ConfigCommand
+}
+
+// GetConfigReminder returns the value of ConfigReminder.
+func (s *HarnessConfig) GetConfigReminder() OptString {
+	return s.ConfigReminder
 }
 
 // GetConfigureError returns the value of ConfigureError.
@@ -2354,6 +2361,11 @@ func (s *HarnessConfig) SetBuiltIn(val bool) {
 // SetConfigCommand sets the value of ConfigCommand.
 func (s *HarnessConfig) SetConfigCommand(val OptNilStringArray) {
 	s.ConfigCommand = val
+}
+
+// SetConfigReminder sets the value of ConfigReminder.
+func (s *HarnessConfig) SetConfigReminder(val OptString) {
+	s.ConfigReminder = val
 }
 
 // SetConfigureError sets the value of ConfigureError.

@@ -53,13 +53,14 @@ func toTUIHarness(cfg apimodel.HarnessConfig, defaultID string) tui.Harness {
 		Shell:   strings.TrimSpace(cfg.Slug) == harness.ShellSlug,
 		// What the server decides both enable and disable on: an image that
 		// declares no configure command has neither to offer.
-		Configurable: len(cfg.ConfigCommand.Or(nil)) > 0,
-		Error:        strings.TrimSpace(cfg.ConfigureError.Or("")),
-		Image:        cfg.Image.Or(""),
-		Digest:       cfg.ImageDigest.Or(""),
-		Run:          cfg.RunCommand,
-		Relaunch:     cfg.RelaunchCommand.Or(nil),
-		Updated:      cfg.UpdatedAt,
+		Configurable:   len(cfg.ConfigCommand.Or(nil)) > 0,
+		ConfigReminder: strings.TrimSpace(cfg.ConfigReminder.Or("")),
+		Error:          strings.TrimSpace(cfg.ConfigureError.Or("")),
+		Image:          cfg.Image.Or(""),
+		Digest:         cfg.ImageDigest.Or(""),
+		Run:            cfg.RunCommand,
+		Relaunch:       cfg.RelaunchCommand.Or(nil),
+		Updated:        cfg.UpdatedAt,
 	}
 	for _, secret := range cfg.Secrets.Or(nil) {
 		harness.Secrets = append(harness.Secrets, tui.HarnessSecret{
@@ -208,12 +209,8 @@ func (d *apiDataSource) DoHarness(ctx context.Context, verb tui.HarnessVerb, har
 	}
 }
 
-// ConfigureHarness runs the harness's own interactive configure flow on the
-// real terminal the window has stepped aside from. The flow is the same one
-// `discobox admin harnesses configure` runs, streams and all.
-func (d *apiDataSource) ConfigureHarness(ctx context.Context, harnessID string, stdin io.Reader, stdout, stderr io.Writer) error {
-	_, err := d.app.runHarnessConfigure(ctx, d.client, d.projectID, harnessID, stdin, stdout, stderr)
-	return err
+func (d *apiDataSource) OpenHarnessConfigure(ctx context.Context, harnessID string, cols, rows int) (tui.Terminal, error) {
+	return d.openLocalHarnessConfigure(ctx, harnessID, cols, rows)
 }
 
 // EditHarnessFile opens one of the harness's files in the user's editor and

@@ -67,6 +67,7 @@
       }
     ],
     "config": {
+      "reminder": "Run /login, optionally adjust /model and /config, then finish configuration with /exit.",
       "command": [
         "/usr/local/libexec/discobox/configure-claude-code"
       ]

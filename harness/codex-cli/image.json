@@ -63,6 +63,7 @@
       }
     ],
     "config": {
+      "reminder": "Sign in with /login, then finish configuration with /exit.",
       "command": [
         "/usr/local/libexec/discobox/configure-codex"
       ]

@@ -85,8 +85,8 @@ func TestHarnessesCursorMoves(t *testing.T) {
 	}
 }
 
-// Enabling hands the terminal to the harness's own setup, and the listing is
-// re-read when it comes back.
+// Enabling runs the harness's own setup in an unmistakable configuration pane,
+// with harness-authored guidance outside the terminal grid.
 func TestHarnessesEnableRunsTheSetup(t *testing.T) {
 	ds := newFakeSource()
 	m := newTestModel(t, ds)
@@ -95,8 +95,11 @@ func TestHarnessesEnableRunsTheSetup(t *testing.T) {
 	if len(ds.configured) != 1 || ds.configured[0] != "hc_codex" {
 		t.Fatalf("configured = %v, want the harness under the cursor", ds.configured)
 	}
-	if !strings.Contains(plainFrame(m), "configured Codex") {
-		t.Fatalf("the status line should report the setup:\n%s", plainFrame(m))
+	frame := plainFrame(m)
+	for _, want := range []string{"Harness configuration · Codex", "Configuring Codex", "Use /login, then /exit when sign-in is complete."} {
+		if !strings.Contains(frame, want) {
+			t.Fatalf("configuration pane is missing %q:\n%s", want, frame)
+		}
 	}
 	if m.busy != "" {
 		t.Fatalf("busy = %q, want it cleared once the setup returned", m.busy)

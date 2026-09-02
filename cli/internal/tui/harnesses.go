@@ -511,12 +511,7 @@ func (m *Model) runHarnessVerb(verb HarnessVerb, harness Harness, resume *RunReq
 	}
 }
 
-// configureHarness hands the terminal to the harness's own setup.
-//
-// It is a program that asks questions — a login, a device code, a key pasted in
-// — and draws its own screen to ask them on, so the window steps aside for it
-// exactly as it does for apply, rather than trying to draw it in a pane. The
-// flow itself is the CLI's, on the far side of the data seam.
+// configureHarness opens the harness's own setup in a clearly named pane.
 func (m *Model) configureHarness(harness Harness) tea.Cmd {
 	return m.configureHarnessThen(harness, nil, nil)
 }
@@ -526,19 +521,13 @@ func (m *Model) configureHarness(harness Harness) tea.Cmd {
 func (m *Model) configureHarnessThen(harness Harness, andDefault *Harness, resume *RunRequest) tea.Cmd {
 	name := harness.displayName()
 	m.busy = "configuring " + name + "…"
-	exec := &harnessExec{
-		title: "Configuring " + name,
-		ctx:   m.ctx,
-		run: func(ctx context.Context, stdin io.Reader, stdout, stderr io.Writer) error {
-			return m.ds.ConfigureHarness(ctx, harness.ID, stdin, stdout, stderr)
-		},
+	m.expanded = true
+	cols, rows := m.paneCells(m.width)
+	ctx, ds := m.ctx, m.ds
+	return func() tea.Msg {
+		term, err := ds.OpenHarnessConfigure(ctx, harness.ID, cols, rows)
+		return configurePaneOpenedMsg{harness: harness, andDefault: andDefault, resume: resume, term: term, err: err}
 	}
-	return m.exec(exec, func(err error) tea.Msg {
-		if err != nil {
-			return harnessDoneMsg{err: fmt.Errorf("configure %s: %w", name, err)}
-		}
-		return harnessDoneMsg{text: "configured " + name, andDefault: andDefault, resume: resume}
-	})
 }
 
 // editHarnessFile hands the terminal to $EDITOR on one of the harness's files,

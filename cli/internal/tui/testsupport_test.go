@@ -189,7 +189,7 @@ func testHarnesses() []Harness {
 		{
 			ID: "hc_codex", Name: "Codex", Slug: "codex", State: HarnessEnabled,
 			BuiltIn: true, Configurable: true, Image: "ghcr.io/example/codex:latest",
-			Run:     []string{"codex"},
+			ConfigReminder: "Use /login, then /exit when sign-in is complete.", Run: []string{"codex"},
 			Secrets: []HarnessSecret{{Name: "OPENAI_API_KEY", Required: true, Declared: true}},
 			Files:   []HarnessFile{{Path: "config.toml", Content: "{}", Configured: true}},
 			Updated: now.Add(-30 * time.Minute),
@@ -718,11 +718,16 @@ func (f *fakeSource) DoHarness(_ context.Context, verb HarnessVerb, id string) e
 	return nil
 }
 
-func (f *fakeSource) ConfigureHarness(_ context.Context, id string, _ io.Reader, _, _ io.Writer) error {
+func (f *fakeSource) OpenHarnessConfigure(_ context.Context, id string, _, _ int) (Terminal, error) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	f.configured = append(f.configured, id)
-	return f.configureErr
+	if f.configureErr != nil {
+		return nil, f.configureErr
+	}
+	term := newFakeTerminal()
+	f.terminals = append(f.terminals, term)
+	return term, nil
 }
 
 func (f *fakeSource) EditHarnessFile(_ context.Context, id, path string, _ io.Reader, _, _ io.Writer) (bool, error) {

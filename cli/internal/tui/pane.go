@@ -151,11 +151,28 @@ type pane struct {
 	// banner and the hints are colored by: the same screen either way, and a
 	// word that is not the same word.
 	failed bool
+
+	// notice is guidance drawn in the window header, outside this pane.
+	notice string
+	// configure identifies a configure command whose completion advances the
+	// harness workflow rather than leaving a finished report open.
+	configure *configurePane
+}
+
+type configurePane struct {
+	harness    Harness
+	andDefault *Harness
+	resume     *RunRequest
 }
 
 // name is what to call a pane: what the application inside it says it is,
 // else what was asked for when it was opened.
 func (p *pane) name() string {
+	// A configure command may set an application title identical to a normal
+	// session. Keep the pane's purpose visible throughout this special flow.
+	if p.configure != nil {
+		return p.title
+	}
 	if title := strings.TrimSpace(p.term.Title()); title != "" {
 		return title
 	}
@@ -249,6 +266,14 @@ type paneOpenedMsg struct {
 	sandbox Sandbox
 	term    Terminal
 	err     error
+}
+
+type configurePaneOpenedMsg struct {
+	harness    Harness
+	andDefault *Harness
+	resume     *RunRequest
+	term       Terminal
+	err        error
 }
 
 // paneEventMsg is a connection state change under an open pane.
@@ -444,6 +469,26 @@ func (m *Model) paneOpened(msg paneOpenedMsg) tea.Cmd {
 		fromPane(p.id, p.term.Attach(msg.term)),
 		fromPane(p.id, m.paneEvents(msg.term)),
 	)
+}
+
+func (m *Model) configurePaneOpened(msg configurePaneOpenedMsg) tea.Cmd {
+	m.busy = ""
+	if msg.err != nil {
+		return m.report(true, "configure %s: %v", msg.harness.displayName(), msg.err)
+	}
+	m.nextPaneID++
+	p := &pane{
+		id: m.nextPaneID, term: termpane.New(m.paneOptions(paneOverlay, false)...),
+		stream: msg.term, action: Interaction("configure"),
+		title:     "Harness configuration · " + msg.harness.displayName(),
+		notice:    msg.harness.ConfigReminder,
+		configure: &configurePane{harness: msg.harness, andDefault: msg.andDefault, resume: msg.resume},
+	}
+	m.overlay = p
+	m.focus = focusPane
+	m.prompt.Blur()
+	m.layout()
+	return tea.Batch(fromPane(p.id, p.term.Attach(msg.term)), fromPane(p.id, m.paneEvents(msg.term)))
 }
 
 // paneKind is what a pane is, as far as the keys it keeps are concerned.
@@ -832,6 +877,23 @@ func (m *Model) isOnScreen(p *pane) bool {
 func (m *Model) paneClosed(p *pane, msg termpane.ClosedMsg) tea.Cmd {
 	action := p.action
 	switch {
+	case p.configure != nil:
+		flow := p.configure
+		m.closeOverlay()
+		m.layout()
+		err := msg.Err
+		if err == nil {
+			if code, done := exitCode(p.stream); done && code != 0 {
+				err = fmt.Errorf("configure command exited with code %d", code)
+			}
+		}
+		name := flow.harness.displayName()
+		if err != nil {
+			return func() tea.Msg { return harnessDoneMsg{err: fmt.Errorf("configure %s: %w", name, err)} }
+		}
+		return func() tea.Msg {
+			return harnessDoneMsg{text: "configured " + name, andDefault: flow.andDefault, resume: flow.resume}
+		}
 	case p.primary:
 		m.closeWorkspace()
 		if msg.Err != nil {
@@ -860,6 +922,14 @@ func (m *Model) paneClosed(p *pane, msg termpane.ClosedMsg) tea.Cmd {
 		m.closeTab(p)
 		return tea.Batch(m.refresh(), m.report(true, "%s: %v", action, msg.Err))
 	}
+}
+
+func exitCode(stream Terminal) (int, bool) {
+	reporter, ok := stream.(ExitReporter)
+	if !ok {
+		return 0, false
+	}
+	return reporter.ExitStatus()
 }
 
 // exitVerdict is what a pane that has ended says it was, and whether that is
@@ -1389,6 +1459,13 @@ func (m *Model) viewPaneWindow() string {
 // is happening — it is the more urgent of the two — and unlike them it is
 // written down nowhere else, so it holds its place all the way down.
 func (m *Model) viewPaneHeader(w int) string {
+	if p := m.overlay; p != nil && p.configure != nil {
+		middle := "Configuring " + p.configure.harness.displayName()
+		if p.notice != "" {
+			middle += "  ·  " + p.notice
+		}
+		return padANSI(m.st.statusWA.Render(middle), w)
+	}
 	folder := m.viewFolder()
 	full := m.viewHeaderBrand() + folder
 

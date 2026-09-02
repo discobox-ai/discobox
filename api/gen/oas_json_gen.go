@@ -4198,6 +4198,12 @@ func (s *HarnessConfig) encodeFields(e *jx.Encoder) {
 		}
 	}
 	{
+		if s.ConfigReminder.Set {
+			e.FieldStart("configReminder")
+			s.ConfigReminder.Encode(e)
+		}
+	}
+	{
 		if s.ConfigureError.Set {
 			e.FieldStart("configureError")
 			s.ConfigureError.Encode(e)
@@ -4297,29 +4303,30 @@ func (s *HarnessConfig) encodeFields(e *jx.Encoder) {
 	}
 }
 
-var jsonFieldsNameOfHarnessConfig = [22]string{
+var jsonFieldsNameOfHarnessConfig = [23]string{
 	0:  "$schema",
 	1:  "additionalGroups",
 	2:  "builtIn",
 	3:  "configCommand",
-	4:  "configureError",
-	5:  "configureSandboxId",
-	6:  "configured",
-	7:  "configuredFiles",
-	8:  "createdAt",
-	9:  "env",
-	10: "files",
-	11: "id",
-	12: "image",
-	13: "imageDigest",
-	14: "name",
-	15: "projectId",
-	16: "relaunchCommand",
-	17: "runCommand",
-	18: "secrets",
-	19: "slug",
-	20: "updatedAt",
-	21: "volumes",
+	4:  "configReminder",
+	5:  "configureError",
+	6:  "configureSandboxId",
+	7:  "configured",
+	8:  "configuredFiles",
+	9:  "createdAt",
+	10: "env",
+	11: "files",
+	12: "id",
+	13: "image",
+	14: "imageDigest",
+	15: "name",
+	16: "projectId",
+	17: "relaunchCommand",
+	18: "runCommand",
+	19: "secrets",
+	20: "slug",
+	21: "updatedAt",
+	22: "volumes",
 }
 
 // Decode decodes HarnessConfig from json.
@@ -4373,6 +4380,16 @@ func (s *HarnessConfig) Decode(d *jx.Decoder) error {
 			}(); err != nil {
 				return errors.Wrap(err, "decode field \"configCommand\"")
 			}
+		case "configReminder":
+			if err := func() error {
+				s.ConfigReminder.Reset()
+				if err := s.ConfigReminder.Decode(d); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"configReminder\"")
+			}
 		case "configureError":
 			if err := func() error {
 				s.ConfigureError.Reset()
@@ -4394,7 +4411,7 @@ func (s *HarnessConfig) Decode(d *jx.Decoder) error {
 				return errors.Wrap(err, "decode field \"configureSandboxId\"")
 			}
 		case "configured":
-			requiredBitSet[0] |= 1 << 6
+			requiredBitSet[0] |= 1 << 7
 			if err := func() error {
 				v, err := d.Bool()
 				s.Configured = bool(v)
@@ -4416,7 +4433,7 @@ func (s *HarnessConfig) Decode(d *jx.Decoder) error {
 				return errors.Wrap(err, "decode field \"configuredFiles\"")
 			}
 		case "createdAt":
-			requiredBitSet[1] |= 1 << 0
+			requiredBitSet[1] |= 1 << 1
 			if err := func() error {
 				v, err := json.DecodeDateTime(d)
 				s.CreatedAt = v
@@ -4448,7 +4465,7 @@ func (s *HarnessConfig) Decode(d *jx.Decoder) error {
 				return errors.Wrap(err, "decode field \"files\"")
 			}
 		case "id":
-			requiredBitSet[1] |= 1 << 3
+			requiredBitSet[1] |= 1 << 4
 			if err := func() error {
 				v, err := d.Str()
 				s.ID = string(v)
@@ -4480,7 +4497,7 @@ func (s *HarnessConfig) Decode(d *jx.Decoder) error {
 				return errors.Wrap(err, "decode field \"imageDigest\"")
 			}
 		case "name":
-			requiredBitSet[1] |= 1 << 6
+			requiredBitSet[1] |= 1 << 7
 			if err := func() error {
 				v, err := d.Str()
 				s.Name = string(v)
@@ -4492,7 +4509,7 @@ func (s *HarnessConfig) Decode(d *jx.Decoder) error {
 				return errors.Wrap(err, "decode field \"name\"")
 			}
 		case "projectId":
-			requiredBitSet[1] |= 1 << 7
+			requiredBitSet[2] |= 1 << 0
 			if err := func() error {
 				v, err := d.Str()
 				s.ProjectId = string(v)
@@ -4543,7 +4560,7 @@ func (s *HarnessConfig) Decode(d *jx.Decoder) error {
 				return errors.Wrap(err, "decode field \"secrets\"")
 			}
 		case "slug":
-			requiredBitSet[2] |= 1 << 3
+			requiredBitSet[2] |= 1 << 4
 			if err := func() error {
 				v, err := d.Str()
 				s.Slug = string(v)
@@ -4555,7 +4572,7 @@ func (s *HarnessConfig) Decode(d *jx.Decoder) error {
 				return errors.Wrap(err, "decode field \"slug\"")
 			}
 		case "updatedAt":
-			requiredBitSet[2] |= 1 << 4
+			requiredBitSet[2] |= 1 << 5
 			if err := func() error {
 				v, err := json.DecodeDateTime(d)
 				s.UpdatedAt = v
@@ -4586,9 +4603,9 @@ func (s *HarnessConfig) Decode(d *jx.Decoder) error {
 	// Validate required fields.
 	var failures []validate.FieldError
 	for i, mask := range [3]uint8{
-		0b01000100,
-		0b11001001,
-		0b00011000,
+		0b10000100,
+		0b10010010,
+		0b00110001,
 	} {
 		if result := (requiredBitSet[i] & mask) ^ mask; result != 0 {
 			// Mask only required fields and check equality to mask using XOR.

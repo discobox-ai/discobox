@@ -24,6 +24,9 @@ components:
                         type: string
                     nullable: true
                     type: array
+                configReminder:
+                    description: Reminder shown outside the interactive configuration terminal, declared by the registered image.
+                    type: string
                 configureError:
                     description: Why the last configure attempt failed. Cleared when a configure starts or succeeds.
                     type: string

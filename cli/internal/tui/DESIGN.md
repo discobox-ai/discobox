@@ -36,8 +36,16 @@ flowchart LR
     L -->|v| Editor["DataSource.OpenEditor"]
     WS -->|leader o| T["tools picker → NewTool / EndExec / OpenEditor"]
     A -->|d s| AVerb["DataSource.DoHarness"]
-    A -->|e f| AExec["tea.Exec → ConfigureHarness / EditHarnessFile"]
+    A -->|e| ACfg["configuration overlay pane → OpenHarnessConfigure"]
+    A -->|f| AExec["tea.Exec → EditHarnessFile"]
 ```
+
+Harness configuration is a local PTY-backed overlay pane running the same
+`discobox admin harnesses configure` command available from a shell. Its border
+names the flow as harness configuration, while the header outside the terminal
+shows the harness image's optional configuration reminder. This keeps prompts
+drawn by the harness visually inside a setup flow rather than presenting them
+as an ordinary harness session.
 
 
 ## The secrets screen

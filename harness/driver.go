@@ -97,7 +97,8 @@ type Image struct {
 // previous configuration from ConfigurePreviousConfigPath; both paths are part
 // of the contract, so the image only declares the command.
 type ImageMode struct {
-	Command []string `json:"command"`
+	Command  []string `json:"command"`
+	Reminder string   `json:"reminder,omitempty"`
 }
 
 // Definition is a built-in shortcut for registering an included harness image.

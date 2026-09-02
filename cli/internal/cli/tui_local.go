@@ -54,6 +54,19 @@ func (d *apiDataSource) openLocalCommand(ctx context.Context, action tui.Interac
 	return &localCommand{PTY: pty, events: make(chan tui.TerminalEvent)}, nil
 }
 
+func (d *apiDataSource) openLocalHarnessConfigure(ctx context.Context, harnessID string, cols, rows int) (tui.Terminal, error) {
+	self, err := os.Executable()
+	if err != nil {
+		return nil, fmt.Errorf("find this program: %w", err)
+	}
+	args := append(d.app.globalFlags(), "admin", "harnesses", "configure", harnessID)
+	pty, err := localpty.Start(ctx, localpty.Command{Path: self, Args: args, Env: append(os.Environ(), "DISCOBOX_TOKEN="+d.app.token)}, cols, rows)
+	if err != nil {
+		return nil, fmt.Errorf("start harness configure: %w", err)
+	}
+	return &localCommand{PTY: pty, events: make(chan tui.TerminalEvent)}, nil
+}
+
 // globalFlags are the flags this invocation was given, to hand to a child so it
 // talks to the same server, project and directory.
 func (a *App) globalFlags() []string {

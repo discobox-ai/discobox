@@ -40,8 +40,9 @@ func TestToTUIHarnessState(t *testing.T) {
 func TestToTUIHarness(t *testing.T) {
 	cfg := apimodel.HarnessConfig{
 		ID: "hc_1", Name: "Claude", Slug: "claude", Configured: true, BuiltIn: true,
-		Image:      apiclientgen.NewOptString("ghcr.io/example/claude:latest"),
-		RunCommand: []string{"claude", "--dangerously-skip-permissions"},
+		Image:          apiclientgen.NewOptString("ghcr.io/example/claude:latest"),
+		ConfigReminder: apiclientgen.NewOptString("Log in, then exit."),
+		RunCommand:     []string{"claude", "--dangerously-skip-permissions"},
 		Secrets: apiclientgen.NewOptNilHarnessConfigSecretArray([]apimodel.HarnessConfigSecret{
 			{Name: "ANTHROPIC_API_KEY", Required: apiclientgen.NewOptBool(true), OneOfGroup: apiclientgen.NewOptString("auth")},
 		}),
@@ -57,6 +58,9 @@ func TestToTUIHarness(t *testing.T) {
 	harness := toTUIHarness(cfg, "hc_1")
 	if harness.State != tui.HarnessEnabled || !harness.Default || !harness.BuiltIn {
 		t.Fatalf("harness = %+v, want an enabled, default, built-in harness", harness)
+	}
+	if harness.ConfigReminder != "Log in, then exit." {
+		t.Fatalf("config reminder = %q, want image-declared reminder", harness.ConfigReminder)
 	}
 	if len(harness.Secrets) != 1 || harness.Secrets[0].Name != "ANTHROPIC_API_KEY" ||
 		!harness.Secrets[0].Required || harness.Secrets[0].OneOf != "auth" || !harness.Secrets[0].Declared {
