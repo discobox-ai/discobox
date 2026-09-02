@@ -31,14 +31,26 @@ still true of it, and true *by rule* rather than by slug:
 
 ## Registration and image metadata
 
-- The image's `io.discobox.harness.v1` label is authoritative. `image.go` inspects
-  it **once** per image (local Docker daemon first, registry fallback) and
-  snapshots the digest, run/relaunch/configure argv, configure reminder, files,
-  and secret declarations onto the config. Nothing re-reads the label afterward.
-- `runCommand` is **optional**, and omitting it means "run the login shell"
-  (ADR 0043 §2) — so neither registration nor refresh requires one. A *blank*
-  command is still rejected: declaring nothing and declaring an empty string are
-  different.
+- The image's manifest **labels** are authoritative. `image.go` inspects the
+  image **once** (local Docker daemon first, registry fallback) and resolves
+  them through `harness.ResolveImageLabels` — every inherited
+  `io.discobox.image.v1.<NN>-<name>` layer, then the image's own
+  `io.discobox.image.v1` — before validating the merged result and snapshotting
+  the digest, run/relaunch/configure argv, configure reminder, files, and secret
+  declarations onto the config. Nothing re-reads the labels afterward.
+- Registration **requires the base layer**. An image carrying no
+  `10-sandbox-base` layer was not built `FROM discobox-sandbox-agent`, and is
+  rejected saying so: the runtime contract lives in that image's filesystem, so
+  such an image cannot run a sandbox whatever it declares (ADR 0086 §1).
+- The whole manifest is **optional**. An image that declares nothing registers
+  under the caller's `--name`/`--slug`, inherits its env and volumes from the
+  base layer, and takes the harness-run convention for its commands.
+- `runCommand` is **optional**, and omitting it means "type
+  `discobox-harness-run`" (ADR 0086 §3) — `conventionCommands` resolves that
+  here, at registration, because this is where the reserved `shell` slug is
+  known, and `shell` is the one harness that must get no command at all. A
+  *blank* command is still rejected: declaring nothing and declaring an empty
+  string are different.
 - Built-in configs **track** their image: `SeedBuiltIns` clobbers `Image` and
   re-snapshots the label whenever the resolved image changes, which is how a dev
   rebuild (`DISCOBOX_HARNESS_<SLUG>_IMAGE` → `.env` → server restart) reaches a

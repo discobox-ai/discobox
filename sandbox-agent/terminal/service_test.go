@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 
@@ -233,19 +234,50 @@ func TestPrimaryCreateRequest(t *testing.T) {
 	if !first.primary || len(first.command) != 0 || len(first.Args) != 1 {
 		t.Fatalf("first start = %#v", first)
 	}
-	// Subsequent start: relaunch command replaces the run command.
+	// Subsequent start: the relaunch command replaces the run command, and the
+	// prompt still trails it (ADR 0086 §4). A harness that resumes a session
+	// ignores it; a sandbox whose first launch failed has no session to resume,
+	// and its user would otherwise arrive at a terminal that has forgotten what
+	// it was for.
 	resume := primaryCreateRequest(harness, "codex", []string{"do a thing"}, true)
-	if len(resume.command) != 2 || resume.command[1] != "resume" || len(resume.Args) != 0 {
+	if len(resume.command) != 2 || resume.command[1] != "resume" || len(resume.Args) != 1 {
 		t.Fatalf("resume = %#v", resume)
 	}
-	// Subsequent start with no relaunch command: start bare, no prompt replay.
+	// Subsequent start with no relaunch command: the bare command, prompt still
+	// carried.
 	bare := primaryCreateRequest(config.Harness{ID: "codex", Command: []string{"codex"}}, "codex", []string{"p"}, true)
-	if len(bare.command) != 0 || len(bare.Args) != 0 {
+	if len(bare.command) != 1 || bare.command[0] != "codex" || len(bare.Args) != 1 {
 		t.Fatalf("bare = %#v", bare)
 	}
 	// The shell fallback never takes the prompt as arguments, on any start.
 	shell := primaryCreateRequest(config.Harness{ID: ShellHarnessID, Command: []string{"/bin/sh", "-l"}}, ShellHarnessID, []string{"p"}, false)
 	if len(shell.command) != 0 || len(shell.Args) != 0 {
 		t.Fatalf("shell = %#v", shell)
+	}
+}
+
+// A revived terminal types the same thing a restarted one does, prompt
+// included (ADR 0086 §4): the revive path is exactly where a first launch that
+// died is picked back up, so it is the path that most needs to still say what
+// the sandbox was asked to do.
+func TestReviveStartupCommandCarriesThePrompt(t *testing.T) {
+	harness := config.Harness{ID: "codex", Command: []string{"codex"}, RelaunchCommand: []string{"codex", "resume"}}
+	got := reviveStartupCommand(harness, "codex", "", []string{"do a thing"})
+	want := []string{"codex", "resume", "do a thing"}
+	if !slices.Equal(got, want) {
+		t.Fatalf("revive = %v, want %v", got, want)
+	}
+	// With no relaunch command, the bare command takes the prompt.
+	got = reviveStartupCommand(config.Harness{ID: "codex", Command: []string{"codex"}}, "codex", "", []string{"p"})
+	if want := []string{"codex", "p"}; !slices.Equal(got, want) {
+		t.Fatalf("revive without relaunch = %v, want %v", got, want)
+	}
+	// The shell types nothing, and neither does a configure flow, whose command
+	// is the exec's own.
+	if got := reviveStartupCommand(harness, ShellHarnessID, "", []string{"p"}); got != nil {
+		t.Fatalf("shell revive = %v, want nothing typed", got)
+	}
+	if got := reviveStartupCommand(harness, "codex", configHarnessMode, []string{"p"}); got != nil {
+		t.Fatalf("configure revive = %v, want nothing typed", got)
 	}
 }

@@ -17,7 +17,7 @@
 #                  profile of its own, so this half is guarded separately.
 #
 # Each stamp lists the seed stores merged into its scope, one id per line, and
-# an id is appended only after that copy finishes (ADR 0085). Two consequences,
+# an id is appended only after that copy finishes (ADR 0086). Two consequences,
 # both load-bearing:
 #
 #   - a copy killed midway is never mistaken for a finished one -- the next run

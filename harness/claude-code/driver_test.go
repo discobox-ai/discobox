@@ -26,12 +26,19 @@ func TestImageLaunchesClaudeWithSourceScopedMemory(t *testing.T) {
 	if err := json.Unmarshal(raw, &image); err != nil {
 		t.Fatal(err)
 	}
-	const launcher = "/usr/local/libexec/discobox/launch-claude-code"
-	if len(image.Harness.RunCommand) != 1 || image.Harness.RunCommand[0] != launcher {
-		t.Fatalf("run command = %v, want source-memory launcher", image.Harness.RunCommand)
+	// The manifest names no command: the launcher is installed under the
+	// conventional name and the runtime types that (ADR 0086 §3). Declaring one
+	// here would be an override, and would silently outrank the convention.
+	if len(image.Harness.RunCommand) != 0 || len(image.Harness.RelaunchCommand) != 0 {
+		t.Fatalf("manifest overrides the harness-run convention: run=%v relaunch=%v",
+			image.Harness.RunCommand, image.Harness.RelaunchCommand)
 	}
-	if len(image.Harness.RelaunchCommand) == 0 || image.Harness.RelaunchCommand[0] != launcher {
-		t.Fatalf("relaunch command = %v, want source-memory launcher", image.Harness.RelaunchCommand)
+	dockerfile, err := os.ReadFile("Dockerfile")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if want := "launch.sh /usr/local/bin/" + harness.RunCommand; !strings.Contains(string(dockerfile), want) {
+		t.Fatalf("Dockerfile does not install the launcher as %q", want)
 	}
 	for _, command := range []string{"/login", "/model", "/config", "/exit"} {
 		if !strings.Contains(image.Harness.Config.Reminder, command) {
@@ -48,6 +55,11 @@ func TestImageLaunchesClaudeWithSourceScopedMemory(t *testing.T) {
 		"harnesses/claude-code/memories",
 		"autoMemoryDirectory",
 		`exec claude "$@"`,
+		// The resume half of the convention, and the prompt that trails it
+		// on every launch (ADR 0086 §4): a resumed session already carries
+		// the prompt, so the launcher drops it rather than re-sending it.
+		harness.ResumeFlag,
+		"set -- --continue",
 	} {
 		if !strings.Contains(script, required) {
 			t.Errorf("launch script is missing %q", required)

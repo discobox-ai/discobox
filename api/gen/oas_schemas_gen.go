@@ -441,8 +441,9 @@ type CreateHarnessConfigBody struct {
 	Schema OptURI `json:"$schema"`
 	// Optional non-secret configured file values to associate with the registered harness.
 	Files OptNilHarnessConfigFileArray `json:"files"`
-	// Harness sandbox image to register. The server validates its io.discobox.harness.v1 label and
-	// snapshots that metadata into the HarnessConfig.
+	// Harness sandbox image to register. Must be built FROM discobox-sandbox-agent. The server resolves
+	// its io.discobox.image.v1 manifest labels, inherited layers included, and snapshots that metadata
+	// into the HarnessConfig.
 	Image string `json:"image"`
 	// Harness config name. Defaults to the name declared by the image label.
 	Name OptString `json:"name"`

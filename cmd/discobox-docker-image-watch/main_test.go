@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"maps"
 	"os"
 	"path/filepath"
 	"reflect"
@@ -226,31 +227,50 @@ func TestDevImageTag(t *testing.T) {
 	}
 }
 
-// An image whose Dockerfile turns HARNESS_METADATA into the io.discobox.image.v1
-// label must be built with that argument, or it ships an empty label the server
-// refuses to read — and the failure is quiet: the harness config it feeds is
-// simply skipped at seeding.
+// An image whose Dockerfile turns a metadata build argument into a manifest
+// label must be built with that argument, or it ships an empty label — and the
+// failure is quiet. For a harness image's own label that means a harness config
+// skipped at seeding; for the base image's layer it means every harness image
+// built on it inherits nothing and is rejected as not built from the base
+// (ADR 0086 §1), which is every harness at once.
+//
+// The pairing runs both ways: an argument with no LABEL to land in is just as
+// broken as a LABEL with no argument, and reads as working.
 func TestSpecsPassImageMetadataToEveryLabeledImage(t *testing.T) {
 	specs, _ := loadDockerImageSpecs(t)
-	labeled := 0
+	labeled := map[string]string{}
 	for _, spec := range specs {
 		data, err := os.ReadFile(filepath.Join(spec.contextDir, spec.dockerfile))
 		if err != nil {
 			t.Fatal(err)
 		}
-		if !strings.Contains(string(data), "LABEL "+harness.ImageLabel+"=") {
+		dockerfile := string(data)
+		declaresOwn := strings.Contains(dockerfile, "LABEL "+harness.ImageLabel+"=")
+		declaresLayer := strings.Contains(dockerfile, "LABEL "+harness.ImageLayerLabelPrefix)
+		if !declaresOwn && !declaresLayer {
+			if spec.metadataArg != "" {
+				t.Errorf("%s is built with %s but its Dockerfile has no label to put it in", spec.name, spec.metadataArg)
+			}
 			continue
 		}
-		labeled++
+		labeled[spec.name] = spec.metadataArg
 		if spec.metadataFile == "" {
-			t.Errorf("%s declares %s but its spec has no image.json to fill it from", spec.name, harness.ImageLabel)
+			t.Errorf("%s declares a manifest label but its spec has no image.json to fill it from", spec.name)
+			continue
 		}
-		if !contains(spec.buildArgs, "HARNESS_METADATA=") {
-			t.Errorf("%s has no HARNESS_METADATA= placeholder for buildImage to fill in: %#v", spec.name, spec.buildArgs)
+		if !contains(spec.buildArgs, spec.metadataArg+"=") {
+			t.Errorf("%s has no %s= placeholder for buildImage to fill in: %#v", spec.name, spec.metadataArg, spec.buildArgs)
 		}
 	}
-	if labeled != len(harnessImages) {
-		t.Fatalf("labeled images = %d, want one per harness image (%d)", labeled, len(harnessImages))
+	// The base layer, plus one per harness image that declares anything. `shell`
+	// declares nothing at all: its whole manifest is the layer it inherits.
+	want := map[string]string{
+		"sandbox-agent":       harness.LayerMetadataBuildArg,
+		"harness-claude-code": harness.MetadataBuildArg,
+		"harness-codex":       harness.MetadataBuildArg,
+	}
+	if !maps.Equal(labeled, want) {
+		t.Fatalf("labeled images = %v, want %v", labeled, want)
 	}
 }
 

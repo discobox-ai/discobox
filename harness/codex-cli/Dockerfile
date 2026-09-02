@@ -21,7 +21,10 @@ COPY --chmod=0644 system-config.toml /etc/codex/config.toml
 COPY --chmod=0644 hooks.json /etc/codex/hooks.json
 
 COPY --chmod=0755 configure.sh /usr/local/libexec/discobox/configure-codex
-COPY --chmod=0755 launch.sh /usr/local/libexec/discobox/launch-codex
+# The harness-run convention (ADR 0086 §3): the image installs its agent
+# under this name, overwriting the base image's no-op shim, and the runtime
+# types it. On PATH, not in libexec, because the runtime resolves it by name.
+COPY --chmod=0755 launch.sh /usr/local/bin/discobox-harness-run
 
 # The one-shot prompting interface in-sandbox tools ask for a model through
 # (ADR 0079). On PATH, not in libexec: its callers resolve it by name.

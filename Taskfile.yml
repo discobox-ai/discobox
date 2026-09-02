@@ -271,7 +271,13 @@ tasks:
     desc: Build the Debian sandbox agent image
     deps: [build:base-image]
     cmds:
-      - docker build -f sandbox-agent/Dockerfile -t discobox-sandbox-agent:local .
+      # IMAGE_LAYER_METADATA is the manifest layer every image built FROM this
+      # one inherits (ADR 0086 §2). Compacted independently of any harness's
+      # own image.json: nothing merges manifests at build time.
+      - >-
+        docker build -f sandbox-agent/Dockerfile
+        --build-arg IMAGE_LAYER_METADATA="$(jq -c . sandbox-agent/image.json)"
+        -t discobox-sandbox-agent:local .
 
   build:images:
     desc: Build the shared base, pool, sandbox base, and all included harness images
@@ -320,11 +326,20 @@ tasks:
       - sh: test -f harness/{{.HARNESS_DIR}}/Dockerfile
         msg: "unknown harness: {{.HARNESS}}"
     cmds:
-      - >-
-        docker build -f harness/{{.HARNESS_DIR}}/Dockerfile
-        --build-arg "SANDBOX_AGENT_IMAGE={{.SANDBOX_AGENT_IMAGE}}"
-        --build-arg HARNESS_METADATA="$(jq -c . {{.IMAGE_CONFIG}})"
-        -t discobox-harness-{{.HARNESS}}:local harness/{{.HARNESS_DIR}}
+      # A harness that declares nothing has no image.json and takes no metadata
+      # argument: its whole manifest is the base layer it inherits (ADR 0086
+      # §2), which is what `shell` is.
+      - |
+        set -eu
+        # Built as an argv list rather than an interpolated string: a manifest
+        # carries descriptions and env values with spaces in them, and an
+        # unquoted command substitution would split one into several arguments.
+        set -- docker build -f harness/{{.HARNESS_DIR}}/Dockerfile \
+          --build-arg "SANDBOX_AGENT_IMAGE={{.SANDBOX_AGENT_IMAGE}}"
+        if [ -f {{.IMAGE_CONFIG}} ]; then
+          set -- "$@" --build-arg "HARNESS_METADATA=$(jq -c . {{.IMAGE_CONFIG}})"
+        fi
+        exec "$@" -t discobox-harness-{{.HARNESS}}:local harness/{{.HARNESS_DIR}}
 
   compile:
     desc: Alias for build

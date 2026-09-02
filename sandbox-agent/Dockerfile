@@ -165,7 +165,7 @@ RUN set -eux; \
     systemctl enable nix-daemon.socket; \
     nix profile install nixpkgs#devenv nixpkgs#bashInteractive; \
     devenv --version; \
-    # ADR 0085: the stamp that guards the seed names the store it was cut
+    # ADR 0086: the stamp that guards the seed names the store it was cut
     # from, and a pool cache that already holds another build's store merges
     # this one in instead of overwriting the database that pool has been
     # writing to. Both need facts only the build knows, recorded beside the
@@ -285,6 +285,9 @@ COPY --chmod=0755 sandbox-agent/image/nix-seed /usr/local/libexec/discobox/nix-s
 # only while the store's own bin directories are still empty. Starts the seed
 # unit, then execs the real binary. See ADR 0075.
 COPY --chmod=0755 sandbox-agent/image/nix-shim /usr/local/lib/discobox/nix-shim
+# The harness-run convention's default implementation, for an image that
+# installs no agent of its own. A harness image overwrites it. See ADR 0086 §3.
+COPY --chmod=0755 sandbox-agent/image/harness-run /usr/local/bin/discobox-harness-run
 COPY --from=sandbox-agent-builder /out/discobox-sandbox-agent /usr/local/bin/discobox-sandbox-agent
 # Installs as `runc` on a directory prepended to containerd's and dockerd's
 # PATH, so every container either one starts has the MITM CA bundles and proxy
@@ -334,6 +337,14 @@ RUN chmod 0755 /usr/local/bin/discobox-sandbox-agent \
         x11-display.socket \
         x11vnc.socket \
         websockify-proxy.socket
+
+# The manifest layer every image built FROM this one inherits: the env,
+# volumes, groups, and seed files that are true of this image's filesystem
+# rather than of any harness (ADR 0086 §2). A child sets its own
+# io.discobox.image.v1 and this key comes along untouched, which is also how
+# the control plane knows the child was built from this base at all.
+ARG IMAGE_LAYER_METADATA
+LABEL io.discobox.image.v1.10-sandbox-base=${IMAGE_LAYER_METADATA}
 
 WORKDIR /workspace
 # No VOLUME directives: the sandbox-agent init flow (PID 1) wires all persistent

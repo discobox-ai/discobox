@@ -81,11 +81,16 @@ func (s *Service) CreateHarnessConfig(ctx context.Context, projectID string, inp
 	name := strings.TrimSpace(input.Name.Or(""))
 	slug := strings.TrimSpace(input.Slug.Or(""))
 	imageDigest := inspected.Digest
-	if name == "" {
-		name = strings.TrimSpace(inspected.Harness.Name)
-	}
-	if slug == "" {
-		slug = strings.TrimSpace(inspected.Harness.ID)
+	// A manifest may name the harness, and needs not: an image that declares
+	// none is registered under the name the caller gave (ADR 0086 §5), which is
+	// why nothing here dereferences an absent harness block.
+	if imageHarness := inspected.Harness; imageHarness != nil {
+		if name == "" {
+			name = strings.TrimSpace(imageHarness.Name)
+		}
+		if slug == "" {
+			slug = strings.TrimSpace(imageHarness.ID)
+		}
 	}
 	if slug == "" && name != "" {
 		slug = harnessdefs.Slugify(name)
@@ -115,9 +120,10 @@ func (s *Service) CreateHarnessConfig(ctx context.Context, projectID string, inp
 	// caller changes them afterward.
 	//
 	// No check that a run command came back, either: an image that declares
-	// none runs the sandbox user's login shell, which the sandbox resolves for
-	// itself (ADR 0043). The label validator already rejects a blank one.
-	runCommand, relaunchCommand, configCommand, configReminder, files, secrets, env, volumes, additionalGroups := harnessMetadataFields(inspected.ImageMetadata)
+	// none is taken to install the conventional harness.RunCommand, which
+	// conventionCommands supplies (ADR 0086 §3). The label validator already
+	// rejects a blank one.
+	runCommand, relaunchCommand, configCommand, configReminder, files, secrets, env, volumes, additionalGroups := harnessMetadataFields(slug, inspected.ImageMetadata)
 
 	config := &model.HarnessConfig{
 		ProjectID:        projectID,
@@ -210,7 +216,7 @@ func (s *Service) RefreshHarnessConfigImage(ctx context.Context, projectID, conf
 	if err != nil {
 		return nil, apperrors.NewStatusError(http.StatusBadRequest, err.Error())
 	}
-	runCommand, relaunchCommand, configCommand, configReminder, files, secrets, env, volumes, additionalGroups := harnessMetadataFields(metadata.ImageMetadata)
+	runCommand, relaunchCommand, configCommand, configReminder, files, secrets, env, volumes, additionalGroups := harnessMetadataFields(config.Slug, metadata.ImageMetadata)
 	previousDigest := config.ImageDigest
 	config.ImageDigest = metadata.Digest
 	config.RunCommand, config.RelaunchCommand, config.ConfigCommand = runCommand, relaunchCommand, configCommand
@@ -411,7 +417,7 @@ func (s *Service) SeedBuiltIns(ctx context.Context, projectID string) error {
 				ProjectID: projectID, Slug: seed.Slug, Name: seed.Name,
 				BuiltIn: true, Image: image, ImageDigest: metadata.Digest,
 			}
-			config.RunCommand, config.RelaunchCommand, config.ConfigCommand, config.ConfigReminder, config.Files, config.Secrets, config.Env, config.Volumes, config.AdditionalGroups = harnessMetadataFields(metadata.ImageMetadata)
+			config.RunCommand, config.RelaunchCommand, config.ConfigCommand, config.ConfigReminder, config.Files, config.Secrets, config.Env, config.Volumes, config.AdditionalGroups = harnessMetadataFields(seed.Slug, metadata.ImageMetadata)
 			// Born configured when there is nothing to collect. `shell` is the
 			// harness that lands here, but by declaring no secrets rather than
 			// by being itself: a fresh project has to be usable before anyone
@@ -428,7 +434,7 @@ func (s *Service) SeedBuiltIns(ctx context.Context, projectID string) error {
 		previousDigest := existing.ImageDigest
 		existing.Image = image
 		existing.ImageDigest = metadata.Digest
-		existing.RunCommand, existing.RelaunchCommand, existing.ConfigCommand, existing.ConfigReminder, existing.Files, existing.Secrets, existing.Env, existing.Volumes, existing.AdditionalGroups = harnessMetadataFields(metadata.ImageMetadata)
+		existing.RunCommand, existing.RelaunchCommand, existing.ConfigCommand, existing.ConfigReminder, existing.Files, existing.Secrets, existing.Env, existing.Volumes, existing.AdditionalGroups = harnessMetadataFields(seed.Slug, metadata.ImageMetadata)
 		if err := s.store.UpdateHarnessConfig(ctx, existing); err != nil {
 			return err
 		}
@@ -476,15 +482,44 @@ func (s *Service) seeds() []harnessdefs.Seed {
 	return harnessdefs.Seeds(s.harnessImages)
 }
 
-// harnessMetadataFields snapshots the mutable config fields declared by a
-// harness image's label metadata.
-func harnessMetadataFields(metadata harness.ImageMetadata) (runCommand, relaunchCommand, configCommand []string, configReminder string, files []model.HarnessConfigFile, secrets []model.HarnessConfigSecret, env map[string]string, volumes []harness.Volume, additionalGroups []string) {
-	image := metadata.Harness
-	if image == nil {
-		return nil, nil, nil, "", nil, nil, nil, nil, nil
+// conventionCommands resolves what a terminal types for this harness: the
+// image's own commands when it declares them, and the convention otherwise
+// (ADR 0086 §3).
+//
+// The convention is resolved here, at registration, because this is where the
+// reserved shell slug is known. The sandbox knows its harness by the config's
+// generated id, so it cannot tell a login shell from an image that declared
+// nothing — and those two must not resolve alike. Snapshotting the resolved
+// commands also keeps them visible in `discobox harness show` and overridable
+// through the config, which is what makes the manifest's copy an override.
+//
+// `shell` gets neither command. It is the one harness whose terminal *is* the
+// shell being launched, so a command typed into it would be a second shell
+// inside the first (ADR 0043 §1's reserved slug is the whole test).
+func conventionCommands(slug string, image harness.Image) (runCommand, relaunchCommand []string) {
+	if strings.TrimSpace(slug) == harness.ShellSlug {
+		return append([]string{}, image.RunCommand...), append([]string{}, image.RelaunchCommand...)
 	}
 	runCommand = append([]string{}, image.RunCommand...)
+	if len(runCommand) == 0 {
+		runCommand = []string{harness.RunCommand}
+	}
 	relaunchCommand = append([]string{}, image.RelaunchCommand...)
+	if len(relaunchCommand) == 0 {
+		relaunchCommand = []string{harness.RunCommand, harness.ResumeFlag}
+	}
+	return runCommand, relaunchCommand
+}
+
+// harnessMetadataFields snapshots the mutable config fields declared by a
+// harness image's label metadata, resolving the run and relaunch commands
+// against the convention for the harness registered under slug.
+func harnessMetadataFields(slug string, metadata harness.ImageMetadata) (runCommand, relaunchCommand, configCommand []string, configReminder string, files []model.HarnessConfigFile, secrets []model.HarnessConfigSecret, env map[string]string, volumes []harness.Volume, additionalGroups []string) {
+	image := metadata.Harness
+	if image == nil {
+		image = &harness.Image{}
+	}
+	runCommand, relaunchCommand = conventionCommands(slug, *image)
 	if image.Config != nil {
 		configCommand = append([]string{}, image.Config.Command...)
 		configReminder = strings.TrimSpace(image.Config.Reminder)

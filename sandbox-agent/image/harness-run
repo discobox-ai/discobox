@@ -1,0 +1,14 @@
+#!/bin/sh
+# The convention every harness image conforms to (ADR 0086 §3): the runtime
+# types `discobox-harness-run [--resume] '<prompt>'` into the terminal's login
+# shell, and the image installs its agent under this name.
+#
+# This is the base image's copy, for an image that installs no agent. It execs
+# nothing, so the user is left at the prompt they are already sitting at rather
+# than at a `command not found` — the terminal is a working shell either way,
+# and saying so once beats leaving them to wonder.
+#
+# A harness image overwrites this file. The `shell` harness never reaches it:
+# its terminal *is* the login shell, so nothing is typed into it at all.
+printf '%s\n' "discobox: this image installs no harness; you are in a plain shell." >&2
+exit 0

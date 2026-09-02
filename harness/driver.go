@@ -74,6 +74,23 @@ const (
 	ConfigureUserName = "discobox"
 	ConfigureUserUID  = 10000
 	ConfigureUserGID  = 10000
+
+	// RunCommand is the command a harness image is expected to install on PATH,
+	// and the one the runtime types when the image declares no override
+	// (ADR 0086 §3). The base image ships it as a shim that execs nothing, so
+	// an image installing no agent lands the user at a clean prompt.
+	//
+	// It is safe to type a command the image may not have because a harness
+	// command is typed into a login shell rather than executed as argv
+	// (ADR 0027): the shell reports what it could not find and hands back a
+	// live prompt, so a wrong guess costs a line of output, not the terminal.
+	RunCommand = "discobox-harness-run"
+
+	// ResumeFlag marks a relaunch — a terminal returning after its sandbox
+	// stopped, or a revive in place (ADR 0038). What it means for the wrapped
+	// agent is the wrapper's business: `--continue` for Claude Code, `resume
+	// --last` for Codex, and nothing at all for an agent with no resume story.
+	ResumeFlag = "--resume"
 )
 
 // Image describes the immutable harness behavior baked into one sandbox

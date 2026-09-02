@@ -21,8 +21,9 @@ internal contract between pool-agent and sandbox-agent, not a REST schema.
   was asked for; `Effective` drops it, so it survives only in `_provenance` as
   the record of what a sandbox actually ran (ADR 0016).
 - `ImageLayer`: the harness contract and defaults snapshotted from the
-  registered image's OCI label (`harness.ImageLabel`) at harness registration
-  time, and re-snapshotted whenever that image's digest moves — a stable tag is
+  registered image's OCI manifest labels — its own `harness.ImageLabel` merged
+  over every layer it inherited from the images it was built `FROM`
+  (ADR 0086 §2) — at harness registration time, and re-snapshotted whenever that image's digest moves — a stable tag is
   rebuilt in place, so registration is not a one-time read (ADR 0016).
 - `ProjectLayer`: the resolved source repository's contribution, read once by
   pool-agent at the commit it clones. Optional — nil when the project

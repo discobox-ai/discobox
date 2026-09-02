@@ -265,13 +265,16 @@ func (s *Service) Create(ctx context.Context, req CreateRequest) (execs.Exec, er
 	if s.hookSocketPath != "" {
 		env["DISCOBOX_HOOK_SOCKET"] = s.hookSocketPath
 	}
-	var command []string
-	if len(req.command) > 0 {
-		command = append([]string{}, req.command...)
-	} else {
+	// The prompt (req.Args) trails the command on every launch, relaunch
+	// included (ADR 0086 §4). A wrapper resuming a session ignores it; a
+	// sandbox whose first launch failed has no session to resume, and because
+	// the command is typed, the prompt is on screen as an editable command
+	// line — the user sees what the sandbox was asked to do.
+	command := append([]string{}, req.command...)
+	if len(command) == 0 {
 		command = append([]string{}, harness.Command...)
-		command = append(command, req.Args...)
 	}
+	command = append(command, req.Args...)
 	metadata := cloneMap(req.Metadata)
 	if metadata == nil {
 		metadata = map[string]string{}
@@ -389,7 +392,7 @@ func (s *Service) revive(ctx context.Context, id string) (execs.Exec, error) {
 		ID:             id,
 		Env:            env,
 		User:           cloneUser(s.defaultUser),
-		StartupCommand: reviveStartupCommand(harness, harnessID, s.harnessMode),
+		StartupCommand: reviveStartupCommand(harness, harnessID, s.harnessMode, s.bootPrompt),
 	})
 	if err != nil {
 		return execs.Exec{}, err
@@ -404,17 +407,30 @@ func (s *Service) revive(ctx context.Context, id string) (execs.Exec, error) {
 // the terminal, recorded as the exec's own command), and neither does a
 // configure flow, whose command is the exec's own for the same reason and is
 // what a relaunch re-runs.
-func reviveStartupCommand(harness config.Harness, harnessID, harnessMode string) []string {
+func reviveStartupCommand(harness config.Harness, harnessID, harnessMode string, prompt []string) []string {
 	switch {
 	case harnessID == ShellHarnessID:
 		return nil
 	case harnessMode == configHarnessMode:
 		return nil
-	case len(harness.RelaunchCommand) > 0:
-		return append([]string{}, harness.RelaunchCommand...)
-	default:
-		return append([]string{}, harness.Command...)
 	}
+	return append(resumeStartupCommand(harness), prompt...)
+}
+
+// resumeStartupCommand is the command a terminal types when it comes back to a
+// harness it has already launched: the harness's relaunch command when it has
+// one, its bare command otherwise.
+//
+// Which command that is was decided at registration, where the convention's
+// `discobox-harness-run --resume` was resolved against the reserved shell slug
+// (ADR 0086 §3). Nothing here re-derives it: the sandbox knows its harness by
+// the config's own id, not by that slug, so it cannot tell the login shell from
+// an image that declared nothing.
+func resumeStartupCommand(harness config.Harness) []string {
+	if len(harness.RelaunchCommand) > 0 {
+		return append([]string{}, harness.RelaunchCommand...)
+	}
+	return append([]string{}, harness.Command...)
 }
 
 // markInstalling records that an exec's harness setup is running.
@@ -715,9 +731,12 @@ func primaryCreateRequest(harness config.Harness, harnessID string, prompt []str
 	// command) nor as a session to resume; it is the same interactive shell on
 	// every start.
 	case harnessID == ShellHarnessID:
-	case launched && len(harness.RelaunchCommand) > 0:
-		req.command = append([]string{}, harness.RelaunchCommand...)
+	// A harness that has already launched comes back on its resume command, and
+	// still carries the prompt: the launch that was supposed to consume it is
+	// exactly the one that may have failed (ADR 0086 §4).
 	case launched:
+		req.command = resumeStartupCommand(harness)
+		req.Args = append([]string{}, prompt...)
 	default:
 		req.Args = append([]string{}, prompt...)
 	}

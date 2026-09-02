@@ -61,11 +61,12 @@ value in the configure sandbox's environment.
   resolves the base from `.env` (`DISCOBOX_DEFAULT_SANDBOX_IMAGE`) so it tracks
   the image watcher's dev builds, falling back to
   `discobox-sandbox-agent:local`.
-- `image.json` and the `io.discobox.harness.v1` label carry the same harness
-  object, like the real harness images: the label is what the control plane
-  validates at registration, and `/usr/share/discobox/image.json` is what the
-  sandbox-agent reads at runtime. An image with only the label registers fine
-  but fails at attach with "exec command is required".
+- `image.json` is the authoring source for this image's own
+  `io.discobox.image.v1` label and nothing else — there is no file inside the
+  image (ADR 0012 §6). It declares only what is this stub's: env, volumes and
+  groups come from the base layer it inherits by being built `FROM` the sandbox
+  agent image, and that inherited layer is also what makes it registrable at all
+  (ADR 0086 §1).
 - This directory is deliberately under `test/`, not `harness/`: it is a
   fixture, not a shipped harness, and the image watcher and server seeding do
   not know about it.

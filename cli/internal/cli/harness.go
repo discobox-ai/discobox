@@ -230,7 +230,7 @@ func (a *App) newHarnessCreateCommand() *cobra.Command {
 	}}
 	cmd.Flags().StringVar(&opts.name, "name", "", "Harness config name")
 	cmd.Flags().StringVar(&opts.slug, "slug", "", "Stable, URL-safe identifier used to select this harness (e.g. codex); defaults to the definition ID or a slug derived from the name")
-	cmd.Flags().StringVar(&opts.image, "image", "", "Harness Docker image to register; the server reads and validates its io.discobox.harness.v1 metadata label")
+	cmd.Flags().StringVar(&opts.image, "image", "", "Harness Docker image to register; must be built FROM discobox-sandbox-agent, whose manifest layer it inherits")
 	cmd.Flags().StringArrayVar(&opts.files, "file", nil, "File to write into the harness's home directory, as PATH=CONTENT or PATH=@LOCALFILE (repeatable)")
 	cmd.Flags().StringArrayVar(&opts.createOnlyFile, "create-only-file", nil, "File path that should only be created if it does not already exist. Can be repeated and must match a --file PATH.")
 	return cmd

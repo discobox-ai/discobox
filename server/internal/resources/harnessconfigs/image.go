@@ -2,7 +2,6 @@ package harnessconfigs
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 	"runtime"
 	"strings"
@@ -138,14 +137,23 @@ func inspectLocalImage(ctx context.Context, imageRef string) (imageMetadata, boo
 	return metadata, true, err
 }
 
+// parseImageMetadata resolves an image's label set into the one manifest it
+// effectively declares: every inherited layer, then the image's own (ADR 0086
+// §2). Only the merged result is validated — a layer on its own is a fragment,
+// and the base layer legitimately carries no harness at all.
 func parseImageMetadata(digest string, labels map[string]string) (imageMetadata, error) {
-	raw := strings.TrimSpace(labels[harness.ImageLabel])
-	if raw == "" {
-		return imageMetadata{}, fmt.Errorf("image is missing required label %q", harness.ImageLabel)
+	metadata, hasBase, err := harness.ResolveImageLabels(labels)
+	if err != nil {
+		return imageMetadata{}, err
 	}
-	var metadata harness.ImageMetadata
-	if err := json.Unmarshal([]byte(raw), &metadata); err != nil {
-		return imageMetadata{}, fmt.Errorf("parse %s label: %w", harness.ImageLabel, err)
+	// The base layer is the only evidence of lineage available without pulling
+	// filesystem layers, and lineage is a hard requirement: the runtime
+	// contract (PID 1, systemd units, the runc wrapper) lives in the base
+	// image's filesystem, so an image that did not come from it cannot run a
+	// sandbox whatever it declares (ADR 0086 §1). Saying that beats reporting a
+	// missing label, which is the same fact phrased as a paperwork error.
+	if !hasBase {
+		return imageMetadata{}, fmt.Errorf("image is not built FROM discobox-sandbox-agent: it carries no %s%s label", harness.ImageLayerLabelPrefix, harness.SandboxBaseLayer)
 	}
 	if err := validateImageMetadata(metadata); err != nil {
 		return imageMetadata{}, err
@@ -154,20 +162,18 @@ func parseImageMetadata(digest string, labels map[string]string) (imageMetadata,
 }
 
 func validateImageMetadata(metadata harness.ImageMetadata) error {
-	if metadata.Harness == nil {
-		return fmt.Errorf("%s label requires harness", harness.ImageLabel)
-	}
+	// A manifest is optional in full: an image that installs its agent as
+	// harness.RunCommand and needs no credentials declares nothing, and takes
+	// its identity from the registration (ADR 0086 §5). What remains here are
+	// the rules about what a *present* declaration may say.
 	h := metadata.Harness
-	if strings.TrimSpace(h.ID) == "" {
-		return fmt.Errorf("%s label requires harness id", harness.ImageLabel)
-	}
-	if strings.TrimSpace(h.Name) == "" {
-		return fmt.Errorf("%s label requires harness name", harness.ImageLabel)
+	if h == nil {
+		h = &harness.Image{}
 	}
 	// An omitted runCommand is a declaration, not an omission: it means the
-	// sandbox resolves the user's login shell, which is the only place that
-	// knows whether it is bash, zsh, or fish (ADR 0025 §3, ADR 0043). A
-	// *present but blank* command is still a broken image.
+	// image installs the conventional harness.RunCommand, which the runtime
+	// types (ADR 0086 §3). A *present but blank* command is still a broken
+	// image.
 	if len(h.RunCommand) > 0 && strings.TrimSpace(h.RunCommand[0]) == "" {
 		return fmt.Errorf("%s label has a blank runCommand", harness.ImageLabel)
 	}
@@ -198,48 +204,83 @@ func validateImageMetadata(metadata harness.ImageMetadata) error {
 	return nil
 }
 
-// harnessMetadataBuildArg is the build argument each harness Dockerfile turns
-// into the harness.ImageLabel label. Keep the two in sync.
-const harnessMetadataBuildArg = "HARNESS_METADATA"
-
 // devImageInspector resolves harness metadata from the development image
 // manifest before falling back to a daemon or registry lookup.
 //
 // In build-mode the host has no Docker daemon and the dev image has never been
 // pushed, so neither fallback can see it: the image exists only as a build
 // description until some pool's daemon builds it. The manifest already carries
-// the metadata verbatim, as the build argument that becomes the label, so
+// the metadata verbatim, as the build arguments that become the labels, so
 // seeding reads it from there and no longer depends on the image existing yet.
+//
+// It reconstructs the label set the built image would carry, inherited layers
+// included, by walking the same edge the manifest already uses to order builds:
+// a harness entry's SANDBOX_AGENT_IMAGE argument names the base entry's
+// reference, whose own layer argument is the layer that image would label
+// (ADR 0086 §4). Without that walk a developer on Windows or macOS would
+// resolve a manifest missing every inherited volume and env var, and every
+// harness image would be rejected as not built from the base.
 type devImageInspector struct {
-	metadataByReference map[string]string
-	fallback            imageInspector
+	labelsByReference map[string]map[string]string
+	fallback          imageInspector
 }
 
 // newDevImageInspector wraps fallback with the build-mode manifest entries in
-// images. It returns fallback unchanged when no entry carries harness metadata,
+// images. It returns fallback unchanged when no entry carries image metadata,
 // so copy-mode and production keep the original behavior exactly.
 func newDevImageInspector(images []devimage.Image, fallback imageInspector) imageInspector {
-	metadata := map[string]string{}
+	// The layer each entry contributes to whatever is built FROM it, keyed by
+	// the reference a child names it under.
+	layerByReference := map[string]string{}
 	for _, image := range images {
 		if image.Build == nil {
 			continue
 		}
-		if raw := strings.TrimSpace(image.Build.Args[harnessMetadataBuildArg]); raw != "" {
-			metadata[strings.TrimSpace(image.Reference)] = raw
+		if raw := strings.TrimSpace(image.Build.Args[harness.LayerMetadataBuildArg]); raw != "" {
+			layerByReference[strings.TrimSpace(image.Reference)] = raw
 		}
 	}
-	if len(metadata) == 0 {
+
+	labels := map[string]map[string]string{}
+	for _, image := range images {
+		if image.Build == nil {
+			continue
+		}
+		reference := strings.TrimSpace(image.Reference)
+		own := strings.TrimSpace(image.Build.Args[harness.MetadataBuildArg])
+		parent := strings.TrimSpace(image.Build.Args[sandboxAgentImageBuildArg])
+		inherited, hasParent := layerByReference[parent]
+		if own == "" && !hasParent {
+			continue
+		}
+		entry := map[string]string{}
+		if hasParent {
+			entry[harness.ImageLayerLabelPrefix+harness.SandboxBaseLayer] = inherited
+		}
+		// An image that declares nothing sets no label of its own, exactly as
+		// its Dockerfile does not.
+		if own != "" {
+			entry[harness.ImageLabel] = own
+		}
+		labels[reference] = entry
+	}
+	if len(labels) == 0 {
 		return fallback
 	}
-	return devImageInspector{metadataByReference: metadata, fallback: fallback}
+	return devImageInspector{labelsByReference: labels, fallback: fallback}
 }
 
+// sandboxAgentImageBuildArg is the build argument a harness Dockerfile takes
+// its base image reference in, and so the manifest edge from a harness image to
+// the base whose layer it inherits. Keep in sync with the harness Dockerfiles.
+const sandboxAgentImageBuildArg = "SANDBOX_AGENT_IMAGE"
+
 func (d devImageInspector) Inspect(ctx context.Context, imageRef string) (imageMetadata, error) {
-	raw, ok := d.metadataByReference[strings.TrimSpace(imageRef)]
+	labels, ok := d.labelsByReference[strings.TrimSpace(imageRef)]
 	if !ok {
 		return d.fallback.Inspect(ctx, imageRef)
 	}
 	// A build-mode reference is content-addressed over that image's inputs, so
 	// it is its own freshness key; there is no digest until it is built.
-	return parseImageMetadata(imageRef, map[string]string{harness.ImageLabel: raw})
+	return parseImageMetadata(imageRef, labels)
 }

@@ -1,6 +1,17 @@
 #!/bin/sh
 set -eu
 
+# The harness-run convention (ADR 0086 §3): the runtime types
+# `discobox-harness-run [--resume] '<prompt>'` into the terminal's login shell.
+#
+# The prompt trails a resume too (ADR 0086 §4), so a user whose first launch
+# failed can still see what the sandbox was asked to do. The resumed session
+# already contains it, so `resume --last` replaces it rather than re-sending it.
+if [ "${1-}" = "--resume" ]; then
+	shift
+	set -- resume --last
+fi
+
 # Codex has no supported setting for moving only its consolidated memory
 # workspace, and deliberately rejects a symlinked memory root. Keep CODEX_HOME
 # (auth, config, sessions, and SQLite coordination) sandbox-local and bind the

@@ -1,51 +1,14 @@
 {
   "apiVersion": "discobox.dev/image/v1",
-  "env": {
-    "DISPLAY": ":0",
-    "NIX_CONFIG": "experimental-features = nix-command flakes",
-    "NIX_REMOTE": "daemon",
-    "NPM_CONFIG_PREFIX": "%HOME%/.npm-global",
-    "PATH": "%HOME%/.npm-global/bin:%HOME%/.cargo/bin:%HOME%/.nix-profile/bin:%HOME%/.local/bin:/nix/var/nix/profiles/default/bin:/usr/local/go/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
-  },
-  "volumes": [
-    { "path": "%HOME%", "volume": "data", "uid": "%UID%", "gid": "%GID%", "mode": "0755" },
-    { "path": "/var/lib/docker", "volume": "data", "uid": 0, "gid": 0, "mode": "0711" },
-    { "path": "/var/lib/containerd", "volume": "data", "uid": 0, "gid": 0, "mode": "0711" },
-    { "path": "/var/lib/discobox", "volume": "data", "uid": 0, "gid": 0, "mode": "0755" },
-    { "path": "/nix", "volume": "cache", "uid": 0, "gid": 0, "mode": "0755" },
-    { "path": "/nix/var/nix/profiles", "volume": "data", "uid": 0, "gid": 0, "mode": "0755" },
-    { "path": "/nix/var/nix/gcroots", "volume": "data", "uid": 0, "gid": 0, "mode": "0755" },
-    { "path": "%HOME%/.cache", "volume": "cache", "uid": "%UID%", "gid": "%GID%", "mode": "0755" },
-    { "path": "%HOME%/.local/share/pnpm", "volume": "cache", "uid": "%UID%", "gid": "%GID%", "mode": "0755" },
-    { "path": "%HOME%/go/pkg/mod", "volume": "cache", "uid": "%UID%", "gid": "%GID%", "mode": "0755" },
-    { "path": "%HOME%/.cargo/registry", "volume": "cache", "uid": "%UID%", "gid": "%GID%", "mode": "0755" },
-    { "path": "%HOME%/.cargo/git", "volume": "cache", "uid": "%UID%", "gid": "%GID%", "mode": "0755" },
-    { "path": "%HOME%/.rustup", "volume": "cache", "uid": "%UID%", "gid": "%GID%", "mode": "0755" },
-    { "path": "%HOME%/.vscode-server", "volume": "cache", "uid": "%UID%", "gid": "%GID%", "mode": "0755" }
-  ],
-  "additionalGroups": ["docker"],
   "harness": {
     "id": "codex",
     "name": "Codex",
     "description": "OpenAI Codex coding harness.",
-    "runCommand": [
-      "/usr/local/libexec/discobox/launch-codex"
-    ],
-    "relaunchCommand": [
-      "/usr/local/libexec/discobox/launch-codex",
-      "resume",
-      "--last"
-    ],
     "files": [
       {
         "path": ".codex/config.toml",
         "template": true,
         "content": "# Managed by Discobox. Policy defaults (approval, sandbox) are the image's\n# system layer, /etc/codex/config.toml, which this file may override.\n{{- range .sources }}{{- if eq .slug \"primary\" }}\n[projects.{{ .target | json }}]\ntrust_level = \"trusted\"\n{{- end }}{{- end }}\n"
-      },
-      {
-        "path": ".config/pnpm/config.yaml",
-        "createOnly": true,
-        "content": "storeDir: ~/.local/share/pnpm\n"
       }
     ],
     "secrets": [

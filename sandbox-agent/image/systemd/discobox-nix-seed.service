@@ -11,7 +11,7 @@ ConditionPathExists=/usr/local/lib/discobox/nix
 [Service]
 Type=oneshot
 # Deliberately not RemainAfterExit: a run that is already up to date is two
-# small file reads under a flock (ADR 0085), and staying active would make
+# small file reads under a flock (ADR 0086), and staying active would make
 # every later `systemctl start` from a shim an instant no-op -- including the
 # one asking to recover a store the last run left half-matching its profiles.
 # Concurrent starts still collapse; systemd joins the caller to the running job.

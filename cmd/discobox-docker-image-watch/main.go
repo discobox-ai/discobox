@@ -17,6 +17,7 @@ import (
 	"time"
 
 	"github.com/discobox-ai/discobox/devimage"
+	"github.com/discobox-ai/discobox/harness"
 )
 
 const envFile = ".env"
@@ -39,7 +40,12 @@ type imageSpec struct {
 	buildDir     string
 	buildArgs    []string
 	files        []string
+	// metadataFile is the authoring-time image.json compacted into metadataArg
+	// at build time, which the Dockerfile turns into a manifest label. Both are
+	// empty for an image that declares nothing and inherits its whole manifest
+	// from the base layer (ADR 0086 §2), which is what `shell` now is.
 	metadataFile string
+	metadataArg  string
 	// contextDir and dockerfile describe the same build as buildArgs, but
 	// declaratively, for build-mode: the server builds these on the destination
 	// Docker daemon, so there is no docker CLI invocation to derive them from.
@@ -352,12 +358,18 @@ func dockerImageSpecs(ctx context.Context, repoRoot string) ([]imageSpec, error)
 			buildDir:     repoRoot,
 			buildArgs: []string{"build", "-f", "sandbox-agent/Dockerfile",
 				"--build-arg", "BASE_IMAGE=discobox-base:local",
+				"--build-arg", harness.LayerMetadataBuildArg + "=",
 				"-t", "discobox-sandbox-agent:local", "."},
 			contextDir: repoRoot,
 			dockerfile: "sandbox-agent/Dockerfile",
 			parent:     baseSpecName,
 			parentArg:  "BASE_IMAGE",
-			files:      sortedFiles(commonSandboxSeen),
+			// The layer every harness image inherits (ADR 0086 §2), filled in
+			// from sandbox-agent/image.json by buildImage; the placeholder
+			// marks where it lands.
+			metadataFile: filepath.Join(repoRoot, "sandbox-agent", "image.json"),
+			metadataArg:  harness.LayerMetadataBuildArg,
+			files:        sortedFiles(commonSandboxSeen),
 		},
 	}
 	for _, harnessImage := range harnessImages {
@@ -366,6 +378,20 @@ func dockerImageSpecs(ctx context.Context, repoRoot string) ([]imageSpec, error)
 		for _, name := range []string{"Dockerfile", "configure.sh", "image.json"} {
 			addFile(repoRoot, filepath.Join(harnessDir, name), seen)
 		}
+		// An image that declares nothing has no manifest file and no build
+		// argument for one: its whole manifest is the base layer it inherits
+		// (ADR 0086 §2), which is what `shell` is.
+		metadataFile := filepath.Join(repoRoot, harnessDir, "image.json")
+		metadataArg := harness.MetadataBuildArg
+		if _, err := os.Stat(metadataFile); err != nil {
+			metadataFile, metadataArg = "", ""
+		}
+		buildArgs := []string{"build", "-f", filepath.Join(harnessDir, "Dockerfile"),
+			"--build-arg", "SANDBOX_AGENT_IMAGE=discobox-sandbox-agent:local"}
+		if metadataArg != "" {
+			buildArgs = append(buildArgs, "--build-arg", metadataArg+"=")
+		}
+		buildArgs = append(buildArgs, "-t", "discobox-harness-"+harnessImage.name+":local", harnessDir)
 		specs = append(specs, imageSpec{
 			name: "harness-" + harnessImage.name, baseImage: "discobox-harness-" + harnessImage.name + ":local",
 			devPrefix: "discobox-harness-" + harnessImage.name + ":dev-", buildDir: repoRoot,
@@ -374,12 +400,11 @@ func dockerImageSpecs(ctx context.Context, repoRoot string) ([]imageSpec, error)
 			// match the server-side harnessdefs.ImageEnvVar mapping (definition id →
 			// DISCOBOX_HARNESS_<ID>_IMAGE); the image name equals the definition id.
 			envImageKey: harnessImageEnvKey(harnessImage.name),
-			// HARNESS_METADATA is filled in from image.json by buildImage at build
-			// time; the placeholder marks where it lands.
-			buildArgs: []string{"build", "-f", filepath.Join(harnessDir, "Dockerfile"),
-				"--build-arg", "SANDBOX_AGENT_IMAGE=discobox-sandbox-agent:local",
-				"--build-arg", "HARNESS_METADATA=", "-t", "discobox-harness-" + harnessImage.name + ":local", harnessDir},
-			metadataFile: filepath.Join(repoRoot, harnessDir, "image.json"),
+			// The metadata argument is filled in from image.json by buildImage
+			// at build time; the placeholder marks where it lands.
+			buildArgs:    buildArgs,
+			metadataFile: metadataFile,
+			metadataArg:  metadataArg,
 			parent:       sandboxAgentSpecName,
 			parentArg:    "SANDBOX_AGENT_IMAGE",
 			// The harness build context is the harness directory itself, so its
@@ -399,10 +424,12 @@ func harnessImageEnvKey(harnessName string) string {
 	return "DISCOBOX_HARNESS_" + strings.ToUpper(strings.ReplaceAll(harnessName, "-", "_")) + "_IMAGE"
 }
 
-// harnessMetadata reads a harness's authoring-time image.json and compacts it
-// wholesale for the HARNESS_METADATA build-arg: the io.discobox.image.v1
-// label's payload is the full image.json shape (apiVersion, env, volumes,
-// harness), not just the harness sub-object.
+// harnessMetadata reads an authoring-time image.json and compacts it wholesale
+// for its build-arg: a manifest label's payload is the full image.json shape
+// (apiVersion, env, volumes, harness), not just the harness sub-object. The
+// same function serves a leaf image's own layer and the base image's
+// contributed one — they are the same shape, differing only in which label key
+// carries them (ADR 0086 §2).
 func harnessMetadata(path string) (string, error) {
 	data, err := os.ReadFile(path)
 	if err != nil {
@@ -686,11 +713,11 @@ func resolveParentImage(ctx context.Context, repoRoot string, specs []imageSpec,
 }
 
 // renderBuildArgs fills in the placeholders a spec's docker argv carries: the
-// harness metadata read from image.json, and the reference of the image this one
-// builds FROM. Both fail quietly if they are missed — an unfilled
-// HARNESS_METADATA ships an empty label the server skips at seeding, and an
-// unfilled parent argument builds on the mutable :local tag instead of the exact
-// base the caller resolved — so this is separated from the docker invocation to
+// manifest metadata read from image.json, and the reference of the image this
+// one builds FROM. Both fail quietly if they are missed — an unfilled metadata
+// argument ships an empty label, which for the base image's layer means every
+// harness image built on it inherits nothing and is rejected as not built from
+// the base (ADR 0086 §1) — so this is separated from the docker invocation to
 // be assertable on its own.
 func renderBuildArgs(spec imageSpec, parentImage string) ([]string, error) {
 	buildArgs := append([]string{}, spec.buildArgs...)
@@ -706,7 +733,7 @@ func renderBuildArgs(spec imageSpec, parentImage string) ([]string, error) {
 		if err != nil {
 			return nil, err
 		}
-		replace("HARNESS_METADATA=", metadata)
+		replace(spec.metadataArg+"=", metadata)
 	}
 	if spec.parentArg != "" && parentImage != "" {
 		replace(spec.parentArg+"=", parentImage)

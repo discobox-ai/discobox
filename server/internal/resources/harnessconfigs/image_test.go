@@ -10,6 +10,19 @@ import (
 	"github.com/discobox-ai/discobox/harness"
 )
 
+// withBaseLayer adds the layer every harness image inherits from the sandbox
+// agent base. Registration requires it as proof of lineage (ADR 0086 §1), so a
+// label map without one is not a case any real image presents.
+func withBaseLayer(own string) map[string]string {
+	labels := map[string]string{
+		harness.ImageLayerLabelPrefix + harness.SandboxBaseLayer: `{"apiVersion":"discobox.dev/image/v1","env":{"DISPLAY":":0"}}`,
+	}
+	if own != "" {
+		labels[harness.ImageLabel] = own
+	}
+	return labels
+}
+
 func TestParseImageMetadata(t *testing.T) {
 	label, err := json.Marshal(harness.ImageMetadata{
 		Env:     map[string]string{"HOME": "/home/sandbox"},
@@ -22,7 +35,7 @@ func TestParseImageMetadata(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	metadata, err := parseImageMetadata("sha256:abc", map[string]string{harness.ImageLabel: string(label)})
+	metadata, err := parseImageMetadata("sha256:abc", withBaseLayer(string(label)))
 	if err != nil {
 		t.Fatalf("parse image metadata: %v", err)
 	}
@@ -42,14 +55,15 @@ func TestParseImageMetadataRejectsInvalidSecrets(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := parseImageMetadata("sha256:abc", map[string]string{harness.ImageLabel: string(label)}); err == nil {
+	if _, err := parseImageMetadata("sha256:abc", withBaseLayer(string(label))); err == nil {
 		t.Fatal("invalid secret name was accepted")
 	}
 }
 
-// An omitted runCommand is a declaration: the sandbox resolves the user's login
-// shell, which is the only place that knows what it is. `harness/shell` is the
-// included image that makes that declaration. A blank one is still broken.
+// An omitted runCommand is a declaration, not an omission: the image installs
+// the conventional harness.RunCommand and the runtime types that (ADR 0086 §3).
+// A blank one is still broken — "declares nothing" and "declares an empty
+// string" are different, and only one of them is a decision.
 func TestParseImageMetadataAcceptsNoRunCommand(t *testing.T) {
 	label, err := json.Marshal(harness.ImageMetadata{
 		APIVersion:       harness.ImageAPIVersion,
@@ -59,7 +73,7 @@ func TestParseImageMetadataAcceptsNoRunCommand(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	metadata, err := parseImageMetadata("sha256:shell", map[string]string{harness.ImageLabel: string(label)})
+	metadata, err := parseImageMetadata("sha256:shell", withBaseLayer(string(label)))
 	if err != nil {
 		t.Fatalf("parse shell image metadata: %v", err)
 	}
@@ -73,7 +87,7 @@ func TestParseImageMetadataAcceptsNoRunCommand(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := parseImageMetadata("sha256:shell", map[string]string{harness.ImageLabel: string(blank)}); err == nil {
+	if _, err := parseImageMetadata("sha256:shell", withBaseLayer(string(blank))); err == nil {
 		t.Fatal("a blank runCommand was accepted")
 	}
 }
@@ -86,17 +100,63 @@ func TestParseImageMetadataRejectsUnknownVolumeKind(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := parseImageMetadata("sha256:abc", map[string]string{harness.ImageLabel: string(label)}); err == nil {
+	if _, err := parseImageMetadata("sha256:abc", withBaseLayer(string(label))); err == nil {
 		t.Fatal("unknown volume kind was accepted")
 	}
 }
 
-// Every included image.json must be metadata this server accepts. The build
-// compacts these files straight into the label, and a rejected label is a
-// harness that is quietly skipped at seeding rather than an error anybody sees
-// — so the authoring file is checked here, where a mistake fails loudly.
+// Every included image.json must be metadata this server accepts, merged the
+// way the built image will carry it: the base image's layer, then the harness's
+// own. The build compacts these files straight into their labels, and a
+// rejected label is a harness quietly skipped at seeding rather than an error
+// anybody sees — so the authoring files are checked here, where a mistake fails
+// loudly.
 func TestIncludedImageJSONFilesAreValid(t *testing.T) {
-	// server/ is a nested module; the harness folders live in the repo root.
+	// server/ is a nested module; the image folders live in the repo root.
+	repoRoot := filepath.Join("..", "..", "..", "..")
+	baseLayer := compactFile(t, filepath.Join(repoRoot, "sandbox-agent", "image.json"))
+
+	matches, err := filepath.Glob(filepath.Join(repoRoot, "harness", "*", "image.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	// Plus the image that declares nothing at all and is its inherited layer,
+	// which is `shell` and is also what any BYO image starts as.
+	cases := map[string]string{"(no manifest)": ""}
+	for _, match := range matches {
+		cases[match] = compactFile(t, match)
+	}
+	for name, own := range cases {
+		labels := map[string]string{harness.ImageLayerLabelPrefix + harness.SandboxBaseLayer: baseLayer}
+		if own != "" {
+			labels[harness.ImageLabel] = own
+		}
+		metadata, err := parseImageMetadata("sha256:test", labels)
+		if err != nil {
+			t.Errorf("%s would be rejected as a label: %v", name, err)
+			continue
+		}
+		if metadata.APIVersion != harness.ImageAPIVersion {
+			t.Errorf("%s apiVersion = %q, want %q", name, metadata.APIVersion, harness.ImageAPIVersion)
+		}
+		// The base image ships the socket-activated desktop, so every image
+		// built on it needs DISPLAY. It is declared once, in the base layer,
+		// and inherited — forgetting it is silent: every GUI tool in that
+		// sandbox fails with "cannot open display" and nothing says why.
+		if got := metadata.Env["DISPLAY"]; got != ":0" {
+			t.Errorf("%s env DISPLAY = %q, want \":0\"", name, got)
+		}
+		// And the volumes, which a harness manifest no longer restates.
+		if len(metadata.Volumes) == 0 {
+			t.Errorf("%s declares no volumes, so its sandbox would persist nothing", name)
+		}
+	}
+}
+
+// A harness manifest must not restate what the base layer already declares.
+// Restating is how the duplication ADR 0086 removed accumulated in the first
+// place, and a stale copy silently outranks the base.
+func TestHarnessManifestsDeclareNoBaseFacts(t *testing.T) {
 	matches, err := filepath.Glob(filepath.Join("..", "..", "..", "..", "harness", "*", "image.json"))
 	if err != nil {
 		t.Fatal(err)
@@ -105,31 +165,35 @@ func TestIncludedImageJSONFilesAreValid(t *testing.T) {
 		t.Fatal("no harness image.json files found")
 	}
 	for _, match := range matches {
-		data, err := os.ReadFile(match)
-		if err != nil {
+		var manifest harness.ImageMetadata
+		if err := json.Unmarshal([]byte(compactFile(t, match)), &manifest); err != nil {
 			t.Fatal(err)
 		}
-		compact := &bytes.Buffer{}
-		if err := json.Compact(compact, data); err != nil {
-			t.Fatalf("%s is not valid JSON: %v", match, err)
+		if len(manifest.Env) != 0 || len(manifest.Volumes) != 0 || len(manifest.AdditionalGroups) != 0 {
+			t.Errorf("%s restates base-layer facts: env=%v volumes=%v groups=%v",
+				match, manifest.Env, manifest.Volumes, manifest.AdditionalGroups)
 		}
-		metadata, err := parseImageMetadata("sha256:test", map[string]string{harness.ImageLabel: compact.String()})
-		if err != nil {
-			t.Fatalf("%s would be rejected as a label: %v", match, err)
+		if manifest.Harness == nil {
+			continue
 		}
-		if metadata.APIVersion != harness.ImageAPIVersion {
-			t.Errorf("%s apiVersion = %q, want %q", match, metadata.APIVersion, harness.ImageAPIVersion)
-		}
-		if metadata.Harness == nil {
-			t.Errorf("%s declares no harness", match)
-		}
-		// Every harness image extends the sandbox-agent base, which ships the
-		// desktop, and nothing merges the base's env into a harness manifest
-		// (harness/DESIGN.md) — so each one has to declare DISPLAY itself.
-		// Forgetting it is silent: every GUI tool in that sandbox fails with
-		// "cannot open display" and nothing else says why.
-		if got := metadata.Env["DISPLAY"]; got != ":0" {
-			t.Errorf("%s env DISPLAY = %q, want \":0\"", match, got)
+		// Naming a command is an override of the harness-run convention, and
+		// nothing Discobox ships takes one (ADR 0086 §3).
+		if len(manifest.Harness.RunCommand) != 0 || len(manifest.Harness.RelaunchCommand) != 0 {
+			t.Errorf("%s overrides the harness-run convention: run=%v relaunch=%v",
+				match, manifest.Harness.RunCommand, manifest.Harness.RelaunchCommand)
 		}
 	}
+}
+
+func compactFile(t *testing.T, path string) string {
+	t.Helper()
+	data, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	compact := &bytes.Buffer{}
+	if err := json.Compact(compact, data); err != nil {
+		t.Fatalf("%s is not valid JSON: %v", path, err)
+	}
+	return compact.String()
 }

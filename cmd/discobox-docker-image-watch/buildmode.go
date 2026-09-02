@@ -101,7 +101,7 @@ func buildModeArgs(spec imageSpec, tags map[string]string) (map[string]string, e
 		if err != nil {
 			return nil, err
 		}
-		args["HARNESS_METADATA"] = metadata
+		args[spec.metadataArg] = metadata
 	}
 	if spec.parentArg != "" {
 		parentTag, ok := tags[spec.parent]

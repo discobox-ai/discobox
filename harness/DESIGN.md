@@ -5,49 +5,75 @@ sandbox terminals.
 
 ## Image Contract
 
-- One sandbox image contains at most one harness. Its immutable identity,
-  run/relaunch commands (`runCommand` optional — omitting it declares that the
-  sandbox resolves the user's login shell, ADR 0043 §2), seed files, secret
-  declarations, optional config command, env defaults, and declarative volumes
-  are published in the
-  `io.discobox.image.v1` OCI image label (`harness.ImageMetadata`) for
-  server-side registration. There is no baked-in file inside the image
-  carrying this data — `image.json` is the build-time authoring source the
-  label is compacted from (see `Taskfile.yml`'s `build:harness-image`), not a
+- One sandbox image contains at most one harness. Its identity, seed files,
+  secret declarations, optional config command, env defaults, declarative
+  volumes, and any command overrides are published in OCI image labels
+  (`harness.ImageMetadata`) for server-side registration. There is no baked-in
+  file inside the image carrying this data — `image.json` is the build-time
+  authoring source a label is compacted from (see `Taskfile.yml`), not a
   runtime artifact.
-- The label is snapshotted onto the harness config at registration and
-  re-snapshotted when the image's config digest changes — by `SeedBuiltIns` for
-  built-ins, by `RefreshHarnessConfigImage` for user-registered images. A
+- **A manifest is a stack of layers** (ADR 0086 §2). An image's effective
+  manifest is `harness.ResolveImageLabels`: every
+  `io.discobox.image.v1.<NN>-<name>` label in ascending order of that suffix,
+  then the image's own `io.discobox.image.v1` label last. Docker inherits a
+  parent's labels and a `LABEL` replaces only the key it names, so a layer set
+  by `sandbox-agent/Dockerfile` is present on every image built from it at any
+  depth. Layers merge by identity — `env` per key, `volumes`/`files` by path,
+  `secrets` by name, groups by union — and none of them may unset.
+  `00`–`49` is reserved for layers Discobox ships.
+- **Extending `discobox-sandbox-agent` is required**, and the base layer proves
+  it. Registration rejects an image carrying no `10-sandbox-base` layer, because
+  the runtime contract — PID 1, systemd units, the runc wrapper — lives in the
+  base image's filesystem, and an image that did not come from it cannot run a
+  sandbox whatever it declares (ADR 0086 §1).
+- **The harness command is a convention.** The image installs its agent as
+  `/usr/local/bin/discobox-harness-run` (`harness.RunCommand`) and the runtime
+  types `discobox-harness-run [--resume] '<prompt>'`. `runCommand` and
+  `relaunchCommand` in a manifest are *overrides*, and nothing Discobox ships
+  sets one. The convention is resolved at registration
+  (`harnessconfigs.conventionCommands`), which is where the reserved `shell`
+  slug is known — the sandbox knows its harness by the config's generated id
+  and cannot tell a login shell from an image that declared nothing.
+  The base image ships `discobox-harness-run` as a shim that execs nothing, so
+  an image installing no agent lands the user at a prompt rather than at a
+  `command not found`; a harness image overwrites it. See ADR 0086 §3.
+- **The prompt trails every launch**, relaunch included (ADR 0086 §4). A
+  wrapper resuming a session ignores it — both included launchers replace it
+  with their own resume flags — but because the command is *typed* (ADR 0027),
+  a sandbox whose first launch failed still shows what it was asked to do, as
+  an editable command line.
+- The resolved manifest is snapshotted onto the harness config at registration
+  and re-snapshotted when the image's config digest changes — by `SeedBuiltIns`
+  for built-ins, by `RefreshHarnessConfigImage` for user-registered images. A
   snapshot is a cache of a mutable tag's current contents, not a permanent
   record (ADR 0016).
 - Harness CLIs are installed at image build time. Runtime commands are never
   supplied by the server or pool-agent.
-- Each provider folder owns its `Dockerfile`, `image.json`, configure script,
-  and other image-specific assets. Harness images extend the sandbox-agent base
-  selected by the `SANDBOX_AGENT_IMAGE` build argument, and must repeat any
-  base env/volumes they still need (the harness's own `image.json` is the
-  final image's sole metadata source; nothing merges with the base image's).
-  The `Dockerfile` and the `image.json` beside it therefore go together: what
-  the image installs and what it declares are one authoring unit, and every
-  base-provided fact is restated by hand until there is a composition pattern
-  for these manifests. `DISPLAY` and the `NIX_*`/`PATH` block are the current
-  cost of that.
-- Every `image.json` declares `DISPLAY=:0`, because the base image ships the
-  socket-activated desktop (Xorg dummy on `:0`, openbox, x11vnc, websockify —
-  see [`sandbox-agent/DESIGN.md`](../sandbox-agent/DESIGN.md)) unconditionally,
-  and every harness extends that base. Without it nothing in a sandbox can open
-  a window: `DISPLAY` reaches an exec only through `sandbox.json`'s env, which
-  is where the image layer lands. It is safe to declare always because nothing
-  runs until something connects — `xvfb.service` is `static`, pulled up on
-  demand by `x11-display.socket` — so an unused `DISPLAY` starts no X server.
-- Every `image.json` declares the three `/nix` volumes: `/nix` on `cache`, with
-  `/nix/var/nix/profiles` and `/nix/var/nix/gcroots` carved back onto `data`.
-  The store is pool-shared, so a closure one sandbox realizes is free for the
-  next; the per-user profile state is not, because both are keyed by username
-  and every sandbox in a pool runs the same user. The base image ships its own
-  store aside and leaves `/nix` empty precisely so this cache bind hides
-  nothing — a cache path is always a plain bind. See ADR 0075 and
-  [`sandbox-agent/DESIGN.md`](../sandbox-agent/DESIGN.md).
+- Each harness folder owns its `Dockerfile`, `image.json` (when it needs one),
+  configure script, and other image-specific assets. `harness/shell` needs
+  none: it installs nothing, declares nothing, and *is* its inherited base
+  layer.
+- **The base layer** is `sandbox-agent/image.json`, beside the Dockerfile that
+  labels it. It carries what is true of that image's filesystem rather than of
+  any harness:
+  - `DISPLAY=:0`, because the base ships the socket-activated desktop (Xorg
+    dummy on `:0`, openbox, x11vnc, websockify — see
+    [`sandbox-agent/DESIGN.md`](../sandbox-agent/DESIGN.md)) unconditionally.
+    Without it nothing in a sandbox can open a window: `DISPLAY` reaches an exec
+    only through `sandbox.json`'s env, which is where the image layer lands. It
+    is safe to declare always because nothing runs until something connects —
+    `xvfb.service` is `static`, pulled up on demand by `x11-display.socket` — so
+    an unused `DISPLAY` starts no X server.
+  - The three `/nix` volumes: `/nix` on `cache`, with `/nix/var/nix/profiles`
+    and `/nix/var/nix/gcroots` carved back onto `data`. The store is
+    pool-shared, so a closure one sandbox realizes is free for the next; the
+    per-user profile state is not, because both are keyed by username and every
+    sandbox in a pool runs the same user. The base image ships its own store
+    aside and leaves `/nix` empty precisely so this cache bind hides nothing — a
+    cache path is always a plain bind. See ADR 0075.
+  - The rest of the persistent and cached paths, the `docker` supplementary
+    group, the `NIX_*`/`PATH`/`NPM_CONFIG_PREFIX` env, and the pnpm `storeDir`
+    seed file.
 - Every harness image provides **`/usr/local/bin/discobox-prompt`**, a one-shot
   prompting interface in-sandbox tools ask for a model through
   ([ADR 0079](../docs/adr/0079-a-local-judge-gates-every-wrapped-credential-use.md)):
@@ -91,8 +117,12 @@ sandbox terminals.
   - `codex-cli`
   - `shell` — the login shell, and the end of the resolution chain. Its
     Dockerfile installs nothing (the base image already ships the shell) and it
-    declares no `runCommand`, no secrets, and no configure flow. It is otherwise
-    an ordinary harness in every mechanism that touches it (ADR 0043).
+    has no `image.json` at all: no identity to declare beyond its reserved slug,
+    no secrets, no configure flow, and its env and volumes are the base layer it
+    inherits. The reserved slug is also what withholds the harness-run
+    convention from it — a command typed into this terminal would be a second
+    shell inside the first. It is otherwise an ordinary harness in every
+    mechanism that touches it (ADR 0043, ADR 0086 §3).
 - `registry` is the list of harnesses a release ships, exposed as
   `Definitions()` for the control plane to seed built-in harness configs. It is
   a manifest, not a dispatch table: nothing looks a driver up by harness type at
