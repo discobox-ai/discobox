@@ -193,12 +193,28 @@ tasks:
       - cd access && go build -o ../{{.ACCESS_BINARY}} {{.ACCESS_MAIN}}
 
   build:cp-relay:
-    desc: Cross-compile the guest control-plane relay embedded in the Windows server
-    # Several targets depend on this and the output is identical for all of
+    desc: Cross-compile the guest control-plane relays embedded in the Windows server
+    # Several targets depend on this and the output is the same set for all of
     # them, so one run per invocation is enough.
     run: once
+    cmds:
+      # One relay per Windows target architecture. WSL2 does not emulate, so a
+      # guest is always the host's architecture and the relay a binary needs is
+      # decided by what that binary was built for — but one source tree builds
+      # both Windows binaries, so both are produced here and the server picks
+      # its own by GOARCH at run time.
+      - task: build:cp-relay:arch
+        vars: { RELAY_ARCH: amd64 }
+      - task: build:cp-relay:arch
+        vars: { RELAY_ARCH: arm64 }
+
+  build:cp-relay:arch:
+    desc: Cross-compile the guest control-plane relay for one architecture (RELAY_ARCH=)
+    requires:
+      vars: [RELAY_ARCH]
     vars:
-      RELAY_OUT: server/providers/wslc/relay/artifacts/discobox-cp-relay.linux-amd64.gz
+      RELAY_BIN: build/discobox-cp-relay.linux-{{.RELAY_ARCH}}
+      RELAY_OUT: server/providers/wslc/relay/artifacts/discobox-cp-relay.linux-{{.RELAY_ARCH}}.gz
     cmds:
       # The relay runs inside a pool guest, which has no Go toolchain, so it is
       # cross-compiled here and embedded in the server binary. Stripped and
@@ -209,11 +225,11 @@ tasks:
       # builds runtime/cgo's Linux C against the macOS SDK and fails. The relay
       # runs in a guest with no libc guarantee, so static is what it wants
       # anyway.
-      - cd pool-agent && CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -trimpath -ldflags="-s -w" -o ../build/discobox-cp-relay ./cmd/discobox-cp-relay
+      - cd pool-agent && CGO_ENABLED=0 GOOS=linux GOARCH={{.RELAY_ARCH}} go build -trimpath -ldflags="-s -w" -o ../{{.RELAY_BIN}} ./cmd/discobox-cp-relay
       # Compressed by a Go helper rather than gzip(1) and a shell redirect:
       # Windows ships no gzip, Git's is absent from a PowerShell or cmd PATH,
       # and a gzip whose stdout reaches a console refuses to write at all.
-      - go run ./cmd/discobox-gzip build/discobox-cp-relay {{.RELAY_OUT}}
+      - go run ./cmd/discobox-gzip {{.RELAY_BIN}} {{.RELAY_OUT}}
 
   build:vz-guest:
     desc: Build the macOS pool guest image and stage it where the vz provider finds it
@@ -746,6 +762,8 @@ tasks:
       # Windows *tests* still run natively (ADR 0066 §4).
       - task: release:binary
         vars: { TARGET_OS: windows, TARGET_ARCH: amd64 }
+      - task: release:binary
+        vars: { TARGET_OS: windows, TARGET_ARCH: arm64 }
 
   release:build:darwin:
     desc: Build and sign the macOS release binary
@@ -863,6 +881,24 @@ tasks:
           [ -e "$binary" ] || continue
           name=$(basename "$binary")
           found=$((found + 1))
+
+          # A Windows binary reaches its WSL guest through the relay embedded
+          # for its own architecture: WSL2 does not emulate, so the guest is
+          # always the host's. One built without it installs, launches, and
+          # fails at the first pool -- on a machine no Linux or amd64 test run
+          # ever touches, which is the same blind spot the interpreter check
+          # below exists for.
+          case "$name" in
+            *-windows-*)
+              arch=${name#*-windows-}
+              arch=${arch%.exe}
+              relay="server/providers/wslc/relay/artifacts/discobox-cp-relay.linux-$arch.gz"
+              [ -f "$relay" ] || { echo "$name: no guest relay was built for linux/$arch; add it to build:cp-relay" >&2; exit 1; }
+              size=$(wc -c < "$relay")
+              [ "$size" -gt 65536 ] || { echo "$name: guest relay for linux/$arch is $size bytes, not a real binary" >&2; exit 1; }
+              echo "$name: guest relay linux/$arch ($size bytes)"
+              ;;
+          esac
 
           case "$name" in
             *-linux-*)
