@@ -1,6 +1,8 @@
 # 0083 — A repository with no commits is uncommitted work on an empty base
 
-- **Status**: Accepted
+- **Status**: Accepted (the Consequences entry deferring `discobox apply` is
+  superseded by [0084](0084-the-first-apply-into-a-repository-with-no-commits-is-its-history.md);
+  everything else stands)
 - **Date**: 2026-09-01
 - **Extends**: [0045](0045-a-directory-with-no-repository-is-delivered-by-push.md) to
   the repository `git init` leaves behind; 0045 itself stands unchanged.
