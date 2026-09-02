@@ -135,3 +135,4 @@ Nygard-style ADRs (see adr.github.io) combined with current-state design docs:
 | [0080](0080-the-image-ships-the-skills-for-what-it-installs.md) | The image ships the skills for what it installs | Accepted |
 | [0081](0081-project-events-are-not-persisted-and-the-wait-polls.md) | Project events are not persisted, and the attach wait polls | Accepted (settles [0061](0061-the-client-facing-project-event-stream-is-removed.md)'s deferred persistence question) |
 | [0082](0082-a-stopped-sandbox-tracks-its-harness-image.md) | A stopped sandbox tracks its harness image | Accepted (supersedes [0021](0021-upgrade-is-a-re-pin-and-preserves-power-state.md) §2) |
+| [0083](0083-a-repository-with-no-commits-is-uncommitted-work-on-an-empty-base.md) | A repository with no commits is uncommitted work on an empty base | Accepted |
