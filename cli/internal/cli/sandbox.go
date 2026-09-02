@@ -471,7 +471,11 @@ func (a *App) newSandboxUpgradeCommand() *cobra.Command {
 			"The discobox keeps its ID, its workspace and sources, its caches, and its\n" +
 			"secrets. Anything written elsewhere in the container's filesystem — packages\n" +
 			"installed by hand, files outside the workspace — is lost, and the running\n" +
-			"harness process is stopped.",
+			"harness process is stopped.\n\n" +
+			"A *stopped* discobox usually does not need this: a new harness image rebuilds\n" +
+			"it where it rests, so its next start is already on the image. This is what\n" +
+			"moves a running one, and any discobox in a project set to \"manual\" with\n" +
+			"\"discobox admin project update --sandbox-upgrade-policy\".",
 		Args:              cobra.ExactArgs(1),
 		ValidArgsFunction: a.completeSandboxes,
 		RunE: func(cmd *cobra.Command, args []string) error {

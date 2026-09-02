@@ -122,12 +122,22 @@ provider instance in its own project.`, Args: cobra.ExactArgs(1), RunE: func(cmd
 func (a *App) newProjectUpdateCommand() *cobra.Command {
 	var name string
 	var archiveRetention time.Duration
+	var upgradePolicy string
 	cmd := &cobra.Command{Use: "update PROJECT_ID", Short: "Update a project", Long: `Update a project.
 
 --archive-retention sets how long this project's archived discoboxes are kept
 before they are purged. Deleting a discobox archives it, so this is how long a
 deleted discobox can still be restored with "discobox admin box unarchive".
-Zero restores the server default.`, Args: cobra.ExactArgs(1), ValidArgsFunction: a.completeProjects, RunE: func(cmd *cobra.Command, args []string) error {
+Zero restores the server default.
+
+--sandbox-upgrade-policy decides whether this project's *stopped* discoboxes
+follow their harness image. Under "automatic" (the default), a new harness image
+rebuilds them where they rest, so the next start is already on it; a running
+discobox is never touched, and nothing is ever started. "manual" holds every
+discobox on the image it was built with, and "discobox admin box upgrade" is
+then the only way one moves. Rebuilding a discobox keeps its volumes, sources
+and history, but discards whatever was written to its container filesystem
+outside them -- which is the reason to hold one back.`, Args: cobra.ExactArgs(1), ValidArgsFunction: a.completeProjects, RunE: func(cmd *cobra.Command, args []string) error {
 		client, err := a.apiClient()
 		if err != nil {
 			return err
@@ -146,6 +156,20 @@ Zero restores the server default.`, Args: cobra.ExactArgs(1), ValidArgsFunction:
 			}
 			body.SetArchiveRetentionSeconds(apiclientgen.NewOptInt64(int64(archiveRetention / time.Second)))
 		}
+		if cmd.Flags().Changed("sandbox-upgrade-policy") {
+			// Empty is meaningful and reachable: it restores the server
+			// default, which the project then tracks as it changes, the same
+			// way 0 does for --archive-retention.
+			policy := apiclientgen.UpdateProjectBodySandboxUpgradePolicy(upgradePolicy)
+			switch policy {
+			case apiclientgen.UpdateProjectBodySandboxUpgradePolicyEmpty,
+				apiclientgen.UpdateProjectBodySandboxUpgradePolicyAutomatic,
+				apiclientgen.UpdateProjectBodySandboxUpgradePolicyManual:
+			default:
+				return fmt.Errorf("--sandbox-upgrade-policy must be automatic, manual, or empty to restore the default")
+			}
+			body.SetSandboxUpgradePolicy(apiclientgen.NewOptUpdateProjectBodySandboxUpgradePolicy(policy))
+		}
 		res, err := client.UpdateProject(cmd.Context(), body, apiclientgen.UpdateProjectParams{ProjectId: projectID})
 		if err != nil {
 			return err
@@ -158,6 +182,9 @@ Zero restores the server default.`, Args: cobra.ExactArgs(1), ValidArgsFunction:
 	}}
 	cmd.Flags().StringVar(&name, "name", "", "Project display name")
 	cmd.Flags().DurationVar(&archiveRetention, "archive-retention", 0, "How long archived discoboxes are kept before being purged (e.g. 48h); 0 restores the server default")
+	cmd.Flags().StringVar(&upgradePolicy, "sandbox-upgrade-policy", "", `Whether stopped discoboxes follow their harness image: "automatic" or "manual"; empty restores the server default`)
+	_ = cmd.RegisterFlagCompletionFunc("sandbox-upgrade-policy", cobra.FixedCompletions(
+		[]string{"automatic", "manual"}, cobra.ShellCompDirectiveNoFileComp))
 	return cmd
 }
 
