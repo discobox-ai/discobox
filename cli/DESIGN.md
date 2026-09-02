@@ -14,7 +14,7 @@ transport helpers where OpenAPI does not model the stream.
 | `internal/sandboxgit` | The client's git transport to a sandbox: the worktree and origin repository URLs the control plane proxies, bearer-token auth on those requests, and the client-side ref names that record what has been sent. Shared by create, apply and push. |
 | `internal/sandboxpush` | `discobox push`: re-delivering a push-delivered source's commits into the origin repository its sandbox fetches from, under a lease (ADR 0058). |
 | `internal/origin` | Resolves the client host and project directory a sandbox is created from. Host identity itself is shared, in the root module's `internal/hostid`. |
-| `internal/gitunborn` | A repository with no commits: whether HEAD is unborn, and the tree of a working tree that has no HEAD to be read against (ADR 0083). |
+| `internal/gitunborn` | A repository with no commits: whether HEAD is unborn, and the tree of a working tree that has no HEAD to be read against. Shared by create (ADR 0083) and apply (ADR 0084), which both have to ask. |
 | `internal/tui` | The `discobox tui` launcher: Bubble Tea presentation and interaction state, expressed against its own `DataSource` interface. See [`internal/tui/DESIGN.md`](internal/tui/DESIGN.md). |
 | `internal/portforward` | Frontend-independent dynamic port forwarding: local listeners kept in sync with a remote's announced ports, over a caller-supplied dialer. |
 | `internal/keys` | The leader: its default, its `DISCOBOX_LEADER` override, normalization, and the byte a raw stream matches it as. Owned here because the launcher's panes and a plain attach must reserve the same key. |
@@ -1229,7 +1229,8 @@ touched, so HEAD stays unborn and their first commit stays theirs.
   that starts empty, because `gitutil.CurrentWorkspaceTree` seeds its index from
   HEAD. `git add` fills it, honoring `.gitignore` and skipping `.git`, and the
   repository's real index — which may already hold paths staged for that first
-  commit — is untouched.
+  commit — is untouched. Apply reads the same function to check nothing has
+  changed since ("Applying Into a Repository With No Commits" below).
 - Nobody is asked. The directory question exists because a directory in no
   repository may be a home directory somebody ran in by accident, and `git init`
   is the user saying it is not; the dirty-workspace question has no alternative
@@ -1321,7 +1322,9 @@ identifiers and JSON keys keep ADR 0014's `Host*` vocabulary.
   chosen (`hostPathOrigin`) and prints it under "chosen by".
 - A merge base that does not exist means the target repository shares no
   history with the sandbox — almost always a `--dir` pointed at the wrong
-  repository — and is reported as that rather than as a git error.
+  repository — and is reported as that rather than as a git error. A source
+  that never had a shared history to begin with does not look for one; see
+  "Applying Into a Repository With No Commits" below.
 - `--allow-dirty` applies a source whose sandbox working tree is dirty. The
   status check still runs and its entries are still reported (with
   `dirtyIgnored`): the flag means the user chose to leave that work in the
@@ -1330,6 +1333,43 @@ identifiers and JSON keys keep ADR 0014's `Host*` vocabulary.
   `gitutil.WithTracer`, on stderr so it never interleaves into the report.
   `gitutil` redacts credentials in traced arguments centrally, so no new git
   call site can leak a token by forgetting to.
+
+### Applying Into a Repository With No Commits
+
+A discobox created from a repository that had no commits ("A Repository With No
+Commits" above) carries `noLocalCommits`, and that is what apply reads to handle
+the round trip back. See
+[ADR 0084](../docs/adr/0084-the-first-apply-into-a-repository-with-no-commits-is-its-history.md).
+
+- The base is the source's own `checkout.commit` — the empty base the discobox
+  started from — reported as `baseOrigin: "discobox-base"`. There is no merge
+  base to look for: such a repository shares no history with anything by
+  construction. This holds on every apply of that discobox, not only the first,
+  which is what lets a user who has since committed something of their own get
+  the discobox's commits cherry-picked on top of it.
+- While the local repository still has no commits, `gitapply.AttemptRoot` lands
+  them instead of `Attempt`. It cherry-picks onto an unborn HEAD of its own — a
+  scratch worktree detached at the empty base, then `git checkout --orphan` — so
+  the discobox's `discobox run empty base` is replayed away and the first
+  sandbox commit becomes the repository's root, authored by whoever wrote it.
+  The branch HEAD already names is then created at the applied tip and
+  `git reset --hard` fills the index and working tree.
+- That reset is guarded: the local working tree must still be exactly what the
+  discobox was created from — the workspace snapshot's tree, or the empty tree
+  for a discobox created from an empty repository. The snapshot ref is read from
+  the local repository and re-fetched from the discobox's origin if it has been
+  pruned, so a missing ref never reads as a changed working tree. A tree that
+  differs is `blocked`, with the differing paths in `localChanges` and a next
+  step that works: commit them, and the same range applies on top. The refusal
+  says which of the two reasons it is — a carried working tree that has changed
+  since, or files the discobox was never given — because only the first is the
+  user having done something, and "put it back the way the discobox found it"
+  is a way out of the first and an instruction to delete their files in the
+  second.
+- `cli/internal/gitunborn` holds the two questions create and apply both ask —
+  whether HEAD is unborn, and what the working tree holds when there is no HEAD
+  to read it against — so neither can disagree with the other about what
+  `.gitignore` means.
 
 ## Harness Configure Step
 

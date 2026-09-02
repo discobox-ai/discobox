@@ -9,14 +9,19 @@
 // landed cleanly. A conflict at any commit aborts and removes the scratch
 // worktree, leaving the repository exactly as it was — so a caller never
 // records a result for a range that only partially applied.
+//
+// AttemptRoot is the same idea for a repository that has no commits at all,
+// which has no branch to fast-forward and no HEAD to pick onto (ADR 0084).
 package gitapply
 
 import (
 	"context"
 	"fmt"
 	"os"
+	"path/filepath"
 	"strings"
 
+	"github.com/discobox-ai/discobox/cli/internal/gitunborn"
 	"github.com/discobox-ai/x/gitutil"
 )
 
@@ -33,6 +38,10 @@ type Result struct {
 	// ConflictCommit is the sandbox-side commit that failed to cherry-pick,
 	// set when !Landed.
 	ConflictCommit string
+	// ChangedPaths is how AttemptRoot refuses: the host working tree is no
+	// longer what the discobox was created from, and these are the paths that
+	// differ. Nothing was attempted, and nothing changed.
+	ChangedPaths []string
 }
 
 // MergeBase returns the common ancestor of ref and repoRoot's current HEAD.
@@ -107,6 +116,130 @@ func Attempt(ctx context.Context, repoRoot, base, tipRef string) (Result, error)
 	}
 
 	return Result{HostBase: head, Landed: true, HostTip: scratchTip}, nil
+}
+
+// AttemptRoot lands the commits in (base, tipRef] into a repository that has no
+// commits at all — the discobox this apply comes from was created from a `git
+// init` and nothing since (ADR 0083), and this is the apply that gives that
+// repository its history (ADR 0084).
+//
+// It differs from Attempt in the two ways that case demands.
+//
+// The cherry-pick runs onto an unborn HEAD of its own, so the discobox's empty
+// base commit is replayed away rather than inherited: the first sandbox commit
+// becomes the repository's root commit, authored by whoever wrote it, and no
+// commit the user did not write ends up in their history.
+//
+// And there is no branch to fast-forward, only untracked files to replace, so
+// the landing is guarded by wantTree — the tree the discobox was created from.
+// The host working tree must still be exactly that, or this refuses with the
+// paths that differ and changes nothing: those files are about to be replaced
+// by what the discobox made of them, and anything the user has changed since
+// would go with them. wantTree is the workspace snapshot's tree, or the empty
+// tree for a discobox created from an empty repository.
+func AttemptRoot(ctx context.Context, repoRoot, base, tipRef, wantTree string) (Result, error) {
+	branch, ok := gitutil.CurrentBranch(ctx, repoRoot)
+	if !ok {
+		return Result{}, fmt.Errorf("%s has no commits and no branch checked out, so there is nothing to land on", repoRoot)
+	}
+	gotTree, cleanupTree, err := gitunborn.WorkspaceTree(ctx, repoRoot)
+	if err != nil {
+		return Result{}, err
+	}
+	defer cleanupTree()
+	if gotTree != wantTree {
+		changed, err := changedPaths(ctx, repoRoot, wantTree, gotTree)
+		if err != nil {
+			return Result{}, err
+		}
+		return Result{ChangedPaths: changed}, nil
+	}
+
+	scratch, err := os.MkdirTemp("", "discobox-apply-*")
+	if err != nil {
+		return Result{}, fmt.Errorf("create scratch worktree directory: %w", err)
+	}
+	// The orphan checkout below names a branch, which outlives the worktree it
+	// was made in, so cleanup deletes it too. The scratch directory's own name
+	// is unique and says where it came from, which is what a branch left behind
+	// by a crash should say as well.
+	scratchBranch := filepath.Base(scratch)
+	removed := false
+	cleanup := func() {
+		if removed {
+			return
+		}
+		removed = true
+		_, _ = gitutil.Output(ctx, repoRoot, nil, nil, "worktree", "remove", "--force", scratch)
+		_, _ = gitutil.Output(ctx, repoRoot, nil, nil, "branch", "-D", scratchBranch)
+		_ = os.RemoveAll(scratch)
+	}
+	defer cleanup()
+
+	// Detached at the empty base first, so the scratch working tree and index
+	// start empty; --orphan then keeps them and drops only the history, which
+	// is the whole point.
+	if _, err := gitutil.Output(ctx, repoRoot, nil, nil, "worktree", "add", "--detach", scratch, base); err != nil {
+		return Result{}, fmt.Errorf("create scratch worktree: %w", err)
+	}
+	if _, err := gitutil.Output(ctx, scratch, nil, nil, "checkout", "--orphan", scratchBranch); err != nil {
+		return Result{}, fmt.Errorf("start the scratch worktree with no history: %w", err)
+	}
+
+	rangeSpec := base + ".." + tipRef
+	if _, cherryErr := gitutil.Output(ctx, scratch, nil, nil, "cherry-pick", rangeSpec); cherryErr != nil {
+		conflicted, err := hasUnmergedPaths(ctx, scratch)
+		if err != nil {
+			_, _ = gitutil.Output(ctx, scratch, nil, nil, "cherry-pick", "--abort")
+			return Result{}, fmt.Errorf("check cherry-pick conflict state: %w", err)
+		}
+		if !conflicted {
+			_, _ = gitutil.Output(ctx, scratch, nil, nil, "cherry-pick", "--abort")
+			return Result{}, fmt.Errorf("cherry-pick %s: %w", rangeSpec, cherryErr)
+		}
+		conflict, _ := gitutil.Output(ctx, scratch, nil, nil, "rev-parse", "CHERRY_PICK_HEAD")
+		_, _ = gitutil.Output(ctx, scratch, nil, nil, "cherry-pick", "--abort")
+		return Result{ConflictCommit: strings.TrimSpace(conflict)}, nil
+	}
+
+	scratchTip, err := gitutil.Output(ctx, scratch, nil, nil, "rev-parse", "HEAD")
+	if err != nil {
+		return Result{}, fmt.Errorf("resolve scratch worktree tip: %w", err)
+	}
+	scratchTip = strings.TrimSpace(scratchTip)
+	cleanup()
+
+	// There is no merge to make here: HEAD already names the branch, and
+	// creating it at the applied tip is what being born means. The reset then
+	// fills the index and replaces the working tree files with what the
+	// discobox made of them — safe because they are still byte for byte what it
+	// was given, which is what wantTree checked. It removes nothing the
+	// repository does not track, so anything ignored or never carried stays.
+	if err := gitutil.UpdateRef(ctx, repoRoot, "refs/heads/"+branch, scratchTip); err != nil {
+		return Result{}, fmt.Errorf("create branch %s at the applied commits: %w", branch, err)
+	}
+	if _, err := gitutil.Output(ctx, repoRoot, nil, nil, "reset", "--hard"); err != nil {
+		return Result{}, fmt.Errorf("check out the applied commits in %s: %w", repoRoot, err)
+	}
+
+	return Result{Landed: true, HostTip: scratchTip}, nil
+}
+
+// changedPaths names what differs between the tree a discobox was created from
+// and the one the working tree holds now, so a refusal says which files it is
+// protecting rather than only that something moved.
+func changedPaths(ctx context.Context, repoRoot, wantTree, gotTree string) ([]string, error) {
+	out, err := gitutil.Output(ctx, repoRoot, nil, nil, "diff", "--name-status", wantTree, gotTree)
+	if err != nil {
+		return nil, fmt.Errorf("compare the working tree with what the discobox was created from: %w", err)
+	}
+	var paths []string
+	for _, line := range strings.Split(strings.TrimSpace(out), "\n") {
+		if line = strings.TrimSpace(line); line != "" {
+			paths = append(paths, line)
+		}
+	}
+	return paths, nil
 }
 
 // hasUnmergedPaths reports whether dir's index currently has unresolved

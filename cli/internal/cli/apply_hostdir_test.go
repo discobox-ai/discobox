@@ -1,12 +1,16 @@
 package cli
 
 import (
+	"context"
+	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
 
 	apiclientgen "github.com/discobox-ai/discobox/api/gen"
 	apimodel "github.com/discobox-ai/discobox/api/model"
+	"github.com/discobox-ai/discobox/cli/internal/gitunborn"
 )
 
 const thisHost = "hst_thismachine0001"
@@ -130,4 +134,69 @@ func TestFormatHostDirOriginNamesTheSandboxOrigin(t *testing.T) {
 	if !strings.Contains(got, "created on this machine") {
 		t.Fatalf("sandbox-origin explained as %q", got)
 	}
+}
+
+// createdFromTree decides what a first apply into a repository with no commits
+// is allowed to overwrite, so getting it wrong either refuses every apply or
+// silently replaces work the user did after the discobox was created.
+func TestCreatedFromTreeIsTheSnapshotTheDiscoboxCarried(t *testing.T) {
+	ctx := context.Background()
+	repo := t.TempDir()
+	git := func(args ...string) string {
+		t.Helper()
+		cmd := exec.CommandContext(ctx, "git", args...)
+		cmd.Dir = repo
+		cmd.Env = append(os.Environ(),
+			"GIT_AUTHOR_NAME=test", "GIT_AUTHOR_EMAIL=test@example.com",
+			"GIT_COMMITTER_NAME=test", "GIT_COMMITTER_EMAIL=test@example.com")
+		out, err := cmd.CombinedOutput()
+		if err != nil {
+			t.Fatalf("git %s: %v\n%s", strings.Join(args, " "), err, out)
+		}
+		return strings.TrimSpace(string(out))
+	}
+	git("init", "--initial-branch=main")
+	if err := os.WriteFile(filepath.Join(repo, "README.md"), []byte("hello\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	// The empty base and snapshot as create writes them, with the branch left
+	// unborn.
+	emptyTree := git("hash-object", "-t", "tree", "-w", "--stdin")
+	base := git("commit-tree", emptyTree, "-m", "discobox run empty base")
+	snapshotTree, cleanup, err := gitunborn.WorkspaceTree(ctx, repo)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer cleanup()
+	git("update-ref", "refs/discobox/run/snap", git("commit-tree", snapshotTree, "-p", base, "-m", "snapshot"))
+
+	app := &App{}
+	t.Run("a carried workspace is the snapshot's tree", func(t *testing.T) {
+		source := apimodel.GitSource{Workspace: apiclientgen.NewOptGitSourceWorkspace(apimodel.GitSourceWorkspace{
+			SnapshotRef: apiclientgen.NewOptString("refs/discobox/run/snap"),
+		})}
+		got, carried, err := app.createdFromTree(ctx, repo, "", "", "", source)
+		if err != nil {
+			t.Fatalf("createdFromTree: %v", err)
+		}
+		if got != snapshotTree || !carried {
+			t.Fatalf("tree = %s (carried %v), want the snapshot's tree %s carried", got, carried, snapshotTree)
+		}
+	})
+
+	// A discobox created from an empty repository, or one told not to carry the
+	// working tree, was given nothing — so nothing is what has to still be here.
+	t.Run("nothing carried is the empty tree", func(t *testing.T) {
+		got, carried, err := app.createdFromTree(ctx, repo, "", "", "", apimodel.GitSource{})
+		if err != nil {
+			t.Fatalf("createdFromTree: %v", err)
+		}
+		if got != emptyTree || carried {
+			t.Fatalf("tree = %s (carried %v), want the empty tree %s not carried", got, carried, emptyTree)
+		}
+		if got == snapshotTree {
+			t.Fatal("a discobox that carried nothing must not be compared against a snapshot")
+		}
+	})
 }

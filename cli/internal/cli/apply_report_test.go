@@ -203,3 +203,93 @@ func TestDetailLinesDoNotInterpretFormatVerbs(t *testing.T) {
 		t.Fatalf("line was reformatted: %q", buf.String())
 	}
 }
+
+func TestBaseOriginExplainsADiscoboxThatStartedFromNothing(t *testing.T) {
+	got := formatBaseOrigin(baseOriginDiscoboxBase)
+	if !strings.Contains(got, "empty base") || !strings.Contains(got, "no commits") {
+		t.Fatalf("discobox-base explained as %q, want it to name both the empty base and why", got)
+	}
+}
+
+// A first apply refused because the local working tree moved on has exactly one
+// way to finish the job — commit the local work, which the discobox's commits
+// then cherry-pick on top of, since they never needed a shared history.
+func TestLocalChangesNextStepsLeadWithCommittingTheLocalWork(t *testing.T) {
+	steps := localChangesNextSteps("sbx_23x11jnw03w11nf2", "primary", "/home/ada/src/new", nil, true)
+	if len(steps) != 2 {
+		t.Fatalf("got %d next steps, want 2: %+v", len(steps), steps)
+	}
+	want := []string{
+		"git -C /home/ada/src/new add -A",
+		"git -C /home/ada/src/new commit -m MESSAGE",
+		"discobox apply sbx_23x11jnw03w11nf2 --source primary",
+	}
+	if len(steps[0].Commands) != len(want) {
+		t.Fatalf("commands = %v, want %v", steps[0].Commands, want)
+	}
+	for i, command := range want {
+		if steps[0].Commands[i] != command {
+			t.Fatalf("command %d = %q, want %q", i, steps[0].Commands[i], command)
+		}
+	}
+}
+
+func TestLocalChangesNextStepsCarryDirOverride(t *testing.T) {
+	steps := localChangesNextSteps("sbx_1", "web", "/work/web", map[string]string{"web": "/home/ada/src/web"}, true)
+	for _, step := range steps {
+		for _, command := range step.Commands {
+			if strings.HasPrefix(command, "discobox apply") && !strings.Contains(command, "--dir web=/home/ada/src/web") {
+				t.Fatalf("re-run dropped the --dir override: %q", command)
+			}
+		}
+	}
+}
+
+// A repository getting its first commits has no commit to name as the "from"
+// half of the range, and a blank there reads as a bug rather than as a fact.
+func TestAppliedFromNamesAnAbsentStartingPoint(t *testing.T) {
+	if got := applyFrom(applySourceReport{}); got != "no commits" {
+		t.Fatalf("applyFrom with no host base = %q, want it said in words", got)
+	}
+	if got := applyFrom(applySourceReport{HostBase: "11aa22bb33cc44dd55ee"}); got != "11aa22bb33cc" {
+		t.Fatalf("applyFrom = %q, want the short SHA", got)
+	}
+}
+
+// The guard fires for two different reasons, and only one of them is the user
+// having changed something: a discobox told not to carry the working tree was
+// never given those files, and saying it "has changed" accuses them of work
+// they did not do.
+func TestBlockedMessageDoesNotAccuseAUserWhoWithheldTheirFiles(t *testing.T) {
+	changed := blockedLocalChanges("/home/ada/src/new", true)
+	if !strings.Contains(changed, "has changed since this discobox was created") {
+		t.Fatalf("carried workspace explained as %q", changed)
+	}
+	withheld := blockedLocalChanges("/home/ada/src/new", false)
+	if strings.Contains(withheld, "has changed") {
+		t.Fatalf("a discobox that was given nothing still says the repository changed: %q", withheld)
+	}
+	if !strings.Contains(withheld, "never given") {
+		t.Fatalf("withheld files explained as %q, want it to say they were never carried", withheld)
+	}
+}
+
+// Undoing an edit is a way out for a working tree the discobox was given.
+// Doing that to files it was never given means deleting them, so that
+// alternative must not be offered there.
+func TestLocalChangesAlternativeNeverSuggestsDeletingWithheldFiles(t *testing.T) {
+	carried := localChangesNextSteps("sbx_1", "primary", "/work/new", nil, true)
+	if !strings.Contains(carried[1].Description, "put it back the way the discobox found it") {
+		t.Fatalf("carried alternative = %q", carried[1].Description)
+	}
+	withheld := localChangesNextSteps("sbx_1", "primary", "/work/new", nil, false)
+	if strings.Contains(withheld[1].Description, "put it back the way the discobox found it") {
+		t.Fatalf("withheld alternative tells the user to delete their own files: %q", withheld[1].Description)
+	}
+	// Committing is the answer either way, and it has to stay first.
+	for _, steps := range [][]applyNextStep{carried, withheld} {
+		if !strings.HasPrefix(steps[0].Description, "commit the local files first") {
+			t.Fatalf("first next step = %q, want committing to lead", steps[0].Description)
+		}
+	}
+}

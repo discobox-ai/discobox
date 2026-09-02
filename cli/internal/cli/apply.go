@@ -14,6 +14,7 @@ import (
 	apiclientgen "github.com/discobox-ai/discobox/api/gen"
 	apimodel "github.com/discobox-ai/discobox/api/model"
 	"github.com/discobox-ai/discobox/cli/internal/gitapply"
+	"github.com/discobox-ai/discobox/cli/internal/gitunborn"
 	"github.com/discobox-ai/discobox/cli/internal/sandboxapply"
 	"github.com/discobox-ai/discobox/internal/hostid"
 	"github.com/discobox-ai/x/gitutil"
@@ -288,6 +289,7 @@ func (a *App) applyOneSource(ctx context.Context, printer applyPrinter, client *
 	}
 	report.HostPath = repoRoot
 	report.HostBranch, _ = gitutil.CurrentBranch(ctx, repoRoot)
+	hostUnborn := gitunborn.HeadIsUnborn(ctx, repoRoot)
 	if head, err := gitutil.ResolveCommit(ctx, repoRoot, "HEAD"); err == nil {
 		report.HostBase = head
 	}
@@ -339,7 +341,19 @@ func (a *App) applyOneSource(ctx context.Context, printer applyPrinter, client *
 	if last, ok := lastApplied(sandbox, entry.slug); ok {
 		report.Base, report.BaseOrigin = last.Commit, baseOriginLastApplied
 	}
-	if report.Base == "" {
+	switch {
+	case report.Base != "":
+	case entry.source.NoLocalCommits.Or(false):
+		// The discobox was created from a repository with no commits, so it
+		// starts from an empty base commit of its own and shares nothing with
+		// this repository by construction — there is no merge base to look for,
+		// and everything after that base is the discobox's work. This holds
+		// however many commits the user has made here since (ADR 0084 §1).
+		report.Base, report.BaseOrigin = checkoutCommit(entry.source), baseOriginDiscoboxBase
+		if report.Base == "" {
+			return fail("source %q records no base commit to apply from", entry.slug)
+		}
+	default:
 		report.BaseOrigin = baseOriginMergeBase
 		report.Base, err = gitapply.MergeBase(ctx, repoRoot, tip)
 		if err != nil {
@@ -366,10 +380,35 @@ func (a *App) applyOneSource(ctx context.Context, printer applyPrinter, client *
 	printer.step("%d %s to apply (git log %s..%s):", len(report.Commits), pluralize("commit", len(report.Commits)), shortSHA(report.Base), report.SandboxRef)
 	printer.commitList(report.Commits)
 
-	printer.step("cherry-picking them in a scratch worktree, then fast-forwarding local %s", applyTarget(report))
-	result, err := gitapply.Attempt(ctx, repoRoot, report.Base, tip)
-	if err != nil {
-		return fail("%v", err)
+	var result gitapply.Result
+	if hostUnborn {
+		// This apply is what gives the repository its history, so there is no
+		// branch to fast-forward — only the files it was created from to
+		// replace, and they have to still be those files.
+		wantTree, carried, err := a.createdFromTree(ctx, repoRoot, gitServerURL, projectID, sandboxID, entry.source)
+		if err != nil {
+			return fail("%v", err)
+		}
+		printer.step("local %s has no commits yet: replaying them onto no history, then creating %s", repoRoot, applyTarget(report))
+		result, err = gitapply.AttemptRoot(ctx, repoRoot, report.Base, tip, wantTree)
+		if err != nil {
+			return fail("%v", err)
+		}
+		if len(result.ChangedPaths) > 0 {
+			report.Status = applyStatusBlocked
+			report.LocalChanges = result.ChangedPaths
+			report.NextSteps = localChangesNextSteps(sandboxID, entry.slug, repoRoot, dirOverrides, carried)
+			printer.step("BLOCKED: %s", blockedLocalChanges(repoRoot, carried))
+			printer.detailLines(report.LocalChanges)
+			printer.nextSteps(report.NextSteps)
+			return report
+		}
+	} else {
+		printer.step("cherry-picking them in a scratch worktree, then fast-forwarding local %s", applyTarget(report))
+		result, err = gitapply.Attempt(ctx, repoRoot, report.Base, tip)
+		if err != nil {
+			return fail("%v", err)
+		}
 	}
 	if result.HostBase != "" {
 		report.HostBase = result.HostBase
@@ -408,10 +447,118 @@ func (a *App) applyOneSource(ctx context.Context, printer applyPrinter, client *
 	}
 
 	report.Status = applyStatusApplied
-	printer.step("APPLIED %d %s to local %s: %s -> %s", len(report.Commits), pluralize("commit", len(report.Commits)), applyTarget(report), shortSHA(report.HostBase), shortSHA(report.HostTip))
+	printer.step("APPLIED %d %s to local %s: %s -> %s", len(report.Commits), pluralize("commit", len(report.Commits)), applyTarget(report), applyFrom(report), shortSHA(report.HostTip))
 	printer.appliedList(report.Commits)
 	printer.step("recorded on discobox %s as applied to %s", sandboxID, repoRoot)
 	return report
+}
+
+// checkoutCommit is the commit a source was created against, which for a
+// discobox created from a repository with no commits is the empty base commit
+// its whole history hangs off.
+func checkoutCommit(source apimodel.GitSource) string {
+	checkout, ok := source.Checkout.Get()
+	if !ok {
+		return ""
+	}
+	return strings.TrimSpace(checkout.Commit.Or(""))
+}
+
+// createdFromTree is the tree the discobox was created from: the workspace
+// snapshot it carried, or the empty tree when it carried nothing. The second
+// return says which of those it was, because a working tree that no longer
+// matches means something different in each case.
+//
+// It is what a local repository with no commits must still hold for its first
+// apply to be safe, so a missing ref must not read as a changed working tree.
+// The ref is resolved out of the repository first, where create wrote it, and
+// fetched from the discobox's own origin if it is gone from here — delivery
+// pushed it there, so the discobox is the second copy of the answer.
+func (a *App) createdFromTree(ctx context.Context, repoRoot, gitServerURL, projectID, sandboxID string, source apimodel.GitSource) (string, bool, error) {
+	ref := ""
+	if workspace, ok := source.Workspace.Get(); ok {
+		ref = strings.TrimSpace(workspace.SnapshotRef.Or(""))
+	}
+	if ref == "" {
+		// Nothing was carried, so the discobox was created from an empty
+		// working tree and that is what this one has to still be.
+		tree, err := gitutil.EmptyTree(ctx, repoRoot)
+		return tree, false, err
+	}
+	if tree, err := resolveTree(ctx, repoRoot, ref); err == nil {
+		return tree, true, nil
+	}
+	if err := sandboxapply.Fetch(ctx, repoRoot, gitServerURL, projectID, sandboxID, a.token, source, "+"+ref+":"+ref); err != nil {
+		return "", true, fmt.Errorf("fetch what the discobox was created from (%s), to check nothing here has changed since: %w", ref, err)
+	}
+	tree, err := resolveTree(ctx, repoRoot, ref)
+	return tree, true, err
+}
+
+func resolveTree(ctx context.Context, repoRoot, rev string) (string, error) {
+	out, err := gitutil.Output(ctx, repoRoot, nil, nil, "rev-parse", "--verify", rev+"^{tree}")
+	if err != nil {
+		return "", fmt.Errorf("resolve tree of %s: %w", rev, err)
+	}
+	return strings.TrimSpace(out), nil
+}
+
+// blockedLocalChanges says why the local working tree is not what the discobox
+// was created from. There are two ways to get here and they are different
+// things to have done: the user changed a working tree the discobox was given,
+// or the user told it not to carry that working tree in the first place
+// (--include-dirty=false, or a repository that gained files after the create).
+// Telling the second one their repository "has changed" accuses them of
+// something they did not do.
+func blockedLocalChanges(repoRoot string, carried bool) string {
+	if carried {
+		return fmt.Sprintf("local %s has changed since this discobox was created, and has no commits to keep those changes in", repoRoot)
+	}
+	return fmt.Sprintf("local %s holds files this discobox was never given, and has no commits to keep them in", repoRoot)
+}
+
+// localChangesNextSteps is the way out of a first apply refused because the
+// local working tree is not what the discobox was created from. Committing the
+// local work is the one that keeps it, and it is the same answer either way:
+// the range being applied never depended on a shared history, so it
+// cherry-picks onto whatever the user commits just as well.
+//
+// The alternative is not the same answer. Undoing an edit puts a carried
+// working tree back the way the discobox found it; doing that to files the
+// discobox was never given would mean deleting them, which is nobody's idea of
+// a way out.
+func localChangesNextSteps(sandboxID, slug, repoRoot string, dirOverrides map[string]string, carried bool) []applyNextStep {
+	rerun := fmt.Sprintf("discobox apply %s --source %s", sandboxID, slug)
+	if dir, ok := dirOverrides[slug]; ok {
+		rerun += fmt.Sprintf(" --dir %s=%s", slug, dir)
+	}
+	alternative := "or look at what changed, and put it back the way the discobox found it"
+	if !carried {
+		alternative = "or look at what is here, and move aside anything the discobox's commits would land on"
+	}
+	return []applyNextStep{
+		{
+			Description: "commit the local files first, then apply the discobox's commits on top of them",
+			Commands: []string{
+				fmt.Sprintf("git -C %s add -A", repoRoot),
+				fmt.Sprintf("git -C %s commit -m MESSAGE", repoRoot),
+				rerun,
+			},
+		},
+		{
+			Description: alternative,
+			Commands:    []string{fmt.Sprintf("git -C %s status", repoRoot)},
+		},
+	}
+}
+
+// applyFrom names where the commits landed from, for a line that reads as a
+// range. A repository getting its first commits has no "from" commit to name.
+func applyFrom(report applySourceReport) string {
+	if report.HostBase == "" {
+		return "no commits"
+	}
+	return shortSHA(report.HostBase)
 }
 
 // applyTarget names what the commits land on locally: the branch when there is

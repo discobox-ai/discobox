@@ -23,8 +23,9 @@ const (
 	// applyStatusConflict: a commit did not apply cleanly; the host repository
 	// is unchanged.
 	applyStatusConflict applyStatus = "conflict"
-	// applyStatusBlocked: the source was not attempted because the sandbox has
-	// uncommitted changes.
+	// applyStatusBlocked: the source was not attempted — the sandbox has
+	// uncommitted changes, or the local working tree is no longer what the
+	// sandbox was created from.
 	applyStatusBlocked applyStatus = "blocked"
 	// applyStatusError: anything else went wrong before or during the attempt.
 	applyStatusError applyStatus = "error"
@@ -42,6 +43,11 @@ const (
 	// baseOriginMergeBase: no prior apply, so the base is the common ancestor
 	// of the sandbox tip and the host branch.
 	baseOriginMergeBase baseOrigin = "merge-base"
+	// baseOriginDiscoboxBase: the discobox was created from a repository with
+	// no commits, so it starts from an empty base commit of its own and there
+	// is no shared history to find a merge base in. Everything after that base
+	// is the discobox's work (ADR 0084).
+	baseOriginDiscoboxBase baseOrigin = "discobox-base"
 )
 
 // hostDirOrigin says how the local directory a source applies into was chosen.
@@ -105,6 +111,11 @@ type applySourceReport struct {
 	// DirtyIgnored records that --allow-dirty applied this source over those
 	// uncommitted changes, which is why a dirty sandbox did not block it.
 	DirtyIgnored bool `json:"dirtyIgnored,omitempty"`
+	// LocalChanges is set when a first apply into a repository with no commits
+	// was refused: the local working tree is no longer what the discobox was
+	// created from, and these are the `git diff --name-status` entries saying
+	// how.
+	LocalChanges []string `json:"localChanges,omitempty"`
 	// NextSteps are the ways out of a failure, each a described set of literal
 	// commands ready to run by a human or an agent. More than one step means
 	// alternatives, not a sequence.
@@ -292,6 +303,8 @@ func formatBaseOrigin(origin baseOrigin) string {
 		return "last commit applied from this source"
 	case baseOriginMergeBase:
 		return "merge base of the discobox tip and local HEAD"
+	case baseOriginDiscoboxBase:
+		return "the empty base this discobox started from; local had no commits"
 	}
 	return string(origin)
 }
