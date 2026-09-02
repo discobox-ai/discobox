@@ -20,7 +20,7 @@ func TestFrames(t *testing.T) {
 	}{
 		{"prompt", func(m *Model) { send(t, m, typeString("make the pool reaper stop leaking volumes")...) }},
 		{"list", func(m *Model) { send(t, m, key("tab"), key("down")) }},
-		{"multiselect", func(m *Model) { send(t, m, key("tab"), key(" "), key(" "), key("up")) }},
+		{"multiselect", func(m *Model) { send(t, m, key("tab"), key(" "), key("down"), key(" ")) }},
 		{"visual", func(m *Model) { send(t, m, key("tab"), key("V"), key("down")) }},
 		{"archived", func(m *Model) { send(t, m, key("tab"), key("A"), key("G")) }},
 		{"actions", func(m *Model) { send(t, m, key("tab"), key(".")) }},
@@ -337,8 +337,8 @@ func TestSelectionPaintsTheWholeRow(t *testing.T) {
 		bg   string
 	}{
 		{"cursor", []string{"tab"}, colHighlightBG},
-		{"selected", []string{"tab", " "}, colSelectedBG}, // marked, cursor moved on
-		{"both", []string{"tab", " ", "up"}, colBothBG},   // marked and under the cursor
+		{"selected", []string{"tab", " ", "down"}, colSelectedBG}, // marked, cursor moved off
+		{"both", []string{"tab", " "}, colBothBG},                 // marked and under the cursor
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			m := newColorModel(t, newFakeSource(testSandboxes()...))

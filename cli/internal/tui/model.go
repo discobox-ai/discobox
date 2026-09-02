@@ -1182,7 +1182,6 @@ func (m *Model) updateList(msg tea.KeyPressMsg) tea.Cmd {
 			return status("selected %s", plural(m.list.commitVisual(), "box", "boxes"))
 		}
 		m.list.toggleSelect()
-		m.list.move(1)
 	case "c":
 		m.list.clearSelection()
 		m.list.visual = false

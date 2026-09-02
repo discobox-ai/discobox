@@ -315,7 +315,7 @@ func TestListLettersRunActions(t *testing.T) {
 func TestSelectionIsWhatCommandsActOn(t *testing.T) {
 	ds := newFakeSource(testSandboxes()...)
 	m := newTestModel(t, ds)
-	send(t, m, key("tab"), key(" "), key(" "))
+	send(t, m, key("tab"), key(" "), key("down"), key(" "))
 
 	if n := m.list.selectionCount(); n != 2 {
 		t.Fatalf("selected %d, want 2", n)
@@ -419,7 +419,7 @@ func TestRenameCancelsWithoutCalling(t *testing.T) {
 func TestRenameTakesExactlyOneBox(t *testing.T) {
 	ds := newFakeSource(testSandboxes()...)
 	m := newTestModel(t, ds)
-	send(t, m, key("tab"), key(" "), key(" "), key("e"))
+	send(t, m, key("tab"), key(" "), key("down"), key(" "), key("e"))
 
 	if m.dialog == nil || m.dialog.kind != dlgMessage {
 		t.Fatalf("rename on a selection should say why, got %+v", m.dialog)
