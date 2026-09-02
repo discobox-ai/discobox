@@ -582,3 +582,25 @@ func TestTotalUsageIsAbsentWithoutAServicesRate(t *testing.T) {
 		t.Errorf("capacity = %v, want 8", total.CapacityVCPUs)
 	}
 }
+
+// The data total is summed at sweep time rather than left to a reader, because
+// the parts land on different rows — each sandbox's own — and a reader joining
+// them can catch one refreshed and another not.
+func TestWalkPoolTreesSumsEverySandboxIntoTheDataTotal(t *testing.T) {
+	walk, ok := walkPoolTrees(context.Background(), "prj_1", "pool_1", []string{"sbx_a", "sbx_b"})
+	if !ok {
+		t.Fatal("sweep reported cancellation")
+	}
+	var sum int64
+	for _, sb := range walk.Sandboxes {
+		sum += sb.TotalBytes
+	}
+	if walk.DataBytes != sum {
+		t.Errorf("dataBytes = %d, want the sandboxes' own trees summed (%d)", walk.DataBytes, sum)
+	}
+	// The shared cache is not in it: it belongs to no sandbox, and folding it
+	// in would count one tree against every discobox that can see it.
+	if walk.DataBytes != 0 && walk.DataBytes == walk.CacheBytes {
+		t.Errorf("the shared cache leaked into the sandboxes' data total")
+	}
+}

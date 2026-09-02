@@ -8789,6 +8789,17 @@ type PoolStorageWalk struct {
 	// When the next sweep is due. A figure still unchanged well past this is a sweep that failed or an
 	// agent that stopped.
 	NextScanAt time.Time `json:"nextScanAt"`
+	// Every sandbox's durable tree on this pool, summed. Optional rather than
+	// required: an agent that predates it writes a sweep without one, and a
+	// missing field must cost that figure rather than the whole report, which
+	// would read as a pool that has never been measured. It is the sandboxes'
+	// own storage and nothing shared: each tree holds that sandbox's home, its
+	// sources and its nested container store, which are genuinely its own
+	// copies rather than links into anything.
+	// Summed here rather than left to a reader because the parts land on
+	// different rows - each sandbox's own - and a reader joining them can
+	// catch one refreshed and another not.
+	DataBytes OptInt64 `json:"dataBytes"`
 	// The pool's shared cache tree, counted once for the pool because that is exactly what it is - it is
 	// bind-mounted whole into every sandbox.
 	CacheBytes int64 `json:"cacheBytes"`
@@ -8816,6 +8827,11 @@ func (s *PoolStorageWalk) GetIntervalSeconds() float64 {
 // GetNextScanAt returns the value of NextScanAt.
 func (s *PoolStorageWalk) GetNextScanAt() time.Time {
 	return s.NextScanAt
+}
+
+// GetDataBytes returns the value of DataBytes.
+func (s *PoolStorageWalk) GetDataBytes() OptInt64 {
+	return s.DataBytes
 }
 
 // GetCacheBytes returns the value of CacheBytes.
@@ -8851,6 +8867,11 @@ func (s *PoolStorageWalk) SetIntervalSeconds(val float64) {
 // SetNextScanAt sets the value of NextScanAt.
 func (s *PoolStorageWalk) SetNextScanAt(val time.Time) {
 	s.NextScanAt = val
+}
+
+// SetDataBytes sets the value of DataBytes.
+func (s *PoolStorageWalk) SetDataBytes(val OptInt64) {
+	s.DataBytes = val
 }
 
 // SetCacheBytes sets the value of CacheBytes.

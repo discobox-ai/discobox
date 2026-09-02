@@ -719,6 +719,21 @@ components:
                     description: When the next sweep is due. A figure still unchanged well past this is a sweep that failed or an agent that stopped.
                     format: date-time
                     type: string
+                dataBytes:
+                    description: |
+                        Every sandbox's durable tree on this pool, summed. Optional rather than
+                        required: an agent that predates it writes a sweep without one, and a
+                        missing field must cost that figure rather than the whole report, which
+                        would read as a pool that has never been measured. It is the sandboxes'
+                        own storage and nothing shared: each tree holds that sandbox's home, its
+                        sources and its nested container store, which are genuinely its own
+                        copies rather than links into anything.
+
+                        Summed here rather than left to a reader because the parts land on
+                        different rows - each sandbox's own - and a reader joining them can
+                        catch one refreshed and another not.
+                    format: int64
+                    type: integer
                 cacheBytes:
                     description: The pool's shared cache tree, counted once for the pool because that is exactly what it is - it is bind-mounted whole into every sandbox.
                     format: int64

@@ -13841,6 +13841,12 @@ func (s *PoolStorageWalk) encodeFields(e *jx.Encoder) {
 		json.EncodeDateTime(e, s.NextScanAt)
 	}
 	{
+		if s.DataBytes.Set {
+			e.FieldStart("dataBytes")
+			s.DataBytes.Encode(e)
+		}
+	}
+	{
 		e.FieldStart("cacheBytes")
 		e.Int64(s.CacheBytes)
 	}
@@ -13857,13 +13863,14 @@ func (s *PoolStorageWalk) encodeFields(e *jx.Encoder) {
 	}
 }
 
-var jsonFieldsNameOfPoolStorageWalk = [6]string{
+var jsonFieldsNameOfPoolStorageWalk = [7]string{
 	0: "observedAt",
 	1: "durationMillis",
 	2: "intervalSeconds",
 	3: "nextScanAt",
-	4: "cacheBytes",
-	5: "buildBytes",
+	4: "dataBytes",
+	5: "cacheBytes",
+	6: "buildBytes",
 }
 
 // Decode decodes PoolStorageWalk from json.
@@ -13924,8 +13931,18 @@ func (s *PoolStorageWalk) Decode(d *jx.Decoder) error {
 			}(); err != nil {
 				return errors.Wrap(err, "decode field \"nextScanAt\"")
 			}
+		case "dataBytes":
+			if err := func() error {
+				s.DataBytes.Reset()
+				if err := s.DataBytes.Decode(d); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"dataBytes\"")
+			}
 		case "cacheBytes":
-			requiredBitSet[0] |= 1 << 4
+			requiredBitSet[0] |= 1 << 5
 			if err := func() error {
 				v, err := d.Int64()
 				s.CacheBytes = int64(v)
@@ -13937,7 +13954,7 @@ func (s *PoolStorageWalk) Decode(d *jx.Decoder) error {
 				return errors.Wrap(err, "decode field \"cacheBytes\"")
 			}
 		case "buildBytes":
-			requiredBitSet[0] |= 1 << 5
+			requiredBitSet[0] |= 1 << 6
 			if err := func() error {
 				v, err := d.Int64()
 				s.BuildBytes = int64(v)
@@ -13969,7 +13986,7 @@ func (s *PoolStorageWalk) Decode(d *jx.Decoder) error {
 	// Validate required fields.
 	var failures []validate.FieldError
 	for i, mask := range [1]uint8{
-		0b00111111,
+		0b01101111,
 	} {
 		if result := (requiredBitSet[i] & mask) ^ mask; result != 0 {
 			// Mask only required fields and check equality to mask using XOR.

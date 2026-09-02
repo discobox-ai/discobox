@@ -246,6 +246,16 @@ func (d *apiDataSource) Resources(ctx context.Context) (tui.Resources, error) {
 			out.DiskFreeBytes += free
 			out.DiskKnown = true
 		}
+		// The walk lags the statfs above, so free space can be known before the
+		// breakdown of what is taken is. The breakdown is added only once it
+		// exists rather than being carried as zeroes.
+		if walk, ok := report.Storage.Walk.Get(); ok {
+			out.DiskDataBytes += walk.DataBytes.Or(0)
+			// The builder's store is disposable and shared, like the cache
+			// beside it, and neither belongs to any one discobox — so a reader
+			// deciding what could be reclaimed reads them as one figure.
+			out.DiskCacheBytes += walk.CacheBytes + walk.BuildBytes
+		}
 	}
 	return out, nil
 }

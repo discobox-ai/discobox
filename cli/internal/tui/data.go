@@ -94,11 +94,20 @@ type Resources struct {
 	MemoryBytes    int64
 	MemoryCapacity int64
 	// DiskFreeBytes is what is left on the filesystem Discobox stores into.
-	// It is free rather than used because the whole filesystem usually holds
-	// more than Discobox, so what Discobox has taken says nothing about
-	// whether the next discobox will fit.
+	// It leads the disk figures because the whole filesystem usually holds
+	// more than Discobox, so what Discobox has taken says nothing on its own
+	// about whether the next discobox will fit.
 	DiskFreeBytes int64
-	DiskKnown     bool
+	// DiskDataBytes is what the discoboxes themselves hold, summed — each
+	// one's home, sources and nested container store, which are its own copies
+	// rather than links into anything shared.
+	DiskDataBytes int64
+	// DiskCacheBytes is what Discobox holds that no discobox owns: the cache
+	// every discobox shares and the builder's own store. Both are disposable
+	// and rebuild themselves, which is what makes them worth telling apart
+	// from the data — it is the half you can reclaim.
+	DiskCacheBytes int64
+	DiskKnown      bool
 }
 
 // DiffStat is what a sandbox has changed: committed and uncommitted tracked

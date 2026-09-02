@@ -1227,8 +1227,15 @@ nothing to report there is no row at all.
 Used covers everything Discobox runs, the discoboxes and the machinery beside
 them both — the shared builder above all, which on a machine mid-build is most
 of it. Which half is busy is what `discobox admin pool resources` answers; the
-question here is only whether there is room. Disk is what is left rather than
-what is taken, since the filesystem holds more than Discobox.
+question here is only whether there is room.
+
+Disk leads with what is left, since the filesystem holds more than Discobox and
+what Discobox has taken says nothing on its own about whether the next discobox
+will fit. Behind it the taken half is split into data and cache — the discoboxes'
+own trees against the shared cache and the builder's store — because that split
+is the difference between deleting somebody's work and reclaiming something that
+rebuilds itself. The split is the first thing dropped on a narrow window, before
+any whole figure goes.
 
 The figures drop from the right when the window is too narrow for all three, and
 a figure is dropped whole rather than truncated: `mem 9.0/3` is a wrong number

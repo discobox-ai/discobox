@@ -438,11 +438,25 @@ func machineText(st *styles, r Resources, avail int) string {
 			"mem "+humanBytesPair(r.MemoryBytes, r.MemoryCapacity),
 			float64(r.MemoryBytes)/float64(r.MemoryCapacity)))
 	}
-	// Disk is what is left rather than what is taken: the filesystem holds more
-	// than Discobox, so what Discobox has taken says nothing about whether the
-	// next discobox will fit.
+	// Free leads, and what is taken is broken out behind it. Free is the
+	// figure that answers whether the next discobox will fit; the split says
+	// where the rest went and, more usefully, how much of it is the cache and
+	// the builder rather than the discoboxes — which is the half that can be
+	// reclaimed without deleting anything somebody made.
 	if r.DiskKnown {
-		parts = append(parts, st.dimText.Render(humanBytes(r.DiskFreeBytes)+" free"))
+		disk := st.dimText.Render("disk " + humanBytes(r.DiskFreeBytes) + " free")
+		if r.DiskDataBytes > 0 || r.DiskCacheBytes > 0 {
+			disk += st.dimText.Render(fmt.Sprintf(" (%s data, %s cache)",
+				humanBytes(r.DiskDataBytes), humanBytes(r.DiskCacheBytes)))
+		}
+		parts = append(parts, disk)
+	}
+
+	// The breakdown is the first thing to give way, before any whole figure
+	// goes: a window too narrow for it still has room to say how much is left,
+	// which is the part somebody is reading this for.
+	if text := strings.Join(parts, st.dimText.Render(" · ")); lipgloss.Width(text) > avail && r.DiskKnown {
+		parts[len(parts)-1] = st.dimText.Render("disk " + humanBytes(r.DiskFreeBytes) + " free")
 	}
 	for len(parts) > 0 {
 		text := strings.Join(parts, st.dimText.Render(" · "))

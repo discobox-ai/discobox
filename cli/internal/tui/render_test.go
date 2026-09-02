@@ -818,3 +818,52 @@ func TestAStoppedDiscoboxStillShowsItsDisk(t *testing.T) {
 		t.Errorf("row %q kept cpu or memory for a discobox that is not running", row)
 	}
 }
+
+// The machine says where its disk went, not just how much is left: the split
+// between what the discoboxes hold and what the shared cache and builder hold
+// is the difference between deleting somebody's work and reclaiming something
+// that rebuilds itself.
+func TestMachineRowSplitsDiskIntoDataAndCache(t *testing.T) {
+	ds := newFakeSource(testSandboxes()...)
+	ds.setResources(Resources{
+		Known: true, CPUVCPUs: 4.2, CPUCapacity: 24,
+		MemoryBytes: 9_663_676_416, MemoryCapacity: 34_359_738_368,
+		DiskKnown:      true,
+		DiskFreeBytes:  222_794_723_328,
+		DiskDataBytes:  50_465_865_728,
+		DiskCacheBytes: 11_811_160_064,
+	})
+	m := newTestModel(t, ds)
+	send(t, m, key("tab"))
+
+	machine := machineRow(t, m)
+	for _, want := range []string{"207 GiB free", "47 GiB data", "11 GiB cache"} {
+		if !strings.Contains(machine, want) {
+			t.Errorf("machine row %q missing %q", machine, want)
+		}
+	}
+}
+
+// Too narrow for the split, the row keeps how much is left — that is what
+// somebody is reading it for — rather than dropping the disk figure whole.
+func TestMachineRowDropsTheDiskSplitBeforeTheFreeSpace(t *testing.T) {
+	ds := newFakeSource(testSandboxes()...)
+	ds.setResources(Resources{
+		Known: true, CPUVCPUs: 4.2, CPUCapacity: 24,
+		MemoryBytes: 9_663_676_416, MemoryCapacity: 34_359_738_368,
+		DiskKnown:      true,
+		DiskFreeBytes:  222_794_723_328,
+		DiskDataBytes:  50_465_865_728,
+		DiskCacheBytes: 11_811_160_064,
+	})
+	m := newTestModel(t, ds)
+	send(t, m, tea.WindowSizeMsg{Width: 80, Height: 20}, key("tab"))
+
+	machine := machineRow(t, m)
+	if !strings.Contains(machine, "207 GiB free") {
+		t.Errorf("machine row %q dropped the free space to keep the split", machine)
+	}
+	if strings.Contains(machine, "data") {
+		t.Errorf("machine row %q kept the split it had no room for", machine)
+	}
+}

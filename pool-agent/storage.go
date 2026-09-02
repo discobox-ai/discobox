@@ -93,6 +93,12 @@ type PoolStorageWalk struct {
 	DurationMillis  int64     `json:"durationMillis"`
 	IntervalSeconds float64   `json:"intervalSeconds"`
 	NextScanAt      time.Time `json:"nextScanAt"`
+	// DataBytes is every sandbox's durable tree, summed. It is the sandboxes'
+	// own storage and nothing shared — each tree holds that sandbox's home,
+	// its sources and its nested container store, which are its own copies
+	// rather than links into anything, so the sum is real disk rather than one
+	// tree counted N times.
+	DataBytes int64 `json:"dataBytes"`
 	// CacheBytes is the pool's shared cache tree, counted once for the pool
 	// because that is exactly what it is.
 	CacheBytes int64 `json:"cacheBytes"`
@@ -143,6 +149,7 @@ func walkPoolTrees(ctx context.Context, projectID, poolID string, sandboxIDs []s
 		}
 		entry.TotalBytes = entry.DataBytes + entry.ConfigBytes + entry.SourcesBytes +
 			entry.SecretsBytes + entry.OriginsBytes
+		walk.DataBytes += entry.TotalBytes
 		walk.Sandboxes = append(walk.Sandboxes, entry)
 	}
 	if ctx.Err() != nil {

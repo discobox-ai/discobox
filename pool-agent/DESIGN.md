@@ -108,6 +108,12 @@ lockstep. A hash rather than a random jitter keeps each pool's schedule
 reproducible. A canceled sweep is discarded rather than reported partially:
 half a walk reports every unvisited tree as empty.
 
+The sweep also sums the per-sandbox trees into `dataBytes`, so a reader has the
+three buckets — data, cache, free — without joining across the sandbox rows,
+where one can be refreshed and another not. The sum is real disk rather than one
+tree counted N times: each sandbox's tree holds its own home, sources and nested
+container store, which are its own copies rather than links into anything shared.
+
 Cache gets exactly one figure, at the pool. It is one shared tree keyed by the
 target path a harness declared rather than by which sandbox wrote it (ADR 0007,
 ADR 0050), so a per-sandbox cache size has no on-disk answer — and repeating the

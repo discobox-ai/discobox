@@ -247,3 +247,36 @@ func TestPoolResourcesToleratesABlobFromAnotherVersion(t *testing.T) {
 		t.Errorf("an older blob's extra field discarded the whole report:\n%s", out)
 	}
 }
+
+// A sweep written by an agent that predates the data total must still read.
+// Making that figure required would have cost the whole report, which draws as
+// a pool nothing has ever measured — over one field nothing depends on.
+func TestPoolResourcesReadsASweepWithoutTheDataTotal(t *testing.T) {
+	const older = `{"id":"pool-1","projectId":"project-1","name":"Default","providerInstanceId":"provider-1",` +
+		`"cpuVcpus":0,"memoryBytes":0,"storageBytes":0,"ready":true,"schedulable":true,"degraded":false,` +
+		`"availableCpuVcpus":0,"availableMemoryBytes":0,"availableStorageBytes":0,` +
+		`"resources":{"reportedAt":"2026-08-27T12:00:00Z",` +
+		`"cpu":{"usageUsec":1,"userUsec":1,"systemUsec":0,"vcpus":8.10,"capacityVcpus":16},` +
+		`"memory":{"currentBytes":25769803776},` +
+		`"storage":{"root":"/var/lib/discobox","filesystem":{"totalBytes":536870912000,"usedBytes":1,"freeBytes":408021893120},` +
+		// The sweep as it was before dataBytes existed.
+		`"walk":{"observedAt":"2026-08-27T11:52:00Z","durationMillis":11400,"intervalSeconds":570,` +
+		`"nextScanAt":"2026-08-27T12:01:30Z","cacheBytes":44023414784,"buildBytes":9663676416}}},` +
+		`"desiredState":"present","state":"active","generation":1,"observedGeneration":1,` +
+		`"createdAt":"2026-01-01T00:00:00Z","updatedAt":"2026-01-01T00:00:00Z"}`
+	server := completionServer(t, map[string]string{
+		"/projects/project-1/pools":        `{"pools":[` + older + `]}`,
+		"/projects/project-1/pools/pool-1": older,
+		"/projects/project-1/sandboxes":    `{"sandboxes":[]}`,
+	})
+
+	out := runCLI(t, server.URL, "admin", "pool", "resources", "pool-1")
+
+	if strings.Contains(out, "has not reported resource usage yet") {
+		t.Errorf("a sweep without the data total discarded the whole report:\n%s", out)
+	}
+	// Everything the older agent did send still reads.
+	if !strings.Contains(out, "cache 41.0GiB (shared)") {
+		t.Errorf("output lost the figures the older agent did send:\n%s", out)
+	}
+}
