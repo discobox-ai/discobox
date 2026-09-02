@@ -89,6 +89,14 @@ func (f *fakeExecAgent) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 }
 
 func (f *fakeExecAgent) serveAttach(w http.ResponseWriter, r *http.Request) {
+	// Recorded before the handshake, not after: Accept writes the 101 that
+	// releases the client, so anything set afterwards races the client's next
+	// request. The arrival of this request is the event the ordering assertion
+	// is about, and it strictly precedes any start the client could send.
+	f.mu.Lock()
+	f.attachOpened = true
+	f.mu.Unlock()
+
 	wsConn, err := websocket.Accept(w, r, nil)
 	if err != nil {
 		return
@@ -97,9 +105,6 @@ func (f *fakeExecAgent) serveAttach(w http.ResponseWriter, r *http.Request) {
 	netConn := websocket.NetConn(r.Context(), wsConn, websocket.MessageBinary)
 	defer netConn.Close()
 
-	f.mu.Lock()
-	f.attachOpened = true
-	f.mu.Unlock()
 	close(f.attached)
 
 	// Nothing is emitted until the exec is started, which is what makes this
