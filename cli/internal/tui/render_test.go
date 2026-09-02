@@ -793,3 +793,28 @@ func TestMachineRowSitsAboveTheBand(t *testing.T) {
 		t.Errorf("the machine row is below the band:\n%s", frameText(m))
 	}
 }
+
+// Stopping a discobox frees its cpu and its memory. It frees no disk at all, so
+// the disk stays on the row — a stopped discobox is often exactly the one whose
+// disk is worth seeing.
+func TestAStoppedDiscoboxStillShowsItsDisk(t *testing.T) {
+	sandboxes := testSandboxes()
+	sandboxes[0].State = StateStopped
+	sandboxes[0].Usage = Usage{
+		// Whatever the counters last said, a stopped discobox is using none of
+		// it — only the disk survives.
+		Known: true, CPUPercent: 61, MemoryBytes: 1_288_490_188, MemoryPercent: 4,
+		DiskKnown: true, DiskBytes: 2_483_027_968, DiskPercent: 12,
+	}
+	m := newTestModel(t, newFakeSource(sandboxes...))
+	send(t, m, key("tab"))
+
+	row := rowFor(t, m, "fix flaky pool")
+	if !strings.Contains(row, "2.3 GiB") {
+		t.Errorf("row %q dropped the disk a stopped discobox still holds", row)
+	}
+	// Its cpu and memory are gone with the process that was using them.
+	if strings.Contains(row, "61%") || strings.Contains(row, "1.2 GiB") {
+		t.Errorf("row %q kept cpu or memory for a discobox that is not running", row)
+	}
+}

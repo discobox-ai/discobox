@@ -100,21 +100,24 @@ func trimLeft(s string, n int) string {
 	return s
 }
 
-// usage is what the sandbox is costing: its share of the host's cpu, the memory
-// it is holding, and the disk it has taken.
+// usage is what the discobox is costing: its share of the host's cpu, the
+// memory it is holding, and the disk it has taken.
+//
+// The first two empty out when it stops and the third does not. Stopping frees
+// cpu and memory; it frees no disk at all, and a stopped discobox is often
+// exactly the one whose disk is worth seeing.
 //
 // Only the cpu is a share. Memory and disk are the amounts themselves, because
-// what a row is being read for is what this discobox costs compared with the
-// one under it — and a percentage of the whole machine answers a question about
-// the machine instead. The share is still what colors them, so a discobox
-// filling the box is noticed without the number having to be read. A sandbox that is not up, or one
-// nothing has measured yet, has none, and says so rather than showing three
-// zeroes — a zero share reads as idle, which is a claim, where a dot is not.
+// what a row is read for is what this discobox costs beside the one under it,
+// and a percentage of the whole machine answers a question about the machine
+// instead. The share is still what colors them, so a discobox filling the box
+// is noticed without the number having to be read.
 //
-// The disk has its own dot for the same reason. It is walked on a slower
-// schedule than the counters, so a sandbox created since the last sweep is
-// measured for cpu and not yet for disk, and "0 B" there would say it holds
-// nothing.
+// A cell nothing has measured is a dot, never a zero: `0%` reads as idle and
+// `0 B` as holding nothing, and both are claims about the discobox where a dot
+// is a claim about what we know. The two halves are measured on different
+// schedules — the counters every report, the disk on the agent's own slower
+// sweep — so a discobox can have one and not the other.
 func usage(st *styles, s Sandbox) string {
 	// The color is the share in every case; only the cpu shows the share as
 	// its number.
@@ -133,12 +136,17 @@ func usage(st *styles, s Sandbox) string {
 	// its figure would have, under the label naming it. Two layouts is how the
 	// dots came to sit under the wrong columns when the cells were resized.
 	cpu, memory, disk := "·", "·", "·"
-	measured := s.up()
-	if measured && s.Usage.Known {
+	// CPU and memory are what a discobox is using, which a stopped one is not:
+	// it holds neither, and there is no sample of it to report.
+	if s.up() && s.Usage.Known {
 		cpu = fmt.Sprintf("%d%%", s.Usage.CPUPercent)
 		memory = humanBytes(s.Usage.MemoryBytes)
 	}
-	if measured && s.Usage.DiskKnown {
+	// Disk is what it is holding, which it holds whether it runs or not — a
+	// stopped discobox has given nothing back. Gating this on running was
+	// wrong: it hid exactly the figure a stopped discobox still has, and the
+	// agent walks a stopped one's trees precisely so it can be shown.
+	if s.Usage.DiskKnown {
 		disk = humanBytes(s.Usage.DiskBytes)
 	}
 	return padANSI(cell(s.Usage.CPUPercent, cpu, 4)+" "+

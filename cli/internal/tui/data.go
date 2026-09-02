@@ -42,7 +42,9 @@ type Usage struct {
 	// samples to difference, which is the first report after it starts.
 	Known bool
 	// DiskKnown covers DiskBytes and DiskPercent, and lags Known on a sandbox
-	// created since the last sweep.
+	// created since the last sweep. It is also the one that outlives running:
+	// a stopped discobox holds its disk and reports it, where Known goes false
+	// with the discobox that was being measured.
 	DiskKnown bool
 
 	CPUPercent int

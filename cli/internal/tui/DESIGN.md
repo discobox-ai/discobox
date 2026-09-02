@@ -1270,7 +1270,12 @@ costs no extra request.
 It has two `Known` flags because it is two measurements on two schedules. CPU
 and memory arrive together on every report; disk is a walk on the agent's own
 adaptive interval, so a discobox created since the last sweep has one and not
-the other. Each cell draws a dot rather than a zero where it is unmeasured:
+the other.
+
+The same split is why stopping a discobox empties the first two cells and not
+the third. Stopping frees cpu and memory; it frees no disk at all, and a stopped
+discobox is often exactly the one whose disk is worth seeing — so the agent
+walks a stopped discobox's trees, and the row draws what it finds. Each cell draws a dot rather than a zero where it is unmeasured:
 `0 B` reads as holding nothing, which is a claim about the discobox where a dot
 is a claim about what we know. Measured and unmeasured share one layout, so a
 dot sits in the cell its figure would have — two layouts is how the dots came to
