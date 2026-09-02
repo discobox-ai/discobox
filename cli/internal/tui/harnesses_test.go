@@ -513,6 +513,7 @@ func TestChoosingAnUnconfiguredHarnessSetsItUpThenDefaultsIt(t *testing.T) {
 	if len(ds.configured) != 1 || ds.configured[0] != "hc_custom" {
 		t.Fatalf("configured = %v, want the chosen harness set up", ds.configured)
 	}
+	finishConfigure(t, m)
 	if len(ds.didHarness) != 1 || ds.didHarness[0] != "set default hc_custom" {
 		t.Fatalf("did = %v, want it made default once its setup succeeded", ds.didHarness)
 	}
@@ -601,6 +602,7 @@ func TestSettingUpAChosenDefaultResumesTheRunThatAsked(t *testing.T) {
 		}
 	}
 
+	finishConfigure(t, m)
 	if len(ds.configured) != 1 || len(ds.didHarness) != 1 {
 		t.Fatalf("configured = %v, did = %v, want both before the run", ds.configured, ds.didHarness)
 	}
@@ -626,6 +628,7 @@ func TestSettingUpANamedHarnessResumesTheRunThatAsked(t *testing.T) {
 	if len(ds.configured) != 1 || ds.configured[0] != "hc_custom" {
 		t.Fatalf("configured = %v, want the named harness set up", ds.configured)
 	}
+	finishConfigure(t, m)
 	if len(ds.runs) != 1 || ds.runs[0].Prompt != "fix the reaper" {
 		t.Fatalf("runs = %v, want the interrupted run submitted after the setup", ds.runs)
 	}

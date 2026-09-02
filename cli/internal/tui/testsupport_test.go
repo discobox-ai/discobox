@@ -11,6 +11,8 @@ import (
 
 	tea "charm.land/bubbletea/v2"
 	"github.com/charmbracelet/x/ansi"
+
+	"github.com/discobox-ai/discobox/termpane"
 )
 
 // fakeSource stands in for the server. Every method records what it was asked
@@ -873,6 +875,20 @@ func newTestModel(t *testing.T, ds DataSource) *Model {
 // The timers — the cursor blink, the status expiry, the resize settle, the
 // refresh tick — are given up on rather than waited for: they are sleeps, and
 // waiting for them only buys a slower test.
+// finishConfigure ends the configuration pane's terminal, which is what
+// carries a setup flow's follow-up: the default the prompt promised to set,
+// and the run that was waiting on the answer. Opening the pane is where
+// configureHarnessThen now stops, so a test asserting on either has to close
+// it first.
+func finishConfigure(t *testing.T, m *Model) *Model {
+	t.Helper()
+	p := m.overlay
+	if p == nil || p.configure == nil {
+		t.Fatalf("no configuration pane is open to finish")
+	}
+	return send(t, m, paneMsg{id: p.id, msg: termpane.ClosedMsg{}})
+}
+
 func send(t *testing.T, m *Model, msgs ...tea.Msg) *Model {
 	t.Helper()
 	for _, msg := range msgs {
