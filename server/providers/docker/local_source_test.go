@@ -27,8 +27,8 @@ func TestLocalSourceBindSupported(t *testing.T) {
 	}
 	for _, tc := range tests {
 		t.Run(tc.daemonHost, func(t *testing.T) {
-			if got := localSourceBindSupported(tc.daemonHost); got != tc.want {
-				t.Fatalf("localSourceBindSupported(%q) = %t, want %t: %s", tc.daemonHost, got, tc.want, tc.why)
+			if got := daemonIsLocal(tc.daemonHost); got != tc.want {
+				t.Fatalf("daemonIsLocal(%q) = %t, want %t: %s", tc.daemonHost, got, tc.want, tc.why)
 			}
 		})
 	}

@@ -115,7 +115,7 @@ func newFromInstance(ctx context.Context, instance *model.SandboxProviderInstanc
 // instance config, so the roots claimed here and the mounts actually made
 // cannot drift.
 func localSourceRoots(daemonHost string, hostMounts []dockerworker.HostMount) []string {
-	if !localSourceBindSupported(daemonHost) {
+	if !daemonIsLocal(daemonHost) {
 		return nil
 	}
 	roots := make([]string, 0, len(hostMounts))
@@ -127,9 +127,11 @@ func localSourceRoots(daemonHost string, hostMounts []dockerworker.HostMount) []
 	return roots
 }
 
-// localSourceBindSupported reports whether containers on daemonHost share a
-// filesystem with this process, so a local source directory can be bind-mounted
-// into a sandbox.
+// daemonIsLocal reports whether the Docker daemon at daemonHost runs on this
+// machine — which decides three separate things: whether a local source
+// directory can be bind-mounted into a sandbox, whether the control plane's own
+// Unix socket is reachable from a pool container, and whether this process can
+// read the daemon's journal.
 //
 // Only socket transports qualify. A socket means the daemon is on this machine,
 // including Docker Desktop, which shares host paths into its VM transparently.
@@ -137,7 +139,7 @@ func localSourceRoots(daemonHost string, hostMounts []dockerworker.HostMount) []
 // tcp://localhost daemon may be forwarded anywhere, so none of them qualify:
 // binding a path the daemon cannot resolve fails at run time, while declining
 // costs only a source push.
-func localSourceBindSupported(daemonHost string) bool {
+func daemonIsLocal(daemonHost string) bool {
 	scheme, _, ok := strings.Cut(strings.TrimSpace(daemonHost), "://")
 	if !ok {
 		return false
@@ -210,7 +212,7 @@ func resolveControlPlaneReach(listenEndpoints []string, daemonHost string) (cont
 			// npipe is deliberately absent: a Windows named pipe is not a
 			// filesystem object a Linux container can bind, and the Windows
 			// backend is wslc, which brings its own relay.
-			if localSourceBindSupported(daemonHost) {
+			if daemonIsLocal(daemonHost) {
 				return controlPlaneReach{
 					url:       "unix://" + parsed.Value,
 					socketDir: path.Dir(parsed.Value),
