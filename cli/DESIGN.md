@@ -635,7 +635,7 @@ launcher will supply the same two halves and draw them instead.
 
 ## Resource Views
 
-`discobox admin pool resources [POOL_ID]` and `discobox admin discobox resources
+`discobox admin pool resources [POOL_ID]` and `discobox admin box resources
 DISCOBOX_ID` read the accounting the pool agent reports (ADR 0071). Both are
 plain reads of `pool.resources` and `discobox.runtime.resources` — the CLI
 computes no rates of its own, because the figures are only comparable when one

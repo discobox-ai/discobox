@@ -101,7 +101,7 @@ Without POOL_ID the project's default pool is used.`,
 	return cmd
 }
 
-// newSandboxResourcesCommand implements `discobox admin discobox resources`:
+// newSandboxResourcesCommand implements `discobox admin box resources`:
 // one discobox's consumption, down to the processes inside it.
 func (a *App) newSandboxResourcesCommand() *cobra.Command {
 	return &cobra.Command{
@@ -121,7 +121,7 @@ inflates it without consuming anything.
 There is no cache figure here. The cache is one tree shared by every discobox
 in the pool, so it is accounted once against the pool; see
 ` + "`discobox admin pool resources`" + `.`,
-		Example:           `  discobox admin discobox resources sbx_01hq`,
+		Example:           `  discobox admin box resources sbx_01hq`,
 		Args:              cobra.ExactArgs(1),
 		ValidArgsFunction: a.completeSandboxes,
 		RunE: func(cmd *cobra.Command, args []string) error {
