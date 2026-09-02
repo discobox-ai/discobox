@@ -79,11 +79,12 @@ func StreamCommand(cmd *exec.Cmd, source string) (*sandbox.PoolLogStream, error)
 	// command is routinely a shell around the tool that produces the output —
 	// the exec driver's whole contract is "run this script" — and killing only
 	// the shell leaves that child alive holding the write end of this stream.
-	configureProcessGroup(cmd)
+	group := newProcessGroup(cmd)
 	if err := cmd.Start(); err != nil {
 		_ = reader.Close()
 		return nil, fmt.Errorf("read pool host logs with %s: %w", cmd.Path, err)
 	}
+	group.adopt()
 	done := make(chan struct{})
 	go func() {
 		defer close(done)
@@ -92,7 +93,7 @@ func StreamCommand(cmd *exec.Cmd, source string) (*sandbox.PoolLogStream, error)
 	}()
 	return &sandbox.PoolLogStream{
 		Source:     source,
-		ReadCloser: &commandStream{reader: reader, cmd: cmd, done: done},
+		ReadCloser: &commandStream{reader: reader, group: group, done: done},
 	}, nil
 }
 
@@ -100,14 +101,14 @@ func StreamCommand(cmd *exec.Cmd, source string) (*sandbox.PoolLogStream, error)
 // which is the only way a --follow read ever ends.
 type commandStream struct {
 	reader *io.PipeReader
-	cmd    *exec.Cmd
+	group  *processGroup
 	done   chan struct{}
 }
 
 func (s *commandStream) Read(p []byte) (int, error) { return s.reader.Read(p) }
 
 func (s *commandStream) Close() error {
-	killProcessGroup(s.cmd)
+	s.group.kill()
 	// Closing the read half is what unblocks a write the kill did not beat, so
 	// the wait below cannot hang on a command holding a full pipe.
 	_ = s.reader.Close()
