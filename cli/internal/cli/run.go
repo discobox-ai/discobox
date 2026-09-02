@@ -131,6 +131,9 @@ discobox as it does here. --declared-sources=false leaves them out.`,
 			if err != nil {
 				return err
 			}
+			if err := a.writeProjectSSHConfig(cmd, client, projectID, ""); err != nil {
+				return fmt.Errorf("sync SSH config: %w", err)
+			}
 			if opts.detach {
 				return a.writeSandbox(cmd, sandbox)
 			}

@@ -39,6 +39,9 @@ func (a *App) newSSHConfigCommand() *cobra.Command {
 			if err != nil {
 				return err
 			}
+			if write {
+				return a.writeProjectSSHConfig(cmd, client, projectID, identityFile)
+			}
 			// The written files are named after the project and the host key
 			// is verified under a name derived from it, so resolve what the
 			// flag means either way: "default" is a server-side alias, and the
@@ -60,11 +63,9 @@ func (a *App) newSSHConfigCommand() *cobra.Command {
 			if windowsErr != nil {
 				fmt.Fprintf(cmd.ErrOrStderr(), "not writing the Windows ssh_config: %v\n", windowsErr)
 			}
-			if !write {
-				// Printed output is for pasting into a config by hand, and the
-				// hand doing it is on this side.
-				targets = targets[:1]
-			}
+			// Printed output is for pasting into a config by hand, and the
+			// hand doing it is on this side.
+			targets = targets[:1]
 			built, err := a.buildManagedSSHConfig(cmd, managedSSHConfigRequest{
 				client:            client,
 				projectID:         projectID,
@@ -76,14 +77,6 @@ func (a *App) newSSHConfigCommand() *cobra.Command {
 			if err != nil {
 				return err
 			}
-			if write {
-				for _, config := range built {
-					if err := writeManagedSSHConfig(cmd, config, resolvedProjectID); err != nil {
-						return err
-					}
-				}
-				return nil
-			}
 			out := cmd.OutOrStdout()
 			fmt.Fprint(out, built[0].stanzas)
 			fmt.Fprintf(out, "\n# add to your known_hosts:\n# %s %s\n", built[0].hostKeyAlias, built[0].hostKey)
@@ -93,6 +86,42 @@ func (a *App) newSSHConfigCommand() *cobra.Command {
 	cmd.Flags().StringVar(&identityFile, "identity-file", "", "Private key to use, generated and enrolled if absent (default: the CLI's own managed key)")
 	cmd.Flags().BoolVarP(&write, "write", "w", false, "Write the config where ssh will find it, instead of printing it")
 	return cmd
+}
+
+// writeProjectSSHConfig is the one operation behind both `admin ssh-config
+// --write` and the automatic refresh after a prompt sandbox is created. On WSL
+// machineSSHTargets returns this distribution and Windows, so every caller
+// keeps both ssh installations in sync.
+func (a *App) writeProjectSSHConfig(cmd *cobra.Command, client *apiclientgen.Client, projectID, identityFile string) error {
+	resolvedProjectID, err := a.concreteProjectID(cmd, client, projectID)
+	if err != nil {
+		return err
+	}
+	hostKey, err := a.sshHostKey(cmd, client)
+	if err != nil {
+		return err
+	}
+	targets, windowsErr := machineSSHTargets(cmd.Context())
+	if windowsErr != nil {
+		fmt.Fprintf(cmd.ErrOrStderr(), "not writing the Windows ssh_config: %v\n", windowsErr)
+	}
+	built, err := a.buildManagedSSHConfig(cmd, managedSSHConfigRequest{
+		client:            client,
+		projectID:         projectID,
+		resolvedProjectID: resolvedProjectID,
+		identityFile:      identityFile,
+		hostKey:           hostKey,
+		write:             true,
+	}, targets)
+	if err != nil {
+		return err
+	}
+	for _, config := range built {
+		if err := writeManagedSSHConfig(cmd, config, resolvedProjectID); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 // managedSSHConfigRequest is what rendering a project's stanzas needs that the

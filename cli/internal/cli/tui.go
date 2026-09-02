@@ -558,6 +558,15 @@ func (d *apiDataSource) Run(ctx context.Context, req tui.RunRequest, report func
 	if err != nil {
 		return tui.Sandbox{}, err
 	}
+	if report != nil {
+		report("syncing SSH config")
+	}
+	cmd := &cobra.Command{}
+	cmd.SetContext(ctx)
+	cmd.SetErr(d.app.errOut)
+	if err := d.app.writeProjectSSHConfig(cmd, d.client, d.projectID, ""); err != nil {
+		return tui.Sandbox{}, fmt.Errorf("sync SSH config: %w", err)
+	}
 	return toTUISandbox(*sandbox), nil
 }
 

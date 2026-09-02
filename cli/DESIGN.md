@@ -813,6 +813,11 @@ level or layering on the attach transports above.
   stay — the host key belongs to the server, not to any sandbox — so the next
   populated run needs no further edit to `~/.ssh/config` and no second trip to
   re-pin the same server.
+- A successful prompt sandbox create refreshes these files after its source has
+  been delivered, from both `discobox run` and the launcher. This is the same
+  operation as `admin ssh-config --write`, including key enrollment and WSL's
+  two targets, so a newly created sandbox is immediately available to OpenSSH
+  clients without a separate command.
 - **WSL** is the one place where the ssh that connects is not on the same side
   of the machine as the CLI (ADR 0074). A Windows VS Code runs Windows
   `ssh.exe`, which reads `%USERPROFILE%\.ssh\config`, opens files by their

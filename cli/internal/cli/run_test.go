@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"os"
 	"path"
 	"path/filepath"
 	"runtime"
@@ -55,6 +56,7 @@ func TestParseRunOptionsRejectsEmptySource(t *testing.T) {
 }
 
 func TestRunCommandCreatesSandbox(t *testing.T) {
+	serveSSHSync := preparePromptCreateSSHSync(t)
 	t.Setenv("RUN_ENV_FROM_SHELL", "from-shell")
 	repo := newRunSourceTestRepo(t)
 	git := runSourceTestGit(t, repo)
@@ -62,6 +64,9 @@ func TestRunCommandCreatesSandbox(t *testing.T) {
 	const sandboxID = "sbx_9qk5n25t2hh2rv00"
 	var posted map[string]any
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if serveSSHSync(w, r) {
+			return
+		}
 		if r.Method != http.MethodPost || r.URL.Path != "/projects/project-1/sandboxes" {
 			t.Fatalf("unexpected request %s %s", r.Method, r.URL.Path)
 		}
@@ -125,13 +130,25 @@ func TestRunCommandCreatesSandbox(t *testing.T) {
 	if output := out.String(); !strings.Contains(output, sandboxID) {
 		t.Fatalf("output = %q, want sandbox ID", output)
 	}
+	managedConfig := filepath.Join(cliStateDir(), "ssh", "project-1", "config")
+	configBytes, err := os.ReadFile(managedConfig)
+	if err != nil {
+		t.Fatalf("read automatically synchronized SSH config: %v", err)
+	}
+	if config := string(configBytes); !strings.Contains(config, "Host run-test") || !strings.Contains(config, "User "+sandboxID) {
+		t.Fatalf("automatically synchronized SSH config does not contain the created sandbox:\n%s", config)
+	}
 }
 
 func TestRunCommandDefaultsSourceToCurrentDirectory(t *testing.T) {
+	serveSSHSync := preparePromptCreateSSHSync(t)
 	repo := newRunSourceTestRepo(t)
 	t.Chdir(repo)
 	var posted map[string]any
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if serveSSHSync(w, r) {
+			return
+		}
 		if r.Method != http.MethodPost || r.URL.Path != "/projects/project-1/sandboxes" {
 			t.Fatalf("unexpected request %s %s", r.Method, r.URL.Path)
 		}
@@ -174,9 +191,13 @@ func TestRunCommandDefaultsSourceToCurrentDirectory(t *testing.T) {
 }
 
 func TestRunCommandStillAcceptsDashDashSeparator(t *testing.T) {
+	serveSSHSync := preparePromptCreateSSHSync(t)
 	repo := newRunSourceTestRepo(t)
 	var sawCreate bool
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if serveSSHSync(w, r) {
+			return
+		}
 		if r.Method != http.MethodPost || r.URL.Path != "/projects/project-1/sandboxes" {
 			t.Fatalf("unexpected request %s %s", r.Method, r.URL.Path)
 		}
@@ -267,10 +288,14 @@ func TestCreateRunSandboxBodySecrets(t *testing.T) {
 // it polled for: attaching a concrete id addresses one session, so a primary
 // that ended before or during the attach would fail instead of being relaunched.
 func TestRunCommandAttachesVirtualPrimaryTerminal(t *testing.T) {
+	serveSSHSync := preparePromptCreateSSHSync(t)
 	repo := newRunSourceTestRepo(t)
 	const sandboxID = "sbx_9qk5n25t2hh2rv00"
 	var attachPath string
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if serveSSHSync(w, r) {
+			return
+		}
 		w.Header().Set("Content-Type", "application/json; charset=utf-8")
 		switch {
 		case r.Method == http.MethodPost && r.URL.Path == "/projects/project-1/sandboxes":

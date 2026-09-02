@@ -89,11 +89,15 @@ func TestSourceDirectoryDropsTheRef(t *testing.T) {
 // Run is the launcher's Enter, and it has to go through the same creation path
 // `discobox run` does rather than posting a body of its own.
 func TestAPIDataSourceRunUsesSharedRunCreation(t *testing.T) {
+	serveSSHSync := preparePromptCreateSSHSync(t)
 	repo := newRunSourceTestRepo(t)
 	git := runSourceTestGit(t, repo)
 	commit := strings.TrimSpace(git("rev-parse", "HEAD"))
 	var posted map[string]any
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if serveSSHSync(w, r) {
+			return
+		}
 		if r.Method != http.MethodPost || r.URL.Path != "/projects/project-1/sandboxes" {
 			t.Fatalf("unexpected request %s %s", r.Method, r.URL.Path)
 		}
@@ -132,6 +136,7 @@ func TestAPIDataSourceRunUsesSharedRunCreation(t *testing.T) {
 	if want := []string{
 		string(sandboxcreate.StepPreparingSource),
 		string(sandboxcreate.StepCreating),
+		"syncing SSH config",
 	}; !slices.Equal(steps, want) {
 		t.Fatalf("reported steps = %q, want %q", steps, want)
 	}
