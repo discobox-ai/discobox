@@ -14,6 +14,7 @@ transport helpers where OpenAPI does not model the stream.
 | `internal/sandboxgit` | The client's git transport to a sandbox: the worktree and origin repository URLs the control plane proxies, bearer-token auth on those requests, and the client-side ref names that record what has been sent. Shared by create, apply and push. |
 | `internal/sandboxpush` | `discobox push`: re-delivering a push-delivered source's commits into the origin repository its sandbox fetches from, under a lease (ADR 0058). |
 | `internal/origin` | Resolves the client host and project directory a sandbox is created from. Host identity itself is shared, in the root module's `internal/hostid`. |
+| `internal/gitunborn` | A repository with no commits: whether HEAD is unborn, and the tree of a working tree that has no HEAD to be read against (ADR 0083). |
 | `internal/tui` | The `discobox tui` launcher: Bubble Tea presentation and interaction state, expressed against its own `DataSource` interface. See [`internal/tui/DESIGN.md`](internal/tui/DESIGN.md). |
 | `internal/portforward` | Frontend-independent dynamic port forwarding: local listeners kept in sync with a remote's announced ports, over a caller-supplied dialer. |
 | `internal/keys` | The leader: its default, its `DISCOBOX_LEADER` override, normalization, and the byte a raw stream matches it as. Owned here because the launcher's panes and a plain attach must reserve the same key. |
@@ -1199,6 +1200,47 @@ workspace, and the sandbox comes up with the files as uncommitted changes.
 See [ADR 0045](../docs/adr/0045-a-directory-with-no-repository-is-delivered-by-push.md),
 [ADR 0073](../docs/adr/0073-a-directory-with-no-repository-is-copied-only-when-asked.md)
 and [ADR 0077](../docs/adr/0077-declining-a-directory-copy-creates-a-discobox-with-no-source.md).
+
+## A Repository With No Commits
+
+`git init` and nothing since leaves an *unborn* HEAD — it names a branch that
+does not exist yet — so there is no commit to check out and nothing in the
+repository to clone. `gitunborn.HeadIsUnborn` tests for it before a base commit is
+demanded, and the answer is the shape above one step back in: nothing has ever
+been committed, so the working tree is uncommitted work on a base of nothing.
+
+The difference from a directory in no repository is that no repository has to be
+built. The base — a root commit of the empty tree — the snapshot, and their refs
+are written into the repository the user made. `refs/heads/<branch>` is never
+touched, so HEAD stays unborn and their first commit stays theirs.
+
+- The source records `noLocalCommits`, and that is what makes the server choose
+  `push`: a clone of the repository yields nothing, and the base commit lives
+  only in objects this client wrote. It is deliberately not `noLocalRepository`,
+  which additionally means the commits are gone with the repository built for
+  that one run. These are in the user's repository and stay there, so a later
+  `discobox push` delivers this source out of it and `CheckDeliverable` finds
+  both objects.
+- The base commit gets a `refs/discobox/run/` ref of its own. It is what the
+  sandbox checks out and what the snapshot is measured against on both ends, so
+  it has to be a ref rather than a loose object — an empty repository's base is
+  pointed at by nothing else at all.
+- `gitunborn.WorkspaceTree` writes the working tree from an index of its own
+  that starts empty, because `gitutil.CurrentWorkspaceTree` seeds its index from
+  HEAD. `git add` fills it, honoring `.gitignore` and skipping `.git`, and the
+  repository's real index — which may already hold paths staged for that first
+  commit — is untouched.
+- Nobody is asked. The directory question exists because a directory in no
+  repository may be a home directory somebody ran in by accident, and `git init`
+  is the user saying it is not; the dirty-workspace question has no alternative
+  to offer, because there is no last commit. `--include-dirty=false` still
+  answers ahead of time, and its answer is the empty base commit at the
+  repository's own path — not "no source", because a repository is a project
+  whose path the user established.
+- An explicit `@REF` is rejected with a message naming the repository and its
+  missing history, rather than git's "Needed a single revision".
+
+See [ADR 0083](../docs/adr/0083-a-repository-with-no-commits-is-uncommitted-work-on-an-empty-base.md).
 
 ## No Source At All
 

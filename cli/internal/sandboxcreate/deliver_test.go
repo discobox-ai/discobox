@@ -187,6 +187,58 @@ func TestPushSourceDeliversADirectoryWithNoRepository(t *testing.T) {
 	}
 }
 
+// A repository with no commits delivers the same two objects as a throwaway one
+// — the empty base and the snapshot — but out of the user's own repository,
+// which is still there afterwards. That is what makes a later delivery of the
+// same source possible, and is the whole difference from ADR 0045's case.
+func TestPushSourceDeliversARepositoryWithNoCommits(t *testing.T) {
+	ctx := context.Background()
+	repo := newUnbornRunSourceTestRepo(t)
+	if err := os.WriteFile(filepath.Join(repo, "a.txt"), []byte("a\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	source, err := resolveRunSource(ctx, repo, runSourceOptions{IncludeDirty: IncludeDirtyAuto})
+	if err != nil {
+		t.Fatalf("resolveRunSource: %v", err)
+	}
+	local := &LocalSources{}
+	local.add("", source)
+	defer local.Close()
+
+	sandboxRepo := t.TempDir()
+	runSourceTestGit(t, sandboxRepo)("init", "--bare")
+	repoRoot, err := local.pushRoot("")
+	if err != nil {
+		t.Fatalf("pushRoot: %v", err)
+	}
+	if err := pushSource(ctx, repoRoot, sandboxRepo, "", source.Checkout.Commit, source.Checkout.RefName, source.Workspace.SnapshotRef); err != nil {
+		t.Fatalf("pushSource: %v", err)
+	}
+
+	git := runSourceTestGit(t, sandboxRepo)
+	if head := strings.TrimSpace(git("rev-parse", "refs/heads/"+source.Checkout.RefName)); head != source.Checkout.Commit {
+		t.Fatalf("branch %s = %s, want the base commit %s", source.Checkout.RefName, head, source.Checkout.Commit)
+	}
+	restored := strings.Fields(git("diff", "--name-only", source.Checkout.Commit, source.Workspace.SnapshotRef))
+	if strings.Join(restored, ",") != "a.txt" {
+		t.Fatalf("delivered snapshot = %v, want the working tree's files", restored)
+	}
+
+	// Nothing was built for this run, so nothing was deleted with it: the same
+	// source can still be delivered out of the repository it came from.
+	apiSource, err := source.apiGitSource()
+	if err != nil {
+		t.Fatalf("apiGitSource: %v", err)
+	}
+	if !apiSource.NoLocalCommits.Or(false) || apiSource.NoLocalRepository.Or(false) {
+		t.Fatalf("api source = %#v, want a repository with no commits rather than no repository", apiSource)
+	}
+	if err := CheckDeliverable(ctx, repo, *apiSource); err != nil {
+		t.Fatalf("CheckDeliverable out of %s: %v", repo, err)
+	}
+}
+
 // A delivery run long after the create needs both halves of every source it is
 // waiting for: the slug that addresses the repository in the discobox, and the
 // key the local repository has to be filed under to be found again.

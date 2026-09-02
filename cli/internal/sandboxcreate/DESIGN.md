@@ -84,6 +84,17 @@ sandbox create requests.
   `LocalSources`, which delivery pushes out of and the caller closes; see the
   CLI design doc's "A Directory That Is Not a Repository" and
   [ADR 0045](../../../docs/adr/0045-a-directory-with-no-repository-is-delivered-by-push.md).
+- A source repository with no commits — an unborn HEAD, which is what `git init`
+  leaves — is resolved into the same shape without building anything: the empty
+  base commit, the snapshot, and their refs go into the user's own repository,
+  no branch moves, and the source records `noLocalCommits` rather than
+  `noLocalRepository`, so it is pushed but stays deliverable afterwards. Nobody
+  is asked. The two questions about an unborn repository — is HEAD one, and
+  what does the working tree hold with no HEAD to read it against — come from
+  `internal/gitunborn`, because `discobox apply` asks them again coming back
+  ([ADR 0084](../../../docs/adr/0084-the-first-apply-into-a-repository-with-no-commits-is-its-history.md)).
+  See the CLI design doc's "A Repository With No Commits" and
+  [ADR 0083](../../../docs/adr/0083-a-repository-with-no-commits-is-uncommitted-work-on-an-empty-base.md).
 - Do not depend on `internal/cli` or `internal/tui`. Both frontends consume this
   package through their adapters.
 - Keep terminal waiting, attach, and rendering in the frontend packages; those

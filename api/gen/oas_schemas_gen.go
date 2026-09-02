@@ -1839,6 +1839,10 @@ type GitSource struct {
 	Kind GitSourceKind `json:"kind"`
 	// Absolute local Git repository directory accessible to the worker.
 	LocalDirectory OptString `json:"localDirectory"`
+	// Whether the repository at localDirectory has no commits, so a clone of it yields nothing and the
+	// base commit this source was resolved against exists only as objects the client holds. The client
+	// can only deliver it by push, and can still deliver it later.
+	NoLocalCommits OptBool `json:"noLocalCommits"`
 	// Whether localDirectory holds no Git repository at all, so nothing can be cloned from it however
 	// reachable it is. The client resolved this source from a repository of its own and can only deliver
 	// it by push. localDirectory still records the directory the source came from.
@@ -1874,6 +1878,11 @@ func (s *GitSource) GetKind() GitSourceKind {
 // GetLocalDirectory returns the value of LocalDirectory.
 func (s *GitSource) GetLocalDirectory() OptString {
 	return s.LocalDirectory
+}
+
+// GetNoLocalCommits returns the value of NoLocalCommits.
+func (s *GitSource) GetNoLocalCommits() OptBool {
+	return s.NoLocalCommits
 }
 
 // GetNoLocalRepository returns the value of NoLocalRepository.
@@ -1919,6 +1928,11 @@ func (s *GitSource) SetKind(val GitSourceKind) {
 // SetLocalDirectory sets the value of LocalDirectory.
 func (s *GitSource) SetLocalDirectory(val OptString) {
 	s.LocalDirectory = val
+}
+
+// SetNoLocalCommits sets the value of NoLocalCommits.
+func (s *GitSource) SetNoLocalCommits(val OptBool) {
+	s.NoLocalCommits = val
 }
 
 // SetNoLocalRepository sets the value of NoLocalRepository.

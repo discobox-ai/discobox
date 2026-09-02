@@ -13,6 +13,7 @@ import (
 
 	apiclientgen "github.com/discobox-ai/discobox/api/gen"
 	apimodel "github.com/discobox-ai/discobox/api/model"
+	"github.com/discobox-ai/discobox/cli/internal/gitunborn"
 	"github.com/discobox-ai/discobox/cli/internal/origin"
 	"github.com/discobox-ai/x/gitutil"
 	"github.com/discobox-ai/x/id"
@@ -131,9 +132,14 @@ type resolvedRunSource struct {
 	// NoLocalRepository states that LocalDirectory holds no repository, so
 	// nothing can be cloned from it however reachable it is.
 	NoLocalRepository bool
-	Checkout          resolvedRunSourceCheckout
-	Workspace         resolvedRunSourceWorkspace
-	Destination       resolvedRunSourceDestination
+	// NoLocalCommits states that the repository at LocalDirectory has no
+	// commits, so a clone of it yields nothing either. Unlike
+	// NoLocalRepository the commits are still here afterwards: they were
+	// written into the user's own repository (ADR 0083).
+	NoLocalCommits bool
+	Checkout       resolvedRunSourceCheckout
+	Workspace      resolvedRunSourceWorkspace
+	Destination    resolvedRunSourceDestination
 	// cleanup releases the throwaway repository, and is nil for a source that
 	// did not need one.
 	cleanup func()
@@ -273,6 +279,9 @@ func (s resolvedRunSource) apiGitSource() (*apimodel.GitSource, error) {
 	if s.NoLocalRepository {
 		source.SetNoLocalRepository(apiclientgen.NewOptBool(true))
 	}
+	if s.NoLocalCommits {
+		source.SetNoLocalCommits(apiclientgen.NewOptBool(true))
+	}
 	checkout := apimodel.GitSourceCheckout{}
 	checkout.SetCommit(optionalString(s.Checkout.Commit))
 	checkout.SetRefName(optionalString(s.Checkout.RefName))
@@ -313,6 +322,9 @@ func resolveLocalRunSource(ctx context.Context, source, ref string, explicitRef 
 	}
 	if err != nil {
 		return resolvedRunSource{}, err
+	}
+	if gitunborn.HeadIsUnborn(ctx, repoRoot) {
+		return resolveUnbornRunSource(ctx, repoRoot, absSource, ref, explicitRef, opts)
 	}
 	destination := localRunDestination(repoRoot, absSource)
 	resolved := resolvedRunSource{
@@ -389,6 +401,95 @@ func snapshotWorkspace(ctx context.Context, repoRoot string, tree gitutil.Worksp
 		SnapshotRef: snapshotRef,
 		BaseCommit:  tree.BaseCommit,
 	}, nil
+}
+
+// resolveUnbornRunSource prepares a source from a repository that has no
+// commits.
+//
+// It is the shape ADR 0045 gives a directory in no repository at all, for the
+// same reason: nothing has ever been committed, so the working tree is
+// uncommitted work — all of it — on a base of nothing. The base is a root
+// commit of the empty tree and the working tree is snapshotted on top of it, so
+// the sandbox comes up with the files as the uncommitted changes they are
+// rather than as a first commit the user did not write.
+//
+// Unlike that case there is no repository to build: this directory holds one,
+// and it is where the base commit, the snapshot, and their refs are written.
+// `refs/heads/<branch>` is never touched, so HEAD stays unborn and the user's
+// first commit stays theirs; the objects stay reachable, so a later
+// `discobox push` can still deliver this source (ADR 0083 §2).
+//
+// Nobody is asked. The question a directory in no repository gets exists
+// because it may be a home directory somebody ran in by accident, and `git
+// init` here is the user saying it is not. The dirty-workspace question has
+// nothing to offer either: its alternative is the last commit, and there is
+// none. `--include-dirty=false` still answers ahead of time, and its answer is
+// the empty base commit at the repository's own path.
+func resolveUnbornRunSource(ctx context.Context, repoRoot, absSource, ref string, explicitRef bool, opts runSourceOptions) (resolvedRunSource, error) {
+	if explicitRef {
+		return resolvedRunSource{}, fmt.Errorf("%s has no commits yet, so it has no ref %q to check out", repoRoot, ref)
+	}
+	branch, ok := gitutil.CurrentBranch(ctx, repoRoot)
+	if !ok {
+		return resolvedRunSource{}, fmt.Errorf("repository %s has no commits and no branch checked out", repoRoot)
+	}
+	emptyTree, err := gitutil.EmptyTree(ctx, repoRoot)
+	if err != nil {
+		return resolvedRunSource{}, err
+	}
+	baseCommit, err := gitutil.CommitTree(ctx, repoRoot, emptyTree, "", runEmptyBaseMessage)
+	if err != nil {
+		return resolvedRunSource{}, err
+	}
+	// The base commit is what the sandbox checks out and what the snapshot is
+	// measured against on both ends, so it has to be a ref in this repository
+	// rather than a loose object in it: nothing else here points at it, and a
+	// delivery that happens later would be racing git's own pruning.
+	baseID, err := id.New(id.PrefixSnapshot)
+	if err != nil {
+		return resolvedRunSource{}, err
+	}
+	if err := gitutil.UpdateRef(ctx, repoRoot, runSnapshotRefPrefix+baseID, baseCommit); err != nil {
+		return resolvedRunSource{}, err
+	}
+	resolved := resolvedRunSource{
+		Kind:           runSourceKindGit,
+		LocalDirectory: repoRoot,
+		RepoRoot:       repoRoot,
+		NoLocalCommits: true,
+		Checkout: resolvedRunSourceCheckout{
+			Commit:  baseCommit,
+			RefName: branch,
+			RefType: runSourceRefTypeBranch,
+		},
+		Workspace:   resolvedRunSourceWorkspace{Mode: runWorkspaceModeClean},
+		Destination: localRunDestination(repoRoot, absSource),
+	}
+	if opts.IncludeDirty == IncludeDirtyNever {
+		return resolved, nil
+	}
+	tree, cleanup, err := gitunborn.WorkspaceTree(ctx, repoRoot)
+	if err != nil {
+		return resolvedRunSource{}, err
+	}
+	defer cleanup()
+	if tree == emptyTree {
+		// An empty repository. There is nothing to snapshot, and the sandbox
+		// starts on the empty base commit at this repository's path — which is
+		// what `git init` in a new project directory asks for.
+		return resolved, nil
+	}
+	workspace, err := snapshotWorkspace(ctx, repoRoot, gitutil.WorkspaceTree{
+		BaseCommit: baseCommit,
+		BaseTree:   emptyTree,
+		Tree:       tree,
+		Dirty:      true,
+	})
+	if err != nil {
+		return resolvedRunSource{}, err
+	}
+	resolved.Workspace = workspace
+	return resolved, nil
 }
 
 // resolveDirectoryRunSource prepares a source from a directory that is in no

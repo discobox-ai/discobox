@@ -69,7 +69,7 @@ It waits for a sandbox that is still being provisioned instead of refusing it,
 which is what lets a client create a sandbox and attach to it in the next call
 rather than polling for readiness (ADR 0039 tier 1).
 
-- The wait polls, because what it waits on is a row (ADR 0081). Every pass
+- The wait polls, because what it waits on is a row (ADR 0083). Every pass
   re-reads authoritative state and asks again, so the transition that opens the
   gate has no window to land in unseen.
 - Its stall budget is restarted by `provisioningMark`: the gate (the sandbox's
@@ -148,7 +148,7 @@ it was asked for; repair proceeds on the pin it has, because the re-pin is a
 rider on a rebuild that is happening anyway.
 
 `UpgradeHarnessConfigSandboxes` is the automatic author of that same upgrade
-(ADR 0082). `resources/harnessconfigs` calls it wherever a harness config's
+(ADR 0083). `resources/harnessconfigs` calls it wherever a harness config's
 `ImageDigest` moves, and it re-pins the config's sandboxes that are converged at
 `ready`, observed `stopped`, unerrored, and present — the eligibility query is
 `Store.ListStoppedSandboxesForHarnessConfig`, and whether each is actually
@@ -293,13 +293,21 @@ sandbox cannot reach is exactly as undeliverable. A sandbox can therefore bind
 its primary source and still wait for a push of a reference, or the other way
 round.
 
-`GitSource.NoLocalRepository` forces `push` ahead of both checks. It says the
-directory the source came from is in no Git repository, so there is nothing at
-that path to clone however reachable it is — the client resolved the source from
-a repository of its own. That is a fact about the client's filesystem, which the
-server cannot see and the client cannot get wrong; the decision it feeds is
-still made here, which is why a client still may not ask for `push` outright.
-See [ADR 0045](../../../../docs/adr/0045-a-directory-with-no-repository-is-delivered-by-push.md).
+`GitSource.NoLocalRepository` and `GitSource.NoLocalCommits` each force `push`
+ahead of both checks. The first says the directory the source came from is in no
+Git repository at all; the second says it is a repository `git init` left with no
+commits, whose empty base commit the client synthesized. Either way there is
+nothing at that path to clone however reachable it is, and only the client holds
+the source. Both are facts about the client's filesystem, which the server cannot
+see and the client cannot get wrong; the decision they feed is still made here,
+which is why a client still may not ask for `push` outright.
+
+They stay two fields because only `NoLocalRepository` also means the commits are
+gone once that create is over — its repository was built for the run and deleted
+with it. A source resolved from a repository with no commits keeps its objects in
+the user's own repository, so the client can still deliver it later. See
+[ADR 0045](../../../../docs/adr/0045-a-directory-with-no-repository-is-delivered-by-push.md)
+and [ADR 0083](../../../../docs/adr/0083-a-repository-with-no-commits-is-uncommitted-work-on-an-empty-base.md).
 
 ```mermaid
 sequenceDiagram

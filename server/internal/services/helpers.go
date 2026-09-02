@@ -540,6 +540,7 @@ func GitSourceToModel(input serverapi.GitSource) model.GitSource {
 		out.LocalDirectory = &value
 	}
 	out.NoLocalRepository = input.NoLocalRepository.Or(false)
+	out.NoLocalCommits = input.NoLocalCommits.Or(false)
 	if checkout, ok := input.Checkout.Get(); ok {
 		out.Checkout = &model.GitSourceCheckout{}
 		if value, ok := checkout.Commit.Get(); ok {

@@ -3580,6 +3580,12 @@ func (s *GitSource) encodeFields(e *jx.Encoder) {
 		}
 	}
 	{
+		if s.NoLocalCommits.Set {
+			e.FieldStart("noLocalCommits")
+			s.NoLocalCommits.Encode(e)
+		}
+	}
+	{
 		if s.NoLocalRepository.Set {
 			e.FieldStart("noLocalRepository")
 			s.NoLocalRepository.Encode(e)
@@ -3605,16 +3611,17 @@ func (s *GitSource) encodeFields(e *jx.Encoder) {
 	}
 }
 
-var jsonFieldsNameOfGitSource = [9]string{
+var jsonFieldsNameOfGitSource = [10]string{
 	0: "checkout",
 	1: "delivery",
 	2: "destination",
 	3: "kind",
 	4: "localDirectory",
-	5: "noLocalRepository",
-	6: "slug",
-	7: "url",
-	8: "workspace",
+	5: "noLocalCommits",
+	6: "noLocalRepository",
+	7: "slug",
+	8: "url",
+	9: "workspace",
 }
 
 // Decode decodes GitSource from json.
@@ -3675,6 +3682,16 @@ func (s *GitSource) Decode(d *jx.Decoder) error {
 				return nil
 			}(); err != nil {
 				return errors.Wrap(err, "decode field \"localDirectory\"")
+			}
+		case "noLocalCommits":
+			if err := func() error {
+				s.NoLocalCommits.Reset()
+				if err := s.NoLocalCommits.Decode(d); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"noLocalCommits\"")
 			}
 		case "noLocalRepository":
 			if err := func() error {

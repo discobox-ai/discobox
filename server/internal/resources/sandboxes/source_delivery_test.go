@@ -72,6 +72,11 @@ func TestSourceNeedsPush(t *testing.T) {
 		source.NoLocalRepository = true
 		return source
 	}
+	unbornSource := func() *model.GitSource {
+		source := localSource()
+		source.NoLocalCommits = true
+		return source
+	}
 	remoteSource := func() *model.GitSource {
 		url := "https://github.com/discobox-ai/discobox.git"
 		return &model.GitSource{Kind: "git", URL: &url}
@@ -102,6 +107,11 @@ func TestSourceNeedsPush(t *testing.T) {
 			name: "a directory with no repository pushes even from this host", definition: binds, serverHost: serverHost,
 			origin: sameHost, source: directorySource(), want: true,
 			why: "the path resolves here, but holds no repository to clone from",
+		},
+		{
+			name: "a repository with no commits pushes even from this host", definition: binds, serverHost: serverHost,
+			origin: sameHost, source: unbornSource(), want: true,
+			why: "the repository resolves here and holds nothing to clone; only the client has its base commit",
 		},
 		{
 			name: "local source from another host pushes", definition: binds, serverHost: serverHost,

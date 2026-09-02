@@ -1601,6 +1601,9 @@ components:
                 localDirectory:
                     description: Absolute local Git repository directory accessible to the worker
                     type: string
+                noLocalCommits:
+                    description: Whether the repository at localDirectory has no commits, so a clone of it yields nothing and the base commit this source was resolved against exists only as objects the client holds. The client can only deliver it by push, and can still deliver it later.
+                    type: boolean
                 noLocalRepository:
                     description: Whether localDirectory holds no Git repository at all, so nothing can be cloned from it however reachable it is. The client resolved this source from a repository of its own and can only deliver it by push. localDirectory still records the directory the source came from.
                     type: boolean

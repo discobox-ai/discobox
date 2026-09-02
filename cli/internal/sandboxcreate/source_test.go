@@ -11,6 +11,7 @@ import (
 	"testing"
 
 	apiclientgen "github.com/discobox-ai/discobox/api/gen"
+	"github.com/discobox-ai/discobox/cli/internal/gitunborn"
 )
 
 func TestResolveRunSourceCleanLocalBranch(t *testing.T) {
@@ -646,4 +647,137 @@ func TestWSLPathLowercasesTheDriveAndKeepsTheRestOfTheCase(t *testing.T) {
 			t.Errorf("wslPath(%q) = %q, %t, want %q, %t", tt.hostPath, got, ok, tt.want, tt.ok)
 		}
 	}
+}
+
+func TestResolveRunSourceUnbornRepositoryCarriesTheWorkingTreeAsASnapshot(t *testing.T) {
+	repo := newUnbornRunSourceTestRepo(t)
+	git := runSourceTestGit(t, repo)
+	if err := os.WriteFile(filepath.Join(repo, "a.txt"), []byte("a\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.MkdirAll(filepath.Join(repo, "sub"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(repo, "sub", "b.txt"), []byte("b\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	// Staged for a first commit the user has not made yet: the real index must
+	// come back exactly as it was.
+	git("add", "a.txt")
+	statusBefore := git("status", "--porcelain=v1", "--untracked-files=all")
+
+	source, err := resolveRunSource(context.Background(), repo, runSourceOptions{IncludeDirty: IncludeDirtyAuto})
+	if err != nil {
+		t.Fatalf("resolveRunSource: %v", err)
+	}
+
+	// The repository is the user's own, so it is what the sandbox mirrors and
+	// what a later push delivers out of — no repository was built anywhere else.
+	if source.LocalDirectory != repo || source.RepoRoot != repo || source.NoLocalRepository {
+		t.Fatalf("source identity = %#v, want the repository at %s itself", source, repo)
+	}
+	if !source.NoLocalCommits {
+		t.Fatalf("source = %#v, want a repository reported as having no commits", source)
+	}
+	if want := wantRunDestination(t, repo, repo); source.Destination != want {
+		t.Fatalf("destination = %#v, want %#v", source.Destination, want)
+	}
+	if source.Checkout.RefName != "main" || source.Checkout.RefType != runSourceRefTypeBranch || source.Checkout.Commit == "" {
+		t.Fatalf("checkout = %#v, want the unborn branch at the empty base commit", source.Checkout)
+	}
+	if source.Workspace.Mode != runWorkspaceModeDirty || !strings.HasPrefix(source.Workspace.SnapshotRef, runSnapshotRefPrefix) || source.Workspace.BaseCommit != source.Checkout.Commit {
+		t.Fatalf("workspace = %#v, want a snapshot on the checked-out commit", source.Workspace)
+	}
+
+	if parents := strings.TrimSpace(git("rev-list", "--parents", "-n", "1", source.Checkout.Commit)); parents != source.Checkout.Commit {
+		t.Fatalf("base commit parents = %q, want the root commit %s alone", parents, source.Checkout.Commit)
+	}
+	if files := strings.TrimSpace(git("ls-tree", "-r", "--name-only", source.Checkout.Commit)); files != "" {
+		t.Fatalf("base commit contains %q, want an empty tree", files)
+	}
+	added := strings.Fields(git("diff", "--name-only", source.Checkout.Commit, source.Workspace.SnapshotRef))
+	if strings.Join(added, ",") != "a.txt,sub/b.txt" {
+		t.Fatalf("snapshot contents = %v, want every file in the working tree", added)
+	}
+
+	// HEAD is still unborn and the branch still does not exist: the user's
+	// first commit is theirs to write.
+	if !gitunborn.HeadIsUnborn(context.Background(), repo) {
+		t.Fatalf("HEAD is born after resolving, want %s left with no commits", repo)
+	}
+	if statusAfter := git("status", "--porcelain=v1", "--untracked-files=all"); statusAfter != statusBefore {
+		t.Fatalf("status = %q, want the index and working tree untouched (%q)", statusAfter, statusBefore)
+	}
+}
+
+func TestResolveRunSourceEmptyUnbornRepositoryStartsFromTheEmptyCommit(t *testing.T) {
+	repo := newUnbornRunSourceTestRepo(t)
+
+	source, err := resolveRunSource(context.Background(), repo, runSourceOptions{IncludeDirty: IncludeDirtyAuto})
+	if err != nil {
+		t.Fatalf("resolveRunSource: %v", err)
+	}
+
+	// `git init` in an empty directory is how a project that does not exist yet
+	// gets started: the sandbox comes up on the empty base at that path.
+	if source.Workspace.Mode != runWorkspaceModeClean || source.Workspace.SnapshotRef != "" {
+		t.Fatalf("workspace = %#v, want a clean checkout with no snapshot", source.Workspace)
+	}
+	if !source.NoLocalCommits || source.Checkout.Commit == "" {
+		t.Fatalf("source = %#v, want the empty base commit reported as having no local commits", source)
+	}
+	// Nothing else in the repository points at the base commit, so it has to be
+	// a ref or a later delivery is racing git's own pruning.
+	git := runSourceTestGit(t, repo)
+	refs := strings.TrimSpace(git("for-each-ref", "--format=%(objectname)", runSnapshotRefPrefix))
+	if !strings.Contains(refs, source.Checkout.Commit) {
+		t.Fatalf("refs under %s = %q, want the base commit %s held by one", runSnapshotRefPrefix, refs, source.Checkout.Commit)
+	}
+}
+
+func TestResolveRunSourceUnbornRepositoryWithoutDirtyStartsFromTheEmptyCommit(t *testing.T) {
+	repo := newUnbornRunSourceTestRepo(t)
+	if err := os.WriteFile(filepath.Join(repo, "a.txt"), []byte("a\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	source, err := resolveRunSource(context.Background(), repo, runSourceOptions{IncludeDirty: IncludeDirtyNever})
+	if err != nil {
+		t.Fatalf("resolveRunSource: %v", err)
+	}
+
+	// The flag answers ahead of time, and its answer keeps the repository's own
+	// path rather than dropping the source: a repository is a project.
+	if source.Kind != runSourceKindGit || source.LocalDirectory != repo {
+		t.Fatalf("source = %#v, want the repository kept at %s", source, repo)
+	}
+	if source.Workspace.Mode != runWorkspaceModeClean || source.Workspace.SnapshotRef != "" {
+		t.Fatalf("workspace = %#v, want the empty base with none of the working tree", source.Workspace)
+	}
+}
+
+func TestResolveRunSourceUnbornRepositoryRefusesAnExplicitRef(t *testing.T) {
+	repo := newUnbornRunSourceTestRepo(t)
+
+	_, err := resolveRunSource(context.Background(), repo+"@main", runSourceOptions{IncludeDirty: IncludeDirtyAuto})
+	if err == nil {
+		t.Fatal("resolveRunSource accepted a ref in a repository with no commits")
+	}
+	// git's own "Needed a single revision" names neither the repository nor
+	// what is actually wrong with the request.
+	if !strings.Contains(err.Error(), "no commits yet") || !strings.Contains(err.Error(), repo) {
+		t.Fatalf("error = %v, want it to name %s and its missing history", err, repo)
+	}
+}
+
+// newUnbornRunSourceTestRepo is what `git init` leaves behind: a repository
+// whose HEAD names a branch that has no commits.
+func newUnbornRunSourceTestRepo(t *testing.T) string {
+	t.Helper()
+	repo := testWorkspace(t)
+	git := runSourceTestGit(t, repo)
+	git("init", "-b", "main")
+	git("config", "user.email", "test@example.com")
+	git("config", "user.name", "Test User")
+	return repo
 }

@@ -80,7 +80,7 @@ const (
 
 	// SandboxUpgradePolicyAutomatic and SandboxUpgradePolicyManual are a
 	// project's answer to whether its stopped sandboxes follow their harness
-	// image (ADR 0082 §3).
+	// image (ADR 0083 §3).
 	//
 	// The empty value is the third member of this vocabulary and means *the
 	// server default*, which is automatic: a project that has never chosen
@@ -132,7 +132,7 @@ var (
 )
 
 // SandboxUpgradesAutomatically reports whether a project's stopped sandboxes
-// are moved onto their harness config's image when it changes (ADR 0082).
+// are moved onto their harness config's image when it changes (ADR 0083).
 //
 // Empty is automatic, which is what makes the default a server-side answer the
 // project follows rather than a value copied into every row at create.
@@ -224,7 +224,7 @@ type Project struct {
 	ArchiveRetentionSeconds int64 `gorm:"column:archive_retention_seconds;not null;default:0" json:"archiveRetentionSeconds,omitempty" doc:"How long archived sandboxes are kept before being purged, in seconds. Zero means the server default."`
 	// SandboxUpgradePolicy decides whether this project's stopped sandboxes are
 	// re-pinned onto their harness config's image when that image moves
-	// (ADR 0082 §3). Empty means the server default, which is `automatic`.
+	// (ADR 0083 §3). Empty means the server default, which is `automatic`.
 	//
 	// It is an opt-out rather than an opt-in because the upgrade is what a user
 	// wants almost always; what it buys is the ability to hold a discobox on
@@ -426,10 +426,18 @@ type GitSource struct {
 	// in no repository, so there is nothing there to clone whatever the
 	// provider could see. Delivery stays the server's decision; this is one of
 	// its inputs.
-	NoLocalRepository bool                  `json:"noLocalRepository,omitempty" doc:"Whether localDirectory holds no Git repository at all, so nothing can be cloned from it however reachable it is. The client resolved this source from a repository of its own and can only deliver it by push. localDirectory still records the directory the source came from."`
-	Checkout          *GitSourceCheckout    `json:"checkout,omitempty" doc:"Immutable checkout target and optional user-facing ref identity"`
-	Workspace         *GitSourceWorkspace   `json:"workspace,omitempty" doc:"Workspace materialization mode for this source"`
-	Destination       *GitSourceDestination `json:"destination,omitempty" doc:"Sandbox destination paths for this source"`
+	NoLocalRepository bool `json:"noLocalRepository,omitempty" doc:"Whether localDirectory holds no Git repository at all, so nothing can be cloned from it however reachable it is. The client resolved this source from a repository of its own and can only deliver it by push. localDirectory still records the directory the source came from."`
+	// NoLocalCommits is the same kind of fact for a repository that exists and
+	// has no commits: `git init` and nothing since. A clone of it yields
+	// nothing, and the empty base commit the source was resolved against lives
+	// only in objects the client wrote, so this source is a push too
+	// (ADR 0083). It is deliberately not NoLocalRepository, which additionally
+	// means the commits are gone forever with the repository built for that one
+	// run; these are in the user's own repository and stay there.
+	NoLocalCommits bool                  `json:"noLocalCommits,omitempty" doc:"Whether the repository at localDirectory has no commits, so a clone of it yields nothing and the base commit this source was resolved against exists only as objects the client holds. The client can only deliver it by push, and can still deliver it later."`
+	Checkout       *GitSourceCheckout    `json:"checkout,omitempty" doc:"Immutable checkout target and optional user-facing ref identity"`
+	Workspace      *GitSourceWorkspace   `json:"workspace,omitempty" doc:"Workspace materialization mode for this source"`
+	Destination    *GitSourceDestination `json:"destination,omitempty" doc:"Sandbox destination paths for this source"`
 }
 
 // Root returns the normalized identity of the source repository, independent of
