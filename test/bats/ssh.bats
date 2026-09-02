@@ -98,7 +98,7 @@ setup_file() {
   run cli admin harness configure ssh-stub </dev/null
   [ "$status" -eq 0 ]
 
-  run cli admin discobox create --name ssh-e2e --harness ssh-stub --wait --wait-timeout 120s
+  run cli admin box create --name ssh-e2e --harness ssh-stub --wait --wait-timeout 120s
   [ "$status" -eq 0 ]
   export DISCOBOX_BATS_SANDBOX_ID="$(printf '%s' "$output" | json_get id)"
   [ -n "$DISCOBOX_BATS_SANDBOX_ID" ]
@@ -106,7 +106,7 @@ setup_file() {
 
 teardown_file() {
   cd "$REPO_ROOT"
-  [ -n "${DISCOBOX_BATS_SANDBOX_ID:-}" ] && cli admin discobox delete "$DISCOBOX_BATS_SANDBOX_ID" >/dev/null 2>&1 || true
+  [ -n "${DISCOBOX_BATS_SANDBOX_ID:-}" ] && cli admin box delete "$DISCOBOX_BATS_SANDBOX_ID" >/dev/null 2>&1 || true
 
   local pool_ids=""
   if [ -f "$DISCOBOX_BATS_DB" ]; then

@@ -55,8 +55,8 @@ type sandboxUpdateOptions struct {
 
 func (a *App) newSandboxCommand() *cobra.Command {
 	cmd := &cobra.Command{
-		Use:     "discobox",
-		Aliases: []string{"discoboxes"},
+		Use:     "box",
+		Aliases: []string{"boxes"},
 		Short:   "Manage discoboxes",
 	}
 	cmd.AddCommand(a.newSandboxListCommand())

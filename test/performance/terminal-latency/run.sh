@@ -113,7 +113,7 @@ wait_for_sandbox_deletion() {
 	local id="$1"
 	local attempt
 	for attempt in {1..60}; do
-		if ! "${cli[@]}" admin discobox get "$id" >/dev/null 2>&1; then
+		if ! "${cli[@]}" admin box get "$id" >/dev/null 2>&1; then
 			return 0
 		fi
 		sleep 0.5
@@ -133,7 +133,7 @@ cleanup() {
 	fi
 
 	if [ -n "$sandbox_id" ]; then
-		"${cli[@]}" admin discobox delete "$sandbox_id" >/dev/null 2>&1 || true
+		"${cli[@]}" admin box delete "$sandbox_id" >/dev/null 2>&1 || true
 		if ! wait_for_sandbox_deletion "$sandbox_id"; then
 			echo "terminal latency: sandbox $sandbox_id is still deleting; harness cleanup may need a retry" >&2
 		fi
@@ -141,7 +141,7 @@ cleanup() {
 	if [ -n "$harness_id" ]; then
 		configure_sandbox_id="$("${cli[@]}" admin harness get "$harness_id" 2>/dev/null | jq -r '.configureSandboxId // empty' || true)"
 		if [ -n "$configure_sandbox_id" ] && [ "$configure_sandbox_id" != "$sandbox_id" ]; then
-			"${cli[@]}" admin discobox delete "$configure_sandbox_id" >/dev/null 2>&1 || true
+			"${cli[@]}" admin box delete "$configure_sandbox_id" >/dev/null 2>&1 || true
 			wait_for_sandbox_deletion "$configure_sandbox_id" || true
 		fi
 		"${cli[@]}" admin harness deconfigure "$harness_id" >/dev/null 2>&1 || true
@@ -163,7 +163,7 @@ delete_probe_sandbox() {
 		container_id=""
 		return 0
 	fi
-	"${cli[@]}" admin discobox delete "$id" >/dev/null
+	"${cli[@]}" admin box delete "$id" >/dev/null
 	if ! wait_for_sandbox_deletion "$id"; then
 		echo "terminal latency: sandbox $id did not finish deleting" >&2
 		return 1
@@ -179,7 +179,7 @@ create_probe_sandbox() {
 	local sandbox_json
 	sandbox_name="$harness_name-$mode-$profile"
 	local sandbox_args=(
-		admin discobox create
+		admin box create
 		--name "$sandbox_name"
 		--harness-config "$harness_id"
 		--cpu-vcpus "$cpu_vcpus"

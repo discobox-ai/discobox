@@ -126,7 +126,7 @@ func (a *App) newProjectUpdateCommand() *cobra.Command {
 
 --archive-retention sets how long this project's archived discoboxes are kept
 before they are purged. Deleting a discobox archives it, so this is how long a
-deleted discobox can still be restored with "discobox admin discobox unarchive".
+deleted discobox can still be restored with "discobox admin box unarchive".
 Zero restores the server default.`, Args: cobra.ExactArgs(1), ValidArgsFunction: a.completeProjects, RunE: func(cmd *cobra.Command, args []string) error {
 		client, err := a.apiClient()
 		if err != nil {

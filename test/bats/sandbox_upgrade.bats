@@ -281,7 +281,7 @@ sandbox_container_image() {
 
 sandbox_field() {
   "$REPO_ROOT/build/discobox" --server "$DISCOBOX_BATS_SERVER" --project default --output json \
-    admin discobox get "$1" | json_get "$2"
+    admin box get "$1" | json_get "$2"
 }
 
 wait_for_sandbox_state() {
@@ -295,7 +295,7 @@ wait_for_sandbox_state() {
   done
   echo "sandbox did not reach $want: $sandbox_id" >&2
   "$REPO_ROOT/build/discobox" --server "$DISCOBOX_BATS_SERVER" --project default --output json \
-    admin discobox get "$sandbox_id" >&2 || true
+    admin box get "$sandbox_id" >&2 || true
   tail -100 "$DISCOBOX_BATS_SERVER_LOG" >&2 || true
   return 1
 }
@@ -311,7 +311,7 @@ wait_for_sandbox_running() {
   done
   echo "sandbox did not return to running: $sandbox_id" >&2
   "$REPO_ROOT/build/discobox" --server "$DISCOBOX_BATS_SERVER" --project default --output json \
-    admin discobox get "$sandbox_id" >&2 || true
+    admin box get "$sandbox_id" >&2 || true
   tail -100 "$DISCOBOX_BATS_SERVER_LOG" >&2 || true
   return 1
 }
@@ -333,7 +333,7 @@ wait_for_sandbox_running() {
   run configure_stub upgrade-stub
   [ "$status" -eq 0 ]
 
-  run cli admin discobox create --name "upgrade-e2e" --harness upgrade-stub --wait --wait-timeout 120s
+  run cli admin box create --name "upgrade-e2e" --harness upgrade-stub --wait --wait-timeout 120s
   [ "$status" -eq 0 ]
   sandbox_id="$(printf '%s' "$output" | json_get id)"
   [ -n "$sandbox_id" ]
@@ -364,7 +364,7 @@ wait_for_sandbox_running() {
   # without being asked.
   [ "$(sandbox_container_image "$sandbox_id")" = "$before_image" ]
 
-  run cli admin discobox upgrade "$sandbox_id"
+  run cli admin box upgrade "$sandbox_id"
   [ "$status" -eq 0 ]
   wait_for_sandbox_running "$sandbox_id"
 
@@ -383,7 +383,7 @@ wait_for_sandbox_running() {
 
   # A second upgrade has nothing to do and is refused rather than performed:
   # recreating a container costs container-local state for no gain.
-  run cli admin discobox upgrade "$sandbox_id"
+  run cli admin box upgrade "$sandbox_id"
   [ "$status" -ne 0 ]
 }
 
@@ -406,14 +406,14 @@ wait_for_sandbox_running() {
   run configure_stub power-stub
   [ "$status" -eq 0 ]
 
-  run cli admin discobox create --name "upgrade-power-e2e" --harness power-stub --wait --wait-timeout 120s
+  run cli admin box create --name "upgrade-power-e2e" --harness power-stub --wait --wait-timeout 120s
   [ "$status" -eq 0 ]
   sandbox_id="$(printf '%s' "$output" | json_get id)"
   [ -n "$sandbox_id" ]
   before_image="$(sandbox_container_image "$sandbox_id")"
   [ -n "$before_image" ]
 
-  run cli admin discobox stop "$sandbox_id"
+  run cli admin box stop "$sandbox_id"
   [ "$status" -eq 0 ]
   wait_for_sandbox_state "$sandbox_id" stopped
 
@@ -423,7 +423,7 @@ wait_for_sandbox_running() {
   after_digest="$(printf '%s' "$output" | json_get imageDigest)"
   [ -n "$after_digest" ]
 
-  run cli admin discobox upgrade "$sandbox_id"
+  run cli admin box upgrade "$sandbox_id"
   [ "$status" -eq 0 ]
 
   # The container is rebuilt on the new image without being started: an upgrade
@@ -439,7 +439,7 @@ wait_for_sandbox_running() {
   wait_for_sandbox_state "$sandbox_id" stopped
 
   # And a start after the upgrade is an ordinary start of the rebuilt container.
-  run cli admin discobox start "$sandbox_id"
+  run cli admin box start "$sandbox_id"
   [ "$status" -eq 0 ]
   wait_for_sandbox_running "$sandbox_id"
   [ "$(sandbox_container_image "$sandbox_id")" = "$after_image" ]

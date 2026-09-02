@@ -12,7 +12,7 @@ sandbox create requests.
   the authority on whether an identity is configured, and a `$USER@$(hostname)`
   fallback here would only relocate the wrong answer
   ([ADR 0042](../../../docs/adr/0042-git-authorship-identity-is-a-first-class-sandbox-property.md)).
-  This inference belongs to the prompt path only — `discobox admin discobox create` is
+  This inference belongs to the prompt path only — `discobox admin box create` is
   flag-driven and reads nothing from the environment.
 - Local user identity is captured from the client machine, except on Windows,
   which has no POSIX identity to capture and instead sends a fixed one: `discobox`,
@@ -105,5 +105,5 @@ sandbox create requests.
 - The sandbox name is generated here (`randomname`), and sandbox names are
   unique within a project, so `CreatePromptSandbox` retries a 409 with a fresh
   name a bounded number of times. Only a generated name is replaced this way: a
-  name the user typed is theirs, so `discobox admin discobox create --name` reports
+  name the user typed is theirs, so `discobox admin box create --name` reports
   the conflict instead of quietly creating something else.

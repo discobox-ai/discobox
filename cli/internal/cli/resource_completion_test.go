@@ -31,7 +31,7 @@ func TestSandboxPositionalCompletionListsSandboxes(t *testing.T) {
 	root := NewRootCommand()
 	setFlag(t, root, "server", server.URL)
 	setFlag(t, root, "project", "project-1")
-	cmd := findCommand(t, root, "admin", "discobox", "get")
+	cmd := findCommand(t, root, "admin", "box", "get")
 
 	completions, directive := cmd.ValidArgsFunction(cmd, nil, "sand")
 
@@ -48,7 +48,7 @@ func TestPoolFlagCompletionListsPools(t *testing.T) {
 	root := NewRootCommand()
 	setFlag(t, root, "server", server.URL)
 	setFlag(t, root, "project", "project-1")
-	cmd := findCommand(t, root, "admin", "discobox", "create")
+	cmd := findCommand(t, root, "admin", "box", "create")
 
 	completions, directive := flagCompletions(t, cmd, "pool", "")
 

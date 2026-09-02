@@ -206,13 +206,13 @@ func TestRootCommandHelp(t *testing.T) {
 	if command, _, err := cmd.Find([]string{"shell"}); err != nil || command.Name() != "shell" {
 		t.Fatalf("find root shell: command=%v err=%v", command, err)
 	}
-	for _, unavailableAtRoot := range []string{"discobox", "terminal", "exec", "provider", "job", "harnesses", "hooks", "server"} {
+	for _, unavailableAtRoot := range []string{"box", "terminal", "exec", "provider", "job", "harnesses", "hooks", "server"} {
 		command, _, err := cmd.Find([]string{unavailableAtRoot})
 		if err == nil && command.Name() == unavailableAtRoot {
 			t.Fatalf("root command still exposes %q", unavailableAtRoot)
 		}
 	}
-	for _, child := range []string{"discobox", "terminal", "exec", "provider", "job", "harnesses", "hooks", "server"} {
+	for _, child := range []string{"box", "terminal", "exec", "provider", "job", "harnesses", "hooks", "server"} {
 		command, args, err := cmd.Find([]string{"admin", child})
 		if err != nil || len(args) != 0 || command.Name() != child {
 			t.Fatalf("find admin child %q: command=%v args=%v err=%v", child, command, args, err)
@@ -251,7 +251,7 @@ func TestProjectIDDefaultsToDefaultAlias(t *testing.T) {
 
 func TestRootCommandRejectsInvalidOutputFormat(t *testing.T) {
 	cmd := NewRootCommand()
-	cmd.SetArgs([]string{"--output", "yaml", "admin", "discobox", "ls"})
+	cmd.SetArgs([]string{"--output", "yaml", "admin", "box", "ls"})
 
 	if err := cmd.Execute(); err == nil {
 		t.Fatal("execute error = nil, want invalid output error")
@@ -261,7 +261,7 @@ func TestRootCommandRejectsInvalidOutputFormat(t *testing.T) {
 func TestListSubcommandsUseLSWithListAlias(t *testing.T) {
 	root := NewRootCommand()
 	paths := [][]string{
-		{"admin", "discobox", "ls"},
+		{"admin", "box", "ls"},
 		{"admin", "terminal", "ls"},
 		{"admin", "exec", "ls"},
 		{"admin", "pool", "ls"},
@@ -314,7 +314,7 @@ func TestSandboxListQuietCommandPrintsFullIDsOnly(t *testing.T) {
 	cmd := NewRootCommand()
 	var out bytes.Buffer
 	cmd.SetOut(&out)
-	cmd.SetArgs([]string{"--server", server.URL, "--project", "project-1", "admin", "discobox", "list", "-q"})
+	cmd.SetArgs([]string{"--server", server.URL, "--project", "project-1", "admin", "box", "list", "-q"})
 
 	if err := cmd.Execute(); err != nil {
 		t.Fatalf("execute sandbox list -q: %v", err)
@@ -1138,7 +1138,7 @@ func TestSandboxGetResolvesShortID(t *testing.T) {
 	cmd := NewRootCommand()
 	var out bytes.Buffer
 	cmd.SetOut(&out)
-	cmd.SetArgs([]string{"--server", server.URL, "--project", "project-1", "admin", "discobox", "get", "sbx_9qk5"})
+	cmd.SetArgs([]string{"--server", server.URL, "--project", "project-1", "admin", "box", "get", "sbx_9qk5"})
 
 	if err := cmd.Execute(); err != nil {
 		t.Fatalf("execute sandbox get: %v", err)
@@ -1193,7 +1193,7 @@ func TestSandboxDeleteContinuesAfterFailure(t *testing.T) {
 	var errOut bytes.Buffer
 	cmd.SetOut(&out)
 	cmd.SetErr(&errOut)
-	cmd.SetArgs([]string{"--server", server.URL, "--project", "project-1", "admin", "discobox", "delete", "sandbox-ok-1", "sandbox-fail", "sandbox-ok-2"})
+	cmd.SetArgs([]string{"--server", server.URL, "--project", "project-1", "admin", "box", "delete", "sandbox-ok-1", "sandbox-fail", "sandbox-ok-2"})
 
 	err := cmd.Execute()
 	if err == nil {

@@ -636,7 +636,7 @@ func (d *apiDataSource) Do(ctx context.Context, verb tui.Verb, sandboxID string)
 }
 
 // Rename gives a sandbox a new name — the one piece of its config the window
-// edits, through the same PATCH `discobox admin discobox update --name` uses.
+// edits, through the same PATCH `discobox admin box update --name` uses.
 func (d *apiDataSource) Rename(ctx context.Context, sandboxID, name string) error {
 	body := &apimodel.UpdateSandboxBody{}
 	body.SetConfig(apiclientgen.NewOptSandboxUpdateConfig(apimodel.SandboxUpdateConfig{

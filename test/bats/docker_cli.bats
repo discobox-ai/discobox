@@ -149,7 +149,7 @@ PY
 
   wait_for_pool_ready "$pool_id"
 
-  run cli admin discobox create --name "$DISCOBOX_BATS_RUN-sandbox" --pool "$pool_id" --wait --wait-timeout 90s
+  run cli admin box create --name "$DISCOBOX_BATS_RUN-sandbox" --pool "$pool_id" --wait --wait-timeout 90s
   [ "$status" -eq 0 ]
   sandbox_json="$output"
   sandbox_id="$(printf '%s' "$sandbox_json" | json_get id)"

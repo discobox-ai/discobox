@@ -12,7 +12,7 @@ import (
 
 // newListCommand lists the sandboxes started from the current project
 // directory, which is the Git repository root of -C (the working directory by
-// default). It is the project-scoped counterpart to `admin discobox ls`, which
+// default). It is the project-scoped counterpart to `admin box ls`, which
 // lists every sandbox in the project regardless of where it was started from.
 //
 // This filters on origin rather than source: a local repository path identifies
@@ -29,7 +29,7 @@ func (a *App) newListCommand() *cobra.Command {
 The project directory is the Git repository root of the current directory, or
 the directory itself when it is not in a repository. Discoboxes started from
 another directory, or from another machine, are not listed; pass --all (or use
-"discobox admin discobox ls") to list every discobox in the project.`,
+"discobox admin box ls") to list every discobox in the project.`,
 		Example: `  discobox ls
   discobox ls --all
   discobox ls -o json`,

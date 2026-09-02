@@ -482,7 +482,7 @@ session, `execstream/client`.
   until `displayState: running`, then poll the exec list until a primary exists
   past `installing` — cost a request per second of provisioning for facts the
   server knew the instant they changed, and every client had to reimplement
-  them. `--wait` on `admin discobox create` is a different thing and stays: there
+  them. `--wait` on `admin box create` is a different thing and stays: there
   the wait *is* what was asked for.
 - The wait is narrated, and the narration never gates it. `attachSandboxTerminal`
   starts `watchProvisioning` before the dial and takes it down the moment the
