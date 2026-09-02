@@ -6,7 +6,9 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -24,12 +26,22 @@ import (
 // was called with. Every other method panics: the handshake tests never
 // reach them.
 type fakeSandboxService struct {
+	// mu guards acquireCalls: every SSH connection is served on its own
+	// goroutine, so the recording and the assertions are concurrent.
+	mu           sync.Mutex
 	acquireCalls []acquireCall
 	acquireErr   error
 	// acquireResult, when set, is returned instead of acquireErr — for tests
 	// that need a real lease pointed at a fake sandbox-agent/pool-agent HTTP
 	// server.
 	acquireResult func() (*services.HTTPClientLease, *model.Sandbox, error)
+}
+
+// calls is a snapshot of what has been recorded so far.
+func (f *fakeSandboxService) calls() []acquireCall {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return slices.Clone(f.acquireCalls)
 }
 
 type acquireCall struct {
@@ -42,7 +54,9 @@ type acquireCall struct {
 
 func (f *fakeSandboxService) AcquireSandboxHTTPClient(ctx context.Context, projectID, sandboxID string, scopes []string) (*services.HTTPClientLease, *model.Sandbox, error) {
 	principal, ok := auth.PrincipalFromContext(ctx)
+	f.mu.Lock()
 	f.acquireCalls = append(f.acquireCalls, acquireCall{principal: principal, ok: ok, projectID: projectID, sandboxID: sandboxID, scopes: scopes})
+	f.mu.Unlock()
 	if f.acquireResult != nil {
 		return f.acquireResult()
 	}
@@ -225,8 +239,7 @@ func TestHandshakeFileKeyAuthenticatesAsDefaultUserWithFullScope(t *testing.T) {
 	defer session.Close()
 	_ = session.Shell() // the fake service errors; only the principal matters here
 
-	waitForCalls(t, h.sandboxes, 1)
-	call := h.sandboxes.acquireCalls[0]
+	call := waitForCalls(t, h.sandboxes, 1)[0]
 	if !call.ok {
 		t.Fatalf("expected a principal in context")
 	}
@@ -272,8 +285,7 @@ func TestHandshakeProjectKeyGetsScopedBundle(t *testing.T) {
 	defer session.Close()
 	_ = session.Shell()
 
-	waitForCalls(t, h.sandboxes, 1)
-	call := h.sandboxes.acquireCalls[0]
+	call := waitForCalls(t, h.sandboxes, 1)[0]
 	if call.principal.UserID != "user_enrolled" {
 		t.Fatalf("UserID = %q, want the enrolling user", call.principal.UserID)
 	}
@@ -341,16 +353,17 @@ func TestUnknownChannelTypeRejected(t *testing.T) {
 	}
 }
 
-func waitForCalls(t *testing.T, svc *fakeSandboxService, n int) {
+func waitForCalls(t *testing.T, svc *fakeSandboxService, n int) []acquireCall {
 	t.Helper()
 	deadline := time.Now().Add(2 * time.Second)
 	for time.Now().Before(deadline) {
-		if len(svc.acquireCalls) >= n {
-			return
+		if calls := svc.calls(); len(calls) >= n {
+			return calls
 		}
 		time.Sleep(10 * time.Millisecond)
 	}
-	t.Fatalf("timed out waiting for %d AcquireSandboxHTTPClient call(s), got %d", n, len(svc.acquireCalls))
+	t.Fatalf("timed out waiting for %d AcquireSandboxHTTPClient call(s), got %d", n, len(svc.calls()))
+	return nil
 }
 
 func (f *fakeSandboxService) UnarchiveSandbox(context.Context, string, string) error {
