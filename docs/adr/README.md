@@ -95,7 +95,7 @@ Nygard-style ADRs (see adr.github.io) combined with current-state design docs:
 | [0040](0040-discobox-images-are-reclaimed-by-label-and-local-age.md) | Discobox images are reclaimed by label and local tag age | Accepted |
 | [0041](0041-dev-hot-reload-is-watchnbuild.md) | Dev hot reload is watchnbuild, not Air | Proposed |
 | [0042](0042-git-authorship-identity-is-a-first-class-sandbox-property.md) | Git authorship identity is a first-class sandbox property | Proposed |
-| [0043](0043-shell-is-an-ordinary-harness-image.md) | `shell` is an ordinary harness image | Accepted |
+| [0043](0043-shell-is-an-ordinary-harness-image.md) | `shell` is an ordinary harness image | Accepted (§2 superseded by [0086](0086-a-harness-image-extends-the-base-and-its-manifest-is-override-only.md)) |
 | [0044](0044-builds-run-on-a-pool-shared-buildkit.md) | Builds run on a pool-shared BuildKit, bound to a sandbox by a mediator | Accepted |
 | [0045](0045-a-directory-with-no-repository-is-delivered-by-push.md) | A directory with no repository is delivered by push | Accepted (§2's "nobody is asked" superseded by [0073](0073-a-directory-with-no-repository-is-copied-only-when-asked.md)) |
 | [0046](0046-listening-ports-are-polled-and-probed-in-the-background.md) | Listening ports are discovered by a standing poller and probed for HTTP | Accepted |
@@ -138,3 +138,4 @@ Nygard-style ADRs (see adr.github.io) combined with current-state design docs:
 | [0083](0083-a-repository-with-no-commits-is-uncommitted-work-on-an-empty-base.md) | A repository with no commits is uncommitted work on an empty base | Accepted (apply consequence superseded by [0084](0084-the-first-apply-into-a-repository-with-no-commits-is-its-history.md)) |
 | [0084](0084-the-first-apply-into-a-repository-with-no-commits-is-its-history.md) | The first apply into a repository with no commits is its history | Accepted (supersedes [0083](0083-a-repository-with-no-commits-is-uncommitted-work-on-an-empty-base.md)'s apply consequence) |
 | [0085](0085-the-nix-seed-stamp-names-the-store-that-seeded-it.md) | The nix seed stamp names the store that seeded it | Accepted (supersedes [0075](0075-the-nix-store-is-a-pool-shared-cache-seeded-on-first-use.md) §5's stamps) |
+| [0086](0086-a-harness-image-extends-the-base-and-its-manifest-is-override-only.md) | A harness image extends the sandbox base, and its manifest is override-only | Accepted (supersedes [0043](0043-shell-is-an-ordinary-harness-image.md) §2) |
