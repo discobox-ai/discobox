@@ -1,6 +1,8 @@
 # 0075 — The nix store is a pool-shared cache, seeded from the image on first use
 
-- **Status**: Accepted
+- **Status**: Accepted (§5's boolean stamps superseded by
+  [0085](0085-the-nix-seed-stamp-names-the-store-that-seeded-it.md);
+  everything else stands)
 - **Date**: 2026-08-27
 
 ## Context
