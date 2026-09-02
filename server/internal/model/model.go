@@ -77,6 +77,18 @@ const (
 	// source fields happen to be set.
 	GitSourceDeliveryClone = "clone"
 	GitSourceDeliveryPush  = "push"
+
+	// SandboxUpgradePolicyAutomatic and SandboxUpgradePolicyManual are a
+	// project's answer to whether its stopped sandboxes follow their harness
+	// image (ADR 0082 §3).
+	//
+	// The empty value is the third member of this vocabulary and means *the
+	// server default*, which is automatic: a project that has never chosen
+	// tracks the default as it changes rather than being frozen to whatever it
+	// was at create. It is deliberately absent from SandboxUpgradePolicies,
+	// because the API omits the field rather than serving an empty enum value.
+	SandboxUpgradePolicyAutomatic = "automatic"
+	SandboxUpgradePolicyManual    = "manual"
 )
 
 // Enum registries. Each slice is the canonical set of values a string-typed
@@ -113,7 +125,23 @@ var (
 		GitSourceDeliveryClone,
 		GitSourceDeliveryPush,
 	}
+	SandboxUpgradePolicies = []string{
+		SandboxUpgradePolicyAutomatic,
+		SandboxUpgradePolicyManual,
+	}
 )
+
+// SandboxUpgradesAutomatically reports whether a project's stopped sandboxes
+// are moved onto their harness config's image when it changes (ADR 0082).
+//
+// Empty is automatic, which is what makes the default a server-side answer the
+// project follows rather than a value copied into every row at create.
+func SandboxUpgradesAutomatically(project *Project) bool {
+	if project == nil {
+		return false
+	}
+	return strings.TrimSpace(project.SandboxUpgradePolicy) != SandboxUpgradePolicyManual
+}
 
 // SandboxIsLive reports whether a sandbox has a container something is
 // currently relying on, and so must not be rebuilt underneath it.
@@ -194,6 +222,15 @@ type Project struct {
 	// a project that has never chosen gets the default as it changes, rather
 	// than being frozen to whatever it was at create time.
 	ArchiveRetentionSeconds int64 `gorm:"column:archive_retention_seconds;not null;default:0" json:"archiveRetentionSeconds,omitempty" doc:"How long archived sandboxes are kept before being purged, in seconds. Zero means the server default."`
+	// SandboxUpgradePolicy decides whether this project's stopped sandboxes are
+	// re-pinned onto their harness config's image when that image moves
+	// (ADR 0082 §3). Empty means the server default, which is `automatic`.
+	//
+	// It is an opt-out rather than an opt-in because the upgrade is what a user
+	// wants almost always; what it buys is the ability to hold a discobox on
+	// the image it was built with, since a rebuild discards whatever was written
+	// to the container's filesystem outside its durable volumes.
+	SandboxUpgradePolicy string `gorm:"column:sandbox_upgrade_policy;not null;type:text;default:''" json:"sandboxUpgradePolicy,omitempty" doc:"Whether this project's stopped sandboxes follow their harness config's image. Empty means the server default, which is automatic." enum:"automatic,manual"`
 	// Welcomed records that this project has shown its introduction, so the
 	// launcher shows it once and never again. It is here rather than in client
 	// state because a person meets Discobox once, not once per machine they

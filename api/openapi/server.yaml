@@ -2187,6 +2187,13 @@ components:
                     format: int64
                     minimum: 0
                     type: integer
+                sandboxUpgradePolicy:
+                    description: Whether this project's stopped sandboxes are moved onto their harness config's image when that image changes. `manual` holds every sandbox on the image it was built with. An empty string restores the server default, which the project then follows as it changes.
+                    enum:
+                        - ""
+                        - automatic
+                        - manual
+                    type: string
                 welcomed:
                     description: Whether this project has already shown its introduction. The launcher sets it once, the first time it welcomes someone to the project; clearing it shows the welcome again.
                     type: boolean
@@ -2223,6 +2230,12 @@ components:
                     description: How long archived sandboxes are kept before being purged, in seconds. Zero means the server default.
                     format: int64
                     type: integer
+                sandboxUpgradePolicy:
+                    description: Whether this project's stopped sandboxes follow their harness config's image. Absent means the server default, which is automatic.
+                    enum:
+                        - automatic
+                        - manual
+                    type: string
                 id:
                     description: Stable project ID
                     type: string

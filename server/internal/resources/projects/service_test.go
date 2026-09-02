@@ -463,6 +463,68 @@ func TestUpdateProjectRenames(t *testing.T) {
 	}
 }
 
+// A project holds its discoboxes on their image by choosing `manual`; empty is
+// the server default, which is automatic and which the project keeps tracking
+// as it changes (ADR 0082 §3).
+func TestUpdateProjectSetsTheSandboxUpgradePolicy(t *testing.T) {
+	svc, _, ctx := newService(t)
+	project, err := svc.CreateProject(ctx, services.CreateProjectBody{Name: "Fresh"})
+	if err != nil {
+		t.Fatalf("create project: %v", err)
+	}
+	if !model.SandboxUpgradesAutomatically(project) {
+		t.Fatal("a new project does not upgrade automatically; empty must mean the server default")
+	}
+
+	held, err := svc.UpdateProject(ctx, project.ID, services.UpdateProjectBody{
+		SandboxUpgradePolicy: apigen.NewOptUpdateProjectBodySandboxUpgradePolicy(
+			apigen.UpdateProjectBodySandboxUpgradePolicyManual),
+	})
+	if err != nil {
+		t.Fatalf("update project: %v", err)
+	}
+	if model.SandboxUpgradesAutomatically(held) {
+		t.Fatal("the project still upgrades automatically after choosing manual")
+	}
+
+	// Empty restores the default rather than being read as absent, the same
+	// affordance zero gives --archive-retention.
+	restored, err := svc.UpdateProject(ctx, project.ID, services.UpdateProjectBody{
+		SandboxUpgradePolicy: apigen.NewOptUpdateProjectBodySandboxUpgradePolicy(
+			apigen.UpdateProjectBodySandboxUpgradePolicyEmpty),
+	})
+	if err != nil {
+		t.Fatalf("update project: %v", err)
+	}
+	if restored.SandboxUpgradePolicy != "" || !model.SandboxUpgradesAutomatically(restored) {
+		t.Fatalf("policy = %q, want the server default restored", restored.SandboxUpgradePolicy)
+	}
+
+	// An update about something else leaves the choice alone.
+	held, err = svc.UpdateProject(ctx, project.ID, services.UpdateProjectBody{
+		SandboxUpgradePolicy: apigen.NewOptUpdateProjectBodySandboxUpgradePolicy(
+			apigen.UpdateProjectBodySandboxUpgradePolicyManual),
+	})
+	if err != nil {
+		t.Fatalf("update project: %v", err)
+	}
+	renamed, err := svc.UpdateProject(ctx, held.ID, services.UpdateProjectBody{Name: apigen.NewOptString("Renamed")})
+	if err != nil {
+		t.Fatalf("update project: %v", err)
+	}
+	if model.SandboxUpgradesAutomatically(renamed) {
+		t.Fatal("renaming a project put its discoboxes back on automatic upgrades")
+	}
+
+	// The generated validator rejects an unknown value at the transport layer,
+	// but the service is reachable from inside the process too, and a value it
+	// does not understand must not be stored as one it does.
+	_, err = svc.UpdateProject(ctx, project.ID, services.UpdateProjectBody{
+		SandboxUpgradePolicy: apigen.NewOptUpdateProjectBodySandboxUpgradePolicy("sometimes"),
+	})
+	statusOf(t, err, http.StatusBadRequest)
+}
+
 // The welcome is shown once per project, so the project is what remembers
 // having shown it — not the machine the launcher happened to run on.
 func TestUpdateProjectRecordsTheWelcome(t *testing.T) {

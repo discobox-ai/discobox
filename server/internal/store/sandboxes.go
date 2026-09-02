@@ -155,6 +155,44 @@ func (s *Store) ListArchivedSandboxRefsExpiredBefore(ctx context.Context, defaul
 	return refs, nil
 }
 
+// ListStoppedSandboxesForHarnessConfig returns the sandboxes on one harness
+// config that a change to that config's image may be applied to unattended
+// (ADR 0082 §2).
+//
+// Every condition here is a state question. Whether a sandbox is *behind* is
+// not asked here at all: that rule is services.SandboxUpgradeTarget, the same
+// one the read path reports `upgrade.available` from, and it also excludes
+// config-mode sandboxes. Restating either in SQL would let this query and the
+// reported state answer differently — and the config-mode half would answer
+// differently at once, since the rule is `mode != "config"` while a column
+// comparison would also drop a legacy row whose mode is empty.
+//
+// `runtime_state = 'stopped'` is an observation with exactly one writer
+// (ADR 0034 §2), which is what makes it safe to act on without asking anyone.
+// The empty runtime state is excluded on purpose: it means *not observed*,
+// which is a different answer from stopped, and upgrading on it would be
+// upgrading on no observation at all.
+func (s *Store) ListStoppedSandboxesForHarnessConfig(ctx context.Context, projectID, harnessConfigID string) ([]model.Sandbox, error) {
+	read, err := s.getRead(ctx)
+	if err != nil {
+		return nil, err
+	}
+	var sandboxes []model.Sandbox
+	err = read.
+		Where("project_id = ? AND harness_config_id = ?", projectID, harnessConfigID).
+		Where("desired_state = ?", model.DesiredStatePresent).
+		// Converged against its spec, and nothing in flight against it: an
+		// unsettled row is already being acted on, and a settled failure needs
+		// intent aimed at the failure, which is what repair is (ADR 0064).
+		Where("state = ?", model.SandboxStateReady).
+		Where("generation = observed_generation").
+		Where("error_message IS NULL").
+		Where("runtime_state = ?", model.SandboxRuntimeStateStopped).
+		Order("id ASC").
+		Find(&sandboxes).Error
+	return sandboxes, err
+}
+
 // ListSandboxes lists a project's sandboxes. A non-empty sourceRoot restricts
 // the result to sandboxes whose primary source resolves to that repository root.
 // A non-empty originKey restricts it to sandboxes created from one client host

@@ -108,7 +108,8 @@ func (s *Service) CreateProject(ctx context.Context, input services.CreateProjec
 }
 
 // UpdateProject edits a project's own settings — its name, how long its
-// archived sandboxes are kept, and whether it has shown its introduction.
+// archived sandboxes are kept, whether its stopped sandboxes follow their
+// harness image, and whether it has shown its introduction.
 // Membership and ownership are not editable here; they are their own resource.
 func (s *Service) UpdateProject(ctx context.Context, projectID string, input services.UpdateProjectBody) (*model.Project, error) {
 	project, err := s.store.GetProject(ctx, projectID)
@@ -134,6 +135,17 @@ func (s *Service) UpdateProject(ctx context.Context, projectID string, input ser
 		// Zero is meaningful rather than absent: it restores the server default,
 		// which the project then tracks as it changes (ADR 0022 §4).
 		project.ArchiveRetentionSeconds = retention
+	}
+	if policy, ok := input.SandboxUpgradePolicy.Get(); ok {
+		// Empty is meaningful rather than absent, exactly as zero is for
+		// retention above: it restores the server default, which the project
+		// then tracks as it changes (ADR 0082 §3).
+		value := strings.TrimSpace(string(policy))
+		if value != "" && value != model.SandboxUpgradePolicyAutomatic && value != model.SandboxUpgradePolicyManual {
+			return nil, apperrors.NewStatusError(http.StatusBadRequest,
+				"sandbox upgrade policy must be \"automatic\" or \"manual\"")
+		}
+		project.SandboxUpgradePolicy = value
 	}
 	if welcomed, ok := input.Welcomed.Get(); ok {
 		// Settable both ways. Setting it is the launcher saying it has done the

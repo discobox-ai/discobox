@@ -5916,6 +5916,52 @@ func (o OptPoolTotalUsage) Or(d PoolTotalUsage) PoolTotalUsage {
 	return d
 }
 
+// NewOptProjectSandboxUpgradePolicy returns new OptProjectSandboxUpgradePolicy with value set to v.
+func NewOptProjectSandboxUpgradePolicy(v ProjectSandboxUpgradePolicy) OptProjectSandboxUpgradePolicy {
+	return OptProjectSandboxUpgradePolicy{
+		Value: v,
+		Set:   true,
+	}
+}
+
+// OptProjectSandboxUpgradePolicy is optional ProjectSandboxUpgradePolicy.
+type OptProjectSandboxUpgradePolicy struct {
+	Value ProjectSandboxUpgradePolicy
+	Set   bool
+}
+
+// IsSet returns true if OptProjectSandboxUpgradePolicy was set.
+func (o OptProjectSandboxUpgradePolicy) IsSet() bool { return o.Set }
+
+// Reset unsets value.
+func (o *OptProjectSandboxUpgradePolicy) Reset() {
+	var v ProjectSandboxUpgradePolicy
+	o.Value = v
+	o.Set = false
+}
+
+// SetTo sets value to v.
+func (o *OptProjectSandboxUpgradePolicy) SetTo(v ProjectSandboxUpgradePolicy) {
+	o.Set = true
+	o.Value = v
+}
+
+// Get returns value and boolean that denotes whether value was set.
+func (o OptProjectSandboxUpgradePolicy) Get() (v ProjectSandboxUpgradePolicy, ok bool) {
+	if !o.Set {
+		return v, false
+	}
+	return o.Value, true
+}
+
+// Or returns value if set, or given parameter if does not.
+func (o OptProjectSandboxUpgradePolicy) Or(d ProjectSandboxUpgradePolicy) ProjectSandboxUpgradePolicy {
+	if v, ok := o.Get(); ok {
+		return v
+	}
+	return d
+}
+
 // NewOptSandboxAgentResourceUsage returns new OptSandboxAgentResourceUsage with value set to v.
 func NewOptSandboxAgentResourceUsage(v SandboxAgentResourceUsage) OptSandboxAgentResourceUsage {
 	return OptSandboxAgentResourceUsage{
@@ -7106,6 +7152,52 @@ func (o OptURI) Get() (v url.URL, ok bool) {
 
 // Or returns value if set, or given parameter if does not.
 func (o OptURI) Or(d url.URL) url.URL {
+	if v, ok := o.Get(); ok {
+		return v
+	}
+	return d
+}
+
+// NewOptUpdateProjectBodySandboxUpgradePolicy returns new OptUpdateProjectBodySandboxUpgradePolicy with value set to v.
+func NewOptUpdateProjectBodySandboxUpgradePolicy(v UpdateProjectBodySandboxUpgradePolicy) OptUpdateProjectBodySandboxUpgradePolicy {
+	return OptUpdateProjectBodySandboxUpgradePolicy{
+		Value: v,
+		Set:   true,
+	}
+}
+
+// OptUpdateProjectBodySandboxUpgradePolicy is optional UpdateProjectBodySandboxUpgradePolicy.
+type OptUpdateProjectBodySandboxUpgradePolicy struct {
+	Value UpdateProjectBodySandboxUpgradePolicy
+	Set   bool
+}
+
+// IsSet returns true if OptUpdateProjectBodySandboxUpgradePolicy was set.
+func (o OptUpdateProjectBodySandboxUpgradePolicy) IsSet() bool { return o.Set }
+
+// Reset unsets value.
+func (o *OptUpdateProjectBodySandboxUpgradePolicy) Reset() {
+	var v UpdateProjectBodySandboxUpgradePolicy
+	o.Value = v
+	o.Set = false
+}
+
+// SetTo sets value to v.
+func (o *OptUpdateProjectBodySandboxUpgradePolicy) SetTo(v UpdateProjectBodySandboxUpgradePolicy) {
+	o.Set = true
+	o.Value = v
+}
+
+// Get returns value and boolean that denotes whether value was set.
+func (o OptUpdateProjectBodySandboxUpgradePolicy) Get() (v UpdateProjectBodySandboxUpgradePolicy, ok bool) {
+	if !o.Set {
+		return v, false
+	}
+	return o.Value, true
+}
+
+// Or returns value if set, or given parameter if does not.
+func (o OptUpdateProjectBodySandboxUpgradePolicy) Or(d UpdateProjectBodySandboxUpgradePolicy) UpdateProjectBodySandboxUpgradePolicy {
 	if v, ok := o.Get(); ok {
 		return v
 	}
@@ -9136,6 +9228,9 @@ type Project struct {
 	// How long archived sandboxes are kept before being purged, in seconds. Zero means the server
 	// default.
 	ArchiveRetentionSeconds OptInt64 `json:"archiveRetentionSeconds"`
+	// Whether this project's stopped sandboxes follow their harness config's image. Absent means the
+	// server default, which is automatic.
+	SandboxUpgradePolicy OptProjectSandboxUpgradePolicy `json:"sandboxUpgradePolicy"`
 	// Stable project ID.
 	ID string `json:"id"`
 	// Project members.
@@ -9191,6 +9286,11 @@ func (s *Project) GetDefaultHarnessConfigId() OptString {
 // GetArchiveRetentionSeconds returns the value of ArchiveRetentionSeconds.
 func (s *Project) GetArchiveRetentionSeconds() OptInt64 {
 	return s.ArchiveRetentionSeconds
+}
+
+// GetSandboxUpgradePolicy returns the value of SandboxUpgradePolicy.
+func (s *Project) GetSandboxUpgradePolicy() OptProjectSandboxUpgradePolicy {
+	return s.SandboxUpgradePolicy
 }
 
 // GetID returns the value of ID.
@@ -9276,6 +9376,11 @@ func (s *Project) SetDefaultHarnessConfigId(val OptString) {
 // SetArchiveRetentionSeconds sets the value of ArchiveRetentionSeconds.
 func (s *Project) SetArchiveRetentionSeconds(val OptInt64) {
 	s.ArchiveRetentionSeconds = val
+}
+
+// SetSandboxUpgradePolicy sets the value of SandboxUpgradePolicy.
+func (s *Project) SetSandboxUpgradePolicy(val OptProjectSandboxUpgradePolicy) {
+	s.SandboxUpgradePolicy = val
 }
 
 // SetID sets the value of ID.
@@ -9399,6 +9504,49 @@ func (s *ProjectMember) SetUpdatedAt(val time.Time) {
 // SetUserId sets the value of UserId.
 func (s *ProjectMember) SetUserId(val string) {
 	s.UserId = val
+}
+
+// Whether this project's stopped sandboxes follow their harness config's image. Absent means the
+// server default, which is automatic.
+type ProjectSandboxUpgradePolicy string
+
+const (
+	ProjectSandboxUpgradePolicyAutomatic ProjectSandboxUpgradePolicy = "automatic"
+	ProjectSandboxUpgradePolicyManual    ProjectSandboxUpgradePolicy = "manual"
+)
+
+// AllValues returns all ProjectSandboxUpgradePolicy values.
+func (ProjectSandboxUpgradePolicy) AllValues() []ProjectSandboxUpgradePolicy {
+	return []ProjectSandboxUpgradePolicy{
+		ProjectSandboxUpgradePolicyAutomatic,
+		ProjectSandboxUpgradePolicyManual,
+	}
+}
+
+// MarshalText implements encoding.TextMarshaler.
+func (s ProjectSandboxUpgradePolicy) MarshalText() ([]byte, error) {
+	switch s {
+	case ProjectSandboxUpgradePolicyAutomatic:
+		return []byte(s), nil
+	case ProjectSandboxUpgradePolicyManual:
+		return []byte(s), nil
+	default:
+		return nil, errors.Errorf("invalid value: %q", s)
+	}
+}
+
+// UnmarshalText implements encoding.TextUnmarshaler.
+func (s *ProjectSandboxUpgradePolicy) UnmarshalText(data []byte) error {
+	switch ProjectSandboxUpgradePolicy(data) {
+	case ProjectSandboxUpgradePolicyAutomatic:
+		*s = ProjectSandboxUpgradePolicyAutomatic
+		return nil
+	case ProjectSandboxUpgradePolicyManual:
+		*s = ProjectSandboxUpgradePolicyManual
+		return nil
+	default:
+		return errors.Errorf("invalid value: %q", data)
+	}
 }
 
 // Ref: #/components/schemas/ProviderConfigField
@@ -15901,6 +16049,10 @@ type UpdateProjectBody struct {
 	// How long this project's archived sandboxes are kept before they are purged, in seconds. Zero
 	// restores the server default, which the project then follows as it changes.
 	ArchiveRetentionSeconds OptInt64 `json:"archiveRetentionSeconds"`
+	// Whether this project's stopped sandboxes are moved onto their harness config's image when that
+	// image changes. `manual` holds every sandbox on the image it was built with. An empty string
+	// restores the server default, which the project then follows as it changes.
+	SandboxUpgradePolicy OptUpdateProjectBodySandboxUpgradePolicy `json:"sandboxUpgradePolicy"`
 	// Whether this project has already shown its introduction. The launcher sets it once, the first time
 	// it welcomes someone to the project; clearing it shows the welcome again.
 	Welcomed OptBool `json:"welcomed"`
@@ -15919,6 +16071,11 @@ func (s *UpdateProjectBody) GetName() OptString {
 // GetArchiveRetentionSeconds returns the value of ArchiveRetentionSeconds.
 func (s *UpdateProjectBody) GetArchiveRetentionSeconds() OptInt64 {
 	return s.ArchiveRetentionSeconds
+}
+
+// GetSandboxUpgradePolicy returns the value of SandboxUpgradePolicy.
+func (s *UpdateProjectBody) GetSandboxUpgradePolicy() OptUpdateProjectBodySandboxUpgradePolicy {
+	return s.SandboxUpgradePolicy
 }
 
 // GetWelcomed returns the value of Welcomed.
@@ -15941,9 +16098,65 @@ func (s *UpdateProjectBody) SetArchiveRetentionSeconds(val OptInt64) {
 	s.ArchiveRetentionSeconds = val
 }
 
+// SetSandboxUpgradePolicy sets the value of SandboxUpgradePolicy.
+func (s *UpdateProjectBody) SetSandboxUpgradePolicy(val OptUpdateProjectBodySandboxUpgradePolicy) {
+	s.SandboxUpgradePolicy = val
+}
+
 // SetWelcomed sets the value of Welcomed.
 func (s *UpdateProjectBody) SetWelcomed(val OptBool) {
 	s.Welcomed = val
+}
+
+// Whether this project's stopped sandboxes are moved onto their harness config's image when that
+// image changes. `manual` holds every sandbox on the image it was built with. An empty string
+// restores the server default, which the project then follows as it changes.
+type UpdateProjectBodySandboxUpgradePolicy string
+
+const (
+	UpdateProjectBodySandboxUpgradePolicyEmpty     UpdateProjectBodySandboxUpgradePolicy = ""
+	UpdateProjectBodySandboxUpgradePolicyAutomatic UpdateProjectBodySandboxUpgradePolicy = "automatic"
+	UpdateProjectBodySandboxUpgradePolicyManual    UpdateProjectBodySandboxUpgradePolicy = "manual"
+)
+
+// AllValues returns all UpdateProjectBodySandboxUpgradePolicy values.
+func (UpdateProjectBodySandboxUpgradePolicy) AllValues() []UpdateProjectBodySandboxUpgradePolicy {
+	return []UpdateProjectBodySandboxUpgradePolicy{
+		UpdateProjectBodySandboxUpgradePolicyEmpty,
+		UpdateProjectBodySandboxUpgradePolicyAutomatic,
+		UpdateProjectBodySandboxUpgradePolicyManual,
+	}
+}
+
+// MarshalText implements encoding.TextMarshaler.
+func (s UpdateProjectBodySandboxUpgradePolicy) MarshalText() ([]byte, error) {
+	switch s {
+	case UpdateProjectBodySandboxUpgradePolicyEmpty:
+		return []byte(s), nil
+	case UpdateProjectBodySandboxUpgradePolicyAutomatic:
+		return []byte(s), nil
+	case UpdateProjectBodySandboxUpgradePolicyManual:
+		return []byte(s), nil
+	default:
+		return nil, errors.Errorf("invalid value: %q", s)
+	}
+}
+
+// UnmarshalText implements encoding.TextUnmarshaler.
+func (s *UpdateProjectBodySandboxUpgradePolicy) UnmarshalText(data []byte) error {
+	switch UpdateProjectBodySandboxUpgradePolicy(data) {
+	case UpdateProjectBodySandboxUpgradePolicyEmpty:
+		*s = UpdateProjectBodySandboxUpgradePolicyEmpty
+		return nil
+	case UpdateProjectBodySandboxUpgradePolicyAutomatic:
+		*s = UpdateProjectBodySandboxUpgradePolicyAutomatic
+		return nil
+	case UpdateProjectBodySandboxUpgradePolicyManual:
+		*s = UpdateProjectBodySandboxUpgradePolicyManual
+		return nil
+	default:
+		return errors.Errorf("invalid value: %q", data)
+	}
 }
 
 // Ref: #/components/schemas/UpdateSandboxBody

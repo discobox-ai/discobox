@@ -223,6 +223,7 @@ func (s *Service) RefreshHarnessConfigImage(ctx context.Context, projectID, conf
 	slog.InfoContext(ctx, "refreshed harness config image",
 		"harnessConfigId", config.ID, "image", image,
 		"previousImageDigest", previousDigest, "imageDigest", metadata.Digest)
+	s.applyResolvedImageDigest(ctx, projectID, config.ID, previousDigest, metadata.Digest)
 	stored, err := s.store.GetHarnessConfig(ctx, projectID, configID)
 	if err != nil {
 		return nil, err
@@ -434,8 +435,38 @@ func (s *Service) SeedBuiltIns(ctx context.Context, projectID string) error {
 		slog.InfoContext(ctx, "updated built-in harness config image",
 			"harnessConfigId", existing.ID, "slug", seed.Slug, "image", image,
 			"previousImageDigest", previousDigest, "imageDigest", metadata.Digest)
+		s.applyResolvedImageDigest(ctx, projectID, existing.ID, previousDigest, metadata.Digest)
 	}
 	return nil
+}
+
+// applyResolvedImageDigest is the single place a harness config's resolved
+// image reaches its sandboxes (ADR 0082 §1).
+//
+// The rule is stated on the field rather than on a list of callers: wherever
+// ImageDigest is written to a value different from the one it replaced, that
+// config's eligible stopped sandboxes are re-pinned onto it. A built-in
+// reseeded at startup and a custom harness re-pulled by its owner are the same
+// event to a sandbox running it, so they go through the same function instead
+// of each remembering independently — and a future writer of the field inherits
+// the behavior by calling this rather than by being amended into a list.
+//
+// A digest that did not move does nothing: the fan-out costs a query per
+// config, and SeedBuiltIns runs on every project ensure.
+//
+// Best effort. The digest is already persisted by the time this runs, so a
+// failure here loses the upgrade, not the refresh — and the sandboxes it
+// missed keep reporting an available upgrade and are picked up the next time
+// this config's image resolves.
+func (s *Service) applyResolvedImageDigest(ctx context.Context, projectID, configID, previousDigest, digest string) {
+	if s.sandboxes == nil || strings.TrimSpace(digest) == "" || previousDigest == digest {
+		return
+	}
+	if err := s.sandboxes.UpgradeHarnessConfigSandboxes(ctx, projectID, configID); err != nil {
+		slog.WarnContext(ctx, "harness image resolved but stopped sandboxes were not upgraded",
+			"harnessConfigId", configID, "previousImageDigest", previousDigest,
+			"imageDigest", digest, "error", err)
+	}
 }
 
 // seeds are the built-in harness configs: every harness in the registry,

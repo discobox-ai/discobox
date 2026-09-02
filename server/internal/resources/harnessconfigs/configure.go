@@ -81,6 +81,11 @@ type SandboxRuntime interface {
 	// config's bindings now name. Configure is one of the two places a binding's
 	// secret changes, and the only one that can replace it outright.
 	RebindHarnessConfigSecrets(ctx context.Context, projectID, harnessConfigID string) error
+	// UpgradeHarnessConfigSandboxes moves this config's stopped sandboxes onto
+	// the image it now resolves to (ADR 0082). Called wherever this config's
+	// ImageDigest is written to a different value, through
+	// applyResolvedImageDigest.
+	UpgradeHarnessConfigSandboxes(ctx context.Context, projectID, harnessConfigID string) error
 }
 
 // Dirtier schedules reconciliation.
@@ -88,7 +93,9 @@ type Dirtier interface {
 	MarkDirtyAt(ctx context.Context, resourceType, id string, at time.Time) error
 }
 
-// SetSandboxRuntime installs the sandbox dependency used by the configure flow.
+// SetSandboxRuntime installs this package's seam onto sandboxes: the configure
+// flow's agent access, and the fan-outs that follow a config change — its
+// secret bindings, and its image (ADR 0082).
 func (s *Service) SetSandboxRuntime(runtime SandboxRuntime) { s.sandboxes = runtime }
 
 // SetDirtier installs the reconcile hook used to reap abandoned configures.

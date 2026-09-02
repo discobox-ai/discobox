@@ -73,7 +73,12 @@ var yamlOwnedEnums = map[string]string{
 	"SandboxExecLogEntry.stream":         "exec log streams are owned by the sandbox-agent",
 	"HarnessVolume.volume":               "value set is owned by harness.VolumeKind in the root module, not a server/internal/model enum tag",
 	"SandboxUpgrade.reason":              "derived at read time by services.SandboxUpgrade from the pin and the harness config; nothing on the model stores it",
-	"CreateProjectBody.copy[]":           "names the resource kinds a project copy takes; a request-shaping vocabulary with no persisted field behind it",
+	// A widening rather than a narrowing, which is why it is not an alias of
+	// Project.sandboxUpgradePolicy: the write body also accepts "" to restore
+	// the server default, the same affordance archiveRetentionSeconds gets from
+	// zero (ADR 0082 §3). A project is never served "" -- the field is omitted.
+	"UpdateProjectBody.sandboxUpgradePolicy": "input-only widening of Project.sandboxUpgradePolicy: the empty value restores the server default and is never served",
+	"CreateProjectBody.copy[]":               "names the resource kinds a project copy takes; a request-shaping vocabulary with no persisted field behind it",
 	// Deliberately not SecretRequest.status. The protocol answers "may I use
 	// this?", which is not the same question as "was this request approved?": a
 	// grant revoked after approval leaves the request approved and the answer

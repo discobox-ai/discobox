@@ -39,6 +39,10 @@ func TestModelEnumsMatchAPISchema(t *testing.T) {
 		{"sandbox state", model.SandboxStates, values(apigen.SandboxRuntimeState("").AllValues())},
 		{"sandbox runtime state", model.SandboxRuntimeStates, values(apigen.SandboxRuntimeRuntimeState("").AllValues())},
 		{"sandbox desired state", model.SandboxDesiredStates, values(apigen.SandboxRuntimeDesiredState("").AllValues())},
+		// The read-side Project enum, not UpdateProjectBody's: the write body
+		// also accepts "" to restore the server default, which is an input
+		// affordance rather than a value a project is ever served as.
+		{"sandbox upgrade policy", model.SandboxUpgradePolicies, values(apigen.ProjectSandboxUpgradePolicy("").AllValues())},
 	}
 
 	for _, tc := range cases {
@@ -74,10 +78,11 @@ func TestModelEnumConstsAreRegistered(t *testing.T) {
 	// character. DesiredState maps to two because the vocabulary is per-resource
 	// since ADR 0022 §1: a value belonging to either resource is registered.
 	registries := map[string][][]string{
-		"PoolState":           {model.PoolStates},
-		"SandboxState":        {model.SandboxStates},
-		"SandboxRuntimeState": {model.SandboxRuntimeStates},
-		"DesiredState":        {model.SandboxDesiredStates, model.PoolDesiredStates},
+		"PoolState":            {model.PoolStates},
+		"SandboxState":         {model.SandboxStates},
+		"SandboxRuntimeState":  {model.SandboxRuntimeStates},
+		"DesiredState":         {model.SandboxDesiredStates, model.PoolDesiredStates},
+		"SandboxUpgradePolicy": {model.SandboxUpgradePolicies},
 	}
 
 	for name, value := range stringConstsInPackage(t) {

@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"log/slog"
 	"net/http"
 	"sort"
 	"strings"
@@ -663,6 +664,70 @@ func (s *Service) UpgradeSandbox(ctx context.Context, projectID, sandboxID strin
 		return nil, mapAPIError(err, "sandbox not found")
 	}
 	return sandbox, nil
+}
+
+// UpgradeHarnessConfigSandboxes moves this harness config's stopped sandboxes
+// onto the image it now resolves to (ADR 0082).
+//
+// It is the same operation as UpgradeSandbox, performed for a caller that is
+// not a person: the same imageRepin, applied through the same
+// recordSandboxIntent, decided by the same services.SandboxUpgradeTarget the
+// read path reports `upgrade.available` from. There is no automatic-upgrade
+// code path — there is an automatic *author* of the upgrade every sandbox
+// already had.
+//
+// Delivery is therefore also unchanged. The re-pin moves ImageDigest, which is
+// in SandboxManifest.Fingerprint(), so the pool agent rebuilds the container
+// whose spec_fingerprint label no longer matches and — because it found that
+// container stopped — leaves the replacement stopped (ADR 0021 §3). Nothing
+// here starts anything.
+//
+// Best-effort per sandbox: one that cannot be re-pinned is logged and the rest
+// still move. A harness image landing must not be all-or-nothing across a
+// project, and the sandbox that missed it is picked up the next time its
+// harness image resolves, still reporting an available upgrade until then.
+func (s *Service) UpgradeHarnessConfigSandboxes(ctx context.Context, projectID, harnessConfigID string) error {
+	harnessConfigID = strings.TrimSpace(harnessConfigID)
+	if harnessConfigID == "" {
+		return nil
+	}
+	project, err := s.store.GetProject(ctx, projectID)
+	if err != nil {
+		if errors.Is(err, store.ErrNotFound) {
+			return nil
+		}
+		return err
+	}
+	// Asked once, before any row is read: the policy is the project's answer to
+	// whether this happens at all (ADR 0082 §3), not a per-sandbox condition.
+	if !model.SandboxUpgradesAutomatically(project) {
+		return nil
+	}
+	candidates, err := s.store.ListStoppedSandboxesForHarnessConfig(ctx, projectID, harnessConfigID)
+	if err != nil {
+		return err
+	}
+	for i := range candidates {
+		sb := &candidates[i]
+		repin, err := s.currentImageRepin(ctx, sb)
+		if err != nil {
+			slog.WarnContext(ctx, "skip automatic sandbox upgrade; cannot resolve target",
+				"projectId", projectID, "sandboxId", sb.ID, "harnessConfigId", harnessConfigID, "error", err)
+			continue
+		}
+		if !repin.Available {
+			continue
+		}
+		if _, err := s.recordSandboxIntent(ctx, projectID, sb.ID, model.DesiredStatePresent, repin.apply); err != nil {
+			slog.WarnContext(ctx, "skip automatic sandbox upgrade; cannot record intent",
+				"projectId", projectID, "sandboxId", sb.ID, "harnessConfigId", harnessConfigID, "error", err)
+			continue
+		}
+		slog.InfoContext(ctx, "upgraded stopped sandbox to its harness image",
+			"projectId", projectID, "sandboxId", sb.ID, "harnessConfigId", harnessConfigID,
+			"previousImageDigest", sb.ImageDigest, "imageDigest", repin.Digest)
+	}
+	return nil
 }
 
 // imageRepin is the change that moves a sandbox onto its harness config's

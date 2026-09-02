@@ -712,12 +712,18 @@ func TestBuiltInDeleteHintOnlySuggestsWhatWouldWork(t *testing.T) {
 // stubSandboxRuntime records the create body the configure flow builds. Only
 // CreateSandbox is exercised; the rest satisfies the interface.
 type stubSandboxRuntime struct {
-	created services.CreateSandboxBody
-	rebound []string
+	created  services.CreateSandboxBody
+	rebound  []string
+	upgraded []string
 }
 
 func (s *stubSandboxRuntime) RebindHarnessConfigSecrets(_ context.Context, _, harnessConfigID string) error {
 	s.rebound = append(s.rebound, harnessConfigID)
+	return nil
+}
+
+func (s *stubSandboxRuntime) UpgradeHarnessConfigSandboxes(_ context.Context, _, harnessConfigID string) error {
+	s.upgraded = append(s.upgraded, harnessConfigID)
 	return nil
 }
 

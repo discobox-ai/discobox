@@ -53,6 +53,28 @@ still true of it, and true *by rule* rather than by slug:
 - Seeding is best-effort per harness: an uninspectable image is logged and
   skipped so it cannot block startup.
 
+## A resolved digest reaches the sandboxes running it
+
+`applyResolvedImageDigest` is the one place a newly resolved image reaches the
+sandboxes on that config (ADR 0082). The rule is stated on the field rather than
+on a list of callers: **wherever `ImageDigest` is written to a value different
+from the one it replaced**, the config's stopped sandboxes are re-pinned onto it
+through `SandboxRuntime.UpgradeHarnessConfigSandboxes`.
+
+Both writers funnel through it, and they are the same event to a sandbox:
+`SeedBuiltIns` carries a dev rebuild of a stable tag, and
+`RefreshHarnessConfigImage` (`POST .../refresh-image`) is the only trigger a
+user-registered image has at all. `CreateHarnessConfig` also writes a digest and
+is deliberately exempt — the config is new, so nothing references it. A future
+writer inherits the behavior by calling this helper rather than by being
+remembered.
+
+An unchanged digest does nothing, because the fan-out costs a query per config
+and seeding runs on every project ensure. Failure is logged, not returned: the
+digest is already persisted, so what is lost is the upgrade rather than the
+refresh, and the sandboxes it missed keep reporting an available upgrade until
+this config's image next resolves.
+
 ## Configured lifecycle
 
 `Configured` is the enable flag — **only configured harnesses can be selected to
@@ -263,6 +285,10 @@ than resolving to one nobody chose.
 - Harness config files are literal by default. Files marked `template` are
   rendered inside the sandbox against the public `SandboxConfig` JSON shape;
   configs must not invent a parallel set of runtime variables.
+- `SandboxRuntime` is this package's whole seam onto sandboxes, and it carries
+  two unrelated duties: the configure flow's agent access, and the two fan-outs
+  that follow a config change — `RebindHarnessConfigSecrets` when a binding
+  moves, `UpgradeHarnessConfigSandboxes` when the image does.
 - The configure flow reaches the sandbox agent through `SandboxRuntime`
   (`AcquireSandboxHTTPClient`), which authorizes the caller's scopes — so it only
   works from inside a user request, which is the point.

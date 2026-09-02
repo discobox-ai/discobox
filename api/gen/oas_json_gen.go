@@ -9854,6 +9854,39 @@ func (s *OptPoolTotalUsage) UnmarshalJSON(data []byte) error {
 	return s.Decode(d)
 }
 
+// Encode encodes ProjectSandboxUpgradePolicy as json.
+func (o OptProjectSandboxUpgradePolicy) Encode(e *jx.Encoder) {
+	if !o.Set {
+		return
+	}
+	e.Str(string(o.Value))
+}
+
+// Decode decodes ProjectSandboxUpgradePolicy from json.
+func (o *OptProjectSandboxUpgradePolicy) Decode(d *jx.Decoder) error {
+	if o == nil {
+		return errors.New("invalid: unable to decode OptProjectSandboxUpgradePolicy to nil")
+	}
+	o.Set = true
+	if err := o.Value.Decode(d); err != nil {
+		return err
+	}
+	return nil
+}
+
+// MarshalJSON implements stdjson.Marshaler.
+func (s OptProjectSandboxUpgradePolicy) MarshalJSON() ([]byte, error) {
+	e := jx.Encoder{}
+	s.Encode(&e)
+	return e.Bytes(), nil
+}
+
+// UnmarshalJSON implements stdjson.Unmarshaler.
+func (s *OptProjectSandboxUpgradePolicy) UnmarshalJSON(data []byte) error {
+	d := jx.DecodeBytes(data)
+	return s.Decode(d)
+}
+
 // Encode encodes SandboxAgentResourceUsage as json.
 func (o OptSandboxAgentResourceUsage) Encode(e *jx.Encoder) {
 	if !o.Set {
@@ -10718,6 +10751,39 @@ func (s OptURI) MarshalJSON() ([]byte, error) {
 
 // UnmarshalJSON implements stdjson.Unmarshaler.
 func (s *OptURI) UnmarshalJSON(data []byte) error {
+	d := jx.DecodeBytes(data)
+	return s.Decode(d)
+}
+
+// Encode encodes UpdateProjectBodySandboxUpgradePolicy as json.
+func (o OptUpdateProjectBodySandboxUpgradePolicy) Encode(e *jx.Encoder) {
+	if !o.Set {
+		return
+	}
+	e.Str(string(o.Value))
+}
+
+// Decode decodes UpdateProjectBodySandboxUpgradePolicy from json.
+func (o *OptUpdateProjectBodySandboxUpgradePolicy) Decode(d *jx.Decoder) error {
+	if o == nil {
+		return errors.New("invalid: unable to decode OptUpdateProjectBodySandboxUpgradePolicy to nil")
+	}
+	o.Set = true
+	if err := o.Value.Decode(d); err != nil {
+		return err
+	}
+	return nil
+}
+
+// MarshalJSON implements stdjson.Marshaler.
+func (s OptUpdateProjectBodySandboxUpgradePolicy) MarshalJSON() ([]byte, error) {
+	e := jx.Encoder{}
+	s.Encode(&e)
+	return e.Bytes(), nil
+}
+
+// UnmarshalJSON implements stdjson.Unmarshaler.
+func (s *OptUpdateProjectBodySandboxUpgradePolicy) UnmarshalJSON(data []byte) error {
 	d := jx.DecodeBytes(data)
 	return s.Decode(d)
 }
@@ -14671,6 +14737,12 @@ func (s *Project) encodeFields(e *jx.Encoder) {
 		}
 	}
 	{
+		if s.SandboxUpgradePolicy.Set {
+			e.FieldStart("sandboxUpgradePolicy")
+			s.SandboxUpgradePolicy.Encode(e)
+		}
+	}
+	{
 		e.FieldStart("id")
 		e.Str(s.ID)
 	}
@@ -14722,7 +14794,7 @@ func (s *Project) encodeFields(e *jx.Encoder) {
 	}
 }
 
-var jsonFieldsNameOfProject = [17]string{
+var jsonFieldsNameOfProject = [18]string{
 	0:  "$schema",
 	1:  "harnessConfigs",
 	2:  "createdAt",
@@ -14730,16 +14802,17 @@ var jsonFieldsNameOfProject = [17]string{
 	4:  "defaultPoolId",
 	5:  "defaultHarnessConfigId",
 	6:  "archiveRetentionSeconds",
-	7:  "id",
-	8:  "members",
-	9:  "name",
-	10: "owner",
-	11: "ownerUserId",
-	12: "pools",
-	13: "sandboxProviderInstances",
-	14: "sandboxes",
-	15: "updatedAt",
-	16: "welcomed",
+	7:  "sandboxUpgradePolicy",
+	8:  "id",
+	9:  "members",
+	10: "name",
+	11: "owner",
+	12: "ownerUserId",
+	13: "pools",
+	14: "sandboxProviderInstances",
+	15: "sandboxes",
+	16: "updatedAt",
+	17: "welcomed",
 }
 
 // Decode decodes Project from json.
@@ -14825,8 +14898,18 @@ func (s *Project) Decode(d *jx.Decoder) error {
 			}(); err != nil {
 				return errors.Wrap(err, "decode field \"archiveRetentionSeconds\"")
 			}
+		case "sandboxUpgradePolicy":
+			if err := func() error {
+				s.SandboxUpgradePolicy.Reset()
+				if err := s.SandboxUpgradePolicy.Decode(d); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"sandboxUpgradePolicy\"")
+			}
 		case "id":
-			requiredBitSet[0] |= 1 << 7
+			requiredBitSet[1] |= 1 << 0
 			if err := func() error {
 				v, err := d.Str()
 				s.ID = string(v)
@@ -14848,7 +14931,7 @@ func (s *Project) Decode(d *jx.Decoder) error {
 				return errors.Wrap(err, "decode field \"members\"")
 			}
 		case "name":
-			requiredBitSet[1] |= 1 << 1
+			requiredBitSet[1] |= 1 << 2
 			if err := func() error {
 				v, err := d.Str()
 				s.Name = string(v)
@@ -14870,7 +14953,7 @@ func (s *Project) Decode(d *jx.Decoder) error {
 				return errors.Wrap(err, "decode field \"owner\"")
 			}
 		case "ownerUserId":
-			requiredBitSet[1] |= 1 << 3
+			requiredBitSet[1] |= 1 << 4
 			if err := func() error {
 				v, err := d.Str()
 				s.OwnerUserId = string(v)
@@ -14912,7 +14995,7 @@ func (s *Project) Decode(d *jx.Decoder) error {
 				return errors.Wrap(err, "decode field \"sandboxes\"")
 			}
 		case "updatedAt":
-			requiredBitSet[1] |= 1 << 7
+			requiredBitSet[2] |= 1 << 0
 			if err := func() error {
 				v, err := json.DecodeDateTime(d)
 				s.UpdatedAt = v
@@ -14924,7 +15007,7 @@ func (s *Project) Decode(d *jx.Decoder) error {
 				return errors.Wrap(err, "decode field \"updatedAt\"")
 			}
 		case "welcomed":
-			requiredBitSet[2] |= 1 << 0
+			requiredBitSet[2] |= 1 << 1
 			if err := func() error {
 				v, err := d.Bool()
 				s.Welcomed = bool(v)
@@ -14945,9 +15028,9 @@ func (s *Project) Decode(d *jx.Decoder) error {
 	// Validate required fields.
 	var failures []validate.FieldError
 	for i, mask := range [3]uint8{
-		0b10001100,
-		0b10001010,
-		0b00000001,
+		0b00001100,
+		0b00010101,
+		0b00000011,
 	} {
 		if result := (requiredBitSet[i] & mask) ^ mask; result != 0 {
 			// Mask only required fields and check equality to mask using XOR.
@@ -15153,6 +15236,46 @@ func (s *ProjectMember) MarshalJSON() ([]byte, error) {
 
 // UnmarshalJSON implements stdjson.Unmarshaler.
 func (s *ProjectMember) UnmarshalJSON(data []byte) error {
+	d := jx.DecodeBytes(data)
+	return s.Decode(d)
+}
+
+// Encode encodes ProjectSandboxUpgradePolicy as json.
+func (s ProjectSandboxUpgradePolicy) Encode(e *jx.Encoder) {
+	e.Str(string(s))
+}
+
+// Decode decodes ProjectSandboxUpgradePolicy from json.
+func (s *ProjectSandboxUpgradePolicy) Decode(d *jx.Decoder) error {
+	if s == nil {
+		return errors.New("invalid: unable to decode ProjectSandboxUpgradePolicy to nil")
+	}
+	v, err := d.StrBytes()
+	if err != nil {
+		return err
+	}
+	// Try to use constant string.
+	switch ProjectSandboxUpgradePolicy(v) {
+	case ProjectSandboxUpgradePolicyAutomatic:
+		*s = ProjectSandboxUpgradePolicyAutomatic
+	case ProjectSandboxUpgradePolicyManual:
+		*s = ProjectSandboxUpgradePolicyManual
+	default:
+		*s = ProjectSandboxUpgradePolicy(v)
+	}
+
+	return nil
+}
+
+// MarshalJSON implements stdjson.Marshaler.
+func (s ProjectSandboxUpgradePolicy) MarshalJSON() ([]byte, error) {
+	e := jx.Encoder{}
+	s.Encode(&e)
+	return e.Bytes(), nil
+}
+
+// UnmarshalJSON implements stdjson.Unmarshaler.
+func (s *ProjectSandboxUpgradePolicy) UnmarshalJSON(data []byte) error {
 	d := jx.DecodeBytes(data)
 	return s.Decode(d)
 }
@@ -28541,6 +28664,12 @@ func (s *UpdateProjectBody) encodeFields(e *jx.Encoder) {
 		}
 	}
 	{
+		if s.SandboxUpgradePolicy.Set {
+			e.FieldStart("sandboxUpgradePolicy")
+			s.SandboxUpgradePolicy.Encode(e)
+		}
+	}
+	{
 		if s.Welcomed.Set {
 			e.FieldStart("welcomed")
 			s.Welcomed.Encode(e)
@@ -28548,11 +28677,12 @@ func (s *UpdateProjectBody) encodeFields(e *jx.Encoder) {
 	}
 }
 
-var jsonFieldsNameOfUpdateProjectBody = [4]string{
+var jsonFieldsNameOfUpdateProjectBody = [5]string{
 	0: "$schema",
 	1: "name",
 	2: "archiveRetentionSeconds",
-	3: "welcomed",
+	3: "sandboxUpgradePolicy",
+	4: "welcomed",
 }
 
 // Decode decodes UpdateProjectBody from json.
@@ -28593,6 +28723,16 @@ func (s *UpdateProjectBody) Decode(d *jx.Decoder) error {
 			}(); err != nil {
 				return errors.Wrap(err, "decode field \"archiveRetentionSeconds\"")
 			}
+		case "sandboxUpgradePolicy":
+			if err := func() error {
+				s.SandboxUpgradePolicy.Reset()
+				if err := s.SandboxUpgradePolicy.Decode(d); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"sandboxUpgradePolicy\"")
+			}
 		case "welcomed":
 			if err := func() error {
 				s.Welcomed.Reset()
@@ -28623,6 +28763,48 @@ func (s *UpdateProjectBody) MarshalJSON() ([]byte, error) {
 
 // UnmarshalJSON implements stdjson.Unmarshaler.
 func (s *UpdateProjectBody) UnmarshalJSON(data []byte) error {
+	d := jx.DecodeBytes(data)
+	return s.Decode(d)
+}
+
+// Encode encodes UpdateProjectBodySandboxUpgradePolicy as json.
+func (s UpdateProjectBodySandboxUpgradePolicy) Encode(e *jx.Encoder) {
+	e.Str(string(s))
+}
+
+// Decode decodes UpdateProjectBodySandboxUpgradePolicy from json.
+func (s *UpdateProjectBodySandboxUpgradePolicy) Decode(d *jx.Decoder) error {
+	if s == nil {
+		return errors.New("invalid: unable to decode UpdateProjectBodySandboxUpgradePolicy to nil")
+	}
+	v, err := d.StrBytes()
+	if err != nil {
+		return err
+	}
+	// Try to use constant string.
+	switch UpdateProjectBodySandboxUpgradePolicy(v) {
+	case UpdateProjectBodySandboxUpgradePolicyEmpty:
+		*s = UpdateProjectBodySandboxUpgradePolicyEmpty
+	case UpdateProjectBodySandboxUpgradePolicyAutomatic:
+		*s = UpdateProjectBodySandboxUpgradePolicyAutomatic
+	case UpdateProjectBodySandboxUpgradePolicyManual:
+		*s = UpdateProjectBodySandboxUpgradePolicyManual
+	default:
+		*s = UpdateProjectBodySandboxUpgradePolicy(v)
+	}
+
+	return nil
+}
+
+// MarshalJSON implements stdjson.Marshaler.
+func (s UpdateProjectBodySandboxUpgradePolicy) MarshalJSON() ([]byte, error) {
+	e := jx.Encoder{}
+	s.Encode(&e)
+	return e.Bytes(), nil
+}
+
+// UnmarshalJSON implements stdjson.Unmarshaler.
+func (s *UpdateProjectBodySandboxUpgradePolicy) UnmarshalJSON(data []byte) error {
 	d := jx.DecodeBytes(data)
 	return s.Decode(d)
 }

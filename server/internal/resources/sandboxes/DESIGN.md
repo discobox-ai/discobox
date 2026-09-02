@@ -32,9 +32,9 @@ flowchart LR
 - The upgrade rule has exactly one implementation,
   `services.SandboxUpgradeTarget`, called both by the read path that reports an
   available upgrade and by `Service.currentImageRepin`, which resolves the
-  change `UpgradeSandbox` and `RepairSandbox` apply. They were separate
-  implementations and drifted: a sandbox could accept an upgrade the listing
-  said it did not have.
+  change `UpgradeSandbox`, `RepairSandbox`, and
+  `UpgradeHarnessConfigSandboxes` apply. They were separate implementations and
+  drifted: a sandbox could accept an upgrade the listing said it did not have.
 - A sandbox name is unique within its project (`idx_sandbox_project_name`),
   like a pool's or a harness config's. It is an addressable handle, not a
   label: `discobox admin ssh-config` emits it as an `ssh_config` `Host` alias, and
@@ -146,6 +146,26 @@ resolver both operations write through, so they cannot pin differently, and
 in what an unavailable target means — upgrade 409s, because the re-pin is what
 it was asked for; repair proceeds on the pin it has, because the re-pin is a
 rider on a rebuild that is happening anyway.
+
+`UpgradeHarnessConfigSandboxes` is the automatic author of that same upgrade
+(ADR 0082). `resources/harnessconfigs` calls it wherever a harness config's
+`ImageDigest` moves, and it re-pins the config's sandboxes that are converged at
+`ready`, observed `stopped`, unerrored, and present — the eligibility query is
+`Store.ListStoppedSandboxesForHarnessConfig`, and whether each is actually
+behind is still `SandboxUpgradeTarget`'s answer, never restated in SQL.
+
+There is no automatic-upgrade code path, only an automatic author of the upgrade
+every sandbox already had: the same `imageRepin`, the same
+`recordSandboxIntent`, the same generation bump, so the pool agent cannot tell
+one from a typed `POST .../upgrade`. Delivery is therefore also unchanged — the
+re-pin moves the manifest fingerprint, the pool agent rebuilds the container that
+no longer matches, and because it found that container stopped it leaves the
+replacement stopped (ADR 0021 §3). Nothing here starts anything.
+
+The reconciler still never moves a pin (ADR 0021 §2's rule as narrowed by 0082):
+the pin moves only in a recorded intent, and this adds an author of that intent
+rather than a new place it moves. `Project.SandboxUpgradePolicy` (`manual`) opts
+a project out; empty means the server default, which is `automatic`.
 
 Retention: an archived sandbox is purged once it has been archived longer than
 `Project.ArchiveRetentionSeconds` (default `DefaultArchiveRetention`, 24h). The

@@ -2563,6 +2563,24 @@ func (s *Project) Validate() error {
 		})
 	}
 	if err := func() error {
+		if value, ok := s.SandboxUpgradePolicy.Get(); ok {
+			if err := func() error {
+				if err := value.Validate(); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return err
+			}
+		}
+		return nil
+	}(); err != nil {
+		failures = append(failures, validate.FieldError{
+			Name:  "sandboxUpgradePolicy",
+			Error: err,
+		})
+	}
+	if err := func() error {
 		if value, ok := s.Members.Get(); ok {
 			if err := func() error {
 				if value == nil {
@@ -2730,6 +2748,17 @@ func (s *Project) Validate() error {
 		return &validate.Error{Fields: failures}
 	}
 	return nil
+}
+
+func (s ProjectSandboxUpgradePolicy) Validate() error {
+	switch s {
+	case "automatic":
+		return nil
+	case "manual":
+		return nil
+	default:
+		return errors.Errorf("invalid value: %v", s)
+	}
 }
 
 func (s *ReportPoolResourcesBody) Validate() error {
@@ -4835,10 +4864,41 @@ func (s *UpdateProjectBody) Validate() error {
 			Error: err,
 		})
 	}
+	if err := func() error {
+		if value, ok := s.SandboxUpgradePolicy.Get(); ok {
+			if err := func() error {
+				if err := value.Validate(); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return err
+			}
+		}
+		return nil
+	}(); err != nil {
+		failures = append(failures, validate.FieldError{
+			Name:  "sandboxUpgradePolicy",
+			Error: err,
+		})
+	}
 	if len(failures) > 0 {
 		return &validate.Error{Fields: failures}
 	}
 	return nil
+}
+
+func (s UpdateProjectBodySandboxUpgradePolicy) Validate() error {
+	switch s {
+	case "":
+		return nil
+	case "automatic":
+		return nil
+	case "manual":
+		return nil
+	default:
+		return errors.Errorf("invalid value: %v", s)
+	}
 }
 
 func (s *UpdateSandboxBody) Validate() error {
