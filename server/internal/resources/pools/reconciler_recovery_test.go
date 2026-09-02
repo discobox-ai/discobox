@@ -12,6 +12,7 @@ import (
 	sandbox "github.com/discobox-ai/discobox/server/internal/sandbox"
 	"github.com/discobox-ai/discobox/server/internal/store"
 	"github.com/discobox-ai/discobox/server/internal/transport"
+	"gorm.io/gorm"
 )
 
 // TestReconcileClearsARecordedFailureOnSuccess pins the half of the pool's
@@ -22,7 +23,7 @@ import (
 // condition that no longer existed.
 func TestReconcileClearsARecordedFailureOnSuccess(t *testing.T) {
 	ctx := context.Background()
-	appStore := newPoolReconcilerTestStore(t)
+	appStore, _ := newPoolReconcilerTestStore(t)
 	manager := sandbox.NewProviderManager()
 	manager.RegisterProvider("stub", stubPoolProvider{})
 
@@ -79,7 +80,7 @@ func TestReconcileClearsARecordedFailureOnSuccess(t *testing.T) {
 // API layer writing the reconciler's fields.
 func TestReconcilePromotesAPoolThatRegisteredAfterConverging(t *testing.T) {
 	ctx := context.Background()
-	appStore := newPoolReconcilerTestStore(t)
+	appStore, _ := newPoolReconcilerTestStore(t)
 	manager := sandbox.NewProviderManager()
 	manager.RegisterProvider("stub", stubPoolProvider{})
 
@@ -126,7 +127,7 @@ func TestReconcilePromotesAPoolThatRegisteredAfterConverging(t *testing.T) {
 // creates.
 func TestFailedReconcileKeepsALiveCreatedPoolActive(t *testing.T) {
 	ctx := context.Background()
-	appStore := newPoolReconcilerTestStore(t)
+	appStore, _ := newPoolReconcilerTestStore(t)
 	manager := sandbox.NewProviderManager()
 	manager.RegisterProvider("stub", failingPoolProvider{stubPoolProvider{}})
 
@@ -181,7 +182,7 @@ func TestFailedReconcileKeepsALiveCreatedPoolActive(t *testing.T) {
 // the reconcile it triggers reads the pool back to active.
 func TestStaleHeartbeatReadsOffline(t *testing.T) {
 	ctx := context.Background()
-	appStore := newPoolReconcilerTestStore(t)
+	appStore, _ := newPoolReconcilerTestStore(t)
 	manager := sandbox.NewProviderManager()
 	manager.RegisterProvider("stub", stubPoolProvider{})
 
@@ -252,7 +253,7 @@ func (failingPoolProvider) ReconcilePool(context.Context, sandbox.PoolManager, *
 	return errors.New("runtime did not converge")
 }
 
-func newPoolReconcilerTestStore(t *testing.T) *store.Store {
+func newPoolReconcilerTestStore(t *testing.T) (*store.Store, *gorm.DB) {
 	t.Helper()
 	ctx := context.Background()
 	db, err := database.New(database.Config{DSN: ":memory:"})
@@ -270,7 +271,7 @@ func newPoolReconcilerTestStore(t *testing.T) *store.Store {
 	if err := db.Write.WithContext(ctx).Create(&model.Project{ID: "project-1", OwnerUserID: "user-1", Name: "Project"}).Error; err != nil {
 		t.Fatalf("create project: %v", err)
 	}
-	return store.New(db.Write, db.Read)
+	return store.New(db.Write, db.Read), db.Write
 }
 
 // stubPoolProvider is a provider whose pool runtime always converges. Only the

@@ -215,7 +215,14 @@ func (r *PoolReconciler) reconcileActive(ctx context.Context, pool *model.Pool, 
 	// and leased separately and its failures are its own. Best effort — the
 	// level-triggered scan picks up anything a lost mark drops, and a pool's
 	// convergence does not depend on this.
-	if current.State == model.PoolStateActive {
+	//
+	// Only for a pool that is not staged yet. This reconcile runs on every 60s
+	// drift scan, and marking unconditionally re-staged every active pool once
+	// a minute forever: the staging resource's own six-hour refresh never got
+	// to fire, and every pool re-inspected every image on its daemon, and said
+	// so in the log. A staged pool that gains an image is picked up by that
+	// refresh, and one that loses its staging by the staging scan.
+	if current.State == model.PoolStateActive && !current.ImagesStaged {
 		if err := r.markImagesDirty(ctx, current.ID); err != nil {
 			slog.WarnContext(ctx, "could not schedule image staging", "pool", current.ID, "error", err)
 		}

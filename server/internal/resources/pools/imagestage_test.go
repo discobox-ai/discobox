@@ -1,11 +1,14 @@
 package pools
 
 import (
+	"context"
 	"slices"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/discobox-ai/discobox/server/internal/model"
+	"github.com/discobox-ai/discobox/server/internal/reconcile"
 	sandbox "github.com/discobox-ai/discobox/server/internal/sandbox"
 )
 
@@ -73,5 +76,69 @@ func TestImageStageCarriesPullProgress(t *testing.T) {
 	}
 	if stage.Current != 818<<20 || stage.Size != 1400<<20 || stage.LayersComplete != 12 {
 		t.Fatalf("stage = %+v, want the pull's counts", stage)
+	}
+}
+
+// TestStagedPoolIsNotRemarkedEveryScan pins the mark as edge-triggered. Every
+// pool re-reconciles on the 60s drift scan, so a mark on every successful pass
+// re-staged every active pool once a minute forever: the staging resource's own
+// six-hour refresh never got to fire, each pass re-inspected every image on the
+// pool's daemon, and the log said "preloaded image" for each of them, forever.
+func TestStagedPoolIsNotRemarkedEveryScan(t *testing.T) {
+	ctx := context.Background()
+	appStore, db := newPoolReconcilerTestStore(t)
+	engine, err := reconcile.New(db, reconcile.Options{})
+	if err != nil {
+		t.Fatalf("engine: %v", err)
+	}
+	manager := sandbox.NewProviderManager()
+	manager.RegisterProvider("stub", stubPoolProvider{})
+
+	provider := &model.SandboxProviderInstance{ID: "provider-1", ProjectID: "project-1", Type: "stub", Name: "stub"}
+	if err := appStore.CreateSandboxProviderInstance(ctx, provider); err != nil {
+		t.Fatalf("create provider: %v", err)
+	}
+	registeredAt := time.Now().UTC()
+	pool := &model.Pool{
+		ID:           "pool-1",
+		ProjectID:    "project-1",
+		PoolManifest: model.PoolManifest{Name: "pool-1", ProviderInstanceID: provider.ID},
+		Ready:        true,
+		Schedulable:  true,
+		RegisteredAt: &registeredAt,
+		LastSeenAt:   &registeredAt,
+		ImagesStaged: true,
+	}
+	pool.DesiredState = model.DesiredStatePresent
+	if err := appStore.CreatePool(ctx, pool); err != nil {
+		t.Fatalf("create pool: %v", err)
+	}
+
+	reconciler := NewPoolReconciler(appStore, manager, NewControlPlane(appStore, engine))
+	if _, err := reconciler.Reconcile(ctx, PoolDirtyID(pool.ProjectID, pool.ID)); err != nil {
+		t.Fatalf("reconcile: %v", err)
+	}
+	dirty, err := engine.ListDirty(ctx, PoolImagesResourceType)
+	if err != nil {
+		t.Fatalf("list dirty: %v", err)
+	}
+	if len(dirty) != 0 {
+		t.Fatalf("dirty = %+v, want none: this pool's images are already staged", dirty)
+	}
+
+	// The other half: a pool that is not staged yet is still marked, so a host
+	// that has just become usable does not wait out a scan interval.
+	if err := db.WithContext(ctx).Model(&model.Pool{}).Where("id = ?", pool.ID).Update("images_staged", false).Error; err != nil {
+		t.Fatalf("unstage pool: %v", err)
+	}
+	if _, err := reconciler.Reconcile(ctx, PoolDirtyID(pool.ProjectID, pool.ID)); err != nil {
+		t.Fatalf("reconcile: %v", err)
+	}
+	dirty, err = engine.ListDirty(ctx, PoolImagesResourceType)
+	if err != nil {
+		t.Fatalf("list dirty: %v", err)
+	}
+	if len(dirty) != 1 || dirty[0].ResourceID != pool.ID {
+		t.Fatalf("dirty = %+v, want the unstaged pool marked", dirty)
 	}
 }
