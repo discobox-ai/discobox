@@ -102,10 +102,12 @@ type Session struct {
 	// what makes an 0x03 byte on the way to the remote a Ctrl-C keystroke.
 	raw     bool
 	writeMu sync.Mutex
-	// lastFrame is when the last frame arrived from the remote, in Unix
-	// nanoseconds, and is the only sign of life a transport without delivery
-	// acknowledgement offers.
-	lastFrame  atomic.Int64
+	// framesIn counts the frames that have arrived from the remote, and is the
+	// only sign of life a transport without delivery acknowledgement offers.
+	// A count rather than a timestamp: the comparison is "did anything arrive
+	// after this interrupt was sent", and a wall clock coarse enough to stamp
+	// both the same nanosecond — Windows regularly is — answers that wrongly.
+	framesIn   atomic.Uint64
 	interrupts interruptRun
 }
 
@@ -236,7 +238,7 @@ func (s *Session) copyOutput() error {
 		if err != nil {
 			return err
 		}
-		s.lastFrame.Store(time.Now().UnixNano())
+		s.framesIn.Add(1)
 		switch next.Type {
 		case frame.Stdout:
 			if _, err := s.opts.Stdout.Write(next.Payload); err != nil {
@@ -360,6 +362,9 @@ type interruptRun struct {
 	// position is that interrupt's action position, or zero when the transport
 	// does not carry acknowledgements.
 	position uint64
+	// framesIn is how many frames had arrived when that interrupt was sent, so
+	// a later one can tell whether the remote has said anything since.
+	framesIn uint64
 }
 
 // isInterrupt reports whether this frame carries the caller pressing Ctrl-C.
@@ -405,6 +410,7 @@ func (s *Session) noteInterrupt() (bool, error) {
 	run.count++
 	run.sentAt = now
 	run.position = 0
+	run.framesIn = s.framesIn.Load()
 	if run.count >= interruptEscapeAt {
 		return false, ErrInterrupted
 	}
@@ -430,7 +436,7 @@ func (s *Session) interruptAnswered(run *interruptRun) bool {
 		_, acknowledged := delivery.Positions()
 		return acknowledged >= run.position
 	}
-	return s.lastFrame.Load() > run.sentAt.UnixNano()
+	return s.framesIn.Load() > run.framesIn
 }
 
 // recordInterruptPosition retains the transport position the interrupt just
