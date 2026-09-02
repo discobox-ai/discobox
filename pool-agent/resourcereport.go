@@ -308,20 +308,44 @@ func (r *poolResourceReporter) report(ctx context.Context) {
 	}
 }
 
-// hostedSandboxIDs is every sandbox this pool hosts, running or not. Unlike the
-// status poll, a stopped sandbox is not skipped: it uses no CPU but it still
-// holds its disk, and a sandbox that vanished from the accounting the moment it
-// stopped would make a full pool look empty.
+// hostedSandboxIDs is every sandbox occupying anything on this pool: the ones
+// with a container, running or stopped, and the ones that are only a tree.
+//
+// Neither half can be dropped. A stopped sandbox uses no CPU and still holds
+// its disk, so skipping it the way the status poll does would make a full pool
+// look empty. An archived one has no container at all — archiving keeps the
+// durable tree by intent (ADR 0022 §6) — and its disk is exactly what somebody
+// deciding whether to purge it needs to see; enumerated from containers alone
+// it would be invisible while occupying gigabytes.
+//
+// A tree with no live sandbox behind it is reported too. That is honest: it is
+// occupying the disk regardless, and which trees still answer to a sandbox is
+// the control plane's judgement to make, against the rows it holds.
 func (r *poolResourceReporter) hostedSandboxIDs(ctx context.Context) ([]string, error) {
 	sandboxes, err := r.runtime.ListSandboxes(ctx)
 	if err != nil {
 		return nil, err
 	}
-	ids := make([]string, 0, len(sandboxes))
+	seen := make(map[string]struct{}, len(sandboxes))
 	for _, sb := range sandboxes {
 		if sb != nil && sb.SandboxID != "" {
-			ids = append(ids, sb.SandboxID)
+			seen[sb.SandboxID] = struct{}{}
 		}
+	}
+	// A failure to read the trees costs the trees, not the report: the
+	// containers are still worth reporting, and the next tick tries again.
+	stored, err := r.runtime.StoredSandboxIDs(ctx)
+	if err != nil {
+		r.logger.Warn("list stored sandbox trees", "poolId", r.bootstrap.PoolID, "error", err)
+	}
+	for _, id := range stored {
+		if id != "" {
+			seen[id] = struct{}{}
+		}
+	}
+	ids := make([]string, 0, len(seen))
+	for id := range seen {
+		ids = append(ids, id)
 	}
 	sort.Strings(ids)
 	return ids, nil

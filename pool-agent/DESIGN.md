@@ -113,9 +113,12 @@ target path a harness declared rather than by which sandbox wrote it (ADR 0007,
 ADR 0050), so a per-sandbox cache size has no on-disk answer — and repeating the
 shared total per sandbox would leave the column summing to N times the truth.
 
-**Stopped sandboxes still count.** Unlike the status poll, the report covers
-every hosted sandbox rather than only the running ones: a stopped sandbox uses
-no CPU but still holds its disk.
+**Stopped and archived sandboxes still count.** Unlike the status poll, the
+report covers the union of the containers (`ListSandboxes`) and the durable
+trees (`StoredSandboxIDs`). A stopped sandbox uses no CPU but still holds its
+disk; an archived one has no container at all — archiving keeps the tree by
+intent (ADR 0022 §6) — and is exactly the sandbox whose disk somebody deciding
+whether to purge it needs to see.
 
 **Pool services are measured, not derived.** The pool container's own cgroup
 covers this agent, buildkitd, the registry, the proxy and the mediator — and

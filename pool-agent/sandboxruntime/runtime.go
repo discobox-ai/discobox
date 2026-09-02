@@ -161,7 +161,20 @@ const (
 
 // Runtime performs local sandbox operations for one pool agent.
 type Runtime interface {
+	// ListSandboxes is every sandbox with a container on this pool, running or
+	// stopped. It is the runtime half of a sandbox, and an archived one has
+	// none — see StoredSandboxIDs for the durable half.
 	ListSandboxes(ctx context.Context) ([]*Sandbox, error)
+	// StoredSandboxIDs is every sandbox whose durable tree this pool holds,
+	// container or not.
+	//
+	// It is a superset of ListSandboxes and exists because the two halves of a
+	// sandbox do not end together: archiving drops the container and keeps the
+	// tree by intent (ADR 0022 §6), and a sandbox whose container was lost out
+	// of band keeps one too until the reaper's retention expires. Both are
+	// still occupying the disk they occupied while running, so anything
+	// accounting for storage has to see them (ADR 0071 §7).
+	StoredSandboxIDs(ctx context.Context) ([]string, error)
 	GetSandbox(ctx context.Context, sandboxID string) (*Sandbox, error)
 	CreateSandbox(ctx context.Context, req *workerapimodel.PoolSandboxCreateRequest) (*Sandbox, error)
 	UpdateSandbox(ctx context.Context, sandboxID string, req *workerapimodel.PoolSandboxUpdateRequest) (*Sandbox, error)
@@ -255,6 +268,41 @@ func (r *DockerSandboxRuntime) ListSandboxes(ctx context.Context) ([]*Sandbox, e
 		out = append(out, r.sandboxFromInspect(ctx, inspect.Container))
 	}
 	return out, nil
+}
+
+// StoredSandboxIDs reads the per-sandbox volume root, which is the same tree
+// the volume reaper scans and is scoped to this pool — so it can never see
+// another pool's data even on a shared daemon.
+func (r *DockerSandboxRuntime) StoredSandboxIDs(context.Context) ([]string, error) {
+	return storedSandboxIDs(r.sandboxesRoot())
+}
+
+// storedSandboxIDs is the pool-scoped core of the above, split out the way the
+// reaper's is: root is the caller's, so it is testable without the absolute
+// container path the runtime addresses its disk by.
+//
+// Every directory under it is a sandbox that has taken disk here, whatever
+// became of its container. The names are deliberately not filtered against the
+// control plane's list: the agent reports what is on its disk, and which of
+// those still answer to a sandbox is the control plane's judgement to make,
+// against the rows it holds.
+func storedSandboxIDs(root string) ([]string, error) {
+	entries, err := os.ReadDir(root)
+	if err != nil {
+		if os.IsNotExist(err) {
+			// A pool that has never created a sandbox has no root yet, which
+			// is no sandboxes rather than a failure.
+			return nil, nil
+		}
+		return nil, err
+	}
+	ids := make([]string, 0, len(entries))
+	for _, entry := range entries {
+		if entry.IsDir() {
+			ids = append(ids, entry.Name())
+		}
+	}
+	return ids, nil
 }
 
 func (r *DockerSandboxRuntime) CreateSandbox(ctx context.Context, req *workerapimodel.PoolSandboxCreateRequest) (*Sandbox, error) {
@@ -2147,6 +2195,24 @@ func (r *MemorySandboxRuntime) ListSandboxes(context.Context) ([]*Sandbox, error
 		out = append(out, cloneSandbox(sb))
 	}
 	return out, nil
+}
+
+// StoredSandboxIDs is the containers plus the archived entries, which is what
+// this runtime has instead of a disk: an archived sandbox has no entry in the
+// map and is still held as data.
+func (r *MemorySandboxRuntime) StoredSandboxIDs(context.Context) ([]string, error) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	ids := make([]string, 0, len(r.sandboxes)+len(r.archived))
+	for id := range r.sandboxes {
+		ids = append(ids, id)
+	}
+	for id := range r.archived {
+		if _, ok := r.sandboxes[id]; !ok {
+			ids = append(ids, id)
+		}
+	}
+	return ids, nil
 }
 
 func (r *MemorySandboxRuntime) CreateSandbox(_ context.Context, req *workerapimodel.PoolSandboxCreateRequest) (*Sandbox, error) {

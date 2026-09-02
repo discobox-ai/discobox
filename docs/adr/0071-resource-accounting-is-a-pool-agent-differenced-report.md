@@ -187,6 +187,19 @@ A canceled sweep is discarded rather than reported partially. A walk that
 stopped half way through reports every unvisited tree as empty, which is a wrong
 answer rather than a missing one.
 
+**The sweep enumerates trees, not containers.** The two halves of a sandbox do
+not end together: archiving drops the container and keeps the durable tree by
+intent (ADR 0022 §6), and a sandbox whose container was lost out of band keeps
+one until the reaper's retention expires. Both occupy every byte they occupied
+while running, and an archived sandbox is exactly the one whose disk somebody
+deciding whether to purge it needs to see — enumerated from containers alone it
+would be invisible while holding gigabytes.
+
+So the report covers the union of the containers and the trees. A tree with no
+sandbox behind it is reported too: it is occupying the disk regardless, and
+which trees still answer to a sandbox is the control plane's judgement, against
+the rows it holds rather than against a directory listing.
+
 Filesystem quotas would make attribution O(1), and are still rejected for now:
 they need project quota IDs assigned per filesystem at volume-preparation time,
 and are silently unavailable on filesystems a pool may legitimately land on.

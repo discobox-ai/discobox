@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"log/slog"
 	"math"
 	"os"
 	"path/filepath"
@@ -212,22 +213,32 @@ func TestRankProcessesDoesNotDifferenceARecycledPID(t *testing.T) {
 type stubRuntime struct {
 	sandboxruntime.Runtime
 	sandboxes []*sandboxruntime.Sandbox
+	stored    []string
 	err       error
+	storedErr error
 }
 
 func (s stubRuntime) ListSandboxes(context.Context) ([]*sandboxruntime.Sandbox, error) {
 	return s.sandboxes, s.err
 }
 
+func (s stubRuntime) StoredSandboxIDs(context.Context) ([]string, error) {
+	return s.stored, s.storedErr
+}
+
+func testReporter(runtime sandboxruntime.Runtime) *poolResourceReporter {
+	return &poolResourceReporter{runtime: runtime, logger: slog.New(slog.DiscardHandler)}
+}
+
 // Storage accounting must cover stopped sandboxes: they use no CPU but they
 // still hold their trees.
 func TestHostedSandboxIDsIncludesStoppedSandboxes(t *testing.T) {
-	reporter := &poolResourceReporter{runtime: stubRuntime{sandboxes: []*sandboxruntime.Sandbox{
+	reporter := testReporter(stubRuntime{sandboxes: []*sandboxruntime.Sandbox{
 		{SandboxID: "sbx_b", Status: sandboxruntime.StatusStopped},
 		{SandboxID: "sbx_a", Status: sandboxruntime.StatusRunning},
 		nil,
 		{SandboxID: ""},
-	}}}
+	}})
 
 	ids, err := reporter.hostedSandboxIDs(context.Background())
 	if err != nil {
@@ -238,8 +249,44 @@ func TestHostedSandboxIDsIncludesStoppedSandboxes(t *testing.T) {
 	}
 }
 
+// An archived sandbox has no container at all — archiving keeps the tree and
+// drops the container — and it is still occupying every byte it occupied while
+// running. Enumerated from containers alone it would be invisible.
+func TestHostedSandboxIDsIncludesArchivedTrees(t *testing.T) {
+	reporter := testReporter(stubRuntime{
+		sandboxes: []*sandboxruntime.Sandbox{{SandboxID: "sbx_live", Status: sandboxruntime.StatusRunning}},
+		// sbx_live has both halves; sbx_archived is a tree and nothing else.
+		stored: []string{"sbx_live", "sbx_archived", ""},
+	})
+
+	ids, err := reporter.hostedSandboxIDs(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(ids) != 2 || ids[0] != "sbx_archived" || ids[1] != "sbx_live" {
+		t.Errorf("ids = %v, want [sbx_archived sbx_live] — the tree counts even with no container", ids)
+	}
+}
+
+// A tree that cannot be read costs the trees, not the report: the containers
+// are still worth reporting and the next tick tries again.
+func TestHostedSandboxIDsSurvivesAnUnreadableTreeRoot(t *testing.T) {
+	reporter := testReporter(stubRuntime{
+		sandboxes: []*sandboxruntime.Sandbox{{SandboxID: "sbx_live", Status: sandboxruntime.StatusRunning}},
+		storedErr: errors.New("permission denied"),
+	})
+
+	ids, err := reporter.hostedSandboxIDs(context.Background())
+	if err != nil {
+		t.Fatalf("an unreadable tree root failed the whole report: %v", err)
+	}
+	if len(ids) != 1 || ids[0] != "sbx_live" {
+		t.Errorf("ids = %v, want the container that was readable", ids)
+	}
+}
+
 func TestHostedSandboxIDsPropagatesRuntimeError(t *testing.T) {
-	reporter := &poolResourceReporter{runtime: stubRuntime{err: errors.New("boom")}}
+	reporter := testReporter(stubRuntime{err: errors.New("boom")})
 	if _, err := reporter.hostedSandboxIDs(context.Background()); err == nil {
 		t.Error("expected the runtime error to propagate")
 	}

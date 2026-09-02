@@ -4,6 +4,7 @@ import (
 	"log/slog"
 	"os"
 	"path/filepath"
+	"sort"
 	"testing"
 	"time"
 
@@ -237,5 +238,42 @@ func TestReapDeadSandboxVolumesIsScopedToItsRoot(t *testing.T) {
 	}
 	if _, err := os.Stat(liveB); err != nil {
 		t.Fatalf("pool A reaped pool B's sandbox: %v", err)
+	}
+}
+
+// Storage accounting enumerates trees rather than containers, because the two
+// halves of a sandbox do not end together: an archived one is a tree with no
+// container and is still occupying every byte it occupied while running.
+func TestStoredSandboxIDsFindsTreesWithoutContainers(t *testing.T) {
+	root := t.TempDir()
+	mkSandboxDir(t, root, "sbx_live")
+	archived := mkSandboxDir(t, root, "sbx_archived")
+	if err := writeSandboxArchiveMarker(archived, time.Now()); err != nil {
+		t.Fatal(err)
+	}
+	// A stray file beside the directories is not a sandbox.
+	if err := os.WriteFile(filepath.Join(root, "notes.txt"), []byte("x"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	ids, err := storedSandboxIDs(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	sort.Strings(ids)
+	if len(ids) != 2 || ids[0] != "sbx_archived" || ids[1] != "sbx_live" {
+		t.Errorf("ids = %v, want both trees and not the file", ids)
+	}
+}
+
+// A pool that has never created a sandbox has no root yet. That is no
+// sandboxes, not a failure that would cost the whole resource report.
+func TestStoredSandboxIDsTreatsAMissingRootAsEmpty(t *testing.T) {
+	ids, err := storedSandboxIDs(filepath.Join(t.TempDir(), "never-created"))
+	if err != nil {
+		t.Fatalf("a missing root errored: %v", err)
+	}
+	if len(ids) != 0 {
+		t.Errorf("ids = %v, want none", ids)
 	}
 }
