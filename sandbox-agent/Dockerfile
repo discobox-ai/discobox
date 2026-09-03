@@ -38,7 +38,7 @@ RUN --mount=type=cache,target=/go/pkg/mod,sharing=locked \
 # tags, so `latest` is main's tip anyway, but an unpinned version makes the
 # build unreproducible and leaves this layer cached on a stale commit. Bump it
 # to pull a newer main.
-ARG REVIEW_VERSION=v0.0.0-20260903055943-32284e3c8325
+ARG REVIEW_VERSION=v0.0.0-20260903193457-150d22329b83
 RUN --mount=type=cache,target=/go/pkg/mod,sharing=locked \
     --mount=type=cache,target=/root/.cache/go-build,sharing=locked \
     set -eux \
