@@ -2,12 +2,15 @@ package vz
 
 import (
 	"encoding/json"
+	"errors"
+	"os"
 	"path/filepath"
 	"runtime"
 	"strings"
 	"testing"
 
 	"github.com/discobox-ai/discobox/pool-agent/wire"
+	sandbox "github.com/discobox-ai/discobox/server/internal/sandbox"
 	"github.com/discobox-ai/discobox/server/providers/vz/internal/vzvm"
 )
 
@@ -216,5 +219,137 @@ func TestDefaultDataDiskIsSizedForRealWork(t *testing.T) {
 	}
 	if defaultCacheDiskGiB <= 0 {
 		t.Errorf("default cache disk = %d GiB", defaultCacheDiskGiB)
+	}
+}
+
+// The share, the pool container's host mount, and the published source roots
+// are three views of one decision. If they disagree, a pool claims it can clone
+// a path its guest or its pool agent cannot reach, and the failure surfaces as a
+// clone error inside the guest with nothing pointing back here.
+func TestHostShareIsOneDecision(t *testing.T) {
+	shares := hostShares()
+	if runtime.GOOS != "darwin" {
+		// /Users is a macOS directory; elsewhere there is nothing to share and
+		// nothing to claim.
+		return
+	}
+	if len(shares) != 1 {
+		t.Fatalf("host shares = %d, want the single /Users share", len(shares))
+	}
+	share := shares[0]
+	if share.HostPath != hostShareDir {
+		t.Errorf("share host path = %q, want %q", share.HostPath, hostShareDir)
+	}
+	if !share.ReadOnly {
+		t.Error("the host share is writable; a sandbox must never write to files on the Mac")
+	}
+
+	mounts := engineConfig(Config{}, nil, nil).HostMounts
+	if len(mounts) != len(shares) {
+		t.Fatalf("engine host mounts = %d, want one per share (%d)", len(mounts), len(shares))
+	}
+	if mounts[0].Source != share.HostPath || !mounts[0].ReadOnly {
+		t.Errorf("engine host mount = %+v, want a read-only bind of %q", mounts[0], share.HostPath)
+	}
+
+	roots := localSourceRoots()
+	if len(roots) != len(shares) || roots[0] != share.HostPath {
+		t.Errorf("local source roots = %v, want %v", roots, []string{share.HostPath})
+	}
+}
+
+// The tag is a contract with a separately released guest image, and the
+// framework caps it at 36 bytes. A tag this side rejects is a pool that never
+// starts; one the framework rejects is the same failure with a worse message.
+func TestHostShareTagIsAcceptable(t *testing.T) {
+	opts := vzvm.Options{
+		CPUCount:       1,
+		MemoryBytes:    512 * 1024 * 1024,
+		KernelPath:     "/guest/vmlinux",
+		RootImagePath:  "/guest/root.ext4",
+		DataImagePath:  "/pool/data.raw",
+		CacheImagePath: "/pool/cache.raw",
+		SharedDirectories: []vzvm.SharedDirectory{
+			{Tag: hostShareTag, HostPath: hostShareDir, ReadOnly: true},
+		},
+	}
+	if err := opts.Validate(); err != nil {
+		t.Fatalf("the configured host share is not a valid VM option: %v", err)
+	}
+}
+
+// The guest build closes the macOS bootstrap: the running guest builds its
+// successor. The spec is what the engine builds from, so a wrong Dockerfile
+// path or a destination the resolver does not read would produce a build that
+// appears to succeed and changes nothing.
+func TestGuestImageBuildSpecPointsAtTheGuestThisDriverBoots(t *testing.T) {
+	local := filepath.Join(t.TempDir(), "guest", "local")
+	guest, err := guestResolver(Config{GuestImageLocalDir: local})
+	if err != nil {
+		t.Fatalf("guestResolver: %v", err)
+	}
+	driver := &Driver{guest: guest}
+
+	spec, err := driver.GuestImageBuildSpec()
+	if err != nil {
+		t.Fatalf("GuestImageBuildSpec: %v", err)
+	}
+	if spec.Dockerfile != guestImageDockerfile {
+		t.Errorf("Dockerfile = %q, want %q", spec.Dockerfile, guestImageDockerfile)
+	}
+	// The Dockerfile path is resolved inside a checkout, so it has to name the
+	// file that is actually in this repository.
+	if _, err := os.Stat(filepath.Join(repoRoot(t), filepath.FromSlash(spec.Dockerfile))); err != nil {
+		t.Errorf("the guest image Dockerfile is not at %s: %v", spec.Dockerfile, err)
+	}
+	if spec.Destination != local {
+		t.Errorf("Destination = %q, want the resolver's local build directory %q", spec.Destination, local)
+	}
+	if !strings.HasPrefix(spec.Platform, "linux/") {
+		t.Errorf("Platform = %q, want a linux guest", spec.Platform)
+	}
+	if spec.Adopt == nil {
+		t.Error("no Adopt: the resolver memoizes for the life of the process, so a build would not be picked up")
+	}
+}
+
+// An override directory names the artifacts outright, so there is nothing for a
+// build to be adopted into and the operation is declined rather than writing
+// somewhere nobody reads.
+func TestGuestImageBuildSpecDeclinesWithoutALocalDirectory(t *testing.T) {
+	override := t.TempDir()
+	for _, name := range []string{kernelArtifact, rootArtifact} {
+		if err := os.WriteFile(filepath.Join(override, name), []byte("artifact"), 0o600); err != nil {
+			t.Fatalf("seed override: %v", err)
+		}
+	}
+	guest, err := guestResolver(Config{GuestImageDir: override})
+	if err != nil {
+		t.Fatalf("guestResolver: %v", err)
+	}
+	driver := &Driver{guest: guest}
+	if _, err := driver.GuestImageBuildSpec(); !errors.Is(err, sandbox.ErrGuestImageBuildUnsupported) {
+		t.Fatalf("GuestImageBuildSpec with an override = %v, want ErrGuestImageBuildUnsupported", err)
+	}
+}
+
+// repoRoot walks up from this package to the checkout it lives in.
+func repoRoot(t *testing.T) string {
+	t.Helper()
+	dir, err := filepath.Abs(".")
+	if err != nil {
+		t.Fatalf("resolve working directory: %v", err)
+	}
+	for {
+		if _, err := os.Stat(filepath.Join(dir, "go.mod")); err == nil {
+			if _, err := os.Stat(filepath.Join(dir, "CLAUDE.md")); err == nil {
+				return dir
+			}
+		}
+		parent := filepath.Dir(dir)
+		if parent == dir {
+			t.Fatal("no repository root above this package")
+		}
+		dir = parent
 	}
 }

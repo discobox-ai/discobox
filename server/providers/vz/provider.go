@@ -17,6 +17,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strconv"
 	"strings"
 
@@ -45,6 +46,19 @@ const (
 	storageNamespace = "vz"
 
 	labelProviderType = "discobox.provider_type"
+
+	// hostShareDir is the host filesystem the guest sees, and hostShareTag is
+	// the virtiofs tag it arrives under. /Users is every account's home
+	// directory on a Mac and so every checkout a developer would start a
+	// sandbox from; nothing outside it is exported, so the share is the user's
+	// own files rather than the machine's.
+	//
+	// The tag is a contract with the guest image, which mounts it at
+	// hostShareDir — the same absolute path the Mac uses. That equality is what
+	// makes a host path usable verbatim as a bind source inside the guest, so
+	// renaming either is a coordinated guest release, like a VSOCK port.
+	hostShareDir = "/Users"
+	hostShareTag = "discobox-users"
 )
 
 // The boot artifacts the guest image publishes. The initrd is required in
@@ -55,6 +69,20 @@ const (
 	initrdArtifact = "initrd.img"
 	rootArtifact   = "root.ext4"
 )
+
+// guestImageDockerfile is the Dockerfile in a discobox checkout that produces
+// the whole artifact set, in the path form BuildKit's frontend wants. Its
+// context is the repository root, which is why the path is spelled from there.
+const guestImageDockerfile = "server/providers/vz/image/Dockerfile"
+
+// guestImagePlatform is what the guest runs on, which is the Mac's own
+// architecture: the artifacts boot on Virtualization.framework, and the
+// framework runs a guest of the host's architecture or none at all. It is
+// pinned rather than left to the builder because the builder is a Linux daemon
+// inside the VM, whose idea of "native" is the same only by coincidence.
+func guestImagePlatform() string {
+	return "linux/" + runtime.GOARCH
+}
 
 // DefaultGuestImage is the published VM image. It is released and versioned on
 // its own line, independently of the discobox release, because it is a
@@ -160,6 +188,7 @@ func newFromInstance(_ context.Context, instance *model.SandboxProviderInstance,
 		MemoryMiB:           cfg.MemoryMiB,
 		DataDiskGiB:         cfg.DataDiskGiB,
 		CacheDiskGiB:        cfg.CacheDiskGiB,
+		SharedDirectories:   hostShares(),
 		ControlPlaneStreams: streams,
 		ProgressReporter:    progress,
 	})
@@ -171,7 +200,56 @@ func newFromInstance(_ context.Context, instance *model.SandboxProviderInstance,
 		_ = driver.Close()
 		return nil, err
 	}
-	return poolruntime.New(engine, Definition(), poolManager), nil
+	definition := Definition()
+	definition.LocalSourceRoots = localSourceRoots()
+	return poolruntime.New(engine, definition, poolManager), nil
+}
+
+// hostShares are the host directories every pool VM exports to its guest.
+//
+// It is one directory, /Users, and it is exported read-only: a sandbox reads a
+// developer's checkout to clone it and has no business writing to the files on
+// their Mac. Everything the sandbox then does happens in its own copy on the
+// pool's data disk.
+//
+// A Mac that somehow has no /Users exports nothing rather than failing to start
+// pools: the share would be rejected by the framework, and this backend has to
+// run on a machine whose sources are pushed instead.
+func hostShares() []vzvm.SharedDirectory {
+	if info, err := os.Stat(hostShareDir); err != nil || !info.IsDir() {
+		return nil
+	}
+	return []vzvm.SharedDirectory{{Tag: hostShareTag, HostPath: hostShareDir, ReadOnly: true}}
+}
+
+// hostMounts carries the shares on into the pool-agent container, where the
+// engine binds each under /host. That is the path the pool agent clones from,
+// so a share the guest has and the container does not is a share nothing can
+// use.
+func hostMounts() []dockerworker.HostMount {
+	shares := hostShares()
+	mounts := make([]dockerworker.HostMount, 0, len(shares))
+	for _, share := range shares {
+		mounts = append(mounts, dockerworker.HostMount{Source: share.HostPath, ReadOnly: share.ReadOnly})
+	}
+	return mounts
+}
+
+// localSourceRoots are the host paths a sandbox on this backend can clone a
+// local source directory out of, which is exactly the set the guest is given.
+//
+// Publishing them is what stops the client pushing a repository it does not
+// have to: a source under one of these roots is delivered by the sandbox
+// cloning it through the share (see server/internal/resources/sandboxes,
+// sourceNeedsPush). Unlike the Docker provider there is no remote-daemon case
+// to exclude — a Virtualization.framework VM is always on this machine.
+func localSourceRoots() []string {
+	shares := hostShares()
+	roots := make([]string, 0, len(shares))
+	for _, share := range shares {
+		roots = append(roots, share.HostPath)
+	}
+	return roots
 }
 
 // engineConfig renders the pool engine configuration for one provider instance.
@@ -186,6 +264,7 @@ func engineConfig(cfg Config, imageSync *dockerworker.DevelopmentImageSynchroniz
 		AgentListenURL:       wire.VSOCKListenURL(agentVSOCKPort),
 		Image:                dockerworker.EffectivePoolImage(cfg.WorkerImage),
 		Labels:               map[string]string{labelProviderType: ProviderType},
+		HostMounts:           hostMounts(),
 		DevelopmentImageSync: imageSync,
 		ProgressReporter:     progress,
 		ProxyAuditRetention:  cfg.ProxyAuditRetention.Value(),

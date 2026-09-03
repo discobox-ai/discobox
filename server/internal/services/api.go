@@ -185,6 +185,10 @@ type PoolService interface {
 	// OpenPoolLogs reads whatever the pool's backend recorded about the machine
 	// running its runtime: a VM's serial console, a Docker daemon's journal.
 	OpenPoolLogs(ctx context.Context, projectID, poolID string, opts sandbox.PoolLogOptions) (*sandbox.PoolLogStream, error)
+	// BuildPoolGuestImage rebuilds the guest image the pool's backend boots, on
+	// that pool's own host, and publishes the artifacts where the backend looks
+	// for a local build (ADR 0062 §7).
+	BuildPoolGuestImage(ctx context.Context, projectID, poolID string, opts sandbox.GuestImageBuildOptions) (*sandbox.GuestImageBuild, error)
 
 	RegisterPool(ctx context.Context, input RegisterPoolBody) (*RegisterPoolResponseBody, error)
 	UpdatePoolStatus(ctx context.Context, poolID string, input UpdatePoolStatusBody) (*model.Pool, error)

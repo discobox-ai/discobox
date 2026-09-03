@@ -218,6 +218,10 @@ func (p *testRuntimeProvider) OpenConsole(context.Context, *model.SandboxProvide
 	return nil, errors.New("no console in unit tests")
 }
 
+func (p *testRuntimeProvider) BuildGuestImage(context.Context, *model.SandboxProviderInstance, *model.Pool, sandbox.GuestImageBuildOptions) (*sandbox.GuestImageBuild, error) {
+	return nil, sandbox.ErrGuestImageBuildUnsupported
+}
+
 func (p *testRuntimeProvider) OpenLogs(context.Context, *model.SandboxProviderInstance, *model.Pool, sandbox.PoolLogOptions) (*sandbox.PoolLogStream, error) {
 	p.logCalls++
 	return nil, errors.New("no host log in unit tests")

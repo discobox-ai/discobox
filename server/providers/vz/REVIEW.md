@@ -18,6 +18,27 @@
   `StopVM`, and a pool's images, volumes, and containers all live on `data.raw`.
 - **Ask the guest to shut down before stopping it.** A hard stop is a dirty
   unmount of both disks while Docker is writing to them.
+- **The `/Users` share is read-only, at the same path, from one list.** The host
+  enforces read-only; a sandbox writing to a developer's files is not a feature
+  behind a flag. The guest must mount it at `/Users` and nowhere else — the
+  origin bind the pool agent gives Docker is the raw host path, with no
+  host-mount prefix applied — and the driver's virtiofs shares, the engine's
+  host mounts, and the published `LocalSourceRoots` all come from `hostShares`.
+  Setting any of them separately is how a pool ends up claiming it can clone a
+  path its guest cannot see.
+- **Adding the host mount needs the guest that has the mount point.** Docker
+  refuses to bind a source the daemon does not have, and the guest root is
+  read-only, so `/Users` exists only if the image created it. A server that
+  declares the mount against an older guest fails every pool with "bind source
+  path does not exist: /Users". In development the answer is
+  `discobox admin pool build-guest` and a pool recreate; for a release it is a
+  `vm/v*` tag and a re-pinned `DefaultGuestImage`, shipped before or with the
+  server-side mount, never after.
+- **A guest build must not disturb a working guest until it has one.** Export to
+  a staging directory beside the destination and swap; never write into the
+  directory a VM may be booting from, and never publish a build that exported
+  nothing — the resolver skips an incomplete local build silently and boots the
+  published image instead, which looks like a build that did nothing.
 - **Pool IDs become directory names.** Anything reaching `filepath.Join` with
   the state directory goes through `validatePoolID` first.
 - **Signing is not optional.** A change to how either binary is built must keep
@@ -29,7 +50,7 @@
   daemon refuses to correct on its own. Every 401 in both directions traces
   back here.
 - **A new guest device is three edits, not one.** The image ships drivers for
-  the six virtio devices `vzvm.Configure` attaches and deletes the rest, so
+  the seven virtio devices `vzvm.Start` attaches and deletes the rest, so
   attaching a device the guest has never had also means keeping its module class
   in `image/Dockerfile` and, if the root depends on it, adding it to
   `/etc/initramfs-tools/modules`. A missing module is a guest that boots to no

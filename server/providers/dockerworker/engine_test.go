@@ -36,6 +36,10 @@ func (nopDriver) AcquireDockerClient(context.Context, string) (*DockerClientLeas
 func (nopDriver) AcquirePoolAgentClient(context.Context, string) (*transport.HTTPClientLease, error) {
 	return nil, errors.New("no worker agent in unit tests")
 }
+func (nopDriver) GuestImageBuildSpec() (GuestImageBuildSpec, error) {
+	return GuestImageBuildSpec{}, sandbox.ErrGuestImageBuildUnsupported
+}
+
 func (nopDriver) PoolLogs(context.Context, string, sandbox.PoolLogOptions) (*sandbox.PoolLogStream, error) {
 	return nil, errors.New("no host log in unit tests")
 }

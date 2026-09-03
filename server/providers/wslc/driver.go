@@ -351,3 +351,8 @@ func validatePoolID(poolID string) error {
 	}
 	return nil
 }
+
+// GuestImageBuildSpec reports that there is nothing here to build: the guest is a WSL distribution the platform installs and updates.
+func (d *Driver) GuestImageBuildSpec() (dockerworker.GuestImageBuildSpec, error) {
+	return dockerworker.GuestImageBuildSpec{}, fmt.Errorf("the wslc backend has no guest image to build: %w", sandbox.ErrGuestImageBuildUnsupported)
+}

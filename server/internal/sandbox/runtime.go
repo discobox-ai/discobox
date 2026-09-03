@@ -225,6 +225,56 @@ type PoolRuntime interface {
 	// came up — and it is the one of the two that answers on a host with no
 	// shell to attach to at all.
 	OpenLogs(ctx context.Context, provider *model.SandboxProviderInstance, pool *model.Pool, opts PoolLogOptions) (*PoolLogStream, error)
+	// BuildGuestImage rebuilds the guest image this backend boots, on the pool
+	// host that is already running it, and writes the artifacts where the
+	// backend looks for a local build (ADR 0062 §7).
+	//
+	// It closes the bootstrap loop: a Mac has no Docker daemon to build a guest
+	// on, and the only one it can reach is the one inside a pool VM — which is
+	// booted from the guest image being replaced. So the running guest builds
+	// its own successor, and the pool is recreated to adopt it.
+	//
+	// A backend that boots no guest image returns ErrGuestImageBuildUnsupported.
+	BuildGuestImage(ctx context.Context, provider *model.SandboxProviderInstance, pool *model.Pool, opts GuestImageBuildOptions) (*GuestImageBuild, error)
+}
+
+// GuestImageBuildOptions configures one rebuild of a backend's guest image.
+type GuestImageBuildOptions struct {
+	// SourceDir is the checkout the guest image is built from, on the machine
+	// running the control plane. It is the build context and the directory the
+	// backend's Dockerfile path is resolved against.
+	//
+	// The caller names it because the server has no other way to know where a
+	// developer's checkout is, and it is read with the control plane's own
+	// privileges. That is the same trust an administrative pool console already
+	// carries — a root shell on the pool host — and this operation is gated the
+	// same way.
+	SourceDir string
+	// RestartHost stops the pool's host once the artifacts are published, so the
+	// pool's own reconcile brings it back on the guest that was just built.
+	//
+	// It is not the default and it is not free: a VM boots the artifacts it was
+	// started with, so nothing adopts a new guest until the machine is replaced,
+	// and replacing it stops every sandbox running on that pool. The caller
+	// decides which of those two costs they are paying.
+	RestartHost bool
+}
+
+// GuestImageBuild is one running guest image build: its output as it happens,
+// and where the artifacts land.
+//
+// It streams because the build is minutes of work on a machine the caller
+// cannot see, and because the caller asking for it is a developer watching it.
+// The build runs while the stream is read and stops when it is closed.
+//
+// A failure is reported in the stream rather than by the call: the response has
+// begun by the time anything can go wrong. The transport carries the outcome
+// out of band — see the guest build error trailer the HTTP route sets — so a
+// client learns of a failure without parsing the build's own output.
+type GuestImageBuild struct {
+	// Destination is the directory the artifacts are written to on success.
+	Destination string
+	io.ReadCloser
 }
 
 // PoolLogOptions configures one read of a pool host's backend log.

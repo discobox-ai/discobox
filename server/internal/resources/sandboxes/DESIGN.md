@@ -284,7 +284,10 @@ mounting `/home` — is as unreachable as one on another machine, and is
 delivered by `push` rather than failing in the pool agent with
 `repository '/host/…' does not exist`. The roots come from the engine that
 makes those mounts (`dockerworker.Engine.HostMounts`), so the claim and the
-mounts cannot drift.
+mounts cannot drift. A backend whose pools are VMs answers the same question
+with whatever it shares into the guest — the macOS `vz` provider exports
+`/Users` read-only over virtiofs and publishes that — so what a root means never
+changes, only what makes a path reachable.
 
 The decision is made per source, for the primary `Source` and every
 `SourceCodeReferences` entry alike: a reference is a local directory the sandbox

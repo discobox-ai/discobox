@@ -283,3 +283,8 @@ func (w *limitedWriter) Write(p []byte) (int, error) {
 	// by the output cap.
 	return len(p), nil
 }
+
+// GuestImageBuildSpec reports that there is nothing here to build: the pool host is whatever the configured command brings up, so this backend has no guest image of its own.
+func (d *Driver) GuestImageBuildSpec() (dockerworker.GuestImageBuildSpec, error) {
+	return dockerworker.GuestImageBuildSpec{}, fmt.Errorf("the execvm backend has no guest image to build: %w", sandbox.ErrGuestImageBuildUnsupported)
+}

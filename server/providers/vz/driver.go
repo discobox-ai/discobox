@@ -62,6 +62,11 @@ type DriverConfig struct {
 	MemoryMiB    int
 	DataDiskGiB  int64
 	CacheDiskGiB int64
+	// SharedDirectories are the host directories every guest this driver starts
+	// exports over virtiofs, each mounted in the guest at the path the Mac uses
+	// for it. They are what a sandbox clones a local source out of, so they and
+	// the engine's host mounts are derived from one list in the provider.
+	SharedDirectories []vzvm.SharedDirectory
 	// ControlPlaneStreams receives connections the guests open. When nil the VM
 	// still runs, but its agent can never register.
 	ControlPlaneStreams StreamSink
@@ -85,6 +90,7 @@ type Driver struct {
 	memoryMiB    int
 	dataDiskGiB  int64
 	cacheDiskGiB int64
+	shares       []vzvm.SharedDirectory
 	streams      StreamSink
 	progress     sandbox.PoolProgressReporter
 
@@ -124,6 +130,7 @@ func NewDriver(cfg DriverConfig) (*Driver, error) {
 		memoryMiB:    effectiveInt(cfg.MemoryMiB, defaultMemoryMiB()),
 		dataDiskGiB:  effectiveInt64(cfg.DataDiskGiB, defaultDataDiskGiB),
 		cacheDiskGiB: effectiveInt64(cfg.CacheDiskGiB, defaultCacheDiskGiB),
+		shares:       cfg.SharedDirectories,
 		streams:      cfg.ControlPlaneStreams,
 		progress:     cfg.ProgressReporter,
 		vms:          map[string]*guestVM{},
@@ -195,6 +202,8 @@ func (d *Driver) EnsureVM(ctx context.Context, poolID string, _ dockerworker.VMS
 		DataImagePath:  dataDisk,
 		CacheImagePath: cacheDisk,
 		ConsoleLogPath: filepath.Join(stateDir, consoleLogName),
+
+		SharedDirectories: d.shares,
 	})
 	if err != nil {
 		return nil, fmt.Errorf("start vz VM for pool %s: %w", poolID, err)
@@ -329,6 +338,31 @@ func (d *Driver) PoolLogs(ctx context.Context, poolID string, opts sandbox.PoolL
 		return nil, err
 	}
 	return &sandbox.PoolLogStream{Source: "vz guest serial console", ReadCloser: stream}, nil
+}
+
+// GuestImageBuildSpec points the engine at the guest image Dockerfile in a
+// checkout and at the directory this driver's resolver prefers.
+//
+// This is the macOS bootstrap closing on itself (ADR 0062 §7). A Mac has no
+// Docker daemon, so the only builder that can produce a guest image is the one
+// inside a pool VM — a VM booted from the guest image being replaced. The
+// running guest builds its successor, the artifacts come back over the same
+// transport, and the next pool start boots them.
+//
+// Adopt drops the resolver's memo. It resolves once per process, so without
+// this the server would keep booting the guest it resolved before the build for
+// as long as it runs, and a developer would conclude the build did nothing.
+func (d *Driver) GuestImageBuildSpec() (dockerworker.GuestImageBuildSpec, error) {
+	destination := d.guest.LocalDir()
+	if destination == "" {
+		return dockerworker.GuestImageBuildSpec{}, fmt.Errorf("this vz provider instance has no local guest image directory configured: %w", sandbox.ErrGuestImageBuildUnsupported)
+	}
+	return dockerworker.GuestImageBuildSpec{
+		Dockerfile:  guestImageDockerfile,
+		Platform:    guestImagePlatform(),
+		Destination: destination,
+		Adopt:       d.guest.Invalidate,
+	}, nil
 }
 
 // ensureDisks creates the pool's durable and disposable disks if they are

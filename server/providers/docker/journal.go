@@ -36,3 +36,8 @@ func (d *LocalDriver) PoolLogs(ctx context.Context, _ string, opts sandbox.PoolL
 	cmd := exec.CommandContext(ctx, journalctl, args[1:]...)
 	return dockerworker.StreamCommand(cmd, "docker daemon journal (systemd) on "+host)
 }
+
+// GuestImageBuildSpec reports that there is nothing here to build: the pool host is this machine, which nothing here built.
+func (d *LocalDriver) GuestImageBuildSpec() (dockerworker.GuestImageBuildSpec, error) {
+	return dockerworker.GuestImageBuildSpec{}, fmt.Errorf("the docker backend has no guest image to build: %w", sandbox.ErrGuestImageBuildUnsupported)
+}

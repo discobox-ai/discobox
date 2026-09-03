@@ -39,6 +39,13 @@ var (
 	// missing implementation: the same driver answers on one host and declines
 	// on another, so the wrapping error carries the reason.
 	ErrPoolLogsUnsupported = errors.New("pool host logs are not available from this backend")
+
+	// ErrGuestImageBuildUnsupported indicates the backend hosting a pool boots
+	// no guest image of its own, so there is nothing for it to build. Like
+	// ErrPoolLogsUnsupported it is a settled answer about this backend rather
+	// than an unfinished implementation, and it is the answer for every backend
+	// whose pool host is a machine somebody else provisioned.
+	ErrGuestImageBuildUnsupported = errors.New("this backend boots no guest image of its own to build")
 )
 
 // PoolFailure reports that a pool has no capacity because its runtime FAILED,

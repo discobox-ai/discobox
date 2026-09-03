@@ -36,6 +36,9 @@ type routerTestServices struct {
 	consoleErr     error
 	poolLog        *stubPoolLog
 	poolLogErr     error
+
+	guestImageBuild    *sandbox.GuestImageBuild
+	guestImageBuildErr error
 }
 
 func newRouterTestServices() *routerTestServices {
@@ -743,6 +746,20 @@ func (s *routerTestServices) OpenPoolConsole(_ context.Context, projectID, poolI
 	s.console.poolID = poolID
 	s.console.openOpts = opts
 	return s.console, nil
+}
+
+// BuildPoolGuestImage hands out the stub build the test installed, so the guest
+// image route can be exercised with no pool, no Docker, and no BuildKit.
+func (s *routerTestServices) BuildPoolGuestImage(_ context.Context, _, _ string, _ sandbox.GuestImageBuildOptions) (*sandbox.GuestImageBuild, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.guestImageBuildErr != nil {
+		return nil, s.guestImageBuildErr
+	}
+	if s.guestImageBuild == nil {
+		return nil, apperrors.NewStatusError(http.StatusNotFound, "pool not found")
+	}
+	return s.guestImageBuild, nil
 }
 
 // OpenPoolLogs hands out the stub log stream the test installed, so the logs

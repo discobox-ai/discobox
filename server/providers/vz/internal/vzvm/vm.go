@@ -13,6 +13,7 @@ package vzvm
 import (
 	"errors"
 	"fmt"
+	"path/filepath"
 	"strings"
 )
 
@@ -46,6 +47,47 @@ type Options struct {
 	// before its Docker daemon answers, which is exactly when a pool host
 	// console cannot help.
 	ConsoleLogPath string
+	// SharedDirectories are host directories the guest sees over virtiofs.
+	// Each is one device, addressed by its tag, and the guest decides where a
+	// tag mounts.
+	SharedDirectories []SharedDirectory
+}
+
+// SharedDirectory is one host directory exported to the guest over virtiofs.
+//
+// The tag is the whole of the contract with the guest image: the host attaches
+// a device carrying it, and the guest's fstab mounts that tag somewhere. Since
+// the guest image is released on its own line, a tag is as load-bearing as a
+// VSOCK port number — renaming one is a coordinated release, not a rename.
+type SharedDirectory struct {
+	// Tag names the device inside the guest. Virtualization.framework limits
+	// it to 36 bytes and rejects "." and "..".
+	Tag string
+	// HostPath is the directory on the Mac.
+	HostPath string
+	// ReadOnly is enforced by the host, not by how the guest mounts it.
+	ReadOnly bool
+}
+
+// maxSharedDirectoryTagLen is Virtualization.framework's limit on a virtiofs
+// tag, checked here so an over-long one is a configuration error rather than an
+// opaque framework rejection at pool start.
+const maxSharedDirectoryTagLen = 36
+
+func (s SharedDirectory) validate() error {
+	tag := strings.TrimSpace(s.Tag)
+	switch {
+	case tag == "":
+		return errors.New("vzvm: shared directory tag is required")
+	case len(tag) > maxSharedDirectoryTagLen:
+		return fmt.Errorf("vzvm: shared directory tag %q exceeds %d bytes", tag, maxSharedDirectoryTagLen)
+	case tag == "." || tag == "..":
+		return fmt.Errorf("vzvm: shared directory tag %q is reserved", tag)
+	}
+	if path := strings.TrimSpace(s.HostPath); path == "" || !filepath.IsAbs(path) {
+		return fmt.Errorf("vzvm: shared directory %q needs an absolute host path, got %q", tag, s.HostPath)
+	}
+	return nil
 }
 
 // Validate checks what can be checked without a hypervisor, so a
@@ -66,6 +108,17 @@ func (o Options) Validate() error {
 		if strings.TrimSpace(value) == "" {
 			return fmt.Errorf("vzvm: %s path is required", field)
 		}
+	}
+	tags := map[string]struct{}{}
+	for _, share := range o.SharedDirectories {
+		if err := share.validate(); err != nil {
+			return err
+		}
+		tag := strings.TrimSpace(share.Tag)
+		if _, ok := tags[tag]; ok {
+			return fmt.Errorf("vzvm: shared directory tag %q is attached twice", tag)
+		}
+		tags[tag] = struct{}{}
 	}
 	return nil
 }

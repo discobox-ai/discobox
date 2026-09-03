@@ -61,6 +61,18 @@ type Driver interface {
 	// A driver whose backend keeps no readable record returns an error
 	// wrapping sandbox.ErrPoolLogsUnsupported, with the reason as its message.
 	PoolLogs(ctx context.Context, poolID string, opts sandbox.PoolLogOptions) (*sandbox.PoolLogStream, error)
+
+	// GuestImageBuildSpec describes how to rebuild the guest image this driver
+	// boots: which Dockerfile in a checkout builds it, what platform it runs
+	// on, and where a local build has to land for this driver to prefer it.
+	//
+	// The engine performs the build, because reaching a pool's BuildKit and
+	// exporting the result to the host is the same work whatever is being
+	// built; what only the driver knows is what its guest *is*.
+	//
+	// A driver whose pool host is a machine it did not build returns an error
+	// wrapping sandbox.ErrGuestImageBuildUnsupported.
+	GuestImageBuildSpec() (GuestImageBuildSpec, error)
 }
 
 // VMSpec is the driver-neutral VM launch request for one worker.

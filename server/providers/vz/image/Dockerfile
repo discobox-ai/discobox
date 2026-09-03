@@ -64,13 +64,15 @@ RUN apt-get update \
     && rm -rf /var/lib/apt/lists/*
 
 # Debian's kernel package carries a module for every device Debian supports.
-# This guest's entire hardware surface is the six virtio devices
-# `vzvm.Configure` attaches — block, net, vsock, console, entropy, balloon — so
-# whole driver classes here describe hardware that cannot appear. depmod after,
-# or modules.dep keeps naming files that are gone.
+# This guest's entire hardware surface is the seven virtio devices `vzvm.Start`
+# attaches — block, net, vsock, console, entropy, balloon, fs — so whole driver
+# classes here describe hardware that cannot appear. depmod after, or modules.dep
+# keeps naming files that are gone.
 #
 # kernel/net and kernel/fs stay whole: overlayfs, bridge, veth and netfilter are
-# Docker's, not the hardware's.
+# Docker's, not the hardware's, and virtiofs is a filesystem rather than a
+# driver class — it lives in kernel/fs/fuse and is loaded on demand by the
+# kernel when /etc/fstab asks for the virtiofs type.
 RUN set -eux; \
     modules=$(ls -d /usr/lib/modules/*); \
     for class in \
@@ -149,7 +151,11 @@ COPY server/providers/vz/image/10-discobox.network /etc/systemd/network/10-disco
 COPY server/providers/vz/image/discobox-vsock.conf /etc/modules-load.d/discobox-vsock.conf
 COPY server/providers/vz/image/fstab /etc/fstab
 
+# /Users is the mount point for the host's read-only virtiofs share (see
+# image/fstab). It has to exist in the read-only root: the guest cannot create
+# it later, and the pool-agent container binds paths under it.
 RUN mkdir -p \
+        /Users \
         /var/lib/discobox \
         /var/lib/discobox/cache \
         /var/lib/containerd \

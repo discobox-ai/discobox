@@ -105,6 +105,14 @@ func Start(opts Options) (*VM, error) {
 		config.SetSerialPortsVirtualMachineConfiguration([]*vz.VirtioConsoleDeviceSerialPortConfiguration{console})
 	}
 
+	shares, err := directorySharingDevices(opts.SharedDirectories)
+	if err != nil {
+		return nil, err
+	}
+	if len(shares) > 0 {
+		config.SetDirectorySharingDevicesVirtualMachineConfiguration(shares)
+	}
+
 	entropy, err := vz.NewVirtioEntropyDeviceConfiguration()
 	if err != nil {
 		return nil, fmt.Errorf("vzvm: entropy device: %w", err)
@@ -169,6 +177,39 @@ func storageDevices(opts Options) ([]vz.StorageDeviceConfiguration, error) {
 		if err != nil {
 			return nil, fmt.Errorf("vzvm: configure disk %s: %w", disk.path, err)
 		}
+		devices = append(devices, device)
+	}
+	return devices, nil
+}
+
+// directorySharingDevices exports host directories to the guest over virtiofs,
+// one device per share so each carries its own tag and its own read-only bit.
+//
+// This is what lets a sandbox clone a developer's checkout out of the guest
+// instead of the client pushing it over the wire: the tag mounts at the same
+// absolute path the Mac uses, so a host path and the guest's spelling of it are
+// the same string, all the way down to the bind the pool agent asks its Docker
+// daemon for.
+//
+// A share the framework rejects fails the pool rather than being dropped. The
+// caller decided a directory is exported, and a guest silently missing it looks
+// like a source that will not clone, diagnosed nowhere near here.
+func directorySharingDevices(shares []SharedDirectory) ([]vz.DirectorySharingDeviceConfiguration, error) {
+	devices := make([]vz.DirectorySharingDeviceConfiguration, 0, len(shares))
+	for _, share := range shares {
+		directory, err := vz.NewSharedDirectory(share.HostPath, share.ReadOnly)
+		if err != nil {
+			return nil, fmt.Errorf("vzvm: share %s: %w", share.HostPath, err)
+		}
+		single, err := vz.NewSingleDirectoryShare(directory)
+		if err != nil {
+			return nil, fmt.Errorf("vzvm: share %s: %w", share.HostPath, err)
+		}
+		device, err := vz.NewVirtioFileSystemDeviceConfiguration(share.Tag)
+		if err != nil {
+			return nil, fmt.Errorf("vzvm: file system device %s: %w", share.Tag, err)
+		}
+		device.SetDirectoryShare(single)
 		devices = append(devices, device)
 	}
 	return devices, nil

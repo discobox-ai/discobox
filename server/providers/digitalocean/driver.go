@@ -450,3 +450,8 @@ type dropletNetwork struct {
 	IPAddress string `json:"ip_address"`
 	Type      string `json:"type"`
 }
+
+// GuestImageBuildSpec reports that there is nothing here to build: the pool host is a droplet booted from the provider's own image.
+func (d *Driver) GuestImageBuildSpec() (dockerworker.GuestImageBuildSpec, error) {
+	return dockerworker.GuestImageBuildSpec{}, fmt.Errorf("the digitalocean backend has no guest image to build: %w", sandbox.ErrGuestImageBuildUnsupported)
+}

@@ -229,6 +229,43 @@ func (s *Service) OpenPoolConsole(ctx context.Context, projectID, poolID string,
 	return console, nil
 }
 
+// BuildPoolGuestImage rebuilds the guest image the pool's backend boots.
+//
+// It resolves the pool the same way OpenPoolLogs does and gates on nothing more
+// for a related reason: the build needs the pool's Docker daemon and nothing
+// else about the pool, and requiring a ready pool would withhold the operation
+// from someone whose pool is unhealthy precisely because of the guest image
+// they are trying to replace.
+func (s *Service) BuildPoolGuestImage(ctx context.Context, projectID, poolID string, opts sandbox.GuestImageBuildOptions) (*sandbox.GuestImageBuild, error) {
+	pool, err := s.store.GetPool(ctx, projectID, poolID)
+	if err != nil {
+		return nil, mapAPIError(err, "pool not found")
+	}
+	provider, err := s.store.GetSandboxProviderInstance(ctx, projectID, pool.ProviderInstanceID)
+	if err != nil {
+		return nil, mapAPIError(err, "pool provider instance not found")
+	}
+	if s.providers == nil {
+		return nil, apperrors.NewStatusError(http.StatusServiceUnavailable, "sandbox provider manager is not configured")
+	}
+	instance, err := s.providers.ResolveInstance(ctx, provider)
+	if err != nil {
+		return nil, err
+	}
+	runtime, ok := instance.(sandbox.PoolRuntime)
+	if !ok {
+		return nil, apperrors.NewStatusError(http.StatusNotImplemented, fmt.Sprintf("provider %q hosts no pool runtime with a guest image to build", provider.Type))
+	}
+	build, err := runtime.BuildGuestImage(ctx, provider, pool, opts)
+	if err != nil {
+		if errors.Is(err, sandbox.ErrGuestImageBuildUnsupported) {
+			return nil, apperrors.NewStatusError(http.StatusNotImplemented, err.Error())
+		}
+		return nil, err
+	}
+	return build, nil
+}
+
 // OpenPoolLogs reads what the pool's backend recorded about its host.
 //
 // It resolves the pool's provider the same way OpenPoolConsole does, and gates

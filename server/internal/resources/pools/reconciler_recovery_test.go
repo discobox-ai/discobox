@@ -303,6 +303,10 @@ func (stubPoolProvider) OpenLogs(context.Context, *model.SandboxProviderInstance
 	return nil, errors.New("no host log in unit tests")
 }
 
+func (stubPoolProvider) BuildGuestImage(context.Context, *model.SandboxProviderInstance, *model.Pool, sandbox.GuestImageBuildOptions) (*sandbox.GuestImageBuild, error) {
+	return nil, sandbox.ErrGuestImageBuildUnsupported
+}
+
 func (stubPoolProvider) Initialize(context.Context, *model.SandboxProviderInstance) error { return nil }
 func (stubPoolProvider) Close() error                                                     { return nil }
 func (stubPoolProvider) Definition() sandbox.ProviderDefinition {

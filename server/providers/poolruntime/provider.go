@@ -86,6 +86,10 @@ type RuntimeProvider interface {
 	// console needs the host's Docker daemon, and this is what says why there
 	// isn't one.
 	OpenLogs(ctx context.Context, provider *model.SandboxProviderInstance, pool *model.Pool, opts sandbox.PoolLogOptions) (*sandbox.PoolLogStream, error)
+	// BuildGuestImage rebuilds the guest image the backend boots, on a pool
+	// host that is already running one, and publishes the artifacts where the
+	// backend looks for a local build.
+	BuildGuestImage(ctx context.Context, provider *model.SandboxProviderInstance, pool *model.Pool, opts sandbox.GuestImageBuildOptions) (*sandbox.GuestImageBuild, error)
 }
 
 // Provider is a sandbox provider backed by pool hosts.
@@ -261,6 +265,17 @@ func (p *Provider) OpenLogs(ctx context.Context, provider *model.SandboxProvider
 		return nil, fmt.Errorf("pool is required")
 	}
 	return p.runtimeProvider.OpenLogs(ctx, provider, pool, opts)
+}
+
+// BuildGuestImage rebuilds the backend's guest image on this pool's host. Like
+// the console and the host log it consults no pool state: the pool has to be up
+// enough to run a build, and that is the only condition, which the build itself
+// reports by failing to reach Docker.
+func (p *Provider) BuildGuestImage(ctx context.Context, provider *model.SandboxProviderInstance, pool *model.Pool, opts sandbox.GuestImageBuildOptions) (*sandbox.GuestImageBuild, error) {
+	if pool == nil {
+		return nil, fmt.Errorf("pool is required")
+	}
+	return p.runtimeProvider.BuildGuestImage(ctx, provider, pool, opts)
 }
 
 func (p *Provider) Create(ctx context.Context, ref sandbox.SandboxRef, state []byte, opts sandbox.CreateOptions) (*sandbox.Sandbox, []byte, error) {

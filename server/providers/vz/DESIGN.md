@@ -75,6 +75,42 @@ address from the lease. Bridged networking is not used: it needs the
 `com.apple.vm.networking` entitlement, which Apple grants by request, and it
 would put pool guests on the user's LAN.
 
+## Host filesystem boundary
+
+The guest sees exactly one host directory: `/Users`, exported as a read-only
+virtiofs share tagged `discobox-users` and mounted in the guest at `/Users` —
+the same absolute path it has on the Mac.
+
+That equality is the mechanism, not a convenience. A local source is delivered
+one of two ways (`server/internal/resources/sandboxes`, `sourceNeedsPush`): the
+client pushes the repository in, or the sandbox clones it from a path the pool
+can already reach. The provider publishes `/Users` as a `LocalSourceRoots`
+entry, so a checkout under it takes the clone path, and every spelling of that
+checkout downstream is the same string — the host path the client reported, the
+`/host/Users/...` bind the engine gives the pool-agent container, and the
+`/Users/...` bind the pool agent asks the guest's Docker daemon for when it
+mounts the origin into a sandbox. Mounting the share anywhere else would break
+the last of those, which never passes through the host-mount prefix.
+
+Read-only is the whole of the write policy. A sandbox clones from the
+developer's checkout and works in its own copy on the pool's data disk; nothing
+in a sandbox may write to files on the Mac. The host enforces it — the guest's
+`ro` in `image/fstab` is a second statement of the same thing, not the one that
+counts.
+
+The share stops at the pool. The guest and the pool-agent container see all of
+`/Users`; a sandbox sees only the one directory the pool agent binds into it as
+that source's origin. Widening the share therefore widens what the pool agent
+can read, not what a sandbox can, and the reason to keep it to `/Users` rather
+than `/` is exactly that: a developer's files are the point, the rest of the
+Mac is not.
+
+`hostShares` is the single list. The virtiofs devices the driver attaches, the
+engine's host mounts, and the published source roots are all derived from it, so
+a directory the guest is given and one a sandbox may clone from cannot drift
+apart. A Mac with no `/Users` exports nothing and publishes no roots, which
+costs a source push rather than a pool.
+
 ## Clock
 
 The guest steps its clock to the host's every 30s, reading
@@ -130,8 +166,8 @@ needs belongs in a container on that daemon, never here. That scope rule is what
 keeps the image small enough to ship on first boot and stable enough to version
 on its own line.
 
-The same rule applies to hardware, and the build enforces it: `vzvm.Configure`
-attaches six virtio devices and nothing else can ever appear, so the Dockerfile
+The same rule applies to hardware, and the build enforces it: `vzvm.Start`
+attaches seven virtio devices and nothing else can ever appear, so the Dockerfile
 deletes the driver classes Debian's kernel package ships for the rest of the
 world and the initrd is built from a list rather than `MODULES=most`. `/boot` is
 deleted once the kernel and initrd are lifted out as artifacts of their own.
@@ -143,6 +179,35 @@ deliberate: libkrun's guest is slated for rework, and coupling to it first would
 make that rework harder. The *pipeline* — `guestimage` and
 `dockerworker.BuildArtifacts` — is shared from the start; the image content is
 not (ADR 0062 §5).
+
+## Guest build loop
+
+A Mac has no Docker daemon, so the only builder that can produce a guest image
+is the one inside a pool VM — a VM booted from the guest image being replaced.
+`BuildGuestImage` closes that loop (ADR 0062 §7): the running guest builds its
+successor on its own BuildKit, the artifacts come back over the same Docker
+transport as a `local` export, and they land in `GuestImageLocalDir`, which the
+resolver already prefers over the published image.
+
+Three things make it work rather than merely run:
+
+- **It needs the pool's Docker, not its agent.** The build is reached through
+  the driver, like the console and the host log, so it answers on a pool whose
+  agent never started — which is the pool a broken guest image produces, and
+  therefore the only pool anybody would be trying to rebuild a guest from.
+- **The artifacts are staged and swapped.** A pool may be booting from that
+  directory at this moment; a build writing into it directly would replace a
+  kernel underneath a VM reading it. A build that exports nothing is refused
+  rather than published, because an incomplete local build is one the resolver
+  skips in silence.
+- **The resolver's memo is dropped on adoption.** It resolves once per process,
+  which is right for a value nothing can change under a running server — except
+  this. Without it the server keeps booting the guest it resolved first for as
+  long as it runs, and the build appears to have done nothing.
+
+A running VM keeps the artifacts it started with, so adopting a new guest is a
+pool recreate. That is deliberately not automatic: it stops every sandbox on the
+pool.
 
 ## Release boundary
 
@@ -160,6 +225,19 @@ pool-agent container (`dockerworker.DefaultPoolImage`), which this provider
 exposes as `workerImage` beside `guestImage`.
 
 The compatibility surface between the two lines is narrow by construction — the
-VSOCK port map, the storage layout, and `discobox-vsock-guest`, which is built
-from `pool-agent` sources into the guest image. Keeping it narrow is what makes
-independent versioning safe; a change to it is a coordinated release.
+VSOCK port map, the storage layout, the `discobox-users` share tag and where the
+guest mounts it, and `discobox-vsock-guest`, which is built from `pool-agent`
+sources into the guest image. Keeping it narrow is what makes independent
+versioning safe; a change to it is a coordinated release.
+
+In development neither line is what runs: `build-guest` builds the guest from
+the checkout and the local build wins over both. That is the intended way to
+work on `image/` — and the way to adopt a guest-side change, such as the
+`/Users` mount point, without cutting a release for it.
+
+The share is the one place that ordering is not symmetric. A guest whose host
+attaches nothing comes up with an empty `/Users` (`nofail`), but a server that
+declares the host mount against a guest with no `/Users` at all cannot start a
+pool container: Docker will not bind a source the daemon does not have. So the
+guest ships first — a `vm/v*` tag and a re-pinned `DefaultGuestImage` — and the
+provider's host mount lands with or after it.

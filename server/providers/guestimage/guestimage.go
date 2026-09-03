@@ -155,6 +155,33 @@ func New(cfg Config) (*Resolver, error) {
 	return &Resolver{cfg: cfg}, nil
 }
 
+// LocalDir is where a local guest image build is looked for, or "" when this
+// resolver has none — an override directory names the artifacts outright, so
+// there is nothing for a build to be adopted into.
+//
+// A caller that builds a guest image writes it here, which is the whole of
+// adopting one: resolution prefers a complete local build over the published
+// image, and deleting the directory goes back.
+func (r *Resolver) LocalDir() string {
+	if r.cfg.OverrideDir != "" {
+		return ""
+	}
+	return r.cfg.LocalDir
+}
+
+// Invalidate drops the memoized bundle, so the next Resolve looks at the disk
+// again.
+//
+// Resolution is memoized for the life of the process, which is right for a
+// value that cannot change under a running server — except when this server is
+// what changed it. A build that publishes a new local guest calls this, or the
+// server keeps booting the guest it resolved first for as long as it runs.
+func (r *Resolver) Invalidate() {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	r.resolved = nil
+}
+
 // Reference reports the configured guest image reference, or "" when an
 // override directory is in use. A LocalDir does not clear it: whether the local
 // build is usable is only known once it is inspected.

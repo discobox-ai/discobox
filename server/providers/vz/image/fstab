@@ -1,3 +1,12 @@
 tmpfs /tmp tmpfs mode=1777,nosuid,nodev 0 0
 tmpfs /var/log tmpfs mode=0755,nosuid,nodev 0 0
 tmpfs /var/tmp tmpfs mode=1777,nosuid,nodev 0 0
+# The Mac's /Users, exported by the host as a read-only virtiofs share and
+# mounted here at the same absolute path it has on the Mac. That equality is the
+# point: the pool agent binds a developer's checkout into a sandbox by its host
+# path, so the two spellings have to be one string.
+#
+# nofail because the device is the host's to attach and this image is released
+# on its own line: a guest booted by a server that shares nothing must still
+# come up, with an empty /Users, rather than dropping to an emergency shell.
+discobox-users /Users virtiofs ro,nofail 0 0

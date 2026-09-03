@@ -757,3 +757,14 @@ func defaultString(value, fallback string) string {
 	}
 	return strings.TrimSpace(value)
 }
+
+// GuestImageBuildSpec reports that there is nothing to build here yet.
+//
+// libkrun runs on Linux only, where a developer has a Docker daemon of their
+// own and builds the guest with it — the bootstrap this exists to break is
+// macOS's, where the only reachable daemon is inside the VM being replaced
+// (ADR 0062 §7). Its guest also does not go through the shared resolver yet, so
+// there is no local build directory for an export to land in.
+func (d *Driver) GuestImageBuildSpec() (dockerworker.GuestImageBuildSpec, error) {
+	return dockerworker.GuestImageBuildSpec{}, fmt.Errorf("the libkrun backend builds its guest image on the host's own Docker: %w", sandbox.ErrGuestImageBuildUnsupported)
+}
