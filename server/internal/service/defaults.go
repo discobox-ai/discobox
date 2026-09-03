@@ -93,6 +93,14 @@ func (s *Service) InitializeDefaults(ctx context.Context, userID string, options
 	return project, nil
 }
 
+// EnsureHarnessAvailable fails when a project has no harness config at all,
+// naming what was wrong with each built-in image. The rule and its reasoning
+// belong to resources/harnessconfigs; the server process calls it after
+// InitializeDefaults and refuses to serve when it fails.
+func (s *Service) EnsureHarnessAvailable(ctx context.Context, projectID string) error {
+	return s.harnessConfigs.EnsureHarnessAvailable(ctx, projectID)
+}
+
 // ensureDefaultSandboxProviderInstalled seeds the default sandbox provider and
 // its pool exactly once, gated on a server_state row rather than on the records
 // themselves. After seeding they are ordinary user-owned records: editing or

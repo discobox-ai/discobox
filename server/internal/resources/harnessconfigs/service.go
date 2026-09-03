@@ -432,6 +432,61 @@ func (s *Service) SeedBuiltIns(ctx context.Context, projectID string) error {
 	return nil
 }
 
+// EnsureHarnessAvailable fails when a project has no harness config at all.
+//
+// Seeding is best-effort per harness, and that is right while some of them
+// seeded: the project is short a harness and every other one still runs. None
+// of them is a different condition. Sandbox create resolves an explicit harness
+// or the project default and refuses when it has neither (ADR 0048), so a
+// project with no config has no path left that ends anywhere but an error, and
+// the causes — an image published without its manifest labels, a daemon that is
+// not running, a registry that cannot be reached — are all outside what anyone
+// can fix from inside the product. The server's startup calls this and refuses
+// to serve; nothing else has to, because nothing else can be first.
+//
+// Any config counts, not only a built-in. A project seeded on an earlier boot,
+// or one whose only harness was registered by hand, has something to run
+// whatever this boot's images do.
+//
+// The reasons are re-inspected rather than remembered from the seeding pass:
+// this runs only when there is nothing to run, so it costs one inspection per
+// built-in on a server that is about to fail anyway, and it puts why each image
+// was unusable in the error instead of leaving it in a log line above it.
+func (s *Service) EnsureHarnessAvailable(ctx context.Context, projectID string) error {
+	configs, err := s.store.ListHarnessConfigs(ctx, projectID)
+	if err != nil {
+		return err
+	}
+	if len(configs) > 0 {
+		return nil
+	}
+	seeds := s.seeds()
+	reasons := make([]string, 0, len(seeds))
+	for _, seed := range seeds {
+		image := strings.TrimSpace(seed.Image)
+		switch {
+		case image == "":
+			reasons = append(reasons, fmt.Sprintf("%s: no image", seed.Slug))
+		case s.inspector == nil:
+			reasons = append(reasons, fmt.Sprintf("%s (%s): image inspection is unavailable", seed.Slug, image))
+		default:
+			if _, inspectErr := s.inspector.Inspect(ctx, image); inspectErr != nil {
+				reasons = append(reasons, fmt.Sprintf("%s (%s): %v", seed.Slug, image, inspectErr))
+				continue
+			}
+			// Inspectable now and still not seeded: whatever failed was the
+			// write, and SeedBuiltIns returned that error rather than skipping.
+			// Reported as its own reason so a puzzling case is not silently
+			// left out of a list of them.
+			reasons = append(reasons, fmt.Sprintf("%s (%s): image is available but no config was created", seed.Slug, image))
+		}
+	}
+	if len(reasons) == 0 {
+		return fmt.Errorf("project %s has no harness, and no built-in harnesses are defined", projectID)
+	}
+	return fmt.Errorf("project %s has no harness to run: %s", projectID, strings.Join(reasons, "; "))
+}
+
 // applyResolvedImageDigest is the single place a harness config's resolved
 // image reaches its sandboxes (ADR 0082 §1).
 //

@@ -151,6 +151,24 @@ func Run(ctx context.Context) error {
 		return fmt.Errorf("initialize app: %w", err)
 	}
 
+	// A server that seeded no harness has nothing it can run: sandbox create
+	// resolves a harness or refuses (ADR 0048), so every route it would serve
+	// ends in the same error. Seeding tolerates an image it cannot inspect
+	// because the harnesses that did seed still work; none of them is not a
+	// degraded server but a broken one, and the cause is always outside the
+	// product — an image published without its manifest labels (ADR 0086 §1), a
+	// Docker daemon that is not running, a registry that cannot be reached.
+	// So the process refuses to serve, saying why for each image, rather than
+	// handing over a router that reports itself ready and cannot make a sandbox.
+	startup.setPhase("checking the built-in harnesses")
+	defaultProject, err := appStore.GetDefaultProjectForUser(ctx, service.DefaultUserID)
+	if err != nil {
+		return fmt.Errorf("resolve the default project: %w", err)
+	}
+	if err := appServices.HarnessConfigs.EnsureHarnessAvailable(ctx, defaultProject.ID); err != nil {
+		return err
+	}
+
 	// SSH's only front door. The route is registered here rather than inside
 	// NewApp because sshd needs the services NewApp returns, and registering it
 	// on the same router keeps SSH reachable wherever the API is — which is

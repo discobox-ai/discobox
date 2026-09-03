@@ -100,6 +100,11 @@ type HarnessConfigService interface {
 	// RefreshHarnessConfigImage re-inspects the config's image and re-snapshots
 	// its label metadata and digest.
 	RefreshHarnessConfigImage(ctx context.Context, projectID, configID string) (*model.HarnessConfig, error)
+	// EnsureHarnessAvailable fails when a project has no harness config at all,
+	// naming what was wrong with each built-in image. Not a route: it is the
+	// invariant server startup checks before it hands over, since a project
+	// with no harness has no sandbox it can create (ADR 0048).
+	EnsureHarnessAvailable(ctx context.Context, projectID string) error
 
 	ListHarnessConfigSecretBindings(ctx context.Context, projectID, configID string) ([]model.HarnessConfigSecretBinding, error)
 	SetHarnessConfigSecretBinding(ctx context.Context, projectID, configID, envName, secretID string) (*model.HarnessConfigSecretBinding, error)

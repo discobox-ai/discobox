@@ -276,6 +276,15 @@ step is logged, so a foreground run and a polling client say the same thing.
 When initialization finishes, the real router is swapped in behind the same
 handler: nothing rebinds and no connection is dropped.
 
+A server that seeded **no harness** does not hand over at all. Seeding tolerates
+an image it cannot inspect, because the harnesses that did seed still run;
+seeding none of them leaves a project where every sandbox create refuses
+(ADR 0048), so startup fails naming what was wrong with each image
+(`harnessconfigs.EnsureHarnessAvailable`) rather than becoming ready and
+answering every request with the same error. Any harness config satisfies it,
+so a server whose images are briefly unreachable still starts on a project that
+seeded on an earlier boot.
+
 Handing over and becoming ready are **separate events**, because two callers ask
 `/healthz` two different questions (ADR 0069 — see also `health.StatusWarming`):
 

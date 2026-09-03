@@ -67,7 +67,14 @@ still true of it, and true *by rule* rather than by slug:
   selectable harness write the config to the store directly, which is what
   ADR 0066 §7 named as the end state; CI builds no stand-in images.
 - Seeding is best-effort per harness: an uninspectable image is logged and
-  skipped so it cannot block startup.
+  skipped so it cannot block startup. **Skipping all of them is not**.
+  `EnsureHarnessAvailable` reports a project with no harness config at all —
+  any config counts, not only a built-in — and the server process refuses to
+  serve when the default project has none, because sandbox create resolves a
+  harness or refuses (ADR 0048) and the causes are all outside the product: an
+  image published without its manifest labels, a daemon that is not running, a
+  registry out of reach. It re-inspects each built-in to say why, since it only
+  runs on a server that is about to fail anyway.
 
 ## A resolved digest reaches the sandboxes running it
 

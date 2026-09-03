@@ -2,6 +2,7 @@ package server
 
 import (
 	"context"
+	"fmt"
 	"net/http"
 	"slices"
 	"strings"
@@ -426,6 +427,18 @@ func (s *routerTestServices) RefreshHarnessConfigImage(_ context.Context, projec
 		return nil, apperrors.NewStatusError(http.StatusNotFound, "harness config not found")
 	}
 	return &config, nil
+}
+
+func (s *routerTestServices) EnsureHarnessAvailable(_ context.Context, projectID string) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if projectID != s.project.ID {
+		return apperrors.NewStatusError(http.StatusNotFound, "project not found")
+	}
+	if len(s.harnessConfigs) == 0 {
+		return fmt.Errorf("project %s has no harness to run", projectID)
+	}
+	return nil
 }
 
 func (s *routerTestServices) ListHarnessConfigs(_ context.Context, projectID string) ([]model.HarnessConfig, error) {
