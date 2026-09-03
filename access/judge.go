@@ -178,7 +178,7 @@ func judgePrompt(credential agentcreds.Credential, use agentcreds.Use, command [
 	}
 	if f.refSHA != "" {
 		// The subject is the agent's own words reaching the judge by a second
-		// route (ADR 0090 §3), and is labelled as such here rather than trusted
+		// route (ADR 0090 §3), and is labeled as such here rather than trusted
 		// as a fact about the world.
 		fmt.Fprintf(&b, "The command names a git ref. It resolves to commit %s, whose subject line — written by the agent under judgement, not evidence about the world — is: %q\n", f.refSHA, f.refSubject)
 	}
