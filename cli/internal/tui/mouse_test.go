@@ -734,6 +734,53 @@ func TestPressingAFormFieldPlacesTheCaret(t *testing.T) {
 	}
 }
 
+// One press changes a value, on any row rather than only the one the keyboard
+// cursor is on: the arrow columns are kept on every row that can be stepped,
+// so the press that lights them is the press that uses them.
+func TestOneArrowPressChangesAnyOptionRow(t *testing.T) {
+	m := newTestModel(t, newFakeSource(testSandboxes()...))
+	slowClock(m)
+	send(t, m, keyPress("ctrl+o"))
+	if m.opts.cursor == optDetach {
+		t.Fatalf("the panel opens on the row this test means to reach past")
+	}
+
+	before := m.opts.opts[optDetach].display()
+	_, y := at(t, m, m.opts.opts[optDetach].label)
+	x := 0
+	for _, z := range m.zones.marks {
+		if z.what.kind == hitOptionCycle && z.what.idx == optDetach && z.what.delta > 0 {
+			x = z.x
+		}
+	}
+	if x == 0 {
+		t.Fatalf("the row has no arrow to press")
+	}
+	tap(t, m, x, y)
+
+	if got := m.opts.opts[optDetach].display(); got == before {
+		t.Fatalf("the value is still %q; one press on its arrow should have changed it", got)
+	}
+	if m.opts.cursor != optDetach {
+		t.Fatalf("the cursor is on %d, want the row that was pressed", m.opts.cursor)
+	}
+}
+
+// And the value does not move as the pointer crosses it: the arrow columns are
+// there whether or not they are lit.
+func TestTheOptionValuesDoNotShiftUnderThePointer(t *testing.T) {
+	m := newTestModel(t, newFakeSource(testSandboxes()...))
+	slowClock(m)
+	send(t, m, keyPress("ctrl+o"))
+
+	x, y := at(t, m, m.opts.opts[optDetach].display())
+	send(t, m, tea.MouseMotionMsg{X: x, Y: y})
+
+	if got, _ := at(t, m, m.opts.opts[optDetach].display()); got != x {
+		t.Fatalf("the value moved from column %d to %d when the pointer arrived", x, got)
+	}
+}
+
 // The run options are one of the modal surfaces, so its key line is a key line
 // like every other: the offers on it are buttons for their keys.
 func TestPressingTheOptionsKeyLineLeaves(t *testing.T) {

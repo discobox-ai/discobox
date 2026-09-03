@@ -1030,6 +1030,15 @@ caveat the question carries — and stays text. A card that is only read
 (`dlgText`, `dlgMessage`) has its key line under the body instead
 (`viewSearch`), and it is pressable on the same terms.
 
+The run options are the same kind of surface and answer the same way: rows,
+the `‹ ›` on them, and a key line. A row that can be stepped keeps its two
+arrow columns whether or not they are lit — a value that jumped sideways as the
+pointer crossed it would be a panel that fidgets — and they light on the cursor
+row and on the row under the pointer, so the press that lights them is the
+press that uses them. Both columns are marked on every stepping row, lit or
+not: a target that only exists once the pointer has stopped is one the first
+click misses.
+
 A card's text field takes a caret from a press (`hitInput`, `pressInput`) — the
 dialog's own field, and a form's typed rows, which take the form cursor with
 them. A field that has scrolled sideways declines rather than guessing: the

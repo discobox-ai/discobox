@@ -729,7 +729,9 @@ func (o *optionSet) view(st *styles, z *zones, width int, prompt string) string 
 		// The row, and then the arrows over the top of it: they are drawn on
 		// the cursor row alone, and each is a press that changes the value the
 		// way the arrow key does.
-		z.markRow(hit{kind: hitOptionRow, idx: i}, rowsTop+i, inner)
+		z.markRow(hit{kind: hitOptionRow, idx: i}, rowsTop+i, inner+2*dialogPadLeft)
+
+		hovered := z.hovering(0, rowsTop+i, inner, 1)
 
 		bar := " "
 		label := st.dimText.Render(pad(opt.label, labelW))
@@ -737,7 +739,7 @@ func (o *optionSet) view(st *styles, z *zones, width int, prompt string) string 
 		case i == o.cursor:
 			bar = st.key.Render("❯")
 			label = st.cursorName.Render(pad(opt.label, labelW))
-		case z.hovering(0, rowsTop+i, inner, 1):
+		case hovered:
 			// Under the pointer: the label says so, and the chevron stays the
 			// cursor's, exactly as it does on a menu's rows.
 			label = st.hover.Render(pad(opt.label, labelW))
@@ -750,17 +752,33 @@ func (o *optionSet) view(st *styles, z *zones, width int, prompt string) string 
 		case i == o.cursor:
 			valueStyle = st.name
 		}
-		// The cursor row wears its arrows, so the one affordance the panel
-		// depends on — left and right change the value — is never a guess.
-		arrows := i == o.cursor && (opt.kind == optChoice || opt.kind == optToggle)
-		if arrows {
-			value = "‹ " + value + " ›"
+		// A row whose value can be stepped keeps the two columns its arrows
+		// need, whether or not they are lit: the arrows are the one affordance
+		// the panel depends on, and a value that jumped two cells sideways as
+		// the pointer crossed it would be a panel that fidgets. They light on
+		// the cursor row, which is what says left and right will work, and on
+		// the row under the pointer, which is what says a press will — without
+		// that, changing a value with the mouse is click the row, watch
+		// nothing happen, then click the arrow that has appeared.
+		steps := opt.kind == optChoice || opt.kind == optToggle
+		if steps {
+			left, right := st.dimText.Render("  "), st.dimText.Render("  ")
+			if i == o.cursor || hovered {
+				left, right = st.key.Render("‹ "), st.key.Render(" ›")
+			}
+			value = left + valueStyle.Render(truncate(value, max(inner-labelW-7, 6))) + right
+		} else {
+			value = valueStyle.Render(truncate(value, max(inner-labelW-3, 6)))
 		}
-		row := bar + " " + label + " " + valueStyle.Render(truncate(value, max(inner-labelW-3, 6)))
-		if arrows {
+		row := bar + " " + label + " " + value
+		if steps {
+			// Both arrow columns are marked on every stepping row, lit or not:
+			// the press that lights them is the same press that would use
+			// them, and a target that only exists after the pointer has
+			// already stopped is one the first click misses.
 			valueX := dialogPadLeft + labelW + 3
-			z.mark(hit{kind: hitOptionCycle, idx: i, delta: -1}, valueX, rowsTop+i, 1, 1)
-			z.mark(hit{kind: hitOptionCycle, idx: i, delta: 1}, valueX+lipgloss.Width(value)-1, rowsTop+i, 1, 1)
+			z.mark(hit{kind: hitOptionCycle, idx: i, delta: -1}, valueX, rowsTop+i, 2, 1)
+			z.mark(hit{kind: hitOptionCycle, idx: i, delta: 1}, valueX+lipgloss.Width(value)-2, rowsTop+i, 2, 1)
 		}
 		b.WriteString(padANSI(row, inner))
 		b.WriteString("\n")
