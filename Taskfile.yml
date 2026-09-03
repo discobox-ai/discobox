@@ -1293,7 +1293,15 @@ tasks:
       - task: release:image
         vars:
           IMAGE: sandbox-agent
-          BUILD_ARGS: --build-arg BASE_IMAGE={{.REGISTRY}}/discobox-base:{{.TAG}}
+          # The same build arguments build:sandbox-agent-image passes, with the
+          # base image pointing at this release rather than the local tag.
+          # IMAGE_LAYER_METADATA is not optional: without it the base layer
+          # label is set to the empty string, and every harness image built
+          # FROM this one inherits an empty layer that registration rejects as
+          # "not built FROM discobox-sandbox-agent" (ADR 0086 §1-2).
+          BUILD_ARGS: >-
+            --build-arg BASE_IMAGE={{.REGISTRY}}/discobox-base:{{.TAG}}
+            --build-arg IMAGE_LAYER_METADATA="$(jq -c . sandbox-agent/image.json)"
       # Strictly after sandbox-agent, and not alongside it: every harness image
       # is built FROM the sandbox agent image this release just pushed, and the
       # build cannot pull a tag that is not in the registry yet.
@@ -1316,6 +1324,11 @@ tasks:
       vars: [HARNESS]
     vars:
       HARNESS_DIR: '{{if eq .HARNESS "codex"}}codex-cli{{else}}{{.HARNESS}}{{end}}'
+      # A harness that declares nothing has no image.json and takes no metadata
+      # argument: its whole manifest is the base layer it inherits (ADR 0086
+      # §2), which is what `shell` is. Same rule as build:harness-image.
+      HARNESS_MANIFEST:
+        sh: test -f harness/{{if eq .HARNESS "codex"}}codex-cli{{else}}{{.HARNESS}}{{end}}/image.json && echo yes || true
     preconditions:
       - sh: test -f harness/{{.HARNESS_DIR}}/Dockerfile
         msg: "unknown harness: {{.HARNESS}}"
@@ -1326,10 +1339,12 @@ tasks:
           DOCKERFILE: harness/{{.HARNESS_DIR}}/Dockerfile
           CONTEXT: harness/{{.HARNESS_DIR}}
           # The same two build arguments build:harness-image passes, with the
-          # base image pointing at this release rather than the local tag.
+          # base image pointing at this release rather than the local tag. The
+          # command substitution is left for the shell release:image runs, so a
+          # manifest carrying spaces stays one argument.
           BUILD_ARGS: >-
             --build-arg SANDBOX_AGENT_IMAGE={{.REGISTRY}}/discobox-sandbox-agent:{{.TAG}}
-            --build-arg HARNESS_METADATA="$(jq -c . harness/{{.HARNESS_DIR}}/image.json)"
+            {{if .HARNESS_MANIFEST}}--build-arg HARNESS_METADATA="$(jq -c . harness/{{.HARNESS_DIR}}/image.json)"{{end}}
 
   release:image:
     desc: Build and push one multi-arch image (IMAGE names it; DOCKERFILE/CONTEXT/BUILD_ARGS override the defaults)
