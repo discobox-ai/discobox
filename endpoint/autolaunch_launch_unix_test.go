@@ -146,6 +146,73 @@ func TestEnsureRunningWaitsOutAStartingServer(t *testing.T) {
 	}
 }
 
+// The other half of waiting one out: a server that answers "starting" and then
+// stops answering has exited, because a server holds its listeners from before
+// it opens the database until the process ends. Waiting out the ready deadline
+// for a process that is gone is five minutes of a status line saying the step
+// it died on — which is exactly what a server that refuses to start without a
+// harness would have looked like.
+func TestEnsureRunningReportsAServerThatDiedWhileStarting(t *testing.T) {
+	socket := testSocketPath(t)
+	endpointURL := "unix://" + socket
+	listener, _, cleanup, err := Listen(endpointURL)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer cleanup()
+
+	var probes atomic.Int32
+	server := &http.Server{
+		ReadHeaderTimeout: 5 * time.Second,
+		Handler: http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(http.StatusServiceUnavailable)
+			writeStatus(t, w, health.Status{
+				Status: health.StatusStarting,
+				Phase:  "checking the built-in harnesses",
+			})
+			probes.Add(1)
+		}),
+	}
+	defer server.Close()
+	go func() { _ = server.Serve(listener) }()
+
+	opts := LaunchOptions{
+		Endpoint:      endpointURL,
+		LogPath:       filepath.Join(t.TempDir(), "server.log"),
+		Command:       "/bin/sh",
+		Args:          []string{"-c", "exit 7"}, // must never run
+		ProbeInterval: 10 * time.Millisecond,
+		ProbeTimeout:  time.Second,
+		// Generous, as it is in production. The point of the test is that this
+		// is not what bounds the wait.
+		ReadyTimeout: 30 * time.Second,
+	}
+	// Answer a few probes, then stop listening the way an exiting process does.
+	go func() {
+		for probes.Load() < 2 {
+			time.Sleep(5 * time.Millisecond)
+		}
+		_ = server.Close()
+		cleanup()
+	}()
+
+	start := time.Now()
+	_, err = EnsureRunning(context.Background(), opts)
+	if err == nil {
+		t.Fatal("expected an error for a server that stopped while starting")
+	}
+	if !strings.Contains(err.Error(), "stopped while starting") {
+		t.Fatalf("error %q does not say the server stopped while starting", err)
+	}
+	if !strings.Contains(err.Error(), "checking the built-in harnesses") {
+		t.Fatalf("error %q does not name the step it stopped on", err)
+	}
+	if elapsed := time.Since(start); elapsed > 10*time.Second {
+		t.Fatalf("waited %s, want the wait to end with the server rather than at the ready deadline", elapsed)
+	}
+}
+
 // An already-ready server needs neither a launch nor a wait.
 func TestEnsureRunningAcceptsAServerWithNoStatusBody(t *testing.T) {
 	socket := testSocketPath(t)

@@ -21,6 +21,9 @@ import (
 const (
 	defaultProbePath     = health.Path
 	defaultProbeInterval = 100 * time.Millisecond
+	// probesBeforeGone is how many consecutive unanswered probes mean a server
+	// that had been answering has exited rather than stalled. See waitReady.
+	probesBeforeGone = 3
 )
 
 // LaunchOptions describes a local server process that can be started on demand.
@@ -107,12 +110,14 @@ func EnsureRunning(ctx context.Context, opts LaunchOptions) (bool, error) {
 // waitReady polls a server that has answered "starting" until it is ready.
 func waitReady(ctx context.Context, opts LaunchOptions, deadline time.Time) error {
 	var last health.Status
+	answered, unanswered := false, 0
 	for time.Now().Before(deadline) {
 		status, err := probeEndpoint(ctx, opts)
 		switch {
 		case err == nil && !status.Starting():
 			return nil
 		case err == nil:
+			answered, unanswered = true, 0
 			// On the step changing, not on every poll: uptime moves with each
 			// answer, so comparing whole statuses reports the same step over
 			// and over.
@@ -122,6 +127,22 @@ func waitReady(ctx context.Context, opts LaunchOptions, deadline time.Time) erro
 			}
 		case !isProbeConnectionError(err):
 			return err
+		case answered:
+			// It was answering and now it is not. A server holds its listeners
+			// for the whole of startup and releases them only when the process
+			// ends, so this is one that gave up — a step that failed — rather
+			// than one that is busy, and waiting out the generous ready
+			// deadline for a process that has exited is minutes of saying
+			// nothing when its last words are already in the log.
+			//
+			// Not on the first failure: a probe has a timeout of its own, and
+			// one that expires on a loaded machine is a slow answer rather than
+			// a dead server. A short run of them is neither.
+			unanswered++
+			if unanswered >= probesBeforeGone {
+				return fmt.Errorf("local server at %s stopped while starting (last step: %s)%s",
+					opts.Endpoint, phaseOrUnknown(last), opts.logTail())
+			}
 		}
 		select {
 		case <-ctx.Done():
@@ -129,11 +150,17 @@ func waitReady(ctx context.Context, opts LaunchOptions, deadline time.Time) erro
 		case <-time.After(opts.probeInterval()):
 		}
 	}
-	phase := last.Phase
-	if phase == "" {
-		phase = "unknown"
+	return fmt.Errorf("local server at %s did not finish starting (last step: %s)%s",
+		opts.Endpoint, phaseOrUnknown(last), opts.logTail())
+}
+
+// phaseOrUnknown names the last step a server reported, for an error that has
+// to say something about a server that never said what it was doing.
+func phaseOrUnknown(status health.Status) string {
+	if phase := strings.TrimSpace(status.Phase); phase != "" {
+		return phase
 	}
-	return fmt.Errorf("local server at %s did not finish starting (last step: %s)%s", opts.Endpoint, phase, opts.logTail())
+	return "unknown"
 }
 
 // probeEndpoint asks the endpoint how it is. A reachable server answers with a
