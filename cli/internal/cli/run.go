@@ -9,11 +9,18 @@ import (
 	"github.com/discobox-ai/discobox/cli/internal/sandboxcreate"
 	"github.com/discobox-ai/discobox/cli/internal/tui"
 	"github.com/spf13/cobra"
+	"github.com/spf13/pflag"
 )
 
 type runCommandOptions struct {
 	prompt sandboxcreate.PromptOptions
-	detach bool
+	// promptFlag is -p. The prompt is normally the words after the command,
+	// which a shell has already split; this is the same prompt as one argument,
+	// for a caller that would rather quote it than fight the shell — and the
+	// only way to give one to the bare `discobox`, where an unquoted prompt
+	// would be indistinguishable from a subcommand.
+	promptFlag []string
+	detach     bool
 	// noSource creates the discobox with nothing materialized in it. -C still
 	// says where the create came from, so the discobox is filed under this
 	// directory and listed here; it just is not cut from it.
@@ -35,7 +42,9 @@ func (a *App) newRunCommand() *cobra.Command {
 		Long: `Launch a prompt in a new discobox against the current directory.
 
 The arguments are the prompt. Use -- when the prompt needs to be separated from
-command flags explicitly.
+command flags explicitly, or pass it as -p to give it as one argument instead —
+the only way to spell a prompt to the bare "discobox", which is this command in
+every way that matters (see "discobox --help").
 
 By default run opens the launcher's window and makes the discobox there: the
 question about uncommitted work is asked on it, the wait is drawn on it, and
@@ -99,90 +108,133 @@ discobox as it does here. --declared-sources=false leaves them out.`,
   discobox run -s OPENAI_API_KEY=sk-... -s GITHUB_TOKEN=<sec_123> fix the failing tests
   discobox run -d fix the failing tests
   discobox run --raw fix the failing tests
-  discobox run -- prompt starting with --flag-like text`,
+  discobox run -- prompt starting with --flag-like text
+  discobox -H codex -d -p 'fix the failing tests'`,
 		Args: cobra.ArbitraryArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
-			// Creating and delivering a source are this client's own work, so
-			// nothing but this process can say which of them is underway
-			// (ADR 0060). The line comes back down before anything else is
-			// written to stderr — and everything else this command writes there
-			// while it is up goes through it, since it owns the row it is on.
-			status := newStatusLine(cmd.ErrOrStderr())
-			defer status.clear()
-			opts.prompt.Source = a.source
-			opts.prompt.NoSource = opts.noSource
-			opts.prompt.ConfirmIncludeDirty = confirmIncludeDirty(cmd, status)
-			opts.prompt.ConfirmCopyDirectory = confirmCopyDirectory(cmd, status)
-			opts.prompt.SkipDeclaredSources = !opts.declaredSources
-			opts.prompt.ReportDeclaredSource = reportDeclaredSource(status)
-			parsedOpts, err := sandboxcreate.ParsePromptOptions(opts.prompt, args)
-			if err != nil {
-				return err
-			}
-			// The window is where a run goes unless something says otherwise,
-			// and it is given the request rather than the discobox: the create
-			// happens inside it, so the question about uncommitted work is the
-			// window's own dialog and the wait is its own screen rather than a
-			// list with a busy line under it. The flags are parsed above
-			// either way — a flag that contradicts itself is this command's
-			// error to report, on this terminal, before a window opens over it.
-			//
-			// -d has nothing to open a window for: it prints the discobox and
-			// returns, and printing is stdout, which the window would be
-			// sitting on.
-			if !opts.detach && !opts.raw && canOpenWindow(cmd) {
-				return a.runTUI(cmd, "", tui.WithRun(a.runWindowRequest(opts, args)))
-			}
-			projectID, err := a.projectIDValue()
-			if err != nil {
-				return err
-			}
-			client, err := a.apiClient()
-			if err != nil {
-				return err
-			}
-			report := func(step sandboxcreate.Step) { status.set(string(step)) }
-			sandbox, local, err := sandboxcreate.CreatePromptSandbox(cmd.Context(), client, projectID, parsedOpts, report)
-			if err != nil {
-				return err
-			}
-			// The local source is done as soon as it has been delivered, which
-			// for a directory that is not a repository means deleting the
-			// repository built over it. The defer covers the paths that never
-			// reach the delivery.
-			defer local.Close()
-			// A server that cannot reach this directory waits for us to push it.
-			gitServerURL, releaseGitServerURL, err := a.gitServerURL(cmd.Context())
-			if err != nil {
-				return err
-			}
-			err = sandboxcreate.DeliverSource(cmd.Context(), client, projectID, sandbox, local, gitServerURL, a.token, report)
-			releaseGitServerURL()
-			local.Close()
-			status.clear()
-			if err != nil {
-				return err
-			}
-			if err := a.writeProjectSSHConfig(cmd, client, projectID, ""); err != nil {
-				return fmt.Errorf("sync SSH config: %w", err)
-			}
-			if opts.detach {
-				return a.writeSandbox(cmd, sandbox)
-			}
-			return a.attachRunSandbox(cmd, projectID, sandbox)
+			return a.runPrompt(cmd, &opts, args)
 		},
 	}
-	cmd.Flags().StringArrayVarP(&opts.prompt.Env, "env", "e", nil, "Environment variable as KEY=VALUE or KEY from the local environment; repeat for multiple variables. A KEY whose name contains KEY, TOKEN, PASS, or SECRET is treated as a secret; use KEY!=VALUE to force it to be a plain environment variable")
-	cmd.Flags().StringArrayVarP(&opts.prompt.Secret, "secret", "s", nil, "Secret injected as a sentinel placeholder resolved by the proxy at runtime, as KEY=VALUE (inline value) or KEY=<SECRET_ID> (reference an existing secret); repeat for multiple secrets")
-	cmd.Flags().StringArrayVarP(&opts.prompt.Include, "include", "i", nil, "Additional source directory or Git repository to bring into the discobox, optionally with @REF; repeat for more than one. A local directory keeps its own absolute path inside the discobox and is named after itself, so -i ../foo is the source foo")
-	cmd.Flags().StringVarP(&opts.prompt.Harness, "harness", "H", "", "Harness config to run, by slug (e.g. codex), name, or ID; defaults to the project default")
-	cmd.Flags().BoolVarP(&opts.detach, "detach", "d", false, "Create the discobox and print it without attaching to its terminal")
-	cmd.Flags().BoolVar(&opts.raw, "raw", false, "Create the discobox here and attach this terminal straight to its terminal, instead of making it in the window")
-	cmd.Flags().BoolVar(&opts.noSource, "no-source", false, "Create the discobox with nothing checked out in it; the directory you run in still decides where it is filed and what Git authorship it commits under")
-	cmd.Flags().BoolVar(&opts.declaredSources, "declared-sources", true, "Bring in the sources the repository declares in .discobox/sources.json, using a local checkout beside the source directory when there is one")
-	cmd.Flags().Var(&opts.prompt.IncludeDirty, "include-dirty", "Carry uncommitted changes in the local source into the discobox: true, false, or auto (ask when the workspace is dirty and this is a terminal). A source directory in no Git repository is uncommitted in its entirety, so this decides whether the directory itself is copied in")
-	cmd.Flags().Lookup("include-dirty").NoOptDefVal = string(sandboxcreate.IncludeDirtyAlways)
+	addRunFlags(cmd, &opts)
 	return cmd
+}
+
+// runPrompt creates the discobox a run describes. It is the body of `discobox
+// run` and of the bare `discobox` that stands in for it: the shortcut is the
+// same command reached without its name, not a second one that has to be kept
+// in step with it.
+//
+// args is the prompt as the shell split it, after -p, which is the same prompt
+// given as one argument.
+func (a *App) runPrompt(cmd *cobra.Command, opts *runCommandOptions, args []string) error {
+	// Creating and delivering a source are this client's own work, so
+	// nothing but this process can say which of them is underway
+	// (ADR 0060). The line comes back down before anything else is
+	// written to stderr — and everything else this command writes there
+	// while it is up goes through it, since it owns the row it is on.
+	status := newStatusLine(cmd.ErrOrStderr())
+	defer status.clear()
+	// -p and the words after the command are the same prompt, so a caller can
+	// use whichever the shell makes easier and both arrive as argv tokens. The
+	// flag leads because it is the one that had to be quoted.
+	prompt := append(append([]string(nil), opts.promptFlag...), args...)
+	opts.prompt.Source = a.source
+	opts.prompt.NoSource = opts.noSource
+	opts.prompt.ConfirmIncludeDirty = confirmIncludeDirty(cmd, status)
+	opts.prompt.ConfirmCopyDirectory = confirmCopyDirectory(cmd, status)
+	opts.prompt.SkipDeclaredSources = !opts.declaredSources
+	opts.prompt.ReportDeclaredSource = reportDeclaredSource(status)
+	parsedOpts, err := sandboxcreate.ParsePromptOptions(opts.prompt, prompt)
+	if err != nil {
+		return err
+	}
+	// The window is where a run goes unless something says otherwise,
+	// and it is given the request rather than the discobox: the create
+	// happens inside it, so the question about uncommitted work is the
+	// window's own dialog and the wait is its own screen rather than a
+	// list with a busy line under it. The flags are parsed above
+	// either way — a flag that contradicts itself is this command's
+	// error to report, on this terminal, before a window opens over it.
+	//
+	// -d has nothing to open a window for: it prints the discobox and
+	// returns, and printing is stdout, which the window would be
+	// sitting on.
+	if !opts.detach && !opts.raw && canOpenWindow(cmd) {
+		return a.runTUI(cmd, "", tui.WithRun(a.runWindowRequest(opts, prompt)))
+	}
+	projectID, err := a.projectIDValue()
+	if err != nil {
+		return err
+	}
+	client, err := a.apiClient()
+	if err != nil {
+		return err
+	}
+	report := func(step sandboxcreate.Step) { status.set(string(step)) }
+	sandbox, local, err := sandboxcreate.CreatePromptSandbox(cmd.Context(), client, projectID, parsedOpts, report)
+	if err != nil {
+		return err
+	}
+	// The local source is done as soon as it has been delivered, which
+	// for a directory that is not a repository means deleting the
+	// repository built over it. The defer covers the paths that never
+	// reach the delivery.
+	defer local.Close()
+	// A server that cannot reach this directory waits for us to push it.
+	gitServerURL, releaseGitServerURL, err := a.gitServerURL(cmd.Context())
+	if err != nil {
+		return err
+	}
+	err = sandboxcreate.DeliverSource(cmd.Context(), client, projectID, sandbox, local, gitServerURL, a.token, report)
+	releaseGitServerURL()
+	local.Close()
+	status.clear()
+	if err != nil {
+		return err
+	}
+	if err := a.writeProjectSSHConfig(cmd, client, projectID, ""); err != nil {
+		return fmt.Errorf("sync SSH config: %w", err)
+	}
+	if opts.detach {
+		return a.writeSandbox(cmd, sandbox)
+	}
+	return a.attachRunSandbox(cmd, projectID, sandbox)
+}
+
+// addRunFlags gives cmd everything a run takes, and hands back the set it
+// added. Both spellings of a run register them from here — `discobox run` and
+// the bare `discobox` that stands in for it — so the two cannot drift into
+// taking different flags, and the returned set is how the bare one asks whether
+// any of them was given at all.
+func addRunFlags(cmd *cobra.Command, opts *runCommandOptions) *pflag.FlagSet {
+	flags := pflag.NewFlagSet("run", pflag.ContinueOnError)
+	flags.StringArrayVarP(&opts.promptFlag, "prompt", "p", nil, "Prompt for the harness, as one argument; repeat to pass more argv tokens. The same thing as the words after the command, and the only spelling the bare \"discobox\" has for a prompt")
+	flags.StringArrayVarP(&opts.prompt.Env, "env", "e", nil, "Environment variable as KEY=VALUE or KEY from the local environment; repeat for multiple variables. A KEY whose name contains KEY, TOKEN, PASS, or SECRET is treated as a secret; use KEY!=VALUE to force it to be a plain environment variable")
+	flags.StringArrayVarP(&opts.prompt.Secret, "secret", "s", nil, "Secret injected as a sentinel placeholder resolved by the proxy at runtime, as KEY=VALUE (inline value) or KEY=<SECRET_ID> (reference an existing secret); repeat for multiple secrets")
+	flags.StringArrayVarP(&opts.prompt.Include, "include", "i", nil, "Additional source directory or Git repository to bring into the discobox, optionally with @REF; repeat for more than one. A local directory keeps its own absolute path inside the discobox and is named after itself, so -i ../foo is the source foo")
+	flags.StringVarP(&opts.prompt.Harness, "harness", "H", "", "Harness config to run, by slug (e.g. codex), name, or ID; defaults to the project default")
+	flags.BoolVarP(&opts.detach, "detach", "d", false, "Create the discobox and print it without attaching to its terminal")
+	flags.BoolVar(&opts.raw, "raw", false, "Create the discobox here and attach this terminal straight to its terminal, instead of making it in the window")
+	flags.BoolVar(&opts.noSource, "no-source", false, "Create the discobox with nothing checked out in it; the directory you run in still decides where it is filed and what Git authorship it commits under")
+	flags.BoolVar(&opts.declaredSources, "declared-sources", true, "Bring in the sources the repository declares in .discobox/sources.json, using a local checkout beside the source directory when there is one")
+	flags.Var(&opts.prompt.IncludeDirty, "include-dirty", "Carry uncommitted changes in the local source into the discobox: true, false, or auto (ask when the workspace is dirty and this is a terminal). A source directory in no Git repository is uncommitted in its entirety, so this decides whether the directory itself is copied in")
+	flags.Lookup("include-dirty").NoOptDefVal = string(sandboxcreate.IncludeDirtyAlways)
+	cmd.Flags().AddFlagSet(flags)
+	return flags
+}
+
+// runRequested reports whether an invocation of the bare `discobox` is a run
+// rather than a launcher. A prompt is one, and so is any of run's own flags on
+// their own: `discobox -d` has said enough about what it wants for a window to
+// be the wrong answer, while `discobox` with nothing at all is the launcher it
+// has always been.
+func runRequested(flags *pflag.FlagSet, args []string) bool {
+	if len(args) > 0 {
+		return true
+	}
+	given := false
+	flags.VisitAll(func(flag *pflag.Flag) { given = given || flag.Changed })
+	return given
 }
 
 // confirmIncludeDirty asks whether uncommitted local work should be carried
@@ -353,9 +405,9 @@ func dirtyWorkspacePrompt(workspace sandboxcreate.DirtyWorkspace) string {
 // the same parse this command has just validated them with. Two flags do not go
 // over: -d, which never reaches a window, and --raw, which is the choice not to
 // open one.
-func (a *App) runWindowRequest(opts runCommandOptions, args []string) tui.RunRequest {
+func (a *App) runWindowRequest(opts *runCommandOptions, prompt []string) tui.RunRequest {
 	req := tui.RunRequest{
-		Prompt:              args,
+		Prompt:              prompt,
 		Source:              a.source,
 		NoSource:            opts.noSource,
 		Harness:             opts.prompt.Harness,

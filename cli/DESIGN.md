@@ -46,16 +46,29 @@ transport helpers where OpenAPI does not model the stream.
 - What runs is therefore `discobox apply` with its own flag defaults and terminal
   detection, not a second implementation that drifts from it. A launcher that
   cannot be reproduced from a shell is the thing to avoid.
-- Bare `discobox` runs the launcher when stdin and stdout are both terminals, and
-  prints its help otherwise (`App.runTUI`, reached from the root command's
-  `RunE` and from `discobox tui`). Typing a program's name is how you ask for it,
-  and the launcher is the one thing you can ask for without knowing a
-  subcommand; a pipe, a script or CI expected output, and a full-screen window
-  is not an answer to that. The root's `Args` is left at cobra's default, which
-  turns an unrecognized first argument into "unknown command" rather than
-  handing it to the launcher. The leader there comes from the environment only:
-  a flag would have to be persistent to be reachable, and every subcommand would
-  carry one that means nothing to it.
+- Bare `discobox` with a prompt, or any flag `run` takes, *is* `discobox run`
+  (`runRequested`, checked first in the root command's `RunE`, dispatching to
+  the shared `App.runPrompt`). `addRunFlags` registers run's flags once and is
+  called for both the `run` subcommand and the root command, so the two cannot
+  drift into taking different flags. `-p`/`--prompt` exists because of this:
+  the words after the command are already a prompt, but the root command has no
+  other way to spell one, since an unquoted prompt is indistinguishable from a
+  subcommand name. This is also why `-p` could not stay `--project`'s
+  shorthand — `--project` now has a long form only.
+- Otherwise, bare `discobox` runs the launcher when stdin and stdout are both
+  terminals, and prints its help when they are not (`App.runTUI`, also reached
+  from `discobox tui`). Typing a program's name is how you ask for it, and the
+  launcher is the one thing you can ask for without knowing a subcommand; a
+  pipe, a script or CI expected output, and a full-screen window is not an
+  answer to that. The leader there comes from the environment only: a flag
+  would have to be persistent to be reachable, and every subcommand would carry
+  one that means nothing to it.
+- The root's `Args` is `cobra.ArbitraryArgs`, not cobra's default: a bare word
+  is a prompt now, not a subcommand to validate, so there is no rule left that
+  can tell a misspelled subcommand from the first word of one. `discobox lst`
+  used to report `unknown command "lst"`; it now opens a discobox prompted
+  "lst". That trade, and the ones around reclaiming `-p`, are deliberate — see
+  [ADR 0089](../docs/adr/0089-the-bare-command-is-a-run-and-costs-unknown-command.md).
 - `discobox configure` is the same launcher opened on its harnesses screen
   (`tui.WithHarnesses()`), not a window of its own. See *Harness Configure
   Step*.

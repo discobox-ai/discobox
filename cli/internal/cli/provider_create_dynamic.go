@@ -180,7 +180,7 @@ func (a *App) consumeProviderCreateGlobalFlags(args []string) []string {
 			i++
 		case strings.HasPrefix(arg, "--server="):
 			a.serverURL = strings.TrimPrefix(arg, "--server=")
-		case arg == "--project" || arg == "-p":
+		case arg == "--project":
 			if i+1 < len(args) {
 				a.projectID = args[i+1]
 				i++

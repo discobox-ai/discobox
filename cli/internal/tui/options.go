@@ -663,7 +663,7 @@ func (o *optionSet) command(prompt string) string {
 	req := o.request(prompt)
 	args := []string{"discobox"}
 	if p := o.session.Project; p != "" && p != o.session.DefaultProject {
-		args = append(args, "-p", p)
+		args = append(args, "--project", p)
 	}
 	if req.Source != "" {
 		args = append(args, "-C", shellQuote(req.Source))

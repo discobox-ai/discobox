@@ -401,7 +401,7 @@ func TestRunWindowRequestCarriesTheCommand(t *testing.T) {
 	opts.prompt.Secret = []string{"OPENAI_API_KEY=sk-x"}
 	opts.prompt.Include = []string{"../bar"}
 
-	req := app.runWindowRequest(opts, []string{"fix", "the", "tests"})
+	req := app.runWindowRequest(&opts, []string{"fix", "the", "tests"})
 
 	if !slices.Equal(req.Prompt, []string{"fix", "the", "tests"}) {
 		t.Fatalf("prompt = %q, want the words the shell split", req.Prompt)
@@ -434,7 +434,7 @@ func TestRunWindowRequestLeavesAutoForTheWindowToAsk(t *testing.T) {
 	} {
 		opts := runCommandOptions{}
 		opts.prompt.IncludeDirty = tc.flag
-		if got := app.runWindowRequest(opts, nil).IncludeDirty; got != tc.want {
+		if got := app.runWindowRequest(&opts, nil).IncludeDirty; got != tc.want {
 			t.Fatalf("--include-dirty=%q reached the window as %q, want %q", tc.flag, got, tc.want)
 		}
 	}

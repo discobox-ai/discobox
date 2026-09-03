@@ -1619,22 +1619,44 @@ func TestBareCommandPrintsHelpWithoutATerminal(t *testing.T) {
 	}
 }
 
-// A misspelled subcommand is still a misspelled subcommand. Cobra's default
-// argument handling reports it rather than handing the word to the launcher,
-// and that error is worth more than a window that opens on a typo.
-func TestUnknownCommandIsNotTheLauncher(t *testing.T) {
+// Any word after the bare command is a prompt, exactly as it would be after
+// `run`: the shortcut is reaching the same run without its name, so a typo of
+// a subcommand now creates a discobox prompted with the typo rather than
+// reporting "unknown command". There is no rule that can tell the two apart —
+// a prompt is words, and a subcommand name is indistinguishable from the first
+// word of one — so this is the trade the shortcut makes.
+func TestBareWordsAreARunPrompt(t *testing.T) {
+	serveSSHSync := preparePromptCreateSSHSync(t)
+	repo := newRunSourceTestRepo(t)
+	var posted map[string]any
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if serveSSHSync(w, r) {
+			return
+		}
+		if r.Method != http.MethodPost || r.URL.Path != "/projects/project-1/sandboxes" {
+			t.Fatalf("unexpected request %s %s", r.Method, r.URL.Path)
+		}
+		defer r.Body.Close()
+		if err := json.NewDecoder(r.Body).Decode(&posted); err != nil {
+			t.Fatalf("decode request body: %v", err)
+		}
+		w.Header().Set("Content-Type", "application/json; charset=utf-8")
+		w.WriteHeader(http.StatusAccepted)
+		_, _ = w.Write([]byte(`{"id":"sbx_bogus","projectId":"project-1","createdByUserId":"user-1","displayName":"run-test","config":{"name":"run-test","image":""},"runtime":{"state":"pending","desiredState":"present","generation":1,"observedGeneration":0},"createdAt":"2026-06-17T00:00:00Z","updatedAt":"2026-06-17T00:00:01Z"}`))
+	}))
+	t.Cleanup(server.Close)
+
 	cmd := NewRootCommand()
 	var out bytes.Buffer
 	cmd.SetOut(&out)
-	cmd.SetErr(&out)
-	cmd.SetIn(&bytes.Buffer{})
-	cmd.SetArgs([]string{"bogus"})
+	cmd.SetArgs([]string{"--server", server.URL, "--project", "project-1", "-C", repo + "@HEAD", "-d", "bogus"})
 
-	err := cmd.Execute()
-	if err == nil {
-		t.Fatalf("want an error, got help:\n%s", out.String())
+	if err := cmd.Execute(); err != nil {
+		t.Fatalf("execute: %v", err)
 	}
-	if !strings.Contains(err.Error(), `unknown command "bogus"`) {
-		t.Fatalf("error = %v, want it to name the command", err)
+	config := posted["config"].(map[string]any)
+	prompt, ok := config["prompt"].([]any)
+	if !ok || len(prompt) != 1 || prompt[0] != "bogus" {
+		t.Fatalf("prompt = %#v, want [bogus]", config["prompt"])
 	}
 }

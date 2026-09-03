@@ -141,3 +141,4 @@ Nygard-style ADRs (see adr.github.io) combined with current-state design docs:
 | [0086](0086-a-harness-image-extends-the-base-and-its-manifest-is-override-only.md) | A harness image extends the sandbox base, and its manifest is override-only | Accepted (supersedes [0043](0043-shell-is-an-ordinary-harness-image.md) §2) |
 | [0087](0087-the-pool-agent-reaps-only-children-nothing-is-waiting-for.md) | The pool agent reaps only children nothing is waiting for | Accepted |
 | [0088](0088-the-launcher-window-answers-the-mouse-and-owns-selection.md) | The launcher window answers the mouse everywhere, and owns selection where it does | Accepted |
+| [0089](0089-the-bare-command-is-a-run-and-costs-unknown-command.md) | The bare command is a run, and costs "unknown command" | Accepted |

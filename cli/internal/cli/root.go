@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/spf13/cobra"
+	"github.com/spf13/pflag"
 
 	apiclientgen "github.com/discobox-ai/discobox/api/gen"
 	"github.com/discobox-ai/discobox/cli/internal/keys"
@@ -65,9 +66,21 @@ func newRootCommand() (*cobra.Command, *App) {
 	cobra.EnableCommandSorting = false
 
 	app := &App{}
+	var run runCommandOptions
+	var runFlags *pflag.FlagSet
 	cmd := &cobra.Command{
-		Use:           "discobox",
-		Short:         "Discobox command line client",
+		Use:   "discobox [flags] [PROMPT...]",
+		Short: "Discobox command line client",
+		Long: `Discobox runs coding agents in isolated sandboxes on this machine.
+
+With a prompt, or any of the flags a run takes, this is "discobox run": the
+command name can be left out of the thing you do most.
+
+  discobox fix the failing tests
+  discobox -H codex -d -p "fix the failing tests"
+
+With nothing at all it opens the launcher, where the same run is one prompt and
+an Enter. See "discobox run --help" for what the flags below mean.`,
 		Version:       version.String(),
 		SilenceUsage:  true,
 		SilenceErrors: true,
@@ -75,17 +88,28 @@ func newRootCommand() (*cobra.Command, *App) {
 			app.errOut = cmd.ErrOrStderr()
 			return app.validate()
 		},
+		// Anything this command is given is a run: the prompt, or a flag only a
+		// run takes. It is the one thing anybody does often enough to resent
+		// typing the name of, and `discobox` is already what you type to reach
+		// the same run in the launcher.
+		//
+		// Args therefore takes whatever it is given, which costs the "unknown
+		// command" cobra used to answer a misspelled subcommand with:
+		// `discobox lst` is now a discobox prompted "lst" rather than an error.
+		// A prompt is words, and no rule can tell a misspelling from the first
+		// word of one.
+		//
 		// Bare `discobox` at a terminal opens the launcher: it is the one thing
 		// you can ask for without knowing a subcommand, and typing the name of
 		// a program is how you ask for it. Anywhere else — a pipe, a script,
 		// CI — it prints its help, because a full-screen window is not an
-		// answer to a program that expected output.
-		//
-		// Args is deliberately left alone: cobra's default already turns an
-		// unrecognized first argument into "unknown command" rather than
-		// handing it here, and that error is worth more than a launcher that
-		// opens when you misspell one.
-		RunE: func(cmd *cobra.Command, _ []string) error {
+		// answer to a program that expected output. A run says where its output
+		// goes for itself, so this only covers the launcher.
+		Args: cobra.ArbitraryArgs,
+		RunE: func(cmd *cobra.Command, args []string) error {
+			if runRequested(runFlags, args) {
+				return app.runPrompt(cmd, &run, args)
+			}
 			if !isTerminalStream(cmd.OutOrStdout()) || !isTerminalStream(cmd.InOrStdin()) {
 				return cmd.Help()
 			}
@@ -97,7 +121,10 @@ func newRootCommand() (*cobra.Command, *App) {
 		},
 	}
 	cmd.PersistentFlags().StringVar(&app.serverURL, "server", envOrDefault("DISCOBOX_SERVER", endpoint.DefaultEndpoint()), "Discobox API server endpoint")
-	cmd.PersistentFlags().StringVarP(&app.projectID, "project", "p", envOrDefault("DISCOBOX_PROJECT", defaultProjectAlias), "Project ID for this invocation; use default for the user's default project")
+	// Long form only: -p is the prompt, on this command and on run, because a
+	// prompt is what somebody typing `discobox -p ...` means every time and a
+	// project is what a script names in full.
+	cmd.PersistentFlags().StringVar(&app.projectID, "project", envOrDefault("DISCOBOX_PROJECT", defaultProjectAlias), "Project ID for this invocation; use default for the user's default project")
 	// Advanced: everything a project is for lives under `discobox admin`, and a
 	// user with one project — which is everyone until they make a second —
 	// gains nothing from a flag on every command's help. It keeps working for
@@ -112,6 +139,10 @@ func newRootCommand() (*cobra.Command, *App) {
 	cmd.PersistentFlags().BoolVar(&app.debug, "debug", false, "Print HTTP requests made by the API client, and the git commands run on this machine")
 	cmd.PersistentFlags().BoolVar(&app.noStart, "no-start", false, "Do not start a local server when the endpoint is unavailable")
 	_ = cmd.RegisterFlagCompletionFunc("project", app.completeProjects)
+	// The run's own flags, on the command that stands in for it. They are local
+	// rather than persistent, so `discobox ls --help` is still a list's flags
+	// and nothing else: only the bare form is a run.
+	runFlags = addRunFlags(cmd, &run)
 
 	cmd.AddCommand(app.newRunCommand())
 	cmd.AddCommand(app.newListCommand())
