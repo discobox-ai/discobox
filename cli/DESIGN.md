@@ -211,6 +211,15 @@ explicit `true` or `false` to a child it spawns (a local pty command, see
 above); `auto` is not forwarded, so the child makes its own build and
 environment answer rather than inheriting a stale one.
 
+An invocation autolaunches at most once, at the first client it builds
+(`App.ensureLocalServerOnce`). Starting a server is a startup step, not
+something to reach for again whenever a request fails: everything that retries
+asks for a client on every pass, so a command that outlived its server used to
+spend the rest of its life spawning replacements, each losing the race for the
+data directory's singleton lock and exiting. Only the caller that made the
+attempt is told how it went; a later one dials the endpoint and reports the
+connection error, rather than being handed a stale failure it cannot act on.
+
 The launched process is this binary re-invoked, and the argv comes from
 `App.serverLaunchArgs`, which reads the path off the command tree rather than
 naming it. A path spelled by hand is a reference nothing checks: the server
@@ -609,6 +618,10 @@ session, `execstream/client`.
   pointless. `lost` is an ungraceful disappearance (unit gone, no exit recorded):
   reconnect, because the redial's attach relaunches — but only for the virtual
   primary id, since nothing can ever revive a concrete one.
+- Nothing in a reconnect loop starts a server. The redial and the reconnect
+  decision both ask `App` for a client, and autolaunch happens at most once per
+  invocation (see the auto-start section above), so a server that goes away
+  mid-attach is reported rather than replaced.
 - A terminal cannot outlive its sandbox. When the exec read fails and the
   sandbox is `stopping`, `stopped`, or `failed`, the attach ends rather than
   reconnecting forever — the stop is observable, so the client acts on it instead

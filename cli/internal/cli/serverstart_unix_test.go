@@ -103,3 +103,52 @@ func encodeStatus(t *testing.T, w http.ResponseWriter, status health.Status) {
 		t.Errorf("encode status: %v", err)
 	}
 }
+
+// An invocation gets one autolaunch, at its start, and no more.
+//
+// Everything that retries — a terminal attach reconnecting, a watch loop — asks
+// for a client on every pass, and each ask used to be another chance to launch a
+// server. A command that outlived its server then spent the rest of its life
+// spawning replacements that lost the race for the singleton lock and exited.
+func TestAnInvocationAutolaunchesAtMostOnce(t *testing.T) {
+	socket := filepath.Join(shorttmp.Dir(t), "s.sock")
+	endpointURL := "unix://" + socket
+	listener, _, cleanup, err := endpoint.Listen(endpointURL)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer cleanup()
+
+	var probes atomic.Int32
+	server := &http.Server{
+		ReadHeaderTimeout: 5 * time.Second,
+		Handler: http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+			probes.Add(1)
+			w.Header().Set("Content-Type", "application/json")
+			encodeStatus(t, w, health.Status{Status: health.StatusReady})
+		}),
+	}
+	defer server.Close()
+	go func() { _ = server.Serve(listener) }()
+
+	_, app := newRootCommand()
+	app.serverURL, app.quiet = endpointURL, true
+
+	if _, _, err := app.httpClientWithAutoStart(true); err != nil {
+		t.Fatal(err)
+	}
+	first := probes.Load()
+	if first == 0 {
+		t.Fatal("the first client should have checked whether a server was there")
+	}
+
+	// The passes a retry loop makes. None of them is a startup.
+	for range 5 {
+		if _, _, err := app.httpClientWithAutoStart(true); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if got := probes.Load(); got != first {
+		t.Fatalf("the launch path ran again for a later client: %d probes, want the %d from startup", got, first)
+	}
+}

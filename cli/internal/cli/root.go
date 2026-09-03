@@ -9,6 +9,7 @@ import (
 	"net/http"
 	"os"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/spf13/cobra"
@@ -46,6 +47,10 @@ type App struct {
 	// can ask the command tree where it lives instead of naming it. See
 	// serverLaunchArgs.
 	serverCmd *cobra.Command
+
+	// autoLaunchOnce guards the one autolaunch attempt this invocation gets.
+	// See ensureLocalServerOnce.
+	autoLaunchOnce sync.Once
 
 	// startedServer records that this invocation launched the server, which is
 	// what makes it the one responsible for showing first-run setup.
@@ -247,7 +252,7 @@ func (a *App) httpClientWithAutoStart(autoStart bool) (string, *http.Client, err
 	transport := http.DefaultTransport
 	parsed := a.serverEndpoint()
 	if autoStart && parsed.AutoLaunchable() {
-		if err := a.ensureLocalServer(context.Background()); err != nil {
+		if err := a.ensureLocalServerOnce(); err != nil {
 			return "", nil, err
 		}
 	}
@@ -310,6 +315,35 @@ func (a *App) serverEndpoint() endpoint.Endpoint {
 		return endpoint.Endpoint{}
 	}
 	return parsed
+}
+
+// ensureLocalServerOnce autolaunches a server for this invocation, at most
+// once.
+//
+// Starting one is a startup step, not something to reach for again every time a
+// request fails. Anything that retries — a terminal attach reconnecting, a
+// watch loop — asks for a client on every pass, and each of those asks used to
+// be a fresh chance to launch a server. So a command that outlived its server
+// spent the rest of its life spawning replacements: one every few seconds, each
+// of them losing the race for the data directory's singleton lock and exiting,
+// for as long as the command ran. A server that was up and went away is a thing
+// to report, not to paper over.
+//
+// Only the caller that made the attempt is told how it went. A later one is not
+// handed a failure it did not cause and cannot act on; it goes on to dial the
+// endpoint, where a server that never started shows up as the connection error
+// it is.
+func (a *App) ensureLocalServerOnce() error {
+	var attempted bool
+	var err error
+	a.autoLaunchOnce.Do(func() {
+		attempted = true
+		err = a.ensureLocalServer(context.Background())
+	})
+	if !attempted {
+		return nil
+	}
+	return err
 }
 
 func (a *App) ensureLocalServer(ctx context.Context) error {
