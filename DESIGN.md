@@ -248,7 +248,13 @@ flowchart TD
 `discobox-base` is released like the rest even though nothing runs it: its
 children must resolve one already-built reference for their layers to be the
 same blobs. `release:images` builds them in that order, and the development
-image watcher orders its own builds from the same parent links.
+image watcher orders its own builds from the same parent links. After any
+partial rebuild, the watcher derives both the complete development manifest and
+every image setting in `.env` from one inspection of the full local image set;
+the two publications must never name different pool or sandbox images.
+Dockerfile verification reuses the Taskfile build recipes with test-only tags,
+so checking a Dockerfile cannot move the watcher-owned `:local` tags underneath
+a running development server.
 
 The pool VM image — the kernel, initrd, and root filesystem a VM-backed pool
 boots — is a separate release line with its own `vm/v*` tags and its own

@@ -258,26 +258,35 @@ tasks:
 
   build:base-image:
     desc: Build the shared Debian/Docker/systemd base both agent images build FROM
+    vars:
+      BASE_IMAGE: '{{.BASE_IMAGE | default "discobox-base:local"}}'
     cmds:
-      - docker build -f base-image/Dockerfile -t discobox-base:local base-image
+      - docker build -f base-image/Dockerfile -t {{.BASE_IMAGE}} base-image
 
   build:pool-agent-image:
     desc: Build the systemd Docker pool image
     deps: [build:base-image]
+    vars:
+      BASE_IMAGE: '{{.BASE_IMAGE | default "discobox-base:local"}}'
+      POOL_AGENT_IMAGE: '{{.POOL_AGENT_IMAGE | default "discobox-pool-agent:local"}}'
     cmds:
-      - docker build -f pool-agent/Dockerfile -t discobox-pool-agent:local .
+      - docker build -f pool-agent/Dockerfile --build-arg BASE_IMAGE={{.BASE_IMAGE}} -t {{.POOL_AGENT_IMAGE}} .
 
   build:sandbox-agent-image:
     desc: Build the Debian sandbox agent image
     deps: [build:base-image]
+    vars:
+      BASE_IMAGE: '{{.BASE_IMAGE | default "discobox-base:local"}}'
+      SANDBOX_AGENT_IMAGE: '{{.SANDBOX_AGENT_IMAGE | default "discobox-sandbox-agent:local"}}'
     cmds:
       # IMAGE_LAYER_METADATA is the manifest layer every image built FROM this
       # one inherits (ADR 0086 §2). Compacted independently of any harness's
       # own image.json: nothing merges manifests at build time.
       - >-
         docker build -f sandbox-agent/Dockerfile
+        --build-arg BASE_IMAGE={{.BASE_IMAGE}}
         --build-arg IMAGE_LAYER_METADATA="$(jq -c . sandbox-agent/image.json)"
-        -t discobox-sandbox-agent:local .
+        -t {{.SANDBOX_AGENT_IMAGE}} .
 
   build:images:
     desc: Build the shared base, pool, sandbox base, and all included harness images
@@ -320,6 +329,7 @@ tasks:
       vars: [HARNESS]
     vars:
       SANDBOX_AGENT_IMAGE: '{{default "discobox-sandbox-agent:local" .SANDBOX_AGENT_IMAGE}}'
+      HARNESS_IMAGE: '{{default (printf "discobox-harness-%s:local" .HARNESS) .HARNESS_IMAGE}}'
       HARNESS_DIR: '{{if eq .HARNESS "codex"}}codex-cli{{else}}{{.HARNESS}}{{end}}'
       IMAGE_CONFIG: harness/{{.HARNESS_DIR}}/image.json
     preconditions:
@@ -339,7 +349,7 @@ tasks:
         if [ -f {{.IMAGE_CONFIG}} ]; then
           set -- "$@" --build-arg "HARNESS_METADATA=$(jq -c . {{.IMAGE_CONFIG}})"
         fi
-        exec "$@" -t discobox-harness-{{.HARNESS}}:local harness/{{.HARNESS_DIR}}
+        exec "$@" -t {{.HARNESS_IMAGE}} harness/{{.HARNESS_DIR}}
 
   compile:
     desc: Alias for build

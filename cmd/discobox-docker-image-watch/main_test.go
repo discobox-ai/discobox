@@ -136,6 +136,34 @@ func TestUpdateEnvUpdatesAllImageReferencesWithoutDroppingUserValues(t *testing.
 	}
 }
 
+func TestDevelopmentImageEnvPublishesTheCompleteManifestAfterAPartialBuild(t *testing.T) {
+	specs := []imageSpec{
+		{name: baseSpecName, intermediate: true},
+		{name: "sandbox-agent", devPrefix: "z-sandbox:dev-", envImageKey: "SANDBOX", envDigestKey: "SANDBOX_DIGEST"},
+		{name: "pool-agent", devPrefix: "a-pool:dev-", envImageKey: "POOL", envDigestKey: "POOL_DIGEST"},
+	}
+	manifest, err := devimage.NewManifest([]devimage.Image{
+		{Reference: "z-sandbox:dev-new", ID: "sha256:sandbox-new"},
+		{Reference: "a-pool:dev-new", ID: "sha256:pool-new"},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	values, err := developmentImageEnv(specs, manifest, "/tmp/manifest.json")
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := map[string]string{
+		"POOL": "a-pool:dev-new", "POOL_DIGEST": "sha256:pool-new",
+		"SANDBOX": "z-sandbox:dev-new", "SANDBOX_DIGEST": "sha256:sandbox-new",
+		devimage.SyncEnv: "true", devimage.ManifestEnv: "/tmp/manifest.json",
+	}
+	if !reflect.DeepEqual(values, want) {
+		t.Fatalf("environment = %#v, want complete manifest values %#v", values, want)
+	}
+}
+
 // Every image built FROM another must both declare that parent and carry the
 // build argument buildImage rewrites, or it silently builds on the mutable
 // :local tag instead of the exact base it was meant to pin.

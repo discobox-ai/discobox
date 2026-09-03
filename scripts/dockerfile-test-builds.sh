@@ -18,6 +18,14 @@ set -euo pipefail
 workspace="${DISCOBOX_ROOT:-$(git rev-parse --show-toplevel 2>/dev/null || pwd)}"
 cd "$workspace"
 
+# The ordinary build targets publish :local images consumed by the development
+# watcher. A verification build must not move those tags out from under a live
+# server, so the same targets are parameterized onto an isolated test namespace.
+export BASE_IMAGE="discobot-dockerfile-test:base"
+export POOL_AGENT_IMAGE="discobot-dockerfile-test:pool-agent"
+export SANDBOX_AGENT_IMAGE="discobot-dockerfile-test:sandbox-agent"
+export HARNESS_IMAGE="discobot-dockerfile-test:harness"
+
 if ! command -v docker >/dev/null 2>&1; then
   echo "docker is required to test-build Dockerfiles" >&2
   exit 1

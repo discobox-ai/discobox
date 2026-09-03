@@ -585,7 +585,6 @@ func buildChangedImages(ctx context.Context, repoRoot string, allSpecs, changedS
 	// can change on its own while its parent is unchanged; in that case the
 	// parent's current dev tag is resolved from its built :local image.
 	ordered := parentsFirst(changedSpecs)
-	values := map[string]string{}
 	built := map[string]string{}
 	for _, spec := range ordered {
 		parentImage := ""
@@ -600,17 +599,11 @@ func buildChangedImages(ctx context.Context, repoRoot string, allSpecs, changedS
 			}
 			parentImage = resolved
 		}
-		image, imageID, err := buildImage(ctx, spec, parentImage)
+		image, _, err := buildImage(ctx, spec, parentImage)
 		if err != nil {
 			return err
 		}
 		built[spec.name] = image
-		if spec.envImageKey != "" {
-			values[spec.envImageKey] = image
-		}
-		if spec.envDigestKey != "" {
-			values[spec.envDigestKey] = imageID
-		}
 	}
 	manifest, err := developmentImageManifest(ctx, repoRoot, allSpecs)
 	if err != nil {
@@ -620,9 +613,53 @@ func buildChangedImages(ctx context.Context, repoRoot string, allSpecs, changedS
 	if err := devimage.WriteAtomic(manifestPath, manifest); err != nil {
 		return fmt.Errorf("write development image manifest: %w", err)
 	}
-	values[devimage.SyncEnv] = "true"
-	values[devimage.ManifestEnv] = manifestPath
+	values, err := developmentImageEnv(allSpecs, manifest, manifestPath)
+	if err != nil {
+		return err
+	}
 	return updateEnv(filepath.Join(repoRoot, envFile), values)
+}
+
+// developmentImageEnv derives every published reference from the complete
+// manifest just written. A partial rebuild must not update only its own keys:
+// another process may have moved any mutable :local tag since the previous
+// pass, and publishing that complete snapshot in the manifest while retaining
+// an old .env reference gives the server two different image sets.
+func developmentImageEnv(specs []imageSpec, manifest devimage.Manifest, manifestPath string) (map[string]string, error) {
+	values := map[string]string{
+		devimage.SyncEnv:     "true",
+		devimage.ManifestEnv: manifestPath,
+	}
+	used := make(map[int]bool, len(manifest.Images))
+	for _, spec := range specs {
+		if spec.intermediate {
+			continue
+		}
+		image := -1
+		for i, entry := range manifest.Images {
+			if strings.HasPrefix(entry.Reference, spec.devPrefix) {
+				if image >= 0 {
+					return nil, fmt.Errorf("development image manifest has multiple images for %s", spec.name)
+				}
+				image = i
+			}
+		}
+		if image < 0 {
+			return nil, fmt.Errorf("development image manifest has no image for %s", spec.name)
+		}
+		entry := manifest.Images[image]
+		used[image] = true
+		if spec.envImageKey != "" {
+			values[spec.envImageKey] = entry.Reference
+		}
+		if spec.envDigestKey != "" {
+			values[spec.envDigestKey] = entry.ID
+		}
+	}
+	if len(used) != len(manifest.Images) {
+		return nil, fmt.Errorf("development image manifest has %d unexpected images", len(manifest.Images)-len(used))
+	}
+	return values, nil
 }
 
 func developmentImageManifest(ctx context.Context, repoRoot string, specs []imageSpec) (devimage.Manifest, error) {
