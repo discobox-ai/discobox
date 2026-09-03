@@ -203,6 +203,33 @@ and no cgo, so its binary is cross-compiled from the Linux job. Agent images are
 built once for both architectures by `depot build`, falling back to emulated
 `docker buildx`.
 
+Two package channels are fed from those assets, both stable-only — each serves
+one channel, so a prerelease reaches neither without being asked for out loud.
+They are fed in opposite directions, and the difference is ownership.
+
+The Homebrew tap is ours, so it **pulls**: `discobox-ai/homebrew-tap` generates
+its own formula from this repository's public releases with
+`scripts/brew-formula.sh`, needing no credential of ours to read them and its
+own `GITHUB_TOKEN` to commit. `brew:refresh` starts it, and is the only thing
+that does — the tap polled on a cron once, and that was removed deliberately: a
+backstop that covers for a broken release step is a backstop that stops anyone
+noticing the step is broken. So a release that cannot reach the tap fails rather
+than quietly leaving `brew install` a version behind. `brew:publish` remains the
+by-hand override for a tag the tap's own rule will not take.
+
+winget cannot be inverted, because `microsoft/winget-pkgs` is not ours and
+nothing there can pull from us. So `winget:publish` **pushes**: it opens a pull
+request from a fork, which is not something `GITHUB_TOKEN` can do, and ends
+there — a validation pipeline and a moderator decide the rest. Both cross-repo
+steps therefore hold a token, and both are scoped to the least each needs: the
+tap's may only start a workflow already defined there, and winget's may only
+write public repositories as the submitting account.
+
+Windows is the one platform whose asset is an archive rather than a bare binary.
+winget resolves a portable package's command from the file name whenever it
+cannot create a symlink, so `release:windows-zip` repackages the same binary as
+`discobox.exe` and uploads it alongside the rest.
+
 Container images form one chain, so that a pool host pulling all of them pulls
 the shared surface once (ADR 0068):
 

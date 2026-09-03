@@ -779,6 +779,7 @@ tasks:
         vars: { TARGET_OS: windows, TARGET_ARCH: amd64 }
       - task: release:binary
         vars: { TARGET_OS: windows, TARGET_ARCH: arm64 }
+      - task: release:windows-zip
 
   release:build:darwin:
     desc: Build and sign the macOS release binary
@@ -862,6 +863,42 @@ tasks:
       - task: sign
         vars: { SIGN_BINARY: '{{.OUT}}' }
 
+  release:windows-zip:
+    desc: Package each Windows binary as the archive winget installs from
+    platforms: [linux]
+    # winget installs a portable package by symlinking the executable under a
+    # command alias — but only where it can, which means an administrator or a
+    # machine with Developer Mode on. Everywhere else it falls back to putting
+    # the install directory on PATH, and then the command the user gets is
+    # whatever the file on disk is called.
+    #
+    # So the file has to be called discobox.exe, and the release asset is not:
+    # renaming it would break every existing download URL and the naming
+    # convention the other three binaries share. The archive carries the same
+    # binary under the name the command has to have, and is uploaded alongside
+    # them for winget alone to consume.
+    cmds:
+      - |
+        set -eu
+        work="$(mktemp -d)"
+        trap 'rm -rf "$work"' EXIT
+        # Whatever Windows binaries were built, rather than a list here that a
+        # new architecture would have to be added to twice.
+        found=0
+        for bin in build/release/bin/discobox-windows-*.exe; do
+          [ -e "$bin" ] || continue
+          name="$(basename "$bin" .exe)"
+          rm -rf "$work/stage" && mkdir "$work/stage"
+          cp "$bin" "$work/stage/discobox.exe"
+          # Zipped from inside the directory so the archive holds discobox.exe
+          # at its root, which is the path the manifest's RelativeFilePath
+          # names — the same path for every architecture.
+          (cd "$work/stage" && zip -q "$work/$name.zip" discobox.exe)
+          mv "$work/$name.zip" build/release/bin/
+          found=$((found + 1))
+        done
+        [ "$found" -gt 0 ] || { echo "release:windows-zip: no Windows binaries were built" >&2; exit 1; }
+
   release:verify:
     desc: Check that the release binaries in build/release/bin are runnable anywhere
     vars:
@@ -903,8 +940,12 @@ tasks:
           # fails at the first pool -- on a machine no Linux or amd64 test run
           # ever touches, which is the same blind spot the interpreter check
           # below exists for.
+          # The binaries only: release:windows-zip puts a .zip beside each one
+          # carrying the very same executable, so checking it again would pair
+          # the same relay twice -- and its name does not end in .exe, so the
+          # architecture would come out as "amd64.zip" and match no relay.
           case "$name" in
-            *-windows-*)
+            *-windows-*.exe)
               arch=${name#*-windows-}
               arch=${arch%.exe}
               relay="server/providers/wslc/relay/artifacts/discobox-cp-relay.linux-$arch.gz"
@@ -1033,6 +1074,169 @@ tasks:
         gh release view "$tag" >/dev/null 2>&1 ||
           gh release create "$tag" --verify-tag --title "$tag" --generate-notes $prerelease
         gh release upload "$tag" build/release/bin/* --clobber
+
+  release:stable:
+    desc: Print yes when the release tag is a stable release, nothing otherwise
+    # So a workflow can ask the question the publish targets already ask, rather
+    # than a second copy of the rule in YAML — which could not express it
+    # anyway, since GitHub expressions have no pattern matching (ADR 0066 §1).
+    silent: true
+    cmds:
+      - printf %s '{{.STABLE_RELEASE}}'
+
+  winget:manifests:
+    desc: Write the winget manifests for a released tag to WINGET_OUT
+    # The rule lives in scripts/winget-manifests.sh for the same reason the
+    # Homebrew one does: nothing about it needs a Go toolchain to reach.
+    vars:
+      WINGET_OUT: '{{.WINGET_OUT | default "build/winget"}}'
+    cmds:
+      - scripts/winget-manifests.sh "{{.TAG}}" "{{.RELEASE_REPO}}" "{{.WINGET_OUT}}"
+
+  winget:publish:
+    desc: Open the winget-pkgs pull request for a tag (task winget:publish -- [--prerelease] TAG)
+    # Nothing automatic runs this, and the asymmetry with brew:publish is not an
+    # oversight. The tap is ours and a push to it is the publish; the Windows
+    # Package Manager Community Repository is Microsoft's, and every version is
+    # a pull request that a validation pipeline runs and a moderator merges. So
+    # this opens the request and stops. Somebody watches it land.
+    #
+    # Writing uses the operator's own GitHub credentials through gh, and the
+    # first pull request from an account has to sign Microsoft's CLA, which is
+    # a reply on the thread that only a human can make.
+    #
+    # No clone anywhere: winget-pkgs carries every manifest for every package
+    # in it, and the git data API writes a commit without one.
+    vars:
+      UPSTREAM: '{{.WINGET_REPO | default "microsoft/winget-pkgs"}}'
+      MANIFESTS: '{{.WINGET_OUT | default "build/winget"}}'
+    cmds:
+      # Before generating: refusing after downloading a release's asset wastes
+      # the download and reads like a failure rather than a decision.
+      - |
+        set -eu
+        tag="{{.TAG}}"
+        case "$tag" in
+          v*) ;;
+          *) echo "winget:publish: expected a v* tag, got '$tag'" >&2; exit 1 ;;
+        esac
+        # winget has no notion of a channel: whatever is published is what
+        # `winget install discobox` gives everyone. Same rule as the tap, and
+        # for the same reason — an alpha goes out only because somebody typed
+        # the flag.
+        if [ -z "{{.STABLE_RELEASE}}" ] && [ -z "{{.ALLOW_PRERELEASE}}" ]; then
+          echo "winget:publish: $tag is a prerelease and winget serves one channel." >&2
+          echo "Publish it anyway with: task winget:publish -- --prerelease $tag" >&2
+          exit 1
+        fi
+      - task: winget:manifests
+        vars: { WINGET_OUT: '{{.MANIFESTS}}' }
+      - |
+        set -eu
+        tag="{{.TAG}}"
+        upstream="{{.UPSTREAM}}"
+
+        # Read back out of what was just generated rather than restated here.
+        # The identifier and the rule that strips the `v` are the script's to
+        # own, and a second copy of either is a second copy that can be wrong.
+        installer="$(ls {{.MANIFESTS}}/*.installer.yaml)"
+        identifier="$(sed -n 's/^PackageIdentifier: //p' "$installer")"
+        version="$(sed -n 's/^PackageVersion: //p' "$installer")"
+
+        # manifests/<publisher's first letter, lowercased>/<publisher>/<package>.
+        publisher="${identifier%%.*}"
+        package="${identifier#*.}"
+        letter="$(printf %s "$publisher" | cut -c1 | tr 'A-Z' 'a-z')"
+        package_dir="manifests/$letter/$publisher/$package"
+
+        if gh api "repos/$upstream/contents/$package_dir/$version" >/dev/null 2>&1; then
+          echo "winget already serves $version"
+          exit 0
+        fi
+
+        login="$(gh api user -q .login)"
+        fork="$login/winget-pkgs"
+        # Idempotent: forking an existing fork says so and succeeds.
+        gh repo fork "$upstream" --clone=false --remote=false >/dev/null
+        gh repo sync "$fork" --branch master --force >/dev/null
+        base="$(gh api "repos/$fork/git/ref/heads/master" -q .object.sha)"
+        base_tree="$(gh api "repos/$fork/git/commits/$base" -q .tree.sha)"
+
+        # The title format the repository's pull request template asks for; the
+        # moderation tooling reads it.
+        if gh api "repos/$upstream/contents/$package_dir" >/dev/null 2>&1; then
+          title="Update: $identifier to $version"
+        else
+          title="New package: $identifier version $version"
+        fi
+
+        tree='[]'
+        for manifest in {{.MANIFESTS}}/*.yaml; do
+          blob="$(jq -Rs '{content: ., encoding: "utf-8"}' < "$manifest" |
+            gh api "repos/$fork/git/blobs" --input - -q .sha)"
+          tree="$(printf %s "$tree" | jq \
+            --arg path "$package_dir/$version/$(basename "$manifest")" --arg sha "$blob" \
+            '. + [{path: $path, mode: "100644", type: "blob", sha: $sha}]')"
+        done
+
+        new_tree="$(jq -n --arg base "$base_tree" --argjson tree "$tree" \
+          '{base_tree: $base, tree: $tree}' |
+          gh api "repos/$fork/git/trees" --input - -q .sha)"
+        commit="$(jq -n --arg message "$title" --arg tree "$new_tree" --arg parent "$base" \
+          '{message: $message, tree: $tree, parents: [$parent]}' |
+          gh api "repos/$fork/git/commits" --input - -q .sha)"
+
+        branch="discobox-$version"
+        # Force, so a first attempt that failed before the pull request existed
+        # can simply be run again.
+        jq -n --arg sha "$commit" '{sha: $sha, force: true}' |
+          gh api -X PATCH "repos/$fork/git/refs/heads/$branch" --input - >/dev/null 2>&1 ||
+          jq -n --arg ref "refs/heads/$branch" --arg sha "$commit" '{ref: $ref, sha: $sha}' |
+            gh api "repos/$fork/git/refs" --input - >/dev/null
+
+        existing="$(gh pr list --repo "$upstream" --head "$branch" --state open \
+          --json url -q '.[0].url' 2>/dev/null || true)"
+        if [ -n "$existing" ]; then
+          echo "updated the open pull request: $existing"
+          exit 0
+        fi
+
+        # The manifests are generated from the release's own asset and the
+        # archive was read back to check it holds what they declare, but
+        # `winget validate` and `winget install --manifest` are Windows-only
+        # and did not run. Said in the body rather than left as two ticked
+        # boxes that are not true.
+        gh pr create --repo "$upstream" --base master --head "$login:$branch" \
+          --title "$title" \
+          --body "$(printf '%s\n' \
+            "Generated by \`task winget:publish\` from the assets $tag uploaded." \
+            "" \
+            "- Installer: \`$identifier\` $version, portable, from the release's \`discobox-windows-amd64.zip\`." \
+            "- The checksum is of that asset, and the archive was checked to contain \`discobox.exe\`." \
+            "- Not validated on Windows: this project releases from Linux and macOS.")"
+
+  brew:refresh:
+    desc: Tell the tap to regenerate its formula from the newest stable release
+    # This is the *only* thing that updates the tap. It used to poll on a cron;
+    # that was deleted deliberately, because a backstop that quietly covers for
+    # a broken release step is a backstop that stops anyone noticing the step is
+    # broken. If this does not run, the tap does not update, and the release
+    # that failed to run it goes red.
+    #
+    # It needs a credential, and there is no way around that: GITHUB_TOKEN is
+    # scoped to the repository it runs in, so nothing minted here can start a
+    # workflow in another repository (ADR 0066, and the original reason the tap
+    # pulls rather than being pushed to). What this does *not* need is write
+    # access: the narrowest token that works is scoped to the tap alone and may
+    # only start a workflow already defined there. That is much less than the
+    # `contents: write` the push-based design required, and it is why this is
+    # worth having and that was not.
+    vars:
+      TAP_REPO: '{{.TAP_REPO | default "discobox-ai/homebrew-tap"}}'
+      TAP_WORKFLOW: '{{.TAP_WORKFLOW | default "update-formula.yml"}}'
+    cmds:
+      - gh workflow run {{.TAP_WORKFLOW}} --repo {{.TAP_REPO}}
+      - echo "asked {{.TAP_REPO}} to update its formula"
 
   brew:formula:
     desc: Write the Homebrew formula for a released tag to BREW_OUT

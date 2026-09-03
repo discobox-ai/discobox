@@ -87,6 +87,11 @@ jobs:
       contents: write
     env:
       GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      # Read only to decide whether the refresh step runs; the step that uses it
+      # takes it as its own GH_TOKEN.
+      TAP_TOKEN: ${{ secrets.HOMEBREW_TAP_TOKEN }}
+    outputs:
+      stable: ${{ steps.stable.outputs.stable }}
     steps:
       - uses: actions/checkout@v6.0.2
       # Both matrix legs land in one directory; release:publish uploads
@@ -99,4 +104,63 @@ jobs:
       - uses: ./.github/actions/task
         with:
           target: release:publish
+      # Nix is installed by the step above. Asked here rather than decided in
+      # YAML so the rule stays the Taskfile's (ADR 0066 §1).
+      - id: stable
+        run: echo "stable=$(nix develop -c go tool task release:stable)" >> "$GITHUB_OUTPUT"
+
+      # A step here rather than a job of its own, which ADR 0066 §2 allows once
+      # Nix is installed: this is one API call, and standing up another runner
+      # to make it would cost minutes to save seconds. The winget submission
+      # earns its own job; this does not.
+      #
+      # Nothing else updates the tap — it has no cron any more — so a missing
+      # token is a broken release, not a slow one, and fails here rather than
+      # leaving `brew install discobox` on the previous version with nobody
+      # aware of it.
+      - if: steps.stable.outputs.stable == 'yes' && env.TAP_TOKEN == ''
+        run: |
+          echo "::error::HOMEBREW_TAP_TOKEN is not set, and nothing else will tell the tap about $RELEASE_TAG"
+          exit 1
+      - name: Tell the tap to update
+        if: steps.stable.outputs.stable == 'yes'
+        env:
+          GH_TOKEN: ${{ secrets.HOMEBREW_TAP_TOKEN }}
+        run: nix develop -c go tool task brew:refresh
+
+  # The winget submission. Unlike the tap, which is ours to push to, the Windows
+  # Package Manager Community Repository takes a pull request per version from a
+  # fork — so this cannot use GITHUB_TOKEN, which may only write to this
+  # repository. WINGET_TOKEN is a classic PAT (fine-grained tokens are not
+  # accepted) with `public_repo`, belonging to the account the pull request
+  # comes from. That account forks microsoft/winget-pkgs and signs Microsoft's
+  # CLA once, on its first pull request, and submits unattended after that.
+  #
+  # Opening the request is all that is automated. A validation pipeline runs it
+  # and a moderator merges it, so a version is pending until someone sees it
+  # land.
+  winget:
+    needs: publish
+    # Stable releases only, the same rule winget:publish enforces in a terminal:
+    # winget serves one channel, so whatever is published is what
+    # `winget install discobox` gives everyone.
+    if: needs.publish.outputs.stable == 'yes'
+    runs-on: depot-ubuntu-24.04-4
+    timeout-minutes: 20
+    permissions:
+      contents: read
+    env:
+      GH_TOKEN: ${{ secrets.WINGET_TOKEN }}
+    steps:
+      - uses: actions/checkout@v6.0.2
+      # Without the token there is nothing to submit with, and nothing else
+      # submits — so this fails rather than passing quietly and leaving winget a
+      # version behind that only a user would discover.
+      - if: env.GH_TOKEN == ''
+        run: |
+          echo "::error::WINGET_TOKEN is not set, so $RELEASE_TAG was not submitted to winget"
+          exit 1
+      - uses: ./.github/actions/task
+        with:
+          target: winget:publish
 

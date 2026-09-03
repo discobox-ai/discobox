@@ -150,6 +150,11 @@
               pkgs.git
               pkgs.gh
               pkgs.jq
+              # `release:windows-zip` builds the archive winget installs from,
+              # and `scripts/winget-manifests.sh` reads back the one a release
+              # actually uploaded to check it holds what the manifest claims.
+              pkgs.zip
+              pkgs.unzip
               pkgs.bats
               pkgs.shellcheck
               pkgs.nodejs
