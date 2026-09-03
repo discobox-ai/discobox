@@ -78,7 +78,7 @@ Nygard-style ADRs (see adr.github.io) combined with current-state design docs:
 | [0023](0023-projects-are-created-by-copy-and-deleted-only-when-empty.md) | A project is created by copying an existing one, and deleted only when empty | Accepted |
 | [0024](0024-ssh-is-a-control-plane-ingress-onto-execs.md) | SSH is a control-plane ingress onto execs, and forwarded TCP terminates inside the sandbox | Accepted (§1's TCP listener superseded by [0057](0057-ssh-reaches-the-server-only-through-the-cli-transport.md)) |
 | [0025](0025-the-sandbox-user-is-one-contract-resolved-inside-the-sandbox.md) | The sandbox user is one contract, resolved inside the sandbox | Accepted (§6 launch-time re-lookup superseded by [0033](0033-user-resolution-is-one-layered-resolver-with-declared-gaps.md)) |
-| [0026](0026-local-source-origin-is-bind-mounted-live-into-the-sandbox.md) | A local source's origin is bind-mounted live into the sandbox | Proposed |
+| [0026](0026-local-source-origin-is-bind-mounted-live-into-the-sandbox.md) | A local source's origin is bind-mounted live into the sandbox | Proposed (§1's bind source superseded by [0093](0093-a-local-sources-origin-is-its-git-directory.md)) |
 | [0027](0027-harness-terminals-run-as-a-shells-typed-in-job.md) | Harness terminals run as a shell's typed-in job, not as the exec's own process | Accepted |
 | [0028](0028-exec-log-transcripts-persist-as-compressed-sqlite-rows.md) | Exec/terminal transcripts persist as compressed sqlite rows, not tmpfs jsonl files | Accepted |
 | [0029](0029-sandboxes-have-no-per-sandbox-resource-requests.md) | Sandboxes have no per-sandbox resource requests | Accepted |
@@ -145,3 +145,4 @@ Nygard-style ADRs (see adr.github.io) combined with current-state design docs:
 | [0090](0090-the-judge-is-handed-facts-and-given-no-tools.md) | The judge is handed facts and given no tools | Accepted |
 | [0091](0091-a-credential-is-not-issued-without-a-verdict-on-record.md) | A credential is not issued without a verdict on record | Accepted |
 | [0092](0092-the-cli-has-no-unjudged-way-to-take-a-value.md) | The CLI has no unjudged way to take a value | Accepted |
+| [0093](0093-a-local-sources-origin-is-its-git-directory.md) | A local source's origin is its git directory, not its working tree | Proposed (supersedes [0026](0026-local-source-origin-is-bind-mounted-live-into-the-sandbox.md) §1's bind source) |

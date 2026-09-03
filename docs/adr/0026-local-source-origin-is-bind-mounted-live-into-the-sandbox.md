@@ -1,6 +1,6 @@
 # 0026 — A local source's origin is bind-mounted live into the sandbox
 
-- **Status**: Proposed
+- **Status**: Proposed (§1's bind source superseded by [0093](0093-a-local-sources-origin-is-its-git-directory.md))
 - **Date**: 2026-08-01
 
 ## Context
