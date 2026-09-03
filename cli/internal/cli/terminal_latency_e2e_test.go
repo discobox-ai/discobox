@@ -61,7 +61,7 @@ func TestTerminalLatencyE2E(t *testing.T) {
 		serverURL: serverURL,
 		projectID: projectID,
 		token:     strings.TrimSpace(os.Getenv("DISCOBOX_TOKEN")),
-		noStart:   true,
+		autoStart: autoStartServerFalse,
 		errOut:    io.Discard,
 	}
 

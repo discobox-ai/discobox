@@ -1,6 +1,7 @@
 package cli
 
 import (
+	"fmt"
 	"os"
 	"strconv"
 	"strings"
@@ -25,7 +26,7 @@ var serverAutoLaunch = "false"
 const AutoLaunchEnv = "DISCOBOX_SERVER_AUTOLAUNCH"
 
 // autoLaunchConfigured reports what the build and the environment say about
-// autolaunching, before --no-start gets its say.
+// autolaunching, before --auto-start-server gets its say.
 //
 // An unparseable value is treated as unset rather than as an error: this
 // decides whether a convenience happens, and failing a command outright over a
@@ -37,4 +38,42 @@ func autoLaunchConfigured() bool {
 		}
 	}
 	return serverAutoLaunch == "true"
+}
+
+// autoStartServer is --auto-start-server, a three-way answer rather than a
+// plain bool: the build and the environment already decide whether an
+// invocation may autolaunch a server (autoLaunchConfigured), and a bool flag
+// could only ever veto that, never override it the other way. "auto" — the
+// default, and what an invocation that never mentions the flag gets — leaves
+// their answer standing; "true" and "false" both outrank it, in the direction
+// their name says.
+//
+// This is what lets a development build be told to launch one without
+// resorting to DISCOBOX_SERVER_AUTOLAUNCH: `--auto-start-server=true` starts
+// one for this invocation alone, `--auto-start-server=false` (or the bare
+// flag, which used to be `--no-start`) refuses to, and the development
+// default — off — is unchanged for anyone who never passes the flag.
+type autoStartServer string
+
+const (
+	autoStartServerAuto  autoStartServer = "auto"
+	autoStartServerTrue  autoStartServer = "true"
+	autoStartServerFalse autoStartServer = "false"
+)
+
+func (m *autoStartServer) String() string { return string(*m) }
+func (m *autoStartServer) Type() string   { return "true|false|auto" }
+
+func (m *autoStartServer) Set(value string) error {
+	switch strings.ToLower(strings.TrimSpace(value)) {
+	case "", string(autoStartServerAuto):
+		*m = autoStartServerAuto
+	case string(autoStartServerTrue), "yes", "y", "1":
+		*m = autoStartServerTrue
+	case string(autoStartServerFalse), "no", "n", "0":
+		*m = autoStartServerFalse
+	default:
+		return fmt.Errorf("must be true, false, or auto")
+	}
+	return nil
 }

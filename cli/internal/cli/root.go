@@ -33,7 +33,7 @@ type App struct {
 	output    string
 	quiet     bool
 	debug     bool
-	noStart   bool
+	autoStart autoStartServer
 	errOut    io.Writer
 
 	// leaderKey is the prefix key this invocation reserves in a terminal it
@@ -65,7 +65,7 @@ func NewRootCommand() *cobra.Command {
 func newRootCommand() (*cobra.Command, *App) {
 	cobra.EnableCommandSorting = false
 
-	app := &App{}
+	app := &App{autoStart: autoStartServerAuto}
 	var run runCommandOptions
 	var runFlags *pflag.FlagSet
 	cmd := &cobra.Command{
@@ -137,7 +137,8 @@ an Enter. See "discobox run --help" for what the flags below mean.`,
 	cmd.PersistentFlags().StringVar(&app.token, "token", os.Getenv("DISCOBOX_TOKEN"), "Bearer token for API requests")
 	cmd.PersistentFlags().StringVarP(&app.output, "output", "o", "table", "Output format: table or json")
 	cmd.PersistentFlags().BoolVar(&app.debug, "debug", false, "Print HTTP requests made by the API client, and the git commands run on this machine")
-	cmd.PersistentFlags().BoolVar(&app.noStart, "no-start", false, "Do not start a local server when the endpoint is unavailable")
+	cmd.PersistentFlags().Var(&app.autoStart, "auto-start-server", "Whether to start a local server when the endpoint is unavailable: true, false, or auto (the build and environment default, off for a development build)")
+	cmd.PersistentFlags().Lookup("auto-start-server").NoOptDefVal = string(autoStartServerTrue)
 	_ = cmd.RegisterFlagCompletionFunc("project", app.completeProjects)
 	// The run's own flags, on the command that stands in for it. They are local
 	// rather than persistent, so `discobox ls --help` is still a list's flags
@@ -215,15 +216,24 @@ func (a *App) apiClient() (*apiclientgen.Client, error) {
 }
 
 func (a *App) httpClient() (string, *http.Client, error) {
-	return a.httpClientWithAutoStart(shouldAutoLaunchServer(a.noStart))
+	return a.httpClientWithAutoStart(shouldAutoLaunchServer(a.autoStart))
 }
 
 // shouldAutoLaunchServer reports whether this invocation may start a server for
-// itself. --no-start is the last word: it is the per-invocation override, and
-// nothing about how the binary was built or what the environment says outranks
-// somebody typing it.
-func shouldAutoLaunchServer(noStart bool) bool {
-	return autoLaunchConfigured() && !noStart
+// itself. --auto-start-server is the last word when it names one: "true" or
+// "false" is the per-invocation override, and nothing about how the binary was
+// built or what the environment says outranks somebody typing it. "auto" —
+// what an invocation that never passes the flag gets — leaves the build and
+// the environment's own answer standing (autoLaunchConfigured).
+func shouldAutoLaunchServer(autoStart autoStartServer) bool {
+	switch autoStart {
+	case autoStartServerTrue:
+		return true
+	case autoStartServerFalse:
+		return false
+	default:
+		return autoLaunchConfigured()
+	}
 }
 
 func (a *App) httpClientWithAutoStart(autoStart bool) (string, *http.Client, error) {

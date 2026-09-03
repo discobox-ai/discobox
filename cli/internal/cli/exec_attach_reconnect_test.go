@@ -68,7 +68,7 @@ func TestOpenExecAttachConnReconnectsForTTY(t *testing.T) {
 
 	ctx, cancel := context.WithTimeout(t.Context(), 5*time.Second)
 	defer cancel()
-	app := &App{serverURL: server.URL, noStart: true}
+	app := &App{serverURL: server.URL, autoStart: autoStartServerFalse}
 	conn, err := app.openExecAttachConn(ctx, "project-1", "sandbox-1", "exec-1", true)
 	if err != nil {
 		t.Fatalf("openExecAttachConn: %v", err)
@@ -127,7 +127,7 @@ func TestOpenExecAttachConnDoesNotReconnectForNonTTY(t *testing.T) {
 
 	ctx, cancel := context.WithTimeout(t.Context(), 5*time.Second)
 	defer cancel()
-	app := &App{serverURL: server.URL, noStart: true}
+	app := &App{serverURL: server.URL, autoStart: autoStartServerFalse}
 	conn, err := app.openExecAttachConn(ctx, "project-1", "sandbox-1", "exec-1", false)
 	if err != nil {
 		t.Fatalf("openExecAttachConn: %v", err)

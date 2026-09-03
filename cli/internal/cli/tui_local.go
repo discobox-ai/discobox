@@ -74,8 +74,8 @@ func (a *App) globalFlags() []string {
 	if a.source != "" {
 		args = append(args, "--chdir", a.source)
 	}
-	if a.noStart {
-		args = append(args, "--no-start")
+	if a.autoStart != autoStartServerAuto {
+		args = append(args, "--auto-start-server="+string(a.autoStart))
 	}
 	return args
 }

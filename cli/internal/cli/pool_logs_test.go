@@ -21,7 +21,7 @@ func TestStreamPoolLogsSeparatesSourceFromLog(t *testing.T) {
 	}))
 	defer server.Close()
 
-	app := &App{serverURL: server.URL, noStart: true}
+	app := &App{serverURL: server.URL, autoStart: autoStartServerFalse}
 	var stdout, stderr bytes.Buffer
 	if err := app.streamPoolLogs(context.Background(), "proj_1", "pool_1", 50, true, &stdout, &stderr); err != nil {
 		t.Fatalf("stream pool logs: %v", err)
@@ -51,7 +51,7 @@ func TestStreamPoolLogsOmitsAnUnboundedTail(t *testing.T) {
 	}))
 	defer server.Close()
 
-	app := &App{serverURL: server.URL, noStart: true}
+	app := &App{serverURL: server.URL, autoStart: autoStartServerFalse}
 	if err := app.streamPoolLogs(context.Background(), "proj_1", "pool_1", 0, false, &bytes.Buffer{}, &bytes.Buffer{}); err != nil {
 		t.Fatalf("stream pool logs: %v", err)
 	}
@@ -70,7 +70,7 @@ func TestStreamPoolLogsSurfacesTheBackendReason(t *testing.T) {
 	}))
 	defer server.Close()
 
-	app := &App{serverURL: server.URL, noStart: true}
+	app := &App{serverURL: server.URL, autoStart: autoStartServerFalse}
 	err := app.streamPoolLogs(context.Background(), "proj_1", "pool_1", 0, false, &bytes.Buffer{}, &bytes.Buffer{})
 	if err == nil {
 		t.Fatal("stream pool logs succeeded on a backend with no log")

@@ -91,15 +91,15 @@ cli=("$repo_root/build/discobox")
 if [ -n "$server" ]; then
 	cli+=(--server "$server")
 fi
-cli+=(--project "$project" --no-start --output json)
+cli+=(--project "$project" --auto-start-server=false --output json)
 if [ -n "${DISCOBOX_TOKEN:-}" ]; then
 	cli+=(--token "$DISCOBOX_TOKEN")
 fi
 
 # Reachability is checked through the CLI rather than curl: the server may be
 # listening on a unix socket, an iroh endpoint, or a URL, and discobox is what
-# resolves all three. --no-start above keeps a missing server a failure instead
-# of launching one.
+# resolves all three. --auto-start-server=false above keeps a missing server a
+# failure instead of launching one.
 if ! "${cli[@]}" admin harness ls >/dev/null 2>&1; then
 	echo "terminal latency: no development server at ${server:-the default endpoint}; start one with 'go tool task dev'" >&2
 	exit 1

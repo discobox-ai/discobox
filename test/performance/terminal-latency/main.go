@@ -141,7 +141,7 @@ func run(opts options) error {
 		Samples:        make([]tmuxLatencySample, 0, opts.samples),
 	}
 
-	command := []string{cliPath, "--server", opts.server, "--project", opts.project, "--no-start"}
+	command := []string{cliPath, "--server", opts.server, "--project", opts.project, "--auto-start-server=false"}
 	if opts.token != "" {
 		command = append(command, "--token", opts.token)
 	}

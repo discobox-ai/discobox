@@ -100,7 +100,7 @@ func TestToolsSSHDoesNotParseSSHFlags(t *testing.T) {
 		cmd.SetOut(new(strings.Builder))
 		cmd.SetErr(new(strings.Builder))
 		cmd.SetArgs(append([]string{
-			"--server", "unix:///nonexistent/discobox-test.sock", "--no-start",
+			"--server", "unix:///nonexistent/discobox-test.sock", "--auto-start-server=false",
 			"--project", "project-1", "tools", "ssh",
 		}, args...))
 		err := cmd.Execute()

@@ -85,7 +85,7 @@ func TestOpenReconnectingSandboxExecAttachPreservesInputAcrossWebSocketReplaceme
 
 	ctx, cancel := context.WithTimeout(t.Context(), 5*time.Second)
 	defer cancel()
-	app := &App{serverURL: server.URL, noStart: true}
+	app := &App{serverURL: server.URL, autoStart: autoStartServerFalse}
 	events := make(chan resume.Event, 4)
 	timings := make(chan resume.TimingEvent, 16)
 	conn, err := app.openReconnectingSandboxExecAttach(ctx, "project-1", "sandbox-1", "exec-1", execAttachOptions{replay: true, event: func(event resume.Event) {

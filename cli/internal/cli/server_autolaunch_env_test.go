@@ -10,7 +10,7 @@ func TestAutoLaunchEnvEnablesADevelopmentBuild(t *testing.T) {
 	if !autoLaunchConfigured() {
 		t.Fatal("a development build did not honor the environment override")
 	}
-	if !shouldAutoLaunchServer(false) {
+	if !shouldAutoLaunchServer(autoStartServerAuto) {
 		t.Fatal("shouldAutoLaunchServer disagreed with it")
 	}
 }
@@ -28,12 +28,17 @@ func TestAutoLaunchEnvDisablesAReleaseBuild(t *testing.T) {
 	}
 }
 
-// --no-start is the last word: it is what somebody types, and neither the build
-// nor the environment outranks that.
-func TestNoStartBeatsEverything(t *testing.T) {
+// An explicit --auto-start-server is the last word: it is what somebody
+// types, and neither the build nor the environment outranks that.
+func TestExplicitAutoStartServerBeatsEverything(t *testing.T) {
 	t.Setenv(AutoLaunchEnv, "1")
-	if shouldAutoLaunchServer(true) {
-		t.Fatal("--no-start was overruled")
+	if shouldAutoLaunchServer(autoStartServerFalse) {
+		t.Fatal("--auto-start-server=false was overruled")
+	}
+
+	t.Setenv(AutoLaunchEnv, "0")
+	if !shouldAutoLaunchServer(autoStartServerTrue) {
+		t.Fatal("--auto-start-server=true was overruled")
 	}
 }
 

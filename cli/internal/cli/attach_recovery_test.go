@@ -68,7 +68,7 @@ func TestSandboxExecAttachDoneDistinguishesGracefulExitFromLostRuntime(t *testin
 			}))
 			t.Cleanup(server.Close)
 
-			app := &App{serverURL: server.URL, noStart: true}
+			app := &App{serverURL: server.URL, autoStart: autoStartServerFalse}
 			done, err := app.sandboxExecAttachDone(t.Context(), "project-1", sandboxID, tc.execID)
 			if done != tc.wantDone {
 				t.Fatalf("done = %v, want %v (err = %v)", done, tc.wantDone, err)
@@ -115,7 +115,7 @@ func TestSandboxExecAttachDoneEndsWhenSandboxStops(t *testing.T) {
 			}))
 			t.Cleanup(server.Close)
 
-			app := &App{serverURL: server.URL, noStart: true}
+			app := &App{serverURL: server.URL, autoStart: autoStartServerFalse}
 			done, err := app.sandboxExecAttachDone(t.Context(), "project-1", sandboxID, primaryExecID)
 			if !done {
 				t.Fatalf("done = false, want the attach to end; err = %v", err)
@@ -150,7 +150,7 @@ func TestSandboxExecAttachDoneRetriesTransientReadFailure(t *testing.T) {
 	}))
 	t.Cleanup(server.Close)
 
-	app := &App{serverURL: server.URL, noStart: true}
+	app := &App{serverURL: server.URL, autoStart: autoStartServerFalse}
 	done, err := app.sandboxExecAttachDone(t.Context(), "project-1", sandboxID, primaryExecID)
 	if done {
 		t.Fatalf("done = true, want a retriable failure; err = %v", err)

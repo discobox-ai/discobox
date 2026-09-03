@@ -68,7 +68,7 @@ func TestLauncherForwardBindsAndCarriesBytes(t *testing.T) {
 	// about what else this machine happens to be running.
 	const sandboxPort = 47311
 	server := forwardTestServer(t, sandboxPort)
-	app := &App{serverURL: server.URL, noStart: true}
+	app := &App{serverURL: server.URL, autoStart: autoStartServerFalse}
 	client, err := app.apiClient()
 	if err != nil {
 		t.Fatalf("api client: %v", err)

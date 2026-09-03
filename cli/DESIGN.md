@@ -178,9 +178,18 @@ behaviour can be exercised from a development build without cutting a release
 one — otherwise the only way to test a change to it is to link a binary the way
 a release links it. The development default stays off, because a developer runs
 the server themselves under `task dev` and a second, quietly forked one would
-race it for the same socket. `--no-start` is the last word either way: it is the
-per-invocation override, and nothing about the build or the environment outranks
-somebody typing it.
+race it for the same socket. `--auto-start-server` is the last word either way,
+when it names one: `true` or `false` is the per-invocation override, and
+nothing about the build or the environment outranks somebody typing it; `auto`
+— the default, what an invocation that never passes the flag gets — leaves the
+build and the environment's own answer standing. It is three-way rather than a
+plain bool (`autoStartServer`, `server_autolaunch.go`) because a bool flag can
+only ever veto autolaunch, never turn it on where the build has it off —
+`--auto-start-server=true` is the flag-level way to do what otherwise needs
+`DISCOBOX_SERVER_AUTOLAUNCH=1`. `App.globalFlags` forwards an invocation's
+explicit `true` or `false` to a child it spawns (a local pty command, see
+above); `auto` is not forwarded, so the child makes its own build and
+environment answer rather than inheriting a stale one.
 
 The launched process is this binary re-invoked, and the argv comes from
 `App.serverLaunchArgs`, which reads the path off the command tree rather than

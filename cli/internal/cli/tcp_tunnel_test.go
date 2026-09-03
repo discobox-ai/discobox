@@ -59,7 +59,7 @@ func tcpTunnelTestServer(t *testing.T, closedWrite chan<- struct{}) *httptest.Se
 func TestSandboxTCPDialerCarriesBytesAndAHalfClose(t *testing.T) {
 	closedWrite := make(chan struct{})
 	server := tcpTunnelTestServer(t, closedWrite)
-	app := &App{serverURL: server.URL, noStart: true}
+	app := &App{serverURL: server.URL, autoStart: autoStartServerFalse}
 
 	dialer, err := app.sandboxTCPDialer("proj-1", "sbx-1")
 	if err != nil {
@@ -114,7 +114,7 @@ func TestSandboxTCPDialerCarriesBytesAndAHalfClose(t *testing.T) {
 func TestSandboxTCPDialerReportsTheHandshakeError(t *testing.T) {
 	closedWrite := make(chan struct{})
 	server := tcpTunnelTestServer(t, closedWrite)
-	app := &App{serverURL: server.URL, noStart: true}
+	app := &App{serverURL: server.URL, autoStart: autoStartServerFalse}
 
 	dialer, err := app.sandboxTCPDialer("proj-1", "sbx-1")
 	if err != nil {
@@ -156,7 +156,7 @@ func TestSandboxTCPDialerReportsTheFarEndsHalfClose(t *testing.T) {
 	}))
 	t.Cleanup(server.Close)
 
-	app := &App{serverURL: server.URL, noStart: true}
+	app := &App{serverURL: server.URL, autoStart: autoStartServerFalse}
 	dialer, err := app.sandboxTCPDialer("proj-1", "sbx-1")
 	if err != nil {
 		t.Fatalf("sandbox tcp dialer: %v", err)
