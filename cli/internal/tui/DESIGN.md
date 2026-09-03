@@ -47,6 +47,19 @@ shows the harness image's optional configuration reminder. This keeps prompts
 drawn by the harness visually inside a setup flow rather than presenting them
 as an ordinary harness session.
 
+The same header carries a **warning about the ports the flow declared and this
+machine cannot give it** (`Harness.ConfigPorts`, `configurePortWarning`), in the
+harness image's own words — Codex's says to sign in by device code instead,
+since its browser sign-in redirects to a `localhost:1455` that was not there to
+forward. The command in the pane binds those ports and prints the same words,
+but a full-screen sign-in paints over its terminal within seconds; the header
+is where the words survive the session. The window does not bind anything: it
+asks `DataSource.LocalPortsInUse` just before opening the flow, so the probe has
+let go by the time the command binds for real, and draws the answer in the
+header's error color. On a row too narrow for both, the warning outranks the
+reminder — the reminder says how the flow goes, the warning says why it will
+not.
+
 
 ## The secrets screen
 

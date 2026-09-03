@@ -39,8 +39,11 @@ type fakeSource struct {
 	harnesses    []Harness
 	harnessErr   error
 	configureErr error
-	secrets      []HarnessSecret
-	editChanged  bool
+	// portsInUse is what LocalPortsInUse answers: the local ports a test says
+	// something else on this machine already holds.
+	portsInUse  map[int]bool
+	secrets     []HarnessSecret
+	editChanged bool
 
 	// The credential inbox: what is waiting, what can answer it, and what the
 	// window did about it.
@@ -747,6 +750,18 @@ func (f *fakeSource) OpenHarnessConfigure(_ context.Context, id string, _, _ int
 	term := newFakeTerminal()
 	f.terminals = append(f.terminals, term)
 	return term, nil
+}
+
+func (f *fakeSource) LocalPortsInUse(_ context.Context, ports []int) []int {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	var inUse []int
+	for _, port := range ports {
+		if f.portsInUse[port] {
+			inUse = append(inUse, port)
+		}
+	}
+	return inUse
 }
 
 func (f *fakeSource) EditHarnessFile(_ context.Context, id, path string, _ io.Reader, _, _ io.Writer) (bool, error) {

@@ -106,6 +106,36 @@ func TestHarnessesEnableRunsTheSetup(t *testing.T) {
 	}
 }
 
+// A port the setup declares and this machine cannot give it is said in the
+// pane's header, in the harness's own words, where the setup's full-screen
+// sign-in cannot paint over it — and only when the port is actually taken.
+func TestHarnessesEnableWarnsWhenADeclaredPortIsTaken(t *testing.T) {
+	declare := func(ds *fakeSource) {
+		for i := range ds.harnesses {
+			if ds.harnesses[i].ID == "hc_codex" {
+				ds.harnesses[i].ConfigPorts = []HarnessConfigPort{{Port: 1455, Unavailable: "Port 1455 is taken; sign in with Device Code instead."}}
+			}
+		}
+	}
+
+	ds := newFakeSource()
+	declare(ds)
+	ds.portsInUse = map[int]bool{1455: true}
+	m := newTestModel(t, ds)
+	send(t, m, keyPress("f3"), keyPress("j"), keyPress("e"))
+	if frame := plainFrame(m); !strings.Contains(frame, "Port 1455 is taken; sign in with Device Code instead.") {
+		t.Fatalf("configuration pane does not warn about the taken port:\n%s", frame)
+	}
+
+	ds = newFakeSource()
+	declare(ds)
+	m = newTestModel(t, ds)
+	send(t, m, keyPress("f3"), keyPress("j"), keyPress("e"))
+	if frame := plainFrame(m); strings.Contains(frame, "Port 1455 is taken") {
+		t.Fatalf("configuration pane warns about a port that is free:\n%s", frame)
+	}
+}
+
 // Disabling asks first, since it deletes the secrets and files the setup wrote.
 func TestHarnessesDisableConfirms(t *testing.T) {
 	ds := newFakeSource()

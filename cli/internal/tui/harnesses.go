@@ -557,9 +557,36 @@ func (m *Model) configureHarnessThen(harness Harness, andDefault *Harness, resum
 	cols, rows := m.paneCells(m.width)
 	ctx, ds := m.ctx, m.ds
 	return func() tea.Msg {
+		// Asked before the flow starts, so the probe's own bind has let go of
+		// the port by the time the flow binds it for real.
+		warning := configurePortWarning(ctx, harness, ds)
 		term, err := ds.OpenHarnessConfigure(ctx, harness.ID, cols, rows)
-		return configurePaneOpenedMsg{harness: harness, andDefault: andDefault, resume: resume, term: term, err: err}
+		return configurePaneOpenedMsg{harness: harness, andDefault: andDefault, resume: resume, term: term, err: err, warning: warning}
 	}
+}
+
+// configurePortWarning is what the configure pane's header says about the
+// ports the harness's flow needs and this machine cannot give it — each port's
+// own message, in declaration order — or nothing when it can.
+func configurePortWarning(ctx context.Context, harness Harness, ds DataSource) string {
+	if len(harness.ConfigPorts) == 0 {
+		return ""
+	}
+	ports := make([]int, 0, len(harness.ConfigPorts))
+	for _, port := range harness.ConfigPorts {
+		ports = append(ports, port.Port)
+	}
+	inUse := map[int]bool{}
+	for _, port := range ds.LocalPortsInUse(ctx, ports) {
+		inUse[port] = true
+	}
+	var messages []string
+	for _, port := range harness.ConfigPorts {
+		if inUse[port.Port] {
+			messages = append(messages, port.Unavailable)
+		}
+	}
+	return strings.Join(messages, "  ·  ")
 }
 
 // editHarnessFile hands the terminal to $EDITOR on one of the harness's files,

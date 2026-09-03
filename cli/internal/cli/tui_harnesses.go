@@ -4,11 +4,14 @@ import (
 	"context"
 	"fmt"
 	"io"
+	"net"
 	"sort"
+	"strconv"
 	"strings"
 
 	apiclientgen "github.com/discobox-ai/discobox/api/gen"
 	apimodel "github.com/discobox-ai/discobox/api/model"
+	"github.com/discobox-ai/discobox/cli/internal/portforward"
 	"github.com/discobox-ai/discobox/cli/internal/tui"
 	"github.com/discobox-ai/discobox/harness"
 )
@@ -61,6 +64,11 @@ func toTUIHarness(cfg apimodel.HarnessConfig, defaultID string) tui.Harness {
 		Run:            cfg.RunCommand,
 		Relaunch:       cfg.RelaunchCommand.Or(nil),
 		Updated:        cfg.UpdatedAt,
+	}
+	for _, port := range cfg.ConfigPorts.Or(nil) {
+		// The fallback is resolved here so the window never has to know
+		// there was one: the same words the configure command prints.
+		harness.ConfigPorts = append(harness.ConfigPorts, tui.HarnessConfigPort{Port: int(port.Port), Unavailable: configPortUnavailable(port)})
 	}
 	for _, secret := range cfg.Secrets.Or(nil) {
 		harness.Secrets = append(harness.Secrets, tui.HarnessSecret{
@@ -211,6 +219,24 @@ func (d *apiDataSource) DoHarness(ctx context.Context, verb tui.HarnessVerb, har
 
 func (d *apiDataSource) OpenHarnessConfigure(ctx context.Context, harnessID string, cols, rows int) (tui.Terminal, error) {
 	return d.openLocalHarnessConfigure(ctx, harnessID, cols, rows)
+}
+
+// LocalPortsInUse binds each port on loopback and lets it go again. That is
+// the same test the configure command's forward applies a moment later, on
+// the same address (portforward.DefaultBindAddress), so the two agree unless
+// something takes the port in between.
+func (d *apiDataSource) LocalPortsInUse(ctx context.Context, ports []int) []int {
+	var config net.ListenConfig
+	var inUse []int
+	for _, port := range ports {
+		listener, err := config.Listen(ctx, "tcp", net.JoinHostPort(portforward.DefaultBindAddress, strconv.Itoa(port)))
+		if err != nil {
+			inUse = append(inUse, port)
+			continue
+		}
+		_ = listener.Close()
+	}
+	return inUse
 }
 
 // EditHarnessFile opens one of the harness's files in the user's editor and

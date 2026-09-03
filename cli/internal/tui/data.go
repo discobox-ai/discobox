@@ -308,6 +308,11 @@ type Harness struct {
 	// ConfigReminder is harness-authored guidance shown outside its configure
 	// terminal, so the terminal itself cannot be mistaken for a normal session.
 	ConfigReminder string
+	// ConfigPorts are the local ports its configure flow forwards into the
+	// configure sandbox at the same number — a sign-in's callback port. The
+	// flow binds them; the window only asks ahead whether it can, so the
+	// header can say so for the whole session. See DataSource.LocalPortsInUse.
+	ConfigPorts []HarnessConfigPort
 	// Error is why the configure flow did not finish, when it did not.
 	Error string
 
@@ -321,6 +326,16 @@ type Harness struct {
 	Files   []HarnessFile
 
 	Updated time.Time
+}
+
+// HarnessConfigPort is one port a harness's configure flow needs bound at its
+// own number on this machine.
+type HarnessConfigPort struct {
+	Port int
+	// Unavailable is what to tell the user when it cannot be: the harness's
+	// own words, since only it knows what its sign-in can still do without
+	// the port. Always filled in.
+	Unavailable string
 }
 
 // HarnessSecret is one environment variable a harness runs with.
@@ -1096,6 +1111,14 @@ type DataSource interface {
 	// OpenHarnessConfigure starts the harness's interactive setup on a terminal
 	// the window draws in a dedicated configuration pane.
 	OpenHarnessConfigure(ctx context.Context, harnessID string, cols, rows int) (Terminal, error)
+
+	// LocalPortsInUse reports which of the given local ports cannot be bound
+	// on this machine right now. The window asks just before it opens a
+	// configure flow that declares ports (Harness.ConfigPorts), so the pane's
+	// header can carry the harness's own warning for as long as the flow runs
+	// — the flow itself binds them a moment later and says the same thing in
+	// its terminal, where a full-screen sign-in then paints over it.
+	LocalPortsInUse(ctx context.Context, ports []int) []int
 
 	// EditHarnessFile opens one of the harness's files in the user's editor and
 	// saves what it wrote back, reporting whether anything changed. The window

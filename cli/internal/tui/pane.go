@@ -154,6 +154,10 @@ type pane struct {
 
 	// notice is guidance drawn in the window header, outside this pane.
 	notice string
+	// warning is drawn beside it, in the header's error color: something
+	// about this machine the configure flow could not get, said where the
+	// flow's own full-screen sign-in cannot paint over it.
+	warning string
 	// configure identifies a configure command whose completion advances the
 	// harness workflow rather than leaving a finished report open.
 	configure *configurePane
@@ -274,6 +278,9 @@ type configurePaneOpenedMsg struct {
 	resume     *RunRequest
 	term       Terminal
 	err        error
+	// warning is what the header carries about the ports the flow declared
+	// and could not have; see configurePortWarning.
+	warning string
 }
 
 // paneEventMsg is a connection state change under an open pane.
@@ -482,6 +489,7 @@ func (m *Model) configurePaneOpened(msg configurePaneOpenedMsg) tea.Cmd {
 		stream: msg.term, action: Interaction("configure"),
 		title:     "Harness configuration · " + msg.harness.displayName(),
 		notice:    msg.harness.ConfigReminder,
+		warning:   msg.warning,
 		configure: &configurePane{harness: msg.harness, andDefault: msg.andDefault, resume: msg.resume},
 	}
 	m.overlay = p
@@ -1513,11 +1521,20 @@ func (m *Model) viewPaneWindow() string {
 // written down nowhere else, so it holds its place all the way down.
 func (m *Model) viewPaneHeader(w int) string {
 	if p := m.overlay; p != nil && p.configure != nil {
-		middle := "Configuring " + p.configure.harness.displayName()
-		if p.notice != "" {
-			middle += "  ·  " + p.notice
+		// The warning outranks the reminder on a row too narrow for both:
+		// the reminder says how the flow goes, the warning says why it will
+		// not, and a row that keeps the first and cuts the second has kept
+		// the wrong one.
+		lead := "Configuring " + p.configure.harness.displayName()
+		warning := ""
+		if p.warning != "" {
+			warning = m.st.statusWA.Render("  ·  ") + m.st.statusER.Render(p.warning)
 		}
-		return padANSI(m.st.statusWA.Render(middle), w)
+		rendered := m.st.statusWA.Render(lead+"  ·  "+p.notice) + warning
+		if p.notice == "" || lipgloss.Width(rendered) > w {
+			rendered = m.st.statusWA.Render(lead) + warning
+		}
+		return padANSI(rendered, w)
 	}
 	folder := m.viewFolder(false)
 	full := m.viewHeaderBrand() + folder
