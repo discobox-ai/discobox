@@ -247,16 +247,9 @@ a band of its own under the header *and* one above the keys, naming what is
 being asked for and the leader key that answers it. Two, because the screen
 between them is a full terminal: whichever end of it you are reading, the
 question is in reach. The bands exist only while something is waiting, and so
-does the hit test, which is re-recorded by every draw.
-
-The band is **painted, and the text keeps its own colors over it**
-(`colAlertBG`, `attentionMark`/`attentionText`/`attentionHint`): a dark red
-field, an amber `⚠`, the subject in bold, and the key in dim grey on the right.
-It was drawn in reversed red, which puts the terminal's own background on a red
-field — a slab at a glance, and a struggle to read at a sentence. The key is
-pinned to the right and the subject is what gives way when the window narrows: a
-bar that says a credential is waiting but not how to answer it has said the less
-useful half.
+does the hit test, which is re-recorded by every draw. The band itself is
+`banner.go` — see **The attention band** below, which the ready-to-apply offer
+shares.
 
 **The leader answers on `g`, not on the list's letter** (`credentialsLeaderKey`).
 This is the one place the workspace does not carry the list's key: the leader's
@@ -266,30 +259,6 @@ and reached for in a hurry, on a screen whose banner is asking you to hurry.
 There is no list in the workspace for `g` to be the top of, so it is free, and
 it is the letter of the thing it does.
 
-**The band is a button.** It records its span as it is drawn, the way the tabs
-and the maximize controls record theirs, and a press anywhere on it opens the
-question — the whole band, not the words on it, since a bar that size that only
-answered on its text would be a bar that mostly does nothing. It owns the
-gesture rather than falling through to the chrome's selection: a bar you click
-to answer a question must not also start a drag-select of its own text.
-
-Because the bands take their rows from the panes rather than adding them to the
-frame, the panes are re-laid out when they appear or go — and the geometry is
-**two counts, not one**:
-
-- `credentialBannerTop` (0 or 1) is how far everything below the header moved.
-  The hardware cursor (`paneOrigin`, and `paneCursor` through it) and every
-  mouse hit test measure down from the header, and only what is *above* the
-  boxes moves them.
-- `credentialBannerCost` (0 or 2) is how much shorter the boxes are, which is
-  what `paneRows` spends.
-
-They were one number while there was one band. A single number answering both
-"how far down did the boxes move" and "how much shorter are they" is exactly
-the shape that puts a terminal's cursor a row away from the cell it is drawn
-in, for the rest of the session — so they are separate functions, and the one
-that means position is named for the top.
-
 **The dialog decides nothing.** It shows what was asked — the credential, the
 env var, the host, the justification, and the uses the agent declared — and
 collects one answer: a project secret, a credential typed in on the spot
@@ -298,6 +267,76 @@ request on the server, which is what keeps this and `discobox secret request
 approve` the same act. Secrets bound to another host are listed but not
 offered: leaving them out would read as the project not having them, and
 choosing one would only mint a grant the server refuses.
+
+## The attention band
+
+The workspace is one screen of terminal with a header above it and a hints line
+below, and the band is the one exception it allows: a bar painted across the
+window, drawn **twice** — under the header and again above the keys — so that
+whichever end of a full screen of output you are reading, the same thing is in
+reach. `banner.go` owns it; each band supplies only its own sentence.
+
+There are two, in this order of precedence, and **only one is ever on screen**
+(`bannerShowing`): a credential request waiting on this discobox
+(`credentials.go`), then work on it that is ready to apply (`apply.go`). An
+agent blocked on a person outranks an offer that will still be there in a
+minute, and a screen carrying two exception bars has a second header rather than
+an exception.
+
+The band is **painted, and the text keeps its own colors over it** (`bannerRow`,
+`attentionMark`/`readyMark`/`attentionText`/`attentionHint`): a field of color,
+a mark, the subject in bold, and the key in dim grey on the right. Reversed
+video puts the terminal's own background on a colored field — a slab at a
+glance, and a struggle to read at a sentence. The field says which band this is
+before it is read: `colAlertBG`, a dark red under an amber `⚠`, for somebody
+being waited on; `colReadyBG`, a dark green under the list's own `⇡`, for
+something there to take. The key is pinned to the right and the subject is what
+gives way when the window narrows: a bar that says a credential is waiting, or
+that a discobox is ready, but not what to press about it has said the less
+useful half.
+
+**The band is a button.** It records its span *and which band it was* as it is
+drawn, the way the tabs and the maximize controls record theirs, and a press
+anywhere on it acts — the whole band, not the words on it, since a bar that size
+that only answered on its text would be a bar that mostly does nothing. It owns
+the gesture rather than falling through to the chrome's selection: a bar you
+click must not also start a drag-select of its own text. The span and the kind
+go the moment the band does, so a stale hit test cannot act on something nobody
+is looking at.
+
+**A click asks; the key does not** (`pressBanner`). The credential band opens
+the question either way, because the question *is* the dialog. The apply band
+runs straight into the apply on `<leader> y` — a chord, typed by somebody who
+read the bar that names it, and the same key the list has always had — but a
+click on it raises a confirmation first (`confirmApply`), because a click is a
+press on a bar the width of the window sitting a row under the header, where a
+mistimed press on a tab lands, and what follows changes a git repository outside
+the discobox. The confirmation names what apply does and says which key skips
+it next time.
+
+Because the bands take their rows from the panes rather than adding them to the
+frame, the panes are re-laid out when one appears or goes — and the geometry is
+**two counts, not one**:
+
+- `bannerTop` (0 or 1) is how far everything below the header moved. The
+  hardware cursor (`paneOrigin`, and `paneCursor` through it) and every mouse
+  hit test measure down from the header, and only what is *above* the boxes
+  moves them.
+- `bannerCost` (0 or 2) is how much shorter the boxes are, which is what
+  `paneRows` spends.
+
+They were one number while there was one band. A single number answering both
+"how far down did the boxes move" and "how much shorter are they" is exactly the
+shape that puts a terminal's cursor a row away from the cell it is drawn in, for
+the rest of the session — so they are separate functions, and the one that means
+position is named for the top.
+
+**The offer is read off the listing, not off a git call** (`applyReady` →
+`currentBox().ahead()`): a clean tree whose head has moved off the commit it was
+spawned from and that no apply has landed — the state the list spells `ready`,
+drawn from the same push the header's git columns come from, so the band and the
+row cannot disagree. It goes while the apply itself is on screen: a bar offering
+what the overlay under it is already doing is the window talking about itself.
 
 ## Decisions
 
@@ -1686,6 +1725,9 @@ the newest one where the busy line goes.
 | `editor.go` | Alt-E: the prompt in `$EDITOR` |
 | `readline.go` | the composer's emacs mode: the word keys, the kill ring, undo, transpose words |
 | `pane.go` | one terminal pane: its keys, messages, chrome and cursor |
+| `banner.go` | the workspace's attention band: which one is up, where it landed, and what a press on it does |
+| `credentials.go` | the credential inbox: the marks, the band's sentence, and the dialog that answers |
+| `apply.go` | apply: the ready band, the question a click asks, and what is offered when it succeeds |
 | `column.go` | one side of the workspace: a strip of panes, one visible |
 | `workspace.go` | the workspace screen: open, poll/reconcile, tabs, detach, the port forward |
 | `services.go` | the discobox's declared services: the menu behind the leader, and the three verbs |

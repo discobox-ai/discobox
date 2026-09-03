@@ -1033,58 +1033,6 @@ func (m *Model) readFinished(p *pane, key tea.KeyPressMsg) tea.Cmd {
 	return nil
 }
 
-// successfulApply is the finished apply report that offers what usually comes
-// next: put the box away, leave it running and detach, or return to it. A failed
-// apply stays an ordinary readable report; cleanup must never be the prominent
-// next action while its error still needs attention.
-func (m *Model) successfulApply(p *pane) bool {
-	if p != m.overlay || p.action != InteractApply || !p.exited || p.failed {
-		return false
-	}
-	code, done := exitCode(p.stream)
-	return done && code == 0
-}
-
-// openSuccessfulApplyDialog asks what to do with a box whose work is safely
-// back on the host. Archive leads because it is the usual cleanup; Escape
-// dismisses only the question and leaves the apply report on screen.
-func (m *Model) openSuccessfulApplyDialog() {
-	items := []action{
-		{key: "archive", label: "archive", detail: "put the discobox away", enabled: true},
-		{key: "detach", label: "detach", detail: "leave the discobox running", enabled: true},
-	}
-	d := actionsDialog("Apply succeeded", "What should happen to this discobox?", items, func(choice string) tea.Cmd {
-		return func() tea.Msg { return applyFinishedChoiceMsg{choice: choice} }
-	})
-	d.footer = "Either choice detaches from the workspace."
-	d.keys = []hint{pressing("Enter chooses", "enter"), pressing("Esc returns to the apply result", "esc")}
-	m.dialog = d
-}
-
-// finishSuccessfulApply carries out either dialog choice. Both leave the
-// workspace; archive additionally changes the discobox's durable lifecycle
-// state after its local terminal view has been closed.
-func (m *Model) finishSuccessfulApply(choice string) tea.Cmd {
-	p := m.overlay
-	if !m.successfulApply(p) {
-		return nil
-	}
-	id := p.sandbox.ID
-	hadWorkspace := m.terminals.len() > 0
-	m.closeWorkspace()
-	m.layout()
-	if choice == "archive" {
-		return m.runVerb(VerbArchive, []string{id})
-	}
-	if m.attach != nil && hadWorkspace {
-		return m.exit(nil)
-	}
-	if hadWorkspace {
-		return tea.Batch(m.refresh(), status("detached — the discobox is still running"))
-	}
-	return m.refresh()
-}
-
 // dismissPane takes a finished pane off the screen: the overlay back to the
 // workspace, a shell tab out of the strip.
 func (m *Model) dismissPane(p *pane) tea.Cmd {
@@ -1248,8 +1196,8 @@ func (m *Model) focusChromeAt(x, y int) (tea.Cmd, bool) {
 	// is asking to be pressed. It owns the gesture rather than falling through
 	// to the chrome's selection — a bar you click to answer a question must
 	// not also start a drag-select of its own text.
-	if m.credentialBannerAt(x, y) {
-		return m.openCredentialDialog(m.paneBox.ID), true
+	if m.bannerAt(x, y) {
+		return m.pressBanner(), true
 	}
 	if m.showingTool() != nil {
 		button, ok := m.buttonAt(x, y)
@@ -1284,7 +1232,7 @@ func (m *Model) focusChromeAt(x, y int) (tea.Cmd, bool) {
 // spans were recorded when the boxes were drawn, and only a box actually on
 // screen records one.
 func (m *Model) zoomAt(x, y int) (shells, ok bool) {
-	if y != 1+m.credentialBannerTop() {
+	if y != 1+m.bannerTop() {
 		return false, false
 	}
 	for _, s := range m.zoomSpans {
@@ -1314,7 +1262,7 @@ func (m *Model) toggleMaximized(shells bool) {
 // is in. The strips are the boxes' top border row, and the spans were recorded
 // when they were drawn.
 func (m *Model) tabAt(x, y int) (shells bool, index int, ok bool) {
-	if y != 1+m.credentialBannerTop() {
+	if y != 1+m.bannerTop() {
 		return false, -1, false
 	}
 	for _, s := range m.tabSpans {
@@ -1330,8 +1278,8 @@ func (m *Model) tabAt(x, y int) (shells bool, index int, ok bool) {
 // below, split down the middle when there are tabs beside the terminal and
 // belonging to the one box on screen when there are not.
 func (m *Model) paneBoxAt(x, y int) *pane {
-	top := 1 + m.credentialBannerTop()
-	if y < top || y > m.paneRows()+2+m.credentialBannerTop() {
+	top := 1 + m.bannerTop()
+	if y < top || y > m.paneRows()+2+m.bannerTop() {
 		return nil
 	}
 	if m.split() && x >= m.width/2 {
@@ -1379,7 +1327,7 @@ func wheelLines(wheel tea.MouseWheelMsg) int {
 // the header, the status line, and the box's own two edges — less what the
 // credential band costs when there is one, which is two rows taken from the
 // panes rather than added to the frame.
-func (m *Model) paneRows() int { return m.height - 4 - m.credentialBannerCost() }
+func (m *Model) paneRows() int { return m.height - 4 - m.bannerCost() }
 
 // paneCells is the terminal size a pane of the given box width implies: the
 // box, less its border and a cell of air inside it on each side.
@@ -1452,7 +1400,7 @@ func (m *Model) paneOrigin(p *pane) (x, y int) {
 	// is: the hardware cursor is placed through it and every mouse event is
 	// translated through it, so an offset applied anywhere else would move one
 	// and not the other.
-	top := 2 + m.credentialBannerTop()
+	top := 2 + m.bannerTop()
 	if p != nil && m.shells.index(p) >= 0 {
 		// A shell tab: its box starts where the terminals' box ends, or at the
 		// window's edge when it is the maximized one.
@@ -1475,7 +1423,7 @@ func (m *Model) viewPaneWindow() string {
 	// there when they were drawn this frame, and a span left over from a box
 	// that is no longer on screen is a click target pointing at nothing.
 	m.tabSpans, m.zoomSpans, m.buttonSpans = m.tabSpans[:0], m.zoomSpans[:0], m.buttonSpans[:0]
-	m.credentials = credentialSpan{}
+	m.banner = bannerSpan{}
 
 	headerW := max(inner-2*boxPad, 1)
 	m.zones.push(1+boxPad, 0)
@@ -1484,13 +1432,14 @@ func (m *Model) viewPaneWindow() string {
 	rows := []string{
 		" " + pad + header + pad + " ",
 	}
-	// A credential request on this discobox gets a band of its own under the
-	// header *and* one above the keys. The agent in front of you is blocked on
-	// a person, and the one thing this screen has to do is say so — on a screen
-	// that is mostly terminal, whichever end of it you are reading. Both are
-	// rows the workspace only has while a request is waiting, so nothing is
-	// spent on either the rest of the time.
-	banner := m.viewCredentialBanner(headerW)
+	// A credential request waiting on this discobox — or work on it that is
+	// ready to apply — gets a band of its own under the header *and* one above
+	// the keys. Whichever it is, the one thing this screen has to do is say so
+	// — on a screen that is mostly terminal, whichever end of it you are
+	// reading. Both are rows the workspace only has while there is something
+	// to say, so nothing is spent on either the rest of the time. See
+	// banner.go.
+	banner := m.viewBanner(headerW)
 	if banner != "" {
 		rows = append(rows, " "+pad+banner+pad+" ")
 	}
@@ -1527,12 +1476,11 @@ func (m *Model) viewPaneWindow() string {
 		// nothing. Both rows are recorded here, as they are drawn, rather than
 		// where they ought to be — the index into these rows *is* the screen
 		// row, so a band that moved would take its hit test with it.
-		m.credentials = credentialSpan{
-			rows:  []int{1, len(rows) - 1},
-			start: 0,
-			end:   max(m.width-1, 0),
-			live:  true,
-		}
+		// The kind was recorded when the bar was composed; this fills in
+		// where it landed.
+		m.banner.rows = []int{1, len(rows) - 1}
+		m.banner.start, m.banner.end = 0, max(m.width-1, 0)
+		m.banner.live = true
 	}
 	room := max(inner-2*boxPad, 1)
 	m.zones.push(1+boxPad, len(rows))

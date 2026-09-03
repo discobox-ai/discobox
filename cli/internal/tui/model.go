@@ -224,10 +224,10 @@ type Model struct {
 	// Absolute screen columns.
 	zoomSpans []zoomSpan
 
-	// credentials is where the workspace's credential banner sits, recorded as
-	// it is drawn so a press can be matched against the frame on screen. See
-	// credentials.go.
-	credentials credentialSpan
+	// banner is where the workspace's attention band sits, and which band it
+	// is, recorded as it is drawn so a press can be matched against the frame
+	// on screen. See banner.go.
+	banner bannerSpan
 
 	// buttonSpans is where the showing tool window's [-] and [x] sit, recorded
 	// as its border is drawn (toolControls). Absolute screen columns.
@@ -1537,7 +1537,7 @@ func (m *Model) actions(targets []Sandbox) []action {
 			why: attachWhy(one, targets)},
 		{key: "s", press: "s", label: "shell", detail: "open a shell in the box", enabled: attachable,
 			why: attachWhy(one, targets)},
-		{key: "y", press: "y", label: "apply", detail: "bring the changes back to " + m.session.Directory, enabled: applyable,
+		{key: applyKey, press: applyKey, label: "apply", detail: "bring the changes back to " + m.session.Directory, enabled: applyable,
 			why: applyWhy},
 		{key: vscodeKey, press: vscodeKey, label: "vscode", detail: "open the box in VS Code, in a window of its own", enabled: attachable,
 			why: attachWhy(one, targets)},
@@ -1717,9 +1717,9 @@ var verbs = map[string]Verb{
 }
 
 var interactions = map[string]Interaction{
-	"a": InteractAttach,
-	"s": InteractShell,
-	"y": InteractApply,
+	"a":      InteractAttach,
+	"s":      InteractShell,
+	applyKey: InteractApply,
 }
 
 // runVerb applies a lifecycle verb to every target, in one command: the window

@@ -342,7 +342,7 @@ func TestTheWorkspaceSaysARequestIsWaitingAndWhichKeyAnswersIt(t *testing.T) {
 	// The hit test goes with it. A span left behind by a bar that is no longer
 	// drawn is a row of the header that silently answers for a request nobody
 	// is waiting on.
-	if m.credentials.live {
+	if m.banner.live {
 		t.Fatal("the banner's hit test outlived the banner")
 	}
 }
@@ -360,7 +360,7 @@ func TestTheLeaderAnswersOnItsOwnKey(t *testing.T) {
 	ds.requests = []CredentialRequest{waitingRequest()}
 	ds.projectSecrets = []Secret{{ID: "sec_gh", Name: "GitHub token", Type: "bearer", Host: "api.github.com"}}
 	d, m, _ := openWorkspace(t, ds, "enter")
-	d.wait("the banner", func() bool { return m.credentialBannerTop() == 1 })
+	d.wait("the banner", func() bool { return m.bannerTop() == 1 })
 
 	d.key("ctrl+a")
 	d.key(credentialsLeaderKey)
@@ -409,12 +409,12 @@ func TestClickingTheBannerOpensTheQuestion(t *testing.T) {
 	ds.requests = []CredentialRequest{waitingRequest()}
 	ds.projectSecrets = []Secret{{ID: "sec_gh", Name: "GitHub token", Type: "bearer", Host: "api.github.com"}}
 	d, m, _ := openWorkspace(t, ds, "enter")
-	d.wait("the banner", func() bool { return m.credentialBannerTop() == 1 })
+	d.wait("the banner", func() bool { return m.bannerTop() == 1 })
 
 	// The span is recorded by the draw, so there has to have been one, and it
 	// covers both bands.
-	d.wait("the banner drawn", func() bool { return m.credentials.live })
-	span := m.credentials
+	d.wait("the banner drawn", func() bool { return m.banner.live })
+	span := m.banner
 	if len(span.rows) != 2 || span.rows[0] != 1 {
 		t.Fatalf("banner rows = %v, want one under the header and one above the keys", span.rows)
 	}
@@ -427,7 +427,7 @@ func TestClickingTheBannerOpensTheQuestion(t *testing.T) {
 	// upper one does.
 	x := span.end - 2
 	for _, row := range span.rows {
-		if !m.credentialBannerAt(x, row) {
+		if !m.bannerAt(x, row) {
 			t.Fatalf("row %d does not answer as the band", row)
 		}
 	}
@@ -473,7 +473,7 @@ func TestTheBandMovesTheChromeItPushesDown(t *testing.T) {
 	ds.requests = []CredentialRequest{waitingRequest()}
 	ds.mu.Unlock()
 	d.dispatch(tickMsg{})
-	d.wait("the banner", func() bool { return m.credentialBannerTop() == 1 })
+	d.wait("the banner", func() bool { return m.bannerTop() == 1 })
 
 	// The frame is still exactly the window: two rows of band, two rows off
 	// the panes.

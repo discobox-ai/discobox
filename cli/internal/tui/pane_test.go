@@ -608,7 +608,7 @@ func TestPaneCursorLandsOnTheGridUnderTheCredentialBand(t *testing.T) {
 	ds.requests = []CredentialRequest{waitingRequest()}
 	ds.mu.Unlock()
 	d.dispatch(tickMsg{})
-	d.wait("the band", func() bool { return m.credentialBannerTop() == 1 })
+	d.wait("the band", func() bool { return m.bannerTop() == 1 })
 	d.wait("the text again", func() bool { return strings.Contains(frameText(m), "abc") })
 
 	cursor := m.paneCursor()
@@ -631,7 +631,7 @@ func TestPaneCursorLandsOnTheGridUnderTheCredentialBand(t *testing.T) {
 	}
 	// The band is on the rows either side of the boxes, and the cursor is on
 	// neither of them.
-	for _, row := range m.credentials.rows {
+	for _, row := range m.banner.rows {
 		if row == cursor.Y {
 			t.Fatalf("the cursor is on row %d, which is the band", row)
 		}

@@ -35,6 +35,12 @@ const (
 	// drawn in. Reversed red puts the terminal's background color on a red
 	// field, which is a slab at a glance and a struggle to read at a sentence.
 	colAlertBG = "52"
+	// The band behind the ready-to-apply banner, the same idea one color round
+	// the wheel: a dark green, because the bar it paints is an offer rather
+	// than a person waiting. Red for "something is blocked on you" and green
+	// for "there is something here to take" is the one distinction the eye
+	// makes before it reads either bar.
+	colReadyBG = "22"
 	// The mark's own purple, which is what the box round the window is drawn
 	// in: the window is framed in the color it is branded in rather than in a
 	// third accent.
@@ -99,12 +105,14 @@ type styles struct {
 	// initializing is the line under the window while the server sets itself up.
 	initializing lipgloss.Style
 	statusER     lipgloss.Style
-	// The workspace's credential banner: a whole-width bar rather than a
-	// colored word, because it has to survive being looked past. It is three
-	// styles over one painted band — the mark that catches the eye, the
-	// subject, and the key that answers — so the bar reads as a sentence with
-	// something to do rather than as a colored slab.
+	// The workspace's attention bands: a whole-width bar rather than a colored
+	// word, because it has to survive being looked past. It is three styles
+	// over one painted band — the mark that catches the eye, the subject, and
+	// the key that acts — so the bar reads as a sentence with something to do
+	// rather than as a colored slab. The text and the hint are shared by both
+	// bands; only the mark and the field behind it say which one this is.
 	attentionMark lipgloss.Style
+	readyMark     lipgloss.Style
 	attentionText lipgloss.Style
 	attentionHint lipgloss.Style
 	info          lipgloss.Style
@@ -174,6 +182,7 @@ func newStyles(color bool) *styles {
 	s.initializing = paint(colWarn)
 	s.statusER = paint(colErr)
 	s.attentionMark = paint(colWarn).Bold(true)
+	s.readyMark = paint(colOK).Bold(true)
 	s.attentionText = lipgloss.NewStyle().Bold(true)
 	s.attentionHint = paint(colGrey)
 	s.info = paint(colInfo)
