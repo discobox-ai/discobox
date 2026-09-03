@@ -933,6 +933,9 @@ func (m *Model) paneClosed(p *pane, msg termpane.ClosedMsg) tea.Cmd {
 		// away.
 		p.exited = true
 		p.status, p.failed = exitVerdict(p.stream)
+		if m.successfulApply(p) {
+			m.openSuccessfulApplyDialog()
+		}
 		return m.refresh()
 
 	case p == m.overlay:
@@ -1028,6 +1031,58 @@ func (m *Model) readFinished(p *pane, key tea.KeyPressMsg) tea.Cmd {
 		return m.dismissPane(p)
 	}
 	return nil
+}
+
+// successfulApply is the finished apply report that offers what usually comes
+// next: put the box away, leave it running and detach, or return to it. A failed
+// apply stays an ordinary readable report; cleanup must never be the prominent
+// next action while its error still needs attention.
+func (m *Model) successfulApply(p *pane) bool {
+	if p != m.overlay || p.action != InteractApply || !p.exited || p.failed {
+		return false
+	}
+	code, done := exitCode(p.stream)
+	return done && code == 0
+}
+
+// openSuccessfulApplyDialog asks what to do with a box whose work is safely
+// back on the host. Archive leads because it is the usual cleanup; Escape
+// dismisses only the question and leaves the apply report on screen.
+func (m *Model) openSuccessfulApplyDialog() {
+	items := []action{
+		{key: "archive", label: "archive", detail: "put the discobox away", enabled: true},
+		{key: "detach", label: "detach", detail: "leave the discobox running", enabled: true},
+	}
+	d := actionsDialog("Apply succeeded", "What should happen to this discobox?", items, func(choice string) tea.Cmd {
+		return func() tea.Msg { return applyFinishedChoiceMsg{choice: choice} }
+	})
+	d.footer = "Either choice detaches from the workspace."
+	d.keys = []hint{pressing("Enter chooses", "enter"), pressing("Esc returns to the apply result", "esc")}
+	m.dialog = d
+}
+
+// finishSuccessfulApply carries out either dialog choice. Both leave the
+// workspace; archive additionally changes the discobox's durable lifecycle
+// state after its local terminal view has been closed.
+func (m *Model) finishSuccessfulApply(choice string) tea.Cmd {
+	p := m.overlay
+	if !m.successfulApply(p) {
+		return nil
+	}
+	id := p.sandbox.ID
+	hadWorkspace := m.terminals.len() > 0
+	m.closeWorkspace()
+	m.layout()
+	if choice == "archive" {
+		return m.runVerb(VerbArchive, []string{id})
+	}
+	if m.attach != nil && hadWorkspace {
+		return m.exit(nil)
+	}
+	if hadWorkspace {
+		return tea.Batch(m.refresh(), status("detached — the discobox is still running"))
+	}
+	return m.refresh()
 }
 
 // dismissPane takes a finished pane off the screen: the overlay back to the

@@ -810,6 +810,14 @@ the reader. Dismissal is local tab closure, not
 detach: the session is already over, and the way to be rid of a *running* shell
 is to exit it — there is deliberately no kill-tab key.
 
+A successful apply is the useful exception to the generic finished-pane flow:
+its report stays on screen and immediately opens a two-choice menu over it.
+Archive is selected by default; detach leaves the discobox running. Either
+choice detaches from the workspace, while Esc dismisses only the menu and
+returns to the readable apply result. A failed apply opens no cleanup menu; it
+keeps the ordinary reader keys so the failure remains the decision in front of
+the user.
+
 **Messages from a pane are addressed to it** (`paneMsg`, `fromPane`). Every
 command a pane produces is tagged with its id, because `termpane.ClosedMsg` says
 only "the session ended" — and a pane that has just been closed still has a read

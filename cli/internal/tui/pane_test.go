@@ -1196,6 +1196,68 @@ func TestAFinishedCommandHoldsItsScreen(t *testing.T) {
 	}
 }
 
+func TestSuccessfulApplyAsksToArchiveOrDetach(t *testing.T) {
+	finish := func(t *testing.T, ds *fakeSource, d *driver, m *Model) {
+		t.Helper()
+		d.key("ctrl+a")
+		d.key("y")
+		d.wait("the command", func() bool { return m.overlay != nil })
+		apply := ds.terminals[len(ds.terminals)-1]
+		apply.mu.Lock()
+		code := 0
+		apply.exit = &code
+		apply.mu.Unlock()
+		apply.Close()
+		d.wait("the successful apply question", func() bool {
+			return m.overlay != nil && m.overlay.exited && m.dialog != nil
+		})
+		if m.dialog.kind != dlgActions || len(m.dialog.items) != 2 {
+			t.Fatalf("dialog = %+v, want a two-choice menu", m.dialog)
+		}
+		if m.dialog.items[0].label != "archive" || m.dialog.items[1].label != "detach" || m.dialog.cursor != 0 {
+			t.Fatalf("items = %+v cursor = %d, want archive selected before detach", m.dialog.items, m.dialog.cursor)
+		}
+	}
+
+	t.Run("escape returns to the apply result", func(t *testing.T) {
+		ds := newFakeSource(testSandboxes()...)
+		d, m, _ := openWorkspace(t, ds, "enter")
+		finish(t, ds, d, m)
+		d.key("esc")
+		if m.dialog != nil || m.overlay == nil || !m.overlay.exited || !m.inPanes() || m.focus != focusPane {
+			t.Fatalf("dialog = %v, overlay = %v, inPanes = %v, focus = %v; want the apply result", m.dialog, m.overlay, m.inPanes(), m.focus)
+		}
+	})
+
+	t.Run("detach leaves the box running", func(t *testing.T) {
+		ds := newFakeSource(testSandboxes()...)
+		d, m, _ := openWorkspace(t, ds, "enter")
+		finish(t, ds, d, m)
+		d.key("down")
+		d.key("enter")
+		if m.overlay != nil || m.inPanes() || m.focus != focusList {
+			t.Fatalf("overlay = %v, inPanes = %v, focus = %v; want the list", m.overlay, m.inPanes(), m.focus)
+		}
+		if len(ds.did) != 0 {
+			t.Fatalf("did = %v, detach must not change the box", ds.did)
+		}
+	})
+
+	t.Run("archive leaves the workspace and archives the box", func(t *testing.T) {
+		ds := newFakeSource(testSandboxes()...)
+		d, m, _ := openWorkspace(t, ds, "enter")
+		finish(t, ds, d, m)
+		d.key("enter")
+		d.wait("archive", func() bool { return len(ds.did) == 1 })
+		if got := ds.did[0]; got != "archive sbx_one" {
+			t.Fatalf("did = %q, want archive sbx_one", got)
+		}
+		if m.overlay != nil || m.inPanes() || m.focus != focusList {
+			t.Fatalf("overlay = %v, inPanes = %v, focus = %v; want the list", m.overlay, m.inPanes(), m.focus)
+		}
+	})
+}
+
 // The primary session that ends is gone: the workspace was a view onto it, so
 // it is not held.
 func TestAnEndedSessionIsNotHeld(t *testing.T) {

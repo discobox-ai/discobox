@@ -576,6 +576,10 @@ type runActionMsg struct {
 	targets []Sandbox
 }
 
+// applyFinishedChoiceMsg carries the cleanup choice out of the successful
+// apply dialog so it runs against the live model after the dialog closes.
+type applyFinishedChoiceMsg struct{ choice string }
+
 // statusHolds is how long a message sits there when nothing else is pressed.
 const statusHolds = 4 * time.Second
 
@@ -831,6 +835,9 @@ func (m *Model) update(msg tea.Msg) tea.Cmd {
 
 	case runActionMsg:
 		return m.actOn(msg.key, msg.targets)
+
+	case applyFinishedChoiceMsg:
+		return m.finishSuccessfulApply(msg.choice)
 
 	case harnessesLoadedMsg:
 		return m.harnessesLoaded(msg)
