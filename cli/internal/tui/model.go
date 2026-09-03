@@ -209,6 +209,11 @@ type Model struct {
 	clickAt        time.Time
 	now            func() time.Time
 
+	// hoverX and hoverY are where the pointer is resting, so a control can be
+	// drawn as live before it is pressed. Off the window until it has moved
+	// once: nothing is under a pointer that has not been seen.
+	hoverX, hoverY int
+
 	// tabSpans is where each visible tab label sits in the shell box's top
 	// border, recorded as the strip is drawn (tabbedEdge) so a click on
 	// [2 bash] can mean tab 2. Box-relative columns.
@@ -406,6 +411,8 @@ func New(ctx context.Context, ds DataSource, options ...Option) *Model {
 		chromeGrid:  &frameGrid{},
 		noise:       newNoise(),
 		now:         time.Now,
+		hoverX:      -1,
+		hoverY:      -1,
 	}
 	m.chromeSel = selection.New(m.chromeGrid)
 	// The label above the field already says what an empty prompt does, and the
@@ -1076,6 +1083,14 @@ func (m *Model) updateKey(msg tea.KeyPressMsg) tea.Cmd {
 	// Not from a pane, where every key is the sandbox's: a window key that
 	// reached past a terminal would be a key the program in it could never
 	// receive. The leader's keys are the way to the window from there.
+	//
+	// Both keys are answered before either screen's own, because they are the
+	// way *between* the screens as much as the way in: the header offers F3
+	// and F4 from everywhere, and a screen that swallowed the key to its
+	// neighbor would make that offer a lie for as long as it was up — which is
+	// exactly where somebody reads it. They are peers, so opening one closes
+	// the other and Esc from either goes back to the launcher, rather than to
+	// a screen left open underneath.
 	if keyName(msg) == harnessesKey && !m.inPanes() {
 		if m.harnessesOpen {
 			m.closeHarnesses()
@@ -1083,17 +1098,16 @@ func (m *Model) updateKey(msg tea.KeyPressMsg) tea.Cmd {
 		}
 		return m.openHarnesses()
 	}
-	if m.harnessesOpen {
-		return m.updateHarnesses(msg)
-	}
-	// The secrets screen, on the next function key along and on the same terms:
-	// a toggle, and not from a pane, where every key belongs to the sandbox.
+	// The secrets screen, on the next function key along and on the same terms.
 	if keyName(msg) == secretsKey && !m.inPanes() {
 		if m.secretsOpen {
 			m.closeSecrets()
 			return nil
 		}
 		return m.openSecrets()
+	}
+	if m.harnessesOpen {
+		return m.updateHarnesses(msg)
 	}
 	if m.secretsOpen {
 		return m.updateSecrets(msg)
@@ -2356,8 +2370,12 @@ func (m *Model) View() tea.View {
 
 func (m *Model) view() tea.View {
 	// Every frame starts with an empty hit map and fills it as it draws. A
-	// control that forgets to mark itself is one the mouse cannot reach.
+	// control that forgets to mark itself is one the mouse cannot reach. The
+	// pointer's resting place goes in with it, so a renderer can ask whether
+	// what it is drawing is under it in the same coordinates, and at the same
+	// moment, as the mark it makes for it.
 	m.zones.reset()
+	m.zones.setHover(m.hoverX, m.hoverY)
 	if m.quit {
 		return tea.NewView("")
 	}
@@ -2579,24 +2597,32 @@ func (m *Model) showLogo() bool {
 }
 
 func (m *Model) viewHeader(width int) string {
-	left, right := m.viewHeaderLeft(), m.viewHeaderRight()
-	// The keys on the right are buttons for themselves, marked where spread
-	// pins them: hard against the far end of the row.
-	if gap := width - lipgloss.Width(left) - lipgloss.Width(right); gap >= 1 {
-		m.zones.push(width-lipgloss.Width(right), 0)
-		m.markHints(m.headerHints(), 0, headerSep)
-		m.zones.pop()
+	left := m.viewHeaderLeft()
+	hints := m.headerHints()
+	// The keys sit hard against the far end, which is where spread pins them,
+	// so where they will land is known before they are drawn. A row with no
+	// room for them drops them whole — spread would too — and an offer that is
+	// not on screen is not marked.
+	keys := hintsWidth(hints, headerSep)
+	if width-lipgloss.Width(left)-keys < 1 {
+		return spread(left, "", width)
 	}
-	return spread(left, right, width)
+	return spread(left, m.viewHints(hints, width-keys, headerSep), width)
 }
 
 // viewHeaderLeft is where you are: the project when it is not the usual one,
 // and the folder the window is working in.
 func (m *Model) viewHeaderLeft() string {
 	brand := m.viewHeaderBrand()
-	folder := m.viewFolder()
-	// The filter is a dropdown, and a dropdown opens when it is clicked.
-	m.zones.mark(hit{kind: hitFolder}, lipgloss.Width(brand), 0, lipgloss.Width(folder), 1)
+	folder := m.viewFolder(false)
+	// The filter is a dropdown, and a dropdown opens when it is clicked. It is
+	// measured before it is shaded because styling costs no cells: the width
+	// the mark takes is the width either way.
+	x, width := lipgloss.Width(brand), lipgloss.Width(folder)
+	m.zones.mark(hit{kind: hitFolder}, x, 0, width, 1)
+	if m.zones.hovering(x, 0, width, 1) {
+		folder = m.viewFolder(true)
+	}
 	return brand + folder
 }
 
@@ -2613,17 +2639,6 @@ func (m *Model) viewHeaderBrand() string {
 		brand += m.st.headerBar.Render(m.session.Project) + m.st.headerLabel.Render("  ")
 	}
 	return brand
-}
-
-// viewHeaderRight is the keys that work where you are. A pane owns the
-// keyboard, so the ones the header offers everywhere else are not among them;
-// the one that is, is the way out.
-func (m *Model) viewHeaderRight() string {
-	text := make([]string, 0, 4)
-	for _, h := range m.headerHints() {
-		text = append(text, h.text)
-	}
-	return m.st.dimText.Render(strings.Join(text, headerSep))
 }
 
 // headerSep sets the header's own offers further apart than the status line's:
@@ -2704,12 +2719,18 @@ func (m *Model) windowTitle() string {
 // viewFolder draws the folder filter: a path with a caret after it, which is
 // what says it can be opened. Focused it wears the arrows that say left and
 // right change it, the same way the run options panel marks its own rows.
-func (m *Model) viewFolder() string {
+func (m *Model) viewFolder(hovered bool) string {
 	label := m.folderLabel()
-	if m.focus != focusFolder {
-		return m.st.headerLabel.Render(label + " ▾")
+	if m.focus == focusFolder {
+		// The keyboard is already on it and it wears its own marks; the
+		// pointer resting there has nothing left to say.
+		return m.st.key.Render("‹ ") + m.st.cursorName.Render(label) + m.st.key.Render(" ›")
 	}
-	return m.st.key.Render("‹ ") + m.st.cursorName.Render(label) + m.st.key.Render(" ›")
+	style := m.st.headerLabel
+	if hovered {
+		style = m.st.hover
+	}
+	return style.Render(label + " ▾")
 }
 
 // viewPrompt draws the composer the way Claude Code draws its own: a rule
@@ -2865,19 +2886,46 @@ func (m *Model) statusLine(room int) string {
 		fields = append(fields, h.text)
 	}
 	kept := fitFields(fields, hintSep, room)
-	m.markHints(hints[:len(kept)], 0, hintSep)
-	return m.st.dimText.Render(strings.Join(kept, hintSep))
+	return m.viewHints(hints[:len(kept)], 0, hintSep)
 }
 
-// markHints records where each offer on a key line landed, walking the row the
-// way the join laid it out.
-func (m *Model) markHints(hints []hint, x int, sep string) {
+// viewHints draws a row of key hints, marks the pressable ones where they
+// land, and picks out whichever the pointer is resting on. x is where the row
+// starts, in the coordinates the caller has pushed.
+//
+// Drawing and marking are the same walk because they are the same arithmetic:
+// a hint highlighted somewhere other than where it is pressed would be a
+// button that lies about itself.
+func (m *Model) viewHints(hints []hint, x int, sep string) string {
+	parts := make([]string, 0, len(hints))
 	for _, h := range hints {
+		width := lipgloss.Width(h.text)
+		style := m.st.dimText
 		if len(h.keys) > 0 {
-			m.zones.mark(keyHit(h.keys...), x, 0, lipgloss.Width(h.text), 1)
+			m.zones.mark(keyHit(h.keys...), x, 0, width, 1)
+			if m.zones.hovering(x, 0, width, 1) {
+				// A control the pointer is on says so before it is pressed.
+				style = m.st.hover
+			}
 		}
-		x += lipgloss.Width(h.text) + lipgloss.Width(sep)
+		parts = append(parts, style.Render(h.text))
+		x += width + lipgloss.Width(sep)
 	}
+	return strings.Join(parts, m.st.dimText.Render(sep))
+}
+
+// hintsWidth is how wide that row comes out, for the callers that have to
+// place it before they can draw it. Styling costs no cells, so the answer is
+// the same either way.
+func hintsWidth(hints []hint, sep string) int {
+	width := 0
+	for i, h := range hints {
+		if i > 0 {
+			width += lipgloss.Width(sep)
+		}
+		width += lipgloss.Width(h.text)
+	}
+	return width
 }
 
 // hintSep is what a key hint is separated from the next by, and so what a row
@@ -3117,8 +3165,13 @@ func (m *Model) helpText() string {
 		"",
 		"  Everything on screen answers it. A press on a row points at it",
 		"  and a second press opens it; the right button is that row's",
-		"  menu; the wheel scrolls whatever is under the pointer, without",
-		"  taking the keyboard from where it is.",
+		"  menu, which is what the . key opens; the wheel scrolls whatever",
+		"  is under the pointer, without taking the keyboard from where it",
+		"  is.",
+		"",
+		"  A control the pointer is resting on is drawn as live, so what can",
+		"  be pressed is answered by moving the mouse rather than by",
+		"  clicking to find out.",
 		"",
 		"  Anything that names a key is a button for that key — the F3 in",
 		"  the header, the a attach on the status line, the ‹ › on a run",
@@ -3254,7 +3307,8 @@ func (m *Model) helpText() string {
 		"    e      rename          t  stop",
 		"    T      start           x  archive",
 		"    U      unarchive       P  purge",
-		"    .      every action, as a menu",
+		"    .      every action, as a menu — what the right button opens",
+		"           on a row",
 		"",
 		"  rename opens the name it already has, to be edited rather than",
 		"  retyped: Enter accepts it, Esc leaves it alone. A box whose",
@@ -3493,6 +3547,8 @@ func (m *Model) helpText() string {
 		"                   secret answers each variable it needs, and the",
 		"                   files it carries",
 		"    f              edit one of those files in $EDITOR",
+		"    .              every action, as a menu — what the right button",
+		"                   opens on a row here",
 		"    Esc or " + HarnessesKeyName + "      back to the launcher",
 		"",
 		"      ● enabled    ○ disabled    ✗ its setup did not finish",

@@ -377,6 +377,10 @@ func (m *Model) openHarnesses() tea.Cmd {
 	m.expand()
 	m.harnessesOpen = true
 	m.optionsOpen = false
+	// The secrets screen is this one's peer, not what it is drawn over: one of
+	// them is the window while it is up, and leaving it goes back to the
+	// launcher rather than to the other one still standing behind it.
+	m.secretsOpen = false
 	m.layout()
 	return m.loadHarnesses()
 }

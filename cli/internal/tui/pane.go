@@ -1497,10 +1497,15 @@ func (m *Model) viewPaneHeader(w int) string {
 		}
 		return padANSI(m.st.statusWA.Render(middle), w)
 	}
-	folder := m.viewFolder()
+	folder := m.viewFolder(false)
 	full := m.viewHeaderBrand() + folder
 
-	keys, pinned := m.viewHeaderRight(), false
+	// The keys are measured as plain text and drawn only once the row has
+	// settled which of its edges it can afford: styling costs no cells, so the
+	// measurement is exact either way, and an offer the row gave up is one
+	// that is neither drawn nor marked.
+	hints := m.headerHints()
+	keys, pinned := strings.Repeat(" ", hintsWidth(hints, headerSep)), false
 	if p := m.focusedPane(); p != nil && p.status != "" {
 		// A command that failed is not the same news as one that is
 		// reconnecting or one that is over, and the banner is where it is read.
@@ -1522,28 +1527,26 @@ func (m *Model) viewPaneHeader(w int) string {
 	// The keys, wherever this row ends up putting them, are buttons for
 	// themselves as they are on every other screen. A row that gave them up to
 	// fit has nothing there to press, and a pane whose status has displaced
-	// them is reporting rather than offering — so the marks are made from the
+	// them is reporting rather than offering — so they are drawn from the
 	// concession that actually won.
-	markKeys := func(right string) {
+	drawKeys := func(right string) string {
 		if pinned || right == "" {
-			return
+			return right
 		}
-		m.markHints(m.headerHints(), w-lipgloss.Width(right), headerSep)
+		return m.viewHints(hints, w-lipgloss.Width(right), headerSep)
 	}
 
 	fields := m.paneHeaderFields()
 	middle := strings.Join(fields, "  ")
 	for _, sides := range concessions {
 		if lipgloss.Width(middle) <= centerRoom(sides[0], sides[1], w) {
-			markKeys(sides[1])
-			return spreadCenter(sides[0], middle, sides[1], w)
+			return spreadCenter(sides[0], middle, drawKeys(sides[1]), w)
 		}
 	}
 	// Nothing left on the edges to give. What the middle can still drop is its
 	// own, against the room the barest row leaves it.
 	bare := concessions[len(concessions)-1]
-	markKeys(bare[1])
-	return spreadCenter(bare[0], dropToFit(fields, "  ", centerRoom(bare[0], bare[1], w)), bare[1], w)
+	return spreadCenter(bare[0], dropToFit(fields, "  ", centerRoom(bare[0], bare[1], w)), drawKeys(bare[1]), w)
 }
 
 // paneHeaderFields is the middle of the workspace's header, field by field:
@@ -1723,17 +1726,17 @@ func (m *Model) paneCursor() *tea.Cursor {
 // this frame and the terminal's own selection is still the one that belongs.
 // See ADR 0085 §1.
 //
-// All-motion is requested only when the focused application wants it and the
-// mouse has not been seized away from it.
+// All-motion, because a control the pointer is resting on is drawn as live
+// before it is pressed, and a pointer that has not moved yet reports nothing.
+// A bare move — no button down — is the window's own: it is answered here and
+// forwarded to a sandbox only when that sandbox asked for motion, so an
+// application that subscribed to buttons alone is sent no more than it was
+// before. See Model.hover.
 func (m *Model) mouseMode() tea.MouseMode {
 	if !m.takesScreen() {
 		return tea.MouseModeNone
 	}
-	if p := m.focusedPane(); p != nil && !m.mouseSeized &&
-		p.term.MouseMode() == termpane.MouseAllMotion {
-		return tea.MouseModeAllMotion
-	}
-	return tea.MouseModeCellMotion
+	return tea.MouseModeAllMotion
 }
 
 // translateMouse moves an event from the screen into a pane's grid.

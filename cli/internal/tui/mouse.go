@@ -7,6 +7,7 @@ import (
 
 	tea "charm.land/bubbletea/v2"
 
+	"github.com/discobox-ai/discobox/termpane"
 	"github.com/discobox-ai/x/selection"
 )
 
@@ -32,10 +33,31 @@ const clickRun = 500 * time.Millisecond
 // place of the window, then the panes, then the window itself. Only the panes
 // route by their own geometry; everything else is a lookup in the hit map.
 func (m *Model) updateMouse(msg tea.MouseMsg) tea.Cmd {
+	// A pointer moving with no button down is nobody's gesture: it is where
+	// the pointer is resting, which is what draws a control as live.
+	if ev, ok := msg.(tea.MouseMotionMsg); ok && ev.Button == tea.MouseNone {
+		return m.hover(ev)
+	}
 	if m.inPanes() && !m.modalUp() {
 		return m.routeMouse(msg)
 	}
 	return m.windowMouse(msg)
+}
+
+// hover records where the pointer is resting, so the next frame can draw
+// whatever is under it as the control it is. The window asks the terminal for
+// every move (mouseMode) and answers most of them here: a sandbox is sent the
+// move only when it asked for motion itself, so one that subscribed to buttons
+// alone receives no more than it did before the window wanted hover.
+func (m *Model) hover(ev tea.MouseMotionMsg) tea.Cmd {
+	m.hoverX, m.hoverY = ev.X, ev.Y
+	if m.modalUp() || !m.inPanes() || m.mouseSeized {
+		return nil
+	}
+	if p := m.focusedPane(); p != nil && p.term.MouseMode() == termpane.MouseAllMotion {
+		return m.routeMouse(ev)
+	}
+	return nil
 }
 
 // modalUp is whether something stands in place of the window rather than

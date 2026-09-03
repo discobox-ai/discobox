@@ -109,6 +109,10 @@ type zones struct {
 	marks  []zone
 	ox, oy int
 	stack  [][2]int
+	// hoverX and hoverY are where the pointer is resting, in absolute cells,
+	// so a renderer can ask whether what it is about to draw is under it —
+	// with the same numbers and the same origin as the mark it makes for it.
+	hoverX, hoverY int
 }
 
 // reset empties the map for a new frame and puts the origin back in the
@@ -117,6 +121,19 @@ func (z *zones) reset() {
 	z.marks = z.marks[:0]
 	z.ox, z.oy = 0, 0
 	z.stack = z.stack[:0]
+}
+
+// setHover takes the pointer's resting place for this frame.
+func (z *zones) setHover(x, y int) { z.hoverX, z.hoverY = x, y }
+
+// hovering reports whether the pointer is resting on a rectangle, in the
+// coordinates its caller is drawing in.
+func (z *zones) hovering(x, y, width, height int) bool {
+	if z.hoverX < 0 || z.hoverY < 0 {
+		return false
+	}
+	x, y = z.ox+x, z.oy+y
+	return z.hoverX >= x && z.hoverX < x+width && z.hoverY >= y && z.hoverY < y+height
 }
 
 // push moves the origin to where the block about to be drawn is being placed,

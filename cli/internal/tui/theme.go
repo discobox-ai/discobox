@@ -124,6 +124,11 @@ type styles struct {
 	dialog      lipgloss.Style
 	dialogTitle lipgloss.Style
 	key         lipgloss.Style
+	// hover is a control with the pointer on it. It is the accent the keys
+	// and the cursor already use, so a live control is picked out in the one
+	// color the window picks anything out in — and underlined as well, because
+	// a terminal with no color has to be able to show it too.
+	hover lipgloss.Style
 }
 
 func newStyles(color bool) *styles {
@@ -185,5 +190,6 @@ func newStyles(color bool) *styles {
 	}
 	s.dialogTitle = paint(colGold).Bold(true)
 	s.key = paint(colGold)
+	s.hover = paint(colGold).Underline(true)
 	return s
 }

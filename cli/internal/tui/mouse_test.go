@@ -588,3 +588,37 @@ func assertMarksLand(t *testing.T, m *Model, width int) {
 		}
 	}
 }
+
+// A control the pointer is resting on says so before it is pressed, so what
+// can be clicked is answerable by moving the mouse rather than by clicking to
+// find out.
+func TestAHintShadesUnderThePointer(t *testing.T) {
+	m := newTestModel(t, newFakeSource(testSandboxes()...))
+
+	plain := plainFrame(m)
+	x, y := at(t, m, "F3 harnesses")
+	send(t, m, tea.MouseMotionMsg{X: x, Y: y})
+
+	if got := plainFrame(m); got != plain {
+		t.Fatalf("hovering changed the text on the frame, not just its color:\n%s", got)
+	}
+	row := strings.Split(rawFrame(m), "\n")[y]
+	if !strings.Contains(row, m.st.hover.Render("F3 harnesses")) {
+		t.Fatalf("the hint under the pointer is not drawn as live:\n%q", row)
+	}
+
+	// And it gives the shade back when the pointer moves off it.
+	send(t, m, tea.MouseMotionMsg{X: 0, Y: y})
+	if row := strings.Split(rawFrame(m), "\n")[y]; strings.Contains(row, m.st.hover.Render("F3 harnesses")) {
+		t.Fatalf("the hint is still live with the pointer elsewhere:\n%q", row)
+	}
+}
+
+// The window asks for every move so it can do that, and answers them itself: a
+// sandbox that subscribed to buttons alone is sent no more than it was.
+func TestABareMoveIsTheWindowsOwn(t *testing.T) {
+	m := newTestModel(t, newFakeSource(testSandboxes()...))
+	if got := m.mouseMode(); got != tea.MouseModeAllMotion {
+		t.Fatalf("the window asks for %v, want every move so a control can shade under the pointer", got)
+	}
+}

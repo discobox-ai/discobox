@@ -1020,17 +1020,30 @@ Every screen the window draws marks its own controls: the rows of all four
 lists (`markList`), the folder filter, the composer and the strip under it, the
 title band's two offers, a menu's rows and a card's, the run options and the
 arrows on them, the confirmation's two answers, and the introduction's one
-instruction. What is left over — prose, borders, column headings, a dialog's
+instruction. `.` opens the same menu the right button does, on the discobox
+list and on the harnesses — a menu the pointer can reach and the keyboard
+cannot would be half a feature. What is left over — prose, borders, column headings, a dialog's
 text input — is not a control and drives the selection instead. A dialog's
 input takes no caret from a press: the textinput has no coordinate to give it,
 and the field is already focused when the card opens.
 
 **A hint that names a key is a button for that key.** `hints()` answers in
 `hint` pairs — what it says, and the keystrokes it stands for, several of them
-for a leader chord — and the renderer both joins them and marks where each one
-landed (`statusLine`, `markHints`). A press is handled as those key presses
-through the handler the keyboard reaches, so the two cannot come to mean
-different things. The list's title band is the same idea from the other side
+for a leader chord — and `viewHints` draws them, marks the pressable ones, and
+shades whichever the pointer is on, in one walk: drawing and marking are the
+same arithmetic, and a hint highlighted somewhere other than where it is
+pressed would be a button that lies about itself. A press is handled as those
+key presses through the handler the keyboard reaches, so the two cannot come to
+mean different things.
+
+**A control the pointer is resting on is drawn as live** (`styles.hover` — the
+window's one accent, underlined so a terminal with no color shows it too). The
+window asks for all-motion (`mouseMode`) and answers a bare move itself
+(`Model.hover`): a sandbox is sent the move only when it asked for motion, so
+one subscribed to buttons alone gets no more than before. The renderer asks
+`zones.hovering` with the numbers it is about to mark with. Rows and menu items
+are left out of it: they already wear a cursor, and a second highlight chasing
+the pointer across them competes with the one that says what Enter will act on. The list's title band is the same idea from the other side
 (`markBand`): the archived offer and the mark count are its own keys, aimed at
 the list wherever the keyboard happens to be.
 

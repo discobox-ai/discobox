@@ -19,6 +19,11 @@
   not formatted text. A new offer written as `says("x archive")` looks right on
   screen and is dead to the pointer; use `keyed`/`pressing`.
 
+- **Shade from the same numbers you mark with.** `zones.hovering` takes the
+  rectangle the mark took, at the same origin, in the same walk. A hint drawn
+  as live somewhere other than where it is pressed is a button that lies about
+  itself.
+
 - **A control that answers a press outright must take the gesture**, so it does
   not also start a drag-select of its own label (`press` returns whether it did).
   One that only points at something — a row — must not, or the row's text stops

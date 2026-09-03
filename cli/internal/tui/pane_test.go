@@ -696,14 +696,14 @@ func TestCtrlCNeverQuitsFromAPane(t *testing.T) {
 	}
 }
 
-// While panes are up the terminal always reports the mouse — selection and
-// click-to-focus need the events — and a sandbox that asked for the mouse is
-// forwarded them, translated out of screen space.
+// The terminal reports the mouse on every screen the window draws — selection
+// and click-to-focus need the events — and a sandbox that asked for the mouse
+// is forwarded them, translated out of screen space.
 func TestMouseIsForwardedToTheSandboxThatAskedForIt(t *testing.T) {
 	ds := newFakeSource(testSandboxes()...)
 	d, m, term := openWorkspace(t, ds, "enter")
 
-	if m.View().MouseMode != tea.MouseModeCellMotion {
+	if m.View().MouseMode == tea.MouseModeNone {
 		t.Fatal("a workspace should report the mouse for selection")
 	}
 
@@ -746,7 +746,7 @@ func TestPrefixMSeizesTheMouse(t *testing.T) {
 	if !m.mouseSeized {
 		t.Fatal("ctrl+a m should take the mouse")
 	}
-	if m.View().MouseMode != tea.MouseModeCellMotion {
+	if m.View().MouseMode == tea.MouseModeNone {
 		t.Fatal("the terminal keeps reporting while the mouse is taken")
 	}
 	if !strings.Contains(m.status, "mouse") {

@@ -657,3 +657,32 @@ func TestAFailedSetupDoesNotResumeTheRun(t *testing.T) {
 		t.Fatalf("did = %v, want no default set from a setup that failed", ds.didHarness)
 	}
 }
+
+// The header offers F3 and F4 from everywhere, so each key has to work from
+// the other's screen: a screen that swallowed the key to its neighbor would
+// make the header's offer a lie for as long as it was up.
+func TestTheTwoScreensReachEachOther(t *testing.T) {
+	m := newTestModel(t, newFakeSource(testSandboxes()...))
+
+	send(t, m, keyPress(harnessesKey))
+	if !m.harnessesOpen {
+		t.Fatalf("F3 did not open the harnesses")
+	}
+
+	send(t, m, keyPress(secretsKey))
+	if !m.secretsOpen || m.harnessesOpen {
+		t.Fatalf("F4 from the harnesses: secrets=%v harnesses=%v, want the secrets alone", m.secretsOpen, m.harnessesOpen)
+	}
+
+	send(t, m, keyPress(harnessesKey))
+	if !m.harnessesOpen || m.secretsOpen {
+		t.Fatalf("F3 from the secrets: harnesses=%v secrets=%v, want the harnesses alone", m.harnessesOpen, m.secretsOpen)
+	}
+
+	// And leaving either goes back to the launcher, not to the other one left
+	// standing behind it.
+	send(t, m, keyPress("esc"))
+	if m.harnessesOpen || m.secretsOpen {
+		t.Fatalf("esc left harnesses=%v secrets=%v, want the launcher", m.harnessesOpen, m.secretsOpen)
+	}
+}
