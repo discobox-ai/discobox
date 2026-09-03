@@ -110,6 +110,7 @@ RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
         build-essential \
         chromium \
         direnv \
+        expect \
         extrepo \
         jq \
         less \
@@ -128,11 +129,13 @@ RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
         python3-websockify \
         python3-xdg \
         ripgrep \
+        screen \
         scrot \
         shellcheck \
         socat \
         sqlite3 \
         sudo \
+        tmux \
         unzip \
         util-linux \
         vim \
@@ -147,6 +150,33 @@ RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
         pcmanfm \
         xz-utils \
     && rm -rf /var/lib/apt/lists/*
+
+# Neovim's official stable build. Debian stable intentionally holds an older
+# release, while the upstream release provides matching amd64 and arm64
+# tarballs. Keep the version and upstream-published checksums together so a
+# bump is explicit and reproducible.
+ARG NEOVIM_VERSION=v0.12.5
+ARG NEOVIM_AMD64_SHA256=bce0f56eda1f1b1db6eee8f4133d7a38813ea07933837dd1777411ca384c6875
+ARG NEOVIM_ARM64_SHA256=1aa5ca085249580ae0f91eb14f27ec0919773ff2d99a163d03f3d6c21ac29725
+RUN set -eux \
+    && case "$(dpkg --print-architecture)" in \
+        amd64) \
+            neovim_arch=x86_64; \
+            neovim_sha256="$NEOVIM_AMD64_SHA256" \
+            ;; \
+        arm64) \
+            neovim_arch=arm64; \
+            neovim_sha256="$NEOVIM_ARM64_SHA256" \
+            ;; \
+        *) echo "no Neovim build for $(dpkg --print-architecture)" >&2; exit 1 ;; \
+    esac \
+    && archive="nvim-linux-${neovim_arch}.tar.gz" \
+    && curl -fsSL -o "/tmp/${archive}" \
+        "https://github.com/neovim/neovim/releases/download/${NEOVIM_VERSION}/${archive}" \
+    && echo "${neovim_sha256}  /tmp/${archive}" | sha256sum -c - \
+    && tar -xzf "/tmp/${archive}" -C /usr/local --strip-components=1 \
+    && rm -f "/tmp/${archive}" \
+    && nvim --version
 
 # Nix, and the second-largest layer. Its own step so the tool groups below can
 # change without repulling it.
