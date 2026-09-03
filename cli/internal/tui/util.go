@@ -290,20 +290,16 @@ func centerRoom(left, right string, w int) int {
 	return w - lipgloss.Width(left) - lipgloss.Width(right) - 2
 }
 
-// dropToFit joins fields with sep into a row of at most room columns, dropping
-// them whole from the right until they fit rather than cutting one mid-word: a
-// narrow window should lose a field, not show half of one.
+// fitFields is which of fields survive a row of at most room columns joined by
+// sep, dropping them whole from the right rather than cutting one mid-word: a
+// narrow window should lose a field, not show half of one. It answers with the
+// fields rather than the joined row, for the caller that has to know where each
+// of them landed as well as what the row says — see Model.statusLine, which
+// marks every offer it draws.
 //
 // The first field always survives. It is the one the rest qualify, so a row
 // that cannot hold it has nothing worth saying anyway, and the caller's own
 // truncation is what deals with that.
-func dropToFit(fields []string, sep string, room int) string {
-	return strings.Join(fitFields(fields, sep, room), sep)
-}
-
-// fitFields is dropToFit's answer before it is joined: which fields survived,
-// for the caller that has to know where each of them landed as well as what
-// the row says. See Model.statusLine, which marks every offer it draws.
 func fitFields(fields []string, sep string, room int) []string {
 	for len(fields) > 1 {
 		if lipgloss.Width(strings.Join(fields, sep)) <= room {

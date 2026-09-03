@@ -498,7 +498,7 @@ func TestTheWorkspaceHintsOfferTheToolsPicker(t *testing.T) {
 
 // That row is one row and stays one row: it drops whole hints from the end
 // rather than wrapping onto a second, which would come out of the panes. The
-// dropping itself is statusLine's (dropToFit); what is asserted here is that the
+// dropping itself is statusLine's (fitFields); what is asserted here is that the
 // workspace's own line survives it — no hint cut mid-word, and the way out never
 // among the casualties.
 func TestTheHintsLineDropsRatherThanOverrunning(t *testing.T) {

@@ -2949,7 +2949,7 @@ func viewHints(st *styles, z *zones, hints []hint, x int, sep string) string {
 }
 
 // fitHints is a key line cut to the room it has, from the tail, where the
-// least of it is: half a hint is not one. See dropToFit.
+// least of it is: half a hint is not one. See fitFields.
 func fitHints(hints []hint, sep string, room int) []hint {
 	text := make([]string, 0, len(hints))
 	for _, h := range hints {
