@@ -44,10 +44,10 @@ func RunLauncher(t *testing.T, agent string, args []string) []string {
 	// shell split arrive as one argument, so an argument containing a newline
 	// would be testing the printf rather than the launcher.
 	stub := filepath.Join(dir, agent)
-	if err := os.WriteFile(stub, []byte("#!/bin/sh\nfor arg in \"$@\"; do printf '%s\\n' \"$arg\"; done\n"), 0o755); err != nil {
+	if err := os.WriteFile(stub, []byte("#!/bin/sh\nfor arg in \"$@\"; do printf '%s\\n' \"$arg\"; done\n"), 0o755); err != nil { //nolint:gosec // The stub is the agent the launcher execs; it has to be executable.
 		t.Fatal(err)
 	}
-	cmd := exec.Command(shell, append([]string{launcher}, args...)...)
+	cmd := exec.CommandContext(t.Context(), shell, append([]string{launcher}, args...)...)
 	cmd.Env = append(os.Environ(),
 		"PATH="+dir+string(os.PathListSeparator)+os.Getenv("PATH"),
 		"HOME="+dir,
