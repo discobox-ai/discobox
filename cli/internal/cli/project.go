@@ -123,6 +123,7 @@ func (a *App) newProjectUpdateCommand() *cobra.Command {
 	var name string
 	var archiveRetention time.Duration
 	var upgradePolicy string
+	var welcomed bool
 	cmd := &cobra.Command{Use: "update PROJECT_ID", Short: "Update a project", Long: `Update a project.
 
 --archive-retention sets how long this project's archived discoboxes are kept
@@ -137,7 +138,11 @@ discobox is never touched, and nothing is ever started. "manual" holds every
 discobox on the image it was built with, and "discobox admin box upgrade" is
 then the only way one moves. Rebuilding a discobox keeps its volumes, sources
 and history, but discards whatever was written to its container filesystem
-outside them -- which is the reason to hold one back.`, Args: cobra.ExactArgs(1), ValidArgsFunction: a.completeProjects, RunE: func(cmd *cobra.Command, args []string) error {
+outside them -- which is the reason to hold one back.
+
+--welcomed=false shows the launcher's welcome screen again on this project's
+next "discobox" or "discobox tui": it is otherwise shown once, the first time
+the launcher opens on the project.`, Args: cobra.ExactArgs(1), ValidArgsFunction: a.completeProjects, RunE: func(cmd *cobra.Command, args []string) error {
 		client, err := a.apiClient()
 		if err != nil {
 			return err
@@ -170,6 +175,9 @@ outside them -- which is the reason to hold one back.`, Args: cobra.ExactArgs(1)
 			}
 			body.SetSandboxUpgradePolicy(apiclientgen.NewOptUpdateProjectBodySandboxUpgradePolicy(policy))
 		}
+		if cmd.Flags().Changed("welcomed") {
+			body.SetWelcomed(apiclientgen.NewOptBool(welcomed))
+		}
 		res, err := client.UpdateProject(cmd.Context(), body, apiclientgen.UpdateProjectParams{ProjectId: projectID})
 		if err != nil {
 			return err
@@ -185,6 +193,7 @@ outside them -- which is the reason to hold one back.`, Args: cobra.ExactArgs(1)
 	cmd.Flags().StringVar(&upgradePolicy, "sandbox-upgrade-policy", "", `Whether stopped discoboxes follow their harness image: "automatic" or "manual"; empty restores the server default`)
 	_ = cmd.RegisterFlagCompletionFunc("sandbox-upgrade-policy", cobra.FixedCompletions(
 		[]string{"automatic", "manual"}, cobra.ShellCompDirectiveNoFileComp))
+	cmd.Flags().BoolVar(&welcomed, "welcomed", false, `Whether this project has shown its welcome screen; pass --welcomed=false to have the launcher show it again`)
 	return cmd
 }
 
