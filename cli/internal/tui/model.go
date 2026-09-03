@@ -2073,7 +2073,7 @@ func (m *Model) workspaceChecked(msg workspaceCheckedMsg) tea.Cmd {
 	// the one that changes nothing about what the sandbox sees. The repository
 	// named is the one the run is cut from, which is not the window's own
 	// directory when the source option names another.
-	m.dialog = m.includeDirtyDialog("Uncommitted changes", dirtyWorkspaceBody(msg.workspace), msg.req)
+	m.dialog = m.includeDirtyDialog("Uncommitted changes", dirtyWorkspaceBody(msg.workspace), true, msg.req)
 	return nil
 }
 
@@ -2113,24 +2113,34 @@ func summarizePaths(paths []string) string {
 func (m *Model) askToCopyDirectory(req RunRequest, dir string) tea.Cmd {
 	total, stop := m.ds.MeasureDirectory(m.ctx, dir)
 	m.copySize, m.copyStop, m.copyDir = total, stop, dir
-	m.dialog = m.includeDirtyDialog("Copy this directory?", copyDirectoryBody(dir), req)
+	m.dialog = m.includeDirtyDialog("Copy this directory?", copyDirectoryBody(dir), false, req)
 	m.dialog.emphasis = directoryCopySize(total())
 	m.copyDialog = m.dialog
 	return m.pollDirectorySize()
 }
 
 // includeDirtyDialog is the two-answer question about what local content
-// reaches the discobox. Both answers are answers — the discobox is created
-// either way — so no is heard on cancel as well as on "n", and Enter means no:
-// carrying content in is what has to be asked for.
-func (m *Model) includeDirtyDialog(title, body string, req RunRequest) *dialog {
+// reaches the discobox. It uses the same two descriptive rows as the standalone
+// run prompt, with the excluding answer first so Enter means no. Both answers
+// are answers — the discobox is created either way — so cancel is heard as no.
+func (m *Model) includeDirtyDialog(title, body string, repository bool, req RunRequest) *dialog {
 	answer := func(includeDirty string) tea.Cmd {
 		req := req
 		req.IncludeDirty = includeDirty
 		return func() tea.Msg { return createMsg{req: req} }
 	}
-	d := confirmDialog(title, body, func(string) tea.Cmd { return answer("true") })
-	d.defaultNo = true
+	items := []action{
+		{key: "false", press: "n", label: "Do not copy the directory", detail: "Create the discobox with nothing checked out in it", enabled: true},
+		{key: "true", press: "y", label: "Copy the directory in", detail: "Everything in it arrives as uncommitted changes", enabled: true},
+	}
+	if repository {
+		items = []action{
+			{key: "false", press: "n", label: "Start from the last commit", detail: "Leave the uncommitted changes here", enabled: true},
+			{key: "true", press: "y", label: "Include uncommitted changes", detail: "Start the discobox from a snapshot of the working tree", enabled: true},
+		}
+	}
+	d := actionsDialog(title, body, items, answer)
+	d.singleLineBody = true
 	d.onCancel = func() tea.Cmd { return answer("false") }
 	return d
 }

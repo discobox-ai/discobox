@@ -146,6 +146,22 @@ func searchable() *dialog {
 // wrapped to the window, so how many lines hold a word is only known here.
 func draw(d *dialog) string { return d.view(newStyles(false), &zones{}, 100, 24) }
 
+func TestSingleLineDialogBodyEllipsizesInsteadOfWrapping(t *testing.T) {
+	d := actionsDialog("Uncommitted changes", "/home/darren/src/disco2 has 7 uncommitted changes (cli/internal/cli/cp.go, cli/internal/cli/picker.go, cli/internal/cli/picker_test.go and 4 more)", []action{
+		{key: "false", label: "Start from the last commit", enabled: true},
+		{key: "true", label: "Include uncommitted changes", enabled: true},
+	}, nil)
+	d.singleLineBody = true
+
+	got := draw(d)
+	if !strings.Contains(got, "…") {
+		t.Fatalf("dialog did not ellipsize its body:\n%s", got)
+	}
+	if strings.Contains(got, "picker_test.go") {
+		t.Fatalf("dialog wrapped the clipped tail onto another row:\n%s", got)
+	}
+}
+
 // / searches the body, and the tally says what it found while it is still
 // being typed.
 func TestSlashSearchesAScrollingBody(t *testing.T) {

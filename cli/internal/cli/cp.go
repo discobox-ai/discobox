@@ -216,7 +216,7 @@ func (a *App) resolveCPOperands(cmd *cobra.Command, client *apiclientgen.Client,
 // ID says outright which one. A name is not, because names are only ever shown
 // — and matched — per directory.
 func (a *App) resolveCPSandbox(cmd *cobra.Command, client *apiclientgen.Client, projectID, reference string) (string, error) {
-	sandboxes, err := a.listProjectSandboxes(cmd.Context(), client, projectID, false)
+	sandboxes, err := a.listProjectSandboxCandidates(cmd.Context(), client, projectID)
 	if err != nil {
 		return "", err
 	}

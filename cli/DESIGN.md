@@ -475,14 +475,21 @@ positional argument shared with the command itself (`shell`, resolved by
 - One candidate is used, none and several are errors, and several with a
   terminal on stdin and stderr open the inline Bubble Tea picker instead.
 - The picker prompts on stderr so the command's stdout stays a clean stream.
+- Sandbox picker labels read the server's `Sandbox.displayName`, exactly like
+  `discobox ls` and the launcher; configured-name and ID fallbacks only defend
+  against an incomplete response. Name resolution still uses the configured
+  name, as described above.
 - `pickOne` is resource-independent: callers supply `pickerItem`s and the
   wording for the empty and ambiguous cases.
-- Typing in the picker fuzzy-filters and re-ranks the list (`internal/cli/fuzzy.go`):
+- `/` opens the same search line the launcher's F1 help uses; it is absent
+  until asked for. Typing there fuzzy-filters and re-ranks the list
+  (`internal/cli/fuzzy.go`):
   a subsequence match over each item's title, ID, and detail, scored to favour
   contiguous, word-start, and early matches, with title weighted over ID over
   detail. Matched runes are highlighted; the list scrolls in a 20-row window.
-  Because every printable key extends the query, navigation is arrows/`ctrl+p`
-  /`ctrl+n` only, and `esc` clears a non-empty query before it cancels.
+  Enter closes the search line and leaves its filter applied; Escape abandons
+  it. Outside search, arrows, `j`/`k`, and `ctrl+p`/`ctrl+n` navigate, Enter
+  selects, and Escape cancels.
 - Ordering with no query is the last sandbox picked for this project (marked
   `last used`), then most recently updated; the tie-break between equally scored
   matches is most recently updated. Typing hands ranking entirely to the query:

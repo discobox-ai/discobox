@@ -148,7 +148,7 @@ func TestARunWindowAsksTheWindowsOwnQuestion(t *testing.T) {
 		Changes: []string{"run.go", "tui.go", "model.go", "pane.go"},
 	}
 	d, m := openRun(t, ds, RunRequest{Prompt: []string{"fix", "the", "tests"}})
-	d.wait("the question", func() bool { return m.dialog != nil && m.dialog.kind == dlgConfirm })
+	d.wait("the question", func() bool { return m.dialog != nil && m.dialog.kind == dlgActions })
 
 	if !strings.Contains(m.dialog.body, "4 uncommitted changes (run.go, tui.go, model.go and 1 more)") {
 		t.Fatalf("dialog body = %q, want the changes it is about named", m.dialog.body)
@@ -171,7 +171,7 @@ func TestARunWindowsQuestionLeadsWithCarryingNothing(t *testing.T) {
 	ds := newFakeSource(testSandboxes()...)
 	ds.workspace = SourceWorkspace{Directory: "/src/disco2", Repository: true, Carries: true}
 	d, m := openRun(t, ds, RunRequest{})
-	d.wait("the question", func() bool { return m.dialog != nil && m.dialog.kind == dlgConfirm })
+	d.wait("the question", func() bool { return m.dialog != nil && m.dialog.kind == dlgActions })
 
 	d.key("enter")
 	d.wait("the create", func() bool { return len(ds.runs) == 1 })

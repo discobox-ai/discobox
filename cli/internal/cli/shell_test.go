@@ -266,6 +266,37 @@ func TestShellNoArgsRunsLoginShell(t *testing.T) {
 	}
 }
 
+func TestShellNoArgsIgnoresArchivedSandbox(t *testing.T) {
+	const archivedID = "sbx_9kvq9z81yq2t3dwn"
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodGet || r.URL.Path != "/projects/project-1/sandboxes" {
+			t.Fatalf("unexpected request: %s %s", r.Method, r.URL.Path)
+		}
+		w.Header().Set("Content-Type", "application/json")
+		archived := strings.Replace(
+			testSandboxJSON(archivedID, "old", "2026-06-17T00:00:00Z", "2026-06-17T00:00:01Z"),
+			`"desiredState":"present","displayState":"running"`,
+			`"desiredState":"archived","displayState":"archived"`,
+			1,
+		)
+		_, _ = w.Write([]byte(`{"sandboxes":[` + archived + `]}`))
+	}))
+	t.Cleanup(server.Close)
+
+	cmd := NewRootCommand()
+	cmd.SetOut(io.Discard)
+	cmd.SetErr(io.Discard)
+	cmd.SetArgs([]string{"--server", server.URL, "--project", "project-1", "shell"})
+
+	err := cmd.Execute()
+	if err == nil {
+		t.Fatal("execute shell error = nil")
+	}
+	if !strings.Contains(err.Error(), "no discoboxes were started from this directory") {
+		t.Fatalf("execute shell error = %q, want the empty candidate message", err)
+	}
+}
+
 // An ambiguous short ID is reported outright rather than silently falling
 // back to treating it as a command, since its shape said it was meant as an
 // ID reference.

@@ -51,8 +51,10 @@ func TestPickOneWithoutTerminalIsAmbiguous(t *testing.T) {
 func TestSandboxPickerListsMostRecentlyUpdatedFirst(t *testing.T) {
 	stale := apimodel.Sandbox{ID: "sbx_stale", UpdatedAt: time.Date(2026, 7, 1, 0, 0, 0, 0, time.UTC)}
 	stale.Config.Name = "stale"
+	stale.DisplayName = "stale"
 	fresh := apimodel.Sandbox{ID: "sbx_fresh", UpdatedAt: time.Date(2026, 7, 2, 0, 0, 0, 0, time.UTC)}
 	fresh.Config.Name = "fresh"
+	fresh.DisplayName = "fresh"
 
 	m := newPickerModel("Select a sandbox", sandboxPickerItems([]apimodel.Sandbox{stale, fresh}), "")
 	if len(m.matches) != 2 {
@@ -66,6 +68,27 @@ func TestSandboxPickerListsMostRecentlyUpdatedFirst(t *testing.T) {
 	}
 }
 
+func TestSandboxPickerUsesTheServerDisplayName(t *testing.T) {
+	sandbox := apimodel.Sandbox{ID: "sbx_1", DisplayName: "fix the reaper"}
+	sandbox.Config.Name = "generated-name"
+
+	items := sandboxPickerItems([]apimodel.Sandbox{sandbox})
+	if len(items) != 1 || items[0].title != "fix the reaper" {
+		t.Fatalf("picker items = %+v, want the terminal title from displayName", items)
+	}
+}
+
+func TestSandboxPickerDefensivelyFallsBackToConfiguredNameThenID(t *testing.T) {
+	named := apimodel.Sandbox{ID: "sbx_named"}
+	named.Config.Name = "configured-name"
+	unnamed := apimodel.Sandbox{ID: "sbx_unnamed"}
+
+	items := sandboxPickerItems([]apimodel.Sandbox{named, unnamed})
+	if items[0].title != "configured-name" || items[1].title != "sbx_unnamed" {
+		t.Fatalf("picker titles = %q, %q, want configured name then ID", items[0].title, items[1].title)
+	}
+}
+
 // Recency is also the tie-break once a query is scoring items equally.
 func TestPickerTiesBreakOnMostRecentlyUpdated(t *testing.T) {
 	older := time.Date(2026, 7, 1, 0, 0, 0, 0, time.UTC)
@@ -74,7 +97,7 @@ func TestPickerTiesBreakOnMostRecentlyUpdated(t *testing.T) {
 		{id: "sbx_1", title: "api", updatedAt: older},
 		{id: "sbx_2", title: "api", updatedAt: newer},
 	}, "")
-	typePickerKeys(t, m, "a", "p", "i")
+	typePickerKeys(t, m, "/", "a", "p", "i")
 	if len(m.matches) != 2 {
 		t.Fatalf("matches = %d, want 2", len(m.matches))
 	}
@@ -104,7 +127,7 @@ func TestPickerTypingFiltersAndRanks(t *testing.T) {
 		{id: "sbx_bbb", title: "api-server", detail: "stopped · now"},
 		{id: "sbx_ccc", title: "apiary", detail: "running · now"},
 	}, "")
-	typePickerKeys(t, m, "a", "p", "i")
+	typePickerKeys(t, m, "/", "a", "p", "i")
 	if len(m.matches) != 2 {
 		t.Fatalf("matches = %d, want 2", len(m.matches))
 	}
@@ -126,7 +149,7 @@ func TestPickerBackspaceAndEscapeRestoreTheFullList(t *testing.T) {
 		{id: "sbx_aaa", title: "docs"},
 		{id: "sbx_bbb", title: "api"},
 	}, "")
-	typePickerKeys(t, m, "a", "p", "i")
+	typePickerKeys(t, m, "/", "a", "p", "i")
 	if len(m.matches) != 1 {
 		t.Fatalf("matches = %d, want 1", len(m.matches))
 	}
@@ -153,7 +176,7 @@ func TestPickerEnterChoosesTheHighlightedMatch(t *testing.T) {
 		{id: "sbx_bbb", title: "api"},
 		{id: "sbx_ccc", title: "apex"},
 	}, "")
-	typePickerKeys(t, m, "a", "p", "down", "enter")
+	typePickerKeys(t, m, "/", "a", "p", "down", "enter", "enter")
 	if !m.done {
 		t.Fatal("enter did not finish the picker")
 	}
@@ -168,7 +191,7 @@ func TestPickerEnterChoosesTheHighlightedMatch(t *testing.T) {
 
 func TestPickerEnterWithNoMatchesDoesNothing(t *testing.T) {
 	m := newPickerModel("Select a sandbox", []pickerItem{{id: "sbx_aaa", title: "docs"}, {id: "sbx_bbb", title: "api"}}, "")
-	typePickerKeys(t, m, "z", "z", "z", "enter")
+	typePickerKeys(t, m, "/", "z", "z", "z", "enter", "enter")
 	if m.done || m.chosen != -1 {
 		t.Fatalf("done = %v, chosen = %d, want the picker to stay open", m.done, m.chosen)
 	}
@@ -193,7 +216,7 @@ func TestPickerLeadsWithTheLastSelection(t *testing.T) {
 
 	// Typing hands ranking back to the query: the remembered pick gets no
 	// standing edge once the user says what they are looking for.
-	typePickerKeys(t, m, "t")
+	typePickerKeys(t, m, "/", "t")
 	if m.matches[0].item.id != "sbx_fresh" {
 		t.Fatalf("top match after typing = %q, want the better query match sbx_fresh", m.matches[0].item.id)
 	}
@@ -255,11 +278,44 @@ func TestPickerLivePromptFollowsItsSubjectUntilItIsFinal(t *testing.T) {
 func TestPickerDrawsAPromptsNoteUnderIt(t *testing.T) {
 	m := newPickerModel("this directory is not a Git repository:\n4.8 GiB in 141201 files", []pickerItem{{id: "no"}, {id: "yes"}}, "")
 	lines := strings.Split(m.View().Content, "\n")
-	if len(lines) < 2 || !strings.Contains(lines[0], "not a Git repository") {
-		t.Fatalf("first line = %q, want the question", lines[0])
+	question := -1
+	for i, line := range lines {
+		if strings.Contains(line, "not a Git repository") {
+			question = i
+			break
+		}
 	}
-	if !strings.Contains(lines[1], "4.8 GiB in 141201 files") {
-		t.Fatalf("second line = %q, want the note on a line of its own", lines[1])
+	if question < 0 {
+		t.Fatalf("view has no question:\n%s", m.View().Content)
+	}
+	if question+1 >= len(lines) {
+		t.Fatalf("question has no following note:\n%s", m.View().Content)
+	}
+	if !strings.Contains(lines[question+1], "4.8 GiB in 141201 files") {
+		t.Fatalf("line after question = %q, want the note on a line of its own", lines[question+1])
+	}
+}
+
+func TestPickerUsesTheTUIDialogAndTableLanguage(t *testing.T) {
+	m := newPickerModel("Select a discobox", []pickerItem{{id: "sbx_1", title: "api", detail: "running"}, {id: "sbx_2", title: "docs", detail: "stopped"}}, "")
+	view := m.View().Content
+	for _, want := range []string{"╭", "╯", "❯", "/ search", "Enter selects", "Esc cancels"} {
+		if !strings.Contains(view, want) {
+			t.Fatalf("picker view has no %q:\n%s", want, view)
+		}
+	}
+	if strings.Index(view, "api") > strings.Index(view, "sbx_1") {
+		t.Fatalf("picker row puts the opaque ID before the name:\n%s", view)
+	}
+	if !strings.Contains(view, "\x1b[m\x1b[48;5;237m") {
+		t.Fatalf("picker cursor background was not reasserted after styled fields:\n%s", view)
+	}
+	if strings.Contains(view, "/▏") {
+		t.Fatalf("picker showed a search field before / was pressed:\n%s", view)
+	}
+	typePickerKeys(t, m, "/", "a")
+	if view := m.View().Content; !strings.Contains(view, "type to search") || m.query != "a" || !m.typing {
+		t.Fatalf("/ did not open the search field:\n%s", view)
 	}
 }
 

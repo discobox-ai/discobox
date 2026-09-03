@@ -32,7 +32,11 @@ type dialog struct {
 	kind  dialogKind
 	title string
 	body  string
-	items []action
+	// singleLineBody keeps a summary on one row and ellipsizes it at the card
+	// edge. It is for a question whose body is context, not prose to read: a
+	// long source path must not push the answers down by wrapping.
+	singleLineBody bool
+	items          []action
 	// footer is the line under a menu, which says what choosing one of its
 	// rows does. Empty takes the action menu's wording.
 	footer string
@@ -716,7 +720,11 @@ func (d *dialog) view(st *styles, z *zones, width, height int) string {
 func (d *dialog) bodyLines(st *styles, room int) []string {
 	var lines []string
 	if d.body != "" {
-		lines = wrap(d.body, room)
+		if d.singleLineBody {
+			lines = []string{truncate(d.body, room)}
+		} else {
+			lines = wrap(d.body, room)
+		}
 		// Wrapping is not enough on its own: a line the wrapper could not break
 		// — the help text's key columns are one long run of spaces and words —
 		// comes back wider than the box, and lipgloss wraps it again into a row

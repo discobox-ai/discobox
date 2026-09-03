@@ -145,7 +145,7 @@ func (a *App) resolveShellTarget(cmd *cobra.Command, args []string) (projectID, 
 	if namesSandbox && len(args) > 0 && idpkg.IsGenerated(args[0]) {
 		return projectID, args[0], client, args[1:], nil
 	}
-	sandboxes, err := a.listProjectSandboxes(cmd.Context(), client, projectID, false)
+	sandboxes, err := a.listProjectSandboxCandidates(cmd.Context(), client, projectID)
 	if err != nil {
 		return "", "", nil, nil, err
 	}

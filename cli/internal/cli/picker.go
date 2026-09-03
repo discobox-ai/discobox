@@ -39,7 +39,7 @@ func (a *App) selectSandbox(cmd *cobra.Command, sandboxArg string) (projectID st
 		sandboxID, err = a.resolveSandboxID(cmd.Context(), client, projectID, sandboxArg)
 		return projectID, sandboxID, client, err
 	}
-	sandboxes, err := a.listProjectSandboxes(cmd.Context(), client, projectID, false)
+	sandboxes, err := a.listProjectSandboxCandidates(cmd.Context(), client, projectID)
 	if err != nil {
 		return "", "", nil, err
 	}
@@ -52,13 +52,38 @@ func (a *App) selectSandbox(cmd *cobra.Command, sandboxArg string) (projectID st
 	return projectID, sandboxID, client, err
 }
 
+// listProjectSandboxCandidates is the shared candidate list for commands that
+// infer a sandbox from the current directory. Archived sandboxes remain in
+// `discobox ls` and explicit resource completion so they can be inspected and
+// unarchived, but they have no runtime and cannot be selected for an operation.
+func (a *App) listProjectSandboxCandidates(ctx context.Context, client *apiclientgen.Client, projectID string) ([]apimodel.Sandbox, error) {
+	sandboxes, err := a.listProjectSandboxes(ctx, client, projectID, false)
+	if err != nil {
+		return nil, err
+	}
+	candidates := make([]apimodel.Sandbox, 0, len(sandboxes))
+	for _, sandbox := range sandboxes {
+		if sandbox.Runtime.DesiredState == apiclientgen.SandboxRuntimeDesiredStatePresent {
+			candidates = append(candidates, sandbox)
+		}
+	}
+	return candidates, nil
+}
+
 func sandboxPickerItems(sandboxes []apimodel.Sandbox) []pickerItem {
 	items := make([]pickerItem, 0, len(sandboxes))
 	for _, sandbox := range sandboxes {
 		updatedAt := recencyTime(sandbox.UpdatedAt, sandbox.CreatedAt)
+		name := strings.TrimSpace(sandbox.DisplayName)
+		if name == "" {
+			name = strings.TrimSpace(sandbox.Config.Name)
+		}
+		if name == "" {
+			name = sandbox.ID
+		}
 		items = append(items, pickerItem{
 			id:        sandbox.ID,
-			title:     sandbox.Config.Name,
+			title:     name,
 			detail:    fmt.Sprintf("%s · %s", sandboxDisplayState(sandbox), formatTime(updatedAt)),
 			updatedAt: updatedAt,
 		})
@@ -159,6 +184,10 @@ type pickerModel struct {
 	items  []pickerItem
 	// query is what the user has typed; it fuzzy-filters and ranks items.
 	query string
+	// typing is the explicit / search mode, matching the launcher's F1 help.
+	// Outside it, letters remain navigation keys rather than silently opening a
+	// text field the screen did not offer.
+	typing bool
 	// recentID is the ID picked last time, which leads the unfiltered list. Once
 	// a query is typed the query alone decides the order.
 	recentID string
@@ -214,37 +243,63 @@ func (m *pickerModel) pollLive() tea.Cmd {
 }
 
 func (m *pickerModel) updateKey(key tea.KeyPressMsg) tea.Cmd {
+	if m.typing {
+		switch key.String() {
+		case "ctrl+c":
+			m.done = true
+			return tea.Quit
+		case "esc":
+			m.typing = false
+			m.query = ""
+			m.refilter()
+			return nil
+		case "enter":
+			m.typing = false
+			return nil
+		case "up", "ctrl+p":
+			if m.cursor > 0 {
+				m.cursor--
+			}
+		case "down", "ctrl+n":
+			if m.cursor < len(m.matches)-1 {
+				m.cursor++
+			}
+		case "backspace", "shift+backspace":
+			if q := []rune(m.query); len(q) > 0 {
+				m.query = string(q[:len(q)-1])
+				m.refilter()
+			}
+		case "ctrl+u":
+			m.query = ""
+			m.refilter()
+		default:
+			if key.Mod&(tea.ModCtrl|tea.ModAlt) == 0 && key.Text != "" {
+				m.query += key.Text
+				m.refilter()
+			}
+		}
+		m.scrollToCursor()
+		return nil
+	}
 	switch key.String() {
 	case "ctrl+c":
 		m.done = true
 		return tea.Quit
 	case "esc":
-		// Backing out of a query first keeps a typo from canceling the command.
-		if m.query != "" {
-			m.query = ""
-			m.refilter()
-			return nil
-		}
 		m.done = true
 		return tea.Quit
-	case "up", "ctrl+p":
+	case "/":
+		m.typing = true
+		m.query = ""
+		m.refilter()
+	case "up", "ctrl+p", "k":
 		if m.cursor > 0 {
 			m.cursor--
 		}
-	case "down", "ctrl+n":
+	case "down", "ctrl+n", "j":
 		if m.cursor < len(m.matches)-1 {
 			m.cursor++
 		}
-	case "backspace", "shift+backspace":
-		// Shift means nothing on Backspace, but a terminal on the Kitty
-		// keyboard protocol reports it as its own key.
-		if q := []rune(m.query); len(q) > 0 {
-			m.query = string(q[:len(q)-1])
-			m.refilter()
-		}
-	case "ctrl+u":
-		m.query = ""
-		m.refilter()
 	case "enter":
 		if len(m.matches) == 0 {
 			return nil
@@ -252,13 +307,6 @@ func (m *pickerModel) updateKey(key tea.KeyPressMsg) tea.Cmd {
 		m.chosen = m.matches[m.cursor].index
 		m.done = true
 		return tea.Quit
-	default:
-		// Anything printable extends the query; modifiers are reserved for the
-		// bindings above.
-		if key.Mod&(tea.ModCtrl|tea.ModAlt) == 0 && key.Text != "" {
-			m.query += key.Text
-			m.refilter()
-		}
 	}
 	m.scrollToCursor()
 	return nil
@@ -354,16 +402,20 @@ func fuzzyPickerMatches(items []pickerItem, query string, recentID string) []pic
 }
 
 var (
-	pickerTitleStyle  = lipgloss.NewStyle().Foreground(lipgloss.Color("13")).Bold(true)
-	pickerCursorStyle = lipgloss.NewStyle().Foreground(lipgloss.Color("6")).Bold(true)
-	pickerDetailStyle = lipgloss.NewStyle().Foreground(lipgloss.Color("8"))
-	pickerHelpStyle   = lipgloss.NewStyle().Foreground(lipgloss.Color("8"))
-	pickerQueryStyle  = lipgloss.NewStyle().Foreground(lipgloss.Color("6"))
-	pickerMatchStyle  = lipgloss.NewStyle().Foreground(lipgloss.Color("11")).Bold(true)
-	pickerRecentStyle = lipgloss.NewStyle().Foreground(lipgloss.Color("6"))
+	// Keep the standalone card in the launcher's visual language. These are the
+	// same fixed 256-color entries as internal/tui/theme.go: gold is the one
+	// accent, dim text recedes, and the cursor is a whole-row band.
+	pickerTitleStyle  = lipgloss.NewStyle().Foreground(lipgloss.Color("220")).Bold(true)
+	pickerCursorStyle = lipgloss.NewStyle().Foreground(lipgloss.Color("220"))
+	pickerDetailStyle = lipgloss.NewStyle().Foreground(lipgloss.Color("240"))
+	pickerHelpStyle   = lipgloss.NewStyle().Foreground(lipgloss.Color("240"))
+	pickerQueryStyle  = lipgloss.NewStyle().Foreground(lipgloss.Color("220"))
+	pickerMatchStyle  = lipgloss.NewStyle().Foreground(lipgloss.Color("220")).Bold(true)
+	pickerRecentStyle = lipgloss.NewStyle().Foreground(lipgloss.Color("245"))
+	pickerCardStyle   = lipgloss.NewStyle().Border(lipgloss.RoundedBorder()).BorderForeground(lipgloss.Color("220")).Padding(1, 2)
 	// pickerNoteStyle draws whatever a prompt puts under its first line: the
 	// thing the question turns on, set apart from the sentence explaining it.
-	pickerNoteStyle = lipgloss.NewStyle().Foreground(lipgloss.Color("11")).Bold(true)
+	pickerNoteStyle = lipgloss.NewStyle().Foreground(lipgloss.Color("220")).Bold(true)
 )
 
 func (m *pickerModel) View() tea.View {
@@ -378,7 +430,9 @@ func (m *pickerModel) View() tea.View {
 	if hasNote {
 		fmt.Fprintf(&b, "%s\n", pickerNoteStyle.Render(note))
 	}
-	fmt.Fprintf(&b, "%s%s\n\n", pickerQueryStyle.Render("search: "), m.query+"▏")
+	if m.typing || m.query != "" {
+		fmt.Fprintf(&b, "%s%s%s\n\n", pickerQueryStyle.Render("/"), m.query, pickerQueryStyle.Render("▏"))
+	}
 	if len(m.matches) == 0 {
 		fmt.Fprintf(&b, "%s\n", pickerDetailStyle.Render("  no matches"))
 	}
@@ -388,23 +442,60 @@ func (m *pickerModel) View() tea.View {
 		selected := i == m.cursor
 		cursor := "  "
 		if selected {
-			cursor = pickerCursorStyle.Render("▸ ")
+			cursor = pickerCursorStyle.Render("❯ ")
 		}
 		detail := renderPickerField(match.item.detail, match.detailPos, 0, pickerDetailStyle, selected)
 		if match.recent {
 			// Say why this row is on top, so leading with it does not look arbitrary.
 			detail += pickerRecentStyle.Render(" · last used")
 		}
-		fmt.Fprintf(&b, "%s%s %s %s\n", cursor,
-			renderPickerField(match.item.id, match.idPos, 24, lipgloss.NewStyle(), selected),
-			renderPickerField(match.item.title, match.titlePos, 20, lipgloss.NewStyle(), selected),
-			detail)
+		row := fmt.Sprintf("%s%s  %s  %s", cursor,
+			renderPickerField(match.item.title, match.titlePos, 24, lipgloss.NewStyle(), selected),
+			renderPickerField(match.item.id, match.idPos, 24, pickerDetailStyle, selected), detail)
+		row = padPickerRow(row, pickerRowWidth(m.matches))
+		if selected {
+			row = highlightPickerRow(row)
+		}
+		fmt.Fprintf(&b, "%s\n", row)
 	}
 	if hidden := len(m.matches) - end; hidden > 0 {
 		fmt.Fprintf(&b, "%s\n", pickerDetailStyle.Render(fmt.Sprintf("  … %d more", hidden)))
 	}
-	fmt.Fprintf(&b, "\n%s\n", pickerHelpStyle.Render("type to search · ↑/↓ move · enter select · esc clear/cancel"))
-	return tea.NewView(b.String())
+	help := "/ search · ↑↓ moves · Enter selects · Esc cancels"
+	if m.typing {
+		help = "type to search · Enter finishes · Esc clears"
+	}
+	fmt.Fprintf(&b, "\n%s\n", pickerHelpStyle.Render(help))
+	return tea.NewView(pickerCardStyle.Render(b.String()))
+}
+
+func pickerRowWidth(matches []pickerMatch) int {
+	width := 2 + 24 + 2 + 24 + 2
+	for _, match := range matches {
+		detail := match.item.detail
+		if match.recent {
+			detail += " · last used"
+		}
+		width = max(width, 2+24+2+24+2+lipgloss.Width(detail))
+	}
+	return width
+}
+
+func padPickerRow(row string, width int) string {
+	if pad := width - lipgloss.Width(row); pad > 0 {
+		return row + strings.Repeat(" ", pad)
+	}
+	return row
+}
+
+// highlightPickerRow keeps the cursor background alive across the resets from
+// each styled field, the same rule the launcher's sandbox table uses.
+func highlightPickerRow(row string) string {
+	const reset = "\x1b[0m"
+	const shortReset = "\x1b[m"
+	seq := "\x1b[48;5;237m"
+	reassert := strings.NewReplacer(reset, reset+seq, shortReset, shortReset+seq)
+	return seq + reassert.Replace(row) + reset
 }
 
 // renderPickerField draws one column, highlighting the runes the query matched
