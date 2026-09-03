@@ -10,13 +10,14 @@ import (
 )
 
 // The chrome — the header with the sandbox id in it, the hints line, the
-// borders — is text on screen, and text on screen should be selectable. It
-// gets the same selection component the panes use, over a much simpler grid:
-// the composed frame itself, parsed back into cells, flat screen rows with
-// nothing wrapped and no scrollback. A gesture belongs to the chrome when no
-// pane claimed its press, and the double-click word rules make the common
-// case — the sandbox id — one double-click, since ids are word characters
-// throughout.
+// borders, and on the window's own screens everything that is not the composer
+// — is text on screen, and text on screen should be selectable. It gets the
+// same selection component the panes use, over a much simpler grid: the
+// composed frame itself, parsed back into cells, flat screen rows with nothing
+// wrapped and no scrollback. A gesture belongs to the chrome when nothing else
+// claimed its press — no pane, and no control in the hit map — and the
+// double-click word rules make the common case, the sandbox id, one
+// double-click, since ids are word characters throughout.
 //
 // A chrome selection is fragile by nature: the frame is recomposed on every
 // message, and a selection whose text no longer reads back identically is
@@ -55,74 +56,26 @@ func (m *Model) parseChrome(frame string) {
 	m.chromeGrid.width = m.width
 }
 
-// chromeMouse drives the chrome selection with an event no pane claimed.
-// Coordinates need no translation: the chrome's grid is the frame itself.
-func (m *Model) chromeMouse(msg tea.MouseMsg) tea.Cmd {
-	switch ev := msg.(type) {
-	case tea.MouseClickMsg:
-		if ev.Button == tea.MouseRight {
-			return m.chromeRightClick()
-		}
-		if ev.Button != tea.MouseLeft {
-			return nil
-		}
-		// The grid must be what is on screen at the moment of the press.
-		m.parseChrome(m.lastFrame)
-		m.chromeCapture = true
-		m.clearPaneSelections(nil)
-		m.chromeSel.MouseDown(ev.Y, ev.X, ev.Mod&tea.ModAlt != 0)
-		m.chromeShot = m.chromeSel.Text()
-	case tea.MouseMotionMsg:
-		if ev.Button != tea.MouseLeft || !m.chromeCapture {
-			return nil
-		}
-		m.chromeSel.MouseDrag(ev.Y, ev.X)
-		m.chromeShot = m.chromeSel.Text()
-	case tea.MouseReleaseMsg:
-		if ev.Button != tea.MouseLeft {
-			return nil
-		}
-		m.chromeCapture = false
-		if text, ok := m.chromeSel.MouseUp(); ok {
-			m.chromeShot = m.chromeSel.Text()
-			return m.copyText(text)
-		}
-	}
-	return nil
-}
-
-// chromeRightClick copies a showing chrome selection and clears it, the way
-// the panes handle the right button over their own; see termpane's
-// rightClickCopy.
-func (m *Model) chromeRightClick() tea.Cmd {
-	if !m.chromeSel.Active() {
-		return nil
-	}
-	text := m.chromeSel.Text()
-	m.chromeSel.Clear()
-	if text == "" {
-		return nil
-	}
-	return m.copyText(text)
-}
-
-// chromeChord catches the copy chords while a chrome selection is showing,
-// the way the panes catch them over their own; see termpane's copyChord.
-func (m *Model) chromeChord(msg tea.KeyPressMsg) (tea.Cmd, bool) {
-	if !m.chromeSel.Active() {
-		return nil, false
-	}
+// copyChord catches the copy chords while one of the window's own selections
+// is showing, the way the panes catch them over their own; see termpane's
+// copyChord.
+//
+// Ctrl-C is among them only inside a pane. There the key belongs to whatever
+// is running and a selection is the one thing with a better claim on it; on
+// the window's own screens it is the quit, and a quit that sometimes copies
+// instead is a quit you cannot press without looking.
+func (m *Model) copyChord(msg tea.KeyPressMsg) (tea.Cmd, bool) {
 	switch msg.Key().Keystroke() {
-	case "ctrl+c", "ctrl+shift+c", "super+c":
+	case "ctrl+shift+c", "super+c":
+	case "ctrl+c":
+		if !m.inPanes() {
+			return nil, false
+		}
 	default:
 		return nil, false
 	}
-	text := m.chromeSel.Text()
-	m.chromeSel.Clear()
-	if text == "" {
-		return nil, false
-	}
-	return m.copyText(text), true
+	cmd := m.copyShowingSelection()
+	return cmd, cmd != nil
 }
 
 // paintChrome keeps the chrome selection honest against a freshly composed

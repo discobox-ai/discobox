@@ -36,7 +36,7 @@ require (
 	4d63.com/gochecknoglobals v0.2.2 // indirect
 	aidanwoods.dev/go-result v0.3.1 // indirect
 	cel.dev/expr v0.25.1 // indirect
-	charm.land/bubbles/v2 v2.1.1 // indirect
+	charm.land/bubbles/v2 v2.2.1 // indirect
 	charm.land/bubbletea/v2 v2.0.8 // indirect
 	charm.land/lipgloss/v2 v2.0.5 // indirect
 	cloud.google.com/go v0.123.0 // indirect

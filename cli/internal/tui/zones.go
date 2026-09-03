@@ -22,7 +22,10 @@ package tui
 type hitKind int
 
 const (
-	hitNone hitKind = iota
+	// The zero value is "nothing here", which is what a lookup that hit no
+	// mark comes back with. It is not named: a control is what it does, and a
+	// hit map that could be asked to record nothing is one with a bug in it.
+	_ hitKind = iota
 
 	// hitKey is a key hint made pressable: the press is handled as that key,
 	// by the same handler the keyboard reaches, so the two cannot drift. A

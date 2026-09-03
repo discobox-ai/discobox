@@ -660,7 +660,7 @@ func (m *Model) updatePane(msg tea.Msg) tea.Cmd {
 	// A chrome selection takes the copy chords the way a pane's own would;
 	// with none showing, every key is the pane's as usual.
 	if key, ok := msg.(tea.KeyPressMsg); ok {
-		if cmd, taken := m.chromeChord(key); taken {
+		if cmd, taken := m.copyChord(key); taken {
 			return cmd
 		}
 	}
@@ -1037,7 +1037,7 @@ func (m *Model) dismissPane(p *pane) tea.Cmd {
 func (m *Model) routeMouse(msg tea.MouseMsg) tea.Cmd {
 	// A gesture the chrome latched stays the chrome's; see chrome.go.
 	if m.chromeCapture {
-		return m.chromeMouse(msg)
+		return m.windowMouse(msg)
 	}
 	var x, y int
 	p := m.paneByID(m.mouseCapture)
@@ -1060,7 +1060,10 @@ func (m *Model) routeMouse(msg tea.MouseMsg) tea.Cmd {
 				return cmd
 			}
 		}
-		return m.chromeMouse(msg)
+		// Everything else on the chrome is the window's own: the offers on the
+		// status line are buttons for their chords, and what is left drives
+		// the selection. See mouse.go.
+		return m.windowMouse(msg)
 	}
 	switch ev := msg.(type) {
 	case tea.MouseClickMsg:

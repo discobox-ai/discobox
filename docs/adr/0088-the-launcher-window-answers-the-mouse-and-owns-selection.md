@@ -34,15 +34,24 @@ position from the layout arithmetic (`buttonAt`).
 
 ## Decision
 
-The window reports the mouse on every frame it draws, answers presses against a
-hit map recorded while the frame is drawn, and provides the selection it took
-away.
+The window reports the mouse on every frame it draws over the terminal,
+answers presses against a hit map recorded while the frame is drawn, and
+provides the selection it took away.
 
 ### 1. The mouse is reported for the whole window, always
 
-`View.MouseMode` is `MouseModeCellMotion` on every screen, not only while panes
-are up. All-motion is still requested only when a focused application asked for
-it and the mouse has not been seized.
+`View.MouseMode` is `MouseModeCellMotion` on every screen the window draws on
+the alternate screen, not only while panes are up. All-motion is still
+requested only when a focused application asked for it and the mouse has not
+been seized.
+
+The opening prompt is the one exception, and it is not a screen of the window
+so much as a few rows printed into the shell's scrollback. A mouse coordinate
+there is the terminal's screen rather than this frame — nothing in the window
+knows which row it was printed on — so a hit map could not be read against it
+anyway, and the terminal's own selection is still the one that belongs around
+text sitting under your last command. `takesScreen` is already the line
+between the two.
 
 The alternative — reporting the mouse only on the screens with something to
 click — was rejected. It makes drag-select mean the terminal's selection on one

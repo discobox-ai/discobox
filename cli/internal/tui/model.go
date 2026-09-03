@@ -1006,6 +1006,13 @@ func (m *Model) updateKey(msg tea.KeyPressMsg) tea.Cmd {
 	m.status, m.statusE = "", false
 	m.statusGen++
 
+	// A copy chord over a selection the window is drawing is that copy,
+	// wherever the selection was made: the window took the terminal's own
+	// selection when it started reporting the mouse, and its chords with it.
+	if cmd, taken := m.copyChord(msg); taken {
+		return cmd
+	}
+
 	// Ctrl-C quits the window, but never from inside a pane: there it belongs
 	// to whatever is running, and a key that sometimes interrupts an agent and
 	// sometimes closes the window it is running in is a key nobody can press
@@ -3097,6 +3104,30 @@ func (m *Model) helpText() string {
 		"    Ctrl-L         repaint, on any screen. In a pane the key reaches",
 		"                   the program in it as well, so the window and what",
 		"                   the box is drawing come back together",
+		"",
+		"───────────────────────────────────────────────────────────────",
+		"The mouse",
+		"",
+		"  Everything on screen answers it. A press on a row points at it",
+		"  and a second press opens it; the right button is that row's",
+		"  menu; the wheel scrolls whatever is under the pointer, without",
+		"  taking the keyboard from where it is.",
+		"",
+		"  Anything that names a key is a button for that key — the F3 in",
+		"  the header, the a attach on the status line, the ‹ › on a run",
+		"  option — so the pointer does exactly what the key does.",
+		"",
+		"  Because the window is reading the mouse, your terminal is not:",
+		"  drag to select here rather than there, double-click for a word,",
+		"  triple-click for a line, and the middle button pastes the last",
+		"  thing selected. A finished selection is on the clipboard; the",
+		"  right button over one copies it again and clears it, and so do",
+		"  Ctrl-Shift-C and ⌘-C. Hold Shift and most terminals will hand",
+		"  you their own selection instead, as they do in tmux.",
+		"",
+		"  The opening prompt is the exception: it is printed in the",
+		"  terminal rather than drawn over it, so there the mouse is still",
+		"  the terminal's own.",
 		"",
 		"───────────────────────────────────────────────────────────────",
 		"In the prompt",

@@ -986,9 +986,52 @@ from every program the window ever draws. Its default and its spelling live in
 the same key: one leader for both terminals discobox shows you is one thing to
 learn and one thing to change.
 
-The terminal always reports the mouse while panes are up (`paneMouseMode`):
-native selection is traded for the panes' own, which is every multiplexer's
-bargain. Events route by position rather than focus — a left press latches the
+**The window answers the mouse on every screen it draws over the terminal**
+(`mouseMode`, `mouse.go`, ADR 0085). Native selection is traded for the
+window's own, which is every multiplexer's bargain — struck once, for the whole
+window, so the pointer never means one thing on one screen and another on the
+next. The opening prompt is the exception and the line is `takesScreen`: it is
+printed inline in the shell's scrollback, where a coordinate is the terminal's
+screen rather than this frame.
+
+**What a press means is a lookup in the hit map the last frame left behind**
+(`zones.go`). There is no widget tree here — every screen is strings joined to
+strings — so each renderer marks the controls it drew, in the coordinates it
+drew them in, and whatever places the block pushes the origin it placed it at
+(`zones.push`/`pop`; a modal is rendered before it can be centered, so `place`
+shifts its marks once instead). Positions are never computed a second time:
+that is how the column header came to drift off its own rows before
+`tailColumns`, and a hit map that drifts is invisible until someone reports a
+click landing on the wrong thing. A list records which rows it actually drew
+(`drawn`) in the loop that drew them, for the same reason.
+
+A press on a row points at it and focuses its list, then goes on into the
+selection so the row's text stays drag-selectable; the second press opens it
+(attach, the same as Enter, on the row under the pointer rather than on
+whatever is marked). The right button is that row's menu — the one `.` opens —
+unless a selection is showing, which it copies and clears instead. The wheel
+scrolls what is under the pointer without taking the keyboard, by moving that
+list's cursor, because the viewport follows the cursor (`clamp`) and an offset
+of its own would be snapped back by the next refresh. The middle button pastes
+the last selection, which is what the middle button pastes everywhere else
+(`Model.primaryText` — X11's primary, not the clipboard).
+
+**A hint that names a key is a button for that key.** `hints()` answers in
+`hint` pairs — what it says, and the keystrokes it stands for, several of them
+for a leader chord — and the renderer both joins them and marks where each one
+landed (`statusLine`, `markHints`). A press is handled as those key presses
+through the handler the keyboard reaches, so the two cannot come to mean
+different things. The list's title band is the same idea from the other side
+(`markBand`): the archived offer and the mark count are its own keys, aimed at
+the list wherever the keyboard happens to be.
+
+**The composer's selection is the textarea's own**, not the chrome's
+(`bubbles/v2` v2.2.1: `PositionAt`, `BeginSelection`, `SelectedText`): a field
+you type into needs a selection that typing replaces. Word and line selection
+there are walked in screen columns (`promptWord`), because that is the
+coordinate the textarea takes a selection in.
+
+Inside a pane, events route by position rather than focus — a left press latches the
 pane it landed in until release (`routeMouse`, `paneAt`, `Model.mouseCapture`)
 and also focuses it — and are translated into that pane's grid at the same
 origin its cursor is placed at (`paneOrigin`). What an event *does* is the
@@ -1005,11 +1048,12 @@ mouse from a sandbox that asked for it, for
 when you would rather copy a stack trace than click on it; the seizure is the
 window's, applied to whichever pane events route to.
 
-The chrome — the header with the sandbox id, the hints line, the borders — is
-selectable too (`chrome.go`): a press no pane claims drives a second
+The chrome — the header with the sandbox id, the hints line, the borders, and
+on the window's own screens everything that is not the composer — is selectable
+too (`chrome.go`): a press nothing else claims drives a second
 `selection.Model` over the composed frame itself, drawn back into cells
 (`parseChrome`), flat rows with nothing wrapped. Before the selection, the
-press means what the cell means (`focusChromeAt`): a tab label selects its
+press means what the cell means (the hit map, and `focusChromeAt`): a tab label selects its
 tab — the strip records where each label landed as it is drawn
 (`tabbedEdge`, `Model.tabSpans`) — and any other cell of a pane's box
 focuses that pane; the gesture then continues into the chrome selection, so
@@ -1021,8 +1065,11 @@ whatever the recompose moved under it, which means status-line selections
 honestly die — and so does a header selection the moment the git state under
 it moves, which is the same honesty: the row it was made on is no longer the
 row on screen. Copies, copy chords, and the right-click copy go through the
-same `copyText` path as the panes'. Detaching returns to the
-list with the cursor still on the sandbox it was opened on.
+same `copyText` path as the panes'. Ctrl-C is among the chords only inside a
+pane, where the key is the sandbox's; on the window's own screens it is the
+quit, and a quit that sometimes copies is one you cannot press without looking.
+Detaching returns to the list with the cursor still on the sandbox it was
+opened on.
 
 The title an application sets goes two places: its own pane's top border
 (`titledEdge`), which says what that terminal is running, and the real
