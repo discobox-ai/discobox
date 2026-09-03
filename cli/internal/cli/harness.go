@@ -281,6 +281,17 @@ func (a *App) newHarnessConfigureCommand() *cobra.Command {
 func (a *App) runHarnessConfigure(ctx context.Context, client *apiclientgen.Client, projectID, harnessID string,
 	stdin io.Reader, stdout, stderr io.Writer,
 ) (*apimodel.HarnessConfig, error) {
+	// Read before the sandbox exists: the ports the flow forwards are the
+	// image's declaration, and they are bound the moment there is a sandbox to
+	// forward them into — see forwardConfigurePorts.
+	configRes, err := client.GetHarnessConfig(ctx, apiclientgen.GetHarnessConfigParams{ProjectId: projectID, HarnessConfigId: harnessID})
+	if err != nil {
+		return nil, fmt.Errorf("start configure: %w", err)
+	}
+	config, err := expectResponse[apimodel.HarnessConfig](configRes)
+	if err != nil {
+		return nil, fmt.Errorf("start configure: %w", err)
+	}
 	sandboxRes, err := client.ConfigureHarnessConfig(ctx, apiclientgen.ConfigureHarnessConfigParams{
 		ProjectId: projectID, HarnessConfigId: harnessID,
 	})
@@ -290,6 +301,13 @@ func (a *App) runHarnessConfigure(ctx context.Context, client *apiclientgen.Clie
 	sandbox, err := expectResponse[apimodel.Sandbox](sandboxRes)
 	if err != nil {
 		return nil, fmt.Errorf("start configure: %w", err)
+	}
+	forward, err := a.forwardConfigurePorts(ctx, projectID, sandbox.ID, config.ConfigPorts.Or(nil), stderr)
+	if err != nil {
+		return nil, fmt.Errorf("forward configure ports: %w", err)
+	}
+	if forward != nil {
+		defer forward.Close()
 	}
 
 	// The same narration an attach gets (ADR 0060). It is the same wait, behind
