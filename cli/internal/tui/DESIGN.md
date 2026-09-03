@@ -1086,7 +1086,8 @@ the last selection, which is what the middle button pastes everywhere else
 (`Model.primaryText` — X11's primary, not the clipboard).
 
 Every screen the window draws marks its own controls: the rows of all four
-lists (`markList`), the folder filter, the composer and the strip under it, the
+lists (`markList`), the folder filter, the workspace header's git summary
+(which opens discobox-review), the composer and the strip under it, the
 title band's two offers, a menu's rows and a card's, the run options and the
 arrows on them, the confirmation's two answers, and the introduction's one
 instruction. `.` opens the same menu the right button does, on the discobox

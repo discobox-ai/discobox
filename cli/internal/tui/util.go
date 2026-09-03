@@ -334,12 +334,20 @@ func spreadCenter(left, middle, right string, w int) string {
 	middle = truncate(middle, room)
 	midW := lipgloss.Width(middle)
 
-	start := max((w-midW)/2, leftW+1)
-	if start+midW > w-rightW-1 {
-		start = w - rightW - 1 - midW
-	}
+	start := centerStart(leftW, midW, rightW, w)
 	row := left + strings.Repeat(" ", start-leftW) + middle
 	return row + strings.Repeat(" ", max(w-lipgloss.Width(row)-rightW, 0)) + right
+}
+
+// centerStart is the column where spreadCenter puts its middle. Renderers that
+// mark controls inside that middle use this same arithmetic, so the hit map is
+// made from where the row was drawn rather than from a parallel layout.
+func centerStart(leftW, middleW, rightW, w int) int {
+	start := max((w-middleW)/2, leftW+1)
+	if start+middleW > w-rightW-1 {
+		start = w - rightW - 1 - middleW
+	}
+	return start
 }
 
 func plural(n int, one, many string) string {

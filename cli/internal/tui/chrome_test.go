@@ -40,6 +40,36 @@ func TestDoubleClickTheHeaderIdCopiesIt(t *testing.T) {
 	}
 }
 
+// The git summary is the diff's natural label, so clicking anywhere on that
+// group opens discobox-review exactly as the leader's tools, diff chord does.
+func TestClickingTheHeaderGitInfoOpensDiff(t *testing.T) {
+	ds := newFakeSource(testSandboxes()...)
+	d, m, _ := openWorkspace(t, ds, "enter")
+
+	clickAt(d, headerCol(t, m, "main@a3f9c21")+2, 0)
+	d.wait("the diff tool", func() bool {
+		runs := ds.toolRunsSeen()
+		return len(runs) == 1 && runs[0] == "diff discobox-review"
+	})
+}
+
+func TestTheHeaderGitInfoShadesUnderThePointer(t *testing.T) {
+	ds := newFakeSource(testSandboxes()...)
+	d, m, _ := openWorkspace(t, ds, "enter")
+	plain := plainFrame(m)
+
+	x := headerCol(t, m, "main@a3f9c21") + 2
+	d.dispatch(tea.MouseMotionMsg{X: x, Y: 0})
+
+	if got := plainFrame(m); got != plain {
+		t.Fatalf("hovering changed the header text, not just its color:\n%s", got)
+	}
+	row := strings.Split(rawFrame(m), "\n")[0]
+	if !strings.Contains(row, m.st.hover.Render("main@a3f9c21*")) {
+		t.Fatalf("the git info under the pointer is not drawn as live:\n%q", row)
+	}
+}
+
 // A press in a pane replaces the chrome's selection, and a press on the
 // chrome replaces the panes': one selection on screen at a time.
 func TestChromeAndPaneSelectionsAreExclusive(t *testing.T) {

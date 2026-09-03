@@ -321,6 +321,14 @@ func (m *Model) press(what hit, clicks int) (tea.Cmd, bool) {
 		m.dialog = m.folderDialog()
 		return nil, true
 
+	case hitGit:
+		// The leader's tools key is handled by the pane asynchronously, but a
+		// pointer is already aimed at the diff choice. Build the same picker and
+		// choose its d row through the dialog's key handler, preserving the
+		// picker's availability check without flashing it on screen.
+		_ = m.openTools()
+		return m.updateKey(keyPress("d")), true
+
 	case hitChips:
 		// The strip names the run options, so it is the way into them.
 		m.optionsOpen = true

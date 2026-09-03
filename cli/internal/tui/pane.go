@@ -8,6 +8,7 @@ import (
 
 	tea "charm.land/bubbletea/v2"
 	"charm.land/lipgloss/v2"
+	"github.com/charmbracelet/x/ansi"
 
 	"github.com/discobox-ai/discobox/cli/internal/keys"
 	"github.com/discobox-ai/discobox/termpane"
@@ -1577,16 +1578,77 @@ func (m *Model) viewPaneHeader(w int) string {
 	}
 
 	fields := m.paneHeaderFields()
-	middle := strings.Join(fields, "  ")
+	middle := fields.text()
 	for _, sides := range concessions {
 		if lipgloss.Width(middle) <= centerRoom(sides[0], sides[1], w) {
-			return spreadCenter(sides[0], middle, drawKeys(sides[1]), w)
+			right := drawKeys(sides[1])
+			return spreadCenter(sides[0], fields.render(m, sides[0], right, w), right, w)
 		}
 	}
 	// Nothing left on the edges to give. What the middle can still drop is its
 	// own, against the room the barest row leaves it.
 	bare := concessions[len(concessions)-1]
-	return spreadCenter(bare[0], dropToFit(fields, "  ", centerRoom(bare[0], bare[1], w)), drawKeys(bare[1]), w)
+	right := drawKeys(bare[1])
+	fields = fields.fit(centerRoom(bare[0], bare[1], w))
+	return spreadCenter(bare[0], fields.render(m, bare[0], right, w), right, w)
+}
+
+type paneHeaderField struct {
+	text string
+	git  bool
+}
+
+type paneHeaderFields []paneHeaderField
+
+func (f paneHeaderFields) text() string {
+	fields := make([]string, len(f))
+	for i := range f {
+		fields[i] = f[i].text
+	}
+	return strings.Join(fields, "  ")
+}
+
+func (f paneHeaderFields) fit(room int) paneHeaderFields {
+	for len(f) > 1 && lipgloss.Width(f.text()) > room {
+		f = f[:len(f)-1]
+	}
+	return f
+}
+
+// render marks and shades the git fields from the same joined text and center
+// position that viewPaneHeader gives spreadCenter. The spaces between those
+// fields belong to the one control too: the header presents one git summary,
+// and any part of it opens the diff.
+func (f paneHeaderFields) render(m *Model, left, right string, w int) string {
+	middle := f.text()
+	first, last, offset := -1, -1, 0
+	for _, field := range f {
+		fieldW := lipgloss.Width(field.text)
+		if field.git {
+			if first < 0 {
+				first = offset
+			}
+			last = offset + fieldW
+		}
+		offset += fieldW + 2
+	}
+	if first < 0 {
+		return middle
+	}
+	x := centerStart(lipgloss.Width(left), lipgloss.Width(middle), lipgloss.Width(right), w) + first
+	m.zones.mark(hit{kind: hitGit}, x, 0, last-first, 1)
+	if !m.zones.hovering(x, 0, last-first, 1) {
+		return middle
+	}
+	for i := range f {
+		if f[i].git {
+			// The normal git colors contain their own resets. Styling that ANSI
+			// run from outside lets those resets cancel the hover, so the live
+			// state owns the visible text while the pointer is over it.
+			f[i].text = m.st.hover.Render(ansi.Strip(f[i].text))
+		}
+	}
+	return f.text()
 }
 
 // paneHeaderFields is the middle of the workspace's header, field by field:
@@ -1617,25 +1679,25 @@ func (m *Model) viewPaneHeader(w int) string {
 // which the apply report gives you anyway, then the word, whose mark is on the
 // position regardless. From the diffstat down that is the list's own drop
 // order. The id leads and never goes — it is what identifies the window.
-func (m *Model) paneHeaderFields() []string {
+func (m *Model) paneHeaderFields() paneHeaderFields {
 	box := m.currentBox()
 	git := gitStyle(m.st, box)
 
-	fields := []string{m.st.dimText.Render(box.ID)}
+	fields := paneHeaderFields{{text: m.st.dimText.Render(box.ID)}}
 	if base := box.base(); base != "" {
-		fields = append(fields, git.Render(base))
+		fields = append(fields, paneHeaderField{text: git.Render(base), git: true})
 	}
 	// The list pads this into a column, so it spells the empty answer as a
 	// dash; here there is no column to fill and nothing to say, so it is left
 	// off entirely.
 	if changes := box.changes(); changes != "-" {
-		fields = append(fields, git.Render(changes))
+		fields = append(fields, paneHeaderField{text: git.Render(changes), git: true})
 	}
 	if stat := diffText(m.st, box); stat != "" {
-		fields = append(fields, stat)
+		fields = append(fields, paneHeaderField{text: stat, git: true})
 	}
 	if listening := portsText(m.st, box, m.forwardedPorts()); listening != "" {
-		fields = append(fields, listening)
+		fields = append(fields, paneHeaderField{text: listening})
 	}
 	return fields
 }

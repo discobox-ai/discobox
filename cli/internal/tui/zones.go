@@ -65,6 +65,10 @@ const (
 	// hitFolder is the header's folder filter: the dropdown, closed.
 	hitFolder
 
+	// hitGit is the workspace header's git position and status. Pressing it
+	// opens the diff tool, the same as the leader's tools, diff chord.
+	hitGit
+
 	// hitPrompt is the composer's text area, where a press places the caret
 	// and a drag selects rather than meaning anything about the window.
 	hitPrompt
