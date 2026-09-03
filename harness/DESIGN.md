@@ -53,6 +53,13 @@ sandbox terminals.
   configure script, and other image-specific assets. `harness/shell` needs
   none: it installs nothing, declares nothing, and *is* its inherited base
   layer.
+- **A manifest argument is required, not optional.** `LABEL key=${ARG}` with no
+  argument passed labels the image with the empty string, which is a build
+  mistake that produces a working image nothing can register — so
+  `sandbox-agent/Dockerfile` and every harness Dockerfile that declares a
+  manifest fail the build when their argument is missing, rather than leaving it
+  for a server to report at seed time. Any build path publishing these images
+  (`build:*-image`, `release:images`, the development watcher) passes it.
 - **The base layer** is `sandbox-agent/image.json`, beside the Dockerfile that
   labels it. It carries what is true of that image's filesystem rather than of
   any harness:

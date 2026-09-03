@@ -4,6 +4,14 @@ ARG SANDBOX_AGENT_IMAGE=discobox-sandbox-agent:local
 FROM ${SANDBOX_AGENT_IMAGE}
 
 ARG HARNESS_METADATA
+# Required for the same reason the base layer is (sandbox-agent/Dockerfile): an
+# omitted argument labels this image with the empty string, which parses as a
+# build that forgot rather than as an image declaring nothing, and only a
+# running server would ever say so.
+RUN [ -n "${HARNESS_METADATA}" ] || { \
+        echo "HARNESS_METADATA build argument is required: pass --build-arg HARNESS_METADATA=\"\$(jq -c . image.json)\"" >&2; \
+        exit 1; \
+    }
 LABEL io.discobox.image.v1=${HARNESS_METADATA}
 
 # npm's cache is build-time scratch. Left behind it put 100MB of it in this

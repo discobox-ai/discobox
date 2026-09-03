@@ -382,6 +382,15 @@ RUN chmod 0755 /usr/local/bin/discobox-sandbox-agent \
 # io.discobox.image.v1 and this key comes along untouched, which is also how
 # the control plane knows the child was built from this base at all.
 ARG IMAGE_LAYER_METADATA
+# Required, and checked here rather than trusted: `LABEL key=${ARG}` with no
+# argument passed sets the key to "" and builds a perfectly good image whose
+# every child is rejected at registration for not being built FROM this one.
+# That is a build mistake, and it is only discoverable from a running server
+# unless the build refuses it — which is how v0.4.0's harness images shipped.
+RUN [ -n "${IMAGE_LAYER_METADATA}" ] || { \
+        echo "IMAGE_LAYER_METADATA build argument is required: pass --build-arg IMAGE_LAYER_METADATA=\"\$(jq -c . sandbox-agent/image.json)\"" >&2; \
+        exit 1; \
+    }
 LABEL io.discobox.image.v1.10-sandbox-base=${IMAGE_LAYER_METADATA}
 
 WORKDIR /workspace
