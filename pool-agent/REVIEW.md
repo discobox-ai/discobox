@@ -36,3 +36,16 @@ Rule of thumb: on the create path, walk only what this agent wrote.
 The pool host cannot resolve a sandbox's account (ADR 0025 §4). An id the
 request did not give stays `unsetID` (-1, the chown(2) sentinel) rather than
 being guessed — see `chownID`/`chownSpec`.
+
+## Subprocesses
+
+`exec.Cmd.Run`, `Output`, `CombinedOutput` and `Start` are not for this module:
+the agent is PID 1 and reaps orphans, so a child it does not know it owns is one
+the reaper may collect out from under `Wait`. Start subprocesses through
+`childproc` (ADR 0087). What a stolen status looks like at the call site is
+`waitid: no child processes` over complete output and a command that ran.
+
+Do not turn a command's failure into a fact about the world — "get-url failed,
+so there is no remote", "the check exited nonzero, so it is not there". Ask for
+the value and read the answer, and prefer one write that both creates and
+corrects over deciding between add and update.

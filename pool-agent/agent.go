@@ -17,6 +17,7 @@ import (
 
 	"github.com/discobox-ai/discobox/layout"
 	"github.com/discobox-ai/discobox/pool-agent/buildkitagent"
+	"github.com/discobox-ai/discobox/pool-agent/childproc"
 	"github.com/discobox-ai/discobox/pool-agent/poolauth"
 	"github.com/discobox-ai/discobox/pool-agent/proxyagent"
 	"github.com/discobox-ai/discobox/pool-agent/sandboxruntime"
@@ -58,7 +59,7 @@ func RunAgent(ctx context.Context, logger *slog.Logger) error {
 	if err != nil {
 		return err
 	}
-	stopReaper := agentsystemd.StartChildReaper(ctx, logger, agentsystemd.ManagedChildProcesses(systemd))
+	stopReaper := childproc.StartReaper(ctx, logger, agentsystemd.ManagedChildProcesses(systemd))
 	defer stopReaper()
 	defer agentsystemd.Stop(systemd)
 

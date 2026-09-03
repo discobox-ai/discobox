@@ -8,8 +8,6 @@ import (
 	"log/slog"
 	"os"
 	"os/exec"
-	"os/signal"
-	"strconv"
 	"strings"
 	"syscall"
 )
@@ -68,77 +66,15 @@ func StartNamespace(ctx context.Context, logger *slog.Logger) (*exec.Cmd, error)
 	return cmd, nil
 }
 
-func StartChildReaper(ctx context.Context, logger *slog.Logger, managed map[int]string) func() {
-	if os.Getpid() != 1 {
-		return func() {}
-	}
-	reaperCtx, cancel := context.WithCancel(ctx)
-	sigCh := make(chan os.Signal, 1)
-	done := make(chan struct{})
-	signal.Notify(sigCh, syscall.SIGCHLD)
-	go func() {
-		defer close(done)
-		reapChildren(logger, managed)
-		for {
-			select {
-			case <-reaperCtx.Done():
-				reapChildren(logger, managed)
-				return
-			case <-sigCh:
-				reapChildren(logger, managed)
-			}
-		}
-	}()
-	return func() {
-		cancel()
-		signal.Stop(sigCh)
-		<-done
-	}
-}
-
-func reapChildren(logger *slog.Logger, managed map[int]string) {
-	for {
-		var status syscall.WaitStatus
-		var usage syscall.Rusage
-		pid, err := syscall.Wait4(-1, &status, syscall.WNOHANG, &usage)
-		switch {
-		case pid > 0:
-			if name := managed[pid]; name != "" {
-				logger.Info("managed child exited", "name", name, "pid", pid, "status", waitStatus(status))
-				continue
-			}
-			logger.Info("reaped child process", "pid", pid, "status", waitStatus(status))
-		case pid == 0:
-			return
-		case errors.Is(err, syscall.ECHILD):
-			return
-		case err != nil:
-			logger.Warn("failed to reap child process", "error", err)
-			return
-		default:
-			return
-		}
-	}
-}
-
+// ManagedChildProcesses names the children this process starts and never waits
+// for, for the reaper that collects them. The systemd child is the only one:
+// it is stopped with a signal, so it is deliberately not registered with
+// childproc and the reaper is what reports its exit.
 func ManagedChildProcesses(systemd *exec.Cmd) map[int]string {
 	if systemd == nil || systemd.Process == nil {
 		return nil
 	}
 	return map[int]string{systemd.Process.Pid: "systemd"}
-}
-
-func waitStatus(status syscall.WaitStatus) string {
-	switch {
-	case status.Exited():
-		return "exited:" + strconv.Itoa(status.ExitStatus())
-	case status.Signaled():
-		return "signaled:" + status.Signal().String()
-	case status.Stopped():
-		return "stopped:" + status.StopSignal().String()
-	default:
-		return "unknown"
-	}
 }
 
 func childEnv() []string {

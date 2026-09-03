@@ -24,7 +24,8 @@ from the future in-sandbox `sandbox-agent` API.
 | `proxyagent` | Worker-scoped proxy wiring: certificate bundle preparation, the `proxy` subcommand entrypoint, per-sandbox client material staging, the sentinel resolver, and the sandbox-facing agent credentials endpoint with its ephemeral-sentinel activation registry (ADR 0031). |
 | `buildkitagent` | The pool-shared BuildKit builder, its output registry, the mediator that binds a build to the sandbox that asked for it, and the per-build egress forwarder. See [Pool-Shared Builds](#pool-shared-builds). |
 | `cmd/discobox-pool-runc` | The pool's runc wrapper, installed as `runc` ahead of BuildKit's own. Injects MITM trust and the per-build egress hooks into each build step's OCI spec. |
-| `systemd` | Linux/systemd namespace startup and child reaping helpers, with non-Linux stubs. |
+| `systemd` | Linux/systemd child pid namespace startup and shutdown, with non-Linux stubs. |
+| `childproc` | This process's children: every subprocess start in the agent, and the reaper for the ones nothing is waiting for. See [Child Processes](#child-processes). |
 | `imagereap` | Rules for reclaiming unused Discobox images from a Docker daemon (ADR 0040). Shared with the server, which applies them to the daemon pool containers run on; see [Image Reclamation](#image-reclamation). |
 
 ## Startup Flow
@@ -46,6 +47,34 @@ After registration, the pool host periodically reports scheduling status and loc
 pressure details. It sets `ready`, `schedulable`, and `degraded` booleans for
 control-plane scheduling. Richer pressure/condition details can be sent as an
 opaque JSON blob for display.
+
+## Child Processes
+
+The agent is PID 1 in its container, so it is both an init — orphans re-parent
+to it — and an ordinary process running `git`, `chown` and `git http-backend`
+through `os/exec`. Those are one kernel resource, and `childproc` owns it
+(ADR 0087).
+
+- **Every subprocess starts through `childproc`** (`Run`, `CombinedOutput`, or
+  `Start`/`Wait`), which records its pid as owned across the fork itself. An
+  `exec.Cmd` started directly is a child the reaper cannot tell from an orphan.
+- **The reaper peeks before it claims.** `waitid(P_ALL, WNOWAIT)` names an
+  exited child without collecting it; an owned pid is left for its owner and the
+  round stops, anything else is collected with `wait4(pid)` and logged. A
+  reaper calling `wait4(-1)` instead takes children `os/exec` is waiting for,
+  and their owners are told the command has no exit status at all — output
+  intact, `waitid: no child processes` returned — which is a silent corruption
+  of every subprocess result in the process.
+- **A caller must never read a fact about the world out of a command's
+  failure.** `ensureOriginRemote` is the shape to copy: it asks
+  `git config --get-all` for the value, whose exit 1 is the answer "there is
+  none", and writes with `--replace-all`, which creates and corrects in one
+  step. The check-then-act it replaced (`git remote get-url`, else
+  `git remote add`) wedged a sandbox for good the first time a status went
+  missing.
+- The systemd namespace child is deliberately *not* registered: it is stopped
+  with a signal and never waited for, so the reaper collecting it is the point.
+  `systemd.ManagedChildProcesses` names it so the log says which it is.
 
 ## Resource Accounting
 

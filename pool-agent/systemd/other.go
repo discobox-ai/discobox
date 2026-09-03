@@ -12,10 +12,6 @@ func StartNamespace(context.Context, *slog.Logger) (*exec.Cmd, error) {
 	return nil, nil
 }
 
-func StartChildReaper(context.Context, *slog.Logger, map[int]string) func() {
-	return func() {}
-}
-
 func ManagedChildProcesses(*exec.Cmd) map[int]string {
 	return nil
 }

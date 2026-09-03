@@ -872,6 +872,48 @@ func TestEnsureOriginRemoteRestoresAMissingFetchRefspec(t *testing.T) {
 	}
 }
 
+// The state a lost exit status used to wedge a sandbox in: a remote git lists
+// but that has no URL. `git remote get-url` fails on it and `git remote add`
+// refuses it — "remote origin already exists" — so a create built on either
+// question could never fix it. Configuring the value converges (ADR 0087).
+func TestEnsureOriginRemoteFixesARemoteWithNoURL(t *testing.T) {
+	requirePOSIXHost(t)
+	ctx := context.Background()
+	runtime := &DockerSandboxRuntime{}
+	target := t.TempDir()
+	git(t, target, "init", "-b", "main")
+	git(t, target, "config", "--add", "remote.origin.fetch", "+refs/heads/*:refs/remotes/origin/*")
+	if got := gitOutput(t, target, "remote"); got != "origin" {
+		t.Fatalf("fixture remotes = %q, want an origin with no URL", got)
+	}
+
+	if err := runtime.ensureOriginRemote(ctx, target, pushDeliveredSource("main"), "primary", currentUser()); err != nil {
+		t.Fatalf("ensure origin remote: %v", err)
+	}
+	if got, want := gitOutput(t, target, "remote", "get-url", "origin"), "/.discobox/origins/primary"; got != want {
+		t.Fatalf("origin = %q, want %q", got, want)
+	}
+}
+
+// A remote carrying two URLs converges on the one the sandbox can resolve,
+// rather than on a write that git refuses because the key is multi-valued.
+func TestEnsureOriginRemoteReplacesEveryURL(t *testing.T) {
+	requirePOSIXHost(t)
+	ctx := context.Background()
+	runtime := &DockerSandboxRuntime{}
+	target := t.TempDir()
+	git(t, target, "init", "-b", "main")
+	git(t, target, "remote", "add", "origin", "/somewhere/else.git")
+	git(t, target, "config", "--add", "remote.origin.url", "/somewhere/other.git")
+
+	if err := runtime.ensureOriginRemote(ctx, target, pushDeliveredSource("main"), "primary", currentUser()); err != nil {
+		t.Fatalf("ensure origin remote: %v", err)
+	}
+	if got, want := gitOutput(t, target, "config", "--get-all", "remote.origin.url"), "/.discobox/origins/primary"; got != want {
+		t.Fatalf("origin URLs = %q, want only %q", got, want)
+	}
+}
+
 // A refspec other than the default is whoever works in the sandbox making a
 // choice, so it survives a create rather than being normalized away.
 func TestEnsureOriginRemoteKeepsACustomFetchRefspec(t *testing.T) {

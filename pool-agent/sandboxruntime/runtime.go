@@ -36,6 +36,7 @@ import (
 	"github.com/moby/moby/client"
 
 	"github.com/discobox-ai/discobox/pool-agent/buildkitagent"
+	"github.com/discobox-ai/discobox/pool-agent/childproc"
 	"github.com/discobox-ai/discobox/pool-agent/execidentity"
 	"github.com/discobox-ai/discobox/pool-agent/imagereap"
 	"github.com/discobox-ai/discobox/pool-agent/internalhttp"
@@ -2952,33 +2953,65 @@ func (r *DockerSandboxRuntime) ensureOriginRemote(ctx context.Context, target st
 	// source, and prepareOwnedTree has asserted it for a clone-delivered one.
 	uid, gid := chownID(user.UID), chownID(user.GID)
 	want := path.Join(sandboxOriginsMount, slug)
-	current, err := runGitOutput(ctx, target, uid, gid, nil, "remote", "get-url", "origin")
+	// One write that both creates and corrects, rather than asking whether the
+	// remote exists and then adding or setting. That question has no honest
+	// answer read out of a command's failure — `git remote get-url` fails both
+	// for a remote that is not there and for one configured without a URL, and
+	// `git remote add` then refuses the second case for good — and a create
+	// that has to be right against a repository in any state cannot be built on
+	// a guess (ADR 0087).
+	//
+	// --replace-all, because the value it converges on is a single URL: the one
+	// the sandbox can resolve. A remote left with two is a remote that fetches
+	// from somewhere this box cannot see.
+	current, err := gitConfigValues(ctx, target, uid, gid, "remote.origin.url")
 	if err != nil {
-		// There is no such remote. `git remote add` rather than a config write,
-		// because it installs the fetch refspec alongside the URL.
-		return runGit(ctx, target, uid, gid, "remote", "add", "origin", want)
+		return err
 	}
-	if strings.TrimSpace(string(current)) != want {
-		if err := runGit(ctx, target, uid, gid, "remote", "set-url", "origin", want); err != nil {
+	if current != want {
+		if err := runGit(ctx, target, uid, gid, "config", "--replace-all", "remote.origin.url", want); err != nil {
 			return err
 		}
 	}
 	return ensureOriginFetchRefspec(ctx, target, uid, gid)
 }
 
-// ensureOriginFetchRefspec restores the refspec a remote is useless without.
-// `git remote add` installs one; a remote assembled by hand — a bare
-// `remote.origin.url` config write, or a refspec deleted afterwards — has a URL
-// and nothing to fetch into, so `git fetch origin` updates no
-// refs/remotes/origin/* and origin/<branch> never resolves. That is the failure
-// this is here to fix, and correcting the URL alone would not fix it.
+// gitConfigValues reads a configuration key's values, newline-separated and
+// empty when it has none.
+//
+// An unset key is not a failure: git exits 1 having printed nothing, which is
+// the answer "there is none", and every other exit is a real error rather than
+// a second way of saying no. --get-all rather than --get because both keys read
+// here may legitimately hold more than one value, which --get reports as an
+// error of its own.
+func gitConfigValues(ctx context.Context, dir string, uid, gid int, key string) (string, error) {
+	out, err := runGitOutput(ctx, dir, uid, gid, nil, "config", "--get-all", key)
+	if err != nil {
+		var exit *exec.ExitError
+		if errors.As(err, &exit) && exit.ExitCode() == 1 {
+			return "", nil
+		}
+		return "", err
+	}
+	return strings.TrimSpace(string(out)), nil
+}
+
+// ensureOriginFetchRefspec installs the refspec a remote is useless without.
+// A URL alone — which is all ensureOriginRemote's own write leaves behind, and
+// all that is left of a remote whose refspec was deleted — has nothing to fetch
+// into, so `git fetch origin` updates no refs/remotes/origin/* and
+// origin/<branch> never resolves. That is the failure this is here to fix, and
+// correcting the URL alone would not fix it.
 //
 // A remote that already fetches something is left exactly as it is: a refspec
 // other than the default is a deliberate choice by whoever is working in the
 // sandbox, and this fills a vacuum rather than enforcing a shape.
 func ensureOriginFetchRefspec(ctx context.Context, target string, uid, gid int) error {
-	out, err := runGitOutput(ctx, target, uid, gid, nil, "config", "--get-all", "remote.origin.fetch")
-	if err == nil && strings.TrimSpace(string(out)) != "" {
+	current, err := gitConfigValues(ctx, target, uid, gid, "remote.origin.fetch")
+	if err != nil {
+		return err
+	}
+	if current != "" {
 		return nil
 	}
 	return runGit(ctx, target, uid, gid, "config", "--add", "remote.origin.fetch", "+refs/heads/*:refs/remotes/origin/*")
@@ -3374,7 +3407,10 @@ func runGitOutputWithEnv(ctx context.Context, dir string, uid, gid int, stdin []
 		cmd.Env = append(os.Environ(), env...)
 	}
 	cmd.SysProcAttr = execidentity.SysProcAttr(uid, gid)
-	out, err := cmd.CombinedOutput()
+	// Through childproc, like every subprocess this agent runs: a git command
+	// the pool agent's reaper collected would report no exit status at all, and
+	// the caller would read that as the command having failed (ADR 0087).
+	out, err := childproc.CombinedOutput(cmd)
 	if err != nil {
 		return nil, fmt.Errorf("git %s: %w: %s", strings.Join(args, " "), err, strings.TrimSpace(string(out)))
 	}
@@ -3417,7 +3453,7 @@ func chownRecursive(ctx context.Context, root string, uid, gid int) error {
 func runChown(ctx context.Context, root string, uid, gid int) error {
 	//nolint:gosec // root is a pool-owned source volume path and args are passed without a shell.
 	cmd := exec.CommandContext(ctx, "chown", "-R", "--no-dereference", chownSpec(uid, gid), root)
-	out, err := cmd.CombinedOutput()
+	out, err := childproc.CombinedOutput(cmd)
 	if err != nil {
 		return fmt.Errorf("chown %s: %w: %s", root, err, strings.TrimSpace(string(out)))
 	}

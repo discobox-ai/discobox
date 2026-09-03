@@ -12,6 +12,7 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/discobox-ai/discobox/pool-agent/childproc"
 	"github.com/discobox-ai/discobox/pool-agent/execidentity"
 )
 
@@ -70,18 +71,21 @@ func ServeBackend(w http.ResponseWriter, r *http.Request, repoPath, suffix strin
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
-	if err := cmd.Start(); err != nil {
+	// Through childproc, so the pool agent's reaper leaves this backend's exit
+	// status to the Wait below rather than collecting it first (ADR 0087).
+	child, err := childproc.Start(cmd)
+	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
 
 	status, err := writeCGIResponse(w, stdout)
 	if err != nil {
-		_ = cmd.Wait()
+		_ = child.Wait()
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
-	if err := cmd.Wait(); err != nil && !errors.Is(r.Context().Err(), context.Canceled) {
+	if err := child.Wait(); err != nil && !errors.Is(r.Context().Err(), context.Canceled) {
 		data, _ := io.ReadAll(io.LimitReader(stderr, 4096))
 		if status == 0 {
 			http.Error(w, strings.TrimSpace(string(data)), http.StatusInternalServerError)
