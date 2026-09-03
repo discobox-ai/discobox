@@ -716,3 +716,65 @@ func TestTheTwoScreensReachEachOther(t *testing.T) {
 		t.Fatalf("esc left harnesses=%v secrets=%v, want the launcher", m.harnessesOpen, m.secretsOpen)
 	}
 }
+
+// The configure terminal owns the keyboard while it is up, even though the
+// screen that opened it is still open behind it.
+//
+// This is the whole of a bug worth a regression test: the screen's keys are
+// commands, and Enter is "reconfigure the harness under the cursor". A key that
+// reached past the pane therefore restarted the very setup that was waiting to
+// be typed at — the harness's banner says "Press Enter to start Claude Code",
+// and pressing it tore the flow down and began another.
+func TestTheConfigureTerminalTakesTheKeysFromTheScreenBehindIt(t *testing.T) {
+	ds := newFakeSource(testSandboxes()...)
+	m := newTestModel(t, ds)
+
+	send(t, m, keyPress(harnessesKey), keyPress("e"))
+	if m.overlay == nil || m.overlay.configure == nil {
+		t.Fatal("e should open the harness's setup in a pane")
+	}
+	if len(ds.configured) != 1 {
+		t.Fatalf("configured = %v, want one setup started", ds.configured)
+	}
+	if !m.harnessesOpen {
+		t.Fatal("the screen should still be open behind the pane")
+	}
+	term := ds.terminals[len(ds.terminals)-1]
+
+	send(t, m, keyPress("enter"))
+	if len(ds.configured) != 1 {
+		t.Fatalf("configured = %v, want Enter typed at the terminal rather than starting the setup again", ds.configured)
+	}
+	if got := term.typed("\r"); !strings.Contains(got, "\r") {
+		t.Fatalf("the terminal was sent %q, want the Enter that was pressed", got)
+	}
+
+	// And the rest of the screen's letters, which are its other commands.
+	send(t, m, keyPress("d"), keyPress("q"))
+	if len(ds.didHarness) != 0 {
+		t.Fatalf("did = %v, want the screen's letters typed at the terminal instead", ds.didHarness)
+	}
+	if !m.harnessesOpen || m.overlay == nil {
+		t.Fatal("q belongs to the pane; it should not have closed the screen behind it")
+	}
+	if got := term.typed("dq"); !strings.Contains(got, "dq") {
+		t.Fatalf("the terminal was sent %q, want the letters that were typed", got)
+	}
+}
+
+// The key list under a configure terminal is the pane's, not the screen's. It
+// is what tells the user which keys are theirs, and offering the screen's while
+// the pane holds them is how a key that no longer works gets pressed.
+func TestTheKeyListUnderAConfigureTerminalIsThePanes(t *testing.T) {
+	ds := newFakeSource(testSandboxes()...)
+	m := newTestModel(t, ds)
+	send(t, m, keyPress(harnessesKey), keyPress("e"))
+
+	out := plainFrame(m)
+	if strings.Contains(out, "reconfigure") {
+		t.Fatalf("the harnesses key list is still offered under the pane:\n%s", out)
+	}
+	if !strings.Contains(out, m.detachHint()) {
+		t.Fatalf("the pane's own way out is missing:\n%s", out)
+	}
+}

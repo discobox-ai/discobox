@@ -43,3 +43,16 @@
 - **The composer's height is a function of its contents**, so `layout()` runs
   after every key *and* every mouse event — a press that changes what is in the
   field changes where everything under it is drawn.
+
+## Key routing
+
+- **What draws in front takes the keys.** `View`'s precedence is the contract:
+  a modal (`modalUp` — the introduction, a dialog, the run options), then a
+  pane (`inPanes`), then the harnesses/secrets screens, then the launcher.
+  `updateKey`, `updatePaste` and `hints()` must follow the same order.
+  The harnesses and secrets screens are the trap: they open panes of their own
+  and stay open behind them, so a check on `harnessesOpen`/`secretsOpen` that
+  is not guarded by `!m.inPanes()` steals every key from the terminal drawn
+  over it — and on that screen the stolen keys are commands, so Enter at a
+  harness's configure banner meant "reconfigure this harness" and restarted the
+  flow it was typed into.

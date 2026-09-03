@@ -958,10 +958,14 @@ func (m *Model) updatePaste(msg tea.PasteMsg) tea.Cmd {
 	switch {
 	case m.dialog != nil:
 		return m.dialog.paste(msg)
-	case m.welcoming, m.optionsOpen, m.harnessesOpen, m.secretsOpen:
+	case m.welcoming, m.optionsOpen:
 		return nil
+	// Before the two screens, not after: a pane opened from one of them is
+	// drawn over it and owns every key, paste included. See updateKey.
 	case m.inPanes():
 		return m.updatePane(msg)
+	case m.harnessesOpen, m.secretsOpen:
+		return nil
 	}
 	before := m.promptState()
 	var cmd tea.Cmd
@@ -1123,11 +1127,21 @@ func (m *Model) updateKey(msg tea.KeyPressMsg) tea.Cmd {
 		}
 		return m.openSecrets()
 	}
-	if m.harnessesOpen {
-		return m.updateHarnesses(msg)
-	}
-	if m.secretsOpen {
-		return m.updateSecrets(msg)
+	// Neither screen while a pane is on screen. They are drawn *under* a pane,
+	// never over one — View reaches `case m.inPanes()` first, and the mouse
+	// leaves them out of modalUp for the same reason — so a key taken here is
+	// one the program in the pane could never receive. That is not a corner
+	// case: both of these screens open panes of their own and stay open behind
+	// them, so the configure terminal a harness opens sat there reading nothing
+	// while Enter went on meaning "reconfigure the highlighted harness" to the
+	// list underneath, restarting the flow the user was looking at.
+	if !m.inPanes() {
+		if m.harnessesOpen {
+			return m.updateHarnesses(msg)
+		}
+		if m.secretsOpen {
+			return m.updateSecrets(msg)
+		}
 	}
 
 	switch m.focus {
@@ -2999,11 +3013,17 @@ func says(text string) hint { return hint{text: text} }
 func pressing(text string, keys ...string) hint { return hint{text: text, keys: keys} }
 
 func (m *Model) hints() []hint {
-	if m.harnessesOpen {
-		return m.harnessHints()
-	}
-	if m.secretsOpen {
-		return m.secretHints()
+	// Only while the screen is the one on screen. A pane opened from it is
+	// drawn over it and takes the keys (updateKey), so offering the list's own
+	// keys under a configure terminal would be offering keys that no longer do
+	// what they say.
+	if !m.inPanes() {
+		if m.harnessesOpen {
+			return m.harnessHints()
+		}
+		if m.secretsOpen {
+			return m.secretHints()
+		}
 	}
 	switch m.focus {
 	case focusPane:
