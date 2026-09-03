@@ -18,6 +18,7 @@ require (
 require (
 	github.com/Code-Hex/go-infinity-channel v1.0.0 // indirect
 	github.com/Code-Hex/vz/v3 v3.7.1 // indirect
+	github.com/containerd/console v1.0.4 // indirect
 	github.com/discobox-ai/iroh-go v0.2.0 // indirect
 	github.com/discobox-ai/iroh-go/libs/darwin_amd64 v0.2.0 // indirect
 	github.com/discobox-ai/iroh-go/libs/darwin_arm64 v0.2.0 // indirect
@@ -36,9 +37,14 @@ require (
 	github.com/jackc/pgservicefile v0.0.0-20240606120523-5a60cdf6a761 // indirect
 	github.com/jackc/pgx/v5 v5.10.0 // indirect
 	github.com/jackc/puddle/v2 v2.2.2 // indirect
+	github.com/morikuni/aec v1.0.0 // indirect
 	github.com/remyoudompheng/bigfft v0.0.0-20230129092748-24d4a6f8daec // indirect
+	github.com/tonistiigi/go-csvvalue v0.0.0-20240710180619-ddb21b71c0b4 // indirect
+	github.com/tonistiigi/units v0.0.0-20180711220420-6950e57a87ea // indirect
+	github.com/tonistiigi/vt100 v0.0.0-20240514184818-90bafcd6abab // indirect
 	github.com/tursodatabase/turso-go-platform-libs v0.7.2 // indirect
 	golang.org/x/mod v0.37.0 // indirect
+	golang.org/x/time v0.15.0 // indirect
 	gorm.io/driver/postgres v1.6.2 // indirect
 	modernc.org/libc v1.22.5 // indirect
 	modernc.org/mathutil v1.5.0 // indirect
