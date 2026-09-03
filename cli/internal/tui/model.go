@@ -2391,7 +2391,14 @@ func (m *Model) view() tea.View {
 	var content string
 	switch {
 	case !m.expanded && !m.inPanes():
+		// Nothing on this frame answers a press: it is printed inline, under
+		// the command that started the window, where a coordinate belongs to
+		// the terminal's screen and not to these rows. Whatever its renderers
+		// marked on the way past is dropped rather than left to be read
+		// against the wrong ones. See mouseMode.
+		marked := m.zones.count()
 		content = m.viewCompact()
+		m.zones.drop(marked)
 	case m.inPanes():
 		// A pane wears the border itself. Everything else — the header, what
 		// the sandbox is called, the keys — sits outside it, the way a caption
@@ -2867,7 +2874,7 @@ func (m *Model) statusLine(room int) string {
 func (m *Model) markHints(hints []hint, x int, sep string) {
 	for _, h := range hints {
 		if len(h.keys) > 0 {
-			m.zones.mark(hit{kind: hitKey, keys: h.keys}, x, 0, lipgloss.Width(h.text), 1)
+			m.zones.mark(keyHit(h.keys...), x, 0, lipgloss.Width(h.text), 1)
 		}
 		x += lipgloss.Width(h.text) + lipgloss.Width(sep)
 	}

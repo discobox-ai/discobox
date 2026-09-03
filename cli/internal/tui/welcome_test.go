@@ -42,7 +42,7 @@ func TestWelcomeIsDismissedByEnterAndRecorded(t *testing.T) {
 	fake := newFakeSource(testSandboxes()...)
 	m := newWelcomeModel(t, fake)
 
-	send(t, m, key("enter"))
+	send(t, m, keyPress("enter"))
 	if m.welcoming {
 		t.Fatal("Enter did not dismiss the introduction")
 	}
@@ -62,7 +62,7 @@ func TestWelcomeSwallowsEveryOtherKey(t *testing.T) {
 	fake := newFakeSource(testSandboxes()...)
 	m := newWelcomeModel(t, fake)
 
-	send(t, m, key("tab"), tea.KeyPressMsg{Code: 'x', Text: "x"}, key("esc"))
+	send(t, m, keyPress("tab"), tea.KeyPressMsg{Code: 'x', Text: "x"}, keyPress("esc"))
 	if !m.welcoming {
 		t.Fatal("the introduction was dismissed by something other than Enter")
 	}
@@ -82,7 +82,7 @@ func TestWelcomeSwallowsEveryOtherKey(t *testing.T) {
 func TestWelcomeDoesNotTrapCtrlC(t *testing.T) {
 	m := newWelcomeModel(t, newFakeSource(testSandboxes()...))
 
-	send(t, m, key("ctrl+c"))
+	send(t, m, keyPress("ctrl+c"))
 	if !m.quit {
 		t.Fatal("ctrl+c did not close the window from the introduction")
 	}
@@ -96,7 +96,7 @@ func TestWelcomeSurvivesAFailedWrite(t *testing.T) {
 	fake.welcomeErr = errors.New("the server said no")
 
 	m := newWelcomeModel(t, fake)
-	send(t, m, key("enter"))
+	send(t, m, keyPress("enter"))
 
 	if m.welcoming {
 		t.Fatal("a failed write held the introduction on screen")

@@ -146,8 +146,8 @@ func TestThePromptComesOffTheScreenBeforeTheWindowTakesIt(t *testing.T) {
 	}{
 		// Both ways to the alternate screen from the opening prompt: opening
 		// the window out, and a modal standing in place of it.
-		{"opening out", func(d *driver) { d.dispatch(key("tab")) }},
-		{"a modal over it", func(d *driver) { d.dispatch(key("enter")) }},
+		{"opening out", func(d *driver) { d.dispatch(keyPress("tab")) }},
+		{"a modal over it", func(d *driver) { d.dispatch(keyPress("enter")) }},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			ds := newFakeSource(testSandboxes()...)
@@ -283,7 +283,7 @@ func TestTypingEndsTheShimmer(t *testing.T) {
 	m.layout()
 	m.startShimmer()
 
-	m.Update(key("f"))
+	m.Update(keyPress("f"))
 	if m.shimmer != 0 {
 		t.Fatal("the first keystroke should end the glint")
 	}

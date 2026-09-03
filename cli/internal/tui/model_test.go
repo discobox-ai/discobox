@@ -30,11 +30,11 @@ func TestOpensInThePrompt(t *testing.T) {
 func TestShiftBackspaceDeletesInThePrompt(t *testing.T) {
 	m := newTestModel(t, newFakeSource(testSandboxes()...))
 	send(t, m, typeString("fix the reaperx")...)
-	send(t, m, key("shift+backspace"))
+	send(t, m, keyPress("shift+backspace"))
 	if got := m.prompt.Value(); got != "fix the reaper" {
 		t.Fatalf("prompt = %q, want shift+backspace to delete a character", got)
 	}
-	send(t, m, key("backspace"))
+	send(t, m, keyPress("backspace"))
 	if got := m.prompt.Value(); got != "fix the reape" {
 		t.Fatalf("prompt = %q, want backspace to delete a character", got)
 	}
@@ -46,7 +46,7 @@ func TestEnterRunsThePromptAndAttaches(t *testing.T) {
 	ds := newFakeSource(testSandboxes()...)
 	m := newTestModel(t, ds)
 	send(t, m, typeString("fix the reaper")...)
-	send(t, m, key("enter"))
+	send(t, m, keyPress("enter"))
 
 	if len(ds.runs) != 1 {
 		t.Fatalf("runs = %d, want 1", len(ds.runs))
@@ -73,7 +73,7 @@ func TestEnterRunsThePromptAndAttaches(t *testing.T) {
 func TestEnterOnAnEmptyPromptStillCreates(t *testing.T) {
 	ds := newFakeSource(testSandboxes()...)
 	m := newTestModel(t, ds)
-	send(t, m, key("enter"))
+	send(t, m, keyPress("enter"))
 
 	if len(ds.runs) != 1 || promptText(ds.runs[0]) != "" {
 		t.Fatalf("runs = %+v, want one empty prompt", ds.runs)
@@ -95,7 +95,7 @@ func TestDirtyWorkspaceIsAskedAboutAndBothAnswersCreate(t *testing.T) {
 		ds := newFakeSource()
 		ds.workspace = SourceWorkspace{Directory: "/home/ada/src/web", Repository: true, Carries: true}
 		m := newTestModel(t, ds)
-		send(t, m, key("enter"))
+		send(t, m, keyPress("enter"))
 		if m.dialog == nil {
 			t.Fatalf("%s: a dirty working tree should be asked about", tc.answer)
 		}
@@ -104,7 +104,7 @@ func TestDirtyWorkspaceIsAskedAboutAndBothAnswersCreate(t *testing.T) {
 		if !strings.Contains(m.dialog.body, "/home/ada/src/web") {
 			t.Fatalf("%s: dialog body = %q, want the repository named", tc.answer, m.dialog.body)
 		}
-		send(t, m, key(tc.answer))
+		send(t, m, keyPress(tc.answer))
 		if len(ds.runs) != 1 {
 			t.Fatalf("%s: runs = %d, want 1", tc.answer, len(ds.runs))
 		}
@@ -131,7 +131,7 @@ func TestDirectoryWithNoRepositoryIsAskedAboutBeforeItIsCopied(t *testing.T) {
 		ds := newFakeSource()
 		ds.workspace = SourceWorkspace{Directory: "/home/ada/notes", Carries: true}
 		m := newTestModel(t, ds)
-		send(t, m, key("enter"))
+		send(t, m, keyPress("enter"))
 		if m.dialog == nil {
 			t.Fatalf("%s: a directory with no repository should be asked about", tc.answer)
 		}
@@ -144,7 +144,7 @@ func TestDirectoryWithNoRepositoryIsAskedAboutBeforeItIsCopied(t *testing.T) {
 		if got := ds.measuredDirs(); len(got) != 1 || got[0] != "/home/ada/notes" {
 			t.Fatalf("%s: measured %v, want the directory being asked about", tc.answer, got)
 		}
-		send(t, m, key(tc.answer))
+		send(t, m, keyPress(tc.answer))
 		if len(ds.runs) != 1 {
 			t.Fatalf("%s: runs = %d, want 1", tc.answer, len(ds.runs))
 		}
@@ -165,7 +165,7 @@ func TestTheDirectoryQuestionCountsWhileItIsUp(t *testing.T) {
 	ds := newFakeSource()
 	ds.workspace = SourceWorkspace{Directory: "/home/ada/notes", Carries: true}
 	m := newTestModel(t, ds)
-	send(t, m, key("enter"))
+	send(t, m, keyPress("enter"))
 	if m.dialog.emphasis != "calculating…" {
 		t.Fatalf("emphasis = %q, want the walk to say it has nothing counted yet", m.dialog.emphasis)
 	}
@@ -195,7 +195,7 @@ func TestAnEmptyDirectoryWithNoRepositoryIsNotAskedAbout(t *testing.T) {
 	ds := newFakeSource()
 	ds.workspace = SourceWorkspace{Directory: "/home/ada/empty"}
 	m := newTestModel(t, ds)
-	send(t, m, key("enter"))
+	send(t, m, keyPress("enter"))
 
 	if m.dialog != nil {
 		t.Fatal("an empty directory should not be asked about")
@@ -212,7 +212,7 @@ func TestAnEmptyDirectoryWithNoRepositoryIsNotAskedAbout(t *testing.T) {
 func TestCleanWorkspaceIsNotAskedAbout(t *testing.T) {
 	ds := newFakeSource()
 	m := newTestModel(t, ds)
-	send(t, m, key("enter"))
+	send(t, m, keyPress("enter"))
 	if m.dialog != nil {
 		t.Fatal("a clean working tree should not be asked about")
 	}
@@ -228,36 +228,36 @@ func TestCleanWorkspaceIsNotAskedAbout(t *testing.T) {
 func TestTheArrowsClimbTheWindowAndStopAtItsEnds(t *testing.T) {
 	m := newTestModel(t, newFakeSource(testSandboxes()...))
 
-	send(t, m, key("tab"))
+	send(t, m, keyPress("tab"))
 	if m.focus != focusList {
 		t.Fatal("tab should move to the list")
 	}
-	send(t, m, key("up"))
+	send(t, m, keyPress("up"))
 	if m.focus != focusFolder {
 		t.Fatal("up off the top of the list should reach the folder filter")
 	}
-	send(t, m, key("up"))
+	send(t, m, keyPress("up"))
 	if m.focus != focusFolder {
 		t.Fatal("up off the folder filter should stay: it is the top")
 	}
 	// Tab and Esc are still the way back from there.
-	send(t, m, key("esc"))
+	send(t, m, keyPress("esc"))
 	if m.focus != focusPrompt {
 		t.Fatal("esc from the folder filter should return to the prompt")
 	}
 
 	// Down at the prompt stays in it, however many times it is pressed.
 	for range 3 {
-		send(t, m, key("down"))
+		send(t, m, keyPress("down"))
 	}
 	if m.focus != focusPrompt {
 		t.Fatal("down at the prompt should stay in the prompt")
 	}
 
 	// And down out of the bottom of the list still returns to it.
-	send(t, m, key("tab"))
+	send(t, m, keyPress("tab"))
 	for range len(m.list.rows()) {
-		send(t, m, key("down"))
+		send(t, m, keyPress("down"))
 	}
 	if m.focus != focusPrompt {
 		t.Fatal("down past the end of the list should return to the prompt")
@@ -273,12 +273,12 @@ func TestAnEmptyListLandsOnTheFolderFilter(t *testing.T) {
 		t.Fatalf("expected an empty list, got %d rows", len(m.list.rows()))
 	}
 
-	send(t, m, key("tab"))
+	send(t, m, keyPress("tab"))
 	if m.focus != focusFolder {
 		t.Fatalf("focus = %v, want the folder filter", m.focus)
 	}
 	// And from there the other folder is one press away.
-	send(t, m, key("right"))
+	send(t, m, keyPress("right"))
 	if m.list.folder != "/src/elsewhere" {
 		t.Fatalf("folder = %q, want the one with something in it", m.list.folder)
 	}
@@ -291,9 +291,9 @@ func TestAnEmptyListLandsOnTheFolderFilter(t *testing.T) {
 func TestListLettersRunActions(t *testing.T) {
 	ds := newFakeSource(testSandboxes()...)
 	m := newTestModel(t, ds)
-	send(t, m, key("tab"))
+	send(t, m, keyPress("tab"))
 
-	send(t, m, key("s"))
+	send(t, m, keyPress("s"))
 	shelled := false
 	for _, open := range ds.execOpened() {
 		if strings.HasPrefix(open, "sbx_one exec_shell") {
@@ -304,8 +304,8 @@ func TestListLettersRunActions(t *testing.T) {
 		t.Fatalf("execOpens = %v, want a shell in the box under the cursor", ds.execOpened())
 	}
 	// A shell keeps ctrl+c for itself, so the leader carries detach there.
-	send(t, m, key("ctrl+a"), key("d"))
-	send(t, m, key("t"))
+	send(t, m, keyPress("ctrl+a"), keyPress("d"))
+	send(t, m, keyPress("t"))
 	if len(ds.did) != 1 || ds.did[0] != "stop sbx_one" {
 		t.Fatalf("did = %v", ds.did)
 	}
@@ -315,12 +315,12 @@ func TestListLettersRunActions(t *testing.T) {
 func TestSelectionIsWhatCommandsActOn(t *testing.T) {
 	ds := newFakeSource(testSandboxes()...)
 	m := newTestModel(t, ds)
-	send(t, m, key("tab"), key(" "), key("down"), key(" "))
+	send(t, m, keyPress("tab"), keyPress(" "), keyPress("down"), keyPress(" "))
 
 	if n := m.list.selectionCount(); n != 2 {
 		t.Fatalf("selected %d, want 2", n)
 	}
-	send(t, m, key("t"))
+	send(t, m, keyPress("t"))
 	if len(ds.did) != 2 || ds.did[0] != "stop sbx_one" || ds.did[1] != "stop sbx_two" {
 		t.Fatalf("did = %v", ds.did)
 	}
@@ -335,12 +335,12 @@ func TestVisualRangeActsOnTheWholeRange(t *testing.T) {
 	ds := newFakeSource(testSandboxes()...)
 	m := newTestModel(t, ds)
 	showAllFolders(t, m)
-	send(t, m, key("V"), key("down"), key("down"))
+	send(t, m, keyPress("V"), keyPress("down"), keyPress("down"))
 
 	if !m.list.visual {
 		t.Fatal("V should start a visual range")
 	}
-	send(t, m, key("x"))
+	send(t, m, keyPress("x"))
 	want := []string{"archive sbx_one", "archive sbx_two", "archive sbx_three"}
 	if len(ds.did) != len(want) {
 		t.Fatalf("did = %v, want %v", ds.did, want)
@@ -360,19 +360,19 @@ func TestVisualRangeActsOnTheWholeRange(t *testing.T) {
 func TestPurgeConfirmsAndArchiveDoesNot(t *testing.T) {
 	ds := newFakeSource(testSandboxes()...)
 	m := newTestModel(t, ds)
-	send(t, m, key("tab"), key("A"), key("G")) // the archived row is last
+	send(t, m, keyPress("tab"), keyPress("A"), keyPress("G")) // the archived row is last
 
 	if got := m.list.current(); got == nil || got.State != StateArchived {
 		t.Fatalf("expected the cursor on an archived sandbox, got %+v", got)
 	}
-	send(t, m, key("P"))
+	send(t, m, keyPress("P"))
 	if m.dialog == nil {
 		t.Fatal("purge should ask first")
 	}
 	if len(ds.did) != 0 {
 		t.Fatalf("nothing should have run before the answer, got %v", ds.did)
 	}
-	send(t, m, key("y"))
+	send(t, m, keyPress("y"))
 	if len(ds.did) != 1 || ds.did[0] != "purge sbx_four" {
 		t.Fatalf("did = %v", ds.did)
 	}
@@ -382,7 +382,7 @@ func TestPurgeConfirmsAndArchiveDoesNot(t *testing.T) {
 func TestRenameEditsTheNameInPlace(t *testing.T) {
 	ds := newFakeSource(testSandboxes()...)
 	m := newTestModel(t, ds)
-	send(t, m, key("tab"), key("e"))
+	send(t, m, keyPress("tab"), keyPress("e"))
 
 	if m.dialog == nil || m.dialog.kind != dlgInput {
 		t.Fatal("e should open an input dialog")
@@ -392,7 +392,7 @@ func TestRenameEditsTheNameInPlace(t *testing.T) {
 		t.Fatalf("input = %q, want the current name", got)
 	}
 	send(t, m, typeString(" again")...)
-	send(t, m, key("enter"))
+	send(t, m, keyPress("enter"))
 	if len(ds.renames) != 1 || ds.renames[0] != "sbx_one fix flaky pool reaper tests again" {
 		t.Fatalf("renames = %v", ds.renames)
 	}
@@ -405,11 +405,11 @@ func TestRenameEditsTheNameInPlace(t *testing.T) {
 func TestRenameCancelsWithoutCalling(t *testing.T) {
 	ds := newFakeSource(testSandboxes()...)
 	m := newTestModel(t, ds)
-	send(t, m, key("tab"), key("e"), key("esc"))
+	send(t, m, keyPress("tab"), keyPress("e"), keyPress("esc"))
 	if len(ds.renames) != 0 {
 		t.Fatalf("esc should rename nothing, got %v", ds.renames)
 	}
-	send(t, m, key("e"), key("enter"))
+	send(t, m, keyPress("e"), keyPress("enter"))
 	if len(ds.renames) != 0 {
 		t.Fatalf("an unchanged name should rename nothing, got %v", ds.renames)
 	}
@@ -419,7 +419,7 @@ func TestRenameCancelsWithoutCalling(t *testing.T) {
 func TestRenameTakesExactlyOneBox(t *testing.T) {
 	ds := newFakeSource(testSandboxes()...)
 	m := newTestModel(t, ds)
-	send(t, m, key("tab"), key(" "), key("down"), key(" "), key("e"))
+	send(t, m, keyPress("tab"), keyPress(" "), keyPress("down"), keyPress(" "), keyPress("e"))
 
 	if m.dialog == nil || m.dialog.kind != dlgMessage {
 		t.Fatalf("rename on a selection should say why, got %+v", m.dialog)
@@ -436,7 +436,7 @@ func TestRenameRefusedWhenNameIsTerminalTitle(t *testing.T) {
 	boxes[0].ConfigName = "brave-otter"
 	ds := newFakeSource(boxes...)
 	m := newTestModel(t, ds)
-	send(t, m, key("tab"), key("e"))
+	send(t, m, keyPress("tab"), keyPress("e"))
 
 	if m.dialog == nil || m.dialog.kind != dlgMessage {
 		t.Fatalf("rename on a title-named row should say why, got %+v", m.dialog)
@@ -450,10 +450,10 @@ func TestRenameRefusedWhenNameIsTerminalTitle(t *testing.T) {
 func TestUnavailableActionExplainsItself(t *testing.T) {
 	ds := newFakeSource(testSandboxes()...)
 	m := newTestModel(t, ds)
-	send(t, m, key("tab"))
+	send(t, m, keyPress("tab"))
 
 	// The row under the cursor is running, so there is no upgrade on it.
-	send(t, m, key("."))
+	send(t, m, keyPress("."))
 	if m.dialog == nil {
 		t.Fatal(". should open the action menu")
 	}
@@ -467,7 +467,7 @@ func TestUnavailableActionExplainsItself(t *testing.T) {
 func TestArchivedSandboxesCannotBeDiffed(t *testing.T) {
 	ds := newFakeSource(testSandboxes()...)
 	m := newTestModel(t, ds)
-	send(t, m, key("tab"), key("A"), key("G"))
+	send(t, m, keyPress("tab"), keyPress("A"), keyPress("G"))
 
 	for _, a := range m.actions(m.list.targets()) {
 		switch a.key {
@@ -480,7 +480,7 @@ func TestArchivedSandboxesCannotBeDiffed(t *testing.T) {
 			}
 		}
 	}
-	send(t, m, key("y"))
+	send(t, m, keyPress("y"))
 	if len(ds.opens) != 0 {
 		t.Fatalf("nothing should have run, got %v", ds.opens)
 	}
@@ -493,7 +493,7 @@ func TestArchivedSandboxesAreHiddenUntilAskedFor(t *testing.T) {
 	if got := len(m.list.rows()); got != 3 {
 		t.Fatalf("rows = %d, want 3 with the archived one hidden", got)
 	}
-	send(t, m, key("A"))
+	send(t, m, keyPress("A"))
 	if got := len(m.list.rows()); got != 4 {
 		t.Fatalf("rows = %d, want 4 with archived shown", got)
 	}
@@ -514,7 +514,7 @@ func TestTheFolderFilterOpensOnThisDirectory(t *testing.T) {
 
 	// Left off the first choice wraps to "every folder", which is the one
 	// choice that is not a path.
-	send(t, m, key("tab"), key("up"), key("left"))
+	send(t, m, keyPress("tab"), keyPress("up"), keyPress("left"))
 	if m.list.folder != "" {
 		t.Fatalf("folder = %q, want every folder", m.list.folder)
 	}
@@ -523,7 +523,7 @@ func TestTheFolderFilterOpensOnThisDirectory(t *testing.T) {
 	}
 
 	// And on round to the other folder something was started from.
-	send(t, m, key("left"))
+	send(t, m, keyPress("left"))
 	if m.list.folder != "/src/obot" {
 		t.Fatalf("folder = %q, want the other folder", m.list.folder)
 	}
@@ -536,7 +536,7 @@ func TestTheFolderFilterOpensOnThisDirectory(t *testing.T) {
 // to drop the filter, and choosing one applies it.
 func TestTheFolderDropdownListsTheKnownFolders(t *testing.T) {
 	m := newTestModel(t, newFakeSource(testSandboxes()...))
-	send(t, m, key("tab"), key("up"), key("enter"))
+	send(t, m, keyPress("tab"), keyPress("up"), keyPress("enter"))
 
 	if m.dialog == nil {
 		t.Fatal("enter on the folder filter should open the dropdown")
@@ -549,7 +549,7 @@ func TestTheFolderDropdownListsTheKnownFolders(t *testing.T) {
 	}
 
 	// The second choice is the other folder; picking it filters to it.
-	send(t, m, key("down"), key("enter"))
+	send(t, m, keyPress("down"), keyPress("enter"))
 	if m.list.folder != "/src/obot" {
 		t.Fatalf("folder = %q, want the choice that was made", m.list.folder)
 	}
@@ -576,7 +576,7 @@ func TestTheFolderFilterAlwaysOffersThisDirectory(t *testing.T) {
 func TestRefreshKeepsTheCursorOnItsSandbox(t *testing.T) {
 	ds := newFakeSource(testSandboxes()...)
 	m := newTestModel(t, ds)
-	send(t, m, key("tab"), key("down"))
+	send(t, m, keyPress("tab"), keyPress("down"))
 	if m.list.current().ID != "sbx_two" {
 		t.Fatalf("cursor on %s", m.list.current().ID)
 	}
@@ -627,12 +627,12 @@ func TestListFailureIsReported(t *testing.T) {
 func TestCtrlDQuitsOnlyOnAnEmptyPrompt(t *testing.T) {
 	m := newTestModel(t, newFakeSource())
 	send(t, m, typeString("something")...)
-	send(t, m, key("ctrl+d"))
+	send(t, m, keyPress("ctrl+d"))
 	if m.quit {
 		t.Fatal("ctrl+d with text in the prompt should not quit")
 	}
 	m.prompt.SetValue("")
-	send(t, m, key("ctrl+d"))
+	send(t, m, keyPress("ctrl+d"))
 	if !m.quit {
 		t.Fatal("ctrl+d on an empty prompt should quit")
 	}
@@ -646,7 +646,7 @@ func TestTheWindowIsFullScreen(t *testing.T) {
 		t.Fatal("the launcher should take the alternate screen")
 	}
 	// Including the layers that stand in place of it.
-	send(t, m, key("f1"))
+	send(t, m, keyPress("f1"))
 	if !m.View().AltScreen {
 		t.Fatal("a dialog should stay on the alternate screen")
 	}
@@ -666,7 +666,7 @@ func TestSwitchingFolderSwitchesWhereTheRunHappens(t *testing.T) {
 		t.Fatalf("source = %q, want the CLI's own default", req.Source)
 	}
 
-	send(t, m, key("tab"), key("up"), key("right")) // on to the other folder
+	send(t, m, keyPress("tab"), keyPress("up"), keyPress("right")) // on to the other folder
 	if m.list.folder != "/src/obot" {
 		t.Fatalf("folder = %q", m.list.folder)
 	}
@@ -678,8 +678,8 @@ func TestSwitchingFolderSwitchesWhereTheRunHappens(t *testing.T) {
 	}
 
 	// And it is what Enter actually asks for.
-	send(t, m, key("esc"))
-	send(t, m, key("enter"))
+	send(t, m, keyPress("esc"))
+	send(t, m, keyPress("enter"))
 	if len(ds.runs) != 1 || ds.runs[0].Source != "/src/obot" {
 		t.Fatalf("runs = %+v, want the folder the header is on", ds.runs)
 	}
@@ -696,7 +696,7 @@ func TestTheSourceChipOnlyShowsWhenItDiffers(t *testing.T) {
 	}
 
 	// Moving the header moves the source with it, so it still says nothing.
-	send(t, m, key("tab"), key("up"), key("right"), key("esc"))
+	send(t, m, keyPress("tab"), keyPress("up"), keyPress("right"), keyPress("esc"))
 	if chips := m.opts.chips(m.st); strings.Contains(chips, "/src/obot") {
 		t.Errorf("the strip repeats the header after a switch: %q", chips)
 	}
@@ -715,7 +715,7 @@ func TestTheSourceChipOnlyShowsWhenItDiffers(t *testing.T) {
 func TestUpFromThePromptLandsOnTheLastRow(t *testing.T) {
 	m := newTestModel(t, newFakeSource(testSandboxes()...))
 
-	send(t, m, key("up"))
+	send(t, m, keyPress("up"))
 	if m.focus != focusList {
 		t.Fatalf("focus = %v, want the list", m.focus)
 	}
@@ -735,11 +735,11 @@ func TestUpStaysInThePromptWithTextInIt(t *testing.T) {
 	m := newTestModel(t, newFakeSource(testSandboxes()...))
 
 	send(t, m, typeString("one")...)
-	send(t, m, key("ctrl+j"))
+	send(t, m, keyPress("ctrl+j"))
 	send(t, m, typeString("two")...)
 	// Up walks the text: the second line to the first, then to its start.
 	for range 4 {
-		send(t, m, key("up"))
+		send(t, m, keyPress("up"))
 		if m.focus != focusPrompt {
 			t.Fatalf("focus = %v, want the prompt: it has text in it", m.focus)
 		}
@@ -748,21 +748,21 @@ func TestUpStaysInThePromptWithTextInIt(t *testing.T) {
 		t.Fatalf("prompt = %q, want the text untouched", got)
 	}
 	// Tab still leaves, and the text goes with it.
-	send(t, m, key("tab"))
+	send(t, m, keyPress("tab"))
 	if m.focus != focusList {
 		t.Fatalf("focus = %v, want the list: tab is the way out", m.focus)
 	}
 
 	// Emptied again, ↑ is a way out once more.
-	send(t, m, key("esc"))
-	send(t, m, key("down"), key("down")) // back to the end of the text
+	send(t, m, keyPress("esc"))
+	send(t, m, keyPress("down"), keyPress("down")) // back to the end of the text
 	for range len("one\ntwo") {
-		send(t, m, key("backspace"))
+		send(t, m, keyPress("backspace"))
 	}
 	if got := m.prompt.Value(); got != "" {
 		t.Fatalf("prompt = %q, want it emptied", got)
 	}
-	send(t, m, key("up"))
+	send(t, m, keyPress("up"))
 	if m.focus != focusList {
 		t.Fatalf("focus = %v, want the list: an empty prompt still lets ↑ out", m.focus)
 	}
@@ -773,12 +773,12 @@ func TestUpStaysInThePromptWithTextInIt(t *testing.T) {
 // prompt, so ↓ goes there rather than refusing.
 func TestDownReachesThePromptThroughAnEmptyList(t *testing.T) {
 	m := newTestModel(t, newFakeSource())
-	send(t, m, key("tab"))
+	send(t, m, keyPress("tab"))
 	if m.focus != focusFolder {
 		t.Fatalf("focus = %v, want the folder filter: there are no rows to land on", m.focus)
 	}
 
-	send(t, m, key("down"))
+	send(t, m, keyPress("down"))
 	if m.focus != focusPrompt {
 		t.Fatalf("focus = %v, want the prompt", m.focus)
 	}
@@ -786,7 +786,7 @@ func TestDownReachesThePromptThroughAnEmptyList(t *testing.T) {
 
 func TestTabFromThePromptLandsOnTheFirstRow(t *testing.T) {
 	m := newTestModel(t, newFakeSource(testSandboxes()...))
-	send(t, m, key("tab"))
+	send(t, m, keyPress("tab"))
 	if m.list.cursor != 0 {
 		t.Fatalf("cursor = %d, want the first row", m.list.cursor)
 	}
@@ -798,15 +798,15 @@ func TestTabFromThePromptLandsOnTheFirstRow(t *testing.T) {
 func TestComingBackToTheListKeepsTheCursor(t *testing.T) {
 	m := newTestModel(t, newFakeSource(testSandboxes()...))
 	showAllFolders(t, m)
-	send(t, m, key("down")) // row 1, chosen deliberately
+	send(t, m, keyPress("down")) // row 1, chosen deliberately
 	on := m.list.current().ID
 
 	for _, back := range []string{"up", "tab"} {
-		send(t, m, key("esc")) // out to the prompt
+		send(t, m, keyPress("esc")) // out to the prompt
 		if m.focus != focusPrompt {
 			t.Fatalf("%s: expected to be in the prompt", back)
 		}
-		send(t, m, key(back))
+		send(t, m, keyPress(back))
 		if m.focus != focusList {
 			t.Fatalf("%s: focus = %v, want the list", back, m.focus)
 		}
@@ -821,12 +821,12 @@ func TestComingBackToTheListKeepsTheCursor(t *testing.T) {
 func TestSwitchingFolderForgetsTheCursor(t *testing.T) {
 	m := newTestModel(t, newFakeSource(testSandboxes()...))
 	showAllFolders(t, m)
-	send(t, m, key("down"))
+	send(t, m, keyPress("down"))
 	if !m.list.visited {
 		t.Fatal("moving the cursor should count as having been in the list")
 	}
 
-	send(t, m, key("up"), key("up"), key("right")) // to the folder, on to the next
+	send(t, m, keyPress("up"), keyPress("up"), keyPress("right")) // to the folder, on to the next
 	if m.list.visited {
 		t.Fatal("a new set of sandboxes is a list nobody has chosen a row in")
 	}
@@ -871,22 +871,22 @@ func TestTabGoesRoundTheWindow(t *testing.T) {
 	m := newTestModel(t, newFakeSource(testSandboxes()...))
 
 	for _, want := range []focusArea{focusList, focusFolder, focusPrompt, focusList} {
-		send(t, m, key("tab"))
+		send(t, m, keyPress("tab"))
 		if m.focus != want {
 			t.Fatalf("tab landed on %v, want %v", m.focus, want)
 		}
 	}
 
 	// And Esc is the short way back, from either stop.
-	send(t, m, key("esc"))
+	send(t, m, keyPress("esc"))
 	if m.focus != focusPrompt {
 		t.Fatalf("esc from the list landed on %v", m.focus)
 	}
-	send(t, m, key("tab"), key("tab")) // prompt -> list -> folder
+	send(t, m, keyPress("tab"), keyPress("tab")) // prompt -> list -> folder
 	if m.focus != focusFolder {
 		t.Fatalf("focus = %v, want the folder filter", m.focus)
 	}
-	send(t, m, key("esc"))
+	send(t, m, keyPress("esc"))
 	if m.focus != focusPrompt {
 		t.Fatalf("esc from the folder filter landed on %v", m.focus)
 	}
@@ -900,7 +900,7 @@ func TestTabGoesRoundTheWindow(t *testing.T) {
 func TestVSCodeOpensTheBoxUnderTheCursor(t *testing.T) {
 	ds := newFakeSource(testSandboxes()...)
 	m := newTestModel(t, ds)
-	send(t, m, key("tab"), key("v"))
+	send(t, m, keyPress("tab"), keyPress("v"))
 
 	if len(ds.editors) != 1 || ds.editors[0] != "sbx_one" {
 		t.Fatalf("editors = %v", ds.editors)
@@ -922,7 +922,7 @@ func TestVSCodeReportsFailureOnTheStatusLine(t *testing.T) {
 	ds := newFakeSource(testSandboxes()...)
 	ds.editorErr = errors.New("no VS Code command found on PATH")
 	m := newTestModel(t, ds)
-	send(t, m, key("tab"), key("v"))
+	send(t, m, keyPress("tab"), keyPress("v"))
 
 	if !m.statusE || !strings.Contains(m.status, "no VS Code command") {
 		t.Fatalf("status = %q (error %v), want the failure reported", m.status, m.statusE)
@@ -935,7 +935,7 @@ func TestVSCodeRefusedOnAnArchivedBox(t *testing.T) {
 	ds := newFakeSource(testSandboxes()...)
 	m := newTestModel(t, ds)
 	// The archived row is the last one, and only shown once A asks for it.
-	send(t, m, key("tab"), key("A"), key("G"), key("v"))
+	send(t, m, keyPress("tab"), keyPress("A"), keyPress("G"), keyPress("v"))
 
 	if len(ds.editors) != 0 {
 		t.Fatalf("an archived box should not reach the editor, got %v", ds.editors)
@@ -960,7 +960,7 @@ func wedgedSandbox() Sandbox {
 func TestRepairRunsOnAWedgedBox(t *testing.T) {
 	ds := newFakeSource(wedgedSandbox())
 	m := newTestModel(t, ds)
-	send(t, m, key("tab"), key("R"))
+	send(t, m, keyPress("tab"), keyPress("R"))
 
 	if len(ds.did) != 1 || ds.did[0] != "repair sbx_wedged" {
 		t.Fatalf("did = %v, want a repair on the box under the cursor", ds.did)
@@ -972,9 +972,9 @@ func TestRepairRunsOnAWedgedBox(t *testing.T) {
 func TestRepairIsRefusedOnAHealthyBox(t *testing.T) {
 	ds := newFakeSource(testSandboxes()...)
 	m := newTestModel(t, ds)
-	send(t, m, key("tab"))
+	send(t, m, keyPress("tab"))
 
-	send(t, m, key("R"))
+	send(t, m, keyPress("R"))
 	if len(ds.did) != 0 {
 		t.Fatalf("did = %v, want nothing: the box under the cursor is running", ds.did)
 	}
@@ -988,7 +988,7 @@ func TestRepairIsRefusedOnAHealthyBox(t *testing.T) {
 func TestRepairPointsAnArchivedBoxAtUnarchive(t *testing.T) {
 	ds := newFakeSource(testSandboxes()...)
 	m := newTestModel(t, ds)
-	send(t, m, key("tab"), key("A"), key("G"))
+	send(t, m, keyPress("tab"), keyPress("A"), keyPress("G"))
 
 	for _, a := range m.actions(m.list.targets()) {
 		if a.key != repairKey {
@@ -1011,7 +1011,7 @@ func TestRepaintWorksOffThePanes(t *testing.T) {
 	m := newTestModel(t, newFakeSource(testSandboxes()...))
 	send(t, m, typeString("fix the reaper")...)
 
-	_, cmd := m.Update(key("ctrl+l"))
+	_, cmd := m.Update(keyPress("ctrl+l"))
 	if !repaints(cmd) {
 		t.Fatal("ctrl+l in the prompt should redraw the window")
 	}

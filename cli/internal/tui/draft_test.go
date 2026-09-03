@@ -84,7 +84,7 @@ func TestClosingTheWindowSavesTheDraft(t *testing.T) {
 	m := newTestModel(t, ds)
 	send(t, m, typeString("unsent")...)
 
-	send(t, m, key("ctrl+c"))
+	send(t, m, keyPress("ctrl+c"))
 	if !m.quit {
 		t.Fatal("ctrl+c should close the window")
 	}
@@ -105,10 +105,10 @@ func TestQuittingOnAnEmptiedPromptDropsTheDraft(t *testing.T) {
 	}
 
 	for range len(ds.session.Draft) {
-		send(t, m, key("backspace"))
+		send(t, m, keyPress("backspace"))
 	}
 	// Ctrl-D is the shell's EOF, and quits on an empty prompt.
-	send(t, m, key("ctrl+d"))
+	send(t, m, keyPress("ctrl+d"))
 	if !m.quit {
 		t.Fatal("ctrl+d on an empty prompt should close the window")
 	}
@@ -158,7 +158,7 @@ func TestNoFolderNoDraft(t *testing.T) {
 
 	send(t, m, typeString("nowhere")...)
 	send(t, m, tickMsg{})
-	send(t, m, key("ctrl+c"))
+	send(t, m, keyPress("ctrl+c"))
 
 	if len(ds.drafts) != 0 {
 		t.Fatalf("drafts = %v, want none written", ds.drafts)

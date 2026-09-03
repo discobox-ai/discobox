@@ -13,7 +13,7 @@ import (
 func TestHarnessesScreenOpensAndCloses(t *testing.T) {
 	m := newTestModel(t, newFakeSource(testSandboxes()...))
 
-	send(t, m, key("f3"))
+	send(t, m, keyPress("f3"))
 	if !m.harnessesOpen {
 		t.Fatal("F3 should open the harnesses screen")
 	}
@@ -24,7 +24,7 @@ func TestHarnessesScreenOpensAndCloses(t *testing.T) {
 		}
 	}
 
-	send(t, m, key("f3"))
+	send(t, m, keyPress("f3"))
 	if m.harnessesOpen {
 		t.Fatal("F3 should close the harnesses screen it opened")
 	}
@@ -33,7 +33,7 @@ func TestHarnessesScreenOpensAndCloses(t *testing.T) {
 	}
 
 	// Esc is the other way out, the same as it is everywhere else.
-	send(t, m, key("f3"), key("esc"))
+	send(t, m, keyPress("f3"), keyPress("esc"))
 	if m.harnessesOpen {
 		t.Fatal("Esc should leave the harnesses screen")
 	}
@@ -46,7 +46,7 @@ func TestHarnessesScreenExpandsTheWindow(t *testing.T) {
 	m.expanded = false
 	m.layout()
 
-	send(t, m, key("f3"))
+	send(t, m, keyPress("f3"))
 	if !m.expanded {
 		t.Fatal("opening the harnesses screen should open the window out")
 	}
@@ -66,20 +66,20 @@ func TestWithHarnessesOpensOnTheScreen(t *testing.T) {
 
 func TestHarnessesCursorMoves(t *testing.T) {
 	m := newTestModel(t, newFakeSource())
-	send(t, m, key("f3"))
+	send(t, m, keyPress("f3"))
 
 	// Up at the top and down at the bottom stay where they are: the screen is
 	// a list, not a carousel.
 	last := len(m.harnesses.all) - 1
-	send(t, m, key("k"))
+	send(t, m, keyPress("k"))
 	if m.harnesses.cursor != 0 {
 		t.Fatalf("cursor = %d, want the top", m.harnesses.cursor)
 	}
-	send(t, m, key("G"), key("j"))
+	send(t, m, keyPress("G"), keyPress("j"))
 	if m.harnesses.cursor != last {
 		t.Fatalf("cursor = %d, want the last row (%d)", m.harnesses.cursor, last)
 	}
-	send(t, m, key("g"))
+	send(t, m, keyPress("g"))
 	if m.harnesses.cursor != 0 {
 		t.Fatalf("cursor after g = %d, want the top", m.harnesses.cursor)
 	}
@@ -90,7 +90,7 @@ func TestHarnessesCursorMoves(t *testing.T) {
 func TestHarnessesEnableRunsTheSetup(t *testing.T) {
 	ds := newFakeSource()
 	m := newTestModel(t, ds)
-	send(t, m, key("f3"), key("j"), key("e"))
+	send(t, m, keyPress("f3"), keyPress("j"), keyPress("e"))
 
 	if len(ds.configured) != 1 || ds.configured[0] != "hc_codex" {
 		t.Fatalf("configured = %v, want the harness under the cursor", ds.configured)
@@ -110,7 +110,7 @@ func TestHarnessesEnableRunsTheSetup(t *testing.T) {
 func TestHarnessesDisableConfirms(t *testing.T) {
 	ds := newFakeSource()
 	m := newTestModel(t, ds)
-	send(t, m, key("f3"), key("d"))
+	send(t, m, keyPress("f3"), keyPress("d"))
 
 	if m.dialog == nil || m.dialog.kind != dlgConfirm {
 		t.Fatal("d should ask before disabling")
@@ -123,12 +123,12 @@ func TestHarnessesDisableConfirms(t *testing.T) {
 	}
 
 	// Answering no leaves the harness alone.
-	send(t, m, key("n"))
+	send(t, m, keyPress("n"))
 	if len(ds.didHarness) != 0 {
 		t.Fatalf("did = %v, want nothing done after answering no", ds.didHarness)
 	}
 
-	send(t, m, key("d"), key("y"))
+	send(t, m, keyPress("d"), keyPress("y"))
 	if len(ds.didHarness) != 1 || ds.didHarness[0] != "disable hc_claude" {
 		t.Fatalf("did = %v, want the harness disabled", ds.didHarness)
 	}
@@ -141,7 +141,7 @@ func TestHarnessesDisableConfirms(t *testing.T) {
 func TestHarnessesDisableNeedsAnEnabledHarness(t *testing.T) {
 	ds := newFakeSource()
 	m := newTestModel(t, ds)
-	send(t, m, key("f3"), key("j"), key("j"), key("d"))
+	send(t, m, keyPress("f3"), keyPress("j"), keyPress("j"), keyPress("d"))
 
 	if m.dialog == nil || m.dialog.kind != dlgMessage {
 		t.Fatal("disabling a harness that is not enabled should explain itself")
@@ -156,7 +156,7 @@ func TestHarnessesSetDefault(t *testing.T) {
 	m := newTestModel(t, ds)
 	// The second row is enabled and not the default, which is the only state
 	// s applies to.
-	send(t, m, key("f3"), key("j"), key("s"))
+	send(t, m, keyPress("f3"), keyPress("j"), keyPress("s"))
 
 	if len(ds.didHarness) != 1 || ds.didHarness[0] != "set default hc_codex" {
 		t.Fatalf("did = %v, want the default set", ds.didHarness)
@@ -166,7 +166,7 @@ func TestHarnessesSetDefault(t *testing.T) {
 	}
 
 	// The harness that already is the default cannot be made it again.
-	send(t, m, key("k"), key("s"))
+	send(t, m, keyPress("k"), keyPress("s"))
 	if m.dialog == nil || m.dialog.kind != dlgMessage || !strings.Contains(m.dialog.body, "already the default") {
 		t.Fatal("setting the default harness as the default should say it already is")
 	}
@@ -184,7 +184,7 @@ func TestHarnessesConfigCard(t *testing.T) {
 		{Name: "CUSTOM_TOKEN", SecretID: "sec_2"},
 	}
 	m := newTestModel(t, ds)
-	send(t, m, key("f3"), key("v"))
+	send(t, m, keyPress("f3"), keyPress("v"))
 
 	if m.dialog == nil || m.dialog.kind != dlgText {
 		t.Fatal("v should open the config card")
@@ -210,7 +210,7 @@ func TestHarnessesEditFile(t *testing.T) {
 	ds := newFakeSource()
 	ds.editChanged = true
 	m := newTestModel(t, ds)
-	send(t, m, key("f3"), key("f"))
+	send(t, m, keyPress("f3"), keyPress("f"))
 
 	if m.dialog == nil || m.dialog.kind != dlgActions {
 		t.Fatal("f should open the file picker")
@@ -219,7 +219,7 @@ func TestHarnessesEditFile(t *testing.T) {
 		t.Fatalf("files = %+v, want the ones its setup wrote first", m.dialog.items)
 	}
 
-	send(t, m, key("enter"))
+	send(t, m, keyPress("enter"))
 	if len(ds.editedFiles) != 1 || ds.editedFiles[0] != "hc_claude .claude.json" {
 		t.Fatalf("edited = %v, want the chosen file", ds.editedFiles)
 	}
@@ -229,7 +229,7 @@ func TestHarnessesEditFile(t *testing.T) {
 
 	// An editor that saved nothing says so rather than claiming an update.
 	ds.editChanged = false
-	send(t, m, key("f"), key("enter"))
+	send(t, m, keyPress("f"), keyPress("enter"))
 	if !strings.Contains(plainFrame(m), ".claude.json unchanged") {
 		t.Fatalf("an unchanged file should say so:\n%s", plainFrame(m))
 	}
@@ -238,7 +238,7 @@ func TestHarnessesEditFile(t *testing.T) {
 // A harness with no files has nothing to edit, and says so.
 func TestHarnessesEditNeedsFiles(t *testing.T) {
 	m := newTestModel(t, newFakeSource())
-	send(t, m, key("f3"), key("G"), key("f"))
+	send(t, m, keyPress("f3"), keyPress("G"), keyPress("f"))
 
 	if m.dialog == nil || m.dialog.kind != dlgMessage {
 		t.Fatal("f on a harness with no files should explain itself")
@@ -280,13 +280,13 @@ func TestHarnessChoicesFollowTheListing(t *testing.T) {
 // reached, and the row's own hint says so.
 func TestEnterOnTheHarnessRowChangesTheChoice(t *testing.T) {
 	m := newTestModel(t, newFakeSource())
-	send(t, m, key("ctrl+o"))
+	send(t, m, keyPress("ctrl+o"))
 	if !m.optionsOpen {
 		t.Fatal("Ctrl-O should open the run options")
 	}
 	before := m.opts.opts[optHarness].display()
 
-	send(t, m, key("enter"))
+	send(t, m, keyPress("enter"))
 
 	if m.harnessesOpen {
 		t.Fatal("Enter on the harness row should not leave the panel")
@@ -303,11 +303,11 @@ func TestEnterOnTheHarnessRowChangesTheChoice(t *testing.T) {
 // it.
 func TestHarnessesFailedRowShowsTheError(t *testing.T) {
 	m := newTestModel(t, newFakeSource())
-	send(t, m, key("f3"), key("G"), key("k"))
+	send(t, m, keyPress("f3"), keyPress("G"), keyPress("k"))
 	if !strings.Contains(plainFrame(m), "the setup exited before it finished") {
 		t.Fatalf("a failed harness should say why under the cursor:\n%s", plainFrame(m))
 	}
-	send(t, m, key("g"))
+	send(t, m, keyPress("g"))
 	if strings.Contains(plainFrame(m), "the setup exited before it finished") {
 		t.Fatal("the error belongs to the row under the cursor, not to every frame")
 	}
@@ -321,7 +321,7 @@ func TestHarnessesFrameFitsTheTerminal(t *testing.T) {
 	for _, size := range [][2]int{{120, 40}, {100, 24}, {80, 20}} {
 		send(t, m, sizeMsg(size[0], size[1]))
 		if !m.harnessesOpen {
-			send(t, m, key("f3"))
+			send(t, m, keyPress("f3"))
 		}
 		lines := strings.Split(rawFrame(m), "\n")
 		if len(lines) != size[1] {
@@ -338,7 +338,7 @@ func TestHarnessesFrameFitsTheTerminal(t *testing.T) {
 func TestHarnessHintsNameEveryApplicableAction(t *testing.T) {
 	ds := newFakeSource()
 	m := newTestModel(t, ds)
-	send(t, m, key("f3"))
+	send(t, m, keyPress("f3"))
 	// 80 columns is the narrow terminal worth holding to: the hint line grows
 	// with the actions that apply, and the widest row is the one every action
 	// applies to.
@@ -371,7 +371,7 @@ func TestHarnessHintsNameEveryApplicableAction(t *testing.T) {
 // the default, so it is the one most easily left unreachable.
 func TestHarnessHintsOfferTheDefault(t *testing.T) {
 	m := newTestModel(t, newFakeSource())
-	send(t, m, key("f3"), key("j"))
+	send(t, m, keyPress("f3"), keyPress("j"))
 
 	if hints := hintLine(m.harnessHints()); !strings.Contains(hints, "s default") {
 		t.Fatalf("hints = %q, want the default offered on an enabled non-default harness", hints)
@@ -393,7 +393,7 @@ func TestRunningAnUnconfiguredHarnessOffersToSetItUp(t *testing.T) {
 		}
 	}
 	send(t, m, typeString("do the thing")...)
-	send(t, m, key("enter"))
+	send(t, m, keyPress("enter"))
 
 	if m.dialog == nil || m.dialog.kind != dlgConfirm {
 		t.Fatal("running an unconfigured harness should ask before failing at create")
@@ -403,7 +403,7 @@ func TestRunningAnUnconfiguredHarnessOffersToSetItUp(t *testing.T) {
 	}
 
 	// Yes runs its setup, on the terminal, the way e does on the screen.
-	send(t, m, key("y"))
+	send(t, m, keyPress("y"))
 	if len(ds.configured) != 1 || ds.configured[0] != "hc_custom" {
 		t.Fatalf("configured = %v, want the chosen harness set up", ds.configured)
 	}
@@ -427,7 +427,7 @@ func TestRunningAHarnessWithNoSetupSaysSoRatherThanAsking(t *testing.T) {
 			harness.idx = i
 		}
 	}
-	send(t, m, key("enter"))
+	send(t, m, keyPress("enter"))
 
 	if m.dialog != nil && m.dialog.kind == dlgConfirm {
 		t.Fatal("a harness with no setup should not be offered one")
@@ -455,7 +455,7 @@ func TestAPromptWithNoDefaultAsksForOne(t *testing.T) {
 	ds := noDefaultSource(t)
 	m := newTestModel(t, ds)
 	send(t, m, typeString("do the thing")...)
-	send(t, m, key("enter"))
+	send(t, m, keyPress("enter"))
 
 	if m.dialog == nil || m.dialog.kind != dlgActions {
 		t.Fatal("a prompt with no harness and no default should ask for one")
@@ -476,10 +476,10 @@ func TestAPromptWithNoDefaultAsksForOne(t *testing.T) {
 func TestChoosingAWorkingHarnessMakesItTheDefault(t *testing.T) {
 	ds := noDefaultSource(t)
 	m := newTestModel(t, ds)
-	send(t, m, key("enter"))
+	send(t, m, keyPress("enter"))
 
 	// Claude is the first candidate and is enabled.
-	send(t, m, key("1"))
+	send(t, m, keyPress("1"))
 
 	if len(ds.didHarness) != 1 || ds.didHarness[0] != "set default hc_claude" {
 		t.Fatalf("did = %v, want the chosen harness made default", ds.didHarness)
@@ -495,13 +495,13 @@ func TestChoosingAWorkingHarnessMakesItTheDefault(t *testing.T) {
 func TestChoosingAnUnconfiguredHarnessSetsItUpThenDefaultsIt(t *testing.T) {
 	ds := noDefaultSource(t)
 	m := newTestModel(t, ds)
-	send(t, m, key("enter"))
+	send(t, m, keyPress("enter"))
 
 	// Custom is registered and disabled.
 	var chose bool
 	for i, item := range m.dialog.items {
 		if item.label == "Custom" {
-			send(t, m, key(itoa(i+1)))
+			send(t, m, keyPress(itoa(i+1)))
 			chose = true
 			break
 		}
@@ -528,7 +528,7 @@ func TestAProjectWithOnlyShellSaysThereIsNothingToRun(t *testing.T) {
 		BuiltIn: true, Shell: true,
 	}}
 	m := newTestModel(t, ds)
-	send(t, m, key("enter"))
+	send(t, m, keyPress("enter"))
 
 	if m.dialog != nil && m.dialog.kind == dlgActions {
 		t.Fatal("there is nothing to choose between, so no menu should open")
@@ -543,7 +543,7 @@ func TestAPromptWithADefaultDoesNotAsk(t *testing.T) {
 	ds := newFakeSource()
 	m := newTestModel(t, ds)
 	send(t, m, typeString("go")...)
-	send(t, m, key("enter"))
+	send(t, m, keyPress("enter"))
 
 	if m.dialog != nil && m.dialog.kind == dlgActions {
 		t.Fatal("a project with a default should not be asked for one")
@@ -561,7 +561,7 @@ func TestAPromptBeforeTheListingLandsIsNotRefused(t *testing.T) {
 	m.harnesses.loaded = false
 	m.harnesses.all = nil
 
-	send(t, m, key("enter"))
+	send(t, m, keyPress("enter"))
 
 	if m.dialog != nil && m.dialog.kind == dlgActions {
 		t.Fatal("nothing is known about the project's harnesses yet, so nothing should be asked")
@@ -577,7 +577,7 @@ func TestChoosingADefaultResumesTheRunThatAsked(t *testing.T) {
 	ds := noDefaultSource(t)
 	m := newTestModel(t, ds)
 	send(t, m, typeString("fix the reaper")...)
-	send(t, m, key("enter"), key("1"))
+	send(t, m, keyPress("enter"), keyPress("1"))
 
 	if len(ds.runs) != 1 {
 		t.Fatalf("runs = %v, want the interrupted run submitted once its harness was chosen", ds.runs)
@@ -593,11 +593,11 @@ func TestSettingUpAChosenDefaultResumesTheRunThatAsked(t *testing.T) {
 	ds := noDefaultSource(t)
 	m := newTestModel(t, ds)
 	send(t, m, typeString("fix the reaper")...)
-	send(t, m, key("enter"))
+	send(t, m, keyPress("enter"))
 
 	for i, item := range m.dialog.items {
 		if item.label == "Custom" {
-			send(t, m, key(itoa(i+1)))
+			send(t, m, keyPress(itoa(i+1)))
 			break
 		}
 	}
@@ -623,7 +623,7 @@ func TestSettingUpANamedHarnessResumesTheRunThatAsked(t *testing.T) {
 		}
 	}
 	send(t, m, typeString("fix the reaper")...)
-	send(t, m, key("enter"), key("y"))
+	send(t, m, keyPress("enter"), keyPress("y"))
 
 	if len(ds.configured) != 1 || ds.configured[0] != "hc_custom" {
 		t.Fatalf("configured = %v, want the named harness set up", ds.configured)
@@ -641,11 +641,11 @@ func TestAFailedSetupDoesNotResumeTheRun(t *testing.T) {
 	ds.configureErr = errors.New("the setup exited before it finished")
 	m := newTestModel(t, ds)
 	send(t, m, typeString("fix the reaper")...)
-	send(t, m, key("enter"))
+	send(t, m, keyPress("enter"))
 
 	for i, item := range m.dialog.items {
 		if item.label == "Custom" {
-			send(t, m, key(itoa(i+1)))
+			send(t, m, keyPress(itoa(i+1)))
 			break
 		}
 	}

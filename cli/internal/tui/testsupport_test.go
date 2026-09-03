@@ -980,67 +980,10 @@ func repaints(cmd tea.Cmd) bool {
 	return msg == tea.ClearScreen()
 }
 
-// key builds the key press a terminal would send for a keystroke, in the two
-// shapes the launcher has to cope with: a printable character carries its text,
-// and everything else is a code. Modifiers are read off the front, so any
-// combination the key lists spell — "ctrl+left", "alt+backspace", "ctrl+_" —
-// can be written here the way it is written there.
-func key(spec string) tea.KeyPressMsg {
-	modifiers := map[string]tea.KeyMod{"ctrl": tea.ModCtrl, "alt": tea.ModAlt, "shift": tea.ModShift}
-	var mod tea.KeyMod
-	for {
-		head, rest, found := strings.Cut(spec, "+")
-		if !found || rest == "" {
-			break
-		}
-		next, ok := modifiers[head]
-		if !ok {
-			break
-		}
-		mod |= next
-		spec = rest
-	}
-
-	named := map[string]rune{
-		"up":        tea.KeyUp,
-		"down":      tea.KeyDown,
-		"left":      tea.KeyLeft,
-		"right":     tea.KeyRight,
-		"enter":     tea.KeyEnter,
-		"tab":       tea.KeyTab,
-		"esc":       tea.KeyEscape,
-		"backspace": tea.KeyBackspace,
-		"delete":    tea.KeyDelete,
-		"home":      tea.KeyHome,
-		"end":       tea.KeyEnd,
-		"f1":        tea.KeyF1,
-		"f2":        tea.KeyF2,
-		"f3":        tea.KeyF3,
-	}
-	if code, ok := named[spec]; ok {
-		return tea.KeyPressMsg{Code: code, Mod: mod}
-	}
-	if spec == " " {
-		return tea.KeyPressMsg{Code: tea.KeySpace, Text: " ", Mod: mod}
-	}
-	runes := []rune(spec)
-	if len(runes) == 1 && runes[0] >= 'A' && runes[0] <= 'Z' {
-		// A capital letter is a shifted one on the wire, which is the shape
-		// keyName exists to see through.
-		return tea.KeyPressMsg{Code: runes[0] + 32, ShiftedCode: runes[0], Text: spec, Mod: mod | tea.ModShift}
-	}
-	if mod != 0 {
-		// A modified key carries no text of its own: the terminal sends the
-		// keystroke, and the name is what the launcher matches on.
-		return tea.KeyPressMsg{Code: runes[0], Mod: mod}
-	}
-	return tea.KeyPressMsg{Code: runes[0], Text: spec}
-}
-
 func typeString(s string) []tea.Msg {
 	msgs := make([]tea.Msg, 0, len(s))
 	for _, r := range s {
-		msgs = append(msgs, key(string(r)))
+		msgs = append(msgs, keyPress(string(r)))
 	}
 	return msgs
 }
@@ -1085,11 +1028,11 @@ func frameText(m *Model) string { return strings.Join(frame(m), "\n") }
 // set to the directory it is running in.
 func showAllFolders(t *testing.T, m *Model) {
 	t.Helper()
-	send(t, m, key("tab"), key("up"), key("left"))
+	send(t, m, keyPress("tab"), keyPress("up"), keyPress("left"))
 	if m.list.folder != "" {
 		t.Fatalf("folder filter is %q, want every folder", m.list.folder)
 	}
-	send(t, m, key("down"))
+	send(t, m, keyPress("down"))
 	if m.focus != focusList {
 		t.Fatalf("focus = %v, want the list", m.focus)
 	}

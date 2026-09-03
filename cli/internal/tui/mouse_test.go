@@ -145,7 +145,7 @@ func TestADoublePressActsOnTheRowUnderThePointer(t *testing.T) {
 	m := newTestModel(t, newFakeSource(boxes...))
 	showAllFolders(t, m)
 	// Mark the first row from the keyboard, then double-click the second.
-	send(t, m, key(" "))
+	send(t, m, keyPress(" "))
 
 	x, y := rowAt(t, m, boxes[1])
 	doublePress(t, m, x, y)
@@ -360,7 +360,7 @@ func TestPressingAMenuRowRunsIt(t *testing.T) {
 	slowClock(m)
 	showAllFolders(t, m)
 	// The list's own menu, on the row the cursor is on.
-	send(t, m, key("."))
+	send(t, m, keyPress("."))
 
 	// The detail, not the label: "archived" is in the reason on a row above.
 	x, y := at(t, m, "put it away")
@@ -380,7 +380,7 @@ func TestPressingAConfirmationAnswersIt(t *testing.T) {
 	m := newTestModel(t, ds)
 	slowClock(m)
 	// Disabling a harness is the confirmation nearest to hand.
-	send(t, m, key("f3"), key("d"))
+	send(t, m, keyPress("f3"), keyPress("d"))
 	if m.dialog == nil || m.dialog.kind != dlgConfirm {
 		t.Fatalf("dialog = %v, want a confirmation to answer", m.dialog)
 	}
@@ -401,7 +401,7 @@ func TestPressingAConfirmationAnswersIt(t *testing.T) {
 func TestPressingTheOptionArrowsChangesTheValue(t *testing.T) {
 	m := newTestModel(t, newFakeSource(testSandboxes()...))
 	slowClock(m)
-	send(t, m, key("ctrl+o"))
+	send(t, m, keyPress("ctrl+o"))
 
 	before := m.opts.opts[optHarness].display()
 	// The arrow on the cursor row, which the panel opens on.
@@ -418,7 +418,7 @@ func TestPressingTheOptionArrowsChangesTheValue(t *testing.T) {
 func TestPressingAHarnessRowMovesItsCursor(t *testing.T) {
 	m := newTestModel(t, newFakeSource(testSandboxes()...))
 	slowClock(m)
-	send(t, m, key("f3"))
+	send(t, m, keyPress("f3"))
 
 	want := m.harnesses.all[2]
 	x, y := at(t, m, want.displayName())
@@ -434,7 +434,7 @@ func TestPressingAHarnessRowMovesItsCursor(t *testing.T) {
 func TestTheRightButtonOpensTheHarnessMenu(t *testing.T) {
 	m := newTestModel(t, newFakeSource(testSandboxes()...))
 	slowClock(m)
-	send(t, m, key("f3"))
+	send(t, m, keyPress("f3"))
 
 	want := m.harnesses.all[1]
 	x, y := at(t, m, want.displayName())

@@ -88,7 +88,7 @@ func TestAWaitingRequestNeverTakesTheScreen(t *testing.T) {
 func TestTheRowKeyAsksWhatWasRequested(t *testing.T) {
 	m, _ := sourceWithRequest(t)
 
-	send(t, m, key("tab"), key(credentialsKey))
+	send(t, m, keyPress("tab"), keyPress(credentialsKey))
 	if m.dialog == nil {
 		t.Fatal("the key on a marked row opened nothing")
 	}
@@ -137,7 +137,7 @@ func TestTheLikeliestSecretIsOfferedFirst(t *testing.T) {
 	}
 	m := newTestModel(t, ds)
 
-	send(t, m, key("tab"), key(credentialsKey))
+	send(t, m, keyPress("tab"), keyPress(credentialsKey))
 	if m.dialog == nil {
 		t.Fatal("no dialog")
 	}
@@ -174,7 +174,7 @@ func TestChoosingANeighbouringHostAsksAboutTheBinding(t *testing.T) {
 	ds.projectSecrets = []Secret{{ID: "sec_gh", Name: "gh", Type: "bearer", Host: "api.github.com"}}
 	m := newTestModel(t, ds)
 
-	send(t, m, key("tab"), key(credentialsKey))
+	send(t, m, keyPress("tab"), keyPress(credentialsKey))
 	drain(t, m, m.dialog.action("secret:sec_gh"), 0)
 	if m.dialog == nil || m.dialog.kind != dlgConfirm {
 		t.Fatal("choosing a secret bound elsewhere did not ask about the binding")
@@ -214,7 +214,7 @@ func TestChoosingANeighbouringHostAsksAboutTheBinding(t *testing.T) {
 func TestAMatchingSecretIsApprovedWithoutAQuestion(t *testing.T) {
 	m, ds := sourceWithRequest(t)
 
-	send(t, m, key("tab"), key(credentialsKey))
+	send(t, m, keyPress("tab"), keyPress(credentialsKey))
 	drain(t, m, m.dialog.action("secret:sec_gh"), 0)
 
 	if len(ds.unbound) != 0 {
@@ -228,7 +228,7 @@ func TestAMatchingSecretIsApprovedWithoutAQuestion(t *testing.T) {
 func TestApprovingNamesTheRequestAndTheSecret(t *testing.T) {
 	m, ds := sourceWithRequest(t)
 
-	send(t, m, key("tab"), key(credentialsKey))
+	send(t, m, keyPress("tab"), keyPress(credentialsKey))
 	if m.dialog == nil {
 		t.Fatal("no dialog")
 	}
@@ -253,7 +253,7 @@ func TestApprovingNamesTheRequestAndTheSecret(t *testing.T) {
 func TestDenyingIsAnAnswerNotADismissal(t *testing.T) {
 	m, ds := sourceWithRequest(t)
 
-	send(t, m, key("tab"), key(credentialsKey))
+	send(t, m, keyPress("tab"), keyPress(credentialsKey))
 	drain(t, m, m.dialog.action("deny"), 0)
 
 	if len(ds.denials) != 1 || ds.denials[0] != "sreq_1" {
@@ -269,7 +269,7 @@ func TestDenyingIsAnAnswerNotADismissal(t *testing.T) {
 func TestANewCredentialIsStoredThenApproved(t *testing.T) {
 	m, ds := sourceWithRequest(t)
 
-	send(t, m, key("tab"), key(credentialsKey))
+	send(t, m, keyPress("tab"), keyPress(credentialsKey))
 	drain(t, m, m.dialog.action("new"), 0)
 	if m.dialog == nil || m.dialog.kind != dlgInput {
 		t.Fatal("choosing a new credential did not ask for one")
@@ -300,7 +300,7 @@ func TestANewCredentialIsStoredThenApproved(t *testing.T) {
 func TestAnEmptyTokenLeavesTheRequestWaiting(t *testing.T) {
 	m, ds := sourceWithRequest(t)
 
-	send(t, m, key("tab"), key(credentialsKey))
+	send(t, m, keyPress("tab"), keyPress(credentialsKey))
 	drain(t, m, m.dialog.action("new"), 0)
 	drain(t, m, m.dialog.action("   "), 0)
 
@@ -508,7 +508,7 @@ func TestAFailedApprovalIsShownAndSaysWhatToDo(t *testing.T) {
 	ds.approveErr = errTestRefused
 	ds.mu.Unlock()
 
-	send(t, m, key("tab"), key(credentialsKey))
+	send(t, m, keyPress("tab"), keyPress(credentialsKey))
 	drain(t, m, m.dialog.action("secret:sec_gh"), 0)
 
 	if m.dialog == nil {
@@ -542,7 +542,7 @@ func TestDecliningToRebindReturnsToTheQuestion(t *testing.T) {
 	ds.projectSecrets = []Secret{{ID: "sec_gh", Name: "gh", Type: "token", Host: "api.github.com"}}
 	m := newTestModel(t, ds)
 
-	send(t, m, key("tab"), key(credentialsKey))
+	send(t, m, keyPress("tab"), keyPress(credentialsKey))
 	drain(t, m, m.dialog.action("secret:sec_gh"), 0)
 	if m.dialog == nil || m.dialog.kind != dlgConfirm {
 		t.Fatal("choosing a secret bound elsewhere did not ask")

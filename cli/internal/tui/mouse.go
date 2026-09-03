@@ -32,10 +32,18 @@ const clickRun = 500 * time.Millisecond
 // place of the window, then the panes, then the window itself. Only the panes
 // route by their own geometry; everything else is a lookup in the hit map.
 func (m *Model) updateMouse(msg tea.MouseMsg) tea.Cmd {
-	if m.inPanes() && m.dialog == nil && !m.optionsOpen && !m.welcoming {
+	if m.inPanes() && !m.modalUp() {
 		return m.routeMouse(msg)
 	}
 	return m.windowMouse(msg)
+}
+
+// modalUp is whether something stands in place of the window rather than
+// inside it: the introduction, a dialog, or the run options. All three are
+// drawn over everything, panes included, so all three take the mouse as well
+// as the keys.
+func (m *Model) modalUp() bool {
+	return m.welcoming || m.dialog != nil || m.optionsOpen
 }
 
 // windowMouse is the mouse on one of the window's own screens.
@@ -202,7 +210,7 @@ func (m *Model) pastePrimary() tea.Cmd {
 	// composer — so a middle click puts the keyboard there as well, the way
 	// clicking into a field does. A modal or a pane already has somewhere for
 	// it to go and keeps it.
-	if m.dialog == nil && !m.inPanes() && m.focus != focusPrompt && !m.optionsOpen && !m.welcoming {
+	if !m.modalUp() && !m.inPanes() && m.focus != focusPrompt {
 		m.backToPrompt()
 	}
 	return m.updatePaste(tea.PasteMsg{Content: m.primaryText})
@@ -235,17 +243,20 @@ func (m *Model) press(what hit, clicks int) (tea.Cmd, bool) {
 		m.focusListForMouse()
 		return m.pressKeys(what.keys), true
 
+	// A row press only points at the row, so the gesture goes on into a
+	// selection; the second press is the one that acts, and takes it. A press
+	// on the empty part of a list is neither: it says which list you are in.
 	case hitRow:
-		return m.pressRow(what.idx, clicks), clicks > 1
+		return m.pressRow(what.idx, clicks), clicks > 1 && what.idx >= 0
 
 	case hitHarnessRow:
-		return m.pressHarnessRow(what.idx, clicks), clicks > 1
+		return m.pressHarnessRow(what.idx, clicks), clicks > 1 && what.idx >= 0
 
 	case hitSecretRow:
-		return m.pressSecretRow(what.idx, clicks), clicks > 1
+		return m.pressSecretRow(what.idx, clicks), clicks > 1 && what.idx >= 0
 
 	case hitRequestRow:
-		return m.pressRequestRow(what.idx, clicks), clicks > 1
+		return m.pressRequestRow(what.idx, clicks), clicks > 1 && what.idx >= 0
 
 	case hitOptionRow:
 		m.opts.moveTo(what.idx)
@@ -520,10 +531,14 @@ func (m *Model) wheelAt(ev tea.MouseWheelMsg) tea.Cmd {
 	case hitRequestRow:
 		m.requestRows.move(-lines)
 	case hitOptionRow, hitOptionCycle:
-		m.opts.move(-lines)
+		// moveTo rather than move: the arrow keys wrap round the panel, and a
+		// wheel that wrapped would jump from the last row to the first on the
+		// way past the end.
+		m.opts.moveTo(m.opts.cursor - lines)
 	case hitDialogItem:
-		if m.dialog != nil {
-			m.dialog.cursor = m.dialog.nextEnabled(clampInt(m.dialog.cursor-lines, 0, len(m.dialog.items)-1), sign(-lines))
+		if d := m.dialog; d != nil {
+			at := min(max(d.cursor-lines, 0), len(d.items)-1)
+			d.cursor = d.nextEnabled(at, sign(-lines))
 		}
 	default:
 		if m.dialog != nil {
@@ -540,12 +555,11 @@ func sign(n int) int {
 	return 1
 }
 
-func clampInt(v, lo, hi int) int { return min(max(v, lo), hi) }
-
 // keyPress is the key press a terminal would send for a keystroke, so a hint
-// that names a key can be answered by handling that key. The two shapes are
-// the ones keyName sees through: a printable character carries its text, and
-// everything else is a code with its modifiers read off the front.
+// that names a key can be answered by handling that key — and so a test can
+// press one. The two shapes are the ones keyName sees through: a printable
+// character carries its text, and everything else is a code, with its
+// modifiers read off the front of the name.
 func keyPress(spec string) tea.KeyPressMsg {
 	modifiers := map[string]tea.KeyMod{"ctrl": tea.ModCtrl, "alt": tea.ModAlt, "shift": tea.ModShift}
 	var mod tea.KeyMod

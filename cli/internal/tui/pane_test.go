@@ -1823,7 +1823,7 @@ func TestRepaintRedrawsTheWindowAndReachesTheBox(t *testing.T) {
 	ds := newFakeSource(testSandboxes()...)
 	_, m, term := openWorkspace(t, ds, "enter")
 
-	_, cmd := m.Update(key("ctrl+l"))
+	_, cmd := m.Update(keyPress("ctrl+l"))
 	if !repaints(cmd) {
 		t.Fatal("ctrl+l in a pane should redraw the window")
 	}

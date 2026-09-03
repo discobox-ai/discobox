@@ -19,7 +19,7 @@ func promptWith(t *testing.T, text string) *Model {
 func press(t *testing.T, m *Model, specs ...string) {
 	t.Helper()
 	for _, spec := range specs {
-		send(t, m, key(spec))
+		send(t, m, keyPress(spec))
 	}
 }
 
@@ -224,7 +224,7 @@ func TestTheWindowsKeysStillWinInTheComposer(t *testing.T) {
 	}
 	// Ctrl-D on what is now an empty prompt is the shell's EOF, not the
 	// textarea's delete-forward.
-	if cmd := m.updateKey(key("ctrl+d")); cmd == nil {
+	if cmd := m.updateKey(keyPress("ctrl+d")); cmd == nil {
 		t.Error("ctrl+d on an empty prompt should still close the window")
 	}
 }

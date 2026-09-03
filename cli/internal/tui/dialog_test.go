@@ -59,7 +59,7 @@ func TestADialogIsDrawnAtTheWidthItWasGiven(t *testing.T) {
 // A dialog is the only thing on screen, so it sits in the middle of it.
 func TestADialogIsCentered(t *testing.T) {
 	m := newTestModel(t, newFakeSource())
-	send(t, m, sizeMsg(120, 40), key("f1"))
+	send(t, m, sizeMsg(120, 40), keyPress("f1"))
 
 	lines := strings.Split(rawFrame(m), "\n")
 	first, last := -1, -1
@@ -100,7 +100,7 @@ func TestACenteredDialogStillFitsTheTerminal(t *testing.T) {
 	for _, size := range [][2]int{{120, 40}, {100, 24}, {80, 20}, {60, 16}} {
 		send(t, m, sizeMsg(size[0], size[1]))
 		if m.dialog == nil {
-			send(t, m, key("f1"))
+			send(t, m, keyPress("f1"))
 		}
 		frame := rawFrame(m)
 		lines := strings.Split(frame, "\n")
@@ -151,7 +151,7 @@ func draw(d *dialog) string { return d.view(newStyles(false), &zones{}, 100, 24)
 func TestSlashSearchesAScrollingBody(t *testing.T) {
 	d := searchable()
 	draw(d)
-	send := func(spec string) { d.update(key(spec)) }
+	send := func(spec string) { d.update(keyPress(spec)) }
 
 	send("/")
 	if !d.typing {
@@ -177,12 +177,12 @@ func TestNAndNWalkTheMatches(t *testing.T) {
 	d := searchable()
 	draw(d)
 	for _, spec := range []string{"/", "l", "e", "a", "d", "e", "r", "enter"} {
-		d.update(key(spec))
+		d.update(keyPress(spec))
 	}
 	if d.typing {
 		t.Fatal("Enter left the search line open")
 	}
-	d.update(key("n"))
+	d.update(keyPress("n"))
 	if got := draw(d); !strings.Contains(got, "the leader quits") || !strings.Contains(got, "/leader") {
 		t.Fatalf("n did not go to the second match:\n%s", got)
 	}
@@ -191,12 +191,12 @@ func TestNAndNWalkTheMatches(t *testing.T) {
 	}
 	// Past the end is the first again: two matches are a ring, not a list with
 	// a wall at each end.
-	d.update(key("n"))
+	d.update(keyPress("n"))
 	draw(d)
 	if d.match != 0 {
 		t.Fatalf("match = %d after walking past the end, want the first", d.match)
 	}
-	d.update(key("N"))
+	d.update(keyPress("N"))
 	draw(d)
 	if d.match != 1 {
 		t.Fatalf("match = %d after N from the first, want the last", d.match)
@@ -209,19 +209,19 @@ func TestEscAbandonsTheSearchAndKeepsYourPlace(t *testing.T) {
 	d := searchable()
 	draw(d)
 	for range 10 {
-		d.update(key("down"))
+		d.update(keyPress("down"))
 	}
 	draw(d)
 	was := d.offset
 
 	for _, spec := range []string{"/", "l", "e", "a", "d", "e", "r"} {
-		d.update(key(spec))
+		d.update(keyPress(spec))
 	}
 	draw(d)
 	if d.offset == was {
 		t.Fatal("the search did not move the body")
 	}
-	if _, closed := d.update(key("esc")); closed {
+	if _, closed := d.update(keyPress("esc")); closed {
 		t.Fatal("Esc closed the dialog instead of the search line")
 	}
 	draw(d)
@@ -232,7 +232,7 @@ func TestEscAbandonsTheSearchAndKeepsYourPlace(t *testing.T) {
 		t.Fatalf("offset = %d after abandoning the search, want %d", d.offset, was)
 	}
 	// With no search open, Esc is the way out again.
-	if _, closed := d.update(key("esc")); !closed {
+	if _, closed := d.update(keyPress("esc")); !closed {
 		t.Fatal("Esc did not close the dialog")
 	}
 }
@@ -242,7 +242,7 @@ func TestBackspacingOutOfTheSearchEndsIt(t *testing.T) {
 	d := searchable()
 	draw(d)
 	for _, spec := range []string{"/", "l", "backspace", "backspace"} {
-		d.update(key(spec))
+		d.update(keyPress(spec))
 	}
 	if d.typing || d.query != "" {
 		t.Fatalf("typing = %v, query = %q, want the search gone", d.typing, d.query)
@@ -270,7 +270,7 @@ func TestASearchedDialogStaysInsideItsBox(t *testing.T) {
 		d := searchable()
 		d.view(st, &zones{}, window, 24)
 		for _, spec := range []string{"/", "l", "e", "a", "d", "e", "r"} {
-			d.update(key(spec))
+			d.update(keyPress(spec))
 		}
 		for _, line := range strings.Split(d.view(st, &zones{}, window, 24), "\n") {
 			if got := lipgloss.Width(line); got > dialogWidth(window) {
@@ -285,7 +285,7 @@ func TestASearchedDialogStaysInsideItsBox(t *testing.T) {
 // without reading down the whole of it.
 func TestTheHelpIsSearchable(t *testing.T) {
 	m := newTestModel(t, newFakeSource(testSandboxes()...))
-	send(t, m, sizeMsg(100, 30), key("f1"), key("/"))
+	send(t, m, sizeMsg(100, 30), keyPress("f1"), keyPress("/"))
 	send(t, m, typeString("vscode")...)
 	got := plainFrame(m)
 	if !strings.Contains(got, "/vscode") {

@@ -11,17 +11,17 @@ import (
 func TestTheSourceRowCyclesAndOpensItsList(t *testing.T) {
 	m := newTestModel(t, newFakeSource(testSandboxes()...))
 
-	send(t, m, key("ctrl+o"))
+	send(t, m, keyPress("ctrl+o"))
 	if !m.optionsOpen {
 		t.Fatal("ctrl+o should open the run options")
 	}
 	for m.opts.cursor != optSource {
-		send(t, m, key("down"))
+		send(t, m, keyPress("down"))
 	}
 	// Right moves to the next source, and the list follows it to the folder
 	// that source's discoboxes are filed under — the header and the row are one
 	// control, so neither is left saying something the other contradicts.
-	send(t, m, key("right"))
+	send(t, m, keyPress("right"))
 	if got := m.opts.opts[optSource].selected(); got != "/src/obot" {
 		t.Fatalf("source = %q, want the next one the project holds", got)
 	}
@@ -30,17 +30,17 @@ func TestTheSourceRowCyclesAndOpensItsList(t *testing.T) {
 	}
 	// Right again reaches the third entry rather than bouncing back: the row's
 	// order does not move under the cursor when the folder follows it.
-	send(t, m, key("right"))
+	send(t, m, keyPress("right"))
 	if got := m.opts.opts[optSource].selected(); got != "https://github.com/acme/foo" {
 		t.Fatalf("source = %q, want the third entry", got)
 	}
-	send(t, m, key("right"))
+	send(t, m, keyPress("right"))
 	if got := m.opts.opts[optSource].selected(); got != sourceNone {
 		t.Fatalf("source = %q, want no source at the end of the row", got)
 	}
-	send(t, m, key("right"))
+	send(t, m, keyPress("right"))
 
-	send(t, m, key("enter"))
+	send(t, m, keyPress("enter"))
 	if m.dialog == nil {
 		t.Fatal("enter on the Source row should open the whole list")
 	}
@@ -65,18 +65,18 @@ func dialogLabels(d *dialog) []string {
 func TestTheSourceDropdownTakesAPathOfYourOwn(t *testing.T) {
 	m := newTestModel(t, newFakeSource(testSandboxes()...))
 
-	send(t, m, key("ctrl+o"))
+	send(t, m, keyPress("ctrl+o"))
 	for m.opts.cursor != optSource {
-		send(t, m, key("down"))
+		send(t, m, keyPress("down"))
 	}
-	send(t, m, key("enter"), key("e"))
+	send(t, m, keyPress("enter"), keyPress("e"))
 	if m.dialog == nil || m.dialog.kind != dlgInput {
 		t.Fatal("the last row should open the input field")
 	}
 	for _, r := range "/src/typed@wip" {
-		send(t, m, key(string(r)))
+		send(t, m, keyPress(string(r)))
 	}
-	send(t, m, key("enter"))
+	send(t, m, keyPress("enter"))
 
 	if got := m.opts.request("").Source; got != "/src/typed@wip" {
 		t.Fatalf("source = %q, want what was typed", got)
@@ -98,7 +98,7 @@ func TestTheHeaderStillMovesTheSource(t *testing.T) {
 	m := newTestModel(t, newFakeSource(testSandboxes()...))
 
 	m.opts.chooseSource("https://github.com/acme/foo")
-	send(t, m, key("tab"), key("up"), key("right"))
+	send(t, m, keyPress("tab"), keyPress("up"), keyPress("right"))
 	if m.list.folder != "/src/obot" {
 		t.Fatalf("folder = %q, want the header to have moved", m.list.folder)
 	}

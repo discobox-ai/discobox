@@ -26,7 +26,7 @@ func TestShiftTabCyclesTheHarnessWithoutOpeningOptions(t *testing.T) {
 	m := newTestModel(t, newFakeSource())
 	before := m.opts.opts[optHarness].display()
 
-	send(t, m, key("shift+tab"))
+	send(t, m, keyPress("shift+tab"))
 
 	if m.optionsOpen {
 		t.Fatal("shift+tab should not open the run options")

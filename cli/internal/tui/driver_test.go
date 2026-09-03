@@ -37,7 +37,7 @@ func (d *driver) start() {
 
 // key presses a key and settles.
 func (d *driver) key(spec string) {
-	d.dispatch(key(spec))
+	d.dispatch(keyPress(spec))
 	d.settle()
 }
 

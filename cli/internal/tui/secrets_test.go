@@ -37,7 +37,7 @@ func secretsFixture(t *testing.T) (*Model, *fakeSource) {
 		{ID: "grant_2", SecretID: "sec_gh", Scope: "project", ScopeKey: "project-1", Host: "github.com"},
 	}
 	m := newTestModel(t, ds)
-	send(t, m, key(secretsKey))
+	send(t, m, keyPress(secretsKey))
 	if !m.secretsOpen {
 		t.Fatal("the secrets screen did not open")
 	}
@@ -72,7 +72,7 @@ func TestAnUnboundSecretSaysSo(t *testing.T) {
 func TestGrantsAreListedAndRevoked(t *testing.T) {
 	m, ds := secretsFixture(t)
 
-	send(t, m, key("enter"))
+	send(t, m, keyPress("enter"))
 	if m.dialog == nil || m.dialog.kind != dlgActions {
 		t.Fatal("enter did not list the grants standing on the secret")
 	}
@@ -101,7 +101,7 @@ func TestGrantsAreListedAndRevoked(t *testing.T) {
 		}
 	}
 	// Esc comes back to the grants, so the withdraw key is right there.
-	send(t, m, key("esc"))
+	send(t, m, keyPress("esc"))
 	if m.dialog == nil || m.dialog.kind != dlgActions {
 		t.Fatalf("dialog = %s, want the grants back", describe(m.dialog))
 	}
@@ -125,7 +125,7 @@ func TestGrantsAreListedAndRevoked(t *testing.T) {
 func TestANewSecretIsNamedBoundAndStoredMasked(t *testing.T) {
 	m, ds := secretsFixture(t)
 
-	send(t, m, key("n"))
+	send(t, m, keyPress("n"))
 	if m.dialog == nil || m.dialog.kind != dlgForm {
 		t.Fatalf("n did not open the new-secret form: %s", describe(m.dialog))
 	}
@@ -160,7 +160,7 @@ func TestANewSecretIsNamedBoundAndStoredMasked(t *testing.T) {
 func TestTheOAuthRowsAreShownBeforeTheyAreAsked(t *testing.T) {
 	m, _ := secretsFixture(t)
 
-	send(t, m, key("n"))
+	send(t, m, keyPress("n"))
 	if rowShown(m, "refresh") {
 		t.Fatal("a token is being asked to renew itself")
 	}
@@ -186,8 +186,8 @@ func TestTheOAuthRowsAreShownBeforeTheyAreAsked(t *testing.T) {
 func TestARequiredRowRefusesTheFormRatherThanClosingIt(t *testing.T) {
 	m, ds := secretsFixture(t)
 
-	send(t, m, key("n"))
-	send(t, m, key("enter"))
+	send(t, m, keyPress("n"))
+	send(t, m, keyPress("enter"))
 	if m.dialog == nil || m.dialog.kind != dlgForm {
 		t.Fatalf("the form went away unanswered: %s", describe(m.dialog))
 	}
@@ -202,7 +202,7 @@ func TestARequiredRowRefusesTheFormRatherThanClosingIt(t *testing.T) {
 func TestTheBindingCanBeEditedAndReleased(t *testing.T) {
 	m, ds := secretsFixture(t)
 
-	send(t, m, key("e"))
+	send(t, m, keyPress("e"))
 	if m.dialog == nil || m.dialog.kind != dlgForm {
 		t.Fatalf("e did not offer what a secret says about itself: %s", describe(m.dialog))
 	}
@@ -229,7 +229,7 @@ func TestTheBindingCanBeEditedAndReleased(t *testing.T) {
 func TestASecretsValueIsReplacedFromTheSameCard(t *testing.T) {
 	m, ds := secretsFixture(t)
 
-	send(t, m, key("e"))
+	send(t, m, keyPress("e"))
 	if !rowShown(m, "token") {
 		t.Fatal("the value cannot be replaced from the card that edits the secret")
 	}
@@ -238,14 +238,14 @@ func TestASecretsValueIsReplacedFromTheSameCard(t *testing.T) {
 	if !strings.Contains(dialogText(m), "unchanged — type to replace it") {
 		t.Fatalf("the row does not say what leaving it empty means:\n%s", dialogText(m))
 	}
-	send(t, m, key("enter"))
+	send(t, m, keyPress("enter"))
 	if len(ds.revalued) != 0 {
 		t.Fatalf("revalued = %v, want an untouched value left alone", ds.revalued)
 	}
 
-	send(t, m, key("e"))
+	send(t, m, keyPress("e"))
 	typeInto(t, m, "token", "ghp_rotated")
-	send(t, m, key("enter"))
+	send(t, m, keyPress("enter"))
 	if len(ds.updated) != 1 || ds.updated[0].Value == nil {
 		t.Fatalf("updated = %#v, want the new value sent", ds.updated)
 	}
@@ -272,11 +272,11 @@ func TestReplacingAnOAuthValueTakesAllOfIt(t *testing.T) {
 		OAuth: &SecretOAuth{TokenURL: "https://console.anthropic.com/v1/oauth/token"},
 	}}
 	ds.mu.Unlock()
-	send(t, m, key("r"))
-	send(t, m, key("e"))
+	send(t, m, keyPress("r"))
+	send(t, m, keyPress("e"))
 
 	typeInto(t, m, "refresh", "sk-ant-ort01-new")
-	send(t, m, key("enter"))
+	send(t, m, keyPress("enter"))
 	if len(ds.updated) != 0 {
 		t.Fatalf("updated = %#v, want half a credential refused", ds.updated)
 	}
@@ -285,7 +285,7 @@ func TestReplacingAnOAuthValueTakesAllOfIt(t *testing.T) {
 	}
 
 	typeInto(t, m, "access", "sk-ant-oat01-new")
-	send(t, m, key("enter"))
+	send(t, m, keyPress("enter"))
 	if len(ds.updated) != 1 || ds.updated[0].Value == nil {
 		t.Fatalf("updated = %#v, want the whole credential stored", ds.updated)
 	}
@@ -306,7 +306,7 @@ func TestReplacingAnOAuthValueTakesAllOfIt(t *testing.T) {
 func TestTheKindOfAStoredCredentialCannotBeChanged(t *testing.T) {
 	m, _ := secretsFixture(t)
 
-	send(t, m, key("e"))
+	send(t, m, keyPress("e"))
 	if rowShown(m, "kind") {
 		t.Fatal("an existing credential is offered a change of kind")
 	}
@@ -320,7 +320,7 @@ func TestTheKindOfAStoredCredentialCannotBeChanged(t *testing.T) {
 func TestDeletingAsksFirstAndSaysWhatGoesWithIt(t *testing.T) {
 	m, ds := secretsFixture(t)
 
-	send(t, m, key("d"))
+	send(t, m, keyPress("d"))
 	if m.dialog == nil || m.dialog.kind != dlgConfirm {
 		t.Fatal("d deleted without asking")
 	}
@@ -356,7 +356,7 @@ func TestTheScreenCountsAndOpensWaitingRequests(t *testing.T) {
 	if !strings.Contains(body, "github") || !strings.Contains(body, "api.github.com") {
 		t.Fatalf("the waiting request is not drawn as a row:\n%s", body)
 	}
-	send(t, m, key(credentialsKey))
+	send(t, m, keyPress(credentialsKey))
 	// Reading the secrets comes first, then the question itself.
 	drain(t, m, m.loadCredentialRequests(), 0)
 	if m.dialog == nil {
@@ -366,11 +366,11 @@ func TestTheScreenCountsAndOpensWaitingRequests(t *testing.T) {
 
 func TestTheScreenIsAToggleAndEscapeLeavesIt(t *testing.T) {
 	m, _ := secretsFixture(t)
-	send(t, m, key(secretsKey))
+	send(t, m, keyPress(secretsKey))
 	if m.secretsOpen {
 		t.Fatal("the key that opened the screen did not put it away")
 	}
-	send(t, m, key(secretsKey), key("esc"))
+	send(t, m, keyPress(secretsKey), keyPress("esc"))
 	if m.secretsOpen {
 		t.Fatal("esc did not leave the screen")
 	}
@@ -399,7 +399,7 @@ func TestTheScreenAnswersARequestNoDiscoboxOwns(t *testing.T) {
 		}
 	}
 
-	send(t, m, key(credentialsKey))
+	send(t, m, keyPress(credentialsKey))
 	drain(t, m, m.loadCredentialRequests(), 0)
 	if m.dialog == nil {
 		t.Fatal("the key did not open the waiting request")
@@ -415,17 +415,17 @@ func TestTheScreenAnswersARequestNoDiscoboxOwns(t *testing.T) {
 func TestTheNewSecretFormIsAnsweredWithTheKeyboard(t *testing.T) {
 	m, ds := secretsFixture(t)
 
-	send(t, m, key("n"))
+	send(t, m, keyPress("n"))
 	if m.dialog == nil || m.dialog.kind != dlgForm {
 		t.Fatalf("dialog = %s, want the new-secret form", describe(m.dialog))
 	}
 	send(t, m, typeString("npm")...)
-	send(t, m, key("down"), key("down")) // past the kind, onto the binding
+	send(t, m, keyPress("down"), keyPress("down")) // past the kind, onto the binding
 	send(t, m, typeString("registry.npmjs.org")...)
-	send(t, m, key("down")) // the lifetime, on its default
-	send(t, m, key("down")) // and past it to the value
+	send(t, m, keyPress("down")) // the lifetime, on its default
+	send(t, m, keyPress("down")) // and past it to the value
 	send(t, m, typeString("npm_typedbyahuman")...)
-	send(t, m, key("enter"))
+	send(t, m, keyPress("enter"))
 
 	if m.dialog != nil {
 		t.Fatalf("dialog = %s, want the form gone once it was answered", describe(m.dialog))
@@ -453,18 +453,18 @@ func TestTheNewSecretFormIsAnsweredWithTheKeyboard(t *testing.T) {
 func TestATokenIsPastedIntoTheSecretItAnswers(t *testing.T) {
 	m, ds := secretsFixture(t)
 
-	send(t, m, key("n"))
+	send(t, m, keyPress("n"))
 	send(t, m, typeString("npm")...)
-	send(t, m, key("down"), key("down"))
+	send(t, m, keyPress("down"), keyPress("down"))
 	send(t, m, tea.PasteMsg{Content: "registry.npmjs.org"})
-	send(t, m, key("down"), key("down"))
+	send(t, m, keyPress("down"), keyPress("down"))
 
 	// Long, because a credential is as long as whoever issued it made it: a
 	// character limit on the field would store the front of this and fail
 	// later as a wrong password.
 	token := "npm_" + strings.Repeat("s3cr3t", 60)
 	send(t, m, tea.PasteMsg{Content: token})
-	send(t, m, key("enter"))
+	send(t, m, keyPress("enter"))
 
 	if len(ds.createdSecrets) != 1 {
 		t.Fatalf("created = %#v, want the secret the pasted answers describe", ds.createdSecrets)
@@ -487,7 +487,7 @@ func TestATokenIsPastedIntoTheSecretItAnswers(t *testing.T) {
 func TestAPreApprovalIsOneFormWithEveryAnswerOnIt(t *testing.T) {
 	m, ds := secretsFixture(t)
 
-	send(t, m, key(grantCreateKey))
+	send(t, m, keyPress(grantCreateKey))
 	if m.dialog == nil || m.dialog.kind != dlgForm {
 		t.Fatalf("dialog = %s, want the grant form", describe(m.dialog))
 	}
@@ -498,7 +498,7 @@ func TestAPreApprovalIsOneFormWithEveryAnswerOnIt(t *testing.T) {
 	}
 	onRow(t, m, "scope")
 	for m.dialog.form.chosen("scope") != "sandbox" {
-		send(t, m, key("right"))
+		send(t, m, keyPress("right"))
 	}
 	if !rowShown(m, "sandbox") {
 		t.Fatal("a discobox-scoped grant does not ask which discobox")
@@ -529,7 +529,7 @@ func TestAPreApprovalIsOneFormWithEveryAnswerOnIt(t *testing.T) {
 	clearRow(t, m, "host")
 	send(t, m, typeString("api.github.com")...)
 	customTTL(t, m, "ttl", "900")
-	send(t, m, key("enter"))
+	send(t, m, keyPress("enter"))
 
 	if len(ds.createdGrants) != 1 {
 		t.Fatalf("created = %#v, want one grant", ds.createdGrants)
@@ -552,13 +552,13 @@ func TestAPreApprovalIsOneFormWithEveryAnswerOnIt(t *testing.T) {
 func TestAnAccessGrantAsksForTheVariableAndTheUse(t *testing.T) {
 	m, ds := secretsFixture(t)
 
-	send(t, m, key(grantCreateKey))
+	send(t, m, keyPress(grantCreateKey))
 	onRow(t, m, "taken")
-	send(t, m, key("right"))
+	send(t, m, keyPress("right"))
 	if !rowShown(m, "envVar") || !rowShown(m, "use") {
 		t.Fatal("the form does not ask what the credential is for")
 	}
-	send(t, m, key("enter"))
+	send(t, m, keyPress("enter"))
 	if m.dialog == nil || m.dialog.kind != dlgForm {
 		t.Fatalf("the form went away with nothing answered: %s", describe(m.dialog))
 	}
@@ -568,7 +568,7 @@ func TestAnAccessGrantAsksForTheVariableAndTheUse(t *testing.T) {
 
 	typeInto(t, m, "envVar", "GH_TOKEN")
 	typeInto(t, m, "use", "Open a pull request")
-	send(t, m, key("enter"))
+	send(t, m, keyPress("enter"))
 
 	if len(ds.createdGrants) != 1 {
 		t.Fatalf("created = %#v, want one grant", ds.createdGrants)
@@ -595,7 +595,7 @@ func TestTheFormIsTheSameHeightOnEveryRow(t *testing.T) {
 		{"the grant card", grantCreateKey},
 	} {
 		for _, width := range []int{60, 80, 120} {
-			send(t, m, key(open.key))
+			send(t, m, keyPress(open.key))
 			f := m.dialog.form
 			rows, on := 0, ""
 			for i := range f.rows {
@@ -614,7 +614,7 @@ func TestTheFormIsTheSameHeightOnEveryRow(t *testing.T) {
 						open.what, width, rows, on, height, f.rows[i].key)
 				}
 			}
-			send(t, m, key("esc"))
+			send(t, m, keyPress("esc"))
 		}
 	}
 }
@@ -627,7 +627,7 @@ func chooseTTL(t *testing.T, m *Model, row, preset string) {
 		if i > len(m.dialog.form.rows)+8 {
 			t.Fatalf("the %s picker has no %q", row, preset)
 		}
-		send(t, m, key("right"))
+		send(t, m, keyPress("right"))
 	}
 }
 
@@ -656,9 +656,9 @@ func rowShown(m *Model, key string) bool {
 func TestAnUnreadableLifetimeGrantsNothing(t *testing.T) {
 	m, ds := secretsFixture(t)
 
-	send(t, m, key(grantCreateKey))
+	send(t, m, keyPress(grantCreateKey))
 	customTTL(t, m, "ttl", "a while")
-	send(t, m, key("enter"))
+	send(t, m, keyPress("enter"))
 
 	if len(ds.createdGrants) != 0 {
 		t.Fatalf("created = %#v, want nothing", ds.createdGrants)
@@ -676,7 +676,7 @@ func TestAnUnreadableLifetimeGrantsNothing(t *testing.T) {
 func TestLeavingAGrantReturnsToTheGrants(t *testing.T) {
 	m, _ := secretsFixture(t)
 
-	send(t, m, key("enter"))
+	send(t, m, keyPress("enter"))
 	if m.dialog == nil || m.dialog.kind != dlgActions {
 		t.Fatalf("dialog = %s, want the grants", describe(m.dialog))
 	}
@@ -698,7 +698,7 @@ func TestLeavingAGrantReturnsToTheGrants(t *testing.T) {
 func TestDecliningARevokeReturnsToTheGrants(t *testing.T) {
 	m, ds := secretsFixture(t)
 
-	send(t, m, key("enter"))
+	send(t, m, keyPress("enter"))
 	drain(t, m, m.dialog.alt("grant_1"), 0)
 	if m.dialog == nil || m.dialog.kind != dlgConfirm {
 		t.Fatalf("dialog = %s, want the question", describe(m.dialog))
@@ -726,21 +726,21 @@ func TestTheTablesHandFocusToEachOther(t *testing.T) {
 	if m.onRequests {
 		t.Fatal("the screen opens on the requests")
 	}
-	send(t, m, key("end"))
-	send(t, m, key("down"))
+	send(t, m, keyPress("end"))
+	send(t, m, keyPress("down"))
 	if !m.onRequests {
 		t.Fatal("down past the last secret did not reach the requests")
 	}
-	send(t, m, key("up"))
+	send(t, m, keyPress("up"))
 	if m.onRequests {
 		t.Fatal("up past the first request did not return to the secrets")
 	}
 	// And Tab crosses either way, wherever the cursor is.
-	send(t, m, key("tab"))
+	send(t, m, keyPress("tab"))
 	if !m.onRequests {
 		t.Fatal("tab did not cross to the requests")
 	}
-	send(t, m, key("tab"))
+	send(t, m, keyPress("tab"))
 	if m.onRequests {
 		t.Fatal("tab did not cross back")
 	}
@@ -748,7 +748,7 @@ func TestTheTablesHandFocusToEachOther(t *testing.T) {
 	if !m.secretsOpen {
 		t.Fatal("tab closed the screen")
 	}
-	send(t, m, key("esc"))
+	send(t, m, keyPress("esc"))
 	if m.secretsOpen {
 		t.Fatal("esc did not leave the screen")
 	}
@@ -766,17 +766,17 @@ func TestEnterOnARequestAnswersThatOne(t *testing.T) {
 	ds.mu.Unlock()
 	send(t, m, tickMsg{})
 
-	send(t, m, key("tab"))
+	send(t, m, keyPress("tab"))
 	if !m.onRequests || len(m.requestRows.all) != 2 {
 		t.Fatalf("requests = %d, want both", len(m.requestRows.all))
 	}
 	// The second row, which is not the one C would have picked.
-	send(t, m, key("down"))
+	send(t, m, keyPress("down"))
 	chosen := m.requestRows.current()
 	if chosen == nil {
 		t.Fatal("no request under the cursor")
 	}
-	send(t, m, key("enter"))
+	send(t, m, keyPress("enter"))
 	drain(t, m, m.loadCredentialRequests(), 0)
 	if m.dialog == nil {
 		t.Fatal("enter answered nothing")
@@ -793,9 +793,9 @@ func TestGrantsCanBeMadeFromTheGrantsList(t *testing.T) {
 	ds.mu.Lock()
 	ds.projectGrants = nil
 	ds.mu.Unlock()
-	send(t, m, key("r"))
+	send(t, m, keyPress("r"))
 
-	send(t, m, key("enter"))
+	send(t, m, keyPress("enter"))
 	if m.dialog == nil || m.dialog.kind != dlgActions {
 		t.Fatalf("dialog = %s, want the grants", describe(m.dialog))
 	}
@@ -848,19 +848,19 @@ func TestARequestRowSaysWhatItIsAbout(t *testing.T) {
 func TestAProjectGrantCanBeAccessOnlyToo(t *testing.T) {
 	m, ds := secretsFixture(t)
 
-	send(t, m, key(grantCreateKey))
+	send(t, m, keyPress(grantCreateKey))
 	if got := m.dialog.form.chosen("scope"); got != grantScopeProject {
 		t.Fatalf("scope = %q, want the form to open on the widest", got)
 	}
 	onRow(t, m, "taken")
-	send(t, m, key("right"))
+	send(t, m, keyPress("right"))
 	if !rowShown(m, "envVar") || !rowShown(m, "use") {
 		t.Fatal("a project grant is not offered the agent credentials shape")
 	}
 	typeInto(t, m, "envVar", "GH_TOKEN")
 	typeInto(t, m, "use", "Open a PR")
 	chooseTTL(t, m, "ttl", ttlNever)
-	send(t, m, key("enter"))
+	send(t, m, keyPress("enter"))
 
 	if len(ds.createdGrants) != 1 {
 		t.Fatalf("created = %#v, want one grant", ds.createdGrants)
@@ -881,10 +881,10 @@ func TestAProjectGrantCanBeAccessOnlyToo(t *testing.T) {
 func TestAnOAuthSecretIsRegisteredFromTheWindow(t *testing.T) {
 	m, ds := secretsFixture(t)
 
-	send(t, m, key("n"))
+	send(t, m, keyPress("n"))
 	typeInto(t, m, "name", "claude")
 	onRow(t, m, "kind")
-	send(t, m, key("right"))
+	send(t, m, keyPress("right"))
 	typeInto(t, m, "host", "api.anthropic.com")
 	typeInto(t, m, "access", "sk-ant-oat01-access")
 	typeInto(t, m, "refresh", "sk-ant-ort01-refresh")
@@ -895,7 +895,7 @@ func TestAnOAuthSecretIsRegisteredFromTheWindow(t *testing.T) {
 	if text := dialogText(m); strings.Contains(text, "sk-ant-oat01-access") || strings.Contains(text, "sk-ant-ort01-refresh") {
 		t.Fatalf("a token is echoed:\n%s", text)
 	}
-	send(t, m, key("enter"))
+	send(t, m, keyPress("enter"))
 
 	if len(ds.createdSecrets) != 1 {
 		t.Fatalf("created = %#v, want one", ds.createdSecrets)
@@ -918,12 +918,12 @@ func TestAnOAuthSecretIsRegisteredFromTheWindow(t *testing.T) {
 func TestAnOAuthSecretWithoutRefreshMaterialStoresNothing(t *testing.T) {
 	m, ds := secretsFixture(t)
 
-	send(t, m, key("n"))
+	send(t, m, keyPress("n"))
 	typeInto(t, m, "name", "claude")
 	onRow(t, m, "kind")
-	send(t, m, key("right"))
+	send(t, m, keyPress("right"))
 	typeInto(t, m, "access", "sk-ant-oat01-access")
-	send(t, m, key("enter"))
+	send(t, m, keyPress("enter"))
 
 	if len(ds.createdSecrets) != 0 {
 		t.Fatalf("created = %#v, want nothing", ds.createdSecrets)
@@ -955,9 +955,9 @@ func TestOpeningAnOAuthSecretShowsWhatItIs(t *testing.T) {
 	}}
 	ds.projectGrants = nil
 	ds.mu.Unlock()
-	send(t, m, key("r"))
+	send(t, m, keyPress("r"))
 
-	send(t, m, key("enter"))
+	send(t, m, keyPress("enter"))
 	if m.dialog == nil {
 		t.Fatal("enter opened nothing")
 	}
@@ -989,8 +989,8 @@ func TestASecretThatCannotRenewSaysSo(t *testing.T) {
 		OAuth: &SecretOAuth{TokenURL: "https://example.com/token"},
 	}}
 	ds.mu.Unlock()
-	send(t, m, key("r"))
-	send(t, m, key("enter"))
+	send(t, m, keyPress("r"))
+	send(t, m, keyPress("enter"))
 
 	if m.dialog == nil || !strings.Contains(dialogText(m), "cannot renew itself") {
 		t.Fatalf("body = %s, want it to say the credential cannot renew", describe(m.dialog))
@@ -1008,10 +1008,10 @@ func TestTheWindowSaysHarnessAndSendsHarnessConfig(t *testing.T) {
 		ScopeKey: "harness_1", Host: "api.github.com",
 	}}
 	ds.mu.Unlock()
-	send(t, m, key("r"))
+	send(t, m, keyPress("r"))
 
 	// Drawn on the grant row, and again when the grant is read.
-	send(t, m, key("enter"))
+	send(t, m, keyPress("enter"))
 	var row action
 	for _, item := range m.dialog.items {
 		if item.key == "grant_h" {
@@ -1030,12 +1030,12 @@ func TestTheWindowSaysHarnessAndSendsHarnessConfig(t *testing.T) {
 	}
 
 	// The form says harness too, and still sends the resource's own word.
-	send(t, m, key("esc"))
-	send(t, m, key("esc"))
-	send(t, m, key(grantCreateKey))
+	send(t, m, keyPress("esc"))
+	send(t, m, keyPress("esc"))
+	send(t, m, keyPress(grantCreateKey))
 	onRow(t, m, "scope")
 	for m.dialog.form.chosen("scope") != "harnessConfig" {
-		send(t, m, key("right"))
+		send(t, m, keyPress("right"))
 	}
 	if got := m.dialog.form.chosenLabel("scope"); got != "one harness" {
 		t.Fatalf("offered = %q, want it to say harness", got)
@@ -1043,7 +1043,7 @@ func TestTheWindowSaysHarnessAndSendsHarnessConfig(t *testing.T) {
 	if !rowShown(m, "harness") {
 		t.Fatal("a harness grant does not ask which harness")
 	}
-	send(t, m, key("enter"))
+	send(t, m, keyPress("enter"))
 
 	if len(ds.createdGrants) != 1 || ds.createdGrants[0].Scope != "harnessConfig" {
 		t.Fatalf("created = %#v, want the server's own word on the wire", ds.createdGrants)
@@ -1059,7 +1059,7 @@ func TestTheWindowSaysHarnessAndSendsHarnessConfig(t *testing.T) {
 func TestTheGrantLimitIsEditedAndZeroMeansForever(t *testing.T) {
 	m, ds := secretsFixture(t)
 
-	send(t, m, key("e"))
+	send(t, m, keyPress("e"))
 	if m.dialog == nil || m.dialog.kind != dlgForm {
 		t.Fatalf("e did not offer what a secret says about itself: %s", describe(m.dialog))
 	}
@@ -1081,7 +1081,7 @@ func TestTheGrantLimitIsEditedAndZeroMeansForever(t *testing.T) {
 	if got := m.dialog.form.chosenLabel("ttl"); got != "no limit" {
 		t.Fatalf("zero reads as %q, want it to say there is no limit", got)
 	}
-	send(t, m, key("enter"))
+	send(t, m, keyPress("enter"))
 	if len(ds.limited) != 1 || ds.limited[0] != "sec_gh=0" {
 		t.Fatalf("limited = %v, want the limit lifted on the secret under the cursor", ds.limited)
 	}
@@ -1202,7 +1202,7 @@ func clearRow(t *testing.T, m *Model, row string) {
 	t.Helper()
 	onRow(t, m, row)
 	for range formValue(t, m, row) {
-		send(t, m, key("backspace"))
+		send(t, m, keyPress("backspace"))
 	}
 }
 

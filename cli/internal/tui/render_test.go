@@ -19,33 +19,33 @@ func TestFrames(t *testing.T) {
 		drive func(m *Model)
 	}{
 		{"prompt", func(m *Model) { send(t, m, typeString("make the pool reaper stop leaking volumes")...) }},
-		{"list", func(m *Model) { send(t, m, key("tab"), key("down")) }},
-		{"multiselect", func(m *Model) { send(t, m, key("tab"), key(" "), key("down"), key(" ")) }},
-		{"visual", func(m *Model) { send(t, m, key("tab"), key("V"), key("down")) }},
-		{"archived", func(m *Model) { send(t, m, key("tab"), key("A"), key("G")) }},
-		{"actions", func(m *Model) { send(t, m, key("tab"), key(".")) }},
-		{"options", func(m *Model) { send(t, m, key("shift+tab")) }},
-		{"harnesses", func(m *Model) { send(t, m, key("f3")) }},
+		{"list", func(m *Model) { send(t, m, keyPress("tab"), keyPress("down")) }},
+		{"multiselect", func(m *Model) { send(t, m, keyPress("tab"), keyPress(" "), keyPress("down"), keyPress(" ")) }},
+		{"visual", func(m *Model) { send(t, m, keyPress("tab"), keyPress("V"), keyPress("down")) }},
+		{"archived", func(m *Model) { send(t, m, keyPress("tab"), keyPress("A"), keyPress("G")) }},
+		{"actions", func(m *Model) { send(t, m, keyPress("tab"), keyPress(".")) }},
+		{"options", func(m *Model) { send(t, m, keyPress("shift+tab")) }},
+		{"harnesses", func(m *Model) { send(t, m, keyPress("f3")) }},
 		// The second row is the one every action applies to, so it is the frame
 		// that shows the whole hint line — s included.
-		{"harnesses-default", func(m *Model) { send(t, m, key("f3"), key("j")) }},
-		{"harness-config", func(m *Model) { send(t, m, key("f3"), key("v")) }},
-		{"harness-files", func(m *Model) { send(t, m, key("f3"), key("f")) }},
-		{"help", func(m *Model) { send(t, m, key("f1")) }},
+		{"harnesses-default", func(m *Model) { send(t, m, keyPress("f3"), keyPress("j")) }},
+		{"harness-config", func(m *Model) { send(t, m, keyPress("f3"), keyPress("v")) }},
+		{"harness-files", func(m *Model) { send(t, m, keyPress("f3"), keyPress("f")) }},
+		{"help", func(m *Model) { send(t, m, keyPress("f1")) }},
 		{"help-search", func(m *Model) {
-			send(t, m, key("f1"), key("/"))
+			send(t, m, keyPress("f1"), keyPress("/"))
 			send(t, m, typeString("shell")...)
 		}},
 		// The tools picker is reached from the workspace, which needs the
 		// driver; the dialog itself is the frame worth looking at, so it is
 		// opened on the discobox the workspace would have been showing.
 		{"tools", func(m *Model) {
-			send(t, m, key("tab"))
+			send(t, m, keyPress("tab"))
 			m.paneBox = Sandbox{ID: "sbx_one"}
 			m.openTools()
 		}},
-		{"folder", func(m *Model) { send(t, m, key("tab"), key("up")) }},
-		{"folder-open", func(m *Model) { send(t, m, key("tab"), key("up"), key("enter")) }},
+		{"folder", func(m *Model) { send(t, m, keyPress("tab"), keyPress("up")) }},
+		{"folder-open", func(m *Model) { send(t, m, keyPress("tab"), keyPress("up"), keyPress("enter")) }},
 		// The mark is dropped without color, so seeing it at all means building
 		// the window the way a real terminal gets it.
 		{"with-mark", func(m *Model) {
@@ -66,7 +66,7 @@ func TestFrames(t *testing.T) {
 // harness, the commit it was cut at and what it changed.
 func TestRowCarriesTheColumns(t *testing.T) {
 	m := newTestModel(t, newFakeSource(testSandboxes()...))
-	send(t, m, key("tab"))
+	send(t, m, keyPress("tab"))
 
 	// A prefix, not the whole name: the name is the column that gives way to
 	// the others, so at this width it is ellipsized.
@@ -90,7 +90,7 @@ func TestRowCarriesTheColumns(t *testing.T) {
 // "idle" where dots read as "not measured".
 func TestUsageWithoutMeasurementsShowsDots(t *testing.T) {
 	m := newTestModel(t, newFakeSource(testSandboxes()...))
-	send(t, m, key("tab"))
+	send(t, m, keyPress("tab"))
 
 	row := rowFor(t, m, "fix flaky pool")
 	// One dot per cell, each in the cell its figure would have taken.
@@ -109,7 +109,7 @@ func TestUsageDrawsADotForTheHalfItHasNotMeasured(t *testing.T) {
 	sandboxes := testSandboxes()
 	sandboxes[0].Usage = Usage{Known: true, CPUPercent: 61, MemoryBytes: 1_288_490_188, MemoryPercent: 4}
 	m := newTestModel(t, newFakeSource(sandboxes...))
-	send(t, m, key("tab"))
+	send(t, m, keyPress("tab"))
 
 	row := rowFor(t, m, "fix flaky pool")
 	for _, want := range []string{"61%", "1.2 GiB"} {
@@ -131,7 +131,7 @@ func TestUsageIsDrawnWhenItIsKnown(t *testing.T) {
 		DiskKnown: true, DiskBytes: 2_483_027_968, DiskPercent: 12,
 	}
 	m := newTestModel(t, newFakeSource(sandboxes...))
-	send(t, m, key("tab"))
+	send(t, m, keyPress("tab"))
 
 	row := rowFor(t, m, "fix flaky pool")
 	// Memory is the amount held, not a share of the machine: what a row is
@@ -148,7 +148,7 @@ func TestUsageIsDrawnWhenItIsKnown(t *testing.T) {
 // apart in monochrome.
 func TestWithoutColorTheStateIsSpelledOut(t *testing.T) {
 	m := newTestModel(t, newFakeSource(testSandboxes()...))
-	send(t, m, key("tab"))
+	send(t, m, keyPress("tab"))
 
 	text := frameText(m)
 	if !strings.Contains(text, "running") {
@@ -168,7 +168,7 @@ func TestWithoutColorTheStateIsSpelledOut(t *testing.T) {
 // reading.
 func TestHintsOfferOnlyWhatApplies(t *testing.T) {
 	m := newTestModel(t, newFakeSource(testSandboxes()...))
-	send(t, m, key("tab"))
+	send(t, m, keyPress("tab"))
 
 	hints := hintLine(m.hints())
 	if strings.Contains(hints, "P purge") {
@@ -181,7 +181,7 @@ func TestHintsOfferOnlyWhatApplies(t *testing.T) {
 	if strings.Contains(hints, "u upgrade") {
 		t.Errorf("upgrade should not be offered where there is none: %q", hints)
 	}
-	send(t, m, key("down"))
+	send(t, m, keyPress("down"))
 	if !strings.Contains(hintLine(m.hints()), "u upgrade") {
 		t.Errorf("upgrade should be offered where one is available: %q", hintLine(m.hints()))
 	}
@@ -193,10 +193,10 @@ func TestHintsOfferOnlyWhatApplies(t *testing.T) {
 func TestOptionsPanelShowsTheCommandItDescribes(t *testing.T) {
 	m := newTestModel(t, newFakeSource())
 	send(t, m, typeString("fix the reaper")...)
-	send(t, m, key("ctrl+o"))
+	send(t, m, keyPress("ctrl+o"))
 
 	// Harness -> codex, uncommitted changes -> include, detach on.
-	send(t, m, key("right"), key("down"), key("right"), key("down"), key("right"))
+	send(t, m, keyPress("right"), keyPress("down"), keyPress("right"), keyPress("down"), keyPress("right"))
 
 	command := m.opts.command(m.prompt.Value())
 	for _, want := range []string{"discobox run", "--harness codex", "--include-dirty=true", "-d", "'fix the reaper'"} {
@@ -278,14 +278,14 @@ func TestStatusNamesTheBoxUnderTheCursor(t *testing.T) {
 	boxes := testSandboxes()
 	boxes[0].ConfigName = "brave-otter"
 	m := newTestModel(t, newFakeSource(boxes...))
-	send(t, m, key("tab"))
+	send(t, m, keyPress("tab"))
 
 	status := statusRow(m)
 	if !strings.Contains(status, boxes[0].ID) || !strings.Contains(status, "brave-otter") {
 		t.Fatalf("status = %q, want the id and the configured name of the row under the cursor", status)
 	}
 
-	send(t, m, key("down"))
+	send(t, m, keyPress("down"))
 	status = statusRow(m)
 	if !strings.Contains(status, boxes[1].ID) || strings.Contains(status, boxes[0].ID) {
 		t.Fatalf("status = %q, want it to follow the cursor to %q", status, boxes[1].ID)
@@ -298,7 +298,7 @@ func TestStatusNamesTheBoxUnderTheCursor(t *testing.T) {
 
 	// Back in the prompt there is no cursor drawn on any row, so there is
 	// nothing for the line to be naming.
-	send(t, m, key("esc"))
+	send(t, m, keyPress("esc"))
 	if status := statusRow(m); strings.Contains(status, boxes[1].ID) {
 		t.Fatalf("status = %q, want no discobox named with the prompt focused", status)
 	}
@@ -309,7 +309,7 @@ func TestStatusNamesTheBoxUnderTheCursor(t *testing.T) {
 // nowhere else.
 func TestStatusKeepsTheIDOverTheKeys(t *testing.T) {
 	m := newTestModel(t, newFakeSource(testSandboxes()...))
-	send(t, m, key("tab"), sizeMsg(90, 40))
+	send(t, m, keyPress("tab"), sizeMsg(90, 40))
 
 	status := statusRow(m)
 	if !strings.Contains(status, "sbx_one") {
@@ -343,7 +343,7 @@ func TestSelectionPaintsTheWholeRow(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			m := newColorModel(t, newFakeSource(testSandboxes()...))
 			for _, k := range tc.keys {
-				send(t, m, key(k))
+				send(t, m, keyPress(k))
 			}
 			row := paintedRow(t, m, tc.bg)
 			bg := "\x1b[48;5;" + tc.bg + "m"
@@ -529,7 +529,7 @@ func TestTheWindowFillsTheTerminal(t *testing.T) {
 	m := newTestModel(t, newFakeSource(testSandboxes()...))
 	send(t, m, tea.WindowSizeMsg{Width: 120, Height: 24})
 	for range 5 {
-		send(t, m, key("ctrl+j"))
+		send(t, m, keyPress("ctrl+j"))
 	}
 	if got := lipgloss.Height(m.View().Content); got != 24 {
 		t.Errorf("with a grown prompt the window drew %d rows:\n%s", got, frameText(m))
@@ -550,7 +550,7 @@ func TestTheComposerGrowsToThreeRowsAndThenScrolls(t *testing.T) {
 	listRows := m.list.height
 
 	for row := 2; row <= promptMaxRows; row++ {
-		send(t, m, key("ctrl+j"))
+		send(t, m, keyPress("ctrl+j"))
 		if got := m.prompt.Height(); got != row {
 			t.Errorf("after %d newlines the composer is %d rows, want %d", row-1, got, row)
 		}
@@ -561,7 +561,7 @@ func TestTheComposerGrowsToThreeRowsAndThenScrolls(t *testing.T) {
 
 	// Past the cap the text keeps going in and the field stays put.
 	for range 4 {
-		send(t, m, key("ctrl+j"))
+		send(t, m, keyPress("ctrl+j"))
 	}
 	send(t, m, typeString("tail")...)
 	if got := m.prompt.Height(); got != promptMaxRows {
@@ -595,7 +595,7 @@ func TestMenuLabelsFitTheirContent(t *testing.T) {
 	m := newTestModel(t, newFakeSource(Sandbox{ID: "sbx_one", Name: "one", State: StateRunning, Folder: long}))
 	// Nothing was started in the folder the window is running in, so Tab lands
 	// on the filter rather than on an empty list.
-	send(t, m, key("tab"), key("enter"))
+	send(t, m, keyPress("tab"), keyPress("enter"))
 
 	if m.dialog == nil {
 		t.Fatal("the dropdown should be open")
@@ -643,7 +643,7 @@ func TestMachineRowSaysWhatItHasAndIsUsing(t *testing.T) {
 		DiskKnown: true, DiskFreeBytes: 34_896_609_280,
 	})
 	m := newTestModel(t, ds)
-	send(t, m, key("tab"))
+	send(t, m, keyPress("tab"))
 
 	machine := machineRow(t, m)
 	for _, want := range []string{"cpu 4.2/24", "mem 9.0/32 GiB", "32 GiB free"} {
@@ -671,7 +671,7 @@ func TestMachineRowSaysWhatItHasAndIsUsing(t *testing.T) {
 // labels sit over their own cells.
 func TestColumnsAreLabeled(t *testing.T) {
 	m := newTestModel(t, newFakeSource(testSandboxes()...))
-	send(t, m, key("tab"))
+	send(t, m, keyPress("tab"))
 
 	var header string
 	for _, line := range frame(m) {
@@ -733,7 +733,7 @@ func machineRow(t *testing.T, m *Model) string {
 // something to draw.
 func TestMachineRowSaysNothingUntilItIsMeasured(t *testing.T) {
 	m := newTestModel(t, newFakeSource(testSandboxes()...))
-	send(t, m, key("tab"))
+	send(t, m, keyPress("tab"))
 
 	for _, line := range frame(m) {
 		if strings.Contains(line, "machine") {
@@ -753,7 +753,7 @@ func TestMachineRowDropsFiguresItCannotFit(t *testing.T) {
 		DiskKnown: true, DiskFreeBytes: 34_896_609_280,
 	})
 	m := newTestModel(t, ds)
-	send(t, m, tea.WindowSizeMsg{Width: 80, Height: 24}, key("tab"))
+	send(t, m, tea.WindowSizeMsg{Width: 80, Height: 24}, keyPress("tab"))
 
 	machine := machineRow(t, m)
 	if !strings.Contains(machine, "cpu 4.2/24") {
@@ -774,7 +774,7 @@ func TestMachineRowSitsAboveTheBand(t *testing.T) {
 		MemoryBytes: 9_663_676_416, MemoryCapacity: 34_359_738_368,
 	})
 	m := newTestModel(t, ds)
-	send(t, m, key("tab"))
+	send(t, m, keyPress("tab"))
 
 	lines := frame(m)
 	machineAt, bandAt := -1, -1
@@ -807,7 +807,7 @@ func TestAStoppedDiscoboxStillShowsItsDisk(t *testing.T) {
 		DiskKnown: true, DiskBytes: 2_483_027_968, DiskPercent: 12,
 	}
 	m := newTestModel(t, newFakeSource(sandboxes...))
-	send(t, m, key("tab"))
+	send(t, m, keyPress("tab"))
 
 	row := rowFor(t, m, "fix flaky pool")
 	if !strings.Contains(row, "2.3 GiB") {
@@ -834,7 +834,7 @@ func TestMachineRowSplitsDiskIntoDataAndCache(t *testing.T) {
 		DiskCacheBytes: 11_811_160_064,
 	})
 	m := newTestModel(t, ds)
-	send(t, m, key("tab"))
+	send(t, m, keyPress("tab"))
 
 	machine := machineRow(t, m)
 	for _, want := range []string{"207 GiB free", "47 GiB data", "11 GiB cache"} {
@@ -857,7 +857,7 @@ func TestMachineRowDropsTheDiskSplitBeforeTheFreeSpace(t *testing.T) {
 		DiskCacheBytes: 11_811_160_064,
 	})
 	m := newTestModel(t, ds)
-	send(t, m, tea.WindowSizeMsg{Width: 80, Height: 20}, key("tab"))
+	send(t, m, tea.WindowSizeMsg{Width: 80, Height: 20}, keyPress("tab"))
 
 	machine := machineRow(t, m)
 	if !strings.Contains(machine, "207 GiB free") {
