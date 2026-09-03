@@ -2,6 +2,7 @@ package cli
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"os"
@@ -145,6 +146,15 @@ func (a *App) runApply(cmd *cobra.Command, sandboxArg, onlySlug string, dirOverr
 	if a.output == "json" {
 		if err := writeJSON(out, report); err != nil {
 			return err
+		}
+	}
+	if reportPath := os.Getenv(applyReportPathEnv); reportPath != "" {
+		data, err := json.Marshal(report)
+		if err != nil {
+			return fmt.Errorf("encode apply result: %w", err)
+		}
+		if err := os.WriteFile(reportPath, data, 0o600); err != nil {
+			return fmt.Errorf("write apply result: %w", err)
 		}
 	}
 

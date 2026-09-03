@@ -46,6 +46,11 @@ transport helpers where OpenAPI does not model the stream.
 - What runs is therefore `discobox apply` with its own flag defaults and terminal
   detection, not a second implementation that drifts from it. A launcher that
   cannot be reproduced from a shell is the thing to avoid.
+- The child also writes its structured apply report to a private temporary file
+  named in its environment. The pane remains the ordinary human-readable
+  command output; the private copy lets the launcher's success dialog name every
+  destination and local commit without parsing terminal text or reimplementing
+  apply. The local terminal owns and removes that file when the pane closes.
 - Bare `discobox` with a prompt, or any flag `run` takes, *is* `discobox run`
   (`runRequested`, checked first in the root command's `RunE`, dispatching to
   the shared `App.runPrompt`). `addRunFlags` registers run's flags once and is

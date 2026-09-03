@@ -2,6 +2,7 @@ package tui
 
 import (
 	"fmt"
+	"strings"
 
 	tea "charm.land/bubbletea/v2"
 )
@@ -130,9 +131,56 @@ func (m *Model) openSuccessfulApplyDialog() {
 	d := actionsDialog("Apply succeeded", "What should happen to this discobox?", items, func(choice string) tea.Cmd {
 		return func() tea.Msg { return applyFinishedChoiceMsg{choice: choice} }
 	})
+	if reporter, ok := m.overlay.stream.(ApplyResultReporter); ok {
+		if result, ok := reporter.ApplyResult(); ok {
+			d.sections = appliedSourceSections(result)
+		}
+	}
 	d.footer = "Either choice detaches from the workspace."
 	d.keys = []hint{pressing("Enter chooses", "enter"), pressing("Esc returns to the apply result", "esc")}
 	m.dialog = d
+}
+
+// appliedSourceSections name every destination and the local commits created
+// there. A source that needed nothing still appears, so a multi-source apply's
+// success dialog accounts for the whole run rather than only the sources that
+// changed.
+func appliedSourceSections(result ApplyResult) []section {
+	sections := make([]section, 0, len(result.Sources))
+	for _, source := range result.Sources {
+		fields := []field{{label: "repository", value: source.Repository, tone: toneAccent}}
+		if source.Branch != "" {
+			fields = append(fields, field{label: "branch", value: source.Branch})
+		}
+		lines := make([]line, 0, len(source.Commits))
+		for _, commit := range source.Commits {
+			if commit.Commit == "" {
+				continue
+			}
+			text := shortAppliedCommit(commit.Commit)
+			if commit.Subject != "" {
+				text += "  " + commit.Subject
+			}
+			lines = append(lines, line{text: text, tone: toneOK, bullet: true})
+		}
+		if len(lines) == 0 {
+			text := "no local commit mapping available — see the apply report"
+			if source.Status == "up-to-date" {
+				text = "no commits created — already up to date"
+			}
+			lines = append(lines, line{text: text, tone: toneDim})
+		}
+		sections = append(sections, section{label: source.Slug, fields: fields, lines: lines})
+	}
+	return sections
+}
+
+func shortAppliedCommit(commit string) string {
+	commit = strings.TrimSpace(commit)
+	if len(commit) > 12 {
+		return commit[:12]
+	}
+	return commit
 }
 
 // finishSuccessfulApply carries out either dialog choice. Both leave the

@@ -1206,6 +1206,19 @@ func TestSuccessfulApplyAsksToArchiveOrDetach(t *testing.T) {
 		apply.mu.Lock()
 		code := 0
 		apply.exit = &code
+		apply.applyResult = &ApplyResult{Sources: []AppliedSource{
+			{
+				Slug:       "primary",
+				Status:     "applied",
+				Repository: "/src/disco2",
+				Branch:     "main",
+				Commits: []AppliedCommit{
+					{Commit: "1234567890abcdef", Subject: "show applied commits"},
+					{Commit: "fedcba0987654321", Subject: "polish the dialog"},
+				},
+			},
+			{Slug: "docs", Status: "up-to-date", Repository: "/src/docs", Branch: "trunk"},
+		}}
 		apply.mu.Unlock()
 		apply.Close()
 		d.wait("the successful apply question", func() bool {
@@ -1216,6 +1229,15 @@ func TestSuccessfulApplyAsksToArchiveOrDetach(t *testing.T) {
 		}
 		if m.dialog.items[0].label != "archive" || m.dialog.items[1].label != "detach" || m.dialog.cursor != 0 {
 			t.Fatalf("items = %+v cursor = %d, want archive selected before detach", m.dialog.items, m.dialog.cursor)
+		}
+		text := dialogText(m)
+		for _, want := range []string{
+			"primary", "/src/disco2", "main", "1234567890ab", "show applied commits",
+			"fedcba098765", "polish the dialog", "docs", "/src/docs", "trunk", "already up to date",
+		} {
+			if !strings.Contains(text, want) {
+				t.Fatalf("dialog does not carry %q:\n%s", want, text)
+			}
 		}
 	}
 

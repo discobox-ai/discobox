@@ -821,6 +821,31 @@ type ExitReporter interface {
 	ExitStatus() (code int, done bool)
 }
 
+// ApplyResultReporter is the result channel carried by the local apply
+// command. The command's terminal remains the human-readable running report;
+// this is the same result in a shape the window can put on its completion
+// dialog without parsing terminal text.
+type ApplyResultReporter interface {
+	ApplyResult() (ApplyResult, bool)
+}
+
+type ApplyResult struct {
+	Sources []AppliedSource `json:"sources"`
+}
+
+type AppliedSource struct {
+	Slug       string          `json:"slug"`
+	Status     string          `json:"status"`
+	Repository string          `json:"hostPath"`
+	Branch     string          `json:"hostBranch"`
+	Commits    []AppliedCommit `json:"commits"`
+}
+
+type AppliedCommit struct {
+	Commit  string `json:"hostCommit"`
+	Subject string `json:"subject"`
+}
+
 // Binding is one sandbox port reachable at a local one, while a Forward is
 // open. Local is what a browser on this machine connects to; Port is what the
 // sandbox is serving on inside itself.

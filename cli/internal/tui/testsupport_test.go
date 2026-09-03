@@ -784,7 +784,8 @@ type fakeTerminal struct {
 	sizes [][2]int
 	// exit is the command's exit code, for a terminal standing in for a local
 	// command. Nil is a terminal that is not one and has no result to give.
-	exit *int
+	exit        *int
+	applyResult *ApplyResult
 }
 
 // ExitStatus makes this terminal an [ExitReporter] when a test has given it a
@@ -797,6 +798,15 @@ func (f *fakeTerminal) ExitStatus() (int, bool) {
 		return 0, false
 	}
 	return *f.exit, true
+}
+
+func (f *fakeTerminal) ApplyResult() (ApplyResult, bool) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	if f.applyResult == nil {
+		return ApplyResult{}, false
+	}
+	return *f.applyResult, true
 }
 
 func newFakeTerminal() *fakeTerminal {
