@@ -987,7 +987,7 @@ the same key: one leader for both terminals discobox shows you is one thing to
 learn and one thing to change.
 
 **The window answers the mouse on every screen it draws over the terminal**
-(`mouseMode`, `mouse.go`, ADR 0085). Native selection is traded for the
+(`mouseMode`, `mouse.go`, ADR 0088). Native selection is traded for the
 window's own, which is every multiplexer's bargain — struck once, for the whole
 window, so the pointer never means one thing on one screen and another on the
 next. The opening prompt is the exception and the line is `takesScreen`: it is

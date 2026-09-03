@@ -187,7 +187,7 @@ type Model struct {
 
 	// zones is where the last frame's controls landed, recorded as it was
 	// drawn, so a press is a lookup rather than the layout computed a second
-	// time. See zones.go and ADR 0085 §3.
+	// time. See zones.go and ADR 0088 §3.
 	zones zones
 
 	// primaryText is the last thing selected in the window, which is what the
@@ -198,7 +198,7 @@ type Model struct {
 	// promptCapture is a selection being dragged inside the composer, which
 	// owns every event until the button comes up. The composer's selection is
 	// the textarea's own rather than the chrome's: it is a field, and a
-	// selection there has to be one typing replaces. See ADR 0085 §2.
+	// selection there has to be one typing replaces. See ADR 0088 §2.
 	promptCapture bool
 	// clicks counts a run of presses on one cell, so the second press on a row
 	// can mean "open it" where the first meant "point at it". now is the clock
@@ -2879,7 +2879,7 @@ func (m *Model) statusIdentity() string {
 // Each offer that survives is marked where it landed, because a hint that
 // names a key is a button for that key: the press is handled as the key press
 // itself, so the pointer and the keyboard cannot come to mean two different
-// things. See ADR 0085 §5.
+// things. See ADR 0088 §5.
 func (m *Model) statusLine(room int) string {
 	switch {
 	case m.statusE:

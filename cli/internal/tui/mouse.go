@@ -17,7 +17,7 @@ import (
 // hit map the frame left behind (zones.go); what is left over — a press on
 // nothing in particular — drives the chrome's selection, which is what stands
 // in for the native one the terminal stopped doing the moment the mouse was
-// reported. See ADR 0085.
+// reported. See ADR 0088.
 //
 // The opening prompt is the exception, and mouseMode is where it is made:
 // it is drawn inline, in the shell's own scrollback, where a mouse coordinate
@@ -84,7 +84,7 @@ func (m *Model) windowMouse(msg tea.MouseMsg) tea.Cmd {
 		case tea.MouseMiddle:
 			// What the middle button pastes everywhere else: the last thing
 			// selected, which is X11's primary selection and not the
-			// clipboard. See ADR 0085 §6.
+			// clipboard. See ADR 0088 §6.
 			return m.pastePrimary()
 		}
 		return nil
@@ -141,7 +141,7 @@ func (m *Model) leftPress(ev tea.MouseClickMsg) tea.Cmd {
 
 	// The composer is a field, and a press in it is the caret moving rather
 	// than anything about the window. Its selection is the textarea's own, so
-	// that typing replaces it and Backspace deletes it. See ADR 0085 §2.
+	// that typing replaces it and Backspace deletes it. See ADR 0088 §2.
 	if where.what.kind == hitPrompt {
 		return m.pressPrompt(ev.X-where.x, ev.Y-where.y, clicks)
 	}
@@ -175,7 +175,7 @@ func (m *Model) leftPress(ev tea.MouseClickMsg) tea.Cmd {
 // rightPress copies a showing selection, and otherwise opens the menu for
 // whatever it landed on. The copy wins because it is the more expensive to
 // lose: a right-click meant for the menu costs one more press, where one that
-// threw away a finished selection costs the selection. See ADR 0085 §4.
+// threw away a finished selection costs the selection. See ADR 0088 §4.
 func (m *Model) rightPress(ev tea.MouseClickMsg) tea.Cmd {
 	if cmd := m.copyShowingSelection(); cmd != nil {
 		return cmd

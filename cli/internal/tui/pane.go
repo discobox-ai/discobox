@@ -1724,7 +1724,7 @@ func (m *Model) paneCursor() *tea.Cursor {
 // The opening prompt is the exception. It is drawn inline, in the shell's own
 // scrollback, where a mouse coordinate is the terminal's screen rather than
 // this frame and the terminal's own selection is still the one that belongs.
-// See ADR 0085 §1.
+// See ADR 0088 §1.
 //
 // All-motion, because a control the pointer is resting on is drawn as live
 // before it is pressed, and a pointer that has not moved yet reports nothing.

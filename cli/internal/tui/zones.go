@@ -4,7 +4,7 @@ package tui
 // whatever is drawn beside it, and nothing on screen ends up knowing where it
 // landed. zones is where a frame writes that down as it draws — a rectangle of
 // cells, and what those cells mean — so answering a press is a lookup rather
-// than the layout computed a second time. See ADR 0085 §3: the one place this
+// than the layout computed a second time. See ADR 0088 §3: the one place this
 // package computed a position twice, the column header over its rows, drifted
 // out of line the moment a column dropped, which is why tailColumns budgets
 // both from one arithmetic.
@@ -30,7 +30,7 @@ const (
 	// hitKey is a key hint made pressable: the press is handled as that key,
 	// by the same handler the keyboard reaches, so the two cannot drift. A
 	// hint is drawn by the screen whose keys it names, which is what makes
-	// the key land where the hint promised. See ADR 0085 §5.
+	// the key land where the hint promised. See ADR 0088 §5.
 	hitKey
 
 	// hitListKey is the same key press, aimed at the discobox list wherever
