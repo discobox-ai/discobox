@@ -43,6 +43,7 @@ func TestThePromptIsErasedFromTheScreenTheWindowLeavesBehind(t *testing.T) {
 	}{
 		{"a terminal with room", 30, 60},
 		{"a terminal too slow to draw every frame", 30, 4},
+		{"a terminal too short for the frame the mark makes", 16, 60},
 		{"the screen given back and taken again", 30, 60},
 	} {
 		t.Run(tc.name, func(t *testing.T) {

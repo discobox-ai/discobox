@@ -174,6 +174,66 @@ func TestThePromptComesOffTheScreenBeforeTheWindowTakesIt(t *testing.T) {
 	}
 }
 
+// The opening frame is printed on the screen the window was started from, so it
+// has to fit on it: a taller frame scrolls its own top rows into the terminal's
+// scrollback as it is printed, and nothing can erase them again. The mark is
+// what goes first, and the small window itself after that.
+func TestTheOpeningFrameFitsTheScreenItIsPrintedOn(t *testing.T) {
+	for _, tc := range []struct {
+		name     string
+		height   int
+		staging  bool
+		mark     bool
+		expanded bool
+	}{
+		{name: "room for everything", height: 40, mark: true},
+		{name: "room for the mark exactly", height: 18, mark: true},
+		{name: "a row short of the mark", height: 17},
+		{name: "the mark's last row wanted by the line under the frame", height: 18, staging: true},
+		{name: "room for the prompt and nothing beside it", height: 13},
+		{name: "no room for a small window at all", height: 12, expanded: true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Setenv("NO_COLOR", "1")
+			var options []Option
+			if tc.staging {
+				// A window with something to report under its frame, whether or
+				// not it has said anything yet: the row is reserved either way,
+				// because the line arrives on its own clock.
+				options = append(options, WithInitialization("staging", make(chan string)))
+			}
+			m := New(t.Context(), newFakeSource(testSandboxes()...), options...)
+			m.logo = newLogo(true)
+			m.width, m.height, m.ready = 141, tc.height, true
+			m.layout()
+
+			if got := m.compactShowsLogo(); got != tc.mark {
+				t.Errorf("the mark is drawn = %v in %d rows, want %v", got, tc.height, tc.mark)
+			}
+			if m.expanded != tc.expanded {
+				t.Fatalf("the window opened out = %v in %d rows, want %v", m.expanded, tc.height, tc.expanded)
+			}
+			if tc.expanded {
+				// Nothing is printed on the screen behind a window that takes
+				// the whole terminal, so there is nothing up there to lose.
+				if !m.View().AltScreen {
+					t.Fatal("a window with no room for its opening frame takes the screen instead")
+				}
+				return
+			}
+			// The frame as it stands, and as tall as it can grow: the composer
+			// takes rows as it is typed in, and neither height may run off the
+			// screen the frame is printed on.
+			if got := lipgloss.Height(m.View().Content); got > tc.height {
+				t.Errorf("the opening frame is %d rows on a %d-row screen:\n%s", got, tc.height, frameText(m))
+			}
+			if got := m.compactRows(composerChrome + promptMaxRows); got > tc.height {
+				t.Errorf("the opening frame grows to %d rows on a %d-row screen", got, tc.height)
+			}
+		})
+	}
+}
+
 // Typing a prompt and running it does not open the window out on its own — but
 // the terminal it attaches to does, because a terminal wants the whole screen.
 func TestRunningFromTheOpeningPromptOpensOutForTheTerminal(t *testing.T) {

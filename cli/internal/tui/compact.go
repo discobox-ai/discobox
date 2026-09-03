@@ -111,10 +111,67 @@ func (m *Model) compactLayout() {
 // compactPromptWidth is what the composer gets: the box's inside, less the mark
 // when there is room for one.
 func (m *Model) compactPromptWidth() int {
-	if m.showLogo() {
+	if m.compactShowsLogo() {
 		return max(m.inner()-m.logo.column(), 20)
 	}
 	return m.inner()
+}
+
+// compactChrome is what the opening frame costs before its body: the box's two
+// edges, the header and the blank under it, and the blank and the status line
+// under that.
+const compactChrome = 6
+
+// composerChrome is what the composer costs around the field: its label, the
+// rule under that, the rule below the field, and the mode line.
+const composerChrome = 4
+
+// compactRows is how tall the opening frame can get around a body of the given
+// height: its chrome, and the line under the frame whenever there is one to
+// report. The tallest it can get rather than the height it is at now, because
+// it grows on its own — the composer as you type, the line when the server has
+// something to say — and a frame that grows past the screen it is printed on
+// cannot take back what that costs.
+func (m *Model) compactRows(body int) int {
+	rows := compactChrome + body
+	if m.initLine != "" || m.initUpdates != nil {
+		rows++
+	}
+	return rows
+}
+
+// fitsInline reports whether a frame of that many rows fits on the screen it is
+// printed on.
+//
+// A frame taller than the screen does not simply overflow: printing it scrolls
+// the terminal, and the rows that go off the top go into its scrollback, where
+// no escape sequence of ours can reach them — the erasing frame cleans the
+// screen and they stay above it, which is where a leftover row of the opening
+// prompt comes from.
+func (m *Model) fitsInline(rows int) bool {
+	return rows <= m.height
+}
+
+// compactShowsLogo reports whether the opening frame has room for the mark.
+//
+// Beyond the width every screen wants it at (showLogo), this frame is printed
+// on the screen the window was started from and has to fit there. The mark is
+// twelve rows and the tallest thing on the frame, so a short terminal loses the
+// decoration first — exactly as a narrow one does, and ahead of losing the
+// small window altogether.
+func (m *Model) compactShowsLogo() bool {
+	return m.showLogo() && m.fitsInline(m.compactRows(m.logo.height()))
+}
+
+// compactFits reports whether the opening frame fits the screen at all. Below
+// some size it does not, and layout opens the window out instead: a window that
+// takes the screen prints nothing on the one behind it.
+func (m *Model) compactFits() bool {
+	body := composerChrome + promptMaxRows
+	if m.compactShowsLogo() {
+		body = max(body, m.logo.height())
+	}
+	return m.fitsInline(m.compactRows(body))
 }
 
 // viewCompact draws the opening window: a header, the mark with the composer
@@ -128,7 +185,7 @@ func (m *Model) viewCompact() string {
 
 	composer := strings.Split(m.viewComposer(promptW), "\n")
 	body := composer
-	if m.showLogo() {
+	if m.compactShowsLogo() {
 		mark := m.logo.viewCentered(max(m.logo.height(), len(composer)))
 		body = strings.Split(
 			lipgloss.JoinHorizontal(lipgloss.Top, mark, centerVertical(composer, m.logo.height(), promptW)),

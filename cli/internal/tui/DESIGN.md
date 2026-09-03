@@ -363,6 +363,17 @@ Up, Down or Tab) is the ask for the rest, and opening a terminal implies it too.
 `expand` is one way. Having asked for the discoboxes once, flipping the screen
 back and forth around them would be the window arguing with you.
 
+**The opening frame has to fit the screen it is printed on** (`compactFits`,
+`fitsInline`). A frame taller than the terminal does not simply overflow:
+printing it scrolls the terminal, and the rows that go off the top land in its
+scrollback, where no escape sequence can reach them — the erase below cleans the
+screen and they stay above it. So the frame is measured at the tallest it can
+get, the composer grown and the line under it drawn, and what does not fit is
+given up in order: the mark first (`compactShowsLogo`, the height counterpart to
+`minWidthForLogo`), then the small window itself, which `layout` opens out
+rather than print. A terminal inside a pane is several rows shorter than the one
+around it, so a discobox run inside a discobox is where this shows up first.
+
 Nothing on that first frame suggests there is anything behind it, so it says so
 — laid into the very top border line (`titledEdge`), and only until the window
 opens out. That line has nothing else on it, which is what keeps a centered word

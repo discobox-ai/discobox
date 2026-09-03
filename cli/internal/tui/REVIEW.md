@@ -74,6 +74,12 @@
   that erases the opening prompt (`clearPrinted`) — cannot be timed out with a
   pause of ours. Wait for the terminal to answer (`clearAcks`) instead.
 
+- **Nothing the window prints inline may be taller than the screen.** The rows
+  a taller frame scrolls off the top are in the terminal's scrollback, and no
+  erase reaches them. Anything that adds a row to the opening frame — a line
+  under it, a taller composer — belongs in `compactRows`, which is what decides
+  whether the mark, or the small window itself, still fits.
+
 - **The alternate screen does not take the printed rows with it.** Anything
   drawn inline stays on the primary screen, behind the window, and surfaces
   again on the way out or around a `tea.Exec`. A new door onto the whole

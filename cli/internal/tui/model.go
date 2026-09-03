@@ -2395,6 +2395,13 @@ func (m *Model) layout() {
 	m.secrets.clamp()
 	if !m.expanded && !m.inPanes() {
 		m.compactLayout()
+		// An opening frame taller than the screen it is printed on loses its
+		// top rows into the terminal's scrollback the moment it is printed, and
+		// nothing can take them back. There is no small window at this size.
+		// See fitsInline.
+		if !m.compactFits() {
+			m.expand()
+		}
 		return
 	}
 	// The workspace takes the whole window: a terminal wants every row it can
