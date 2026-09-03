@@ -126,8 +126,14 @@ type styles struct {
 	key         lipgloss.Style
 	// hover is a control with the pointer on it. It is the accent the keys
 	// and the cursor already use, so a live control is picked out in the one
-	// color the window picks anything out in — and underlined as well, because
-	// a terminal with no color has to be able to show it too.
+	// color the window picks anything out in — and bold as well, so a terminal
+	// with no color still shows it.
+	//
+	// Not underlined, which is the more obvious spelling of "you can press
+	// this": lipgloss renders an underlined run one escape per character,
+	// which is ten times the bytes for a hint that changes on every mouse
+	// move. Not reverse video either — that is how a selection is drawn, and
+	// two things that mean different things must not look the same.
 	hover lipgloss.Style
 }
 
@@ -190,6 +196,6 @@ func newStyles(color bool) *styles {
 	}
 	s.dialogTitle = paint(colGold).Bold(true)
 	s.key = paint(colGold)
-	s.hover = paint(colGold).Underline(true)
+	s.hover = paint(colGold).Bold(true)
 	return s
 }
