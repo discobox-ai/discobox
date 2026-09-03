@@ -135,7 +135,7 @@ func (a *App) runApply(cmd *cobra.Command, sandboxArg, onlySlug string, dirOverr
 	}
 
 	out := cmd.OutOrStdout()
-	printer := applyPrinter{out: out, on: a.output != "json"}
+	printer := newApplyPrinter(out, a.output != "json")
 	report := applyReport{SandboxID: sandboxID, SandboxName: sandbox.Config.Name}
 	printer.sandboxHeader(report, len(sources))
 	for _, s := range sources {
@@ -268,7 +268,7 @@ func (a *App) applyOneSource(ctx context.Context, printer applyPrinter, client *
 	fail := func(format string, args ...any) applySourceReport {
 		report.Status = applyStatusError
 		report.Error = fmt.Sprintf(format, args...)
-		printer.step("ERROR: %s", report.Error)
+		printer.outcome(applyStatusError, "ERROR: %s", report.Error)
 		return report
 	}
 
@@ -301,7 +301,7 @@ func (a *App) applyOneSource(ctx context.Context, printer applyPrinter, client *
 	printer.sourceHeader(report)
 
 	if report.SandboxDir != "" {
-		printer.step("checking the discobox working tree (git status --porcelain in %s)", report.SandboxDir)
+		printer.note("checking the discobox working tree (git status --porcelain)")
 		dirty, status, err := a.sandboxSourceDirty(ctx, projectID, sandboxID, report.SandboxDir)
 		if err != nil {
 			return fail("check discobox working tree: %v", err)
@@ -311,7 +311,7 @@ func (a *App) applyOneSource(ctx context.Context, printer applyPrinter, client *
 			report.Status = applyStatusBlocked
 			report.UncommittedChanges = statusLines(status)
 			report.NextSteps = dirtyNextSteps(sandboxID, entry.slug, report.SandboxDir, dirOverrides)
-			printer.step("BLOCKED: the discobox has %d uncommitted %s; only committed work is applied",
+			printer.outcome(applyStatusBlocked, "BLOCKED: the discobox has %d uncommitted %s; only committed work is applied",
 				len(report.UncommittedChanges), pluralize("change", len(report.UncommittedChanges)))
 			printer.detailLines(report.UncommittedChanges)
 			printer.nextSteps(report.NextSteps)
@@ -322,21 +322,21 @@ func (a *App) applyOneSource(ctx context.Context, printer applyPrinter, client *
 			// chose to leave it there rather than not knowing about it.
 			report.UncommittedChanges = statusLines(status)
 			report.DirtyIgnored = true
-			printer.step("--allow-dirty: applying anyway; %d uncommitted %s stay in the discobox and are not applied",
+			printer.caution("--allow-dirty: applying anyway; %d uncommitted %s stay in the discobox and are not applied",
 				len(report.UncommittedChanges), pluralize("change", len(report.UncommittedChanges)))
 			printer.detailLines(report.UncommittedChanges)
 		default:
-			printer.detail("clean, nothing uncommitted")
+			printer.noteDetail("clean, nothing uncommitted")
 		}
 	}
 
-	printer.step("fetching the discobox's commits into %s", report.SandboxRef)
+	printer.note("fetching the discobox's commits")
 	tip, err := sandboxapply.FetchSource(ctx, repoRoot, gitServerURL, projectID, sandboxID, a.token, entry.source)
 	if err != nil {
 		return fail("%v", err)
 	}
 	report.SandboxTip = tip
-	printer.detail("discobox tip %s", shortSHA(tip))
+	printer.noteDetail("discobox tip %s", shortSHA(tip))
 
 	if last, ok := lastApplied(sandbox, entry.slug); ok {
 		report.Base, report.BaseOrigin = last.Commit, baseOriginLastApplied
@@ -364,11 +364,11 @@ func (a *App) applyOneSource(ctx context.Context, printer applyPrinter, client *
 			return fail("the discobox's history has no commit in common with %s, so there is nothing to apply onto; is that the repository source %q came from? (%v)", repoRoot, entry.slug, err)
 		}
 	}
-	printer.step("base %s (%s)", shortSHA(report.Base), formatBaseOrigin(report.BaseOrigin))
+	printer.note("base %s — %s", shortSHA(report.Base), formatBaseOrigin(report.BaseOrigin))
 
 	if report.Base == tip {
 		report.Status = applyStatusUpToDate
-		printer.step("UP TO DATE: the discobox has no commits after %s, so local %s is unchanged", shortSHA(report.Base), applyTarget(report))
+		printer.outcome(applyStatusUpToDate, "UP TO DATE: the discobox has no commits after %s, so local %s is unchanged", shortSHA(report.Base), applyTarget(report))
 		return report
 	}
 
@@ -377,7 +377,7 @@ func (a *App) applyOneSource(ctx context.Context, printer applyPrinter, client *
 		return fail("%v", err)
 	}
 	report.Commits = applyCommits(commits)
-	printer.step("%d %s to apply (git log %s..%s):", len(report.Commits), pluralize("commit", len(report.Commits)), shortSHA(report.Base), report.SandboxRef)
+	printer.commitsToApply(report.Commits)
 	printer.commitList(report.Commits)
 
 	var result gitapply.Result
@@ -389,7 +389,7 @@ func (a *App) applyOneSource(ctx context.Context, printer applyPrinter, client *
 		if err != nil {
 			return fail("%v", err)
 		}
-		printer.step("local %s has no commits yet: replaying them onto no history, then creating %s", repoRoot, applyTarget(report))
+		printer.note("local %s has no commits yet: replaying them onto no history, then creating %s", repoRoot, applyTarget(report))
 		result, err = gitapply.AttemptRoot(ctx, repoRoot, report.Base, tip, wantTree)
 		if err != nil {
 			return fail("%v", err)
@@ -398,13 +398,13 @@ func (a *App) applyOneSource(ctx context.Context, printer applyPrinter, client *
 			report.Status = applyStatusBlocked
 			report.LocalChanges = result.ChangedPaths
 			report.NextSteps = localChangesNextSteps(sandboxID, entry.slug, repoRoot, dirOverrides, carried)
-			printer.step("BLOCKED: %s", blockedLocalChanges(repoRoot, carried))
+			printer.outcome(applyStatusBlocked, "BLOCKED: %s", blockedLocalChanges(repoRoot, carried))
 			printer.detailLines(report.LocalChanges)
 			printer.nextSteps(report.NextSteps)
 			return report
 		}
 	} else {
-		printer.step("cherry-picking them in a scratch worktree, then fast-forwarding local %s", applyTarget(report))
+		printer.note("cherry-picking them in a scratch worktree, then fast-forwarding local %s", applyTarget(report))
 		result, err = gitapply.Attempt(ctx, repoRoot, report.Base, tip)
 		if err != nil {
 			return fail("%v", err)
@@ -423,8 +423,8 @@ func (a *App) applyOneSource(ctx context.Context, printer applyPrinter, client *
 			Description: fmt.Sprintf("reproduce and resolve it in %s directly", repoRoot),
 			Commands:    []string{fmt.Sprintf("git -C %s cherry-pick %s..%s", repoRoot, shortSHA(report.Base), report.SandboxRef)},
 		}}
-		printer.step("CONFLICT: %s%s did not apply cleanly", shortSHA(report.ConflictCommit), quoteSubject(commitSubject(report.Commits, report.ConflictCommit)))
-		printer.step("nothing in %s changed; local %s is still at %s", repoRoot, applyTarget(report), shortSHA(report.HostBase))
+		printer.outcome(applyStatusConflict, "CONFLICT: %s%s did not apply cleanly", shortSHA(report.ConflictCommit), quoteSubject(commitSubject(report.Commits, report.ConflictCommit)))
+		printer.noteDetail("nothing in %s changed; local %s is still at %s", repoRoot, applyTarget(report), shortSHA(report.HostBase))
 		printer.nextSteps(report.NextSteps)
 		return report
 	}
@@ -447,9 +447,10 @@ func (a *App) applyOneSource(ctx context.Context, printer applyPrinter, client *
 	}
 
 	report.Status = applyStatusApplied
-	printer.step("APPLIED %d %s to local %s: %s -> %s", len(report.Commits), pluralize("commit", len(report.Commits)), applyTarget(report), applyFrom(report), shortSHA(report.HostTip))
+	printer.outcome(applyStatusApplied, "APPLIED %d %s to local %s", len(report.Commits), pluralize("commit", len(report.Commits)), applyTarget(report))
 	printer.appliedList(report.Commits)
-	printer.step("recorded on discobox %s as applied to %s", sandboxID, repoRoot)
+	printer.landed(report)
+	printer.note("recorded on discobox %s as applied to %s", sandboxID, repoRoot)
 	return report
 }
 

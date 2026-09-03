@@ -2,9 +2,13 @@ package cli
 
 import (
 	"bytes"
+	"io"
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/charmbracelet/colorprofile"
+	"github.com/charmbracelet/x/ansi"
 
 	"github.com/discobox-ai/x/gitutil"
 )
@@ -12,17 +16,18 @@ import (
 func appliedSourceFixture() applySourceReport {
 	when := time.Now().Add(-2 * time.Hour)
 	return applySourceReport{
-		Slug:       "primary",
-		Status:     applyStatusApplied,
-		HostPath:   "/home/ada/src/disco2",
-		HostBranch: "main",
-		HostBase:   "4f3a1c2b8d90aaaabbbbccccddddeeeeffff0000",
-		HostTip:    "77aa88bb99ccddddeeeeffff0000111122223333",
-		SandboxDir: "/work/disco2",
-		SandboxRef: "refs/discobox/apply/sbx_h1ssjzhp60emtc2n/primary",
-		SandboxTip: "9c1d2e3f4a5b6666777788889999aaaabbbbcccc",
-		Base:       "4f3a1c2b8d90aaaabbbbccccddddeeeeffff0000",
-		BaseOrigin: baseOriginMergeBase,
+		Slug:           "primary",
+		Status:         applyStatusApplied,
+		HostPath:       "/home/ada/src/disco2",
+		HostPathOrigin: hostDirFromSandboxOrigin,
+		HostBranch:     "main",
+		HostBase:       "4f3a1c2b8d90aaaabbbbccccddddeeeeffff0000",
+		HostTip:        "77aa88bb99ccddddeeeeffff0000111122223333",
+		SandboxDir:     "/work/disco2",
+		SandboxRef:     "refs/discobox/apply/sbx_h1ssjzhp60emtc2n/primary",
+		SandboxTip:     "9c1d2e3f4a5b6666777788889999aaaabbbbcccc",
+		Base:           "4f3a1c2b8d90aaaabbbbccccddddeeeeffff0000",
+		BaseOrigin:     baseOriginMergeBase,
 		Commits: []applyCommit{{
 			Commit:     "9c1d2e3f4a5b6666777788889999aaaabbbbcccc",
 			HostCommit: "11aa22bb33cc4444555566667777888899990000",
@@ -33,15 +38,47 @@ func appliedSourceFixture() applySourceReport {
 	}
 }
 
+// renderApplyRun plays a whole successful apply through a printer, in the order
+// applyOneSource prints it, so the tests read the report the way a reader does
+// rather than a line at a time.
+func renderApplyRun(printer applyPrinter) {
+	report := appliedSourceFixture()
+	printer.sandboxHeader(applyReport{SandboxID: "sbx_h1ssjzhp60emtc2n", SandboxName: "fix flaky pool reaper tests"}, 1)
+	printer.sourceHeader(report)
+	printer.note("checking the discobox working tree (git status --porcelain)")
+	printer.noteDetail("clean, nothing uncommitted")
+	printer.note("fetching the discobox's commits")
+	printer.noteDetail("discobox tip %s", shortSHA(report.SandboxTip))
+	printer.note("base %s — %s", shortSHA(report.Base), formatBaseOrigin(report.BaseOrigin))
+	printer.commitsToApply(report.Commits)
+	printer.commitList(report.Commits)
+	printer.note("cherry-picking them in a scratch worktree, then fast-forwarding local %s", applyTarget(report))
+	printer.outcome(applyStatusApplied, "APPLIED %d %s to local %s",
+		len(report.Commits), pluralize("commit", len(report.Commits)), applyTarget(report))
+	printer.appliedList(report.Commits)
+	printer.landed(report)
+	printer.note("recorded on discobox %s as applied to %s", "sbx_h1ssjzhp60emtc2n", report.HostPath)
+}
+
+// plainPrinter is the printer a pipe, a file or a NO_COLOR terminal gets: the
+// writer is not a terminal, so every escape the styles write is stripped on the
+// way out. It is what almost every test here reads, because the report has to
+// say everything it says without color.
+func plainPrinter(out io.Writer) applyPrinter { return newApplyPrinter(out, true) }
+
+// colorPrinter forces the painted path, which no test environment's stdout
+// would otherwise take.
+func colorPrinter(out io.Writer) applyPrinter {
+	printer := newApplyPrinter(out, true)
+	printer.out = &colorprofile.Writer{Forward: out, Profile: colorprofile.ANSI256}
+	printer.width = 96
+	return printer
+}
+
 func renderApplied(t *testing.T) string {
 	t.Helper()
 	var buf bytes.Buffer
-	printer := applyPrinter{out: &buf, on: true}
-	report := appliedSourceFixture()
-	printer.sourceHeader(report)
-	printer.step("base %s (%s)", shortSHA(report.Base), formatBaseOrigin(report.BaseOrigin))
-	printer.commitList(report.Commits)
-	printer.appliedList(report.Commits)
+	renderApplyRun(plainPrinter(&buf))
 	return buf.String()
 }
 
@@ -51,17 +88,132 @@ func renderApplied(t *testing.T) string {
 func TestAppliedOutputNamesBothSidesAndEveryCommit(t *testing.T) {
 	out := renderApplied(t)
 	for _, want := range []string{
-		"==> source primary",
-		"local repo    /home/ada/src/disco2",
-		"discobox repo /work/disco2",
+		"── primary ",
+		"local repo     /home/ada/src/disco2",
+		"discobox repo  /work/disco2",
 		"branch main at 4f3a1c2b8d90",
 		"refs/discobox/apply/sbx_h1ssjzhp60emtc2n/primary",
-		"base 4f3a1c2b8d90 (merge base of the discobox tip and local HEAD)",
-		"9c1d2e3f4a5b  Fix parser panic on empty input  (Ada Lovelace, 2 hours ago)",
-		"9c1d2e3f4a5b -> 11aa22bb33cc  Fix parser panic on empty input",
+		"base 4f3a1c2b8d90 — merge base of the discobox tip and local HEAD",
+		"1 commit to apply",
+		"9c1d2e3f4a5b  Fix parser panic on empty input  Ada Lovelace, 2 hours ago",
+		"✓ APPLIED 1 commit to local main",
+		"9c1d2e3f4a5b → 11aa22bb33cc  Fix parser panic on empty input",
+		"local main  4f3a1c2b8d90 → 77aa88bb99cc",
 	} {
 		if !strings.Contains(out, want) {
 			t.Fatalf("output missing %q:\n%s", want, out)
+		}
+	}
+}
+
+// A pipe, a file and a NO_COLOR terminal all get the report with nothing in it
+// but text. The whole report is written in color and the writer takes it away
+// (newApplyPrinter), so this is the check that the taking-away actually covers
+// every line rather than the ones somebody remembered to gate.
+func TestTheReportWritesNoEscapesToAPipe(t *testing.T) {
+	var buf bytes.Buffer
+	printer := plainPrinter(&buf)
+	renderApplyRun(printer)
+	printer.caution("--allow-dirty: applying anyway")
+	printer.nextSteps(dirtyNextSteps("sbx_1", "primary", "/work", nil))
+	printer.detailLines([]string{" M server/main.go"})
+	printer.summary(applyReport{Sources: []applySourceReport{
+		{Status: applyStatusApplied}, {Status: applyStatusConflict},
+	}})
+	if strings.ContainsRune(buf.String(), '\x1b') {
+		t.Fatalf("the report wrote an escape sequence to a plain writer:\n%q", buf.String())
+	}
+}
+
+// The marks are not color, so they stay in a pipe — and the status word is
+// spelled out beside them either way, so nothing about the outcome depends on
+// reading a glyph.
+func TestEveryOutcomeIsMarkedAndSpelledOut(t *testing.T) {
+	for _, tc := range []struct {
+		status applyStatus
+		mark   string
+	}{
+		{applyStatusApplied, "✓"},
+		{applyStatusUpToDate, "✓"},
+		{applyStatusBlocked, "⚠"},
+		{applyStatusConflict, "✗"},
+		{applyStatusError, "✗"},
+	} {
+		var buf bytes.Buffer
+		plainPrinter(&buf).outcome(tc.status, "%s: something", strings.ToUpper(string(tc.status)))
+		out := buf.String()
+		if !strings.Contains(out, tc.mark+" "+strings.ToUpper(string(tc.status))) {
+			t.Fatalf("%s outcome = %q, want %q leading the status word", tc.status, out, tc.mark)
+		}
+	}
+}
+
+// Color is added to the report, never substituted for it: painting the same run
+// and stripping the escapes has to give back exactly the plain report, or the
+// two streams are showing different output.
+func TestColorAddsNothingButColor(t *testing.T) {
+	var plain, painted bytes.Buffer
+	printer := plainPrinter(&plain)
+	printer.width = 96 // the painted printer's, so the rules are the same length
+	renderApplyRun(printer)
+	renderApplyRun(colorPrinter(&painted))
+
+	if !strings.ContainsRune(painted.String(), '\x1b') {
+		t.Fatal("the painted report has no color in it")
+	}
+	if got := ansi.Strip(painted.String()); got != plain.String() {
+		t.Fatalf("stripped color output differs from the plain report:\n%q\n%q", got, plain.String())
+	}
+}
+
+// The commits are the part of the report a reader came for, so they are the
+// part that is painted: gold for a SHA on either side of the apply, the
+// plumbing dim around them, and the outcome in its status color.
+func TestTheCommitsAndTheOutcomeAreThePaintedParts(t *testing.T) {
+	var buf bytes.Buffer
+	renderApplyRun(colorPrinter(&buf))
+	out := buf.String()
+	for what, want := range map[string]string{
+		"the discobox commit":  "\x1b[38;5;" + applyColSHA + "m9c1d2e3f4a5b",
+		"the local commit":     "\x1b[38;5;" + applyColSHA + "m11aa22bb33cc",
+		"the plumbing":         "\x1b[38;5;" + applyColDim + "mfetching the discobox's commits",
+		"the applied outcome":  applyColOK + "m✓ APPLIED",
+		"the commit list head": "\x1b[1m1 commit to apply",
+	} {
+		if !strings.Contains(out, want) {
+			t.Fatalf("%s is not painted as expected (%q):\n%q", what, want, out)
+		}
+	}
+}
+
+// The authors line up under each other, which is what makes a list of commits
+// scannable rather than a paragraph with SHAs in it — but only while the
+// aligned row fits the window. Padding a row that is about to wrap only moves
+// the wrap.
+func TestTheCommitListAlignsOnlyWhenTheRowFits(t *testing.T) {
+	commits := []applyCommit{
+		{Commit: "9c1d2e3f4a5b6666", Subject: "short one", Author: "Ada Lovelace", Date: time.Now().Add(-time.Hour)},
+		{Commit: "aa1d2e3f4a5b6666", Subject: "a considerably longer commit subject", Author: "Ada Lovelace", Date: time.Now().Add(-time.Hour)},
+	}
+
+	var wide bytes.Buffer
+	printer := plainPrinter(&wide)
+	printer.width = 200
+	printer.commitList(commits)
+	if !strings.Contains(wide.String(), "short one                             Ada Lovelace") {
+		t.Fatalf("a wide window did not align the attribution:\n%q", wide.String())
+	}
+
+	var narrow bytes.Buffer
+	printer = plainPrinter(&narrow)
+	printer.width = 60
+	printer.commitList(commits)
+	if !strings.Contains(narrow.String(), "short one  Ada Lovelace") {
+		t.Fatalf("a narrow window padded a row that cannot fit anyway:\n%q", narrow.String())
+	}
+	for _, want := range []string{"9c1d2e3f4a5b", "a considerably longer commit subject", "Ada Lovelace"} {
+		if !strings.Contains(narrow.String(), want) {
+			t.Fatalf("a narrow window dropped %q:\n%q", want, narrow.String())
 		}
 	}
 }
@@ -77,9 +229,8 @@ func TestBaseOriginDistinguishesRepeatApplies(t *testing.T) {
 
 func TestPrinterIsSilentInJSONMode(t *testing.T) {
 	var buf bytes.Buffer
-	printer := applyPrinter{out: &buf, on: false}
-	printer.sourceHeader(appliedSourceFixture())
-	printer.step("something happened")
+	printer := newApplyPrinter(&buf, false)
+	renderApplyRun(printer)
 	printer.summary(applyReport{Sources: []applySourceReport{{Status: applyStatusApplied}, {Status: applyStatusConflict}}})
 	if buf.Len() != 0 {
 		t.Fatalf("JSON mode wrote progress text:\n%s", buf.String())
@@ -88,7 +239,7 @@ func TestPrinterIsSilentInJSONMode(t *testing.T) {
 
 func TestSummaryCountsEveryStatusForMultipleSources(t *testing.T) {
 	var buf bytes.Buffer
-	printer := applyPrinter{out: &buf, on: true}
+	printer := plainPrinter(&buf)
 	printer.summary(applyReport{Sources: []applySourceReport{
 		{Slug: "primary", Status: applyStatusApplied},
 		{Slug: "docs", Status: applyStatusUpToDate},
@@ -103,7 +254,7 @@ func TestSummaryCountsEveryStatusForMultipleSources(t *testing.T) {
 // A single source needs no summary: its own result lines already said it.
 func TestSummarySkippedForOneSource(t *testing.T) {
 	var buf bytes.Buffer
-	applyPrinter{out: &buf, on: true}.summary(applyReport{Sources: []applySourceReport{{Status: applyStatusApplied}}})
+	plainPrinter(&buf).summary(applyReport{Sources: []applySourceReport{{Status: applyStatusApplied}}})
 	if buf.Len() != 0 {
 		t.Fatalf("single-source run printed a summary:\n%s", buf.String())
 	}
@@ -111,8 +262,9 @@ func TestSummarySkippedForOneSource(t *testing.T) {
 
 func TestDetachedHeadIsNamedRatherThanBlank(t *testing.T) {
 	report := applySourceReport{HostPath: "/srv/repo", HostBase: "4f3a1c2b8d90aaaa"}
-	if got := formatBranchAt(report.HostBranch, report.HostBase); !strings.Contains(got, "detached HEAD at 4f3a1c2b8d90") {
-		t.Fatalf("formatBranchAt = %q", got)
+	plain := plainPrinter(&bytes.Buffer{})
+	if got := ansi.Strip(plain.branchAt(report.HostBranch, report.HostBase)); !strings.Contains(got, "detached HEAD at 4f3a1c2b8d90") {
+		t.Fatalf("branchAt = %q", got)
 	}
 	if got := applyTarget(report); got != "/srv/repo (detached HEAD)" {
 		t.Fatalf("applyTarget = %q", got)
@@ -180,13 +332,13 @@ func TestDirtyNextStepsCarryDirOverride(t *testing.T) {
 
 func TestNextStepsPrintDescriptionThenCommands(t *testing.T) {
 	var buf bytes.Buffer
-	applyPrinter{out: &buf, on: true}.nextSteps(dirtyNextSteps("sbx_1", "primary", "/work", nil))
+	plainPrinter(&buf).nextSteps(dirtyNextSteps("sbx_1", "primary", "/work", nil))
 	out := buf.String()
 	for _, want := range []string{
-		"    commit them in the discobox, then apply again:",
-		"      discobox apply sbx_1 --source primary\n",
-		"    or apply only what is already committed, leaving them in the discobox:",
-		"      discobox apply sbx_1 --source primary --allow-dirty\n",
+		"  commit them in the discobox, then apply again:",
+		"    discobox apply sbx_1 --source primary\n",
+		"  or apply only what is already committed, leaving them in the discobox:",
+		"    discobox apply sbx_1 --source primary --allow-dirty\n",
 	} {
 		if !strings.Contains(out, want) {
 			t.Fatalf("output missing %q:\n%s", want, out)
@@ -198,7 +350,7 @@ func TestNextStepsPrintDescriptionThenCommands(t *testing.T) {
 // percent verb in it must survive verbatim.
 func TestDetailLinesDoNotInterpretFormatVerbs(t *testing.T) {
 	var buf bytes.Buffer
-	applyPrinter{out: &buf, on: true}.detailLines([]string{"?? weird%s%dname.txt"})
+	plainPrinter(&buf).detailLines([]string{"?? weird%s%dname.txt"})
 	if !strings.Contains(buf.String(), "?? weird%s%dname.txt") {
 		t.Fatalf("line was reformatted: %q", buf.String())
 	}

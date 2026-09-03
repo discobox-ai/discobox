@@ -1350,9 +1350,53 @@ too (`internal/hostid`, `Origin.HostId`), and a reader of the output has no way
 to tell the two senses apart. This is a wording rule for what users see —
 identifiers and JSON keys keep ADR 0014's `Host*` vocabulary.
 
+### Three Weights, One Palette
+
+Everything in the report having the same weight is what made an account of a
+git operation read as a wall of text. It is drawn in three:
+
+- **The plumbing is dim** — which repositories, which fetch ref, what is being
+  fetched, where the base came from, what is being cherry-picked. It is context,
+  and it is read only when something went wrong.
+- **The commits are bright**, under a bold count: they are the work, and they
+  are what the reader came for. `commitList` is what will land, with the author
+  and date dim in a column aligned across the list; `appliedList` is what did,
+  as `sandbox → local` so "what are these new commits on my branch" is
+  answerable without another command. `landed` closes it with the local range.
+- **The outcome is one marked, colored line** (`outcome` → `applyStatusMark`):
+  `✓` green applied, `✓` grey up-to-date, `⚠` amber blocked — nothing is broken,
+  something is yours to do — `✗` red for a conflict or an error. Each keeps its
+  status word in capitals, so the ending is findable by eye in a scrolled-back
+  terminal with or without color. `nextSteps` prints its commands in the
+  launcher's command color, because they are the part of a failed report meant
+  to be copied.
+
+Color is **written unconditionally and taken away by the writer**:
+`newApplyPrinter` wraps the command's output in a `colorprofile.Writer`, which
+strips every escape for a pipe or a file, drops color but keeps weight under
+`NO_COLOR`, and downsamples to what a 16-color terminal can show —
+`CLICOLOR_FORCE` still gets color into `less -R`. Honoring the stream in one
+place beats a `color` check at every call site, and it is why nothing in
+`apply_report.go` asks whether color is on. `TestColorAddsNothingButColor`
+holds the line: stripping the painted report has to give back the plain one
+exactly, so a terminal and a log file never show different output.
+
+Marks are not color and are never gated: `✓` in a pipe is still worth reading.
+The palette is the launcher's (`internal/tui/theme.go`) because apply is read
+inside a pane of that window as often as in a shell, and gold for a commit has
+to mean the same thing in both.
+
+The one thing measured off the terminal is width (`terminalWidth`, on the real
+stream — the wrapper is not a file): the rule that opens a source, and whether
+the commit list pads its subjects to a column at all. A report in a log file
+takes a fixed width rather than changing shape with whoever's window produced
+it.
+
 - `internal/cli/apply_report.go` owns the shape (`applyReport`) and its
   rendering (`applyPrinter`). Text output renders from the same struct that
-  `-o json` emits, so the two can never describe different things.
+  `-o json` emits, so the two can never describe different things. Call sites in
+  `apply.go` name what a line *is* — `note`, `commitsToApply`, `outcome` — and
+  never how it is drawn, so the report's weights stay in one file.
 - Every outcome is an `applyStatus` on the report, including failure:
   `applyOneSource` returns a report instead of an error, so a failed source
   keeps the context the run had already established rather than collapsing to
