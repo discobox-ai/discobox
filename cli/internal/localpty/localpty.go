@@ -19,6 +19,8 @@ package localpty
 import (
 	"context"
 	"io"
+	"os"
+	"strconv"
 	"time"
 )
 
@@ -80,17 +82,47 @@ type Command struct {
 	Dir string
 }
 
+// ParentPIDEnv names the process a command started here must not outlive. The
+// child reads it and ends itself once that process is gone.
+//
+// Both of the ways a pane ends its command — canceling ctx, closing the PTY —
+// run inside this process, so neither happens if this process dies without
+// unwinding: a crash, a SIGKILL, a terminal closed out from under a window that
+// did not get to its deferred Close. The child is started with Setsid and a pty
+// of its own, which is the point of this package and also means nothing the
+// operating system does on its own reaches it — no SIGHUP from the real
+// terminal, no process group to be killed with. It is left running with a pty
+// nobody holds, and on a command that retries (a terminal attach reconnecting)
+// it stays that way indefinitely. This is the lifeline that ends it.
+const ParentPIDEnv = "DISCOBOX_PARENT_PID"
+
 // Start runs cmd on a pty sized to cols by rows, with the pty as the command's
 // controlling terminal.
 //
 // Canceling ctx ends the command, as it does for exec.CommandContext. So does
 // closing the returned PTY, which is the launcher's way of dismissing a pane
-// whose command is still running.
+// whose command is still running. Neither survives this process dying
+// abruptly, which is what ParentPIDEnv is for; it is set here rather than by
+// each caller so that a child started on a pane's pty cannot be given one
+// without it.
 //
 // The error is worth showing a user: a platform that has no pseudo-terminal to
 // give says so here, and it is the only place that knows why.
 func Start(ctx context.Context, cmd Command, cols, rows int) (PTY, error) {
+	cmd.Env = withParentPID(cmd.Env)
 	return start(ctx, cmd, cols, rows)
+}
+
+// withParentPID adds this process's ID to a child environment.
+//
+// An empty Env means "inherit this process's" (see Command.Env), so it has to
+// be materialized before anything can be added to it — appending to nil would
+// hand the child that one variable and nothing else.
+func withParentPID(env []string) []string {
+	if len(env) == 0 {
+		env = os.Environ()
+	}
+	return append(env, ParentPIDEnv+"="+strconv.Itoa(os.Getpid()))
 }
 
 // defaultSize is what a pty is opened at when the caller has not laid out yet.

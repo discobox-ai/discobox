@@ -36,6 +36,8 @@ func TestMain(m *testing.M) {
 		os.Exit(3)
 	case "wait":
 		time.Sleep(time.Hour)
+	case "parent":
+		fmt.Printf("PARENT %s\r\n", os.Getenv(ParentPIDEnv))
 	}
 	os.Exit(0)
 }
@@ -192,6 +194,39 @@ func TestAnUnsizedPaneGetsADefault(t *testing.T) {
 
 	if err := p.Resize(0, 0); err != nil {
 		t.Fatalf("resize to nothing = %v, want it ignored", err)
+	}
+}
+
+// A command started here is told whose child it is, so it can end itself if
+// that process goes away. Closing the PTY and canceling the context are the
+// only other ways a pane ends its command, and both need the process that
+// started it to still be running its own code.
+func TestACommandIsToldWhoStartedIt(t *testing.T) {
+	p := helper(t, "parent", 80, 24)
+	out := readAll(p)
+	out.wait(t, fmt.Sprintf("PARENT %d", os.Getpid()), "the command should be told the pid it must not outlive")
+}
+
+// The environment is the child's own, plus that one variable. Appending to a
+// caller that passed none would have handed the child a world with nothing in
+// it but the pid.
+func TestAnInheritedEnvironmentSurvivesTheParentPID(t *testing.T) {
+	t.Setenv("LOCALPTY_TEST_INHERITED", "yes")
+	env := withParentPID(nil)
+	var sawInherited, sawParent bool
+	for _, entry := range env {
+		switch entry {
+		case "LOCALPTY_TEST_INHERITED=yes":
+			sawInherited = true
+		case fmt.Sprintf("%s=%d", ParentPIDEnv, os.Getpid()):
+			sawParent = true
+		}
+	}
+	if !sawInherited {
+		t.Fatal("a command that asked to inherit this environment should still get it")
+	}
+	if !sawParent {
+		t.Fatal("the command should be told the pid it must not outlive")
 	}
 }
 

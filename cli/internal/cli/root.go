@@ -86,7 +86,14 @@ an Enter. See "discobox run --help" for what the flags below mean.`,
 		SilenceErrors: true,
 		PersistentPreRunE: func(cmd *cobra.Command, _ []string) error {
 			app.errOut = cmd.ErrOrStderr()
-			return app.validate()
+			if err := app.validate(); err != nil {
+				return err
+			}
+			// Every command, not just the ones a pane runs: which command a
+			// pane is showing is the launcher's business, and a watch nobody
+			// asked for is a no-op (watchParentProcess).
+			cmd.SetContext(watchParentProcess(cmd.Context(), app.errOut))
+			return nil
 		},
 		// Anything this command is given is a run: the prompt, or a flag only a
 		// run takes. It is the one thing anybody does often enough to resent

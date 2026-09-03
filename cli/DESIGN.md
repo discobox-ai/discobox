@@ -43,6 +43,21 @@ transport helpers where OpenAPI does not model the stream.
   through a thread attribute `os/exec` cannot carry — so `localpty.Start` takes
   argv rather than an `*exec.Cmd`. See
   [ADR 0065](../docs/adr/0065-the-cli-owns-its-pty-seam-and-windows-gets-conpty.md).
+- A pane child must not outlive the process that drew it. Both of the ways a
+  pane ends its command — canceling the context, closing the PTY — run inside
+  the launcher, so a launcher that dies without unwinding ends neither. The
+  child is `Setsid` with a pty of its own, which is what this package is for and
+  also means nothing the operating system does reaches it: no SIGHUP from the
+  real terminal, no shared process group. `localpty.Start` therefore sets
+  `DISCOBOX_PARENT_PID`, and the child's `PersistentPreRunE` runs the rest of
+  the command under a context that is canceled once that process is gone
+  (`parentwatch.go`), and leaves anyway if canceling did not end it. It is
+  polled rather than signaled because macOS has neither `PR_SET_PDEATHSIG` nor
+  job objects. It is opt-in from the spawner because an orphaned pane child and
+  a command the user backgrounded from a shell look identical from inside. The
+  child consumes the variable rather than reading it, so it reaches one process
+  and not everything that process starts — above all the autolaunched server,
+  a singleton whose whole point is to outlive the CLI that forked it.
 - What runs is therefore `discobox apply` with its own flag defaults and terminal
   detection, not a second implementation that drifts from it. A launcher that
   cannot be reproduced from a shell is the thing to avoid.
