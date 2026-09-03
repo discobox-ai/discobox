@@ -13,7 +13,7 @@ package vzvm
 import (
 	"errors"
 	"fmt"
-	"path/filepath"
+	"path"
 	"strings"
 )
 
@@ -63,7 +63,9 @@ type SharedDirectory struct {
 	// Tag names the device inside the guest. Virtualization.framework limits
 	// it to 36 bytes and rejects "." and "..".
 	Tag string
-	// HostPath is the directory on the Mac.
+	// HostPath is the directory on the Mac. It is a macOS path whatever the
+	// platform this package is compiled for, so it is checked with path, not
+	// filepath: on Windows filepath.IsAbs rejects "/Users".
 	HostPath string
 	// ReadOnly is enforced by the host, not by how the guest mounts it.
 	ReadOnly bool
@@ -84,7 +86,7 @@ func (s SharedDirectory) validate() error {
 	case tag == "." || tag == "..":
 		return fmt.Errorf("vzvm: shared directory tag %q is reserved", tag)
 	}
-	if path := strings.TrimSpace(s.HostPath); path == "" || !filepath.IsAbs(path) {
+	if host := strings.TrimSpace(s.HostPath); host == "" || !path.IsAbs(host) {
 		return fmt.Errorf("vzvm: shared directory %q needs an absolute host path, got %q", tag, s.HostPath)
 	}
 	return nil
