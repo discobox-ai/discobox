@@ -68,6 +68,28 @@ func TestEnterRunsThePromptAndAttaches(t *testing.T) {
 	}
 }
 
+// A modified Enter belongs to the prompt instead of submitting it. Enhanced
+// terminals can report Shift-Enter and Ctrl-Enter distinctly; byte-oriented
+// terminals commonly report the latter as Ctrl-J.
+func TestModifiedEnterInsertsANewline(t *testing.T) {
+	for _, key := range []string{"shift+enter", "ctrl+enter", "ctrl+j", "alt+enter"} {
+		t.Run(key, func(t *testing.T) {
+			ds := newFakeSource(testSandboxes()...)
+			m := newTestModel(t, ds)
+			send(t, m, typeString("first")...)
+			send(t, m, keyPress(key))
+			send(t, m, typeString("second")...)
+
+			if got := m.prompt.Value(); got != "first\nsecond" {
+				t.Fatalf("prompt = %q, want a newline from %s", got, key)
+			}
+			if len(ds.runs) != 0 {
+				t.Fatalf("runs = %d, want none", len(ds.runs))
+			}
+		})
+	}
+}
+
 // An empty prompt is not an error. It is the other thing you come here for: a
 // sandbox with nothing given to the harness.
 func TestEnterOnAnEmptyPromptStillCreates(t *testing.T) {

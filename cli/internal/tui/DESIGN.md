@@ -1352,6 +1352,11 @@ reads the height back rather than computing one. Three rows is enough to see the
 sentence you are still writing; a field that kept growing would take the window
 over for a prompt you are only halfway through.
 
+**Modified Enter writes a newline.** Shift-Enter, Ctrl-Enter, Alt-Enter, and
+Ctrl-J all keep the prompt open and split the line. Enhanced terminals report
+the Enter chords distinctly; Ctrl-J also covers terminals that encode
+Ctrl-Enter as the traditional line-feed control byte.
+
 **The composer is a readline** (`readline.go`). The field answers GNU readline's
 emacs mode, because anyone who has typed at a shell prompt has those motions in
 their fingers and a field that answers Ctrl-A but not Ctrl-Y invites the muscle

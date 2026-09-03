@@ -1183,7 +1183,8 @@ func (m *Model) promptEdited(msg editorDoneMsg) {
 
 // updatePrompt handles the default mode. Every key is text, except the ones
 // that leave or act on the composer: Up walks out of the top of the field,
-// Enter launches, Tab moves to the list, and Shift-Tab cycles the harness.
+// Enter launches, modified Enter inserts a newline, Tab moves to the list, and
+// Shift-Tab cycles the harness.
 func (m *Model) updatePrompt(msg tea.KeyPressMsg) tea.Cmd {
 	switch keyName(msg) {
 	case "up":
@@ -1241,9 +1242,10 @@ func (m *Model) updatePrompt(msg tea.KeyPressMsg) tea.Cmd {
 	case "enter":
 		return m.run()
 
-	case "alt+enter", "ctrl+enter", "ctrl+j":
+	case "shift+enter", "alt+enter", "ctrl+enter", "ctrl+j":
 		// A terminal that can tell Ctrl-Enter apart sends ctrl+enter; most
-		// send it as ctrl+j, which is the same byte as Ctrl-J.
+		// send it as ctrl+j, which is the same byte as Ctrl-J. Terminals with
+		// key disambiguation report Shift-Enter directly.
 		m.prompt.InsertString("\n")
 		return nil
 
@@ -3078,7 +3080,7 @@ func (m *Model) hints() []hint {
 			keyed("Shift-Tab", "shift+tab", "harness"),
 			keyed("Ctrl-O", "ctrl+o", "options"),
 			keyed("Alt-E", "alt+e", "editor"),
-			says("Ctrl-Enter newline"),
+			says("Shift/Ctrl-Enter newline"),
 			keyed("Ctrl-D", "ctrl+d", "quit"),
 		}
 	}
@@ -3244,8 +3246,8 @@ func (m *Model) helpText() string {
 		"",
 		"    Enter          run the prompt in a new discobox, or with an",
 		"                   empty prompt just create one and attach to it",
-		"    Ctrl-Enter     newline (Alt-Enter too, and Ctrl-J, which is",
-		"                   what most terminals send for Ctrl-Enter)",
+		"    Shift-Enter    newline (Ctrl-Enter and Alt-Enter too, and",
+		"                   Ctrl-J, which some terminals send for Ctrl-Enter)",
 		"    Ctrl-D         quit, when the prompt is empty",
 		"    ↑ ↓            move a line at a time, wrapped rows included.",
 		"                   From the row they cannot move off they go to the",
