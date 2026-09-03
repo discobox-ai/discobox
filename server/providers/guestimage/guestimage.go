@@ -32,6 +32,7 @@ import (
 	"slices"
 	"strings"
 	"sync"
+	"time"
 
 	"github.com/google/go-containerregistry/pkg/authn"
 	"github.com/google/go-containerregistry/pkg/name"
@@ -98,6 +99,43 @@ func (b *Bundle) Path(artifact string) string {
 	}
 	return b.paths[artifact]
 }
+
+// Progress is one report about a guest image being fetched, shaped for a status
+// line rather than for a progress bar.
+//
+// Current counts the compressed bytes read from the registry, which is what the
+// wait is actually made of: extraction is streamed, so a layer is downloaded as
+// it is written out. Total is the sum of the layer sizes the manifest declares,
+// so unlike a Docker pull it is known before the first byte and does not grow.
+type Progress struct {
+	// Reference is the image being fetched.
+	Reference string
+	// Current and Total are compressed bytes.
+	Current int64
+	Total   int64
+	// Layers and LayersComplete count the image's layers.
+	Layers         int
+	LayersComplete int
+	// Done marks the closing report, sent once the artifacts are on disk.
+	Done bool
+}
+
+// ProgressFunc receives fetch progress. A nil one asks for none, and then
+// nothing is wrapped and no reporting goroutine runs.
+//
+// It is called from the extraction's own goroutine and may be called often;
+// an implementation that blocks slows the fetch down.
+type ProgressFunc func(Progress)
+
+// progressInterval is how often a fetch in flight is reported. It matches the
+// pool image pull's rate, because both end up on the same status line and a
+// byte counter has to move at about this rate to read as movement.
+//
+// Reporting is on a ticker rather than on byte arrival, so a stalled download
+// keeps restating the phase. Nothing else does: unlike the phases a driver
+// holds, a fetch has no heartbeat of its own, and a status line that goes stale
+// mid-fetch reverts to saying only that the pool is being waited on.
+const progressInterval = 500 * time.Millisecond
 
 // Resolver resolves one driver's guest artifacts, at most once per process for
 // a given digest. It is safe for concurrent use: pools start in parallel and
@@ -194,13 +232,17 @@ func (r *Resolver) Reference() string {
 
 // Resolve returns the artifact bundle, pulling and extracting the guest image
 // the first time it is needed on this host.
-func (r *Resolver) Resolve(ctx context.Context) (*Bundle, error) {
+//
+// report, when set, narrates the pull. It is only ever called for a fetch that
+// actually moves bytes: an override directory, a local build, and a cache hit
+// all resolve without touching the network and have nothing to narrate.
+func (r *Resolver) Resolve(ctx context.Context, report ProgressFunc) (*Bundle, error) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	if r.resolved != nil {
 		return r.resolved, nil
 	}
-	bundle, err := r.resolve(ctx)
+	bundle, err := r.resolve(ctx, report)
 	if err != nil {
 		return nil, err
 	}
@@ -208,7 +250,7 @@ func (r *Resolver) Resolve(ctx context.Context) (*Bundle, error) {
 	return bundle, nil
 }
 
-func (r *Resolver) resolve(ctx context.Context) (*Bundle, error) {
+func (r *Resolver) resolve(ctx context.Context, report ProgressFunc) (*Bundle, error) {
 	if r.cfg.OverrideDir != "" {
 		bundle, err := r.collect(r.cfg.OverrideDir, "override")
 		if err != nil {
@@ -263,7 +305,7 @@ func (r *Resolver) resolve(ctx context.Context) (*Bundle, error) {
 	if err != nil {
 		return nil, fmt.Errorf("guestimage: read %s: %w", r.cfg.Reference, err)
 	}
-	if err := r.extract(ctx, image, dir); err != nil {
+	if err := r.extract(ctx, image, dir, report); err != nil {
 		return nil, err
 	}
 	bundle, err := r.collect(dir, digest)
@@ -278,7 +320,7 @@ func (r *Resolver) resolve(ctx context.Context) (*Bundle, error) {
 // extract flattens the image and writes the wanted artifacts into dir. It
 // builds a temporary directory and renames it, so a partially extracted
 // directory is never visible under a digest.
-func (r *Resolver) extract(ctx context.Context, image v1.Image, dir string) error {
+func (r *Resolver) extract(ctx context.Context, image v1.Image, dir string, report ProgressFunc) error {
 	if err := os.MkdirAll(r.cfg.CacheDir, 0o755); err != nil {
 		return fmt.Errorf("guestimage: create cache directory: %w", err)
 	}
@@ -302,6 +344,19 @@ func (r *Resolver) extract(ctx context.Context, image v1.Image, dir string) erro
 		if !artifact.Optional {
 			required[clean] = struct{}{}
 		}
+	}
+
+	// Narration wraps the image rather than the tar stream, because the bytes
+	// worth counting are the compressed ones crossing the network. Extraction
+	// is what pulls them: mutate.Extract reads each layer as it flattens, so
+	// the download and the write to disk are one pass and one progress report.
+	if report != nil {
+		counted, stop, err := countedImage(image, r.cfg.Reference, report)
+		if err != nil {
+			return err
+		}
+		defer stop()
+		image = counted
 	}
 
 	contents := mutate.Extract(image)

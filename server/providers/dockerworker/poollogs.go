@@ -9,6 +9,7 @@ import (
 	"os/exec"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/discobox-ai/discobox/server/internal/model"
@@ -134,6 +135,16 @@ func (s *commandStream) Close() error {
 // invisible to someone reading a boot log.
 func TailFile(ctx context.Context, path string, opts sandbox.PoolLogOptions) (io.ReadCloser, error) {
 	file, err := os.Open(path) //nolint:gosec // The path is composed by the driver from its own state directory.
+	if errors.Is(err, os.ErrNotExist) && opts.Follow {
+		// The file does not exist until the backend first writes to it, which
+		// for a VM console is when the machine boots — and the whole of a cold
+		// start happens before that: the guest image is fetched, disks are
+		// created, and only then is there a VM to have a console. Someone who
+		// asked to follow at that point asked to watch the boot, so wait for it
+		// rather than failing with "no log yet" during the one wait this log
+		// exists to explain.
+		return &followReader{ctx: ctx, path: path, tail: opts.Tail}, nil
+	}
 	if err != nil {
 		return nil, err
 	}
@@ -146,7 +157,7 @@ func TailFile(ctx context.Context, path string, opts sandbox.PoolLogOptions) (io
 	if !opts.Follow {
 		return file, nil
 	}
-	return &followReader{ctx: ctx, file: file}, nil
+	return &followReader{ctx: ctx, path: path, tail: opts.Tail, file: file}, nil
 }
 
 // seekToTail positions the file at the start of its last n lines, scanning
@@ -190,22 +201,38 @@ func seekToTail(file *os.File, n int) error {
 	return err
 }
 
-// followReader reads a growing file, waiting at EOF instead of reporting it.
-// The wait ends when the caller's context does, which is how a client that
-// disconnects releases the file.
+// followReader reads a growing file, waiting at EOF instead of reporting it,
+// and waiting for the file itself when it is not there yet. The wait ends when
+// the caller's context does, which is how a client that disconnects releases
+// the file.
+//
+// The file is held behind a mutex because it can arrive after the stream has
+// been handed out: a reader that opens it and a caller that closes the stream
+// are then two goroutines racing for the same field.
 type followReader struct {
 	ctx  context.Context
-	file *os.File
+	path string
+	tail int
+
+	mu     sync.Mutex
+	file   *os.File
+	closed bool
 }
 
 func (r *followReader) Read(p []byte) (int, error) {
 	for {
-		n, err := r.file.Read(p)
-		if n > 0 {
-			return n, nil
-		}
-		if err != nil && !errors.Is(err, io.EOF) {
+		file, err := r.current()
+		if err != nil {
 			return 0, err
+		}
+		if file != nil {
+			n, err := file.Read(p)
+			if n > 0 {
+				return n, nil
+			}
+			if err != nil && !errors.Is(err, io.EOF) {
+				return 0, err
+			}
 		}
 		select {
 		case <-r.ctx.Done():
@@ -217,4 +244,43 @@ func (r *followReader) Read(p []byte) (int, error) {
 	}
 }
 
-func (r *followReader) Close() error { return r.file.Close() }
+// current is the open file, opening it if it has appeared since the last poll.
+// A file that is still absent is not an error — that is what is being waited
+// for — so it reports no file and no error, and the caller polls again.
+func (r *followReader) current() (*os.File, error) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	if r.closed {
+		return nil, io.EOF
+	}
+	if r.file != nil {
+		return r.file, nil
+	}
+	file, err := os.Open(r.path) //nolint:gosec // The path is composed by the driver from its own state directory.
+	if errors.Is(err, os.ErrNotExist) {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, err
+	}
+	if r.tail > 0 {
+		if err := seekToTail(file, r.tail); err != nil {
+			_ = file.Close()
+			return nil, err
+		}
+	}
+	r.file = file
+	return file, nil
+}
+
+func (r *followReader) Close() error {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	r.closed = true
+	if r.file == nil {
+		return nil
+	}
+	file := r.file
+	r.file = nil
+	return file.Close()
+}

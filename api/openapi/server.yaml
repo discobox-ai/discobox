@@ -3976,10 +3976,16 @@ components:
                 disk image and boots a machine before any of it can run containers, and those are
                 the minutes a first pool start is actually spent in. The two image phases carry
                 pull byte counts; the rest are named work with no denominator to report.
+
+                syncing_development_images appears only on a server running development images:
+                it is the build of the pool, sandbox-base, and harness images on the pool's own
+                Docker, which on a VM backend is where a cold start spends its second stretch of
+                minutes, after the machine is up and before its agent exists to start.
             enum:
                 - fetching_vm_image
                 - starting_vm
                 - waiting_for_docker
+                - syncing_development_images
                 - pulling_pool_image
                 - starting_pool_agent
                 - waiting_for_pool_agent

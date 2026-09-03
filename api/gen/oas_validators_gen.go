@@ -2228,6 +2228,8 @@ func (s PoolProvisionPhase) Validate() error {
 		return nil
 	case "waiting_for_docker":
 		return nil
+	case "syncing_development_images":
+		return nil
 	case "pulling_pool_image":
 		return nil
 	case "starting_pool_agent":

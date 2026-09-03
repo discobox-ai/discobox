@@ -104,9 +104,23 @@ builds one from its pool manager. Reports land on the pool row's
 it is doing instead.
 
 The engine reports the phases every backend shares — starting the VM, waiting
-for Docker, pulling the pool image, starting and waiting for the agent — around
-the calls that perform them. A driver refines that from inside: `vz` reports
-fetching the VM image, which the engine can only see as part of starting a VM.
+for Docker, preparing the development images, pulling the pool image, starting
+and waiting for the agent — around the calls that perform them. A driver refines
+that from inside: `vz` reports fetching the VM image, which the engine can only
+see as part of starting a VM.
+
+A phase with a denominator reports it, and a phase without one is held. The two
+are exclusive: `Hold` restates a bare phase on a heartbeat, so holding a phase
+that also reports bytes would blank the byte counts every time the heartbeat
+fired. A pull is its own heartbeat instead — the Docker pulls report as their
+stream advances, and the guest image fetch reports on a ticker so a stalled
+download keeps the phase fresh rather than aging out mid-fetch.
+
+Phases exist wherever the wait does. Two stretches of a cold macOS start have no
+Docker mechanic behind them and were therefore silent until named: the guest
+image fetch, which is hundreds of megabytes before there is a VM at all, and the
+development image build, which runs on the pool's own BuildKit after the machine
+is up and before its agent can be started.
 
 The record has a second reader. Placement waits for the sandbox's pool to become
 schedulable, and that wait used to spend one fixed 30s budget whether the pool
@@ -293,10 +307,18 @@ stream carries that description to the operator:
 | Driver | Log | How |
 | --- | --- | --- |
 | `vz`, `libkrun` | guest serial console | the file the VM appends across every boot, in the pool's state (vz) or runtime (libkrun) directory |
+
 | `docker` | Docker daemon journal | `journalctl` on the control plane's own machine |
 | `digitalocean` | droplet's Docker daemon journal | `journalctl` over the SSH connection the driver already uses for Docker (`sshdocker.Dialer.StreamCommand`) |
 | `wslc` | guest journal, else its kernel ring buffer | a guest process over the session, since the platform owns the guest's boot and the host captures no console |
 | `execvm` | whatever the command prints | a `logs` operation, streamed rather than collected |
+
+A followed read waits for a log that does not exist yet rather than failing.
+The console file is created when the VM starts, and everything before that — the
+guest image fetch, the disks — is precisely the wait an operator opens the log
+to understand; failing there answers "the VM has not started" to someone who
+already knows. Without `--follow` there is nothing to wait for, so a missing log
+is still an error.
 
 Three properties are load-bearing:
 

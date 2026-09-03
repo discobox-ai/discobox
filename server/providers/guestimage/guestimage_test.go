@@ -10,6 +10,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 	"sync/atomic"
 	"testing"
 
@@ -85,7 +86,7 @@ func TestResolveExtractsRequestedArtifacts(t *testing.T) {
 	if err != nil {
 		t.Fatalf("New: %v", err)
 	}
-	bundle, err := resolver.Resolve(context.Background())
+	bundle, err := resolver.Resolve(context.Background(), nil)
 	if err != nil {
 		t.Fatalf("Resolve: %v", err)
 	}
@@ -127,7 +128,7 @@ func TestResolveCachesByDigestAcrossResolvers(t *testing.T) {
 	if err != nil {
 		t.Fatalf("New: %v", err)
 	}
-	if _, err := first.Resolve(context.Background()); err != nil {
+	if _, err := first.Resolve(context.Background(), nil); err != nil {
 		t.Fatalf("first Resolve: %v", err)
 	}
 	pulled := requests.Load()
@@ -141,7 +142,7 @@ func TestResolveCachesByDigestAcrossResolvers(t *testing.T) {
 	if err != nil {
 		t.Fatalf("New: %v", err)
 	}
-	bundle, err := second.Resolve(context.Background())
+	bundle, err := second.Resolve(context.Background(), nil)
 	if err != nil {
 		t.Fatalf("second Resolve: %v", err)
 	}
@@ -167,7 +168,7 @@ func TestResolveFailsOnMissingRequiredArtifact(t *testing.T) {
 	if err != nil {
 		t.Fatalf("New: %v", err)
 	}
-	_, err = resolver.Resolve(context.Background())
+	_, err = resolver.Resolve(context.Background(), nil)
 	if err == nil {
 		t.Fatal("Resolve succeeded without the root filesystem")
 	}
@@ -189,7 +190,7 @@ func TestResolveToleratesAbsentOptionalArtifact(t *testing.T) {
 	if err != nil {
 		t.Fatalf("New: %v", err)
 	}
-	bundle, err := resolver.Resolve(context.Background())
+	bundle, err := resolver.Resolve(context.Background(), nil)
 	if err != nil {
 		t.Fatalf("Resolve: %v", err)
 	}
@@ -216,7 +217,7 @@ func TestResolveUsesOverrideDirectory(t *testing.T) {
 	if got := resolver.Reference(); got != "" {
 		t.Errorf("Reference() = %q, want empty while overridden", got)
 	}
-	bundle, err := resolver.Resolve(context.Background())
+	bundle, err := resolver.Resolve(context.Background(), nil)
 	if err != nil {
 		t.Fatalf("Resolve: %v", err)
 	}
@@ -242,7 +243,7 @@ func TestResolveFailsOnIncompleteOverrideDirectory(t *testing.T) {
 	if err != nil {
 		t.Fatalf("New: %v", err)
 	}
-	if _, err := resolver.Resolve(context.Background()); err == nil {
+	if _, err := resolver.Resolve(context.Background(), nil); err == nil {
 		t.Fatal("Resolve succeeded with an empty override directory")
 	}
 }
@@ -284,7 +285,7 @@ func TestResolvePrefersACompleteLocalDirectory(t *testing.T) {
 	if err != nil {
 		t.Fatalf("New: %v", err)
 	}
-	bundle, err := resolver.Resolve(context.Background())
+	bundle, err := resolver.Resolve(context.Background(), nil)
 	if err != nil {
 		t.Fatalf("Resolve: %v", err)
 	}
@@ -330,7 +331,7 @@ func TestResolveFallsBackWhenTheLocalDirectoryIsIncomplete(t *testing.T) {
 			if err != nil {
 				t.Fatalf("New: %v", err)
 			}
-			bundle, err := resolver.Resolve(context.Background())
+			bundle, err := resolver.Resolve(context.Background(), nil)
 			if err != nil {
 				t.Fatalf("Resolve: %v", err)
 			}
@@ -359,7 +360,98 @@ func TestResolveDoesNotFallBackFromAConfiguredOverride(t *testing.T) {
 	if err != nil {
 		t.Fatalf("New: %v", err)
 	}
-	if _, err := resolver.Resolve(context.Background()); err == nil {
+	if _, err := resolver.Resolve(context.Background(), nil); err == nil {
 		t.Fatal("a broken configured override fell back instead of failing")
+	}
+}
+
+// A guest image is hundreds of megabytes and is fetched before there is a VM to
+// have a console, so this report is the only account of the longest wait in a
+// cold pool start. It has to carry bytes, not just the fact that a fetch is
+// happening.
+func TestResolveReportsFetchProgress(t *testing.T) {
+	reference, _ := pushGuestImage(t, map[string][]byte{
+		"vmlinux":   []byte(strings.Repeat("kernel", 4096)),
+		"root.ext4": []byte(strings.Repeat("root", 4096)),
+	})
+	resolver, err := New(Config{
+		Reference: reference,
+		CacheDir:  t.TempDir(),
+		Platform:  linuxAMD64(),
+		Artifacts: []Artifact{{Name: "vmlinux"}, {Name: "root.ext4"}},
+	})
+	if err != nil {
+		t.Fatalf("New: %v", err)
+	}
+
+	var mu sync.Mutex
+	var reports []Progress
+	if _, err := resolver.Resolve(context.Background(), func(progress Progress) {
+		mu.Lock()
+		defer mu.Unlock()
+		reports = append(reports, progress)
+	}); err != nil {
+		t.Fatalf("Resolve: %v", err)
+	}
+
+	mu.Lock()
+	defer mu.Unlock()
+	if len(reports) < 2 {
+		t.Fatalf("reports = %d, want an opening one and a closing one at least", len(reports))
+	}
+	first := reports[0]
+	if first.Reference != reference {
+		t.Errorf("first report reference = %q, want %q", first.Reference, reference)
+	}
+	// The denominator comes from the manifest, so it is known before a byte
+	// moves — unlike a Docker pull, whose total grows as layers are walked.
+	if first.Total <= 0 {
+		t.Errorf("first report total = %d, want the manifest's layer sizes", first.Total)
+	}
+	if first.Layers <= 0 {
+		t.Errorf("first report layers = %d, want the image's layer count", first.Layers)
+	}
+	last := reports[len(reports)-1]
+	if !last.Done {
+		t.Error("the last report is not marked done")
+	}
+	if last.Current != last.Total {
+		t.Errorf("closing report = %d of %d bytes, want every compressed byte counted", last.Current, last.Total)
+	}
+	if last.LayersComplete != last.Layers {
+		t.Errorf("closing report = %d of %d layers complete", last.LayersComplete, last.Layers)
+	}
+}
+
+// A resolve that never reaches the registry has nothing to narrate, and a
+// report that fired anyway would put a byte counter on a status line for a
+// fetch that is not happening.
+func TestResolveReportsNothingForACacheHit(t *testing.T) {
+	reference, _ := pushGuestImage(t, map[string][]byte{"vmlinux": []byte("kernel bytes")})
+	cache := t.TempDir()
+	config := Config{
+		Reference: reference,
+		CacheDir:  cache,
+		Platform:  linuxAMD64(),
+		Artifacts: []Artifact{{Name: "vmlinux"}},
+	}
+	first, err := New(config)
+	if err != nil {
+		t.Fatalf("New: %v", err)
+	}
+	if _, err := first.Resolve(context.Background(), nil); err != nil {
+		t.Fatalf("first Resolve: %v", err)
+	}
+
+	second, err := New(config)
+	if err != nil {
+		t.Fatalf("New: %v", err)
+	}
+	reported := false
+	if _, err := second.Resolve(context.Background(), func(Progress) { reported = true }); err != nil {
+		t.Fatalf("second Resolve: %v", err)
+	}
+	if reported {
+		t.Error("a cache hit reported fetch progress")
 	}
 }

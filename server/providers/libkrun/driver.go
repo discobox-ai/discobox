@@ -314,7 +314,7 @@ func (d *Driver) PoolLogs(ctx context.Context, poolID string, opts sandbox.PoolL
 	stream, err := dockerworker.TailFile(ctx, path, opts)
 	if err != nil {
 		if errors.Is(err, os.ErrNotExist) {
-			return nil, fmt.Errorf("pool %s has no libkrun console log yet: its VM has not been started on this host", poolID)
+			return nil, fmt.Errorf("pool %s has no libkrun console log yet: its VM has not been started on this host, which on a cold start means the guest image is still being fetched; --follow waits for the boot instead of failing here", poolID)
 		}
 		return nil, err
 	}

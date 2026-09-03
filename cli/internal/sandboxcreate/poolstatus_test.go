@@ -26,6 +26,7 @@ func TestPoolProvisionStatusNamesTheDriversWork(t *testing.T) {
 		{apiclientgen.PoolProvisionPhaseFetchingVMImage, "fetching the VM image"},
 		{apiclientgen.PoolProvisionPhaseStartingVM, "starting the VM"},
 		{apiclientgen.PoolProvisionPhaseWaitingForDocker, "waiting for Docker in the VM"},
+		{apiclientgen.PoolProvisionPhaseSyncingDevelopmentImages, "preparing the development images"},
 		{apiclientgen.PoolProvisionPhasePullingPoolImage, "pulling the pool agent image"},
 		{apiclientgen.PoolProvisionPhaseStartingPoolAgent, "starting the pool agent"},
 		{apiclientgen.PoolProvisionPhaseWaitingForPoolAgent, "waiting for the pool agent to come up"},
@@ -76,5 +77,31 @@ func TestPoolProvisionStatusSaysNothingWithoutARecord(t *testing.T) {
 	}
 	if got := PoolProvisionStatus(nil); got != "" {
 		t.Fatalf("PoolProvisionStatus(nil) = %q, want nothing", got)
+	}
+}
+
+// The guest image is fetched by digest, and its digest is 71 characters on a
+// line that also has to carry a byte count. Without shortening, the numbers
+// this line exists for are pushed off the end of a terminal.
+func TestPoolProvisionStatusShortensADigestPinnedImage(t *testing.T) {
+	pool := poolWith(apimodel.PoolProvisionProgress{
+		Phase: apiclientgen.PoolProvisionPhaseFetchingVMImage,
+		Pull: apiclientgen.NewOptSandboxPullProgress(apimodel.SandboxPullProgress{
+			Image:   "ghcr.io/discobox-ai/discobox-vm@sha256:a384499ea85ab5704a1e7ac1266509c1e4590d896d962d13ad77cba0db2479c8",
+			Current: apiclientgen.NewOptInt64(210 << 20),
+			Total:   apiclientgen.NewOptInt64(490 << 20),
+		}),
+	}, time.Now())
+	got := string(PoolProvisionStatus(pool))
+	if !strings.Contains(got, "discobox-vm@a384499ea85a") {
+		t.Errorf("PoolProvisionStatus() = %q, want the short digest", got)
+	}
+	if strings.Contains(got, "db2479c8") {
+		t.Errorf("PoolProvisionStatus() = %q, still carries the whole digest", got)
+	}
+	for _, want := range []string{"210.0 MiB", "490.0 MiB"} {
+		if !strings.Contains(got, want) {
+			t.Errorf("PoolProvisionStatus() = %q, missing %q", got, want)
+		}
 	}
 }

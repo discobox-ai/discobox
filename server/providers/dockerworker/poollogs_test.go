@@ -224,3 +224,58 @@ func firstLineOf(value string) string {
 	line, _, _ := strings.Cut(value, "\n")
 	return line
 }
+
+// The whole of a cold VM start happens before the console file exists: the
+// guest image is fetched, the disks are created, and only then is there a
+// machine with a serial port. An operator following the log through that wait
+// asked to watch the boot, so the wait is the answer, not an error.
+func TestTailFileFollowWaitsForAFileThatDoesNotExistYet(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "console.log")
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	stream, err := TailFile(ctx, path, sandbox.PoolLogOptions{Tail: 200, Follow: true})
+	if err != nil {
+		t.Fatalf("tail a console log that does not exist yet: %v", err)
+	}
+	defer stream.Close()
+
+	read := make(chan string, 1)
+	go func() {
+		buf := make([]byte, 64)
+		n, err := stream.Read(buf)
+		if err != nil {
+			read <- "error: " + err.Error()
+			return
+		}
+		read <- string(buf[:n])
+	}()
+
+	// Nothing to read yet, and no failure either.
+	select {
+	case got := <-read:
+		t.Fatalf("read returned %q before the VM wrote anything", got)
+	case <-time.After(2 * followPollInterval):
+	}
+
+	if err := os.WriteFile(path, []byte("booting\n"), 0o600); err != nil {
+		t.Fatalf("write console log: %v", err)
+	}
+	select {
+	case got := <-read:
+		if got != "booting\n" {
+			t.Fatalf("read = %q, want the first console line", got)
+		}
+	case <-time.After(5 * time.Second):
+		t.Fatal("a followed read never picked up the console log the VM created")
+	}
+}
+
+// Without --follow there is nothing to wait for, so a missing console is still
+// the error that says the VM has not started.
+func TestTailFileWithoutFollowStillReportsAMissingFile(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "console.log")
+	if _, err := TailFile(context.Background(), path, sandbox.PoolLogOptions{Tail: 200}); !errors.Is(err, os.ErrNotExist) {
+		t.Fatalf("tail without follow = %v, want a not-exist error", err)
+	}
+}

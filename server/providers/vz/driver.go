@@ -164,9 +164,26 @@ func (d *Driver) EnsureVM(ctx context.Context, poolID string, _ dockerworker.VMS
 	// Reported unconditionally rather than only when it turns out to be a miss:
 	// whether the image is cached is known only by asking, and a phase that
 	// lasts milliseconds on a warm machine costs a status line one frame.
-	releaseFetch := d.progress.Hold(ctx, poolID, sandbox.PoolPhaseFetchingVMImage)
-	bundle, err := d.guest.Resolve(ctx)
-	releaseFetch()
+	//
+	// The phase is not held. A fetch that moves bytes restates itself twice a
+	// second with its byte counts, and a held phase would blank those every time
+	// its heartbeat fired — the same reason the engine does not hold the pool
+	// image pull. The one report here covers a resolve that never gets that far:
+	// a cache hit, a local build, or a registry that has not answered yet.
+	d.progress.Report(ctx, poolID, sandbox.PoolPhaseFetchingVMImage)
+	bundle, err := d.guest.Resolve(ctx, func(fetch guestimage.Progress) {
+		d.progress.ReportProgress(ctx, poolID, sandbox.PoolProvisionProgress{
+			Phase: sandbox.PoolPhaseFetchingVMImage,
+			Pull: &sandbox.PoolPullProgress{
+				Image:          fetch.Reference,
+				Current:        fetch.Current,
+				Total:          fetch.Total,
+				Layers:         fetch.Layers,
+				LayersComplete: fetch.LayersComplete,
+				Done:           fetch.Done,
+			},
+		})
+	})
 	if err != nil {
 		return nil, err
 	}
@@ -333,7 +350,7 @@ func (d *Driver) PoolLogs(ctx context.Context, poolID string, opts sandbox.PoolL
 	stream, err := dockerworker.TailFile(ctx, path, opts)
 	if err != nil {
 		if errors.Is(err, os.ErrNotExist) {
-			return nil, fmt.Errorf("pool %s has no vz console log yet: its VM has not been started on this host", poolID)
+			return nil, fmt.Errorf("pool %s has no vz console log yet: its VM has not been started on this host, which on a cold start means the guest image is still being fetched; --follow waits for the boot instead of failing here", poolID)
 		}
 		return nil, err
 	}

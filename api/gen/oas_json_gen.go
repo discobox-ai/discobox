@@ -13090,6 +13090,8 @@ func (s *PoolProvisionPhase) Decode(d *jx.Decoder) error {
 		*s = PoolProvisionPhaseStartingVM
 	case PoolProvisionPhaseWaitingForDocker:
 		*s = PoolProvisionPhaseWaitingForDocker
+	case PoolProvisionPhaseSyncingDevelopmentImages:
+		*s = PoolProvisionPhaseSyncingDevelopmentImages
 	case PoolProvisionPhasePullingPoolImage:
 		*s = PoolProvisionPhasePullingPoolImage
 	case PoolProvisionPhaseStartingPoolAgent:

@@ -57,12 +57,18 @@ type PoolManager interface {
 type PoolProvisionPhase string
 
 const (
-	PoolPhaseFetchingVMImage     PoolProvisionPhase = "fetching_vm_image"
-	PoolPhaseStartingVM          PoolProvisionPhase = "starting_vm"
-	PoolPhaseWaitingForDocker    PoolProvisionPhase = "waiting_for_docker"
-	PoolPhasePullingPoolImage    PoolProvisionPhase = "pulling_pool_image"
-	PoolPhaseStartingPoolAgent   PoolProvisionPhase = "starting_pool_agent"
-	PoolPhaseWaitingForPoolAgent PoolProvisionPhase = "waiting_for_pool_agent"
+	PoolPhaseFetchingVMImage  PoolProvisionPhase = "fetching_vm_image"
+	PoolPhaseStartingVM       PoolProvisionPhase = "starting_vm"
+	PoolPhaseWaitingForDocker PoolProvisionPhase = "waiting_for_docker"
+	// PoolPhaseSyncingDevelopmentImages is the build of the development images
+	// on the pool's own Docker daemon. It appears only on a server running
+	// them, and it is the second long stretch of a cold VM start: the machine
+	// is up, and the pool, sandbox-base, and harness images are being built
+	// from the local checkout before there is a pool agent to start.
+	PoolPhaseSyncingDevelopmentImages PoolProvisionPhase = "syncing_development_images"
+	PoolPhasePullingPoolImage         PoolProvisionPhase = "pulling_pool_image"
+	PoolPhaseStartingPoolAgent        PoolProvisionPhase = "starting_pool_agent"
+	PoolPhaseWaitingForPoolAgent      PoolProvisionPhase = "waiting_for_pool_agent"
 	// PoolPhasePreloadingImages is the startup pull of the images a sandbox
 	// will want, done before anybody asks for one.
 	PoolPhasePreloadingImages PoolProvisionPhase = "preloading_images"

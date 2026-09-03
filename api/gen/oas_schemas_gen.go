@@ -8429,17 +8429,22 @@ func (s *PoolMemoryUsageAdditional) init() PoolMemoryUsageAdditional {
 // disk image and boots a machine before any of it can run containers, and those are
 // the minutes a first pool start is actually spent in. The two image phases carry
 // pull byte counts; the rest are named work with no denominator to report.
+// syncing_development_images appears only on a server running development images:
+// it is the build of the pool, sandbox-base, and harness images on the pool's own
+// Docker, which on a VM backend is where a cold start spends its second stretch of
+// minutes, after the machine is up and before its agent exists to start.
 // Ref: #/components/schemas/PoolProvisionPhase
 type PoolProvisionPhase string
 
 const (
-	PoolProvisionPhaseFetchingVMImage     PoolProvisionPhase = "fetching_vm_image"
-	PoolProvisionPhaseStartingVM          PoolProvisionPhase = "starting_vm"
-	PoolProvisionPhaseWaitingForDocker    PoolProvisionPhase = "waiting_for_docker"
-	PoolProvisionPhasePullingPoolImage    PoolProvisionPhase = "pulling_pool_image"
-	PoolProvisionPhaseStartingPoolAgent   PoolProvisionPhase = "starting_pool_agent"
-	PoolProvisionPhaseWaitingForPoolAgent PoolProvisionPhase = "waiting_for_pool_agent"
-	PoolProvisionPhasePreloadingImages    PoolProvisionPhase = "preloading_images"
+	PoolProvisionPhaseFetchingVMImage          PoolProvisionPhase = "fetching_vm_image"
+	PoolProvisionPhaseStartingVM               PoolProvisionPhase = "starting_vm"
+	PoolProvisionPhaseWaitingForDocker         PoolProvisionPhase = "waiting_for_docker"
+	PoolProvisionPhaseSyncingDevelopmentImages PoolProvisionPhase = "syncing_development_images"
+	PoolProvisionPhasePullingPoolImage         PoolProvisionPhase = "pulling_pool_image"
+	PoolProvisionPhaseStartingPoolAgent        PoolProvisionPhase = "starting_pool_agent"
+	PoolProvisionPhaseWaitingForPoolAgent      PoolProvisionPhase = "waiting_for_pool_agent"
+	PoolProvisionPhasePreloadingImages         PoolProvisionPhase = "preloading_images"
 )
 
 // AllValues returns all PoolProvisionPhase values.
@@ -8448,6 +8453,7 @@ func (PoolProvisionPhase) AllValues() []PoolProvisionPhase {
 		PoolProvisionPhaseFetchingVMImage,
 		PoolProvisionPhaseStartingVM,
 		PoolProvisionPhaseWaitingForDocker,
+		PoolProvisionPhaseSyncingDevelopmentImages,
 		PoolProvisionPhasePullingPoolImage,
 		PoolProvisionPhaseStartingPoolAgent,
 		PoolProvisionPhaseWaitingForPoolAgent,
@@ -8463,6 +8469,8 @@ func (s PoolProvisionPhase) MarshalText() ([]byte, error) {
 	case PoolProvisionPhaseStartingVM:
 		return []byte(s), nil
 	case PoolProvisionPhaseWaitingForDocker:
+		return []byte(s), nil
+	case PoolProvisionPhaseSyncingDevelopmentImages:
 		return []byte(s), nil
 	case PoolProvisionPhasePullingPoolImage:
 		return []byte(s), nil
@@ -8488,6 +8496,9 @@ func (s *PoolProvisionPhase) UnmarshalText(data []byte) error {
 		return nil
 	case PoolProvisionPhaseWaitingForDocker:
 		*s = PoolProvisionPhaseWaitingForDocker
+		return nil
+	case PoolProvisionPhaseSyncingDevelopmentImages:
+		*s = PoolProvisionPhaseSyncingDevelopmentImages
 		return nil
 	case PoolProvisionPhasePullingPoolImage:
 		*s = PoolProvisionPhasePullingPoolImage

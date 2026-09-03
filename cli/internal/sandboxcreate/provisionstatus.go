@@ -152,15 +152,33 @@ func pullLine(pull apimodel.SandboxPullProgress) Step {
 // imageLabel shortens an image reference to the part that identifies it. A
 // status line has one line, and the registry host and namespace are the same
 // for every image a given deployment pulls.
+//
+// A digest is cut to its first bytes for the same reason. A pinned reference is
+// the intended form for the guest image, and its full digest is 71 characters
+// of a line that also has to carry a byte count — long enough to push the
+// numbers off the end of a terminal. The short form still tells two builds
+// apart, which is all a status line needs it for; the whole digest is in the
+// server's log.
 func imageLabel(image string) string {
 	image = strings.TrimSpace(image)
 	if image == "" {
 		return "the discobox image"
 	}
 	if slash := strings.LastIndex(image, "/"); slash >= 0 && slash+1 < len(image) {
-		return image[slash+1:]
+		image = image[slash+1:]
 	}
-	return image
+	name, digest, ok := strings.Cut(image, "@")
+	if !ok {
+		return image
+	}
+	if _, hex, ok := strings.Cut(digest, ":"); ok {
+		digest = hex
+	}
+	const shortDigest = 12
+	if len(digest) > shortDigest {
+		digest = digest[:shortDigest]
+	}
+	return name + "@" + digest
 }
 
 // humanBytes renders a byte count the way a download reports one.
@@ -220,6 +238,12 @@ func PoolProvisionStatus(pool *apimodel.Pool) Step {
 		return "starting the VM"
 	case apiclientgen.PoolProvisionPhaseWaitingForDocker:
 		return "waiting for Docker in the VM"
+	case apiclientgen.PoolProvisionPhaseSyncingDevelopmentImages:
+		// Only a development server ever reports this, and on a VM backend it
+		// is minutes: the images are built from the local checkout on the
+		// pool's own Docker. "preparing" rather than "building" because the
+		// same phase covers copying them from a developer's daemon.
+		return "preparing the development images"
 	case apiclientgen.PoolProvisionPhasePullingPoolImage:
 		return "pulling the pool agent image"
 	case apiclientgen.PoolProvisionPhaseStartingPoolAgent:
