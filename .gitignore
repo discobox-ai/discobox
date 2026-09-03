@@ -4,6 +4,7 @@ build/
 .env
 .env.*
 !.env.example
+.discobox-server.env
 .discobox/cache/
 .discobox/config/
 .discobox/data/

@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/adrg/xdg"
+	"github.com/joho/godotenv"
 
 	"github.com/discobox-ai/discobox/controlplane"
 	"github.com/discobox-ai/discobox/devimage"
@@ -22,6 +23,40 @@ import (
 )
 
 const appName = "discobox"
+
+// EnvFile is the env file LoadEnvFile reads by default, and EnvFileVar names a
+// different one.
+//
+// Deliberately not `.env`. A server that loads whatever `.env` sits in the
+// current directory silently reconfigures itself from an unrelated project's
+// file, which is how a hand-built binary run from a source tree ends up
+// pointing at a development image or database nobody asked for. Development
+// still wants that file, so the dev loop names it — `.wnb.yaml` runs the server
+// with `DISCOBOX_ENV_FILE=.env` — rather than the server guessing.
+const (
+	EnvFile    = ".discobox-server.env"
+	EnvFileVar = "DISCOBOX_ENV_FILE"
+)
+
+// LoadEnvFile reads EnvFile, or the file EnvFileVar names, into the process
+// environment. Set EnvFileVar to the empty string to load nothing.
+//
+// A missing file is not an error: the file is an optional convenience, and
+// every setting it carries can be set in the environment directly. The
+// environment wins — godotenv never replaces a variable that is already set —
+// so an explicit `DISCOBOX_...=x discobox-server` still means what it says.
+//
+// Call it before Load: Load reads the environment as it finds it.
+func LoadEnvFile() {
+	name, ok := os.LookupEnv(EnvFileVar)
+	if !ok {
+		name = EnvFile
+	}
+	if name == "" {
+		return
+	}
+	_ = godotenv.Load(name)
+}
 
 // Config holds all configuration for discobox-server.
 type Config struct {

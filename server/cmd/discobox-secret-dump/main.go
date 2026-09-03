@@ -4,9 +4,9 @@
 // direct access to the database and encryption key.
 //
 // It resolves the database DSN and DISCOBOX_ENCRYPTION_KEY exactly as
-// discobox-server does (including a local .env file), opens the database
-// read-only without migrating it, looks the secret up by ID, and decrypts it
-// through the same store logic the server uses.
+// discobox-server does (including a local .discobox-server.env file), opens
+// the database read-only without migrating it, looks the secret up by ID, and
+// decrypts it through the same store logic the server uses.
 package main
 
 import (
@@ -18,7 +18,6 @@ import (
 	"os"
 	"strings"
 
-	"github.com/joho/godotenv"
 	"gorm.io/gorm"
 
 	"github.com/discobox-ai/discobox/server/internal/config"
@@ -41,7 +40,8 @@ func run(ctx context.Context) error {
 		fmt.Fprintf(flag.CommandLine.Output(), "Usage: %s [--json] <secret-id>\n\n", os.Args[0])
 		fmt.Fprintln(flag.CommandLine.Output(),
 			"Prints a stored secret's decrypted value. Reads DATABASE_DSN /\n"+
-				"DISCOBOX_ENCRYPTION_KEY (and .env) the same way discobox-server does.\n"+
+				"DISCOBOX_ENCRYPTION_KEY (and "+config.EnvFile+") the same way\n"+
+				"discobox-server does.\n"+
 				"The secret ID may be a full ID or a unique prefix.")
 		flag.PrintDefaults()
 	}
@@ -55,9 +55,9 @@ func run(ctx context.Context) error {
 		return errors.New("secret ID must not be empty")
 	}
 
-	// Match discobox-server: pick up a local .env, then load config from the
-	// environment so the DSN and encryption key resolve identically.
-	_ = godotenv.Load()
+	// Match discobox-server: pick up a local env file, then load config from
+	// the environment so the DSN and encryption key resolve identically.
+	config.LoadEnvFile()
 	cfg, err := config.Load()
 	if err != nil {
 		return fmt.Errorf("load config: %w", err)

@@ -244,8 +244,16 @@ binds, plus `iroh://`, which every build carries (ADR 0067), so `discobox`
 reaches a development server with no `--server` and the dev loop runs exactly
 the transports users get. A tool that needs a URL asks for one in
 `DISCOBOX_SERVER_LISTEN` — from the
-environment, not from `.env`, which the server loads with godotenv and which
-does not replace a variable already set.
+environment, not from the env file, which godotenv loads and which does not
+replace a variable already set.
+
+`config.LoadEnvFile` reads `.discobox-server.env`, or the file
+`DISCOBOX_ENV_FILE` names, before `config.Load` reads the environment. The name
+is deliberately not `.env`: a server that loads whatever `.env` sits in the
+directory it was started from silently reconfigures a hand-built binary from an
+unrelated project's file. Development still wants `.env` — the image watcher
+writes development image tags there — so the dev loop asks for it by name
+(`.wnb.yaml`, and the `run`/`debug` tasks) instead of the server guessing.
 
 The SSH control-plane ingress (ADR 0024) binds **no listener of its own**. It is
 served on the router, at `GET /ssh/connect`, so it is reachable wherever the API

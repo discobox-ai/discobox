@@ -35,7 +35,13 @@ build:
   grace: 2s
 
 run:
-  command: ./build/discobox-server$(go env GOEXE)
+  # DISCOBOX_ENV_FILE is what makes `.env` a development file rather than
+  # something the server picks up on its own: the server's default is
+  # `.discobox-server.env`, so a hand-built binary run from any directory that
+  # happens to hold an `.env` is not silently reconfigured by it. Here the dev
+  # loop asks for it by name. godotenv does not replace a variable already set,
+  # so the `task dev` environment still wins over the file.
+  command: DISCOBOX_ENV_FILE=.env ./build/discobox-server$(go env GOEXE)
   # Long enough to let a shutdown that is draining sandboxes finish. A grace
   # this long is only safe because wnb stays responsive while stopping: Ctrl-C
   # a second time and the process group is killed immediately rather than

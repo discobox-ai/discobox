@@ -10,7 +10,6 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/joho/godotenv"
 	"go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp"
 
 	"github.com/discobox-ai/discobox/endpoint"
@@ -24,9 +23,7 @@ import (
 
 // Run loads configuration, initializes storage and services, and starts the HTTP server.
 func Run(ctx context.Context) error {
-	// Load .env file if present.
-	_ = godotenv.Load()
-
+	config.LoadEnvFile()
 	cfg, err := config.Load()
 	if err != nil {
 		return fmt.Errorf("load config: %w", err)
