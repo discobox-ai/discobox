@@ -110,6 +110,11 @@ type dialog struct {
 	// or "yes" for a confirmed question. It is not called on cancel.
 	action func(result string) tea.Cmd
 
+	// keys is the line under the card saying what the keys here do, made
+	// pressable the way every other key line in the window is. footer, above
+	// it, is prose — the caveat the question carries — and stays text.
+	keys []hint
+
 	// onCancel runs when the dialog is dismissed without answering. Most
 	// dialogs have nothing to do there, but a question whose two answers are
 	// both answers — carry the uncommitted changes, or do not — has to hear
@@ -596,24 +601,38 @@ func (d *dialog) view(st *styles, z *zones, width, height int) string {
 			b.WriteString("\n")
 		}
 	}
-	// The footer is what the keys here do, and often the caveat the question
-	// carries. It wraps rather than being cut: a sentence that says what a
-	// credential may be used for is not one to lose the end of.
-	footer := func(fallback string) {
-		text := d.footer
-		if text == "" {
-			text = fallback
-		}
-		if text == "" {
+	// The footer is the caveat the question carries. It wraps rather than being
+	// cut: a sentence that says what a credential may be used for is not one to
+	// lose the end of.
+	footer := func() {
+		if d.footer == "" {
 			return
 		}
 		b.WriteString("\n")
-		for i, wrapped := range wrap(text, inner) {
+		for i, wrapped := range wrap(d.footer, inner) {
 			if i > 0 {
 				b.WriteString("\n")
 			}
 			b.WriteString(st.dimText.Render(truncate(wrapped, inner)))
 		}
+	}
+	// The key line under it, drawn and marked exactly as the status line's is:
+	// a hint that names a key is a button for that key here too, and a card
+	// whose keys were only readable would be the one surface in the window
+	// where they are not. It gives up offers from the tail to fit.
+	keys := func(fallback ...hint) {
+		line := d.keys
+		if len(line) == 0 {
+			line = fallback
+		}
+		line = fitHints(line, hintSep, inner)
+		if len(line) == 0 {
+			return
+		}
+		b.WriteString("\n")
+		z.push(dialogPadLeft, strings.Count(b.String(), "\n")+dialogPadTop)
+		b.WriteString(viewHints(st, z, line, 0, hintSep))
+		z.pop()
 	}
 
 	switch d.kind {
@@ -638,13 +657,15 @@ func (d *dialog) view(st *styles, z *zones, width, height int) string {
 		b.WriteString(no)
 		if d.footer != "" {
 			b.WriteString("\n")
-			footer("")
+			footer()
 		}
+		keys()
 	case dlgStatus:
-		// No answer to give, so the footer is the whole of what can be done
+		// No answer to give, so the key line is the whole of what can be done
 		// here: stop watching, or — in a window that is the command it is
 		// waiting for — leave. See Model.waitDialog.
-		footer("Esc stops watching")
+		footer()
+		keys(pressing("Esc stops watching", "esc"))
 	case dlgMessage, dlgText:
 		b.WriteString("\n")
 		b.WriteString(truncate(d.viewSearch(st, inner), inner))
@@ -654,11 +675,9 @@ func (d *dialog) view(st *styles, z *zones, width, height int) string {
 		// whose rows only answer their letters is a menu the pointer cannot
 		// work.
 		itemsTop := strings.Count(b.String(), "\n") + dialogPadTop
-		for i := range d.items {
-			z.markRow(hit{kind: hitDialogItem, idx: i}, itemsTop+i, inner+2*dialogPadLeft)
-		}
-		b.WriteString(d.viewItems(st, inner))
-		footer("Enter runs the highlighted action · Esc cancels")
+		b.WriteString(d.viewItems(st, z, itemsTop, inner))
+		footer()
+		keys(pressing("Enter runs the highlighted action", "enter"), pressing("Esc cancels", "esc"))
 	case dlgForm:
 		answer()
 		b.WriteString(d.form.view(st, z, strings.Count(b.String(), "\n")+dialogPadTop, inner))
@@ -667,13 +686,15 @@ func (d *dialog) view(st *styles, z *zones, width, height int) string {
 		b.WriteString("\n")
 		b.WriteString(d.form.hint(st, inner))
 		b.WriteString("\n")
-		footer("↑↓ moves · ←→ chooses · enter accepts · esc cancels")
+		footer()
+		keys(says("↑↓ moves"), says("←→ chooses"), pressing("enter accepts", "enter"), pressing("esc cancels", "esc"))
 
 	case dlgInput:
 		answer()
 		b.WriteString(d.input.View())
 		b.WriteString("\n")
-		footer("Enter accepts · Esc cancels")
+		footer()
+		keys(pressing("Enter accepts", "enter"), pressing("Esc cancels", "esc"))
 	}
 
 	return st.dialog.Width(boxWidth).Render(b.String())
@@ -794,7 +815,7 @@ func answerRule(st *styles, label string, room int) string {
 // The key column is as wide as the widest key and no wider, and a menu whose
 // rows have no keys — one choosing between secrets, or grants, or discoboxes —
 // has no column at all rather than a ragged one full of IDs.
-func (d *dialog) viewItems(st *styles, inner int) string {
+func (d *dialog) viewItems(st *styles, z *zones, top, inner int) string {
 	pressW := 0
 	for _, it := range d.items {
 		pressW = max(pressW, lipgloss.Width(it.press))
@@ -814,9 +835,17 @@ func (d *dialog) viewItems(st *styles, inner int) string {
 
 	var b strings.Builder
 	for i, it := range d.items {
+		// The row is a press, and it says so under the pointer: a menu that
+		// only answered its letters is a menu the pointer cannot work, and one
+		// that answered the pointer silently is one nobody tries twice. The
+		// chevron stays the cursor's — what Enter runs — so the two never say
+		// the same thing.
+		z.markRow(hit{kind: hitDialogItem, idx: i}, top+i, inner+2*dialogPadLeft)
 		bar, label := " ", st.dimText
 		if i == d.cursor && it.enabled {
 			bar, label = st.key.Render("❯"), st.cursorName
+		} else if it.enabled && z.hovering(0, top+i, inner+2*dialogPadLeft, 1) {
+			label = st.hover
 		}
 		key, detail := "", it.detail
 		if pressW > 0 {

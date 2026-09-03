@@ -151,7 +151,7 @@ func (m *Model) folderDialog() *dialog {
 		return nil
 	})
 	menu.cursor = m.folderIndex(choices)
-	menu.footer = "Enter shows that folder's discoboxes · Esc cancels"
+	menu.keys = []hint{pressing("Enter shows that folder's discoboxes", "enter"), pressing("Esc cancels", "esc")}
 	return menu
 }
 

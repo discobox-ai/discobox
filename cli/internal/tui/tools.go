@@ -298,9 +298,13 @@ func (m *Model) openTools() tea.Cmd {
 		}
 		return nil
 	}
-	m.dialog.footer = "Enter opens it · " + toolFileKey + " its config · " +
-		m.leader() + " " + paneDetachAlt + " puts one away · " +
-		m.leader() + " " + toolCloseKey + " ends it · Esc cancels"
+	m.dialog.keys = []hint{
+		pressing("Enter opens it", "enter"),
+		keyed(toolFileKey, toolFileKey, "its config"),
+		pressing(m.leader()+" "+paneDetachAlt+" puts one away", m.leader(), paneDetachAlt),
+		pressing(m.leader()+" "+toolCloseKey+" ends it", m.leader(), toolCloseKey),
+		pressing("Esc cancels", "esc"),
+	}
 	return nil
 }
 
@@ -345,7 +349,7 @@ func (m *Model) openToolFiles(id string) tea.Cmd {
 		}
 		return nil
 	})
-	menu.footer = "Enter opens it in $EDITOR · Esc cancels"
+	menu.keys = []hint{pressing("Enter opens it in $EDITOR", "enter"), pressing("Esc cancels", "esc")}
 	m.dialog = menu
 	return nil
 }

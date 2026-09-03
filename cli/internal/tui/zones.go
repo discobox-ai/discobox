@@ -166,16 +166,6 @@ func (z *zones) drop(from int) {
 	}
 }
 
-// shift moves everything marked since count returned from, for the blocks that
-// are centered: a modal is rendered before anything knows how big it is, so
-// where it lands is only settled afterwards.
-func (z *zones) shift(from, dx, dy int) {
-	for i := from; i < len(z.marks); i++ {
-		z.marks[i].x += dx
-		z.marks[i].y += dy
-	}
-}
-
 // mark records what a rectangle of cells means, in the coordinates its caller
 // is drawing in.
 func (z *zones) mark(what hit, x, y, width, height int) {

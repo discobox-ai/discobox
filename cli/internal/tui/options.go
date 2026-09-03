@@ -473,7 +473,7 @@ func (o *optionSet) sourceDialog() *dialog {
 		return nil
 	})
 	menu.cursor = opt.idx
-	menu.footer = "Enter cuts the next discobox from that · Esc cancels"
+	menu.keys = []hint{pressing("Enter cuts the next discobox from that", "enter"), pressing("Esc cancels", "esc")}
 	return menu
 }
 

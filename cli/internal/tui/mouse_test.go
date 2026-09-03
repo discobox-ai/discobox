@@ -622,3 +622,41 @@ func TestABareMoveIsTheWindowsOwn(t *testing.T) {
 		t.Fatalf("the window asks for %v, want every move so a control can shade under the pointer", got)
 	}
 }
+
+// A card's key line is a key line like any other: the offers on it are buttons
+// for their keys, because a card is the one surface where they would otherwise
+// only be readable.
+func TestPressingADialogsKeyLineAnswersIt(t *testing.T) {
+	m := newTestModel(t, newFakeSource(testSandboxes()...))
+	slowClock(m)
+	showAllFolders(t, m)
+	send(t, m, keyPress("."))
+
+	x, y := at(t, m, "Esc cancels")
+	tap(t, m, x, y)
+
+	if m.dialog != nil {
+		t.Fatalf("pressing the menu's own Esc offer should close it, kind = %v", m.dialog.kind)
+	}
+}
+
+// And a menu row says so under the pointer, without taking the chevron from
+// the row Enter would run.
+func TestAMenuRowShadesUnderThePointer(t *testing.T) {
+	m := newTestModel(t, newFakeSource(testSandboxes()...))
+	slowClock(m)
+	showAllFolders(t, m)
+	send(t, m, keyPress("."))
+
+	before := m.dialog.cursor
+	x, y := at(t, m, "put it away")
+	send(t, m, tea.MouseMotionMsg{X: x, Y: y})
+
+	row := strings.Split(rawFrame(m), "\n")[y]
+	if !strings.Contains(row, m.st.hover.Render(pad("archive", 14))) {
+		t.Fatalf("the row under the pointer is not drawn as live:\n%q", row)
+	}
+	if m.dialog.cursor != before {
+		t.Fatalf("hovering moved the cursor to %d; the chevron says what Enter runs", m.dialog.cursor)
+	}
+}

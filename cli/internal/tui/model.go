@@ -1945,7 +1945,7 @@ func (m *Model) askForADefaultHarness(req RunRequest) (tea.Cmd, bool) {
 			}
 			return nil
 		})
-	menu.footer = "Enter chooses · Esc cancels"
+	menu.keys = []hint{pressing("Enter chooses", "enter"), pressing("Esc cancels", "esc")}
 	m.dialog = menu
 	return nil, true
 }
@@ -2178,7 +2178,9 @@ const creatingTitle = "Creating a discobox"
 func (m *Model) waitDialog(title, body string) *dialog {
 	d := statusDialog(title, body)
 	if m.oneShot() {
-		d.footer = "Esc closes this window · the discobox carries on"
+		// What the key does, and then what it does not do: the second half is
+		// the reassurance, not an offer, so it names no key.
+		d.keys = []hint{pressing("Esc closes this window", "esc"), says("the discobox carries on")}
 		d.onCancel = func() tea.Cmd { return m.exit(nil) }
 	}
 	return d
@@ -2549,18 +2551,25 @@ func (m *Model) center(content string) string {
 	return lipgloss.Place(m.width, m.height, lipgloss.Center, lipgloss.Center, content)
 }
 
-// place draws a modal surface and moves whatever it marked to where it landed.
-// A card is rendered before anything knows how big it is, so its controls are
-// marked in its own coordinates and shifted once, rather than drawn against an
-// origin nothing could have pushed yet.
+// place draws a modal surface in the middle of the window.
+//
+// It draws it twice: once to measure, and once at the origin that measurement
+// gives it. A card is centered on whatever it comes out at, so where it lands
+// is not known until it has been drawn — and a renderer that shades the row
+// the pointer is on has to know before it draws, which no amount of moving the
+// marks afterwards can give it. The first pass's marks are dropped; the
+// second's are the frame's. Styling costs no cells, so the two passes are the
+// same size whatever the pointer is doing.
 func (m *Model) place(render func() string) string {
-	at := m.zones.count()
+	marked := m.zones.count()
 	content := render()
-	if m.width > 0 && m.height > 0 {
-		m.zones.shift(at,
-			centerOffset(m.width, lipgloss.Width(content)),
-			centerOffset(m.height, lipgloss.Height(content)))
+	if m.width <= 0 || m.height <= 0 {
+		return m.paintChrome(content)
 	}
+	m.zones.drop(marked)
+	m.zones.push(centerOffset(m.width, lipgloss.Width(content)), centerOffset(m.height, lipgloss.Height(content)))
+	content = render()
+	m.zones.pop()
 	return m.paintChrome(m.center(content))
 }
 
@@ -2607,7 +2616,7 @@ func (m *Model) viewHeader(width int) string {
 	if width-lipgloss.Width(left)-keys < 1 {
 		return spread(left, "", width)
 	}
-	return spread(left, m.viewHints(hints, width-keys, headerSep), width)
+	return spread(left, viewHints(m.st, &m.zones, hints, width-keys, headerSep), width)
 }
 
 // viewHeaderLeft is where you are: the project when it is not the usual one,
@@ -2880,13 +2889,7 @@ func (m *Model) statusLine(room int) string {
 	case m.busy != "":
 		return m.st.statusWA.Render(m.busy)
 	}
-	hints := m.hints()
-	fields := make([]string, 0, len(hints))
-	for _, h := range hints {
-		fields = append(fields, h.text)
-	}
-	kept := fitFields(fields, hintSep, room)
-	return m.viewHints(hints[:len(kept)], 0, hintSep)
+	return viewHints(m.st, &m.zones, fitHints(m.hints(), hintSep, room), 0, hintSep)
 }
 
 // viewHints draws a row of key hints, marks the pressable ones where they
@@ -2896,22 +2899,32 @@ func (m *Model) statusLine(room int) string {
 // Drawing and marking are the same walk because they are the same arithmetic:
 // a hint highlighted somewhere other than where it is pressed would be a
 // button that lies about itself.
-func (m *Model) viewHints(hints []hint, x int, sep string) string {
+func viewHints(st *styles, z *zones, hints []hint, x int, sep string) string {
 	parts := make([]string, 0, len(hints))
 	for _, h := range hints {
 		width := lipgloss.Width(h.text)
-		style := m.st.dimText
+		style := st.dimText
 		if len(h.keys) > 0 {
-			m.zones.mark(keyHit(h.keys...), x, 0, width, 1)
-			if m.zones.hovering(x, 0, width, 1) {
+			z.mark(keyHit(h.keys...), x, 0, width, 1)
+			if z.hovering(x, 0, width, 1) {
 				// A control the pointer is on says so before it is pressed.
-				style = m.st.hover
+				style = st.hover
 			}
 		}
 		parts = append(parts, style.Render(h.text))
 		x += width + lipgloss.Width(sep)
 	}
-	return strings.Join(parts, m.st.dimText.Render(sep))
+	return strings.Join(parts, st.dimText.Render(sep))
+}
+
+// fitHints is a key line cut to the room it has, from the tail, where the
+// least of it is: half a hint is not one. See dropToFit.
+func fitHints(hints []hint, sep string, room int) []hint {
+	text := make([]string, 0, len(hints))
+	for _, h := range hints {
+		text = append(text, h.text)
+	}
+	return hints[:len(fitFields(text, sep, room))]
 }
 
 // hintsWidth is how wide that row comes out, for the callers that have to

@@ -1533,7 +1533,7 @@ func (m *Model) viewPaneHeader(w int) string {
 		if pinned || right == "" {
 			return right
 		}
-		return m.viewHints(hints, w-lipgloss.Width(right), headerSep)
+		return viewHints(m.st, &m.zones, hints, w-lipgloss.Width(right), headerSep)
 	}
 
 	fields := m.paneHeaderFields()

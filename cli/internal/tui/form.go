@@ -297,15 +297,21 @@ func (f *form) view(st *styles, z *zones, top, inner int) string {
 				b.WriteString("\n")
 			}
 		}
-		mark := "  "
-		label := st.dimText
-		if i == f.cursor {
-			mark, label = st.key.Render("❯")+" ", st.cursorName
-		}
 		// A row is answered where it is drawn: the sections mean a row's place
 		// on the card is not its place in the form, so the mark is made here,
 		// against the line the builder is actually on. See zones.go.
-		z.markRow(hit{kind: hitFormRow, idx: i}, top+strings.Count(b.String(), "\n"), inner+2*dialogPadLeft)
+		y := top + strings.Count(b.String(), "\n")
+		z.markRow(hit{kind: hitFormRow, idx: i}, y, inner+2*dialogPadLeft)
+
+		mark := "  "
+		label := st.dimText
+		switch {
+		case i == f.cursor:
+			mark, label = st.key.Render("❯")+" ", st.cursorName
+		case f.answerable(i) && z.hovering(0, y, inner+2*dialogPadLeft, 1):
+			// Under the pointer, and answerable: a row you can press says so.
+			label = st.hover
+		}
 		b.WriteString(padANSI(mark+padANSI(label.Render(truncate(row.label, labelW)), labelW)+"  "+
 			f.viewValue(st, i, valueW), inner))
 		b.WriteString("\n")

@@ -177,7 +177,7 @@ func (m *Model) askAboutCredential(req CredentialRequest, secrets []Secret) tea.
 	})
 	d.sections = credentialAsk(req, m.secrets.now())
 	d.answerLabel = "which secret answers this?"
-	d.footer = "enter approves with the highlighted secret · esc leaves it waiting"
+	d.keys = []hint{pressing("enter approves with the highlighted secret", "enter"), pressing("esc leaves it waiting", "esc")}
 	m.dialog = d
 	return nil
 }
@@ -302,7 +302,8 @@ func (m *Model) askForNewCredential(req CredentialRequest) tea.Cmd {
 	})
 	d.sections = []section{{label: "the new project secret", fields: fields}}
 	d.answerLabel = "paste the token"
-	d.footer = "it is stored encrypted and this request approved with it · Enter accepts · Esc cancels"
+	d.footer = "it is stored encrypted and this request approved with it"
+	d.keys = []hint{pressing("Enter accepts", "enter"), pressing("Esc cancels", "esc")}
 	d.input.EchoMode = 1 // textinput.EchoPassword: a credential is not drawn back.
 	m.dialog = d
 	return nil

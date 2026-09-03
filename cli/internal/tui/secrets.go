@@ -463,11 +463,11 @@ func (m *Model) askForGrantScope() tea.Cmd {
 	host.hint = "the host covers itself and everything beneath it, and may not reach outside the secret's own binding"
 
 	ttl := ttlRows("ttl", "lifetime", where, "never expires", int64(secret.MaxTTL/time.Second))
-	hint := "it never expires: a credential nobody has to think about again, and one nothing takes away"
+	lifetime := "it never expires: a credential nobody has to think about again, and one nothing takes away"
 	if secret.MaxTTL > 0 {
-		hint = "this credential allows at most " + grantLimit(secret.MaxTTL) + ", so it cannot be granted forever"
+		lifetime = "this credential allows at most " + grantLimit(secret.MaxTTL) + ", so it cannot be granted forever"
 	}
-	ttl[0].hint, ttl[1].hint = hint, hint
+	ttl[0].hint, ttl[1].hint = lifetime, lifetime
 
 	rows = append(rows, deliveredAs, use, host)
 	rows = append(rows, ttl...)
@@ -499,7 +499,7 @@ func (m *Model) askForGrantScope() tea.Cmd {
 	d.sections = []section{{lines: []line{
 		{text: "a standing grant authorizes this credential before anything asks for it", tone: toneDim},
 	}}}
-	d.footer = "↑↓ moves · ←→ chooses · enter grants · esc leaves the secret alone"
+	d.keys = []hint{says("↑↓ moves"), says("←→ chooses"), pressing("enter grants", "enter"), pressing("esc leaves the secret alone", "esc")}
 	m.dialog = d
 	return nil
 }
@@ -605,7 +605,7 @@ func (m *Model) showGrants() tea.Cmd {
 	d.titleRight = secretAge(*secret, m.secrets.now())
 	d.sections = describeSecret(*secret, m.secrets.now())
 	d.answerLabel = answer
-	d.footer = "enter reads · " + grantRevokeKey + " revokes · esc leaves them alone"
+	d.keys = []hint{pressing("enter reads", "enter"), keyed(grantRevokeKey, grantRevokeKey, "revokes"), pressing("esc leaves them alone", "esc")}
 	d.altKey = grantRevokeKey
 	d.alt = func(grantID string) tea.Cmd {
 		if grantID == grantCreateItem {
@@ -1057,7 +1057,7 @@ func (m *Model) newSecretForm() tea.Cmd {
 			Value:         formSecretValue(f),
 		})
 	})
-	d.footer = "↑↓ moves · ←→ chooses · enter stores it · esc cancels"
+	d.keys = []hint{says("↑↓ moves"), says("←→ chooses"), pressing("enter stores it", "enter"), pressing("esc cancels", "esc")}
 	m.dialog = d
 	return nil
 }
@@ -1130,7 +1130,7 @@ func (m *Model) editSecretForm() tea.Cmd {
 	d.sections = []section{{lines: []line{
 		{text: "the kind is the one thing it cannot be told: a token and an oauth credential renew differently, so that is a new credential rather than an edit", tone: toneDim},
 	}}}
-	d.footer = "↑↓ moves · enter saves · esc leaves it alone"
+	d.keys = []hint{says("↑↓ moves"), pressing("enter saves", "enter"), pressing("esc leaves it alone", "esc")}
 	m.dialog = d
 	return nil
 }

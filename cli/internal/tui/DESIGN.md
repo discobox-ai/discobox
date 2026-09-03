@@ -1022,7 +1022,16 @@ title band's two offers, a menu's rows and a card's, the run options and the
 arrows on them, the confirmation's two answers, and the introduction's one
 instruction. `.` opens the same menu the right button does, on the discobox
 list and on the harnesses — a menu the pointer can reach and the keyboard
-cannot would be half a feature. What is left over — prose, borders, column headings, a dialog's
+cannot would be half a feature.
+
+A card's own key line is `dialog.keys`, a `[]hint` drawn and marked exactly as
+the status line's is; `dialog.footer` is what is left, which is prose — the
+caveat the question carries — and stays text. A modal is drawn **twice**
+(`place`): once to measure, and once at the origin that measurement gives it.
+A card is centered on whatever it comes out at, so where it lands is not known
+until it has been drawn, and a renderer that shades the row under the pointer
+has to know before it draws — which no amount of moving its marks afterwards
+can give it. What is left over — prose, borders, column headings, a dialog's
 text input — is not a control and drives the selection instead. A dialog's
 input takes no caret from a press: the textinput has no coordinate to give it,
 and the field is already focused when the card opens.
@@ -1041,9 +1050,12 @@ window's one accent, underlined so a terminal with no color shows it too). The
 window asks for all-motion (`mouseMode`) and answers a bare move itself
 (`Model.hover`): a sandbox is sent the move only when it asked for motion, so
 one subscribed to buttons alone gets no more than before. The renderer asks
-`zones.hovering` with the numbers it is about to mark with. Rows and menu items
-are left out of it: they already wear a cursor, and a second highlight chasing
-the pointer across them competes with the one that says what Enter will act on. The list's title band is the same idea from the other side
+`zones.hovering` with the numbers it is about to mark with. A menu's rows and a card's shade too, in the label
+alone: the chevron stays the cursor's, so what the pointer is on and what Enter
+would run never say the same thing. The four screen lists are left out — their
+cursor is a whole-row background that already competes with the marks and the
+selection colors, and a third band chasing the pointer across them would be
+one too many. The list's title band is the same idea from the other side
 (`markBand`): the archived offer and the mark count are its own keys, aimed at
 the list wherever the keyboard happens to be.
 

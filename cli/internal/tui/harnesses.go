@@ -638,7 +638,7 @@ func (m *Model) harnessFilesDialog(harness Harness) *dialog {
 		}
 		return nil
 	})
-	menu.footer = "Enter opens it in $EDITOR · Esc cancels"
+	menu.keys = []hint{pressing("Enter opens it in $EDITOR", "enter"), pressing("Esc cancels", "esc")}
 	return menu
 }
 
