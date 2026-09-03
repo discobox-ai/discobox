@@ -706,7 +706,16 @@ func (o *optionSet) view(st *styles, z *zones, width int, prompt string) string 
 	var b strings.Builder
 	b.WriteString(st.dialogTitle.Render("Run Options"))
 	b.WriteString("\n")
-	b.WriteString(st.dimText.Render(truncate("← → change  ·  Enter opens the row  ·  Esc back to the prompt", inner)))
+	// The keys, as a key line like every other in the window: the panel is one
+	// of the modal surfaces, and a surface where the offers were text and
+	// nowhere else they were buttons would be the odd one out.
+	z.push(dialogPadLeft, strings.Count(b.String(), "\n")+dialogPadTop)
+	b.WriteString(viewHints(st, z, fitHints([]hint{
+		says("← → change"),
+		pressing("Enter opens the row", "enter"),
+		pressing("Esc back to the prompt", "esc"),
+	}, hintSep, inner), 0, hintSep))
+	z.pop()
 	b.WriteString("\n\n")
 
 	// Where the first row lands inside the card: the title, the key line under
@@ -717,11 +726,21 @@ func (o *optionSet) view(st *styles, z *zones, width int, prompt string) string 
 
 	labelW := 21
 	for i, opt := range o.opts {
+		// The row, and then the arrows over the top of it: they are drawn on
+		// the cursor row alone, and each is a press that changes the value the
+		// way the arrow key does.
+		z.markRow(hit{kind: hitOptionRow, idx: i}, rowsTop+i, inner)
+
 		bar := " "
 		label := st.dimText.Render(pad(opt.label, labelW))
-		if i == o.cursor {
+		switch {
+		case i == o.cursor:
 			bar = st.key.Render("❯")
 			label = st.cursorName.Render(pad(opt.label, labelW))
+		case z.hovering(0, rowsTop+i, inner, 1):
+			// Under the pointer: the label says so, and the chevron stays the
+			// cursor's, exactly as it does on a menu's rows.
+			label = st.hover.Render(pad(opt.label, labelW))
 		}
 		value := opt.display()
 		valueStyle := st.dimText
@@ -733,15 +752,12 @@ func (o *optionSet) view(st *styles, z *zones, width int, prompt string) string 
 		}
 		// The cursor row wears its arrows, so the one affordance the panel
 		// depends on — left and right change the value — is never a guess.
-		if i == o.cursor && (opt.kind == optChoice || opt.kind == optToggle) {
+		arrows := i == o.cursor && (opt.kind == optChoice || opt.kind == optToggle)
+		if arrows {
 			value = "‹ " + value + " ›"
 		}
 		row := bar + " " + label + " " + valueStyle.Render(truncate(value, max(inner-labelW-3, 6)))
-		// The row, and then the arrows over the top of it: they are drawn on
-		// the cursor row alone, and each is a press that changes the value the
-		// way the arrow key does.
-		z.markRow(hit{kind: hitOptionRow, idx: i}, rowsTop+i, inner)
-		if i == o.cursor && (opt.kind == optChoice || opt.kind == optToggle) {
+		if arrows {
 			valueX := dialogPadLeft + labelW + 3
 			z.mark(hit{kind: hitOptionCycle, idx: i, delta: -1}, valueX, rowsTop+i, 1, 1)
 			z.mark(hit{kind: hitOptionCycle, idx: i, delta: 1}, valueX+lipgloss.Width(value)-1, rowsTop+i, 1, 1)

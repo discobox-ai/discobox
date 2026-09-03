@@ -733,3 +733,18 @@ func TestPressingAFormFieldPlacesTheCaret(t *testing.T) {
 		t.Fatalf("the caret is at %d, want where the pointer was (3)", got)
 	}
 }
+
+// The run options are one of the modal surfaces, so its key line is a key line
+// like every other: the offers on it are buttons for their keys.
+func TestPressingTheOptionsKeyLineLeaves(t *testing.T) {
+	m := newTestModel(t, newFakeSource(testSandboxes()...))
+	slowClock(m)
+	send(t, m, keyPress("ctrl+o"))
+
+	x, y := at(t, m, "Esc back to the prompt")
+	tap(t, m, x, y)
+
+	if m.optionsOpen {
+		t.Fatalf("pressing the panel's own Esc offer should close it")
+	}
+}
