@@ -15,20 +15,22 @@ func initRepo(t *testing.T, subject string) string {
 	t.Chdir(dir)
 	run := func(args ...string) {
 		t.Helper()
-		cmd := exec.Command("git", args...)
+		cmd := exec.CommandContext(t.Context(), "git", args...)
 		if out, err := cmd.CombinedOutput(); err != nil {
 			t.Fatalf("git %v: %v\n%s", args, err, out)
 		}
 	}
-	run("init", "-q")
+	// -b pins the branch name: the default comes from the developer's own
+	// init.defaultBranch, and the refspec test below names the branch.
+	run("init", "-q", "-b", "main")
 	run("config", "user.email", "t@example.com")
 	run("config", "user.name", "t")
-	if err := exec.Command("sh", "-c", "echo hi > f").Run(); err != nil {
+	if err := exec.CommandContext(t.Context(), "sh", "-c", "echo hi > f").Run(); err != nil {
 		t.Fatalf("write fixture file: %v", err)
 	}
 	run("add", "f")
 	run("commit", "-q", "-m", subject)
-	sha, err := exec.Command("git", "rev-parse", "HEAD").Output()
+	sha, err := exec.CommandContext(t.Context(), "git", "rev-parse", "HEAD").Output()
 	if err != nil {
 		t.Fatalf("rev-parse HEAD: %v", err)
 	}
@@ -47,7 +49,7 @@ func TestGatherFactsFindsTheRepoRootAndAResolvedRef(t *testing.T) {
 
 	f := gatherFacts(context.Background(), []string{"git", "push", "origin", sha + ":refs/heads/main"})
 
-	root, err := exec.Command("git", "rev-parse", "--show-toplevel").Output()
+	root, err := exec.CommandContext(t.Context(), "git", "rev-parse", "--show-toplevel").Output()
 	if err != nil {
 		t.Fatalf("rev-parse --show-toplevel: %v", err)
 	}
@@ -69,12 +71,12 @@ func TestGatherFactsFindsTheRepoRootAndAResolvedRef(t *testing.T) {
 func TestGitRefFactTriesTheSecondHalfOfARefspecWhenTheFirstDoesNotResolve(t *testing.T) {
 	initRepo(t, "reachable only by branch name")
 
-	sha, subject := gitRefFact(context.Background(), []string{"origin", "not-a-real-ref:master"})
+	sha, subject := gitRefFact(context.Background(), []string{"origin", "not-a-real-ref:main"})
 	if subject != "reachable only by branch name" {
-		t.Fatalf("subject = %q, want the commit on master", subject)
+		t.Fatalf("subject = %q, want the commit on main", subject)
 	}
 	if sha == "" {
-		t.Fatal("sha is empty, want master's commit")
+		t.Fatal("sha is empty, want main's commit")
 	}
 }
 
@@ -101,7 +103,7 @@ func TestGitOutputOverridesRepositoryConfigThatWouldRedirectIt(t *testing.T) {
 	initRepo(t, "config cannot redirect this")
 	run := func(args ...string) {
 		t.Helper()
-		if out, err := exec.Command("git", args...).CombinedOutput(); err != nil {
+		if out, err := exec.CommandContext(t.Context(), "git", args...).CombinedOutput(); err != nil {
 			t.Fatalf("git %v: %v\n%s", args, err, out)
 		}
 	}
