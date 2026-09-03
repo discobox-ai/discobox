@@ -79,7 +79,8 @@ func EnsureRunning(ctx context.Context, opts LaunchOptions) (bool, error) {
 	} else if !isProbeConnectionError(err) {
 		return false, err
 	}
-	if err := startDetached(ctx, opts); err != nil {
+	child, err := startDetached(ctx, opts)
+	if err != nil {
 		return false, err
 	}
 	// Two deadlines, because two different things go wrong. A process that
@@ -98,6 +99,22 @@ func EnsureRunning(ctx context.Context, opts LaunchOptions) (bool, error) {
 			return true, waitReady(ctx, opts, time.Now().Add(opts.readyTimeout()))
 		}
 		lastErr = err
+		// Cancellation first, because it is also what killed the process. A
+		// child started with exec.CommandContext is killed by os/exec the
+		// moment ctx is done, so an interrupted CLI sees its own server exit
+		// and would otherwise report it as a server that died on startup.
+		if ctx.Err() != nil {
+			return true, ctx.Err()
+		}
+		// A launched process that has already exited is not going to answer,
+		// and the start timeout is the wrong thing to spend on it: a server
+		// that refuses to start — no WSL Containers on Windows, no harness —
+		// dies in milliseconds, and its explanation is in the log before the
+		// first probe. Waiting the rest out says nothing and delays every
+		// command that autolaunches after it.
+		if child.exited() {
+			return true, fmt.Errorf("local server at %s exited during startup%s", opts.Endpoint, opts.logTail())
+		}
 		select {
 		case <-ctx.Done():
 			return true, ctx.Err()
@@ -200,9 +217,36 @@ func probeEndpoint(ctx context.Context, opts LaunchOptions) (health.Status, erro
 	return status, nil
 }
 
-func startDetached(ctx context.Context, opts LaunchOptions) error {
+// launchedProcess is the server process this call started, when it is one this
+// process can watch. Its only question is whether that process is still alive,
+// which is what tells a server that died on startup apart from one that is
+// merely slow to bind.
+//
+// A server started as a user service has none: systemd owns the process, this
+// one never had a handle on it, and the probe loop's own reasoning about a
+// server that stopped answering is what covers it there.
+type launchedProcess struct {
+	done <-chan struct{}
+}
+
+// exited reports whether the launched process is already gone. A nil receiver —
+// nothing this process is watching — is never gone, so the caller has no case
+// to switch on.
+func (p *launchedProcess) exited() bool {
+	if p == nil {
+		return false
+	}
+	select {
+	case <-p.done:
+		return true
+	default:
+		return false
+	}
+}
+
+func startDetached(ctx context.Context, opts LaunchOptions) (*launchedProcess, error) {
 	if opts.Command == "" {
-		return fmt.Errorf("server command is required")
+		return nil, fmt.Errorf("server command is required")
 	}
 	// The child's output went nowhere, so a server that died on startup died
 	// silently and the only symptom was a caller waiting out its timeout on a
@@ -211,13 +255,13 @@ func startDetached(ctx context.Context, opts LaunchOptions) error {
 	// append to the same file and needs the directory to exist.
 	logFile, err := openServerLog(opts.logPath(), opts.Command, opts.Args)
 	if err != nil {
-		return err
+		return nil, err
 	}
 	defer logFile.Close()
 	if started, err := startUserService(ctx, opts); err != nil {
-		return err
+		return nil, err
 	} else if started {
-		return nil
+		return nil, nil
 	}
 	//nolint:gosec // The command is supplied by trusted CLI configuration for local server startup.
 	cmd := exec.CommandContext(ctx, opts.Command, opts.Args...)
@@ -227,9 +271,18 @@ func startDetached(ctx context.Context, opts LaunchOptions) error {
 	cmd.Env = append(os.Environ(), opts.Env...)
 	setDetachedProcess(cmd)
 	if err := cmd.Start(); err != nil {
-		return fmt.Errorf("start local server: %w", err)
+		return nil, fmt.Errorf("start local server: %w", err)
 	}
-	return nil
+	// Reaped rather than left behind: the server is meant to outlive this
+	// process, so this waits only to learn that it did not — and a Wait that
+	// returns also releases the process handle and stops the context watchdog
+	// os/exec left running for it.
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		_ = cmd.Wait()
+	}()
+	return &launchedProcess{done: done}, nil
 }
 
 func userServiceUnitName(opts LaunchOptions) string {

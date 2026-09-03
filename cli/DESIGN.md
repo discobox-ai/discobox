@@ -212,6 +212,16 @@ without leaving a phase per line scrolled above unrelated output. The child's ou
 reports — the alternative, discarding it, is what made a server dying on startup
 indistinguishable from one that was merely slow.
 
+Neither deadline is what ends the wait for a server that is already gone.
+`EnsureRunning` watches the process it started and reports it the moment it
+exits, and a server that answered `starting` and then stopped answering is
+reported when it stops. A server refusing to start — a Windows host with no WSL
+Containers, a project with no harness — is a failure in milliseconds whose
+explanation is already in the log, so nothing is gained by sitting out the rest
+of `StartTimeout` on every command that autolaunches. A server started as a user
+service is the exception: systemd owns that process and the CLI has no handle on
+it, so only the probes speak for it.
+
 That log is the launched server's only account of itself: it has no terminal,
 and nothing else records what it did. So it lives with the server's state rather
 than beside the socket, which sits in a runtime directory the system clears; it

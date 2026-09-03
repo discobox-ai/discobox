@@ -20,30 +20,47 @@ import (
 // so the only symptom was a caller waiting out its timeout against a socket
 // nothing had bound. That is exactly how `discobox server` — a command that no
 // longer existed — failed for every user without saying so once.
+//
+// It is also reported as soon as the process is gone rather than at the start
+// timeout. A server that refuses to start — a Windows host with no WSL
+// Containers, a project with no harness — exits in milliseconds with its
+// explanation already in the log, and spending ten more seconds on it delays
+// every command that autolaunches after it.
 func TestEnsureRunningReportsWhyTheServerDied(t *testing.T) {
 	socket := testSocketPath(t)
+	// No systemd-run or systemctl on this PATH, so the launch is the direct
+	// one: a server started as a user service belongs to the service manager
+	// and this process has no handle on it, which is a different path with a
+	// different report. The command below is absolute and runs regardless.
+	t.Setenv("PATH", t.TempDir())
 	opts := LaunchOptions{
-		Endpoint:      "unix://" + socket,
-		LogPath:       filepath.Join(t.TempDir(), "server.log"),
-		Command:       "/bin/sh",
-		Args:          []string{"-c", `echo 'unknown command "server" for "discobox"' >&2; exit 1`},
-		StartTimeout:  500 * time.Millisecond,
+		Endpoint: "unix://" + socket,
+		LogPath:  filepath.Join(t.TempDir(), "server.log"),
+		Command:  "/bin/sh",
+		Args:     []string{"-c", `echo 'unknown command "server" for "discobox"' >&2; exit 1`},
+		// Generous, as it is in production. The point of the test is that this
+		// is not what bounds the wait.
+		StartTimeout:  30 * time.Second,
 		ProbeInterval: 20 * time.Millisecond,
 		ProbeTimeout:  100 * time.Millisecond,
 	}
 
+	start := time.Now()
 	_, err := EnsureRunning(context.Background(), opts)
 	if err == nil {
 		t.Fatal("expected an error")
 	}
-	if !strings.Contains(err.Error(), "never answered") {
-		t.Fatalf("error %q does not say the server never answered", err)
+	if !strings.Contains(err.Error(), "exited during startup") {
+		t.Fatalf("error %q does not say the server exited", err)
 	}
 	if !strings.Contains(err.Error(), `unknown command "server"`) {
 		t.Fatalf("error %q does not carry what the server said", err)
 	}
 	if !strings.Contains(err.Error(), opts.LogPath) {
 		t.Fatalf("error %q does not say where the rest of the log is", err)
+	}
+	if elapsed := time.Since(start); elapsed > 10*time.Second {
+		t.Fatalf("waited %s, want the wait to end with the process rather than at the start timeout", elapsed)
 	}
 }
 
