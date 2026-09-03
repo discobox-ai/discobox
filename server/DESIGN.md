@@ -276,6 +276,20 @@ step is logged, so a foreground run and a polling client say the same thing.
 When initialization finishes, the real router is swapped in behind the same
 handler: nothing rebinds and no connection is dropped.
 
+The **platform prerequisite** is checked before any of this — before the
+singleton lock, before anything binds — because it reads the environment and
+nothing else. The platform's own pool backend is the default on the host it
+belongs to, so a Windows machine without WSL Containers can run no pool at all
+(`providers.EnsurePlatformPrerequisites`, a no-op elsewhere), and it is a
+startup failure rather than something each sandbox create discovers, because the
+platform's own error for a component that is not installed names neither the
+component nor the one command that installs it. Running it this early is what
+keeps a wrong answer cheap: a refusal after the singleton lock would have
+already asked the incumbent server to shut down, costing the user a working
+server rather than only the one that will not start. A server that exits here
+has not bound its listeners, so the CLI reports it from the launch log
+(`endpoint.EnsureRunning`) rather than from a phase.
+
 A server that seeded **no harness** does not hand over at all. Seeding tolerates
 an image it cannot inspect, because the harnesses that did seed still run;
 seeding none of them leaves a project where every sandbox create refuses

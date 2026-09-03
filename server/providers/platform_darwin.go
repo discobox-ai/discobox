@@ -1,6 +1,8 @@
 package providers
 
 import (
+	"context"
+
 	sandbox "github.com/discobox-ai/discobox/server/internal/sandbox"
 	"github.com/discobox-ai/discobox/server/providers/poolruntime"
 	"github.com/discobox-ai/discobox/server/providers/vz"
@@ -24,3 +26,8 @@ func controlPlaneStreams(options FactoryOptions) vz.StreamSink {
 	}
 	return options.ControlPlaneStreams
 }
+
+// ensurePlatformPrerequisites has nothing to check: Virtualization.framework is
+// part of macOS, so the vz backend needs nothing installed alongside discobox —
+// which is the whole point of ADR 0062.
+func ensurePlatformPrerequisites(context.Context) error { return nil }

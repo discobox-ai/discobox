@@ -499,6 +499,41 @@ library, and no VM image to install: a Mac needs a codesigned `discobox-server`
 and a network, and in particular no Docker daemon. See
 [vz/DESIGN.md](vz/DESIGN.md).
 
+## Windows (wslc) Driver
+
+`server/providers/wslc` gives each pool one WSL Containers VM, driven through
+the WSL COM session manager rather than a CLI (`wslc/internal/wslcsession`).
+
+The component it drives is not part of Windows yet: `wslc` ships in the WSL
+**prerelease** channel, so a plain `wsl --update` leaves a machine without it
+and reports success. Nothing can ask whether the COM class is registered
+without activating it, and activation on a host that lacks it fails with a bare
+`REGDB_E_CLASSNOTREG` — so the presence of the `wslc` CLI, installed by the same
+package, is what `wslc.EnsureInstalled` checks, and the error it returns names
+`wsl --update --pre-release`.
+
+That check is a **startup precondition**, not a per-pool one, because wslc is
+the platform default provider on Windows (`sandbox.PlatformDefaultProvider`): a
+host without it can run no pool at all, so the server refuses to serve rather
+than letting every sandbox create rediscover it one HRESULT at a time.
+`providers.EnsurePlatformPrerequisites` is the seam — a no-op on Linux and
+macOS, whose backends need nothing installed alongside discobox.
+
+**Presence is the only thing that refuses a host.** The version is read for the
+log and a program that is found but will not run is logged, not refused: the
+COM class is what a pool needs, this program only stands in for it, and a
+stand-in that invents a failure the real thing would not have is worse than no
+check. Not finding it at all is the one condition strong enough to act on.
+
+`DISCOBOX_WSLC_COMMAND` (`wslc.WSLCCommandEnv`) names the program the check
+looks for, and skips the install-directory fallback when it is set. Naming
+something that does not exist is how the refusal gets exercised on a host that
+does have WSL Containers, which is the only host anyone develops this on; a full
+path is how a wslc installed somewhere unexpected is accepted. It must be set
+for the server process, and the CLI passes its own environment to a server it
+autolaunches — so exporting it is enough, once an already-running server has
+been shut down rather than reused.
+
 ## DigitalOcean Driver
 
 `server/providers/digitalocean` implements the `dockerworker.Driver` contract

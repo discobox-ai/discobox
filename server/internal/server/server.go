@@ -19,6 +19,7 @@ import (
 	"github.com/discobox-ai/discobox/server/internal/service"
 	"github.com/discobox-ai/discobox/server/internal/sshd"
 	"github.com/discobox-ai/discobox/server/internal/transport/carrierhub"
+	"github.com/discobox-ai/discobox/server/providers"
 )
 
 // Run loads configuration, initializes storage and services, and starts the HTTP server.
@@ -27,6 +28,21 @@ func Run(ctx context.Context) error {
 	cfg, err := config.Load()
 	if err != nil {
 		return fmt.Errorf("load config: %w", err)
+	}
+	// The platform's own pool backend is the default on the host it belongs to,
+	// so a machine missing what it needs — WSL Containers on Windows — can run
+	// no pool at all, and every sandbox create would fail with whatever the
+	// platform says about a component that is not installed, which names neither
+	// the component nor the one command that installs it.
+	//
+	// Before the singleton lock, and before anything binds: this reads the
+	// environment and nothing else, and a refusal that came later would have
+	// already asked the running server to shut down — so a wrong answer here
+	// would cost the user the working server they had rather than just the one
+	// that will not start. The CLI reports a server that exits this early from
+	// its launch log (endpoint.EnsureRunning).
+	if err := providers.EnsurePlatformPrerequisites(ctx); err != nil {
+		return err
 	}
 	// Wait until we are the only server on this data directory, asking any
 	// incumbent to shut down. This is deferred first so it releases last: the
