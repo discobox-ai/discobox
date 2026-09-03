@@ -743,6 +743,14 @@ func (m *Model) SetPrefixArmed(armed bool) {
 	m.prefixArmed, m.prefixRepeat, m.chordLead = armed, armed, ""
 }
 
+// PrefixPending reports whether a sequence behind the prefix is already under
+// way: the prefix armed and waiting for the key it qualifies, or a chord lead
+// waiting for the key that says which command. A host that takes the keys off
+// a pane — one whose program has ended, whose screen is a reader's rather than
+// a terminal — asks this so that a sequence it let start is one the pane gets
+// to finish, rather than a chord that loses its second keystroke.
+func (m *Model) PrefixPending() bool { return m.prefixArmed || m.chordLead != "" }
+
 // SendKey forwards one key press to the terminal, encoded the way the
 // application on the other end has asked for it — cursor-key mode, keypad mode
 // and alt prefixing are all the emulator's business rather than the caller's.

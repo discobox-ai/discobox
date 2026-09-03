@@ -447,6 +447,52 @@ func TestAnExitedShellStaysReadableUntilDismissed(t *testing.T) {
 	}
 }
 
+// A held screen is a pane, not a modal: the leader's chords still reach the
+// window from it, so a shell you have finished reading does not have to be
+// dismissed before opening another one or walking to the next pane.
+func TestAHeldPaneStillAnswersTheLeader(t *testing.T) {
+	ds := newFakeSource(testSandboxes()...)
+	ds.services = []Service{{ID: "otel", Name: "OTEL", Status: "stopped"}}
+	d, m, _ := openWorkspace(t, ds, "enter")
+	d.key("ctrl+a")
+	d.key("s")
+	d.wait("the tab", func() bool { return m.shells.len() == 1 })
+
+	shell := ds.execTerm("exec_shell1")
+	ds.endExec("exec_shell1")
+	shell.Close()
+	d.wait("the held screen", func() bool { return m.shells.len() == 1 && m.shells.panes[0].exited })
+
+	if m.focusedPane() != m.shells.panes[0] {
+		t.Fatal("the shell that exited should still have the keys")
+	}
+
+	// A second shell, asked for from the screen that is over.
+	d.key("ctrl+a")
+	d.key("s")
+	d.wait("the second tab", func() bool { return m.shells.len() == 2 })
+	if !m.shells.panes[0].exited {
+		t.Fatal("the held screen should still be held")
+	}
+
+	// A chord too: its second keystroke goes to the pane that opened it,
+	// rather than being read as a key on the held screen.
+	m.focusOrdinal(1)
+	if m.focusedPane() != m.shells.panes[0] {
+		t.Fatal("the held screen should be the one the chord is typed on")
+	}
+	d.key("ctrl+a")
+	d.key(paneServicesKey)
+	d.key(paneServicesMenuKey)
+	d.wait("the services menu", func() bool { return m.dialog != nil })
+	d.key("esc")
+	d.wait("the menu gone", func() bool { return m.dialog == nil })
+
+	// Everything else is still the reader's, dismissal included.
+	d.key("q")
+	d.wait("the tab to close", func() bool { return m.shells.len() == 1 })
+}
+
 // A terminal that cannot be opened reports on the status line and leaves the
 // window where it was, rather than stranding it in an empty pane.
 func TestFailedOpenIsReported(t *testing.T) {

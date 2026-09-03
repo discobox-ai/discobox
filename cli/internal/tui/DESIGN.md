@@ -798,7 +798,15 @@ pane says so, and
 its keys become the reader's (`readFinished`): the arrows and pgup/pgdn walk
 back through output longer than the pane, `g`/`G` jump to the ends, the wheel
 scrolls, `h`/`l` still leave for another pane, and only the keys that mean done
-— `q`, Esc, Enter, Ctrl-C — dismiss it. Dismissal is local tab closure, not
+— `q`, Esc, Enter, Ctrl-C — dismiss it. The leader is the exception to that
+handover (`finishedKey`): a held screen is a pane with the window still around
+it, so the prefix's chords keep working on it — another pane, a new shell, the
+tools, quit — because a screen where every window key did nothing until it had
+been dismissed would be blocking you at exactly the moment you are deciding
+what to do next. They stay termpane's to resolve, so the chords are declared in
+one place, and a sequence already open there (`PrefixPending`, the prefix armed
+or a lead waiting) is left to finish rather than losing its second keystroke to
+the reader. Dismissal is local tab closure, not
 detach: the session is already over, and the way to be rid of a *running* shell
 is to exit it — there is deliberately no kill-tab key.
 

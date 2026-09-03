@@ -665,11 +665,11 @@ func (m *Model) updatePane(msg tea.Msg) tea.Cmd {
 		}
 	}
 	// A pane whose command has finished is a screen to read, not a terminal to
-	// type at. Its keys are the reader's: the arrows walk back through output
-	// longer than the pane, and the ones that mean "done" take it away.
+	// type at. Its keys are the reader's — except the leader's, which are the
+	// window's wherever you are.
 	if p.exited {
 		if key, ok := msg.(tea.KeyPressMsg); ok {
-			return m.readFinished(p, key)
+			return m.finishedKey(p, key)
 		}
 		return nil
 	}
@@ -973,6 +973,25 @@ func exitVerdict(stream Terminal) (string, bool) {
 		return "finished", false
 	}
 	return fmt.Sprintf("failed · exit %d", code), true
+}
+
+// finishedKey routes a key on a held screen.
+//
+// The pane is over; the window around it is not. A leader chord still means
+// what it means everywhere else — another pane, a new shell, the tools, quit —
+// because a screen that answered only its own reader keys would be one where
+// every window key you pressed did nothing until you had dismissed it first,
+// and a held screen is exactly where you are still deciding what to do next.
+// The prefix stays termpane's, so the chords are resolved in the one place
+// they are declared, and a sequence already open there is left to finish.
+// Everything else is the reader's.
+func (m *Model) finishedKey(p *pane, key tea.KeyPressMsg) tea.Cmd {
+	if p.term.PrefixPending() || keyName(key) == m.leader() {
+		term, cmd := p.term.Update(key)
+		p.term = term
+		return fromPane(p.id, cmd)
+	}
+	return m.readFinished(p, key)
 }
 
 // readFinished handles a key on a pane whose command has finished.

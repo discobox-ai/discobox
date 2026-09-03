@@ -281,7 +281,11 @@ moves followed by typing fires a binding per letter. The armed state is
 readable and settable (`PrefixArmed`, `SetPrefixArmed`) because a host whose
 binding moves focus to another pane has to carry the sequence there, or the
 run stops on its own first step; setting it armed opens the run form, since
-the carry is the only thing it is for.
+the carry is the only thing it is for. Whether a sequence is open at all — the
+prefix armed, or a lead waiting for the key that says which command
+(`PrefixPending`) — is readable for the other half of that: a host that takes
+the keys off a pane, a finished one whose screen is a reader's, has to leave a
+sequence it already let start to the pane that started it.
 
 **A binding can be a lead rather than a command.** `WithPrefixChord` reserves a
 key behind the prefix that emits nothing itself and waits for a second key,
