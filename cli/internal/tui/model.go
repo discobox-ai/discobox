@@ -2503,15 +2503,7 @@ func (m *Model) view() tea.View {
 
 		content = m.box("", rows)
 	}
-	content = m.paintChrome(content)
-
-	// Under the border, outside the application: one-time setup the user did not
-	// ask for and cannot act on, which the window itself does not wait for.
-	if line := m.viewInitialization(); line != "" {
-		content += "\n" + line
-	}
-
-	view := tea.NewView(content)
+	view := tea.NewView(m.paintChrome(content))
 	// The whole terminal, once the window has opened out — but not before: the
 	// opening prompt is inline, sitting under the command that started it.
 	view.AltScreen = m.takesScreen()
@@ -2864,6 +2856,7 @@ func (m *Model) viewStatus() string {
 	if n := m.list.selectionCount(); n > 0 {
 		fields = append(fields, m.st.statusWA.Render(plural(n, "selected", "selected")))
 	}
+	fields = withReport(fields, m.viewInitialization(), m.inner())
 	right := ""
 	if len(fields) > 0 {
 		right = strings.Join(fields, "   ") + "  "
@@ -2874,6 +2867,27 @@ func (m *Model) viewStatus() string {
 	keys := m.statusLine(max(m.inner()-lipgloss.Width(right)-2, 1))
 	m.zones.pop()
 	return spreadPin("  "+keys, right, m.inner())
+}
+
+// withReport puts the initialization report at the end of a status row's pinned
+// fields, and drops what was already there when the two cannot both fit.
+//
+// The report goes last because that is where it belongs on the row, and the
+// identity beside it gives way rather than the report: the identity is a fact
+// about the row the cursor is on, one press from being seen again, while the
+// report is the only account on screen of a wait the user did not ask for.
+// Half the row is what the pinned end may take before that trade is made —
+// past that the keys are being squeezed for two things at once, and the report
+// is the one of them that cannot be found anywhere else.
+func withReport(fields []string, report string, width int) []string {
+	if report == "" {
+		return fields
+	}
+	together := append(append([]string{}, fields...), report)
+	if lipgloss.Width(strings.Join(together, "   ")) > width/2 {
+		return []string{report}
+	}
+	return together
 }
 
 // statusIdentity is the discobox under the cursor, named the two ways the row

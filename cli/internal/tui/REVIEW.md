@@ -31,6 +31,15 @@
 
 ## Selection
 
+- **Everything on screen is inside the frame `paintChrome` is handed.** The
+  chrome selection addresses the grid parsed from that frame, and
+  `selection.snap` *clamps* a press past the last line instead of dropping it.
+  So a row appended to the view after the paint is not inert: it silently hands
+  its presses to the row above it, and the only symptom is a drag that
+  highlights the wrong line. Anything that wants to sit outside the window —
+  under the border, beside it — goes on an existing row instead; see
+  `initializing.go`, which is there because it tried the other way.
+
 - **One selection on screen at a time.** A press that starts one clears the
   others (`clearSelections`, `clearPaneSelections`); two highlights racing to
   answer the next copy is the bug this prevents.

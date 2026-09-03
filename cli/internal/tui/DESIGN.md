@@ -1327,6 +1327,31 @@ list gives up rows for the composer as it grows and takes none at all when
 there is no room. A frame one row too tall scrolls the terminal, which is the
 one thing the renderer cannot redraw its way out of.
 
+**The server's own setup reports at the end of the status row**
+(`initializing.go`). Staging the images a discobox runs takes minutes on a cold
+pull, and the window deliberately does not wait for it: the launcher lists and
+the composer takes input regardless, and only actually running a discobox wants
+those images. So the report is pinned to the right end of the row every screen
+already draws — `viewStatus` for the launcher, harnesses, secrets and the
+opening prompt, `viewPaneWindow` for the workspace.
+
+Pinned rather than put *in* that row, because `statusLine` is one slot with a
+strict precedence and whatever holds it displaces the keys. The left of the row
+belongs to what the user just did — the busy line, a result, the keys — and this
+belongs to something they did not do and cannot act on, so the two have to be
+able to speak at once. `spreadPin` cuts the keys back to make room, never the
+report: it is the only account on screen of a wait nothing else explains, while
+F1 spells the keys out anyway. `withReport` makes the same trade against the
+pinned identity when both cannot fit.
+
+A row of its own under the border is what this was. It cost a row every screen
+that fills the terminal then had to be told about, and being outside the frame
+is what let it scroll the alternate screen — stranding the hardware cursor a row
+from the grid — and hand its own presses to the border above it, because
+`paintChrome` had already parsed the selection grid from a frame that did not
+include it. On the status row it is inside the frame like everything else and
+none of that is a question that can be got wrong.
+
 **An unsent prompt outlives the window** (`draft.go`). What is in the composer
 is written through `DataSource.SaveDraft`, keyed by the session's directory, and
 `Session.Draft` is what the next window in that folder opens holding. Closing a

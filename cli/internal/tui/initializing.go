@@ -4,10 +4,10 @@ import (
 	"strings"
 
 	tea "charm.land/bubbletea/v2"
-	"charm.land/lipgloss/v2"
 )
 
-// A line below the window saying the server is still setting itself up.
+// The report at the end of the status line saying the server is still setting
+// itself up.
 //
 // The work is one-time — staging the images a discobox runs — and it used to be
 // waited on before the window opened, which meant several minutes of a status
@@ -15,13 +15,23 @@ import (
 // the launcher lists, the composer takes input, and only actually running a
 // discobox wants those images.
 //
-// So the window opens at once and this reports underneath it, outside the
-// border, where it is plainly not part of the application. Deliberately not the
-// busy line inside the frame: that one belongs to whatever the user just did,
-// and this belongs to something they did not do and cannot act on.
+// So the window opens at once and this reports on the row every screen already
+// keeps for saying what is going on. It is pinned to the right end of that row
+// rather than taking the line the way a message does: the left of the row
+// belongs to whatever the user just did — the busy line, a result, the keys —
+// and this belongs to something they did not do and cannot act on, so the two
+// have to be able to say their piece at the same time. See Model.viewStatus and
+// viewPaneWindow, which pin it, and statusLine, which draws the left.
+//
+// A row of its own, under the border, is what this used to be. It cost a row
+// the window then had to be told about — every screen that fills the terminal,
+// the pane geometry, the chrome selection's grid — and being outside all of
+// them is what let it scroll the alternate screen and hand its own presses to
+// the border above it. On the status row it is inside the frame like everything
+// else, and none of that is a question that can be got wrong.
 //
 // It removes itself when the work finishes, which is the whole shape of it — a
-// line that exists only while there is something to say.
+// report that exists only while there is something to say.
 
 // initializationMsg carries one update. done is true when the channel closes,
 // which is how "finished" arrives.
@@ -30,8 +40,8 @@ type initializationMsg struct {
 	done bool
 }
 
-// WithInitialization shows a line under the window while the server finishes
-// setting itself up, headed by title and fed by updates. The line disappears
+// WithInitialization reports on the status line while the server finishes
+// setting itself up, headed by title and fed by updates. The report disappears
 // when updates is closed.
 func WithInitialization(title string, updates <-chan string) Option {
 	return func(m *Model) {
@@ -60,8 +70,7 @@ func (m *Model) awaitInitialization() tea.Cmd {
 // applyInitialization records an update and asks for the next one.
 func (m *Model) applyInitialization(msg initializationMsg) tea.Cmd {
 	if msg.done {
-		// Nothing left to say, so nothing is said: the line and the row it
-		// occupied both go.
+		// Nothing left to say, so nothing is said.
 		m.initUpdates, m.initLine, m.initTitle = nil, "", ""
 		return nil
 	}
@@ -69,8 +78,13 @@ func (m *Model) applyInitialization(msg initializationMsg) tea.Cmd {
 	return m.awaitInitialization()
 }
 
-// viewInitialization is the line itself, or empty when there is nothing to
-// report. The caller renders it outside the window's border.
+// viewInitialization is the report itself, or empty when there is nothing to
+// say. The caller pins it to the right end of its status row.
+//
+// It is not cut to fit here. The row it goes on is what knows how much room
+// there is, and spreadPin cuts the keys back to make room for this rather than
+// the other way round — a wait the user did not ask for is the one thing on
+// that row nothing else on screen accounts for, so it is the last to give way.
 func (m *Model) viewInitialization() string {
 	line := strings.TrimSpace(m.initLine)
 	if line == "" {
@@ -78,12 +92,6 @@ func (m *Model) viewInitialization() string {
 	}
 	if title := strings.TrimSpace(m.initTitle); title != "" {
 		line = title + ": " + line
-	}
-	// Truncated rather than wrapped: a second row would move the window every
-	// time the text changed length, and this is the one thing on screen that
-	// must not make anything else jump.
-	if m.width > 0 {
-		line = lipgloss.NewStyle().MaxWidth(m.width).Render(line)
 	}
 	return m.st.initializing.Render(line)
 }
