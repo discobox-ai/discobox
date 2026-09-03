@@ -84,6 +84,13 @@ const (
 	// command is typed into a login shell rather than executed as argv
 	// (ADR 0027): the shell reports what it could not find and hands back a
 	// live prompt, so a wrong guess costs a line of output, not the terminal.
+	//
+	// Being typed is also why the prompt reaches the wrapper as words rather
+	// than as one argument: the shell splits the line before the wrapper runs.
+	// Rejoining everything after the flags with single spaces, and handing the
+	// agent that one string, is the wrapper's half of the convention — an
+	// agent CLI reads its prompt as a single positional and would otherwise
+	// see only the first word.
 	RunCommand = "discobox-harness-run"
 
 	// ResumeFlag marks a relaunch — a terminal returning after its sandbox

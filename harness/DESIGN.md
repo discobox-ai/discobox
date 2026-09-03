@@ -37,6 +37,16 @@ sandbox terminals.
   The base image ships `discobox-harness-run` as a shim that execs nothing, so
   an image installing no agent lands the user at a prompt rather than at a
   `command not found`; a harness image overwrites it. See ADR 0086 §3.
+- **A wrapper joins its prompt words back into one prompt.** The command is
+  *typed* (ADR 0027), so the login shell splits it before the wrapper runs:
+  `discobox fix the failing tests` reaches `discobox-harness-run` as four
+  arguments, not one. Every wrapper joins everything after the flags with
+  single spaces and hands its agent that single string — an agent CLI takes its
+  prompt as one positional, so a wrapper that forwards `"$@"` unchanged asks it
+  to "fix". This is the wrapper's half of the convention and part of what a
+  third-party harness image signs up for; the runtime types the words as the
+  user's shell split them and does not rejoin them, because what is on screen
+  is an editable command line the user may extend.
 - **The prompt trails every launch**, relaunch included (ADR 0086 §4). A
   wrapper resuming a session ignores it — both included launchers replace it
   with their own resume flags — but because the command is *typed* (ADR 0027),

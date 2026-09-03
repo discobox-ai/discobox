@@ -3,6 +3,11 @@
 # types `discobox-harness-run [--resume] '<prompt>'` into the terminal's login
 # shell, and the image installs its agent under this name.
 #
+# The prompt is one prompt however many words it arrives as: the command is
+# typed, so a shell splits it before this script sees it. A wrapper joins
+# everything after the flags back together with single spaces and hands its
+# agent that one string. This copy runs nothing, so it has nothing to join.
+#
 # This is the base image's copy, for an image that installs no agent. It execs
 # nothing, so the user is left at the prompt they are already sitting at rather
 # than at a `command not found` — the terminal is a working shell either way,

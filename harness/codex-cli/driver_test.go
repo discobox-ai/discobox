@@ -3,10 +3,12 @@ package codexcli
 import (
 	"encoding/json"
 	"os"
+	"slices"
 	"strings"
 	"testing"
 
 	"github.com/discobox-ai/discobox/harness"
+	"github.com/discobox-ai/discobox/harness/internal/launchertest"
 )
 
 func TestDefinitionConfigure(t *testing.T) {
@@ -316,5 +318,31 @@ func TestImageLaunchesCodexWithSourceScopedMemory(t *testing.T) {
 		if !strings.Contains(string(config), setting) {
 			t.Errorf("system config does not set %q", setting)
 		}
+	}
+}
+
+// TestLaunchJoinsThePromptWords covers the wrapper's half of the harness-run
+// convention (ADR 0086 §3): the command is typed, so the login shell splits the
+// prompt before the launcher sees it, and the launcher hands `codex` the one
+// prompt it takes as a positional rather than its first word.
+func TestLaunchJoinsThePromptWords(t *testing.T) {
+	for _, tc := range []struct {
+		name string
+		args []string
+		want []string
+	}{
+		{"split words are one prompt", []string{"fix", "the", "failing", "tests"}, []string{"fix the failing tests"}},
+		{"an already quoted prompt is unchanged", []string{"fix the failing tests"}, []string{"fix the failing tests"}},
+		{"no prompt passes none", nil, nil},
+		// A resumed session already carries the prompt (ADR 0086 §4), so the
+		// launcher replaces it rather than sending it a second time.
+		{"a resume replaces the prompt", []string{harness.ResumeFlag, "fix", "the", "failing", "tests"}, []string{"resume", "--last"}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			got := launchertest.RunLauncher(t, "codex", tc.args)
+			if !slices.Equal(got, tc.want) {
+				t.Fatalf("codex argv = %#v, want %#v", got, tc.want)
+			}
+		})
 	}
 }

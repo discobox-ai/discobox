@@ -8,8 +8,22 @@ set -eu
 # failed can still see what the sandbox was asked to do. The resumed session
 # already contains it, so `resume --last` replaces it rather than re-sending it.
 if [ "${1-}" = "--resume" ]; then
-	shift
 	set -- resume --last
+else
+	# A prompt is one prompt, however many words the shell split it into: the
+	# command is typed, so `discobox fix the failing tests` arrives here as
+	# four arguments. Joining everything after the flags back together with
+	# single spaces is the wrapper's half of the convention (ADR 0086 §3) —
+	# `codex` takes its prompt as a single positional and would otherwise be
+	# asked to "fix".
+	if [ "$#" -gt 1 ]; then
+		prompt="$1"
+		shift
+		for word in "$@"; do
+			prompt="$prompt $word"
+		done
+		set -- "$prompt"
+	fi
 fi
 
 # Codex has no supported setting for moving only its consolidated memory
