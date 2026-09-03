@@ -1,6 +1,7 @@
 package tui
 
 import (
+	"fmt"
 	"strings"
 
 	tea "charm.land/bubbletea/v2"
@@ -26,24 +27,39 @@ func WithWelcome() Option {
 	return func(m *Model) { m.welcoming = true }
 }
 
-// welcomeTitle and welcomeBody are the whole of it. It is short on purpose:
-// this is a screen between someone and the thing they came to do, so it earns
-// its place by being read, not by being complete. What it has to get across is
-// the shape of the loop — out of the source directory, into a sandbox, back as
-// a commit — so it is three numbered steps rather than three paragraphs about
-// them.
+// The screen is short on purpose: this is something between someone and the
+// thing they came to do, so it earns its place by being read, not by being
+// complete. What it has to get across is the shape of the loop — out of the
+// source directory, into a sandbox, back as a commit — so it is three numbered
+// steps, each with the command that performs it.
+//
+// The commands are the point. Someone who reads only the three green lines has
+// the whole of using this; the prose beside them only says why each one is run.
+// They are the TUI flow rather than `discobox run`, which does the same work in
+// one line and teaches none of the shape.
 const welcomeTitle = "Welcome to Discobox"
 
-const welcomeBody = `Discobox runs coding agents in isolated sandboxes on this machine.
+const welcomeIntro = "Discobox runs coding agents in isolated sandboxes on this machine."
 
-1. Run it from a source directory; the source is copied in.
-2. Work with the agent until the change is committed.
-3. Apply that commit back to your source.
+// welcomeSteps is the loop, in the order it happens. The middle one has no
+// discobox command in it because that step is not ours: it is the agent, or
+// you, working until there is something to take out.
+var welcomeSteps = []struct{ text, command string }{
+	{"A new box, with your source copied into it", "cd ~/src/my-project && discobox"},
+	{"Work with the agent until the change is a commit", `git commit -am "..."`},
+	{"Take that commit back out to your source", "discobox apply"},
+}
 
-Enter starts one, Tab moves to the ones you have, F1 lists every key.`
+// welcomeKeys is the window's own three keys, after the three steps: what the
+// screen behind this one expects.
+const welcomeKeys = "Enter starts one, Tab moves to the ones you have, F1 lists every key."
 
 // welcomeFooter is the one instruction, and the only key the screen takes.
 const welcomeFooter = "Press Enter to continue"
+
+// welcomeIndent is where a step's words start, past its number, so a wrapped
+// line and the command under it line up with the text rather than the digit.
+const welcomeIndent = "   "
 
 // welcomeMaxWidth is the widest the card is set, border included — about
 // seventy columns of text, which is a comfortable measure to read.
@@ -78,9 +94,10 @@ func (m *Model) markWelcomed() tea.Cmd {
 	}
 }
 
-// viewWelcome draws the introduction: the mark, what this is, and the key that
-// leaves. It wears the dialog's box because it is the same kind of thing — one
-// card, centered, with the window it stands in front of not drawn at all.
+// viewWelcome draws the introduction: the mark, what this is, the three steps,
+// and the key that leaves. It wears the dialog's box because it is the same
+// kind of thing — one card, centered, with the window it stands in front of not
+// drawn at all.
 func (m *Model) viewWelcome() string {
 	// Narrower than a dialog, which sizes itself to the window because what it
 	// holds is rows and columns. This is prose, and prose set across a hundred
@@ -88,32 +105,52 @@ func (m *Model) viewWelcome() string {
 	boxWidth := min(dialogWidth(m.width), welcomeMaxWidth)
 	inner := max(boxWidth-dialogChromeWidth, 16)
 
-	var rows []string
-	// The mark, when the box is wide enough to hold it whole. It is the one
-	// place in the window the mark is centered over text rather than beside it:
-	// here it is the thing being introduced.
-	if m.logo.height() > 0 && m.logo.column() <= inner {
-		rows = append(rows, m.logo.view(m.logo.height()), "")
+	rows := []string{m.st.dialogTitle.Render(truncate(welcomeTitle, inner)), ""}
+	rows = append(rows, welcomeLines(welcomeIntro, "", inner)...)
+	for i, step := range welcomeSteps {
+		rows = append(rows, "")
+		rows = append(rows, welcomeLines(step.text, fmt.Sprintf("%d. ", i+1), inner)...)
+		// The command carries the one color the window uses for commands, and
+		// bold as well so a terminal with no color still shows which of the two
+		// lines is the one to type.
+		rows = append(rows, m.st.command.Bold(true).Render(truncate(welcomeIndent+step.command, inner)))
 	}
-	rows = append(rows, m.st.dialogTitle.Render(truncate(welcomeTitle, inner)), "")
-
-	// Every line wraps on its own, so the numbered steps stay one to a row and
-	// the blank lines between blocks survive. Wrapping the whole text at once
-	// would run the steps together into a single block of prose.
-	for _, line := range strings.Split(welcomeBody, "\n") {
-		if line == "" {
-			rows = append(rows, "")
-			continue
-		}
-		for _, wrapped := range wrap(line, inner) {
-			rows = append(rows, truncate(wrapped, inner))
-		}
-	}
+	rows = append(rows, "")
+	rows = append(rows, welcomeLines(welcomeKeys, "", inner)...)
 	// The one instruction is the one control: a press on it is the Enter it
 	// asks for. The prose above stays selectable rather than being one big
 	// button.
-	m.zones.mark(keyHit("enter"), dialogPadLeft, len(rows)+1+dialogPadTop, lipgloss.Width(welcomeFooter), 1)
 	rows = append(rows, "", m.st.key.Render(welcomeFooter))
 
+	// The mark goes on top, centered over the card, when there are rows to
+	// spare for it: here it is the thing being introduced rather than the thing
+	// beside the list. On a short terminal the steps are what the screen is
+	// for, so the mark is what gives way — the same trade the list makes at
+	// minWidthForLogo, in the other dimension.
+	if logo := m.logo.centeredRows(inner); len(logo) > 0 &&
+		len(logo)+1+len(rows)+dialogChromeHeight <= m.height {
+		rows = append(append(logo, ""), rows...)
+	}
+
+	m.zones.mark(keyHit("enter"), dialogPadLeft, len(rows)-1+dialogPadTop, lipgloss.Width(welcomeFooter), 1)
 	return m.st.dialog.Width(boxWidth).Render(lipgloss.JoinVertical(lipgloss.Left, rows...))
+}
+
+// welcomeLines wraps one block of the screen under its own first line: a
+// step's number sits in the margin, and its wrapped lines and the command below
+// it start where its words do. A block with no prefix — the two lines of prose
+// — hangs from the left edge like the paragraph it is. Wrapping each block on
+// its own is what keeps the steps one to a row and the blank lines between them
+// intact; wrapping the screen at once would run them into one paragraph.
+func welcomeLines(text, prefix string, inner int) []string {
+	hang := strings.Repeat(" ", lipgloss.Width(prefix))
+	var rows []string
+	for i, line := range wrap(text, inner-len(hang)) {
+		lead := hang
+		if i == 0 {
+			lead = prefix
+		}
+		rows = append(rows, truncate(lead+line, inner))
+	}
+	return rows
 }

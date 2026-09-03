@@ -163,6 +163,26 @@ func (l logo) viewCentered(height int) string {
 	return lipgloss.JoinVertical(lipgloss.Left, rows...)
 }
 
+// centeredRows is the mark set in the middle of a width, for the one place it
+// stands over text rather than beside it: the introduction, where the mark is
+// the thing being introduced rather than the thing beside the list.
+//
+// The rows keep their alignment to each other and the block moves — it is a
+// picture, not a stack of centered lines. Nothing is drawn where the width
+// cannot hold the mark and its gutters; a mark flush against the box is worse
+// than no mark.
+func (l logo) centeredRows(width int) []string {
+	if l.height() == 0 || l.column() > width {
+		return nil
+	}
+	indent := strings.Repeat(" ", (width-l.width)/2)
+	rows := make([]string, 0, l.height())
+	for _, row := range l.rows {
+		rows = append(rows, padANSI(indent+row, width))
+	}
+	return rows
+}
+
 // paddedRows is the mark's own rows, indented into its column and padded down
 // to height.
 func (l logo) paddedRows(height int) []string {

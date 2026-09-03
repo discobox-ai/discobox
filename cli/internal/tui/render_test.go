@@ -456,6 +456,40 @@ func TestTheMarkIsCenteredAcrossItsColumn(t *testing.T) {
 	}
 }
 
+// Over the introduction it is centered across the whole card instead of across
+// its own column: there it is the thing being introduced, not the thing beside
+// a list.
+func TestTheMarkIsCenteredAcrossTheWelcomeCard(t *testing.T) {
+	mark := logo{rows: []string{"aaaa", "bb"}, width: 4}
+
+	rows := mark.centeredRows(20)
+	if len(rows) != mark.height() {
+		t.Fatalf("centeredRows drew %d rows, want %d", len(rows), mark.height())
+	}
+	for _, row := range rows {
+		if lipgloss.Width(row) != 20 {
+			t.Fatalf("row %q is not the width it was given", row)
+		}
+	}
+	if lead := len(rows[0]) - len(strings.TrimLeft(rows[0], " ")); lead != (20-mark.width)/2 {
+		t.Fatalf("the art starts at column %d, want %d", lead, (20-mark.width)/2)
+	}
+	// The rows keep their alignment to each other; the block moves, not the
+	// lines within it.
+	if lead := len(rows[1]) - len(strings.TrimLeft(rows[1], " ")); lead != (20-mark.width)/2 {
+		t.Fatalf("a short row was centered on its own, at column %d", lead)
+	}
+
+	// Too narrow to hold the art and its gutters: nothing is drawn rather than
+	// a mark flush against the box.
+	if rows := mark.centeredRows(mark.column() - 1); rows != nil {
+		t.Fatalf("a card too narrow for the mark drew %q", rows)
+	}
+	if rows := (logo{}).centeredRows(40); rows != nil {
+		t.Fatalf("a colorless window drew a mark: %q", rows)
+	}
+}
+
 // A mark with no rows reserves nothing, so a colorless terminal gives the whole
 // width back to the list rather than an empty column.
 func TestNoMarkReservesNoColumn(t *testing.T) {

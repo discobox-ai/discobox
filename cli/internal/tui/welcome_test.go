@@ -6,6 +6,7 @@ import (
 	"testing"
 
 	tea "charm.land/bubbletea/v2"
+	"charm.land/lipgloss/v2"
 )
 
 // newWelcomeModel is the window as a first-time user gets it: opened on the
@@ -113,5 +114,54 @@ func TestWithWelcomeOpensOverTheScreenItWasGiven(t *testing.T) {
 	m := New(t.Context(), newFakeSource(), WithWelcome(), WithHarnesses())
 	if !m.welcoming || !m.harnessesOpen {
 		t.Fatalf("welcoming = %v, harnessesOpen = %v; want both", m.welcoming, m.harnessesOpen)
+	}
+}
+
+// The three commands are the point of the screen: someone who reads only them
+// has the whole loop, in order, so each one is on the screen and none of them
+// is `discobox run`, which does the same work without teaching the shape.
+func TestWelcomeShowsTheThreeCommandsInOrder(t *testing.T) {
+	m := newWelcomeModel(t, newFakeSource(testSandboxes()...))
+
+	content := m.View().Content
+	at := -1
+	for _, step := range welcomeSteps {
+		i := strings.Index(content, step.command)
+		if i < 0 {
+			t.Fatalf("the command %q is not on screen:\n%s", step.command, content)
+		}
+		if i <= at {
+			t.Fatalf("the command %q is out of order", step.command)
+		}
+		at = i
+	}
+	if strings.Contains(content, "discobox run") {
+		t.Fatalf("the screen sends people down the one-shot path:\n%s", content)
+	}
+}
+
+// The mark gives way on a short terminal. The steps are what the screen is for,
+// and a card taller than the window loses rows off the bottom, which is where
+// the last step and the key that leaves are.
+func TestWelcomeDropsTheMarkOnAShortWindow(t *testing.T) {
+	m := newWelcomeModel(t, newFakeSource())
+	m.logo = newLogo(true)
+	if m.logo.height() == 0 {
+		t.Fatal("there is no mark to drop")
+	}
+
+	m.width, m.height = 120, 44
+	tall := lipgloss.Height(m.viewWelcome())
+	if tall > m.height {
+		t.Fatalf("the card is %d rows in a %d-row window", tall, m.height)
+	}
+
+	m.height = tall - 1
+	short := lipgloss.Height(m.viewWelcome())
+	if want := tall - (m.logo.height() + 1); short != want {
+		t.Fatalf("the card is %d rows without the mark, want %d", short, want)
+	}
+	if short > m.height {
+		t.Fatalf("the card is %d rows in a %d-row window", short, m.height)
 	}
 }
