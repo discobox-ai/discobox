@@ -1156,8 +1156,10 @@ tasks:
 
         login="$(gh api user -q .login)"
         fork="$login/winget-pkgs"
-        # Idempotent: forking an existing fork says so and succeeds.
-        gh repo fork "$upstream" --clone=false --remote=false >/dev/null
+        # Idempotent: forking an existing fork says so and succeeds. No
+        # --remote: gh rejects the flag outright when a repository argument is
+        # given, and adds no remote in that case anyway.
+        gh repo fork "$upstream" --clone=false >/dev/null
         gh repo sync "$fork" --branch master --force >/dev/null
         base="$(gh api "repos/$fork/git/ref/heads/master" -q .object.sha)"
         base_tree="$(gh api "repos/$fork/git/commits/$base" -q .tree.sha)"
