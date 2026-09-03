@@ -5,6 +5,7 @@ package model
 
 import apigen "github.com/discobox-ai/discobox/api/gen"
 
+type AgentCredentialVerdict = apigen.AgentCredentialVerdict
 type AppliedSourceCommit = apigen.AppliedSourceCommit
 type ApproveSecretRequestBody = apigen.ApproveSecretRequestBody
 type AssignSandboxHarnessSecretsBody = apigen.AssignSandboxHarnessSecretsBody
@@ -75,6 +76,7 @@ type Project = apigen.Project
 type ProjectMember = apigen.ProjectMember
 type ProviderConfigField = apigen.ProviderConfigField
 type ProviderStatus = apigen.ProviderStatus
+type RecordCredentialVerdictBody = apigen.RecordCredentialVerdictBody
 type RegisterPoolBody = apigen.RegisterPoolBody
 type RegisterPoolResponseBody = apigen.RegisterPoolResponseBody
 type ReportPoolResourcesBody = apigen.ReportPoolResourcesBody

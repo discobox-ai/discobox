@@ -142,3 +142,6 @@ Nygard-style ADRs (see adr.github.io) combined with current-state design docs:
 | [0087](0087-the-pool-agent-reaps-only-children-nothing-is-waiting-for.md) | The pool agent reaps only children nothing is waiting for | Accepted |
 | [0088](0088-the-launcher-window-answers-the-mouse-and-owns-selection.md) | The launcher window answers the mouse everywhere, and owns selection where it does | Accepted |
 | [0089](0089-the-bare-command-is-a-run-and-costs-unknown-command.md) | The bare command is a run, and costs "unknown command" | Accepted |
+| [0090](0090-the-judge-is-handed-facts-and-given-no-tools.md) | The judge is handed facts and given no tools | Accepted |
+| [0091](0091-a-credential-is-not-issued-without-a-verdict-on-record.md) | A credential is not issued without a verdict on record | Accepted |
+| [0092](0092-the-cli-has-no-unjudged-way-to-take-a-value.md) | The CLI has no unjudged way to take a value | Accepted |

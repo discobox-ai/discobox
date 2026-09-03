@@ -1186,6 +1186,58 @@ func (s *SandboxSecret) BeforeCreate(_ *gorm.DB) error {
 	return nil
 }
 
+// CredentialVerdict is one judge decision about a command run under an agent
+// credentials use, recorded on the call that takes a value for it so that no
+// value is issued without one (ADR 0091): the call that mints the value is
+// the call that carries the verdict.
+//
+// A denied command never reaches that call — ADR 0079 §1 judges before the
+// value is taken, so a refusal mints nothing — and so leaves no row here on
+// its own. Volunteered distinguishes the two provenances: false for a verdict
+// that rode an issued credential, true for one a sandbox chose to report
+// after a denial that would otherwise leave no trace at all. A row is
+// complete for every credential this control plane ever handed out; it is
+// present for a denial only when the sandbox sent it.
+type CredentialVerdict struct {
+	ID        string `gorm:"primaryKey;type:text" json:"id" doc:"Stable verdict ID"`
+	ProjectID string `gorm:"column:project_id;not null;type:text;index" json:"projectId" doc:"Project ID"`
+	SandboxID string `gorm:"column:sandbox_id;not null;type:text;index" json:"sandboxId" doc:"Sandbox the command ran in"`
+	// GrantID is resolved from UseID against the sandbox's live grants at
+	// record time, best-effort: a grant revoked in the moment between judging
+	// and recording leaves this empty rather than failing the write, because
+	// the verdict is still complete evidence about the command without it.
+	GrantID string `gorm:"column:grant_id;not null;type:text;default:'';index" json:"grantId,omitempty" doc:"Grant the use belonged to, when it could still be resolved"`
+	UseID   string `gorm:"column:use_id;not null;type:text;index" json:"useId" doc:"Approved use the command was judged against"`
+	// Command is serialized JSON rather than a joined string: SecretGrant.Uses
+	// already sets the precedent for a slice column on this model, and keeping
+	// argv elements distinct is what let the judge — and lets a reader of this
+	// row later — see the command the way it was executed rather than a shell's
+	// guess at where it would have split.
+	Command     []string  `gorm:"column:command;type:text;serializer:json" json:"command,omitempty" doc:"The argv the judge was shown"`
+	Allow       bool      `gorm:"column:allow;not null" json:"allow" doc:"What the judge decided"`
+	Reason      string    `gorm:"column:reason;not null;type:text;default:''" json:"reason,omitempty" doc:"The judge's own sentence"`
+	Role        string    `gorm:"column:role;not null;type:text;default:''" json:"role,omitempty" doc:"The role discobox-prompt was asked for (e.g. judge), never a vendor model id"`
+	Prompt      string    `gorm:"column:prompt;not null;type:text;default:''" json:"prompt,omitempty" doc:"The exact prompt the judge was given, including the facts block"`
+	LatencyMS   int64     `gorm:"column:latency_ms;not null;default:0" json:"latencyMs,omitempty" doc:"How long the judge took to answer, in milliseconds"`
+	Volunteered bool      `gorm:"column:volunteered;not null;default:false" json:"volunteered" doc:"True when the sandbox reported this after a denial the issuing call never saw"`
+	CreatedAt   time.Time `gorm:"autoCreateTime" json:"createdAt" doc:"Creation timestamp" format:"date-time"`
+
+	Project *Project `gorm:"foreignKey:ProjectID" json:"-"`
+}
+
+func (CredentialVerdict) TableName() string { return "credential_verdicts" }
+
+func (c *CredentialVerdict) BeforeCreate(_ *gorm.DB) error {
+	if c.ID == "" {
+		var err error
+		c.ID, err = id.New(id.PrefixCredentialVerdict)
+		if err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
 // AllModels returns all persisted model types.
 func AllModels() []any {
 	return []any{
@@ -1205,5 +1257,6 @@ func AllModels() []any {
 		&SecretGrant{},
 		&SandboxSecret{},
 		&SSHKey{},
+		&CredentialVerdict{},
 	}
 }

@@ -1,8 +1,8 @@
 # Agent Credentials Protocol v1
 
 A small HTTP protocol an agent inside a sandbox uses to **ask a human** for a
-credential it was not provisioned with, and then **use** it. Three operations:
-`list`, `request`, `get`.
+credential it was not provisioned with, and then **use** it. Four operations:
+`list`, `request`, `get`, and reporting a denial `get` never saw.
 
 The protocol knows nothing about Discobox. It is the contract between the
 in-sandbox CLI (`discobox-access`) and whatever serves it, so the same CLI
@@ -133,7 +133,11 @@ POST /v1/credentials/use
 ```
 
 ```json
-{ "useId": "use_7f3c…", "command": ["gh", "pr", "create", "--fill"] }
+{
+  "useId": "use_7f3c…",
+  "command": ["gh", "pr", "create", "--fill"],
+  "verdict": { "allow": true, "reason": "opens a PR against the approved repo", "role": "judge", "prompt": "Approved use: …", "latencyMs": 842 }
+}
 ```
 
 ```json
@@ -146,8 +150,45 @@ window and gives the audit log a per-use story. It is not a trust anchor: in
 Discobox the real enforcement happens against the actual outbound request at
 swap time, and a client that lies about its command gains nothing.
 
+`verdict` is required
+([ADR 0091](adr/0091-a-credential-is-not-issued-without-a-verdict-on-record.md)):
+a caller reports what decided the command was the approved use, and an
+implementation that judges its callers persists it before the value is handed
+out, so a credential is never issued with no record of why. `role` names what
+answered (a role like `"judge"`, never a vendor model id — a caller with
+nothing that decided the command, because it never judges its callers at all,
+reports the role it would have asked for anyway, such as `"none"`). `prompt`
+is the exact text the decision was made from, in full. An implementation that
+makes no such decision may still require the field and record it verbatim; the
+protocol does not make persistence itself mandatory, only that the field is
+sent.
+
 `expiresAt` is the end of this value's window. A client that needs the
 credential again after it passes calls `get` again rather than holding the value.
+
+## Reporting a verdict `get` never saw
+
+```
+POST /v1/credentials/denials
+```
+
+```json
+{
+  "useId": "use_7f3c…",
+  "command": ["curl", "-X", "DELETE", "…"],
+  "verdict": { "allow": false, "reason": "broader than the approved use", "role": "judge", "prompt": "Approved use: …" }
+}
+```
+
+A caller that judges its own commands before calling `get` (`discobox-access`
+does; the protocol does not require it) never calls `get` at all for a command
+its judge refused — there is nothing to issue, so there is nothing for `get`'s
+own recording to catch. Without this operation that verdict would exist only
+on the caller's own side, if anywhere. Reporting it is the caller's choice, not
+its obligation: the response is `204` either way, and a client is free to treat
+this call's own failure as unremarkable — it is what a caller volunteers about
+a decision made before this protocol was ever asked to act on it, not a
+correction to something `get` returned.
 
 ## The client shape that fits it best
 
@@ -196,19 +237,28 @@ is a property of this client, not of the protocol: an implementation serving the
 protocol neither knows nor depends on whether its caller does this, and a
 different client may do something else.
 
-`list`, a bare `get`, and the flag form of `request` exist for scripting.
-`get` is the weaker path on purpose: it hands the value to a caller that may
-log or persist it, which the wrapper structurally cannot.
+**The reference client has no unwrapped way to take a value.** The wire
+operation below is `get` for a reason — a caller of the protocol may still ask
+for a value with no command attached — but `discobox-access` itself dropped
+that as a CLI capability
+([ADR 0092](adr/0092-the-cli-has-no-unjudged-way-to-take-a-value.md)): a value
+with nothing for the judge to have ruled on is exactly the case the judge
+cannot help with, and this client does not keep offering one just because
+wrapping is sometimes inconvenient. `list` and the flag form of `request`
+remain, for scripting the parts that were never about a value in the first
+place.
 
 ## Implementing the server side
 
-An implementation owns three decisions the protocol does not make:
+An implementation owns four decisions the protocol does not make:
 
 1. **Who may call it.** The protocol carries no identity beyond the optional
    bearer token; the transport decides whose credentials these are.
 2. **What `get` returns.** Real value, or a scoped stand-in.
 3. **How a request reaches a human.** The protocol only says a request has an
    id and a status that eventually settles.
+4. **What becomes of a verdict.** The field is required on both `get` and the
+   denial report; whether either is persisted, and where, is not specified.
 
 In Discobox: sandbox-agent serves the protocol on sandbox loopback, relays to
 pool-agent over the sandbox's mTLS client certificate (which is the identity),

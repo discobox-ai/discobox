@@ -11,6 +11,83 @@ import (
 	"github.com/go-faster/jx"
 )
 
+// What a judge decided about one command, and what it was given to decide from.
+// Ref: #/components/schemas/AgentCredentialVerdict
+type AgentCredentialVerdict struct {
+	// A URL to the JSON Schema for this object.
+	Schema OptURI `json:"$schema"`
+	// True if the judge allowed the command.
+	Allow bool `json:"allow"`
+	// How long the judge took to answer, in milliseconds.
+	LatencyMs OptInt64 `json:"latencyMs"`
+	// The exact prompt the judge was given, including the facts block.
+	Prompt string `json:"prompt"`
+	// The judge's own sentence, addressed to the agent that asked.
+	Reason OptString `json:"reason"`
+	// The role discobox-prompt was asked for (e.g. "judge"), never a vendor model id.
+	Role string `json:"role"`
+}
+
+// GetSchema returns the value of Schema.
+func (s *AgentCredentialVerdict) GetSchema() OptURI {
+	return s.Schema
+}
+
+// GetAllow returns the value of Allow.
+func (s *AgentCredentialVerdict) GetAllow() bool {
+	return s.Allow
+}
+
+// GetLatencyMs returns the value of LatencyMs.
+func (s *AgentCredentialVerdict) GetLatencyMs() OptInt64 {
+	return s.LatencyMs
+}
+
+// GetPrompt returns the value of Prompt.
+func (s *AgentCredentialVerdict) GetPrompt() string {
+	return s.Prompt
+}
+
+// GetReason returns the value of Reason.
+func (s *AgentCredentialVerdict) GetReason() OptString {
+	return s.Reason
+}
+
+// GetRole returns the value of Role.
+func (s *AgentCredentialVerdict) GetRole() string {
+	return s.Role
+}
+
+// SetSchema sets the value of Schema.
+func (s *AgentCredentialVerdict) SetSchema(val OptURI) {
+	s.Schema = val
+}
+
+// SetAllow sets the value of Allow.
+func (s *AgentCredentialVerdict) SetAllow(val bool) {
+	s.Allow = val
+}
+
+// SetLatencyMs sets the value of LatencyMs.
+func (s *AgentCredentialVerdict) SetLatencyMs(val OptInt64) {
+	s.LatencyMs = val
+}
+
+// SetPrompt sets the value of Prompt.
+func (s *AgentCredentialVerdict) SetPrompt(val string) {
+	s.Prompt = val
+}
+
+// SetReason sets the value of Reason.
+func (s *AgentCredentialVerdict) SetReason(val OptString) {
+	s.Reason = val
+}
+
+// SetRole sets the value of Role.
+func (s *AgentCredentialVerdict) SetRole(val string) {
+	s.Role = val
+}
+
 // Records one successful discobox apply of a source's commits into a host working tree.
 // Client-declared provenance, like Origin, since the server cannot observe host-side Git state.
 // Ref: #/components/schemas/AppliedSourceCommit
@@ -1735,6 +1812,7 @@ func (*ErrorModelStatusCode) mintSandboxAgentStatusTokensRes()     {}
 func (*ErrorModelStatusCode) purgeSandboxRes()                     {}
 func (*ErrorModelStatusCode) reconcilePoolRes()                    {}
 func (*ErrorModelStatusCode) reconcileSandboxRes()                 {}
+func (*ErrorModelStatusCode) recordCredentialVerdictRes()          {}
 func (*ErrorModelStatusCode) refreshHarnessConfigImageRes()        {}
 func (*ErrorModelStatusCode) registerPoolRes()                     {}
 func (*ErrorModelStatusCode) repairSandboxRes()                    {}
@@ -9826,6 +9904,91 @@ func (s *ProviderStatus) SetState(val string) {
 type PurgeSandboxNoContent struct{}
 
 func (*PurgeSandboxNoContent) purgeSandboxRes() {}
+
+// A judge's verdict about one command run under an agent credential use, relayed by the pool agent
+// on behalf of one of its sandboxes (ADR 0091). Carried on the same call that takes a value, so a
+// credential cannot be issued without a record of why; sent on its own when the judge refused and no
+// value was ever taken.
+// Ref: #/components/schemas/RecordCredentialVerdictBody
+type RecordCredentialVerdictBody struct {
+	// A URL to the JSON Schema for this object.
+	Schema OptURI `json:"$schema"`
+	// The argv the judge was shown.
+	Command []string `json:"command"`
+	// Sandbox the command ran in.
+	SandboxId string `json:"sandboxId"`
+	// Approved use the command was judged against.
+	UseId   string                 `json:"useId"`
+	Verdict AgentCredentialVerdict `json:"verdict"`
+	// True when the judge refused and this report is the only record of it, because the use call this
+	// would otherwise ride never happened.
+	Volunteered bool `json:"volunteered"`
+}
+
+// GetSchema returns the value of Schema.
+func (s *RecordCredentialVerdictBody) GetSchema() OptURI {
+	return s.Schema
+}
+
+// GetCommand returns the value of Command.
+func (s *RecordCredentialVerdictBody) GetCommand() []string {
+	return s.Command
+}
+
+// GetSandboxId returns the value of SandboxId.
+func (s *RecordCredentialVerdictBody) GetSandboxId() string {
+	return s.SandboxId
+}
+
+// GetUseId returns the value of UseId.
+func (s *RecordCredentialVerdictBody) GetUseId() string {
+	return s.UseId
+}
+
+// GetVerdict returns the value of Verdict.
+func (s *RecordCredentialVerdictBody) GetVerdict() AgentCredentialVerdict {
+	return s.Verdict
+}
+
+// GetVolunteered returns the value of Volunteered.
+func (s *RecordCredentialVerdictBody) GetVolunteered() bool {
+	return s.Volunteered
+}
+
+// SetSchema sets the value of Schema.
+func (s *RecordCredentialVerdictBody) SetSchema(val OptURI) {
+	s.Schema = val
+}
+
+// SetCommand sets the value of Command.
+func (s *RecordCredentialVerdictBody) SetCommand(val []string) {
+	s.Command = val
+}
+
+// SetSandboxId sets the value of SandboxId.
+func (s *RecordCredentialVerdictBody) SetSandboxId(val string) {
+	s.SandboxId = val
+}
+
+// SetUseId sets the value of UseId.
+func (s *RecordCredentialVerdictBody) SetUseId(val string) {
+	s.UseId = val
+}
+
+// SetVerdict sets the value of Verdict.
+func (s *RecordCredentialVerdictBody) SetVerdict(val AgentCredentialVerdict) {
+	s.Verdict = val
+}
+
+// SetVolunteered sets the value of Volunteered.
+func (s *RecordCredentialVerdictBody) SetVolunteered(val bool) {
+	s.Volunteered = val
+}
+
+// RecordCredentialVerdictNoContent is response for RecordCredentialVerdict operation.
+type RecordCredentialVerdictNoContent struct{}
+
+func (*RecordCredentialVerdictNoContent) recordCredentialVerdictRes() {}
 
 // Ref: #/components/schemas/RegisterPoolBody
 type RegisterPoolBody struct {

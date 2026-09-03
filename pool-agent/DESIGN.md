@@ -584,7 +584,11 @@ back at swap time are one act. Splitting them across processes would put a file
 and a race between the moment a sandbox is handed a sentinel and the moment the
 proxy would recognize it.
 
-- `list` and `request` are relayed to the control plane unchanged; `get` mints.
+- `list` and `request` are relayed to the control plane unchanged. `get` records
+  the caller's verdict to the control plane before it mints — a write failure
+  there stops the mint, so a value is never issued with no record of why — and
+  a refusal that never reaches `get` at all is relayed on its own, through the
+  denial-report call ([ADR 0091](../docs/adr/0091-a-credential-is-not-issued-without-a-verdict-on-record.md)).
 - **Activations** (`activations.go`) are in-memory and pool-local: ephemeral
   sentinel → `{stable sentinel, useId, host, declared command, expiry}`. They are
   disposable by design — a restart costs a dead sentinel and one fresh `get`,

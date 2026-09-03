@@ -63,6 +63,22 @@ type listCredentialsDoc struct {
 	Credentials []credentialDoc `json:"credentials"`
 }
 
+type credentialVerdictDoc struct {
+	Allow     bool   `json:"allow"`
+	Reason    string `json:"reason,omitempty"`
+	Role      string `json:"role"`
+	Prompt    string `json:"prompt"`
+	LatencyMs int64  `json:"latencyMs,omitempty"`
+}
+
+type recordCredentialVerdictDoc struct {
+	SandboxID   string               `json:"sandboxId"`
+	UseID       string               `json:"useId"`
+	Command     []string             `json:"command,omitempty"`
+	Verdict     credentialVerdictDoc `json:"verdict"`
+	Volunteered bool                 `json:"volunteered"`
+}
+
 type createCredentialRequestDoc struct {
 	SandboxID     string             `json:"sandboxId"`
 	Name          string             `json:"name"`
@@ -99,6 +115,27 @@ func (c *controlPlaneCredentials) requestStatus(ctx context.Context, sandboxID, 
 	path := "sandbox-credential-requests/" + url.PathEscape(requestID)
 	err := c.do(ctx, http.MethodGet, path, query, nil, &out)
 	return out, err
+}
+
+// recordVerdict persists one judge decision to the control plane (ADR 0091).
+// volunteered is false for a verdict recorded on the same call that mints a
+// value, and true for one a sandbox reports on its own after the judge
+// refused and no value was ever taken.
+func (c *controlPlaneCredentials) recordVerdict(ctx context.Context, sandboxID, useID string, command []string, verdict agentcreds.Verdict, volunteered bool) error {
+	body := recordCredentialVerdictDoc{
+		SandboxID: sandboxID,
+		UseID:     useID,
+		Command:   command,
+		Verdict: credentialVerdictDoc{
+			Allow:     verdict.Allow,
+			Reason:    verdict.Reason,
+			Role:      verdict.Role,
+			Prompt:    verdict.Prompt,
+			LatencyMs: verdict.LatencyMS,
+		},
+		Volunteered: volunteered,
+	}
+	return c.do(ctx, http.MethodPost, "sandbox-credential-verdicts", nil, body, nil)
 }
 
 func (c *controlPlaneCredentials) do(ctx context.Context, method, path string, query url.Values, body, out any) error {
@@ -245,6 +282,9 @@ func (b *credentialBroker) Get(ctx context.Context, body agentcreds.UseBody) (ag
 	if useID == "" {
 		return agentcreds.UseResponse{}, fmt.Errorf("%w: useId is required", agentcreds.ErrInvalid)
 	}
+	if err := validateVerdict(body.Verdict); err != nil {
+		return agentcreds.UseResponse{}, err
+	}
 	docs, err := b.controlPlan.list(ctx, b.sandboxID)
 	if err != nil {
 		return agentcreds.UseResponse{}, err
@@ -253,6 +293,11 @@ func (b *credentialBroker) Get(ctx context.Context, body agentcreds.UseBody) (ag
 		for _, use := range doc.Uses {
 			if use.UseID != useID {
 				continue
+			}
+			// Recorded before the mint, and gating it: a failure here must stop
+			// the value from being issued, not merely go unlogged (ADR 0091).
+			if err := b.controlPlan.recordVerdict(ctx, b.sandboxID, useID, body.Command, body.Verdict, false); err != nil {
+				return agentcreds.UseResponse{}, err
 			}
 			record, err := b.activations.mint(b.sandboxID, doc.Sentinel, useID, doc.Host, doc.Format, body.Command)
 			if err != nil {
@@ -270,6 +315,35 @@ func (b *credentialBroker) Get(ctx context.Context, body agentcreds.UseBody) (ag
 	// Unknown, revoked, or expired all look the same from here, and saying which
 	// would tell an untrusted caller more than it needs.
 	return agentcreds.UseResponse{}, fmt.Errorf("%w: no live approved use %s", agentcreds.ErrDenied, useID)
+}
+
+// ReportDenial records a verdict for a command the judge refused, which never
+// reached Get: a refusal mints no ephemeral sentinel and leaves no activation
+// behind (ADR 0079 §1), so this is the only route that decision reaches the
+// control plane by (ADR 0091 §3). There is no value to gate here, so nothing
+// about this call depends on which use the sandbox is naming, only that a
+// verdict was actually given.
+func (b *credentialBroker) ReportDenial(ctx context.Context, body agentcreds.DenialReport) error {
+	useID := strings.TrimSpace(body.UseID)
+	if useID == "" {
+		return fmt.Errorf("%w: useId is required", agentcreds.ErrInvalid)
+	}
+	if err := validateVerdict(body.Verdict); err != nil {
+		return err
+	}
+	return b.controlPlan.recordVerdict(ctx, b.sandboxID, useID, body.Command, body.Verdict, true)
+}
+
+// validateVerdict rejects a call with nothing to record. ADR 0091 makes a
+// verdict a required part of both Get and ReportDenial, not merely a welcome
+// addition to either — Role and Prompt are what the CLI always has by
+// construction, so their absence means the caller sent no verdict at all
+// rather than an incomplete one.
+func validateVerdict(v agentcreds.Verdict) error {
+	if strings.TrimSpace(v.Role) == "" || strings.TrimSpace(v.Prompt) == "" {
+		return fmt.Errorf("%w: verdict is required", agentcreds.ErrInvalid)
+	}
+	return nil
 }
 
 func protocolUses(docs []credentialUseDoc, expiresAt *time.Time) []agentcreds.Use {

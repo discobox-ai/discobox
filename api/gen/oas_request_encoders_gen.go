@@ -244,6 +244,20 @@ func encodeMintSandboxAgentStatusTokensRequest(
 	return nil
 }
 
+func encodeRecordCredentialVerdictRequest(
+	req *RecordCredentialVerdictBody,
+	r *http.Request,
+) error {
+	const contentType = "application/json"
+	e := new(jx.Encoder)
+	{
+		req.Encode(e)
+	}
+	encoded := e.Bytes()
+	ht.SetBody(r, bytes.NewReader(encoded), contentType)
+	return nil
+}
+
 func encodeRegisterPoolRequest(
 	req *RegisterPoolBody,
 	r *http.Request,

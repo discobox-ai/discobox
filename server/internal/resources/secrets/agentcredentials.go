@@ -147,6 +147,58 @@ func (s *Service) GetSandboxCredentialRequest(ctx context.Context, poolID, sandb
 	return req, grant, nil
 }
 
+// RecordCredentialVerdict persists one judge decision about an agent
+// credential use, called on the same code path that mints a value — before
+// the mint, in the issuing case, and gating it: a store failure here must
+// stop that path, so no credential is ever issued with no record of why
+// (ADR 0091).
+func (s *Service) RecordCredentialVerdict(ctx context.Context, poolID string, input services.RecordCredentialVerdictBody) error {
+	sandbox, err := s.sandboxOwnedByPool(ctx, poolID, strings.TrimSpace(input.SandboxId))
+	if err != nil {
+		return err
+	}
+	verdict := input.Verdict
+	row := &model.CredentialVerdict{
+		ProjectID:   sandbox.ProjectID,
+		SandboxID:   sandbox.ID,
+		UseID:       strings.TrimSpace(input.UseId),
+		Command:     input.Command,
+		Allow:       verdict.Allow,
+		Reason:      strings.TrimSpace(verdict.Reason.Or("")),
+		Role:        verdict.Role,
+		Prompt:      verdict.Prompt,
+		LatencyMS:   verdict.LatencyMs.Or(0),
+		Volunteered: input.Volunteered,
+	}
+	if grantID, ok := s.findGrantForUse(ctx, sandbox, row.UseID); ok {
+		row.GrantID = grantID
+	}
+	return s.store.CreateCredentialVerdict(ctx, row)
+}
+
+// findGrantForUse resolves which of a sandbox's live grants a use ID belongs
+// to. Best-effort: a grant revoked in the moment between judging and
+// recording is not found here, and the verdict is recorded without it rather
+// than failing the write (ADR 0091 §2) — it is still complete evidence about
+// the command either way.
+func (s *Service) findGrantForUse(ctx context.Context, sandbox *model.Sandbox, useID string) (string, bool) {
+	if useID == "" {
+		return "", false
+	}
+	credentials, err := s.store.ListLiveAgentCredentials(ctx, sandbox.ProjectID, sandbox.ID, agentGrantScopes(sandbox))
+	if err != nil {
+		return "", false
+	}
+	for _, credential := range credentials {
+		for _, use := range credential.Grant.Uses {
+			if use.UseID == useID {
+				return credential.Grant.ID, true
+			}
+		}
+	}
+	return "", false
+}
+
 // bindAgentCredential gives the sandbox its stable binding for an approved
 // credential, creating it if the sandbox has none yet.
 //

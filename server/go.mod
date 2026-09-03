@@ -9,7 +9,7 @@ require (
 	github.com/coder/websocket v1.8.14
 	github.com/containerd/errdefs v1.0.0
 	github.com/discobox-ai/discobox/pool-agent v0.0.0-00010101000000-000000000000
-	github.com/discobox-ai/x v0.0.0-20260828205057-2567df0ccf27
+	github.com/discobox-ai/x v0.0.0-20260903144420-ff3709c36e16
 	github.com/glebarez/sqlite v1.11.0
 	github.com/go-faster/jx v1.2.0
 	github.com/google/go-containerregistry v0.20.6

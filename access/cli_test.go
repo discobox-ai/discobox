@@ -24,6 +24,8 @@ type fakeService struct {
 	gotUse      agentcreds.UseBody
 	status      agentcreds.RequestStatus
 	getErr      error
+	gotDenial   agentcreds.DenialReport
+	denialErr   error
 }
 
 func (f *fakeService) List(context.Context) ([]agentcreds.Credential, error) {
@@ -45,6 +47,11 @@ func (f *fakeService) Get(_ context.Context, body agentcreds.UseBody) (agentcred
 		return agentcreds.UseResponse{}, f.getErr
 	}
 	return agentcreds.UseResponse{EnvVar: "GITHUB_TOKEN", Value: "ghp_stand_in"}, nil
+}
+
+func (f *fakeService) ReportDenial(_ context.Context, body agentcreds.DenialReport) error {
+	f.gotDenial = body
+	return f.denialErr
 }
 
 // serve points the CLI at a real handler over HTTP, so these exercise the wire
@@ -156,10 +163,19 @@ func TestRequestJSONRejectsUnknownFields(t *testing.T) {
 	}
 }
 
-func TestDenialIsReportedAsAStableCode(t *testing.T) {
-	serve(t, &fakeService{getErr: fmt.Errorf("%w: no live approved use", agentcreds.ErrDenied)})
+// The judge is not the only thing that can say no: the service still can, at
+// the use call, after a command it approved of. That denial must surface with
+// the same stable code as a refusal the judge made itself.
+func TestDenialFromTheServiceIsReportedAsAStableCode(t *testing.T) {
+	stubJudge(t, allowScript)
+	serve(t, &fakeService{
+		credentials: judgeCredentials(),
+		getErr:      fmt.Errorf("%w: no live approved use", agentcreds.ErrDenied),
+	})
 
-	_, stderr, code := capture(t, "", func() int { return Run([]string{"get", "--use", "use_gone", "--json"}) })
+	_, stderr, code := capture(t, "", func() int {
+		return Run([]string{"run", "--use", "use_7f3c", "--json", "--", "sh", "-c", "exit 0"})
+	})
 	if code != exitError {
 		t.Fatalf("exit = %d, want 1", code)
 	}

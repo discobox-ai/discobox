@@ -18,6 +18,7 @@ type SetHarnessConfigSecretBindingBody = apimodel.SetHarnessConfigSecretBindingB
 type CreateSecretBody = apimodel.CreateSecretBody
 type CreateSecretRequestBody = apimodel.CreateSecretRequestBody
 type CreateSandboxCredentialRequestBody = apimodel.CreateSandboxCredentialRequestBody
+type RecordCredentialVerdictBody = apimodel.RecordCredentialVerdictBody
 type CreateSecretGrantBody = apimodel.CreateSecretGrantBody
 type CreateSSHKeyBody = apimodel.CreateSSHKeyBody
 type UpdateHarnessConfigBody = apimodel.UpdateHarnessConfigBody
@@ -226,6 +227,9 @@ type SecretService interface {
 	ListSandboxCredentials(ctx context.Context, poolID, sandboxID string) ([]store.AgentCredential, error)
 	CreateSandboxCredentialRequest(ctx context.Context, poolID string, input CreateSandboxCredentialRequestBody) (*model.SecretRequest, error)
 	GetSandboxCredentialRequest(ctx context.Context, poolID, sandboxID, requestID string) (*model.SecretRequest, *model.SecretGrant, error)
+	// RecordCredentialVerdict persists one judge decision, so a credential
+	// cannot be issued without a record of why (ADR 0091).
+	RecordCredentialVerdict(ctx context.Context, poolID string, input RecordCredentialVerdictBody) error
 }
 
 // SSHKeyService manages project-scoped SSH keys that authorize SSH access to

@@ -467,6 +467,12 @@ type Handler interface {
 	//
 	// POST /projects/{projectId}/sandboxes/{sandboxId}/reconcile
 	ReconcileSandbox(ctx context.Context, params ReconcileSandboxParams) (ReconcileSandboxRes, error)
+	// RecordCredentialVerdict implements record-credential-verdict operation.
+	//
+	// Record a judge's verdict about a command run under an agent credential use.
+	//
+	// POST /api/pools/{poolId}/sandbox-credential-verdicts
+	RecordCredentialVerdict(ctx context.Context, req *RecordCredentialVerdictBody, params RecordCredentialVerdictParams) (RecordCredentialVerdictRes, error)
 	// RefreshHarnessConfigImage implements refresh-harness-config-image operation.
 	//
 	// Re-inspect the harness config's image and re-snapshot its label metadata and digest.

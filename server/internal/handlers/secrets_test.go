@@ -131,6 +131,10 @@ func (fakeSecretService) GetSandboxCredentialRequest(context.Context, string, st
 	return &model.SecretRequest{ID: "sreq-1", Status: model.SecretRequestStatusPending}, nil, nil
 }
 
+func (fakeSecretService) RecordCredentialVerdict(context.Context, string, svcapi.RecordCredentialVerdictBody) error {
+	return nil
+}
+
 func fakeSecret() model.Secret {
 	now := time.Date(2026, 6, 17, 0, 0, 0, 0, time.UTC)
 	return model.Secret{

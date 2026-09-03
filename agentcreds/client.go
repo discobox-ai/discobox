@@ -12,7 +12,7 @@ import (
 )
 
 // Client speaks the protocol to a base URL. It is the only thing the in-sandbox
-// CLI knows: a URL, an optional bearer token, and these four calls.
+// CLI knows: a URL, an optional bearer token, and these five calls.
 type Client struct {
 	baseURL string
 	token   string
@@ -80,6 +80,14 @@ func (c *Client) Get(ctx context.Context, body UseBody) (UseResponse, error) {
 	var out UseResponse
 	err := c.do(ctx, http.MethodPost, PathUse, body, &out)
 	return out, err
+}
+
+// ReportDenial volunteers a verdict for a command the judge refused, which
+// never reached Get. Best-effort by contract (ADR 0091 §3): a caller may, and
+// the reference CLI does, ignore this call's own failure rather than let it
+// change what the caller reports for the refusal that prompted it.
+func (c *Client) ReportDenial(ctx context.Context, body DenialReport) error {
+	return c.do(ctx, http.MethodPost, PathDenials, body, nil)
 }
 
 // WaitForRequest polls a request until it settles or ctx is done. Blocking is

@@ -215,6 +215,17 @@ func (h *Handler) GetSandboxCredentialRequest(ctx context.Context, params server
 	return agentCredentialRequestStatus(result, grant), nil
 }
 
+func (h *Handler) RecordCredentialVerdict(ctx context.Context, req *apimodel.RecordCredentialVerdictBody, _ serverapi.RecordCredentialVerdictParams) (serverapi.RecordCredentialVerdictRes, error) {
+	principal, err := credentialBrokerPrincipal(ctx)
+	if err != nil {
+		return apiError(err), nil
+	}
+	if err := h.services.Secrets.RecordCredentialVerdict(ctx, principal.PoolID, *req); err != nil {
+		return apiError(err), nil
+	}
+	return &serverapi.RecordCredentialVerdictNoContent{}, nil
+}
+
 // credentialBrokerPrincipal authorizes an agent credentials broker call. The
 // scope is distinct from secret:resolve because the two are held by the same
 // process for different reasons: resolving is what the proxy does with traffic

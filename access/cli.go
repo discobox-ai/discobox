@@ -6,7 +6,7 @@
 //
 // # Interface shape
 //
-// The primary consumer is an LLM agent, and the four operations do not have the
+// The primary consumer is an LLM agent, and the three operations do not have the
 // same shape, so they do not get the same interface:
 //
 //   - "run" wraps a command, so it takes argv. The security property is that
@@ -16,7 +16,14 @@
 //   - "request" carries nested, free-text fields — a justification and a list
 //     of use descriptions — through a shell that treats quotes and apostrophes
 //     as syntax. That is the payload JSON is for, so --json reads it from stdin.
-//   - "list" and "get" take nothing or one id, where flags are already precise.
+//   - "list" takes nothing, where flags are already precise.
+//
+// There is no "get" that hands back a bare value: every use this CLI supports
+// goes through "run", so it is always the judge's argv, never a value with no
+// command attached to it. See judge.go and DESIGN.md's "What it must never do"
+// for why. The protocol underneath still has a use call that mints one — a
+// scripted caller that cannot exec through this CLI needs it — but that is a
+// gap in what can be secured today, not a supported way to reach a credential.
 //
 // --json means "talk to me in JSON" for whichever direction the command has:
 // structured output everywhere, and a structured body on stdin for "request".
@@ -73,8 +80,6 @@ func Run(args []string) int {
 		return runList(ctx, rest)
 	case "request":
 		return runRequest(ctx, rest)
-	case "get":
-		return runGet(ctx, rest)
 	case "run":
 		return runWrapped(ctx, rest)
 	case "help", "-h", "--help":
@@ -134,8 +139,9 @@ func usage(w io.Writer) {
       With flags: --name, --env-var, --host, --why, --use (repeatable),
       --wait, --timeout.
 
-  %[1]s get --use USE_ID [--command TEXT] [--json]
-      Print the value for one use, for scripts that cannot be wrapped.
+There is no command that prints a credential's value on its own. "run" is the
+only way to use one — the value goes straight into the child it names and
+nowhere else, which is what lets a model judge the command before it runs.
 
 --json also makes failures structured, on stderr:
 

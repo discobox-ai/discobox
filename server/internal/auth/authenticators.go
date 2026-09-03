@@ -119,6 +119,9 @@ var poolRuntimeActions = map[string]bool{
 	// The agent credentials broker (ADR 0031).
 	"sandbox-credentials":         false,
 	"sandbox-credential-requests": true, // .../{requestId} polls one request
+	// The judge's verdict trail (ADR 0091). It addresses no resource of its
+	// own — one call records one verdict — so it takes no trailing ID.
+	"sandbox-credential-verdicts": false,
 }
 
 func isPoolRuntimePath(path string) bool {

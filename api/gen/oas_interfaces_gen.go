@@ -281,6 +281,10 @@ type ReconcileSandboxRes interface {
 	reconcileSandboxRes()
 }
 
+type RecordCredentialVerdictRes interface {
+	recordCredentialVerdictRes()
+}
+
 type RefreshHarnessConfigImageRes interface {
 	refreshHarnessConfigImageRes()
 }

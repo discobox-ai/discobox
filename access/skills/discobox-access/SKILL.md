@@ -81,9 +81,9 @@ discobox-access run --use use_7f3a2b -- gh pr create --fill
   else, ask for it in step 2 rather than stretching an existing use.
 - Everything after `--` is your command, run exactly as written.
 
-For a script that genuinely cannot be wrapped there is
-`discobox-access get --use USE_ID`, which prints the raw value. Prefer `run`:
-`get` hands you a secret that then becomes your problem to not leak.
+There is no command that prints the value on its own. `run` is the only way to
+use one — if what you need to run cannot be `exec`'d directly, wrap it in a
+shell: `discobox-access run --use use_7f3a2b -- sh -c '...'`.
 
 ## Never do this with the value
 

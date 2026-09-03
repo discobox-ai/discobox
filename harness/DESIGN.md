@@ -77,16 +77,21 @@ sandbox terminals.
 - Every harness image provides **`/usr/local/bin/discobox-prompt`**, a one-shot
   prompting interface in-sandbox tools ask for a model through
   ([ADR 0079](../docs/adr/0079-a-local-judge-gates-every-wrapped-credential-use.md)):
-  `discobox-prompt --model ROLE --system TEXT --prompt TEXT --output-schema JSON`,
+  `discobox-prompt --model ROLE --system TEXT --prompt TEXT --output-schema JSON [--no-tools]`,
   answering on stdout and exiting 0 only when the model answered. `--model`
   names a *role* (`judge` today), never a model id — the caller does not know
   what the image installed, so mapping the role is the wrapper's job, and it is
   version-coupled to a CLI the image pins the way the hook and launch wrappers
-  are. It goes on PATH rather than in `libexec` because its callers resolve it
-  by name. Its first consumer is the credential CLI's judge, which will not run
-  a wrapped command until a model agrees the command is the approved use; a
-  harness with no wrapper (`shell`) refuses those commands rather than running
-  them unjudged.
+  are. `--no-tools` means the model answers from its prompt and executes
+  nothing — no command, no file read, no network fetch
+  ([ADR 0090](../docs/adr/0090-the-judge-is-handed-facts-and-given-no-tools.md))
+  — and mapping it onto whatever the image's CLI calls the same thing is the
+  wrapper's job too; a CLI with no tools-off switch maps it onto the strictest
+  sandboxing it has instead. It goes on PATH rather than in `libexec` because
+  its callers resolve it by name. Its first consumer is the credential CLI's
+  judge, which will not run a wrapped command until a model agrees the command
+  is the approved use, and which never omits `--no-tools`; a harness with no
+  wrapper (`shell`) refuses those commands rather than running them unjudged.
 - `harnessMode: config` selects the image-owned interactive config command;
   normal or omitted mode selects the image-owned run/relaunch commands.
 - **A config command may declare the ports its sign-in needs** (`config.ports`,

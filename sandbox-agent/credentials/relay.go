@@ -122,6 +122,10 @@ func (r *Relay) Get(ctx context.Context, body agentcreds.UseBody) (agentcreds.Us
 	return r.client.Get(ctx, body)
 }
 
+func (r *Relay) ReportDenial(ctx context.Context, body agentcreds.DenialReport) error {
+	return r.client.ReportDenial(ctx, body)
+}
+
 // Serve runs the loopback protocol endpoint until ctx is done.
 //
 // There is no token on this listener, for the same reason the hook socket has

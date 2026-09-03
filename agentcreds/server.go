@@ -23,6 +23,9 @@ type Service interface {
 	RequestStatus(ctx context.Context, requestID string) (RequestStatus, error)
 	// Get returns a value for one declared command.
 	Get(ctx context.Context, body UseBody) (UseResponse, error)
+	// ReportDenial records a verdict for a command the judge refused, which
+	// never reached Get (ADR 0091 §3).
+	ReportDenial(ctx context.Context, body DenialReport) error
 }
 
 // ErrNotFound makes a handler answer 404. It is the "this id means nothing to
@@ -85,6 +88,17 @@ func NewHandler(svc Service) http.Handler {
 			return
 		}
 		writeJSON(w, http.StatusOK, out)
+	})
+	mux.HandleFunc("POST "+PathDenials, func(w http.ResponseWriter, r *http.Request) {
+		var body DenialReport
+		if !decode(w, r, &body) {
+			return
+		}
+		if err := svc.ReportDenial(r.Context(), body); err != nil {
+			writeError(w, err)
+			return
+		}
+		w.WriteHeader(http.StatusNoContent)
 	})
 	return mux
 }

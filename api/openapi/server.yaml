@@ -2735,6 +2735,69 @@ components:
                 - requestId
                 - status
             type: object
+        RecordCredentialVerdictBody:
+            additionalProperties: false
+            description: A judge's verdict about one command run under an agent credential use, relayed by the pool agent on behalf of one of its sandboxes (ADR 0091). Carried on the same call that takes a value, so a credential cannot be issued without a record of why; sent on its own when the judge refused and no value was ever taken.
+            properties:
+                $schema:
+                    description: A URL to the JSON Schema for this object.
+                    example: https://example.com/schemas/RecordCredentialVerdictBody.json
+                    format: uri
+                    readOnly: true
+                    type: string
+                command:
+                    description: The argv the judge was shown
+                    items:
+                        type: string
+                    type: array
+                sandboxId:
+                    description: Sandbox the command ran in
+                    type: string
+                useId:
+                    description: Approved use the command was judged against
+                    type: string
+                verdict:
+                    $ref: '#/components/schemas/AgentCredentialVerdict'
+                volunteered:
+                    description: True when the judge refused and this report is the only record of it, because the use call this would otherwise ride never happened
+                    type: boolean
+            required:
+                - sandboxId
+                - useId
+                - verdict
+                - volunteered
+            type: object
+        AgentCredentialVerdict:
+            additionalProperties: false
+            description: What a judge decided about one command, and what it was given to decide from.
+            properties:
+                $schema:
+                    description: A URL to the JSON Schema for this object.
+                    example: https://example.com/schemas/AgentCredentialVerdict.json
+                    format: uri
+                    readOnly: true
+                    type: string
+                allow:
+                    description: True if the judge allowed the command
+                    type: boolean
+                latencyMs:
+                    description: How long the judge took to answer, in milliseconds
+                    format: int64
+                    type: integer
+                prompt:
+                    description: The exact prompt the judge was given, including the facts block
+                    type: string
+                reason:
+                    description: The judge's own sentence, addressed to the agent that asked
+                    type: string
+                role:
+                    description: The role discobox-prompt was asked for (e.g. "judge"), never a vendor model id
+                    type: string
+            required:
+                - allow
+                - role
+                - prompt
+            type: object
         ResolveSandboxSecretResponse:
             additionalProperties: false
             description: Result of resolving a sentinel. The value is present only when status is approved.
@@ -4700,6 +4763,41 @@ paths:
                                 $ref: '#/components/schemas/ErrorModel'
                     description: Error
             summary: Poll an agent credential request
+            tags:
+                - Pools
+    /api/pools/{poolId}/sandbox-credential-verdicts:
+        post:
+            operationId: record-credential-verdict
+            parameters:
+                - description: Pool ID
+                  in: path
+                  name: poolId
+                  required: true
+                  schema:
+                    description: Pool ID
+                    type: string
+                - description: Bearer pool assertion with the credential:broker scope
+                  in: header
+                  name: Authorization
+                  schema:
+                    description: Bearer pool assertion with the credential:broker scope
+                    type: string
+            requestBody:
+                content:
+                    application/json:
+                        schema:
+                            $ref: '#/components/schemas/RecordCredentialVerdictBody'
+                required: true
+            responses:
+                204:
+                    description: No Content
+                default:
+                    content:
+                        application/problem+json:
+                            schema:
+                                $ref: '#/components/schemas/ErrorModel'
+                    description: Error
+            summary: Record a judge's verdict about a command run under an agent credential use
             tags:
                 - Pools
     /api/pools/{poolId}/resolve-sandbox-secret:

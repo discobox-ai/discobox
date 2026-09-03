@@ -1,6 +1,7 @@
 package access
 
 import (
+	"errors"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -106,11 +107,101 @@ func TestRunAsksTheJudgeAboutTheApprovedUseAndTheRealArgv(t *testing.T) {
 	if !strings.Contains(flags["--system"], "security judge") {
 		t.Fatalf("--system = %q, want the judging instructions", flags["--system"])
 	}
+	noTools := false
+	for _, arg := range args {
+		if arg == "--no-tools" {
+			noTools = true
+		}
+	}
+	if !noTools {
+		t.Fatalf("args = %v, want --no-tools; the judge must never be given tools (ADR 0090)", args)
+	}
 	prompt := flags["--prompt"]
 	for _, want := range []string{"Open a PR against the current repo", "api.github.com", "GITHUB_TOKEN", "[0] sh", "[2] exit 0"} {
 		if !strings.Contains(prompt, want) {
 			t.Fatalf("--prompt = %q, want it to carry %q", prompt, want)
 		}
+	}
+}
+
+// An allowed command's verdict has to reach the same call that takes the
+// value, not just decide whether that call happens (ADR 0091 §1).
+func TestRunCarriesTheVerdictOnTheUseCall(t *testing.T) {
+	stubJudge(t, allowScript)
+	svc := &fakeService{credentials: judgeCredentials()}
+	serve(t, svc)
+
+	_, _, code := capture(t, "", func() int {
+		return Run([]string{"run", "--use", "use_7f3c", "--", "sh", "-c", "exit 0"})
+	})
+	if code != exitOK {
+		t.Fatalf("exit = %d, want 0", code)
+	}
+	if !svc.gotUse.Verdict.Allow || svc.gotUse.Verdict.Reason != "opens a PR" {
+		t.Fatalf("verdict on the use call = %#v, want the judge's own answer", svc.gotUse.Verdict)
+	}
+	if svc.gotUse.Verdict.Role != judgeModel || svc.gotUse.Verdict.Prompt == "" {
+		t.Fatalf("verdict = %#v, want the role and the exact prompt carried too", svc.gotUse.Verdict)
+	}
+}
+
+// A denial never reaches the use call, so it is reported on its own — the
+// only route ADR 0091 §3 gives it to trusted ground. Reporting it must not
+// change what the CLI itself reports for the refusal.
+func TestRunReportsADenialTheUseCallNeverSees(t *testing.T) {
+	stubJudge(t, `printf '{"allow":false,"reason":"deletes repositories, which is not the approved use"}\n'`)
+	svc := &fakeService{credentials: judgeCredentials()}
+	serve(t, svc)
+
+	_, stderr, code := capture(t, "", func() int {
+		return Run([]string{"run", "--use", "use_7f3c", "--json", "--", "sh", "-c", "exit 0"})
+	})
+	if code == exitOK {
+		t.Fatal("a denied command ran")
+	}
+	if !strings.Contains(stderr, "deletes repositories") {
+		t.Fatalf("stderr = %q, want the judge's own reason", stderr)
+	}
+	if svc.gotUse.UseID != "" {
+		t.Fatal("the use call ran even though the judge denied the command")
+	}
+	if svc.gotDenial.Verdict.Allow || svc.gotDenial.Verdict.Reason == "" {
+		t.Fatalf("reported denial = %#v, want the refused verdict", svc.gotDenial)
+	}
+	if svc.gotDenial.UseID != "use_7f3c" {
+		t.Fatalf("reported denial useId = %q, want use_7f3c", svc.gotDenial.UseID)
+	}
+}
+
+// Reporting is best-effort: its own failure must not surface as run's.
+func TestRunIgnoresAFailureToReportADenial(t *testing.T) {
+	stubJudge(t, `printf '{"allow":false,"reason":"not the approved use"}\n'`)
+	svc := &fakeService{credentials: judgeCredentials(), denialErr: errors.New("control plane unreachable")}
+	serve(t, svc)
+
+	_, stderr, code := capture(t, "", func() int {
+		return Run([]string{"run", "--use", "use_7f3c", "--json", "--", "sh", "-c", "exit 0"})
+	})
+	if code == exitOK {
+		t.Fatal("a denied command ran")
+	}
+	if strings.Contains(stderr, "control plane unreachable") {
+		t.Fatalf("stderr = %q, want the judge's own refusal, not the report's failure", stderr)
+	}
+}
+
+// A refusal for want of a judge at all — no wrapper installed — never asked
+// one anything, so there is nothing to report.
+func TestRunReportsNothingWhenNoJudgeWasEverAsked(t *testing.T) {
+	t.Setenv(PromptCommandEnv, "discobox-prompt-absent")
+	svc := &fakeService{credentials: judgeCredentials()}
+	serve(t, svc)
+
+	capture(t, "", func() int {
+		return Run([]string{"run", "--use", "use_7f3c", "--", "sh", "-c", "exit 0"})
+	})
+	if svc.gotDenial.UseID != "" {
+		t.Fatalf("denial reported = %#v, want none: no judge was ever reached", svc.gotDenial)
 	}
 }
 

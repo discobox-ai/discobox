@@ -7,7 +7,7 @@ set -eu
 # agrees the command is the use a human approved.
 #
 # Contract:
-#   discobox-prompt --model ROLE --system TEXT --prompt TEXT --output-schema JSON
+#   discobox-prompt --model ROLE --system TEXT --prompt TEXT --output-schema JSON [--no-tools]
 #   stdout: the model's answer, and, when a schema is given, one JSON document
 #           conforming to it. `codex exec` frames its answer in a transcript,
 #           so a caller parsing a schema'd answer must find the JSON in it.
@@ -15,11 +15,17 @@ set -eu
 #
 # --model names a role, never a model id: the caller does not know what this
 # image installed. Mapping the role is this script's job.
+#
+# --no-tools means the model answers from its prompt and executes nothing: no
+# command, no file read, no network fetch (ADR 0090). It is this script's job
+# to map that onto whatever its CLI calls the same thing, the way --model
+# already is.
 
 model=""
 system=""
 prompt=""
 schema=""
+no_tools=""
 
 while [ $# -gt 0 ]; do
 	case "$1" in
@@ -31,6 +37,7 @@ while [ $# -gt 0 ]; do
 	--prompt=*) prompt="${1#--prompt=}"; shift ;;
 	--output-schema) schema="${2:-}"; shift 2 ;;
 	--output-schema=*) schema="${1#--output-schema=}"; shift ;;
+	--no-tools) no_tools=1; shift ;;
 	--) shift; break ;;
 	-*) printf '%s\n' "discobox-prompt: unknown flag $1" >&2; exit 2 ;;
 	*) break ;;
@@ -57,13 +64,34 @@ if [ -n "$schema" ]; then
 		"$schema")"
 fi
 
-# The role is left to the account's configured model unless the caller asked for
-# something this image can name. Codex's model ids move with its releases, and a
-# stale id here would fail every call rather than degrade to a slower answer.
+# The role, mapped onto a model this image can name.
+#
+# "judge" is not a cheap classification, however short its answer is. It is the
+# only thing standing between a granted credential and a command that misuses
+# it, and it reads an argv written by the agent it is judging, so it is named
+# rather than left to whatever the account happens to be configured with — a
+# gate whose model is a user preference is not a gate. Terra is the middle tier
+# of its generation, which is the same choice the claude-code wrapper makes.
+#
+# The risk this accepts: an id Codex has retired fails the call, and a judge
+# that cannot answer refuses the command. That is the safe direction, but it
+# is a real outage — bump this when the model line moves.
+#
+# Anything else is left to the account's configured model.
 set -- codex exec --skip-git-repo-check --color never
 case "$model" in
-judge | fast | "") ;;
+judge) set -- "$@" --model gpt-5.6-terra ;;
+fast | "") ;;
 *) set -- "$@" --model "$model" ;;
 esac
+
+# Codex has no tools-off switch — read-only is the strictest sandboxing
+# available, and approvals still have to be silenced or `exec` would stop and
+# wait for one on a session with no one to answer it. Read access and
+# read-only command execution are the residual this leaves (ADR 0090 §1); a
+# judge here is not tool-free, only unable to write.
+if [ -n "$no_tools" ]; then
+	set -- "$@" --sandbox read-only --ask-for-approval never
+fi
 
 exec "$@" "$composed"

@@ -682,6 +682,15 @@ func (UnimplementedHandler) ReconcileSandbox(ctx context.Context, params Reconci
 	return r, ht.ErrNotImplemented
 }
 
+// RecordCredentialVerdict implements record-credential-verdict operation.
+//
+// Record a judge's verdict about a command run under an agent credential use.
+//
+// POST /api/pools/{poolId}/sandbox-credential-verdicts
+func (UnimplementedHandler) RecordCredentialVerdict(ctx context.Context, req *RecordCredentialVerdictBody, params RecordCredentialVerdictParams) (r RecordCredentialVerdictRes, _ error) {
+	return r, ht.ErrNotImplemented
+}
+
 // RefreshHarnessConfigImage implements refresh-harness-config-image operation.
 //
 // Re-inspect the harness config's image and re-snapshot its label metadata and digest.

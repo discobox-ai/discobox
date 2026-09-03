@@ -163,29 +163,6 @@ func readRequestBody(stdin *os.File) (requestInput, error) {
 	return input, nil
 }
 
-func runGet(ctx context.Context, args []string) int {
-	var useID, command string
-	var structured bool
-	flags := flag.NewFlagSet(Name+" get", flag.ContinueOnError)
-	flags.StringVar(&useID, "use", "", "approved use ID")
-	flags.StringVar(&command, "command", "", "the command you are about to run")
-	flags.BoolVar(&structured, "json", false, "emit JSON")
-	if !parse(flags, args) {
-		return exitUsage
-	}
-	out := newEmitter(structured)
-
-	result, err := newClient().Get(ctx, agentcreds.UseBody{UseID: useID, Command: strings.Fields(command)})
-	if err != nil {
-		return out.report(err)
-	}
-	out.emit(result, func(w io.Writer) {
-		// The bare value, so `$(... get --use ID)` does the obvious thing.
-		fmt.Fprintln(w, result.Value)
-	})
-	return exitOK
-}
-
 // runWrapped is the form the protocol is designed around: the declared command
 // is literally the argv executed, and the value is injected into that child
 // process's environment and nowhere else.
@@ -214,10 +191,19 @@ func runWrapped(ctx context.Context, args []string) int {
 	// Judged before the value is taken (ADR 0079 §1), so a refusal mints no
 	// ephemeral sentinel and leaves no activation behind for a command that
 	// never ran.
-	if err := judgeCommand(ctx, credential, use, command); err != nil {
-		return out.report(err)
+	verdict, judgeErr := judgeCommand(ctx, credential, use, command)
+	if judgeErr != nil {
+		// A denial never reaches Get, and so would leave no record on trusted
+		// ground at all if this stopped here. Reporting it is best-effort — its
+		// own failure changes nothing about what run reports for the refusal
+		// that prompted it — and only attempted when a judge was actually asked;
+		// a zero Verdict means judgeCommand never got that far.
+		if verdict.Role != "" {
+			_ = client.ReportDenial(ctx, agentcreds.DenialReport{UseID: useID, Command: command, Verdict: verdict})
+		}
+		return out.report(judgeErr)
 	}
-	result, err := client.Get(ctx, agentcreds.UseBody{UseID: useID, Command: command})
+	result, err := client.Get(ctx, agentcreds.UseBody{UseID: useID, Command: command, Verdict: verdict})
 	if err != nil {
 		return out.report(err)
 	}
@@ -245,7 +231,7 @@ func runWrapped(ctx context.Context, args []string) int {
 //
 // A use the service does not list cannot be judged — there is no approved
 // sentence to hold the command up to — so it is refused here rather than
-// carried to `get`, which would only deny it one hop later.
+// carried to the use call, which would only deny it one hop later.
 func approvedUse(ctx context.Context, client *agentcreds.Client, useID string) (agentcreds.Credential, agentcreds.Use, error) {
 	useID = strings.TrimSpace(useID)
 	if useID == "" {

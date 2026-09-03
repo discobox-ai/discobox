@@ -249,7 +249,11 @@ func TestCredentialsEndpointIdentifiesTheSandboxByItsCertificate(t *testing.T) {
 
 	// A `get` mints against that identity, and the value handed back is an
 	// ephemeral sentinel rather than anything the control plane holds.
-	result, err := client.Get(ctx, agentcreds.UseBody{UseID: "use-1", Command: []string{"gh", "pr", "create"}})
+	result, err := client.Get(ctx, agentcreds.UseBody{
+		UseID:   "use-1",
+		Command: []string{"gh", "pr", "create"},
+		Verdict: agentcreds.Verdict{Allow: true, Reason: "matches the approved use", Role: "judge", Prompt: "..."},
+	})
 	if err != nil {
 		t.Fatalf("get over mTLS: %v", err)
 	}
