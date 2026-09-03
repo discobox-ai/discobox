@@ -95,18 +95,3 @@ func CombinedOutput(cmd *exec.Cmd) ([]byte, error) {
 	err := Run(cmd)
 	return out.Bytes(), err
 }
-
-// reapUnowned calls reap for pid unless this process owns it, holding the
-// registry across both so no child can be started or released in between. It
-// reports whether reap ran and said it collected the child.
-//
-// A pid we own is left alone rather than waited for: its owner's Wait is the
-// only thing entitled to its exit status.
-func reapUnowned(pid int, reap func(int) bool) bool {
-	children.mu.Lock()
-	defer children.mu.Unlock()
-	if _, ours := children.owned[pid]; ours {
-		return false
-	}
-	return reap(pid)
-}
