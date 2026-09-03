@@ -153,6 +153,39 @@ func TestForwarderBindsTheNearestFreePortAbove(t *testing.T) {
 	}
 }
 
+func TestExactForwarderBindsItsOwnPortOrNone(t *testing.T) {
+	sandbox := echoServer(t)
+	// A free port, found by binding one and letting it go.
+	probe, err := listenTest(t, "127.0.0.1:0")
+	if err != nil {
+		t.Fatalf("listen: %v", err)
+	}
+	freePort := probe.Addr().(*net.TCPAddr).Port
+	_ = probe.Close()
+	taken, err := listenTest(t, "127.0.0.1:0")
+	if err != nil {
+		t.Fatalf("listen: %v", err)
+	}
+	defer taken.Close()
+	takenPort := taken.Addr().(*net.TCPAddr).Port
+
+	events := newCollector()
+	forwarder := New(t.Context(), Options{Dialer: dialerTo(sandbox), Exact: true, Observe: events.observe})
+	defer forwarder.Close()
+
+	forwarder.Set([]Target{{Port: freePort}, {Port: takenPort}})
+	if bound := events.await(t, Bound, freePort); bound.Local != freePort {
+		t.Fatalf("local port = %d, want exactly %d", bound.Local, freePort)
+	}
+	if failed := events.await(t, BindFailed, takenPort); failed.Err == nil {
+		t.Fatal("expected the bind failure to carry its reason")
+	}
+	bindings := forwarder.Bindings()
+	if len(bindings) != 1 || bindings[0].Target.Port != freePort {
+		t.Fatalf("bindings = %v, want only %d: an exact forward must not land the taken port elsewhere", bindings, freePort)
+	}
+}
+
 func TestForwarderKeepsTheLocalPortWhenTheSandboxPortComesAndGoes(t *testing.T) {
 	sandbox := echoServer(t)
 	events := newCollector()

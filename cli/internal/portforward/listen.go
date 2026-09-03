@@ -52,6 +52,13 @@ func listenNearest(ctx context.Context, address string, want, search int) (net.L
 	return nil, firstErr
 }
 
+// listenExact binds want and nothing else, for a forward whose local number is
+// not the caller's to choose — see Options.Exact.
+func listenExact(ctx context.Context, address string, want int) (net.Listener, error) {
+	var config net.ListenConfig
+	return config.Listen(ctx, "tcp", net.JoinHostPort(address, strconv.Itoa(want)))
+}
+
 type searchSpan struct {
 	start int
 	count int

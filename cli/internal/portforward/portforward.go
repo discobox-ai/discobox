@@ -79,8 +79,18 @@ type Options struct {
 	// DefaultBindAddress.
 	BindAddress string
 	// Search is how many ports above a remote port the search for a free local
-	// one covers. Zero means DefaultSearch.
+	// one covers. Zero means DefaultSearch. Ignored when Exact is set.
 	Search int
+	// Exact binds every target at its own number or not at all.
+	//
+	// The nearest-free search exists because a forwarded dev server is useful
+	// at whatever number it lands on — the caller prints it and you open that.
+	// A port an outside service sends a browser back to is not: the redirect
+	// URI names one number, so a forward that quietly moved to the next free
+	// port would answer nothing while reporting itself as bound. A target that
+	// cannot take its own port reports BindFailed and stays unbound, which is
+	// the honest answer and the one a caller can tell the user about.
+	Exact bool
 	// Observe receives every status change. It is called from the forwarder's
 	// own goroutines and from Set, possibly concurrently, so an observer that
 	// writes anywhere shared must serialize itself.
@@ -94,6 +104,7 @@ type Forwarder struct {
 	dialer  Dialer
 	address string
 	search  int
+	exact   bool
 	observe func(Event)
 
 	mu sync.Mutex
@@ -124,6 +135,7 @@ func New(ctx context.Context, opts Options) *Forwarder {
 		dialer:     opts.Dialer,
 		address:    opts.BindAddress,
 		search:     opts.Search,
+		exact:      opts.Exact,
 		observe:    opts.Observe,
 		bound:      map[int]*binding{},
 		bindFailed: map[int]string{},
@@ -193,7 +205,7 @@ func (f *Forwarder) Set(targets []Target) {
 			continue
 		}
 		target := wanted[port]
-		listener, err := listenNearest(f.ctx, f.address, port, f.search)
+		listener, err := f.listen(port)
 		if err != nil {
 			// Retried on the next listing, but only reported when the reason
 			// changes: a listing arrives on a poll interval, and a port that
@@ -216,6 +228,15 @@ func (f *Forwarder) Set(targets []Target) {
 	for _, event := range events {
 		f.emit(event)
 	}
+}
+
+// listen opens the local listener standing in for a remote port: its own
+// number when the forwarder is exact, otherwise the nearest free one.
+func (f *Forwarder) listen(port int) (net.Listener, error) {
+	if f.exact {
+		return listenExact(f.ctx, f.address, port)
+	}
+	return listenNearest(f.ctx, f.address, port, f.search)
 }
 
 // Bindings is what is bound right now, in remote port order.
