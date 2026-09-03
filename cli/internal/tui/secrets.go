@@ -43,6 +43,9 @@ type secretList struct {
 	width, height int
 
 	now func() time.Time
+
+	// drawn is which rows the last render put on screen; see zones.go.
+	drawn drawn
 }
 
 func newSecretList() *secretList { return &secretList{now: time.Now} }
@@ -136,7 +139,7 @@ func (l *secretList) clamp() {
 	}
 }
 
-func (l *secretList) view(st *styles, focused bool) string {
+func (l *secretList) view(st *styles, z *zones, focused bool) string {
 	titleStyle := st.titleList
 	if !focused {
 		titleStyle = st.titleDim
@@ -148,13 +151,17 @@ func (l *secretList) view(st *styles, focused bool) string {
 	if len(l.all) == 0 {
 		body = append(body, st.dimText.Render(pad("  no secrets in this project yet — n stores one", l.width)))
 	}
+	l.drawn = drawn{top: len(out), first: l.offset}
 	for i := l.offset; i < len(l.all) && len(body) < l.height; i++ {
 		body = append(body, l.row(st, l.all[i], i, focused))
+		l.drawn.count++
 	}
 	for len(body) < l.height {
 		body = append(body, blank)
 	}
-	return lipgloss.JoinVertical(lipgloss.Left, append(out, body...)...)
+	block := append(out, body...)
+	z.markList(hitSecretRow, l.drawn, l.width, len(block))
+	return lipgloss.JoinVertical(lipgloss.Left, block...)
 }
 
 // row draws one secret: what it is called, where it may be sent, and what
@@ -1251,12 +1258,15 @@ func (m *Model) viewSecrets() string {
 	// The credentials the project holds, and under them what is waiting on a
 	// person. They are read together: which secret answers this request is the
 	// question, and the answer is in the table above it.
-	body := lipgloss.JoinVertical(lipgloss.Left,
-		m.secrets.view(m.st, !m.onRequests),
-		"",
-		"",
-		m.requestRows.view(m.st, m.onRequests),
-	)
+	m.zones.push(bodyLeft+m.logoColumn(), headerTop+2)
+	secrets := m.secrets.view(m.st, &m.zones, !m.onRequests)
+	// The lower table is pushed past the upper one and the two blank rows
+	// between them, so its rows are marked where they are actually drawn.
+	m.zones.push(0, lipgloss.Height(secrets)+2)
+	requests := m.requestRows.view(m.st, &m.zones, m.onRequests)
+	m.zones.pop()
+	m.zones.pop()
+	body := lipgloss.JoinVertical(lipgloss.Left, secrets, "", "", requests)
 	// The secrets take only the rows they have, so what is left over falls
 	// below the lower table rather than between the two: the window keeps its
 	// full height, and the tables stay next to each other where they are read
@@ -1265,9 +1275,14 @@ func (m *Model) viewSecrets() string {
 	if m.showLogo() {
 		body = lipgloss.JoinHorizontal(lipgloss.Top, m.logo.view(lipgloss.Height(body)), body)
 	}
+	m.zones.push(bodyLeft, headerTop)
 	rows := []string{m.viewHeader(m.inner()), ""}
+	m.zones.pop()
 	rows = append(rows, strings.Split(body, "\n")...)
+
+	m.zones.push(bodyLeft, headerTop+len(rows))
 	rows = append(rows, m.viewStatus())
+	m.zones.pop()
 	return m.box("", rows)
 }
 
@@ -1282,13 +1297,25 @@ const requestsChrome = 3
 
 // secretHints is the bottom line here: what the secret under the cursor can
 // take, most reached-for first.
-func (m *Model) secretHints() string {
+func (m *Model) secretHints() []hint {
 	if m.onRequests {
-		return strings.Join([]string{"↑↓ move", "enter answer it", "tab secrets", "esc back"}, hintSep)
+		return []hint{
+			says("↑↓ move"),
+			keyed("enter", "enter", "answer it"),
+			keyed("tab", "tab", "secrets"),
+			keyed("esc", "esc", "back"),
+		}
 	}
-	hints := []string{"↑↓ move", "n new", "enter grants", grantCreateKey + " grant", "e edit", "d delete"}
+	hints := []hint{
+		says("↑↓ move"),
+		keyed("n", "n", "new"),
+		keyed("enter", "enter", "grants"),
+		keyed(grantCreateKey, grantCreateKey, "grant"),
+		keyed("e", "e", "edit"),
+		keyed("d", "d", "delete"),
+	}
 	if len(m.requestRows.all) > 0 {
-		hints = append(hints, "tab requests")
+		hints = append(hints, keyed("tab", "tab", "requests"))
 	}
-	return strings.Join(append(hints, "esc back"), hintSep)
+	return append(hints, keyed("esc", "esc", "back"))
 }

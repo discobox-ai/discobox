@@ -201,7 +201,7 @@ func TestARunningToolIsPickedUpOnAttach(t *testing.T) {
 	d.key("ctrl+a")
 	d.key(toolsKey)
 	d.wait("the picker", func() bool { return m.dialog != nil })
-	if body := m.dialog.view(m.st, m.width, m.height); !strings.Contains(body, "running") {
+	if body := m.dialog.view(m.st, &m.zones, m.width, m.height); !strings.Contains(body, "running") {
 		t.Errorf("the picker should say which tools are up:\n%s", body)
 	}
 	d.key("d")
@@ -412,7 +412,7 @@ func TestTheFileListNamesEveryFileAndWhereItGoes(t *testing.T) {
 		return m.dialog != nil && strings.Contains(m.dialog.title, "Config")
 	})
 
-	body := m.dialog.view(m.st, m.width, m.height)
+	body := m.dialog.view(m.st, &m.zones, m.width, m.height)
 	for _, want := range []string{
 		"config.jsonc", "~/.config/fresh/config.json",
 		"live_diff.json", "~/.local/share/fresh/orchestrator/state/live_diff.json",
@@ -488,7 +488,7 @@ func TestTheWorkspaceHintsOfferTheToolsPicker(t *testing.T) {
 	_, m, _ := openWorkspace(t, ds, "enter")
 
 	want := "ctrl+a " + toolsKey + " tools"
-	if got := m.hints(); !strings.Contains(got, want) {
+	if got := hintLine(m.hints()); !strings.Contains(got, want) {
 		t.Fatalf("hints = %q, want it to offer %q", got, want)
 	}
 	if !strings.Contains(frameText(m), want) {

@@ -676,11 +676,12 @@ func (m *Model) buttonAt(x, y int) (buttonAction, bool) {
 // Most worth keeping first, since the row drops from the end; see fitHints.
 // Putting it away leads, because it is the one people reach for and the one
 // that does not destroy anything.
-func (m *Model) toolHints(p *pane) []string {
-	return []string{
-		"every key goes to " + p.name(),
-		m.detachHint() + " put away",
-		m.leader() + " " + toolCloseKey + " close",
-		m.leader() + " " + toolsKey + " tools",
+func (m *Model) toolHints(p *pane) []hint {
+	leader := m.leader()
+	return []hint{
+		says("every key goes to " + p.name()),
+		pressing(m.detachHint()+" put away", leader, paneDetachAlt),
+		pressing(leader+" "+toolCloseKey+" close", leader, toolCloseKey),
+		pressing(leader+" "+toolsKey+" tools", leader, toolsKey),
 	}
 }

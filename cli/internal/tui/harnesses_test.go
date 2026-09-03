@@ -347,7 +347,7 @@ func TestHarnessHintsNameEveryApplicableAction(t *testing.T) {
 	for i := range ds.harnesses {
 		m.harnesses.moveTo(i)
 		harness := *m.harnesses.current()
-		hints := m.harnessHints()
+		hints := hintLine(m.harnessHints())
 		for _, a := range harnessActions(harness) {
 			named := strings.Contains(hints, a.key+" "+a.label)
 			if a.enabled && !named {
@@ -373,7 +373,7 @@ func TestHarnessHintsOfferTheDefault(t *testing.T) {
 	m := newTestModel(t, newFakeSource())
 	send(t, m, key("f3"), key("j"))
 
-	if hints := m.harnessHints(); !strings.Contains(hints, "s default") {
+	if hints := hintLine(m.harnessHints()); !strings.Contains(hints, "s default") {
 		t.Fatalf("hints = %q, want the default offered on an enabled non-default harness", hints)
 	}
 }

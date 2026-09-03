@@ -38,7 +38,7 @@ func TestADialogNeverOutgrowsTheWindow(t *testing.T) {
 		if got := dialogWidth(window); got > window {
 			t.Fatalf("dialogWidth(%d) = %d, wider than the window", window, got)
 		}
-		if got := lipgloss.Width(dialog.view(st, window, 40)); got > window {
+		if got := lipgloss.Width(dialog.view(st, &zones{}, window, 40)); got > window {
 			t.Fatalf("a dialog rendered at %d columns came out %d wide", window, got)
 		}
 	}
@@ -50,7 +50,7 @@ func TestADialogIsDrawnAtTheWidthItWasGiven(t *testing.T) {
 	st := newStyles(false)
 	dialog := textDialog("Title", "a short body")
 	for _, window := range []int{120, 100, 80, 60} {
-		if got := lipgloss.Width(dialog.view(st, window, 40)); got != dialogWidth(window) {
+		if got := lipgloss.Width(dialog.view(st, &zones{}, window, 40)); got != dialogWidth(window) {
 			t.Fatalf("at %d columns the box is %d wide, want %d", window, got, dialogWidth(window))
 		}
 	}
@@ -122,9 +122,9 @@ func TestALongBodyUsesTheHeightItIsGiven(t *testing.T) {
 	body := strings.TrimRight(strings.Repeat("a line\n", 60), "\n")
 	dialog := textDialog("Title", body)
 
-	short := strings.Count(dialog.view(st, 100, 20), "\n")
+	short := strings.Count(dialog.view(st, &zones{}, 100, 20), "\n")
 	dialog.offset = 0
-	tall := strings.Count(dialog.view(st, 100, 60), "\n")
+	tall := strings.Count(dialog.view(st, &zones{}, 100, 60), "\n")
 	if tall <= short {
 		t.Fatalf("body rows: %d in a 20-row window, %d in a 60-row one — want the taller window to show more", short, tall)
 	}
@@ -144,7 +144,7 @@ func searchable() *dialog {
 
 // draw renders the dialog, which is what counts the matches: the body is
 // wrapped to the window, so how many lines hold a word is only known here.
-func draw(d *dialog) string { return d.view(newStyles(false), 100, 24) }
+func draw(d *dialog) string { return d.view(newStyles(false), &zones{}, 100, 24) }
 
 // / searches the body, and the tally says what it found while it is still
 // being typed.
@@ -253,7 +253,7 @@ func TestBackspacingOutOfTheSearchEndsIt(t *testing.T) {
 // already on screen.
 func TestAShortBodyDoesNotOfferASearch(t *testing.T) {
 	st := newStyles(false)
-	short := textDialog("Title", "one line").view(st, 100, 24)
+	short := textDialog("Title", "one line").view(st, &zones{}, 100, 24)
 	if strings.Contains(short, "/ search") {
 		t.Fatalf("a body that fits offered a search:\n%s", short)
 	}
@@ -268,11 +268,11 @@ func TestASearchedDialogStaysInsideItsBox(t *testing.T) {
 	st := newStyles(true)
 	for _, window := range []int{120, 100, 80, 60, 40, 20} {
 		d := searchable()
-		d.view(st, window, 24)
+		d.view(st, &zones{}, window, 24)
 		for _, spec := range []string{"/", "l", "e", "a", "d", "e", "r"} {
 			d.update(key(spec))
 		}
-		for _, line := range strings.Split(d.view(st, window, 24), "\n") {
+		for _, line := range strings.Split(d.view(st, &zones{}, window, 24), "\n") {
 			if got := lipgloss.Width(line); got > dialogWidth(window) {
 				t.Fatalf("at %d columns a searched row is %d wide, want at most %d",
 					window, got, dialogWidth(window))

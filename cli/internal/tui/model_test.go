@@ -457,7 +457,7 @@ func TestUnavailableActionExplainsItself(t *testing.T) {
 	if m.dialog == nil {
 		t.Fatal(". should open the action menu")
 	}
-	if !strings.Contains(m.dialog.view(m.st, 120, 40), "already on the current image") {
+	if !strings.Contains(m.dialog.view(m.st, &m.zones, 120, 40), "already on the current image") {
 		t.Fatal("the menu should keep upgrade, with the reason it is unavailable")
 	}
 }
@@ -541,7 +541,7 @@ func TestTheFolderDropdownListsTheKnownFolders(t *testing.T) {
 	if m.dialog == nil {
 		t.Fatal("enter on the folder filter should open the dropdown")
 	}
-	view := m.dialog.view(m.st, 120, 40)
+	view := m.dialog.view(m.st, &m.zones, 120, 40)
 	for _, want := range []string{"/src/disco2", "/src/obot", allFolders, "where this window is running"} {
 		if !strings.Contains(view, want) {
 			t.Errorf("the dropdown is missing %q:\n%s", want, view)
@@ -846,8 +846,8 @@ func TestLeaderReachesThePaneAndTheKeyLists(t *testing.T) {
 	d.key("enter")
 	d.wait("the pane", func() bool { return m.focus == focusPane })
 
-	if !strings.Contains(m.hints(), "ctrl+b d detach") {
-		t.Errorf("the key list should name the leader: %q", m.hints())
+	if !strings.Contains(hintLine(m.hints()), "ctrl+b d detach") {
+		t.Errorf("the key list should name the leader: %q", hintLine(m.hints()))
 	}
 	if !strings.Contains(m.helpText(), "ctrl+b d") {
 		t.Error("the help should name the leader")
@@ -978,7 +978,7 @@ func TestRepairIsRefusedOnAHealthyBox(t *testing.T) {
 	if len(ds.did) != 0 {
 		t.Fatalf("did = %v, want nothing: the box under the cursor is running", ds.did)
 	}
-	if m.dialog == nil || !strings.Contains(m.dialog.view(m.st, 120, 40), "nothing is wrong with it") {
+	if m.dialog == nil || !strings.Contains(m.dialog.view(m.st, &m.zones, 120, 40), "nothing is wrong with it") {
 		t.Fatal("a refused repair should say why")
 	}
 }

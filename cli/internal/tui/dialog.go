@@ -527,9 +527,14 @@ func dialogExtent(window, fullBelow, minimum int) int {
 const (
 	dialogChromeWidth  = 2 + 2*2
 	dialogChromeHeight = 2 + 2*1
+	// dialogPadLeft and dialogPadTop are where the content starts inside that
+	// box, which is what turns a line of the card into a cell of the frame for
+	// the hit map. See zones.go.
+	dialogPadLeft = 1 + 2
+	dialogPadTop  = 1 + 1
 )
 
-func (d *dialog) view(st *styles, width, height int) string {
+func (d *dialog) view(st *styles, z *zones, width, height int) string {
 	boxWidth := dialogWidth(width)
 	inner := max(boxWidth-dialogChromeWidth, 16)
 
@@ -620,6 +625,10 @@ func (d *dialog) view(st *styles, width, height int) string {
 		} else {
 			yes += " (Enter)"
 		}
+		// The two answers, each a button for its own letter.
+		answerRow := strings.Count(b.String(), "\n") + dialogPadTop
+		z.mark(keyHit("y"), dialogPadLeft, answerRow, lipgloss.Width("y "+yes), 1)
+		z.mark(keyHit("n"), dialogPadLeft+lipgloss.Width("y "+yes)+3, answerRow, lipgloss.Width("n "+no), 1)
 		b.WriteString(st.key.Render("y"))
 		b.WriteString(" ")
 		b.WriteString(yes)
@@ -641,6 +650,13 @@ func (d *dialog) view(st *styles, width, height int) string {
 		b.WriteString(truncate(d.viewSearch(st, inner), inner))
 	case dlgActions:
 		answer()
+		// Every row of a menu is a press, marked where the card put it: a menu
+		// whose rows only answer their letters is a menu the pointer cannot
+		// work.
+		itemsTop := strings.Count(b.String(), "\n") + dialogPadTop
+		for i := range d.items {
+			z.markRow(hit{kind: hitDialogItem, idx: i}, itemsTop+i, inner+2*dialogPadLeft)
+		}
 		b.WriteString(d.viewItems(st, inner))
 		footer("Enter runs the highlighted action · Esc cancels")
 	case dlgForm:

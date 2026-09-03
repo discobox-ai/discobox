@@ -298,16 +298,20 @@ func centerRoom(left, right string, w int) int {
 // that cannot hold it has nothing worth saying anyway, and the caller's own
 // truncation is what deals with that.
 func dropToFit(fields []string, sep string, room int) string {
+	return strings.Join(fitFields(fields, sep, room), sep)
+}
+
+// fitFields is dropToFit's answer before it is joined: which fields survived,
+// for the caller that has to know where each of them landed as well as what
+// the row says. See Model.statusLine, which marks every offer it draws.
+func fitFields(fields []string, sep string, room int) []string {
 	for len(fields) > 1 {
-		if out := strings.Join(fields, sep); lipgloss.Width(out) <= room {
-			return out
+		if lipgloss.Width(strings.Join(fields, sep)) <= room {
+			return fields
 		}
 		fields = fields[:len(fields)-1]
 	}
-	if len(fields) == 0 {
-		return ""
-	}
-	return fields[0]
+	return fields
 }
 
 // spreadCenter lays a left, a middle and a right fragment out on one row, with

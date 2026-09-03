@@ -25,6 +25,9 @@ type requestList struct {
 	width, height int
 
 	now func() time.Time
+
+	// drawn is which rows the last render put on screen; see zones.go.
+	drawn drawn
 }
 
 func newRequestList() *requestList { return &requestList{now: time.Now} }
@@ -82,7 +85,7 @@ func (l *requestList) clamp() {
 	}
 }
 
-func (l *requestList) view(st *styles, focused bool) string {
+func (l *requestList) view(st *styles, z *zones, focused bool) string {
 	titleStyle := st.titleList
 	if !focused {
 		titleStyle = st.titleDim
@@ -99,13 +102,17 @@ func (l *requestList) view(st *styles, focused bool) string {
 	if len(l.all) == 0 {
 		body = append(body, st.dimText.Render(pad("  nothing is waiting", l.width)))
 	}
+	l.drawn = drawn{top: len(out), first: l.offset}
 	for i := l.offset; i < len(l.all) && len(body) < l.height; i++ {
 		body = append(body, l.row(st, l.all[i], i, focused))
+		l.drawn.count++
 	}
 	for len(body) < l.height {
 		body = append(body, blank)
 	}
-	return lipgloss.JoinVertical(lipgloss.Left, append(out, body...)...)
+	block := append(out, body...)
+	z.markList(hitRequestRow, l.drawn, l.width, len(block))
+	return lipgloss.JoinVertical(lipgloss.Left, block...)
 }
 
 // row draws one request: what is being asked for, where it may go, who is

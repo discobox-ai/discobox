@@ -170,7 +170,7 @@ func TestHintsOfferOnlyWhatApplies(t *testing.T) {
 	m := newTestModel(t, newFakeSource(testSandboxes()...))
 	send(t, m, key("tab"))
 
-	hints := m.hints()
+	hints := hintLine(m.hints())
 	if strings.Contains(hints, "P purge") {
 		t.Errorf("purge should not be offered on a running sandbox: %q", hints)
 	}
@@ -182,8 +182,8 @@ func TestHintsOfferOnlyWhatApplies(t *testing.T) {
 		t.Errorf("upgrade should not be offered where there is none: %q", hints)
 	}
 	send(t, m, key("down"))
-	if !strings.Contains(m.hints(), "u upgrade") {
-		t.Errorf("upgrade should be offered where one is available: %q", m.hints())
+	if !strings.Contains(hintLine(m.hints()), "u upgrade") {
+		t.Errorf("upgrade should be offered where one is available: %q", hintLine(m.hints()))
 	}
 }
 
@@ -204,7 +204,7 @@ func TestOptionsPanelShowsTheCommandItDescribes(t *testing.T) {
 			t.Errorf("command %q missing %q", command, want)
 		}
 	}
-	if !strings.Contains(m.opts.view(m.st, 120, m.prompt.Value()), "--harness codex") {
+	if !strings.Contains(m.opts.view(m.st, &m.zones, 120, m.prompt.Value()), "--harness codex") {
 		t.Error("the panel should show the command it describes")
 	}
 	// And what the panel describes is what Enter asks for.
@@ -471,7 +471,7 @@ func TestTheListKeepsRoomForTheMark(t *testing.T) {
 	m.logo = logo{rows: []string{"aa", "bb", "cc", "dd", "ee", "ff"}, width: 2}
 	m.layout()
 
-	body := m.list.view(m.st, false)
+	body := m.list.view(m.st, &m.zones, false)
 	if got, want := lipgloss.Height(body), m.logo.height(); got < want {
 		t.Fatalf("the list block is %d rows, too short to stand a %d-row mark beside", got, want)
 	}
@@ -600,7 +600,7 @@ func TestMenuLabelsFitTheirContent(t *testing.T) {
 	if m.dialog == nil {
 		t.Fatal("the dropdown should be open")
 	}
-	view := m.dialog.view(m.st, 120, 40)
+	view := m.dialog.view(m.st, &m.zones, 120, 40)
 	if !strings.Contains(view, long) {
 		t.Errorf("the dropdown truncated the path:\n%s", view)
 	}

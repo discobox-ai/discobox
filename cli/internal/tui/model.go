@@ -12,6 +12,7 @@ package tui
 import (
 	"context"
 	"fmt"
+	"math"
 	"math/rand/v2"
 	"os"
 	"strings"
@@ -183,6 +184,30 @@ type Model struct {
 	chromeShot    string
 	chromeCapture bool
 	lastFrame     string
+
+	// zones is where the last frame's controls landed, recorded as it was
+	// drawn, so a press is a lookup rather than the layout computed a second
+	// time. See zones.go and ADR 0085 §3.
+	zones zones
+
+	// primaryText is the last thing selected in the window, which is what the
+	// middle button pastes — X11's primary selection, kept here because the
+	// window took the terminal's over when it started reporting the mouse.
+	primaryText string
+
+	// promptCapture is a selection being dragged inside the composer, which
+	// owns every event until the button comes up. The composer's selection is
+	// the textarea's own rather than the chrome's: it is a field, and a
+	// selection there has to be one typing replaces. See ADR 0085 §2.
+	promptCapture bool
+	// clicks counts a run of presses on one cell, so the second press on a row
+	// can mean "open it" where the first meant "point at it". now is the clock
+	// it is counted against, replaceable so a test can decide what is one
+	// gesture and what is two.
+	clicks         int
+	clickX, clickY int
+	clickAt        time.Time
+	now            func() time.Time
 
 	// tabSpans is where each visible tab label sits in the shell box's top
 	// border, recorded as the strip is drawn (tabbedEdge) so a click on
@@ -380,6 +405,7 @@ func New(ctx context.Context, ds DataSource, options ...Option) *Model {
 		copyOS:      func(text string) error { return osClipboard(ctx, text) },
 		chromeGrid:  &frameGrid{},
 		noise:       newNoise(),
+		now:         time.Now,
 	}
 	m.chromeSel = selection.New(m.chromeGrid)
 	// The label above the field already says what an empty prompt does, and the
@@ -852,6 +878,14 @@ func (m *Model) update(msg tea.Msg) tea.Cmd {
 
 	case tea.PasteMsg:
 		return m.updatePaste(msg)
+
+	case tea.MouseMsg:
+		// The layout the press was aimed at is the one the last frame left
+		// behind, and the composer's height can change under a click, so
+		// geometry is recomputed after one exactly as it is after a key.
+		cmd := m.updateMouse(msg)
+		m.layout()
+		return cmd
 
 	case tea.KeyPressMsg:
 		// Ctrl-L repaints, and is not consumed doing it. The redraw here is
@@ -2212,6 +2246,23 @@ const boxPad = 1
 // boxChrome is what the border costs a row: the two edges and the padding.
 const boxChrome = 2 + 2*boxPad
 
+// bodyLeft and headerTop are where a screen's content begins inside the box:
+// past the border and its padding, and under the top edge. They are what the
+// hit map's origins are pushed by, so a control is marked where it is drawn.
+const (
+	bodyLeft  = 1 + boxPad
+	headerTop = 1
+)
+
+// logoColumn is how far the mark pushes the body to the right, or nothing when
+// there is no room for one.
+func (m *Model) logoColumn() int {
+	if !m.showLogo() {
+		return 0
+	}
+	return m.logo.column()
+}
+
 // windowChrome is what the window costs in rows before any sandbox is in it.
 // See layout, which is the only place it is used and where it is counted out.
 const windowChrome = 11
@@ -2297,6 +2348,9 @@ func (m *Model) View() tea.View {
 }
 
 func (m *Model) view() tea.View {
+	// Every frame starts with an empty hit map and fills it as it draws. A
+	// control that forgets to mark itself is one the mouse cannot reach.
+	m.zones.reset()
 	if m.quit {
 		return tea.NewView("")
 	}
@@ -2312,26 +2366,17 @@ func (m *Model) view() tea.View {
 	// The introduction is the window until it is dismissed, ahead of the screen
 	// it was opened on and ahead of any modal. See welcome.go.
 	if m.welcoming {
-		return m.altView(m.center(m.viewWelcome()))
+		return m.altView(m.place(m.viewWelcome))
 	}
 
 	// A modal is drawn in place of the window rather than over it, and closing
 	// it puts the window back. It carries its own border, so it needs none of
 	// the frame below.
 	if m.dialog != nil {
-		return m.altView(m.center(m.dialog.view(m.st, m.width, m.height)))
+		return m.altView(m.place(func() string { return m.dialog.view(m.st, &m.zones, m.width, m.height) }))
 	}
 	if m.optionsOpen {
-		return m.altView(m.center(m.opts.view(m.st, m.width, m.prompt.Value())))
-	}
-
-	// The header spans the window; under it the mark stands beside the list,
-	// and the composer spans both again.
-	body := m.list.view(m.st, m.focus == focusList)
-	if m.showLogo() {
-		// The mark is centered against whatever the list came out at, so it
-		// follows the window rather than the window working around it.
-		body = lipgloss.JoinHorizontal(lipgloss.Top, m.logo.view(lipgloss.Height(body)), body)
+		return m.altView(m.place(func() string { return m.opts.view(m.st, &m.zones, m.width, m.prompt.Value()) }))
 	}
 
 	// The header names the session; what is under it is a different kind of
@@ -2344,7 +2389,7 @@ func (m *Model) view() tea.View {
 		// A pane wears the border itself. Everything else — the header, what
 		// the sandbox is called, the keys — sits outside it, the way a caption
 		// sits outside the thing it captions.
-		content = m.paintChrome(m.viewPaneWindow())
+		content = m.viewPaneWindow()
 	case m.harnessesOpen:
 		// The harnesses screen is the window while it is up, drawn in the same box
 		// with the same header: it is another list of things you act on, not a
@@ -2353,11 +2398,31 @@ func (m *Model) view() tea.View {
 	case m.secretsOpen:
 		content = m.viewSecrets()
 	default:
+		// The header spans the window; under it the mark stands beside the
+		// list, and the composer spans both again. Each block is drawn with
+		// the origin it is being placed at pushed, so what it marks lands
+		// where it is drawn. See zones.go.
+		m.zones.push(bodyLeft, headerTop)
 		rows := []string{m.viewHeader(m.inner()), ""}
+		m.zones.pop()
+
+		m.zones.push(bodyLeft+m.logoColumn(), headerTop+2)
+		body := m.list.view(m.st, &m.zones, m.focus == focusList)
+		m.zones.pop()
+		if m.showLogo() {
+			// The mark is centered against whatever the list came out at, so
+			// it follows the window rather than the window working around it.
+			body = lipgloss.JoinHorizontal(lipgloss.Top, m.logo.view(lipgloss.Height(body)), body)
+		}
 		rows = append(rows, strings.Split(body, "\n")...)
+
+		m.zones.push(bodyLeft, headerTop+2+len(strings.Split(body, "\n")))
 		rows = append(rows, strings.Split(m.viewPrompt(), "\n")...)
+		m.zones.pop()
+
 		content = m.box("", rows)
 	}
+	content = m.paintChrome(content)
 
 	// Under the border, outside the application: one-time setup the user did not
 	// ask for and cannot act on, which the window itself does not wait for.
@@ -2369,7 +2434,7 @@ func (m *Model) view() tea.View {
 	// The whole terminal, once the window has opened out — but not before: the
 	// opening prompt is inline, sitting under the command that started it.
 	view.AltScreen = m.takesScreen()
-	view.MouseMode = m.paneMouseMode()
+	view.MouseMode = m.mouseMode()
 	view.WindowTitle = m.windowTitle()
 	// The cursor belongs to whatever is drawing one. A pane places it where the
 	// sandbox put it; everywhere else the composer's own virtual cursor does
@@ -2452,6 +2517,32 @@ func (m *Model) center(content string) string {
 	return lipgloss.Place(m.width, m.height, lipgloss.Center, lipgloss.Center, content)
 }
 
+// place draws a modal surface and moves whatever it marked to where it landed.
+// A card is rendered before anything knows how big it is, so its controls are
+// marked in its own coordinates and shifted once, rather than drawn against an
+// origin nothing could have pushed yet.
+func (m *Model) place(render func() string) string {
+	at := m.zones.count()
+	content := render()
+	if m.width > 0 && m.height > 0 {
+		m.zones.shift(at,
+			centerOffset(m.width, lipgloss.Width(content)),
+			centerOffset(m.height, lipgloss.Height(content)))
+	}
+	return m.paintChrome(m.center(content))
+}
+
+// centerOffset is where lipgloss.Place puts a block of this size: the leading
+// half of the gap, rounded the way Place rounds it, so a hit map and a frame
+// cannot disagree by a cell on an odd one.
+func centerOffset(outer, inner int) int {
+	gap := outer - inner
+	if gap <= 0 {
+		return 0
+	}
+	return gap - int(math.Round(float64(gap)/2))
+}
+
 // takesScreen reports whether the frame the window draws now is the whole
 // terminal. Everything but the opening prompt is: a modal and the options panel
 // stand in place of the window rather than inside it, and both can be up before
@@ -2474,13 +2565,25 @@ func (m *Model) showLogo() bool {
 }
 
 func (m *Model) viewHeader(width int) string {
-	return spread(m.viewHeaderLeft(), m.viewHeaderRight(), width)
+	left, right := m.viewHeaderLeft(), m.viewHeaderRight()
+	// The keys on the right are buttons for themselves, marked where spread
+	// pins them: hard against the far end of the row.
+	if gap := width - lipgloss.Width(left) - lipgloss.Width(right); gap >= 1 {
+		m.zones.push(width-lipgloss.Width(right), 0)
+		m.markHints(m.headerHints(), 0, headerSep)
+		m.zones.pop()
+	}
+	return spread(left, right, width)
 }
 
 // viewHeaderLeft is where you are: the project when it is not the usual one,
 // and the folder the window is working in.
 func (m *Model) viewHeaderLeft() string {
-	return m.viewHeaderBrand() + m.viewFolder()
+	brand := m.viewHeaderBrand()
+	folder := m.viewFolder()
+	// The filter is a dropdown, and a dropdown opens when it is clicked.
+	m.zones.mark(hit{kind: hitFolder}, lipgloss.Width(brand), 0, lipgloss.Width(folder), 1)
+	return brand + folder
 }
 
 // viewHeaderBrand is the program's own name, and the project it is pointed at
@@ -2502,6 +2605,23 @@ func (m *Model) viewHeaderBrand() string {
 // keyboard, so the ones the header offers everywhere else are not among them;
 // the one that is, is the way out.
 func (m *Model) viewHeaderRight() string {
+	text := make([]string, 0, 4)
+	for _, h := range m.headerHints() {
+		text = append(text, h.text)
+	}
+	return m.st.dimText.Render(strings.Join(text, headerSep))
+}
+
+// headerSep sets the header's own offers further apart than the status line's:
+// there are three or four of them against a whole row, where the status line
+// is a list that has to fit.
+const headerSep = "  ·  "
+
+// headerHints is the row's right end: the keys that work wherever you are.
+//
+// A pane owns the keyboard, so the ones the header offers everywhere else are
+// not among them; the one that is, is the way out.
+func (m *Model) headerHints() []hint {
 	if p := m.focusedPane(); p != nil {
 		out := "detach"
 		if p.tool != "" {
@@ -2509,15 +2629,15 @@ func (m *Model) viewHeaderRight() string {
 			// here is put this window away, not leave the workspace.
 			out = "put away"
 		}
-		hint := m.detachHint() + " " + out
+		hints := []hint{pressing(m.detachHint()+" "+out, m.leader(), paneDetachAlt)}
 		// Quit is only worth its half of the row where it differs from detach.
 		// In a window that is one command's own the two do the same thing —
 		// the window goes, the discobox and everything in it carries on — and a
 		// row offering both reads as a choice between them.
 		if !m.oneShot() {
-			hint += "  ·  " + m.leader() + " " + paneQuitKey + " quit"
+			hints = append(hints, pressing(m.leader()+" "+paneQuitKey+" quit", m.leader(), paneQuitKey))
 		}
-		return m.st.dimText.Render(hint)
+		return hints
 	}
 	// The harnesses screen is advertised here rather than on the status line
 	// because it is reachable from every one of the window's own screens, and
@@ -2527,11 +2647,16 @@ func (m *Model) viewHeaderRight() string {
 	// leader is armed, so it reads the same as the workspace's, and Ctrl-C in
 	// the prompt, where Ctrl-A belongs to the composer. Ctrl-C still quits on
 	// both; this is what the window offers, not all it accepts.
-	quit := m.leader() + " " + paneQuitKey + " quit"
+	quit := pressing(m.leader()+" "+paneQuitKey+" quit", m.leader(), paneQuitKey)
 	if m.focus == focusPrompt {
-		quit = "Ctrl-C quit"
+		quit = pressing("Ctrl-C quit", "ctrl+c")
 	}
-	return m.st.dimText.Render("F1 help  ·  F3 harnesses  ·  " + SecretsKeyName + " secrets  ·  " + quit)
+	return []hint{
+		keyed("F1", "f1", "help"),
+		keyed(HarnessesKeyName, harnessesKey, "harnesses"),
+		keyed(SecretsKeyName, secretsKey, "secrets"),
+		quit,
+	}
 }
 
 // windowTitle is what the terminal running this window should call itself.
@@ -2580,7 +2705,11 @@ func (m *Model) viewFolder() string {
 func (m *Model) viewPrompt() string {
 	// What the field does sits against the field; the keys are keys, and
 	// belong on the status line with everything else transient.
-	return m.viewComposer(m.inner()) + "\n" + m.viewStatus()
+	composer := m.viewComposer(m.inner())
+	m.zones.push(0, lipgloss.Height(composer))
+	status := m.viewStatus()
+	m.zones.pop()
+	return composer + "\n" + status
 }
 
 // viewComposer is the field and everything that describes it, at the given
@@ -2600,6 +2729,15 @@ func (m *Model) viewComposer(width int) string {
 		chips = m.opts.mutedChips(m.st)
 	}
 	mode := padANSI("  "+chips, width)
+
+	// The field is two rows down, under its label and its rule, and it is as
+	// tall as the text has made it. A press in it is the caret moving and a
+	// drag is a selection, both handed to the textarea in its own coordinates
+	// — which is why the whole field is marked rather than its rows.
+	m.zones.mark(hit{kind: hitPrompt}, 0, 2, width, m.prompt.Height())
+	// The strip under it names the run options, so it is the way into them.
+	m.zones.mark(hit{kind: hitChips}, 2, 3+m.prompt.Height(), lipgloss.Width(chips), 1)
+
 	return lipgloss.JoinVertical(lipgloss.Left,
 		m.viewLabel(width), padANSI(rule, width), m.prompt.View(), padANSI(rule, width), mode)
 }
@@ -2639,8 +2777,12 @@ func (m *Model) viewStatus() string {
 	if len(fields) > 0 {
 		right = strings.Join(fields, "   ") + "  "
 	}
-	left := "  " + m.statusLine(max(m.inner()-lipgloss.Width(right)-2, 1))
-	return spreadPin(left, right, m.inner())
+	// The two spaces the line opens with are the origin its offers are marked
+	// against.
+	m.zones.push(2, 0)
+	keys := m.statusLine(max(m.inner()-lipgloss.Width(right)-2, 1))
+	m.zones.pop()
+	return spreadPin("  "+keys, right, m.inner())
 }
 
 // statusIdentity is the discobox under the cursor, named the two ways the row
@@ -2686,9 +2828,14 @@ func (m *Model) statusIdentity() string {
 // cannot show is a key that looks like it did nothing at all.
 //
 // The keys give up whole offers to fit, from the tail, where the least of them
-// is (`dropToFit`): half a key hint is not one. A message is returned whole —
+// is (`fitFields`): half a key hint is not one. A message is returned whole —
 // it is one thing and there is nothing of it to drop — and the caller's own
 // truncation is what deals with one too long for the row.
+//
+// Each offer that survives is marked where it landed, because a hint that
+// names a key is a button for that key: the press is handled as the key press
+// itself, so the pointer and the keyboard cannot come to mean two different
+// things. See ADR 0085 §5.
 func (m *Model) statusLine(room int) string {
 	switch {
 	case m.statusE:
@@ -2698,11 +2845,29 @@ func (m *Model) statusLine(room int) string {
 	case m.busy != "":
 		return m.st.statusWA.Render(m.busy)
 	}
-	return m.st.dimText.Render(dropToFit(strings.Split(m.hints(), hintSep), hintSep, room))
+	hints := m.hints()
+	fields := make([]string, 0, len(hints))
+	for _, h := range hints {
+		fields = append(fields, h.text)
+	}
+	kept := fitFields(fields, hintSep, room)
+	m.markHints(hints[:len(kept)], 0, hintSep)
+	return m.st.dimText.Render(strings.Join(kept, hintSep))
 }
 
-// hintSep is what a key hint is separated from the next by, and so what the
-// status line splits them back apart on to drop one.
+// markHints records where each offer on a key line landed, walking the row the
+// way the join laid it out.
+func (m *Model) markHints(hints []hint, x int, sep string) {
+	for _, h := range hints {
+		if len(h.keys) > 0 {
+			m.zones.mark(hit{kind: hitKey, keys: h.keys}, x, 0, lipgloss.Width(h.text), 1)
+		}
+		x += lipgloss.Width(h.text) + lipgloss.Width(sep)
+	}
+}
+
+// hintSep is what a key hint is separated from the next by, and so what a row
+// of them is joined with.
 const hintSep = " · "
 
 // detachDescription is what the leader's d does, which depends on what the
@@ -2717,7 +2882,31 @@ func (m *Model) detachDescription() string {
 	return "detach from the whole workspace"
 }
 
-func (m *Model) hints() string {
+// hint is one offer on a key line: what it says, and the keys that pressing it
+// stands for. The two travel together rather than being formatted into a line
+// and parsed back out of it, because the renderer is what knows where each
+// offer landed and the mouse needs both halves. Empty keys is an offer that
+// names no one key — a pair of arrows, a statement about the screen — and is
+// text and nothing more.
+type hint struct {
+	text string
+	keys []string
+}
+
+// keyed is the common shape: the key as it is spelled to the reader, the
+// keystroke that is, and what it does.
+func keyed(spelling, press, label string) hint {
+	return hint{text: spelling + " " + label, keys: []string{press}}
+}
+
+// says is an offer with no key behind it.
+func says(text string) hint { return hint{text: text} }
+
+// pressing is an offer whose text is written out in full — a chord, or a key
+// named in the middle of a sentence — with the keystrokes it stands for.
+func pressing(text string, keys ...string) hint { return hint{text: text, keys: keys} }
+
+func (m *Model) hints() []hint {
 	if m.harnessesOpen {
 		return m.harnessHints()
 	}
@@ -2726,141 +2915,175 @@ func (m *Model) hints() string {
 	}
 	switch m.focus {
 	case focusPane:
-		p := m.focusedPane()
-		if p == nil {
-			return ""
-		}
-		if p.exited {
-			// The same word the banner is using: a pane that failed says so at
-			// both ends of itself, rather than reporting the end of the stream
-			// as a result.
-			done := p.status
-			if done == "" {
-				done = "finished"
-			}
-			hints := done + " · q closes"
-			if p.term.ScrollbackLen() > 0 {
-				hints = done + " · ↑↓ pgup/pgdn scroll · q closes"
-			}
-			if !m.hasScreen(p) {
-				hints += hintSep + "←/→ pane"
-			}
-			return hints
-		}
-		if p.tool != "" {
-			return strings.Join(m.toolHints(p), hintSep)
-		}
-		// A workspace terminal is the discobox's own and you detach from the
-		// whole workspace; the command over them is this CLI's, and you close
-		// it alone.
-		what, out := "the box", "detach"
-		if p == m.overlay {
-			what, out = string(p.action), "close"
-		}
-		hints := "every key goes to " + what + " · " + m.detachHint() + " " + out
-		if p.service != "" {
-			// A service reads no input, so the line does not open by promising
-			// it every key. What it offers instead is what can be done to the
-			// service from the pane you are looking at — the two verbs that
-			// mean this service here rather than the discobox.
-			hints = "read-only · " + m.detachHint() + " " + out +
-				" · " + m.leader() + " t stop · " + m.leader() + " T start" +
-				// The one place the services menu is advertised. It is where
-				// restart lives, and where the services with no tab are, and
-				// a pane onto one is where you would think to look.
-				" · " + m.leader() + " " + paneServicesKey + paneServicesMenuKey + " services"
-		}
-		if m.screenPane() == nil {
-			// Restoring outranks everything below it, because it is the way out
-			// of a state the screen is in right now — the same thing that keeps
-			// detach at the front — while maximizing is only something on
-			// offer. So the one key changes place depending on which of the two
-			// it currently is.
-			//
-			// Either way it is only there with two columns to choose between:
-			// more terminals are more tabs in the one box.
-			zoom := ""
-			if m.shells.len() > 0 {
-				zoom = hintSep + m.leader() + " " + paneZoomKey + " maximize"
-				if m.maximized {
-					hints += hintSep + m.leader() + " " + paneZoomKey + " restore"
-					zoom = ""
-				}
-			}
-			// Only the shell is offered here. Another terminal is the advanced
-			// one of the two — a second harness session, next to a shell it
-			// sounds exactly like — and a hints line that names both spends its
-			// scarcest row teaching a distinction most people never need. It is
-			// in the help, under the key that opens it.
-			if p.service == "" {
-				hints += hintSep + m.leader() + " s shell"
-			}
-			// The tools sit here for the same reason the services menu sits on
-			// a service's line: this is the only place they are advertised, and
-			// a picker nothing points at is a picker nobody opens.
-			hints += hintSep + m.leader() + " " + toolsKey + " tools"
-			if len(m.panes()) > 1 {
-				hints += hintSep + m.leader() + " ←/→ pane"
-				if len(m.numbered()) > 1 {
-					hints += hintSep + m.leader() + " 0-9 jump"
-				}
-				// The services' own alphabet is only worth a row when there
-				// are services to jump to; when there are none the chord is
-				// still how the menu opens, which the service pane's own line
-				// already says.
-				if len(m.services()) > 0 {
-					hints += hintSep + m.leader() + " " + paneServicesKey + "1-9 service"
-				}
-			}
-			hints += zoom
-		}
-		// The seize toggle only matters while something in the box has the
-		// mouse; the rest of the time selection simply works.
-		if m.mouseSeized {
-			hints += " · " + m.paneMouseHint() + " mouse back"
-		} else if p.term.MouseMode() != termpane.MouseNone {
-			hints += " · " + m.paneMouseHint() + " take mouse"
-		}
-		return hints
+		return m.paneHints()
 	case focusFolder:
-		return "←→ change folder · Enter lists them all · ↓ boxes · Tab or Esc prompt"
+		return []hint{
+			says("←→ change folder"),
+			pressing("Enter lists them all", "enter"),
+			pressing("↓ boxes", "down"),
+			pressing("Tab or Esc prompt", "esc"),
+		}
 	case focusList:
 		if m.list.visual {
 			lo, hi := m.list.visualRange()
-			return fmt.Sprintf("VISUAL  %s · ↑/↓ extend · Space selects · a letter acts on the range · V or Esc cancel",
-				plural(hi-lo+1, "box", "boxes"))
+			return []hint{
+				says(fmt.Sprintf("VISUAL  %s", plural(hi-lo+1, "box", "boxes"))),
+				says("↑/↓ extend"),
+				pressing("Space selects", " "),
+				says("a letter acts on the range"),
+				pressing("V or Esc cancel", "V"),
+			}
+		}
+		var out []hint
+		if m.list.nameFull > m.list.nameWidth {
+			// Only worth saying on a row that has more name than column.
+			out = append(out, says("←→ read the rest of the name"))
 		}
 		// Only the actions the sandboxes under the cursor can actually take:
 		// a key list that offers purge on a running sandbox is a key list you
 		// stop reading.
-		var parts []string
 		for _, a := range m.actions(m.list.targets()) {
 			if a.enabled {
-				parts = append(parts, a.key+" "+a.label)
+				out = append(out, keyed(a.key, a.key, a.label))
 			}
 		}
-		parts = append(parts, "Space select", "V range")
+		out = append(out, keyed("Space", " ", "select"), keyed("V", "V", "range"))
 		if m.list.showArchived {
-			parts = append(parts, "A hide archived")
+			out = append(out, keyed("A", "A", "hide archived"))
 		} else if m.list.archivedCount() > 0 {
-			parts = append(parts, "A show archived")
+			out = append(out, keyed("A", "A", "show archived"))
 		}
-		parts = append(parts, "↑ or Tab folder", "Esc prompt")
-		keys := strings.Join(parts, hintSep)
-		if m.list.nameFull > m.list.nameWidth {
-			// Only worth saying on a row that has more name than column.
-			keys = "←→ read the rest of the name · " + keys
-		}
-		return keys
+		return append(out, pressing("↑ or Tab folder", "tab"), pressing("Esc prompt", "esc"))
 	default:
 		// ↑ is only a way out of an empty prompt; with text in it, it walks
 		// the text and Tab is the way to the list.
-		out := "Tab or ↑ discoboxes"
+		out := pressing("Tab or ↑ discoboxes", "tab")
 		if m.prompt.Value() != "" {
-			out = "Tab discoboxes"
+			out = pressing("Tab discoboxes", "tab")
 		}
-		return out + " · Shift-Tab harness · Ctrl-O options · Alt-E editor · Ctrl-Enter newline · Ctrl-D quit"
+		return []hint{
+			out,
+			keyed("Shift-Tab", "shift+tab", "harness"),
+			keyed("Ctrl-O", "ctrl+o", "options"),
+			keyed("Alt-E", "alt+e", "editor"),
+			says("Ctrl-Enter newline"),
+			keyed("Ctrl-D", "ctrl+d", "quit"),
+		}
 	}
+}
+
+// paneHints is the workspace's key line: what the screen you are looking at
+// can do, and the way out of it.
+//
+// Its offers are mostly the leader's, so they carry two keystrokes rather than
+// one — a click on `ctrl+a s` arms the leader and then presses s, which is
+// exactly what the two presses would have done.
+func (m *Model) paneHints() []hint {
+	p := m.focusedPane()
+	if p == nil {
+		return nil
+	}
+	leader := m.leader()
+	if p.exited {
+		// The same word the banner is using: a pane that failed says so at
+		// both ends of itself, rather than reporting the end of the stream
+		// as a result.
+		done := p.status
+		if done == "" {
+			done = "finished"
+		}
+		out := []hint{says(done)}
+		if p.term.ScrollbackLen() > 0 {
+			out = append(out, says("↑↓ pgup/pgdn scroll"))
+		}
+		out = append(out, keyed("q", "q", "closes"))
+		if !m.hasScreen(p) {
+			out = append(out, says("←/→ pane"))
+		}
+		return out
+	}
+	if p.tool != "" {
+		return m.toolHints(p)
+	}
+	// A workspace terminal is the discobox's own and you detach from the
+	// whole workspace; the command over them is this CLI's, and you close
+	// it alone.
+	what, out := "the box", "detach"
+	if p == m.overlay {
+		what, out = string(p.action), "close"
+	}
+	hints := []hint{
+		says("every key goes to " + what),
+		pressing(m.detachHint()+" "+out, leader, paneDetachAlt),
+	}
+	if p.service != "" {
+		// A service reads no input, so the line does not open by promising
+		// it every key. What it offers instead is what can be done to the
+		// service from the pane you are looking at — the two verbs that
+		// mean this service here rather than the discobox.
+		hints = []hint{
+			says("read-only"),
+			pressing(m.detachHint()+" "+out, leader, paneDetachAlt),
+			pressing(leader+" t stop", leader, "t"),
+			pressing(leader+" T start", leader, "T"),
+			// The one place the services menu is advertised. It is where
+			// restart lives, and where the services with no tab are, and
+			// a pane onto one is where you would think to look.
+			pressing(leader+" "+paneServicesKey+paneServicesMenuKey+" services", leader, paneServicesKey, paneServicesMenuKey),
+		}
+	}
+	if m.screenPane() != nil {
+		return hints
+	}
+	// Restoring outranks everything below it, because it is the way out of a
+	// state the screen is in right now — the same thing that keeps detach at
+	// the front — while maximizing is only something on offer. So the one key
+	// changes place depending on which of the two it currently is.
+	//
+	// Either way it is only there with two columns to choose between: more
+	// terminals are more tabs in the one box.
+	var zoom []hint
+	if m.shells.len() > 0 {
+		zoom = []hint{pressing(leader+" "+paneZoomKey+" maximize", leader, paneZoomKey)}
+		if m.maximized {
+			hints = append(hints, pressing(leader+" "+paneZoomKey+" restore", leader, paneZoomKey))
+			zoom = nil
+		}
+	}
+	// Only the shell is offered here. Another terminal is the advanced one of
+	// the two — a second harness session, next to a shell it sounds exactly
+	// like — and a hints line that names both spends its scarcest row teaching
+	// a distinction most people never need. It is in the help, under the key
+	// that opens it.
+	if p.service == "" {
+		hints = append(hints, pressing(leader+" s shell", leader, "s"))
+	}
+	// The tools sit here for the same reason the services menu sits on a
+	// service's line: this is the only place they are advertised, and a picker
+	// nothing points at is a picker nobody opens.
+	hints = append(hints, pressing(leader+" "+toolsKey+" tools", leader, toolsKey))
+	if len(m.panes()) > 1 {
+		hints = append(hints, says(leader+" ←/→ pane"))
+		if len(m.numbered()) > 1 {
+			hints = append(hints, says(leader+" 0-9 jump"))
+		}
+		// The services' own alphabet is only worth a row when there are
+		// services to jump to; when there are none the chord is still how the
+		// menu opens, which the service pane's own line already says.
+		if len(m.services()) > 0 {
+			hints = append(hints, says(leader+" "+paneServicesKey+"1-9 service"))
+		}
+	}
+	hints = append(hints, zoom...)
+	// The seize toggle only matters while something in the box has the mouse;
+	// the rest of the time selection simply works.
+	switch {
+	case m.mouseSeized:
+		hints = append(hints, pressing(m.paneMouseHint()+" mouse back", leader, paneMouseKey))
+	case p.term.MouseMode() != termpane.MouseNone:
+		hints = append(hints, pressing(m.paneMouseHint()+" take mouse", leader, paneMouseKey))
+	}
+	return hints
 }
 
 func (m *Model) helpText() string {

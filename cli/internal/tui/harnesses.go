@@ -56,6 +56,9 @@ type harnessList struct {
 	// now is when the frame is being drawn, so the age column is a pure
 	// function of the model and a test can render a fixed one.
 	now func() time.Time
+
+	// drawn is which rows the last render put on screen; see zones.go.
+	drawn drawn
 }
 
 func newHarnessList() *harnessList { return &harnessList{now: time.Now} }
@@ -155,7 +158,7 @@ func harnessStateStyle(st *styles, h Harness) lipgloss.Style {
 	}
 }
 
-func (l *harnessList) view(st *styles) string {
+func (l *harnessList) view(st *styles, z *zones) string {
 	right := plural(len(l.all), "harness", "harnesses")
 	if n := l.enabled(); n != len(l.all) {
 		right = itoa(n) + " enabled  ·  " + right
@@ -167,13 +170,17 @@ func (l *harnessList) view(st *styles) string {
 	if len(l.all) == 0 {
 		body = append(body, st.dimText.Render(pad("  no harnesses in this project — register one with `discobox admin harnesses create`", l.width)))
 	}
+	l.drawn = drawn{top: len(out), first: l.offset}
 	for i := l.offset; i < len(l.all) && len(body) < l.height; i++ {
 		body = append(body, l.row(st, l.all[i], i))
+		l.drawn.count++
 	}
 	for len(body) < l.height {
 		body = append(body, blank)
 	}
-	return lipgloss.JoinVertical(lipgloss.Left, append(append(out, body...), blank)...)
+	block := append(append(out, body...), blank)
+	z.markList(hitHarnessRow, l.drawn, l.width, len(block))
+	return lipgloss.JoinVertical(lipgloss.Left, block...)
 }
 
 // row draws one harness, budgeted the way a discobox row is: the columns are
@@ -400,6 +407,8 @@ func (m *Model) updateHarnesses(msg tea.KeyPressMsg) tea.Cmd {
 		m.harnesses.moveTo(len(m.harnesses.all) - 1)
 	case "?":
 		m.dialog = textDialog("Keys", m.helpText())
+	case ".":
+		return m.harnessMenu()
 	case "enter":
 		return m.harnessAct("e")
 	default:
@@ -411,6 +420,20 @@ func (m *Model) updateHarnesses(msg tea.KeyPressMsg) tea.Cmd {
 			}
 		}
 	}
+	return nil
+}
+
+// harnessMenu is every action the harness under the cursor can take, as a menu
+// — what `.` opens on the discobox list, and what the right button opens on a
+// row here. A screen whose actions are only reachable by knowing their letters
+// is one the pointer cannot work.
+func (m *Model) harnessMenu() tea.Cmd {
+	harness := m.harnesses.current()
+	if harness == nil {
+		return status("no harnesses to act on")
+	}
+	m.dialog = actionsDialog(harness.displayName(), "", harnessActions(*harness),
+		func(key string) tea.Cmd { return m.harnessAct(key) })
 	return nil
 }
 
@@ -777,29 +800,36 @@ func harnessFileLines(file HarnessFile) []string {
 const harnessesChrome = 7
 
 func (m *Model) viewHarnesses() string {
-	body := m.harnesses.view(m.st)
+	m.zones.push(bodyLeft+m.logoColumn(), headerTop+2)
+	body := m.harnesses.view(m.st, &m.zones)
+	m.zones.pop()
 	if m.showLogo() {
 		body = lipgloss.JoinHorizontal(lipgloss.Top, m.logo.view(lipgloss.Height(body)), body)
 	}
+
+	m.zones.push(bodyLeft, headerTop)
 	rows := []string{m.viewHeader(m.inner()), ""}
+	m.zones.pop()
 	rows = append(rows, strings.Split(body, "\n")...)
+
+	m.zones.push(bodyLeft, headerTop+len(rows))
 	rows = append(rows, m.viewStatus())
+	m.zones.pop()
 	return m.box("", rows)
 }
 
 // harnessHints is the bottom line here: only the actions the harness under the
 // cursor can actually take, the way the discobox list does it.
-func (m *Model) harnessHints() string {
-	var parts []string
+func (m *Model) harnessHints() []hint {
+	var out []hint
 	if harness := m.harnesses.current(); harness != nil {
 		for _, a := range harnessActions(*harness) {
 			if a.enabled {
-				parts = append(parts, a.key+" "+a.label)
+				out = append(out, keyed(a.key, a.key, a.label))
 			}
 		}
 	}
-	parts = append(parts, "Esc back")
-	return strings.Join(parts, hintSep)
+	return append(out, pressing("Esc back", "esc"))
 }
 
 // ---------------------------------------------------------------------------

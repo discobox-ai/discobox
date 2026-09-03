@@ -4,6 +4,7 @@ import (
 	"strings"
 
 	tea "charm.land/bubbletea/v2"
+	"charm.land/lipgloss/v2"
 )
 
 // runOptions is every flag `discobox run` takes, laid out as one editable list.
@@ -534,6 +535,12 @@ func (o *optionSet) move(delta int) {
 	o.cursor = (o.cursor + delta + len(o.opts)) % len(o.opts)
 }
 
+// moveTo puts the cursor on one row, which is what a press on it means. It
+// clamps rather than wrapping: a pointer names a row that is there.
+func (o *optionSet) moveTo(i int) {
+	o.cursor = min(max(i, 0), len(o.opts)-1)
+}
+
 // request is what Enter actually asks for: the options as `discobox run`'s
 // arguments, with the prompt from the composer.
 func (o *optionSet) request(prompt string) RunRequest {
@@ -689,7 +696,7 @@ func (o *optionSet) command(prompt string) string {
 	return strings.Join(args, " ")
 }
 
-func (o *optionSet) view(st *styles, width int, prompt string) string {
+func (o *optionSet) view(st *styles, z *zones, width int, prompt string) string {
 	// The same box the dialogs get: this panel stands in place of the window
 	// exactly as they do, and two modal surfaces at two sizes read as two
 	// different kinds of thing.
@@ -701,6 +708,12 @@ func (o *optionSet) view(st *styles, width int, prompt string) string {
 	b.WriteString("\n")
 	b.WriteString(st.dimText.Render(truncate("← → change  ·  Enter opens the row  ·  Esc back to the prompt", inner)))
 	b.WriteString("\n\n")
+
+	// Where the first row lands inside the card: the title, the key line under
+	// it, and the blank between them and the rows. Counted off the builder
+	// rather than written out, so a line added above the rows moves the marks
+	// with it.
+	rowsTop := strings.Count(b.String(), "\n") + dialogPadTop
 
 	labelW := 21
 	for i, opt := range o.opts {
@@ -724,6 +737,15 @@ func (o *optionSet) view(st *styles, width int, prompt string) string {
 			value = "‹ " + value + " ›"
 		}
 		row := bar + " " + label + " " + valueStyle.Render(truncate(value, max(inner-labelW-3, 6)))
+		// The row, and then the arrows over the top of it: they are drawn on
+		// the cursor row alone, and each is a press that changes the value the
+		// way the arrow key does.
+		z.markRow(hit{kind: hitOptionRow, idx: i}, rowsTop+i, inner)
+		if i == o.cursor && (opt.kind == optChoice || opt.kind == optToggle) {
+			valueX := dialogPadLeft + labelW + 3
+			z.mark(hit{kind: hitOptionCycle, idx: i, delta: -1}, valueX, rowsTop+i, 1, 1)
+			z.mark(hit{kind: hitOptionCycle, idx: i, delta: 1}, valueX+lipgloss.Width(value)-1, rowsTop+i, 1, 1)
+		}
 		b.WriteString(padANSI(row, inner))
 		b.WriteString("\n")
 	}

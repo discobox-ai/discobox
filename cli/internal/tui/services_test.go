@@ -337,12 +337,12 @@ func TestTheHintsLineOnAServiceOffersItsVerbs(t *testing.T) {
 	d.wait("the service tab", func() bool { return m.terminals.len() == 2 })
 
 	// On the primary it is the discobox's line, unchanged.
-	if got := m.hints(); !strings.Contains(got, "every key goes to the box") {
+	if got := hintLine(m.hints()); !strings.Contains(got, "every key goes to the box") {
 		t.Fatalf("terminal hints = %q, want the box's line", got)
 	}
 
 	focusService(d, m)
-	got := m.hints()
+	got := hintLine(m.hints())
 	for _, want := range []string{"read-only", "t stop", "T start", "S0 services"} {
 		if !strings.Contains(got, want) {
 			t.Errorf("service hints = %q, want it to offer %q", got, want)

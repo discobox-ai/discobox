@@ -109,6 +109,10 @@ func (m *Model) viewWelcome() string {
 			rows = append(rows, truncate(wrapped, inner))
 		}
 	}
+	// The one instruction is the one control: a press on it is the Enter it
+	// asks for. The prose above stays selectable rather than being one big
+	// button.
+	m.zones.mark(keyHit("enter"), dialogPadLeft, len(rows)+1+dialogPadTop, lipgloss.Width(welcomeFooter), 1)
 	rows = append(rows, "", m.st.key.Render(welcomeFooter))
 
 	return m.st.dialog.Width(boxWidth).Render(lipgloss.JoinVertical(lipgloss.Left, rows...))

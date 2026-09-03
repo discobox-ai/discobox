@@ -1455,7 +1455,10 @@ func (m *Model) viewPaneWindow() string {
 		}
 	}
 	room := max(inner-2*boxPad, 1)
-	rows = append(rows, " "+pad+padANSI(m.statusLine(room), room)+pad+" ")
+	m.zones.push(1+boxPad, len(rows))
+	status := m.statusLine(room)
+	m.zones.pop()
+	rows = append(rows, " "+pad+padANSI(status, room)+pad+" ")
 	return strings.Join(rows, "\n")
 }
 
@@ -1689,14 +1692,21 @@ func (m *Model) paneCursor() *tea.Cursor {
 	return p.term.Cursor(x, y)
 }
 
-// paneMouseMode is what the window asks the real terminal to report. While
-// panes are up the mouse is always reported: selection and click-to-focus
-// need the events even when nothing in the box asked for a mouse — which is
-// the bargain every multiplexer strikes, native selection traded for the
-// panes' own. All-motion is requested only when the focused application wants
-// it and the mouse has not been seized away from it.
-func (m *Model) paneMouseMode() tea.MouseMode {
-	if !m.inPanes() {
+// mouseMode is what the window asks the real terminal to report. Every frame
+// the window draws on the alternate screen reports the mouse: clicks, drags
+// and the wheel are how the window is worked with a pointer, and they are
+// needed even when nothing in a box asked for a mouse — which is the bargain
+// every multiplexer strikes, native selection traded for the window's own.
+//
+// The opening prompt is the exception. It is drawn inline, in the shell's own
+// scrollback, where a mouse coordinate is the terminal's screen rather than
+// this frame and the terminal's own selection is still the one that belongs.
+// See ADR 0085 §1.
+//
+// All-motion is requested only when the focused application wants it and the
+// mouse has not been seized away from it.
+func (m *Model) mouseMode() tea.MouseMode {
+	if !m.takesScreen() {
 		return tea.MouseModeNone
 	}
 	if p := m.focusedPane(); p != nil && !m.mouseSeized &&

@@ -433,8 +433,8 @@ func TestAnExitedShellStaysReadableUntilDismissed(t *testing.T) {
 	if !strings.Contains(plainFrame(m), "everything built") {
 		t.Errorf("the last screen should still be up:\n%s", plainFrame(m))
 	}
-	if !strings.Contains(m.hints(), "finished") {
-		t.Errorf("hints = %q, want them to say the shell is over", m.hints())
+	if !strings.Contains(hintLine(m.hints()), "finished") {
+		t.Errorf("hints = %q, want them to say the shell is over", hintLine(m.hints()))
 	}
 
 	d.key("q")
@@ -1006,8 +1006,8 @@ func TestEachPaneKeepsItsOwnKeys(t *testing.T) {
 	if !m.inPanes() || m.shells.len() != 1 {
 		t.Fatal("ctrl+c in a shell should not detach anything")
 	}
-	if !strings.Contains(m.hints(), m.leader()+" d detach") {
-		t.Fatalf("the keys should say the way out: %q", m.hints())
+	if !strings.Contains(hintLine(m.hints()), m.leader()+" d detach") {
+		t.Fatalf("the keys should say the way out: %q", hintLine(m.hints()))
 	}
 
 	// Back on the terminal, ctrl+c reaches the harness too. Someone who types
@@ -1131,8 +1131,8 @@ func TestAFinishedCommandHoldsItsScreen(t *testing.T) {
 	if !strings.Contains(plainFrame(m), "finished") {
 		t.Errorf("it should say the command is over:\n%s", plainFrame(m))
 	}
-	if !strings.Contains(m.hints(), "q closes") {
-		t.Errorf("the keys should say how to take it away: %q", m.hints())
+	if !strings.Contains(hintLine(m.hints()), "q closes") {
+		t.Errorf("the keys should say how to take it away: %q", hintLine(m.hints()))
 	}
 
 	// A key that means nothing here leaves the screen alone: taking it away
@@ -1436,8 +1436,8 @@ func TestAFinishedCommandCanBeScrolled(t *testing.T) {
 	if strings.Contains(plainFrame(m), "line 1 ") {
 		t.Fatal("the first lines should have scrolled off the pane")
 	}
-	if !strings.Contains(m.hints(), "scroll") {
-		t.Errorf("the keys should offer scrolling: %q", m.hints())
+	if !strings.Contains(hintLine(m.hints()), "scroll") {
+		t.Errorf("the keys should offer scrolling: %q", hintLine(m.hints()))
 	}
 
 	// Up walks back, home goes to the top, and the earliest output is there.

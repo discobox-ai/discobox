@@ -604,7 +604,7 @@ func TestTheFormIsTheSameHeightOnEveryRow(t *testing.T) {
 				}
 				f.cursor = i
 				f.focus()
-				height := len(strings.Split(m.dialog.view(m.st, width, 60), "\n"))
+				height := len(strings.Split(m.dialog.view(m.st, &m.zones, width, 60), "\n"))
 				if rows == 0 {
 					rows, on = height, f.rows[i].key
 					continue

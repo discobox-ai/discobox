@@ -58,6 +58,11 @@ type sandboxList struct {
 	// function of the model and a test can render a fixed one.
 	now func() time.Time
 
+	// drawn is which rows the last render actually put on screen, recorded by
+	// the loop that drew them so the mouse hits exactly what is there. See
+	// zones.go.
+	drawn drawn
+
 	width, height int
 }
 
@@ -349,21 +354,27 @@ func stateDot(s Sandbox) string {
 	}
 }
 
-func (l *sandboxList) view(st *styles, focused bool) string {
+func (l *sandboxList) view(st *styles, z *zones, focused bool) string {
 	titleStyle := st.titleList
 	if !focused {
 		titleStyle = st.titleDim
 	}
 	rows := l.rows()
 	right := plural(len(rows), "box", "boxes")
+	// The marks are worth a press of their own: they are the one thing on the
+	// band that is a state you got into rather than a fact about the project,
+	// and c is how you get out of it.
+	marks := ""
 	if n := l.selectionCount(); n > 0 {
-		right = plural(n, "selected", "selected") + "  ·  " + right
+		marks = plural(n, "selected", "selected")
+		right = marks + "  ·  " + right
 	}
 	// The folder the list is filtered to is named in the header, which is where
 	// it is chosen, so the title bar does not say it twice.
-	scope := "Discoboxes"
+	scope, offer := "Discoboxes", ""
 	if n := l.archivedCount(); n > 0 && !l.showArchived {
-		scope += "   " + plural(n, "archived", "archived") + ", A shows them"
+		offer = plural(n, "archived", "archived") + ", A shows them"
+		scope += "   " + offer
 	}
 	blank := strings.Repeat(" ", max(l.width, 0))
 
@@ -382,6 +393,10 @@ func (l *sandboxList) view(st *styles, focused bool) string {
 			rowBudget--
 		}
 	}
+	// A band that names a key is a button for it, wherever the keyboard
+	// happens to be: pressing "A shows them" from the composer must show the
+	// archived rather than type an A into the prompt. See zones.go.
+	l.markBand(z, len(out), offer, marks, right)
 	out = append(out, renderTitle(titleStyle, scope, right, l.width))
 
 	// Only where a row survives being labeled. A window this short is one
@@ -399,15 +414,33 @@ func (l *sandboxList) view(st *styles, focused bool) string {
 	if len(rows) == 0 {
 		body = append(body, st.dimText.Render(pad("  no discoboxes here yet — type a prompt below", l.width)))
 	}
+	l.drawn = drawn{top: len(out), first: l.offset}
 	for i := l.offset; i < len(rows) && len(body) < rowBudget; i++ {
 		body = append(body, l.row(st, rows[i], i, focused))
+		l.drawn.count++
 	}
 	for len(body) < rowBudget {
 		body = append(body, blank)
 	}
 	// One blank after the last row, so a list long enough to reach the composer
 	// still has air between them.
-	return lipgloss.JoinVertical(lipgloss.Left, append(append(out, body...), blank)...)
+	block := append(append(out, body...), blank)
+	z.markList(hitRow, l.drawn, l.width, len(block))
+	return lipgloss.JoinVertical(lipgloss.Left, block...)
+}
+
+// markBand makes the two offers on the title band pressable: the archived
+// count, which names A, and the number of marks, which names c. The band is
+// drawn by renderTitle, which pads a cell on each side and pins the right
+// fragment to the far end, so both spans are measured off that.
+func (l *sandboxList) markBand(z *zones, y int, offer, marks, right string) {
+	if offer != "" {
+		// The offer is the tail of the left fragment.
+		z.mark(listKeyHit("A"), 1+lipgloss.Width("Discoboxes   "), y, lipgloss.Width(offer), 1)
+	}
+	if marks != "" {
+		z.mark(listKeyHit("c"), l.width-1-lipgloss.Width(right), y, lipgloss.Width(marks), 1)
+	}
 }
 
 // row draws one sandbox. Widths are budgeted left to right and the columns

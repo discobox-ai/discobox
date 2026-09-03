@@ -1058,7 +1058,7 @@ func dialogText(m *Model) string {
 	if m.dialog == nil {
 		return ""
 	}
-	return ansi.Strip(m.dialog.view(m.st, 100, 40))
+	return ansi.Strip(m.dialog.view(m.st, &m.zones, 100, 40))
 }
 
 func frame(m *Model) []string {
@@ -1283,4 +1283,15 @@ func (f *fakeSource) DeleteSecret(_ context.Context, secretID string) error {
 	}
 	f.projectSecrets = kept
 	return nil
+}
+
+// hintLine is the key line as one string, the way the status line joins it.
+// The hints themselves are key/label pairs now — a hint that names a key is a
+// button for it — and what most of these tests read is the text.
+func hintLine(hints []hint) string {
+	text := make([]string, 0, len(hints))
+	for _, h := range hints {
+		text = append(text, h.text)
+	}
+	return strings.Join(text, hintSep)
 }
