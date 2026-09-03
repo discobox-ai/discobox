@@ -1635,6 +1635,28 @@ directory; a remote URL and `no source` have no folder of their own, so a
 discobox from either is filed under — and the list follows to — the directory the
 window is running in, which is exactly where `ResolveOrigin` puts it.
 
+**"All folders" is not a place, so a create from it asks** (`askWhereToCutFrom`).
+Every other choice in the header names the directory a new discobox is cut from;
+that one names them all, and the source silently fell back to whichever
+directory the window happened to be running in — a discobox cut from somewhere
+nobody named. Enter opens the Source row's own list instead
+(`sourceDialog(true)`), so the answer is a choice the panel already offers, and
+answering it moves the header onto that folder: the next Enter has a place to
+cut from and asks nothing. A window whose session has not landed yet is on no
+folder for a different reason — nothing has told it which, and it has no
+directory or sources to offer — so it is left to `discobox run`'s own
+resolution, the way a prompt submitted before the harnesses land is.
+
+**A path typed by hand is checked before the window takes it**
+(`DataSource.ResolveSource`, `Model.resolveSource`). The list's own choices are
+places the project has already been cut from; the field takes anything. A
+directory that is not there fails the create seconds later, with the field gone
+and the path to retype from memory — so it is refused while the field is still
+open, which reopens holding what was typed and saying what is wrong with it. The
+check belongs on the data seam rather than here: this package touches no
+filesystem, and what counts as a remote, how `~` expands, and what `DIR@REF`
+splits into are the create path's to answer.
+
 Because the header follows the row, the row's order cannot follow the header.
 Leading with the current folder would reorder the choices every time the list
 moved, and left-right would then only ever reach the first two of them. The order

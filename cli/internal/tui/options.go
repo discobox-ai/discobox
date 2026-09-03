@@ -441,11 +441,25 @@ func (o *optionSet) typedSource() string {
 type sourceChosenMsg struct {
 	source string
 	enter  bool
+	// typed says the answer came from the input field rather than off the
+	// list, so it names a place nothing has vouched for and is checked before
+	// it is taken. See Model.resolveSource.
+	typed bool
+	// run says the question was the one a create asked, so answering it
+	// carries that create on rather than only setting the row. See
+	// Model.askWhereToCutFrom.
+	run bool
 }
 
 // sourceDialog is the Source row opened out: every source the project has been
 // cut from, "no source", and the way to name one the listing has never seen.
-func (o *optionSet) sourceDialog() *dialog {
+//
+// run titles it as the question a create asked, when the header is on every
+// folder at once and there is no one folder the create could be cut from. It is
+// the same list either way: the answer that settles the row is the answer that
+// settles the create, and offering a different set of choices depending on
+// which of the two asked would be two controls wearing one name.
+func (o *optionSet) sourceDialog(run bool) *dialog {
 	opt := o.opts[optSource]
 	items := make([]action, 0, len(opt.choices)+1)
 	for i, choice := range opt.choices {
@@ -461,19 +475,28 @@ func (o *optionSet) sourceDialog() *dialog {
 		})
 	}
 	items = append(items, action{key: "e", press: "e", label: enterSourceChoice, enabled: true})
-	menu := actionsDialog("Cut the discobox from", "", items, func(key string) tea.Cmd {
+	title, body := "Cut the discobox from", ""
+	if run {
+		title = "Where should this discobox be cut from?"
+		body = "The list is showing every folder, so there is no one folder for this discobox to be cut from."
+	}
+	menu := actionsDialog(title, body, items, func(key string) tea.Cmd {
 		if key == "e" {
-			return func() tea.Msg { return sourceChosenMsg{enter: true} }
+			return func() tea.Msg { return sourceChosenMsg{enter: true, run: run} }
 		}
 		for i, value := range opt.values {
 			if itoa(i+1) == key {
-				return func() tea.Msg { return sourceChosenMsg{source: value} }
+				return func() tea.Msg { return sourceChosenMsg{source: value, run: run} }
 			}
 		}
 		return nil
 	})
 	menu.cursor = opt.idx
-	menu.keys = []hint{pressing("Enter cuts the next discobox from that", "enter"), pressing("Esc cancels", "esc")}
+	answer := "Enter cuts the next discobox from that"
+	if run {
+		answer = "Enter creates the discobox from that"
+	}
+	menu.keys = []hint{pressing(answer, "enter"), pressing("Esc cancels", "esc")}
 	return menu
 }
 
@@ -483,6 +506,12 @@ func (o *optionSet) sourceDetail(value string) string {
 	case value == sourceNone:
 		return "nothing checked out — an empty discobox"
 	case value == o.sourceDir():
+		if o.folder == "" {
+			// Every folder at once is not a folder the window is showing, so
+			// the directory it happens to be running in is described as what
+			// it is — the same words the folder dropdown uses for it.
+			return "where this window is running"
+		}
 		return "the folder this window is showing"
 	case o.remoteSource(value):
 		return "cloned by the discobox itself"

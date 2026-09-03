@@ -799,12 +799,25 @@ func (m *Model) update(msg tea.Msg) tea.Cmd {
 
 	case sourceChosenMsg:
 		if msg.enter {
-			m.dialog = inputDialog("Source", sourceHint, m.opts.sourceLabel(), m.opts.typedSource(),
-				func(v string) tea.Cmd { return func() tea.Msg { return sourceChosenMsg{source: strings.TrimSpace(v)} } })
+			m.askForSource(m.opts.typedSource(), "", msg.run)
+			return nil
+		}
+		if msg.typed {
+			return m.resolveSource(msg)
+		}
+		m.opts.chooseSource(msg.source)
+		return m.sourceApplied(msg.run)
+
+	case sourceResolvedMsg:
+		if msg.err != nil {
+			// Back into the field, holding what was typed and saying what is
+			// wrong with it: a path off by one character is corrected there,
+			// where a dismissed dialog would mean typing the whole of it again.
+			m.askForSource(msg.typed, msg.err.Error(), msg.run)
 			return nil
 		}
 		m.opts.chooseSource(msg.source)
-		return m.followSource()
+		return m.sourceApplied(msg.run)
 
 	case paneOpenedMsg:
 		return m.paneOpened(msg)
@@ -1510,7 +1523,7 @@ func (m *Model) updateOptions(msg tea.KeyPressMsg) tea.Cmd {
 			// own: left and right are for the two or three you switch between,
 			// and everything else — including a path the listing has never
 			// seen — is behind Enter.
-			m.dialog = m.opts.sourceDialog()
+			m.dialog = m.opts.sourceDialog(false)
 			return nil
 		}
 		switch opt.kind {
@@ -1909,6 +1922,91 @@ func (m *Model) renameDone(msg renameDoneMsg) tea.Cmd {
 // An empty prompt is not an error. It means the other thing you come here for:
 // a sandbox of your own to work in, with no harness given anything to do.
 func (m *Model) run() tea.Cmd {
+	if m.askWhereToCutFrom() {
+		return nil
+	}
+	return m.runRequest(m.opts.request(m.prompt.Value()))
+}
+
+// askWhereToCutFrom stops a create the window has no folder for and asks what
+// it should be cut from. It reports whether the run was stopped.
+//
+// "All folders" is the one filter that is not a place. Every other choice in
+// the header names the directory a new discobox is cut from, and this one names
+// them all — so the source fell back to whatever directory the window happens
+// to be running in, and Enter cut from somewhere nobody had named. The question
+// is the Source row's own list (sourceDialog), so the answer is a choice the
+// panel already offers, and answering it moves the header onto that folder: the
+// next Enter has a place to cut from and asks nothing.
+//
+// A window whose session has not landed yet is on no folder for a different
+// reason — nothing has told it which — and has no directory or sources to
+// offer. It is left to `discobox run`'s own resolution, the way a prompt
+// submitted before the harnesses land is.
+func (m *Model) askWhereToCutFrom() bool {
+	if m.opts.folder != "" || m.session.Directory == "" {
+		return false
+	}
+	m.dialog = m.opts.sourceDialog(true)
+	return true
+}
+
+// askForSource opens the field a source is typed into. problem is what was
+// wrong with the last thing typed, which the field opens holding: a path that
+// is not there is corrected in place rather than retyped from memory.
+func (m *Model) askForSource(value, problem string, run bool) {
+	body := sourceHint
+	if problem != "" {
+		body = problem
+	}
+	d := inputDialog("Source", body, m.opts.sourceLabel(), value,
+		func(v string) tea.Cmd {
+			return func() tea.Msg {
+				return sourceChosenMsg{source: strings.TrimSpace(v), typed: true, run: run}
+			}
+		})
+	d.err = problem != ""
+	m.dialog = d
+}
+
+// resolveSource checks a source typed by hand before the window takes it. The
+// list's own choices are places the project has already been cut from and need
+// no checking; a path typed into the field is vouched for by nothing, and the
+// create is the wrong place to find out — it fails on it seconds later with the
+// field gone.
+func (m *Model) resolveSource(msg sourceChosenMsg) tea.Cmd {
+	if msg.source == "" {
+		// Nothing typed is the folder the field offered as its placeholder,
+		// which is where the window was cutting from already.
+		m.opts.chooseSource("")
+		return m.sourceApplied(msg.run)
+	}
+	return func() tea.Msg {
+		resolved, err := m.ds.ResolveSource(m.ctx, msg.source)
+		return sourceResolvedMsg{typed: msg.source, source: resolved, run: msg.run, err: err}
+	}
+}
+
+// sourceResolvedMsg is what the check came back with: the source as the create
+// path will take it, or what is wrong with what was typed.
+type sourceResolvedMsg struct {
+	// typed is what was in the field, which a refusal puts back into it.
+	typed  string
+	source string
+	run    bool
+	err    error
+}
+
+// sourceApplied is what happens once a source is settled: the list follows it,
+// and an answer given to a create's own question carries that create on.
+func (m *Model) sourceApplied(run bool) tea.Cmd {
+	cmd := m.followSource()
+	if !run {
+		return cmd
+	}
+	// The request is built again rather than resumed, because the panel is what
+	// a run is made of and the answer has just changed it. The follow's status
+	// line goes with it: the create says what it is doing from here.
 	return m.runRequest(m.opts.request(m.prompt.Value()))
 }
 

@@ -25,6 +25,10 @@ type fakeSource struct {
 	session   Session
 	sandboxes []Sandbox
 	workspace SourceWorkspace
+	// resolved records every source handed to ResolveSource, and sourceErr is
+	// what it answers with — a directory that is not on this machine.
+	resolved  []string
+	sourceErr error
 	// runGate holds a create open until the test closes it. Nil is a create
 	// that returns at once, which is what every test that is not about the
 	// wait wants.
@@ -309,6 +313,27 @@ func (f *fakeSource) WatchProvisioning(_ context.Context, sandboxID string, repo
 
 func (f *fakeSource) Workspace(context.Context, string) (SourceWorkspace, error) {
 	return f.workspace, nil
+}
+
+// ResolveSource answers the way the real one does for a directory that is
+// there: what was typed, unchanged. sourceErr is what a test stages for one
+// that is not.
+func (f *fakeSource) ResolveSource(_ context.Context, source string) (string, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.resolved = append(f.resolved, source)
+	if f.sourceErr != nil {
+		return "", f.sourceErr
+	}
+	return source, nil
+}
+
+// setSourceErr moves what ResolveSource answers while the window is up, so a
+// test can refuse a path and then accept the correction.
+func (f *fakeSource) setSourceErr(err error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.sourceErr = err
 }
 
 func (f *fakeSource) MeasureDirectory(_ context.Context, dir string) (func() DirectoryTotal, func()) {

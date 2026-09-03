@@ -2,6 +2,7 @@ package cli
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"os"
@@ -492,6 +493,53 @@ func (d *apiDataSource) Workspace(ctx context.Context, source string) (tui.Sourc
 		paths = append(paths, change.Path)
 	}
 	return tui.SourceWorkspace{Directory: root, Repository: true, Carries: len(paths) > 0, Changes: paths}, nil
+}
+
+// ResolveSource checks a source the window was given by hand and reports it the
+// way the create path will take it. A repository the discobox clones for itself
+// is not on this machine, so there is nothing here to check it against and it
+// comes back as typed; a local directory has ~ expanded and is made absolute,
+// so what the window says it is cutting from is the directory it will actually
+// cut from rather than whatever relative fragment was quickest to type.
+//
+// The refusal is the point of it. `-C` on a directory that is not there fails
+// the create a few seconds later, by which time the field it was typed into is
+// gone and the path has to be remembered rather than corrected.
+func (d *apiDataSource) ResolveSource(_ context.Context, source string) (string, error) {
+	value := strings.TrimSpace(source)
+	if value == "" {
+		return "", fmt.Errorf("name a directory, a repository URL, or DIR@REF")
+	}
+	// The ref is carried through untouched: which commit to cut from is the
+	// create path's question, and asking it of a directory that is not there
+	// answers nothing.
+	dir := sourceDirectory(value)
+	ref := value[len(dir):]
+	if sandboxcreate.IsRemoteGitSource(dir) {
+		return value, nil
+	}
+	// No shell has been anywhere near this value, so ~ is still a tilde.
+	if dir == "~" || strings.HasPrefix(dir, "~/") {
+		home, err := os.UserHomeDir()
+		if err != nil {
+			return "", fmt.Errorf("resolve %s: %w", dir, err)
+		}
+		dir = filepath.Join(home, strings.TrimPrefix(dir, "~"))
+	}
+	abs, err := filepath.Abs(dir)
+	if err != nil {
+		return "", fmt.Errorf("resolve %s: %w", dir, err)
+	}
+	info, err := os.Stat(abs)
+	switch {
+	case errors.Is(err, os.ErrNotExist):
+		return "", fmt.Errorf("%s does not exist", abs)
+	case err != nil:
+		return "", err
+	case !info.IsDir():
+		return "", fmt.Errorf("%s is not a directory", abs)
+	}
+	return abs + ref, nil
 }
 
 // MeasureDirectory is the shared create path's directory walk, in the shape the

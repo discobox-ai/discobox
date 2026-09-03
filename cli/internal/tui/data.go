@@ -1119,6 +1119,16 @@ type DataSource interface {
 	// so the window can settle --include-dirty=auto before it creates anything.
 	Workspace(ctx context.Context, source string) (SourceWorkspace, error)
 
+	// ResolveSource checks a source named by hand — a directory, a repository
+	// URL, or DIR@REF — and reports it the way the create path will take it:
+	// with ~ expanded and the directory made absolute, and whatever ref was
+	// typed left on the end. A local directory that is not there is an error
+	// rather than a value, because the window is still holding the field it
+	// was typed into and this is the last point at which it can be corrected;
+	// the alternative is a create that fails on it seconds later, with the
+	// field long gone and the path to retype from memory.
+	ResolveSource(ctx context.Context, source string) (string, error)
+
 	// MeasureDirectory starts counting what copying dir into a discobox would
 	// carry. total reports the running count and is polled while the question
 	// about it is on screen; stop ends a walk whose question has been answered,
