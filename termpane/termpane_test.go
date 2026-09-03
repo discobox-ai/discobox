@@ -1012,9 +1012,9 @@ func TestScrollbackCanBeLookedAt(t *testing.T) {
 	}
 }
 
-// New output pins the view back to the live screen: a pane scrolled away from
-// what is happening in it, with no way to notice, is a pane that looks hung.
-func TestNewOutputReturnsToTheLiveScreen(t *testing.T) {
+// New output grows beneath a viewport in history without moving the rows the
+// user is reading. The offset grows with the buffer until they scroll down.
+func TestNewOutputPreservesScrolledViewport(t *testing.T) {
 	m, stream, cmd := attach(t, 40, 5)
 	stream.send(strings.Repeat("filler\r\n", 20))
 	cmd = pump(t, m, cmd, "filler")
@@ -1023,11 +1023,20 @@ func TestNewOutputReturnsToTheLiveScreen(t *testing.T) {
 	if m.ScrollOffset() == 0 {
 		t.Fatal("expected to be scrolled back")
 	}
+	wantScreen := screen(m)
+	wantOffset := m.ScrollOffset() + 1
 
 	stream.send("something new\r\n")
-	pump(t, m, cmd, "something new")
-	if m.ScrollOffset() != 0 {
-		t.Fatalf("offset = %d, want the live screen", m.ScrollOffset())
+	msg, ok := runWithin(cmd, time.Second)
+	if !ok {
+		t.Fatal("new output did not arrive")
+	}
+	m.Update(msg)
+	if got := m.ScrollOffset(); got != wantOffset {
+		t.Fatalf("offset = %d, want %d to follow the growing buffer", got, wantOffset)
+	}
+	if got := screen(m); got != wantScreen {
+		t.Fatalf("output moved the scrolled viewport:\n%s\nwant:\n%s", got, wantScreen)
 	}
 }
 

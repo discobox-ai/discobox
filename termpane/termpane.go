@@ -514,16 +514,24 @@ func (m *Model) Update(msg tea.Msg) (*Model, tea.Cmd) {
 	switch msg := msg.(type) {
 	case outputMsg:
 		if m.emu != nil {
+			oldHistory := m.ScrollbackLen()
+			oldAlt := m.AltScreen()
 			_, _ = m.emu.Write(msg.data)
 			m.outputSeq++
+			// A viewport in history is anchored to the buffer, not to its
+			// distance from the live screen. Account for lines newly pushed
+			// into scrollback so output can continue without moving what the
+			// user is reading. Alternate screens have no scrollback, so a
+			// transition to or from one returns to its live screen.
+			if m.AltScreen() != oldAlt {
+				m.scroll = 0
+			} else if m.scroll > 0 {
+				m.scroll = min(m.scroll+m.ScrollbackLen()-oldHistory, m.ScrollbackLen())
+			}
 		}
 		// A selection whose text this output overwrote is cleared before it
 		// can highlight something nobody selected.
 		m.reconcileSelection()
-		// New output pins the view back to the live screen. A pane scrolled
-		// away from what is happening in it, with no way to notice, is a pane
-		// that looks hung.
-		m.scroll = 0
 		// Output is also where an application's own copy arrives; the write
 		// above is what parsed it. See clipboard.go.
 		return m, tea.Batch(m.takeClipboard(), m.reader.next())
@@ -841,8 +849,8 @@ func (m *Model) ScrollbackLen() int {
 // reports where it ended up. It is bounded by what has been kept, so it stops at
 // the top of the history rather than running off into blank rows.
 //
-// The view returns to the live screen on its own the moment anything new
-// arrives; see Update.
+// New output leaves a scrolled viewport anchored to the same buffer rows and
+// increases this offset as lines are added beneath it; see Update.
 func (m *Model) Scroll(delta int) int {
 	m.scroll = min(max(m.scroll+delta, 0), m.ScrollbackLen())
 	return m.scroll

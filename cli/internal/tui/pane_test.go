@@ -1506,6 +1506,39 @@ func TestAFinishedCommandCanBeScrolled(t *testing.T) {
 	}
 }
 
+// Streaming output continues below a viewport in scrollback without pulling
+// the real window back to the live screen.
+func TestStreamingOutputDoesNotMoveScrolledViewport(t *testing.T) {
+	ds := newFakeSource(testSandboxes()...)
+	d, m, term := openWorkspace(t, ds, "enter")
+	p := m.primary()
+
+	_, rows := m.paneCells(m.paneWidthOf(p))
+	var out strings.Builder
+	for i := 1; i <= rows+10; i++ {
+		if i > 1 {
+			out.WriteString("\r\n")
+		}
+		fmt.Fprintf(&out, "stream line %d", i)
+	}
+	term.send(out.String())
+	d.wait("stream output", func() bool { return p.term.ScrollbackLen() >= 10 })
+
+	ox, oy := m.paneOrigin(p)
+	d.dispatch(tea.MouseWheelMsg{X: ox + 1, Y: oy + 1, Button: tea.MouseWheelUp})
+	if p.term.ScrollOffset() == 0 {
+		t.Fatal("mouse wheel did not move the live pane into scrollback")
+	}
+	wantFrame := plainFrame(m)
+	wantSeq := p.term.OutputSeq() + 1
+
+	term.send("\r\nstream still running")
+	d.wait("continued stream output", func() bool { return p.term.OutputSeq() >= wantSeq })
+	if got := plainFrame(m); got != wantFrame {
+		t.Fatalf("streaming output moved the scrolled TUI viewport:\n%s\nwant:\n%s", got, wantFrame)
+	}
+}
+
 // Moving between panes takes the arrows as well as the letters, and holding
 // Ctrl keeps the sequence open: the leader, then Ctrl-← Ctrl-→ walks across
 // without pressing the leader again.

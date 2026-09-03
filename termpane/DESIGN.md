@@ -298,10 +298,13 @@ prefix, the lead and the key all delivered to the application, so a mistyped
 chord costs nothing.
 
 **Scrollback can be looked at.** `Scroll` moves the view back through what has
-scrolled off, `View` draws those rows in place of the screen's, and any new
-output pins it back to the live screen — a pane scrolled away from what is
-happening in it, with no way to notice, is a pane that looks hung. What keys
-drive it is the host's business, as with everything else here.
+scrolled off, and `View` draws those rows in place of the screen's. While the
+view is back there, new output grows beneath it: the offset advances by the
+number of lines added to scrollback so the buffer rows being read stay put.
+Returning to the live screen is an explicit scroll down, except that entering
+or leaving the alternate screen resets the view because alternate screens have
+no scrollback. What keys drive it is the host's business, as with everything
+else here.
 
 ## Not here
 
