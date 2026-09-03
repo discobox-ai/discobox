@@ -1,6 +1,7 @@
 package tui
 
 import (
+	"fmt"
 	"strings"
 	"testing"
 	"time"
@@ -506,5 +507,84 @@ func TestPressingAFormRowMovesTheCursorToIt(t *testing.T) {
 
 	if got := m.dialog.form.cursor; got == before {
 		t.Fatalf("the form cursor is still on %d; the press should have moved it", got)
+	}
+}
+
+// Every mark a frame makes has to be on that frame, over something drawn. An
+// origin pushed wrong lands a control off the window or on blank cells, where
+// nothing looks broken and the press simply misses — which is the failure this
+// whole mechanism has to be watched for.
+func TestEveryMarkLandsOnSomethingDrawn(t *testing.T) {
+	screens := map[string]func(t *testing.T) *Model{
+		"the discobox list": func(t *testing.T) *Model {
+			m := newTestModel(t, newFakeSource(testSandboxes()...))
+			showAllFolders(t, m)
+			return m
+		},
+		"the harnesses": func(t *testing.T) *Model {
+			m := newTestModel(t, newFakeSource(testSandboxes()...))
+			return send(t, m, keyPress("f3"))
+		},
+		"the secrets": func(t *testing.T) *Model {
+			m, _ := secretsFixture(t)
+			return m
+		},
+		"the run options": func(t *testing.T) *Model {
+			m := newTestModel(t, newFakeSource(testSandboxes()...))
+			return send(t, m, keyPress("ctrl+o"))
+		},
+		"an actions menu": func(t *testing.T) *Model {
+			m := newTestModel(t, newFakeSource(testSandboxes()...))
+			showAllFolders(t, m)
+			return send(t, m, keyPress("."))
+		},
+		"a card": func(t *testing.T) *Model {
+			m, _ := secretsFixture(t)
+			return send(t, m, keyPress("n"))
+		},
+		"the introduction": func(t *testing.T) *Model {
+			m := newTestModel(t, newFakeSource(testSandboxes()...))
+			m.welcoming = true
+			return m
+		},
+	}
+
+	// At two widths, because the narrow one is where a column drops off the
+	// end and a hit map computed a second time would come apart from the frame.
+	for name, open := range screens {
+		for _, width := range []int{120, 72} {
+			t.Run(fmt.Sprintf("%s at %d", name, width), func(t *testing.T) {
+				assertMarksLand(t, open(t), width)
+			})
+		}
+	}
+}
+
+func assertMarksLand(t *testing.T, m *Model, width int) {
+	t.Helper()
+	send(t, m, tea.WindowSizeMsg{Width: width, Height: 40})
+	lines := strings.Split(plainFrame(m), "\n")
+	if len(m.zones.marks) == 0 {
+		t.Fatalf("the frame marked nothing at all")
+	}
+	for _, z := range m.zones.marks {
+		if z.y < 0 || z.y+z.height > len(lines) {
+			t.Errorf("a %v mark spans rows %d..%d of a %d-row frame", z.what.kind, z.y, z.y+z.height-1, len(lines))
+			continue
+		}
+		if z.x < 0 || z.x+z.width > m.width {
+			t.Errorf("a %v mark spans columns %d..%d of a %d-column frame", z.what.kind, z.x, z.x+z.width-1, m.width)
+			continue
+		}
+		// A hint is a word made pressable, so its cells hold that word. The
+		// wider marks are rows and fields, which are blank often enough — an
+		// empty list, a prompt nobody has typed in.
+		if z.what.kind != hitKey && z.what.kind != hitListKey {
+			continue
+		}
+		row := []rune(lines[z.y])
+		if z.x+z.width > len(row) || strings.TrimSpace(string(row[z.x:z.x+z.width])) == "" {
+			t.Errorf("a %v mark for %v covers no text at %d,%d in:\n%s", z.what.kind, z.what.keys, z.x, z.y, lines[z.y])
+		}
 	}
 }
