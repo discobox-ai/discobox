@@ -65,3 +65,16 @@
   over it — and on that screen the stolen keys are commands, so Enter at a
   harness's configure banner meant "reconfigure this harness" and restarted the
   flow it was typed into.
+
+## The screen
+
+- **A frame the window holds only briefly is a frame that may never be drawn.**
+  The renderer keeps the latest frame and writes whichever is current when its
+  own clock fires, so anything a frame is meant to *do* — the empty inline frame
+  that erases the opening prompt (`clearPrinted`) — cannot be timed out with a
+  pause of ours. Wait for the terminal to answer (`clearAcks`) instead.
+
+- **The alternate screen does not take the printed rows with it.** Anything
+  drawn inline stays on the primary screen, behind the window, and surfaces
+  again on the way out or around a `tea.Exec`. A new door onto the whole
+  terminal belongs in `takesScreen`, which is what `clearPrinted` reads.

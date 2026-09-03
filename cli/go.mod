@@ -51,7 +51,7 @@ require (
 	github.com/AdaLogics/go-fuzz-headers v0.0.0-20240806141605-e8a1dd7889d6 // indirect
 	github.com/atotto/clipboard v0.1.4
 	github.com/charmbracelet/x/exp/ordered v0.1.0 // indirect
-	github.com/charmbracelet/x/vt v0.0.0-20260713092006-0d683c34c74b // indirect
+	github.com/charmbracelet/x/vt v0.0.0-20260713092006-0d683c34c74b
 	github.com/containerd/containerd/api v1.8.0 // indirect
 	github.com/containerd/containerd/v2 v2.0.4 // indirect
 	github.com/containerd/continuity v0.4.5 // indirect

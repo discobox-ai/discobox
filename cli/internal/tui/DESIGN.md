@@ -406,8 +406,17 @@ frame, which is how the renderer is asked to erase the rows it printed; it is
 the only thing that knows where they are, which is why this is a frame of
 nothing rather than an escape sequence of ours. `View` records what it drew
 (`printed`) and `Update` reads it, so this is one place rather than a call at
-every door onto the screen. The empty frame is held for a couple of the
-renderer's own frames, because it flushes on its own clock rather than on ours.
+every door onto the screen.
+
+The window then holds still until the terminal says that frame has been written,
+rather than for a pause of its own. The renderer does not draw the frames the
+window returns: it keeps the latest and writes whichever is current when its own
+clock fires, so a frame held briefly may never be written at all — which on a
+terminal whose writes are slow is what left the prompt on the screen. It asks
+the terminal where its cursor is instead (`clearAcks`), because the request goes
+out from that same clock, immediately before the frame does; two answers, since
+the first can overtake the frame it was written beside. A timeout under it
+(`clearTimeout`) is for the outputs that are not terminals and never answer.
 
 **Four kinds of action.** A `Verb` goes to the API and returns, so the window
 stays up and reports on its status line. An `Interaction` is drawn in the window

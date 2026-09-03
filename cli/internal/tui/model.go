@@ -257,10 +257,11 @@ type Model struct {
 
 	// printed is whether the last frame was drawn inline — that is, printed on
 	// the screen the window was started from, which the alternate screen does
-	// not take with it. clearing is the window holding still while those rows
-	// are erased. Both are compact.go's; see clearPrinted.
+	// not take with it. clearing is how many acknowledgements the window is
+	// still waiting for while those rows are erased, zero for none outstanding.
+	// Both are compact.go's; see clearPrinted.
 	printed  bool
-	clearing bool
+	clearing int
 
 	// shimmer is the frame the opening glint is on, or zero when there is none.
 	// See shimmer.go.
@@ -617,9 +618,17 @@ func status(format string, args ...any) tea.Cmd {
 // the screen it was printed on, the first time the window takes the whole
 // terminal. See clearPrinted.
 func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
-	if _, ok := msg.(screenClearedMsg); ok {
-		m.clearing, m.printed = false, false
+	// The erasing frame is acknowledged by the terminal, and given up on by the
+	// backstop under it. Neither answer is anything the window itself is asked
+	// about, so neither reaches update below. See clearPrinted.
+	switch msg.(type) {
+	case screenClearedMsg:
+		m.clearing, m.printed = 0, false
 		return m, nil
+	case tea.CursorPositionMsg:
+		if m.clearing > 0 {
+			return m, m.screenCleared()
+		}
 	}
 	cmd := m.clearPrinted(m.update(msg))
 	// Whatever just happened may have changed which pane is on screen, and a
@@ -2445,7 +2454,7 @@ func (m *Model) view() tea.View {
 	}
 	// Nothing at all, inline, while the rows the opening prompt printed are
 	// erased off the screen it printed them on. See clearPrinted.
-	if m.clearing {
+	if m.clearing > 0 {
 		return tea.NewView("")
 	}
 	if !m.ready {

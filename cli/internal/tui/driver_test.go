@@ -63,6 +63,12 @@ func (d *driver) run(cmd tea.Cmd) {
 		if msg == nil {
 			return
 		}
+		// The terminal answers when it is asked where its cursor is, and the
+		// window waits on that answer before it takes the screen. See
+		// clearPrinted.
+		if msg == tea.RequestCursorPosition() {
+			msg = tea.CursorPositionMsg{}
+		}
 		if batch, ok := msg.(tea.BatchMsg); ok {
 			for _, sub := range batch {
 				d.run(sub)
