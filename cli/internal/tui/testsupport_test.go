@@ -25,6 +25,10 @@ type fakeSource struct {
 	session   Session
 	sandboxes []Sandbox
 	workspace SourceWorkspace
+	// runGate holds a create open until the test closes it. Nil is a create
+	// that returns at once, which is what every test that is not about the
+	// wait wants.
+	runGate chan struct{}
 
 	// measured records the directories the window asked to be measured, and
 	// total is what the walk it gets back reports.
@@ -155,6 +159,11 @@ type fakeSource struct {
 	editedFiles   []string // "id path"
 }
 
+// promptText is the request's prompt as one string, which is what a test
+// asserts on: the window sends one argument, and `discobox run` sends the words
+// the shell split.
+func promptText(req RunRequest) string { return strings.Join(req.Prompt, " ") }
+
 func newFakeSource(sandboxes ...Sandbox) *fakeSource {
 	return &fakeSource{
 		session: Session{
@@ -255,15 +264,23 @@ func (f *fakeSource) setResources(r Resources) {
 
 func (f *fakeSource) Run(_ context.Context, req RunRequest, report func(string)) (Sandbox, error) {
 	f.mu.Lock()
-	defer f.mu.Unlock()
 	f.runs = append(f.runs, req)
+	gate := f.runGate
+	f.mu.Unlock()
+	// A create held open, for a test that wants to look at what the window is
+	// showing while one is underway. Nothing staged is a create that returns.
+	if gate != nil {
+		<-gate
+	}
+	f.mu.Lock()
+	defer f.mu.Unlock()
 	for _, step := range f.runSteps {
 		report(step)
 	}
 	if f.runErr != nil {
 		return Sandbox{}, f.runErr
 	}
-	return Sandbox{ID: f.createdID, Name: req.Prompt, State: StateStarting}, nil
+	return Sandbox{ID: f.createdID, Name: promptText(req), State: StateStarting}, nil
 }
 
 // WatchProvisioning reports whatever the test staged and returns. The real one

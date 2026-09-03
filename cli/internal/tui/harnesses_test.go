@@ -582,7 +582,7 @@ func TestChoosingADefaultResumesTheRunThatAsked(t *testing.T) {
 	if len(ds.runs) != 1 {
 		t.Fatalf("runs = %v, want the interrupted run submitted once its harness was chosen", ds.runs)
 	}
-	if got := ds.runs[0].Prompt; got != "fix the reaper" {
+	if got := promptText(ds.runs[0]); got != "fix the reaper" {
 		t.Fatalf("prompt = %q, want the one that was waiting", got)
 	}
 }
@@ -606,7 +606,7 @@ func TestSettingUpAChosenDefaultResumesTheRunThatAsked(t *testing.T) {
 	if len(ds.configured) != 1 || len(ds.didHarness) != 1 {
 		t.Fatalf("configured = %v, did = %v, want both before the run", ds.configured, ds.didHarness)
 	}
-	if len(ds.runs) != 1 || ds.runs[0].Prompt != "fix the reaper" {
+	if len(ds.runs) != 1 || promptText(ds.runs[0]) != "fix the reaper" {
 		t.Fatalf("runs = %v, want the interrupted run submitted after the setup", ds.runs)
 	}
 }
@@ -629,7 +629,7 @@ func TestSettingUpANamedHarnessResumesTheRunThatAsked(t *testing.T) {
 		t.Fatalf("configured = %v, want the named harness set up", ds.configured)
 	}
 	finishConfigure(t, m)
-	if len(ds.runs) != 1 || ds.runs[0].Prompt != "fix the reaper" {
+	if len(ds.runs) != 1 || promptText(ds.runs[0]) != "fix the reaper" {
 		t.Fatalf("runs = %v, want the interrupted run submitted after the setup", ds.runs)
 	}
 }

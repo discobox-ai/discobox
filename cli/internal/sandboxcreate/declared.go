@@ -85,7 +85,7 @@ func readDeclaredSources(root string) (map[string]string, error) {
 		// and a relative path here would otherwise be resolved against whatever
 		// directory the caller happened to run from, quietly bringing in some
 		// other repository entirely.
-		if source, _, _ := splitRunSourceRef(url); !isRemoteGitSource(source) {
+		if source, _, _ := splitRunSourceRef(url); !IsRemoteGitSource(source) {
 			return nil, fmt.Errorf("%s: declared source %q is %q, which is not a Git URL; the local checkout beside the source is found by name, so only the URL to fall back to belongs here",
 				path, name, url)
 		}

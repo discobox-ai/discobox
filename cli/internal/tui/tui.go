@@ -12,7 +12,13 @@ import (
 // The alternate screen is asked for by the view rather than by a program option,
 // because Bubble Tea v2 decides it per frame.
 func Run(ctx context.Context, ds DataSource, options ...Option) error {
-	program := tea.NewProgram(New(ctx, ds, options...), tea.WithContext(ctx))
-	_, err := program.Run()
-	return err
+	model := New(ctx, ds, options...)
+	program := tea.NewProgram(model, tea.WithContext(ctx))
+	if _, err := program.Run(); err != nil {
+		return err
+	}
+	// A window opened as an attach ends with whatever ended the attach, so the
+	// command that opened it fails the way a plain attach fails. Everything
+	// else ends with nothing to say. See Model.exit.
+	return model.exitErr
 }

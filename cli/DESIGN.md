@@ -59,6 +59,35 @@ transport helpers where OpenAPI does not model the stream.
 - `discobox configure` is the same launcher opened on its harnesses screen
   (`tui.WithHarnesses()`), not a window of its own. See *Harness Configure
   Step*.
+- `discobox run` and `discobox attach` are the same launcher, opened on one run
+  (`tui.WithRun`) and on one discobox (`tui.WithAttach`), not a terminal stream
+  on the caller's screen. What run creates is a machine with terminals,
+  services and ports on it, and the workspace screen is where all of that
+  already is; a second, poorer view of the same session is the thing to avoid.
+- **`discobox run` hands the window its request and the window makes the
+  discobox** (`App.runWindowRequest` → `tui.WithRun` → `Model.runRequest`). It
+  takes the path Enter in the prompt takes, so the question about uncommitted
+  work is the window's own dialog and the wait is the window's own screen —
+  which is the point: one flow, asked and drawn one way, however the run was
+  started. The flags are still parsed on this side first
+  (`sandboxcreate.ParsePromptOptions`): a flag that contradicts itself is the
+  command's error to report, on the terminal, before a window opens over it.
+- Such a window *is* the attach on what it opened or made, so leaving it leaves
+  the window: the leader's `d`, and the primary session ending, close it
+  (`Model.exit`) rather than falling back to a list nobody asked for, and an
+  attach that never came up ends the window with its own failure, which
+  `tui.Run` hands back as the command's error. Detaching still leaves every
+  session running.
+- `--raw` creates the discobox on this side and streams its terminal, which is
+  what both commands always were: for a pipe, a recording, or a terminal to
+  keep as it is. It is also what a run or attach with no terminal to draw a
+  window on gets (`canOpenWindow`), the same rule bare `discobox` follows, and
+  what `-d` implies — it prints the discobox on stdout, which a window would be
+  sitting on.
+- `discobox attach`'s window is opened on the sandbox record the command
+  fetches rather than on its id, so the attach starts without waiting for a
+  listing to come back. The window follows the server from there
+  (`Model.currentBox`).
 - `DISCOBOX_LEADER` sets the prefix key, normalized by `keys.NormalizeLeader`:
   a bare letter is taken as Ctrl-that, since a leader that is not a chord would
   be a character you could never type, and only a letter is accepted because the
@@ -474,8 +503,9 @@ session, `execstream/client`.
   rejected the attach with a definitive status (`404`, `409`) its own message is
   reported verbatim instead: it knows why, and the client's inference would only
   repeat or contradict it.
-- Nothing polls for readiness before attaching. `discobox run` creates, delivers
-  the source if it must be pushed, and attaches; the attach itself waits, at
+- Nothing polls for readiness before attaching, on either path. `discobox run`
+  creates, delivers the source if it must be pushed, and attaches — in the
+  window or as a stream; the attach itself waits, at
   each tier for what only that tier can see — the control plane for the sandbox
   to be dispatched to a live pool and to be usable rather than mid-delivery, the
   pool agent for the container, the sandbox agent for the primary terminal's
@@ -515,8 +545,8 @@ session, `execstream/client`.
   sandbox is `stopping`, `stopped`, or `failed`, the attach ends rather than
   reconnecting forever — the stop is observable, so the client acts on it instead
   of looping against a runtime that is gone. No attach restarts the sandbox;
-  `discobox attach` (`internal/cli/attach.go`) is deliberately a thin wrapper over
-  `attachSandboxTerminal` with the virtual primary id and nothing else — sandbox
+  `discobox attach --raw` (`internal/cli/attach.go`) is deliberately a thin wrapper
+  over `attachSandboxTerminal` with the virtual primary id and nothing else — sandbox
   autostart is a possible future addition to it, and until then the client never
   starts a sandbox to keep an attach alive.
 - The way out of a terminal attach is the leader then `d` (`detachFilter`,
@@ -1056,6 +1086,17 @@ terminal, appended lines off one, and cleared before the stream is handed to
 anything else. The launcher renders the same reports on its busy line instead;
 see the launcher's design doc.
 
+**While it is up it owns the row it is on, so everything else the command
+writes to that stream goes through it.** A line that stays goes through
+`print`, which erases the row, writes the line where the scrollback keeps it,
+and draws the status line again underneath; written past it instead, a report
+comes out with the spinner glued to its front —
+`⠧ preparing sourcesource x: /home/ada/src/x`. Anything that draws its own
+screen on the stream — the create's two confirmation questions — takes the row
+with `suspend`, whose returned func gives it back. Suspending is not clearing:
+the wait carries on underneath, reports keep landing, and the last of them is
+what the line says when it comes back.
+
 ## Uncommitted Work at Create
 
 A dirty local workspace becomes a snapshot commit on top of the checked-out
@@ -1063,16 +1104,25 @@ commit, kept under `refs/discobox/run/`, and reaches the sandbox as uncommitted
 changes on that same commit. `discobox run --include-dirty` decides whether that
 happens:
 
-- `auto` (default) asks, and only when the workspace is actually dirty. The
-  question is the standard picker, with "start from the last commit" leading, so
-  the default answer is the one that carries nothing extra into the sandbox.
+- `auto` (default) asks, and only when the workspace is actually dirty. Where
+  it asks depends on who is creating: `discobox run` creates in the window, so
+  the question is the window's own dialog (`Model.workspaceChecked`) — one
+  question, whose answer is then carried to the create as `true` or `false` for
+  every source it cuts from. `--raw`, `-d` and a run with no terminal create on
+  this side and ask with the standard picker, per source, with "start from the
+  last commit" leading so the default answer carries nothing extra. The picker
+  draws on the stream the create is narrating on, so it suspends the status
+  line for as long as it is up (see "Saying What a Wait Is For").
 - `true` / `false` answer ahead of time; bare `--include-dirty` means `true`.
 - Frontends express the question through `sandboxcreate.ConfirmIncludeDirtyFunc`
   rather than prompting themselves. A nil func means there is nobody to ask — no
   terminal — and the work is included: dropping a user's edits silently is worse
   than carrying them. The launcher does not use it: it owns the screen, so it
   asks in its own confirmation dialog and settles `IncludeDirty` to `true` or
-  `false` before it calls the shared create at all.
+  `false` before it calls the shared create at all. It asks about the primary
+  source, which is the one it can see a working tree for; the answer stands for
+  every source that create cuts from, and an extra `-i` source whose tree is
+  dirty when the primary's is clean is carried in under the nil-func default.
 - `true` is rejected for a remote URL or an explicit `@REF`, because a snapshot
   only ever sits on top of HEAD of a local working tree.
 - The same flag settles the same question for a source directory in no

@@ -88,13 +88,19 @@ func (m *Model) narrated(msg narrationMsg) tea.Cmd {
 		// point of the generation: the line belongs to whatever is running now.
 		return nil
 	}
-	m.busy = msg.text + "…"
-	// The waiting dialog is the same report, larger: while one is up it is the
-	// only thing on screen, so it says what the busy line would have.
-	if m.dialog != nil && m.dialog.kind == dlgStatus {
-		m.dialog.body = msg.text
-	}
+	m.waiting(msg.text)
 	return m.nextNarration(msg.source)
+}
+
+// waiting says what the window is doing: the busy line, and the waiting dialog
+// with it while one is up. The dialog is the same report, larger — it is the
+// only thing on screen, so it says what the busy line would have — which is why
+// the two are written together rather than in each of the places that report.
+func (m *Model) waiting(text string) {
+	m.busy = text + "…"
+	if m.dialog != nil && m.dialog.kind == dlgStatus {
+		m.dialog.body = text
+	}
 }
 
 // endNarration takes the busy line back.

@@ -612,6 +612,46 @@ and `wsGen` is bumped so stale ticks and in-flight opens are dropped rather
 than resurrecting a screen that was left. The primary session ending ends the
 workspace too: it is above all a view onto that session.
 
+**A window can be one command's own** (`Model.oneShot`): `discobox attach`
+opens it on one discobox (`WithAttach`, `Model.attach`) and `discobox run` opens
+it on one run request (`WithRun`, `Model.pendingRun`), instead of either command
+streaming a terminal of its own.
+
+- An attach opens its workspace from `Init`, on the row the command already has
+  rather than waiting for the listing — which is still read, since the header
+  and the workspace's keys take the discobox back off it (`currentBox`).
+- A run is *not* started from `Init`. It waits for the harness listing
+  (`harnessesLoaded` → `startPendingRun`), because the questions the window asks
+  ahead of a create — a project with no default harness, a harness that has
+  never been set up — are asked off that listing; started before it arrived, the
+  run would meet the server's refusal instead of the question. From there it is
+  `runRequest`, the same path Enter in the prompt takes, so the question about
+  uncommitted work and the wait are the window's own, whoever asked for the run.
+- Such a window never shows the list. The wait has the screen from the first
+  frame (`Model.waitDialog`, `creatingTitle`) and stays up through the create,
+  becoming the wait on the discobox itself once there is one to name; a create
+  that fails takes it down, because a report belongs on a screen somebody can
+  read it on. The launcher's own runs keep the list they were started from and
+  report on the busy line there.
+- Leaving that wait leaves the window (`onCancel` → `Model.exit`), because
+  there is no list behind it to stop watching *from*. The discobox is not
+  touched: it was created before the wait went up, or is being created by a
+  request the server already has, and it carries on coming up with nothing
+  attached to it. The launcher's wait keeps the plain "Esc stops watching",
+  which there means going back to the list the discobox will appear in.
+- The window is the attach on what it opened or made — a run becomes one in
+  `created` — so every way out of the workspace is the way out of the window:
+  the leader's `d` and the primary session ending both go through `Model.exit`,
+  and an attach that never came up exits carrying its own failure, which `Run`
+  hands back as the command's error. The key still reads `detach`, because that
+  is what it does to the discobox — nothing stops — and the header drops the
+  `leader q quit` half beside it, since quit and detach are the same act in
+  such a window and offering both reads as a choice between them.
+- The composer is unreachable in such a window, so the launcher's draft is
+  neither restored into it nor written over (`restoreDraft`, `draftToSave`), and
+  the introduction is not shown (`New`): there is no prompt for it to interrupt
+  and no screen for it to hand over to.
+
 A tab strip is laid into its box's top border (`tabbedEdge`, a `titledEdge`
 with several titles), so it costs no grid row and both halves come out the same
 height. Tabs are titled by the application's own title, else the session's

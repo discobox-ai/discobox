@@ -9,6 +9,7 @@ import (
 	"path"
 	"path/filepath"
 	"runtime"
+	"slices"
 	"strings"
 	"testing"
 
@@ -287,7 +288,23 @@ func TestCreateRunSandboxBodySecrets(t *testing.T) {
 // run must attach the sandbox-agent's virtual primary id, not the concrete id
 // it polled for: attaching a concrete id addresses one session, so a primary
 // that ended before or during the attach would fail instead of being relaunched.
+//
+// It goes there as a stream when there is no window to draw — the buffers a
+// test hands it are no terminal — and when --raw asks for that stream on a
+// terminal that could have drawn one.
 func TestRunCommandAttachesVirtualPrimaryTerminal(t *testing.T) {
+	for _, tc := range []struct {
+		name  string
+		flags []string
+	}{
+		{name: "with nothing to draw a window on"},
+		{name: "with --raw", flags: []string{"--raw"}},
+	} {
+		t.Run(tc.name, func(t *testing.T) { runAttachesVirtualPrimaryTerminal(t, tc.flags) })
+	}
+}
+
+func runAttachesVirtualPrimaryTerminal(t *testing.T, flags []string) {
 	serveSSHSync := preparePromptCreateSSHSync(t)
 	repo := newRunSourceTestRepo(t)
 	const sandboxID = "sbx_9qk5n25t2hh2rv00"
@@ -319,7 +336,9 @@ func TestRunCommandAttachesVirtualPrimaryTerminal(t *testing.T) {
 	cmd := NewRootCommand()
 	cmd.SetOut(&bytes.Buffer{})
 	cmd.SetErr(&bytes.Buffer{})
-	cmd.SetArgs([]string{"--server", server.URL, "--project", "project-1", "run", "-C", repo + "@HEAD", "fix", "tests"})
+	args := []string{"--server", server.URL, "--project", "project-1", "run", "-C", repo + "@HEAD"}
+	args = append(args, flags...)
+	cmd.SetArgs(append(args, "fix", "tests"))
 
 	err := cmd.Execute()
 	t.Logf("run err = %v", err)
@@ -369,4 +388,54 @@ func wantSourceDirectory(t *testing.T, repoRoot string) string {
 		t.Fatalf("test repo %s has no drive letter to mount", repoRoot)
 	}
 	return path.Clean("/mnt/" + strings.ToLower(volume[:1]) + filepath.ToSlash(repoRoot[len(volume):]))
+}
+
+// The window is handed the whole command: every flag that describes the create,
+// in the shape the launcher's own Enter produces. What is not there is what a
+// window means — -d never reaches one, and --raw is the choice not to open one.
+func TestRunWindowRequestCarriesTheCommand(t *testing.T) {
+	app := &App{source: "../foo@HEAD"}
+	opts := runCommandOptions{declaredSources: false}
+	opts.prompt.Harness = "codex"
+	opts.prompt.Env = []string{"MODE=test"}
+	opts.prompt.Secret = []string{"OPENAI_API_KEY=sk-x"}
+	opts.prompt.Include = []string{"../bar"}
+
+	req := app.runWindowRequest(opts, []string{"fix", "the", "tests"})
+
+	if !slices.Equal(req.Prompt, []string{"fix", "the", "tests"}) {
+		t.Fatalf("prompt = %q, want the words the shell split", req.Prompt)
+	}
+	if req.Source != "../foo@HEAD" {
+		t.Fatalf("source = %q, want -C as it was given, ref and all", req.Source)
+	}
+	if req.Harness != "codex" || !slices.Equal(req.Env, []string{"MODE=test"}) ||
+		!slices.Equal(req.Secret, []string{"OPENAI_API_KEY=sk-x"}) || !slices.Equal(req.Include, []string{"../bar"}) {
+		t.Fatalf("request = %+v, want every flag that describes the create", req)
+	}
+	if !req.SkipDeclaredSources {
+		t.Fatal("--declared-sources=false should reach the window")
+	}
+}
+
+// --include-dirty is the one flag the window reads as a question rather than a
+// value: auto is empty, which is what makes the window ask, and an answer given
+// on the command line is carried straight through to the create.
+func TestRunWindowRequestLeavesAutoForTheWindowToAsk(t *testing.T) {
+	app := &App{source: "."}
+	for _, tc := range []struct {
+		flag sandboxcreate.IncludeDirty
+		want string
+	}{
+		{flag: "", want: ""},
+		{flag: sandboxcreate.IncludeDirtyAuto, want: ""},
+		{flag: sandboxcreate.IncludeDirtyAlways, want: "true"},
+		{flag: sandboxcreate.IncludeDirtyNever, want: "false"},
+	} {
+		opts := runCommandOptions{}
+		opts.prompt.IncludeDirty = tc.flag
+		if got := app.runWindowRequest(opts, nil).IncludeDirty; got != tc.want {
+			t.Fatalf("--include-dirty=%q reached the window as %q, want %q", tc.flag, got, tc.want)
+		}
+	}
 }

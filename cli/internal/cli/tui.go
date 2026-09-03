@@ -64,9 +64,11 @@ discobox terminal is up.`,
 	return cmd
 }
 
-// runTUI starts the launcher. It is reached three ways — `discobox tui`, `discobox`
-// with nothing to do, and `discobox configure`, which is the launcher opened on
-// its harnesses screen — so it lives here rather than inside any one's RunE.
+// runTUI starts the launcher. It is reached five ways — `discobox tui`, `discobox`
+// with nothing to do, `discobox configure`, which is the launcher opened on its
+// harnesses screen, `discobox run`, which is the launcher opened on one run
+// (`tui.WithRun`), and `discobox attach`, which is it opened on one discobox
+// (`tui.WithAttach`) — so it lives here rather than inside any one's RunE.
 //
 // leaderFlag is --leader, empty when it was not given: the environment's leader
 // is already resolved on the App, and only an explicit flag displaces it.
@@ -96,7 +98,9 @@ func (a *App) runTUI(cmd *cobra.Command, leaderFlag string, options ...tui.Optio
 	// Whether to introduce Discobox is settled before the window opens rather
 	// than when the session load comes back: a welcome that arrives a moment
 	// later would arrive over a prompt the user is already typing into, and the
-	// first run — the one this is for — is the slowest load there is.
+	// first run — the one this is for — is the slowest load there is. A window
+	// opened on one run or one discobox drops it: there is no prompt there for
+	// it to interrupt, which the window itself settles.
 	welcomed, err := a.projectWelcomed(cmd.Context(), client, projectID)
 	if err != nil {
 		return err
@@ -108,6 +112,15 @@ func (a *App) runTUI(cmd *cobra.Command, leaderFlag string, options ...tui.Optio
 		options = append(options, tui.WithInitialization("Server initialization", a.stagingUpdates(cmd.Context())))
 	}
 	return tui.Run(cmd.Context(), ds, options...)
+}
+
+// canOpenWindow reports whether this invocation can put a full-screen window
+// on the terminal it was run from, which is what `discobox run` and `discobox
+// attach` do unless --raw says otherwise. It is the rule bare `discobox`
+// already uses: a pipe, a script, or CI has no terminal to draw one on, and
+// there the attach is the byte stream it always was.
+func canOpenWindow(cmd *cobra.Command) bool {
+	return isTerminalStream(cmd.InOrStdin()) && isTerminalStream(cmd.OutOrStdout())
 }
 
 // projectWelcomed reports whether this project has already shown its
@@ -446,6 +459,11 @@ func (d *apiDataSource) Workspace(ctx context.Context, source string) (tui.Sourc
 	if strings.TrimSpace(source) == "" {
 		source = d.app.source
 	}
+	// A repository the discobox clones for itself has no working tree here, so
+	// there is nothing it could carry and nothing to ask about.
+	if sandboxcreate.IsRemoteGitSource(sourceDirectory(source)) {
+		return tui.SourceWorkspace{Directory: source}, nil
+	}
 	dir, err := filepath.Abs(sourceDirectory(source))
 	if err != nil {
 		return tui.SourceWorkspace{}, err
@@ -465,7 +483,13 @@ func (d *apiDataSource) Workspace(ctx context.Context, source string) (tui.Sourc
 	if err != nil {
 		return tui.SourceWorkspace{}, err
 	}
-	return tui.SourceWorkspace{Directory: root, Repository: true, Carries: len(changes) > 0}, nil
+	// The paths as well as the count: the question about them names a few, so
+	// what is being carried in is recognizable rather than a number.
+	paths := make([]string, 0, len(changes))
+	for _, change := range changes {
+		paths = append(paths, change.Path)
+	}
+	return tui.SourceWorkspace{Directory: root, Repository: true, Carries: len(paths) > 0, Changes: paths}, nil
 }
 
 // MeasureDirectory is the shared create path's directory walk, in the shape the
@@ -507,6 +531,19 @@ func (d *apiDataSource) Run(ctx context.Context, req tui.RunRequest, report func
 		Harness:  strings.TrimSpace(req.Harness),
 		Env:      req.Env,
 		Secret:   req.Secret,
+		// Both only ever come from `discobox run`'s own request, which the
+		// window is opened on: the panel offers no way to name an extra source
+		// or to leave the declared ones out. See tui.WithRun.
+		Include:             req.Include,
+		SkipDeclaredSources: req.SkipDeclaredSources,
+	}
+	// What each declared source resolved to, in the window's own form: it has
+	// no scrollback to keep a line in, so the report is narrated as it happens
+	// beside the step that is making it.
+	if report != nil {
+		opts.ReportDeclaredSource = func(source sandboxcreate.DeclaredSource) {
+			report(declaredSourceLine(source))
+		}
 	}
 	// With no source there is no directory to cut from, and -C says only where
 	// the create came from — which for the window is where it is running, the
@@ -523,13 +560,8 @@ func (d *apiDataSource) Run(ctx context.Context, req tui.RunRequest, report func
 		opts.IncludeDirty = sandboxcreate.IncludeDirtyNever
 	}
 	// The prompt goes in as the positional arguments, which is where the shared
-	// parse takes it from: one argument, because the composer holds one piece of
-	// text and splitting it would be inventing tokens the user did not type.
-	var args []string
-	if req.Prompt != "" {
-		args = []string{req.Prompt}
-	}
-	opts, err := sandboxcreate.ParsePromptOptions(opts, args)
+	// parse takes it from.
+	opts, err := sandboxcreate.ParsePromptOptions(opts, req.Prompt)
 	if err != nil {
 		return tui.Sandbox{}, err
 	}

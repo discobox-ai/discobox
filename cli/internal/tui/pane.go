@@ -801,6 +801,12 @@ func (m *Model) updatePaneMsg(tagged paneMsg) tea.Cmd {
 		// terminals, and closing the window onto them is not the same as
 		// ending them.
 		m.closeWorkspace()
+		if m.attach != nil {
+			// The window is the attach, so detaching from it leaves the
+			// window: there is no list behind it to come back to, and landing
+			// on one would be a screen nobody asked for. See WithAttach.
+			return m.exit(nil)
+		}
 		return tea.Batch(m.refresh(), status("detached — the discobox is still running"))
 
 	case termpane.ClosedMsg:
@@ -896,6 +902,11 @@ func (m *Model) paneClosed(p *pane, msg termpane.ClosedMsg) tea.Cmd {
 		}
 	case p.primary:
 		m.closeWorkspace()
+		if m.attach != nil {
+			// The attach is over when its session is, exactly as a plain
+			// `discobox attach` is: the window goes, with whatever ended it.
+			return m.exit(msg.Err)
+		}
 		if msg.Err != nil {
 			return tea.Batch(m.refresh(), m.report(true, "%s: %v", action, msg.Err))
 		}

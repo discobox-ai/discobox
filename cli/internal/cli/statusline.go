@@ -58,7 +58,12 @@ type statusLine struct {
 	// first line drawn rather than at construction, so a wait that turns out to
 	// be short enough never to draw costs no goroutine at all.
 	ticking bool
-	stop    chan struct{}
+	// suspended is the line held down while something else has the stream: a
+	// question that draws its own screen on it. The wait carries on and the
+	// reports keep landing — they are what the line says when it comes back —
+	// but nothing is drawn until it does. See suspend.
+	suspended bool
+	stop      chan struct{}
 }
 
 // The spinner is the braille cycle, in the window's own gold, and the text is
@@ -114,6 +119,11 @@ func (l *statusLine) set(text string) {
 		return
 	}
 	l.text = text
+	// A report that arrives while something else has the stream is remembered
+	// rather than drawn: it is what the line will say when it comes back.
+	if l.suspended {
+		return
+	}
 	l.draw()
 	l.startSpinner()
 }
@@ -138,6 +148,74 @@ func (l *statusLine) textWidth() int {
 func (l *statusLine) draw() {
 	fmt.Fprintf(l.out, "\r\x1b[K%s", l.render())
 	l.shown = true
+}
+
+// erase takes the row back down, leaving the cursor at the start of it. The
+// caller holds the mutex.
+func (l *statusLine) erase() {
+	if !l.shown {
+		return
+	}
+	fmt.Fprint(l.out, "\r\x1b[K")
+	l.shown = false
+}
+
+// print writes a line that stays, above the one being rewritten in place: the
+// row this owns is erased, the text is written where the scrollback keeps it,
+// and the status line is drawn again underneath.
+//
+// It is how anything else says something on this stream while a wait is being
+// narrated. Writing to the stream directly instead writes into the row this
+// line owns, and the result is the report with the spinner glued to the front
+// of it — "⠧ preparing sourcesource x: /home/ada/src/x".
+func (l *statusLine) print(format string, args ...any) {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	text := fmt.Sprintf(format, args...)
+	if !strings.HasSuffix(text, "\n") {
+		text += "\n"
+	}
+	l.erase()
+	fmt.Fprint(l.out, text)
+	if l.done || l.suspended || !l.tty || l.text == "" {
+		return
+	}
+	l.draw()
+	l.startSpinner()
+}
+
+// suspend hands the stream to something that draws on it itself — a question
+// with its own screen — and returns what takes it back. The wait is not over,
+// so this is not clear: reports keep arriving while the line is down, and what
+// the last one said is what comes back.
+//
+// The returned func is safe to call more than once, and a line already
+// suspended or already cleared returns one that does nothing.
+func (l *statusLine) suspend() func() {
+	if l == nil {
+		return func() {}
+	}
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	if l.done || l.suspended {
+		return func() {}
+	}
+	l.suspended = true
+	l.erase()
+	return sync.OnceFunc(l.resume)
+}
+
+// resume draws the line again after a suspend, saying whatever the last report
+// left. A line cleared while it was down stays down: clearing is final.
+func (l *statusLine) resume() {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	l.suspended = false
+	if l.done || !l.tty || l.text == "" {
+		return
+	}
+	l.draw()
+	l.startSpinner()
 }
 
 // render is the styled line, or the plain text where there is nothing to style
@@ -172,7 +250,11 @@ func (l *statusLine) spin() {
 			return
 		case <-ticker.C:
 			l.mu.Lock()
-			if l.done || !l.shown {
+			if l.done || l.suspended || !l.shown {
+				// The line is down. This goroutine lets go of the spinner so
+				// that whoever puts the line back can start one again; while
+				// it is down there is nothing to animate.
+				l.ticking = false
 				l.mu.Unlock()
 				return
 			}
@@ -230,8 +312,5 @@ func (l *statusLine) clear() {
 	// Closed under the mutex the spinner takes before it draws, so the goroutine
 	// cannot be part way through a draw that lands after the erase below.
 	close(l.stop)
-	if l.shown {
-		fmt.Fprint(l.out, "\r\x1b[K")
-		l.shown = false
-	}
+	l.erase()
 }

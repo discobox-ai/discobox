@@ -350,12 +350,17 @@ func (m *Model) loadHarnesses() tea.Cmd {
 // enabling one makes it selectable without the window being reopened.
 func (m *Model) harnessesLoaded(msg harnessesLoadedMsg) tea.Cmd {
 	if msg.err != nil {
-		return m.report(true, "cannot list the harnesses: %v", msg.err)
+		// A run waiting on this listing goes anyway: what the questions here
+		// would have caught, the server catches, and a run held forever behind
+		// a listing that will not come is worse than the refusal.
+		return tea.Batch(m.report(true, "cannot list the harnesses: %v", msg.err), m.startPendingRun())
 	}
 	m.harnesses.setAll(msg.harnesses)
 	m.opts.setHarnesses(msg.harnesses)
 	m.layout()
-	return nil
+	// `discobox run` handed its request to this window, and this is the first
+	// moment the window can ask what it asks before a create. See pendingRun.
+	return m.startPendingRun()
 }
 
 // openHarnesses brings the screen up. It opens the window out for the same

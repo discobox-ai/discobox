@@ -1,6 +1,7 @@
 package cli
 
 import (
+	"bytes"
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
@@ -8,6 +9,8 @@ import (
 	"slices"
 	"strings"
 	"testing"
+
+	"github.com/spf13/cobra"
 
 	apiclientgen "github.com/discobox-ai/discobox/api/gen"
 	apimodel "github.com/discobox-ai/discobox/api/model"
@@ -124,7 +127,7 @@ func TestAPIDataSourceRunUsesSharedRunCreation(t *testing.T) {
 	sandbox, err := ds.Run(t.Context(), tui.RunRequest{
 		Harness: "codex",
 		Source:  repo + "@HEAD",
-		Prompt:  "fix the failing tests",
+		Prompt:  []string{"fix the failing tests"},
 	}, func(step string) { steps = append(steps, step) })
 	if err != nil {
 		t.Fatalf("run: %v", err)
@@ -247,5 +250,18 @@ func TestToTUISandboxCarriesBothNames(t *testing.T) {
 	unnamed := named("sbx_abc12345000000p3", "  ")
 	if unnamed.ConfigName != "" {
 		t.Fatalf("ConfigName = %q, want empty: a blank name is no name", unnamed.ConfigName)
+	}
+}
+
+// `discobox run` and `discobox attach` open the window on the discobox, but
+// only where there is a terminal to draw one on: a pipe, a script or CI gets
+// the stream those commands have always been, the same rule bare `discobox`
+// follows before opening the launcher.
+func TestTheWindowNeedsATerminalToOpenOn(t *testing.T) {
+	cmd := &cobra.Command{}
+	cmd.SetIn(&bytes.Buffer{})
+	cmd.SetOut(&bytes.Buffer{})
+	if canOpenWindow(cmd) {
+		t.Fatal("a command wired to buffers has no terminal to draw a window on")
 	}
 }

@@ -7,6 +7,7 @@ import (
 
 	apimodel "github.com/discobox-ai/discobox/api/model"
 	"github.com/discobox-ai/discobox/cli/internal/sandboxcreate"
+	"github.com/discobox-ai/discobox/cli/internal/tui"
 	"github.com/spf13/cobra"
 )
 
@@ -20,6 +21,9 @@ type runCommandOptions struct {
 	// declaredSources is the flag's positive form: the option it settles is
 	// "skip them", because bringing them in is what declaring them asks for.
 	declaredSources bool
+	// raw attaches this terminal to the discobox's terminal directly, instead
+	// of opening the window on it.
+	raw bool
 }
 
 func (a *App) newRunCommand() *cobra.Command {
@@ -33,13 +37,25 @@ func (a *App) newRunCommand() *cobra.Command {
 The arguments are the prompt. Use -- when the prompt needs to be separated from
 command flags explicitly.
 
-Every discobox has one default terminal: the configured harness, or a shell when
-no harness is configured. By default run waits for the discobox to start and
-attaches to that terminal, streaming it to your terminal (press Ctrl-A d to
-detach; DISCOBOX_LEADER changes the Ctrl-A). If an interrupt stops getting
-through — the discobox or the server has gone quiet — Ctrl-C again says so, and
-one more quits, leaving the terminal running like a detach. Pass -d to create
-the discobox and print it without attaching.
+By default run opens the launcher's window and makes the discobox there: the
+question about uncommitted work is asked on it, the wait is drawn on it, and
+what it lands on is the discobox itself — its default terminal (the configured
+harness, or a shell when it has none), the shells and services running beside
+it, and its forwarded ports. It is the same screen, in the same window, that
+typing the same thing into "discobox tui" gives you. Press Ctrl-A d to leave,
+which detaches and exits; the discobox and everything in it keeps running
+(DISCOBOX_LEADER changes the Ctrl-A).
+
+--raw creates the discobox here instead and attaches this terminal to its
+default terminal: the stream and nothing else, for a pipe, a recording, or a
+terminal you would rather keep as it is. The questions are asked on this
+terminal, one per source. Ctrl-A d detaches there too. If an interrupt stops
+getting through — the discobox or the server has gone quiet — Ctrl-C again says
+so, and one more quits, leaving the terminal running like a detach. Without a
+terminal to draw a window on, run is raw whether or not the flag was given.
+
+Pass -d to create the discobox and print it without attaching at all; there is
+no window in that either.
 
 Uncommitted changes in the source directory are carried into the discobox as a
 snapshot on top of the checked-out commit. By default run asks before doing that
@@ -82,18 +98,40 @@ discobox as it does here. --declared-sources=false leaves them out.`,
   discobox run -e GITHUB_TOKEN -e MODE=test fix the failing tests
   discobox run -s OPENAI_API_KEY=sk-... -s GITHUB_TOKEN=<sec_123> fix the failing tests
   discobox run -d fix the failing tests
+  discobox run --raw fix the failing tests
   discobox run -- prompt starting with --flag-like text`,
 		Args: cobra.ArbitraryArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
+			// Creating and delivering a source are this client's own work, so
+			// nothing but this process can say which of them is underway
+			// (ADR 0060). The line comes back down before anything else is
+			// written to stderr — and everything else this command writes there
+			// while it is up goes through it, since it owns the row it is on.
+			status := newStatusLine(cmd.ErrOrStderr())
+			defer status.clear()
 			opts.prompt.Source = a.source
 			opts.prompt.NoSource = opts.noSource
-			opts.prompt.ConfirmIncludeDirty = confirmIncludeDirty(cmd)
-			opts.prompt.ConfirmCopyDirectory = confirmCopyDirectory(cmd)
+			opts.prompt.ConfirmIncludeDirty = confirmIncludeDirty(cmd, status)
+			opts.prompt.ConfirmCopyDirectory = confirmCopyDirectory(cmd, status)
 			opts.prompt.SkipDeclaredSources = !opts.declaredSources
-			opts.prompt.ReportDeclaredSource = reportDeclaredSource(cmd)
+			opts.prompt.ReportDeclaredSource = reportDeclaredSource(status)
 			parsedOpts, err := sandboxcreate.ParsePromptOptions(opts.prompt, args)
 			if err != nil {
 				return err
+			}
+			// The window is where a run goes unless something says otherwise,
+			// and it is given the request rather than the discobox: the create
+			// happens inside it, so the question about uncommitted work is the
+			// window's own dialog and the wait is its own screen rather than a
+			// list with a busy line under it. The flags are parsed above
+			// either way — a flag that contradicts itself is this command's
+			// error to report, on this terminal, before a window opens over it.
+			//
+			// -d has nothing to open a window for: it prints the discobox and
+			// returns, and printing is stdout, which the window would be
+			// sitting on.
+			if !opts.detach && !opts.raw && canOpenWindow(cmd) {
+				return a.runTUI(cmd, "", tui.WithRun(a.runWindowRequest(opts, args)))
 			}
 			projectID, err := a.projectIDValue()
 			if err != nil {
@@ -103,12 +141,6 @@ discobox as it does here. --declared-sources=false leaves them out.`,
 			if err != nil {
 				return err
 			}
-			// Creating and delivering a source are this client's own work, so
-			// nothing but this process can say which of them is underway
-			// (ADR 0060). The line comes back down before anything else is
-			// written to stderr.
-			status := newStatusLine(cmd.ErrOrStderr())
-			defer status.clear()
 			report := func(step sandboxcreate.Step) { status.set(string(step)) }
 			sandbox, local, err := sandboxcreate.CreatePromptSandbox(cmd.Context(), client, projectID, parsedOpts, report)
 			if err != nil {
@@ -145,6 +177,7 @@ discobox as it does here. --declared-sources=false leaves them out.`,
 	cmd.Flags().StringArrayVarP(&opts.prompt.Include, "include", "i", nil, "Additional source directory or Git repository to bring into the discobox, optionally with @REF; repeat for more than one. A local directory keeps its own absolute path inside the discobox and is named after itself, so -i ../foo is the source foo")
 	cmd.Flags().StringVarP(&opts.prompt.Harness, "harness", "H", "", "Harness config to run, by slug (e.g. codex), name, or ID; defaults to the project default")
 	cmd.Flags().BoolVarP(&opts.detach, "detach", "d", false, "Create the discobox and print it without attaching to its terminal")
+	cmd.Flags().BoolVar(&opts.raw, "raw", false, "Create the discobox here and attach this terminal straight to its terminal, instead of making it in the window")
 	cmd.Flags().BoolVar(&opts.noSource, "no-source", false, "Create the discobox with nothing checked out in it; the directory you run in still decides where it is filed and what Git authorship it commits under")
 	cmd.Flags().BoolVar(&opts.declaredSources, "declared-sources", true, "Bring in the sources the repository declares in .discobox/sources.json, using a local checkout beside the source directory when there is one")
 	cmd.Flags().Var(&opts.prompt.IncludeDirty, "include-dirty", "Carry uncommitted changes in the local source into the discobox: true, false, or auto (ask when the workspace is dirty and this is a terminal). A source directory in no Git repository is uncommitted in its entirety, so this decides whether the directory itself is copied in")
@@ -157,11 +190,15 @@ discobox as it does here. --declared-sources=false leaves them out.`,
 // dirty workspace. Without a terminal there is nobody to ask, so the work is
 // included: that is what run has always done, and dropping edits silently is
 // worse than carrying them.
-func confirmIncludeDirty(cmd *cobra.Command) sandboxcreate.ConfirmIncludeDirtyFunc {
+func confirmIncludeDirty(cmd *cobra.Command, status *statusLine) sandboxcreate.ConfirmIncludeDirtyFunc {
 	return func(_ context.Context, workspace sandboxcreate.DirtyWorkspace) (bool, error) {
 		if !isTerminalStream(cmd.InOrStdin()) || !isTerminalStream(cmd.ErrOrStderr()) {
 			return true, nil
 		}
+		// The question draws its own screen on the stream the wait is being
+		// narrated on, so the narration gives the row up for as long as it is
+		// on and comes back after it.
+		defer status.suspend()()
 		// Excluding leads, so the default answer is the one that changes nothing
 		// about what the sandbox sees: the committed history.
 		choice, err := pickOne(cmd, dirtyWorkspacePrompt(workspace), []pickerItem{
@@ -199,11 +236,12 @@ func confirmIncludeDirty(cmd *cobra.Command) sandboxcreate.ConfirmIncludeDirtyFu
 // Without a terminal there is nobody to ask and the directory is copied, which
 // is what a source directory has always meant here; the alternative is a
 // discobox that silently came up with nothing in it.
-func confirmCopyDirectory(cmd *cobra.Command) sandboxcreate.ConfirmCopyDirectoryFunc {
+func confirmCopyDirectory(cmd *cobra.Command, status *statusLine) sandboxcreate.ConfirmCopyDirectoryFunc {
 	return func(_ context.Context, directory sandboxcreate.DirectoryCopy) (bool, error) {
 		if !isTerminalStream(cmd.InOrStdin()) || !isTerminalStream(cmd.ErrOrStderr()) {
 			return true, nil
 		}
+		defer status.suspend()()
 		live := func() (string, bool) {
 			total := directory.Size.Total()
 			return directoryCopyPrompt(directory.Dir, total), total.Done
@@ -260,22 +298,34 @@ func directoryCopySize(total sandboxcreate.DirectoryTotal) string {
 // It is always reported, never only on a surprise. These sources are in the
 // sandbox because a file in the repository asked for them, which is exactly the
 // kind of thing a caller who did not write that file needs told.
-func reportDeclaredSource(cmd *cobra.Command) sandboxcreate.ReportDeclaredSourceFunc {
+//
+// It goes through the status line rather than to the stream directly, because
+// this runs while the create is being narrated on that same stream and the
+// narration owns the row it is on. Written past it, each of these lines came
+// out with the spinner on the front of it.
+func reportDeclaredSource(status *statusLine) sandboxcreate.ReportDeclaredSourceFunc {
 	return func(source sandboxcreate.DeclaredSource) {
-		out := cmd.ErrOrStderr()
-		switch {
-		case !source.Local:
-			fmt.Fprintf(out, "source %s: cloning %s (no checkout at %s)\n",
-				source.Name, source.URL, source.Checkout)
-		case source.Origin != "":
-			// The checkout is used anyway — a fork next door is the usual
-			// reason, and is what the caller has — but a directory that only
-			// shares the name looks identical from here, so say which it is.
-			fmt.Fprintf(out, "source %s: %s (origin %s, declared %s)\n",
-				source.Name, source.Checkout, source.Origin, source.URL)
-		default:
-			fmt.Fprintf(out, "source %s: %s\n", source.Name, source.Checkout)
-		}
+		status.print("%s", declaredSourceLine(source))
+	}
+}
+
+// declaredSourceLine is that report as one line. It is shared with the window,
+// which narrates the same line on its busy line rather than printing it: the
+// two frontends say the same thing about the same source, in the form each of
+// them has for saying it.
+func declaredSourceLine(source sandboxcreate.DeclaredSource) string {
+	switch {
+	case !source.Local:
+		return fmt.Sprintf("source %s: cloning %s (no checkout at %s)",
+			source.Name, source.URL, source.Checkout)
+	case source.Origin != "":
+		// The checkout is used anyway — a fork next door is the usual reason,
+		// and is what the caller has — but a directory that only shares the
+		// name looks identical from here, so say which it is.
+		return fmt.Sprintf("source %s: %s (origin %s, declared %s)",
+			source.Name, source.Checkout, source.Origin, source.URL)
+	default:
+		return fmt.Sprintf("source %s: %s", source.Name, source.Checkout)
 	}
 }
 
@@ -294,10 +344,46 @@ func dirtyWorkspacePrompt(workspace sandboxcreate.DirtyWorkspace) string {
 	return fmt.Sprintf("%s has %d uncommitted %s (%s)", workspace.RepoRoot, len(paths), pluralize("change", len(paths)), summary)
 }
 
-// attachRunSandbox attaches the caller's stdio to the freshly created
-// sandbox's default terminal. Every sandbox gets one primary terminal from the
-// sandbox-agent — the configured harness, or a plain shell when it has none —
-// so run attaches to it unless --detach was passed.
+// runWindowRequest is this command as the window takes it: `discobox run`'s
+// flags in the shape the launcher's own Enter produces, so what the window
+// creates is what this command describes.
+//
+// The values go over as they were given — the source with its @REF, the prompt
+// as the words the shell split — because the window's create runs them through
+// the same parse this command has just validated them with. Two flags do not go
+// over: -d, which never reaches a window, and --raw, which is the choice not to
+// open one.
+func (a *App) runWindowRequest(opts runCommandOptions, args []string) tui.RunRequest {
+	req := tui.RunRequest{
+		Prompt:              args,
+		Source:              a.source,
+		NoSource:            opts.noSource,
+		Harness:             opts.prompt.Harness,
+		Env:                 opts.prompt.Env,
+		Secret:              opts.prompt.Secret,
+		Include:             opts.prompt.Include,
+		SkipDeclaredSources: !opts.declaredSources,
+	}
+	// auto is the window's empty: the question it puts up. The other two are
+	// answers already given, and the window hands them to the create for every
+	// source it cuts from, as this command does.
+	switch opts.prompt.IncludeDirty {
+	case sandboxcreate.IncludeDirtyAlways:
+		req.IncludeDirty = "true"
+	case sandboxcreate.IncludeDirtyNever:
+		req.IncludeDirty = "false"
+	}
+	return req
+}
+
+// attachRunSandbox streams the freshly created sandbox's default terminal to
+// this one. Every sandbox gets one primary terminal from the sandbox-agent —
+// the configured harness, or a plain shell when it has none — so run attaches
+// to it unless --detach was passed.
+//
+// This is the --raw path, and what a run with no terminal to draw a window on
+// gets. A run that can open one never reaches here: it hands its request to the
+// window, which creates the discobox itself and opens on it.
 //
 // It does not wait for the sandbox first. The attach itself waits, at every
 // tier that can see something the one above it cannot: the control plane for

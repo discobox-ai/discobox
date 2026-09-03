@@ -1,6 +1,7 @@
 package tui
 
 import (
+	"fmt"
 	"path"
 	"sort"
 	"strings"
@@ -590,6 +591,12 @@ func (m *Model) workspaceTermOpened(msg workspaceTermMsg) tea.Cmd {
 	if msg.err != nil {
 		if primary {
 			m.closeWorkspace()
+			if m.attach != nil {
+				// The window was opened to be this attach and the attach never
+				// came up, so it ends the way the command would have: with the
+				// failure, and nothing on screen behind it.
+				return m.exit(fmt.Errorf("%s: %w", action, msg.err))
+			}
 		}
 		// Re-fit what did open: a primary sized for a split whose tabs never
 		// arrived should take the width back.

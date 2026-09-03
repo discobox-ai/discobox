@@ -35,15 +35,19 @@ discobox run "fix the flaky test in the payments suite"
 ```
 
 That creates a box from the current directory, starts your configured agent in
-it, and streams the work back. When it's done:
+it, and opens the box in a window: the agent's terminal, the shells and
+services running beside it, and its forwarded ports. Ctrl-A d leaves the window
+and the box keeps running; `--raw` streams the terminal to this one instead.
+When it's done:
 
 ```bash
 discobox ls              # boxes started from this directory
 discobox apply           # cherry-pick the box's commits onto your working tree
 ```
 
-Typing `discobox` on its own opens the launcher instead: the same three steps —
-start a box, work in it, apply what it committed — in one window.
+Typing `discobox` on its own opens the launcher on everything you have: the
+same three steps — start a box, work in it, apply what it committed — for every
+box in one window.
 
 The box runs on your machine and reaches nothing on it. Nothing was installed
 outside the box, nothing ran outside it, and no credential of yours entered it.
@@ -141,7 +145,7 @@ discobox            Open the launcher
 discobox run        Launch a prompt in a new discobox
 discobox ls         List discoboxes started from this directory
 discobox shell      Run a command in a box, or open its login shell
-discobox attach     Attach to a box's terminal
+discobox attach     Open a box: its terminal and what runs beside it
 discobox apply      Cherry-pick a box's commits onto your working tree
 discobox push       Push local commits into a box's origin, to rebase there
 discobox proxy      Forward a box's listening ports to local ports

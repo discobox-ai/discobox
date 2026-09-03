@@ -538,10 +538,14 @@ func (o *optionSet) move(delta int) {
 // arguments, with the prompt from the composer.
 func (o *optionSet) request(prompt string) RunRequest {
 	req := RunRequest{
-		Prompt: strings.TrimSpace(prompt),
 		Detach: o.opts[optDetach].changed(),
 		Env:    append([]string(nil), o.opts[optEnv].items...),
 		Secret: append([]string(nil), o.opts[optSecret].items...),
+	}
+	// One argument, because the composer holds one piece of text and splitting
+	// it would be inventing tokens the user did not type.
+	if text := strings.TrimSpace(prompt); text != "" {
+		req.Prompt = []string{text}
 	}
 	// The folder the header is on is what the source row leads with, and naming
 	// the session's own directory would only repeat the CLI's default — so that
@@ -676,8 +680,11 @@ func (o *optionSet) command(prompt string) string {
 	for _, s := range req.Secret {
 		args = append(args, "-s", shellQuote(s))
 	}
-	if req.Prompt != "" {
-		args = append(args, "--", shellQuote(req.Prompt))
+	if len(req.Prompt) > 0 {
+		args = append(args, "--")
+		for _, word := range req.Prompt {
+			args = append(args, shellQuote(word))
+		}
 	}
 	return strings.Join(args, " ")
 }

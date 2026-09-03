@@ -27,6 +27,13 @@ func (m *Model) restoreDraft(draft string) tea.Cmd {
 	if draft == "" || m.prompt.Value() != "" {
 		return nil
 	}
+	// A window that is one command's own never shows the composer — it opens on
+	// a discobox and leaves when that is left — so there is nowhere to put the
+	// draft back, and announcing it would be a line about a field nobody can
+	// see. See draftToSave for the other half: it is not written over either.
+	if m.oneShot() {
+		return nil
+	}
 	m.prompt.SetValue(draft)
 	m.promptEnd()
 	// The draft is where this window starts, not something it did, so Ctrl-_
@@ -76,6 +83,13 @@ func (m *Model) saveDraftNow() {
 // alternative is a window that says the same thing about the same broken disk
 // every five seconds.
 func (m *Model) draftToSave() (folder, prompt string, ok bool) {
+	// Nothing a `discobox run` or `discobox attach` window does is a prompt
+	// somebody typed here: the composer is never shown, and a create started
+	// from the command line empties it on the way past. Writing that would
+	// throw away the sentence the launcher was left mid-way through.
+	if m.oneShot() {
+		return "", "", false
+	}
 	folder, prompt = m.session.Directory, m.prompt.Value()
 	if folder == "" || prompt == m.draft {
 		return "", "", false

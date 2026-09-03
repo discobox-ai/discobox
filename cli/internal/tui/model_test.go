@@ -51,7 +51,7 @@ func TestEnterRunsThePromptAndAttaches(t *testing.T) {
 	if len(ds.runs) != 1 {
 		t.Fatalf("runs = %d, want 1", len(ds.runs))
 	}
-	if ds.runs[0].Prompt != "fix the reaper" {
+	if promptText(ds.runs[0]) != "fix the reaper" {
 		t.Fatalf("prompt = %q", ds.runs[0].Prompt)
 	}
 	// Attaching is a terminal the window draws itself, not a command it steps
@@ -75,7 +75,7 @@ func TestEnterOnAnEmptyPromptStillCreates(t *testing.T) {
 	m := newTestModel(t, ds)
 	send(t, m, key("enter"))
 
-	if len(ds.runs) != 1 || ds.runs[0].Prompt != "" {
+	if len(ds.runs) != 1 || promptText(ds.runs[0]) != "" {
 		t.Fatalf("runs = %+v, want one empty prompt", ds.runs)
 	}
 }

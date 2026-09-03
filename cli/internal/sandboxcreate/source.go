@@ -226,7 +226,7 @@ func resolveRunSource(ctx context.Context, sourceArg string, opts runSourceOptio
 	if strings.TrimSpace(source) == "" {
 		return resolvedRunSource{}, fmt.Errorf("source directory or Git repository is required")
 	}
-	if isRemoteGitSource(source) {
+	if IsRemoteGitSource(source) {
 		if opts.IncludeDirty == IncludeDirtyAlways {
 			return resolvedRunSource{}, fmt.Errorf("--include-dirty=true needs a local source: a remote repository has no working tree")
 		}
@@ -246,7 +246,7 @@ func resolveRunSource(ctx context.Context, sourceArg string, opts runSourceOptio
 func ResolveOrigin(ctx context.Context, sourceArg string) (apimodel.Origin, error) {
 	source, _, _ := splitRunSourceRef(sourceArg)
 	dir := strings.TrimSpace(source)
-	if dir == "" || isRemoteGitSource(dir) {
+	if dir == "" || IsRemoteGitSource(dir) {
 		cwd, err := os.Getwd()
 		if err != nil {
 			return apimodel.Origin{}, fmt.Errorf("resolve working directory: %w", err)
@@ -753,7 +753,13 @@ func gitRefExists(ctx context.Context, repoRoot, ref string) bool {
 	return err == nil
 }
 
-func isRemoteGitSource(value string) bool {
+// IsRemoteGitSource reports whether a source value names a repository to clone
+// rather than a directory on this machine.
+//
+// It is exported because a frontend asking about a source's working tree has to
+// know when there is not one to ask about: `discobox run -C https://…` has no
+// local checkout, so no uncommitted work, and no question to put to anybody.
+func IsRemoteGitSource(value string) bool {
 	if strings.Contains(value, "://") {
 		u, err := url.Parse(value)
 		return err == nil && u.Scheme != "" && (u.Host != "" || u.Scheme == "file")

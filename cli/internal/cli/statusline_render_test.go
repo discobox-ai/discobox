@@ -192,3 +192,57 @@ func TestServerStartupTextOmitsAnAbsentPhase(t *testing.T) {
 		t.Fatalf("serverStartupText() with a blank phase = %q", got)
 	}
 }
+
+// While the line is up it owns the row it is on, so a report from anywhere else
+// in the command goes through it. Written past it, the report came out with the
+// spinner on the front of it: "⠧ preparing sourcesource x: /home/ada/src/x".
+func TestStatusLinePrintsALineAboveItself(t *testing.T) {
+	t.Setenv("TERM", "xterm-256color")
+	out := statusLineOnPTY(t, 90, func(line *statusLine) {
+		line.set("preparing source")
+		line.print("source x: /home/ada/src/x")
+		line.clear()
+	})
+	shown := visible(out)
+	if strings.Contains(shown, "preparing sourcesource x") {
+		t.Fatalf("the report was written into the row the status line owns: %q", shown)
+	}
+	// Erased before it and broken after it, so it is a row of its own. The
+	// break is "\r\n" because a terminal translates it on the way out.
+	if !strings.Contains(shown, "\x1b[Ksource x: /home/ada/src/x\r\n") {
+		t.Fatalf("the report should be a line of its own: %q", shown)
+	}
+	// And the wait is still on underneath it.
+	if strings.LastIndex(shown, "preparing source") < strings.Index(shown, "source x:") {
+		t.Fatalf("the status line was not drawn again under the report: %q", shown)
+	}
+}
+
+// A question with its own screen takes the row and gives it back. What arrives
+// while it is down is remembered rather than drawn, so the line comes back
+// saying what the wait has reached rather than where it was interrupted.
+func TestStatusLineGivesTheRowUpWhileSomethingElseHasIt(t *testing.T) {
+	t.Setenv("TERM", "xterm-256color")
+	out := statusLineOnPTY(t, 90, func(line *statusLine) {
+		line.set("preparing source")
+		resume := line.suspend()
+		// What the thing holding the stream drew on it, and a report that
+		// landed behind it.
+		line.print("include the uncommitted changes? no")
+		line.set("creating the discobox")
+		resume()
+		line.clear()
+	})
+	shown := visible(out)
+	asked := strings.Index(shown, "include the uncommitted changes?")
+	drawn := strings.Index(shown, "creating the discobox")
+	if asked < 0 || drawn < 0 {
+		t.Fatalf("both the question and the line under it should be on screen: %q", shown)
+	}
+	if drawn < asked {
+		t.Fatalf("the report was drawn while the row was somebody else's: %q", shown)
+	}
+	if !strings.HasSuffix(out, "\r\x1b[K") {
+		t.Errorf("clear() left the resumed line on the screen: %q", out)
+	}
+}

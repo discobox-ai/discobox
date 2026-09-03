@@ -666,7 +666,11 @@ const ExecPrimary = "primary"
 // RunRequest is what Enter in the prompt asks for: `discobox run`'s arguments, and
 // nothing the command does not have.
 type RunRequest struct {
-	Prompt  string
+	// Prompt is what the harness is given to do, as the create takes it: the
+	// arguments. The composer holds one piece of text and sends it as one
+	// argument — splitting it would be inventing tokens nobody typed — while
+	// `discobox run fix the tests` sends the three words the shell split.
+	Prompt  []string
 	Harness string // empty is the project default
 
 	// IncludeDirty is `--include-dirty`: "", "true" or "false". Empty is auto,
@@ -685,6 +689,17 @@ type RunRequest struct {
 	// in it. Source is empty with it — there is no directory to cut from — and
 	// the discobox is still filed under the one the window is running in.
 	NoSource bool
+
+	// Include is `-i`: the extra sources brought into the same discobox beside
+	// the primary one. The window offers no way to name one; it carries them
+	// because `discobox run` opens the window on its own request and that
+	// request is the whole command (WithRun).
+	Include []string
+
+	// SkipDeclaredSources is `--declared-sources=false`: leave out the sources
+	// the primary source's repository declares in .discobox/sources.json. The
+	// zero value brings them in, which is what both frontends do by default.
+	SkipDeclaredSources bool
 }
 
 // SourceWorkspace is what a create would carry into a discobox from the source
@@ -700,6 +715,11 @@ type SourceWorkspace struct {
 	// Carries is whether there is anything to carry: uncommitted work in a
 	// repository, or any content at all in a directory that is in none.
 	Carries bool
+	// Changes are the paths that differ from the checked-out commit, as the
+	// create path reports them. They are what the question about them names,
+	// so that "carry them in?" says which. Empty for a directory in no
+	// repository, where the answer is the whole of it.
+	Changes []string
 }
 
 // DirectoryTotal is how much of a directory copying it into a discobox would

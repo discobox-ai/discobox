@@ -128,6 +128,32 @@ type Model struct {
 	// the poll and the picker cannot open two panes onto one session.
 	toolOpening map[string]bool
 
+	// pendingRun is the run this window was opened to make — `discobox run`'s
+	// own request — held until the harness listing lands. It is started from
+	// there rather than from Init because the questions the window asks ahead
+	// of a create (a project with no default harness, a harness that has never
+	// been set up) are asked off that listing, and a run started before it
+	// arrived would meet the server's refusal instead of the question.
+	pendingRun *RunRequest
+	// oneRun is whether the window was opened to make one discobox and show
+	// it. It is what the window is for, so the window ends with it: the
+	// workspace it opens on the discobox it made closes the window when it is
+	// left, exactly as `discobox attach`'s does. See WithRun.
+	oneRun bool
+
+	// attach is the discobox this window was opened as an attach on, and nil
+	// for the launcher proper. `discobox run` and `discobox attach` open the
+	// window on that discobox's workspace rather than drawing a terminal of
+	// their own, so the window is that attach: leaving the workspace —
+	// detaching, or the session ending — leaves the window, because there is
+	// no list behind it that anybody asked for. See WithAttach.
+	attach *Sandbox
+	// exitErr is what an attach that never came up ends the window with. Run
+	// returns it, so the command that opened the window fails the way a plain
+	// attach fails rather than reporting on a status line nobody is left to
+	// read. See Model.exit.
+	exitErr error
+
 	// overlay is the command that has the screen over the workspace while it
 	// runs.
 	overlay *pane
@@ -283,6 +309,24 @@ func WithHarnesses() Option {
 	return func(m *Model) { m.harnessesOpen, m.expanded = true, true }
 }
 
+// WithAttach opens the window on one discobox's workspace, which is what
+// `discobox run` and `discobox attach` are: the window is that attach rather
+// than a launcher that happens to have one open. It is opened out with it — the
+// workspace is the whole of it — and leaving the workspace closes the window
+// instead of falling back to a list nobody asked for.
+func WithAttach(sandbox Sandbox) Option {
+	return func(m *Model) { m.attach = &sandbox }
+}
+
+// WithRun opens the window on one run: `discobox run` builds its request from
+// its flags and hands it over rather than creating the discobox itself, so the
+// question about uncommitted work is the window's own dialog, the wait is the
+// window's own screen, and what it lands on is the workspace. The window is
+// that run, so it closes when the workspace it opened is left.
+func WithRun(req RunRequest) Option {
+	return func(m *Model) { m.oneRun, m.pendingRun = true, &req }
+}
+
 func New(ctx context.Context, ds DataSource, options ...Option) *Model {
 	color := detectColor()
 	st := newStyles(color)
@@ -344,9 +388,22 @@ func New(ctx context.Context, ds DataSource, options ...Option) *Model {
 	for _, option := range options {
 		option(m)
 	}
+	if m.oneShot() {
+		// A window that is one command's own opens on the discobox it is about
+		// and closes when that is left. There is no prompt for the
+		// introduction to interrupt and no screen for it to hand over to, so
+		// it is not shown here however the project stands.
+		m.welcoming = false
+	}
 	m.opts = newOptions(session)
 	return m
 }
+
+// oneShot reports whether this window is one command's own — `discobox run` or
+// `discobox attach` — rather than the launcher. Such a window opens on the
+// discobox it is about, never shows the prompt or the list, and goes when the
+// workspace does.
+func (m *Model) oneShot() bool { return m.oneRun || m.attach != nil }
 
 // Init loads what the window is drawn from. The session comes first because the
 // header and the filter are read from it; the listing and the harnesses follow
@@ -354,7 +411,37 @@ func New(ctx context.Context, ds DataSource, options ...Option) *Model {
 // harnesses are read here rather than when their screen is opened because the
 // run options offer them as the harness to run.
 func (m *Model) Init() tea.Cmd {
-	return tea.Batch(textarea.Blink, m.loadSession(), m.refresh(), m.loadResources(), m.loadCredentialRequests(), m.loadHarnesses(), m.tick(), m.startShimmer(), m.awaitInitialization())
+	cmds := []tea.Cmd{textarea.Blink, m.loadSession(), m.refresh(), m.loadResources(), m.loadCredentialRequests(), m.loadHarnesses(), m.tick(), m.startShimmer(), m.awaitInitialization()}
+	// An attach opens on its workspace rather than on the prompt, from the row
+	// the command already has: waiting for the listing to come back would hold
+	// the attach behind a request it does not need. The listing is still read,
+	// because the header and the workspace's keys take the discobox off it as
+	// it moves (currentBox).
+	//
+	// Until the terminal is up the window says what it is waiting for, on the
+	// same screen a run's wait uses. A window that is one command's own has no
+	// list to sit on while it waits, and the list of everything else is not
+	// what somebody who named one discobox is looking at.
+	if m.attach != nil {
+		m.dialog = m.waitDialog("Opening "+sandboxLabel(*m.attach), "attaching")
+		cmds = append(cmds, m.openWorkspace(*m.attach, false))
+	}
+	// A run is not started here — it waits for the harnesses, see pendingRun —
+	// but the window says what it is for from the first frame rather than
+	// showing the list of everything else while the run it was opened for gets
+	// going.
+	if m.oneRun {
+		m.dialog = m.waitDialog(creatingTitle, "starting")
+	}
+	return tea.Batch(cmds...)
+}
+
+// exit ends an attached window, carrying whatever ended it back to the command
+// that opened it. Nothing is reported on screen: the window is going, and the
+// command it belongs to is what reports.
+func (m *Model) exit(err error) tea.Cmd {
+	m.exitErr = err
+	return m.closeWindow()
 }
 
 // ---------------------------------------------------------------------------
@@ -1706,7 +1793,14 @@ func (m *Model) renameDone(msg renameDoneMsg) tea.Cmd {
 // An empty prompt is not an error. It means the other thing you come here for:
 // a sandbox of your own to work in, with no harness given anything to do.
 func (m *Model) run() tea.Cmd {
-	req := m.opts.request(m.prompt.Value())
+	return m.runRequest(m.opts.request(m.prompt.Value()))
+}
+
+// runRequest is a run past the questions about the harness it lands on, from
+// wherever the request came: the composer, or the command the window was opened
+// by (WithRun). Both take the same path, which is the point of handing the
+// command's request to the window rather than having it create for itself.
+func (m *Model) runRequest(req RunRequest) tea.Cmd {
 	if cmd, stop := m.askForADefaultHarness(req); stop {
 		return cmd
 	}
@@ -1714,6 +1808,18 @@ func (m *Model) run() tea.Cmd {
 		return cmd
 	}
 	return m.startRun(req)
+}
+
+// startPendingRun starts the run the window was opened on, once there is a
+// harness listing to ask its questions against. It is a no-op for every window
+// that was not opened on one, and for the second listing of one that was.
+func (m *Model) startPendingRun() tea.Cmd {
+	if m.pendingRun == nil {
+		return nil
+	}
+	req := *m.pendingRun
+	m.pendingRun = nil
+	return m.runRequest(req)
 }
 
 // startRun is the run itself, past the questions about which harness it lands
@@ -1728,7 +1834,7 @@ func (m *Model) startRun(req RunRequest) tea.Cmd {
 	}
 	// --include-dirty=auto means ask, and there is only something to ask about
 	// when the working tree has something in it.
-	m.busy = "checking the working tree…"
+	m.waiting("checking the working tree")
 	return func() tea.Msg {
 		workspace, err := m.ds.Workspace(m.ctx, req.Source)
 		return workspaceCheckedMsg{req: req, workspace: workspace, err: err}
@@ -1879,10 +1985,32 @@ func (m *Model) workspaceChecked(msg workspaceCheckedMsg) tea.Cmd {
 	// the one that changes nothing about what the sandbox sees. The repository
 	// named is the one the run is cut from, which is not the window's own
 	// directory when the source option names another.
-	m.dialog = m.includeDirtyDialog("Uncommitted changes",
-		msg.workspace.Directory+" has uncommitted changes. Carry them into the discobox as a snapshot on top of the checked-out commit?",
-		msg.req)
+	m.dialog = m.includeDirtyDialog("Uncommitted changes", dirtyWorkspaceBody(msg.workspace), msg.req)
 	return nil
+}
+
+// dirtyWorkspaceBody says what the question is about: the directory, how many
+// paths differ from the checked-out commit, and enough of them to recognize the
+// change by. A listing that reported no paths still asks the question — what it
+// is about is the working tree, not the count.
+func dirtyWorkspaceBody(workspace SourceWorkspace) string {
+	subject := workspace.Directory + " has uncommitted changes"
+	if n := len(workspace.Changes); n > 0 {
+		subject = fmt.Sprintf("%s has %s (%s)",
+			workspace.Directory, plural(n, "uncommitted change", "uncommitted changes"), summarizePaths(workspace.Changes))
+	}
+	return subject + ". Carry them into the discobox as a snapshot on top of the checked-out commit?"
+}
+
+// summarizePaths is a few of the paths and then how many more there are: enough
+// to recognize the change by, without turning the question into a file listing.
+func summarizePaths(paths []string) string {
+	const shown = 3
+	summary := strings.Join(paths[:min(shown, len(paths))], ", ")
+	if len(paths) > shown {
+		summary = fmt.Sprintf("%s and %d more", summary, len(paths)-shown)
+	}
+	return summary
 }
 
 // askToCopyDirectory is the same question for a source directory that is in no
@@ -1978,8 +2106,37 @@ func directoryCopySize(total DirectoryTotal) string {
 // createMsg carries a settled request back to the live model.
 type createMsg struct{ req RunRequest }
 
+// creatingTitle is the wait's title before there is a discobox to name. It
+// becomes "Starting <name>" the moment the create comes back with one.
+const creatingTitle = "Creating a discobox"
+
+// waitDialog is the screen a window waits on: what it is waiting for, with the
+// newest report under it.
+//
+// Leaving it is where the two kinds of window differ. The launcher goes back to
+// the list it was started from, which is where the discobox it is waiting for
+// will appear. A window that is one command's own has no list behind it, so
+// leaving the wait leaves the window — and leaves the discobox alone: it was
+// created before this screen went up, or is being created by a request the
+// server has already taken, and it carries on coming up either way. Nothing is
+// stopped and nothing is attached to.
+func (m *Model) waitDialog(title, body string) *dialog {
+	d := statusDialog(title, body)
+	if m.oneShot() {
+		d.footer = "Esc closes this window · the discobox carries on"
+		d.onCancel = func() tea.Cmd { return m.exit(nil) }
+	}
+	return d
+}
+
 func (m *Model) create(req RunRequest) tea.Cmd {
-	m.busy = "creating the discobox…"
+	if m.oneShot() {
+		// The window is this run, so the wait is the screen: there is no list
+		// behind it for a busy line to sit under. The launcher's own runs keep
+		// the list they were started from and report on the busy line there.
+		m.dialog = m.waitDialog(creatingTitle, "")
+	}
+	m.waiting("creating the discobox")
 	// Create resolves a source, may snapshot a dirty tree, and may push the
 	// whole thing to a server that cannot reach this directory. Which of those
 	// is underway is knowable only here, so the shared creation path reports it
@@ -1997,6 +2154,12 @@ func (m *Model) created(msg createdMsg) tea.Cmd {
 	m.endNarration()
 	m.busy = ""
 	if msg.err != nil {
+		// The wait is over and there is nothing to wait for, so it goes: the
+		// report belongs on a screen somebody can read it on. Only this
+		// window's own wait is taken down; a dialog the user opened is theirs.
+		if m.dialog != nil && m.dialog.kind == dlgStatus {
+			m.dialog = nil
+		}
 		return m.report(true, "cannot create the discobox: %v", msg.err)
 	}
 	// The prompt has been spent. Clearing it is what makes the window usable
@@ -2007,11 +2170,18 @@ func (m *Model) created(msg createdMsg) tea.Cmd {
 	if msg.req.Detach {
 		return tea.Batch(m.refresh(), m.report(false, "created %s", msg.sandbox.ID))
 	}
+	if m.oneRun {
+		// The window was opened to make this discobox and show it, so from
+		// here it is the attach on it: leaving the workspace leaves the
+		// window, and there is no list behind it to fall back to.
+		box := msg.sandbox
+		m.attach = &box
+	}
 	// The window goes to the discobox being made, rather than sitting on a
 	// list with a busy line under it. Everything the wait is spent on — a pool
 	// coming up, an image arriving, a container starting — reports here until
 	// the attach can take over, and this takes itself down when it does.
-	m.dialog = statusDialog("Starting "+sandboxLabel(msg.sandbox), "creating the discobox")
+	m.dialog = m.waitDialog("Starting "+sandboxLabel(msg.sandbox), "creating the discobox")
 	return tea.Batch(m.refresh(), m.openFromList(InteractAttach, msg.sandbox))
 }
 
@@ -2339,7 +2509,15 @@ func (m *Model) viewHeaderRight() string {
 			// here is put this window away, not leave the workspace.
 			out = "put away"
 		}
-		return m.st.dimText.Render(m.detachHint() + " " + out + "  ·  " + m.leader() + " " + paneQuitKey + " quit")
+		hint := m.detachHint() + " " + out
+		// Quit is only worth its half of the row where it differs from detach.
+		// In a window that is one command's own the two do the same thing —
+		// the window goes, the discobox and everything in it carries on — and a
+		// row offering both reads as a choice between them.
+		if !m.oneShot() {
+			hint += "  ·  " + m.leader() + " " + paneQuitKey + " quit"
+		}
+		return m.st.dimText.Render(hint)
 	}
 	// The harnesses screen is advertised here rather than on the status line
 	// because it is reachable from every one of the window's own screens, and
@@ -2526,6 +2704,18 @@ func (m *Model) statusLine(room int) string {
 // hintSep is what a key hint is separated from the next by, and so what the
 // status line splits them back apart on to drop one.
 const hintSep = " · "
+
+// detachDescription is what the leader's d does, which depends on what the
+// window is: the launcher goes back to its list, and a window that is one
+// command's own — `discobox run`, `discobox attach` — has no list behind it and
+// goes. Neither stops anything: what follows this in the key list is "leaving
+// every session running", which is true of both.
+func (m *Model) detachDescription() string {
+	if m.oneShot() {
+		return "detach, which closes this window"
+	}
+	return "detach from the whole workspace"
+}
 
 func (m *Model) hints() string {
 	if m.harnessesOpen {
@@ -2942,7 +3132,7 @@ func (m *Model) helpText() string {
 		"  Every other key goes to the focused pane. Which ones do not",
 		"  depends on what is in it:",
 		"",
-		"    " + m.leader() + " " + paneDetachAlt + "       detach from the whole workspace, leaving",
+		"    " + m.leader() + " " + paneDetachAlt + "       " + m.detachDescription() + ", leaving",
 		"                   every session running. The same key everywhere:",
 		"                   Ctrl-C is the application's, in a harness as much",
 		"                   as in a shell, because someone who types it to",

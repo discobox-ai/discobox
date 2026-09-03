@@ -632,8 +632,10 @@ func (d *dialog) view(st *styles, width, height int) string {
 			footer("")
 		}
 	case dlgStatus:
-		b.WriteString("\n")
-		b.WriteString(st.dimText.Render("Esc stops watching"))
+		// No answer to give, so the footer is the whole of what can be done
+		// here: stop watching, or — in a window that is the command it is
+		// waiting for — leave. See Model.waitDialog.
+		footer("Esc stops watching")
 	case dlgMessage, dlgText:
 		b.WriteString("\n")
 		b.WriteString(truncate(d.viewSearch(st, inner), inner))

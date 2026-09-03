@@ -129,7 +129,7 @@ func validRunHomeDirectory(value string) bool {
 func resolveGitIdentity(ctx context.Context, sourceArg string) apimodel.SandboxGitIdentity {
 	source, _, _ := splitRunSourceRef(sourceArg)
 	dir := strings.TrimSpace(source)
-	if dir == "" || isRemoteGitSource(dir) {
+	if dir == "" || IsRemoteGitSource(dir) {
 		// Empty means git runs in this process's own directory, which is the
 		// intended fallback -- no need to fail the create over a cwd lookup.
 		dir = ""
