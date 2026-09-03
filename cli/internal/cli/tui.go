@@ -595,10 +595,17 @@ func (d *apiDataSource) Run(ctx context.Context, req tui.RunRequest, report func
 	if report != nil {
 		report("syncing SSH config")
 	}
-	cmd := &cobra.Command{}
-	cmd.SetContext(ctx)
-	cmd.SetErr(d.app.errOut)
-	if err := d.app.writeProjectSSHConfig(cmd, d.client, d.projectID, ""); err != nil {
+	// Which key it enrolled and which files it wrote go on the busy line with
+	// everything else this create says. Nothing reaches the terminal: the
+	// window is a full-screen program on it, and a line written past the
+	// renderer draws over the frame — which is what "wrote …/config" used to
+	// do, on the stream this used to hand it.
+	notes := noteFunc(func(format string, args ...any) {
+		if report != nil {
+			report(fmt.Sprintf(format, args...))
+		}
+	})
+	if err := d.app.writeProjectSSHConfig(ctx, d.client, d.projectID, "", notes); err != nil {
 		return tui.Sandbox{}, fmt.Errorf("sync SSH config: %w", err)
 	}
 	return toTUISandbox(*sandbox), nil

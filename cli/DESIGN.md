@@ -935,6 +935,16 @@ level or layering on the attach transports above.
   `StrictHostKeyChecking` meaningful without editing the file that records the
   user's trust in every other host they use; printed output cannot name a file
   the run never wrote, so it keeps emitting the line as a comment instead.
+- **This work says what it did through a `noteFunc`, never onto a stream.** It
+  generates keys, enrolls them, and rewrites two files per ssh installation, and
+  every one of those is worth a line — but who is listening differs by caller
+  and none of it may pick a screen for itself. `admin ssh-config`, `tools
+  vscode`, `tools ssh` and `cp` pass `printedNotes(stderr)`; `discobox run`
+  passes its status line, so the lines are gone before the attach; the launcher
+  passes its busy line, so nothing reaches the terminal it has drawn a window
+  on. Everything below `writeProjectSSHConfig` therefore takes a `context.Context`
+  and a sink rather than the `*cobra.Command`, which is what makes writing to
+  the wrong screen impossible rather than merely discouraged.
 
 ## Signals and Job Control
 
@@ -1130,6 +1140,20 @@ screen on the stream — the create's two confirmation questions — takes the r
 with `suspend`, whose returned func gives it back. Suspending is not clearing:
 the wait carries on underneath, reports keep landing, and the last of them is
 what the line says when it comes back.
+
+**A run that ends in an attach leaves nothing above the terminal.** What a
+declared source resolved to, which key was enrolled, which `ssh_config` was
+written: each is a `noteFunc` line rather than a `Fprintln`, and `runPrompt`
+picks the sink from what it does next. `-d` returns to the shell and prints them
+(`statusLine.print`), because the scrollback is where they are read. Everything
+else hands this terminal to the discobox's own full-screen program, and notes
+them on the status line instead (`statusLine.note`), which takes its row back
+before the terminal starts — a row left standing above that program is content
+it never drew and will not redraw, so what it paints lands shifted. Off a
+terminal `note` appends like `set` does, so a run in CI keeps the whole record
+either way. The two lines a run does print are its own answer, not housekeeping:
+the server-autolaunch notice, and "Created discobox …, attaching when it is
+ready".
 
 ## Uncommitted Work at Create
 

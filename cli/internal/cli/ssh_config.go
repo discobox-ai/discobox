@@ -1,6 +1,7 @@
 package cli
 
 import (
+	"context"
 	"fmt"
 	"strings"
 
@@ -39,20 +40,24 @@ func (a *App) newSSHConfigCommand() *cobra.Command {
 			if err != nil {
 				return err
 			}
+			// The user typed this command, so what it does on their behalf is
+			// theirs to read: these notes are printed where the command's own
+			// reporting goes.
+			notes := printedNotes(cmd.ErrOrStderr())
 			if write {
-				return a.writeProjectSSHConfig(cmd, client, projectID, identityFile)
+				return a.writeProjectSSHConfig(cmd.Context(), client, projectID, identityFile, notes)
 			}
 			// The written files are named after the project and the host key
 			// is verified under a name derived from it, so resolve what the
 			// flag means either way: "default" is a server-side alias, and the
 			// same project reached as "default" and by ID must not end up
 			// owning two files, two Include lines, and two known_hosts names.
-			resolvedProjectID, err := a.concreteProjectID(cmd, client, projectID)
+			resolvedProjectID, err := a.concreteProjectID(cmd.Context(), client, projectID)
 			if err != nil {
 				return err
 			}
 
-			hostKey, err := a.sshHostKey(cmd, client)
+			hostKey, err := a.sshHostKey(cmd.Context(), client)
 			if err != nil {
 				return err
 			}
@@ -61,18 +66,19 @@ func (a *App) newSSHConfigCommand() *cobra.Command {
 			// and no reason to withhold this side's.
 			targets, windowsErr := machineSSHTargets(cmd.Context())
 			if windowsErr != nil {
-				fmt.Fprintf(cmd.ErrOrStderr(), "not writing the Windows ssh_config: %v\n", windowsErr)
+				notes("not writing the Windows ssh_config: %v", windowsErr)
 			}
 			// Printed output is for pasting into a config by hand, and the
 			// hand doing it is on this side.
 			targets = targets[:1]
-			built, err := a.buildManagedSSHConfig(cmd, managedSSHConfigRequest{
+			built, err := a.buildManagedSSHConfig(cmd.Context(), managedSSHConfigRequest{
 				client:            client,
 				projectID:         projectID,
 				resolvedProjectID: resolvedProjectID,
 				identityFile:      identityFile,
 				hostKey:           hostKey,
 				write:             write,
+				notes:             notes,
 			}, targets)
 			if err != nil {
 				return err
@@ -92,32 +98,39 @@ func (a *App) newSSHConfigCommand() *cobra.Command {
 // --write` and the automatic refresh after a prompt sandbox is created. On WSL
 // machineSSHTargets returns this distribution and Windows, so every caller
 // keeps both ssh installations in sync.
-func (a *App) writeProjectSSHConfig(cmd *cobra.Command, client *apiclientgen.Client, projectID, identityFile string) error {
-	resolvedProjectID, err := a.concreteProjectID(cmd, client, projectID)
+//
+// It takes a context and a note sink rather than the command, so that what it
+// says goes where the caller is showing things rather than onto whatever stream
+// the command happens to hold. A create runs this on its way to a full-screen
+// terminal — the launcher's window, or the attach `discobox run` ends in — and
+// neither of those has a stream to spare.
+func (a *App) writeProjectSSHConfig(ctx context.Context, client *apiclientgen.Client, projectID, identityFile string, notes noteFunc) error {
+	resolvedProjectID, err := a.concreteProjectID(ctx, client, projectID)
 	if err != nil {
 		return err
 	}
-	hostKey, err := a.sshHostKey(cmd, client)
+	hostKey, err := a.sshHostKey(ctx, client)
 	if err != nil {
 		return err
 	}
-	targets, windowsErr := machineSSHTargets(cmd.Context())
+	targets, windowsErr := machineSSHTargets(ctx)
 	if windowsErr != nil {
-		fmt.Fprintf(cmd.ErrOrStderr(), "not writing the Windows ssh_config: %v\n", windowsErr)
+		notes("not writing the Windows ssh_config: %v", windowsErr)
 	}
-	built, err := a.buildManagedSSHConfig(cmd, managedSSHConfigRequest{
+	built, err := a.buildManagedSSHConfig(ctx, managedSSHConfigRequest{
 		client:            client,
 		projectID:         projectID,
 		resolvedProjectID: resolvedProjectID,
 		identityFile:      identityFile,
 		hostKey:           hostKey,
 		write:             true,
+		notes:             notes,
 	}, targets)
 	if err != nil {
 		return err
 	}
 	for _, config := range built {
-		if err := writeManagedSSHConfig(cmd, config, resolvedProjectID); err != nil {
+		if err := writeManagedSSHConfig(config, resolvedProjectID, notes); err != nil {
 			return err
 		}
 	}
@@ -139,6 +152,10 @@ type managedSSHConfigRequest struct {
 	// write decides whether the stanzas may name a known_hosts file, since only
 	// a written config owns one.
 	write bool
+	// notes is where the key enrollment says what it did. It is required: this
+	// work generates and enrolls keys on the caller's behalf, and no caller may
+	// have that happen silently.
+	notes noteFunc
 }
 
 // managedSSHConfig is a project's emitted ssh_config: the stanzas, the name the
@@ -167,12 +184,12 @@ type managedSSHConfig struct {
 // The project is listed and the identity resolved once for all of them: what
 // differs between one ssh installation and the next is how the stanzas spell
 // what they name, not which sandboxes exist or which key authenticates.
-func (a *App) buildManagedSSHConfig(cmd *cobra.Command, req managedSSHConfigRequest, targets []sshTarget) ([]managedSSHConfig, error) {
-	identityFile, err := a.resolveSSHIdentity(cmd, req.client, req.projectID, req.identityFile)
+func (a *App) buildManagedSSHConfig(ctx context.Context, req managedSSHConfigRequest, targets []sshTarget) ([]managedSSHConfig, error) {
+	identityFile, err := a.resolveSSHIdentity(ctx, req.client, req.projectID, req.identityFile, req.notes)
 	if err != nil {
 		return nil, err
 	}
-	sandboxesRes, err := req.client.ListSandboxes(cmd.Context(), apiclientgen.ListSandboxesParams{ProjectId: req.projectID})
+	sandboxesRes, err := req.client.ListSandboxes(ctx, apiclientgen.ListSandboxesParams{ProjectId: req.projectID})
 	if err != nil {
 		return nil, err
 	}
@@ -202,7 +219,7 @@ func (a *App) buildManagedSSHConfig(cmd *cobra.Command, req managedSSHConfigRequ
 		}
 		// The key is generated and enrolled on this side whichever ssh reads
 		// the config; only where it has to be readable from changes.
-		identity, err := target.mirrorSSHIdentity(cmd.Context(), identityFile)
+		identity, err := target.mirrorSSHIdentity(ctx, identityFile)
 		if err != nil {
 			return nil, err
 		}
@@ -236,8 +253,8 @@ func (a *App) buildManagedSSHConfig(cmd *cobra.Command, req managedSSHConfigRequ
 // `GET /ssh` used to answer two more questions — whether the server serves SSH,
 // and at what address — and answers neither now: it serves SSH over the
 // transport the API already answers on, and that is the only way in (ADR 0057).
-func (a *App) sshHostKey(cmd *cobra.Command, client *apiclientgen.Client) (string, error) {
-	res, err := client.GetSSHIngress(cmd.Context())
+func (a *App) sshHostKey(ctx context.Context, client *apiclientgen.Client) (string, error) {
+	res, err := client.GetSSHIngress(ctx)
 	if err != nil {
 		return "", err
 	}
@@ -360,28 +377,28 @@ func knownHostsHost(host string, port int) string {
 //
 // Agent-only keys cannot win step 3: `IdentityFile` names a file, and an agent
 // identity has no path to name.
-func (a *App) resolveSSHIdentity(cmd *cobra.Command, client *apiclientgen.Client, projectID, explicitPath string) (string, error) {
-	enrolled, err := a.listEnrolledFingerprints(cmd, client, projectID)
+func (a *App) resolveSSHIdentity(ctx context.Context, client *apiclientgen.Client, projectID, explicitPath string, notes noteFunc) (string, error) {
+	enrolled, err := a.listEnrolledFingerprints(ctx, client, projectID)
 	if err != nil {
 		return "", err
 	}
 
 	if strings.TrimSpace(explicitPath) != "" {
-		return explicitPath, a.enrollSSHIdentity(cmd, client, projectID, explicitPath, enrolled)
+		return explicitPath, a.enrollSSHIdentity(ctx, client, projectID, explicitPath, enrolled, notes)
 	}
 	managed := defaultSSHIdentityPath()
 	if fileExists(managed) {
-		return managed, a.enrollSSHIdentity(cmd, client, projectID, managed, enrolled)
+		return managed, a.enrollSSHIdentity(ctx, client, projectID, managed, enrolled, notes)
 	}
 	if reusable := enrolledLocalKey(enrolled); reusable != "" {
-		fmt.Fprintf(cmd.ErrOrStderr(), "using %s, already enrolled in this project\n", reusable)
+		notes("using %s, already enrolled in this project", reusable)
 		return reusable, nil
 	}
-	return managed, a.enrollSSHIdentity(cmd, client, projectID, managed, enrolled)
+	return managed, a.enrollSSHIdentity(ctx, client, projectID, managed, enrolled, notes)
 }
 
-func (a *App) listEnrolledFingerprints(cmd *cobra.Command, client *apiclientgen.Client, projectID string) (map[string]bool, error) {
-	res, err := client.ListSSHKeys(cmd.Context(), apiclientgen.ListSSHKeysParams{ProjectId: projectID})
+func (a *App) listEnrolledFingerprints(ctx context.Context, client *apiclientgen.Client, projectID string) (map[string]bool, error) {
+	res, err := client.ListSSHKeys(ctx, apiclientgen.ListSSHKeysParams{ProjectId: projectID})
 	if err != nil {
 		return nil, err
 	}
@@ -421,7 +438,7 @@ func enrolledLocalKey(enrolled map[string]bool) string {
 // the key, so running this against a second project — or after someone revoked
 // the key — enrolls the existing key instead of creating a duplicate or leaving
 // a config that cannot authenticate.
-func (a *App) enrollSSHIdentity(cmd *cobra.Command, client *apiclientgen.Client, projectID, path string, enrolled map[string]bool) error {
+func (a *App) enrollSSHIdentity(ctx context.Context, client *apiclientgen.Client, projectID, path string, enrolled map[string]bool, notes noteFunc) error {
 	publicKeyLine, created, err := loadOrCreateSSHIdentity(path)
 	if err != nil {
 		return err
@@ -432,7 +449,7 @@ func (a *App) enrollSSHIdentity(cmd *cobra.Command, client *apiclientgen.Client,
 	}
 	fingerprint := ssh.FingerprintSHA256(parsed)
 	if created {
-		fmt.Fprintf(cmd.ErrOrStderr(), "generated a new SSH key at %s (%s)\n", path, fingerprint)
+		notes("generated a new SSH key at %s (%s)", path, fingerprint)
 	}
 	if enrolled[fingerprint] {
 		return nil
@@ -440,13 +457,13 @@ func (a *App) enrollSSHIdentity(cmd *cobra.Command, client *apiclientgen.Client,
 
 	createBody := &apimodel.CreateSSHKeyBody{PublicKey: publicKeyLine}
 	createBody.SetName(apiclientgen.NewOptString(sshIdentityComment()))
-	createRes, err := client.CreateSSHKey(cmd.Context(), createBody, apiclientgen.CreateSSHKeyParams{ProjectId: projectID})
+	createRes, err := client.CreateSSHKey(ctx, createBody, apiclientgen.CreateSSHKeyParams{ProjectId: projectID})
 	if err != nil {
 		return err
 	}
 	if _, err := expectResponse[apimodel.SSHKey](createRes); err != nil {
 		return err
 	}
-	fmt.Fprintf(cmd.ErrOrStderr(), "enrolled SSH key %s in this project\n", fingerprint)
+	notes("enrolled SSH key %s in this project", fingerprint)
 	return nil
 }

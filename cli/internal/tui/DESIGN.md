@@ -497,7 +497,10 @@ in the tools picker, below. The
 command writes an `ssh_config` and prints what it wrote, so `apiDataSource`
 gives it `io.Discard` for both streams — a stray line of stderr would draw over
 a full-screen window — and lets the error carry what went wrong to the status
-line.
+line. `DataSource.Run` refreshes the same `ssh_config` after a create, and obeys
+the same rule from the other side: it passes a `noteFunc` that reports onto the
+busy line, so "wrote …/config" is narration rather than a line drawn across the
+frame.
 
 **Services are the left column's first group, and their panes are read-only**
 (`services.go`, ADR 0070 §7).

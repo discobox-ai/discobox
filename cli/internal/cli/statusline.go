@@ -314,3 +314,44 @@ func (l *statusLine) clear() {
 	close(l.stop)
 	l.erase()
 }
+
+// noteFunc is where one line about something done on the caller's behalf goes:
+// which SSH key was enrolled, which ssh_config was written, where a declared
+// source came from.
+//
+// Work that produces those takes one of these rather than writing to a stream,
+// because which screen is listening differs by caller and the work cannot tell
+// from where it runs. A command the user typed prints them; a run on its way to
+// a full-screen terminal narrates them on its status line; the launcher puts
+// them on its busy line and lets nothing through to the terminal at all.
+// Written to a stream directly they land on whichever of those owns the screen,
+// which is how "wrote …/config" ends up drawn across a window's frame.
+//
+// The format carries no trailing newline: a sink that keeps lines adds one, and
+// a sink that rewrites a row cannot have one.
+type noteFunc func(format string, args ...any)
+
+// printedNotes keeps each note, one line each, where the command's own
+// reporting goes. It is what a command the user typed uses: they asked for the
+// work, so what it did is theirs to read afterwards.
+func printedNotes(out io.Writer) noteFunc {
+	return func(format string, args ...any) {
+		fmt.Fprintf(out, format+"\n", args...)
+	}
+}
+
+// note says something done on the caller's behalf on the row this line owns,
+// where the next report replaces it and clear takes it away.
+//
+// It is print's counterpart, and what the caller does with the stream next is
+// what decides between them. A command that returns to a shell prints: the line
+// is worth keeping and the scrollback is where it is kept. A command that hands
+// the terminal to a full-screen program — every run that ends in an attach —
+// cannot keep anything, because a line above that program is content it never
+// drew and will not redraw, and it notes instead.
+//
+// Off a terminal there is no row to rewrite and set appends, so a run in CI
+// keeps the record either way.
+func (l *statusLine) note(format string, args ...any) {
+	l.set(fmt.Sprintf(format, args...))
+}

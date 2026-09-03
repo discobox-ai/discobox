@@ -118,8 +118,12 @@ func TestAPIDataSourceRunUsesSharedRunCreation(t *testing.T) {
 	if err != nil {
 		t.Fatalf("new client: %v", err)
 	}
+	// The window is a full-screen program on this terminal, so the app's error
+	// stream is the one thing the create may not write to. It is given one here
+	// that fails the test if anything lands on it.
+	var stray strings.Builder
 	ds := &apiDataSource{
-		app:       &App{serverURL: server.URL},
+		app:       &App{serverURL: server.URL, errOut: &stray},
 		client:    client,
 		projectID: "project-1",
 	}
@@ -136,12 +140,26 @@ func TestAPIDataSourceRunUsesSharedRunCreation(t *testing.T) {
 	// same words `discobox run` uses, because both call the same creation path
 	// (ADR 0060). A source the server can reach needs no push, so the delivery
 	// reports nothing here.
-	if want := []string{
+	phases := []string{
 		string(sandboxcreate.StepPreparingSource),
 		string(sandboxcreate.StepCreating),
 		"syncing SSH config",
-	}; !slices.Equal(steps, want) {
-		t.Fatalf("reported steps = %q, want %q", steps, want)
+	}
+	if len(steps) < len(phases) || !slices.Equal(steps[:len(phases)], phases) {
+		t.Fatalf("reported steps = %q, want them to open with %q", steps, phases)
+	}
+	// What the sync did on the user's behalf is reported rather than printed,
+	// which is the whole point of reporting it: the key it enrolled and the
+	// files it wrote have nowhere to go but the busy line, and written to a
+	// stream they would be drawn across the window's frame.
+	notes := strings.Join(steps[len(phases):], "\n")
+	for _, want := range []string{"generated a new SSH key at ", "enrolled SSH key ", "wrote "} {
+		if !strings.Contains(notes, want) {
+			t.Fatalf("the SSH config sync did not report %q on the busy line: %q", want, steps)
+		}
+	}
+	if stray.Len() > 0 {
+		t.Fatalf("the create wrote to the terminal the window is drawn on: %q", stray.String())
 	}
 	if sandbox.ID != "sbx_9qk5n25t2hh2rv00" {
 		t.Fatalf("sandbox ID = %q", sandbox.ID)

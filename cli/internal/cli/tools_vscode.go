@@ -104,6 +104,11 @@ func (a *App) runToolsVSCode(cmd *cobra.Command, opts toolsVSCodeOptions) error 
 	// editor will drive decides whether a missing one is fatal: a Windows
 	// build launched from WSL connects with Windows OpenSSH, and without that
 	// config there is nothing for it to connect to.
+	// The user typed this command, so what it does on their behalf is printed
+	// where its own reporting goes. Driven from the launcher's window instead,
+	// that stream is io.Discard and none of it reaches the screen — see
+	// apiDataSource.OpenEditor.
+	notes := printedNotes(cmd.ErrOrStderr())
 	targets, windowsErr := machineSSHTargets(cmd.Context())
 	if windowsErr != nil {
 		if isWindowsExecutable(cmd.Context(), editor) {
@@ -111,7 +116,7 @@ func (a *App) runToolsVSCode(cmd *cobra.Command, opts toolsVSCodeOptions) error 
 				"name a Linux build with --editor or $%s to use this machine's own ssh_config instead",
 				editor, windowsErr, vscodeEditorEnv)
 		}
-		fmt.Fprintf(cmd.ErrOrStderr(), "not writing the Windows ssh_config: %v\n", windowsErr)
+		notes("not writing the Windows ssh_config: %v", windowsErr)
 	}
 
 	var projectID, sandboxID string
@@ -127,7 +132,7 @@ func (a *App) runToolsVSCode(cmd *cobra.Command, opts toolsVSCodeOptions) error 
 		return err
 	}
 
-	remote, err := a.vscodeRemoteTarget(cmd, targets, client, projectID, sandboxID, opts.source)
+	remote, err := a.vscodeRemoteTarget(cmd.Context(), targets, client, projectID, sandboxID, opts.source, notes)
 	if err != nil {
 		return err
 	}
@@ -190,27 +195,28 @@ func (t vscodeRemoteTarget) describe() string {
 // whole project's stanzas rather than this sandbox's is what `ssh-config
 // --write` already means by that file — it is rewritten wholesale on every run
 // — and it leaves every other sandbox reachable too.
-func (a *App) vscodeRemoteTarget(cmd *cobra.Command, targets []sshTarget, client *apiclientgen.Client, projectID, sandboxID, sourceSlug string) (vscodeRemoteTarget, error) {
-	resolvedProjectID, err := a.concreteProjectID(cmd, client, projectID)
+func (a *App) vscodeRemoteTarget(ctx context.Context, targets []sshTarget, client *apiclientgen.Client, projectID, sandboxID, sourceSlug string, notes noteFunc) (vscodeRemoteTarget, error) {
+	resolvedProjectID, err := a.concreteProjectID(ctx, client, projectID)
 	if err != nil {
 		return vscodeRemoteTarget{}, err
 	}
-	hostKey, err := a.sshHostKey(cmd, client)
+	hostKey, err := a.sshHostKey(ctx, client)
 	if err != nil {
 		return vscodeRemoteTarget{}, err
 	}
-	built, err := a.buildManagedSSHConfig(cmd, managedSSHConfigRequest{
+	built, err := a.buildManagedSSHConfig(ctx, managedSSHConfigRequest{
 		client:            client,
 		projectID:         projectID,
 		resolvedProjectID: resolvedProjectID,
 		hostKey:           hostKey,
 		write:             true,
+		notes:             notes,
 	}, targets)
 	if err != nil {
 		return vscodeRemoteTarget{}, err
 	}
 	for _, config := range built {
-		if err := writeManagedSSHConfig(cmd, config, resolvedProjectID); err != nil {
+		if err := writeManagedSSHConfig(config, resolvedProjectID, notes); err != nil {
 			return vscodeRemoteTarget{}, err
 		}
 	}
@@ -222,7 +228,7 @@ func (a *App) vscodeRemoteTarget(cmd *cobra.Command, targets []sshTarget, client
 		// sshConfigHostPatterns.
 		return vscodeRemoteTarget{}, fmt.Errorf("discobox %s has no unambiguous SSH host alias; rename it or the discobox whose name spells its ID", sandboxID)
 	}
-	folder, err := a.vscodeFolder(cmd.Context(), client, projectID, sandboxID, sourceSlug)
+	folder, err := a.vscodeFolder(ctx, client, projectID, sandboxID, sourceSlug)
 	if err != nil {
 		return vscodeRemoteTarget{}, err
 	}

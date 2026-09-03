@@ -2,12 +2,11 @@ package cli
 
 import (
 	"bufio"
+	"context"
 	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
-
-	"github.com/spf13/cobra"
 
 	apiclientgen "github.com/discobox-ai/discobox/api/gen"
 	apimodel "github.com/discobox-ai/discobox/api/model"
@@ -97,7 +96,7 @@ func managedConfigHeader(projectID string) string {
 // stanzas is empty when the project has no sandboxes, and that writes an empty
 // config rather than skipping the write: these files mirror the server, so a
 // project whose last sandbox is gone must stop offering stanzas for it.
-func writeManagedSSHConfig(cmd *cobra.Command, built managedSSHConfig, projectID string) error {
+func writeManagedSSHConfig(built managedSSHConfig, projectID string, notes noteFunc) error {
 	target := built.target
 	configPath, knownHostsPath := target.configPath(projectID), target.knownHostsPath(projectID)
 	if err := ensureStateDir(filepath.Dir(configPath.local)); err != nil {
@@ -134,13 +133,12 @@ func writeManagedSSHConfig(cmd *cobra.Command, built managedSSHConfig, projectID
 	if err != nil {
 		return err
 	}
-	stderr := cmd.ErrOrStderr()
-	fmt.Fprintf(stderr, "wrote %s\n", configPath.client)
+	notes("wrote %s", configPath.client)
 	if added {
-		fmt.Fprintf(stderr, "added an Include for it to %s\n", target.userConfig.client)
+		notes("added an Include for it to %s", target.userConfig.client)
 	}
 	for _, stale := range dropped {
-		fmt.Fprintf(stderr, "removed a stale Include of %s\n", stale)
+		notes("removed a stale Include of %s", stale)
 	}
 	return nil
 }
@@ -372,8 +370,8 @@ func sshConfigQuote(path string) string {
 // default flag — and wrong here: these files are *named* after the project, so
 // leaving the alias unresolved is exactly how one project ends up owning two
 // files and two Include lines.
-func (a *App) concreteProjectID(cmd *cobra.Command, client *apiclientgen.Client, projectID string) (string, error) {
-	res, err := client.GetProject(cmd.Context(), apiclientgen.GetProjectParams{ProjectId: projectID})
+func (a *App) concreteProjectID(ctx context.Context, client *apiclientgen.Client, projectID string) (string, error) {
+	res, err := client.GetProject(ctx, apiclientgen.GetProjectParams{ProjectId: projectID})
 	if err != nil {
 		return "", err
 	}

@@ -246,3 +246,51 @@ func TestStatusLineGivesTheRowUpWhileSomethingElseHasIt(t *testing.T) {
 		t.Errorf("clear() left the resumed line on the screen: %q", out)
 	}
 }
+
+// A note is a line about something done on the caller's behalf, and where it
+// belongs depends on what the caller does with the terminal next. A run that
+// ends in an attach hands the whole screen to the discobox's terminal, so its
+// notes go on the row the status line owns and leave with it: a row left
+// standing above a full-screen program is content that program never drew.
+// Printing is the other half of the choice, and is what -d does.
+func TestStatusLineNotesLeaveNothingBehindWhilePrintsStay(t *testing.T) {
+	t.Setenv("TERM", "xterm-256color")
+	t.Setenv("NO_COLOR", "1")
+	noted := statusLineOnPTY(t, 90, func(line *statusLine) {
+		line.set("preparing source")
+		line.note("source x: %s", "/home/ada/src/x")
+		line.clear()
+	})
+	// The row it was drawn on is the row the status line was already using, and
+	// clear takes that row back: nothing of it survives the wait.
+	if strings.Contains(noted, "\n") {
+		t.Fatalf("a note scrolled a row the terminal keeps: %q", noted)
+	}
+	if !strings.HasSuffix(noted, "\r\x1b[K") {
+		t.Fatalf("the note was not erased with the line: %q", noted)
+	}
+
+	printed := statusLineOnPTY(t, 90, func(line *statusLine) {
+		line.set("preparing source")
+		line.print("source x: %s", "/home/ada/src/x")
+		line.clear()
+	})
+	// \r\n rather than \n: the row is written to a terminal, which translates
+	// the newline on the way out.
+	if !strings.Contains(printed, "source x: /home/ada/src/x\r\n") {
+		t.Fatalf("a printed line did not reach the scrollback: %q", printed)
+	}
+}
+
+// Off a terminal there is no row to rewrite and nothing about to take the
+// screen, so a note is a line like any other: a run in CI keeps the record of
+// which key it enrolled and which config it wrote.
+func TestStatusLineNotesAreKeptOffATerminal(t *testing.T) {
+	var out bytes.Buffer
+	line := newStatusLine(&out)
+	line.note("wrote %s", "/state/discobox/cli/ssh/project-1/config")
+	line.clear()
+	if got, want := out.String(), "wrote /state/discobox/cli/ssh/project-1/config\n"; got != want {
+		t.Fatalf("off-terminal note = %q, want %q", got, want)
+	}
+}

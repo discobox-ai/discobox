@@ -233,11 +233,14 @@ func (s *sshBridgeSession) close() {
 // already, which is why this takes a client and a project rather than deriving
 // them.
 func (a *App) startSSHBridgeSession(cmd *cobra.Command, client *apiclientgen.Client, projectID string) (*sshBridgeSession, error) {
-	identityFile, err := a.resolveSSHIdentity(cmd, client, projectID, "")
+	// `tools ssh` and `cp` are commands the user typed, and a key generated or
+	// enrolled for them is theirs to know about, so the notes are printed where
+	// the command's own reporting goes.
+	identityFile, err := a.resolveSSHIdentity(cmd.Context(), client, projectID, "", printedNotes(cmd.ErrOrStderr()))
 	if err != nil {
 		return nil, err
 	}
-	hostKey, err := a.sshHostKey(cmd, client)
+	hostKey, err := a.sshHostKey(cmd.Context(), client)
 	if err != nil {
 		return nil, err
 	}

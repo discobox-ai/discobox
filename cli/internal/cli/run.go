@@ -134,6 +134,20 @@ func (a *App) runPrompt(cmd *cobra.Command, opts *runCommandOptions, args []stri
 	// while it is up goes through it, since it owns the row it is on.
 	status := newStatusLine(cmd.ErrOrStderr())
 	defer status.clear()
+	// Where a line that is not a phase of the wait goes: what a declared source
+	// resolved to, which SSH key was enrolled, which ssh_config was written.
+	//
+	// A run that ends in an attach hands this terminal to the discobox's own
+	// full-screen program, and nothing may be left standing above it: those
+	// rows are content that program never drew and will not redraw, so what it
+	// paints lands shifted off the screen it believes it has. Such a run notes
+	// them on the status line, which takes its row back before the terminal
+	// starts. -d returns to the shell instead, where the scrollback is exactly
+	// where they belong.
+	notes := noteFunc(status.note)
+	if opts.detach {
+		notes = status.print
+	}
 	// -p and the words after the command are the same prompt, so a caller can
 	// use whichever the shell makes easier and both arrive as argv tokens. The
 	// flag leads because it is the one that had to be quoted.
@@ -143,7 +157,7 @@ func (a *App) runPrompt(cmd *cobra.Command, opts *runCommandOptions, args []stri
 	opts.prompt.ConfirmIncludeDirty = confirmIncludeDirty(cmd, status)
 	opts.prompt.ConfirmCopyDirectory = confirmCopyDirectory(cmd, status)
 	opts.prompt.SkipDeclaredSources = !opts.declaredSources
-	opts.prompt.ReportDeclaredSource = reportDeclaredSource(status)
+	opts.prompt.ReportDeclaredSource = reportDeclaredSource(notes)
 	parsedOpts, err := sandboxcreate.ParsePromptOptions(opts.prompt, prompt)
 	if err != nil {
 		return err
@@ -188,11 +202,18 @@ func (a *App) runPrompt(cmd *cobra.Command, opts *runCommandOptions, args []stri
 	err = sandboxcreate.DeliverSource(cmd.Context(), client, projectID, sandbox, local, gitServerURL, a.token, report)
 	releaseGitServerURL()
 	local.Close()
-	status.clear()
 	if err != nil {
 		return err
 	}
-	if err := a.writeProjectSSHConfig(cmd, client, projectID, ""); err != nil {
+	// Still under the status line, and named on it: the sync generates a key,
+	// enrolls it and rewrites two files, which is a wait like any other and the
+	// last thing between the create and the terminal. The window narrates the
+	// same step in the same words. The line comes down before either of the two
+	// things that follow — printing the discobox, or attaching to it.
+	status.set("syncing SSH config")
+	err = a.writeProjectSSHConfig(cmd.Context(), client, projectID, "", notes)
+	status.clear()
+	if err != nil {
 		return fmt.Errorf("sync SSH config: %w", err)
 	}
 	if opts.detach {
@@ -351,13 +372,14 @@ func directoryCopySize(total sandboxcreate.DirectoryTotal) string {
 // sandbox because a file in the repository asked for them, which is exactly the
 // kind of thing a caller who did not write that file needs told.
 //
-// It goes through the status line rather than to the stream directly, because
-// this runs while the create is being narrated on that same stream and the
-// narration owns the row it is on. Written past it, each of these lines came
-// out with the spinner on the front of it.
-func reportDeclaredSource(status *statusLine) sandboxcreate.ReportDeclaredSourceFunc {
+// It goes through the run's note sink rather than to the stream directly,
+// because this runs while the create is being narrated on that same stream and
+// the narration owns the row it is on. Written past it, each of these lines came
+// out with the spinner on the front of it — and a run that ends in an attach
+// cannot leave them on the screen at all. See notes in runPrompt.
+func reportDeclaredSource(notes noteFunc) sandboxcreate.ReportDeclaredSourceFunc {
 	return func(source sandboxcreate.DeclaredSource) {
-		status.print("%s", declaredSourceLine(source))
+		notes("%s", declaredSourceLine(source))
 	}
 }
 
