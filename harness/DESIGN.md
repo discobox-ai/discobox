@@ -89,6 +89,22 @@ sandbox terminals.
   them unjudged.
 - `harnessMode: config` selects the image-owned interactive config command;
   normal or omitted mode selects the image-owned run/relaunch commands.
+- **A config command may declare the ports its sign-in needs** (`config.ports`,
+  `harness.ConfigPort`). A browser sign-in ends at a callback server on the
+  CLI's own localhost, at a port the identity provider registered in advance —
+  Codex's ChatGPT login redirects to `localhost:1455` and nowhere else — and
+  inside a sandbox that server is one the user's browser cannot reach. The
+  configure flow forwards each declared port from the user's machine into the
+  configure sandbox **at the same number or not at all**
+  (`portforward.Options.Exact`): the redirect URI is fixed, so a forward that
+  landed on the next free port would look bound and answer no browser. A port
+  the machine cannot give is reported in the image's own `unavailable` words —
+  only the image knows what its harness can still do without the callback — in
+  the configure terminal and, in the launcher, on the configure pane's header,
+  where the CLI's full-screen sign-in cannot paint over it. See
+  [`resources/harnessconfigs/DESIGN.md`](../server/internal/resources/harnessconfigs/DESIGN.md)
+  for the snapshot and [`cli/internal/tui/DESIGN.md`](../cli/internal/tui/DESIGN.md)
+  for the pane.
 
 ## Driver Model
 
@@ -353,12 +369,16 @@ there once the user leaves the session (`/exit` or Ctrl-D).
 `codex-cli/configure.sh` follows the claude-code shape: it launches a bare,
 interactive `codex` and lets the user sign in and configure it the way they
 normally would, then inspects what codex itself wrote. Codex's onboarding
-already offers every sign-in this flow would otherwise reimplement — ChatGPT in
-a browser, **ChatGPT by device code**, or an API key — and all of them write
-`$CODEX_HOME/auth.json`, so the script only has to read what the session left
-behind. Device code is the one that works here and the banner says so: the
-sandbox has no browser, and codex's browser flow completes against a callback
-server on the sandbox's own localhost.
+already offers every sign-in this flow would otherwise reimplement — **ChatGPT
+in a browser**, **ChatGPT by device code**, or an API key — and all of them
+write `$CODEX_HOME/auth.json`, so the script only has to read what the session
+left behind. The sandbox has no browser, so the banner says how each of the two
+ChatGPT sign-ins gets there: the browser flow prints a link to open on the
+user's own machine and completes against a callback server on the sandbox's
+localhost:1455, which the image declares as a config port so the configure flow
+forwards it in from the user's machine (see [Image Contract](#image-contract));
+device code is the fallback the flow names when that port was taken, in the
+image's `unavailable` message.
 
 - **Both credentials are delivered as a file, never an environment variable**
   (`delivery: file`). This is not the tidiness argument claude-code makes; codex

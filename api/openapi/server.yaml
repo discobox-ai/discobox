@@ -27,6 +27,12 @@ components:
                 configReminder:
                     description: Reminder shown outside the interactive configuration terminal, declared by the registered image.
                     type: string
+                configPorts:
+                    description: Local ports the configure flow forwards into the configure sandbox at the same port number, declared by the registered image.
+                    items:
+                        $ref: '#/components/schemas/HarnessConfigPort'
+                    nullable: true
+                    type: array
                 configureError:
                     description: Why the last configure attempt failed. Cleared when a configure starts or succeeds.
                     type: string
@@ -140,6 +146,20 @@ components:
             required:
                 - path
                 - volume
+            type: object
+        HarnessConfigPort:
+            additionalProperties: false
+            description: A local port a harness's configure flow needs bound at the same number on the user's machine and forwarded into the configure sandbox, such as an OAuth callback its sign-in redirects to.
+            properties:
+                port:
+                    description: The port, bound locally at exactly this number or not at all.
+                    format: int64
+                    type: integer
+                unavailable:
+                    description: What to tell the user when the port cannot be bound on their machine; empty falls back to naming the port.
+                    type: string
+            required:
+                - port
             type: object
         HarnessConfigFile:
             additionalProperties: false

@@ -7,9 +7,10 @@
 # HarnessConfig.
 #
 # Codex's own onboarding already offers every sign-in this script would
-# otherwise reimplement — ChatGPT in a browser, ChatGPT by device code (the one
-# that works on a headless machine like this sandbox), or an API key — and each
-# writes its result to $CODEX_HOME/auth.json. So this script launches a bare
+# otherwise reimplement — ChatGPT in a browser (its localhost:1455 callback is
+# forwarded in from the user's machine; see config.ports in image.json), ChatGPT
+# by device code (the fallback when that port could not be bound there), or an
+# API key — and each writes its result to $CODEX_HOME/auth.json. So this script launches a bare
 # `codex` and then reads whichever shape that file came back in:
 #   - A ChatGPT sign-in writes {"tokens": {id_token, access_token,
 #     refresh_token, account_id}, "last_refresh": ...}. The access token is
@@ -704,9 +705,11 @@ while [ -z "$ENV_NAME" ]; do
 		printf '%s\n' "${C_BOLD}You must do both of these:${C_RESET}"
 		echo
 		printf '%s\n' "  1. ${C_BOLD}Sign in${C_RESET}  on the screen Codex opens on. Nothing can be saved"
-		echo "              without it. This sandbox has no browser, so pick"
-		printf '%s\n' "              ${C_BOLD}Sign in with Device Code${C_RESET} and enter the code on your own"
-		echo "              machine — or use an API key."
+		echo "              without it. This sandbox has no browser: for"
+		printf '%s\n' "              ${C_BOLD}Sign in with ChatGPT${C_RESET}, open the link it prints on your own"
+		echo "              machine — Discobox forwards the sign-in back in here."
+		printf '%s\n' "              If Discobox warned that port 1455 is taken, pick"
+		printf '%s\n' "              ${C_BOLD}Sign in with Device Code${C_RESET} instead — or use an API key."
 		printf '%s\n' "  2. ${C_BOLD}${C_CMD}/exit${C_RESET}    Leave Codex when you're done. Setup only finishes"
 		echo "              once you exit — staying in blocks it."
 		echo

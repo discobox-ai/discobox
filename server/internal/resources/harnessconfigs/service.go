@@ -123,24 +123,14 @@ func (s *Service) CreateHarnessConfig(ctx context.Context, projectID string, inp
 	// none is taken to install the conventional harness.RunCommand, which
 	// conventionCommands supplies (ADR 0086 §3). The label validator already
 	// rejects a blank one.
-	runCommand, relaunchCommand, configCommand, configReminder, files, secrets, env, volumes, additionalGroups := harnessMetadataFields(slug, inspected.ImageMetadata)
-
 	config := &model.HarnessConfig{
-		ProjectID:        projectID,
-		Slug:             slug,
-		Name:             name,
-		Image:            image,
-		ImageDigest:      imageDigest,
-		RunCommand:       runCommand,
-		RelaunchCommand:  relaunchCommand,
-		ConfigCommand:    configCommand,
-		ConfigReminder:   configReminder,
-		Files:            files,
-		Secrets:          secrets,
-		Env:              env,
-		Volumes:          volumes,
-		AdditionalGroups: additionalGroups,
+		ProjectID:   projectID,
+		Slug:        slug,
+		Name:        name,
+		Image:       image,
+		ImageDigest: imageDigest,
 	}
+	snapshotImageMetadata(config, inspected.ImageMetadata)
 	if err := s.store.CreateHarnessConfig(ctx, config); err != nil {
 		return nil, err
 	}
@@ -216,13 +206,9 @@ func (s *Service) RefreshHarnessConfigImage(ctx context.Context, projectID, conf
 	if err != nil {
 		return nil, apperrors.NewStatusError(http.StatusBadRequest, err.Error())
 	}
-	runCommand, relaunchCommand, configCommand, configReminder, files, secrets, env, volumes, additionalGroups := harnessMetadataFields(config.Slug, metadata.ImageMetadata)
 	previousDigest := config.ImageDigest
 	config.ImageDigest = metadata.Digest
-	config.RunCommand, config.RelaunchCommand, config.ConfigCommand = runCommand, relaunchCommand, configCommand
-	config.ConfigReminder = configReminder
-	config.Files, config.Secrets, config.Env, config.Volumes = files, secrets, env, volumes
-	config.AdditionalGroups = additionalGroups
+	snapshotImageMetadata(config, metadata.ImageMetadata)
 	if err := s.store.UpdateHarnessConfig(ctx, config); err != nil {
 		return nil, err
 	}
@@ -417,7 +403,7 @@ func (s *Service) SeedBuiltIns(ctx context.Context, projectID string) error {
 				ProjectID: projectID, Slug: seed.Slug, Name: seed.Name,
 				BuiltIn: true, Image: image, ImageDigest: metadata.Digest,
 			}
-			config.RunCommand, config.RelaunchCommand, config.ConfigCommand, config.ConfigReminder, config.Files, config.Secrets, config.Env, config.Volumes, config.AdditionalGroups = harnessMetadataFields(seed.Slug, metadata.ImageMetadata)
+			snapshotImageMetadata(config, metadata.ImageMetadata)
 			// Born configured when there is nothing to collect. `shell` is the
 			// harness that lands here, but by declaring no secrets rather than
 			// by being itself: a fresh project has to be usable before anyone
@@ -434,7 +420,7 @@ func (s *Service) SeedBuiltIns(ctx context.Context, projectID string) error {
 		previousDigest := existing.ImageDigest
 		existing.Image = image
 		existing.ImageDigest = metadata.Digest
-		existing.RunCommand, existing.RelaunchCommand, existing.ConfigCommand, existing.ConfigReminder, existing.Files, existing.Secrets, existing.Env, existing.Volumes, existing.AdditionalGroups = harnessMetadataFields(seed.Slug, metadata.ImageMetadata)
+		snapshotImageMetadata(existing, metadata.ImageMetadata)
 		if err := s.store.UpdateHarnessConfig(ctx, existing); err != nil {
 			return err
 		}
@@ -511,24 +497,33 @@ func conventionCommands(slug string, image harness.Image) (runCommand, relaunchC
 	return runCommand, relaunchCommand
 }
 
-// harnessMetadataFields snapshots the mutable config fields declared by a
-// harness image's label metadata, resolving the run and relaunch commands
-// against the convention for the harness registered under slug.
-func harnessMetadataFields(slug string, metadata harness.ImageMetadata) (runCommand, relaunchCommand, configCommand []string, configReminder string, files []model.HarnessConfigFile, secrets []model.HarnessConfigSecret, env map[string]string, volumes []harness.Volume, additionalGroups []string) {
+// snapshotImageMetadata writes the mutable fields a harness image's label
+// metadata declares onto config, resolving the run and relaunch commands
+// against the convention for the slug it is registered under.
+//
+// It takes the config rather than returning the fields because every caller
+// wants exactly this set on exactly one config, and a snapshot that grows a
+// field should not have to grow a return value at three call sites to reach
+// them. Identity — id, slug, image, digest, Configured — is the caller's; this
+// is only what the label says.
+func snapshotImageMetadata(config *model.HarnessConfig, metadata harness.ImageMetadata) {
 	image := metadata.Harness
 	if image == nil {
 		image = &harness.Image{}
 	}
-	runCommand, relaunchCommand = conventionCommands(slug, *image)
+	config.RunCommand, config.RelaunchCommand = conventionCommands(config.Slug, *image)
+	config.ConfigCommand, config.ConfigReminder, config.ConfigPorts = nil, "", nil
 	if image.Config != nil {
-		configCommand = append([]string{}, image.Config.Command...)
-		configReminder = strings.TrimSpace(image.Config.Reminder)
+		config.ConfigCommand = append([]string{}, image.Config.Command...)
+		config.ConfigReminder = strings.TrimSpace(image.Config.Reminder)
+		config.ConfigPorts = append([]harness.ConfigPort{}, image.Config.Ports...)
 	}
-	files = make([]model.HarnessConfigFile, 0, len(image.Files))
+	files := make([]model.HarnessConfigFile, 0, len(image.Files))
 	for _, file := range image.Files {
 		files = append(files, model.HarnessConfigFile{Path: file.Path, Content: file.Content, CreateOnly: file.CreateOnly, Template: file.Template})
 	}
-	secrets = make([]model.HarnessConfigSecret, 0, len(image.Secrets))
+	config.Files = files
+	secrets := make([]model.HarnessConfigSecret, 0, len(image.Secrets))
 	for _, secret := range image.Secrets {
 		secrets = append(secrets, model.HarnessConfigSecret{
 			Name: secret.Name, Required: secret.Required, OneOfGroup: secret.OneOfGroup,
@@ -538,15 +533,17 @@ func harnessMetadataFields(slug string, metadata harness.ImageMetadata) (runComm
 			Delivery: secret.Delivery,
 		})
 	}
+	config.Secrets = secrets
+	config.Env = nil
 	if len(metadata.Env) > 0 {
-		env = make(map[string]string, len(metadata.Env))
+		env := make(map[string]string, len(metadata.Env))
 		for k, v := range metadata.Env {
 			env[k] = v
 		}
+		config.Env = env
 	}
-	volumes = append([]harness.Volume{}, metadata.Volumes...)
-	additionalGroups = append([]string{}, metadata.AdditionalGroups...)
-	return runCommand, relaunchCommand, configCommand, configReminder, files, secrets, env, volumes, additionalGroups
+	config.Volumes = append([]harness.Volume{}, metadata.Volumes...)
+	config.AdditionalGroups = append([]string{}, metadata.AdditionalGroups...)
 }
 
 func apiError(err error, notFoundMessage string) error {

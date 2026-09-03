@@ -177,8 +177,25 @@ func validateImageMetadata(metadata harness.ImageMetadata) error {
 	if len(h.RunCommand) > 0 && strings.TrimSpace(h.RunCommand[0]) == "" {
 		return fmt.Errorf("%s label has a blank runCommand", harness.ImageLabel)
 	}
-	if h.Config != nil && (len(h.Config.Command) == 0 || strings.TrimSpace(h.Config.Command[0]) == "") {
-		return fmt.Errorf("%s label config mode requires command", harness.ImageLabel)
+	if h.Config != nil {
+		if len(h.Config.Command) == 0 || strings.TrimSpace(h.Config.Command[0]) == "" {
+			return fmt.Errorf("%s label config mode requires command", harness.ImageLabel)
+		}
+		// A declared port is forwarded at its own number or not at all, so a
+		// number no listener can hold is a broken image rather than a forward
+		// that quietly lands elsewhere. Duplicates are rejected for the same
+		// reason: the second declaration could only ever contradict the first
+		// about what to say when the port is unavailable.
+		ports := map[int]struct{}{}
+		for _, port := range h.Config.Ports {
+			if port.Port < 1 || port.Port > 65535 {
+				return fmt.Errorf("%s label config port %d is out of range", harness.ImageLabel, port.Port)
+			}
+			if _, ok := ports[port.Port]; ok {
+				return fmt.Errorf("%s label has duplicate config port %d", harness.ImageLabel, port.Port)
+			}
+			ports[port.Port] = struct{}{}
+		}
 	}
 	seen := map[string]struct{}{}
 	for _, secret := range h.Secrets {

@@ -328,6 +328,7 @@ type HarnessConfig struct {
 	RelaunchCommand  []string              `gorm:"column:relaunch_command;type:text;serializer:json" json:"relaunchCommand,omitempty" doc:"Relaunch argv snapshotted from the registered image label."`
 	ConfigCommand    []string              `gorm:"column:config_command;type:text;serializer:json" json:"configCommand,omitempty" doc:"Config-mode argv snapshotted from the registered image label."`
 	ConfigReminder   string                `gorm:"column:config_reminder;not null;type:text;default:''" json:"configReminder,omitempty" doc:"Reminder shown outside the interactive configuration terminal, snapshotted from the registered image label."`
+	ConfigPorts      []harness.ConfigPort  `gorm:"column:config_ports;type:text;serializer:json" json:"configPorts,omitempty" doc:"Local ports the configure flow forwards into the configure sandbox at the same port number, snapshotted from the registered image label."`
 	Files            []HarnessConfigFile   `gorm:"column:files;type:text;serializer:json" json:"files,omitempty" doc:"Non-secret files declared by the image label. Baseline only; the configure flow's files live in ConfiguredFiles."`
 	Secrets          []HarnessConfigSecret `gorm:"column:secrets;type:text;serializer:json" json:"secrets,omitempty" doc:"Environment-variable secret declarations snapshotted from the image label."`
 	Env              map[string]string     `gorm:"column:env;type:text;serializer:json" json:"env,omitempty" doc:"Default environment variables snapshotted from the image label."`

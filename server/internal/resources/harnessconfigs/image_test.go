@@ -8,6 +8,7 @@ import (
 	"testing"
 
 	"github.com/discobox-ai/discobox/harness"
+	"github.com/discobox-ai/discobox/server/internal/model"
 )
 
 // withBaseLayer adds the layer every harness image inherits from the sandbox
@@ -102,6 +103,47 @@ func TestParseImageMetadataRejectsUnknownVolumeKind(t *testing.T) {
 	}
 	if _, err := parseImageMetadata("sha256:abc", withBaseLayer(string(label))); err == nil {
 		t.Fatal("unknown volume kind was accepted")
+	}
+}
+
+// A configure port is forwarded at its own number or not at all, so a number
+// no listener can hold, or one declared twice, is a broken image.
+func TestParseImageMetadataRejectsBadConfigPorts(t *testing.T) {
+	for name, ports := range map[string][]harness.ConfigPort{
+		"zero":      {{Port: 0}},
+		"too high":  {{Port: 65536}},
+		"duplicate": {{Port: 1455}, {Port: 1455, Unavailable: "a second opinion"}},
+	} {
+		label, err := json.Marshal(harness.ImageMetadata{Harness: &harness.Image{
+			ID: "codex", Name: "Codex", RunCommand: []string{"codex"},
+			Config: &harness.ImageMode{Command: []string{"configure"}, Ports: ports},
+		}})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if _, err := parseImageMetadata("sha256:abc", withBaseLayer(string(label))); err == nil {
+			t.Fatalf("%s config port was accepted", name)
+		}
+	}
+}
+
+// What the label declares for config mode lands on the config as declared,
+// message included, and is cleared again by an image that no longer declares it.
+func TestSnapshotImageMetadataCarriesConfigPorts(t *testing.T) {
+	config := &model.HarnessConfig{Slug: "codex"}
+	snapshotImageMetadata(config, harness.ImageMetadata{Harness: &harness.Image{
+		ID: "codex", Name: "Codex",
+		Config: &harness.ImageMode{
+			Command: []string{"configure"}, Reminder: " sign in ",
+			Ports: []harness.ConfigPort{{Port: 1455, Unavailable: "use a device code"}},
+		},
+	}})
+	if config.ConfigReminder != "sign in" || len(config.ConfigPorts) != 1 || config.ConfigPorts[0] != (harness.ConfigPort{Port: 1455, Unavailable: "use a device code"}) {
+		t.Fatalf("config mode snapshot = %q %#v", config.ConfigReminder, config.ConfigPorts)
+	}
+	snapshotImageMetadata(config, harness.ImageMetadata{Harness: &harness.Image{ID: "codex", Name: "Codex"}})
+	if config.ConfigCommand != nil || config.ConfigReminder != "" || config.ConfigPorts != nil {
+		t.Fatalf("config mode survived an image that declares none: %q %q %#v", config.ConfigCommand, config.ConfigReminder, config.ConfigPorts)
 	}
 }
 

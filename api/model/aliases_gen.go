@@ -31,6 +31,7 @@ type GitSourceDestination = apigen.GitSourceDestination
 type GitSourceWorkspace = apigen.GitSourceWorkspace
 type HarnessConfig = apigen.HarnessConfig
 type HarnessConfigFile = apigen.HarnessConfigFile
+type HarnessConfigPort = apigen.HarnessConfigPort
 type HarnessConfigSecret = apigen.HarnessConfigSecret
 type HarnessConfigSecretBinding = apigen.HarnessConfigSecretBinding
 type HarnessHookLog = apigen.HarnessHookLog

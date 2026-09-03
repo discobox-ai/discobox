@@ -110,10 +110,13 @@ func TestDefinitionConfigure(t *testing.T) {
 	if !strings.Contains(script, "confirm_launch") {
 		t.Fatalf("configure script launches codex without holding its instructions on screen: %s", script)
 	}
-	// This sandbox has no browser, so the one sign-in that works here is named
-	// explicitly; /exit is what setup cannot finish without; /logout is how an
-	// already-signed-in session switches accounts, codex having no /login.
-	for _, phrase := range []string{"Device Code", "/exit", "/model", "/logout"} {
+	// This sandbox has no browser, so both sign-ins that work here are named
+	// explicitly — the browser one completes through the port the image
+	// declares (image.json config.ports) and the device code is the fallback
+	// when that port could not be bound; /exit is what setup cannot finish
+	// without; /logout is how an already-signed-in session switches accounts,
+	// codex having no /login.
+	for _, phrase := range []string{"Sign in with ChatGPT", "Device Code", "1455", "/exit", "/model", "/logout"} {
 		if !strings.Contains(script, phrase) {
 			t.Fatalf("configure script does not point the user at %s: %s", phrase, script)
 		}

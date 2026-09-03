@@ -27,6 +27,12 @@
     ],
     "config": {
       "reminder": "Sign in with /login, then finish configuration with /exit.",
+      "ports": [
+        {
+          "port": 1455,
+          "unavailable": "Port 1455 is taken on your machine, so \"Sign in with ChatGPT\" cannot complete here. Choose \"Sign in with Device Code\" instead, or free the port and configure again."
+        }
+      ],
       "command": [
         "/usr/local/libexec/discobox/configure-codex"
       ]

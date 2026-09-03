@@ -116,6 +116,33 @@ type Image struct {
 type ImageMode struct {
 	Command  []string `json:"command"`
 	Reminder string   `json:"reminder,omitempty"`
+	// Ports are the callback ports the configure command needs reachable at
+	// the same number on the user's own machine. See ConfigPort.
+	Ports []ConfigPort `json:"ports,omitempty"`
+}
+
+// ConfigPort is one local port a configure command's sign-in depends on.
+//
+// A harness CLI signing in through a browser starts a callback server on its
+// own localhost and sends the browser to a redirect URI naming that exact port
+// — one the identity provider has registered in advance, so it is not
+// negotiable. In a sandbox that server is on the *sandbox's* localhost, where
+// the user's browser cannot reach it, which is why the only sign-in that has
+// worked here is a device code.
+//
+// Declaring the port asks the configure flow to forward it: the same port
+// number on this machine, tunneled into the configure sandbox, for as long as
+// the flow runs. Same number or nothing — the redirect URI is fixed, so a
+// forward that landed on the next free port would answer no browser while
+// looking like it had worked.
+type ConfigPort struct {
+	Port int `json:"port"`
+	// Unavailable is what to tell the user when the port cannot be bound here,
+	// because something else on their machine already holds it. Only the image
+	// knows what its harness can still do without the callback — sign in by
+	// device code, in Codex's case — so the fallback is the image's to spell
+	// out. Empty falls back to saying which port could not be bound.
+	Unavailable string `json:"unavailable,omitempty"`
 }
 
 // Definition is a built-in shortcut for registering an included harness image.

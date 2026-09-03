@@ -36,8 +36,12 @@ still true of it, and true *by rule* rather than by slug:
   them through `harness.ResolveImageLabels` — every inherited
   `io.discobox.image.v1.<NN>-<name>` layer, then the image's own
   `io.discobox.image.v1` — before validating the merged result and snapshotting
-  the digest, run/relaunch/configure argv, configure reminder, files, and secret
-  declarations onto the config. Nothing re-reads the labels afterward.
+  the digest, run/relaunch/configure argv, configure reminder and ports, files,
+  and secret declarations onto the config (`snapshotImageMetadata`). Nothing
+  re-reads the labels afterward. Configure ports (`harness.ConfigPort`) are
+  validated as a port number each, declared once; the forward they ask for is
+  the CLI's, not this service's — see `cli/internal/cli` →
+  `forwardConfigurePorts`.
 - Registration **requires the base layer**. An image carrying no
   `10-sandbox-base` layer was not built `FROM discobox-sandbox-agent`, and is
   rejected saying so: the runtime contract lives in that image's filesystem, so

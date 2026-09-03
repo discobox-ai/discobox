@@ -228,6 +228,8 @@ func mergeHarness(base, over *Image) *Image {
 	}
 	if over.Config != nil {
 		config := *over.Config
+		config.Command = append([]string(nil), over.Config.Command...)
+		config.Ports = append([]ConfigPort(nil), over.Config.Ports...)
 		merged.Config = &config
 	}
 	merged.Files = mergeFiles(merged.Files, over.Files)

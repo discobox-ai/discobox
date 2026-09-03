@@ -2200,6 +2200,9 @@ type HarnessConfig struct {
 	ConfigCommand OptNilStringArray `json:"configCommand"`
 	// Reminder shown outside the interactive configuration terminal, declared by the registered image.
 	ConfigReminder OptString `json:"configReminder"`
+	// Local ports the configure flow forwards into the configure sandbox at the same port number,
+	// declared by the registered image.
+	ConfigPorts OptNilHarnessConfigPortArray `json:"configPorts"`
 	// Why the last configure attempt failed. Cleared when a configure starts or succeeds.
 	ConfigureError OptString `json:"configureError"`
 	// Sandbox running the configure flow, while one is in flight.
@@ -2266,6 +2269,11 @@ func (s *HarnessConfig) GetConfigCommand() OptNilStringArray {
 // GetConfigReminder returns the value of ConfigReminder.
 func (s *HarnessConfig) GetConfigReminder() OptString {
 	return s.ConfigReminder
+}
+
+// GetConfigPorts returns the value of ConfigPorts.
+func (s *HarnessConfig) GetConfigPorts() OptNilHarnessConfigPortArray {
+	return s.ConfigPorts
 }
 
 // GetConfigureError returns the value of ConfigureError.
@@ -2381,6 +2389,11 @@ func (s *HarnessConfig) SetConfigCommand(val OptNilStringArray) {
 // SetConfigReminder sets the value of ConfigReminder.
 func (s *HarnessConfig) SetConfigReminder(val OptString) {
 	s.ConfigReminder = val
+}
+
+// SetConfigPorts sets the value of ConfigPorts.
+func (s *HarnessConfig) SetConfigPorts(val OptNilHarnessConfigPortArray) {
+	s.ConfigPorts = val
 }
 
 // SetConfigureError sets the value of ConfigureError.
@@ -2543,6 +2556,37 @@ func (s *HarnessConfigFile) SetCreateOnly(val OptBool) {
 // SetTemplate sets the value of Template.
 func (s *HarnessConfigFile) SetTemplate(val OptBool) {
 	s.Template = val
+}
+
+// A local port a harness's configure flow needs bound at the same number on the user's machine and
+// forwarded into the configure sandbox, such as an OAuth callback its sign-in redirects to.
+// Ref: #/components/schemas/HarnessConfigPort
+type HarnessConfigPort struct {
+	// The port, bound locally at exactly this number or not at all.
+	Port int64 `json:"port"`
+	// What to tell the user when the port cannot be bound on their machine; empty falls back to naming
+	// the port.
+	Unavailable OptString `json:"unavailable"`
+}
+
+// GetPort returns the value of Port.
+func (s *HarnessConfigPort) GetPort() int64 {
+	return s.Port
+}
+
+// GetUnavailable returns the value of Unavailable.
+func (s *HarnessConfigPort) GetUnavailable() OptString {
+	return s.Unavailable
+}
+
+// SetPort sets the value of Port.
+func (s *HarnessConfigPort) SetPort(val int64) {
+	s.Port = val
+}
+
+// SetUnavailable sets the value of Unavailable.
+func (s *HarnessConfigPort) SetUnavailable(val OptString) {
+	s.Unavailable = val
 }
 
 // Declares an environment variable the harness expects, and whether it is required.
@@ -4847,6 +4891,69 @@ func (o OptNilHarnessConfigFileArray) Get() (v []HarnessConfigFile, ok bool) {
 
 // Or returns value if set, or given parameter if does not.
 func (o OptNilHarnessConfigFileArray) Or(d []HarnessConfigFile) []HarnessConfigFile {
+	if v, ok := o.Get(); ok {
+		return v
+	}
+	return d
+}
+
+// NewOptNilHarnessConfigPortArray returns new OptNilHarnessConfigPortArray with value set to v.
+func NewOptNilHarnessConfigPortArray(v []HarnessConfigPort) OptNilHarnessConfigPortArray {
+	return OptNilHarnessConfigPortArray{
+		Value: v,
+		Set:   true,
+	}
+}
+
+// OptNilHarnessConfigPortArray is optional nullable []HarnessConfigPort.
+type OptNilHarnessConfigPortArray struct {
+	Value []HarnessConfigPort
+	Set   bool
+	Null  bool
+}
+
+// IsSet returns true if OptNilHarnessConfigPortArray was set.
+func (o OptNilHarnessConfigPortArray) IsSet() bool { return o.Set }
+
+// Reset unsets value.
+func (o *OptNilHarnessConfigPortArray) Reset() {
+	var v []HarnessConfigPort
+	o.Value = v
+	o.Set = false
+	o.Null = false
+}
+
+// SetTo sets value to v.
+func (o *OptNilHarnessConfigPortArray) SetTo(v []HarnessConfigPort) {
+	o.Set = true
+	o.Null = false
+	o.Value = v
+}
+
+// IsNull returns true if value is Null.
+func (o OptNilHarnessConfigPortArray) IsNull() bool { return o.Null }
+
+// SetToNull sets value to null.
+func (o *OptNilHarnessConfigPortArray) SetToNull() {
+	o.Set = true
+	o.Null = true
+	var v []HarnessConfigPort
+	o.Value = v
+}
+
+// Get returns value and boolean that denotes whether value was set.
+func (o OptNilHarnessConfigPortArray) Get() (v []HarnessConfigPort, ok bool) {
+	if o.Null {
+		return v, false
+	}
+	if !o.Set {
+		return v, false
+	}
+	return o.Value, true
+}
+
+// Or returns value if set, or given parameter if does not.
+func (o OptNilHarnessConfigPortArray) Or(d []HarnessConfigPort) []HarnessConfigPort {
 	if v, ok := o.Get(); ok {
 		return v
 	}
