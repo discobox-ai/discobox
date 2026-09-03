@@ -5,12 +5,17 @@ description: Have a fresh-eyes subagent review the local changes and leave its f
 
 # Review Until Accepted
 
+You are working inside a discobox, and `discobox-review` is installed in it.
+It is a review of the local working tree: comments anchored to lines, replies
+on them, per-file approval, all kept in `.git/discobox-review.json` beside the
+repository rather than on a forge. Nothing here needs a remote, a pull request,
+or a network.
+
 Two roles over one working tree. A **reviewer** subagent reads the change cold
-and writes its findings into the repository's review
-(`.git/discobox-review.json`) with the `discobox-review` command. You are the
-**author**: you fix what is worth fixing, push back on what is not, and send the
-reviewer back in. Rounds repeat until the reviewer has closed every comment and
-approved every file.
+and writes its findings into that review with the `discobox-review` command.
+You are the **author**: you fix what is worth fixing, push back on what is not,
+and send the reviewer back in. Rounds repeat until the reviewer has closed
+every comment and approved every file.
 
 The reviewer never edits code. You never close your own comments. That
 separation is the whole point — if you resolve your own threads there was no
@@ -63,10 +68,10 @@ Delegate to **one** subagent, working in this tree, with this brief:
 >
 > Read the change with `discobox-review diff --stat` then `discobox-review
 > diff`. The line numbers it prints are the ones a comment anchors to. Read the
-> surrounding code — a diff hides its own context. Read `CLAUDE.md`, and the
-> `DESIGN.md` and `REVIEW.md` files from the repository root down to each
-> package the change touches; a change that contradicts the closest `REVIEW.md`
-> is a finding.
+> surrounding code — a diff hides its own context. Read what the repository
+> tells agents about itself — `AGENTS.md`, `CLAUDE.md`, and any design or
+> review notes from the root down to each directory the change touches; a
+> change that contradicts the closest one of those is a finding.
 >
 > Leave every finding in the review, one conversation per concern:
 >
@@ -84,11 +89,11 @@ Delegate to **one** subagent, working in this tree, with this brief:
 > for reading the code — CI already runs it; your value is what CI cannot see.
 >
 > Look for: correctness bugs and the failure that reaches them; a claim in a
-> comment or doc that the code does not honour; design guidance in `DESIGN.md`
-> or `REVIEW.md` this change breaks; abstractions that exist only to shrink the
-> diff (`CLAUDE.md` "Implementation Quality"); missing migration or upgrade path
-> for persisted state; a case the change plainly forgot. Say what breaks and
-> when, not that something "could be clearer".
+> comment or doc that the code does not honour; design guidance in the repo's
+> notes this change breaks; abstractions that exist only to shrink the diff;
+> missing migration or upgrade path for persisted state; a case the change
+> plainly forgot. Say what breaks and when, not that something "could be
+> clearer".
 >
 > Approve what deserves it. A review that comments on everything and approves
 > nothing is not a careful review, it is an unhelpful one.
@@ -178,8 +183,10 @@ file's approval, the last round has to be one where the reviewer approved
 everything *after* your final change — if you edited anything after the
 approval, run one more round.
 
-Before you report done, run `go tool task check-hooks` (repo convention) and
-report what it says.
+Before you report done, run whatever check this repository tells agents to run
+before handing work back — a build, a lint, a test target, whatever its
+`AGENTS.md` or `CLAUDE.md` names — and report what it says. The reviewer read
+the code; nobody here ran it.
 
 Cap the loop at **5 rounds**. If it has not converged by then the disagreement
 is not going to be settled by another round: stop, summarise both positions, and

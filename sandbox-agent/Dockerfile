@@ -38,6 +38,11 @@ RUN --mount=type=cache,target=/go/pkg/mod,sharing=locked \
 # tags, so `latest` is main's tip anyway, but an unpinned version makes the
 # build unreproducible and leaves this layer cached on a stale commit. Bump it
 # to pull a newer main.
+#
+# Bumping it can also invalidate the `discobox-review` skill, which documents
+# this binary's interface from another repository and is installed further
+# down: re-read `sandbox-agent/image/skills/discobox-review/SKILL.md` against
+# the version you move to. Nothing else in the build will notice.
 ARG REVIEW_VERSION=v0.0.0-20260903193457-150d22329b83
 RUN --mount=type=cache,target=/go/pkg/mod,sharing=locked \
     --mount=type=cache,target=/root/.cache/go-build,sharing=locked \
@@ -342,6 +347,16 @@ COPY --from=sandbox-agent-builder /out/discobox-access /usr/local/bin/discobox-a
 # the repository declares (ADR 0080). It lives in the module whose flags it
 # documents, so changing them puts somebody in front of it.
 COPY access/skills /usr/local/share/discobox/skills
+# The skills for the tools the image installs that no module here owns —
+# `discobox-review`, whose binary comes from discobox-ai/review below. Two
+# COPYs into one directory merge, so this tree and the module-owned one above
+# share it without either hiding the other.
+#
+# ADR 0080 §3 would put this skill beside the interface it documents, and that
+# interface is in another repository; see sandbox-agent/DESIGN.md for why it is
+# here anyway. What that costs is paid at `ARG REVIEW_VERSION` in the builder
+# stage, where the note to re-read this skill on a bump lives.
+COPY sandbox-agent/image/skills /usr/local/share/discobox/skills
 # Installs as `docker`, ahead of the real CLI at /usr/bin/docker on PATH, to
 # give `docker build` the pool-shared BuildKit cache. Non-build commands are
 # exec'd straight through. See the sandbox-agent/dockercache package.
