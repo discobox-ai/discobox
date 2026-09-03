@@ -5,6 +5,7 @@ import (
 	"context"
 	"io"
 	"os"
+	"os/exec"
 	"strconv"
 	"testing"
 	"time"
@@ -31,7 +32,8 @@ func TestAnInvocationWithNoParentNamedIsNotWatched(t *testing.T) {
 // watched.
 func TestAPaneChildIsWatched(t *testing.T) {
 	t.Setenv(localpty.ParentPIDEnv, strconv.Itoa(os.Getppid()))
-	ctx := context.Background()
+	noExit(t)
+	ctx := t.Context()
 	watched := watchParentProcess(ctx, nil)
 	if watched == ctx {
 		t.Fatal("a command started on a pane's pty should be watched")
@@ -51,8 +53,7 @@ func TestALostParentEndsTheCommand(t *testing.T) {
 	t.Cleanup(func() { parentWatchExit = restore })
 
 	var notice bytes.Buffer
-	// Our own pid is never our parent, so the watchdog sees it gone at once.
-	ctx := watchProcess(t.Context(), os.Getpid(), time.Millisecond, time.Millisecond, &notice)
+	ctx := watchProcess(t.Context(), exitedProcess(t), time.Millisecond, time.Millisecond, &notice)
 
 	select {
 	case <-ctx.Done():
@@ -79,8 +80,10 @@ func TestTheWatchEndsWithTheCommand(t *testing.T) {
 	parentWatchExit = func(int) { t.Error("a command that ended on its own should not be exited by the watchdog") }
 	t.Cleanup(func() { parentWatchExit = restore })
 
+	// A poll that will not come round again, so the only branch left is the
+	// one being tested: what the watch does when the command ends first.
 	ctx, cancel := context.WithCancel(context.Background())
-	watched := watchProcess(ctx, os.Getppid(), time.Millisecond, time.Millisecond, nil)
+	watched := watchProcess(ctx, os.Getppid(), time.Hour, time.Millisecond, nil)
 	cancel()
 	select {
 	case <-watched.Done():
@@ -95,6 +98,7 @@ func TestTheWatchEndsWithTheCommand(t *testing.T) {
 // watched context and not the one Execute was handed.
 func TestTheWatchedContextIsWhatCommandsRunUnder(t *testing.T) {
 	t.Setenv(localpty.ParentPIDEnv, strconv.Itoa(os.Getppid()))
+	noExit(t)
 
 	cmd, _ := newRootCommand()
 	var got context.Context
@@ -109,7 +113,7 @@ func TestTheWatchedContextIsWhatCommandsRunUnder(t *testing.T) {
 	cmd.SetOut(io.Discard)
 	cmd.SetErr(io.Discard)
 
-	ctx := context.Background()
+	ctx := t.Context()
 	if err := cmd.ExecuteContext(ctx); err != nil {
 		t.Fatal(err)
 	}
@@ -127,8 +131,53 @@ func TestTheWatchedContextIsWhatCommandsRunUnder(t *testing.T) {
 // pid that is not its parent already "gone".
 func TestTheParentPIDDoesNotReachWhatTheCommandStarts(t *testing.T) {
 	t.Setenv(localpty.ParentPIDEnv, strconv.Itoa(os.Getppid()))
-	watchParentProcess(context.Background(), nil)
+	noExit(t)
+	watchParentProcess(t.Context(), nil)
 	if value, ok := os.LookupEnv(localpty.ParentPIDEnv); ok {
 		t.Fatalf("%s = %q in the environment a child would inherit, want it consumed", localpty.ParentPIDEnv, value)
 	}
+}
+
+// noExit keeps a watch started by a test from ending the test binary.
+//
+// A test that starts a real watch leaves a goroutine polling for as long as its
+// context lives, and what that goroutine does when it decides the parent is
+// gone is exit the process. Whether it decides that is a question about the
+// machine the test is running on — what a runner reports for a parent it is
+// allowed to open — and no test in this package is asking it.
+func noExit(t *testing.T) {
+	t.Helper()
+	restore := parentWatchExit
+	parentWatchExit = func(int) {}
+	t.Cleanup(func() { parentWatchExit = restore })
+}
+
+// exitedProcess is a pid that named a process and no longer does.
+//
+// One is spawned and reaped rather than picked, because what "gone" means is
+// exactly what differs between the platforms: Unix answers by asking who this
+// process's parent is now, Windows by probing the pid itself. A pid that is
+// merely not our parent — this process's own, say — is gone under the first and
+// plainly alive under the second, which is a test that passes on one platform
+// while asserting nothing on the other.
+//
+// The process is this test binary in its no-op helper mode (see TestMain),
+// which is how this package spawns a real process portably: Windows cannot exec
+// a shell script.
+func exitedProcess(t *testing.T) int {
+	t.Helper()
+	exe, err := os.Executable()
+	if err != nil {
+		t.Fatalf("locate test binary: %v", err)
+	}
+	cmd := exec.CommandContext(t.Context(), exe)
+	cmd.Env = append(os.Environ(), fakeEditorEnv+"=")
+	if err := cmd.Start(); err != nil {
+		t.Fatalf("start a process to outlive: %v", err)
+	}
+	pid := cmd.Process.Pid
+	if err := cmd.Wait(); err != nil {
+		t.Fatalf("wait for it to end: %v", err)
+	}
+	return pid
 }
