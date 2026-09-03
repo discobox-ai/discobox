@@ -1232,12 +1232,20 @@ func TestSuccessfulApplyAsksToArchiveOrDetach(t *testing.T) {
 		}
 		text := dialogText(m)
 		for _, want := range []string{
-			"primary", "/src/disco2", "main", "1234567890ab", "show applied commits",
+			"What this apply did", "primary", "/src/disco2", "main", "1234567890ab", "show applied commits",
 			"fedcba098765", "polish the dialog", "docs", "/src/docs", "trunk", "already up to date",
 		} {
 			if !strings.Contains(text, want) {
 				t.Fatalf("dialog does not carry %q:\n%s", want, text)
 			}
+		}
+		// The question is asked where it is answered: under the summary of what
+		// the apply did, immediately above the rows that answer it.
+		summary := strings.Index(text, "polish the dialog")
+		question := strings.Index(text, "what should happen to this discobox?")
+		archive := strings.Index(text, "put the discobox away")
+		if question < summary || archive < question {
+			t.Fatalf("summary at %d, question at %d, archive at %d; want the question between them:\n%s", summary, question, archive, text)
 		}
 	}
 

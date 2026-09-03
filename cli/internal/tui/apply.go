@@ -128,7 +128,11 @@ func (m *Model) openSuccessfulApplyDialog() {
 		{key: "archive", label: "archive", detail: "put the discobox away", enabled: true},
 		{key: "detach", label: "detach", detail: "leave the discobox running", enabled: true},
 	}
-	d := actionsDialog("Apply succeeded", "What should happen to this discobox?", items, func(choice string) tea.Cmd {
+	// The body is the heading over the summary, and the question is the answer
+	// rule immediately above the rows that answer it: what was done is read
+	// top-down, and what to do next is asked where the choosing happens rather
+	// than a card's height above it.
+	d := actionsDialog("Apply succeeded", "What this apply did:", items, func(choice string) tea.Cmd {
 		return func() tea.Msg { return applyFinishedChoiceMsg{choice: choice} }
 	})
 	if reporter, ok := m.overlay.stream.(ApplyResultReporter); ok {
@@ -136,6 +140,7 @@ func (m *Model) openSuccessfulApplyDialog() {
 			d.sections = appliedSourceSections(result)
 		}
 	}
+	d.answerLabel = "what should happen to this discobox?"
 	d.footer = "Either choice detaches from the workspace."
 	d.keys = []hint{pressing("Enter chooses", "enter"), pressing("Esc returns to the apply result", "esc")}
 	m.dialog = d
