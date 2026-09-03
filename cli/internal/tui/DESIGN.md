@@ -684,6 +684,14 @@ asked `overlay != nil` asks it instead.
   of a screen does the same. `[x]` calls `DataSource.EndExec`, which is the one
   place this window ends a session rather than closing its view of one, and is
   on the shifted `X` for that reason.
+- **A tool that exits takes its window with it** (`paneClosed`), unlike every
+  other non-primary pane. Quitting difftui or fresh is how you say you are done
+  with it, so a held screen captioned with its exit would be one more thing to
+  dismiss after every look at the diff — and there is nothing left to reopen
+  anyway. A broken stream is still reported on the status line, since the
+  screen that would have carried the reason went with the window. That is why
+  no tool pane is ever `exited`: the picker's rows are running or not open at
+  all.
 - The sessions live in the discobox, so the poll picks up every labeled one it
   finds and puts it away rather than showing it: attaching to a discobox should
   show you the discobox. That is what makes a diff survive quitting the
@@ -775,7 +783,8 @@ the hints on it without a second path through any of them.
 
 **A finished pane keeps its screen, and can be read back through.** The
 distinction is positional now: the primary does not hold (its end is the
-workspace's), while every other tab and the overlay do. A terminal or shell
+workspace's) and neither does a tool (its window was the program — see the
+tools above), while every other tab and the overlay do. A terminal or shell
 that exits stays as
 a readable tab, and a command that ran, printed and returned stays as the
 screen — an apply with little to say is over in a moment, and a pane that

@@ -875,11 +875,12 @@ func (m *Model) isOnScreen(p *pane) bool {
 // paneClosed handles a session or command ending on its own.
 //
 // Where the pane sits decides what happens: the primary terminal ending ends
-// the workspace, since a workspace is a view onto that session; a shell tab
-// and a finished command hold their last screen to be read — an apply with
-// little to say is over in a moment, and a pane that vanished with it would be
-// a screen you never got to read. Only an error closes a pane unread, and is
-// reported instead.
+// the workspace, since a workspace is a view onto that session; a tool ending
+// takes its window with it, since the window was the program; a shell tab and
+// a finished command hold their last screen to be read — an apply with little
+// to say is over in a moment, and a pane that vanished with it would be a
+// screen you never got to read. Only an error closes one of those unread, and
+// is reported instead.
 func (m *Model) paneClosed(p *pane, msg termpane.ClosedMsg) tea.Cmd {
 	action := p.action
 	switch {
@@ -912,17 +913,27 @@ func (m *Model) paneClosed(p *pane, msg termpane.ClosedMsg) tea.Cmd {
 		}
 		return tea.Batch(m.refresh(), status("the session ended"))
 
+	case p.tool != "":
+		// A tool is the program, not a transcript of one: quitting difftui or
+		// fresh is how you say you are done with it, and a held screen
+		// captioned with its exit would be one more thing to dismiss after
+		// every look at the diff. So the window goes when the program does,
+		// however it ended, and there is nothing left in the strip to reopen.
+		//
+		// A stream that broke is the other thing, and is still reported: the
+		// screen that would have carried the reason went with the window.
+		gone := tea.Batch(m.dropTool(p, false), m.refresh())
+		if msg.Err != nil {
+			return tea.Batch(gone, m.report(true, "%s: %v", action, msg.Err))
+		}
+		return gone
+
 	case msg.Err == nil:
 		// Keep the last screen up to be read; the keys that mean done take it
 		// away.
 		p.exited = true
 		p.status, p.failed = exitVerdict(p.stream)
 		return m.refresh()
-
-	case p.tool != "":
-		// A tool whose session died has nothing left to reopen, so it leaves
-		// the strip rather than being held as a screen nobody asked for.
-		return tea.Batch(m.dropTool(p, false), m.refresh(), m.report(true, "%s: %v", action, msg.Err))
 
 	case p == m.overlay:
 		m.closeOverlay()

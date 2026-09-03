@@ -110,6 +110,28 @@ func TestClosingAToolEndsItsSession(t *testing.T) {
 	}
 }
 
+// Quitting the tool itself is the third way out, and it is the ordinary one:
+// the window goes when the program does, rather than holding a dead screen the
+// reader has to dismiss before the workspace comes back.
+func TestAToolThatExitsTakesItsWindowWithIt(t *testing.T) {
+	ds := newFakeSource(testSandboxes()...)
+	d, m := openTool(t, ds, "d")
+	term := ds.execTerm(m.showingTool().execID)
+
+	term.Close()
+	d.wait("the workspace back", func() bool { return m.showingTool() == nil })
+
+	if m.toolPane("diff") != nil {
+		t.Error("a tool that exited should leave no pane behind")
+	}
+	if !m.inPanes() {
+		t.Fatal("a tool exiting should leave the workspace up")
+	}
+	if got := ds.endedExecs(); len(got) != 0 {
+		t.Fatalf("ended = %v, want nothing ended for a session that ended itself", got)
+	}
+}
+
 // The [-] and [x] on the border are the same two things, reachable with a
 // mouse: a press on one has to mean that button and not the pane under it.
 func TestTheToolWindowButtonsMinimizeAndClose(t *testing.T) {

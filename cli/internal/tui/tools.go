@@ -269,13 +269,10 @@ func (m *Model) openTools() tea.Cmd {
 	items := make([]action, 0, len(tools))
 	for _, t := range tools {
 		detail := t.detail
-		if p := m.toolPane(t.id); p != nil {
-			switch {
-			case p.exited:
-				detail = t.detail + " · finished"
-			default:
-				detail = t.detail + " · running"
-			}
+		if m.toolPane(t.id) != nil {
+			// Every tool pane is a running one: a tool that exits takes its
+			// window with it (see paneClosed).
+			detail = t.detail + " · running"
 		}
 		items = append(items, action{
 			key: t.key, press: t.key, label: t.label, detail: detail,
@@ -565,11 +562,6 @@ func (m *Model) minimizeTool() tea.Cmd {
 	}
 	m.toolOpen = false
 	m.layout()
-	if p.exited {
-		// Nothing is running to come back to. Putting away a finished screen
-		// is dismissing it.
-		return m.dropTool(p, false)
-	}
 	return status("%s put away — %s %s reopens it", p.name(), m.leader(), toolsKey)
 }
 
@@ -583,8 +575,7 @@ func (m *Model) closeTool() tea.Cmd {
 		return nil
 	}
 	name := p.name()
-	cmd := m.dropTool(p, !p.exited)
-	return tea.Batch(cmd, status("%s closed", name))
+	return tea.Batch(m.dropTool(p, true), status("%s closed", name))
 }
 
 // dropTool takes a tool off the screen and out of the strip, ending its session
