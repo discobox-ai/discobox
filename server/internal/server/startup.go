@@ -33,7 +33,13 @@ type startupHandler struct {
 }
 
 func newStartupHandler(phase string) *startupHandler {
-	return &startupHandler{phase: phase}
+	handler := &startupHandler{}
+	// Through setPhase, so the first step is logged like every other one. It
+	// was the only step that never was, which left a foreground run's log
+	// starting at the second one and saying nothing about the step it was on
+	// if it failed there.
+	handler.setPhase(phase)
+	return handler
 }
 
 // setPhase records what startup is doing now, and logs it so a server run in
