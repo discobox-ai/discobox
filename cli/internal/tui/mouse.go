@@ -204,7 +204,7 @@ func (m *Model) copyShowingSelection() tea.Cmd {
 	if text == "" {
 		return nil
 	}
-	return m.copyText(text)
+	return m.copyText(text, "copied")
 }
 
 // clearSelections drops every selection the window itself is drawing. One
@@ -225,7 +225,7 @@ func (m *Model) tookSelection(text string) tea.Cmd {
 		return nil
 	}
 	m.primaryText = text
-	return m.copyText(text)
+	return m.copyText(text, "copied")
 }
 
 // pastePrimary puts the last selection back wherever text goes, exactly as a
@@ -456,8 +456,9 @@ func (m *Model) pressDialogItem(idx int) tea.Cmd {
 	if d.action == nil {
 		return nil
 	}
+	stays := d.items[idx].stays
 	cmd := d.action(d.items[idx].key)
-	if m.dialog == d {
+	if m.dialog == d && !stays {
 		m.dialog = nil
 	}
 	return cmd

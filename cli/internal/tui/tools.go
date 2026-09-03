@@ -44,7 +44,21 @@ const (
 	// there means "run this" and its files are the other thing you might want
 	// from the same row.
 	toolFileKey = "e"
+
+	// addressSSHKey and addressGitKey copy the two ways into this discobox
+	// that are not a program: the ssh command that opens a session in it, and
+	// the git URL its working tree answers on. They sit in the picker because
+	// the question is the picker's own — how do I get at this box — and the
+	// answer for a shell and for git happens to be a line of text rather than
+	// something to launch.
+	addressSSHKey = "s"
+	addressGitKey = "g"
 )
+
+// toolsTitle names the picker's card. It is a constant because a lookup that
+// finishes while the card is up has to know whether the card still on screen
+// is the one it was for.
+const toolsTitle = "Tools"
 
 // tool is one entry in the picker: what it is called, the key it answers to,
 // and what running it means.
@@ -240,6 +254,18 @@ type toolFilesMsg struct{ id string }
 // toolFileMsg is the file chosen out of that list, on its way to $EDITOR.
 type toolFileMsg struct{ file ToolFile }
 
+// addressesMsg is one discobox's ssh and git addresses, looked up.
+type addressesMsg struct {
+	id   string
+	addr Addresses
+	err  error
+}
+
+// copyAddressMsg is one of the picker's address rows, chosen. It is a message
+// rather than a call for the same reason runToolMsg is: a dialog closes over
+// the model by value, so it emits what was chosen and the live model acts.
+type copyAddressMsg struct{ text string }
+
 // toolFileDoneMsg is what came back from the editor.
 type toolFileDoneMsg struct {
 	file    ToolFile
@@ -261,12 +287,26 @@ type toolTermMsg struct {
 	show bool
 }
 
-// openTools opens the picker. Every tool is offered whatever is running: the
-// row says which are up, and choosing one is "show me that", not "start
-// another".
+// openTools opens the picker, and starts the lookup its two address rows are
+// waiting on. Every tool is offered whatever is running: the row says which are
+// up, and choosing one is "show me that", not "start another".
 func (m *Model) openTools() tea.Cmd {
 	box := m.currentBox()
-	items := make([]action, 0, len(tools))
+	// A receipt belongs to the press that earned it, not to the card: reopening
+	// the picker must not greet a reader with a "copied" from last time.
+	m.copied = ""
+	// Before the card is built, so the rows are drawn against the lookup this
+	// open started rather than against the state before it.
+	fetch := m.resolveAddresses(box)
+	m.dialog = m.toolsDialog(box)
+	return fetch
+}
+
+// toolsDialog is the picker's card, built from what is known right now. It is
+// separate from openTools because the addresses arrive after the card does, and
+// the card is then built again rather than patched — see addressesResolved.
+func (m *Model) toolsDialog(box Sandbox) *dialog {
+	items := make([]action, 0, len(tools)+2)
 	for _, t := range tools {
 		detail := t.detail
 		if m.toolPane(t.id) != nil {
@@ -280,8 +320,23 @@ func (m *Model) openTools() tea.Cmd {
 			why:     attachWhy(true, []Sandbox{box}),
 		})
 	}
-	m.dialog = actionsDialog("Tools", "Run a tool against "+displayName(box)+".", items,
+	// An address is only worth printing for a discobox the config has a stanza
+	// for, which is the same boxes the tools apply to: an archived one is out
+	// of the listing the stanzas are rendered from.
+	addr, unreachable := m.addresses[box.ID], attachWhy(true, []Sandbox{box})
+	ssh := addr.action(addressSSHKey, "ssh", addr.SSH, unreachable)
+	git := addr.action(addressGitKey, "git url", addr.Git, unreachable)
+	ssh.note, git.note = m.copiedNote(addr.SSH), m.copiedNote(addr.Git)
+	items = append(items, ssh, git)
+
+	d := actionsDialog(toolsTitle, "Run a tool against "+displayName(box)+", or take an address to it.", items,
 		func(key string) tea.Cmd {
+			switch key {
+			case addressSSHKey:
+				return copyAddress(addr.SSH)
+			case addressGitKey:
+				return copyAddress(addr.Git)
+			}
 			for _, t := range tools {
 				if t.key == key {
 					return func() tea.Msg { return runToolMsg{id: t.id} }
@@ -289,8 +344,8 @@ func (m *Model) openTools() tea.Cmd {
 			}
 			return nil
 		})
-	m.dialog.altKey = toolFileKey
-	m.dialog.alt = func(key string) tea.Cmd {
+	d.altKey = toolFileKey
+	d.alt = func(key string) tea.Cmd {
 		for _, t := range tools {
 			if t.key == key {
 				return func() tea.Msg { return toolFilesMsg{id: t.id} }
@@ -298,14 +353,149 @@ func (m *Model) openTools() tea.Cmd {
 		}
 		return nil
 	}
-	m.dialog.keys = []hint{
-		pressing("Enter opens it", "enter"),
+	d.footer = "ssh and git url copy rather than open. They are the whole of what it takes " +
+		"from any shell on this machine — opening this refreshed the ssh config behind them."
+	// The two address rows are the whole of what stays: a copy is done when the
+	// word appears beside it, and taking the card away would take the word with
+	// it. The tools are the other thing — running one is a window, and the card
+	// has to get out of its way.
+	d.keys = []hint{
+		pressing("Enter opens or copies", "enter"),
 		keyed(toolFileKey, toolFileKey, "its config"),
 		pressing(m.leader()+" "+paneDetachAlt+" puts one away", m.leader(), paneDetachAlt),
 		pressing(m.leader()+" "+toolCloseKey+" ends it", m.leader(), toolCloseKey),
 		pressing("Esc cancels", "esc"),
 	}
+	return d
+}
+
+// resolvedAddresses is one discobox's entry in the picker's address cache: what
+// was found, or why nothing was.
+//
+// An entry that is present and empty is a lookup still running, which is what
+// keeps reopening the picker from starting a second one — so it is the presence
+// of the entry, not its contents, that means "already asked".
+type resolvedAddresses struct {
+	Addresses
+	err string
+}
+
+// action is one address as a row of the picker.
+//
+// The address itself is the row's detail, not a caption offering to produce it:
+// what makes `ssh mybox` worth a row is reading it and seeing that there is
+// nothing else to it, and a row that said "copy the ssh address" would be a
+// button for a fact it declined to show.
+func (r resolvedAddresses) action(key, label, value, unreachable string) action {
+	row := action{key: key, press: key, label: label, stays: true}
+	switch {
+	case unreachable != "":
+		row.why = unreachable
+	case value != "":
+		row.detail, row.enabled = value, true
+	case r.err != "":
+		row.why = r.err
+	case r.Addresses == (Addresses{}):
+		row.why = "looking it up…"
+	default:
+		// Resolved, and this half of it came back empty: a discobox with no
+		// unambiguous host pattern, or none whose source ever landed.
+		row.why = "nothing to reach it by"
+	}
+	return row
+}
+
+// resolveAddresses starts one discobox's lookup, or reports that there is
+// nothing to start: it is already known, or already running.
+//
+// A failed lookup is retried on the next open rather than cached as the answer.
+// What it failed at — writing an ssh config, reaching the server — is the kind
+// of thing that stops being true, and the retry is a person reopening the card
+// to see whether it has.
+func (m *Model) resolveAddresses(box Sandbox) tea.Cmd {
+	if box.ID == "" || !box.attachable() {
+		return nil
+	}
+	if m.addresses == nil {
+		m.addresses = map[string]resolvedAddresses{}
+	}
+	if known, asked := m.addresses[box.ID]; asked && known.err == "" {
+		return nil
+	}
+	m.addresses[box.ID] = resolvedAddresses{}
+	ctx, ds, id := m.ctx, m.ds, box.ID
+	return func() tea.Msg {
+		addr, err := ds.Addresses(ctx, id)
+		return addressesMsg{id: id, addr: addr, err: err}
+	}
+}
+
+// addressesResolved records what came back and, when the picker is still the
+// card on screen and still on that discobox, builds it again.
+//
+// Again rather than patched: the rows close over the addresses they were built
+// with — a card's callback is fixed when the card is — so a row whose text was
+// replaced in place would still copy the nothing it was built around.
+func (m *Model) addressesResolved(msg addressesMsg) tea.Cmd {
+	entry := resolvedAddresses{Addresses: msg.addr}
+	if msg.err != nil {
+		entry.err = msg.err.Error()
+	}
+	if m.addresses == nil {
+		m.addresses = map[string]resolvedAddresses{}
+	}
+	m.addresses[msg.id] = entry
+
+	box := m.currentBox()
+	if m.dialog == nil || m.dialog.title != toolsTitle || box.ID != msg.id {
+		return nil
+	}
+	// The cursor is where the reader put it, and a card rebuilt under them
+	// must not move it.
+	cursor := m.dialog.cursor
+	m.dialog = m.toolsDialog(box)
+	m.dialog.cursor = min(cursor, len(m.dialog.items)-1)
 	return nil
+}
+
+// copyAddress is a chosen address on its way to the clipboard. Nothing to copy
+// is nothing to do: the row it came from was not selectable in the first place.
+func copyAddress(text string) tea.Cmd {
+	if text == "" {
+		return nil
+	}
+	return func() tea.Msg { return copyAddressMsg{text: text} }
+}
+
+// copiedNote is what an address row says about itself: "copied", on the one
+// whose text is on the clipboard, and nothing on the other.
+//
+// It is matched on the text rather than on which key was pressed, so a row
+// whose address has since been resolved to something else does not go on
+// claiming a copy that was of the old one.
+func (m *Model) copiedNote(value string) string {
+	if value == "" || value != m.copied {
+		return ""
+	}
+	return "copied"
+}
+
+// addressCopied puts one address on the clipboard and marks the row it came
+// from, leaving the card up.
+//
+// The card stays because the confirmation is on it: a press that copied and
+// closed reported itself on a status line under a window the reader had just
+// been taken back to, which is where a small green word goes unseen. Staying
+// also answers the other half of it — the address beside this one is usually
+// the next thing wanted.
+func (m *Model) addressCopied(msg copyAddressMsg) tea.Cmd {
+	m.copied = msg.text
+	if d := m.dialog; d != nil && d.title == toolsTitle {
+		cursor := d.cursor
+		m.dialog = m.toolsDialog(m.currentBox())
+		m.dialog.cursor = min(cursor, len(m.dialog.items)-1)
+	}
+	return m.copyText(msg.text, "copied "+msg.text)
 }
 
 // openToolFiles lists what one tool carries, so a file can be picked to edit.

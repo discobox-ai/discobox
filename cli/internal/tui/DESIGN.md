@@ -34,7 +34,7 @@ flowchart LR
     WS -->|leader C| Cred
     L -->|y| Overlay["overlay pane → DataSource.Open"]
     L -->|v| Editor["DataSource.OpenEditor"]
-    WS -->|leader o| T["tools picker → NewTool / EndExec / OpenEditor"]
+    WS -->|leader o| T["tools picker → NewTool / EndExec / OpenEditor / Addresses"]
     A -->|d s| AVerb["DataSource.DoHarness"]
     A -->|e| ACfg["configuration overlay pane → OpenHarnessConfigure"]
     A -->|f| AExec["tea.Exec → EditHarnessFile"]
@@ -779,6 +779,28 @@ asked `overlay != nil` asks it instead.
   name: `fresh .` rather than `fresh`, because fresh opens a directory — file
   tree, workspace, the lot — only when handed exactly one, and comes up on an
   empty buffer otherwise.
+- **The last two rows are not tools: they are the discobox's addresses**
+  (`addressSSHKey`, `addressGitKey`, `DataSource.Addresses`). `s` prints and
+  copies `ssh <name>`, `g` the `ssh://<name>/<workdir>` git URL, and both are
+  the whole of what it takes from any shell on this machine. They are in the
+  picker because the question is the picker's — how do I get at this box — and
+  they are printed rather than captioned, because what makes them worth a row
+  is reading one and seeing that there is nothing else to it. Resolving them
+  writes the project's managed `ssh_config`, which is the only thing that makes
+  either true (the server binds no SSH port: ADR 0057, ADR 0074), so the card
+  cannot print them until a lookup returns — `resolveAddresses` starts one when
+  the card opens and `addressesResolved` builds the card again, since a row's
+  callback is fixed when the card is. The cache is `Model.addresses`, keyed by
+  discobox: an entry present and empty is a lookup in flight, and a failed one
+  is retried on the next open rather than kept as the answer.
+- **A copy leaves the card up** (`action.stays`, `action.note`,
+  `Model.copied`). The row that was taken says `copied` in the window's OK
+  color at the end of itself, budgeted out of its own detail so a pressed row
+  is never wider than the card. These are the only menu rows in the window that
+  answer in place: closing would take the confirmation away with the card meant
+  to carry it, and the address beside it is usually the next thing wanted. The
+  receipt is matched on the address text, not on which key was pressed, and is
+  cleared when the card opens — it belongs to the press that earned it.
 
 **The hints row is one row and drops rather than wraps** (`fitHints`).
 `paneRows` budgets exactly one status line, so a second one would have to come

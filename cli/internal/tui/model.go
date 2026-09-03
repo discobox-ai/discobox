@@ -128,6 +128,15 @@ type Model struct {
 	// toolOpening is the tools with an attach in flight, keyed by tool id, so
 	// the poll and the picker cannot open two panes onto one session.
 	toolOpening map[string]bool
+	// addresses is what each discobox answers to from a shell on this
+	// machine, keyed by sandbox id, once the picker has asked. An entry that
+	// is present and empty is a lookup still running — which is what keeps
+	// reopening the picker from starting a second one — so absence, not a
+	// zero value, is what means "never asked". See tools.go.
+	addresses map[string]resolvedAddresses
+	// copied is the address last taken off that card, so the row it came from
+	// can say so. It is cleared when the card opens; see openTools.
+	copied string
 
 	// pendingRun is the run this window was opened to make — `discobox run`'s
 	// own request — held until the harness listing lands. It is started from
@@ -814,6 +823,12 @@ func (m *Model) update(msg tea.Msg) tea.Cmd {
 
 	case toolFileDoneMsg:
 		return m.toolFileEdited(msg)
+
+	case addressesMsg:
+		return m.addressesResolved(msg)
+
+	case copyAddressMsg:
+		return m.addressCopied(msg)
 
 	case workspaceTickMsg:
 		if msg.gen != m.wsGen {

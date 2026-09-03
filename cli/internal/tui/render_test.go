@@ -42,6 +42,13 @@ func TestFrames(t *testing.T) {
 		{"tools", func(m *Model) {
 			send(t, m, keyPress("tab"))
 			m.paneBox = Sandbox{ID: "sbx_one"}
+			// The addresses come from a lookup this frame has no runtime to
+			// run, so they are seeded as one that finished would have left
+			// them; the rows are the frame worth looking at.
+			m.addresses = map[string]resolvedAddresses{"sbx_one": {Addresses: Addresses{
+				SSH: "ssh sbx_one",
+				Git: "ssh://sbx_one/home/discobox/disco2",
+			}}}
 			m.openTools()
 		}},
 		{"folder", func(m *Model) { send(t, m, keyPress("tab"), keyPress("up")) }},

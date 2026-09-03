@@ -2,10 +2,12 @@ package tui
 
 import (
 	"encoding/json"
+	"errors"
 	"strings"
 	"testing"
 	"time"
 
+	tea "charm.land/bubbletea/v2"
 	"charm.land/lipgloss/v2"
 )
 
@@ -20,6 +22,104 @@ func openTool(t *testing.T, ds *fakeSource, key string) (*driver, *Model) {
 	d.key(key)
 	d.wait("the tool window", func() bool { return m.showingTool() != nil })
 	return d, m
+}
+
+// openPicker opens the workspace and puts the tools picker on screen.
+func openPicker(t *testing.T, ds *fakeSource) (*driver, *Model) {
+	t.Helper()
+	d, m, _ := openWorkspace(t, ds, "enter")
+	d.key("ctrl+a")
+	d.key(toolsKey)
+	d.wait("the picker", func() bool { return m.dialog != nil })
+	return d, m
+}
+
+// The picker prints the two ways into a discobox that are not this window, and
+// a press takes the whole line: what makes them worth a row is reading them and
+// seeing that there is nothing else to them.
+func TestTheToolsPickerPrintsAndCopiesTheAddresses(t *testing.T) {
+	ds := newFakeSource(testSandboxes()...)
+	d, m := openPicker(t, ds)
+	copies := make(chan string, 2)
+	m.copyOS = func(text string) error { copies <- text; return nil }
+
+	d.wait("the addresses", func() bool { return strings.Contains(frameText(m), "ssh sbx_one") })
+	if frame := frameText(m); !strings.Contains(frame, "ssh://sbx_one/home/discobox/repo") {
+		t.Fatalf("the picker should print the git URL too:\n%s", frame)
+	}
+	if got := ds.addressLookups(); len(got) != 1 || got[0] != "sbx_one" {
+		t.Fatalf("address lookups = %v, want one for sbx_one", got)
+	}
+
+	// Clicking the row is the whole gesture: the point of printing an address
+	// is that it can be taken without knowing a key for it.
+	x, y := at(t, m, "ssh://sbx_one/home/discobox/repo")
+	d.dispatch(tea.MouseClickMsg{X: x, Y: y, Button: tea.MouseLeft})
+	d.dispatch(tea.MouseReleaseMsg{X: x, Y: y, Button: tea.MouseLeft})
+	d.wait("the copy", func() bool { return len(copies) > 0 })
+	if got := <-copies; got != "ssh://sbx_one/home/discobox/repo" {
+		t.Fatalf("copied %q, want the git URL", got)
+	}
+
+	// The card stays up and the row it came from says so, which is the whole
+	// reason it stays: a receipt on a status line under a card that had just
+	// been taken away is one nobody reads.
+	if m.dialog == nil {
+		t.Fatal("copying an address should leave the card up")
+	}
+	d.wait("the receipt", func() bool {
+		return strings.Contains(frameText(m), "ssh://sbx_one/home/discobox/repo  copied")
+	})
+	if strings.Contains(frameText(m), "ssh sbx_one  copied") {
+		t.Error("the receipt belongs to the row it was earned on")
+	}
+
+	// And the address beside it is still one press away, on the same card.
+	d.key(addressSSHKey)
+	d.wait("the second copy", func() bool { return len(copies) > 0 })
+	if got := <-copies; got != "ssh sbx_one" {
+		t.Fatalf("copied %q, want the ssh command", got)
+	}
+	d.key("esc")
+	d.wait("the card to close", func() bool { return m.dialog == nil })
+
+	// Resolved once and remembered: reopening the card does not go and write
+	// the ssh config a second time, and it opens with no receipt on it.
+	d.key("ctrl+a")
+	d.key(toolsKey)
+	d.wait("the picker again", func() bool { return m.dialog != nil })
+	if strings.Contains(frameText(m), "copied") {
+		t.Error("a reopened card should carry no receipt from the last one")
+	}
+	if got := ds.addressLookups(); len(got) != 1 {
+		t.Errorf("address lookups = %v, want the first one reused", got)
+	}
+}
+
+// A lookup that failed says so on the rows it could not fill, and is tried
+// again the next time the card is opened — what it failed at is the kind of
+// thing that stops being true.
+func TestTheToolsPickerRetriesAFailedAddressLookup(t *testing.T) {
+	ds := newFakeSource(testSandboxes()...)
+	ds.addressErr = errors.New("no ssh_config to write")
+	d, m := openPicker(t, ds)
+
+	d.wait("the reason", func() bool { return strings.Contains(frameText(m), "no ssh_config to write") })
+	if strings.Contains(frameText(m), "ssh sbx_one") {
+		t.Error("a failed lookup should print no address")
+	}
+
+	ds.mu.Lock()
+	ds.addressErr = nil
+	ds.mu.Unlock()
+	d.key("esc")
+	d.wait("the card to close", func() bool { return m.dialog == nil })
+	d.key("ctrl+a")
+	d.key(toolsKey)
+	d.wait("the retry", func() bool { return strings.Contains(frameText(m), "ssh sbx_one") })
+	if got := ds.addressLookups(); len(got) != 2 {
+		t.Fatalf("address lookups = %v, want the failure retried", got)
+	}
 }
 
 // The picker runs the tool in the discobox, as an exec session in its primary

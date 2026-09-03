@@ -1,7 +1,6 @@
 package cli
 
 import (
-	"context"
 	"errors"
 	"fmt"
 	"net/url"
@@ -12,7 +11,6 @@ import (
 	"github.com/spf13/cobra"
 
 	apiclientgen "github.com/discobox-ai/discobox/api/gen"
-	apimodel "github.com/discobox-ai/discobox/api/model"
 )
 
 // vscodeEditors are the VS Code builds this command knows how to launch, in the
@@ -132,7 +130,7 @@ func (a *App) runToolsVSCode(cmd *cobra.Command, opts toolsVSCodeOptions) error 
 		return err
 	}
 
-	remote, err := a.vscodeRemoteTarget(cmd.Context(), targets, client, projectID, sandboxID, opts.source, notes)
+	remote, err := a.sandboxSSHRemote(cmd.Context(), targets, client, projectID, sandboxID, opts.source, notes)
 	if err != nil {
 		return err
 	}
@@ -170,97 +168,6 @@ func (a *App) runToolsVSCode(cmd *cobra.Command, opts toolsVSCodeOptions) error 
 		return fmt.Errorf("run %s: %w", editor, err)
 	}
 	return nil
-}
-
-// vscodeRemoteTarget is where the editor is pointed: the ssh host that reaches
-// the sandbox, and the directory in it to open.
-type vscodeRemoteTarget struct {
-	host   string
-	folder string
-}
-
-func (t vscodeRemoteTarget) describe() string {
-	if t.folder == "" {
-		return t.host
-	}
-	return t.host + ":" + t.folder
-}
-
-// vscodeRemoteTarget refreshes the project's managed ssh_config and works out
-// what to open in it.
-//
-// The config is written rather than printed because Remote-SSH reads
-// ssh_config and nothing else: it drives the system `ssh` binary, so the only
-// way to hand it a host is to put the host where ssh finds it. Writing the
-// whole project's stanzas rather than this sandbox's is what `ssh-config
-// --write` already means by that file — it is rewritten wholesale on every run
-// — and it leaves every other sandbox reachable too.
-func (a *App) vscodeRemoteTarget(ctx context.Context, targets []sshTarget, client *apiclientgen.Client, projectID, sandboxID, sourceSlug string, notes noteFunc) (vscodeRemoteTarget, error) {
-	resolvedProjectID, err := a.concreteProjectID(ctx, client, projectID)
-	if err != nil {
-		return vscodeRemoteTarget{}, err
-	}
-	hostKey, err := a.sshHostKey(ctx, client)
-	if err != nil {
-		return vscodeRemoteTarget{}, err
-	}
-	built, err := a.buildManagedSSHConfig(ctx, managedSSHConfigRequest{
-		client:            client,
-		projectID:         projectID,
-		resolvedProjectID: resolvedProjectID,
-		hostKey:           hostKey,
-		write:             true,
-		notes:             notes,
-	}, targets)
-	if err != nil {
-		return vscodeRemoteTarget{}, err
-	}
-	for _, config := range built {
-		if err := writeManagedSSHConfig(config, resolvedProjectID, notes); err != nil {
-			return vscodeRemoteTarget{}, err
-		}
-	}
-
-	host, ok := built[0].aliases[sandboxID]
-	if !ok {
-		// Every spelling of this sandbox was claimed by another one, so the
-		// config carries no stanza it could be reached by. See
-		// sshConfigHostPatterns.
-		return vscodeRemoteTarget{}, fmt.Errorf("discobox %s has no unambiguous SSH host alias; rename it or the discobox whose name spells its ID", sandboxID)
-	}
-	folder, err := a.vscodeFolder(ctx, client, projectID, sandboxID, sourceSlug)
-	if err != nil {
-		return vscodeRemoteTarget{}, err
-	}
-	return vscodeRemoteTarget{host: host, folder: folder}, nil
-}
-
-// vscodeFolder is the directory in the sandbox the window opens on.
-//
-// An SSH session lands in the run user's home directory rather than the
-// sandbox's exec default, so unlike `discobox tools git` this cannot leave the
-// directory unsaid: without one, VS Code would open a window on the home
-// directory and the working tree would be somewhere else. Empty is still
-// possible — a sandbox may not have told us where its source landed — and then
-// the window opens on the host with no folder, which is VS Code's own way of
-// saying "connected, nothing open".
-func (a *App) vscodeFolder(ctx context.Context, client *apiclientgen.Client, projectID, sandboxID, sourceSlug string) (string, error) {
-	if sourceSlug != "" {
-		return a.toolSourceWorkdir(ctx, client, projectID, sandboxID, sourceSlug)
-	}
-	res, err := client.GetSandbox(ctx, apiclientgen.GetSandboxParams{ProjectId: projectID, SandboxId: sandboxID})
-	if err != nil {
-		return "", err
-	}
-	sandbox, err := expectResponse[apimodel.Sandbox](res)
-	if err != nil {
-		return "", err
-	}
-	sources := applySources(sandbox)
-	if len(sources) == 0 {
-		return "", nil
-	}
-	return sourceWorkdir(sources[0].source), nil
 }
 
 // vscodeFolderURI is the folder as VS Code's own remote URI: the authority

@@ -91,6 +91,12 @@ type fakeSource struct {
 	renameErr error
 	editorErr error
 
+	// addressed records which discoboxes were looked up; addressErr fails the
+	// lookup, and addresses is what a successful one reports.
+	addressed  []string
+	addressErr error
+	addresses  Addresses
+
 	// execs is what the workspace's poll is told is running; execsErr fails
 	// the listing, openExecErr every attach, openExecErrFor one exec's
 	// attach, newShellErr the shell create.
@@ -387,6 +393,25 @@ func (f *fakeSource) OpenEditor(_ context.Context, id string) error {
 	defer f.mu.Unlock()
 	f.editors = append(f.editors, id)
 	return f.editorErr
+}
+
+func (f *fakeSource) Addresses(_ context.Context, id string) (Addresses, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.addressed = append(f.addressed, id)
+	if f.addressErr != nil {
+		return Addresses{}, f.addressErr
+	}
+	if f.addresses == (Addresses{}) {
+		return Addresses{SSH: "ssh " + id, Git: "ssh://" + id + "/home/discobox/repo"}, nil
+	}
+	return f.addresses, nil
+}
+
+func (f *fakeSource) addressLookups() []string {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return append([]string(nil), f.addressed...)
 }
 
 func (f *fakeSource) Open(_ context.Context, action Interaction, id string, cols, rows int) (Terminal, error) {

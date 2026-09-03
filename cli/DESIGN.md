@@ -408,6 +408,15 @@ its own, tomorrow as much as now, with no port on the server to depend on. The a
 — which is why `buildManagedSSHConfig` returns the aliases rather than letting a
 caller guess them.
 
+Refreshing the config and working out what to point at it is
+`App.sandboxSSHRemote` (`internal/cli/ssh_config.go`), not the vscode command's
+own: the launcher's tools picker prints the same discobox's `ssh <alias>` and
+`ssh://<alias>/<workdir>` for copying (`apiDataSource.Addresses` →
+`tui.Addresses`), and it is the same three questions — which config, which
+alias, which directory — with the same write behind them. A printed address
+that would not have connected is worse than none, so the window pays for the
+write exactly as the editor does.
+
 The window opens on the primary source's working directory, or the one
 `--source` names. `tools git` can leave the directory unsaid because an exec
 with no workdir lands in the sandbox's default; an SSH session cannot, because

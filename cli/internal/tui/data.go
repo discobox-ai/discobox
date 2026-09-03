@@ -673,6 +673,28 @@ type ToolSpec struct {
 	Files   []ToolFile
 }
 
+// Addresses are the ways into a discobox that are not this window: the ssh
+// command that opens a session in it, and the git URL its primary source
+// answers on.
+//
+// They are strings to show and copy rather than parts to assemble, because
+// what makes them worth printing is that they are already the whole thing —
+// the point of `ssh mybox` is that there is no address, port, user or key to
+// go and find. Both are empty when there is nothing to print, which is not an
+// error: a discobox whose every host pattern was claimed by another one has no
+// unambiguous name to be reached by, and one whose source never landed has no
+// directory to clone from.
+type Addresses struct {
+	// SSH is the whole command, `ssh <name>`, rather than the host on its own.
+	// It is what someone reads to learn that reaching a discobox is one word
+	// in a shell, and pasting it into that shell should be all of it.
+	SSH string
+	// Git is a URL rather than a command, because a URL is what git takes
+	// everywhere — clone, remote add, fetch — and only the first of those is a
+	// guess about what the reader wants.
+	Git string
+}
+
 // ExecPrimary is the virtual exec id of the sandbox's primary terminal. The
 // sandbox resolves it to the current primary session — and relaunches one that
 // has stopped — so the workspace never has to know its concrete id.
@@ -1229,6 +1251,17 @@ type DataSource interface {
 	// differs. The window is suspended for it, the way editing a harness file
 	// suspends it.
 	EditToolFile(ctx context.Context, file ToolFile, stdin io.Reader, stdout, stderr io.Writer) (bool, error)
+
+	// Addresses is how to reach one discobox from a shell on this machine.
+	//
+	// Resolving them refreshes the project's managed ssh_config, the same file
+	// `discobox admin ssh-config --write` owns, so what comes back is a
+	// command that works rather than one that would have worked if something
+	// else had been run first. That is also why it is a call and not a field
+	// on Sandbox: it writes, it can fail, and it is worth neither on every row
+	// of a listing nor on every poll.
+	Addresses(ctx context.Context, sandboxID string) (Addresses, error)
+
 	// CredentialRequests is every credential request in the project still
 	// waiting on a person, newest first. It is polled with the listing rather
 	// than streamed: the client-facing event stream is gone (ADR 0061), and a

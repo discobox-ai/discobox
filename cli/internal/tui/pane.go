@@ -707,7 +707,7 @@ func (m *Model) updatePaneMsg(tagged paneMsg) tea.Cmd {
 		return status("mouse handed back to the box")
 
 	case termpane.CopyMsg:
-		return m.copyText(msg.Text)
+		return m.copyText(msg.Text, "copied")
 
 	case paneActionMsg:
 		// On a service, stop and start are the service's. The pane you are
@@ -1301,12 +1301,17 @@ func (m *Model) paneBoxAt(x, y int) *pane {
 	return m.terminals.visible()
 }
 
-// copyText puts selected text on the clipboard: the OS clipboard first, and
-// OSC 52 only when there is none to write — an SSH session, a box with no
-// clipboard tool. Not both: they can land on the same clipboard (WSL's is
-// Windows'), the last writer wins, and OSC 52 is the path terminals are
-// known to mis-decode. See osClipboard.
-func (m *Model) copyText(text string) tea.Cmd {
+// copyText puts text on the clipboard: the OS clipboard first, and OSC 52 only
+// when there is none to write — an SSH session, a box with no clipboard tool.
+// Not both: they can land on the same clipboard (WSL's is Windows'), the last
+// writer wins, and OSC 52 is the path terminals are known to mis-decode. See
+// osClipboard.
+//
+// said is what the status line reports. A selection copied by hand is its own
+// receipt — it is highlighted on screen — so "copied" is the whole of what
+// there is to say; a copy that came off a card the press then closed has to
+// name what it took, or nothing on screen says.
+func (m *Model) copyText(text, said string) tea.Cmd {
 	copyOS := m.copyOS
 	return tea.Batch(
 		func() tea.Msg {
@@ -1315,7 +1320,7 @@ func (m *Model) copyText(text string) tea.Cmd {
 			}
 			return tea.SetClipboard(text)()
 		},
-		status("copied"),
+		status("%s", said),
 	)
 }
 

@@ -700,6 +700,42 @@ func (d *apiDataSource) Rename(ctx context.Context, sandboxID, name string) erro
 	return err
 }
 
+// Addresses is how to reach one discobox from a shell on this machine: the ssh
+// command that opens a session in it, and the git URL of its primary source.
+//
+// Resolving them writes the project's managed ssh_config, which is the only
+// thing that makes either of them true: the server binds no SSH port, so the
+// host in both strings exists nowhere but that file and the ProxyCommand in it
+// (ADR 0057, ADR 0074). The window prints them so that reaching a discobox
+// stops looking like something only this window can do — and printing an
+// address that would not have connected would be worse than printing none.
+//
+// It writes for every ssh installation on this machine, which on WSL is two.
+// The Windows one failing is not fatal here, the way it is for a Windows VS
+// Code: what is being printed is a command for a shell, and the shell someone
+// is reading this in is this side's.
+//
+// The notes go nowhere. Every other caller of this work has a screen for them —
+// a shell's scrollback, a status line, the launcher's busy line — and this one
+// has a card up over the window, whose rows are the answer being waited on:
+// "wrote …/config" is not what someone opening the picker is reading for. What
+// went wrong still comes back as the error, which the card puts on the row it
+// could not fill.
+func (d *apiDataSource) Addresses(ctx context.Context, sandboxID string) (tui.Addresses, error) {
+	// A Windows ssh that cannot be resolved from WSL leaves this side's, which
+	// is the one the shell reading this is running; only losing both is fatal.
+	targets, err := machineSSHTargets(ctx)
+	if len(targets) == 0 {
+		return tui.Addresses{}, err
+	}
+	silent := noteFunc(func(string, ...any) {})
+	remote, err := d.app.sandboxSSHRemote(ctx, targets, d.client, d.projectID, sandboxID, "", silent)
+	if err != nil {
+		return tui.Addresses{}, err
+	}
+	return tui.Addresses{SSH: "ssh " + remote.host, Git: remote.gitURL()}, nil
+}
+
 // OpenEditor opens one sandbox in VS Code, by running `discobox tools vscode`.
 //
 // It runs the command rather than reimplementing it for the same reason an

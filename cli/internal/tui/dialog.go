@@ -142,6 +142,19 @@ type action struct {
 	detail  string
 	enabled bool
 	why     string // why it is not available, when it is not
+
+	// note is what the row says about itself after it has been chosen, drawn
+	// at the end of it in the window's OK color: the tools picker's "copied".
+	// It is on the row rather than on the card because it belongs to the one
+	// row it happened to, and a card that reported it anywhere else would
+	// leave a reader working out which press it was about.
+	note string
+
+	// stays is a row that answers in place rather than closing the card. It is
+	// for a row whose whole result is a word — a copy — where closing would
+	// take the confirmation away with the card that was to carry it, and where
+	// the next thing a reader wants is often the row beside it.
+	stays bool
 }
 
 // tone is how a value is painted. A caller says what a line means and the
@@ -329,7 +342,8 @@ func (d *dialog) update(msg tea.KeyPressMsg) (tea.Cmd, bool) {
 			d.cursor = d.nextEnabled(min(d.cursor+1, len(d.items)-1), 1)
 		case "enter":
 			if d.cursor < len(d.items) && d.items[d.cursor].enabled && d.action != nil {
-				return d.action(d.items[d.cursor].key), true
+				it := d.items[d.cursor]
+				return d.action(it.key), !it.stays
 			}
 			return nil, false
 		case "q":
@@ -337,7 +351,7 @@ func (d *dialog) update(msg tea.KeyPressMsg) (tea.Cmd, bool) {
 		default:
 			for _, it := range d.items {
 				if it.press != "" && it.press == keyName(msg) && it.enabled && d.action != nil {
-					return d.action(it.key), true
+					return d.action(it.key), !it.stays
 				}
 			}
 		}
@@ -872,8 +886,16 @@ func (d *dialog) viewItems(st *styles, z *zones, top, inner int) string {
 		if !it.enabled && it.why != "" {
 			detail = it.why
 		}
+		// The note is budgeted out of the detail rather than added to the row:
+		// a row that grew by what it had to say about itself would be a row
+		// wider than the card the moment it was pressed.
+		note := ""
+		if it.note != "" {
+			note = "  " + st.statusOK.Render(it.note)
+		}
+		room := max(inner-keyCol-labelW-4-lipgloss.Width(note), 8)
 		row := bar + " " + key + label.Render(pad(it.label, labelW)) + "  " +
-			st.dimText.Render(truncate(detail, max(inner-keyCol-labelW-4, 8)))
+			st.dimText.Render(truncate(detail, room)) + note
 		b.WriteString(padANSI(row, inner))
 		b.WriteString("\n")
 	}

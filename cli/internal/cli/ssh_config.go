@@ -3,6 +3,7 @@ package cli
 import (
 	"context"
 	"fmt"
+	"net/url"
 	"strings"
 
 	"github.com/spf13/cobra"
@@ -466,4 +467,118 @@ func (a *App) enrollSSHIdentity(ctx context.Context, client *apiclientgen.Client
 	}
 	notes("enrolled SSH key %s in this project", fingerprint)
 	return nil
+}
+
+// sandboxSSHRemote is one discobox as the rest of the world reaches it: the
+// ssh host that gets there, and the directory in it worth pointing at.
+//
+// It refreshes the project's managed ssh_config on the way, because the host
+// only exists in that file: nothing here is an address, and every program that
+// speaks ssh — VS Code's Remote-SSH, `git clone`, `ssh` itself — finds a host
+// by reading ssh_config and nothing else. Writing the whole project's stanzas
+// rather than this sandbox's is what `ssh-config --write` already means by that
+// file — it is rewritten wholesale on every run — and it leaves every other
+// sandbox reachable too.
+type sandboxSSHRemote struct {
+	host   string
+	folder string
+}
+
+func (t sandboxSSHRemote) describe() string {
+	if t.folder == "" {
+		return t.host
+	}
+	return t.host + ":" + t.folder
+}
+
+// gitURL is the remote's working tree as git takes it: an ssh URL whose
+// authority is the ssh_config host, so git hands the whole connection —
+// ProxyCommand, identity, host key — back to the ssh that already knows how to
+// reach this discobox.
+//
+// Built rather than pasted together so a workdir with a space or a percent sign
+// in it survives being one, the same reason vscodeFolderURI is. Empty when
+// there is no directory to name, since a URL to the run user's home is a clone
+// of nothing.
+func (t sandboxSSHRemote) gitURL() string {
+	if t.folder == "" {
+		return ""
+	}
+	uri := url.URL{Scheme: "ssh", Host: t.host, Path: t.folder}
+	return uri.String()
+}
+
+// sandboxSSHRemote refreshes the project's managed ssh_config for every target
+// and works out how this sandbox is reached in it. It is what `tools vscode`
+// points an editor at and what the launcher's tools picker prints for copying:
+// the same three questions — which config, which alias, which directory — and
+// the same write behind them.
+func (a *App) sandboxSSHRemote(ctx context.Context, targets []sshTarget, client *apiclientgen.Client, projectID, sandboxID, sourceSlug string, notes noteFunc) (sandboxSSHRemote, error) {
+	resolvedProjectID, err := a.concreteProjectID(ctx, client, projectID)
+	if err != nil {
+		return sandboxSSHRemote{}, err
+	}
+	hostKey, err := a.sshHostKey(ctx, client)
+	if err != nil {
+		return sandboxSSHRemote{}, err
+	}
+	built, err := a.buildManagedSSHConfig(ctx, managedSSHConfigRequest{
+		client:            client,
+		projectID:         projectID,
+		resolvedProjectID: resolvedProjectID,
+		hostKey:           hostKey,
+		write:             true,
+		notes:             notes,
+	}, targets)
+	if err != nil {
+		return sandboxSSHRemote{}, err
+	}
+	for _, config := range built {
+		if err := writeManagedSSHConfig(config, resolvedProjectID, notes); err != nil {
+			return sandboxSSHRemote{}, err
+		}
+	}
+
+	host, ok := built[0].aliases[sandboxID]
+	if !ok {
+		// Every spelling of this sandbox was claimed by another one, so the
+		// config carries no stanza it could be reached by. See
+		// sshConfigHostPatterns.
+		return sandboxSSHRemote{}, fmt.Errorf("discobox %s has no unambiguous SSH host alias; rename it or the discobox whose name spells its ID", sandboxID)
+	}
+	folder, err := a.sandboxSSHFolder(ctx, client, projectID, sandboxID, sourceSlug)
+	if err != nil {
+		return sandboxSSHRemote{}, err
+	}
+	return sandboxSSHRemote{host: host, folder: folder}, nil
+}
+
+// sandboxSSHFolder is the directory in the sandbox an ssh-driven program is
+// pointed at.
+//
+// An SSH session lands in the run user's home directory rather than the
+// sandbox's exec default, so unlike `discobox tools git` this cannot leave the
+// directory unsaid: without one, VS Code would open a window on the home
+// directory and the working tree would be somewhere else, and a git URL would
+// name a directory that is not a repository. Empty is still possible — a
+// sandbox may not have told us where its source landed — and then VS Code opens
+// on the host with no folder, which is its own way of saying "connected,
+// nothing open", and there is no git URL to print at all.
+func (a *App) sandboxSSHFolder(ctx context.Context, client *apiclientgen.Client, projectID, sandboxID, sourceSlug string) (string, error) {
+	if sourceSlug != "" {
+		return a.toolSourceWorkdir(ctx, client, projectID, sandboxID, sourceSlug)
+	}
+	res, err := client.GetSandbox(ctx, apiclientgen.GetSandboxParams{ProjectId: projectID, SandboxId: sandboxID})
+	if err != nil {
+		return "", err
+	}
+	sandbox, err := expectResponse[apimodel.Sandbox](res)
+	if err != nil {
+		return "", err
+	}
+	sources := applySources(sandbox)
+	if len(sources) == 0 {
+		return "", nil
+	}
+	return sourceWorkdir(sources[0].source), nil
 }
