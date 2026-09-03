@@ -423,6 +423,19 @@ tasks:
       # <data dir>/authorized_ids — `discobox admin iroh-id` prints the one to add.
       # DISCOBOX_DEV_IROH=0 drops the iroh listener and keeps the socket.
       DISCOBOX_SERVER_LISTEN: '{{.DISCOBOX_SERVER_LISTEN | default .DEV_LISTEN}}'
+      # Purge archived discoboxes after minutes rather than the production day.
+      # A development tree costs as much disk as a production one and is made
+      # and thrown away many times an afternoon, so a day of retention is a day
+      # of dead trees. This moves the server-wide default only: a project that
+      # set its own --archive-retention still gets it.
+      #
+      # Set here, so .env cannot raise it: godotenv does not replace a variable
+      # that is already set, and here losing that argument costs archived
+      # discoboxes that can no longer be unarchived rather than a port. Keep one
+      # for longer per project (`discobox admin project update <p>
+      # --archive-retention 24h`), or for the whole server on the command line:
+      #     DISCOBOX_ARCHIVE_RETENTION=24h go tool task dev
+      DISCOBOX_ARCHIVE_RETENTION: '{{.DISCOBOX_ARCHIVE_RETENTION | default "15m"}}'
     cmds:
       - touch .env
       - go tool watchnbuild

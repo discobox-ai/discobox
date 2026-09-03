@@ -228,6 +228,61 @@ func TestArchiveRetentionFollowsTheProjectSetting(t *testing.T) {
 	}
 }
 
+// A server-wide default shortens the window for every project that has not
+// chosen one, which is what `task dev` sets: a development tree is as large as
+// a production one and is discarded many times a day.
+func TestArchiveRetentionFollowsTheConfiguredServerDefault(t *testing.T) {
+	ctx := context.Background()
+	appStore := newExecutorTestStore(t)
+	sb := archivableSandbox(ctx, t, appStore, model.SandboxStateArchived, time.Hour)
+
+	provider := &archiveTestProvider{}
+	reconciler := sandboxes.NewSandboxReconciler(appStore,
+		sandboxes.WithSandboxProvider(provider),
+		sandboxes.WithArchiveRetention(time.Minute))
+	if _, err := reconciler.ReconcileSandbox(ctx, sb); err != nil {
+		t.Fatalf("reconcile expired archive: %v", err)
+	}
+
+	if provider.removeCalls != 1 {
+		t.Fatalf("remove calls = %d, want 1: a one-minute server default must expire a one-hour-old archive", provider.removeCalls)
+	}
+}
+
+// The server default is the value a project defers to, not a ceiling on it: a
+// project that asked for longer keeps its data for longer.
+func TestProjectArchiveRetentionWinsOverTheServerDefault(t *testing.T) {
+	ctx := context.Background()
+	appStore := newExecutorTestStore(t)
+	sb := archivableSandbox(ctx, t, appStore, model.SandboxStateArchived, time.Hour)
+
+	project, err := appStore.GetProject(ctx, "project-1")
+	if err != nil {
+		t.Fatalf("get project: %v", err)
+	}
+	project.ArchiveRetentionSeconds = int64(24 * time.Hour / time.Second)
+	if err := appStore.UpsertProject(ctx, project); err != nil {
+		t.Fatalf("set project retention: %v", err)
+	}
+
+	provider := &archiveTestProvider{}
+	reconciler := sandboxes.NewSandboxReconciler(appStore,
+		sandboxes.WithSandboxProvider(provider),
+		sandboxes.WithArchiveRetention(time.Minute))
+	result, err := reconciler.ReconcileSandbox(ctx, sb)
+	if err != nil {
+		t.Fatalf("reconcile archived: %v", err)
+	}
+
+	if provider.removeCalls != 0 {
+		t.Fatalf("remove calls = %d, want 0: the project asked for 24h and the server default must not override it", provider.removeCalls)
+	}
+	want := sb.StateChangedAt.Add(24 * time.Hour)
+	if !result.RequeueAt.Equal(want) {
+		t.Fatalf("RequeueAt = %s, want %s (the project's own deadline)", result.RequeueAt, want)
+	}
+}
+
 // The expiry sweep is the backstop for a lost future-dated mark. An archived
 // sandbox has converged, so the ordinary needs-reconcile scan cannot see it, and
 // without this a lost mark would mean data kept forever.

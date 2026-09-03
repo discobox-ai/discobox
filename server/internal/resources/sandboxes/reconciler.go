@@ -89,7 +89,7 @@ func (r *SandboxReconciler) ScanDirty(ctx context.Context) ([]string, error) {
 	if err != nil {
 		return nil, err
 	}
-	expired, err := r.store.ListArchivedSandboxRefsExpiredBefore(ctx, DefaultArchiveRetention, time.Now().UTC())
+	expired, err := r.store.ListArchivedSandboxRefsExpiredBefore(ctx, r.serverArchiveRetention(), time.Now().UTC())
 	if err != nil {
 		return nil, err
 	}
@@ -115,6 +115,10 @@ type SandboxReconciler struct {
 	manager  *ProviderManager
 	auth     SandboxAuthenticator
 	engine   *reconcile.Engine
+	// archiveRetention is the server-wide default a project follows until it
+	// sets its own. Zero means unconfigured, not "purge immediately", so the
+	// package default applies; see serverArchiveRetention.
+	archiveRetention time.Duration
 }
 
 // SandboxReconcilerOption configures a sandbox reconciler.
@@ -153,6 +157,20 @@ func WithSandboxProviderManager(manager *ProviderManager) SandboxReconcilerOptio
 func WithSandboxReconcileEngine(engine *reconcile.Engine) SandboxReconcilerOption {
 	return func(reconciler *SandboxReconciler) {
 		reconciler.engine = engine
+	}
+}
+
+// WithArchiveRetention sets the server-wide default retention for archived
+// sandboxes, which every project that has not set its own follows. A project
+// setting still wins: this is the default it defers to, not a ceiling.
+//
+// It exists so a development server can hold archived sandboxes for minutes
+// rather than a day — a development tree is as large as a production one and is
+// discarded far more often — without writing that shorter window into any
+// project, which is a setting the developer would then carry into production.
+func WithArchiveRetention(retention time.Duration) SandboxReconcilerOption {
+	return func(reconciler *SandboxReconciler) {
+		reconciler.archiveRetention = retention
 	}
 }
 

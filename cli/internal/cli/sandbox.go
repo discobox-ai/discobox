@@ -223,9 +223,10 @@ func (a *App) newSandboxDeleteCommand() *cobra.Command {
 
 The container and its runtime resources are removed; the discobox's workspace,
 config, and secrets are kept, so "discobox unarchive" brings it back with its
-work intact. Archived discoboxes are purged automatically once the project's
-archive retention runs out (24h by default; see "project update
---archive-retention").
+work intact. Archived discoboxes are purged automatically once the retention
+runs out: the project's own if it set one, otherwise the server's default --
+24h, though a development server commonly sets a far shorter one. See
+"project update --archive-retention".
 
 To destroy a discobox and its data now, use "discobox purge".`,
 		Args:              cobra.MinimumNArgs(1),

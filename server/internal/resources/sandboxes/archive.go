@@ -9,19 +9,30 @@ import (
 	"github.com/discobox-ai/discobox/server/internal/reconcile"
 )
 
-// DefaultArchiveRetention is how long an archived sandbox is kept when its
-// project has not chosen otherwise. It is a policy, not a mechanism: the pool
-// agent's volume reaper has a same-length window for accidentally orphaned
-// trees, and the two are unrelated (ADR 0022 §4).
+// DefaultArchiveRetention is how long an archived sandbox is kept when neither
+// the project nor the server has chosen otherwise. It is a policy, not a
+// mechanism: the pool agent's volume reaper has a same-length window for
+// accidentally orphaned trees, and the two are unrelated (ADR 0022 §4).
 const DefaultArchiveRetention = 24 * time.Hour
 
-// archiveRetention resolves the retention that applies to one sandbox. A
+// serverArchiveRetention is the default every project that has not set its own
+// follows. A zero configured value means the server said nothing, which is the
+// distinction that lets a development server shorten the window without
+// touching any project's setting.
+func (r *SandboxReconciler) serverArchiveRetention() time.Duration {
+	if r.archiveRetention > 0 {
+		return r.archiveRetention
+	}
+	return DefaultArchiveRetention
+}
+
+// projectArchiveRetention resolves the retention that applies to one sandbox. A
 // project that has not set one follows the server default as it changes, rather
 // than having been frozen to whatever the default was when it was created.
-func (r *SandboxReconciler) archiveRetention(ctx context.Context, projectID string) time.Duration {
+func (r *SandboxReconciler) projectArchiveRetention(ctx context.Context, projectID string) time.Duration {
 	project, err := r.store.GetProject(ctx, projectID)
 	if err != nil || project == nil || project.ArchiveRetentionSeconds <= 0 {
-		return DefaultArchiveRetention
+		return r.serverArchiveRetention()
 	}
 	return time.Duration(project.ArchiveRetentionSeconds) * time.Second
 }
@@ -51,7 +62,7 @@ func (r *SandboxReconciler) archive(ctx context.Context, sandbox *model.Sandbox,
 		return reconcile.Result{}, nil
 	}
 
-	retention := r.archiveRetention(ctx, sandbox.ProjectID)
+	retention := r.projectArchiveRetention(ctx, sandbox.ProjectID)
 
 	if sandbox.State == model.SandboxStateArchived {
 		if !time.Now().Before(archiveDeadline(sandbox, retention)) {

@@ -146,6 +146,7 @@ func Run(ctx context.Context) error {
 		HostID:                         cfg.HostID,
 		DevelopmentImages:              cfg.DevelopmentImages,
 		ListenEndpoints:                cfg.Listen,
+		ArchiveRetention:               cfg.ArchiveRetention,
 	})
 	if err != nil {
 		return fmt.Errorf("initialize app: %w", err)

@@ -168,7 +168,12 @@ rather than a new place it moves. `Project.SandboxUpgradePolicy` (`manual`) opts
 a project out; empty means the server default, which is `automatic`.
 
 Retention: an archived sandbox is purged once it has been archived longer than
-`Project.ArchiveRetentionSeconds` (default `DefaultArchiveRetention`, 24h). The
+`Project.ArchiveRetentionSeconds`. A project that has not set one follows the
+server-wide default — `DISCOBOX_ARCHIVE_RETENTION`, else `DefaultArchiveRetention`
+(24h) — as it changes, rather than being frozen to whatever it was at creation.
+`task dev` sets that variable to 15m, because a development tree costs as much
+disk as a production one and is discarded many times a day; the setting is a
+default and not a ceiling, so a project that chose its own keeps it. The
 deadline derives from `StateChangedAt` and is never stored — the same reason the
 source-push timeout derives its own — and is armed by returning it as
 `reconcile.Result.RequeueAt`. `ScanDirty` also returns expired archives, because an archived

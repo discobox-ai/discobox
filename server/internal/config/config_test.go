@@ -337,7 +337,46 @@ func clearConfigEnv(t *testing.T) {
 		"DISCOBOX_ENCRYPTION_KEY",
 		"OTEL_METRICS_EXPORTER",
 		"OTEL_METRIC_EXPORT_INTERVAL",
+		ArchiveRetentionEnv,
 	} {
 		t.Setenv(key, "")
+	}
+}
+
+// Archive retention is unset by default, which the sandbox reconciler reads as
+// "the package default stands" rather than "purge immediately".
+func TestLoadArchiveRetention(t *testing.T) {
+	clearConfigEnv(t)
+	cfg, err := Load()
+	if err != nil {
+		t.Fatalf("Load() error = %v", err)
+	}
+	if cfg.ArchiveRetention != 0 {
+		t.Fatalf("ArchiveRetention = %s, want 0 when unset", cfg.ArchiveRetention)
+	}
+
+	clearConfigEnv(t)
+	t.Setenv(ArchiveRetentionEnv, "15m")
+	cfg, err = Load()
+	if err != nil {
+		t.Fatalf("Load() error = %v", err)
+	}
+	if cfg.ArchiveRetention != 15*time.Minute {
+		t.Fatalf("ArchiveRetention = %s, want 15m", cfg.ArchiveRetention)
+	}
+}
+
+// A retention that cannot be honored fails startup instead of silently
+// reverting to a day: a typo here either destroys data early or keeps it
+// forever, and both are worth a loud failure.
+func TestLoadRejectsUnusableArchiveRetention(t *testing.T) {
+	for _, value := range []string{"fifteen minutes", "0", "-5m"} {
+		t.Run(value, func(t *testing.T) {
+			clearConfigEnv(t)
+			t.Setenv(ArchiveRetentionEnv, value)
+			if _, err := Load(); err == nil {
+				t.Fatalf("Load() accepted %s=%q", ArchiveRetentionEnv, value)
+			}
+		})
 	}
 }

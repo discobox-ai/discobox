@@ -98,6 +98,12 @@ type Config struct {
 	// simply means those sandboxes report no upgrade.
 	DefaultSandboxImageDigest string
 
+	// ArchiveRetention is how long an archived sandbox is kept before it is
+	// purged, for projects that have not set their own retention. Zero means the
+	// environment said nothing and sandboxes.DefaultArchiveRetention applies; a
+	// project's own setting always wins over both.
+	ArchiveRetention time.Duration
+
 	// DevelopmentImages is the watcher-built image set to converge onto each
 	// Docker daemon before it hosts development pools.
 	DevelopmentImages []devimage.Image
@@ -133,6 +139,11 @@ func Load() (*Config, error) {
 	cfg.SandboxReconcileJobConcurrency = getEnvInt("SANDBOX_RECONCILE_JOB_CONCURRENCY", 4)
 	cfg.DefaultSandboxImage = getEnv("DISCOBOX_DEFAULT_SANDBOX_IMAGE", sandbox.DefaultSandboxImageName)
 	cfg.DefaultSandboxImageDigest = getEnv("DISCOBOX_DEFAULT_SANDBOX_IMAGE_DIGEST", "")
+	archiveRetention, err := archiveRetentionFromEnv()
+	if err != nil {
+		return nil, err
+	}
+	cfg.ArchiveRetention = archiveRetention
 	developmentImageSync, err := getEnvBool(devimage.SyncEnv, false)
 	if err != nil {
 		return nil, err
@@ -243,6 +254,33 @@ func splitListenEndpoints(value string) []string {
 		}
 	}
 	return endpoints
+}
+
+// ArchiveRetentionEnv overrides how long an archived sandbox is kept before it
+// is purged, for every project that has not chosen its own. `task dev` sets it
+// short, because a development tree costs as much disk as a production one and
+// is thrown away far more often.
+const ArchiveRetentionEnv = "DISCOBOX_ARCHIVE_RETENTION"
+
+// archiveRetentionFromEnv reads ArchiveRetentionEnv, returning zero when it is
+// unset so the sandboxes package default stands. An unparsable or non-positive
+// value is an error rather than a silent fallback, for the reason
+// imagereap.ConfiguredRetention gives about its own window: the two ways to get
+// a retention wrong are destroying data that was still wanted and never
+// reclaiming any, and neither should happen quietly.
+func archiveRetentionFromEnv() (time.Duration, error) {
+	value := strings.TrimSpace(os.Getenv(ArchiveRetentionEnv))
+	if value == "" {
+		return 0, nil
+	}
+	retention, err := time.ParseDuration(value)
+	if err != nil {
+		return 0, fmt.Errorf("%s: %w", ArchiveRetentionEnv, err)
+	}
+	if retention <= 0 {
+		return 0, fmt.Errorf("%s must be greater than 0, got %s", ArchiveRetentionEnv, value)
+	}
+	return retention, nil
 }
 
 func getEnv(key, defaultValue string) string {

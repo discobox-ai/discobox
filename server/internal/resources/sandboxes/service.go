@@ -36,6 +36,9 @@ type Service struct {
 	defaultImage       string
 	defaultImageDigest string
 	hostID             string
+	// archiveRetention is the server-wide default retention for archived
+	// sandboxes; zero leaves DefaultArchiveRetention in force.
+	archiveRetention time.Duration
 }
 
 func NewService(store *store.Store, manager *sandbox.ProviderManager, defaultUserID string, engine *reconcile.Engine, providerStore ...any) *Service {
@@ -74,6 +77,13 @@ func (s *Service) SetDefaultSandboxImage(image, digest string) {
 		s.defaultImage = image
 	}
 	s.defaultImageDigest = strings.TrimSpace(digest)
+}
+
+// SetArchiveRetention records the server-wide default retention for archived
+// sandboxes. Projects that have set their own are unaffected; see
+// WithArchiveRetention.
+func (s *Service) SetArchiveRetention(retention time.Duration) {
+	s.archiveRetention = retention
 }
 
 // SetHostID records the machine this server runs on, so a create request whose
@@ -1020,6 +1030,7 @@ func (s *Service) NewSandboxReconciler() *SandboxReconciler {
 		WithSandboxProviderManager(s.sandboxProviders),
 		WithSandboxAuthenticator(s.sandboxAuth),
 		WithSandboxReconcileEngine(s.engine),
+		WithArchiveRetention(s.archiveRetention),
 	)
 }
 

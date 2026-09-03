@@ -66,6 +66,10 @@ type Options struct {
 	// the local IPC endpoint an unconfigured server binds, which is the same
 	// rule config applies.
 	ListenEndpoints []string
+	// ArchiveRetention is the server-wide default an archived sandbox is kept
+	// for, which a project follows until it sets its own. Zero leaves the
+	// package default (24h) in force.
+	ArchiveRetention time.Duration
 }
 
 func New(store *store.Store, engine *reconcile.Engine, options Options) *Service {
@@ -84,6 +88,7 @@ func New(store *store.Store, engine *reconcile.Engine, options Options) *Service
 	poolService := pools.NewService(store, manager, poolControlPlane)
 	poolService.SetSandboxStateReporter(sandboxService)
 	jobsService := resourcejobs.NewService(store, engine)
+	sandboxService.SetArchiveRetention(options.ArchiveRetention)
 	harnessConfigService := harnessconfigs.NewService(store)
 	harnessConfigService.SetDevelopmentImages(options.DevelopmentImages)
 	// The configure flow runs an ephemeral sandbox and watches it through the

@@ -69,6 +69,12 @@ type AppOptions struct {
 	// inward derives its address from them, so it offers the agent a transport
 	// the server actually answers on rather than assuming one.
 	ListenEndpoints []string
+
+	// ArchiveRetention is how long an archived sandbox is kept before it is
+	// purged, for projects that have not set their own. Zero is left zero rather
+	// than defaulted here: DefaultAppOptions is production wiring, and the
+	// package default is the production answer. See config.Config.
+	ArchiveRetention time.Duration
 }
 
 // DefaultAppOptions returns the production defaults for the app.
@@ -143,6 +149,7 @@ func NewApp(ctx context.Context, writeDB, readDB *gorm.DB, options ...AppOptions
 		DevelopmentImages:              opts.DevelopmentImages,
 		ControlPlaneStreams:            controlPlaneStreams,
 		ListenEndpoints:                opts.ListenEndpoints,
+		ArchiveRetention:               opts.ArchiveRetention,
 	})
 	appServices.SetDefaultSandboxImage(opts.DefaultSandboxImage, opts.DefaultSandboxImageDigest)
 	appServices.SetHostID(opts.HostID)
