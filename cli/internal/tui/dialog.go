@@ -661,7 +661,7 @@ func (d *dialog) view(st *styles, z *zones, width, height int) string {
 		footer("Enter runs the highlighted action · Esc cancels")
 	case dlgForm:
 		answer()
-		b.WriteString(d.form.view(st, inner))
+		b.WriteString(d.form.view(st, z, strings.Count(b.String(), "\n")+dialogPadTop, inner))
 		// The hint keeps its rows whether or not it has anything to say, so
 		// moving down the form does not resize the card under the cursor.
 		b.WriteString("\n")

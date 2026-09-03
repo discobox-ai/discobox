@@ -487,3 +487,24 @@ func TestADoublePressOnASecretOpensIt(t *testing.T) {
 		t.Fatalf("a double press should open the secret")
 	}
 }
+
+// A card being filled in answers the pointer too: a press moves the cursor to
+// the row and focuses its field, which is what ↑ and ↓ do.
+func TestPressingAFormRowMovesTheCursorToIt(t *testing.T) {
+	m, _ := secretsFixture(t)
+	slowClock(m)
+	send(t, m, keyPress("n"))
+	if m.dialog == nil || m.dialog.kind != dlgForm {
+		t.Fatalf("dialog = %v, want the new-secret card", m.dialog)
+	}
+	before := m.dialog.form.cursor
+
+	// The row under the one the card opens on.
+	label := m.dialog.form.rows[before+1].label
+	x, y := at(t, m, label)
+	tap(t, m, x, y)
+
+	if got := m.dialog.form.cursor; got == before {
+		t.Fatalf("the form cursor is still on %d; the press should have moved it", got)
+	}
+}

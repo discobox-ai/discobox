@@ -1404,8 +1404,11 @@ func (m *Model) viewPaneWindow() string {
 	m.credentials = credentialSpan{}
 
 	headerW := max(inner-2*boxPad, 1)
+	m.zones.push(1+boxPad, 0)
+	header := m.viewPaneHeader(headerW)
+	m.zones.pop()
 	rows := []string{
-		" " + pad + m.viewPaneHeader(headerW) + pad + " ",
+		" " + pad + header + pad + " ",
 	}
 	// A credential request on this discobox gets a band of its own under the
 	// header *and* one above the keys. The agent in front of you is blocked on
@@ -1516,16 +1519,30 @@ func (m *Model) viewPaneHeader(w int) string {
 	}
 	concessions = append(concessions, [2]string{folder, keys}, [2]string{"", keys})
 
+	// The keys, wherever this row ends up putting them, are buttons for
+	// themselves as they are on every other screen. A row that gave them up to
+	// fit has nothing there to press, and a pane whose status has displaced
+	// them is reporting rather than offering — so the marks are made from the
+	// concession that actually won.
+	markKeys := func(right string) {
+		if pinned || right == "" {
+			return
+		}
+		m.markHints(m.headerHints(), w-lipgloss.Width(right), headerSep)
+	}
+
 	fields := m.paneHeaderFields()
 	middle := strings.Join(fields, "  ")
 	for _, sides := range concessions {
 		if lipgloss.Width(middle) <= centerRoom(sides[0], sides[1], w) {
+			markKeys(sides[1])
 			return spreadCenter(sides[0], middle, sides[1], w)
 		}
 	}
 	// Nothing left on the edges to give. What the middle can still drop is its
 	// own, against the room the barest row leaves it.
 	bare := concessions[len(concessions)-1]
+	markKeys(bare[1])
 	return spreadCenter(bare[0], dropToFit(fields, "  ", centerRoom(bare[0], bare[1], w)), bare[1], w)
 }
 

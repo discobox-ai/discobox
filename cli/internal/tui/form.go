@@ -166,6 +166,14 @@ func (f *form) move(delta int) {
 	f.focus()
 }
 
+// moveTo puts the cursor on one row, which is what a press on it means. A row
+// nobody may answer takes the next one that can be, the way moving onto it
+// would.
+func (f *form) moveTo(i int) {
+	f.cursor = f.next(min(max(i, 0), len(f.rows)-1), 1)
+	f.focus()
+}
+
 // value is what a typed row holds, trimmed.
 func (f *form) value(key string) string {
 	for _, row := range f.rows {
@@ -268,7 +276,7 @@ func (f *form) paste(msg tea.PasteMsg) tea.Cmd {
 
 // view draws the rows: the label column, the values beside it, and a rule
 // wherever the section changes.
-func (f *form) view(st *styles, inner int) string {
+func (f *form) view(st *styles, z *zones, top, inner int) string {
 	labelW := 0
 	for _, row := range f.rows {
 		labelW = max(labelW, lipgloss.Width(row.label))
@@ -294,6 +302,10 @@ func (f *form) view(st *styles, inner int) string {
 		if i == f.cursor {
 			mark, label = st.key.Render("❯")+" ", st.cursorName
 		}
+		// A row is answered where it is drawn: the sections mean a row's place
+		// on the card is not its place in the form, so the mark is made here,
+		// against the line the builder is actually on. See zones.go.
+		z.markRow(hit{kind: hitFormRow, idx: i}, top+strings.Count(b.String(), "\n"), inner+2*dialogPadLeft)
 		b.WriteString(padANSI(mark+padANSI(label.Render(truncate(row.label, labelW)), labelW)+"  "+
 			f.viewValue(st, i, valueW), inner))
 		b.WriteString("\n")

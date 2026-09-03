@@ -1016,6 +1016,15 @@ of its own would be snapped back by the next refresh. The middle button pastes
 the last selection, which is what the middle button pastes everywhere else
 (`Model.primaryText` — X11's primary, not the clipboard).
 
+Every screen the window draws marks its own controls: the rows of all four
+lists (`markList`), the folder filter, the composer and the strip under it, the
+title band's two offers, a menu's rows and a card's, the run options and the
+arrows on them, the confirmation's two answers, and the introduction's one
+instruction. What is left over — prose, borders, column headings, a dialog's
+text input — is not a control and drives the selection instead. A dialog's
+input takes no caret from a press: the textinput has no coordinate to give it,
+and the field is already focused when the card opens.
+
 **A hint that names a key is a button for that key.** `hints()` answers in
 `hint` pairs — what it says, and the keystrokes it stands for, several of them
 for a leader chord — and the renderer both joins them and marks where each one

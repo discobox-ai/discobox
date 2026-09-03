@@ -275,6 +275,14 @@ func (m *Model) press(what hit, clicks int) (tea.Cmd, bool) {
 	case hitDialogItem:
 		return m.pressDialogItem(what.idx), true
 
+	case hitFormRow:
+		// The row is answered where the keyboard is: a press moves the cursor
+		// to it and focuses its field, which is what ↑ and ↓ do.
+		if d := m.dialog; d != nil && d.kind == dlgForm {
+			d.form.moveTo(what.idx)
+		}
+		return nil, true
+
 	case hitFolder:
 		// A dropdown opens when it is clicked. Reaching it and opening it are
 		// two keys, because a keyboard has to get there first; a pointer is
@@ -535,6 +543,10 @@ func (m *Model) wheelAt(ev tea.MouseWheelMsg) tea.Cmd {
 		// wheel that wrapped would jump from the last row to the first on the
 		// way past the end.
 		m.opts.moveTo(m.opts.cursor - lines)
+	case hitFormRow:
+		if d := m.dialog; d != nil && d.kind == dlgForm {
+			d.form.move(-sign(lines))
+		}
 	case hitDialogItem:
 		if d := m.dialog; d != nil {
 			at := min(max(d.cursor-lines, 0), len(d.items)-1)

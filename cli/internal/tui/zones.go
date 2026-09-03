@@ -52,8 +52,10 @@ const (
 	hitOptionRow
 	hitOptionCycle
 
-	// hitDialogItem is one action of the menu a dialog is showing.
+	// hitDialogItem is one action of the menu a dialog is showing;
+	// hitFormRow is one row of a card being filled in.
 	hitDialogItem
+	hitFormRow
 
 	// hitFolder is the header's folder filter: the dropdown, closed.
 	hitFolder
