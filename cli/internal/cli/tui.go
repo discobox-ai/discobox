@@ -98,9 +98,11 @@ func (a *App) runTUI(cmd *cobra.Command, leaderFlag string, options ...tui.Optio
 	// Whether to introduce Discobox is settled before the window opens rather
 	// than when the session load comes back: a welcome that arrives a moment
 	// later would arrive over a prompt the user is already typing into, and the
-	// first run — the one this is for — is the slowest load there is. A window
-	// opened on one run or one discobox drops it: there is no prompt there for
-	// it to interrupt, which the window itself settles.
+	// first run — the one this is for — is the slowest load there is. Whether
+	// it is actually shown from here is the window's own call — see
+	// tui.WithAttach and tui.WithRun — since a window opened on one discobox
+	// (`discobox attach`) has no screen behind the introduction to hand over
+	// to, while one opened on one run (`discobox run`) does.
 	welcomed, err := a.projectWelcomed(cmd.Context(), client, projectID)
 	if err != nil {
 		return err

@@ -343,7 +343,9 @@ func WithHarnesses() Option {
 // `discobox run` and `discobox attach` are: the window is that attach rather
 // than a launcher that happens to have one open. It is opened out with it — the
 // workspace is the whole of it — and leaving the workspace closes the window
-// instead of falling back to a list nobody asked for.
+// instead of falling back to a list nobody asked for. The introduction never
+// stands in front of it, project unwelcomed or not — see New — because there
+// is nothing behind the workspace for it to hand over to.
 func WithAttach(sandbox Sandbox) Option {
 	return func(m *Model) { m.attach = &sandbox }
 }
@@ -353,6 +355,11 @@ func WithAttach(sandbox Sandbox) Option {
 // question about uncommitted work is the window's own dialog, the wait is the
 // window's own screen, and what it lands on is the workspace. The window is
 // that run, so it closes when the workspace it opened is left.
+//
+// A project that has not been welcomed still gets the introduction here: it
+// opens over the wait for the discobox this run is making, the run proceeds
+// behind it exactly as everything else loads behind it, and Enter uncovers
+// however far that has gotten.
 func WithRun(req RunRequest) Option {
 	return func(m *Model) { m.oneRun, m.pendingRun = true, &req }
 }
@@ -421,11 +428,14 @@ func New(ctx context.Context, ds DataSource, options ...Option) *Model {
 	for _, option := range options {
 		option(m)
 	}
-	if m.oneShot() {
-		// A window that is one command's own opens on the discobox it is about
-		// and closes when that is left. There is no prompt for the
-		// introduction to interrupt and no screen for it to hand over to, so
-		// it is not shown here however the project stands.
+	if m.attach != nil {
+		// `discobox attach` opens directly on the discobox it names, and
+		// dismissing the introduction here would only uncover that exact
+		// workspace again — there is nothing behind it the introduction is
+		// standing in front of. `discobox run` is left welcoming: it opens on
+		// a discobox that does not exist yet, and the introduction stands in
+		// front of the wait for it exactly as it stands in front of the list
+		// on every other first run. See WithRun.
 		m.welcoming = false
 	}
 	m.opts = newOptions(session)

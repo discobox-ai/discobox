@@ -1277,6 +1277,13 @@ slowest load there is, and a welcome that arrived late would arrive over a
 prompt already being typed into. It takes every key — only Enter does anything —
 so a press aimed at the introduction cannot reach a screen the user has not seen.
 
+It stands in front of `discobox run`'s window too, when the project has not
+been welcomed: the run this window was opened to make proceeds behind it the
+same way every other load does, and Enter uncovers whatever it has gotten to —
+still waiting, or already the workspace. `discobox attach` is the one window it
+never covers (`Model.New`): there is nothing behind the workspace it opens
+directly on for the introduction to hand over to.
+
 **A scrolling body is searched with `/`** (`updateText`, `viewBody`). The help
 is pages long and the config card is most of a screen, so the way to a line in
 either is to say what is on it: `/` opens a line at the foot of the box, the
