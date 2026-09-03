@@ -32,27 +32,35 @@ RUN --mount=type=cache,target=/go/pkg/mod,sharing=locked \
     && CGO_ENABLED=0 GOOS=$TARGETOS GOARCH=$TARGETARCH go -C sandbox-agent build -trimpath -ldflags="-s -w" -o /out/discobox-docker ./cmd/discobox-docker \
     && CGO_ENABLED=0 GOOS=$TARGETOS GOARCH=$TARGETARCH go -C access build -trimpath -ldflags="-s -w" -o /out/discobox-access ./cmd/discobox-access
 
-# Built in its own layer so bumping the difftui version does not invalidate the
+# Built in its own layer so bumping the review version does not invalidate the
 # sandbox-agent binaries above.
-# Pinned to a main pseudo-version rather than `latest`: difftui carries no
+# Pinned to a main pseudo-version rather than `latest`: review carries no
 # tags, so `latest` is main's tip anyway, but an unpinned version makes the
 # build unreproducible and leaves this layer cached on a stale commit. Bump it
 # to pull a newer main.
-ARG DIFFTUI_VERSION=v0.0.0-20260808165440-27da2073239f
+ARG REVIEW_VERSION=v0.0.0-20260903055943-32284e3c8325
 RUN --mount=type=cache,target=/go/pkg/mod,sharing=locked \
     --mount=type=cache,target=/root/.cache/go-build,sharing=locked \
     set -eux \
     && CGO_ENABLED=0 GOOS=$TARGETOS GOARCH=$TARGETARCH \
-        go install -trimpath -ldflags="-s -w" github.com/discobox-ai/difftui@${DIFFTUI_VERSION} \
-    # `go install` refuses a GOBIN with cross-compilation and drops
-    # cross-built binaries under GOPATH/bin/<goos>_<goarch> instead, so pick
-    # the binary up from whichever of the two layouts was used.
-    && mv "$(go env GOPATH)/bin/${TARGETOS}_${TARGETARCH}/difftui" /out/difftui \
-        || mv "$(go env GOPATH)/bin/difftui" /out/difftui
+        go install -trimpath -ldflags="-s -w" github.com/discobox-ai/review/cmd/discobox-review@${REVIEW_VERSION} \
+    # `go install` refuses a GOBIN with cross-compilation, so where the binary
+    # lands depends on how this image is being built. depot builds each
+    # architecture on a native machine and it is GOPATH/bin; the emulated
+    # buildx fallback cross-compiles the foreign leg to keep the Go stage off
+    # QEMU, and it is GOPATH/bin/<goos>_<goarch>. Both are reachable, so take
+    # whichever was used.
+    #
+    # The two moves are grouped so that the fallback belongs to the first move
+    # alone. Ungrouped, `install && mv A || mv B` is `(install && mv A) || mv
+    # B`, so a failed install runs the fallback too and the build reports a
+    # missing file instead of why the install failed.
+    && { mv "$(go env GOPATH)/bin/${TARGETOS}_${TARGETARCH}/discobox-review" /out/discobox-review \
+        || mv "$(go env GOPATH)/bin/discobox-review" /out/discobox-review; }
 
 # fresh (getfresh.dev), the terminal editor the launcher's tools picker opens.
-# Its own layer for the same reason difftui has one, and pinned to a release
-# tag rather than following latest: an unpinned version makes the build
+# Its own layer for the same reason discobox-review has one, and pinned to a
+# release tag rather than following latest: an unpinned version makes the build
 # unreproducible and leaves this layer cached on whatever it first saw. Bump it
 # to pull a newer release.
 #
@@ -338,14 +346,14 @@ COPY access/skills /usr/local/share/discobox/skills
 # give `docker build` the pool-shared BuildKit cache. Non-build commands are
 # exec'd straight through. See the sandbox-agent/dockercache package.
 COPY --from=sandbox-agent-builder /out/discobox-docker /usr/local/bin/docker
-COPY --from=sandbox-agent-builder /out/difftui /usr/local/bin/difftui
+COPY --from=sandbox-agent-builder /out/discobox-review /usr/local/bin/discobox-review
 COPY --from=sandbox-agent-builder /out/fresh /usr/local/bin/fresh
 
 RUN chmod 0755 /usr/local/bin/discobox-sandbox-agent \
     && chmod 0755 /opt/discobox/bin/runc \
     && chmod 0755 /usr/local/bin/discobox-ca-anchor \
     && chmod 0755 /usr/local/bin/docker \
-    && chmod 0755 /usr/local/bin/difftui \
+    && chmod 0755 /usr/local/bin/discobox-review \
     && chmod 0755 /usr/local/bin/fresh \
     && chmod 0755 /usr/local/bin/discobox-vnc-websockify \
     && ln -sf /usr/local/bin/discobox-sandbox-agent /usr/local/bin/discobox-hook-publish \

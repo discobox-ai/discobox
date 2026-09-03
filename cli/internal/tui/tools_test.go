@@ -28,8 +28,8 @@ func TestTheToolsPickerRunsDiffInTheBox(t *testing.T) {
 	ds := newFakeSource(testSandboxes()...)
 	d, m := openTool(t, ds, "d")
 
-	if got := ds.toolRunsSeen(); len(got) != 1 || got[0] != "diff difftui" {
-		t.Fatalf("tool runs = %v, want difftui as the diff tool", got)
+	if got := ds.toolRunsSeen(); len(got) != 1 || got[0] != "diff discobox-review" {
+		t.Fatalf("tool runs = %v, want discobox-review as the diff tool", got)
 	}
 	p := m.showingTool()
 	if p.tool != "diff" {
@@ -181,7 +181,7 @@ func buttonColumns(t *testing.T, m *Model) (minimize, closeAt int) {
 func TestARunningToolIsPickedUpOnAttach(t *testing.T) {
 	ds := newFakeSource(testSandboxes()...)
 	ds.execs = []Exec{{
-		ID: "exec_diff", Command: []string{"difftui"}, Tool: "diff",
+		ID: "exec_diff", Command: []string{"discobox-review"}, Tool: "diff",
 		Tty: true, Live: true, CreatedAt: time.Date(2026, 8, 7, 12, 0, 0, 0, time.UTC),
 	}}
 	d, m, _ := openWorkspace(t, ds, "enter")

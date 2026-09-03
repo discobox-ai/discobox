@@ -77,17 +77,17 @@ func (t tool) spec() ToolSpec {
 
 // tools is every tool, in the order the picker lists them.
 //
-// The two that run in the discobox come from its image: difftui and fresh are
-// installed there, not here, so they are the same version for everyone looking
-// at the same discobox and there is nothing to have on your machine. vscode is
-// the opposite and is listed anyway: it is the same question — "open this
-// discobox in X" — and a picker that answered it for two of the three would
-// leave the third on a key you had to remember separately.
+// The two that run in the discobox come from its image: discobox-review and
+// fresh are installed there, not here, so they are the same version for
+// everyone looking at the same discobox and there is nothing to have on your
+// machine. vscode is the opposite and is listed anyway: it is the same
+// question — "open this discobox in X" — and a picker that answered it for two
+// of the three would leave the third on a key you had to remember separately.
 var tools = []tool{
 	{
 		id: "diff", key: "d", label: "diff",
-		detail:  "what has changed, in difftui",
-		command: []string{"difftui"},
+		detail:  "what has changed, in discobox-review",
+		command: []string{"discobox-review"},
 	},
 	{
 		id: "fresh", key: "f", label: "fresh",

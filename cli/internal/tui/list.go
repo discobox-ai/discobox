@@ -35,8 +35,8 @@ type sandboxList struct {
 	// way until then.
 	showArchived bool
 
-	// Visual mode, lifted from difftui's diff: V anchors here, moving extends
-	// the range, and a command acts on the whole of it.
+	// Visual mode, lifted from discobox-review's diff: V anchors here, moving
+	// extends the range, and a command acts on the whole of it.
 	visual bool
 	anchor int
 
@@ -518,8 +518,9 @@ func (l *sandboxList) row(st *styles, s Sandbox, i int, focused bool) string {
 	addCol(padANSI(diffText(st, s), 11), 11)
 	tail := cols.text
 
-	// The cursor is a chevron, and selection is a background — difftui's
-	// file list, which is a picker like this one rather than a diff.
+	// The cursor is a chevron, and selection is a background —
+	// discobox-review's file list, which is a picker like this one rather than
+	// a diff.
 	marker := "  "
 	if atCursor {
 		marker = st.key.Render("❯") + " "

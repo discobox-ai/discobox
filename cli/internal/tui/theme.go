@@ -7,9 +7,9 @@ import (
 	"github.com/charmbracelet/colorprofile"
 )
 
-// The palette is difftui's, which is git-gui's: lightsalmon, lightgreen and
-// gold over a terminal's own background. Nothing here paints a full screen
-// background — the panes are told apart by their title bars alone.
+// The palette is discobox-review's, which is git-gui's: lightsalmon,
+// lightgreen and gold over a terminal's own background. Nothing here paints a
+// full screen background — the panes are told apart by their title bars alone.
 //
 // They are held as 256-color indices rather than as lipgloss colors because
 // highlight() has to write the background escape itself; see the comment there.
@@ -88,8 +88,8 @@ type styles struct {
 	titleDim  lipgloss.Style
 
 	// The cursor is a chevron in the left column and the row it is on takes a
-	// background, as difftui's file lists do. Painting a background across a
-	// row that carries its own colors needs highlight(), not a style.
+	// background, as discobox-review's file lists do. Painting a background
+	// across a row that carries its own colors needs highlight(), not a style.
 	cursorName lipgloss.Style
 
 	dimText lipgloss.Style

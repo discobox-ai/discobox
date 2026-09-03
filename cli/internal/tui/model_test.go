@@ -330,7 +330,7 @@ func TestSelectionIsWhatCommandsActOn(t *testing.T) {
 	}
 }
 
-// V draws a range difftui-style, and a command acts on the whole of it.
+// V draws a range discobox-review-style, and a command acts on the whole of it.
 func TestVisualRangeActsOnTheWholeRange(t *testing.T) {
 	ds := newFakeSource(testSandboxes()...)
 	m := newTestModel(t, ds)

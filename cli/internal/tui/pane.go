@@ -922,11 +922,12 @@ func (m *Model) paneClosed(p *pane, msg termpane.ClosedMsg) tea.Cmd {
 		return tea.Batch(m.refresh(), status("the session ended"))
 
 	case p.tool != "":
-		// A tool is the program, not a transcript of one: quitting difftui or
-		// fresh is how you say you are done with it, and a held screen
-		// captioned with its exit would be one more thing to dismiss after
-		// every look at the diff. So the window goes when the program does,
-		// however it ended, and there is nothing left in the strip to reopen.
+		// A tool is the program, not a transcript of one: quitting
+		// discobox-review or fresh is how you say you are done with it, and a
+		// held screen captioned with its exit would be one more thing to
+		// dismiss after every look at the diff. So the window goes when the
+		// program does, however it ended, and there is nothing left in the
+		// strip to reopen.
 		//
 		// A stream that broke is the other thing, and is still reported: the
 		// screen that would have carried the reason went with the window.

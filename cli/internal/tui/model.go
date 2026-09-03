@@ -1268,7 +1268,7 @@ func (m *Model) promptEnd() {
 }
 
 // updateList handles the sandbox pane. A letter is a command here, the way it
-// is in difftui's file lists, because there is no text to type.
+// is in discobox-review's file lists, because there is no text to type.
 func (m *Model) updateList(msg tea.KeyPressMsg) tea.Cmd {
 	switch keyName(msg) {
 	case credentialsKey:
@@ -1610,7 +1610,7 @@ func chooseAction(targets []Sandbox) func(string) tea.Cmd {
 
 func (m *Model) act(key string) tea.Cmd {
 	// A command acts on the visual range and ends the mode, the way staging a
-	// visual selection does in difftui.
+	// visual selection does in discobox-review.
 	targets := m.list.targets()
 	m.list.visual = false
 	return m.actOn(key, targets)
@@ -3428,7 +3428,7 @@ func (m *Model) helpText() string {
 		"  terminal nor a tab: each one is a window over the workspace,",
 		"  which carries on underneath.",
 		"",
-		"    d              diff — what has changed, in difftui",
+		"    d              diff — what has changed, in discobox-review",
 		"    f              fresh — the fresh editor, in the box",
 		"    " + vscodeKey + "              vscode — the box in VS Code, in a window of",
 		"                   its own",

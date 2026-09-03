@@ -720,11 +720,12 @@ looked at** (`tools.go`, ADR-0071). `Model.tools` is a third `column` and
 the whole screen, the apply overlay or the showing tool, and every place that
 asked `overlay != nil` asks it instead.
 
-- The catalog is this package's (`tools`): `diff` runs `difftui`, `fresh` runs
-  the `fresh` editor — both carried by the sandbox image, so everyone looking
-  at one discobox is looking at the same versions — and `vscode` has no command
-  at all and is run rather than opened. The picker is on the leader's `o`,
-  because `t` is stop and `x` is archive in the key map the two screens share.
+- The catalog is this package's (`tools`): `diff` runs `discobox-review`,
+  `fresh` runs the `fresh` editor — both carried by the sandbox image, so
+  everyone looking at one discobox is looking at the same versions — and
+  `vscode` has no command at all and is run rather than opened. The picker is
+  on the leader's `o`, because `t` is stop and `x` is archive in the key map
+  the two screens share.
 - A tool session is a plain TTY exec labeled `metadata.tool` = the tool's id,
   created with no workdir so it lands in the discobox's primary source
   directory. `Exec.Tool` carries it back off the listing; `toolExec` is asked
@@ -737,13 +738,13 @@ asked `overlay != nil` asks it instead.
   place this window ends a session rather than closing its view of one, and is
   on the shifted `X` for that reason.
 - **A tool that exits takes its window with it** (`paneClosed`), unlike every
-  other non-primary pane. Quitting difftui or fresh is how you say you are done
-  with it, so a held screen captioned with its exit would be one more thing to
-  dismiss after every look at the diff — and there is nothing left to reopen
-  anyway. A broken stream is still reported on the status line, since the
-  screen that would have carried the reason went with the window. That is why
-  no tool pane is ever `exited`: the picker's rows are running or not open at
-  all.
+  other non-primary pane. Quitting discobox-review or fresh is how you say you
+  are done with it, so a held screen captioned with its exit would be one more
+  thing to dismiss after every look at the diff — and there is nothing left to
+  reopen anyway. A broken stream is still reported on the status line, since
+  the screen that would have carried the reason went with the window. That is
+  why no tool pane is ever `exited`: the picker's rows are running or not open
+  at all.
 - The sessions live in the discobox, so the poll picks up every labeled one it
   finds and puts it away rather than showing it: attaching to a discobox should
   show you the discobox. That is what makes a diff survive quitting the

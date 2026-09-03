@@ -64,8 +64,8 @@ func truncate(s string, w int) string {
 //
 // A style cannot do this: every styled span in the row ends in a reset, and a
 // reset clears the background with it, so the color would stop at the first
-// one. Re-asserting the background after each reset is what makes difftui's
-// full-row selection work over colored content.
+// one. Re-asserting the background after each reset is what makes
+// discobox-review's full-row selection work over colored content.
 //
 // The palette is 256-color indices throughout, so the sequence is built
 // directly. A terminal that cannot color gets nothing back, and the cursor
