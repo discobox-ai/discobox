@@ -394,7 +394,20 @@ func TestPurgeConfirmsAndArchiveDoesNot(t *testing.T) {
 	if len(ds.did) != 0 {
 		t.Fatalf("nothing should have run before the answer, got %v", ds.did)
 	}
-	send(t, m, keyPress("y"))
+	// Enter is no: the answer someone gives a dialog without reading it must
+	// not be the one that destroys the disk.
+	if !m.dialog.defaultNo {
+		t.Fatal("purge should default to no")
+	}
+	send(t, m, keyPress("enter"))
+	if len(ds.did) != 0 {
+		t.Fatalf("enter should purge nothing, got %v", ds.did)
+	}
+	if m.dialog != nil {
+		t.Fatal("enter should close the dialog")
+	}
+
+	send(t, m, keyPress("P"), keyPress("y"))
 	if len(ds.did) != 1 || ds.did[0] != "purge sbx_four" {
 		t.Fatalf("did = %v", ds.did)
 	}

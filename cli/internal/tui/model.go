@@ -1712,9 +1712,13 @@ func (m *Model) actOn(key string, targets []Sandbox) tea.Cmd {
 		// Archiving is reversible and needs no ceremony. Purging is not.
 		question := fmt.Sprintf("Purge %s? The disk and everything on it goes, and unarchive cannot bring it back.",
 			actionTitle(targets))
-		m.dialog = confirmDialog("Purge", question, func(string) tea.Cmd {
+		d := confirmDialog("Purge", question, func(string) tea.Cmd {
 			return func() tea.Msg { return runVerbMsg{verb: VerbPurge, ids: ids} }
 		})
+		// Enter means no: a destruction nobody can undo has to be typed for,
+		// not fallen into by answering the dialog the way every other one is.
+		d.defaultNo = true
+		m.dialog = d
 		return nil
 	}
 	return m.runVerb(verb, ids)
