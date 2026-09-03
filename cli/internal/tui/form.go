@@ -312,6 +312,12 @@ func (f *form) view(st *styles, z *zones, top, inner int) string {
 			// Under the pointer, and answerable: a row you can press says so.
 			label = st.hover
 		}
+		// A row that is typed into takes a caret from a press, so the value
+		// column is marked as the field it is. A picker's ‹ › are the cursor
+		// row's own keys and the row mark under them is enough.
+		if f.answerable(i) && len(row.choices) == 0 {
+			z.mark(hit{kind: hitInput, idx: i}, dialogPadLeft+labelW+4, y, valueW, 1)
+		}
 		b.WriteString(padANSI(mark+padANSI(label.Render(truncate(row.label, labelW)), labelW)+"  "+
 			f.viewValue(st, i, valueW), inner))
 		b.WriteString("\n")

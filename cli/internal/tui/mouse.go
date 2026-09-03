@@ -6,6 +6,7 @@ import (
 	"unicode"
 
 	tea "charm.land/bubbletea/v2"
+	"charm.land/lipgloss/v2"
 
 	"github.com/discobox-ai/discobox/termpane"
 	"github.com/discobox-ai/x/selection"
@@ -143,6 +144,12 @@ func (m *Model) leftPress(ev tea.MouseClickMsg) tea.Cmd {
 	// that typing replaces it and Backspace deletes it. See ADR 0085 §2.
 	if where.what.kind == hitPrompt {
 		return m.pressPrompt(ev.X-where.x, ev.Y-where.y, clicks)
+	}
+	// A card's text field is a field too, and takes the caret the same way.
+	if where.what.kind == hitInput {
+		m.pressInput(where.what.idx, ev.X-where.x)
+		m.clearSelections()
+		return nil
 	}
 
 	cmd, taken := m.press(where.what, clicks)
@@ -446,6 +453,54 @@ func (m *Model) pressDialogItem(idx int) tea.Cmd {
 		m.dialog = nil
 	}
 	return cmd
+}
+
+// pressInput puts the caret in a card's text field where the pointer is: the
+// dialog's own field when idx is negative, and otherwise the form row's, which
+// takes the cursor with it.
+//
+// A field that has scrolled sideways declines rather than guessing. The
+// textinput keeps its horizontal offset to itself, so a value longer than the
+// field is one this cannot place a caret in without being wrong — and a caret
+// that lands somewhere other than where it was clicked is worse than one that
+// did not move.
+func (m *Model) pressInput(idx, col int) {
+	d := m.dialog
+	if d == nil {
+		return
+	}
+	field := &d.input
+	if idx >= 0 {
+		if d.kind != dlgForm || idx >= len(d.form.rows) {
+			return
+		}
+		d.form.moveTo(idx)
+		if d.form.cursor != idx {
+			// The row refused the cursor — it is not one that can be answered.
+			return
+		}
+		field = &d.form.rows[idx].input
+	}
+	col -= lipgloss.Width(field.Prompt)
+	value := field.Value()
+	if col < 0 || lipgloss.Width(value) >= field.Width() {
+		return
+	}
+	field.SetCursor(caretAt(value, col))
+}
+
+// caretAt is the rune a display column names, walked the way the field draws
+// it: a column past the end is the end.
+func caretAt(value string, col int) int {
+	width := 0
+	for i, r := range []rune(value) {
+		next := lipgloss.Width(string(r))
+		if width+next > col {
+			return i
+		}
+		width += next
+	}
+	return len([]rune(value))
 }
 
 // pressPrompt puts the caret where the pointer is and opens a selection there.

@@ -668,7 +668,9 @@ func (d *dialog) view(st *styles, z *zones, width, height int) string {
 		keys(pressing("Esc stops watching", "esc"))
 	case dlgMessage, dlgText:
 		b.WriteString("\n")
-		b.WriteString(truncate(d.viewSearch(st, inner), inner))
+		z.push(dialogPadLeft, strings.Count(b.String(), "\n")+dialogPadTop)
+		b.WriteString(truncate(d.viewSearch(st, z, inner), inner))
+		z.pop()
 	case dlgActions:
 		answer()
 		// Every row of a menu is a press, marked where the card put it: a menu
@@ -691,7 +693,12 @@ func (d *dialog) view(st *styles, z *zones, width, height int) string {
 
 	case dlgInput:
 		answer()
-		b.WriteString(d.input.View())
+		// The field is a field: a press in it puts the caret where the
+		// pointer is, rather than only bringing the card into focus it
+		// already has.
+		field := d.input.View()
+		z.mark(hit{kind: hitInput, idx: -1}, dialogPadLeft, strings.Count(b.String(), "\n")+dialogPadTop, lipgloss.Width(field), 1)
+		b.WriteString(field)
 		b.WriteString("\n")
 		footer()
 		keys(pressing("Enter accepts", "enter"), pressing("Esc cancels", "esc"))
@@ -937,7 +944,7 @@ func (d *dialog) viewBody(st *styles, lines []string, inner, maxBody int, chevro
 
 // viewSearch is the row under a scrolling body: the search line while one is
 // being typed, and otherwise what the keys there are.
-func (d *dialog) viewSearch(st *styles, inner int) string {
+func (d *dialog) viewSearch(st *styles, z *zones, inner int) string {
 	if d.typing {
 		// The tally rides on the right of the line rather than waiting for
 		// Enter, so a query that matches nothing says so while there are still
@@ -948,13 +955,18 @@ func (d *dialog) viewSearch(st *styles, inner int) string {
 		// The query stays on the line with the search put away, because the
 		// rows below it are painted and n and N are live: a footer that forgot
 		// what was searched for would leave both unexplained.
-		return st.key.Render("/") + d.query +
-			st.dimText.Render("  "+d.tally()+" · n / N next, previous · / search · Esc closes")
+		found := st.key.Render("/") + d.query + st.dimText.Render("  "+d.tally()+"  ")
+		return found + viewHints(st, z, []hint{
+			pressing("n / N next, previous", "n"),
+			pressing("/ search", "/"),
+			pressing("Esc closes", "esc"),
+		}, lipgloss.Width(found), hintSep)
 	}
+	line := []hint{pressing("Esc closes", "esc")}
 	if d.overflow {
-		return st.dimText.Render("/ search · Esc closes")
+		line = []hint{pressing("/ search", "/"), pressing("Esc closes", "esc")}
 	}
-	return st.dimText.Render("Esc closes")
+	return viewHints(st, z, line, 0, hintSep)
 }
 
 // tally is which match the body is on, of how many.

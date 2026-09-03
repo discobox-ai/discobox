@@ -57,6 +57,11 @@ const (
 	hitDialogItem
 	hitFormRow
 
+	// hitInput is a text field on a card: the dialog's own when idx is
+	// negative, and otherwise the form row's. A press in one puts the caret
+	// where the pointer is.
+	hitInput
+
 	// hitFolder is the header's folder filter: the dropdown, closed.
 	hitFolder
 

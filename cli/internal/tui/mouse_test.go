@@ -7,6 +7,7 @@ import (
 	"time"
 
 	tea "charm.land/bubbletea/v2"
+	"charm.land/lipgloss/v2"
 	"github.com/charmbracelet/x/ansi"
 )
 
@@ -658,5 +659,77 @@ func TestAMenuRowShadesUnderThePointer(t *testing.T) {
 	}
 	if m.dialog.cursor != before {
 		t.Fatalf("hovering moved the cursor to %d; the chevron says what Enter runs", m.dialog.cursor)
+	}
+}
+
+// A card's text field takes the caret from a press, the way the composer does.
+func TestPressingACardsFieldPlacesTheCaret(t *testing.T) {
+	boxes := testSandboxes()
+	m := newTestModel(t, newFakeSource(boxes...))
+	slowClock(m)
+	showAllFolders(t, m)
+	send(t, m, keyPress("e")) // rename opens the name it already has
+	if m.dialog == nil || m.dialog.kind != dlgInput {
+		t.Fatalf("dialog = %v, want the rename field", m.dialog)
+	}
+	if got := m.dialog.input.Position(); got != len(boxes[0].Name) {
+		t.Fatalf("the caret opens at %d, want the end of the name", got)
+	}
+
+	x, y := at(t, m, boxes[0].Name)
+	tap(t, m, x+4, y)
+
+	if got := m.dialog.input.Position(); got != 4 {
+		t.Fatalf("the caret is at %d, want where the pointer was (4)", got)
+	}
+}
+
+// And a card's key line closes it, on the cards that are only read.
+func TestPressingACardsCloseOffer(t *testing.T) {
+	m := newTestModel(t, newFakeSource(testSandboxes()...))
+	slowClock(m)
+	send(t, m, keyPress("f1"))
+	if m.dialog == nil {
+		t.Fatalf("F1 did not open the help")
+	}
+
+	// The key line, not the same words in the prose above it: the help
+	// explains its own search, so "Esc closes" appears in the body too.
+	line := "/ search" + hintSep + "Esc closes"
+	x, y := at(t, m, line)
+	tap(t, m, x+lipgloss.Width("/ search"+hintSep), y)
+
+	if m.dialog != nil {
+		t.Fatalf("pressing the card's own Esc offer should close it")
+	}
+}
+
+// A form row that is typed into takes the caret too, and the cursor with it.
+func TestPressingAFormFieldPlacesTheCaret(t *testing.T) {
+	m, _ := secretsFixture(t)
+	slowClock(m)
+	send(t, m, keyPress("n"))
+
+	row := -1
+	for i, r := range m.dialog.form.rows {
+		if len(r.choices) == 0 && m.dialog.form.answerable(i) {
+			m.dialog.form.moveTo(i)
+			m.dialog.form.rows[i].input.SetValue("github")
+			row = i
+			break
+		}
+	}
+	if row < 0 {
+		t.Fatal("the card has no field to type into")
+	}
+
+	x, y := at(t, m, "github")
+	tap(t, m, x+3, y)
+
+	if got := m.dialog.form.cursor; got != row {
+		t.Fatalf("the form cursor is on %d, want the row that was pressed (%d)", got, row)
+	}
+	if got := m.dialog.form.rows[row].input.Position(); got != 3 {
+		t.Fatalf("the caret is at %d, want where the pointer was (3)", got)
 	}
 }

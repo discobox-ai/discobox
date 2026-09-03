@@ -1026,7 +1026,15 @@ cannot would be half a feature.
 
 A card's own key line is `dialog.keys`, a `[]hint` drawn and marked exactly as
 the status line's is; `dialog.footer` is what is left, which is prose — the
-caveat the question carries — and stays text. A modal is drawn **twice**
+caveat the question carries — and stays text. A card that is only read
+(`dlgText`, `dlgMessage`) has its key line under the body instead
+(`viewSearch`), and it is pressable on the same terms.
+
+A card's text field takes a caret from a press (`hitInput`, `pressInput`) — the
+dialog's own field, and a form's typed rows, which take the form cursor with
+them. A field that has scrolled sideways declines rather than guessing: the
+textinput keeps its horizontal offset to itself, and a caret landing somewhere
+other than where it was clicked is worse than one that did not move. A modal is drawn **twice**
 (`place`): once to measure, and once at the origin that measurement gives it.
 A card is centered on whatever it comes out at, so where it lands is not known
 until it has been drawn, and a renderer that shades the row under the pointer
