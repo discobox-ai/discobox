@@ -96,7 +96,7 @@ func guestImagePlatform() string {
 // ADR 0062 §9 lands. It is deliberately not called a pool image — that already
 // means the pool-agent container (dockerworker.DefaultPoolImage), which every
 // VM provider exposes as workerImage alongside this one.
-const DefaultGuestImage = "ghcr.io/discobox-ai/discobox-vm@sha256:a384499ea85ab5704a1e7ac1266509c1e4590d896d962d13ad77cba0db2479c8"
+const DefaultGuestImage = "ghcr.io/discobox-ai/discobox-vm@sha256:689cb9bc05c1304358209ae9afeec70d2ee7b5d0cda786c558e2bcef6f4a76dd"
 
 // Config is the persisted vz provider configuration.
 type Config struct {
