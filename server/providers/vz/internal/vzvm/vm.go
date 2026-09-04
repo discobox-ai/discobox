@@ -18,7 +18,10 @@ import (
 )
 
 // ErrUnsupported reports that this build cannot run Virtualization.framework.
-var ErrUnsupported = errors.New("vzvm: Apple Virtualization.framework is available on macOS only")
+// What is wrong differs by build, so the stub wraps it with the reason: off
+// macOS the framework does not exist, and on macOS without cgo the bindings
+// were not compiled in.
+var ErrUnsupported = errors.New("vzvm: this build cannot run Apple Virtualization.framework")
 
 // Options describes one guest. Disk order is fixed and load-bearing: the guest
 // addresses the root filesystem as /dev/vda, durable data as /dev/vdb, and

@@ -30,8 +30,14 @@ no runtime lock, and no recorded process identity.
 
 `internal/vzvm` is the whole cgo/darwin surface, isolated exactly as
 `wslc/internal/wslcsession` is, so the driver, its configuration, and its tests
-compile and run on every platform. Off darwin every entry point returns
-`ErrUnsupported`; the provider is registered from `platform_darwin.go` only.
+compile and run on every platform. The bindings are built `darwin && cgo` —
+`Code-Hex/vz` is an entirely cgo package, so a darwin build with cgo off has no
+framework to call — and the stub covers `!darwin || !cgo`. Every stub entry
+point returns `ErrUnsupported` wrapped with which build it is: off macOS the
+framework does not exist, on macOS the binary was built `CGO_ENABLED=0`. That
+second build still registers the provider, since `platform_darwin.go` is
+selected by GOOS alone, so it fails at `NewDriver`'s `Supported` check — on
+first use, with the fix named, rather than at init or silently.
 
 A VM is an in-process object, so **the VM dies with the server** — a property,
 not a policy. There is nothing to re-adopt after a restart. `StopVM` and

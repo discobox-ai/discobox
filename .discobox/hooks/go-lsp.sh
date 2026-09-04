@@ -5,16 +5,18 @@
 # engine: lsp
 # pattern: "**/*.go"
 # ignore:
-#   - "**/*_darwin.go"
+#   - "server/providers/vz/internal/vzvm/{vm,host}_{darwin,other}.go"
 # language_id: go
 # min_severity: warning
 #---
-# Darwin files are ignored because this server cannot type-check them off a
-# Mac. Opening one makes gopls build a darwin view, and a cross-compiled darwin
-# view is CGO_ENABLED=0, so Code-Hex/vz — an entirely cgo package that the vz
-# provider's darwin files reach through — exports nothing. Every symbol it
-# defines is then reported undefined, on code that compiles fine on the machine
-# that runs it. The darwin CI job is what checks these files.
+# vzvm is split on `darwin && cgo` / `!darwin || !cgo`, because Code-Hex/vz is
+# an entirely cgo package. Opening either half makes gopls build a darwin view,
+# and that view does not resolve the cgo tag the way the go command does: it
+# takes both halves as one package and reports every symbol as declared twice.
+# The split is correct — `go vet` type-checks darwin with cgo on and off, and
+# the darwin CI job compiles the real one — so those four files are not
+# diagnosed here. Everything else in the package, and every other _darwin.go
+# file in the tree, still is.
 set -euo pipefail
 
 exec go tool gopls serve
