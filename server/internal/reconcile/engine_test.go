@@ -9,14 +9,28 @@ import (
 	"testing"
 	"time"
 
-	"github.com/glebarez/sqlite"
 	"gorm.io/gorm"
 	"gorm.io/gorm/logger"
+
+	"github.com/discobox-ai/x/gormdb"
 )
 
-func testEngine(t *testing.T) (*Engine, *gorm.DB) {
+// testDB opens a database the way the server opens its own: through gormdb, and
+// returning the write pool because that is the pool reconcile.New is handed in
+// production (see NewApp in internal/server/router.go).
+//
+// Not gorm.Open(sqlite.Open(...)). GORM's own defaults leave SQLite on the
+// rollback journal with an unbounded connection pool, so the engine's claim,
+// lease, and settle writes contended for the file lock with the test's polling
+// reads on a second connection -- which is where this package's SQLITE_BUSY
+// flake came from, on loaded machines only. The write pool is WAL with a single
+// connection, so the engine's writes and the tests' reads take turns on that
+// one connection rather than racing each other for the file.
+func testDB(t *testing.T) *gorm.DB {
 	t.Helper()
-	db, err := gorm.Open(sqlite.Open(filepath.Join(t.TempDir(), "test.db")), &gorm.Config{
+	pools, err := gormdb.Open(gormdb.Config{
+		Driver: gormdb.DriverSQLite,
+		DSN:    filepath.Join(t.TempDir(), "test.db"),
 		Logger: logger.Default.LogMode(logger.Silent),
 	})
 	if err != nil {
@@ -24,14 +38,18 @@ func testEngine(t *testing.T) (*Engine, *gorm.DB) {
 	}
 	// Registered after t.TempDir's own cleanup and before start's engine stop,
 	// so cleanup runs in the only order that works: stop the workers, release
-	// the handle, then remove the directory. Linux unlinks a file that is still
+	// the handles, then remove the directory. Linux unlinks a file that is still
 	// open, so a leaked handle is invisible there; Windows refuses, and it
 	// surfaces as a cleanup failure rather than as the leak it is.
 	t.Cleanup(func() {
-		if sqlDB, err := db.DB(); err == nil {
-			_ = sqlDB.Close()
-		}
+		_ = pools.Close()
 	})
+	return pools.Write
+}
+
+func testEngine(t *testing.T) (*Engine, *gorm.DB) {
+	t.Helper()
+	db := testDB(t)
 	e, err := New(db, Options{
 		SingleNode:   true,
 		PollInterval: 20 * time.Millisecond,
@@ -294,17 +312,7 @@ func (s *scanningReconciler) ScanDirty(context.Context) ([]string, error) {
 }
 
 func TestScannerBackstop(t *testing.T) {
-	db, err := gorm.Open(sqlite.Open(filepath.Join(t.TempDir(), "test.db")), &gorm.Config{
-		Logger: logger.Default.LogMode(logger.Silent),
-	})
-	if err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(func() {
-		if sqlDB, err := db.DB(); err == nil {
-			_ = sqlDB.Close()
-		}
-	})
+	db := testDB(t)
 	e, err := New(db, Options{
 		SingleNode:   true,
 		PollInterval: 20 * time.Millisecond,
