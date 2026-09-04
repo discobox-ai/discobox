@@ -220,6 +220,13 @@ data directory's singleton lock and exiting. Only the caller that made the
 attempt is told how it went; a later one dials the endpoint and reports the
 connection error, rather than being handed a stale failure it cannot act on.
 
+That first check also compares release versions from `/healthz`. When the local
+server is an older semantic version than the autolaunching CLI, the CLI asks it
+to shut down, waits for the endpoint to be released, and launches the server
+embedded in its own binary. It never downgrades a newer server, and development
+or legacy responses without semantic versions are left alone because they do
+not establish which process is older.
+
 The launched process is this binary re-invoked, and the argv comes from
 `App.serverLaunchArgs`, which reads the path off the command tree rather than
 naming it. A path spelled by hand is a reference nothing checks: the server

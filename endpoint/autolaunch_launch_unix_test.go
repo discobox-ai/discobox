@@ -264,6 +264,113 @@ func TestEnsureRunningAcceptsAServerWithNoStatusBody(t *testing.T) {
 	}
 }
 
+func TestEnsureRunningReplacesAnOlderServer(t *testing.T) {
+	socket := testSocketPath(t)
+	endpointURL := "unix://" + socket
+	listener, _, cleanup, err := Listen(endpointURL)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer cleanup()
+
+	var oldServer *http.Server
+	oldServer = &http.Server{
+		ReadHeaderTimeout: 5 * time.Second,
+		Handler: http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			switch r.URL.Path {
+			case "/healthz":
+				w.WriteHeader(http.StatusServiceUnavailable)
+				writeStatus(t, w, health.Status{Status: health.StatusStarting, Phase: "stuck", Version: "v0.5.0"})
+			case "/shutdown":
+				w.WriteHeader(http.StatusAccepted)
+				go func() { _ = oldServer.Close() }()
+			default:
+				http.NotFound(w, r)
+			}
+		}),
+	}
+	go func() { _ = oldServer.Serve(listener) }()
+
+	t.Setenv("PATH", t.TempDir()) // force the directly launched process path
+	opts := LaunchOptions{
+		Endpoint: endpointURL,
+		LogPath:  filepath.Join(t.TempDir(), "server.log"),
+		Command:  os.Args[0],
+		Args:     []string{"-test.run=^TestAutolaunchReplacementHelper$"},
+		Env: []string{
+			"DISCOBOX_TEST_SERVER_ENDPOINT=" + endpointURL,
+			"DISCOBOX_TEST_SERVER_DELAY=150ms",
+		},
+		ExpectedVersion: "v0.5.1",
+		// The replacement can wait behind the old server's data-directory lock
+		// after its listener is gone. Prove that transition gets ReadyTimeout,
+		// not this ordinary never-bound-child deadline.
+		StartTimeout:  50 * time.Millisecond,
+		ReadyTimeout:  5 * time.Second,
+		ProbeInterval: 20 * time.Millisecond,
+		ProbeTimeout:  time.Second,
+	}
+	started, err := EnsureRunning(context.Background(), opts)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !started {
+		t.Fatal("EnsureRunning did not replace the older server")
+	}
+
+	baseURL, client, err := HTTPClient(endpointURL, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	req, err := http.NewRequestWithContext(context.Background(), http.MethodPost, baseURL+"/shutdown", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	resp, err := client.Do(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	_ = resp.Body.Close()
+}
+
+// TestAutolaunchReplacementHelper is re-executed as the replacement server by
+// TestEnsureRunningReplacesAnOlderServer.
+func TestAutolaunchReplacementHelper(t *testing.T) {
+	endpointURL := os.Getenv("DISCOBOX_TEST_SERVER_ENDPOINT")
+	if endpointURL == "" {
+		t.Skip("helper process")
+	}
+	if delay, err := time.ParseDuration(os.Getenv("DISCOBOX_TEST_SERVER_DELAY")); err == nil {
+		time.Sleep(delay)
+	}
+	listener, _, cleanup, err := Listen(endpointURL)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer cleanup()
+	done := make(chan struct{})
+	var server *http.Server
+	server = &http.Server{
+		ReadHeaderTimeout: 5 * time.Second,
+		Handler: http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			switch r.URL.Path {
+			case "/healthz":
+				writeStatus(t, w, health.Status{Status: health.StatusReady, Version: "v0.5.1"})
+			case "/shutdown":
+				w.WriteHeader(http.StatusAccepted)
+				go func() {
+					_ = server.Close()
+					close(done)
+				}()
+			default:
+				http.NotFound(w, r)
+			}
+		}),
+	}
+	go func() { _ = server.Serve(listener) }()
+	<-done
+}
+
 func writeStatus(t *testing.T, w http.ResponseWriter, status health.Status) {
 	t.Helper()
 	if err := json.NewEncoder(w).Encode(status); err != nil {

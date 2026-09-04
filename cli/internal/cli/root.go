@@ -361,10 +361,11 @@ func (a *App) ensureLocalServer(ctx context.Context) error {
 	// scrolled above output that had nothing to do with them.
 	progress := a.serverStartupLine()
 	started, err := endpoint.EnsureRunning(ctx, endpoint.LaunchOptions{
-		Endpoint: a.serverURL,
-		Command:  command,
-		Args:     args,
-		Env:      localServerEnv(a.serverURL),
+		Endpoint:        a.serverURL,
+		Command:         command,
+		Args:            args,
+		Env:             localServerEnv(a.serverURL),
+		ExpectedVersion: version.String(),
 		OnProgress: func(status health.Status) {
 			progress.set(serverStartupText(status))
 		},

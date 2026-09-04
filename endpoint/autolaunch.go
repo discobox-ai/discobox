@@ -16,6 +16,7 @@ import (
 	"time"
 
 	"github.com/discobox-ai/discobox/health"
+	"golang.org/x/mod/semver"
 )
 
 const (
@@ -39,6 +40,10 @@ type LaunchOptions struct {
 	StartTimeout  time.Duration
 	ReadyTimeout  time.Duration
 	ProbeInterval time.Duration
+	// ExpectedVersion is the version carried by the launching binary. When a
+	// local server reports an older semantic version, EnsureRunning replaces it
+	// before returning.
+	ExpectedVersion string
 
 	// OnProgress is called with each status a starting server reports, so a
 	// caller can show what it is waiting for. Called only when the status
@@ -55,15 +60,19 @@ type LaunchOptions struct {
 // it, which is worth saying out loud; one that found a server already up has
 // nothing to report.
 func EnsureRunning(ctx context.Context, opts LaunchOptions) (bool, error) {
+	replacedOlder := false
 	if opts.Endpoint == "" {
 		opts.Endpoint = DefaultEndpoint()
 	}
 	// A server that is already up needs nothing, and one that is still starting
 	// needs waiting on rather than a second process started alongside it.
-	if status, err := probeEndpoint(ctx, opts); err == nil && !status.Starting() {
-		return false, nil
-	} else if err == nil {
-		return false, waitReady(ctx, opts, time.Now().Add(opts.readyTimeout()))
+	if status, err := probeEndpoint(ctx, opts); err == nil {
+		if !olderServer(status, opts.ExpectedVersion) {
+			if !status.Starting() {
+				return false, nil
+			}
+			return false, waitReady(ctx, opts, time.Now().Add(opts.readyTimeout()))
+		}
 	} else if !isProbeConnectionError(err) {
 		return false, err
 	}
@@ -72,10 +81,19 @@ func EnsureRunning(ctx context.Context, opts LaunchOptions) (bool, error) {
 		return false, err
 	}
 	defer unlock()
-	if status, err := probeEndpoint(ctx, opts); err == nil && !status.Starting() {
-		return false, nil
-	} else if err == nil {
-		return false, waitReady(ctx, opts, time.Now().Add(opts.readyTimeout()))
+	if status, err := probeEndpoint(ctx, opts); err == nil {
+		if olderServer(status, opts.ExpectedVersion) {
+			if err := replaceOlderServer(ctx, opts); err != nil {
+				return false, err
+			}
+			replacedOlder = true
+		} else if status.Starting() {
+			if err := waitReady(ctx, opts, time.Now().Add(opts.readyTimeout())); err != nil {
+				return false, err
+			}
+		} else {
+			return false, nil
+		}
 	} else if !isProbeConnectionError(err) {
 		return false, err
 	}
@@ -88,7 +106,15 @@ func EnsureRunning(ctx context.Context, opts LaunchOptions) (bool, error) {
 	// it does not have — and there is no point waiting minutes for it. One that
 	// answers "starting" is working, and cutting it off at ten seconds is how a
 	// first run against an empty database looked like a failure.
-	deadline := time.Now().Add(opts.startTimeout())
+	startWait := opts.startTimeout()
+	if replacedOlder {
+		// The old listener disappears before its server has finished draining
+		// providers and released the data-directory singleton. The replacement
+		// is alive but cannot bind during that interval, so this is a known
+		// shutdown/start transition rather than a child that never came up.
+		startWait = opts.readyTimeout()
+	}
+	deadline := time.Now().Add(startWait)
 	var lastErr error
 	for time.Now().Before(deadline) {
 		status, err := probeEndpoint(ctx, opts)
@@ -122,6 +148,53 @@ func EnsureRunning(ctx context.Context, opts LaunchOptions) (bool, error) {
 		}
 	}
 	return true, fmt.Errorf("local server at %s never answered: %w%s", opts.Endpoint, lastErr, opts.logTail())
+}
+
+// olderServer is deliberately one-way. An older CLI must not downgrade a
+// newer server, and an unversioned development build or legacy health response
+// does not provide enough evidence to replace a running process.
+func olderServer(status health.Status, expected string) bool {
+	return semver.IsValid(status.Version) && semver.IsValid(expected) && semver.Compare(status.Version, expected) < 0
+}
+
+func replaceOlderServer(ctx context.Context, opts LaunchOptions) error {
+	baseURL, client, err := HTTPClient(opts.Endpoint, nil)
+	if err != nil {
+		return err
+	}
+	shutdownCtx, cancel := context.WithTimeout(ctx, opts.probeTimeout())
+	defer cancel()
+	req, err := http.NewRequestWithContext(shutdownCtx, http.MethodPost, baseURL+"/shutdown", nil)
+	if err != nil {
+		return err
+	}
+	resp, err := client.Do(req)
+	if err != nil {
+		return fmt.Errorf("stop older local server: %w", err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		return fmt.Errorf("stop older local server: %s", resp.Status)
+	}
+	// Server shutdown includes draining reconcilers and VM backends. Give it the
+	// same long allowance as startup after the process has begun answering,
+	// rather than the short deadline used for a child that never binds.
+	deadline := time.Now().Add(opts.readyTimeout())
+	for time.Now().Before(deadline) {
+		_, err := probeEndpoint(ctx, opts)
+		if isProbeConnectionError(err) {
+			return nil
+		}
+		if err != nil {
+			return err
+		}
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		case <-time.After(opts.probeInterval()):
+		}
+	}
+	return fmt.Errorf("older local server at %s did not stop", opts.Endpoint)
 }
 
 // waitReady polls a server that has answered "starting" until it is ready.
