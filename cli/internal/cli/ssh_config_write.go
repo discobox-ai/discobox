@@ -60,13 +60,12 @@ func renderSSHConfig(in sshConfigRender) string {
 		}
 		fmt.Fprintf(&out, "Host %s\n", strings.Join(patterns[i], " "))
 		// No HostName and no Port: there is no address to dial. ssh runs the
-		// ProxyCommand and speaks its protocol over its stdio.
-		fmt.Fprintf(&out, "    ProxyCommand %s\n", in.proxyCommand)
+		// ProxyCommand and speaks its protocol over its stdio. The whole line
+		// is escaped rather than the endpoint alone, since the executable's
+		// path is as free to contain a percent sign as the endpoint is.
+		fmt.Fprintf(&out, "    ProxyCommand %s\n", escapeSSHPercent(in.proxyCommand))
 		fmt.Fprintf(&out, "    User %s\n", sandbox.ID)
-		// Quoted when it has to be: a Windows profile under a name with a
-		// space in it — "C:\Users\Ada Lovelace\…" — is an ordinary path, and
-		// unquoted ssh would read the first word of it as the whole filename.
-		fmt.Fprintf(&out, "    IdentityFile %s\n", sshConfigQuote(in.identityFile))
+		fmt.Fprintf(&out, "    IdentityFile %s\n", sshConfigPath(in.identityFile))
 		// Without IdentitiesOnly, ssh offers every agent key before this one
 		// and can exhaust MaxAuthTries before reaching it.
 		fmt.Fprintf(&out, "    IdentitiesOnly yes\n")
@@ -74,7 +73,7 @@ func renderSSHConfig(in sshConfigRender) string {
 		// line covers the whole project.
 		fmt.Fprintf(&out, "    HostKeyAlias %s\n", in.hostKeyAlias)
 		if in.knownHostsFile != "" {
-			fmt.Fprintf(&out, "    UserKnownHostsFile %s\n", sshConfigQuote(in.knownHostsFile))
+			fmt.Fprintf(&out, "    UserKnownHostsFile %s\n", sshConfigPath(in.knownHostsFile))
 		}
 		if i < len(in.sandboxes)-1 {
 			fmt.Fprintln(&out)
@@ -129,51 +128,64 @@ func writeManagedSSHConfig(built managedSSHConfig, projectID string, notes noteF
 		}
 	}
 
-	added, dropped, err := target.ensureUserConfigInclude(configPath)
+	edits, err := target.ensureUserConfigInclude(configPath)
 	if err != nil {
 		return err
 	}
 	notes("wrote %s", configPath.client)
-	if added {
+	if edits.added {
 		notes("added an Include for it to %s", target.userConfig.client)
 	}
-	for _, stale := range dropped {
+	for _, stale := range edits.dropped {
 		notes("removed a stale Include of %s", stale)
+	}
+	for _, repaired := range edits.repaired {
+		notes("rewrote an Include of %s that ssh could not read", repaired)
 	}
 	return nil
 }
 
+// includeEdits is what ensureUserConfigInclude did to a config the user owns,
+// so the caller can say it: a line added, lines removed, lines rewritten under
+// them.
+type includeEdits struct {
+	added bool
+	// dropped are the Includes of files this CLI no longer writes.
+	dropped []string
+	// repaired are the Includes this CLI wrote before it escaped percent
+	// signs, rewritten in the spelling ssh can read.
+	repaired []string
+}
+
+func (e includeEdits) none() bool {
+	return !e.added && len(e.dropped) == 0 && len(e.repaired) == 0
+}
+
 // ensureUserConfigInclude adds an Include for managed to the target ssh's
-// config and drops the ones this CLI wrote that no longer point anywhere it
-// manages, reporting what it did on each count. It is idempotent, so repeated
-// runs leave one line rather than a growing pile.
+// config and normalizes the ones this CLI wrote, reporting what it did on each
+// count. It is idempotent, so repeated runs leave one line rather than a
+// growing pile.
 //
 // The line goes at the top because ssh_config takes the *first* value obtained
 // for each keyword: an Include placed after a `Host *` block the user already
 // has would lose every setting that block also sets.
-//
-// Dropping the stale ones is not tidiness. ssh fails outright on an Include it
-// will not read — one whose permissions it dislikes, in particular — so a line
-// left pointing into a directory this CLI has moved out of breaks every
-// connection through this config, including the ones the new line was written
-// to make work.
-func (t sshTarget) ensureUserConfigInclude(managed sshPath) (bool, []string, error) {
+func (t sshTarget) ensureUserConfigInclude(managed sshPath) (includeEdits, error) {
 	userConfig := t.userConfig.local
 	existing, err := os.ReadFile(userConfig)
 	if err != nil && !os.IsNotExist(err) {
-		return false, nil, fmt.Errorf("read %s: %w", userConfig, err)
+		return includeEdits{}, fmt.Errorf("read %s: %w", userConfig, err)
 	}
-	cleaned, dropped := t.dropStaleManagedIncludes(string(existing), managed.client)
-	if t.hasInclude(cleaned, managed.client) && len(dropped) == 0 {
-		return false, nil, nil
+	cleaned, edits := t.normalizeManagedIncludes(string(existing), managed.client)
+	edits.added = !t.hasInclude(cleaned, managed.client)
+	if edits.none() {
+		return includeEdits{}, nil
 	}
 	if err := os.MkdirAll(filepath.Dir(userConfig), 0o700); err != nil {
-		return false, nil, fmt.Errorf("create SSH directory: %w", err)
+		return includeEdits{}, fmt.Errorf("create SSH directory: %w", err)
 	}
-	added := !t.hasInclude(cleaned, managed.client)
 	body := cleaned
-	if added {
-		body = "Include " + sshConfigQuote(managed.client) + "\n"
+	if edits.added {
+		body = "Include " + sshConfigPath(managed.client) + "\n"
 		if len(cleaned) > 0 {
 			body += "\n" + cleaned
 		}
@@ -182,7 +194,7 @@ func (t sshTarget) ensureUserConfigInclude(managed sshPath) (bool, []string, err
 	// cannot leave the user with a truncated ssh_config.
 	tmp, err := os.CreateTemp(filepath.Dir(userConfig), ".discobox-ssh-config-*")
 	if err != nil {
-		return false, nil, fmt.Errorf("write %s: %w", userConfig, err)
+		return includeEdits{}, fmt.Errorf("write %s: %w", userConfig, err)
 	}
 	defer os.Remove(tmp.Name())
 	// Chmod is the whole story on Unix and none of it on Windows, where the
@@ -193,28 +205,47 @@ func (t sshTarget) ensureUserConfigInclude(managed sshPath) (bool, []string, err
 	// over the one thing the boundary cannot give us.
 	if err := tmp.Chmod(0o600); err != nil && !t.acrossWSL() {
 		_ = tmp.Close()
-		return false, nil, fmt.Errorf("write %s: %w", userConfig, err)
+		return includeEdits{}, fmt.Errorf("write %s: %w", userConfig, err)
 	}
 	if err := restrictToUser(tmp.Name()); err != nil {
 		_ = tmp.Close()
-		return false, nil, fmt.Errorf("write %s: %w", userConfig, err)
+		return includeEdits{}, fmt.Errorf("write %s: %w", userConfig, err)
 	}
 	if _, err := tmp.WriteString(body); err != nil {
 		_ = tmp.Close()
-		return false, nil, fmt.Errorf("write %s: %w", userConfig, err)
+		return includeEdits{}, fmt.Errorf("write %s: %w", userConfig, err)
 	}
 	if err := tmp.Close(); err != nil {
-		return false, nil, fmt.Errorf("write %s: %w", userConfig, err)
+		return includeEdits{}, fmt.Errorf("write %s: %w", userConfig, err)
 	}
 	if err := os.Rename(tmp.Name(), userConfig); err != nil {
-		return false, nil, fmt.Errorf("write %s: %w", userConfig, err)
+		return includeEdits{}, fmt.Errorf("write %s: %w", userConfig, err)
 	}
-	return added, dropped, nil
+	return edits, nil
 }
 
-// dropStaleManagedIncludes removes Include lines that name a file this CLI
-// generates but no longer writes, returning the config without them and the
-// paths dropped.
+// normalizeManagedIncludes brings the Include lines this CLI owns into the
+// state this run writes them in: the ones naming a file it no longer writes are
+// removed, and the ones written before it escaped percent signs are rewritten
+// in the spelling ssh can read. It returns the config and what it did to it.
+//
+// Removing the stale ones is not tidiness. ssh fails outright on an Include it
+// will not read — one whose permissions it dislikes, in particular — so a line
+// left pointing into a directory this CLI has moved out of breaks every
+// connection through this config, including the ones the new line was written
+// to make work.
+//
+// The repair is the same failure reached the other way. A line written before
+// escapeSSHPercent existed names a file ssh cannot expand, and ssh abandons the
+// whole config over it rather than that one line: until it is rewritten no host
+// in the file resolves, this CLI's or anyone else's. Matching an Include on the
+// filename it names is what keeps a run from duplicating its own line, and it
+// is also what would leave this one sitting there forever, since the file it
+// names is the file this run would name.
+//
+// It is rewritten rather than dropped because the file it names is still the
+// right one: the line may belong to another project, which this run cannot
+// re-add and whose own next run may be a long way off.
 //
 // A managed path is recognized by its shape — <anything>/discobox/cli/ssh/<project>/config
 // — which is what this CLI has always written and nothing else has reason to.
@@ -224,30 +255,43 @@ func (t sshTarget) ensureUserConfigInclude(managed sshPath) (bool, []string, err
 // refuses. Includes under the current state directory are left alone however
 // many there are: one per project is the design.
 //
-// The user's own Includes are untouched. Only this shape is ours to remove.
-func (t sshTarget) dropStaleManagedIncludes(config, managed string) (string, []string) {
+// The user's own Includes are untouched. Only this shape is ours to edit.
+func (t sshTarget) normalizeManagedIncludes(config, managed string) (string, includeEdits) {
 	var kept []string
-	var dropped []string
+	var edits includeEdits
 	for _, line := range strings.Split(config, "\n") {
-		if path, ok := t.includePath(line); ok &&
-			t.isManagedConfigPath(path) &&
-			!t.samePathAs(path, managed) &&
-			!t.within(t.state.client, path) {
-			dropped = append(dropped, path)
-			continue
+		field, ok := t.includeField(line)
+		filename := unescapeSSHPercent(field)
+		path := t.clean(filename)
+		switch {
+		case !ok || !t.isManagedConfigPath(path):
+			kept = append(kept, line)
+		case !t.samePathAs(path, managed) && !t.within(t.state.client, path):
+			edits.dropped = append(edits.dropped, path)
+		case field != escapeSSHPercent(filename):
+			edits.repaired = append(edits.repaired, path)
+			kept = append(kept, "Include "+sshConfigPath(filename))
+		default:
+			kept = append(kept, line)
 		}
-		kept = append(kept, line)
 	}
-	if len(dropped) == 0 {
-		return config, nil
+	if len(edits.dropped) == 0 && len(edits.repaired) == 0 {
+		return config, edits
 	}
-	// A dropped line leaves a blank behind, and a run of them accumulates: the
-	// file is rewritten without the gaps rather than growing one per removal.
-	return collapseBlankRuns(strings.Join(kept, "\n")), dropped
+	body := strings.Join(kept, "\n")
+	if len(edits.dropped) > 0 {
+		// A dropped line leaves a blank behind, and a run of them accumulates:
+		// the file is rewritten without the gaps rather than growing one per
+		// removal.
+		body = collapseBlankRuns(body)
+	}
+	return body, edits
 }
 
-// includePath is the path an Include line names, if the line is one.
-func (t sshTarget) includePath(line string) (string, bool) {
+// includeField is the path an Include line names, if the line is one, spelled
+// as the line spells it — percent escapes and all. What ssh opens is
+// unescapeSSHPercent of it.
+func (t sshTarget) includeField(line string) (string, bool) {
 	trimmed := strings.TrimSpace(line)
 	if trimmed == "" || strings.HasPrefix(trimmed, "#") {
 		return "", false
@@ -258,7 +302,7 @@ func (t sshTarget) includePath(line string) (string, bool) {
 	if len(fields) != 2 || !strings.EqualFold(fields[0], "include") {
 		return "", false
 	}
-	return t.clean(fields[1]), true
+	return fields[1], true
 }
 
 // isManagedConfigPath reports whether path has the shape this CLI writes:
@@ -313,7 +357,7 @@ func (t sshTarget) hasInclude(config, managed string) bool {
 			continue
 		}
 		for _, field := range fields[1:] {
-			if t.samePathAs(field, managed) {
+			if t.samePathAs(unescapeSSHPercent(field), managed) {
 				return true
 			}
 		}
@@ -352,14 +396,41 @@ func sshConfigFields(line string) []string {
 	return fields
 }
 
-// sshConfigQuote wraps a path in the double quotes ssh_config needs when it
-// contains a space, and leaves it alone otherwise so the ordinary line stays
-// the one people have always seen.
-func sshConfigQuote(path string) string {
-	if !strings.ContainsAny(path, " \t") {
-		return path
+// sshConfigPath renders a path the way an ssh_config has to spell it: percent
+// escaped, and wrapped in the double quotes ssh needs when it contains a space
+// — a Windows profile under a name with a space in it, "C:\Users\Ada Lovelace\…",
+// is an ordinary path. A path with neither is left alone, so the ordinary line
+// stays the one people have always seen.
+func sshConfigPath(path string) string {
+	escaped := escapeSSHPercent(path)
+	if !strings.ContainsAny(escaped, " \t") {
+		return escaped
 	}
-	return `"` + path + `"`
+	return `"` + escaped + `"`
+}
+
+// escapeSSHPercent doubles every percent sign, which is how a literal one is
+// written in a value ssh expands tokens in.
+//
+// ssh expands %h, %p, %r and the rest in ProxyCommand, IdentityFile,
+// UserKnownHostsFile and Include, and an unknown key there is not ignored: it
+// fails the expansion, and with it the whole connection, with
+// "percent_expand: failed" and no indication of which line was at fault.
+//
+// This is not a hypothetical %z. An iroh endpoint carrying direct addresses
+// spells them as query parameters — iroh://<id>?addr=192.0.2.7%3A11204 — and
+// the ProxyCommand carries whatever endpoint the config was written against,
+// so pointing the CLI at a remote host is precisely the case that produces
+// one.
+func escapeSSHPercent(value string) string {
+	return strings.ReplaceAll(value, "%", "%%")
+}
+
+// unescapeSSHPercent reads back what escapeSSHPercent wrote, so an Include this
+// CLI put in the user's config is recognized as naming the file it names rather
+// than as a second, differently spelled one.
+func unescapeSSHPercent(value string) string {
+	return strings.ReplaceAll(value, "%%", "%")
 }
 
 // concreteProjectID turns whatever -p was given into the project's real ID.

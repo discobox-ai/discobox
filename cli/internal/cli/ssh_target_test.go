@@ -180,23 +180,23 @@ func TestSSHTargetIncludeIsIdempotentAcrossTheBoundary(t *testing.T) {
 	target := wslTestTarget(t.TempDir())
 	managed := target.configPath("proj_1")
 
-	added, dropped, err := target.ensureUserConfigInclude(managed)
+	edits, err := target.ensureUserConfigInclude(managed)
 	if err != nil {
 		t.Fatalf("ensureUserConfigInclude: %v", err)
 	}
-	if !added || len(dropped) != 0 {
-		t.Fatalf("added = %v, dropped = %v, want a single new line", added, dropped)
+	if !edits.added || len(edits.dropped) != 0 {
+		t.Fatalf("edits = %+v, want a single new line", edits)
 	}
 	first := readFile(t, target.userConfig.local)
 	if want := `Include "` + managed.client + `"` + "\n"; first != want {
 		t.Fatalf("user config = %q, want %q", first, want)
 	}
 
-	added, _, err = target.ensureUserConfigInclude(managed)
+	edits, err = target.ensureUserConfigInclude(managed)
 	if err != nil {
 		t.Fatalf("ensureUserConfigInclude again: %v", err)
 	}
-	if added {
+	if edits.added {
 		t.Fatal("the Include was written twice")
 	}
 	if got := readFile(t, target.userConfig.local); got != first {
@@ -219,12 +219,12 @@ func TestSSHTargetDropsStaleManagedIncludes(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	added, dropped, err := target.ensureUserConfigInclude(managed)
+	edits, err := target.ensureUserConfigInclude(managed)
 	if err != nil {
 		t.Fatalf("ensureUserConfigInclude: %v", err)
 	}
-	if !added || len(dropped) != 1 || dropped[0] != target.clean(stale) {
-		t.Fatalf("added = %v, dropped = %v, want the stale line gone", added, dropped)
+	if !edits.added || len(edits.dropped) != 1 || edits.dropped[0] != target.clean(stale) {
+		t.Fatalf("edits = %+v, want the stale line gone", edits)
 	}
 	got := readFile(t, target.userConfig.local)
 	if strings.Contains(got, "Roaming") {

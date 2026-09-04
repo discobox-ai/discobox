@@ -5,6 +5,8 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	apimodel "github.com/discobox-ai/discobox/api/model"
 )
 
 // runSSHConfigWrite runs `ssh-config --write` against fake with HOME and
@@ -374,5 +376,121 @@ func TestSSHConfigWriteKeepsOtherProjectsIncludes(t *testing.T) {
 
 	if got := readFile(t, userConfig); !strings.Contains(got, other) {
 		t.Fatalf("another project's Include was dropped:\n%s", got)
+	}
+}
+
+// TestSSHConfigEscapesPercentSigns: ssh expands %h, %p and the rest in
+// ProxyCommand, IdentityFile and UserKnownHostsFile, and a key it does not know
+// is not ignored — it fails the expansion and the connection with it. An iroh
+// endpoint carrying direct addresses spells them ?addr=192.0.2.7%3A11204, so
+// the ProxyCommand of a config written against a remote server contains one.
+func TestSSHConfigEscapesPercentSigns(t *testing.T) {
+	config := renderSSHConfig(sshConfigRender{
+		sandboxes:      []apimodel.Sandbox{{ID: "sbx_devbox00000001", Config: apimodel.SandboxConfig{Name: "devbox"}}},
+		proxyCommand:   "'/usr/local/bin/discobox' --server 'iroh://abc?addr=192.0.2.7%3A11204' admin ssh-proxy",
+		hostKeyAlias:   "prj_1.discobox.internal",
+		identityFile:   "/home/u/state/100%/id_ed25519",
+		knownHostsFile: "/home/u/state/100%/known_hosts",
+	})
+	for _, want := range []string{
+		"    ProxyCommand '/usr/local/bin/discobox' --server 'iroh://abc?addr=192.0.2.7%%3A11204' admin ssh-proxy\n",
+		"    IdentityFile /home/u/state/100%%/id_ed25519\n",
+		"    UserKnownHostsFile /home/u/state/100%%/known_hosts\n",
+	} {
+		if !strings.Contains(config, want) {
+			t.Fatalf("config does not escape the percent sign, want %q:\n%s", want, config)
+		}
+	}
+	// HostKeyAlias is not one of the expanded keywords: escaping it would name
+	// a host the known_hosts line beside it does not.
+	if !strings.Contains(config, "    HostKeyAlias prj_1.discobox.internal\n") {
+		t.Fatalf("HostKeyAlias should be written as-is:\n%s", config)
+	}
+}
+
+// TestSSHConfigWriteIncludesAPathWithAPercentSign: Include is expanded too, so
+// the line in the user's own config carries the escape — and the next run has
+// to read it back as the file it names rather than adding a second line.
+func TestSSHConfigWriteIncludesAPathWithAPercentSign(t *testing.T) {
+	home := t.TempDir()
+	state := filepath.Join(t.TempDir(), "100% state")
+	setHome(t, home)
+	t.Setenv("XDG_STATE_HOME", state)
+
+	for range 2 {
+		server := writeFakeServer().start(t)
+		cmd := NewRootCommand()
+		cmd.SetOut(new(strings.Builder))
+		cmd.SetErr(new(strings.Builder))
+		cmd.SetArgs([]string{"--server", server.URL, "--project", "project-1", "admin", "ssh-config", "--write"})
+		if err := cmd.Execute(); err != nil {
+			t.Fatalf("execute ssh-config --write: %v", err)
+		}
+	}
+
+	configPath, _ := managedPaths(state)
+	userConfig := readFile(t, filepath.Join(home, ".ssh", "config"))
+	// Quoted for the space and escaped for the percent sign, both at once.
+	want := `Include "` + strings.ReplaceAll(configPath, "%", "%%") + `"` + "\n"
+	if userConfig != want {
+		t.Fatalf("user ssh config = %q, want %q", userConfig, want)
+	}
+}
+
+// TestSSHConfigWriteRepairsAnUnescapedInclude: a version of this CLI before the
+// escape existed wrote the path raw, and ssh does not skip a line it cannot
+// expand — it abandons ~/.ssh/config, so every host on the machine stops
+// resolving. Matching an Include on the filename it names is what keeps a run
+// from duplicating its own line, and would also leave this one there forever.
+func TestSSHConfigWriteRepairsAnUnescapedInclude(t *testing.T) {
+	home := t.TempDir()
+	state := filepath.Join(t.TempDir(), "100% state")
+	setHome(t, home)
+	t.Setenv("XDG_STATE_HOME", state)
+
+	configPath, _ := managedPaths(state)
+	// What an older version left behind: this project's own line, another
+	// project's, and the user's own config after them.
+	otherProject := filepath.Join(filepath.Dir(filepath.Dir(configPath)), "prj_other", "config")
+	userConfigPath := filepath.Join(home, ".ssh", "config")
+	if err := os.MkdirAll(filepath.Dir(userConfigPath), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	existing := `Include "` + configPath + `"` + "\n" +
+		`Include "` + otherProject + `"` + "\n\nHost work\n    HostName work.example.com\n"
+	if err := os.WriteFile(userConfigPath, []byte(existing), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	server := writeFakeServer().start(t)
+	cmd := NewRootCommand()
+	cmd.SetOut(new(strings.Builder))
+	var errOut strings.Builder
+	cmd.SetErr(&errOut)
+	cmd.SetArgs([]string{"--server", server.URL, "--project", "project-1", "admin", "ssh-config", "--write"})
+	if err := cmd.Execute(); err != nil {
+		t.Fatalf("execute ssh-config --write: %v", err)
+	}
+
+	got := readFile(t, userConfigPath)
+	if strings.Contains(got, "100% state") {
+		t.Fatalf("an Include ssh cannot expand survived:\n%s", got)
+	}
+	// The other project's line is rewritten, not dropped: this run cannot
+	// re-add it, and its own next run may be a long way off.
+	for _, want := range []string{
+		`Include "` + strings.ReplaceAll(configPath, "%", "%%") + `"` + "\n",
+		`Include "` + strings.ReplaceAll(otherProject, "%", "%%") + `"` + "\n",
+		"Host work\n",
+	} {
+		if !strings.Contains(got, want) {
+			t.Fatalf("user config is missing %q:\n%s", want, got)
+		}
+	}
+	if strings.Count(got, "Include ") != 2 {
+		t.Fatalf("the repaired line was added rather than rewritten:\n%s", got)
+	}
+	if !strings.Contains(errOut.String(), "ssh could not read") {
+		t.Fatalf("stderr should report the lines it rewrote, got %q", errOut.String())
 	}
 }

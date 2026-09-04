@@ -193,7 +193,12 @@ func sshBridgeOptions(identityFile, knownHostsFile string) []string {
 		// The host key is pinned to a file written for this command alone, so
 		// verification is real without touching the user's known_hosts — and
 		// without the loopback port's reused number ever meaning anything.
-		"-o", "UserKnownHostsFile=" + knownHostsFile,
+		// Spelled for the config parser, not for the shell: ssh reads a -o
+		// argument as a config line, so this value is percent-expanded and
+		// split on whitespace, and a temp directory under "C:\Users\Ada
+		// Lovelace" would arrive as two filenames neither of which exists. The
+		// -i above is neither, and is passed as it is.
+		"-o", "UserKnownHostsFile=" + sshConfigPath(knownHostsFile),
 		"-o", "StrictHostKeyChecking=yes",
 		// The bridge is this process; the user's ssh_config has nothing to say
 		// about it, and a stray `Host *` block there could otherwise override

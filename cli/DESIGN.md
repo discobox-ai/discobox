@@ -862,6 +862,14 @@ level or layering on the attach transports above.
   everywhere but Windows, where OpenSSH hands the line to `%COMSPEC%` — and it
   is the *target's* shell that decides, not `runtime.GOOS`, because a config
   written from WSL for Windows is read by a shell this process does not have.
+- Every value ssh expands tokens in — `ProxyCommand`, `IdentityFile`,
+  `UserKnownHostsFile`, `Include` — is written with its percent signs doubled
+  (`escapeSSHPercent`), and read back unescaped. An unknown key there is not
+  ignored: ssh fails the expansion and the connection with it, naming neither
+  the keyword nor the line. An iroh endpoint carrying direct addresses spells
+  them `?addr=192.0.2.7%3A11204`, so a config written against a remote server
+  is exactly the case that contains one. `HostKeyAlias` is not expanded and is
+  written as-is.
 - `sshTarget` (`internal/cli/ssh_target.go`) is the OpenSSH installation an
   emitted config is written for: the state directory holding its files, the
   `ssh_config` that gains the `Include`, how a path inside it is spelled, and
@@ -906,10 +914,14 @@ level or layering on the attach transports above.
   whole file.
 - `--write` writes the stanzas and the server's host key to two files under the
   CLI state directory, beside the generated key, and adds one `Include` line to
-  `~/.ssh/config`. It also removes the `Include` lines it wrote to a state
-  directory it no longer uses (`dropStaleManagedIncludes`, recognizing the
+  `~/.ssh/config`. It also normalizes the `Include` lines it owns
+  (`normalizeManagedIncludes`, recognizing the
   `.../discobox/cli/ssh/<project>/config` shape it writes and nothing else
-  does). ssh fails outright on an `Include` it will not read, so a line left
+  does): the ones naming a state directory it no longer uses are removed, and
+  the ones an older version wrote with an unescaped percent sign are rewritten
+  rather than dropped, since the file they name is still the right one and the
+  line may belong to a project this run cannot re-add. ssh fails outright on an
+  `Include` it will not read, so a line left
   pointing at a moved — or, on Windows, wrongly permissioned — file breaks every
   connection through the config, the ones the new line was written to enable
   included. Other projects' lines under the current state directory stay: one
@@ -979,11 +991,15 @@ level or layering on the attach transports above.
   key that any of those leave reachable by another principal, so the run fails
   here rather than leaving Remote-SSH to complain about a file the user never
   created.
-- Values that can contain a space are quoted: `IdentityFile`,
-  `UserKnownHostsFile`, and the `Include` line (`sshConfigQuote`, and
-  `sshConfigFields` reading them back so a re-run recognizes its own line). A
-  Windows profile under a name with a space in it is ordinary, and unquoted ssh
-  reads the first word as the whole filename.
+- Paths are spelled for ssh's config parser, not printed: `sshConfigPath`
+  quotes what contains a space and escapes what contains a percent sign, and
+  `sshConfigFields` reads them back so a re-run recognizes its own line. It
+  covers `IdentityFile`, `UserKnownHostsFile` and the `Include` line, and the
+  bridge's `-o UserKnownHostsFile=` too — ssh reads a `-o` argument as a config
+  line, so a value there is split on whitespace and expanded exactly as one in
+  a file is. A Windows profile under a name with a space in it is ordinary, and
+  unquoted ssh takes the first word as the whole filename. The `-i` beside it
+  is neither split nor expanded, and is passed as it is.
 - Only the written form carries `UserKnownHostsFile`, pointing at the
   known_hosts it just wrote. Pinning the host key there keeps
   `StrictHostKeyChecking` meaningful without editing the file that records the

@@ -2,6 +2,7 @@ package cli
 
 import (
 	"os"
+	"slices"
 	"strings"
 	"testing"
 )
@@ -33,6 +34,24 @@ func TestSSHBridgeArgsCarryEverythingTheSessionNeeds(t *testing.T) {
 		if arg == sshBridgeHost {
 			t.Fatalf("the host must not be part of the option list, got %v", args)
 		}
+	}
+}
+
+// TestSSHBridgeSpellsTheKnownHostsFileForTheConfigParser: ssh reads a -o
+// argument as a config line, so the value is percent-expanded and split on
+// whitespace. The temp file lives under the profile, which on a Windows account
+// named "Ada Lovelace" is a path with a space in it: unquoted it arrives as two
+// filenames, neither of which exists, and StrictHostKeyChecking=yes below fails
+// the session. The -i beside it is neither expanded nor split, and is passed
+// as it is.
+func TestSSHBridgeSpellsTheKnownHostsFileForTheConfigParser(t *testing.T) {
+	args := sshBridgeArgs(45678, "sbx_devbox00000001", `C:\Users\Ada Lovelace\100%\id`,
+		`C:\Users\Ada Lovelace\AppData\Local\Temp\100%\known_hosts`)
+	if !slices.Contains(args, `UserKnownHostsFile="C:\Users\Ada Lovelace\AppData\Local\Temp\100%%\known_hosts"`) {
+		t.Fatalf("the known_hosts option is not spelled for ssh's config parser: %v", args)
+	}
+	if !slices.Contains(args, `C:\Users\Ada Lovelace\100%\id`) {
+		t.Fatalf("the identity should be passed as it is: %v", args)
 	}
 }
 
