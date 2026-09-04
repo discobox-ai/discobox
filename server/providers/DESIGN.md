@@ -571,3 +571,12 @@ the only part of an error body this package treats as a contract; title and
 detail are prose for people. Collapsing the two let the create path — which
 treats `ErrAlreadyExists` as success — swallow a create the agent had refused,
 settling a sandbox with no container as converged and `ready`.
+
+## Pool-agent client leases
+
+A `poolAgentClient` wraps one `transport.HTTPClientLease`, and the call it is
+made for consumes it. The lease carries the transport that makes `https://pool`
+mean this pool's agent, so a client built without one dials that name for real
+and fails to resolve it. Acquire a client per call — a retry loop included —
+and let `poolClient` refuse a spent one rather than degrading to a client that
+cannot reach anything.

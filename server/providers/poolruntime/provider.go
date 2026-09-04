@@ -173,11 +173,17 @@ func (p *Provider) syncKnownPools(ctx context.Context, manager sandbox.PoolManag
 	for i := range pools {
 		known = append(known, pools[i].ID)
 	}
-	client, err := p.agentClientForPool(ctx, pool)
-	if err != nil {
-		return err
-	}
 	return syncWithRetry(ctx, func(ctx context.Context) error {
+		// One client per attempt: a pool-agent client carries a single-use
+		// transport lease that the call it is made for consumes. Hoisting this
+		// out of the retry left every attempt after the first with no lease and
+		// so no transport, which failed resolving the literal `https://pool` --
+		// a DNS error standing in for a sync that could only ever land on its
+		// first try.
+		client, err := p.agentClientForPool(ctx, pool)
+		if err != nil {
+			return err
+		}
 		return client.SyncKnownPools(ctx, provider.ProjectID, known)
 	})
 }

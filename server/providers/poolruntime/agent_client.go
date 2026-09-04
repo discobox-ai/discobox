@@ -198,21 +198,23 @@ func (p *poolAgentClient) AcquireHTTPClient(_ context.Context, ref sandbox.Sandb
 func (p *poolAgentClient) poolClient(ref sandbox.SandboxRef, scopes ...string) (*poolclient.Client, func(), error) {
 	lease := p.lease
 	p.lease = nil
-	if lease != nil && lease.AuthTokenProvider == nil {
+	// The lease is single-use and this is what spends it, so a second call on
+	// one poolAgentClient arrives with nothing to dial. Say so: without the
+	// transport the client below falls back to http.DefaultClient and the
+	// literal `https://pool`, which resolves nowhere -- reporting a DNS failure
+	// for what is really a caller reusing a spent client.
+	if lease == nil {
+		return nil, nil, fmt.Errorf("pool-agent client for pool %s is spent; acquire one per call", p.poolID)
+	}
+	if lease.AuthTokenProvider == nil {
 		lease.AuthTokenProvider = p.authTokenProvider(ref, scopes...)
 	}
 	client, err := newWorkerAgentClient(lease)
 	if err != nil {
-		if lease != nil {
-			lease.Release()
-		}
+		lease.Release()
 		return nil, nil, err
 	}
-	return client, func() {
-		if lease != nil {
-			lease.Release()
-		}
-	}, nil
+	return client, lease.Release, nil
 }
 
 func (p *poolAgentClient) authTokenProvider(ref sandbox.SandboxRef, scopes ...string) func(context.Context) (string, error) {
@@ -255,16 +257,20 @@ func requiresSandboxAgentToken(scopes []string) bool {
 	return false
 }
 
+// newWorkerAgentClient builds the pool-agent client for one call. The lease is
+// required: it carries the transport that makes `https://pool` mean this pool's
+// agent, and nothing routes that name without it.
 func newWorkerAgentClient(lease *transport.HTTPClientLease) (*poolclient.Client, error) {
+	if lease == nil {
+		return nil, fmt.Errorf("pool-agent client requires a transport lease")
+	}
 	httpClient := http.DefaultClient
+	if lease.Client != nil {
+		httpClient = lease.Client
+	}
 	baseURL := defaultPoolBaseURL
-	if lease != nil {
-		if lease.Client != nil {
-			httpClient = lease.Client
-		}
-		if strings.TrimSpace(lease.BaseURL) != "" {
-			baseURL = lease.BaseURL
-		}
+	if strings.TrimSpace(lease.BaseURL) != "" {
+		baseURL = lease.BaseURL
 	}
 	return poolclient.NewClient(strings.TrimRight(baseURL, "/"), workerSecuritySource{lease: lease}, poolclient.WithClient(httpClient))
 }
