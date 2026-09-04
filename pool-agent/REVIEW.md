@@ -49,3 +49,12 @@ Do not turn a command's failure into a fact about the world — "get-url failed,
 so there is no remote", "the check exited nonzero, so it is not there". Ask for
 the value and read the answer, and prefer one write that both creates and
 corrects over deciding between add and update.
+
+## Error responses
+
+A status this API reuses for two conditions needs a `type` to tell them apart.
+409 is both "already exists" and "archived", and the control plane acts on them
+in opposite ways, so `mapRuntimeError` stamps the archived one with
+`model.ErrorTypeSandboxArchived` and `NewError` copies it onto the response. Do
+not let a caller's only signal be the detail string: it is prose, it is written
+for people, and nothing stops it being reworded.

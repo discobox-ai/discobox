@@ -598,12 +598,35 @@ func mapPoolClientError(err error) error {
 		return sandbox.ErrNotFound
 	}
 	if errors.As(err, &statusErr) && statusErr.StatusCode == http.StatusConflict {
+		// Two different conditions share this status, and only the type tells
+		// them apart. Archived means the pool agent did nothing and will keep
+		// doing nothing until someone unarchives the sandbox; already-exists
+		// means the caller's work is done. Reporting the first as the second
+		// let a refused create settle as a converged, healthy sandbox that had
+		// no container at all.
+		if poolErrorType(statusErr) == poolapimodel.ErrorTypeSandboxArchived {
+			return sandbox.ErrArchived
+		}
 		return sandbox.ErrAlreadyExists
 	}
 	if errors.As(err, &statusErr) {
 		return fmt.Errorf("pool-agent request failed: %s", poolClientErrorMessage(statusErr))
 	}
 	return err
+}
+
+// poolErrorType reads the RFC 7807 `type` off a pool-agent error, empty when it
+// carries none. It is the only part of an error response this package treats as
+// a contract; title and detail are for people.
+func poolErrorType(statusErr *poolclient.ErrorModelStatusCode) string {
+	if statusErr == nil {
+		return ""
+	}
+	errorType, ok := statusErr.Response.Type.Get()
+	if !ok {
+		return ""
+	}
+	return errorType.String()
 }
 
 func poolClientErrorMessage(statusErr *poolclient.ErrorModelStatusCode) string {

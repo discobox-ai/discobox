@@ -13,6 +13,16 @@ var (
 	// ErrAlreadyExists indicates a runtime sandbox already exists.
 	ErrAlreadyExists = errors.New("sandbox already exists")
 
+	// ErrArchived indicates the sandbox exists as retained data with no
+	// runtime, and will not get one until it is unarchived (ADR 0022 §5).
+	//
+	// It is distinct from ErrAlreadyExists even though the pool agent reports
+	// both as 409: a create that answers "already exists" has succeeded as far
+	// as the caller is concerned, while one that answers "archived" has done
+	// nothing and will keep doing nothing. Collapsing the two let a refused
+	// create settle as a converged, healthy sandbox with no container.
+	ErrArchived = errors.New("sandbox is archived; unarchive it to use it")
+
 	// ErrNotRunning indicates the runtime sandbox is not running.
 	ErrNotRunning = errors.New("sandbox not running")
 

@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"net/http"
+	"net/url"
 	"time"
 
 	workerapi "github.com/discobox-ai/discobox/pool-agent/api/gen"
@@ -184,13 +185,22 @@ func (s *sandboxService) NewError(_ context.Context, err error) *workerapi.Error
 			status = http.StatusUnauthorized
 		}
 	}
+	response := workerapimodel.ErrorModel{
+		Status: workerapi.NewOptInt64(int64(status)),
+		Title:  workerapi.NewOptString(http.StatusText(status)),
+		Detail: workerapi.NewOptString(err.Error()),
+	}
+	var typedErr interface{ ErrorType() string }
+	if errors.As(err, &typedErr) {
+		if errorType := typedErr.ErrorType(); errorType != "" {
+			if parsed, parseErr := url.Parse(errorType); parseErr == nil {
+				response.Type = workerapi.NewOptURI(*parsed)
+			}
+		}
+	}
 	return &workerapi.ErrorModelStatusCode{
 		StatusCode: status,
-		Response: workerapimodel.ErrorModel{
-			Status: workerapi.NewOptInt64(int64(status)),
-			Title:  workerapi.NewOptString(http.StatusText(status)),
-			Detail: workerapi.NewOptString(err.Error()),
-		},
+		Response:   response,
 	}
 }
 
@@ -284,16 +294,19 @@ func mapRuntimeError(err error) error {
 		return newStatusError(http.StatusConflict, http.StatusText(http.StatusConflict))
 	}
 	// Archived carries its own message: unlike the two above, the caller's next
-	// move (unarchive) is not obvious from the status alone.
+	// move (unarchive) is not obvious from the status alone. It also carries a
+	// type, because the message is for a human and the control plane has to
+	// tell this 409 from the already-exists one above to act on it at all.
 	if errors.Is(err, sandboxruntime.ErrArchived) {
-		return newStatusError(http.StatusConflict, err.Error())
+		return newTypedStatusError(http.StatusConflict, err.Error(), workerapimodel.ErrorTypeSandboxArchived)
 	}
 	return newStatusError(http.StatusInternalServerError, err.Error())
 }
 
 type statusError struct {
-	status  int
-	message string
+	status    int
+	message   string
+	errorType string
 }
 
 func (e statusError) Error() string {
@@ -304,8 +317,19 @@ func (e statusError) StatusCode() int {
 	return e.status
 }
 
+// ErrorType is the RFC 7807 `type` for this error, empty when it has none.
+// NewError copies it onto the response so a caller can classify the failure
+// without parsing the message.
+func (e statusError) ErrorType() string {
+	return e.errorType
+}
+
 func newStatusError(status int, message string) error {
 	return statusError{status: status, message: message}
+}
+
+func newTypedStatusError(status int, message, errorType string) error {
+	return statusError{status: status, message: message, errorType: errorType}
 }
 
 func convert[To any](from any) (To, error) {

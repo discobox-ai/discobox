@@ -25,6 +25,7 @@ type PoolManager = contract.PoolManager
 
 var ErrNotFound = contract.ErrNotFound
 var ErrAlreadyExists = contract.ErrAlreadyExists
+var ErrArchived = contract.ErrArchived
 var ErrNotRunning = contract.ErrNotRunning
 var ErrAlreadyRunning = contract.ErrAlreadyRunning
 var StatusCreated = contract.StatusCreated
