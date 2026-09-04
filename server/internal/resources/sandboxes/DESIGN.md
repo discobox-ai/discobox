@@ -132,9 +132,16 @@ Repair (ADR 0035) is archive, unarchive, and start as one operation, for a
 sandbox that is wedged — typically a settled failure whose container or
 disposable pool-host state is broken while its durable tree is fine. It is one
 present-intent whose generation is named by `Sandbox.RepairGeneration`; for
-exactly that generation, `ensure` runs the provider's `Archive` teardown before
-the ordinary create, so the rebuild starts from the retained tree. Recording
-the intent is what clears a latched `ErrorMessage`. Like purge, the request
+exactly that generation, and only until it converges, `ensure` runs the
+provider's `Archive` teardown before the ordinary create, so the rebuild starts
+from the retained tree. Recording the intent is what clears a latched
+`ErrorMessage`.
+
+The teardown is gated on the repair not having landed yet, not on the
+generation alone. `ensure` also runs on observation — "your container is gone"
+arrives with the generations already in agreement — so a converged repair
+generation would otherwise re-archive a healthy sandbox on every attach, and
+leave it settled as archived while its row still read `ready`. Like purge, the request
 drives the reconcile inline so the caller gets the verdict; unlike everything
 else here, a clean converge is followed by the same start instruction an
 explicit start sends — still an instruction, never stored intent.

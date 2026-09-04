@@ -754,6 +754,11 @@ type Sandbox struct {
 	// ordinary create rebuilds it. Naming exactly one generation is what makes
 	// repair one-shot: retries within the generation re-run an idempotent
 	// teardown, later generations never tear down again.
+	//
+	// "Retries within the generation" means the repair has not been observed
+	// yet. Once ObservedGeneration reaches it the repair has landed, and the
+	// ensures that still arrive on that generation are observation-driven --
+	// which must not tear anything down.
 	RepairGeneration int64      `gorm:"column:repair_generation;not null;default:0" json:"-" doc:"Generation whose ensure rebuilds from a teardown (ADR 0035)"`
 	SecretState      []byte     `gorm:"column:secret_state" json:"-"`
 	LastActiveAt     *time.Time `gorm:"column:last_active_at;index" json:"lastActiveAt,omitempty" doc:"Last observed activity timestamp" format:"date-time"`

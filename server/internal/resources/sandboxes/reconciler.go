@@ -238,7 +238,15 @@ func (r *SandboxReconciler) ensure(ctx context.Context, sandbox *model.Sandbox, 
 	// teardown is the same provider Archive an archive uses, and it is
 	// idempotent, so a retry within this generation is safe; a later
 	// generation no longer matches and never tears down again.
-	if sandbox.RepairGeneration == generation && !firstCreate {
+	//
+	// The teardown belongs to the repair that has not landed yet, which is why
+	// the generation alone does not select it. Ensure also runs on observation
+	// — "your container is gone" arrives with the generations already in
+	// agreement (above) — and on a settled repair generation that reads as a
+	// retry of a repair which already finished. Tearing down there re-archived
+	// a healthy sandbox on every attach, and left it settled as archived with
+	// its row still reading `ready`.
+	if sandbox.RepairGeneration == generation && !sandbox.Converged() && !firstCreate {
 		if err := r.archiveSandbox(ctx, sandbox); err != nil {
 			sandbox.ObservedGeneration = generation
 			sandbox.RecordFailure(model.SandboxStateFailed, err.Error())

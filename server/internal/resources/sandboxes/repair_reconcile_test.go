@@ -191,3 +191,38 @@ func TestReconcileRepairOnANeverRunSandboxSkipsTeardown(t *testing.T) {
 		t.Fatalf("create calls = %d (start=%v), want the ordinary starting first create", provider.createCalls, provider.createStart)
 	}
 }
+
+// Ensure also runs on observation, and those reconciles arrive with the
+// generations already in agreement — including on the generation a repair rode.
+// Tearing down there re-archived a healthy sandbox on every attach, and the
+// sandbox settled as archived with its row still reading `ready`.
+func TestReconcileRepairDoesNotTearDownOnceSettled(t *testing.T) {
+	ctx := context.Background()
+	appStore := newExecutorTestStore(t)
+	sb := repairableSandbox(ctx, t, appStore, model.SandboxStateReady)
+	recordRepairIntent(ctx, t, appStore, sb)
+
+	provider := &archiveTestProvider{}
+	reconciler := sandboxes.NewSandboxReconciler(appStore, sandboxes.WithSandboxProvider(provider))
+	if _, err := reconciler.ReconcileSandbox(ctx, sb); err != nil {
+		t.Fatalf("reconcile repair: %v", err)
+	}
+
+	// What an attach arrives as: the row is reloaded and reconciled again with
+	// no new intent, so RepairGeneration still names the current generation.
+	settled, err := appStore.GetSandbox(ctx, sb.ProjectID, sb.ID)
+	if err != nil {
+		t.Fatalf("get sandbox: %v", err)
+	}
+	if settled.RepairGeneration != settled.Generation || !settled.Converged() {
+		t.Fatalf("fixture does not exercise the case: repair generation %d, generation %d, observed %d",
+			settled.RepairGeneration, settled.Generation, settled.ObservedGeneration)
+	}
+	if _, err := reconciler.ReconcileSandbox(ctx, settled); err != nil {
+		t.Fatalf("reconcile settled repair: %v", err)
+	}
+
+	if provider.archiveCalls != 1 {
+		t.Fatalf("archive calls = %d, want 1: a settled repair must not tear down again", provider.archiveCalls)
+	}
+}
