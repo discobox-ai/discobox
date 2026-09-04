@@ -74,16 +74,78 @@ func (e *GuestExecError) Unwrap() error { return e.Err }
 // AppID's LocalService value). This alone doesn't launch a new process -
 // that happens inside CreateSession, when the service spins up a dedicated
 // wslcsession.exe for the new session via WSLCSessionFactory.
+//
+// It then asks the service its version, which decides both which struct
+// layout CreateSession may send and which vtable slots every session call
+// may use. That question comes first because the interface's IID is the same
+// on every build (see types.go), so activation itself succeeds against a
+// service this library cannot speak to.
 func activateSessionManager() (sessionManager, error) {
 	ptr, err := coCreateInstance(&clsidWSLCSessionManager, &iidIWSLCSessionManager, clsctxLocalServer)
 	if err != nil {
 		return nil, fmt.Errorf("wslcsession: activate WSLCSessionManager: %w", err)
 	}
-	return &comSessionManager{ptr: ptr}, nil
+
+	// GetVersion is the one call that is safe to make before knowing which
+	// build is answering: it has been method 1 with a single out parameter
+	// for as long as the interface has existed, so it cannot be the call
+	// that lands on the wrong slot.
+	version, err := managerVersion(ptr)
+	if err != nil {
+		comRelease(ptr)
+		return nil, fmt.Errorf("wslcsession: GetVersion: %w", err)
+	}
+	if !version.atLeast(minSupportedVersion) {
+		comRelease(ptr)
+		return nil, fmt.Errorf("wslcsession: WSL %s is too old for this build: WSL %s changed the "+
+			"WSLC session ABI, and calling an older service would marshal every CreateSession as "+
+			"a struct it does not have; update WSL with `wsl --update --pre-release`",
+			version, minSupportedVersion)
+	}
+	return &comSessionManager{ptr: ptr, version: version}, nil
 }
 
+// managerVersion calls IWSLCSessionManager::GetVersion.
+func managerVersion(ptr unsafe.Pointer) (wslcVersion, error) {
+	var version wslcVersion
+	hr := vtblCall(ptr, slotSessionManagerGetVersion, uintptr(unsafe.Pointer(&version)))
+	if err := hrErr(hr); err != nil {
+		return wslcVersion{}, err
+	}
+	return version, nil
+}
+
+// abiError explains RPC_X_BAD_STUB_DATA, which is what a call marshalled to
+// the wrong layout comes back as: the service's proxy read the arguments per
+// its own build of wslc.idl and found them malformed. Nothing about the call
+// itself is wrong, so the bare HRESULT sends whoever reads it looking in the
+// wrong place - it did exactly that when WSL 2.9.5's two new
+// WSLCSessionSettings fields first reached a host here. Every other failure
+// is returned unchanged.
+func abiError(err error, version wslcVersion) error {
+	if !isHRESULT(err, hrRPCXBadStubData) {
+		return err
+	}
+	return fmt.Errorf("WSL %s does not lay out the WSLC COM interface the way this build expects "+
+		"(derived from WSL %s); that interface is private and changes between WSL releases, so "+
+		"the layouts in types.go have to be re-derived against this one: %w",
+		version, derivedVersion, err)
+}
+
+// acquireVmLease is the AcquireVmLease argument WSL 2.9.5 added to
+// CreateRootNamespaceProcess and MountWindowsFolder. TRUE is the ordinary
+// client value: start the VM if none is running, and wait out an announced
+// stop so the call is served by a fresh one rather than by a VM already
+// committed to going away. It also attaches a keep-alive token to the
+// returned process, which is what stops wslc's idle worker from tearing the
+// VM down under a long-lived guest process - the control-plane relay being
+// exactly that. FALSE exists for calls wslc's own plugins make, which must
+// never extend a VM's life.
+const acquireVmLease uintptr = 1
+
 type comSessionManager struct {
-	ptr unsafe.Pointer
+	ptr     unsafe.Pointer
+	version wslcVersion
 }
 
 func (m *comSessionManager) Release() { comRelease(m.ptr) }
@@ -120,6 +182,10 @@ func (m *comSessionManager) CreateSession(opts Options) (wslcSession, error) {
 		bootTimeoutMs = uint32(opts.BootTimeout.Milliseconds())
 	}
 
+	// HostLoopback and IdleTimeoutSec are deliberately left zero; see the
+	// fields' own comments in types.go for why neither matters here. What
+	// does matter is that they exist in the struct at all, which is the
+	// whole of the 2.9.5 ABI break.
 	settings := wslcSessionSettings{
 		DisplayName:          dnPtr,
 		StoragePath:          spPtr,
@@ -140,24 +206,26 @@ func (m *comSessionManager) CreateSession(opts Options) (wslcSession, error) {
 	runtime.KeepAlive(spPtr)
 	runtime.KeepAlive(settings)
 	if err := hrErr(hr); err != nil {
-		return nil, fmt.Errorf("wslcsession: CreateSession: %w", err)
+		return nil, fmt.Errorf("wslcsession: CreateSession: %w", abiError(err, m.version))
 	}
-	return &comSession{ptr: sessionPtr}, nil
+	return &comSession{ptr: sessionPtr, version: m.version, slots: slotsForVersion(m.version)}, nil
 }
 
 type comSession struct {
-	ptr unsafe.Pointer
+	ptr     unsafe.Pointer
+	version wslcVersion
+	slots   sessionSlots
 }
 
 func (s *comSession) Release() { comRelease(s.ptr) }
 
 func (s *comSession) Terminate() error {
-	return hrErr(vtblCall(s.ptr, slotSessionTerminate))
+	return hrErr(vtblCall(s.ptr, s.slots.terminate))
 }
 
 func (s *comSession) GetDisplayName() (string, error) {
 	var p *uint16
-	hr := vtblCall(s.ptr, slotSessionGetDisplayName, uintptr(unsafe.Pointer(&p)))
+	hr := vtblCall(s.ptr, s.slots.getDisplayName, uintptr(unsafe.Pointer(&p)))
 	if err := hrErr(hr); err != nil {
 		return "", err
 	}
@@ -179,11 +247,11 @@ func (s *comSession) MountWindowsFolder(windowsPath, linuxPath string, readOnly 
 		ro = 1
 	}
 
-	hr := vtblCall(s.ptr, slotSessionMountWindowsFolder,
-		uintptr(unsafe.Pointer(wPtr)), uintptr(unsafe.Pointer(lPtr)), ro)
+	hr := vtblCall(s.ptr, s.slots.mountWindowsFolder,
+		uintptr(unsafe.Pointer(wPtr)), uintptr(unsafe.Pointer(lPtr)), ro, acquireVmLease)
 	runtime.KeepAlive(wPtr)
 	runtime.KeepAlive(lPtr)
-	return hrErr(hr)
+	return abiError(hrErr(hr), s.version)
 }
 
 func (s *comSession) CreateRootNamespaceProcess(executable string, argv []string, withStdin bool) (wslcProcess, error) {
@@ -214,10 +282,11 @@ func (s *comSession) CreateRootNamespaceProcess(executable string, argv []string
 
 	var processPtr unsafe.Pointer
 	var errNo int32
-	hr := vtblCall(s.ptr, slotSessionCreateRootNamespaceProcess,
+	hr := vtblCall(s.ptr, s.slots.createRootNamespaceProcess,
 		uintptr(unsafe.Pointer(exePtr)),
 		uintptr(unsafe.Pointer(&options)),
 		0, 0, // ttyRows, ttyColumns - unused, no Tty flag set
+		acquireVmLease,
 		uintptr(unsafe.Pointer(&processPtr)),
 		uintptr(unsafe.Pointer(&errNo)))
 	runtime.KeepAlive(exePtr)
@@ -225,7 +294,7 @@ func (s *comSession) CreateRootNamespaceProcess(executable string, argv []string
 	runtime.KeepAlive(envKeepAlive)
 	runtime.KeepAlive(options)
 	if err := hrErr(hr); err != nil {
-		return nil, &GuestExecError{Err: err, Errno: errNo}
+		return nil, &GuestExecError{Err: abiError(err, s.version), Errno: errNo}
 	}
 	return &comProcess{ptr: processPtr}, nil
 }
@@ -268,7 +337,7 @@ func (s *comSession) CreateVolume(v VolumeOptions) error {
 	}
 
 	var info wslcVolumeInformation
-	hr := vtblCall(s.ptr, slotSessionCreateVolume,
+	hr := vtblCall(s.ptr, s.slots.createVolume,
 		uintptr(unsafe.Pointer(&options)),
 		uintptr(unsafe.Pointer(&info)))
 	runtime.KeepAlive(namePtr)
@@ -278,7 +347,7 @@ func (s *comSession) CreateVolume(v VolumeOptions) error {
 	runtime.KeepAlive(sizeBytesValPtr)
 	runtime.KeepAlive(fixedKeyPtr)
 	runtime.KeepAlive(fixedValPtr)
-	return hrErr(hr)
+	return abiError(hrErr(hr), s.version)
 }
 
 type comProcess struct {

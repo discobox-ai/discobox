@@ -14,9 +14,16 @@ import "fmt"
 // IWSLCSession), not the documented WSLCCompat.idl ones - wslc.idl says
 // "ABI breaking changes in this file are OK, since both client & server
 // always ship together. The WSLC SDK must not use this file" - meaning this
-// library depends on an interface Microsoft can change without notice. It
-// works today; a future WSL update could require re-deriving vtable slots
-// and struct layouts against the wslc.idl of that version.
+// library depends on an interface Microsoft can change without notice.
+//
+// It already has, twice, which is why the version below is checked rather
+// than assumed. WSL 2.9.5 added two fields to WSLCSessionSettings and an
+// AcquireVmLease argument to two methods; WSL 2.9.10 inserted
+// IWSLCSession::GetEvents as method 6 and pushed every later method down one
+// vtable slot. Everything here is derived from the wslc.idl of WSL 2.9.10,
+// and the IID never changed across any of it - the interface a build answers
+// with is whatever that build compiled, so activation cannot tell the
+// difference and a mismatched call is simply marshalled wrong.
 
 // iidIWSLCSession isn't needed: CoCreateInstance is only ever called for
 // IWSLCSessionManager (see NewSession); the resulting IWSLCSession pointer
@@ -33,25 +40,105 @@ var (
 // the slot directly, so there's no need for "placeholder" method
 // declarations to keep slot numbers aligned - just the right number here.
 //
-// slotSessionManagerCreateSession is method 2; method 1 (GetVersion) isn't
-// used by this library and so isn't declared.
+// Only IWSLCSessionManager's and IWSLCProcess's slots are constants; the
+// session's move between releases and live in sessionSlots below.
 const (
-	slotSessionManagerCreateSession = 4 // IWSLCSessionManager method 2
-
-	slotSessionGetID                      = 3  // IWSLCSession method 1
-	slotSessionGetDisplayName             = 4  // method 2
-	slotSessionGetState                   = 5  // method 3
-	slotSessionCreateRootNamespaceProcess = 23 // method 21
-	slotSessionTerminate                  = 25 // method 23
-	slotSessionMountWindowsFolder         = 26 // method 24
-	slotSessionCreateVolume               = 32 // method 30
-	slotSessionDeleteVolume               = 33 // method 31
+	slotSessionManagerGetVersion    = 3 // IWSLCSessionManager method 1
+	slotSessionManagerCreateSession = 4 // method 2
 
 	slotProcessSignal       = 3 // IWSLCProcess method 1
 	slotProcessGetExitEvent = 4 // method 2
 	slotProcessGetStdHandle = 5 // method 3
 	slotProcessGetPid       = 7 // method 5
 	slotProcessGetState     = 8 // method 6
+)
+
+// sessionSlots holds the IWSLCSession slots this library calls. They are the
+// one part of the vtable that moves: WSL 2.9.10 inserted GetEvents as method
+// 6, so on an older build every method after it sits one slot lower. A call
+// made at the wrong slot is a call to a different method with this one's
+// arguments - Terminate() landing on FormatVirtualDisk, say - so the set is
+// chosen from the version the service reports rather than assumed.
+//
+// Only the methods this library calls are tracked. The others were two more
+// numbers to keep right for no caller.
+type sessionSlots struct {
+	getDisplayName             int
+	createRootNamespaceProcess int
+	terminate                  int
+	mountWindowsFolder         int
+	createVolume               int
+}
+
+// slotsForVersion returns the IWSLCSession slots the given service exposes.
+func slotsForVersion(v wslcVersion) sessionSlots {
+	if v.atLeast(getEventsVersion) {
+		// GetDisplayName is method 2, CreateRootNamespaceProcess 22,
+		// Terminate 24, MountWindowsFolder 25, CreateVolume 31.
+		return sessionSlots{
+			getDisplayName:             4,
+			createRootNamespaceProcess: 24,
+			terminate:                  26,
+			mountWindowsFolder:         27,
+			createVolume:               33,
+		}
+	}
+	// 2.9.5 through 2.9.9, with no GetEvents ahead of them:
+	// CreateRootNamespaceProcess is method 21, Terminate 23,
+	// MountWindowsFolder 24, CreateVolume 30.
+	return sessionSlots{
+		getDisplayName:             4,
+		createRootNamespaceProcess: 23,
+		terminate:                  25,
+		mountWindowsFolder:         26,
+		createVolume:               32,
+	}
+}
+
+// wslcVersion mirrors _WSLCVersion (wslc.idl): the WSL package version the
+// service reports through IWSLCSessionManager::GetVersion, which is the
+// installer's own 2.9.10.0 without its trailing build number.
+type wslcVersion struct {
+	Major    uint32
+	Minor    uint32
+	Revision uint32
+}
+
+func (v wslcVersion) String() string {
+	return fmt.Sprintf("%d.%d.%d", v.Major, v.Minor, v.Revision)
+}
+
+// atLeast reports whether v is o or newer.
+func (v wslcVersion) atLeast(o wslcVersion) bool {
+	if v.Major != o.Major {
+		return v.Major > o.Major
+	}
+	if v.Minor != o.Minor {
+		return v.Minor > o.Minor
+	}
+	return v.Revision >= o.Revision
+}
+
+// The WSL releases this library's knowledge of the interface is keyed to.
+//
+// minSupportedVersion is the release that gave WSLCSessionSettings the
+// layout below. A service older than it reads the struct this library sends
+// as the shorter one it knows, takes the wrong bytes for its pointer fields,
+// and fails the call with RPC_X_BAD_STUB_DATA - which is exactly how the
+// mirror image of that mismatch turned up here, as an 0x800706F7 out of
+// CreateSession the day a host updated to 2.9.10. Refusing an older build up
+// front is the difference between an explanation and that HRESULT.
+//
+// getEventsVersion is the release that inserted IWSLCSession::GetEvents, and
+// so selects between the two sets of session slots.
+//
+// derivedVersion is the release every layout here was read off. It is named
+// in the error a future ABI change produces, so the message says what has to
+// be re-derived and against what.
+var (
+	minSupportedVersion = wslcVersion{Major: 2, Minor: 9, Revision: 5}
+	getEventsVersion    = wslcVersion{Major: 2, Minor: 9, Revision: 10}
+	derivedVersion      = wslcVersion{Major: 2, Minor: 9, Revision: 10}
 )
 
 // WSLCNetworkingMode.
@@ -111,7 +198,11 @@ type wslcHandle struct {
 	Handle uintptr
 }
 
-// wslcSessionSettings mirrors _WSLCSessionSettings (wslc.idl:453-468).
+// wslcSessionSettings mirrors _WSLCSessionSettings as of WSL 2.9.10.
+// HostLoopback and IdleTimeoutSec are the fields 2.9.5 added, and sending
+// the struct without them is what made CreateSession fail with
+// RPC_X_BAD_STUB_DATA on an updated host: the service's proxy walked this
+// buffer expecting a pointer where the old layout had DmesgOutput.
 type wslcSessionSettings struct {
 	DisplayName          *uint16
 	StoragePath          *uint16
@@ -121,10 +212,28 @@ type wslcSessionSettings struct {
 	BootTimeoutMs        uint32
 	NetworkingMode       int32
 	FeatureFlags         int32
-	DmesgOutput          wslcHandle
-	StorageFlags         int32
-	RootVhdOverride      *uint16
-	RootVhdTypeOverride  *byte
+
+	// HostLoopback is the DNS name the guest resolves to the host's
+	// loopback address (wslc's own CLI defaults it to
+	// "host.wslc.internal"). NULL leaves the record uncreated, which is
+	// what this library wants: a guest here reaches the host over the
+	// relay's stdio, never over the network.
+	HostLoopback *byte
+
+	DmesgOutput  wslcHandle
+	StorageFlags int32
+
+	// IdleTimeoutSec is how long wslc lets an idle VM run before tearing it
+	// down, 0 selecting its own 30s grace period. Idle means an activity
+	// refcount of zero, and a client-held IWSLCProcess reference is one of
+	// the things that counts - so a session with the control-plane relay
+	// running is never idle and this value never comes into play. See
+	// acquireVmLease in comapi.go, which is what attaches that reference.
+	IdleTimeoutSec uint32
+
+	// Below options are used for debugging purposes only.
+	RootVhdOverride     *uint16
+	RootVhdTypeOverride *byte
 }
 
 // WSLCFD.
