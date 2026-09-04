@@ -4,34 +4,53 @@ package wslcsession
 
 import "fmt"
 
-// Field layouts below are verified against wslc.idl and the MIDL-generated
-// wslc.h (via `midl` run against src/windows/service/inc/wslc.idl in the WSL
-// repo), not guessed. Go's struct layout follows the same natural-alignment
-// rules as the C compiler that generated wslc.h, so field order + type alone
-// (no manual padding) reproduces an identical byte layout.
+// Field layouts below are verified against the WSL service's own IDL and the
+// MIDL-generated headers (via `midl` run against src/windows/service/inc in
+// the WSL repo), not guessed. Go's struct layout follows the same
+// natural-alignment rules as the C compiler that generated those headers, so
+// field order + type alone (no manual padding) reproduces an identical byte
+// layout.
 //
-// This uses the internal wslc.idl interfaces (IWSLCSessionManager/
-// IWSLCSession), not the documented WSLCCompat.idl ones - wslc.idl says
-// "ABI breaking changes in this file are OK, since both client & server
-// always ship together. The WSLC SDK must not use this file" - meaning this
-// library depends on an interface Microsoft can change without notice.
+// Two interfaces are mirrored here, and which one a call belongs on is the
+// most important thing in this file.
 //
-// It already has, twice, which is why the version below is checked rather
-// than assumed. WSL 2.9.5 added two fields to WSLCSessionSettings and an
-// AcquireVmLease argument to two methods; WSL 2.9.10 inserted
-// IWSLCSession::GetEvents as method 6 and pushed every later method down one
-// vtable slot. Everything here is derived from the wslc.idl of WSL 2.9.10,
-// and the IID never changed across any of it - the interface a build answers
-// with is whatever that build compiled, so activation cannot tell the
-// difference and a mismatched call is simply marshalled wrong.
+// WSLCCompat.idl is the SDK-facing interface - what wslcsdk.dll (the
+// Microsoft.WSL.Containers package) talks to, reached by activating the same
+// CLSID with a different IID, exactly as wslcsdk.cpp's CreateSessionManager
+// does. Its header says "Changes in this file must maintain backwards
+// compatibility", it carries a version handshake in
+// IsClientVersionSupported, and across WSL 2.9.0 to 2.9.10 it changed by one
+// appended method while the private interface below broke twice. Everything
+// this library can call there, it calls there.
+//
+// wslc.idl is the service's private interface, whose own header says "ABI
+// breaking changes in this file are OK, since both client & server always
+// ship together. The WSLC SDK must not use this file". Two methods this
+// library needs have no SDK-facing equivalent - MountWindowsFolder ("used
+// only for testing (and by the plugin API)") and CreateRootNamespaceProcess
+// ("meant for debugging") - and those two calls, alone, are made on it. The
+// same session object implements both interfaces, so one QueryInterface
+// reaches them.
+//
+// What that division buys: no struct this library sends is defined by the
+// private interface any more, which is what broke on WSL 2.9.10 (2.9.5 had
+// added two fields to WSLCSessionSettings; the SDK-facing copy of that
+// struct was left alone, and still is). What it does not buy: the two
+// private methods still sit at vtable slots that move - 2.9.10 inserted
+// GetEvents as method 6 and pushed both of them down one - so their slots
+// are chosen from the version the service reports.
 
-// iidIWSLCSession isn't needed: CoCreateInstance is only ever called for
-// IWSLCSessionManager (see NewSession); the resulting IWSLCSession pointer
-// comes back directly from CreateSession's [out] parameter, with no
-// separate QueryInterface step that would need its IID.
 var (
 	clsidWSLCSessionManager = mustGUID("a9b7a1b9-0671-405c-95f1-e0612cb4ce8f")
-	iidIWSLCSessionManager  = mustGUID("82A7ABC8-6B50-43FC-AB96-15FBBE7E8760")
+
+	// WSLCCompat.idl - the SDK-facing interfaces.
+	iidIWSLCCompatSessionManager = mustGUID("279F2047-DA35-45A3-B671-AFD2302D5D16")
+	iidIWSLCCompatProcess        = mustGUID("AC69DD0D-6616-4C4F-91F2-C39D6034EA82")
+
+	// wslc.idl - the private session interface, reached by QueryInterface on
+	// the session the SDK-facing CreateSession returns, and used for nothing
+	// but MountWindowsFolder and CreateRootNamespaceProcess.
+	iidIWSLCSession = mustGUID("EF0661E4-6364-40EA-B433-E2FDF11F3519")
 )
 
 // Absolute vtable slot indices (0-based, counting IUnknown's
@@ -40,64 +59,55 @@ var (
 // the slot directly, so there's no need for "placeholder" method
 // declarations to keep slot numbers aligned - just the right number here.
 //
-// Only IWSLCSessionManager's and IWSLCProcess's slots are constants; the
-// session's move between releases and live in sessionSlots below.
+// These are constants because they are the SDK-facing interface's, and it
+// promises not to move them. IWSLCCompatSession's numbering is the one that
+// includes OpenContainer, added as method 8 in WSL 2.9.5 - the same release
+// the service raised its minimum supported client version to, and the reason
+// minSupportedVersion below is what it is.
 const (
-	slotSessionManagerGetVersion    = 3 // IWSLCSessionManager method 1
-	slotSessionManagerCreateSession = 4 // method 2
+	slotCompatManagerGetVersion               = 3 // IWSLCCompatSessionManager method 1
+	slotCompatManagerIsClientVersionSupported = 4 // method 2
+	slotCompatManagerCreateSession            = 5 // method 3
 
-	slotProcessSignal       = 3 // IWSLCProcess method 1
-	slotProcessGetExitEvent = 4 // method 2
-	slotProcessGetStdHandle = 5 // method 3
-	slotProcessGetPid       = 7 // method 5
-	slotProcessGetState     = 8 // method 6
+	slotCompatSessionTerminate    = 11 // IWSLCCompatSession method 9
+	slotCompatSessionCreateVolume = 14 // method 12
+
+	slotCompatProcessGetStdHandle = 5 // IWSLCCompatProcess method 3
 )
 
-// sessionSlots holds the IWSLCSession slots this library calls. They are the
-// one part of the vtable that moves: WSL 2.9.10 inserted GetEvents as method
-// 6, so on an older build every method after it sits one slot lower. A call
+// sessionSlots holds the two private IWSLCSession slots this library still
+// calls, because the SDK-facing interface exposes no equivalent. They are
+// the one part of the vtable that moves: WSL 2.9.10 inserted GetEvents as
+// method 6, so on an older build both of these sit one slot lower. A call
 // made at the wrong slot is a call to a different method with this one's
-// arguments - Terminate() landing on FormatVirtualDisk, say - so the set is
-// chosen from the version the service reports rather than assumed.
-//
-// Only the methods this library calls are tracked. The others were two more
-// numbers to keep right for no caller.
+// arguments - MountWindowsFolder landing on UnmountWindowsFolder - so the
+// set is chosen from the version the service reports rather than assumed.
 type sessionSlots struct {
-	getDisplayName             int
 	createRootNamespaceProcess int
-	terminate                  int
 	mountWindowsFolder         int
-	createVolume               int
 }
 
-// slotsForVersion returns the IWSLCSession slots the given service exposes.
+// slotsForVersion returns the private IWSLCSession slots the given service
+// exposes.
 func slotsForVersion(v wslcVersion) sessionSlots {
 	if v.atLeast(getEventsVersion) {
-		// GetDisplayName is method 2, CreateRootNamespaceProcess 22,
-		// Terminate 24, MountWindowsFolder 25, CreateVolume 31.
+		// CreateRootNamespaceProcess is method 22, MountWindowsFolder 25.
 		return sessionSlots{
-			getDisplayName:             4,
 			createRootNamespaceProcess: 24,
-			terminate:                  26,
 			mountWindowsFolder:         27,
-			createVolume:               33,
 		}
 	}
 	// 2.9.5 through 2.9.9, with no GetEvents ahead of them:
-	// CreateRootNamespaceProcess is method 21, Terminate 23,
-	// MountWindowsFolder 24, CreateVolume 30.
+	// CreateRootNamespaceProcess is method 21, MountWindowsFolder 24.
 	return sessionSlots{
-		getDisplayName:             4,
 		createRootNamespaceProcess: 23,
-		terminate:                  25,
 		mountWindowsFolder:         26,
-		createVolume:               32,
 	}
 }
 
-// wslcVersion mirrors _WSLCVersion (wslc.idl): the WSL package version the
-// service reports through IWSLCSessionManager::GetVersion, which is the
-// installer's own 2.9.10.0 without its trailing build number.
+// wslcVersion mirrors _WSLCCompatVersion: the WSL package version the
+// service reports through GetVersion, which is the installer's own 2.9.10.0
+// without its trailing build number.
 type wslcVersion struct {
 	Major    uint32
 	Minor    uint32
@@ -119,22 +129,21 @@ func (v wslcVersion) atLeast(o wslcVersion) bool {
 	return v.Revision >= o.Revision
 }
 
-// The WSL releases this library's knowledge of the interface is keyed to.
+// The WSL releases this library's knowledge of both interfaces is keyed to.
 //
-// minSupportedVersion is the release that gave WSLCSessionSettings the
-// layout below. A service older than it reads the struct this library sends
-// as the shorter one it knows, takes the wrong bytes for its pointer fields,
-// and fails the call with RPC_X_BAD_STUB_DATA - which is exactly how the
-// mirror image of that mismatch turned up here, as an 0x800706F7 out of
-// CreateSession the day a host updated to 2.9.10. Refusing an older build up
-// front is the difference between an explanation and that HRESULT.
+// minSupportedVersion is 2.9.5, which is where both interfaces turn on. It
+// is where IWSLCCompatSession gained OpenContainer as method 8, moving every
+// slot after it - the service's own IsClientVersionSupported refuses clients
+// older than this for that exact reason - and where the private methods
+// gained their AcquireVmLease argument.
 //
 // getEventsVersion is the release that inserted IWSLCSession::GetEvents, and
-// so selects between the two sets of session slots.
+// so selects between the two sets of private slots.
 //
-// derivedVersion is the release every layout here was read off. It is named
-// in the error a future ABI change produces, so the message says what has to
-// be re-derived and against what.
+// derivedVersion is the release every layout here was read off. It is the
+// client version handed to IsClientVersionSupported, and it is named in the
+// error a future ABI change produces, so the message says what has to be
+// re-derived and against what.
 var (
 	minSupportedVersion = wslcVersion{Major: 2, Minor: 9, Revision: 5}
 	getEventsVersion    = wslcVersion{Major: 2, Minor: 9, Revision: 10}
@@ -189,21 +198,29 @@ func (t wslcHandleType) String() string {
 	}
 }
 
-// wslcHandle mirrors _WSLCHandle: a discriminated union of a HANDLE, which
-// in Go just needs the union's storage (pointer-sized) - Go's struct layout
-// engine inserts the same 4 bytes of padding after Type that a C compiler
-// would, to align Handle to 8 bytes.
-type wslcHandle struct {
+// compatHandle mirrors _WSLCCompatHandle: a discriminated union of a HANDLE,
+// which in Go just needs the union's storage (pointer-sized) - Go's struct
+// layout engine inserts the same 4 bytes of padding after Type that a C
+// compiler would, to align Handle to 8 bytes.
+type compatHandle struct {
 	Type   wslcHandleType
 	Handle uintptr
 }
 
-// wslcSessionSettings mirrors _WSLCSessionSettings as of WSL 2.9.10.
-// HostLoopback and IdleTimeoutSec are the fields 2.9.5 added, and sending
-// the struct without them is what made CreateSession fail with
-// RPC_X_BAD_STUB_DATA on an updated host: the service's proxy walked this
-// buffer expecting a pointer where the old layout had DmesgOutput.
-type wslcSessionSettings struct {
+// compatSessionSettings mirrors _WSLCCompatSessionSettings.
+//
+// This is the same shape the private WSLCSessionSettings had before WSL
+// 2.9.5 gave it a HostLoopback pointer and an IdleTimeoutSec, and it has not
+// moved since - the clearest evidence available of what the SDK-facing
+// interface's compatibility promise is worth. The service zero-initializes
+// the private struct it converts this into, so both of those fields end up
+// exactly as this library used to set them itself: a null HostLoopback (no
+// host-loopback DNS record in the guest, which is right - a guest here
+// reaches the host over the relay's stdio, never over the network) and an
+// IdleTimeoutSec of 0 (wslc's own 30s grace period before it tears an idle
+// VM down; a session holding the relay's process reference is never idle,
+// see acquireVmLease in comapi.go).
+type compatSessionSettings struct {
 	DisplayName          *uint16
 	StoragePath          *uint16
 	MaximumStorageSizeMb uint64
@@ -212,24 +229,8 @@ type wslcSessionSettings struct {
 	BootTimeoutMs        uint32
 	NetworkingMode       int32
 	FeatureFlags         int32
-
-	// HostLoopback is the DNS name the guest resolves to the host's
-	// loopback address (wslc's own CLI defaults it to
-	// "host.wslc.internal"). NULL leaves the record uncreated, which is
-	// what this library wants: a guest here reaches the host over the
-	// relay's stdio, never over the network.
-	HostLoopback *byte
-
-	DmesgOutput  wslcHandle
-	StorageFlags int32
-
-	// IdleTimeoutSec is how long wslc lets an idle VM run before tearing it
-	// down, 0 selecting its own 30s grace period. Idle means an activity
-	// refcount of zero, and a client-held IWSLCProcess reference is one of
-	// the things that counts - so a session with the control-plane relay
-	// running is never idle and this value never comes into play. See
-	// acquireVmLease in comapi.go, which is what attaches that reference.
-	IdleTimeoutSec uint32
+	DmesgOutput          compatHandle
+	StorageFlags         int32
 
 	// Below options are used for debugging purposes only.
 	RootVhdOverride     *uint16
@@ -249,13 +250,17 @@ const (
 )
 
 // wslcStringArray mirrors _WSLCStringArray: a pointer to an array of LPCSTR
-// (char*) plus a count.
+// (char*) plus a count. It is spelled from the private IDL because the
+// options struct it belongs to is the root-namespace exec's, which the
+// SDK-facing interface has no equivalent of.
 type wslcStringArray struct {
 	Values *uintptr
 	Count  uint32
 }
 
-// wslcProcessOptions mirrors _WSLCProcessOptions (wslc.idl:172-179).
+// wslcProcessOptions mirrors _WSLCProcessOptions (wslc.idl). Private for the
+// same reason as wslcStringArray - and unchanged across every release this
+// library supports.
 type wslcProcessOptions struct {
 	CurrentDirectory *byte
 	User             *byte
@@ -264,9 +269,9 @@ type wslcProcessOptions struct {
 	Flags            int32
 }
 
-// wslcKeyValuePair mirrors KeyValuePair (wslc.idl:690-694), aliased as both
-// WSLCDriverOption and WSLCLabel.
-type wslcKeyValuePair struct {
+// compatKeyValuePair mirrors _WSLCCompatKeyValuePair, aliased as both
+// WSLCCompatDriverOption and WSLCCompatLabel.
+type compatKeyValuePair struct {
 	Key   *byte
 	Value *byte
 }
@@ -284,18 +289,19 @@ const (
 	driverOptFixed     = "Fixed"
 )
 
-// wslcVolumeOptions mirrors _WSLCVolumeOptions (wslc.idl:1696-1704).
-type wslcVolumeOptions struct {
+// compatVolumeOptions mirrors _WSLCCompatVolumeOptions.
+type compatVolumeOptions struct {
 	Name            *byte
 	Driver          *byte
-	DriverOpts      *wslcKeyValuePair
+	DriverOpts      *compatKeyValuePair
 	DriverOptsCount uint32
-	Labels          *wslcKeyValuePair
+	Labels          *compatKeyValuePair
 	LabelsCount     uint32
 }
 
-// wslcVolumeInformation mirrors _WSLCVolumeInformation (wslc.idl:1706-1712).
-type wslcVolumeInformation struct {
+// compatVolumeInformation mirrors _WSLCCompatVolumeInformation: two
+// fixed-size char arrays, each WSLCCompat_MAX_*_LENGTH + 1 bytes.
+type compatVolumeInformation struct {
 	Name   [256]byte
 	Driver [256]byte
 }

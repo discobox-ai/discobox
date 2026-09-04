@@ -14,26 +14,32 @@ import (
 // This file is the boundary between the raw COM ABI (com.go/types.go -
 // vtable slots, C struct layouts, unsafe.Pointer, manual runtime.KeepAlive)
 // and the rest of the package. Everything below implements one of these
-// three interfaces, each mirroring one real COM interface from wslc.idl
-// one-for-one but with Go-native parameter and return types (string,
-// []string, bool) instead of *uint16/*byte/uintptr - session.go and conn.go
-// only ever see these interfaces, never a raw pointer or vtable slot.
+// three interfaces, mirroring the real COM methods one-for-one but with
+// Go-native parameter and return types (string, []string, bool) instead of
+// *uint16/*byte/uintptr - session.go and conn.go only ever see these
+// interfaces, never a raw pointer or vtable slot.
+//
+// Each Go interface spans two COM ones. The SDK-facing WSLCCompat.idl
+// carries every call it has an equivalent for; the service's private
+// wslc.idl carries the two it does not. types.go explains why that division
+// is where it is; the comments below say which side each method is on.
 
-// sessionManager mirrors IWSLCSessionManager (wslc.idl), restricted to the
-// one method this library uses.
+// sessionManager mirrors IWSLCCompatSessionManager, restricted to the one
+// method this library uses beyond the version handshake in
+// activateSessionManager.
 type sessionManager interface {
-	// CreateSession calls IWSLCSessionManager::CreateSession (vtable slot
-	// slotSessionManagerCreateSession). Never sets
-	// WSLCSessionFlagsPersistent - see the Session doc comment in
+	// CreateSession calls IWSLCCompatSessionManager::CreateSession. Never
+	// sets WSLCSessionFlagsPersistent - see the Session doc comment in
 	// session.go for why.
 	CreateSession(opts Options) (wslcSession, error)
 	Release()
 }
 
-// wslcSession mirrors IWSLCSession (wslc.idl), restricted to the methods
-// this library uses.
+// wslcSession is one session object, addressed through both of the
+// interfaces it implements: Terminate and CreateVolume are
+// IWSLCCompatSession's, MountWindowsFolder and CreateRootNamespaceProcess
+// are IWSLCSession's, which has no SDK-facing counterpart for either.
 type wslcSession interface {
-	GetDisplayName() (string, error)
 	Terminate() error
 	MountWindowsFolder(windowsPath, linuxPath string, readOnly bool) error
 	CreateRootNamespaceProcess(executable string, argv []string, withStdin bool) (wslcProcess, error)
@@ -41,18 +47,19 @@ type wslcSession interface {
 	Release()
 }
 
-// wslcProcess mirrors IWSLCProcess (wslc.idl), restricted to the method
-// this library uses.
+// wslcProcess mirrors IWSLCCompatProcess, restricted to the method this
+// library uses. The process object comes back from the private
+// CreateRootNamespaceProcess, but nothing private is ever called on it.
 type wslcProcess interface {
 	GetStdHandle(fd int32) (socketHandle, error)
 	Release()
 }
 
-// socketHandle is a Winsock SOCKET handle, as returned by
-// IWSLCProcess::GetStdHandle for a guest process's stdin/stdout - a real
-// hvsocket-relayed connection under the hood (see conn.go). It's a named
-// type rather than a bare uintptr so call sites read as "this is a handle",
-// not "this is some pointer-sized number".
+// socketHandle is a Winsock SOCKET handle, as returned by GetStdHandle for a
+// guest process's stdin/stdout - a real hvsocket-relayed connection under
+// the hood (see conn.go). It's a named type rather than a bare uintptr so
+// call sites read as "this is a handle", not "this is some pointer-sized
+// number".
 type socketHandle uintptr
 
 // GuestExecError wraps a CreateRootNamespaceProcess failure together with
@@ -71,53 +78,91 @@ func (e *GuestExecError) Unwrap() error { return e.Err }
 // activateSessionManager calls CoCreateInstance for CLSID
 // a9b7a1b9-0671-405c-95f1-e0612cb4ce8f (WSLCSessionManager), which lives
 // inside the always-running WSLService Windows service (confirmed via its
-// AppID's LocalService value). This alone doesn't launch a new process -
-// that happens inside CreateSession, when the service spins up a dedicated
-// wslcsession.exe for the new session via WSLCSessionFactory.
+// AppID's LocalService value), asking for the SDK-facing
+// IWSLCCompatSessionManager - the same activation wslcsdk.dll performs. This
+// alone doesn't launch a new process; that happens inside CreateSession,
+// when the service spins up a dedicated wslcsession.exe for the new session
+// via WSLCSessionFactory.
 //
-// It then asks the service its version, which decides both which struct
-// layout CreateSession may send and which vtable slots every session call
-// may use. That question comes first because the interface's IID is the same
-// on every build (see types.go), so activation itself succeeds against a
-// service this library cannot speak to.
+// It then agrees a version with the service, twice over, before any real
+// call is made. Both questions come first because the interfaces' IIDs are
+// the same on every build (see types.go), so activation itself succeeds
+// against a service this library cannot speak to.
 func activateSessionManager() (sessionManager, error) {
-	ptr, err := coCreateInstance(&clsidWSLCSessionManager, &iidIWSLCSessionManager, clsctxLocalServer)
+	ptr, err := coCreateInstance(&clsidWSLCSessionManager, &iidIWSLCCompatSessionManager, clsctxLocalServer)
 	if err != nil {
 		return nil, fmt.Errorf("wslcsession: activate WSLCSessionManager: %w", err)
 	}
 
 	// GetVersion is the one call that is safe to make before knowing which
 	// build is answering: it has been method 1 with a single out parameter
-	// for as long as the interface has existed, so it cannot be the call
+	// for as long as either interface has existed, so it cannot be the call
 	// that lands on the wrong slot.
 	version, err := managerVersion(ptr)
 	if err != nil {
 		comRelease(ptr)
 		return nil, fmt.Errorf("wslcsession: GetVersion: %w", err)
 	}
+
+	// This library's own floor, which the service cannot answer for: it
+	// covers the private slots as well as the SDK-facing ones.
 	if !version.atLeast(minSupportedVersion) {
 		comRelease(ptr)
-		return nil, fmt.Errorf("wslcsession: WSL %s is too old for this build: WSL %s changed the "+
-			"WSLC session ABI, and calling an older service would marshal every CreateSession as "+
-			"a struct it does not have; update WSL with `wsl --update --pre-release`",
+		return nil, fmt.Errorf("wslcsession: WSL %s is too old for this build: WSL %s moved both "+
+			"the SDK-facing and the private WSLC interfaces, and calling an older service would "+
+			"put every call at the wrong vtable slot; update WSL with `wsl --update --pre-release`",
 			version, minSupportedVersion)
 	}
+
+	// The service's own floor, which only it can answer for. This is the
+	// handshake the SDK performs, and the reason a future break on this
+	// interface arrives as a refusal naming both versions rather than as a
+	// call that is quietly marshalled wrong.
+	supported, err := clientVersionSupported(ptr, derivedVersion)
+	if err != nil {
+		comRelease(ptr)
+		return nil, fmt.Errorf("wslcsession: IsClientVersionSupported: %w", err)
+	}
+	if !supported {
+		comRelease(ptr)
+		return nil, fmt.Errorf("wslcsession: WSL %s no longer supports a client built against WSL "+
+			"%s: the SDK-facing WSLC interface has had a breaking change, and this library has to "+
+			"be re-derived against it (see types.go)", version, derivedVersion)
+	}
+
 	return &comSessionManager{ptr: ptr, version: version}, nil
 }
 
-// managerVersion calls IWSLCSessionManager::GetVersion.
+// managerVersion calls IWSLCCompatSessionManager::GetVersion.
 func managerVersion(ptr unsafe.Pointer) (wslcVersion, error) {
 	var version wslcVersion
-	hr := vtblCall(ptr, slotSessionManagerGetVersion, uintptr(unsafe.Pointer(&version)))
+	hr := vtblCall(ptr, slotCompatManagerGetVersion, uintptr(unsafe.Pointer(&version)))
 	if err := hrErr(hr); err != nil {
 		return wslcVersion{}, err
 	}
 	return version, nil
 }
 
+// clientVersionSupported calls
+// IWSLCCompatSessionManager::IsClientVersionSupported, which is how the
+// service tells a client built against one release whether its idea of the
+// SDK-facing interface still holds. The service raised that floor once
+// already, in 2.9.5, to insert a method mid-interface.
+func clientVersionSupported(ptr unsafe.Pointer, client wslcVersion) (bool, error) {
+	var supported int32
+	hr := vtblCall(ptr, slotCompatManagerIsClientVersionSupported,
+		uintptr(unsafe.Pointer(&client)),
+		uintptr(unsafe.Pointer(&supported)))
+	runtime.KeepAlive(client)
+	if err := hrErr(hr); err != nil {
+		return false, err
+	}
+	return supported != 0, nil
+}
+
 // abiError explains RPC_X_BAD_STUB_DATA, which is what a call marshalled to
 // the wrong layout comes back as: the service's proxy read the arguments per
-// its own build of wslc.idl and found them malformed. Nothing about the call
+// its own build of the IDL and found them malformed. Nothing about the call
 // itself is wrong, so the bare HRESULT sends whoever reads it looking in the
 // wrong place - it did exactly that when WSL 2.9.5's two new
 // WSLCSessionSettings fields first reached a host here. Every other failure
@@ -126,9 +171,8 @@ func abiError(err error, version wslcVersion) error {
 	if !isHRESULT(err, hrRPCXBadStubData) {
 		return err
 	}
-	return fmt.Errorf("WSL %s does not lay out the WSLC COM interface the way this build expects "+
-		"(derived from WSL %s); that interface is private and changes between WSL releases, so "+
-		"the layouts in types.go have to be re-derived against this one: %w",
+	return fmt.Errorf("WSL %s does not lay out this WSLC call the way this build expects (derived "+
+		"from WSL %s); the layouts in types.go have to be re-derived against this one: %w",
 		version, derivedVersion, err)
 }
 
@@ -182,11 +226,7 @@ func (m *comSessionManager) CreateSession(opts Options) (wslcSession, error) {
 		bootTimeoutMs = uint32(opts.BootTimeout.Milliseconds())
 	}
 
-	// HostLoopback and IdleTimeoutSec are deliberately left zero; see the
-	// fields' own comments in types.go for why neither matters here. What
-	// does matter is that they exist in the struct at all, which is the
-	// whole of the 2.9.5 ABI break.
-	settings := wslcSessionSettings{
+	settings := compatSessionSettings{
 		DisplayName:          dnPtr,
 		StoragePath:          spPtr,
 		MaximumStorageSizeMb: opts.MaxStorageSizeMB,
@@ -196,42 +236,57 @@ func (m *comSessionManager) CreateSession(opts Options) (wslcSession, error) {
 		NetworkingMode:       networkingModeNAT,
 	}
 
-	var sessionPtr unsafe.Pointer
-	hr := vtblCall(m.ptr, slotSessionManagerCreateSession,
+	var compatPtr unsafe.Pointer
+	hr := vtblCall(m.ptr, slotCompatManagerCreateSession,
 		uintptr(unsafe.Pointer(&settings)),
 		uintptr(sessionFlagNone),
 		0, // warning callback
-		uintptr(unsafe.Pointer(&sessionPtr)))
+		uintptr(unsafe.Pointer(&compatPtr)))
 	runtime.KeepAlive(dnPtr)
 	runtime.KeepAlive(spPtr)
 	runtime.KeepAlive(settings)
 	if err := hrErr(hr); err != nil {
 		return nil, fmt.Errorf("wslcsession: CreateSession: %w", abiError(err, m.version))
 	}
-	return &comSession{ptr: sessionPtr, version: m.version, slots: slotsForVersion(m.version)}, nil
+
+	// The session object implements the private interface too, and the two
+	// methods this library cannot reach any other way are on it. Both
+	// pointers are references to that one object, so both are released
+	// together.
+	privatePtr, err := queryInterface(compatPtr, &iidIWSLCSession)
+	if err != nil {
+		comRelease(compatPtr)
+		return nil, fmt.Errorf("wslcsession: QueryInterface(IWSLCSession): %w", err)
+	}
+
+	return &comSession{
+		compat:  compatPtr,
+		private: privatePtr,
+		version: m.version,
+		slots:   slotsForVersion(m.version),
+	}, nil
 }
 
 type comSession struct {
-	ptr     unsafe.Pointer
+	compat  unsafe.Pointer
+	private unsafe.Pointer
 	version wslcVersion
 	slots   sessionSlots
 }
 
-func (s *comSession) Release() { comRelease(s.ptr) }
+func (s *comSession) Release() {
+	comRelease(s.private)
+	comRelease(s.compat)
+}
 
 func (s *comSession) Terminate() error {
-	return hrErr(vtblCall(s.ptr, s.slots.terminate))
+	return hrErr(vtblCall(s.compat, slotCompatSessionTerminate))
 }
 
-func (s *comSession) GetDisplayName() (string, error) {
-	var p *uint16
-	hr := vtblCall(s.ptr, s.slots.getDisplayName, uintptr(unsafe.Pointer(&p)))
-	if err := hrErr(hr); err != nil {
-		return "", err
-	}
-	return syscall.UTF16ToString(unsafe.Slice(p, 256)), nil
-}
-
+// MountWindowsFolder is one of the two private calls. The SDK-facing
+// interface mounts a Windows directory only into a container
+// (WSLCCompatVolume), never into the VM's own namespace, which is where the
+// relay and the bridge have to find it.
 func (s *comSession) MountWindowsFolder(windowsPath, linuxPath string, readOnly bool) error {
 	wPtr, err := syscall.UTF16PtrFromString(windowsPath)
 	if err != nil {
@@ -247,13 +302,17 @@ func (s *comSession) MountWindowsFolder(windowsPath, linuxPath string, readOnly 
 		ro = 1
 	}
 
-	hr := vtblCall(s.ptr, s.slots.mountWindowsFolder,
+	hr := vtblCall(s.private, s.slots.mountWindowsFolder,
 		uintptr(unsafe.Pointer(wPtr)), uintptr(unsafe.Pointer(lPtr)), ro, acquireVmLease)
 	runtime.KeepAlive(wPtr)
 	runtime.KeepAlive(lPtr)
 	return abiError(hrErr(hr), s.version)
 }
 
+// CreateRootNamespaceProcess is the other private call: the SDK-facing
+// interface can start a process only inside a container (Exec, or a
+// container's init process), and everything this library runs in the guest
+// runs in the VM's root namespace instead.
 func (s *comSession) CreateRootNamespaceProcess(executable string, argv []string, withStdin bool) (wslcProcess, error) {
 	exePtr, err := syscall.BytePtrFromString(executable)
 	if err != nil {
@@ -282,7 +341,7 @@ func (s *comSession) CreateRootNamespaceProcess(executable string, argv []string
 
 	var processPtr unsafe.Pointer
 	var errNo int32
-	hr := vtblCall(s.ptr, s.slots.createRootNamespaceProcess,
+	hr := vtblCall(s.private, s.slots.createRootNamespaceProcess,
 		uintptr(unsafe.Pointer(exePtr)),
 		uintptr(unsafe.Pointer(&options)),
 		0, 0, // ttyRows, ttyColumns - unused, no Tty flag set
@@ -296,12 +355,27 @@ func (s *comSession) CreateRootNamespaceProcess(executable string, argv []string
 	if err := hrErr(hr); err != nil {
 		return nil, &GuestExecError{Err: abiError(err, s.version), Errno: errNo}
 	}
-	return &comProcess{ptr: processPtr}, nil
+
+	// Only the private interface can start this process, but nothing private
+	// needs to be called on it afterwards, so the reference kept is the
+	// SDK-facing one. Both refer to the same object: its keep-alive token
+	// (and with it the VM) lives as long as either reference does, so
+	// dropping the private one here changes nothing but which vtable
+	// GetStdHandle is read from.
+	compatProcess, qiErr := queryInterface(processPtr, &iidIWSLCCompatProcess)
+	comRelease(processPtr)
+	if qiErr != nil {
+		return nil, &GuestExecError{
+			Err:   fmt.Errorf("wslcsession: QueryInterface(IWSLCCompatProcess): %w", qiErr),
+			Errno: errNo,
+		}
+	}
+	return &comProcess{ptr: compatProcess}, nil
 }
 
-// CreateVolume calls IWSLCSession::CreateVolume with the "vhd" driver (see
-// WSLCVhdVolume.cpp / WSLCVolumeMetadata.h) to create a named docker volume
-// backed by its own .vhdx, independent of the session's main storage.
+// CreateVolume calls IWSLCCompatSession::CreateVolume with the "vhd" driver
+// (see WSLCVhdVolume.cpp / WSLCVolumeMetadata.h) to create a named docker
+// volume backed by its own .vhdx, independent of the session's main storage.
 func (s *comSession) CreateVolume(v VolumeOptions) error {
 	if v.Name == "" {
 		return fmt.Errorf("wslcsession: volume name is required")
@@ -324,20 +398,20 @@ func (s *comSession) CreateVolume(v VolumeOptions) error {
 	fixedKeyPtr, _ := syscall.BytePtrFromString(driverOptFixed)
 	fixedValPtr, _ := syscall.BytePtrFromString(strconv.FormatBool(v.Fixed))
 
-	driverOpts := []wslcKeyValuePair{
+	driverOpts := []compatKeyValuePair{
 		{Key: sizeBytesKeyPtr, Value: sizeBytesValPtr},
 		{Key: fixedKeyPtr, Value: fixedValPtr},
 	}
 
-	options := wslcVolumeOptions{
+	options := compatVolumeOptions{
 		Name:            namePtr,
 		Driver:          driverPtr,
 		DriverOpts:      &driverOpts[0],
 		DriverOptsCount: uint32(len(driverOpts)),
 	}
 
-	var info wslcVolumeInformation
-	hr := vtblCall(s.ptr, s.slots.createVolume,
+	var info compatVolumeInformation
+	hr := vtblCall(s.compat, slotCompatSessionCreateVolume,
 		uintptr(unsafe.Pointer(&options)),
 		uintptr(unsafe.Pointer(&info)))
 	runtime.KeepAlive(namePtr)
@@ -357,15 +431,15 @@ type comProcess struct {
 func (p *comProcess) Release() { comRelease(p.ptr) }
 
 func (p *comProcess) GetStdHandle(fd int32) (socketHandle, error) {
-	var h wslcHandle
-	hr := vtblCall(p.ptr, slotProcessGetStdHandle, uintptr(fd), uintptr(unsafe.Pointer(&h)))
+	var h compatHandle
+	hr := vtblCall(p.ptr, slotCompatProcessGetStdHandle, uintptr(fd), uintptr(unsafe.Pointer(&h)))
 	if err := hrErr(hr); err != nil {
 		return 0, err
 	}
-	// Observed to always be Socket in practice, but WSLCHandle is a genuine
-	// discriminated union - fail clearly here rather than silently handing
-	// a File or Pipe handle to raw Winsock recv()/send() later, which would
-	// misbehave instead of erroring.
+	// Observed to always be Socket in practice, but WSLCCompatHandle is a
+	// genuine discriminated union - fail clearly here rather than silently
+	// handing a File or Pipe handle to raw Winsock recv()/send() later,
+	// which would misbehave instead of erroring.
 	if h.Type != handleTypeSocket {
 		return 0, fmt.Errorf("wslcsession: expected a Socket handle, got %s", h.Type)
 	}

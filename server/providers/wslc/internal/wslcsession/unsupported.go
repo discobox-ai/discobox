@@ -27,7 +27,6 @@ func NewSession(Options) (*Session, error) {
 }
 
 func (*Session) Close() error                           { return errUnsupported }
-func (*Session) DisplayName() (string, error)           { return "", errUnsupported }
 func (*Session) DockerConn() (net.Conn, error)          { return nil, errUnsupported }
 func (*Session) DialGuestUnix(string) (net.Conn, error) { return nil, errUnsupported }
 func (*Session) DialGuestTCP(string) (net.Conn, error)  { return nil, errUnsupported }

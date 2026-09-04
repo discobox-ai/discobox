@@ -220,16 +220,6 @@ func (s *Session) Close() error {
 	return nil
 }
 
-// DisplayName returns the session's display name.
-func (s *Session) DisplayName() (string, error) {
-	var name string
-	var callErr error
-	s.do(func() {
-		name, callErr = s.sess.GetDisplayName()
-	})
-	return name, callErr
-}
-
 // DockerConn returns a connection to dockerd's Docker Engine API socket
 // inside the guest, relayed entirely over the guest's private vsock control
 // channel - no TCP port, public or otherwise, is ever created.

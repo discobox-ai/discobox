@@ -192,6 +192,24 @@ func vtblCall(obj unsafe.Pointer, slot int, args ...uintptr) uintptr {
 	return r
 }
 
+// queryInterface calls IUnknown::QueryInterface (vtable slot 0) and returns
+// another reference to the same object, addressed through the requested
+// interface. The WSL service's session and process objects each implement
+// both the SDK-facing and the private interface, so this is what lets a call
+// be made on whichever of the two is the safer place for it (see types.go).
+//
+// The returned pointer is a reference in its own right: QueryInterface
+// AddRefs, so it has to be released separately from the one it was derived
+// from.
+func queryInterface(obj unsafe.Pointer, iid *GUID) (unsafe.Pointer, error) {
+	var out unsafe.Pointer
+	hr := vtblCall(obj, 0, uintptr(unsafe.Pointer(iid)), uintptr(unsafe.Pointer(&out)))
+	if err := hrErr(hr); err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 func comRelease(obj unsafe.Pointer) {
 	if obj != nil {
 		vtblCall(obj, 2) // IUnknown::Release

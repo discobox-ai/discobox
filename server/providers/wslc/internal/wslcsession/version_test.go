@@ -37,17 +37,14 @@ func TestVersionOrderingComparesEveryComponent(t *testing.T) {
 }
 
 // The slot shift is the whole reason the version is asked for at all: WSL
-// 2.9.10 inserted GetEvents as IWSLCSession method 6, so every method after
-// it moved down one slot. Both sets are asserted whole, because a single
-// wrong number here is a silent call to the neighbouring method.
+// 2.9.10 inserted GetEvents as IWSLCSession method 6, and both of the private
+// methods still called there sit after it. Both sets are asserted whole,
+// because a single wrong number is a silent call to the neighbouring method.
 func TestSlotsFollowTheGetEventsInsertion(t *testing.T) {
 	before := slotsForVersion(wslcVersion{2, 9, 9})
 	want := sessionSlots{
-		getDisplayName:             4,
 		createRootNamespaceProcess: 23,
-		terminate:                  25,
 		mountWindowsFolder:         26,
-		createVolume:               32,
 	}
 	if before != want {
 		t.Errorf("slots for 2.9.9 = %+v, want %+v", before, want)
@@ -55,23 +52,16 @@ func TestSlotsFollowTheGetEventsInsertion(t *testing.T) {
 
 	after := slotsForVersion(wslcVersion{2, 9, 10})
 	want = sessionSlots{
-		getDisplayName:             4,
 		createRootNamespaceProcess: 24,
-		terminate:                  26,
 		mountWindowsFolder:         27,
-		createVolume:               33,
 	}
 	if after != want {
 		t.Errorf("slots for 2.9.10 = %+v, want %+v", after, want)
 	}
 
-	// GetEvents is method 6, so only the methods after it move; a newer build
-	// keeps the shifted set rather than falling back to the old one.
+	// A newer build keeps the shifted set rather than falling back.
 	if got := slotsForVersion(wslcVersion{2, 10, 0}); got != after {
 		t.Errorf("slots for 2.10.0 = %+v, want the 2.9.10 set %+v", got, after)
-	}
-	if before.getDisplayName != after.getDisplayName {
-		t.Errorf("GetDisplayName is method 2, ahead of GetEvents, and must not move")
 	}
 }
 

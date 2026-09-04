@@ -143,9 +143,8 @@ type fakeSession struct {
 	released   atomic.Int32
 }
 
-func (s *fakeSession) GetDisplayName() (string, error) { return "discobox-pool_test", nil }
-func (s *fakeSession) Terminate() error                { s.terminated.Add(1); return nil }
-func (s *fakeSession) Release()                        { s.released.Add(1) }
+func (s *fakeSession) Terminate() error { s.terminated.Add(1); return nil }
+func (s *fakeSession) Release()         { s.released.Add(1) }
 func (s *fakeSession) CreateVolume(VolumeOptions) error {
 	return nil
 }
