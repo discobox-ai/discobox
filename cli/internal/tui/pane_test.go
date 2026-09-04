@@ -1812,12 +1812,12 @@ func TestACommandTakesTheScreenOverTheWorkspace(t *testing.T) {
 	}
 }
 
-// Every command the list offers is here on the key it has there. A lifecycle
-// verb runs against the server and reports, and the screen stays up — you did
-// not leave the terminal to archive the box you are looking at.
+// Every command the list offers is here on the key it has there. Archiving is
+// the exception that also detaches: the workspace belongs to the box being put
+// away, so its result is reported on the list behind it.
 func TestLeaderRunsTheListsVerbs(t *testing.T) {
 	ds := newFakeSource(testSandboxes()...)
-	d, m, _ := openWorkspace(t, ds, "enter")
+	d, m, term := openWorkspace(t, ds, "enter")
 
 	d.key("ctrl+a")
 	d.key("x") // archive
@@ -1826,8 +1826,13 @@ func TestLeaderRunsTheListsVerbs(t *testing.T) {
 	if ds.did[0] != "archive sbx_one" {
 		t.Fatalf("did = %v, want the box on screen archived", ds.did)
 	}
-	if m.focus != focusPane || !m.inPanes() {
-		t.Fatalf("focus = %v, want the screen kept", m.focus)
+	if m.focus != focusList || m.inPanes() {
+		t.Fatalf("focus = %v inPanes = %v, want the list", m.focus, m.inPanes())
+	}
+	select {
+	case <-term.closed:
+	default:
+		t.Fatal("the workspace terminal is still attached after archive")
 	}
 }
 

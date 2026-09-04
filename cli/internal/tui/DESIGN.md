@@ -430,8 +430,11 @@ the first can overtake the frame it was written beside. A timeout under it
 (`clearTimeout`) is for the outputs that are not terminals and never answer.
 
 **Four kinds of action.** A `Verb` goes to the API and returns, so the window
-stays up and reports on its status line. An `Interaction` is drawn in the window
-(`pane.go`/`workspace.go`, over the `termpane` module): attach and shell open
+stays up and reports on its status line. Archive invoked from a workspace is the
+exception: putting that discobox away also detaches its local streams and
+returns to the list, where the result is reported. An `Interaction` is drawn in
+the window (`pane.go`/`workspace.go`, over the `termpane` module): attach and
+shell open
 the workspace screen onto the discobox's own terminals, and apply is an overlay
 pane over whichever screen asked for it. Every interaction takes exactly one
 discobox, which is what a pane shows, and says so on the menu with the reason
