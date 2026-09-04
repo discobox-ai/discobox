@@ -7,7 +7,6 @@ import (
 	"crypto/x509"
 	"fmt"
 	"net/http"
-	"net/http/httptest"
 	"net/url"
 	"os"
 	"path/filepath"
@@ -40,7 +39,7 @@ func TestHTTPProxyMITMUpgradeHandshakeIsNotFragmented(t *testing.T) {
 
 	// A CDN-fronted handshake response: the required headers plus enough edge
 	// headers to cross tungstenite's threshold when each one is fragmented.
-	origin := httptest.NewUnstartedServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+	origin := newTLSOrigin(func(w http.ResponseWriter, _ *http.Request) {
 		hijacker, ok := w.(http.Hijacker)
 		if !ok {
 			http.Error(w, "hijack unsupported", http.StatusInternalServerError)
@@ -65,9 +64,7 @@ func TestHTTPProxyMITMUpgradeHandshakeIsNotFragmented(t *testing.T) {
 		// Hold the upgraded connection open until the client is done reading.
 		buf := make([]byte, 4)
 		_, _ = rw.Read(buf)
-	}))
-	origin.EnableHTTP2 = false
-	origin.StartTLS()
+	})
 	defer origin.Close()
 	originURL, err := url.Parse(origin.URL)
 	if err != nil {

@@ -776,19 +776,32 @@ func TestLocalForwarderHTTPToWorkerProxy(t *testing.T) {
 // (`sandbox-agent/ports/probe.go`).
 const portProbeUserAgent = "discobox-sandbox-agent (port probe)"
 
-// newOrigin is an upstream for a test to point the proxy at. It answers the
-// sandbox-agent's port probe itself rather than passing it to the handler:
-// every port that starts listening on the machine is asked `HEAD /` once, and
-// this repository is worked on inside a sandbox, so a test that counts or
-// records what reached its upstream would otherwise be counting a request the
-// proxy never sent.
-func newOrigin(handler http.HandlerFunc) *httptest.Server {
-	return httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+// ignoringPortProbe answers the sandbox-agent's port probe itself rather than
+// passing it to the handler: every port that starts listening on the machine is
+// asked `HEAD /` once, and this repository is worked on inside a sandbox, so a
+// test that counts or records what reached its upstream would otherwise be
+// counting a request the proxy never sent.
+func ignoringPortProbe(handler http.HandlerFunc) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
 		if r.Header.Get("User-Agent") == portProbeUserAgent {
 			return
 		}
 		handler(w, r)
-	}))
+	}
+}
+
+// newOrigin is an upstream for a test to point the proxy at.
+func newOrigin(handler http.HandlerFunc) *httptest.Server {
+	return httptest.NewServer(ignoringPortProbe(handler))
+}
+
+// newTLSOrigin is the same for an upstream the proxy has to MITM. HTTP/2 is off
+// because the proxy's MITM leg speaks HTTP/1.1.
+func newTLSOrigin(handler http.HandlerFunc) *httptest.Server {
+	origin := httptest.NewUnstartedServer(ignoringPortProbe(handler))
+	origin.EnableHTTP2 = false
+	origin.StartTLS()
+	return origin
 }
 
 func waitForAddr(t *testing.T, server *Server) net.Addr {
@@ -970,12 +983,10 @@ func TestHTTPProxySecretSwapOverMITM(t *testing.T) {
 	const realValue = "sk-proj-REALVALUE1111111111111111111111111111111111"
 
 	var sawAuth string
-	origin := httptest.NewUnstartedServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	origin := newTLSOrigin(func(w http.ResponseWriter, r *http.Request) {
 		sawAuth = r.Header.Get("Authorization")
 		_, _ = io.WriteString(w, "ok")
-	}))
-	origin.EnableHTTP2 = false
-	origin.StartTLS()
+	})
 	defer origin.Close()
 	originURL, err := url.Parse(origin.URL)
 	if err != nil {
@@ -1101,10 +1112,10 @@ func TestHTTPProxySecretSentinelSwapInBasicAuth(t *testing.T) {
 	}
 
 	var sawAuthorization string
-	origin := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	origin := newOrigin(func(w http.ResponseWriter, r *http.Request) {
 		sawAuthorization = r.Header.Get("Authorization")
 		_, _ = io.WriteString(w, "ok")
-	}))
+	})
 	defer origin.Close()
 
 	originURL, err := url.Parse(origin.URL)
