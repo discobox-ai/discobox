@@ -44,11 +44,22 @@ fi
 EOF
 )
 
-  local tmp
+  local tmp blockfile
   tmp=$(mktemp)
+  blockfile=$(mktemp)
+  printf '%s\n' "$block" > "$blockfile"
   if grep -Fq "$begin" "$BASHRC" && grep -Fq "$end" "$BASHRC"; then
-    awk -v begin="$begin" -v end="$end" -v block="$block" '
-      $0 == begin { print block; skip = 1; next }
+    # The block reaches awk as a file rather than through -v. A -v value
+    # carrying newlines is a GNU extension, and BSD awk -- which is the awk on
+    # macOS -- rejects it outright with "newline in string", so the replace
+    # path failed on every run after the one that first wrote the block.
+    awk -v begin="$begin" -v end="$end" -v blockfile="$blockfile" '
+      $0 == begin {
+        while ((getline line < blockfile) > 0) print line
+        close(blockfile)
+        skip = 1
+        next
+      }
       $0 == end { skip = 0; next }
       !skip { print }
     ' "$BASHRC" > "$tmp"
@@ -59,7 +70,7 @@ EOF
     } > "$tmp"
   fi
   cat "$tmp" > "$BASHRC"
-  rm -f "$tmp"
+  rm -f "$tmp" "$blockfile"
 }
 
 load_nix_profile() {
@@ -98,6 +109,18 @@ install_nix() {
     return
   fi
 
+  # macOS has no unattended install left for this hook to do. Upstream removed
+  # single-user mode there -- "--no-daemon installs are no-longer supported on
+  # Darwin/macOS" -- and the daemon install that replaced it is a system change
+  # (an APFS volume, a _nixbld group, a launchd daemon) that needs root. A
+  # session hook running in the background is the wrong place to ask for that,
+  # so name the command and leave the machine alone.
+  if [ "$(uname -s)" = "Darwin" ]; then
+    log "no Nix here, and macOS has no unattended install this hook can perform"
+    log "to install it: curl -fsSL https://nixos.org/nix/install | sh -s -- --daemon"
+    return 1
+  fi
+
   log "installing Nix with the upstream no-daemon installer"
   curl -fsSL https://nixos.org/nix/install | sh -s -- --no-daemon --yes --no-modify-profile
   load_nix_profile
@@ -127,7 +150,16 @@ allow_workspace_envrc() {
 }
 
 ensure_bashrc_block
-install_nix
+
+# Everything below needs Nix: direnv is installed with it, and .envrc loads the
+# flake through it. Without Nix there is nothing here to do, and nothing wrong
+# either -- the toolchain can come from elsewhere -- so this is a skip, not a
+# failure.
+if ! install_nix; then
+  log "skipping direnv and .envrc: both need Nix"
+  exit 0
+fi
+
 install_direnv
 ensure_bashrc_block
 allow_workspace_envrc
