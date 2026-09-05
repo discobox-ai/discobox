@@ -795,3 +795,72 @@ func TestClientReportsDeliveryPositions(t *testing.T) {
 		t.Fatalf("positions = %d/%d after acknowledgement, want them equal", accepted, acknowledged)
 	}
 }
+
+// A repaint goes out on the current connection, unpositioned, and is not
+// retained: it is a request about one moment, and a reconnect repaints on its
+// own, so a repaint held over one would arrive behind the repaint the reconnect
+// already did.
+func TestClientSendsRepaintUnpositionedAndDoesNotRestoreIt(t *testing.T) {
+	firstClient, firstServer := newConnPair(t)
+	secondClient, secondServer := newConnPair(t)
+	sent := make(chan frame.Frame, 1)
+	go func() {
+		acceptSession(t, firstServer, 0)
+		next, err := firstServer.ReadFrame()
+		if err != nil {
+			t.Errorf("read repaint: %v", err)
+			return
+		}
+		sent <- next
+	}()
+
+	allowDial := make(chan struct{})
+	client, err := New(t.Context(), firstClient, Options{
+		Dial: func(context.Context) (execstream.Conn, error) {
+			<-allowDial
+			return secondClient, nil
+		},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	client.backoff = func(int) time.Duration { return 0 }
+	t.Cleanup(func() { _ = client.Close() })
+
+	if err := client.WriteFrame(frame.Repaint, nil); err != nil {
+		t.Fatalf("write repaint: %v", err)
+	}
+	got := <-sent
+	if got.Type != frame.Repaint {
+		t.Fatalf("sent frame type %d, want a repaint sent as itself rather than wrapped in an action", got.Type)
+	}
+
+	// Nothing is restored after a reconnect. The next frame the new connection
+	// carries is the one written next — a resize here, because a resize is
+	// retained state and so proves the difference — rather than the repaint
+	// sent again ahead of it.
+	client.invalidate(firstClient)
+	restored := make(chan frame.Frame, 1)
+	go func() {
+		acceptSession(t, secondServer, 0)
+		next, err := secondServer.ReadFrame()
+		if err != nil {
+			t.Errorf("read after reconnect: %v", err)
+			return
+		}
+		restored <- next
+	}()
+	close(allowDial)
+
+	if err := client.WriteFrame(frame.Resize, []byte(`{"cols":80,"rows":24}`)); err != nil {
+		t.Fatalf("write resize: %v", err)
+	}
+	select {
+	case next := <-restored:
+		if next.Type != frame.Resize {
+			t.Fatalf("first frame after reconnect was type %d, want the resize — the repaint is not retained", next.Type)
+		}
+	case <-time.After(3 * time.Second):
+		t.Fatal("timed out waiting for the frame after reconnect")
+	}
+}

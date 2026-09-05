@@ -682,6 +682,18 @@ func (m *Model) updatePane(msg tea.Msg) tea.Cmd {
 		}
 		return nil
 	}
+	// Ctrl-L asks the sandbox for the screen at this pane's size before the key
+	// itself goes on to the program. Two panes onto one terminal — this window
+	// and another attach — leave it the size whichever of them resized last, so
+	// the one that lost is drawing a layout meant for a window it cannot see,
+	// and the local redraw the window just did cannot help: it draws the same
+	// wrong lines again. See termpane.Model.Repaint.
+	//
+	// Not while the leader is pending: there the key is the second half of a
+	// chord, and a chord is not a repaint.
+	if key, ok := msg.(tea.KeyPressMsg); ok && keyName(key) == repaintKey && !p.term.PrefixPending() {
+		p.term.Repaint()
+	}
 	term, cmd := p.term.Update(msg)
 	p.term = term
 	return fromPane(p.id, cmd)

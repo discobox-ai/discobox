@@ -390,6 +390,10 @@ func (t *textTerminal) Write(p []byte) (int, error) { return len(p), nil }
 
 func (t *textTerminal) Resize(int, int) error { return nil }
 
+// Repaint has nothing to repaint from: the text is all there ever was, and the
+// pane showing it is read-only.
+func (t *textTerminal) Repaint() error { return nil }
+
 func (t *textTerminal) Events() <-chan TerminalEvent { return t.events }
 
 func (t *textTerminal) Close() error {

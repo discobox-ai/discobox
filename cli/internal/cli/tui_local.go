@@ -102,6 +102,12 @@ func (a *App) globalFlags() []string {
 }
 
 // Events never fires: there is no connection under a local command to lose.
+// Repaint has nothing to ask for. A local command has exactly one client — the
+// pane that started it — so its pty is the size that pane last set, and there
+// is no other attacher whose size could have displaced it. The Ctrl-L that
+// called this reaches the command anyway.
+func (c *localCommand) Repaint() error { return nil }
+
 func (c *localCommand) Events() <-chan tui.TerminalEvent { return c.events }
 
 // ExitStatus passes on how the command ended, which is what lets a finished

@@ -52,6 +52,15 @@ type Stream interface {
 
 	// Resize tells the far end the terminal is now cols by rows cells.
 	Resize(cols, rows int) error
+
+	// Repaint asks the far end to send back what it is showing, now, without
+	// waiting for the program to produce output of its own.
+	//
+	// It is what [Model.Repaint] is built on, and it exists for streams more
+	// than one client is attached to: see there for what goes wrong without it.
+	// A stream with a single client, or one whose far end cannot reproduce a
+	// screen, has nothing to do here and says so by returning nil.
+	Repaint() error
 }
 
 // Model is one terminal pane. The zero value is not usable; build one with
@@ -295,6 +304,36 @@ func (m *Model) SetSize(cols, rows int) {
 
 // Size is the pane's current size in cells.
 func (m *Model) Size() (cols, rows int) { return m.cols, m.rows }
+
+// Repaint re-asserts this pane's size to the far end and asks it for the screen
+// again. It is what a host should call on whatever key it repaints on.
+//
+// It is for the stream two panes are attached to at once. The terminal on the
+// far end has one size — the last one either of them sent — so the pane that
+// did not send it is drawing a screen laid out for somebody else's window, and
+// nothing it can do locally fixes that: its emulator holds the lines that
+// arrived, and drawing them again draws the same wrong lines. Re-asserting the
+// size is what makes the far end lay out for this pane, and asking for the
+// repaint is what makes it say so now rather than at the next keystroke that
+// happens to produce output.
+//
+// The size goes out whether or not it changed here, which is the one place that
+// happens — [Model.SetSize] sends nothing when the size it is given matches.
+// The size that is wrong in this case is the far end's, and this pane has no
+// way to know it: it never saw the resize that displaced it.
+//
+// It does not consume the key it was called for. Ctrl-L is the application's
+// too, and the two repaints — the far end's picture of the screen and the
+// program's own redraw — are what one press is expected to produce.
+func (m *Model) Repaint() {
+	// A read-only pane sends nothing and shares nothing: there is no far end
+	// whose size could be another pane's. See WithReadOnly.
+	if m.stream == nil || m.opts.readOnly {
+		return
+	}
+	_ = m.stream.Resize(m.cols, m.rows)
+	_ = m.stream.Repaint()
+}
 
 // OutputSeq counts the batches of output this pane has drawn. It says nothing
 // about how much arrived — only that the screen is not what it was — which is

@@ -20,10 +20,11 @@ type fakeStream struct {
 	closed chan struct{}
 	once   sync.Once
 
-	mu      sync.Mutex
-	written []byte
-	sizes   [][2]int
-	err     error
+	mu       sync.Mutex
+	written  []byte
+	sizes    [][2]int
+	repaints int
+	err      error
 }
 
 func newFakeStream() *fakeStream {
@@ -56,6 +57,13 @@ func (f *fakeStream) Resize(cols, rows int) error {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	f.sizes = append(f.sizes, [2]int{cols, rows})
+	return nil
+}
+
+func (f *fakeStream) Repaint() error {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.repaints++
 	return nil
 }
 
@@ -99,6 +107,12 @@ func (f *fakeStream) sentN(t *testing.T, want string, n int) string {
 		}
 		time.Sleep(time.Millisecond)
 	}
+}
+
+func (f *fakeStream) repaintCount() int {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return f.repaints
 }
 
 func (f *fakeStream) resizes() [][2]int {

@@ -10,8 +10,8 @@ libraries in behind it.
 
 ## The one decision the design turns on
 
-A pane is driven by a `Stream`: `io.ReadWriteCloser` plus `Resize(cols, rows)`.
-It never starts a process and never opens a PTY.
+A pane is driven by a `Stream`: `io.ReadWriteCloser` plus `Resize(cols, rows)`
+and `Repaint()`. It never starts a process and never opens a PTY.
 
 That is what makes it usable here at all. Disco's terminals are not local: they
 are framed exec streams over a websocket to a sandbox on a pool host, with
@@ -23,7 +23,7 @@ stream — costs nothing and is the whole of the reuse.
 ```mermaid
 flowchart LR
     Host["host app (Bubble Tea)"] -->|SetSize, Update, View| M["termpane.Model"]
-    Host -->|Attach| S["Stream (io.ReadWriteCloser + Resize)"]
+    Host -->|Attach| S["Stream (io.ReadWriteCloser + Resize + Repaint)"]
     S -->|output bytes| R["reader goroutine"]
     R -->|outputMsg| M
     M -->|Write| E["vt.Emulator"]
@@ -143,6 +143,24 @@ prefix costs nothing. Promoting detach is what lets a host reserve a key the
 application also wants — Ctrl-C being the obvious one — while leaving a way to
 type it. What *happens* on detach is the host's decision; the pane keeps
 running.
+
+**A repaint is a question for the far end, not a redraw here** (`Model.Repaint`,
+`Stream.Repaint`). Nothing local fixes a pane whose screen is wrong: the
+emulator holds the lines that arrived, and drawing them again draws the same
+lines. The case that matters is a stream two clients are attached to — this pane
+and another attach onto the same terminal — because the terminal has one size,
+whichever of them sent it last, and the one that lost is laying out for a window
+it does not have. So `Repaint` re-asserts this pane's size and asks the far end
+for the screen. The re-assert goes out whether or not the size changed here,
+which is the one place that happens: `SetSize` sends nothing when the numbers
+match, and the numbers that are wrong in this case are the far end's, which this
+pane never saw change.
+
+The key is the host's, like every other key: nothing here is reserved for
+Ctrl-L, and a host that repaints on it calls this and passes the key on. Two
+repaints for one press is the intent — the far end's picture of the screen, and
+the program's own redraw. A stream with one client implements `Repaint` as
+`nil`: nothing can have displaced its size.
 
 **The mouse is mirrored — unless the host seizes it.** `MouseMode()` reports
 what the application has asked for, read off the stream by a CSI handler that

@@ -204,8 +204,8 @@ func (c *Conn) WriteFrame(typ byte, payload []byte) error {
 	switch typ {
 	case frame.Input, frame.Signal, frame.CloseInput:
 		return c.writeAction(typ, payload)
-	case frame.Resize, frame.Ready:
-		return c.writeState(typ, payload)
+	case frame.Resize, frame.Ready, frame.Repaint:
+		return c.writeUnpositioned(typ, payload)
 	default:
 		return fmt.Errorf("%w: unsupported client frame type %d", ErrProtocol, typ)
 	}
@@ -296,7 +296,16 @@ func (c *Conn) writeAction(typ byte, payload []byte) error {
 	}
 }
 
-func (c *Conn) writeState(typ byte, payload []byte) error {
+// writeUnpositioned sends a frame that carries no process input, so it needs no
+// position and no acknowledgement: it goes out on whatever connection is
+// current, or nowhere.
+//
+// Resize and Ready are retained, because they describe a state the host must be
+// left in and a reconnect starts a host that knows neither. A repaint is not:
+// it is a request about one moment, and a reconnect repaints on its own — a
+// repaint held over a reconnect would arrive behind the one the reconnect
+// already did.
+func (c *Conn) writeUnpositioned(typ byte, payload []byte) error {
 	c.writeMu.Lock()
 	defer c.writeMu.Unlock()
 
@@ -322,7 +331,6 @@ func (c *Conn) writeState(typ byte, payload []byte) error {
 		c.invalidate(conn)
 		go func() { _ = c.reconnect(err) }()
 	}
-	// Resize and Ready are retained state and will be restored after reconnect.
 	return nil
 }
 

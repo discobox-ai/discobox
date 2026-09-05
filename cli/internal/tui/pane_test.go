@@ -1992,18 +1992,47 @@ func TestAPaneWithNoVerdictIsSimplyFinished(t *testing.T) {
 }
 
 // Ctrl-L repaints, and is not consumed doing it. The window redraws itself,
-// which is what clears clutter written over it from outside; the key goes on to
-// the program in the pane as well, because what the pane is showing is drawn
-// from the emulator's grid and only the far end can redraw that.
+// which is what clears clutter written over it from outside; the sandbox is
+// asked for the screen again, because what the pane is showing is drawn from
+// the emulator's grid and only the far end can put right what is in it; and the
+// key goes on to the program as well.
+//
+// The size goes with the ask. Another client attached to the same terminal
+// leaves it whatever size that client asked for, and this pane cannot tell that
+// happened — so the one moment it says its size again is the moment somebody
+// says the screen looks wrong. See termpane.Model.Repaint.
 func TestRepaintRedrawsTheWindowAndReachesTheBox(t *testing.T) {
 	ds := newFakeSource(testSandboxes()...)
 	_, m, term := openWorkspace(t, ds, "enter")
+	cols, rows := m.focusedPane().term.Size()
 
 	_, cmd := m.Update(keyPress("ctrl+l"))
 	if !repaints(cmd) {
 		t.Fatal("ctrl+l in a pane should redraw the window")
 	}
+	asked, size := term.asked()
+	if asked != 1 {
+		t.Fatalf("asked the box for %d repaints, want 1", asked)
+	}
+	if size != [2]int{cols, rows} {
+		t.Fatalf("re-asserted %v, want the pane's own size %v", size, [2]int{cols, rows})
+	}
 	if got := term.typed("\x0c"); !strings.Contains(got, "\x0c") {
 		t.Fatalf("typed %q, want ctrl+l to reach the box too", got)
+	}
+}
+
+// The leader plus l moves the pane, and holding Ctrl through the pair is how
+// everyone types it. That is a chord, not a repaint: asking the sandbox for its
+// screen on the way past would fire on every step of a run of them.
+func TestRepaintDoesNotFireOnTheLeaderChord(t *testing.T) {
+	ds := newFakeSource(testSandboxes()...)
+	d, _, term := openWorkspace(t, ds, "enter")
+
+	d.key("ctrl+a")
+	d.key("ctrl+l")
+
+	if asked, _ := term.asked(); asked != 0 {
+		t.Fatalf("asked the box for %d repaints, want none for a chord", asked)
 	}
 }

@@ -387,6 +387,20 @@ func (t *framedTerminal) Resize(cols, rows int) error {
 	return t.frames.WriteFrame(frame.Resize, payload)
 }
 
+// Repaint asks the sandbox to send this attacher the screen again, at the size
+// the resize before it just re-asserted.
+//
+// The two frames are one thought and go out in order on one connection: the
+// resize is what the exec's terminal is laid out to, and the repaint is what
+// makes the answer arrive without waiting for the program to type something.
+// An exec with no screen to repaint from — a pipe exec, a service's log —
+// ignores the frame.
+func (t *framedTerminal) Repaint() error {
+	t.writeMu.Lock()
+	defer t.writeMu.Unlock()
+	return t.frames.WriteFrame(frame.Repaint, nil)
+}
+
 func (t *framedTerminal) Close() error { return t.frames.Close() }
 
 func (t *framedTerminal) Events() <-chan tui.TerminalEvent { return t.events }

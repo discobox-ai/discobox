@@ -4,7 +4,9 @@ import (
 	"bytes"
 	"context"
 	"errors"
+	"fmt"
 	"net"
+	"slices"
 	"sync"
 	"testing"
 	"time"
@@ -382,3 +384,315 @@ func TestResizeIsRetainedForLaunch(t *testing.T) {
 }
 
 func ptr[T any](v T) *T { return &v }
+
+// A repaint asked for mid-stream is the replay half of an attach, at a later
+// moment: the client that asked gets the snapshot, ahead of whatever is
+// broadcast next, and the program is nudged into confirming it.
+//
+// Every other attacher gets nothing. What they are showing arrived because they
+// asked for it, and a screen redrawn under somebody who pressed nothing is a
+// screen that flickers for no reason they can see.
+func TestRepaintReachesOnlyTheClientThatAskedForIt(t *testing.T) {
+	done := make(chan struct{})
+	defer close(done)
+	replay := &fakeReplayer{snapshot: []byte("HISTORY")}
+	s := New(Options{Done: done, Replay: replay})
+
+	asking, askingClient := newPipe(t)
+	quiet, quietClient := newPipe(t)
+	go func() { _ = s.Attach(context.Background(), asking, AttachOptions{}) }()
+	go func() { _ = s.Attach(context.Background(), quiet, AttachOptions{}) }()
+	for len(s.Attachers()) < 2 {
+		time.Sleep(time.Millisecond)
+	}
+
+	// Two frames on the asking side — the repaint, then the live output behind
+	// it — and one on the other, which sees only the live output.
+	askingFrames := collect(askingClient, 2)
+	quietFrames := collect(quietClient, 1)
+
+	if err := frame.Write(askingClient, frame.Repaint, nil); err != nil {
+		t.Fatalf("write repaint: %v", err)
+	}
+	// The nudge trails the snapshot reaching the wire, so waiting for it is
+	// what makes the broadcast below land after the repaint rather than racing
+	// it.
+	deadline := time.Now().Add(2 * time.Second)
+	for {
+		replay.mu.Lock()
+		after := replay.after
+		replay.mu.Unlock()
+		if after == 1 {
+			break
+		}
+		if time.Now().After(deadline) {
+			t.Fatalf("AfterReplay called %d times, want 1", after)
+		}
+		time.Sleep(time.Millisecond)
+	}
+	s.Broadcast(frame.Stdout, []byte("live"))
+
+	got := await(t, askingFrames)
+	if len(got) != 2 || string(got[0].Payload) != "HISTORY" || string(got[1].Payload) != "live" {
+		t.Fatalf("asking client read %q, want the snapshot then the live output", framePayloads(got))
+	}
+	other := await(t, quietFrames)
+	if len(other) != 1 || string(other[0].Payload) != "live" {
+		t.Fatalf("other client read %q, want only the live output", framePayloads(other))
+	}
+}
+
+// A stream with no screen — a pipe exec — has nothing to repaint from. The
+// frame is ignored rather than answered with an empty screen or an error, the
+// same answer an attach that asks for a replay gets.
+func TestRepaintWithoutAReplayerIsIgnored(t *testing.T) {
+	done := make(chan struct{})
+	defer close(done)
+	var mu sync.Mutex
+	var seen []byte
+	s := New(Options{Done: done, OnFrame: func(f frame.Frame) error {
+		mu.Lock()
+		defer mu.Unlock()
+		seen = append(seen, f.Type)
+		return nil
+	}})
+	conn, client := newPipe(t)
+	go func() { _ = s.Attach(context.Background(), conn, AttachOptions{}) }()
+	for !s.HasAttachers() {
+		time.Sleep(time.Millisecond)
+	}
+
+	if err := frame.Write(client, frame.Repaint, nil); err != nil {
+		t.Fatalf("write repaint: %v", err)
+	}
+	// The input behind it is what proves the repaint was consumed rather than
+	// routed to the process: it arrives, and nothing else does.
+	if err := frame.Write(client, frame.Input, []byte("x")); err != nil {
+		t.Fatalf("write input: %v", err)
+	}
+	deadline := time.Now().Add(2 * time.Second)
+	for time.Now().Before(deadline) {
+		mu.Lock()
+		n := len(seen)
+		mu.Unlock()
+		if n > 0 {
+			break
+		}
+		time.Sleep(time.Millisecond)
+	}
+	mu.Lock()
+	got := append([]byte(nil), seen...)
+	mu.Unlock()
+	if !bytes.Equal(got, []byte{frame.Input}) {
+		t.Fatalf("routed frames = %v, want the input only", got)
+	}
+}
+
+func framePayloads(frames []frame.Frame) []string {
+	out := make([]string, 0, len(frames))
+	for _, f := range frames {
+		out = append(out, string(f.Payload))
+	}
+	return out
+}
+
+// The fence a snapshot leaves behind: a chunk the Replayer had already absorbed
+// when the snapshot was taken is not delivered behind it.
+//
+// The interleave it stands in for has no seam to pause it — Broadcast counts a
+// chunk under the stream lock and delivers it after releasing that lock, so a
+// repaint can take its snapshot in between — and what closes that window is the
+// count, not the write order. A client that received the chunk twice would show
+// the second copy under the repaint it asked for.
+func TestReplayFenceDropsWhatTheSnapshotAlreadyHolds(t *testing.T) {
+	conn, client := newPipe(t)
+	attach := &Attacher{conn: conn, done: make(chan struct{}), ready: make(chan struct{})}
+
+	// A snapshot taken when the Replayer had absorbed seven chunks.
+	attach.beginReplay(7)
+	if err := attach.flushBuffer(); err != nil {
+		t.Fatalf("flush: %v", err)
+	}
+
+	// Drained continuously, and broadcast from a goroutine: a chunk that should
+	// have been dropped has to have somewhere to go, or this fails as a
+	// deadlock instead of as the extra frame it is.
+	received := make(chan string, 8)
+	go func() {
+		for {
+			next, err := frame.Read(client)
+			if err != nil {
+				return
+			}
+			received <- string(next.Payload)
+		}
+	}()
+	go func() {
+		for _, chunk := range []struct {
+			text string
+			at   uint64
+		}{
+			{"seventh", 7}, // in the snapshot: already on the client's screen
+			{"sixth", 6},   // older still, and in it too
+			{"eighth", 8},  // counted after it: the client has not seen this
+			{"stderr", 0},  // no snapshot can hold it, so it is never dropped
+		} {
+			_ = attach.broadcast(frame.Stdout, []byte(chunk.text), chunk.at)
+		}
+	}()
+
+	var got []string
+	for len(got) < 2 {
+		select {
+		case text := <-received:
+			got = append(got, text)
+		case <-time.After(3 * time.Second):
+			t.Fatalf("client read %q, want the two chunks the snapshot does not hold", got)
+		}
+	}
+	if want := []string{"eighth", "stderr"}; !slices.Equal(got, want) {
+		t.Fatalf("client read %q, want %q — everything in the snapshot dropped", got, want)
+	}
+	select {
+	case extra := <-received:
+		t.Fatalf("client also read %q, want nothing the snapshot already holds", extra)
+	case <-time.After(100 * time.Millisecond):
+	}
+}
+
+// A repaint asked for before this attacher's own attach replay has happened
+// does nothing, and the attach's replay is untouched by it.
+//
+// Both would paint a screen, and the attach's is the older of the two: served
+// second it leaves the client looking at a screen from before it pressed
+// anything. The window is the whole of waitForReady, which a resume reconnect
+// passes through — and reconnecting is exactly when somebody reaches for
+// Ctrl-L.
+func TestRepaintWhileTheAttachReplayIsStillOwedDoesNothing(t *testing.T) {
+	done := make(chan struct{})
+	defer close(done)
+	// Numbered, so a second snapshot cannot be mistaken for the first: the
+	// attach holds snapshot 1 from registration, and a repaint served in this
+	// window would take and send snapshot 2 ahead of it.
+	replay := &countingReplayer{}
+	s := New(Options{Done: done, Replay: replay})
+	conn, client := newPipe(t)
+
+	go func() { _ = s.Attach(context.Background(), conn, AttachOptions{Replay: true}) }()
+	for !s.HasAttachers() {
+		time.Sleep(time.Millisecond)
+	}
+
+	// Drained from the start: a frame written in the window below must have
+	// somewhere to land, or its absence proves nothing.
+	received := make(chan string, 8)
+	go func() {
+		for {
+			next, err := frame.Read(client)
+			if err != nil {
+				return
+			}
+			received <- string(next.Payload)
+		}
+	}()
+
+	// The replay is still owed: no frame.Ready has been sent.
+	if err := frame.Write(client, frame.Repaint, nil); err != nil {
+		t.Fatalf("write repaint: %v", err)
+	}
+	select {
+	case early := <-received:
+		t.Fatalf("client read %q before its own attach replay, want the repaint to stand aside", early)
+	case <-time.After(200 * time.Millisecond):
+	}
+	replay.mu.Lock()
+	after := replay.after
+	replay.mu.Unlock()
+	if after != 0 {
+		t.Fatalf("AfterReplay ran %d times before the attach replay, want none", after)
+	}
+
+	// The attach's own replay then happens, exactly once and with the snapshot
+	// it registered with.
+	if err := frame.Write(client, frame.Ready, nil); err != nil {
+		t.Fatalf("write ready: %v", err)
+	}
+	select {
+	case got := <-received:
+		if got != "SNAPSHOT1" {
+			t.Fatalf("client read %q, want the snapshot the attach registered with", got)
+		}
+	case <-time.After(3 * time.Second):
+		t.Fatal("timed out waiting for the attach replay")
+	}
+	select {
+	case extra := <-received:
+		t.Fatalf("client also read %q, want one screen and not two", extra)
+	case <-time.After(100 * time.Millisecond):
+	}
+}
+
+// countingReplayer numbers its snapshots, so a test can tell which call
+// produced the screen that reached the wire.
+type countingReplayer struct {
+	mu    sync.Mutex
+	taken int
+	after int
+}
+
+func (r *countingReplayer) Observe([]byte) {}
+
+func (r *countingReplayer) Snapshot() []byte {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	r.taken++
+	return fmt.Appendf(nil, "SNAPSHOT%d", r.taken)
+}
+
+func (r *countingReplayer) AfterReplay() {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	r.after++
+}
+
+// A repaint with no screen to send sets no fence, and still asks for the
+// redraw.
+//
+// The Replayer fails open: an emulator dropped after a panic answers Snapshot
+// with nothing, and plain live streaming carries on. A fence recorded for a
+// screen that was never written would turn that into live output silently
+// discarded — dropped as "already painted" by a repaint that painted nothing.
+// The program's own redraw is then the whole of the repaint, which is what
+// failing open means here.
+func TestRepaintWithNoScreenSetsNoFence(t *testing.T) {
+	done := make(chan struct{})
+	defer close(done)
+	replay := &fakeReplayer{} // no snapshot: the screen has been dropped
+	s := New(Options{Done: done, Replay: replay})
+	conn, _ := newPipe(t)
+
+	attach := &Attacher{conn: conn, done: make(chan struct{}), ready: make(chan struct{})}
+	s.mu.Lock()
+	s.attachers[attach] = struct{}{}
+	s.observed = 5
+	s.mu.Unlock()
+
+	s.repaint(attach)
+
+	attach.mu.Lock()
+	fence := attach.replayedThrough
+	buffering := attach.buffering
+	attach.mu.Unlock()
+	if fence != 0 {
+		t.Fatalf("fence moved to %d for a screen that was never sent, want it left alone", fence)
+	}
+	if buffering {
+		t.Fatal("attacher left buffering with no snapshot coming to flush it behind")
+	}
+	replay.mu.Lock()
+	after := replay.after
+	replay.mu.Unlock()
+	if after != 1 {
+		t.Fatalf("AfterReplay ran %d times, want the program nudged into redrawing anyway", after)
+	}
+}

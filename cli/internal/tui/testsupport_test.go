@@ -829,9 +829,10 @@ type fakeTerminal struct {
 	closed chan struct{}
 	once   sync.Once
 
-	mu    sync.Mutex
-	input []byte
-	sizes [][2]int
+	mu       sync.Mutex
+	input    []byte
+	sizes    [][2]int
+	repaints int
 	// exit is the command's exit code, for a terminal standing in for a local
 	// command. Nil is a terminal that is not one and has no result to give.
 	exit        *int
@@ -890,6 +891,13 @@ func (f *fakeTerminal) Resize(cols, rows int) error {
 	return nil
 }
 
+func (f *fakeTerminal) Repaint() error {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.repaints++
+	return nil
+}
+
 func (f *fakeTerminal) Close() error {
 	f.once.Do(func() { close(f.closed) })
 	return nil
@@ -898,6 +906,17 @@ func (f *fakeTerminal) Close() error {
 func (f *fakeTerminal) Events() <-chan TerminalEvent { return f.events }
 
 func (f *fakeTerminal) send(s string) { f.out <- []byte(s) }
+
+// asked is how many repaints the pane has asked this terminal for, and the size
+// it last re-asserted asking.
+func (f *fakeTerminal) asked() (int, [2]int) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	if len(f.sizes) == 0 {
+		return f.repaints, [2]int{}
+	}
+	return f.repaints, f.sizes[len(f.sizes)-1]
+}
 
 // typed is what the pane has sent to the sandbox, polled because input travels
 // through the emulator on its own goroutine.

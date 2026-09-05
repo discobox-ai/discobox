@@ -48,6 +48,26 @@ const (
 	// traveling the other way. An exec has no use for it: a process that
 	// closes its output is a process that has exited, which Exit already says.
 	CloseOutput byte = 13
+	// Repaint asks the host to send this client the screen again: the same
+	// repaint an attach with replay receives, at a moment of the client's
+	// choosing. It is what a client does when what it is showing may not be
+	// what the program is showing.
+	//
+	// A stream is fanned out to every attacher, and the terminal under it has
+	// one size — the last one anybody sent. A client whose size lost is drawing
+	// a screen laid out for somebody else's window, and there is nothing it can
+	// fix locally: its emulator holds what arrived. It re-sends its size and
+	// asks for this.
+	//
+	// The screen that comes back is that client's alone. The size it sent first
+	// is not: it is the terminal's now, and the program redrawing at it is
+	// output every attacher receives — the client that was laid out correctly
+	// is now the one that is not. That is the shape of one terminal with one
+	// size and several windows onto it, not something this frame chooses; what
+	// it decides is only who asks and who is sent a screen.
+	//
+	// Carries no payload; a stream with no screen to repaint ignores it.
+	Repaint byte = 14
 )
 
 const maxPayload = 16 * 1024 * 1024

@@ -591,7 +591,10 @@ development images without a registry.
   acknowledged only after the shim applies them. The host retains the highest
   applied position for the process lifetime, so retransmission after a lost
   acknowledgement is deduplicated rather than applied twice. Ready remains
-  connection-local and resize remains coalesced idempotent state.
+  connection-local and resize remains coalesced idempotent state. Repaint is
+  neither: it is unpositioned like both, and retained like neither, because a
+  reconnect replays on its own and a repaint held across one would land behind
+  the repaint that reconnect already did.
 - Terminal-query answering: the screen emulator responds to queries in the
   output stream (DA1, DSR, DECRQM, ...) by writing answers to an unbuffered
   internal pipe. `Runtime.pumpScreenResponses` must always drain that pipe —
@@ -609,6 +612,23 @@ development images without a registry.
   not), `Runtime.AfterReplay` jiggles the PTY one row smaller and back,
   so SIGWINCH makes the program redraw itself and the client converges to the
   program's real screen even when the snapshot was imperfect or missing.
+- A client can ask for that same repaint mid-attach (`frame.Repaint`,
+  `host.Stream.repaint`): the snapshot, ahead of the live frames buffered behind
+  it, then the redraw jiggle — the replay half of an attach, at a moment the
+  client chooses. It is answered in `readFrames` rather than through `OnFrame`
+  because the snapshot goes to the attacher that asked and to nobody else. Only
+  the snapshot: the re-sent size retimes the shared PTY, and `AfterReplay`'s
+  jiggle makes the program redraw at it, which is output every attacher
+  receives — the client that was laid out correctly becomes the one that is not.
+  That is inherent to one PTY with one size, where the last client to name it
+  wins, as it did before this frame existed; the frame decides only who asks and
+  who is sent a screen. It exists for the size, which is the one piece of
+  terminal state a fan-out stream cannot give every client at once: the PTY is
+  whatever size the last client to send one asked for, so the others are drawing
+  a layout for a window they do not have and cannot tell. The client re-sends
+  its size and asks for this; the resize is what makes the program lay out
+  again, and the repaint is what makes the screen arrive without waiting for the
+  program to produce output. A pipe exec has no screen and ignores the frame.
 - The PTY handle is the runtime's while the process holds it, and the size
   ioctls run under `Runtime.mu` for that reason. Asking a `*os.File` for its
   descriptor is not safe against the close that ends the exec, and a resize or a

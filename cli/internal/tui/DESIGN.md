@@ -1087,11 +1087,32 @@ what clears clutter written over the window by something that was not the
 window. It cannot clear what a *pane* is showing — that is drawn from the
 emulator's grid and would be drawn from it again identically — so the key is
 batched with the normal dispatch rather than returned instead of it, and in a
-pane goes on to the far end (`termpane` reserves nothing for Ctrl-L). One press,
-two repaints: the window's own, and the application's. It is handled in `update`
-rather than in `updateKey` because it routes to nobody; every other screen —
-a dialog, the options panel, the harnesses — gets the redraw for the same
-reason, without any of them having to know the key exists.
+pane goes on to the far end (`termpane` reserves nothing for Ctrl-L). It is
+handled in `update` rather than in `updateKey` because it routes to nobody;
+every other screen — a dialog, the options panel, the harnesses — gets the
+redraw for the same reason, without any of them having to know the key exists.
+
+In a pane it also asks the sandbox for the screen (`updatePane`, on the way to
+`termpane.Model.Repaint`). That is the half the local redraw cannot do, and the
+case it is for is two clients on one terminal: this window and another window
+on the same discobox, or the same terminal open on two machines. The exec's PTY
+is whatever size the last of them sent, so the one that lost is reading a layout
+meant for somebody else's window, and it has no way to know that happened. So
+the repaint re-asserts this pane's size before it asks — the size is what makes
+the program lay out again, and the ask is what makes the answer arrive without
+waiting for the program to say something next. Not while the leader is pending:
+there Ctrl-L is the second half of `leader l`, which moves the pane. One press,
+three repaints where they are all available: the window's own, the sandbox's
+picture of the screen, and the program's own redraw behind it.
+
+Taking the size takes it *from* the other client, which is the same bargain a
+resize always was: one terminal, one size, last one to say wins. Between two
+windows that is symmetric — whoever presses Ctrl-L next takes it back. A
+`discobox attach --raw` on the other end is not: `execstream/client.Session`
+sends a size only when its own terminal changes and has no repaint to ask with,
+so it cannot take the size back without its user physically resizing the
+window. Giving it the same two frames is what would close that, and is not done
+here.
 
 **F1, `F3`, `F4` and Ctrl-O are the window's own keys** (`updateKey`), answered
 ahead of every screen's dispatch *and* ahead of the run options panel. They are

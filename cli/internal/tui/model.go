@@ -955,10 +955,15 @@ func (m *Model) update(msg tea.Msg) tea.Cmd {
 		// and draws every cell again, which is what clears clutter written
 		// over the window by something that was not the window. It cannot
 		// clear what a pane is showing, because that is drawn from the
-		// emulator's grid and would be drawn from it again identically; only
-		// the program on the far end can redraw that, so the key goes on to
-		// whatever is focused as well. In a pane the two repaints are one
-		// press: the window's, and the box's.
+		// emulator's grid and would be drawn from it again identically, so the
+		// key goes on to whatever is focused as well.
+		//
+		// A pane does more with it than pass it on: it re-asserts its size to
+		// the sandbox and asks for the screen back, because the size the
+		// sandbox's terminal is at may be another client's (updatePane, and
+		// termpane.Model.Repaint). One press, three repaints where they are all
+		// available: the window's own, the sandbox's picture of the screen, and
+		// the program's own redraw behind it.
 		var repaint tea.Cmd
 		if keyName(msg) == repaintKey {
 			repaint = tea.ClearScreen

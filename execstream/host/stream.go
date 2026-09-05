@@ -31,8 +31,9 @@ import (
 // Observe is called with every stdout chunk while the stream lock is held, in
 // broadcast order, and must not block: a Replayer that blocks stalls the
 // process's output. Snapshot is called under the same lock when an attacher
-// registers, so the snapshot and the frames buffered after it are exactly
-// contiguous — no chunk is duplicated or lost across the join.
+// registers, and again whenever one asks for a repaint, so the snapshot and the
+// frames buffered after it are exactly contiguous — no chunk is duplicated or
+// lost across the join.
 //
 // AfterReplay runs once the snapshot and the frames buffered behind it have
 // reached the wire. It exists for implementations whose real state lives
@@ -73,6 +74,13 @@ type Stream struct {
 	// replay backs repaint-on-attach; nil until SetReplayer, and nil forever
 	// for a stream with no terminal.
 	replay Replayer
+	// observed counts the chunks the Replayer has absorbed. It is the fence
+	// between a snapshot and the frames behind it: a snapshot taken at count N
+	// contains every chunk up to N, so an attacher told to replay from N drops
+	// those rather than painting them a second time underneath it. Only
+	// meaningful with a Replayer, and only stdout is counted, because only
+	// stdout is replayable state.
+	observed uint64
 	// resize is the most recent size a client asked for, retained so a process
 	// that has not started yet can be launched at the right size.
 	resize      *frame.ResizePayload
@@ -138,6 +146,10 @@ func (s *Stream) Attach(ctx context.Context, conn execstream.Conn, opts AttachOp
 	// frames queue rather than racing the announcement onto the wire.
 	replay := s.replayer()
 	wantReplay := opts.Replay && replay != nil
+	// Set before registration, so a Repaint frame that arrives on the read
+	// goroutine below — started once the announcement is out — finds the join
+	// still in progress rather than racing it. See Stream.repaint.
+	attach.joining = true
 	snapshot := s.addAttacher(attach, wantReplay)
 	defer s.removeAttacher(attach)
 
@@ -163,6 +175,9 @@ func (s *Stream) Attach(ctx context.Context, conn execstream.Conn, opts AttachOp
 	if err := attach.flushBuffer(); err != nil {
 		attach.Close()
 	}
+	// Everything owed on attach is on the wire, so a repaint asked for from
+	// here on has a screen of its own to send and a buffer of its own to flush.
+	attach.joined()
 	if wantReplay {
 		replay.AfterReplay()
 	}
@@ -181,25 +196,85 @@ func (s *Stream) Attach(ctx context.Context, conn execstream.Conn, opts AttachOp
 	return nil
 }
 
+// repaint replays the current screen to one client that is already attached.
+//
+// It is the replay half of Attach, at a later moment: buffer, snapshot under
+// the lock so the repaint and the live frames behind it stay contiguous, write
+// it ahead of them, and let the Replayer nudge the program into confirming it.
+// A stream with no Replayer has no screen to repaint and does nothing, which is
+// the same answer it gives an attach that asks for one.
+//
+// The snapshot goes to the client that asked and to nobody else. What the
+// Replayer does afterwards does not: nudging the program into redrawing is a
+// program writing to its terminal, which every attacher sees, and the client
+// asking has usually just re-sent its own size, which the terminal takes. That
+// is not this call's to avoid — one terminal has one size, and the last client
+// to name it wins — but it is why only the snapshot is described as private.
+//
+// A repaint asked for while this attacher is still joining does nothing. Attach
+// is holding everything broadcast since registration, and is about to put it on
+// the wire — behind the screen it registered with, when it asked for one.
+// Painting a second screen into that window would race the two onto the wire in
+// either order, and the older one landing last is a client left staring at a
+// screen from before it asked; flushing that buffer early would put frames the
+// new snapshot already contains on top of it.
+//
+// The snapshot is taken before the fence is set, and no fence is set without
+// one. A Replayer that has dropped its emulator — the screen fails open, so a
+// panic in it degrades to plain live streaming — returns nothing, and a fence
+// set for a screen that was never sent would drop live output that nothing has
+// painted. Then the redraw below is the whole of the repaint, which is what
+// failing open means.
+func (s *Stream) repaint(attach *Attacher) {
+	s.mu.Lock()
+	replay := s.replay
+	var snapshot []byte
+	if replay != nil && !attach.isJoining() {
+		snapshot = replay.Snapshot()
+		if len(snapshot) > 0 {
+			attach.beginReplay(s.observed)
+		}
+	} else {
+		replay = nil
+	}
+	s.mu.Unlock()
+	if replay == nil {
+		return
+	}
+	if err := attach.writeSnapshot(snapshot); err != nil {
+		attach.Close()
+	}
+	if err := attach.flushBuffer(); err != nil {
+		attach.Close()
+	}
+	replay.AfterReplay()
+}
+
 // Broadcast delivers one chunk of the process's output to every attacher as a
 // frame of typ, which is frame.Stdout or frame.Stderr.
 func (s *Stream) Broadcast(typ byte, payload []byte) {
-	// Feed the Replayer and snapshot the attacher set under one lock, so an
-	// attacher registering concurrently falls cleanly on one side of this chunk:
-	// either the Replayer absorbed it before the snapshot was taken, or the
-	// attacher is in the set below and receives it as a buffered live frame. The
-	// wire writes stay outside the lock so a slow client cannot stall the
-	// process.
+	// Feed the Replayer, count the chunk, and snapshot the attacher set under
+	// one lock, so an attacher registering or asking for a repaint falls
+	// cleanly on one side of it: either the Replayer absorbed it before the
+	// snapshot was taken — and the count says so, so the attacher drops it
+	// rather than painting it under the snapshot that already holds it — or it
+	// arrives as a buffered live frame behind that snapshot. The wire writes
+	// stay outside the lock so a slow client cannot stall the process, which is
+	// why the count, and not the write order, is what decides.
 	s.mu.Lock()
 	// Only stdout is replayable state; a stream with a Replayer is a TTY stream,
-	// which never produces stderr frames anyway.
+	// which never produces stderr frames anyway. Everything else is stamped
+	// zero, which no snapshot can contain, so it is always delivered.
+	var at uint64
 	if s.replay != nil && typ == frame.Stdout {
 		s.replay.Observe(payload)
+		s.observed++
+		at = s.observed
 	}
 	attachers := s.snapshotAttachersLocked()
 	s.mu.Unlock()
 	for _, attach := range attachers {
-		if err := attach.WriteFrame(typ, payload); err != nil {
+		if err := attach.broadcast(typ, payload, at); err != nil {
 			s.removeAttacher(attach)
 		}
 	}
@@ -251,6 +326,7 @@ func (s *Stream) addAttacher(attach *Attacher, replay bool) []byte {
 	if !replay || s.replay == nil {
 		return nil
 	}
+	attach.beginReplay(s.observed)
 	return s.replay.Snapshot()
 }
 
@@ -345,6 +421,13 @@ func (s *Stream) readFrames(attach *Attacher) {
 		case frame.Ready:
 			attach.markReady()
 			continue
+		case frame.Repaint:
+			// The screen it sends back goes to this attacher alone, so it is
+			// answered here, where the attacher is known, rather than through
+			// onFrame, which is the process's. What it sets in motion after
+			// that is not private: see Stream.repaint.
+			s.repaint(attach)
+			continue
 		case frame.SessionOK, frame.Ack:
 			s.failAttach(attach, fmt.Errorf("%w: unexpected client frame type %d", resume.ErrProtocol, next.Type))
 			return
@@ -405,11 +488,71 @@ type Attacher struct {
 	// can reach the wire first. flushBuffer drains the queue and clears the flag.
 	buffering bool
 	buffered  []bufferedFrame
+	// replayedThrough is the Replayer's chunk count at the moment this
+	// attacher's snapshot was taken. Everything up to it is in that snapshot,
+	// so delivering it again would paint it twice.
+	replayedThrough uint64
+	// joining is set until Attach has put everything buffered since
+	// registration on the wire, replay or no replay. See Stream.repaint.
+	joining bool
 }
 
 type bufferedFrame struct {
 	typ     byte
 	payload []byte
+}
+
+// beginReplay sends live frames back to the queue and records the chunk count
+// the snapshot about to be taken contains, so a repaint reaches the wire ahead
+// of the frames behind it and is not painted over by the ones inside it. Attach
+// begins there; a mid-stream repaint returns there.
+//
+// It is called under the Stream lock, beside the Snapshot it describes. That is
+// what makes the pair atomic against Broadcast, which counts a chunk under the
+// same lock and delivers it after releasing it.
+func (a *Attacher) beginReplay(through uint64) {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	a.buffering = true
+	a.replayedThrough = through
+}
+
+// joined says this attacher's registration window is over: whatever it was
+// owed on attach has reached the wire.
+func (a *Attacher) joined() {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	a.joining = false
+}
+
+// isJoining reports whether this attacher is still inside the window Attach
+// buffers for.
+func (a *Attacher) isJoining() bool {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	return a.joining
+}
+
+// broadcast delivers one chunk of the process's output, which the Replayer
+// absorbed as its chunk number at — or zero for output no snapshot can hold.
+//
+// A chunk the client's own snapshot already contains is dropped. Without that,
+// a chunk counted just before a repaint took its snapshot, and written just
+// after, would be queued behind that snapshot and painted a second time: for a
+// TUI the redraw hides it, and for anything that scrolls it stays on the screen
+// as a duplicated line under the repaint that was meant to put the screen
+// right.
+func (a *Attacher) broadcast(typ byte, payload []byte, at uint64) error {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	if at != 0 && at <= a.replayedThrough {
+		return nil
+	}
+	if a.buffering {
+		a.buffered = append(a.buffered, bufferedFrame{typ: typ, payload: append([]byte(nil), payload...)})
+		return nil
+	}
+	return a.writeLocked(typ, payload)
 }
 
 // WriteFrame sends one frame, or queues it while this attacher is buffering.
