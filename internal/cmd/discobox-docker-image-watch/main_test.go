@@ -16,7 +16,10 @@ import (
 
 func loadDockerImageSpecs(t *testing.T) ([]imageSpec, string) {
 	t.Helper()
-	repoRoot, err := filepath.Abs(filepath.Join("..", ".."))
+	// findRepoRoot rather than a count of "..": the command has moved down the
+	// tree once already, and a hardcoded depth fails the whole package the next
+	// time it does.
+	repoRoot, err := findRepoRoot()
 	if err != nil {
 		t.Fatal(err)
 	}

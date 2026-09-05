@@ -229,7 +229,7 @@ tasks:
       # Compressed by a Go helper rather than gzip(1) and a shell redirect:
       # Windows ships no gzip, Git's is absent from a PowerShell or cmd PATH,
       # and a gzip whose stdout reaches a console refuses to write at all.
-      - go run ./cmd/discobox-gzip {{.RELAY_BIN}} {{.RELAY_OUT}}
+      - go run ./internal/cmd/discobox-gzip {{.RELAY_BIN}} {{.RELAY_OUT}}
 
   build:vz-guest:
     desc: Build the macOS pool guest image and stage it where the vz provider finds it
@@ -448,7 +448,7 @@ tasks:
   dev:docker-image-watch:
     desc: Build and continuously rebuild pool, sandbox, and harness development images
     cmds:
-      - go run ./cmd/discobox-docker-image-watch
+      - go run ./internal/cmd/discobox-docker-image-watch
 
   dev:pool-agent-image-watch:
     desc: Alias for dev:docker-image-watch

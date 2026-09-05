@@ -23,7 +23,11 @@
 - `sandbox-agent`: nested Go module and image context for the sandbox agent runtime environment.
 - `termpane`: nested Go module; a reusable Bubble Tea component that draws a live terminal from any stream. No dependency on the rest of the repository.
 - `pool-agent/cmd/discobox-pool-agent`: pool agent entrypoint.
-- `cmd/discobox-docker-image-watch`: local Docker image rebuild watcher for pool-agent and sandbox-agent images.
+- `internal/cmd`: development and build tools, under `internal` because they are
+  this repository's own and nothing outside it should build them:
+  `discobox-docker-image-watch` (local pool-agent and sandbox-agent image rebuild
+  watcher), `discobox-dev-lock` (one `task dev` loop per checkout),
+  `discobox-gzip` (portable file compression for the build).
 - `docs`: user/developer documentation.
 - `test`: integration and Bats tests.
 - `orchestration`: nested Go module for durable jobs and desired-state orchestration helpers.
