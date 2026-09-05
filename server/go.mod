@@ -10,6 +10,7 @@ require (
 	github.com/containerd/errdefs v1.0.0
 	github.com/discobox-ai/discobox/pool-agent v0.0.0-00010101000000-000000000000
 	github.com/discobox-ai/x v0.0.0-20260903144420-ff3709c36e16
+	github.com/distribution/reference v0.6.0
 	github.com/go-faster/jx v1.2.0
 	github.com/google/go-containerregistry v0.20.6
 	github.com/google/uuid v1.6.0
@@ -148,7 +149,6 @@ require (
 	github.com/discobox-ai/iroh-go/libs/linux_arm64_musl v0.2.0 // indirect
 	github.com/discobox-ai/iroh-go/libs/windows_amd64 v0.2.0 // indirect
 	github.com/discobox-ai/iroh-go/libs/windows_arm64 v0.2.0 // indirect
-	github.com/distribution/reference v0.6.0 // indirect
 	github.com/dlclark/regexp2 v1.12.0 // indirect
 	github.com/docker/cli v28.2.2+incompatible // indirect
 	github.com/docker/distribution v2.8.3+incompatible // indirect

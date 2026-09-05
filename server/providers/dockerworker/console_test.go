@@ -59,7 +59,7 @@ func TestConsoleHostConfigSharesTheHost(t *testing.T) {
 // them would run an agent instead of a shell.
 func TestConsoleConfigRunsAShellNotTheAgent(t *testing.T) {
 	engine := newTestEngine(t, Config{Image: "pool-image"})
-	config := engine.consoleConfig(&model.SandboxProviderInstance{ID: "provider-1"}, testConsolePool())
+	config := engine.consoleConfig(&model.SandboxProviderInstance{ID: "provider-1"}, testConsolePool(), "pool-image")
 
 	if config.Image != "pool-image" {
 		t.Fatalf("image = %q", config.Image)
@@ -117,7 +117,7 @@ func TestShouldReplaceConsoleContainer(t *testing.T) {
 		"no labels":   {config: &container.Config{Image: "pool-image"}, want: true},
 		"no config":   {config: nil, want: true},
 	} {
-		if got := engine.shouldReplaceConsoleContainer(container.InspectResponse{Config: testCase.config}); got != testCase.want {
+		if got := engine.shouldReplaceConsoleContainer(container.InspectResponse{Config: testCase.config}, "pool-image"); got != testCase.want {
 			t.Fatalf("%s: shouldReplaceConsoleContainer = %v, want %v", name, got, testCase.want)
 		}
 	}

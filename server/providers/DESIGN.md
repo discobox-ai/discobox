@@ -152,6 +152,21 @@ on a machine that has never built anything.
 Inspect-then-pull rather than pull-always, because the development path below
 places images that exist on no registry.
 
+When the configured image cannot be pulled and the daemon already holds another
+tag of the same repository, the engine launches the newest such tag instead of
+failing the reconcile (`Engine.fallbackPoolImage`). A pool whose agent is a
+release behind still schedules sandboxes; a pool with no agent schedules
+nothing, so a brief registry outage is not worth taking a working pool offline
+over. Only the configured image's own repository is a candidate — no other
+image substitutes for the pool agent.
+
+The fallback is a waypoint, not a resting place. `Engine.resolvePoolAgentImage`
+re-resolves on every reconcile and the drift check compares the running
+container against *that*, not against the configured image, so the pool
+upgrades itself as soon as the registry answers and is left alone until then.
+Comparing against the configured image instead would remove and recreate a
+working pool agent on every reconcile for as long as the outage lasted.
+
 ## Development Image Convergence
 
 The development image watcher publishes a versioned manifest of

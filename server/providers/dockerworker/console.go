@@ -90,14 +90,23 @@ func (e *Engine) attachConsole(ctx context.Context, lease *DockerClientLease, pr
 // built from a different image or console layout.
 func (e *Engine) ensureConsoleContainer(ctx context.Context, cli *client.Client, provider *model.SandboxProviderInstance, pool *model.Pool) (string, error) {
 	name := ConsoleContainerName(pool.ID)
-	existing, err := cli.ContainerInspect(ctx, name, client.ContainerInspectOptions{})
-	switch {
-	case err == nil:
-		if e.shouldReplaceConsoleContainer(existing.Container) {
+	existing, existingErr := cli.ContainerInspect(ctx, name, client.ContainerInspectOptions{})
+	if existingErr != nil && !cerrdefs.IsNotFound(existingErr) {
+		return "", existingErr
+	}
+	image, err := e.resolvePoolAgentImage(ctx, cli, pool.ID, existing.Container)
+	if err != nil {
+		return "", err
+	}
+	if existingErr == nil {
+		// Against the resolved image: a console built from a fallback is kept
+		// while that is still the best available, so the one-console-per-host
+		// promise — and any capture running in it — survives a registry outage.
+		if e.shouldReplaceConsoleContainer(existing.Container, image) {
 			if _, err := cli.ContainerRemove(ctx, existing.Container.ID, client.ContainerRemoveOptions{Force: true}); err != nil && !cerrdefs.IsNotFound(err) {
 				return "", err
 			}
-			break
+			return e.createConsoleContainer(ctx, cli, provider, pool, name, image)
 		}
 		if existing.Container.State != nil && existing.Container.State.Running {
 			return existing.Container.ID, nil
@@ -108,20 +117,18 @@ func (e *Engine) ensureConsoleContainer(ctx context.Context, cli *client.Client,
 			return "", err
 		}
 		return existing.Container.ID, nil
-	case !cerrdefs.IsNotFound(err):
-		return "", err
 	}
-	return e.createConsoleContainer(ctx, cli, provider, pool, name)
+	return e.createConsoleContainer(ctx, cli, provider, pool, name, image)
 }
 
-func (e *Engine) createConsoleContainer(ctx context.Context, cli *client.Client, provider *model.SandboxProviderInstance, pool *model.Pool, name string) (string, error) {
-	// The console runs the pool-agent image too, and an operator can open one
-	// on a daemon that has never hosted a pool container.
-	if err := e.ensureImage(ctx, cli, pool.ID); err != nil {
-		return "", err
-	}
+// createConsoleContainer creates the console from image, which the caller has
+// already resolved and made present. A superseded image is especially welcome
+// here: the console exists to debug a host whose pool will not come up, which
+// is exactly when the configured image is the one thing that could not be
+// fetched.
+func (e *Engine) createConsoleContainer(ctx context.Context, cli *client.Client, provider *model.SandboxProviderInstance, pool *model.Pool, name, image string) (string, error) {
 	created, err := cli.ContainerCreate(ctx, client.ContainerCreateOptions{
-		Config:     e.consoleConfig(provider, pool),
+		Config:     e.consoleConfig(provider, pool, image),
 		HostConfig: e.consoleHostConfig(),
 		Name:       name,
 	})
@@ -148,9 +155,9 @@ func (e *Engine) createConsoleContainer(ctx context.Context, cli *client.Client,
 	return created.ID, nil
 }
 
-func (e *Engine) consoleConfig(provider *model.SandboxProviderInstance, pool *model.Pool) *container.Config {
+func (e *Engine) consoleConfig(provider *model.SandboxProviderInstance, pool *model.Pool, image string) *container.Config {
 	return &container.Config{
-		Image:  e.cfg.Image,
+		Image:  image,
 		Labels: e.consoleLabels(provider, pool),
 		// The pool-agent image's entrypoint is the agent binary and its
 		// healthcheck probes the agent's port; a console runs neither.
@@ -221,11 +228,11 @@ func (e *Engine) consoleLabels(provider *model.SandboxProviderInstance, pool *mo
 // shouldReplaceConsoleContainer reports whether an existing console container
 // was built from something this engine no longer wants: another image, or an
 // older console layout.
-func (e *Engine) shouldReplaceConsoleContainer(existing container.InspectResponse) bool {
+func (e *Engine) shouldReplaceConsoleContainer(existing container.InspectResponse, image string) bool {
 	if existing.Config == nil {
 		return true
 	}
-	if strings.TrimSpace(existing.Config.Image) != strings.TrimSpace(e.cfg.Image) {
+	if strings.TrimSpace(existing.Config.Image) != strings.TrimSpace(image) {
 		return true
 	}
 	return existing.Config.Labels[LabelConsoleConfig] != strconv.Itoa(consoleConfigLayoutVersion)

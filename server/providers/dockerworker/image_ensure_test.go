@@ -9,6 +9,9 @@ import (
 	"sync"
 	"testing"
 
+	"github.com/moby/moby/api/types/container"
+	imagesummary "github.com/moby/moby/api/types/image"
+
 	sandbox "github.com/discobox-ai/discobox/server/internal/sandbox"
 )
 
@@ -21,6 +24,9 @@ type fakePullDaemon struct {
 	failing bool
 	// script, when set, is the exact progress stream to replay.
 	script []string
+	// local is what an image list reports, newest build last is not assumed.
+	// It stands in for the tags a daemon has accumulated across upgrades.
+	local []imagesummary.Summary
 }
 
 func (d *fakePullDaemon) serveHTTP(w http.ResponseWriter, request *http.Request) {
@@ -29,6 +35,14 @@ func (d *fakePullDaemon) serveHTTP(w http.ResponseWriter, request *http.Request)
 	case request.Method == http.MethodGet && path == "/_ping":
 		w.Header().Set("Api-Version", "1.51")
 		w.WriteHeader(http.StatusOK)
+	case request.Method == http.MethodGet && path == "/images/json":
+		// Deliberately ignores the reference filter: the daemon's filter is a
+		// pattern match, and the engine must not rely on it having narrowed
+		// anything.
+		d.mu.Lock()
+		items := append([]imagesummary.Summary(nil), d.local...)
+		d.mu.Unlock()
+		writeDockerJSON(w, items)
 	case request.Method == http.MethodGet && strings.HasPrefix(path, "/images/") && strings.HasSuffix(path, "/json"):
 		reference, _ := url.PathUnescape(strings.TrimSuffix(strings.TrimPrefix(path, "/images/"), "/json"))
 		d.mu.Lock()
@@ -90,8 +104,12 @@ func TestEnsureImagePullsWhenAbsent(t *testing.T) {
 	defer cli.Close()
 
 	engine := &Engine{cfg: Config{Image: testPoolImage}}
-	if err := engine.ensureImage(context.Background(), cli, "pool_test"); err != nil {
+	image, err := engine.ensureImage(context.Background(), cli, "pool_test")
+	if err != nil {
 		t.Fatal(err)
+	}
+	if image != testPoolImage {
+		t.Fatalf("image = %q, want %q", image, testPoolImage)
 	}
 	if pulls := daemon.pulled(); len(pulls) != 1 || pulls[0] != testPoolImage {
 		t.Fatalf("pulls = %v, want [%s]", pulls, testPoolImage)
@@ -113,8 +131,12 @@ func TestEnsureImageDoesNotPullWhenPresent(t *testing.T) {
 	defer cli.Close()
 
 	engine := &Engine{cfg: Config{Image: image}}
-	if err := engine.ensureImage(context.Background(), cli, "pool_test"); err != nil {
+	got, err := engine.ensureImage(context.Background(), cli, "pool_test")
+	if err != nil {
 		t.Fatal(err)
+	}
+	if got != image {
+		t.Fatalf("image = %q, want %q", got, image)
 	}
 	if pulls := daemon.pulled(); len(pulls) != 0 {
 		t.Fatalf("pulls = %v, want none", pulls)
@@ -134,7 +156,7 @@ func TestEnsureImageReportsPullFailure(t *testing.T) {
 	defer cli.Close()
 
 	engine := &Engine{cfg: Config{Image: testPoolImage}}
-	err = engine.ensureImage(context.Background(), cli, "pool_test")
+	_, err = engine.ensureImage(context.Background(), cli, "pool_test")
 	if err == nil {
 		t.Fatal("expected an error")
 	}
@@ -166,7 +188,7 @@ func TestEnsureImageReportsPullProgress(t *testing.T) {
 			reports = append(reports, progress)
 		},
 	}}
-	if err := engine.ensureImage(context.Background(), cli, "pool_test"); err != nil {
+	if _, err := engine.ensureImage(context.Background(), cli, "pool_test"); err != nil {
 		t.Fatal(err)
 	}
 
@@ -213,10 +235,210 @@ func TestEnsureImageReportsNothingWhenTheImageIsPresent(t *testing.T) {
 		Image:            image,
 		ProgressReporter: func(context.Context, string, sandbox.PoolProvisionProgress) { reported = true },
 	}}
-	if err := engine.ensureImage(context.Background(), cli, "pool_test"); err != nil {
+	if _, err := engine.ensureImage(context.Background(), cli, "pool_test"); err != nil {
 		t.Fatal(err)
 	}
 	if reported {
 		t.Fatal("reported a pull that never happened")
+	}
+}
+
+// A pool whose agent is a release behind still schedules sandboxes; a pool with
+// no agent at all schedules nothing. When the configured image cannot be
+// pulled, a superseded one already on the daemon is what the pool launches.
+func TestEnsureImageFallsBackToACachedPoolImage(t *testing.T) {
+	const cached = "ghcr.io/discobox-ai/discobox-pool-agent:v1.2.2"
+	daemon := &fakePullDaemon{
+		present: map[string]struct{}{},
+		failing: true,
+		local:   []imagesummary.Summary{{ID: "sha256:old", RepoTags: []string{cached}, Created: 100}},
+	}
+	server := httptest.NewServer(http.HandlerFunc(daemon.serveHTTP))
+	defer server.Close()
+	cli, err := testDockerClient(server.URL)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer cli.Close()
+
+	engine := &Engine{cfg: Config{Image: testPoolImage}}
+	image, err := engine.ensureImage(context.Background(), cli, "pool_test")
+	if err != nil {
+		t.Fatalf("a cached pool image was available, so the pull failure should not have: %v", err)
+	}
+	if image != cached {
+		t.Fatalf("image = %q, want the cached %q", image, cached)
+	}
+}
+
+// The newest release the daemon has ever held, not whichever tag it happens to
+// list first.
+func TestEnsureImageFallsBackToTheNewestCachedPoolImage(t *testing.T) {
+	const newest = "ghcr.io/discobox-ai/discobox-pool-agent:v1.2.2"
+	daemon := &fakePullDaemon{
+		present: map[string]struct{}{},
+		failing: true,
+		local: []imagesummary.Summary{
+			{ID: "sha256:older", RepoTags: []string{"ghcr.io/discobox-ai/discobox-pool-agent:v1.0.0"}, Created: 100},
+			{ID: "sha256:newest", RepoTags: []string{newest}, Created: 300},
+			{ID: "sha256:middle", RepoTags: []string{"ghcr.io/discobox-ai/discobox-pool-agent:v1.1.0"}, Created: 200},
+		},
+	}
+	server := httptest.NewServer(http.HandlerFunc(daemon.serveHTTP))
+	defer server.Close()
+	cli, err := testDockerClient(server.URL)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer cli.Close()
+
+	engine := &Engine{cfg: Config{Image: testPoolImage}}
+	image, err := engine.ensureImage(context.Background(), cli, "pool_test")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if image != newest {
+		t.Fatalf("image = %q, want the newest cached %q", image, newest)
+	}
+}
+
+// The pool agent is the one thing this may launch. Another Discobox image on
+// the same daemon — a harness, the sandbox agent — is not a substitute for it,
+// and the daemon-side reference filter is a pattern match that cannot be
+// trusted to have excluded them.
+func TestEnsureImageWillNotFallBackToAnotherRepository(t *testing.T) {
+	daemon := &fakePullDaemon{
+		present: map[string]struct{}{},
+		failing: true,
+		local: []imagesummary.Summary{
+			{ID: "sha256:harness", RepoTags: []string{"ghcr.io/discobox-ai/discobox-harness-shell:v1.2.2"}, Created: 900},
+			{ID: "sha256:sandbox", RepoTags: []string{"ghcr.io/discobox-ai/discobox-sandbox-agent:v1.2.2"}, Created: 900},
+		},
+	}
+	server := httptest.NewServer(http.HandlerFunc(daemon.serveHTTP))
+	defer server.Close()
+	cli, err := testDockerClient(server.URL)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer cli.Close()
+
+	engine := &Engine{cfg: Config{Image: testPoolImage}}
+	image, err := engine.ensureImage(context.Background(), cli, "pool_test")
+	if err == nil {
+		t.Fatalf("fell back to %q, which is not a pool agent", image)
+	}
+}
+
+// With nothing local to fall back to there is no pool to run, and the pull
+// failure has to reach the reconcile.
+func TestEnsureImageReportsPullFailureWithNoCachedPoolImage(t *testing.T) {
+	daemon := &fakePullDaemon{present: map[string]struct{}{}, failing: true, local: []imagesummary.Summary{}}
+	server := httptest.NewServer(http.HandlerFunc(daemon.serveHTTP))
+	defer server.Close()
+	cli, err := testDockerClient(server.URL)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer cli.Close()
+
+	engine := &Engine{cfg: Config{Image: testPoolImage}}
+	_, err = engine.ensureImage(context.Background(), cli, "pool_test")
+	if err == nil {
+		t.Fatal("expected an error")
+	}
+	if !strings.Contains(err.Error(), testPoolImage) {
+		t.Fatalf("error %q does not name the image", err)
+	}
+}
+
+// A short local reference and a fully qualified one for the same repository are
+// the same repository, so a development daemon can fall back across its own
+// tags.
+func TestFallbackPoolImageMatchesRepositoriesAcrossReferenceForms(t *testing.T) {
+	for name, testCase := range map[string]struct {
+		configured string
+		tag        string
+		want       bool
+	}{
+		"short configured, short cached":         {configured: "discobox-pool-agent:dev-b", tag: "discobox-pool-agent:dev-a", want: true},
+		"short configured, qualified cached":     {configured: "discobox-pool-agent:dev-b", tag: "docker.io/library/discobox-pool-agent:dev-a", want: true},
+		"qualified configured, another registry": {configured: "ghcr.io/discobox-ai/discobox-pool-agent:v1", tag: "docker.io/library/discobox-pool-agent:dev-a", want: false},
+	} {
+		daemon := &fakePullDaemon{
+			present: map[string]struct{}{},
+			failing: true,
+			local:   []imagesummary.Summary{{ID: "sha256:cached", RepoTags: []string{testCase.tag}, Created: 100}},
+		}
+		server := httptest.NewServer(http.HandlerFunc(daemon.serveHTTP))
+		cli, err := testDockerClient(server.URL)
+		if err != nil {
+			server.Close()
+			t.Fatal(err)
+		}
+		engine := &Engine{cfg: Config{Image: testCase.configured}}
+		image, ok := engine.fallbackPoolImage(context.Background(), cli)
+		if ok != testCase.want {
+			t.Fatalf("%s: fallbackPoolImage = (%q, %v), want ok=%v", name, image, ok, testCase.want)
+		}
+		cli.Close()
+		server.Close()
+	}
+}
+
+// The drift check compares the running container against the image the engine
+// would launch now. Resolving that must be free when the container is already
+// on the configured image, must upgrade a fallback the moment the configured
+// image can be pulled, and must return the running fallback unchanged while it
+// still cannot — otherwise every reconcile would remove and recreate a working
+// pool agent for as long as the registry stayed unreachable.
+func TestResolvePoolAgentImage(t *testing.T) {
+	const fallback = "ghcr.io/discobox-ai/discobox-pool-agent:v1.2.2"
+	for name, testCase := range map[string]struct {
+		running   string
+		pullFails bool
+		want      string
+		wantPulls int
+	}{
+		"already on the configured image":             {running: testPoolImage, want: testPoolImage, wantPulls: 0},
+		"fallback upgrades when the registry answers": {running: fallback, want: testPoolImage, wantPulls: 1},
+		"fallback stands while the registry does not": {running: fallback, pullFails: true, want: fallback, wantPulls: 1},
+		"no container yet":                            {running: "", want: testPoolImage, wantPulls: 1},
+	} {
+		t.Run(name, func(t *testing.T) {
+			daemon := &fakePullDaemon{
+				present: map[string]struct{}{},
+				failing: testCase.pullFails,
+				local:   []imagesummary.Summary{{ID: "sha256:old", RepoTags: []string{fallback}, Created: 100}},
+			}
+			server := httptest.NewServer(http.HandlerFunc(daemon.serveHTTP))
+			defer server.Close()
+			cli, err := testDockerClient(server.URL)
+			if err != nil {
+				t.Fatal(err)
+			}
+			defer cli.Close()
+
+			var existing container.InspectResponse
+			if testCase.running != "" {
+				existing.Config = &container.Config{Image: testCase.running}
+			}
+			engine := &Engine{cfg: Config{Image: testPoolImage}}
+			image, err := engine.resolvePoolAgentImage(context.Background(), cli, "pool_test", existing)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if image != testCase.want {
+				t.Fatalf("image = %q, want %q", image, testCase.want)
+			}
+			if pulls := daemon.pulled(); len(pulls) != testCase.wantPulls {
+				t.Fatalf("pulls = %v, want %d", pulls, testCase.wantPulls)
+			}
+			// The property the drift check depends on: what the engine would
+			// launch equals what is running, so nothing is recreated.
+			if testCase.want == testCase.running && shouldRemoveExistingContainer(existing, image, nil) {
+				t.Fatal("a container already running the resolved image would be recreated")
+			}
+		})
 	}
 }

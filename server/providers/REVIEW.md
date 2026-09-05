@@ -45,3 +45,9 @@
 - Drivers must not implement Docker readiness polling or carry bootstrap
   secrets in VM user data; the engine owns readiness waits and injects
   bootstrap identity as container environment.
+- Compare a pool container against the image the engine would launch *now*
+  (`Engine.resolvePoolAgentImage`), never against `cfg.Image` directly. When the
+  configured image cannot be pulled the engine may launch a superseded local
+  tag; a drift check written against `cfg.Image` reads that as drift and
+  removes and recreates a working pool agent on every reconcile until the
+  registry answers. The same rule covers the console.

@@ -459,8 +459,23 @@ func (e *Engine) acquireDockerReady(ctx context.Context, poolID string) (*Docker
 func (e *Engine) ensurePoolContainer(ctx context.Context, cli *client.Client, provider *model.SandboxProviderInstance, pool *model.Pool, mint poolagent.MintBootstrap, forceRecreate bool) (*container.InspectResponse, bool, error) {
 	name := ContainerName(pool.ID)
 	labels := e.containerLabels(provider, pool)
-	if existing, err := cli.ContainerInspect(ctx, name, client.ContainerInspectOptions{}); err == nil {
-		if forceRecreate || shouldRemoveExistingContainer(existing.Container, e.cfg.Image, labels) {
+
+	existing, existingErr := cli.ContainerInspect(ctx, name, client.ContainerInspectOptions{})
+	if existingErr != nil && !cerrdefs.IsNotFound(existingErr) {
+		return nil, false, existingErr
+	}
+	image, err := e.resolvePoolAgentImage(ctx, cli, pool.ID, existing.Container)
+	if err != nil {
+		return nil, false, err
+	}
+
+	if existingErr == nil {
+		// Against the resolved image, not the configured one: a container
+		// running a fallback is corrected the moment the configured image can
+		// be pulled, and left alone until then. Comparing against the
+		// configured image would remove and recreate it on every reconcile for
+		// as long as the registry stayed unreachable.
+		if forceRecreate || shouldRemoveExistingContainer(existing.Container, image, labels) {
 			if _, err := cli.ContainerRemove(ctx, existing.Container.ID, client.ContainerRemoveOptions{Force: true, RemoveVolumes: true}); err != nil {
 				return nil, false, err
 			}
@@ -468,25 +483,38 @@ func (e *Engine) ensurePoolContainer(ctx context.Context, cli *client.Client, pr
 			inst, err := e.waitContainerReady(ctx, cli, existing.Container.ID, false)
 			return inst, false, err
 		}
-	} else if !cerrdefs.IsNotFound(err) {
-		return nil, false, err
 	}
 
-	inst, err := e.createPoolContainer(ctx, cli, pool, name, labels, mint)
+	inst, err := e.createPoolContainer(ctx, cli, pool, name, labels, mint, image)
 	if err != nil {
 		return nil, false, err
 	}
 	return inst, true, nil
 }
 
-func (e *Engine) createPoolContainer(ctx context.Context, cli *client.Client, pool *model.Pool, name string, labels map[string]string, mint poolagent.MintBootstrap) (*container.InspectResponse, error) {
+// resolvePoolAgentImage resolves the pool-agent image to run, given whatever
+// container is already there. Both the pool container and the console run this
+// image, and both resolve it the same way.
+//
+// A container already on the configured image settles it without touching the
+// daemon's images at all, which keeps the steady-state reconcile as free as it
+// was before a fallback was possible. Every other case asks ensureImage, whose
+// pull attempt is both how a cold daemon gets the image and how a pool running
+// a fallback discovers that the configured one is reachable again.
+func (e *Engine) resolvePoolAgentImage(ctx context.Context, cli *client.Client, poolID string, existing container.InspectResponse) (string, error) {
+	if existing.Config != nil && strings.TrimSpace(existing.Config.Image) == strings.TrimSpace(e.cfg.Image) {
+		return e.cfg.Image, nil
+	}
+	return e.ensureImage(ctx, cli, poolID)
+}
+
+// createPoolContainer creates the pool-agent container from image, which the
+// caller has already resolved and made present — that pull is the longest step
+// in bringing a pool up, and it happens before the bootstrap token is minted so
+// the token does not spend its lifetime waiting on a registry.
+func (e *Engine) createPoolContainer(ctx context.Context, cli *client.Client, pool *model.Pool, name string, labels map[string]string, mint poolagent.MintBootstrap, image string) (*container.InspectResponse, error) {
 	if mint == nil {
 		return nil, fmt.Errorf("worker bootstrap minter is required")
-	}
-	// Before minting: a first pull is the longest step here, and a bootstrap
-	// token minted ahead of it spends its lifetime waiting on the registry.
-	if err := e.ensureImage(ctx, cli, pool.ID); err != nil {
-		return nil, err
 	}
 	releaseStart := e.cfg.ProgressReporter.Hold(ctx, pool.ID, sandbox.PoolPhaseStartingPoolAgent)
 	defer releaseStart()
@@ -508,7 +536,7 @@ func (e *Engine) createPoolContainer(ctx context.Context, cli *client.Client, po
 	bootstrap.HostStateRoot = e.cfg.HostStateRoot
 
 	config := &container.Config{
-		Image:  e.cfg.Image,
+		Image:  image,
 		Labels: labels,
 		Env:    envList(e.poolContainerEnv(bootstrap)),
 		Cmd:    e.cfg.Command,

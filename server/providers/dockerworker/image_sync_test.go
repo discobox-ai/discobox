@@ -226,7 +226,7 @@ func stripDockerAPIVersion(path string) string {
 	return path
 }
 
-func writeDockerJSON(w http.ResponseWriter, value map[string]string) {
+func writeDockerJSON(w http.ResponseWriter, value any) {
 	w.Header().Set("Content-Type", "application/json")
 	if err := json.NewEncoder(w).Encode(value); err != nil {
 		panic(err)
