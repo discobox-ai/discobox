@@ -100,8 +100,12 @@ func (t tool) spec() ToolSpec {
 var tools = []tool{
 	{
 		id: "diff", key: "d", label: "diff",
-		detail:  "what has changed, in discobox-review",
-		command: []string{"discobox-review"},
+		detail: "what has changed, in discobox-review",
+		// -by is what a comment written in the window is signed with, and
+		// discobox-review has no default for it: a name it guessed could be the
+		// person's on an agent's remark. git-user is how a person says "the
+		// name git already knows me by", which is who is at this keyboard.
+		command: []string{"discobox-review", "-by", "git-user"},
 	},
 	{
 		id: "fresh", key: "f", label: "fresh",

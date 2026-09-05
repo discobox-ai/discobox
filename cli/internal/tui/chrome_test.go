@@ -49,7 +49,7 @@ func TestClickingTheHeaderGitInfoOpensDiff(t *testing.T) {
 	clickAt(d, headerCol(t, m, "main@a3f9c21")+2, 0)
 	d.wait("the diff tool", func() bool {
 		runs := ds.toolRunsSeen()
-		return len(runs) == 1 && runs[0] == "diff discobox-review"
+		return len(runs) == 1 && runs[0] == "diff discobox-review -by git-user"
 	})
 }
 

@@ -82,8 +82,9 @@ Delegate to **one** subagent, working in this tree, with this brief:
 >
 >     discobox-review approve --by reviewer <path>
 >
-> Always pass `--by reviewer`. Without it the remark is attributed to the
-> repository owner's git identity, and the review stops being legible.
+> `--by` is required on all three — it is who the remark is signed by, and
+> discobox-review has no default for it. `reviewer` is yours, so the review says
+> which side wrote each remark.
 >
 > Do not edit any file. Do not commit. Do not run the test suite as a substitute
 > for reading the code — CI already runs it; your value is what CI cannot see.
@@ -198,7 +199,9 @@ fixed, what you pushed back on and why, and anything the user decided.
 ## Rules
 
 - `--by reviewer` and `--by author` on every `comment`, `reply` and `approve`.
-  The default attributes the remark to the repository owner.
+  There is no default: without it the command refuses. (A person at the window
+  passes `--by git-user`, which is git's own `user.name`; neither role here is
+  the person.)
 - The reviewer edits nothing. The author resolves nothing.
 - Neither role commits. This skill reviews work; committing it is a separate
   step the user asks for.

@@ -128,7 +128,7 @@ func TestTheToolsPickerRunsDiffInTheBox(t *testing.T) {
 	ds := newFakeSource(testSandboxes()...)
 	d, m := openTool(t, ds, "d")
 
-	if got := ds.toolRunsSeen(); len(got) != 1 || got[0] != "diff discobox-review" {
+	if got := ds.toolRunsSeen(); len(got) != 1 || got[0] != "diff discobox-review -by git-user" {
 		t.Fatalf("tool runs = %v, want discobox-review as the diff tool", got)
 	}
 	p := m.showingTool()
