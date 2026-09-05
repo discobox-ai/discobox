@@ -165,3 +165,26 @@ func TestScreenSnapshotSanitizesTheTitle(t *testing.T) {
 		t.Fatalf("title is %d bytes, want it capped at %d", got, maxOSCString)
 	}
 }
+
+// A resize to the size the screen already is leaves it alone.
+//
+// The emulator's Resize resets the scroll region, and a repaint re-asserts a
+// size that is usually the one already set — so a program that had set margins
+// would lose them out of every snapshot taken after somebody pressed Ctrl-L.
+//
+// Margins are visible in where a line feed leaves the cursor: at the bottom of
+// a three-row region it scrolls the region and stays on row 3, and with the
+// margins reset it walks on down the screen. The snapshot restores the cursor,
+// so the row it names is the answer.
+func TestScreenResizeToTheSameSizeKeepsTheScrollRegion(t *testing.T) {
+	screen := newScreenBuffer(24, 80, DefaultScrollbackLines)
+	screen.write([]byte("\x1b[1;3r\x1b[3;1H"))
+
+	screen.resize(24, 80)
+
+	screen.write([]byte("\n\n\n"))
+	snapshot := string(screen.snapshot())
+	if !strings.HasSuffix(snapshot, "\x1b[3;1H") {
+		t.Fatalf("snapshot leaves the cursor at %q, want row 3 — the bottom of the scroll region it scrolled inside", snapshot[max(0, len(snapshot)-12):])
+	}
+}

@@ -69,8 +69,20 @@ func (s *screenBuffer) write(p []byte) {
 	s.modes.scan(p)
 }
 
+// resize lays the screen out at a new size. A resize to the size it already is
+// is not one, and is skipped.
+//
+// The emulator's own Resize is not idempotent: it resets the scroll region to
+// the whole screen and re-notifies a program that asked for in-band resize
+// reports. A client re-asserting its size to ask for a repaint sends the size
+// it already sent, and a program that had set margins would lose them out of
+// this screen — and so out of the next snapshot taken from it — for a repaint
+// that changed nothing.
 func (s *screenBuffer) resize(rows, cols uint16) {
 	if rows == 0 || cols == 0 {
+		return
+	}
+	if s.emu.Width() == int(cols) && s.emu.Height() == int(rows) {
 		return
 	}
 	s.emu.Resize(int(cols), int(rows))
