@@ -496,6 +496,10 @@ func (r *shimRuntime) close() {
 		_ = r.listener.Close()
 	}
 	if r.proc != nil {
+		// The runtime holds the same PTY handle for resizes and the repaint
+		// jiggle. It gives it up first, so nothing is asking the file for its
+		// descriptor while this closes it.
+		r.stream.ReleaseTTY()
 		r.proc.Close()
 	}
 	if r.logger != nil {

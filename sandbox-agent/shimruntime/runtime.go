@@ -117,13 +117,17 @@ func (r *Runtime) Snapshot() []byte {
 // converges to, and it is also what recovers a repaint whose snapshot was lost
 // to an emulator panic.
 func (r *Runtime) AfterReplay() {
+	// Under the lock for the whole of it, not just to read the handle. A size
+	// ioctl asks the file for its descriptor, which is not safe against the
+	// close that ends the exec, and a repaint can be asked for at any moment —
+	// including the one the process is exiting in. ReleaseTTY takes the same
+	// lock to say the handle is gone.
 	r.mu.Lock()
-	tty := r.tty
-	r.mu.Unlock()
-	if tty == nil {
+	defer r.mu.Unlock()
+	if r.tty == nil {
 		return
 	}
-	size, err := pty.GetsizeFull(tty)
+	size, err := pty.GetsizeFull(r.tty)
 	if err != nil || size.Rows == 0 || size.Cols == 0 {
 		return
 	}
@@ -133,8 +137,18 @@ func (r *Runtime) AfterReplay() {
 	} else {
 		jiggle.Rows++
 	}
-	_ = pty.Setsize(tty, &jiggle)
-	_ = pty.Setsize(tty, size)
+	_ = pty.Setsize(r.tty, &jiggle)
+	_ = pty.Setsize(r.tty, size)
+}
+
+// ReleaseTTY gives up the PTY handle. It is called before the process closes
+// it, so nothing here reaches for a descriptor that is being taken away: a
+// resize or a repaint that arrives afterwards finds no terminal and does
+// nothing, which is the truth about an exec that is ending.
+func (r *Runtime) ReleaseTTY() {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	r.tty = nil
 }
 
 // runScreenLocked runs fn against the screen buffer, dropping the screen if fn
@@ -303,14 +317,15 @@ func (r *Runtime) InitialWinsize(rows, cols uint16) *pty.Winsize {
 // ApplyResize records the requested size and applies it to the screen and PTY.
 func (r *Runtime) ApplyResize(resize frame.ResizePayload) {
 	r.stream.ApplyResize(resize)
+	// The ioctl stays under the lock for the reason AfterReplay's does: the
+	// handle is only a handle while ReleaseTTY has not been called.
 	r.mu.Lock()
+	defer r.mu.Unlock()
 	if r.screen != nil {
 		r.runScreenLocked(func(screen *screenBuffer) { screen.resize(resize.Rows, resize.Cols) })
 	}
-	tty := r.tty
-	r.mu.Unlock()
-	if tty != nil {
-		_ = pty.Setsize(tty, &pty.Winsize{Rows: resize.Rows, Cols: resize.Cols})
+	if r.tty != nil {
+		_ = pty.Setsize(r.tty, &pty.Winsize{Rows: resize.Rows, Cols: resize.Cols})
 	}
 }
 

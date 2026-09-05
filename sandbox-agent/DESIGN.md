@@ -606,9 +606,17 @@ development images without a registry.
   repaint-on-attach degrades to plain live streaming instead of the emulator
   bug killing the exec. The PTY handle outlives the screen for this reason.
 - The program's repaint is authoritative: after a replay (snapshot present or
-  not), `Runtime.redrawAfterReplay` jiggles the PTY one row smaller and back,
+  not), `Runtime.AfterReplay` jiggles the PTY one row smaller and back,
   so SIGWINCH makes the program redraw itself and the client converges to the
   program's real screen even when the snapshot was imperfect or missing.
+- The PTY handle is the runtime's while the process holds it, and the size
+  ioctls run under `Runtime.mu` for that reason. Asking a `*os.File` for its
+  descriptor is not safe against the close that ends the exec, and a resize or a
+  repaint can arrive in the moment the process is exiting, so `shimRuntime.close`
+  calls `Runtime.ReleaseTTY` before `procio.Process.Close`: afterwards there is
+  no terminal to resize, which is the truth about an exec that is ending. Reads
+  and writes on the handle need no such care — those are refcounted against
+  close; only the descriptor is not.
 - No phantom deadlines on attach: `http.Server` per-request read/write
   deadlines survive hijacks and websocket accepts, so long-lived attach
   streams must not inherit them. The shim and `shimproxy.AttachHTTPUpgrade`
