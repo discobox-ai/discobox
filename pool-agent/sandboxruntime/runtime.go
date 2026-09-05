@@ -1148,6 +1148,7 @@ func documentVolumes(volumes []workerapimodel.HarnessVolume) []harness.Volume {
 		out = append(out, harness.Volume{
 			Path:   v.Path,
 			Volume: harness.VolumeKind(v.Volume),
+			Scope:  harness.VolumeScope(v.Scope.Or("")),
 			UID:    harness.ScalarToken(optString(v.UID)),
 			GID:    harness.ScalarToken(optString(v.Gid)),
 			Mode:   optString(v.Mode),

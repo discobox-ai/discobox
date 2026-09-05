@@ -326,6 +326,13 @@ func poolHarnessVolumes(volumes []harness.Volume) []poolapimodel.HarnessVolume {
 			Path:   v.Path,
 			Volume: poolclient.HarnessVolumeVolume(v.Volume),
 		}
+		// Absent stays absent rather than becoming "user": the sandbox agent
+		// defaults an unset scope itself (ADR 0094 §3), and sending a value the
+		// image did not state would make an image built before the field
+		// indistinguishable from one that chose the default.
+		if scope := string(v.Scope); scope != "" {
+			volume.Scope = poolclient.NewOptHarnessVolumeScope(poolclient.HarnessVolumeScope(scope))
+		}
 		if uid := string(v.UID); uid != "" {
 			volume.UID = poolclient.NewOptString(uid)
 		}

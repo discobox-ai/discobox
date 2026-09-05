@@ -134,6 +134,12 @@ components:
                         - data
                         - cache
                     type: string
+                scope:
+                    description: Who a cache path is shared with. Absent means the sandbox user, which is the safe default; shared puts every sandbox in the pool on one directory and is only valid for cache.
+                    enum:
+                        - user
+                        - shared
+                    type: string
                 uid:
                     description: Owner UID, as a decimal string or a %UID%/%GID% token.
                     type: string

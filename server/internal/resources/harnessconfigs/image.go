@@ -217,6 +217,9 @@ func validateImageMetadata(metadata harness.ImageMetadata) error {
 		default:
 			return fmt.Errorf("%s label volume %q has unknown kind %q", harness.ImageLabel, volume.Path, volume.Volume)
 		}
+		if err := harness.ValidateVolumeScope(volume.Volume, volume.Scope); err != nil {
+			return fmt.Errorf("%s label volume %q: %w", harness.ImageLabel, volume.Path, err)
+		}
 	}
 	return nil
 }

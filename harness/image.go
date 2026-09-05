@@ -39,13 +39,41 @@ const (
 	VolumeCache VolumeKind = "cache"
 )
 
+// VolumeScope says who a cache path is shared with. It exists because sharing a
+// cache directory is safe exactly when nothing in it is owned by one particular
+// user, and only the image knows which of its paths are like that (ADR 0094).
+//
+// The default is deliberately the safe one: a path that says nothing is scoped
+// to the sandbox user, because that is what a cache directory filled by the
+// sandbox user needs, and because an image that forgets to think about this at
+// all should not get the answer that hands one user's files to another. Sharing
+// is the claim that has to be made out loud.
+type VolumeScope string
+
+const (
+	// VolumeScopeUser gives each sandbox user their own copy of the path. It is
+	// what an unset scope means.
+	VolumeScopeUser VolumeScope = "user"
+	// VolumeScopeShared puts every sandbox in the pool on one directory,
+	// whoever they run as. Only correct where nothing below the path belongs to
+	// a user: /nix is root-owned, world-readable, content-addressed, and reached
+	// through a root daemon, so two uids on one store is what nix is built for.
+	VolumeScopeShared VolumeScope = "shared"
+)
+
 // Volume is an image-declared path the sandbox-agent wires from a primary
 // volume during boot. Path may contain the %HOME% token; UID and GID accept
 // either a JSON number or a runtime token (%UID%/%GID%); Mode is an octal
 // string (e.g. "0755"). All are resolved at mount time via ResolveVolumes.
+//
+// Scope applies to cache paths only and defaults to VolumeScopeUser. It is not
+// derivable from UID: that field says who owns the mountpoint, and a path that
+// declares no owner at all is still filled by the sandbox user -- so inferring
+// "shareable" from "uid 0" would make the unstated case the dangerous one.
 type Volume struct {
 	Path   string      `json:"path"`
 	Volume VolumeKind  `json:"volume"`
+	Scope  VolumeScope `json:"scope,omitempty"`
 	UID    ScalarToken `json:"uid,omitempty"`
 	GID    ScalarToken `json:"gid,omitempty"`
 	Mode   string      `json:"mode,omitempty"`
@@ -84,13 +112,16 @@ type VolumeRuntime struct {
 	GID  int
 }
 
-// ResolvedVolume is a Volume with all tokens expanded and fields parsed.
+// ResolvedVolume is a Volume with all tokens expanded and fields parsed. Scope
+// is concrete here -- never empty -- so nothing downstream has to know what an
+// unset scope meant.
 type ResolvedVolume struct {
-	Path string
-	Kind VolumeKind
-	UID  *int
-	GID  *int
-	Mode *os.FileMode
+	Path  string
+	Kind  VolumeKind
+	Scope VolumeScope
+	UID   *int
+	GID   *int
+	Mode  *os.FileMode
 }
 
 // ResolveVolumes expands every declared volume's tokens against the runtime
@@ -113,7 +144,11 @@ func ResolveVolumes(volumes []Volume, rt VolumeRuntime) ([]ResolvedVolume, error
 		default:
 			return nil, fmt.Errorf("volume %q: unknown volume kind %q", path, v.Volume)
 		}
-		rv := ResolvedVolume{Path: filepath.Clean(path), Kind: v.Volume}
+		scope, err := resolveScope(v.Volume, v.Scope)
+		if err != nil {
+			return nil, fmt.Errorf("volume %q: %w", path, err)
+		}
+		rv := ResolvedVolume{Path: filepath.Clean(path), Kind: v.Volume, Scope: scope}
 		if uid, ok, err := resolveScalar(v.UID, rt); err != nil {
 			return nil, fmt.Errorf("volume %q uid: %w", path, err)
 		} else if ok {
@@ -135,6 +170,43 @@ func ResolveVolumes(volumes []Volume, rt VolumeRuntime) ([]ResolvedVolume, error
 		out = append(out, rv)
 	}
 	return out, nil
+}
+
+// ValidateVolumeScope reports whether a declared scope can be honored for this
+// volume kind, without needing the runtime identity ResolveVolumes wants.
+//
+// It is separate so the control plane can reject a bad scope where it reads the
+// image label, naming the image, rather than letting it through to fail at boot
+// four layers away -- the same reason the kind is checked there too.
+//
+// A shared data path is refused rather than ignored: a data volume is one
+// sandbox's own tree, so nothing could carry out the claim, and an image that
+// makes it has misunderstood which volume it declared. Honoring it silently
+// would leave the image believing in sharing that never happens.
+func ValidateVolumeScope(kind VolumeKind, scope VolumeScope) error {
+	switch scope {
+	case "", VolumeScopeUser:
+		return nil
+	case VolumeScopeShared:
+		if kind != VolumeCache {
+			return fmt.Errorf("scope %q applies to cache paths only", scope)
+		}
+		return nil
+	default:
+		return fmt.Errorf("unknown scope %q", scope)
+	}
+}
+
+// resolveScope validates and then fills in the default, so an unset scope
+// arrives downstream as the user scope it means.
+func resolveScope(kind VolumeKind, scope VolumeScope) (VolumeScope, error) {
+	if err := ValidateVolumeScope(kind, scope); err != nil {
+		return "", err
+	}
+	if scope == "" {
+		return VolumeScopeUser, nil
+	}
+	return scope, nil
 }
 
 func resolveScalar(tok ScalarToken, rt VolumeRuntime) (int, bool, error) {

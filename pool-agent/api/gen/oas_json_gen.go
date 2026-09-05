@@ -1213,6 +1213,12 @@ func (s *HarnessVolume) encodeFields(e *jx.Encoder) {
 		s.Volume.Encode(e)
 	}
 	{
+		if s.Scope.Set {
+			e.FieldStart("scope")
+			s.Scope.Encode(e)
+		}
+	}
+	{
 		if s.UID.Set {
 			e.FieldStart("uid")
 			s.UID.Encode(e)
@@ -1232,12 +1238,13 @@ func (s *HarnessVolume) encodeFields(e *jx.Encoder) {
 	}
 }
 
-var jsonFieldsNameOfHarnessVolume = [5]string{
+var jsonFieldsNameOfHarnessVolume = [6]string{
 	0: "path",
 	1: "volume",
-	2: "uid",
-	3: "gid",
-	4: "mode",
+	2: "scope",
+	3: "uid",
+	4: "gid",
+	5: "mode",
 }
 
 // Decode decodes HarnessVolume from json.
@@ -1270,6 +1277,16 @@ func (s *HarnessVolume) Decode(d *jx.Decoder) error {
 				return nil
 			}(); err != nil {
 				return errors.Wrap(err, "decode field \"volume\"")
+			}
+		case "scope":
+			if err := func() error {
+				s.Scope.Reset()
+				if err := s.Scope.Decode(d); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"scope\"")
 			}
 		case "uid":
 			if err := func() error {
@@ -1353,6 +1370,46 @@ func (s *HarnessVolume) MarshalJSON() ([]byte, error) {
 
 // UnmarshalJSON implements stdjson.Unmarshaler.
 func (s *HarnessVolume) UnmarshalJSON(data []byte) error {
+	d := jx.DecodeBytes(data)
+	return s.Decode(d)
+}
+
+// Encode encodes HarnessVolumeScope as json.
+func (s HarnessVolumeScope) Encode(e *jx.Encoder) {
+	e.Str(string(s))
+}
+
+// Decode decodes HarnessVolumeScope from json.
+func (s *HarnessVolumeScope) Decode(d *jx.Decoder) error {
+	if s == nil {
+		return errors.New("invalid: unable to decode HarnessVolumeScope to nil")
+	}
+	v, err := d.StrBytes()
+	if err != nil {
+		return err
+	}
+	// Try to use constant string.
+	switch HarnessVolumeScope(v) {
+	case HarnessVolumeScopeUser:
+		*s = HarnessVolumeScopeUser
+	case HarnessVolumeScopeShared:
+		*s = HarnessVolumeScopeShared
+	default:
+		*s = HarnessVolumeScope(v)
+	}
+
+	return nil
+}
+
+// MarshalJSON implements stdjson.Marshaler.
+func (s HarnessVolumeScope) MarshalJSON() ([]byte, error) {
+	e := jx.Encoder{}
+	s.Encode(&e)
+	return e.Bytes(), nil
+}
+
+// UnmarshalJSON implements stdjson.Unmarshaler.
+func (s *HarnessVolumeScope) UnmarshalJSON(data []byte) error {
 	d := jx.DecodeBytes(data)
 	return s.Decode(d)
 }
@@ -1672,6 +1729,39 @@ func (s OptGitSourceWorkspaceMode) MarshalJSON() ([]byte, error) {
 
 // UnmarshalJSON implements stdjson.Unmarshaler.
 func (s *OptGitSourceWorkspaceMode) UnmarshalJSON(data []byte) error {
+	d := jx.DecodeBytes(data)
+	return s.Decode(d)
+}
+
+// Encode encodes HarnessVolumeScope as json.
+func (o OptHarnessVolumeScope) Encode(e *jx.Encoder) {
+	if !o.Set {
+		return
+	}
+	e.Str(string(o.Value))
+}
+
+// Decode decodes HarnessVolumeScope from json.
+func (o *OptHarnessVolumeScope) Decode(d *jx.Decoder) error {
+	if o == nil {
+		return errors.New("invalid: unable to decode OptHarnessVolumeScope to nil")
+	}
+	o.Set = true
+	if err := o.Value.Decode(d); err != nil {
+		return err
+	}
+	return nil
+}
+
+// MarshalJSON implements stdjson.Marshaler.
+func (s OptHarnessVolumeScope) MarshalJSON() ([]byte, error) {
+	e := jx.Encoder{}
+	s.Encode(&e)
+	return e.Bytes(), nil
+}
+
+// UnmarshalJSON implements stdjson.Unmarshaler.
+func (s *OptHarnessVolumeScope) UnmarshalJSON(data []byte) error {
 	d := jx.DecodeBytes(data)
 	return s.Decode(d)
 }

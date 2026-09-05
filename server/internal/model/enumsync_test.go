@@ -72,6 +72,7 @@ var yamlOwnedEnums = map[string]string{
 	"SandboxAgentListeningPort.protocol": "what a listening port speaks is established by sandbox-agent probing it (ADR 0046); the server stores AgentStatus as opaque JSON",
 	"SandboxExecLogEntry.stream":         "exec log streams are owned by the sandbox-agent",
 	"HarnessVolume.volume":               "value set is owned by harness.VolumeKind in the root module, not a server/internal/model enum tag",
+	"HarnessVolume.scope":                "value set is owned by harness.VolumeScope in the root module, not a server/internal/model enum tag (ADR 0094 §3)",
 	"SandboxUpgrade.reason":              "derived at read time by services.SandboxUpgrade from the pin and the harness config; nothing on the model stores it",
 	// A widening rather than a narrowing, which is why it is not an alias of
 	// Project.sandboxUpgradePolicy: the write body also accepts "" to restore

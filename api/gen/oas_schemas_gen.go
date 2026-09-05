@@ -2970,6 +2970,9 @@ type HarnessVolume struct {
 	Path string `json:"path"`
 	// Which primary volume backs this path.
 	Volume HarnessVolumeVolume `json:"volume"`
+	// Who a cache path is shared with. Absent means the sandbox user, which is the safe default; shared
+	// puts every sandbox in the pool on one directory and is only valid for cache.
+	Scope OptHarnessVolumeScope `json:"scope"`
 	// Owner UID, as a decimal string or a %UID%/%GID% token.
 	UID OptString `json:"uid"`
 	// Owner GID, as a decimal string or a %UID%/%GID% token.
@@ -2986,6 +2989,11 @@ func (s *HarnessVolume) GetPath() string {
 // GetVolume returns the value of Volume.
 func (s *HarnessVolume) GetVolume() HarnessVolumeVolume {
 	return s.Volume
+}
+
+// GetScope returns the value of Scope.
+func (s *HarnessVolume) GetScope() OptHarnessVolumeScope {
+	return s.Scope
 }
 
 // GetUID returns the value of UID.
@@ -3013,6 +3021,11 @@ func (s *HarnessVolume) SetVolume(val HarnessVolumeVolume) {
 	s.Volume = val
 }
 
+// SetScope sets the value of Scope.
+func (s *HarnessVolume) SetScope(val OptHarnessVolumeScope) {
+	s.Scope = val
+}
+
 // SetUID sets the value of UID.
 func (s *HarnessVolume) SetUID(val OptString) {
 	s.UID = val
@@ -3026,6 +3039,49 @@ func (s *HarnessVolume) SetGid(val OptString) {
 // SetMode sets the value of Mode.
 func (s *HarnessVolume) SetMode(val OptString) {
 	s.Mode = val
+}
+
+// Who a cache path is shared with. Absent means the sandbox user, which is the safe default; shared
+// puts every sandbox in the pool on one directory and is only valid for cache.
+type HarnessVolumeScope string
+
+const (
+	HarnessVolumeScopeUser   HarnessVolumeScope = "user"
+	HarnessVolumeScopeShared HarnessVolumeScope = "shared"
+)
+
+// AllValues returns all HarnessVolumeScope values.
+func (HarnessVolumeScope) AllValues() []HarnessVolumeScope {
+	return []HarnessVolumeScope{
+		HarnessVolumeScopeUser,
+		HarnessVolumeScopeShared,
+	}
+}
+
+// MarshalText implements encoding.TextMarshaler.
+func (s HarnessVolumeScope) MarshalText() ([]byte, error) {
+	switch s {
+	case HarnessVolumeScopeUser:
+		return []byte(s), nil
+	case HarnessVolumeScopeShared:
+		return []byte(s), nil
+	default:
+		return nil, errors.Errorf("invalid value: %q", s)
+	}
+}
+
+// UnmarshalText implements encoding.TextUnmarshaler.
+func (s *HarnessVolumeScope) UnmarshalText(data []byte) error {
+	switch HarnessVolumeScope(data) {
+	case HarnessVolumeScopeUser:
+		*s = HarnessVolumeScopeUser
+		return nil
+	case HarnessVolumeScopeShared:
+		*s = HarnessVolumeScopeShared
+		return nil
+	default:
+		return errors.Errorf("invalid value: %q", data)
+	}
 }
 
 // Which primary volume backs this path.
@@ -4453,6 +4509,52 @@ func (o OptHarnessConfigSecretDelivery) Get() (v HarnessConfigSecretDelivery, ok
 
 // Or returns value if set, or given parameter if does not.
 func (o OptHarnessConfigSecretDelivery) Or(d HarnessConfigSecretDelivery) HarnessConfigSecretDelivery {
+	if v, ok := o.Get(); ok {
+		return v
+	}
+	return d
+}
+
+// NewOptHarnessVolumeScope returns new OptHarnessVolumeScope with value set to v.
+func NewOptHarnessVolumeScope(v HarnessVolumeScope) OptHarnessVolumeScope {
+	return OptHarnessVolumeScope{
+		Value: v,
+		Set:   true,
+	}
+}
+
+// OptHarnessVolumeScope is optional HarnessVolumeScope.
+type OptHarnessVolumeScope struct {
+	Value HarnessVolumeScope
+	Set   bool
+}
+
+// IsSet returns true if OptHarnessVolumeScope was set.
+func (o OptHarnessVolumeScope) IsSet() bool { return o.Set }
+
+// Reset unsets value.
+func (o *OptHarnessVolumeScope) Reset() {
+	var v HarnessVolumeScope
+	o.Value = v
+	o.Set = false
+}
+
+// SetTo sets value to v.
+func (o *OptHarnessVolumeScope) SetTo(v HarnessVolumeScope) {
+	o.Set = true
+	o.Value = v
+}
+
+// Get returns value and boolean that denotes whether value was set.
+func (o OptHarnessVolumeScope) Get() (v HarnessVolumeScope, ok bool) {
+	if !o.Set {
+		return v, false
+	}
+	return o.Value, true
+}
+
+// Or returns value if set, or given parameter if does not.
+func (o OptHarnessVolumeScope) Or(d HarnessVolumeScope) HarnessVolumeScope {
 	if v, ok := o.Get(); ok {
 		return v
 	}

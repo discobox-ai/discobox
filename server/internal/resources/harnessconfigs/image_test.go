@@ -61,6 +61,52 @@ func TestParseImageMetadataRejectsInvalidSecrets(t *testing.T) {
 	}
 }
 
+// A scope that cannot be honored is refused where the label is read, naming the
+// image, rather than four layers away at sandbox boot — the same treatment the
+// volume kind gets. Sharing a data volume is the case: that tree is one
+// sandbox's own, so no layer below could carry the claim out (ADR 0094 §3).
+func TestParseImageMetadataRejectsAnUnhonorableVolumeScope(t *testing.T) {
+	for name, volume := range map[string]harness.Volume{
+		"shared data path": {Path: "/home/sandbox", Volume: harness.VolumeData, Scope: harness.VolumeScopeShared},
+		"unknown scope":    {Path: "/nix", Volume: harness.VolumeCache, Scope: "pool"},
+	} {
+		label, err := json.Marshal(harness.ImageMetadata{
+			APIVersion: harness.ImageAPIVersion,
+			Volumes:    []harness.Volume{volume},
+			Harness:    &harness.Image{ID: "shell", Name: "Shell"},
+		})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if _, err := parseImageMetadata("sha256:abc", withBaseLayer(string(label))); err == nil {
+			t.Errorf("%s was accepted", name)
+		}
+	}
+}
+
+// The scope survives the label, so an image that declares one is not quietly
+// read as an image that declared nothing.
+func TestParseImageMetadataKeepsADeclaredVolumeScope(t *testing.T) {
+	label, err := json.Marshal(harness.ImageMetadata{
+		APIVersion: harness.ImageAPIVersion,
+		Volumes: []harness.Volume{
+			{Path: "/nix", Volume: harness.VolumeCache, Scope: harness.VolumeScopeShared},
+			{Path: "/home/sandbox/.cache", Volume: harness.VolumeCache},
+		},
+		Harness: &harness.Image{ID: "shell", Name: "Shell"},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	metadata, err := parseImageMetadata("sha256:abc", withBaseLayer(string(label)))
+	if err != nil {
+		t.Fatalf("parse image metadata: %v", err)
+	}
+	if metadata.Volumes[0].Scope != harness.VolumeScopeShared || metadata.Volumes[1].Scope != "" {
+		t.Fatalf("volume scopes = %q, %q", metadata.Volumes[0].Scope, metadata.Volumes[1].Scope)
+	}
+}
+
 // An omitted runCommand is a declaration, not an omission: the image installs
 // the conventional harness.RunCommand and the runtime types that (ADR 0086 §3).
 // A blank one is still broken — "declares nothing" and "declares an empty

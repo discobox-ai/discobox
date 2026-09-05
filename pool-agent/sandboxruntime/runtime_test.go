@@ -13,6 +13,7 @@ import (
 	"github.com/moby/moby/api/types/container"
 	"github.com/moby/moby/api/types/mount"
 
+	"github.com/discobox-ai/discobox/harness"
 	"github.com/discobox-ai/discobox/layout"
 	workerclient "github.com/discobox-ai/discobox/pool-agent/api/gen"
 	workerapimodel "github.com/discobox-ai/discobox/pool-agent/api/model"
@@ -327,6 +328,31 @@ func TestDockerSandboxRuntimeDaemonPathTranslatesOnlyRelocatedState(t *testing.T
 	// rewritten just because the state root moved.
 	if got := relocated.daemonPath("/home/dev/src"); got != "/home/dev/src" {
 		t.Fatalf("daemon path = %q, want foreign paths passed through", got)
+	}
+}
+
+// The far end of the same journey: what the agent writes into sandbox.json is
+// what boot reads to decide whether a cache path is partitioned (ADR 0094). The
+// scope has to survive this rebuild, and an unset one has to stay unset so
+// harness.ResolveVolumes applies the default rather than this hop inventing one.
+func TestDocumentVolumesKeepTheScope(t *testing.T) {
+	volumes := documentVolumes([]workerapimodel.HarnessVolume{
+		{
+			Path:   "/nix",
+			Volume: "cache",
+			Scope:  workerclient.NewOptHarnessVolumeScope(workerclient.HarnessVolumeScopeShared),
+			UID:    workerclient.NewOptString("0"),
+		},
+		{Path: "/home/darren/.cache", Volume: "cache", UID: workerclient.NewOptString("1000")},
+	})
+	if len(volumes) != 2 {
+		t.Fatalf("volumes = %d, want 2", len(volumes))
+	}
+	if volumes[0].Scope != harness.VolumeScopeShared {
+		t.Fatalf("/nix scope = %q, want %q", volumes[0].Scope, harness.VolumeScopeShared)
+	}
+	if volumes[1].Scope != "" {
+		t.Fatalf("undeclared scope = %q, want it left unset for ResolveVolumes to default", volumes[1].Scope)
 	}
 }
 
