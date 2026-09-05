@@ -1,6 +1,9 @@
 # 0007 — Declarative sandbox volumes wired by the sandbox-agent
 
-- **Status**: Proposed
+- **Status**: Proposed (§1's cache backing amended by
+  [0094](0094-the-pool-cache-is-partitioned-by-the-sandbox-users-uid.md): a
+  cache path is backed by the sandbox user's partition of the pool cache,
+  `/.discobox/cache/.users/<uid>/<target>`, not by the tree root)
 - **Date**: 2026-07-20
 
 ## Context

@@ -1,7 +1,11 @@
 # 0075 — The nix store is a pool-shared cache, seeded from the image on first use
 
 - **Status**: Accepted (§5's boolean stamps superseded by
-  [0085](0085-the-nix-seed-stamp-names-the-store-that-seeded-it.md);
+  [0085](0085-the-nix-seed-stamp-names-the-store-that-seeded-it.md); §2's premise
+  that every sandbox in a pool runs the same user no longer holds, so its `/nix`
+  declaration now states `"scope": "shared"` to keep the store pool-wide while
+  the per-user caches around it are partitioned —
+  [0094](0094-the-pool-cache-is-partitioned-by-the-sandbox-users-uid.md);
   everything else stands)
 - **Date**: 2026-08-27
 
