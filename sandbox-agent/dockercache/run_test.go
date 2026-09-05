@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"runtime"
 	"strings"
@@ -16,9 +17,11 @@ import (
 // every invocation to a log, and fails the first failTags `tag` calls with the
 // error the daemon returns when another build raced this one for the name.
 //
-// The stub is a /bin/sh script and the build it stands in for runs /bin/true,
-// so every test built on it is POSIX-only. That costs nothing: discobox-docker
-// is the docker shim inside the Linux sandbox and never ships for Windows.
+// The stub is a /bin/sh script, so every test built on it is POSIX-only. That
+// costs nothing: discobox-docker is the docker shim inside the Linux sandbox
+// and never ships for Windows. The build it stands in for runs `true`, which is
+// looked up rather than named: it lives in /bin on Linux and /usr/bin on macOS,
+// and hardcoding either makes a POSIX-only test a Linux-only one.
 func stubDocker(t *testing.T, failTags int) string {
 	t.Helper()
 	if runtime.GOOS == "windows" {
@@ -70,9 +73,14 @@ func callsTo(t *testing.T, log, prefix string) int {
 // rewrittenBuild is what Rewrite hands back for a build with one tag. Argv is a
 // command that simply succeeds: this exercises what happens around the build,
 // not the build.
-func rewrittenBuild() dockercache.Args {
+func rewrittenBuild(t *testing.T) dockercache.Args {
+	t.Helper()
+	succeeds, err := exec.LookPath("true")
+	if err != nil {
+		t.Skipf("no `true` on PATH: %v", err)
+	}
 	return dockercache.Args{
-		Argv:        []string{"/bin/true"},
+		Argv:        []string{succeeds},
 		Rewritten:   true,
 		RegistryRef: "discobox-pool-proxy:5000/discobox-build/abc:build",
 		Tags:        []string{"discobox-sandbox-agent:local"},
@@ -85,7 +93,7 @@ func rewrittenBuild() dockercache.Args {
 func TestARacedTagIsRetried(t *testing.T) {
 	log := stubDocker(t, 1)
 
-	if code := dockercache.BuildViaRegistry(context.Background(), rewrittenBuild()); code != 0 {
+	if code := dockercache.BuildViaRegistry(context.Background(), rewrittenBuild(t)); code != 0 {
 		t.Fatalf("exit = %d, want a build that succeeded on the retry", code)
 	}
 	if got := callsTo(t, log, "tag "); got != 2 {
@@ -98,7 +106,7 @@ func TestARacedTagIsRetried(t *testing.T) {
 func TestATagThatKeepsFailingFailsTheBuild(t *testing.T) {
 	log := stubDocker(t, 99)
 
-	if code := dockercache.BuildViaRegistry(context.Background(), rewrittenBuild()); code == 0 {
+	if code := dockercache.BuildViaRegistry(context.Background(), rewrittenBuild(t)); code == 0 {
 		t.Fatal("a tag that never succeeds should fail the build")
 	}
 	if got := callsTo(t, log, "tag "); got != 3 {
@@ -112,7 +120,7 @@ func TestATagThatKeepsFailingFailsTheBuild(t *testing.T) {
 func TestTheRegistryReferenceIsDroppedOnFailureToo(t *testing.T) {
 	log := stubDocker(t, 99)
 
-	dockercache.BuildViaRegistry(context.Background(), rewrittenBuild())
+	dockercache.BuildViaRegistry(context.Background(), rewrittenBuild(t))
 
 	if got := callsTo(t, log, "rmi "); got != 1 {
 		t.Fatalf("rmi calls = %d, want the reference dropped after the failed tag", got)
@@ -122,7 +130,7 @@ func TestTheRegistryReferenceIsDroppedOnFailureToo(t *testing.T) {
 func TestTheRegistryReferenceIsDroppedOnSuccess(t *testing.T) {
 	log := stubDocker(t, 0)
 
-	if code := dockercache.BuildViaRegistry(context.Background(), rewrittenBuild()); code != 0 {
+	if code := dockercache.BuildViaRegistry(context.Background(), rewrittenBuild(t)); code != 0 {
 		t.Fatalf("exit = %d, want success", code)
 	}
 	if got := callsTo(t, log, "rmi "); got != 1 {
@@ -134,7 +142,7 @@ func TestTheRegistryReferenceIsDroppedOnSuccess(t *testing.T) {
 // reference would delete the image itself.
 func TestAnUntaggedBuildKeepsItsReference(t *testing.T) {
 	log := stubDocker(t, 0)
-	build := rewrittenBuild()
+	build := rewrittenBuild(t)
 	build.Tags = nil
 
 	if code := dockercache.BuildViaRegistry(context.Background(), build); code != 0 {

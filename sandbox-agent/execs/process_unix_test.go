@@ -77,13 +77,27 @@ func TestUserEnvDefaultsOnAnEmptyUserYieldsNothing(t *testing.T) {
 	}
 }
 
+// gidZeroGroupName is whatever this host calls gid 0: `root` on Linux, `wheel`
+// on macOS, which has no `root` group at all. The tests below need a group that
+// genuinely resolves, because what they assert is what userCredential does with
+// one that exists -- so they ask for the name instead of assuming it, and stay
+// about the behavior rather than about the host they run on.
+func gidZeroGroupName(t *testing.T) string {
+	t.Helper()
+	group, err := osuser.LookupGroupId("0")
+	if err != nil {
+		t.Skipf("this host resolves no group for gid 0: %v", err)
+	}
+	return group.Name
+}
+
 // The agent runs as root. With NoSetGroups the child kept root's supplementary
 // groups and none of the sandbox user's, silently discarding every group the
 // image declared -- which is why docker-in-sandbox needed an `sg docker`
 // wrapper. Groups must be set explicitly from the manifest.
 func TestCredentialSetsManifestGroups(t *testing.T) {
 	uid := int64(os.Getuid())
-	cred, ok, err := userCredential(&User{UID: &uid, GID: &uid, AdditionalGroups: []string{"root"}})
+	cred, ok, err := userCredential(&User{UID: &uid, GID: &uid, AdditionalGroups: []string{gidZeroGroupName(t)}})
 	if err != nil || !ok {
 		t.Fatalf("userCredential: ok=%v err=%v", ok, err)
 	}
@@ -91,7 +105,7 @@ func TestCredentialSetsManifestGroups(t *testing.T) {
 		t.Fatal("NoSetGroups must not be set: the child would inherit the agent's groups")
 	}
 	if len(cred.Groups) != 1 || cred.Groups[0] != 0 {
-		t.Fatalf("Groups = %v, want the resolved gid for \"root\"", cred.Groups)
+		t.Fatalf("Groups = %v, want the resolved gid 0", cred.Groups)
 	}
 }
 
@@ -100,7 +114,7 @@ func TestCredentialSetsManifestGroups(t *testing.T) {
 func TestCredentialSkipsUnknownGroups(t *testing.T) {
 	uid := int64(os.Getuid())
 	cred, ok, err := userCredential(&User{UID: &uid, GID: &uid,
-		AdditionalGroups: []string{"root", "discobox-no-such-group"}})
+		AdditionalGroups: []string{gidZeroGroupName(t), "discobox-no-such-group"}})
 	if err != nil || !ok {
 		t.Fatalf("userCredential: ok=%v err=%v", ok, err)
 	}
