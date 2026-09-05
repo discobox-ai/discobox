@@ -194,8 +194,15 @@ func TestStreamCommandMergesStderrAndEndsOnExit(t *testing.T) {
 // that killed only the shell would leave the command unreaped until the sleep
 // ended on its own. That shows up here as a close that takes the full
 // commandStopWait instead of returning at once.
+//
+// The announcement comes from inside the background job, so the read below is
+// what proves the grandchild exists. Echoing from the shell first only proves
+// the shell got that far: the kill could then land before the fork, leaving a
+// sleep that joined the group after the signal swept it and outlived a kill
+// that was never wrong. That is a race in the fixture rather than in the code
+// under test, and macOS loses it every time.
 func TestStreamCommandCloseStopsTheCommandAndItsChildren(t *testing.T) {
-	cmd := exec.CommandContext(t.Context(), "sh", "-c", "echo started; sleep 300 & wait")
+	cmd := exec.CommandContext(t.Context(), "sh", "-c", "{ echo started; sleep 300; } & wait")
 	stream, err := StreamCommand(cmd, "test log")
 	if err != nil {
 		t.Fatalf("stream command: %v", err)
