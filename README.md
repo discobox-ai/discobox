@@ -48,30 +48,28 @@ discobox "fix the flaky test in the payments suite"
   <img src="assets/screens/launcher.png" alt="The launcher listing three running discoboxes with their harness, branch, and resource use" width="920">
 </div>
 
-Nothing was installed outside the box, nothing ran outside it, no credential of
-yours entered it, and the work comes back as commits rather than a diff you
-have to trust.
+Nothing was installed on your machine, nothing ran on it, and no credential of
+yours entered the box. The work comes back as commits.
 
 ---
 
-## Maximum autonomy, because there is a boundary
+## Autonomy inside a boundary
 
 Today you either lock an agent down until it can't do real work, or hand it a
 machine that has your SSH keys, your cloud credentials, and your `.env` files.
-Discobox rejects that trade: the constraint belongs on what an agent can
-*reach*, which is finite, not on what it can *do*, which isn't.
+Discobox constrains what an agent can reach instead of what it can do.
 
 Inside the box nothing is in the agent's way: root, package installs, nested
-Docker, `rm -rf /` if it decides to. No allowlists, no approvals, no babysitting
-a permission prompt. Everything that leaves goes through one door you control —
-a per-box mTLS identity through a MITM proxy, destination policy, every request
-audited — and your credentials never enter at all. The agent holds sentinels;
-the proxy swaps in the real value on the way out, bound to one domain. For
-anything it wasn't given, it asks a human and says why.
+Docker, `rm -rf /` if it decides to. No allowlists, no approvals, no permission
+prompts. Everything that leaves goes through one door you control — a per-box
+mTLS identity through a MITM proxy, destination policy, every request audited —
+and your credentials never enter at all. The agent holds sentinels; the proxy
+swaps in the real value on the way out, bound to one domain. For anything it
+wasn't given, it asks a human and says why.
 
-Which means **prompt injection can't steal what isn't there.** A fully
-compromised agent, running an attacker's instructions, with root, still has no
-credential to exfiltrate and still has to get past the door.
+**Prompt injection has nothing to take.** An agent running an attacker's
+instructions, with root, holds sentinels rather than credentials, and still has
+to get past the proxy.
 
 **[Read the full security model →](https://discobox.ai/security)** — the threat
 model, the asset matrix including its weak cells, and what Discobox does not
@@ -79,16 +77,15 @@ defend against.
 
 ---
 
-## Remote development that's actually good
+## Remote development
 
-Remote development has always been a downgrade: you gave up your editor, your
-shell, your toolchain, and your ports, and got latency in exchange.
+Remote development has always meant giving up your editor, your shell, your
+toolchain and your ports.
 
-Agentic development is a different shape. You're not typing in the box, you're
-steering, reading, and running the thing — a workload a remote environment is
-*better* at, because boxes are disposable, several run at once, and the one
-you're not watching is still working. Discobox is built for that shape, and
-most of it is spent giving back what a sealed box takes away.
+Agentic development asks for less of that. You are not typing in the box, you
+are steering, reading and running what the agent does. Boxes are disposable,
+several run at once, and one keeps working while you read another. Most of what
+follows is how a sealed box gets back the things it took away.
 
 <div align="center">
   <img src="assets/screens/claude-code.png" alt="One discobox open: Claude Code working on the left, a shell on the right showing nested Docker containers, systemd services and listening sockets" width="920">
@@ -110,8 +107,8 @@ going to the box.
   the shells you open on the right, services and forwarded ports beside them.
   The mouse works; `F1` lists every key.
 - **Terminals revive in place.** Close the window, reattach from another
-  machine, come back tomorrow — same session, same scrollback, and a durable
-  transcript rather than a tab you lost.
+  machine, come back tomorrow: same session, same scrollback. Transcripts are
+  stored, not held in a tab.
 - **`discobox shell`** runs a command or a login shell, **`discobox cp`** copies
   files in and out scp-style, **`discobox tools git`** runs git in the box's
   working tree from here.
@@ -120,10 +117,10 @@ going to the box.
 
 - **direnv is wired up**, so nix, mise, or whatever your project already
   declares pulls your toolchain in on entry. Nothing to re-declare.
-- **The Nix store is a pool-shared cache**, seeded on first use, so the second
-  box doesn't rebuild the first one's world.
+- **The Nix store is a pool-shared cache**, seeded on first use, so a second box
+  does not rebuild what the first one already built.
 - **`.discobox/services`** declares what runs beside the work — the API, a
-  database, a watcher. The box starts them, names them, keeps their output.
+  database, a watcher. The box starts them and keeps their output.
 - **`.discobox/skills`** gives the agent skills that exist only inside the box.
   Your `~/.claude/skills` on your laptop stays untouched.
 - **`.discobox/sources.json`** names the sibling repositories this one is worked
@@ -145,8 +142,8 @@ going to the box.
 
 - **Nested Docker works**, builds included: they run on a pool-shared BuildKit
   and trust the proxy through a runc wrapper.
-- **`ctrl+a o` is every tool at once** — the diff, the editor, VS Code, and the
-  ssh and git addresses, ready to copy.
+- **`ctrl+a o` opens the tools** — the diff, the editor, VS Code, and the ssh
+  and git addresses, ready to copy.
 
 <div align="center">
   <img src="assets/screens/tools.png" alt="The tools menu: diff, fresh, vscode, ssh and git url, each on one key" width="920">
@@ -156,7 +153,7 @@ going to the box.
   working tree that lives in the box: line-anchored comments, replies, and
   per-file approval. Two agents run it against each other — one reviews and
   comments, the other fixes and answers — until every thread is closed and every
-  file signed off. Nothing to push, no PR to open, no rebase to survive.
+  file signed off. No push, no pull request, no rebase.
 
 <div align="center">
   <img src="assets/screens/review.png" alt="The built-in diff and approval tool showing an untracked file, with a changed-file list and an approval count" width="920">
@@ -173,8 +170,8 @@ going to the box.
 
 ### Running it
 
-- **Boxes upgrade and repair in place**, preserving power state; deletes are
-  archive-then-purge rather than a surprise.
+- **Boxes upgrade and repair in place**, preserving power state; deletes archive
+  first and purge after.
 - **Everything is scriptable.** A full OpenAPI surface and a CLI to match —
   anything the launcher does, a shell script can do.
 - **macOS, Linux, and Windows.** libkrun microVMs on Linux,
@@ -211,8 +208,8 @@ discobox configure  Enable, disable, and set the default harness
 discobox admin      Pools, projects, harness images, and the API server
 ```
 
-`discobox --help` for the rest — `tui`, `completion`, and every flag. `run` can
-be left off the thing you do most: `discobox fix the failing tests` is a run.
+`discobox --help` for the rest — `tui`, `completion`, and every flag. `run` is
+optional: `discobox fix the failing tests` is a run.
 
 ---
 
@@ -223,8 +220,8 @@ today. Three things are designed and not yet built:
 
 - **Trusted-side verification of credential use.** The check that a command
   matches its approved use runs *inside* the box today, on a description the
-  agent supplies — a guardrail against an agent that errs, not a boundary
-  against one that deceives. Either way the credential never enters the box, the
+  agent supplies — a guardrail, not a security boundary. Either way the
+  credential never enters the box, the
   sentinel only resolves against the granted domain, a human approved the grant,
   and every use is audited.
   ([ADR 0031](docs/adr/0031-agent-credentials-are-a-portable-protocol-with-ephemeral-sentinels.md))
