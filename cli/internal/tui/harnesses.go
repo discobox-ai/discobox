@@ -410,7 +410,7 @@ func (m *Model) updateHarnesses(msg tea.KeyPressMsg) tea.Cmd {
 	case "end", "G":
 		m.harnesses.moveTo(len(m.harnesses.all) - 1)
 	case "?":
-		m.dialog = textDialog("Keys", m.helpText())
+		m.dialog = m.helpDialog()
 	case ".":
 		return m.harnessMenu()
 	case "enter":

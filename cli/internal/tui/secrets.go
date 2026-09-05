@@ -313,7 +313,7 @@ func (m *Model) updateSecrets(msg tea.KeyPressMsg) tea.Cmd {
 		m.onRequests = !m.onRequests
 		return nil
 	case "?":
-		m.dialog = textDialog("Keys", m.helpText())
+		m.dialog = m.helpDialog()
 		return nil
 	case "r":
 		return tea.Batch(m.loadSecrets(), m.loadCredentialRequests(), status("refreshing"))

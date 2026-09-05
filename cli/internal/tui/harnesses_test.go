@@ -8,6 +8,30 @@ import (
 	"charm.land/lipgloss/v2"
 )
 
+// The harness config card is the other card the window puts up to be read, so
+// it takes the same c as the help — with the window's own color stripped off on
+// the way to the clipboard, because what belongs there is the text.
+func TestTheConfigCardIsCopiedWithoutItsColor(t *testing.T) {
+	m := newTestModel(t, newFakeSource(testSandboxes()...))
+	copies := make(chan string, 1)
+	m.copyOS = func(text string) error { copies <- text; return nil }
+
+	body := "\x1b[32mImage\x1b[0m  ghcr.io/discobox/claude:1"
+	send(t, m, sizeMsg(100, 30), harnessCardMsg{title: "claude", body: body})
+	if m.dialog == nil {
+		t.Fatal("the card did not go up")
+	}
+	send(t, m, keyPress("c"))
+	select {
+	case got := <-copies:
+		if want := "Image  ghcr.io/discobox/claude:1"; got != want {
+			t.Fatalf("copied %q, want %q", got, want)
+		}
+	default:
+		t.Fatal("c did not copy the config card")
+	}
+}
+
 // The window's own keys are answered over the run options panel: the panel's
 // harness row names F3 in its own hint, and the panel is the one surface with
 // no other way to the key reference.

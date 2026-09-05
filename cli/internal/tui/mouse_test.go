@@ -695,9 +695,9 @@ func TestPressingACardsCloseOffer(t *testing.T) {
 
 	// The key line, not the same words in the prose above it: the help
 	// explains its own search, so "Esc closes" appears in the body too.
-	line := "/ search" + hintSep + "Esc closes"
+	line := "/ search" + hintSep + "c copies" + hintSep + "Esc closes"
 	x, y := at(t, m, line)
-	tap(t, m, x+lipgloss.Width("/ search"+hintSep), y)
+	tap(t, m, x+lipgloss.Width("/ search"+hintSep+"c copies"+hintSep), y)
 
 	if m.dialog != nil {
 		t.Fatalf("pressing the card's own Esc offer should close it")

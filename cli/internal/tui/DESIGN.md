@@ -1370,6 +1370,22 @@ body goes to the first match as the query is typed, Enter puts the line away
 and keeps the matches, `n` and `N` walk them, and Esc — the search line's, while
 one is open — abandons it and puts the body back where it was.
 
+**`c` takes the whole body**, not the drawn part (`dialog.copy`, set by
+`Model.readableDialog`). A card longer than the window has no other way out of it,
+and reading a key reference somewhere else is a fair thing to want. The field
+is nil unless a `*Model` wires one — the clipboard is the window's, not the
+dialog's — and the key is then neither offered nor answered. Both scrolling
+cards wire it, through `Model.readableDialog`: the help and a harness's
+configuration. The copy is `ansi.Strip`ped on the way out, because the config
+card renders through `styles` and what belongs on a clipboard is the text
+rather than a screenshot of it.
+
+The copy reports on the card itself, beside the key line (`dialog.copied`), not
+through `Model.copyText`'s status line: a dialog is drawn *in place of* the
+window, so there is no status row under it, and the key that closes the card
+clears `m.status` on its way through `updateKey`. This is the trap
+`Model.copiedNote` already solved for the tools card's address rows.
+
 Matching and counting happen in the *draw*, not at the key. The body is wrapped
 to the window, so which line a word falls on, and how many lines hold it, is
 only known once there is a width to wrap to; a key press moves an index and asks

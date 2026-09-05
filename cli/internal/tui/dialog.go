@@ -32,6 +32,17 @@ type dialog struct {
 	kind  dialogKind
 	title string
 	body  string
+	// copy is what c does on a scrolling card: the whole body on the
+	// clipboard, for a card longer than the window it is drawn in. Nil where
+	// no Model has wired one, and the key is then neither offered nor answered.
+	copy func(body string) tea.Cmd
+	// copied is whether c has been pressed, and so whether the card says the
+	// copy happened. It is the card's own receipt: a dialog is drawn in place
+	// of the window rather than over it, so there is no status line under this
+	// for a report to land on. See Model.copiedNote, which is the same word in
+	// the same place for the same reason.
+	copied bool
+
 	// singleLineBody keeps a summary on one row and ellipsizes it at the card
 	// edge. It is for a question whose body is context, not prose to read: a
 	// long source path must not push the answers down by wrapping.
@@ -451,6 +462,11 @@ func (d *dialog) updateText(msg tea.KeyPressMsg) (tea.Cmd, bool) {
 	case "/":
 		d.resume, d.typing = d.offset, true
 		d.setQuery("")
+	case "c":
+		if d.copy != nil {
+			d.copied = true
+			return d.copy(d.body), false
+		}
 	case "n":
 		if d.query != "" {
 			d.match, d.seek = d.match+1, true
@@ -981,22 +997,69 @@ func (d *dialog) viewSearch(st *styles, z *zones, inner int) string {
 		// letters to take back.
 		return spread(st.key.Render("/")+d.query+st.key.Render("▏"), st.dimText.Render(d.tally()), inner)
 	}
+	// The query stays on the line with the search put away, because the rows
+	// below it are painted and n and N are live: a footer that forgot what was
+	// searched for would leave both unexplained.
+	out := pressing("Esc closes", "esc")
+	found := ""
+	var line []hint
 	if d.query != "" {
-		// The query stays on the line with the search put away, because the
-		// rows below it are painted and n and N are live: a footer that forgot
-		// what was searched for would leave both unexplained.
-		found := st.key.Render("/") + d.query + st.dimText.Render("  "+d.tally()+"  ")
-		return found + viewHints(st, z, []hint{
-			pressing("n / N next, previous", "n"),
-			pressing("/ search", "/"),
-			pressing("Esc closes", "esc"),
-		}, lipgloss.Width(found), hintSep)
+		// The query is a reminder here rather than the line being typed — that
+		// is the branch above, which gives it the whole row — so it is what
+		// gives way to the keys. A long one, or a tally as wide as "no
+		// matches", would otherwise take the row before a single offer was
+		// drawn, the way out included.
+		found = st.key.Render("/") + d.query + st.dimText.Render("  "+d.tally()+"  ")
+		found = truncate(found, max(inner-lipgloss.Width(out.text)-lipgloss.Width(hintSep), 1))
+		line = append(line, pressing("n / N next, previous", "n"))
 	}
-	line := []hint{pressing("Esc closes", "esc")}
-	if d.overflow {
-		line = []hint{pressing("/ search", "/"), pressing("Esc closes", "esc")}
+	if d.query != "" || d.overflow {
+		line = append(line, pressing("/ search", "/"))
 	}
-	return viewHints(st, z, line, 0, hintSep)
+	// Offered in every state the key works in, which is every state but a
+	// search being typed: an offer that came and went as a query was set would
+	// be one nobody trusts.
+	if d.copy != nil {
+		line = append(line, pressing("c copies", "c"))
+	}
+
+	// The row is truncated rather than wrapped (see view), and viewHints marks
+	// its zones where it drew them, so a row cut at the edge would leave the
+	// offers past the cut live to the pointer. It is fitted to its room here
+	// instead, the way the card's other key line is.
+	//
+	// Esc is held out of that fit rather than joining the tail fitHints trims
+	// from. It is the way out of the card, and a row that gave it up to keep
+	// an offer about searching would have been cut the wrong way round —
+	// which is what a query wide enough to squeeze the line does first.
+	note := ""
+	if d.copied {
+		note = "copied"
+	}
+	// What gives way, in order: the offers ahead of Esc, then the receipt, and
+	// never Esc itself. A query takes its cells off the left before any of them
+	// is drawn, so on a narrow card there is a width where all that is left is
+	// the search and the way out of it — which is the pair worth keeping.
+	x := lipgloss.Width(found)
+	kept, noteWidth := x+lipgloss.Width(out.text), 0
+	if note != "" {
+		noteWidth = lipgloss.Width(hintSep) + lipgloss.Width(note)
+		if kept+noteWidth > inner {
+			note, noteWidth = "", 0
+		}
+	}
+	// Not fitHints: it never returns fewer than one offer, which is right for a
+	// row where something must be said and wrong here, where the something is
+	// Esc and it is already held out.
+	room := inner - kept - noteWidth
+	for len(line) > 0 && hintsWidth(line, hintSep)+lipgloss.Width(hintSep) > room {
+		line = line[:len(line)-1]
+	}
+	row := found + viewHints(st, z, append(line, out), x, hintSep)
+	if note != "" {
+		row += st.dimText.Render(hintSep) + st.statusOK.Render(note)
+	}
+	return row
 }
 
 // tally is which match the body is on, of how many.

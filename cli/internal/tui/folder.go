@@ -117,7 +117,7 @@ func (m *Model) updateFolder(msg tea.KeyPressMsg) tea.Cmd {
 		m.optionsOpen = true
 		return nil
 	case "f1", "?":
-		m.dialog = textDialog("Keys", m.helpText())
+		m.dialog = m.helpDialog()
 		return nil
 	}
 	return nil

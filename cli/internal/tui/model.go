@@ -21,6 +21,7 @@ import (
 	"charm.land/bubbles/v2/textarea"
 	tea "charm.land/bubbletea/v2"
 	"charm.land/lipgloss/v2"
+	"github.com/charmbracelet/x/ansi"
 
 	"github.com/discobox-ai/discobox/termpane"
 	"github.com/discobox-ai/x/selection"
@@ -927,7 +928,7 @@ func (m *Model) update(msg tea.Msg) tea.Cmd {
 		if msg.err != nil {
 			return m.report(true, "cannot read the harness: %v", msg.err)
 		}
-		m.dialog = textDialog(msg.title, msg.body)
+		m.dialog = m.readableDialog(msg.title, msg.body)
 		return nil
 
 	case editorDoneMsg:
@@ -1127,7 +1128,7 @@ func (m *Model) updateKey(msg tea.KeyPressMsg) tea.Cmd {
 		return nil
 	}
 	if keyName(msg) == "f1" {
-		m.dialog = textDialog("Keys", m.helpText())
+		m.dialog = m.helpDialog()
 		return nil
 	}
 	// The harnesses screen is on a function key because the prompt takes every
@@ -1427,7 +1428,7 @@ func (m *Model) updateList(msg tea.KeyPressMsg) tea.Cmd {
 	case "r":
 		return tea.Batch(m.refresh(), status("refreshing"))
 	case "?":
-		m.dialog = textDialog("Keys", m.helpText())
+		m.dialog = m.helpDialog()
 	case "enter":
 		return m.act("a")
 	case ".":
@@ -3371,6 +3372,23 @@ func (m *Model) paneHints() []hint {
 	}
 	return hints
 }
+
+// readableDialog is a scrolling card the window put up to be read rather than
+// answered: the help, and a harness's configuration. Both are longer than the
+// terminal drawing them, so both are searched with / and taken whole with c.
+//
+// The copy is wired here rather than into textDialog because the clipboard is
+// the window's, and it strips the color on the way out: the config card is
+// rendered through styles, and what belongs on a clipboard is the text rather
+// than a screenshot of it. The help is plain, so stripping it costs nothing.
+func (m *Model) readableDialog(title, body string) *dialog {
+	d := textDialog(title, body)
+	d.copy = func(body string) tea.Cmd { return m.copyText(ansi.Strip(body), "copied") }
+	return d
+}
+
+// helpDialog is the F1 card, wherever the key was pressed.
+func (m *Model) helpDialog() *dialog { return m.readableDialog("Keys", m.helpText()) }
 
 func (m *Model) helpText() string {
 	return strings.Join([]string{

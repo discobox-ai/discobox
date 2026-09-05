@@ -4,6 +4,7 @@ import (
 	"strings"
 	"testing"
 
+	tea "charm.land/bubbletea/v2"
 	"charm.land/lipgloss/v2"
 )
 
@@ -309,5 +310,111 @@ func TestTheHelpIsSearchable(t *testing.T) {
 	}
 	if !strings.Contains(got, "vscode takes neither") {
 		t.Fatalf("the help did not scroll to the match:\n%s", got)
+	}
+}
+
+// The help is longer than the terminal drawing it, so c takes the whole of it
+// rather than the part that happens to be on screen — and it is a letter again
+// the moment the search line is open.
+func TestTheHelpIsCopiedWhole(t *testing.T) {
+	m := newTestModel(t, newFakeSource(testSandboxes()...))
+	copies := make(chan string, 2)
+	m.copyOS = func(text string) error { copies <- text; return nil }
+
+	send(t, m, sizeMsg(100, 30), keyPress("f1"))
+	if !strings.Contains(plainFrame(m), "c copies") {
+		t.Fatalf("the card does not offer the key:\n%s", plainFrame(m))
+	}
+	send(t, m, keyPress("c"))
+	select {
+	case got := <-copies:
+		if got != m.helpText() {
+			t.Fatalf("copied %d bytes, want the whole help of %d", len(got), len(m.helpText()))
+		}
+	default:
+		t.Fatal("c did not copy the help")
+	}
+	if m.dialog == nil {
+		t.Fatal("copying should leave the help up to go on reading")
+	}
+	// The receipt is on the card. There is no status line under a dialog, so a
+	// copy that only reported through one would report to nobody.
+	if got := plainFrame(m); !strings.Contains(got, "copied") {
+		t.Fatalf("the card does not say the copy happened:\n%s", got)
+	}
+
+	send(t, m, keyPress("/"), keyPress("c"))
+	if got := plainFrame(m); !strings.Contains(got, "/c") {
+		t.Fatalf("c in the search line is a letter, not the copy:\n%s", got)
+	}
+	select {
+	case <-copies:
+		t.Fatal("c in the search line copied instead of searching")
+	default:
+	}
+
+	// Enter puts the search line away and keeps the query. The key still works
+	// there, so the card still has to offer it.
+	send(t, m, keyPress("enter"))
+	if got := plainFrame(m); !strings.Contains(got, "c copies") {
+		t.Fatalf("the offer went away with the search line still queried:\n%s", got)
+	}
+	send(t, m, keyPress("c"))
+	select {
+	case <-copies:
+	default:
+		t.Fatal("c did not copy with a query set")
+	}
+}
+
+// The card's key line is cut to its room rather than past the edge, because
+// viewHints marks where it drew: an offer past the cut would be a button drawn
+// nowhere and pressable anyway. See REVIEW.md.
+func TestTheCardsKeyLineIsFittedToNarrowWindows(t *testing.T) {
+	st := newStyles(true)
+	// A query is what squeezes the row hardest: it takes its own cells off the
+	// left before a single offer is drawn, and "no matches" is the widest tally
+	// there is. Esc has to survive all of it.
+	for _, tc := range []struct {
+		name  string
+		query string
+	}{
+		{"no search", ""},
+		{"a match", "body"},
+		{"no matches", "nothing here matches this"},
+	} {
+		for _, window := range []int{120, 100, 80, 60, 48, 40, 30, 20} {
+			d := textDialog("Keys", strings.Repeat("a line of the body\n", 200))
+			d.copy = func(string) tea.Cmd { return nil }
+			d.copied = true
+			d.view(st, &zones{}, window, 24)
+			if tc.query != "" {
+				d.update(keyPress("/"))
+				for _, r := range tc.query {
+					d.update(keyPress(string(r)))
+				}
+				d.update(keyPress("enter"))
+			}
+			got := d.view(st, &zones{}, window, 24)
+			for _, line := range strings.Split(got, "\n") {
+				if w := lipgloss.Width(line); w > dialogWidth(window) {
+					t.Fatalf("%s at %d columns: a row is %d wide, want at most %d\n%s",
+						tc.name, window, w, dialogWidth(window), got)
+				}
+			}
+			// Below the floor on inner the box has no inside to speak of and
+			// lipgloss re-wraps everything to the width it really has — the
+			// case view already carves out for the chevron. The row is built
+			// to fit inner, so down there it is built to a width the box does
+			// not have and there is nothing to promise about it.
+			if dialogWidth(window)-dialogChromeWidth < max(dialogWidth(window)-dialogChromeWidth, 16) {
+				continue
+			}
+			// Esc is the one offer that may never be trimmed or cut in half:
+			// it is how the card is left.
+			if !strings.Contains(got, "Esc closes") {
+				t.Fatalf("%s at %d columns: the way out is not on the row:\n%s", tc.name, window, got)
+			}
+		}
 	}
 }
