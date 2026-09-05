@@ -1126,9 +1126,6 @@ func (m *Model) updateKey(msg tea.KeyPressMsg) tea.Cmd {
 		m.leaderArmed = true
 		return nil
 	}
-	if m.optionsOpen {
-		return m.updateOptions(msg)
-	}
 	if keyName(msg) == "f1" {
 		m.dialog = textDialog("Keys", m.helpText())
 		return nil
@@ -1142,13 +1139,14 @@ func (m *Model) updateKey(msg tea.KeyPressMsg) tea.Cmd {
 	// reached past a terminal would be a key the program in it could never
 	// receive. The leader's keys are the way to the window from there.
 	//
-	// Both keys are answered before either screen's own, because they are the
-	// way *between* the screens as much as the way in: the header offers F3
-	// and F4 from everywhere, and a screen that swallowed the key to its
-	// neighbor would make that offer a lie for as long as it was up — which is
-	// exactly where somebody reads it. They are peers, so opening one closes
-	// the other and Esc from either goes back to the launcher, rather than to
-	// a screen left open underneath.
+	// These are answered before every screen's own keys and before the run
+	// options panel, because they are the way *between* the screens as much as
+	// the way in: the header offers F3 and F4 from everywhere and the panel's
+	// harness row names F3 in its hint, and a surface that swallowed the key
+	// to its neighbor would make those offers a lie for as long as it was up —
+	// which is exactly where somebody reads them. The screens are peers, so
+	// opening one closes the other and Esc from either goes back to the
+	// launcher, rather than to a screen left open underneath.
 	if keyName(msg) == harnessesKey && !m.inPanes() {
 		if m.harnessesOpen {
 			m.closeHarnesses()
@@ -1163,6 +1161,27 @@ func (m *Model) updateKey(msg tea.KeyPressMsg) tea.Cmd {
 			return nil
 		}
 		return m.openSecrets()
+	}
+	// The run options on the same terms again: one key that opens the panel and
+	// closes it, from every screen the window has of its own.
+	//
+	// It is the third peer of the two screens rather than a layer over one, so
+	// opening it puts them away the same way openHarnesses and openSecrets put
+	// it away. A screen left standing underneath would take its own key back
+	// while nothing could see it: F3 over the panel would reach the harnesses
+	// dispatch above, close a screen that was already covered, and leave the
+	// frame exactly as it was — one press of the key the panel's own harness
+	// row advertises, doing nothing.
+	if keyName(msg) == optionsKey && !m.inPanes() {
+		m.optionsOpen = !m.optionsOpen
+		if m.optionsOpen {
+			m.harnessesOpen, m.secretsOpen = false, false
+		}
+		m.layout()
+		return nil
+	}
+	if m.optionsOpen {
+		return m.updateOptions(msg)
 	}
 	// Neither screen while a pane is on screen. They are drawn *under* a pane,
 	// never over one — View reaches `case m.inPanes()` first, and the mouse
@@ -1266,10 +1285,6 @@ func (m *Model) updatePrompt(msg tea.KeyPressMsg) tea.Cmd {
 
 	case "shift+tab":
 		m.opts.opts[optHarness].cycle(1)
-		return nil
-
-	case "ctrl+o":
-		m.optionsOpen = true
 		return nil
 
 	case "alt+e", "f2":
@@ -1384,7 +1399,7 @@ func (m *Model) updateList(msg tea.KeyPressMsg) tea.Cmd {
 		// to the prompt. Esc is the way straight out.
 		m.focus = focusFolder
 		return nil
-	case "shift+tab", "ctrl+o":
+	case "shift+tab":
 		m.optionsOpen = true
 	case "V":
 		m.list.toggleVisual()
@@ -1498,7 +1513,7 @@ func (m *Model) followSource() tea.Cmd {
 func (m *Model) updateOptions(msg tea.KeyPressMsg) tea.Cmd {
 	opt := m.opts.current()
 	switch keyName(msg) {
-	case "esc", "tab", "shift+tab", "ctrl+o":
+	case "esc", "tab", "shift+tab":
 		m.optionsOpen = false
 		return nil
 	case "up", "k":

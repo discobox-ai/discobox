@@ -8,6 +8,53 @@ import (
 	"charm.land/lipgloss/v2"
 )
 
+// The window's own keys are answered over the run options panel: the panel's
+// harness row names F3 in its own hint, and the panel is the one surface with
+// no other way to the key reference.
+func TestTheWindowKeysReachOverTheRunOptions(t *testing.T) {
+	m := newTestModel(t, newFakeSource(testSandboxes()...))
+	send(t, m, sizeMsg(100, 30), keyPress("ctrl+o"))
+	if !m.optionsOpen {
+		t.Fatal("ctrl+o should open the run options from the prompt")
+	}
+	send(t, m, keyPress("f1"))
+	if m.dialog == nil {
+		t.Fatal("F1 should reach the help over the options panel")
+	}
+	send(t, m, keyPress("esc"))
+	if !m.optionsOpen {
+		t.Fatal("closing the help should leave the panel where it was")
+	}
+	send(t, m, keyPress("f3"))
+	if !m.harnessesOpen || m.optionsOpen {
+		t.Fatalf("F3 should open the harnesses and put the panel away: harnesses=%v options=%v",
+			m.harnessesOpen, m.optionsOpen)
+	}
+
+	// And the same key back the other way, from a screen that is up. The panel
+	// is the screens' peer, not a layer over one: it puts them away as they put
+	// it away, so nothing is left standing under it holding its own key.
+	send(t, m, keyPress("ctrl+o"))
+	if !m.optionsOpen || m.harnessesOpen {
+		t.Fatalf("ctrl+o should open the panel and put the harnesses away: options=%v harnesses=%v",
+			m.optionsOpen, m.harnessesOpen)
+	}
+	// One press, not two: with the harnesses left open underneath, F3 here
+	// would close a screen nothing could see and change no frame at all —
+	// which is the key the panel's own harness row advertises.
+	send(t, m, keyPress("f3"))
+	if !m.harnessesOpen || m.optionsOpen {
+		t.Fatalf("F3 over the panel should open the harnesses in one press: harnesses=%v options=%v",
+			m.harnessesOpen, m.optionsOpen)
+	}
+
+	send(t, m, keyPress("ctrl+o"))
+	send(t, m, keyPress("ctrl+o"))
+	if m.optionsOpen {
+		t.Fatal("ctrl+o should close the panel it opened")
+	}
+}
+
 // F3 opens the harnesses screen from wherever the window is, and closes it
 // again.
 func TestHarnessesScreenOpensAndCloses(t *testing.T) {

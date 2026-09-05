@@ -113,7 +113,7 @@ func (m *Model) updateFolder(msg tea.KeyPressMsg) tea.Cmd {
 		// The filter is the top of the window. Up has nowhere left to go, and
 		// jumping to the prompt from here would be moving down the screen.
 		return nil
-	case "shift+tab", "ctrl+o":
+	case "shift+tab":
 		m.optionsOpen = true
 		return nil
 	case "f1", "?":

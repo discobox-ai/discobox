@@ -1093,6 +1093,22 @@ rather than in `updateKey` because it routes to nobody; every other screen —
 a dialog, the options panel, the harnesses — gets the redraw for the same
 reason, without any of them having to know the key exists.
 
+**F1, `F3`, `F4` and Ctrl-O are the window's own keys** (`updateKey`), answered
+ahead of every screen's dispatch *and* ahead of the run options panel. They are
+the way between screens as much as the way into one: the header offers `F3` and
+`F4` from everywhere and the panel's harness row names `F3` in its hint, so a
+surface that swallowed the key to its neighbour would make those offers a lie
+for exactly as long as somebody was reading them. All but F1 are guarded by
+`!m.inPanes()` — inside a pane every key is the sandbox's. Each is a toggle,
+and the three surfaces are peers: the harnesses, the secrets and the run
+options each put the other two away on their way in — `openHarnesses`,
+`openSecrets`, and the `optionsKey` branch of `updateKey` — so Esc from any of
+them goes back to the launcher rather than to a surface left standing
+underneath. That is not tidiness. A surface left open under another still
+answers its own key from the dispatch above, so the key would close something
+nobody could see and change no frame at all; a fourth peer added here has to
+clear the other three for the same reason.
+
 **The leader is configurable, and it is not this package's.** `--leader`/
 `DISCOBOX_LEADER` (`internal/keys.NormalizeLeader`, `WithLeader`) because the
 leader is the key that *collides* — it has to be a chord nothing you run in a
