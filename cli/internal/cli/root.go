@@ -89,8 +89,16 @@ an Enter. See "discobox run --help" for what the flags below mean.`,
 		Version:       version.String(),
 		SilenceUsage:  true,
 		SilenceErrors: true,
-		PersistentPreRunE: func(cmd *cobra.Command, _ []string) error {
+		PersistentPreRunE: func(cmd *cobra.Command, args []string) error {
 			app.errOut = cmd.ErrOrStderr()
+			// Nothing below is needed to print a version, and cobra answers
+			// --version before it reaches this hook at all. A broken
+			// environment — a leader key this cannot parse, an output format
+			// it does not have — is exactly when somebody asks what they are
+			// running, so the two spellings answer the same there too.
+			if !cmd.HasParent() && versionRequested(runFlags, args) {
+				return nil
+			}
 			if err := app.validate(); err != nil {
 				return err
 			}
@@ -119,6 +127,10 @@ an Enter. See "discobox run --help" for what the flags below mean.`,
 		// goes for itself, so this only covers the launcher.
 		Args: cobra.ArbitraryArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
+			// The one bare word that is an answer rather than a prompt.
+			if versionRequested(runFlags, args) {
+				return printVersion(cmd)
+			}
 			if runRequested(runFlags, args) {
 				return app.runPrompt(cmd, &run, args)
 			}

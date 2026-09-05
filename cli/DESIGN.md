@@ -89,6 +89,14 @@ transport helpers where OpenAPI does not model the stream.
   used to report `unknown command "lst"`; it now opens a discobox prompted
   "lst". That trade, and the ones around reclaiming `-p`, are deliberate — see
   [ADR 0089](../docs/adr/0089-the-bare-command-is-a-run-and-costs-unknown-command.md).
+- The single word `discobox version` is the one exception: it prints what
+  `discobox --version` prints (`versionRequested`, `printVersion`), because
+  anything driving the CLI without reading its help reaches for both spellings
+  and a run is too much to pay for the wrong one. The carve-out is the word
+  alone with nothing a run takes — `discobox version bump the go modules` and
+  `discobox version -d` are still prompts — so the only prompt lost is the
+  one-word "version". There is no subcommand: the word is reserved in the
+  root's dispatch, and `--version` stays the spelling the help documents.
 - `discobox configure` is the same launcher opened on its harnesses screen
   (`tui.WithHarnesses()`), not a window of its own. See *Harness Configure
   Step*.

@@ -21,6 +21,7 @@ import (
 
 	apiclientgen "github.com/discobox-ai/discobox/api/gen"
 	apimodel "github.com/discobox-ai/discobox/api/model"
+	"github.com/discobox-ai/discobox/cli/internal/keys"
 )
 
 func TestWriteProviderTableIncludesConfig(t *testing.T) {
@@ -1658,5 +1659,85 @@ func TestBareWordsAreARunPrompt(t *testing.T) {
 	prompt, ok := config["prompt"].([]any)
 	if !ok || len(prompt) != 1 || prompt[0] != "bogus" {
 		t.Fatalf("prompt = %#v, want [bogus]", config["prompt"])
+	}
+}
+
+// `discobox version` prints what `discobox --version` prints, and costs nothing
+// else: the bare command takes any word as a run prompt, so the word "version"
+// alone would otherwise spend a sandbox on a one-line question.
+func TestBareVersionWordPrintsTheVersion(t *testing.T) {
+	run := func(env map[string]string, args ...string) string {
+		t.Helper()
+		for name, value := range env {
+			t.Setenv(name, value)
+		}
+		cmd := NewRootCommand()
+		var out bytes.Buffer
+		cmd.SetOut(&out)
+		cmd.SetErr(&out)
+		cmd.SetIn(&bytes.Buffer{})
+		cmd.SetArgs(args)
+		if err := cmd.Execute(); err != nil {
+			t.Fatalf("execute %v: %v", args, err)
+		}
+		return out.String()
+	}
+
+	word := run(nil, "version")
+	if flag := run(nil, "--version"); word != flag {
+		t.Fatalf("`version` printed %q, `--version` printed %q", word, flag)
+	}
+	if !strings.HasPrefix(word, "discobox version ") {
+		t.Fatalf("want a version line, got %q", word)
+	}
+	// Neither spelling needs a working environment: what somebody diagnosing a
+	// broken one asks first is what they are running. cobra answers --version
+	// before the root's PersistentPreRunE; this answers it there.
+	if broken := run(map[string]string{keys.LeaderEnv: "not-a-key"}, "version"); broken != word {
+		t.Fatalf("with an unparseable leader `version` printed %q, want %q", broken, word)
+	}
+	// And it stays out of the help, which documents --version instead.
+	help := run(nil, "--help")
+	if strings.Contains(help, "\n  version") {
+		t.Fatalf("the version word should not be listed as a command:\n%s", help)
+	}
+}
+
+// Only the bare word is an answer. Words after it are the prompt they have
+// always been, so ADR 0089's trade is not partly undone for anything that
+// starts with "version" — "version bump the go modules" is a run.
+func TestVersionFollowedByWordsIsARunPrompt(t *testing.T) {
+	serveSSHSync := preparePromptCreateSSHSync(t)
+	repo := newRunSourceTestRepo(t)
+	var posted map[string]any
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if serveSSHSync(w, r) {
+			return
+		}
+		if r.Method != http.MethodPost || r.URL.Path != "/projects/project-1/sandboxes" {
+			t.Fatalf("unexpected request %s %s", r.Method, r.URL.Path)
+		}
+		defer r.Body.Close()
+		if err := json.NewDecoder(r.Body).Decode(&posted); err != nil {
+			t.Fatalf("decode request body: %v", err)
+		}
+		w.Header().Set("Content-Type", "application/json; charset=utf-8")
+		w.WriteHeader(http.StatusAccepted)
+		_, _ = w.Write([]byte(`{"id":"sbx_bogus","projectId":"project-1","createdByUserId":"user-1","displayName":"run-test","config":{"name":"run-test","image":""},"runtime":{"state":"pending","desiredState":"present","generation":1,"observedGeneration":0},"createdAt":"2026-06-17T00:00:00Z","updatedAt":"2026-06-17T00:00:01Z"}`))
+	}))
+	t.Cleanup(server.Close)
+
+	cmd := NewRootCommand()
+	var out bytes.Buffer
+	cmd.SetOut(&out)
+	cmd.SetArgs([]string{"--server", server.URL, "--project", "project-1", "-C", repo + "@HEAD", "-d", "version", "bump", "the", "go", "modules"})
+
+	if err := cmd.Execute(); err != nil {
+		t.Fatalf("execute: %v", err)
+	}
+	config := posted["config"].(map[string]any)
+	prompt, ok := config["prompt"].([]any)
+	if !ok || len(prompt) != 5 || prompt[0] != "version" || prompt[1] != "bump" {
+		t.Fatalf("prompt = %#v, want [version bump the go modules]", config["prompt"])
 	}
 }
