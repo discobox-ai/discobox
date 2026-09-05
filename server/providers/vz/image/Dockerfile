@@ -132,7 +132,6 @@ RUN systemctl mask \
         getty.target \
         systemd-logind.service \
         systemd-firstboot.service \
-        systemd-networkd-wait-online.service \
         systemd-random-seed.service \
         systemd-remount-fs.service \
         sys-fs-fuse-connections.mount \
@@ -147,6 +146,7 @@ COPY --chmod=0755 server/providers/vz/image/discobox-sync-clock /usr/local/sbin/
 COPY server/providers/vz/image/discobox-timesync.service /etc/systemd/system/discobox-timesync.service
 COPY server/providers/vz/image/discobox-timesync.timer /etc/systemd/system/discobox-timesync.timer
 COPY server/providers/vz/image/docker.service.d/10-discobox.conf /etc/systemd/system/docker.service.d/10-discobox.conf
+COPY server/providers/vz/image/systemd-networkd-wait-online.service.d/10-discobox.conf /etc/systemd/system/systemd-networkd-wait-online.service.d/10-discobox.conf
 COPY server/providers/vz/image/10-discobox.network /etc/systemd/network/10-discobox.network
 COPY server/providers/vz/image/discobox-vsock.conf /etc/modules-load.d/discobox-vsock.conf
 COPY server/providers/vz/image/fstab /etc/fstab
@@ -171,6 +171,7 @@ RUN mkdir -p \
         docker.service \
         docker.socket \
         systemd-networkd.service \
+        systemd-networkd-wait-online.service \
         systemd-resolved.service
 
 FROM debian:13-slim AS assemble

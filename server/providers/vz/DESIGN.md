@@ -168,9 +168,18 @@ The guest carries only what boots Docker: `dockerd`, the two
 `discobox-vsock-guest` services, a storage unit that mounts the data and cache
 disks and bind-mounts `/var/lib/docker` and `/var/lib/containerd` onto them, and
 `systemd-networkd`/`systemd-resolved` for the DHCP lease. Anything a sandbox
-needs belongs in a container on that daemon, never here. That scope rule is what
-keeps the image small enough to ship on first boot and stable enough to version
-on its own line.
+needs belongs in a container on that daemon, never here. That scope rule is
+what keeps the image small enough to ship on first boot and stable enough to
+version on its own line.
+
+`systemd-networkd-wait-online` is enabled with it, and deliberately so: it is
+the only thing that gives `network-online.target` a meaning under networkd, and
+`docker.service` orders itself after that target. Masked — as it once was, among
+units a headless guest genuinely does not need — the target was reached
+vacuously and `dockerd` could start before the lease landed, with no resolver
+and no route, failing its first registry pull. The drop-in narrows the wait to
+`--any` with a timeout, because `docker0` and the per-sandbox bridges are
+networkd-managed too and only exist once `dockerd` is already running.
 
 The same rule applies to hardware, and the build enforces it: `vzvm.Start`
 attaches seven virtio devices and nothing else can ever appear, so the Dockerfile

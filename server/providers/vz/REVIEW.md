@@ -58,3 +58,11 @@
 - **Guest image changes are a separate release.** Editing `image/` does not ship
   with the server; it ships when a `vm/v*` tag is cut and `DefaultGuestImage` is
   re-pinned to the new `discobox-vm` digest.
+- **Do not mask `systemd-networkd-wait-online.service`.** It is the only thing
+  that makes `network-online.target` mean anything under networkd, and
+  `docker.service` orders itself after that target. Masking it does not remove
+  the dependency, it silently satisfies it, and `dockerd` then races the DHCP
+  lease this guest takes its address, route, *and* resolver from — a race it
+  loses often enough to fail the pool's first registry pull and mark the pool
+  offline. It belongs with the units the guest enables, not with the ones a
+  headless guest masks.
