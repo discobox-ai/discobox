@@ -10,6 +10,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/discobox-ai/discobox/internal/filelock"
 )
 
 func TestAcquireSingletonTakesFreeLock(t *testing.T) {
@@ -48,8 +50,8 @@ func TestAcquireSingletonBlocksSecondHolder(t *testing.T) {
 
 	// The lock is per open file description, so a second acquire in this
 	// process exercises the same kernel path a second process takes.
-	if _, err := tryAcquireSingleton(filepath.Join(dir, singletonLockName)); !errors.Is(err, errLockBusy) {
-		t.Fatalf("second acquire err = %v, want errLockBusy", err)
+	if _, err := filelock.TryAcquire(filepath.Join(dir, singletonLockName)); !errors.Is(err, filelock.ErrBusy) {
+		t.Fatalf("second acquire err = %v, want filelock.ErrBusy", err)
 	}
 
 	ctx, cancel := context.WithTimeout(context.Background(), 250*time.Millisecond)

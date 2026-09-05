@@ -1,6 +1,6 @@
 //go:build !windows
 
-package server
+package filelock
 
 import (
 	"errors"
@@ -14,7 +14,7 @@ import (
 func lockFileNB(file *os.File) error {
 	err := syscall.Flock(int(file.Fd()), syscall.LOCK_EX|syscall.LOCK_NB)
 	if errors.Is(err, syscall.EWOULDBLOCK) {
-		return errLockBusy
+		return ErrBusy
 	}
 	return err
 }

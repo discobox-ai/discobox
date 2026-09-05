@@ -1,6 +1,6 @@
 //go:build windows
 
-package server
+package filelock
 
 import (
 	"errors"
@@ -20,7 +20,7 @@ func lockFileNB(file *os.File) error {
 		0, 1, 0, &overlapped,
 	)
 	if errors.Is(err, windows.ERROR_LOCK_VIOLATION) {
-		return errLockBusy
+		return ErrBusy
 	}
 	return err
 }
