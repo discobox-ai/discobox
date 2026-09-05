@@ -50,18 +50,24 @@ func WireSecrets() error {
 
 // wireVolumes wires every image-declared data/cache path from its backing
 // primary volume onto its target.
-func (b *booter) wireVolumes(volumes []harness.ResolvedVolume) error {
+//
+// id is the identity this sandbox runs as, which decides the cache partition of
+// every path that did not declare itself shared (ADR 0094). It is the resolved
+// uid rather than the volume's declared owner: what makes sharing a cache
+// directory safe is who ends up writing in it, which is a claim the image makes
+// in its scope rather than something derivable from who owns the mountpoint.
+func (b *booter) wireVolumes(volumes []harness.ResolvedVolume, id identity) error {
 	sortVolumesByDepth(volumes)
 	for _, v := range volumes {
-		if err := b.wireVolume(v); err != nil {
+		if err := b.wireVolume(v, id); err != nil {
 			return fmt.Errorf("wire volume %s: %w", v.Path, err)
 		}
 	}
 	return nil
 }
 
-func (b *booter) wireVolume(v harness.ResolvedVolume) error {
-	dir := volumeDir(v.Kind, v.Path)
+func (b *booter) wireVolume(v harness.ResolvedVolume, id identity) error {
+	dir := volumeDir(v, id.uid)
 	if err := os.MkdirAll(v.Path, 0o755); err != nil {
 		return err
 	}

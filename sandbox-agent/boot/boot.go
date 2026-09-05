@@ -65,7 +65,7 @@ func (b *booter) provision(logger *slog.Logger, id identity) error {
 		if err != nil {
 			return fmt.Errorf("resolve volumes: %w", err)
 		}
-		if err := b.wireVolumes(volumes); err != nil {
+		if err := b.wireVolumes(volumes, id); err != nil {
 			return err
 		}
 		logger.Info("wired sandbox volumes", "count", len(volumes))

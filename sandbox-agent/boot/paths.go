@@ -8,6 +8,7 @@ package boot
 import (
 	"path"
 	"sort"
+	"strconv"
 	"strings"
 
 	"github.com/discobox-ai/discobox/harness"
@@ -36,22 +37,51 @@ const (
 	manifestName = "sandbox.json"
 )
 
-// backingMount returns the primary volume that backs a declared volume kind.
-func backingMount(kind harness.VolumeKind) string {
-	if kind == harness.VolumeCache {
-		return cacheMountPath
-	}
-	return dataMountPath
-}
+// cacheUsersDir is the level at which the pool cache is partitioned by user,
+// below which each partition mirrors target paths exactly as the data volume
+// does. It is dot-prefixed because its siblings are those mirrored paths -- both
+// the shared cache paths, which stay at the cache root, and everything a
+// pre-partition agent wrote there. No image declares a cache path at "/.users",
+// so a target cannot be mistaken for the partition or shadow it.
+const cacheUsersDir = ".users"
 
 // volumeDir is the directory on the backing primary volume that stores a
-// declared path's contents: /.discobox/{data|cache}/<target>.
+// declared path's contents:
+//
+//	/.discobox/data/<target>                  a per-sandbox data volume
+//	/.discobox/cache/.users/<uid>/<target>     a user-scoped cache path
+//	/.discobox/cache/<target>                  a shared cache path
+//
+// A data volume is this sandbox's alone, so it has nobody to be partitioned
+// from. A cache path is shared by every sandbox the pool runs, and a user-scoped
+// one is chowned to the sandbox user and filled by it -- so two users on one
+// directory leave each other files they cannot write, and re-chown the
+// mountpoints out from under each other on every boot. Two clients of one server
+// are two users whenever their local accounts differ, which is ordinary rather
+// than exotic (ADR 0094).
+//
+// The uid is the whole key. A name is not a uid, a gid does not decide who may
+// write a file, and a home directory is where files go rather than whose they
+// are; two sandboxes that agree on a uid can share, which is what a pool-shared
+// cache is for.
+//
+// A shared cache path keeps the unpartitioned location deliberately. It is the
+// path such a tree already lives at, so declaring the scope moves nothing, costs
+// no re-seed, and strands no copy -- and an older sandbox agent, which knows
+// nothing of partitions, lands on the same directory and goes on sharing it.
 //
 // These are guest paths, so this file joins with "path" rather than
 // "path/filepath": the sandbox is Linux whatever host the tests run on, and
 // filepath would splice a backslash in on a Windows runner.
-func volumeDir(kind harness.VolumeKind, target string) string {
-	return path.Join(backingMount(kind), strings.TrimPrefix(path.Clean(target), "/"))
+func volumeDir(v harness.ResolvedVolume, uid int) string {
+	trimmed := strings.TrimPrefix(path.Clean(v.Path), "/")
+	if v.Kind != harness.VolumeCache {
+		return path.Join(dataMountPath, trimmed)
+	}
+	if v.Scope == harness.VolumeScopeShared {
+		return path.Join(cacheMountPath, trimmed)
+	}
+	return path.Join(cacheMountPath, cacheUsersDir, strconv.Itoa(uid), trimmed)
 }
 
 // overlayDirs returns the upperdir and workdir used when a declared path is

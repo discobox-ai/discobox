@@ -45,8 +45,10 @@ func scaleBlocks(blocks, blockSize uint64) int64 {
 // SandboxStorage is one sandbox's durable footprint, by the tree that holds it.
 //
 // There is deliberately no cache figure here. Cache is one pool-shared tree
-// keyed by the target path a harness declared, never by which sandbox wrote it
-// (ADR 0007, ADR 0050), so a per-sandbox cache size has no on-disk answer.
+// keyed by the target path a harness declared and, for every path that did not
+// declare itself shared, by the sandbox user's uid above it -- never by which
+// sandbox wrote it (ADR 0007, ADR 0050, ADR 0094), so a per-sandbox cache size
+// has no on-disk answer.
 // Repeating the shared total on every sandbox would make this column stop
 // summing to anything real, so cache is reported once, at the pool (ADR 0071 §5).
 type SandboxStorage struct {

@@ -144,9 +144,13 @@ tree counted N times: each sandbox's tree holds its own home, sources and nested
 container store, which are its own copies rather than links into anything shared.
 
 Cache gets exactly one figure, at the pool. It is one shared tree keyed by the
-target path a harness declared rather than by which sandbox wrote it (ADR 0007,
-ADR 0050), so a per-sandbox cache size has no on-disk answer — and repeating the
-shared total per sandbox would leave the column summing to N times the truth.
+target path a harness declared — with the sandbox user's uid above it for every
+path that did not declare itself shared — rather than by which sandbox wrote it
+(ADR 0007, ADR 0050,
+[ADR 0094](../docs/adr/0094-the-pool-cache-is-partitioned-by-the-sandbox-users-uid.md)),
+so a per-sandbox cache size has no on-disk answer — and repeating the shared
+total per sandbox would leave the column summing to N times the truth. The figure
+covers `layout.PoolCache` whole, every user's partition included.
 
 **Stopped and archived sandboxes still count.** Unlike the status poll, the
 report covers the union of the containers (`ListSandboxes`) and the durable
@@ -404,7 +408,12 @@ flowchart LR
   `/.discobox/{data,cache,config,sources,secrets}`; it no longer decides
   in-sandbox paths (home, `/var/lib/docker`, source targets). `data`, `config`,
   `sources`, and `secrets` are per-sandbox; `cache` is shared across the pool's
-  sandboxes in this project. The durable host layout is
+  sandboxes in this project — the whole tree is bound in, and the sandbox agent
+  partitions it by the uid it resolved, except for the paths an image declares
+  shared
+  ([ADR 0094](../docs/adr/0094-the-pool-cache-is-partitioned-by-the-sandbox-users-uid.md));
+  this side cannot make that split because the uid may exist only in the image
+  (ADR 0025 §4). The durable host layout is
   `/var/lib/discobox/projects/{project}/pools/{pool}/sandboxes/{sandbox}/{data,config,sources,secrets}`;
   disposable shared cache lives independently at
   `/var/lib/discobox/cache/projects/{project}/pools/{pool}/cache`.
