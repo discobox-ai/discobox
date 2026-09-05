@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/usr/bin/env bash
 #---
 # name: Go mod tidy
 # type: file
@@ -15,7 +15,9 @@ workspace="${DISCOBOX_WORKSPACE:-$(pwd)}"
 
 # DISCOBOX_CHANGED_FILES is newline-separated (the hook runner joins the paths
 # with "\n"), so splitting on newlines alone keeps paths containing spaces
-# intact. An empty value yields no arguments, which tidies every workspace module.
+# intact. mapfile is bash 4, and macOS's /bin/bash is 3.2, so the shebang above
+# asks PATH for a bash rather than naming that one.
+# An empty value yields no arguments, which tidies every workspace module.
 mapfile -t changed < <(printf '%s' "${DISCOBOX_CHANGED_FILES:-}")
 
 DISCOBOX_ROOT="$workspace" exec "$workspace/scripts/go-mod-tidy.sh" "${changed[@]}"

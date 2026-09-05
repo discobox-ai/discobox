@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/usr/bin/env bash
 # Test-build the repository's Dockerfiles, to catch the breakage that comes from
 # changes made nowhere near them: a moved directory leaves `COPY x ./x` naming
 # nothing, and a renamed build argument leaves a FROM resolving to nothing.
@@ -14,6 +14,16 @@
 # target of their own are built directly, at the bottom.
 
 set -euo pipefail
+
+# mapfile is bash 4. macOS ships bash 3.2 as /bin/bash and always will (it is
+# the last GPLv2 release), so the shebang asks PATH for a bash rather than
+# naming that one. Say so plainly if PATH hands us an old one too: the bare
+# failure is `mapfile: command not found`, which reads like a missing tool
+# rather than a missing bash.
+if [ "${BASH_VERSINFO[0]:-0}" -lt 4 ]; then
+  echo "[dockerfile-test-builds] needs bash 4+ (this is ${BASH_VERSION:-unknown}); install a newer bash or run inside 'nix develop'" >&2
+  exit 1
+fi
 
 workspace="${DISCOBOX_ROOT:-$(git rev-parse --show-toplevel 2>/dev/null || pwd)}"
 cd "$workspace"

@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/usr/bin/env bash
 # Keep every module's go.mod/go.sum tidy under BOTH resolution modes so local
 # dev (the go.work workspace) and per-module builds (Docker/CI, which run with
 # GOWORK=off and -mod=readonly) never drift apart. The workspace papers over a
@@ -11,6 +11,16 @@
 # which narrow it to the modules they belong to.
 
 set -euo pipefail
+
+# mapfile, associative arrays, and ${!array[@]} are all bash 4. macOS ships bash
+# 3.2 as /bin/bash and always will (it is the last GPLv2 release), so the
+# shebang asks PATH for a bash rather than naming that one. Say so plainly if
+# PATH hands us an old one too: the bare failure is `mapfile: command not found`
+# on line 20, which reads like a missing tool rather than a missing bash.
+if [ "${BASH_VERSINFO[0]:-0}" -lt 4 ]; then
+  echo "[go-mod-tidy] needs bash 4+ (this is ${BASH_VERSION:-unknown}); install a newer bash or run inside 'nix develop'" >&2
+  exit 1
+fi
 
 workspace="${DISCOBOX_ROOT:-$(git rev-parse --show-toplevel 2>/dev/null || pwd)}"
 cd "$workspace"
