@@ -438,17 +438,22 @@ tasks:
       DISCOBOX_ARCHIVE_RETENTION: '{{.DISCOBOX_ARCHIVE_RETENTION | default "15m"}}'
     cmds:
       - touch .env
-      - go tool watchnbuild
+      # Through discobox-dev-lock, so a second `task dev` in this checkout says
+      # so and stops instead of joining the loop: each server it starts asks the
+      # incumbent to shut down, the incumbent's own supervisor restarts it, and
+      # the two displace each other every retry interval for as long as both
+      # run. See internal/cmd/discobox-dev-lock.
+      - go run ./internal/cmd/discobox-dev-lock server go tool watchnbuild
 
   dev:cli:
     desc: Recompile the discobox CLI with watchnbuild hot reload (see .wnb.cli.yaml)
     cmds:
-      - go tool watchnbuild -config .wnb.cli.yaml
+      - go run ./internal/cmd/discobox-dev-lock cli go tool watchnbuild -config .wnb.cli.yaml
 
   dev:docker-image-watch:
     desc: Build and continuously rebuild pool, sandbox, and harness development images
     cmds:
-      - go run ./internal/cmd/discobox-docker-image-watch
+      - go run ./internal/cmd/discobox-dev-lock docker-image-watch go run ./internal/cmd/discobox-docker-image-watch
 
   dev:pool-agent-image-watch:
     desc: Alias for dev:docker-image-watch
