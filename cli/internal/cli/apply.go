@@ -348,31 +348,29 @@ func (a *App) applyOneSource(ctx context.Context, printer applyPrinter, client *
 	report.SandboxTip = tip
 	printer.noteDetail("discobox tip %s", shortSHA(tip))
 
+	lastCommit := ""
 	if last, ok := lastApplied(sandbox, entry.slug); ok {
-		report.Base, report.BaseOrigin = last.Commit, baseOriginLastApplied
+		lastCommit = last.Commit
 	}
-	switch {
-	case report.Base != "":
-	case entry.source.NoLocalCommits.Or(false):
+	discoboxBase := ""
+	if entry.source.NoLocalCommits.Or(false) {
 		// The discobox was created from a repository with no commits, so it
 		// starts from an empty base commit of its own and shares nothing with
 		// this repository by construction — there is no merge base to look for,
 		// and everything after that base is the discobox's work. This holds
 		// however many commits the user has made here since (ADR 0084 §1).
-		report.Base, report.BaseOrigin = checkoutCommit(entry.source), baseOriginDiscoboxBase
-		if report.Base == "" {
+		discoboxBase = checkoutCommit(entry.source)
+		if discoboxBase == "" {
 			return fail("source %q records no base commit to apply from", entry.slug)
 		}
-	default:
-		report.BaseOrigin = baseOriginMergeBase
-		report.Base, err = gitapply.MergeBase(ctx, repoRoot, tip)
-		if err != nil {
-			// The overwhelmingly likely cause is that repoRoot is not the
-			// repository this source came from — unrelated histories share no
-			// commit — which is worth saying outright, since --dir is how a
-			// caller points at the wrong one in the first place.
-			return fail("the discobox's history has no commit in common with %s, so there is nothing to apply onto; is that the repository source %q came from? (%v)", repoRoot, entry.slug, err)
-		}
+	}
+	report.Base, report.BaseOrigin, err = resolveApplyBase(ctx, repoRoot, tip, lastCommit, discoboxBase)
+	if err != nil {
+		// The overwhelmingly likely cause is that repoRoot is not the
+		// repository this source came from — unrelated histories share no
+		// commit — which is worth saying outright, since --dir is how a
+		// caller points at the wrong one in the first place.
+		return fail("the discobox's history has no commit in common with %s, so there is nothing to apply onto; is that the repository source %q came from? (%v)", repoRoot, entry.slug, err)
 	}
 	printer.note("base %s — %s", shortSHA(report.Base), formatBaseOrigin(report.BaseOrigin))
 
@@ -462,6 +460,26 @@ func (a *App) applyOneSource(ctx context.Context, printer applyPrinter, client *
 	printer.landed(report)
 	printer.note("recorded on discobox %s as applied to %s", sandboxID, repoRoot)
 	return report
+}
+
+// resolveApplyBase chooses the exclusive end of the sandbox commit range.
+// A prior apply is the narrowest answer while its sandbox-side commit remains
+// in the current history. A rebase can rewrite that commit away; in that case
+// it is a stale cursor, so the range is derived from the histories that exist
+// now. Repositories created without commits retain their explicit empty base,
+// because their histories need not share an ancestor (ADR 0084).
+func resolveApplyBase(ctx context.Context, repoRoot, tip, lastCommit, discoboxBase string) (string, baseOrigin, error) {
+	if lastCommit != "" && gitapply.IsAncestor(ctx, repoRoot, lastCommit, tip) {
+		return lastCommit, baseOriginLastApplied, nil
+	}
+	if discoboxBase != "" {
+		return discoboxBase, baseOriginDiscoboxBase, nil
+	}
+	base, err := gitapply.MergeBase(ctx, repoRoot, tip)
+	if err != nil {
+		return "", "", err
+	}
+	return base, baseOriginMergeBase, nil
 }
 
 // checkoutCommit is the commit a source was created against, which for a

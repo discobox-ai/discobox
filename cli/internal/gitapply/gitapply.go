@@ -53,6 +53,14 @@ func MergeBase(ctx context.Context, repoRoot, ref string) (string, error) {
 	return strings.TrimSpace(out), nil
 }
 
+// IsAncestor reports whether ancestor is reachable from descendant. A missing
+// or rewritten commit is not an error to the caller: it simply cannot serve as
+// a range base, and the caller can derive a current merge base instead.
+func IsAncestor(ctx context.Context, repoRoot, ancestor, descendant string) bool {
+	_, err := gitutil.Output(ctx, repoRoot, nil, nil, "merge-base", "--is-ancestor", ancestor, descendant)
+	return err == nil
+}
+
 // Attempt cherry-picks the commits in (base, tipRef] onto repoRoot's current
 // HEAD. base and tipRef must both already be reachable in repoRoot (e.g. via
 // a prior fetch). Callers should not call Attempt when base and the commit
