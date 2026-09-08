@@ -1140,7 +1140,8 @@ func (m *Model) routeMouse(msg tea.MouseMsg) tea.Cmd {
 		}
 	}
 	p.term.SetSeized(m.mouseSeized)
-	return fromPane(p.id, p.term.HandleMouse(translateMouse(msg, x, y)))
+	cols, _ := m.paneCells(m.paneWidthOf(p))
+	return fromPane(p.id, p.term.HandleMouse(translateMouse(msg, x, y, cols)))
 }
 
 // paneAt is the pane whose grid is under a screen position, with the origin
@@ -1148,6 +1149,14 @@ func (m *Model) routeMouse(msg tea.MouseMsg) tea.Cmd {
 // otherwise the terminal is on the left and the visible shell tab on the
 // right, or the one maximized box owns the screen alone. The chrome between and
 // around them belongs to no pane.
+//
+// The cell of air the box draws each side of the grid (boxPad) counts as the
+// pane's. It is breathing room for the eye, not a gutter between two things:
+// a press on it is a press on the line beside it, and treating it as chrome
+// meant a drag that began one cell wide of the text ran as a chrome
+// selection across the whole frame instead of the pane's own. translateMouse
+// pulls the press back onto the grid. The border itself stays chrome — it
+// carries the tabs, the title and the buttons.
 func (m *Model) paneAt(x, y int) (*pane, int, int) {
 	for _, p := range m.onScreen() {
 		if p == nil {
@@ -1155,7 +1164,7 @@ func (m *Model) paneAt(x, y int) (*pane, int, int) {
 		}
 		ox, oy := m.paneOrigin(p)
 		cols, rows := m.paneCells(m.paneWidthOf(p))
-		if x >= ox && x < ox+cols && y >= oy && y < oy+rows {
+		if x >= ox-boxPad && x < ox+cols+boxPad && y >= oy && y < oy+rows {
 			return p, ox, oy
 		}
 	}
@@ -1880,17 +1889,48 @@ func (m *Model) mouseMode() tea.MouseMode {
 	return tea.MouseModeAllMotion
 }
 
-// translateMouse moves an event from the screen into a pane's grid.
-func translateMouse(msg tea.MouseMsg, originX, originY int) tea.MouseMsg {
+// translateMouse moves an event from the screen into a pane's grid, pulling a
+// press or a wheel tick that landed on the cell of air the box draws beside
+// the grid (paneAt) onto the column of grid next to it: the first column of
+// the row on the left, the last on the right. A gesture has to start
+// somewhere real, and the cell the eye reads as the edge of the text is the
+// one the pointer meant.
+//
+// The release moves with its press. A selection ignores where the button came
+// up (the gesture already has its cursor), but a sandbox that asked for the
+// mouse does not: termpane forwards both, and SendMouse drops whatever is off
+// the grid, so clamping one and not the other would send a button down that
+// never comes back up — vim with mouse=a left in a visual drag by a single
+// click on the air.
+//
+// Only that one cell each side, and only across: the air is horizontal — the
+// grid meets the box's top and bottom edges — and anything further out is
+// genuinely outside, left where it is so a pane the pointer has wandered off
+// (Model.mouseCapture) still sees a coordinate that says so.
+//
+// Motion is the exception, passed through untouched: a drag that runs past
+// the grid is how a selection scrolls the pane it is running out of
+// (termpane's dragScroll), and its column is clamped onto the row by the
+// selection itself.
+func translateMouse(msg tea.MouseMsg, originX, originY, cols int) tea.MouseMsg {
+	onGrid := func(x int) int {
+		switch {
+		case x < 0 && x >= -boxPad:
+			return 0
+		case x >= cols && x < cols+boxPad:
+			return cols - 1
+		}
+		return x
+	}
 	switch event := msg.(type) {
 	case tea.MouseClickMsg:
-		event.X, event.Y = event.X-originX, event.Y-originY
+		event.X, event.Y = onGrid(event.X-originX), event.Y-originY
 		return event
 	case tea.MouseReleaseMsg:
-		event.X, event.Y = event.X-originX, event.Y-originY
+		event.X, event.Y = onGrid(event.X-originX), event.Y-originY
 		return event
 	case tea.MouseWheelMsg:
-		event.X, event.Y = event.X-originX, event.Y-originY
+		event.X, event.Y = onGrid(event.X-originX), event.Y-originY
 		return event
 	case tea.MouseMotionMsg:
 		event.X, event.Y = event.X-originX, event.Y-originY

@@ -774,6 +774,29 @@ func TestMouseIsForwardedToTheSandboxThatAskedForIt(t *testing.T) {
 	}
 }
 
+// A click on the box's air reaches a sandbox that asked for the mouse as a
+// matched pair on the grid's edge column. The press is pulled onto the grid,
+// and so is the release: forwarding one without the other leaves the
+// application holding a button that never comes up.
+func TestAClickOnTheAirForwardsBothHalvesToTheSandbox(t *testing.T) {
+	ds := newFakeSource(testSandboxes()...)
+	d, m, term := openWorkspace(t, ds, "enter")
+
+	term.send("\x1b[?1000h\x1b[?1006hCLICKS")
+	d.wait("mouse mode", func() bool {
+		p := m.focusedPane()
+		return p != nil && p.term.MouseMode() != termpane.MouseNone
+	})
+
+	originX, originY := m.paneOrigin(m.focusedPane())
+	d.dispatch(tea.MouseClickMsg{X: originX - boxPad, Y: originY, Button: tea.MouseLeft})
+	d.dispatch(tea.MouseReleaseMsg{X: originX - boxPad, Y: originY, Button: tea.MouseLeft})
+	if got := term.typed("\x1b[<0;1;1m"); !strings.Contains(got, "\x1b[<0;1;1M") ||
+		!strings.Contains(got, "\x1b[<0;1;1m") {
+		t.Fatalf("typed %q, want a press and a release at grid cell 0,0", got)
+	}
+}
+
 // ctrl+a m takes the mouse from a sandbox that is using it, for when you
 // would rather copy a stack trace than click on it. The terminal keeps
 // reporting either way: the events drive selection while the mouse is taken.
@@ -831,6 +854,86 @@ func TestDragSelectsAndCopiesFromThePane(t *testing.T) {
 	d.wait("the copy", func() bool { return m.status == "copied" })
 	if got := m.focusedPane().term.SelectionText(); got != "hello" {
 		t.Fatalf("selected %q, want %q", got, "hello")
+	}
+}
+
+// The cell of air the box draws beside the grid belongs to the pane: a drag
+// that starts on it selects from the edge of the text and goes on wrapping
+// down the pane's own lines, rather than falling through to the chrome's
+// selection across the whole frame.
+func TestDragFromTheBoxAirSelectsInThePane(t *testing.T) {
+	ds := newFakeSource(testSandboxes()...)
+	d, m, term := openWorkspace(t, ds, "enter")
+
+	term.send("hello world\r\nsecond line")
+	d.wait("output", func() bool { return strings.Contains(frameText(m), "second line") })
+
+	originX, originY := m.paneOrigin(m.focusedPane())
+	d.dispatch(tea.MouseClickMsg{X: originX - boxPad, Y: originY, Button: tea.MouseLeft})
+	d.dispatch(tea.MouseMotionMsg{X: originX + 5, Y: originY + 1, Button: tea.MouseLeft})
+	d.dispatch(tea.MouseReleaseMsg{X: originX + 5, Y: originY + 1, Button: tea.MouseLeft})
+	d.wait("the copy", func() bool { return m.status == "copied" })
+	if m.chromeSel.Active() {
+		t.Fatal("the air beside the grid started a chrome selection")
+	}
+	if got := m.focusedPane().term.SelectionText(); got != "hello world\nsecond" {
+		t.Fatalf("selected %q, want %q", got, "hello world\nsecond")
+	}
+}
+
+// The air on the far side is the pane's too, and a press on it means the last
+// cell of the row rather than nothing.
+func TestPressInTheRightAirSelectsToTheEndOfTheRow(t *testing.T) {
+	ds := newFakeSource(testSandboxes()...)
+	d, m, term := openWorkspace(t, ds, "enter")
+
+	term.send("hello world")
+	d.wait("output", func() bool { return strings.Contains(frameText(m), "hello world") })
+
+	p := m.focusedPane()
+	originX, originY := m.paneOrigin(p)
+	cols, _ := m.paneCells(m.paneWidthOf(p))
+	right := originX + cols - 1 + boxPad
+	d.dispatch(tea.MouseClickMsg{X: right, Y: originY, Button: tea.MouseLeft})
+	d.dispatch(tea.MouseMotionMsg{X: originX, Y: originY, Button: tea.MouseLeft})
+	d.dispatch(tea.MouseReleaseMsg{X: originX, Y: originY, Button: tea.MouseLeft})
+	d.wait("the copy", func() bool { return m.status == "copied" })
+	if got := p.term.SelectionText(); got != "hello world" {
+		t.Fatalf("selected %q, want %q", got, "hello world")
+	}
+}
+
+// The air is one cell and no more. The border column just outside it is still
+// the chrome's at a grid row, the same as it is on the rows where it carries
+// the tabs and the title: a drag there runs as the chrome's selection, so
+// border text stays drag-selectable.
+func TestTheBorderBesideTheAirStaysTheChromes(t *testing.T) {
+	ds := newFakeSource(testSandboxes()...)
+	d, m, term := openWorkspace(t, ds, "enter")
+
+	term.send("hello world")
+	d.wait("output", func() bool { return strings.Contains(frameText(m), "hello world") })
+
+	p := m.focusedPane()
+	originX, originY := m.paneOrigin(p)
+	cols, _ := m.paneCells(m.paneWidthOf(p))
+	for _, tc := range []struct {
+		side string
+		x    int
+	}{
+		{"left", originX - boxPad - 1},
+		{"right", originX + cols + boxPad},
+	} {
+		d.dispatch(tea.MouseClickMsg{X: tc.x, Y: originY, Button: tea.MouseLeft})
+		d.dispatch(tea.MouseMotionMsg{X: tc.x, Y: originY + 1, Button: tea.MouseLeft})
+		d.dispatch(tea.MouseReleaseMsg{X: tc.x, Y: originY + 1, Button: tea.MouseLeft})
+		d.settle()
+		if !m.chromeSel.Active() {
+			t.Fatalf("a drag on the %s border should be the chrome's selection", tc.side)
+		}
+		if p.term.HasSelection() {
+			t.Fatalf("the %s border started a selection inside the pane", tc.side)
+		}
 	}
 }
 

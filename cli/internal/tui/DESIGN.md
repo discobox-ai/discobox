@@ -1240,7 +1240,17 @@ coordinate the textarea takes a selection in.
 Inside a pane, events route by position rather than focus — a left press latches the
 pane it landed in until release (`routeMouse`, `paneAt`, `Model.mouseCapture`)
 and also focuses it — and are translated into that pane's grid at the same
-origin its cursor is placed at (`paneOrigin`). What an event *does* is the
+origin its cursor is placed at (`paneOrigin`). The cell of air the box draws
+each side of the grid routes to the pane too, and a press or a wheel tick on
+it is pulled onto the column of grid beside it (`translateMouse`): it is
+breathing room for the eye rather than a gutter between two things, so a drag
+that starts one cell wide of the text selects from the edge of that text and
+goes on wrapping down the pane's own lines instead of running as a chrome
+selection across the whole frame. Only that one cell, and only across — the
+grid meets the box's top and bottom edges, and a pointer further out is
+genuinely outside.
+
+What an event *does* is the
 pane's decision (`termpane.HandleMouse`, ADR 0036): forwarded to a sandbox
 that asked for the mouse, selection otherwise, the wheel to whoever can
 scroll. A finished selection — or a copy chord or right click over one, or an
@@ -1261,7 +1271,7 @@ too (`chrome.go`): a press nothing else claims drives a second
 (`parseChrome`), flat rows with nothing wrapped. Before the selection, the
 press means what the cell means (the hit map, and `focusChromeAt`): a tab label selects its
 tab — the strip records where each label landed as it is drawn
-(`tabbedEdge`, `Model.tabSpans`) — and any other cell of a pane's box
+(`tabbedEdge`, `Model.tabSpans`) — and any other cell of a pane's border
 focuses that pane; the gesture then continues into the chrome selection, so
 border text stays drag-selectable. The word rules make the
 sandbox id one double-click. One selection is on screen at a time — a pane
