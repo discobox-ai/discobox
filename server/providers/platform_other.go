@@ -21,4 +21,4 @@ func registerPlatformProviderFactories(*sandbox.ProviderManager, poolruntime.Poo
 // provider's problem rather than the whole server's — and a Linux server that
 // cannot reach one at all is already refused by the harness check, which needs
 // the same daemon to inspect an image.
-func ensurePlatformPrerequisites(context.Context) error { return nil }
+func ensurePlatformPrerequisites(context.Context, FactoryOptions) error { return nil }

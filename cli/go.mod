@@ -45,6 +45,7 @@ require (
 	github.com/tursodatabase/turso-go-platform-libs v0.7.2 // indirect
 	golang.org/x/mod v0.37.0 // indirect
 	golang.org/x/time v0.15.0 // indirect
+	gopkg.in/yaml.v3 v3.0.1 // indirect
 	gorm.io/driver/postgres v1.6.2 // indirect
 	modernc.org/libc v1.22.5 // indirect
 	modernc.org/mathutil v1.5.0 // indirect

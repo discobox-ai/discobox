@@ -130,6 +130,15 @@ func (UnimplementedHandler) CreateHarnessConfig(ctx context.Context, req *Create
 	return r, ht.ErrNotImplemented
 }
 
+// CreatePeer implements create-peer operation.
+//
+// Enroll a peer.
+//
+// POST /peers
+func (UnimplementedHandler) CreatePeer(ctx context.Context, req *CreatePeerBody) (r CreatePeerRes, _ error) {
+	return r, ht.ErrNotImplemented
+}
+
 // CreatePool implements create-pool operation.
 //
 // Create a pool.
@@ -247,6 +256,15 @@ func (UnimplementedHandler) DeleteHarnessConfig(ctx context.Context, params Dele
 //
 // DELETE /projects/{projectId}/harness-configs/{harnessConfigId}/secret-bindings/{envName}
 func (UnimplementedHandler) DeleteHarnessConfigSecretBinding(ctx context.Context, params DeleteHarnessConfigSecretBindingParams) (r DeleteHarnessConfigSecretBindingRes, _ error) {
+	return r, ht.ErrNotImplemented
+}
+
+// DeletePeer implements delete-peer operation.
+//
+// Revoke an enrolled peer.
+//
+// DELETE /peers/{peerId}
+func (UnimplementedHandler) DeletePeer(ctx context.Context, params DeletePeerParams) (r DeletePeerRes, _ error) {
 	return r, ht.ErrNotImplemented
 }
 
@@ -492,6 +510,15 @@ func (UnimplementedHandler) ListHarnessHooks(ctx context.Context, params ListHar
 //
 // GET /projects/{projectId}/jobs
 func (UnimplementedHandler) ListJobs(ctx context.Context, params ListJobsParams) (r ListJobsRes, _ error) {
+	return r, ht.ErrNotImplemented
+}
+
+// ListPeers implements list-peers operation.
+//
+// List the peers enrolled on this server.
+//
+// GET /peers
+func (UnimplementedHandler) ListPeers(ctx context.Context) (r ListPeersRes, _ error) {
 	return r, ht.ErrNotImplemented
 }
 

@@ -7,33 +7,30 @@ import (
 	"github.com/discobox-ai/discobox/server/providers/dockerworker"
 )
 
-func TestEffectivePoolImageUsesProviderImageBeforeGlobalDefault(t *testing.T) {
-	t.Setenv(dockerworker.PoolImageEnv, "worker:global")
+func TestEffectivePoolImagePrefersTheProviderThenTheServer(t *testing.T) {
+	const serverWide = "worker:server"
 
-	if got := EffectivePoolImage("worker:provider"); got != "worker:provider" {
-		t.Fatalf("effective worker image = %q, want provider image", got)
+	// A provider that names its own image wins over the server-wide override.
+	if got := dockerworker.EffectivePoolImage("worker:provider", serverWide); got != "worker:provider" {
+		t.Fatalf("effective worker image = %q, want the provider image", got)
 	}
-	if got := PoolImageSource("worker:provider"); got != "provider" {
+	if got := dockerworker.PoolImageSource("worker:provider", serverWide); got != "provider" {
 		t.Fatalf("worker image source = %q, want provider", got)
 	}
-}
 
-func TestEffectivePoolImageUsesGlobalWhenProviderImageMissing(t *testing.T) {
-	t.Setenv(dockerworker.PoolImageEnv, "worker:global")
+	// A provider that names none takes the server's.
+	if got := dockerworker.EffectivePoolImage("", serverWide); got != serverWide {
+		t.Fatalf("effective worker image = %q, want the server override", got)
+	}
+	if got := dockerworker.PoolImageSource("", serverWide); got != "server" {
+		t.Fatalf("worker image source = %q, want server", got)
+	}
 
-	if got := EffectivePoolImage(""); got != "worker:global" {
-		t.Fatalf("effective worker image = %q, want global image", got)
+	// With neither, the image this build shipped with.
+	if got := dockerworker.EffectivePoolImage("", ""); got != DefaultImage() {
+		t.Fatalf("effective worker image = %q, want the static default", got)
 	}
-	if got := PoolImageSource(""); got != "global" {
-		t.Fatalf("worker image source = %q, want global", got)
-	}
-}
-
-func TestEffectivePoolImageUsesStaticDefaultWhenUnset(t *testing.T) {
-	if got := EffectivePoolImage(""); got != DefaultImage() {
-		t.Fatalf("effective worker image = %q, want static default", got)
-	}
-	if got := PoolImageSource(""); got != "default" {
+	if got := dockerworker.PoolImageSource("", ""); got != "default" {
 		t.Fatalf("worker image source = %q, want default", got)
 	}
 }

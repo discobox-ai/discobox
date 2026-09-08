@@ -15,45 +15,42 @@ import (
 // and it is skipped entirely when no endpoint names the scheme: an iroh
 // endpoint generates a key and opens a UDP socket, neither of which a server
 // that was not asked to serve iroh should do.
-func configureIroh(dataDir string, listenEndpoints []string) error {
+func configureIroh(dataDir string, listenEndpoints, relayURLs []string) (*irohd.Admission, error) {
 	if !hasIrohEndpoint(listenEndpoints) {
-		return nil
+		return nil, nil
 	}
 	key, err := irohd.LoadOrCreateEndpointKey(dataDir)
 	if err != nil {
-		return fmt.Errorf("iroh endpoint key: %w", err)
+		return nil, fmt.Errorf("iroh endpoint key: %w", err)
 	}
+	// Built here and handed its store once NewApp returns: this runs before
+	// the database exists, so the managed layer cannot be captured (ADR 0095
+	// §4). Both layers are consulted per connection rather than cached, so
+	// enrolling or revoking takes effect on the next connection without a
+	// restart — the contract sshd's authorized_keys has.
+	admission := irohd.NewAdmission(dataDir)
+	// Once, here, where somebody who has just upgraded is reading.
+	irohd.LogAuthorizedIDProblems(dataDir)
 	if err := endpoint.ConfigureIroh(endpoint.IrohConfig{
 		SecretKey: key,
-		Authorize: func(id endpoint.IrohID) bool {
-			// Loaded per connection rather than once at startup, so enrolling
-			// or revoking an ID takes effect on the next connection without a
-			// restart — the same contract sshd's authorized_keys has.
-			authorized, err := irohd.LoadAuthorizedIDs(dataDir)
-			if err != nil {
-				// Fail closed. An unreadable allowlist is not a reason to
-				// admit everyone.
-				log.Printf("iroh: read authorized IDs: %v", err)
-				return false
-			}
-			if !authorized.Allows(id) {
-				log.Printf("iroh: refused endpoint %s: not in authorized_ids", id)
-				return false
-			}
-			return true
-		},
+		Authorize: admission.Authorize,
+		// Empty keeps n0's public relays, which are free but rate-limited and
+		// carry no uptime guarantee. A deployment on its own relays has to
+		// configure its clients too: the address carries a peer ID and does
+		// not name ours (ADR 0096 §6).
+		RelayURLs: relayURLs,
 	}); err != nil {
-		return fmt.Errorf("configure iroh: %w", err)
+		return nil, fmt.Errorf("configure iroh: %w", err)
 	}
 	id, err := endpoint.LocalIrohID()
 	if err != nil {
-		return fmt.Errorf("iroh endpoint ID: %w", err)
+		return nil, fmt.Errorf("iroh endpoint ID: %w", err)
 	}
 	// Printed before the listener starts because it is the only way anyone
-	// learns the address: unlike the SSH endpoint, an iroh address cannot be
+	// learns the address: unlike the SSH endpoint, this address cannot be
 	// fetched over the API, since it *is* how the API is reached (ADR 0052 §6).
-	log.Printf("iroh endpoint ID is %s", id)
-	return nil
+	log.Printf("this server's peer ID is %s", id)
+	return admission, nil
 }
 
 func hasIrohEndpoint(listenEndpoints []string) bool {
@@ -69,15 +66,22 @@ func hasIrohEndpoint(listenEndpoints []string) bool {
 	return false
 }
 
-// irohTicket renders a listener's iroh URL as a ticket, and reports an error
-// for every other scheme so the caller can simply not print one.
-func irohTicket(display string) (string, error) {
+// irohFallbackURL renders a listener's address with this host's direct socket
+// addresses attached, and reports an error for every other scheme so the
+// caller can simply not print one.
+//
+// It is printed beside the address rather than instead of it. The address is
+// what an operator reads, pastes and enrolls; this is what a peer dials when
+// discovery cannot resolve that address — a deployment with no route to a
+// discovery service, or two peers on one host that should not wait for one
+// (ADR 0097 §3).
+func irohFallbackURL(display string) (string, error) {
 	parsed, err := endpoint.Parse(display)
 	if err != nil {
 		return "", err
 	}
 	if parsed.Scheme != "iroh" {
-		return "", fmt.Errorf("endpoint %q is not an iroh endpoint", display)
+		return "", fmt.Errorf("endpoint %q is not reached over iroh", display)
 	}
-	return endpoint.IrohTicket(parsed)
+	return endpoint.LocalIrohFallbackURL()
 }

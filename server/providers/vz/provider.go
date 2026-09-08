@@ -165,13 +165,13 @@ func Validate(data json.RawMessage) error {
 	return nil
 }
 
-func FactoryWithPoolManager(poolManager poolruntime.PoolManager, imageSync *dockerworker.DevelopmentImageSynchronizer, streams StreamSink) sandbox.ProviderFactory {
+func FactoryWithPoolManager(poolManager poolruntime.PoolManager, imageSync *dockerworker.DevelopmentImageSynchronizer, streams StreamSink, serverDefaults dockerworker.ServerDefaults) sandbox.ProviderFactory {
 	return func(ctx context.Context, instance *model.SandboxProviderInstance) (sandbox.Provider, error) {
-		return newFromInstance(ctx, instance, poolManager, imageSync, streams)
+		return newFromInstance(ctx, instance, poolManager, imageSync, streams, serverDefaults)
 	}
 }
 
-func newFromInstance(_ context.Context, instance *model.SandboxProviderInstance, poolManager poolruntime.PoolManager, imageSync *dockerworker.DevelopmentImageSynchronizer, streams StreamSink) (sandbox.Provider, error) {
+func newFromInstance(_ context.Context, instance *model.SandboxProviderInstance, poolManager poolruntime.PoolManager, imageSync *dockerworker.DevelopmentImageSynchronizer, streams StreamSink, serverDefaults dockerworker.ServerDefaults) (sandbox.Provider, error) {
 	cfg, err := Decode(instance.Config)
 	if err != nil {
 		return nil, err
@@ -195,7 +195,7 @@ func newFromInstance(_ context.Context, instance *model.SandboxProviderInstance,
 	if err != nil {
 		return nil, err
 	}
-	engine, err := dockerworker.New(engineConfig(cfg, imageSync, progress), driver)
+	engine, err := dockerworker.New(engineConfig(cfg, imageSync, progress, serverDefaults), driver)
 	if err != nil {
 		_ = driver.Close()
 		return nil, err
@@ -255,14 +255,15 @@ func localSourceRoots() []string {
 // engineConfig renders the pool engine configuration for one provider instance.
 // It is separate from newFromInstance so the transport invariants can be
 // asserted without a VM or a pool manager.
-func engineConfig(cfg Config, imageSync *dockerworker.DevelopmentImageSynchronizer, progress sandbox.PoolProgressReporter) dockerworker.Config {
+func engineConfig(cfg Config, imageSync *dockerworker.DevelopmentImageSynchronizer, progress sandbox.PoolProgressReporter, serverDefaults dockerworker.ServerDefaults) dockerworker.Config {
 	return dockerworker.Config{
 		// Both directions are VSOCK, as for libkrun: the agent dials host CID 2
 		// for the control plane and listens on its own port for inbound
 		// requests. macOS opens no TCP listener and raises no firewall prompt.
 		ControlPlaneURL:      wire.VSOCKURL(guestvsock.HostCID, controlPlaneVSOCKPort),
 		AgentListenURL:       wire.VSOCKListenURL(agentVSOCKPort),
-		Image:                dockerworker.EffectivePoolImage(cfg.WorkerImage),
+		Image:                dockerworker.EffectivePoolImage(cfg.WorkerImage, serverDefaults.PoolImage),
+		ImageRetention:       serverDefaults.ImageRetention,
 		Labels:               map[string]string{labelProviderType: ProviderType},
 		HostMounts:           hostMounts(),
 		DevelopmentImageSync: imageSync,

@@ -36,8 +36,17 @@ var errIrohNotConfigured = errors.New("iroh endpoint used before ConfigureIroh")
 type IrohEndpoint struct {
 	cfg IrohConfig
 
+	// ctx bounds every admission check this endpoint runs, and cancel fires
+	// when it closes. IrohConfig.Authorize may wait for something the process
+	// has not built yet — the control plane's admission gate waits for its
+	// database (ADR 0095 §4) — and a waiter with no cancellation outlives a
+	// failed startup instead of being refused by it.
+	ctx    context.Context
+	cancel context.CancelFunc
+
 	mu       sync.Mutex
 	endpoint *iroh.Endpoint
+	closed   bool
 }
 
 // NewIrohEndpoint prepares an endpoint. Binding is deferred to first use, so
@@ -46,7 +55,8 @@ func NewIrohEndpoint(cfg IrohConfig) (*IrohEndpoint, error) {
 	if len(cfg.SecretKey) != ed25519.PrivateKeySize {
 		return nil, fmt.Errorf("iroh secret key is %d bytes, want %d", len(cfg.SecretKey), ed25519.PrivateKeySize)
 	}
-	return &IrohEndpoint{cfg: cfg}, nil
+	ctx, cancel := context.WithCancel(context.Background())
+	return &IrohEndpoint{cfg: cfg, ctx: ctx, cancel: cancel}, nil
 }
 
 // ID is the endpoint ID peers dial to reach this endpoint.
@@ -70,10 +80,15 @@ func irohPreset(cfg IrohConfig) (iroh.Preset, iroh.RelayMode) {
 	switch {
 	case cfg.DisableDiscovery && cfg.DisableRelay:
 		return iroh.PresetMinimal, iroh.RelayFromPreset
+	case cfg.DisableDiscovery && len(cfg.RelayURLs) > 0:
+		// Minimal brings no relays, so the custom list is what supplies them.
+		return iroh.PresetMinimal, iroh.RelayCustom
 	case cfg.DisableDiscovery:
 		return iroh.PresetMinimal, iroh.RelayDefault
 	case cfg.DisableRelay:
 		return iroh.PresetN0NoRelay, iroh.RelayFromPreset
+	case len(cfg.RelayURLs) > 0:
+		return iroh.PresetN0, iroh.RelayCustom
 	default:
 		return iroh.PresetN0, iroh.RelayFromPreset
 	}
@@ -89,6 +104,9 @@ func (e *IrohEndpoint) bind() (*iroh.Endpoint, error) {
 	if e.endpoint != nil {
 		return e.endpoint, nil
 	}
+	if e.closed {
+		return nil, errIrohEndpointClosed
+	}
 	preset, relay := irohPreset(e.cfg)
 	// iroh takes the 32-byte seed, which is the first half of a Go ed25519
 	// private key; the second half is the public key it derives anyway.
@@ -98,6 +116,7 @@ func (e *IrohEndpoint) bind() (*iroh.Endpoint, error) {
 	bound, err := iroh.Bind(context.Background(), iroh.Options{
 		Preset:    preset,
 		RelayMode: relay,
+		RelayURLs: e.cfg.RelayURLs,
 		SecretKey: &secret,
 		ALPNs:     [][]byte{[]byte(irohALPN)},
 		BindAddrs: e.cfg.BindAddrs,
@@ -113,9 +132,17 @@ func (e *IrohEndpoint) bind() (*iroh.Endpoint, error) {
 // it: a process binds one endpoint, and a server that has stopped listening
 // has no use for the socket it was listening on.
 func (e *IrohEndpoint) close() {
+	// Before the socket, so an admission check still waiting is refused rather
+	// than left parked on a listener that is going away.
+	e.cancel()
 	e.mu.Lock()
 	bound := e.endpoint
 	e.endpoint = nil
+	// Closing is final. bind is lazy, so without this a second Listen would
+	// re-bind a socket and hand every admission check the context close just
+	// canceled — a listener that comes up and refuses every peer with "this
+	// server is shutting down", on a server that is running.
+	e.closed = true
 	e.mu.Unlock()
 	if bound == nil {
 		return
@@ -191,61 +218,20 @@ func parseIrohAddrs(addrs []string) ([]netip.AddrPort, error) {
 	return out, nil
 }
 
-// irohTicketPrefix is what an iroh endpoint ticket starts with. It is how a
-// ticket is told from a URL without trying to decode every endpoint string as
-// one, which would load the iroh library for endpoints that have nothing to do
-// with iroh.
-const irohTicketPrefix = "endpoint"
-
-// IrohTicket renders an iroh endpoint as the ticket other iroh implementations
-// accept: the same endpoint ID and addresses in one opaque token, with nothing
-// for a shell, a chat client or a query string to mangle.
+// irohPeerFromAddr reads the endpoint ID out of an accepted connection's
+// address.
 //
-// It is not shorter than the URL by much — the URL's length is its address
-// list, which a ticket carries too — so both are worth printing. The URL is
-// the one an operator reads the endpoint ID out of, which is the value that
-// goes in authorized_ids; the ticket is the one they paste.
-func IrohTicket(target Endpoint) (string, error) {
-	if target.Scheme != "iroh" {
-		return "", fmt.Errorf("endpoint %q is not an iroh endpoint", target.Raw)
+// It takes the typed value rather than parsing Addr.String(), which renders
+// iroh's own hex form. That string is a transport detail and not a peer ID
+// (ADR 0097 §6): reading it with ParseIrohID would couple this seam to an
+// encoding neither side owns, and would have silently reported every peer as
+// the zero ID the moment the peer ID format changed.
+func irohPeerFromAddr(addr net.Addr) (IrohID, bool) {
+	typed, ok := addr.(iroh.Addr)
+	if !ok || typed.ID.IsZero() {
+		return IrohID{}, false
 	}
-	id, err := target.IrohID()
-	if err != nil {
-		return "", err
-	}
-	addrs, err := parseIrohAddrs(target.IrohAddrs)
-	if err != nil {
-		return "", err
-	}
-	ticket, err := iroh.AddrOf(iroh.EndpointID(id)).WithDirectAddrs(addrs...).Ticket()
-	if err != nil {
-		return "", fmt.Errorf("encode iroh ticket: %w", err)
-	}
-	return string(ticket), nil
-}
-
-// parseIrohTicket decodes the ticket form into the same endpoint the URL form
-// describes.
-//
-// A relay named in the ticket is not carried. This endpoint reaches peers
-// through its own relay configuration and discovery, so the peer's opinion
-// about which relay to use is redundant with what we would do anyway; a
-// deployment that needs a specific relay configures one rather than inheriting
-// it from whoever pasted a ticket.
-func parseIrohTicket(raw string) (Endpoint, error) {
-	ticket, err := iroh.ParseTicket(raw)
-	if err != nil {
-		return Endpoint{}, fmt.Errorf("iroh ticket: %w", err)
-	}
-	addr, err := ticket.Addr()
-	if err != nil {
-		return Endpoint{}, fmt.Errorf("iroh ticket: %w", err)
-	}
-	parsed := Endpoint{Raw: raw, Scheme: "iroh", Value: IrohID(addr.ID).String()}
-	for _, direct := range addr.DirectAddrs {
-		parsed.IrohAddrs = append(parsed.IrohAddrs, direct.String())
-	}
-	return parsed, nil
+	return IrohID(typed.ID), true
 }
 
 // The process's default endpoint, installed by ConfigureIroh. Listen and
@@ -276,6 +262,36 @@ func localIrohID() (IrohID, error) {
 		return IrohID{}, err
 	}
 	return configured.ID()
+}
+
+// errIrohEndpointClosed is returned by an endpoint that has been closed. An
+// identity and its socket do not come back: build another endpoint.
+var errIrohEndpointClosed = errors.New("this iroh endpoint is closed")
+
+func localIrohFallbackURL() (string, error) {
+	configured, err := defaultIrohEndpoint()
+	if err != nil {
+		return "", err
+	}
+	return configured.fallbackURL()
+}
+
+// fallbackURL is this endpoint's address with its direct socket addresses
+// attached. See [LocalIrohFallbackURL], which is this for the process default.
+func (e *IrohEndpoint) fallbackURL() (string, error) {
+	configured := e
+	id, err := configured.ID()
+	if err != nil {
+		return "", err
+	}
+	addrs, err := configured.DirectAddrs()
+	if err != nil {
+		return "", err
+	}
+	if len(addrs) == 0 {
+		return "", errors.New("this endpoint has no direct addresses yet")
+	}
+	return IrohURLWithAddrs(id, addrs), nil
 }
 
 func defaultIrohEndpoint() (*IrohEndpoint, error) {
@@ -404,20 +420,22 @@ func (e *IrohEndpoint) Listen() (net.Listener, string, func(), error) {
 	if err != nil {
 		return nil, "", nil, err
 	}
-	addrs, err := dialableAddrs(ep)
-	if err != nil {
-		return nil, "", nil, err
-	}
 	listener := ep.Listener(iroh.ListenOptions{Authorize: e.authorize})
-	// The dialable URL is only known once the endpoint is bound, which is why
-	// Listen reports the address it ended up with rather than echoing the one
-	// it was given. The direct addresses ride along so the logged URL works
-	// before any discovery service does.
+	// The address is only known once the endpoint is bound, which is why
+	// Listen reports what it ended up with rather than echoing what it was
+	// given.
+	//
+	// Direct addresses are deliberately not advertised (ADR 0097 §3). They are
+	// this host's socket addresses, which in practice means its Docker bridges
+	// and loopback — useless to the peer being handed the address, and a
+	// description of the host's internal network to anyone the log reaches.
+	// Discovery resolves a peer ID on its own; a deployment without discovery
+	// writes ?addr= into the endpoint it dials, which Parse still accepts.
 	cleanup := func() {
 		_ = listener.Close()
 		e.close()
 	}
-	return listener, IrohURLWithAddrs(IrohID(ep.ID()), addrs), cleanup, nil
+	return listener, IrohURL(IrohID(ep.ID())), cleanup, nil
 }
 
 // authorize decides whether a peer may speak to the control plane at all. It
@@ -433,8 +451,11 @@ func (e *IrohEndpoint) authorize(conn *iroh.Conn) error {
 		return fmt.Errorf("endpoint identity is unreadable: %w", err)
 	}
 	peer := IrohID(id)
-	if e.cfg.Authorize == nil || !e.cfg.Authorize(peer) {
+	if e.cfg.Authorize == nil {
 		return fmt.Errorf("endpoint %s is not authorized on this server", peer)
 	}
-	return nil
+	// The policy's own error is the close reason, unwrapped: it is written for
+	// the operator reading it on the other end, and wrapping it here would
+	// prefix every refusal with this package's framing.
+	return e.cfg.Authorize(e.ctx, peer)
 }

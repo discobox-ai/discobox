@@ -5,6 +5,7 @@ import (
 	"crypto/ed25519"
 	"crypto/rand"
 	"errors"
+	"fmt"
 	"io"
 	"net"
 	"net/http"
@@ -21,7 +22,7 @@ import (
 // serves it unchanged, so the test drives a real http.Server over real iroh
 // streams rather than a stand-in.
 func TestIrohServesHTTPAndWebSockets(t *testing.T) {
-	server, client := irohPair(t, func(IrohID) bool { return true })
+	server, client := irohPair(t, admitAll)
 
 	listener, display, cleanup, err := server.Listen()
 	if err != nil {
@@ -33,17 +34,41 @@ func TestIrohServesHTTPAndWebSockets(t *testing.T) {
 	if err != nil {
 		t.Fatalf("ID() error = %v", err)
 	}
-	// The display value is what an operator copies, so it must be dialable on
-	// its own: the ID plus the addresses that reach it.
-	if !strings.HasPrefix(display, IrohURL(serverID)) {
-		t.Fatalf("display = %q, want it to start with %q", display, IrohURL(serverID))
+	// The display value is what an operator copies and what a server logs, so
+	// it is the address and nothing else: no query string, and none of this
+	// host's socket addresses (ADR 0097 §3).
+	if display != IrohURL(serverID) {
+		t.Fatalf("display = %q, want exactly %q", display, IrohURL(serverID))
 	}
 	advertised, err := Parse(display)
 	if err != nil {
 		t.Fatalf("Parse(display) error = %v", err)
 	}
-	if len(advertised.IrohAddrs) == 0 {
-		t.Fatal("display carries no direct addresses, so nothing can dial it without discovery")
+	if len(advertised.IrohAddrs) != 0 {
+		t.Fatalf("display advertises %v; those are this host's own addresses", advertised.IrohAddrs)
+	}
+
+	// The fallback is a separate value, offered beside the address for a peer
+	// that cannot resolve it through discovery (ADR 0097 §3). It has to carry
+	// the same peer and at least one address, or there is no way into a
+	// deployment that has no discovery.
+	fallback, err := server.fallbackURL()
+	if err != nil {
+		t.Fatalf("fallbackURL() error = %v", err)
+	}
+	withAddrs, err := Parse(fallback)
+	if err != nil {
+		t.Fatalf("Parse(fallback) error = %v", err)
+	}
+	fallbackID, err := withAddrs.IrohID()
+	if err != nil {
+		t.Fatalf("IrohID() error = %v", err)
+	}
+	if fallbackID != serverID {
+		t.Fatalf("fallback names %s, want %s", fallbackID, serverID)
+	}
+	if len(withAddrs.IrohAddrs) == 0 {
+		t.Fatal("the fallback carries no addresses, so it is not a way in without discovery")
 	}
 
 	var seenPeer IrohID
@@ -135,7 +160,7 @@ func TestIrohServesHTTPAndWebSockets(t *testing.T) {
 
 // An unenrolled peer is refused at accept, before any HTTP exists.
 func TestIrohRefusesUnauthorizedEndpoint(t *testing.T) {
-	server, client := irohPair(t, func(IrohID) bool { return false })
+	server, client := irohPair(t, refuseAll)
 
 	listener, _, cleanup, err := server.Listen()
 	if err != nil {
@@ -188,7 +213,7 @@ func TestIrohRefusesUnauthorizedEndpoint(t *testing.T) {
 // to return, so a conn that only honors deadlines captured at entry deadlocks
 // every websocket upgrade.
 func TestIrohConnDeadlineInterruptsBlockedRead(t *testing.T) {
-	server, client := irohPair(t, func(IrohID) bool { return true })
+	server, client := irohPair(t, admitAll)
 	listener, _, cleanup, err := server.Listen()
 	if err != nil {
 		t.Fatalf("Listen() error = %v", err)
@@ -267,7 +292,7 @@ func TestIrohConnDeadlineInterruptsBlockedRead(t *testing.T) {
 
 // irohPair builds a server and a client endpoint that can find each other on
 // this host without relays or discovery.
-func irohPair(t *testing.T, authorize func(IrohID) bool) (server, client *IrohEndpoint) {
+func irohPair(t *testing.T, authorize func(context.Context, IrohID) error) (server, client *IrohEndpoint) {
 	t.Helper()
 	server = newIrohEndpointForTest(t, IrohConfig{
 		SecretKey: newSecretKey(t),
@@ -327,4 +352,134 @@ func newSecretKey(t *testing.T) ed25519.PrivateKey {
 		t.Fatalf("generate key: %v", err)
 	}
 	return priv
+}
+
+// admitAll and refuseAll are the two admission policies these tests need. They
+// are named rather than written inline at each call because the signature
+// carries a context the tests never use, and repeating that is noise.
+func admitAll(context.Context, IrohID) error { return nil }
+
+func refuseAll(_ context.Context, id IrohID) error {
+	return fmt.Errorf("endpoint %s is not authorized on this server", id)
+}
+
+// A refusal carries the policy's own words, not this package's. "Not enrolled"
+// and "the server is still starting" send an operator to different places, and
+// the close reason is the only channel that distinction has (ADR 0095 §4).
+func TestIrohRefusalReasonReachesPeer(t *testing.T) {
+	const reason = "this server has not finished starting"
+	server, client := irohPair(t, func(context.Context, IrohID) error {
+		return errors.New(reason)
+	})
+
+	listener, _, cleanup, err := server.Listen()
+	if err != nil {
+		t.Fatalf("Listen() error = %v", err)
+	}
+	t.Cleanup(cleanup)
+	httpServer := &http.Server{ReadHeaderTimeout: 10 * time.Second}
+	go func() { _ = httpServer.Serve(listener) }()
+	t.Cleanup(func() { _ = httpServer.Close() })
+
+	serverID, err := server.ID()
+	if err != nil {
+		t.Fatalf("ID() error = %v", err)
+	}
+	ctx, cancel := context.WithTimeout(t.Context(), 60*time.Second)
+	defer cancel()
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, LogicalHTTPBaseURL+"/", nil)
+	if err != nil {
+		t.Fatalf("new request: %v", err)
+	}
+	resp, err := irohClient(t, client, serverID).Do(req)
+	if err == nil {
+		_ = resp.Body.Close()
+		t.Fatal("request succeeded against a refusing endpoint")
+	}
+	if !strings.Contains(err.Error(), reason) {
+		t.Fatalf("error = %v, want it to carry the policy's reason %q", err, reason)
+	}
+}
+
+// Closing the endpoint releases an admission check that is still waiting.
+//
+// The control plane's gate waits for a database that startup has not opened
+// yet (ADR 0095 §4). When that startup fails instead, the listener is torn
+// down — and a waiter with no cancellation would sit there until the process
+// died rather than being refused by it.
+func TestIrohCloseReleasesWaitingAuthorize(t *testing.T) {
+	entered := make(chan struct{}, 1)
+	released := make(chan error, 1)
+	server, client := irohPair(t, func(ctx context.Context, _ IrohID) error {
+		select {
+		case entered <- struct{}{}:
+		default:
+		}
+		<-ctx.Done()
+		released <- ctx.Err()
+		return ctx.Err()
+	})
+
+	listener, _, cleanup, err := server.Listen()
+	if err != nil {
+		t.Fatalf("Listen() error = %v", err)
+	}
+	httpServer := &http.Server{ReadHeaderTimeout: 10 * time.Second}
+	go func() { _ = httpServer.Serve(listener) }()
+	t.Cleanup(func() { _ = httpServer.Close() })
+
+	serverID, err := server.ID()
+	if err != nil {
+		t.Fatalf("ID() error = %v", err)
+	}
+	go func() {
+		ctx, cancel := context.WithTimeout(t.Context(), 60*time.Second)
+		defer cancel()
+		req, err := http.NewRequestWithContext(ctx, http.MethodGet, LogicalHTTPBaseURL+"/", nil)
+		if err != nil {
+			return
+		}
+		resp, err := irohClient(t, client, serverID).Do(req)
+		if err == nil {
+			_ = resp.Body.Close()
+		}
+	}()
+
+	select {
+	case <-entered:
+	case <-time.After(60 * time.Second):
+		t.Fatal("the admission policy was never consulted")
+	}
+
+	cleanup()
+
+	select {
+	case err := <-released:
+		if !errors.Is(err, context.Canceled) {
+			t.Fatalf("waiting policy released with %v, want context.Canceled", err)
+		}
+	case <-time.After(30 * time.Second):
+		t.Fatal("closing the endpoint did not release the waiting admission policy")
+	}
+}
+
+// A closed endpoint stays closed.
+//
+// bind is lazy, so before this a second Listen would return a working listener
+// whose admission checks all saw the context close had already canceled: every
+// peer refused with "this server is shutting down", on a server that is up.
+func TestIrohEndpointDoesNotComeBackAfterClose(t *testing.T) {
+	server, _ := irohPair(t, admitAll)
+	_, _, cleanup, err := server.Listen()
+	if err != nil {
+		t.Fatalf("Listen() error = %v", err)
+	}
+	cleanup()
+
+	if _, _, _, err := server.Listen(); !errors.Is(err, errIrohEndpointClosed) {
+		t.Fatalf("Listen() after close = %v, want errIrohEndpointClosed", err)
+	}
+	if _, err := server.DirectAddrs(); !errors.Is(err, errIrohEndpointClosed) {
+		t.Fatalf("DirectAddrs() after close = %v, want errIrohEndpointClosed", err)
+	}
 }

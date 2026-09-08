@@ -13,6 +13,7 @@ import (
 	"github.com/discobox-ai/discobox/server/internal/reconcile"
 	"github.com/discobox-ai/discobox/server/internal/resources/harnessconfigs"
 	resourcejobs "github.com/discobox-ai/discobox/server/internal/resources/jobs"
+	"github.com/discobox-ai/discobox/server/internal/resources/peers"
 	"github.com/discobox-ai/discobox/server/internal/resources/pools"
 	"github.com/discobox-ai/discobox/server/internal/resources/projects"
 	"github.com/discobox-ai/discobox/server/internal/resources/providers"
@@ -41,6 +42,7 @@ type Service struct {
 	services.JobService
 	services.SecretService
 	services.SSHKeyService
+	services.PeerService
 
 	store            *store.Store
 	engine           *reconcile.Engine
@@ -66,6 +68,13 @@ type Options struct {
 	// the local IPC endpoint an unconfigured server binds, which is the same
 	// rule config applies.
 	ListenEndpoints []string
+	// ServerDefaults are the provider settings the server configures rather
+	// than any one provider instance: the pool-agent image override and the
+	// host daemon's image retention window.
+	ServerDefaults dockerworker.ServerDefaults
+	// WSLCCommand overrides the WSL Containers program the Windows host is
+	// checked for.
+	WSLCCommand string
 	// ArchiveRetention is the server-wide default an archived sandbox is kept
 	// for, which a project follows until it sets its own. Zero leaves the
 	// package default (24h) in force.
@@ -82,6 +91,8 @@ func New(store *store.Store, engine *reconcile.Engine, options Options) *Service
 		DevelopmentImageSync: options.DevelopmentImageSync,
 		ControlPlaneStreams:  options.ControlPlaneStreams,
 		ListenEndpoints:      options.ListenEndpoints,
+		ServerDefaults:       options.ServerDefaults,
+		WSLCCommand:          options.WSLCCommand,
 	})
 	sandboxService := sandboxes.NewService(store, manager, DefaultUserID, engine, poolControlPlane)
 	providerService := providers.NewService(store, sandboxService, poolControlPlane)
@@ -104,6 +115,7 @@ func New(store *store.Store, engine *reconcile.Engine, options Options) *Service
 		JobService:                     jobsService,
 		SecretService:                  secrets.NewService(store),
 		SSHKeyService:                  sshkeys.NewService(store),
+		PeerService:                    peers.NewService(store),
 
 		jobs:            jobsService,
 		providerService: providerService,

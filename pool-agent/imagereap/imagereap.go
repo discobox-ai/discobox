@@ -87,7 +87,7 @@ func ReclaimInterval(retention time.Duration) time.Duration {
 // deleting images that are still wanted and never reclaiming anything, and both
 // should be loud.
 func RetentionFromEnv() (time.Duration, error) {
-	retention, err := ConfiguredRetention()
+	retention, err := configuredRetention()
 	if err != nil {
 		return 0, err
 	}
@@ -97,13 +97,16 @@ func RetentionFromEnv() (time.Duration, error) {
 	return retention, nil
 }
 
-// ConfiguredRetention is RetentionFromEnv without the default applied: it
-// returns zero when RetentionEnv is unset. It exists for the one caller that
-// must tell "not configured" apart from "configured to the default value" — the
-// engine records the override in the pool container's configuration, and
-// materializing a default there would change that configuration's revision and
-// recreate every existing pool for no reason.
-func ConfiguredRetention() (time.Duration, error) {
+// configuredRetention is RetentionFromEnv without the default applied: it
+// returns zero when RetentionEnv is unset.
+//
+// The distinction between "not configured" and "configured to the default
+// value" is load-bearing, but it is no longer load-bearing here: the server
+// keeps it in config.Config.ImageRetention, which records an override in each
+// pool container's configuration and would change every pool's revision if it
+// materialized a default (ADR 0096 §5). This is unexported because that was
+// its only caller outside this file.
+func configuredRetention() (time.Duration, error) {
 	value := strings.TrimSpace(os.Getenv(RetentionEnv))
 	if value == "" {
 		return 0, nil

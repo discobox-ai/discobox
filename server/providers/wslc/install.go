@@ -23,7 +23,8 @@ import (
 // themselves to confirm the same thing.
 const wslcCommand = "wslc"
 
-// WSLCCommandEnv overrides the program EnsureInstalled looks for, primarily so
+// wslcCommandSetting names the configuration that overrides the program
+// EnsureInstalled looks for, primarily so
 // the refusal can be exercised on a Windows host that has WSL Containers:
 // naming something that does not exist (`DISCOBOX_WSLC_COMMAND=wslc-missing`)
 // is the only way to see what a host without it sees, short of uninstalling
@@ -34,7 +35,7 @@ const wslcCommand = "wslc"
 // to a server it autolaunches, so exporting it in the shell is enough — but
 // only if there is no server running already, which is what would be reused
 // instead (`discobox admin server shutdown` first).
-const WSLCCommandEnv = "DISCOBOX_WSLC_COMMAND"
+const wslcCommandSetting = "wslcCommand (DISCOBOX_WSLC_COMMAND)"
 
 // wslcInstallHint is the one command that fixes a Windows host without WSL
 // Containers. The `--pre-release` matters: wslc ships only in that channel
@@ -63,8 +64,8 @@ const wslcVersionTimeout = 30 * time.Second
 // — so a wslc that is found but exits non-zero is reported and startup
 // continues. Not finding it at all is the one condition strong enough to refuse
 // on, because then there is nothing to stand in for anything.
-func EnsureInstalled(ctx context.Context) error {
-	program, overridden := wslcProgram()
+func EnsureInstalled(ctx context.Context, command string) error {
+	program, overridden := wslcProgram(command)
 	path, searched, err := lookWSLC(program, overridden)
 	if err != nil {
 		return fmt.Errorf("WSL Containers (%s) is not installed: discobox runs every Windows pool "+
@@ -101,8 +102,8 @@ func reportVersion(ctx context.Context, path string) {
 // wslcProgram is the program to look for, and whether that was somebody's
 // choice rather than the default. What is overridden is reported because an
 // override that is forgotten explains an otherwise impossible refusal.
-func wslcProgram() (string, bool) {
-	if name := strings.TrimSpace(os.Getenv(WSLCCommandEnv)); name != "" {
+func wslcProgram(configured string) (string, bool) {
+	if name := strings.TrimSpace(configured); name != "" {
 		return name, true
 	}
 	return wslcCommand, false
@@ -157,9 +158,9 @@ func lookWSLC(program string, overridden bool) (path, searched string, err error
 // for the case this check is least sure of, an install in a third location.
 func escapeHatch(overridden bool) string {
 	if overridden {
-		return "(this is the program named by " + WSLCCommandEnv + ")"
+		return "(this is the program named by " + wslcCommandSetting + ")"
 	}
-	return "(if it is installed somewhere else, name it in " + WSLCCommandEnv + ")"
+	return "(if it is installed somewhere else, name it in " + wslcCommandSetting + ")"
 }
 
 // firstLine is the version line `wslc --version` answers with, defended against

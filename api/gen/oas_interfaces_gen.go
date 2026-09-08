@@ -41,6 +41,10 @@ type CreateHarnessConfigRes interface {
 	createHarnessConfigRes()
 }
 
+type CreatePeerRes interface {
+	createPeerRes()
+}
+
 type CreatePoolRes interface {
 	createPoolRes()
 }
@@ -91,6 +95,10 @@ type DeleteHarnessConfigRes interface {
 
 type DeleteHarnessConfigSecretBindingRes interface {
 	deleteHarnessConfigSecretBindingRes()
+}
+
+type DeletePeerRes interface {
+	deletePeerRes()
 }
 
 type DeletePoolRes interface {
@@ -199,6 +207,10 @@ type ListHarnessHooksRes interface {
 
 type ListJobsRes interface {
 	listJobsRes()
+}
+
+type ListPeersRes interface {
+	listPeersRes()
 }
 
 type ListPoolsRes interface {

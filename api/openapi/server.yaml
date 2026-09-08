@@ -4270,6 +4270,69 @@ components:
             required:
                 - publicKey
             type: object
+        Peer:
+            additionalProperties: false
+            description: A machine permitted to connect to this server (ADR 0095). It authenticates as the server's default user and is not scoped to a project.
+            properties:
+                $schema:
+                    description: A URL to the JSON Schema for this object.
+                    example: https://example.com/schemas/Peer.json
+                    format: uri
+                    readOnly: true
+                    type: string
+                createdAt:
+                    description: Creation timestamp
+                    format: date-time
+                    type: string
+                id:
+                    description: Peer ID
+                    type: string
+                name:
+                    description: Optional label for the enrollment
+                    type: string
+                updatedAt:
+                    description: Last update timestamp
+                    format: date-time
+                    type: string
+            required:
+                - id
+                - createdAt
+                - updatedAt
+            type: object
+        CreatePeerBody:
+            additionalProperties: false
+            properties:
+                $schema:
+                    description: A URL to the JSON Schema for this object.
+                    example: https://example.com/schemas/CreatePeerBody.json
+                    format: uri
+                    readOnly: true
+                    type: string
+                peerId:
+                    description: The peer's ID, as `discobox admin peer id` prints it. It is an address rather than a secret; enrolling it is what grants access.
+                    type: string
+                name:
+                    description: Optional label for the enrollment
+                    type: string
+            required:
+                - peerId
+            type: object
+        ListPeersBody:
+            additionalProperties: false
+            properties:
+                $schema:
+                    description: A URL to the JSON Schema for this object.
+                    example: https://example.com/schemas/ListPeersBody.json
+                    format: uri
+                    readOnly: true
+                    type: string
+                peers:
+                    items:
+                        $ref: '#/components/schemas/Peer'
+                    type: array
+            required:
+                - peers
+            type: object
         ListSSHKeysBody:
             additionalProperties: false
             properties:
@@ -7872,6 +7935,72 @@ paths:
             summary: Discover this server's SSH ingress endpoint and host key
             tags:
                 - SSH
+    /peers:
+        get:
+            operationId: list-peers
+            responses:
+                200:
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/ListPeersBody'
+                    description: OK
+                default:
+                    content:
+                        application/problem+json:
+                            schema:
+                                $ref: '#/components/schemas/ErrorModel'
+                    description: Error
+            summary: List the peers enrolled on this server
+            tags:
+                - Peers
+        post:
+            operationId: create-peer
+            requestBody:
+                content:
+                    application/json:
+                        schema:
+                            $ref: '#/components/schemas/CreatePeerBody'
+                required: true
+            responses:
+                200:
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/Peer'
+                    description: OK
+                default:
+                    content:
+                        application/problem+json:
+                            schema:
+                                $ref: '#/components/schemas/ErrorModel'
+                    description: Error
+            summary: Enroll a peer
+            tags:
+                - Peers
+    /peers/{peerId}:
+        delete:
+            operationId: delete-peer
+            parameters:
+                - description: Peer ID, or an unambiguous prefix of one
+                  in: path
+                  name: peerId
+                  required: true
+                  schema:
+                    description: Peer ID, or an unambiguous prefix of one
+                    type: string
+            responses:
+                204:
+                    description: No Content
+                default:
+                    content:
+                        application/problem+json:
+                            schema:
+                                $ref: '#/components/schemas/ErrorModel'
+                    description: Error
+            summary: Revoke an enrolled peer
+            tags:
+                - Peers
     /providers/catalog:
         get:
             operationId: list-sandbox-provider-catalog

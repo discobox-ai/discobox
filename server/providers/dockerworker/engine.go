@@ -196,19 +196,14 @@ func New(cfg Config, driver Driver) (*Engine, error) {
 	cfg.CgroupNSMode = strings.TrimSpace(cfg.CgroupNSMode)
 	cfg.HostMounts = NormalizeHostMounts(cfg.HostMounts)
 	// Resolved here so every backend gets the same policy without repeating it
-	// in five engineConfig functions. An explicit setting always wins; otherwise
-	// a daemon the image watcher is driving takes the development window, and
-	// everything else stays zero — which is what keeps configRevision, and
-	// therefore every existing production pool, unchanged on upgrade.
-	if cfg.ImageRetention == 0 {
-		retention, err := imagereap.ConfiguredRetention()
-		if err != nil {
-			return nil, err
-		}
-		if retention == 0 && cfg.DevelopmentImageSync != nil {
-			retention = imagereap.DevelopmentRetention
-		}
-		cfg.ImageRetention = retention
+	// in five engineConfig functions. An explicit setting always wins — the
+	// provider's own, or the server's, both of which have already been applied
+	// to cfg by the time this runs — otherwise a daemon the image watcher is
+	// driving takes the development window, and everything else stays zero,
+	// which is what keeps configRevision, and therefore every existing
+	// production pool, unchanged on upgrade.
+	if cfg.ImageRetention == 0 && cfg.DevelopmentImageSync != nil {
+		cfg.ImageRetention = imagereap.DevelopmentRetention
 	}
 	return &Engine{driver: driver, cfg: cfg, configRevision: configRevision(cfg)}, nil
 }

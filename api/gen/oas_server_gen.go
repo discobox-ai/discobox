@@ -95,6 +95,12 @@ type Handler interface {
 	//
 	// POST /projects/{projectId}/harness-configs
 	CreateHarnessConfig(ctx context.Context, req *CreateHarnessConfigBody, params CreateHarnessConfigParams) (CreateHarnessConfigRes, error)
+	// CreatePeer implements create-peer operation.
+	//
+	// Enroll a peer.
+	//
+	// POST /peers
+	CreatePeer(ctx context.Context, req *CreatePeerBody) (CreatePeerRes, error)
 	// CreatePool implements create-pool operation.
 	//
 	// Create a pool.
@@ -176,6 +182,12 @@ type Handler interface {
 	//
 	// DELETE /projects/{projectId}/harness-configs/{harnessConfigId}/secret-bindings/{envName}
 	DeleteHarnessConfigSecretBinding(ctx context.Context, params DeleteHarnessConfigSecretBindingParams) (DeleteHarnessConfigSecretBindingRes, error)
+	// DeletePeer implements delete-peer operation.
+	//
+	// Revoke an enrolled peer.
+	//
+	// DELETE /peers/{peerId}
+	DeletePeer(ctx context.Context, params DeletePeerParams) (DeletePeerRes, error)
 	// DeletePool implements delete-pool operation.
 	//
 	// Delete a pool.
@@ -340,6 +352,12 @@ type Handler interface {
 	//
 	// GET /projects/{projectId}/jobs
 	ListJobs(ctx context.Context, params ListJobsParams) (ListJobsRes, error)
+	// ListPeers implements list-peers operation.
+	//
+	// List the peers enrolled on this server.
+	//
+	// GET /peers
+	ListPeers(ctx context.Context) (ListPeersRes, error)
 	// ListPools implements list-pools operation.
 	//
 	// List pools.

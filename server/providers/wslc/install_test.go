@@ -18,7 +18,6 @@ import (
 // the install directory is a guess, and a host that keeps wslc somewhere else
 // is refused with nothing to act on unless the error says so.
 func TestEnsureInstalledSaysHowToInstallWSLContainers(t *testing.T) {
-	t.Setenv(WSLCCommandEnv, "")
 	t.Setenv("PATH", t.TempDir())
 	// The install directory is searched too, so an empty one is what "not
 	// installed" means here rather than an unset variable this host never had.
@@ -26,7 +25,7 @@ func TestEnsureInstalledSaysHowToInstallWSLContainers(t *testing.T) {
 	t.Setenv("ProgramFiles", programFiles)
 	t.Setenv("ProgramW6432", programFiles)
 
-	err := EnsureInstalled(t.Context())
+	err := EnsureInstalled(t.Context(), "")
 	if err == nil {
 		t.Fatal("EnsureInstalled = nil with no wslc anywhere, want a refusal")
 	}
@@ -35,7 +34,7 @@ func TestEnsureInstalledSaysHowToInstallWSLContainers(t *testing.T) {
 		"wsl --update --pre-release",
 		"PATH",
 		filepath.Join(programFiles, "WSL"),
-		WSLCCommandEnv,
+		wslcCommandSetting,
 	} {
 		if !strings.Contains(err.Error(), want) {
 			t.Fatalf("error %q does not mention %q", err, want)
@@ -47,10 +46,9 @@ func TestEnsureInstalledSaysHowToInstallWSLContainers(t *testing.T) {
 // this server starts on. Pinning a minimum here would refuse hosts on the
 // strength of a number rather than on anything that failed.
 func TestEnsureInstalledAcceptsAnyWorkingWSLC(t *testing.T) {
-	t.Setenv(WSLCCommandEnv, "")
 	t.Setenv("PATH", dirWithFakeWSLC(t, 0, "wslc 2.9.4.0"))
 
-	if err := EnsureInstalled(t.Context()); err != nil {
+	if err := EnsureInstalled(t.Context(), ""); err != nil {
 		t.Fatalf("EnsureInstalled = %v, want nil when wslc answers", err)
 	}
 }
@@ -71,12 +69,11 @@ func TestEnsureInstalledFindsWSLCOffPath(t *testing.T) {
 		t.Fatal(err)
 	}
 	writeFakeWSLC(t, filepath.Join(installed, wslcCommand+".exe"), 0, "wslc 2.9.4.0")
-	t.Setenv(WSLCCommandEnv, "")
 	t.Setenv("PATH", t.TempDir())
 	t.Setenv("ProgramFiles", programFiles)
 	t.Setenv("ProgramW6432", programFiles)
 
-	if err := EnsureInstalled(t.Context()); err != nil {
+	if err := EnsureInstalled(t.Context(), ""); err != nil {
 		t.Fatalf("EnsureInstalled = %v, want wslc to be found where the WSL package installs it", err)
 	}
 }
@@ -87,10 +84,9 @@ func TestEnsureInstalledFindsWSLCOffPath(t *testing.T) {
 // refuse a host whose pools would have run, which is the one failure a proxy
 // check must not invent. It is logged instead.
 func TestEnsureInstalledDoesNotRefuseAWSLCThatWillNotRun(t *testing.T) {
-	t.Setenv(WSLCCommandEnv, "")
 	t.Setenv("PATH", dirWithFakeWSLC(t, 1, "WSL is not installed"))
 
-	if err := EnsureInstalled(t.Context()); err != nil {
+	if err := EnsureInstalled(t.Context(), ""); err != nil {
 		t.Fatalf("EnsureInstalled = %v, want a wslc that exits non-zero to be reported, not refused", err)
 	}
 }
@@ -104,13 +100,12 @@ func TestEnsureInstalledLooksForTheOverriddenProgram(t *testing.T) {
 	// A working wslc is on PATH, exactly as it is on the host this override
 	// exists for. Finding it anyway would make the override useless.
 	t.Setenv("PATH", dirWithFakeWSLC(t, 0, "wslc 2.9.4.0"))
-	t.Setenv(WSLCCommandEnv, "wslc-missing")
 
-	err := EnsureInstalled(t.Context())
+	err := EnsureInstalled(t.Context(), "wslc-missing")
 	if err == nil {
 		t.Fatal("EnsureInstalled = nil, want the overridden program to be the one that has to exist")
 	}
-	for _, want := range []string{"wslc-missing", "wsl --update --pre-release", WSLCCommandEnv} {
+	for _, want := range []string{"wslc-missing", "wsl --update --pre-release", wslcCommandSetting} {
 		if !strings.Contains(err.Error(), want) {
 			t.Fatalf("error %q does not mention %q", err, want)
 		}
@@ -122,9 +117,8 @@ func TestEnsureInstalledLooksForTheOverriddenProgram(t *testing.T) {
 func TestEnsureInstalledAcceptsAnOverriddenProgram(t *testing.T) {
 	installed := filepath.Join(dirWithFakeWSLC(t, 0, "wslc 2.9.4.0"), fakeWSLCName())
 	t.Setenv("PATH", t.TempDir())
-	t.Setenv(WSLCCommandEnv, installed)
 
-	if err := EnsureInstalled(t.Context()); err != nil {
+	if err := EnsureInstalled(t.Context(), installed); err != nil {
 		t.Fatalf("EnsureInstalled = %v, want the overridden program to be accepted", err)
 	}
 }

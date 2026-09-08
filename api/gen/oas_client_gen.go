@@ -114,6 +114,12 @@ type Invoker interface {
 	//
 	// POST /projects/{projectId}/harness-configs
 	CreateHarnessConfig(ctx context.Context, request *CreateHarnessConfigBody, params CreateHarnessConfigParams) (CreateHarnessConfigRes, error)
+	// CreatePeer invokes create-peer operation.
+	//
+	// Enroll a peer.
+	//
+	// POST /peers
+	CreatePeer(ctx context.Context, request *CreatePeerBody) (CreatePeerRes, error)
 	// CreatePool invokes create-pool operation.
 	//
 	// Create a pool.
@@ -195,6 +201,12 @@ type Invoker interface {
 	//
 	// DELETE /projects/{projectId}/harness-configs/{harnessConfigId}/secret-bindings/{envName}
 	DeleteHarnessConfigSecretBinding(ctx context.Context, params DeleteHarnessConfigSecretBindingParams) (DeleteHarnessConfigSecretBindingRes, error)
+	// DeletePeer invokes delete-peer operation.
+	//
+	// Revoke an enrolled peer.
+	//
+	// DELETE /peers/{peerId}
+	DeletePeer(ctx context.Context, params DeletePeerParams) (DeletePeerRes, error)
 	// DeletePool invokes delete-pool operation.
 	//
 	// Delete a pool.
@@ -359,6 +371,12 @@ type Invoker interface {
 	//
 	// GET /projects/{projectId}/jobs
 	ListJobs(ctx context.Context, params ListJobsParams) (ListJobsRes, error)
+	// ListPeers invokes list-peers operation.
+	//
+	// List the peers enrolled on this server.
+	//
+	// GET /peers
+	ListPeers(ctx context.Context) (ListPeersRes, error)
 	// ListPools invokes list-pools operation.
 	//
 	// List pools.
@@ -1919,6 +1937,83 @@ func (c *Client) sendCreateHarnessConfig(ctx context.Context, request *CreateHar
 	return result, nil
 }
 
+// CreatePeer invokes create-peer operation.
+//
+// Enroll a peer.
+//
+// POST /peers
+func (c *Client) CreatePeer(ctx context.Context, request *CreatePeerBody) (CreatePeerRes, error) {
+	res, err := c.sendCreatePeer(ctx, request)
+	return res, err
+}
+
+func (c *Client) sendCreatePeer(ctx context.Context, request *CreatePeerBody) (res CreatePeerRes, err error) {
+	otelAttrs := []attribute.KeyValue{
+		otelogen.OperationID("create-peer"),
+		semconv.HTTPRequestMethodKey.String("POST"),
+		semconv.URLTemplateKey.String("/peers"),
+	}
+	otelAttrs = append(otelAttrs, c.cfg.Attributes...)
+
+	// Run stopwatch.
+	startTime := time.Now()
+	defer func() {
+		// Use floating point division here for higher precision (instead of Millisecond method).
+		elapsedDuration := time.Since(startTime)
+		c.duration.Record(ctx, float64(elapsedDuration)/float64(time.Millisecond), metric.WithAttributes(otelAttrs...))
+	}()
+
+	// Increment request counter.
+	c.requests.Add(ctx, 1, metric.WithAttributes(otelAttrs...))
+
+	// Start a span for this request.
+	ctx, span := c.cfg.Tracer.Start(ctx, CreatePeerOperation,
+		trace.WithAttributes(otelAttrs...),
+		clientSpanKind,
+	)
+	// Track stage for error reporting.
+	var stage string
+	defer func() {
+		if err != nil {
+			span.RecordError(err)
+			span.SetStatus(codes.Error, stage)
+			c.errors.Add(ctx, 1, metric.WithAttributes(otelAttrs...))
+		}
+		span.End()
+	}()
+
+	stage = "BuildURL"
+	u := uri.Clone(c.requestURL(ctx))
+	var pathParts [1]string
+	pathParts[0] = "/peers"
+	uri.AddPathParts(u, pathParts[:]...)
+
+	stage = "EncodeRequest"
+	r, err := ht.NewRequest(ctx, "POST", u)
+	if err != nil {
+		return res, errors.Wrap(err, "create request")
+	}
+	if err := encodeCreatePeerRequest(request, r); err != nil {
+		return res, errors.Wrap(err, "encode request")
+	}
+
+	stage = "SendRequest"
+	resp, err := c.cfg.Client.Do(r)
+	if err != nil {
+		return res, errors.Wrap(err, "do request")
+	}
+	body := resp.Body
+	defer body.Close()
+
+	stage = "DecodeResponse"
+	result, err := decodeCreatePeerResponse(resp)
+	if err != nil {
+		return res, errors.Wrap(err, "decode response")
+	}
+
+	return result, nil
+}
+
 // CreatePool invokes create-pool operation.
 //
 // Create a pool.
@@ -3228,6 +3323,98 @@ func (c *Client) sendDeleteHarnessConfigSecretBinding(ctx context.Context, param
 
 	stage = "DecodeResponse"
 	result, err := decodeDeleteHarnessConfigSecretBindingResponse(resp)
+	if err != nil {
+		return res, errors.Wrap(err, "decode response")
+	}
+
+	return result, nil
+}
+
+// DeletePeer invokes delete-peer operation.
+//
+// Revoke an enrolled peer.
+//
+// DELETE /peers/{peerId}
+func (c *Client) DeletePeer(ctx context.Context, params DeletePeerParams) (DeletePeerRes, error) {
+	res, err := c.sendDeletePeer(ctx, params)
+	return res, err
+}
+
+func (c *Client) sendDeletePeer(ctx context.Context, params DeletePeerParams) (res DeletePeerRes, err error) {
+	otelAttrs := []attribute.KeyValue{
+		otelogen.OperationID("delete-peer"),
+		semconv.HTTPRequestMethodKey.String("DELETE"),
+		semconv.URLTemplateKey.String("/peers/{peerId}"),
+	}
+	otelAttrs = append(otelAttrs, c.cfg.Attributes...)
+
+	// Run stopwatch.
+	startTime := time.Now()
+	defer func() {
+		// Use floating point division here for higher precision (instead of Millisecond method).
+		elapsedDuration := time.Since(startTime)
+		c.duration.Record(ctx, float64(elapsedDuration)/float64(time.Millisecond), metric.WithAttributes(otelAttrs...))
+	}()
+
+	// Increment request counter.
+	c.requests.Add(ctx, 1, metric.WithAttributes(otelAttrs...))
+
+	// Start a span for this request.
+	ctx, span := c.cfg.Tracer.Start(ctx, DeletePeerOperation,
+		trace.WithAttributes(otelAttrs...),
+		clientSpanKind,
+	)
+	// Track stage for error reporting.
+	var stage string
+	defer func() {
+		if err != nil {
+			span.RecordError(err)
+			span.SetStatus(codes.Error, stage)
+			c.errors.Add(ctx, 1, metric.WithAttributes(otelAttrs...))
+		}
+		span.End()
+	}()
+
+	stage = "BuildURL"
+	u := uri.Clone(c.requestURL(ctx))
+	var pathParts [2]string
+	pathParts[0] = "/peers/"
+	{
+		// Encode "peerId" parameter.
+		e := uri.NewPathEncoder(uri.PathEncoderConfig{
+			Param:   "peerId",
+			Style:   uri.PathStyleSimple,
+			Explode: false,
+		})
+		if err := func() error {
+			return e.EncodeValue(conv.StringToString(params.PeerId))
+		}(); err != nil {
+			return res, errors.Wrap(err, "encode path")
+		}
+		encoded, err := e.Result()
+		if err != nil {
+			return res, errors.Wrap(err, "encode path")
+		}
+		pathParts[1] = encoded
+	}
+	uri.AddPathParts(u, pathParts[:]...)
+
+	stage = "EncodeRequest"
+	r, err := ht.NewRequest(ctx, "DELETE", u)
+	if err != nil {
+		return res, errors.Wrap(err, "create request")
+	}
+
+	stage = "SendRequest"
+	resp, err := c.cfg.Client.Do(r)
+	if err != nil {
+		return res, errors.Wrap(err, "do request")
+	}
+	body := resp.Body
+	defer body.Close()
+
+	stage = "DecodeResponse"
+	result, err := decodeDeletePeerResponse(resp)
 	if err != nil {
 		return res, errors.Wrap(err, "decode response")
 	}
@@ -6254,6 +6441,80 @@ func (c *Client) sendListJobs(ctx context.Context, params ListJobsParams) (res L
 
 	stage = "DecodeResponse"
 	result, err := decodeListJobsResponse(resp)
+	if err != nil {
+		return res, errors.Wrap(err, "decode response")
+	}
+
+	return result, nil
+}
+
+// ListPeers invokes list-peers operation.
+//
+// List the peers enrolled on this server.
+//
+// GET /peers
+func (c *Client) ListPeers(ctx context.Context) (ListPeersRes, error) {
+	res, err := c.sendListPeers(ctx)
+	return res, err
+}
+
+func (c *Client) sendListPeers(ctx context.Context) (res ListPeersRes, err error) {
+	otelAttrs := []attribute.KeyValue{
+		otelogen.OperationID("list-peers"),
+		semconv.HTTPRequestMethodKey.String("GET"),
+		semconv.URLTemplateKey.String("/peers"),
+	}
+	otelAttrs = append(otelAttrs, c.cfg.Attributes...)
+
+	// Run stopwatch.
+	startTime := time.Now()
+	defer func() {
+		// Use floating point division here for higher precision (instead of Millisecond method).
+		elapsedDuration := time.Since(startTime)
+		c.duration.Record(ctx, float64(elapsedDuration)/float64(time.Millisecond), metric.WithAttributes(otelAttrs...))
+	}()
+
+	// Increment request counter.
+	c.requests.Add(ctx, 1, metric.WithAttributes(otelAttrs...))
+
+	// Start a span for this request.
+	ctx, span := c.cfg.Tracer.Start(ctx, ListPeersOperation,
+		trace.WithAttributes(otelAttrs...),
+		clientSpanKind,
+	)
+	// Track stage for error reporting.
+	var stage string
+	defer func() {
+		if err != nil {
+			span.RecordError(err)
+			span.SetStatus(codes.Error, stage)
+			c.errors.Add(ctx, 1, metric.WithAttributes(otelAttrs...))
+		}
+		span.End()
+	}()
+
+	stage = "BuildURL"
+	u := uri.Clone(c.requestURL(ctx))
+	var pathParts [1]string
+	pathParts[0] = "/peers"
+	uri.AddPathParts(u, pathParts[:]...)
+
+	stage = "EncodeRequest"
+	r, err := ht.NewRequest(ctx, "GET", u)
+	if err != nil {
+		return res, errors.Wrap(err, "create request")
+	}
+
+	stage = "SendRequest"
+	resp, err := c.cfg.Client.Do(r)
+	if err != nil {
+		return res, errors.Wrap(err, "do request")
+	}
+	body := resp.Body
+	defer body.Close()
+
+	stage = "DecodeResponse"
+	result, err := decodeListPeersResponse(resp)
 	if err != nil {
 		return res, errors.Wrap(err, "decode response")
 	}

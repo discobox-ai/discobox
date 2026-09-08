@@ -49,13 +49,13 @@ func Validate(data json.RawMessage) error {
 	return poolruntime.RequireControlPlaneURL(ProviderType, cfg.ControlPlaneURL)
 }
 
-func FactoryWithPoolManager(poolManager poolruntime.PoolManager, imageSync *dockerworker.DevelopmentImageSynchronizer) sandbox.ProviderFactory {
+func FactoryWithPoolManager(poolManager poolruntime.PoolManager, imageSync *dockerworker.DevelopmentImageSynchronizer, serverDefaults dockerworker.ServerDefaults) sandbox.ProviderFactory {
 	return func(ctx context.Context, instance *model.SandboxProviderInstance) (sandbox.Provider, error) {
-		return newFromInstance(ctx, instance, poolManager, imageSync)
+		return newFromInstance(ctx, instance, poolManager, imageSync, serverDefaults)
 	}
 }
 
-func newFromInstance(_ context.Context, instance *model.SandboxProviderInstance, poolManager poolruntime.PoolManager, imageSync *dockerworker.DevelopmentImageSynchronizer) (sandbox.Provider, error) {
+func newFromInstance(_ context.Context, instance *model.SandboxProviderInstance, poolManager poolruntime.PoolManager, imageSync *dockerworker.DevelopmentImageSynchronizer, serverDefaults dockerworker.ServerDefaults) (sandbox.Provider, error) {
 	cfg, err := Decode(instance.Config)
 	if err != nil {
 		return nil, err
@@ -68,7 +68,7 @@ func newFromInstance(_ context.Context, instance *model.SandboxProviderInstance,
 	if err != nil {
 		return nil, err
 	}
-	engineCfg := engineConfig(cfg)
+	engineCfg := engineConfig(cfg, serverDefaults)
 	engineCfg.DevelopmentImageSync = imageSync
 	engineCfg.ProgressReporter = sandbox.PoolProgressReporterFor(poolManager)
 	engine, err := dockerworker.New(engineCfg, driver)
@@ -82,14 +82,15 @@ func newFromInstance(_ context.Context, instance *model.SandboxProviderInstance,
 // engineConfig maps the exec provider configuration to the shared engine
 // configuration. The harness port publishes on all interfaces by default so the
 // harness-endpoint command can return a fixed VM address and port.
-func engineConfig(cfg Config) dockerworker.Config {
+func engineConfig(cfg Config, serverDefaults dockerworker.ServerDefaults) dockerworker.Config {
 	publicAgentPort := true
 	if cfg.PublicAgentPort != nil {
 		publicAgentPort = *cfg.PublicAgentPort
 	}
 	return dockerworker.Config{
 		ControlPlaneURL:     cfg.ControlPlaneURL,
-		Image:               dockerworker.EffectivePoolImage(cfg.WorkerImage),
+		Image:               dockerworker.EffectivePoolImage(cfg.WorkerImage, serverDefaults.PoolImage),
+		ImageRetention:      serverDefaults.ImageRetention,
 		AgentPort:           effectiveAgentPort(cfg.AgentPort),
 		PublicAgentPort:     publicAgentPort,
 		Labels:              map[string]string{labelProviderType: ProviderType},

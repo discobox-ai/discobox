@@ -33,11 +33,11 @@ func irohEchoServer(t *testing.T, key ed25519.PrivateKey) (addrs []string, admit
 	admitted = &atomic.Int64{}
 	server := newIrohEndpointForTest(t, IrohConfig{
 		SecretKey: key,
-		Authorize: func(IrohID) bool {
+		Authorize: func(context.Context, IrohID) error {
 			// Authorize runs once per connection, which makes it the count of
 			// connections this server accepted.
 			admitted.Add(1)
-			return true
+			return nil
 		},
 	})
 
@@ -290,7 +290,7 @@ func TestIrohConcurrentRequestsAndWebsockets(t *testing.T) {
 // side is done. Half-close is how "done sending" is said, and it has to reach
 // the other end as a clean EOF rather than as a broken stream.
 func TestIrohHijackedStreamHalfCloses(t *testing.T) {
-	server, client := irohPair(t, func(IrohID) bool { return true })
+	server, client := irohPair(t, admitAll)
 
 	listener, _, cleanup, err := server.Listen()
 	if err != nil {

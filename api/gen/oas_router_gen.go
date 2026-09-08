@@ -11,40 +11,43 @@ import (
 )
 
 var (
-	rn93AllowedHeaders = map[string]string{
+	rn97AllowedHeaders = map[string]string{
+		"POST": "Content-Type",
+	}
+	rn105AllowedHeaders = map[string]string{
 		"POST": "Content-Type",
 	}
 	rn101AllowedHeaders = map[string]string{
 		"POST": "Content-Type",
 	}
-	rn97AllowedHeaders = map[string]string{
+	rn103AllowedHeaders = map[string]string{
 		"POST": "Content-Type",
 	}
-	rn99AllowedHeaders = map[string]string{
+	rn90AllowedHeaders = map[string]string{
 		"POST": "Content-Type",
 	}
-	rn86AllowedHeaders = map[string]string{
+	rn39AllowedHeaders = map[string]string{
 		"POST": "Content-Type",
 	}
-	rn37AllowedHeaders = map[string]string{
+	rn95AllowedHeaders = map[string]string{
 		"POST": "Content-Type",
 	}
-	rn91AllowedHeaders = map[string]string{
+	rn102AllowedHeaders = map[string]string{
 		"POST": "Content-Type",
 	}
-	rn98AllowedHeaders = map[string]string{
+	rn127AllowedHeaders = map[string]string{
 		"POST": "Content-Type",
 	}
-	rn123AllowedHeaders = map[string]string{
-		"POST": "Content-Type",
-	}
-	rn38AllowedHeaders = map[string]string{
+	rn40AllowedHeaders = map[string]string{
 		"POST": "Content-Type",
 	}
 	rn21AllowedHeaders = map[string]string{
 		"POST": "Content-Type",
 	}
 	rn31AllowedHeaders = map[string]string{
+		"POST": "Content-Type",
+	}
+	rn33AllowedHeaders = map[string]string{
 		"POST": "Content-Type",
 	}
 	rn2AllowedHeaders = map[string]string{
@@ -56,22 +59,22 @@ var (
 	rn12AllowedHeaders = map[string]string{
 		"PATCH": "Content-Type",
 	}
-	rn49AllowedHeaders = map[string]string{
+	rn51AllowedHeaders = map[string]string{
 		"PUT": "Content-Type",
 	}
-	rn30AllowedHeaders = map[string]string{
-		"POST": "Content-Type",
-	}
-	rn51AllowedHeaders = map[string]string{
-		"PATCH": "Content-Type",
-	}
-	rn40AllowedHeaders = map[string]string{
+	rn32AllowedHeaders = map[string]string{
 		"POST": "Content-Type",
 	}
 	rn55AllowedHeaders = map[string]string{
 		"PATCH": "Content-Type",
 	}
-	rn33AllowedHeaders = map[string]string{
+	rn42AllowedHeaders = map[string]string{
+		"POST": "Content-Type",
+	}
+	rn59AllowedHeaders = map[string]string{
+		"PATCH": "Content-Type",
+	}
+	rn35AllowedHeaders = map[string]string{
 		"POST": "Content-Type",
 	}
 	rn8AllowedHeaders = map[string]string{
@@ -86,34 +89,34 @@ var (
 	rn9AllowedHeaders = map[string]string{
 		"POST": "Content-Type",
 	}
-	rn102AllowedHeaders = map[string]string{
-		"POST": "Content-Type",
-	}
-	rn112AllowedHeaders = map[string]string{
+	rn106AllowedHeaders = map[string]string{
 		"POST": "Content-Type",
 	}
 	rn116AllowedHeaders = map[string]string{
 		"POST": "Content-Type",
 	}
-	rn125AllowedHeaders = map[string]string{
+	rn120AllowedHeaders = map[string]string{
 		"POST": "Content-Type",
 	}
-	rn44AllowedHeaders = map[string]string{
+	rn129AllowedHeaders = map[string]string{
 		"POST": "Content-Type",
 	}
-	rn45AllowedHeaders = map[string]string{
+	rn46AllowedHeaders = map[string]string{
+		"POST": "Content-Type",
+	}
+	rn47AllowedHeaders = map[string]string{
 		"POST": "Content-Type",
 	}
 	rn5AllowedHeaders = map[string]string{
 		"POST": "Content-Type",
 	}
-	rn42AllowedHeaders = map[string]string{
+	rn44AllowedHeaders = map[string]string{
 		"POST": "Content-Type",
 	}
-	rn57AllowedHeaders = map[string]string{
+	rn61AllowedHeaders = map[string]string{
 		"PUT": "Content-Type",
 	}
-	rn32AllowedHeaders = map[string]string{
+	rn34AllowedHeaders = map[string]string{
 		"POST": "Content-Type",
 	}
 )
@@ -209,7 +212,7 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 							default:
 								s.notAllowed(w, r, notAllowedParams{
 									allowedMethods: "POST",
-									allowedHeaders: rn93AllowedHeaders,
+									allowedHeaders: rn97AllowedHeaders,
 									acceptPost:     "application/json",
 									acceptPatch:    "",
 								})
@@ -275,7 +278,7 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 									default:
 										s.notAllowed(w, r, notAllowedParams{
 											allowedMethods: "POST",
-											allowedHeaders: rn101AllowedHeaders,
+											allowedHeaders: rn105AllowedHeaders,
 											acceptPost:     "application/json",
 											acceptPatch:    "",
 										})
@@ -302,7 +305,7 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 									default:
 										s.notAllowed(w, r, notAllowedParams{
 											allowedMethods: "POST",
-											allowedHeaders: rn97AllowedHeaders,
+											allowedHeaders: rn101AllowedHeaders,
 											acceptPost:     "application/json",
 											acceptPatch:    "",
 										})
@@ -354,7 +357,7 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 										default:
 											s.notAllowed(w, r, notAllowedParams{
 												allowedMethods: "POST",
-												allowedHeaders: rn99AllowedHeaders,
+												allowedHeaders: rn103AllowedHeaders,
 												acceptPost:     "application/json",
 												acceptPatch:    "",
 											})
@@ -381,7 +384,7 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 											default:
 												s.notAllowed(w, r, notAllowedParams{
 													allowedMethods: "POST",
-													allowedHeaders: rn86AllowedHeaders,
+													allowedHeaders: rn90AllowedHeaders,
 													acceptPost:     "application/json",
 													acceptPatch:    "",
 												})
@@ -433,7 +436,7 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 												default:
 													s.notAllowed(w, r, notAllowedParams{
 														allowedMethods: "POST",
-														allowedHeaders: rn37AllowedHeaders,
+														allowedHeaders: rn39AllowedHeaders,
 														acceptPost:     "application/json",
 														acceptPatch:    "",
 													})
@@ -499,7 +502,7 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 												default:
 													s.notAllowed(w, r, notAllowedParams{
 														allowedMethods: "POST",
-														allowedHeaders: rn91AllowedHeaders,
+														allowedHeaders: rn95AllowedHeaders,
 														acceptPost:     "application/json",
 														acceptPatch:    "",
 													})
@@ -557,7 +560,7 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 										default:
 											s.notAllowed(w, r, notAllowedParams{
 												allowedMethods: "POST",
-												allowedHeaders: rn98AllowedHeaders,
+												allowedHeaders: rn102AllowedHeaders,
 												acceptPost:     "application/json",
 												acceptPatch:    "",
 											})
@@ -586,7 +589,7 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 									default:
 										s.notAllowed(w, r, notAllowedParams{
 											allowedMethods: "POST",
-											allowedHeaders: rn123AllowedHeaders,
+											allowedHeaders: rn127AllowedHeaders,
 											acceptPost:     "application/json",
 											acceptPatch:    "",
 										})
@@ -678,7 +681,7 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 									default:
 										s.notAllowed(w, r, notAllowedParams{
 											allowedMethods: "GET,POST",
-											allowedHeaders: rn38AllowedHeaders,
+											allowedHeaders: rn40AllowedHeaders,
 											acceptPost:     "application/json",
 											acceptPatch:    "",
 										})
@@ -1262,9 +1265,9 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 
 				}
 
-			case 'p': // Prefix: "pro"
+			case 'p': // Prefix: "p"
 
-				if l := len("pro"); len(elem) >= l && elem[0:l] == "pro" {
+				if l := len("p"); len(elem) >= l && elem[0:l] == "p" {
 					elem = elem[l:]
 				} else {
 					break
@@ -1274,9 +1277,9 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 					break
 				}
 				switch elem[0] {
-				case 'j': // Prefix: "jects"
+				case 'e': // Prefix: "eers"
 
-					if l := len("jects"); len(elem) >= l && elem[0:l] == "jects" {
+					if l := len("eers"); len(elem) >= l && elem[0:l] == "eers" {
 						elem = elem[l:]
 					} else {
 						break
@@ -1285,9 +1288,9 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 					if len(elem) == 0 {
 						switch r.Method {
 						case "GET":
-							s.handleListProjectsRequest([0]string{}, elemIsEscaped, w, r)
+							s.handleListPeersRequest([0]string{}, elemIsEscaped, w, r)
 						case "POST":
-							s.handleCreateProjectRequest([0]string{}, elemIsEscaped, w, r)
+							s.handleCreatePeerRequest([0]string{}, elemIsEscaped, w, r)
 						default:
 							s.notAllowed(w, r, notAllowedParams{
 								allowedMethods: "GET,POST",
@@ -1308,35 +1311,68 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 							break
 						}
 
-						// Param: "projectId"
-						// Match until "/"
+						// Param: "peerId"
+						// Leaf parameter, slashes are prohibited
 						idx := strings.IndexByte(elem, '/')
-						if idx < 0 {
-							idx = len(elem)
+						if idx >= 0 {
+							break
 						}
-						args[0] = elem[:idx]
-						elem = elem[idx:]
+						args[0] = elem
+						elem = ""
 
 						if len(elem) == 0 {
+							// Leaf node.
 							switch r.Method {
 							case "DELETE":
-								s.handleDeleteProjectRequest([1]string{
-									args[0],
-								}, elemIsEscaped, w, r)
-							case "GET":
-								s.handleGetProjectRequest([1]string{
-									args[0],
-								}, elemIsEscaped, w, r)
-							case "PATCH":
-								s.handleUpdateProjectRequest([1]string{
+								s.handleDeletePeerRequest([1]string{
 									args[0],
 								}, elemIsEscaped, w, r)
 							default:
 								s.notAllowed(w, r, notAllowedParams{
-									allowedMethods: "DELETE,GET,PATCH",
-									allowedHeaders: rn2AllowedHeaders,
+									allowedMethods: "DELETE",
+									allowedHeaders: nil,
 									acceptPost:     "",
-									acceptPatch:    "application/json",
+									acceptPatch:    "",
+								})
+							}
+
+							return
+						}
+
+					}
+
+				case 'r': // Prefix: "ro"
+
+					if l := len("ro"); len(elem) >= l && elem[0:l] == "ro" {
+						elem = elem[l:]
+					} else {
+						break
+					}
+
+					if len(elem) == 0 {
+						break
+					}
+					switch elem[0] {
+					case 'j': // Prefix: "jects"
+
+						if l := len("jects"); len(elem) >= l && elem[0:l] == "jects" {
+							elem = elem[l:]
+						} else {
+							break
+						}
+
+						if len(elem) == 0 {
+							switch r.Method {
+							case "GET":
+								s.handleListProjectsRequest([0]string{}, elemIsEscaped, w, r)
+							case "POST":
+								s.handleCreateProjectRequest([0]string{}, elemIsEscaped, w, r)
+							default:
+								s.notAllowed(w, r, notAllowedParams{
+									allowedMethods: "GET,POST",
+									allowedHeaders: rn33AllowedHeaders,
+									acceptPost:     "application/json",
+									acceptPatch:    "",
 								})
 							}
 
@@ -1351,107 +1387,104 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 								break
 							}
 
+							// Param: "projectId"
+							// Match until "/"
+							idx := strings.IndexByte(elem, '/')
+							if idx < 0 {
+								idx = len(elem)
+							}
+							args[0] = elem[:idx]
+							elem = elem[idx:]
+
 							if len(elem) == 0 {
-								break
+								switch r.Method {
+								case "DELETE":
+									s.handleDeleteProjectRequest([1]string{
+										args[0],
+									}, elemIsEscaped, w, r)
+								case "GET":
+									s.handleGetProjectRequest([1]string{
+										args[0],
+									}, elemIsEscaped, w, r)
+								case "PATCH":
+									s.handleUpdateProjectRequest([1]string{
+										args[0],
+									}, elemIsEscaped, w, r)
+								default:
+									s.notAllowed(w, r, notAllowedParams{
+										allowedMethods: "DELETE,GET,PATCH",
+										allowedHeaders: rn2AllowedHeaders,
+										acceptPost:     "",
+										acceptPatch:    "application/json",
+									})
+								}
+
+								return
 							}
 							switch elem[0] {
-							case 'd': // Prefix: "default"
+							case '/': // Prefix: "/"
 
-								if l := len("default"); len(elem) >= l && elem[0:l] == "default" {
+								if l := len("/"); len(elem) >= l && elem[0:l] == "/" {
 									elem = elem[l:]
 								} else {
 									break
 								}
 
 								if len(elem) == 0 {
-									// Leaf node.
-									switch r.Method {
-									case "PUT":
-										s.handleSetDefaultProjectRequest([1]string{
-											args[0],
-										}, elemIsEscaped, w, r)
-									default:
-										s.notAllowed(w, r, notAllowedParams{
-											allowedMethods: "PUT",
-											allowedHeaders: nil,
-											acceptPost:     "",
-											acceptPatch:    "",
-										})
-									}
-
-									return
-								}
-
-							case 'h': // Prefix: "harness-configs"
-
-								if l := len("harness-configs"); len(elem) >= l && elem[0:l] == "harness-configs" {
-									elem = elem[l:]
-								} else {
 									break
-								}
-
-								if len(elem) == 0 {
-									switch r.Method {
-									case "GET":
-										s.handleListHarnessConfigsRequest([1]string{
-											args[0],
-										}, elemIsEscaped, w, r)
-									case "POST":
-										s.handleCreateHarnessConfigRequest([1]string{
-											args[0],
-										}, elemIsEscaped, w, r)
-									default:
-										s.notAllowed(w, r, notAllowedParams{
-											allowedMethods: "GET,POST",
-											allowedHeaders: rn29AllowedHeaders,
-											acceptPost:     "application/json",
-											acceptPatch:    "",
-										})
-									}
-
-									return
 								}
 								switch elem[0] {
-								case '/': // Prefix: "/"
+								case 'd': // Prefix: "default"
 
-									if l := len("/"); len(elem) >= l && elem[0:l] == "/" {
+									if l := len("default"); len(elem) >= l && elem[0:l] == "default" {
 										elem = elem[l:]
 									} else {
 										break
 									}
 
-									// Param: "harnessConfigId"
-									// Match until "/"
-									idx := strings.IndexByte(elem, '/')
-									if idx < 0 {
-										idx = len(elem)
-									}
-									args[1] = elem[:idx]
-									elem = elem[idx:]
-
 									if len(elem) == 0 {
+										// Leaf node.
 										switch r.Method {
-										case "DELETE":
-											s.handleDeleteHarnessConfigRequest([2]string{
+										case "PUT":
+											s.handleSetDefaultProjectRequest([1]string{
 												args[0],
-												args[1],
-											}, elemIsEscaped, w, r)
-										case "GET":
-											s.handleGetHarnessConfigRequest([2]string{
-												args[0],
-												args[1],
-											}, elemIsEscaped, w, r)
-										case "PATCH":
-											s.handleUpdateHarnessConfigRequest([2]string{
-												args[0],
-												args[1],
 											}, elemIsEscaped, w, r)
 										default:
 											s.notAllowed(w, r, notAllowedParams{
-												allowedMethods: "DELETE,GET,PATCH",
-												allowedHeaders: rn12AllowedHeaders,
+												allowedMethods: "PUT",
+												allowedHeaders: nil,
 												acceptPost:     "",
-												acceptPatch:    "application/json",
+												acceptPatch:    "",
+											})
+										}
+
+										return
+									}
+
+								case 'h': // Prefix: "harness-configs"
+
+									if l := len("harness-configs"); len(elem) >= l && elem[0:l] == "harness-configs" {
+										elem = elem[l:]
+									} else {
+										break
+									}
+
+									if len(elem) == 0 {
+										switch r.Method {
+										case "GET":
+											s.handleListHarnessConfigsRequest([1]string{
+												args[0],
+											}, elemIsEscaped, w, r)
+										case "POST":
+											s.handleCreateHarnessConfigRequest([1]string{
+												args[0],
+											}, elemIsEscaped, w, r)
+										default:
+											s.notAllowed(w, r, notAllowedParams{
+												allowedMethods: "GET,POST",
+												allowedHeaders: rn29AllowedHeaders,
+												acceptPost:     "application/json",
+												acceptPatch:    "",
 											})
 										}
 
@@ -1466,112 +1499,47 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 											break
 										}
 
+										// Param: "harnessConfigId"
+										// Match until "/"
+										idx := strings.IndexByte(elem, '/')
+										if idx < 0 {
+											idx = len(elem)
+										}
+										args[1] = elem[:idx]
+										elem = elem[idx:]
+
 										if len(elem) == 0 {
-											break
+											switch r.Method {
+											case "DELETE":
+												s.handleDeleteHarnessConfigRequest([2]string{
+													args[0],
+													args[1],
+												}, elemIsEscaped, w, r)
+											case "GET":
+												s.handleGetHarnessConfigRequest([2]string{
+													args[0],
+													args[1],
+												}, elemIsEscaped, w, r)
+											case "PATCH":
+												s.handleUpdateHarnessConfigRequest([2]string{
+													args[0],
+													args[1],
+												}, elemIsEscaped, w, r)
+											default:
+												s.notAllowed(w, r, notAllowedParams{
+													allowedMethods: "DELETE,GET,PATCH",
+													allowedHeaders: rn12AllowedHeaders,
+													acceptPost:     "",
+													acceptPatch:    "application/json",
+												})
+											}
+
+											return
 										}
 										switch elem[0] {
-										case 'c': // Prefix: "configure"
+										case '/': // Prefix: "/"
 
-											if l := len("configure"); len(elem) >= l && elem[0:l] == "configure" {
-												elem = elem[l:]
-											} else {
-												break
-											}
-
-											if len(elem) == 0 {
-												switch r.Method {
-												case "POST":
-													s.handleConfigureHarnessConfigRequest([2]string{
-														args[0],
-														args[1],
-													}, elemIsEscaped, w, r)
-												default:
-													s.notAllowed(w, r, notAllowedParams{
-														allowedMethods: "POST",
-														allowedHeaders: nil,
-														acceptPost:     "",
-														acceptPatch:    "",
-													})
-												}
-
-												return
-											}
-											switch elem[0] {
-											case '/': // Prefix: "/"
-
-												if l := len("/"); len(elem) >= l && elem[0:l] == "/" {
-													elem = elem[l:]
-												} else {
-													break
-												}
-
-												if len(elem) == 0 {
-													break
-												}
-												switch elem[0] {
-												case 'a': // Prefix: "attach"
-
-													if l := len("attach"); len(elem) >= l && elem[0:l] == "attach" {
-														elem = elem[l:]
-													} else {
-														break
-													}
-
-													if len(elem) == 0 {
-														// Leaf node.
-														switch r.Method {
-														case "POST":
-															s.handleAttachHarnessConfigConfigureRequest([2]string{
-																args[0],
-																args[1],
-															}, elemIsEscaped, w, r)
-														default:
-															s.notAllowed(w, r, notAllowedParams{
-																allowedMethods: "POST",
-																allowedHeaders: nil,
-																acceptPost:     "",
-																acceptPatch:    "",
-															})
-														}
-
-														return
-													}
-
-												case 'c': // Prefix: "commit"
-
-													if l := len("commit"); len(elem) >= l && elem[0:l] == "commit" {
-														elem = elem[l:]
-													} else {
-														break
-													}
-
-													if len(elem) == 0 {
-														// Leaf node.
-														switch r.Method {
-														case "POST":
-															s.handleCommitHarnessConfigConfigureRequest([2]string{
-																args[0],
-																args[1],
-															}, elemIsEscaped, w, r)
-														default:
-															s.notAllowed(w, r, notAllowedParams{
-																allowedMethods: "POST",
-																allowedHeaders: nil,
-																acceptPost:     "",
-																acceptPatch:    "",
-															})
-														}
-
-														return
-													}
-
-												}
-
-											}
-
-										case 'd': // Prefix: "de"
-
-											if l := len("de"); len(elem) >= l && elem[0:l] == "de" {
+											if l := len("/"); len(elem) >= l && elem[0:l] == "/" {
 												elem = elem[l:]
 											} else {
 												break
@@ -1590,10 +1558,9 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 												}
 
 												if len(elem) == 0 {
-													// Leaf node.
 													switch r.Method {
 													case "POST":
-														s.handleDeconfigureHarnessConfigRequest([2]string{
+														s.handleConfigureHarnessConfigRequest([2]string{
 															args[0],
 															args[1],
 														}, elemIsEscaped, w, r)
@@ -1608,594 +1575,82 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 
 													return
 												}
+												switch elem[0] {
+												case '/': // Prefix: "/"
 
-											case 'f': // Prefix: "fault"
-
-												if l := len("fault"); len(elem) >= l && elem[0:l] == "fault" {
-													elem = elem[l:]
-												} else {
-													break
-												}
-
-												if len(elem) == 0 {
-													// Leaf node.
-													switch r.Method {
-													case "DELETE":
-														s.handleUnsetDefaultHarnessConfigRequest([2]string{
-															args[0],
-															args[1],
-														}, elemIsEscaped, w, r)
-													case "PUT":
-														s.handleSetDefaultHarnessConfigRequest([2]string{
-															args[0],
-															args[1],
-														}, elemIsEscaped, w, r)
-													default:
-														s.notAllowed(w, r, notAllowedParams{
-															allowedMethods: "DELETE,PUT",
-															allowedHeaders: nil,
-															acceptPost:     "",
-															acceptPatch:    "",
-														})
+													if l := len("/"); len(elem) >= l && elem[0:l] == "/" {
+														elem = elem[l:]
+													} else {
+														break
 													}
 
-													return
-												}
+													if len(elem) == 0 {
+														break
+													}
+													switch elem[0] {
+													case 'a': // Prefix: "attach"
 
-											}
+														if l := len("attach"); len(elem) >= l && elem[0:l] == "attach" {
+															elem = elem[l:]
+														} else {
+															break
+														}
 
-										case 'r': // Prefix: "refresh-image"
+														if len(elem) == 0 {
+															// Leaf node.
+															switch r.Method {
+															case "POST":
+																s.handleAttachHarnessConfigConfigureRequest([2]string{
+																	args[0],
+																	args[1],
+																}, elemIsEscaped, w, r)
+															default:
+																s.notAllowed(w, r, notAllowedParams{
+																	allowedMethods: "POST",
+																	allowedHeaders: nil,
+																	acceptPost:     "",
+																	acceptPatch:    "",
+																})
+															}
 
-											if l := len("refresh-image"); len(elem) >= l && elem[0:l] == "refresh-image" {
-												elem = elem[l:]
-											} else {
-												break
-											}
+															return
+														}
 
-											if len(elem) == 0 {
-												// Leaf node.
-												switch r.Method {
-												case "POST":
-													s.handleRefreshHarnessConfigImageRequest([2]string{
-														args[0],
-														args[1],
-													}, elemIsEscaped, w, r)
-												default:
-													s.notAllowed(w, r, notAllowedParams{
-														allowedMethods: "POST",
-														allowedHeaders: nil,
-														acceptPost:     "",
-														acceptPatch:    "",
-													})
-												}
+													case 'c': // Prefix: "commit"
 
-												return
-											}
+														if l := len("commit"); len(elem) >= l && elem[0:l] == "commit" {
+															elem = elem[l:]
+														} else {
+															break
+														}
 
-										case 's': // Prefix: "secret-bindings"
+														if len(elem) == 0 {
+															// Leaf node.
+															switch r.Method {
+															case "POST":
+																s.handleCommitHarnessConfigConfigureRequest([2]string{
+																	args[0],
+																	args[1],
+																}, elemIsEscaped, w, r)
+															default:
+																s.notAllowed(w, r, notAllowedParams{
+																	allowedMethods: "POST",
+																	allowedHeaders: nil,
+																	acceptPost:     "",
+																	acceptPatch:    "",
+																})
+															}
 
-											if l := len("secret-bindings"); len(elem) >= l && elem[0:l] == "secret-bindings" {
-												elem = elem[l:]
-											} else {
-												break
-											}
+															return
+														}
 
-											if len(elem) == 0 {
-												switch r.Method {
-												case "GET":
-													s.handleListHarnessConfigSecretBindingsRequest([2]string{
-														args[0],
-														args[1],
-													}, elemIsEscaped, w, r)
-												default:
-													s.notAllowed(w, r, notAllowedParams{
-														allowedMethods: "GET",
-														allowedHeaders: nil,
-														acceptPost:     "",
-														acceptPatch:    "",
-													})
-												}
-
-												return
-											}
-											switch elem[0] {
-											case '/': // Prefix: "/"
-
-												if l := len("/"); len(elem) >= l && elem[0:l] == "/" {
-													elem = elem[l:]
-												} else {
-													break
-												}
-
-												// Param: "envName"
-												// Leaf parameter, slashes are prohibited
-												idx := strings.IndexByte(elem, '/')
-												if idx >= 0 {
-													break
-												}
-												args[2] = elem
-												elem = ""
-
-												if len(elem) == 0 {
-													// Leaf node.
-													switch r.Method {
-													case "DELETE":
-														s.handleDeleteHarnessConfigSecretBindingRequest([3]string{
-															args[0],
-															args[1],
-															args[2],
-														}, elemIsEscaped, w, r)
-													case "PUT":
-														s.handleSetHarnessConfigSecretBindingRequest([3]string{
-															args[0],
-															args[1],
-															args[2],
-														}, elemIsEscaped, w, r)
-													default:
-														s.notAllowed(w, r, notAllowedParams{
-															allowedMethods: "DELETE,PUT",
-															allowedHeaders: rn49AllowedHeaders,
-															acceptPost:     "",
-															acceptPatch:    "",
-														})
 													}
 
-													return
 												}
 
-											}
+											case 'd': // Prefix: "de"
 
-										}
-
-									}
-
-								}
-
-							case 'j': // Prefix: "jobs"
-
-								if l := len("jobs"); len(elem) >= l && elem[0:l] == "jobs" {
-									elem = elem[l:]
-								} else {
-									break
-								}
-
-								if len(elem) == 0 {
-									switch r.Method {
-									case "GET":
-										s.handleListJobsRequest([1]string{
-											args[0],
-										}, elemIsEscaped, w, r)
-									default:
-										s.notAllowed(w, r, notAllowedParams{
-											allowedMethods: "GET",
-											allowedHeaders: nil,
-											acceptPost:     "",
-											acceptPatch:    "",
-										})
-									}
-
-									return
-								}
-								switch elem[0] {
-								case '/': // Prefix: "/"
-
-									if l := len("/"); len(elem) >= l && elem[0:l] == "/" {
-										elem = elem[l:]
-									} else {
-										break
-									}
-
-									// Param: "jobId"
-									// Match until "/"
-									idx := strings.IndexByte(elem, '/')
-									if idx < 0 {
-										idx = len(elem)
-									}
-									args[1] = elem[:idx]
-									elem = elem[idx:]
-
-									if len(elem) == 0 {
-										switch r.Method {
-										case "GET":
-											s.handleGetJobRequest([2]string{
-												args[0],
-												args[1],
-											}, elemIsEscaped, w, r)
-										default:
-											s.notAllowed(w, r, notAllowedParams{
-												allowedMethods: "GET",
-												allowedHeaders: nil,
-												acceptPost:     "",
-												acceptPatch:    "",
-											})
-										}
-
-										return
-									}
-									switch elem[0] {
-									case '/': // Prefix: "/force"
-
-										if l := len("/force"); len(elem) >= l && elem[0:l] == "/force" {
-											elem = elem[l:]
-										} else {
-											break
-										}
-
-										if len(elem) == 0 {
-											// Leaf node.
-											switch r.Method {
-											case "POST":
-												s.handleForceJobRequest([2]string{
-													args[0],
-													args[1],
-												}, elemIsEscaped, w, r)
-											default:
-												s.notAllowed(w, r, notAllowedParams{
-													allowedMethods: "POST",
-													allowedHeaders: nil,
-													acceptPost:     "",
-													acceptPatch:    "",
-												})
-											}
-
-											return
-										}
-
-									}
-
-								}
-
-							case 'p': // Prefix: "p"
-
-								if l := len("p"); len(elem) >= l && elem[0:l] == "p" {
-									elem = elem[l:]
-								} else {
-									break
-								}
-
-								if len(elem) == 0 {
-									break
-								}
-								switch elem[0] {
-								case 'o': // Prefix: "ools"
-
-									if l := len("ools"); len(elem) >= l && elem[0:l] == "ools" {
-										elem = elem[l:]
-									} else {
-										break
-									}
-
-									if len(elem) == 0 {
-										switch r.Method {
-										case "GET":
-											s.handleListPoolsRequest([1]string{
-												args[0],
-											}, elemIsEscaped, w, r)
-										case "POST":
-											s.handleCreatePoolRequest([1]string{
-												args[0],
-											}, elemIsEscaped, w, r)
-										default:
-											s.notAllowed(w, r, notAllowedParams{
-												allowedMethods: "GET,POST",
-												allowedHeaders: rn30AllowedHeaders,
-												acceptPost:     "application/json",
-												acceptPatch:    "",
-											})
-										}
-
-										return
-									}
-									switch elem[0] {
-									case '/': // Prefix: "/"
-
-										if l := len("/"); len(elem) >= l && elem[0:l] == "/" {
-											elem = elem[l:]
-										} else {
-											break
-										}
-
-										// Param: "poolId"
-										// Match until "/"
-										idx := strings.IndexByte(elem, '/')
-										if idx < 0 {
-											idx = len(elem)
-										}
-										args[1] = elem[:idx]
-										elem = elem[idx:]
-
-										if len(elem) == 0 {
-											switch r.Method {
-											case "DELETE":
-												s.handleDeletePoolRequest([2]string{
-													args[0],
-													args[1],
-												}, elemIsEscaped, w, r)
-											case "GET":
-												s.handleGetPoolRequest([2]string{
-													args[0],
-													args[1],
-												}, elemIsEscaped, w, r)
-											case "PATCH":
-												s.handleUpdatePoolRequest([2]string{
-													args[0],
-													args[1],
-												}, elemIsEscaped, w, r)
-											default:
-												s.notAllowed(w, r, notAllowedParams{
-													allowedMethods: "DELETE,GET,PATCH",
-													allowedHeaders: rn51AllowedHeaders,
-													acceptPost:     "",
-													acceptPatch:    "application/json",
-												})
-											}
-
-											return
-										}
-										switch elem[0] {
-										case '/': // Prefix: "/"
-
-											if l := len("/"); len(elem) >= l && elem[0:l] == "/" {
-												elem = elem[l:]
-											} else {
-												break
-											}
-
-											if len(elem) == 0 {
-												break
-											}
-											switch elem[0] {
-											case 'd': // Prefix: "default"
-
-												if l := len("default"); len(elem) >= l && elem[0:l] == "default" {
-													elem = elem[l:]
-												} else {
-													break
-												}
-
-												if len(elem) == 0 {
-													// Leaf node.
-													switch r.Method {
-													case "DELETE":
-														s.handleUnsetDefaultPoolRequest([2]string{
-															args[0],
-															args[1],
-														}, elemIsEscaped, w, r)
-													case "PUT":
-														s.handleSetDefaultPoolRequest([2]string{
-															args[0],
-															args[1],
-														}, elemIsEscaped, w, r)
-													default:
-														s.notAllowed(w, r, notAllowedParams{
-															allowedMethods: "DELETE,PUT",
-															allowedHeaders: nil,
-															acceptPost:     "",
-															acceptPatch:    "",
-														})
-													}
-
-													return
-												}
-
-											case 'r': // Prefix: "reconcile"
-
-												if l := len("reconcile"); len(elem) >= l && elem[0:l] == "reconcile" {
-													elem = elem[l:]
-												} else {
-													break
-												}
-
-												if len(elem) == 0 {
-													// Leaf node.
-													switch r.Method {
-													case "POST":
-														s.handleReconcilePoolRequest([2]string{
-															args[0],
-															args[1],
-														}, elemIsEscaped, w, r)
-													default:
-														s.notAllowed(w, r, notAllowedParams{
-															allowedMethods: "POST",
-															allowedHeaders: nil,
-															acceptPost:     "",
-															acceptPatch:    "",
-														})
-													}
-
-													return
-												}
-
-											}
-
-										}
-
-									}
-
-								case 'r': // Prefix: "roviders"
-
-									if l := len("roviders"); len(elem) >= l && elem[0:l] == "roviders" {
-										elem = elem[l:]
-									} else {
-										break
-									}
-
-									if len(elem) == 0 {
-										switch r.Method {
-										case "GET":
-											s.handleListSandboxProviderInstancesRequest([1]string{
-												args[0],
-											}, elemIsEscaped, w, r)
-										case "POST":
-											s.handleCreateSandboxProviderInstanceRequest([1]string{
-												args[0],
-											}, elemIsEscaped, w, r)
-										default:
-											s.notAllowed(w, r, notAllowedParams{
-												allowedMethods: "GET,POST",
-												allowedHeaders: rn40AllowedHeaders,
-												acceptPost:     "application/json",
-												acceptPatch:    "",
-											})
-										}
-
-										return
-									}
-									switch elem[0] {
-									case '/': // Prefix: "/"
-
-										if l := len("/"); len(elem) >= l && elem[0:l] == "/" {
-											elem = elem[l:]
-										} else {
-											break
-										}
-
-										// Param: "providerId"
-										// Leaf parameter, slashes are prohibited
-										idx := strings.IndexByte(elem, '/')
-										if idx >= 0 {
-											break
-										}
-										args[1] = elem
-										elem = ""
-
-										if len(elem) == 0 {
-											// Leaf node.
-											switch r.Method {
-											case "DELETE":
-												s.handleDeleteSandboxProviderInstanceRequest([2]string{
-													args[0],
-													args[1],
-												}, elemIsEscaped, w, r)
-											case "GET":
-												s.handleGetSandboxProviderInstanceRequest([2]string{
-													args[0],
-													args[1],
-												}, elemIsEscaped, w, r)
-											case "PATCH":
-												s.handleUpdateSandboxProviderInstanceRequest([2]string{
-													args[0],
-													args[1],
-												}, elemIsEscaped, w, r)
-											default:
-												s.notAllowed(w, r, notAllowedParams{
-													allowedMethods: "DELETE,GET,PATCH",
-													allowedHeaders: rn55AllowedHeaders,
-													acceptPost:     "",
-													acceptPatch:    "application/json",
-												})
-											}
-
-											return
-										}
-
-									}
-
-								}
-
-							case 's': // Prefix: "s"
-
-								if l := len("s"); len(elem) >= l && elem[0:l] == "s" {
-									elem = elem[l:]
-								} else {
-									break
-								}
-
-								if len(elem) == 0 {
-									break
-								}
-								switch elem[0] {
-								case 'a': // Prefix: "andboxes"
-
-									if l := len("andboxes"); len(elem) >= l && elem[0:l] == "andboxes" {
-										elem = elem[l:]
-									} else {
-										break
-									}
-
-									if len(elem) == 0 {
-										switch r.Method {
-										case "GET":
-											s.handleListSandboxesRequest([1]string{
-												args[0],
-											}, elemIsEscaped, w, r)
-										case "POST":
-											s.handleCreateSandboxRequest([1]string{
-												args[0],
-											}, elemIsEscaped, w, r)
-										default:
-											s.notAllowed(w, r, notAllowedParams{
-												allowedMethods: "GET,POST",
-												allowedHeaders: rn33AllowedHeaders,
-												acceptPost:     "application/json",
-												acceptPatch:    "",
-											})
-										}
-
-										return
-									}
-									switch elem[0] {
-									case '/': // Prefix: "/"
-
-										if l := len("/"); len(elem) >= l && elem[0:l] == "/" {
-											elem = elem[l:]
-										} else {
-											break
-										}
-
-										// Param: "sandboxId"
-										// Match until "/"
-										idx := strings.IndexByte(elem, '/')
-										if idx < 0 {
-											idx = len(elem)
-										}
-										args[1] = elem[:idx]
-										elem = elem[idx:]
-
-										if len(elem) == 0 {
-											switch r.Method {
-											case "DELETE":
-												s.handleDeleteSandboxRequest([2]string{
-													args[0],
-													args[1],
-												}, elemIsEscaped, w, r)
-											case "GET":
-												s.handleGetSandboxRequest([2]string{
-													args[0],
-													args[1],
-												}, elemIsEscaped, w, r)
-											case "PATCH":
-												s.handleUpdateSandboxRequest([2]string{
-													args[0],
-													args[1],
-												}, elemIsEscaped, w, r)
-											default:
-												s.notAllowed(w, r, notAllowedParams{
-													allowedMethods: "DELETE,GET,PATCH",
-													allowedHeaders: rn8AllowedHeaders,
-													acceptPost:     "",
-													acceptPatch:    "application/json",
-												})
-											}
-
-											return
-										}
-										switch elem[0] {
-										case '/': // Prefix: "/"
-
-											if l := len("/"); len(elem) >= l && elem[0:l] == "/" {
-												elem = elem[l:]
-											} else {
-												break
-											}
-
-											if len(elem) == 0 {
-												break
-											}
-											switch elem[0] {
-											case 'c': // Prefix: "complete-"
-
-												if l := len("complete-"); len(elem) >= l && elem[0:l] == "complete-" {
+												if l := len("de"); len(elem) >= l && elem[0:l] == "de" {
 													elem = elem[l:]
 												} else {
 													break
@@ -2205,9 +1660,9 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 													break
 												}
 												switch elem[0] {
-												case 'a': // Prefix: "apply"
+												case 'c': // Prefix: "configure"
 
-													if l := len("apply"); len(elem) >= l && elem[0:l] == "apply" {
+													if l := len("configure"); len(elem) >= l && elem[0:l] == "configure" {
 														elem = elem[l:]
 													} else {
 														break
@@ -2217,133 +1672,7 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 														// Leaf node.
 														switch r.Method {
 														case "POST":
-															s.handleCompleteSandboxApplyRequest([2]string{
-																args[0],
-																args[1],
-															}, elemIsEscaped, w, r)
-														default:
-															s.notAllowed(w, r, notAllowedParams{
-																allowedMethods: "POST",
-																allowedHeaders: rn25AllowedHeaders,
-																acceptPost:     "application/json",
-																acceptPatch:    "",
-															})
-														}
-
-														return
-													}
-
-												case 's': // Prefix: "source-push"
-
-													if l := len("source-push"); len(elem) >= l && elem[0:l] == "source-push" {
-														elem = elem[l:]
-													} else {
-														break
-													}
-
-													if len(elem) == 0 {
-														// Leaf node.
-														switch r.Method {
-														case "POST":
-															s.handleCompleteSandboxSourcePushRequest([2]string{
-																args[0],
-																args[1],
-															}, elemIsEscaped, w, r)
-														default:
-															s.notAllowed(w, r, notAllowedParams{
-																allowedMethods: "POST",
-																allowedHeaders: rn27AllowedHeaders,
-																acceptPost:     "application/json",
-																acceptPatch:    "",
-															})
-														}
-
-														return
-													}
-
-												}
-
-											case 'h': // Prefix: "harness-secrets"
-
-												if l := len("harness-secrets"); len(elem) >= l && elem[0:l] == "harness-secrets" {
-													elem = elem[l:]
-												} else {
-													break
-												}
-
-												if len(elem) == 0 {
-													// Leaf node.
-													switch r.Method {
-													case "POST":
-														s.handleAssignSandboxHarnessSecretsRequest([2]string{
-															args[0],
-															args[1],
-														}, elemIsEscaped, w, r)
-													default:
-														s.notAllowed(w, r, notAllowedParams{
-															allowedMethods: "POST",
-															allowedHeaders: rn9AllowedHeaders,
-															acceptPost:     "application/json",
-															acceptPatch:    "",
-														})
-													}
-
-													return
-												}
-
-											case 'p': // Prefix: "purge"
-
-												if l := len("purge"); len(elem) >= l && elem[0:l] == "purge" {
-													elem = elem[l:]
-												} else {
-													break
-												}
-
-												if len(elem) == 0 {
-													// Leaf node.
-													switch r.Method {
-													case "POST":
-														s.handlePurgeSandboxRequest([2]string{
-															args[0],
-															args[1],
-														}, elemIsEscaped, w, r)
-													default:
-														s.notAllowed(w, r, notAllowedParams{
-															allowedMethods: "POST",
-															allowedHeaders: nil,
-															acceptPost:     "",
-															acceptPatch:    "",
-														})
-													}
-
-													return
-												}
-
-											case 'r': // Prefix: "re"
-
-												if l := len("re"); len(elem) >= l && elem[0:l] == "re" {
-													elem = elem[l:]
-												} else {
-													break
-												}
-
-												if len(elem) == 0 {
-													break
-												}
-												switch elem[0] {
-												case 'c': // Prefix: "concile"
-
-													if l := len("concile"); len(elem) >= l && elem[0:l] == "concile" {
-														elem = elem[l:]
-													} else {
-														break
-													}
-
-													if len(elem) == 0 {
-														// Leaf node.
-														switch r.Method {
-														case "POST":
-															s.handleReconcileSandboxRequest([2]string{
+															s.handleDeconfigureHarnessConfigRequest([2]string{
 																args[0],
 																args[1],
 															}, elemIsEscaped, w, r)
@@ -2359,9 +1688,9 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 														return
 													}
 
-												case 'p': // Prefix: "pair"
+												case 'f': // Prefix: "fault"
 
-													if l := len("pair"); len(elem) >= l && elem[0:l] == "pair" {
+													if l := len("fault"); len(elem) >= l && elem[0:l] == "fault" {
 														elem = elem[l:]
 													} else {
 														break
@@ -2370,14 +1699,19 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 													if len(elem) == 0 {
 														// Leaf node.
 														switch r.Method {
-														case "POST":
-															s.handleRepairSandboxRequest([2]string{
+														case "DELETE":
+															s.handleUnsetDefaultHarnessConfigRequest([2]string{
+																args[0],
+																args[1],
+															}, elemIsEscaped, w, r)
+														case "PUT":
+															s.handleSetDefaultHarnessConfigRequest([2]string{
 																args[0],
 																args[1],
 															}, elemIsEscaped, w, r)
 														default:
 															s.notAllowed(w, r, notAllowedParams{
-																allowedMethods: "POST",
+																allowedMethods: "DELETE,PUT",
 																allowedHeaders: nil,
 																acceptPost:     "",
 																acceptPatch:    "",
@@ -2387,264 +1721,27 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 														return
 													}
 
-												case 's': // Prefix: "start"
-
-													if l := len("start"); len(elem) >= l && elem[0:l] == "start" {
-														elem = elem[l:]
-													} else {
-														break
-													}
-
-													if len(elem) == 0 {
-														// Leaf node.
-														switch r.Method {
-														case "POST":
-															s.handleRestartSandboxRequest([2]string{
-																args[0],
-																args[1],
-															}, elemIsEscaped, w, r)
-														default:
-															s.notAllowed(w, r, notAllowedParams{
-																allowedMethods: "POST",
-																allowedHeaders: rn102AllowedHeaders,
-																acceptPost:     "application/json",
-																acceptPatch:    "",
-															})
-														}
-
-														return
-													}
-
 												}
 
-											case 's': // Prefix: "st"
+											case 'r': // Prefix: "refresh-image"
 
-												if l := len("st"); len(elem) >= l && elem[0:l] == "st" {
+												if l := len("refresh-image"); len(elem) >= l && elem[0:l] == "refresh-image" {
 													elem = elem[l:]
 												} else {
 													break
 												}
-
-												if len(elem) == 0 {
-													break
-												}
-												switch elem[0] {
-												case 'a': // Prefix: "art"
-
-													if l := len("art"); len(elem) >= l && elem[0:l] == "art" {
-														elem = elem[l:]
-													} else {
-														break
-													}
-
-													if len(elem) == 0 {
-														// Leaf node.
-														switch r.Method {
-														case "POST":
-															s.handleStartSandboxRequest([2]string{
-																args[0],
-																args[1],
-															}, elemIsEscaped, w, r)
-														default:
-															s.notAllowed(w, r, notAllowedParams{
-																allowedMethods: "POST",
-																allowedHeaders: rn112AllowedHeaders,
-																acceptPost:     "application/json",
-																acceptPatch:    "",
-															})
-														}
-
-														return
-													}
-
-												case 'o': // Prefix: "op"
-
-													if l := len("op"); len(elem) >= l && elem[0:l] == "op" {
-														elem = elem[l:]
-													} else {
-														break
-													}
-
-													if len(elem) == 0 {
-														// Leaf node.
-														switch r.Method {
-														case "POST":
-															s.handleStopSandboxRequest([2]string{
-																args[0],
-																args[1],
-															}, elemIsEscaped, w, r)
-														default:
-															s.notAllowed(w, r, notAllowedParams{
-																allowedMethods: "POST",
-																allowedHeaders: rn116AllowedHeaders,
-																acceptPost:     "application/json",
-																acceptPatch:    "",
-															})
-														}
-
-														return
-													}
-
-												}
-
-											case 'u': // Prefix: "u"
-
-												if l := len("u"); len(elem) >= l && elem[0:l] == "u" {
-													elem = elem[l:]
-												} else {
-													break
-												}
-
-												if len(elem) == 0 {
-													break
-												}
-												switch elem[0] {
-												case 'n': // Prefix: "narchive"
-
-													if l := len("narchive"); len(elem) >= l && elem[0:l] == "narchive" {
-														elem = elem[l:]
-													} else {
-														break
-													}
-
-													if len(elem) == 0 {
-														// Leaf node.
-														switch r.Method {
-														case "POST":
-															s.handleUnarchiveSandboxRequest([2]string{
-																args[0],
-																args[1],
-															}, elemIsEscaped, w, r)
-														default:
-															s.notAllowed(w, r, notAllowedParams{
-																allowedMethods: "POST",
-																allowedHeaders: nil,
-																acceptPost:     "",
-																acceptPatch:    "",
-															})
-														}
-
-														return
-													}
-
-												case 'p': // Prefix: "pgrade"
-
-													if l := len("pgrade"); len(elem) >= l && elem[0:l] == "pgrade" {
-														elem = elem[l:]
-													} else {
-														break
-													}
-
-													if len(elem) == 0 {
-														// Leaf node.
-														switch r.Method {
-														case "POST":
-															s.handleUpgradeSandboxRequest([2]string{
-																args[0],
-																args[1],
-															}, elemIsEscaped, w, r)
-														default:
-															s.notAllowed(w, r, notAllowedParams{
-																allowedMethods: "POST",
-																allowedHeaders: rn125AllowedHeaders,
-																acceptPost:     "application/json",
-																acceptPatch:    "",
-															})
-														}
-
-														return
-													}
-
-												}
-
-											}
-
-										}
-
-									}
-
-								case 'e': // Prefix: "ecret"
-
-									if l := len("ecret"); len(elem) >= l && elem[0:l] == "ecret" {
-										elem = elem[l:]
-									} else {
-										break
-									}
-
-									if len(elem) == 0 {
-										break
-									}
-									switch elem[0] {
-									case '-': // Prefix: "-"
-
-										if l := len("-"); len(elem) >= l && elem[0:l] == "-" {
-											elem = elem[l:]
-										} else {
-											break
-										}
-
-										if len(elem) == 0 {
-											break
-										}
-										switch elem[0] {
-										case 'g': // Prefix: "grants"
-
-											if l := len("grants"); len(elem) >= l && elem[0:l] == "grants" {
-												elem = elem[l:]
-											} else {
-												break
-											}
-
-											if len(elem) == 0 {
-												switch r.Method {
-												case "GET":
-													s.handleListSecretGrantsRequest([1]string{
-														args[0],
-													}, elemIsEscaped, w, r)
-												case "POST":
-													s.handleCreateSecretGrantRequest([1]string{
-														args[0],
-													}, elemIsEscaped, w, r)
-												default:
-													s.notAllowed(w, r, notAllowedParams{
-														allowedMethods: "GET,POST",
-														allowedHeaders: rn44AllowedHeaders,
-														acceptPost:     "application/json",
-														acceptPatch:    "",
-													})
-												}
-
-												return
-											}
-											switch elem[0] {
-											case '/': // Prefix: "/"
-
-												if l := len("/"); len(elem) >= l && elem[0:l] == "/" {
-													elem = elem[l:]
-												} else {
-													break
-												}
-
-												// Param: "grantId"
-												// Leaf parameter, slashes are prohibited
-												idx := strings.IndexByte(elem, '/')
-												if idx >= 0 {
-													break
-												}
-												args[1] = elem
-												elem = ""
 
 												if len(elem) == 0 {
 													// Leaf node.
 													switch r.Method {
-													case "DELETE":
-														s.handleRevokeSecretGrantRequest([2]string{
+													case "POST":
+														s.handleRefreshHarnessConfigImageRequest([2]string{
 															args[0],
 															args[1],
 														}, elemIsEscaped, w, r)
 													default:
 														s.notAllowed(w, r, notAllowedParams{
-															allowedMethods: "DELETE",
+															allowedMethods: "POST",
 															allowedHeaders: nil,
 															acceptPost:     "",
 															acceptPatch:    "",
@@ -2654,59 +1751,18 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 													return
 												}
 
-											}
+											case 's': // Prefix: "secret-bindings"
 
-										case 'r': // Prefix: "requests"
-
-											if l := len("requests"); len(elem) >= l && elem[0:l] == "requests" {
-												elem = elem[l:]
-											} else {
-												break
-											}
-
-											if len(elem) == 0 {
-												switch r.Method {
-												case "GET":
-													s.handleListSecretRequestsRequest([1]string{
-														args[0],
-													}, elemIsEscaped, w, r)
-												case "POST":
-													s.handleCreateSecretRequestRequest([1]string{
-														args[0],
-													}, elemIsEscaped, w, r)
-												default:
-													s.notAllowed(w, r, notAllowedParams{
-														allowedMethods: "GET,POST",
-														allowedHeaders: rn45AllowedHeaders,
-														acceptPost:     "application/json",
-														acceptPatch:    "",
-													})
-												}
-
-												return
-											}
-											switch elem[0] {
-											case '/': // Prefix: "/"
-
-												if l := len("/"); len(elem) >= l && elem[0:l] == "/" {
+												if l := len("secret-bindings"); len(elem) >= l && elem[0:l] == "secret-bindings" {
 													elem = elem[l:]
 												} else {
 													break
 												}
-
-												// Param: "requestId"
-												// Match until "/"
-												idx := strings.IndexByte(elem, '/')
-												if idx < 0 {
-													idx = len(elem)
-												}
-												args[1] = elem[:idx]
-												elem = elem[idx:]
 
 												if len(elem) == 0 {
 													switch r.Method {
 													case "GET":
-														s.handleGetSecretRequestRequest([2]string{
+														s.handleListHarnessConfigSecretBindingsRequest([2]string{
 															args[0],
 															args[1],
 														}, elemIsEscaped, w, r)
@@ -2730,66 +1786,40 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 														break
 													}
 
-													if len(elem) == 0 {
+													// Param: "envName"
+													// Leaf parameter, slashes are prohibited
+													idx := strings.IndexByte(elem, '/')
+													if idx >= 0 {
 														break
 													}
-													switch elem[0] {
-													case 'a': // Prefix: "approve"
+													args[2] = elem
+													elem = ""
 
-														if l := len("approve"); len(elem) >= l && elem[0:l] == "approve" {
-															elem = elem[l:]
-														} else {
-															break
+													if len(elem) == 0 {
+														// Leaf node.
+														switch r.Method {
+														case "DELETE":
+															s.handleDeleteHarnessConfigSecretBindingRequest([3]string{
+																args[0],
+																args[1],
+																args[2],
+															}, elemIsEscaped, w, r)
+														case "PUT":
+															s.handleSetHarnessConfigSecretBindingRequest([3]string{
+																args[0],
+																args[1],
+																args[2],
+															}, elemIsEscaped, w, r)
+														default:
+															s.notAllowed(w, r, notAllowedParams{
+																allowedMethods: "DELETE,PUT",
+																allowedHeaders: rn51AllowedHeaders,
+																acceptPost:     "",
+																acceptPatch:    "",
+															})
 														}
 
-														if len(elem) == 0 {
-															// Leaf node.
-															switch r.Method {
-															case "POST":
-																s.handleApproveSecretRequestRequest([2]string{
-																	args[0],
-																	args[1],
-																}, elemIsEscaped, w, r)
-															default:
-																s.notAllowed(w, r, notAllowedParams{
-																	allowedMethods: "POST",
-																	allowedHeaders: rn5AllowedHeaders,
-																	acceptPost:     "application/json",
-																	acceptPatch:    "",
-																})
-															}
-
-															return
-														}
-
-													case 'd': // Prefix: "deny"
-
-														if l := len("deny"); len(elem) >= l && elem[0:l] == "deny" {
-															elem = elem[l:]
-														} else {
-															break
-														}
-
-														if len(elem) == 0 {
-															// Leaf node.
-															switch r.Method {
-															case "POST":
-																s.handleDenySecretRequestRequest([2]string{
-																	args[0],
-																	args[1],
-																}, elemIsEscaped, w, r)
-															default:
-																s.notAllowed(w, r, notAllowedParams{
-																	allowedMethods: "POST",
-																	allowedHeaders: nil,
-																	acceptPost:     "",
-																	acceptPatch:    "",
-																})
-															}
-
-															return
-														}
-
+														return
 													}
 
 												}
@@ -2798,9 +1828,117 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 
 										}
 
-									case 's': // Prefix: "s"
+									}
 
-										if l := len("s"); len(elem) >= l && elem[0:l] == "s" {
+								case 'j': // Prefix: "jobs"
+
+									if l := len("jobs"); len(elem) >= l && elem[0:l] == "jobs" {
+										elem = elem[l:]
+									} else {
+										break
+									}
+
+									if len(elem) == 0 {
+										switch r.Method {
+										case "GET":
+											s.handleListJobsRequest([1]string{
+												args[0],
+											}, elemIsEscaped, w, r)
+										default:
+											s.notAllowed(w, r, notAllowedParams{
+												allowedMethods: "GET",
+												allowedHeaders: nil,
+												acceptPost:     "",
+												acceptPatch:    "",
+											})
+										}
+
+										return
+									}
+									switch elem[0] {
+									case '/': // Prefix: "/"
+
+										if l := len("/"); len(elem) >= l && elem[0:l] == "/" {
+											elem = elem[l:]
+										} else {
+											break
+										}
+
+										// Param: "jobId"
+										// Match until "/"
+										idx := strings.IndexByte(elem, '/')
+										if idx < 0 {
+											idx = len(elem)
+										}
+										args[1] = elem[:idx]
+										elem = elem[idx:]
+
+										if len(elem) == 0 {
+											switch r.Method {
+											case "GET":
+												s.handleGetJobRequest([2]string{
+													args[0],
+													args[1],
+												}, elemIsEscaped, w, r)
+											default:
+												s.notAllowed(w, r, notAllowedParams{
+													allowedMethods: "GET",
+													allowedHeaders: nil,
+													acceptPost:     "",
+													acceptPatch:    "",
+												})
+											}
+
+											return
+										}
+										switch elem[0] {
+										case '/': // Prefix: "/force"
+
+											if l := len("/force"); len(elem) >= l && elem[0:l] == "/force" {
+												elem = elem[l:]
+											} else {
+												break
+											}
+
+											if len(elem) == 0 {
+												// Leaf node.
+												switch r.Method {
+												case "POST":
+													s.handleForceJobRequest([2]string{
+														args[0],
+														args[1],
+													}, elemIsEscaped, w, r)
+												default:
+													s.notAllowed(w, r, notAllowedParams{
+														allowedMethods: "POST",
+														allowedHeaders: nil,
+														acceptPost:     "",
+														acceptPatch:    "",
+													})
+												}
+
+												return
+											}
+
+										}
+
+									}
+
+								case 'p': // Prefix: "p"
+
+									if l := len("p"); len(elem) >= l && elem[0:l] == "p" {
+										elem = elem[l:]
+									} else {
+										break
+									}
+
+									if len(elem) == 0 {
+										break
+									}
+									switch elem[0] {
+									case 'o': // Prefix: "ools"
+
+										if l := len("ools"); len(elem) >= l && elem[0:l] == "ools" {
 											elem = elem[l:]
 										} else {
 											break
@@ -2809,11 +1947,166 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 										if len(elem) == 0 {
 											switch r.Method {
 											case "GET":
-												s.handleListSecretsRequest([1]string{
+												s.handleListPoolsRequest([1]string{
 													args[0],
 												}, elemIsEscaped, w, r)
 											case "POST":
-												s.handleCreateSecretRequest([1]string{
+												s.handleCreatePoolRequest([1]string{
+													args[0],
+												}, elemIsEscaped, w, r)
+											default:
+												s.notAllowed(w, r, notAllowedParams{
+													allowedMethods: "GET,POST",
+													allowedHeaders: rn32AllowedHeaders,
+													acceptPost:     "application/json",
+													acceptPatch:    "",
+												})
+											}
+
+											return
+										}
+										switch elem[0] {
+										case '/': // Prefix: "/"
+
+											if l := len("/"); len(elem) >= l && elem[0:l] == "/" {
+												elem = elem[l:]
+											} else {
+												break
+											}
+
+											// Param: "poolId"
+											// Match until "/"
+											idx := strings.IndexByte(elem, '/')
+											if idx < 0 {
+												idx = len(elem)
+											}
+											args[1] = elem[:idx]
+											elem = elem[idx:]
+
+											if len(elem) == 0 {
+												switch r.Method {
+												case "DELETE":
+													s.handleDeletePoolRequest([2]string{
+														args[0],
+														args[1],
+													}, elemIsEscaped, w, r)
+												case "GET":
+													s.handleGetPoolRequest([2]string{
+														args[0],
+														args[1],
+													}, elemIsEscaped, w, r)
+												case "PATCH":
+													s.handleUpdatePoolRequest([2]string{
+														args[0],
+														args[1],
+													}, elemIsEscaped, w, r)
+												default:
+													s.notAllowed(w, r, notAllowedParams{
+														allowedMethods: "DELETE,GET,PATCH",
+														allowedHeaders: rn55AllowedHeaders,
+														acceptPost:     "",
+														acceptPatch:    "application/json",
+													})
+												}
+
+												return
+											}
+											switch elem[0] {
+											case '/': // Prefix: "/"
+
+												if l := len("/"); len(elem) >= l && elem[0:l] == "/" {
+													elem = elem[l:]
+												} else {
+													break
+												}
+
+												if len(elem) == 0 {
+													break
+												}
+												switch elem[0] {
+												case 'd': // Prefix: "default"
+
+													if l := len("default"); len(elem) >= l && elem[0:l] == "default" {
+														elem = elem[l:]
+													} else {
+														break
+													}
+
+													if len(elem) == 0 {
+														// Leaf node.
+														switch r.Method {
+														case "DELETE":
+															s.handleUnsetDefaultPoolRequest([2]string{
+																args[0],
+																args[1],
+															}, elemIsEscaped, w, r)
+														case "PUT":
+															s.handleSetDefaultPoolRequest([2]string{
+																args[0],
+																args[1],
+															}, elemIsEscaped, w, r)
+														default:
+															s.notAllowed(w, r, notAllowedParams{
+																allowedMethods: "DELETE,PUT",
+																allowedHeaders: nil,
+																acceptPost:     "",
+																acceptPatch:    "",
+															})
+														}
+
+														return
+													}
+
+												case 'r': // Prefix: "reconcile"
+
+													if l := len("reconcile"); len(elem) >= l && elem[0:l] == "reconcile" {
+														elem = elem[l:]
+													} else {
+														break
+													}
+
+													if len(elem) == 0 {
+														// Leaf node.
+														switch r.Method {
+														case "POST":
+															s.handleReconcilePoolRequest([2]string{
+																args[0],
+																args[1],
+															}, elemIsEscaped, w, r)
+														default:
+															s.notAllowed(w, r, notAllowedParams{
+																allowedMethods: "POST",
+																allowedHeaders: nil,
+																acceptPost:     "",
+																acceptPatch:    "",
+															})
+														}
+
+														return
+													}
+
+												}
+
+											}
+
+										}
+
+									case 'r': // Prefix: "roviders"
+
+										if l := len("roviders"); len(elem) >= l && elem[0:l] == "roviders" {
+											elem = elem[l:]
+										} else {
+											break
+										}
+
+										if len(elem) == 0 {
+											switch r.Method {
+											case "GET":
+												s.handleListSandboxProviderInstancesRequest([1]string{
+													args[0],
+												}, elemIsEscaped, w, r)
+											case "POST":
+												s.handleCreateSandboxProviderInstanceRequest([1]string{
 													args[0],
 												}, elemIsEscaped, w, r)
 											default:
@@ -2836,7 +2129,7 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 												break
 											}
 
-											// Param: "secretId"
+											// Param: "providerId"
 											// Leaf parameter, slashes are prohibited
 											idx := strings.IndexByte(elem, '/')
 											if idx >= 0 {
@@ -2849,24 +2142,881 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 												// Leaf node.
 												switch r.Method {
 												case "DELETE":
-													s.handleDeleteSecretRequest([2]string{
+													s.handleDeleteSandboxProviderInstanceRequest([2]string{
 														args[0],
 														args[1],
 													}, elemIsEscaped, w, r)
 												case "GET":
-													s.handleGetSecretRequest([2]string{
+													s.handleGetSandboxProviderInstanceRequest([2]string{
 														args[0],
 														args[1],
 													}, elemIsEscaped, w, r)
-												case "PUT":
-													s.handleUpdateSecretRequest([2]string{
+												case "PATCH":
+													s.handleUpdateSandboxProviderInstanceRequest([2]string{
 														args[0],
 														args[1],
 													}, elemIsEscaped, w, r)
 												default:
 													s.notAllowed(w, r, notAllowedParams{
-														allowedMethods: "DELETE,GET,PUT",
-														allowedHeaders: rn57AllowedHeaders,
+														allowedMethods: "DELETE,GET,PATCH",
+														allowedHeaders: rn59AllowedHeaders,
+														acceptPost:     "",
+														acceptPatch:    "application/json",
+													})
+												}
+
+												return
+											}
+
+										}
+
+									}
+
+								case 's': // Prefix: "s"
+
+									if l := len("s"); len(elem) >= l && elem[0:l] == "s" {
+										elem = elem[l:]
+									} else {
+										break
+									}
+
+									if len(elem) == 0 {
+										break
+									}
+									switch elem[0] {
+									case 'a': // Prefix: "andboxes"
+
+										if l := len("andboxes"); len(elem) >= l && elem[0:l] == "andboxes" {
+											elem = elem[l:]
+										} else {
+											break
+										}
+
+										if len(elem) == 0 {
+											switch r.Method {
+											case "GET":
+												s.handleListSandboxesRequest([1]string{
+													args[0],
+												}, elemIsEscaped, w, r)
+											case "POST":
+												s.handleCreateSandboxRequest([1]string{
+													args[0],
+												}, elemIsEscaped, w, r)
+											default:
+												s.notAllowed(w, r, notAllowedParams{
+													allowedMethods: "GET,POST",
+													allowedHeaders: rn35AllowedHeaders,
+													acceptPost:     "application/json",
+													acceptPatch:    "",
+												})
+											}
+
+											return
+										}
+										switch elem[0] {
+										case '/': // Prefix: "/"
+
+											if l := len("/"); len(elem) >= l && elem[0:l] == "/" {
+												elem = elem[l:]
+											} else {
+												break
+											}
+
+											// Param: "sandboxId"
+											// Match until "/"
+											idx := strings.IndexByte(elem, '/')
+											if idx < 0 {
+												idx = len(elem)
+											}
+											args[1] = elem[:idx]
+											elem = elem[idx:]
+
+											if len(elem) == 0 {
+												switch r.Method {
+												case "DELETE":
+													s.handleDeleteSandboxRequest([2]string{
+														args[0],
+														args[1],
+													}, elemIsEscaped, w, r)
+												case "GET":
+													s.handleGetSandboxRequest([2]string{
+														args[0],
+														args[1],
+													}, elemIsEscaped, w, r)
+												case "PATCH":
+													s.handleUpdateSandboxRequest([2]string{
+														args[0],
+														args[1],
+													}, elemIsEscaped, w, r)
+												default:
+													s.notAllowed(w, r, notAllowedParams{
+														allowedMethods: "DELETE,GET,PATCH",
+														allowedHeaders: rn8AllowedHeaders,
+														acceptPost:     "",
+														acceptPatch:    "application/json",
+													})
+												}
+
+												return
+											}
+											switch elem[0] {
+											case '/': // Prefix: "/"
+
+												if l := len("/"); len(elem) >= l && elem[0:l] == "/" {
+													elem = elem[l:]
+												} else {
+													break
+												}
+
+												if len(elem) == 0 {
+													break
+												}
+												switch elem[0] {
+												case 'c': // Prefix: "complete-"
+
+													if l := len("complete-"); len(elem) >= l && elem[0:l] == "complete-" {
+														elem = elem[l:]
+													} else {
+														break
+													}
+
+													if len(elem) == 0 {
+														break
+													}
+													switch elem[0] {
+													case 'a': // Prefix: "apply"
+
+														if l := len("apply"); len(elem) >= l && elem[0:l] == "apply" {
+															elem = elem[l:]
+														} else {
+															break
+														}
+
+														if len(elem) == 0 {
+															// Leaf node.
+															switch r.Method {
+															case "POST":
+																s.handleCompleteSandboxApplyRequest([2]string{
+																	args[0],
+																	args[1],
+																}, elemIsEscaped, w, r)
+															default:
+																s.notAllowed(w, r, notAllowedParams{
+																	allowedMethods: "POST",
+																	allowedHeaders: rn25AllowedHeaders,
+																	acceptPost:     "application/json",
+																	acceptPatch:    "",
+																})
+															}
+
+															return
+														}
+
+													case 's': // Prefix: "source-push"
+
+														if l := len("source-push"); len(elem) >= l && elem[0:l] == "source-push" {
+															elem = elem[l:]
+														} else {
+															break
+														}
+
+														if len(elem) == 0 {
+															// Leaf node.
+															switch r.Method {
+															case "POST":
+																s.handleCompleteSandboxSourcePushRequest([2]string{
+																	args[0],
+																	args[1],
+																}, elemIsEscaped, w, r)
+															default:
+																s.notAllowed(w, r, notAllowedParams{
+																	allowedMethods: "POST",
+																	allowedHeaders: rn27AllowedHeaders,
+																	acceptPost:     "application/json",
+																	acceptPatch:    "",
+																})
+															}
+
+															return
+														}
+
+													}
+
+												case 'h': // Prefix: "harness-secrets"
+
+													if l := len("harness-secrets"); len(elem) >= l && elem[0:l] == "harness-secrets" {
+														elem = elem[l:]
+													} else {
+														break
+													}
+
+													if len(elem) == 0 {
+														// Leaf node.
+														switch r.Method {
+														case "POST":
+															s.handleAssignSandboxHarnessSecretsRequest([2]string{
+																args[0],
+																args[1],
+															}, elemIsEscaped, w, r)
+														default:
+															s.notAllowed(w, r, notAllowedParams{
+																allowedMethods: "POST",
+																allowedHeaders: rn9AllowedHeaders,
+																acceptPost:     "application/json",
+																acceptPatch:    "",
+															})
+														}
+
+														return
+													}
+
+												case 'p': // Prefix: "purge"
+
+													if l := len("purge"); len(elem) >= l && elem[0:l] == "purge" {
+														elem = elem[l:]
+													} else {
+														break
+													}
+
+													if len(elem) == 0 {
+														// Leaf node.
+														switch r.Method {
+														case "POST":
+															s.handlePurgeSandboxRequest([2]string{
+																args[0],
+																args[1],
+															}, elemIsEscaped, w, r)
+														default:
+															s.notAllowed(w, r, notAllowedParams{
+																allowedMethods: "POST",
+																allowedHeaders: nil,
+																acceptPost:     "",
+																acceptPatch:    "",
+															})
+														}
+
+														return
+													}
+
+												case 'r': // Prefix: "re"
+
+													if l := len("re"); len(elem) >= l && elem[0:l] == "re" {
+														elem = elem[l:]
+													} else {
+														break
+													}
+
+													if len(elem) == 0 {
+														break
+													}
+													switch elem[0] {
+													case 'c': // Prefix: "concile"
+
+														if l := len("concile"); len(elem) >= l && elem[0:l] == "concile" {
+															elem = elem[l:]
+														} else {
+															break
+														}
+
+														if len(elem) == 0 {
+															// Leaf node.
+															switch r.Method {
+															case "POST":
+																s.handleReconcileSandboxRequest([2]string{
+																	args[0],
+																	args[1],
+																}, elemIsEscaped, w, r)
+															default:
+																s.notAllowed(w, r, notAllowedParams{
+																	allowedMethods: "POST",
+																	allowedHeaders: nil,
+																	acceptPost:     "",
+																	acceptPatch:    "",
+																})
+															}
+
+															return
+														}
+
+													case 'p': // Prefix: "pair"
+
+														if l := len("pair"); len(elem) >= l && elem[0:l] == "pair" {
+															elem = elem[l:]
+														} else {
+															break
+														}
+
+														if len(elem) == 0 {
+															// Leaf node.
+															switch r.Method {
+															case "POST":
+																s.handleRepairSandboxRequest([2]string{
+																	args[0],
+																	args[1],
+																}, elemIsEscaped, w, r)
+															default:
+																s.notAllowed(w, r, notAllowedParams{
+																	allowedMethods: "POST",
+																	allowedHeaders: nil,
+																	acceptPost:     "",
+																	acceptPatch:    "",
+																})
+															}
+
+															return
+														}
+
+													case 's': // Prefix: "start"
+
+														if l := len("start"); len(elem) >= l && elem[0:l] == "start" {
+															elem = elem[l:]
+														} else {
+															break
+														}
+
+														if len(elem) == 0 {
+															// Leaf node.
+															switch r.Method {
+															case "POST":
+																s.handleRestartSandboxRequest([2]string{
+																	args[0],
+																	args[1],
+																}, elemIsEscaped, w, r)
+															default:
+																s.notAllowed(w, r, notAllowedParams{
+																	allowedMethods: "POST",
+																	allowedHeaders: rn106AllowedHeaders,
+																	acceptPost:     "application/json",
+																	acceptPatch:    "",
+																})
+															}
+
+															return
+														}
+
+													}
+
+												case 's': // Prefix: "st"
+
+													if l := len("st"); len(elem) >= l && elem[0:l] == "st" {
+														elem = elem[l:]
+													} else {
+														break
+													}
+
+													if len(elem) == 0 {
+														break
+													}
+													switch elem[0] {
+													case 'a': // Prefix: "art"
+
+														if l := len("art"); len(elem) >= l && elem[0:l] == "art" {
+															elem = elem[l:]
+														} else {
+															break
+														}
+
+														if len(elem) == 0 {
+															// Leaf node.
+															switch r.Method {
+															case "POST":
+																s.handleStartSandboxRequest([2]string{
+																	args[0],
+																	args[1],
+																}, elemIsEscaped, w, r)
+															default:
+																s.notAllowed(w, r, notAllowedParams{
+																	allowedMethods: "POST",
+																	allowedHeaders: rn116AllowedHeaders,
+																	acceptPost:     "application/json",
+																	acceptPatch:    "",
+																})
+															}
+
+															return
+														}
+
+													case 'o': // Prefix: "op"
+
+														if l := len("op"); len(elem) >= l && elem[0:l] == "op" {
+															elem = elem[l:]
+														} else {
+															break
+														}
+
+														if len(elem) == 0 {
+															// Leaf node.
+															switch r.Method {
+															case "POST":
+																s.handleStopSandboxRequest([2]string{
+																	args[0],
+																	args[1],
+																}, elemIsEscaped, w, r)
+															default:
+																s.notAllowed(w, r, notAllowedParams{
+																	allowedMethods: "POST",
+																	allowedHeaders: rn120AllowedHeaders,
+																	acceptPost:     "application/json",
+																	acceptPatch:    "",
+																})
+															}
+
+															return
+														}
+
+													}
+
+												case 'u': // Prefix: "u"
+
+													if l := len("u"); len(elem) >= l && elem[0:l] == "u" {
+														elem = elem[l:]
+													} else {
+														break
+													}
+
+													if len(elem) == 0 {
+														break
+													}
+													switch elem[0] {
+													case 'n': // Prefix: "narchive"
+
+														if l := len("narchive"); len(elem) >= l && elem[0:l] == "narchive" {
+															elem = elem[l:]
+														} else {
+															break
+														}
+
+														if len(elem) == 0 {
+															// Leaf node.
+															switch r.Method {
+															case "POST":
+																s.handleUnarchiveSandboxRequest([2]string{
+																	args[0],
+																	args[1],
+																}, elemIsEscaped, w, r)
+															default:
+																s.notAllowed(w, r, notAllowedParams{
+																	allowedMethods: "POST",
+																	allowedHeaders: nil,
+																	acceptPost:     "",
+																	acceptPatch:    "",
+																})
+															}
+
+															return
+														}
+
+													case 'p': // Prefix: "pgrade"
+
+														if l := len("pgrade"); len(elem) >= l && elem[0:l] == "pgrade" {
+															elem = elem[l:]
+														} else {
+															break
+														}
+
+														if len(elem) == 0 {
+															// Leaf node.
+															switch r.Method {
+															case "POST":
+																s.handleUpgradeSandboxRequest([2]string{
+																	args[0],
+																	args[1],
+																}, elemIsEscaped, w, r)
+															default:
+																s.notAllowed(w, r, notAllowedParams{
+																	allowedMethods: "POST",
+																	allowedHeaders: rn129AllowedHeaders,
+																	acceptPost:     "application/json",
+																	acceptPatch:    "",
+																})
+															}
+
+															return
+														}
+
+													}
+
+												}
+
+											}
+
+										}
+
+									case 'e': // Prefix: "ecret"
+
+										if l := len("ecret"); len(elem) >= l && elem[0:l] == "ecret" {
+											elem = elem[l:]
+										} else {
+											break
+										}
+
+										if len(elem) == 0 {
+											break
+										}
+										switch elem[0] {
+										case '-': // Prefix: "-"
+
+											if l := len("-"); len(elem) >= l && elem[0:l] == "-" {
+												elem = elem[l:]
+											} else {
+												break
+											}
+
+											if len(elem) == 0 {
+												break
+											}
+											switch elem[0] {
+											case 'g': // Prefix: "grants"
+
+												if l := len("grants"); len(elem) >= l && elem[0:l] == "grants" {
+													elem = elem[l:]
+												} else {
+													break
+												}
+
+												if len(elem) == 0 {
+													switch r.Method {
+													case "GET":
+														s.handleListSecretGrantsRequest([1]string{
+															args[0],
+														}, elemIsEscaped, w, r)
+													case "POST":
+														s.handleCreateSecretGrantRequest([1]string{
+															args[0],
+														}, elemIsEscaped, w, r)
+													default:
+														s.notAllowed(w, r, notAllowedParams{
+															allowedMethods: "GET,POST",
+															allowedHeaders: rn46AllowedHeaders,
+															acceptPost:     "application/json",
+															acceptPatch:    "",
+														})
+													}
+
+													return
+												}
+												switch elem[0] {
+												case '/': // Prefix: "/"
+
+													if l := len("/"); len(elem) >= l && elem[0:l] == "/" {
+														elem = elem[l:]
+													} else {
+														break
+													}
+
+													// Param: "grantId"
+													// Leaf parameter, slashes are prohibited
+													idx := strings.IndexByte(elem, '/')
+													if idx >= 0 {
+														break
+													}
+													args[1] = elem
+													elem = ""
+
+													if len(elem) == 0 {
+														// Leaf node.
+														switch r.Method {
+														case "DELETE":
+															s.handleRevokeSecretGrantRequest([2]string{
+																args[0],
+																args[1],
+															}, elemIsEscaped, w, r)
+														default:
+															s.notAllowed(w, r, notAllowedParams{
+																allowedMethods: "DELETE",
+																allowedHeaders: nil,
+																acceptPost:     "",
+																acceptPatch:    "",
+															})
+														}
+
+														return
+													}
+
+												}
+
+											case 'r': // Prefix: "requests"
+
+												if l := len("requests"); len(elem) >= l && elem[0:l] == "requests" {
+													elem = elem[l:]
+												} else {
+													break
+												}
+
+												if len(elem) == 0 {
+													switch r.Method {
+													case "GET":
+														s.handleListSecretRequestsRequest([1]string{
+															args[0],
+														}, elemIsEscaped, w, r)
+													case "POST":
+														s.handleCreateSecretRequestRequest([1]string{
+															args[0],
+														}, elemIsEscaped, w, r)
+													default:
+														s.notAllowed(w, r, notAllowedParams{
+															allowedMethods: "GET,POST",
+															allowedHeaders: rn47AllowedHeaders,
+															acceptPost:     "application/json",
+															acceptPatch:    "",
+														})
+													}
+
+													return
+												}
+												switch elem[0] {
+												case '/': // Prefix: "/"
+
+													if l := len("/"); len(elem) >= l && elem[0:l] == "/" {
+														elem = elem[l:]
+													} else {
+														break
+													}
+
+													// Param: "requestId"
+													// Match until "/"
+													idx := strings.IndexByte(elem, '/')
+													if idx < 0 {
+														idx = len(elem)
+													}
+													args[1] = elem[:idx]
+													elem = elem[idx:]
+
+													if len(elem) == 0 {
+														switch r.Method {
+														case "GET":
+															s.handleGetSecretRequestRequest([2]string{
+																args[0],
+																args[1],
+															}, elemIsEscaped, w, r)
+														default:
+															s.notAllowed(w, r, notAllowedParams{
+																allowedMethods: "GET",
+																allowedHeaders: nil,
+																acceptPost:     "",
+																acceptPatch:    "",
+															})
+														}
+
+														return
+													}
+													switch elem[0] {
+													case '/': // Prefix: "/"
+
+														if l := len("/"); len(elem) >= l && elem[0:l] == "/" {
+															elem = elem[l:]
+														} else {
+															break
+														}
+
+														if len(elem) == 0 {
+															break
+														}
+														switch elem[0] {
+														case 'a': // Prefix: "approve"
+
+															if l := len("approve"); len(elem) >= l && elem[0:l] == "approve" {
+																elem = elem[l:]
+															} else {
+																break
+															}
+
+															if len(elem) == 0 {
+																// Leaf node.
+																switch r.Method {
+																case "POST":
+																	s.handleApproveSecretRequestRequest([2]string{
+																		args[0],
+																		args[1],
+																	}, elemIsEscaped, w, r)
+																default:
+																	s.notAllowed(w, r, notAllowedParams{
+																		allowedMethods: "POST",
+																		allowedHeaders: rn5AllowedHeaders,
+																		acceptPost:     "application/json",
+																		acceptPatch:    "",
+																	})
+																}
+
+																return
+															}
+
+														case 'd': // Prefix: "deny"
+
+															if l := len("deny"); len(elem) >= l && elem[0:l] == "deny" {
+																elem = elem[l:]
+															} else {
+																break
+															}
+
+															if len(elem) == 0 {
+																// Leaf node.
+																switch r.Method {
+																case "POST":
+																	s.handleDenySecretRequestRequest([2]string{
+																		args[0],
+																		args[1],
+																	}, elemIsEscaped, w, r)
+																default:
+																	s.notAllowed(w, r, notAllowedParams{
+																		allowedMethods: "POST",
+																		allowedHeaders: nil,
+																		acceptPost:     "",
+																		acceptPatch:    "",
+																	})
+																}
+
+																return
+															}
+
+														}
+
+													}
+
+												}
+
+											}
+
+										case 's': // Prefix: "s"
+
+											if l := len("s"); len(elem) >= l && elem[0:l] == "s" {
+												elem = elem[l:]
+											} else {
+												break
+											}
+
+											if len(elem) == 0 {
+												switch r.Method {
+												case "GET":
+													s.handleListSecretsRequest([1]string{
+														args[0],
+													}, elemIsEscaped, w, r)
+												case "POST":
+													s.handleCreateSecretRequest([1]string{
+														args[0],
+													}, elemIsEscaped, w, r)
+												default:
+													s.notAllowed(w, r, notAllowedParams{
+														allowedMethods: "GET,POST",
+														allowedHeaders: rn44AllowedHeaders,
+														acceptPost:     "application/json",
+														acceptPatch:    "",
+													})
+												}
+
+												return
+											}
+											switch elem[0] {
+											case '/': // Prefix: "/"
+
+												if l := len("/"); len(elem) >= l && elem[0:l] == "/" {
+													elem = elem[l:]
+												} else {
+													break
+												}
+
+												// Param: "secretId"
+												// Leaf parameter, slashes are prohibited
+												idx := strings.IndexByte(elem, '/')
+												if idx >= 0 {
+													break
+												}
+												args[1] = elem
+												elem = ""
+
+												if len(elem) == 0 {
+													// Leaf node.
+													switch r.Method {
+													case "DELETE":
+														s.handleDeleteSecretRequest([2]string{
+															args[0],
+															args[1],
+														}, elemIsEscaped, w, r)
+													case "GET":
+														s.handleGetSecretRequest([2]string{
+															args[0],
+															args[1],
+														}, elemIsEscaped, w, r)
+													case "PUT":
+														s.handleUpdateSecretRequest([2]string{
+															args[0],
+															args[1],
+														}, elemIsEscaped, w, r)
+													default:
+														s.notAllowed(w, r, notAllowedParams{
+															allowedMethods: "DELETE,GET,PUT",
+															allowedHeaders: rn61AllowedHeaders,
+															acceptPost:     "",
+															acceptPatch:    "",
+														})
+													}
+
+													return
+												}
+
+											}
+
+										}
+
+									case 's': // Prefix: "sh-keys"
+
+										if l := len("sh-keys"); len(elem) >= l && elem[0:l] == "sh-keys" {
+											elem = elem[l:]
+										} else {
+											break
+										}
+
+										if len(elem) == 0 {
+											switch r.Method {
+											case "GET":
+												s.handleListSSHKeysRequest([1]string{
+													args[0],
+												}, elemIsEscaped, w, r)
+											case "POST":
+												s.handleCreateSSHKeyRequest([1]string{
+													args[0],
+												}, elemIsEscaped, w, r)
+											default:
+												s.notAllowed(w, r, notAllowedParams{
+													allowedMethods: "GET,POST",
+													allowedHeaders: rn34AllowedHeaders,
+													acceptPost:     "application/json",
+													acceptPatch:    "",
+												})
+											}
+
+											return
+										}
+										switch elem[0] {
+										case '/': // Prefix: "/"
+
+											if l := len("/"); len(elem) >= l && elem[0:l] == "/" {
+												elem = elem[l:]
+											} else {
+												break
+											}
+
+											// Param: "sshKeyId"
+											// Leaf parameter, slashes are prohibited
+											idx := strings.IndexByte(elem, '/')
+											if idx >= 0 {
+												break
+											}
+											args[1] = elem
+											elem = ""
+
+											if len(elem) == 0 {
+												// Leaf node.
+												switch r.Method {
+												case "DELETE":
+													s.handleDeleteSSHKeyRequest([2]string{
+														args[0],
+														args[1],
+													}, elemIsEscaped, w, r)
+												default:
+													s.notAllowed(w, r, notAllowedParams{
+														allowedMethods: "DELETE",
+														allowedHeaders: nil,
 														acceptPost:     "",
 														acceptPatch:    "",
 													})
@@ -2879,106 +3029,37 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 
 									}
 
-								case 's': // Prefix: "sh-keys"
-
-									if l := len("sh-keys"); len(elem) >= l && elem[0:l] == "sh-keys" {
-										elem = elem[l:]
-									} else {
-										break
-									}
-
-									if len(elem) == 0 {
-										switch r.Method {
-										case "GET":
-											s.handleListSSHKeysRequest([1]string{
-												args[0],
-											}, elemIsEscaped, w, r)
-										case "POST":
-											s.handleCreateSSHKeyRequest([1]string{
-												args[0],
-											}, elemIsEscaped, w, r)
-										default:
-											s.notAllowed(w, r, notAllowedParams{
-												allowedMethods: "GET,POST",
-												allowedHeaders: rn32AllowedHeaders,
-												acceptPost:     "application/json",
-												acceptPatch:    "",
-											})
-										}
-
-										return
-									}
-									switch elem[0] {
-									case '/': // Prefix: "/"
-
-										if l := len("/"); len(elem) >= l && elem[0:l] == "/" {
-											elem = elem[l:]
-										} else {
-											break
-										}
-
-										// Param: "sshKeyId"
-										// Leaf parameter, slashes are prohibited
-										idx := strings.IndexByte(elem, '/')
-										if idx >= 0 {
-											break
-										}
-										args[1] = elem
-										elem = ""
-
-										if len(elem) == 0 {
-											// Leaf node.
-											switch r.Method {
-											case "DELETE":
-												s.handleDeleteSSHKeyRequest([2]string{
-													args[0],
-													args[1],
-												}, elemIsEscaped, w, r)
-											default:
-												s.notAllowed(w, r, notAllowedParams{
-													allowedMethods: "DELETE",
-													allowedHeaders: nil,
-													acceptPost:     "",
-													acceptPatch:    "",
-												})
-											}
-
-											return
-										}
-
-									}
-
 								}
 
 							}
 
 						}
 
-					}
+					case 'v': // Prefix: "viders/catalog"
 
-				case 'v': // Prefix: "viders/catalog"
-
-					if l := len("viders/catalog"); len(elem) >= l && elem[0:l] == "viders/catalog" {
-						elem = elem[l:]
-					} else {
-						break
-					}
-
-					if len(elem) == 0 {
-						// Leaf node.
-						switch r.Method {
-						case "GET":
-							s.handleListSandboxProviderCatalogRequest([0]string{}, elemIsEscaped, w, r)
-						default:
-							s.notAllowed(w, r, notAllowedParams{
-								allowedMethods: "GET",
-								allowedHeaders: nil,
-								acceptPost:     "",
-								acceptPatch:    "",
-							})
+						if l := len("viders/catalog"); len(elem) >= l && elem[0:l] == "viders/catalog" {
+							elem = elem[l:]
+						} else {
+							break
 						}
 
-						return
+						if len(elem) == 0 {
+							// Leaf node.
+							switch r.Method {
+							case "GET":
+								s.handleListSandboxProviderCatalogRequest([0]string{}, elemIsEscaped, w, r)
+							default:
+								s.notAllowed(w, r, notAllowedParams{
+									allowedMethods: "GET",
+									allowedHeaders: nil,
+									acceptPost:     "",
+									acceptPatch:    "",
+								})
+							}
+
+							return
+						}
+
 					}
 
 				}
@@ -4126,9 +4207,9 @@ func (s *Server) FindPath(method string, u *url.URL) (r Route, _ bool) {
 
 				}
 
-			case 'p': // Prefix: "pro"
+			case 'p': // Prefix: "p"
 
-				if l := len("pro"); len(elem) >= l && elem[0:l] == "pro" {
+				if l := len("p"); len(elem) >= l && elem[0:l] == "p" {
 					elem = elem[l:]
 				} else {
 					break
@@ -4138,9 +4219,9 @@ func (s *Server) FindPath(method string, u *url.URL) (r Route, _ bool) {
 					break
 				}
 				switch elem[0] {
-				case 'j': // Prefix: "jects"
+				case 'e': // Prefix: "eers"
 
-					if l := len("jects"); len(elem) >= l && elem[0:l] == "jects" {
+					if l := len("eers"); len(elem) >= l && elem[0:l] == "eers" {
 						elem = elem[l:]
 					} else {
 						break
@@ -4149,20 +4230,20 @@ func (s *Server) FindPath(method string, u *url.URL) (r Route, _ bool) {
 					if len(elem) == 0 {
 						switch method {
 						case "GET":
-							r.name = ListProjectsOperation
-							r.summary = "List projects"
-							r.operationID = "list-projects"
+							r.name = ListPeersOperation
+							r.summary = "List the peers enrolled on this server"
+							r.operationID = "list-peers"
 							r.operationGroup = ""
-							r.pathPattern = "/projects"
+							r.pathPattern = "/peers"
 							r.args = args
 							r.count = 0
 							return r, true
 						case "POST":
-							r.name = CreateProjectOperation
-							r.summary = "Create a project"
-							r.operationID = "create-project"
+							r.name = CreatePeerOperation
+							r.summary = "Enroll a peer"
+							r.operationID = "create-peer"
 							r.operationGroup = ""
-							r.pathPattern = "/projects"
+							r.pathPattern = "/peers"
 							r.args = args
 							r.count = 0
 							return r, true
@@ -4179,43 +4260,73 @@ func (s *Server) FindPath(method string, u *url.URL) (r Route, _ bool) {
 							break
 						}
 
-						// Param: "projectId"
-						// Match until "/"
+						// Param: "peerId"
+						// Leaf parameter, slashes are prohibited
 						idx := strings.IndexByte(elem, '/')
-						if idx < 0 {
-							idx = len(elem)
+						if idx >= 0 {
+							break
 						}
-						args[0] = elem[:idx]
-						elem = elem[idx:]
+						args[0] = elem
+						elem = ""
+
+						if len(elem) == 0 {
+							// Leaf node.
+							switch method {
+							case "DELETE":
+								r.name = DeletePeerOperation
+								r.summary = "Revoke an enrolled peer"
+								r.operationID = "delete-peer"
+								r.operationGroup = ""
+								r.pathPattern = "/peers/{peerId}"
+								r.args = args
+								r.count = 1
+								return r, true
+							default:
+								return
+							}
+						}
+
+					}
+
+				case 'r': // Prefix: "ro"
+
+					if l := len("ro"); len(elem) >= l && elem[0:l] == "ro" {
+						elem = elem[l:]
+					} else {
+						break
+					}
+
+					if len(elem) == 0 {
+						break
+					}
+					switch elem[0] {
+					case 'j': // Prefix: "jects"
+
+						if l := len("jects"); len(elem) >= l && elem[0:l] == "jects" {
+							elem = elem[l:]
+						} else {
+							break
+						}
 
 						if len(elem) == 0 {
 							switch method {
-							case "DELETE":
-								r.name = DeleteProjectOperation
-								r.summary = "Delete a project"
-								r.operationID = "delete-project"
-								r.operationGroup = ""
-								r.pathPattern = "/projects/{projectId}"
-								r.args = args
-								r.count = 1
-								return r, true
 							case "GET":
-								r.name = GetProjectOperation
-								r.summary = "Get a project"
-								r.operationID = "get-project"
+								r.name = ListProjectsOperation
+								r.summary = "List projects"
+								r.operationID = "list-projects"
 								r.operationGroup = ""
-								r.pathPattern = "/projects/{projectId}"
+								r.pathPattern = "/projects"
 								r.args = args
-								r.count = 1
+								r.count = 0
 								return r, true
-							case "PATCH":
-								r.name = UpdateProjectOperation
-								r.summary = "Update a project"
-								r.operationID = "update-project"
+							case "POST":
+								r.name = CreateProjectOperation
+								r.summary = "Create a project"
+								r.operationID = "create-project"
 								r.operationGroup = ""
-								r.pathPattern = "/projects/{projectId}"
+								r.pathPattern = "/projects"
 								r.args = args
-								r.count = 1
+								r.count = 0
 								return r, true
 							default:
 								return
@@ -4230,113 +4341,113 @@ func (s *Server) FindPath(method string, u *url.URL) (r Route, _ bool) {
 								break
 							}
 
+							// Param: "projectId"
+							// Match until "/"
+							idx := strings.IndexByte(elem, '/')
+							if idx < 0 {
+								idx = len(elem)
+							}
+							args[0] = elem[:idx]
+							elem = elem[idx:]
+
 							if len(elem) == 0 {
-								break
+								switch method {
+								case "DELETE":
+									r.name = DeleteProjectOperation
+									r.summary = "Delete a project"
+									r.operationID = "delete-project"
+									r.operationGroup = ""
+									r.pathPattern = "/projects/{projectId}"
+									r.args = args
+									r.count = 1
+									return r, true
+								case "GET":
+									r.name = GetProjectOperation
+									r.summary = "Get a project"
+									r.operationID = "get-project"
+									r.operationGroup = ""
+									r.pathPattern = "/projects/{projectId}"
+									r.args = args
+									r.count = 1
+									return r, true
+								case "PATCH":
+									r.name = UpdateProjectOperation
+									r.summary = "Update a project"
+									r.operationID = "update-project"
+									r.operationGroup = ""
+									r.pathPattern = "/projects/{projectId}"
+									r.args = args
+									r.count = 1
+									return r, true
+								default:
+									return
+								}
 							}
 							switch elem[0] {
-							case 'd': // Prefix: "default"
+							case '/': // Prefix: "/"
 
-								if l := len("default"); len(elem) >= l && elem[0:l] == "default" {
+								if l := len("/"); len(elem) >= l && elem[0:l] == "/" {
 									elem = elem[l:]
 								} else {
 									break
 								}
 
 								if len(elem) == 0 {
-									// Leaf node.
-									switch method {
-									case "PUT":
-										r.name = SetDefaultProjectOperation
-										r.summary = "Set the user's default project"
-										r.operationID = "set-default-project"
-										r.operationGroup = ""
-										r.pathPattern = "/projects/{projectId}/default"
-										r.args = args
-										r.count = 1
-										return r, true
-									default:
-										return
-									}
-								}
-
-							case 'h': // Prefix: "harness-configs"
-
-								if l := len("harness-configs"); len(elem) >= l && elem[0:l] == "harness-configs" {
-									elem = elem[l:]
-								} else {
 									break
-								}
-
-								if len(elem) == 0 {
-									switch method {
-									case "GET":
-										r.name = ListHarnessConfigsOperation
-										r.summary = "List harness configs"
-										r.operationID = "list-harness-configs"
-										r.operationGroup = ""
-										r.pathPattern = "/projects/{projectId}/harness-configs"
-										r.args = args
-										r.count = 1
-										return r, true
-									case "POST":
-										r.name = CreateHarnessConfigOperation
-										r.summary = "Create a harness config"
-										r.operationID = "create-harness-config"
-										r.operationGroup = ""
-										r.pathPattern = "/projects/{projectId}/harness-configs"
-										r.args = args
-										r.count = 1
-										return r, true
-									default:
-										return
-									}
 								}
 								switch elem[0] {
-								case '/': // Prefix: "/"
+								case 'd': // Prefix: "default"
 
-									if l := len("/"); len(elem) >= l && elem[0:l] == "/" {
+									if l := len("default"); len(elem) >= l && elem[0:l] == "default" {
 										elem = elem[l:]
 									} else {
 										break
 									}
 
-									// Param: "harnessConfigId"
-									// Match until "/"
-									idx := strings.IndexByte(elem, '/')
-									if idx < 0 {
-										idx = len(elem)
+									if len(elem) == 0 {
+										// Leaf node.
+										switch method {
+										case "PUT":
+											r.name = SetDefaultProjectOperation
+											r.summary = "Set the user's default project"
+											r.operationID = "set-default-project"
+											r.operationGroup = ""
+											r.pathPattern = "/projects/{projectId}/default"
+											r.args = args
+											r.count = 1
+											return r, true
+										default:
+											return
+										}
 									}
-									args[1] = elem[:idx]
-									elem = elem[idx:]
+
+								case 'h': // Prefix: "harness-configs"
+
+									if l := len("harness-configs"); len(elem) >= l && elem[0:l] == "harness-configs" {
+										elem = elem[l:]
+									} else {
+										break
+									}
 
 									if len(elem) == 0 {
 										switch method {
-										case "DELETE":
-											r.name = DeleteHarnessConfigOperation
-											r.summary = "Delete a harness config"
-											r.operationID = "delete-harness-config"
-											r.operationGroup = ""
-											r.pathPattern = "/projects/{projectId}/harness-configs/{harnessConfigId}"
-											r.args = args
-											r.count = 2
-											return r, true
 										case "GET":
-											r.name = GetHarnessConfigOperation
-											r.summary = "Get a harness config"
-											r.operationID = "get-harness-config"
+											r.name = ListHarnessConfigsOperation
+											r.summary = "List harness configs"
+											r.operationID = "list-harness-configs"
 											r.operationGroup = ""
-											r.pathPattern = "/projects/{projectId}/harness-configs/{harnessConfigId}"
+											r.pathPattern = "/projects/{projectId}/harness-configs"
 											r.args = args
-											r.count = 2
+											r.count = 1
 											return r, true
-										case "PATCH":
-											r.name = UpdateHarnessConfigOperation
-											r.summary = "Update a harness config"
-											r.operationID = "update-harness-config"
+										case "POST":
+											r.name = CreateHarnessConfigOperation
+											r.summary = "Create a harness config"
+											r.operationID = "create-harness-config"
 											r.operationGroup = ""
-											r.pathPattern = "/projects/{projectId}/harness-configs/{harnessConfigId}"
+											r.pathPattern = "/projects/{projectId}/harness-configs"
 											r.args = args
-											r.count = 2
+											r.count = 1
 											return r, true
 										default:
 											return
@@ -4351,103 +4462,52 @@ func (s *Server) FindPath(method string, u *url.URL) (r Route, _ bool) {
 											break
 										}
 
+										// Param: "harnessConfigId"
+										// Match until "/"
+										idx := strings.IndexByte(elem, '/')
+										if idx < 0 {
+											idx = len(elem)
+										}
+										args[1] = elem[:idx]
+										elem = elem[idx:]
+
 										if len(elem) == 0 {
-											break
+											switch method {
+											case "DELETE":
+												r.name = DeleteHarnessConfigOperation
+												r.summary = "Delete a harness config"
+												r.operationID = "delete-harness-config"
+												r.operationGroup = ""
+												r.pathPattern = "/projects/{projectId}/harness-configs/{harnessConfigId}"
+												r.args = args
+												r.count = 2
+												return r, true
+											case "GET":
+												r.name = GetHarnessConfigOperation
+												r.summary = "Get a harness config"
+												r.operationID = "get-harness-config"
+												r.operationGroup = ""
+												r.pathPattern = "/projects/{projectId}/harness-configs/{harnessConfigId}"
+												r.args = args
+												r.count = 2
+												return r, true
+											case "PATCH":
+												r.name = UpdateHarnessConfigOperation
+												r.summary = "Update a harness config"
+												r.operationID = "update-harness-config"
+												r.operationGroup = ""
+												r.pathPattern = "/projects/{projectId}/harness-configs/{harnessConfigId}"
+												r.args = args
+												r.count = 2
+												return r, true
+											default:
+												return
+											}
 										}
 										switch elem[0] {
-										case 'c': // Prefix: "configure"
+										case '/': // Prefix: "/"
 
-											if l := len("configure"); len(elem) >= l && elem[0:l] == "configure" {
-												elem = elem[l:]
-											} else {
-												break
-											}
-
-											if len(elem) == 0 {
-												switch method {
-												case "POST":
-													r.name = ConfigureHarnessConfigOperation
-													r.summary = "Run a harness config's configure flow"
-													r.operationID = "configure-harness-config"
-													r.operationGroup = ""
-													r.pathPattern = "/projects/{projectId}/harness-configs/{harnessConfigId}/configure"
-													r.args = args
-													r.count = 2
-													return r, true
-												default:
-													return
-												}
-											}
-											switch elem[0] {
-											case '/': // Prefix: "/"
-
-												if l := len("/"); len(elem) >= l && elem[0:l] == "/" {
-													elem = elem[l:]
-												} else {
-													break
-												}
-
-												if len(elem) == 0 {
-													break
-												}
-												switch elem[0] {
-												case 'a': // Prefix: "attach"
-
-													if l := len("attach"); len(elem) >= l && elem[0:l] == "attach" {
-														elem = elem[l:]
-													} else {
-														break
-													}
-
-													if len(elem) == 0 {
-														// Leaf node.
-														switch method {
-														case "POST":
-															r.name = AttachHarnessConfigConfigureOperation
-															r.summary = "Seed the configure sandbox before attaching"
-															r.operationID = "attach-harness-config-configure"
-															r.operationGroup = ""
-															r.pathPattern = "/projects/{projectId}/harness-configs/{harnessConfigId}/configure/attach"
-															r.args = args
-															r.count = 2
-															return r, true
-														default:
-															return
-														}
-													}
-
-												case 'c': // Prefix: "commit"
-
-													if l := len("commit"); len(elem) >= l && elem[0:l] == "commit" {
-														elem = elem[l:]
-													} else {
-														break
-													}
-
-													if len(elem) == 0 {
-														// Leaf node.
-														switch method {
-														case "POST":
-															r.name = CommitHarnessConfigConfigureOperation
-															r.summary = "Commit a harness config's configure flow"
-															r.operationID = "commit-harness-config-configure"
-															r.operationGroup = ""
-															r.pathPattern = "/projects/{projectId}/harness-configs/{harnessConfigId}/configure/commit"
-															r.args = args
-															r.count = 2
-															return r, true
-														default:
-															return
-														}
-													}
-
-												}
-
-											}
-
-										case 'd': // Prefix: "de"
-
-											if l := len("de"); len(elem) >= l && elem[0:l] == "de" {
+											if l := len("/"); len(elem) >= l && elem[0:l] == "/" {
 												elem = elem[l:]
 											} else {
 												break
@@ -4466,1102 +4526,13 @@ func (s *Server) FindPath(method string, u *url.URL) (r Route, _ bool) {
 												}
 
 												if len(elem) == 0 {
-													// Leaf node.
 													switch method {
 													case "POST":
-														r.name = DeconfigureHarnessConfigOperation
-														r.summary = "Undo a harness config's configure flow"
-														r.operationID = "deconfigure-harness-config"
+														r.name = ConfigureHarnessConfigOperation
+														r.summary = "Run a harness config's configure flow"
+														r.operationID = "configure-harness-config"
 														r.operationGroup = ""
-														r.pathPattern = "/projects/{projectId}/harness-configs/{harnessConfigId}/deconfigure"
-														r.args = args
-														r.count = 2
-														return r, true
-													default:
-														return
-													}
-												}
-
-											case 'f': // Prefix: "fault"
-
-												if l := len("fault"); len(elem) >= l && elem[0:l] == "fault" {
-													elem = elem[l:]
-												} else {
-													break
-												}
-
-												if len(elem) == 0 {
-													// Leaf node.
-													switch method {
-													case "DELETE":
-														r.name = UnsetDefaultHarnessConfigOperation
-														r.summary = "Clear the project default harness config"
-														r.operationID = "unset-default-harness-config"
-														r.operationGroup = ""
-														r.pathPattern = "/projects/{projectId}/harness-configs/{harnessConfigId}/default"
-														r.args = args
-														r.count = 2
-														return r, true
-													case "PUT":
-														r.name = SetDefaultHarnessConfigOperation
-														r.summary = "Set the project default harness config"
-														r.operationID = "set-default-harness-config"
-														r.operationGroup = ""
-														r.pathPattern = "/projects/{projectId}/harness-configs/{harnessConfigId}/default"
-														r.args = args
-														r.count = 2
-														return r, true
-													default:
-														return
-													}
-												}
-
-											}
-
-										case 'r': // Prefix: "refresh-image"
-
-											if l := len("refresh-image"); len(elem) >= l && elem[0:l] == "refresh-image" {
-												elem = elem[l:]
-											} else {
-												break
-											}
-
-											if len(elem) == 0 {
-												// Leaf node.
-												switch method {
-												case "POST":
-													r.name = RefreshHarnessConfigImageOperation
-													r.summary = "Re-snapshot a harness config from its image"
-													r.operationID = "refresh-harness-config-image"
-													r.operationGroup = ""
-													r.pathPattern = "/projects/{projectId}/harness-configs/{harnessConfigId}/refresh-image"
-													r.args = args
-													r.count = 2
-													return r, true
-												default:
-													return
-												}
-											}
-
-										case 's': // Prefix: "secret-bindings"
-
-											if l := len("secret-bindings"); len(elem) >= l && elem[0:l] == "secret-bindings" {
-												elem = elem[l:]
-											} else {
-												break
-											}
-
-											if len(elem) == 0 {
-												switch method {
-												case "GET":
-													r.name = ListHarnessConfigSecretBindingsOperation
-													r.summary = "List harness config secret bindings"
-													r.operationID = "list-harness-config-secret-bindings"
-													r.operationGroup = ""
-													r.pathPattern = "/projects/{projectId}/harness-configs/{harnessConfigId}/secret-bindings"
-													r.args = args
-													r.count = 2
-													return r, true
-												default:
-													return
-												}
-											}
-											switch elem[0] {
-											case '/': // Prefix: "/"
-
-												if l := len("/"); len(elem) >= l && elem[0:l] == "/" {
-													elem = elem[l:]
-												} else {
-													break
-												}
-
-												// Param: "envName"
-												// Leaf parameter, slashes are prohibited
-												idx := strings.IndexByte(elem, '/')
-												if idx >= 0 {
-													break
-												}
-												args[2] = elem
-												elem = ""
-
-												if len(elem) == 0 {
-													// Leaf node.
-													switch method {
-													case "DELETE":
-														r.name = DeleteHarnessConfigSecretBindingOperation
-														r.summary = "Remove a harness config secret binding"
-														r.operationID = "delete-harness-config-secret-binding"
-														r.operationGroup = ""
-														r.pathPattern = "/projects/{projectId}/harness-configs/{harnessConfigId}/secret-bindings/{envName}"
-														r.args = args
-														r.count = 3
-														return r, true
-													case "PUT":
-														r.name = SetHarnessConfigSecretBindingOperation
-														r.summary = "Bind a harness config environment variable to a secret"
-														r.operationID = "set-harness-config-secret-binding"
-														r.operationGroup = ""
-														r.pathPattern = "/projects/{projectId}/harness-configs/{harnessConfigId}/secret-bindings/{envName}"
-														r.args = args
-														r.count = 3
-														return r, true
-													default:
-														return
-													}
-												}
-
-											}
-
-										}
-
-									}
-
-								}
-
-							case 'j': // Prefix: "jobs"
-
-								if l := len("jobs"); len(elem) >= l && elem[0:l] == "jobs" {
-									elem = elem[l:]
-								} else {
-									break
-								}
-
-								if len(elem) == 0 {
-									switch method {
-									case "GET":
-										r.name = ListJobsOperation
-										r.summary = "List jobs for a project"
-										r.operationID = "list-jobs"
-										r.operationGroup = ""
-										r.pathPattern = "/projects/{projectId}/jobs"
-										r.args = args
-										r.count = 1
-										return r, true
-									default:
-										return
-									}
-								}
-								switch elem[0] {
-								case '/': // Prefix: "/"
-
-									if l := len("/"); len(elem) >= l && elem[0:l] == "/" {
-										elem = elem[l:]
-									} else {
-										break
-									}
-
-									// Param: "jobId"
-									// Match until "/"
-									idx := strings.IndexByte(elem, '/')
-									if idx < 0 {
-										idx = len(elem)
-									}
-									args[1] = elem[:idx]
-									elem = elem[idx:]
-
-									if len(elem) == 0 {
-										switch method {
-										case "GET":
-											r.name = GetJobOperation
-											r.summary = "Get a job"
-											r.operationID = "get-job"
-											r.operationGroup = ""
-											r.pathPattern = "/projects/{projectId}/jobs/{jobId}"
-											r.args = args
-											r.count = 2
-											return r, true
-										default:
-											return
-										}
-									}
-									switch elem[0] {
-									case '/': // Prefix: "/force"
-
-										if l := len("/force"); len(elem) >= l && elem[0:l] == "/force" {
-											elem = elem[l:]
-										} else {
-											break
-										}
-
-										if len(elem) == 0 {
-											// Leaf node.
-											switch method {
-											case "POST":
-												r.name = ForceJobOperation
-												r.summary = "Force a pending, scheduled, or backoff job to run immediately"
-												r.operationID = "force-job"
-												r.operationGroup = ""
-												r.pathPattern = "/projects/{projectId}/jobs/{jobId}/force"
-												r.args = args
-												r.count = 2
-												return r, true
-											default:
-												return
-											}
-										}
-
-									}
-
-								}
-
-							case 'p': // Prefix: "p"
-
-								if l := len("p"); len(elem) >= l && elem[0:l] == "p" {
-									elem = elem[l:]
-								} else {
-									break
-								}
-
-								if len(elem) == 0 {
-									break
-								}
-								switch elem[0] {
-								case 'o': // Prefix: "ools"
-
-									if l := len("ools"); len(elem) >= l && elem[0:l] == "ools" {
-										elem = elem[l:]
-									} else {
-										break
-									}
-
-									if len(elem) == 0 {
-										switch method {
-										case "GET":
-											r.name = ListPoolsOperation
-											r.summary = "List pools"
-											r.operationID = "list-pools"
-											r.operationGroup = ""
-											r.pathPattern = "/projects/{projectId}/pools"
-											r.args = args
-											r.count = 1
-											return r, true
-										case "POST":
-											r.name = CreatePoolOperation
-											r.summary = "Create a pool"
-											r.operationID = "create-pool"
-											r.operationGroup = ""
-											r.pathPattern = "/projects/{projectId}/pools"
-											r.args = args
-											r.count = 1
-											return r, true
-										default:
-											return
-										}
-									}
-									switch elem[0] {
-									case '/': // Prefix: "/"
-
-										if l := len("/"); len(elem) >= l && elem[0:l] == "/" {
-											elem = elem[l:]
-										} else {
-											break
-										}
-
-										// Param: "poolId"
-										// Match until "/"
-										idx := strings.IndexByte(elem, '/')
-										if idx < 0 {
-											idx = len(elem)
-										}
-										args[1] = elem[:idx]
-										elem = elem[idx:]
-
-										if len(elem) == 0 {
-											switch method {
-											case "DELETE":
-												r.name = DeletePoolOperation
-												r.summary = "Delete a pool"
-												r.operationID = "delete-pool"
-												r.operationGroup = ""
-												r.pathPattern = "/projects/{projectId}/pools/{poolId}"
-												r.args = args
-												r.count = 2
-												return r, true
-											case "GET":
-												r.name = GetPoolOperation
-												r.summary = "Get a pool"
-												r.operationID = "get-pool"
-												r.operationGroup = ""
-												r.pathPattern = "/projects/{projectId}/pools/{poolId}"
-												r.args = args
-												r.count = 2
-												return r, true
-											case "PATCH":
-												r.name = UpdatePoolOperation
-												r.summary = "Update a pool"
-												r.operationID = "update-pool"
-												r.operationGroup = ""
-												r.pathPattern = "/projects/{projectId}/pools/{poolId}"
-												r.args = args
-												r.count = 2
-												return r, true
-											default:
-												return
-											}
-										}
-										switch elem[0] {
-										case '/': // Prefix: "/"
-
-											if l := len("/"); len(elem) >= l && elem[0:l] == "/" {
-												elem = elem[l:]
-											} else {
-												break
-											}
-
-											if len(elem) == 0 {
-												break
-											}
-											switch elem[0] {
-											case 'd': // Prefix: "default"
-
-												if l := len("default"); len(elem) >= l && elem[0:l] == "default" {
-													elem = elem[l:]
-												} else {
-													break
-												}
-
-												if len(elem) == 0 {
-													// Leaf node.
-													switch method {
-													case "DELETE":
-														r.name = UnsetDefaultPoolOperation
-														r.summary = "Clear the project default pool"
-														r.operationID = "unset-default-pool"
-														r.operationGroup = ""
-														r.pathPattern = "/projects/{projectId}/pools/{poolId}/default"
-														r.args = args
-														r.count = 2
-														return r, true
-													case "PUT":
-														r.name = SetDefaultPoolOperation
-														r.summary = "Set the project default pool"
-														r.operationID = "set-default-pool"
-														r.operationGroup = ""
-														r.pathPattern = "/projects/{projectId}/pools/{poolId}/default"
-														r.args = args
-														r.count = 2
-														return r, true
-													default:
-														return
-													}
-												}
-
-											case 'r': // Prefix: "reconcile"
-
-												if l := len("reconcile"); len(elem) >= l && elem[0:l] == "reconcile" {
-													elem = elem[l:]
-												} else {
-													break
-												}
-
-												if len(elem) == 0 {
-													// Leaf node.
-													switch method {
-													case "POST":
-														r.name = ReconcilePoolOperation
-														r.summary = "Reconcile a pool"
-														r.operationID = "reconcile-pool"
-														r.operationGroup = ""
-														r.pathPattern = "/projects/{projectId}/pools/{poolId}/reconcile"
-														r.args = args
-														r.count = 2
-														return r, true
-													default:
-														return
-													}
-												}
-
-											}
-
-										}
-
-									}
-
-								case 'r': // Prefix: "roviders"
-
-									if l := len("roviders"); len(elem) >= l && elem[0:l] == "roviders" {
-										elem = elem[l:]
-									} else {
-										break
-									}
-
-									if len(elem) == 0 {
-										switch method {
-										case "GET":
-											r.name = ListSandboxProviderInstancesOperation
-											r.summary = "List sandbox provider instances"
-											r.operationID = "list-sandbox-provider-instances"
-											r.operationGroup = ""
-											r.pathPattern = "/projects/{projectId}/providers"
-											r.args = args
-											r.count = 1
-											return r, true
-										case "POST":
-											r.name = CreateSandboxProviderInstanceOperation
-											r.summary = "Create a sandbox provider instance"
-											r.operationID = "create-sandbox-provider-instance"
-											r.operationGroup = ""
-											r.pathPattern = "/projects/{projectId}/providers"
-											r.args = args
-											r.count = 1
-											return r, true
-										default:
-											return
-										}
-									}
-									switch elem[0] {
-									case '/': // Prefix: "/"
-
-										if l := len("/"); len(elem) >= l && elem[0:l] == "/" {
-											elem = elem[l:]
-										} else {
-											break
-										}
-
-										// Param: "providerId"
-										// Leaf parameter, slashes are prohibited
-										idx := strings.IndexByte(elem, '/')
-										if idx >= 0 {
-											break
-										}
-										args[1] = elem
-										elem = ""
-
-										if len(elem) == 0 {
-											// Leaf node.
-											switch method {
-											case "DELETE":
-												r.name = DeleteSandboxProviderInstanceOperation
-												r.summary = "Delete a sandbox provider instance"
-												r.operationID = "delete-sandbox-provider-instance"
-												r.operationGroup = ""
-												r.pathPattern = "/projects/{projectId}/providers/{providerId}"
-												r.args = args
-												r.count = 2
-												return r, true
-											case "GET":
-												r.name = GetSandboxProviderInstanceOperation
-												r.summary = "Get a sandbox provider instance"
-												r.operationID = "get-sandbox-provider-instance"
-												r.operationGroup = ""
-												r.pathPattern = "/projects/{projectId}/providers/{providerId}"
-												r.args = args
-												r.count = 2
-												return r, true
-											case "PATCH":
-												r.name = UpdateSandboxProviderInstanceOperation
-												r.summary = "Update a sandbox provider instance"
-												r.operationID = "update-sandbox-provider-instance"
-												r.operationGroup = ""
-												r.pathPattern = "/projects/{projectId}/providers/{providerId}"
-												r.args = args
-												r.count = 2
-												return r, true
-											default:
-												return
-											}
-										}
-
-									}
-
-								}
-
-							case 's': // Prefix: "s"
-
-								if l := len("s"); len(elem) >= l && elem[0:l] == "s" {
-									elem = elem[l:]
-								} else {
-									break
-								}
-
-								if len(elem) == 0 {
-									break
-								}
-								switch elem[0] {
-								case 'a': // Prefix: "andboxes"
-
-									if l := len("andboxes"); len(elem) >= l && elem[0:l] == "andboxes" {
-										elem = elem[l:]
-									} else {
-										break
-									}
-
-									if len(elem) == 0 {
-										switch method {
-										case "GET":
-											r.name = ListSandboxesOperation
-											r.summary = "List sandboxes"
-											r.operationID = "list-sandboxes"
-											r.operationGroup = ""
-											r.pathPattern = "/projects/{projectId}/sandboxes"
-											r.args = args
-											r.count = 1
-											return r, true
-										case "POST":
-											r.name = CreateSandboxOperation
-											r.summary = "Create a sandbox"
-											r.operationID = "create-sandbox"
-											r.operationGroup = ""
-											r.pathPattern = "/projects/{projectId}/sandboxes"
-											r.args = args
-											r.count = 1
-											return r, true
-										default:
-											return
-										}
-									}
-									switch elem[0] {
-									case '/': // Prefix: "/"
-
-										if l := len("/"); len(elem) >= l && elem[0:l] == "/" {
-											elem = elem[l:]
-										} else {
-											break
-										}
-
-										// Param: "sandboxId"
-										// Match until "/"
-										idx := strings.IndexByte(elem, '/')
-										if idx < 0 {
-											idx = len(elem)
-										}
-										args[1] = elem[:idx]
-										elem = elem[idx:]
-
-										if len(elem) == 0 {
-											switch method {
-											case "DELETE":
-												r.name = DeleteSandboxOperation
-												r.summary = "Archive a sandbox"
-												r.operationID = "delete-sandbox"
-												r.operationGroup = ""
-												r.pathPattern = "/projects/{projectId}/sandboxes/{sandboxId}"
-												r.args = args
-												r.count = 2
-												return r, true
-											case "GET":
-												r.name = GetSandboxOperation
-												r.summary = "Get a sandbox"
-												r.operationID = "get-sandbox"
-												r.operationGroup = ""
-												r.pathPattern = "/projects/{projectId}/sandboxes/{sandboxId}"
-												r.args = args
-												r.count = 2
-												return r, true
-											case "PATCH":
-												r.name = UpdateSandboxOperation
-												r.summary = "Update a sandbox"
-												r.operationID = "update-sandbox"
-												r.operationGroup = ""
-												r.pathPattern = "/projects/{projectId}/sandboxes/{sandboxId}"
-												r.args = args
-												r.count = 2
-												return r, true
-											default:
-												return
-											}
-										}
-										switch elem[0] {
-										case '/': // Prefix: "/"
-
-											if l := len("/"); len(elem) >= l && elem[0:l] == "/" {
-												elem = elem[l:]
-											} else {
-												break
-											}
-
-											if len(elem) == 0 {
-												break
-											}
-											switch elem[0] {
-											case 'c': // Prefix: "complete-"
-
-												if l := len("complete-"); len(elem) >= l && elem[0:l] == "complete-" {
-													elem = elem[l:]
-												} else {
-													break
-												}
-
-												if len(elem) == 0 {
-													break
-												}
-												switch elem[0] {
-												case 'a': // Prefix: "apply"
-
-													if l := len("apply"); len(elem) >= l && elem[0:l] == "apply" {
-														elem = elem[l:]
-													} else {
-														break
-													}
-
-													if len(elem) == 0 {
-														// Leaf node.
-														switch method {
-														case "POST":
-															r.name = CompleteSandboxApplyOperation
-															r.summary = "Record a completed discobox apply"
-															r.operationID = "complete-sandbox-apply"
-															r.operationGroup = ""
-															r.pathPattern = "/projects/{projectId}/sandboxes/{sandboxId}/complete-apply"
-															r.args = args
-															r.count = 2
-															return r, true
-														default:
-															return
-														}
-													}
-
-												case 's': // Prefix: "source-push"
-
-													if l := len("source-push"); len(elem) >= l && elem[0:l] == "source-push" {
-														elem = elem[l:]
-													} else {
-														break
-													}
-
-													if len(elem) == 0 {
-														// Leaf node.
-														switch method {
-														case "POST":
-															r.name = CompleteSandboxSourcePushOperation
-															r.summary = "Complete a sandbox source push"
-															r.operationID = "complete-sandbox-source-push"
-															r.operationGroup = ""
-															r.pathPattern = "/projects/{projectId}/sandboxes/{sandboxId}/complete-source-push"
-															r.args = args
-															r.count = 2
-															return r, true
-														default:
-															return
-														}
-													}
-
-												}
-
-											case 'h': // Prefix: "harness-secrets"
-
-												if l := len("harness-secrets"); len(elem) >= l && elem[0:l] == "harness-secrets" {
-													elem = elem[l:]
-												} else {
-													break
-												}
-
-												if len(elem) == 0 {
-													// Leaf node.
-													switch method {
-													case "POST":
-														r.name = AssignSandboxHarnessSecretsOperation
-														r.summary = "Assign a harness config's bound secrets to a running sandbox and return their sentinel env"
-														r.operationID = "assign-sandbox-harness-secrets"
-														r.operationGroup = ""
-														r.pathPattern = "/projects/{projectId}/sandboxes/{sandboxId}/harness-secrets"
-														r.args = args
-														r.count = 2
-														return r, true
-													default:
-														return
-													}
-												}
-
-											case 'p': // Prefix: "purge"
-
-												if l := len("purge"); len(elem) >= l && elem[0:l] == "purge" {
-													elem = elem[l:]
-												} else {
-													break
-												}
-
-												if len(elem) == 0 {
-													// Leaf node.
-													switch method {
-													case "POST":
-														r.name = PurgeSandboxOperation
-														r.summary = "Purge a sandbox and its data"
-														r.operationID = "purge-sandbox"
-														r.operationGroup = ""
-														r.pathPattern = "/projects/{projectId}/sandboxes/{sandboxId}/purge"
-														r.args = args
-														r.count = 2
-														return r, true
-													default:
-														return
-													}
-												}
-
-											case 'r': // Prefix: "re"
-
-												if l := len("re"); len(elem) >= l && elem[0:l] == "re" {
-													elem = elem[l:]
-												} else {
-													break
-												}
-
-												if len(elem) == 0 {
-													break
-												}
-												switch elem[0] {
-												case 'c': // Prefix: "concile"
-
-													if l := len("concile"); len(elem) >= l && elem[0:l] == "concile" {
-														elem = elem[l:]
-													} else {
-														break
-													}
-
-													if len(elem) == 0 {
-														// Leaf node.
-														switch method {
-														case "POST":
-															r.name = ReconcileSandboxOperation
-															r.summary = "Reconcile a sandbox"
-															r.operationID = "reconcile-sandbox"
-															r.operationGroup = ""
-															r.pathPattern = "/projects/{projectId}/sandboxes/{sandboxId}/reconcile"
-															r.args = args
-															r.count = 2
-															return r, true
-														default:
-															return
-														}
-													}
-
-												case 'p': // Prefix: "pair"
-
-													if l := len("pair"); len(elem) >= l && elem[0:l] == "pair" {
-														elem = elem[l:]
-													} else {
-														break
-													}
-
-													if len(elem) == 0 {
-														// Leaf node.
-														switch method {
-														case "POST":
-															r.name = RepairSandboxOperation
-															r.summary = "Repair a sandbox"
-															r.operationID = "repair-sandbox"
-															r.operationGroup = ""
-															r.pathPattern = "/projects/{projectId}/sandboxes/{sandboxId}/repair"
-															r.args = args
-															r.count = 2
-															return r, true
-														default:
-															return
-														}
-													}
-
-												case 's': // Prefix: "start"
-
-													if l := len("start"); len(elem) >= l && elem[0:l] == "start" {
-														elem = elem[l:]
-													} else {
-														break
-													}
-
-													if len(elem) == 0 {
-														// Leaf node.
-														switch method {
-														case "POST":
-															r.name = RestartSandboxOperation
-															r.summary = "Restart a sandbox"
-															r.operationID = "restart-sandbox"
-															r.operationGroup = ""
-															r.pathPattern = "/projects/{projectId}/sandboxes/{sandboxId}/restart"
-															r.args = args
-															r.count = 2
-															return r, true
-														default:
-															return
-														}
-													}
-
-												}
-
-											case 's': // Prefix: "st"
-
-												if l := len("st"); len(elem) >= l && elem[0:l] == "st" {
-													elem = elem[l:]
-												} else {
-													break
-												}
-
-												if len(elem) == 0 {
-													break
-												}
-												switch elem[0] {
-												case 'a': // Prefix: "art"
-
-													if l := len("art"); len(elem) >= l && elem[0:l] == "art" {
-														elem = elem[l:]
-													} else {
-														break
-													}
-
-													if len(elem) == 0 {
-														// Leaf node.
-														switch method {
-														case "POST":
-															r.name = StartSandboxOperation
-															r.summary = "Start a sandbox"
-															r.operationID = "start-sandbox"
-															r.operationGroup = ""
-															r.pathPattern = "/projects/{projectId}/sandboxes/{sandboxId}/start"
-															r.args = args
-															r.count = 2
-															return r, true
-														default:
-															return
-														}
-													}
-
-												case 'o': // Prefix: "op"
-
-													if l := len("op"); len(elem) >= l && elem[0:l] == "op" {
-														elem = elem[l:]
-													} else {
-														break
-													}
-
-													if len(elem) == 0 {
-														// Leaf node.
-														switch method {
-														case "POST":
-															r.name = StopSandboxOperation
-															r.summary = "Stop a sandbox"
-															r.operationID = "stop-sandbox"
-															r.operationGroup = ""
-															r.pathPattern = "/projects/{projectId}/sandboxes/{sandboxId}/stop"
-															r.args = args
-															r.count = 2
-															return r, true
-														default:
-															return
-														}
-													}
-
-												}
-
-											case 'u': // Prefix: "u"
-
-												if l := len("u"); len(elem) >= l && elem[0:l] == "u" {
-													elem = elem[l:]
-												} else {
-													break
-												}
-
-												if len(elem) == 0 {
-													break
-												}
-												switch elem[0] {
-												case 'n': // Prefix: "narchive"
-
-													if l := len("narchive"); len(elem) >= l && elem[0:l] == "narchive" {
-														elem = elem[l:]
-													} else {
-														break
-													}
-
-													if len(elem) == 0 {
-														// Leaf node.
-														switch method {
-														case "POST":
-															r.name = UnarchiveSandboxOperation
-															r.summary = "Unarchive a sandbox"
-															r.operationID = "unarchive-sandbox"
-															r.operationGroup = ""
-															r.pathPattern = "/projects/{projectId}/sandboxes/{sandboxId}/unarchive"
-															r.args = args
-															r.count = 2
-															return r, true
-														default:
-															return
-														}
-													}
-
-												case 'p': // Prefix: "pgrade"
-
-													if l := len("pgrade"); len(elem) >= l && elem[0:l] == "pgrade" {
-														elem = elem[l:]
-													} else {
-														break
-													}
-
-													if len(elem) == 0 {
-														// Leaf node.
-														switch method {
-														case "POST":
-															r.name = UpgradeSandboxOperation
-															r.summary = "Upgrade a sandbox to its harness config's current image"
-															r.operationID = "upgrade-sandbox"
-															r.operationGroup = ""
-															r.pathPattern = "/projects/{projectId}/sandboxes/{sandboxId}/upgrade"
-															r.args = args
-															r.count = 2
-															return r, true
-														default:
-															return
-														}
-													}
-
-												}
-
-											}
-
-										}
-
-									}
-
-								case 'e': // Prefix: "ecret"
-
-									if l := len("ecret"); len(elem) >= l && elem[0:l] == "ecret" {
-										elem = elem[l:]
-									} else {
-										break
-									}
-
-									if len(elem) == 0 {
-										break
-									}
-									switch elem[0] {
-									case '-': // Prefix: "-"
-
-										if l := len("-"); len(elem) >= l && elem[0:l] == "-" {
-											elem = elem[l:]
-										} else {
-											break
-										}
-
-										if len(elem) == 0 {
-											break
-										}
-										switch elem[0] {
-										case 'g': // Prefix: "grants"
-
-											if l := len("grants"); len(elem) >= l && elem[0:l] == "grants" {
-												elem = elem[l:]
-											} else {
-												break
-											}
-
-											if len(elem) == 0 {
-												switch method {
-												case "GET":
-													r.name = ListSecretGrantsOperation
-													r.summary = "List secret grants"
-													r.operationID = "list-secret-grants"
-													r.operationGroup = ""
-													r.pathPattern = "/projects/{projectId}/secret-grants"
-													r.args = args
-													r.count = 1
-													return r, true
-												case "POST":
-													r.name = CreateSecretGrantOperation
-													r.summary = "Create a secret grant (pre-approval)"
-													r.operationID = "create-secret-grant"
-													r.operationGroup = ""
-													r.pathPattern = "/projects/{projectId}/secret-grants"
-													r.args = args
-													r.count = 1
-													return r, true
-												default:
-													return
-												}
-											}
-											switch elem[0] {
-											case '/': // Prefix: "/"
-
-												if l := len("/"); len(elem) >= l && elem[0:l] == "/" {
-													elem = elem[l:]
-												} else {
-													break
-												}
-
-												// Param: "grantId"
-												// Leaf parameter, slashes are prohibited
-												idx := strings.IndexByte(elem, '/')
-												if idx >= 0 {
-													break
-												}
-												args[1] = elem
-												elem = ""
-
-												if len(elem) == 0 {
-													// Leaf node.
-													switch method {
-													case "DELETE":
-														r.name = RevokeSecretGrantOperation
-														r.summary = "Revoke a secret grant"
-														r.operationID = "revoke-secret-grant"
-														r.operationGroup = ""
-														r.pathPattern = "/projects/{projectId}/secret-grants/{grantId}"
-														r.args = args
-														r.count = 2
-														return r, true
-													default:
-														return
-													}
-												}
-
-											}
-
-										case 'r': // Prefix: "requests"
-
-											if l := len("requests"); len(elem) >= l && elem[0:l] == "requests" {
-												elem = elem[l:]
-											} else {
-												break
-											}
-
-											if len(elem) == 0 {
-												switch method {
-												case "GET":
-													r.name = ListSecretRequestsOperation
-													r.summary = "List secret requests"
-													r.operationID = "list-secret-requests"
-													r.operationGroup = ""
-													r.pathPattern = "/projects/{projectId}/secret-requests"
-													r.args = args
-													r.count = 1
-													return r, true
-												case "POST":
-													r.name = CreateSecretRequestOperation
-													r.summary = "Request access to a secret"
-													r.operationID = "create-secret-request"
-													r.operationGroup = ""
-													r.pathPattern = "/projects/{projectId}/secret-requests"
-													r.args = args
-													r.count = 1
-													return r, true
-												default:
-													return
-												}
-											}
-											switch elem[0] {
-											case '/': // Prefix: "/"
-
-												if l := len("/"); len(elem) >= l && elem[0:l] == "/" {
-													elem = elem[l:]
-												} else {
-													break
-												}
-
-												// Param: "requestId"
-												// Match until "/"
-												idx := strings.IndexByte(elem, '/')
-												if idx < 0 {
-													idx = len(elem)
-												}
-												args[1] = elem[:idx]
-												elem = elem[idx:]
-
-												if len(elem) == 0 {
-													switch method {
-													case "GET":
-														r.name = GetSecretRequestOperation
-														r.summary = "Get a secret request; includes decrypted value when approved and not expired"
-														r.operationID = "get-secret-request"
-														r.operationGroup = ""
-														r.pathPattern = "/projects/{projectId}/secret-requests/{requestId}"
+														r.pathPattern = "/projects/{projectId}/harness-configs/{harnessConfigId}/configure"
 														r.args = args
 														r.count = 2
 														return r, true
@@ -5582,9 +4553,9 @@ func (s *Server) FindPath(method string, u *url.URL) (r Route, _ bool) {
 														break
 													}
 													switch elem[0] {
-													case 'a': // Prefix: "approve"
+													case 'a': // Prefix: "attach"
 
-														if l := len("approve"); len(elem) >= l && elem[0:l] == "approve" {
+														if l := len("attach"); len(elem) >= l && elem[0:l] == "attach" {
 															elem = elem[l:]
 														} else {
 															break
@@ -5594,11 +4565,11 @@ func (s *Server) FindPath(method string, u *url.URL) (r Route, _ bool) {
 															// Leaf node.
 															switch method {
 															case "POST":
-																r.name = ApproveSecretRequestOperation
-																r.summary = "Approve a secret request"
-																r.operationID = "approve-secret-request"
+																r.name = AttachHarnessConfigConfigureOperation
+																r.summary = "Seed the configure sandbox before attaching"
+																r.operationID = "attach-harness-config-configure"
 																r.operationGroup = ""
-																r.pathPattern = "/projects/{projectId}/secret-requests/{requestId}/approve"
+																r.pathPattern = "/projects/{projectId}/harness-configs/{harnessConfigId}/configure/attach"
 																r.args = args
 																r.count = 2
 																return r, true
@@ -5607,9 +4578,9 @@ func (s *Server) FindPath(method string, u *url.URL) (r Route, _ bool) {
 															}
 														}
 
-													case 'd': // Prefix: "deny"
+													case 'c': // Prefix: "commit"
 
-														if l := len("deny"); len(elem) >= l && elem[0:l] == "deny" {
+														if l := len("commit"); len(elem) >= l && elem[0:l] == "commit" {
 															elem = elem[l:]
 														} else {
 															break
@@ -5619,11 +4590,11 @@ func (s *Server) FindPath(method string, u *url.URL) (r Route, _ bool) {
 															// Leaf node.
 															switch method {
 															case "POST":
-																r.name = DenySecretRequestOperation
-																r.summary = "Deny a secret request"
-																r.operationID = "deny-secret-request"
+																r.name = CommitHarnessConfigConfigureOperation
+																r.summary = "Commit a harness config's configure flow"
+																r.operationID = "commit-harness-config-configure"
 																r.operationGroup = ""
-																r.pathPattern = "/projects/{projectId}/secret-requests/{requestId}/deny"
+																r.pathPattern = "/projects/{projectId}/harness-configs/{harnessConfigId}/configure/commit"
 																r.args = args
 																r.count = 2
 																return r, true
@@ -5636,102 +4607,182 @@ func (s *Server) FindPath(method string, u *url.URL) (r Route, _ bool) {
 
 												}
 
-											}
+											case 'd': // Prefix: "de"
 
-										}
-
-									case 's': // Prefix: "s"
-
-										if l := len("s"); len(elem) >= l && elem[0:l] == "s" {
-											elem = elem[l:]
-										} else {
-											break
-										}
-
-										if len(elem) == 0 {
-											switch method {
-											case "GET":
-												r.name = ListSecretsOperation
-												r.summary = "List secrets"
-												r.operationID = "list-secrets"
-												r.operationGroup = ""
-												r.pathPattern = "/projects/{projectId}/secrets"
-												r.args = args
-												r.count = 1
-												return r, true
-											case "POST":
-												r.name = CreateSecretOperation
-												r.summary = "Create a secret"
-												r.operationID = "create-secret"
-												r.operationGroup = ""
-												r.pathPattern = "/projects/{projectId}/secrets"
-												r.args = args
-												r.count = 1
-												return r, true
-											default:
-												return
-											}
-										}
-										switch elem[0] {
-										case '/': // Prefix: "/"
-
-											if l := len("/"); len(elem) >= l && elem[0:l] == "/" {
-												elem = elem[l:]
-											} else {
-												break
-											}
-
-											// Param: "secretId"
-											// Leaf parameter, slashes are prohibited
-											idx := strings.IndexByte(elem, '/')
-											if idx >= 0 {
-												break
-											}
-											args[1] = elem
-											elem = ""
-
-											if len(elem) == 0 {
-												// Leaf node.
-												switch method {
-												case "DELETE":
-													r.name = DeleteSecretOperation
-													r.summary = "Delete a secret"
-													r.operationID = "delete-secret"
-													r.operationGroup = ""
-													r.pathPattern = "/projects/{projectId}/secrets/{secretId}"
-													r.args = args
-													r.count = 2
-													return r, true
-												case "GET":
-													r.name = GetSecretOperation
-													r.summary = "Get a secret"
-													r.operationID = "get-secret"
-													r.operationGroup = ""
-													r.pathPattern = "/projects/{projectId}/secrets/{secretId}"
-													r.args = args
-													r.count = 2
-													return r, true
-												case "PUT":
-													r.name = UpdateSecretOperation
-													r.summary = "Update a secret"
-													r.operationID = "update-secret"
-													r.operationGroup = ""
-													r.pathPattern = "/projects/{projectId}/secrets/{secretId}"
-													r.args = args
-													r.count = 2
-													return r, true
-												default:
-													return
+												if l := len("de"); len(elem) >= l && elem[0:l] == "de" {
+													elem = elem[l:]
+												} else {
+													break
 												}
+
+												if len(elem) == 0 {
+													break
+												}
+												switch elem[0] {
+												case 'c': // Prefix: "configure"
+
+													if l := len("configure"); len(elem) >= l && elem[0:l] == "configure" {
+														elem = elem[l:]
+													} else {
+														break
+													}
+
+													if len(elem) == 0 {
+														// Leaf node.
+														switch method {
+														case "POST":
+															r.name = DeconfigureHarnessConfigOperation
+															r.summary = "Undo a harness config's configure flow"
+															r.operationID = "deconfigure-harness-config"
+															r.operationGroup = ""
+															r.pathPattern = "/projects/{projectId}/harness-configs/{harnessConfigId}/deconfigure"
+															r.args = args
+															r.count = 2
+															return r, true
+														default:
+															return
+														}
+													}
+
+												case 'f': // Prefix: "fault"
+
+													if l := len("fault"); len(elem) >= l && elem[0:l] == "fault" {
+														elem = elem[l:]
+													} else {
+														break
+													}
+
+													if len(elem) == 0 {
+														// Leaf node.
+														switch method {
+														case "DELETE":
+															r.name = UnsetDefaultHarnessConfigOperation
+															r.summary = "Clear the project default harness config"
+															r.operationID = "unset-default-harness-config"
+															r.operationGroup = ""
+															r.pathPattern = "/projects/{projectId}/harness-configs/{harnessConfigId}/default"
+															r.args = args
+															r.count = 2
+															return r, true
+														case "PUT":
+															r.name = SetDefaultHarnessConfigOperation
+															r.summary = "Set the project default harness config"
+															r.operationID = "set-default-harness-config"
+															r.operationGroup = ""
+															r.pathPattern = "/projects/{projectId}/harness-configs/{harnessConfigId}/default"
+															r.args = args
+															r.count = 2
+															return r, true
+														default:
+															return
+														}
+													}
+
+												}
+
+											case 'r': // Prefix: "refresh-image"
+
+												if l := len("refresh-image"); len(elem) >= l && elem[0:l] == "refresh-image" {
+													elem = elem[l:]
+												} else {
+													break
+												}
+
+												if len(elem) == 0 {
+													// Leaf node.
+													switch method {
+													case "POST":
+														r.name = RefreshHarnessConfigImageOperation
+														r.summary = "Re-snapshot a harness config from its image"
+														r.operationID = "refresh-harness-config-image"
+														r.operationGroup = ""
+														r.pathPattern = "/projects/{projectId}/harness-configs/{harnessConfigId}/refresh-image"
+														r.args = args
+														r.count = 2
+														return r, true
+													default:
+														return
+													}
+												}
+
+											case 's': // Prefix: "secret-bindings"
+
+												if l := len("secret-bindings"); len(elem) >= l && elem[0:l] == "secret-bindings" {
+													elem = elem[l:]
+												} else {
+													break
+												}
+
+												if len(elem) == 0 {
+													switch method {
+													case "GET":
+														r.name = ListHarnessConfigSecretBindingsOperation
+														r.summary = "List harness config secret bindings"
+														r.operationID = "list-harness-config-secret-bindings"
+														r.operationGroup = ""
+														r.pathPattern = "/projects/{projectId}/harness-configs/{harnessConfigId}/secret-bindings"
+														r.args = args
+														r.count = 2
+														return r, true
+													default:
+														return
+													}
+												}
+												switch elem[0] {
+												case '/': // Prefix: "/"
+
+													if l := len("/"); len(elem) >= l && elem[0:l] == "/" {
+														elem = elem[l:]
+													} else {
+														break
+													}
+
+													// Param: "envName"
+													// Leaf parameter, slashes are prohibited
+													idx := strings.IndexByte(elem, '/')
+													if idx >= 0 {
+														break
+													}
+													args[2] = elem
+													elem = ""
+
+													if len(elem) == 0 {
+														// Leaf node.
+														switch method {
+														case "DELETE":
+															r.name = DeleteHarnessConfigSecretBindingOperation
+															r.summary = "Remove a harness config secret binding"
+															r.operationID = "delete-harness-config-secret-binding"
+															r.operationGroup = ""
+															r.pathPattern = "/projects/{projectId}/harness-configs/{harnessConfigId}/secret-bindings/{envName}"
+															r.args = args
+															r.count = 3
+															return r, true
+														case "PUT":
+															r.name = SetHarnessConfigSecretBindingOperation
+															r.summary = "Bind a harness config environment variable to a secret"
+															r.operationID = "set-harness-config-secret-binding"
+															r.operationGroup = ""
+															r.pathPattern = "/projects/{projectId}/harness-configs/{harnessConfigId}/secret-bindings/{envName}"
+															r.args = args
+															r.count = 3
+															return r, true
+														default:
+															return
+														}
+													}
+
+												}
+
 											}
 
 										}
 
 									}
 
-								case 's': // Prefix: "sh-keys"
+								case 'j': // Prefix: "jobs"
 
-									if l := len("sh-keys"); len(elem) >= l && elem[0:l] == "sh-keys" {
+									if l := len("jobs"); len(elem) >= l && elem[0:l] == "jobs" {
 										elem = elem[l:]
 									} else {
 										break
@@ -5740,20 +4791,11 @@ func (s *Server) FindPath(method string, u *url.URL) (r Route, _ bool) {
 									if len(elem) == 0 {
 										switch method {
 										case "GET":
-											r.name = ListSSHKeysOperation
-											r.summary = "List SSH keys"
-											r.operationID = "list-ssh-keys"
+											r.name = ListJobsOperation
+											r.summary = "List jobs for a project"
+											r.operationID = "list-jobs"
 											r.operationGroup = ""
-											r.pathPattern = "/projects/{projectId}/ssh-keys"
-											r.args = args
-											r.count = 1
-											return r, true
-										case "POST":
-											r.name = CreateSSHKeyOperation
-											r.summary = "Enroll a project-scoped SSH key"
-											r.operationID = "create-ssh-key"
-											r.operationGroup = ""
-											r.pathPattern = "/projects/{projectId}/ssh-keys"
+											r.pathPattern = "/projects/{projectId}/jobs"
 											r.args = args
 											r.count = 1
 											return r, true
@@ -5770,30 +4812,1152 @@ func (s *Server) FindPath(method string, u *url.URL) (r Route, _ bool) {
 											break
 										}
 
-										// Param: "sshKeyId"
-										// Leaf parameter, slashes are prohibited
+										// Param: "jobId"
+										// Match until "/"
 										idx := strings.IndexByte(elem, '/')
-										if idx >= 0 {
-											break
+										if idx < 0 {
+											idx = len(elem)
 										}
-										args[1] = elem
-										elem = ""
+										args[1] = elem[:idx]
+										elem = elem[idx:]
 
 										if len(elem) == 0 {
-											// Leaf node.
 											switch method {
-											case "DELETE":
-												r.name = DeleteSSHKeyOperation
-												r.summary = "Revoke an SSH key"
-												r.operationID = "delete-ssh-key"
+											case "GET":
+												r.name = GetJobOperation
+												r.summary = "Get a job"
+												r.operationID = "get-job"
 												r.operationGroup = ""
-												r.pathPattern = "/projects/{projectId}/ssh-keys/{sshKeyId}"
+												r.pathPattern = "/projects/{projectId}/jobs/{jobId}"
 												r.args = args
 												r.count = 2
 												return r, true
 											default:
 												return
 											}
+										}
+										switch elem[0] {
+										case '/': // Prefix: "/force"
+
+											if l := len("/force"); len(elem) >= l && elem[0:l] == "/force" {
+												elem = elem[l:]
+											} else {
+												break
+											}
+
+											if len(elem) == 0 {
+												// Leaf node.
+												switch method {
+												case "POST":
+													r.name = ForceJobOperation
+													r.summary = "Force a pending, scheduled, or backoff job to run immediately"
+													r.operationID = "force-job"
+													r.operationGroup = ""
+													r.pathPattern = "/projects/{projectId}/jobs/{jobId}/force"
+													r.args = args
+													r.count = 2
+													return r, true
+												default:
+													return
+												}
+											}
+
+										}
+
+									}
+
+								case 'p': // Prefix: "p"
+
+									if l := len("p"); len(elem) >= l && elem[0:l] == "p" {
+										elem = elem[l:]
+									} else {
+										break
+									}
+
+									if len(elem) == 0 {
+										break
+									}
+									switch elem[0] {
+									case 'o': // Prefix: "ools"
+
+										if l := len("ools"); len(elem) >= l && elem[0:l] == "ools" {
+											elem = elem[l:]
+										} else {
+											break
+										}
+
+										if len(elem) == 0 {
+											switch method {
+											case "GET":
+												r.name = ListPoolsOperation
+												r.summary = "List pools"
+												r.operationID = "list-pools"
+												r.operationGroup = ""
+												r.pathPattern = "/projects/{projectId}/pools"
+												r.args = args
+												r.count = 1
+												return r, true
+											case "POST":
+												r.name = CreatePoolOperation
+												r.summary = "Create a pool"
+												r.operationID = "create-pool"
+												r.operationGroup = ""
+												r.pathPattern = "/projects/{projectId}/pools"
+												r.args = args
+												r.count = 1
+												return r, true
+											default:
+												return
+											}
+										}
+										switch elem[0] {
+										case '/': // Prefix: "/"
+
+											if l := len("/"); len(elem) >= l && elem[0:l] == "/" {
+												elem = elem[l:]
+											} else {
+												break
+											}
+
+											// Param: "poolId"
+											// Match until "/"
+											idx := strings.IndexByte(elem, '/')
+											if idx < 0 {
+												idx = len(elem)
+											}
+											args[1] = elem[:idx]
+											elem = elem[idx:]
+
+											if len(elem) == 0 {
+												switch method {
+												case "DELETE":
+													r.name = DeletePoolOperation
+													r.summary = "Delete a pool"
+													r.operationID = "delete-pool"
+													r.operationGroup = ""
+													r.pathPattern = "/projects/{projectId}/pools/{poolId}"
+													r.args = args
+													r.count = 2
+													return r, true
+												case "GET":
+													r.name = GetPoolOperation
+													r.summary = "Get a pool"
+													r.operationID = "get-pool"
+													r.operationGroup = ""
+													r.pathPattern = "/projects/{projectId}/pools/{poolId}"
+													r.args = args
+													r.count = 2
+													return r, true
+												case "PATCH":
+													r.name = UpdatePoolOperation
+													r.summary = "Update a pool"
+													r.operationID = "update-pool"
+													r.operationGroup = ""
+													r.pathPattern = "/projects/{projectId}/pools/{poolId}"
+													r.args = args
+													r.count = 2
+													return r, true
+												default:
+													return
+												}
+											}
+											switch elem[0] {
+											case '/': // Prefix: "/"
+
+												if l := len("/"); len(elem) >= l && elem[0:l] == "/" {
+													elem = elem[l:]
+												} else {
+													break
+												}
+
+												if len(elem) == 0 {
+													break
+												}
+												switch elem[0] {
+												case 'd': // Prefix: "default"
+
+													if l := len("default"); len(elem) >= l && elem[0:l] == "default" {
+														elem = elem[l:]
+													} else {
+														break
+													}
+
+													if len(elem) == 0 {
+														// Leaf node.
+														switch method {
+														case "DELETE":
+															r.name = UnsetDefaultPoolOperation
+															r.summary = "Clear the project default pool"
+															r.operationID = "unset-default-pool"
+															r.operationGroup = ""
+															r.pathPattern = "/projects/{projectId}/pools/{poolId}/default"
+															r.args = args
+															r.count = 2
+															return r, true
+														case "PUT":
+															r.name = SetDefaultPoolOperation
+															r.summary = "Set the project default pool"
+															r.operationID = "set-default-pool"
+															r.operationGroup = ""
+															r.pathPattern = "/projects/{projectId}/pools/{poolId}/default"
+															r.args = args
+															r.count = 2
+															return r, true
+														default:
+															return
+														}
+													}
+
+												case 'r': // Prefix: "reconcile"
+
+													if l := len("reconcile"); len(elem) >= l && elem[0:l] == "reconcile" {
+														elem = elem[l:]
+													} else {
+														break
+													}
+
+													if len(elem) == 0 {
+														// Leaf node.
+														switch method {
+														case "POST":
+															r.name = ReconcilePoolOperation
+															r.summary = "Reconcile a pool"
+															r.operationID = "reconcile-pool"
+															r.operationGroup = ""
+															r.pathPattern = "/projects/{projectId}/pools/{poolId}/reconcile"
+															r.args = args
+															r.count = 2
+															return r, true
+														default:
+															return
+														}
+													}
+
+												}
+
+											}
+
+										}
+
+									case 'r': // Prefix: "roviders"
+
+										if l := len("roviders"); len(elem) >= l && elem[0:l] == "roviders" {
+											elem = elem[l:]
+										} else {
+											break
+										}
+
+										if len(elem) == 0 {
+											switch method {
+											case "GET":
+												r.name = ListSandboxProviderInstancesOperation
+												r.summary = "List sandbox provider instances"
+												r.operationID = "list-sandbox-provider-instances"
+												r.operationGroup = ""
+												r.pathPattern = "/projects/{projectId}/providers"
+												r.args = args
+												r.count = 1
+												return r, true
+											case "POST":
+												r.name = CreateSandboxProviderInstanceOperation
+												r.summary = "Create a sandbox provider instance"
+												r.operationID = "create-sandbox-provider-instance"
+												r.operationGroup = ""
+												r.pathPattern = "/projects/{projectId}/providers"
+												r.args = args
+												r.count = 1
+												return r, true
+											default:
+												return
+											}
+										}
+										switch elem[0] {
+										case '/': // Prefix: "/"
+
+											if l := len("/"); len(elem) >= l && elem[0:l] == "/" {
+												elem = elem[l:]
+											} else {
+												break
+											}
+
+											// Param: "providerId"
+											// Leaf parameter, slashes are prohibited
+											idx := strings.IndexByte(elem, '/')
+											if idx >= 0 {
+												break
+											}
+											args[1] = elem
+											elem = ""
+
+											if len(elem) == 0 {
+												// Leaf node.
+												switch method {
+												case "DELETE":
+													r.name = DeleteSandboxProviderInstanceOperation
+													r.summary = "Delete a sandbox provider instance"
+													r.operationID = "delete-sandbox-provider-instance"
+													r.operationGroup = ""
+													r.pathPattern = "/projects/{projectId}/providers/{providerId}"
+													r.args = args
+													r.count = 2
+													return r, true
+												case "GET":
+													r.name = GetSandboxProviderInstanceOperation
+													r.summary = "Get a sandbox provider instance"
+													r.operationID = "get-sandbox-provider-instance"
+													r.operationGroup = ""
+													r.pathPattern = "/projects/{projectId}/providers/{providerId}"
+													r.args = args
+													r.count = 2
+													return r, true
+												case "PATCH":
+													r.name = UpdateSandboxProviderInstanceOperation
+													r.summary = "Update a sandbox provider instance"
+													r.operationID = "update-sandbox-provider-instance"
+													r.operationGroup = ""
+													r.pathPattern = "/projects/{projectId}/providers/{providerId}"
+													r.args = args
+													r.count = 2
+													return r, true
+												default:
+													return
+												}
+											}
+
+										}
+
+									}
+
+								case 's': // Prefix: "s"
+
+									if l := len("s"); len(elem) >= l && elem[0:l] == "s" {
+										elem = elem[l:]
+									} else {
+										break
+									}
+
+									if len(elem) == 0 {
+										break
+									}
+									switch elem[0] {
+									case 'a': // Prefix: "andboxes"
+
+										if l := len("andboxes"); len(elem) >= l && elem[0:l] == "andboxes" {
+											elem = elem[l:]
+										} else {
+											break
+										}
+
+										if len(elem) == 0 {
+											switch method {
+											case "GET":
+												r.name = ListSandboxesOperation
+												r.summary = "List sandboxes"
+												r.operationID = "list-sandboxes"
+												r.operationGroup = ""
+												r.pathPattern = "/projects/{projectId}/sandboxes"
+												r.args = args
+												r.count = 1
+												return r, true
+											case "POST":
+												r.name = CreateSandboxOperation
+												r.summary = "Create a sandbox"
+												r.operationID = "create-sandbox"
+												r.operationGroup = ""
+												r.pathPattern = "/projects/{projectId}/sandboxes"
+												r.args = args
+												r.count = 1
+												return r, true
+											default:
+												return
+											}
+										}
+										switch elem[0] {
+										case '/': // Prefix: "/"
+
+											if l := len("/"); len(elem) >= l && elem[0:l] == "/" {
+												elem = elem[l:]
+											} else {
+												break
+											}
+
+											// Param: "sandboxId"
+											// Match until "/"
+											idx := strings.IndexByte(elem, '/')
+											if idx < 0 {
+												idx = len(elem)
+											}
+											args[1] = elem[:idx]
+											elem = elem[idx:]
+
+											if len(elem) == 0 {
+												switch method {
+												case "DELETE":
+													r.name = DeleteSandboxOperation
+													r.summary = "Archive a sandbox"
+													r.operationID = "delete-sandbox"
+													r.operationGroup = ""
+													r.pathPattern = "/projects/{projectId}/sandboxes/{sandboxId}"
+													r.args = args
+													r.count = 2
+													return r, true
+												case "GET":
+													r.name = GetSandboxOperation
+													r.summary = "Get a sandbox"
+													r.operationID = "get-sandbox"
+													r.operationGroup = ""
+													r.pathPattern = "/projects/{projectId}/sandboxes/{sandboxId}"
+													r.args = args
+													r.count = 2
+													return r, true
+												case "PATCH":
+													r.name = UpdateSandboxOperation
+													r.summary = "Update a sandbox"
+													r.operationID = "update-sandbox"
+													r.operationGroup = ""
+													r.pathPattern = "/projects/{projectId}/sandboxes/{sandboxId}"
+													r.args = args
+													r.count = 2
+													return r, true
+												default:
+													return
+												}
+											}
+											switch elem[0] {
+											case '/': // Prefix: "/"
+
+												if l := len("/"); len(elem) >= l && elem[0:l] == "/" {
+													elem = elem[l:]
+												} else {
+													break
+												}
+
+												if len(elem) == 0 {
+													break
+												}
+												switch elem[0] {
+												case 'c': // Prefix: "complete-"
+
+													if l := len("complete-"); len(elem) >= l && elem[0:l] == "complete-" {
+														elem = elem[l:]
+													} else {
+														break
+													}
+
+													if len(elem) == 0 {
+														break
+													}
+													switch elem[0] {
+													case 'a': // Prefix: "apply"
+
+														if l := len("apply"); len(elem) >= l && elem[0:l] == "apply" {
+															elem = elem[l:]
+														} else {
+															break
+														}
+
+														if len(elem) == 0 {
+															// Leaf node.
+															switch method {
+															case "POST":
+																r.name = CompleteSandboxApplyOperation
+																r.summary = "Record a completed discobox apply"
+																r.operationID = "complete-sandbox-apply"
+																r.operationGroup = ""
+																r.pathPattern = "/projects/{projectId}/sandboxes/{sandboxId}/complete-apply"
+																r.args = args
+																r.count = 2
+																return r, true
+															default:
+																return
+															}
+														}
+
+													case 's': // Prefix: "source-push"
+
+														if l := len("source-push"); len(elem) >= l && elem[0:l] == "source-push" {
+															elem = elem[l:]
+														} else {
+															break
+														}
+
+														if len(elem) == 0 {
+															// Leaf node.
+															switch method {
+															case "POST":
+																r.name = CompleteSandboxSourcePushOperation
+																r.summary = "Complete a sandbox source push"
+																r.operationID = "complete-sandbox-source-push"
+																r.operationGroup = ""
+																r.pathPattern = "/projects/{projectId}/sandboxes/{sandboxId}/complete-source-push"
+																r.args = args
+																r.count = 2
+																return r, true
+															default:
+																return
+															}
+														}
+
+													}
+
+												case 'h': // Prefix: "harness-secrets"
+
+													if l := len("harness-secrets"); len(elem) >= l && elem[0:l] == "harness-secrets" {
+														elem = elem[l:]
+													} else {
+														break
+													}
+
+													if len(elem) == 0 {
+														// Leaf node.
+														switch method {
+														case "POST":
+															r.name = AssignSandboxHarnessSecretsOperation
+															r.summary = "Assign a harness config's bound secrets to a running sandbox and return their sentinel env"
+															r.operationID = "assign-sandbox-harness-secrets"
+															r.operationGroup = ""
+															r.pathPattern = "/projects/{projectId}/sandboxes/{sandboxId}/harness-secrets"
+															r.args = args
+															r.count = 2
+															return r, true
+														default:
+															return
+														}
+													}
+
+												case 'p': // Prefix: "purge"
+
+													if l := len("purge"); len(elem) >= l && elem[0:l] == "purge" {
+														elem = elem[l:]
+													} else {
+														break
+													}
+
+													if len(elem) == 0 {
+														// Leaf node.
+														switch method {
+														case "POST":
+															r.name = PurgeSandboxOperation
+															r.summary = "Purge a sandbox and its data"
+															r.operationID = "purge-sandbox"
+															r.operationGroup = ""
+															r.pathPattern = "/projects/{projectId}/sandboxes/{sandboxId}/purge"
+															r.args = args
+															r.count = 2
+															return r, true
+														default:
+															return
+														}
+													}
+
+												case 'r': // Prefix: "re"
+
+													if l := len("re"); len(elem) >= l && elem[0:l] == "re" {
+														elem = elem[l:]
+													} else {
+														break
+													}
+
+													if len(elem) == 0 {
+														break
+													}
+													switch elem[0] {
+													case 'c': // Prefix: "concile"
+
+														if l := len("concile"); len(elem) >= l && elem[0:l] == "concile" {
+															elem = elem[l:]
+														} else {
+															break
+														}
+
+														if len(elem) == 0 {
+															// Leaf node.
+															switch method {
+															case "POST":
+																r.name = ReconcileSandboxOperation
+																r.summary = "Reconcile a sandbox"
+																r.operationID = "reconcile-sandbox"
+																r.operationGroup = ""
+																r.pathPattern = "/projects/{projectId}/sandboxes/{sandboxId}/reconcile"
+																r.args = args
+																r.count = 2
+																return r, true
+															default:
+																return
+															}
+														}
+
+													case 'p': // Prefix: "pair"
+
+														if l := len("pair"); len(elem) >= l && elem[0:l] == "pair" {
+															elem = elem[l:]
+														} else {
+															break
+														}
+
+														if len(elem) == 0 {
+															// Leaf node.
+															switch method {
+															case "POST":
+																r.name = RepairSandboxOperation
+																r.summary = "Repair a sandbox"
+																r.operationID = "repair-sandbox"
+																r.operationGroup = ""
+																r.pathPattern = "/projects/{projectId}/sandboxes/{sandboxId}/repair"
+																r.args = args
+																r.count = 2
+																return r, true
+															default:
+																return
+															}
+														}
+
+													case 's': // Prefix: "start"
+
+														if l := len("start"); len(elem) >= l && elem[0:l] == "start" {
+															elem = elem[l:]
+														} else {
+															break
+														}
+
+														if len(elem) == 0 {
+															// Leaf node.
+															switch method {
+															case "POST":
+																r.name = RestartSandboxOperation
+																r.summary = "Restart a sandbox"
+																r.operationID = "restart-sandbox"
+																r.operationGroup = ""
+																r.pathPattern = "/projects/{projectId}/sandboxes/{sandboxId}/restart"
+																r.args = args
+																r.count = 2
+																return r, true
+															default:
+																return
+															}
+														}
+
+													}
+
+												case 's': // Prefix: "st"
+
+													if l := len("st"); len(elem) >= l && elem[0:l] == "st" {
+														elem = elem[l:]
+													} else {
+														break
+													}
+
+													if len(elem) == 0 {
+														break
+													}
+													switch elem[0] {
+													case 'a': // Prefix: "art"
+
+														if l := len("art"); len(elem) >= l && elem[0:l] == "art" {
+															elem = elem[l:]
+														} else {
+															break
+														}
+
+														if len(elem) == 0 {
+															// Leaf node.
+															switch method {
+															case "POST":
+																r.name = StartSandboxOperation
+																r.summary = "Start a sandbox"
+																r.operationID = "start-sandbox"
+																r.operationGroup = ""
+																r.pathPattern = "/projects/{projectId}/sandboxes/{sandboxId}/start"
+																r.args = args
+																r.count = 2
+																return r, true
+															default:
+																return
+															}
+														}
+
+													case 'o': // Prefix: "op"
+
+														if l := len("op"); len(elem) >= l && elem[0:l] == "op" {
+															elem = elem[l:]
+														} else {
+															break
+														}
+
+														if len(elem) == 0 {
+															// Leaf node.
+															switch method {
+															case "POST":
+																r.name = StopSandboxOperation
+																r.summary = "Stop a sandbox"
+																r.operationID = "stop-sandbox"
+																r.operationGroup = ""
+																r.pathPattern = "/projects/{projectId}/sandboxes/{sandboxId}/stop"
+																r.args = args
+																r.count = 2
+																return r, true
+															default:
+																return
+															}
+														}
+
+													}
+
+												case 'u': // Prefix: "u"
+
+													if l := len("u"); len(elem) >= l && elem[0:l] == "u" {
+														elem = elem[l:]
+													} else {
+														break
+													}
+
+													if len(elem) == 0 {
+														break
+													}
+													switch elem[0] {
+													case 'n': // Prefix: "narchive"
+
+														if l := len("narchive"); len(elem) >= l && elem[0:l] == "narchive" {
+															elem = elem[l:]
+														} else {
+															break
+														}
+
+														if len(elem) == 0 {
+															// Leaf node.
+															switch method {
+															case "POST":
+																r.name = UnarchiveSandboxOperation
+																r.summary = "Unarchive a sandbox"
+																r.operationID = "unarchive-sandbox"
+																r.operationGroup = ""
+																r.pathPattern = "/projects/{projectId}/sandboxes/{sandboxId}/unarchive"
+																r.args = args
+																r.count = 2
+																return r, true
+															default:
+																return
+															}
+														}
+
+													case 'p': // Prefix: "pgrade"
+
+														if l := len("pgrade"); len(elem) >= l && elem[0:l] == "pgrade" {
+															elem = elem[l:]
+														} else {
+															break
+														}
+
+														if len(elem) == 0 {
+															// Leaf node.
+															switch method {
+															case "POST":
+																r.name = UpgradeSandboxOperation
+																r.summary = "Upgrade a sandbox to its harness config's current image"
+																r.operationID = "upgrade-sandbox"
+																r.operationGroup = ""
+																r.pathPattern = "/projects/{projectId}/sandboxes/{sandboxId}/upgrade"
+																r.args = args
+																r.count = 2
+																return r, true
+															default:
+																return
+															}
+														}
+
+													}
+
+												}
+
+											}
+
+										}
+
+									case 'e': // Prefix: "ecret"
+
+										if l := len("ecret"); len(elem) >= l && elem[0:l] == "ecret" {
+											elem = elem[l:]
+										} else {
+											break
+										}
+
+										if len(elem) == 0 {
+											break
+										}
+										switch elem[0] {
+										case '-': // Prefix: "-"
+
+											if l := len("-"); len(elem) >= l && elem[0:l] == "-" {
+												elem = elem[l:]
+											} else {
+												break
+											}
+
+											if len(elem) == 0 {
+												break
+											}
+											switch elem[0] {
+											case 'g': // Prefix: "grants"
+
+												if l := len("grants"); len(elem) >= l && elem[0:l] == "grants" {
+													elem = elem[l:]
+												} else {
+													break
+												}
+
+												if len(elem) == 0 {
+													switch method {
+													case "GET":
+														r.name = ListSecretGrantsOperation
+														r.summary = "List secret grants"
+														r.operationID = "list-secret-grants"
+														r.operationGroup = ""
+														r.pathPattern = "/projects/{projectId}/secret-grants"
+														r.args = args
+														r.count = 1
+														return r, true
+													case "POST":
+														r.name = CreateSecretGrantOperation
+														r.summary = "Create a secret grant (pre-approval)"
+														r.operationID = "create-secret-grant"
+														r.operationGroup = ""
+														r.pathPattern = "/projects/{projectId}/secret-grants"
+														r.args = args
+														r.count = 1
+														return r, true
+													default:
+														return
+													}
+												}
+												switch elem[0] {
+												case '/': // Prefix: "/"
+
+													if l := len("/"); len(elem) >= l && elem[0:l] == "/" {
+														elem = elem[l:]
+													} else {
+														break
+													}
+
+													// Param: "grantId"
+													// Leaf parameter, slashes are prohibited
+													idx := strings.IndexByte(elem, '/')
+													if idx >= 0 {
+														break
+													}
+													args[1] = elem
+													elem = ""
+
+													if len(elem) == 0 {
+														// Leaf node.
+														switch method {
+														case "DELETE":
+															r.name = RevokeSecretGrantOperation
+															r.summary = "Revoke a secret grant"
+															r.operationID = "revoke-secret-grant"
+															r.operationGroup = ""
+															r.pathPattern = "/projects/{projectId}/secret-grants/{grantId}"
+															r.args = args
+															r.count = 2
+															return r, true
+														default:
+															return
+														}
+													}
+
+												}
+
+											case 'r': // Prefix: "requests"
+
+												if l := len("requests"); len(elem) >= l && elem[0:l] == "requests" {
+													elem = elem[l:]
+												} else {
+													break
+												}
+
+												if len(elem) == 0 {
+													switch method {
+													case "GET":
+														r.name = ListSecretRequestsOperation
+														r.summary = "List secret requests"
+														r.operationID = "list-secret-requests"
+														r.operationGroup = ""
+														r.pathPattern = "/projects/{projectId}/secret-requests"
+														r.args = args
+														r.count = 1
+														return r, true
+													case "POST":
+														r.name = CreateSecretRequestOperation
+														r.summary = "Request access to a secret"
+														r.operationID = "create-secret-request"
+														r.operationGroup = ""
+														r.pathPattern = "/projects/{projectId}/secret-requests"
+														r.args = args
+														r.count = 1
+														return r, true
+													default:
+														return
+													}
+												}
+												switch elem[0] {
+												case '/': // Prefix: "/"
+
+													if l := len("/"); len(elem) >= l && elem[0:l] == "/" {
+														elem = elem[l:]
+													} else {
+														break
+													}
+
+													// Param: "requestId"
+													// Match until "/"
+													idx := strings.IndexByte(elem, '/')
+													if idx < 0 {
+														idx = len(elem)
+													}
+													args[1] = elem[:idx]
+													elem = elem[idx:]
+
+													if len(elem) == 0 {
+														switch method {
+														case "GET":
+															r.name = GetSecretRequestOperation
+															r.summary = "Get a secret request; includes decrypted value when approved and not expired"
+															r.operationID = "get-secret-request"
+															r.operationGroup = ""
+															r.pathPattern = "/projects/{projectId}/secret-requests/{requestId}"
+															r.args = args
+															r.count = 2
+															return r, true
+														default:
+															return
+														}
+													}
+													switch elem[0] {
+													case '/': // Prefix: "/"
+
+														if l := len("/"); len(elem) >= l && elem[0:l] == "/" {
+															elem = elem[l:]
+														} else {
+															break
+														}
+
+														if len(elem) == 0 {
+															break
+														}
+														switch elem[0] {
+														case 'a': // Prefix: "approve"
+
+															if l := len("approve"); len(elem) >= l && elem[0:l] == "approve" {
+																elem = elem[l:]
+															} else {
+																break
+															}
+
+															if len(elem) == 0 {
+																// Leaf node.
+																switch method {
+																case "POST":
+																	r.name = ApproveSecretRequestOperation
+																	r.summary = "Approve a secret request"
+																	r.operationID = "approve-secret-request"
+																	r.operationGroup = ""
+																	r.pathPattern = "/projects/{projectId}/secret-requests/{requestId}/approve"
+																	r.args = args
+																	r.count = 2
+																	return r, true
+																default:
+																	return
+																}
+															}
+
+														case 'd': // Prefix: "deny"
+
+															if l := len("deny"); len(elem) >= l && elem[0:l] == "deny" {
+																elem = elem[l:]
+															} else {
+																break
+															}
+
+															if len(elem) == 0 {
+																// Leaf node.
+																switch method {
+																case "POST":
+																	r.name = DenySecretRequestOperation
+																	r.summary = "Deny a secret request"
+																	r.operationID = "deny-secret-request"
+																	r.operationGroup = ""
+																	r.pathPattern = "/projects/{projectId}/secret-requests/{requestId}/deny"
+																	r.args = args
+																	r.count = 2
+																	return r, true
+																default:
+																	return
+																}
+															}
+
+														}
+
+													}
+
+												}
+
+											}
+
+										case 's': // Prefix: "s"
+
+											if l := len("s"); len(elem) >= l && elem[0:l] == "s" {
+												elem = elem[l:]
+											} else {
+												break
+											}
+
+											if len(elem) == 0 {
+												switch method {
+												case "GET":
+													r.name = ListSecretsOperation
+													r.summary = "List secrets"
+													r.operationID = "list-secrets"
+													r.operationGroup = ""
+													r.pathPattern = "/projects/{projectId}/secrets"
+													r.args = args
+													r.count = 1
+													return r, true
+												case "POST":
+													r.name = CreateSecretOperation
+													r.summary = "Create a secret"
+													r.operationID = "create-secret"
+													r.operationGroup = ""
+													r.pathPattern = "/projects/{projectId}/secrets"
+													r.args = args
+													r.count = 1
+													return r, true
+												default:
+													return
+												}
+											}
+											switch elem[0] {
+											case '/': // Prefix: "/"
+
+												if l := len("/"); len(elem) >= l && elem[0:l] == "/" {
+													elem = elem[l:]
+												} else {
+													break
+												}
+
+												// Param: "secretId"
+												// Leaf parameter, slashes are prohibited
+												idx := strings.IndexByte(elem, '/')
+												if idx >= 0 {
+													break
+												}
+												args[1] = elem
+												elem = ""
+
+												if len(elem) == 0 {
+													// Leaf node.
+													switch method {
+													case "DELETE":
+														r.name = DeleteSecretOperation
+														r.summary = "Delete a secret"
+														r.operationID = "delete-secret"
+														r.operationGroup = ""
+														r.pathPattern = "/projects/{projectId}/secrets/{secretId}"
+														r.args = args
+														r.count = 2
+														return r, true
+													case "GET":
+														r.name = GetSecretOperation
+														r.summary = "Get a secret"
+														r.operationID = "get-secret"
+														r.operationGroup = ""
+														r.pathPattern = "/projects/{projectId}/secrets/{secretId}"
+														r.args = args
+														r.count = 2
+														return r, true
+													case "PUT":
+														r.name = UpdateSecretOperation
+														r.summary = "Update a secret"
+														r.operationID = "update-secret"
+														r.operationGroup = ""
+														r.pathPattern = "/projects/{projectId}/secrets/{secretId}"
+														r.args = args
+														r.count = 2
+														return r, true
+													default:
+														return
+													}
+												}
+
+											}
+
+										}
+
+									case 's': // Prefix: "sh-keys"
+
+										if l := len("sh-keys"); len(elem) >= l && elem[0:l] == "sh-keys" {
+											elem = elem[l:]
+										} else {
+											break
+										}
+
+										if len(elem) == 0 {
+											switch method {
+											case "GET":
+												r.name = ListSSHKeysOperation
+												r.summary = "List SSH keys"
+												r.operationID = "list-ssh-keys"
+												r.operationGroup = ""
+												r.pathPattern = "/projects/{projectId}/ssh-keys"
+												r.args = args
+												r.count = 1
+												return r, true
+											case "POST":
+												r.name = CreateSSHKeyOperation
+												r.summary = "Enroll a project-scoped SSH key"
+												r.operationID = "create-ssh-key"
+												r.operationGroup = ""
+												r.pathPattern = "/projects/{projectId}/ssh-keys"
+												r.args = args
+												r.count = 1
+												return r, true
+											default:
+												return
+											}
+										}
+										switch elem[0] {
+										case '/': // Prefix: "/"
+
+											if l := len("/"); len(elem) >= l && elem[0:l] == "/" {
+												elem = elem[l:]
+											} else {
+												break
+											}
+
+											// Param: "sshKeyId"
+											// Leaf parameter, slashes are prohibited
+											idx := strings.IndexByte(elem, '/')
+											if idx >= 0 {
+												break
+											}
+											args[1] = elem
+											elem = ""
+
+											if len(elem) == 0 {
+												// Leaf node.
+												switch method {
+												case "DELETE":
+													r.name = DeleteSSHKeyOperation
+													r.summary = "Revoke an SSH key"
+													r.operationID = "delete-ssh-key"
+													r.operationGroup = ""
+													r.pathPattern = "/projects/{projectId}/ssh-keys/{sshKeyId}"
+													r.args = args
+													r.count = 2
+													return r, true
+												default:
+													return
+												}
+											}
+
 										}
 
 									}
@@ -5804,31 +5968,31 @@ func (s *Server) FindPath(method string, u *url.URL) (r Route, _ bool) {
 
 						}
 
-					}
+					case 'v': // Prefix: "viders/catalog"
 
-				case 'v': // Prefix: "viders/catalog"
-
-					if l := len("viders/catalog"); len(elem) >= l && elem[0:l] == "viders/catalog" {
-						elem = elem[l:]
-					} else {
-						break
-					}
-
-					if len(elem) == 0 {
-						// Leaf node.
-						switch method {
-						case "GET":
-							r.name = ListSandboxProviderCatalogOperation
-							r.summary = "List sandbox provider catalog"
-							r.operationID = "list-sandbox-provider-catalog"
-							r.operationGroup = ""
-							r.pathPattern = "/providers/catalog"
-							r.args = args
-							r.count = 0
-							return r, true
-						default:
-							return
+						if l := len("viders/catalog"); len(elem) >= l && elem[0:l] == "viders/catalog" {
+							elem = elem[l:]
+						} else {
+							break
 						}
+
+						if len(elem) == 0 {
+							// Leaf node.
+							switch method {
+							case "GET":
+								r.name = ListSandboxProviderCatalogOperation
+								r.summary = "List sandbox provider catalog"
+								r.operationID = "list-sandbox-provider-catalog"
+								r.operationGroup = ""
+								r.pathPattern = "/providers/catalog"
+								r.args = args
+								r.count = 0
+								return r, true
+							default:
+								return
+							}
+						}
+
 					}
 
 				}

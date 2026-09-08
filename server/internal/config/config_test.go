@@ -318,6 +318,9 @@ func TestLoadRejectsInvalidValues(t *testing.T) {
 
 func clearConfigEnv(t *testing.T) {
 	t.Helper()
+	// Nothing in a test may read the machine's real configuration file, and an
+	// empty path is how Load is told to read none.
+	t.Setenv(ConfigFileVar, "")
 	for _, key := range []string{
 		"PORT",
 		"DISCOBOX_SERVER",
@@ -337,7 +340,11 @@ func clearConfigEnv(t *testing.T) {
 		"DISCOBOX_ENCRYPTION_KEY",
 		"OTEL_METRICS_EXPORTER",
 		"OTEL_METRIC_EXPORT_INTERVAL",
-		ArchiveRetentionEnv,
+		"DISCOBOX_ARCHIVE_RETENTION",
+		"DISCOBOX_IMAGE_RETENTION",
+		"DISCOBOX_DOCKER_POOL_IMAGE",
+		"DISCOBOX_WSLC_COMMAND",
+		"DISCOBOX_IROH_RELAY_URLS",
 	} {
 		t.Setenv(key, "")
 	}
@@ -356,7 +363,7 @@ func TestLoadArchiveRetention(t *testing.T) {
 	}
 
 	clearConfigEnv(t)
-	t.Setenv(ArchiveRetentionEnv, "15m")
+	t.Setenv("DISCOBOX_ARCHIVE_RETENTION", "15m")
 	cfg, err = Load()
 	if err != nil {
 		t.Fatalf("Load() error = %v", err)
@@ -369,14 +376,19 @@ func TestLoadArchiveRetention(t *testing.T) {
 // A retention that cannot be honored fails startup instead of silently
 // reverting to a day: a typo here either destroys data early or keeps it
 // forever, and both are worth a loud failure.
-func TestLoadRejectsUnusableArchiveRetention(t *testing.T) {
-	for _, value := range []string{"fifteen minutes", "0", "-5m"} {
-		t.Run(value, func(t *testing.T) {
-			clearConfigEnv(t)
-			t.Setenv(ArchiveRetentionEnv, value)
-			if _, err := Load(); err == nil {
-				t.Fatalf("Load() accepted %s=%q", ArchiveRetentionEnv, value)
-			}
-		})
+//
+// Image retention is checked alongside it because engine construction no
+// longer parses that value — the server does, here (ADR 0096 §5).
+func TestLoadRejectsUnusableRetentions(t *testing.T) {
+	for _, key := range []string{"DISCOBOX_ARCHIVE_RETENTION", "DISCOBOX_IMAGE_RETENTION"} {
+		for _, value := range []string{"fifteen minutes", "0", "-5m"} {
+			t.Run(key+"="+value, func(t *testing.T) {
+				clearConfigEnv(t)
+				t.Setenv(key, value)
+				if _, err := Load(); err == nil {
+					t.Fatalf("Load() accepted %s=%q", key, value)
+				}
+			})
+		}
 	}
 }

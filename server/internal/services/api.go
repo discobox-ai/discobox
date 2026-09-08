@@ -21,6 +21,7 @@ type CreateSandboxCredentialRequestBody = apimodel.CreateSandboxCredentialReques
 type RecordCredentialVerdictBody = apimodel.RecordCredentialVerdictBody
 type CreateSecretGrantBody = apimodel.CreateSecretGrantBody
 type CreateSSHKeyBody = apimodel.CreateSSHKeyBody
+type CreatePeerBody = apimodel.CreatePeerBody
 type UpdateHarnessConfigBody = apimodel.UpdateHarnessConfigBody
 type UpdateSecretBody = apimodel.UpdateSecretBody
 type CreateSandboxBody = apimodel.CreateSandboxBody
@@ -249,6 +250,20 @@ type SSHKeyService interface {
 	DeleteSSHKey(ctx context.Context, projectID, keyID string) error
 }
 
+// PeerService manages the iroh endpoint IDs enrolled on this server (ADR
+// 0095). It is server-scoped rather than project-scoped: an iroh connection
+// carries the entire control-plane API, so an enrolled ID authenticates as a
+// user and the existing authorization pipeline decides the rest.
+//
+// It is the managed half of two layers. The other is the authorized_ids file,
+// which is deliberately not reachable from here — it is what an operator falls
+// back to when the API is what they are trying to reach (ADR 0095 §3).
+type PeerService interface {
+	ListPeers(ctx context.Context) ([]model.Peer, error)
+	CreatePeer(ctx context.Context, input CreatePeerBody) (*model.Peer, error)
+	DeletePeer(ctx context.Context, idOrPrefix string) error
+}
+
 // SSHIngress is what a client needs to verify this server's SSH ingress (ADR
 // 0024, ADR 0057). It is a resolved value rather than a service: the host key
 // is loaded once at startup, so there is nothing to call.
@@ -274,4 +289,5 @@ type Services struct {
 	Jobs           JobService
 	Secrets        SecretService
 	SSHKeys        SSHKeyService
+	Peers          PeerService
 }

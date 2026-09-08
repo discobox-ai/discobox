@@ -45,8 +45,9 @@ func TestUnsetImageRetentionLeavesPoolConfigurationUnchanged(t *testing.T) {
 }
 
 func TestConfiguredImageRetentionReachesThePoolAgent(t *testing.T) {
-	t.Setenv(imagereap.RetentionEnv, "72h")
-	engine, err := New(Config{Image: "pool:test"}, nopDriver{})
+	// The window is server configuration now, so it arrives in Config rather
+	// than being read from the environment here (ADR 0096 §5).
+	engine, err := New(Config{Image: "pool:test", ImageRetention: 72 * time.Hour}, nopDriver{})
 	if err != nil {
 		t.Fatalf("new engine: %v", err)
 	}
@@ -68,13 +69,6 @@ func TestConfiguredImageRetentionReachesThePoolAgent(t *testing.T) {
 	unset.cfg.ImageRetention = 0
 	if engine.ConfigRevision() == configRevision(unset.cfg) {
 		t.Fatalf("ConfigRevision unchanged after configuring image retention")
-	}
-}
-
-func TestInvalidImageRetentionFailsEngineConstruction(t *testing.T) {
-	t.Setenv(imagereap.RetentionEnv, "sometimes")
-	if _, err := New(Config{Image: "pool:test"}, nopDriver{}); err == nil {
-		t.Fatal("New succeeded with an unparsable image retention")
 	}
 }
 
@@ -162,14 +156,13 @@ func TestDevelopmentDaemonsUseTheDevelopmentRetentionAndCadence(t *testing.T) {
 // An operator who sets the window explicitly means it, on a development daemon
 // as much as anywhere else.
 func TestExplicitImageRetentionOverridesTheDevelopmentDefault(t *testing.T) {
-	t.Setenv(imagereap.RetentionEnv, "6h")
 	sync, err := newDevelopmentImageSynchronizer([]devimage.Image{
 		{Reference: "discobox-sandbox-agent:dev-abc", ID: "sha256:abc"},
 	}, func() (*client.Client, error) { return nil, errors.New("no source daemon in unit tests") })
 	if err != nil {
 		t.Fatalf("new synchronizer: %v", err)
 	}
-	engine, err := New(Config{Image: "pool:test", DevelopmentImageSync: sync}, nopDriver{})
+	engine, err := New(Config{Image: "pool:test", DevelopmentImageSync: sync, ImageRetention: 6 * time.Hour}, nopDriver{})
 	if err != nil {
 		t.Fatalf("new engine: %v", err)
 	}

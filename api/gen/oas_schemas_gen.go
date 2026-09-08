@@ -579,6 +579,47 @@ func (s *CreateHarnessConfigBody) SetSlug(val OptString) {
 	s.Slug = val
 }
 
+// Ref: #/components/schemas/CreatePeerBody
+type CreatePeerBody struct {
+	// A URL to the JSON Schema for this object.
+	Schema OptURI `json:"$schema"`
+	// The peer's ID, as `discobox admin peer id` prints it. It is an address rather than a secret;
+	// enrolling it is what grants access.
+	PeerId string `json:"peerId"`
+	// Optional label for the enrollment.
+	Name OptString `json:"name"`
+}
+
+// GetSchema returns the value of Schema.
+func (s *CreatePeerBody) GetSchema() OptURI {
+	return s.Schema
+}
+
+// GetPeerId returns the value of PeerId.
+func (s *CreatePeerBody) GetPeerId() string {
+	return s.PeerId
+}
+
+// GetName returns the value of Name.
+func (s *CreatePeerBody) GetName() OptString {
+	return s.Name
+}
+
+// SetSchema sets the value of Schema.
+func (s *CreatePeerBody) SetSchema(val OptURI) {
+	s.Schema = val
+}
+
+// SetPeerId sets the value of PeerId.
+func (s *CreatePeerBody) SetPeerId(val string) {
+	s.PeerId = val
+}
+
+// SetName sets the value of Name.
+func (s *CreatePeerBody) SetName(val OptString) {
+	s.Name = val
+}
+
 // Ref: #/components/schemas/CreatePoolBody
 type CreatePoolBody struct {
 	// A URL to the JSON Schema for this object.
@@ -1562,6 +1603,11 @@ type DeleteHarnessConfigSecretBindingNoContent struct{}
 
 func (*DeleteHarnessConfigSecretBindingNoContent) deleteHarnessConfigSecretBindingRes() {}
 
+// DeletePeerNoContent is response for DeletePeer operation.
+type DeletePeerNoContent struct{}
+
+func (*DeletePeerNoContent) deletePeerRes() {}
+
 // DeletePoolNoContent is response for DeletePool operation.
 type DeletePoolNoContent struct{}
 
@@ -1765,6 +1811,7 @@ func (*ErrorModelStatusCode) completeSandboxApplyRes()             {}
 func (*ErrorModelStatusCode) completeSandboxSourcePushRes()        {}
 func (*ErrorModelStatusCode) configureHarnessConfigRes()           {}
 func (*ErrorModelStatusCode) createHarnessConfigRes()              {}
+func (*ErrorModelStatusCode) createPeerRes()                       {}
 func (*ErrorModelStatusCode) createPoolRes()                       {}
 func (*ErrorModelStatusCode) createProjectRes()                    {}
 func (*ErrorModelStatusCode) createSSHKeyRes()                     {}
@@ -1777,6 +1824,7 @@ func (*ErrorModelStatusCode) createSecretRes()                     {}
 func (*ErrorModelStatusCode) deconfigureHarnessConfigRes()         {}
 func (*ErrorModelStatusCode) deleteHarnessConfigRes()              {}
 func (*ErrorModelStatusCode) deleteHarnessConfigSecretBindingRes() {}
+func (*ErrorModelStatusCode) deletePeerRes()                       {}
 func (*ErrorModelStatusCode) deletePoolRes()                       {}
 func (*ErrorModelStatusCode) deleteProjectRes()                    {}
 func (*ErrorModelStatusCode) deleteSSHKeyRes()                     {}
@@ -1798,6 +1846,7 @@ func (*ErrorModelStatusCode) getSecretRes()                        {}
 func (*ErrorModelStatusCode) listHarnessConfigSecretBindingsRes()  {}
 func (*ErrorModelStatusCode) listHarnessConfigsRes()               {}
 func (*ErrorModelStatusCode) listJobsRes()                         {}
+func (*ErrorModelStatusCode) listPeersRes()                        {}
 func (*ErrorModelStatusCode) listPoolsRes()                        {}
 func (*ErrorModelStatusCode) listProjectsRes()                     {}
 func (*ErrorModelStatusCode) listSSHKeysRes()                      {}
@@ -3469,6 +3518,35 @@ func (s *ListJobsBody) SetJobs(val []Job) {
 }
 
 func (*ListJobsBody) listJobsRes() {}
+
+// Ref: #/components/schemas/ListPeersBody
+type ListPeersBody struct {
+	// A URL to the JSON Schema for this object.
+	Schema OptURI `json:"$schema"`
+	Peers  []Peer `json:"peers"`
+}
+
+// GetSchema returns the value of Schema.
+func (s *ListPeersBody) GetSchema() OptURI {
+	return s.Schema
+}
+
+// GetPeers returns the value of Peers.
+func (s *ListPeersBody) GetPeers() []Peer {
+	return s.Peers
+}
+
+// SetSchema sets the value of Schema.
+func (s *ListPeersBody) SetSchema(val OptURI) {
+	s.Schema = val
+}
+
+// SetPeers sets the value of Peers.
+func (s *ListPeersBody) SetPeers(val []Peer) {
+	s.Peers = val
+}
+
+func (*ListPeersBody) listPeersRes() {}
 
 // Ref: #/components/schemas/ListPoolsBody
 type ListPoolsBody struct {
@@ -7606,6 +7684,74 @@ func (s *Origin) SetProjectPath(val string) {
 func (s *Origin) SetUser(val OptString) {
 	s.User = val
 }
+
+// A machine permitted to connect to this server (ADR 0095). It authenticates as the server's default
+// user and is not scoped to a project.
+// Ref: #/components/schemas/Peer
+type Peer struct {
+	// A URL to the JSON Schema for this object.
+	Schema OptURI `json:"$schema"`
+	// Creation timestamp.
+	CreatedAt time.Time `json:"createdAt"`
+	// Peer ID.
+	ID string `json:"id"`
+	// Optional label for the enrollment.
+	Name OptString `json:"name"`
+	// Last update timestamp.
+	UpdatedAt time.Time `json:"updatedAt"`
+}
+
+// GetSchema returns the value of Schema.
+func (s *Peer) GetSchema() OptURI {
+	return s.Schema
+}
+
+// GetCreatedAt returns the value of CreatedAt.
+func (s *Peer) GetCreatedAt() time.Time {
+	return s.CreatedAt
+}
+
+// GetID returns the value of ID.
+func (s *Peer) GetID() string {
+	return s.ID
+}
+
+// GetName returns the value of Name.
+func (s *Peer) GetName() OptString {
+	return s.Name
+}
+
+// GetUpdatedAt returns the value of UpdatedAt.
+func (s *Peer) GetUpdatedAt() time.Time {
+	return s.UpdatedAt
+}
+
+// SetSchema sets the value of Schema.
+func (s *Peer) SetSchema(val OptURI) {
+	s.Schema = val
+}
+
+// SetCreatedAt sets the value of CreatedAt.
+func (s *Peer) SetCreatedAt(val time.Time) {
+	s.CreatedAt = val
+}
+
+// SetID sets the value of ID.
+func (s *Peer) SetID(val string) {
+	s.ID = val
+}
+
+// SetName sets the value of Name.
+func (s *Peer) SetName(val OptString) {
+	s.Name = val
+}
+
+// SetUpdatedAt sets the value of UpdatedAt.
+func (s *Peer) SetUpdatedAt(val time.Time) {
+	s.UpdatedAt = val
+}
+
+func (*Peer) createPeerRes() {}
 
 // Ref: #/components/schemas/Pool
 type Pool struct {

@@ -106,13 +106,13 @@ func Validate(data json.RawMessage) error {
 	return nil
 }
 
-func FactoryWithPoolManager(poolManager poolruntime.PoolManager, imageSync *dockerworker.DevelopmentImageSynchronizer) sandbox.ProviderFactory {
+func FactoryWithPoolManager(poolManager poolruntime.PoolManager, imageSync *dockerworker.DevelopmentImageSynchronizer, serverDefaults dockerworker.ServerDefaults) sandbox.ProviderFactory {
 	return func(ctx context.Context, instance *model.SandboxProviderInstance) (sandbox.Provider, error) {
-		return newFromInstance(ctx, instance, poolManager, imageSync)
+		return newFromInstance(ctx, instance, poolManager, imageSync, serverDefaults)
 	}
 }
 
-func newFromInstance(_ context.Context, instance *model.SandboxProviderInstance, poolManager poolruntime.PoolManager, imageSync *dockerworker.DevelopmentImageSynchronizer) (sandbox.Provider, error) {
+func newFromInstance(_ context.Context, instance *model.SandboxProviderInstance, poolManager poolruntime.PoolManager, imageSync *dockerworker.DevelopmentImageSynchronizer, serverDefaults dockerworker.ServerDefaults) (sandbox.Provider, error) {
 	cfg, err := Decode(instance.Config)
 	if err != nil {
 		return nil, err
@@ -127,7 +127,8 @@ func newFromInstance(_ context.Context, instance *model.SandboxProviderInstance,
 		// port. The schemes are the whole configuration.
 		ControlPlaneURL:      wire.VSOCKURL(guestvsock.HostCID, controlPlaneVSOCKPort),
 		AgentListenURL:       wire.VSOCKListenURL(agentVSOCKPort),
-		Image:                dockerworker.EffectivePoolImage(cfg.WorkerImage),
+		Image:                dockerworker.EffectivePoolImage(cfg.WorkerImage, serverDefaults.PoolImage),
+		ImageRetention:       serverDefaults.ImageRetention,
 		Labels:               map[string]string{labelProviderType: ProviderType},
 		DevelopmentImageSync: imageSync,
 		ProgressReporter:     sandbox.PoolProgressReporterFor(poolManager),

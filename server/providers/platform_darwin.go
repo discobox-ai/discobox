@@ -14,7 +14,7 @@ import (
 // should advertise a provider that cannot start there.
 func registerPlatformProviderFactories(manager *sandbox.ProviderManager, poolManager poolruntime.PoolManager, options FactoryOptions) {
 	manager.RegisterProviderDefinition(vz.ProviderType, vz.Definition())
-	manager.RegisterFactory(vz.ProviderType, vz.FactoryWithPoolManager(poolManager, options.DevelopmentImageSync, controlPlaneStreams(options)))
+	manager.RegisterFactory(vz.ProviderType, vz.FactoryWithPoolManager(poolManager, options.DevelopmentImageSync, controlPlaneStreams(options), options.ServerDefaults))
 	manager.RegisterProviderConfigValidator(vz.ProviderType, vz.Validate)
 }
 
@@ -30,4 +30,4 @@ func controlPlaneStreams(options FactoryOptions) vz.StreamSink {
 // ensurePlatformPrerequisites has nothing to check: Virtualization.framework is
 // part of macOS, so the vz backend needs nothing installed alongside discobox —
 // which is the whole point of ADR 0062.
-func ensurePlatformPrerequisites(context.Context) error { return nil }
+func ensurePlatformPrerequisites(context.Context, FactoryOptions) error { return nil }

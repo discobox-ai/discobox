@@ -85,13 +85,13 @@ func Validate(data json.RawMessage) error {
 	return nil
 }
 
-func FactoryWithPoolManager(poolManager poolruntime.PoolManager, imageSync *dockerworker.DevelopmentImageSynchronizer, streams StreamSink) sandbox.ProviderFactory {
+func FactoryWithPoolManager(poolManager poolruntime.PoolManager, imageSync *dockerworker.DevelopmentImageSynchronizer, streams StreamSink, serverDefaults dockerworker.ServerDefaults) sandbox.ProviderFactory {
 	return func(ctx context.Context, instance *model.SandboxProviderInstance) (sandbox.Provider, error) {
-		return newFromInstance(ctx, instance, poolManager, imageSync, streams)
+		return newFromInstance(ctx, instance, poolManager, imageSync, streams, serverDefaults)
 	}
 }
 
-func newFromInstance(_ context.Context, instance *model.SandboxProviderInstance, poolManager poolruntime.PoolManager, imageSync *dockerworker.DevelopmentImageSynchronizer, streams StreamSink) (sandbox.Provider, error) {
+func newFromInstance(_ context.Context, instance *model.SandboxProviderInstance, poolManager poolruntime.PoolManager, imageSync *dockerworker.DevelopmentImageSynchronizer, streams StreamSink, serverDefaults dockerworker.ServerDefaults) (sandbox.Provider, error) {
 	// Every pool needs the guest relay, which is embedded at build time. Fail
 	// here, where the message can name the build task, rather than at pool
 	// start with a missing-file error from inside a VM.
@@ -106,7 +106,7 @@ func newFromInstance(_ context.Context, instance *model.SandboxProviderInstance,
 	if err != nil {
 		return nil, err
 	}
-	engine, err := dockerworker.New(engineConfig(cfg, imageSync, sandbox.PoolProgressReporterFor(poolManager)), driver)
+	engine, err := dockerworker.New(engineConfig(cfg, imageSync, sandbox.PoolProgressReporterFor(poolManager), serverDefaults), driver)
 	if err != nil {
 		_ = driver.Close()
 		return nil, err
@@ -117,7 +117,7 @@ func newFromInstance(_ context.Context, instance *model.SandboxProviderInstance,
 // engineConfig renders the pool engine configuration for one provider instance.
 // It is separate from newFromInstance so the invariants below can be asserted
 // without a VM, a Docker daemon, or a pool manager.
-func engineConfig(cfg Config, imageSync *dockerworker.DevelopmentImageSynchronizer, progress sandbox.PoolProgressReporter) dockerworker.Config {
+func engineConfig(cfg Config, imageSync *dockerworker.DevelopmentImageSynchronizer, progress sandbox.PoolProgressReporter, serverDefaults dockerworker.ServerDefaults) dockerworker.Config {
 	return dockerworker.Config{
 		// The agent reaches the control plane over a Unix socket the guest relay
 		// serves, so no host TCP listener — and therefore no Windows firewall
@@ -127,8 +127,9 @@ func engineConfig(cfg Config, imageSync *dockerworker.DevelopmentImageSynchroniz
 		// wslc persists only /var/lib/docker, so pool state is placed inside it.
 		// The container still sees layout.ContainerRoot; only the daemon-side
 		// location moves, which is exactly what HostStateRoot expresses.
-		HostStateRoot: GuestStateRoot,
-		Image:         dockerworker.EffectivePoolImage(cfg.WorkerImage),
+		HostStateRoot:  GuestStateRoot,
+		Image:          dockerworker.EffectivePoolImage(cfg.WorkerImage, serverDefaults.PoolImage),
+		ImageRetention: serverDefaults.ImageRetention,
 		// The agent still listens on the guest's loopback; the control plane
 		// reaches it by opening a stream on the same relay session.
 		AgentPort: effectiveInt(cfg.AgentPort, defaultAgentPort),

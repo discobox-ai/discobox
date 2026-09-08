@@ -1262,6 +1262,7 @@ func AllModels() []any {
 		&SecretGrant{},
 		&SandboxSecret{},
 		&SSHKey{},
+		&Peer{},
 		&CredentialVerdict{},
 	}
 }

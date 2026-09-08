@@ -61,7 +61,7 @@ func TestLoadOrCreateIrohIdentityRejectsCorruptFile(t *testing.T) {
 func TestIrohIDCommandPrintsTheEndpointID(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "id_ed25519")
 	app := &App{}
-	cmd := app.newIrohIDCommand()
+	cmd := app.newPeerIDCommand()
 	cmd.SetArgs([]string{"--identity-file", path})
 
 	var out, errOut testBuffer
@@ -95,3 +95,37 @@ func (b *testBuffer) Write(p []byte) (int, error) {
 }
 
 func (b *testBuffer) String() string { return string(b.data) }
+
+// `discobox admin peer` is the name; the iroh spellings operators already have
+// in their notes keep working, hidden (ADR 0095 §5, ADR 0097 §7).
+func TestAdminCarriesPeerAndTheOldIrohSpellings(t *testing.T) {
+	app := &App{}
+	admin := app.newAdminCommand()
+
+	for _, sub := range []string{"id", "ls", "add", "rm"} {
+		found, _, err := admin.Find([]string{"peer", sub})
+		if err != nil {
+			t.Fatalf("find peer %s: %v", sub, err)
+		}
+		if found.Name() != sub {
+			t.Fatalf("peer %s resolved to %q", sub, found.Name())
+		}
+		// The old group name still reaches the same verbs.
+		if found, _, err = admin.Find([]string{"iroh", sub}); err != nil {
+			t.Fatalf("find iroh %s: %v", sub, err)
+		}
+		if found.Name() != sub {
+			t.Fatalf("iroh %s resolved to %q", sub, found.Name())
+		}
+	}
+
+	for _, name := range []string{"iroh", "iroh-id"} {
+		alias, _, err := admin.Find([]string{name})
+		if err != nil {
+			t.Fatalf("find %s: %v", name, err)
+		}
+		if !alias.Hidden {
+			t.Fatalf("%q is listed in help; the old spellings are kept but not advertised", name)
+		}
+	}
+}

@@ -70,8 +70,22 @@ path equality:
 - `/harness-definitions`
 - `/harness-definitions/`
 - `/api/pools/register`
+- `/peers`
+- `/peers/`
 - `/projects`
 - `/providers/catalog`
+
+`/peers` is the enrolled-peer resource (ADR 0095 §1). It is server-scoped,
+so there is no project membership to authorize on, and an enrolled peer
+authenticates as the default user rather than as a principal of its own — there
+is nothing narrower for it to be. The consequence is accepted deliberately and
+is written down rather than discovered: this authorizes every principal the
+pipeline authenticates, on every listener the router serves, including the
+carrier hub a pool guest dials. Such a caller already holds `ScopeAll`, so no
+new scope is granted; what is new is that it can mint a durable external
+credential, and that it can revoke every enrollment. `authorized_ids` is
+deliberately unreachable from the API and is what bounds that. Narrow this entry
+when a connection carries provenance to authorize on.
 
 `/api/pools/register` is allowed here only as a bootstrap credential
 redemption route. It has no authenticated pool principal yet; the service

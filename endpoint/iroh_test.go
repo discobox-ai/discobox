@@ -1,79 +1,54 @@
 package endpoint
 
 import (
-	"crypto/ed25519"
-	"crypto/rand"
 	"errors"
-	"slices"
 	"strings"
 	"testing"
+
+	iroh "github.com/discobox-ai/iroh-go"
 )
 
-func TestParseIrohIDRoundTripsHex(t *testing.T) {
-	pub, _, err := ed25519.GenerateKey(rand.Reader)
-	if err != nil {
-		t.Fatalf("generate key: %v", err)
-	}
-	want, err := IrohIDFromPublicKey(pub)
-	if err != nil {
-		t.Fatalf("IrohIDFromPublicKey() error = %v", err)
-	}
-	got, err := ParseIrohID(want.String())
-	if err != nil {
-		t.Fatalf("ParseIrohID() error = %v", err)
-	}
-	if got != want {
-		t.Fatalf("round trip = %s, want %s", got, want)
-	}
-	if len(want.String()) != 2*IrohIDSize {
-		t.Fatalf("text form is %d chars, want %d", len(want.String()), 2*IrohIDSize)
-	}
-}
-
-// A truncated ID is a different identity rather than a prefix of this one, so
-// accepting one would let a mistyped address resolve to nobody instead of
-// failing where it was typed.
-func TestParseIrohIDRejectsMalformed(t *testing.T) {
-	full := strings.Repeat("ab", IrohIDSize)
-	for name, value := range map[string]string{
-		"empty":     "",
-		"blank":     "   ",
-		"truncated": full[:len(full)-2],
-		"too long":  full + "cd",
-		"not hex":   strings.Repeat("zz", IrohIDSize),
+// Both spellings name the same server, and both resolve to the iroh transport
+// so that nothing below Parse has a second scheme to learn (ADR 0097 §2).
+func TestParseDialFormCarriesEndpointID(t *testing.T) {
+	want := testPeerID(t)
+	for _, raw := range []string{
+		"discobox://" + want.String(), // the address a user is handed
+		"discobox://" + want.Key(),    // the same, with the dashes stripped
+		"iroh://" + want.String(),     // the transport-level spelling
 	} {
-		if _, err := ParseIrohID(value); err == nil {
-			t.Fatalf("ParseIrohID(%s) succeeded, want error", name)
+		parsed, err := Parse(raw)
+		if err != nil {
+			t.Fatalf("Parse(%q) error = %v", raw, err)
+		}
+		if parsed.Scheme != "iroh" {
+			t.Fatalf("Parse(%q).Scheme = %q, want iroh", raw, parsed.Scheme)
+		}
+		id, err := parsed.IrohID()
+		if err != nil {
+			t.Fatalf("IrohID() error = %v", err)
+		}
+		if id != want {
+			t.Fatalf("Parse(%q) resolved a different peer", raw)
 		}
 	}
 }
 
-func TestParseIrohIDNormalizesCaseAndSpace(t *testing.T) {
-	full := strings.Repeat("AB", IrohIDSize)
-	id, err := ParseIrohID("  " + full + "  ")
-	if err != nil {
-		t.Fatalf("ParseIrohID() error = %v", err)
-	}
-	if got, want := id.String(), strings.ToLower(full); got != want {
-		t.Fatalf("String() = %q, want %q", got, want)
-	}
-}
-
-func TestParseDialFormCarriesEndpointID(t *testing.T) {
-	full := strings.Repeat("ab", IrohIDSize)
-	parsed, err := Parse("iroh://" + full)
-	if err != nil {
-		t.Fatalf("Parse() error = %v", err)
-	}
-	if parsed.Scheme != "iroh" {
-		t.Fatalf("Scheme = %q, want iroh", parsed.Scheme)
-	}
-	id, err := parsed.IrohID()
-	if err != nil {
-		t.Fatalf("IrohID() error = %v", err)
-	}
-	if id.String() != full {
-		t.Fatalf("IrohID() = %s, want %s", id, full)
+// "discobox://" and "iroh://" with no peer are both the listen form: a
+// server's identity comes from its key file, so there is no address to
+// configure and none to dial.
+func TestParseDiscoboxListenForm(t *testing.T) {
+	for _, raw := range []string{"discobox://", "iroh://"} {
+		parsed, err := Parse(raw)
+		if err != nil {
+			t.Fatalf("Parse(%q) error = %v", raw, err)
+		}
+		if parsed.Scheme != "iroh" {
+			t.Fatalf("Parse(%q).Scheme = %q, want iroh", raw, parsed.Scheme)
+		}
+		if _, err := parsed.IrohID(); err == nil {
+			t.Fatalf("Parse(%q).IrohID() succeeded on the listen form", raw)
+		}
 	}
 }
 
@@ -93,7 +68,7 @@ func TestParseListenFormNamesNoPeer(t *testing.T) {
 }
 
 func TestParseRejectsMalformedIrohEndpoint(t *testing.T) {
-	for _, raw := range []string{"iroh://not-an-id", "iroh:///some/path", "iroh://" + strings.Repeat("ab", 8)} {
+	for _, raw := range []string{"iroh://not-an-id", "iroh:///some/path", "iroh://d1-dtztd73", "discobox://not-an-id"} {
 		if _, err := Parse(raw); err == nil {
 			t.Fatalf("Parse(%q) succeeded, want error", raw)
 		}
@@ -105,7 +80,7 @@ func TestParseRejectsMalformedIrohEndpoint(t *testing.T) {
 // always needs the loopback bridge. Those two answers are what the capability
 // methods exist to keep apart.
 func TestIrohEndpointCapabilities(t *testing.T) {
-	parsed, err := Parse("iroh://" + strings.Repeat("ab", IrohIDSize))
+	parsed, err := Parse("iroh://" + testPeerID(t).String())
 	if err != nil {
 		t.Fatalf("Parse() error = %v", err)
 	}
@@ -121,7 +96,7 @@ func TestIrohEndpointCapabilities(t *testing.T) {
 // [ConfigureIroh] installs one. The failure has to name that rather than the
 // scheme, which is understood perfectly well.
 func TestIrohEndpointRequiresAnIdentity(t *testing.T) {
-	raw := "iroh://" + strings.Repeat("ab", IrohIDSize)
+	raw := "iroh://" + testPeerID(t).String()
 	_, _, err := HTTPClient(raw, nil)
 	if err == nil {
 		t.Fatal("HTTPClient() succeeded without an iroh identity configured")
@@ -134,11 +109,12 @@ func TestIrohEndpointRequiresAnIdentity(t *testing.T) {
 	}
 }
 
-// An endpoint ID is not routable on its own, so the URL has to be able to carry
-// the addresses that reach it until a discovery service exists.
+// A server no longer advertises addresses, but the URL still carries them for
+// a deployment with no discovery service, or two peers on one host that should
+// not wait for a round trip to resolve each other (ADR 0097 §3).
 func TestParseCarriesDirectAddresses(t *testing.T) {
-	full := strings.Repeat("ab", IrohIDSize)
-	parsed, err := Parse("iroh://" + full + "?addr=127.0.0.1%3A41234&addr=%5B%3A%3A1%5D%3A41235")
+	want := testPeerID(t)
+	parsed, err := Parse("iroh://" + want.String() + "?addr=127.0.0.1%3A41234&addr=%5B%3A%3A1%5D%3A41235")
 	if err != nil {
 		t.Fatalf("Parse() error = %v", err)
 	}
@@ -146,14 +122,14 @@ func TestParseCarriesDirectAddresses(t *testing.T) {
 	if err != nil {
 		t.Fatalf("IrohID() error = %v", err)
 	}
-	if id.String() != full {
-		t.Fatalf("IrohID() = %s, want %s", id, full)
+	if id != want {
+		t.Fatalf("IrohID() = %s, want %s", id, want)
 	}
-	want := []string{"127.0.0.1:41234", "[::1]:41235"}
-	if len(parsed.IrohAddrs) != len(want) {
-		t.Fatalf("IrohAddrs = %v, want %v", parsed.IrohAddrs, want)
+	wantAddrs := []string{"127.0.0.1:41234", "[::1]:41235"}
+	if len(parsed.IrohAddrs) != len(wantAddrs) {
+		t.Fatalf("IrohAddrs = %v, want %v", parsed.IrohAddrs, wantAddrs)
 	}
-	for i, addr := range want {
+	for i, addr := range wantAddrs {
 		if parsed.IrohAddrs[i] != addr {
 			t.Fatalf("IrohAddrs[%d] = %q, want %q", i, parsed.IrohAddrs[i], addr)
 		}
@@ -161,10 +137,7 @@ func TestParseCarriesDirectAddresses(t *testing.T) {
 }
 
 func TestIrohURLWithAddrsRoundTrips(t *testing.T) {
-	id, err := ParseIrohID(strings.Repeat("ef", IrohIDSize))
-	if err != nil {
-		t.Fatalf("ParseIrohID() error = %v", err)
-	}
+	id := testPeerID(t)
 	addrs := []string{"127.0.0.1:41234", "[::1]:41235"}
 	parsed, err := Parse(IrohURLWithAddrs(id, addrs))
 	if err != nil {
@@ -183,10 +156,7 @@ func TestIrohURLWithAddrsRoundTrips(t *testing.T) {
 }
 
 func TestIrohURLDialsTheID(t *testing.T) {
-	id, err := ParseIrohID(strings.Repeat("cd", IrohIDSize))
-	if err != nil {
-		t.Fatalf("ParseIrohID() error = %v", err)
-	}
+	id := testPeerID(t)
 	parsed, err := Parse(IrohURL(id))
 	if err != nil {
 		t.Fatalf("Parse(IrohURL()) error = %v", err)
@@ -200,70 +170,29 @@ func TestIrohURLDialsTheID(t *testing.T) {
 	}
 }
 
-// The ticket and the URL are two spellings of one address, so an endpoint has
-// to survive the round trip through either.
-func TestIrohTicketRoundTrips(t *testing.T) {
-	pub, _, err := ed25519.GenerateKey(rand.Reader)
-	if err != nil {
-		t.Fatalf("generate key: %v", err)
-	}
-	id, err := IrohIDFromPublicKey(pub)
-	if err != nil {
-		t.Fatalf("IrohIDFromPublicKey() error = %v", err)
-	}
-	addrs := []string{"127.0.0.1:41234", "[::1]:41235"}
-
-	fromURL, err := Parse(IrohURLWithAddrs(id, addrs))
-	if err != nil {
-		t.Fatalf("Parse(url) error = %v", err)
-	}
-	ticket, err := IrohTicket(fromURL)
-	if err != nil {
-		t.Fatalf("IrohTicket() error = %v", err)
-	}
-
-	// A ticket is an endpoint anywhere an endpoint is taken, so --server and
-	// DISCOBOX_SERVER_LISTEN accept the thing the server printed.
-	fromTicket, err := Parse(ticket)
-	if err != nil {
-		t.Fatalf("Parse(ticket) error = %v", err)
-	}
-	if fromTicket.Scheme != "iroh" {
-		t.Fatalf("Scheme = %q, want iroh", fromTicket.Scheme)
-	}
-	if fromTicket.Value != fromURL.Value {
-		t.Fatalf("ticket carries %q, want %q", fromTicket.Value, fromURL.Value)
-	}
-	if !slices.Equal(fromTicket.IrohAddrs, fromURL.IrohAddrs) {
-		t.Fatalf("ticket addresses = %v, want %v", fromTicket.IrohAddrs, fromURL.IrohAddrs)
-	}
-	// Raw keeps the ticket, so an error about this endpoint names what the
-	// operator actually pasted.
-	if fromTicket.Raw != ticket {
-		t.Fatalf("Raw = %q, want the ticket", fromTicket.Raw)
-	}
-}
-
-// Only an iroh endpoint has a ticket.
-func TestIrohTicketRejectsOtherSchemes(t *testing.T) {
-	parsed, err := Parse("unix:///tmp/discobox/server.sock")
-	if err != nil {
-		t.Fatalf("Parse() error = %v", err)
-	}
-	if _, err := IrohTicket(parsed); err == nil {
-		t.Fatal("IrohTicket() accepted a unix endpoint")
-	}
-}
-
-// A string that starts like a ticket but is not one has to fail as a ticket,
-// not as an unsupported scheme, or the message sends someone looking for a
-// typo in a scheme they never wrote.
-func TestParseRejectsAMalformedTicket(t *testing.T) {
-	_, err := Parse("endpointnotarealticket")
-	if err == nil {
-		t.Fatal("Parse() accepted a malformed ticket")
-	}
-	if strings.Contains(err.Error(), "unsupported endpoint scheme") {
-		t.Fatalf("error = %v, want it to name the ticket", err)
+// The preset carries relays and discovery together, so a custom relay list has
+// to reach the right combination of both (ADR 0096 §6).
+func TestIrohPresetSelectsCustomRelays(t *testing.T) {
+	custom := []string{"https://relay.example"}
+	for _, tc := range []struct {
+		name      string
+		cfg       IrohConfig
+		wantPre   iroh.Preset
+		wantRelay iroh.RelayMode
+	}{
+		{"default is n0's relays and discovery", IrohConfig{}, iroh.PresetN0, iroh.RelayFromPreset},
+		{"custom relays keep discovery", IrohConfig{RelayURLs: custom}, iroh.PresetN0, iroh.RelayCustom},
+		{"custom relays without discovery", IrohConfig{RelayURLs: custom, DisableDiscovery: true}, iroh.PresetMinimal, iroh.RelayCustom},
+		// DisableRelay is the more specific request: a caller that wants no
+		// relays at all is not asking which ones.
+		{"no relays beats a list", IrohConfig{RelayURLs: custom, DisableRelay: true}, iroh.PresetN0NoRelay, iroh.RelayFromPreset},
+		{"no relays and no discovery", IrohConfig{DisableRelay: true, DisableDiscovery: true}, iroh.PresetMinimal, iroh.RelayFromPreset},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			preset, relay := irohPreset(tc.cfg)
+			if preset != tc.wantPre || relay != tc.wantRelay {
+				t.Fatalf("irohPreset() = (%v, %v), want (%v, %v)", preset, relay, tc.wantPre, tc.wantRelay)
+			}
+		})
 	}
 }

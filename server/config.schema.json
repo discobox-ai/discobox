@@ -1,0 +1,182 @@
+{
+  "$id": "https://raw.githubusercontent.com/discobox-ai/discobox/main/server/config.schema.json",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "description": "Configuration for discobox-server. Every setting may also be set by the environment variable named in its description, which takes precedence over this file (ADR 0096).",
+  "properties": {
+    "archiveRetention": {
+      "description": "How long an archived sandbox is kept before purging, for projects with no retention of their own. Environment: DISCOBOX_ARCHIVE_RETENTION (takes precedence over this file).",
+      "pattern": "^\\d+(\\.\\d+)?(ns|us|ms|s|m|h)([0-9.]+(ns|us|ms|s|m|h))*$",
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "cacheDir": {
+      "description": "Reproducible data that may be deleted. Defaults to \u003cXDG cache home\u003e/discobox. Environment: DISCOBOX_CACHE_DIR (takes precedence over this file).",
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "configDir": {
+      "description": "Operator-edited configuration. Defaults to \u003cXDG config home\u003e/discobox. It cannot relocate the configuration file itself, which is found from the environment (ADR 0096 §1). Environment: DISCOBOX_CONFIG_DIR (takes precedence over this file).",
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "dataDir": {
+      "description": "Durable server state: the database, the SSH host key, the iroh endpoint key, authorized_keys and authorized_ids. Defaults to \u003cXDG data home\u003e/discobox. Environment: DISCOBOX_DATA_DIR (takes precedence over this file).",
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "databaseDriver": {
+      "description": "Database driver. Detected from databaseDsn when unset. Environment: DATABASE_DRIVER (takes precedence over this file).",
+      "enum": [
+        "sqlite",
+        "postgres",
+        null
+      ],
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "databaseDsn": {
+      "description": "Database DSN. Defaults to a SQLite file under dataDir. Environment: DATABASE_DSN (takes precedence over this file).",
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "databaseReadDsn": {
+      "description": "Optional separate DSN for reads, for a deployment with a read replica. Environment: DATABASE_READ_DSN (takes precedence over this file).",
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "defaultSandboxImage": {
+      "description": "Image for sandboxes that name no harness. Defaults to the built-in sandbox agent image. Environment: DISCOBOX_DEFAULT_SANDBOX_IMAGE (takes precedence over this file).",
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "defaultSandboxImageDigest": {
+      "description": "Digest identifying the build behind defaultSandboxImage. Those sandboxes report no upgrade when it is unknown. Environment: DISCOBOX_DEFAULT_SANDBOX_IMAGE_DIGEST (takes precedence over this file).",
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "devImageManifest": {
+      "description": "Path to the manifest listing the images devImageSync converges. Required when devImageSync is set. Environment: DISCOBOX_DEV_DOCKER_IMAGE_MANIFEST (takes precedence over this file).",
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "devImageSync": {
+      "description": "Converge locally built images onto each Docker daemon before it hosts a development pool. Environment: DISCOBOX_DEV_DOCKER_IMAGE_SYNC (takes precedence over this file).",
+      "type": "boolean"
+    },
+    "dispatcherPollInterval": {
+      "default": "1s",
+      "description": "How often the job dispatcher polls for work. Environment: DISPATCHER_POLL_INTERVAL (takes precedence over this file).",
+      "pattern": "^\\d+(\\.\\d+)?(ns|us|ms|s|m|h)([0-9.]+(ns|us|ms|s|m|h))*$",
+      "type": "string"
+    },
+    "dockerPoolImage": {
+      "description": "Pool agent image the Docker provider runs. Defaults to the released image for this build. Environment: DISCOBOX_DOCKER_POOL_IMAGE (takes precedence over this file).",
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "encryptionKey": {
+      "description": "Base64 AES key that seals stored secrets. Secrets are stored unsealed when empty. Environment: DISCOBOX_ENCRYPTION_KEY (takes precedence over this file).",
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "imageRetention": {
+      "description": "How long an unused Discobox image is kept on the host Docker daemon. The configured value is propagated into pool containers, so one setting governs both. Environment: DISCOBOX_IMAGE_RETENTION (takes precedence over this file).",
+      "pattern": "^\\d+(\\.\\d+)?(ns|us|ms|s|m|h)([0-9.]+(ns|us|ms|s|m|h))*$",
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "iroh": {
+      "additionalProperties": false,
+      "description": "Settings for the iroh transport, which is how a server is reached from another network without a port, a certificate, or a name.",
+      "properties": {
+        "relayUrls": {
+          "description": "Relay servers to use instead of n0's public ones, which are free and need no configuration but rate-limit traffic, are shared with every other iroh deployment, and carry no uptime guarantee. Running your own means running iroh-relay and listing it here. Clients need the same list (discobox --iroh-relay): an address does not carry the server's relay, so a half-configured pair fails when it tries to connect. Address discovery is separate, still uses n0's public service, and is not configurable yet. Environment: DISCOBOX_IROH_RELAY_URLS (takes precedence over this file).",
+          "items": {
+            "type": "string"
+          },
+          "type": [
+            "array",
+            "null"
+          ]
+        }
+      },
+      "type": [
+        "object",
+        "null"
+      ]
+    },
+    "listen": {
+      "description": "Endpoints to listen on. Local IPC is added when none is named, so the CLI can always reach the server. Environment: DISCOBOX_SERVER_LISTEN (takes precedence over this file).",
+      "items": {
+        "type": "string"
+      },
+      "type": [
+        "array",
+        "null"
+      ]
+    },
+    "otelMetricExportInterval": {
+      "default": "1s",
+      "description": "How often metrics are exported. The OTEL_METRIC_EXPORT_INTERVAL environment variable sets this too, in milliseconds, as the OpenTelemetry specification defines it.",
+      "pattern": "^\\d+(\\.\\d+)?(ns|us|ms|s|m|h)([0-9.]+(ns|us|ms|s|m|h))*$",
+      "type": "string"
+    },
+    "otelMetricsEnabled": {
+      "description": "Export OpenTelemetry metrics over OTLP. The OTEL_METRICS_EXPORTER=otlp environment variable sets this too.",
+      "type": "boolean"
+    },
+    "port": {
+      "default": 18080,
+      "description": "TCP port for an http:// listen endpoint that does not name one. Environment: PORT (takes precedence over this file).",
+      "type": "integer"
+    },
+    "sandboxReconcileJobConcurrency": {
+      "default": 4,
+      "description": "How many sandbox reconcile jobs run at once. Environment: SANDBOX_RECONCILE_JOB_CONCURRENCY (takes precedence over this file).",
+      "type": "integer"
+    },
+    "stateDir": {
+      "description": "State that should survive a restart but is not precious. Defaults to \u003cXDG state home\u003e/discobox. Environment: DISCOBOX_STATE_DIR (takes precedence over this file).",
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "wslcCommand": {
+      "description": "The WSL Containers program to look for on a Windows host, as a name on PATH or a full path. Empty looks for the component's own name, wslc. Windows only. Environment: DISCOBOX_WSLC_COMMAND (takes precedence over this file).",
+      "type": [
+        "string",
+        "null"
+      ]
+    }
+  },
+  "title": "Discobox server configuration",
+  "type": "object"
+}

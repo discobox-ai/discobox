@@ -21,6 +21,7 @@ func (a *App) newAdminCommand() *cobra.Command {
 	cmd.AddCommand(a.newSSHKeyCommand())
 	cmd.AddCommand(a.newSSHConfigCommand())
 	cmd.AddCommand(a.newSSHProxyCommand())
-	cmd.AddCommand(a.newIrohIDCommand())
+	cmd.AddCommand(a.newPeerCommand())
+	cmd.AddCommand(a.newIrohAliasCommands()...)
 	return cmd
 }

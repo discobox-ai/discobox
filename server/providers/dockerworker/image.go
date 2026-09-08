@@ -1,8 +1,8 @@
 package dockerworker
 
 import (
-	"os"
 	"strings"
+	"time"
 )
 
 // DefaultPoolImage is the default pool-agent container image launched by the
@@ -13,33 +13,49 @@ import (
 // A release overwrites this at link time with the image built for that release,
 // so a released binary pulls the pool agent it was cut alongside rather than
 // whatever :latest happens to be. It is a var, not a const, for exactly that
-// reason. A development build keeps :latest and local development overrides it
-// through PoolImageEnv.
+// reason. A development build keeps :latest, and local development overrides
+// it with the server's `dockerPoolImage` setting — DISCOBOX_DOCKER_POOL_IMAGE
+// in the environment — which arrives here as ServerDefaults.PoolImage
+// (ADR 0096 §5).
 var DefaultPoolImage = "ghcr.io/discobox-ai/discobox-pool-agent:latest"
 
-// PoolImageEnv globally overrides the default pool-agent image, primarily for
-// local development against freshly built images.
-const PoolImageEnv = "DISCOBOX_DOCKER_POOL_IMAGE"
+// ServerDefaults are the provider settings that belong to the server rather
+// than to any one provider instance (ADR 0096 §5). They arrive as a value
+// because they are configuration, and configuration is the server's to hold —
+// a provider that read them from the environment would be reading a file it
+// does not own.
+type ServerDefaults struct {
+	// PoolImage overrides the pool-agent image, for a provider whose own
+	// configuration names none.
+	PoolImage string
+	// ImageRetention is how long an unused Discobox image is kept. Zero means
+	// unconfigured, which is not the same as zero: see Config.ImageRetention.
+	ImageRetention time.Duration
+}
 
 // EffectivePoolImage resolves the pool-agent image from provider
-// configuration, the global override, or the static default.
-func EffectivePoolImage(image string) string {
+// configuration, the server-wide override, or the static default.
+//
+// The override arrives as an argument rather than being read from the
+// environment here: it is server configuration, and the server is what holds
+// configuration (ADR 0096 §5).
+func EffectivePoolImage(image, override string) string {
 	if image = strings.TrimSpace(image); image != "" {
 		return image
 	}
-	if value := strings.TrimSpace(os.Getenv(PoolImageEnv)); value != "" {
-		return value
+	if override = strings.TrimSpace(override); override != "" {
+		return override
 	}
 	return DefaultPoolImage
 }
 
 // PoolImageSource reports where the effective pool image came from.
-func PoolImageSource(image string) string {
+func PoolImageSource(image, override string) string {
 	if strings.TrimSpace(image) != "" {
 		return "provider"
 	}
-	if strings.TrimSpace(os.Getenv(PoolImageEnv)) != "" {
-		return "global"
+	if strings.TrimSpace(override) != "" {
+		return "server"
 	}
 	return "default"
 }

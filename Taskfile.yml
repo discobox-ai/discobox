@@ -726,6 +726,9 @@ tasks:
       # Nested modules generate their own API surfaces and are not reached by
       # the root pattern.
       - cd pool-agent && go generate ./...
+      # The server's configuration schema is generated from config.Config, so
+      # a new setting cannot ship without the schema that documents it.
+      - cd server && go generate ./...
 
   generate:verify:
     desc: Fail when a generated file is stale

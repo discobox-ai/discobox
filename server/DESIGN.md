@@ -210,6 +210,62 @@ needed.
   only cover the routes that consult the server at all, which the git and HTTP
   proxies do not.
 
+## Configuration
+
+`config.Load` resolves three layers in order: literal defaults from struct
+tags, then the configuration file, then the environment. The environment wins
+(ADR 0096).
+
+```mermaid
+flowchart LR
+    defaults["defaults (struct tags)"] --> file["server.yaml"]
+    file --> env["environment"]
+    env --> computed["computed defaults for what nothing set"]
+    computed --> validate["validate"]
+```
+
+The file is `<XDG config home>/discobox/server.yaml`, or whatever
+`DISCOBOX_CONFIG_FILE` names; an empty value reads none. Its path comes from
+the environment and cannot come from the file, because `configDir` is itself a
+setting. A missing file is not an error — the environment alone still
+configures a server completely.
+
+`config.Config`'s struct tags are the source of truth. `yaml` is the key, `env`
+the overriding variable, `default` the literal default and `doc` the
+description; a field tagged `yaml:"-"` is derived rather than configured.
+`internal/config/genschema` emits two artifacts from the same walk the loader
+binds, so a setting cannot be loadable and undocumented: `server/config.schema.json`
+for an editor, and `server/server.example.yaml`, the commented reference listing
+every setting at the value it has when nothing sets it. `task verify` fails when
+either is stale.
+
+The reference renders "unset" as a bare key rather than an empty value, because
+`archiveRetention: ""` is not a duration and `dataDir: ""` would claim the
+operator chose the empty string. A key with nothing after it is YAML null, which
+the loader reads as saying nothing — so the whole file can be uncommented and
+still configure exactly the server that no file configures, which is what a test
+asserts.
+
+Decoding is strict: a key nothing defines fails startup naming the key and the
+file. That is the capability the environment cannot offer, and the reason the
+file exists at all.
+
+Presence is read from the YAML node rather than from the resulting values,
+because a field set to its zero value and a field left out mean different
+things — `archiveRetention: 0s` is a window that purges on sight, and no key at
+all means the package default stands.
+
+Two OpenTelemetry variables are read by hand rather than bound: `OTEL_METRICS_EXPORTER`
+names an exporter and `OTEL_METRIC_EXPORT_INTERVAL` counts milliseconds, both
+fixed by that specification. The file spells them as a boolean and a duration.
+
+Settings the server holds on a provider's behalf travel as
+`dockerworker.ServerDefaults` and `FactoryOptions`, not as environment reads
+inside the provider. The one variable that stays a variable is
+`DISCOBOX_IMAGE_RETENTION` **on a pool agent container**: that is a wire
+between two processes, and the pool agent is a separate binary with its own
+contract.
+
 ## Listen Endpoints
 
 The server binds local IPC — `unix://` or `npipe://` — and nothing else unless
@@ -225,11 +281,60 @@ are the default socket and pipe, and `iroh://` is the identity in the server's
 key file. `unix://,iroh://` therefore reads as "where I always listen, plus
 iroh".
 
-An iroh endpoint is logged twice: as a URL and as a ticket. The URL is the form
-to read — its endpoint ID is the value a peer puts in `authorized_ids` — and
-the ticket is the form to paste, carrying the same address with no query string
-for a shell or a chat client to mangle. Both are accepted wherever an endpoint
-is, so either can be handed to `--server`.
+An iroh endpoint is logged once, as `discobox://` and this server's peer ID
+(ADR 0097). That is the whole address: no query string, no direct addresses,
+and nothing that names the transport. `iroh://<peer-id>` names the same server
+for anyone debugging the transport, and both are accepted wherever an endpoint
+is.
+
+Direct addresses are not advertised. They are this host's own sockets — in
+practice its Docker bridges and loopback — which are useless to the peer being
+handed the address and describe the host's internal network to anyone the log
+reaches. Discovery resolves a peer ID on its own; a deployment without
+discovery writes `?addr=` into the endpoint it dials, which `Parse` still
+accepts.
+
+## Peer Admission
+
+Which peers may connect is two layers, and `internal/irohd` owns both (ADR
+0095). `Admission.Authorize` is the accept-time hook, consulted before any HTTP
+exists. A peer ID is written one way everywhere — the address, this file, the
+API, the database — so two of them can be compared by eye (ADR 0097 §5):
+
+```mermaid
+flowchart TD
+    accept[iroh accept: peer ID proven] --> file{"in &lt;data dir&gt;/authorized_ids?"}
+    file -- yes --> admit[admit]
+    file -- no --> store{"store installed?"}
+    store -- "not yet" --> wait[wait: deadline or listener cancel]
+    wait --> store
+    store -- yes --> row{"enrolled in peers?"}
+    row -- yes --> admit
+    row -- no --> refuse["refuse; the reason is the QUIC close"]
+```
+
+The file is the operator's way back into a server whose API is what they are
+trying to reach, and is deliberately unreachable from that API. The table is
+the managed layer, served by `/peers` and `discobox admin peer`. Both are
+read per connection, so enrolling and revoking take effect on the next dial
+without a restart, and neither tears down a connection already established.
+
+The wait exists because the server binds before it initializes: `configureIroh`
+runs ahead of `database.New`, so the gate is built before there is a store to
+ask and is handed one by `SetStore` when `NewApp` returns. A peer arriving in
+that window waits rather than being told it is not enrolled — refusing would be
+a wrong answer that sends an operator to the wrong file. Startup failure closes
+the listener, which cancels the wait and refuses the peers parked on it.
+
+Enrollment is authorized for any authenticated principal, on every listener the
+router serves; see [auth](internal/auth/DESIGN.md) for what that costs and why
+it is accepted.
+
+A line in `authorized_ids` that does not parse is skipped and **logged** with
+its file and line number, once at startup rather than per connection. The
+tolerance is `authorized_keys(5)`'s, so one typo does not refuse every other
+peer; the logging is what stops a file written before peer IDs replaced hex
+from silently costing an operator their break-glass access (ADR 0097 §6).
 
 Nothing in the system requires HTTP. Pool backends reach the control plane over
 whatever transport their guest can dial — see

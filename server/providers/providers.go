@@ -22,6 +22,12 @@ type FactoryOptions struct {
 	// ListenEndpoints are the endpoints the control plane listens on. A backend
 	// whose agent dials inward picks its address from them.
 	ListenEndpoints []string
+	// ServerDefaults are the provider settings the server configures rather
+	// than any one provider instance.
+	ServerDefaults dockerworker.ServerDefaults
+	// WSLCCommand overrides the WSL Containers program the Windows host is
+	// checked for. Empty looks for the component's own name.
+	WSLCCommand string
 }
 
 func RegisterBuiltInSandboxProviderFactories(manager *sandbox.ProviderManager, poolManager poolruntime.PoolManager, options FactoryOptions) {
@@ -29,16 +35,16 @@ func RegisterBuiltInSandboxProviderFactories(manager *sandbox.ProviderManager, p
 		return
 	}
 	manager.RegisterProviderDefinition(digitalocean.ProviderType, digitalocean.Definition())
-	manager.RegisterFactory(digitalocean.ProviderType, digitalocean.FactoryWithPoolManager(poolManager, options.DevelopmentImageSync))
+	manager.RegisterFactory(digitalocean.ProviderType, digitalocean.FactoryWithPoolManager(poolManager, options.DevelopmentImageSync, options.ServerDefaults))
 	manager.RegisterProviderConfigValidator(digitalocean.ProviderType, digitalocean.Validate)
 	manager.RegisterProviderDefinition(docker.ProviderType, docker.Definition())
-	manager.RegisterFactory(docker.ProviderType, docker.FactoryWithPoolManager(poolManager, options.DevelopmentImageSync, options.ListenEndpoints))
+	manager.RegisterFactory(docker.ProviderType, docker.FactoryWithPoolManager(poolManager, options.DevelopmentImageSync, options.ListenEndpoints, options.ServerDefaults))
 	manager.RegisterProviderConfigValidator(docker.ProviderType, docker.Validate)
 	manager.RegisterProviderDefinition(execvm.ProviderType, execvm.Definition())
-	manager.RegisterFactory(execvm.ProviderType, execvm.FactoryWithPoolManager(poolManager, options.DevelopmentImageSync))
+	manager.RegisterFactory(execvm.ProviderType, execvm.FactoryWithPoolManager(poolManager, options.DevelopmentImageSync, options.ServerDefaults))
 	manager.RegisterProviderConfigValidator(execvm.ProviderType, execvm.Validate)
 	manager.RegisterProviderDefinition(libkrun.ProviderType, libkrun.Definition())
-	manager.RegisterFactory(libkrun.ProviderType, libkrun.FactoryWithPoolManager(poolManager, options.DevelopmentImageSync))
+	manager.RegisterFactory(libkrun.ProviderType, libkrun.FactoryWithPoolManager(poolManager, options.DevelopmentImageSync, options.ServerDefaults))
 	manager.RegisterProviderConfigValidator(libkrun.ProviderType, libkrun.Validate)
 	registerPlatformProviderFactories(manager, poolManager, options)
 }
@@ -52,6 +58,6 @@ func RegisterBuiltInSandboxProviderFactories(manager *sandbox.ProviderManager, p
 // on the host it belongs to (`sandbox.PlatformDefaultProvider`), so a missing
 // prerequisite is every pool on the machine, and the server refuses to serve
 // rather than making each sandbox create discover it.
-func EnsurePlatformPrerequisites(ctx context.Context) error {
-	return ensurePlatformPrerequisites(ctx)
+func EnsurePlatformPrerequisites(ctx context.Context, options FactoryOptions) error {
+	return ensurePlatformPrerequisites(ctx, options)
 }

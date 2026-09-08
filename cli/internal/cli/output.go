@@ -475,6 +475,33 @@ func (a *App) writeSSHKeys(cmd *cobra.Command, keys []apimodel.SSHKey) error {
 	return tw.Flush()
 }
 
+func (a *App) writePeer(cmd *cobra.Command, enrolled *apimodel.Peer) error {
+	if enrolled == nil {
+		return nil
+	}
+	if a.output == "json" {
+		return writeJSON(cmd.OutOrStdout(), enrolled)
+	}
+	fmt.Fprintln(cmd.OutOrStdout(), enrolled.ID)
+	return nil
+}
+
+func (a *App) writePeers(cmd *cobra.Command, ids []apimodel.Peer) error {
+	ids = sortedByRecency(ids, func(id apimodel.Peer) time.Time { return recencyTime(id.UpdatedAt, id.CreatedAt) })
+	if a.quiet {
+		return writeResourceIDs(cmd.OutOrStdout(), ids, func(id apimodel.Peer) string { return id.ID })
+	}
+	if a.output == "json" {
+		return writeJSON(cmd.OutOrStdout(), map[string]any{"peers": ids})
+	}
+	tw := tabwriter.NewWriter(cmd.OutOrStdout(), 0, 0, 2, ' ', 0)
+	fmt.Fprintln(tw, "PEER ID\tNAME\tCREATED")
+	for _, id := range ids {
+		fmt.Fprintf(tw, "%s\t%s\t%s\n", id.ID, id.Name.Or(""), formatTime(id.CreatedAt))
+	}
+	return tw.Flush()
+}
+
 func (a *App) writeSecretGrant(cmd *cobra.Command, grant *apimodel.SecretGrant) error {
 	if grant == nil {
 		return nil

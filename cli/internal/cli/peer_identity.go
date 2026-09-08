@@ -80,10 +80,10 @@ func readIrohIdentity(path string) (endpoint.IrohID, error) {
 // server endpoint needs one.
 //
 // It runs only for an iroh endpoint: generating a key and opening a UDP socket
-// is not something `discobox ls` against a unix socket should do. The identity is
-// the one `discobox admin iroh-id` prints, so what an operator enrolled is what
-// connects.
-func configureIrohForEndpoint(parsed endpoint.Endpoint) error {
+// is not something `discobox ls` against a unix socket should do. The identity
+// is the one `discobox admin peer id` prints, so what an operator enrolled is
+// what connects.
+func configureIrohForEndpoint(parsed endpoint.Endpoint, relayURLs string) error {
 	if parsed.Scheme != "iroh" {
 		return nil
 	}
@@ -92,7 +92,10 @@ func configureIrohForEndpoint(parsed endpoint.Endpoint) error {
 	if err != nil {
 		return err
 	}
-	if err := endpoint.ConfigureIroh(endpoint.IrohConfig{SecretKey: key}); err != nil {
+	if err := endpoint.ConfigureIroh(endpoint.IrohConfig{
+		SecretKey: key,
+		RelayURLs: splitRelayURLs(relayURLs),
+	}); err != nil {
 		if strings.Contains(err.Error(), errIrohAlreadyConfigured.Error()) {
 			return nil
 		}
@@ -140,4 +143,17 @@ func readIrohIdentityKey(path string) (ed25519.PrivateKey, error) {
 		return nil, fmt.Errorf("iroh identity %s is %T, want ed25519", path, parsed)
 	}
 	return key, nil
+}
+
+// splitRelayURLs parses the comma-separated relay list. Empty keeps n0's public
+// relays, which is what a client that was told nothing should use, because it
+// is what a server that was told nothing uses.
+func splitRelayURLs(value string) []string {
+	var out []string
+	for _, item := range strings.Split(value, ",") {
+		if item = strings.TrimSpace(item); item != "" {
+			out = append(out, item)
+		}
+	}
+	return out
 }

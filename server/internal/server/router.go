@@ -70,6 +70,14 @@ type AppOptions struct {
 	// the server actually answers on rather than assuming one.
 	ListenEndpoints []string
 
+	// ServerDefaults are the provider settings the server configures rather
+	// than any one provider instance (ADR 0096 §5).
+	ServerDefaults dockerworker.ServerDefaults
+
+	// WSLCCommand overrides the WSL Containers program the Windows host is
+	// checked for.
+	WSLCCommand string
+
 	// ArchiveRetention is how long an archived sandbox is kept before it is
 	// purged, for projects that have not set their own. Zero is left zero rather
 	// than defaulted here: DefaultAppOptions is production wiring, and the
@@ -150,6 +158,8 @@ func NewApp(ctx context.Context, writeDB, readDB *gorm.DB, options ...AppOptions
 		ControlPlaneStreams:            controlPlaneStreams,
 		ListenEndpoints:                opts.ListenEndpoints,
 		ArchiveRetention:               opts.ArchiveRetention,
+		ServerDefaults:                 opts.ServerDefaults,
+		WSLCCommand:                    opts.WSLCCommand,
 	})
 	appServices.SetDefaultSandboxImage(opts.DefaultSandboxImage, opts.DefaultSandboxImageDigest)
 	appServices.SetHostID(opts.HostID)
@@ -173,6 +183,7 @@ func NewApp(ctx context.Context, writeDB, readDB *gorm.DB, options ...AppOptions
 		Jobs:           appServices,
 		Secrets:        appServices,
 		SSHKeys:        appServices,
+		Peers:          appServices,
 	}
 	router := chi.NewRouter()
 	router.Use(auth.Authentication(

@@ -27,15 +27,16 @@ import (
 const defaultProjectAlias = "default"
 
 type App struct {
-	serverURL string
-	projectID string
-	source    string
-	token     string
-	output    string
-	quiet     bool
-	debug     bool
-	autoStart autoStartServer
-	errOut    io.Writer
+	serverURL     string
+	irohRelayURLs string
+	projectID     string
+	source        string
+	token         string
+	output        string
+	quiet         bool
+	debug         bool
+	autoStart     autoStartServer
+	errOut        io.Writer
 
 	// leaderKey is the prefix key this invocation reserves in a terminal it
 	// shows: the launcher's window commands, and the detach chord of an attach.
@@ -145,6 +146,10 @@ an Enter. See "discobox run --help" for what the flags below mean.`,
 		},
 	}
 	cmd.PersistentFlags().StringVar(&app.serverURL, "server", envOrDefault("DISCOBOX_SERVER", endpoint.DefaultEndpoint()), "Discobox API server endpoint")
+	// A client has to be told the same relays as the server it dials. An
+	// address carries a peer ID and nothing else, so a server moved off n0's
+	// public relays does not move its clients with it (ADR 0096 §6).
+	cmd.PersistentFlags().StringVar(&app.irohRelayURLs, "iroh-relay", envOrDefault("DISCOBOX_IROH_RELAY_URLS", ""), "Comma-separated iroh relay servers to use instead of the public ones; must match the server's")
 	// Long form only: -p is the prompt, on this command and on run, because a
 	// prompt is what somebody typing `discobox -p ...` means every time and a
 	// project is what a script names in full.
@@ -268,7 +273,7 @@ func (a *App) httpClientWithAutoStart(autoStart bool) (string, *http.Client, err
 			return "", nil, err
 		}
 	}
-	if err := configureIrohForEndpoint(parsed); err != nil {
+	if err := configureIrohForEndpoint(parsed, a.irohRelayURLs); err != nil {
 		return "", nil, err
 	}
 	baseURL, client, err := endpoint.HTTPClient(a.serverURL, transport)

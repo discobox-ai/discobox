@@ -26,15 +26,22 @@ import (
 
 const LogicalHTTPBaseURL = "http://discobox.local"
 
+// SchemeDiscobox is the address scheme a user is given: "discobox://" and a
+// peer ID, naming a Discobox server rather than the transport that reaches it
+// (ADR 0097). It resolves to the iroh transport here, so it appears nowhere
+// below Parse.
+const SchemeDiscobox = "discobox"
+
 type Endpoint struct {
 	Raw    string
 	Scheme string
 	Value  string
 	// IrohAddrs are direct socket addresses to try for an iroh peer, carried
-	// as repeated ?addr= parameters. An endpoint ID is not routable on its own:
-	// resolving one needs a discovery service, and until a deployment has one
-	// the address has to travel with the ID. This is the ticket idea in URL
-	// form, and it is also what makes two peers on one machine reachable.
+	// as repeated ?addr= parameters. Resolving a peer ID on its own needs a
+	// discovery service, so a deployment without one carries the addresses
+	// alongside it — which is also what makes two peers on one machine
+	// reachable without waiting for discovery to propagate. A server offers
+	// this form beside its address rather than as it (ADR 0097 §3).
 	IrohAddrs []string
 }
 
@@ -42,12 +49,6 @@ func Parse(raw string) (Endpoint, error) {
 	raw = strings.TrimSpace(raw)
 	if raw == "" {
 		return Endpoint{}, fmt.Errorf("endpoint is required")
-	}
-	// An iroh ticket is not a URL. It carries the same address the iroh://
-	// form spells out, in the single token iroh tools paste around, so it is
-	// accepted wherever an endpoint is.
-	if strings.HasPrefix(raw, irohTicketPrefix) && !strings.Contains(raw, "://") {
-		return parseIrohTicket(raw)
 	}
 	u, err := url.Parse(raw)
 	if err != nil {
@@ -71,23 +72,27 @@ func Parse(raw string) (Endpoint, error) {
 			return localDefault(raw, scheme)
 		}
 		return Endpoint{Raw: raw, Scheme: scheme, Value: value}, nil
-	case "iroh":
-		// "iroh://" with no ID is the listen form: a server's identity comes
-		// from its key file, so there is nothing about the address to
-		// configure. "iroh://<endpoint-id>" is the dial form, where the ID is
-		// the entire address.
+	case SchemeDiscobox, "iroh":
+		// Both spell the same thing. "discobox://<peer-id>" is the address a
+		// user is given and the one a server prints; "iroh://<peer-id>" names
+		// the transport, for someone who is debugging it (ADR 0097 §§2, 7).
+		// Either with no ID is the listen form: a server's identity comes from
+		// its key file, so there is nothing about the address to configure.
+		//
+		// The result says "iroh" whichever was written, so nothing below Parse
+		// has a second scheme to learn.
 		host := strings.TrimSpace(u.Host)
 		if host == "" {
 			if path := strings.Trim(u.Path, "/"); path != "" {
-				return Endpoint{}, fmt.Errorf("iroh endpoint %q must be iroh://<endpoint-id>, or iroh:// to listen", raw)
+				return Endpoint{}, fmt.Errorf("endpoint %q must be %s://<peer-id>, or %s:// to listen", raw, scheme, scheme)
 			}
-			return Endpoint{Raw: raw, Scheme: scheme}, nil
+			return Endpoint{Raw: raw, Scheme: "iroh"}, nil
 		}
 		id, err := ParseIrohID(host)
 		if err != nil {
 			return Endpoint{}, err
 		}
-		return Endpoint{Raw: raw, Scheme: scheme, Value: id.String(), IrohAddrs: u.Query()["addr"]}, nil
+		return Endpoint{Raw: raw, Scheme: "iroh", Value: id.Key(), IrohAddrs: u.Query()["addr"]}, nil
 	default:
 		return Endpoint{}, fmt.Errorf("unsupported endpoint scheme %q in %q", u.Scheme, raw)
 	}

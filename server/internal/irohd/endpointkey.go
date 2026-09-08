@@ -1,10 +1,15 @@
 // Package irohd owns the server's iroh identity and the endpoint IDs it will
-// accept connections from (ADR 0052 §5).
+// accept connections from (ADR 0052 §5, ADR 0095).
 //
 // It is the iroh counterpart of internal/sshd's host key and authorized_keys
 // handling, and for the same reasons: the identity is an address that must
 // survive restarts, and the authorization layer must work before any API
 // access exists.
+//
+// Admission is two layers, like sshd's. LoadAuthorizedIDs reads the file an
+// operator edits, which is what works when the API is what they are trying to
+// reach; Admission adds the managed layer that /peers serves, and holds the
+// wait that exists because the listener binds before the database opens.
 package irohd
 
 import (

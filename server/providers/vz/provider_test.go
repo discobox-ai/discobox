@@ -12,6 +12,8 @@ import (
 	"github.com/discobox-ai/discobox/pool-agent/wire"
 	sandbox "github.com/discobox-ai/discobox/server/internal/sandbox"
 	"github.com/discobox-ai/discobox/server/providers/vz/internal/vzvm"
+
+	"github.com/discobox-ai/discobox/server/providers/dockerworker"
 )
 
 // The whole backend is expressed in the two transport URLs. VSOCK in both
@@ -19,7 +21,7 @@ import (
 // firewall prompt, so a change that turns either into an IP endpoint is a
 // behavior change, not a refactor.
 func TestEngineConfigUsesVSOCKInBothDirections(t *testing.T) {
-	cfg := engineConfig(Config{}, nil, nil)
+	cfg := engineConfig(Config{}, nil, nil, dockerworker.ServerDefaults{})
 
 	controlPlane, err := wire.Parse(cfg.ControlPlaneURL)
 	if err != nil {
@@ -47,11 +49,11 @@ func TestEngineConfigUsesVSOCKInBothDirections(t *testing.T) {
 // A pool image is required on every backend; leaving it unset would start a
 // container from whatever the daemon happened to have.
 func TestEngineConfigResolvesAPoolImage(t *testing.T) {
-	if image := engineConfig(Config{}, nil, nil).Image; strings.TrimSpace(image) == "" {
+	if image := engineConfig(Config{}, nil, nil, dockerworker.ServerDefaults{}).Image; strings.TrimSpace(image) == "" {
 		t.Fatal("engine config resolved no pool image")
 	}
 	const configured = "example.com/pool:custom"
-	if image := engineConfig(Config{WorkerImage: configured}, nil, nil).Image; image != configured {
+	if image := engineConfig(Config{WorkerImage: configured}, nil, nil, dockerworker.ServerDefaults{}).Image; image != configured {
 		t.Fatalf("pool image = %q, want the configured value", image)
 	}
 }
@@ -244,7 +246,7 @@ func TestHostShareIsOneDecision(t *testing.T) {
 		t.Error("the host share is writable; a sandbox must never write to files on the Mac")
 	}
 
-	mounts := engineConfig(Config{}, nil, nil).HostMounts
+	mounts := engineConfig(Config{}, nil, nil, dockerworker.ServerDefaults{}).HostMounts
 	if len(mounts) != len(shares) {
 		t.Fatalf("engine host mounts = %d, want one per share (%d)", len(mounts), len(shares))
 	}

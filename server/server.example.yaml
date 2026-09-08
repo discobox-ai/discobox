@@ -1,0 +1,142 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/discobox-ai/discobox/main/server/config.schema.json
+#
+# discobox-server configuration reference.
+#
+# Every setting is listed here, commented out, showing the value it has when
+# nothing sets it. Copy this to the path the server reads —
+# <XDG config home>/discobox/server.yaml, or wherever DISCOBOX_CONFIG_FILE
+# names — and uncomment only what you want to change: deleting the "#" from a
+# setting's line leaves correctly indented YAML, at any depth. A nested setting
+# needs its parent uncommented too, which is the one place a single deletion is
+# not enough. A server with no file at all behaves exactly as one always has.
+#
+# Every setting can also be set by the environment variable named beside it,
+# and the environment wins over this file (ADR 0096).
+#
+# A key this server does not define is a startup failure naming the key. That
+# is the point of the file: a misspelled environment variable is silently the
+# default instead.
+#
+# This file is generated from the tags on config.Config by
+# `go tool task generate`. Edit the struct, not this.
+
+# TCP port for an http:// listen endpoint that does not name one.
+# Environment: PORT
+#port: 18080
+
+# Endpoints to listen on. Local IPC is added when none is named, so the
+# CLI can always reach the server.
+# Environment: DISCOBOX_SERVER_LISTEN
+#listen:
+
+# Durable server state: the database, the SSH host key, the iroh endpoint
+# key, authorized_keys and authorized_ids. Defaults to <XDG data
+# home>/discobox.
+# Environment: DISCOBOX_DATA_DIR
+#dataDir:
+
+# Operator-edited configuration. Defaults to <XDG config home>/discobox.
+# It cannot relocate the configuration file itself, which is found from
+# the environment (ADR 0096 §1).
+# Environment: DISCOBOX_CONFIG_DIR
+#configDir:
+
+# Reproducible data that may be deleted. Defaults to <XDG cache
+# home>/discobox.
+# Environment: DISCOBOX_CACHE_DIR
+#cacheDir:
+
+# State that should survive a restart but is not precious. Defaults to
+# <XDG state home>/discobox.
+# Environment: DISCOBOX_STATE_DIR
+#stateDir:
+
+# Database DSN. Defaults to a SQLite file under dataDir.
+# Environment: DATABASE_DSN
+#databaseDsn:
+
+# Optional separate DSN for reads, for a deployment with a read replica.
+# Environment: DATABASE_READ_DSN
+#databaseReadDsn:
+
+# Database driver. Detected from databaseDsn when unset.
+# Environment: DATABASE_DRIVER
+#databaseDriver:
+
+# Base64 AES key that seals stored secrets. Secrets are stored unsealed
+# when empty.
+# Environment: DISCOBOX_ENCRYPTION_KEY
+#encryptionKey:
+
+# How often the job dispatcher polls for work.
+# Environment: DISPATCHER_POLL_INTERVAL
+#dispatcherPollInterval: 1s
+
+# How many sandbox reconcile jobs run at once.
+# Environment: SANDBOX_RECONCILE_JOB_CONCURRENCY
+#sandboxReconcileJobConcurrency: 4
+
+# Image for sandboxes that name no harness. Defaults to the built-in
+# sandbox agent image.
+# Environment: DISCOBOX_DEFAULT_SANDBOX_IMAGE
+#defaultSandboxImage:
+
+# Digest identifying the build behind defaultSandboxImage. Those
+# sandboxes report no upgrade when it is unknown.
+# Environment: DISCOBOX_DEFAULT_SANDBOX_IMAGE_DIGEST
+#defaultSandboxImageDigest:
+
+# How long an archived sandbox is kept before purging, for projects with
+# no retention of their own.
+# Environment: DISCOBOX_ARCHIVE_RETENTION
+#archiveRetention:
+
+# How long an unused Discobox image is kept on the host Docker daemon.
+# The configured value is propagated into pool containers, so one setting
+# governs both.
+# Environment: DISCOBOX_IMAGE_RETENTION
+#imageRetention:
+
+# Pool agent image the Docker provider runs. Defaults to the released
+# image for this build.
+# Environment: DISCOBOX_DOCKER_POOL_IMAGE
+#dockerPoolImage:
+
+# The WSL Containers program to look for on a Windows host, as a name on
+# PATH or a full path. Empty looks for the component's own name, wslc.
+# Windows only.
+# Environment: DISCOBOX_WSLC_COMMAND
+#wslcCommand:
+
+# Converge locally built images onto each Docker daemon before it hosts a
+# development pool.
+# Environment: DISCOBOX_DEV_DOCKER_IMAGE_SYNC
+#devImageSync: false
+
+# Path to the manifest listing the images devImageSync converges.
+# Required when devImageSync is set.
+# Environment: DISCOBOX_DEV_DOCKER_IMAGE_MANIFEST
+#devImageManifest:
+
+# Settings for the iroh transport, which is how a server is reached from
+# another network without a port, a certificate, or a name.
+#iroh:
+  # Relay servers to use instead of n0's public ones, which are free and
+  # need no configuration but rate-limit traffic, are shared with every
+  # other iroh deployment, and carry no uptime guarantee. Running your
+  # own means running iroh-relay and listing it here. Clients need the
+  # same list (discobox --iroh-relay): an address does not carry the
+  # server's relay, so a half-configured pair fails when it tries to
+  # connect. Address discovery is separate, still uses n0's public
+  # service, and is not configurable yet.
+  # Environment: DISCOBOX_IROH_RELAY_URLS
+  #relayUrls:
+
+# Export OpenTelemetry metrics over OTLP. The OTEL_METRICS_EXPORTER=otlp
+# environment variable sets this too.
+#otelMetricsEnabled: false
+
+# How often metrics are exported. The OTEL_METRIC_EXPORT_INTERVAL
+# environment variable sets this too, in milliseconds, as the
+# OpenTelemetry specification defines it.
+#otelMetricExportInterval: 1s

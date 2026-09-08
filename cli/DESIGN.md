@@ -157,8 +157,9 @@ transport helpers where OpenAPI does not model the stream.
 
 `cliStateDir()` (`internal/cli/statedir.go`) is `<state>` throughout this
 document: the picker's memory, the launcher's unsent prompts, this machine's
-iroh identity, the SSH identity, and the generated per-project `ssh_config`
-files. It is state the CLI derives,
+iroh identity (`<state>/iroh/id_ed25519`, whose peer ID `discobox admin peer id` prints
+and an operator enrolls), the SSH identity, and the generated per-project
+`ssh_config` files. It is state the CLI derives,
 not configuration anyone edits, so it follows each platform's convention for
 that — `$XDG_STATE_HOME` or `~/.local/state` on Unix, `%LOCALAPPDATA%` on
 Windows, which is the local one rather than the roaming `%APPDATA%`: an SSH

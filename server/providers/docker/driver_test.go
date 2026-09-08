@@ -46,7 +46,7 @@ const (
 
 func engineConfigFor(t *testing.T, cfg Config, listen []string, daemonHost string) dockerworker.Config {
 	t.Helper()
-	engineCfg, err := engineConfig(cfg, listen, daemonHost)
+	engineCfg, err := engineConfig(cfg, listen, daemonHost, dockerworker.ServerDefaults{})
 	if err != nil {
 		t.Fatalf("engineConfig() error = %v", err)
 	}
@@ -98,7 +98,7 @@ func TestEngineConfigUsesHTTPListenerForRemoteDaemon(t *testing.T) {
 // A pool that could never register is a configuration error worth naming, not a
 // silently broken pool.
 func TestEngineConfigFailsWhenNoEndpointIsReachable(t *testing.T) {
-	_, err := engineConfig(Config{}, []string{testUnixListen}, testRemoteDaemon)
+	_, err := engineConfig(Config{}, []string{testUnixListen}, testRemoteDaemon, dockerworker.ServerDefaults{})
 	if err == nil {
 		t.Fatal("engineConfig() succeeded with no endpoint the daemon can reach")
 	}

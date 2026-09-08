@@ -20,6 +20,7 @@ import (
 	"github.com/discobox-ai/discobox/server/internal/sshd"
 	"github.com/discobox-ai/discobox/server/internal/transport/carrierhub"
 	"github.com/discobox-ai/discobox/server/providers"
+	"github.com/discobox-ai/discobox/server/providers/dockerworker"
 )
 
 // Run loads configuration, initializes storage and services, and starts the HTTP server.
@@ -36,12 +37,14 @@ func Run(ctx context.Context) error {
 	// the component nor the one command that installs it.
 	//
 	// Before the singleton lock, and before anything binds: this reads the
-	// environment and nothing else, and a refusal that came later would have
+	// configuration and nothing else, and a refusal that came later would have
 	// already asked the running server to shut down — so a wrong answer here
 	// would cost the user the working server they had rather than just the one
 	// that will not start. The CLI reports a server that exits this early from
 	// its launch log (endpoint.EnsureRunning).
-	if err := providers.EnsurePlatformPrerequisites(ctx); err != nil {
+	if err := providers.EnsurePlatformPrerequisites(ctx, providers.FactoryOptions{
+		WSLCCommand: cfg.WSLCCommand,
+	}); err != nil {
 		return err
 	}
 	// Wait until we are the only server on this data directory, asking any
@@ -80,7 +83,8 @@ func Run(ctx context.Context) error {
 	// tell a server still coming up from one that died on startup — two very
 	// different problems that looked identical, and the reason a CLI could sit
 	// out its whole start timeout with nothing to report.
-	if err := configureIroh(cfg.DataDir, cfg.Listen); err != nil {
+	irohAdmission, err := configureIroh(cfg.DataDir, cfg.Listen, cfg.Iroh.RelayURLs)
+	if err != nil {
 		return err
 	}
 	listeners, err := listenAll(ctx, cfg.Listen)
@@ -163,9 +167,22 @@ func Run(ctx context.Context) error {
 		DevelopmentImages:              cfg.DevelopmentImages,
 		ListenEndpoints:                cfg.Listen,
 		ArchiveRetention:               cfg.ArchiveRetention,
+		ServerDefaults: dockerworker.ServerDefaults{
+			PoolImage:      cfg.DockerPoolImage,
+			ImageRetention: cfg.ImageRetention,
+		},
+		WSLCCommand: cfg.WSLCCommand,
 	})
 	if err != nil {
 		return fmt.Errorf("initialize app: %w", err)
+	}
+	// The iroh gate has been answering from authorized_ids alone since the
+	// listener bound; this is the managed layer arriving (ADR 0095 §4). Any
+	// peer parked waiting for it is released here. If startup had failed
+	// before this line, cleanupListeners would have closed the endpoint and
+	// refused them instead.
+	if irohAdmission != nil {
+		irohAdmission.SetStore(appStore)
 	}
 
 	// A server that seeded no harness has nothing it can run: sandbox create
@@ -225,12 +242,11 @@ func Run(ctx context.Context) error {
 	startup.setReady(handler)
 	for _, listener := range listeners {
 		log.Printf("listening on %s", listener.display)
-		// An iroh endpoint is also printed as a ticket. The URL is the form to
-		// read — its endpoint ID is what goes in a peer's authorized_ids — and
-		// the ticket is the form to paste, with no query string for a shell or
-		// a chat client to mangle. Both dial the same server.
-		if ticket, err := irohTicket(listener.display); err == nil {
-			log.Printf("or dial it with the ticket %s", ticket)
+		// Beside the address, not instead of it: the address is what an
+		// operator reads and enrolls, and this is what a peer dials when
+		// discovery cannot resolve it (ADR 0097 §3).
+		if fallback, err := irohFallbackURL(listener.display); err == nil {
+			log.Printf("without discovery, dial %s", fallback)
 		}
 		log.Printf("openapi spec available at %s/openapi.yaml", listener.display)
 		log.Printf("api docs available at %s/docs", listener.display)

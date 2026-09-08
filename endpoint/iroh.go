@@ -1,13 +1,12 @@
 package endpoint
 
 import (
+	"context"
 	"crypto/ed25519"
-	"encoding/hex"
 	"fmt"
 	"net"
 	"net/netip"
 	"net/url"
-	"strings"
 )
 
 // IrohIDSize is the length in bytes of an iroh endpoint ID, which is an ed25519
@@ -21,30 +20,10 @@ const IrohIDSize = ed25519.PublicKeySize
 // the matching secret. There is no certificate authority and no
 // trust-on-first-use step to get wrong.
 //
-// The text form is lowercase hex, the encoding upstream iroh renders and parses,
-// so an ID written down here is the same string every other iroh implementation
-// accepts.
+// Its text form is the peer ID (ADR 0097 §1): `d1-` and Crockford base32 with
+// check symbols, which is what an operator reads, types and enrolls. See
+// peerid.go.
 type IrohID [IrohIDSize]byte
-
-// ParseIrohID decodes an endpoint ID from its hex text form. It is deliberately
-// strict about length: a truncated ID is a different identity, not a prefix of
-// this one, and accepting one would let a typo silently address nobody.
-func ParseIrohID(value string) (IrohID, error) {
-	var id IrohID
-	trimmed := strings.ToLower(strings.TrimSpace(value))
-	if trimmed == "" {
-		return IrohID{}, fmt.Errorf("iroh endpoint ID is required")
-	}
-	decoded, err := hex.DecodeString(trimmed)
-	if err != nil {
-		return IrohID{}, fmt.Errorf("iroh endpoint ID %q is not hex: %w", value, err)
-	}
-	if len(decoded) != IrohIDSize {
-		return IrohID{}, fmt.Errorf("iroh endpoint ID %q is %d bytes, want %d", value, len(decoded), IrohIDSize)
-	}
-	copy(id[:], decoded)
-	return id, nil
-}
 
 // IrohIDFromPublicKey converts an ed25519 public key into the endpoint ID that
 // addresses its holder.
@@ -55,18 +34,6 @@ func IrohIDFromPublicKey(pub ed25519.PublicKey) (IrohID, error) {
 	}
 	copy(id[:], pub)
 	return id, nil
-}
-
-// String renders the ID in the lowercase hex form iroh uses.
-func (id IrohID) String() string {
-	return hex.EncodeToString(id[:])
-}
-
-// Short renders the first bytes of the ID, for logs and prompts where the full
-// value is noise. It is never a valid address: [ParseIrohID] rejects it, so a
-// short form cannot be pasted somewhere that expects the real thing.
-func (id IrohID) Short() string {
-	return hex.EncodeToString(id[:5])
 }
 
 // IsZero reports whether the ID is unset.
@@ -103,20 +70,22 @@ func IrohPeer(conn net.Conn) (IrohID, bool) {
 	if addr == nil || addr.Network() != irohNetwork {
 		return IrohID{}, false
 	}
-	id, err := ParseIrohID(addr.String())
-	if err != nil {
-		return IrohID{}, false
-	}
-	return id, true
+	return irohPeerFromAddr(addr)
 }
 
-// IrohURL renders the endpoint URL that dials id.
+// IrohURL renders the address that dials id: the one a server prints and a
+// user is handed (ADR 0097 §1).
 func IrohURL(id IrohID) string {
-	return "iroh://" + id.String()
+	return SchemeDiscobox + "://" + id.String()
 }
 
-// IrohURLWithAddrs renders the endpoint URL that dials id, carrying direct
-// socket addresses for callers that cannot resolve the ID through discovery.
+// IrohURLWithAddrs renders the address that dials id, carrying direct socket
+// addresses for a peer that cannot resolve the peer ID through discovery.
+//
+// This is the fallback form, not the address (ADR 0097 §3): a server
+// advertises the plain one and offers this beside it, because the addresses
+// are its own sockets — often its Docker bridges — which are noise to a peer
+// that has discovery and the only way in for a peer that does not.
 func IrohURLWithAddrs(id IrohID, addrs []string) string {
 	base := IrohURL(id)
 	if len(addrs) == 0 {
@@ -136,17 +105,39 @@ type IrohConfig struct {
 	// the endpoint ID peers dial.
 	SecretKey ed25519.PrivateKey
 
-	// Authorize reports whether a peer may connect. It is consulted at accept,
+	// Authorize decides whether a peer may connect. It is consulted at accept,
 	// before any HTTP exists, so an unenrolled peer never reaches the handler
 	// surface. A nil Authorize refuses everyone: a listener that admits anyone
 	// holding the address is an unauthenticated control plane (ADR 0052 §5),
 	// and defaulting to open would make that the easy mistake.
-	Authorize func(IrohID) bool
+	//
+	// The returned error is the close reason the peer reads, so a refusal can
+	// say which one it is: "not enrolled" and "this server has not finished
+	// starting" send an operator to different places, and a bool could only
+	// ever produce the first (ADR 0095 §4).
+	//
+	// The context is the listener's, not the connection's — iroh hands the
+	// accept hook a connection and nothing else. It is canceled when the
+	// endpoint closes, which is what releases an admission check waiting on
+	// something startup has not produced yet.
+	Authorize func(ctx context.Context, id IrohID) error
 
 	// Locate returns socket addresses to try for a peer, for deployments that
 	// reach peers without the default discovery service — a self-hosted setup,
 	// or two peers on one host. Nil relies on discovery alone.
 	Locate func(IrohID) []string
+
+	// RelayURLs are the relay servers to use instead of the defaults, for a
+	// deployment running its own (ADR 0096 §6). Empty keeps n0's public
+	// relays, which are free, rate-limited, and carry no uptime guarantee.
+	//
+	// Both ends of a connection need this. An address carries a peer ID and
+	// nothing else, so a server moved onto its own relays does not move its
+	// clients with it, and a half-configured pair fails at connect time.
+	//
+	// It is ignored when DisableRelay is set: a caller that asked for no
+	// relays has asked for something more specific than which relays.
+	RelayURLs []string
 
 	// DisableRelay binds without relay servers, for callers that must not
 	// depend on anyone else's infrastructure.
@@ -185,4 +176,15 @@ func ConfigureIroh(cfg IrohConfig) error {
 // LocalIrohID is the endpoint ID this process answers as.
 func LocalIrohID() (IrohID, error) {
 	return localIrohID()
+}
+
+// LocalIrohFallbackURL is this process's address with its direct socket
+// addresses attached, for a peer that cannot use discovery.
+//
+// It is a separate call rather than something [Listen] returns because it is a
+// separate thing: [Listen] reports the address, and this reports the way in
+// when resolving that address does not work. A caller that has no iroh
+// endpoint configured gets an error and should print nothing.
+func LocalIrohFallbackURL() (string, error) {
+	return localIrohFallbackURL()
 }

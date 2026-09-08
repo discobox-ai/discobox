@@ -2420,6 +2420,72 @@ func decodeDeleteHarnessConfigSecretBindingParams(args [3]string, argsEscaped bo
 	return params, nil
 }
 
+// DeletePeerParams is parameters of delete-peer operation.
+type DeletePeerParams struct {
+	// Peer ID, or an unambiguous prefix of one.
+	PeerId string
+}
+
+func unpackDeletePeerParams(packed middleware.Parameters) (params DeletePeerParams) {
+	{
+		key := middleware.ParameterKey{
+			Name: "peerId",
+			In:   "path",
+		}
+		params.PeerId = packed[key].(string)
+	}
+	return params
+}
+
+func decodeDeletePeerParams(args [1]string, argsEscaped bool, r *http.Request) (params DeletePeerParams, _ error) {
+	// Decode path: peerId.
+	if err := func() error {
+		param := args[0]
+		if argsEscaped {
+			unescaped, err := url.PathUnescape(args[0])
+			if err != nil {
+				return errors.Wrap(err, "unescape path")
+			}
+			param = unescaped
+		}
+		if len(param) > 0 {
+			d := uri.NewPathDecoder(uri.PathDecoderConfig{
+				Param:   "peerId",
+				Value:   param,
+				Style:   uri.PathStyleSimple,
+				Explode: false,
+			})
+
+			if err := func() error {
+				val, err := d.DecodeValue()
+				if err != nil {
+					return err
+				}
+
+				c, err := conv.ToString(val)
+				if err != nil {
+					return err
+				}
+
+				params.PeerId = c
+				return nil
+			}(); err != nil {
+				return err
+			}
+		} else {
+			return validate.ErrFieldRequired
+		}
+		return nil
+	}(); err != nil {
+		return params, &ogenerrors.DecodeParamError{
+			Name: "peerId",
+			In:   "path",
+			Err:  err,
+		}
+	}
+	return params, nil
+}
+
 // DeletePoolParams is parameters of delete-pool operation.
 type DeletePoolParams struct {
 	// Project ID.

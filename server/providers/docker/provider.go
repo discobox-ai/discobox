@@ -64,13 +64,13 @@ func Validate(data json.RawMessage) error {
 	return err
 }
 
-func FactoryWithPoolManager(poolManager poolruntime.PoolManager, imageSync *dockerworker.DevelopmentImageSynchronizer, listenEndpoints []string) sandbox.ProviderFactory {
+func FactoryWithPoolManager(poolManager poolruntime.PoolManager, imageSync *dockerworker.DevelopmentImageSynchronizer, listenEndpoints []string, serverDefaults dockerworker.ServerDefaults) sandbox.ProviderFactory {
 	return func(ctx context.Context, instance *model.SandboxProviderInstance) (sandbox.Provider, error) {
-		return newFromInstance(ctx, instance, poolManager, imageSync, listenEndpoints)
+		return newFromInstance(ctx, instance, poolManager, imageSync, listenEndpoints, serverDefaults)
 	}
 }
 
-func newFromInstance(ctx context.Context, instance *model.SandboxProviderInstance, poolManager poolruntime.PoolManager, imageSync *dockerworker.DevelopmentImageSynchronizer, listenEndpoints []string) (sandbox.Provider, error) {
+func newFromInstance(ctx context.Context, instance *model.SandboxProviderInstance, poolManager poolruntime.PoolManager, imageSync *dockerworker.DevelopmentImageSynchronizer, listenEndpoints []string, serverDefaults dockerworker.ServerDefaults) (sandbox.Provider, error) {
 	cfg, err := Decode(instance.Config)
 	if err != nil {
 		return nil, err
@@ -79,7 +79,7 @@ func newFromInstance(ctx context.Context, instance *model.SandboxProviderInstanc
 	if err != nil {
 		return nil, err
 	}
-	engineCfg, err := engineConfig(cfg, listenEndpoints, driver.DaemonHost())
+	engineCfg, err := engineConfig(cfg, listenEndpoints, driver.DaemonHost(), serverDefaults)
 	if err != nil {
 		_ = driver.Close()
 		return nil, err
@@ -155,10 +155,11 @@ func daemonIsLocal(daemonHost string) bool {
 // engineConfig maps the docker provider configuration to the shared engine
 // configuration, deriving how the pool agent reaches the control plane when the
 // instance does not name it.
-func engineConfig(cfg Config, listenEndpoints []string, daemonHost string) (dockerworker.Config, error) {
+func engineConfig(cfg Config, listenEndpoints []string, daemonHost string, serverDefaults dockerworker.ServerDefaults) (dockerworker.Config, error) {
 	engineCfg := dockerworker.Config{
 		ControlPlaneURL:     strings.TrimSpace(cfg.ControlPlaneURL),
-		Image:               dockerworker.EffectivePoolImage(cfg.Image),
+		Image:               dockerworker.EffectivePoolImage(cfg.Image, serverDefaults.PoolImage),
+		ImageRetention:      serverDefaults.ImageRetention,
 		Network:             cfg.Network,
 		AgentPort:           effectiveAgentPort(cfg.AgentPort),
 		Privileged:          cfg.Privileged,
@@ -262,14 +263,6 @@ func effectiveAgentPort(agentPort int) int {
 
 func controlPlaneURLUsesHostGateway(value string) bool {
 	return strings.Contains(value, "://"+dockerHostGateway) || strings.HasPrefix(value, dockerHostGateway+":")
-}
-
-func EffectivePoolImage(image string) string {
-	return dockerworker.EffectivePoolImage(image)
-}
-
-func PoolImageSource(image string) string {
-	return dockerworker.PoolImageSource(image)
 }
 
 // Definition describes the Docker provider for provider catalogs.

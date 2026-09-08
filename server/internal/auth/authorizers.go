@@ -108,6 +108,20 @@ var authenticatedAllowedPaths = []string{
 	"/harness-definitions",
 	"/harness-definitions/",
 	"/api/pools/register",
+	// Enrolling and revoking peers (ADR 0095 §1). There is no
+	// resource-specific authorizer for it: the resource is server-scoped, so
+	// there is no project membership to check, and an enrolled peer
+	// authenticates as the default user rather than as a principal of its own.
+	//
+	// This authorizes any authenticated principal, which today is every caller
+	// the pipeline sees, on every listener the router serves — the carrier hub
+	// included. ADR 0095 §1 accepts that knowingly and says why: such a caller
+	// already holds ScopeAll, so this grants no new scope, but it does let
+	// transient reach become a durable external credential, and it lets that
+	// caller revoke every enrollment. Narrow this the moment a connection has
+	// provenance to authorize on.
+	"/peers",
+	"/peers/",
 	"/projects",
 	"/providers/catalog",
 	"/shutdown",
