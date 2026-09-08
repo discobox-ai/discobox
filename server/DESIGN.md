@@ -688,6 +688,7 @@ and treats a decode failure as "not reported", which the next report heals.
 | `internal/store` | Persistence methods, resource transactions, and durable job records. |
 | `internal/auth/sandbox` | Sandbox access issuer keys and worker/sandbox auth token helpers. |
 | `internal/secrets` | Encryption/sealing interfaces and implementations used by server persistence. |
+| `internal/registryauth` | The keychain for the server's direct registry reads: Docker's credentials, degraded to anonymous when the credential store cannot be read, so a broken helper cannot stop a public image from being pulled. |
 | `internal/config` | Server configuration loading. |
 | `internal/apperrors` | Server-owned sentinel and HTTP status errors used by handlers, services, store, and provider adapters. |
 | `internal/model` | Server-owned persistence models and migration model list. |

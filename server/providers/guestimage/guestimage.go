@@ -34,7 +34,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/google/go-containerregistry/pkg/authn"
+	"github.com/discobox-ai/discobox/server/internal/registryauth"
 	"github.com/google/go-containerregistry/pkg/name"
 	v1 "github.com/google/go-containerregistry/pkg/v1"
 	"github.com/google/go-containerregistry/pkg/v1/mutate"
@@ -286,10 +286,10 @@ func (r *Resolver) resolve(ctx context.Context, report ProgressFunc) (*Bundle, e
 
 	descriptor, err := remote.Get(ref,
 		remote.WithContext(ctx),
-		remote.WithAuthFromKeychain(authn.DefaultKeychain),
+		remote.WithAuthFromKeychain(registryauth.Keychain()),
 		remote.WithPlatform(r.platform()))
 	if err != nil {
-		return nil, fmt.Errorf("guestimage: fetch %s: %w", r.cfg.Reference, err)
+		return nil, fmt.Errorf("guestimage: fetch %s: %w", r.cfg.Reference, registryauth.Explain(ref, err))
 	}
 	digest := descriptor.Digest.String()
 	dir := r.digestDir(descriptor.Digest)

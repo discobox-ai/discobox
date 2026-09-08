@@ -8,8 +8,8 @@ import (
 
 	"github.com/discobox-ai/discobox/devimage"
 	"github.com/discobox-ai/discobox/harness"
+	"github.com/discobox-ai/discobox/server/internal/registryauth"
 	services "github.com/discobox-ai/discobox/server/internal/services"
-	"github.com/google/go-containerregistry/pkg/authn"
 	"github.com/google/go-containerregistry/pkg/name"
 	v1 "github.com/google/go-containerregistry/pkg/v1"
 	"github.com/google/go-containerregistry/pkg/v1/remote"
@@ -40,7 +40,7 @@ func (defaultImageInspector) Inspect(ctx context.Context, imageRef string) (imag
 	}
 	remoteOptions := []remote.Option{
 		remote.WithContext(ctx),
-		remote.WithAuthFromKeychain(authn.DefaultKeychain),
+		remote.WithAuthFromKeychain(registryauth.Keychain()),
 		remote.WithPlatform(poolPlatform()),
 	}
 	// One GET, because it answers both questions: the descriptor carries the
@@ -53,7 +53,7 @@ func (defaultImageInspector) Inspect(ctx context.Context, imageRef string) (imag
 	// none were seeded, and a project came up with no harnesses at all.
 	descriptor, err := remote.Get(ref, remoteOptions...)
 	if err != nil {
-		return imageMetadata{}, fmt.Errorf("inspect harness image %q: %w", imageRef, err)
+		return imageMetadata{}, fmt.Errorf("inspect harness image %q: %w", imageRef, registryauth.Explain(ref, err))
 	}
 	image, err := descriptor.Image()
 	if err != nil {
