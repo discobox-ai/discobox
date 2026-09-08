@@ -1,6 +1,8 @@
 # 0052 — iroh is an optional endpoint scheme, and each hop names its endpoint package
 
 - **Status**: Accepted
+- **§5's file-only enrollment superseded by**: [0095](0095-an-enrolled-iroh-id-is-a-managed-resource.md) — an enrolled ID is also a managed resource. The rest of §5, and §§1-4, 6, stand.
+- **§§5-6's ID and address spellings superseded by**: [0097](0097-a-discobox-address-is-versioned-and-names-no-transport.md), §6 named the condition — "once discovery is deployed the bare address resolves" — and 0097 is what happens when it is met; it also replaces §5's hex `authorized_ids` lines with the one enforced peer-ID format. §5's two-layer admission, and everything else in both, stand.
 - **Date**: 2026-08-19
 
 ## Context
