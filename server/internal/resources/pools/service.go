@@ -29,23 +29,16 @@ func NewService(appStore *store.Store, providerManager *sandbox.ProviderManager,
 	return &Service{store: appStore, providers: providerManager, pools: controlPlane}
 }
 
-func mapAPIError(err error, notFoundMessage string) error {
-	if errors.Is(err, store.ErrNotFound) {
-		return apperrors.NewStatusError(http.StatusNotFound, notFoundMessage)
-	}
-	return err
-}
-
 func (s *Service) ListPools(ctx context.Context, projectID string) ([]model.Pool, error) {
 	if _, err := s.store.GetProject(ctx, projectID); err != nil {
-		return nil, mapAPIError(err, "project not found")
+		return nil, apperrors.NotFound(err, "project not found")
 	}
 	return s.store.ListPools(ctx, projectID)
 }
 
 func (s *Service) CreatePool(ctx context.Context, projectID string, input services.CreatePoolBody) (*model.Pool, error) {
 	if _, err := s.store.GetProject(ctx, projectID); err != nil {
-		return nil, mapAPIError(err, "project not found")
+		return nil, apperrors.NotFound(err, "project not found")
 	}
 	name := strings.TrimSpace(input.Name)
 	if name == "" {
@@ -57,7 +50,7 @@ func (s *Service) CreatePool(ctx context.Context, projectID string, input servic
 	}
 	provider, err := s.store.GetSandboxProviderInstance(ctx, projectID, providerInstanceID)
 	if err != nil {
-		return nil, mapAPIError(err, "provider instance not found")
+		return nil, apperrors.NotFound(err, "provider instance not found")
 	}
 	pool := &model.Pool{
 		ProjectID: projectID,
@@ -83,7 +76,7 @@ func (s *Service) CreatePool(ctx context.Context, projectID string, input servic
 func (s *Service) GetPool(ctx context.Context, projectID, poolID string) (*model.Pool, error) {
 	pool, err := s.store.GetPool(ctx, projectID, poolID)
 	if err != nil {
-		return nil, mapAPIError(err, "pool not found")
+		return nil, apperrors.NotFound(err, "pool not found")
 	}
 	return pool, nil
 }
@@ -91,7 +84,7 @@ func (s *Service) GetPool(ctx context.Context, projectID, poolID string) (*model
 func (s *Service) UpdatePool(ctx context.Context, projectID, poolID string, input services.UpdatePoolBody) (*model.Pool, error) {
 	pool, err := s.store.GetPool(ctx, projectID, poolID)
 	if err != nil {
-		return nil, mapAPIError(err, "pool not found")
+		return nil, apperrors.NotFound(err, "pool not found")
 	}
 	if name, ok := input.Name.Get(); ok {
 		name = strings.TrimSpace(name)
@@ -126,11 +119,11 @@ func (s *Service) UpdatePool(ctx context.Context, projectID, poolID string, inpu
 func (s *Service) SetDefaultPool(ctx context.Context, projectID, poolID string) (*model.Project, error) {
 	project, err := s.store.GetProject(ctx, projectID)
 	if err != nil {
-		return nil, mapAPIError(err, "project not found")
+		return nil, apperrors.NotFound(err, "project not found")
 	}
 	pool, err := s.store.GetPool(ctx, projectID, poolID)
 	if err != nil {
-		return nil, mapAPIError(err, "pool not found")
+		return nil, apperrors.NotFound(err, "pool not found")
 	}
 	project.DefaultPoolID = pool.ID
 	if err := s.store.UpsertProject(ctx, project); err != nil {
@@ -146,11 +139,11 @@ func (s *Service) SetDefaultPool(ctx context.Context, projectID, poolID string) 
 func (s *Service) UnsetDefaultPool(ctx context.Context, projectID, poolID string) (*model.Project, error) {
 	project, err := s.store.GetProject(ctx, projectID)
 	if err != nil {
-		return nil, mapAPIError(err, "project not found")
+		return nil, apperrors.NotFound(err, "project not found")
 	}
 	pool, err := s.store.GetPool(ctx, projectID, poolID)
 	if err != nil {
-		return nil, mapAPIError(err, "pool not found")
+		return nil, apperrors.NotFound(err, "pool not found")
 	}
 	if project.DefaultPoolID != pool.ID {
 		return nil, apperrors.NewStatusError(http.StatusConflict, "pool is not the project default")
@@ -170,11 +163,11 @@ func (s *Service) UnsetDefaultPool(ctx context.Context, projectID, poolID string
 func (s *Service) DeletePool(ctx context.Context, projectID, poolID string) error {
 	project, err := s.store.GetProject(ctx, projectID)
 	if err != nil {
-		return mapAPIError(err, "project not found")
+		return apperrors.NotFound(err, "project not found")
 	}
 	pool, err := s.store.GetPool(ctx, projectID, poolID)
 	if err != nil {
-		return mapAPIError(err, "pool not found")
+		return apperrors.NotFound(err, "pool not found")
 	}
 	if project.DefaultPoolID == pool.ID {
 		return apperrors.NewStatusError(http.StatusConflict, "pool is the project default; set a different default or unset it before deleting")
@@ -190,7 +183,7 @@ func (s *Service) DeletePool(ctx context.Context, projectID, poolID string) erro
 		return fmt.Errorf("pool control plane is required")
 	}
 	if _, err := s.pools.SubmitPoolDelete(ctx, projectID, pool.ID); err != nil {
-		return mapAPIError(err, "pool not found")
+		return apperrors.NotFound(err, "pool not found")
 	}
 	return nil
 }
@@ -205,11 +198,11 @@ func (s *Service) DeletePool(ctx context.Context, projectID, poolID string) erro
 func (s *Service) OpenPoolConsole(ctx context.Context, projectID, poolID string, opts sandbox.ConsoleOptions) (sandbox.PTY, error) {
 	pool, err := s.store.GetPool(ctx, projectID, poolID)
 	if err != nil {
-		return nil, mapAPIError(err, "pool not found")
+		return nil, apperrors.NotFound(err, "pool not found")
 	}
 	provider, err := s.store.GetSandboxProviderInstance(ctx, projectID, pool.ProviderInstanceID)
 	if err != nil {
-		return nil, mapAPIError(err, "pool provider instance not found")
+		return nil, apperrors.NotFound(err, "pool provider instance not found")
 	}
 	if s.providers == nil {
 		return nil, apperrors.NewStatusError(http.StatusServiceUnavailable, "sandbox provider manager is not configured")
@@ -239,11 +232,11 @@ func (s *Service) OpenPoolConsole(ctx context.Context, projectID, poolID string,
 func (s *Service) BuildPoolGuestImage(ctx context.Context, projectID, poolID string, opts sandbox.GuestImageBuildOptions) (*sandbox.GuestImageBuild, error) {
 	pool, err := s.store.GetPool(ctx, projectID, poolID)
 	if err != nil {
-		return nil, mapAPIError(err, "pool not found")
+		return nil, apperrors.NotFound(err, "pool not found")
 	}
 	provider, err := s.store.GetSandboxProviderInstance(ctx, projectID, pool.ProviderInstanceID)
 	if err != nil {
-		return nil, mapAPIError(err, "pool provider instance not found")
+		return nil, apperrors.NotFound(err, "pool provider instance not found")
 	}
 	if s.providers == nil {
 		return nil, apperrors.NewStatusError(http.StatusServiceUnavailable, "sandbox provider manager is not configured")
@@ -276,11 +269,11 @@ func (s *Service) BuildPoolGuestImage(ctx context.Context, projectID, poolID str
 func (s *Service) OpenPoolLogs(ctx context.Context, projectID, poolID string, opts sandbox.PoolLogOptions) (*sandbox.PoolLogStream, error) {
 	pool, err := s.store.GetPool(ctx, projectID, poolID)
 	if err != nil {
-		return nil, mapAPIError(err, "pool not found")
+		return nil, apperrors.NotFound(err, "pool not found")
 	}
 	provider, err := s.store.GetSandboxProviderInstance(ctx, projectID, pool.ProviderInstanceID)
 	if err != nil {
-		return nil, mapAPIError(err, "pool provider instance not found")
+		return nil, apperrors.NotFound(err, "pool provider instance not found")
 	}
 	if s.providers == nil {
 		return nil, apperrors.NewStatusError(http.StatusServiceUnavailable, "sandbox provider manager is not configured")

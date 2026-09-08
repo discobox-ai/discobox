@@ -115,7 +115,7 @@ func (s *Service) ConfigureHarnessConfig(ctx context.Context, projectID, configI
 	}
 	config, err := s.store.GetHarnessConfig(ctx, projectID, configID)
 	if err != nil {
-		return nil, apiError(err, "harness config not found")
+		return nil, apperrors.NotFound(err, "harness config not found")
 	}
 	if strings.TrimSpace(config.Image) == "" {
 		return nil, apperrors.NewStatusError(http.StatusBadRequest, "harness config has no image to configure")
@@ -188,7 +188,7 @@ func (s *Service) AttachHarnessConfigConfigure(ctx context.Context, projectID, c
 	}
 	config, err := s.store.GetHarnessConfig(ctx, projectID, configID)
 	if err != nil {
-		return apiError(err, "harness config not found")
+		return apperrors.NotFound(err, "harness config not found")
 	}
 	sandboxID := strings.TrimSpace(config.ConfigureSandboxID)
 	if sandboxID == "" {
@@ -268,7 +268,7 @@ func (s *Service) CommitHarnessConfigConfigure(ctx context.Context, projectID, c
 	}
 	config, err := s.store.GetHarnessConfig(ctx, projectID, configID)
 	if err != nil {
-		return nil, apiError(err, "harness config not found")
+		return nil, apperrors.NotFound(err, "harness config not found")
 	}
 	sandboxID := strings.TrimSpace(config.ConfigureSandboxID)
 	if sandboxID == "" {
@@ -615,7 +615,7 @@ func matchPreviousSentinel(value json.RawMessage, sentinels map[string]string) s
 func (s *Service) DeconfigureHarnessConfig(ctx context.Context, projectID, configID string) (*model.HarnessConfig, error) {
 	config, err := s.store.GetHarnessConfig(ctx, projectID, configID)
 	if err != nil {
-		return nil, apiError(err, "harness config not found")
+		return nil, apperrors.NotFound(err, "harness config not found")
 	}
 	// Refused for a harness with nothing to configure, because configure is
 	// what would undo it and configure refuses that harness too. Turning one
@@ -635,7 +635,7 @@ func (s *Service) DeconfigureHarnessConfig(ctx context.Context, projectID, confi
 	// harness resolving to an unconfigured one, which the create path rejects.
 	project, err := s.store.GetProject(ctx, projectID)
 	if err != nil {
-		return nil, apiError(err, "project not found")
+		return nil, apperrors.NotFound(err, "project not found")
 	}
 	if project.DefaultHarnessConfigID == config.ID {
 		return nil, apperrors.NewStatusError(http.StatusConflict,

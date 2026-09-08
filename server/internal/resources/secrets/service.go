@@ -39,7 +39,7 @@ func NewService(store *store.Store) *Service {
 
 func (s *Service) ListSecrets(ctx context.Context, projectID string) ([]model.Secret, error) {
 	if _, err := s.store.GetProject(ctx, projectID); err != nil {
-		return nil, apiError(err, "project not found")
+		return nil, apperrors.NotFound(err, "project not found")
 	}
 	secrets, err := s.store.ListSecrets(ctx, projectID)
 	if err != nil {
@@ -90,7 +90,7 @@ func normalizeHost(host string) string { return hostscope.Normalize(host) }
 
 func (s *Service) CreateSecret(ctx context.Context, projectID string, input services.CreateSecretBody) (*model.Secret, error) {
 	if _, err := s.store.GetProject(ctx, projectID); err != nil {
-		return nil, apiError(err, "project not found")
+		return nil, apperrors.NotFound(err, "project not found")
 	}
 	name := strings.TrimSpace(input.Name)
 	if name == "" {
@@ -150,7 +150,7 @@ func (s *Service) CreateSecret(ctx context.Context, projectID string, input serv
 func (s *Service) GetSecret(ctx context.Context, projectID, secretID string) (*model.Secret, error) {
 	sec, err := s.store.GetSecret(ctx, projectID, secretID)
 	if err != nil {
-		return nil, apiError(err, "secret not found")
+		return nil, apperrors.NotFound(err, "secret not found")
 	}
 	s.describeOAuth(ctx, sec)
 	return sec, nil
@@ -159,7 +159,7 @@ func (s *Service) GetSecret(ctx context.Context, projectID, secretID string) (*m
 func (s *Service) UpdateSecret(ctx context.Context, projectID, secretID string, input services.UpdateSecretBody) (*model.Secret, error) {
 	sec, err := s.store.GetSecret(ctx, projectID, secretID)
 	if err != nil {
-		return nil, apiError(err, "secret not found")
+		return nil, apperrors.NotFound(err, "secret not found")
 	}
 	if nameVal, ok := input.Name.Get(); ok {
 		name := strings.TrimSpace(nameVal)
@@ -203,21 +203,21 @@ func (s *Service) UpdateSecret(ctx context.Context, projectID, secretID string, 
 
 func (s *Service) DeleteSecret(ctx context.Context, projectID, secretID string) error {
 	if err := s.store.DeleteSecret(ctx, projectID, secretID); err != nil {
-		return apiError(err, "secret not found")
+		return apperrors.NotFound(err, "secret not found")
 	}
 	return nil
 }
 
 func (s *Service) ListSecretRequests(ctx context.Context, projectID, status string) ([]model.SecretRequest, error) {
 	if _, err := s.store.GetProject(ctx, projectID); err != nil {
-		return nil, apiError(err, "project not found")
+		return nil, apperrors.NotFound(err, "project not found")
 	}
 	return s.store.ListSecretRequests(ctx, projectID, status)
 }
 
 func (s *Service) CreateSecretRequest(ctx context.Context, projectID string, input services.CreateSecretRequestBody) (*model.SecretRequest, error) {
 	if _, err := s.store.GetProject(ctx, projectID); err != nil {
-		return nil, apiError(err, "project not found")
+		return nil, apperrors.NotFound(err, "project not found")
 	}
 	secretType := string(input.Type)
 	if !validSecretType(secretType) {
@@ -275,7 +275,7 @@ func (s *Service) CreateSecretRequest(ctx context.Context, projectID string, inp
 func (s *Service) GetSecretRequest(ctx context.Context, projectID, requestID string) (*model.SecretRequest, error) {
 	req, err := s.store.GetSecretRequest(ctx, projectID, requestID)
 	if err != nil {
-		return nil, apiError(err, "secret request not found")
+		return nil, apperrors.NotFound(err, "secret request not found")
 	}
 	return req, nil
 }
@@ -287,7 +287,7 @@ func (s *Service) GetSecretRequest(ctx context.Context, projectID, requestID str
 func (s *Service) ApproveSecretRequest(ctx context.Context, projectID, requestID string, input services.ApproveSecretRequestBody) (*model.SecretRequest, error) {
 	req, err := s.store.GetSecretRequest(ctx, projectID, requestID)
 	if err != nil {
-		return nil, apiError(err, "secret request not found")
+		return nil, apperrors.NotFound(err, "secret request not found")
 	}
 	if req.Status != model.SecretRequestStatusPending {
 		return nil, apperrors.NewStatusError(http.StatusConflict, fmt.Sprintf("secret request is already %s", req.Status))
@@ -299,7 +299,7 @@ func (s *Service) ApproveSecretRequest(ctx context.Context, projectID, requestID
 	}
 	secret, err := s.store.GetSecret(ctx, projectID, secretID)
 	if err != nil {
-		return nil, apiError(err, "secret not found")
+		return nil, apperrors.NotFound(err, "secret not found")
 	}
 
 	scope := strings.TrimSpace(string(input.Scope.Or("")))
@@ -387,7 +387,7 @@ func (s *Service) ApproveSecretRequest(ctx context.Context, projectID, requestID
 func (s *Service) DenySecretRequest(ctx context.Context, projectID, requestID string) error {
 	req, err := s.store.GetSecretRequest(ctx, projectID, requestID)
 	if err != nil {
-		return apiError(err, "secret request not found")
+		return apperrors.NotFound(err, "secret request not found")
 	}
 	if req.Status != model.SecretRequestStatusPending {
 		return apperrors.NewStatusError(http.StatusConflict, fmt.Sprintf("secret request is already %s", req.Status))
@@ -410,19 +410,19 @@ func (s *Service) DenySecretRequest(ctx context.Context, projectID, requestID st
 func (s *Service) ResolveSandboxSecret(ctx context.Context, poolID, sandboxID, sentinel, host string) (*model.SandboxSecretResolution, error) {
 	assignment, err := s.store.GetSandboxSecretBySentinel(ctx, sandboxID, sentinel)
 	if err != nil {
-		return nil, apiError(err, "sandbox secret not found")
+		return nil, apperrors.NotFound(err, "sandbox secret not found")
 	}
 	// The calling pool agent must own the sandbox the sentinel belongs to.
 	sandbox, err := s.store.GetSandbox(ctx, assignment.ProjectID, assignment.SandboxID)
 	if err != nil {
-		return nil, apiError(err, "sandbox not found")
+		return nil, apperrors.NotFound(err, "sandbox not found")
 	}
 	if strings.TrimSpace(sandbox.PoolID) != strings.TrimSpace(poolID) {
 		return nil, apperrors.NewStatusError(http.StatusNotFound, "sandbox secret not found")
 	}
 	secret, err := s.store.GetSecret(ctx, assignment.ProjectID, assignment.SecretID)
 	if err != nil {
-		return nil, apiError(err, "secret not found")
+		return nil, apperrors.NotFound(err, "secret not found")
 	}
 	host = normalizeHost(host)
 
@@ -490,12 +490,12 @@ func (s *Service) ResolveSandboxSecret(ctx context.Context, poolID, sandboxID, s
 // ListSecretGrants returns a project's grants, optionally filtered to one secret.
 func (s *Service) ListSecretGrants(ctx context.Context, projectID, secretID string) ([]model.SecretGrant, error) {
 	if _, err := s.store.GetProject(ctx, projectID); err != nil {
-		return nil, apiError(err, "project not found")
+		return nil, apperrors.NotFound(err, "project not found")
 	}
 	secretID = strings.TrimSpace(secretID)
 	if secretID != "" {
 		if _, err := s.store.GetSecret(ctx, projectID, secretID); err != nil {
-			return nil, apiError(err, "secret not found")
+			return nil, apperrors.NotFound(err, "secret not found")
 		}
 	}
 	return s.store.ListSecretGrants(ctx, projectID, secretID)
@@ -505,7 +505,7 @@ func (s *Service) ListSecretGrants(ctx context.Context, projectID, secretID stri
 // prior request.
 func (s *Service) CreateSecretGrant(ctx context.Context, projectID string, input services.CreateSecretGrantBody) (*model.SecretGrant, error) {
 	if _, err := s.store.GetProject(ctx, projectID); err != nil {
-		return nil, apiError(err, "project not found")
+		return nil, apperrors.NotFound(err, "project not found")
 	}
 	secretID := strings.TrimSpace(input.SecretId)
 	if secretID == "" {
@@ -513,7 +513,7 @@ func (s *Service) CreateSecretGrant(ctx context.Context, projectID string, input
 	}
 	secret, err := s.store.GetSecret(ctx, projectID, secretID)
 	if err != nil {
-		return nil, apiError(err, "secret not found")
+		return nil, apperrors.NotFound(err, "secret not found")
 	}
 	scope := strings.TrimSpace(string(input.Scope))
 	scopeKey := strings.TrimSpace(input.ScopeKey.Or(""))
@@ -579,7 +579,7 @@ func (s *Service) CreateSecretGrant(ctx context.Context, projectID string, input
 // RevokeSecretGrant deletes a standing grant.
 func (s *Service) RevokeSecretGrant(ctx context.Context, projectID, grantID string) error {
 	if err := s.store.DeleteSecretGrant(ctx, projectID, grantID); err != nil {
-		return apiError(err, "secret grant not found")
+		return apperrors.NotFound(err, "secret grant not found")
 	}
 	return nil
 }
@@ -600,7 +600,7 @@ func (s *Service) grantScopeKey(ctx context.Context, projectID, sandboxID, scope
 		}
 		sandbox, err := s.store.GetSandbox(ctx, projectID, sandboxID)
 		if err != nil {
-			return "", apiError(err, "sandbox not found")
+			return "", apperrors.NotFound(err, "sandbox not found")
 		}
 		if sandbox.HarnessConfigID == nil || strings.TrimSpace(*sandbox.HarnessConfigID) == "" {
 			return "", apperrors.NewStatusError(http.StatusBadRequest, "sandbox has no harness config to scope the grant to")
@@ -797,13 +797,6 @@ func secretCollision(err error, sec *model.Secret) error {
 	return apperrors.NewStatusError(http.StatusConflict, fmt.Sprintf(
 		"this project already has a %s secret named %q %s; pick another name, or update the one it has",
 		sec.Type, sec.Name, where))
-}
-
-func apiError(err error, notFoundMessage string) error {
-	if errors.Is(err, store.ErrNotFound) {
-		return apperrors.NewStatusError(http.StatusNotFound, notFoundMessage)
-	}
-	return err
 }
 
 func isAdvisoryMatchError(err error) bool {

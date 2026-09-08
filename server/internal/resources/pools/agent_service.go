@@ -54,11 +54,11 @@ func (s *Service) RegisterPool(ctx context.Context, input services.RegisterPoolB
 	}
 	pool, err := s.store.GetPool(ctx, projectID, poolID)
 	if err != nil {
-		return nil, mapAPIError(err, "pool not found")
+		return nil, apperrors.NotFound(err, "pool not found")
 	}
 	h := sha256.Sum256([]byte(input.BootstrapToken))
 	if _, err := s.store.RegisterPool(ctx, pool.ID, h[:], input.PublicKey, defaultString(input.KeyType.Or(""), poolauth.KeyType)); err != nil {
-		return nil, mapAPIError(err, "pool bootstrap token not found")
+		return nil, apperrors.NotFound(err, "pool bootstrap token not found")
 	}
 	if s.pools != nil {
 		if err := s.pools.SchedulePoolReconciliation(ctx, pool.ProjectID, pool.ID); err != nil {
@@ -81,7 +81,7 @@ func (s *Service) UpdatePoolStatus(ctx context.Context, poolID string, input ser
 	}
 	pool, err := s.store.UpdatePoolStatus(ctx, poolID, input.Ready, input.Schedulable, input.Degraded, input.AvailableCpuVcpus, input.AvailableMemoryBytes, input.AvailableStorageBytes, services.RawMessage(input.Conditions))
 	if err != nil {
-		return nil, mapAPIError(err, "pool not found")
+		return nil, apperrors.NotFound(err, "pool not found")
 	}
 	// A heartbeat from a pool recorded `offline` is the observation that the
 	// host is back. Like registration (ADR 0017 §10), it reaches the
@@ -115,7 +115,7 @@ func (s *Service) MintSandboxAgentStatusTokens(ctx context.Context, poolID strin
 	}
 	pool, err := s.store.GetPoolByID(ctx, poolID)
 	if err != nil {
-		return nil, mapAPIError(err, "pool not found")
+		return nil, apperrors.NotFound(err, "pool not found")
 	}
 	tokens := make([]services.SandboxAgentStatusToken, 0, len(input.SandboxIds))
 	for _, sandboxID := range input.SandboxIds {
@@ -165,7 +165,7 @@ func (s *Service) ReportSandboxAgentStatus(ctx context.Context, poolID string, i
 	}
 	pool, err := s.store.GetPoolByID(ctx, poolID)
 	if err != nil {
-		return mapAPIError(err, "pool not found")
+		return apperrors.NotFound(err, "pool not found")
 	}
 	for _, entry := range input.Sandboxes {
 		sandboxID := strings.TrimSpace(entry.SandboxId)
@@ -210,7 +210,7 @@ func (s *Service) ReportPoolResources(ctx context.Context, poolID string, input 
 	}
 	pool, err := s.store.GetPoolByID(ctx, poolID)
 	if err != nil {
-		return mapAPIError(err, "pool not found")
+		return apperrors.NotFound(err, "pool not found")
 	}
 	reportedAt := input.Report.ReportedAt
 	if reportedAt.IsZero() {
@@ -223,7 +223,7 @@ func (s *Service) ReportPoolResources(ctx context.Context, poolID string, input 
 	// disagree the moment one write succeeded and the other did not.
 	poolResources := encodePoolResourceReport(reportedAt, input)
 	if err := s.store.RecordPoolResources(ctx, poolID, poolResources, reportedAt); err != nil {
-		return mapAPIError(err, "pool not found")
+		return apperrors.NotFound(err, "pool not found")
 	}
 
 	for _, entry := range input.Sandboxes {
@@ -357,7 +357,7 @@ func (s *Service) ReportPoolSandboxStates(ctx context.Context, poolID string, in
 		Reports:    reports,
 	}
 	if err := s.sandboxReporter.ReportSandboxStates(ctx, batch); err != nil {
-		return mapAPIError(err, "pool not found")
+		return apperrors.NotFound(err, "pool not found")
 	}
 	progress := make([]store.SandboxProgressReport, 0, len(input.Progress))
 	for _, entry := range input.Progress {
@@ -397,7 +397,7 @@ func (s *Service) ReportPoolSandboxStates(ctx context.Context, poolID string, in
 		progress = append(progress, store.SandboxProgressReport{SandboxID: sandboxID, Progress: payload})
 	}
 	if err := s.sandboxReporter.ReportSandboxProgress(ctx, poolID, input.ReportedAt, progress); err != nil {
-		return mapAPIError(err, "pool not found")
+		return apperrors.NotFound(err, "pool not found")
 	}
 	return nil
 }
@@ -409,7 +409,7 @@ func (s *Service) ReconcilePool(ctx context.Context, projectID, poolID string) (
 	}
 	pool, err := s.store.GetPool(ctx, strings.TrimSpace(projectID), strings.TrimSpace(poolID))
 	if err != nil {
-		return nil, mapAPIError(err, "pool not found")
+		return nil, apperrors.NotFound(err, "pool not found")
 	}
 	if err := s.pools.SchedulePoolReconciliation(ctx, pool.ProjectID, pool.ID); err != nil {
 		return nil, err

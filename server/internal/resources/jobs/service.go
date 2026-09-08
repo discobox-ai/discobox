@@ -53,7 +53,7 @@ func (s *Service) getEngine() (*reconcile.Engine, error) {
 // ListJobs returns the project's pending reconcile marks.
 func (s *Service) ListJobs(ctx context.Context, projectID string) ([]model.Job, error) {
 	if _, err := s.store.GetProject(ctx, projectID); err != nil {
-		return nil, apiError(err, "project not found")
+		return nil, apperrors.NotFound(err, "project not found")
 	}
 	engine, err := s.getEngine()
 	if err != nil {
@@ -107,7 +107,7 @@ func (s *Service) ForceJob(ctx context.Context, projectID, jobID string) (*model
 
 func (s *Service) findMark(ctx context.Context, projectID, jobID string) (*reconcile.DirtyResource, error) {
 	if _, err := s.store.GetProject(ctx, projectID); err != nil {
-		return nil, apiError(err, "project not found")
+		return nil, apperrors.NotFound(err, "project not found")
 	}
 	resourceType, resourceID, err := parseAPIJobID(jobID)
 	if err != nil {
@@ -173,11 +173,4 @@ func jobFromMark(mark reconcile.DirtyResource) model.Job {
 		CreatedAt:    mark.MarkedAt,
 		UpdatedAt:    mark.MarkedAt,
 	}
-}
-
-func apiError(err error, notFoundMessage string) error {
-	if errors.Is(err, store.ErrNotFound) {
-		return apperrors.NewStatusError(http.StatusNotFound, notFoundMessage)
-	}
-	return err
 }

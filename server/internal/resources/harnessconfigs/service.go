@@ -50,7 +50,7 @@ func (s *Service) SetDevelopmentImages(images []devimage.Image) {
 
 func (s *Service) ListHarnessConfigs(ctx context.Context, projectID string) ([]model.HarnessConfig, error) {
 	if _, err := s.store.GetProject(ctx, projectID); err != nil {
-		return nil, apiError(err, "project not found")
+		return nil, apperrors.NotFound(err, "project not found")
 	}
 	configs, err := s.store.ListHarnessConfigs(ctx, projectID)
 	if err != nil {
@@ -62,7 +62,7 @@ func (s *Service) ListHarnessConfigs(ctx context.Context, projectID string) ([]m
 func (s *Service) CreateHarnessConfig(ctx context.Context, projectID string, input services.CreateHarnessConfigBody) (*model.HarnessConfig, error) {
 	_, err := s.store.GetProject(ctx, projectID)
 	if err != nil {
-		return nil, apiError(err, "project not found")
+		return nil, apperrors.NotFound(err, "project not found")
 	}
 	image := strings.TrimSpace(input.Image)
 	if image == "" {
@@ -144,7 +144,7 @@ func (s *Service) CreateHarnessConfig(ctx context.Context, projectID string, inp
 func (s *Service) GetHarnessConfig(ctx context.Context, projectID, configID string) (*model.HarnessConfig, error) {
 	config, err := s.store.GetHarnessConfig(ctx, projectID, configID)
 	if err != nil {
-		return nil, apiError(err, "harness config not found")
+		return nil, apperrors.NotFound(err, "harness config not found")
 	}
 	return config, nil
 }
@@ -152,7 +152,7 @@ func (s *Service) GetHarnessConfig(ctx context.Context, projectID, configID stri
 func (s *Service) UpdateHarnessConfig(ctx context.Context, projectID, configID string, input services.UpdateHarnessConfigBody) (*model.HarnessConfig, error) {
 	config, err := s.store.GetHarnessConfig(ctx, projectID, configID)
 	if err != nil {
-		return nil, apiError(err, "harness config not found")
+		return nil, apperrors.NotFound(err, "harness config not found")
 	}
 	if nameValue, ok := input.Name.Get(); ok {
 		name := strings.TrimSpace(nameValue)
@@ -193,7 +193,7 @@ func (s *Service) UpdateHarnessConfig(ctx context.Context, projectID, configID s
 func (s *Service) RefreshHarnessConfigImage(ctx context.Context, projectID, configID string) (*model.HarnessConfig, error) {
 	config, err := s.store.GetHarnessConfig(ctx, projectID, configID)
 	if err != nil {
-		return nil, apiError(err, "harness config not found")
+		return nil, apperrors.NotFound(err, "harness config not found")
 	}
 	if s.inspector == nil {
 		return nil, apperrors.NewStatusError(http.StatusServiceUnavailable, "image inspection is unavailable")
@@ -226,11 +226,11 @@ func (s *Service) RefreshHarnessConfigImage(ctx context.Context, projectID, conf
 func (s *Service) SetDefaultHarnessConfig(ctx context.Context, projectID, configID string) (*model.Project, error) {
 	project, err := s.store.GetProject(ctx, projectID)
 	if err != nil {
-		return nil, apiError(err, "project not found")
+		return nil, apperrors.NotFound(err, "project not found")
 	}
 	config, err := s.store.GetHarnessConfig(ctx, projectID, configID)
 	if err != nil {
-		return nil, apiError(err, "harness config not found")
+		return nil, apperrors.NotFound(err, "harness config not found")
 	}
 	project.DefaultHarnessConfigID = config.ID
 	if err := s.store.UpsertProject(ctx, project); err != nil {
@@ -247,11 +247,11 @@ func (s *Service) SetDefaultHarnessConfig(ctx context.Context, projectID, config
 func (s *Service) UnsetDefaultHarnessConfig(ctx context.Context, projectID, configID string) (*model.Project, error) {
 	project, err := s.store.GetProject(ctx, projectID)
 	if err != nil {
-		return nil, apiError(err, "project not found")
+		return nil, apperrors.NotFound(err, "project not found")
 	}
 	config, err := s.store.GetHarnessConfig(ctx, projectID, configID)
 	if err != nil {
-		return nil, apiError(err, "harness config not found")
+		return nil, apperrors.NotFound(err, "harness config not found")
 	}
 	if project.DefaultHarnessConfigID != config.ID {
 		return nil, apperrors.NewStatusError(http.StatusConflict, "harness config is not the project default")
@@ -279,11 +279,11 @@ func builtInDeleteHint(config *model.HarnessConfig) string {
 
 func (s *Service) DeleteHarnessConfig(ctx context.Context, projectID, configID string) error {
 	if _, err := s.store.GetProject(ctx, projectID); err != nil {
-		return apiError(err, "project not found")
+		return apperrors.NotFound(err, "project not found")
 	}
 	config, err := s.store.GetHarnessConfig(ctx, projectID, configID)
 	if err != nil {
-		return apiError(err, "harness config not found")
+		return apperrors.NotFound(err, "harness config not found")
 	}
 	// Deleting a built-in is meaningless: the server seeds it again on the next
 	// start. Deconfiguring is the way to turn one off — but only where that
@@ -297,7 +297,7 @@ func (s *Service) DeleteHarnessConfig(ctx context.Context, projectID, configID s
 		if errors.Is(err, store.ErrInUse) {
 			return apperrors.NewStatusError(http.StatusConflict, "harness config is in use by a sandbox")
 		}
-		return apiError(err, "harness config not found")
+		return apperrors.NotFound(err, "harness config not found")
 	}
 	return nil
 }
@@ -305,7 +305,7 @@ func (s *Service) DeleteHarnessConfig(ctx context.Context, projectID, configID s
 // ListHarnessConfigSecretBindings returns the env→secret bindings for a harness config.
 func (s *Service) ListHarnessConfigSecretBindings(ctx context.Context, projectID, configID string) ([]model.HarnessConfigSecretBinding, error) {
 	if _, err := s.store.GetHarnessConfig(ctx, projectID, configID); err != nil {
-		return nil, apiError(err, "harness config not found")
+		return nil, apperrors.NotFound(err, "harness config not found")
 	}
 	return s.store.ListHarnessConfigSecretBindings(ctx, projectID, configID)
 }
@@ -315,7 +315,7 @@ func (s *Service) ListHarnessConfigSecretBindings(ctx context.Context, projectID
 func (s *Service) SetHarnessConfigSecretBinding(ctx context.Context, projectID, configID, envName, secretID string) (*model.HarnessConfigSecretBinding, error) {
 	config, err := s.store.GetHarnessConfig(ctx, projectID, configID)
 	if err != nil {
-		return nil, apiError(err, "harness config not found")
+		return nil, apperrors.NotFound(err, "harness config not found")
 	}
 	envName = strings.TrimSpace(envName)
 	if !services.HarnessConfigEnvVarNamePattern.MatchString(envName) {
@@ -326,7 +326,7 @@ func (s *Service) SetHarnessConfigSecretBinding(ctx context.Context, projectID, 
 		return nil, apperrors.NewStatusError(http.StatusBadRequest, "secret ID is required")
 	}
 	if _, err := s.store.GetSecret(ctx, projectID, secretID); err != nil {
-		return nil, apiError(err, "secret not found")
+		return nil, apperrors.NotFound(err, "secret not found")
 	}
 	binding := &model.HarnessConfigSecretBinding{
 		ProjectID:       projectID,
@@ -352,10 +352,10 @@ func (s *Service) SetHarnessConfigSecretBinding(ctx context.Context, projectID, 
 // environment variable.
 func (s *Service) DeleteHarnessConfigSecretBinding(ctx context.Context, projectID, configID, envName string) error {
 	if _, err := s.store.GetHarnessConfig(ctx, projectID, configID); err != nil {
-		return apiError(err, "harness config not found")
+		return apperrors.NotFound(err, "harness config not found")
 	}
 	if err := s.store.DeleteHarnessConfigSecretBinding(ctx, projectID, configID, strings.TrimSpace(envName)); err != nil {
-		return apiError(err, "harness config secret binding not found")
+		return apperrors.NotFound(err, "harness config secret binding not found")
 	}
 	return nil
 }
@@ -599,11 +599,4 @@ func snapshotImageMetadata(config *model.HarnessConfig, metadata harness.ImageMe
 	}
 	config.Volumes = append([]harness.Volume{}, metadata.Volumes...)
 	config.AdditionalGroups = append([]string{}, metadata.AdditionalGroups...)
-}
-
-func apiError(err error, notFoundMessage string) error {
-	if errors.Is(err, store.ErrNotFound) {
-		return apperrors.NewStatusError(http.StatusNotFound, notFoundMessage)
-	}
-	return err
 }

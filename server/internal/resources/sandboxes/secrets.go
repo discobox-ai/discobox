@@ -69,7 +69,7 @@ func (s *Service) prepareSandboxSecrets(ctx context.Context, projectID string, s
 func (s *Service) applyHarnessConfigSecrets(ctx context.Context, projectID string, sandbox *model.Sandbox, harnessConfigID string, inlineEnvs map[string]struct{}) ([]*model.SandboxSecret, error) {
 	config, err := s.store.GetHarnessConfig(ctx, projectID, harnessConfigID)
 	if err != nil {
-		return nil, mapAPIError(err, "harness config not found")
+		return nil, apperrors.NotFound(err, "harness config not found")
 	}
 	bindings, err := s.store.ListHarnessConfigSecretBindings(ctx, projectID, harnessConfigID)
 	if err != nil {
@@ -141,7 +141,7 @@ func (s *Service) applyHarnessConfigSecrets(ctx context.Context, projectID strin
 func (s *Service) applyPreviousConfigureSecrets(ctx context.Context, projectID string, sandbox *model.Sandbox, harnessConfigID string) ([]*model.SandboxSecret, error) {
 	config, err := s.store.GetHarnessConfig(ctx, projectID, harnessConfigID)
 	if err != nil {
-		return nil, mapAPIError(err, "harness config not found")
+		return nil, apperrors.NotFound(err, "harness config not found")
 	}
 	if len(config.ConfiguredSecretIDs) == 0 {
 		return nil, nil
@@ -232,7 +232,7 @@ func (s *Service) resolveSecretForInput(ctx context.Context, projectID string, i
 	case refID != "":
 		secret, err := s.store.GetSecret(ctx, projectID, refID)
 		if err != nil {
-			return "", "", mapAPIError(err, "secret not found")
+			return "", "", apperrors.NotFound(err, "secret not found")
 		}
 		return secret.ID, secretFormat(ctx, s.store, secret), nil
 	case strings.TrimSpace(value) != "":
@@ -306,11 +306,11 @@ const defaultAnonymousGrantTTLSeconds = 3600
 func (s *Service) AssignSandboxHarnessSecrets(ctx context.Context, projectID, sandboxID, harnessConfigID string) (map[string]string, error) {
 	sandboxModel, err := s.store.GetSandbox(ctx, projectID, sandboxID)
 	if err != nil {
-		return nil, mapAPIError(err, "sandbox not found")
+		return nil, apperrors.NotFound(err, "sandbox not found")
 	}
 	config, err := s.store.GetHarnessConfig(ctx, projectID, harnessConfigID)
 	if err != nil {
-		return nil, mapAPIError(err, "harness config not found")
+		return nil, apperrors.NotFound(err, "harness config not found")
 	}
 	bindings, err := s.store.ListHarnessConfigSecretBindings(ctx, projectID, harnessConfigID)
 	if err != nil {
@@ -444,7 +444,7 @@ func (s *Service) RebindHarnessConfigSecrets(ctx context.Context, projectID, har
 func (s *Service) RebindSandboxSecrets(ctx context.Context, projectID, sandboxID string) error {
 	sandboxModel, err := s.store.GetSandbox(ctx, projectID, sandboxID)
 	if err != nil {
-		return mapAPIError(err, "sandbox not found")
+		return apperrors.NotFound(err, "sandbox not found")
 	}
 	if sandboxModel.HarnessConfigID == nil || strings.TrimSpace(*sandboxModel.HarnessConfigID) == "" {
 		return nil

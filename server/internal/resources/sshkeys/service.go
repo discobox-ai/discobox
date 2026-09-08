@@ -27,14 +27,14 @@ func NewService(store *store.Store) *Service {
 
 func (s *Service) ListSSHKeys(ctx context.Context, projectID string) ([]model.SSHKey, error) {
 	if _, err := s.store.GetProject(ctx, projectID); err != nil {
-		return nil, apiError(err, "project not found")
+		return nil, apperrors.NotFound(err, "project not found")
 	}
 	return s.store.ListSSHKeys(ctx, projectID)
 }
 
 func (s *Service) CreateSSHKey(ctx context.Context, projectID string, input services.CreateSSHKeyBody) (*model.SSHKey, error) {
 	if _, err := s.store.GetProject(ctx, projectID); err != nil {
-		return nil, apiError(err, "project not found")
+		return nil, apperrors.NotFound(err, "project not found")
 	}
 	publicKey, comment, err := parseAuthorizedKeyLine(input.PublicKey)
 	if err != nil {
@@ -56,7 +56,7 @@ func (s *Service) CreateSSHKey(ctx context.Context, projectID string, input serv
 
 func (s *Service) DeleteSSHKey(ctx context.Context, projectID, keyID string) error {
 	if err := s.store.DeleteSSHKey(ctx, projectID, keyID); err != nil {
-		return apiError(err, "SSH key not found")
+		return apperrors.NotFound(err, "SSH key not found")
 	}
 	return nil
 }
@@ -77,11 +77,4 @@ func parseAuthorizedKeyLine(line string) (ssh.PublicKey, string, error) {
 		return nil, "", errors.New("only one public key may be provided")
 	}
 	return pub, comment, nil
-}
-
-func apiError(err error, notFoundMessage string) error {
-	if errors.Is(err, store.ErrNotFound) {
-		return apperrors.NewStatusError(http.StatusNotFound, notFoundMessage)
-	}
-	return err
 }

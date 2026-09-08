@@ -124,7 +124,7 @@ func (s *Service) GetSandboxCredentialRequest(ctx context.Context, poolID, sandb
 	}
 	req, err := s.store.GetSecretRequest(ctx, sandbox.ProjectID, requestID)
 	if err != nil {
-		return nil, nil, apiError(err, "secret request not found")
+		return nil, nil, apperrors.NotFound(err, "secret request not found")
 	}
 	// A sandbox may poll only its own asks. Requests are project-scoped rows and
 	// a pool hosts many sandboxes, so without this a compromised sandbox could
@@ -316,7 +316,7 @@ func (s *Service) sandboxOwnedByPool(ctx context.Context, poolID, sandboxID stri
 	}
 	sandbox, err := s.store.GetSandboxByID(ctx, sandboxID)
 	if err != nil {
-		return nil, apiError(err, "sandbox not found")
+		return nil, apperrors.NotFound(err, "sandbox not found")
 	}
 	if strings.TrimSpace(sandbox.PoolID) != strings.TrimSpace(poolID) {
 		return nil, apperrors.NewStatusError(http.StatusNotFound, "sandbox not found")

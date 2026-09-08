@@ -57,7 +57,7 @@ func (s *Service) ListProjects(ctx context.Context) ([]model.Project, error) {
 func (s *Service) GetProject(ctx context.Context, projectID string) (*model.Project, error) {
 	project, err := s.store.GetProject(ctx, projectID)
 	if err != nil {
-		return nil, apiError(err, "project not found")
+		return nil, apperrors.NotFound(err, "project not found")
 	}
 	return project, nil
 }
@@ -114,7 +114,7 @@ func (s *Service) CreateProject(ctx context.Context, input services.CreateProjec
 func (s *Service) UpdateProject(ctx context.Context, projectID string, input services.UpdateProjectBody) (*model.Project, error) {
 	project, err := s.store.GetProject(ctx, projectID)
 	if err != nil {
-		return nil, apiError(err, "project not found")
+		return nil, apperrors.NotFound(err, "project not found")
 	}
 	if name, ok := input.Name.Get(); ok {
 		name = strings.TrimSpace(name)
@@ -166,7 +166,7 @@ func (s *Service) UpdateProject(ctx context.Context, projectID string, input ser
 func (s *Service) DeleteProject(ctx context.Context, projectID string) error {
 	project, err := s.store.GetProject(ctx, projectID)
 	if err != nil {
-		return apiError(err, "project not found")
+		return apperrors.NotFound(err, "project not found")
 	}
 	if project.Default {
 		return apperrors.NewStatusError(http.StatusConflict, "project is the default project; make another project the default before deleting it")
@@ -185,7 +185,7 @@ func (s *Service) DeleteProject(ctx context.Context, projectID string) error {
 	if pools > 0 {
 		return apperrors.NewStatusError(http.StatusConflict, "project has pools")
 	}
-	return apiError(s.store.DeleteProject(ctx, projectID), "project not found")
+	return apperrors.NotFound(s.store.DeleteProject(ctx, projectID), "project not found")
 }
 
 // SetDefaultProject moves the calling user's default-project flag. There is no
@@ -197,11 +197,11 @@ func (s *Service) SetDefaultProject(ctx context.Context, projectID string) (*mod
 		return nil, apperrors.NewStatusError(http.StatusForbidden, "setting the default project requires a user")
 	}
 	if _, err := s.store.GetProject(ctx, projectID); err != nil {
-		return nil, apiError(err, "project not found")
+		return nil, apperrors.NotFound(err, "project not found")
 	}
 	project, err := s.store.SetDefaultProjectForUser(ctx, userID, projectID)
 	if err != nil {
-		return nil, apiError(err, "project not found")
+		return nil, apperrors.NotFound(err, "project not found")
 	}
 	return project, nil
 }
@@ -229,11 +229,4 @@ func (s *Service) abandon(ctx context.Context, projectID string, cause error) er
 		return errors.Join(cause, fmt.Errorf("roll back project %s: %w", projectID, err))
 	}
 	return cause
-}
-
-func apiError(err error, notFoundMessage string) error {
-	if errors.Is(err, store.ErrNotFound) {
-		return apperrors.NewStatusError(http.StatusNotFound, notFoundMessage)
-	}
-	return err
 }

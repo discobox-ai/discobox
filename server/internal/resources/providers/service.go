@@ -3,7 +3,6 @@ package providers
 import (
 	"context"
 	"encoding/json"
-	"errors"
 	"fmt"
 	"net/http"
 	"strings"
@@ -32,13 +31,6 @@ type SandboxProviderCatalogItem = sandboxesvc.SandboxProviderCatalogItem
 
 func NewService(store *store.Store, sandboxes SandboxCatalogService, poolManager *pools.ControlPlane) *Service {
 	return &Service{store: store, sandboxes: sandboxes, pools: poolManager}
-}
-
-func mapAPIError(err error, notFoundMessage string) error {
-	if errors.Is(err, store.ErrNotFound) {
-		return apperrors.NewStatusError(http.StatusNotFound, notFoundMessage)
-	}
-	return err
 }
 
 func (s *Service) ListSandboxProviderCatalogItems(context.Context) ([]services.SandboxProviderCatalogItem, error) {
@@ -117,17 +109,17 @@ func providerStatusToService(status sandboxesvc.ProviderStatus) services.Provide
 
 func (s *Service) ListSandboxProviderInstances(ctx context.Context, projectID string) ([]model.SandboxProviderInstance, error) {
 	if _, err := s.store.GetProject(ctx, projectID); err != nil {
-		return nil, mapAPIError(err, "project not found")
+		return nil, apperrors.NotFound(err, "project not found")
 	}
 	return s.store.ListSandboxProviderInstances(ctx, projectID)
 }
 
 func (s *Service) CreateSandboxProviderInstance(ctx context.Context, projectID string, input services.CreateSandboxProviderInstanceBody) (*model.SandboxProviderInstance, error) {
 	if _, err := s.store.GetProject(ctx, projectID); err != nil {
-		return nil, mapAPIError(err, "project not found")
+		return nil, apperrors.NotFound(err, "project not found")
 	}
 	if strings.TrimSpace(input.Type) == "" {
-		return nil, mapAPIError(fmt.Errorf("type is required"), "")
+		return nil, apperrors.NotFound(fmt.Errorf("type is required"), "")
 	}
 	if err := s.sandboxes.SandboxProviderManager().ValidateProviderConfig(input.Type, services.RawMessage(input.Config)); err != nil {
 		return nil, err
@@ -145,7 +137,7 @@ func (s *Service) CreateSandboxProviderInstance(ctx context.Context, projectID s
 func (s *Service) GetSandboxProviderInstance(ctx context.Context, projectID, providerID string) (*model.SandboxProviderInstance, error) {
 	provider, err := s.store.GetSandboxProviderInstance(ctx, projectID, providerID)
 	if err != nil {
-		return nil, mapAPIError(err, "provider instance not found")
+		return nil, apperrors.NotFound(err, "provider instance not found")
 	}
 	return provider, nil
 }
@@ -153,7 +145,7 @@ func (s *Service) GetSandboxProviderInstance(ctx context.Context, projectID, pro
 func (s *Service) UpdateSandboxProviderInstance(ctx context.Context, projectID, providerID string, input services.UpdateSandboxProviderInstanceBody) (*model.SandboxProviderInstance, error) {
 	provider, err := s.store.GetSandboxProviderInstance(ctx, projectID, providerID)
 	if err != nil {
-		return nil, mapAPIError(err, "provider instance not found")
+		return nil, apperrors.NotFound(err, "provider instance not found")
 	}
 	if name, ok := input.Name.Get(); ok {
 		provider.Name = name
@@ -184,7 +176,7 @@ func (s *Service) DeleteSandboxProviderInstance(ctx context.Context, projectID, 
 	if len(pools) > 0 {
 		return apperrors.NewStatusError(http.StatusConflict, "provider instance has pools")
 	}
-	return mapAPIError(s.store.DeleteSandboxProviderInstance(ctx, projectID, providerID), "provider instance not found")
+	return apperrors.NotFound(s.store.DeleteSandboxProviderInstance(ctx, projectID, providerID), "provider instance not found")
 }
 
 // EnsureExistingSandboxProviderInstances schedules provider startup

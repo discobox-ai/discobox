@@ -51,7 +51,7 @@ func (s *Service) resolveCopyPlan(ctx context.Context, userID string, input serv
 		source, err = s.store.GetProject(ctx, sourceID)
 	}
 	if err != nil {
-		return copyPlan{}, apiError(err, "source project not found")
+		return copyPlan{}, apperrors.NotFound(err, "source project not found")
 	}
 	member, err := s.store.IsProjectMember(ctx, source.ID, userID)
 	if err != nil {

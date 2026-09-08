@@ -1,7 +1,10 @@
 // Package apperrors defines shared sentinel and HTTP status errors.
 package apperrors
 
-import "errors"
+import (
+	"errors"
+	"net/http"
+)
 
 var (
 	// ErrNotFound indicates a requested resource does not exist.
@@ -38,4 +41,14 @@ func (e StatusError) Unwrap() error {
 // NewStatusError returns an error carrying an HTTP status code.
 func NewStatusError(status int, message string) error {
 	return StatusError{Status: status, Message: message}
+}
+
+// NotFound returns a 404 status error that still matches the sentinel err came
+// with, so a caller past the API boundary can keep using errors.Is on it while
+// the API serves the status and the message.
+func NotFound(err error, message string) error {
+	if errors.Is(err, ErrNotFound) {
+		return StatusError{Status: http.StatusNotFound, Message: message, Cause: err}
+	}
+	return err
 }

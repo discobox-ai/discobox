@@ -93,13 +93,6 @@ func (s *Service) SetHostID(hostID string) {
 	s.hostID = strings.TrimSpace(hostID)
 }
 
-func mapAPIError(err error, notFoundMessage string) error {
-	if errors.Is(err, store.ErrNotFound) {
-		return apperrors.NewStatusError(http.StatusNotFound, notFoundMessage)
-	}
-	return err
-}
-
 // SandboxProviderCatalogItem describes a registered sandbox provider type.
 type SandboxProviderCatalogItem struct {
 	ID           string
@@ -112,7 +105,7 @@ type SandboxProviderCatalogItem struct {
 
 func (s *Service) ListSandboxes(ctx context.Context, projectID, sourceRoot, originKey string) ([]model.Sandbox, error) {
 	if _, err := s.store.GetProject(ctx, projectID); err != nil {
-		return nil, mapAPIError(err, "project not found")
+		return nil, apperrors.NotFound(err, "project not found")
 	}
 	return s.store.ListSandboxes(ctx, projectID, sourceRoot, originKey)
 }
@@ -121,7 +114,7 @@ func (s *Service) CreateSandbox(ctx context.Context, projectID string, input ser
 	config := input.Config
 	project, err := s.store.GetProject(ctx, projectID)
 	if err != nil {
-		return nil, mapAPIError(err, "project not found")
+		return nil, apperrors.NotFound(err, "project not found")
 	}
 	poolID := services.OptStringPtr(input.PoolId)
 	if poolID == nil && project.DefaultPoolID != "" {
@@ -133,11 +126,11 @@ func (s *Service) CreateSandbox(ctx context.Context, projectID string, input ser
 	}
 	pool, err := s.store.GetPool(ctx, projectID, *poolID)
 	if err != nil {
-		return nil, mapAPIError(err, "pool not found")
+		return nil, apperrors.NotFound(err, "pool not found")
 	}
 	provider, err := s.store.GetSandboxProviderInstance(ctx, projectID, pool.ProviderInstanceID)
 	if err != nil {
-		return nil, mapAPIError(err, "provider instance not found")
+		return nil, apperrors.NotFound(err, "provider instance not found")
 	}
 	if provider.Disabled {
 		return nil, fmt.Errorf("provider instance disabled")
@@ -204,7 +197,7 @@ func (s *Service) CreateSandbox(ctx context.Context, projectID string, input ser
 	if harnessConfigID != "" && harnessMode != "config" {
 		harnessConfig, err := s.store.GetHarnessConfig(ctx, projectID, harnessConfigID)
 		if err != nil {
-			return nil, mapAPIError(err, "harness config not found")
+			return nil, apperrors.NotFound(err, "harness config not found")
 		}
 		// A harness is only selectable once its configure flow has succeeded.
 		// harnessMode "config" is exempt: that is the configure flow itself.
@@ -308,7 +301,7 @@ func (s *Service) resolveHarnessConfigID(ctx context.Context, project *model.Pro
 	if id, ok := harnessConfigID.Get(); ok && id != "" {
 		config, err := s.store.GetHarnessConfig(ctx, project.ID, id)
 		if err != nil {
-			return "", mapAPIError(err, "harness config not found")
+			return "", apperrors.NotFound(err, "harness config not found")
 		}
 		return config.ID, nil
 	}
@@ -319,11 +312,11 @@ func (s *Service) resolveHarnessConfigID(ctx context.Context, project *model.Pro
 		if config, err := s.store.GetHarnessConfigBySlug(ctx, project.ID, selector); err == nil {
 			return config.ID, nil
 		} else if !errors.Is(err, store.ErrNotFound) {
-			return "", mapAPIError(err, "harness config not found")
+			return "", apperrors.NotFound(err, "harness config not found")
 		}
 		config, err := s.store.GetHarnessConfigByName(ctx, project.ID, selector)
 		if err != nil {
-			return "", mapAPIError(err, "harness config not found")
+			return "", apperrors.NotFound(err, "harness config not found")
 		}
 		return config.ID, nil
 	}
@@ -336,7 +329,7 @@ func (s *Service) resolveHarnessConfigID(ctx context.Context, project *model.Pro
 			return config.ID, nil
 		}
 		if !errors.Is(err, store.ErrNotFound) {
-			return "", mapAPIError(err, "harness config not found")
+			return "", apperrors.NotFound(err, "harness config not found")
 		}
 		// The default was deleted. That is an absent default like any other.
 	}
@@ -347,7 +340,7 @@ func (s *Service) resolveHarnessConfigID(ctx context.Context, project *model.Pro
 func (s *Service) GetSandbox(ctx context.Context, projectID, sandboxID string) (*model.Sandbox, error) {
 	sandbox, err := s.store.GetSandbox(ctx, projectID, sandboxID)
 	if err != nil {
-		return nil, mapAPIError(err, "sandbox not found")
+		return nil, apperrors.NotFound(err, "sandbox not found")
 	}
 	return sandbox, nil
 }
@@ -367,14 +360,14 @@ func (s *Service) AcquireSandboxHTTPClient(ctx context.Context, projectID, sandb
 	}
 	sandboxModel, err := s.store.GetSandbox(ctx, projectID, sandboxID)
 	if err != nil {
-		return nil, nil, mapAPIError(err, "sandbox not found")
+		return nil, nil, apperrors.NotFound(err, "sandbox not found")
 	}
 	if sandboxModel.DesiredState == model.DesiredStateDeleted {
 		return nil, sandboxModel, apperrors.NewStatusError(http.StatusConflict, "sandbox is being deleted")
 	}
 	pool, err := s.store.GetPool(ctx, projectID, sandboxModel.PoolID)
 	if err != nil {
-		return nil, sandboxModel, mapAPIError(err, "sandbox pool not found")
+		return nil, sandboxModel, apperrors.NotFound(err, "sandbox pool not found")
 	}
 	// The gate is liveness, not convergence: `offline` is the reconciler's
 	// verdict that the pool agent stopped answering, and Ready is the agent's
@@ -424,7 +417,7 @@ func authorizeRequestedScopes(ctx context.Context, scopes []string) error {
 func (s *Service) UpdateSandbox(ctx context.Context, projectID, sandboxID string, input services.UpdateSandboxBody) (*model.Sandbox, error) {
 	sandbox, err := s.store.GetSandbox(ctx, projectID, sandboxID)
 	if err != nil {
-		return nil, mapAPIError(err, "sandbox not found")
+		return nil, apperrors.NotFound(err, "sandbox not found")
 	}
 
 	if config, ok := input.Config.Get(); ok {
@@ -448,7 +441,7 @@ func (s *Service) UpdateSandbox(ctx context.Context, projectID, sandboxID string
 func (s *Service) DeleteSandbox(ctx context.Context, projectID, sandboxID string) error {
 	_, err := s.recordSandboxIntent(ctx, projectID, sandboxID, model.DesiredStateArchived)
 	if err != nil {
-		return mapAPIError(err, "sandbox not found")
+		return apperrors.NotFound(err, "sandbox not found")
 	}
 	return nil
 }
@@ -461,13 +454,13 @@ func (s *Service) DeleteSandbox(ctx context.Context, projectID, sandboxID string
 func (s *Service) UnarchiveSandbox(ctx context.Context, projectID, sandboxID string) error {
 	sandbox, err := s.store.GetSandbox(ctx, projectID, sandboxID)
 	if err != nil {
-		return mapAPIError(err, "sandbox not found")
+		return apperrors.NotFound(err, "sandbox not found")
 	}
 	if sandbox.DesiredState != model.DesiredStateArchived {
 		return apperrors.NewStatusError(http.StatusConflict, "sandbox is not archived")
 	}
 	if _, err := s.recordSandboxIntent(ctx, projectID, sandboxID, model.DesiredStatePresent); err != nil {
-		return mapAPIError(err, "sandbox not found")
+		return apperrors.NotFound(err, "sandbox not found")
 	}
 	return nil
 }
@@ -487,7 +480,7 @@ func (s *Service) UnarchiveSandbox(ctx context.Context, projectID, sandboxID str
 // verify: the row it would check against is the thing being deleted.
 func (s *Service) PurgeSandbox(ctx context.Context, projectID, sandboxID string) error {
 	if _, err := s.recordSandboxIntent(ctx, projectID, sandboxID, model.DesiredStateDeleted); err != nil {
-		return mapAPIError(err, "sandbox not found")
+		return apperrors.NotFound(err, "sandbox not found")
 	}
 	// The Result is discarded rather than honored: a delete converges to the row
 	// being gone and never arms a timer, and this call is outside the engine, so
@@ -555,7 +548,7 @@ func (s *Service) RestartSandbox(ctx context.Context, projectID, sandboxID strin
 func (s *Service) RepairSandbox(ctx context.Context, projectID, sandboxID string) (*model.Sandbox, error) {
 	sandbox, err := s.store.GetSandbox(ctx, projectID, sandboxID)
 	if err != nil {
-		return nil, mapAPIError(err, "sandbox not found")
+		return nil, apperrors.NotFound(err, "sandbox not found")
 	}
 	if sandbox.DesiredState == model.DesiredStateDeleted {
 		return nil, apperrors.NewStatusError(http.StatusConflict, "sandbox is being deleted")
@@ -571,7 +564,7 @@ func (s *Service) RepairSandbox(ctx context.Context, projectID, sandboxID string
 		sb.RepairGeneration = sb.Generation
 		repin.apply(sb)
 	}); err != nil {
-		return nil, mapAPIError(err, "sandbox not found")
+		return nil, apperrors.NotFound(err, "sandbox not found")
 	}
 	// The Result is discarded rather than honored: this call is outside the
 	// engine, so there is no claimed row to arm a timer on, and the background
@@ -583,7 +576,7 @@ func (s *Service) RepairSandbox(ctx context.Context, projectID, sandboxID string
 	// failure on the resource (ADR 0017 §4), so read the verdict off the row.
 	sandbox, err = s.store.GetSandbox(ctx, projectID, sandboxID)
 	if err != nil {
-		return nil, mapAPIError(err, "sandbox not found")
+		return nil, apperrors.NotFound(err, "sandbox not found")
 	}
 	if sandbox.ErrorMessage != nil {
 		return nil, apperrors.NewStatusError(http.StatusConflict,
@@ -595,7 +588,7 @@ func (s *Service) RepairSandbox(ctx context.Context, projectID, sandboxID string
 func (s *Service) instructSandbox(ctx context.Context, projectID, sandboxID string, instruction sandboxInstruction) (*model.Sandbox, error) {
 	sandbox, err := s.store.GetSandbox(ctx, projectID, sandboxID)
 	if err != nil {
-		return nil, mapAPIError(err, "sandbox not found")
+		return nil, apperrors.NotFound(err, "sandbox not found")
 	}
 	if sandbox.DesiredState == model.DesiredStateDeleted {
 		return nil, apperrors.NewStatusError(http.StatusConflict, "sandbox is being deleted")
@@ -647,7 +640,7 @@ func (s *Service) resolveProvider(ctx context.Context, sb *model.Sandbox) (Provi
 func (s *Service) UpgradeSandbox(ctx context.Context, projectID, sandboxID string, _ services.UpgradeSandboxBody) (*model.Sandbox, error) {
 	existing, err := s.store.GetSandbox(ctx, projectID, sandboxID)
 	if err != nil {
-		return nil, mapAPIError(err, "sandbox not found")
+		return nil, apperrors.NotFound(err, "sandbox not found")
 	}
 	repin, err := s.currentImageRepin(ctx, existing)
 	if err != nil {
@@ -671,7 +664,7 @@ func (s *Service) UpgradeSandbox(ctx context.Context, projectID, sandboxID strin
 	// match it (ADR 0017 §5). There is no restart counter to bump.
 	sandbox, err := s.recordSandboxIntent(ctx, projectID, sandboxID, model.DesiredStatePresent, repin.apply)
 	if err != nil {
-		return nil, mapAPIError(err, "sandbox not found")
+		return nil, apperrors.NotFound(err, "sandbox not found")
 	}
 	return sandbox, nil
 }
@@ -865,7 +858,7 @@ func (s *Service) FallbackHarnessConfig(ctx context.Context, projectID string) (
 func (s *Service) CompleteSandboxSourcePush(ctx context.Context, projectID, sandboxID string, input services.CompleteSandboxSourcePushBody) (*model.Sandbox, error) {
 	existing, err := s.store.GetSandbox(ctx, projectID, sandboxID)
 	if err != nil {
-		return nil, mapAPIError(err, "sandbox not found")
+		return nil, apperrors.NotFound(err, "sandbox not found")
 	}
 	pending := pushDeliveredSources(existing)
 	if len(pending) == 0 {
@@ -887,7 +880,7 @@ func (s *Service) CompleteSandboxSourcePush(ctx context.Context, projectID, sand
 		sb.SourceDeliveredAt = &now
 	})
 	if err != nil {
-		return nil, mapAPIError(err, "sandbox not found")
+		return nil, apperrors.NotFound(err, "sandbox not found")
 	}
 	return sandbox, nil
 }
@@ -955,7 +948,7 @@ func verifySourcePushCommits(pending []gitSourceEntry, reported map[string]strin
 func (s *Service) CompleteSandboxApply(ctx context.Context, projectID, sandboxID string, input services.CompleteSandboxApplyBody) (*model.Sandbox, error) {
 	existing, err := s.store.GetSandbox(ctx, projectID, sandboxID)
 	if err != nil {
-		return nil, mapAPIError(err, "sandbox not found")
+		return nil, apperrors.NotFound(err, "sandbox not found")
 	}
 	slug := strings.TrimSpace(input.Slug)
 	if slug == "" || !sandboxHasSourceSlug(existing, slug) {
@@ -982,7 +975,7 @@ func (s *Service) CompleteSandboxApply(ctx context.Context, projectID, sandboxID
 		sb.AppliedCommits = append(sb.AppliedCommits, entry)
 	})
 	if err != nil {
-		return nil, mapAPIError(err, "sandbox not found")
+		return nil, apperrors.NotFound(err, "sandbox not found")
 	}
 	return sandbox, nil
 }
@@ -1006,7 +999,7 @@ func sandboxHasSourceSlug(sandbox *model.Sandbox, slug string) bool {
 func (s *Service) ReconcileSandbox(ctx context.Context, projectID, sandboxID string) (*model.Sandbox, error) {
 	sandbox, err := s.scheduleSandboxReconcile(ctx, projectID, sandboxID)
 	if err != nil {
-		return nil, mapAPIError(err, "sandbox not found")
+		return nil, apperrors.NotFound(err, "sandbox not found")
 	}
 	return sandbox, nil
 }
@@ -1102,7 +1095,7 @@ func (s *Service) CreateSandboxAuthToken(ctx context.Context, projectID, sandbox
 	}
 	sb, err := s.store.GetSandbox(ctx, projectID, sandboxID)
 	if err != nil {
-		return "", mapAPIError(err, "sandbox not found")
+		return "", apperrors.NotFound(err, "sandbox not found")
 	}
 	return s.sandboxAuth.CreateToken(ctx, sandboxauth.TokenClaims{
 		ProjectID: sb.ProjectID,

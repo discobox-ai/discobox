@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/discobox-ai/discobox/harness"
+	"github.com/discobox-ai/discobox/server/internal/apperrors"
 	"github.com/discobox-ai/discobox/server/internal/database"
 	"github.com/discobox-ai/discobox/server/internal/model"
 	services "github.com/discobox-ai/discobox/server/internal/services"
@@ -712,9 +713,10 @@ func TestBuiltInDeleteHintOnlySuggestsWhatWouldWork(t *testing.T) {
 // stubSandboxRuntime records the create body the configure flow builds. Only
 // CreateSandbox is exercised; the rest satisfies the interface.
 type stubSandboxRuntime struct {
-	created  services.CreateSandboxBody
-	rebound  []string
-	upgraded []string
+	created   services.CreateSandboxBody
+	rebound   []string
+	upgraded  []string
+	deleteErr error
 }
 
 func (s *stubSandboxRuntime) RebindHarnessConfigSecrets(_ context.Context, _, harnessConfigID string) error {
@@ -732,7 +734,7 @@ func (s *stubSandboxRuntime) CreateSandbox(_ context.Context, projectID string, 
 	return &model.Sandbox{ID: "sandbox-1", ProjectID: projectID}, nil
 }
 
-func (s *stubSandboxRuntime) DeleteSandbox(context.Context, string, string) error { return nil }
+func (s *stubSandboxRuntime) DeleteSandbox(context.Context, string, string) error { return s.deleteErr }
 
 func (s *stubSandboxRuntime) AcquireSandboxHTTPClient(context.Context, string, string, []string) (*services.HTTPClientLease, *model.Sandbox, error) {
 	return nil, nil, errors.New("not used")
@@ -831,5 +833,61 @@ func TestConfigureCreatedSecretsHaveNoGrantLimit(t *testing.T) {
 	}
 	if grants[0].ExpiresAt != nil {
 		t.Fatalf("expires at = %v, want a grant that outlives the configure run", grants[0].ExpiresAt)
+	}
+}
+
+// The reaper's job is to let go of a configure sandbox that is already gone, so
+// a sandbox the runtime no longer knows about has to read as success. The
+// runtime answers a missing sandbox with the 404 it serves the API, and that
+// error still has to match the store sentinel: when it did not, the reap failed
+// forever, ConfigureSandboxID was never cleared, and the reconciler logged
+// "sandbox not found" every requeue for the life of the process.
+func TestReconcileReapsAConfigureSandboxThatIsAlreadyGone(t *testing.T) {
+	ctx := context.Background()
+	db, err := database.New(database.Config{DSN: ":memory:"})
+	if err != nil {
+		t.Fatalf("open db: %v", err)
+	}
+	t.Cleanup(func() { _ = db.Close() })
+	if err := db.Migrate(ctx); err != nil {
+		t.Fatalf("migrate db: %v", err)
+	}
+	if err := db.Write.WithContext(ctx).Create(&model.Project{
+		ID: "project-1", OwnerUserID: "user-1", Name: "Project",
+	}).Error; err != nil {
+		t.Fatalf("create project: %v", err)
+	}
+	st := store.New(db.Write, db.Read)
+
+	config := &model.HarnessConfig{
+		ProjectID: "project-1", Slug: "claude-code", Name: "Claude Code",
+		Image:              "img:1",
+		ConfigCommand:      []string{"configure"},
+		ConfigureSandboxID: "sbx_gone",
+	}
+	if err := st.CreateHarnessConfig(ctx, config); err != nil {
+		t.Fatalf("create harness config: %v", err)
+	}
+	// Past the TTL, so the reap runs rather than requeueing.
+	if err := db.Write.WithContext(ctx).Model(&model.HarnessConfig{}).
+		Where("id = ?", config.ID).
+		UpdateColumn("updated_at", time.Now().Add(-2*configureTTL)).Error; err != nil {
+		t.Fatalf("backdate harness config: %v", err)
+	}
+
+	runtime := &stubSandboxRuntime{
+		deleteErr: apperrors.NotFound(store.ErrNotFound, "sandbox not found"),
+	}
+	svc := &Service{store: st, inspector: &stubInspector{}, sandboxes: runtime, dirtier: stubDirtier{}}
+	if _, err := svc.Reconcile(ctx, config.ID); err != nil {
+		t.Fatalf("reconcile: %v", err)
+	}
+
+	reaped, err := st.GetHarnessConfigByID(ctx, config.ID)
+	if err != nil {
+		t.Fatalf("get harness config: %v", err)
+	}
+	if reaped.ConfigureSandboxID != "" {
+		t.Fatalf("configure sandbox id = %q, want it cleared", reaped.ConfigureSandboxID)
 	}
 }
