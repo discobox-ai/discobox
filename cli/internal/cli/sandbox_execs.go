@@ -604,6 +604,12 @@ type execAttachOptions struct {
 	// timing receives transport heartbeat and positioned-action RTT samples from
 	// the shared resumable stream.
 	timing resume.TimingOptions
+	// notWorkingHere marks an attach to a discobox nobody's code is in — the
+	// throwaway sandbox a harness's configure flow runs in — so it does not
+	// push local commits into an origin the way every other terminal attach
+	// does (ADR 0095 §1). It is the attach saying what it is for; nothing else
+	// about the attach differs.
+	notWorkingHere bool
 }
 
 func (a *App) openReconnectingSandboxExecAttach(
