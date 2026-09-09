@@ -48,7 +48,7 @@ its own.`,
 	cmd.Flags().StringVar(&a.serverSource.binary, "binary", "",
 		"Run this server binary instead of resolving one (also "+ServerBinaryEnv+")")
 	cmd.Flags().StringVar(&a.serverSource.manifest, "manifest", "",
-		"Stage from this manifest file or URL instead of the one this build carries (also "+ServerManifestEnv+")")
+		"Stage from this manifest file instead of the one this build carries (also "+ServerManifestEnv+")")
 	cmd.AddCommand(a.newServerStageCommand())
 	cmd.AddCommand(a.newServerManifestCommand())
 	cmd.AddCommand(a.newServerShutdownCommand())
@@ -56,17 +56,31 @@ its own.`,
 	return cmd
 }
 
+// serverStopGrace is how long a server gets to shut down once the context ends
+// it. Draining providers means stopping containers and VMs, which is slower
+// than a process exit and is the whole reason for asking rather than killing.
+const serverStopGrace = 30 * time.Second
+
 // runServerProcess runs the server in the foreground, as the thing this command
 // stands in for.
 //
-// No signal handling: the child is in this process's group, so the terminal's
-// interrupt reaches it directly, and forwarding one would deliver it twice. The
-// context is what ends the server otherwise — it is canceled when the process
-// that asked for this one goes away (watchParentProcess), and a server outliving
-// the window it was started in is not what anybody meant.
+// No signal handling for the terminal's own interrupt: the child is in this
+// process's group, so Ctrl-C reaches it directly, and forwarding one would
+// deliver it twice.
+//
+// The context is the other way this ends — it is canceled when the process that
+// asked for this one goes away (watchParentProcess) — and there the server is
+// asked to stop rather than killed. os/exec's default is Process.Kill, which
+// takes a server down holding its provider state and the data directory's
+// singleton lock; this change's own launch path documents what that costs, in
+// the widened start window a replacement needs while the previous server is
+// still draining (endpoint/autolaunch.go). WaitDelay is the backstop for a
+// server that will not stop being asked.
 func runServerProcess(cmd *cobra.Command, path string) error {
 	//nolint:gosec // The path is the resolved server binary; see serverResolver.
 	server := exec.CommandContext(cmd.Context(), path)
+	server.Cancel = func() error { return stopServerProcess(server.Process) }
+	server.WaitDelay = serverStopGrace
 	server.Stdin = cmd.InOrStdin()
 	server.Stdout = cmd.OutOrStdout()
 	server.Stderr = cmd.ErrOrStderr()
@@ -104,7 +118,7 @@ than in front of the first command that wanted a server.`,
 		},
 	}
 	cmd.Flags().StringVar(&a.serverSource.manifest, "manifest", "",
-		"Stage from this manifest file or URL instead of the one this build carries (also "+ServerManifestEnv+")")
+		"Stage from this manifest file instead of the one this build carries (also "+ServerManifestEnv+")")
 	cmd.Flags().BoolVar(&a.serverSource.force, "force", false,
 		"Download and verify again even when this version is already staged")
 	return cmd
@@ -188,7 +202,7 @@ is otherwise only visible as a directory of files after the fact.`,
 		},
 	}
 	cmd.Flags().StringVar(&a.serverSource.manifest, "manifest", "",
-		"Read this manifest file or URL instead of the one this build carries (also "+ServerManifestEnv+")")
+		"Read this manifest file instead of the one this build carries (also "+ServerManifestEnv+")")
 	return cmd
 }
 

@@ -22,8 +22,8 @@ const (
 	// below. It is the escape hatch for running a build of the server that no
 	// manifest describes.
 	ServerBinaryEnv = "DISCOBOX_SERVER_BINARY"
-	// ServerManifestEnv names a manifest file or URL to stage from instead of
-	// the one this build carries.
+	// ServerManifestEnv names a manifest file to stage from instead of the one
+	// this build carries.
 	ServerManifestEnv = "DISCOBOX_SERVER_MANIFEST"
 )
 
@@ -99,6 +99,18 @@ func (a *App) serverResolver(onProgress func(serverstage.Progress)) serverResolv
 // convenience with.
 func (r serverResolver) resolve(ctx context.Context) (string, error) {
 	if named := r.source.binary; named != "" {
+		// Absolute, because a bare name means two different files to the two
+		// halves of this: os.Stat resolves it against the working directory
+		// and exec.Command hands it to PATH. So `--binary discobox-server` in
+		// build/ used to stat the file in front of it and then run whichever
+		// one PATH found — or fail saying there was none, with the file it had
+		// just checked sitting right there. PATH is not searched for a server
+		// (ADR 0099 §6), and "used as-is" has to mean the file the caller
+		// named.
+		named, err := filepath.Abs(named)
+		if err != nil {
+			return "", fmt.Errorf("server binary %s: %w", r.source.binary, err)
+		}
 		if _, err := os.Stat(named); err != nil {
 			return "", fmt.Errorf("server binary %s: %w", named, err)
 		}
@@ -159,7 +171,7 @@ func serverBinaryName() string {
 // or the one this build carries.
 func (r serverResolver) manifest(ctx context.Context) (serverstage.Manifest, error) {
 	if named := r.source.manifest; named != "" {
-		return serverstage.Load(ctx, named, r.client)
+		return serverstage.Load(ctx, named)
 	}
 	return serverstage.Default()
 }
