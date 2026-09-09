@@ -33,13 +33,6 @@ type Command struct {
 	Args []string
 }
 
-// StaticCommand is the LaunchOptions.Command of a program already known.
-func StaticCommand(path string, args ...string) func(context.Context) (Command, error) {
-	return func(context.Context) (Command, error) {
-		return Command{Path: path, Args: args}, nil
-	}
-}
-
 // LaunchOptions describes a local server process that can be started on demand.
 type LaunchOptions struct {
 	Endpoint string

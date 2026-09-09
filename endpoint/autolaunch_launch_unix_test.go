@@ -36,7 +36,7 @@ func TestEnsureRunningReportsWhyTheServerDied(t *testing.T) {
 	opts := LaunchOptions{
 		Endpoint: "unix://" + socket,
 		LogPath:  filepath.Join(t.TempDir(), "server.log"),
-		Command:  StaticCommand("/bin/sh", "-c", `echo 'unknown command "server" for "discobox"' >&2; exit 1`),
+		Command:  staticCommand("/bin/sh", "-c", `echo 'unknown command "server" for "discobox"' >&2; exit 1`),
 		// Generous, as it is in production. The point of the test is that this
 		// is not what bounds the wait.
 		StartTimeout:  30 * time.Second,
@@ -72,7 +72,7 @@ func TestEnsureRunningKeepsEarlierLaunchesInTheLog(t *testing.T) {
 		opts := LaunchOptions{
 			Endpoint:      "unix://" + testSocketPath(t),
 			LogPath:       logPath,
-			Command:       StaticCommand("/bin/sh", "-c", "echo "+message+" >&2; exit 1"),
+			Command:       staticCommand("/bin/sh", "-c", "echo "+message+" >&2; exit 1"),
 			StartTimeout:  500 * time.Millisecond,
 			ProbeInterval: 20 * time.Millisecond,
 			ProbeTimeout:  100 * time.Millisecond,
@@ -141,7 +141,7 @@ func TestEnsureRunningWaitsOutAStartingServer(t *testing.T) {
 	opts := LaunchOptions{
 		Endpoint:      endpointURL,
 		LogPath:       filepath.Join(t.TempDir(), "server.log"),
-		Command:       StaticCommand("/bin/sh", "-c", "exit 7"), // must never run
+		Command:       staticCommand("/bin/sh", "-c", "exit 7"), // must never run
 		ProbeInterval: 10 * time.Millisecond,
 		ProbeTimeout:  time.Second,
 		ReadyTimeout:  10 * time.Second,
@@ -194,7 +194,7 @@ func TestEnsureRunningReportsAServerThatDiedWhileStarting(t *testing.T) {
 	opts := LaunchOptions{
 		Endpoint:      endpointURL,
 		LogPath:       filepath.Join(t.TempDir(), "server.log"),
-		Command:       StaticCommand("/bin/sh", "-c", "exit 7"), // must never run
+		Command:       staticCommand("/bin/sh", "-c", "exit 7"), // must never run
 		ProbeInterval: 10 * time.Millisecond,
 		ProbeTimeout:  time.Second,
 		// Generous, as it is in production. The point of the test is that this
@@ -247,7 +247,7 @@ func TestEnsureRunningAcceptsAServerWithNoStatusBody(t *testing.T) {
 	opts := LaunchOptions{
 		Endpoint:     endpointURL,
 		LogPath:      filepath.Join(t.TempDir(), "server.log"),
-		Command:      StaticCommand("/bin/sh", "-c", "exit 7"), // must never run
+		Command:      staticCommand("/bin/sh", "-c", "exit 7"), // must never run
 		ProbeTimeout: time.Second,
 	}
 	started, err := EnsureRunning(context.Background(), opts)
@@ -290,7 +290,7 @@ func TestEnsureRunningReplacesAnOlderServer(t *testing.T) {
 	opts := LaunchOptions{
 		Endpoint: endpointURL,
 		LogPath:  filepath.Join(t.TempDir(), "server.log"),
-		Command:  StaticCommand(os.Args[0], "-test.run=^TestAutolaunchReplacementHelper$"),
+		Command:  staticCommand(os.Args[0], "-test.run=^TestAutolaunchReplacementHelper$"),
 		Env: []string{
 			"DISCOBOX_TEST_SERVER_ENDPOINT=" + endpointURL,
 			"DISCOBOX_TEST_SERVER_DELAY=150ms",
