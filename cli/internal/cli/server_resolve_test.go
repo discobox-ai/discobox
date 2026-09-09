@@ -205,13 +205,17 @@ func TestServerStageText(t *testing.T) {
 		report serverstage.Progress
 		want   string
 	}{
+		// The one-asset case, which is every release so far: no count, no file
+		// name, and bytesSuffix's tail — the same sentence image staging draws
+		// on this line minutes later.
 		{serverstage.Progress{Asset: "discobox-server", Index: 1, Assets: 1, Total: 1024, Current: 512},
-			"downloading discobox-server · 512 B of 1.0 KiB"},
+			"Downloading server — 512 B of 1.0 KiB"},
 		{serverstage.Progress{Asset: "relay.bin", Index: 2, Assets: 2, Current: 2048},
-			"downloading relay.bin (2 of 2) · 2.0 KiB"},
+			"Downloading server (2 of 2): relay.bin — 2.0 KiB"},
+		// A server that has declared no length yet still says what it is doing.
 		{serverstage.Progress{Asset: "discobox-server", Index: 1, Assets: 1},
-			"downloading discobox-server"},
-		{serverstage.Progress{Done: true}, "staging discobox server · done"},
+			"Downloading server"},
+		{serverstage.Progress{Done: true}, "Server downloaded"},
 	}
 	for _, test := range tests {
 		if got := serverStageText(test.report); got != test.want {

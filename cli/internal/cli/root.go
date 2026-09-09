@@ -449,15 +449,18 @@ func (a *App) serverStartupLine() *statusLine {
 // used to be silent, so the only two outcomes a user saw were a prompt that
 // came back late and a timeout that explained nothing.
 //
-// The separator is the window's, and so is the shape: the phase is a detail of
-// the one thing being narrated rather than a second thing alongside it. A
-// server that reports no phase says only what it is, because "starting discobox
-// server · starting" is the same word twice.
+// The shape is the window's, and so is the grammar: sentence case, and the
+// phase after a colon as a detail of the one thing being narrated rather than a
+// second thing alongside it. One first run draws three of these on this one
+// line — the server downloading (serverStageText), the server starting, the
+// images staging (stageLine) — and three ways of writing the same sentence read
+// as three unrelated programs taking turns. A server that reports no phase says
+// only what it is, because "Starting server: starting" is the same word twice.
 func serverStartupText(status health.Status) string {
 	if phase := strings.TrimSpace(status.Phase); phase != "" {
-		return "starting discobox server · " + phase
+		return "Starting server: " + phase
 	}
-	return "starting discobox server"
+	return "Starting server"
 }
 
 // notify writes one line about something done on the user's behalf.

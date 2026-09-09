@@ -192,25 +192,30 @@ is otherwise only visible as a directory of files after the fact.`,
 	return cmd
 }
 
-// serverStageText says what a staging is doing, for the same one-line status
-// the launch itself narrates on.
+// serverStageText says what a download is doing, in the words the rest of
+// first-run setup uses.
+//
+// The grammar is stageLine's, which narrates image staging on this same line
+// minutes later: a sentence-case label, the count of things leading when there
+// is more than one, the one being fetched after a colon, and bytesSuffix's
+// "— 12.0 MiB of 89.6 MiB" tail — reused rather than restated, since a second
+// way to write a byte ratio is a second way for it to drift. Two downloads in
+// one wait that describe themselves differently read as two unrelated programs.
+//
+// A one-asset manifest names no asset. The server is what is being downloaded
+// and the file is called discobox-server, so naming it says it twice.
 func serverStageText(report serverstage.Progress) string {
 	if report.Done {
-		return "staging discobox server · done"
+		return "Server downloaded"
 	}
-	var b strings.Builder
-	b.WriteString("downloading ")
-	b.WriteString(report.Asset)
+	line := "Downloading server"
 	if report.Assets > 1 {
-		fmt.Fprintf(&b, " (%d of %d)", report.Index, report.Assets)
+		line += fmt.Sprintf(" (%d of %d)", report.Index, report.Assets)
+		if report.Asset != "" {
+			line += ": " + report.Asset
+		}
 	}
-	switch {
-	case report.Total > 0:
-		fmt.Fprintf(&b, " · %s of %s", humanBytes(report.Current), humanBytes(report.Total))
-	case report.Current > 0:
-		fmt.Fprintf(&b, " · %s", humanBytes(report.Current))
-	}
-	return b.String()
+	return line + bytesSuffix(report.Current, report.Total, 0, 0)
 }
 
 func (a *App) newServerShutdownCommand() *cobra.Command {

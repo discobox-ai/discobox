@@ -9,6 +9,7 @@ import (
 
 	"github.com/creack/pty"
 	"github.com/discobox-ai/discobox/health"
+	"github.com/discobox-ai/discobox/serverstage"
 )
 
 // sgr matches the color escapes the styled line carries, so a test can measure
@@ -141,7 +142,7 @@ func TestStatusLineAppendsPlainLinesOffATerminal(t *testing.T) {
 	line.set(serverStartupText(health.Status{Status: health.StatusStarting, Phase: "starting services"}))
 	line.clear()
 	got := out.String()
-	want := "starting discobox server · migrating the database\nstarting discobox server · starting services\n"
+	want := "Starting server: migrating the database\nStarting server: starting services\n"
 	if got != want {
 		t.Fatalf("off-terminal output = %q, want %q", got, want)
 	}
@@ -185,10 +186,10 @@ func TestStatusLineIsANoOpWhenThereIsNowhereToNarrate(t *testing.T) {
 
 // "starting discobox server · starting" is the same word twice.
 func TestServerStartupTextOmitsAnAbsentPhase(t *testing.T) {
-	if got := serverStartupText(health.Status{Status: health.StatusStarting}); got != "starting discobox server" {
+	if got := serverStartupText(health.Status{Status: health.StatusStarting}); got != "Starting server" {
 		t.Fatalf("serverStartupText() = %q", got)
 	}
-	if got := serverStartupText(health.Status{Status: health.StatusStarting, Phase: "  "}); got != "starting discobox server" {
+	if got := serverStartupText(health.Status{Status: health.StatusStarting, Phase: "  "}); got != "Starting server" {
 		t.Fatalf("serverStartupText() with a blank phase = %q", got)
 	}
 }
@@ -292,5 +293,54 @@ func TestStatusLineNotesAreKeptOffATerminal(t *testing.T) {
 	line.clear()
 	if got, want := out.String(), "wrote /state/discobox/cli/ssh/project-1/config\n"; got != want {
 		t.Fatalf("off-terminal note = %q, want %q", got, want)
+	}
+}
+
+// A download is the longest wait a first run has, and it reports several times
+// a second. On a terminal that has to be one row that keeps changing, with the
+// spinner saying it is alive — not a hundred rows of byte counts, which is what
+// an appended line per report would be.
+func TestStatusLineDrawsADownloadOnOneRow(t *testing.T) {
+	t.Setenv("TERM", "xterm-256color")
+	reports := []serverstage.Progress{
+		{Asset: "discobox-server", Index: 1, Assets: 1, Total: 94 << 20},
+		{Asset: "discobox-server", Index: 1, Assets: 1, Total: 94 << 20, Current: 12 << 20},
+		{Asset: "discobox-server", Index: 1, Assets: 1, Total: 94 << 20, Current: 94 << 20},
+		{Done: true},
+	}
+	out := statusLineOnPTY(t, 90, func(line *statusLine) {
+		for _, report := range reports {
+			line.set(serverStageText(report))
+		}
+		line.clear()
+	})
+	if strings.Contains(out, "\n") {
+		t.Fatalf("a download report scrolled instead of being replaced: %q", out)
+	}
+	if !strings.Contains(out, statusSpinnerFrames[0]) {
+		t.Errorf("the download drew no spinner: %q", out)
+	}
+	// The counts a user actually reads, and the finish.
+	for _, want := range []string{"Downloading server", "12.0 MiB of 94.0 MiB", "Server downloaded"} {
+		if !strings.Contains(visible(out), want) {
+			t.Errorf("%q was never drawn: %q", want, visible(out))
+		}
+	}
+	if !strings.HasSuffix(out, "\r\x1b[K") {
+		t.Error("clear() left the download on the screen")
+	}
+}
+
+// The same wait off a terminal: a record of what it was spent on, one line per
+// distinct report, and no spinner frames written into a log file.
+func TestStatusLineAppendsADownloadOffATerminal(t *testing.T) {
+	var out bytes.Buffer
+	line := newStatusLine(&out)
+	line.set(serverStageText(serverstage.Progress{Asset: "discobox-server", Index: 1, Assets: 1, Total: 94 << 20, Current: 12 << 20}))
+	line.set(serverStageText(serverstage.Progress{Done: true}))
+	line.clear()
+	want := "Downloading server — 12.0 MiB of 94.0 MiB\nServer downloaded\n"
+	if got := out.String(); got != want {
+		t.Fatalf("off-terminal output = %q, want %q", got, want)
 	}
 }

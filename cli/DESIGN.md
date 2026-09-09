@@ -1264,6 +1264,29 @@ terminal, appended lines off one, and cleared before the stream is handed to
 anything else. The launcher renders the same reports on its busy line instead;
 see the launcher's design doc.
 
+**A first run draws three different things on that one row**, in order: the
+server downloading (`serverStageText`), the server starting
+(`serverStartupText`), and the pool's images staging (`stagingLine`). They share
+a grammar deliberately — sentence case, the count of things leading when there
+is more than one, the one being fetched after a colon, and `bytesSuffix`'s
+`— 12.0 MiB of 94.0 MiB` tail, which all three call rather than restate. Three
+ways of writing the same sentence, taking turns on one line, read as three
+unrelated programs rather than one setup.
+
+    ⠋ Downloading server — 12.0 MiB of 94.0 MiB
+    ⠋ Starting server: migrating the database
+    ⠋ Downloading images (1 of 4): discobox-sandbox-agent — 213.0 MiB of 1.9 GiB, 4/41 layers
+
+Byte counts are always a pair and never a percentage: the pool's totals grow
+while a manifest is walked, so a percentage there visibly goes backwards
+(`bytesSuffix`). The server download does know its total, and states it the same
+way anyway, for the same reason the grammar is shared.
+
+The download narrates before the launcher's window opens, not inside it. The
+window needs a server to list from, so the download is already over by the time
+there is a window — unlike image staging, which deliberately outlives the
+window's opening and is handed to it as `WithInitialization`.
+
 **While it is up it owns the row it is on, so everything else the command
 writes to that stream goes through it.** A line that stays goes through
 `print`, which erases the row, writes the line where the scrollback keeps it,
