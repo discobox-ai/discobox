@@ -181,7 +181,13 @@ func newTestManager(t *testing.T) (*Manager, *fakeUnits, string) {
 	if err != nil {
 		t.Fatalf("new exec manager: %v", err)
 	}
-	manager, err := NewManager(ManagerConfig{Execs: execManager, Root: root})
+	// An empty builtin directory of its own, rather than the image's. Left
+	// unset this reads BuiltinDir — a real path on a real machine — and this
+	// repository is worked on inside a sandbox whose image declares a service
+	// there, so every listing these tests make came back with the image's
+	// desktop in it and every count was one too high. What a manager test is
+	// about is what the test itself declared.
+	manager, err := NewManager(ManagerConfig{Execs: execManager, Root: root, BuiltinDir: t.TempDir()})
 	if err != nil {
 		t.Fatalf("new service manager: %v", err)
 	}
@@ -253,7 +259,13 @@ func TestAServiceRunsInItsDeclaringRepositoryRoot(t *testing.T) {
 	if err != nil {
 		t.Fatalf("new exec manager: %v", err)
 	}
-	manager, err := NewManager(ManagerConfig{Execs: execManager, Root: root})
+	// An empty builtin directory of its own, rather than the image's. Left
+	// unset this reads BuiltinDir — a real path on a real machine — and this
+	// repository is worked on inside a sandbox whose image declares a service
+	// there, so every listing these tests make came back with the image's
+	// desktop in it and every count was one too high. What a manager test is
+	// about is what the test itself declared.
+	manager, err := NewManager(ManagerConfig{Execs: execManager, Root: root, BuiltinDir: t.TempDir()})
 	if err != nil {
 		t.Fatalf("new service manager: %v", err)
 	}
