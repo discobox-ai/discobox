@@ -1,5 +1,6 @@
-// Package sourcesready holds the sandbox's first harness launch until its
-// sources are actually in place.
+// Package sourcesready holds the sandbox's boot work until its sources are
+// actually in place: the first harness launch, and the start of the services
+// the repository declares.
 //
 // A source the client delivers by push is not there when the container is
 // created: pool-agent parks an empty repository for the push to land in, and
@@ -33,13 +34,18 @@ import (
 // makes the wait end promptly.
 const backstopInterval = time.Second
 
-// Gate returns the wait a first harness launch must clear, or nil when there is
-// nothing to wait for.
+// Gate returns the wait the sandbox's boot work must clear, or nil when there
+// is nothing to wait for.
 //
 // nil is the answer for every sandbox whose sources were materialized before
 // its container existed — every clone-delivered one, and every sandbox created
 // before this contract, whose config names no source that awaits delivery. The
-// launch path is then exactly what it was, with no file to stat.
+// boot path is then exactly what it was, with no file to stat.
+//
+// The returned func is safe to call from more than one goroutine: each call
+// arms its own watch and its own backstop, and returns as soon as the signal is
+// there. Callers hold one gate between them rather than each building one, so
+// they cannot come to differ about what they are waiting for.
 func Gate(sources []sandboxconfig.Source, path string, logger *slog.Logger) func(context.Context) error {
 	if !sandboxconfig.SourcesAwaitDelivery(sources) {
 		return nil
@@ -86,7 +92,9 @@ func Wait(ctx context.Context, path string, logger *slog.Logger) error {
 	if exists(path) {
 		return nil
 	}
-	logger.Info("waiting for the sandbox's source to be delivered before launching the harness", "signal", path)
+	// Neutral about what is waiting: both the first harness launch and the
+	// services autostart clear this gate, and each waits on its own.
+	logger.Info("waiting for the sandbox's source to be delivered", "signal", path)
 	ticker := time.NewTicker(backstopInterval)
 	defer ticker.Stop()
 	var events chan fsnotify.Event

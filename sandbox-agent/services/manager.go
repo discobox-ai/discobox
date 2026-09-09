@@ -253,6 +253,11 @@ func (m *Manager) EnsureStarted(ctx context.Context, logger *slog.Logger) error 
 	if err != nil {
 		return err
 	}
+	// A repository that declares none is the ordinary case, so finding nothing
+	// is not a warning — but it is also what a boot that ran before the working
+	// tree existed looks like, and that was invisible until somebody read the
+	// exec table. Say what was looked at and what was found.
+	logger.Debug("discovered sandbox service declarations", "root", m.root, "count", len(defs))
 	for _, def := range defs {
 		if !def.Runnable() {
 			logger.Warn("skipping sandbox service declaration", "service", def.ID, "file", def.FileName, "problem", def.Problem)

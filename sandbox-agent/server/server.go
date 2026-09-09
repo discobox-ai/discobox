@@ -105,6 +105,12 @@ type agentRuntime struct {
 	store      *agentstore.Store
 	portsWatch *ports.Watcher
 	listenAddr string
+	// awaitSources is the wait for a push-delivered sandbox's working tree,
+	// nil when there is nothing to wait for. Built once and shared, because
+	// everything that reads the tree at boot has to be behind the same answer:
+	// a second, independently constructed copy of "wait for delivery" is how
+	// one of them goes stale.
+	awaitSources func(context.Context) error
 }
 
 // defaultListenAddress is where the agent serves when the manifest names no
@@ -159,6 +165,9 @@ func newRouterAndManager(cfg Config) (agentRuntime, error) {
 	if err != nil {
 		return agentRuntime{}, err
 	}
+	// nil for every sandbox whose sources were in place before its container
+	// was created, which is all of them but a push-delivered one.
+	awaitSources := sourcesready.Gate(cfg.Sources, "", slog.Default())
 	manager, err := terminal.NewService(terminal.ServiceConfig{
 		Execs:         execManager,
 		Harness:       cfg.Harness,
@@ -173,9 +182,7 @@ func newRouterAndManager(cfg Config) (agentRuntime, error) {
 		PrimaryState:  localStore,
 		HarnessMode:   cfg.HarnessMode,
 		Prompt:        cfg.Prompt,
-		// nil for every sandbox whose sources were in place before its
-		// container was created, which is all of them but a push-delivered one.
-		AwaitSources: sourcesready.Gate(cfg.Sources, "", slog.Default()),
+		AwaitSources:  awaitSources,
 	})
 	if err != nil {
 		return agentRuntime{}, err
@@ -256,13 +263,14 @@ func newRouterAndManager(cfg Config) (agentRuntime, error) {
 		protected.Mount("/", generated)
 	})
 	return agentRuntime{
-		router:     router,
-		terminals:  manager,
-		execs:      execManager,
-		services:   serviceManager,
-		store:      localStore,
-		portsWatch: portsWatch,
-		listenAddr: cfg.ListenAddress,
+		router:       router,
+		terminals:    manager,
+		execs:        execManager,
+		services:     serviceManager,
+		store:        localStore,
+		portsWatch:   portsWatch,
+		listenAddr:   cfg.ListenAddress,
+		awaitSources: awaitSources,
 	}, nil
 }
 
@@ -397,13 +405,7 @@ func Serve(ctx context.Context, logger *slog.Logger, cfg Config) error {
 	// none, since it exists to run one setup command and end, not to be worked
 	// in.
 	if cfg.HarnessMode != "config" && built.services != nil {
-		go func() {
-			switch err := built.services.EnsureStarted(ctx, logger); {
-			case err == nil, errors.Is(err, context.Canceled):
-			default:
-				logger.Error("start sandbox services", "error", err)
-			}
-		}()
+		go startDeclaredServices(ctx, logger, built.awaitSources, built.services.EnsureStarted)
 	}
 	go execReconcileLoop(ctx, logger, execManager)
 	// A harness that reads its credential from a file can clear that file on an
@@ -467,6 +469,34 @@ func serveCredentials(ctx context.Context, logger *slog.Logger, bridgePath strin
 	}
 	if err := credentials.Serve(ctx, logger, relay, ""); err != nil && !errors.Is(err, context.Canceled) {
 		logger.Warn("sandbox credentials endpoint stopped", "error", err)
+	}
+}
+
+// startDeclaredServices waits for the sandbox's sources and then starts what
+// the repository declares.
+//
+// The wait is the point. Services are declared *inside* the working tree, so a
+// push-delivered sandbox — whose tree is materialized after its container is
+// already running (ADR 0001) — has nothing to discover at the moment the agent
+// boots. Discovery is a one-shot at boot and an absent directory is not an
+// error, since most repositories declare none, so starting before delivery did
+// not fail: it found nothing, said nothing, and never looked again. The same
+// gate the primary terminal's first launch clears is what this clears.
+func startDeclaredServices(ctx context.Context, logger *slog.Logger, await func(context.Context) error, start func(context.Context, *slog.Logger) error) {
+	if await != nil {
+		switch err := await(ctx); {
+		case err == nil:
+		case errors.Is(err, context.Canceled):
+			return
+		default:
+			logger.Error("wait for the sandbox's sources before starting its services", "error", err)
+			return
+		}
+	}
+	switch err := start(ctx, logger); {
+	case err == nil, errors.Is(err, context.Canceled):
+	default:
+		logger.Error("start sandbox services", "error", err)
 	}
 }
 

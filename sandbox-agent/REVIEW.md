@@ -54,6 +54,23 @@ Decision record: [ADR 0025](../docs/adr/0025-the-sandbox-user-is-one-contract-re
   the credential and `SysProcAttr` construction are platform-specific. Build with
   `GOOS=windows` before relying on that split.
 
+## Reading the working tree at boot
+
+- **Anything at boot that reads the sandbox's sources goes behind
+  `agentRuntime.awaitSources`.** In a push-delivered sandbox the container is
+  running before its working tree exists (ADR 0001), so boot code that reads it
+  is racing the delivery — and the race is silent, because an empty tree is
+  indistinguishable from a repository that declares nothing. That is exactly how
+  `.discobox/services` came to start on no sandbox at all: discovery ran ~3
+  seconds early, found no directory, returned no error, logged nothing, and
+  never looked again.
+- **One gate, shared.** Take the field; do not call `sourcesready.Gate` a second
+  time. Two constructions of the same wait is how one of them ends up gating
+  nothing.
+- **A one-shot at boot needs a reason it will not be re-run.** `EnsureStarted`
+  runs once. Anything else with that shape has to be either gated or repeated —
+  "it will be picked up later" is only true if something looks later.
+
 ## Boot cost
 
 Boot runs before anything in the sandbox is usable, so work here is latency the
