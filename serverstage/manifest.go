@@ -98,11 +98,6 @@ func Default() (Manifest, error) {
 	return DecodeManifest(DefaultManifest)
 }
 
-// HasDefault reports whether this build carries a server download at all,
-// without decoding it. Resolution asks before it reports that there is nothing
-// to run, so the answer can name the reason.
-func HasDefault() bool { return strings.TrimSpace(DefaultManifest) != "" }
-
 // DecodeManifest reads a base64-encoded manifest, as the linker carries one.
 func DecodeManifest(encoded string) (Manifest, error) {
 	encoded = strings.TrimSpace(encoded)
@@ -152,8 +147,12 @@ func ParseManifest(data []byte) (Manifest, error) {
 }
 
 var (
-	sha256Pattern  = regexp.MustCompile(`^[0-9a-f]{64}$`)
-	versionPattern = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9._+-]*$`)
+	sha256Pattern = regexp.MustCompile(`^[0-9a-f]{64}$`)
+	// versionPattern and platformPattern both guard directory names: the
+	// staged path is built from all three (see Dir), so each has to be a name
+	// and not a traversal.
+	versionPattern  = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9._+-]*$`)
+	platformPattern = regexp.MustCompile(`^[a-z0-9]+$`)
 )
 
 // Validate reports whether the manifest is one that can be staged safely.
@@ -162,6 +161,9 @@ func (m Manifest) Validate() error {
 		// The version is a directory name, so it is checked as one rather than
 		// merely for emptiness: everything staged is addressed through it.
 		return fmt.Errorf("server manifest version %q is not a usable directory name", m.Version)
+	}
+	if !platformPattern.MatchString(m.OS) || !platformPattern.MatchString(m.Arch) {
+		return fmt.Errorf("server manifest names platform %q, which is not a GOOS/GOARCH pair", m.Platform())
 	}
 	if m.Command == "" {
 		return errors.New("server manifest names no command to run")
@@ -238,7 +240,15 @@ func (m Manifest) Platform() string {
 }
 
 // Dir is where the manifest's assets are staged under root.
-func (m Manifest) Dir(root string) string { return filepath.Join(root, m.Version) }
+//
+// Keyed by platform as well as version, because staging for a machine other
+// than this one is a supported use (a manifest is a file, and --manifest takes
+// one). Keyed by version alone, a darwin set and a linux set of the same
+// version resolved to one directory and evicted each other on every command —
+// each one re-downloading what the other had just deleted.
+func (m Manifest) Dir(root string) string {
+	return filepath.Join(root, m.OS+"-"+m.Arch, m.Version)
+}
 
 // sameAssets reports whether two manifests describe the same files with the
 // same contents. It is what makes a staged directory reusable: a version that

@@ -210,9 +210,16 @@ its exit status; the autolaunch starts the same binary in the background
 
 Resolution (`serverResolver`, `server_resolve.go`) is, in order:
 
-1. `--binary` or `DISCOBOX_SERVER_BINARY`, used as it is.
+1. `--binary` or `DISCOBOX_SERVER_BINARY`, made absolute and used as it is —
+   absolute because `os.Stat` resolves a bare name against the working
+   directory and `exec.Command` hands one to `PATH`, so the two halves would
+   otherwise disagree about which file was named.
 2. `--manifest` or `DISCOBOX_SERVER_MANIFEST`, staged. An explicit manifest is
-   an instruction, so it outranks whatever is lying beside the binary.
+   an instruction, so it outranks whatever is lying beside the binary. It names
+   a **file**: a manifest fetched over the network is what ADR 0099 §3 rejected
+   and §8 deferred, since its digests are what every download is checked
+   against and one that arrived over TLS alone moves the trust root out of the
+   binary.
 3. `discobox-server` in the directory of the running `discobox`, through any
    symlink it was reached by. This is what makes a development build work with
    nothing configured — `task build` writes both into `build/` — and what lets a
@@ -234,19 +241,69 @@ target's server links its CLI moments later, which is the pairing that matters.
 would be downloaded and how `release:verify` proves the ldflag reached the
 binary.
 
-Staging writes into `<state>/discobox/server/<version>` — a sibling of the CLI's
-own state, because what is there is another program. Each asset is hashed as it
-is written, and the set is downloaded into a temporary sibling directory and
-renamed into place only once every digest matches, so a directory that exists is
-complete and verified: an interrupted or corrupted download can never be
-mistaken for a staged version, and the file it would leave behind is one that
-gets executed. A version directory is never written over; a set that no longer
-matches its manifest, or a `stage --force`, moves the old one aside first, and
-puts it back if the move into place fails. The manifest is written in beside the
-assets as `manifest.json`, which is what marks the directory complete and what
-records where the contents came from. Re-verifying on every use was rejected: it
-is a hash of ~100 MB in front of every command that starts a server, defending a
+Staging writes into `<discobox state>/server/<os>-<arch>/<version>`
+(`stagedServerRoot`) — a sibling of the CLI's own state, because what is there
+is another program. Keyed by platform as well as version because staging for
+another machine is a supported use: keyed by version alone, a darwin set and a
+linux set of one version resolved to one directory and evicted each other on
+every command, each re-downloading what the other had just deleted.
+
+Each asset is hashed as it is written, is bounded by the size the manifest
+declares (`io.LimitReader`, so a URL that has started serving something else
+cannot fill the disk before the check rejects it), and is `Sync`ed before it is
+closed — as is the temporary directory before the rename and the parent after
+it, since on ext4 or xfs the rename can reach the journal ahead of the data and
+nothing re-verifies a staged set. The set is downloaded into a temporary sibling
+directory and renamed into place only once every digest matches, so a directory
+that exists is complete and verified: an interrupted or corrupted download can
+never be mistaken for a staged version, and the file it would leave behind is
+one that gets executed.
+
+A set that no longer matches its manifest, or a `stage --force`, moves the old
+one aside first and puts it back if the move into place fails. A commit that
+fails is a failure under `--force`, which asked for the bytes to be fetched and
+checked again; only without it does a directory another process just staged
+count as the answer. The manifest is written in beside the assets as
+`manifest.json`, which is what marks the directory complete and what records
+where the contents came from. Re-verifying on every use was rejected: it is a
+hash of ~100 MB in front of every command that starts a server, defending a
 directory under the user's own state root against the user.
+
+Two things bound a download besides its size. A stall watchdog rides the
+progress ticker and cancels a body that has stopped arriving, because the CLI's
+root context is never canceled and the launch deadline is taken *after* staging
+runs — without it a dead connection leaves a first `discobox run` on one status
+line indefinitely. And each staging sweeps `*.staging-*`/`*.replaced-*`
+leftovers older than an hour, at both levels — beside the destination, where a
+temporary is created, and directly under the root, where the alphas created one.
+Ctrl-C kills the CLI outright, so the deferred cleanup never runs and nothing
+else was going to look. The age is measured against the newest thing *inside*
+the directory rather than the directory itself: appending to a file does not
+touch the directory holding it, so a download still arriving after an hour would
+otherwise look exactly as old as one abandoned an hour ago, and the sweep would
+take it from the process filling it.
+
+A set staged by v0.6.0-alpha.1 or .2 sits at `<root>/<version>`, from before the
+layout carried a platform. `migrateLegacyLayout` renames it into place using the
+platform its own `manifest.json` states, before the staged check, so it is not
+re-downloaded to arrive at the file already on disk. A legacy directory is one
+directly under the root holding a `manifest.json`; a platform directory holds
+version directories and no manifest, which is what tells them apart.
+
+That record is decoded with a plain `json.Unmarshal`, not `ParseManifest`.
+`ParseManifest` is the validator for a manifest about to be *staged* — it
+refuses unknown fields and applies rules invented since — and alpha.1 wrote no
+`size`, so validating its record would fail and take a complete, verified server
+with it: the release the migration is most for. Moving a set needs only where it
+belongs. Nothing here is destructive on failure either: a move that cannot
+happen is left for the next run, because a full disk says nothing about whether
+the server is wanted, and deleting on one leaves an offline machine with neither
+a server nor a way to get one. A set that is merely a *duplicate* — already
+staged where it belongs — is renamed to `.replaced-` before being removed, the
+same move `commit` makes for the same reason: a delete that stops at a locked
+file leaves a directory with no `manifest.json` to identify it and no marker in
+its name to sweep it by, and under a `.replaced-` name the sweep keeps
+retrying.
 
 `discobox admin server stage` is the download on its own — before a flight, in
 an image build, on a machine being provisioned. Nothing requires it; a command

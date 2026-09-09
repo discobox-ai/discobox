@@ -3,8 +3,7 @@ package serverstage
 import (
 	"context"
 	"encoding/json"
-	"net/http"
-	"net/http/httptest"
+	"errors"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -108,15 +107,15 @@ func TestParseManifestRejectsAnUnknownField(t *testing.T) {
 }
 
 func TestDefaultIsAbsentFromAnOrdinaryBuild(t *testing.T) {
-	if HasDefault() {
+	if DefaultManifest != "" {
 		t.Fatalf("a test binary carries a server manifest: %q", DefaultManifest)
 	}
-	if _, err := Default(); err == nil {
-		t.Fatal("Default() succeeded on a build with no manifest")
+	if _, err := Default(); !errors.Is(err, ErrNoManifest) {
+		t.Fatalf("Default() on a build with no manifest = %v, want ErrNoManifest", err)
 	}
 }
 
-func TestLoadReadsAFileOrAURL(t *testing.T) {
+func TestLoadReadsAFile(t *testing.T) {
 	want := validManifest()
 	data, err := json.Marshal(want)
 	if err != nil {
@@ -126,19 +125,27 @@ func TestLoadReadsAFileOrAURL(t *testing.T) {
 	if err := os.WriteFile(path, data, 0o600); err != nil {
 		t.Fatal(err)
 	}
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
-		_, _ = w.Write(data)
-	}))
-	defer server.Close()
+	got, err := Load(context.Background(), path)
+	if err != nil {
+		t.Fatalf("Load(%q): %v", path, err)
+	}
+	if !got.sameAssets(want) {
+		t.Fatalf("Load(%q) = %+v", path, got)
+	}
+}
 
-	for _, ref := range []string{path, server.URL + "/manifest.json"} {
-		got, err := Load(context.Background(), ref, nil)
-		if err != nil {
-			t.Fatalf("Load(%q): %v", ref, err)
-		}
-		if !got.sameAssets(want) {
-			t.Fatalf("Load(%q) = %+v", ref, got)
-		}
+// A manifest fetched over the network is the capability ADR 0099 §3 rejected
+// and §8 deferred: its digests are what every download is checked against, so
+// one that arrived over TLS and nothing else moves the trust root out of the
+// binary. The refusal says what to do instead rather than reporting a missing
+// file.
+func TestLoadRefusesAURL(t *testing.T) {
+	_, err := Load(context.Background(), "https://example.invalid/manifest.json")
+	if err == nil {
+		t.Fatal("Load accepted a URL")
+	}
+	if !strings.Contains(err.Error(), "download it first") {
+		t.Fatalf("error %q does not say what to do instead", err)
 	}
 }
 

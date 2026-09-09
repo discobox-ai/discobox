@@ -166,7 +166,7 @@ func TestResolveStagesWhenAManifestIsNamed(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if want := filepath.Join(root, "v9.9.9", serverBinaryName()); got != want {
+	if want := filepath.Join(root, runtime.GOOS+"-"+runtime.GOARCH, "v9.9.9", serverBinaryName()); got != want {
 		t.Fatalf("resolved %q, want the staged %q", got, want)
 	}
 	if *fetches != 1 {
