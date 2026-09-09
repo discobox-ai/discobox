@@ -995,7 +995,16 @@ func placeRunSource(repoRoot, workingDirectory, root string) resolvedRunSourceDe
 
 // mirrorableSourceRoots are the directories a source may occupy inside a
 // sandbox under its own host path (ADR 0096 §1): where user data lives on every
-// platform Discobox runs on, and nothing the sandbox image manages.
+// platform Discobox runs on, and none of them systemd's inside the sandbox.
+//
+// It is not a claim that every path under them is free in there. /home is the
+// one that is not: the sandbox user's home defaults to /home/<name>
+// (sandbox-agent/boot/user.go) and a harness's volumes are mounted under it, so
+// a repository whose root is exactly that path — /home/node against an image
+// whose user is node — is mirrored over them. The client cannot see which user
+// an image resolves to, so it cannot tell that path from a safe one. It is a
+// known collision this rule does not close, recorded in ADR 0096 §1; closing it
+// needs the side that knows the resolved user, which is the server.
 //
 // It is an allow-list rather than a list of directories to keep out of, because
 // the two fail in opposite directions. A source placed somewhere unexpected is
@@ -1017,6 +1026,13 @@ var mirrorableSourceRoots = []string{
 	"/srv",
 	"/opt",
 	"/data",
+	// The real path of a home on an ostree system — Silverblue, Kinoite,
+	// Bluefin, CoreOS — where /home is a symlink to /var/home. It is what
+	// arrives here, because the root comes from `git rev-parse --show-toplevel`
+	// and git resolves through getcwd(). Without it every source on those
+	// machines is clamped. /var itself is emphatically not on this list; this
+	// is one directory under it that the sandbox image does not have.
+	"/var/home",
 }
 
 // sandboxOwnedPaths are paths inside a mirrorable root that the sandbox image
@@ -1024,10 +1040,11 @@ var mirrorableSourceRoots = []string{
 // something the discobox needs to run rather than something systemd would put
 // back.
 //
-// It is a short list of what we install, not an attempt to guess at the
-// system — the roots above are chosen so that everything else under them is
-// nobody's. /opt/discobox holds the runc a nested Docker build runs through, so
-// a checkout of this project deployed at that path would otherwise shadow it.
+// It is a short list of what *we* install, not an attempt to guess at the
+// system, and not the same thing as the /home collision above: this is a path
+// the client can name, so it is refused by name. /opt/discobox holds the runc a
+// nested Docker build runs through, so a checkout of this project deployed at
+// that path would otherwise shadow it.
 var sandboxOwnedPaths = []string{"/opt/discobox"}
 
 // sandboxSourceRoot is the path a host directory keeps inside a sandbox, and

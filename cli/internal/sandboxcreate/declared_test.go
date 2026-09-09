@@ -253,18 +253,19 @@ func declareSources(t *testing.T, root string, declared map[string]string) {
 
 // newRunSourceTestRepoIn is a repository at a named path inside a workspace, so
 // a test can put two of them side by side the way a caller's checkouts are.
-// testWorkspace is a temporary directory whose name matches what git reports
-// for it. Windows hands out an 8.3 short name (RUNNER~1) and macOS hands out
-// /var where git says /private/var, and these tests compare a path they built
-// against one that came back through source resolution.
-// testWorkspace is a directory a test's sources live in, registered for the
-// length of the test as a root a sandbox may hold.
+// testWorkspace is a directory a test's sources live in: a temporary directory
+// whose name matches what git reports for it, registered for the length of the
+// test as a root a sandbox may hold.
 //
-// Every source here is built under t.TempDir(), which is /tmp — the one root
-// this package deliberately refuses to mirror into a sandbox, because the
-// sandbox's own systemd owns that directory (ADR 0096). Registering it keeps
-// these tests about what each of them is about; the clamp itself is asserted
-// from an unregistered path, in source_test.go.
+// The name has to match because these tests compare a path they built against
+// one that came back through source resolution — Windows hands out an 8.3 short
+// name (RUNNER~1) and macOS hands out /var where git says /private/var.
+//
+// It is registered because every source here is built under t.TempDir(), which
+// is /tmp — the one root this package deliberately refuses to mirror into a
+// sandbox, because the sandbox's own systemd owns that directory (ADR 0096).
+// Registering it keeps these tests about what each of them is about; the clamp
+// itself is asserted from an unregistered path, in source_test.go.
 func testWorkspace(t *testing.T) string {
 	t.Helper()
 	dir, err := filepath.EvalSymlinks(t.TempDir())

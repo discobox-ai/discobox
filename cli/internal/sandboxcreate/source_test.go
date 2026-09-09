@@ -805,9 +805,15 @@ func TestLocalRunDestinationMirrorsOnlySafeRoots(t *testing.T) {
 		{"/srv/app", "/srv/app"},
 		{"/opt/app", "/opt/app"},
 		{"/data/app", "/data/app"},
+		// An ostree home, which is what git reports on Silverblue and friends.
+		{"/var/home/me/src/app", "/var/home/me/src/app"},
 
 		{"/tmp/scratch/app", defaultRunSourceDir},
 		{"/var/lib/app", defaultRunSourceDir},
+		{"/var/tmp/app", defaultRunSourceDir},
+		// udisks2 mounts removable media here on Fedora and Arch, and it
+		// cannot be mirrored: /run is systemd's tmpfs inside the sandbox.
+		{"/run/media/me/stick/app", defaultRunSourceDir},
 		{"/etc/app", defaultRunSourceDir},
 		{"/usr/local/src/app", defaultRunSourceDir},
 		{"/app", defaultRunSourceDir},

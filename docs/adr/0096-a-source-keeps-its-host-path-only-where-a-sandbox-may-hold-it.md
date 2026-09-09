@@ -1,6 +1,6 @@
 # 0096 — A source keeps its host path inside the sandbox only where a sandbox may hold it
 
-- **Status**: Proposed
+- **Status**: Accepted
 - **Date**: 2026-09-09
 
 ## Context
@@ -57,26 +57,55 @@ inside a sandbox; that part was assumed.
 
 ### 1. A host path is mirrored only from a root a sandbox may hold
 
-Nine roots, and their children:
+Ten roots, and their children:
 
 ```
-/home  /Users  /mnt  /workspace  /Volumes  /media  /srv  /opt  /data
+/home  /Users  /mnt  /workspace  /Volumes  /media  /srv  /opt  /data  /var/home
 ```
 
 These are where code and user data live on the platforms Discobox runs on:
 Linux and WSL homes, macOS homes, mounted drives (`/mnt` is also where a Windows
 path already lands — see §3), removable and external media, the sandbox's own
-workspace, and the three roots people keep repositories under on a server.
-Nothing in the sandbox image manages any of them: `/srv` is created by tmpfiles
-with no age argument, so nothing cleans it; `/data` is not in the image at all;
-`/opt` holds only what an image installs there.
+workspace, and the three roots people keep repositories under on a server. None
+of them is systemd's inside the sandbox: `/srv` is created by tmpfiles with no
+age argument, so nothing cleans it; `/data` is not in the image at all; `/opt`
+holds only what an image installs there.
 
-**One path inside them is ours** (`sandboxOwnedPaths`): `/opt/discobox`, which
-holds the `runc` a nested Docker build runs through. A source there would
-replace something the discobox needs to run rather than something systemd would
-put back, and a checkout of this project deployed at that path is not far-
-fetched. It is a list of what we install rather than a guess at the system —
-the roots above are chosen so that everything else under them is nobody's.
+`/var/home` is the tenth because on an ostree system — Silverblue, Kinoite,
+Bluefin, CoreOS — `/home` is a symlink to it, and the real path is what arrives
+here: the root comes from `git rev-parse --show-toplevel`, and git resolves
+through `getcwd()`. Without it, every source on those machines is clamped while
+§1 reads as though "Linux homes" covered them. `/var` itself is emphatically not
+on the list; this is one directory under it that the image does not have.
+
+**Two things inside these roots are not the user's**, and the difference between
+them matters:
+
+- `/opt/discobox` is **ours**, and is refused by name (`sandboxOwnedPaths`): it
+  holds the `runc` a nested Docker build runs through, so a source mounted over
+  it replaces something the discobox needs to run rather than something systemd
+  would put back. A checkout of this project deployed at that path is not
+  far-fetched. It is a list of what *we* install, not a guess at the system.
+- `/home/<sandbox user>` is the **image's**, and is a known collision this rule
+  does not close. The sandbox user's home defaults to `/home/<name>`
+  (`sandbox-agent/boot/user.go`) and a harness's volumes are mounted under it,
+  so a repository whose root is exactly that path — `/home/node` against an
+  image whose user is `node` — is mirrored straight over them. The client cannot
+  see which user an image resolves to, so it cannot tell that path from a safe
+  one, and this is not a regression: every source was mirrored before. Closing
+  it needs the side that *does* know — the server resolves the sandbox user —
+  and that is a separate decision. Saying so here is what keeps the next person
+  from reading §1 as an audit it is not.
+
+**A root that cannot be added, and why it is not an oversight.** udisks2 mounts
+removable media at `/run/media/<user>/<label>` on Fedora, Arch and most
+GNOME/KDE setups. It is exactly the "removable media" §1 claims to cover, and it
+still clamps — because `/run` is systemd's own tmpfs inside the sandbox, which
+is the hazard this ADR exists for. The premise that a host root's name says
+something about the sandbox's holds for the ten above and fails here, so a
+source on removable media goes to `/workspace/source` on those distributions.
+That is the allow-list failing toward the recoverable answer, which is the
+trade §1 is chosen for.
 
 It is a whitelist, not a list of forbidden system directories, because the two
 fail in opposite directions. A forbidden-list that misses a root — `/snap`,
@@ -171,7 +200,10 @@ instead. The sources are all still there, under their own names.
 
 Adding a root later is one line and changes where new discoboxes put their
 sources; adding one that the image turns out to occupy is what
-`sandboxOwnedPaths` is for.
+`sandboxOwnedPaths` is for. Both are per-machine behaviour splits until somebody
+notices — a discobox made before the root was added keeps its old destination —
+which is the argument for getting the list right before this is accepted rather
+than after.
 
 Existing discoboxes keep the destinations they were created with; this decides
 where a create puts a source, and a create happens once.

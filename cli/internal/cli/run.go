@@ -71,6 +71,14 @@ snapshot on top of the checked-out commit. By default run asks before doing that
 when there is a terminal to ask on; --include-dirty=true|false answers ahead of
 time.
 
+The source keeps its own path inside the discobox, so /home/you/src/app is
+/home/you/src/app in there too. That holds for a directory under /home, /Users,
+/mnt, /workspace, /Volumes, /media, /srv, /opt, /data or /var/home; everywhere
+else the discobox's own system owns the path, so the source is placed at
+/workspace/source instead and the discobox starts in the same subdirectory you
+ran from. A source at one of those roots itself, or under /opt/discobox, is
+placed that way too.
+
 A source directory that is not in a Git repository works too: everything in it
 is carried into the discobox as uncommitted changes on an empty first commit,
 and nothing is written to the directory itself. Because that is the whole
@@ -89,10 +97,9 @@ discobox holding foo and nothing else.
 -i brings extra sources into the same discobox, repeat it for more than one. Each
 is resolved exactly like the source directory is, uncommitted changes included,
 and a local one keeps its own absolute path inside the discobox, so ../foo shows
-up at the path readlink -f ../foo prints. A source from a directory the discobox
-cannot hold at that path -- anything outside /home, /Users, /mnt, /workspace,
-/Volumes, /media, /srv, /opt and /data, since the rest belongs to the discobox's
-own system -- is placed under /workspace instead, named after itself.
+up at the path readlink -f ../foo prints, under the same rule the source
+directory follows above; one from anywhere else is placed under /workspace,
+named after itself.
 
 A repository can name the others it is worked on with, in .discobox/sources.json
 at its root:
@@ -101,7 +108,8 @@ at its root:
 
 Each is brought in the way -i would: the ../foo you already have checked out
 when there is one, and a clone of the URL when there is not. Either way it lands
-at the same path beside the source, so ../foo means the same thing inside the
+beside the source -- at the same path when the source kept its own, under
+/workspace when it did not -- so ../foo means the same thing inside the
 discobox as it does here. --declared-sources=false leaves them out.`,
 		Example: `  discobox -p 'fix the failing tests'
   discobox -H codex -d -p 'fix the failing tests'
@@ -238,7 +246,7 @@ func addRunFlags(cmd *cobra.Command, opts *runCommandOptions) *pflag.FlagSet {
 	flags.StringArrayVarP(&opts.promptFlag, "prompt", "p", nil, "Prompt for the harness, as one argument; repeat to pass more argv tokens. The same thing as the words after \"run\", and the only spelling the bare \"discobox\" has for a prompt")
 	flags.StringArrayVarP(&opts.prompt.Env, "env", "e", nil, "Environment variable as KEY=VALUE or KEY from the local environment; repeat for multiple variables. A KEY whose name contains KEY, TOKEN, PASS, or SECRET is treated as a secret; use KEY!=VALUE to force it to be a plain environment variable")
 	flags.StringArrayVarP(&opts.prompt.Secret, "secret", "s", nil, "Secret injected as a sentinel placeholder resolved by the proxy at runtime, as KEY=VALUE (inline value) or KEY=<SECRET_ID> (reference an existing secret); repeat for multiple secrets")
-	flags.StringArrayVarP(&opts.prompt.Include, "include", "i", nil, "Additional source directory or Git repository to bring into the discobox, optionally with @REF; repeat for more than one. A local directory keeps its own absolute path inside the discobox where the discobox can hold it, and is named after itself either way, so -i ../foo is the source foo")
+	flags.StringArrayVarP(&opts.prompt.Include, "include", "i", nil, "Additional source directory or Git repository to bring into the discobox, optionally with @REF; repeat for more than one. A local directory keeps its own absolute path inside the discobox where the discobox can hold that path, and is placed under /workspace where it cannot; either way it is named after itself, so -i ../foo is the source foo")
 	flags.StringVarP(&opts.prompt.Harness, "harness", "H", "", "Harness config to run, by slug (e.g. codex), name, or ID; defaults to the project default")
 	flags.BoolVarP(&opts.detach, "detach", "d", false, "Create the discobox and print it without attaching to its terminal")
 	flags.BoolVar(&opts.raw, "raw", false, "Create the discobox here and attach this terminal straight to its terminal, instead of making it in the window")

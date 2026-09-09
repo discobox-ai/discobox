@@ -373,9 +373,6 @@ func runTestSandboxJSON(sandboxID, phase string) string {
 	return `{"id":"` + sandboxID + `","projectId":"project-1","createdByUserId":"user-1","displayName":"run-test","config":{"name":"run-test","image":""},"runtime":{` + runtime + `},"createdAt":"2026-06-17T00:00:00Z","updatedAt":"2026-06-17T00:00:01Z"}`
 }
 
-// wantSourceDirectory is the sandbox directory a local repo root lands in on
-// the platform the test is running on: the host path itself on a POSIX host,
-// and the /mnt path WSL mounts it under on Windows.
 // wantSourceDirectory is where the source these tests create lands inside the
 // sandbox.
 //
