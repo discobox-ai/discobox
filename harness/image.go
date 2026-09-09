@@ -5,7 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
-	"path/filepath"
+	"path"
 	"strconv"
 	"strings"
 )
@@ -132,37 +132,41 @@ func ResolveVolumes(volumes []Volume, rt VolumeRuntime) ([]ResolvedVolume, error
 	}
 	out := make([]ResolvedVolume, 0, len(volumes))
 	for idx, v := range volumes {
-		path := expandVolumeToken(v.Path, rt)
-		if strings.TrimSpace(path) == "" {
+		// A volume path is a path inside the sandbox, so it is a Linux path on
+		// every host and is judged as one. filepath here read "/home/ada/.cache"
+		// as relative on a Windows host and refused every declared volume — the
+		// control plane resolves these, and it runs wherever the user does.
+		volumePath := expandVolumeToken(v.Path, rt)
+		if strings.TrimSpace(volumePath) == "" {
 			return nil, fmt.Errorf("volume[%d]: path is required", idx)
 		}
-		if !filepath.IsAbs(path) {
-			return nil, fmt.Errorf("volume %q: path must be absolute", path)
+		if !path.IsAbs(volumePath) {
+			return nil, fmt.Errorf("volume %q: path must be absolute", volumePath)
 		}
 		switch v.Volume {
 		case VolumeData, VolumeCache:
 		default:
-			return nil, fmt.Errorf("volume %q: unknown volume kind %q", path, v.Volume)
+			return nil, fmt.Errorf("volume %q: unknown volume kind %q", volumePath, v.Volume)
 		}
 		scope, err := resolveScope(v.Volume, v.Scope)
 		if err != nil {
-			return nil, fmt.Errorf("volume %q: %w", path, err)
+			return nil, fmt.Errorf("volume %q: %w", volumePath, err)
 		}
-		rv := ResolvedVolume{Path: filepath.Clean(path), Kind: v.Volume, Scope: scope}
+		rv := ResolvedVolume{Path: path.Clean(volumePath), Kind: v.Volume, Scope: scope}
 		if uid, ok, err := resolveScalar(v.UID, rt); err != nil {
-			return nil, fmt.Errorf("volume %q uid: %w", path, err)
+			return nil, fmt.Errorf("volume %q uid: %w", volumePath, err)
 		} else if ok {
 			rv.UID = &uid
 		}
 		if gid, ok, err := resolveScalar(v.GID, rt); err != nil {
-			return nil, fmt.Errorf("volume %q gid: %w", path, err)
+			return nil, fmt.Errorf("volume %q gid: %w", volumePath, err)
 		} else if ok {
 			rv.GID = &gid
 		}
 		if mode := strings.TrimSpace(v.Mode); mode != "" {
 			parsed, err := strconv.ParseUint(mode, 8, 32)
 			if err != nil {
-				return nil, fmt.Errorf("volume %q mode %q: %w", path, mode, err)
+				return nil, fmt.Errorf("volume %q mode %q: %w", volumePath, mode, err)
 			}
 			m := os.FileMode(parsed)
 			rv.Mode = &m
