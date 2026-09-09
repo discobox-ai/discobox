@@ -8,7 +8,6 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
-	"sync"
 	"time"
 
 	"github.com/spf13/cobra"
@@ -148,12 +147,6 @@ type apiDataSource struct {
 	app       *App
 	client    *apiclientgen.Client
 	projectID string
-
-	// pushCache is what an automatic push resolves to per discobox, guarded by
-	// pushMu: the window pushes one discobox at a time, but the answer outlives
-	// any one call. See tui_push.go.
-	pushMu    sync.Mutex
-	pushCache map[string]*pushTargets
 }
 
 // Session is what the header, the origin filter and the run options are drawn

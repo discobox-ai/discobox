@@ -338,6 +338,19 @@ func (a *App) writeSandboxTerminals(cmd *cobra.Command, terminals []apimodel.San
 // scrollback replay and detach-chord handling. See detachFilter.
 func (a *App) attachSandboxTerminal(ctx context.Context, projectID, sandboxID, terminalID string, opts execAttachOptions, stdin io.Reader, stdout, stderr io.Writer) error {
 	opts.replay = true
+	// Going to work in a discobox is when the commits made here belong in its
+	// origin, and attaching a terminal is that moment (ADR 0095 §1). It runs
+	// beside the attach rather than before it: the dial below can block for
+	// minutes behind a cold image pull, and a push is not a reason to wait
+	// longer to see the terminal. Everything it does is silent until the
+	// stream is over — see autoPushWhileAttached.
+	// Named for what it is: "client" in this file is the exec stream's.
+	apiClient, err := a.apiClient()
+	if err != nil {
+		return err
+	}
+	stopPushing := a.autoPushWhileAttached(ctx, apiClient, projectID, sandboxID)
+	defer stopPushing(stderr)
 	// The dial blocks for as long as the sandbox takes to become attachable —
 	// every tier below waits for the readiness only it can see (ADR 0039) —
 	// which behind a cold image pull is minutes on a silent socket. Say what it

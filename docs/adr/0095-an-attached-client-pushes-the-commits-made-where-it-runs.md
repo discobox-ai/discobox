@@ -1,7 +1,9 @@
-# 0095 — The launcher pushes while you are looking at a discobox
+# 0095 — An attached client pushes the commits made where it is running
 
 - **Status**: Proposed
 - **Date**: 2026-09-05
+- **§1 amended**: 2026-09-09 — the trigger is a terminal attach, not the
+  launcher's workspace. Nothing else changes.
 - **Supersedes**: [0058](0058-a-push-delivered-source-has-a-pool-side-origin.md) §8's
   manual `InteractPush` key. §§1–7 stand unchanged and are what this builds on.
 
@@ -46,19 +48,36 @@ throwaway mirror. Treating the two symmetrically — a key each, beside each oth
 
 ## Decision
 
-### 1. An open workspace pushes, and keeps pushing
+### 1. Attaching to a terminal pushes, and keeps pushing
 
-While the launcher's workspace is open on a discobox, the window pushes that
-discobox's push-delivered sources: once when the workspace opens, and again on
-its own generation-guarded clock at `refreshEvery` (5s) for as long as it stays
-open. Closing the workspace bumps the generation and the loop stops with it, the
-way every other workspace poll does.
+**An attach is the trigger.** Attaching a terminal to a discobox is the act of
+going to work in it, and it is the moment the commits made where the client runs
+should already be in its origin. So for as long as a terminal attach lasts, its
+client pushes that discobox's push-delivered sources: once at the start, and
+again every 5s.
 
-Nothing else triggers it. Not the cursor moving down the list, not a row being
-on screen, not a box in another folder: the workspace is the one place the
-window knows which discobox is being worked on, and a window that pushed to
-every box it can see would be doing work for boxes nobody is looking at at a
-cost per box per tick.
+This covers both ways a terminal is attached, without either being a rule of its
+own:
+
+- **The launcher's workspace**, which attaches to the discobox's terminals as
+  soon as it opens (`openWorkspace`) and holds them until it is detached. Its
+  loop is guarded by the workspace generation, so leaving ends it the way it
+  ends every other workspace poll.
+- **A raw attach** — `discobox attach --raw`, `discobox run --raw`,
+  `discobox admin terminal attach` — which has no window at all. One choke point
+  serves all of them (`attachSandboxTerminal`), and the loop lasts as long as
+  the stream does.
+
+Nothing else triggers it. Not the cursor moving down a list, not a row being on
+screen, not a one-shot `discobox shell -- <cmd>`, and not a box nobody is
+attached to. "Attached" is what tells a discobox somebody is working in from the
+rest of the project, and it is a fact both front ends already have.
+
+The earlier draft of this section said the launcher's workspace, and named the
+window as the thing that pushes. That was the visible half of the real rule
+rather than the rule: `--raw` is the same session with a different renderer, and
+a person working in it has exactly the same reason to expect their commits to be
+there.
 
 ### 2. Only where the push is this machine's to make
 
@@ -80,22 +99,23 @@ commit it was created from and reporting the set complete, which starts it
 (`deliverAwaitedSource`). That is a state-machine transition and a decision
 about a create that failed; it stays a thing a person asks for by name.
 
-There is no `--dir` here. The window pushes what the discobox recorded or it
-pushes nothing; a source whose directory has moved is a question to answer at a
-prompt, with the flag that exists for it.
+There is no `--dir` here. An automatic push sends what the discobox recorded or
+it sends nothing; a source whose directory has moved is a question to answer at
+a prompt, with the flag that exists for it.
 
 ### 3. It is `discobox push` with no flags, through the same code
 
-The window calls `sandboxpush.Push` per source with zero options, through one
-new `DataSource` seam. Not a pane running the Cobra command, which is what §8
-proposed for a key: an interaction that takes the screen is exactly wrong for
-something nobody asked for at that moment.
+Both front ends call `sandboxpush.Push` per source with zero options, through
+one function that resolves what a discobox's sources are on this machine and
+pushes them. Not a pane running the Cobra command, which is what §8 proposed for
+a key: an interaction that takes the screen is exactly wrong for something
+nobody asked for at that moment.
 
 Everything 0058 §6 decided applies unchanged and is not re-decided here: the
 lease, the related-history check, the no-op on an unmoved tip, and uncommitted
-changes left where they are. In particular **the window never forces**. A lease
-refusal is a real signal — another machine pushed to this discobox — and the
-answer to it is a person deciding, at `discobox push --force`.
+changes left where they are. In particular **an automatic push never forces**. A
+lease refusal is a real signal — another machine pushed to this discobox — and
+the answer to it is a person deciding, at `discobox push --force`.
 
 ### 4. Nothing is spent when nothing changed
 
@@ -105,18 +125,26 @@ compares it to the lease ref (`refs/discobox/origin/<sandboxID>/<slug>/<branch>`
 §6) — two ref reads in a repository this machine already has open — and stops
 there. No network, no git transport, no control-plane request.
 
-That is what `sandboxpush.Push` already does on an unmoved tip, so the seam is
-free to call on every tick rather than needing a cheaper pre-check of its own.
-What the window does add is caching the discobox's sources and their resolved
-repository roots for the life of the workspace: a source's delivery, slug and
-local directory are fixed at create, so re-reading them every tick would be an
-API call to learn something that cannot change.
+That is what `sandboxpush.Push` already does on an unmoved tip, so it is free to
+call on every tick rather than needing a cheaper pre-check of its own. What is
+added is caching the discobox's sources and their resolved repository roots for
+the life of the client: a source's delivery, slug and local directory are fixed
+at create, so re-reading them every tick would be an API call to learn something
+that cannot change.
 
-### 5. A push says so; a refusal says so once
+### 5. A push says so where there is somewhere to say it
 
-A push that moved the mirror reports on the status line, in the window's
-ordinary way — the same line a verb reports on, for the same few seconds. Silence
-means nothing needed pushing, which is the state it is in almost always.
+In the window, a push that moved the mirror reports on the status line, in the
+ordinary way — the same line a verb reports on, for the same few seconds.
+Silence means nothing needed pushing, which is the state it is in almost always.
+
+A raw attach has nowhere to say it. `--raw` is documented as "the stream and
+nothing else, for a pipe, a recording, or a terminal you would rather keep as it
+is", and a line written into that stream lands in the middle of whatever the
+harness is drawing. So there it says nothing while it runs, and reports what
+could **not** be pushed once the stream is over and the terminal is the
+client's again. A refusal is the half somebody has to act on; a successful push
+is visible in git.
 
 A push that failed reports once and is **not retried against the same tip**. The
 failures §6 produces are decisions, not transients: a stale lease, an unrelated
@@ -124,7 +152,7 @@ history, a directory that is gone. Retrying one every five seconds would put a
 red line on screen forever and send the same rejected pack with it. The next
 local commit is a new tip and a new attempt.
 
-At most one push per workspace is in flight; a tick that arrives while one is
+At most one push per attach is in flight; a tick that arrives while one is
 running is dropped rather than queued.
 
 ### 6. There is no push key in the window
@@ -132,11 +160,11 @@ running is dropped rather than queued.
 §8's `InteractPush` is not built. `discobox push` remains the whole of the
 explicit path, and is what covers everything the automatic one deliberately does
 not: `--force` past a lease, `--branch` to offer the box a second branch,
-`--dir` for a checkout that moved, a discobox nobody has open, and the delivery
-of a parked one.
+`--dir` for a checkout that moved, a discobox nobody is attached to, and the
+delivery of a parked one.
 
-A key that does what the window is already doing is a key whose only real use is
-the flag it cannot pass.
+A key that does what an attached client is already doing is a key whose only
+real use is the flag it cannot pass.
 
 ## Alternatives rejected
 
@@ -144,6 +172,12 @@ the flag it cannot pass.
 the feature: the origin is stale exactly when nobody remembered, and a key is
 remembered by the people who already knew. It is also a pane taking the screen
 for a git transfer that has no output worth reading in the ordinary case.
+
+**Keep the workspace as the trigger, and leave `--raw` out.** The first draft of
+§1. Rejected once it was written down: the window is a renderer, not a reason. A
+person attached over `--raw` is working in that discobox exactly as much, and
+telling them their commits do not travel because of which front end they chose
+is a rule nobody could predict from what it does.
 
 **Push from the list, for every push-delivered box on the tick.** Widest reach,
 and it would cover the box you are about to open. Rejected on scope: the tick
@@ -193,12 +227,13 @@ destructive case the whole design routes around.
 ## Consequences
 
 A discobox created from this machine sees local commits in its `origin` within
-about five seconds of the workspace being open on it, with nothing typed. The
+about five seconds, with nothing typed, for as long as a terminal is attached to
+it — from the launcher or from a raw attach. The
 sandbox's reported diff base self-corrects through `UpstreamRef` once it fetches
 (0058 §5), so the list's ahead/diff columns follow without further work.
 
-Commits made while no workspace is open do not travel until one is, which is the
-deliberate edge of §1. Opening the box is what closes it.
+Commits made while nothing is attached do not travel until something is, which
+is the deliberate edge of §1. Attaching is what closes it.
 
 The mirror's history grows with every push rather than only at create. It is
 reaped with the sandbox (§1) and hardlinked into the sandbox's clone (§4), so

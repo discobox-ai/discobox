@@ -378,7 +378,7 @@ offer.
 The other direction from apply, and deliberately not shaped like it. While a
 workspace is open on a discobox, the window sends whatever has been committed
 here since it was created into the origin that discobox fetches from
-([ADR 0095](../../../docs/adr/0095-the-launcher-pushes-while-you-are-looking-at-a-discobox.md)).
+([ADR 0095](../../../docs/adr/0095-an-attached-client-pushes-the-commits-made-where-it-runs.md)).
 Nobody presses anything. See `push.go`.
 
 **It is safe to do unasked because of what the target is.** The origin of a
@@ -390,16 +390,17 @@ checked out, rebased or interrupted, and uncommitted work in it cannot be
 touched. Apply is the opposite — it writes the developer's own working tree —
 which is why apply is offered on a band and this is not offered at all.
 
-**The workspace is the trigger, and the only one.** Opening it pushes, and so
-does its own 5s beat (`autoPushEvery`, the listing's) for as long as it stays
-open. The cursor moving down the list pushes nothing: the workspace is the one
-place the window knows which discobox is being worked on, and pushing for every
-row on screen would be local git per box per tick for boxes nobody is looking
-at. The loop is push → answer → schedule rather than a free-running tick, so a
-transfer that outlasts the beat is never overlapped by the next one, and it ends
-with the workspace's generation like every other poll there.
+**The trigger is an attach, and the workspace is one.** The rule is not about
+this window: a client with a terminal attached pushes, which is why `discobox
+attach --raw` does it too (`internal/cli/push_auto.go`). Here that means opening
+the workspace — which attaches — and its own 5s beat (`autoPushEvery`, the
+listing's) for as long as it stays open. The cursor moving down the list pushes
+nothing: nothing is attached to that row. The loop is push → answer → schedule
+rather than a free-running tick, so a transfer that outlasts the beat is never
+overlapped by the next one, and it ends with the workspace's generation like
+every other poll there.
 
-**The row says whether the discobox is this window's to push** (`Sandbox.Pushable`,
+**The row says whether the discobox is worth asking about** (`Sandbox.Pushable`,
 `pushable` in `internal/cli/tui_push.go`): a source delivered by pushing it,
 this machine recorded as the origin host, and a state that can take one. A
 discobox still awaiting its source is excluded on purpose — a push to a parked

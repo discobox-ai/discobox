@@ -3,21 +3,28 @@ package cli
 import (
 	"context"
 	"errors"
+	"fmt"
+	"io"
+	"time"
 
 	apiclientgen "github.com/discobox-ai/discobox/api/gen"
 	apimodel "github.com/discobox-ai/discobox/api/model"
 	"github.com/discobox-ai/discobox/cli/internal/sandboxpush"
-	"github.com/discobox-ai/discobox/cli/internal/tui"
 	"github.com/discobox-ai/discobox/internal/hostid"
 	"github.com/discobox-ai/x/gitutil"
 )
 
-// The launcher's automatic push (ADR 0095): the window's end of `discobox
-// push`, run for it rather than by it while a workspace is open on a discobox.
+// The automatic push (ADR 0095): `discobox push`, run for an attached client
+// rather than by a person, for as long as a terminal attach lasts.
+//
+// Attaching is the trigger, so this serves both front ends — the launcher's
+// workspace through the DataSource seam in tui_push.go, and a raw attach
+// through autoPushWhileAttached below.
 //
 // Everything about what is sent, and what is refused, is sandboxpush's — the
 // same code the command runs, with no options, so the two cannot drift. What is
-// here is only which sources this machine may push and where they live.
+// here is only which sources this machine may push, where they live, and the
+// beat.
 
 // pushable reports that new commits made here are this window's to send into
 // the discobox's origin: it has a source delivered by pushing it, this machine
@@ -57,6 +64,22 @@ func pushable(sb apimodel.Sandbox, hostID string) bool {
 	return false
 }
 
+// sourcePush is what one of a discobox's push-delivered sources did on one
+// look: what its local branch resolves to now, and whether that moved the
+// discobox's origin. A source with nothing to send reports the commit both ends
+// already hold and nothing else.
+type sourcePush struct {
+	Slug   string
+	Branch string
+	// Commit is the local tip resolved for this source, whether or not it was
+	// sent — what a caller records against a failure so the same refused push
+	// is not attempted again every beat.
+	Commit string
+	Pushed bool
+	// Err is why this source did not push. Having nothing to send is not one.
+	Err error
+}
+
 // pushTargets is what an automatic push for one discobox resolves to on this
 // machine: its push-delivered sources, and the repository root each one is
 // pushed from.
@@ -70,23 +93,30 @@ type pushTargets struct {
 	roots map[string]string
 }
 
-// PushSources sends this machine's new commits into the origin repositories the
-// discobox's push-delivered sources fetch from.
+// pushSandboxSources sends this machine's new commits into the origin
+// repositories the discobox's push-delivered sources fetch from — the transport
+// `discobox push` performs, with no flags. Nothing in the discobox moves: it
+// gains origin/<branch>, and whoever is working in it rebases when they choose.
+//
+// held names, per source slug, a commit whose push has already failed. Such a
+// source is resolved but not sent again while it names that same commit, so a
+// standing refusal — a stale lease, an unrelated history — costs a ref read
+// rather than a rejected transfer on every beat.
 //
 // The order is deliberate: every source is resolved first, and only if
 // something actually moved is the git route opened. Resolving is two ref reads
 // in a repository this machine already has, so the ordinary beat — nothing
 // committed since the last one — dials nothing at all (ADR 0095 §4).
-func (d *apiDataSource) PushSources(ctx context.Context, sandboxID string, held map[string]string) ([]tui.SourcePush, error) {
-	targets, err := d.pushTargets(ctx, sandboxID)
+func (a *App) pushSandboxSources(ctx context.Context, client *apiclientgen.Client, projectID, sandboxID string, held map[string]string) ([]sourcePush, error) {
+	targets, err := a.pushTargets(ctx, client, projectID, sandboxID)
 	if err != nil {
 		return nil, err
 	}
-	pushes := make([]tui.SourcePush, 0, len(targets.sources))
+	pushes := make([]sourcePush, 0, len(targets.sources))
 	var pending []applySourceEntry
 	for _, entry := range targets.sources {
 		resolved, err := sandboxpush.Resolve(ctx, targets.roots[entry.slug], sandboxID, entry.source, sandboxpush.Options{})
-		push := tui.SourcePush{Slug: entry.slug, Branch: resolved.Branch, Commit: resolved.Commit}
+		push := sourcePush{Slug: entry.slug, Branch: resolved.Branch, Commit: resolved.Commit}
 		// A source held at exactly what it names now is one whose push already
 		// failed and was already reported. It is resolved — that is how the
 		// hold is released when the branch moves — and nothing else.
@@ -109,14 +139,14 @@ func (d *apiDataSource) PushSources(ctx context.Context, sandboxID string, held 
 		return pushes, nil
 	}
 
-	gitServerURL, releaseGitServerURL, err := d.app.gitServerURL(ctx)
+	gitServerURL, releaseGitServerURL, err := a.gitServerURL(ctx)
 	if err != nil {
 		return pushes, err
 	}
 	defer releaseGitServerURL()
 	for _, entry := range pending {
-		result, err := sandboxpush.Push(ctx, targets.roots[entry.slug], gitServerURL, d.projectID, sandboxID, d.app.token, entry.source, sandboxpush.Options{})
-		pushes = append(pushes, tui.SourcePush{
+		result, err := sandboxpush.Push(ctx, targets.roots[entry.slug], gitServerURL, projectID, sandboxID, a.token, entry.source, sandboxpush.Options{})
+		pushes = append(pushes, sourcePush{
 			Slug:   entry.slug,
 			Branch: result.Branch,
 			Commit: result.Commit,
@@ -128,21 +158,21 @@ func (d *apiDataSource) PushSources(ctx context.Context, sandboxID string, held 
 }
 
 // pushTargets resolves the discobox's sources once and holds the answer for the
-// life of the window.
+// life of this invocation.
 //
-// A source this machine cannot push is left out rather than reported: the
-// window asks this of a discobox whose row says it is pushable, and a second
-// source of its own that is bound or cloned is not a failure of anything. The
-// empty answer is held too, since what makes it empty does not change either.
-func (d *apiDataSource) pushTargets(ctx context.Context, sandboxID string) (*pushTargets, error) {
-	d.pushMu.Lock()
-	cached, ok := d.pushCache[sandboxID]
-	d.pushMu.Unlock()
+// A source this machine cannot push is left out rather than reported: a
+// discobox with a bound or cloned source of its own is not a failure of
+// anything, it is simply not one this pushes. The empty answer is held too,
+// since what makes it empty does not change either.
+func (a *App) pushTargets(ctx context.Context, client *apiclientgen.Client, projectID, sandboxID string) (*pushTargets, error) {
+	a.pushMu.Lock()
+	cached, ok := a.pushCache[sandboxID]
+	a.pushMu.Unlock()
 	if ok {
 		return cached, nil
 	}
 
-	res, err := d.client.GetSandbox(ctx, apiclientgen.GetSandboxParams{ProjectId: d.projectID, SandboxId: sandboxID})
+	res, err := client.GetSandbox(ctx, apiclientgen.GetSandboxParams{ProjectId: projectID, SandboxId: sandboxID})
 	if err != nil {
 		return nil, err
 	}
@@ -155,6 +185,13 @@ func (d *apiDataSource) pushTargets(ctx context.Context, sandboxID string) (*pus
 		return nil, err
 	}
 	targets := &pushTargets{roots: map[string]string{}}
+	// Asked here rather than trusted from a caller: the launcher reads the same
+	// answer off the row to know whether to call at all, and a raw attach has
+	// no row to read.
+	if !pushable(*sandbox, hostID) {
+		a.cachePushTargets(sandboxID, targets)
+		return targets, nil
+	}
 	for _, entry := range applySources(sandbox) {
 		if err := sandboxpush.CheckPushDelivered(entry.source); err != nil {
 			continue
@@ -163,7 +200,7 @@ func (d *apiDataSource) pushTargets(ctx context.Context, sandboxID string) (*pus
 		if err != nil {
 			// Another machine's discobox, or a directory that is no longer
 			// there. Both are answered by `discobox push`, which can say so
-			// and take a --dir; a window pushing on its own cannot.
+			// and take a --dir; a push nobody asked for cannot.
 			continue
 		}
 		repoRoot, err := gitutil.Root(ctx, hostDir)
@@ -181,11 +218,75 @@ func (d *apiDataSource) pushTargets(ctx context.Context, sandboxID string) (*pus
 		targets.roots[entry.slug] = repoRoot
 	}
 
-	d.pushMu.Lock()
-	if d.pushCache == nil {
-		d.pushCache = map[string]*pushTargets{}
-	}
-	d.pushCache[sandboxID] = targets
-	d.pushMu.Unlock()
+	a.cachePushTargets(sandboxID, targets)
 	return targets, nil
+}
+
+func (a *App) cachePushTargets(sandboxID string, targets *pushTargets) {
+	a.pushMu.Lock()
+	defer a.pushMu.Unlock()
+	if a.pushCache == nil {
+		a.pushCache = map[string]*pushTargets{}
+	}
+	a.pushCache[sandboxID] = targets
+}
+
+// autoPushEvery is how often an attached client looks for new local commits to
+// send. The launcher's window keeps its own copy of this beat, on the listing's
+// clock; this is the raw attach's.
+const autoPushEvery = 5 * time.Second
+
+// autoPushWhileAttached pushes the discobox's push-delivered sources for as
+// long as a terminal attach lasts: once at the start, and again on every beat
+// (ADR 0095 §1). Attaching is the trigger, so this runs for `discobox attach
+// --raw`, `discobox run --raw` and `discobox admin terminal attach` alike.
+//
+// It writes nothing while the attach runs. A raw attach is the discobox's
+// stream and nothing else — for a pipe, a recording, or a terminal you would
+// rather keep as it is — and a line put into it lands in the middle of whatever
+// the harness is drawing. The returned stop ends the loop and reports what
+// could not be pushed, on a terminal that is the client's again by then; a push
+// that worked says nothing, because it is visible in git and nobody asked for
+// it (ADR 0095 §5).
+func (a *App) autoPushWhileAttached(ctx context.Context, client *apiclientgen.Client, projectID, sandboxID string) (stop func(io.Writer)) {
+	pushing, cancel := context.WithCancel(ctx)
+	done := make(chan []sourcePush, 1)
+	go func() {
+		// held is this loop's own record of what has already been refused, so a
+		// standing refusal is not retried — and not re-reported — every beat.
+		held := map[string]string{}
+		var failed []sourcePush
+		ticker := time.NewTicker(autoPushEvery)
+		defer ticker.Stop()
+		for {
+			pushes, err := a.pushSandboxSources(pushing, client, projectID, sandboxID, held)
+			if err == nil {
+				failed = failed[:0]
+				for _, push := range pushes {
+					switch {
+					case push.Err != nil:
+						held[push.Slug] = push.Commit
+						failed = append(failed, push)
+					case push.Pushed:
+						delete(held, push.Slug)
+					}
+				}
+			}
+			select {
+			case <-pushing.Done():
+				done <- failed
+				return
+			case <-ticker.C:
+			}
+		}
+	}()
+	return func(stderr io.Writer) {
+		cancel()
+		for _, push := range <-done {
+			// Every failure that is still standing when the attach ends, which
+			// is at most one per source: the loop holds each one at the commit
+			// it failed on.
+			fmt.Fprintf(stderr, "could not push %s into the discobox's origin: %v\n", push.Slug, push.Err)
+		}
+	}
 }

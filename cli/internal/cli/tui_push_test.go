@@ -9,7 +9,9 @@ import (
 	"path/filepath"
 	"slices"
 	"strings"
+	"sync"
 	"testing"
+	"time"
 
 	apiclientgen "github.com/discobox-ai/discobox/api/gen"
 	apimodel "github.com/discobox-ai/discobox/api/model"
@@ -135,14 +137,50 @@ func pushGit(t *testing.T, dir string, args ...string) string {
 	return strings.TrimSpace(string(out))
 }
 
+// pathLog is every request path the stub control plane was asked for. It is
+// guarded because the automatic push runs on its own goroutine, so the test
+// reads what the server's goroutine writes.
+type pathLog struct {
+	mu    sync.Mutex
+	paths []string
+}
+
+func (l *pathLog) add(path string) {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	l.paths = append(l.paths, path)
+}
+
+func (l *pathLog) all() []string {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	return append([]string(nil), l.paths...)
+}
+
+func (l *pathLog) reset() {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	l.paths = nil
+}
+
+// touched reports whether any request so far named part of a path.
+func (l *pathLog) touched(part string) bool {
+	for _, path := range l.all() {
+		if strings.Contains(path, part) {
+			return true
+		}
+	}
+	return false
+}
+
 // pushDataSource is a data source over a stub control plane holding one
 // push-delivered discobox cut from dir, and the paths it was asked for.
-func pushDataSource(t *testing.T, dir string) (*apiDataSource, *[]string) {
+func pushDataSource(t *testing.T, dir string) (*apiDataSource, *pathLog) {
 	t.Helper()
 	t.Setenv(hostid.EnvVar, thisHost)
 	t.Setenv("GIT_TERMINAL_PROMPT", "0")
 
-	paths := &[]string{}
+	paths := &pathLog{}
 	sandbox := `{"id":"sbx_1","projectId":"project-1","createdByUserId":"user-1","displayName":"box",` +
 		`"config":{"name":"box","image":"","source":{"kind":"git","slug":"primary","delivery":"push",` +
 		`"localDirectory":"` + dir + `","checkout":{"refName":"main","refType":"branch"}}},` +
@@ -150,7 +188,7 @@ func pushDataSource(t *testing.T, dir string) (*apiDataSource, *[]string) {
 		`"runtime":{"state":"ready","desiredState":"present","displayState":"running","generation":1,"observedGeneration":1},` +
 		`"createdAt":"2026-01-01T00:00:00Z","updatedAt":"2026-01-01T00:00:00Z"}`
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		*paths = append(*paths, r.URL.Path)
+		paths.add(r.URL.Path)
 		if r.URL.Path == "/projects/project-1/sandboxes/sbx_1" {
 			w.Header().Set("Content-Type", "application/json")
 			_, _ = w.Write([]byte(sandbox))
@@ -190,8 +228,8 @@ func TestPushSourcesSendsNothingAndDialsNothingWhenNothingChanged(t *testing.T) 
 			t.Fatalf("look %d: pushes = %#v, want %s on main", look, pushes, commit)
 		}
 	}
-	if want := []string{"/projects/project-1/sandboxes/sbx_1"}; !slices.Equal(*paths, want) {
-		t.Fatalf("requests = %v, want the discobox read once and no git route touched", *paths)
+	if want := []string{"/projects/project-1/sandboxes/sbx_1"}; !slices.Equal(paths.all(), want) {
+		t.Fatalf("requests = %v, want the discobox read once and no git route touched", paths.all())
 	}
 }
 
@@ -210,15 +248,11 @@ func TestPushSourcesHoldsARefusedCommit(t *testing.T) {
 	if len(pushes) != 1 || pushes[0].Err == nil || pushes[0].Commit != commit {
 		t.Fatalf("pushes = %#v, want %s attempted and refused", pushes, commit)
 	}
-	var attempted bool
-	for _, path := range *paths {
-		attempted = attempted || strings.Contains(path, "git-origins")
-	}
-	if !attempted {
-		t.Fatalf("requests = %v, want the git route dialed for a commit with nowhere to be", *paths)
+	if !paths.touched("git-origins") {
+		t.Fatalf("requests = %v, want the git route dialed for a commit with nowhere to be", paths.all())
 	}
 
-	*paths = nil
+	paths.reset()
 	held := map[string]string{"primary": commit}
 	pushes, err = ds.PushSources(t.Context(), "sbx_1", held)
 	if err != nil {
@@ -227,7 +261,68 @@ func TestPushSourcesHoldsARefusedCommit(t *testing.T) {
 	if len(pushes) != 1 || pushes[0].Err != nil || pushes[0].Pushed {
 		t.Fatalf("pushes = %#v, want the held commit resolved and not sent", pushes)
 	}
-	if len(*paths) != 0 {
-		t.Fatalf("requests = %v, want nothing dialed for a commit already refused", *paths)
+	if got := paths.all(); len(got) != 0 {
+		t.Fatalf("requests = %v, want nothing dialed for a commit already refused", got)
 	}
+}
+
+// A raw attach has no window, so it pushes for itself: the same rule, for as
+// long as the stream lasts (ADR 0095 §1). It says nothing into the stream while
+// it runs, and reports what could not be pushed once the terminal is the
+// client's again.
+func TestAutoPushWhileAttachedPushesAndReportsOnlyOnStop(t *testing.T) {
+	dir, commit := pushRepo(t)
+	ds, paths := pushDataSource(t, dir)
+
+	var report strings.Builder
+	stop := ds.app.autoPushWhileAttached(t.Context(), ds.client, "project-1", "sbx_1")
+	// The push is attempted against a stub that does not serve the git route,
+	// so it fails — which is what puts something in the report.
+	waitFor(t, func() bool { return paths.touched("git-origins") }, "the git route to be dialed")
+	if report.Len() != 0 {
+		t.Fatalf("wrote %q while attached, want nothing in the stream", report.String())
+	}
+	stop(&report)
+
+	if !strings.Contains(report.String(), "could not push primary") {
+		t.Fatalf("report = %q, want the refused source named", report.String())
+	}
+	if !strings.Contains(report.String(), commit[:7]) && !strings.Contains(report.String(), "origin") {
+		t.Fatalf("report = %q, want it to say what failed", report.String())
+	}
+}
+
+// A discobox this machine has nothing to push to is never asked, on the raw
+// path as in the window: the whole rule lives in one place.
+func TestAutoPushWhileAttachedSkipsADiscoboxItCannotPush(t *testing.T) {
+	dir, _ := pushRepo(t)
+	ds, paths := pushDataSource(t, dir)
+	ds.app.pushCache = nil
+	t.Setenv(hostid.EnvVar, "hst_othermachine0002")
+
+	var report strings.Builder
+	stop := ds.app.autoPushWhileAttached(t.Context(), ds.client, "project-1", "sbx_1")
+	waitFor(t, func() bool { return len(paths.all()) > 0 }, "the discobox to be read")
+	stop(&report)
+
+	if paths.touched("git-origins") {
+		t.Fatalf("requests = %v, want no push for another machine's discobox", paths.all())
+	}
+	if report.String() != "" {
+		t.Fatalf("report = %q, want nothing said about a discobox this machine cannot push", report.String())
+	}
+}
+
+// waitFor pumps until cond holds, so a test can wait on the loop's own
+// goroutine without sleeping for a fixed time.
+func waitFor(t *testing.T, cond func() bool, what string) {
+	t.Helper()
+	deadline := time.Now().Add(10 * time.Second)
+	for time.Now().Before(deadline) {
+		if cond() {
+			return
+		}
+		time.Sleep(5 * time.Millisecond)
+	}
+	t.Fatalf("timed out waiting for %s", what)
 }

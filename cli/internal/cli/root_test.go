@@ -398,6 +398,13 @@ func TestTerminalCreateFallsBackWhenStartResponseIsTruncated(t *testing.T) {
 func TestTerminalAttachPrimaryUsesVirtualExecID(t *testing.T) {
 	var attachPath string
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		// Every terminal attach asks what the discobox's sources are, to push
+		// the commits made here into its origin (ADR 0095). This one has none.
+		if strings.HasSuffix(r.URL.Path, "/projects/project-1/sandboxes/sandbox-1") {
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = w.Write([]byte(`{"id":"sandbox-1","projectId":"project-1","createdByUserId":"user-1","displayName":"box","config":{"name":"box","image":""},"runtime":{"state":"ready","desiredState":"present","generation":1,"observedGeneration":1},"createdAt":"2026-01-01T00:00:00Z","updatedAt":"2026-01-01T00:00:00Z"}`))
+			return
+		}
 		if !strings.HasSuffix(r.URL.Path, "/attach") {
 			t.Fatalf("unexpected request: %s %s", r.Method, r.URL.Path)
 		}
@@ -426,11 +433,18 @@ func TestTerminalAttachPrimaryUsesVirtualExecID(t *testing.T) {
 }
 
 // `discobox attach` is the root-command shortcut for `admin terminal attach
-// primary --sandbox-id`: it must reach the same virtual primary exec, with no
-// other behavior in between.
+// primary --sandbox-id`: it must reach the same virtual primary exec, and
+// nothing between the two may change which exec that is.
 func TestAttachUsesVirtualPrimaryExecID(t *testing.T) {
 	var attachPath string
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		// Every terminal attach asks what the discobox's sources are, to push
+		// the commits made here into its origin (ADR 0095). This one has none.
+		if strings.HasSuffix(r.URL.Path, "/projects/project-1/sandboxes/sandbox-1") {
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = w.Write([]byte(`{"id":"sandbox-1","projectId":"project-1","createdByUserId":"user-1","displayName":"box","config":{"name":"box","image":""},"runtime":{"state":"ready","desiredState":"present","generation":1,"observedGeneration":1},"createdAt":"2026-01-01T00:00:00Z","updatedAt":"2026-01-01T00:00:00Z"}`))
+			return
+		}
 		if !strings.HasSuffix(r.URL.Path, "/attach") {
 			t.Fatalf("unexpected request: %s %s", r.Method, r.URL.Path)
 		}

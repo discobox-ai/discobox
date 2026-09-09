@@ -52,6 +52,14 @@ type App struct {
 	// See ensureLocalServerOnce.
 	autoLaunchOnce sync.Once
 
+	// pushCache is what an automatic push resolves to per discobox, guarded by
+	// pushMu: which of its sources this machine may push and the repository
+	// each one is pushed from, none of which can change while the discobox
+	// exists. Every attached client in this invocation shares it. See
+	// push_auto.go.
+	pushMu    sync.Mutex
+	pushCache map[string]*pushTargets
+
 	// startedServer records that this invocation launched the server, which is
 	// what makes it the one responsible for showing first-run setup.
 	startedServer bool
