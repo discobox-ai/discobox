@@ -71,6 +71,10 @@ type App struct {
 	// stagingShownByUI is set by a front end that reports that setup itself, so
 	// the launch path does not block on it.
 	stagingShownByUI bool
+	// runsAnImage is set by a command that is going to make a discobox run an
+	// image, which is the only kind worth holding while a first run stages
+	// them. See waitsOutFirstRunStaging.
+	runsAnImage bool
 }
 
 func NewRootCommand() *cobra.Command {
@@ -430,11 +434,9 @@ func (a *App) ensureLocalServer(ctx context.Context) error {
 		// already up says nothing.
 		a.notify("started the discobox server in the background (logs: discobox admin server logs; stop it with: discobox admin server shutdown)")
 		a.startedServer = true
-		// Unless a front end is going to show it. The window reports this under
-		// its own frame while the user gets on with the application, which beats
-		// a line they can only watch — so it says so, and this leaves the
-		// waiting to it.
-		if a.stagingShownByUI {
+		// Only a run holds for the images, and only when nothing else is
+		// showing them. See waitsOutFirstRunStaging.
+		if !a.waitsOutFirstRunStaging() {
 			return nil
 		}
 		// And wait out the first run here, once, rather than letting it happen
@@ -448,6 +450,27 @@ func (a *App) ensureLocalServer(ctx context.Context) error {
 		staging.clear()
 	}
 	return nil
+}
+
+// waitsOutFirstRunStaging reports whether this command should hold while a
+// first run stages the images a discobox runs.
+//
+// Only a command that is going to run one. Staging is a head start for the
+// images a discobox opens (ADR 0069), and `discobox ps` opens none: holding a
+// list behind gigabytes it will never read is a first command that prints the
+// line about the server it started and then appears to hang, which is exactly
+// how it was reported. The pull is not lost by not waiting here — it happens
+// inside the operation that needs the image, which narrates it there.
+//
+// A front end waits for nothing either, for the opposite reason: the window
+// reports this under its own frame while the user gets on with the application,
+// which beats a line they can only watch — so it says so, and this leaves the
+// waiting to it.
+func (a *App) waitsOutFirstRunStaging() bool {
+	if a.stagingShownByUI {
+		return false
+	}
+	return a.runsAnImage
 }
 
 // serverStartupLine is where a launch narrates, or nothing when there is

@@ -1802,3 +1802,45 @@ func TestVersionFollowedByWordsIsAnError(t *testing.T) {
 		t.Fatalf("error = %q, want it to name the extra word", err)
 	}
 }
+
+// Which commands hold while a first run stages images, and which do not. A
+// list, a status, a `ps` opens no image, and blocking one behind gigabytes it
+// will never read is a first command that looks hung.
+func TestWaitsOutFirstRunStaging(t *testing.T) {
+	// Pointers: an App carries the sync.Once that guards its one autolaunch,
+	// and a table of values would copy it.
+	for _, tc := range []struct {
+		name string
+		app  *App
+		want bool
+	}{
+		{name: "a command that reads", app: &App{}, want: false},
+		{name: "a run", app: &App{runsAnImage: true}, want: true},
+		{name: "a run in the window, which shows staging itself", app: &App{runsAnImage: true, stagingShownByUI: true}, want: false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := tc.app.waitsOutFirstRunStaging(); got != tc.want {
+				t.Fatalf("waitsOutFirstRunStaging() = %v, want %v", got, tc.want)
+			}
+		})
+	}
+}
+
+// And the run marks itself as one, before anything it does reaches the API —
+// the wait belongs to the launch that first call can trigger. Asserted on the
+// way through a run that fails for its own reasons, so this needs no server.
+func TestARunMarksItselfAsRunningAnImage(t *testing.T) {
+	app := &App{}
+	cmd := &cobra.Command{}
+	cmd.SetOut(io.Discard)
+	cmd.SetErr(io.Discard)
+
+	err := app.runPrompt(cmd, &runCommandOptions{}, nil)
+
+	if err == nil {
+		t.Fatal("expected a run with no source to fail")
+	}
+	if !app.runsAnImage {
+		t.Fatal("a run did not mark itself as one, so a first run would not wait for its image")
+	}
+}

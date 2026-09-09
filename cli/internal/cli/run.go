@@ -141,6 +141,11 @@ discobox as it does here. --declared-sources=false leaves them out.`,
 // given as one argument. Only `run` has trailing words to pass; the bare
 // command's prompt is -p and nothing else, so it passes none.
 func (a *App) runPrompt(cmd *cobra.Command, opts *runCommandOptions, args []string) error {
+	// A run is what a staged image is staged for, so this is the command that
+	// waits for one on a first run (waitsOutFirstRunStaging). Set before
+	// anything reaches the API, because the wait belongs to the launch that
+	// first call may trigger.
+	a.runsAnImage = true
 	// Creating and delivering a source are this client's own work, so
 	// nothing but this process can say which of them is underway
 	// (ADR 0060). The line comes back down before anything else is
