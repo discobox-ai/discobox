@@ -1,0 +1,45 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  The desktop's backdrop, rendered to PNG at image build by rsvg-convert.
+
+  It is the same picture as the viewer page the desktop is watched through: a
+  near-black ground, one wash of the mark's purple falling from the top edge,
+  and the wordmark as the only thing actually drawn.
+
+  The wordmark is referenced rather than inlined, so this file never becomes a
+  second copy of the art to keep in step with Illustrator. librsvg will only
+  follow a reference that stays inside the document's own directory, which is
+  why the build copies the two files into one directory before rendering.
+-->
+<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink"
+     width="2560" height="1440" viewBox="0 0 2560 1440">
+  <defs>
+    <radialGradient id="wash" cx="0.5" cy="-0.05" r="0.78">
+      <stop offset="0" stop-color="#9e4aa7" stop-opacity="0.34"/>
+      <stop offset="0.55" stop-color="#9e4aa7" stop-opacity="0.08"/>
+      <stop offset="1" stop-color="#9e4aa7" stop-opacity="0"/>
+    </radialGradient>
+    <radialGradient id="vignette" cx="0.5" cy="0.45" r="0.75">
+      <stop offset="0.55" stop-color="#0b090e" stop-opacity="0"/>
+      <stop offset="1" stop-color="#000000" stop-opacity="0.42"/>
+    </radialGradient>
+    <linearGradient id="hairline" x1="0" y1="0" x2="1" y2="0">
+      <stop offset="0" stop-color="#fdcc11"/>
+      <stop offset="0.56" stop-color="#9e4aa7"/>
+      <stop offset="1" stop-color="#06eaa7"/>
+    </linearGradient>
+  </defs>
+
+  <rect width="2560" height="1440" fill="#0b090e"/>
+  <rect width="2560" height="1440" fill="url(#wash)"/>
+  <rect width="2560" height="1440" fill="url(#vignette)"/>
+
+  <!-- The wordmark's own gradient is the gold-purple-teal one; on a ground this
+       dark the white cut reads as the mark and the gradient reads as noise. -->
+  <image xlink:href="wordmark-white.svg"
+         x="906" y="620" width="748" height="210" opacity="0.92"/>
+
+  <!-- The hairline the viewer draws under its top bar, echoed under the
+       wordmark so the page and the desktop inside it share one detail. -->
+  <rect x="906" y="884" width="748" height="2" fill="url(#hairline)" opacity="0.6"/>
+</svg>

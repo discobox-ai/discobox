@@ -1,0 +1,40 @@
+[Unit]
+Description=Discobox desktop viewer (branded noVNC page, display sizing, annotations)
+Documentation=https://github.com/discobox-ai/discobox
+# Not Requires=xvfb.service, and deliberately nothing that would pull it in:
+# reaching this port must never start a desktop. A port probe, a preview link
+# someone opens and closes, a health check -- all of those land here, and X
+# stays down for every one of them. The display comes up when a browser asks
+# for a framebuffer size, or when an X client talks to :0. Ordered after it
+# only so the reverse case -- something else talked to :0 first, and
+# xvfb.service pulls this in as its companion -- does not race it.
+After=xvfb.service
+# The session bus is how this service reaches xfconf, which is where the
+# desktop's UI density lives now that xfsettingsd owns it. See desktop/display.go.
+Requires=discobox-desktop-bus.service
+After=discobox-desktop-bus.service
+
+[Service]
+# notify, not simple: readiness here means "the desktop scale is settled", and
+# xfce4-session@.service is ordered after it for exactly that. The scale reaches
+# the session as GDK_SCALE in an environment file, which every process reads
+# once when it starts, so a session started before the scale is known draws its
+# panel and window manager at the wrong one. See desktop.settleScale.
+Type=notify
+NotifyAccess=main
+# Readiness is reached without any I/O that can block -- the remembered scale is
+# read from a file -- so this only has to cover process startup.
+TimeoutStartSec=60
+Environment=DBUS_SESSION_BUS_ADDRESS=unix:path=/run/discobox/desktop/bus
+# User= comes from a drop-in the boot flow writes, resolving the sandbox user:
+# the annotation record lives under that user's home, and the agent that reads
+# it back runs as the same user.
+ExecStart=/usr/local/bin/discobox-sandbox-agent desktop
+Restart=on-failure
+RestartSec=2
+ProtectSystem=full
+NoNewPrivileges=true
+RestrictSUIDSGID=true
+LockPersonality=true
+SystemCallArchitectures=native
+CapabilityBoundingSet=

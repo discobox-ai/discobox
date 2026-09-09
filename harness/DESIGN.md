@@ -74,7 +74,7 @@ sandbox terminals.
   labels it. It carries what is true of that image's filesystem rather than of
   any harness:
   - `DISPLAY=:0`, because the base ships the socket-activated desktop (Xorg
-    dummy on `:0`, openbox, x11vnc, websockify — see
+    dummy on `:0`, Xfce, x11vnc, websockify — see
     [`sandbox-agent/DESIGN.md`](../sandbox-agent/DESIGN.md)) unconditionally.
     Without it nothing in a sandbox can open a window: `DISPLAY` reaches an exec
     only through `sandbox.json`'s env, which is where the image layer lands. It

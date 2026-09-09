@@ -3,7 +3,11 @@ Description=Xdummy virtual X11 display on :0
 
 [Service]
 Type=simple
-ExecStartPre=-/bin/rm -f /tmp/.X11-unix/X0 /tmp/.X0-lock
+# Only the lock is Xorg's to clean up. /tmp/.X11-unix/X0 belongs to
+# x11-display.socket, which is listening on it: Xorg runs -nolisten local and
+# never creates it, and removing it unlinks the path clients reach :0 through,
+# so the display would socket-activate exactly once and then be unreachable.
+ExecStartPre=-/bin/rm -f /tmp/.X0-lock
 ExecStart=/usr/lib/xorg/Xorg :0 -config /etc/X11/xorg-dummy.conf -noreset -ac -listen tcp -nolisten local +extension RANDR
 Restart=on-failure
 RestartSec=2

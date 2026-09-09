@@ -1,0 +1,153 @@
+<!doctype html>
+<html lang="en" data-theme="dark">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Discobox desktop</title>
+<link rel="icon" href="/brand/favicon.svg" type="image/svg+xml">
+<link rel="stylesheet" href="/app.css">
+</head>
+<body>
+
+<header class="bar">
+  <a class="brand" href="/" title="Discobox">
+    <img class="brand-word" src="/brand/wordmark-gradient.svg" alt="Discobox">
+    <span class="brand-sub">desktop</span>
+  </a>
+
+  <div class="status" id="status" data-state="connecting">
+    <!-- The state is the reconnect control when there is something to
+         reconnect. Disabled otherwise, so it is a label the rest of the time
+         rather than a button that does nothing. -->
+    <button class="status-main" id="status-main" type="button" disabled>
+      <span class="dot"></span>
+      <span class="status-text" id="status-text">Starting the display…</span>
+    </button>
+    <span class="chip chip-name" id="chip-name" hidden></span>
+    <span class="chip" id="chip-geometry" hidden></span>
+    <span class="chip" id="chip-density" hidden></span>
+  </div>
+
+  <div class="actions">
+    <button class="btn btn-accent" id="btn-annotate" type="button" aria-pressed="false">
+      <svg viewBox="0 0 16 16" aria-hidden="true"><rect x="1.75" y="3.75" width="12.5" height="8.5" rx="1.25"/><path d="M5 8h6M8 5.6v4.8"/></svg>
+      Annotate
+    </button>
+    <button class="btn" id="btn-notes" type="button" aria-pressed="false">
+      Notes <span class="count" id="notes-count">0</span>
+    </button>
+    <label class="btn btn-select" for="scale" title="Device scale. Detected from this screen; applies to programs started afterwards.">
+      Density
+      <select id="scale">
+        <option value="1">Standard</option>
+        <option value="2">HiDPI 2&times;</option>
+        <option value="3">HiDPI 3&times;</option>
+      </select>
+    </label>
+    <button class="btn btn-icon" id="btn-fullscreen" type="button" title="Fullscreen">
+      <svg viewBox="0 0 16 16" aria-hidden="true"><path d="M2 6V2.5h3.5M14 6V2.5h-3.5M2 10v3.5h3.5M14 10v3.5h-3.5"/></svg>
+    </button>
+    <button class="btn btn-icon" id="btn-reconnect" type="button" title="Reconnect">
+      <svg viewBox="0 0 16 16" aria-hidden="true"><path d="M13.2 7A5.2 5.2 0 1 1 11.6 3.6"/><path d="M13.6 1.6V4.4H10.8"/></svg>
+    </button>
+  </div>
+</header>
+
+<main class="stage" id="stage">
+  <div class="screen-wrap" id="screen-wrap">
+    <div class="screen" id="screen"></div>
+    <div class="overlay" id="overlay">
+      <div class="marquee" id="marquee" hidden></div>
+    </div>
+    <div class="curtain" id="curtain">
+      <img class="curtain-mark" src="/brand/logo-purple.svg" alt="">
+      <p class="curtain-text" id="curtain-text">Waking the desktop…</p>
+    </div>
+  </div>
+
+  <div class="annotate-hint" id="annotate-hint" hidden>
+    Drag a box around what should change &nbsp;·&nbsp; <kbd>Esc</kbd> to cancel
+  </div>
+</main>
+
+<!-- The comment popover, anchored to the box just drawn. -->
+<form class="composer" id="composer" hidden>
+  <label class="composer-label" for="composer-text">What should change here?</label>
+  <textarea id="composer-text" rows="3" placeholder="The toolbar icons sit two pixels below their label…" spellcheck="true"></textarea>
+  <div class="composer-foot">
+    <span class="composer-region" id="composer-region"></span>
+    <span class="composer-buttons">
+      <button class="btn" type="button" id="composer-cancel">Cancel</button>
+      <button class="btn btn-accent" type="submit" id="composer-save">Save note</button>
+    </span>
+  </div>
+</form>
+
+<aside class="notes" id="notes" hidden aria-label="Desktop notes">
+  <div class="notes-head">
+    <h2>Notes</h2>
+    <button class="btn btn-icon" id="notes-close" type="button" title="Close">
+      <svg viewBox="0 0 16 16" aria-hidden="true"><path d="M4 4l8 8M12 4l-8 8"/></svg>
+    </button>
+  </div>
+
+  <div class="handoff">
+    <p class="handoff-lead">Paste this to your agent:</p>
+    <code class="handoff-prompt" id="handoff-prompt"></code>
+    <button class="btn btn-accent btn-block" id="btn-copy" type="button">Copy prompt</button>
+    <p class="handoff-path" id="handoff-path"></p>
+  </div>
+
+  <ul class="notes-list" id="notes-list"></ul>
+  <p class="notes-empty" id="notes-empty">Nothing noted yet. Hit <b>Annotate</b> and drag a box on the desktop.</p>
+</aside>
+
+<!-- One note, opened from the list: what the screen looked like when it was
+     taken, and everything that can be done about it. The screenshot is the
+     record — the desktop behind this dialog has moved on. -->
+<dialog class="note-dialog" id="note-dialog">
+  <form method="dialog" class="note-dialog-close-form">
+    <button class="btn btn-icon" id="note-dialog-close" value="close" aria-label="Close">
+      <svg viewBox="0 0 16 16" aria-hidden="true"><path d="M4 4l8 8M12 4l-8 8"/></svg>
+    </button>
+  </form>
+
+  <figure class="note-figure">
+    <img class="note-figure-shot" id="note-dialog-shot" alt="" hidden>
+    <figcaption class="note-figure-none" id="note-dialog-noshot" hidden>
+      No screenshot was captured for this note.
+    </figcaption>
+    <!-- Two pictures of the same moment: where it was, and what it was. -->
+    <div class="note-figure-switch" id="note-dialog-switch" hidden>
+      <button type="button" class="note-figure-tab" id="note-dialog-tab-screen">Full screen</button>
+      <button type="button" class="note-figure-tab" id="note-dialog-tab-region">Region</button>
+    </div>
+  </figure>
+
+  <div class="note-dialog-body">
+    <div class="note-dialog-head">
+      <span class="note-id" id="note-dialog-id"></span>
+      <span class="note-dialog-when" id="note-dialog-when"></span>
+    </div>
+    <p class="note-dialog-region" id="note-dialog-region"></p>
+
+    <textarea class="note-dialog-text" id="note-dialog-text" rows="4" spellcheck="true"></textarea>
+
+    <!-- What has been said back. The agent writes these into the Markdown
+         itself; this only displays them. -->
+    <ul class="note-replies" id="note-dialog-replies" hidden></ul>
+
+    <div class="note-dialog-actions">
+      <button class="btn" id="note-dialog-done" type="button" aria-pressed="false"></button>
+      <span class="note-dialog-spacer"></span>
+      <button class="btn btn-danger" id="note-dialog-delete" type="button">Delete</button>
+      <button class="btn btn-accent" id="note-dialog-save" type="button">Save</button>
+    </div>
+  </div>
+</dialog>
+
+<div class="toast" id="toast" hidden></div>
+
+<script type="module" src="/app.js"></script>
+</body>
+</html>

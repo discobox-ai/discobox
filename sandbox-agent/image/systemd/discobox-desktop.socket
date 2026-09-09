@@ -1,0 +1,9 @@
+[Unit]
+Description=Discobox desktop viewer socket activation on localhost port 6900
+Documentation=https://github.com/discobox-ai/discobox
+
+[Socket]
+ListenStream=127.0.0.1:6900
+
+[Install]
+WantedBy=sockets.target

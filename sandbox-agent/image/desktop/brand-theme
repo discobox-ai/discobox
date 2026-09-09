@@ -1,0 +1,287 @@
+#!/usr/bin/env python3
+"""Derive the Discobox GTK and xfwm4 theme from Debian's Greybird-dark.
+
+Run once at image build. Greybird-dark is a complete, maintained dark theme
+whose one problem is that it is Ubuntu blue; hand-writing a GTK3 theme to
+replace it would be ten thousand lines of CSS nobody here wants to own. So the
+theme is *derived* rather than authored: every color in it is put through one
+transform, and the small palette that draws the window decorations is pinned by
+hand.
+
+The transform is a hue map, not a color list, so it survives Debian shipping a
+new Greybird:
+
+  near-grey (S < 0.10)   tinted toward the brand's purple-black, keeping L
+  blue (H 190..255)      the accent -- moved to the brand purple, desaturated
+  everything else        left exactly alone
+
+That last line is the important one. Greybird's red, orange and green are the
+error, warning and success colors; a blanket "make it purple" would erase the
+one distinction those colors exist to make.
+
+Lightness is preserved everywhere, so every contrast ratio Greybird was built
+with survives the recolor.
+"""
+
+import colorsys
+import os
+import re
+import shutil
+import sys
+
+SOURCE = "/usr/share/themes/Greybird-dark"
+TARGET = "/usr/share/themes/Discobox"
+
+# The scales the desktop viewer offers, and so the decoration variants that have
+# to exist. See DECORATION_SCALING below for why this is a build-time concern at
+# all; desktop.MaxScale is the other end of the agreement.
+DECORATION_SCALES = (2, 3)
+
+# The viewer's palette, from sandbox-agent/desktop/web/app.css. The desktop and
+# the page it is watched through are one thing and are colored from one list.
+TITLE_ACTIVE = "#1b1622"
+TITLE_INACTIVE = "#14111a"
+TITLE_HOVER = "#2f2439"
+EDGE_ACTIVE = "#9e4aa7"
+EDGE_INACTIVE = "#2a2233"
+HAIRLINE_ACTIVE = "#4a3757"
+HAIRLINE_INACTIVE = "#241d2c"
+HAIRLINE_HOVER = "#5a4468"
+PRESSED = "#9e4aa7"
+PRESSED_HAIRLINE = "#b45cbd"
+GLYPH_ACTIVE = "#ece7f2"
+GLYPH_INACTIVE = "#6d6478"
+GLYPH_PRESSED = "#0b090e"
+
+# The hue the brand's purple sits at, and how much of Greybird's saturation to
+# keep when moving a color onto it. Greybird's accent is a far more saturated
+# blue than the brand's purple, so carrying its saturation across unchanged
+# would give a desktop louder than anything else that wears this palette.
+BRAND_HUE = 295 / 360
+GREY_HUE = 285 / 360
+GREY_SATURATION = 0.16
+ACCENT_SATURATION = 0.62
+
+HEX = re.compile(r"#([0-9a-fA-F]{6})\b")
+
+
+def recolor(match):
+    """Map one #rrggbb onto the brand, keeping its lightness."""
+    value = match.group(1)
+    red, green, blue = (int(value[i:i + 2], 16) / 255 for i in (0, 2, 4))
+    hue, lightness, saturation = colorsys.rgb_to_hls(red, green, blue)
+    if saturation < 0.10:
+        # A neutral. Tinted, not colored: the tint fades out toward black and
+        # white so that text stays text and a border stays a border.
+        hue = GREY_HUE
+        saturation = GREY_SATURATION * (1 - abs(lightness - 0.5) * 1.1)
+    elif 190 <= hue * 360 <= 255:
+        hue = BRAND_HUE
+        saturation = min(1.0, saturation * ACCENT_SATURATION)
+    else:
+        return match.group(0)
+    red, green, blue = colorsys.hls_to_rgb(hue, lightness, saturation)
+    return "#%02x%02x%02x" % tuple(round(channel * 255) for channel in (red, green, blue))
+
+
+def rewrite(path, pins=()):
+    """Put a file's color table through the transform, honoring pins first."""
+    with open(path, encoding="utf-8", errors="surrogateescape") as handle:
+        text = handle.read()
+    for source, replacement in pins:
+        text = re.sub(source, replacement, text, flags=re.IGNORECASE)
+    text = HEX.sub(recolor, text)
+    with open(path, "w", encoding="utf-8", errors="surrogateescape") as handle:
+        handle.write(text)
+
+
+# The window decorations are pinned rather than transformed, because they are
+# the one part of another program's window that is ours to draw. Greybird's
+# xfwm4 theme is three structural colors and one glyph color, and every XPM in
+# it is drawn from that short list:
+#
+#   #1d1f1f  the border, all the way around the window
+#   #414343  a hairline just inside the top border
+#   #3b3e3f  the titlebar body (#3c4041 in the two shade-toggled images)
+#   whichever color the glyph on a button is in this state
+#
+# **The border is what carries focus.** A focused window is outlined in the
+# mark's purple and an unfocused one in the line color — which is exactly what
+# the viewer does to the desktop it frames, and it is the only thing that
+# separates a window from a backdrop this dark. Making the *titlebar* carry
+# focus instead would not work here: both states have to stay near-black to sit
+# under the panel, and near-black against near-black is not a distinction.
+DECORATION_PINS = {
+    "active": [
+        ("#1d1f1f", EDGE_ACTIVE),
+        ("#414343", HAIRLINE_ACTIVE),
+        ("#3b3e3f|#3c4041", TITLE_ACTIVE),
+        ("#ffffff", GLYPH_ACTIVE),
+    ],
+    "inactive": [
+        ("#1d1f1f", EDGE_INACTIVE),
+        ("#414343", HAIRLINE_INACTIVE),
+        ("#3b3e3f|#3c4041", TITLE_INACTIVE),
+        ("#babab3", GLYPH_INACTIVE),
+    ],
+    # Hover and press are only ever drawn on a focused window, so both keep the
+    # active border and lift the button's own cell out of the titlebar.
+    "prelight": [
+        ("#1d1f1f", EDGE_ACTIVE),
+        ("#414343", HAIRLINE_HOVER),
+        ("#3b3e3f|#3c4041", TITLE_HOVER),
+    ],
+    "pressed": [
+        ("#1d1f1f", EDGE_ACTIVE),
+        ("#414343", PRESSED_HAIRLINE),
+        ("#3b3e3f|#3c4041", PRESSED),
+        ("#19b1a2", GLYPH_PRESSED),
+    ],
+}
+
+# xfwm4 draws its decorations from fixed-size pixmaps and **does not scale
+# them**. It has exactly one HiDPI accommodation, a hardcoded substitution of
+# Default-xhdpi for Default at scale 2, and it applies to no other theme —
+# measured on this image, `Default` grows from a 29px titlebar to 58px at scale
+# 2 while every other theme, variants included, stays where it is.
+#
+# So a HiDPI desktop needs the art to already exist at that size, and the image
+# ships one variant per scale for the viewer to select between. Pixel-doubling
+# is the right way to make them, not resampling: the framebuffer is rendered at
+# device resolution and drawn back down by the browser, so a doubled pixmap
+# lands on screen looking exactly like the original — which is the whole point.
+# What actually gains from the scale is the text beside it, which is a font.
+
+
+def scale_xpm(text, factor):
+    """Return an XPM scaled by an integer factor, by repeating pixels.
+
+    The format is a C array of string literals: one header, one line per color,
+    then one line per row of pixels. Parsing by line rather than by scanning for
+    quotes keeps a color whose character *is* a quote from derailing it.
+    """
+    lines = text.split("\n")
+    quoted = [i for i, line in enumerate(lines) if line.lstrip().startswith('"')]
+    if not quoted:
+        return text
+    header = lines[quoted[0]]
+    values = header[header.index('"') + 1:header.rindex('"')].split()
+    width, height, colors, per_pixel = (int(v) for v in values[:4])
+
+    rows = quoted[1 + colors:]
+    if len(rows) != height:
+        return text
+
+    lines[quoted[0]] = header.replace(
+        " ".join(values[:4]),
+        f"{width * factor} {height * factor} {colors} {per_pixel}", 1)
+
+    scaled = []
+    for index in rows:
+        line = lines[index]
+        start, end = line.index('"') + 1, line.rindex('"')
+        pixels = line[start:end]
+        wide = "".join(
+            pixels[i:i + per_pixel] * factor
+            for i in range(0, width * per_pixel, per_pixel))
+        scaled.append((index, line[:start] + wide + line[end:]))
+
+    # Rebuilt back to front so the earlier insertion points stay valid.
+    for index, line in reversed(scaled):
+        lines[index:index + 1] = [line] * factor
+    return "\n".join(lines)
+
+
+# The themerc keys that are a measurement in pixels, and so scale with the art.
+# Everything else in the file is a color, a boolean, or a percentage.
+SCALED_THEMERC_KEYS = (
+    "button_offset", "button_spacing", "frame_border_top",
+    "shadow_delta_height", "shadow_delta_width", "shadow_delta_x",
+    "shadow_delta_y", "title_horizontal_offset",
+    "title_vertical_offset_active", "title_vertical_offset_inactive",
+)
+
+
+def scale_themerc(text, factor):
+    out = []
+    for line in text.split("\n"):
+        key, separator, value = line.partition("=")
+        if separator and key.strip() in SCALED_THEMERC_KEYS:
+            try:
+                line = f"{key}={int(value.strip()) * factor}"
+            except ValueError:
+                pass
+        out.append(line)
+    return "\n".join(out)
+
+
+INDEX_THEME = """[Desktop Entry]
+Type=X-GNOME-Metatheme
+Name=Discobox
+Comment=Discobox, derived from Greybird-dark
+Encoding=UTF-8
+
+[X-GNOME-Metatheme]
+GtkTheme=Discobox
+MetacityTheme=Discobox
+IconTheme=elementary-xfce-dark
+CursorTheme=Adwaita
+ButtonLayout=:minimize,maximize,close
+"""
+
+
+def main():
+    if not os.path.isdir(SOURCE):
+        sys.exit(f"{SOURCE} is missing: install greybird-gtk-theme before deriving the theme")
+    shutil.rmtree(TARGET, ignore_errors=True)
+    shutil.copytree(SOURCE, TARGET)
+
+    # Greybird ships a compiled gresource beside its stylesheet. GTK loads a
+    # named theme from gtk.css, never from that file, so it would only sit in
+    # the image as an un-recolored copy of what we just replaced.
+    for stale in ("gtk-3.0/gtk.gresource", "index.theme"):
+        path = os.path.join(TARGET, stale)
+        if os.path.exists(path):
+            os.remove(path)
+
+    for stylesheet in ("gtk-3.0/gtk.css", "gtk-3.0/gtk-dark.css", "gtk-2.0/gtkrc"):
+        path = os.path.join(TARGET, stylesheet)
+        if os.path.exists(path):
+            rewrite(path)
+
+    decorations = os.path.join(TARGET, "xfwm4")
+    for name in sorted(os.listdir(decorations)):
+        if not name.endswith(".xpm") and name != "themerc":
+            continue
+        state = next((s for s in DECORATION_PINS if f"-{s}." in name), "active")
+        rewrite(os.path.join(decorations, name), DECORATION_PINS[state])
+
+    with open(os.path.join(decorations, "themerc"), "a", encoding="utf-8") as handle:
+        handle.write(f"\nactive_text_color={GLYPH_ACTIVE}\ninactive_text_color={GLYPH_INACTIVE}\n")
+
+    with open(os.path.join(TARGET, "index.theme"), "w", encoding="utf-8") as handle:
+        handle.write(INDEX_THEME)
+
+    # One decoration-only variant per scale. Only the xfwm4 directory is
+    # duplicated: GTK scales itself from GDK_SCALE, so a second copy of a
+    # 300KB stylesheet would be an image layer bought for nothing.
+    for factor in DECORATION_SCALES:
+        variant = os.path.join(f"{TARGET}-{factor}x", "xfwm4")
+        shutil.rmtree(os.path.dirname(variant), ignore_errors=True)
+        shutil.copytree(decorations, variant)
+        for name in sorted(os.listdir(variant)):
+            path = os.path.join(variant, name)
+            with open(path, encoding="utf-8", errors="surrogateescape") as handle:
+                text = handle.read()
+            if name.endswith(".xpm"):
+                text = scale_xpm(text, factor)
+            elif name == "themerc":
+                text = scale_themerc(text, factor)
+            else:
+                continue
+            with open(path, "w", encoding="utf-8", errors="surrogateescape") as handle:
+                handle.write(text)
+
+
+if __name__ == "__main__":
+    main()

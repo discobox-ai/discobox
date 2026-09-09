@@ -8,6 +8,7 @@ import (
 	"flag"
 	"io"
 	"log/slog"
+	"net"
 	"os"
 	"os/signal"
 	"path/filepath"
@@ -18,6 +19,7 @@ import (
 	"github.com/discobox-ai/discobox/proxy/bridge"
 	"github.com/discobox-ai/discobox/sandbox-agent/boot"
 	"github.com/discobox-ai/discobox/sandbox-agent/config"
+	"github.com/discobox-ai/discobox/sandbox-agent/desktop"
 	"github.com/discobox-ai/discobox/sandbox-agent/execs"
 	harnesshooks "github.com/discobox-ai/discobox/sandbox-agent/hooks"
 	"github.com/discobox-ai/discobox/sandbox-agent/nestedbridge"
@@ -45,6 +47,9 @@ func run(args []string) int {
 	}
 	if len(args) > 0 && args[0] == "render-proxy-env" {
 		return runRenderProxyEnv(args[1:])
+	}
+	if len(args) > 0 && args[0] == "desktop" {
+		return runDesktop(args[1:])
 	}
 	if len(args) > 0 && args[0] == "init" {
 		return boot.Init(slog.Default(), args[1:])
@@ -231,6 +236,42 @@ func runRenderProxyEnv(args []string) int {
 	}
 	if err := proxyenv.WriteFile(sandboxJSON, out); err != nil {
 		slog.Error("render proxy env", "error", err)
+		return 1
+	}
+	return 0
+}
+
+// runDesktop runs the desktop viewer: the branded page on 6900 that embeds
+// noVNC, sizes the X screen to the browser window, and writes what a person
+// draws on the desktop somewhere the agent working in this sandbox can read it.
+// See the desktop package.
+func runDesktop(args []string) int {
+	var cfg desktop.Config
+	flags := flag.NewFlagSet("discobox-sandbox-agent desktop", flag.ContinueOnError)
+	flags.StringVar(&cfg.Addr, "addr", desktop.DefaultAddr, "address to serve on when systemd passes no socket")
+	flags.StringVar(&cfg.Display, "display", ":0", "X display to serve and size")
+	flags.StringVar(&cfg.FeedbackDir, "feedback-dir", desktop.DefaultFeedbackDir, "directory holding the annotation record")
+	flags.StringVar(&cfg.WebsockifyURL, "websockify", desktop.DefaultWebsockify, "VNC websocket proxy to front")
+	flags.StringVar(&cfg.NoVNCDir, "novnc-dir", desktop.DefaultNoVNCDir, "directory holding the noVNC client")
+	flags.StringVar(&cfg.BrandDir, "brand-dir", desktop.DefaultBrandDir, "directory holding the brand assets")
+	if err := flags.Parse(args); err != nil {
+		return 2
+	}
+	// Socket-activated in the image, so the port is listening from boot and
+	// nothing runs until a browser asks for the page.
+	listeners, err := activation.Listeners()
+	if err != nil {
+		slog.Error("read systemd activation listeners", "error", err)
+		return 1
+	}
+	var listener net.Listener
+	if len(listeners) > 0 {
+		listener = listeners[0]
+	}
+	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+	defer stop()
+	if err := desktop.Serve(ctx, slog.Default(), cfg, listener); err != nil {
+		slog.Error("serve desktop viewer", "error", err)
 		return 1
 	}
 	return 0

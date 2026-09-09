@@ -1,0 +1,31 @@
+[Unit]
+Description=Xfce desktop session on display :0
+Requires=xvfb.service discobox-desktop-bus.service
+After=xvfb.service discobox-desktop-bus.service
+# The session reads the desktop scale from an environment file the viewer
+# writes, and GDK_SCALE is read once per process -- so the session must not
+# start until the viewer says the scale is settled. That is what the viewer's
+# Type=notify readiness means. Ordering only, not Requires: an image or a boot
+# where the viewer fails still gets a desktop, just at 1x.
+After=discobox-desktop.service
+PartOf=xvfb.service
+
+[Service]
+Type=simple
+User=%i
+Environment=DISPLAY=:0
+Environment=DBUS_SESSION_BUS_ADDRESS=unix:path=/run/discobox/desktop/bus
+# xfce4-session, not startxfce4: the wrapper's job is to start an X server, a
+# D-Bus session and then the session manager, and all three of those are units
+# here already.
+ExecStart=/usr/bin/xfce4-session
+# always, not on-failure: the applications menu has a Log Out entry, and a
+# person who finds it in a container has otherwise ended their own desktop with
+# no way back to it. Restarting turns that into "start my session over".
+# A systemd-initiated stop -- which is what PartOf=xvfb.service issues -- is not
+# a restart, so the session still goes away with the X server.
+Restart=always
+RestartSec=2
+
+[Install]
+WantedBy=multi-user.target

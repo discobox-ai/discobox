@@ -1,0 +1,21 @@
+# The sandbox's default applications, system-wide.
+#
+# Chromium is the browser this image installs, so it is the one a link opens.
+# This is the XDG default-applications list, which is what `xdg-open` and every
+# GIO client -- Thunar, the panel, xfdesktop, a GTK app following a link --
+# consult. It is the /etc/xdg copy so it applies to whatever user the sandbox
+# was given, without seeding anything into a home directory that a person may
+# then have to keep in step.
+#
+# Debian's `x-www-browser` alternative is set alongside it in the Dockerfile:
+# that is the other half, for the scripts and CLI tools that resolve a browser
+# through alternatives rather than through XDG.
+[Default Applications]
+text/html=chromium.desktop
+text/xml=chromium.desktop
+application/xhtml+xml=chromium.desktop
+application/xml=chromium.desktop
+x-scheme-handler/http=chromium.desktop
+x-scheme-handler/https=chromium.desktop
+x-scheme-handler/about=chromium.desktop
+x-scheme-handler/unknown=chromium.desktop

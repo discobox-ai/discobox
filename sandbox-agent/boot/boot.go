@@ -5,6 +5,7 @@ import (
 	"log/slog"
 	"os"
 
+	"github.com/discobox-ai/discobox/sandbox-agent/desktop"
 	"github.com/discobox-ai/discobox/sandboxconfig"
 )
 
@@ -86,6 +87,11 @@ func (b *booter) provision(logger *slog.Logger, id identity) error {
 		// writes into home, which the recursive chown has already passed over.
 		if err := b.seedDirenvConfig(id, effective.Sources); err != nil {
 			return fmt.Errorf("seed direnv config: %w", err)
+		}
+		// After seedHome for the same reason: it chowns the home tree, and
+		// these are written straight to their final owner.
+		if err := b.seedDesktopLaunchers(id, desktop.LauncherDir); err != nil {
+			return fmt.Errorf("seed desktop launchers: %w", err)
 		}
 		if err := b.wireSources(effective.Sources, id); err != nil {
 			return err

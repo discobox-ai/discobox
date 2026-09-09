@@ -1,0 +1,49 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  The backdrop, and what sits on it.
+
+  The monitor is named in the property path, which is xfdesktop's design: a
+  backdrop belongs to one output on one workspace. That name is DUMMY0 and is
+  not a guess -- the image ships image/xorg-dummy.conf and the dummy driver
+  names its single output that -- but it is the one line here that would have to
+  move if the X server this desktop runs on ever changed.
+
+  single-workspace-mode keeps the backdrop attached to the desktop rather than
+  to a workspace, which matters because xfwm4 is configured for exactly one.
+-->
+<channel name="xfce4-desktop" version="1.0">
+  <property name="backdrop" type="empty">
+    <property name="single-workspace-mode" type="bool" value="true"/>
+    <property name="single-workspace-number" type="int" value="0"/>
+    <property name="screen0" type="empty">
+      <property name="monitorDUMMY0" type="empty">
+        <property name="workspace0" type="empty">
+          <property name="image-style" type="int" value="5"/>
+          <property name="color-style" type="int" value="0"/>
+          <property name="last-image" type="string" value="/usr/local/share/discobox/desktop/wallpaper.png"/>
+          <property name="rgba1" type="array">
+            <value type="double" value="0.043137"/>
+            <value type="double" value="0.035294"/>
+            <value type="double" value="0.054902"/>
+            <value type="double" value="1.000000"/>
+          </property>
+        </property>
+      </property>
+    </property>
+  </property>
+  <property name="desktop-icons" type="empty">
+    <property name="style" type="int" value="2"/>
+    <property name="icon-size" type="uint" value="40"/>
+    <property name="single-click" type="bool" value="false"/>
+    <property name="file-icons" type="empty">
+      <property name="show-home" type="bool" value="true"/>
+      <property name="show-filesystem" type="bool" value="false"/>
+      <property name="show-removable" type="bool" value="false"/>
+      <property name="show-trash" type="bool" value="false"/>
+    </property>
+  </property>
+  <property name="desktop-menu" type="empty">
+    <property name="show" type="bool" value="true"/>
+    <property name="show-icons" type="bool" value="true"/>
+  </property>
+</channel>

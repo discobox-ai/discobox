@@ -1,0 +1,18 @@
+# Tell Chromium the desktop scale outright, instead of letting it infer one.
+#
+# Chromium derives its device scale factor from two things on this desktop and
+# multiplies them: Xft/DPI over XSETTINGS (192 at 2x, so 2) and GDK_SCALE from
+# the environment (2). It comes out at scale squared -- a 2x desktop launches a
+# 4x browser. GDK_DPI_SCALE corrects the same double-count for GTK's text, but
+# Chromium does not read it, so there is nothing to divide it back out.
+#
+# Naming the scale stops the inference. Debian's /usr/bin/chromium is a shell
+# wrapper that sources every file in /etc/chromium.d and appends $CHROMIUM_FLAGS,
+# which is the supported way in and the reason scale.env carries the scale as a
+# plain number as well as as toolkit variables.
+if [ -n "${HOME:-}" ] && [ -r "$HOME/.discobox/desktop/scale.env" ]; then
+    . "$HOME/.discobox/desktop/scale.env"
+fi
+if [ -n "${DISCOBOX_DESKTOP_SCALE:-}" ]; then
+    CHROMIUM_FLAGS="$CHROMIUM_FLAGS --force-device-scale-factor=$DISCOBOX_DESKTOP_SCALE"
+fi

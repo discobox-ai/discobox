@@ -122,12 +122,18 @@ RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
     && apt-get install -y --no-install-recommends \
         build-essential \
         chromium \
+        chromium-sandbox \
+        dbus-x11 \
         direnv \
+        elementary-xfce-icon-theme \
         expect \
         extrepo \
+        greybird-gtk-theme \
         jq \
         less \
         libnss3-tools \
+        librsvg2-bin \
+        novnc \
         openssh-client \
         openssh-sftp-server \
         passwd \
@@ -148,6 +154,7 @@ RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
         socat \
         sqlite3 \
         sudo \
+        thunar \
         tmux \
         unzip \
         util-linux \
@@ -155,12 +162,17 @@ RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
         x11vnc \
         x11-xserver-utils \
         xdotool \
+        xfce4-appfinder \
+        xfce4-panel \
+        xfce4-session \
+        xfce4-settings \
+        xfce4-terminal \
+        xfdesktop4 \
+        xfwm4 \
         xserver-xorg-core \
         xserver-xorg-video-dummy \
         xterm \
         xvfb \
-        openbox \
-        pcmanfm \
         xz-utils \
     && rm -rf /var/lib/apt/lists/*
 
@@ -296,6 +308,7 @@ RUN set -eux \
 
 COPY sandbox-agent/image/profile.d/sandbox-dev-tools.sh /etc/profile.d/sandbox-dev-tools.sh
 COPY sandbox-agent/image/profile.d/sandbox-direnv.sh /etc/profile.d/sandbox-direnv.sh
+COPY sandbox-agent/image/profile.d/sandbox-desktop-scale.sh /etc/profile.d/sandbox-desktop-scale.sh
 COPY sandbox-agent/image/systemd/discobox-sandbox-agent.service /etc/systemd/system/discobox-sandbox-agent.service
 COPY sandbox-agent/image/systemd/discobox-proxy-bridge.service /etc/systemd/system/discobox-proxy-bridge.service
 COPY sandbox-agent/image/systemd/discobox-buildkit-bridge.service /etc/systemd/system/discobox-buildkit-bridge.service
@@ -320,9 +333,69 @@ COPY sandbox-agent/image/systemd/websockify-proxy.socket /etc/systemd/system/web
 COPY sandbox-agent/image/systemd/websockify-proxy.service /etc/systemd/system/websockify-proxy.service
 COPY sandbox-agent/image/systemd/websockify@.service /etc/systemd/system/websockify@.service
 COPY sandbox-agent/image/systemd/xvfb.service /etc/systemd/system/xvfb.service
-COPY sandbox-agent/image/systemd/openbox@.service /etc/systemd/system/openbox@.service
+COPY sandbox-agent/image/systemd/discobox-desktop.socket /etc/systemd/system/discobox-desktop.socket
+COPY sandbox-agent/image/systemd/discobox-desktop.service /etc/systemd/system/discobox-desktop.service
+COPY sandbox-agent/image/systemd/discobox-desktop-bus.service /etc/systemd/system/discobox-desktop-bus.service
+COPY sandbox-agent/image/systemd/xfce4-session@.service /etc/systemd/system/xfce4-session@.service
 COPY sandbox-agent/image/xorg-dummy.conf /etc/X11/xorg-dummy.conf
 COPY sandbox-agent/image/discobox-vnc-websockify /usr/local/bin/discobox-vnc-websockify
+# The mark and wordmark the desktop viewer's page is drawn with, served as
+# /brand/ by `discobox-sandbox-agent desktop`. Taken from the repository's
+# own brand directory rather than copied into the sandbox-agent module and
+# embedded: this module is nested, so go:embed cannot reach up to them, and a
+# second copy is a second thing to keep in step with Illustrator.
+COPY assets/brand /usr/local/share/discobox/brand
+# Xfce's defaults, replacing Debian's: the desktop is chrome, and this is what
+# makes it the brand's chrome rather than Ubuntu blue on a stock grey panel.
+# See sandbox-agent/image/desktop and sandbox-agent/desktop/DESIGN.md.
+COPY sandbox-agent/image/desktop/xfconf /etc/xdg/xfce4/xfconf/xfce-perchannel-xml
+COPY sandbox-agent/image/desktop/panel.xml /etc/xdg/xfce4/panel/default.xml
+# The launchers the boot flow seeds into a new home's ~/Desktop, beside the
+# Home icon xfdesktop draws itself. Shipped as files rather than written from
+# Go so they sit next to the rest of the desktop's configuration.
+COPY sandbox-agent/image/desktop/launchers /usr/local/share/discobox/desktop/launchers
+# Chromium is this image's browser, so it is what a link opens. See the file.
+COPY sandbox-agent/image/desktop/mimeapps.list /etc/xdg/mimeapps.list
+# And Xfce's own preferred-applications list, which is what the panel, Thunar
+# and xfdesktop actually open a URL through. See the file.
+COPY sandbox-agent/image/desktop/helpers.rc /etc/xdg/xfce4/helpers.rc
+# Chromium's own scale, which it otherwise infers twice over. See the file.
+COPY sandbox-agent/image/desktop/chromium.d /etc/chromium.d
+COPY --chmod=0755 sandbox-agent/image/desktop/brand-theme /usr/local/libexec/discobox/brand-theme
+COPY sandbox-agent/image/desktop/wallpaper.svg /usr/local/libexec/discobox/wallpaper.svg
+# The theme is derived from Debian's Greybird-dark rather than authored, and the
+# backdrop and the panel's menu button are rasterized from the same brand SVGs
+# the viewer's page is drawn with. Two details:
+#
+#   - librsvg only follows a reference that stays inside the document's own
+#     directory, which is why the wallpaper and the wordmark it draws are copied
+#     into one directory to render.
+#   - the mark is rendered onto a page larger than itself, because the panel
+#     scales a button icon to the full height it is given and the mark would
+#     otherwise sit on the panel with its feet on both edges.
+# Debian resolves a browser two ways and both have to say Chromium: the XDG
+# default-applications list above, and the `x-www-browser` alternative that
+# `sensible-browser` and a long tail of scripts go through. `update-alternatives`
+# is not idempotent against a missing target, so this runs after the package is
+# installed and fails the build if Chromium is not there.
+#
+# The initial-preferences file turns off Chromium's own "make me your default?"
+# infobar, which is noise on a desktop where the question is already answered.
+# Both filenames are written: Debian's packaging has used `master_preferences`
+# for years and upstream renamed it to `initial_preferences`, and whichever this
+# build's Chromium reads, the other is inert.
+RUN set -eux \
+    && update-alternatives --set x-www-browser /usr/bin/chromium \
+    && mkdir -p /etc/chromium \
+    && printf '%s\n' '{"browser":{"check_default_browser":false},"distribution":{"import_bookmarks":false,"make_chrome_default":false,"suppress_first_run_bubble":true,"skip_first_run_ui":true}}' \
+        | tee /etc/chromium/master_preferences > /etc/chromium/initial_preferences \
+    && /usr/local/libexec/discobox/brand-theme \
+    && mkdir -p /usr/local/share/discobox/desktop /tmp/wallpaper \
+    && cp /usr/local/libexec/discobox/wallpaper.svg /usr/local/share/discobox/brand/wordmark-white.svg /tmp/wallpaper/ \
+    && rsvg-convert -w 2560 -h 1440 -o /usr/local/share/discobox/desktop/wallpaper.png /tmp/wallpaper/wallpaper.svg \
+    && rsvg-convert --page-width 160 --page-height 160 --top 16 --left 18 -h 128 \
+        -o /usr/local/share/discobox/desktop/mark.png /usr/local/share/discobox/brand/logo-purple.svg \
+    && rm -rf /tmp/wallpaper /usr/local/libexec/discobox/wallpaper.svg
 COPY --chmod=0755 sandbox-agent/image/nix-seed /usr/local/libexec/discobox/nix-seed
 # Installs as `nix`, `devenv` and friends on /usr/local/bin, which PATH reaches
 # only while the store's own bin directories are still empty. Starts the seed
@@ -389,7 +462,8 @@ RUN chmod 0755 /usr/local/bin/discobox-sandbox-agent \
         discobox-render-proxy-env.service \
         x11-display.socket \
         x11vnc.socket \
-        websockify-proxy.socket
+        websockify-proxy.socket \
+        discobox-desktop.socket
 
 # The manifest layer every image built FROM this one inherits: the env,
 # volumes, groups, and seed files that are true of this image's filesystem
@@ -412,6 +486,6 @@ WORKDIR /workspace
 # No VOLUME directives: the sandbox-agent init flow (PID 1) wires all persistent
 # and cached paths from the primary volumes the worker mounts, per ADR 0007.
 # Anonymous volumes here would only shadow those binds.
-EXPOSE 6080
+EXPOSE 6080 6900
 ENTRYPOINT ["/usr/local/bin/discobox-sandbox-agent", "init"]
 CMD ["/sbin/init"]

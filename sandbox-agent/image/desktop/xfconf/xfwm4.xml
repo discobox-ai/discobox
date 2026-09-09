@@ -1,0 +1,36 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  The window manager's defaults. The theme is the derived Discobox one, so every
+  window on this desktop carries the brand's purple hairline along the top of
+  its titlebar.
+
+  Compositing is off. It buys shadows and transparency, and it costs a full
+  software composite of every frame on a dummy driver with no GPU behind it,
+  which x11vnc then has to re-encode. The viewer already draws the desktop
+  inside a framed, shadowed window of its own; a second set of shadows inside
+  that frame is paid for on every keystroke.
+
+  One workspace, because a desktop that is a single browser tab has nowhere to
+  put a second one and no pager to reach it with.
+-->
+<channel name="xfwm4" version="1.0">
+  <property name="general" type="empty">
+    <property name="theme" type="string" value="Discobox"/>
+    <property name="title_font" type="string" value="Sans Bold 9"/>
+    <property name="title_alignment" type="string" value="center"/>
+    <property name="button_layout" type="string" value="O|HMC"/>
+    <property name="workspace_count" type="int" value="1"/>
+    <property name="use_compositing" type="bool" value="false"/>
+    <property name="click_to_focus" type="bool" value="true"/>
+    <property name="focus_new" type="bool" value="true"/>
+    <property name="snap_to_border" type="bool" value="true"/>
+    <property name="snap_to_windows" type="bool" value="true"/>
+    <property name="snap_width" type="int" value="10"/>
+    <property name="box_move" type="bool" value="false"/>
+    <property name="box_resize" type="bool" value="false"/>
+    <property name="placement_mode" type="string" value="center"/>
+    <property name="placement_ratio" type="int" value="100"/>
+    <property name="wrap_workspaces" type="bool" value="false"/>
+    <property name="cycle_minimum" type="bool" value="false"/>
+  </property>
+</channel>

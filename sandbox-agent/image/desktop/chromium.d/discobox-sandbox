@@ -1,0 +1,17 @@
+# Fall back to --no-sandbox only where the kernel will not give Chromium the
+# namespaces its own sandbox needs.
+#
+# The image installs chromium-sandbox, so the setuid helper is there and is used
+# wherever it works. But a sandbox is a container, and a container's seccomp
+# profile commonly refuses the namespace clone even to a setuid-root helper --
+# "Failed to move to new namespace: ... Operation not permitted", after which
+# Chromium exits rather than starting degraded. Probing is what tells the two
+# apart, instead of hardcoding an answer that is wrong on one of them.
+#
+# What this gives up is Chromium's own renderer isolation, inside a container
+# that is already the isolation boundary for everything else the sandbox runs.
+# What it buys is a browser that starts. Nothing is given up where the probe
+# succeeds.
+if ! unshare --user --pid true >/dev/null 2>&1; then
+    CHROMIUM_FLAGS="$CHROMIUM_FLAGS --no-sandbox"
+fi

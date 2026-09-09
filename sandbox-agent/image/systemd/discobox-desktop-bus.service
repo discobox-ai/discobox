@@ -1,0 +1,28 @@
+[Unit]
+Description=Discobox desktop session D-Bus
+Documentation=https://github.com/discobox-ai/discobox
+# The one bus the desktop shares. Xfce keeps its settings in xfconf, which is
+# only reachable over a session bus, and the viewer is a separate systemd
+# service that has to reach the same xfconf the session is reading -- so the bus
+# cannot be the private one dbus-run-session would hand xfce4-session alone.
+# Its address is a fixed path both units name.
+
+[Service]
+Type=simple
+# User= comes from a drop-in the boot flow writes, resolving the sandbox user:
+# this bus is that user's desktop session, and every unit that connects to it
+# runs as the same user.
+#
+# The runtime directory is what makes the fixed path work: systemd creates it
+# owned by that user, so dbus-daemon can bind inside it, and removes it on stop,
+# so a restart never finds its own stale socket sitting in the way.
+RuntimeDirectory=discobox/desktop
+RuntimeDirectoryMode=0755
+ExecStart=/usr/bin/dbus-daemon --session --address=unix:path=/run/discobox/desktop/bus --nofork --nopidfile --syslog-only
+Restart=on-failure
+RestartSec=2
+NoNewPrivileges=true
+RestrictSUIDSGID=true
+LockPersonality=true
+SystemCallArchitectures=native
+CapabilityBoundingSet=

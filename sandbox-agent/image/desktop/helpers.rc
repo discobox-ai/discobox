@@ -1,0 +1,22 @@
+# Xfce's Preferred Applications, replacing Debian's defaults.
+#
+# This is the third place a browser is chosen on this image, and the one the
+# desktop itself uses: exo-open reads it, and the panel, Thunar and xfdesktop
+# all open a URL through exo-open. The other two are /etc/xdg/mimeapps.list,
+# which xdg-open and every GIO client read, and Debian's `x-www-browser`
+# alternative, which scripts go through. All three name Chromium.
+#
+# Debian's defaults reached Chromium too, but only by indirection:
+# debian-sensible-browser -> sensible-browser -> x-www-browser -> chromium. That
+# works and it is not worth relying on -- it puts the answer three symlinks away
+# from the question, and the helper is named directly here instead.
+#
+# The helper names are files in /usr/share/xfce4/helpers. MailReader is left at
+# Debian's value on purpose: this image installs no mail reader, and naming one
+# it does not have would be a worse answer than naming one it also does not
+# have but did not choose.
+
+WebBrowser=chromium
+MailReader=thunderbird
+TerminalEmulator=xfce4-terminal
+FileManager=thunar
