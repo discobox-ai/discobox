@@ -1110,6 +1110,12 @@ type SourcePush struct {
 	Commit string
 	// Pushed reports that the discobox's origin moved.
 	Pushed bool
+	// UpToDate reports that the origin already holds this commit, however it
+	// got there. It is what releases a source the window is holding after a
+	// refusal that somebody then answered by hand — `discobox push --force`
+	// moves the lease rather than the branch, so nothing else about this
+	// source would change.
+	UpToDate bool
 	// Err is why this source did not push. Having nothing to send is not one:
 	// that is the ordinary answer, and it is not an error.
 	Err error

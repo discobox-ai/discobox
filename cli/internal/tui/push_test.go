@@ -137,3 +137,28 @@ func TestLeavingTheWorkspaceStopsPushing(t *testing.T) {
 		t.Fatalf("looks = %d, want the loop to have ended with the workspace (%d)", after, before)
 	}
 }
+
+// A refusal somebody answered themselves releases the hold. `discobox push
+// --force` moves the lease rather than the branch, so the tip is still the one
+// that failed and only "the origin already has it" can say the refusal is over.
+// Without that the window would skip the source until the next commit.
+func TestAnAnsweredRefusalReleasesTheHold(t *testing.T) {
+	ds := newFakeSource(pushableSandboxes()...)
+	ds.pushes = []SourcePush{{Slug: "primary", Branch: "main", Commit: "b7d0f1145aa2", Err: errors.New("refused")}}
+
+	d, m, _ := openWorkspace(t, ds, "enter")
+	d.wait("the refusal", func() bool { return strings.Contains(m.status, "refused") })
+	m.status, m.statusE = "", false
+
+	// Somebody runs `discobox push --force` in another terminal: the same
+	// commit, now in the origin.
+	ds.mu.Lock()
+	ds.pushes = []SourcePush{{Slug: "primary", Branch: "main", Commit: "b7d0f1145aa2", UpToDate: true}}
+	ds.mu.Unlock()
+
+	d.dispatch(autoPushTickMsg{gen: m.wsGen})
+	d.wait("the hold to go", func() bool { _, held := m.pushHeld["primary"]; return !held })
+	if m.status != "" {
+		t.Fatalf("status = %q, want nothing said about a refusal somebody else answered", m.status)
+	}
+}

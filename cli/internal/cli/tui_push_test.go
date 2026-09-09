@@ -27,6 +27,10 @@ func pushDeliveredSandbox() apimodel.Sandbox {
 		Slug:           apiclientgen.NewOptString("primary"),
 		Delivery:       apiclientgen.NewOptGitSourceDelivery(apiclientgen.GitSourceDeliveryPush),
 		LocalDirectory: apiclientgen.NewOptString("/src/disco2"),
+		Checkout: apiclientgen.NewOptGitSourceCheckout(apimodel.GitSourceCheckout{
+			RefName: apiclientgen.NewOptString("main"),
+			RefType: apiclientgen.NewOptString("branch"),
+		}),
 	}
 	sandbox := apimodel.Sandbox{
 		Runtime: apimodel.SandboxRuntime{
@@ -66,6 +70,25 @@ func TestPushableIsThisMachinesPushDeliveredDiscoboxes(t *testing.T) {
 	noOrigin := pushDeliveredSandbox()
 	noOrigin.Origin.Reset()
 
+	// A source checked out at a tag or a bare commit names no branch, so
+	// `discobox push` would fall back to whatever HEAD is now — which on a
+	// clock is whatever the developer has switched to since.
+	tagged := pushDeliveredSandbox()
+	taggedSource, _ := tagged.Config.Source.Get()
+	taggedSource.SetCheckout(apiclientgen.NewOptGitSourceCheckout(apimodel.GitSourceCheckout{
+		RefName: apiclientgen.NewOptString("v1.2.3"),
+		RefType: apiclientgen.NewOptString("tag"),
+	}))
+	tagged.Config.SetSource(apiclientgen.NewOptGitSource(taggedSource))
+
+	detached := pushDeliveredSandbox()
+	detachedSource, _ := detached.Config.Source.Get()
+	detachedSource.SetCheckout(apiclientgen.NewOptGitSourceCheckout(apimodel.GitSourceCheckout{
+		Commit:  apiclientgen.NewOptString("a3f9c2179bbf0f4e2e9d1a7c5b6d8e0f11223344"),
+		RefType: apiclientgen.NewOptString("commit"),
+	}))
+	detached.Config.SetSource(apiclientgen.NewOptGitSource(detachedSource))
+
 	for _, tc := range []struct {
 		name    string
 		sandbox apimodel.Sandbox
@@ -80,6 +103,8 @@ func TestPushableIsThisMachinesPushDeliveredDiscoboxes(t *testing.T) {
 		{"created on another machine", elsewhere, thisHost, false},
 		{"no recorded origin", noOrigin, thisHost, false},
 		{"this machine has no identity", pushDeliveredSandbox(), "", false},
+		{"checked out at a tag", tagged, thisHost, false},
+		{"checked out at a bare commit", detached, thisHost, false},
 	} {
 		if got := pushable(tc.sandbox, tc.hostID); got != tc.want {
 			t.Errorf("%s: pushable = %v, want %v", tc.name, got, tc.want)
@@ -102,6 +127,10 @@ func TestPushableFollowsASecondSource(t *testing.T) {
 		Slug:           apiclientgen.NewOptString("docs"),
 		Delivery:       apiclientgen.NewOptGitSourceDelivery(apiclientgen.GitSourceDeliveryPush),
 		LocalDirectory: apiclientgen.NewOptString("/src/docs"),
+		Checkout: apiclientgen.NewOptGitSourceCheckout(apimodel.GitSourceCheckout{
+			RefName: apiclientgen.NewOptString("main"),
+			RefType: apiclientgen.NewOptString("branch"),
+		}),
 	}
 	sandbox.Config.SetSourceCodeReferences(apiclientgen.NewOptSandboxConfigSourceCodeReferences(
 		apiclientgen.SandboxConfigSourceCodeReferences{"docs": reference}))
@@ -271,24 +300,63 @@ func TestPushSourcesHoldsARefusedCommit(t *testing.T) {
 // it runs, and reports what could not be pushed once the terminal is the
 // client's again.
 func TestAutoPushWhileAttachedPushesAndReportsOnlyOnStop(t *testing.T) {
-	dir, commit := pushRepo(t)
+	dir, _ := pushRepo(t)
 	ds, paths := pushDataSource(t, dir)
 
 	var report strings.Builder
 	stop := ds.app.autoPushWhileAttached(t.Context(), ds.client, "project-1", "sbx_1")
 	// The push is attempted against a stub that does not serve the git route,
 	// so it fails — which is what puts something in the report.
+	//
+	// Stopping here lands mid-transfer as often as not: the stub records this
+	// when git opens /info/refs, well before it has the 404. That is deliberate
+	// and not a race — a transfer that has started cannot be interrupted and is
+	// reported whenever it lands, so this test says the same thing either way.
 	waitFor(t, func() bool { return paths.touched("git-origins") }, "the git route to be dialed")
 	if report.Len() != 0 {
 		t.Fatalf("wrote %q while attached, want nothing in the stream", report.String())
 	}
 	stop(&report)
 
-	if !strings.Contains(report.String(), "could not push primary") {
-		t.Fatalf("report = %q, want the refused source named", report.String())
+	got := report.String()
+	if !strings.Contains(got, "could not push primary") {
+		t.Fatalf("report = %q, want the refused source named", got)
 	}
-	if !strings.Contains(report.String(), commit[:7]) && !strings.Contains(report.String(), "origin") {
-		t.Fatalf("report = %q, want it to say what failed", report.String())
+	// The reason has to be the one the stub gave, not one stopping produced:
+	// a report that cannot tell a refused push from a killed one would pass
+	// just as happily if detaching started killing transfers again.
+	if !strings.Contains(got, "not found") && !strings.Contains(got, "404") {
+		t.Fatalf("report = %q, want the reason the push was refused", got)
+	}
+	for _, canceled := range []string{"signal: killed", "context canceled", "context deadline exceeded"} {
+		if strings.Contains(got, canceled) {
+			t.Fatalf("report = %q, want a refusal rather than %s: stopping must not interrupt a push", got, canceled)
+		}
+	}
+}
+
+// Stopping never produces a failure of its own. A transfer that has started
+// finishes and is reported whatever it says (ADR 0095 §6); what a stop can cut
+// short is the half that decides whether to send, and that half says nothing.
+// Without the distinction, an ordinary detach prints a push failure nobody
+// caused — and can leave the origin ahead of the lease that guards it.
+func TestAutoPushWhileAttachedDoesNotReportItsOwnStop(t *testing.T) {
+	dir, _ := pushRepo(t)
+	ds, paths := pushDataSource(t, dir)
+
+	stop := ds.app.autoPushWhileAttached(t.Context(), ds.client, "project-1", "sbx_1")
+	// Stop as early as possible: while the first look is still resolving, or
+	// mid-transfer. Resolving, there is nothing to say; mid-transfer, the push
+	// finishes and its refusal is reported like any other. What must never
+	// appear either way is a failure the stop itself caused.
+	waitFor(t, func() bool { return len(paths.all()) > 0 }, "the first look to start")
+	var report strings.Builder
+	stop(&report)
+
+	for _, canceled := range []string{"signal: killed", "context canceled", "context deadline exceeded"} {
+		if strings.Contains(report.String(), canceled) {
+			t.Fatalf("report = %q, want stopping to be silent about itself", report.String())
+		}
 	}
 }
 
@@ -325,4 +393,64 @@ func waitFor(t *testing.T, cond func() bool, what string) {
 		time.Sleep(5 * time.Millisecond)
 	}
 	t.Fatalf("timed out waiting for %s", what)
+}
+
+// A refusal stands until something resolves it, not until the next beat. The
+// beat after a failure sends nothing — the source is held — so a report built
+// from the current look alone would forget the refusal five seconds after it
+// happened, and only ever tell you about one that landed just before you
+// detached.
+func TestAutoPushWhileAttachedReportsARefusalManyBeatsLater(t *testing.T) {
+	dir, _ := pushRepo(t)
+	ds, paths := pushDataSource(t, dir)
+	beatFast(t)
+
+	stop := ds.app.autoPushWhileAttached(t.Context(), ds.client, "project-1", "sbx_1")
+	waitFor(t, func() bool { return paths.touched("git-origins") }, "the push to be refused")
+
+	// Let several beats pass. Each one resolves the branch, finds it held at
+	// the commit that failed, and sends nothing — so the git route is dialed
+	// exactly once however long this runs.
+	dialed := len(paths.all())
+	time.Sleep(20 * autoPushEvery)
+	if got := len(paths.all()); got != dialed {
+		t.Fatalf("requests grew from %d to %d, want a held refusal to cost nothing per beat", dialed, got)
+	}
+
+	var report strings.Builder
+	stop(&report)
+	if !strings.Contains(report.String(), "could not push primary") {
+		t.Fatalf("report = %q, want the refusal still standing after many beats", report.String())
+	}
+}
+
+// beatFast shortens the automatic push's beat for the length of a test, so a
+// test about what happens across beats does not take a minute.
+func beatFast(t *testing.T) {
+	t.Helper()
+	previous := autoPushEvery
+	autoPushEvery = 5 * time.Millisecond
+	t.Cleanup(func() { autoPushEvery = previous })
+}
+
+// A hold has to be released by the origin holding the commit, not only by the
+// branch moving: `discobox push --force` answers a refusal by moving the lease,
+// which leaves the tip exactly where the hold remembers it.
+func TestPushSourcesReportsAHeldCommitTheOriginNowHolds(t *testing.T) {
+	dir, commit := pushRepo(t)
+	ds, paths := pushDataSource(t, dir)
+	// What answering the refusal by hand leaves behind: the lease now names the
+	// commit that was refused.
+	pushGit(t, dir, "update-ref", sandboxgit.OriginLeaseRef("sbx_1", "primary", "main"), commit)
+
+	pushes, err := ds.PushSources(t.Context(), "sbx_1", map[string]string{"primary": commit})
+	if err != nil {
+		t.Fatalf("look: %v", err)
+	}
+	if len(pushes) != 1 || !pushes[0].UpToDate || pushes[0].Err != nil {
+		t.Fatalf("pushes = %#v, want the held commit reported as already in the origin", pushes)
+	}
+	if paths.touched("git-origins") {
+		t.Fatalf("requests = %v, want nothing sent for a commit the origin already has", paths.all())
+	}
 }

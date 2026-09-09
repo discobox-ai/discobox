@@ -20,11 +20,12 @@ func (d *apiDataSource) PushSources(ctx context.Context, sandboxID string, held 
 	out := make([]tui.SourcePush, 0, len(pushes))
 	for _, push := range pushes {
 		out = append(out, tui.SourcePush{
-			Slug:   push.Slug,
-			Branch: push.Branch,
-			Commit: push.Commit,
-			Pushed: push.Pushed,
-			Err:    push.Err,
+			Slug:     push.Slug,
+			Branch:   push.Branch,
+			Commit:   push.Commit,
+			Pushed:   push.Pushed,
+			UpToDate: push.UpToDate,
+			Err:      push.Err,
 		})
 	}
 	return out, nil

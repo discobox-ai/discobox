@@ -401,7 +401,7 @@ overlapped by the next one, and it ends with the workspace's generation like
 every other poll there.
 
 **The row says whether the discobox is worth asking about** (`Sandbox.Pushable`,
-`pushable` in `internal/cli/tui_push.go`): a source delivered by pushing it,
+`pushable` in `internal/cli/push_auto.go`): a source delivered by pushing it,
 this machine recorded as the origin host, and a state that can take one. A
 discobox still awaiting its source is excluded on purpose — a push to a parked
 one is its create's delivery, which starts it, and that stays something asked
@@ -417,8 +417,11 @@ are fixed at create.
 `discobox push` with no flags, so the lease and the related-history check are
 ADR 0058 §6's and the window never overrides them. A source that was refused is
 held at the commit it failed on (`pushHeld`, passed back as `held`) and resolved
-but not re-sent until the branch moves — otherwise a standing refusal would be a
-permanent red status line with a rejected transfer behind it every five seconds.
+but not re-sent until the branch moves — or until the origin turns out to hold
+that commit anyway, which is what answering the refusal by hand looks like from
+here, since `discobox push --force` moves the lease rather than the branch.
+Otherwise a standing refusal would be a permanent red status line with a
+rejected transfer behind it every five seconds.
 What went is one status line; nothing to send says nothing at all.
 
 ## Decisions

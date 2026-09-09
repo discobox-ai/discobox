@@ -105,6 +105,12 @@ func (m *Model) autoPushed(msg autoPushedMsg) tea.Cmd {
 		case push.Pushed:
 			delete(m.pushHeld, push.Slug)
 			moved = append(moved, push)
+		case push.UpToDate:
+			// Already in the origin, which after a refusal means somebody
+			// answered it themselves. Nothing to say — but the hold goes, or
+			// this window would keep skipping the source until the next
+			// commit.
+			delete(m.pushHeld, push.Slug)
 		}
 	}
 	cmds := []tea.Cmd{m.autoPushTick(msg.gen)}

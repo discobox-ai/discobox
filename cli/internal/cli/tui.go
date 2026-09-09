@@ -115,6 +115,12 @@ func (a *App) runTUI(cmd *cobra.Command, leaderFlag string, options ...tui.Optio
 	if a.startedServer {
 		options = append(options, tui.WithInitialization("Server initialization", a.stagingUpdates(cmd.Context())))
 	}
+	// The window's own loop does not wait for the commands it has in flight
+	// when it quits, and one of them may be a push that cannot be interrupted
+	// (App.waitForPushes). Leaving without it would end a transfer between
+	// receive-pack and the lease that guards it — the thing the push path is
+	// careful not to do.
+	defer a.waitForPushes(cmd.ErrOrStderr())
 	return tui.Run(cmd.Context(), ds, options...)
 }
 

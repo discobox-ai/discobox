@@ -1296,13 +1296,32 @@ Both front ends run the same rule, over one resolver (`App.pushSandboxSources`,
 - the **launcher's workspace**, which attaches to the discobox's terminals when
   it opens, through `DataSource.PushSources` (`internal/cli/tui_push.go`) on a
   loop guarded by the workspace generation (`internal/tui/push.go`);
-- a **raw attach** — `attach --raw`, `run --raw`, `admin terminal attach` — from
-  the one choke point they share (`attachSandboxTerminal` →
-  `App.autoPushWhileAttached`).
+- a **raw attach** — `attach --raw`, `run --raw`, `admin terminal attach`,
+  `admin terminal start --attach` — from the one choke point they share
+  (`attachSandboxTerminal` → `App.autoPushWhileAttached`). The one attach there
+  that is not somebody working in a discobox says so
+  (`execAttachOptions.notWorkingHere`): a harness's configure flow attaches to a
+  throwaway sandbox holding nobody's source.
+
+Only a source checked out at a **branch** is sent. One created from a tag or a
+bare commit names no branch, so the push would fall back to whatever `HEAD` is
+now — on a clock, whatever the developer switched to since — and those are left
+to the command. What the resolver holds between beats is only what a create
+fixed: a discobox that is not *yet* pushable is asked again rather than
+remembered.
 
 `sandboxpush.Resolve` is what makes the ordinary beat free — the branch tip
-against the lease, no transport, no request — and neither front end passes
-`--force`, so every refusal ADR 0058 §6 produces is still a person's to answer.
+against the lease, no transport, and no loopback proxy stood up to reach one —
+and neither front end passes `--force`, so every refusal ADR 0058 §6 produces is
+still a person's to answer. A transfer that has started finishes even if the
+attach ends under it, and whoever is leaving waits for it — killing `git push`
+mid-pack can leave the origin ahead of the lease that guards it, which would
+refuse the *next* push. What ends such a transfer is git giving up on a
+connection that has stopped moving (`sandboxgit.StallArgs`), never a deadline: a
+first push after attaching can be days of commits, and that is the one a
+deadline would cut. Every push also runs with `GIT_TERMINAL_PROMPT=0`
+(`sandboxgit.NoPromptEnv`), create's delivery included, because the terminal git
+would prompt on belongs to whatever the caller is doing.
 The window says what moved on its status line; a raw attach says nothing into a
 stream that is the discobox's, and reports what could not be pushed once the
 stream is over.

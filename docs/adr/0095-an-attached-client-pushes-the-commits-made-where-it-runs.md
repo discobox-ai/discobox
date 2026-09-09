@@ -1,6 +1,6 @@
 # 0095 — An attached client pushes the commits made where it is running
 
-- **Status**: Proposed
+- **Status**: Accepted
 - **Date**: 2026-09-05
 - **§1 amended**: 2026-09-09 — the trigger is a terminal attach, not the
   launcher's workspace. Nothing else changes.
@@ -28,7 +28,7 @@ push into it unlike any other write this window performs:
   reaped with it (§1), and the sandbox's own view of it is read-only (§2, and
   the writable-origin alternative 0058 rejected). The only writer is a client
   holding the repository the sandbox was cut from.
-- **The lease already answers the one real hazard** (§6). A rewind is refused
+- **The lease already answers the one real hazard** (0058 §6). A rewind is refused
   unless this client put the commits there, and an unrelated history is refused
   outright. Those refusals do not become less safe when nobody typed a key
   first.
@@ -63,10 +63,17 @@ own:
   soon as it opens (`openWorkspace`) and holds them until it is detached. Its
   loop is guarded by the workspace generation, so leaving ends it the way it
   ends every other workspace poll.
-- **A raw attach** — `discobox attach --raw`, `discobox run --raw`,
-  `discobox admin terminal attach` — which has no window at all. One choke point
-  serves all of them (`attachSandboxTerminal`), and the loop lasts as long as
-  the stream does.
+- **Every raw attach** — `discobox attach --raw`, `discobox run --raw`,
+  `discobox admin terminal attach`, and `admin terminal start --attach` — which
+  has no window at all. One choke point serves all of them
+  (`attachSandboxTerminal`), and the loop lasts as long as the stream does.
+
+That choke point has one caller that is **not** somebody going to work in a
+discobox: the throwaway sandbox a harness's configure flow attaches to, so a
+person can answer a login prompt. It holds no source of anyone's, so it says so
+at the call site (`execAttachOptions.notWorkingHere`) and is not asked. An
+attach that is part of a flow rather than a session is the exception the rule
+needs, and naming it there is cheaper than teaching this to tell them apart.
 
 Nothing else triggers it. Not the cursor moving down a list, not a row being on
 screen, not a one-shot `discobox shell -- <cmd>`, and not a box nobody is
@@ -87,6 +94,13 @@ otherwise:
 - The source is push-delivered (`sandboxpush.CheckPushDelivered`). A
   clone-delivered source's origin is live and a remote-URL source's origin is
   the real remote; there is no mirror to write.
+- **The source was checked out at a branch.** A source created from a tag or a
+  bare commit names no branch, and `discobox push` then falls back to whatever
+  `HEAD` is now (`pushRefs`) — which is a rev a person picked the moment for,
+  and on a 5s clock is whatever branch the developer has switched to since.
+  Sending that into a discobox's origin with nobody present is the one thing
+  this must not do, so those sources are left to the command. That is what
+  0058 §6's argument keeps the command for.
 - The discobox's `Origin.HostId` is this machine's host id — the same test
   `resolveApplyHostDir` makes. Another machine's checkout is not this one's to
   push.
@@ -122,15 +136,31 @@ the answer to it is a person deciding, at `discobox push --force`.
 The common tick is the one where nothing has been committed since the last, and
 it must cost nothing worth measuring. It resolves the local branch tip and
 compares it to the lease ref (`refs/discobox/origin/<sandboxID>/<slug>/<branch>`,
-§6) — two ref reads in a repository this machine already has open — and stops
+0058 §6) — two ref reads in a repository this machine already has open — and stops
 there. No network, no git transport, no control-plane request.
 
-That is what `sandboxpush.Push` already does on an unmoved tip, so it is free to
-call on every tick rather than needing a cheaper pre-check of its own. What is
-added is caching the discobox's sources and their resolved repository roots for
-the life of the client: a source's delivery, slug and local directory are fixed
-at create, so re-reading them every tick would be an API call to learn something
-that cannot change.
+`sandboxpush.Push` is itself cheap on an unmoved tip — it resolves the same two
+refs and returns. What is not cheap is *getting to it*: a push needs an origin
+URL, so the caller resolves one first, and on a unix-socket or named-pipe
+endpoint that means standing up a loopback proxy and tearing it down again
+(`App.gitServerURL` → `endpoint.StartLoopbackProxy`). Every 5s, forever, for a
+beat that sends nothing.
+
+So the order is: **resolve every source, and only open the git route if one of
+them moved** (`sandboxpush.Resolve`, then `Push` for the pending ones). Resolve
+is the same two ref reads Push would do, exported so the decision can be made
+before anything is dialed, and it is the head of Push itself — so what counts as
+"new commits" is decided in one place rather than once for the asking and once
+for the doing.
+
+What is also added is caching the discobox's sources and their resolved
+repository roots, so the beat makes no control-plane request either. Only what
+cannot change is held: which sources a discobox has, their delivery, and the
+directories they came from are fixed at create, and so is the answer "none of
+them is this machine's to push". A discobox that is merely *not yet* pushable —
+still awaiting its source, a directory not mounted yet, a repository nobody has
+run `git init` in — is asked again on the next beat, because a client that
+remembered the first no would keep it for the whole session.
 
 ### 5. A push says so where there is somewhere to say it
 
@@ -146,8 +176,69 @@ could **not** be pushed once the stream is over and the terminal is the
 client's again. A refusal is the half somebody has to act on; a successful push
 is visible in git.
 
+### 6. A transfer that has started finishes, and is reported even if it lands late
+
+Leaving — a detach, a window quitting — ends the **beat**. It does not end a
+`git push` that is already going.
+
+Killing one mid-transfer is not a tidy no-op. The receiving end may already have
+taken the pack while the lease this client leases against is only written after
+the push returns (0058 §6, `pushTo`), so a client that stopped in that window
+would leave the discobox's origin ahead of its own lease — and the next push,
+automatic or typed, is refused until somebody passes `--force`. That is exactly
+the refusal §5 treats as another machine's doing, manufactured out of pressing
+Ctrl-A d.
+
+So the halves are split. Working out *whether* to send — reading the discobox,
+resolving a branch tip — is cancellable, and an error from there while stopping
+is dropped, because it is about the stop. The send itself runs on a context
+nothing cancels, and whoever is leaving waits for it: the raw attach in its
+stop, the launcher on its way out, because a Bubble Tea program returns on Quit
+without waiting for the commands it has in flight. An error from a transfer is
+never about the stop — nothing could have interrupted it — so it is reported
+even when it arrives after the detach. Commit, detach a second later, and the
+push that goes out in between is the one most likely to be refused; silence
+there would be the worst version of §5.
+
+**The cost is real and is the point of writing this down**: `Ctrl-A d` no longer
+always returns the shell instantly, and neither does quitting the launcher. Two
+things bound it, and a third says what it is:
+
+- git is told not to prompt (`GIT_TERMINAL_PROMPT=0`). Its own prompt and every
+  credential helper open `/dev/tty` directly, and that terminal is the one just
+  handed back — so without this, a push that wants a credential is a hang with
+  nothing on screen, output captured.
+- git is told to give up on a connection that has **stopped moving**
+  (`http.lowSpeedLimit`, `http.lowSpeedTime`), rather than on a clock. A
+  deadline is the wrong instrument here: the largest transfer this ever makes is
+  the first one after attaching, carrying everything committed since this client
+  last pushed — days of work, for a discobox attached to on Thursday and made on
+  Tuesday — and that is precisely the transfer a deadline would cut in half,
+  producing the stranded lease this section exists to prevent, at the moment it
+  is most expensive. Rate is what tells a big push from a wedged one; elapsed
+  time is not.
+- A wait long enough to notice says so (ADR 0060). Both waits print what they
+  are waiting for, because the launcher's has already taken the screen down and
+  would otherwise be an unexplained pause at a shell prompt.
+
+Nobody should undo any of it for feeling slow.
+
+**Rejected: kill the push and say nothing.** Simpler, and it makes detach
+instant. It is the version that strands the lease, and the failure surfaces
+minutes later as a refusal nobody caused.
+
+**Rejected: kill the push and report it.** What was built first. It prints
+`signal: killed` for a push nobody asked for, on an ordinary detach, and still
+strands the lease.
+
+**Rejected: bound the send with a deadline.** Also built first, at two minutes.
+It is the same rejected alternative wearing a bound: a transfer that outlasts it
+is killed mid-pack, reported, and then *held* — so the origin is left ahead of
+the lease and nothing retries it. The only transfers long enough to reach a
+deadline are the honest ones.
+
 A push that failed reports once and is **not retried against the same tip**. The
-failures §6 produces are decisions, not transients: a stale lease, an unrelated
+failures 0058 §6 produces are decisions, not transients: a stale lease, an unrelated
 history, a directory that is gone. Retrying one every five seconds would put a
 red line on screen forever and send the same rejected pack with it. The next
 local commit is a new tip and a new attempt.
@@ -155,7 +246,7 @@ local commit is a new tip and a new attempt.
 At most one push per attach is in flight; a tick that arrives while one is
 running is dropped rather than queued.
 
-### 6. There is no push key in the window
+### 7. There is no push key in the window
 
 §8's `InteractPush` is not built. `discobox push` remains the whole of the
 explicit path, and is what covers everything the automatic one deliberately does

@@ -59,6 +59,11 @@ type App struct {
 	// push_auto.go.
 	pushMu    sync.Mutex
 	pushCache map[string]*pushTargets
+	// pushInFlight counts transfers that have started and cannot be
+	// interrupted, so a front end can wait for them on the way out rather than
+	// ending one between receive-pack and the lease that guards it. See
+	// App.waitForPushes.
+	pushInFlight sync.WaitGroup
 
 	// startedServer records that this invocation launched the server, which is
 	// what makes it the one responsible for showing first-run setup.
