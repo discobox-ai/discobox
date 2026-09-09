@@ -1217,6 +1217,16 @@ press that uses them. Both columns are marked on every stepping row, lit or
 not: a target that only exists once the pointer has stopped is one the first
 click misses.
 
+**The panel shows the command it describes, spelled `discobox -p '...'`**
+(`optionSet.command`). What is on screen has to be reproducible from a shell —
+a panel offering something the command cannot is the thing to avoid — and the
+spelling is the one the CLI's help leads with: the prompt as `-p`, with no
+`run` in front. That is also the truer rendering of what Enter does, since the
+composer holds one piece of text and sends it as one argument, which is exactly
+what `-p` is. Only a preview carrying neither a prompt nor a run flag names
+`run`, because `discobox -C dir` on its own is the launcher
+([ADR 0100](../../../docs/adr/0100-the-prompt-is-a-flag-and-the-root-takes-no-words.md)).
+
 A card's text field takes a caret from a press (`hitInput`, `pressInput`) — the
 dialog's own field, and a form's typed rows, which take the form cursor with
 them. A field that has scrolled sideways declines rather than guessing: the

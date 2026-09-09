@@ -154,7 +154,7 @@ func TestNoSourceAsksForTheFlagAndNoDirectory(t *testing.T) {
 	if req.Source != "" {
 		t.Fatalf("source = %q, want nothing to cut from", req.Source)
 	}
-	if cmd := m.opts.command("do a thing"); !strings.Contains(cmd, "run --no-source") || strings.Contains(cmd, "-C") {
+	if cmd := m.opts.command("do a thing"); !strings.Contains(cmd, "--no-source") || strings.Contains(cmd, "-C") {
 		t.Fatalf("command = %q, want --no-source and no -C", cmd)
 	}
 	if chips := m.opts.chips(newStyles(false)); !strings.Contains(chips, noSourceChoice) {

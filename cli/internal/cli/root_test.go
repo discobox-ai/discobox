@@ -1625,13 +1625,73 @@ func TestBareCommandPrintsHelpWithoutATerminal(t *testing.T) {
 	}
 }
 
-// Any word after the bare command is a prompt, exactly as it would be after
-// `run`: the shortcut is reaching the same run without its name, so a typo of
-// a subcommand now creates a discobox prompted with the typo rather than
-// reporting "unknown command". There is no rule that can tell the two apart —
-// a prompt is words, and a subcommand name is indistinguishable from the first
-// word of one — so this is the trade the shortcut makes.
-func TestBareWordsAreARunPrompt(t *testing.T) {
+// A word after the bare command is a subcommand, not a prompt: the prompt is
+// -p. Nothing can tell a misspelled subcommand from the first word of a prompt
+// — a prompt is words — so the two are not asked to share a spelling, and a
+// misspelling says what it was near instead of quietly costing a discobox.
+func TestBareWordsAreNotAPrompt(t *testing.T) {
+	cmd := NewRootCommand()
+	var out bytes.Buffer
+	cmd.SetOut(&out)
+	cmd.SetErr(&out)
+	cmd.SetIn(&bytes.Buffer{})
+	cmd.SetArgs([]string{"lst"})
+
+	err := cmd.Execute()
+	if err == nil {
+		t.Fatalf("`discobox lst` was accepted, output:\n%s", out.String())
+	}
+	if !strings.Contains(err.Error(), `unknown command "lst"`) {
+		t.Fatalf("error = %q, want it to name the unknown command", err)
+	}
+	// And it says what the word was near, which is the whole reason a typo is
+	// worth reporting rather than running.
+	if !strings.Contains(err.Error(), "ls") {
+		t.Fatalf("error = %q, want a suggestion", err)
+	}
+	// Nothing reached a server on the way to saying so.
+	if strings.Contains(out.String(), "connect") {
+		t.Fatalf("the unknown-command path talked to something:\n%s", out.String())
+	}
+}
+
+// A `--` does not smuggle a prompt past that. cobra's stripFlags stops there,
+// so legacyArgs never sees the words and cannot report them — and dropping them
+// is worse than either: `discobox -d -- fix the failing tests` would otherwise
+// create a discobox with an empty prompt and say nothing about the four words
+// it lost. It is also the likeliest way to mistype this, since `run --` is what
+// run's own help teaches.
+func TestBareWordsAfterADashDashAreRefused(t *testing.T) {
+	for _, args := range [][]string{
+		{"--", "fix", "the", "failing", "tests"},
+		{"-d", "--", "fix", "the", "failing", "tests"},
+	} {
+		cmd := NewRootCommand()
+		var out bytes.Buffer
+		cmd.SetOut(&out)
+		cmd.SetErr(&out)
+		cmd.SetIn(&bytes.Buffer{})
+		cmd.SetArgs(args)
+
+		err := cmd.Execute()
+		if err == nil {
+			t.Fatalf("`discobox %s` was accepted, output:\n%s", strings.Join(args, " "), out.String())
+		}
+		// And it says what to type instead, since the words were a prompt.
+		if !strings.Contains(err.Error(), "-p") {
+			t.Fatalf("error = %q, want it to name -p", err)
+		}
+		// Nothing was created on the way to refusing: the -d form would
+		// otherwise have gone all the way to a discobox.
+		if strings.Contains(out.String(), "preparing source") {
+			t.Fatalf("`discobox %s` started a create:\n%s", strings.Join(args, " "), out.String())
+		}
+	}
+}
+
+// -p is the prompt the bare command takes, and it reaches the same run
+// `discobox run` does.
+func TestPromptFlagIsARun(t *testing.T) {
 	serveSSHSync := preparePromptCreateSSHSync(t)
 	repo := newRunSourceTestRepo(t)
 	var posted map[string]any
@@ -1648,28 +1708,29 @@ func TestBareWordsAreARunPrompt(t *testing.T) {
 		}
 		w.Header().Set("Content-Type", "application/json; charset=utf-8")
 		w.WriteHeader(http.StatusAccepted)
-		_, _ = w.Write([]byte(`{"id":"sbx_bogus","projectId":"project-1","createdByUserId":"user-1","displayName":"run-test","config":{"name":"run-test","image":""},"runtime":{"state":"pending","desiredState":"present","generation":1,"observedGeneration":0},"createdAt":"2026-06-17T00:00:00Z","updatedAt":"2026-06-17T00:00:01Z"}`))
+		_, _ = w.Write([]byte(`{"id":"sbx_prompted","projectId":"project-1","createdByUserId":"user-1","displayName":"run-test","config":{"name":"run-test","image":""},"runtime":{"state":"pending","desiredState":"present","generation":1,"observedGeneration":0},"createdAt":"2026-06-17T00:00:00Z","updatedAt":"2026-06-17T00:00:01Z"}`))
 	}))
 	t.Cleanup(server.Close)
 
 	cmd := NewRootCommand()
 	var out bytes.Buffer
 	cmd.SetOut(&out)
-	cmd.SetArgs([]string{"--server", server.URL, "--project", "project-1", "-C", repo + "@HEAD", "-d", "bogus"})
+	cmd.SetArgs([]string{"--server", server.URL, "--project", "project-1", "-C", repo + "@HEAD", "-d", "-p", "version bump the go modules"})
 
 	if err := cmd.Execute(); err != nil {
 		t.Fatalf("execute: %v", err)
 	}
 	config := posted["config"].(map[string]any)
 	prompt, ok := config["prompt"].([]any)
-	if !ok || len(prompt) != 1 || prompt[0] != "bogus" {
-		t.Fatalf("prompt = %#v, want [bogus]", config["prompt"])
+	// One argument, as it was given: -p does not split what the caller quoted.
+	if !ok || len(prompt) != 1 || prompt[0] != "version bump the go modules" {
+		t.Fatalf("prompt = %#v, want it as one argument", config["prompt"])
 	}
 }
 
-// `discobox version` prints what `discobox --version` prints, and costs nothing
-// else: the bare command takes any word as a run prompt, so the word "version"
-// alone would otherwise spend a sandbox on a one-line question.
+// `discobox version` prints what `discobox --version` prints: anything driving
+// the CLI without reading its help reaches for both spellings, and one of them
+// answering "unknown command" is not worth the tidiness of having only one.
 func TestBareVersionWordPrintsTheVersion(t *testing.T) {
 	run := func(env map[string]string, args ...string) string {
 		t.Helper()
@@ -1708,41 +1769,22 @@ func TestBareVersionWordPrintsTheVersion(t *testing.T) {
 	}
 }
 
-// Only the bare word is an answer. Words after it are the prompt they have
-// always been, so ADR 0089's trade is not partly undone for anything that
-// starts with "version" — "version bump the go modules" is a run.
-func TestVersionFollowedByWordsIsARunPrompt(t *testing.T) {
-	serveSSHSync := preparePromptCreateSSHSync(t)
-	repo := newRunSourceTestRepo(t)
-	var posted map[string]any
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if serveSSHSync(w, r) {
-			return
-		}
-		if r.Method != http.MethodPost || r.URL.Path != "/projects/project-1/sandboxes" {
-			t.Fatalf("unexpected request %s %s", r.Method, r.URL.Path)
-		}
-		defer r.Body.Close()
-		if err := json.NewDecoder(r.Body).Decode(&posted); err != nil {
-			t.Fatalf("decode request body: %v", err)
-		}
-		w.Header().Set("Content-Type", "application/json; charset=utf-8")
-		w.WriteHeader(http.StatusAccepted)
-		_, _ = w.Write([]byte(`{"id":"sbx_bogus","projectId":"project-1","createdByUserId":"user-1","displayName":"run-test","config":{"name":"run-test","image":""},"runtime":{"state":"pending","desiredState":"present","generation":1,"observedGeneration":0},"createdAt":"2026-06-17T00:00:00Z","updatedAt":"2026-06-17T00:00:01Z"}`))
-	}))
-	t.Cleanup(server.Close)
-
+// Only the bare word is the version. `discobox version bump the go modules` is
+// not a prompt and not a version either — it is words after a command that
+// takes none, which is what it says.
+func TestVersionFollowedByWordsIsAnError(t *testing.T) {
 	cmd := NewRootCommand()
 	var out bytes.Buffer
 	cmd.SetOut(&out)
-	cmd.SetArgs([]string{"--server", server.URL, "--project", "project-1", "-C", repo + "@HEAD", "-d", "version", "bump", "the", "go", "modules"})
+	cmd.SetErr(&out)
+	cmd.SetIn(&bytes.Buffer{})
+	cmd.SetArgs([]string{"version", "bump", "the", "go", "modules"})
 
-	if err := cmd.Execute(); err != nil {
-		t.Fatalf("execute: %v", err)
+	err := cmd.Execute()
+	if err == nil {
+		t.Fatalf("`discobox version bump ...` was accepted, output:\n%s", out.String())
 	}
-	config := posted["config"].(map[string]any)
-	prompt, ok := config["prompt"].([]any)
-	if !ok || len(prompt) != 5 || prompt[0] != "version" || prompt[1] != "bump" {
-		t.Fatalf("prompt = %#v, want [version bump the go modules]", config["prompt"])
+	if !strings.Contains(err.Error(), `unknown command "bump"`) {
+		t.Fatalf("error = %q, want it to name the extra word", err)
 	}
 }

@@ -66,15 +66,17 @@ transport helpers where OpenAPI does not model the stream.
   command output; the private copy lets the launcher's success dialog name every
   destination and local commit without parsing terminal text or reimplementing
   apply. The local terminal owns and removes that file when the pane closes.
-- Bare `discobox` with a prompt, or any flag `run` takes, *is* `discobox run`
+- Bare `discobox` given any flag `run` takes *is* `discobox run`
   (`runRequested`, checked first in the root command's `RunE`, dispatching to
   the shared `App.runPrompt`). `addRunFlags` registers run's flags once and is
   called for both the `run` subcommand and the root command, so the two cannot
-  drift into taking different flags. `-p`/`--prompt` exists because of this:
-  the words after the command are already a prompt, but the root command has no
-  other way to spell one, since an unquoted prompt is indistinguishable from a
-  subcommand name. This is also why `-p` could not stay `--project`'s
-  shorthand — `--project` now has a long form only.
+  drift into taking different flags. `-p`/`--prompt` is the prompt there, and
+  the form the documents lead with: `discobox -p '...'`. Not every example is
+  that one — an example whose point is that a shell splits the words, such as
+  the wrapper convention in [`harness/DESIGN.md`](../harness/DESIGN.md), says
+  `discobox run <words>`, which is where those words still exist. What no
+  example may spell is a form that is gone. This is why `-p` could not stay
+  `--project`'s shorthand — `--project` now has a long form only.
 - Otherwise, bare `discobox` runs the launcher when stdin and stdout are both
   terminals, and prints its help when they are not (`App.runTUI`, also reached
   from `discobox tui`). Typing a program's name is how you ask for it, and the
@@ -83,20 +85,27 @@ transport helpers where OpenAPI does not model the stream.
   answer to that. The leader there comes from the environment only: a flag
   would have to be persistent to be reachable, and every subcommand would carry
   one that means nothing to it.
-- The root's `Args` is `cobra.ArbitraryArgs`, not cobra's default: a bare word
-  is a prompt now, not a subcommand to validate, so there is no rule left that
-  can tell a misspelled subcommand from the first word of one. `discobox lst`
-  used to report `unknown command "lst"`; it now opens a discobox prompted
-  "lst". That trade, and the ones around reclaiming `-p`, are deliberate — see
-  [ADR 0089](../docs/adr/0089-the-bare-command-is-a-run-and-costs-unknown-command.md).
-- The single word `discobox version` is the one exception: it prints what
-  `discobox --version` prints (`versionRequested`, `printVersion`), because
-  anything driving the CLI without reading its help reaches for both spellings
-  and a run is too much to pay for the wrong one. The carve-out is the word
-  alone with nothing a run takes — `discobox version bump the go modules` and
-  `discobox version -d` are still prompts — so the only prompt lost is the
-  one-word "version". There is no subcommand: the word is reserved in the
-  root's dispatch, and `--version` stays the spelling the help documents.
+- **Words after the bare command are subcommands, not a prompt.** The root
+  leaves `Args` unset, which is what keeps cobra's root-only `legacyArgs`
+  check: `discobox lst` reports `unknown command "lst"` and suggests `ls`.
+  A prompt is words and a misspelling is a word, so nothing can tell the two
+  apart once they share a spelling — the prompt takes a flag instead, and the
+  words go back to naming commands. `legacyArgs` is not all of it: cobra's
+  `stripFlags` stops at a `--`, so the check never sees what follows one and
+  `RunE` refuses any positional word that reaches it, naming `-p`. Dropping
+  them would put the silent create back — `discobox -d -- fix the failing
+  tests` with an empty prompt — by the one spelling `run`'s help teaches. See
+  [ADR 0100](../docs/adr/0100-the-prompt-is-a-flag-and-the-root-takes-no-words.md),
+  which supersedes [ADR 0089](../docs/adr/0089-the-bare-command-is-a-run-and-costs-unknown-command.md)'s
+  trade on that point; `run` keeps its trailing prompt, where the name in front
+  of the words says what they are.
+- `discobox version` is an ordinary hidden subcommand (`newVersionCommand`,
+  `printVersion`), because anything driving the CLI without reading its help
+  reaches for both spellings of a version. It is hidden rather than listed —
+  `--version` is what the help documents — and carries an empty
+  `PersistentPreRunE` so the root's does not run: what somebody diagnosing a
+  broken environment asks first is what they are running, so a leader key the
+  environment spells wrong must not be what stops them hearing it.
 - `discobox configure` is the same launcher opened on its harnesses screen
   (`tui.WithHarnesses()`), not a window of its own. See *Harness Configure
   Step*.

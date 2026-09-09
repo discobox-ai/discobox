@@ -4,25 +4,34 @@ import (
 	"fmt"
 
 	"github.com/spf13/cobra"
-	"github.com/spf13/pflag"
 )
 
-// versionRequested reports whether this invocation is the bare word `discobox
-// version` rather than a run prompted with it.
+// newVersionCommand is `discobox version`, which prints what `discobox
+// --version` prints.
 //
-// The bare command takes any word as a prompt (see newRootCommand), so without
-// this the word "version" is a discobox prompted "version": a sandbox and a
-// whole agent, for a question that has a one-line answer. Anything driving the
-// CLI without reading its help reaches for both spellings, and one of them
-// costing a run is not a trade worth keeping.
-//
-// The carve-out is the smallest one that answers that: the single word, alone,
-// with nothing a run takes. `discobox version bump the go modules` and
-// `discobox version -d` are still the prompts they always were, so what ADR
-// 0089 bought stays bought — only the one-word prompt "version" is gone, and no
-// spelling of this could have kept it.
-func versionRequested(flags *pflag.FlagSet, args []string) bool {
-	return len(args) == 1 && args[0] == "version" && !runRequested(flags, nil)
+// Anything driving a CLI without reading its help reaches for both spellings,
+// and one of them answering "unknown command" is a worse trade than a command
+// nobody has to be told about. It is hidden rather than listed: --version is
+// the spelling the help documents, and a command list is for the things you
+// cannot guess.
+func newVersionCommand() *cobra.Command {
+	return &cobra.Command{
+		Use:    "version",
+		Short:  "Print the Discobox version",
+		Hidden: true,
+		Args:   cobra.NoArgs,
+		// The root's hook resolves the leader key and starts the parent watch,
+		// and a version needs neither. What somebody diagnosing a broken
+		// environment asks first is what they are running, so an environment
+		// this cannot parse — a leader key it does not know, an output format
+		// it does not have — must not be what stops them hearing it. cobra runs
+		// the closest hook only, so this empty one is how the root's is skipped;
+		// cobra answers --version earlier still, before any hook at all.
+		PersistentPreRunE: func(*cobra.Command, []string) error { return nil },
+		RunE: func(cmd *cobra.Command, _ []string) error {
+			return printVersion(cmd)
+		},
+	}
 }
 
 // printVersion writes what `discobox --version` writes.

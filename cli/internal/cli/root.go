@@ -74,31 +74,26 @@ func newRootCommand() (*cobra.Command, *App) {
 	var run runCommandOptions
 	var runFlags *pflag.FlagSet
 	cmd := &cobra.Command{
-		Use:   "discobox [flags] [PROMPT...]",
+		Use:   "discobox [flags]",
 		Short: "Discobox command line client",
 		Long: `Discobox runs coding agents in isolated sandboxes on this machine.
 
-With a prompt, or any of the flags a run takes, this is "discobox run": the
+Given a prompt, or any of the flags a run takes, this is "discobox run": the
 command name can be left out of the thing you do most.
 
-  discobox fix the failing tests
-  discobox -H codex -d -p "fix the failing tests"
+  discobox -p 'fix the failing tests'
+  discobox -H codex -d -p 'fix the failing tests'
+
+The prompt is -p here, and only -p: a word on its own is still a subcommand, so
+a misspelled one says so rather than quietly becoming a prompt.
 
 With nothing at all it opens the launcher, where the same run is one prompt and
 an Enter. See "discobox run --help" for what the flags below mean.`,
 		Version:       version.String(),
 		SilenceUsage:  true,
 		SilenceErrors: true,
-		PersistentPreRunE: func(cmd *cobra.Command, args []string) error {
+		PersistentPreRunE: func(cmd *cobra.Command, _ []string) error {
 			app.errOut = cmd.ErrOrStderr()
-			// Nothing below is needed to print a version, and cobra answers
-			// --version before it reaches this hook at all. A broken
-			// environment — a leader key this cannot parse, an output format
-			// it does not have — is exactly when somebody asks what they are
-			// running, so the two spellings answer the same there too.
-			if !cmd.HasParent() && versionRequested(runFlags, args) {
-				return nil
-			}
 			if err := app.validate(); err != nil {
 				return err
 			}
@@ -108,16 +103,30 @@ an Enter. See "discobox run --help" for what the flags below mean.`,
 			cmd.SetContext(watchParentProcess(cmd.Context(), app.errOut))
 			return nil
 		},
-		// Anything this command is given is a run: the prompt, or a flag only a
-		// run takes. It is the one thing anybody does often enough to resent
-		// typing the name of, and `discobox` is already what you type to reach
-		// the same run in the launcher.
+		// Any of run's own flags makes this command a run: it is the one thing
+		// anybody does often enough to resent typing the name of, and
+		// `discobox` is already what you type to reach the same run in the
+		// launcher.
 		//
-		// Args therefore takes whatever it is given, which costs the "unknown
-		// command" cobra used to answer a misspelled subcommand with:
-		// `discobox lst` is now a discobox prompted "lst" rather than an error.
-		// A prompt is words, and no rule can tell a misspelling from the first
-		// word of one.
+		// The prompt is -p, and words after the command are not a prompt. They
+		// were, for a while (ADR 0089), and the price was cobra's root-only
+		// "unknown command" check, which only runs when Args is unset: with it
+		// disabled every subcommand name was one typo away from a sandbox, and
+		// `discobox lst` created a discobox prompted "lst" rather than saying
+		// what was misspelled. Nothing can tell a typo from the first word of a
+		// prompt — a prompt is words — so the prompt takes a flag and the words
+		// go back to being subcommands (ADR 0100). Leaving Args unset is most
+		// of that; run keeps its trailing prompt, where the name in front of
+		// it says what the words are.
+		//
+		// legacyArgs does not cover all of it, though: cobra's stripFlags
+		// stops at a `--`, so words past one never reach that check and would
+		// arrive here to be ignored. That is the same silent failure by
+		// another spelling — `discobox -d -- fix the failing tests` would
+		// create a discobox with an empty prompt and say nothing about the
+		// four words it dropped — and it is the likeliest way to mistype this,
+		// since `run --` is what run's own help teaches. So RunE refuses them
+		// rather than dropping them.
 		//
 		// Bare `discobox` at a terminal opens the launcher: it is the one thing
 		// you can ask for without knowing a subcommand, and typing the name of
@@ -125,14 +134,12 @@ an Enter. See "discobox run --help" for what the flags below mean.`,
 		// CI — it prints its help, because a full-screen window is not an
 		// answer to a program that expected output. A run says where its output
 		// goes for itself, so this only covers the launcher.
-		Args: cobra.ArbitraryArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
-			// The one bare word that is an answer rather than a prompt.
-			if versionRequested(runFlags, args) {
-				return printVersion(cmd)
+			if len(args) > 0 {
+				return fmt.Errorf("%s takes no arguments; the prompt is -p: discobox -p %q", cmd.CommandPath(), strings.Join(args, " "))
 			}
-			if runRequested(runFlags, args) {
-				return app.runPrompt(cmd, &run, args)
+			if runRequested(runFlags) {
+				return app.runPrompt(cmd, &run, nil)
 			}
 			if !isTerminalStream(cmd.OutOrStdout()) || !isTerminalStream(cmd.InOrStdin()) {
 				return cmd.Help()
@@ -195,6 +202,7 @@ an Enter. See "discobox run --help" for what the flags below mean.`,
 	cmd.AddCommand(app.newTUICommand())
 	cmd.AddCommand(app.newCompletionCommand())
 	cmd.AddCommand(app.newAdminCommand())
+	cmd.AddCommand(newVersionCommand())
 	// Cobra's usage template always lists a subcommand literally named "help",
 	// even when hidden. Give the help command another name so it stays out of the
 	// command list; the --help flag still works on every command.

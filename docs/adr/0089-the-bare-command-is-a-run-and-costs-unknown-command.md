@@ -1,6 +1,9 @@
 # 0089 — The bare command is a run, and costs "unknown command"
 
-- **Status**: Accepted
+- **Status**: Accepted (§4's positional prompt and §5's `cobra.ArbitraryArgs`
+  superseded by
+  [ADR 0100](0100-the-prompt-is-a-flag-and-the-root-takes-no-words.md); §§1–3
+  stand)
 - **Date**: 2026-09-03
 
 ## Context

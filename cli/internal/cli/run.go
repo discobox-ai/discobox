@@ -14,11 +14,10 @@ import (
 
 type runCommandOptions struct {
 	prompt sandboxcreate.PromptOptions
-	// promptFlag is -p. The prompt is normally the words after the command,
-	// which a shell has already split; this is the same prompt as one argument,
-	// for a caller that would rather quote it than fight the shell — and the
-	// only way to give one to the bare `discobox`, where an unquoted prompt
-	// would be indistinguishable from a subcommand.
+	// promptFlag is -p: the prompt as one argument, and the only way to spell
+	// one to the bare `discobox`, where a word on its own is a subcommand. The
+	// words after `run` are the same prompt as the shell split it, kept because
+	// the name in front of them says what they are.
 	promptFlag []string
 	detach     bool
 	// noSource creates the discobox with nothing materialized in it. -C still
@@ -41,10 +40,11 @@ func (a *App) newRunCommand() *cobra.Command {
 		Short:   "Launch prompt in new discobox",
 		Long: `Launch a prompt in a new discobox against the current directory.
 
-The arguments are the prompt. Use -- when the prompt needs to be separated from
-command flags explicitly, or pass it as -p to give it as one argument instead —
-the only way to spell a prompt to the bare "discobox", which is this command in
-every way that matters (see "discobox --help").
+The prompt is -p, which is also how the bare "discobox" takes one — that is this
+command in every way that matters (see "discobox --help"), so "discobox -p '...'"
+and "discobox run -p '...'" are the same thing. The words after this command are
+a prompt too, for a shell where quoting is the awkward part; use -- when they
+need to be separated from command flags explicitly.
 
 By default run opens the launcher's window and makes the discobox there: the
 question about uncommitted work is asked on it, the wait is drawn on it, and
@@ -100,16 +100,18 @@ Each is brought in the way -i would: the ../foo you already have checked out
 when there is one, and a clone of the URL when there is not. Either way it lands
 at the same path beside the source, so ../foo means the same thing inside the
 discobox as it does here. --declared-sources=false leaves them out.`,
-		Example: `  discobox run fix the failing tests
-  discobox run --include-dirty=false fix the failing tests
-  discobox run -i ../foo -i ../bar make them share one client
-  discobox run --no-source draft a proposal for the new pricing page
-  discobox run -e GITHUB_TOKEN -e MODE=test fix the failing tests
-  discobox run -s OPENAI_API_KEY=sk-... -s GITHUB_TOKEN=<sec_123> fix the failing tests
-  discobox run -d fix the failing tests
-  discobox run --raw fix the failing tests
-  discobox run -- prompt starting with --flag-like text
-  discobox -H codex -d -p 'fix the failing tests'`,
+		Example: `  discobox -p 'fix the failing tests'
+  discobox -H codex -d -p 'fix the failing tests'
+  discobox run -p 'fix the failing tests'
+  discobox run --include-dirty=false -p 'fix the failing tests'
+  discobox run -i ../foo -i ../bar -p 'make them share one client'
+  discobox run --no-source -p 'draft a proposal for the new pricing page'
+  discobox run -e GITHUB_TOKEN -e MODE=test -p 'fix the failing tests'
+  discobox run -s OPENAI_API_KEY=sk-... -s GITHUB_TOKEN=<sec_123> -p 'fix the failing tests'
+  discobox run -d -p 'fix the failing tests'
+  discobox run --raw -p 'fix the failing tests'
+  discobox run fix the failing tests
+  discobox run -- prompt starting with --flag-like text`,
 		Args: cobra.ArbitraryArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			return a.runPrompt(cmd, &opts, args)
@@ -125,7 +127,8 @@ discobox as it does here. --declared-sources=false leaves them out.`,
 // in step with it.
 //
 // args is the prompt as the shell split it, after -p, which is the same prompt
-// given as one argument.
+// given as one argument. Only `run` has trailing words to pass; the bare
+// command's prompt is -p and nothing else, so it passes none.
 func (a *App) runPrompt(cmd *cobra.Command, opts *runCommandOptions, args []string) error {
 	// Creating and delivering a source are this client's own work, so
 	// nothing but this process can say which of them is underway
@@ -148,9 +151,9 @@ func (a *App) runPrompt(cmd *cobra.Command, opts *runCommandOptions, args []stri
 	if opts.detach {
 		notes = status.print
 	}
-	// -p and the words after the command are the same prompt, so a caller can
-	// use whichever the shell makes easier and both arrive as argv tokens. The
-	// flag leads because it is the one that had to be quoted.
+	// -p and the words after `run` are the same prompt, so a caller can use
+	// whichever the shell makes easier and both arrive as argv tokens. The flag
+	// leads because it is the one that had to be quoted.
 	prompt := append(append([]string(nil), opts.promptFlag...), args...)
 	opts.prompt.Source = a.source
 	opts.prompt.NoSource = opts.noSource
@@ -229,7 +232,7 @@ func (a *App) runPrompt(cmd *cobra.Command, opts *runCommandOptions, args []stri
 // any of them was given at all.
 func addRunFlags(cmd *cobra.Command, opts *runCommandOptions) *pflag.FlagSet {
 	flags := pflag.NewFlagSet("run", pflag.ContinueOnError)
-	flags.StringArrayVarP(&opts.promptFlag, "prompt", "p", nil, "Prompt for the harness, as one argument; repeat to pass more argv tokens. The same thing as the words after the command, and the only spelling the bare \"discobox\" has for a prompt")
+	flags.StringArrayVarP(&opts.promptFlag, "prompt", "p", nil, "Prompt for the harness, as one argument; repeat to pass more argv tokens. The same thing as the words after \"run\", and the only spelling the bare \"discobox\" has for a prompt")
 	flags.StringArrayVarP(&opts.prompt.Env, "env", "e", nil, "Environment variable as KEY=VALUE or KEY from the local environment; repeat for multiple variables. A KEY whose name contains KEY, TOKEN, PASS, or SECRET is treated as a secret; use KEY!=VALUE to force it to be a plain environment variable")
 	flags.StringArrayVarP(&opts.prompt.Secret, "secret", "s", nil, "Secret injected as a sentinel placeholder resolved by the proxy at runtime, as KEY=VALUE (inline value) or KEY=<SECRET_ID> (reference an existing secret); repeat for multiple secrets")
 	flags.StringArrayVarP(&opts.prompt.Include, "include", "i", nil, "Additional source directory or Git repository to bring into the discobox, optionally with @REF; repeat for more than one. A local directory keeps its own absolute path inside the discobox and is named after itself, so -i ../foo is the source foo")
@@ -245,14 +248,12 @@ func addRunFlags(cmd *cobra.Command, opts *runCommandOptions) *pflag.FlagSet {
 }
 
 // runRequested reports whether an invocation of the bare `discobox` is a run
-// rather than a launcher. A prompt is one, and so is any of run's own flags on
-// their own: `discobox -d` has said enough about what it wants for a window to
-// be the wrong answer, while `discobox` with nothing at all is the launcher it
-// has always been.
-func runRequested(flags *pflag.FlagSet, args []string) bool {
-	if len(args) > 0 {
-		return true
-	}
+// rather than a launcher. Any of run's own flags makes it one — -p above all,
+// but `discobox -d` has said enough about what it wants for a window to be the
+// wrong answer too — while `discobox` with nothing at all is the launcher it has
+// always been. There are no positional words to consider: at this command they
+// are subcommands, not a prompt (see newRootCommand).
+func runRequested(flags *pflag.FlagSet) bool {
 	given := false
 	flags.VisitAll(func(flag *pflag.Flag) { given = given || flag.Changed })
 	return given

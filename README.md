@@ -41,7 +41,7 @@ and services beside it, its forwarded ports. `Ctrl-A d` leaves; the box keeps
 working. Or skip the window entirely:
 
 ```bash
-discobox "fix the flaky test in the payments suite"
+discobox -p "fix the flaky test in the payments suite"
 ```
 
 <div align="center">
@@ -209,7 +209,7 @@ discobox admin      Pools, projects, harness images, and the API server
 ```
 
 `discobox --help` for the rest — `tui`, `completion`, and every flag. `run` is
-optional: `discobox fix the failing tests` is a run.
+optional: `discobox -p '...'` is a run, and takes every flag `run` does.
 
 ---
 

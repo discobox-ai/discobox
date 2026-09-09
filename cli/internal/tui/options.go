@@ -690,9 +690,15 @@ func (o *optionSet) renderChips(st *styles, focused bool) string {
 	return marker.Render("⏵⏵ ") + strings.Join(parts, separator.Render(" · "))
 }
 
-// command renders the `discobox run` invocation the current options describe. It
-// is the panel's own documentation: what is on screen is reproducible from a
-// shell, and if it is not, the panel is offering something the command cannot.
+// command renders the run invocation the current options describe. It is the
+// panel's own documentation: what is on screen is reproducible from a shell,
+// and if it is not, the panel is offering something the command cannot.
+//
+// It spells the run the way the CLI's own help leads with it — `discobox -p
+// '...'`, with no `run` in front — which is also the more faithful rendering of
+// what Enter does: the composer holds one piece of text and sends it as one
+// argument, which is exactly what -p is. The trailing words `run` still takes
+// would be inventing a tokenization the user did not type.
 func (o *optionSet) command(prompt string) string {
 	req := o.request(prompt)
 	args := []string{"discobox"}
@@ -702,32 +708,37 @@ func (o *optionSet) command(prompt string) string {
 	if req.Source != "" {
 		args = append(args, "-C", shellQuote(req.Source))
 	}
-	args = append(args, "run")
+	// run's own flags, kept apart from the ones above because they are what
+	// makes the bare command a run at all (`runRequested` in the CLI).
+	var run []string
+	for _, word := range req.Prompt {
+		run = append(run, "-p", shellQuote(word))
+	}
 	if req.NoSource {
-		args = append(args, "--no-source")
+		run = append(run, "--no-source")
 	}
 	if req.Harness != "" {
-		args = append(args, "--harness", req.Harness)
+		run = append(run, "--harness", req.Harness)
 	}
 	if req.IncludeDirty != "" {
-		args = append(args, "--include-dirty="+req.IncludeDirty)
+		run = append(run, "--include-dirty="+req.IncludeDirty)
 	}
 	if req.Detach {
-		args = append(args, "-d")
+		run = append(run, "-d")
 	}
 	for _, e := range req.Env {
-		args = append(args, "-e", shellQuote(e))
+		run = append(run, "-e", shellQuote(e))
 	}
 	for _, s := range req.Secret {
-		args = append(args, "-s", shellQuote(s))
+		run = append(run, "-s", shellQuote(s))
 	}
-	if len(req.Prompt) > 0 {
-		args = append(args, "--")
-		for _, word := range req.Prompt {
-			args = append(args, shellQuote(word))
-		}
+	// An empty prompt with nothing else set is the launcher, not a run: -C and
+	// --project say nothing about which of the two this is. Only that one case
+	// has to name the command.
+	if len(run) == 0 {
+		run = []string{"run"}
 	}
-	return strings.Join(args, " ")
+	return strings.Join(append(args, run...), " ")
 }
 
 func (o *optionSet) view(st *styles, z *zones, width int, prompt string) string {

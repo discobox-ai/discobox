@@ -141,7 +141,7 @@ Nygard-style ADRs (see adr.github.io) combined with current-state design docs:
 | [0086](0086-a-harness-image-extends-the-base-and-its-manifest-is-override-only.md) | A harness image extends the sandbox base, and its manifest is override-only | Accepted (supersedes [0043](0043-shell-is-an-ordinary-harness-image.md) §2) |
 | [0087](0087-the-pool-agent-reaps-only-children-nothing-is-waiting-for.md) | The pool agent reaps only children nothing is waiting for | Accepted |
 | [0088](0088-the-launcher-window-answers-the-mouse-and-owns-selection.md) | The launcher window answers the mouse everywhere, and owns selection where it does | Accepted |
-| [0089](0089-the-bare-command-is-a-run-and-costs-unknown-command.md) | The bare command is a run, and costs "unknown command" | Accepted |
+| [0089](0089-the-bare-command-is-a-run-and-costs-unknown-command.md) | The bare command is a run, and costs "unknown command" | Accepted (§4's positional prompt and §5's `ArbitraryArgs` superseded by [0100](0100-the-prompt-is-a-flag-and-the-root-takes-no-words.md); §§1–3 stand) |
 | [0090](0090-the-judge-is-handed-facts-and-given-no-tools.md) | The judge is handed facts and given no tools | Accepted |
 | [0091](0091-a-credential-is-not-issued-without-a-verdict-on-record.md) | A credential is not issued without a verdict on record | Accepted |
 | [0092](0092-the-cli-has-no-unjudged-way-to-take-a-value.md) | The CLI has no unjudged way to take a value | Accepted |
@@ -152,3 +152,4 @@ Nygard-style ADRs (see adr.github.io) combined with current-state design docs:
 | [0097](0097-a-discobox-address-is-versioned-and-names-no-transport.md) | A Discobox address is `discobox://<peer-id>`, and nothing user-facing says iroh | Accepted (settles [0052](0052-iroh-is-an-optional-endpoint-scheme.md) §6's deferred address form; amends [0095](0095-an-enrolled-iroh-id-is-a-managed-resource.md) §2's hex spelling) |
 | [0098](0098-a-server-serves-its-own-peer-id.md) | A server serves its own peer ID, and `discobox id` prints both halves | Accepted (narrows [0052](0052-iroh-is-an-optional-endpoint-scheme.md) §6's out-of-band address to the case iroh is the only way in) |
 | [0099](0099-the-cli-downloads-the-server-it-starts.md) | The CLI downloads the server it starts, staged by version and checked by digest | Accepted (amends [0066](0066-the-build-is-nix-plus-taskfile-and-github-actions-only-triggers-it.md) §5's entitlement scope to the server binary) |
+| [0100](0100-the-prompt-is-a-flag-and-the-root-takes-no-words.md) | The prompt is a flag, and the bare command takes no words | Accepted (supersedes [0089](0089-the-bare-command-is-a-run-and-costs-unknown-command.md) §4's positional prompt and §5) |
