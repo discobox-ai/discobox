@@ -171,7 +171,7 @@ func pushTo(ctx context.Context, repoRoot, originURL, token, sandboxID string, s
 		// fast-forward cannot lose a commit, and a rewind needs --force.
 	}
 	args = append(args, originURL, commit+":refs/heads/"+branch)
-	if _, err := gitutil.Output(ctx, repoRoot, nil, nil, sandboxgit.AuthArgs(token, args)...); err != nil {
+	if _, err := gitutil.Output(ctx, repoRoot, nil, sandboxgit.NoPromptEnv, sandboxgit.PushArgs(token, args)...); err != nil {
 		return result, pushError(err, hasLease, opts.Force)
 	}
 	if err := gitutil.UpdateRef(ctx, repoRoot, pending.LeaseRef, commit); err != nil {

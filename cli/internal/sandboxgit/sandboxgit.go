@@ -66,6 +66,37 @@ func AuthArgs(token string, args []string) []string {
 	return append([]string{"-c", "http.extraHeader=Authorization: Bearer " + token}, args...)
 }
 
+// PushArgs is a push to the control plane's proxy: what it takes to get there
+// (AuthArgs) and what it takes to come back from a connection that has stopped
+// (StallArgs).
+func PushArgs(token string, args []string) []string {
+	return AuthArgs(token, append(append([]string{}, StallArgs...), args...))
+}
+
+// NoPromptEnv makes git fail rather than ask, for every push this client makes
+// to the control plane's proxy.
+//
+// The transport is authenticated by a bearer token (AuthArgs), so there is no
+// credential a person could usefully type — but git's own prompt and every
+// credential helper open /dev/tty directly rather than stdin, and that terminal
+// belongs to whatever the caller is doing: a create narrating its steps, an
+// attach that has just handed the terminal back. Output is captured either way,
+// so a prompt is a hang with nothing on screen to explain it.
+var NoPromptEnv = map[string]string{"GIT_TERMINAL_PROMPT": "0"}
+
+// StallArgs make git give up on a transfer that has stopped moving, and only
+// on one that has stopped moving.
+//
+// A caller that cannot interrupt a push still needs it to end (ADR 0095 §6),
+// and a wall clock is the wrong instrument: the largest transfer this client
+// ever makes is a first push carrying everything committed since it last
+// pushed, which is exactly the one a deadline would cut in half — leaving the
+// origin ahead of a lease that was never written, which is the failure the
+// uninterruptible send exists to prevent. git measures the thing that actually
+// distinguishes big from wedged, so it is asked to: below 1 KiB/s for a minute
+// is a connection that has stopped, at any size.
+var StallArgs = []string{"-c", "http.lowSpeedLimit=1024", "-c", "http.lowSpeedTime=60"}
+
 // OriginLeaseRef is where a client records the commit it last pushed to one
 // branch of a source's origin repository, in its own repository.
 //

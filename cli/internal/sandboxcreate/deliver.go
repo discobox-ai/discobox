@@ -250,7 +250,7 @@ func pushSource(ctx context.Context, repoRoot, repoURL, token, commit, branch, s
 	}
 	args := []string{"push", repoURL}
 	args = append(args, refspecs...)
-	if _, err := gitutil.Output(ctx, repoRoot, nil, nil, sandboxgit.AuthArgs(token, args)...); err != nil {
+	if _, err := gitutil.Output(ctx, repoRoot, nil, sandboxgit.NoPromptEnv, sandboxgit.PushArgs(token, args)...); err != nil {
 		return fmt.Errorf("push source to discobox: %w", err)
 	}
 	return nil
