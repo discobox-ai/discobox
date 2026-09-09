@@ -42,8 +42,9 @@ func NewLocalDriver(ctx context.Context, host string, agentPort int) (*LocalDriv
 		return nil, err
 	}
 	if _, err := cli.Ping(ctx, client.PingOptions{}); err != nil {
+		daemonHost := cli.DaemonHost()
 		_ = cli.Close()
-		return nil, err
+		return nil, explainDaemonUnreachable(ctx, daemonHost, err)
 	}
 	return &LocalDriver{client: cli, agentPort: agentPort}, nil
 }
