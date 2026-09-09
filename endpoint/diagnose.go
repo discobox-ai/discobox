@@ -500,6 +500,20 @@ func diagnoseIrohConnect(ctx context.Context, diagnosis *Diagnosis, configured *
 	started = time.Now()
 	stream, err := conn.OpenConn(ctx)
 	if err != nil {
+		// A refusal can land here rather than on the request below. The server
+		// closes an accepted connection the moment it decides against the peer
+		// (ADR 0095 §4), and whether that close arrives before or after this
+		// call is a race nothing on this side controls — so both places ask the
+		// connection why it went away, and a refused peer is reported as one
+		// either way. Blaming the stream sends an operator to look for a broken
+		// transport when the answer is that they are not enrolled.
+		if reason := irohCloseReason(conn); reason != "" {
+			diagnosis.skip(DiagnosisLayerStream, "the connection was closed first")
+			diagnosis.fail(DiagnosisLayerAdmission, started, "the server closed the connection: "+reason, nil,
+				admissionHint(reason, local))
+			diagnosis.skip(DiagnosisLayerServer, "the connection was closed before the server answered")
+			return
+		}
 		diagnosis.fail(DiagnosisLayerStream, started, "no stream on the connection", err, "")
 		diagnosis.skipRest(DiagnosisLayerAdmission, DiagnosisLayerServer)
 		return
@@ -510,7 +524,9 @@ func diagnoseIrohConnect(ctx context.Context, diagnosis *Diagnosis, configured *
 	// The refusal lands here rather than at the handshake: a server accepts a
 	// connection, checks the peer against its allowlist, and closes with the
 	// reason if it says no (ADR 0095 §4). Opening a stream costs no round trip,
-	// so this request is the first thing that can notice.
+	// so this request is usually the first thing that can notice — usually,
+	// because a close that arrives sooner fails the open above instead, which
+	// is why that path asks the same question.
 	started = time.Now()
 	status, err := probeHealthConn(ctx, stream, opts.RequestTimeout)
 	if err != nil {
