@@ -215,6 +215,11 @@ func Stage(ctx context.Context, m Manifest, opts Options) (string, error) {
 // aside rather than deleted in place: on Windows a running server's file cannot
 // be deleted at all, and a rename can still get it out of the way — and if the
 // move into place then fails, what was there is put back rather than lost.
+//
+// That a Windows rename of a directory holding a running executable succeeds is
+// the premise here and in migrateLegacyLayout, and it is not something the
+// tests establish: the mode bits they provoke the failure with do not exist
+// there. If it turns out to be false, both sites need the same fix.
 func commit(temp, dir string) error {
 	parent := filepath.Dir(dir)
 	var aside string

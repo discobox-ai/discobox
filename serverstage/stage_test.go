@@ -385,9 +385,7 @@ func TestStageKeepsPlatformsApart(t *testing.T) {
 // there would answer the one question --force exists to ask with a set nothing
 // re-verified.
 func TestStageForceDoesNotReportAnUntouchedSetAsRestaged(t *testing.T) {
-	if os.Geteuid() == 0 {
-		t.Skip("root ignores the directory permissions this makes the rename fail with")
-	}
+	requireModeBits(t)
 	served := serveAssets(t, map[string][]byte{"discobox-server": []byte("the server")})
 	root := t.TempDir()
 	manifest := served.manifest("v1.2.3", "discobox-server", "discobox-server")
@@ -733,9 +731,7 @@ func TestStageLeavesALegacySetItCannotMove(t *testing.T) {
 // here it is a directory whose mode forbids unlinking what is inside while
 // still allowing the directory itself to be renamed.
 func TestStageMigrationLeavesADuplicateSweepable(t *testing.T) {
-	if os.Geteuid() == 0 {
-		t.Skip("root ignores the directory permissions this makes the removal fail with")
-	}
+	requireModeBits(t)
 	served := serveAssets(t, map[string][]byte{"discobox-server": []byte("the server")})
 	manifest := served.manifest("v1.2.3", "discobox-server", "discobox-server")
 	root := t.TempDir()
@@ -784,5 +780,27 @@ func TestStageMigrationLeavesADuplicateSweepable(t *testing.T) {
 			t.Fatalf("%s survived under a name nothing sweeps", name)
 		}
 		_ = os.Chmod(filepath.Join(root, name), 0o700)
+	}
+}
+
+// requireModeBits skips a test that provokes a filesystem failure by taking
+// write permission away from a directory.
+//
+// Windows has no POSIX mode: os.Chmod there sets the read-only attribute at
+// most and never stops a rename or an unlink, so the operation these tests need
+// to fail simply succeeds and the assertion inverts — one of them failed on the
+// Windows runner, and the other passed while testing nothing. Root is the same
+// problem from the other side, since it ignores the bits entirely.
+//
+// What is skipped is the way of provoking the failure, not the behaviour: the
+// code under test is platform-independent, and on Windows the case it stands in
+// for is a locked executable rather than a mode.
+func requireModeBits(t *testing.T) {
+	t.Helper()
+	if runtime.GOOS == "windows" {
+		t.Skip("Windows has no POSIX mode, so chmod does not make a rename or an unlink fail")
+	}
+	if os.Geteuid() == 0 {
+		t.Skip("root ignores the directory permissions this provokes the failure with")
 	}
 }
