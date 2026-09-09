@@ -276,6 +276,11 @@ func TestADeclarationThatStartsNothingIsNotBroken(t *testing.T) {
 // An ordinary script is still validated as one, so `start: never` cannot be
 // inferred from a missing executable bit.
 func TestAScriptThatStartsNothingIsStillCheckedWhenItSaysNothing(t *testing.T) {
+	// The problem this asserts is the missing executable bit, and validate
+	// deliberately does not look for one on Windows, where it does not exist.
+	if runtime.GOOS == "windows" {
+		t.Skip("the executable bit validate checks for is POSIX-only")
+	}
 	builtin := t.TempDir()
 	writeBuiltin(t, builtin, "10-thing.sh", "#!/bin/bash\n#---\n# port: 8080\n#---\nexec up\n", 0o644)
 

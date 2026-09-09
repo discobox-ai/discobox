@@ -3,6 +3,7 @@ package boot
 import (
 	"os"
 	"path/filepath"
+	"runtime"
 	"testing"
 )
 
@@ -22,6 +23,13 @@ func launcherSource(t *testing.T) string {
 }
 
 func TestSeedDesktopLaunchersPopulatesANewDesktop(t *testing.T) {
+	// Both halves of what this asserts are POSIX-only: seedDesktopLaunchers
+	// chowns the launchers to the sandbox user, which Windows does not support
+	// at all, and the executable bit it checks for does not exist there. The
+	// sibling tests below stop before the chown, so they still run everywhere.
+	if runtime.GOOS == "windows" {
+		t.Skip("chown and the executable bit are POSIX-only")
+	}
 	home := t.TempDir()
 	id := identity{home: home, uid: os.Getuid(), gid: os.Getgid()}
 	if err := (&booter{}).seedDesktopLaunchers(id, launcherSource(t)); err != nil {
