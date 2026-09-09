@@ -18,7 +18,9 @@ import (
 // portable install may want to.
 
 // discoboxStateDir is the root of this machine's Discobox state, which the
-// CLI's own state and the server binaries it stages are both under.
+// CLI's own state and the server binaries it stages are both under. Empty when
+// this machine has nowhere to put it — see the callers, which each have their
+// own last resort.
 func discoboxStateDir() string {
 	if value := strings.TrimSpace(os.Getenv("XDG_STATE_HOME")); value != "" {
 		return filepath.Join(value, "discobox")
@@ -26,22 +28,35 @@ func discoboxStateDir() string {
 	if home := stateHome(); home != "" {
 		return filepath.Join(home, "discobox")
 	}
-	// Somewhere rather than nowhere: a picker that cannot remember is a
-	// smaller failure than a command that cannot run.
-	return filepath.Join(os.TempDir(), "discobox-state")
+	return ""
 }
 
 // cliStateDir is where the CLI keeps its own state.
 func cliStateDir() string {
-	return filepath.Join(discoboxStateDir(), "cli")
+	if root := discoboxStateDir(); root != "" {
+		return filepath.Join(root, "cli")
+	}
+	// Somewhere rather than nowhere: a picker that cannot remember is a
+	// smaller failure than a command that cannot run.
+	//
+	// This exact name, unchanged. What is under here is not only the picker's
+	// memory: it is also this machine's iroh identity — the peer ID an
+	// operator enrolled against a server — and its SSH key. An install that
+	// reaches this branch (no HOME under a systemd unit, a container, a cron
+	// job) would otherwise come back from an upgrade with a new identity and
+	// an enrolment that no longer matches, for no reason but a tidier path.
+	return filepath.Join(os.TempDir(), "discobox-cli-state")
 }
 
-// stagedServerRoot holds one directory per staged server version (ADR 0099).
-// A sibling of the CLI's own state rather than a subdirectory of it: what is
-// staged there is another program, and the CLI is only the thing that fetched
-// it.
+// stagedServerRoot holds one directory per platform per staged server version
+// (ADR 0099). A sibling of the CLI's own state rather than a subdirectory of
+// it: what is staged there is another program, and the CLI is only the thing
+// that fetched it.
 func stagedServerRoot() string {
-	return filepath.Join(discoboxStateDir(), "server")
+	if root := discoboxStateDir(); root != "" {
+		return filepath.Join(root, "server")
+	}
+	return filepath.Join(os.TempDir(), "discobox-server-state")
 }
 
 // ensureStateDir creates a directory under the state directory and restricts it
