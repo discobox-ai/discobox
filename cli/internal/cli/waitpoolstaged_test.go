@@ -1,7 +1,12 @@
 package cli
 
 import (
+	"context"
+	"net/http"
+	"net/http/httptest"
+	"strconv"
 	"strings"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -166,4 +171,112 @@ func TestHumanBytes(t *testing.T) {
 			t.Fatalf("humanBytes(%d) = %q, want %q", tc.in, got, tc.want)
 		}
 	}
+}
+
+// The wait polls a server that is not obliged to answer, on a client with no
+// timeout of its own. One that took the connection and went quiet used to park
+// the wait forever — the stall clock never runs, because it is only read once a
+// poll returns — and the first command on a new machine printed the line about
+// the server it had started and then nothing at all.
+func TestWaitForStagedPoolsEndsWhenTheServerStopsAnswering(t *testing.T) {
+	release := make(chan struct{})
+	server := httptest.NewServer(http.HandlerFunc(func(http.ResponseWriter, *http.Request) {
+		<-release
+	}))
+	t.Cleanup(func() {
+		close(release)
+		server.Close()
+	})
+	shortenPoolStageRead(t)
+
+	app := &App{serverURL: server.URL, autoStart: autoStartServerFalse, projectID: "project-1"}
+	if elapsed := timeWait(t, app); elapsed > 5*time.Second {
+		t.Fatalf("the wait took %s against a server that never answered", elapsed)
+	}
+}
+
+// A poll that fails ends the wait rather than being sat out. The CLI has just
+// probed this server as ready, so an unreadable pool list is a fault rather
+// than a blip — and staging is a head start, so giving up on it costs the pull
+// later, where the operation that needs the image narrates it.
+func TestWaitForStagedPoolsGivesUpWhenThePoolsCannotBeRead(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusInternalServerError)
+	}))
+	t.Cleanup(server.Close)
+
+	app := &App{serverURL: server.URL, autoStart: autoStartServerFalse, projectID: "project-1"}
+	if elapsed := timeWait(t, app); elapsed > 5*time.Second {
+		t.Fatalf("the wait took %s against a server that could not answer", elapsed)
+	}
+}
+
+// The wait it is there to do: report while the pool is unstaged, and end as
+// soon as it is staged.
+func TestWaitForStagedPoolsReportsUntilEverythingIsStaged(t *testing.T) {
+	var polls atomic.Int32
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		staged := polls.Add(1) > 1
+		_, _ = w.Write([]byte(`{"pools":[` + testPoolJSON(staged) + `]}`))
+	}))
+	t.Cleanup(server.Close)
+
+	app := &App{serverURL: server.URL, autoStart: autoStartServerFalse, projectID: "project-1"}
+	var lines []string
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		app.waitForStagedPools(context.Background(), func(line string) { lines = append(lines, line) })
+	}()
+	select {
+	case <-done:
+	case <-time.After(10 * time.Second):
+		t.Fatal("the wait did not end after the pool staged")
+	}
+	if len(lines) != 1 || !strings.Contains(lines[0], "Downloading images") {
+		t.Fatalf("lines = %q, want the unstaged pool reported once", lines)
+	}
+}
+
+// timeWait runs the wait to completion and says how long it took, failing the
+// test rather than hanging it when the wait does not end.
+func timeWait(t *testing.T, app *App) time.Duration {
+	t.Helper()
+	started := time.Now()
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		app.waitForStagedPools(context.Background(), nil)
+	}()
+	select {
+	case <-done:
+		return time.Since(started)
+	case <-time.After(30 * time.Second):
+		t.Fatal("the wait never ended")
+		return 0
+	}
+}
+
+// shortenPoolStageRead makes the per-poll bound short enough to test, and puts
+// the production value back.
+func shortenPoolStageRead(t *testing.T) {
+	t.Helper()
+	previous := poolStageReadTimeout
+	poolStageReadTimeout = 200 * time.Millisecond
+	t.Cleanup(func() { poolStageReadTimeout = previous })
+}
+
+// testPoolJSON is a pool as the API sends one, staged or mid-download.
+func testPoolJSON(staged bool) string {
+	pool := `{"id":"pool-1","projectId":"project-1","name":"Default","providerInstanceId":"provider-1",` +
+		`"cpuVcpus":0,"memoryBytes":0,"storageBytes":0,"ready":true,"schedulable":true,"degraded":false,` +
+		`"availableCpuVcpus":0,"availableMemoryBytes":0,"availableStorageBytes":0,` +
+		`"desiredState":"present","state":"active","generation":1,"observedGeneration":1,` +
+		`"createdAt":"2026-01-01T00:00:00Z","updatedAt":"2026-01-01T00:00:00Z",` +
+		`"imagesStaged":` + strconv.FormatBool(staged)
+	if !staged {
+		pool += `,"imageStage":{"state":"staging","image":"ghcr.io/discobox-ai/discobox-harness-shell:v1","done":1,"total":4}`
+	}
+	return pool + `}`
 }

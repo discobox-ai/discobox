@@ -34,6 +34,21 @@ const (
 	poolStageStallTimeout = 5 * time.Minute
 )
 
+// poolStageReadTimeout bounds one poll of the pools.
+//
+// The client this wait uses has no timeout of its own — an API call ends when
+// the server answers it — so a server that took the connection and then went
+// quiet parked the whole wait, forever. The stall clock could not save it: that
+// clock is only read once a poll returns, and a poll that never returns never
+// reaches it. What the user saw was a first command that printed the line about
+// the server it had started and then nothing at all, for as long as they were
+// willing to wait.
+//
+// A var because the tests shorten it. Generous, because the server it asks is
+// on the other side of a socket on this machine: anything near this long is a
+// server that has stopped answering rather than one that is thinking.
+var poolStageReadTimeout = 10 * time.Second
+
 // waitForStagedPools waits until every pool in the project has staged its
 // images, narrating what it is waiting for.
 //
@@ -57,18 +72,26 @@ func (a *App) waitForStagedPools(ctx context.Context, report func(string)) {
 	last := ""
 	for {
 		pools, ok := a.readPools(ctx, client, projectID)
-		if ok {
-			if stagedEverywhere(pools) {
-				return
+		if !ok {
+			// A wait that cannot read the pools has nothing to wait on and
+			// nothing to say, and the CLI has just probed this server as ready,
+			// so the first unanswered poll is a real fault rather than a blip
+			// to sit out. Giving up costs the head start and nothing else: the
+			// image gets pulled by the operation that needs it, narrated where
+			// it happens, which is where it would have been without any of
+			// this (ADR 0069).
+			return
+		}
+		if stagedEverywhere(pools) {
+			return
+		}
+		if line := stagingLine(pools); line != "" && line != last {
+			last = line
+			if report != nil {
+				report(line)
 			}
-			if line := stagingLine(pools); line != "" && line != last {
-				last = line
-				if report != nil {
-					report(line)
-				}
-				// Something moved, so the clock starts again.
-				stall.Progressed()
-			}
+			// Something moved, so the clock starts again.
+			stall.Progressed()
 		}
 		if stall.Expired() {
 			return
@@ -82,6 +105,8 @@ func (a *App) waitForStagedPools(ctx context.Context, report func(string)) {
 }
 
 func (a *App) readPools(ctx context.Context, client *apiclientgen.Client, projectID string) ([]apimodel.Pool, bool) {
+	ctx, cancel := context.WithTimeout(ctx, poolStageReadTimeout)
+	defer cancel()
 	res, err := client.ListPools(ctx, apiclientgen.ListPoolsParams{ProjectId: projectID})
 	if err != nil {
 		return nil, false
