@@ -1,6 +1,9 @@
 # 0058 — A push-delivered source has a pool-side origin the client re-pushes into
 
 - **Status**: Accepted
+- **§8 superseded by**: [0095](0095-an-attached-client-pushes-the-commits-made-where-it-runs.md)
+  — an attached client pushes on its own, so the launcher has no push key.
+  §§1–7 stand.
 - **Date**: 2026-08-19
 
 ## Context
