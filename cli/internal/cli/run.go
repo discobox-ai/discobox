@@ -91,8 +91,8 @@ is resolved exactly like the source directory is, uncommitted changes included,
 and a local one keeps its own absolute path inside the discobox, so ../foo shows
 up at the path readlink -f ../foo prints. A source from a directory the discobox
 cannot hold at that path -- anything outside /home, /Users, /mnt, /workspace,
-/Volumes and /media, since the rest belongs to the discobox's own system -- is
-placed under /workspace instead, named after itself.
+/Volumes, /media, /srv, /opt and /data, since the rest belongs to the discobox's
+own system -- is placed under /workspace instead, named after itself.
 
 A repository can name the others it is worked on with, in .discobox/sources.json
 at its root:

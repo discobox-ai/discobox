@@ -1010,7 +1010,25 @@ var mirrorableSourceRoots = []string{
 	"/workspace",
 	"/Volumes",
 	"/media",
+	// Where code is kept on a server. None of them is systemd's: /srv is
+	// created by tmpfiles with no age, so nothing cleans it; /data is not in
+	// the image at all; /opt holds only what an image installs there, which is
+	// sandboxOwnedPaths below.
+	"/srv",
+	"/opt",
+	"/data",
 }
+
+// sandboxOwnedPaths are paths inside a mirrorable root that the sandbox image
+// itself occupies, so a source cannot have them: mounting over one replaces
+// something the discobox needs to run rather than something systemd would put
+// back.
+//
+// It is a short list of what we install, not an attempt to guess at the
+// system — the roots above are chosen so that everything else under them is
+// nobody's. /opt/discobox holds the runc a nested Docker build runs through, so
+// a checkout of this project deployed at that path would otherwise shadow it.
+var sandboxOwnedPaths = []string{"/opt/discobox"}
 
 // sandboxSourceRoot is the path a host directory keeps inside a sandbox, and
 // whether it keeps one at all.
@@ -1027,6 +1045,11 @@ func sandboxSourceRoot(hostPath string) (string, bool) {
 	dir := path.Clean(filepath.ToSlash(hostPath))
 	if !path.IsAbs(dir) {
 		return "", false
+	}
+	for _, owned := range sandboxOwnedPaths {
+		if dir == owned || strings.HasPrefix(dir, owned+"/") {
+			return "", false
+		}
 	}
 	for _, root := range mirrorableSourceRoots {
 		// A child of the root, never the root itself: a source at /home is not

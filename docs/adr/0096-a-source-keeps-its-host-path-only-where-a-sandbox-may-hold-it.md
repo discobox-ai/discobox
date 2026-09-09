@@ -57,16 +57,26 @@ inside a sandbox; that part was assumed.
 
 ### 1. A host path is mirrored only from a root a sandbox may hold
 
-Six roots, and their children:
+Nine roots, and their children:
 
 ```
-/home  /Users  /mnt  /workspace  /Volumes  /media
+/home  /Users  /mnt  /workspace  /Volumes  /media  /srv  /opt  /data
 ```
 
-These are where user data lives on the platforms Discobox runs on: Linux and
-WSL homes, macOS homes, mounted drives (`/mnt` is also where a Windows path
-already lands — see §3), removable and external media, and the sandbox's own
-workspace. Nothing in the sandbox image manages any of them.
+These are where code and user data live on the platforms Discobox runs on:
+Linux and WSL homes, macOS homes, mounted drives (`/mnt` is also where a Windows
+path already lands — see §3), removable and external media, the sandbox's own
+workspace, and the three roots people keep repositories under on a server.
+Nothing in the sandbox image manages any of them: `/srv` is created by tmpfiles
+with no age argument, so nothing cleans it; `/data` is not in the image at all;
+`/opt` holds only what an image installs there.
+
+**One path inside them is ours** (`sandboxOwnedPaths`): `/opt/discobox`, which
+holds the `runc` a nested Docker build runs through. A source there would
+replace something the discobox needs to run rather than something systemd would
+put back, and a checkout of this project deployed at that path is not far-
+fetched. It is a list of what we install rather than a guess at the system —
+the roots above are chosen so that everything else under them is nobody's.
 
 It is a whitelist, not a list of forbidden system directories, because the two
 fail in opposite directions. A forbidden-list that misses a root — `/snap`,
@@ -115,20 +125,23 @@ Both stay as they are.
 
 **Refuse a source outside those roots.** The stricter reading, and the first
 instinct: `discobox run -C /tmp/x` errors and names the allowed roots. Rejected
-because it declines work Discobox can do perfectly well. A repository under
-`/srv`, `/opt` or `/data` is an ordinary way to keep code on a server, and a
-directory under `/tmp` is what every test that creates a discobox from
-`t.TempDir()` uses — seven test files in this repository do. None of them is
-asking for a path *inside* the sandbox; they are asking for a discobox. The
-refusal buys nothing the placement rule does not, and costs the cases where the
+because it declines work Discobox can do perfectly well. A directory under
+`/tmp` is what every test that creates a discobox from `t.TempDir()` uses —
+seven test files in this repository do — and none of them is asking for a path
+*inside* the sandbox; they are asking for a discobox. The same goes for a
+scratch clone, a CI checkout, and any root nobody has added to §1 yet. The
+refusal buys nothing the placement rule does not, and costs every case where the
 only thing wrong was a mount point we picked.
 
-**A forbidden list — `/tmp`, `/var`, `/run`, `/etc`, `/usr`, …** Keeps today's
-mirroring for `/srv`, `/opt` and `/data`, which is a real advantage: those
-sources keep their own paths. Rejected on the asymmetry in §1. The cost of
-wrongly clamping is a source at a different path; the cost of wrongly mirroring
-is an empty mount point, a healthy-looking discobox with no code in it, and an
-error message about `chdir` that names nothing anyone can act on.
+**A forbidden list — `/tmp`, `/var`, `/run`, `/etc`, `/usr`, …** The obvious
+alternative, and it mirrors more: every root nobody has thought about keeps its
+own path. Rejected on the asymmetry. The cost of wrongly clamping is a source at
+a different path; the cost of wrongly mirroring is an empty mount point, a
+healthy-looking discobox with no code in it, and an error message about `chdir`
+that names nothing anyone can act on. So the list is the one that fails toward
+the recoverable answer, and roots worth mirroring are added to it deliberately —
+`/srv`, `/opt` and `/data` were, once it was checked what the image keeps in
+them.
 
 **Disable `tmp.mount` in the sandbox image, or exclude the source path from
 tmpfiles.** Makes `/tmp` writable by us. Rejected: it is fighting the operating
@@ -149,13 +162,16 @@ the discobox loses its working tree on restart rather than never having had one.
 
 ## Consequences
 
-A repository under a root outside §1 — `/tmp`, `/srv`, `/opt`, `/data`, `/var`
-— now lands at `/workspace/source` instead of its own path. For `/tmp` that is
-strictly better: the path did not exist inside the sandbox at all. For `/srv`,
-`/opt` and `/data` it is a real change: a script inside the box that hardcoded
-the host path stops matching, and `../foo` between two such sources resolves
-through `/workspace` instead. The sources are all still there, under their own
-names.
+A repository under a root outside §1 — `/tmp`, `/var`, `/usr/local`, anywhere
+else — now lands at `/workspace/source` instead of its own path. For `/tmp` that
+is strictly better: the path did not exist inside the sandbox at all. Elsewhere
+it is a real change: a script inside the box that hardcoded the host path stops
+matching, and `../foo` between two such sources resolves through `/workspace`
+instead. The sources are all still there, under their own names.
+
+Adding a root later is one line and changes where new discoboxes put their
+sources; adding one that the image turns out to occupy is what
+`sandboxOwnedPaths` is for.
 
 Existing discoboxes keep the destinations they were created with; this decides
 where a create puts a source, and a create happens once.

@@ -23,8 +23,10 @@ sandbox create requests.
   local machine, because there is no local answer to get wrong.
 - A local source keeps its own absolute path inside the sandbox **when that path
   is one a sandbox may hold** — a child of `/home`, `/Users`, `/mnt`,
-  `/workspace`, `/Volumes` or `/media` (`mirrorableSourceRoots`) — so a path
-  means the same thing on both sides of the boundary. Anywhere else it is placed
+  `/workspace`, `/Volumes`, `/media`, `/srv`, `/opt` or `/data`
+  (`mirrorableSourceRoots`), minus the paths the image itself occupies
+  (`sandboxOwnedPaths`, which is `/opt/discobox`) — so a path means the same
+  thing on both sides of the boundary. Anywhere else it is placed
   where a source with no host path goes: the primary at `/workspace/source`, a
   reference at `/workspace/<name>`, with the requested subdirectory honored by
   its position within the repository. The destination is a mount target — the

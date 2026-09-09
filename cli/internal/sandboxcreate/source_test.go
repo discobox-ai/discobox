@@ -802,14 +802,19 @@ func TestLocalRunDestinationMirrorsOnlySafeRoots(t *testing.T) {
 		{"/workspace/app", "/workspace/app"},
 		{"/Volumes/External/app", "/Volumes/External/app"},
 		{"/media/darren/stick/app", "/media/darren/stick/app"},
+		{"/srv/app", "/srv/app"},
+		{"/opt/app", "/opt/app"},
+		{"/data/app", "/data/app"},
 
 		{"/tmp/scratch/app", defaultRunSourceDir},
 		{"/var/lib/app", defaultRunSourceDir},
 		{"/etc/app", defaultRunSourceDir},
 		{"/usr/local/src/app", defaultRunSourceDir},
-		{"/srv/app", defaultRunSourceDir},
-		{"/opt/app", defaultRunSourceDir},
 		{"/app", defaultRunSourceDir},
+		// What the image installs into a root that is otherwise the user's:
+		// mounting over it takes the discobox's own runc with it.
+		{"/opt/discobox", defaultRunSourceDir},
+		{"/opt/discobox/checkout", defaultRunSourceDir},
 		// The roots themselves are not sources: a repository at /home is not a
 		// checkout, and mounting over the whole of one is what this prevents.
 		{"/home", defaultRunSourceDir},
