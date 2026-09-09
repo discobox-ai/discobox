@@ -792,7 +792,7 @@ func TestStageMigrationLeavesADuplicateSweepable(t *testing.T) {
 // Windows runner, and the other passed while testing nothing. Root is the same
 // problem from the other side, since it ignores the bits entirely.
 //
-// What is skipped is the way of provoking the failure, not the behaviour: the
+// What is skipped is the way of provoking the failure, not the behavior: the
 // code under test is platform-independent, and on Windows the case it stands in
 // for is a locked executable rather than a mode.
 func requireModeBits(t *testing.T) {
