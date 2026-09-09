@@ -1457,6 +1457,86 @@ since the file that declares them lives in a checkout there is none of.
 In the launcher this is the Source row's last entry rather than a flag of its
 own; see the launcher design doc.
 
+## The Two IDs an Enrollment Is Made Of (`discobox id`)
+
+Enrolling a client is two peer IDs meeting: this machine's, which a server
+admits, and the server's, which a client dials. `discobox id`
+(`internal/cli/identity.go`) prints both, because comparing them against what
+the other machine says is the whole of what a person does with them.
+
+- **The client half** is this machine's key file, generated on first use —
+  the same file and the same generation `discobox admin peer id` performs, so
+  the two commands can never mint different identities for one machine.
+- **The server half** comes from `--server` when the address names a peer, and
+  from `GET /peer` otherwise (ADR 0098). The address first because it costs no
+  round trip and answers while the server is down; the row says which source it
+  was, since an ID read out of an address was never confirmed by the server
+  that answers to it.
+- **A half that is missing is still a row.** A server that does not listen on
+  `discobox://` has answered — that is the ordinary local-socket configuration
+  — and exits zero. A server that could not be *asked* has not, and that is a
+  non-zero exit so a script does not proceed with one of the two IDs it wanted.
+  Either way the client half is still printed: an unreachable server is often
+  why somebody is asking.
+- **It never starts a server**, for the reason `status` does not.
+
+`--iroh` swaps both rows to iroh's own hex form, which is what iroh's tracing
+prints (`endpoint{id=4afa25be01}`) and what `--iroh-log` therefore puts in
+front of a reader who has no way to line it up with a `d1-` peer ID. It
+replaces the peer ID rather than joining it: two spellings of one identity in
+one output is what a single written form exists to prevent (ADR 0097 §5). The
+`-o json` output carries both forms unconditionally, because a program reading
+it is not comparing them by eye.
+
+`discobox admin peer id` stays what it is: one value, no server needed, for a
+script and for the machine that has no access yet.
+
+## Reaching the Server, and Saying Where It Stops (`discobox status`)
+
+Reaching a server is a stack, and the error a client is handed names only the
+top of it. Over iroh, `dial iroh endpoint d1-…: iroh: connect failed` is the
+same sentence whether the native library never loaded, this machine cannot
+reach a relay, the peer ID names a server that is switched off, or the server
+is running and does not admit this machine — four problems with four fixes and,
+before this command, one message.
+
+`discobox status` (`internal/cli/status.go`) prints
+`endpoint.Diagnose`'s answer: one row per layer, in the order a connection
+passes through them, each with a status word beside its mark so a report
+pasted into an issue still says which layer failed. The layers below the API
+are the `endpoint` package's, because only that package can see them; this
+command adds the one above — an authenticated `ListProjects`, which is what
+proves the connection is usable rather than merely open.
+
+Three properties are deliberate:
+
+- **It never starts a server.** Every other command may autolaunch one; this
+  one reports what is there, and a status that starts a server destroys the
+  question it was asked.
+- **A failure names the lowest layer, not the top one.** The failing layer
+  carries the hint — enroll this peer, drop the `?addr=`, fix the relay — and
+  nothing above it is reported as a second failure; it is reported as not
+  reached.
+- **An unreachable server is a non-zero exit**, so the command is usable as a
+  check in a script. The message on stderr is one short line, because the
+  report on stdout has already said everything.
+
+Admission is the layer that looks least like itself, and it is the reason the
+command exists. A server refuses a peer by *accepting* the connection and then
+closing it with the reason (ADR 0095 §4), so the handshake succeeds and the
+refusal arrives under the first request. The diagnosis therefore reads the QUIC
+close reason when the health request fails, reports it as admission rather than
+as a broken stream, and turns the server's own wording into the enrollment
+command to run.
+
+`--iroh-log` (`DISCOBOX_IROH_LOG`) answers the same question for the command
+that is failing rather than after the fact: `off`, `error`, `warn`, `info`,
+`debug`, `trace`. It prints the transport's own events — bind, relay, connect,
+stream, accept — and sets iroh's internal tracing to the same level. Both go to
+stderr, and both are off unless asked for, because this is a trace of the
+transport underneath whatever a command is printing rather than part of its
+answer. The server has the same knob as `iroh.logLevel`.
+
 ## Git Transport to the Server
 
 `git` is a subprocess that only understands URLs, so it cannot use the CLI's

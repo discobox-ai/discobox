@@ -328,6 +328,12 @@ type Handler interface {
 	//
 	// GET /projects/{projectId}/secret-requests/{requestId}
 	GetSecretRequest(ctx context.Context, params GetSecretRequestParams) (GetSecretRequestRes, error)
+	// GetServerPeer implements get-server-peer operation.
+	//
+	// Discover this server's own peer ID.
+	//
+	// GET /peer
+	GetServerPeer(ctx context.Context) (GetServerPeerRes, error)
 	// ListHarnessConfigSecretBindings implements list-harness-config-secret-bindings operation.
 	//
 	// List harness config secret bindings.

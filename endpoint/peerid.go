@@ -1,6 +1,7 @@
 package endpoint
 
 import (
+	"encoding/hex"
 	"fmt"
 	"strings"
 )
@@ -62,6 +63,20 @@ func (id IrohID) String() string {
 // (ADR 0097 §5).
 func (id IrohID) Key() string {
 	return PeerIDVersion + encodePeerIDBody(id[:])
+}
+
+// IrohEndpointID renders this identity the way iroh itself writes one: 64
+// lowercase hex characters, which is what iroh's own tracing, tickets and
+// tooling show. iroh abbreviates it to the first five bytes in a log line —
+// `endpoint{id=4afa25be01}` — so a reader with both logs open has two
+// identifiers for one machine and nothing to line them up with. This is that
+// something (ADR 0098 §5).
+//
+// Output only. Nothing here reads it back: [ParseIrohID] rejects hex, and so
+// do authorized_ids and the API, because a peer ID has exactly one written
+// form (ADR 0097 §6).
+func (id IrohID) IrohEndpointID() string {
+	return hex.EncodeToString(id[:])
 }
 
 // Short renders the version and the first group, for a log line where the

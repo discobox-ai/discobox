@@ -122,6 +122,12 @@ var authenticatedAllowedPaths = []string{
 	// provenance to authorize on.
 	"/peers",
 	"/peers/",
+	// This server's own peer ID (ADR 0098). Server-scoped like /peers, and
+	// for the same reason unauthorized by anything narrower: there is no
+	// project membership to check and the value is one an authenticated caller
+	// is entitled to know — it is the address they reached this server at, or
+	// the one they would.
+	"/peer",
 	"/projects",
 	"/providers/catalog",
 	"/shutdown",

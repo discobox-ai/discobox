@@ -5,6 +5,8 @@ import (
 	"crypto/rand"
 	"strings"
 	"testing"
+
+	iroh "github.com/discobox-ai/iroh-go"
 )
 
 func testPeerID(t *testing.T) IrohID {
@@ -207,5 +209,24 @@ func TestPeerIDShortIsNotDialable(t *testing.T) {
 	id := testPeerID(t)
 	if _, err := ParseIrohID(id.Short()); err == nil {
 		t.Fatalf("the short form %q parsed as a peer ID", id.Short())
+	}
+}
+
+// The hex form has to be iroh's own, or it is a third spelling rather than a
+// bridge to the transport's logs (ADR 0098 §5). iroh renders an endpoint ID as
+// lowercase hex and abbreviates it to the first five bytes; this checks both
+// against the library rather than against a copy of its rules.
+func TestIrohEndpointIDMatchesTheTransport(t *testing.T) {
+	id := testPeerID(t)
+	native := iroh.EndpointID(id)
+	if got, want := id.IrohEndpointID(), native.String(); got != want {
+		t.Fatalf("IrohEndpointID() = %q, want iroh's own %q", got, want)
+	}
+	if !strings.HasPrefix(id.IrohEndpointID(), native.Short()) {
+		t.Fatalf("IrohEndpointID() = %q does not start with the %q iroh logs", id.IrohEndpointID(), native.Short())
+	}
+	// And it is not readable back: one written form, enforced (ADR 0097 §6).
+	if _, err := ParseIrohID(id.IrohEndpointID()); err == nil {
+		t.Fatal("ParseIrohID accepted the hex form; hex is output only")
 	}
 }

@@ -4333,6 +4333,20 @@ components:
             required:
                 - peers
             type: object
+        ServerPeer:
+            additionalProperties: false
+            description: This server's own peer identity, for a client that already reaches it some other way (ADR 0098). It is the value a client dials as `discobox://<peer-id>`, and it is absent on a server that does not listen for peers.
+            properties:
+                $schema:
+                    description: A URL to the JSON Schema for this object.
+                    example: https://example.com/schemas/ServerPeer.json
+                    format: uri
+                    readOnly: true
+                    type: string
+                peerId:
+                    description: This server's peer ID. Absent when the server does not listen on `discobox://`, in which case it has no peer identity at all rather than an unused one.
+                    type: string
+            type: object
         ListSSHKeysBody:
             additionalProperties: false
             properties:
@@ -7935,6 +7949,25 @@ paths:
             summary: Discover this server's SSH ingress endpoint and host key
             tags:
                 - SSH
+    /peer:
+        get:
+            operationId: get-server-peer
+            responses:
+                200:
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/ServerPeer'
+                    description: OK
+                default:
+                    content:
+                        application/problem+json:
+                            schema:
+                                $ref: '#/components/schemas/ErrorModel'
+                    description: Error
+            summary: Discover this server's own peer ID
+            tags:
+                - Peers
     /peers:
         get:
             operationId: list-peers

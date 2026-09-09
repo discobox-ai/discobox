@@ -132,6 +132,13 @@
   # Environment: DISCOBOX_IROH_RELAY_URLS
   #relayUrls:
 
+  # Log the iroh transport as it binds, accepts and refuses: off (the
+  # default), error, warn, info, debug, or trace. It also sets the
+  # verbosity of iroh's own tracing, which is written to this server's
+  # log. The matching client-side setting is discobox --iroh-log.
+  # Environment: DISCOBOX_IROH_LOG
+  #logLevel:
+
 # Export OpenTelemetry metrics over OTLP. The OTEL_METRICS_EXPORTER=otlp
 # environment variable sets this too.
 #otelMetricsEnabled: false

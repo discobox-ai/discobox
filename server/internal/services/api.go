@@ -275,11 +275,29 @@ type SSHIngress struct {
 	HostKey string
 }
 
+// ServerPeer is this server's own peer identity, served by GET /peer so a
+// client that already reaches this server some other way can learn the address
+// to dial it at (ADR 0098). Like SSHIngress it is a resolved value rather than
+// a service: the identity is loaded once, at the point the iroh endpoint is
+// configured, and cannot change while the process runs — it is the address.
+//
+// ID is empty on a server that does not listen on discobox://. Such a server
+// has no peer identity rather than an unused one: a key is loaded or generated
+// only for an endpoint that is actually bound (ADR 0052 §6).
+type ServerPeer struct {
+	ID string
+}
+
 // Services groups the dependencies needed by the API operations.
 type Services struct {
 	// SSH is served by GET /ssh so a client can pin the host key before it
 	// holds any other credential.
 	SSH SSHIngress
+
+	// ServerPeer is served by GET /peer: who this server is, for a client
+	// deciding what to dial. Peers, below, is the other direction — who this
+	// server admits.
+	ServerPeer ServerPeer
 
 	Projects       ProjectService
 	HarnessConfigs HarnessConfigService

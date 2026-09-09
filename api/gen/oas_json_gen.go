@@ -28993,6 +28993,86 @@ func (s *SecretValue) UnmarshalJSON(data []byte) error {
 }
 
 // Encode implements json.Marshaler.
+func (s *ServerPeer) Encode(e *jx.Encoder) {
+	e.ObjStart()
+	s.encodeFields(e)
+	e.ObjEnd()
+}
+
+// encodeFields encodes fields.
+func (s *ServerPeer) encodeFields(e *jx.Encoder) {
+	{
+		if s.Schema.Set {
+			e.FieldStart("$schema")
+			s.Schema.Encode(e)
+		}
+	}
+	{
+		if s.PeerId.Set {
+			e.FieldStart("peerId")
+			s.PeerId.Encode(e)
+		}
+	}
+}
+
+var jsonFieldsNameOfServerPeer = [2]string{
+	0: "$schema",
+	1: "peerId",
+}
+
+// Decode decodes ServerPeer from json.
+func (s *ServerPeer) Decode(d *jx.Decoder) error {
+	if s == nil {
+		return errors.New("invalid: unable to decode ServerPeer to nil")
+	}
+
+	if err := d.ObjBytes(func(d *jx.Decoder, k []byte) error {
+		switch string(k) {
+		case "$schema":
+			if err := func() error {
+				s.Schema.Reset()
+				if err := s.Schema.Decode(d); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"$schema\"")
+			}
+		case "peerId":
+			if err := func() error {
+				s.PeerId.Reset()
+				if err := s.PeerId.Decode(d); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"peerId\"")
+			}
+		default:
+			return errors.Errorf("unexpected field %q", k)
+		}
+		return nil
+	}); err != nil {
+		return errors.Wrap(err, "decode ServerPeer")
+	}
+
+	return nil
+}
+
+// MarshalJSON implements stdjson.Marshaler.
+func (s *ServerPeer) MarshalJSON() ([]byte, error) {
+	e := jx.Encoder{}
+	s.Encode(&e)
+	return e.Bytes(), nil
+}
+
+// UnmarshalJSON implements stdjson.Unmarshaler.
+func (s *ServerPeer) UnmarshalJSON(data []byte) error {
+	d := jx.DecodeBytes(data)
+	return s.Decode(d)
+}
+
+// Encode implements json.Marshaler.
 func (s *SetHarnessConfigSecretBindingBody) Encode(e *jx.Encoder) {
 	e.ObjStart()
 	s.encodeFields(e)

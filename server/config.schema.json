@@ -116,6 +116,13 @@
       "additionalProperties": false,
       "description": "Settings for the iroh transport, which is how a server is reached from another network without a port, a certificate, or a name.",
       "properties": {
+        "logLevel": {
+          "description": "Log the iroh transport as it binds, accepts and refuses: off (the default), error, warn, info, debug, or trace. It also sets the verbosity of iroh's own tracing, which is written to this server's log. The matching client-side setting is discobox --iroh-log. Environment: DISCOBOX_IROH_LOG (takes precedence over this file).",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
         "relayUrls": {
           "description": "Relay servers to use instead of n0's public ones, which are free and need no configuration but rate-limit traffic, are shared with every other iroh deployment, and carry no uptime guarantee. Running your own means running iroh-relay and listing it here. Clients need the same list (discobox --iroh-relay): an address does not carry the server's relay, so a half-configured pair fails when it tries to connect. Address discovery is separate, still uses n0's public service, and is not configurable yet. Environment: DISCOBOX_IROH_RELAY_URLS (takes precedence over this file).",
           "items": {

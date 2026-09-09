@@ -1843,6 +1843,7 @@ func (*ErrorModelStatusCode) getSandboxProviderInstanceRes()       {}
 func (*ErrorModelStatusCode) getSandboxRes()                       {}
 func (*ErrorModelStatusCode) getSecretRequestRes()                 {}
 func (*ErrorModelStatusCode) getSecretRes()                        {}
+func (*ErrorModelStatusCode) getServerPeerRes()                    {}
 func (*ErrorModelStatusCode) listHarnessConfigSecretBindingsRes()  {}
 func (*ErrorModelStatusCode) listHarnessConfigsRes()               {}
 func (*ErrorModelStatusCode) listJobsRes()                         {}
@@ -16269,6 +16270,40 @@ func (s *SecretValue) SetToken(val OptString) {
 func (s *SecretValue) SetTokenUrl(val OptString) {
 	s.TokenUrl = val
 }
+
+// This server's own peer identity, for a client that already reaches it some other way (ADR 0098).
+// It is the value a client dials as `discobox://<peer-id>`, and it is absent on a server that does
+// not listen for peers.
+// Ref: #/components/schemas/ServerPeer
+type ServerPeer struct {
+	// A URL to the JSON Schema for this object.
+	Schema OptURI `json:"$schema"`
+	// This server's peer ID. Absent when the server does not listen on `discobox://`, in which case it
+	// has no peer identity at all rather than an unused one.
+	PeerId OptString `json:"peerId"`
+}
+
+// GetSchema returns the value of Schema.
+func (s *ServerPeer) GetSchema() OptURI {
+	return s.Schema
+}
+
+// GetPeerId returns the value of PeerId.
+func (s *ServerPeer) GetPeerId() OptString {
+	return s.PeerId
+}
+
+// SetSchema sets the value of Schema.
+func (s *ServerPeer) SetSchema(val OptURI) {
+	s.Schema = val
+}
+
+// SetPeerId sets the value of PeerId.
+func (s *ServerPeer) SetPeerId(val OptString) {
+	s.PeerId = val
+}
+
+func (*ServerPeer) getServerPeerRes() {}
 
 // Ref: #/components/schemas/SetHarnessConfigSecretBindingBody
 type SetHarnessConfigSecretBindingBody struct {

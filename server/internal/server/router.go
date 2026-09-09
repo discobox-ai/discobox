@@ -39,6 +39,12 @@ type AppOptions struct {
 	// data directory, neither of which this constructor owns.
 	SSHIngress services.SSHIngress
 
+	// ServerPeer is what GET /peer serves: this server's own peer ID, or empty
+	// when it does not listen on discobox://. Resolved by the caller because
+	// the identity is loaded when the iroh endpoint is configured, which
+	// happens before this constructor runs (ADR 0098).
+	ServerPeer services.ServerPeer
+
 	SecretSealer secrets.Sealer
 
 	// DispatcherPollInterval is how often the reconcile engine looks for
@@ -175,6 +181,7 @@ func NewApp(ctx context.Context, writeDB, readDB *gorm.DB, options ...AppOptions
 	}
 	svc := services.Services{
 		SSH:            opts.SSHIngress,
+		ServerPeer:     opts.ServerPeer,
 		Projects:       appServices,
 		HarnessConfigs: appServices,
 		Sandboxes:      appServices,

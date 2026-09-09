@@ -477,6 +477,15 @@ func (UnimplementedHandler) GetSecretRequest(ctx context.Context, params GetSecr
 	return r, ht.ErrNotImplemented
 }
 
+// GetServerPeer implements get-server-peer operation.
+//
+// Discover this server's own peer ID.
+//
+// GET /peer
+func (UnimplementedHandler) GetServerPeer(ctx context.Context) (r GetServerPeerRes, _ error) {
+	return r, ht.ErrNotImplemented
+}
+
 // ListHarnessConfigSecretBindings implements list-harness-config-secret-bindings operation.
 //
 // List harness config secret bindings.

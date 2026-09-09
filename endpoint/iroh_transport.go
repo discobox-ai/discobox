@@ -1,6 +1,7 @@
 package endpoint
 
 import (
+	"cmp"
 	"context"
 	"crypto/ed25519"
 	"errors"
@@ -8,6 +9,7 @@ import (
 	"net"
 	"net/http"
 	"net/netip"
+	"strings"
 	"sync"
 	"time"
 
@@ -113,6 +115,7 @@ func (e *IrohEndpoint) bind() (*iroh.Endpoint, error) {
 	var secret iroh.SecretKey
 	copy(secret[:], e.cfg.SecretKey.Seed())
 
+	started := time.Now()
 	bound, err := iroh.Bind(context.Background(), iroh.Options{
 		Preset:    preset,
 		RelayMode: relay,
@@ -122,10 +125,50 @@ func (e *IrohEndpoint) bind() (*iroh.Endpoint, error) {
 		BindAddrs: e.cfg.BindAddrs,
 	})
 	if err != nil {
+		irohLogf(IrohLogError, "bind: %v", err)
 		return nil, fmt.Errorf("bind iroh endpoint: %w", err)
+	}
+	irohLogf(IrohLogInfo, "bind: endpoint %s bound in %s (%s)",
+		IrohID(bound.ID()).Short(), time.Since(started).Round(time.Millisecond), irohReachDescription(e.cfg))
+	if irohLogEnabled(IrohLogDebug) {
+		if sockets, socketsErr := bound.BoundSockets(); socketsErr != nil {
+			irohLogf(IrohLogDebug, "bind: bound sockets are unreadable: %v", socketsErr)
+		} else {
+			irohLogf(IrohLogDebug, "bind: sockets %s", joinAddrPorts(sockets))
+		}
 	}
 	e.endpoint = bound
 	return e.endpoint, nil
+}
+
+// irohReachDescription says how this endpoint expects to find peers, in the
+// two terms that decide it: whether it can look an ID up, and which relays it
+// falls back to. Both are configuration a caller chose, and both are invisible
+// in the error a failed dial produces.
+func irohReachDescription(cfg IrohConfig) string {
+	discovery := "discovery on"
+	if cfg.DisableDiscovery {
+		discovery = "discovery off"
+	}
+	switch {
+	case cfg.DisableRelay:
+		return discovery + ", relays off"
+	case len(cfg.RelayURLs) > 0:
+		return discovery + ", relays " + strings.Join(cfg.RelayURLs, " ")
+	default:
+		return discovery + ", default relays"
+	}
+}
+
+func joinAddrPorts(addrs []netip.AddrPort) string {
+	if len(addrs) == 0 {
+		return "none"
+	}
+	out := make([]string, 0, len(addrs))
+	for _, addr := range addrs {
+		out = append(out, addr.String())
+	}
+	return strings.Join(out, " ")
 }
 
 // close releases the bound socket. Only [IrohEndpoint.Listen]'s cleanup calls
@@ -150,6 +193,32 @@ func (e *IrohEndpoint) close() {
 	ctx, cancel := context.WithTimeout(context.Background(), irohTeardownTimeout)
 	defer cancel()
 	_ = bound.Close(ctx)
+}
+
+// Relay is the relay this endpoint is reachable through, waiting until ctx
+// expires for it to come online. See [LocalIrohRelay], which is this for the
+// process default.
+func (e *IrohEndpoint) Relay(ctx context.Context) (string, error) {
+	if e.cfg.DisableRelay {
+		// Online never returns on its own with relays off, so waiting on it
+		// would spend the caller's entire timeout to learn something this
+		// endpoint's own configuration already says.
+		return "", nil
+	}
+	bound, err := e.bind()
+	if err != nil {
+		return "", err
+	}
+	if err := bound.Online(ctx); err != nil {
+		irohLogf(IrohLogWarn, "relay: not online: %v", err)
+		return "", err
+	}
+	home, err := bound.HomeRelay()
+	if err != nil {
+		return "", err
+	}
+	irohLogf(IrohLogInfo, "relay: home relay is %s", cmp.Or(home, "none"))
+	return home, nil
 }
 
 // DirectAddrs are the socket addresses this endpoint is reachable at, for a
@@ -350,13 +419,22 @@ func (e *IrohEndpoint) RoundTripper(id IrohID, base http.RoundTripper, direct ..
 		addrs := append(append([]string(nil), direct...), locate(e.cfg.Locate, id)...)
 		parsed, err := parseIrohAddrs(addrs)
 		if err != nil {
+			irohLogf(IrohLogError, "connect: %s has an unusable direct address: %v", id.Short(), err)
 			return nil, err
 		}
 		addr := iroh.AddrOf(iroh.EndpointID(id)).WithDirectAddrs(parsed...)
+		irohLogf(IrohLogInfo, "connect: dialing %s (direct %s, alpn %s)", id.Short(), joinAddrPorts(parsed), irohALPN)
+		started := time.Now()
 		opened, err := ep.Connect(ctx, addr, []byte(irohALPN))
 		if err != nil {
+			irohLogf(IrohLogError, "connect: %s failed after %s: %v", id.Short(), time.Since(started).Round(time.Millisecond), err)
 			return nil, fmt.Errorf("dial iroh endpoint %s: %w", id.Short(), err)
 		}
+		// A handshake proves the peer's identity and nothing about whether it
+		// will admit us: a server refuses by closing the connection after
+		// accepting it, so the refusal surfaces at the first stream rather than
+		// here. That is the layer boundary this line marks.
+		irohLogf(IrohLogInfo, "connect: %s connected in %s", id.Short(), time.Since(started).Round(time.Millisecond))
 		conn = opened
 		return conn, nil
 	}
@@ -376,12 +454,15 @@ func (e *IrohEndpoint) RoundTripper(id IrohID, base http.RoundTripper, direct ..
 			}
 			stream, err := active.OpenConn(ctx)
 			if err == nil {
+				irohLogf(IrohLogDebug, "stream: opened to %s", id.Short())
 				return stream, nil
 			}
 			if attempt == 0 && errors.Is(err, iroh.ErrConnection) {
+				irohLogf(IrohLogWarn, "stream: the connection to %s is gone (%v); redialing", id.Short(), err)
 				stale = active
 				continue
 			}
+			irohLogf(IrohLogError, "stream: open to %s failed: %v", id.Short(), err)
 			return nil, fmt.Errorf("open iroh stream to %s: %w", id.Short(), err)
 		}
 	}
@@ -431,7 +512,9 @@ func (e *IrohEndpoint) Listen() (net.Listener, string, func(), error) {
 	// description of the host's internal network to anyone the log reaches.
 	// Discovery resolves a peer ID on its own; a deployment without discovery
 	// writes ?addr= into the endpoint it dials, which Parse still accepts.
+	irohLogf(IrohLogInfo, "listen: accepting as %s (alpn %s)", IrohID(ep.ID()).Short(), irohALPN)
 	cleanup := func() {
+		irohLogf(IrohLogInfo, "listen: closing the endpoint")
 		_ = listener.Close()
 		e.close()
 	}
@@ -448,14 +531,26 @@ func (e *IrohEndpoint) Listen() (net.Listener, string, func(), error) {
 func (e *IrohEndpoint) authorize(conn *iroh.Conn) error {
 	id, err := conn.RemoteID()
 	if err != nil {
+		irohLogf(IrohLogWarn, "accept: the peer's identity is unreadable: %v", err)
 		return fmt.Errorf("endpoint identity is unreadable: %w", err)
 	}
 	peer := IrohID(id)
 	if e.cfg.Authorize == nil {
+		irohLogf(IrohLogWarn, "accept: refusing %s: this endpoint has no admission policy", peer.Short())
 		return fmt.Errorf("endpoint %s is not authorized on this server", peer)
 	}
 	// The policy's own error is the close reason, unwrapped: it is written for
 	// the operator reading it on the other end, and wrapping it here would
 	// prefix every refusal with this package's framing.
-	return e.cfg.Authorize(e.ctx, peer)
+	//
+	// Both outcomes are logged here rather than inside the policy, because this
+	// is the one place every outcome passes through: an admitted peer is
+	// otherwise invisible, and a server whose log only records refusals cannot
+	// answer "did my client get in at all".
+	if err := e.cfg.Authorize(e.ctx, peer); err != nil {
+		irohLogf(IrohLogWarn, "accept: refused %s: %v", peer.Short(), err)
+		return err
+	}
+	irohLogf(IrohLogInfo, "accept: admitted %s", peer.Short())
+	return nil
 }

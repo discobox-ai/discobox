@@ -54,6 +54,7 @@ const (
 	GetSandboxServiceOperation                OperationName = "GetSandboxService"
 	GetSecretOperation                        OperationName = "GetSecret"
 	GetSecretRequestOperation                 OperationName = "GetSecretRequest"
+	GetServerPeerOperation                    OperationName = "GetServerPeer"
 	ListHarnessConfigSecretBindingsOperation  OperationName = "ListHarnessConfigSecretBindings"
 	ListHarnessConfigsOperation               OperationName = "ListHarnessConfigs"
 	ListHarnessHooksOperation                 OperationName = "ListHarnessHooks"

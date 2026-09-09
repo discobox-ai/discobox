@@ -1614,9 +1614,14 @@ func TestBareCommandPrintsHelpWithoutATerminal(t *testing.T) {
 	if !strings.Contains(out.String(), "Available Commands:") {
 		t.Fatalf("want the help, got:\n%s", out.String())
 	}
-	// And nothing tried to reach a server on the way there.
-	if strings.Contains(out.String(), "connect") {
-		t.Fatalf("the help path should not have talked to anything:\n%s", out.String())
+	// And nothing tried to reach a server on the way there. A dial from here
+	// would have failed, so it is the failure that is looked for: matching the
+	// bare word "connect" also matched any command whose one-line description
+	// mentions a connection, which the help is a list of.
+	for _, dialed := range []string{"connection refused", "no such file or directory", "dial "} {
+		if strings.Contains(out.String(), dialed) {
+			t.Fatalf("the help path should not have talked to anything (%q):\n%s", dialed, out.String())
+		}
 	}
 }
 

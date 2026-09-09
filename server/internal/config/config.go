@@ -175,6 +175,13 @@ type IrohSettings struct {
 	// else, so a server that moves off n0's relays does not move its clients
 	// with it.
 	RelayURLs []string `yaml:"relayUrls" env:"DISCOBOX_IROH_RELAY_URLS" doc:"Relay servers to use instead of n0's public ones, which are free and need no configuration but rate-limit traffic, are shared with every other iroh deployment, and carry no uptime guarantee. Running your own means running iroh-relay and listing it here. Clients need the same list (discobox --iroh-relay): an address does not carry the server's relay, so a half-configured pair fails when it tries to connect. Address discovery is separate, still uses n0's public service, and is not configurable yet."`
+
+	// LogLevel turns on the transport's own account of itself. An iroh
+	// connection fails in layers — the socket, the relay, the handshake, the
+	// admission check — and the error a client is handed names only the top
+	// one, so a server that cannot say what it did at each layer can only be
+	// diagnosed from the client side.
+	LogLevel string `yaml:"logLevel" env:"DISCOBOX_IROH_LOG" doc:"Log the iroh transport as it binds, accepts and refuses: off (the default), error, warn, info, debug, or trace. It also sets the verbosity of iroh's own tracing, which is written to this server's log. The matching client-side setting is discobox --iroh-log."`
 }
 
 // ConfigFileVar names the configuration file, and DefaultConfigFileName is

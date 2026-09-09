@@ -29,6 +29,7 @@ const defaultProjectAlias = "default"
 type App struct {
 	serverURL     string
 	irohRelayURLs string
+	irohLogLevel  string
 	projectID     string
 	source        string
 	token         string
@@ -150,6 +151,12 @@ an Enter. See "discobox run --help" for what the flags below mean.`,
 	// address carries a peer ID and nothing else, so a server moved off n0's
 	// public relays does not move its clients with it (ADR 0096 §6).
 	cmd.PersistentFlags().StringVar(&app.irohRelayURLs, "iroh-relay", envOrDefault("DISCOBOX_IROH_RELAY_URLS", ""), "Comma-separated iroh relay servers to use instead of the public ones; must match the server's")
+	// An iroh connection fails in layers and reports only the top one. This
+	// prints each layer as it happens — the socket, the relay, the dial, the
+	// stream — plus iroh's own tracing at the same level. `discobox status`
+	// answers the same question after the fact; this one answers it for the
+	// command that is failing.
+	cmd.PersistentFlags().StringVar(&app.irohLogLevel, "iroh-log", envOrDefault(endpoint.IrohLogEnv, ""), "Log the iroh transport as it connects: off, error, warn, info, debug, or trace")
 	// Long form only: -p is the prompt, on this command and on run, because a
 	// prompt is what somebody typing `discobox -p ...` means every time and a
 	// project is what a script names in full.
@@ -184,6 +191,8 @@ an Enter. See "discobox run --help" for what the flags below mean.`,
 	cmd.AddCommand(app.newPushCommand())
 	cmd.AddCommand(app.newToolsCommand())
 	cmd.AddCommand(app.newConfigureCommand())
+	cmd.AddCommand(app.newStatusCommand())
+	cmd.AddCommand(app.newIDCommand())
 	cmd.AddCommand(app.newSecretCommand())
 	cmd.AddCommand(app.newTUICommand())
 	cmd.AddCommand(app.newCompletionCommand())
@@ -273,7 +282,7 @@ func (a *App) httpClientWithAutoStart(autoStart bool) (string, *http.Client, err
 			return "", nil, err
 		}
 	}
-	if err := configureIrohForEndpoint(parsed, a.irohRelayURLs); err != nil {
+	if err := configureIrohForEndpoint(parsed, a.irohRelayURLs, a.irohLogLevel); err != nil {
 		return "", nil, err
 	}
 	baseURL, client, err := endpoint.HTTPClient(a.serverURL, transport)

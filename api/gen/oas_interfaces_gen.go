@@ -193,6 +193,10 @@ type GetSecretRes interface {
 	getSecretRes()
 }
 
+type GetServerPeerRes interface {
+	getServerPeerRes()
+}
+
 type ListHarnessConfigSecretBindingsRes interface {
 	listHarnessConfigSecretBindingsRes()
 }

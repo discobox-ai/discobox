@@ -77,15 +77,26 @@ func readIrohIdentity(path string) (endpoint.IrohID, error) {
 }
 
 // configureIrohForEndpoint installs this machine's iroh identity when the
-// server endpoint needs one.
+// server endpoint needs one, and the transport logging that goes with it.
 //
-// It runs only for an iroh endpoint: generating a key and opening a UDP socket
-// is not something `discobox ls` against a unix socket should do. The identity
-// is the one `discobox admin peer id` prints, so what an operator enrolled is
-// what connects.
-func configureIrohForEndpoint(parsed endpoint.Endpoint, relayURLs string) error {
+// It runs only for an iroh endpoint: generating a key, opening a UDP socket and
+// loading the native library is not something `discobox ls` against a unix
+// socket should do. The identity is the one `discobox admin peer id` prints, so
+// what an operator enrolled is what connects.
+func configureIrohForEndpoint(parsed endpoint.Endpoint, relayURLs, logLevel string) error {
 	if parsed.Scheme != "iroh" {
 		return nil
+	}
+	level, err := endpoint.ParseIrohLogLevel(logLevel)
+	if err != nil {
+		return fmt.Errorf("--iroh-log: %w", err)
+	}
+	// Before the identity, so a failure to bind or load the library is itself
+	// logged at the level that was asked for. It goes to stderr rather than to
+	// the command's output stream: this is a trace of the transport underneath
+	// whatever the command is printing, not part of its answer.
+	if err := endpoint.SetIrohLogging(level, os.Stderr); err != nil {
+		return err
 	}
 	path := defaultIrohIdentityPath()
 	key, err := loadOrCreateIrohIdentityKey(path)

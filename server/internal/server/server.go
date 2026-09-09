@@ -83,7 +83,7 @@ func Run(ctx context.Context) error {
 	// tell a server still coming up from one that died on startup — two very
 	// different problems that looked identical, and the reason a CLI could sit
 	// out its whole start timeout with nothing to report.
-	irohAdmission, err := configureIroh(cfg.DataDir, cfg.Listen, cfg.Iroh.RelayURLs)
+	irohAdmission, irohPeerID, err := configureIroh(cfg.DataDir, cfg.Listen, cfg.Iroh.RelayURLs, cfg.Iroh.LogLevel)
 	if err != nil {
 		return err
 	}
@@ -156,6 +156,7 @@ func Run(ctx context.Context) error {
 	startup.setPhase("starting services")
 	router, appServices, appStore, shutdownApp, err := NewApp(ctx, db.Write, db.Read, AppOptions{
 		SSHIngress:                     sshIngress,
+		ServerPeer:                     serverPeer(irohPeerID),
 		ControlPlaneStreams:            controlPlaneStreams,
 		UserID:                         service.DefaultUserID,
 		SecretSealer:                   sealer,

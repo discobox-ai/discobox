@@ -178,6 +178,26 @@ func LocalIrohID() (IrohID, error) {
 	return localIrohID()
 }
 
+// LocalIrohRelay is the relay this process's endpoint is reachable through,
+// waiting until ctx expires for it to come online.
+//
+// It answers the question a server operator cannot otherwise ask: whether this
+// machine is reachable from another network at all. A peer ID resolves to a
+// relay, so an endpoint that never reaches one is reachable only from networks
+// that can route to its sockets directly — which is a working setup, and a
+// completely different one from the one its address implies.
+//
+// An empty string with no error means there is no home relay to report: an
+// endpoint configured without relays, which answers immediately, or one that
+// came online without being given one.
+func LocalIrohRelay(ctx context.Context) (string, error) {
+	configured, err := defaultIrohEndpoint()
+	if err != nil {
+		return "", err
+	}
+	return configured.Relay(ctx)
+}
+
 // LocalIrohFallbackURL is this process's address with its direct socket
 // addresses attached, for a peer that cannot use discovery.
 //

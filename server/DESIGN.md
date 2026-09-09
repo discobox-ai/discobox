@@ -294,6 +294,50 @@ reaches. Discovery resolves a peer ID on its own; a deployment without
 discovery writes `?addr=` into the endpoint it dials, which `Parse` still
 accepts.
 
+### The Server's Own Peer ID
+
+`GET /peer` serves this server's peer ID, resolved when the iroh endpoint was
+configured (ADR 0098). It is the same shape as `GET /ssh` — a server telling a
+client who it is, over the transport that client already has — and it exists
+because the alternative was grepping the startup log line.
+
+The ID is **absent** on a server that does not listen on `discobox://`: a key
+is loaded only for an endpoint that is bound, so such a server has no peer
+identity rather than an unused one, and its absence is the answer to "does this
+server listen for peers". `serverPeer` refuses to report the zero ID, which
+renders as a well-formed address that reaches nothing.
+
+Unlike `GET /ssh` it is **authenticated**. `/ssh` is public because
+`ssh-config` reads it before any credential exists; nothing needs a peer ID
+before authentication, and a public path is a decision to defend forever. It is
+listed in `authenticatedAllowedPaths` for the same reason `/peers` is: the
+resource is server-scoped, so no narrower authorizer applies.
+
+The startup log line stays. It is the only way in for the case ADR 0052 §6
+described and this route cannot serve: a client whose *only* transport is the
+iroh endpoint it is trying to find.
+
+### Transport Logging and Reach
+
+An iroh connection fails in layers and reports only the top one, so
+`iroh.logLevel` (`DISCOBOX_IROH_LOG`: off, error, warn, info, debug, trace)
+turns on the transport's own account of itself — bind, listen, accept, refuse —
+and sets iroh's internal tracing to the same level. One setting for both,
+because two knobs for one question is one too many, and both write to this
+server's log, which for an autolaunched server is the file
+`discobox admin server logs` prints. The client has the same knob as
+`discobox --iroh-log`, and `discobox status` asks the same question from the
+other end (see [cli](../cli/DESIGN.md)).
+
+Separately and always, a server that listens on iroh reports **once**, in the
+background, whether it reached a relay (`logIrohReach`). A peer ID is resolved
+through a relay, so a server that never reaches one is reachable only from
+networks that can route to its sockets directly — a working deployment, and a
+completely different one from what its address implies. Until that line, the
+two were indistinguishable in the log: the address was printed either way, and
+the difference showed up only as a client somewhere else timing out. It is in
+the background because it is a report and not a step; nothing waits on it.
+
 ## Peer Admission
 
 Which peers may connect is two layers, and `internal/irohd` owns both (ADR
@@ -329,6 +373,12 @@ the listener, which cancels the wait and refuses the peers parked on it.
 Enrollment is authorized for any authenticated principal, on every listener the
 router serves; see [auth](internal/auth/DESIGN.md) for what that costs and why
 it is accepted.
+
+Every accept outcome is logged by `endpoint`'s admission hook rather than by
+the policy, because that is the one place all of them pass through: a server
+whose log records only refusals cannot answer "did that client get in at all".
+Refusals stay at `warn`, admits at `info`, and both are silent unless
+`iroh.logLevel` turns them on.
 
 A line in `authorized_ids` that does not parse is skipped and **logged** with
 its file and line number, once at startup rather than per connection. The
