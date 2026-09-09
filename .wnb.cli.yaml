@@ -18,13 +18,12 @@ debounce: 1s
 
 build:
   # Nothing removes build/discobox first: go build replaces the output atomically
-  # and leaves the old binary in place when compilation fails. sign is a no-op
-  # off macOS; on macOS `discobox` runs the server in-process, so it needs the
-  # virtualization entitlement on every rebuild (ADR 0066 §5).
+  # and leaves the old binary in place when compilation fails. Nothing signs it
+  # either: the CLI runs the server as a separate process (ADR 0099), so it
+  # creates no VM and needs no virtualization entitlement.
   command: >-
     EXE=$(go env GOEXE) &&
-    cd cli && go build -o ../build/discobox$EXE ./cmd/discobox &&
-    cd .. && go tool task sign SIGN_BINARY=build/discobox$EXE
+    cd cli && go build -o ../build/discobox$EXE ./cmd/discobox
   grace: 2s
 
 # no run: — build-only.

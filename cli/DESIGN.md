@@ -9,7 +9,7 @@ transport helpers where OpenAPI does not model the stream.
 | Package/path | Ownership |
 | --- | --- |
 | `cmd/discobox` | Binary entrypoint. |
-| `internal/cli` | Cobra command tree, output formatting, local server auto-start, TUI API adapter, and the attach transports and policy layered on `execstream/client`. |
+| `internal/cli` | Cobra command tree, output formatting, local server resolution and auto-start, TUI API adapter, and the attach transports and policy layered on `execstream/client`. Staging itself is the root module's `serverstage`. |
 | `internal/sandboxcreate` | UI-independent client-side sandbox request preparation and creation, including prompt options, source resolution, workspace snapshots, environment/secrets, local user identity, and source push delivery. |
 | `internal/sandboxgit` | The client's git transport to a sandbox: the worktree and origin repository URLs the control plane proxies, bearer-token auth on those requests, and the client-side ref names that record what has been sent. Shared by create, apply and push. |
 | `internal/sandboxpush` | `discobox push`: re-delivering a push-delivered source's commits into the origin repository its sandbox fetches from, under a lease (ADR 0058). |
@@ -159,7 +159,10 @@ transport helpers where OpenAPI does not model the stream.
 document: the picker's memory, the launcher's unsent prompts, this machine's
 iroh identity (`<state>/iroh/id_ed25519`, whose peer ID `discobox admin peer id` prints
 and an operator enrolls), the SSH identity, and the generated per-project
-`ssh_config` files. It is state the CLI derives,
+`ssh_config` files. It is `<discobox state>/cli`, a sibling of
+`<discobox state>/server` where staged server versions live
+(`stagedServerRoot()`): what is staged there is another program, and the CLI is
+only what fetched it. It is state the CLI derives,
 not configuration anyone edits, so it follows each platform's convention for
 that — `$XDG_STATE_HOME` or `~/.local/state` on Unix, `%LOCALAPPDATA%` on
 Windows, which is the local one rather than the roaming `%APPDATA%`: an SSH
@@ -198,6 +201,57 @@ unwritable or corrupt file costs the convenience and never the command.
   under it, and a prompt past the cap is cut on a rune boundary — a state file
   is not where a pasted log belongs.
 
+## The Server Is a Separate Program
+
+The CLI does not contain the control plane. `discobox admin server` resolves a
+`discobox-server` binary and runs it as a child, passing through its stdio and
+its exit status; the autolaunch starts the same binary in the background
+(ADR 0099). Nothing re-invokes `discobox` to get a server any more.
+
+Resolution (`serverResolver`, `server_resolve.go`) is, in order:
+
+1. `--binary` or `DISCOBOX_SERVER_BINARY`, used as it is.
+2. `--manifest` or `DISCOBOX_SERVER_MANIFEST`, staged. An explicit manifest is
+   an instruction, so it outranks whatever is lying beside the binary.
+3. `discobox-server` in the directory of the running `discobox`, through any
+   symlink it was reached by. This is what makes a development build work with
+   nothing configured — `task build` writes both into `build/` — and what lets a
+   package shipping both skip a download. **`PATH` is not searched**: a
+   directory mate of the executable is no more attacker-controlled than the
+   executable itself, and a `PATH` entry is a different claim entirely.
+4. The manifest this build was linked with, staged.
+
+A build with none of them fails saying so and naming both ways out. It never
+guesses at a URL.
+
+`serverstage` (root module) holds the format and the staging. A release CLI
+carries `serverstage.DefaultManifest`, base64 JSON describing the server assets
+for *its own* platform: a name, a URL and a SHA-256 each, plus which one is the
+command. One platform's, because the release fans out natively (ADR 0066 §4) and
+no link step sees every platform's digest — but the runner that builds a
+target's server links its CLI moments later, which is the pairing that matters.
+`discobox admin server manifest` prints it, which is both how a user asks what
+would be downloaded and how `release:verify` proves the ldflag reached the
+binary.
+
+Staging writes into `<state>/discobox/server/<version>` — a sibling of the CLI's
+own state, because what is there is another program. Each asset is hashed as it
+is written, and the set is downloaded into a temporary sibling directory and
+renamed into place only once every digest matches, so a directory that exists is
+complete and verified: an interrupted or corrupted download can never be
+mistaken for a staged version, and the file it would leave behind is one that
+gets executed. A version directory is never written over; a set that no longer
+matches its manifest, or a `stage --force`, moves the old one aside first, and
+puts it back if the move into place fails. The manifest is written in beside the
+assets as `manifest.json`, which is what marks the directory complete and what
+records where the contents came from. Re-verifying on every use was rejected: it
+is a hash of ~100 MB in front of every command that starts a server, defending a
+directory under the user's own state root against the user.
+
+`discobox admin server stage` is the download on its own — before a flight, in
+an image build, on a machine being provisioned. Nothing requires it; a command
+that needs a server stages one.
+
 Local server auto-launch is a release capability. Normal and development builds
 leave it disabled; release CLI binaries opt in at build time by setting
 `cli.serverAutoLaunch` to `true` with the Go linker's `-X` flag.
@@ -231,16 +285,17 @@ connection error, rather than being handed a stale failure it cannot act on.
 
 That first check also compares release versions from `/healthz`. When the local
 server is an older semantic version than the autolaunching CLI, the CLI asks it
-to shut down, waits for the endpoint to be released, and launches the server
-embedded in its own binary. It never downgrades a newer server, and development
-or legacy responses without semantic versions are left alone because they do
-not establish which process is older.
+to shut down, waits for the endpoint to be released, and launches the server it
+resolves for itself. It never downgrades a newer server, and development or
+legacy responses without semantic versions are left alone because they do not
+establish which process is older.
 
-The launched process is this binary re-invoked, and the argv comes from
-`App.serverLaunchArgs`, which reads the path off the command tree rather than
-naming it. A path spelled by hand is a reference nothing checks: the server
-command moved under `admin`, the literal `[]string{"server"}` did not, and every
-release launched a child that exited instantly with `unknown command`.
+`endpoint.LaunchOptions.Command` is a func, not a path, and `EnsureRunning`
+calls it only when a server actually has to be started — under the launch lock,
+after the last probe. Resolving one can mean downloading it, or failing outright
+on a build that has no server to download, and neither is a price to pay for
+finding out that the server you wanted was already running. It also means two
+CLIs racing to start one do not both download it.
 
 Waiting on it is two-stage, against `health.Status` from `/healthz`. A server
 that never answers has died and is given `StartTimeout`; one that answers

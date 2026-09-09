@@ -146,10 +146,13 @@ anybody who wants it.
 ### 6. Resolution order: an explicit override, a sibling, then the staged set
 
 1. `--binary` / `DISCOBOX_SERVER_BINARY`, used as-is.
-2. `discobox-server` in the same directory as the running `discobox`.
-3. The staged set for the embedded manifest, staging it if it is not there.
+2. `--manifest` / `DISCOBOX_SERVER_MANIFEST`, staged. An explicit manifest is
+   an instruction as much as an explicit binary is, so it outranks step 3.
+3. `discobox-server` in the same directory as the running `discobox`.
+4. The staged set for the embedded manifest, staging it if it is not there.
 
-The sibling is what keeps a development build working with nothing configured:
+Step 3, the sibling, is what keeps a development build working with nothing
+configured:
 `task build` writes `build/discobox` and `build/discobox-server` side by side,
 and a build that has no embedded manifest — every build that is not a release —
 would otherwise have nothing to run. It is also how a distribution that ships
@@ -192,9 +195,16 @@ rejections are worth reopening.
 
 ## Consequences
 
+- The CLI is 37.9 MB on linux/amd64, down from 104 MB. Docker, buildkit,
+  go-containerregistry, gorm and its drivers, and `Code-Hex/vz` leave
+  `cli/go.mod` entirely.
 - A first `discobox run` on a machine with no server now downloads one. It is
   reported on the same status line that already narrates the launch, and it
-  happens once per version.
+  happens once per version. Resolution is therefore lazy:
+  `endpoint.LaunchOptions.Command` became a func called only when a server
+  actually has to be started, so a machine whose server is already running — or
+  a development build with no server to download — is not made to pay for, or
+  fail on, finding that out.
 - An air-gapped or offline install needs `discobox admin server stage` on a
   machine that has a network, or the two binaries installed side by side (§6),
   or `--binary`. There is no third mode where the CLI silently runs an old

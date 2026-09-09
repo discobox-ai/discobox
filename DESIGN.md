@@ -116,10 +116,11 @@ flowchart TD
   [ADR 0008](docs/adr/0008-attach-stream-packages.md).
 - CLI module: `discobox` command implementation; depends on root generated
   clients/contracts for normal user commands and talks to the control plane
-  through the Server REST API. Its `discobox server` subcommand embeds the
-  server module's public runtime entrypoint so local auto-launch can re-exec the
-  current CLI binary instead of depending on a separate `discobox-server`
-  executable.
+  through the Server REST API. It does **not** depend on the server module:
+  `discobox admin server` resolves a `discobox-server` binary — one beside the
+  executable, or one staged from the manifest the release linked in — and runs
+  it as a child, which is also what local auto-launch starts
+  ([ADR 0099](docs/adr/0099-the-cli-downloads-the-server-it-starts.md)).
 - Server module: control plane implementation, persistence models, sandbox
   provider Go interfaces, provider manager, and Docker/VM/cloud/pool-backed
   provider implementations.
@@ -158,6 +159,7 @@ Root module package map:
 | [`agentcreds`](agentcreds) | The agent credentials protocol: the portable list/request/get contract, its client, an `http.Handler` over a `Service` interface, and the stable error codes and client configuration both halves share. It knows nothing about Discobox, which is what lets one in-sandbox CLI work against sandbox-agent and against any other implementation. See [`docs/agent-credentials-protocol.md`](docs/agent-credentials-protocol.md) and [ADR 0031](docs/adr/0031-agent-credentials-are-a-portable-protocol-with-ephemeral-sentinels.md). |
 | [`endpoint`](endpoint) | How a client reaches the control plane and how the control plane listens, resolved from a URL scheme. Shared because the CLI and the server must agree on what an endpoint means, and because `git`, websockets, and the generated client all reach the server through the one client it builds. The pool-agent hop is resolved separately by [`pool-agent/wire`](pool-agent/wire). It also owns `Diagnose`, which reports reaching a server layer by layer rather than as the one error the top of the stack produces, and the transport logging behind `discobox --iroh-log` and the server's `iroh.logLevel` — both live here because the layers they describe are this package's, and nothing above it can see them. |
 | [`harness`](harness) | Harness hook registration drivers for sandbox terminals. |
+| [`serverstage`](serverstage) | The description of a released server — its assets, where each is published, and what each one's SHA-256 is — and the staging that turns one into verified files on disk, one directory per version. In the root module because it is a release-format contract with two ends: the CLI decodes the manifest a release linked into it, and `internal/cmd/discobox-server-manifest` is what encodes one at build time. See [ADR 0099](docs/adr/0099-the-cli-downloads-the-server-it-starts.md). |
 | [`id`](id) | Shared identifier helpers. |
 | [`hostscope`](hostscope) | What a credential's host scope covers: a scope covers itself and everything beneath it, never its parent. Shared because three places compare a scope against the destination the proxy observed — the control plane's grant lookup, the pool agent's activation check, and the guard on what a grant may point a secret at — and a rule that differs in one of them is either a credential that stops working for no visible reason or one that travels somewhere nobody approved. |
 | [`secretformat`](secretformat) | The shape of credential values: a generative template that mints a sentinel byte-identical to a real provider key, and inference of a template from a real value. Shared because both ends mint sentinels — the control plane the stable one bound to a sandbox, the pool agent the ephemeral one per use — and a sentinel shaped by different rules at each end would be distinguishable from the real thing. |

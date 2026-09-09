@@ -27,13 +27,34 @@ const (
 	probesBeforeGone = 3
 )
 
+// Command is a program to launch, and the arguments to launch it with.
+type Command struct {
+	Path string
+	Args []string
+}
+
+// StaticCommand is the LaunchOptions.Command of a program already known.
+func StaticCommand(path string, args ...string) func(context.Context) (Command, error) {
+	return func(context.Context) (Command, error) {
+		return Command{Path: path, Args: args}, nil
+	}
+}
+
 // LaunchOptions describes a local server process that can be started on demand.
 type LaunchOptions struct {
-	Endpoint      string
-	LockPath      string
-	LogPath       string
-	Command       string
-	Args          []string
+	Endpoint string
+	LockPath string
+	LogPath  string
+	// Command resolves the program to start. It is called at most once, and
+	// only when a server actually has to be started — never for one that is
+	// already running.
+	//
+	// A func rather than a path because resolving it can cost something: the
+	// CLI's server is a separate binary it may have to download and verify
+	// first (ADR 0099), and a build with no server to download fails to
+	// resolve one at all. Neither is a price a caller should pay to discover
+	// that the server it wanted is already up.
+	Command       func(context.Context) (Command, error)
 	Env           []string
 	ProbePath     string
 	ProbeTimeout  time.Duration
@@ -317,8 +338,21 @@ func (p *launchedProcess) exited() bool {
 	}
 }
 
+// startDetached resolves the server program and starts it in the background.
+//
+// Resolution happens here, under the launch lock and after the last probe, so
+// it is done once per machine that actually needs a server rather than once
+// per CLI invocation — and two CLIs racing to start one do not both download
+// it.
 func startDetached(ctx context.Context, opts LaunchOptions) (*launchedProcess, error) {
-	if opts.Command == "" {
+	if opts.Command == nil {
+		return nil, fmt.Errorf("server command is required")
+	}
+	command, err := opts.Command(ctx)
+	if err != nil {
+		return nil, err
+	}
+	if command.Path == "" {
 		return nil, fmt.Errorf("server command is required")
 	}
 	// The child's output went nowhere, so a server that died on startup died
@@ -326,18 +360,18 @@ func startDetached(ctx context.Context, opts LaunchOptions) (*launchedProcess, e
 	// socket nothing had bound. It goes to a file instead — opened here, before
 	// either way of starting the process, because the systemd unit is told to
 	// append to the same file and needs the directory to exist.
-	logFile, err := openServerLog(opts.logPath(), opts.Command, opts.Args)
+	logFile, err := openServerLog(opts.logPath(), command.Path, command.Args)
 	if err != nil {
 		return nil, err
 	}
 	defer logFile.Close()
-	if started, err := startUserService(ctx, opts); err != nil {
+	if started, err := startUserService(ctx, opts, command); err != nil {
 		return nil, err
 	} else if started {
 		return nil, nil
 	}
 	//nolint:gosec // The command is supplied by trusted CLI configuration for local server startup.
-	cmd := exec.CommandContext(ctx, opts.Command, opts.Args...)
+	cmd := exec.CommandContext(ctx, command.Path, command.Args...)
 	cmd.Stdout = logFile
 	cmd.Stderr = logFile
 	cmd.Stdin = nil
@@ -358,15 +392,20 @@ func startDetached(ctx context.Context, opts LaunchOptions) (*launchedProcess, e
 	return &launchedProcess{done: done}, nil
 }
 
-func userServiceUnitName(opts LaunchOptions) string {
+func userServiceUnitName(opts LaunchOptions, command Command) string {
 	sum := sha256.Sum256([]byte(opts.Endpoint))
 	suffix := hex.EncodeToString(sum[:])[:16]
-	return systemdUnitName(filepath.Base(opts.Command), suffix)
+	return systemdUnitName(filepath.Base(command.Path), suffix)
 }
 
 func systemdUnitName(name, suffix string) string {
 	name = strings.TrimSuffix(name, filepath.Ext(name))
 	name = strings.ToLower(name)
+	// The program is discobox-server, and the unit is named after what it is
+	// rather than after the file: "-server" is appended below, and a machine
+	// upgraded from the CLI that used to run the server in-process must not
+	// end up with a second unit under a second name for the same endpoint.
+	name = strings.TrimSuffix(name, "-server")
 	var b strings.Builder
 	for _, r := range name {
 		switch {
@@ -424,7 +463,7 @@ func (o LaunchOptions) logTail() string {
 	if tail == "" {
 		return ""
 	}
-	return fmt.Sprintf("\n%s said (full log: %s):\n%s", o.Command, o.logPath(), tail)
+	return fmt.Sprintf("\nthe local server said (full log: %s):\n%s", o.logPath(), tail)
 }
 
 // progress reports a starting server's status, when a caller asked to see it.

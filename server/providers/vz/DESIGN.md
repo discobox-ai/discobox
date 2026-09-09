@@ -47,10 +47,14 @@ uses, `DeleteVM` is reserved for an authorized pool deletion.
 Codesigning is part of the build, not of packaging: creating a VM requires
 `com.apple.security.virtualization`, and that entitlement exists only on a
 signed binary. `task sign` re-signs after every build and is wired into
-`build:server`, `build:cli`, `release:binary`, and the watchnbuild dev loop.
-`disco` needs the entitlement as much as `discobox-server` does: it runs the
-server in-process, so it is the process that creates the VM (ADR 0066 §5).
-`go run` cannot start a server that runs pools.
+`build:server`, `release:binary`, and the watchnbuild dev loop. `go run` cannot
+start a server that runs pools.
+
+`discobox-server` is the only binary signed. The CLI ran the server in-process
+and needed the entitlement for it (ADR 0066 §5); it now runs the server as a
+separate program it downloads (ADR 0099), so the process that creates the VM is
+the server again. A staged server is copied byte for byte from the release
+asset, and the signature lives inside the Mach-O, so it survives the download.
 
 ## Transport boundary
 

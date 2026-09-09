@@ -32,11 +32,11 @@ func setDetachedProcess(cmd *exec.Cmd) {
 	cmd.SysProcAttr = &syscall.SysProcAttr{Setsid: true}
 }
 
-func startUserService(ctx context.Context, opts LaunchOptions) (bool, error) {
+func startUserService(ctx context.Context, opts LaunchOptions, command Command) (bool, error) {
 	if !systemdUserManagerAvailable(ctx) {
 		return false, nil
 	}
-	args := systemdRunArgs(opts)
+	args := systemdRunArgs(opts, command)
 	cmd := exec.CommandContext(ctx, "systemd-run", args...)
 	_, err := cmd.CombinedOutput()
 	if err != nil {
@@ -58,7 +58,7 @@ func systemdUserManagerAvailable(ctx context.Context) bool {
 	return exec.CommandContext(ctx, "systemctl", "--user", "show-environment").Run() == nil
 }
 
-func systemdRunArgs(opts LaunchOptions) []string {
+func systemdRunArgs(opts LaunchOptions, command Command) []string {
 	// The unit appends to the same file the directly-executed child writes, so
 	// where a server's output lives does not depend on which of the two ways
 	// this machine happened to start it. journald has the same lines, but only
@@ -66,7 +66,7 @@ func systemdRunArgs(opts LaunchOptions) []string {
 	args := []string{
 		"--user",
 		"--collect",
-		"--unit=" + userServiceUnitName(opts),
+		"--unit=" + userServiceUnitName(opts, command),
 		"--property=Description=Discobox local API server",
 		"--property=StandardOutput=append:" + opts.logPath(),
 		"--property=StandardError=append:" + opts.logPath(),
@@ -74,7 +74,7 @@ func systemdRunArgs(opts LaunchOptions) []string {
 	for _, entry := range opts.Env {
 		args = append(args, "--setenv="+entry)
 	}
-	args = append(args, "--", opts.Command)
-	args = append(args, opts.Args...)
+	args = append(args, "--", command.Path)
+	args = append(args, command.Args...)
 	return args
 }

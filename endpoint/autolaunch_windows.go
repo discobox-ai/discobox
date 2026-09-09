@@ -67,6 +67,6 @@ func setDetachedProcess(cmd *exec.Cmd) {
 	}
 }
 
-func startUserService(context.Context, LaunchOptions) (bool, error) {
+func startUserService(context.Context, LaunchOptions, Command) (bool, error) {
 	return false, nil
 }

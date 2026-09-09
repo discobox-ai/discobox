@@ -30,14 +30,16 @@ func TestOlderServer(t *testing.T) {
 }
 
 func TestSystemdUnitNameIsStableAndScoped(t *testing.T) {
-	opts := LaunchOptions{
-		Endpoint: "unix:///tmp/discobox/server.sock",
-		Command:  "/usr/local/bin/discobox",
-	}
+	opts := LaunchOptions{Endpoint: "unix:///tmp/discobox/server.sock"}
 
-	got := userServiceUnitName(opts)
+	got := userServiceUnitName(opts, Command{Path: "/usr/local/bin/discobox-server"})
 	if got != "discobox-server-30ad8514897f671d" {
 		t.Fatalf("userServiceUnitName() = %q", got)
+	}
+	// The name a machine's unit had when the CLI ran the server in-process.
+	// An upgrade must not leave a second unit for the same endpoint.
+	if was := userServiceUnitName(opts, Command{Path: "/usr/local/bin/discobox", Args: []string{"admin", "server"}}); was != got {
+		t.Fatalf("the unit is now %q, and used to be %q", got, was)
 	}
 }
 

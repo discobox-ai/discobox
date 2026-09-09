@@ -27,7 +27,8 @@
   this repository's own and nothing outside it should build them:
   `discobox-docker-image-watch` (local pool-agent and sandbox-agent image rebuild
   watcher), `discobox-dev-lock` (one `task dev` loop per checkout),
-  `discobox-gzip` (portable file compression for the build).
+  `discobox-gzip` (portable file compression for the build),
+  `discobox-server-manifest` (the server manifest a release CLI is linked with).
 - `docs`: user/developer documentation.
 - `test`: integration and Bats tests.
 - `orchestration`: nested Go module for durable jobs and desired-state orchestration helpers.

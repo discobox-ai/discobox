@@ -68,17 +68,14 @@ class Discobox < Formula
   end
 
   def caveats
-    on_macos do
-      <<~EOS
-        This binary is ad-hoc signed with com.apple.security.virtualization,
-        which Virtualization.framework requires to create a VM. Without it a
-        macOS pool cannot start.
-
-        com.apple.vm.networking is deliberately absent. It is what puts guests
-        on your LAN, and Apple grants it by request; pool guests are NAT'd by
-        the framework instead.
-      EOS
-    end
+    <<~EOS
+      This installs the client. The Discobox server is a separate program,
+      downloaded on demand the first time something needs one locally and kept
+      under your state directory by version. It is checked against the SHA-256
+      this release was cut with, which is carried inside this binary; run
+      "discobox admin server stage" to fetch it in advance, or
+      "discobox admin server manifest" to see exactly what it would fetch.
+    EOS
   end
 
   test do

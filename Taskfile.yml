@@ -154,9 +154,10 @@ tasks:
     # signing is enough locally; distribution needs Developer ID and
     # notarization. Task skips the whole target off darwin.
     #
-    # It takes a binary rather than naming one: `disco` runs the server
-    # in-process and is what a release actually ships, so it needs the
-    # entitlement as much as discobox-server does (ADR 0066 §5).
+    # It takes a binary rather than naming one, which is what let the rule move
+    # when the code did: the CLI ran the server in-process and needed the
+    # entitlement for it (ADR 0066 §5), and now that the server is a separate
+    # program again (ADR 0099) discobox-server is the only thing signed.
     platforms: [darwin]
     vars:
       ENTITLEMENTS: server/providers/vz/vz.entitlements
@@ -171,19 +172,15 @@ tasks:
 
   build:cli:
     desc: Compile discobox CLI
-    deps:
-      # discobox embeds the server, and with it the guest relay (root.go runs the
-      # server in-process for `discobox admin server`). Without this the CLI still
-      # compiles -- the go:embed target is a directory a committed README
-      # satisfies -- and then fails every wslc pool at runtime with an error
-      # telling the user to run a build task.
-      - build:cp-relay
+    # No dependency on the server and nothing to sign: the CLI runs the server
+    # as a separate program (ADR 0099), so the guest relay and the
+    # Virtualization entitlement are build:server's business. `task build`
+    # writes both binaries into build/, which is what makes a development CLI
+    # find a server with nothing configured.
     cmds:
       - mkdir -p build
       - rm -f {{.CLI_BINARY}}
       - cd cli && go build -o ../{{.CLI_BINARY}} {{.CLI_MAIN}}
-      - task: sign
-        vars: { SIGN_BINARY: '{{.CLI_BINARY}}' }
 
 
   build:access:
@@ -833,11 +830,11 @@ tasks:
         vars: { TARGET_OS: darwin, TARGET_ARCH: arm64 }
 
   release:binary:
-    desc: Build one release disco binary (TARGET_OS=, TARGET_ARCH=)
+    desc: Build one platform's release binaries — the CLI and the server it stages (TARGET_OS=, TARGET_ARCH=)
     requires:
       vars: [TARGET_OS, TARGET_ARCH]
     deps:
-      # disco embeds the server, and the server embeds the guest relay.
+      # The server embeds the guest relay.
       - build:cp-relay
     vars:
       # The tag the agent images are pinned to, resolved the way release:image
@@ -851,29 +848,36 @@ tasks:
           esac
       EXT: '{{if eq .TARGET_OS "windows"}}.exe{{end}}'
       OUT: build/release/bin/discobox-{{.TARGET_OS}}-{{.TARGET_ARCH}}{{.EXT}}
+      # The server is published as its own asset and staged by the CLI on the
+      # machine that needs one (ADR 0099). SERVER_NAME is what it is called once
+      # staged, which is also what a sibling next to the CLI has to be called;
+      # SERVER_OUT is the published asset, whose name says which platform it is
+      # for.
+      SERVER_NAME: discobox-server{{.EXT}}
+      SERVER_OUT: build/release/bin/discobox-server-{{.TARGET_OS}}-{{.TARGET_ARCH}}{{.EXT}}
       # cgo only where the platform's hypervisor bindings need it: Code-Hex/vz
       # on darwin. Everywhere else a static binary is the better artifact.
       CGO: '{{if eq .TARGET_OS "darwin"}}1{{else}}0{{end}}'
-      # A release build autolaunches its own in-process server; a development
-      # build never does (cli/internal/cli/server_autolaunch_test.go).
-      #
       # Every image this release publishes is pinned to the release's own tag:
       # the two agent images, and the registry and tag the three built-in
-      # harness images resolve through. Their defaults are :latest and local
-      # tags, which is right for a development build and wrong for a shipped
-      # one: a binary should run the images it was cut alongside, not whatever
-      # :latest has moved to since — and a local tag resolves to nothing at all
-      # on a user's machine, which is how a release shipped seeding three
-      # harnesses whose images Docker Hub had never heard of. The tag rather
-      # than a digest because release:images runs in a parallel job — there is
-      # no digest yet at link time — and a release tag never moves.
+      # harness images resolve through. They reach the server's link and not the
+      # CLI's, because an image is what the server runs and the CLI no longer
+      # contains one.
+      #
+      # Their defaults are :latest and local tags, which is right for a
+      # development build and wrong for a shipped one: a binary should run the
+      # images it was cut alongside, not whatever :latest has moved to since —
+      # and a local tag resolves to nothing at all on a user's machine, which is
+      # how a release shipped seeding three harnesses whose images Docker Hub
+      # had never heard of. The tag rather than a digest because release:images
+      # runs in a parallel job — there is no digest yet at link time — and a
+      # release tag never moves.
       #
       # Only when there is a tag to pin to. ci.yml builds the release artifacts
       # on every push to prove they still build, with no tag in sight, and an
       # empty PIN_TAG would bake "discobox-pool-agent:" — a reference no daemon
       # can pull — into a binary that otherwise looks fine.
-      RELEASE_LDFLAGS: >-
-        {{if .PIN_TAG}}-X github.com/discobox-ai/discobox/version.Version={{.PIN_TAG}}{{end}}
+      SERVER_LDFLAGS: >-
         {{if and .PIN_TAG .REGISTRY}}-X github.com/discobox-ai/discobox/server/providers/dockerworker.DefaultPoolImage={{.REGISTRY}}/discobox-pool-agent:{{.PIN_TAG}}
         -X github.com/discobox-ai/discobox/server/internal/sandbox.DefaultSandboxImageName={{.REGISTRY}}/discobox-sandbox-agent:{{.PIN_TAG}}
         -X github.com/discobox-ai/discobox/harness.ImageRegistry={{.REGISTRY}}
@@ -892,17 +896,49 @@ tasks:
       # It does mean glibc — a musl system has no loader at this path, and one
       # that dlopens cannot be static instead (ADR 0067 §2's embedded cdylib).
       INTERP: '{{if eq .TARGET_OS "linux"}}{{if eq .TARGET_ARCH "amd64"}}/lib64/ld-linux-x86-64.so.2{{else}}/lib/ld-linux-aarch64.so.1{{end}}{{end}}'
-      LDFLAGS: -s -w {{if .INTERP}}-I {{.INTERP}}{{end}} -X github.com/discobox-ai/discobox/cli/internal/cli.serverAutoLaunch=true {{.RELEASE_LDFLAGS}}
+      # Both binaries carry the release version: the CLI prints it, the server
+      # answers it on /healthz, and the CLI compares the two to decide whether
+      # the running server is older than the one it would start.
+      LDFLAGS: -s -w {{if .INTERP}}-I {{.INTERP}}{{end}} {{if .PIN_TAG}}-X github.com/discobox-ai/discobox/version.Version={{.PIN_TAG}}{{end}}
+      # A release build autolaunches a server; a development build never does
+      # (cli/internal/cli/server_autolaunch_test.go).
+      CLI_LDFLAGS: -X github.com/discobox-ai/discobox/cli/internal/cli.serverAutoLaunch=true
     cmds:
       - mkdir -p build/release/bin
+      # The server first: the CLI is linked against its digest, so it cannot be
+      # built until the file it describes is final.
       - >-
-        cd cli &&
+        cd server &&
         GOOS={{.TARGET_OS}} GOARCH={{.TARGET_ARCH}} CGO_ENABLED={{.CGO}}
-        go build -trimpath -ldflags="{{.LDFLAGS}}" -o ../{{.OUT}} {{.CLI_MAIN}}
-      # After the link and after stripping: signing rewrites the binary, so
-      # nothing may touch it afterwards (ADR 0066 §5).
+        go build -trimpath -ldflags="{{.LDFLAGS}} {{.SERVER_LDFLAGS}}" -o ../{{.SERVER_OUT}} {{.SERVER_MAIN}}
+      # After the link and after stripping, and before the digest is taken:
+      # signing rewrites the binary, so nothing may touch it afterwards
+      # (ADR 0066 §5). The server is the process that creates a VM, so it is the
+      # binary that needs the Virtualization entitlement (ADR 0099).
       - task: sign
-        vars: { SIGN_BINARY: '{{.OUT}}' }
+        vars: { SIGN_BINARY: '{{.SERVER_OUT}}' }
+      # The manifest is generated here rather than in a var because it is a
+      # digest of a file this target has only just written, and Task evaluates
+      # vars before the first command runs.
+      #
+      # Only for a tagged build. ci.yml builds the release artifacts on every
+      # push to prove they still build, with no tag and so no release to
+      # download from; an untagged CLI carries no manifest and falls back to a
+      # server binary beside it, which is what a development build does anyway.
+      - |
+        set -eu
+        manifest=""
+        if [ -n "{{.PIN_TAG}}" ] && [ -n "{{.RELEASE_REPO}}" ]; then
+          manifest="$(go run ./internal/cmd/discobox-server-manifest \
+            -version "{{.PIN_TAG}}" -os "{{.TARGET_OS}}" -arch "{{.TARGET_ARCH}}" \
+            -base-url "https://github.com/{{.RELEASE_REPO}}/releases/download/{{.PIN_TAG}}" \
+            -command "{{.SERVER_NAME}}" \
+            -asset "{{.SERVER_NAME}}={{.SERVER_OUT}}")"
+        fi
+        cd cli && GOOS={{.TARGET_OS}} GOARCH={{.TARGET_ARCH}} CGO_ENABLED={{.CGO}} \
+          go build -trimpath \
+          -ldflags="{{.LDFLAGS}} {{.CLI_LDFLAGS}}${manifest:+ -X github.com/discobox-ai/discobox/serverstage.DefaultManifest=$manifest}" \
+          -o "../{{.OUT}}" {{.CLI_MAIN}}
 
   release:windows-zip:
     desc: Package each Windows binary as the archive winget installs from
@@ -969,24 +1005,28 @@ tasks:
         set -eu
         [ -d build/release/bin ] || { echo "release:verify: nothing built" >&2; exit 1; }
         host="$(go env GOOS)-$(go env GOARCH)"
+        work="$(mktemp -d)"
+        trap 'rm -rf "$work"' EXIT
         found=0
         for binary in build/release/bin/*; do
           [ -e "$binary" ] || continue
           name=$(basename "$binary")
           found=$((found + 1))
 
-          # A Windows binary reaches its WSL guest through the relay embedded
+          # A Windows server reaches its WSL guest through the relay embedded
           # for its own architecture: WSL2 does not emulate, so the guest is
           # always the host's. One built without it installs, launches, and
           # fails at the first pool -- on a machine no Linux or amd64 test run
           # ever touches, which is the same blind spot the interpreter check
           # below exists for.
-          # The binaries only: release:windows-zip puts a .zip beside each one
-          # carrying the very same executable, so checking it again would pair
-          # the same relay twice -- and its name does not end in .exe, so the
-          # architecture would come out as "amd64.zip" and match no relay.
+          # The server binaries only: the relay is embedded in the server (ADR
+          # 0099), and release:windows-zip puts a .zip beside each CLI carrying
+          # the very same executable, so a looser pattern would both check a
+          # binary that does not contain a relay and pair the same one twice --
+          # and a .zip's name does not end in .exe, so its architecture would
+          # come out as "amd64.zip" and match no relay.
           case "$name" in
-            *-windows-*.exe)
+            discobox-server-windows-*.exe)
               arch=${name#*-windows-}
               arch=${arch%.exe}
               relay="server/providers/wslc/relay/artifacts/discobox-cp-relay.linux-$arch.gz"
@@ -1022,6 +1062,25 @@ tasks:
                   *) echo "$name: reports '$got', not {{.PIN_TAG}}: the version ldflag is not reaching the binary" >&2; exit 1 ;;
                 esac
               fi
+
+              # And, for the CLI, that it knows where to get a server. The
+              # manifest is a base64 blob passed through a shell into -X, and
+              # the linker accepts an -X for a symbol that does not exist
+              # without a word of complaint, so a release could otherwise ship
+              # a CLI that has no server to download and says so only on a
+              # user's machine (ADR 0099).
+              case "$name" in
+                discobox-server-*) ;;
+                *)
+                  if [ -n "{{.PIN_TAG}}" ]; then
+                    "$binary" admin server manifest > "$work/manifest.json" ||
+                      { echo "$name: carries no server manifest: the manifest ldflag is not reaching the binary" >&2; exit 1; }
+                    grep -q "discobox-server-$host" "$work/manifest.json" ||
+                      { echo "$name: its server manifest does not name the $host server asset:" >&2; cat "$work/manifest.json" >&2; exit 1; }
+                    echo "$name: stages $(grep -c '"sha256"' "$work/manifest.json") server asset(s) for $host"
+                  fi
+                  ;;
+              esac
               ;;
           esac
         done

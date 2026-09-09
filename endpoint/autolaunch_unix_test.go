@@ -11,14 +11,12 @@ func TestSystemdRunArgsStartsUserUnitWithEnvironment(t *testing.T) {
 	opts := LaunchOptions{
 		Endpoint: "unix:///tmp/discobox/server.sock",
 		LogPath:  "/tmp/discobox-state/server.log",
-		Command:  "/usr/local/bin/discobox",
-		Args:     []string{"server"},
 		Env: []string{
 			"DISCOBOX_SERVER=unix:///tmp/discobox/server.sock",
 		},
 	}
 
-	args := systemdRunArgs(opts)
+	args := systemdRunArgs(opts, Command{Path: "/usr/local/bin/discobox-server"})
 	for _, want := range []string{
 		"--user",
 		"--collect",
@@ -34,7 +32,7 @@ func TestSystemdRunArgsStartsUserUnitWithEnvironment(t *testing.T) {
 			t.Fatalf("systemdRunArgs() missing %q", want)
 		}
 	}
-	if got := args[len(args)-3:]; !slices.Equal(got, []string{"--", "/usr/local/bin/discobox", "server"}) {
+	if got := args[len(args)-2:]; !slices.Equal(got, []string{"--", "/usr/local/bin/discobox-server"}) {
 		t.Fatalf("systemdRunArgs() command tail = %#v", got)
 	}
 }

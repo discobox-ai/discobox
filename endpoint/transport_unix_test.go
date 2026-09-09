@@ -77,7 +77,6 @@ func TestEnsureRunningUsesExistingUnixServer(t *testing.T) {
 
 	if _, err := EnsureRunning(context.Background(), LaunchOptions{
 		Endpoint:     endpoint,
-		Command:      "",
 		ProbeTimeout: time.Second,
 	}); err != nil {
 		t.Fatalf("EnsureRunning() error = %v", err)

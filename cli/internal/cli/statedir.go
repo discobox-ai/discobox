@@ -17,17 +17,31 @@ import (
 // set — including on Windows, where nothing sets it by accident and a test or a
 // portable install may want to.
 
-// cliStateDir is where the CLI keeps its own state.
-func cliStateDir() string {
+// discoboxStateDir is the root of this machine's Discobox state, which the
+// CLI's own state and the server binaries it stages are both under.
+func discoboxStateDir() string {
 	if value := strings.TrimSpace(os.Getenv("XDG_STATE_HOME")); value != "" {
-		return filepath.Join(value, "discobox", "cli")
+		return filepath.Join(value, "discobox")
 	}
 	if home := stateHome(); home != "" {
-		return filepath.Join(home, "discobox", "cli")
+		return filepath.Join(home, "discobox")
 	}
 	// Somewhere rather than nowhere: a picker that cannot remember is a
 	// smaller failure than a command that cannot run.
-	return filepath.Join(os.TempDir(), "discobox-cli-state")
+	return filepath.Join(os.TempDir(), "discobox-state")
+}
+
+// cliStateDir is where the CLI keeps its own state.
+func cliStateDir() string {
+	return filepath.Join(discoboxStateDir(), "cli")
+}
+
+// stagedServerRoot holds one directory per staged server version (ADR 0099).
+// A sibling of the CLI's own state rather than a subdirectory of it: what is
+// staged there is another program, and the CLI is only the thing that fetched
+// it.
+func stagedServerRoot() string {
+	return filepath.Join(discoboxStateDir(), "server")
 }
 
 // ensureStateDir creates a directory under the state directory and restricts it

@@ -10,17 +10,15 @@ import (
 	"os"
 	"strings"
 	"sync"
-	"time"
 
 	"github.com/spf13/cobra"
 	"github.com/spf13/pflag"
 
 	apiclientgen "github.com/discobox-ai/discobox/api/gen"
 	"github.com/discobox-ai/discobox/cli/internal/keys"
-	"github.com/discobox-ai/discobox/controlplane"
 	"github.com/discobox-ai/discobox/endpoint"
 	"github.com/discobox-ai/discobox/health"
-	discoboxserver "github.com/discobox-ai/discobox/server"
+	"github.com/discobox-ai/discobox/serverstage"
 	"github.com/discobox-ai/discobox/version"
 )
 
@@ -39,16 +37,16 @@ type App struct {
 	autoStart     autoStartServer
 	errOut        io.Writer
 
+	// serverSource is where the server binary comes from, as far as the flags
+	// say. `admin server` is what sets it; everything else, the autolaunch
+	// included, resolves from the environment and the machine.
+	serverSource serverSource
+
 	// leaderKey is the prefix key this invocation reserves in a terminal it
 	// shows: the launcher's window commands, and the detach chord of an attach.
 	// validate resolves it from the environment, so it is empty until then —
 	// read it through leader() rather than directly.
 	leaderKey string
-
-	// serverCmd is the command that runs the server, kept so the autolaunch
-	// can ask the command tree where it lives instead of naming it. See
-	// serverLaunchArgs.
-	serverCmd *cobra.Command
 
 	// autoLaunchOnce guards the one autolaunch attempt this invocation gets.
 	// See ensureLocalServerOnce.
@@ -373,23 +371,26 @@ func (a *App) ensureLocalServerOnce() error {
 }
 
 func (a *App) ensureLocalServer(ctx context.Context) error {
-	command, err := os.Executable()
-	if err != nil {
-		return err
-	}
-	args, err := a.serverLaunchArgs()
-	if err != nil {
-		return err
-	}
 	// One line for the whole start, rewritten in place and taken back down
 	// before the command that wanted the server writes anything of its own.
 	// Every phase used to append a line, so a first run left five of them
 	// scrolled above output that had nothing to do with them.
 	progress := a.serverStartupLine()
 	started, err := endpoint.EnsureRunning(ctx, endpoint.LaunchOptions{
-		Endpoint:        a.serverURL,
-		Command:         command,
-		Args:            args,
+		Endpoint: a.serverURL,
+		// Resolved only if a server actually has to be started, because
+		// resolving one can mean downloading it (ADR 0099) — and a machine
+		// whose server is already running, or a development build with no
+		// server to download, must not pay for that to find out.
+		Command: func(ctx context.Context) (endpoint.Command, error) {
+			path, err := a.resolveServer(ctx, func(report serverstage.Progress) {
+				progress.set(serverStageText(report))
+			})
+			if err != nil {
+				return endpoint.Command{}, err
+			}
+			return endpoint.Command{Path: path}, nil
+		},
 		Env:             localServerEnv(a.serverURL),
 		ExpectedVersion: version.String(),
 		OnProgress: func(status health.Status) {
@@ -496,136 +497,6 @@ func localServerEnv(endpoint string) []string {
 		}
 	}
 	return env
-}
-
-func (a *App) newServerCommand() *cobra.Command {
-	cmd := &cobra.Command{
-		Use:   "server",
-		Short: "Run the Discobox API server",
-		RunE: func(cmd *cobra.Command, _ []string) error {
-			return discoboxserver.Run(cmd.Context())
-		},
-	}
-	cmd.AddCommand(a.newServerShutdownCommand())
-	cmd.AddCommand(a.newServerLogsCommand())
-	a.serverCmd = cmd
-	return cmd
-}
-
-// serverLaunchArgs is the argv this binary re-invokes itself with to run its
-// own server, read off the command tree rather than written out.
-//
-// It used to be the literal []string{"server"}. The command moved under
-// `admin`, the literal did not, and the autolaunched process exited instantly
-// with `unknown command "server"` — invisibly, because its output goes nowhere
-// — leaving every CLI invocation to wait out the start timeout and report that
-// the server never became ready. A path spelled by hand is a reference the
-// compiler cannot check; this one moves when the command does.
-func (a *App) serverLaunchArgs() ([]string, error) {
-	if a.serverCmd == nil {
-		return nil, fmt.Errorf("server command is not wired into the command tree")
-	}
-	var path []string
-	for cmd := a.serverCmd; cmd != nil && cmd.HasParent(); cmd = cmd.Parent() {
-		path = append([]string{cmd.Name()}, path...)
-	}
-	if len(path) == 0 {
-		return nil, fmt.Errorf("server command has no path in the command tree")
-	}
-	return path, nil
-}
-
-func (a *App) newServerShutdownCommand() *cobra.Command {
-	var wait bool
-	cmd := &cobra.Command{
-		Use:   "shutdown",
-		Short: "Ask the Discobox API server to stop",
-		RunE: func(cmd *cobra.Command, _ []string) error {
-			baseURL, httpClient, err := a.httpClientWithAutoStart(false)
-			if err != nil {
-				return err
-			}
-			resp, err := requestServerShutdown(cmd.Context(), baseURL, httpClient)
-			if err != nil && a.serverEndpoint().AutoLaunchable() {
-				baseURL, httpClient = defaultHTTPShutdownClient()
-				resp, err = requestServerShutdown(cmd.Context(), baseURL, httpClient)
-			}
-			if err != nil {
-				return fmt.Errorf("shutdown server: %w", err)
-			}
-			defer resp.Body.Close()
-			if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-				body, _ := io.ReadAll(resp.Body)
-				return fmt.Errorf("shutdown server: %s: %s", resp.Status, strings.TrimSpace(string(body)))
-			}
-			if wait {
-				if err := waitForServerShutdown(cmd.Context(), baseURL, httpClient, 10*time.Second); err != nil {
-					return err
-				}
-			}
-			if a.output == "json" {
-				return writeJSON(cmd.OutOrStdout(), map[string]any{"shutdown": true, "wait": wait})
-			}
-			message := "shutdown requested"
-			if wait {
-				message = "shutdown complete"
-			}
-			_, err = fmt.Fprintln(cmd.OutOrStdout(), message)
-			return err
-		},
-	}
-	cmd.Flags().BoolVar(&wait, "wait", false, "Wait until the server stops accepting requests")
-	return cmd
-}
-
-func requestServerShutdown(ctx context.Context, baseURL string, httpClient *http.Client) (*http.Response, error) {
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, baseURL+"/shutdown", nil)
-	if err != nil {
-		return nil, err
-	}
-	return httpClient.Do(req)
-}
-
-func defaultHTTPShutdownClient() (string, *http.Client) {
-	port := strings.TrimSpace(os.Getenv("PORT"))
-	if port == "" {
-		port = fmt.Sprint(controlplane.DefaultPort)
-	}
-	return "http://127.0.0.1:" + port, http.DefaultClient
-}
-
-func waitForServerShutdown(ctx context.Context, baseURL string, httpClient *http.Client, timeout time.Duration) error {
-	deadline := time.Now().Add(timeout)
-	for {
-		probeCtx, cancel := context.WithTimeout(ctx, 500*time.Millisecond)
-		req, err := http.NewRequestWithContext(probeCtx, http.MethodGet, baseURL+"/healthz", nil)
-		if err != nil {
-			cancel()
-			return err
-		}
-		resp := doShutdownProbe(httpClient, req)
-		cancel()
-		if resp == nil {
-			return nil
-		}
-		_ = resp.Body.Close()
-		if time.Now().After(deadline) {
-			return fmt.Errorf("shutdown server: still accepting requests after %s", timeout)
-		}
-		select {
-		case <-ctx.Done():
-			return ctx.Err()
-		case <-time.After(100 * time.Millisecond):
-		}
-	}
-}
-
-func doShutdownProbe(httpClient *http.Client, req *http.Request) *http.Response {
-	resp, err := httpClient.Do(req)
-	if err != nil {
-		return nil
-	}
-	return resp
 }
 
 type requestHeaderTransport struct {
