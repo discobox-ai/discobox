@@ -384,8 +384,16 @@ func runTestSandboxJSON(sandboxID, phase string) string {
 func wantSourceDirectory(t *testing.T, repoRoot string) string {
 	t.Helper()
 	if runtime.GOOS != "windows" {
-		if !strings.HasPrefix(filepath.ToSlash(repoRoot), "/tmp/") {
-			t.Fatalf("test repo %s is no longer under /tmp; this expectation assumes it is", repoRoot)
+		// /tmp is deliberately absent from sandboxcreate's mirrorable roots, so
+		// a source there has no host path to keep and lands at the default.
+		// Resolved rather than compared literally: macOS reports /tmp as
+		// /private/tmp, and newRunSourceTestRepo canonicalizes what it returns.
+		tmp, err := filepath.EvalSymlinks("/tmp")
+		if err != nil {
+			t.Fatalf("resolve /tmp: %v", err)
+		}
+		if !strings.HasPrefix(filepath.ToSlash(repoRoot), filepath.ToSlash(tmp)+"/") {
+			t.Fatalf("test repo %s is not under %s; this expectation assumes a source that cannot be mirrored", repoRoot, tmp)
 		}
 		return "/workspace/source"
 	}

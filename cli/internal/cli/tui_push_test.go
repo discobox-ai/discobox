@@ -2,6 +2,7 @@ package cli
 
 import (
 	"context"
+	"encoding/json"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -210,10 +211,17 @@ func pushDataSource(t *testing.T, dir string) (*apiDataSource, *pathLog) {
 	t.Setenv("GIT_TERMINAL_PROMPT", "0")
 
 	paths := &pathLog{}
+	// Marshaled, not interpolated: a Windows temp directory is
+	// C:\Users\..., and every one of those backslashes is an invalid JSON
+	// escape inside a string literal.
+	dirJSON, err := json.Marshal(dir)
+	if err != nil {
+		t.Fatalf("marshal %s: %v", dir, err)
+	}
 	sandbox := `{"id":"sbx_1","projectId":"project-1","createdByUserId":"user-1","displayName":"box",` +
 		`"config":{"name":"box","image":"","source":{"kind":"git","slug":"primary","delivery":"push",` +
-		`"localDirectory":"` + dir + `","checkout":{"refName":"main","refType":"branch"}}},` +
-		`"origin":{"hostId":"` + thisHost + `","projectPath":"` + dir + `"},` +
+		`"localDirectory":` + string(dirJSON) + `,"checkout":{"refName":"main","refType":"branch"}}},` +
+		`"origin":{"hostId":"` + thisHost + `","projectPath":` + string(dirJSON) + `},` +
 		`"runtime":{"state":"ready","desiredState":"present","displayState":"running","generation":1,"observedGeneration":1},` +
 		`"createdAt":"2026-01-01T00:00:00Z","updatedAt":"2026-01-01T00:00:00Z"}`
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {

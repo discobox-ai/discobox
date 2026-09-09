@@ -8,6 +8,8 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/discobox-ai/x/shorttmp"
 )
 
 func preparePromptCreateSSHSync(t *testing.T) func(http.ResponseWriter, *http.Request) bool {
@@ -36,11 +38,18 @@ func preparePromptCreateSSHSync(t *testing.T) func(http.ResponseWriter, *http.Re
 
 func newRunSourceTestRepo(t *testing.T) string {
 	t.Helper()
+	// shorttmp rather than t.TempDir: where the repository sits decides where
+	// the sandbox keeps it (sandboxcreate.sandboxSourceRoot), and $TMPDIR is
+	// not ours to choose — CI points it under /home/runner, which is a
+	// mirrorable root, so the source lands at its own host path instead of
+	// /workspace/source. shorttmp roots at /tmp, which is deliberately not
+	// mirrorable, so the placement under test is the same everywhere.
+	//
 	// Canonicalized because callers compare it against a path that came back
-	// out of git: Windows hands t.TempDir() an 8.3 short name (RUNNER~1) where
-	// git reports the long one, and macOS hands out /var where git reports
-	// /private/var. Both are the same directory by two names.
-	repo, err := filepath.EvalSymlinks(t.TempDir())
+	// out of git: Windows hands out an 8.3 short name (RUNNER~1) where git
+	// reports the long one, and macOS resolves /tmp to /private/tmp. Both are
+	// the same directory by two names.
+	repo, err := filepath.EvalSymlinks(shorttmp.Dir(t))
 	if err != nil {
 		t.Fatal(err)
 	}
