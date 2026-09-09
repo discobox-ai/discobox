@@ -291,7 +291,7 @@ func TestWatcherReportsADeclaredPortNothingIsListeningOn(t *testing.T) {
 		UID:      1000,
 		ProcRoot: fixture.root,
 		Probe:    probe.probe,
-		Declared: func() ([]int, error) { return []int{8080}, nil },
+		Declared: func() ([]Declaration, error) { return []Declaration{{Port: 8080}}, nil },
 	})
 
 	watcher.tick(context.Background())
@@ -318,12 +318,12 @@ func TestWatcherReportsADeclaredPortNothingIsListeningOn(t *testing.T) {
 func TestWatcherFollowsTheDeclaredSetAsItChanges(t *testing.T) {
 	fixture := newProcFixture(t)
 	fixture.write()
-	var declared []int
+	var declared []Declaration
 	watcher := New(Config{
 		UID:      1000,
 		ProcRoot: fixture.root,
 		Probe:    newRecordingProbe(nil).probe,
-		Declared: func() ([]int, error) { return declared, nil },
+		Declared: func() ([]Declaration, error) { return declared, nil },
 	})
 
 	watcher.tick(context.Background())
@@ -331,7 +331,7 @@ func TestWatcherFollowsTheDeclaredSetAsItChanges(t *testing.T) {
 		t.Fatalf("snapshot = %+v, want empty", watcher.Snapshot())
 	}
 
-	declared = []int{5432}
+	declared = []Declaration{{Port: 5432}}
 	watcher.tick(context.Background())
 	snapshotByPort(t, watcher, 5432)
 
@@ -352,7 +352,7 @@ func TestWatcherKeepsTheObservationOfADeclaredPortThatIsAlsoListening(t *testing
 		UID:      1000,
 		ProcRoot: fixture.root,
 		Probe:    probe.probe,
-		Declared: func() ([]int, error) { return []int{8080}, nil },
+		Declared: func() ([]Declaration, error) { return []Declaration{{Port: 8080}}, nil },
 	})
 
 	watcher.tick(context.Background())
@@ -382,7 +382,7 @@ func TestWatcherProbesADeclaredPortOnceItAnswers(t *testing.T) {
 		UID:      1000,
 		ProcRoot: fixture.root,
 		Probe:    probe.probe,
-		Declared: func() ([]int, error) { return []int{8080}, nil },
+		Declared: func() ([]Declaration, error) { return []Declaration{{Port: 8080}}, nil },
 	})
 
 	// Nothing is up yet: unknown, and retried, the way an unreachable observed
@@ -413,7 +413,7 @@ func TestWatcherExcludesADeclaredPortItMustNotReport(t *testing.T) {
 		ProcRoot:     fixture.root,
 		ExcludePorts: []int{8558},
 		Probe:        newRecordingProbe(nil).probe,
-		Declared:     func() ([]int, error) { return []int{8558, 70000, 0}, nil },
+		Declared:     func() ([]Declaration, error) { return []Declaration{{Port: 8558}, {Port: 70000}, {Port: 0}}, nil },
 	})
 
 	watcher.tick(context.Background())
@@ -431,11 +431,115 @@ func TestWatcherSurvivesADeclaredSetItCannotRead(t *testing.T) {
 		UID:      1000,
 		ProcRoot: fixture.root,
 		Probe:    newRecordingProbe(nil).probe,
-		Declared: func() ([]int, error) { return nil, errors.New("read .discobox/services: permission denied") },
+		Declared: func() ([]Declaration, error) { return nil, errors.New("read .discobox/services: permission denied") },
 	})
 
 	watcher.tick(context.Background())
 	if got := snapshotByPort(t, watcher, 5173); got.Declared {
 		t.Errorf("declared = true, want false")
+	}
+}
+
+// The reason ADR 0094 exists. Classifying a port means connecting to it, and
+// connecting to a socket-activated port is what starts the service behind it —
+// for the desktop, an X server, a window manager and a VNC server, brought up
+// by a classification probe in every sandbox whether or not anybody wanted one.
+//
+// So a stated protocol must not be a shortcut that still probes: the port has
+// to be reported without ever being touched.
+func TestAStatedProtocolIsReportedWithoutProbingThePort(t *testing.T) {
+	fixture := newProcFixture(t)
+	fixture.write()
+	probe := newRecordingProbe(map[int]Protocol{6900: ProtocolTCP})
+	watcher := New(Config{
+		UID:      1000,
+		ProcRoot: fixture.root,
+		Probe:    probe.probe,
+		Declared: func() ([]Declaration, error) {
+			return []Declaration{{Port: 6900, ServiceID: "ai.discobox.desktop", ServiceName: "Desktop", Protocol: ProtocolHTTP}}, nil
+		},
+	})
+
+	watcher.tick(context.Background())
+	watcher.tick(context.Background())
+
+	if got := probe.callCount(6900); got != 0 {
+		t.Fatalf("the port was probed %d times; a stated protocol must be believed, not verified", got)
+	}
+	port := snapshotByPort(t, watcher, 6900)
+	if port.Protocol != ProtocolHTTP {
+		t.Fatalf("protocol = %q, want the declared %q", port.Protocol, ProtocolHTTP)
+	}
+	if port.ServiceID != "ai.discobox.desktop" {
+		t.Fatalf("serviceId = %q; a client matches the desktop on this", port.ServiceID)
+	}
+	if port.ServiceName != "Desktop" {
+		t.Fatalf("serviceName = %q, want the declared display name", port.ServiceName)
+	}
+	if !port.Declared {
+		t.Fatalf("a declared port is not marked declared: %+v", port)
+	}
+}
+
+// A declaration that states nothing is ADR 0076's behavior unchanged: the port
+// is listed, and probed. Only an image may claim what a port speaks, and the
+// unset field must not be read as a claim of "".
+func TestADeclarationWithoutAProtocolIsStillProbed(t *testing.T) {
+	fixture := newProcFixture(t)
+	fixture.write()
+	probe := newRecordingProbe(map[int]Protocol{5432: ProtocolTCP})
+	for _, test := range []struct {
+		name        string
+		declaration Declaration
+	}{
+		{"zero value", Declaration{Port: 5432, ServiceID: "db", ServiceName: "Database"}},
+		{"explicitly unknown", Declaration{Port: 5432, ServiceID: "db", ServiceName: "Database", Protocol: ProtocolUnknown}},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			watcher := New(Config{
+				UID:      1000,
+				ProcRoot: fixture.root,
+				Probe:    probe.probe,
+				Declared: func() ([]Declaration, error) { return []Declaration{test.declaration}, nil },
+			})
+			watcher.tick(context.Background())
+			port := snapshotByPort(t, watcher, 5432)
+			if port.Protocol != ProtocolTCP {
+				t.Fatalf("protocol = %q, want the probed %q", port.Protocol, ProtocolTCP)
+			}
+			if port.ServiceID != "db" {
+				t.Fatalf("serviceId = %q, want the declared id", port.ServiceID)
+			}
+		})
+	}
+}
+
+// A port both an image and the repository declare takes the image's protocol.
+// The server orders the two sources for this, and it is what keeps a repository
+// service that happens to name 6900 from putting the desktop back in the probe
+// queue.
+func TestTheFirstDeclarationOfAPortWins(t *testing.T) {
+	fixture := newProcFixture(t)
+	fixture.write()
+	probe := newRecordingProbe(nil)
+	watcher := New(Config{
+		UID:      1000,
+		ProcRoot: fixture.root,
+		Probe:    probe.probe,
+		Declared: func() ([]Declaration, error) {
+			return []Declaration{
+				{Port: 6900, ServiceID: "ai.discobox.desktop", ServiceName: "Desktop", Protocol: ProtocolHTTP},
+				{Port: 6900, ServiceID: "something-else"},
+			}, nil
+		},
+	})
+
+	watcher.tick(context.Background())
+
+	if got := probe.callCount(6900); got != 0 {
+		t.Fatalf("the port was probed %d times; the image's declaration should have settled it", got)
+	}
+	if port := snapshotByPort(t, watcher, 6900); port.ServiceID != "ai.discobox.desktop" || port.Protocol != ProtocolHTTP {
+		t.Fatalf("port = %+v, want the first declaration's id and protocol", port)
 	}
 }

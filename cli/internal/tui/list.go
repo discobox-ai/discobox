@@ -7,6 +7,7 @@ import (
 
 	"charm.land/lipgloss/v2"
 	"github.com/charmbracelet/x/ansi"
+	"github.com/discobox-ai/discobox/sandboxservices"
 )
 
 // sandboxList is the upper pane: every sandbox in the project, newest-created
@@ -629,6 +630,9 @@ func diffText(st *styles, s Sandbox) string {
 // you can do; the local port, which is the one you can type, is the half worth
 // the space.
 //
+// The desktop is not among them: it has its own header field (desktopText), so
+// a sandbox serving nothing else renders no port group at all.
+//
 // Empty when nothing is listening, which is also what a sandbox whose agent has
 // not reported yet looks like — there is no third thing to say and no room to
 // say it in.
@@ -639,10 +643,21 @@ func portsText(st *styles, s Sandbox, forwarded map[int]int) string {
 	groups := map[string][]Port{}
 	var order []string
 	for _, port := range s.Ports {
+		// The desktop is drawn as its own field, not as a number here. It is
+		// not a port somebody's program is serving and there is nothing useful
+		// to do with the number: "open the desktop" is the whole offer, and
+		// listing `http:6900` beside a dev server invites opening it as if it
+		// were one.
+		if port.ServiceID == sandboxservices.DesktopID {
+			continue
+		}
 		if _, seen := groups[port.Protocol]; !seen {
 			order = append(order, port.Protocol)
 		}
 		groups[port.Protocol] = append(groups[port.Protocol], port)
+	}
+	if len(order) == 0 {
+		return ""
 	}
 	sort.SliceStable(order, func(i, j int) bool {
 		return protocolRank(order[i]) < protocolRank(order[j])
@@ -659,6 +674,41 @@ func portsText(st *styles, s Sandbox, forwarded map[int]int) string {
 		parts = append(parts, protocolLabel(protocol)+":"+strings.Join(text, ","))
 	}
 	return st.info.Render(strings.Join(parts, " · "))
+}
+
+// desktopText is the sandbox's graphical desktop, as a link to the local end of
+// its forward.
+//
+// Its own field rather than a number in the protocol groups, because it is a
+// different kind of thing: a desktop to open, not a port to connect something
+// to. The client recognizes it by the id the image declared it under
+// (sandboxservices.DesktopID) rather than by a port number, so nothing here
+// hardcodes 6900 — see ADR 0094.
+//
+// Drawn only when the forward has bound it, for the reason portEntry links only
+// forwarded ports: an offer to open a desktop that cannot be reached is worse
+// than not offering. The label is the declaration's own name, so the sandbox
+// says what to call it.
+func desktopText(st *styles, s Sandbox, forwarded map[int]int) string {
+	for _, port := range s.Ports {
+		if port.ServiceID != sandboxservices.DesktopID {
+			continue
+		}
+		local, ok := forwarded[port.Number]
+		if !ok {
+			return ""
+		}
+		scheme, web := portScheme(port.Protocol)
+		if !web {
+			return ""
+		}
+		label := port.ServiceName
+		if label == "" {
+			label = "Desktop"
+		}
+		return st.info.Render(hyperlink(scheme+"://localhost:"+itoa(local), label))
+	}
+	return ""
 }
 
 // portEntry is one port in its group: the number on its own, or `local->remote`

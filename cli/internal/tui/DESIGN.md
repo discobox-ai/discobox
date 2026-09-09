@@ -351,6 +351,29 @@ drawn from the same push the header's git columns come from, so the band and the
 row cannot disagree. It goes while the apply itself is on screen: a bar offering
 what the overlay under it is already doing is the window talking about itself.
 
+## The desktop is a link, not a port
+
+A sandbox that ships a graphical desktop declares it as a service with the id
+`sandboxservices.DesktopID` ([ADR 0094](../../../docs/adr/0094-an-image-declares-services-in-the-format-a-repository-does.md)),
+and the workspace header draws it as its own field — the declaration's own name,
+hyperlinked to the local end of its forward — rather than as a number in
+`portsText`'s protocol groups.
+
+It is a different offer. `http:6900` beside a dev server invites opening it as
+if it were one, and the port number is not the useful thing about a desktop:
+"open the desktop" is the whole of it.
+
+Nothing here knows what 6900 is. The match is on the service id, so a desktop
+declared on another port is still recognized and a plain listener that happens
+to be on 6900 is still listed as a port. The id lives in the root module's
+`sandboxservices` because the sandbox that reports it and this client that
+matches it are in different nested modules, and a string duplicated across two
+modules is a string that drifts.
+
+The link is drawn only when the forward has bound it, the same rule
+`portEntry` follows: an offer to open something unreachable is worse than no
+offer.
+
 ## Decisions
 
 **It opens as a prompt and opens out into a window** (`compact.go`). The first

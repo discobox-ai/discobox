@@ -11375,6 +11375,15 @@ func (s *SandboxAgentGitSourceStatus) SetObservedAt(val time.Time) {
 
 // Ref: #/components/schemas/SandboxAgentListeningPort
 type SandboxAgentListeningPort struct {
+	// Id of the declaration this port came from, absent for a port only discovery
+	// found. Stable and matchable: `ai.discobox.desktop` is the sandbox's desktop
+	// viewer, which a client is expected to recognize and give its own affordance
+	// rather than list as an HTTP port. The `ai.discobox.` namespace is reserved
+	// for declarations the image ships.
+	ServiceId OptString `json:"serviceId"`
+	// Display name of the declaration this port came from, so a client can label it without a second
+	// request. Absent for a port only discovery found.
+	ServiceName OptString `json:"serviceName"`
 	// TCP port the sandbox serves - one its own processes were seen listening on, one a service declares,
 	//  or both.
 	Port int64 `json:"port"`
@@ -11397,6 +11406,16 @@ type SandboxAgentListeningPort struct {
 	// When this port was first listed - first observed listening, or first declared. Survives a restart
 	// of whatever is behind it, as long as the port itself never went away in between.
 	FirstSeenAt time.Time `json:"firstSeenAt"`
+}
+
+// GetServiceId returns the value of ServiceId.
+func (s *SandboxAgentListeningPort) GetServiceId() OptString {
+	return s.ServiceId
+}
+
+// GetServiceName returns the value of ServiceName.
+func (s *SandboxAgentListeningPort) GetServiceName() OptString {
+	return s.ServiceName
 }
 
 // GetPort returns the value of Port.
@@ -11422,6 +11441,16 @@ func (s *SandboxAgentListeningPort) GetProtocol() SandboxAgentListeningPortProto
 // GetFirstSeenAt returns the value of FirstSeenAt.
 func (s *SandboxAgentListeningPort) GetFirstSeenAt() time.Time {
 	return s.FirstSeenAt
+}
+
+// SetServiceId sets the value of ServiceId.
+func (s *SandboxAgentListeningPort) SetServiceId(val OptString) {
+	s.ServiceId = val
+}
+
+// SetServiceName sets the value of ServiceName.
+func (s *SandboxAgentListeningPort) SetServiceName(val OptString) {
+	s.ServiceName = val
 }
 
 // SetPort sets the value of Port.

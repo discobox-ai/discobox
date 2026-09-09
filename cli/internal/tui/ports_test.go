@@ -6,6 +6,7 @@ import (
 
 	"charm.land/lipgloss/v2"
 	"github.com/charmbracelet/x/ansi"
+	"github.com/discobox-ai/discobox/sandboxservices"
 )
 
 // The protocol is the repetitive half of a port list, so it is said once per
@@ -152,5 +153,80 @@ func TestPortsTextLinksAForwardThatKeptItsNumber(t *testing.T) {
 	rendered := portsText(st, Sandbox{Ports: []Port{{Number: 5173, Protocol: "http"}}}, map[int]int{5173: 5173})
 	if want := hyperlink("http://localhost:5173", "5173"); !strings.Contains(rendered, want) {
 		t.Fatalf("portsText = %q, want it to contain %q", rendered, want)
+	}
+}
+
+// The desktop is not a port somebody's program is serving, so it is kept out of
+// the protocol groups: `http:6900` beside a dev server invites opening it as if
+// it were one, and the number is not the useful thing about it.
+func TestPortsTextLeavesTheDesktopOut(t *testing.T) {
+	st := newStyles(false)
+	ports := []Port{
+		{Number: 8080, Protocol: "http"},
+		{Number: 6900, Protocol: "http", ServiceID: sandboxservices.DesktopID, ServiceName: "Desktop"},
+	}
+	got := ansi.Strip(portsText(st, Sandbox{Ports: ports}, map[int]int{8080: 8080, 6900: 6900}))
+	if want := "http:8080"; got != want {
+		t.Fatalf("portsText = %q, want %q", got, want)
+	}
+}
+
+// A sandbox serving only the desktop renders no port group at all, rather than
+// an empty `http:` label.
+func TestPortsTextIsEmptyWhenOnlyTheDesktopIsServed(t *testing.T) {
+	st := newStyles(false)
+	ports := []Port{{Number: 6900, Protocol: "http", ServiceID: sandboxservices.DesktopID}}
+	if got := ansi.Strip(portsText(st, Sandbox{Ports: ports}, map[int]int{6900: 6900})); got != "" {
+		t.Fatalf("portsText = %q, want empty", got)
+	}
+}
+
+// The desktop gets its own field, labeled by the declaration rather than by a
+// number, and linked to the local end of its forward.
+func TestDesktopTextLinksTheForwardedDesktop(t *testing.T) {
+	st := newStyles(false)
+	ports := []Port{{Number: 6900, Protocol: "http", ServiceID: sandboxservices.DesktopID, ServiceName: "Desktop"}}
+
+	rendered := desktopText(st, Sandbox{Ports: ports}, map[int]int{6900: 6901})
+	if got := ansi.Strip(rendered); got != "Desktop" {
+		t.Fatalf("desktopText = %q, want the declaration's name", got)
+	}
+	// The link points at the local end, which is the only end reachable here.
+	if !strings.Contains(rendered, "http://localhost:6901") {
+		t.Fatalf("desktopText did not link the forwarded port: %q", rendered)
+	}
+	if strings.Contains(ansi.Strip(rendered), "6900") {
+		t.Fatalf("desktopText shows a port number: %q", rendered)
+	}
+}
+
+// An offer to open a desktop that is not reachable is worse than no offer, so
+// an unforwarded one draws nothing — the rule portEntry follows for links.
+func TestDesktopTextIsEmptyWithoutAForward(t *testing.T) {
+	st := newStyles(false)
+	ports := []Port{{Number: 6900, Protocol: "http", ServiceID: sandboxservices.DesktopID, ServiceName: "Desktop"}}
+	if got := desktopText(st, Sandbox{Ports: ports}, nil); got != "" {
+		t.Fatalf("desktopText = %q, want empty with no forward", got)
+	}
+}
+
+// Nothing here knows what 6900 is. A desktop declared on another port is still
+// the desktop, and a plain port on 6900 is still a plain port.
+func TestTheDesktopIsRecognizedByIDNotByPortNumber(t *testing.T) {
+	st := newStyles(false)
+	elsewhere := []Port{{Number: 7100, Protocol: "http", ServiceID: sandboxservices.DesktopID, ServiceName: "Desktop"}}
+	if got := ansi.Strip(desktopText(st, Sandbox{Ports: elsewhere}, map[int]int{7100: 7100})); got != "Desktop" {
+		t.Fatalf("a desktop on another port was not recognized: %q", got)
+	}
+	if got := ansi.Strip(portsText(st, Sandbox{Ports: elsewhere}, map[int]int{7100: 7100})); got != "" {
+		t.Fatalf("a desktop on another port was still listed as a port: %q", got)
+	}
+
+	plain := []Port{{Number: 6900, Protocol: "http"}}
+	if got := desktopText(st, Sandbox{Ports: plain}, map[int]int{6900: 6900}); got != "" {
+		t.Fatalf("an undeclared port on 6900 was treated as the desktop: %q", got)
+	}
+	if got := ansi.Strip(portsText(st, Sandbox{Ports: plain}, map[int]int{6900: 6900})); got != "http:6900" {
+		t.Fatalf("an undeclared port on 6900 was not listed: %q", got)
 	}
 }

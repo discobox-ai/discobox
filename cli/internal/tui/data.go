@@ -160,6 +160,16 @@ type GitState struct {
 type Port struct {
 	Number   int
 	Protocol string // http, https, tcp, or unknown while a probe has not answered
+	// ServiceID and ServiceName are the declaration this port came from, empty
+	// for a port only discovery found.
+	//
+	// The id is what the header matches on: sandboxservices.DesktopID is drawn
+	// as its own field rather than as a number in the protocol groups, because
+	// a desktop is a different offer from a forwarded port. The name is what
+	// that field is labeled with, so nothing here has to know what any
+	// particular id is called.
+	ServiceID   string
+	ServiceName string
 }
 
 // Sandbox is the row model: what a picker needs to tell one sandbox from

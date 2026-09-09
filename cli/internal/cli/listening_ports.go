@@ -23,18 +23,7 @@ import (
 // and so is dialed at the default host, which is the right answer for one
 // published by a nested container or a socket-activated unit.
 func sandboxPortTargets(sb apimodel.Sandbox) []portforward.Target {
-	agentStatus, ok := sb.Runtime.AgentStatus.Get()
-	if !ok {
-		return nil
-	}
-	raw, ok := agentStatus["ports"]
-	if !ok {
-		return nil
-	}
-	var reported []apimodel.SandboxAgentListeningPort
-	if err := json.Unmarshal(raw, &reported); err != nil {
-		return nil
-	}
+	reported := reportedPorts(sb)
 	targets := make([]portforward.Target, 0, len(reported))
 	for _, port := range reported {
 		if port.Port <= 0 || port.Port > 65535 {
@@ -71,10 +60,41 @@ func dialHostForPort(addresses []string) string {
 // sandboxListeningPorts is the same listing narrowed to what fits beside a
 // sandbox on one line: the number and what it speaks.
 func sandboxListeningPorts(sb apimodel.Sandbox) []tui.Port {
-	targets := sandboxPortTargets(sb)
-	out := make([]tui.Port, 0, len(targets))
-	for _, target := range targets {
-		out = append(out, tui.Port{Number: target.Port, Protocol: target.Protocol})
+	reported := reportedPorts(sb)
+	out := make([]tui.Port, 0, len(reported))
+	for _, port := range reported {
+		if port.Port <= 0 || port.Port > 65535 {
+			continue
+		}
+		// Read from the report rather than from the forward targets: a target
+		// is a host and a port, which is all a tunnel needs, and the service a
+		// port came from is exactly the part it has no use for. The header
+		// does.
+		out = append(out, tui.Port{
+			Number:      int(port.Port),
+			Protocol:    string(port.Protocol),
+			ServiceID:   port.ServiceId.Or(""),
+			ServiceName: port.ServiceName.Or(""),
+		})
 	}
 	return out
+}
+
+// reportedPorts is the agent's last port report, or nothing when it has not
+// made one. Both the forward and the header are drawn from it, so they can
+// never disagree about what the sandbox is serving.
+func reportedPorts(sb apimodel.Sandbox) []apimodel.SandboxAgentListeningPort {
+	agentStatus, ok := sb.Runtime.AgentStatus.Get()
+	if !ok {
+		return nil
+	}
+	raw, ok := agentStatus["ports"]
+	if !ok {
+		return nil
+	}
+	var reported []apimodel.SandboxAgentListeningPort
+	if err := json.Unmarshal(raw, &reported); err != nil {
+		return nil
+	}
+	return reported
 }

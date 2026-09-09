@@ -1278,6 +1278,15 @@ type SandboxAgentListeningPort struct {
 	// HTTP/2-only server); unknown means not classified yet or unreachable when
 	// probed, and is retried.
 	Protocol SandboxAgentListeningPortProtocol `json:"protocol"`
+	// Id of the declaration this port came from, absent for a port only discovery
+	// found. Stable and matchable: `ai.discobox.desktop` is the sandbox's desktop
+	// viewer, which a client is expected to recognize and give its own affordance
+	// rather than list as an HTTP port. The `ai.discobox.` namespace is reserved
+	// for declarations the image ships.
+	ServiceId OptString `json:"serviceId"`
+	// Display name of the declaration this port came from, so a client can label it without a second
+	// request. Absent for a port only discovery found.
+	ServiceName OptString `json:"serviceName"`
 }
 
 // GetAddresses returns the value of Addresses.
@@ -1305,6 +1314,16 @@ func (s *SandboxAgentListeningPort) GetProtocol() SandboxAgentListeningPortProto
 	return s.Protocol
 }
 
+// GetServiceId returns the value of ServiceId.
+func (s *SandboxAgentListeningPort) GetServiceId() OptString {
+	return s.ServiceId
+}
+
+// GetServiceName returns the value of ServiceName.
+func (s *SandboxAgentListeningPort) GetServiceName() OptString {
+	return s.ServiceName
+}
+
 // SetAddresses sets the value of Addresses.
 func (s *SandboxAgentListeningPort) SetAddresses(val []string) {
 	s.Addresses = val
@@ -1328,6 +1347,16 @@ func (s *SandboxAgentListeningPort) SetPort(val int64) {
 // SetProtocol sets the value of Protocol.
 func (s *SandboxAgentListeningPort) SetProtocol(val SandboxAgentListeningPortProtocol) {
 	s.Protocol = val
+}
+
+// SetServiceId sets the value of ServiceId.
+func (s *SandboxAgentListeningPort) SetServiceId(val OptString) {
+	s.ServiceId = val
+}
+
+// SetServiceName sets the value of ServiceName.
+func (s *SandboxAgentListeningPort) SetServiceName(val OptString) {
+	s.ServiceName = val
 }
 
 // What the port turned out to speak, established by probing it once when it

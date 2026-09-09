@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/discobox-ai/discobox/sandbox-agent/execs"
+	"github.com/discobox-ai/discobox/sandbox-agent/ports"
 )
 
 // Metadata keys tagging the exec that runs a service. The id is the join —
@@ -67,6 +68,9 @@ type ManagerConfig struct {
 	// sandbox's primary source directory, which DirName is resolved under and
 	// which is also where an exec that names no workdir starts.
 	Root string
+	// BuiltinDir is where the image's own declarations live. Empty uses
+	// BuiltinDir, which is where the image installs them.
+	BuiltinDir string
 }
 
 // Manager runs the sandbox's declared services.
@@ -79,6 +83,9 @@ type ManagerConfig struct {
 type Manager struct {
 	execs *execs.Manager
 	root  string
+	// builtinDir is where the image's own declarations live. A field rather
+	// than the constant directly so a test can point it somewhere real.
+	builtinDir string
 
 	// lifecycle serializes start/stop/restart per service id. Deciding whether
 	// to create an exec or relaunch the existing one is a check-then-act over
@@ -99,14 +106,23 @@ func NewManager(cfg ManagerConfig) (*Manager, error) {
 	if strings.TrimSpace(cfg.Root) == "" {
 		return nil, errors.New("service root is required")
 	}
-	return &Manager{execs: cfg.Execs, root: cfg.Root, lifecycle: map[string]*sync.Mutex{}}, nil
+	builtinDir := cfg.BuiltinDir
+	if strings.TrimSpace(builtinDir) == "" {
+		builtinDir = BuiltinDir
+	}
+	return &Manager{
+		execs:      cfg.Execs,
+		root:       cfg.Root,
+		builtinDir: builtinDir,
+		lifecycle:  map[string]*sync.Mutex{},
+	}, nil
 }
 
 // List is every declared service with the state of its run, in declaration
 // order. It takes no context because it cancels nothing: discovery is a
 // directory read and run state is already-collected exec records.
 func (m *Manager) List() ([]Service, error) {
-	defs, err := Discover(m.root)
+	defs, err := Discover(m.builtinDir, m.root)
 	if err != nil {
 		return nil, err
 	}
@@ -118,21 +134,44 @@ func (m *Manager) List() ([]Service, error) {
 	return out, nil
 }
 
-// DeclaredPorts is every port the repository's declarations name, deduplicated
-// and in declaration order. It is what the listening-port watcher folds into
-// its snapshot so a declared port is reported whatever procfs shows (ADR 0076),
-// and it reads the declarations rather than the exec records deliberately: a
-// port is declared by a file, not by a run, and the script that published it
-// has usually exited by the time the port matters.
+// declaredProtocol maps what a declaration wrote onto the vocabulary the probe
+// produces. Anything a declaration did not state — which parseFile has already
+// restricted to the empty string — is ProtocolUnknown, the value that queues a
+// probe.
+func declaredProtocol(declared string) ports.Protocol {
+	switch declared {
+	case "http":
+		return ports.ProtocolHTTP
+	case "https":
+		return ports.ProtocolHTTPS
+	case "tcp":
+		return ports.ProtocolTCP
+	default:
+		return ports.ProtocolUnknown
+	}
+}
+
+// Declarations is every port the repository's declarations name, deduplicated
+// and in declaration order, each carrying the service that named it. It is what
+// the listening-port watcher folds into its snapshot so a declared port is
+// reported whatever procfs shows (ADR 0076), and it reads the declarations
+// rather than the exec records deliberately: a port is declared by a file, not
+// by a run, and the script that published it has usually exited by the time the
+// port matters.
+//
+// A declaration that states a protocol is believed rather than measured, and
+// the port is never connected to (ADR 0094). One that states none is probed, as
+// every port was before. That is the whole difference, and it matters most for
+// a socket-activated service, where connecting to the port is what starts it.
 //
 // A declaration that cannot run still contributes its ports. The file says the
 // port exists; a missing executable bit says nothing about that either way.
-func (m *Manager) DeclaredPorts() ([]int, error) {
-	defs, err := Discover(m.root)
+func (m *Manager) Declarations() ([]ports.Declaration, error) {
+	defs, err := Discover(m.builtinDir, m.root)
 	if err != nil {
 		return nil, err
 	}
-	var out []int
+	var out []ports.Declaration
 	seen := map[int]struct{}{}
 	for _, def := range defs {
 		for _, port := range def.Ports {
@@ -140,7 +179,12 @@ func (m *Manager) DeclaredPorts() ([]int, error) {
 				continue
 			}
 			seen[port] = struct{}{}
-			out = append(out, port)
+			out = append(out, ports.Declaration{
+				Port:        port,
+				ServiceID:   def.ID,
+				ServiceName: def.Name,
+				Protocol:    declaredProtocol(def.Protocol),
+			})
 		}
 	}
 	return out, nil
@@ -249,7 +293,7 @@ func (m *Manager) EnsureStarted(ctx context.Context, logger *slog.Logger) error 
 	if logger == nil {
 		logger = slog.Default()
 	}
-	defs, err := Discover(m.root)
+	defs, err := Discover(m.builtinDir, m.root)
 	if err != nil {
 		return err
 	}
@@ -259,6 +303,13 @@ func (m *Manager) EnsureStarted(ctx context.Context, logger *slog.Logger) error 
 	// exec table. Say what was looked at and what was found.
 	logger.Debug("discovered sandbox service declarations", "root", m.root, "count", len(defs))
 	for _, def := range defs {
+		// A declaration that starts nothing is not a declaration that failed.
+		// Something else already serves its ports — a socket unit, a nested
+		// container — and warning about it every boot would put a permanent
+		// complaint in the log for a file doing exactly what it says.
+		if def.Start == StartNever {
+			continue
+		}
 		if !def.Runnable() {
 			logger.Warn("skipping sandbox service declaration", "service", def.ID, "file", def.FileName, "problem", def.Problem)
 			continue
@@ -328,7 +379,7 @@ func (m *Manager) definition(id string) (Definition, error) {
 	if id == "" {
 		return Definition{}, ErrNotFound
 	}
-	defs, err := Discover(m.root)
+	defs, err := Discover(m.builtinDir, m.root)
 	if err != nil {
 		return Definition{}, err
 	}

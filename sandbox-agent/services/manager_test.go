@@ -3,6 +3,7 @@ package services
 import (
 	"context"
 	"encoding/json"
+	"log/slog"
 	"net"
 	"net/http"
 	"os"
@@ -14,6 +15,8 @@ import (
 	"time"
 
 	"github.com/discobox-ai/discobox/sandbox-agent/execs"
+	portspkg "github.com/discobox-ai/discobox/sandbox-agent/ports"
+	"github.com/discobox-ai/discobox/sandboxservices"
 	"github.com/discobox-ai/x/shorttmp"
 )
 
@@ -546,31 +549,74 @@ func TestDeclaredPortsReadsEveryDeclarationWhateverItsState(t *testing.T) {
 	// The same port twice is one port.
 	writeService(t, root, "30-again.sh", "#!/bin/bash\n#---\n# port: 8080\n#---\nexec up\n", 0o755)
 
-	ports, err := manager.DeclaredPorts()
+	ports, err := manager.Declarations()
 	if err != nil {
 		t.Fatalf("declared ports: %v", err)
 	}
-	if !equalInts(ports, []int{8080, 5432, 9000}) {
+	if !equalInts(declaredPortNumbers(ports), []int{8080, 5432, 9000}) {
 		t.Fatalf("declared ports = %v, want [8080 5432 9000]", ports)
 	}
 
 	writeService(t, root, "40-added.sh", "#!/bin/bash\n#---\n# ports: 3000\n#---\nexec up\n", 0o755)
-	ports, err = manager.DeclaredPorts()
+	ports, err = manager.Declarations()
 	if err != nil {
 		t.Fatalf("declared ports after an edit: %v", err)
 	}
-	if !equalInts(ports, []int{8080, 5432, 9000, 3000}) {
+	if !equalInts(declaredPortNumbers(ports), []int{8080, 5432, 9000, 3000}) {
 		t.Fatalf("declared ports = %v after a declaration was added, want it seen", ports)
 	}
+	// A repository declaration states no protocol, so its port is still probed.
+	// Only an image may claim what a port speaks (ADR 0094).
+	for _, declaration := range ports {
+		if declaration.Protocol != portspkg.ProtocolUnknown {
+			t.Fatalf("%s declared protocol %q; a repository service must not claim one",
+				declaration.ServiceID, declaration.Protocol)
+		}
+		if declaration.ServiceID == "" {
+			t.Fatalf("declaration for port %d carries no service id", declaration.Port)
+		}
+	}
+}
+
+// declaredPortNumbers is the port numbers alone, in declaration order.
+func declaredPortNumbers(declarations []portspkg.Declaration) []int {
+	out := make([]int, 0, len(declarations))
+	for _, declaration := range declarations {
+		out = append(out, declaration.Port)
+	}
+	return out
 }
 
 func TestDeclaredPortsWithNoDeclarations(t *testing.T) {
 	manager, _, _ := newTestManager(t)
-	ports, err := manager.DeclaredPorts()
+	ports, err := manager.Declarations()
 	if err != nil {
 		t.Fatalf("declared ports: %v", err)
 	}
 	if len(ports) != 0 {
 		t.Fatalf("declared ports = %v, want none", ports)
+	}
+}
+
+// A declaration that starts nothing must not be reported as a broken one. It
+// has no Problem to print, so the warning it used to produce read
+// `problem=""` — a complaint about a file doing exactly what it says, on every
+// boot of every sandbox.
+func TestEnsureStartedIsQuietAboutDeclarationsThatStartNothing(t *testing.T) {
+	manager, _, _ := newTestManager(t)
+	builtin := t.TempDir()
+	if err := os.WriteFile(filepath.Join(builtin, "10-desktop.sh"),
+		[]byte("#---\n# id: "+sandboxservices.DesktopID+"\n# port: 6900\n# protocol: http\n# start: never\n#---\n"), 0o644); err != nil {
+		t.Fatalf("write: %v", err)
+	}
+	manager.builtinDir = builtin
+
+	var logged strings.Builder
+	logger := slog.New(slog.NewTextHandler(&logged, &slog.HandlerOptions{Level: slog.LevelWarn}))
+	if err := manager.EnsureStarted(t.Context(), logger); err != nil {
+		t.Fatalf("EnsureStarted: %v", err)
+	}
+	if strings.Contains(logged.String(), "skipping sandbox service declaration") {
+		t.Fatalf("a declaration that starts nothing was warned about: %s", logged.String())
 	}
 }

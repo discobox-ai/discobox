@@ -314,8 +314,13 @@ func newPortsWatcher(cfg Config, execManager *execs.Manager, serviceManager *ser
 		UID:          uid,
 		ExcludePorts: listenPorts(cfg.ListenAddress),
 	}
+	// One seam, two directories behind it: the image's declarations and the
+	// repository's, which services.Discover already merges. A declaration that
+	// states a protocol keeps its port out of the probe queue entirely, which
+	// is what stops a classification probe from socket-activating the desktop
+	// (ADR 0094).
 	if serviceManager != nil {
-		watcher.Declared = serviceManager.DeclaredPorts
+		watcher.Declared = serviceManager.Declarations
 	}
 	return ports.New(watcher), nil
 }

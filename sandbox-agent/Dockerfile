@@ -21,6 +21,7 @@ COPY harness ./harness
 COPY proxy ./proxy
 COPY runcca ./runcca
 COPY sandboxconfig ./sandboxconfig
+COPY sandboxservices ./sandboxservices
 COPY sandboxuser ./sandboxuser
 COPY sandbox-agent ./sandbox-agent
 
@@ -354,6 +355,11 @@ COPY sandbox-agent/image/desktop/panel.xml /etc/xdg/xfce4/panel/default.xml
 # Home icon xfdesktop draws itself. Shipped as files rather than written from
 # Go so they sit next to the rest of the desktop's configuration.
 COPY sandbox-agent/image/desktop/launchers /usr/local/share/discobox/desktop/launchers
+# The desktop's own service declaration, in the same format a repository's
+# `.discobox/services` uses and read from the same code. It declares the port
+# and what it speaks so the port watcher never has to connect to it — which for
+# a socket-activated service is what would start it (ADR 0094).
+COPY sandbox-agent/image/services /usr/local/share/discobox/services
 # Chromium is this image's browser, so it is what a link opens. See the file.
 COPY sandbox-agent/image/desktop/mimeapps.list /etc/xdg/mimeapps.list
 # And Xfce's own preferred-applications list, which is what the panel, Thunar

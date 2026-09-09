@@ -1744,6 +1744,11 @@ func (m *Model) paneHeaderFields() paneHeaderFields {
 	if stat := diffText(m.st, box); stat != "" {
 		fields = append(fields, paneHeaderField{text: stat, git: true})
 	}
+	// Ahead of the ports, because it is the one thing in this header a person
+	// opens rather than reads.
+	if desktop := desktopText(m.st, box, m.forwardedPorts()); desktop != "" {
+		fields = append(fields, paneHeaderField{text: desktop})
+	}
 	if listening := portsText(m.st, box, m.forwardedPorts()); listening != "" {
 		fields = append(fields, paneHeaderField{text: listening})
 	}

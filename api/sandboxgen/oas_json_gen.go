@@ -2066,14 +2066,28 @@ func (s *SandboxAgentListeningPort) encodeFields(e *jx.Encoder) {
 		e.FieldStart("protocol")
 		s.Protocol.Encode(e)
 	}
+	{
+		if s.ServiceId.Set {
+			e.FieldStart("serviceId")
+			s.ServiceId.Encode(e)
+		}
+	}
+	{
+		if s.ServiceName.Set {
+			e.FieldStart("serviceName")
+			s.ServiceName.Encode(e)
+		}
+	}
 }
 
-var jsonFieldsNameOfSandboxAgentListeningPort = [5]string{
+var jsonFieldsNameOfSandboxAgentListeningPort = [7]string{
 	0: "addresses",
 	1: "declared",
 	2: "firstSeenAt",
 	3: "port",
 	4: "protocol",
+	5: "serviceId",
+	6: "serviceName",
 }
 
 // Decode decodes SandboxAgentListeningPort from json.
@@ -2147,6 +2161,26 @@ func (s *SandboxAgentListeningPort) Decode(d *jx.Decoder) error {
 				return nil
 			}(); err != nil {
 				return errors.Wrap(err, "decode field \"protocol\"")
+			}
+		case "serviceId":
+			if err := func() error {
+				s.ServiceId.Reset()
+				if err := s.ServiceId.Decode(d); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"serviceId\"")
+			}
+		case "serviceName":
+			if err := func() error {
+				s.ServiceName.Reset()
+				if err := s.ServiceName.Decode(d); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"serviceName\"")
 			}
 		default:
 			return errors.Errorf("unexpected field %q", k)

@@ -11,11 +11,20 @@
 // else in that response is computed fresh per request.
 //
 // The snapshot has a second input, and so is what the sandbox serves rather
-// than only what it was seen listening on: a service declaration may name ports
-// the uid filter cannot see, because the socket belongs to root — published by
-// a nested container, or bound by a socket-activated unit — however plainly the
-// sandbox's own work is behind it (ADR 0076). Those are folded in here, probed
-// like any other, and marked Declared.
+// than only what it was seen listening on: a declaration may name ports the uid
+// filter cannot see, because the socket belongs to root — published by a nested
+// container, or bound by a socket-activated unit — however plainly the
+// sandbox's own work is behind it (ADR 0076). Those are folded in here and
+// marked Declared.
+//
+// A declaration may also state what its port speaks, and then it is believed
+// rather than measured (ADR 0094). That is not an optimization. Classifying a
+// port means connecting to it, and connecting to a socket-activated port is
+// what starts the service behind it — for the desktop, an X server, a window
+// manager and a VNC server, brought up by a classification probe in every
+// sandbox whether or not anybody wanted a desktop. An image that knew the
+// answer at build time can say so, and the port is then reported without ever
+// being touched.
 package ports
 
 import (
@@ -66,6 +75,15 @@ type Port struct {
 	// what says that, and a declared port with none is one nothing visible is
 	// listening on.
 	Declared bool `json:"declared,omitempty"`
+	// ServiceID and ServiceName are the declaration this port came from, empty
+	// for a port only discovery found.
+	//
+	// Both, for the reason the exec metadata carries both (ADR 0070 §7): the id
+	// is what a client matches on — `ai.discobox.desktop` is recognized and
+	// given its own affordance rather than listed as a port — and the name
+	// rides along so the thing it draws has a label without a second request.
+	ServiceID   string `json:"serviceId,omitempty"`
+	ServiceName string `json:"serviceName,omitempty"`
 	// FirstSeenAt is when this port was first listed — first observed
 	// listening, or first declared. It survives a restart of whatever is
 	// behind it as long as the port itself never went away between two scans.
@@ -87,9 +105,9 @@ type Config struct {
 	ProcRoot string
 	// Interval defaults to DefaultInterval.
 	Interval time.Duration
-	// Declared reports the ports a service declaration names, which are listed
-	// whatever the scan finds (ADR 0076). Nil — a sandbox with no service layer
-	// to ask — means none.
+	// Declared reports the ports declarations name, which are listed whatever
+	// the scan finds (ADR 0076). Nil — a sandbox with nothing to ask — means
+	// none.
 	//
 	// It is a function called on every tick rather than a set fixed at
 	// construction because declarations are re-read from disk on every listing
@@ -98,10 +116,34 @@ type Config struct {
 	// way. Asking through a seam is also what keeps a procfs watcher from
 	// knowing what a repository is, the way Probe keeps it from knowing what
 	// HTTP is.
-	Declared func() ([]int, error)
+	Declared func() ([]Declaration, error)
 	// Probe defaults to probing the target for real. Tests replace it.
 	Probe  func(context.Context, netip.AddrPort) Protocol
 	Logger *slog.Logger
+}
+
+// Declaration is a port something says exists, whatever procfs shows.
+//
+// Protocol is the field that changes behavior: stated, it is reported as-is and
+// the port is never connected to; empty, the port is probed like any other.
+// That is the whole of ADR 0094 — an image that knows what its port speaks can
+// keep the sandbox from finding out the only way a probe can.
+type Declaration struct {
+	Port        int
+	ServiceID   string
+	ServiceName string
+	Protocol    Protocol
+}
+
+// stated reports whether this declaration claims a protocol.
+//
+// Both the zero value and ProtocolUnknown mean "no claim", and they are not the
+// same string: Protocol's zero value is "" while ProtocolUnknown is "unknown".
+// Testing only against the constant would read an unset field as a claim, skip
+// the probe, and report the port as speaking "" — which is the whole mechanism
+// failing quietly rather than loudly.
+func (d Declaration) stated() bool {
+	return d.Protocol != "" && d.Protocol != ProtocolUnknown
 }
 
 // Watcher keeps the current listening-port snapshot. The zero value is not
@@ -112,7 +154,7 @@ type Watcher struct {
 	exclude  map[int]struct{}
 	procRoot string
 	interval time.Duration
-	declared func() ([]int, error)
+	declared func() ([]Declaration, error)
 	probe    func(context.Context, netip.AddrPort) Protocol
 	logger   *slog.Logger
 
@@ -132,6 +174,8 @@ type portState struct {
 	addresses   []string
 	target      netip.AddrPort
 	declared    bool
+	serviceID   string
+	serviceName string
 }
 
 // declaredInodeKey stands in for the socket inodes of a port that has none to
@@ -225,7 +269,7 @@ func (w *Watcher) tick(ctx context.Context) {
 // named drop off the snapshot until a later tick reads them, which a client
 // that already forwarded one rides out — a binding outlives the port going
 // away (ADR 0049).
-func (w *Watcher) declaredPorts() []int {
+func (w *Watcher) declaredPorts() []Declaration {
 	if w.declared == nil {
 		return nil
 	}
@@ -246,7 +290,7 @@ func (w *Watcher) declaredPorts() []int {
 // also observed is an ordinary observed port that happens to be declared — it
 // has real binds and a real socket identity to key its probe cache on, and only
 // a port nothing visible is listening on is carried by its declaration alone.
-func (w *Watcher) observe(listeners []listener, declared []int, now time.Time) []int {
+func (w *Watcher) observe(listeners []listener, declared []Declaration, now time.Time) []int {
 	grouped := map[int][]listener{}
 	for _, entry := range listeners {
 		if _, skip := w.exclude[entry.Port]; skip {
@@ -254,17 +298,21 @@ func (w *Watcher) observe(listeners []listener, declared []int, now time.Time) [
 		}
 		grouped[entry.Port] = append(grouped[entry.Port], entry)
 	}
-	declaredSet := make(map[int]struct{}, len(declared))
-	for _, port := range declared {
-		if port < 1 || port > 65535 {
+	declaredSet := make(map[int]Declaration, len(declared))
+	for _, declaration := range declared {
+		if declaration.Port < 1 || declaration.Port > 65535 {
 			continue
 		}
 		// The exclusion is what it is for observed ports: the agent's own
 		// listener is not a service, and declaring it would not make it one.
-		if _, skip := w.exclude[port]; skip {
+		if _, skip := w.exclude[declaration.Port]; skip {
 			continue
 		}
-		declaredSet[port] = struct{}{}
+		// First declaration of a port wins, so two sources naming the same
+		// port cannot flip its protocol between ticks.
+		if _, ok := declaredSet[declaration.Port]; !ok {
+			declaredSet[declaration.Port] = declaration
+		}
 	}
 
 	w.mu.Lock()
@@ -279,6 +327,18 @@ func (w *Watcher) observe(listeners []listener, declared []int, now time.Time) [
 			state.firstSeenAt = previous.firstSeenAt
 			if previous.inodeKey == state.inodeKey {
 				state.protocol = previous.protocol
+			}
+		}
+		// A stated protocol outranks anything carried forward, and is what
+		// keeps the port out of the probe queue below. It is re-applied on
+		// every tick rather than only when the port is new, so a declaration
+		// edited while the sandbox is up takes effect the same way its port
+		// number does.
+		if declaration, ok := declaredSet[port]; ok {
+			state.serviceID = declaration.ServiceID
+			state.serviceName = declaration.ServiceName
+			if declaration.stated() {
+				state.protocol = declaration.Protocol
 			}
 		}
 		if state.protocol == ProtocolUnknown {
@@ -376,6 +436,8 @@ func (w *Watcher) publish() {
 			Addresses:   state.addresses,
 			Protocol:    state.protocol,
 			Declared:    state.declared,
+			ServiceID:   state.serviceID,
+			ServiceName: state.serviceName,
 			FirstSeenAt: state.firstSeenAt,
 		})
 	}

@@ -488,13 +488,32 @@ func (h *handler) GetSandboxAgentStatus(ctx context.Context, _ sandboxapi.GetSan
 	return &response, nil
 }
 
+// sandboxAgentListeningPort carries one port onto the wire.
+//
+// Every field of ports.Port has to be mapped here, and a test asserts it by
+// reflection rather than by listing them: this is a hand-written projection
+// between two structs that are edited for different reasons, and a field added
+// to one and not the other is lost silently. `declared` was, from the day
+// ADR 0076 added it until the day something needed to read it.
 func sandboxAgentListeningPort(in ports.Port) sandboxapi.SandboxAgentListeningPort {
-	return sandboxapi.SandboxAgentListeningPort{
+	out := sandboxapi.SandboxAgentListeningPort{
 		Port:        int64(in.Port),
 		Addresses:   append([]string(nil), in.Addresses...),
 		Protocol:    sandboxapi.SandboxAgentListeningPortProtocol(in.Protocol),
 		FirstSeenAt: in.FirstSeenAt,
 	}
+	// Set only when there is something to say, so an ordinary discovered port
+	// carries no empty strings and no `"declared": false`.
+	if in.Declared {
+		out.Declared = sandboxapi.NewOptBool(true)
+	}
+	if in.ServiceID != "" {
+		out.ServiceId = sandboxapi.NewOptString(in.ServiceID)
+	}
+	if in.ServiceName != "" {
+		out.ServiceName = sandboxapi.NewOptString(in.ServiceName)
+	}
+	return out
 }
 
 // sandboxAgentResourceUsage carries the sample onto the wire as it was read.
