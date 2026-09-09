@@ -120,6 +120,10 @@ type Model struct {
 	// ports standing in for what the discobox is serving, which the header
 	// draws as arrows. See workspace.go.
 	forward Forward
+	// pushHeld is the commit each source's automatic push failed on, keyed by
+	// slug, for as long as the workspace is open. A source is not pushed again
+	// while its branch still names the commit that was refused; see push.go.
+	pushHeld map[string]string
 	// The tools open on this discobox: a strip of panes like the two columns,
 	// except that only one is ever drawn and it is drawn over everything.
 	// toolOpen is whether that column has the window; put away, its panes stay
@@ -858,6 +862,15 @@ func (m *Model) update(msg tea.Msg) tea.Cmd {
 			return nil
 		}
 		return tea.Batch(m.listExecs(msg.gen), m.listServices(msg.gen), m.workspaceTick(msg.gen))
+
+	case autoPushTickMsg:
+		if msg.gen != m.wsGen {
+			return nil
+		}
+		return m.autoPush(msg.gen)
+
+	case autoPushedMsg:
+		return m.autoPushed(msg)
 
 	case workspaceServicesMsg:
 		return m.workspaceServices(msg)

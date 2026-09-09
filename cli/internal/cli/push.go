@@ -64,6 +64,11 @@ starts it. That needs the repositories those sources came from to still hold
 those commits; --source, --branch, and --force describe a push to a running
 discobox and do not apply.
 
+The launcher pushes for you while its window is open on a discobox, so most of
+the time there is nothing to run here. This command is what covers the rest: a
+discobox nobody has open, another branch, a source whose directory has moved,
+and forcing past a push the launcher will not make on its own.
+
 A push may rewind the discobox's origin — that is what a local rebase or amend
 means — but not silently: it is refused if the origin has moved since this
 machine last pushed, or if it holds commits this machine did not put there.

@@ -40,7 +40,7 @@ func TestToTUISandboxNarrowsDisplayState(t *testing.T) {
 				DesiredState: "present",
 				DisplayState: apiclientgen.NewOptSandboxRuntimeDisplayState(apiclientgen.SandboxRuntimeDisplayState(tc.display)),
 			},
-		})
+		}, "host_1")
 		if sandbox.State != tc.want {
 			t.Errorf("display %q -> %q, want %q", tc.display, sandbox.State, tc.want)
 		}
@@ -63,7 +63,7 @@ func TestToTUISandboxMarksSnapshotSources(t *testing.T) {
 	sandbox := apimodel.Sandbox{Runtime: apimodel.SandboxRuntime{State: "running", DesiredState: "present"}}
 	sandbox.Config.SetSource(apiclientgen.NewOptGitSource(source))
 
-	row := toTUISandbox(sandbox)
+	row := toTUISandbox(sandbox, "host_1")
 	if row.Branch != "main" || row.Commit != "a3f9c21" {
 		t.Fatalf("base = %q@%q, want main@a3f9c21", row.Branch, row.Commit)
 	}
@@ -232,7 +232,7 @@ func TestToTUISandboxCarriesTheRuntimeAxis(t *testing.T) {
 			runtime.RuntimeState = apiclientgen.NewOptSandboxRuntimeRuntimeState(
 				apiclientgen.SandboxRuntimeRuntimeState(runtimeState))
 		}
-		return toTUISandbox(apimodel.Sandbox{Runtime: runtime})
+		return toTUISandbox(apimodel.Sandbox{Runtime: runtime}, "host_1")
 	}
 
 	live := errored("running")
@@ -255,7 +255,7 @@ func TestToTUISandboxCarriesBothNames(t *testing.T) {
 	named := func(display, configured string) tui.Sandbox {
 		sb := apimodel.Sandbox{ID: "sbx_abc12345000000p3", DisplayName: display}
 		sb.Config.Name = configured
-		return toTUISandbox(sb)
+		return toTUISandbox(sb, "host_1")
 	}
 
 	titled := named("fix the reaper", "brave-otter")

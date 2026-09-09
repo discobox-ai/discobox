@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"io"
+	"sort"
 	"strings"
 	"sync"
 	"testing"
@@ -151,6 +152,14 @@ type fakeSource struct {
 
 	// draftErr fails every draft write.
 	draftErr error
+
+	// The workspace's automatic push: pushes is what each call answers with,
+	// pushErr fails the call as a whole, and pushCalls records every call as
+	// "<id> <held slug=commit,…>" so a test can hold the window to what it
+	// asked for and what it said it was already holding.
+	pushes    []SourcePush
+	pushErr   error
+	pushCalls []string
 
 	// Calls, in order.
 	drafts    []string // "folder prompt"
@@ -411,6 +420,37 @@ func (f *fakeSource) endedExecs() []string {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	return append([]string(nil), f.ended...)
+}
+
+func (f *fakeSource) PushSources(_ context.Context, id string, held map[string]string) ([]SourcePush, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	holds := make([]string, 0, len(held))
+	for slug, commit := range held {
+		holds = append(holds, slug+"="+commit)
+	}
+	sort.Strings(holds)
+	f.pushCalls = append(f.pushCalls, strings.TrimSpace(id+" "+strings.Join(holds, ",")))
+	if f.pushErr != nil {
+		return nil, f.pushErr
+	}
+	pushes := make([]SourcePush, 0, len(f.pushes))
+	for _, push := range f.pushes {
+		// A source held at what it names now is resolved and not sent again,
+		// which is what the data source does with a push that already failed.
+		if commit, ok := held[push.Slug]; ok && commit == push.Commit {
+			push.Err, push.Pushed = nil, false
+		}
+		pushes = append(pushes, push)
+	}
+	return pushes, nil
+}
+
+// pushedCalls is every automatic push the window has made so far.
+func (f *fakeSource) pushedCalls() []string {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return append([]string(nil), f.pushCalls...)
 }
 
 func (f *fakeSource) OpenEditor(_ context.Context, id string) error {

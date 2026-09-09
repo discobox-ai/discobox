@@ -8,6 +8,7 @@ import (
 	apiclientgen "github.com/discobox-ai/discobox/api/gen"
 	apimodel "github.com/discobox-ai/discobox/api/model"
 	"github.com/discobox-ai/discobox/cli/internal/tui"
+	"github.com/discobox-ai/discobox/internal/hostid"
 )
 
 // newAttachCommand implements `discobox attach`: open a discobox's own screen,
@@ -72,7 +73,10 @@ draw a window on, attach is raw whether or not the flag was given.`,
 				if err != nil {
 					return err
 				}
-				box := toTUISandbox(*sandbox)
+				// A machine with no resolvable identity simply has no
+				// discobox of its own to push into; see pushable.
+				hostID, _ := hostid.Get()
+				box := toTUISandbox(*sandbox, hostID)
 				return a.runTUI(cmd, "", tui.WithAttach(box))
 			}
 			fmt.Fprintf(cmd.ErrOrStderr(), "Attaching to the discobox's primary terminal (%s to detach)\n", a.detachHint())

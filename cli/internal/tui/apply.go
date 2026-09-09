@@ -162,7 +162,7 @@ func appliedSourceSections(result ApplyResult) []section {
 			if commit.Commit == "" {
 				continue
 			}
-			text := shortAppliedCommit(commit.Commit)
+			text := shortCommit(commit.Commit)
 			if commit.Subject != "" {
 				text += "  " + commit.Subject
 			}
@@ -180,7 +180,10 @@ func appliedSourceSections(result ApplyResult) []section {
 	return sections
 }
 
-func shortAppliedCommit(commit string) string {
+// shortCommit is how the window spells a full SHA it was handed rather than
+// drawn for it: the apply report's commits, and the tip an automatic push sent.
+// The listing's own commits arrive already short.
+func shortCommit(commit string) string {
 	commit = strings.TrimSpace(commit)
 	if len(commit) > 12 {
 		return commit[:12]

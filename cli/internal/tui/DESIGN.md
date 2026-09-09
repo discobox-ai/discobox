@@ -373,6 +373,52 @@ modules is a string that drifts.
 The link is drawn only when the forward has bound it, the same rule
 `portEntry` follows: an offer to open something unreachable is worse than no
 offer.
+## Pushing, without being asked
+
+The other direction from apply, and deliberately not shaped like it. While a
+workspace is open on a discobox, the window sends whatever has been committed
+here since it was created into the origin that discobox fetches from
+([ADR 0095](../../../docs/adr/0095-the-launcher-pushes-while-you-are-looking-at-a-discobox.md)).
+Nobody presses anything. See `push.go`.
+
+**It is safe to do unasked because of what the target is.** The origin of a
+push-delivered source is a bare repository belonging to one discobox, bound
+read-only into it, written by one client
+([ADR 0058](../../../docs/adr/0058-a-push-delivered-source-has-a-pool-side-origin.md)
+§§1–2). A push moves `origin/<branch>` and stops: nothing in the discobox is
+checked out, rebased or interrupted, and uncommitted work in it cannot be
+touched. Apply is the opposite — it writes the developer's own working tree —
+which is why apply is offered on a band and this is not offered at all.
+
+**The workspace is the trigger, and the only one.** Opening it pushes, and so
+does its own 5s beat (`autoPushEvery`, the listing's) for as long as it stays
+open. The cursor moving down the list pushes nothing: the workspace is the one
+place the window knows which discobox is being worked on, and pushing for every
+row on screen would be local git per box per tick for boxes nobody is looking
+at. The loop is push → answer → schedule rather than a free-running tick, so a
+transfer that outlasts the beat is never overlapped by the next one, and it ends
+with the workspace's generation like every other poll there.
+
+**The row says whether the discobox is this window's to push** (`Sandbox.Pushable`,
+`pushable` in `internal/cli/tui_push.go`): a source delivered by pushing it,
+this machine recorded as the origin host, and a state that can take one. A
+discobox still awaiting its source is excluded on purpose — a push to a parked
+one is its create's delivery, which starts it, and that stays something asked
+for by name at `discobox push`.
+
+**The idle beat costs two ref reads** (`sandboxpush.Resolve`): the branch tip
+against the lease this client last pushed. No transport, no control-plane
+request. The discobox's sources and their repository roots are resolved once and
+held for the life of the window, since a source's delivery, slug and directory
+are fixed at create.
+
+**Nothing is forced, and a refusal is reported once.** The push is
+`discobox push` with no flags, so the lease and the related-history check are
+ADR 0058 §6's and the window never overrides them. A source that was refused is
+held at the commit it failed on (`pushHeld`, passed back as `held`) and resolved
+but not re-sent until the branch moves — otherwise a standing refusal would be a
+permanent red status line with a rejected transfer behind it every five seconds.
+What went is one status line; nothing to send says nothing at all.
 
 ## Decisions
 
@@ -1946,6 +1992,7 @@ the newest one where the busy line goes.
 | `banner.go` | the workspace's attention band: which one is up, where it landed, and what a press on it does |
 | `credentials.go` | the credential inbox: the marks, the band's sentence, and the dialog that answers |
 | `apply.go` | apply: the ready band, the question a click asks, and what is offered when it succeeds |
+| `push.go` | the automatic push: the beat it runs on, what it says, and what it holds back after a refusal |
 | `column.go` | one side of the workspace: a strip of panes, one visible |
 | `workspace.go` | the workspace screen: open, poll/reconcile, tabs, detach, the port forward |
 | `services.go` | the discobox's declared services: the menu behind the leader, and the three verbs |

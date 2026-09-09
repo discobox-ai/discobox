@@ -12,7 +12,7 @@ transport helpers where OpenAPI does not model the stream.
 | `internal/cli` | Cobra command tree, output formatting, local server resolution and auto-start, TUI API adapter, and the attach transports and policy layered on `execstream/client`. Staging itself is the root module's `serverstage`. |
 | `internal/sandboxcreate` | UI-independent client-side sandbox request preparation and creation, including prompt options, source resolution, workspace snapshots, environment/secrets, local user identity, and source push delivery. |
 | `internal/sandboxgit` | The client's git transport to a sandbox: the worktree and origin repository URLs the control plane proxies, bearer-token auth on those requests, and the client-side ref names that record what has been sent. Shared by create, apply and push. |
-| `internal/sandboxpush` | `discobox push`: re-delivering a push-delivered source's commits into the origin repository its sandbox fetches from, under a lease (ADR 0058). |
+| `internal/sandboxpush` | `discobox push`: re-delivering a push-delivered source's commits into the origin repository its sandbox fetches from, under a lease (ADR 0058), and resolving locally whether there is anything to send (ADR 0095). |
 | `internal/origin` | Resolves the client host and project directory a sandbox is created from. Host identity itself is shared, in the root module's `internal/hostid`. |
 | `internal/gitunborn` | A repository with no commits: whether HEAD is unborn, and the tree of a working tree that has no HEAD to be read against. Shared by create (ADR 0083) and apply (ADR 0084), which both have to ask. |
 | `internal/tui` | The `discobox tui` launcher: Bubble Tea presentation and interaction state, expressed against its own `DataSource` interface. See [`internal/tui/DESIGN.md`](internal/tui/DESIGN.md). |
@@ -1282,7 +1282,18 @@ throwaway repository was deleted when that run ended (ADR 0045) and took the
 only copy of those commits with it. `--source`, `--branch`, and `--force` all
 describe a rebase-time push and are refused here rather than ignored.
 
-See [ADR 0058](../docs/adr/0058-a-push-delivered-source-has-a-pool-side-origin.md).
+**The launcher pushes on its own** while its workspace is open on a discobox
+this machine created (`internal/tui/push.go`, `DataSource.PushSources`,
+`internal/cli/tui_push.go`). It is this same transport with no flags, on the
+listing's beat: what the command exists for is a discobox whose origin is stale
+because nobody remembered, and the origin is a repository belonging to that one
+discobox which nothing else reads. `sandboxpush.Resolve` is what makes the
+ordinary beat free — the branch tip against the lease, no transport — and the
+window never passes `--force`, so every refusal ADR 0058 §6 produces is still a
+person's to answer here.
+
+See [ADR 0058](../docs/adr/0058-a-push-delivered-source-has-a-pool-side-origin.md)
+and [ADR 0095](../docs/adr/0095-the-launcher-pushes-while-you-are-looking-at-a-discobox.md).
 
 ## Saying What a Wait Is For
 

@@ -48,6 +48,59 @@ type Result struct {
 	DirtyFiles int
 }
 
+// Pending is what a push would send for one source, worked out without sending
+// anything: the revision to push and the branch it lands on, what that revision
+// names right now, and what this client last put in the origin.
+type Pending struct {
+	Slug string
+	// Branch is the branch in the origin repository the commits would land on.
+	Branch string
+	// LocalRev is the local revision to push, as named.
+	LocalRev string
+	// Commit is what LocalRev resolves to now, full SHA.
+	Commit string
+	// Lease is the commit this client last pushed, full SHA, and LeaseRef is
+	// where that is recorded. HasLease is false when this client has never
+	// pushed to this source, which is not the same as having pushed nothing:
+	// there is then no lease to hold and git's own fast-forward rule stands.
+	Lease    string
+	LeaseRef string
+	HasLease bool
+}
+
+// UpToDate reports that the origin already holds this commit, by this client's
+// own record of what it put there — so there is nothing to send.
+func (p Pending) UpToDate() bool { return p.HasLease && p.Lease == p.Commit }
+
+// Resolve answers "is there anything here to push", locally.
+//
+// It is two ref reads in a repository this machine already has open: the branch
+// tip and the lease. Nothing is dialed and nothing is transferred, which is what
+// makes it the whole cost of an automatic push on the ordinary tick where
+// nothing has been committed since the last one (ADR 0095 §4).
+//
+// It is also the head of the push itself, so what counts as "new commits" is
+// decided in one place rather than once for the asking and once for the doing.
+func Resolve(ctx context.Context, repoRoot, sandboxID string, source apimodel.GitSource, opts Options) (Pending, error) {
+	slug := strings.TrimSpace(source.Slug.Or(""))
+	if slug == "" {
+		return Pending{}, fmt.Errorf("source has no slug to address its origin repository")
+	}
+	pending := Pending{Slug: slug}
+	if err := CheckPushDelivered(source); err != nil {
+		return pending, err
+	}
+	pending.LocalRev, pending.Branch = pushRefs(source, opts.Branch)
+	commit, err := gitutil.ResolveCommit(ctx, repoRoot, pending.LocalRev)
+	if err != nil {
+		return pending, err
+	}
+	pending.Commit = commit
+	pending.LeaseRef = sandboxgit.OriginLeaseRef(sandboxID, slug, pending.Branch)
+	pending.Lease, pending.HasLease = resolveRef(ctx, repoRoot, pending.LeaseRef)
+	return pending, nil
+}
+
 // Options names what to push and how hard to insist.
 type Options struct {
 	// Branch is the local branch to push, landing in the origin repository under
@@ -79,30 +132,24 @@ func Push(ctx context.Context, repoRoot, serverURL, projectID, sandboxID, token 
 // path where one is reachable directly. Everything that decides what to send, and
 // what to refuse, lives here; Push only resolves where to send it.
 func pushTo(ctx context.Context, repoRoot, originURL, token, sandboxID string, source apimodel.GitSource, opts Options) (Result, error) {
-	slug := strings.TrimSpace(source.Slug.Or(""))
-	if slug == "" {
-		return Result{}, fmt.Errorf("source has no slug to address its origin repository")
+	pending, err := Resolve(ctx, repoRoot, sandboxID, source, opts)
+	// Reported whether or not the resolve got that far: a source with no slug
+	// fills in nothing, and every field it did answer is context for the error.
+	result := Result{
+		Slug:     pending.Slug,
+		Branch:   pending.Branch,
+		LocalRev: pending.LocalRev,
+		Commit:   pending.Commit,
+		Lease:    pending.Lease,
 	}
-	result := Result{Slug: slug}
-	if err := CheckPushDelivered(source); err != nil {
-		return result, err
-	}
-
-	localRev, branch := pushRefs(source, opts.Branch)
-	result.LocalRev, result.Branch = localRev, branch
-	commit, err := gitutil.ResolveCommit(ctx, repoRoot, localRev)
 	if err != nil {
 		return result, err
 	}
-	result.Commit = commit
-
-	leaseRef := sandboxgit.OriginLeaseRef(sandboxID, slug, branch)
-	lease, hasLease := resolveRef(ctx, repoRoot, leaseRef)
-	result.Lease = lease
-	if hasLease && lease == commit {
+	if pending.UpToDate() {
 		result.UpToDate = true
 		return result, nil
 	}
+	commit, branch, lease, hasLease := pending.Commit, pending.Branch, pending.Lease, pending.HasLease
 	if !opts.Force {
 		if err := checkRelatedHistory(ctx, repoRoot, source, commit); err != nil {
 			return result, err
@@ -127,7 +174,7 @@ func pushTo(ctx context.Context, repoRoot, originURL, token, sandboxID string, s
 	if _, err := gitutil.Output(ctx, repoRoot, nil, nil, sandboxgit.AuthArgs(token, args)...); err != nil {
 		return result, pushError(err, hasLease, opts.Force)
 	}
-	if err := gitutil.UpdateRef(ctx, repoRoot, leaseRef, commit); err != nil {
+	if err := gitutil.UpdateRef(ctx, repoRoot, pending.LeaseRef, commit); err != nil {
 		return result, err
 	}
 	return result, nil

@@ -236,6 +236,17 @@ type Sandbox struct {
 	Commit string // the commit it was spawned from, short
 	Dirty  bool   // spawned from a snapshot on top of that commit
 
+	// Pushable reports that new local commits here are this window's to send:
+	// the discobox has a source delivered by pushing it, this machine is the
+	// one it was pushed from, and it is in a state to take another push
+	// (ADR 0095 §2). Whether there are any new commits is a local question,
+	// asked by the push itself and never by the listing.
+	//
+	// It is on the row because it is the gate the workspace's automatic push
+	// reads on every beat, and reading it here costs the listing nothing: the
+	// delivery, the origin host and the state are all already in the response.
+	Pushable bool
+
 	// Git is where the work sits now, when the sandbox's agent has reported;
 	// the spawn fields above are the fallback until it does.
 	Git GitState
@@ -1083,6 +1094,27 @@ type Approval struct {
 	TTLSeconds int64
 }
 
+// SourcePush is what one of a discobox's push-delivered sources did when the
+// window last looked at it: what the local branch resolves to now, and whether
+// that moved the discobox's origin.
+//
+// A source with nothing to send reports the commit both ends already hold and
+// nothing else, so "checked, and there was nothing" and "sent" are the same
+// shape.
+type SourcePush struct {
+	Slug   string
+	Branch string
+	// Commit is the local tip resolved for this source, whether or not it was
+	// sent. It is what the window records against a failure, so the same
+	// refused push is not attempted again every beat.
+	Commit string
+	// Pushed reports that the discobox's origin moved.
+	Pushed bool
+	// Err is why this source did not push. Having nothing to send is not one:
+	// that is the ordinary answer, and it is not an error.
+	Err error
+}
+
 type DataSource interface {
 	// Session is read once at startup, and is what the header and the run
 	// options panel are drawn from.
@@ -1160,6 +1192,27 @@ type DataSource interface {
 	// sandbox. The window stays exactly where it was, which is the point: the
 	// terminal and the editor are two views of one sandbox, open at once.
 	OpenEditor(ctx context.Context, sandboxID string) error
+
+	// PushSources sends this machine's new commits into the origin
+	// repositories the discobox's push-delivered sources fetch from — the
+	// transport `discobox push` performs, with no flags (ADR 0058 §5,
+	// ADR 0095 §3). Nothing in the discobox moves: it gains origin/<branch>,
+	// and whoever is working in it rebases when they choose.
+	//
+	// held names, per source slug, a commit whose push has already failed.
+	// Such a source is resolved but not sent again while it names that same
+	// commit, so a standing refusal — a stale lease, an unrelated history —
+	// costs a ref read rather than a rejected transfer on every beat.
+	//
+	// It is called only for a discobox whose row is Pushable, and it is
+	// answered locally when nothing has been committed since the last call:
+	// resolving a branch tip against the lease dials nothing.
+	//
+	// The returned error is the call failing as a whole — the discobox could
+	// not be read, the git route could not be opened. A source that could not
+	// be pushed reports on its own SourcePush instead, because the others
+	// still can be.
+	PushSources(ctx context.Context, sandboxID string, held map[string]string) ([]SourcePush, error)
 
 	// Harnesses is the project's harnesses, oldest first, which is the order
 	// they were registered in. It is read at startup as well as by the harnesses

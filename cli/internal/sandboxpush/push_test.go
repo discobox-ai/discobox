@@ -2,6 +2,7 @@ package sandboxpush
 
 import (
 	"context"
+	"errors"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -357,5 +358,60 @@ func TestCheckPushDeliveredExplainsWhyThereIsNothingToPush(t *testing.T) {
 	err = CheckPushDelivered(remote)
 	if err == nil || !strings.Contains(err.Error(), "from a remote") {
 		t.Fatalf("remote source error = %v", err)
+	}
+}
+
+// Resolve is what an automatic push asks on every beat, so it has to answer
+// without sending anything: it reads the branch and the lease, and says whether
+// there is anything between them.
+func TestResolveAnswersWhetherThereIsAnythingToSend(t *testing.T) {
+	root, base := clientRepo(t, "main")
+	origin := originRepo(t, "main")
+	source := pushDeliveredSource("main", base)
+
+	// Nothing has been pushed from here, so there is no lease to be up to date
+	// against: an unpushed branch is something to send.
+	first, err := Resolve(context.Background(), root, testSandbox, source, Options{})
+	if err != nil {
+		t.Fatalf("resolve: %v", err)
+	}
+	if first.HasLease || first.UpToDate() || first.Commit != base || first.Branch != "main" {
+		t.Fatalf("resolve = %#v, want %s on main with no lease", first, base)
+	}
+
+	if _, err := push(t, root, origin, source, Options{}); err != nil {
+		t.Fatalf("push: %v", err)
+	}
+	sent, err := Resolve(context.Background(), root, testSandbox, source, Options{})
+	if err != nil {
+		t.Fatalf("resolve after push: %v", err)
+	}
+	if !sent.UpToDate() || sent.Lease != base {
+		t.Fatalf("resolve = %#v, want the pushed commit leased and up to date", sent)
+	}
+
+	next := commitFile(t, root, "README.md", "two\n", "two")
+	moved, err := Resolve(context.Background(), root, testSandbox, source, Options{})
+	if err != nil {
+		t.Fatalf("resolve after commit: %v", err)
+	}
+	if moved.UpToDate() || moved.Commit != next {
+		t.Fatalf("resolve = %#v, want the new commit pending", moved)
+	}
+	// And it said so without touching the origin, which still holds the old tip.
+	if got := git(t, origin, "rev-parse", "refs/heads/main"); got != base {
+		t.Fatalf("origin main = %q, want resolving to have sent nothing", got)
+	}
+}
+
+// A source the discobox reaches on its own has nothing to resolve, so the
+// answer is the same refusal the push gives rather than a commit.
+func TestResolveRefusesASourceThatIsNotPushDelivered(t *testing.T) {
+	root, base := clientRepo(t, "main")
+	source := pushDeliveredSource("main", base)
+	source.Delivery.Reset()
+
+	if _, err := Resolve(context.Background(), root, testSandbox, source, Options{}); !errors.Is(err, ErrNotPushDelivered) {
+		t.Fatalf("resolve = %v, want it to say there is nothing to push into", err)
 	}
 }

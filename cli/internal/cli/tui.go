@@ -8,6 +8,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/spf13/cobra"
@@ -17,6 +18,7 @@ import (
 	"github.com/discobox-ai/discobox/cli/internal/keys"
 	"github.com/discobox-ai/discobox/cli/internal/sandboxcreate"
 	"github.com/discobox-ai/discobox/cli/internal/tui"
+	"github.com/discobox-ai/discobox/internal/hostid"
 	"github.com/discobox-ai/x/gitutil"
 )
 
@@ -146,6 +148,12 @@ type apiDataSource struct {
 	app       *App
 	client    *apiclientgen.Client
 	projectID string
+
+	// pushCache is what an automatic push resolves to per discobox, guarded by
+	// pushMu: the window pushes one discobox at a time, but the answer outlives
+	// any one call. See tui_push.go.
+	pushMu    sync.Mutex
+	pushCache map[string]*pushTargets
 }
 
 // Session is what the header, the origin filter and the run options are drawn
@@ -212,9 +220,13 @@ func (d *apiDataSource) List(ctx context.Context) ([]tui.Sandbox, error) {
 		return nil, err
 	}
 	sandboxes := sortedByRecency(body.GetSandboxes(), func(sb apimodel.Sandbox) time.Time { return sb.CreatedAt })
+	// This machine's identity, resolved once for the listing rather than per
+	// row: it is what decides whether a discobox's origin is this window's to
+	// push into. A machine that cannot resolve one pushes nothing (pushable).
+	hostID, _ := hostid.Get()
 	out := make([]tui.Sandbox, 0, len(sandboxes))
 	for _, sb := range sandboxes {
-		out = append(out, toTUISandbox(sb))
+		out = append(out, toTUISandbox(sb, hostID))
 	}
 	return out, nil
 }
@@ -355,7 +367,7 @@ func percentOf(value, of float64) int {
 	return min(max(int(value/of*100+0.5), 0), 100)
 }
 
-func toTUISandbox(sb apimodel.Sandbox) tui.Sandbox {
+func toTUISandbox(sb apimodel.Sandbox, hostID string) tui.Sandbox {
 	row := tui.Sandbox{
 		ID:   sb.ID,
 		Name: sb.DisplayName,
@@ -406,6 +418,7 @@ func toTUISandbox(sb apimodel.Sandbox) tui.Sandbox {
 		// which is exactly what the starred commit on the row means.
 		row.Dirty = sourceSnapshotRef(source) != ""
 	}
+	row.Pushable = pushable(sb, hostID)
 	row.Ports = sandboxListeningPorts(sb)
 	if git := sandboxGitStatus(sb); git.Known {
 		row.Git = tui.GitState{
@@ -656,7 +669,8 @@ func (d *apiDataSource) Run(ctx context.Context, req tui.RunRequest, report func
 	if err := d.app.writeProjectSSHConfig(ctx, d.client, d.projectID, "", notes); err != nil {
 		return tui.Sandbox{}, fmt.Errorf("sync SSH config: %w", err)
 	}
-	return toTUISandbox(*sandbox), nil
+	hostID, _ := hostid.Get()
+	return toTUISandbox(*sandbox, hostID), nil
 }
 
 // WatchProvisioning says what a discobox that is not usable yet is being made
