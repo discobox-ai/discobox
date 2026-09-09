@@ -89,7 +89,10 @@ discobox holding foo and nothing else.
 -i brings extra sources into the same discobox, repeat it for more than one. Each
 is resolved exactly like the source directory is, uncommitted changes included,
 and a local one keeps its own absolute path inside the discobox, so ../foo shows
-up at the path readlink -f ../foo prints.
+up at the path readlink -f ../foo prints. A source from a directory the discobox
+cannot hold at that path -- anything outside /home, /Users, /mnt, /workspace,
+/Volumes and /media, since the rest belongs to the discobox's own system -- is
+placed under /workspace instead, named after itself.
 
 A repository can name the others it is worked on with, in .discobox/sources.json
 at its root:
@@ -235,7 +238,7 @@ func addRunFlags(cmd *cobra.Command, opts *runCommandOptions) *pflag.FlagSet {
 	flags.StringArrayVarP(&opts.promptFlag, "prompt", "p", nil, "Prompt for the harness, as one argument; repeat to pass more argv tokens. The same thing as the words after \"run\", and the only spelling the bare \"discobox\" has for a prompt")
 	flags.StringArrayVarP(&opts.prompt.Env, "env", "e", nil, "Environment variable as KEY=VALUE or KEY from the local environment; repeat for multiple variables. A KEY whose name contains KEY, TOKEN, PASS, or SECRET is treated as a secret; use KEY!=VALUE to force it to be a plain environment variable")
 	flags.StringArrayVarP(&opts.prompt.Secret, "secret", "s", nil, "Secret injected as a sentinel placeholder resolved by the proxy at runtime, as KEY=VALUE (inline value) or KEY=<SECRET_ID> (reference an existing secret); repeat for multiple secrets")
-	flags.StringArrayVarP(&opts.prompt.Include, "include", "i", nil, "Additional source directory or Git repository to bring into the discobox, optionally with @REF; repeat for more than one. A local directory keeps its own absolute path inside the discobox and is named after itself, so -i ../foo is the source foo")
+	flags.StringArrayVarP(&opts.prompt.Include, "include", "i", nil, "Additional source directory or Git repository to bring into the discobox, optionally with @REF; repeat for more than one. A local directory keeps its own absolute path inside the discobox where the discobox can hold it, and is named after itself either way, so -i ../foo is the source foo")
 	flags.StringVarP(&opts.prompt.Harness, "harness", "H", "", "Harness config to run, by slug (e.g. codex), name, or ID; defaults to the project default")
 	flags.BoolVarP(&opts.detach, "detach", "d", false, "Create the discobox and print it without attaching to its terminal")
 	flags.BoolVar(&opts.raw, "raw", false, "Create the discobox here and attach this terminal straight to its terminal, instead of making it in the window")

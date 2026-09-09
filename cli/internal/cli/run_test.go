@@ -117,9 +117,8 @@ func TestRunCommandCreatesSandbox(t *testing.T) {
 		t.Fatalf("checkout = %#v, want commit %s", checkout, commit)
 	}
 	destination := source["destination"].(map[string]any)
-	// A POSIX host path doubles as a sandbox path, so the destination mirrors
-	// the repo root there. A Windows path does not -- the sandbox runs Linux --
-	// so it is mirrored under the /mnt name WSL gives that same path.
+	// Where a source from this test's directory lands in the sandbox; see
+	// wantSourceDirectory.
 	wantDir := wantSourceDirectory(t, repo)
 	if destination["directory"] != wantDir || destination["workingDirectory"] != wantDir {
 		t.Fatalf("destination = %#v, want %s", destination, wantDir)
@@ -178,9 +177,8 @@ func TestRunCommandDefaultsSourceToCurrentDirectory(t *testing.T) {
 		t.Fatalf("localDirectory = %q, want %s", source["localDirectory"], repo)
 	}
 	destination := source["destination"].(map[string]any)
-	// A POSIX host path doubles as a sandbox path, so the destination mirrors
-	// the repo root there. A Windows path does not -- the sandbox runs Linux --
-	// so it is mirrored under the /mnt name WSL gives that same path.
+	// Where a source from this test's directory lands in the sandbox; see
+	// wantSourceDirectory.
 	wantDir := wantSourceDirectory(t, repo)
 	if destination["directory"] != wantDir || destination["workingDirectory"] != wantDir {
 		t.Fatalf("destination = %#v, want %s", destination, wantDir)
@@ -378,10 +376,21 @@ func runTestSandboxJSON(sandboxID, phase string) string {
 // wantSourceDirectory is the sandbox directory a local repo root lands in on
 // the platform the test is running on: the host path itself on a POSIX host,
 // and the /mnt path WSL mounts it under on Windows.
+// wantSourceDirectory is where the source these tests create lands inside the
+// sandbox.
+//
+// Their repositories are built under t.TempDir(), which is /tmp — a directory
+// the sandbox's own systemd owns, so a source is never placed there and is
+// clamped to the default location instead (ADR 0096). What each of these tests
+// is about is the request the create sends, not the mirroring rule, which is
+// asserted where it lives, in internal/sandboxcreate.
 func wantSourceDirectory(t *testing.T, repoRoot string) string {
 	t.Helper()
 	if runtime.GOOS != "windows" {
-		return repoRoot
+		if !strings.HasPrefix(filepath.ToSlash(repoRoot), "/tmp/") {
+			t.Fatalf("test repo %s is no longer under /tmp; this expectation assumes it is", repoRoot)
+		}
+		return "/workspace/source"
 	}
 	volume := filepath.VolumeName(repoRoot)
 	if len(volume) != 2 || volume[1] != ':' {

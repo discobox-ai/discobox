@@ -30,8 +30,9 @@ const (
 	defaultRunSourceDir    = "/workspace/source"
 	defaultRunWorkingDir   = "/workspace/source"
 	defaultRemoteBranch    = "HEAD"
-	// referenceRunSourceRoot holds an extra source that has no host path of its
-	// own to keep, which is every remote one.
+	// referenceRunSourceRoot holds an extra source with no host path of its own
+	// to keep: every remote one, and every local one whose path a sandbox may
+	// not hold (mirrorableSourceRoots).
 	referenceRunSourceRoot = "/workspace"
 	// wslDriveRoot is where WSL mounts the Windows drives, and so where a
 	// Windows host path is mirrored to inside a sandbox.
@@ -814,9 +815,9 @@ type referencePlacement struct {
 // It is the same resolution the primary source gets — a local repository, a
 // directory in no repository, or a remote URL, each asked about its own
 // uncommitted work — and differs only in where the result lands and what it is
-// called. A local source keeps its own absolute host path inside the sandbox,
-// exactly as the primary source does, so a path means the same thing on both
-// sides of the sandbox boundary.
+// called. A local source keeps its own absolute host path inside the sandbox
+// exactly as the primary source does, wherever that path is one a sandbox may
+// hold, so a path means the same thing on both sides of the sandbox boundary.
 //
 // used carries the names already taken by earlier references so two of them
 // cannot both claim one; a collision with the primary source's own slug is the
@@ -848,28 +849,41 @@ func resolveRunSourceReference(ctx context.Context, arg string, placement refere
 
 // referenceDestination is the sandbox directory an extra source is placed in,
 // and the name it takes from.
+//
+// A source that keeps its own host path is placed at it. One that does not — a
+// remote, or a local repository from a root a sandbox may not hold (ADR 0096) —
+// is placed by name under the reference root, which is also what keeps two such
+// sources from both landing on the primary's default directory.
 func referenceDestination(resolved resolvedRunSource, placement referencePlacement) (directory, name string) {
-	if resolved.URL != "" {
-		name = placement.Name
-		if name == "" {
-			name = remoteSourceName(resolved.URL)
+	if resolved.URL == "" {
+		if _, mirrored := sandboxSourceRoot(resolved.LocalDirectory); mirrored {
+			// The local destination is the repository root, not the directory
+			// that was named: running against a subdirectory brings in the
+			// repository that holds it, and the source is named after what it
+			// actually is unless the caller named it.
+			directory = filepath.ToSlash(resolved.Destination.Directory)
+			name = placement.Name
+			if name == "" {
+				name = path.Base(directory)
+			}
+			return directory, name
 		}
-		root := placement.Root
-		if root == "" {
-			root = referenceRunSourceRoot
-		}
-		return path.Join(filepath.ToSlash(root), slugifySource(name)), name
 	}
-	// The local destination is the repository root, not the directory that was
-	// named: running against a subdirectory brings in the repository that holds
-	// it, and the source is named after what it actually is unless the caller
-	// named it.
-	directory = filepath.ToSlash(resolved.Destination.Directory)
 	name = placement.Name
 	if name == "" {
-		name = path.Base(directory)
+		if resolved.URL != "" {
+			name = remoteSourceName(resolved.URL)
+		} else {
+			// Named after the directory it came from, which is the name it
+			// would have kept had its path been one a sandbox may hold.
+			name = path.Base(filepath.ToSlash(resolved.LocalDirectory))
+		}
 	}
-	return directory, name
+	root := placement.Root
+	if root == "" {
+		root = referenceRunSourceRoot
+	}
+	return path.Join(filepath.ToSlash(root), slugifySource(name)), name
 }
 
 // remoteSourceName is the repository name a remote URL ends in.
@@ -940,45 +954,36 @@ func defaultRunDestination() resolvedRunSourceDestination {
 	}
 }
 
-// localRunDestination keeps the repo root as the sandbox source directory and
-// makes the requested source directory the working directory, so running
-// against a subdirectory of a repo starts the harness in that subdirectory. The
-// inside-repo guard covers cases where the source path does not sit under the
-// resolved root lexically (e.g. symlinked paths).
+// localRunDestination is where a local source lands inside the sandbox: the
+// repository root at the path it keeps there, with the requested source
+// directory as the working directory, so running against a subdirectory of a
+// repo starts the harness in that subdirectory. The inside-repo guard covers
+// cases where the source path does not sit under the resolved root lexically
+// (e.g. symlinked paths).
+//
+// A repository whose host path is not one a sandbox may hold is placed at the
+// default location instead, as a remote source always has been (ADR 0096 §2).
+// That is a placement, not a refusal: the host directory is the caller's, the
+// mount point inside the sandbox is ours, and only the second one can collide
+// with the sandbox's own operating system.
 func localRunDestination(repoRoot, sourceDir string) resolvedRunSourceDestination {
 	workingDirectory := repoRoot
 	if dir := filepath.Clean(sourceDir); pathInsideDirectory(repoRoot, dir) {
 		workingDirectory = dir
 	}
-	if runtime.GOOS == "windows" {
-		return windowsRunDestination(repoRoot, workingDirectory)
-	}
-	return resolvedRunSourceDestination{
-		Directory:        repoRoot,
-		WorkingDirectory: workingDirectory,
-	}
-}
-
-// windowsRunDestination mirrors the host path the way a POSIX host does, in the
-// spelling WSL gives that same path: "E:\src\project" becomes
-// "/mnt/e/src/project".
-//
-// A Windows path cannot be mirrored verbatim -- the sandbox runs Linux, and the
-// daemon rejects "E:\src\project" outright as not absolute -- but it does have a
-// POSIX name, the one WSL already mounts it under, so the mapping stays
-// one-to-one and reversible instead of collapsing every source onto one
-// container directory. The drive letter is lowercased because that is how WSL
-// spells /mnt, and the rest keeps the case it has on the host.
-//
-// A path with no drive letter -- a UNC share, or a path already inside a WSL
-// distro -- has no /mnt name, so it falls back to the default container
-// location, with the requested subdirectory honored by its position within the
-// repository rather than by its spelling on this machine.
-func windowsRunDestination(repoRoot, workingDirectory string) resolvedRunSourceDestination {
-	root, ok := wslPath(repoRoot)
+	root, ok := sandboxSourceRoot(repoRoot)
 	if !ok {
 		root = defaultRunSourceDir
 	}
+	return placeRunSource(repoRoot, workingDirectory, root)
+}
+
+// placeRunSource puts a repository at root inside the sandbox, carrying the
+// working directory's position *within* the repository over to it rather than
+// its spelling on this machine. A root that is the repository's own mirrored
+// path reproduces both paths exactly; any other root keeps the subdirectory the
+// caller asked for.
+func placeRunSource(repoRoot, workingDirectory, root string) resolvedRunSourceDestination {
 	destination := resolvedRunSourceDestination{Directory: root, WorkingDirectory: root}
 	rel, err := filepath.Rel(repoRoot, workingDirectory)
 	if err != nil || rel == "." {
@@ -988,9 +993,66 @@ func windowsRunDestination(repoRoot, workingDirectory string) resolvedRunSourceD
 	return destination
 }
 
+// mirrorableSourceRoots are the directories a source may occupy inside a
+// sandbox under its own host path (ADR 0096 §1): where user data lives on every
+// platform Discobox runs on, and nothing the sandbox image manages.
+//
+// It is an allow-list rather than a list of directories to keep out of, because
+// the two fail in opposite directions. A source placed somewhere unexpected is
+// a source at /workspace/source, which works; a source mounted onto a directory
+// the sandbox's own systemd manages is a discobox that comes up healthy with an
+// empty mount point where its code should be — /tmp is mounted over during boot
+// and aged at 10 days — and says so only as a chdir failure hours later.
+var mirrorableSourceRoots = []string{
+	"/home",
+	"/Users",
+	"/mnt",
+	"/workspace",
+	"/Volumes",
+	"/media",
+}
+
+// sandboxSourceRoot is the path a host directory keeps inside a sandbox, and
+// whether it keeps one at all.
+//
+// The two platforms ask the same question and answer it differently: a Windows
+// path is mirrored under the /mnt name WSL already gives it, and a POSIX path
+// is mirrored as itself when it comes from a root a sandbox may hold. Either
+// way, "no" means the source is placed where one with no host path is placed
+// rather than refused (ADR 0096 §2).
+func sandboxSourceRoot(hostPath string) (string, bool) {
+	if runtime.GOOS == "windows" {
+		return wslPath(hostPath)
+	}
+	dir := path.Clean(filepath.ToSlash(hostPath))
+	if !path.IsAbs(dir) {
+		return "", false
+	}
+	for _, root := range mirrorableSourceRoots {
+		// A child of the root, never the root itself: a source at /home is not
+		// a checkout, and mounting over the whole of one of these is the case
+		// this rule exists to prevent.
+		if strings.HasPrefix(dir, root+"/") {
+			return dir, true
+		}
+	}
+	return "", false
+}
+
 // wslPath is the /mnt path WSL exposes a Windows drive path under, and reports
 // whether the path has one at all. It parses the path itself rather than asking
 // the filepath package, so it answers the same on every host.
+//
+// A Windows path cannot be mirrored verbatim — the sandbox runs Linux, and the
+// daemon rejects "E:\src\project" outright as not absolute — but it does have a
+// POSIX name, the one WSL already mounts it under, so the mapping stays
+// one-to-one and reversible instead of collapsing every source onto one
+// container directory. The drive letter is lowercased because that is how WSL
+// spells /mnt, and the rest keeps the case it has on the host.
+//
+// A path with no drive letter — a UNC share, or a path already inside a WSL
+// distro — has no /mnt name and no other path a sandbox may hold, which is the
+// same answer sandboxSourceRoot gives a POSIX path from an unmirrorable root.
 func wslPath(hostPath string) (string, bool) {
 	if len(hostPath) < 2 || hostPath[1] != ':' {
 		return "", false

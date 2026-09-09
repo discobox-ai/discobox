@@ -781,3 +781,105 @@ func newUnbornRunSourceTestRepo(t *testing.T) string {
 	git("config", "user.name", "Test User")
 	return repo
 }
+
+// The rule itself: a source keeps its own path inside the sandbox only from a
+// root the sandbox may hold, and is placed at the default location otherwise
+// (ADR 0096). The unsafe half is what matters — /tmp is a tmpfs systemd mounts
+// over during boot, so a source targeted there is a mount point that comes up
+// empty.
+func TestLocalRunDestinationMirrorsOnlySafeRoots(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("POSIX roots; the Windows mapping is TestLocalRunDestinationWindows*")
+	}
+	for _, tc := range []struct {
+		repo string
+		want string
+	}{
+		{"/home/darren/src/app", "/home/darren/src/app"},
+		{"/Users/darren/src/app", "/Users/darren/src/app"},
+		{"/mnt/c/src/app", "/mnt/c/src/app"},
+		{"/mnt/data/app", "/mnt/data/app"},
+		{"/workspace/app", "/workspace/app"},
+		{"/Volumes/External/app", "/Volumes/External/app"},
+		{"/media/darren/stick/app", "/media/darren/stick/app"},
+
+		{"/tmp/scratch/app", defaultRunSourceDir},
+		{"/var/lib/app", defaultRunSourceDir},
+		{"/etc/app", defaultRunSourceDir},
+		{"/usr/local/src/app", defaultRunSourceDir},
+		{"/srv/app", defaultRunSourceDir},
+		{"/opt/app", defaultRunSourceDir},
+		{"/app", defaultRunSourceDir},
+		// The roots themselves are not sources: a repository at /home is not a
+		// checkout, and mounting over the whole of one is what this prevents.
+		{"/home", defaultRunSourceDir},
+		{"/workspace", defaultRunSourceDir},
+	} {
+		got := localRunDestination(tc.repo, tc.repo)
+		if got.Directory != tc.want || got.WorkingDirectory != tc.want {
+			t.Errorf("%s -> %#v, want %s", tc.repo, got, tc.want)
+		}
+	}
+}
+
+// A clamped source still starts the harness in the subdirectory that was asked
+// for: what it loses is the spelling on this machine, not the position within
+// the repository.
+func TestLocalRunDestinationClampKeepsTheSubdirectory(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("POSIX roots")
+	}
+	got := localRunDestination("/tmp/scratch/app", "/tmp/scratch/app/services/api")
+	want := resolvedRunSourceDestination{
+		Directory:        "/workspace/source",
+		WorkingDirectory: "/workspace/source/services/api",
+	}
+	if got != want {
+		t.Fatalf("destination = %#v, want %#v", got, want)
+	}
+}
+
+// Two references from an unmirrorable root are placed by their own names, not
+// both onto the primary's default directory — which is the collision the
+// by-name placement exists to prevent.
+func TestReferenceDestinationPlacesUnmirrorableSourcesByName(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("POSIX roots")
+	}
+	api := resolvedRunSource{
+		LocalDirectory: "/tmp/scratch/api",
+		Destination:    localRunDestination("/tmp/scratch/api", "/tmp/scratch/api"),
+	}
+	web := resolvedRunSource{
+		LocalDirectory: "/tmp/other/web",
+		Destination:    localRunDestination("/tmp/other/web", "/tmp/other/web"),
+	}
+
+	apiDir, apiName := referenceDestination(api, referencePlacement{})
+	webDir, _ := referenceDestination(web, referencePlacement{})
+	if apiDir != "/workspace/api" || apiName != "api" {
+		t.Fatalf("api -> %q named %q, want /workspace/api named api", apiDir, apiName)
+	}
+	if webDir != "/workspace/web" {
+		t.Fatalf("web -> %q, want /workspace/web", webDir)
+	}
+	if apiDir == webDir {
+		t.Fatal("two clamped references landed on one directory")
+	}
+}
+
+// A reference whose path the sandbox may hold still keeps it, which is the
+// whole point of the mirroring rule.
+func TestReferenceDestinationKeepsAMirrorablePath(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("POSIX roots")
+	}
+	source := resolvedRunSource{
+		LocalDirectory: "/home/darren/src/api",
+		Destination:    localRunDestination("/home/darren/src/api", "/home/darren/src/api"),
+	}
+	dir, name := referenceDestination(source, referencePlacement{})
+	if dir != "/home/darren/src/api" || name != "api" {
+		t.Fatalf("reference -> %q named %q, want its own path named api", dir, name)
+	}
+}

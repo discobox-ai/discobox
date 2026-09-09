@@ -257,13 +257,33 @@ func declareSources(t *testing.T, root string, declared map[string]string) {
 // for it. Windows hands out an 8.3 short name (RUNNER~1) and macOS hands out
 // /var where git says /private/var, and these tests compare a path they built
 // against one that came back through source resolution.
+// testWorkspace is a directory a test's sources live in, registered for the
+// length of the test as a root a sandbox may hold.
+//
+// Every source here is built under t.TempDir(), which is /tmp — the one root
+// this package deliberately refuses to mirror into a sandbox, because the
+// sandbox's own systemd owns that directory (ADR 0096). Registering it keeps
+// these tests about what each of them is about; the clamp itself is asserted
+// from an unregistered path, in source_test.go.
 func testWorkspace(t *testing.T) string {
 	t.Helper()
 	dir, err := filepath.EvalSymlinks(t.TempDir())
 	if err != nil {
 		t.Fatal(err)
 	}
+	// The parent, because a source is often the workspace directory itself and
+	// a root is mirrored for its children rather than for itself.
+	mirrorRootForTest(t, filepath.Dir(dir))
 	return dir
+}
+
+// mirrorRootForTest makes root a directory a source may keep its own path
+// under, until the test ends.
+func mirrorRootForTest(t *testing.T, root string) {
+	t.Helper()
+	previous := mirrorableSourceRoots
+	mirrorableSourceRoots = append(append([]string{}, previous...), filepath.ToSlash(root))
+	t.Cleanup(func() { mirrorableSourceRoots = previous })
 }
 
 func newRunSourceTestRepoIn(t *testing.T, workspace, name string) string {

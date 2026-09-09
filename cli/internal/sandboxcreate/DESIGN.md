@@ -21,8 +21,20 @@ sandbox create requests.
   ([ADR 0025](../../../docs/adr/0025-the-sandbox-user-is-one-contract-resolved-inside-the-sandbox.md)
   §5) — root on most harness images. A stated identity is not a guess about the
   local machine, because there is no local answer to get wrong.
-- A local source keeps its own absolute path inside the sandbox, so a path means
-  the same thing on both sides of the boundary. On Windows it keeps that path in
+- A local source keeps its own absolute path inside the sandbox **when that path
+  is one a sandbox may hold** — a child of `/home`, `/Users`, `/mnt`,
+  `/workspace`, `/Volumes` or `/media` (`mirrorableSourceRoots`) — so a path
+  means the same thing on both sides of the boundary. Anywhere else it is placed
+  where a source with no host path goes: the primary at `/workspace/source`, a
+  reference at `/workspace/<name>`, with the requested subdirectory honored by
+  its position within the repository. The destination is a mount target — the
+  sandbox-agent binds `/.discobox/sources/<slug>` onto it — and the sandbox is a
+  systemd machine that owns some of those directories: a source targeted at
+  `/tmp` is mounted onto a tmpfs systemd puts there during boot, so the discobox
+  comes up healthy with nothing in it. It is a placement rule and not a refusal,
+  because the host directory is the caller's and the mount point is ours; see
+  [ADR 0096](../../../docs/adr/0096-a-source-keeps-its-host-path-only-where-a-sandbox-may-hold-it.md).
+  On Windows it keeps that path in
   the spelling WSL gives it: `E:\src\project` becomes `/mnt/e/src/project`, the
   drive letter lowercased because that is how `/mnt` is spelled and the rest left
   in the case it has on the host. A Windows path cannot be mirrored verbatim —
@@ -30,8 +42,9 @@ sandbox create requests.
   absolute — but it already has a POSIX name, so the mapping stays one-to-one
   instead of collapsing every source onto one container directory. A path with no
   drive letter has no `/mnt` name — a UNC share, or a path already inside a
-  distro — and falls back to `/workspace/source`, with the requested
-  subdirectory honored by its position within the repository.
+  distro — and falls back the same way an unmirrorable POSIX path does. One
+  predicate answers both (`sandboxSourceRoot`), and one routine places the
+  result (`placeRunSource`).
 - A source's path on this machine and its path in the sandbox are therefore two
   different things off a POSIX host, and the code that reads the client's disk —
   `.discobox/sources.json`, the checkout beside the primary source — takes the

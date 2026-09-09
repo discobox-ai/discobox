@@ -1282,18 +1282,33 @@ throwaway repository was deleted when that run ended (ADR 0045) and took the
 only copy of those commits with it. `--source`, `--branch`, and `--force` all
 describe a rebase-time push and are refused here rather than ignored.
 
-**The launcher pushes on its own** while its workspace is open on a discobox
-this machine created (`internal/tui/push.go`, `DataSource.PushSources`,
-`internal/cli/tui_push.go`). It is this same transport with no flags, on the
-listing's beat: what the command exists for is a discobox whose origin is stale
-because nobody remembered, and the origin is a repository belonging to that one
-discobox which nothing else reads. `sandboxpush.Resolve` is what makes the
-ordinary beat free — the branch tip against the lease, no transport — and the
-window never passes `--force`, so every refusal ADR 0058 §6 produces is still a
-person's to answer here.
+**An attached client pushes on its own** (`internal/cli/push_auto.go`). Going to
+work in a discobox is when the commits made here belong in its origin, and
+attaching a terminal is that moment — so for as long as an attach lasts, its
+client pushes that discobox's push-delivered sources: at the start, and every
+5s. What the command exists for is a discobox whose origin is stale because
+nobody remembered, and that origin is a repository belonging to one discobox
+which nothing else reads.
+
+Both front ends run the same rule, over one resolver (`App.pushSandboxSources`,
+`pushable`, and a per-discobox cache of what its sources resolve to here):
+
+- the **launcher's workspace**, which attaches to the discobox's terminals when
+  it opens, through `DataSource.PushSources` (`internal/cli/tui_push.go`) on a
+  loop guarded by the workspace generation (`internal/tui/push.go`);
+- a **raw attach** — `attach --raw`, `run --raw`, `admin terminal attach` — from
+  the one choke point they share (`attachSandboxTerminal` →
+  `App.autoPushWhileAttached`).
+
+`sandboxpush.Resolve` is what makes the ordinary beat free — the branch tip
+against the lease, no transport, no request — and neither front end passes
+`--force`, so every refusal ADR 0058 §6 produces is still a person's to answer.
+The window says what moved on its status line; a raw attach says nothing into a
+stream that is the discobox's, and reports what could not be pushed once the
+stream is over.
 
 See [ADR 0058](../docs/adr/0058-a-push-delivered-source-has-a-pool-side-origin.md)
-and [ADR 0095](../docs/adr/0095-the-launcher-pushes-while-you-are-looking-at-a-discobox.md).
+and [ADR 0095](../docs/adr/0095-an-attached-client-pushes-the-commits-made-where-it-runs.md).
 
 ## Saying What a Wait Is For
 
@@ -1449,9 +1464,11 @@ mechanism they use is the primary source's, not a second one:
   primary source does, so `-i ../foo` lands at what `readlink -f ../foo` prints
   and a path means the same thing on both sides of the boundary. That path is
   also the reference's key in the request. On a Windows client it is the path in
-  WSL's spelling — `E:\srcoo` is `/mnt/e/src/foo` — which is the same mirror
-  the primary source gets; see the sandbox creation design doc. A remote source
-  has no host path to keep and goes under `/workspace/<slug>`.
+  WSL's spelling — `E:\src\foo` is `/mnt/e/src/foo` — which is the same mirror
+  the primary source gets; see the sandbox creation design doc. A source with no
+  host path a sandbox may hold — every remote one, and a local one from outside
+  the mirrorable roots — goes under `/workspace/<name>` instead, which is also
+  what keeps two of them from claiming one directory.
 - The slug is the directory's own name — `-i ../foo` is the source `foo` — and
   is what addresses its Git repository in a push. Two references that would take
   the same name are numbered here rather than left to the server, so the slug
