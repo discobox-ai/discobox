@@ -226,8 +226,8 @@ guesses at a URL.
 
 `serverstage` (root module) holds the format and the staging. A release CLI
 carries `serverstage.DefaultManifest`, base64 JSON describing the server assets
-for *its own* platform: a name, a URL and a SHA-256 each, plus which one is the
-command. One platform's, because the release fans out natively (ADR 0066 §4) and
+for *its own* platform: a name, a URL, a SHA-256 and a size each, plus which one
+is the command. One platform's, because the release fans out natively (ADR 0066 §4) and
 no link step sees every platform's digest — but the runner that builds a
 target's server links its CLI moments later, which is the pairing that matters.
 `discobox admin server manifest` prints it, which is both how a user asks what
@@ -1281,6 +1281,17 @@ Byte counts are always a pair and never a percentage: the pool's totals grow
 while a manifest is walked, so a percentage there visibly goes backwards
 (`bytesSuffix`). The server download does know its total, and states it the same
 way anyway, for the same reason the grammar is shared.
+
+**That total is the manifest's, not the response's.** GitHub serves a release
+asset with no `Content-Length` at all, so a download that asked the transport how
+big the file was got `-1` and could only count upwards — which is what
+v0.6.0-alpha.1 actually did, and what `httptest` hid, because it sets the header.
+The size is declared beside the digest instead: the build knows it, having just
+hashed the file, so it is known before the first byte and cannot be a different
+claim about the same file. It is checked after the download too, before the
+digest, because "is 41 bytes, not the 76312841 this build expects" is the legible
+complaint for a truncated download or a URL that has started serving something
+else.
 
 The download narrates before the launcher's window opens, not inside it. The
 window needs a server to list from, so the download is already over by the time

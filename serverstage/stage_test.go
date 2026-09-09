@@ -52,6 +52,7 @@ func (a *assets) manifest(version, command string, names ...string) Manifest {
 			Name:       name,
 			URL:        a.server.URL + "/" + name,
 			SHA256:     hex.EncodeToString(sum[:]),
+			Size:       int64(len(a.files[name])),
 			Executable: name == command,
 		})
 	}
@@ -270,5 +271,72 @@ func TestStagedRejectsAnIncompleteDirectory(t *testing.T) {
 	}
 	if _, ok := Staged(root, manifest); ok {
 		t.Fatal("a directory missing the server counts as staged")
+	}
+}
+
+// The whole point of declaring a size: GitHub serves a release asset with no
+// Content-Length, so a download that asked the transport how big the file was
+// got -1 and could only count upwards. The manifest's size is what the progress
+// line counts towards, and it is there from the first report.
+func TestStageReportsATotalWithoutAContentLength(t *testing.T) {
+	body := []byte("the server, in a response with no declared length")
+	sum := sha256.Sum256(body)
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		// What GitHub's asset CDN does: no Content-Length, chunked instead.
+		w.Header().Set("Transfer-Encoding", "chunked")
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write(body)
+	}))
+	defer server.Close()
+
+	manifest := Manifest{
+		Version: "v1", OS: runtime.GOOS, Arch: runtime.GOARCH, Command: "discobox-server",
+		Assets: []Asset{{
+			Name: "discobox-server", URL: server.URL + "/discobox-server",
+			SHA256: hex.EncodeToString(sum[:]), Size: int64(len(body)), Executable: true,
+		}},
+	}
+	var first Progress
+	seen := false
+	if _, err := Stage(context.Background(), manifest, Options{
+		Root: t.TempDir(),
+		OnProgress: func(p Progress) {
+			if !seen && !p.Done {
+				first, seen = p, true
+			}
+		},
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if !seen {
+		t.Fatal("staging reported nothing")
+	}
+	if first.Total != int64(len(body)) {
+		t.Fatalf("first report total = %d, want the manifest's %d: the total must not come from the response", first.Total, len(body))
+	}
+}
+
+// A size that does not match is reported as a size, not as a digest. Both catch
+// it, but "is 41 bytes, not the 94371840 this build expects" is the legible
+// complaint for a truncated download or a URL that now serves something else.
+func TestStageReportsAWrongSizeAsASize(t *testing.T) {
+	served := serveAssets(t, map[string][]byte{"discobox-server": []byte("the server")})
+	manifest := served.manifest("v1", "discobox-server", "discobox-server")
+	manifest.Assets[0].Size = 999999
+	root := t.TempDir()
+
+	_, err := Stage(context.Background(), manifest, Options{Root: root})
+	if err == nil {
+		t.Fatal("staging an asset of the wrong size succeeded")
+	}
+	if !strings.Contains(err.Error(), "999999") || !strings.Contains(err.Error(), "bytes") {
+		t.Fatalf("error %q does not name the size it expected", err)
+	}
+	entries, err := os.ReadDir(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(entries) != 0 {
+		t.Fatalf("a failed staging left %v behind", entries)
 	}
 }

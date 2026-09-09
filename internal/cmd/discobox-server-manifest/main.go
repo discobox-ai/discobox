@@ -80,7 +80,7 @@ func run() error {
 		if !ok {
 			return fmt.Errorf("-asset %q is not name=path", entry)
 		}
-		digest, err := sha256File(path)
+		digest, size, err := sha256File(path)
 		if err != nil {
 			return err
 		}
@@ -88,6 +88,7 @@ func run() error {
 			Name:       name,
 			URL:        strings.TrimSuffix(*baseURL, "/") + "/" + filepath.Base(path),
 			SHA256:     digest,
+			Size:       size,
 			Executable: name == *command || slices.Contains(executable, name),
 		})
 	}
@@ -99,15 +100,19 @@ func run() error {
 	return nil
 }
 
-func sha256File(path string) (string, error) {
+// sha256File is the asset's digest and its size, taken in one pass. The size
+// comes from the copy rather than from a stat so the two cannot describe
+// different reads of the file.
+func sha256File(path string) (string, int64, error) {
 	file, err := os.Open(path)
 	if err != nil {
-		return "", err
+		return "", 0, err
 	}
 	defer file.Close()
 	digest := sha256.New()
-	if _, err := io.Copy(digest, file); err != nil {
-		return "", err
+	size, err := io.Copy(digest, file)
+	if err != nil {
+		return "", 0, err
 	}
-	return hex.EncodeToString(digest.Sum(nil)), nil
+	return hex.EncodeToString(digest.Sum(nil)), size, nil
 }

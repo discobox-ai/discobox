@@ -40,6 +40,16 @@ type Asset struct {
 	// SHA256 is the digest the download must have, lowercase hex. It is what
 	// makes the download trustworthy rather than the transport it arrived over.
 	SHA256 string `json:"sha256"`
+	// Size is how many bytes that is, which the build knows because it hashed
+	// the file to fill in SHA256.
+	//
+	// It is declared rather than read from the response because the response
+	// does not carry it: GitHub serves a release asset with no Content-Length,
+	// so a download that trusted the transport had nothing to count towards
+	// and could only report a number going up. Declaring it means the total is
+	// known before the first byte and cannot be a different claim from the
+	// digest's — they describe the same file, decided at the same moment.
+	Size int64 `json:"size"`
 	// Executable marks an asset that is staged with the execute bit. The rest
 	// are staged readable by this user and nothing else.
 	Executable bool `json:"executable,omitempty"`
@@ -188,6 +198,9 @@ func (a Asset) validate() error {
 	}
 	if !sha256Pattern.MatchString(a.SHA256) {
 		return fmt.Errorf("server manifest asset %q has no usable sha256 digest", a.Name)
+	}
+	if a.Size <= 0 {
+		return fmt.Errorf("server manifest asset %q declares no size", a.Name)
 	}
 	parsed, err := url.Parse(a.URL)
 	if err != nil {

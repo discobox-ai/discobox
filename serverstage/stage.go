@@ -40,8 +40,8 @@ type Progress struct {
 	// 1", so a renderer is given the numbers rather than a phrase.
 	Index  int
 	Assets int
-	// Current and Total are bytes of this asset. Total is 0 when the server
-	// did not declare a length, which is the case a renderer has to survive.
+	// Current and Total are bytes of this asset. Total is the size the
+	// manifest declares, so it is known from the first report and never grows.
 	Current int64
 	Total   int64
 	// Done marks the closing report, sent once every asset is staged.
@@ -207,15 +207,13 @@ func download(ctx context.Context, client *http.Client, asset Asset, path string
 		return fmt.Errorf("download %s: %w", asset.Name, err)
 	}
 	digest := sha256.New()
-	// A response that declared no length reports 0 rather than -1: a renderer
-	// showing "of -1 B" is worse than one showing a count with no target.
-	total := resp.ContentLength
-	if total < 0 {
-		total = 0
-	}
 	counted := &countingWriter{
-		to:     io.MultiWriter(file, digest),
-		total:  total,
+		to: io.MultiWriter(file, digest),
+		// The manifest's size, not the response's. GitHub serves a release
+		// asset with no Content-Length at all, so a download that asked the
+		// transport how big the file was got -1 and could only count upwards —
+		// which is what the first alpha's progress line actually did.
+		total:  asset.Size,
 		report: report,
 	}
 	stop := counted.start()
@@ -227,6 +225,13 @@ func download(ctx context.Context, client *http.Client, asset Asset, path string
 	}
 	if closeErr != nil {
 		return fmt.Errorf("download %s: %w", asset.Name, closeErr)
+	}
+	// Size before digest, because it is the more legible complaint for the case
+	// that actually happens — a truncated download, or a URL that now serves
+	// something else entirely — and a digest mismatch says only that the bytes
+	// differ.
+	if got := counted.current.Load(); got != asset.Size {
+		return fmt.Errorf("%s from %s is %d bytes, not the %d this build expects", asset.Name, asset.URL, got, asset.Size)
 	}
 	if got := hex.EncodeToString(digest.Sum(nil)); !strings.EqualFold(got, asset.SHA256) {
 		return fmt.Errorf("%s from %s has digest %s, not the %s this build expects", asset.Name, asset.URL, got, asset.SHA256)

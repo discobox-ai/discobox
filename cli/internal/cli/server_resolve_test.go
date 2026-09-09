@@ -55,6 +55,7 @@ func servedManifest(t *testing.T, version string) (serverstage.Manifest, *int) {
 			Name:       serverBinaryName(),
 			URL:        server.URL + "/discobox-server",
 			SHA256:     hex.EncodeToString(sum[:]),
+			Size:       int64(len(body)),
 			Executable: true,
 		}},
 	}, fetches

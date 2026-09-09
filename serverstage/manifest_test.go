@@ -22,6 +22,7 @@ func validManifest() Manifest {
 			Name:       "discobox-server",
 			URL:        "https://example.invalid/discobox-server-linux-amd64",
 			SHA256:     strings.Repeat("ab", 32),
+			Size:       94 << 20,
 			Executable: true,
 		}},
 	}
@@ -61,6 +62,8 @@ func TestManifestValidationRejects(t *testing.T) {
 		"an absolute asset":        func(m *Manifest) { m.Assets[0].Name = "/etc/evil" },
 		"an asset over the record": func(m *Manifest) { m.Assets[0].Name = manifestFileName },
 		"no digest":                func(m *Manifest) { m.Assets[0].SHA256 = "" },
+		"no size":                  func(m *Manifest) { m.Assets[0].Size = 0 },
+		"a negative size":          func(m *Manifest) { m.Assets[0].Size = -1 },
 		"a truncated digest":       func(m *Manifest) { m.Assets[0].SHA256 = "abcd" },
 		"a scheme it cannot fetch": func(m *Manifest) { m.Assets[0].URL = "file:///etc/passwd" },
 		"a URL with no host":       func(m *Manifest) { m.Assets[0].URL = "https:///discobox-server" },
@@ -93,7 +96,7 @@ func TestParseManifestRejectsAnUnknownField(t *testing.T) {
 		"command": "discobox-server",
 		"assets": []map[string]any{{
 			"name": "discobox-server", "url": "https://example.invalid/s",
-			"sha256": strings.Repeat("ab", 32), "exec-utable": true,
+			"sha256": strings.Repeat("ab", 32), "size": 1, "exec-utable": true,
 		}},
 	})
 	if err != nil {
