@@ -39,8 +39,10 @@ sandbox terminals.
   `command not found`; a harness image overwrites it. See ADR 0086 §3.
 - **A wrapper joins its prompt words back into one prompt.** The command is
   *typed* (ADR 0027), so the login shell splits it before the wrapper runs:
-  `discobox fix the failing tests` reaches `discobox-harness-run` as four
-  arguments, not one. Every wrapper joins everything after the flags with
+  `discobox run fix the failing tests` reaches `discobox-harness-run` as four
+  arguments, not one. A prompt given as one argument — `discobox -p 'fix the
+  failing tests'`, and everything the launcher creates — arrives as one, which
+  the same joining leaves alone. Every wrapper joins everything after the flags with
   single spaces and hands its agent that single string — an agent CLI takes its
   prompt as one positional, so a wrapper that forwards `"$@"` unchanged asks it
   to "fix". This is the wrapper's half of the convention and part of what a
@@ -360,12 +362,21 @@ there once the user leaves the session (`/exit` or Ctrl-D).
   retry. A candidate that fails verification is cleared
   (`clear_captured_credential`) before the retry, so a stale artifact from an
   earlier attempt in the same sandbox can't be mistaken for a fresh one.
-- The configure sandbox has no source, so the image's `.claude.json` template
-  trusts no directory. The script first merges `hasTrustDialogAccepted` for the
-  workspace into `~/.claude.json`, so the interactive session (and the
-  `claude -p` verification) run without stopping at the trust dialog. This
-  touches only trust/onboarding, never a credential, and `.claude.json` is not
-  returned as a harness file.
+- Directory trust is the image's `.claude.json` template and nothing else. It
+  trusts `.workingDir` — the directory the sandbox's terminals start in — so the
+  configure sandbox, which has no source, opens on login rather than on the
+  trust dialog for the workspace it is already sitting in. The script writes no
+  trust map of its own: what it wrote would belong to a sandbox that is deleted
+  minutes later, and `.claude.json` is not returned as a harness file. That is
+  what makes this harness the simple case — nothing a configure run captures
+  can overlay the template, unlike codex's `config.toml` below.
+- `.claude.json` is `createOnly`, and home is a persistent data volume, so this
+  settles trust for a sandbox's **first** launch only. A sandbox created before
+  the template trusted `.workingDir` keeps the `.claude.json` it already has;
+  upgrading its image does not rewrite it, and it takes one trust dialog, once,
+  which Claude Code then records itself. Repairing it in place is deliberately
+  not done: `createOnly` says the harness owns the file after the first write,
+  and reaching back into it is what that flag exists to forbid.
 - The image's baseline `.claude/settings.json` sets
   `permissions.defaultMode: bypassPermissions`, which Claude Code refuses to
   honor as root. That is why the configure sandbox runs as a non-root account
@@ -454,7 +465,22 @@ image's `unavailable` message.
   user left it. Codex keeps settings and directory trust in one file, so
   returning it verbatim would make this throwaway sandbox's trust map the
   harness's. The `[projects]` tables are stripped and one templated stanza put
-  back — the same one the image declares, trusting the sandbox's primary source
-  wherever it lands. That is also why the script trusts the workspace before
-  launching: without it the session opens on the trust screen instead of the
-  sign-in screen.
+  back — the same one the image declares, trusting `.workingDir`, the directory
+  the sandbox's terminals start in.
+  - The stanza is **guarded** on `.workingDir` rather than rendered bare. Unlike
+    claude's, this file is persisted in the harness config and delivered to
+    whatever sandbox uses it, which may run an image whose agent predates that
+    key; bare, `missingkey=zero` renders `[projects.null]` — valid TOML that
+    silently trusts a project named `null`. Guarded, it degrades to no trust,
+    which is the older and visible failure.
+  - The script still trusts the workspace before launching (`ensure_workspace_trusted`).
+    A configured harness delivers its captured `config.toml` into the configure
+    sandbox, so a copy taken before trust followed `.workingDir` shadows the
+    image's fixed template — in the very run that would refresh it. Whatever the
+    script writes is stripped back out by `write_output`, so the returned file is
+    the fixed one either way.
+  - A codex harness config configured before this **keeps its stale stanza until
+    it is reconfigured**: `ConfiguredFiles` overlay the image's `Files` by path
+    and nothing migrates them. Run sandboxes on such a config trust their primary
+    source, as before, and a source-less one trusts nothing until a reconfigure
+    rewrites the file.

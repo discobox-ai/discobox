@@ -7,19 +7,26 @@ import (
 	"os"
 	"path/filepath"
 	"slices"
+	"strings"
 	"testing"
 
 	discoboxharness "github.com/discobox-ai/discobox/harness"
 	"github.com/discobox-ai/discobox/sandbox-agent/config"
 )
 
-// claudeImageHarness reads the Claude harness's authoring-time image.json
-// directly (the runtime carrier is the OCI label now, but the file itself is
-// still the build-time source of truth — see harness/DESIGN.md) and converts
-// its harness contract to config.Harness, the same shape sandbox.json decodes.
+// claudeImageHarness reads the Claude harness's authoring-time image.json.
 func claudeImageHarness(t *testing.T) config.Harness {
 	t.Helper()
-	data, err := os.ReadFile(filepath.Join("..", "..", "harness", "claude-code", "image.json"))
+	return imageHarness(t, "claude-code")
+}
+
+// imageHarness reads a harness's authoring-time image.json directly (the
+// runtime carrier is the OCI label now, but the file itself is still the
+// build-time source of truth — see harness/DESIGN.md) and converts its harness
+// contract to config.Harness, the same shape sandbox.json decodes.
+func imageHarness(t *testing.T, dir string) config.Harness {
+	t.Helper()
+	data, err := os.ReadFile(filepath.Join("..", "..", "harness", dir, "image.json"))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -28,7 +35,7 @@ func claudeImageHarness(t *testing.T) config.Harness {
 		t.Fatal(err)
 	}
 	if metadata.Harness == nil {
-		t.Fatal("claude-code image.json has no harness contract")
+		t.Fatalf("%s image.json has no harness contract", dir)
 	}
 	files := make([]config.HarnessFile, 0, len(metadata.Harness.Files))
 	for _, file := range metadata.Harness.Files {
@@ -48,6 +55,7 @@ func TestFileInstallerRendersSandboxConfigTemplate(t *testing.T) {
 	home := t.TempDir()
 	installer := FileInstaller{
 		HomeDirectory: home,
+		WorkingDir:    `/workspace/project"quoted`,
 		SandboxConfig: map[string]any{
 			"sources": []any{
 				map[string]any{"slug": "primary", "target": `/workspace/project"quoted`},
@@ -76,7 +84,7 @@ func TestFileInstallerRendersSandboxConfigTemplate(t *testing.T) {
 		t.Fatalf("projects = %#v, want safely encoded trusted project", state.Projects)
 	}
 	if len(state.Projects) != 1 {
-		t.Fatalf("projects = %#v, want only the primary source trusted", state.Projects)
+		t.Fatalf("projects = %#v, want only the working directory trusted", state.Projects)
 	}
 }
 
@@ -99,14 +107,19 @@ func TestFileInstallerDoesNotRenderLiteralFile(t *testing.T) {
 	}
 }
 
-// A configure sandbox has no source, so the template must render without one.
+// A sandbox with no source -- `discobox run` with nothing to clone, and every
+// configure sandbox -- still has a directory its harness is launched in, and
+// that is the directory the trust rendering follows. Keying it off the primary
+// source instead left these sandboxes trusting nothing, so Claude Code opened
+// on the trust dialog for /workspace instead of on the work.
+//
 // This goes through FileInstaller rather than calling the renderer directly:
 // the context a template is guaranteed is the one templateContext builds, and a
-// bare map is not that -- `.secrets` is always present there, so a template may
-// ask whether a credential exists.
-func TestClaudeTemplateSupportsSandboxWithoutPrimarySource(t *testing.T) {
+// bare map is not that -- `.secrets` and `.workingDir` are always present there,
+// so a template may ask whether a credential exists and where the harness runs.
+func TestClaudeTemplateTrustsWorkingDirectoryWithoutAnySource(t *testing.T) {
 	home := t.TempDir()
-	installer := FileInstaller{HomeDirectory: home, SandboxConfig: map[string]any{}}
+	installer := FileInstaller{HomeDirectory: home, WorkingDir: "/workspace", SandboxConfig: map[string]any{}}
 	if err := installer.EnsureInstalled(context.Background(), claudeImageHarness(t), "", nil); err != nil {
 		t.Fatalf("install: %v", err)
 	}
@@ -114,16 +127,62 @@ func TestClaudeTemplateSupportsSandboxWithoutPrimarySource(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	var state map[string]any
+	var state struct {
+		PrimaryAPIKey any `json:"primaryApiKey"`
+		Projects      map[string]struct {
+			Trusted bool `json:"hasTrustDialogAccepted"`
+		} `json:"projects"`
+	}
 	if err := json.Unmarshal(rendered, &state); err != nil {
 		t.Fatalf("parse Claude config: %v\n%s", err, rendered)
 	}
-	if _, ok := state["projects"]; ok {
-		t.Fatalf("source-less Claude config unexpectedly has projects: %#v", state)
+	if !state.Projects["/workspace"].Trusted {
+		t.Fatalf("projects = %#v, want the source-less sandbox's working directory trusted", state.Projects)
 	}
 	// No secret bound either: the key must be absent, not present and empty.
-	if _, ok := state["primaryApiKey"]; ok {
+	if state.PrimaryAPIKey != nil {
 		t.Fatalf("source-less Claude config unexpectedly has primaryApiKey: %#v", state)
+	}
+}
+
+// Codex's config.toml is captured by its configure flow and persisted, so a
+// copy of this template outlives the image that wrote it and can be delivered
+// to a sandbox whose agent predates `workingDir`. Under missingkey=zero the
+// bare form renders `[projects.null]` -- valid TOML that silently trusts a
+// project named null -- so the stanza is guarded and degrades to no trust at
+// all, which is the older and visible failure.
+//
+// The absent key that older agent would produce cannot be built here, since
+// templateContext always sets it; the guard treats absent and empty alike, so
+// an empty WorkingDir is what pins the behavior.
+func TestCodexTemplateRendersNoTrustRatherThanANullProject(t *testing.T) {
+	home := t.TempDir()
+	installer := FileInstaller{HomeDirectory: home, SandboxConfig: map[string]any{}}
+	if err := installer.EnsureInstalled(context.Background(), imageHarness(t, "codex-cli"), "", nil); err != nil {
+		t.Fatalf("install: %v", err)
+	}
+	rendered, err := os.ReadFile(filepath.Join(home, ".codex", "config.toml"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(string(rendered), "projects.") {
+		t.Fatalf("rendered config.toml = %s, want no [projects] table at all", rendered)
+	}
+}
+
+// Codex gates the same way on its own trust screen, from the same context key.
+func TestCodexTemplateTrustsWorkingDirectoryWithoutAnySource(t *testing.T) {
+	home := t.TempDir()
+	installer := FileInstaller{HomeDirectory: home, WorkingDir: "/workspace", SandboxConfig: map[string]any{}}
+	if err := installer.EnsureInstalled(context.Background(), imageHarness(t, "codex-cli"), "", nil); err != nil {
+		t.Fatalf("install: %v", err)
+	}
+	rendered, err := os.ReadFile(filepath.Join(home, ".codex", "config.toml"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if want := "[projects.\"/workspace\"]\ntrust_level = \"trusted\""; !strings.Contains(string(rendered), want) {
+		t.Fatalf("rendered config.toml = %s, want %s", rendered, want)
 	}
 }
 
@@ -170,11 +229,17 @@ func TestFileInstallerTemplateContextDoesNotMutateSandboxConfig(t *testing.T) {
 		SandboxConfig: shared,
 		Secrets:       func() map[string]string { return map[string]string{"A": "b"} },
 	}
-	if _, ok := installer.templateContext()["secrets"]; !ok {
+	ctx := installer.templateContext()
+	if _, ok := ctx["secrets"]; !ok {
 		t.Fatal("template context carries no secrets")
 	}
-	if _, ok := shared["secrets"]; ok {
-		t.Fatal("sandbox config was mutated by building the template context")
+	if _, ok := ctx["workingDir"]; !ok {
+		t.Fatal("template context carries no working directory")
+	}
+	for _, key := range []string{"secrets", "workingDir"} {
+		if _, ok := shared[key]; ok {
+			t.Fatalf("sandbox config was mutated by building the template context: %s", key)
+		}
 	}
 }
 
@@ -276,10 +341,9 @@ func TestClaudeTemplateRendersPrimaryApiKeyFromSentinel(t *testing.T) {
 			home := t.TempDir()
 			installer := FileInstaller{
 				HomeDirectory: home,
-				SandboxConfig: map[string]any{
-					"sources": []any{map[string]any{"slug": "primary", "target": "/workspace/app"}},
-				},
-				Secrets: func() map[string]string { return tc.secrets },
+				WorkingDir:    "/workspace/app",
+				SandboxConfig: map[string]any{},
+				Secrets:       func() map[string]string { return tc.secrets },
 			}
 			if err := installer.EnsureInstalled(context.Background(), claudeImageHarness(t), "", nil); err != nil {
 				t.Fatalf("install: %v", err)
@@ -302,7 +366,7 @@ func TestClaudeTemplateRendersPrimaryApiKeyFromSentinel(t *testing.T) {
 			}
 			// Adding the key must not cost the trust rendering that shares the file.
 			if !state.Projects["/workspace/app"].Trusted {
-				t.Fatalf("projects = %#v, want the primary source still trusted", state.Projects)
+				t.Fatalf("projects = %#v, want the working directory still trusted", state.Projects)
 			}
 		})
 	}

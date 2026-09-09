@@ -8,7 +8,7 @@
       {
         "path": ".codex/config.toml",
         "template": true,
-        "content": "# Managed by Discobox. Policy defaults (approval, sandbox) are the image's\n# system layer, /etc/codex/config.toml, which this file may override.\n{{- range .sources }}{{- if eq .slug \"primary\" }}\n[projects.{{ .target | json }}]\ntrust_level = \"trusted\"\n{{- end }}{{- end }}\n"
+        "content": "# Managed by Discobox. Policy defaults (approval, sandbox) are the image's\n# system layer, /etc/codex/config.toml, which this file may override.\n{{- if .workingDir }}\n\n[projects.{{ .workingDir | json }}]\ntrust_level = \"trusted\"\n{{- end }}\n"
       }
     ],
     "secrets": [

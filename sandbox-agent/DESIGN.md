@@ -172,8 +172,16 @@ PID, because PIDs are reused and the pool agent differences per process.
   repository the client pushes into for a push-delivered one (ADR 0058); either
   way it is the repository `origin` names. See ADR 0026.
 - Render templated harness files locally at installation time against the public
-  `SandboxConfig` object from the manifest. Keep API field names as the template
-  surface and expose only deterministic, non-secret formatting helpers.
+  `SandboxConfig` object from the manifest, plus two keys the installer adds:
+  `secrets` (env name -> sentinel) and `workingDir`. Keep API field names as the
+  template surface and expose only deterministic, non-secret formatting helpers.
+- `workingDir` is the directory this sandbox's terminals start in, resolved by
+  the exec layer that starts them (`execs.Manager.DefaultWorkdir`): the primary
+  source's target when there is one, the working root when there is not. It is
+  what a harness that gates work on directory trust is told to trust. Deriving
+  that from `sources` instead left every source-less sandbox — `discobox run`
+  with nothing to clone, and every configure sandbox — trusting nothing, so the
+  harness opened on its trust prompt for a directory it was already sitting in.
 - A repository's `.discobox/skills` is copied, never reconciled. It is installed
   once — on the primary terminal's first launch — and from then on the copies are
   the harness's files: it prunes, renames, and rewrites them, and restoring them

@@ -125,11 +125,13 @@ func TestDefinitionConfigure(t *testing.T) {
 	if !strings.Contains(script, "primaryApiKey") {
 		t.Fatalf("configure script does not capture a console-managed API key: %s", script)
 	}
-	// The configure sandbox has no source, so the workspace is not trusted by
-	// the image template; the script must trust it itself or the interactive
-	// session stops at the trust dialog.
-	if !strings.Contains(script, "hasTrustDialogAccepted") {
-		t.Fatalf("configure script does not pre-trust the workspace for login: %s", script)
+	// Directory trust belongs to the image's .claude.json template, which trusts
+	// the directory the sandbox's terminals start in whether or not the sandbox
+	// has a source -- a configure sandbox has none. The script must not write a
+	// second trust map of its own: it runs in a throwaway sandbox, so what it
+	// writes there is a map nothing outside it ever sees.
+	if strings.Contains(script, "hasTrustDialogAccepted") {
+		t.Fatalf("configure script writes its own trust map instead of leaving it to the image template: %s", script)
 	}
 	if !strings.Contains(script, "CLAUDE_CODE_OAUTH_TOKEN") || !strings.Contains(script, "ANTHROPIC_API_KEY") {
 		t.Fatalf("configure script does not offer both auth secrets: %s", script)

@@ -306,8 +306,15 @@ than resolving to one nobody chose.
 - Keep transport DTO conversion in `internal/handlers`; this package may use
   generated DTO aliases from `internal/services`.
 - Harness config files are literal by default. Files marked `template` are
-  rendered inside the sandbox against the public `SandboxConfig` JSON shape;
-  configs must not invent a parallel set of runtime variables.
+  rendered inside the sandbox against the public `SandboxConfig` JSON shape plus
+  the two keys the installer resolves — `secrets` (env name -> sentinel) and
+  `workingDir` (the directory this sandbox's terminals start in); configs must
+  not invent a parallel set of runtime variables beyond those.
+- A harness that gates work on directory trust renders `workingDir`, never the
+  primary source's `target` out of `sources`. A sandbox created with no source
+  has no primary target, and such a template renders no trust at all — which is
+  a harness that opens on its own trust prompt for the directory it was just
+  launched in. See `sandbox-agent/DESIGN.md`.
 - `SandboxRuntime` is this package's whole seam onto sandboxes, and it carries
   two unrelated duties: the configure flow's agent access, and the two fan-outs
   that follow a config change — `RebindHarnessConfigSecrets` when a binding

@@ -9,7 +9,7 @@
         "path": ".claude.json",
         "createOnly": true,
         "template": true,
-        "content": "{\n  \"hasCompletedOnboarding\": true\n  {{- if .secrets.ANTHROPIC_API_KEY }},\n  \"primaryApiKey\": {{ .secrets.ANTHROPIC_API_KEY | json }}\n  {{- end }}\n  {{- range .sources }}{{- if eq .slug \"primary\" }},\n  \"projects\": {\n    {{ .target | json }}: {\n      \"hasTrustDialogAccepted\": true\n    }\n  }\n  {{- end }}{{- end }}\n}"
+        "content": "{\n  \"hasCompletedOnboarding\": true\n  {{- if .secrets.ANTHROPIC_API_KEY }},\n  \"primaryApiKey\": {{ .secrets.ANTHROPIC_API_KEY | json }}\n  {{- end }},\n  \"projects\": {\n    {{ .workingDir | json }}: {\n      \"hasTrustDialogAccepted\": true\n    }\n  }\n}"
       },
       {
         "path": ".claude/settings.json",

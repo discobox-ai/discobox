@@ -27,9 +27,9 @@
 # file, so anything the user changes in the session (theme, model, statusline,
 # ...) becomes the harness's default going forward. ~/.claude.json is never
 # captured as a file: besides holding the credential this script already
-# extracts on its own, it carries this sandbox's own per-workspace trust map
-# (ensure_workspace_trusted, below), which is specific to the ephemeral
-# configure sandbox and must not override a real sandbox's own trust state.
+# extracts on its own, it carries this sandbox's own per-workspace trust map,
+# which is specific to the ephemeral configure sandbox and must not override a
+# real sandbox's own trust state.
 #
 # Reconfigure: /run/discobox/configure/harness-previous-config.json lists the
 # secrets a previous run stored, without their values. Each one's value is
@@ -53,12 +53,6 @@ CREDENTIALS_PATH=".claude/.credentials.json"
 # the control plane refreshes the credential behind it. 2100-01-01, in the
 # milliseconds Claude Code stores.
 CREDENTIALS_EXPIRES_AT=4102444800000
-
-# The workspace the configure sandbox runs in. Unlike a run sandbox it has no
-# source, so the image's .claude.json template trusts nothing — we mark the
-# workspace trusted below so `claude` opens straight into onboarding/login
-# rather than stopping at the trust dialog.
-WORKSPACE_DIR="${DISCOBOX_WORKING_ROOT:-/workspace}"
 
 API_KEY_ENV=ANTHROPIC_API_KEY
 OAUTH_ENV=CLAUDE_CODE_OAUTH_TOKEN
@@ -95,36 +89,6 @@ else
 	C_CMD=""
 	C_ERR=""
 fi
-
-# ensure_workspace_trusted marks the workspace (and the current directory) as
-# already trusted in ~/.claude.json, so the interactive `claude` launch below
-# (and the `claude -p` verification) run without stopping at the trust dialog
-# first. It merges into the file the image installed rather than replacing it,
-# and touches only trust/onboarding, never a credential.
-ensure_workspace_trusted() {
-	CLAUDE_CONFIGURE_CONFIG_FILE="$CLAUDE_CONFIG_FILE" \
-		CLAUDE_CONFIGURE_TRUST_DIRS="$WORKSPACE_DIR
-$PWD" node <<-'NODE_EOF'
-		const fs = require('fs');
-		const nodePath = require('path');
-		const file = process.env.CLAUDE_CONFIGURE_CONFIG_FILE;
-		let config = {};
-		try {
-			config = JSON.parse(fs.readFileSync(file, 'utf8')) || {};
-		} catch (err) {
-			config = {};
-		}
-		config.hasCompletedOnboarding = true;
-		config.projects = config.projects || {};
-		for (const dir of process.env.CLAUDE_CONFIGURE_TRUST_DIRS.split('\n')) {
-			const trimmed = (dir || '').trim();
-			if (!trimmed) continue;
-			config.projects[trimmed] = Object.assign({}, config.projects[trimmed], { hasTrustDialogAccepted: true });
-		}
-		fs.mkdirSync(nodePath.dirname(file), { recursive: true });
-		fs.writeFileSync(file, JSON.stringify(config, null, 2));
-	NODE_EOF
-}
 
 # env_label prints the human name recorded alongside the secret.
 env_label() {
@@ -579,11 +543,6 @@ write_output() {
 }
 
 PREVIOUS_ENV=$(previous_env)
-
-# Trust the workspace up front so every claude invocation below — the
-# interactive session and the `claude -p` verification — runs without a trust
-# prompt.
-ensure_workspace_trusted
 
 ENV_NAME=""
 TOKEN=""

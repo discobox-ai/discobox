@@ -70,10 +70,12 @@ OAUTH_CLIENT_ID="app_EMoamEEZ73f0CkXaXp7hrann"
 # date simply never triggers.
 AUTH_LAST_REFRESH="2100-01-01T00:00:00Z"
 
-# The workspace the configure sandbox runs in. Unlike a run sandbox it has no
-# source, so the image's config.toml template trusts nothing — we mark the
-# workspace trusted below so `codex` opens straight into onboarding rather than
-# stopping at the trust screen.
+# The workspace the configure sandbox runs in. The image's config.toml template
+# trusts this sandbox's working directory on its own, but a harness configured
+# before overlays that template with the config.toml the last run captured —
+# and one captured before trust followed the working directory still asks for a
+# primary source this sandbox does not have. So the workspace is trusted here
+# too, or a reconfigure opens on the trust screen.
 WORKSPACE_DIR="${DISCOBOX_WORKING_ROOT:-/workspace}"
 
 # Holds the collected OAuth capture JSON (secret value plus the non-secret
@@ -142,6 +144,13 @@ previous_env() {
 # on the sign-in screen instead of the trust screen. It rewrites only the
 # [projects] tables — the same ones write_output strips back out, since this
 # sandbox's trust map must not become the harness's.
+#
+# The image's own template already trusts the sandbox's working directory, so on
+# a first configure this changes nothing. It earns its place on the *re*configure:
+# the config.toml an earlier run captured overlays that template by path, and one
+# captured before trust followed the working directory asks for a primary source
+# a configure sandbox does not have. Without this, refreshing that stale copy
+# would mean first getting past the trust screen it causes.
 ensure_workspace_trusted() {
 	CODEX_CONFIGURE_CONFIG_FILE="$CONFIG_FILE" \
 		CODEX_CONFIGURE_TRUST_DIRS="$WORKSPACE_DIR
@@ -537,13 +546,20 @@ write_output() {
 		// verbatim would make this throwaway sandbox's trust map the harness's.
 		// The [projects] tables are dropped and one templated stanza put back,
 		// which is the same thing the image's own config.toml declares: trust
-		// the sandbox's primary source, whatever path it lands on.
+		// the directory the sandbox's terminals start in, whatever path that is.
+		//
+		// Guarded on `.workingDir` rather than rendered bare. This file is
+		// persisted and delivered to whatever sandbox uses this config, which
+		// may be running an image whose agent predates that key: under
+		// missingkey=zero it renders as `[projects.null]`, valid TOML that
+		// silently trusts a project named null. Absent trust is the older,
+		// visible failure, and is the one to degrade to.
 		const trustStanza = [
 			'',
-			'{{- range .sources }}{{- if eq .slug "primary" }}',
-			'[projects.{{ .target | json }}]',
+			'{{- if .workingDir }}',
+			'[projects.{{ .workingDir | json }}]',
 			'trust_level = "trusted"',
-			'{{- end }}{{- end }}',
+			'{{- end }}',
 			'',
 		].join('\n');
 		const configFile = () => {
@@ -666,7 +682,8 @@ write_output() {
 PREVIOUS_ENV=$(previous_env)
 
 # Trust the workspace up front so the interactive launch below opens on the
-# sign-in screen rather than the trust screen.
+# sign-in screen rather than the trust screen, whatever the config.toml a
+# previous configure captured says.
 ensure_workspace_trusted
 
 ENV_NAME=""

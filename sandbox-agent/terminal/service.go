@@ -176,6 +176,13 @@ func NewService(cfg ServiceConfig) (*Service, error) {
 		launches:      map[string]*terminalLaunch{},
 	}
 	if s.installer == nil {
+		// Where this sandbox's terminals start, resolved by the exec layer that
+		// will start them rather than derived a second time here. A harness that
+		// has to be told which directory it may work in is told this one.
+		workingDir, err := cfg.Execs.DefaultWorkdir()
+		if err != nil {
+			return nil, fmt.Errorf("resolve default working directory: %w", err)
+		}
 		s.installer = CompositeInstaller{Installers: []Installer{
 			FileInstaller{
 				// The run user as the exec layer resolved it, not the manifest
@@ -184,6 +191,7 @@ func NewService(cfg ServiceConfig) (*Service, error) {
 				User:          defaultUser,
 				HomeDirectory: cfg.ExecDefaults.HomeDirectory,
 				SandboxConfig: cfg.SandboxConfig,
+				WorkingDir:    workingDir,
 				Secrets:       cfg.SecretEnv,
 			},
 		}}
@@ -836,6 +844,17 @@ type FileInstaller struct {
 	// HomeDirectory is the manifest's explicit home, when it carries one.
 	HomeDirectory string
 	SandboxConfig map[string]any
+	// WorkingDir is the directory this sandbox's terminals start in — the
+	// primary source's target when it has one, the working root when it does
+	// not — as the exec layer resolves it (execs.Manager.DefaultWorkdir).
+	//
+	// A harness that gates work on directory trust (Claude Code's trust
+	// dialog, codex's trust screen) is told to trust this, not the primary
+	// source's target. They are the same path in the ordinary case, and the
+	// difference is the whole point: a sandbox with no source has no primary
+	// target, and a harness told to trust nothing opens on a trust prompt
+	// instead of on the work.
+	WorkingDir string
 	// Secrets returns the sandbox's env-name -> sentinel map, so a templated
 	// file can place a sentinel where a harness expects to read a credential.
 	//
@@ -879,16 +898,20 @@ func (i FileInstaller) EnsureInstalled(_ context.Context, harness config.Harness
 }
 
 // templateContext is the sandbox config a harness file renders against, plus
-// `secrets` — the env-name -> sentinel map — under its own key. A copy, so the
-// added key never mutates the shared config, and so a config that already
-// carried `secrets` cannot be shadowed silently.
+// `secrets` — the env-name -> sentinel map — and `workingDir` under their own
+// keys. A copy, so the added keys never mutate the shared config, and so a
+// config that already carried either cannot shadow them silently.
 func (i FileInstaller) templateContext() map[string]any {
 	var sentinels map[string]string
 	if i.Secrets != nil {
 		sentinels = i.Secrets()
 	}
-	out := make(map[string]any, len(i.SandboxConfig)+1)
+	out := make(map[string]any, len(i.SandboxConfig)+2)
 	maps.Copy(out, i.SandboxConfig)
+	// Every sandbox has one, source or no source, so a template that needs the
+	// directory the harness runs in never has to go looking through `sources`
+	// for a stand-in that may not be there.
+	out["workingDir"] = i.WorkingDir
 	// Always present, even empty. A template that asks whether a credential
 	// exists (`{{ if .secrets.NAME }}`) must be able to ask: with the key
 	// missing entirely, that walk fails the render rather than answering "no",

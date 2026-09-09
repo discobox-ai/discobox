@@ -72,17 +72,28 @@ func TestDefinitionConfigure(t *testing.T) {
 	if !strings.Contains(script, "codex exec") {
 		t.Fatalf("configure script does not verify the credential with a test prompt: %s", script)
 	}
-	// The configure sandbox has no source, so the image's config.toml template
-	// trusts nothing; the script must trust the workspace itself or the
-	// interactive session stops at the trust screen instead of the sign-in one.
-	if !strings.Contains(script, "ensure_workspace_trusted") || !strings.Contains(script, `trust_level = "trusted"`) {
-		t.Fatalf("configure script does not pre-trust the workspace for sign-in: %s", script)
-	}
 	// Settings and directory trust share one file in codex, and this throwaway
 	// sandbox's trust map must not become the harness's, so [projects] is
-	// stripped from what is captured and one templated stanza put back.
+	// stripped from what is captured and one templated stanza put back -- the
+	// same stanza the image declares, trusting the directory the sandbox's
+	// terminals start in whether or not the sandbox has a source.
 	if !strings.Contains(script, "startsWith('projects.')") {
 		t.Fatalf("configure script returns the configure sandbox's own trust map: %s", script)
+	}
+	if !strings.Contains(script, `[projects.{{ .workingDir | json }}]`) {
+		t.Fatalf("configure script does not put the harness's own trust stanza back: %s", script)
+	}
+	// The captured config.toml overlays the image's by path, so a copy taken
+	// before trust followed the working directory shadows the fixed template --
+	// including in the configure sandbox that would refresh it. The script
+	// trusts the workspace itself so a reconfigure reaches the sign-in screen.
+	if !strings.Contains(script, "ensure_workspace_trusted") {
+		t.Fatalf("configure script does not pre-trust the workspace for sign-in: %s", script)
+	}
+	// Guarded, because that persisted copy may be rendered by an agent with no
+	// workingDir: bare, it becomes [projects.null], which is valid TOML.
+	if !strings.Contains(script, `'{{- if .workingDir }}'`) {
+		t.Fatalf("configure script's trust stanza is unguarded, so an older agent renders [projects.null]: %s", script)
 	}
 	// Every retry is gated on a person asking for one. An attempt that fails
 	// without ever reaching the user -- codex refusing to start, say -- fails
