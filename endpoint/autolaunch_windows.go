@@ -4,6 +4,7 @@ package endpoint
 
 import (
 	"context"
+	"io"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -67,6 +68,6 @@ func setDetachedProcess(cmd *exec.Cmd) {
 	}
 }
 
-func startUserService(context.Context, LaunchOptions, Command) (bool, error) {
+func startUserService(context.Context, LaunchOptions, Command, io.Writer) (bool, error) {
 	return false, nil
 }

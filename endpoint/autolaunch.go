@@ -358,7 +358,7 @@ func startDetached(ctx context.Context, opts LaunchOptions) (*launchedProcess, e
 		return nil, err
 	}
 	defer logFile.Close()
-	if started, err := startUserService(ctx, opts, command); err != nil {
+	if started, err := startUserService(ctx, opts, command, logFile); err != nil {
 		return nil, err
 	} else if started {
 		return nil, nil
