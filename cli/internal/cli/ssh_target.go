@@ -114,26 +114,62 @@ func windowsSSHTarget(ctx context.Context) (sshTarget, error) {
 // until you reach for the other tool. Writing both also means no command is the
 // only way to produce one of them, which is what `tools vscode` had become.
 //
-// The Windows side needs interop to resolve at all, so its failure is returned
-// rather than raised: `admin ssh-config --write` has still written a usable
-// config for this side and says what it could not do, while an editor command
-// launching a Windows editor — `tools vscode` or `tools zed` — cannot proceed
-// and turns it into an error (editorFamily.sshTargets).
-func machineSSHTargets(ctx context.Context) (targets []sshTarget, windowsErr error) {
+// The Windows side needs interop to resolve at all, so its failure travels on
+// the value rather than being raised: `admin ssh-config --write` has still
+// written a usable config for this side and says what it could not do, while an
+// editor command launching a Windows editor — `tools vscode` or `tools zed` —
+// cannot proceed and turns it into an error (editorFamily.sshTargets).
+func machineSSHTargets(ctx context.Context) (machineTargets, error) {
 	local, err := localSSHTarget()
 	if err != nil {
-		return nil, err
+		return machineTargets{}, fmt.Errorf("locate this machine's own ssh: %w", err)
 	}
-	targets = []sshTarget{local}
+	targets := machineTargets{all: []sshTarget{local}}
 	if !isWSL() {
 		return targets, nil
 	}
-	windows, err := windowsSSHTarget(ctx)
-	if err != nil {
-		return targets, err
+	// Recorded on the value either way, and added when there was nothing to
+	// record: not resolving the Windows side is a thing this answer carries,
+	// never a thing it fails on.
+	windows, windowsErr := windowsSSHTarget(ctx)
+	targets.windowsErr = windowsErr
+	if windowsErr == nil {
+		windows.optional = true
+		targets.all = append(targets.all, windows)
 	}
-	windows.optional = true
-	return append(targets, windows), nil
+	return targets, nil
+}
+
+// machineTargets is what this machine has to write for, and what it could not
+// work out about the installation that may be missing.
+//
+// The two are separate values because their failures are different failures.
+// This machine's own ssh is the one every caller is writing for and the one the
+// shell asking is running: not having it ends the work. The Windows side of a
+// WSL machine is a second installation, and not having it leaves the first
+// perfectly usable.
+//
+// They came back as one error return once, and every caller read that error as
+// the Windows one — so a machine whose home directory could not be resolved
+// reported "not writing the Windows ssh_config", carried on with no targets at
+// all, and then wrote nothing while reporting success, printed a config out of
+// an empty slice, or indexed the first of no configs.
+type machineTargets struct {
+	// all is every installation to write for, this machine's own first. It is
+	// empty only when the error beside it is not nil, and two callers index it
+	// on the strength of that: `admin ssh-config`'s all[:1] and the built[0]
+	// that sandboxSSHRemote hands back. So a caller that reports the error and
+	// carries on anyway panics at those two, and writes nothing at all at a
+	// third that only passes the slice on — which is the whole reason this
+	// error is not one to report and continue past. Both beat the alternative:
+	// there is no config worth writing for a machine with no ssh on it, and a
+	// shape that handed back a zero sshTarget instead of nothing would write
+	// one to paths made of empty strings.
+	all []sshTarget
+	// windowsErr is why the Windows side is not in all, on a WSL machine where
+	// it could not be resolved. It is nil everywhere else, including on a
+	// machine that is not WSL and has no second installation to miss.
+	windowsErr error
 }
 
 // acrossWSL reports that this target's files are written through the WSL

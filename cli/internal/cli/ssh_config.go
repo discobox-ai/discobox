@@ -65,13 +65,15 @@ func (a *App) newSSHConfigCommand() *cobra.Command {
 			// Every ssh on this machine, which on WSL is two. A config that
 			// cannot be written for the Windows side is worth saying so about
 			// and no reason to withhold this side's.
-			targets, windowsErr := machineSSHTargets(cmd.Context())
-			if windowsErr != nil {
-				notes(windowsSSHConfigSkipped, windowsErr)
+			targets, err := machineSSHTargets(cmd.Context())
+			if err != nil {
+				return err
+			}
+			if targets.windowsErr != nil {
+				notes(windowsSSHConfigSkipped, targets.windowsErr)
 			}
 			// Printed output is for pasting into a config by hand, and the
 			// hand doing it is on this side.
-			targets = targets[:1]
 			built, err := a.buildManagedSSHConfig(cmd.Context(), managedSSHConfigRequest{
 				client:            client,
 				projectID:         projectID,
@@ -80,7 +82,7 @@ func (a *App) newSSHConfigCommand() *cobra.Command {
 				hostKey:           hostKey,
 				write:             write,
 				notes:             notes,
-			}, targets)
+			}, targets.all[:1])
 			if err != nil {
 				return err
 			}
@@ -114,9 +116,12 @@ func (a *App) writeProjectSSHConfig(ctx context.Context, client *apiclientgen.Cl
 	if err != nil {
 		return err
 	}
-	targets, windowsErr := machineSSHTargets(ctx)
-	if windowsErr != nil {
-		notes(windowsSSHConfigSkipped, windowsErr)
+	targets, err := machineSSHTargets(ctx)
+	if err != nil {
+		return err
+	}
+	if targets.windowsErr != nil {
+		notes(windowsSSHConfigSkipped, targets.windowsErr)
 	}
 	_, err = a.writeManagedSSHConfigs(ctx, managedSSHConfigRequest{
 		client:            client,
@@ -126,7 +131,7 @@ func (a *App) writeProjectSSHConfig(ctx context.Context, client *apiclientgen.Cl
 		hostKey:           hostKey,
 		write:             true,
 		notes:             notes,
-	}, targets)
+	}, targets.all)
 	return err
 }
 

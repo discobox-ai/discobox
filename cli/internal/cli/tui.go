@@ -784,13 +784,14 @@ func (d *apiDataSource) Rename(ctx context.Context, sandboxID, name string) erro
 // could not fill.
 func (d *apiDataSource) Addresses(ctx context.Context, sandboxID string) (tui.Addresses, error) {
 	// A Windows ssh that cannot be resolved from WSL leaves this side's, which
-	// is the one the shell reading this is running; only losing both is fatal.
+	// is the one the shell reading this is running, and machineSSHTargets errors
+	// only when that one is missing too.
 	targets, err := machineSSHTargets(ctx)
-	if len(targets) == 0 {
+	if err != nil {
 		return tui.Addresses{}, err
 	}
 	silent := noteFunc(func(string, ...any) {})
-	remote, err := d.app.sandboxSSHRemote(ctx, targets, d.client, d.projectID, sandboxID, "", silent)
+	remote, err := d.app.sandboxSSHRemote(ctx, targets.all, d.client, d.projectID, sandboxID, "", silent)
 	if err != nil {
 		return tui.Addresses{}, err
 	}

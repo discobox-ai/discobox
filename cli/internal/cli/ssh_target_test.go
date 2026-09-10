@@ -48,6 +48,49 @@ func wslTestTarget(root string) sshTarget {
 	return target
 }
 
+// A machine whose own ssh cannot be resolved is an error, not a remark about
+// Windows. Both failures came back on one error return once, every caller read
+// that return as the Windows one, and the work then carried on with nothing to
+// write for at all.
+func TestMachineSSHTargetsSeparatesThisMachineFromWindows(t *testing.T) {
+	setHome(t, "")
+	targets, err := machineSSHTargets(t.Context())
+	if err == nil {
+		t.Fatal("expected a machine with no home directory to be an error")
+	}
+	if targets.windowsErr != nil {
+		t.Fatalf("this machine's failure came back as the Windows side's: %v", targets.windowsErr)
+	}
+	if len(targets.all) != 0 {
+		t.Fatalf("targets = %v, want a value with nothing in it", targets.all)
+	}
+}
+
+// The same at the call site, where the mislabel had its consequence: `--write`
+// noted a Windows failure it had not had, wrote no config for anything, and
+// returned success.
+func TestSSHConfigWriteWithoutAHomeDirectorySaysWhichSSHIsMissing(t *testing.T) {
+	t.Setenv("XDG_STATE_HOME", t.TempDir())
+	setHome(t, "")
+	server := writeFakeServer().start(t)
+	cmd := NewRootCommand()
+	var out, errOut strings.Builder
+	cmd.SetOut(&out)
+	cmd.SetErr(&errOut)
+	cmd.SetArgs([]string{"--server", server.URL, "--project", "project-1", "admin", "ssh-config", "--write"})
+
+	err := cmd.Execute()
+	if err == nil {
+		t.Fatal("a write with nowhere to write reported success")
+	}
+	if !strings.Contains(err.Error(), "own ssh") {
+		t.Fatalf("the error should name which ssh could not be found, got: %v", err)
+	}
+	if strings.Contains(errOut.String(), "not writing the Windows ssh_config") {
+		t.Fatalf("this machine's failure was reported as the Windows side's:\n%s", errOut.String())
+	}
+}
+
 // A path this process writes and Windows reads has two spellings, and every
 // file the config names has to be in the second one.
 func TestSSHTargetSpellsPathsForBothSides(t *testing.T) {

@@ -1136,11 +1136,18 @@ level or layering on the attach transports above.
   failing is a warning rather than an error: the Windows target carries
   `optional`, a failure to resolve, build or write it is reported through the
   note sink and that target is dropped, and this side's config is still written
-  and still correct (ADR 0102 §3). A create that has already made a discobox
-  does not fail over the other installation's config. An editor command
-  launching a Windows editor clears the flag, because that editor connects with
-  Windows OpenSSH and a window opening on a config that was never written is
-  worse than the error. Windows is asked where its
+  and still correct (ADR 0102 §3). *This* machine's own ssh is the other case
+  and `machineSSHTargets` keeps the two apart: it returns a `machineTargets`
+  beside an error that means only "there is no ssh here to write for", and
+  `all` is empty only when that error is set. So a caller cannot mistake the
+  second failure for the first and carry on with nothing to write — and one
+  that reports the error and carries on anyway panics where it indexes and
+  writes nothing where it does not, rather than writing a config to paths made
+  of empty strings. A create that has already made a discobox does not fail over
+  the other installation's config. An editor command launching a Windows editor
+  clears the flag, because that editor connects with Windows OpenSSH and a
+  window opening on a config that was never written is worse than the error.
+  Windows is asked where its
   own folders are (`cmd.exe /c echo %LOCALAPPDATA%`, `wslpath -u`) rather than
   assumed — and `cmd.exe` itself is taken from PATH, or, in a distribution
   configured not to inherit the Windows one, translated from the Windows path it

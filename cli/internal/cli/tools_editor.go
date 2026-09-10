@@ -78,22 +78,25 @@ func (f editorFamily) resolve(named string) (string, error) {
 // editor that needs the Windows config clears `optional` and gets an error
 // wherever the failure happens instead.
 func (f editorFamily) sshTargets(ctx context.Context, editor string, notes noteFunc) ([]sshTarget, error) {
-	targets, windowsErr := machineSSHTargets(ctx)
+	targets, err := machineSSHTargets(ctx)
+	if err != nil {
+		return nil, err
+	}
 	windowsEditor := isWSL() && isWindowsExecutable(ctx, editor)
-	if windowsErr != nil {
+	if targets.windowsErr != nil {
 		if windowsEditor {
 			return nil, fmt.Errorf("%s is a Windows program, so it connects with Windows OpenSSH: %w; "+
 				"name a Linux build with --editor or $%s to use this machine's own ssh_config instead",
-				editor, windowsErr, f.env)
+				editor, targets.windowsErr, f.env)
 		}
-		notes(windowsSSHConfigSkipped, windowsErr)
+		notes(windowsSSHConfigSkipped, targets.windowsErr)
 	}
 	if windowsEditor {
-		for i := range targets {
-			targets[i].optional = false
+		for i := range targets.all {
+			targets.all[i].optional = false
 		}
 	}
-	return targets, nil
+	return targets.all, nil
 }
 
 // launch runs the editor with the arguments the command built, wired to this
