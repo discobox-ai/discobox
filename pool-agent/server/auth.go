@@ -150,7 +150,7 @@ const (
 // reject refuses a request in the shape the API says it will, and records why.
 //
 // Two things were wrong with http.Error here. It writes text/plain, and the
-// spec declares application/json for every error, so the generated client could
+// spec declares application/problem+json for every error, so the generated client could
 // not decode the response at all: a 401 reached the control plane as
 // "unexpected Content-Type: text/plain" wrapped in decoder frames, with the
 // status buried and the cause absent. And all four refusals looked identical,
@@ -178,7 +178,7 @@ func (a *SignedTokenAuthenticator) reject(r *http.Request, w http.ResponseWriter
 		http.Error(w, http.StatusText(status), status)
 		return
 	}
-	w.Header().Set("Content-Type", "application/json")
+	w.Header().Set("Content-Type", "application/problem+json")
 	w.WriteHeader(status)
 	_, _ = w.Write(body)
 }

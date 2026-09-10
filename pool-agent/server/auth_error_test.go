@@ -1,40 +1,61 @@
 package server
 
 import (
+	"context"
 	"crypto/ed25519"
 	"crypto/rand"
 	"encoding/base64"
 	"encoding/json"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"strings"
 	"testing"
+
+	workerapi "github.com/discobox-ai/discobox/pool-agent/api/gen"
 )
 
-// A refusal has to arrive as the API says it will. The spec declares JSON for
-// every error, so a text/plain body means the generated client cannot decode
-// the response at all: the control plane sees "unexpected Content-Type" with
-// decoder frames around it, and never learns the status was 401.
+// Exercise the generated decoder: valid JSON alone is not enough when the
+// contract requires application/problem+json.
 func TestRefusalDecodesAsTheDeclaredErrorShape(t *testing.T) {
-	recorder := refuse(t, "")
+	public, _, err := ed25519.GenerateKey(rand.Reader)
+	if err != nil {
+		t.Fatal(err)
+	}
+	router, err := NewRouter(Config{
+		Identity:              Identity{ProjectID: "p1", PoolID: "pool_1"},
+		ControlPlanePublicKey: base64.StdEncoding.EncodeToString(public),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	server := httptest.NewServer(router)
+	t.Cleanup(server.Close)
+	for _, tc := range []struct{ name, token, reason string }{
+		{"missing token", "", reasonMissingToken},
+		{"invalid token", "v4.public.not-a-real-token", reasonInvalidToken},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			client, err := workerapi.NewClient(server.URL, refusalSecuritySource(tc.token), workerapi.WithClient(server.Client()))
+			if err != nil {
+				t.Fatal(err)
+			}
+			err = client.PoolSync(t.Context(), &workerapi.PoolSyncRequest{KnownPoolIds: []string{"pool_1"}}, workerapi.PoolSyncParams{ProjectId: "p1", PoolId: "pool_1"})
+			var refusal *workerapi.ErrorModelStatusCode
+			if !errors.As(err, &refusal) {
+				t.Fatalf("PoolSync error = %v, want decoded API error", err)
+			}
+			if refusal.StatusCode != http.StatusUnauthorized || refusal.Response.Status.Value != http.StatusUnauthorized || refusal.Response.Title.Value != "Unauthorized" || refusal.Response.Detail.Value != tc.reason {
+				t.Fatalf("refusal = %+v, want 401 Unauthorized with detail %q", refusal, tc.reason)
+			}
+		})
+	}
+}
 
-	if got := recorder.Code; got != http.StatusUnauthorized {
-		t.Fatalf("status = %d, want 401", got)
-	}
-	if got := recorder.Header().Get("Content-Type"); got != "application/json" {
-		t.Fatalf("Content-Type = %q, want application/json", got)
-	}
-	var body struct {
-		Status int    `json:"status"`
-		Title  string `json:"title"`
-		Detail string `json:"detail"`
-	}
-	if err := json.Unmarshal(recorder.Body.Bytes(), &body); err != nil {
-		t.Fatalf("decode body %q: %v", recorder.Body.String(), err)
-	}
-	if body.Status != http.StatusUnauthorized || body.Title != "Unauthorized" {
-		t.Fatalf("body = %+v, want a 401 Unauthorized", body)
-	}
+type refusalSecuritySource string
+
+func (s refusalSecuritySource) PoolBearerAuth(context.Context, workerapi.OperationName) (workerapi.PoolBearerAuth, error) {
+	return workerapi.PoolBearerAuth{Token: string(s)}, nil
 }
 
 // The four refusals have to be distinguishable. An expired token means the
