@@ -213,6 +213,15 @@ func TestEngineConfigIsVSOCKInBothDirections(t *testing.T) {
 // The manifest is the contract between the server and the launcher child, and
 // it is the only place the guest's port map is written down on the host side.
 func TestManifestPlacesEveryPortAndSocket(t *testing.T) {
+	// The manifest is a Linux path namespace and the driver that renders one
+	// only ever runs on a Linux host, so it composes host paths with filepath
+	// and the artifact bundle below is a real directory from t.TempDir. On
+	// Windows both come back as "C:\..." with backslashes, which the manifest
+	// correctly refuses. What this asserts is the port and socket map, and that
+	// is not a thing the host's path syntax has an opinion about.
+	if runtime.GOOS == "windows" {
+		t.Skip("the driver renders Linux host paths; see krunvm for the format's own tests")
+	}
 	driver := &Driver{
 		runtimeDir:         "/run/user/1000/discobox/libkrun",
 		controlPlaneSocket: "/run/user/1000/discobox/server.sock",

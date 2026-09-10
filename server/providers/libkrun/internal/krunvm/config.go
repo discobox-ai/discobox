@@ -17,7 +17,7 @@ import (
 	"errors"
 	"fmt"
 	"os"
-	"path/filepath"
+	"path"
 	"strconv"
 	"strings"
 )
@@ -281,20 +281,28 @@ func (c Config) ValidateDiskFiles() error {
 	return nil
 }
 
-func validateAbsolutePath(name, path string) error {
-	if !filepath.IsAbs(path) {
-		return fmt.Errorf("%s %q must be an absolute path", name, path)
+// Every path in a manifest is a guest-side Linux path: the launcher that reads
+// one runs on linux/amd64, and the paths it names are inside the VM or on the
+// Linux host booting it. So these compare with `path`, not `filepath`. This
+// package compiles and its tests run on every platform (see the package
+// comment), and on Windows `filepath` reads "/var/lib/discobox" as relative and
+// cleans it to backslashes — a manifest this package wrote would be one it
+// rejects.
+func validateAbsolutePath(name, p string) error {
+	if !path.IsAbs(p) {
+		return fmt.Errorf("%s %q must be an absolute path", name, p)
 	}
-	if path != filepath.Clean(path) {
-		return fmt.Errorf("%s %q must be a clean path", name, path)
+	if p != path.Clean(p) {
+		return fmt.Errorf("%s %q must be a clean path", name, p)
 	}
 	return nil
 }
 
+// Both arguments have passed validateAbsolutePath, so they are absolute and
+// clean and a prefix test is exact. `path` has no Rel to borrow.
 func isBeneath(parent, child string) bool {
 	if parent == child {
 		return false
 	}
-	relative, err := filepath.Rel(parent, child)
-	return err == nil && relative != ".." && !strings.HasPrefix(relative, ".."+string(filepath.Separator))
+	return strings.HasPrefix(child, strings.TrimSuffix(parent, "/")+"/")
 }
