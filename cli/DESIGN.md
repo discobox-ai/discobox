@@ -733,15 +733,53 @@ positional argument shared with the command itself (`shell`, resolved by
 - Candidates are exactly what `discobox ls` shows — `listProjectSandboxes` filtered
   to the current project directory's origin — so the command and the listing can
   never disagree.
-- One candidate is used, none and several are errors, and several with a
-  terminal on stdin and stderr open the inline Bubble Tea picker instead.
+- One candidate is used. Several with a terminal on stdin and stderr open the
+  inline Bubble Tea picker; several without one is an error, since there is
+  nobody to ask. None is an error too, unless a wider list exists and there is
+  a terminal — see the widening bullet below.
+- `a` in the picker widens the list to `discobox ls --all`: every discobox in
+  the project, whatever directory or machine started it
+  (`pickerOptions.expand`, built by `sandboxPickerExpansion`). It is the same
+  `listProjectSandboxCandidates` call with `all` set, so the widened list is
+  `ls --all` minus the archived discoboxes — dropped for the reason the scoped
+  list drops them, that they have no runtime to act on. The load happens on the
+  first press and its answer is kept, `a` toggles back, the typed query survives
+  the swap, and a failed load is reported in the card with the scoped list left
+  up. Widened rows carry where each discobox came from — the project directory,
+  and the machine when `Origin.hostId` is not this host's — because across
+  directories that is the only thing telling two identically named discoboxes
+  apart. The scoped list omits it, since every row there shares one origin.
+  Names stay resolved per directory even so (`matchSandboxArg`): a name is
+  unique only within the directory that issued it. Picking a widened row is
+  unaffected, since the picker returns an ID.
+- A directory that started nothing opens the picker already widened rather than
+  failing, because there is no candidate to lose by asking; a directory that
+  started exactly one still takes it without asking, because stopping to ask
+  would cost every such run a keystroke to answer a question with one answer.
+  A pre-widened picker that finds the project empty, or cannot load it, reports
+  the caller's own wording rather than a cancel.
+- The origin is its own column, budgeted against the terminal width
+  (`columnBudgets`) and dropped entirely when there is too little left to read
+  — the picker is an inline program, so a card wider than the window does not
+  merely wrap, it smears, the repaint counting lines it drew rather than lines
+  the terminal made of them. Shortening elides the path's front and keeps the
+  machine name whole, that being what the prefix is there to carry, and a
+  shortened origin is drawn unhighlighted because the query's offsets were
+  measured against the whole string.
 - The picker prompts on stderr so the command's stdout stays a clean stream.
 - Sandbox picker labels read the server's `Sandbox.displayName`, exactly like
   `discobox ls` and the launcher; configured-name and ID fallbacks only defend
   against an incomplete response. Name resolution still uses the configured
   name, as described above.
-- `pickOne` is resource-independent: callers supply `pickerItem`s and the
-  wording for the empty and ambiguous cases.
+- A row's detail is `discobox ls`'s answer in the same words: the runtime state,
+  the CHANGES word from `sandboxGitState.changes` (dirty, ready, applied,
+  clean), and when it was last touched — so the choice between two discoboxes
+  can be made on which one holds work. The git word is dropped rather than drawn
+  as `-` when no agent has reported: a blank cell reads as a column, a dash
+  mid-sentence reads as a value. The detail is fuzzy-matched like every other
+  field, so `/dirty` and `/` plus a directory name both filter.
+- `pickOne` is resource-independent: callers supply `pickerItem`s, the wording
+  for the empty and ambiguous cases, and optionally the wider list `a` offers.
 - `/` opens the same search line the launcher's F1 help uses; it is absent
   until asked for. Typing there fuzzy-filters and re-ranks the list
   (`internal/cli/fuzzy.go`):
@@ -749,8 +787,8 @@ positional argument shared with the command itself (`shell`, resolved by
   contiguous, word-start, and early matches, with title weighted over ID over
   detail. Matched runes are highlighted; the list scrolls in a 20-row window.
   Enter closes the search line and leaves its filter applied; Escape abandons
-  it. Outside search, arrows, `j`/`k`, and `ctrl+p`/`ctrl+n` navigate, Enter
-  selects, and Escape cancels.
+  it. Outside search, arrows, `j`/`k`, and `ctrl+p`/`ctrl+n` navigate, `a`
+  widens the list, Enter selects, and Escape cancels.
 - Ordering with no query is the last sandbox picked for this project (marked
   `last used`), then most recently updated; the tie-break between equally scored
   matches is most recently updated. Typing hands ranking entirely to the query:

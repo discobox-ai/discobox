@@ -145,7 +145,7 @@ func (a *App) resolveShellTarget(cmd *cobra.Command, args []string) (projectID, 
 	if namesSandbox && len(args) > 0 && idpkg.IsGenerated(args[0]) {
 		return projectID, args[0], client, args[1:], nil
 	}
-	sandboxes, err := a.listProjectSandboxCandidates(cmd.Context(), client, projectID)
+	sandboxes, err := a.listProjectSandboxCandidates(cmd.Context(), client, projectID, false)
 	if err != nil {
 		return "", "", nil, nil, err
 	}
@@ -158,10 +158,11 @@ func (a *App) resolveShellTarget(cmd *cobra.Command, args []string) (projectID, 
 			return projectID, id, client, args[1:], nil
 		}
 	}
-	sandboxID, err = pickOne(cmd, "Select a discobox", sandboxPickerItems(sandboxes), pickerOptions{
+	sandboxID, err = pickOne(cmd, "Select a discobox", sandboxPickerItems(sandboxes, ""), pickerOptions{
 		empty:     "no discoboxes were started from this directory; start one with `discobox run`, or name the discobox as the first argument",
 		ambiguous: "more than one discobox was started from this directory; name the discobox as the first argument",
 		recentKey: "sandbox:" + projectID,
+		expand:    a.sandboxPickerExpansion(cmd.Context(), client, projectID),
 	})
 	return projectID, sandboxID, client, args, err
 }

@@ -214,18 +214,25 @@ func (a *App) resolveCPOperands(cmd *cobra.Command, client *apiclientgen.Client,
 //
 // An ID that names no discobox of this directory is still tried against the
 // whole project: a discobox started somewhere else is still a discobox, and an
-// ID says outright which one. A name is not, because names are only ever shown
-// — and matched — per directory.
+// ID says outright which one. A name is not, and stays matched per directory
+// even though the picker's "a" now *shows* names from the whole project: a
+// name is unique only within the directory that issued it, so two directories
+// can each hold a "docs", and resolving one project-wide would either pick a
+// discobox the user did not mean or fail as ambiguous. Picking such a row is
+// still fine — the picker hands back an ID, not the name — so what a widened
+// pick costs is only that the name cannot be retyped later, which is what the
+// error below says when someone tries.
 func (a *App) resolveCPSandbox(cmd *cobra.Command, client *apiclientgen.Client, projectID, reference string) (string, error) {
-	sandboxes, err := a.listProjectSandboxCandidates(cmd.Context(), client, projectID)
+	sandboxes, err := a.listProjectSandboxCandidates(cmd.Context(), client, projectID, false)
 	if err != nil {
 		return "", err
 	}
 	if reference == "" {
-		return pickOne(cmd, "Select a discobox", sandboxPickerItems(sandboxes), pickerOptions{
+		return pickOne(cmd, "Select a discobox", sandboxPickerItems(sandboxes, ""), pickerOptions{
 			empty:     "no discoboxes were started from this directory; start one with `discobox run`, or name one before the colon",
 			ambiguous: "more than one discobox was started from this directory; name one before the colon",
 			recentKey: "sandbox:" + projectID,
+			expand:    a.sandboxPickerExpansion(cmd.Context(), client, projectID),
 		})
 	}
 	sandboxID, ok, err := matchSandboxArg(reference, sandboxes)
@@ -236,7 +243,7 @@ func (a *App) resolveCPSandbox(cmd *cobra.Command, client *apiclientgen.Client, 
 		return sandboxID, nil
 	}
 	if !isResolvableShortID(reference) {
-		return "", fmt.Errorf("no discobox named %q was started from this directory; run `discobox ls` to see them, or write the discobox ID", reference)
+		return "", fmt.Errorf("no discobox named %q was started from this directory; run `discobox ls` to see them, `discobox ls --all` to see the ones started elsewhere, or write the discobox ID", reference)
 	}
 	sandboxID, err = a.resolveSandboxID(cmd.Context(), client, projectID, reference)
 	if err != nil {
