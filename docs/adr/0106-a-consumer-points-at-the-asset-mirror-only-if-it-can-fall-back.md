@@ -1,6 +1,7 @@
 # 0106 — A consumer points at the asset mirror only if it can fall back
 
-- **Status**: Proposed
+- **Status**: Accepted
+- **Amends**: [0099](0099-the-cli-downloads-the-server-it-starts.md) §3 in one respect — a manifest asset names an ordered list of URLs rather than one. Everything else in §3 stands, including that the manifest states a URL and a digest or neither: every entry in the list is checked against the same digest, so more sources is more places to find one verified artifact and never a location the binary trusts.
 - **Date**: 2026-09-10
 
 ## Context
