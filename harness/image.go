@@ -27,6 +27,14 @@ type ImageMetadata struct {
 	// boot, alongside its own primary group. An image needs this when a
 	// tool it ships (like the Docker CLI) checks group membership rather
 	// than relying solely on the sudo access every sandbox user already has.
+	//
+	// A group here grants access only when its GID inside the image matches
+	// the one on the host object it guards — a sandbox container is
+	// privileged, so it sees the host's /var/run/docker.sock and /dev/kvm with
+	// the host's numeric owners. Both sides are the same Debian release
+	// installing the same packages, so the allocations agree; a group whose
+	// GID diverges is membership in a group that owns nothing, which fails as
+	// a permission error rather than as anything louder.
 	AdditionalGroups []string `json:"additionalGroups,omitempty"`
 	Harness          *Image   `json:"harness,omitempty"`
 }
