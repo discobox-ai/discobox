@@ -10,12 +10,16 @@ func (a *App) newCompletionCommand() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "completion [bash|zsh|fish|powershell]",
 		Short: "Generate shell completion script",
-		Long: `Generate shell completion script.
+		// Named for the binary this is, not for the one it usually is: the
+		// latest channel installs the same CLI as `discobox-dev`, and a script
+		// telling somebody to write `_discobox` would have them overwrite the
+		// completions of the stable install sitting beside it (ADR 0105).
+		Long: fmt.Sprintf(`Generate shell completion script.
 
 Examples:
-  source <(discobox completion bash)
-  discobox completion zsh > "${fpath[1]}/_discobox"
-  discobox completion fish > ~/.config/fish/completions/discobox.fish`,
+  source <(%[1]s completion bash)
+  %[1]s completion zsh > "${fpath[1]}/_%[1]s"
+  %[1]s completion fish > ~/.config/fish/completions/%[1]s.fish`, commandName()),
 		Args: cobra.MatchAll(cobra.ExactArgs(1), cobra.OnlyValidArgs),
 		ValidArgs: []string{
 			"bash",

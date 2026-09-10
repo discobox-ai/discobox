@@ -8,6 +8,7 @@ import (
 	"mime"
 	"net/http"
 	"os"
+	"path/filepath"
 	"slices"
 	"strings"
 	"sync"
@@ -78,6 +79,27 @@ type App struct {
 	runsAnImage bool
 }
 
+// commandName is the name this binary was invoked as, which is what every
+// example, usage line, and generated completion script calls it.
+//
+// There is more than one, because Homebrew refuses to link two formulae that
+// install the same file: the latest channel installs the same binary as
+// `discobox-dev` so it can sit beside a stable `discobox` (ADR 0105). One
+// build, two names, and neither is knowable until it runs — so this reads
+// argv[0] rather than a linker stamp.
+//
+// Anything that is not a discobox name is one: a `go test` binary, `go run`'s
+// temporary file, a copy someone renamed. Those get the real name back, so that
+// output stays what a reader expects and does not depend on where the binary
+// happens to live.
+func commandName() string {
+	name := strings.TrimSuffix(filepath.Base(os.Args[0]), ".exe")
+	if name == "discobox" || strings.HasPrefix(name, "discobox-") {
+		return name
+	}
+	return "discobox"
+}
+
 func NewRootCommand() *cobra.Command {
 	cmd, _ := newRootCommand()
 	return cmd
@@ -91,22 +113,23 @@ func newRootCommand() (*cobra.Command, *App) {
 	app := &App{autoStart: autoStartServerAuto}
 	var run runCommandOptions
 	var runFlags *pflag.FlagSet
+	name := commandName()
 	cmd := &cobra.Command{
-		Use:   "discobox [flags]",
+		Use:   name + " [flags]",
 		Short: "Discobox command line client",
-		Long: `Discobox runs coding agents in isolated sandboxes on this machine.
+		Long: fmt.Sprintf(`Discobox runs coding agents in isolated sandboxes on this machine.
 
-Given a prompt, or any of the flags a run takes, this is "discobox run": the
+Given a prompt, or any of the flags a run takes, this is "%[1]s run": the
 command name can be left out of the thing you do most.
 
-  discobox -p 'fix the failing tests'
-  discobox -H codex -d -p 'fix the failing tests'
+  %[1]s -p 'fix the failing tests'
+  %[1]s -H codex -d -p 'fix the failing tests'
 
 The prompt is -p here, and only -p: a word on its own is still a subcommand, so
 a misspelled one says so rather than quietly becoming a prompt.
 
 With nothing at all it opens the launcher, where the same run is one prompt and
-an Enter. See "discobox run --help" for what the flags below mean.`,
+an Enter. See "%[1]s run --help" for what the flags below mean.`, name),
 		Version:       version.String(),
 		SilenceUsage:  true,
 		SilenceErrors: true,
