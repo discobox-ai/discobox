@@ -85,8 +85,18 @@ jobs:
     permissions:
       contents: read
       packages: write
+      # Depot authenticates by OIDC against the trust relationship on its
+      # project, which is what mints the token. Without this the CLI has
+      # nothing to present and the push fails with "unauthenticated: Invalid
+      # token" after both builds have already succeeded.
+      id-token: write
+    env:
+      DEPOT_PROJECT_ID: ${{ vars.DEPOT_PROJECT_ID }}
+      DEPOT_TOKEN: ${{ secrets.DEPOT_TOKEN }}
     steps:
       - uses: actions/checkout@v6.0.2
+      - uses: depot/setup-action@v1.7.2
+        if: vars.DEPOT_PROJECT_ID != ''
       - uses: docker/login-action@v3.6.0
         with:
           registry: ghcr.io
