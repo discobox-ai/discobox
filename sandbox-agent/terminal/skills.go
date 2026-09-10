@@ -29,12 +29,17 @@ const ProjectSkillsDir = ".discobox/skills"
 // ships: the ones for what is in every sandbox whatever it was made from, so
 // they cannot come from the repository being worked on (ADR 0080).
 //
-// `discobox-access` and `discobox-review` are what it holds today, and both
-// are there for the same reason: the tool is installed in every sandbox, and
-// an agent never told it exists reaches for what it was trained on instead. It
-// writes a token into a config file or asks the user to paste one into the
-// chat, which is the one thing the credential protocol exists to avoid; it
-// reviews its own change in its own context, which agrees with itself.
+// `discobox-access`, `discobox-review` and `discobox` are what it holds today,
+// for two reasons rather than one. The first two document a tool installed in
+// every sandbox, which an agent never told about reaches past for what it was
+// trained on instead: it writes a token into a config file or asks the user to
+// paste one into the chat, which is the one thing the credential protocol
+// exists to avoid; it reviews its own change in its own context, which agrees
+// with itself. `discobox` documents no tool — it describes the sandbox itself,
+// which an agent has no way to learn from inside and will otherwise guess
+// wrong about: that `origin` can be pushed to, that a sentinel is a real
+// credential to repair, that a port it is serving needs some further step to
+// reach the user.
 const BuiltinSkillsDir = "/usr/local/share/discobox/skills"
 
 // skillDirectories are the home-relative directories coding harnesses read

@@ -426,15 +426,16 @@ COPY --from=sandbox-agent-builder /out/discobox-access /usr/local/bin/discobox-a
 # the repository declares (ADR 0080). It lives in the module whose flags it
 # documents, so changing them puts somebody in front of it.
 COPY access/skills /usr/local/share/discobox/skills
-# The skills for the tools the image installs that no module here owns —
-# `discobox-review`, whose binary comes from discobox-ai/review below. Two
-# COPYs into one directory merge, so this tree and the module-owned one above
-# share it without either hiding the other.
+# The image's own skills: `discobox`, which tells an agent what the sandbox it
+# is running in is, and `discobox-review`, whose binary comes from
+# discobox-ai/review below. Two COPYs into one directory merge, so this tree and
+# the module-owned one above share it without either hiding the other.
 #
-# ADR 0080 §3 would put this skill beside the interface it documents, and that
-# interface is in another repository; see sandbox-agent/DESIGN.md for why it is
-# here anyway. What that costs is paid at `ARG REVIEW_VERSION` in the builder
-# stage, where the note to re-read this skill on a bump lives.
+# `discobox` is where ADR 0080 §3 puts it — the sandbox's own behavior is this
+# module's interface. `discobox-review`'s is not: that interface is in another
+# repository; see sandbox-agent/DESIGN.md for why it is here anyway. What that
+# costs is paid at `ARG REVIEW_VERSION` in the builder stage, where the note to
+# re-read that skill on a bump lives.
 COPY sandbox-agent/image/skills /usr/local/share/discobox/skills
 # Installs as `docker`, ahead of the real CLI at /usr/bin/docker on PATH, to
 # give `docker build` the pool-shared BuildKit cache. Non-build commands are
