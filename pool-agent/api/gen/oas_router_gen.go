@@ -11,7 +11,7 @@ import (
 )
 
 var (
-	rn15AllowedHeaders = map[string]string{
+	rn17AllowedHeaders = map[string]string{
 		"POST": "Authorization,Content-Type",
 	}
 	rn8AllowedHeaders = map[string]string{
@@ -26,14 +26,17 @@ var (
 	rn7AllowedHeaders = map[string]string{
 		"POST": "Authorization",
 	}
-	rn10AllowedHeaders = map[string]string{
-		"POST": "Authorization,Content-Type",
-	}
-	rn11AllowedHeaders = map[string]string{
+	rn12AllowedHeaders = map[string]string{
 		"POST": "Authorization,Content-Type",
 	}
 	rn13AllowedHeaders = map[string]string{
 		"POST": "Authorization,Content-Type",
+	}
+	rn15AllowedHeaders = map[string]string{
+		"POST": "Authorization,Content-Type",
+	}
+	rn10AllowedHeaders = map[string]string{
+		"POST": "Content-Type",
 	}
 )
 
@@ -76,163 +79,126 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			break
 		}
 		switch elem[0] {
-		case '/': // Prefix: "/api/project/"
+		case '/': // Prefix: "/"
 
-			if l := len("/api/project/"); len(elem) >= l && elem[0:l] == "/api/project/" {
+			if l := len("/"); len(elem) >= l && elem[0:l] == "/" {
 				elem = elem[l:]
 			} else {
 				break
 			}
 
-			// Param: "projectId"
-			// Match until "/"
-			idx := strings.IndexByte(elem, '/')
-			if idx < 0 {
-				idx = len(elem)
-			}
-			args[0] = elem[:idx]
-			elem = elem[idx:]
-
 			if len(elem) == 0 {
 				break
 			}
 			switch elem[0] {
-			case '/': // Prefix: "/pool/"
+			case 'a': // Prefix: "api/project/"
 
-				if l := len("/pool/"); len(elem) >= l && elem[0:l] == "/pool/" {
+				if l := len("api/project/"); len(elem) >= l && elem[0:l] == "api/project/" {
 					elem = elem[l:]
 				} else {
 					break
 				}
 
-				// Param: "poolId"
+				// Param: "projectId"
 				// Match until "/"
 				idx := strings.IndexByte(elem, '/')
 				if idx < 0 {
 					idx = len(elem)
 				}
-				args[1] = elem[:idx]
+				args[0] = elem[:idx]
 				elem = elem[idx:]
 
 				if len(elem) == 0 {
 					break
 				}
 				switch elem[0] {
-				case '/': // Prefix: "/"
+				case '/': // Prefix: "/pool/"
 
-					if l := len("/"); len(elem) >= l && elem[0:l] == "/" {
+					if l := len("/pool/"); len(elem) >= l && elem[0:l] == "/pool/" {
 						elem = elem[l:]
 					} else {
 						break
 					}
 
+					// Param: "poolId"
+					// Match until "/"
+					idx := strings.IndexByte(elem, '/')
+					if idx < 0 {
+						idx = len(elem)
+					}
+					args[1] = elem[:idx]
+					elem = elem[idx:]
+
 					if len(elem) == 0 {
 						break
 					}
 					switch elem[0] {
-					case 'p': // Prefix: "pool-sync"
+					case '/': // Prefix: "/"
 
-						if l := len("pool-sync"); len(elem) >= l && elem[0:l] == "pool-sync" {
+						if l := len("/"); len(elem) >= l && elem[0:l] == "/" {
 							elem = elem[l:]
 						} else {
 							break
 						}
 
 						if len(elem) == 0 {
-							// Leaf node.
-							switch r.Method {
-							case "POST":
-								s.handlePoolSyncRequest([2]string{
-									args[0],
-									args[1],
-								}, elemIsEscaped, w, r)
-							default:
-								s.notAllowed(w, r, notAllowedParams{
-									allowedMethods: "POST",
-									allowedHeaders: rn15AllowedHeaders,
-									acceptPost:     "application/json",
-									acceptPatch:    "",
-								})
-							}
-
-							return
-						}
-
-					case 's': // Prefix: "sandboxes"
-
-						if l := len("sandboxes"); len(elem) >= l && elem[0:l] == "sandboxes" {
-							elem = elem[l:]
-						} else {
 							break
-						}
-
-						if len(elem) == 0 {
-							switch r.Method {
-							case "GET":
-								s.handlePoolListSandboxesRequest([2]string{
-									args[0],
-									args[1],
-								}, elemIsEscaped, w, r)
-							case "POST":
-								s.handlePoolCreateSandboxRequest([2]string{
-									args[0],
-									args[1],
-								}, elemIsEscaped, w, r)
-							default:
-								s.notAllowed(w, r, notAllowedParams{
-									allowedMethods: "GET,POST",
-									allowedHeaders: rn8AllowedHeaders,
-									acceptPost:     "application/json",
-									acceptPatch:    "",
-								})
-							}
-
-							return
 						}
 						switch elem[0] {
-						case '/': // Prefix: "/"
+						case 'p': // Prefix: "pool-sync"
 
-							if l := len("/"); len(elem) >= l && elem[0:l] == "/" {
+							if l := len("pool-sync"); len(elem) >= l && elem[0:l] == "pool-sync" {
 								elem = elem[l:]
 							} else {
 								break
 							}
 
-							// Param: "sandboxId"
-							// Match until "/"
-							idx := strings.IndexByte(elem, '/')
-							if idx < 0 {
-								idx = len(elem)
-							}
-							args[2] = elem[:idx]
-							elem = elem[idx:]
-
 							if len(elem) == 0 {
+								// Leaf node.
 								switch r.Method {
-								case "DELETE":
-									s.handlePoolDeleteSandboxRequest([3]string{
+								case "POST":
+									s.handlePoolSyncRequest([2]string{
 										args[0],
 										args[1],
-										args[2],
-									}, elemIsEscaped, w, r)
-								case "GET":
-									s.handlePoolGetSandboxRequest([3]string{
-										args[0],
-										args[1],
-										args[2],
-									}, elemIsEscaped, w, r)
-								case "PATCH":
-									s.handlePoolUpdateSandboxRequest([3]string{
-										args[0],
-										args[1],
-										args[2],
 									}, elemIsEscaped, w, r)
 								default:
 									s.notAllowed(w, r, notAllowedParams{
-										allowedMethods: "DELETE,GET,PATCH",
-										allowedHeaders: rn6AllowedHeaders,
-										acceptPost:     "",
-										acceptPatch:    "application/json",
+										allowedMethods: "POST",
+										allowedHeaders: rn17AllowedHeaders,
+										acceptPost:     "application/json",
+										acceptPatch:    "",
+									})
+								}
+
+								return
+							}
+
+						case 's': // Prefix: "sandboxes"
+
+							if l := len("sandboxes"); len(elem) >= l && elem[0:l] == "sandboxes" {
+								elem = elem[l:]
+							} else {
+								break
+							}
+
+							if len(elem) == 0 {
+								switch r.Method {
+								case "GET":
+									s.handlePoolListSandboxesRequest([2]string{
+										args[0],
+										args[1],
+									}, elemIsEscaped, w, r)
+								case "POST":
+									s.handlePoolCreateSandboxRequest([2]string{
+										args[0],
+										args[1],
+									}, elemIsEscaped, w, r)
+								default:
+									s.notAllowed(w, r, notAllowedParams{
+										allowedMethods: "GET,POST",
+										allowedHeaders: rn8AllowedHeaders,
+										acceptPost:     "application/json",
+										acceptPatch:    "",
 									})
 								}
 
@@ -247,71 +213,50 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 									break
 								}
 
+								// Param: "sandboxId"
+								// Match until "/"
+								idx := strings.IndexByte(elem, '/')
+								if idx < 0 {
+									idx = len(elem)
+								}
+								args[2] = elem[:idx]
+								elem = elem[idx:]
+
 								if len(elem) == 0 {
-									break
+									switch r.Method {
+									case "DELETE":
+										s.handlePoolDeleteSandboxRequest([3]string{
+											args[0],
+											args[1],
+											args[2],
+										}, elemIsEscaped, w, r)
+									case "GET":
+										s.handlePoolGetSandboxRequest([3]string{
+											args[0],
+											args[1],
+											args[2],
+										}, elemIsEscaped, w, r)
+									case "PATCH":
+										s.handlePoolUpdateSandboxRequest([3]string{
+											args[0],
+											args[1],
+											args[2],
+										}, elemIsEscaped, w, r)
+									default:
+										s.notAllowed(w, r, notAllowedParams{
+											allowedMethods: "DELETE,GET,PATCH",
+											allowedHeaders: rn6AllowedHeaders,
+											acceptPost:     "",
+											acceptPatch:    "application/json",
+										})
+									}
+
+									return
 								}
 								switch elem[0] {
-								case 'a': // Prefix: "archive"
+								case '/': // Prefix: "/"
 
-									if l := len("archive"); len(elem) >= l && elem[0:l] == "archive" {
-										elem = elem[l:]
-									} else {
-										break
-									}
-
-									if len(elem) == 0 {
-										// Leaf node.
-										switch r.Method {
-										case "POST":
-											s.handlePoolArchiveSandboxRequest([3]string{
-												args[0],
-												args[1],
-												args[2],
-											}, elemIsEscaped, w, r)
-										default:
-											s.notAllowed(w, r, notAllowedParams{
-												allowedMethods: "POST",
-												allowedHeaders: rn7AllowedHeaders,
-												acceptPost:     "",
-												acceptPatch:    "",
-											})
-										}
-
-										return
-									}
-
-								case 'r': // Prefix: "restart"
-
-									if l := len("restart"); len(elem) >= l && elem[0:l] == "restart" {
-										elem = elem[l:]
-									} else {
-										break
-									}
-
-									if len(elem) == 0 {
-										// Leaf node.
-										switch r.Method {
-										case "POST":
-											s.handlePoolRestartSandboxRequest([3]string{
-												args[0],
-												args[1],
-												args[2],
-											}, elemIsEscaped, w, r)
-										default:
-											s.notAllowed(w, r, notAllowedParams{
-												allowedMethods: "POST",
-												allowedHeaders: rn10AllowedHeaders,
-												acceptPost:     "application/json",
-												acceptPatch:    "",
-											})
-										}
-
-										return
-									}
-
-								case 's': // Prefix: "st"
-
-									if l := len("st"); len(elem) >= l && elem[0:l] == "st" {
+									if l := len("/"); len(elem) >= l && elem[0:l] == "/" {
 										elem = elem[l:]
 									} else {
 										break
@@ -321,9 +266,9 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 										break
 									}
 									switch elem[0] {
-									case 'a': // Prefix: "art"
+									case 'a': // Prefix: "archive"
 
-										if l := len("art"); len(elem) >= l && elem[0:l] == "art" {
+										if l := len("archive"); len(elem) >= l && elem[0:l] == "archive" {
 											elem = elem[l:]
 										} else {
 											break
@@ -333,7 +278,7 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 											// Leaf node.
 											switch r.Method {
 											case "POST":
-												s.handlePoolStartSandboxRequest([3]string{
+												s.handlePoolArchiveSandboxRequest([3]string{
 													args[0],
 													args[1],
 													args[2],
@@ -341,8 +286,8 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 											default:
 												s.notAllowed(w, r, notAllowedParams{
 													allowedMethods: "POST",
-													allowedHeaders: rn11AllowedHeaders,
-													acceptPost:     "application/json",
+													allowedHeaders: rn7AllowedHeaders,
+													acceptPost:     "",
 													acceptPatch:    "",
 												})
 											}
@@ -350,9 +295,9 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 											return
 										}
 
-									case 'o': // Prefix: "op"
+									case 'r': // Prefix: "restart"
 
-										if l := len("op"); len(elem) >= l && elem[0:l] == "op" {
+										if l := len("restart"); len(elem) >= l && elem[0:l] == "restart" {
 											elem = elem[l:]
 										} else {
 											break
@@ -362,7 +307,7 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 											// Leaf node.
 											switch r.Method {
 											case "POST":
-												s.handlePoolStopSandboxRequest([3]string{
+												s.handlePoolRestartSandboxRequest([3]string{
 													args[0],
 													args[1],
 													args[2],
@@ -370,13 +315,85 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 											default:
 												s.notAllowed(w, r, notAllowedParams{
 													allowedMethods: "POST",
-													allowedHeaders: rn13AllowedHeaders,
+													allowedHeaders: rn12AllowedHeaders,
 													acceptPost:     "application/json",
 													acceptPatch:    "",
 												})
 											}
 
 											return
+										}
+
+									case 's': // Prefix: "st"
+
+										if l := len("st"); len(elem) >= l && elem[0:l] == "st" {
+											elem = elem[l:]
+										} else {
+											break
+										}
+
+										if len(elem) == 0 {
+											break
+										}
+										switch elem[0] {
+										case 'a': // Prefix: "art"
+
+											if l := len("art"); len(elem) >= l && elem[0:l] == "art" {
+												elem = elem[l:]
+											} else {
+												break
+											}
+
+											if len(elem) == 0 {
+												// Leaf node.
+												switch r.Method {
+												case "POST":
+													s.handlePoolStartSandboxRequest([3]string{
+														args[0],
+														args[1],
+														args[2],
+													}, elemIsEscaped, w, r)
+												default:
+													s.notAllowed(w, r, notAllowedParams{
+														allowedMethods: "POST",
+														allowedHeaders: rn13AllowedHeaders,
+														acceptPost:     "application/json",
+														acceptPatch:    "",
+													})
+												}
+
+												return
+											}
+
+										case 'o': // Prefix: "op"
+
+											if l := len("op"); len(elem) >= l && elem[0:l] == "op" {
+												elem = elem[l:]
+											} else {
+												break
+											}
+
+											if len(elem) == 0 {
+												// Leaf node.
+												switch r.Method {
+												case "POST":
+													s.handlePoolStopSandboxRequest([3]string{
+														args[0],
+														args[1],
+														args[2],
+													}, elemIsEscaped, w, r)
+												default:
+													s.notAllowed(w, r, notAllowedParams{
+														allowedMethods: "POST",
+														allowedHeaders: rn15AllowedHeaders,
+														acceptPost:     "application/json",
+														acceptPatch:    "",
+													})
+												}
+
+												return
+											}
+
 										}
 
 									}
@@ -389,6 +406,31 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 
 					}
 
+				}
+
+			case 'j': // Prefix: "judge"
+
+				if l := len("judge"); len(elem) >= l && elem[0:l] == "judge" {
+					elem = elem[l:]
+				} else {
+					break
+				}
+
+				if len(elem) == 0 {
+					// Leaf node.
+					switch r.Method {
+					case "POST":
+						s.handlePoolJudgeRequest([0]string{}, elemIsEscaped, w, r)
+					default:
+						s.notAllowed(w, r, notAllowedParams{
+							allowedMethods: "POST",
+							allowedHeaders: rn10AllowedHeaders,
+							acceptPost:     "application/json",
+							acceptPatch:    "",
+						})
+					}
+
+					return
 				}
 
 			}
@@ -479,163 +521,124 @@ func (s *Server) FindPath(method string, u *url.URL) (r Route, _ bool) {
 			break
 		}
 		switch elem[0] {
-		case '/': // Prefix: "/api/project/"
+		case '/': // Prefix: "/"
 
-			if l := len("/api/project/"); len(elem) >= l && elem[0:l] == "/api/project/" {
+			if l := len("/"); len(elem) >= l && elem[0:l] == "/" {
 				elem = elem[l:]
 			} else {
 				break
 			}
 
-			// Param: "projectId"
-			// Match until "/"
-			idx := strings.IndexByte(elem, '/')
-			if idx < 0 {
-				idx = len(elem)
-			}
-			args[0] = elem[:idx]
-			elem = elem[idx:]
-
 			if len(elem) == 0 {
 				break
 			}
 			switch elem[0] {
-			case '/': // Prefix: "/pool/"
+			case 'a': // Prefix: "api/project/"
 
-				if l := len("/pool/"); len(elem) >= l && elem[0:l] == "/pool/" {
+				if l := len("api/project/"); len(elem) >= l && elem[0:l] == "api/project/" {
 					elem = elem[l:]
 				} else {
 					break
 				}
 
-				// Param: "poolId"
+				// Param: "projectId"
 				// Match until "/"
 				idx := strings.IndexByte(elem, '/')
 				if idx < 0 {
 					idx = len(elem)
 				}
-				args[1] = elem[:idx]
+				args[0] = elem[:idx]
 				elem = elem[idx:]
 
 				if len(elem) == 0 {
 					break
 				}
 				switch elem[0] {
-				case '/': // Prefix: "/"
+				case '/': // Prefix: "/pool/"
 
-					if l := len("/"); len(elem) >= l && elem[0:l] == "/" {
+					if l := len("/pool/"); len(elem) >= l && elem[0:l] == "/pool/" {
 						elem = elem[l:]
 					} else {
 						break
 					}
 
+					// Param: "poolId"
+					// Match until "/"
+					idx := strings.IndexByte(elem, '/')
+					if idx < 0 {
+						idx = len(elem)
+					}
+					args[1] = elem[:idx]
+					elem = elem[idx:]
+
 					if len(elem) == 0 {
 						break
 					}
 					switch elem[0] {
-					case 'p': // Prefix: "pool-sync"
+					case '/': // Prefix: "/"
 
-						if l := len("pool-sync"); len(elem) >= l && elem[0:l] == "pool-sync" {
+						if l := len("/"); len(elem) >= l && elem[0:l] == "/" {
 							elem = elem[l:]
 						} else {
 							break
 						}
 
 						if len(elem) == 0 {
-							// Leaf node.
-							switch method {
-							case "POST":
-								r.name = PoolSyncOperation
-								r.summary = "Reconcile the set of pools this host should have, reaping any others"
-								r.operationID = "pool-sync"
-								r.operationGroup = ""
-								r.pathPattern = "/api/project/{projectId}/pool/{poolId}/pool-sync"
-								r.args = args
-								r.count = 2
-								return r, true
-							default:
-								return
-							}
-						}
-
-					case 's': // Prefix: "sandboxes"
-
-						if l := len("sandboxes"); len(elem) >= l && elem[0:l] == "sandboxes" {
-							elem = elem[l:]
-						} else {
 							break
-						}
-
-						if len(elem) == 0 {
-							switch method {
-							case "GET":
-								r.name = PoolListSandboxesOperation
-								r.summary = "List pool sandboxes"
-								r.operationID = "pool-list-sandboxes"
-								r.operationGroup = ""
-								r.pathPattern = "/api/project/{projectId}/pool/{poolId}/sandboxes"
-								r.args = args
-								r.count = 2
-								return r, true
-							case "POST":
-								r.name = PoolCreateSandboxOperation
-								r.summary = "Create pool sandbox"
-								r.operationID = "pool-create-sandbox"
-								r.operationGroup = ""
-								r.pathPattern = "/api/project/{projectId}/pool/{poolId}/sandboxes"
-								r.args = args
-								r.count = 2
-								return r, true
-							default:
-								return
-							}
 						}
 						switch elem[0] {
-						case '/': // Prefix: "/"
+						case 'p': // Prefix: "pool-sync"
 
-							if l := len("/"); len(elem) >= l && elem[0:l] == "/" {
+							if l := len("pool-sync"); len(elem) >= l && elem[0:l] == "pool-sync" {
 								elem = elem[l:]
 							} else {
 								break
 							}
 
-							// Param: "sandboxId"
-							// Match until "/"
-							idx := strings.IndexByte(elem, '/')
-							if idx < 0 {
-								idx = len(elem)
+							if len(elem) == 0 {
+								// Leaf node.
+								switch method {
+								case "POST":
+									r.name = PoolSyncOperation
+									r.summary = "Reconcile the set of pools this host should have, reaping any others"
+									r.operationID = "pool-sync"
+									r.operationGroup = ""
+									r.pathPattern = "/api/project/{projectId}/pool/{poolId}/pool-sync"
+									r.args = args
+									r.count = 2
+									return r, true
+								default:
+									return
+								}
 							}
-							args[2] = elem[:idx]
-							elem = elem[idx:]
+
+						case 's': // Prefix: "sandboxes"
+
+							if l := len("sandboxes"); len(elem) >= l && elem[0:l] == "sandboxes" {
+								elem = elem[l:]
+							} else {
+								break
+							}
 
 							if len(elem) == 0 {
 								switch method {
-								case "DELETE":
-									r.name = PoolDeleteSandboxOperation
-									r.summary = "Delete pool sandbox"
-									r.operationID = "pool-delete-sandbox"
-									r.operationGroup = ""
-									r.pathPattern = "/api/project/{projectId}/pool/{poolId}/sandboxes/{sandboxId}"
-									r.args = args
-									r.count = 3
-									return r, true
 								case "GET":
-									r.name = PoolGetSandboxOperation
-									r.summary = "Get pool sandbox"
-									r.operationID = "pool-get-sandbox"
+									r.name = PoolListSandboxesOperation
+									r.summary = "List pool sandboxes"
+									r.operationID = "pool-list-sandboxes"
 									r.operationGroup = ""
-									r.pathPattern = "/api/project/{projectId}/pool/{poolId}/sandboxes/{sandboxId}"
+									r.pathPattern = "/api/project/{projectId}/pool/{poolId}/sandboxes"
 									r.args = args
-									r.count = 3
+									r.count = 2
 									return r, true
-								case "PATCH":
-									r.name = PoolUpdateSandboxOperation
-									r.summary = "Update pool sandbox"
-									r.operationID = "pool-update-sandbox"
+								case "POST":
+									r.name = PoolCreateSandboxOperation
+									r.summary = "Create pool sandbox"
+									r.operationID = "pool-create-sandbox"
 									r.operationGroup = ""
-									r.pathPattern = "/api/project/{projectId}/pool/{poolId}/sandboxes/{sandboxId}"
+									r.pathPattern = "/api/project/{projectId}/pool/{poolId}/sandboxes"
 									r.args = args
-									r.count = 3
+									r.count = 2
 									return r, true
 								default:
 									return
@@ -650,63 +653,52 @@ func (s *Server) FindPath(method string, u *url.URL) (r Route, _ bool) {
 									break
 								}
 
+								// Param: "sandboxId"
+								// Match until "/"
+								idx := strings.IndexByte(elem, '/')
+								if idx < 0 {
+									idx = len(elem)
+								}
+								args[2] = elem[:idx]
+								elem = elem[idx:]
+
 								if len(elem) == 0 {
-									break
+									switch method {
+									case "DELETE":
+										r.name = PoolDeleteSandboxOperation
+										r.summary = "Delete pool sandbox"
+										r.operationID = "pool-delete-sandbox"
+										r.operationGroup = ""
+										r.pathPattern = "/api/project/{projectId}/pool/{poolId}/sandboxes/{sandboxId}"
+										r.args = args
+										r.count = 3
+										return r, true
+									case "GET":
+										r.name = PoolGetSandboxOperation
+										r.summary = "Get pool sandbox"
+										r.operationID = "pool-get-sandbox"
+										r.operationGroup = ""
+										r.pathPattern = "/api/project/{projectId}/pool/{poolId}/sandboxes/{sandboxId}"
+										r.args = args
+										r.count = 3
+										return r, true
+									case "PATCH":
+										r.name = PoolUpdateSandboxOperation
+										r.summary = "Update pool sandbox"
+										r.operationID = "pool-update-sandbox"
+										r.operationGroup = ""
+										r.pathPattern = "/api/project/{projectId}/pool/{poolId}/sandboxes/{sandboxId}"
+										r.args = args
+										r.count = 3
+										return r, true
+									default:
+										return
+									}
 								}
 								switch elem[0] {
-								case 'a': // Prefix: "archive"
+								case '/': // Prefix: "/"
 
-									if l := len("archive"); len(elem) >= l && elem[0:l] == "archive" {
-										elem = elem[l:]
-									} else {
-										break
-									}
-
-									if len(elem) == 0 {
-										// Leaf node.
-										switch method {
-										case "POST":
-											r.name = PoolArchiveSandboxOperation
-											r.summary = "Archive pool sandbox"
-											r.operationID = "pool-archive-sandbox"
-											r.operationGroup = ""
-											r.pathPattern = "/api/project/{projectId}/pool/{poolId}/sandboxes/{sandboxId}/archive"
-											r.args = args
-											r.count = 3
-											return r, true
-										default:
-											return
-										}
-									}
-
-								case 'r': // Prefix: "restart"
-
-									if l := len("restart"); len(elem) >= l && elem[0:l] == "restart" {
-										elem = elem[l:]
-									} else {
-										break
-									}
-
-									if len(elem) == 0 {
-										// Leaf node.
-										switch method {
-										case "POST":
-											r.name = PoolRestartSandboxOperation
-											r.summary = "Restart pool sandbox"
-											r.operationID = "pool-restart-sandbox"
-											r.operationGroup = ""
-											r.pathPattern = "/api/project/{projectId}/pool/{poolId}/sandboxes/{sandboxId}/restart"
-											r.args = args
-											r.count = 3
-											return r, true
-										default:
-											return
-										}
-									}
-
-								case 's': // Prefix: "st"
-
-									if l := len("st"); len(elem) >= l && elem[0:l] == "st" {
+									if l := len("/"); len(elem) >= l && elem[0:l] == "/" {
 										elem = elem[l:]
 									} else {
 										break
@@ -716,9 +708,9 @@ func (s *Server) FindPath(method string, u *url.URL) (r Route, _ bool) {
 										break
 									}
 									switch elem[0] {
-									case 'a': // Prefix: "art"
+									case 'a': // Prefix: "archive"
 
-										if l := len("art"); len(elem) >= l && elem[0:l] == "art" {
+										if l := len("archive"); len(elem) >= l && elem[0:l] == "archive" {
 											elem = elem[l:]
 										} else {
 											break
@@ -728,11 +720,11 @@ func (s *Server) FindPath(method string, u *url.URL) (r Route, _ bool) {
 											// Leaf node.
 											switch method {
 											case "POST":
-												r.name = PoolStartSandboxOperation
-												r.summary = "Start pool sandbox"
-												r.operationID = "pool-start-sandbox"
+												r.name = PoolArchiveSandboxOperation
+												r.summary = "Archive pool sandbox"
+												r.operationID = "pool-archive-sandbox"
 												r.operationGroup = ""
-												r.pathPattern = "/api/project/{projectId}/pool/{poolId}/sandboxes/{sandboxId}/start"
+												r.pathPattern = "/api/project/{projectId}/pool/{poolId}/sandboxes/{sandboxId}/archive"
 												r.args = args
 												r.count = 3
 												return r, true
@@ -741,9 +733,9 @@ func (s *Server) FindPath(method string, u *url.URL) (r Route, _ bool) {
 											}
 										}
 
-									case 'o': // Prefix: "op"
+									case 'r': // Prefix: "restart"
 
-										if l := len("op"); len(elem) >= l && elem[0:l] == "op" {
+										if l := len("restart"); len(elem) >= l && elem[0:l] == "restart" {
 											elem = elem[l:]
 										} else {
 											break
@@ -753,17 +745,81 @@ func (s *Server) FindPath(method string, u *url.URL) (r Route, _ bool) {
 											// Leaf node.
 											switch method {
 											case "POST":
-												r.name = PoolStopSandboxOperation
-												r.summary = "Stop pool sandbox"
-												r.operationID = "pool-stop-sandbox"
+												r.name = PoolRestartSandboxOperation
+												r.summary = "Restart pool sandbox"
+												r.operationID = "pool-restart-sandbox"
 												r.operationGroup = ""
-												r.pathPattern = "/api/project/{projectId}/pool/{poolId}/sandboxes/{sandboxId}/stop"
+												r.pathPattern = "/api/project/{projectId}/pool/{poolId}/sandboxes/{sandboxId}/restart"
 												r.args = args
 												r.count = 3
 												return r, true
 											default:
 												return
 											}
+										}
+
+									case 's': // Prefix: "st"
+
+										if l := len("st"); len(elem) >= l && elem[0:l] == "st" {
+											elem = elem[l:]
+										} else {
+											break
+										}
+
+										if len(elem) == 0 {
+											break
+										}
+										switch elem[0] {
+										case 'a': // Prefix: "art"
+
+											if l := len("art"); len(elem) >= l && elem[0:l] == "art" {
+												elem = elem[l:]
+											} else {
+												break
+											}
+
+											if len(elem) == 0 {
+												// Leaf node.
+												switch method {
+												case "POST":
+													r.name = PoolStartSandboxOperation
+													r.summary = "Start pool sandbox"
+													r.operationID = "pool-start-sandbox"
+													r.operationGroup = ""
+													r.pathPattern = "/api/project/{projectId}/pool/{poolId}/sandboxes/{sandboxId}/start"
+													r.args = args
+													r.count = 3
+													return r, true
+												default:
+													return
+												}
+											}
+
+										case 'o': // Prefix: "op"
+
+											if l := len("op"); len(elem) >= l && elem[0:l] == "op" {
+												elem = elem[l:]
+											} else {
+												break
+											}
+
+											if len(elem) == 0 {
+												// Leaf node.
+												switch method {
+												case "POST":
+													r.name = PoolStopSandboxOperation
+													r.summary = "Stop pool sandbox"
+													r.operationID = "pool-stop-sandbox"
+													r.operationGroup = ""
+													r.pathPattern = "/api/project/{projectId}/pool/{poolId}/sandboxes/{sandboxId}/stop"
+													r.args = args
+													r.count = 3
+													return r, true
+												default:
+													return
+												}
+											}
+
 										}
 
 									}
@@ -776,6 +832,31 @@ func (s *Server) FindPath(method string, u *url.URL) (r Route, _ bool) {
 
 					}
 
+				}
+
+			case 'j': // Prefix: "judge"
+
+				if l := len("judge"); len(elem) >= l && elem[0:l] == "judge" {
+					elem = elem[l:]
+				} else {
+					break
+				}
+
+				if len(elem) == 0 {
+					// Leaf node.
+					switch method {
+					case "POST":
+						r.name = PoolJudgeOperation
+						r.summary = "Judge a typed credential operation over pool-private IPC."
+						r.operationID = "pool-judge"
+						r.operationGroup = ""
+						r.pathPattern = "/judge"
+						r.args = args
+						r.count = 0
+						return r, true
+					default:
+						return
+					}
 				}
 
 			}

@@ -753,6 +753,179 @@ func (s *HarnessVolumeVolume) UnmarshalText(data []byte) error {
 	}
 }
 
+// Ref: #/components/schemas/JudgeJob
+type JudgeJob struct {
+	Kind       string    `json:"kind"`
+	Purpose    string    `json:"purpose"`
+	Host       string    `json:"host"`
+	Credential string    `json:"credential"`
+	Command    []string  `json:"command"`
+	Evidence   OptString `json:"evidence"`
+}
+
+// GetKind returns the value of Kind.
+func (s *JudgeJob) GetKind() string {
+	return s.Kind
+}
+
+// GetPurpose returns the value of Purpose.
+func (s *JudgeJob) GetPurpose() string {
+	return s.Purpose
+}
+
+// GetHost returns the value of Host.
+func (s *JudgeJob) GetHost() string {
+	return s.Host
+}
+
+// GetCredential returns the value of Credential.
+func (s *JudgeJob) GetCredential() string {
+	return s.Credential
+}
+
+// GetCommand returns the value of Command.
+func (s *JudgeJob) GetCommand() []string {
+	return s.Command
+}
+
+// GetEvidence returns the value of Evidence.
+func (s *JudgeJob) GetEvidence() OptString {
+	return s.Evidence
+}
+
+// SetKind sets the value of Kind.
+func (s *JudgeJob) SetKind(val string) {
+	s.Kind = val
+}
+
+// SetPurpose sets the value of Purpose.
+func (s *JudgeJob) SetPurpose(val string) {
+	s.Purpose = val
+}
+
+// SetHost sets the value of Host.
+func (s *JudgeJob) SetHost(val string) {
+	s.Host = val
+}
+
+// SetCredential sets the value of Credential.
+func (s *JudgeJob) SetCredential(val string) {
+	s.Credential = val
+}
+
+// SetCommand sets the value of Command.
+func (s *JudgeJob) SetCommand(val []string) {
+	s.Command = val
+}
+
+// SetEvidence sets the value of Evidence.
+func (s *JudgeJob) SetEvidence(val OptString) {
+	s.Evidence = val
+}
+
+// Ref: #/components/schemas/JudgeVerdict
+type JudgeVerdict struct {
+	Allow           bool   `json:"allow"`
+	Reason          string `json:"reason"`
+	Role            string `json:"role"`
+	Prompt          string `json:"prompt"`
+	PromptVersion   string `json:"promptVersion"`
+	LatencyMs       int64  `json:"latencyMs"`
+	HarnessConfigId string `json:"harnessConfigId"`
+	Revision        string `json:"revision"`
+	Image           string `json:"image"`
+}
+
+// GetAllow returns the value of Allow.
+func (s *JudgeVerdict) GetAllow() bool {
+	return s.Allow
+}
+
+// GetReason returns the value of Reason.
+func (s *JudgeVerdict) GetReason() string {
+	return s.Reason
+}
+
+// GetRole returns the value of Role.
+func (s *JudgeVerdict) GetRole() string {
+	return s.Role
+}
+
+// GetPrompt returns the value of Prompt.
+func (s *JudgeVerdict) GetPrompt() string {
+	return s.Prompt
+}
+
+// GetPromptVersion returns the value of PromptVersion.
+func (s *JudgeVerdict) GetPromptVersion() string {
+	return s.PromptVersion
+}
+
+// GetLatencyMs returns the value of LatencyMs.
+func (s *JudgeVerdict) GetLatencyMs() int64 {
+	return s.LatencyMs
+}
+
+// GetHarnessConfigId returns the value of HarnessConfigId.
+func (s *JudgeVerdict) GetHarnessConfigId() string {
+	return s.HarnessConfigId
+}
+
+// GetRevision returns the value of Revision.
+func (s *JudgeVerdict) GetRevision() string {
+	return s.Revision
+}
+
+// GetImage returns the value of Image.
+func (s *JudgeVerdict) GetImage() string {
+	return s.Image
+}
+
+// SetAllow sets the value of Allow.
+func (s *JudgeVerdict) SetAllow(val bool) {
+	s.Allow = val
+}
+
+// SetReason sets the value of Reason.
+func (s *JudgeVerdict) SetReason(val string) {
+	s.Reason = val
+}
+
+// SetRole sets the value of Role.
+func (s *JudgeVerdict) SetRole(val string) {
+	s.Role = val
+}
+
+// SetPrompt sets the value of Prompt.
+func (s *JudgeVerdict) SetPrompt(val string) {
+	s.Prompt = val
+}
+
+// SetPromptVersion sets the value of PromptVersion.
+func (s *JudgeVerdict) SetPromptVersion(val string) {
+	s.PromptVersion = val
+}
+
+// SetLatencyMs sets the value of LatencyMs.
+func (s *JudgeVerdict) SetLatencyMs(val int64) {
+	s.LatencyMs = val
+}
+
+// SetHarnessConfigId sets the value of HarnessConfigId.
+func (s *JudgeVerdict) SetHarnessConfigId(val string) {
+	s.HarnessConfigId = val
+}
+
+// SetRevision sets the value of Revision.
+func (s *JudgeVerdict) SetRevision(val string) {
+	s.Revision = val
+}
+
+// SetImage sets the value of Image.
+func (s *JudgeVerdict) SetImage(val string) {
+	s.Image = val
+}
+
 // NewNilDateTime returns new NilDateTime with value set to v.
 func NewNilDateTime(v time.Time) NilDateTime {
 	return NilDateTime{
@@ -3089,6 +3262,7 @@ type SandboxConfigHarnessMode string
 const (
 	SandboxConfigHarnessModeRun    SandboxConfigHarnessMode = "run"
 	SandboxConfigHarnessModeConfig SandboxConfigHarnessMode = "config"
+	SandboxConfigHarnessModeJudge  SandboxConfigHarnessMode = "judge"
 )
 
 // AllValues returns all SandboxConfigHarnessMode values.
@@ -3096,6 +3270,7 @@ func (SandboxConfigHarnessMode) AllValues() []SandboxConfigHarnessMode {
 	return []SandboxConfigHarnessMode{
 		SandboxConfigHarnessModeRun,
 		SandboxConfigHarnessModeConfig,
+		SandboxConfigHarnessModeJudge,
 	}
 }
 
@@ -3105,6 +3280,8 @@ func (s SandboxConfigHarnessMode) MarshalText() ([]byte, error) {
 	case SandboxConfigHarnessModeRun:
 		return []byte(s), nil
 	case SandboxConfigHarnessModeConfig:
+		return []byte(s), nil
+	case SandboxConfigHarnessModeJudge:
 		return []byte(s), nil
 	default:
 		return nil, errors.Errorf("invalid value: %q", s)
@@ -3119,6 +3296,9 @@ func (s *SandboxConfigHarnessMode) UnmarshalText(data []byte) error {
 		return nil
 	case SandboxConfigHarnessModeConfig:
 		*s = SandboxConfigHarnessModeConfig
+		return nil
+	case SandboxConfigHarnessModeJudge:
+		*s = SandboxConfigHarnessModeJudge
 		return nil
 	default:
 		return errors.Errorf("invalid value: %q", data)

@@ -378,6 +378,15 @@ func (UnimplementedHandler) GetPool(ctx context.Context, params GetPoolParams) (
 	return r, ht.ErrNotImplemented
 }
 
+// GetPoolJudgeRuntime implements get-pool-judge-runtime operation.
+//
+// Get pool judge runtime.
+//
+// GET /api/pools/{poolId}/judge-runtime
+func (UnimplementedHandler) GetPoolJudgeRuntime(ctx context.Context, params GetPoolJudgeRuntimeParams) (r GetPoolJudgeRuntimeRes, _ error) {
+	return r, ht.ErrNotImplemented
+}
+
 // GetProject implements get-project operation.
 //
 // Get a project.
@@ -483,6 +492,15 @@ func (UnimplementedHandler) GetSecretRequest(ctx context.Context, params GetSecr
 //
 // GET /peer
 func (UnimplementedHandler) GetServerPeer(ctx context.Context) (r GetServerPeerRes, _ error) {
+	return r, ht.ErrNotImplemented
+}
+
+// JudgeSandbox implements judge-sandbox operation.
+//
+// Judge sandbox.
+//
+// POST /api/projects/{projectId}/sandboxes/{sandboxId}/judge
+func (UnimplementedHandler) JudgeSandbox(ctx context.Context, req *JudgeJob, params JudgeSandboxParams) (r JudgeSandboxRes, _ error) {
 	return r, ht.ErrNotImplemented
 }
 
@@ -720,7 +738,7 @@ func (UnimplementedHandler) ReconcileSandbox(ctx context.Context, params Reconci
 
 // RecordCredentialVerdict implements record-credential-verdict operation.
 //
-// Record a judge's verdict about a command run under an agent credential use.
+// Record a credential command or request verdict.
 //
 // POST /api/pools/{poolId}/sandbox-credential-verdicts
 func (UnimplementedHandler) RecordCredentialVerdict(ctx context.Context, req *RecordCredentialVerdictBody, params RecordCredentialVerdictParams) (r RecordCredentialVerdictRes, _ error) {

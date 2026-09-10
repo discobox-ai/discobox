@@ -102,6 +102,7 @@ type ServiceConfig struct {
 const configHarnessMode = "config"
 
 type Service struct {
+	judgeSlot      chan struct{}
 	execs          *execs.Manager
 	harness        config.Harness
 	env            map[string]string
@@ -160,6 +161,7 @@ func NewService(cfg ServiceConfig) (*Service, error) {
 	}
 
 	s := &Service{
+		judgeSlot:     make(chan struct{}, 1),
 		execs:         cfg.Execs,
 		harness:       cloneHarness(cfg.Harness),
 		env:           cloneMap(cfg.Env),

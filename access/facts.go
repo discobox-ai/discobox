@@ -9,7 +9,7 @@ import (
 )
 
 // factsTimeout bounds every git lookup gatherFacts makes, combined. It is far
-// shorter than judgeTimeout and is not carved out of it — a fact is
+// shorter than the service's judge timeout and is not carved out of it — a fact is
 // best-effort context for the prompt, not something worth spending the
 // model's own budget waiting on, and a git invocation that hangs (a
 // credential helper prompting on a terminal that is not there, for instance)
@@ -19,8 +19,7 @@ const factsTimeout = 5 * time.Second
 // facts is what gatherFacts could establish about where the command runs and,
 // for a command naming a git ref, what that ref resolves to (ADR 0090 §2).
 // Every field is best-effort and independently optional: a value the CLI
-// could not establish is left empty, and judgePrompt omits what it did not
-// get rather than sending a placeholder.
+// could not establish is left empty in the untrusted evidence sent to the service.
 type facts struct {
 	repoRoot   string
 	refSHA     string

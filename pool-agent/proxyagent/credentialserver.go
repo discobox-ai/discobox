@@ -77,7 +77,7 @@ func serveCredentialsOn(ctx context.Context, logger *slog.Logger, tcp net.Listen
 		ReadHeaderTimeout: 10 * time.Second,
 		// A request here is one control-plane round trip, never a stream, so
 		// bounded deadlines are safe and a stuck sandbox cannot pin a connection.
-		ReadTimeout:  30 * time.Second,
+		ReadTimeout:  credentialBrokerTimeout,
 		WriteTimeout: 60 * time.Second,
 		IdleTimeout:  120 * time.Second,
 		BaseContext:  func(net.Listener) context.Context { return ctx },
@@ -129,6 +129,7 @@ func (h *credentialsHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	defer cancel()
 	agentcreds.NewHandler(&credentialBroker{
 		sandboxID:   sandboxID,
+		judge:       callPoolJudge,
 		controlPlan: h.controlPlane,
 		activations: h.activations,
 	}).ServeHTTP(w, r.WithContext(ctx))

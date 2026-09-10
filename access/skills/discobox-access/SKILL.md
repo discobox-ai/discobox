@@ -75,10 +75,12 @@ discobox-access run --use use_7f3a2b -- gh pr create --fill
 
 - The credential goes into that one child process's environment and nowhere
   else. It exits with your command's own status, like `env`(1).
-- Before it runs, a model checks your command against the sentence the use was
+- Before it runs, the pool’s dedicated judge checks your command against the sentence the use was
   approved for. **Stay inside what was approved.** A command broader than the
   approved use is refused with `denied` and never starts. If you need something
   else, ask for it in step 2 rather than stretching an existing use.
+- Each outbound API request is also checked against the approved use before the
+  proxy supplies the credential. Supporting requests must fit that use too.
 - Everything after `--` is your command, run exactly as written.
 
 There is no command that prints the value on its own. `run` is the only way to

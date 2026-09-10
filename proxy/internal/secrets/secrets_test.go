@@ -358,7 +358,7 @@ func applyPrevious(t *testing.T, sw *Swapper, clientID, sentinel string) (string
 	t.Helper()
 	req := newRequest(t, http.MethodGet, "https://api.example.com/")
 	req.Header.Set("Authorization", "Bearer "+sentinel)
-	res := sw.ApplyPrevious(req, clientID)
+	res := sw.ApplyPrevious(context.Background(), req, clientID)
 	return req.Header.Get("Authorization"), res.Swapped()
 }
 
@@ -424,3 +424,5 @@ func TestInvalidateForcesReresolve(t *testing.T) {
 		t.Fatalf("resolver called %d times after Invalidate, want a fresh resolve", calls)
 	}
 }
+
+func (f *fakeResolver) Authorize(context.Context, AuthorizeRequest) error { return nil }

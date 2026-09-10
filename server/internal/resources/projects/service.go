@@ -128,6 +128,20 @@ func (s *Service) UpdateProject(ctx context.Context, projectID string, input ser
 			project.Name = name
 		}
 	}
+	if selected, ok := input.JudgeHarnessConfigId.Get(); ok {
+		selected = strings.TrimSpace(selected)
+		if selected != "" {
+			hc, err := s.store.GetHarnessConfig(ctx, projectID, selected)
+			if err != nil {
+				return nil, apperrors.NotFound(err, "judge harness not found")
+			}
+			if !hc.Configured || hc.Slug == "shell" {
+				return nil, apperrors.NewStatusError(http.StatusBadRequest, "judge requires a configured prompting harness")
+			}
+		}
+		project.JudgeHarnessConfigID = selected
+	}
+
 	if retention, ok := input.ArchiveRetentionSeconds.Get(); ok {
 		if retention < 0 {
 			return nil, apperrors.NewStatusError(http.StatusBadRequest, "archive retention cannot be negative")

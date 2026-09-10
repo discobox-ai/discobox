@@ -78,81 +78,24 @@ Rules the shape depends on:
 
 ## The judge
 
-`run` does not execute a command until a model has agreed the command is the use
-a human approved it for ([ADR 0079](../docs/adr/0079-a-local-judge-gates-every-wrapped-credential-use.md)).
+`run` sends its argv and bounded working-directory/git context to the credential
+service. It receives a sentinel only after the service judges the command and
+records an allow. The CLI executes no model and accepts no caller verdict.
+Unavailable, malformed, denied, or unrecorded results never start the child.
 
-The model is reached through `discobox-prompt`, which the **harness image**
-provides — `claude -p` for claude-code, `codex exec` for codex-cli — and which
-the CLI calls as:
+In Discobox the local sandbox-agent relays to the pool credential broker. The
+broker loads the approved purpose from the control plane and calls the pool's
+dedicated judge harness. The proxy calls the same service for each actual HTTP
+request before substituting a use-scoped sentinel, including cached values and
+retries. See [ADR 0106](../docs/adr/0106-a-trusted-judge-checks-requests-before-credential-substitution.md)
+and [`pool-agent/DESIGN.md`](../pool-agent/DESIGN.md).
 
-```
-discobox-prompt --model judge --system <instructions> --prompt <use + argv + facts> --output-schema {allow, reason} --no-tools
-```
-
-`--model judge` names a role. The CLI never learns a model id; mapping the role
-onto a model is the wrapper's job, because the wrapper is the half that knows
-what its image installed. What the role is worth spending is its decision too:
-claude-code sends `judge` to Sonnet and keeps the small model for `fast`, since
-a wrong `allow` costs a credential and a wrong `deny` costs a retry.
-
-`--no-tools` is passed on every call and cannot be turned off
-([ADR 0090](../docs/adr/0090-the-judge-is-handed-facts-and-given-no-tools.md)).
-The judge answers from its prompt and executes nothing: no command, no file
-read, no network fetch. `discobox-prompt` maps it onto whatever its CLI calls
-the same thing — claude-code adds `--tools "" --restricted
---disable-slash-commands`, which also stops the judge session reading the
-sandbox's own `~/.claude` settings and skills, both of which the agent it is
-judging can write; codex-cli, which has no tools-off switch, adds `--sandbox
-read-only --ask-for-approval never` and leaves read access as the residual.
-
-`judgePrompt` (`facts.go`) adds a small, bounded block of facts the CLI itself
-gathers — never anything the argv or the repository chooses: the repository
-root, and, for a command naming a git ref, that ref's resolved SHA and commit
-subject. The subject is labelled in the prompt as the agent's own words
-reaching the judge by a second route, not a fact about the world — it can only
-catch a refspec that names something unlike the approved sentence, not verify
-that a commit is what it claims. Every git call goes through `gitOutput`, which
-pins `core.pager` and `diff.external` on the command line so the repository's
-own configuration cannot redirect a lookup into running something else; nothing
-here diffs or shows a patch today, so the guard is currently unreachable, but
-it costs nothing and stays true if that changes.
-
-Three properties do the work:
-
-- **Judge first, take second.** The approved use comes from `list`, the verdict
-  comes before the use call, and only then is a value issued. A refusal
-  therefore mints no ephemeral sentinel and leaves no activation behind. A use
-  `list` does not carry is refused without asking anyone: there is no approved
-  sentence to hold the command up to.
-- **Every non-yes is a no.** No wrapper installed, a non-zero exit, an
-  unreadable answer, or `allow: false` all stop the command with code `denied`.
-  There is no flag to skip the judge — an escape hatch would be used by exactly
-  the situation the gate exists for.
-- **A credential is never issued without a record of why**
-  ([ADR 0091](../docs/adr/0091-a-credential-is-not-issued-without-a-verdict-on-record.md)).
-  `judgeCommand` always returns the verdict it reached, not only whether to
-  proceed, and `run` carries it on the very call that takes a value —
-  `agentcreds.UseBody.Verdict` — so the pool agent can persist it to the
-  control plane before minting and refuse to mint at all if that write fails.
-  A refusal never reaches that call, so it has nowhere else to leave a trace;
-  `run` reports it separately with `client.ReportDenial`, best-effort — its own
-  failure changes nothing about what `run` reports for the refusal that
-  prompted it — and skipped entirely when no judge was ever reached (a missing
-  wrapper, say): there is no verdict to report when nothing was asked.
-
-**It is a guardrail, not a boundary.** It runs in the sandbox, so an agent that
-does not want to be judged calls the protocol endpoint directly, bypassing this
-CLI entirely. Nothing here is an authorization decision and no trusted-side
-check is relaxed for it: the pool agent still refuses a sentinel outside its
-window or against another host, and the control plane still checks the grant.
-What the judge catches is the honest failure — drift from the granted task, a
-command broader than it needed, or an agent steered by something it read.
-
-This CLI no longer offers a way to take a value without a command to judge.
-There was one, `get`, and removing it was a decision made in advance of it ever
-being made safe: an unjudged path that any future improvement to the judge
-would have to keep supporting is a path that has to be secured forever, not
-just today. See [ADR 0092](../docs/adr/0092-the-cli-has-no-unjudged-way-to-take-a-value.md).
+`facts.go` gathers best-effort repository root, ref SHA, and commit subject.
+These are untrusted caller claims; neither git metadata nor the declared
+command grants authority over the actual request. Git lookups are bounded and
+pin pager/external-diff settings. The portable client remains dependent only on
+`agentcreds`; model selection, prompt construction and verdict persistence are
+service responsibilities.
 
 ## The skill
 

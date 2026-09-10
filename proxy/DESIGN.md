@@ -288,3 +288,17 @@ public verification key; pool-agent owns the private signing key.
 SOCKS5 remains a TCP tunnel. It is authenticated by the same mTLS listener and
 records connect attempts, destination, allow/deny, and client identity, but it
 does not inspect tunneled payloads.
+
+## Use-scoped request authorization
+
+`secrets.Resolver.Authorize` is required before resolving or using cached or
+previous credentials. The swapper gathers all exact and supported encoded
+header/query matches and commits substitutions atomically only after every
+authorization and resolution succeeds. A refusal leaves all sentinels intact.
+
+The resolver receives the original request before header rewriting. Evidence
+capture preserves upstream bytes, redacts credential fields, and bounds complete
+identity/gzip UTF-8 JSON, form and text bodies. Duplicate JSON keys, malformed
+queries, unsupported content, truncation, oversized bodies and upgrades cannot
+authorize a use. Each attempt receives a request ID; HTTP audit records persist
+all judge request IDs and failures, including retry attempts.

@@ -104,6 +104,9 @@ func TestHTTPProxyRetriesRejectedSwappedCredential(t *testing.T) {
 	var mu sync.Mutex
 	origin := newOrigin(func(w http.ResponseWriter, r *http.Request) {
 		attempts.Add(1)
+		if r.Header.Get("X-Proxy-Marker") != "rewritten" {
+			t.Error("retry lost trusted header rewrite")
+		}
 		received, _ := io.ReadAll(r.Body)
 		mu.Lock()
 		sawBodies = append(sawBodies, string(received))
@@ -118,7 +121,9 @@ func TestHTTPProxyRetriesRejectedSwappedCredential(t *testing.T) {
 	defer origin.Close()
 
 	resolver := &rotatingResolver{values: []string{stale, rotated}}
-	client := startSecretProxy(ctx, t, sentinel, resolver)
+	client := startSecretProxy(ctx, t, sentinel, resolver, func(cfg *Config) {
+		cfg.Headers = []HeaderRule{{ID: "marker", Pattern: "*", Set: map[string]string{"X-Proxy-Marker": "rewritten"}}}
+	})
 
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, origin.URL, strings.NewReader(body))
 	if err != nil {
@@ -310,3 +315,6 @@ func TestHTTPProxyRetriesWithTheDisplacedCredential(t *testing.T) {
 		t.Fatalf("upstream attempts = %d, want the first request, its rejection, and one retry", n)
 	}
 }
+
+func (r *rotatingResolver) Authorize(context.Context, secrets.AuthorizeRequest) error { return nil }
+func (r *settableResolver) Authorize(context.Context, secrets.AuthorizeRequest) error { return nil }

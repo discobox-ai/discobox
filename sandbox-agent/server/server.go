@@ -394,7 +394,7 @@ func Serve(ctx context.Context, logger *slog.Logger, cfg Config) error {
 	// command is interactive and reads inputs seeded into the sandbox after it is
 	// running, so launching it at boot would race that seeding. Attaching to the
 	// virtual primary exec id launches it (see terminal.ResolvePrimary).
-	if cfg.HarnessMode != "config" {
+	if cfg.HarnessMode != "config" && cfg.HarnessMode != "judge" {
 		go func() {
 			switch err := manager.EnsurePrimary(ctx, cfg.Prompt); {
 			case err == nil, errors.Is(err, context.Canceled):
@@ -409,7 +409,7 @@ func Serve(ctx context.Context, logger *slog.Logger, cfg Config) error {
 	// cannot hold up the agent answering — and a config-mode sandbox starts
 	// none, since it exists to run one setup command and end, not to be worked
 	// in.
-	if cfg.HarnessMode != "config" && built.services != nil {
+	if cfg.HarnessMode != "config" && cfg.HarnessMode != "judge" && built.services != nil {
 		go startDeclaredServices(ctx, logger, built.awaitSources, built.services.EnsureStarted)
 	}
 	go execReconcileLoop(ctx, logger, execManager)

@@ -66,6 +66,12 @@ type Handler interface {
 	//
 	// GET /api/projects/{projectId}/sandboxes/{sandboxId}/services/{serviceId}
 	GetSandboxService(ctx context.Context, params GetSandboxServiceParams) (*SandboxService, error)
+	// JudgeSandbox implements judge-sandbox operation.
+	//
+	// Judge sandbox.
+	//
+	// POST /api/projects/{projectId}/sandboxes/{sandboxId}/judge
+	JudgeSandbox(ctx context.Context, req *JudgeJob, params JudgeSandboxParams) (*JudgeVerdict, error)
 	// ListHarnessHooks implements list-harness-hooks operation.
 	//
 	// List recent sandbox harness hook payload logs.

@@ -110,6 +110,7 @@ func bearerToken(authorization string) string {
 var poolRuntimeActions = map[string]bool{
 	"sandbox-states":              false,
 	"status":                      false,
+	"judge-runtime":               false,
 	"resolve-sandbox-secret":      false,
 	"sandbox-agent-status-tokens": false,
 	"sandbox-agent-status":        false,

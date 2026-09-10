@@ -28,6 +28,8 @@ func TestRecorderPersistsHTTPEvent(t *testing.T) {
 		t.Fatalf("Open() error = %v", err)
 	}
 	recorder.RecordHTTP(HTTPEvent{
+		JudgeRequestIDs: []string{"request-first", "request-retry"},
+		JudgeErrors:     []string{"use does not match"},
 		Time:            time.Now().UTC(),
 		ClientID:        "sandbox-1",
 		Method:          http.MethodGet,
@@ -58,6 +60,9 @@ func TestRecorderPersistsHTTPEvent(t *testing.T) {
 	var exchange HTTPExchange
 	if err := pools.Read.First(&exchange).Error; err != nil {
 		t.Fatalf("read exchange: %v", err)
+	}
+	if exchange.JudgeRequestIDs != "request-first,request-retry" || exchange.JudgeErrors != "use does not match" {
+		t.Fatal("lost judge audit correlation")
 	}
 	if exchange.ClientID != "sandbox-1" {
 		t.Fatalf("ClientID = %q", exchange.ClientID)

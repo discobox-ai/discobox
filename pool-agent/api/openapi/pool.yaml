@@ -1,5 +1,9 @@
 components:
     schemas:
+        JudgeJob:
+            $ref: '../../../api/openapi/server.yaml#/components/schemas/JudgeJob'
+        JudgeVerdict:
+            $ref: '../../../api/openapi/server.yaml#/components/schemas/JudgeVerdict'
         HarnessConfigFile:
             additionalProperties: false
             properties:
@@ -246,6 +250,7 @@ components:
                     enum:
                         - run
                         - config
+                        - judge
                     type: string
                 model:
                     type: string
@@ -563,6 +568,30 @@ info:
     version: 0.1.0
 openapi: 3.0.3
 paths:
+    /judge:
+        post:
+            operationId: pool-judge
+            summary: Judge a typed credential operation over pool-private IPC.
+            security: []
+            requestBody:
+                required: true
+                content:
+                    application/json:
+                        schema:
+                            $ref: '#/components/schemas/JudgeJob'
+            responses:
+                200:
+                    description: Verdict.
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/JudgeVerdict'
+                default:
+                    description: Error response.
+                    content:
+                        application/problem+json:
+                            schema:
+                                $ref: '#/components/schemas/ErrorModel'
     "/api/project/{projectId}/pool/{poolId}/sandboxes":
         get:
             operationId: pool-list-sandboxes

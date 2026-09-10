@@ -6837,6 +6837,433 @@ func (s *JobStatus) UnmarshalJSON(data []byte) error {
 }
 
 // Encode implements json.Marshaler.
+func (s *JudgeJob) Encode(e *jx.Encoder) {
+	e.ObjStart()
+	s.encodeFields(e)
+	e.ObjEnd()
+}
+
+// encodeFields encodes fields.
+func (s *JudgeJob) encodeFields(e *jx.Encoder) {
+	{
+		e.FieldStart("kind")
+		e.Str(s.Kind)
+	}
+	{
+		e.FieldStart("purpose")
+		e.Str(s.Purpose)
+	}
+	{
+		e.FieldStart("host")
+		e.Str(s.Host)
+	}
+	{
+		e.FieldStart("credential")
+		e.Str(s.Credential)
+	}
+	{
+		if s.Command != nil {
+			e.FieldStart("command")
+			e.ArrStart()
+			for _, elem := range s.Command {
+				e.Str(elem)
+			}
+			e.ArrEnd()
+		}
+	}
+	{
+		if s.Evidence.Set {
+			e.FieldStart("evidence")
+			s.Evidence.Encode(e)
+		}
+	}
+}
+
+var jsonFieldsNameOfJudgeJob = [6]string{
+	0: "kind",
+	1: "purpose",
+	2: "host",
+	3: "credential",
+	4: "command",
+	5: "evidence",
+}
+
+// Decode decodes JudgeJob from json.
+func (s *JudgeJob) Decode(d *jx.Decoder) error {
+	if s == nil {
+		return errors.New("invalid: unable to decode JudgeJob to nil")
+	}
+	var requiredBitSet [1]uint8
+
+	if err := d.ObjBytes(func(d *jx.Decoder, k []byte) error {
+		switch string(k) {
+		case "kind":
+			requiredBitSet[0] |= 1 << 0
+			if err := func() error {
+				v, err := d.Str()
+				s.Kind = string(v)
+				if err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"kind\"")
+			}
+		case "purpose":
+			requiredBitSet[0] |= 1 << 1
+			if err := func() error {
+				v, err := d.Str()
+				s.Purpose = string(v)
+				if err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"purpose\"")
+			}
+		case "host":
+			requiredBitSet[0] |= 1 << 2
+			if err := func() error {
+				v, err := d.Str()
+				s.Host = string(v)
+				if err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"host\"")
+			}
+		case "credential":
+			requiredBitSet[0] |= 1 << 3
+			if err := func() error {
+				v, err := d.Str()
+				s.Credential = string(v)
+				if err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"credential\"")
+			}
+		case "command":
+			if err := func() error {
+				s.Command = make([]string, 0)
+				if err := d.Arr(func(d *jx.Decoder) error {
+					var elem string
+					v, err := d.Str()
+					elem = string(v)
+					if err != nil {
+						return err
+					}
+					s.Command = append(s.Command, elem)
+					return nil
+				}); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"command\"")
+			}
+		case "evidence":
+			if err := func() error {
+				s.Evidence.Reset()
+				if err := s.Evidence.Decode(d); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"evidence\"")
+			}
+		default:
+			return errors.Errorf("unexpected field %q", k)
+		}
+		return nil
+	}); err != nil {
+		return errors.Wrap(err, "decode JudgeJob")
+	}
+	// Validate required fields.
+	var failures []validate.FieldError
+	for i, mask := range [1]uint8{
+		0b00001111,
+	} {
+		if result := (requiredBitSet[i] & mask) ^ mask; result != 0 {
+			// Mask only required fields and check equality to mask using XOR.
+			//
+			// If XOR result is not zero, result is not equal to expected, so some fields are missed.
+			// Bits of fields which would be set are actually bits of missed fields.
+			missed := bits.OnesCount8(result)
+			for bitN := 0; bitN < missed; bitN++ {
+				bitIdx := bits.TrailingZeros8(result)
+				fieldIdx := i*8 + bitIdx
+				var name string
+				if fieldIdx < len(jsonFieldsNameOfJudgeJob) {
+					name = jsonFieldsNameOfJudgeJob[fieldIdx]
+				} else {
+					name = strconv.Itoa(fieldIdx)
+				}
+				failures = append(failures, validate.FieldError{
+					Name:  name,
+					Error: validate.ErrFieldRequired,
+				})
+				// Reset bit.
+				result &^= 1 << bitIdx
+			}
+		}
+	}
+	if len(failures) > 0 {
+		return &validate.Error{Fields: failures}
+	}
+
+	return nil
+}
+
+// MarshalJSON implements stdjson.Marshaler.
+func (s *JudgeJob) MarshalJSON() ([]byte, error) {
+	e := jx.Encoder{}
+	s.Encode(&e)
+	return e.Bytes(), nil
+}
+
+// UnmarshalJSON implements stdjson.Unmarshaler.
+func (s *JudgeJob) UnmarshalJSON(data []byte) error {
+	d := jx.DecodeBytes(data)
+	return s.Decode(d)
+}
+
+// Encode implements json.Marshaler.
+func (s *JudgeVerdict) Encode(e *jx.Encoder) {
+	e.ObjStart()
+	s.encodeFields(e)
+	e.ObjEnd()
+}
+
+// encodeFields encodes fields.
+func (s *JudgeVerdict) encodeFields(e *jx.Encoder) {
+	{
+		e.FieldStart("allow")
+		e.Bool(s.Allow)
+	}
+	{
+		e.FieldStart("reason")
+		e.Str(s.Reason)
+	}
+	{
+		e.FieldStart("role")
+		e.Str(s.Role)
+	}
+	{
+		e.FieldStart("prompt")
+		e.Str(s.Prompt)
+	}
+	{
+		e.FieldStart("promptVersion")
+		e.Str(s.PromptVersion)
+	}
+	{
+		e.FieldStart("latencyMs")
+		e.Int64(s.LatencyMs)
+	}
+	{
+		e.FieldStart("harnessConfigId")
+		e.Str(s.HarnessConfigId)
+	}
+	{
+		e.FieldStart("revision")
+		e.Str(s.Revision)
+	}
+	{
+		e.FieldStart("image")
+		e.Str(s.Image)
+	}
+}
+
+var jsonFieldsNameOfJudgeVerdict = [9]string{
+	0: "allow",
+	1: "reason",
+	2: "role",
+	3: "prompt",
+	4: "promptVersion",
+	5: "latencyMs",
+	6: "harnessConfigId",
+	7: "revision",
+	8: "image",
+}
+
+// Decode decodes JudgeVerdict from json.
+func (s *JudgeVerdict) Decode(d *jx.Decoder) error {
+	if s == nil {
+		return errors.New("invalid: unable to decode JudgeVerdict to nil")
+	}
+	var requiredBitSet [2]uint8
+
+	if err := d.ObjBytes(func(d *jx.Decoder, k []byte) error {
+		switch string(k) {
+		case "allow":
+			requiredBitSet[0] |= 1 << 0
+			if err := func() error {
+				v, err := d.Bool()
+				s.Allow = bool(v)
+				if err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"allow\"")
+			}
+		case "reason":
+			requiredBitSet[0] |= 1 << 1
+			if err := func() error {
+				v, err := d.Str()
+				s.Reason = string(v)
+				if err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"reason\"")
+			}
+		case "role":
+			requiredBitSet[0] |= 1 << 2
+			if err := func() error {
+				v, err := d.Str()
+				s.Role = string(v)
+				if err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"role\"")
+			}
+		case "prompt":
+			requiredBitSet[0] |= 1 << 3
+			if err := func() error {
+				v, err := d.Str()
+				s.Prompt = string(v)
+				if err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"prompt\"")
+			}
+		case "promptVersion":
+			requiredBitSet[0] |= 1 << 4
+			if err := func() error {
+				v, err := d.Str()
+				s.PromptVersion = string(v)
+				if err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"promptVersion\"")
+			}
+		case "latencyMs":
+			requiredBitSet[0] |= 1 << 5
+			if err := func() error {
+				v, err := d.Int64()
+				s.LatencyMs = int64(v)
+				if err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"latencyMs\"")
+			}
+		case "harnessConfigId":
+			requiredBitSet[0] |= 1 << 6
+			if err := func() error {
+				v, err := d.Str()
+				s.HarnessConfigId = string(v)
+				if err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"harnessConfigId\"")
+			}
+		case "revision":
+			requiredBitSet[0] |= 1 << 7
+			if err := func() error {
+				v, err := d.Str()
+				s.Revision = string(v)
+				if err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"revision\"")
+			}
+		case "image":
+			requiredBitSet[1] |= 1 << 0
+			if err := func() error {
+				v, err := d.Str()
+				s.Image = string(v)
+				if err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"image\"")
+			}
+		default:
+			return errors.Errorf("unexpected field %q", k)
+		}
+		return nil
+	}); err != nil {
+		return errors.Wrap(err, "decode JudgeVerdict")
+	}
+	// Validate required fields.
+	var failures []validate.FieldError
+	for i, mask := range [2]uint8{
+		0b11111111,
+		0b00000001,
+	} {
+		if result := (requiredBitSet[i] & mask) ^ mask; result != 0 {
+			// Mask only required fields and check equality to mask using XOR.
+			//
+			// If XOR result is not zero, result is not equal to expected, so some fields are missed.
+			// Bits of fields which would be set are actually bits of missed fields.
+			missed := bits.OnesCount8(result)
+			for bitN := 0; bitN < missed; bitN++ {
+				bitIdx := bits.TrailingZeros8(result)
+				fieldIdx := i*8 + bitIdx
+				var name string
+				if fieldIdx < len(jsonFieldsNameOfJudgeVerdict) {
+					name = jsonFieldsNameOfJudgeVerdict[fieldIdx]
+				} else {
+					name = strconv.Itoa(fieldIdx)
+				}
+				failures = append(failures, validate.FieldError{
+					Name:  name,
+					Error: validate.ErrFieldRequired,
+				})
+				// Reset bit.
+				result &^= 1 << bitIdx
+			}
+		}
+	}
+	if len(failures) > 0 {
+		return &validate.Error{Fields: failures}
+	}
+
+	return nil
+}
+
+// MarshalJSON implements stdjson.Marshaler.
+func (s *JudgeVerdict) MarshalJSON() ([]byte, error) {
+	e := jx.Encoder{}
+	s.Encode(&e)
+	return e.Bytes(), nil
+}
+
+// UnmarshalJSON implements stdjson.Unmarshaler.
+func (s *JudgeVerdict) UnmarshalJSON(data []byte) error {
+	d := jx.DecodeBytes(data)
+	return s.Decode(d)
+}
+
+// Encode implements json.Marshaler.
 func (s *ListHarnessConfigSecretBindingsBody) Encode(e *jx.Encoder) {
 	e.ObjStart()
 	s.encodeFields(e)
@@ -13558,6 +13985,222 @@ func (s *PoolImageState) UnmarshalJSON(data []byte) error {
 }
 
 // Encode implements json.Marshaler.
+func (s *PoolJudgeRuntimeResponse) Encode(e *jx.Encoder) {
+	e.ObjStart()
+	s.encodeFields(e)
+	e.ObjEnd()
+}
+
+// encodeFields encodes fields.
+func (s *PoolJudgeRuntimeResponse) encodeFields(e *jx.Encoder) {
+	{
+		e.FieldStart("sandboxId")
+		e.Str(s.SandboxId)
+	}
+	{
+		e.FieldStart("revision")
+		e.Str(s.Revision)
+	}
+	{
+		e.FieldStart("harness")
+		s.Harness.Encode(e)
+	}
+	{
+		e.FieldStart("secretEnv")
+		s.SecretEnv.Encode(e)
+	}
+	{
+		e.FieldStart("token")
+		e.Str(s.Token)
+	}
+}
+
+var jsonFieldsNameOfPoolJudgeRuntimeResponse = [5]string{
+	0: "sandboxId",
+	1: "revision",
+	2: "harness",
+	3: "secretEnv",
+	4: "token",
+}
+
+// Decode decodes PoolJudgeRuntimeResponse from json.
+func (s *PoolJudgeRuntimeResponse) Decode(d *jx.Decoder) error {
+	if s == nil {
+		return errors.New("invalid: unable to decode PoolJudgeRuntimeResponse to nil")
+	}
+	var requiredBitSet [1]uint8
+
+	if err := d.ObjBytes(func(d *jx.Decoder, k []byte) error {
+		switch string(k) {
+		case "sandboxId":
+			requiredBitSet[0] |= 1 << 0
+			if err := func() error {
+				v, err := d.Str()
+				s.SandboxId = string(v)
+				if err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"sandboxId\"")
+			}
+		case "revision":
+			requiredBitSet[0] |= 1 << 1
+			if err := func() error {
+				v, err := d.Str()
+				s.Revision = string(v)
+				if err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"revision\"")
+			}
+		case "harness":
+			requiredBitSet[0] |= 1 << 2
+			if err := func() error {
+				if err := s.Harness.Decode(d); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"harness\"")
+			}
+		case "secretEnv":
+			requiredBitSet[0] |= 1 << 3
+			if err := func() error {
+				if err := s.SecretEnv.Decode(d); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"secretEnv\"")
+			}
+		case "token":
+			requiredBitSet[0] |= 1 << 4
+			if err := func() error {
+				v, err := d.Str()
+				s.Token = string(v)
+				if err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"token\"")
+			}
+		default:
+			return errors.Errorf("unexpected field %q", k)
+		}
+		return nil
+	}); err != nil {
+		return errors.Wrap(err, "decode PoolJudgeRuntimeResponse")
+	}
+	// Validate required fields.
+	var failures []validate.FieldError
+	for i, mask := range [1]uint8{
+		0b00011111,
+	} {
+		if result := (requiredBitSet[i] & mask) ^ mask; result != 0 {
+			// Mask only required fields and check equality to mask using XOR.
+			//
+			// If XOR result is not zero, result is not equal to expected, so some fields are missed.
+			// Bits of fields which would be set are actually bits of missed fields.
+			missed := bits.OnesCount8(result)
+			for bitN := 0; bitN < missed; bitN++ {
+				bitIdx := bits.TrailingZeros8(result)
+				fieldIdx := i*8 + bitIdx
+				var name string
+				if fieldIdx < len(jsonFieldsNameOfPoolJudgeRuntimeResponse) {
+					name = jsonFieldsNameOfPoolJudgeRuntimeResponse[fieldIdx]
+				} else {
+					name = strconv.Itoa(fieldIdx)
+				}
+				failures = append(failures, validate.FieldError{
+					Name:  name,
+					Error: validate.ErrFieldRequired,
+				})
+				// Reset bit.
+				result &^= 1 << bitIdx
+			}
+		}
+	}
+	if len(failures) > 0 {
+		return &validate.Error{Fields: failures}
+	}
+
+	return nil
+}
+
+// MarshalJSON implements stdjson.Marshaler.
+func (s *PoolJudgeRuntimeResponse) MarshalJSON() ([]byte, error) {
+	e := jx.Encoder{}
+	s.Encode(&e)
+	return e.Bytes(), nil
+}
+
+// UnmarshalJSON implements stdjson.Unmarshaler.
+func (s *PoolJudgeRuntimeResponse) UnmarshalJSON(data []byte) error {
+	d := jx.DecodeBytes(data)
+	return s.Decode(d)
+}
+
+// Encode implements json.Marshaler.
+func (s PoolJudgeRuntimeResponseSecretEnv) Encode(e *jx.Encoder) {
+	e.ObjStart()
+	s.encodeFields(e)
+	e.ObjEnd()
+}
+
+// encodeFields implements json.Marshaler.
+func (s PoolJudgeRuntimeResponseSecretEnv) encodeFields(e *jx.Encoder) {
+	for k, elem := range s {
+		e.FieldStart(k)
+
+		e.Str(elem)
+	}
+}
+
+// Decode decodes PoolJudgeRuntimeResponseSecretEnv from json.
+func (s *PoolJudgeRuntimeResponseSecretEnv) Decode(d *jx.Decoder) error {
+	if s == nil {
+		return errors.New("invalid: unable to decode PoolJudgeRuntimeResponseSecretEnv to nil")
+	}
+	m := s.init()
+	if err := d.ObjBytes(func(d *jx.Decoder, k []byte) error {
+		var elem string
+		if err := func() error {
+			v, err := d.Str()
+			elem = string(v)
+			if err != nil {
+				return err
+			}
+			return nil
+		}(); err != nil {
+			return errors.Wrapf(err, "decode field %q", k)
+		}
+		m[string(k)] = elem
+		return nil
+	}); err != nil {
+		return errors.Wrap(err, "decode PoolJudgeRuntimeResponseSecretEnv")
+	}
+
+	return nil
+}
+
+// MarshalJSON implements stdjson.Marshaler.
+func (s PoolJudgeRuntimeResponseSecretEnv) MarshalJSON() ([]byte, error) {
+	e := jx.Encoder{}
+	s.Encode(&e)
+	return e.Bytes(), nil
+}
+
+// UnmarshalJSON implements stdjson.Unmarshaler.
+func (s *PoolJudgeRuntimeResponseSecretEnv) UnmarshalJSON(data []byte) error {
+	d := jx.DecodeBytes(data)
+	return s.Decode(d)
+}
+
+// Encode implements json.Marshaler.
 func (s *PoolMemoryUsage) Encode(e *jx.Encoder) {
 	e.ObjStart()
 	s.encodeFields(e)
@@ -15820,6 +16463,12 @@ func (s *Project) Encode(e *jx.Encoder) {
 // encodeFields encodes fields.
 func (s *Project) encodeFields(e *jx.Encoder) {
 	{
+		if s.JudgeHarnessConfigId.Set {
+			e.FieldStart("judgeHarnessConfigId")
+			s.JudgeHarnessConfigId.Encode(e)
+		}
+	}
+	{
 		if s.Schema.Set {
 			e.FieldStart("$schema")
 			s.Schema.Encode(e)
@@ -15915,25 +16564,26 @@ func (s *Project) encodeFields(e *jx.Encoder) {
 	}
 }
 
-var jsonFieldsNameOfProject = [18]string{
-	0:  "$schema",
-	1:  "harnessConfigs",
-	2:  "createdAt",
-	3:  "default",
-	4:  "defaultPoolId",
-	5:  "defaultHarnessConfigId",
-	6:  "archiveRetentionSeconds",
-	7:  "sandboxUpgradePolicy",
-	8:  "id",
-	9:  "members",
-	10: "name",
-	11: "owner",
-	12: "ownerUserId",
-	13: "pools",
-	14: "sandboxProviderInstances",
-	15: "sandboxes",
-	16: "updatedAt",
-	17: "welcomed",
+var jsonFieldsNameOfProject = [19]string{
+	0:  "judgeHarnessConfigId",
+	1:  "$schema",
+	2:  "harnessConfigs",
+	3:  "createdAt",
+	4:  "default",
+	5:  "defaultPoolId",
+	6:  "defaultHarnessConfigId",
+	7:  "archiveRetentionSeconds",
+	8:  "sandboxUpgradePolicy",
+	9:  "id",
+	10: "members",
+	11: "name",
+	12: "owner",
+	13: "ownerUserId",
+	14: "pools",
+	15: "sandboxProviderInstances",
+	16: "sandboxes",
+	17: "updatedAt",
+	18: "welcomed",
 }
 
 // Decode decodes Project from json.
@@ -15945,6 +16595,16 @@ func (s *Project) Decode(d *jx.Decoder) error {
 
 	if err := d.ObjBytes(func(d *jx.Decoder, k []byte) error {
 		switch string(k) {
+		case "judgeHarnessConfigId":
+			if err := func() error {
+				s.JudgeHarnessConfigId.Reset()
+				if err := s.JudgeHarnessConfigId.Decode(d); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"judgeHarnessConfigId\"")
+			}
 		case "$schema":
 			if err := func() error {
 				s.Schema.Reset()
@@ -15966,7 +16626,7 @@ func (s *Project) Decode(d *jx.Decoder) error {
 				return errors.Wrap(err, "decode field \"harnessConfigs\"")
 			}
 		case "createdAt":
-			requiredBitSet[0] |= 1 << 2
+			requiredBitSet[0] |= 1 << 3
 			if err := func() error {
 				v, err := json.DecodeDateTime(d)
 				s.CreatedAt = v
@@ -15978,7 +16638,7 @@ func (s *Project) Decode(d *jx.Decoder) error {
 				return errors.Wrap(err, "decode field \"createdAt\"")
 			}
 		case "default":
-			requiredBitSet[0] |= 1 << 3
+			requiredBitSet[0] |= 1 << 4
 			if err := func() error {
 				v, err := d.Bool()
 				s.Default = bool(v)
@@ -16030,7 +16690,7 @@ func (s *Project) Decode(d *jx.Decoder) error {
 				return errors.Wrap(err, "decode field \"sandboxUpgradePolicy\"")
 			}
 		case "id":
-			requiredBitSet[1] |= 1 << 0
+			requiredBitSet[1] |= 1 << 1
 			if err := func() error {
 				v, err := d.Str()
 				s.ID = string(v)
@@ -16052,7 +16712,7 @@ func (s *Project) Decode(d *jx.Decoder) error {
 				return errors.Wrap(err, "decode field \"members\"")
 			}
 		case "name":
-			requiredBitSet[1] |= 1 << 2
+			requiredBitSet[1] |= 1 << 3
 			if err := func() error {
 				v, err := d.Str()
 				s.Name = string(v)
@@ -16074,7 +16734,7 @@ func (s *Project) Decode(d *jx.Decoder) error {
 				return errors.Wrap(err, "decode field \"owner\"")
 			}
 		case "ownerUserId":
-			requiredBitSet[1] |= 1 << 4
+			requiredBitSet[1] |= 1 << 5
 			if err := func() error {
 				v, err := d.Str()
 				s.OwnerUserId = string(v)
@@ -16116,7 +16776,7 @@ func (s *Project) Decode(d *jx.Decoder) error {
 				return errors.Wrap(err, "decode field \"sandboxes\"")
 			}
 		case "updatedAt":
-			requiredBitSet[2] |= 1 << 0
+			requiredBitSet[2] |= 1 << 1
 			if err := func() error {
 				v, err := json.DecodeDateTime(d)
 				s.UpdatedAt = v
@@ -16128,7 +16788,7 @@ func (s *Project) Decode(d *jx.Decoder) error {
 				return errors.Wrap(err, "decode field \"updatedAt\"")
 			}
 		case "welcomed":
-			requiredBitSet[2] |= 1 << 1
+			requiredBitSet[2] |= 1 << 2
 			if err := func() error {
 				v, err := d.Bool()
 				s.Welcomed = bool(v)
@@ -16149,9 +16809,9 @@ func (s *Project) Decode(d *jx.Decoder) error {
 	// Validate required fields.
 	var failures []validate.FieldError
 	for i, mask := range [3]uint8{
-		0b00001100,
-		0b00010101,
-		0b00000011,
+		0b00011000,
+		0b00101010,
+		0b00000110,
 	} {
 		if result := (requiredBitSet[i] & mask) ^ mask; result != 0 {
 			// Mask only required fields and check equality to mask using XOR.
@@ -16792,6 +17452,42 @@ func (s *RecordCredentialVerdictBody) Encode(e *jx.Encoder) {
 // encodeFields encodes fields.
 func (s *RecordCredentialVerdictBody) encodeFields(e *jx.Encoder) {
 	{
+		if s.Origin.Set {
+			e.FieldStart("origin")
+			s.Origin.Encode(e)
+		}
+	}
+	{
+		if s.RequestId.Set {
+			e.FieldStart("requestId")
+			s.RequestId.Encode(e)
+		}
+	}
+	{
+		if s.HarnessConfigId.Set {
+			e.FieldStart("harnessConfigId")
+			s.HarnessConfigId.Encode(e)
+		}
+	}
+	{
+		if s.Revision.Set {
+			e.FieldStart("revision")
+			s.Revision.Encode(e)
+		}
+	}
+	{
+		if s.Image.Set {
+			e.FieldStart("image")
+			s.Image.Encode(e)
+		}
+	}
+	{
+		if s.PromptVersion.Set {
+			e.FieldStart("promptVersion")
+			s.PromptVersion.Encode(e)
+		}
+	}
+	{
 		if s.Schema.Set {
 			e.FieldStart("$schema")
 			s.Schema.Encode(e)
@@ -16825,13 +17521,19 @@ func (s *RecordCredentialVerdictBody) encodeFields(e *jx.Encoder) {
 	}
 }
 
-var jsonFieldsNameOfRecordCredentialVerdictBody = [6]string{
-	0: "$schema",
-	1: "command",
-	2: "sandboxId",
-	3: "useId",
-	4: "verdict",
-	5: "volunteered",
+var jsonFieldsNameOfRecordCredentialVerdictBody = [12]string{
+	0:  "origin",
+	1:  "requestId",
+	2:  "harnessConfigId",
+	3:  "revision",
+	4:  "image",
+	5:  "promptVersion",
+	6:  "$schema",
+	7:  "command",
+	8:  "sandboxId",
+	9:  "useId",
+	10: "verdict",
+	11: "volunteered",
 }
 
 // Decode decodes RecordCredentialVerdictBody from json.
@@ -16839,10 +17541,70 @@ func (s *RecordCredentialVerdictBody) Decode(d *jx.Decoder) error {
 	if s == nil {
 		return errors.New("invalid: unable to decode RecordCredentialVerdictBody to nil")
 	}
-	var requiredBitSet [1]uint8
+	var requiredBitSet [2]uint8
 
 	if err := d.ObjBytes(func(d *jx.Decoder, k []byte) error {
 		switch string(k) {
+		case "origin":
+			if err := func() error {
+				s.Origin.Reset()
+				if err := s.Origin.Decode(d); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"origin\"")
+			}
+		case "requestId":
+			if err := func() error {
+				s.RequestId.Reset()
+				if err := s.RequestId.Decode(d); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"requestId\"")
+			}
+		case "harnessConfigId":
+			if err := func() error {
+				s.HarnessConfigId.Reset()
+				if err := s.HarnessConfigId.Decode(d); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"harnessConfigId\"")
+			}
+		case "revision":
+			if err := func() error {
+				s.Revision.Reset()
+				if err := s.Revision.Decode(d); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"revision\"")
+			}
+		case "image":
+			if err := func() error {
+				s.Image.Reset()
+				if err := s.Image.Decode(d); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"image\"")
+			}
+		case "promptVersion":
+			if err := func() error {
+				s.PromptVersion.Reset()
+				if err := s.PromptVersion.Decode(d); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"promptVersion\"")
+			}
 		case "$schema":
 			if err := func() error {
 				s.Schema.Reset()
@@ -16873,7 +17635,7 @@ func (s *RecordCredentialVerdictBody) Decode(d *jx.Decoder) error {
 				return errors.Wrap(err, "decode field \"command\"")
 			}
 		case "sandboxId":
-			requiredBitSet[0] |= 1 << 2
+			requiredBitSet[1] |= 1 << 0
 			if err := func() error {
 				v, err := d.Str()
 				s.SandboxId = string(v)
@@ -16885,7 +17647,7 @@ func (s *RecordCredentialVerdictBody) Decode(d *jx.Decoder) error {
 				return errors.Wrap(err, "decode field \"sandboxId\"")
 			}
 		case "useId":
-			requiredBitSet[0] |= 1 << 3
+			requiredBitSet[1] |= 1 << 1
 			if err := func() error {
 				v, err := d.Str()
 				s.UseId = string(v)
@@ -16897,7 +17659,7 @@ func (s *RecordCredentialVerdictBody) Decode(d *jx.Decoder) error {
 				return errors.Wrap(err, "decode field \"useId\"")
 			}
 		case "verdict":
-			requiredBitSet[0] |= 1 << 4
+			requiredBitSet[1] |= 1 << 2
 			if err := func() error {
 				if err := s.Verdict.Decode(d); err != nil {
 					return err
@@ -16907,7 +17669,7 @@ func (s *RecordCredentialVerdictBody) Decode(d *jx.Decoder) error {
 				return errors.Wrap(err, "decode field \"verdict\"")
 			}
 		case "volunteered":
-			requiredBitSet[0] |= 1 << 5
+			requiredBitSet[1] |= 1 << 3
 			if err := func() error {
 				v, err := d.Bool()
 				s.Volunteered = bool(v)
@@ -16927,8 +17689,9 @@ func (s *RecordCredentialVerdictBody) Decode(d *jx.Decoder) error {
 	}
 	// Validate required fields.
 	var failures []validate.FieldError
-	for i, mask := range [1]uint8{
-		0b00111100,
+	for i, mask := range [2]uint8{
+		0b00000000,
+		0b00001111,
 	} {
 		if result := (requiredBitSet[i] & mask) ^ mask; result != 0 {
 			// Mask only required fields and check equality to mask using XOR.
@@ -30090,6 +30853,12 @@ func (s *UpdateProjectBody) Encode(e *jx.Encoder) {
 // encodeFields encodes fields.
 func (s *UpdateProjectBody) encodeFields(e *jx.Encoder) {
 	{
+		if s.JudgeHarnessConfigId.Set {
+			e.FieldStart("judgeHarnessConfigId")
+			s.JudgeHarnessConfigId.Encode(e)
+		}
+	}
+	{
 		if s.Schema.Set {
 			e.FieldStart("$schema")
 			s.Schema.Encode(e)
@@ -30121,12 +30890,13 @@ func (s *UpdateProjectBody) encodeFields(e *jx.Encoder) {
 	}
 }
 
-var jsonFieldsNameOfUpdateProjectBody = [5]string{
-	0: "$schema",
-	1: "name",
-	2: "archiveRetentionSeconds",
-	3: "sandboxUpgradePolicy",
-	4: "welcomed",
+var jsonFieldsNameOfUpdateProjectBody = [6]string{
+	0: "judgeHarnessConfigId",
+	1: "$schema",
+	2: "name",
+	3: "archiveRetentionSeconds",
+	4: "sandboxUpgradePolicy",
+	5: "welcomed",
 }
 
 // Decode decodes UpdateProjectBody from json.
@@ -30137,6 +30907,16 @@ func (s *UpdateProjectBody) Decode(d *jx.Decoder) error {
 
 	if err := d.ObjBytes(func(d *jx.Decoder, k []byte) error {
 		switch string(k) {
+		case "judgeHarnessConfigId":
+			if err := func() error {
+				s.JudgeHarnessConfigId.Reset()
+				if err := s.JudgeHarnessConfigId.Decode(d); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"judgeHarnessConfigId\"")
+			}
 		case "$schema":
 			if err := func() error {
 				s.Schema.Reset()

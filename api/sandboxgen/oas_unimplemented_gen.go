@@ -95,6 +95,15 @@ func (UnimplementedHandler) GetSandboxService(ctx context.Context, params GetSan
 	return r, ht.ErrNotImplemented
 }
 
+// JudgeSandbox implements judge-sandbox operation.
+//
+// Judge sandbox.
+//
+// POST /api/projects/{projectId}/sandboxes/{sandboxId}/judge
+func (UnimplementedHandler) JudgeSandbox(ctx context.Context, req *JudgeJob, params JudgeSandboxParams) (r *JudgeVerdict, _ error) {
+	return r, ht.ErrNotImplemented
+}
+
 // ListHarnessHooks implements list-harness-hooks operation.
 //
 // List recent sandbox harness hook payload logs.

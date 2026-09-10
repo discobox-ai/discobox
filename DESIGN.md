@@ -301,3 +301,8 @@ is one image for every VM backend: `vz` boots its `linux/arm64` variant and
 `libkrun` the `linux/amd64` one (ADR 0101). The libkrunfw-patched kernel libkrun
 needs is the one artifact it cannot take from there, so it has a third line of
 its own, `vm-kernel/v*`.
+
+Credential command and outbound-request judgments share a dedicated pool-owned
+harness outside work sandboxes. The root `judge` package owns its typed jobs,
+fixed policy and strict verdict format; runtime ownership is described in
+[`pool-agent/DESIGN.md`](pool-agent/DESIGN.md).

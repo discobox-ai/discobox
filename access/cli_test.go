@@ -167,7 +167,6 @@ func TestRequestJSONRejectsUnknownFields(t *testing.T) {
 // the use call, after a command it approved of. That denial must surface with
 // the same stable code as a refusal the judge made itself.
 func TestDenialFromTheServiceIsReportedAsAStableCode(t *testing.T) {
-	stubJudge(t, allowScript)
 	serve(t, &fakeService{
 		credentials: judgeCredentials(),
 		getErr:      fmt.Errorf("%w: no live approved use", agentcreds.ErrDenied),
@@ -195,7 +194,6 @@ func TestDenialFromTheServiceIsReportedAsAStableCode(t *testing.T) {
 // run's contract: the argv it declares is the argv it executes, and the child's
 // exit status is the wrapper's.
 func TestRunDeclaresTheCommandItExecutesAndPassesTheExitCode(t *testing.T) {
-	stubJudge(t, allowScript)
 	svc := &fakeService{credentials: judgeCredentials()}
 	serve(t, svc)
 
@@ -217,7 +215,6 @@ func TestRunDeclaresTheCommandItExecutesAndPassesTheExitCode(t *testing.T) {
 }
 
 func TestRunInjectsTheValueOnlyIntoTheChild(t *testing.T) {
-	stubJudge(t, allowScript)
 	serve(t, &fakeService{credentials: judgeCredentials()})
 	t.Setenv("GITHUB_TOKEN", "stale-value-that-must-not-win")
 

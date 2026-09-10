@@ -593,11 +593,10 @@ back at swap time are one act. Splitting them across processes would put a file
 and a race between the moment a sandbox is handed a sentinel and the moment the
 proxy would recognize it.
 
-- `list` and `request` are relayed to the control plane unchanged. `get` records
-  the caller's verdict to the control plane before it mints — a write failure
-  there stops the mint, so a value is never issued with no record of why — and
-  a refusal that never reaches `get` at all is relayed on its own, through the
-  denial-report call ([ADR 0091](../docs/adr/0091-a-credential-is-not-issued-without-a-verdict-on-record.md)).
+- `list` and `request` relay to the control plane. `get` loads the live approved
+  use, judges argv through `judges`, records the trusted verdict, and rechecks
+  the grant before minting. Any failure stops issuance. Caller denial reports
+  remain untrusted audit history and cannot authorize issuance.
 - **Activations** (`activations.go`) are in-memory and pool-local: ephemeral
   sentinel → `{stable sentinel, useId, host, declared command, expiry}`. They are
   disposable by design — a restart costs a dead sentinel and one fresh `get`,
@@ -840,3 +839,43 @@ by simply being re-fetched if it does age out.
 - Keep future in-sandbox agent API implementation code in the `sandbox-agent`
   module; pool-local provider operation routes and their generated server
   adapter belong under `server`.
+
+## Dedicated judge harness
+
+`judges` reconciles one pool-owned runtime from the authenticated control-plane
+`judge-runtime` recipe. The project selects `judgeHarnessConfigId`, with empty
+following `defaultHarnessConfigId`. An unavailable selection fails closed.
+`discobox admin project update PROJECT_ID --judge-harness HARNESS_CONFIG_ID`
+sets the override; an empty value restores the default.
+
+```mermaid
+flowchart LR
+    access["discobox-access"] --> relay["local sandbox-agent"]
+    relay --> broker["pool credential broker"]
+    broker --> judge["pool-agent judges"]
+    proxy["proxy authorization"] --> judge
+    judge --> runtime["dedicated harness sandbox-agent"]
+    runtime --> prompt["discobox-prompt, judge role"]
+    judge --> control["control plane recipe"]
+    broker --> audit["control plane verdicts"]
+    proxy --> audit
+```
+
+The pool-private root-owned Unix socket is the only pool judge ingress. Work
+sandboxes receive neither that socket nor the dedicated runtime's `judge:run`
+token. The public pool router cannot dispatch judge work. Jobs carry evidence,
+not executable commands or caller-selected system prompts. One request runs at
+a time with a deadline and no unbounded queue; the harness answers one-shot.
+
+Runtime identities include the harness revision. Reconfiguration retires old
+identities and their credential bindings; results are rechecked against the
+current recipe. Judge runtimes have private home, data, config and cache, no
+project sources, and no interactive primary or repository services. Their model
+credentials use ordinary harness bindings, exempt from use judging so that a
+judge's own model request cannot recursively require another judgment.
+
+The resolver authorizes every matched use-scoped sentinel before any replacement,
+including cached and previous values. HTTP evidence is complete and bounded;
+unsupported bodies and upgrades fail closed. Every use must pass and remain live
+after all judgments. Proxy request IDs join HTTP audit events to trusted
+request verdicts; caller reports never carry trusted origins.

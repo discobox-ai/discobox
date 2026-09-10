@@ -262,6 +262,12 @@ type Handler interface {
 	//
 	// GET /projects/{projectId}/pools/{poolId}
 	GetPool(ctx context.Context, params GetPoolParams) (GetPoolRes, error)
+	// GetPoolJudgeRuntime implements get-pool-judge-runtime operation.
+	//
+	// Get pool judge runtime.
+	//
+	// GET /api/pools/{poolId}/judge-runtime
+	GetPoolJudgeRuntime(ctx context.Context, params GetPoolJudgeRuntimeParams) (GetPoolJudgeRuntimeRes, error)
 	// GetProject implements get-project operation.
 	//
 	// Get a project.
@@ -334,6 +340,12 @@ type Handler interface {
 	//
 	// GET /peer
 	GetServerPeer(ctx context.Context) (GetServerPeerRes, error)
+	// JudgeSandbox implements judge-sandbox operation.
+	//
+	// Judge sandbox.
+	//
+	// POST /api/projects/{projectId}/sandboxes/{sandboxId}/judge
+	JudgeSandbox(ctx context.Context, req *JudgeJob, params JudgeSandboxParams) (JudgeSandboxRes, error)
 	// ListHarnessConfigSecretBindings implements list-harness-config-secret-bindings operation.
 	//
 	// List harness config secret bindings.
@@ -493,7 +505,7 @@ type Handler interface {
 	ReconcileSandbox(ctx context.Context, params ReconcileSandboxParams) (ReconcileSandboxRes, error)
 	// RecordCredentialVerdict implements record-credential-verdict operation.
 	//
-	// Record a judge's verdict about a command run under an agent credential use.
+	// Record a credential command or request verdict.
 	//
 	// POST /api/pools/{poolId}/sandbox-credential-verdicts
 	RecordCredentialVerdict(ctx context.Context, req *RecordCredentialVerdictBody, params RecordCredentialVerdictParams) (RecordCredentialVerdictRes, error)

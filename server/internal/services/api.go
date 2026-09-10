@@ -177,6 +177,7 @@ type SandboxProviderInstanceService interface {
 // sandboxes are scheduled into, each its own runtime host. It also carries the
 // pool agent surface: registration, heartbeats, and sandbox-state reports.
 type PoolService interface {
+	GetPoolJudgeRuntime(ctx context.Context, poolID string) (*apimodel.PoolJudgeRuntimeResponse, error)
 	ListPools(ctx context.Context, projectID string) ([]model.Pool, error)
 	CreatePool(ctx context.Context, projectID string, input CreatePoolBody) (*model.Pool, error)
 	GetPool(ctx context.Context, projectID, poolID string) (*model.Pool, error)

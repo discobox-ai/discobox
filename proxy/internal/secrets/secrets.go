@@ -39,6 +39,7 @@ type ResolveResult struct {
 // Resolver resolves a sentinel to its real credential value. Implementations
 // live outside the proxy (worker-agent) so the proxy stays server-agnostic.
 type Resolver interface {
+	Authorize(context.Context, AuthorizeRequest) error
 	Resolve(ctx context.Context, req ResolveRequest) (ResolveResult, error)
 }
 
@@ -153,6 +154,8 @@ func New(resolver Resolver, cfg Config) *Swapper {
 
 // Result describes what a swap did to a request.
 type Result struct {
+	RequestID  string
+	unresolved bool
 	// Headers is the set of request header names whose values were swapped.
 	Headers []string
 	// QueryParams is the set of query parameter names whose values were swapped.
@@ -179,9 +182,16 @@ func (s *Swapper) Apply(ctx context.Context, req *http.Request, clientID string)
 	if req == nil || !s.Active(clientID) {
 		return Result{}
 	}
+	requestID, err := s.authorize(ctx, req, clientID)
+	if err != nil {
+		return Result{RequestID: requestID, Errors: []string{err.Error()}}
+	}
+	original := req
+	req = req.Clone(ctx)
+
 	sentinels := s.sentinels[clientID]
 	host := extractHost(req.Host)
-	var res Result
+	res := Result{RequestID: requestID}
 
 	for name, values := range req.Header {
 		for i, value := range values {
@@ -211,6 +221,11 @@ func (s *Swapper) Apply(ctx context.Context, req *http.Request, clientID string)
 		}
 	}
 
+	if res.unresolved {
+		return Result{RequestID: res.RequestID, Errors: res.Errors}
+	}
+	original.Header = req.Header
+	original.URL = req.URL
 	dedupe(&res.Headers)
 	dedupe(&res.QueryParams)
 	return res
@@ -218,7 +233,11 @@ func (s *Swapper) Apply(ctx context.Context, req *http.Request, clientID string)
 
 func (s *Swapper) swapValue(ctx context.Context, clientID, host, value string, sentinels []string, res *Result) (string, bool) {
 	out := swapSentinels(value, sentinels, func(sentinel string) (string, bool) {
-		return s.resolve(ctx, clientID, sentinel, host, res)
+		value, ok := s.resolve(ctx, clientID, sentinel, host, res)
+		if !ok {
+			res.unresolved = true
+		}
+		return value, ok
 	})
 	if out.encoded {
 		res.Encoded = true
@@ -403,18 +422,29 @@ func (s *Swapper) deferRefresh(key string, refreshAt time.Time) {
 //
 // Headers only. A query-param swap rewrites the URL, and a retry is not worth
 // reconstructing one.
-func (s *Swapper) ApplyPrevious(req *http.Request, clientID string) Result {
+func (s *Swapper) ApplyPrevious(ctx context.Context, req *http.Request, clientID string) Result {
 	if req == nil || !s.Active(clientID) {
 		return Result{}
 	}
+	requestID, err := s.authorize(ctx, req, clientID)
+	if err != nil {
+		return Result{RequestID: requestID, Errors: []string{err.Error()}}
+	}
+	original := req
+	req = req.Clone(ctx)
+
 	sentinels := s.sentinels[clientID]
 	host := extractHost(req.Host)
 	now := s.now()
-	var res Result
+	res := Result{RequestID: requestID}
 	for name, values := range req.Header {
 		for i, value := range values {
 			out := swapSentinels(value, sentinels, func(sentinel string) (string, bool) {
-				return s.previousFor(clientID, sentinel, host, now)
+				value, ok := s.previousFor(clientID, sentinel, host, now)
+				if !ok {
+					res.unresolved = true
+				}
+				return value, ok
 			})
 			if out.swapped {
 				req.Header[name][i] = out.value
@@ -422,6 +452,11 @@ func (s *Swapper) ApplyPrevious(req *http.Request, clientID string) Result {
 			}
 		}
 	}
+	if res.unresolved {
+		return Result{RequestID: res.RequestID, Errors: res.Errors}
+	}
+	original.Header = req.Header
+	original.URL = req.URL
 	dedupe(&res.Headers)
 	return res
 }

@@ -8,6 +8,7 @@ import (
 	"net/url"
 	"time"
 
+	"github.com/discobox-ai/discobox/judge"
 	workerapi "github.com/discobox-ai/discobox/pool-agent/api/gen"
 	workerapimodel "github.com/discobox-ai/discobox/pool-agent/api/model"
 	"github.com/discobox-ai/discobox/pool-agent/sandboxruntime"
@@ -20,6 +21,7 @@ type Identity struct {
 }
 
 type sandboxService struct {
+	judge    func(context.Context, judge.Job) (judge.Verdict, error)
 	identity Identity
 	runtime  sandboxruntime.Runtime
 }

@@ -123,6 +123,7 @@ func (a *App) newProjectUpdateCommand() *cobra.Command {
 	var name string
 	var archiveRetention time.Duration
 	var upgradePolicy string
+	var judgeHarness string
 	var welcomed bool
 	cmd := &cobra.Command{Use: "update PROJECT_ID", Short: "Update a project", Long: `Update a project.
 
@@ -175,6 +176,9 @@ the launcher opens on the project.`, Args: cobra.ExactArgs(1), ValidArgsFunction
 			}
 			body.SetSandboxUpgradePolicy(apiclientgen.NewOptUpdateProjectBodySandboxUpgradePolicy(policy))
 		}
+		if cmd.Flags().Changed("judge-harness") {
+			body.SetJudgeHarnessConfigId(apiclientgen.NewOptString(strings.TrimSpace(judgeHarness)))
+		}
 		if cmd.Flags().Changed("welcomed") {
 			body.SetWelcomed(apiclientgen.NewOptBool(welcomed))
 		}
@@ -190,6 +194,7 @@ the launcher opens on the project.`, Args: cobra.ExactArgs(1), ValidArgsFunction
 	}}
 	cmd.Flags().StringVar(&name, "name", "", "Project display name")
 	cmd.Flags().DurationVar(&archiveRetention, "archive-retention", 0, "How long archived discoboxes are kept before being purged (e.g. 48h); 0 restores the server default")
+	cmd.Flags().StringVar(&judgeHarness, "judge-harness", "", "Harness config ID for the pool judge; empty follows the project default")
 	cmd.Flags().StringVar(&upgradePolicy, "sandbox-upgrade-policy", "", `Whether stopped discoboxes follow their harness image: "automatic" or "manual"; empty restores the server default`)
 	_ = cmd.RegisterFlagCompletionFunc("sandbox-upgrade-policy", cobra.FixedCompletions(
 		[]string{"automatic", "manual"}, cobra.ShellCompDirectiveNoFileComp))

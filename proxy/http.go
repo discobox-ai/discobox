@@ -39,6 +39,8 @@ type httpProxy struct {
 }
 
 type requestMeta struct {
+	judgeRequestIDs      []string
+	judgeErrors          []string
 	ctx                  context.Context
 	span                 trace.Span
 	start                time.Time
@@ -269,6 +271,7 @@ func (h *httpProxy) setupHandlers() {
 			lookupSpan.End()
 		}
 
+		h.swapSecrets(req, meta, client)
 		_, rewriteSpan := proxyTracer().Start(traceCtx, "proxy.header_rewrite")
 		match := rewriter.Apply(req, client.ID)
 		if match.Matched {
@@ -284,7 +287,6 @@ func (h *httpProxy) setupHandlers() {
 			rewriteSpan.SetAttributes(attribute.Bool("proxy.header_rewrite.matched", false))
 		}
 		rewriteSpan.End()
-		h.swapSecrets(req, meta, client)
 		h.bufferRetryBody(req, meta)
 		h.captureRequestBody(req, meta)
 		return req, nil
@@ -394,6 +396,8 @@ func (h *httpProxy) auditEvent(req *http.Request, resp *http.Response, meta *req
 	return audit.HTTPEvent{
 		Context:              meta.ctx,
 		Time:                 time.Now().UTC(),
+		JudgeRequestIDs:      meta.judgeRequestIDs,
+		JudgeErrors:          meta.judgeErrors,
 		ClientID:             meta.client.ID,
 		ClientSubject:        meta.client.Subject,
 		ClientSerial:         meta.client.Serial,
@@ -433,6 +437,10 @@ func (h *httpProxy) swapSecrets(req *http.Request, meta *requestMeta, client cli
 	defer span.End()
 	preSwapHeader := req.Header.Clone()
 	result := swapper.Apply(meta.ctx, req, client.ID)
+	if result.RequestID != "" {
+		meta.judgeRequestIDs = append(meta.judgeRequestIDs, result.RequestID)
+	}
+	meta.judgeErrors = append(meta.judgeErrors, result.Errors...)
 	if !result.Swapped() {
 		span.SetAttributes(attribute.Bool("proxy.secret_swap.swapped", false))
 		if len(result.Errors) > 0 {
@@ -536,11 +544,25 @@ func (h *httpProxy) retryRejectedSwap(resp *http.Response, ctx *goproxy.ProxyCtx
 	// Read the displaced value before invalidating: invalidation drops the
 	// cache entry, and this asks about the value behind it.
 	previous := h.rebuiltRequest(req, meta)
-	previousResult := swapper.ApplyPrevious(previous, meta.client.ID)
+	previousResult := swapper.ApplyPrevious(meta.ctx, previous, meta.client.ID)
+	meta.judgeRequestIDs = append(meta.judgeRequestIDs, previousResult.RequestID)
+	meta.judgeErrors = append(meta.judgeErrors, previousResult.Errors...)
 
 	swapper.Invalidate(meta.client.ID, req.Host)
 	resolved := h.rebuiltRequest(req, meta)
 	resolvedResult := swapper.Apply(meta.ctx, resolved, meta.client.ID)
+	meta.judgeRequestIDs = append(meta.judgeRequestIDs, resolvedResult.RequestID)
+	meta.judgeErrors = append(meta.judgeErrors, resolvedResult.Errors...)
+
+	// Rebuilt requests carry the original headers so the judge never sees
+	// injected credentials. Restore the trusted rewrites only after judgment.
+	_, rewriter := h.policy()
+	if resolvedResult.Swapped() {
+		rewriter.Apply(resolved, meta.client.ID)
+	}
+	if previousResult.Swapped() {
+		rewriter.Apply(previous, meta.client.ID)
+	}
 
 	var retryReq *http.Request
 	var source string
@@ -693,6 +715,8 @@ func (s *upgradedResponseStream) auditEvent(duration time.Duration) audit.HTTPEv
 	event := audit.HTTPEvent{
 		Context:              s.meta.ctx,
 		Time:                 time.Now().UTC(),
+		JudgeRequestIDs:      s.meta.judgeRequestIDs,
+		JudgeErrors:          s.meta.judgeErrors,
 		ClientID:             s.meta.client.ID,
 		ClientSubject:        s.meta.client.Subject,
 		ClientSerial:         s.meta.client.Serial,
@@ -787,6 +811,8 @@ func (s *responseStream) finish(aborted bool, readErr error) {
 		event := audit.HTTPEvent{
 			Context:              s.meta.ctx,
 			Time:                 time.Now().UTC(),
+			JudgeRequestIDs:      s.meta.judgeRequestIDs,
+			JudgeErrors:          s.meta.judgeErrors,
 			ClientID:             s.meta.client.ID,
 			ClientSubject:        s.meta.client.Subject,
 			ClientSerial:         s.meta.client.Serial,

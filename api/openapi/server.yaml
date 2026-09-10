@@ -1,5 +1,67 @@
 components:
     schemas:
+        JudgeJob:
+            type: object
+            additionalProperties: false
+            required: [kind, purpose, host, credential]
+            properties:
+                kind:
+                    type: string
+                purpose:
+                    type: string
+                    maxLength: 16384
+                host:
+                    type: string
+                credential:
+                    type: string
+                command:
+                    type: array
+                    items:
+                        type: string
+                evidence:
+                    type: string
+                    maxLength: 524288
+        JudgeVerdict:
+            type: object
+            additionalProperties: false
+            required: [allow, reason, role, prompt, promptVersion, latencyMs, harnessConfigId, revision, image]
+            properties:
+                allow:
+                    type: boolean
+                reason:
+                    type: string
+                role:
+                    type: string
+                prompt:
+                    type: string
+                promptVersion:
+                    type: string
+                latencyMs:
+                    type: integer
+                    format: int64
+                harnessConfigId:
+                    type: string
+                revision:
+                    type: string
+                image:
+                    type: string
+        PoolJudgeRuntimeResponse:
+            type: object
+            additionalProperties: false
+            required: [sandboxId, revision, harness, secretEnv, token]
+            properties:
+                sandboxId:
+                    type: string
+                revision:
+                    type: string
+                harness:
+                    $ref: '#/components/schemas/HarnessConfig'
+                secretEnv:
+                    type: object
+                    additionalProperties:
+                        type: string
+                token:
+                    type: string
         HarnessConfig:
             additionalProperties: false
             properties:
@@ -2212,6 +2274,9 @@ components:
         UpdateProjectBody:
             additionalProperties: false
             properties:
+                judgeHarnessConfigId:
+                    description: Configured harness for the pool judge. Empty follows the project default.
+                    type: string
                 $schema:
                     description: A URL to the JSON Schema for this object.
                     example: https://example.com/schemas/UpdateProjectBody.json
@@ -2241,6 +2306,9 @@ components:
         Project:
             additionalProperties: false
             properties:
+                judgeHarnessConfigId:
+                    description: Configured harness for the pool judge. Empty follows the project default.
+                    type: string
                 $schema:
                     description: A URL to the JSON Schema for this object.
                     example: https://example.com/schemas/Project.json
@@ -2754,8 +2822,20 @@ components:
             type: object
         RecordCredentialVerdictBody:
             additionalProperties: false
-            description: A judge's verdict about one command run under an agent credential use, relayed by the pool agent on behalf of one of its sandboxes (ADR 0091). Carried on the same call that takes a value, so a credential cannot be issued without a record of why; sent on its own when the judge refused and no value was ever taken.
+            description: A command or request verdict recorded by the pool before minting or substitution. Trusted origins carry dedicated harness provenance; volunteered caller reports remain untrusted history (ADR 0106).
             properties:
+                origin:
+                    type: string
+                requestId:
+                    type: string
+                harnessConfigId:
+                    type: string
+                revision:
+                    type: string
+                image:
+                    type: string
+                promptVersion:
+                    type: string
                 $schema:
                     description: A URL to the JSON Schema for this object.
                     example: https://example.com/schemas/RecordCredentialVerdictBody.json
@@ -4470,6 +4550,64 @@ info:
     version: 0.1.0
 openapi: 3.1.1
 paths:
+    /api/projects/{projectId}/sandboxes/{sandboxId}/judge:
+        post:
+            operationId: judge-sandbox
+            summary: Judge sandbox.
+            x-sandbox-agent: true
+            parameters:
+                - in: path
+                  name: projectId
+                  required: true
+                  schema:
+                    type: string
+                - in: path
+                  name: sandboxId
+                  required: true
+                  schema:
+                    type: string
+            requestBody:
+                required: true
+                content:
+                    application/json:
+                        schema:
+                            $ref: "#/components/schemas/JudgeJob"
+            responses:
+                200:
+                    description: Successful response.
+                    content:
+                        application/json:
+                            schema:
+                                $ref: "#/components/schemas/JudgeVerdict"
+                default:
+                    description: Error response.
+                    content:
+                        application/json:
+                            schema:
+                                $ref: "#/components/schemas/ErrorResponse"
+    /api/pools/{poolId}/judge-runtime:
+        get:
+            operationId: get-pool-judge-runtime
+            summary: Get pool judge runtime.
+            parameters:
+                - in: path
+                  name: poolId
+                  required: true
+                  schema:
+                    type: string
+            responses:
+                200:
+                    description: Successful response.
+                    content:
+                        application/json:
+                            schema:
+                                $ref: "#/components/schemas/PoolJudgeRuntimeResponse"
+                default:
+                    description: Error response.
+                    content:
+                        application/problem+json:
+                            schema:
+                                $ref: "#/components/schemas/ErrorModel"
     /projects/{projectId}/jobs:
         get:
             operationId: list-jobs
@@ -4926,7 +5064,7 @@ paths:
                             schema:
                                 $ref: '#/components/schemas/ErrorModel'
                     description: Error
-            summary: Record a judge's verdict about a command run under an agent credential use
+            summary: Record a credential command or request verdict
             tags:
                 - Pools
     /api/pools/{poolId}/resolve-sandbox-secret:

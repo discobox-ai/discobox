@@ -84,7 +84,12 @@ func (s *Store) DeletePool(ctx context.Context, projectID, poolID string) error 
 	if err != nil {
 		return err
 	}
-	return write.Delete(pool).Error
+	return write.Transaction(func(tx *gorm.DB) error {
+		if err := tx.Where("sandbox_id IN (?)", tx.Model(&model.PoolJudge{}).Select("sandbox_id").Where("pool_id = ? AND project_id = ?", poolID, projectID)).Delete(&model.SandboxSecret{}).Error; err != nil {
+			return err
+		}
+		return tx.Delete(pool).Error
+	})
 }
 
 func (s *Store) CountSandboxesForPool(ctx context.Context, projectID, poolID string) (int64, error) {

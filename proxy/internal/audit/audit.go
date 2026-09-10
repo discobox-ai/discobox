@@ -24,6 +24,8 @@ const tracerName = "github.com/discobox-ai/discobox/proxy"
 
 // HTTPEvent is an asynchronous audit event for an HTTP exchange.
 type HTTPEvent struct {
+	JudgeRequestIDs      []string
+	JudgeErrors          []string
 	Context              context.Context `gorm:"-"`
 	Time                 time.Time
 	EnqueuedAt           time.Time
@@ -83,6 +85,8 @@ type SOCKSEvent struct {
 
 // HTTPExchange is the GORM model for audited HTTP exchanges.
 type HTTPExchange struct {
+	JudgeRequestIDs     string
+	JudgeErrors         string
 	ID                  uint `gorm:"primaryKey"`
 	CreatedAt           time.Time
 	EnqueuedAt          time.Time
@@ -407,6 +411,8 @@ func (r *Recorder) run() {
 			_, span := tracer().Start(eventContext(e), "proxy.audit.write", trace.WithAttributes(attribute.String("proxy.audit.type", "http")))
 			writtenAt := time.Now().UTC()
 			err := r.db.Create(&HTTPExchange{
+				JudgeRequestIDs:     strings.Join(e.JudgeRequestIDs, ","),
+				JudgeErrors:         strings.Join(e.JudgeErrors, "; "),
 				CreatedAt:           nonZeroTime(e.Time),
 				EnqueuedAt:          nonZeroTime(e.EnqueuedAt),
 				WrittenAt:           writtenAt,

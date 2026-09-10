@@ -9,6 +9,7 @@ import (
 	"sync"
 	"time"
 
+	apimodel "github.com/discobox-ai/discobox/api/model"
 	"github.com/discobox-ai/discobox/server/internal/apperrors"
 
 	"github.com/discobox-ai/discobox/server/internal/model"
@@ -939,4 +940,8 @@ func (s *routerTestServices) sortedSandboxes() []model.Sandbox {
 		return 0
 	})
 	return sandboxes
+}
+
+func (s *routerTestServices) GetPoolJudgeRuntime(context.Context, string) (*apimodel.PoolJudgeRuntimeResponse, error) {
+	return nil, fmt.Errorf("judge not configured")
 }

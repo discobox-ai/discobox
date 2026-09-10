@@ -216,6 +216,7 @@ type Project struct {
 	// identity is special.
 	Default                bool   `gorm:"column:default_project;not null;default:false;index" json:"default" doc:"Whether this is the user's default project"`
 	DefaultPoolID          string `gorm:"column:default_pool_id;type:text;default:''" json:"defaultPoolId,omitempty" doc:"Default pool ID for new sandboxes"`
+	JudgeHarnessConfigID   string `gorm:"column:judge_harness_config_id;type:text;not null;default:''" json:"judgeHarnessConfigId,omitempty" doc:"Judge harness override; empty follows the project default"`
 	DefaultHarnessConfigID string `gorm:"column:default_harness_config_id;type:text;default:''" json:"defaultHarnessConfigId,omitempty" doc:"Default harness config ID"`
 	// ArchiveRetentionSeconds is how long this project's archived sandboxes are
 	// kept before they are purged (ADR 0022 §4). Zero means the server default:
@@ -1204,6 +1205,13 @@ func (s *SandboxSecret) BeforeCreate(_ *gorm.DB) error {
 // complete for every credential this control plane ever handed out; it is
 // present for a denial only when the sandbox sent it.
 type CredentialVerdict struct {
+	Origin          string `gorm:"not null;type:text;default:'client'" json:"origin"`
+	RequestID       string `gorm:"type:text;not null;default:'';index" json:"requestId,omitempty"`
+	HarnessConfigID string `gorm:"type:text;not null;default:''" json:"harnessConfigId,omitempty"`
+	Revision        string `gorm:"type:text;not null;default:''" json:"revision,omitempty"`
+	Image           string `gorm:"type:text;not null;default:''" json:"image,omitempty"`
+	PromptVersion   string `gorm:"type:text;not null;default:''" json:"promptVersion,omitempty"`
+
 	ID        string `gorm:"primaryKey;type:text" json:"id" doc:"Stable verdict ID"`
 	ProjectID string `gorm:"column:project_id;not null;type:text;index" json:"projectId" doc:"Project ID"`
 	SandboxID string `gorm:"column:sandbox_id;not null;type:text;index" json:"sandboxId" doc:"Sandbox the command ran in"`
@@ -1264,5 +1272,6 @@ func AllModels() []any {
 		&SSHKey{},
 		&Peer{},
 		&CredentialVerdict{},
+		&PoolJudge{},
 	}
 }

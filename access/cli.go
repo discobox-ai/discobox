@@ -20,7 +20,7 @@
 //
 // There is no "get" that hands back a bare value: every use this CLI supports
 // goes through "run", so it is always the judge's argv, never a value with no
-// command attached to it. See judge.go and DESIGN.md's "What it must never do"
+// command attached to it. See DESIGN.md's "What it must never do"
 // for why. The protocol underneath still has a use call that mints one — a
 // scripted caller that cannot exec through this CLI needs it — but that is a
 // gap in what can be secured today, not a supported way to reach a credential.
@@ -31,10 +31,9 @@
 // # The judge
 //
 // "run" does not execute a command until a model has agreed the command is the
-// use a human approved it for (ADR 0079). The model is reached through
-// discobox-prompt, which the harness image provides, and every failure of that
-// gate — no wrapper, no answer, an unreadable answer, or a refusal — stops the
-// command. See judge.go for what the gate is and is not.
+// use a human approved it for. The credential service owns that judgment and
+// records it before issuing the value. No model executes in this CLI; see
+// DESIGN.md for the dedicated pool harness and request-time enforcement.
 package access
 
 import (
@@ -114,7 +113,7 @@ func usage(w io.Writer) {
       declares, and the value never leaves that one child process.
 
       COMMAND is judged against the use it was approved for before it runs, by
-      a model reached through %[5]s. A command broader than the
+      a model reached through the pool judge. A command broader than the
       approved use is refused with code "denied" and never started.
 
   %[1]s request [--json] [flags]
@@ -155,10 +154,9 @@ nowhere else, which is what lets a model judge the command before it runs.
 The value you receive is opaque and short-lived. Do not log it, write it to a
 file, or reuse it after it expires — ask for it again instead.
 
-Configured by %[2]s (default %[3]s) and %[4]s. The judge runs
-%[5]s, which every harness image provides; %[6]s names a
-different one.
-`, Name, agentcreds.URLEnv, agentcreds.DefaultBaseURL, agentcreds.TokenEnv, DefaultPromptCommand, PromptCommandEnv)
+Configured by %[2]s (default %[3]s) and %[4]s. The service judges
+each command using the pool's dedicated harness before issuing a value.
+`, Name, agentcreds.URLEnv, agentcreds.DefaultBaseURL, agentcreds.TokenEnv)
 }
 
 // usageError reports a mistake in how the command was invoked, which is

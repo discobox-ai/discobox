@@ -17,6 +17,9 @@ var (
 	rn7AllowedHeaders = map[string]string{
 		"POST": "Content-Type",
 	}
+	rn16AllowedHeaders = map[string]string{
+		"POST": "Content-Type",
+	}
 )
 
 func (s *Server) cutPrefix(path string) (string, bool) {
@@ -450,6 +453,34 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 									allowedMethods: "GET",
 									allowedHeaders: nil,
 									acceptPost:     "",
+									acceptPatch:    "",
+								})
+							}
+
+							return
+						}
+
+					case 'j': // Prefix: "judge"
+
+						if l := len("judge"); len(elem) >= l && elem[0:l] == "judge" {
+							elem = elem[l:]
+						} else {
+							break
+						}
+
+						if len(elem) == 0 {
+							// Leaf node.
+							switch r.Method {
+							case "POST":
+								s.handleJudgeSandboxRequest([2]string{
+									args[0],
+									args[1],
+								}, elemIsEscaped, w, r)
+							default:
+								s.notAllowed(w, r, notAllowedParams{
+									allowedMethods: "POST",
+									allowedHeaders: rn16AllowedHeaders,
+									acceptPost:     "application/json",
 									acceptPatch:    "",
 								})
 							}
@@ -1166,6 +1197,31 @@ func (s *Server) FindPath(method string, u *url.URL) (r Route, _ bool) {
 								r.operationID = "list-harness-hooks"
 								r.operationGroup = ""
 								r.pathPattern = "/api/projects/{projectId}/sandboxes/{sandboxId}/harness-hooks"
+								r.args = args
+								r.count = 2
+								return r, true
+							default:
+								return
+							}
+						}
+
+					case 'j': // Prefix: "judge"
+
+						if l := len("judge"); len(elem) >= l && elem[0:l] == "judge" {
+							elem = elem[l:]
+						} else {
+							break
+						}
+
+						if len(elem) == 0 {
+							// Leaf node.
+							switch method {
+							case "POST":
+								r.name = JudgeSandboxOperation
+								r.summary = "Judge sandbox."
+								r.operationID = "judge-sandbox"
+								r.operationGroup = ""
+								r.pathPattern = "/api/projects/{projectId}/sandboxes/{sandboxId}/judge"
 								r.args = args
 								r.count = 2
 								return r, true

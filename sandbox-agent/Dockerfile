@@ -18,6 +18,7 @@ COPY access ./access
 COPY api ./api
 COPY execstream ./execstream
 COPY harness ./harness
+COPY judge ./judge
 COPY proxy ./proxy
 COPY runcca ./runcca
 COPY sandboxconfig ./sandboxconfig

@@ -174,6 +174,9 @@ func routeIdentity(path string) (string, string, bool) {
 }
 
 func requiredRequestScope(r *http.Request) string {
+	if strings.HasSuffix(r.URL.Path, "/judge") {
+		return "judge:run"
+	}
 	// The status route reports git/session/connection telemetry and nothing
 	// else, so it is gated on its own narrow scope rather than exec:read.
 	if r.Method == http.MethodGet && strings.HasSuffix(r.URL.Path, "/status") {

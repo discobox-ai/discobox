@@ -701,3 +701,14 @@ development images without a registry.
   both websocket ends of an attach (CLI dial, `shimproxy.AttachWebSocket`)
   run keepalive ping loops that close the tunnel when the peer stops
   answering.
+
+## Judge service mode
+
+`harnessMode=judge` disables automatic primary terminals and repository services.
+The scoped `judge:run` endpoint accepts typed evidence jobs only, applies the
+shared fixed policy, and invokes the image’s `discobox-prompt` with the judge
+role, schema and `--no-tools`. `execs.RunOneShot` resolves the normal runtime
+identity, bounds both output streams, kills the process group on cancellation,
+and exposes no attach surface or persisted transcript. No caller can select an
+executable or system prompt. The pool supplies a dedicated isolated runtime;
+work sandbox credential endpoints remain relays to the pool broker.

@@ -55,6 +55,12 @@ type Invoker interface {
 	//
 	// GET /api/project/{projectId}/pool/{poolId}/sandboxes/{sandboxId}
 	PoolGetSandbox(ctx context.Context, params PoolGetSandboxParams) (*PoolSandboxInstance, error)
+	// PoolJudge invokes pool-judge operation.
+	//
+	// Judge a typed credential operation over pool-private IPC.
+	//
+	// POST /judge
+	PoolJudge(ctx context.Context, request *JudgeJob) (*JudgeVerdict, error)
 	// PoolListSandboxes invokes pool-list-sandboxes operation.
 	//
 	// List pool sandboxes.
@@ -768,6 +774,83 @@ func (c *Client) sendPoolGetSandbox(ctx context.Context, params PoolGetSandboxPa
 
 	stage = "DecodeResponse"
 	result, err := decodePoolGetSandboxResponse(resp)
+	if err != nil {
+		return res, errors.Wrap(err, "decode response")
+	}
+
+	return result, nil
+}
+
+// PoolJudge invokes pool-judge operation.
+//
+// Judge a typed credential operation over pool-private IPC.
+//
+// POST /judge
+func (c *Client) PoolJudge(ctx context.Context, request *JudgeJob) (*JudgeVerdict, error) {
+	res, err := c.sendPoolJudge(ctx, request)
+	return res, err
+}
+
+func (c *Client) sendPoolJudge(ctx context.Context, request *JudgeJob) (res *JudgeVerdict, err error) {
+	otelAttrs := []attribute.KeyValue{
+		otelogen.OperationID("pool-judge"),
+		semconv.HTTPRequestMethodKey.String("POST"),
+		semconv.URLTemplateKey.String("/judge"),
+	}
+	otelAttrs = append(otelAttrs, c.cfg.Attributes...)
+
+	// Run stopwatch.
+	startTime := time.Now()
+	defer func() {
+		// Use floating point division here for higher precision (instead of Millisecond method).
+		elapsedDuration := time.Since(startTime)
+		c.duration.Record(ctx, float64(elapsedDuration)/float64(time.Millisecond), metric.WithAttributes(otelAttrs...))
+	}()
+
+	// Increment request counter.
+	c.requests.Add(ctx, 1, metric.WithAttributes(otelAttrs...))
+
+	// Start a span for this request.
+	ctx, span := c.cfg.Tracer.Start(ctx, PoolJudgeOperation,
+		trace.WithAttributes(otelAttrs...),
+		clientSpanKind,
+	)
+	// Track stage for error reporting.
+	var stage string
+	defer func() {
+		if err != nil {
+			span.RecordError(err)
+			span.SetStatus(codes.Error, stage)
+			c.errors.Add(ctx, 1, metric.WithAttributes(otelAttrs...))
+		}
+		span.End()
+	}()
+
+	stage = "BuildURL"
+	u := uri.Clone(c.requestURL(ctx))
+	var pathParts [1]string
+	pathParts[0] = "/judge"
+	uri.AddPathParts(u, pathParts[:]...)
+
+	stage = "EncodeRequest"
+	r, err := ht.NewRequest(ctx, "POST", u)
+	if err != nil {
+		return res, errors.Wrap(err, "create request")
+	}
+	if err := encodePoolJudgeRequest(request, r); err != nil {
+		return res, errors.Wrap(err, "encode request")
+	}
+
+	stage = "SendRequest"
+	resp, err := c.cfg.Client.Do(r)
+	if err != nil {
+		return res, errors.Wrap(err, "do request")
+	}
+	body := resp.Body
+	defer body.Close()
+
+	stage = "DecodeResponse"
+	result, err := decodePoolJudgeResponse(resp)
 	if err != nil {
 		return res, errors.Wrap(err, "decode response")
 	}

@@ -30,7 +30,7 @@ const (
 	// which carries both the mTLS keypair and the pool endpoint to dial.
 	DefaultBridgeConfigPath = "/etc/discobox/proxy/bridge.json"
 
-	relayTimeout = 30 * time.Second
+	relayTimeout = 110 * time.Second
 )
 
 // ListenAddress is where the protocol is served inside the sandbox: the

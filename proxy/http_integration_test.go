@@ -1238,3 +1238,5 @@ func TestHTTPProxySecretSentinelSwapInBasicAuth(t *testing.T) {
 		t.Fatalf("Authorization audit values = %#v, want [REDACTED]", values)
 	}
 }
+
+func (r stubResolver) Authorize(context.Context, secrets.AuthorizeRequest) error { return nil }

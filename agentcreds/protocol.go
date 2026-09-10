@@ -135,15 +135,9 @@ func (s RequestStatus) Settled() bool {
 	return s.Status == StatusGranted || s.Status == StatusDenied
 }
 
-// Verdict is what a judge decided about a command, carried on the call that
-// takes a value for it so that a credential cannot be issued without one
-// (ADR 0091): the call that mints the value is the call that carries the
-// record of why.
-//
-// Role names what discobox-prompt was asked for (e.g. "judge"), never a
-// vendor model id — the judge itself never learns one to report. Prompt is
-// stored in full, not digested: the value of an audit record here is being
-// able to read exactly what the judge saw, not a hash of it.
+// Verdict is a caller-reported decision carried only by DenialReport. It is
+// untrusted history, never authorization to issue a credential. Prompt records
+// what that caller claims to have asked; Role names its claimed model role.
 type Verdict struct {
 	Allow     bool   `json:"allow"`
 	Reason    string `json:"reason,omitempty"`
@@ -157,20 +151,16 @@ type Verdict struct {
 // and gives the audit log a per-use story; it is never a trust anchor, because
 // the caller could lie about it.
 //
-// Verdict is required: an implementation may reject a body without one, the
-// same way it rejects a body without a UseID (ADR 0091 §1).
+// The service judges Command before issuing a value. Evidence contains bounded,
+// explicitly untrusted context collected by the caller, never a verdict.
 type UseBody struct {
-	UseID   string   `json:"useId"`
-	Command []string `json:"command,omitempty"`
-	Verdict Verdict  `json:"verdict"`
+	UseID    string   `json:"useId"`
+	Command  []string `json:"command"`
+	Evidence string   `json:"evidence,omitempty"`
 }
 
-// DenialReport volunteers a verdict that never reached UseBody because the
-// judge refused before a value was ever taken (ADR 0079 §1's ordering means a
-// refusal mints nothing, so the use call this would otherwise ride never
-// happens). Reporting it is best-effort on the caller's side — nothing about
-// what the CLI does next depends on whether this call succeeds — but what it
-// stores, once it arrives, is as real as an issued verdict.
+// DenialReport volunteers a local refusal for audit history. Services must
+// distinguish it from decisions made by their trusted judge.
 type DenialReport struct {
 	UseID   string   `json:"useId"`
 	Command []string `json:"command,omitempty"`

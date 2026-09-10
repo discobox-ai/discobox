@@ -330,6 +330,11 @@ func Serve(ctx context.Context, logger *slog.Logger, bootstrap Bootstrap, regist
 			}
 		}
 	}
+	go func() {
+		if err := servePoolJudge(ctx, logger, bootstrap, registration, runtime); err != nil && ctx.Err() == nil {
+			logger.Error("pool judge service stopped", "error", err)
+		}
+	}()
 	go runtime.WatchProxyMaterial(ctx, logger)
 	go runtime.WatchImages(ctx, logger)
 	return ServeWithRuntime(ctx, logger, bootstrap, registration, runtime)

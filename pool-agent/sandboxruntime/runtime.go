@@ -871,6 +871,9 @@ func (r *DockerSandboxRuntime) prepareSandboxVolumes(ctx context.Context, sandbo
 		return nil, nil, fmt.Errorf("prepare sandbox data volume: %w", err)
 	}
 	cacheHostPath := r.poolCacheRoot()
+	if string(req.Config.HarnessMode.Or("")) == "judge" {
+		cacheHostPath = filepath.Join(filepath.Join(r.sandboxesRoot(), sandboxID), "judge-cache")
+	}
 	if err := prepareOwnedMountpoint(cacheHostPath, 0, 0); err != nil {
 		return nil, nil, fmt.Errorf("prepare pool cache volume: %w", err)
 	}

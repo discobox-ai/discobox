@@ -43,3 +43,7 @@ straight from the store.
 
 Ordering is load-bearing: providers and harnesses are database-only and roll
 the project back on failure, so pools — which schedule real hosts — run last.
+
+`judgeHarnessConfigId` is a project preference: empty follows the default
+harness. Updates accept only a configured prompting harness in this project; an
+explicit selection that later becomes unavailable fails closed at judgment.

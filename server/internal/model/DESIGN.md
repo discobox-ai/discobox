@@ -225,3 +225,8 @@ spent bootstrap-token rows in the same database operation.
 Pool repair is not delete. Repair is an in-place recovery operation that
 replaces the runtime under the same pool identity and must preserve the pool
 row and pool-local state (named volumes).
+
+`PoolJudge` owns a pool’s dedicated harness revision and runtime identity, outside
+the scheduled Sandbox table. Pool deletion removes its secret assignments.
+Project judge selection and credential-verdict provenance fields are additive;
+existing verdicts default to the untrusted `client` origin.

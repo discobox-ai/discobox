@@ -42,7 +42,7 @@ func WithHTTPClient(client *http.Client) ClientOption {
 func NewClient(baseURL string, opts ...ClientOption) *Client {
 	c := &Client{
 		baseURL: strings.TrimRight(strings.TrimSpace(baseURL), "/"),
-		http:    &http.Client{Timeout: 30 * time.Second},
+		http:    &http.Client{Timeout: 110 * time.Second},
 	}
 	for _, opt := range opts {
 		if opt != nil {

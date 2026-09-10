@@ -16,6 +16,7 @@ import (
 	"time"
 
 	"github.com/discobox-ai/discobox/agentcreds"
+	"github.com/discobox-ai/discobox/judge"
 	"github.com/discobox-ai/discobox/proxy"
 )
 
@@ -41,6 +42,9 @@ func TestMintedSentinelIsSwappedOnRealTraffic(t *testing.T) {
 
 	var sawAuthorization string
 	origin := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.UserAgent() == "discobox-sandbox-agent (port probe)" {
+			return
+		}
 		sawAuthorization = r.Header.Get("Authorization")
 		_, _ = io.WriteString(w, "ok")
 	}))
@@ -52,6 +56,15 @@ func TestMintedSentinelIsSwappedOnRealTraffic(t *testing.T) {
 	// through.
 	var sawSentinel string
 	controlPlane := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch {
+		case strings.HasSuffix(r.URL.Path, "/sandbox-credentials"):
+			_ = json.NewEncoder(w).Encode(listCredentialsDoc{Credentials: []credentialDoc{{Name: "github", Host: originHost, Sentinel: "STABLE-SENTINEL", Uses: []credentialUseDoc{{UseID: "use-1", Description: "open a PR"}}}}})
+			return
+		case strings.HasSuffix(r.URL.Path, "/sandbox-credential-verdicts"):
+			w.WriteHeader(http.StatusNoContent)
+			return
+		}
+
 		var body resolveRequestBody
 		_ = json.NewDecoder(r.Body).Decode(&body)
 		sawSentinel = body.Sentinel
@@ -96,6 +109,8 @@ func TestMintedSentinelIsSwappedOnRealTraffic(t *testing.T) {
 	if err != nil {
 		t.Fatalf("mint: %v", err)
 	}
+
+	stubPoolJudge(t, func(job judge.Job) (judge.Verdict, error) { return allowPoolJudge(ctx, job) })
 
 	client := proxyClient(t, server, material)
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, origin.URL, nil)
@@ -249,10 +264,11 @@ func TestCredentialsEndpointIdentifiesTheSandboxByItsCertificate(t *testing.T) {
 
 	// A `get` mints against that identity, and the value handed back is an
 	// ephemeral sentinel rather than anything the control plane holds.
+	stubPoolJudge(t, func(job judge.Job) (judge.Verdict, error) { return allowPoolJudge(ctx, job) })
+
 	result, err := client.Get(ctx, agentcreds.UseBody{
 		UseID:   "use-1",
 		Command: []string{"gh", "pr", "create"},
-		Verdict: agentcreds.Verdict{Allow: true, Reason: "matches the approved use", Role: "judge", Prompt: "..."},
 	})
 	if err != nil {
 		t.Fatalf("get over mTLS: %v", err)

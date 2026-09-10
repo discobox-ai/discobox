@@ -108,6 +108,64 @@ components:
             required:
                 - hooks
             type: object
+        JudgeJob:
+            additionalProperties: false
+            properties:
+                command:
+                    items:
+                        type: string
+                    type: array
+                credential:
+                    type: string
+                evidence:
+                    maxLength: 524288
+                    type: string
+                host:
+                    type: string
+                kind:
+                    type: string
+                purpose:
+                    maxLength: 16384
+                    type: string
+            required:
+                - kind
+                - purpose
+                - host
+                - credential
+            type: object
+        JudgeVerdict:
+            additionalProperties: false
+            properties:
+                allow:
+                    type: boolean
+                harnessConfigId:
+                    type: string
+                image:
+                    type: string
+                latencyMs:
+                    format: int64
+                    type: integer
+                prompt:
+                    type: string
+                promptVersion:
+                    type: string
+                reason:
+                    type: string
+                revision:
+                    type: string
+                role:
+                    type: string
+            required:
+                - allow
+                - reason
+                - role
+                - prompt
+                - promptVersion
+                - latencyMs
+                - harnessConfigId
+                - revision
+                - image
+            type: object
         ResourceHistoryResponse:
             additionalProperties: false
             properties:
@@ -1269,6 +1327,40 @@ paths:
             summary: List recent sandbox harness hook payload logs.
             tags:
                 - Harness Hooks
+    /api/projects/{projectId}/sandboxes/{sandboxId}/judge:
+        post:
+            operationId: judge-sandbox
+            parameters:
+                - in: path
+                  name: projectId
+                  required: true
+                  schema:
+                    type: string
+                - in: path
+                  name: sandboxId
+                  required: true
+                  schema:
+                    type: string
+            requestBody:
+                content:
+                    application/json:
+                        schema:
+                            $ref: '#/components/schemas/JudgeJob'
+                required: true
+            responses:
+                "200":
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/JudgeVerdict'
+                    description: Successful response.
+                default:
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/ErrorResponse'
+                    description: Error response.
+            summary: Judge sandbox.
     /api/projects/{projectId}/sandboxes/{sandboxId}/services:
         get:
             description: Lists the services declared under .discobox/services in the sandbox's primary source, each with the state of the exec running it. Declarations are re-read on every request, so a service file added or edited while the sandbox is up appears immediately.

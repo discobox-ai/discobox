@@ -412,27 +412,44 @@ func (s *Service) ResolveSandboxSecret(ctx context.Context, poolID, sandboxID, s
 	if err != nil {
 		return nil, apperrors.NotFound(err, "sandbox secret not found")
 	}
-	// The calling pool agent must own the sandbox the sentinel belongs to.
-	sandbox, err := s.store.GetSandbox(ctx, assignment.ProjectID, assignment.SandboxID)
-	if err != nil {
-		return nil, apperrors.NotFound(err, "sandbox not found")
-	}
-	if strings.TrimSpace(sandbox.PoolID) != strings.TrimSpace(poolID) {
-		return nil, apperrors.NewStatusError(http.StatusNotFound, "sandbox secret not found")
+	// Resolve ownership before granting access. A pool judge is a pool-owned
+	// runtime, never a user sandbox or a caller-supplied synthetic Sandbox row.
+	scopes := []store.GrantScope{{Scope: model.SecretGrantScopeProject, ScopeKey: assignment.ProjectID}}
+	sandbox, ownerErr := s.store.GetSandbox(ctx, assignment.ProjectID, assignment.SandboxID)
+	if ownerErr == nil {
+		if sandbox.PoolID != poolID {
+			return nil, apperrors.NewStatusError(http.StatusNotFound, "sandbox secret not found")
+		}
+		scopes = append(scopes, store.GrantScope{Scope: model.SecretGrantScopeSandbox, ScopeKey: sandbox.ID})
+		if sandbox.HarnessConfigID != nil {
+			scopes = append(scopes, store.GrantScope{Scope: model.SecretGrantScopeHarnessConfig, ScopeKey: *sandbox.HarnessConfigID})
+		}
+	} else {
+		if !errors.Is(ownerErr, store.ErrNotFound) {
+			return nil, ownerErr
+		}
+		runtime, err := s.store.GetPoolJudge(ctx, poolID)
+		if err != nil || runtime.SandboxID != sandboxID || runtime.ProjectID != assignment.ProjectID {
+			return nil, apperrors.NewStatusError(http.StatusNotFound, "credential runtime not found")
+		}
+		project, err := s.store.GetProject(ctx, runtime.ProjectID)
+		if err != nil {
+			return nil, err
+		}
+		selected := project.JudgeHarnessConfigID
+		if selected == "" {
+			selected = project.DefaultHarnessConfigID
+		}
+		if selected != runtime.HarnessConfigID {
+			return &model.SandboxSecretResolution{Status: model.SecretRequestStatusDenied}, nil
+		}
+		scopes = []store.GrantScope{{Scope: model.SecretGrantScopeHarnessConfig, ScopeKey: runtime.HarnessConfigID}}
 	}
 	secret, err := s.store.GetSecret(ctx, assignment.ProjectID, assignment.SecretID)
 	if err != nil {
 		return nil, apperrors.NotFound(err, "secret not found")
 	}
 	host = normalizeHost(host)
-
-	scopes := []store.GrantScope{
-		{Scope: model.SecretGrantScopeSandbox, ScopeKey: sandbox.ID},
-		{Scope: model.SecretGrantScopeProject, ScopeKey: assignment.ProjectID},
-	}
-	if sandbox.HarnessConfigID != nil && strings.TrimSpace(*sandbox.HarnessConfigID) != "" {
-		scopes = append(scopes, store.GrantScope{Scope: model.SecretGrantScopeHarnessConfig, ScopeKey: strings.TrimSpace(*sandbox.HarnessConfigID)})
-	}
 	// The binding is checked where the credential is handed out, not only where
 	// a grant is minted. A secret bound to a host may be used for that host and
 	// the hosts beneath it and nowhere else — which has to hold for grants that

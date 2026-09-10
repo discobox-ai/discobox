@@ -238,3 +238,15 @@ identical to a bearer's. It is refreshed server-side on resolve when near
 expiry, collapsed onto one upstream refresh by a singleflight group so a
 rotating refresh token is spent once, and the resolution's expiry is capped by
 the token's own so the proxy re-resolves as it ages out. See ADR 0011.
+
+## Trusted judge records
+
+Command and request verdicts originate in the pool’s dedicated judge, and are
+persisted before mint or substitution. Records include origin, request ID,
+harness revision/image, prompt version, evidence, reason and latency. Allowed
+trusted records require the current configured judge and a live grant. Caller
+denial reports and existing rows remain `origin=client` and cannot authorize.
+
+Dedicated judge identities resolve only their configured harness bindings and
+harness-scoped grants, with normal host and expiry checks. They are separate
+from work Sandbox rows and cannot inherit project agent-use credentials.

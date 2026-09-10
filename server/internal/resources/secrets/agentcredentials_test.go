@@ -467,3 +467,61 @@ func TestApprovedHostIsNormalizedToWhatTheProxyReports(t *testing.T) {
 		})
 	}
 }
+
+func TestTrustedVerdictRequiresCurrentHarnessAndCannotBeVolunteered(t *testing.T) {
+	ctx := testPrincipalContext()
+	svc, st := newAgentCredentialService(t)
+	secret := createBearerSecret(ctx, t, svc)
+	req := createAgentRequest(ctx, t, svc)
+	approved, err := svc.ApproveSecretRequest(ctx, "project-1", req.ID, services.ApproveSecretRequestBody{SecretId: secret.ID})
+	if err != nil {
+		t.Fatal(err)
+	}
+	grant, err := st.GetSecretGrant(ctx, "project-1", approved.GrantID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	hc := &model.HarnessConfig{ID: "judge-hc", ProjectID: "project-1", Name: "judge", Slug: "judge", Configured: true, Image: "example/judge"}
+	if err := st.CreateHarnessConfig(ctx, hc); err != nil {
+		t.Fatal(err)
+	}
+	project, err := st.GetProject(ctx, "project-1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	project.DefaultHarnessConfigID = hc.ID
+	if err := st.UpsertProject(ctx, project); err != nil {
+		t.Fatal(err)
+	}
+	bindings, err := st.ListHarnessConfigSecretBindings(ctx, "project-1", hc.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	revision, err := model.JudgeRevision(hc, bindings)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := st.EnsurePoolJudge(ctx, model.PoolJudge{PoolID: testPoolID, ProjectID: "project-1", SandboxID: "judge_dedicated", HarnessConfigID: hc.ID, Revision: revision}, bindings); err != nil {
+		t.Fatal(err)
+	}
+	body := services.RecordCredentialVerdictBody{SandboxId: testSandboxID, UseId: grant.Uses[0].UseID, Command: []string{"gh", "pr", "create"}, Origin: serverapi.NewOptString("command"), HarnessConfigId: serverapi.NewOptString(hc.ID), Revision: serverapi.NewOptString(revision), PromptVersion: serverapi.NewOptString("1"), Verdict: apimodel.AgentCredentialVerdict{Allow: true, Role: "judge", Prompt: "approved purpose and evidence"}}
+	if err := svc.RecordCredentialVerdict(ctx, testPoolID, body); err != nil {
+		t.Fatal(err)
+	}
+	body.Volunteered = true
+	if err := svc.RecordCredentialVerdict(ctx, testPoolID, body); err == nil {
+		t.Fatal("caller claimed trusted provenance")
+	}
+	body.Volunteered = false
+	project.DefaultHarnessConfigID = "different-harness"
+	if err := st.UpsertProject(ctx, project); err != nil {
+		t.Fatal(err)
+	}
+	if err := svc.RecordCredentialVerdict(ctx, testPoolID, body); err == nil {
+		t.Fatal("accepted stale harness verdict")
+	}
+	body.Verdict.Allow = false
+	if err := svc.RecordCredentialVerdict(ctx, testPoolID, body); err != nil {
+		t.Fatalf("lost denial history: %v", err)
+	}
+}

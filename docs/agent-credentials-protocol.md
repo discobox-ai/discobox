@@ -136,7 +136,7 @@ POST /v1/credentials/use
 {
   "useId": "use_7f3c…",
   "command": ["gh", "pr", "create", "--fill"],
-  "verdict": { "allow": true, "reason": "opens a PR against the approved repo", "role": "judge", "prompt": "Approved use: …", "latencyMs": 842 }
+  "evidence": "Working directory and bounded repository context"
 }
 ```
 
@@ -150,18 +150,11 @@ window and gives the audit log a per-use story. It is not a trust anchor: in
 Discobox the real enforcement happens against the actual outbound request at
 swap time, and a client that lies about its command gains nothing.
 
-`verdict` is required
-([ADR 0091](adr/0091-a-credential-is-not-issued-without-a-verdict-on-record.md)):
-a caller reports what decided the command was the approved use, and an
-implementation that judges its callers persists it before the value is handed
-out, so a credential is never issued with no record of why. `role` names what
-answered (a role like `"judge"`, never a vendor model id — a caller with
-nothing that decided the command, because it never judges its callers at all,
-reports the role it would have asked for anyway, such as `"none"`). `prompt`
-is the exact text the decision was made from, in full. An implementation that
-makes no such decision may still require the field and record it verbatim; the
-protocol does not make persistence itself mandatory, only that the field is
-sent.
+`command` is required by Discobox. `evidence` is optional, bounded caller context
+and is always untrusted. A caller-supplied allow verdict is not accepted. The
+service loads the approved use, obtains its own judgment, and persists it before
+issuing a value. This moves the decision out of the requesting sandbox
+([ADR 0106](adr/0106-a-trusted-judge-checks-requests-before-credential-substitution.md)).
 
 `expiresAt` is the end of this value's window. A client that needs the
 credential again after it passes calls `get` again rather than holding the value.
@@ -180,15 +173,10 @@ POST /v1/credentials/denials
 }
 ```
 
-A caller that judges its own commands before calling `get` (`discobox-access`
-does; the protocol does not require it) never calls `get` at all for a command
-its judge refused — there is nothing to issue, so there is nothing for `get`'s
-own recording to catch. Without this operation that verdict would exist only
-on the caller's own side, if anywhere. Reporting it is the caller's choice, not
-its obligation: the response is `204` either way, and a client is free to treat
-this call's own failure as unremarkable — it is what a caller volunteers about
-a decision made before this protocol was ever asked to act on it, not a
-correction to something `get` returned.
+A client may volunteer its own refusal for history. It cannot claim trusted
+judge provenance or authorize a use through this endpoint. Discobox stores these
+as `origin=client`; its own command and request verdicts are recorded separately.
+`discobox-access` relies on the service judge and does not make local verdicts.
 
 ## The client shape that fits it best
 
@@ -229,24 +217,11 @@ structured output everywhere, and a structured body on stdin for `request`.
 Results go to stdout and failures to stderr, always — which is what lets `run`
 hand its child the real stdout untouched.
 
-**The reference client judges before it runs.** Before executing a wrapped
-command, `discobox-access` asks a local model whether the command is the use
-it was approved for, and refuses to start it otherwise
-([ADR 0079](adr/0079-a-local-judge-gates-every-wrapped-credential-use.md)). That
-is a property of this client, not of the protocol: an implementation serving the
-protocol neither knows nor depends on whether its caller does this, and a
-different client may do something else.
-
-**The reference client has no unwrapped way to take a value.** The wire
-operation below is `get` for a reason — a caller of the protocol may still ask
-for a value with no command attached — but `discobox-access` itself dropped
-that as a CLI capability
-([ADR 0092](adr/0092-the-cli-has-no-unjudged-way-to-take-a-value.md)): a value
-with nothing for the judge to have ruled on is exactly the case the judge
-cannot help with, and this client does not keep offering one just because
-wrapping is sometimes inconvenient. `list` and the flag form of `request`
-remain, for scripting the parts that were never about a value in the first
-place.
+**The reference client waits for the service judge before it runs.**
+`discobox-access run` sends argv and context to the service and starts the child
+only when it receives a scoped value. It has no command to print a value alone.
+Discobox also judges each actual API request at substitution time; a declaration
+of argv never replaces that check.
 
 ## Implementing the server side
 
@@ -257,8 +232,8 @@ An implementation owns four decisions the protocol does not make:
 2. **What `get` returns.** Real value, or a scoped stand-in.
 3. **How a request reaches a human.** The protocol only says a request has an
    id and a status that eventually settles.
-4. **What becomes of a verdict.** The field is required on both `get` and the
-   denial report; whether either is persisted, and where, is not specified.
+4. **How commands are judged.** Runtime selection, model policy and audit
+   persistence belong to the service. Caller denial reports are untrusted history.
 
 In Discobox: sandbox-agent serves the protocol on sandbox loopback, relays to
 pool-agent over the sandbox's mTLS client certificate (which is the identity),

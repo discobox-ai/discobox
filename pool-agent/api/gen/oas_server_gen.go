@@ -35,6 +35,12 @@ type Handler interface {
 	//
 	// GET /api/project/{projectId}/pool/{poolId}/sandboxes/{sandboxId}
 	PoolGetSandbox(ctx context.Context, params PoolGetSandboxParams) (*PoolSandboxInstance, error)
+	// PoolJudge implements pool-judge operation.
+	//
+	// Judge a typed credential operation over pool-private IPC.
+	//
+	// POST /judge
+	PoolJudge(ctx context.Context, req *JudgeJob) (*JudgeVerdict, error)
 	// PoolListSandboxes implements pool-list-sandboxes operation.
 	//
 	// List pool sandboxes.

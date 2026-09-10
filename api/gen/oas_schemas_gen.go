@@ -1835,6 +1835,7 @@ func (*ErrorModelStatusCode) denySecretRequestRes()                {}
 func (*ErrorModelStatusCode) forceJobRes()                         {}
 func (*ErrorModelStatusCode) getHarnessConfigRes()                 {}
 func (*ErrorModelStatusCode) getJobRes()                           {}
+func (*ErrorModelStatusCode) getPoolJudgeRuntimeRes()              {}
 func (*ErrorModelStatusCode) getPoolRes()                          {}
 func (*ErrorModelStatusCode) getProjectRes()                       {}
 func (*ErrorModelStatusCode) getSSHIngressRes()                    {}
@@ -1940,6 +1941,7 @@ func (*ErrorResponseStatusCode) getSandboxAgentStatusRes()          {}
 func (*ErrorResponseStatusCode) getSandboxExecRes()                 {}
 func (*ErrorResponseStatusCode) getSandboxExecResourcesRes()        {}
 func (*ErrorResponseStatusCode) getSandboxServiceRes()              {}
+func (*ErrorResponseStatusCode) judgeSandboxRes()                   {}
 func (*ErrorResponseStatusCode) listHarnessHooksRes()               {}
 func (*ErrorResponseStatusCode) listSandboxExecEventsRes()          {}
 func (*ErrorResponseStatusCode) listSandboxExecLogsRes()            {}
@@ -3515,6 +3517,181 @@ func (s *JobStatus) UnmarshalText(data []byte) error {
 		return errors.Errorf("invalid value: %q", data)
 	}
 }
+
+// Ref: #/components/schemas/JudgeJob
+type JudgeJob struct {
+	Kind       string    `json:"kind"`
+	Purpose    string    `json:"purpose"`
+	Host       string    `json:"host"`
+	Credential string    `json:"credential"`
+	Command    []string  `json:"command"`
+	Evidence   OptString `json:"evidence"`
+}
+
+// GetKind returns the value of Kind.
+func (s *JudgeJob) GetKind() string {
+	return s.Kind
+}
+
+// GetPurpose returns the value of Purpose.
+func (s *JudgeJob) GetPurpose() string {
+	return s.Purpose
+}
+
+// GetHost returns the value of Host.
+func (s *JudgeJob) GetHost() string {
+	return s.Host
+}
+
+// GetCredential returns the value of Credential.
+func (s *JudgeJob) GetCredential() string {
+	return s.Credential
+}
+
+// GetCommand returns the value of Command.
+func (s *JudgeJob) GetCommand() []string {
+	return s.Command
+}
+
+// GetEvidence returns the value of Evidence.
+func (s *JudgeJob) GetEvidence() OptString {
+	return s.Evidence
+}
+
+// SetKind sets the value of Kind.
+func (s *JudgeJob) SetKind(val string) {
+	s.Kind = val
+}
+
+// SetPurpose sets the value of Purpose.
+func (s *JudgeJob) SetPurpose(val string) {
+	s.Purpose = val
+}
+
+// SetHost sets the value of Host.
+func (s *JudgeJob) SetHost(val string) {
+	s.Host = val
+}
+
+// SetCredential sets the value of Credential.
+func (s *JudgeJob) SetCredential(val string) {
+	s.Credential = val
+}
+
+// SetCommand sets the value of Command.
+func (s *JudgeJob) SetCommand(val []string) {
+	s.Command = val
+}
+
+// SetEvidence sets the value of Evidence.
+func (s *JudgeJob) SetEvidence(val OptString) {
+	s.Evidence = val
+}
+
+// Ref: #/components/schemas/JudgeVerdict
+type JudgeVerdict struct {
+	Allow           bool   `json:"allow"`
+	Reason          string `json:"reason"`
+	Role            string `json:"role"`
+	Prompt          string `json:"prompt"`
+	PromptVersion   string `json:"promptVersion"`
+	LatencyMs       int64  `json:"latencyMs"`
+	HarnessConfigId string `json:"harnessConfigId"`
+	Revision        string `json:"revision"`
+	Image           string `json:"image"`
+}
+
+// GetAllow returns the value of Allow.
+func (s *JudgeVerdict) GetAllow() bool {
+	return s.Allow
+}
+
+// GetReason returns the value of Reason.
+func (s *JudgeVerdict) GetReason() string {
+	return s.Reason
+}
+
+// GetRole returns the value of Role.
+func (s *JudgeVerdict) GetRole() string {
+	return s.Role
+}
+
+// GetPrompt returns the value of Prompt.
+func (s *JudgeVerdict) GetPrompt() string {
+	return s.Prompt
+}
+
+// GetPromptVersion returns the value of PromptVersion.
+func (s *JudgeVerdict) GetPromptVersion() string {
+	return s.PromptVersion
+}
+
+// GetLatencyMs returns the value of LatencyMs.
+func (s *JudgeVerdict) GetLatencyMs() int64 {
+	return s.LatencyMs
+}
+
+// GetHarnessConfigId returns the value of HarnessConfigId.
+func (s *JudgeVerdict) GetHarnessConfigId() string {
+	return s.HarnessConfigId
+}
+
+// GetRevision returns the value of Revision.
+func (s *JudgeVerdict) GetRevision() string {
+	return s.Revision
+}
+
+// GetImage returns the value of Image.
+func (s *JudgeVerdict) GetImage() string {
+	return s.Image
+}
+
+// SetAllow sets the value of Allow.
+func (s *JudgeVerdict) SetAllow(val bool) {
+	s.Allow = val
+}
+
+// SetReason sets the value of Reason.
+func (s *JudgeVerdict) SetReason(val string) {
+	s.Reason = val
+}
+
+// SetRole sets the value of Role.
+func (s *JudgeVerdict) SetRole(val string) {
+	s.Role = val
+}
+
+// SetPrompt sets the value of Prompt.
+func (s *JudgeVerdict) SetPrompt(val string) {
+	s.Prompt = val
+}
+
+// SetPromptVersion sets the value of PromptVersion.
+func (s *JudgeVerdict) SetPromptVersion(val string) {
+	s.PromptVersion = val
+}
+
+// SetLatencyMs sets the value of LatencyMs.
+func (s *JudgeVerdict) SetLatencyMs(val int64) {
+	s.LatencyMs = val
+}
+
+// SetHarnessConfigId sets the value of HarnessConfigId.
+func (s *JudgeVerdict) SetHarnessConfigId(val string) {
+	s.HarnessConfigId = val
+}
+
+// SetRevision sets the value of Revision.
+func (s *JudgeVerdict) SetRevision(val string) {
+	s.Revision = val
+}
+
+// SetImage sets the value of Image.
+func (s *JudgeVerdict) SetImage(val string) {
+	s.Image = val
+}
+
+func (*JudgeVerdict) judgeSandboxRes() {}
 
 // Ref: #/components/schemas/ListHarnessConfigSecretBindingsBody
 type ListHarnessConfigSecretBindingsBody struct {
@@ -8700,6 +8877,78 @@ func (s *PoolImageState) UnmarshalText(data []byte) error {
 	}
 }
 
+// Ref: #/components/schemas/PoolJudgeRuntimeResponse
+type PoolJudgeRuntimeResponse struct {
+	SandboxId string                            `json:"sandboxId"`
+	Revision  string                            `json:"revision"`
+	Harness   HarnessConfig                     `json:"harness"`
+	SecretEnv PoolJudgeRuntimeResponseSecretEnv `json:"secretEnv"`
+	Token     string                            `json:"token"`
+}
+
+// GetSandboxId returns the value of SandboxId.
+func (s *PoolJudgeRuntimeResponse) GetSandboxId() string {
+	return s.SandboxId
+}
+
+// GetRevision returns the value of Revision.
+func (s *PoolJudgeRuntimeResponse) GetRevision() string {
+	return s.Revision
+}
+
+// GetHarness returns the value of Harness.
+func (s *PoolJudgeRuntimeResponse) GetHarness() HarnessConfig {
+	return s.Harness
+}
+
+// GetSecretEnv returns the value of SecretEnv.
+func (s *PoolJudgeRuntimeResponse) GetSecretEnv() PoolJudgeRuntimeResponseSecretEnv {
+	return s.SecretEnv
+}
+
+// GetToken returns the value of Token.
+func (s *PoolJudgeRuntimeResponse) GetToken() string {
+	return s.Token
+}
+
+// SetSandboxId sets the value of SandboxId.
+func (s *PoolJudgeRuntimeResponse) SetSandboxId(val string) {
+	s.SandboxId = val
+}
+
+// SetRevision sets the value of Revision.
+func (s *PoolJudgeRuntimeResponse) SetRevision(val string) {
+	s.Revision = val
+}
+
+// SetHarness sets the value of Harness.
+func (s *PoolJudgeRuntimeResponse) SetHarness(val HarnessConfig) {
+	s.Harness = val
+}
+
+// SetSecretEnv sets the value of SecretEnv.
+func (s *PoolJudgeRuntimeResponse) SetSecretEnv(val PoolJudgeRuntimeResponseSecretEnv) {
+	s.SecretEnv = val
+}
+
+// SetToken sets the value of Token.
+func (s *PoolJudgeRuntimeResponse) SetToken(val string) {
+	s.Token = val
+}
+
+func (*PoolJudgeRuntimeResponse) getPoolJudgeRuntimeRes() {}
+
+type PoolJudgeRuntimeResponseSecretEnv map[string]string
+
+func (s *PoolJudgeRuntimeResponseSecretEnv) init() PoolJudgeRuntimeResponseSecretEnv {
+	m := *s
+	if m == nil {
+		m = map[string]string{}
+		*s = m
+	}
+	return m
+}
+
 // What the pool's own services hold, from the pool container's own cgroup. Excludes the sandboxes,
 // which are charged to their own cgroups outside this subtree.
 // Ref: #/components/schemas/PoolMemoryUsage
@@ -9791,6 +10040,8 @@ func (s *ProcessConsumptionAdditional) init() ProcessConsumptionAdditional {
 
 // Ref: #/components/schemas/Project
 type Project struct {
+	// Configured harness for the pool judge. Empty follows the project default.
+	JudgeHarnessConfigId OptString `json:"judgeHarnessConfigId"`
 	// A URL to the JSON Schema for this object.
 	Schema OptURI `json:"$schema"`
 	// Harness configurations.
@@ -9829,6 +10080,11 @@ type Project struct {
 	UpdatedAt time.Time `json:"updatedAt"`
 	// Whether this project has already shown its introduction.
 	Welcomed bool `json:"welcomed"`
+}
+
+// GetJudgeHarnessConfigId returns the value of JudgeHarnessConfigId.
+func (s *Project) GetJudgeHarnessConfigId() OptString {
+	return s.JudgeHarnessConfigId
 }
 
 // GetSchema returns the value of Schema.
@@ -9919,6 +10175,11 @@ func (s *Project) GetUpdatedAt() time.Time {
 // GetWelcomed returns the value of Welcomed.
 func (s *Project) GetWelcomed() bool {
 	return s.Welcomed
+}
+
+// SetJudgeHarnessConfigId sets the value of JudgeHarnessConfigId.
+func (s *Project) SetJudgeHarnessConfigId(val OptString) {
+	s.JudgeHarnessConfigId = val
 }
 
 // SetSchema sets the value of Schema.
@@ -10283,12 +10544,16 @@ type PurgeSandboxNoContent struct{}
 
 func (*PurgeSandboxNoContent) purgeSandboxRes() {}
 
-// A judge's verdict about one command run under an agent credential use, relayed by the pool agent
-// on behalf of one of its sandboxes (ADR 0091). Carried on the same call that takes a value, so a
-// credential cannot be issued without a record of why; sent on its own when the judge refused and no
-// value was ever taken.
+// A command or request verdict recorded by the pool before minting or substitution. Trusted origins
+// carry dedicated harness provenance; volunteered caller reports remain untrusted history (ADR 0106).
 // Ref: #/components/schemas/RecordCredentialVerdictBody
 type RecordCredentialVerdictBody struct {
+	Origin          OptString `json:"origin"`
+	RequestId       OptString `json:"requestId"`
+	HarnessConfigId OptString `json:"harnessConfigId"`
+	Revision        OptString `json:"revision"`
+	Image           OptString `json:"image"`
+	PromptVersion   OptString `json:"promptVersion"`
 	// A URL to the JSON Schema for this object.
 	Schema OptURI `json:"$schema"`
 	// The argv the judge was shown.
@@ -10301,6 +10566,36 @@ type RecordCredentialVerdictBody struct {
 	// True when the judge refused and this report is the only record of it, because the use call this
 	// would otherwise ride never happened.
 	Volunteered bool `json:"volunteered"`
+}
+
+// GetOrigin returns the value of Origin.
+func (s *RecordCredentialVerdictBody) GetOrigin() OptString {
+	return s.Origin
+}
+
+// GetRequestId returns the value of RequestId.
+func (s *RecordCredentialVerdictBody) GetRequestId() OptString {
+	return s.RequestId
+}
+
+// GetHarnessConfigId returns the value of HarnessConfigId.
+func (s *RecordCredentialVerdictBody) GetHarnessConfigId() OptString {
+	return s.HarnessConfigId
+}
+
+// GetRevision returns the value of Revision.
+func (s *RecordCredentialVerdictBody) GetRevision() OptString {
+	return s.Revision
+}
+
+// GetImage returns the value of Image.
+func (s *RecordCredentialVerdictBody) GetImage() OptString {
+	return s.Image
+}
+
+// GetPromptVersion returns the value of PromptVersion.
+func (s *RecordCredentialVerdictBody) GetPromptVersion() OptString {
+	return s.PromptVersion
 }
 
 // GetSchema returns the value of Schema.
@@ -10331,6 +10626,36 @@ func (s *RecordCredentialVerdictBody) GetVerdict() AgentCredentialVerdict {
 // GetVolunteered returns the value of Volunteered.
 func (s *RecordCredentialVerdictBody) GetVolunteered() bool {
 	return s.Volunteered
+}
+
+// SetOrigin sets the value of Origin.
+func (s *RecordCredentialVerdictBody) SetOrigin(val OptString) {
+	s.Origin = val
+}
+
+// SetRequestId sets the value of RequestId.
+func (s *RecordCredentialVerdictBody) SetRequestId(val OptString) {
+	s.RequestId = val
+}
+
+// SetHarnessConfigId sets the value of HarnessConfigId.
+func (s *RecordCredentialVerdictBody) SetHarnessConfigId(val OptString) {
+	s.HarnessConfigId = val
+}
+
+// SetRevision sets the value of Revision.
+func (s *RecordCredentialVerdictBody) SetRevision(val OptString) {
+	s.Revision = val
+}
+
+// SetImage sets the value of Image.
+func (s *RecordCredentialVerdictBody) SetImage(val OptString) {
+	s.Image = val
+}
+
+// SetPromptVersion sets the value of PromptVersion.
+func (s *RecordCredentialVerdictBody) SetPromptVersion(val OptString) {
+	s.PromptVersion = val
 }
 
 // SetSchema sets the value of Schema.
@@ -16779,6 +17104,8 @@ func (s *UpdatePoolStatusBody) SetSchedulable(val bool) {
 
 // Ref: #/components/schemas/UpdateProjectBody
 type UpdateProjectBody struct {
+	// Configured harness for the pool judge. Empty follows the project default.
+	JudgeHarnessConfigId OptString `json:"judgeHarnessConfigId"`
 	// A URL to the JSON Schema for this object.
 	Schema OptURI `json:"$schema"`
 	// Project display name.
@@ -16793,6 +17120,11 @@ type UpdateProjectBody struct {
 	// Whether this project has already shown its introduction. The launcher sets it once, the first time
 	// it welcomes someone to the project; clearing it shows the welcome again.
 	Welcomed OptBool `json:"welcomed"`
+}
+
+// GetJudgeHarnessConfigId returns the value of JudgeHarnessConfigId.
+func (s *UpdateProjectBody) GetJudgeHarnessConfigId() OptString {
+	return s.JudgeHarnessConfigId
 }
 
 // GetSchema returns the value of Schema.
@@ -16818,6 +17150,11 @@ func (s *UpdateProjectBody) GetSandboxUpgradePolicy() OptUpdateProjectBodySandbo
 // GetWelcomed returns the value of Welcomed.
 func (s *UpdateProjectBody) GetWelcomed() OptBool {
 	return s.Welcomed
+}
+
+// SetJudgeHarnessConfigId sets the value of JudgeHarnessConfigId.
+func (s *UpdateProjectBody) SetJudgeHarnessConfigId(val OptString) {
+	s.JudgeHarnessConfigId = val
 }
 
 // SetSchema sets the value of Schema.

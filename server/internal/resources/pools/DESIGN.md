@@ -116,3 +116,12 @@ Two consequences worth stating, because both were bugs:
   state forward. The create reconcile converges the generation before the agent
   registers, so a drift re-check that preserved `State` would strand a
   registered pool in `registering`.
+
+## Judge runtime recipe
+
+The authenticated pool alone reads `judge-runtime`. It resolves the project’s
+judge override or default, requires a configured prompting harness, and returns
+its image/configuration, scoped secret sentinels, revision identity and a
+`judge:run` sandbox-agent token. `PoolJudge` is separate from scheduled Sandbox
+rows: pool-agent reconciles its lifecycle. Revisions include configured files and
+secret bindings; stale recipes cannot replace the current binding transaction.

@@ -52,6 +52,15 @@ func (UnimplementedHandler) PoolGetSandbox(ctx context.Context, params PoolGetSa
 	return r, ht.ErrNotImplemented
 }
 
+// PoolJudge implements pool-judge operation.
+//
+// Judge a typed credential operation over pool-private IPC.
+//
+// POST /judge
+func (UnimplementedHandler) PoolJudge(ctx context.Context, req *JudgeJob) (r *JudgeVerdict, _ error) {
+	return r, ht.ErrNotImplemented
+}
+
 // PoolListSandboxes implements pool-list-sandboxes operation.
 //
 // List pool sandboxes.

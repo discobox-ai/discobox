@@ -397,6 +397,179 @@ func (s *HarnessHookLogsResponse) SetHooks(val []HarnessHookLog) {
 	s.Hooks = val
 }
 
+// Ref: #/components/schemas/JudgeJob
+type JudgeJob struct {
+	Command    []string  `json:"command"`
+	Credential string    `json:"credential"`
+	Evidence   OptString `json:"evidence"`
+	Host       string    `json:"host"`
+	Kind       string    `json:"kind"`
+	Purpose    string    `json:"purpose"`
+}
+
+// GetCommand returns the value of Command.
+func (s *JudgeJob) GetCommand() []string {
+	return s.Command
+}
+
+// GetCredential returns the value of Credential.
+func (s *JudgeJob) GetCredential() string {
+	return s.Credential
+}
+
+// GetEvidence returns the value of Evidence.
+func (s *JudgeJob) GetEvidence() OptString {
+	return s.Evidence
+}
+
+// GetHost returns the value of Host.
+func (s *JudgeJob) GetHost() string {
+	return s.Host
+}
+
+// GetKind returns the value of Kind.
+func (s *JudgeJob) GetKind() string {
+	return s.Kind
+}
+
+// GetPurpose returns the value of Purpose.
+func (s *JudgeJob) GetPurpose() string {
+	return s.Purpose
+}
+
+// SetCommand sets the value of Command.
+func (s *JudgeJob) SetCommand(val []string) {
+	s.Command = val
+}
+
+// SetCredential sets the value of Credential.
+func (s *JudgeJob) SetCredential(val string) {
+	s.Credential = val
+}
+
+// SetEvidence sets the value of Evidence.
+func (s *JudgeJob) SetEvidence(val OptString) {
+	s.Evidence = val
+}
+
+// SetHost sets the value of Host.
+func (s *JudgeJob) SetHost(val string) {
+	s.Host = val
+}
+
+// SetKind sets the value of Kind.
+func (s *JudgeJob) SetKind(val string) {
+	s.Kind = val
+}
+
+// SetPurpose sets the value of Purpose.
+func (s *JudgeJob) SetPurpose(val string) {
+	s.Purpose = val
+}
+
+// Ref: #/components/schemas/JudgeVerdict
+type JudgeVerdict struct {
+	Allow           bool   `json:"allow"`
+	HarnessConfigId string `json:"harnessConfigId"`
+	Image           string `json:"image"`
+	LatencyMs       int64  `json:"latencyMs"`
+	Prompt          string `json:"prompt"`
+	PromptVersion   string `json:"promptVersion"`
+	Reason          string `json:"reason"`
+	Revision        string `json:"revision"`
+	Role            string `json:"role"`
+}
+
+// GetAllow returns the value of Allow.
+func (s *JudgeVerdict) GetAllow() bool {
+	return s.Allow
+}
+
+// GetHarnessConfigId returns the value of HarnessConfigId.
+func (s *JudgeVerdict) GetHarnessConfigId() string {
+	return s.HarnessConfigId
+}
+
+// GetImage returns the value of Image.
+func (s *JudgeVerdict) GetImage() string {
+	return s.Image
+}
+
+// GetLatencyMs returns the value of LatencyMs.
+func (s *JudgeVerdict) GetLatencyMs() int64 {
+	return s.LatencyMs
+}
+
+// GetPrompt returns the value of Prompt.
+func (s *JudgeVerdict) GetPrompt() string {
+	return s.Prompt
+}
+
+// GetPromptVersion returns the value of PromptVersion.
+func (s *JudgeVerdict) GetPromptVersion() string {
+	return s.PromptVersion
+}
+
+// GetReason returns the value of Reason.
+func (s *JudgeVerdict) GetReason() string {
+	return s.Reason
+}
+
+// GetRevision returns the value of Revision.
+func (s *JudgeVerdict) GetRevision() string {
+	return s.Revision
+}
+
+// GetRole returns the value of Role.
+func (s *JudgeVerdict) GetRole() string {
+	return s.Role
+}
+
+// SetAllow sets the value of Allow.
+func (s *JudgeVerdict) SetAllow(val bool) {
+	s.Allow = val
+}
+
+// SetHarnessConfigId sets the value of HarnessConfigId.
+func (s *JudgeVerdict) SetHarnessConfigId(val string) {
+	s.HarnessConfigId = val
+}
+
+// SetImage sets the value of Image.
+func (s *JudgeVerdict) SetImage(val string) {
+	s.Image = val
+}
+
+// SetLatencyMs sets the value of LatencyMs.
+func (s *JudgeVerdict) SetLatencyMs(val int64) {
+	s.LatencyMs = val
+}
+
+// SetPrompt sets the value of Prompt.
+func (s *JudgeVerdict) SetPrompt(val string) {
+	s.Prompt = val
+}
+
+// SetPromptVersion sets the value of PromptVersion.
+func (s *JudgeVerdict) SetPromptVersion(val string) {
+	s.PromptVersion = val
+}
+
+// SetReason sets the value of Reason.
+func (s *JudgeVerdict) SetReason(val string) {
+	s.Reason = val
+}
+
+// SetRevision sets the value of Revision.
+func (s *JudgeVerdict) SetRevision(val string) {
+	s.Revision = val
+}
+
+// SetRole sets the value of Role.
+func (s *JudgeVerdict) SetRole(val string) {
+	s.Role = val
+}
+
 // NewOptBool returns new OptBool with value set to v.
 func NewOptBool(v bool) OptBool {
 	return OptBool{

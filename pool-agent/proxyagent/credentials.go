@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/discobox-ai/discobox/agentcreds"
+	"github.com/discobox-ai/discobox/judge"
 )
 
 // The pool half of the agent credentials protocol (ADR 0031).
@@ -31,7 +32,7 @@ import (
 // behalf. It is shorter than a human's patience and longer than any healthy
 // round trip; a hung control plane must fail the agent's call, not hold its
 // process open.
-const credentialBrokerTimeout = 15 * time.Second
+const credentialBrokerTimeout = judge.Timeout + 15*time.Second
 
 // controlPlaneCredentials calls the control plane's agent credentials broker
 // routes with the scoped token from ResolveContextFile — the same file the
@@ -72,6 +73,13 @@ type credentialVerdictDoc struct {
 }
 
 type recordCredentialVerdictDoc struct {
+	Origin          string `json:"origin,omitempty"`
+	RequestID       string `json:"requestId,omitempty"`
+	HarnessConfigID string `json:"harnessConfigId,omitempty"`
+	Revision        string `json:"revision,omitempty"`
+	Image           string `json:"image,omitempty"`
+	PromptVersion   string `json:"promptVersion,omitempty"`
+
 	SandboxID   string               `json:"sandboxId"`
 	UseID       string               `json:"useId"`
 	Command     []string             `json:"command,omitempty"`
@@ -217,6 +225,7 @@ func controlPlaneError(resp *http.Response) error {
 // per connection from the client certificate, so a sandbox's identity is
 // structurally not something it can pass in a request body.
 type credentialBroker struct {
+	judge       func(context.Context, judge.Job) (judge.Verdict, error)
 	sandboxID   string
 	controlPlan *controlPlaneCredentials
 	activations *activations
@@ -282,8 +291,11 @@ func (b *credentialBroker) Get(ctx context.Context, body agentcreds.UseBody) (ag
 	if useID == "" {
 		return agentcreds.UseResponse{}, fmt.Errorf("%w: useId is required", agentcreds.ErrInvalid)
 	}
-	if err := validateVerdict(body.Verdict); err != nil {
-		return agentcreds.UseResponse{}, err
+	if len(body.Command) == 0 || strings.TrimSpace(body.Command[0]) == "" {
+		return agentcreds.UseResponse{}, fmt.Errorf("%w: command argv is required", agentcreds.ErrInvalid)
+	}
+	if b.judge == nil {
+		return agentcreds.UseResponse{}, fmt.Errorf("pool judge unavailable")
 	}
 	docs, err := b.controlPlan.list(ctx, b.sandboxID)
 	if err != nil {
@@ -294,11 +306,30 @@ func (b *credentialBroker) Get(ctx context.Context, body agentcreds.UseBody) (ag
 			if use.UseID != useID {
 				continue
 			}
-			// Recorded before the mint, and gating it: a failure here must stop
-			// the value from being issued, not merely go unlogged (ADR 0091).
-			if err := b.controlPlan.recordVerdict(ctx, b.sandboxID, useID, body.Command, body.Verdict, false); err != nil {
+			job := judge.Job{Kind: "command", Purpose: use.Description, Host: doc.Host, Credential: doc.Name, Command: body.Command, Evidence: body.Evidence}
+			verdict, judgeErr := b.judge(ctx, job)
+			if judgeErr != nil {
+				verdict.Allow = false
+				verdict.Reason = "pool judge unavailable"
+			}
+			if err := b.controlPlan.recordTrustedVerdict(ctx, b.sandboxID, useID, body.Command, "command", "", verdict); err != nil {
 				return agentcreds.UseResponse{}, err
 			}
+			if judgeErr != nil {
+				return agentcreds.UseResponse{}, fmt.Errorf("pool judge unavailable: %w", judgeErr)
+			}
+			if !verdict.Allow {
+				return agentcreds.UseResponse{}, fmt.Errorf("%w: %s", agentcreds.ErrDenied, verdict.Reason)
+			}
+			// Re-read after model latency: a grant revoked while judging cannot mint.
+			current, err := b.controlPlan.list(ctx, b.sandboxID)
+			if err != nil {
+				return agentcreds.UseResponse{}, err
+			}
+			if !liveCredentialUse(current, doc.Sentinel, useID, use.Description, doc.Host) {
+				return agentcreds.UseResponse{}, fmt.Errorf("%w: approved use changed during judging", agentcreds.ErrDenied)
+			}
+
 			record, err := b.activations.mint(b.sandboxID, doc.Sentinel, useID, doc.Host, doc.Format, body.Command)
 			if err != nil {
 				return agentcreds.UseResponse{}, err
@@ -355,4 +386,24 @@ func protocolUses(docs []credentialUseDoc, expiresAt *time.Time) []agentcreds.Us
 		out = append(out, agentcreds.Use{UseID: doc.UseID, Description: doc.Description, ExpiresAt: expiresAt})
 	}
 	return out
+}
+
+func liveCredentialUse(docs []credentialDoc, sentinel, useID, purpose, host string) bool {
+	for _, doc := range docs {
+		if doc.Sentinel == sentinel && doc.Host == host {
+			for _, use := range doc.Uses {
+				if use.UseID == useID && use.Description == purpose {
+					return true
+				}
+			}
+		}
+	}
+	return false
+}
+
+func (c *controlPlaneCredentials) recordTrustedVerdict(ctx context.Context, sandboxID, useID string, command []string, origin, requestID string, v judge.Verdict) error {
+	return c.do(ctx, http.MethodPost, "sandbox-credential-verdicts", nil, recordCredentialVerdictDoc{
+		SandboxID: sandboxID, UseID: useID, Command: command, Origin: origin, RequestID: requestID, HarnessConfigID: v.HarnessConfigID, Revision: v.Revision, Image: v.Image, PromptVersion: v.PromptVersion,
+		Verdict: credentialVerdictDoc{Allow: v.Allow, Reason: v.Reason, Role: judge.Role, Prompt: v.Prompt, LatencyMs: v.LatencyMS},
+	}, nil)
 }

@@ -106,24 +106,21 @@ func TestDenialRoundTripsAsDenial(t *testing.T) {
 // Get is the call ADR 0091 makes carry a verdict, so it has to reach the wire
 // as part of the same body as the command — not a second call the server
 // could receive and the client could still treat Get as having succeeded.
-func TestGetCarriesTheVerdict(t *testing.T) {
+func TestGetCarriesCommandEvidence(t *testing.T) {
 	svc := &fakeService{}
 	_, err := newTestClient(t, svc).Get(context.Background(), agentcreds.UseBody{
-		UseID:   "use-1",
-		Command: []string{"gh", "pr", "create"},
-		Verdict: agentcreds.Verdict{Allow: true, Reason: "matches the approved use", Role: "judge", Prompt: "...", LatencyMS: 750},
+		UseID:    "use-1",
+		Command:  []string{"gh", "pr", "create"},
+		Evidence: "untrusted command context",
 	})
 	if err != nil {
 		t.Fatalf("get: %v", err)
 	}
-	if !svc.gotUse.Verdict.Allow || svc.gotUse.Verdict.Role != "judge" || svc.gotUse.Verdict.LatencyMS != 750 {
-		t.Fatalf("verdict = %#v, want it carried on the same body as the command", svc.gotUse.Verdict)
+	if svc.gotUse.Evidence != "untrusted command context" || len(svc.gotUse.Command) != 3 {
+		t.Fatalf("use = %#v", svc.gotUse)
 	}
 }
 
-// The one call this protocol has for a verdict that never rode an issued
-// credential (ADR 0091 §3): the judge refused, Get was never called, and this
-// is the only route that decision reaches the server by.
 func TestReportDenialCarriesTheRefusedVerdict(t *testing.T) {
 	svc := &fakeService{}
 	err := newTestClient(t, svc).ReportDenial(context.Background(), agentcreds.DenialReport{

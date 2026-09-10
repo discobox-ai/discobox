@@ -10,6 +10,9 @@ type SecretResolver = secrets.Resolver
 // SecretResolveRequest is the input to a SecretResolver.
 type SecretResolveRequest = secrets.ResolveRequest
 
+// SecretAuthorizeRequest carries pre-substitution evidence for each request.
+type SecretAuthorizeRequest = secrets.AuthorizeRequest
+
 // SecretResolveResult is the output of a SecretResolver.
 type SecretResolveResult = secrets.ResolveResult
 

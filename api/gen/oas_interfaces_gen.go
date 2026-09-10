@@ -145,6 +145,10 @@ type GetJobRes interface {
 	getJobRes()
 }
 
+type GetPoolJudgeRuntimeRes interface {
+	getPoolJudgeRuntimeRes()
+}
+
 type GetPoolRes interface {
 	getPoolRes()
 }
@@ -195,6 +199,10 @@ type GetSecretRes interface {
 
 type GetServerPeerRes interface {
 	getServerPeerRes()
+}
+
+type JudgeSandboxRes interface {
+	judgeSandboxRes()
 }
 
 type ListHarnessConfigSecretBindingsRes interface {

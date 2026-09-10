@@ -219,7 +219,7 @@ func TestApplyPreviousSwapsBase64(t *testing.T) {
 
 	retry := newRequest(t, http.MethodGet, "https://github.com/org/repo.git/info/refs")
 	retry.Header.Set("Authorization", basicAuth("x-access-token:"+sentinel))
-	if res := sw.ApplyPrevious(retry, "sandbox-1"); !res.Swapped() {
+	if res := sw.ApplyPrevious(context.Background(), retry, "sandbox-1"); !res.Swapped() {
 		t.Fatal("expected previous-value swap")
 	}
 	if got, want := retry.Header.Get("Authorization"), basicAuth("x-access-token:ghp_first"); got != want {

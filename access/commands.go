@@ -184,26 +184,17 @@ func runWrapped(ctx context.Context, args []string) int {
 		return usageError(out, "no command given; use `%s run --use USE_ID -- COMMAND ...`", Name)
 	}
 	client := newClient()
-	credential, use, err := approvedUse(ctx, client, useID)
+	_, _, err := approvedUse(ctx, client, useID)
 	if err != nil {
 		return out.report(err)
 	}
-	// Judged before the value is taken (ADR 0079 §1), so a refusal mints no
-	// ephemeral sentinel and leaves no activation behind for a command that
-	// never ran.
-	verdict, judgeErr := judgeCommand(ctx, credential, use, command)
-	if judgeErr != nil {
-		// A denial never reaches Get, and so would leave no record on trusted
-		// ground at all if this stopped here. Reporting it is best-effort — its
-		// own failure changes nothing about what run reports for the refusal
-		// that prompted it — and only attempted when a judge was actually asked;
-		// a zero Verdict means judgeCommand never got that far.
-		if verdict.Role != "" {
-			_ = client.ReportDenial(ctx, agentcreds.DenialReport{UseID: useID, Command: command, Verdict: verdict})
-		}
-		return out.report(judgeErr)
+	f := gatherFacts(ctx, command)
+	cwd, _ := os.Getwd()
+	evidence, err := json.Marshal(struct{ WorkingDirectory, RepositoryRoot, RefSHA, RefSubject string }{cwd, f.repoRoot, f.refSHA, f.refSubject})
+	if err != nil {
+		return out.report(err)
 	}
-	result, err := client.Get(ctx, agentcreds.UseBody{UseID: useID, Command: command, Verdict: verdict})
+	result, err := client.Get(ctx, agentcreds.UseBody{UseID: useID, Command: command, Evidence: string(evidence)})
 	if err != nil {
 		return out.report(err)
 	}

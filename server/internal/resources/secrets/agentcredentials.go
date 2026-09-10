@@ -158,7 +158,15 @@ func (s *Service) RecordCredentialVerdict(ctx context.Context, poolID string, in
 		return err
 	}
 	verdict := input.Verdict
+	origin := input.Origin.Or("client")
+	if origin != "client" && origin != "command" && origin != "request" {
+		return apperrors.NewStatusError(http.StatusBadRequest, "invalid verdict origin")
+	}
+	if input.Volunteered && origin != "client" {
+		return apperrors.NewStatusError(http.StatusBadRequest, "volunteered verdict cannot claim a trusted origin")
+	}
 	row := &model.CredentialVerdict{
+		Origin: origin, RequestID: input.RequestId.Or(""), HarnessConfigID: input.HarnessConfigId.Or(""), Revision: input.Revision.Or(""), Image: input.Image.Or(""), PromptVersion: input.PromptVersion.Or(""),
 		ProjectID:   sandbox.ProjectID,
 		SandboxID:   sandbox.ID,
 		UseID:       strings.TrimSpace(input.UseId),
@@ -173,6 +181,40 @@ func (s *Service) RecordCredentialVerdict(ctx context.Context, poolID string, in
 	if grantID, ok := s.findGrantForUse(ctx, sandbox, row.UseID); ok {
 		row.GrantID = grantID
 	}
+	if origin != "client" && row.Allow {
+		runtime, err := s.store.GetPoolJudge(ctx, poolID)
+		if err != nil || runtime.Revision != row.Revision || runtime.HarnessConfigID != row.HarnessConfigID || row.GrantID == "" {
+			return apperrors.NewStatusError(http.StatusForbidden, "judge configuration or approved grant changed")
+		}
+		project, err := s.store.GetProject(ctx, sandbox.ProjectID)
+		if err != nil {
+			return err
+		}
+		selected := project.JudgeHarnessConfigID
+		if selected == "" {
+			selected = project.DefaultHarnessConfigID
+		}
+		if selected != row.HarnessConfigID {
+			return apperrors.NewStatusError(http.StatusForbidden, "judge selection changed")
+		}
+		hc, err := s.store.GetHarnessConfig(ctx, sandbox.ProjectID, selected)
+		if err != nil {
+			return err
+		}
+		bindings, err := s.store.ListHarnessConfigSecretBindings(ctx, sandbox.ProjectID, selected)
+		if err != nil {
+			return err
+		}
+		revision, err := model.JudgeRevision(hc, bindings)
+		if err != nil {
+			return err
+		}
+		if !hc.Configured || hc.Slug == "shell" || revision != row.Revision {
+			return apperrors.NewStatusError(http.StatusForbidden, "judge configuration changed")
+		}
+
+	}
+
 	return s.store.CreateCredentialVerdict(ctx, row)
 }
 
