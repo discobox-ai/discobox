@@ -160,4 +160,4 @@ Nygard-style ADRs (see adr.github.io) combined with current-state design docs:
 | [0103](0103-a-global-flag-belongs-to-the-command-it-is-written-in-front-of.md) | A global flag belongs to the command it is written in front of | Accepted (supersedes [0100](0100-the-prompt-is-a-flag-and-the-root-takes-no-words.md) §1's mechanism) |
 | [0104](0104-a-client-dials-with-an-ephemeral-key-and-proves-the-enrolled-one.md) | A client dials with an ephemeral key and proves the enrolled one with a certificate | Accepted (amends [0095](0095-an-enrolled-iroh-id-is-a-managed-resource.md) §2 — an enrolled ID stops being the address a client dials from) |
 | [0105](0105-a-release-is-cut-as-a-prerelease-and-blessed-stable-later.md) | A release is cut as a prerelease and blessed stable by hand | Accepted |
-| [0106](0106-a-trusted-judge-checks-requests-before-credential-substitution.md) | A dedicated pool harness judges commands and credential-bearing requests | Proposed |
+| [0106](0106-a-trusted-judge-checks-requests-before-credential-substitution.md) | A dedicated pool harness judges commands and credential-bearing requests | Accepted |

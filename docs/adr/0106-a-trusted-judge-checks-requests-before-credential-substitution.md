@@ -1,6 +1,6 @@
 # 0106 — A dedicated pool harness judges commands and credential-bearing requests
 
-- **Status**: Proposed
+- **Status**: Accepted
 - **Date**: 2026-09-10
 - **Amends**: [0079](0079-a-local-judge-gates-every-wrapped-credential-use.md)'s sandbox-local command judge and deferred trusted-side placement; [0090](0090-the-judge-is-handed-facts-and-given-no-tools.md)'s judge invocation location; [0091](0091-a-credential-is-not-issued-without-a-verdict-on-record.md)'s caller-supplied verdict requirement. Settles [0031](0031-agent-credentials-are-a-portable-protocol-with-ephemeral-sentinels.md) §6's deferred request judge.
 
