@@ -39,6 +39,15 @@ func (f *sshConfigFakeServer) start(t *testing.T) *httptest.Server {
 		defer f.mu.Unlock()
 		w.Header().Set("Content-Type", "application/json")
 		switch {
+		case r.Method == http.MethodHead:
+			// Not this CLI. Run inside a discobox, this suite's listeners are
+			// noticed by the sandbox-agent's own port watcher, which asks each
+			// new one `HEAD /` to find out whether it is an HTTP service
+			// (`sandbox-agent/ports/probe.go`). Left to the default branch it
+			// fails whichever test happened to be holding the port when the
+			// watcher looked, which is every test in this file and none of
+			// them reproducibly.
+			return
 		case r.URL.Path == "/projects/project-1" && r.Method == http.MethodGet:
 			// Deliberately not the flag value: --write names its files after
 			// the resolved ID, and this proves it resolves rather than reusing
