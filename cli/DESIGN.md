@@ -630,10 +630,12 @@ Which editor it turns out to be then decides *which ssh* the config has to reach
 (`editorFamily.sshTargets`). A Windows build launched from WSL connects with
 Windows OpenSSH, on the other side of the boundary from this process, and a
 Windows ssh_config that cannot be written is fatal for it rather than a note —
-see [SSH Keys and Config](#ssh-keys-and-config-adr-0024). These are the only
-commands that make that call, because they are the only ones that know which
-program will be driving ssh; `tools ssh` carries its own connection and never
-touches `ssh_config`.
+which is the whole of what that side being `optional` decides, so such an editor
+clears it and gets an error wherever the failure happens rather than a dropped
+target. See [SSH Keys and Config](#ssh-keys-and-config-adr-0024). These are the
+only commands that make that call, because they are the only ones that know
+which program will be driving ssh; `tools ssh` carries its own connection and
+never touches `ssh_config`.
 
 `tools vscode` runs the editor with `DONT_PROMPT_WSL_INSTALL=1`
 (`vscodeQuietWSLPrompt`), always rather than only under WSL: the variable means nothing elsewhere, and a conditional is
@@ -1129,10 +1131,16 @@ level or layering on the attach transports above.
   `%LOCALAPPDATA%\discobox\cli\ssh\<project>\`, an `Include` in the Windows
   user's `~/.ssh/config`, a `ProxyCommand` of `wsl.exe -d <distro> -e sh -c
   "exec '<linux discobox>' --server '…' admin ssh-proxy"`, and a copy of the
-  enrolled private key beside them, refreshed on every run. Resolving that side
-  needs interop, so failing to is a warning — this side's config is still
-  written and still correct — except for an editor command launching a Windows
-  editor, where it is the whole point and therefore an error. Windows is asked where its
+  enrolled private key beside them, refreshed on every run. Everything on that
+  side runs through interop, a Windows profile and a Windows ACL, and any of it
+  failing is a warning rather than an error: the Windows target carries
+  `optional`, a failure to resolve, build or write it is reported through the
+  note sink and that target is dropped, and this side's config is still written
+  and still correct (ADR 0102 §3). A create that has already made a discobox
+  does not fail over the other installation's config. An editor command
+  launching a Windows editor clears the flag, because that editor connects with
+  Windows OpenSSH and a window opening on a config that was never written is
+  worse than the error. Windows is asked where its
   own folders are (`cmd.exe /c echo %LOCALAPPDATA%`, `wslpath -u`) rather than
   assumed — and `cmd.exe` itself is taken from PATH, or, in a distribution
   configured not to inherit the Windows one, translated from the Windows path it
@@ -1152,10 +1160,16 @@ level or layering on the attach transports above.
   **The key's ACL**: set with `icacls` and read back, never inherited. A file
   written from WSL onto a drive mount carries an explicit `S-1-5-32` ACE, one
   created from Windows inherits whatever the profile grants below it, and
-  `os.WriteFile` over an existing file keeps the old DACL. ssh refuses a private
-  key that any of those leave reachable by another principal, so the run fails
-  here rather than leaving Remote-SSH to complain about a file the user never
-  created.
+  `os.WriteFile` over an existing file keeps the old DACL. What is granted
+  instead is what `restrictToUser` grants natively and what Windows OpenSSH
+  reads a private key under — the user, SYSTEM and Administrators — the
+  well-known two by SID, since their names are localized (ADR 0102 §1). The
+  read-back counts: three ACEs with the user's among them is that grant and
+  nothing else, and a fourth is an explicit entry that survived
+  `/inheritance:r`, which is what reading back exists to catch. A copy this
+  cannot vouch for is removed again — a wide ACL, or an `icacls` that could not
+  be run at all — because the failure is a warning now, and a key left behind
+  under permissions nothing confirmed is what reading back is for.
 - Paths are spelled for ssh's config parser, not printed: `sshConfigPath`
   quotes what contains a space and escapes what contains a percent sign, and
   `sshConfigFields` reads them back so a re-run recognizes its own line. It

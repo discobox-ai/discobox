@@ -67,7 +67,7 @@ func (a *App) newSSHConfigCommand() *cobra.Command {
 			// and no reason to withhold this side's.
 			targets, windowsErr := machineSSHTargets(cmd.Context())
 			if windowsErr != nil {
-				notes("not writing the Windows ssh_config: %v", windowsErr)
+				notes(windowsSSHConfigSkipped, windowsErr)
 			}
 			// Printed output is for pasting into a config by hand, and the
 			// hand doing it is on this side.
@@ -116,9 +116,9 @@ func (a *App) writeProjectSSHConfig(ctx context.Context, client *apiclientgen.Cl
 	}
 	targets, windowsErr := machineSSHTargets(ctx)
 	if windowsErr != nil {
-		notes("not writing the Windows ssh_config: %v", windowsErr)
+		notes(windowsSSHConfigSkipped, windowsErr)
 	}
-	built, err := a.buildManagedSSHConfig(ctx, managedSSHConfigRequest{
+	_, err = a.writeManagedSSHConfigs(ctx, managedSSHConfigRequest{
 		client:            client,
 		projectID:         projectID,
 		resolvedProjectID: resolvedProjectID,
@@ -127,15 +127,7 @@ func (a *App) writeProjectSSHConfig(ctx context.Context, client *apiclientgen.Cl
 		write:             true,
 		notes:             notes,
 	}, targets)
-	if err != nil {
-		return err
-	}
-	for _, config := range built {
-		if err := writeManagedSSHConfig(config, resolvedProjectID, notes); err != nil {
-			return err
-		}
-	}
-	return nil
+	return err
 }
 
 // managedSSHConfigRequest is what rendering a project's stanzas needs that the
@@ -212,17 +204,16 @@ func (a *App) buildManagedSSHConfig(ctx context.Context, req managedSSHConfigReq
 		}
 	}
 
-	built := make([]managedSSHConfig, 0, len(targets))
-	for _, target := range targets {
+	buildTarget := func(target sshTarget) (managedSSHConfig, error) {
 		proxyCommand, err := target.proxyCommandLine(a.serverURL)
 		if err != nil {
-			return nil, err
+			return managedSSHConfig{}, err
 		}
 		// The key is generated and enrolled on this side whichever ssh reads
 		// the config; only where it has to be readable from changes.
 		identity, err := target.mirrorSSHIdentity(ctx, identityFile)
 		if err != nil {
-			return nil, err
+			return managedSSHConfig{}, err
 		}
 		// Only the written config can name a known_hosts file, because only it
 		// owns one: printed output would be naming a file this run never wrote.
@@ -237,15 +228,62 @@ func (a *App) buildManagedSSHConfig(ctx context.Context, req managedSSHConfigReq
 			identityFile:   identity.client,
 			knownHostsFile: knownHostsFile,
 		}
-		built = append(built, managedSSHConfig{
+		return managedSSHConfig{
 			target:       target,
 			stanzas:      renderSSHConfig(render),
 			hostKeyAlias: render.hostKeyAlias,
 			hostKey:      req.hostKey,
 			aliases:      aliases,
-		})
+		}, nil
+	}
+
+	built := make([]managedSSHConfig, 0, len(targets))
+	for _, target := range targets {
+		config, err := buildTarget(target)
+		if err != nil {
+			if !target.optional {
+				return nil, err
+			}
+			req.notes(windowsSSHConfigSkipped, err)
+			continue
+		}
+		built = append(built, config)
 	}
 	return built, nil
+}
+
+// windowsSSHConfigSkipped is what a target that may fail says when it does. It
+// is one sentence in one wording wherever the failure happens — resolving the
+// target, mirroring the key, writing the files — because it is one thing the
+// reader has to know: this machine's other ssh installation did not get the
+// stanzas, and here is why. See sshTarget.optional.
+const windowsSSHConfigSkipped = "not writing the Windows ssh_config: %v"
+
+// writeManagedSSHConfigs renders a project's stanzas for every target and puts
+// each where that ssh will read them. It is what every caller that writes does,
+// as against `admin ssh-config` with no --write, which renders one target and
+// prints it.
+//
+// A target that may fail and does is reported and dropped rather than failing
+// the caller: what comes back is the targets that were written, this machine's
+// own first. See sshTarget.optional.
+func (a *App) writeManagedSSHConfigs(ctx context.Context, req managedSSHConfigRequest, targets []sshTarget) ([]managedSSHConfig, error) {
+	built, err := a.buildManagedSSHConfig(ctx, req, targets)
+	if err != nil {
+		return nil, err
+	}
+	written := make([]managedSSHConfig, 0, len(built))
+	for _, config := range built {
+		if err := writeManagedSSHConfig(config, req.resolvedProjectID, req.notes); err != nil {
+			if !config.target.optional {
+				return nil, err
+			}
+			req.notes(windowsSSHConfigSkipped, err)
+			continue
+		}
+		written = append(written, config)
+	}
+	return written, nil
 }
 
 // sshHostKey is the server's host public key, which every emitted stanza pins
@@ -552,7 +590,7 @@ func (a *App) sandboxSSHRemote(ctx context.Context, targets []sshTarget, client 
 	if err != nil {
 		return sandboxSSHRemote{}, err
 	}
-	built, err := a.buildManagedSSHConfig(ctx, managedSSHConfigRequest{
+	built, err := a.writeManagedSSHConfigs(ctx, managedSSHConfigRequest{
 		client:            client,
 		projectID:         projectID,
 		resolvedProjectID: resolvedProjectID,
@@ -562,11 +600,6 @@ func (a *App) sandboxSSHRemote(ctx context.Context, targets []sshTarget, client 
 	}, targets)
 	if err != nil {
 		return sandboxSSHRemote{}, err
-	}
-	for _, config := range built {
-		if err := writeManagedSSHConfig(config, resolvedProjectID, notes); err != nil {
-			return sandboxSSHRemote{}, err
-		}
 	}
 
 	host, ok := built[0].aliases[sandboxID]

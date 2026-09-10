@@ -14,13 +14,17 @@ import (
 // Like fakeWSLMachine, it is a set of shell scripts, and the bridge it stands
 // up only ever runs from inside a distribution: there is no WSL half on a
 // native Windows host, which cannot execute the fakes either.
-func wslTestWindowsTools(t *testing.T) string {
+func wslTestWindowsTools(t *testing.T, opts ...wslMachineOption) string {
 	t.Helper()
 	if runtime.GOOS == "windows" {
 		t.Skip("the fakes are shell scripts, and the bridge runs from the Linux side")
 	}
+	var machine wslMachine
+	for _, opt := range opts {
+		opt(&machine)
+	}
 	dir := t.TempDir()
-	fakeWindowsTools(t, dir, false)
+	fakeWindowsTools(t, dir, machine.leakyKeyACL)
 	t.Setenv("PATH", dir+string(os.PathListSeparator)+os.Getenv("PATH"))
 	return dir
 }
@@ -116,10 +120,15 @@ func TestSSHTargetMirrorsTheIdentityAcrossTheBoundary(t *testing.T) {
 		t.Fatalf("mirrored public key = %q", got)
 	}
 
-	// The copy is no use to ssh unless it is the user's alone: the ACL it
-	// would otherwise have is one ssh refuses to read a private key under.
+	// The copy is no use to ssh unless its ACL is the one ssh reads a private
+	// key under: the user, SYSTEM and Administrators, granted rather than
+	// inherited, and the well-known two by SID because their names are
+	// localized (ADR 0102).
 	acl := readFile(t, aclLog(tools))
-	for _, want := range []string{mirrored.client, "/inheritance:r", "/remove:g *S-1-5-32", "/grant:r Ada:F"} {
+	for _, want := range []string{
+		mirrored.client, "/inheritance:r", "/remove:g *S-1-5-32",
+		"/grant:r Ada:F", "/grant:r *S-1-5-18:F", "/grant:r *S-1-5-32-544:F",
+	} {
 		if !strings.Contains(acl, want) {
 			t.Fatalf("the key's ACL was not set with %q:\n%s", want, acl)
 		}
@@ -137,6 +146,34 @@ func TestSSHTargetMirrorsTheIdentityAcrossTheBoundary(t *testing.T) {
 	}
 	if got := readFile(t, mirrored.local); got != "ROTATED" {
 		t.Fatalf("mirrored key after rotation = %q", got)
+	}
+}
+
+// A copy this cannot make safe does not stay on the Windows filesystem. The
+// caller above may turn the failure into a warning and carry on (ADR 0102 §3),
+// and a run that went on to succeed having left an enrolled private key under
+// the ACL it just refused is the thing the check exists to prevent.
+func TestSSHTargetRemovesAKeyItCannotNarrow(t *testing.T) {
+	wslTestWindowsTools(t, withLeakyKeyACL)
+	target := wslTestTarget(t.TempDir())
+	source := filepath.Join(t.TempDir(), "id_ed25519")
+	if err := os.WriteFile(source, []byte("PRIVATE"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	// Where the copy would have landed, worked out here rather than taken from
+	// the return: a failed mirror reports no path at all, which is the whole
+	// reason the file it wrote has to be gone.
+	copied := target.join(target.sshDir(), "id_ed25519").local
+	_, err := target.mirrorSSHIdentity(t.Context(), source)
+	if err == nil {
+		t.Fatal("expected a key another principal can read to be refused")
+	}
+	if !strings.Contains(err.Error(), `BUILTIN\Users`) {
+		t.Fatalf("the error should name what can read the key, got: %v", err)
+	}
+	if _, err := os.Stat(copied); !os.IsNotExist(err) {
+		t.Fatalf("the copy was left behind at %s: %v", copied, err)
 	}
 }
 

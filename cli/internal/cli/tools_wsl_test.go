@@ -160,6 +160,8 @@ esac
 	if leakyKeyACL {
 		leak = `\n                     BUILTIN\\Users:(RX)`
 	}
+	// The three a granted key carries, in the shape icacls prints them: the
+	// user on the path's own line and the well-known two indented under it.
 	writeFakeTool(t, filepath.Join(dir, "icacls.exe"), `#!/bin/sh
 path=$1
 shift
@@ -168,7 +170,8 @@ if [ $# -gt 0 ]; then
 	echo "Successfully processed 1 files; Failed processing 0 files"
 	exit 0
 fi
-printf '%s BEENIE\\Ada:(F)`+leak+`\n' "$path"
+printf '%s BEENIE\\Ada:(F)\n                     NT AUTHORITY\\SYSTEM:(F)\n                     BUILTIN\\Administrators:(F)`+leak+`\n' "$path"
+echo "Successfully processed 1 files; Failed processing 0 files"
 `)
 }
 
@@ -218,13 +221,13 @@ func TestToolsVSCodeOnWSLWritesTheConfigWindowsReads(t *testing.T) {
 	}
 
 	// The key is on the Windows side too, because ssh.exe opens it itself --
-	// and narrowed to this user, because ssh refuses to read a private key
-	// anybody else can (ADR 0078 §2).
+	// and narrowed to the three principals ssh reads a private key for, since
+	// what it would inherit is not among them (ADR 0078 §2, ADR 0102).
 	if _, err := os.Stat(filepath.Join(windowsState, "id_ed25519")); err != nil {
 		t.Fatalf("the identity was not mirrored for Windows: %v", err)
 	}
 	acl := readFile(t, aclLog(windowsToolsDir(root)))
-	if !strings.Contains(acl, `/inheritance:r /remove:g *S-1-5-32 /grant:r Ada:F`) {
+	if !strings.Contains(acl, `/inheritance:r /remove:g *S-1-5-32 /grant:r Ada:F /grant:r *S-1-5-18:F /grant:r *S-1-5-32-544:F`) {
 		t.Fatalf("the mirrored key's ACL was not narrowed:\n%s", acl)
 	}
 
@@ -310,6 +313,71 @@ func TestToolsVSCodeOnWSLRefusesALeakyKey(t *testing.T) {
 		if !strings.Contains(err.Error(), want) {
 			t.Fatalf("error should name what can read the key and why it matters, got: %v", err)
 		}
+	}
+}
+
+// Everything on the Windows side is one interop call away from failing, and
+// none of it is a reason to lose the config for the ssh this shell runs. A
+// Linux editor connects through this distribution's own ssh: the Windows side
+// says what it could not do and the window still opens.
+func TestToolsVSCodeOnWSLReportsTheWindowsSideForALinuxEditor(t *testing.T) {
+	root, _ := fakeWSLMachine(t, withLeakyKeyACL)
+	record := fakeVSCode(t)
+
+	home, state, stderr, err := runToolsVSCodeCmd(t, vscodeFakeServer(), "--discobox-id", "sbx_devbox00000001")
+	if err != nil {
+		t.Fatalf("execute tools vscode: %v", err)
+	}
+	if !strings.Contains(stderr, "not writing the Windows ssh_config") {
+		t.Fatalf("nothing said what the Windows side could not do:\n%s", stderr)
+	}
+	configPath, _ := managedPaths(state)
+	if got := readFile(t, filepath.Join(home, ".ssh", "config")); !strings.Contains(got, configPath) {
+		t.Fatalf("the local ssh_config does not include the managed one: %q", got)
+	}
+	windowsConfig := filepath.Join(root, "Users", "Ada Lovelace", "AppData", "Local",
+		"discobox", "cli", "ssh", resolvedTestProjectID, "config")
+	if _, err := os.Stat(windowsConfig); err == nil {
+		t.Fatal("a config was written for a key ssh will not read")
+	}
+	if args := editorArgs(t, record); !contains(args, "--folder-uri") {
+		t.Fatalf("editor args = %v, want the editor to have opened anyway", args)
+	}
+}
+
+// The same for `admin ssh-config --write`, which is the command every other
+// caller of this work goes through: a run's refresh, and the launcher's. What
+// the Windows side could not do is reported, and this side is still written --
+// a create that has already made a discobox does not fail over the ACL of a
+// mirrored key.
+func TestSSHConfigWriteOnWSLReportsTheWindowsSide(t *testing.T) {
+	root, _ := fakeWSLMachine(t, withLeakyKeyACL)
+	home, state := t.TempDir(), t.TempDir()
+	setHome(t, home)
+	t.Setenv("XDG_STATE_HOME", state)
+
+	server := writeFakeServer().start(t)
+	cmd := NewRootCommand()
+	var out, errOut strings.Builder
+	cmd.SetOut(&out)
+	cmd.SetErr(&errOut)
+	cmd.SetArgs([]string{"--server", server.URL, "--project", "project-1", "admin", "ssh-config", "--write"})
+	if err := cmd.Execute(); err != nil {
+		t.Fatalf("execute ssh-config --write: %v", err)
+	}
+	for _, want := range []string{"not writing the Windows ssh_config", `BUILTIN\Users`, "private key"} {
+		if !strings.Contains(errOut.String(), want) {
+			t.Fatalf("the report is missing %q:\n%s", want, errOut.String())
+		}
+	}
+	local, _ := managedPaths(state)
+	if _, err := os.Stat(local); err != nil {
+		t.Fatalf("this distribution's config was not written: %v", err)
+	}
+	windowsConfig := filepath.Join(root, "Users", "Ada Lovelace", "AppData", "Local",
+		"discobox", "cli", "ssh", resolvedTestProjectID, "config")
+	if _, err := os.Stat(windowsConfig); err == nil {
+		t.Fatal("a config was written for a key ssh will not read")
 	}
 }
 

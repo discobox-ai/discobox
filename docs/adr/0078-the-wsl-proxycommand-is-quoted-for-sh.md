@@ -1,6 +1,8 @@
 # 0078. The WSL bridge, corrected: quoting, the key's ACL, and both sides written
 
-Status: Accepted
+Status: Accepted (§2's "granted to the user alone" ACL and its read-back
+superseded by [0102](0102-a-mirrored-key-carries-the-acl-ssh-reads.md);
+§1 and §3 stand)
 
 Amends [0074](0074-a-wsl-cli-writes-the-ssh-config-windows-reads.md) §2, §3, and
 its consequence that only `tools vscode` writes the Windows side.

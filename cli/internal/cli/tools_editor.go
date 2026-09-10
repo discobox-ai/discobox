@@ -71,17 +71,28 @@ func (f editorFamily) resolve(named string) (string, error) {
 // Windows build launched from WSL connects with Windows OpenSSH, and without
 // that config there is nothing for it to connect to. Anywhere else the Windows
 // side is worth a note and no more — this side's config is written and correct.
+//
+// Not resolving it is only the first way that side can fail, and the editor
+// decides the rest of them the same way: mirroring the key, setting its ACL and
+// writing the files are all allowed to fail with a note (ADR 0102 §3), so an
+// editor that needs the Windows config clears `optional` and gets an error
+// wherever the failure happens instead.
 func (f editorFamily) sshTargets(ctx context.Context, editor string, notes noteFunc) ([]sshTarget, error) {
 	targets, windowsErr := machineSSHTargets(ctx)
-	if windowsErr == nil {
-		return targets, nil
+	windowsEditor := isWSL() && isWindowsExecutable(ctx, editor)
+	if windowsErr != nil {
+		if windowsEditor {
+			return nil, fmt.Errorf("%s is a Windows program, so it connects with Windows OpenSSH: %w; "+
+				"name a Linux build with --editor or $%s to use this machine's own ssh_config instead",
+				editor, windowsErr, f.env)
+		}
+		notes(windowsSSHConfigSkipped, windowsErr)
 	}
-	if isWindowsExecutable(ctx, editor) {
-		return nil, fmt.Errorf("%s is a Windows program, so it connects with Windows OpenSSH: %w; "+
-			"name a Linux build with --editor or $%s to use this machine's own ssh_config instead",
-			editor, windowsErr, f.env)
+	if windowsEditor {
+		for i := range targets {
+			targets[i].optional = false
+		}
 	}
-	notes("not writing the Windows ssh_config: %v", windowsErr)
 	return targets, nil
 }
 

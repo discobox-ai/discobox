@@ -2,6 +2,7 @@ package cli
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"os"
 	"path"
@@ -49,6 +50,15 @@ type sshTarget struct {
 	// userConfig the ssh_config that gains an Include of them.
 	state      sshPath
 	userConfig sshPath
+	// optional says that failing to write for this target is worth reporting
+	// and no reason to fail the work that asked for the write. It is the
+	// Windows side of a WSL machine and nothing else: everything there runs
+	// through interop, a Windows profile and a Windows ACL, and none of it is
+	// a reason to lose the config for the ssh this shell is running — least of
+	// all in the middle of a run that has already made a discobox to attach
+	// to. `tools vscode` launching a Windows editor is the one caller with
+	// nothing left to connect through, and clears it. See ADR 0102.
+	optional bool
 }
 
 // localSSHTarget is the ssh this machine runs: the CLI's own state directory,
@@ -122,6 +132,7 @@ func machineSSHTargets(ctx context.Context) (targets []sshTarget, windowsErr err
 	if err != nil {
 		return targets, err
 	}
+	windows.optional = true
 	return append(targets, windows), nil
 }
 
@@ -208,13 +219,21 @@ func (t sshTarget) proxyCommandLine(serverURL string) (string, error) {
 // the key exists on both sides, and the copy is rewritten on every run so a
 // rotated or re-enrolled key never leaves a stale one behind.
 //
-// What the copy cannot do is inherit an acceptable ACL. ssh refuses a private
-// key any principal but its owner can reach, and both ways of putting the file
-// there fail that: a file written from this side carries an explicit ACE for
-// `S-1-5-32` that WSL puts on everything it creates on a drive mount, and one
-// created on the Windows side inherits whatever the profile grants — a group
-// with read access is enough to be refused. So the ACL is set, not inherited,
-// which from here means icacls. See ADR 0078 §2.
+// What the copy cannot do is inherit an acceptable ACL. ssh reads a private key
+// under three principals — its owner, SYSTEM and Administrators — and neither
+// way of putting the file there lands on those: a file written from this side
+// carries an explicit ACE for `S-1-5-32` that WSL puts on everything it creates
+// on a drive mount, and one created on the Windows side inherits whatever the
+// profile grants, where a group with read access is enough to be refused. So
+// the ACL is set, not inherited, which from here means icacls
+// (restrictWindowsKey). See ADR 0102 §1.
+//
+// A copy this cannot vouch for is removed again — a wide ACL, but equally an
+// icacls that could not be run or did not answer. It is on the Windows
+// filesystem only to be read by ssh.exe, the permissions it has are the ones
+// nothing confirmed, and the caller may well turn this error into a warning and
+// carry on (ADR 0102 §3) — which would leave an enrolled private key sitting
+// there under exactly what this exists to check.
 func (t sshTarget) mirrorSSHIdentity(ctx context.Context, source string) (sshPath, error) {
 	if !t.acrossWSL() {
 		return samePath(source), nil
@@ -240,6 +259,9 @@ func (t sshTarget) mirrorSSHIdentity(ctx context.Context, source string) (sshPat
 			// Only the private half. The public one is public, and ssh reads
 			// it without an opinion about who else can.
 			if err := restrictWindowsKey(ctx, mirrored.client); err != nil {
+				if removeErr := os.Remove(mirrored.local); removeErr != nil {
+					return sshPath{}, errors.Join(err, fmt.Errorf("remove the copy: %w", removeErr))
+				}
 				return sshPath{}, err
 			}
 		}

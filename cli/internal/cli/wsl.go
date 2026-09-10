@@ -121,16 +121,22 @@ func wslWindowsFolder(ctx context.Context, name string) (sshPath, error) {
 	return sshPath{local: local, client: value}, nil
 }
 
-// restrictWindowsKey narrows a mirrored private key to this user alone, and
-// checks that it worked.
+// restrictWindowsKey narrows a mirrored private key to the principals ssh.exe
+// will read one for, and checks that it worked.
 //
 // This is restrictToUser's job from the other side of the boundary: a mode bit
 // written from here means nothing to Windows, and ssh.exe refuses to read a
-// private key any other principal can. Neither default is safe to inherit —
-// WSL puts an explicit S-1-5-32 ACE on everything it creates on a drive mount,
-// and a Windows profile hands its own groups read access downward — so both are
-// removed and the user is granted the file outright. Full control rather than
-// read: this CLI rewrites the key on every run.
+// private key a principal it does not trust can reach. Neither default is safe
+// to inherit — WSL puts an explicit S-1-5-32 ACE on everything it creates on a
+// drive mount, and a Windows profile hands its own groups read access downward
+// — so both are removed and the ACL is granted outright. Full control rather
+// than read: this CLI rewrites the key on every run.
+//
+// The three it grants are the three restrictToUser grants natively, which are
+// the three Windows OpenSSH accepts: the user, SYSTEM, and Administrators. The
+// last two are on every file a Windows profile holds, ssh reads those keys, and
+// removing them would take away the user's own recovery path without taking
+// anything away from anybody else. See ADR 0102.
 //
 // The result is read back rather than assumed. icacls reports success for a
 // grant that leaves another principal's ACE in place, which is exactly the
@@ -148,10 +154,13 @@ func restrictWindowsKey(ctx context.Context, windowsPath string) error {
 	if err != nil {
 		return err
 	}
+	granted := []string{user, localSystemSID, administratorsSID}
+	args := []string{windowsPath, "/inheritance:r", "/remove:g", builtinDomainSID}
+	for _, principal := range granted {
+		args = append(args, "/grant:r", principal+":F")
+	}
 	//nolint:gosec // G204: a path this command wrote and a name Windows gave it.
-	set := exec.CommandContext(ctx, icacls, windowsPath,
-		"/inheritance:r", "/remove:g", builtinDomainSID, "/grant:r", user+":F")
-	if out, err := set.CombinedOutput(); err != nil {
+	if out, err := exec.CommandContext(ctx, icacls, args...).CombinedOutput(); err != nil {
 		return fmt.Errorf("restrict %s to %s: %w: %s", windowsPath, user, err, strings.TrimSpace(string(out)))
 	}
 	//nolint:gosec // G204: as above.
@@ -159,9 +168,17 @@ func restrictWindowsKey(ctx context.Context, windowsPath string) error {
 	if err != nil {
 		return fmt.Errorf("read the ACL of %s: %w", windowsPath, err)
 	}
-	if others := aclPrincipalsBesides(string(out), windowsPath, user); len(others) > 0 {
-		return fmt.Errorf("%s is readable by %s, and ssh will not read a private key that anyone else can; "+
-			"grant it to %s alone", windowsPath, strings.Join(others, ", "), user)
+	// Counted rather than named, because only one of the three prints under a
+	// name this side knows: SYSTEM and Administrators are localized, and the
+	// SIDs they were granted by are not what icacls prints back. Three ACEs
+	// with the user's among them is the grant above and nothing else; anything
+	// more is an explicit ACE that survived it, which is the case this reads
+	// back to catch.
+	principals := aclPrincipals(string(out), windowsPath)
+	if len(principals) != len(granted) || !aclNamesUser(principals, user) {
+		return fmt.Errorf("%s is readable by %s, and ssh reads a private key only when nothing "+
+			"but %s, SYSTEM and Administrators can; grant it to those three alone",
+			windowsPath, strings.Join(principals, ", "), user)
 	}
 	return nil
 }
@@ -172,22 +189,36 @@ func restrictWindowsKey(ctx context.Context, windowsPath string) error {
 // prints it as BUILTIN\BUILTIN.
 const builtinDomainSID = "*S-1-5-32"
 
-// aclPrincipalsBesides lists the principals in icacls output that are not the
-// one expected. Each ACE is `PRINCIPAL:(rights)`, the first sharing a line with
-// the path; a principal is `DOMAIN\name`, and it is the name that identifies
-// the user.
-func aclPrincipalsBesides(listing, windowsPath, user string) []string {
-	var others []string
+// The two principals a private key may carry besides its owner, by SID for the
+// same reason: BUILTIN\Administrators and NT AUTHORITY\SYSTEM are spelled in
+// the display language of the machine, and a grant by name would be a grant to
+// nobody on half of them.
+const (
+	localSystemSID    = "*S-1-5-18"
+	administratorsSID = "*S-1-5-32-544"
+)
+
+// aclPrincipals lists the principals icacls reports on one file. Each ACE is
+// `PRINCIPAL:(rights)`, the first sharing a line with the path; the count line
+// icacls ends with carries no such entry and is skipped.
+func aclPrincipals(listing, windowsPath string) []string {
+	var principals []string
 	for _, line := range strings.Split(listing, "\n") {
 		entry := strings.TrimSpace(strings.TrimPrefix(strings.TrimSpace(line), windowsPath))
-		rights := strings.Index(entry, ":(")
-		if rights < 0 {
-			continue
-		}
-		principal := entry[:rights]
-		if name := principal[strings.LastIndex(principal, `\`)+1:]; !strings.EqualFold(name, user) {
-			others = append(others, principal)
+		if rights := strings.Index(entry, ":("); rights > 0 {
+			principals = append(principals, entry[:rights])
 		}
 	}
-	return others
+	return principals
+}
+
+// aclNamesUser reports whether one of the principals is this user. A principal
+// is `DOMAIN\name`, and it is the name that identifies the user.
+func aclNamesUser(principals []string, user string) bool {
+	for _, principal := range principals {
+		if name := principal[strings.LastIndex(principal, `\`)+1:]; strings.EqualFold(name, user) {
+			return true
+		}
+	}
+	return false
 }
