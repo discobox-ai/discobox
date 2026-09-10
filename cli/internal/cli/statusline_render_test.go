@@ -104,6 +104,7 @@ func TestStatusLineLeavesRoomForTheSpinner(t *testing.T) {
 // The window's colors, so that a command which narrates a server start and then
 // a discobox it is waiting for does not paint the two differently.
 func TestStatusLineCarriesTheWindowsColors(t *testing.T) {
+	t.Setenv("NO_COLOR", "")
 	t.Setenv("TERM", "xterm-256color")
 	t.Setenv("COLORTERM", "truecolor")
 	out := statusLineOnPTY(t, 90, func(line *statusLine) {
